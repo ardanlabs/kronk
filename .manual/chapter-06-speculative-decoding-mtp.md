@@ -234,8 +234,9 @@ Startup events under `draft-model`, `draft-model-mtp`, and
 - **Classic separate drafts require one slot.** Set `nseq-max: 1` on the
   target entry.
 - **Multi-slot MTP uses one physical batch per logical decode.** Kronk caps
-  `nbatch` at `nubatch` because llama.cpp exposes dense NextN hidden states in
-  physical-batch order without a complete mapping back to logical token rows.
+  the derived internal `NBatch` and `NUBatch` at the same value because
+  llama.cpp exposes dense NextN hidden states in physical-batch order without
+  a complete mapping back to logical token rows.
 - **Tokenizer compatibility remains the user's responsibility.** Kronk rejects
   unequal vocabulary sizes, but that check cannot establish identical token
   mappings or templates.

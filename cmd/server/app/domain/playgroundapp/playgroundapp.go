@@ -87,10 +87,6 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 		cfg.PtrNSeqMax = new(1)
 	}
 
-	if cfg.NUBatch() > cfg.NBatch() {
-		return errs.Errorf(errs.InvalidArgument, "nubatch (%d) must not exceed nbatch (%d)", cfg.NUBatch(), cfg.NBatch())
-	}
-
 	var (
 		cacheKey string
 		krn      *kronk.Kronk
@@ -115,8 +111,9 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 		"shared", !req.HasOverrides(),
 		"krn-ptr", fmt.Sprintf("%p", krn),
 		"context-window", krn.ModelConfig().ContextWindow(),
-		"nbatch", krn.ModelConfig().NBatch(),
-		"nubatch", krn.ModelConfig().NUBatch(),
+		"prefill-batch-size", krn.ModelConfig().PrefillBatchSize(),
+		"effective-nbatch", krn.ModelConfig().EffectiveNBatch(),
+		"effective-nubatch", krn.ModelConfig().EffectiveNUBatch(),
 		"flash-attention", krn.ModelConfig().FlashAttention().String(),
 		"cache-type-k", krn.ModelConfig().CacheTypeK.String(),
 		"cache-type-v", krn.ModelConfig().CacheTypeV.String(),
@@ -132,17 +129,18 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 	a.mu.Unlock()
 
 	effectiveConfig := map[string]any{
-		"context_window":    krn.ModelConfig().ContextWindow(),
-		"nbatch":            krn.ModelConfig().NBatch(),
-		"nubatch":           krn.ModelConfig().NUBatch(),
-		"nseq_max":          krn.ModelConfig().NSeqMax(),
-		"flash_attention":   krn.ModelConfig().FlashAttention().String(),
-		"cache_type_k":      krn.ModelConfig().CacheTypeK.String(),
-		"cache_type_v":      krn.ModelConfig().CacheTypeV.String(),
-		"load_mode":         krn.ModelConfig().LoadMode.String(),
-		"incremental_cache": krn.ModelConfig().IncrementalCache(),
-		"split_mode":        formatSplitMode(krn.ModelConfig().PtrSplitMode),
-		"model_type":        krn.ModelInfo().Type.String(),
+		"context_window":     krn.ModelConfig().ContextWindow(),
+		"prefill_batch_size": krn.ModelConfig().PrefillBatchSize(),
+		"effective_nbatch":   krn.ModelConfig().EffectiveNBatch(),
+		"effective_nubatch":  krn.ModelConfig().EffectiveNUBatch(),
+		"nseq_max":           krn.ModelConfig().NSeqMax(),
+		"flash_attention":    krn.ModelConfig().FlashAttention().String(),
+		"cache_type_k":       krn.ModelConfig().CacheTypeK.String(),
+		"cache_type_v":       krn.ModelConfig().CacheTypeV.String(),
+		"load_mode":          krn.ModelConfig().LoadMode.String(),
+		"incremental_cache":  krn.ModelConfig().IncrementalCache(),
+		"split_mode":         formatSplitMode(krn.ModelConfig().PtrSplitMode),
+		"model_type":         krn.ModelInfo().Type.String(),
 	}
 
 	// Report the active drafter. A separate-GGUF draft carries model files;

@@ -6,10 +6,8 @@ import { MOE_SWEEP_LABELS } from './vram';
 export interface ConfigSweepParamsProps {
   configSweepDef: ConfigSweepDefinition;
   setConfigSweepDef: React.Dispatch<React.SetStateAction<ConfigSweepDefinition>>;
-  rawNBatch: string;
-  setRawNBatch: (v: string) => void;
-  rawNUBatch: string;
-  setRawNUBatch: (v: string) => void;
+  rawPrefillBatchSize: string;
+  setRawPrefillBatchSize: (v: string) => void;
   rawContextWindow: string;
   setRawContextWindow: (v: string) => void;
   rawNSeqMax: string;
@@ -18,7 +16,7 @@ export interface ConfigSweepParamsProps {
   setRawMoeKeepExpertsTopN: (v: string) => void;
   rawOpOffloadMinBatch: string;
   setRawOpOffloadMinBatch: (v: string) => void;
-  commitNumericSweep: (raw: string, field: 'nbatch' | 'nubatch' | 'contextWindow' | 'nSeqMax' | 'moeKeepExpertsTopN' | 'opOffloadMinBatch', setRaw: (v: string) => void) => void;
+  commitNumericSweep: (raw: string, field: 'prefillBatchSize' | 'contextWindow' | 'nSeqMax' | 'moeKeepExpertsTopN' | 'opOffloadMinBatch', setRaw: (v: string) => void) => void;
   isMoE?: boolean;
   isRunning: boolean;
   trialCount: number;
@@ -27,10 +25,8 @@ export interface ConfigSweepParamsProps {
 export default function ConfigSweepParams({
   configSweepDef,
   setConfigSweepDef,
-  rawNBatch,
-  setRawNBatch,
-  rawNUBatch,
-  setRawNUBatch,
+  rawPrefillBatchSize,
+  setRawPrefillBatchSize,
   rawContextWindow,
   setRawContextWindow,
   rawNSeqMax,
@@ -51,29 +47,15 @@ export default function ConfigSweepParams({
       </p>
       <div className="playground-sweep-params">
         <div className="playground-sweep-param">
-          <FieldLabel className="playground-sweep-param-toggle" tooltipKey="nbatch">NBatch</FieldLabel>
+          <FieldLabel className="playground-sweep-param-toggle" tooltipKey="prefillBatchSize">Prefill Batch Size</FieldLabel>
           <input
             type="text"
             className="playground-sweep-param-values"
-            value={rawNBatch}
-            onChange={(e) => setRawNBatch(e.target.value)}
-            onBlur={() => commitNumericSweep(rawNBatch, 'nbatch', setRawNBatch)}
+            value={rawPrefillBatchSize}
+            onChange={(e) => setRawPrefillBatchSize(e.target.value)}
+            onBlur={() => commitNumericSweep(rawPrefillBatchSize, 'prefillBatchSize', setRawPrefillBatchSize)}
             onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
             placeholder="512, 1024, 2048, 4096"
-            disabled={isRunning}
-          />
-        </div>
-
-        <div className="playground-sweep-param">
-          <FieldLabel className="playground-sweep-param-toggle" tooltipKey="nubatch">NUBatch</FieldLabel>
-          <input
-            type="text"
-            className="playground-sweep-param-values"
-            value={rawNUBatch}
-            onChange={(e) => setRawNUBatch(e.target.value)}
-            onBlur={() => commitNumericSweep(rawNUBatch, 'nubatch', setRawNUBatch)}
-            onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-            placeholder="128, 256, 512, 1024, 2048"
             disabled={isRunning}
           />
         </div>

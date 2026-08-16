@@ -1,0 +1,1 @@
+export const DEFAULT_PREFILL_BATCH_SIZE = 2048;

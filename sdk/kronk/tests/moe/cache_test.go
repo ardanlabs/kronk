@@ -15,8 +15,7 @@ func Test_CacheIMC(t *testing.T) {
 	cfg := model.Config{
 		ModelFiles:          testlib.MPMoEVision.ModelFiles,
 		PtrContextWindow:    new(8192),
-		PtrNBatch:           new(2048),
-		PtrNUBatch:          new(2048),
+		PtrPrefillBatchSize: new(2048),
 		CacheTypeK:          model.GGMLTypeF16,
 		CacheTypeV:          model.GGMLTypeF16,
 		PtrNSeqMax:          new(1),
@@ -164,8 +163,7 @@ func Test_CacheIMCMultiSlot(t *testing.T) {
 	cfg := model.Config{
 		ModelFiles:          testlib.MPMoEVision.ModelFiles,
 		PtrContextWindow:    new(8192),
-		PtrNBatch:           new(2048),
-		PtrNUBatch:          new(2048),
+		PtrPrefillBatchSize: new(2048),
 		CacheTypeK:          model.GGMLTypeF16,
 		CacheTypeV:          model.GGMLTypeF16,
 		PtrNSeqMax:          new(2),

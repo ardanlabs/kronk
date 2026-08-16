@@ -57,8 +57,7 @@ func (s *SessionRequest) Validate() error {
 // user-provided overrides are merged on top of the catalog-resolved base config.
 type SessionConfig struct {
 	ContextWindow       *int                      `json:"context_window"`
-	NBatch              *int                      `json:"nbatch"`
-	NUBatch             *int                      `json:"nubatch"`
+	PrefillBatchSize    *int                      `json:"prefill_batch_size"`
 	NSeqMax             *int                      `json:"nseq_max"`
 	FlashAttention      *model.FlashAttentionType `json:"flash_attention"`
 	CacheTypeK          *model.GGMLType           `json:"cache_type_k"`
@@ -90,11 +89,8 @@ func (sc SessionConfig) ApplyTo(cfg model.Config) model.Config {
 	if sc.ContextWindow != nil {
 		cfg.PtrContextWindow = sc.ContextWindow
 	}
-	if sc.NBatch != nil {
-		cfg.PtrNBatch = sc.NBatch
-	}
-	if sc.NUBatch != nil {
-		cfg.PtrNUBatch = sc.NUBatch
+	if sc.PrefillBatchSize != nil {
+		cfg.PtrPrefillBatchSize = sc.PrefillBatchSize
 	}
 	if sc.NSeqMax != nil {
 		cfg.PtrNSeqMax = sc.NSeqMax
@@ -184,8 +180,7 @@ func (sc SessionConfig) ApplyTo(cfg model.Config) model.Config {
 // provided by the user.
 func (sc SessionConfig) HasOverrides() bool {
 	return sc.ContextWindow != nil ||
-		sc.NBatch != nil ||
-		sc.NUBatch != nil ||
+		sc.PrefillBatchSize != nil ||
 		sc.NSeqMax != nil ||
 		sc.FlashAttention != nil ||
 		sc.CacheTypeK != nil ||
@@ -226,12 +221,8 @@ func (sc SessionConfig) Validate() error {
 		return fmt.Errorf("context-window must be between 1 and 131072, got %d", *sc.ContextWindow)
 	}
 
-	if sc.NBatch != nil && (*sc.NBatch < 1 || *sc.NBatch > 16384) {
-		return fmt.Errorf("nbatch must be between 1 and 16384, got %d", *sc.NBatch)
-	}
-
-	if sc.NUBatch != nil && (*sc.NUBatch < 1 || *sc.NUBatch > 16384) {
-		return fmt.Errorf("nubatch must be between 1 and 16384, got %d", *sc.NUBatch)
+	if sc.PrefillBatchSize != nil && (*sc.PrefillBatchSize < 1 || *sc.PrefillBatchSize > 16384) {
+		return fmt.Errorf("prefill-batch-size must be between 1 and 16384, got %d", *sc.PrefillBatchSize)
 	}
 
 	if sc.NSeqMax != nil && (*sc.NSeqMax < 1 || *sc.NSeqMax > 64) {

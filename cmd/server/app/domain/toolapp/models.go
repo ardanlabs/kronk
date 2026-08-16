@@ -339,8 +339,11 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 
 	slots := max(req.Slots, 1)
 	var configuredSWAFull *bool
+	var nUBatch int64
 	if req.ModelID != "" {
-		configuredSWAFull = a.pool.Kronk.ModelConfig()[req.ModelID].PtrSWAFull
+		modelConfig := a.pool.Kronk.ModelConfig()[req.ModelID]
+		configuredSWAFull = modelConfig.PtrSWAFull
+		nUBatch = int64(modelConfig.ToKronkConfig().PrefillBatchSize())
 	}
 	swaFull := resolveSWAFull(req.SWAFull, configuredSWAFull)
 
@@ -348,6 +351,7 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 		ContextWindow:     req.ContextWindow,
 		BytesPerElement:   req.BytesPerElement,
 		Slots:             slots,
+		NUBatch:           nUBatch,
 		GPULayers:         req.GPULayers,
 		ExpertLayersOnGPU: req.ExpertLayersOnGPU,
 		KVCacheOnCPU:      req.KVCacheOnCPU,
@@ -557,6 +561,14 @@ func (a *app) imcSessions(ctx context.Context, r *http.Request) web.Encoder {
 	a.log.Info(ctx, "imc-sessions", "len", len(sessions))
 
 	return toIMCSessions(sessions)
+}
+
+func (a *app) batchEngineSlots(ctx context.Context, r *http.Request) web.Encoder {
+	snapshots := a.pool.Kronk.BatchEngineSnapshots()
+
+	a.log.Info(ctx, "batch-engine-slots", "models", len(snapshots))
+
+	return toBatchEngineSnapshots(snapshots)
 }
 
 func (a *app) poolBudget(ctx context.Context, r *http.Request) web.Encoder {

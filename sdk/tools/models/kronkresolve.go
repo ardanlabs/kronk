@@ -292,9 +292,8 @@ func autoTuneWithConfigAndBudget(info ModelInfo, devs devices.Devices, constrain
 
 	var cfg ModelConfig
 
-	// NBatch and NUBatch are intentionally left unset here so the load-time
-	// adjustConfig (the single source of batch sizing) derives them: NUBatch
-	// defaults to 2048 and NBatch to NUBatch * NSeqMax.
+	// Leave the prefill batch size unset so load-time adjustment applies its
+	// 2048-token default and derives llama.cpp's internal batch capacities.
 	cfg.PtrContextWindow = new(int(rec.ContextWindow))
 	cfg.PtrNSeqMax = new(int(rec.NSeqMax))
 
@@ -390,11 +389,8 @@ func MergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	if src.PtrContextWindow != nil {
 		dst.PtrContextWindow = src.PtrContextWindow
 	}
-	if src.PtrNBatch != nil {
-		dst.PtrNBatch = src.PtrNBatch
-	}
-	if src.PtrNUBatch != nil {
-		dst.PtrNUBatch = src.PtrNUBatch
+	if src.PtrPrefillBatchSize != nil {
+		dst.PtrPrefillBatchSize = src.PtrPrefillBatchSize
 	}
 	if src.PtrNThreads != nil {
 		dst.PtrNThreads = src.PtrNThreads

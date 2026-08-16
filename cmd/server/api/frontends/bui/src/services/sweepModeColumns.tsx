@@ -322,18 +322,11 @@ export function configParamColumns(): ColumnDef<ConfigTrialResult>[] {
       renderCell: (row) => row.config?.['context_window'] ?? '—',
     },
     {
-      id: 'nbatch',
-      title: 'NBatch',
+      id: 'prefill_batch_size',
+      title: 'Prefill Batch Size',
       sortable: true,
-      getValue: (row) => row.config?.nbatch,
-      renderCell: (row) => row.config?.nbatch ?? '—',
-    },
-    {
-      id: 'nubatch',
-      title: 'NUBatch',
-      sortable: true,
-      getValue: (row) => row.config?.nubatch,
-      renderCell: (row) => row.config?.nubatch ?? '—',
+      getValue: (row) => row.config?.['prefill_batch_size'],
+      renderCell: (row) => row.config?.['prefill_batch_size'] ?? '—',
     },
     {
       id: 'nseq_max',

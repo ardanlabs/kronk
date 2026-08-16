@@ -1,0 +1,141 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+  <title id="title">Two requests move from prefill to generation</title>
+  <desc id="desc">With two slots, Request 1 first owns prefill while Request 2 waits. When Request 1 begins generation, Request 2 becomes the prefill owner and Request 1 generation is staged first. Finally both requests generate together. With the default prefill batch size of 2048, non-MTP resolves to internal NUBatch 2048 and NBatch 2050, while MTP with ndraft 3 resolves both values to 2056. A larger prefill batch size moves more prompt tokens per decode call but makes each call longer.</desc>
+
+  <defs>
+    <marker id="arrow" markerWidth="13" markerHeight="13" refX="11" refY="6.5" orient="auto">
+      <path d="M 0 0 L 13 6.5 L 0 13 z" fill="#64748b"/>
+    </marker>
+    <style>
+      text { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .title { font-size: 42px; font-weight: 750; fill: #0f172a; }
+      .subtitle { font-size: 21px; font-weight: 450; fill: #475569; }
+      .frame-title { font-size: 25px; font-weight: 750; fill: #0f172a; }
+      .frame-subtitle { font-size: 19px; font-weight: 550; fill: #475569; }
+      .slot { font-size: 18px; font-weight: 750; fill: #475569; letter-spacing: 0.8px; }
+      .request { font-size: 22px; font-weight: 750; fill: #0f172a; }
+      .state { font-size: 18px; font-weight: 750; }
+      .body { font-size: 18px; font-weight: 500; fill: #334155; }
+      .small { font-size: 18px; font-weight: 500; fill: #475569; }
+      .eyebrow { font-size: 18px; font-weight: 750; letter-spacing: 0.8px; fill: #475569; }
+      .bar { font-size: 17px; font-weight: 750; fill: #ffffff; text-anchor: middle; }
+      .formula { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 20px; font-weight: 700; fill: #0f172a; }
+      .config-heading { font-size: 20px; font-weight: 750; letter-spacing: 0.7px; fill: #334155; }
+      .config-body { font-size: 21px; font-weight: 550; fill: #334155; }
+      .config-state { font-size: 19px; font-weight: 750; }
+      .config-value { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 22px; font-weight: 700; fill: #0f172a; }
+      .takeaway { font-size: 20px; font-weight: 550; fill: #334155; }
+      .white { fill: #ffffff; }
+    </style>
+  </defs>
+
+  <rect width="1920" height="1080" fill="#f8fafc"/>
+  <rect width="1920" height="12" fill="#0f766e"/>
+
+  <text id="title" class="title" x="72" y="68">HOW TWO REQUESTS SHARE THE BATCH ENGINE</text>
+  <text class="subtitle" x="72" y="106">One slot owns prefill at a time. Slots that are ready to generate always go first.</text>
+
+  <!-- Core rule -->
+  <rect x="72" y="136" width="1776" height="82" rx="18" fill="#0f172a"/>
+  <rect x="105" y="155" width="254" height="44" rx="11" fill="#2563eb"/>
+  <text class="body white" x="232" y="183" text-anchor="middle">ONE PREFILL OWNER</text>
+  <text class="body white" x="390" y="183">stays selected until its prefill completes</text>
+  <rect x="1035" y="155" width="276" height="44" rx="11" fill="#16a34a"/>
+  <text class="body white" x="1173" y="183" text-anchor="middle">GENERATION FIRST</text>
+  <text class="body white" x="1342" y="183">on every decode iteration</text>
+
+  <!-- Timeline arrows -->
+  <path d="M 632 505 H 674" stroke="#64748b" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+  <path d="M 1242 505 H 1284" stroke="#64748b" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- Step 1 -->
+  <rect x="72" y="250" width="560" height="550" rx="24" fill="#ffffff" stroke="#93c5fd" stroke-width="3"/>
+  <path d="M 96 250 H 608 Q 632 250 632 274 V 332 H 72 V 274 Q 72 250 96 250 Z" fill="#dbeafe"/>
+  <text class="frame-title" x="108" y="288">1 · REQUEST 1 PREFILLS</text>
+  <text class="frame-subtitle" x="108" y="316">Request 2 has a slot, but waits for the owner</text>
+
+  <rect x="108" y="365" width="488" height="104" rx="16" fill="#eff6ff" stroke="#3b82f6" stroke-width="3"/>
+  <text class="slot" x="132" y="397">SLOT 0</text>
+  <text class="request" x="132" y="432">Request 1</text>
+  <rect x="402" y="388" width="166" height="50" rx="11" fill="#2563eb"/>
+  <text class="state white" x="485" y="419" text-anchor="middle">PREFILL OWNER</text>
+
+  <rect x="108" y="489" width="488" height="104" rx="16" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
+  <text class="slot" x="132" y="521">SLOT 1</text>
+  <text class="request" x="132" y="556">Request 2</text>
+  <rect x="402" y="512" width="166" height="50" rx="11" fill="#e2e8f0"/>
+  <text class="state" x="485" y="543" text-anchor="middle" fill="#475569">PREFILL WAIT</text>
+
+  <text class="eyebrow" x="108" y="637">DECODE TRAY</text>
+  <rect x="108" y="656" width="488" height="70" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+  <rect x="130" y="674" width="444" height="34" rx="8" fill="#2563eb"/>
+  <text class="bar" x="352" y="697">Request 1 · up to 2048 prefill tokens</text>
+  <text class="small" x="352" y="765" text-anchor="middle">Prefill selector: Slot 0 → next Slot 1</text>
+
+  <!-- Step 2 -->
+  <rect x="682" y="250" width="560" height="550" rx="24" fill="#ffffff" stroke="#2dd4bf" stroke-width="3"/>
+  <path d="M 706 250 H 1218 Q 1242 250 1242 274 V 332 H 682 V 274 Q 682 250 706 250 Z" fill="#ccfbf1"/>
+  <text class="frame-title" x="718" y="288">2 · REQUEST 2 PREFILLS</text>
+  <text class="frame-subtitle" x="718" y="316">Request 1 keeps generating while Slot 1 prefills</text>
+
+  <rect x="718" y="365" width="488" height="104" rx="16" fill="#f0fdf4" stroke="#22c55e" stroke-width="3"/>
+  <text class="slot" x="742" y="397">SLOT 0</text>
+  <text class="request" x="742" y="432">Request 1</text>
+  <rect x="1012" y="388" width="166" height="50" rx="11" fill="#16a34a"/>
+  <text class="state white" x="1095" y="419" text-anchor="middle">GENERATION</text>
+
+  <rect x="718" y="489" width="488" height="104" rx="16" fill="#eff6ff" stroke="#3b82f6" stroke-width="3"/>
+  <text class="slot" x="742" y="521">SLOT 1</text>
+  <text class="request" x="742" y="556">Request 2</text>
+  <rect x="1012" y="512" width="166" height="50" rx="11" fill="#2563eb"/>
+  <text class="state white" x="1095" y="543" text-anchor="middle">PREFILL OWNER</text>
+
+  <text class="eyebrow" x="718" y="637">DECODE TRAY · GENERATION FIRST</text>
+  <rect x="718" y="656" width="488" height="70" rx="14" fill="#f8fafc" stroke="#94a3b8" stroke-width="2"/>
+  <rect x="740" y="674" width="112" height="34" rx="8" fill="#16a34a"/>
+  <rect x="864" y="674" width="320" height="34" rx="8" fill="#2563eb"/>
+  <text class="bar" x="796" y="697">R1 output</text>
+  <text class="bar" x="1024" y="697">Request 2 · up to 2048 prefill tokens</text>
+  <text class="small" x="962" y="765" text-anchor="middle">Slot 1 remains owner until Request 2 prefill completes</text>
+
+  <!-- Step 3 -->
+  <rect x="1292" y="250" width="556" height="550" rx="24" fill="#ffffff" stroke="#4ade80" stroke-width="3"/>
+  <path d="M 1316 250 H 1824 Q 1848 250 1848 274 V 332 H 1292 V 274 Q 1292 250 1316 250 Z" fill="#dcfce7"/>
+  <text class="frame-title" x="1328" y="288">3 · BOTH REQUESTS GENERATE</text>
+  <text class="frame-subtitle" x="1328" y="316">No slot is waiting for prefill</text>
+
+  <rect x="1328" y="365" width="484" height="104" rx="16" fill="#f0fdf4" stroke="#22c55e" stroke-width="3"/>
+  <text class="slot" x="1352" y="397">SLOT 0</text>
+  <text class="request" x="1352" y="432">Request 1</text>
+  <rect x="1618" y="388" width="166" height="50" rx="11" fill="#16a34a"/>
+  <text class="state white" x="1701" y="419" text-anchor="middle">GENERATION</text>
+
+  <rect x="1328" y="489" width="484" height="104" rx="16" fill="#f0fdf4" stroke="#22c55e" stroke-width="3"/>
+  <text class="slot" x="1352" y="521">SLOT 1</text>
+  <text class="request" x="1352" y="556">Request 2</text>
+  <rect x="1618" y="512" width="166" height="50" rx="11" fill="#16a34a"/>
+  <text class="state white" x="1701" y="543" text-anchor="middle">GENERATION</text>
+
+  <text class="eyebrow" x="1328" y="637">DECODE TRAY · READY OUTPUT SLOTS</text>
+  <rect x="1328" y="656" width="484" height="70" rx="14" fill="#f0fdf4" stroke="#86efac" stroke-width="2"/>
+  <rect x="1350" y="674" width="210" height="34" rx="8" fill="#16a34a"/>
+  <rect x="1572" y="674" width="218" height="34" rx="8" fill="#15803d"/>
+  <text class="bar" x="1455" y="697">Request 1 output rows</text>
+  <text class="bar" x="1681" y="697">Request 2 output rows</text>
+  <text class="small" x="1570" y="765" text-anchor="middle">Generation proceeds for every ready slot</text>
+
+  <!-- Sizing explanation -->
+  <rect x="72" y="838" width="1776" height="182" rx="22" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <text class="config-heading" x="108" y="874">DEFAULT CONFIGURATION · PREFILL BATCH SIZE = 2048 · TWO SLOTS</text>
+  <text class="config-body" x="108" y="908">Kronk keeps room for a complete 2048-token prefill chunk and adds generation headroom for both slots.</text>
+
+  <rect x="108" y="932" width="758" height="64" rx="13" fill="#eff6ff"/>
+  <text class="config-state" x="136" y="959" fill="#1d4ed8">NON-MTP · reserve 1 × 2 = 2 generation rows</text>
+  <text class="config-value" x="136" y="985">effective NUBatch = 2048 · NBatch = 2050</text>
+
+  <rect x="890" y="932" width="922" height="64" rx="13" fill="#faf5ff"/>
+  <text class="config-state" x="918" y="959" fill="#7e22ce">MTP · nDraft 3 · reserve (1 + 3) × 2 = 8 generation rows</text>
+  <text class="config-value" x="918" y="985">effective NUBatch = 2056 · NBatch = 2056</text>
+
+  <text class="takeaway" x="72" y="1058">A larger prefill batch size can reach generation in fewer decode calls, but each call makes other generating slots wait longer.</text>
+</svg>

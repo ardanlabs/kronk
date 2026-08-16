@@ -154,9 +154,11 @@ sizes as a complete memory estimate. See
 for memory planning and [Chapter 4](https://www.kronkai.com/manual#chapter-4-batch-processing) for
 concurrency.
 
-Most deployments should leave `nubatch` unset. Its default is 2048 for every
-model. A multimodal encoder may require an entire media-token chunk to fit in
-one physical batch, so lowering `nubatch` can break media input.
+Most deployments should leave `prefill-batch-size` at its 2048-token default.
+Kronk adds the model's per-slot generation reserve when deriving llama.cpp's
+internal batch capacities. A multimodal encoder may require an entire
+media-token chunk to fit in one physical batch, so lowering
+`prefill-batch-size` below that capacity can break media input.
 `proj-on-cpu: true` can keep the projector on the CPU when accelerator memory
 is constrained, at a performance cost.
 

@@ -1,11 +1,24 @@
 package playgroundapp
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
+
+func TestSessionConfigPrefillBatchSizeJSON(t *testing.T) {
+	var cfg SessionConfig
+	if err := json.Unmarshal([]byte(`{"prefill_batch_size":4096}`), &cfg); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	got := cfg.ApplyTo(model.Config{})
+	if got.PrefillBatchSize() != 4096 {
+		t.Errorf("PrefillBatchSize() = %d, want 4096", got.PrefillBatchSize())
+	}
+}
 
 func TestSessionConfigApplyTo_LoadMode(t *testing.T) {
 	tests := []struct {

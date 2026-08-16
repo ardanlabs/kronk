@@ -16,19 +16,18 @@
 #   cache-type-v: q8_0                   # Explicit KV value type; omit for AutoTune (f16, then q8_0)
 #   chat-template-kwargs:                # Model-level Jinja defaults; request values override matching keys
 #   preserve_thinking: true              # Preserve prior tool-call reasoning when supported by the template
-#   context-window: 8196                 # Per-sequence token capacity; explicit value is fixed
+#   context-window: 8192                 # Per-sequence token capacity; explicit value is fixed
 #   devices: [CUDA0, CUDA1]              # Devices to use (run `kronk devices` to list)
 #   flash-attention: auto                # Flash Attention: enabled, disabled, auto (default: auto)
 #   imc-session-capacity: 8              # Reusable IMC identities (default: nseq-max * max(3, queue-depth))
 #   incremental-cache: true              # Incremental message caching (IMC) for agentic workflows (default: true)
 #   insecure-logging: false              # Log potentially sensitive data like message content (debug only)
 #   main-gpu: 0                          # Primary GPU index for single-GPU mode
-#   nbatch: 2048                         # Logical batch size (default: nubatch * nseq-max; multi-slot MTP caps at nubatch)
 #   ngpu-layers: 0                       # GPU layers to offload (0 = all, -1 = none, N = specific count)
 #   nseq-max: 2                          # Parallel sequences; explicit value is fixed
 #   nthreads: 0                          # Threads for generation (0 = llama.cpp default)
 #   nthreads-batch: 0                    # Threads for batch processing (0 = llama.cpp default)
-#   nubatch: 2048                        # Physical batch size for prompt ingestion (default: 2048)
+#   prefill-batch-size: 2048             # Prompt tokens processed per prefill decode contribution (default: 2048)
 #   numa: distribute                     # NUMA strategy: "" (off), distribute, isolate, numactl, mirror
 #   offload-kqv: true                    # Offload KV cache to GPU (false = keep on CPU)
 #   op-offload: true                     # Offload tensor operations to GPU (false = keep on CPU)
@@ -185,7 +184,8 @@
 # ==============================================================================
 # CODING MODELS
 
-# ~54GB VRAM
+# nseq-max: 1  ~54GB VRAM
+# nseq-max: 2  ~82GB VRAM
 unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
   chat-template-kwargs:
     preserve_thinking: true
@@ -197,10 +197,12 @@ unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
     top_p: 1
     enable_thinking: false
 
-# ~40GB VRAM
+# nseq-max: 1  ~40GB VRAM
+# nseq-max: 2  ~43GB VRAM
 unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
   chat-template-kwargs:
     preserve_thinking: true
+  nseq-max: 2
   context-window: 131072
   sampling-parameters:
     max_tokens: 16384
@@ -209,26 +211,28 @@ unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
     top_p: 1
     enable_thinking: false
 
-# ~40GB VRAM
+# nseq-max: 1  ~40GB VRAM
+# nseq-max: 2  ~48GB VRAM
 unsloth/Qwen3.8-27B-UD-Q8_K_XL/AGENT:
   chat-template-kwargs:
     preserve_thinking: true
+  nseq-max: 2
   context-window: 131072
   sampling-parameters:
-    reasoning_effort: "low"
     max_tokens: 16384
     temperature: 0.6
     top_k: 20
     top_p: 1
     enable_thinking: false
 
-# ~26GB VRAM
+# nseq-max: 1  ~26GB VRAM
+# nseq-max: 2  ~35GB VRAM
 unsloth/Qwen3.8-27B-UD-Q4_K_XL/AGENT:
   chat-template-kwargs:
     preserve_thinking: true
+  nseq-max: 2
   context-window: 131072
   sampling-parameters:
-    reasoning_effort: "low"
     max_tokens: 16384
     temperature: 0.6
     top_k: 20

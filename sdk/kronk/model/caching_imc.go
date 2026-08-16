@@ -161,7 +161,7 @@ func (m *Model) decodeTokensIntoCache(ctx context.Context, tokens []llama.Token,
 	nTokens := len(tokens)
 
 	if nBatch <= 0 {
-		nBatch = m.cfg.NBatch()
+		nBatch = m.cfg.EffectiveNBatch()
 	}
 
 	m.log(ctx, "cache", "status", "decoding tokens into cache", "seq", seqID, "tokens", nTokens, "start_pos", startPos, "nbatch", nBatch)

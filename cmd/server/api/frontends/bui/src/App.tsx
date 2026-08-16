@@ -4,6 +4,7 @@ import Layout from './components/Layout';
 import ModelList from './components/ModelList';
 import ModelPs from './components/ModelPs';
 import IMCSessions from './components/IMCSessions';
+import Slots from './components/Slots';
 import Diagnose from './components/Diagnose';
 import ModelPull from './components/ModelPull';
 import KMSPull from './components/KMSPull';
@@ -76,6 +77,7 @@ export type Page =
   | 'model-list'
   | 'model-ps'
   | 'imc-sessions'
+  | 'slots'
   | 'model-pull'
   | 'kms-pull'
   | 'catalog-list'
@@ -129,6 +131,7 @@ export const routeMap: Record<Page, string> = {
   'model-list': '/models',
   'model-ps': '/system/running',
   'imc-sessions': '/system/imc-sessions',
+  'slots': '/system/slots',
   'model-pull': '/models/pull',
   'kms-pull': '/models/kms-pull',
   'catalog-list': '/catalog',
@@ -277,6 +280,7 @@ function App() {
                 <Route path="/system/info" element={<Diagnose />} />
                 <Route path="/system/running" element={<ModelPs />} />
                 <Route path="/system/imc-sessions" element={<IMCSessions />} />
+                <Route path="/system/slots" element={<Slots />} />
                 <Route path="/models" element={<ModelList />} />
                 <Route path="/models/pull" element={<ModelPull />} />
                 <Route path="/models/kms-pull" element={<KMSPull />} />

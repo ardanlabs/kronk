@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
-  <title id="title">The two stages of prefill and how nbatch and nubatch shape prefill compute</title>
-  <desc id="desc">Prefill stage one restores reusable KV state from a compatible IMC session into an assigned slot. Prefill stage two computes KV tensors for CPU-side token slices held by assigned jobs. A before view shows that restored Slot 1 state does not enter the tray. Kronk sweeps across active jobs, taking at most nubatch tokens from each job per visit until the shared nbatch tray is full or no additional ready work can be added. The GPU computes the missing KV tensors, and an after view shows the complete prompt state in Slot 1.</desc>
+  <title id="title">The two stages of prefill and how the prefill batch size shapes compute</title>
+  <desc id="desc">Prefill stage one restores reusable KV state from a compatible IMC session into an assigned slot. Prefill stage two computes KV tensors for CPU-side token slices held by assigned jobs. A before view shows that restored Slot 1 state does not enter the tray. Kronk stages generation rows first, then takes prompt tokens from one prefill owner. The cursor remains on that owner across decode iterations until its prefill completes. The GPU computes the missing KV tensors, and an after view shows the complete prompt state in Slot 1.</desc>
 
   <defs>
     <filter id="shadow" x="-10%" y="-10%" width="120%" height="135%">
@@ -27,7 +27,7 @@
   <rect x="0" y="0" width="1920" height="12" fill="#0f766e"/>
 
   <text class="title" x="72" y="67">PREFILL: RESTORE WHAT EXISTS, COMPUTE WHAT IS MISSING</text>
-  <text class="subtitle" x="72" y="105">Stage 1 restores reusable KV state. Stage 2 computes the missing state using nbatch and nubatch.</text>
+  <text class="subtitle" x="72" y="105">Stage 1 restores reusable KV state. Stage 2 computes missing state in configured prefill contributions.</text>
 
   <!-- Prefill overview -->
   <g filter="url(#shadow)">
@@ -165,9 +165,9 @@
     <text class="token white" x="461.5" y="790">4</text><text class="token white" x="494.5" y="790">6</text>
   </g>
 
-  <!-- Round-robin scheduler -->
-  <text class="eyebrow" x="678" y="662" fill="#6d28d9">ROUND</text>
-  <text class="eyebrow" x="678" y="684" fill="#6d28d9">ROBIN</text>
+  <!-- Prefill owner -->
+  <text class="eyebrow" x="678" y="662" fill="#6d28d9">PREFILL</text>
+  <text class="eyebrow" x="678" y="684" fill="#6d28d9">OWNER A</text>
   <path d="M 675 724 H 728" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
 
   <!-- Shared logical tray -->
@@ -175,33 +175,26 @@
   <text class="heading" x="770" y="610">CPU · shared tray</text>
   <rect x="1000" y="586" width="125" height="44" rx="10" fill="#e0e7ff"/>
   <rect x="1138" y="586" width="125" height="44" rx="10" fill="#dbeafe"/>
-  <text class="small" x="1062.5" y="614" text-anchor="middle">nubatch = 4</text>
-  <text class="small" x="1200.5" y="614" text-anchor="middle">nbatch = 12</text>
-  <text class="eyebrow" x="770" y="658" fill="#6d28d9">NBATCH · 12 TOKEN POSITIONS</text>
+  <text class="small" x="1062.5" y="614" text-anchor="middle">prefill = 4</text>
+  <text class="small" x="1200.5" y="614" text-anchor="middle">NBatch = 7</text>
+  <text class="eyebrow" x="770" y="658" fill="#6d28d9">GENERATION FIRST · THEN OWNER A</text>
   <g>
-    <rect x="770" y="679" width="36" height="48" rx="8" fill="#3b82f6"/>
-    <rect x="812" y="679" width="36" height="48" rx="8" fill="#3b82f6"/>
-    <rect x="854" y="679" width="36" height="48" rx="8" fill="#3b82f6"/>
+    <rect x="770" y="679" width="36" height="48" rx="8" fill="#22c55e"/>
+    <rect x="812" y="679" width="36" height="48" rx="8" fill="#22c55e"/>
+    <rect x="854" y="679" width="36" height="48" rx="8" fill="#bbf7d0"/>
     <rect x="896" y="679" width="36" height="48" rx="8" fill="#3b82f6"/>
-    <rect x="938" y="679" width="36" height="48" rx="8" fill="#8b5cf6"/>
-    <rect x="980" y="679" width="36" height="48" rx="8" fill="#8b5cf6"/>
-    <rect x="1022" y="679" width="36" height="48" rx="8" fill="#8b5cf6"/>
-    <rect x="1064" y="679" width="36" height="48" rx="8" fill="#8b5cf6"/>
-    <rect x="1106" y="679" width="36" height="48" rx="8" fill="#f97316"/>
-    <rect x="1148" y="679" width="36" height="48" rx="8" fill="#f97316"/>
-    <rect x="1190" y="679" width="36" height="48" rx="8" fill="#c4b5fd"/>
-    <rect x="1232" y="679" width="36" height="48" rx="8" fill="#c4b5fd"/>
-    <text class="token white" x="788" y="703">7</text><text class="token white" x="830" y="703">4</text>
-    <text class="token white" x="872" y="703">9</text><text class="token white" x="914" y="703">3</text>
-    <text class="token white" x="956" y="703">6</text><text class="token white" x="998" y="703">2</text>
-    <text class="token white" x="1040" y="703">5</text><text class="token white" x="1082" y="703">8</text>
-    <text class="token white" x="1124" y="703">4</text><text class="token white" x="1166" y="703">6</text>
-    <text class="token" x="1208" y="703">1</text><text class="token" x="1250" y="703">7</text>
+    <rect x="938" y="679" width="36" height="48" rx="8" fill="#3b82f6"/>
+    <rect x="980" y="679" width="36" height="48" rx="8" fill="#3b82f6"/>
+    <rect x="1022" y="679" width="36" height="48" rx="8" fill="#3b82f6"/>
+    <text class="token white" x="788" y="703">G</text><text class="token white" x="830" y="703">G</text>
+    <text class="token" x="872" y="703">R</text><text class="token white" x="914" y="703">7</text>
+    <text class="token white" x="956" y="703">4</text><text class="token white" x="998" y="703">9</text>
+    <text class="token white" x="1040" y="703">3</text>
   </g>
-  <text class="small" x="770" y="755">Sweep 1: 4 from A · 4 from B · 2 from C</text>
-  <text class="small" x="770" y="781">Sweep 2: 2 more from B · tray reaches nbatch</text>
+  <text class="small" x="770" y="755">2 generation rows · 1 unused reserve · 4 prefill tokens from A</text>
+  <text class="small" x="770" y="781">Next decode starts with A again unless A completed prefill</text>
   <rect x="770" y="798" width="498" height="30" rx="8" fill="#0f172a"/>
-  <text class="small white" x="1019" y="819" text-anchor="middle">Submit at nbatch—or when no more work can be added.</text>
+  <text class="small white" x="1019" y="819" text-anchor="middle">Submit logically; non-MTP may split it into physical ubatches.</text>
 
   <path d="M 1305 707 H 1334" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
 
@@ -239,20 +232,20 @@
 
   <!-- Initial-fill implementation note -->
   <rect x="105" y="858" width="1708" height="40" rx="12" fill="#fff7ed" stroke="#fb923c" stroke-width="2"/>
-  <text class="small" x="132" y="884">Initial Stage 2 work may seed up to available nbatch. The nubatch contribution limit shown above applies when continuing across active jobs.</text>
+  <text class="small" x="132" y="884">Admission only binds the job. Stage 2 always enters through the prefill owner after prioritized generation rows.</text>
 
   <!-- Definitions -->
   <rect x="70" y="946" width="548" height="94" rx="18" fill="#0f172a"/>
-  <text class="heading white" x="100" y="980">nubatch · per-visit and physical limit</text>
-  <text class="small white" x="100" y="1011">Bounds one active job’s contribution and each physical chunk.</text>
+  <text class="heading white" x="100" y="980">Prefill batch size · user setting</text>
+  <text class="small white" x="100" y="1011">Caps prompt tokens contributed by the current owner.</text>
 
   <rect x="636" y="946" width="548" height="94" rx="18" fill="#0f172a"/>
-  <text class="heading white" x="666" y="980">nbatch · shared logical capacity</text>
-  <text class="small white" x="666" y="1011">Bounds total token positions submitted in one logical decode.</text>
+  <text class="heading white" x="666" y="980">Effective NBatch · internal</text>
+  <text class="small white" x="666" y="1011">Prefill size plus generation reserve for every slot.</text>
 
   <rect x="1202" y="946" width="646" height="94" rx="18" fill="#0f172a"/>
-  <text class="heading white" x="1232" y="980">Default · nbatch = nubatch × nseq-max</text>
-  <text class="small white" x="1232" y="1011">Provides one full nubatch contribution per active sequence.</text>
+  <text class="heading white" x="1232" y="980">Effective NUBatch · internal</text>
+  <text class="small white" x="1232" y="1011">MTP matches NUBatch to NBatch; non-MTP can split the tray.</text>
 
-  <text class="small muted" x="72" y="1068">Most users should leave both values unset. Larger logical batches and physical chunks require larger compute buffers.</text>
+  <text class="small muted" x="72" y="1068">Most users should keep the 2048-token default. Larger prefill contributions require larger compute buffers.</text>
 </svg>

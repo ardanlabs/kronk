@@ -73,6 +73,10 @@ type ModelDetail = kronkpool.ModelDetail
 // entry.
 type IMCSessionDetail = kronkpool.IMCSessionDetail
 
+// BatchEngineDetail re-exports the current generation scheduler state for one
+// loaded model.
+type BatchEngineDetail = kronkpool.BatchEngineDetail
+
 const (
 	ModelStatusLoaded  = kronkpool.ModelStatusLoaded
 	ModelStatusLoading = kronkpool.ModelStatusLoading

@@ -73,6 +73,20 @@ The sidebar groups related operations by subsystem.
 - **Info** reports server, host, device, library, and model diagnostics.
 - **Running** shows models that are loading or resident in the pool, along
   with the current resource budget. Models can also be unloaded here.
+- **Slots** polls the live batch-engine scheduler for each loaded generation
+  model. It shows each slot's phase and request age, prefill stage 1 establishing
+  the sequence by copying reusable IMC session state into the slot, and prefill
+  stage 2 decoding both stable-prefix IMC extensions (such as completed tool
+  calls) and the remaining uncached request tail. The Stage 2 cards show active,
+  next, and waiting slots for those two decode paths. The table also reports
+  per-slot progress, generation mode, and row contribution. Use this view with
+  the batch-engine logs to verify prefill ownership, rotation, and generation
+  priority during concurrent requests. Embedding and reranking models do not
+  have generation slots and are omitted. Each Stage 2 selector retains its
+  selected slot until that decode path is complete, then advances to the next
+  eligible slot.
+- **IMC Sessions** shows the bounded Incremental Message Cache entries owned by
+  loaded models, including current and fallback cache usage.
 
 #### Kronk
 

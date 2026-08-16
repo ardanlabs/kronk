@@ -440,8 +440,7 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc models.ModelConfig
 		Metadata:      metadata,
 		ModelConfig: &ModelConfig{
 			PtrContextWindow:      rmc.PtrContextWindow,
-			PtrNBatch:             rmc.PtrNBatch,
-			PtrNUBatch:            rmc.PtrNUBatch,
+			PtrPrefillBatchSize:   rmc.PtrPrefillBatchSize,
 			PtrNThreads:           rmc.PtrNThreads,
 			PtrNThreadsBatch:      rmc.PtrNThreadsBatch,
 			CacheTypeK:            rmc.CacheTypeK,
@@ -635,6 +634,132 @@ func toIMCSessions(sessions []pool.IMCSessionDetail) IMCSessionsResponse {
 			LastUsed:            session.LastUsed,
 			HasMedia:            session.HasMedia,
 		}
+	}
+
+	return details
+}
+
+// BatchGenerationContribution describes one slot's contribution to the latest
+// logical batch.
+type BatchGenerationContribution struct {
+	SlotID int    `json:"slot_id"`
+	Rows   int    `json:"rows"`
+	Mode   string `json:"mode"`
+}
+
+// BatchSlotDetail describes one generation slot at the latest batch-loop
+// boundary.
+type BatchSlotDetail struct {
+	ID                      int    `json:"id"`
+	Phase                   string `json:"phase"`
+	RequestID               string `json:"request_id"`
+	RequestAgeMS            int64  `json:"request_age_ms"`
+	PrefillOwner            bool   `json:"prefill_owner"`
+	PromptTokens            int    `json:"prompt_tokens"`
+	PrefilledTokens         int    `json:"prefilled_tokens"`
+	PrefillRemaining        int    `json:"prefill_remaining"`
+	GeneratedTokens         int    `json:"generated_tokens"`
+	PastTokens              int    `json:"past_tokens"`
+	GenerationMode          string `json:"generation_mode"`
+	GenerationRows          int    `json:"generation_rows"`
+	IMCPreparedTokens       int    `json:"imc_prepared_tokens"`
+	IMCTotalTokens          int    `json:"imc_total_tokens"`
+	IMCPreparationRemaining int    `json:"imc_preparation_remaining"`
+}
+
+// BatchEngineDetail describes one loaded model's generation scheduler.
+type BatchEngineDetail struct {
+	ModelID                 string                        `json:"model_id"`
+	Iteration               uint64                        `json:"iteration"`
+	PrefillBatchSize        int                           `json:"prefill_batch_size"`
+	NBatch                  int                           `json:"nbatch"`
+	NUBatch                 int                           `json:"nubatch"`
+	MTP                     bool                          `json:"mtp"`
+	NDraft                  int                           `json:"ndraft"`
+	QueuedRequests          int                           `json:"queued_requests"`
+	PendingRequests         int                           `json:"pending_requests"`
+	PrefillSelectorStart    int                           `json:"prefill_selector_start"`
+	PrefillSelectorSelected int                           `json:"prefill_selector_selected"`
+	PrefillSelectorNext     int                           `json:"prefill_selector_next"`
+	EligiblePrefillSlots    []int                         `json:"eligible_prefill_slots"`
+	IMCSelectorStart        int                           `json:"imc_selector_start"`
+	IMCSelectorSelected     int                           `json:"imc_selector_selected"`
+	IMCSelectorNext         int                           `json:"imc_selector_next"`
+	EligibleIMCSlots        []int                         `json:"eligible_imc_slots"`
+	GenerationRows          int                           `json:"generation_rows"`
+	PrefillRows             int                           `json:"prefill_rows"`
+	TotalRows               int                           `json:"total_rows"`
+	GenerationContributions []BatchGenerationContribution `json:"generation_contributions"`
+	Slots                   []BatchSlotDetail             `json:"slots"`
+}
+
+// BatchEngineSlotsResponse is the latest scheduler state for loaded generation
+// models.
+type BatchEngineSlotsResponse []BatchEngineDetail
+
+// Encode implements the encoder interface.
+func (app BatchEngineSlotsResponse) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}
+
+func toBatchEngineSnapshots(snapshots []pool.BatchEngineDetail) BatchEngineSlotsResponse {
+	details := make(BatchEngineSlotsResponse, len(snapshots))
+	for i, snapshot := range snapshots {
+		detail := BatchEngineDetail{
+			ModelID:                 snapshot.ModelID,
+			Iteration:               snapshot.Iteration,
+			PrefillBatchSize:        snapshot.PrefillBatchSize,
+			NBatch:                  snapshot.NBatch,
+			NUBatch:                 snapshot.NUBatch,
+			MTP:                     snapshot.MTP,
+			NDraft:                  snapshot.NDraft,
+			QueuedRequests:          snapshot.QueuedRequests,
+			PendingRequests:         snapshot.PendingRequests,
+			PrefillSelectorStart:    snapshot.PrefillSelectorStart,
+			PrefillSelectorSelected: snapshot.PrefillSelectorSelected,
+			PrefillSelectorNext:     snapshot.PrefillSelectorNext,
+			EligiblePrefillSlots:    append([]int{}, snapshot.EligiblePrefillSlots...),
+			IMCSelectorStart:        snapshot.IMCSelectorStart,
+			IMCSelectorSelected:     snapshot.IMCSelectorSelected,
+			IMCSelectorNext:         snapshot.IMCSelectorNext,
+			EligibleIMCSlots:        append([]int{}, snapshot.EligibleIMCSlots...),
+			GenerationRows:          snapshot.GenerationRows,
+			PrefillRows:             snapshot.PrefillRows,
+			TotalRows:               snapshot.TotalRows,
+			GenerationContributions: make([]BatchGenerationContribution, len(snapshot.GenerationContributions)),
+			Slots:                   make([]BatchSlotDetail, len(snapshot.Slots)),
+		}
+
+		for j, contribution := range snapshot.GenerationContributions {
+			detail.GenerationContributions[j] = BatchGenerationContribution{
+				SlotID: contribution.SlotID,
+				Rows:   contribution.Rows,
+				Mode:   contribution.Mode,
+			}
+		}
+
+		for j, slot := range snapshot.Slots {
+			detail.Slots[j] = BatchSlotDetail{
+				ID:                      slot.ID,
+				Phase:                   slot.Phase,
+				RequestID:               slot.RequestID,
+				RequestAgeMS:            slot.RequestAge.Milliseconds(),
+				PrefillOwner:            slot.PrefillOwner,
+				PromptTokens:            slot.PromptTokens,
+				PrefilledTokens:         slot.PrefilledTokens,
+				PrefillRemaining:        slot.PrefillRemaining,
+				GeneratedTokens:         slot.GeneratedTokens,
+				PastTokens:              slot.PastTokens,
+				GenerationMode:          slot.GenerationMode,
+				GenerationRows:          slot.GenerationRows,
+				IMCPreparedTokens:       slot.IMCPreparedTokens,
+				IMCTotalTokens:          slot.IMCTotalTokens,
+				IMCPreparationRemaining: slot.IMCPreparationRemaining,
+			}
+		}
+
+		details[i] = detail
 	}
 
 	return details
@@ -886,8 +1011,7 @@ func toAppMoEConfig(m *model.MoEConfig) *MoEConfig {
 // ModelConfig represents the model configuration the model will use by default.
 type ModelConfig struct {
 	PtrContextWindow      *int                     `json:"context-window"`
-	PtrNBatch             *int                     `json:"nbatch"`
-	PtrNUBatch            *int                     `json:"nubatch"`
+	PtrPrefillBatchSize   *int                     `json:"prefill-batch-size"`
 	PtrNThreads           *int                     `json:"nthreads"`
 	PtrNThreadsBatch      *int                     `json:"nthreads-batch"`
 	CacheTypeK            model.GGMLType           `json:"cache-type-k"`
@@ -1205,6 +1329,7 @@ func vramConfigFromRMC(rmc models.ModelConfig) vram.Config {
 		ContextWindow:     contextWindow,
 		BytesPerElement:   bpe,
 		Slots:             slots,
+		NUBatch:           int64(kronkConfig.PrefillBatchSize()),
 		GPULayers:         int64(kronkConfig.NGpuLayers()),
 		ExpertLayersOnGPU: kronkConfig.ExpertLayersOnGPU(),
 		SWAFull:           resolveSWAFull(nil, kronkConfig.PtrSWAFull),

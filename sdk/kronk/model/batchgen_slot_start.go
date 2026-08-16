@@ -254,6 +254,8 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 				"physical_kv_cells", restoredPhysicalKVCells,
 				"ram_bytes", fmtBytes(uint64(len(kvState))))
 
+			s.imcRestoring = true
+			e.publishDiagnostics(true)
 			restoreStart := time.Now()
 
 			e.model.decodeMu.Lock()
@@ -364,6 +366,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 						"slot", s.id, "seq", s.seqID, "cached_tokens", cacheIdx)
 				}
 			}
+			s.imcRestoring = false
 		}
 
 		// Decode new cache extension tokens into the slot's sequence if any.
@@ -518,86 +521,18 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 					"cached_tokens", cacheIdx, "new_cache_tokens", len(job.imcNewCacheTokens))
 			}
 
-			// Decode extension tokens into the slot's sequence.
-			// When MTP is enabled, use the mirror-aware variant so the
-			// draft seq KV is populated in lock-step with the target
-			// seq KV. The post-build snapshot below then captures both
-			// seqs, so a cache hit on the next request can restore the
-			// draft state too and MTP can keep running through the
-			// cached prefix instead of being disabled.
-			imcDecodeStart := time.Now()
-
-			decode := func(tokens []llama.Token, position int) error {
-				if e.model.draft != nil && e.model.draft.mtp() && !s.mtpDisabledForRequest {
-					return e.decodeTokensIntoCacheMTP(job.ctx, s, tokens, position)
-				}
-				return e.model.decodeTokensIntoCache(job.ctx, tokens, s.seqID, position)
+			// Large text IMC builds and extensions are prepared incrementally by
+			// processBatch. Returning here lets fillSlots bind the remaining jobs
+			// before any one request monopolizes the model context.
+			s.imcPrep = &imcPreparation{
+				cacheIdx:              cacheIdx,
+				position:              int(cacheIdx),
+				sessionUpdateDisabled: sessionUpdateDisabled,
 			}
-
-			checkpointExtension := 0
-			if job.imcCheckpointTokens > int(cacheIdx) && job.imcCheckpointTokens < job.imcNewTotalCached {
-				checkpointExtension = job.imcCheckpointTokens - int(cacheIdx)
-			}
-
-			var decodeErr error
-			if checkpointExtension > 0 {
-				decodeErr = decode(job.imcNewCacheTokens[:checkpointExtension], int(cacheIdx))
-				if decodeErr == nil {
-					checkpointPublished := e.snapshotProgressiveCheckpoint(job.ctx, s, job, job.imcCheckpointTokens)
-					if !checkpointPublished && job.reusedPromptTokens > 0 {
-						preserved, preserveErr := e.model.imcPreserveCurrentSnapshot(job.ctx, job.imcSession, false)
-						if preserveErr != nil || !preserved {
-							sessionUpdateDisabled = true
-							e.model.log(job.ctx, "start-slot", "status", "imc-progressive-update-disabled",
-								"session_id", job.imcSessionID, "reused_tokens", job.reusedPromptTokens,
-								"checkpoint_tokens", job.imcCheckpointTokens, "err", preserveErr)
-						}
-					}
-				}
-				if decodeErr == nil {
-					decodeErr = decode(job.imcNewCacheTokens[checkpointExtension:], job.imcCheckpointTokens)
-				}
-			} else {
-				decodeErr = decode(job.imcNewCacheTokens, int(cacheIdx))
-			}
-			if decodeErr != nil {
-				e.model.decodeMu.Lock()
-				llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
-				if e.model.draft != nil && e.model.draft.mtp() {
-					llama.MemorySeqRm(e.model.draft.core().mem, s.seqID, -1, -1)
-					s.draftNPast = 0
-					s.pendingH = s.pendingH[:0]
-				}
-				e.model.decodeMu.Unlock()
-
-				e.finishSlot(s, fmt.Errorf("start-slot: imc decode: %w", decodeErr))
-				return
-			}
-
-			metrics.AddPrefillTime(e.model.modelInfo.ID, "imc-decode", time.Since(imcDecodeStart))
-
-			cacheIdx = llama.Pos(job.imcNewTotalCached)
-			job.imcPhysicalCached = job.imcNewTotalCached
-
-			if job.imcPromoteCheckpoint && !sessionUpdateDisabled {
-				if err := e.model.imcPromoteTurnCheckpoint(job.ctx, job.imcSession); err != nil {
-					sessionUpdateDisabled = true
-					e.model.log(job.ctx, "start-slot", "status", "imc-reusable-preserve-failed",
-						"session_id", job.imcSessionID, "err", err)
-				}
-			}
-
-			if !sessionUpdateDisabled {
-				hasMedia := len(job.imcMediaKVCounts) > 0
-				e.model.imcCommitSession(job.imcSession, job.imcNewMsgsHash, job.imcNewTotalCached, job.imcNewCachedMsgCount, job.imcNewCachedTokens, hasMedia, job.imcMediaKVCounts, job.imcExpectedRenderHash, job.imcNewEndsAtUser)
-				e.model.cacheMu.Lock()
-				job.imcSession.promptPlan = job.imcPromptPlan
-				e.model.cacheMu.Unlock()
-				sessionWasCommitted = true
-			}
-
-			e.model.log(job.ctx, "start-slot", "status", "imc-cache-ready", "slot", s.id, "seq", s.seqID,
-				"total_cached", job.imcNewTotalCached)
+			e.model.log(job.ctx, "start-slot", "status", "imc-preparation-queued",
+				"slot", s.id, "seq", s.seqID, "tokens", len(job.imcNewCacheTokens),
+				"start_position", cacheIdx, "chunk_tokens", e.imcPreparationChunkSize())
+			return
 
 		case cacheIdx > 0:
 			e.model.log(job.ctx, "start-slot", "status", "imc-reuse", "slot", s.id, "seq", s.seqID,
@@ -613,6 +548,14 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 		llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
 		e.model.decodeMu.Unlock()
 	}
+
+	e.finishStartSlot(s, job, cacheIdx, sessionUpdateDisabled, sessionWasCommitted, buf)
+}
+
+// finishStartSlot snapshots and publishes any prepared IMC prefix, then stages
+// the request's ordinary suffix prefill. Text IMC preparation calls this only
+// after its final resumable chunk has completed.
+func (e *batchEngine) finishStartSlot(s *slot, job *chatJob, cacheIdx llama.Pos, sessionUpdateDisabled, sessionWasCommitted bool, buf []byte) {
 
 	s.nPast = cacheIdx
 
@@ -965,7 +908,7 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 		"suffix_tokens", suffixTokens,
 		"cached_tokens", cacheIdx,
 		"total_prompt", totalPrompt,
-		"nbatch", e.model.cfg.NBatch(),
+		"nbatch", e.model.cfg.EffectiveNBatch(),
 		"batch_current", e.batch.NTokens)
 
 	if !e.applyContextTokenBudget(s, "start-slot") {
@@ -1076,15 +1019,8 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 	s.prefillTokens = tokens
 	s.nPrefilled = 0
 
-	// Add first chunk of prompt tokens to batch. Use NBatch as the limit
-	// since this is the initial fill for a newly assigned slot.
-	if !e.addPrefillChunk(s, e.model.cfg.NBatch()) {
-		if s.job != nil {
-			e.finishSlot(s, e.slotCancelError(s))
-		}
-		return false
-	}
-
+	// processBatch selects the current prefill owner after all generation rows
+	// have been staged. Do not let admission bypass that ordering or cursor.
 	return true
 }
 
@@ -1149,7 +1085,7 @@ func (e *batchEngine) startSlotTextMRoPE(s *slot, job *chatJob, cacheIdx llama.P
 			"slot", s.id, "id", job.id, "reason", s.mtpDisableReason)
 	}
 
-	nBatch := e.model.cfg.NBatch()
+	nBatch := e.model.cfg.EffectiveNBatch()
 	for start := 0; start < len(tokens); start += nBatch {
 		end := min(start+nBatch, len(tokens))
 		if err := e.decodeTextMRoPE(s, tokens[start:end]); err != nil {

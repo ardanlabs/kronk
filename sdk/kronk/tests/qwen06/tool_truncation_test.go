@@ -25,13 +25,12 @@ func TestLengthTerminatedToolCallBecomesContent(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var rawToolOutput string
 			cfg := model.Config{
-				ModelFiles:         testlib.MPDraft.ModelFiles,
-				PtrContextWindow:   &tt.contextWindow,
-				PtrNBatch:          new(512),
-				PtrNUBatch:         new(256),
-				CacheTypeK:         model.GGMLTypeQ8_0,
-				CacheTypeV:         model.GGMLTypeQ8_0,
-				PtrInsecureLogging: new(true),
+				ModelFiles:          testlib.MPDraft.ModelFiles,
+				PtrContextWindow:    &tt.contextWindow,
+				PtrPrefillBatchSize: new(256),
+				CacheTypeK:          model.GGMLTypeQ8_0,
+				CacheTypeV:          model.GGMLTypeQ8_0,
+				PtrInsecureLogging:  new(true),
 				Log: func(_ context.Context, msg string, args ...any) {
 					if msg != "tool-call" {
 						return

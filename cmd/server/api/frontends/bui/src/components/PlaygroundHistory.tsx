@@ -280,8 +280,7 @@ export default function PlaygroundHistory({ filterMode }: { filterMode?: AutoTes
                 {displayMode === 'config' && bestConfigTrial ? (
                   <>
                     <div><strong>Context Window:</strong> {bestConfigTrial.config?.['context_window'] ?? '—'}</div>
-                    <div><strong>NBatch:</strong> {bestConfigTrial.config?.nbatch ?? '—'}</div>
-                    <div><strong>NUBatch:</strong> {bestConfigTrial.config?.nubatch ?? '—'}</div>
+                    <div><strong>Prefill Batch Size:</strong> {bestConfigTrial.config?.['prefill_batch_size'] ?? '—'}</div>
                     <div><strong>NSeqMax:</strong> {bestConfigTrial.config?.['nseq_max'] ?? '—'}</div>
                     <div><strong>Flash Attention:</strong> {bestConfigTrial.config?.['flash_attention'] ?? '—'}</div>
                     <div><strong>KV Cache Type:</strong> {bestConfigTrial.config?.['cache_type'] ?? '—'}</div>

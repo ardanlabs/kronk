@@ -363,3 +363,26 @@ func (p *Pool) IMCSessions() []IMCSessionDetail {
 
 	return details
 }
+
+// BatchEngineSnapshots returns the latest generation scheduler state for each
+// loaded language model. Embedding and reranking models are omitted.
+func (p *Pool) BatchEngineSnapshots() []BatchEngineDetail {
+	details := make([]BatchEngineDetail, 0)
+
+	for key, krn := range p.engine.All() {
+		snapshot, ok := krn.BatchEngineSnapshot()
+		if !ok {
+			continue
+		}
+		details = append(details, BatchEngineDetail{
+			ModelID:             key,
+			BatchEngineSnapshot: snapshot,
+		})
+	}
+
+	slices.SortFunc(details, func(a, b BatchEngineDetail) int {
+		return cmp.Compare(a.ModelID, b.ModelID)
+	})
+
+	return details
+}

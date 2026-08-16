@@ -34,6 +34,20 @@ type batchEngine struct {
 	// were written after finishSlot's initial clear.
 	batchReleased   []bool
 	batchAssembling bool
+	batchIteration  uint64
+	imcPrepNext     int
+	prefillNext     int
+	diagnostics     atomic.Pointer[BatchEngineSnapshot]
+
+	// Diagnostics below are owned by processLoop and copied into diagnostics
+	// at batch-loop boundaries for concurrent observers.
+	diagnosticPrefillStart    int
+	diagnosticPrefillSelected int
+	diagnosticIMCStart        int
+	diagnosticIMCSelected     int
+	diagnosticGenerationRows  int
+	diagnosticGeneration      []BatchGenerationContribution
+	diagnosticLastPublished   time.Time
 
 	// Pre-allocated M-RoPE batch and position buffer for vision model text
 	// chunks. Avoids per-call BatchInit/BatchFree and posData allocation in
@@ -66,18 +80,21 @@ func newBatchEngine(m *Model, nSlots int) *batchEngine {
 	}
 
 	e := batchEngine{
-		model:         m,
-		nSlots:        nSlots,
-		slots:         slots,
-		batch:         batch,
-		requestQ:      make(chan *chatJob, nSlots*m.cfg.QueueDepth()),
-		wakeCh:        make(chan struct{}, 1),
-		shutdownCh:    make(chan struct{}),
-		batchReleased: make([]bool, nSlots),
+		model:                     m,
+		nSlots:                    nSlots,
+		slots:                     slots,
+		batch:                     batch,
+		requestQ:                  make(chan *chatJob, nSlots*m.cfg.QueueDepth()),
+		wakeCh:                    make(chan struct{}, 1),
+		shutdownCh:                make(chan struct{}),
+		batchReleased:             make([]bool, nSlots),
+		diagnosticPrefillSelected: -1,
+		diagnosticIMCSelected:     -1,
 	}
+	e.publishDiagnostics(true)
 
 	// Pre-allocate M-RoPE batch for vision model text chunk decoding.
-	nBatch := m.cfg.NBatch()
+	nBatch := m.cfg.EffectiveNBatch()
 	if nBatch > 0 {
 		e.mropeBatch = llama.BatchInit(int32(nBatch), 0, 1)
 		e.mropeOrigPos = e.mropeBatch.Pos
@@ -206,6 +223,18 @@ func (e *batchEngine) processLoop(ctx context.Context) {
 
 // processBatch handles one iteration of the batch processing loop.
 func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
+	e.batchIteration++
+	iteration := e.batchIteration
+	e.diagnosticPrefillStart = e.prefillNext
+	e.diagnosticPrefillSelected = -1
+	e.diagnosticIMCStart = e.imcPrepNext
+	e.diagnosticIMCSelected = -1
+	e.diagnosticGenerationRows = 0
+	e.diagnosticGeneration = e.diagnosticGeneration[:0]
+	defer func() {
+		e.publishDiagnostics(!e.hasActiveSlots())
+	}()
+
 	// Clear the batch.
 	e.batch.Clear()
 	for i := range e.batchReleased {
@@ -228,13 +257,16 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	// one llama.Decode.
 	e.batchAssembling = true
 
-	// Admit and initialize new requests before existing slots stage any rows.
-	// startSlot may clear, restore, decode, and snapshot per-sequence state for
-	// IMC. Performing those target-context mutations after another slot has
-	// already staged rows leaves the shared batch describing context state that
-	// no longer matches the point at which it was assembled, which is especially
-	// unsafe for hybrid/recurrent models.
+	// Bind queued jobs to every available slot before advancing text IMC
+	// preparation. Text builds and extensions return from startSlot without
+	// staging shared rows, so requests arriving while another prompt is being
+	// prepared can still claim free slots immediately. If another start path did
+	// stage rows during admission, defer direct IMC decoding until the next
+	// iteration rather than mutating context behind an assembled batch.
 	e.fillSlots(buf)
+	if e.batch.NTokens == 0 && e.hasIMCPreparation() {
+		e.advanceIMCPreparation(buf)
+	}
 
 	// Prefill draft model for slots that just completed target prefill.
 	// Use the slot's per-request job context so log entries carry the
@@ -252,9 +284,16 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 		}
 	}
 
-	// Add generation tokens first. Each slot that has completed prefill needs
-	// exactly 1 token in the batch. Adding these before prefill chunks ensures
-	// addPrefillChunk sees the correct available space and won't overflow.
+	// Add generation tokens first. An ordinary slot contributes one row, while
+	// a speculative slot can contribute the sampled token plus its draft rows.
+	// Adding these before prefill keeps output responsive and lets prefill use
+	// only the tray capacity that remains.
+	batchRowsBeforeGeneration := e.batch.NTokens
+	trackPrefillSchedule := len(e.prefillSlotIDs()) > 0
+	var generationContributions []string
+	if trackPrefillSchedule {
+		generationContributions = make([]string, 0, len(e.slots))
+	}
 	for _, s := range e.slots {
 		if !s.active || !s.prefillDone {
 			continue
@@ -274,8 +313,16 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 		// A newly admitted request may have filled the logical batch during
 		// startSlot. Defer existing generation rows to the next iteration rather
 		// than overflowing the batch; the new request's prefill is decoded first.
-		if int(e.batch.NTokens) >= e.model.cfg.NBatch() {
+		if int(e.batch.NTokens) >= e.model.cfg.EffectiveNBatch() {
 			s.iBatch = -1
+			e.diagnosticGeneration = append(e.diagnosticGeneration, BatchGenerationContribution{
+				SlotID: s.id,
+				Mode:   "deferred-nbatch",
+			})
+			if trackPrefillSchedule {
+				generationContributions = append(generationContributions,
+					fmt.Sprintf("slot=%d,rows=0,mode=deferred-nbatch", s.id))
+			}
 			continue
 		}
 
@@ -296,6 +343,15 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 			default:
 				token = llama.SamplerSample(s.sampler, e.model.lctx, -1)
 			}
+			if trackPrefillSchedule {
+				generationContributions = append(generationContributions,
+					fmt.Sprintf("slot=%d,rows=1,mode=mrope-direct", s.id))
+			}
+			e.diagnosticGeneration = append(e.diagnosticGeneration, BatchGenerationContribution{
+				SlotID: s.id,
+				Rows:   1,
+				Mode:   "mrope-direct",
+			})
 			e.handleSampledToken(s, token, -1, buf)
 			continue
 		}
@@ -351,6 +407,23 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 					s.targetBatchCount = int32(1 + len(draftTokens))
 					s.mtpHasBatch = true
 				}
+				if trackPrefillSchedule {
+					mode := "speculative"
+					if mtpDraft {
+						mode = "mtp"
+					}
+					generationContributions = append(generationContributions,
+						fmt.Sprintf("slot=%d,rows=%d,mode=%s", s.id, 1+len(draftTokens), mode))
+				}
+				mode := "speculative"
+				if mtpDraft {
+					mode = "mtp"
+				}
+				e.diagnosticGeneration = append(e.diagnosticGeneration, BatchGenerationContribution{
+					SlotID: s.id,
+					Rows:   1 + len(draftTokens),
+					Mode:   mode,
+				})
 
 				// Hybrid targets use llama.cpp's bounded recurrent rollback
 				// when the context accepted enough NRsSeq snapshots for this
@@ -386,70 +459,73 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 			e.finishSlot(s, fmt.Errorf("add generation token: %w", err))
 			continue
 		}
+		if trackPrefillSchedule {
+			generationContributions = append(generationContributions,
+				fmt.Sprintf("slot=%d,rows=1,mode=ordinary", s.id))
+		}
+		e.diagnosticGeneration = append(e.diagnosticGeneration, BatchGenerationContribution{
+			SlotID: s.id,
+			Rows:   1,
+			Mode:   "ordinary",
+		})
 		s.nPast++
 	}
+	generationRows := e.batch.NTokens
+	e.diagnosticGenerationRows = int(generationRows - batchRowsBeforeGeneration)
 
-	// Continue prefill for text-only slots using round-robin allocation.
-	// Pull NUBatch tokens from each slot in turn to prevent one slot from
-	// starving others by consuming the entire tray.
-	//
-	// MTP correctness constraint: addPrefillChunk records a slot's pre-norm
-	// range as a single (targetBatchStart, targetBatchCount) tuple, which
-	// assumes the slot's rows in e.batch are contiguous. If two or more
-	// slots are prefilling and the outer loop runs a second pass, the
-	// rows of any one slot become interleaved with another slot's rows
-	// and the mirror step would copy the wrong pre-norm hidden states
-	// into the draft KV. To keep the recorded range contiguous, cap the
-	// outer loop at one pass when MTP is active and more than one slot
-	// is prefilling. Single-slot prefill keeps looping (rows are
-	// trivially contiguous), so single-request prefill throughput is
-	// unaffected.
-	chunkLimit := e.model.cfg.NUBatch()
-	mtpLimitOnePass := false
-	if mtpDraft {
-		nPrefillSlots := 0
-		for _, s := range e.slots {
-			if s.active && s.prefillTokens != nil {
-				nPrefillSlots++
-				if nPrefillSlots > 1 {
-					mtpLimitOnePass = true
-					break
-				}
-			}
-		}
+	// Continue ordinary text prefill from one slot. The cursor remains on that
+	// owner across decode iterations until its prompt is complete, minimizing
+	// time-to-first-token for one request without delaying output rows from slots
+	// already generating. Completion advances ownership to the next active
+	// prefilling slot. This also keeps every MTP pre-norm range contiguous.
+	prefillSlots := e.prefillSlotIDs()
+	selectorStart := e.prefillNext
+	s, idx := e.nextPrefillSlot()
+	e.diagnosticPrefillStart = selectorStart
+	if s != nil && int(e.batch.NTokens) >= e.model.cfg.EffectiveNBatch() {
+		e.model.log(s.job.ctx, "batch-engine", "status", "prefill-deferred",
+			"iteration", iteration,
+			"slot", s.id,
+			"prefill_slots", fmt.Sprintf("%v", prefillSlots),
+			"generation_contributions", fmt.Sprintf("%v", generationContributions),
+			"selector_start", selectorStart,
+			"selector_selected", idx,
+			"selector_next", e.prefillNext,
+			"generation_rows", generationRows,
+			"tray_tokens", e.batch.NTokens,
+			"nbatch", e.model.cfg.EffectiveNBatch(),
+			"nubatch", e.model.cfg.EffectiveNUBatch())
 	}
-	for {
-		before := e.batch.NTokens
-		for _, s := range e.slots {
-			if !s.active || s.prefillTokens == nil {
-				continue
+	if s != nil && int(e.batch.NTokens) < e.model.cfg.EffectiveNBatch() {
+		beforeSlot := e.batch.NTokens
+		if !e.addPrefillChunk(s, e.model.cfg.PrefillBatchSize()) {
+			if s.job != nil {
+				e.finishSlot(s, e.slotCancelError(s))
 			}
-
-			// Check if client cancelled.
-			if s.job.ctx.Err() != nil {
-				e.finishSlot(s, s.job.ctx.Err())
-				continue
+		} else if e.batch.NTokens > beforeSlot {
+			e.diagnosticPrefillSelected = idx
+			prefillComplete := s.prefillTokens == nil
+			if prefillComplete {
+				e.prefillNext = (idx + 1) % len(e.slots)
+			} else {
+				e.prefillNext = idx
 			}
-
-			// addPrefillChunk finishes the slot itself on internal errors. On
-			// cancellation the job remains attached for this caller to finish.
-			if !e.addPrefillChunk(s, chunkLimit) {
-				if s.job != nil {
-					e.finishSlot(s, e.slotCancelError(s))
-				}
-				continue
-			}
-		}
-
-		// Stop when no tokens were added (all slots done or tray full).
-		if e.batch.NTokens == before {
-			break
-		}
-
-		// MTP multi-slot prefill: only one pass to keep each slot's rows
-		// contiguous in e.batch (see comment above).
-		if mtpLimitOnePass {
-			break
+			e.model.log(s.job.ctx, "batch-engine", "status", "prefill-scheduled",
+				"iteration", iteration,
+				"slot", s.id,
+				"prefill_slots", fmt.Sprintf("%v", prefillSlots),
+				"generation_contributions", fmt.Sprintf("%v", generationContributions),
+				"chunk_tokens", e.batch.NTokens-beforeSlot,
+				"prefill_remaining", max(0, len(s.prefillTokens)-s.nPrefilled),
+				"prefill_complete", prefillComplete,
+				"selector_start", selectorStart,
+				"selector_selected", idx,
+				"selector_next", e.prefillNext,
+				"next_slot", e.prefillNext,
+				"generation_rows", generationRows,
+				"tray_tokens", e.batch.NTokens,
+				"nbatch", e.model.cfg.EffectiveNBatch(),
+				"nubatch", e.model.cfg.EffectiveNUBatch())
 		}
 	}
 
@@ -478,8 +554,12 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 		return
 	}
 
+	// Publish the assembled tray before native decode so a slow decode remains
+	// visible to diagnostics clients while it is in progress.
+	e.publishDiagnostics(false)
+
 	// Defensive check: batch tokens must not exceed NBatch.
-	nBatch := e.model.cfg.NBatch()
+	nBatch := e.model.cfg.EffectiveNBatch()
 	if int(e.batch.NTokens) > nBatch {
 		e.model.log(ctx, "process-batch", "ERROR", "batch-overflow",
 			"batch_tokens", e.batch.NTokens,

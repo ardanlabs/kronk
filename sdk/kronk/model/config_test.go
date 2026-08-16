@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -284,87 +285,123 @@ func TestFlashAttentionToYZMAType(t *testing.T) {
 
 func TestAdjustConfigUsesOneBatchDefault(t *testing.T) {
 	tests := []struct {
-		name       string
-		cfg        Config
-		wantNBatch int
+		name        string
+		cfg         Config
+		wantNBatch  int
+		wantNUBatch int
 	}{
-		{"text", NewConfig(WithContextWindow(8192), WithNSeqMax(4)), defNUBatch * 4},
-		{"projection", NewConfig(WithContextWindow(8192), WithNSeqMax(4), WithProjFile("mmproj.gguf")), defNUBatch * 4},
-		{"MoE CPU experts", NewConfig(WithContextWindow(8192), WithNSeqMax(4), WithMoE(&MoEConfig{Mode: MoEModeExpertsCPU})), defNUBatch * 4},
-		{"embedding", NewConfig(WithModelFiles([]string{"Qwen3-Embedding-0.6B-Q8_0.gguf"}), WithContextWindow(8192), WithNSeqMax(4)), defNUBatch},
-		{"rerank", NewConfig(WithModelFiles([]string{"bge-reranker-v2-m3-Q8_0.gguf"}), WithContextWindow(8192), WithNSeqMax(4)), defNUBatch},
+		{"text", NewConfig(WithContextWindow(8192), WithNSeqMax(4)), DefaultPrefillBatchSize + 4, DefaultPrefillBatchSize},
+		{"projection", NewConfig(WithContextWindow(8192), WithNSeqMax(4), WithProjFile("mmproj.gguf")), DefaultPrefillBatchSize + 4, DefaultPrefillBatchSize},
+		{"MoE CPU experts", NewConfig(WithContextWindow(8192), WithNSeqMax(4), WithMoE(&MoEConfig{Mode: MoEModeExpertsCPU})), DefaultPrefillBatchSize + 4, DefaultPrefillBatchSize},
+		{"embedding", NewConfig(WithModelFiles([]string{"Qwen3-Embedding-0.6B-Q8_0.gguf"}), WithContextWindow(8192), WithNSeqMax(4)), DefaultPrefillBatchSize, DefaultPrefillBatchSize},
+		{"rerank", NewConfig(WithModelFiles([]string{"bge-reranker-v2-m3-Q8_0.gguf"}), WithContextWindow(8192), WithNSeqMax(4)), DefaultPrefillBatchSize, DefaultPrefillBatchSize},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := adjustConfig(tt.cfg, 0)
-			if got := cfg.NUBatch(); got != defNUBatch {
-				t.Errorf("NUBatch: got %d, want %d", got, defNUBatch)
+			if got := cfg.EffectiveNUBatch(); got != tt.wantNUBatch {
+				t.Errorf("NUBatch: got %d, want %d", got, tt.wantNUBatch)
 			}
-			if got := cfg.NBatch(); got != tt.wantNBatch {
+			if got := cfg.EffectiveNBatch(); got != tt.wantNBatch {
 				t.Errorf("NBatch: got %d, want %d", got, tt.wantNBatch)
+			}
+			if got := cfg.PrefillBatchSize(); got != DefaultPrefillBatchSize {
+				t.Errorf("PrefillBatchSize: got %d, want %d", got, DefaultPrefillBatchSize)
 			}
 		})
 	}
 }
 
-func TestAdjustConfigPreservesExplicitBatchSizes(t *testing.T) {
+func TestAdjustConfigUsesConfiguredPrefillBatchSize(t *testing.T) {
 	cfg := NewConfig(
-		WithModelFiles([]string{"Qwen3-Embedding-0.6B-Q8_0.gguf"}),
 		WithContextWindow(8192),
 		WithNSeqMax(4),
-		WithNBatch(4096),
-		WithNUBatch(2048),
+		WithPrefillBatchSize(4096),
 	)
 
 	got := adjustConfig(cfg, 0)
 
-	if got.NBatch() != 4096 {
-		t.Errorf("NBatch: got %d, want %d", got.NBatch(), 4096)
+	if got.PrefillBatchSize() != 4096 {
+		t.Errorf("PrefillBatchSize: got %d, want %d", got.PrefillBatchSize(), 4096)
 	}
-	if got.NUBatch() != 2048 {
-		t.Errorf("NUBatch: got %d, want %d", got.NUBatch(), 2048)
+	if got.EffectiveNBatch() != 4100 || got.EffectiveNUBatch() != 4096 {
+		t.Errorf("effective batch: got %d/%d, want 4100/4096", got.EffectiveNBatch(), got.EffectiveNUBatch())
 	}
 }
 
-func TestAdjustMTPBatch(t *testing.T) {
+func TestAdjustGenerationBatchUsesPrefillBatchSize(t *testing.T) {
 	tests := []struct {
-		name       string
-		mtpEnabled bool
-		nSeqMax    int
-		nBatch     int
-		nUBatch    int
-		wantNBatch int
+		name                string
+		generationRows      int
+		singlePhysicalBatch bool
+		wantNBatch          int
+		wantNUBatch         int
 	}{
-		{"MTP multi-slot", true, 2, 4096, 2048, 2048},
-		{"MTP single-slot", true, 1, 4096, 2048, 4096},
-		{"MTP already one ubatch", true, 2, 2048, 2048, 2048},
-		{"non-MTP multi-slot", false, 2, 4096, 2048, 4096},
+		{"non-MTP", 1, false, 1028, 1024},
+		{"MTP", 1 + defMTPNDraft, true, 1040, 1040},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := NewConfig(
-				WithNSeqMax(tt.nSeqMax),
-				WithNBatch(tt.nBatch),
-				WithNUBatch(tt.nUBatch),
-			)
+			cfg := NewConfig(WithNSeqMax(4), WithPrefillBatchSize(1024))
+			got := adjustGenerationBatch(cfg, tt.generationRows, tt.singlePhysicalBatch)
 
-			got := adjustMTPBatch(cfg, tt.mtpEnabled)
-			if got.NBatch() != tt.wantNBatch {
-				t.Errorf("NBatch: got %d, want %d", got.NBatch(), tt.wantNBatch)
+			if got.EffectiveNBatch() != tt.wantNBatch || got.EffectiveNUBatch() != tt.wantNUBatch {
+				t.Errorf("batch = %d/%d, want %d/%d", got.EffectiveNBatch(), got.EffectiveNUBatch(), tt.wantNBatch, tt.wantNUBatch)
 			}
 		})
 	}
+}
 
-	cfg := adjustConfig(NewConfig(
-		WithContextWindow(8192),
-		WithNSeqMax(2),
-	), 0)
+func TestAdjustDefaultGenerationBatchBySlotCount(t *testing.T) {
+	tests := []struct {
+		nSeqMax   int
+		wantPlain int
+		wantMTP   int
+	}{
+		{nSeqMax: 1, wantPlain: 2049, wantMTP: 2052},
+		{nSeqMax: 2, wantPlain: 2050, wantMTP: 2056},
+		{nSeqMax: 4, wantPlain: 2052, wantMTP: 2064},
+	}
 
-	got := adjustMTPBatch(cfg, true)
-	if got.NBatch() != got.NUBatch() {
-		t.Errorf("default MTP batch: NBatch got %d, want NUBatch %d", got.NBatch(), got.NUBatch())
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("slots-%d", tt.nSeqMax), func(t *testing.T) {
+			plain := adjustConfig(NewConfig(
+				WithContextWindow(8192),
+				WithNSeqMax(tt.nSeqMax),
+			), 0)
+			if plain.EffectiveNBatch() != tt.wantPlain || plain.EffectiveNUBatch() != DefaultPrefillBatchSize {
+				t.Errorf("plain batch = %d/%d, want %d/%d", plain.EffectiveNBatch(), plain.EffectiveNUBatch(), tt.wantPlain, DefaultPrefillBatchSize)
+			}
+
+			mtp := adjustGenerationBatch(plain, 1+defMTPNDraft, true)
+			if mtp.EffectiveNBatch() != tt.wantMTP || mtp.EffectiveNUBatch() != tt.wantMTP {
+				t.Errorf("MTP batch = %d/%d, want %d/%d", mtp.EffectiveNBatch(), mtp.EffectiveNUBatch(), tt.wantMTP, tt.wantMTP)
+			}
+		})
+	}
+}
+
+func TestValidateGenerationBatchCapacity(t *testing.T) {
+	tests := []struct {
+		name              string
+		nBatch            int
+		generationReserve int
+		wantErr           bool
+	}{
+		{"capacity available", 2056, 8, false},
+		{"exact capacity", 8, 8, false},
+		{"insufficient capacity", 7, 8, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateGenerationBatchCapacity(tt.nBatch, tt.generationReserve)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateGenerationBatchCapacity() error = %v, wantErr %t", err, tt.wantErr)
+			}
+		})
 	}
 }
 
@@ -686,6 +723,14 @@ func TestValidateConfig(t *testing.T) {
 		{"negative admission timeout is invalid", NewConfig(
 			WithModelFiles([]string{"dummy.gguf"}),
 			WithAdmissionTimeout(-time.Second),
+		), true},
+		{"zero prefill batch size is invalid", NewConfig(
+			WithModelFiles([]string{"dummy.gguf"}),
+			WithPrefillBatchSize(0),
+		), true},
+		{"negative prefill batch size is invalid", NewConfig(
+			WithModelFiles([]string{"dummy.gguf"}),
+			WithPrefillBatchSize(-1),
 		), true},
 		{"quantized V cache with Flash Attention disabled is invalid", NewConfig(
 			WithModelFiles([]string{"dummy.gguf"}),

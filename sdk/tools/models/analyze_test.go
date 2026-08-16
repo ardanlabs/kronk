@@ -718,11 +718,8 @@ func TestAutoTuneWithConfigPreservesExplicitSizing(t *testing.T) {
 	if cfg.PtrNSeqMax == nil || *cfg.PtrNSeqMax != nSeqMax {
 		t.Errorf("PtrNSeqMax: got %v, want %d", cfg.PtrNSeqMax, nSeqMax)
 	}
-	if cfg.PtrNBatch != nil {
-		t.Errorf("PtrNBatch: got %v, want nil", cfg.PtrNBatch)
-	}
-	if cfg.PtrNUBatch != nil {
-		t.Errorf("PtrNUBatch: got %v, want nil", cfg.PtrNUBatch)
+	if cfg.PtrPrefillBatchSize != nil {
+		t.Errorf("PtrPrefillBatchSize: got %v, want nil", cfg.PtrPrefillBatchSize)
 	}
 	if cfg.FlashAttention == nil || *cfg.FlashAttention != flashAttention {
 		t.Errorf("FlashAttention: got %v, want %s", cfg.FlashAttention, flashAttention)

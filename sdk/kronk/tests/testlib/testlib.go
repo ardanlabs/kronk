@@ -152,13 +152,12 @@ func WithModel(t *testing.T, cfg model.Config, fn func(t *testing.T, krn *kronk.
 // model lifecycle (e.g., concurrency tests that test unload behavior).
 func InitChatTest(t *testing.T, mp models.Path, tooling bool) (*kronk.Kronk, model.D) {
 	krn, err := kronk.New(model.WithConfig(model.Config{
-		ModelFiles:       mp.ModelFiles,
-		PtrContextWindow: new(32768),
-		PtrNBatch:        new(1024),
-		PtrNUBatch:       new(256),
-		CacheTypeK:       model.GGMLTypeF16,
-		CacheTypeV:       model.GGMLTypeF16,
-		PtrNSeqMax:       new(2),
+		ModelFiles:          mp.ModelFiles,
+		PtrContextWindow:    new(32768),
+		PtrPrefillBatchSize: new(256),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(2),
 	}))
 
 	if err != nil {
@@ -210,37 +209,34 @@ func InitChatTest(t *testing.T, mp models.Path, tooling bool) (*kronk.Kronk, mod
 
 func CfgThinkToolChat() model.Config {
 	return model.Config{
-		ModelFiles:       MPThinkToolChat.ModelFiles,
-		PtrContextWindow: new(8192),
-		PtrNBatch:        new(2048),
-		PtrNUBatch:       new(512),
-		CacheTypeK:       model.GGMLTypeQ8_0,
-		CacheTypeV:       model.GGMLTypeQ8_0,
-		PtrNSeqMax:       new(2),
+		ModelFiles:          MPThinkToolChat.ModelFiles,
+		PtrContextWindow:    new(8192),
+		PtrPrefillBatchSize: new(512),
+		CacheTypeK:          model.GGMLTypeQ8_0,
+		CacheTypeV:          model.GGMLTypeQ8_0,
+		PtrNSeqMax:          new(2),
 	}
 }
 
 func CfgGPTChat() model.Config {
 	return model.Config{
-		ModelFiles:       MPGPTChat.ModelFiles,
-		PtrContextWindow: new(8192),
-		PtrNBatch:        new(2048),
-		PtrNUBatch:       new(512),
-		CacheTypeK:       model.GGMLTypeQ8_0,
-		CacheTypeV:       model.GGMLTypeQ8_0,
-		PtrNSeqMax:       new(2),
+		ModelFiles:          MPGPTChat.ModelFiles,
+		PtrContextWindow:    new(8192),
+		PtrPrefillBatchSize: new(512),
+		CacheTypeK:          model.GGMLTypeQ8_0,
+		CacheTypeV:          model.GGMLTypeQ8_0,
+		PtrNSeqMax:          new(2),
 	}
 }
 
 func CfgSimpleVision() model.Config {
 	return model.Config{
-		ModelFiles:       MPSimpleVision.ModelFiles,
-		ProjFile:         MPSimpleVision.ProjFile,
-		PtrContextWindow: new(8192),
-		PtrNBatch:        new(2048),
-		PtrNUBatch:       new(2048),
-		CacheTypeK:       model.GGMLTypeQ8_0,
-		CacheTypeV:       model.GGMLTypeQ8_0,
+		ModelFiles:          MPSimpleVision.ModelFiles,
+		ProjFile:            MPSimpleVision.ProjFile,
+		PtrContextWindow:    new(8192),
+		PtrPrefillBatchSize: new(2048),
+		CacheTypeK:          model.GGMLTypeQ8_0,
+		CacheTypeV:          model.GGMLTypeQ8_0,
 	}
 }
 
@@ -249,8 +245,7 @@ func CfgSimpleVisionIMC() model.Config {
 		ModelFiles:          MPSimpleVision.ModelFiles,
 		ProjFile:            MPSimpleVision.ProjFile,
 		PtrContextWindow:    new(8192),
-		PtrNBatch:           new(2048),
-		PtrNUBatch:          new(2048),
+		PtrPrefillBatchSize: new(2048),
 		CacheTypeK:          model.GGMLTypeQ8_0,
 		CacheTypeV:          model.GGMLTypeQ8_0,
 		PtrIncrementalCache: new(true),
@@ -263,8 +258,7 @@ func CfgMoEVisionIMC() model.Config {
 		ModelFiles:          MPMoEVision.ModelFiles,
 		ProjFile:            MPMoEVision.ProjFile,
 		PtrContextWindow:    new(8192),
-		PtrNBatch:           new(2048),
-		PtrNUBatch:          new(2048),
+		PtrPrefillBatchSize: new(2048),
 		CacheTypeK:          model.GGMLTypeF16,
 		CacheTypeV:          model.GGMLTypeF16,
 		PtrIncrementalCache: new(true),
@@ -275,36 +269,33 @@ func CfgMoEVisionIMC() model.Config {
 // CfgEmbedBatchSeq returns the Qwen3 sequence-batch configuration.
 func CfgEmbedBatchSeq() model.Config {
 	return model.Config{
-		ModelFiles:       MPEmbedBatchSeq.ModelFiles,
-		PtrContextWindow: new(8192),
-		PtrNBatch:        new(2048),
-		PtrNUBatch:       new(2048),
-		CacheTypeK:       model.GGMLTypeF16,
-		CacheTypeV:       model.GGMLTypeF16,
-		PtrNSeqMax:       new(4),
+		ModelFiles:          MPEmbedBatchSeq.ModelFiles,
+		PtrContextWindow:    new(8192),
+		PtrPrefillBatchSize: new(2048),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(4),
 	}
 }
 
 // CfgRerankBatchSeq returns the BGE sequence-batch configuration.
 func CfgRerankBatchSeq() model.Config {
 	return model.Config{
-		ModelFiles:       MPRerankBatchSeq.ModelFiles,
-		PtrContextWindow: new(2048),
-		PtrNBatch:        new(2048),
-		PtrNUBatch:       new(512),
-		CacheTypeK:       model.GGMLTypeF16,
-		CacheTypeV:       model.GGMLTypeF16,
-		PtrNSeqMax:       new(4),
+		ModelFiles:          MPRerankBatchSeq.ModelFiles,
+		PtrContextWindow:    new(2048),
+		PtrPrefillBatchSize: new(512),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(4),
 	}
 }
 
 func CfgAudio() model.Config {
 	return model.Config{
-		ModelFiles:       MPAudio.ModelFiles,
-		ProjFile:         MPAudio.ProjFile,
-		PtrContextWindow: new(8192),
-		PtrNBatch:        new(2048),
-		PtrNUBatch:       new(2048),
+		ModelFiles:          MPAudio.ModelFiles,
+		ProjFile:            MPAudio.ProjFile,
+		PtrContextWindow:    new(8192),
+		PtrPrefillBatchSize: new(2048),
 		// Keep K/V at F16. Audio multimodal models are unusually
 		// sensitive to KV-cache quantization: audio tokens encode
 		// fine-grained acoustic structure, and the noise introduced by
@@ -319,25 +310,23 @@ func CfgAudio() model.Config {
 
 func CfgMoEVision() model.Config {
 	return model.Config{
-		ModelFiles:       MPMoEVision.ModelFiles,
-		PtrContextWindow: new(8192),
-		PtrNBatch:        new(2048),
-		PtrNUBatch:       new(2048),
-		CacheTypeK:       model.GGMLTypeF16,
-		CacheTypeV:       model.GGMLTypeF16,
-		PtrNSeqMax:       new(2),
+		ModelFiles:          MPMoEVision.ModelFiles,
+		PtrContextWindow:    new(8192),
+		PtrPrefillBatchSize: new(2048),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(2),
 	}
 }
 
 func CfgHybridChat() model.Config {
 	return model.Config{
-		ModelFiles:       MPHybridVision.ModelFiles,
-		PtrContextWindow: new(8192),
-		PtrNBatch:        new(2048),
-		PtrNUBatch:       new(512),
-		CacheTypeK:       model.GGMLTypeF16,
-		CacheTypeV:       model.GGMLTypeF16,
-		PtrNSeqMax:       new(2),
+		ModelFiles:          MPHybridVision.ModelFiles,
+		PtrContextWindow:    new(8192),
+		PtrPrefillBatchSize: new(512),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(2),
 	}
 }
 
@@ -349,13 +338,12 @@ func CfgHybridChat() model.Config {
 // contiguity constraint in processBatch.
 func CfgMTPChat() model.Config {
 	return model.Config{
-		ModelFiles:       MPMTP.ModelFiles,
-		PtrContextWindow: new(8192),
-		PtrNBatch:        new(2048),
-		PtrNUBatch:       new(512),
-		CacheTypeK:       model.GGMLTypeF16,
-		CacheTypeV:       model.GGMLTypeF16,
-		PtrNSeqMax:       new(1),
+		ModelFiles:          MPMTP.ModelFiles,
+		PtrContextWindow:    new(8192),
+		PtrPrefillBatchSize: new(512),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(1),
 	}
 }
 
@@ -375,13 +363,12 @@ func CfgMTPChat() model.Config {
 // The cache settings match the single-slot MTP configuration.
 func CfgMTPChatMultiSlot() model.Config {
 	return model.Config{
-		ModelFiles:       MPMTP.ModelFiles,
-		PtrContextWindow: new(8192),
-		PtrNBatch:        new(2048),
-		PtrNUBatch:       new(512),
-		CacheTypeK:       model.GGMLTypeF16,
-		CacheTypeV:       model.GGMLTypeF16,
-		PtrNSeqMax:       new(2),
+		ModelFiles:          MPMTP.ModelFiles,
+		PtrContextWindow:    new(8192),
+		PtrPrefillBatchSize: new(512),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(2),
 	}
 }
 
@@ -394,13 +381,12 @@ func CfgMTPChatMultiSlot() model.Config {
 // is created single-sequence (see loadDraftModel).
 func CfgClassicDraftChat() model.Config {
 	return model.Config{
-		ModelFiles:       MPThinkToolChat.ModelFiles,
-		PtrContextWindow: new(8192),
-		PtrNBatch:        new(2048),
-		PtrNUBatch:       new(512),
-		CacheTypeK:       model.GGMLTypeQ8_0,
-		CacheTypeV:       model.GGMLTypeQ8_0,
-		PtrNSeqMax:       new(1),
+		ModelFiles:          MPThinkToolChat.ModelFiles,
+		PtrContextWindow:    new(8192),
+		PtrPrefillBatchSize: new(512),
+		CacheTypeK:          model.GGMLTypeQ8_0,
+		CacheTypeV:          model.GGMLTypeQ8_0,
+		PtrNSeqMax:          new(1),
 		PtrDraftModel: &model.DraftModelConfig{
 			ModelFiles: MPDraft.ModelFiles,
 			NDraft:     4,
@@ -418,14 +404,13 @@ func CfgClassicDraftChat() model.Config {
 // SWA configs. NSeqMax=1 for the single-slot path.
 func CfgGemma4MTPChat() model.Config {
 	return model.Config{
-		ModelFiles:       MPMoEVision.ModelFiles,
-		MTPDrafterFile:   MPMoEVision.MTPFile,
-		PtrContextWindow: new(8192),
-		PtrNBatch:        new(2048),
-		PtrNUBatch:       new(512),
-		CacheTypeK:       model.GGMLTypeF16,
-		CacheTypeV:       model.GGMLTypeF16,
-		PtrNSeqMax:       new(1),
+		ModelFiles:          MPMoEVision.ModelFiles,
+		MTPDrafterFile:      MPMoEVision.MTPFile,
+		PtrContextWindow:    new(8192),
+		PtrPrefillBatchSize: new(512),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(1),
 	}
 }
 
@@ -435,14 +420,13 @@ func CfgGemma4MTPChat() model.Config {
 // drafting under contention.
 func CfgGemma4MTPChatMultiSlot() model.Config {
 	return model.Config{
-		ModelFiles:       MPMoEVision.ModelFiles,
-		MTPDrafterFile:   MPMoEVision.MTPFile,
-		PtrContextWindow: new(8192),
-		PtrNBatch:        new(2048),
-		PtrNUBatch:       new(512),
-		CacheTypeK:       model.GGMLTypeF16,
-		CacheTypeV:       model.GGMLTypeF16,
-		PtrNSeqMax:       new(2),
+		ModelFiles:          MPMoEVision.ModelFiles,
+		MTPDrafterFile:      MPMoEVision.MTPFile,
+		PtrContextWindow:    new(8192),
+		PtrPrefillBatchSize: new(512),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(2),
 	}
 }
 
@@ -451,8 +435,7 @@ func CfgHybridVisionIMC() model.Config {
 		ModelFiles:          MPHybridVision.ModelFiles,
 		ProjFile:            MPHybridVision.ProjFile,
 		PtrContextWindow:    new(4096),
-		PtrNBatch:           new(2048),
-		PtrNUBatch:          new(512),
+		PtrPrefillBatchSize: new(512),
 		CacheTypeK:          model.GGMLTypeQ8_0,
 		CacheTypeV:          model.GGMLTypeQ8_0,
 		PtrIncrementalCache: new(true),
