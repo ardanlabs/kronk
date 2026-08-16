@@ -305,7 +305,9 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		return nil, err
 	}
 
+	configuredPrefillBatchSize := cfg.PrefillBatchSize()
 	cfg = adjustConfig(cfg, mdl)
+	prefillChunk := cfg.PrefillBatchSize()
 
 	mtpCandidate := cfg.PtrDraftModel == nil || !cfg.PtrDraftModel.IsSeparate()
 
@@ -313,8 +315,35 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		probeGemma4AssistantMTP(ctx, l, cfg.MTPDrafterFile)
 
 	mtpEnabled := mtpCandidate && MTPAvailable() && (loadMTP || companionMTP)
+	pooled := isEmbedOrRerankConfig(cfg)
+	generationRowsPerSlot := 0
+	if !pooled {
+		generationRowsPerSlot = 1
+	}
+	if mtpEnabled && !pooled {
+		generationRowsPerSlot += mtpNDraft(cfg)
+	}
+	if !pooled {
+		cfg = adjustGenerationBatch(cfg, generationRowsPerSlot, mtpEnabled)
+	}
 
-	cfg = adjustMTPBatch(cfg, mtpEnabled)
+	generationReserve := cfg.NSeqMax() * generationRowsPerSlot
+	if err := validateGenerationBatchCapacity(cfg.EffectiveNBatch(), generationReserve); err != nil {
+		llama.ModelFree(mdl)
+		return nil, fmt.Errorf("resolve batch sizing: %w", err)
+	}
+	effectivePrefill := min(prefillChunk, max(cfg.EffectiveNBatch()-generationReserve, 0))
+	l(ctx, "batch-sizing", "status", "resolved",
+		"configured-prefill-batch-size", configuredPrefillBatchSize,
+		"prefill-batch-size", prefillChunk,
+		"nseq-max", cfg.NSeqMax(),
+		"generation-rows-per-slot", generationRowsPerSlot,
+		"generation-reserve", generationReserve,
+		"effective-prefill", effectivePrefill,
+		"effective-nbatch", cfg.EffectiveNBatch(),
+		"effective-nubatch", cfg.EffectiveNUBatch(),
+		"mtp", mtpEnabled,
+		"automatic-padding", true)
 
 	modelInfo := toModelInfo(cfg, mdl)
 
@@ -462,6 +491,14 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	}
 
 	return &m, nil
+}
+
+func validateGenerationBatchCapacity(nBatch, generationReserve int) error {
+	if nBatch >= generationReserve {
+		return nil
+	}
+
+	return fmt.Errorf("derived NBatch=%d cannot hold the worst-case generation reserve of %d rows; increase PrefillBatchSize or reduce NSeqMax or NDraft", nBatch, generationReserve)
 }
 
 // modelParamsKeepalive holds backing buffers that the C side of llama.cpp
@@ -1503,6 +1540,7 @@ func calculateVRAMDiag(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory in
 		ContextWindow:          int64(cfg.ContextWindow()),
 		BytesPerElement:        int64(gguf.MaxBytesPerElement(int32(cfg.CacheTypeK), int32(cfg.CacheTypeV))),
 		Slots:                  int64(max(cfg.NSeqMax(), 1)),
+		NUBatch:                int64(cfg.EffectiveNUBatch()),
 		ExpertLayersOnGPU:      cfg.ExpertLayersOnGPU(),
 		SWAFull:                effectiveSWAFull(cfg.PtrSWAFull, llama.ContextDefaultParams().SwaFull != 0),
 		RecurrentStateCopies:   RecurrentStateCopies(cfg, false),

@@ -15,6 +15,9 @@ import urllib.request
 from pathlib import Path
 
 
+CANARY_REPETITIONS = 8
+
+
 def arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -78,7 +81,7 @@ def request_json(
 
 def request_stream(
     host: str, path: str, timeout: int, body: dict
-) -> tuple[str, dict, float]:
+) -> tuple[str, dict, float, str | None]:
     request = urllib.request.Request(
         f"{host.rstrip('/')}{path}",
         data=json.dumps(body).encode(),
@@ -88,6 +91,7 @@ def request_stream(
     content: list[str] = []
     usage: dict = {}
     first_content_at = 0.0
+    finish_reason = None
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             for raw_line in response:
@@ -101,6 +105,8 @@ def request_stream(
                 if chunk_usage := chunk.get("usage"):
                     usage = chunk_usage
                 choices = chunk.get("choices") or []
+                if choices and choices[0].get("finish_reason") is not None:
+                    finish_reason = choices[0]["finish_reason"]
                 delta = choices[0].get("delta") if choices else None
                 piece = delta.get("content", "") if isinstance(delta, dict) else ""
                 if piece:
@@ -111,7 +117,7 @@ def request_stream(
         detail = exc.read().decode(errors="replace")
         raise RuntimeError(f"{path}: HTTP {exc.code}: {detail}") from exc
 
-    return "".join(content), usage, first_content_at
+    return "".join(content), usage, first_content_at, finish_reason
 
 
 def model_matches(identifier: str, configured: str) -> bool:
@@ -180,7 +186,8 @@ def record_prompt(session: int, turn: int, records: int) -> str:
             f"record {record:04d}: latency budget retry owner archive signal metric policy."
         )
     lines.append(
-        f"Reply by repeating {key}-TURN-{turn} exactly 48 times, separated by spaces. "
+        f"Reply by repeating {key}-TURN-{turn} exactly {CANARY_REPETITIONS} times, "
+        "separated by spaces. "
         "Do not output anything else."
     )
     return "\n".join(lines)
@@ -228,7 +235,7 @@ def completion(
 
     barrier.wait()
     started = time.monotonic()
-    content, usage, first_content_at = request_stream(
+    content, usage, first_content_at, finish_reason = request_stream(
         args.host, "/v1/chat/completions", args.timeout, body
     )
     finished_at = time.monotonic()
@@ -249,10 +256,12 @@ def completion(
             f"session {session + 1} turn {turn}: response contained foreign "
             f"conversation markers {sorted(foreign_markers)}: {content!r}"
         )
-    if observed_markers.count(expected_marker) < 8:
+    if observed_markers.count(expected_marker) < CANARY_REPETITIONS:
         raise RuntimeError(
             f"session {session + 1} turn {turn}: response produced only "
-            f"{observed_markers.count(expected_marker)} canaries, want at least 8"
+            f"{observed_markers.count(expected_marker)} canaries, want "
+            f"{CANARY_REPETITIONS}; finish_reason={finish_reason!r}, "
+            f"completion_tokens={usage.get('completion_tokens', 0)}: {content!r}"
         )
 
     messages.extend(
@@ -267,6 +276,7 @@ def completion(
         "elapsed_seconds": round(elapsed, 3),
         "prompt_tokens": int(usage.get("prompt_tokens", 0)),
         "completion_tokens": int(usage.get("completion_tokens", 0)),
+        "finish_reason": finish_reason,
         "first_content_seconds": round(first_content_at - started, 3),
         "_first_content_at": first_content_at,
         "_finished_at": finished_at,
@@ -375,9 +385,17 @@ def main() -> int:
 
     records = calibrate_records(args)
     calibrated = token_count(args, record_prompt(0, 1, records))
+    canary = f"{conversation_key(args.conversations - 1)}-TURN-{args.turns}"
+    canary_tokens = token_count(args, " ".join([canary] * CANARY_REPETITIONS))
+    if canary_tokens > args.max_tokens:
+        raise RuntimeError(
+            f"{CANARY_REPETITIONS} response canaries require {canary_tokens} tokens, "
+            f"but --max-tokens is {args.max_tokens}"
+        )
     print(
         f"model={args.model} slots={args.slots} conversations={args.conversations}; "
-        f"calibrated turn payload={calibrated} tokens"
+        f"calibrated turn payload={calibrated} tokens; "
+        f"canary response={canary_tokens}/{args.max_tokens} tokens"
     )
 
     load = run_load(args, records)

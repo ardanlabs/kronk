@@ -123,7 +123,7 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 		TypeK:                  int32(cfg.CacheTypeK),
 		TypeV:                  int32(cfg.CacheTypeV),
 		Slots:                  nseq,
-		NUBatch:                effectiveNUBatch(cfg),
+		NUBatch:                effectivePrefillBatchSize(cfg),
 		ExpertLayersOnGPU:      cfg.ExpertLayersOnGPU(),
 		GPULayers:              int64(cfg.NGpuLayers()),
 		KVCacheOnCPU:           cfg.PtrOffloadKQV != nil && !*cfg.PtrOffloadKQV,
@@ -354,7 +354,7 @@ func (l *Llama) Display(krn *kronk.Kronk, modelID string) loader.Display {
 		TypeK:                  int32(cfg.CacheTypeK),
 		TypeV:                  int32(cfg.CacheTypeV),
 		Slots:                  nseq,
-		NUBatch:                effectiveNUBatch(cfg),
+		NUBatch:                effectivePrefillBatchSize(cfg),
 		ExpertLayersOnGPU:      cfg.ExpertLayersOnGPU(),
 		GPULayers:              int64(cfg.NGpuLayers()),
 		KVCacheOnCPU:           cfg.PtrOffloadKQV != nil && !*cfg.PtrOffloadKQV,
@@ -393,15 +393,12 @@ func effectiveSWAFull(cfg model.Config) bool {
 	return llama.ContextDefaultParams().SwaFull != 0
 }
 
-func effectiveNUBatch(cfg model.Config) int64 {
-	nUBatch := cfg.NUBatch()
-	if nUBatch <= 0 {
-		nUBatch = 2048
+func effectivePrefillBatchSize(cfg model.Config) int64 {
+	prefillBatchSize := cfg.PrefillBatchSize()
+	if prefillBatchSize <= 0 {
+		return int64(model.DefaultPrefillBatchSize)
 	}
-	if nBatch := cfg.NBatch(); nBatch > 0 && nUBatch > nBatch {
-		nUBatch = nBatch
-	}
-	return int64(nUBatch)
+	return int64(prefillBatchSize)
 }
 
 // =============================================================================

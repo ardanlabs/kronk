@@ -308,6 +308,14 @@ export default function DocsSDKKronk() {
               <p className="doc-description">ActiveStreams returns the number of active streams.</p>
             </div>
 
+            <div className="doc-section" id="method-kronk-batchenginesnapshot">
+              <h4>Kronk.BatchEngineSnapshot</h4>
+              <pre className="code-block">
+                <code>func (krn *Kronk) BatchEngineSnapshot() (model.BatchEngineSnapshot, bool)</code>
+              </pre>
+              <p className="doc-description">BatchEngineSnapshot returns the latest generation scheduler state. Models used only for embeddings or reranking do not expose a batch engine.</p>
+            </div>
+
             <div className="doc-section" id="method-kronk-chat">
               <h4>Kronk.Chat</h4>
               <pre className="code-block">
@@ -543,6 +551,7 @@ export default function DocsSDKKronk() {
               <a href="#methods" className="doc-index-header">Methods</a>
               <ul>
                 <li><a href="#method-kronk-activestreams">Kronk.ActiveStreams</a></li>
+                <li><a href="#method-kronk-batchenginesnapshot">Kronk.BatchEngineSnapshot</a></li>
                 <li><a href="#method-kronk-chat">Kronk.Chat</a></li>
                 <li><a href="#method-kronk-chatstreaming">Kronk.ChatStreaming</a></li>
                 <li><a href="#method-kronk-chatstreaminghttp">Kronk.ChatStreamingHTTP</a></li>

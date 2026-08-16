@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useMemo, type ReactNode } from 'react';
 import type { DisplayMessage } from './ChatContext';
 import type { ModelLoadMode, PlaygroundSessionResponse } from '../types';
+import { DEFAULT_PREFILL_BATCH_SIZE } from '../lib/modelDefaults';
 
 interface PlaygroundState {
   // Session
@@ -45,10 +46,8 @@ interface PlaygroundState {
   setCustomScript: React.Dispatch<React.SetStateAction<string>>;
   contextWindow: number;
   setContextWindow: React.Dispatch<React.SetStateAction<number>>;
-  nBatch: number;
-  setNBatch: React.Dispatch<React.SetStateAction<number>>;
-  nUBatch: number;
-  setNUBatch: React.Dispatch<React.SetStateAction<number>>;
+  prefillBatchSize: number;
+  setPrefillBatchSize: React.Dispatch<React.SetStateAction<number>>;
   nSeqMax: number;
   setNSeqMax: React.Dispatch<React.SetStateAction<number>>;
   flashAttention: string;
@@ -87,8 +86,7 @@ export function PlaygroundProvider({ children }: { children: ReactNode }) {
   const [selectedTemplate, setSelectedTemplate] = useState('');
   const [customScript, setCustomScript] = useState('');
   const [contextWindow, setContextWindow] = useState(8192);
-  const [nBatch, setNBatch] = useState(2048);
-  const [nUBatch, setNUBatch] = useState(2048);
+  const [prefillBatchSize, setPrefillBatchSize] = useState(DEFAULT_PREFILL_BATCH_SIZE);
   const [nSeqMax, setNSeqMax] = useState(1);
   const [flashAttention, setFlashAttention] = useState('auto');
   const [cacheType, setCacheType] = useState('');
@@ -112,8 +110,7 @@ export function PlaygroundProvider({ children }: { children: ReactNode }) {
     selectedTemplate, setSelectedTemplate,
     customScript, setCustomScript,
     contextWindow, setContextWindow,
-    nBatch, setNBatch,
-    nUBatch, setNUBatch,
+    prefillBatchSize, setPrefillBatchSize,
     nSeqMax, setNSeqMax,
     flashAttention, setFlashAttention,
     cacheType, setCacheType,
@@ -125,7 +122,7 @@ export function PlaygroundProvider({ children }: { children: ReactNode }) {
     hydratedModelId, setHydratedModelId,
   }), [
     session, chatMessages, selectedModel, playgroundMode, sweepMode, activeTab, systemPrompt, lastTPS,
-    templateMode, selectedTemplate, customScript, contextWindow, nBatch, nUBatch,
+    templateMode, selectedTemplate, customScript, contextWindow, prefillBatchSize,
     nSeqMax, flashAttention, cacheType, loadMode, cacheMode, moeMode, moeKeepTopN, tensorBuftOverrides, hydratedModelId,
   ]);
 

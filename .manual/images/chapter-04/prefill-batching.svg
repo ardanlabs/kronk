@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
-  <title id="title">The two stages of prefill and how nbatch and nubatch shape prefill compute</title>
-  <desc id="desc">Prefill stage one restores reusable KV state from a compatible IMC session into an assigned slot. Prefill stage two computes KV tensors for CPU-side token slices held by assigned jobs. A before view shows that restored Slot 1 state does not enter the tray. Kronk sweeps across active jobs, taking at most nubatch tokens from each job per visit until the shared nbatch tray is full or no additional ready work can be added. The GPU computes the missing KV tensors, and an after view shows the complete prompt state in Slot 1.</desc>
+  <title id="title">Prefill has two phases: restore reusable state, then compute missing state</title>
+  <desc id="desc">A complete logical prompt is split into a reusable prefix and an uncached request suffix. Phase one copies a compatible IMC snapshot into the assigned slot without running model decode. Phase two decodes only the missing request tokens and appends their KV state to the restored prefix. If there is no compatible IMC snapshot, phase one restores nothing and phase two computes the full prompt.</desc>
 
   <defs>
     <filter id="shadow" x="-10%" y="-10%" width="120%" height="135%">
@@ -12,11 +12,11 @@
     <style>
       .title { font: 700 42px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; letter-spacing: 0.4px; }
       .subtitle { font: 400 21px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
-      .section { font: 700 24px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .section { font: 700 25px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
       .heading { font: 700 21px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
       .body { font: 500 18px Inter, ui-sans-serif, system-ui, sans-serif; fill: #334155; }
-      .small { font: 500 16px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
-      .eyebrow { font: 700 15px Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 1.2px; }
+      .small { font: 500 18px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .eyebrow { font: 700 18px Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 1.2px; }
       .token { font: 700 19px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-anchor: middle; dominant-baseline: middle; }
       .white { fill: #ffffff; }
       .muted { fill: #64748b; }
@@ -26,233 +26,161 @@
   <rect width="1920" height="1080" fill="#f8fafc"/>
   <rect x="0" y="0" width="1920" height="12" fill="#0f766e"/>
 
-  <text class="title" x="72" y="67">PREFILL: RESTORE WHAT EXISTS, COMPUTE WHAT IS MISSING</text>
-  <text class="subtitle" x="72" y="105">Stage 1 restores reusable KV state. Stage 2 computes the missing state using nbatch and nubatch.</text>
+  <text class="title" x="72" y="67">PREFILL HAS TWO PHASES</text>
+  <text class="subtitle" x="72" y="105">Phase I copies reusable KV state. Phase II computes KV state only for request tokens that are still missing.</text>
 
-  <!-- Prefill overview -->
+  <!-- Complete logical prompt -->
   <g filter="url(#shadow)">
-    <rect x="70" y="138" width="1778" height="318" rx="26" fill="#ffffff" stroke="#93c5fd" stroke-width="3"/>
+    <rect x="70" y="142" width="1778" height="205" rx="26" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
   </g>
-  <rect x="70" y="138" width="1778" height="62" rx="26" fill="#dbeafe"/>
-  <path d="M 70 174 Q 70 200 96 200 H 1822 Q 1848 200 1848 174" fill="#dbeafe"/>
-  <text class="eyebrow" x="104" y="176" fill="#1d4ed8">PREFILL OVERVIEW</text>
-  <text class="section" x="278" y="178">RESTORE REUSABLE STATE, THEN COMPUTE THE MISSING STATE</text>
+  <text class="eyebrow" x="108" y="181" fill="#475569">COMPLETE LOGICAL PROMPT</text>
+  <text class="small" x="108" y="212">Full token sequence known before prefill.</text>
 
-  <!-- Complete prompt -->
-  <rect x="105" y="224" width="490" height="196" rx="18" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
-  <text class="heading" x="140" y="263">Complete logical prompt</text>
-  <text class="small" x="140" y="291">Token IDs are known before model execution.</text>
+  <rect x="520" y="172" width="398" height="142" rx="18" fill="#f0fdf4" stroke="#4ade80" stroke-width="2"/>
+  <text class="heading" x="719" y="205" text-anchor="middle">Reusable prefix</text>
+  <text class="small" x="719" y="232" text-anchor="middle">Already represented by a compatible IMC snapshot</text>
   <g>
-    <rect x="140" y="314" width="45" height="45" rx="9" fill="#e2e8f0"/>
-    <rect x="194" y="314" width="45" height="45" rx="9" fill="#e2e8f0"/>
-    <rect x="248" y="314" width="45" height="45" rx="9" fill="#e2e8f0"/>
-    <rect x="302" y="314" width="45" height="45" rx="9" fill="#e2e8f0"/>
-    <rect x="356" y="314" width="45" height="45" rx="9" fill="#e2e8f0"/>
-    <rect x="410" y="314" width="45" height="45" rx="9" fill="#e2e8f0"/>
-    <rect x="464" y="314" width="45" height="45" rx="9" fill="#e2e8f0"/>
-    <rect x="518" y="314" width="45" height="45" rx="9" fill="#e2e8f0"/>
-    <text class="token" x="162.5" y="336.5">5</text>
-    <text class="token" x="216.5" y="336.5">2</text>
-    <text class="token" x="270.5" y="336.5">8</text>
-    <text class="token" x="324.5" y="336.5">1</text>
-    <text class="token" x="378.5" y="336.5">7</text>
-    <text class="token" x="432.5" y="336.5">4</text>
-    <text class="token" x="486.5" y="336.5">9</text>
-    <text class="token" x="540.5" y="336.5">3</text>
+    <rect x="579" y="252" width="48" height="48" rx="9" fill="#22c55e"/>
+    <rect x="641" y="252" width="48" height="48" rx="9" fill="#22c55e"/>
+    <rect x="703" y="252" width="48" height="48" rx="9" fill="#22c55e"/>
+    <rect x="765" y="252" width="48" height="48" rx="9" fill="#22c55e"/>
+    <text class="token white" x="603" y="276">5</text>
+    <text class="token white" x="665" y="276">2</text>
+    <text class="token white" x="727" y="276">8</text>
+    <text class="token white" x="789" y="276">1</text>
   </g>
-  <text class="small" x="140" y="394">The full prompt is still tracked on the CPU.</text>
 
-  <path d="M 610 322 H 674" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
-  <text class="eyebrow" x="616" y="284" fill="#1d4ed8">MATCH</text>
+  <path d="M 950 243 H 988" stroke="#94a3b8" stroke-width="3" stroke-dasharray="7 7"/>
 
-  <!-- Assigned sequence -->
-  <rect x="695" y="224" width="530" height="196" rx="18" fill="#f0fdf4" stroke="#4ade80" stroke-width="2"/>
-  <text class="heading" x="730" y="263">Stage 1 · Restore saved KV state</text>
-  <text class="small" x="730" y="291">The session supplies the reusable prompt prefix.</text>
+  <rect x="1020" y="172" width="398" height="142" rx="18" fill="#eff6ff" stroke="#60a5fa" stroke-width="2"/>
+  <text class="heading" x="1219" y="205" text-anchor="middle">Uncached request suffix</text>
+  <text class="small" x="1219" y="232" text-anchor="middle">Token IDs exist, but their KV state does not</text>
   <g>
-    <rect x="730" y="314" width="45" height="45" rx="9" fill="#22c55e"/>
-    <rect x="784" y="314" width="45" height="45" rx="9" fill="#22c55e"/>
-    <rect x="838" y="314" width="45" height="45" rx="9" fill="#22c55e"/>
-    <rect x="892" y="314" width="45" height="45" rx="9" fill="#22c55e"/>
-    <text class="token white" x="752.5" y="336.5">5</text>
-    <text class="token white" x="806.5" y="336.5">2</text>
-    <text class="token white" x="860.5" y="336.5">8</text>
-    <text class="token white" x="914.5" y="336.5">1</text>
+    <rect x="1079" y="252" width="48" height="48" rx="9" fill="#3b82f6"/>
+    <rect x="1141" y="252" width="48" height="48" rx="9" fill="#3b82f6"/>
+    <rect x="1203" y="252" width="48" height="48" rx="9" fill="#3b82f6"/>
+    <rect x="1265" y="252" width="48" height="48" rx="9" fill="#3b82f6"/>
+    <text class="token white" x="1103" y="276">7</text>
+    <text class="token white" x="1165" y="276">4</text>
+    <text class="token white" x="1227" y="276">9</text>
+    <text class="token white" x="1289" y="276">3</text>
   </g>
-  <text class="small" x="730" y="391">Restored KV prefix</text>
 
-  <path d="M 1240 322 H 1304" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
-  <text class="eyebrow" x="1244" y="284" fill="#b45309">STAGE 2</text>
-
-  <!-- Complete KV -->
-  <rect x="1325" y="224" width="488" height="196" rx="18" fill="#ecfeff" stroke="#2dd4bf" stroke-width="2"/>
-  <text class="heading" x="1360" y="263">Stage 2 · Compute missing KV state</text>
-  <text class="small" x="1360" y="291">Run only the uncached suffix through the model.</text>
-  <g>
-    <rect x="1360" y="314" width="45" height="45" rx="9" fill="#22c55e"/>
-    <rect x="1414" y="314" width="45" height="45" rx="9" fill="#22c55e"/>
-    <rect x="1468" y="314" width="45" height="45" rx="9" fill="#22c55e"/>
-    <rect x="1522" y="314" width="45" height="45" rx="9" fill="#22c55e"/>
-    <rect x="1576" y="314" width="45" height="45" rx="9" fill="#22c55e"/>
-    <rect x="1630" y="314" width="45" height="45" rx="9" fill="#22c55e"/>
-    <rect x="1684" y="314" width="45" height="45" rx="9" fill="#22c55e"/>
-    <rect x="1738" y="314" width="45" height="45" rx="9" fill="#22c55e"/>
-    <text class="token white" x="1382.5" y="336.5">5</text>
-    <text class="token white" x="1436.5" y="336.5">2</text>
-    <text class="token white" x="1490.5" y="336.5">8</text>
-    <text class="token white" x="1544.5" y="336.5">1</text>
-    <text class="token white" x="1598.5" y="336.5">7</text>
-    <text class="token white" x="1652.5" y="336.5">4</text>
-    <text class="token white" x="1706.5" y="336.5">9</text>
-    <text class="token white" x="1760.5" y="336.5">3</text>
-  </g>
-  <text class="small" x="1360" y="394">Complete prompt KV state · ready for generation</text>
-
-  <!-- Lesson 2 -->
+  <!-- Phase I -->
   <g filter="url(#shadow)">
-    <rect x="70" y="486" width="1778" height="430" rx="26" fill="#ffffff" stroke="#c4b5fd" stroke-width="3"/>
+    <rect x="70" y="382" width="830" height="438" rx="26" fill="#ffffff" stroke="#4ade80" stroke-width="3"/>
   </g>
-  <rect x="70" y="486" width="1778" height="62" rx="26" fill="#ede9fe"/>
-  <path d="M 70 522 Q 70 548 96 548 H 1822 Q 1848 548 1848 522" fill="#ede9fe"/>
-  <text class="eyebrow" x="104" y="524" fill="#6d28d9">STAGE 2 DETAIL</text>
-  <text class="section" x="278" y="526">HOW MISSING PROMPT TOKENS BECOME KV STATE</text>
+  <rect x="70" y="382" width="830" height="67" rx="26" fill="#dcfce7"/>
+  <path d="M 70 415 Q 70 449 104 449 H 866 Q 900 449 900 415" fill="#dcfce7"/>
+  <text class="eyebrow" x="108" y="422" fill="#15803d">PHASE I · IMC RESTORE</text>
+  <text class="section" x="390" y="424">COPY REUSABLE STATE</text>
 
-  <!-- Before: restored slot state (comparison only) -->
-  <rect x="105" y="574" width="235" height="266" rx="18" fill="#f0fdf4" stroke="#4ade80" stroke-width="2"/>
-  <text class="eyebrow" x="130" y="608" fill="#15803d">GPU KV · BEFORE</text>
-  <text class="heading" x="130" y="642">Slot 1 after restore</text>
+  <rect x="112" y="493" width="292" height="218" rx="18" fill="#f0fdf4" stroke="#86efac" stroke-width="2"/>
+  <text class="heading" x="258" y="530" text-anchor="middle">Compatible IMC snapshot</text>
+  <text class="small" x="258" y="558" text-anchor="middle">Saved target KV state</text>
   <g>
-    <rect x="130" y="666" width="38" height="44" rx="8" fill="#22c55e"/>
-    <rect x="178" y="666" width="38" height="44" rx="8" fill="#22c55e"/>
-    <rect x="226" y="666" width="38" height="44" rx="8" fill="#22c55e"/>
-    <rect x="274" y="666" width="38" height="44" rx="8" fill="#22c55e"/>
-    <text class="token white" x="149" y="688">5</text><text class="token white" x="197" y="688">2</text>
-    <text class="token white" x="245" y="688">8</text><text class="token white" x="293" y="688">1</text>
+    <rect x="153" y="589" width="42" height="45" rx="8" fill="#22c55e"/>
+    <rect x="210" y="589" width="42" height="45" rx="8" fill="#22c55e"/>
+    <rect x="267" y="589" width="42" height="45" rx="8" fill="#22c55e"/>
+    <rect x="324" y="589" width="42" height="45" rx="8" fill="#22c55e"/>
+    <text class="token white" x="174" y="611.5">5</text>
+    <text class="token white" x="231" y="611.5">2</text>
+    <text class="token white" x="288" y="611.5">8</text>
+    <text class="token white" x="345" y="611.5">1</text>
   </g>
-  <text class="small" x="130" y="750">Restored prefix remains</text>
-  <text class="small" x="130" y="774">in the slot’s KV state.</text>
-  <rect x="130" y="796" width="182" height="28" rx="8" fill="#dcfce7"/>
-  <text class="small" x="145" y="816">Not added to the tray</text>
+  <text class="small" x="258" y="676" text-anchor="middle">Session store → assigned slot</text>
 
-  <!-- CPU pending token slices -->
-  <rect x="365" y="574" width="300" height="266" rx="18" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
-  <text class="heading" x="390" y="610">CPU - Missing Tokens</text>
-  <text class="body" x="390" y="680">Job A</text>
+  <path d="M 424 600 H 515" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+  <text class="eyebrow" x="469" y="574" fill="#15803d" text-anchor="middle">COPY</text>
+
+  <rect x="535" y="493" width="322" height="218" rx="18" fill="#f8fafc" stroke="#86efac" stroke-width="2"/>
+  <text class="heading" x="696" y="530" text-anchor="middle">Assigned slot KV state</text>
+  <text class="small" x="696" y="558" text-anchor="middle">The reusable prefix is now resident</text>
   <g>
-    <rect x="448" y="655" width="27" height="38" rx="7" fill="#3b82f6"/>
-    <rect x="481" y="655" width="27" height="38" rx="7" fill="#3b82f6"/>
-    <rect x="514" y="655" width="27" height="38" rx="7" fill="#3b82f6"/>
-    <rect x="547" y="655" width="27" height="38" rx="7" fill="#3b82f6"/>
-    <text class="token white" x="461.5" y="674">7</text><text class="token white" x="494.5" y="674">4</text>
-    <text class="token white" x="527.5" y="674">9</text><text class="token white" x="560.5" y="674">3</text>
+    <rect x="591" y="589" width="42" height="45" rx="8" fill="#22c55e"/>
+    <rect x="648" y="589" width="42" height="45" rx="8" fill="#22c55e"/>
+    <rect x="705" y="589" width="42" height="45" rx="8" fill="#22c55e"/>
+    <rect x="762" y="589" width="42" height="45" rx="8" fill="#22c55e"/>
+    <text class="token white" x="612" y="611.5">5</text>
+    <text class="token white" x="669" y="611.5">2</text>
+    <text class="token white" x="726" y="611.5">8</text>
+    <text class="token white" x="783" y="611.5">1</text>
   </g>
-  <text class="body" x="390" y="738">Job B</text>
+  <text class="small" x="696" y="676" text-anchor="middle">Ready for the missing suffix</text>
+
+  <rect x="112" y="743" width="745" height="48" rx="12" fill="#14532d"/>
+  <text class="body white" x="484.5" y="773" text-anchor="middle">No model decode · no prompt tokens are recomputed</text>
+
+  <!-- Phase transition -->
+  <path d="M 920 601 H 995" stroke="#334155" stroke-width="5" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- Phase II -->
+  <g filter="url(#shadow)">
+    <rect x="1020" y="382" width="828" height="438" rx="26" fill="#ffffff" stroke="#60a5fa" stroke-width="3"/>
+  </g>
+  <rect x="1020" y="382" width="828" height="67" rx="26" fill="#dbeafe"/>
+  <path d="M 1020 415 Q 1020 449 1054 449 H 1814 Q 1848 449 1848 415" fill="#dbeafe"/>
+  <text class="eyebrow" x="1058" y="422" fill="#1d4ed8">PHASE II · REQUEST PREFILL</text>
+  <text class="section" x="1357" y="424">COMPUTE MISSING STATE</text>
+
+  <rect x="1058" y="493" width="220" height="218" rx="18" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+  <text class="heading" x="1168" y="530" text-anchor="middle">Request tokens</text>
+  <text class="small" x="1168" y="558" text-anchor="middle">Uncached suffix</text>
   <g>
-    <rect x="448" y="713" width="27" height="38" rx="7" fill="#8b5cf6"/>
-    <rect x="481" y="713" width="27" height="38" rx="7" fill="#8b5cf6"/>
-    <rect x="514" y="713" width="27" height="38" rx="7" fill="#8b5cf6"/>
-    <rect x="547" y="713" width="27" height="38" rx="7" fill="#8b5cf6"/>
-    <rect x="580" y="713" width="27" height="38" rx="7" fill="#c4b5fd"/>
-    <rect x="613" y="713" width="27" height="38" rx="7" fill="#c4b5fd"/>
-    <text class="token white" x="461.5" y="732">6</text><text class="token white" x="494.5" y="732">2</text>
-    <text class="token white" x="527.5" y="732">5</text><text class="token white" x="560.5" y="732">8</text>
-    <text class="token" x="593.5" y="732">1</text><text class="token" x="626.5" y="732">7</text>
+    <rect x="1082" y="589" width="38" height="45" rx="8" fill="#3b82f6"/>
+    <rect x="1128" y="589" width="38" height="45" rx="8" fill="#3b82f6"/>
+    <rect x="1174" y="589" width="38" height="45" rx="8" fill="#3b82f6"/>
+    <rect x="1220" y="589" width="38" height="45" rx="8" fill="#3b82f6"/>
+    <text class="token white" x="1101" y="611.5">7</text>
+    <text class="token white" x="1147" y="611.5">4</text>
+    <text class="token white" x="1193" y="611.5">9</text>
+    <text class="token white" x="1239" y="611.5">3</text>
   </g>
-  <text class="body" x="390" y="796">Job C</text>
+  <text class="small" x="1168" y="676" text-anchor="middle">CPU token IDs</text>
+
+  <path d="M 1292 600 H 1340" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+
+  <rect x="1360" y="493" width="185" height="218" rx="18" fill="#eff6ff" stroke="#60a5fa" stroke-width="2"/>
+  <text class="eyebrow" x="1452.5" y="548" fill="#1d4ed8" text-anchor="middle">MODEL</text>
+  <text class="heading" x="1452.5" y="593" text-anchor="middle">Decode</text>
+  <text class="small" x="1452.5" y="626" text-anchor="middle">Bounded</text>
+  <text class="small" x="1452.5" y="651" text-anchor="middle">contributions</text>
+
+  <path d="M 1559 600 H 1607" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+
+  <rect x="1627" y="493" width="183" height="218" rx="18" fill="#f8fafc" stroke="#2dd4bf" stroke-width="2"/>
+  <text class="heading" x="1718.5" y="530" text-anchor="middle">Complete slot</text>
+  <text class="small" x="1718.5" y="558" text-anchor="middle">KV state</text>
   <g>
-    <rect x="448" y="771" width="27" height="38" rx="7" fill="#f97316"/>
-    <rect x="481" y="771" width="27" height="38" rx="7" fill="#f97316"/>
-    <text class="token white" x="461.5" y="790">4</text><text class="token white" x="494.5" y="790">6</text>
+    <rect x="1644" y="589" width="17" height="43" rx="5" fill="#22c55e"/>
+    <rect x="1664" y="589" width="17" height="43" rx="5" fill="#22c55e"/>
+    <rect x="1684" y="589" width="17" height="43" rx="5" fill="#22c55e"/>
+    <rect x="1704" y="589" width="17" height="43" rx="5" fill="#22c55e"/>
+    <rect x="1724" y="589" width="17" height="43" rx="5" fill="#3b82f6"/>
+    <rect x="1744" y="589" width="17" height="43" rx="5" fill="#3b82f6"/>
+    <rect x="1764" y="589" width="17" height="43" rx="5" fill="#3b82f6"/>
+    <rect x="1784" y="589" width="17" height="43" rx="5" fill="#3b82f6"/>
   </g>
+  <text class="small" x="1718.5" y="676" text-anchor="middle">Ready to generate</text>
 
-  <!-- Round-robin scheduler -->
-  <text class="eyebrow" x="678" y="662" fill="#6d28d9">ROUND</text>
-  <text class="eyebrow" x="678" y="684" fill="#6d28d9">ROBIN</text>
-  <path d="M 675 724 H 728" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+  <rect x="1058" y="743" width="752" height="48" rx="12" fill="#1e3a8a"/>
+  <text class="body white" x="1434" y="773" text-anchor="middle">Only missing tokens run through the model</text>
 
-  <!-- Shared logical tray -->
-  <rect x="745" y="574" width="550" height="266" rx="18" fill="#fffbeb" stroke="#fbbf24" stroke-width="2"/>
-  <text class="heading" x="770" y="610">CPU · shared tray</text>
-  <rect x="1000" y="586" width="125" height="44" rx="10" fill="#e0e7ff"/>
-  <rect x="1138" y="586" width="125" height="44" rx="10" fill="#dbeafe"/>
-  <text class="small" x="1062.5" y="614" text-anchor="middle">nubatch = 4</text>
-  <text class="small" x="1200.5" y="614" text-anchor="middle">nbatch = 12</text>
-  <text class="eyebrow" x="770" y="658" fill="#6d28d9">NBATCH · 12 TOKEN POSITIONS</text>
-  <g>
-    <rect x="770" y="679" width="36" height="48" rx="8" fill="#3b82f6"/>
-    <rect x="812" y="679" width="36" height="48" rx="8" fill="#3b82f6"/>
-    <rect x="854" y="679" width="36" height="48" rx="8" fill="#3b82f6"/>
-    <rect x="896" y="679" width="36" height="48" rx="8" fill="#3b82f6"/>
-    <rect x="938" y="679" width="36" height="48" rx="8" fill="#8b5cf6"/>
-    <rect x="980" y="679" width="36" height="48" rx="8" fill="#8b5cf6"/>
-    <rect x="1022" y="679" width="36" height="48" rx="8" fill="#8b5cf6"/>
-    <rect x="1064" y="679" width="36" height="48" rx="8" fill="#8b5cf6"/>
-    <rect x="1106" y="679" width="36" height="48" rx="8" fill="#f97316"/>
-    <rect x="1148" y="679" width="36" height="48" rx="8" fill="#f97316"/>
-    <rect x="1190" y="679" width="36" height="48" rx="8" fill="#c4b5fd"/>
-    <rect x="1232" y="679" width="36" height="48" rx="8" fill="#c4b5fd"/>
-    <text class="token white" x="788" y="703">7</text><text class="token white" x="830" y="703">4</text>
-    <text class="token white" x="872" y="703">9</text><text class="token white" x="914" y="703">3</text>
-    <text class="token white" x="956" y="703">6</text><text class="token white" x="998" y="703">2</text>
-    <text class="token white" x="1040" y="703">5</text><text class="token white" x="1082" y="703">8</text>
-    <text class="token white" x="1124" y="703">4</text><text class="token white" x="1166" y="703">6</text>
-    <text class="token" x="1208" y="703">1</text><text class="token" x="1250" y="703">7</text>
-  </g>
-  <text class="small" x="770" y="755">Sweep 1: 4 from A · 4 from B · 2 from C</text>
-  <text class="small" x="770" y="781">Sweep 2: 2 more from B · tray reaches nbatch</text>
-  <rect x="770" y="798" width="498" height="30" rx="8" fill="#0f172a"/>
-  <text class="small white" x="1019" y="819" text-anchor="middle">Submit at nbatch—or when no more work can be added.</text>
+  <!-- Key outcomes -->
+  <rect x="70" y="858" width="565" height="150" rx="20" fill="#ffffff" stroke="#86efac" stroke-width="2"/>
+  <text class="eyebrow" x="104" y="897" fill="#15803d">THE IMC HIT IS OPTIONAL</text>
+  <text class="body" x="104" y="932">Compatible IMC hit → restore saved state.</text>
+  <text class="body" x="104" y="962">No hit → the assigned slot starts empty.</text>
 
-  <path d="M 1305 707 H 1334" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+  <rect x="660" y="858" width="565" height="150" rx="20" fill="#ffffff" stroke="#93c5fd" stroke-width="2"/>
+  <text class="eyebrow" x="694" y="897" fill="#1d4ed8">PHASE II DOES THE COMPUTE</text>
+  <text class="body" x="694" y="932">Decode the uncached request suffix.</text>
+  <text class="body" x="694" y="962">Without a restore, decode the full prompt.</text>
 
-  <!-- Simple GPU computation -->
-  <rect x="1350" y="574" width="145" height="266" rx="18" fill="#eff6ff" stroke="#60a5fa" stroke-width="2"/>
-  <text class="eyebrow" x="1422.5" y="640" fill="#1d4ed8" text-anchor="middle">GPU</text>
-  <text class="heading" x="1422.5" y="687" text-anchor="middle">Compute</text>
-  <text class="heading" x="1422.5" y="719" text-anchor="middle">missing</text>
-  <text class="heading" x="1422.5" y="751" text-anchor="middle">KV tensors</text>
+  <rect x="1250" y="858" width="598" height="150" rx="20" fill="#0f172a"/>
+  <text class="eyebrow" x="1284" y="897" fill="#5eead4">THE RESULT</text>
+  <text class="body white" x="1284" y="932">One complete slot-local KV sequence,</text>
+  <text class="body white" x="1284" y="962">ready to produce the first output token.</text>
 
-  <path d="M 1505 707 H 1534" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
-
-  <!-- After: complete slot state -->
-  <rect x="1550" y="574" width="263" height="266" rx="18" fill="#f0fdf4" stroke="#4ade80" stroke-width="2"/>
-  <text class="eyebrow" x="1575" y="608" fill="#15803d">GPU KV · AFTER</text>
-  <text class="heading" x="1575" y="642">Slot 1 complete</text>
-  <g>
-    <rect x="1575" y="658" width="25" height="38" rx="7" fill="#22c55e"/>
-    <rect x="1604" y="658" width="25" height="38" rx="7" fill="#22c55e"/>
-    <rect x="1633" y="658" width="25" height="38" rx="7" fill="#22c55e"/>
-    <rect x="1662" y="658" width="25" height="38" rx="7" fill="#22c55e"/>
-    <rect x="1691" y="658" width="25" height="38" rx="7" fill="#22c55e"/>
-    <rect x="1720" y="658" width="25" height="38" rx="7" fill="#22c55e"/>
-    <rect x="1749" y="658" width="25" height="38" rx="7" fill="#22c55e"/>
-    <rect x="1778" y="658" width="25" height="38" rx="7" fill="#22c55e"/>
-    <text class="token white" x="1587.5" y="677">5</text><text class="token white" x="1616.5" y="677">2</text>
-    <text class="token white" x="1645.5" y="677">8</text><text class="token white" x="1674.5" y="677">1</text>
-    <text class="token white" x="1703.5" y="677">7</text><text class="token white" x="1732.5" y="677">4</text>
-    <text class="token white" x="1761.5" y="677">9</text><text class="token white" x="1790.5" y="677">3</text>
-  </g>
-  <rect x="1575" y="711" width="213" height="44" rx="9" fill="#ede9fe" stroke="#8b5cf6" stroke-width="2"/>
-  <rect x="1575" y="769" width="213" height="44" rx="9" fill="#ffedd5" stroke="#f97316" stroke-width="2"/>
-  <text class="body" x="1623" y="739">Slot 2 updated</text>
-  <text class="body" x="1623" y="797">Slot 3 updated</text>
-
-  <!-- Initial-fill implementation note -->
-  <rect x="105" y="858" width="1708" height="40" rx="12" fill="#fff7ed" stroke="#fb923c" stroke-width="2"/>
-  <text class="small" x="132" y="884">Initial Stage 2 work may seed up to available nbatch. The nubatch contribution limit shown above applies when continuing across active jobs.</text>
-
-  <!-- Definitions -->
-  <rect x="70" y="946" width="548" height="94" rx="18" fill="#0f172a"/>
-  <text class="heading white" x="100" y="980">nubatch · per-visit and physical limit</text>
-  <text class="small white" x="100" y="1011">Bounds one active job’s contribution and each physical chunk.</text>
-
-  <rect x="636" y="946" width="548" height="94" rx="18" fill="#0f172a"/>
-  <text class="heading white" x="666" y="980">nbatch · shared logical capacity</text>
-  <text class="small white" x="666" y="1011">Bounds total token positions submitted in one logical decode.</text>
-
-  <rect x="1202" y="946" width="646" height="94" rx="18" fill="#0f172a"/>
-  <text class="heading white" x="1232" y="980">Default · nbatch = nubatch × nseq-max</text>
-  <text class="small white" x="1232" y="1011">Provides one full nubatch contribution per active sequence.</text>
-
-  <text class="small muted" x="72" y="1068">Most users should leave both values unset. Larger logical batches and physical chunks require larger compute buffers.</text>
+  <text class="small muted" x="72" y="1055">Restore copies existing model state. Request prefill computes only the state that does not already exist.</text>
 </svg>

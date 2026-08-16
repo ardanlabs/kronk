@@ -2,6 +2,8 @@
 
 ## Index
 
+- [v1.31.2](#v1312)
+  - [Model Batch Configuration Changes](#v1312-model-batch-configuration-changes)
 - [v1.30.5](#v1305)
   - [Pool TTL Changes](#v1305-pool-ttl-changes)
 - [v1.30.4](#v1304)
@@ -17,6 +19,51 @@
   - [HTTP Error Response Changes](#v1303-http-error-response-changes)
   - [Session Storage Changes](#v1303-session-storage-changes)
   - [Go SDK Changes](#v1303-go-sdk-changes)
+
+## v1.31.2
+
+### v1.31.2: Model Batch Configuration Changes
+
+The separate user-configurable `nbatch` and `nubatch` settings were replaced
+by one prompt-processing setting:
+
+```yaml
+# Before
+nbatch: 8192
+nubatch: 2048
+
+# After
+prefill-batch-size: 2048
+```
+
+`prefill-batch-size` defaults to 2048 and limits how many prompt tokens the
+current prefill owner contributes to one decode iteration. Kronk now derives
+llama.cpp's internal logical `NBatch` and physical `NUBatch` capacities from
+that value, the slot count, and the generation mode. Non-MTP reserves one
+generation row per slot. MTP reserves `1 + ndraft` rows per slot and uses one
+physical batch for the complete prefill-plus-generation tray.
+
+Direct Go SDK consumers must replace these removed APIs:
+
+| Removed | Replacement |
+| ------- | ----------- |
+| `model.Config.PtrNBatch` | `model.Config.PtrPrefillBatchSize` |
+| `model.Config.PtrNUBatch` | `model.Config.PtrPrefillBatchSize` |
+| `model.Config.NBatch()` | `model.Config.PrefillBatchSize()` for configuration; `EffectiveNBatch()` for diagnostics |
+| `model.Config.NUBatch()` | `model.Config.PrefillBatchSize()` for configuration; `EffectiveNUBatch()` for diagnostics |
+| `model.WithNBatch(...)` | `model.WithPrefillBatchSize(...)` |
+| `model.WithNUBatch(...)` | `model.WithPrefillBatchSize(...)` |
+
+The Playground request field changed from `nbatch` and `nubatch` to
+`prefill_batch_size`. The BUI playground and configuration sweeps now expose
+only **Prefill Batch Size**. Effective `NBatch / NUBatch` values remain visible
+as read-only runtime diagnostics on the Slots screen.
+
+When migrating an old configuration with different values, use the old
+`nubatch` value as the initial `prefill-batch-size`, then benchmark the workload.
+A larger value can finish long-prompt prefill in fewer decode calls, but each
+call takes longer before already-generating slots can run again and requires a
+larger compute buffer.
 
 ## v1.30.5
 

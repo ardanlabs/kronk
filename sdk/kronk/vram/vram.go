@@ -24,6 +24,10 @@ const (
 	ContextWindow256K int64 = 262144
 )
 
+// DefaultNUBatch is the physical batch capacity used when a caller does not
+// provide an effective NUBatch.
+const DefaultNUBatch int64 = 2 * 1024
+
 // Bytes per element constants for KV cache types. Re-exported from
 // sdk/kronk/gguf so callers don't need a second import.
 const (
@@ -734,13 +738,6 @@ func EstimateComputeBuffer(input Input) int64 {
 		baseBufferSmall = 256 * 1024 * 1024 // 256 MiB for models < 100B params
 		baseBufferLarge = 512 * 1024 * 1024 // 512 MiB for models >= 100B params
 		k               = 8                 // empirical multiplier
-
-		// nUBatch mirrors the runtime physical batch default applied in
-		// model.adjustConfig (model.defNUBatch = 2048). The compute buffer
-		// scales with n_ubatch, and the VRAM calculator UI does not expose
-		// n_ubatch, so we estimate against the same default the server uses
-		// at load time.
-		nUBatch = 2048
 	)
 
 	baseBuffer := int64(baseBufferSmall)
@@ -750,6 +747,10 @@ func EstimateComputeBuffer(input Input) int64 {
 
 	slots := max(input.Slots, 1)
 	slotMultiplier := 1.0 + 0.25*float64(slots-1)
+	nUBatch := input.NUBatch
+	if nUBatch <= 0 {
+		nUBatch = DefaultNUBatch
+	}
 
 	var embeddingComponent int64
 	if input.EmbeddingLength > 0 {

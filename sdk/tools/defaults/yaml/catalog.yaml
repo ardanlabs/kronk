@@ -230,22 +230,6 @@ models:
       endpoint: rerank
       rerank: true
     resolved_at: 2026-07-30T01:18:36.132801Z
-  ggml-org/qwen3-reranker-0.6b-q8_0:
-    provider: ggml-org
-    family: Qwen3-Reranker-0.6B-Q8_0-GGUF
-    revision: main
-    files:
-      - qwen3-reranker-0.6b-q8_0.gguf
-    file_sizes:
-      - 639153184
-    mtp_checked: true
-    model_type: Dense
-    capabilities:
-      endpoint: chat_completion
-      streaming: true
-      reasoning: true
-      tooling: true
-    resolved_at: 2026-08-11T04:03:46.439615Z
   gpustack/bge-reranker-v2-m3-Q8_0:
     provider: gpustack
     family: bge-reranker-v2-m3-GGUF
@@ -407,6 +391,9 @@ models:
     files:
       - Llama-3.3-70B-Instruct-Q8_0/Llama-3.3-70B-Instruct-Q8_0-00001-of-00002.gguf
       - Llama-3.3-70B-Instruct-Q8_0/Llama-3.3-70B-Instruct-Q8_0-00002-of-00002.gguf
+    file_sizes:
+      - 39808940448
+      - 35166113792
     mtp_checked: true
     model_type: Dense
     capabilities:
@@ -533,6 +520,8 @@ models:
     revision: main
     files:
       - Qwen3.6-27B-IQ4_NL.gguf
+    file_sizes:
+      - 16071772384
     mmproj: mmproj-Qwen3.6-27B-IQ4_NL.gguf
     mmproj_orig: mmproj-F16.gguf
     mtp_checked: true
@@ -570,6 +559,8 @@ models:
     revision: main
     files:
       - Qwen3.6-27B-Q4_K_S.gguf
+    file_sizes:
+      - 15856158944
     mmproj: mmproj-Qwen3.6-27B-Q4_K_S.gguf
     mmproj_orig: mmproj-F16.gguf
     mtp_checked: true
@@ -587,6 +578,8 @@ models:
     revision: main
     files:
       - Qwen3.6-27B-Q6_K.gguf
+    file_sizes:
+      - 22523238624
     mmproj: mmproj-Qwen3.6-27B-Q6_K.gguf
     mmproj_orig: mmproj-F16.gguf
     mtp_checked: true
@@ -604,6 +597,8 @@ models:
     revision: main
     files:
       - Qwen3.6-27B-Q8_0.gguf
+    file_sizes:
+      - 28595763424
     mmproj: mmproj-Qwen3.6-27B-Q8_0.gguf
     mmproj_orig: mmproj-F16.gguf
     mtp_checked: true
@@ -621,6 +616,8 @@ models:
     revision: main
     files:
       - Qwen3.6-27B-UD-IQ2_XXS.gguf
+    file_sizes:
+      - 9567265920
     mmproj: mmproj-Qwen3.6-27B-UD-IQ2_XXS.gguf
     mmproj_orig: mmproj-F16.gguf
     mtp_checked: true
@@ -845,6 +842,8 @@ models:
     revision: main
     files:
       - Qwen3.6-27B-Q4_K_S.gguf
+    file_sizes:
+      - 16121357440
     mmproj: mmproj-mtp-Qwen3.6-27B-Q4_K_S.gguf
     mmproj_orig: mmproj-F16.gguf
     mtp_checked: true

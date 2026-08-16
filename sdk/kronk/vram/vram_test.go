@@ -6,6 +6,27 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 )
 
+func TestEstimateComputeBufferUsesNUBatch(t *testing.T) {
+	base := EstimateComputeBuffer(Input{
+		NUBatch:         DefaultNUBatch,
+		EmbeddingLength: 4096,
+	})
+	doubled := EstimateComputeBuffer(Input{
+		NUBatch:         2 * DefaultNUBatch,
+		EmbeddingLength: 4096,
+	})
+	defaulted := EstimateComputeBuffer(Input{
+		EmbeddingLength: 4096,
+	})
+
+	if doubled <= base {
+		t.Errorf("doubled NUBatch estimate: got %d, want greater than %d", doubled, base)
+	}
+	if defaulted != base {
+		t.Errorf("default NUBatch estimate: got %d, want %d", defaulted, base)
+	}
+}
+
 func TestAutoFitCPUOnly(t *testing.T) {
 	const mib = 1024 * 1024
 

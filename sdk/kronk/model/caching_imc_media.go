@@ -198,7 +198,7 @@ func (m *Model) decodeMediaIntoCache(ctx context.Context, cacheD D, seqID llama.
 // decodeEmbeddingsIntoCache decodes embeddings into a KV cache sequence with
 // standard linear positioning. Returns the number of KV positions consumed.
 func (m *Model) decodeEmbeddingsIntoCache(embd []float32, nEmbd, nTokens int32, seqID llama.SeqId, startPos int, useNonCausal bool) (int, error) {
-	nBatch := int32(m.cfg.NBatch())
+	nBatch := int32(m.cfg.EffectiveNBatch())
 	if nBatch <= 0 {
 		nBatch = 512
 	}
@@ -259,7 +259,7 @@ func (m *Model) decodeEmbeddingsMRoPEIntoCache(embd []float32, nEmbd, nTokens, n
 		return 0, fmt.Errorf("mrope image layout: unsupported token count %d for grid %dx%d", nTokens, nx, ny)
 	}
 
-	nBatch := int32(m.cfg.NBatch())
+	nBatch := int32(m.cfg.EffectiveNBatch())
 	if nBatch <= 0 {
 		nBatch = 512
 	}
@@ -338,7 +338,7 @@ func (m *Model) decodeTextMRoPEIntoCache(tokens []llama.Token, seqID llama.SeqId
 		return 0, nil
 	}
 
-	nBatch := int32(m.cfg.NBatch())
+	nBatch := int32(m.cfg.EffectiveNBatch())
 	if nBatch <= 0 {
 		nBatch = 512
 	}

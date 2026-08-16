@@ -98,7 +98,7 @@ The complete generation lifecycle is introduced in
 The focused view below zooms into IMC's Stage 2 responsibility: deciding the
 safest minimum work and reserving the session that owns reusable state.
 
-![IMC session selection using complete saved prompt plans](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-05/imc-session-selection.png)
+![IMC session selection using complete saved prompt plans](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-05/imc-session-selection.svg)
 
 The planning process has five steps.
 
@@ -400,7 +400,7 @@ message boundaries, not token counts. With a deterministic, prefix-stable
 template, each Current prefixes the next full rendering, so Kronk restores it,
 appends only the new stable tokens, and advances the retained boundary.
 
-![IMC cache growth with a deterministic template](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-05/imc-cache-growth-deterministic.png)
+![IMC cache growth with a deterministic template](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-05/imc-cache-growth-deterministic.svg)
 
 A Qwen-like reasoning template can behave differently at the candidate
 boundary immediately before a new user message. When Kronk independently
@@ -415,7 +415,7 @@ complete state that still prefixes the full rendering, recomputes forward, and
 publishes the new Current state. A completed Current that ended at a real user
 message can be preserved as the next User Boundary on a later extension.
 
-![IMC cache growth with a Qwen-like reasoning template](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-05/imc-cache-growth-qwen.png)
+![IMC cache growth with a Qwen-like reasoning template](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-05/imc-cache-growth-qwen.svg)
 
 Kronk may also build a newer User Boundary while prefilling a request that ends
 in a real user message. It independently renders the history without that final
@@ -467,6 +467,20 @@ Admission waiting is controlled separately by the per-model
 admission permit. The server's `KRONK_WEB_INFERENCE_TIMEOUT` (default `60m`)
 instead bounds admitted preparation, slot waiting, and inference; neither
 setting changes IMC session retention.
+
+For text IMC builds and extensions, slot assignment and cache preparation are
+separate steps. Kronk first binds queued requests to all available execution
+slots. The batch loop then selects one preparing slot and retains it as the
+prefill Stage 2 IMC-extension owner until that slot's new stable-prefix tokens
+have been decoded, the request is cancelled, or the slot otherwise becomes
+ineligible. Normal generation resumes between extension chunks, and the
+selector advances to the next waiting slot when the current owner finishes. A
+chunk uses the configured prefill capacity—2048 tokens by default;
+generation-reserve rows do not change it. This removes cache building from
+synchronous slot startup while allowing already-generating requests to continue
+between chunks. Prefill Stage 1 is only the `StateSeqSetData` copy that restores
+an exact reusable IMC snapshot into the slot; it performs no token decode. Media
+cache builds still use their dedicated synchronous paths.
 
 Kronk reserves a session as soon as it selects it for an exact match, append,
 or rebuild. Other requests cannot select that identity while the reservation
@@ -661,6 +675,20 @@ At debug log level, IMC planning events identify the selected `match_kind`
 tail token counts. Media planning events similarly identify exact, anchor, and
 rebuild decisions. Request-completion events include whether IMC participated
 and whether a prior snapshot was restored.
+
+Resumable text preparation emits `imc-preparation-queued` when a slot owns the
+request, `imc-preparation-chunk` after each successful target and compatible
+MTP draft advance, and `imc-cache-ready` after final preparation. The final
+event's `session_committed` field reports whether the updated snapshot metadata
+was committed. The chunk event reports `slot`, `chunk_tokens`,
+`prepared_tokens`, `total_tokens`, `remaining_tokens`, `next_position`,
+`elapsed`, and the batch `iteration`. It also reports `preparation_slots`,
+`selector_start`, `selector_selected`, and `selector_next` so the IMC
+preparation owner and next-slot cursor can be followed independently from the
+ordinary prefill cursor. Repeated chunk events for one slot show ownership being
+retained through Stage 2; after completion, the next preparing slot becomes the
+owner. Generation events between chunk events demonstrate that existing
+generation remains live.
 
 The Prometheus counters `imc_snapshot_skipped_total` and
 `imc_pure_hit_stale_session_total` expose exact-hit snapshot skips and rejected

@@ -32,8 +32,7 @@ export const PARAM_TOOLTIPS = {
   reasoning_effort: 'Requested reasoning level (model/provider dependent): none, minimal, low, medium, high. When omitted, the model template chooses its default. Higher effort may produce more thorough reasoning but uses more tokens and time. Unsupported models ignore this.',
 
   // Config sweep
-  nbatch: 'Batch tray capacity — maximum tokens processed per decode call (shared across slots during prefill). Larger values speed up prompt evaluation and multi-request batching but increase VRAM usage. Typically keep ≤ context window size.',
-  nubatch: 'Micro-batch size for prompt processing. Controls VRAM usage per batch operation. Must be ≤ NBatch. Smaller values reduce peak VRAM usage at the cost of slightly slower processing.',
+  prefillBatchSize: 'Maximum prompt tokens contributed by the current prefill owner in one decode iteration. Larger values can reach generation in fewer calls but increase compute-buffer memory and make each call longer for other active slots.',
   contextWindow: 'Maximum number of tokens (input + output combined) the model can handle at once. Larger windows support longer conversations but increase VRAM usage proportionally via the KV cache. Models with RoPE can extend beyond native context using YaRN (up to ~4× recommended).',
   nSeqMax: 'Maximum number of concurrent request slots. Each slot handles one user request simultaneously. More slots = better concurrency, but each slot reserves memory for its KV cache.',
   flashAttention: 'Optimized attention algorithm that reduces VRAM usage and can improve speed. "Enabled" forces it on, "Disabled" forces it off, "Auto" lets the server decide based on model compatibility.',
@@ -43,9 +42,9 @@ export const PARAM_TOOLTIPS = {
   // MoE configuration
   moeMode: 'How to distribute expert weights between GPU and CPU. "Recommended" auto-detects the best option for your hardware. "Save GPU Memory" moves experts to CPU (most common for consumer GPUs). "Maximum Speed" keeps everything on GPU (requires very large VRAM; exact need depends on model, quantization, context, and slots). "Balanced" lets you choose how many layers stay on GPU.',
   moeKeepExpertsTopN: 'Slide right for more speed (keeps more expert layers on GPU), slide left to save VRAM (offloads to CPU). The highest-numbered layers stay on GPU first. 0 = all experts on CPU.',
-  moeTipBatch: 'For MoE models with CPU experts, NBatch/NUBatch ≥ 4096 is recommended for optimal prompt processing speed.',
+  moeTipBatch: 'For MoE models with CPU experts, a Prefill Batch Size of at least 4096 is recommended for optimal prompt processing speed.',
   moeTipFlashAttention: 'Flash Attention is strongly recommended for MoE models — it significantly reduces VRAM usage and improves performance.',
-  moeTipComputeBuffer: 'Larger NUBatch increases compute buffer VRAM usage. Monitor with the VRAM calculator when tuning MoE batch sizes.',
+  moeTipComputeBuffer: 'A larger Prefill Batch Size increases compute buffer VRAM usage. Monitor with the VRAM calculator when tuning it.',
   availableVRAM: 'Total GPU VRAM available (in GB). When set, config candidates estimated to exceed this are auto-skipped before the sweep runs. Set to 0 or leave empty to disable VRAM filtering.',
 
   // NUMA / model loading / Op-offload (Phase F2/F3)
@@ -177,6 +176,22 @@ export const PARAM_TOOLTIPS = {
   runningModelExpiresAt: 'Wall-clock time at which the pool will idle-evict this model unless it is touched again. Shows Never when pool TTL is 0.',
   runningModelActiveStreams: 'Number of in-flight chat/embed/rerank streams currently using this model. The pool refuses to evict a model with active streams.',
   runningModelStatus: 'Lifecycle stage in the pool. "loaded" means the GGUF is open in llama.cpp and the model can serve requests. "loading" means the resource manager has reserved memory for the load but the GGUF is still being SHA-verified and read from disk; the model is not servable yet but the budget already accounts for it.',
+
+  // Batch engine slot diagnostics
+  slotIteration: 'Latest scheduler loop iteration published by this model. It advances while requests are active or waiting.',
+  slotBatchSizing: 'Configured prefill contribution, effective physical micro-batch capacity (NUBatch), and effective logical batch capacity (NBatch) used by the loaded model.',
+  slotQueue: 'Requests in the engine input channel plus requests already drained into the engine that are waiting for a free slot.',
+  slotPrefillSelector: 'Prefill stage 2 decodes the remaining request-owned tokens that were not available in the IMC session. The large value is the active slot; Next always shows the next eligible slot or round-robin cursor; Waiting lists all currently eligible slots.',
+  slotIMCSelector: 'Prefill stage 2 decodes new stable-prefix tokens, such as completed tool calls, to extend an IMC session after reusable state has been restored. The active slot retains ownership until its extension is complete; Next always shows the next eligible slot or round-robin cursor; Waiting lists all slots with extensions to decode.',
+  slotEligible: 'Slot IDs with uncached request-tail tokens waiting for prefill stage 2. They remain listed while generation priority or another stage 2 owner delays their work.',
+  slotID: 'Stable inference slot and llama.cpp sequence index within this loaded model.',
+  slotPhase: 'Current request phase. Prefill stage 1 restores reusable IMC sequence state into the slot. Prefill stage 2 decodes new tokens into that sequence. Generation produces output tokens.',
+  slotRequest: 'Current request identifier. Empty for an idle slot.',
+  slotAge: 'Elapsed wall-clock time since this request entered the slot. Useful for identifying unusually long or stalled work.',
+  slotPrefillProgress: 'Tokens decoded into the slot during prefill stage 2. This includes stable-prefix IMC extensions such as completed tool calls and remaining request-tail tokens.',
+  slotIMCProgress: 'Prefill stage 1 copies reusable sequence state from an IMC session into the slot. This is a state restore, not token decoding, and may complete between screen refreshes.',
+  slotGeneration: 'Generated output-token count plus this slot’s generation mode and row contribution to the latest scheduler iteration.',
+  slotPastTokens: 'Current next position in this slot’s model KV sequence.',
 
   // IMC session tooltips
   imcModelID: 'Cache key for the loaded model that owns this bounded set of Incremental Message Cache entries.',

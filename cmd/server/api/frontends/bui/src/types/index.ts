@@ -83,6 +83,57 @@ export interface IMCSessionDetail {
 
 export type IMCSessionsResponse = IMCSessionDetail[];
 
+export interface BatchGenerationContribution {
+  slot_id: number;
+  rows: number;
+  mode: string;
+}
+
+export interface BatchSlotDetail {
+  id: number;
+  phase: 'idle' | 'starting' | 'imc-restore' | 'prefill-imc' | 'prefill' | 'media-prefill' | 'generation';
+  request_id: string;
+  request_age_ms: number;
+  prefill_owner: boolean;
+  prompt_tokens: number;
+  prefilled_tokens: number;
+  prefill_remaining: number;
+  generated_tokens: number;
+  past_tokens: number;
+  generation_mode: string;
+  generation_rows: number;
+  imc_prepared_tokens: number;
+  imc_total_tokens: number;
+  imc_preparation_remaining: number;
+}
+
+export interface BatchEngineDetail {
+  model_id: string;
+  iteration: number;
+  prefill_batch_size: number;
+  nbatch: number;
+  nubatch: number;
+  mtp: boolean;
+  ndraft: number;
+  queued_requests: number;
+  pending_requests: number;
+  prefill_selector_start: number;
+  prefill_selector_selected: number;
+  prefill_selector_next: number;
+  eligible_prefill_slots: number[];
+  imc_selector_start: number;
+  imc_selector_selected: number;
+  imc_selector_next: number;
+  eligible_imc_slots: number[];
+  generation_rows: number;
+  prefill_rows: number;
+  total_rows: number;
+  generation_contributions: BatchGenerationContribution[];
+  slots: BatchSlotDetail[];
+}
+
+export type BatchEngineSlotsResponse = BatchEngineDetail[];
+
 export interface DeviceBudget {
   index: number;
   name: string;
@@ -120,8 +171,7 @@ export type ModelLoadMode = 'auto' | 'mmap' | 'none' | 'mlock' | 'mmap+mlock' | 
 
 export interface ModelConfig {
   'context-window': number;
-  nbatch: number;
-  nubatch: number;
+  'prefill-batch-size': number;
   nthreads: number;
   'nthreads-batch': number;
   'cache-type-k': string;
@@ -712,8 +762,7 @@ export interface PlaygroundSessionRequest {
 
 export interface PlaygroundModelConfig {
   'context_window'?: number;
-  nbatch?: number;
-  nubatch?: number;
+  'prefill_batch_size'?: number;
   'nseq_max'?: number;
   'flash_attention'?: string;
   'cache_type_k'?: string;
@@ -910,8 +959,7 @@ export interface SweepStringValues {
 }
 
 export interface ConfigSweepDefinition {
-  nbatch: SweepParamValues;
-  nubatch: SweepParamValues;
+  prefillBatchSize: SweepParamValues;
   contextWindow: SweepParamValues;
   nSeqMax: SweepParamValues;
   flashAttention: SweepStringValues;
@@ -961,8 +1009,7 @@ export interface BestConfigWeights {
 
 export interface ConfigCandidate {
   'context_window'?: number;
-  nbatch?: number;
-  nubatch?: number;
+  'prefill_batch_size'?: number;
   'nseq_max'?: number;
   'flash_attention'?: string;
   'cache_type'?: string;

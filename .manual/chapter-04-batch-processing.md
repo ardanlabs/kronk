@@ -224,34 +224,69 @@ falls back to target-only generation without discarding a valid target prefix.
 
 #### 4.7.2 Prefill Uncached Work
 
-For ordinary text prefill, active slots contribute prompt tokens in
-round-robin chunks of up to `nubatch` tokens until the shared `nbatch` capacity
-is reached. This prevents one large prompt from consuming every prefill pass
-while other slots wait. Generated tokens from active slots can be processed in
-the same shared decode loop.
+For ordinary text prefill, one active slot owns prefill until its prompt is
+complete. Each decode iteration first stages generated and speculative rows
+from every ready output slot, then gives the remaining tray capacity to the
+prefill owner. This gets one request to first-token generation quickly without
+pausing output already streaming from other slots.
 
-More precisely, `nubatch` caps one slot's contribution during one scheduler
-visit, while `nbatch` caps the complete logical batch passed to `llama.Decode`.
-For each ready text slot, Kronk adds:
+More precisely, `prefill-batch-size`—2048 tokens by default—caps the owner's
+contribution during one scheduler visit. Kronk derives an internal logical
+batch capacity that also reserves generation rows. For the current prefill
+owner, Kronk adds:
 
 ```text
-min(remaining prompt tokens, available nbatch space, nubatch)
+min(remaining prompt tokens, available logical-batch space, prefill-batch-size)
 ```
 
-The scheduler makes another sweep over ready slots while the tray still has
-space. A slot can therefore contribute more than `nubatch` to one logical
-batch through multiple visits; no individual visit or backend physical chunk
-exceeds `nubatch`. Generated and speculative tokens are added before ordinary
-prefill and reduce the `nbatch` space available to prompt chunks.
+The scheduler retains a prefill cursor between decode iterations. It remains
+on the current owner across prefill contributions and advances to the next
+eligible slot only when that owner's prefill completes, is cancelled, or
+otherwise becomes ineligible. A long prompt can therefore make another new
+prompt wait, but it cannot block output-token generation between decode
+iterations.
 
-![How nbatch and nubatch cooperate during Stage 4 text prefill](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-04/prefill-batching.svg)
+At debug level, each contribution emits `status[prefill-scheduled]` with
+`iteration`, `slot`, `prefill_slots`, `generation_contributions`,
+`chunk_tokens`, `prefill_remaining`, `prefill_complete`, `selector_start`,
+`selector_selected`, `selector_next`, `generation_rows`, `tray_tokens`,
+`nbatch`, and `nubatch`. `prefill_slots` lists every eligible prefill slot for
+that iteration. Each `generation_contributions` entry reports its slot, staged
+row count, and mode; M-RoPE direct decoding is identified separately because it
+does not occupy the shared tray. The three selector fields show the persistent
+cursor before selection, the selected slot-array index, and the cursor retained
+for the next iteration. While an owner is still prefilling,
+`selector_selected` and `selector_next` remain equal. Completion moves
+`selector_next` to the following slot-array index. If generation rows consume
+the complete logical tray, `status[prefill-deferred]` records the same slot and
+selector snapshot without a prefill contribution. The older `next_slot` field
+remains as an alias for `selector_next`.
 
-By default, Kronk sets `nbatch` to `nubatch × nseq-max`. For prefill-only work,
-that gives every active slot room to contribute one full `nubatch` chunk during
-the first sweep. A shorter remaining prompt contributes a smaller chunk, and
-the scheduler can use the remaining tray capacity in another sweep. An
-explicitly smaller `nbatch` may fill before every slot contributes a full
-chunk. Kronk enforces `nubatch ≤ nbatch`.
+![The two prefill phases: restore reusable IMC state, then compute missing request state](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-04/prefill-batching.svg)
+
+Kronk adds a generation reserve to the 2048-token default prefill contribution.
+Non-MTP reserves one row per slot and keeps the internal physical capacity at
+2048, so llama.cpp may split the logical tray into physical ubatches. MTP
+reserves `1 + ndraft` rows per slot and raises both internal capacities so a
+full speculative verification round and the prefill contribution remain in one
+physical batch. For four slots, the internal effective values are
+`NUBatch: 2048`, `NBatch: 2052` for non-MTP and `NUBatch: 2064`,
+`NBatch: 2064` for MTP with the default `ndraft: 3`.
+
+Generation-row count comes from the generation mode, not from the configured
+prefill size:
+ordinary generation contributes one row, while MTP with `ndraft: 3` contributes
+up to four rows—the sampled token plus three candidates. Generation and prefill
+therefore continue in the same scheduler iteration for both modes. If the
+prefill owner is not itself generating, some of the worst-case reserve remains
+unused.
+
+At model load, `batch-sizing status[resolved]` logs
+`configured-prefill-batch-size`, `prefill-batch-size`,
+`generation-rows-per-slot`, `generation-reserve`, `effective-prefill`,
+`effective-nbatch`, `effective-nubatch`, `mtp`, and `automatic-padding`.
+The effective values describe derived llama.cpp capacities; they are diagnostic
+output rather than separate configuration controls.
 
 #### 4.7.3 Generate Output
 
@@ -288,8 +323,8 @@ returns the outer admission permit. The next pending job can then occupy the
 slot; it does not inherit the prior request's sampler, parser, or sequence
 state.
 
-Most users should leave `nbatch` and `nubatch` unset. Kronk derives their
-load-time values as described in
+Most users should leave `prefill-batch-size` at its 2048-token default. Kronk
+derives the internal batch capacities as described in
 [Chapter 3 §3.5](https://www.kronkai.com/manual#35-concurrency-and-batching).
 
 ### 4.8 Embedding and Reranking

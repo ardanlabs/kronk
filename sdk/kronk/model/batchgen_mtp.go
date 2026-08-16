@@ -386,7 +386,7 @@ func (e *batchEngine) decodeTokensIntoCacheMTP(ctx context.Context, s *slot, tok
 
 	nBatch := int(e.model.ctxParams.NBatch)
 	if nBatch <= 0 {
-		nBatch = e.model.cfg.NBatch()
+		nBatch = e.model.cfg.EffectiveNBatch()
 	}
 
 	nTokens := len(tokens)

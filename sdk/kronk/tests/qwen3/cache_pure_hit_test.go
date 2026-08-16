@@ -43,8 +43,7 @@ func Test_CacheIMCQwen3PureHitSnapshotSkip(t *testing.T) {
 	cfg := model.Config{
 		ModelFiles:          testlib.MPThinkToolChat.ModelFiles,
 		PtrContextWindow:    new(8192),
-		PtrNBatch:           new(2048),
-		PtrNUBatch:          new(512),
+		PtrPrefillBatchSize: new(512),
 		CacheTypeK:          model.GGMLTypeF16,
 		CacheTypeV:          model.GGMLTypeF16,
 		PtrNSeqMax:          new(1),
@@ -102,8 +101,7 @@ func Test_CacheIMCQwen3ExtensionDoesNotSkip(t *testing.T) {
 	cfg := model.Config{
 		ModelFiles:          testlib.MPThinkToolChat.ModelFiles,
 		PtrContextWindow:    new(8192),
-		PtrNBatch:           new(2048),
-		PtrNUBatch:          new(512),
+		PtrPrefillBatchSize: new(512),
 		CacheTypeK:          model.GGMLTypeF16,
 		CacheTypeV:          model.GGMLTypeF16,
 		PtrNSeqMax:          new(1),

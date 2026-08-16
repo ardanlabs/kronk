@@ -1,4 +1,5 @@
 import { api } from './api'
+import { DEFAULT_PREFILL_BATCH_SIZE } from '../lib/modelDefaults'
 import type {
   ChatStreamResponse,
   ChatToolCall,
@@ -2405,8 +2406,7 @@ export const defaultSamplingSweepDef: SamplingSweepDefinition = {
 
 /** Default config sweep grids for each parameter. */
 export const defaultConfigSweepDef: ConfigSweepDefinition = {
-  nbatch: { enabled: true, values: [128, 256, 512, 1024, 2048, 4096] },
-  nubatch: { enabled: true, values: [128, 256, 512, 1024, 2048, 4096] },
+  prefillBatchSize: { enabled: true, values: [DEFAULT_PREFILL_BATCH_SIZE] },
   contextWindow: { enabled: true, values: [2048, 4096, 8192, 16384, 32768, 65536, 98304, 131072] },
   nSeqMax: { enabled: true, values: [1, 2] },
   flashAttention: { enabled: true, values: ['enabled', 'disabled'] },
@@ -2416,8 +2416,7 @@ export const defaultConfigSweepDef: ConfigSweepDefinition = {
 
 /** Default config sweep grids optimized for MoE models. */
 export const defaultMoESweepDef: ConfigSweepDefinition = {
-  nbatch: { enabled: true, values: [1024, 2048, 4096] },
-  nubatch: { enabled: true, values: [1024, 2048, 4096] },
+  prefillBatchSize: { enabled: true, values: [1024, 2048, 4096] },
   contextWindow: { enabled: true, values: [4096, 8192, 16384, 32768] },
   nSeqMax: { enabled: true, values: [1, 2] },
   flashAttention: { enabled: true, values: ['enabled'] },
@@ -2436,18 +2435,14 @@ export function generateConfigCandidates(
 ): ConfigCandidate[] {
   const baseline: ConfigCandidate = {
     'context_window': baseConfig['context_window'],
-    nbatch: baseConfig.nbatch,
-    nubatch: baseConfig.nubatch,
+    'prefill_batch_size': baseConfig['prefill_batch_size'] ?? DEFAULT_PREFILL_BATCH_SIZE,
     'nseq_max': baseConfig['nseq_max'],
   }
 
   const paramAxes: Array<{ configKey: keyof ConfigCandidate; values: number[] }> = []
 
-  if (def.nbatch.enabled && def.nbatch.values.length > 0) {
-    paramAxes.push({ configKey: 'nbatch', values: def.nbatch.values })
-  }
-  if (def.nubatch.enabled && def.nubatch.values.length > 0) {
-    paramAxes.push({ configKey: 'nubatch', values: def.nubatch.values })
+  if (def.prefillBatchSize.enabled && def.prefillBatchSize.values.length > 0) {
+    paramAxes.push({ configKey: 'prefill_batch_size', values: def.prefillBatchSize.values })
   }
   if (def.contextWindow.enabled && def.contextWindow.values.length > 0) {
     paramAxes.push({ configKey: 'context_window', values: def.contextWindow.values })
@@ -2536,17 +2531,11 @@ export function generateConfigCandidates(
   const candidates: ConfigCandidate[] = []
 
   const keyOf = (c: ConfigCandidate) =>
-    `cw=${c['context_window']}|nb=${c.nbatch}|nub=${c.nubatch}|ns=${c['nseq_max']}|fa=${c['flash_attention']}|ct=${c['cache_type']}|cm=${c['cache_mode']}|mm=${c['moe_mode']}|mk=${c['moe_keep_experts_top_n'] ?? ''}|oomb=${c['op_offload_min_batch']}`
+    `cw=${c['context_window']}|pbs=${c['prefill_batch_size']}|ns=${c['nseq_max']}|fa=${c['flash_attention']}|ct=${c['cache_type']}|cm=${c['cache_mode']}|mm=${c['moe_mode']}|mk=${c['moe_keep_experts_top_n'] ?? ''}|oomb=${c['op_offload_min_batch']}`
 
   for (const c of combos) {
     const k = keyOf(c)
     if (seen.has(k)) continue
-    // Skip invalid: effective nubatch must not exceed effective nbatch.
-    const effNBatch = c.nbatch ?? baseConfig.nbatch
-    const effNUBatch = c.nubatch ?? baseConfig.nubatch
-    if (effNBatch !== undefined && effNUBatch !== undefined &&
-        Number.isFinite(effNBatch) && Number.isFinite(effNUBatch) &&
-        effNUBatch > effNBatch) continue
     // Skip invalid combos for hybrid models.
     if (modelCaps?.isHybrid) {
       if (c['flash_attention'] === 'enabled') continue

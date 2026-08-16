@@ -9,9 +9,32 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
+func (e *batchEngine) nextPrefillSlot() (*slot, int) {
+	for offset := range e.slots {
+		idx := (e.prefillNext + offset) % len(e.slots)
+		s := e.slots[idx]
+		if s.active && s.prefillTokens != nil {
+			return s, idx
+		}
+	}
+
+	return nil, -1
+}
+
+func (e *batchEngine) prefillSlotIDs() []int {
+	var ids []int
+	for _, s := range e.slots {
+		if s.active && s.prefillTokens != nil {
+			ids = append(ids, s.id)
+		}
+	}
+
+	return ids
+}
+
 // addPrefillChunk adds the next chunk of generation prefill tokens to the batch.
-// The chunkLimit parameter caps how many tokens this slot may add in one call,
-// enabling round-robin fair sharing of the tray across slots.
+// The chunkLimit parameter caps how many tokens the current prefill owner may
+// add in one decode iteration.
 // Returns false on shutdown, context cancellation, or an internal error. It
 // finishes the slot before returning an internal error.
 func (e *batchEngine) addPrefillChunk(s *slot, chunkLimit int) bool {
@@ -32,7 +55,7 @@ func (e *batchEngine) addPrefillChunk(s *slot, chunkLimit int) bool {
 
 	prefillStart := time.Now()
 
-	nBatch := e.model.cfg.NBatch()
+	nBatch := e.model.cfg.EffectiveNBatch()
 	remaining := len(s.prefillTokens) - s.nPrefilled
 
 	// Limit chunk size to available space in batch (total across all slots
@@ -43,14 +66,10 @@ func (e *batchEngine) addPrefillChunk(s *slot, chunkLimit int) bool {
 		return true
 	}
 
-	chunkSize := min(remaining, availableInBatch, chunkLimit)
+	chunkSize := prefillContributionSize(remaining, availableInBatch, chunkLimit)
 
-	// MTP: claim (or extend) the slot's range in the target batch so
-	// the post-decode mirror knows where this chunk's pre-norm rows
-	// live. addPrefillChunk may be called multiple times per
-	// processBatch iteration (round-robin tray fill), so we only set
-	// start/basePos on the FIRST call this iteration; subsequent calls
-	// just accumulate count.
+	// MTP: claim the slot's contiguous range in the target batch so the
+	// post-decode mirror knows where this chunk's pre-norm rows live.
 	mtpDraft := e.model.draft != nil && e.model.draft.mtp()
 	if mtpDraft && !s.mtpHasBatch {
 		s.targetBatchStart = e.batch.NTokens
@@ -73,7 +92,7 @@ func (e *batchEngine) addPrefillChunk(s *slot, chunkLimit int) bool {
 	s.nPast += llama.Pos(chunkSize)
 	s.nPrefilled += chunkSize
 	if mtpDraft {
-		s.targetBatchCount += int32(chunkSize)
+		s.targetBatchCount = int32(chunkSize)
 	}
 
 	prefillDuration := time.Since(prefillStart)
@@ -91,4 +110,8 @@ func (e *batchEngine) addPrefillChunk(s *slot, chunkLimit int) bool {
 
 	s.iBatch = -1
 	return true
+}
+
+func prefillContributionSize(remaining, availableInBatch, chunkLimit int) int {
+	return max(min(remaining, availableInBatch, chunkLimit), 0)
 }

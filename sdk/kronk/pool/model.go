@@ -43,3 +43,10 @@ type IMCSessionDetail struct {
 	ModelID string
 	model.IMCSessionDetail
 }
+
+// BatchEngineDetail provides the current generation scheduler state for one
+// loaded model.
+type BatchEngineDetail struct {
+	ModelID string
+	model.BatchEngineSnapshot
+}

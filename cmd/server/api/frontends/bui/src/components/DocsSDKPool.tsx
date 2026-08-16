@@ -61,6 +61,17 @@ export default function DocsSDKPool() {
           <div className="card" id="types">
             <h3>Types</h3>
 
+            <div className="doc-section" id="type-batchenginedetail">
+              <h4>BatchEngineDetail</h4>
+              <pre className="code-block">
+                <code>{`type BatchEngineDetail struct {
+	ModelID string
+	model.BatchEngineSnapshot
+}`}</code>
+              </pre>
+              <p className="doc-description">BatchEngineDetail provides the current generation scheduler state for one loaded model.</p>
+            </div>
+
             <div className="doc-section" id="type-config">
               <h4>Config</h4>
               <pre className="code-block">
@@ -207,6 +218,14 @@ export default function DocsSDKPool() {
               <p className="doc-description">AquireModel will provide a kronk API for the specified model. If the model is not in the pool, an API for the model will be created.</p>
             </div>
 
+            <div className="doc-section" id="method-pool-batchenginesnapshots">
+              <h4>Pool.BatchEngineSnapshots</h4>
+              <pre className="code-block">
+                <code>func (p *Pool) BatchEngineSnapshots() []BatchEngineDetail</code>
+              </pre>
+              <p className="doc-description">BatchEngineSnapshots returns the latest generation scheduler state for each loaded language model. Embedding and reranking models are omitted.</p>
+            </div>
+
             <div className="doc-section" id="method-pool-getexisting">
               <h4>Pool.GetExisting</h4>
               <pre className="code-block">
@@ -334,6 +353,7 @@ export default function DocsSDKPool() {
             <div className="doc-index-section">
               <a href="#types" className="doc-index-header">Types</a>
               <ul>
+                <li><a href="#type-batchenginedetail">BatchEngineDetail</a></li>
                 <li><a href="#type-config">Config</a></li>
                 <li><a href="#type-imcsessiondetail">IMCSessionDetail</a></li>
                 <li><a href="#type-llama">Llama</a></li>
@@ -353,6 +373,7 @@ export default function DocsSDKPool() {
                 <li><a href="#method-llama-resolvedmodelconfig">Llama.ResolvedModelConfig</a></li>
                 <li><a href="#method-pool-aquirecustom">Pool.AquireCustom</a></li>
                 <li><a href="#method-pool-aquiremodel">Pool.AquireModel</a></li>
+                <li><a href="#method-pool-batchenginesnapshots">Pool.BatchEngineSnapshots</a></li>
                 <li><a href="#method-pool-getexisting">Pool.GetExisting</a></li>
                 <li><a href="#method-pool-imcsessions">Pool.IMCSessions</a></li>
                 <li><a href="#method-pool-invalidate">Pool.Invalidate</a></li>

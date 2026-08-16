@@ -1,0 +1,174 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+  <title id="title">Why a fallback cache matters with a Qwen-like reasoning template</title>
+  <desc id="desc">A Qwen-like template emits reasoning for the last assistant but omits or moves it when that assistant becomes historical. Adding a user message therefore makes the saved Current diverge from the new stable rendering. Current cannot be trimmed because no complete serialized snapshot exists at the coincidental overlap. Kronk restores the earlier complete Fallback, recomputes the changed suffix, publishes a new Current, and can advance Fallback after a later compatible extension.</desc>
+
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="135%">
+      <feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#334155"/>
+    </marker>
+    <style>
+      .title { font: 700 42px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; letter-spacing: 0.4px; }
+      .subtitle { font: 400 21px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .section { font: 700 25px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .heading { font: 700 21px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .body { font: 500 18px Inter, ui-sans-serif, system-ui, sans-serif; fill: #334155; }
+      .small { font: 500 18px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .eyebrow { font: 700 18px Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 1.2px; }
+      .pill { font: 700 18px Inter, ui-sans-serif, system-ui, sans-serif; text-anchor: middle; dominant-baseline: middle; }
+      .white { fill: #ffffff; }
+      .green { fill: #15803d; }
+      .blue { fill: #1d4ed8; }
+      .red { fill: #b91c1c; }
+      .purple { fill: #7e22ce; }
+      .muted { fill: #64748b; }
+    </style>
+  </defs>
+
+  <rect width="1920" height="1080" fill="#f8fafc"/>
+  <rect x="0" y="0" width="1920" height="12" fill="#0f766e"/>
+
+  <text class="title" x="72" y="67">QWEN-LIKE TEMPLATE: WHY FALLBACK MATTERS</text>
+  <text class="subtitle" x="72" y="105">Appending a message can change how an earlier assistant turn renders—even when its stored message did not change.</text>
+
+  <!-- Template behavior -->
+  <g filter="url(#shadow)">
+    <rect x="70" y="140" width="1778" height="126" rx="24" fill="#ffffff" stroke="#c4b5fd" stroke-width="2"/>
+  </g>
+  <text class="eyebrow purple" x="106" y="181">SIMPLIFIED TEMPLATE RULE</text>
+  <rect x="758" y="158" width="22" height="22" rx="5" fill="#22c55e"/>
+  <text class="body" x="794" y="177">Serialized cache state</text>
+  <rect x="1062" y="158" width="22" height="22" rx="5" fill="#3b82f6"/>
+  <text class="body" x="1098" y="177">Recomputed suffix</text>
+  <rect x="1340" y="158" width="22" height="22" rx="5" fill="#a855f7"/>
+  <text class="body" x="1376" y="177">Template-dependent reasoning</text>
+  <rect x="106" y="199" width="704" height="44" rx="11" fill="#f3e8ff"/>
+  <text class="body" x="132" y="228">Assistant is last → emit its reasoning content</text>
+  <path d="M 845 221 H 921" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+  <rect x="943" y="199" width="863" height="44" rx="11" fill="#fff1f2"/>
+  <text class="body" x="969" y="228">Assistant becomes historical → omit or move that reasoning content</text>
+
+  <!-- Divergence -->
+  <g filter="url(#shadow)">
+    <rect x="70" y="302" width="1020" height="390" rx="26" fill="#ffffff" stroke="#fca5a5" stroke-width="3"/>
+  </g>
+  <rect x="70" y="302" width="1020" height="66" rx="26" fill="#fee2e2"/>
+  <path d="M 70 336 Q 70 368 102 368 H 1058 Q 1090 368 1090 336" fill="#fee2e2"/>
+  <text class="eyebrow red" x="106" y="343">1 · APPEND USER 2</text>
+  <text class="section" x="322" y="345">THE SAVED CURRENT DIVERGES</text>
+
+  <text class="eyebrow" x="106" y="409" fill="#475569">SAVED CURRENT · ASSISTANT 1 WAS LAST</text>
+  <g>
+    <rect x="106" y="430" width="132" height="50" rx="10" fill="#22c55e"/>
+    <rect x="248" y="430" width="112" height="50" rx="10" fill="#22c55e"/>
+    <rect x="370" y="430" width="124" height="50" rx="10" fill="#22c55e"/>
+    <rect x="504" y="430" width="156" height="50" rx="10" fill="#a855f7"/>
+    <text class="pill white" x="172" y="455">SYSTEM</text>
+    <text class="pill white" x="304" y="455">USER 1</text>
+    <text class="pill white" x="432" y="455">ASST 1</text>
+    <text class="pill white" x="582" y="455">REASONING 1</text>
+  </g>
+  <text class="body purple" x="692" y="461">Emitted while Assistant 1 was last</text>
+
+  <text class="eyebrow" x="106" y="529" fill="#475569">NEW STABLE RENDERING · ASSISTANT 1 IS HISTORICAL</text>
+  <g>
+    <rect x="106" y="550" width="132" height="50" rx="10" fill="#22c55e"/>
+    <rect x="248" y="550" width="112" height="50" rx="10" fill="#22c55e"/>
+    <rect x="370" y="550" width="124" height="50" rx="10" fill="#3b82f6"/>
+    <rect x="504" y="550" width="112" height="50" rx="10" fill="#3b82f6"/>
+    <text class="pill white" x="172" y="575">SYSTEM</text>
+    <text class="pill white" x="304" y="575">USER 1</text>
+    <text class="pill white" x="432" y="575">ASST 1</text>
+    <text class="pill white" x="560" y="575">USER 2</text>
+  </g>
+  <text class="body red" x="648" y="581">Reasoning 1 disappeared before User 2</text>
+
+  <circle cx="1018" cy="455" r="18" fill="#fee2e2" stroke="#ef4444" stroke-width="2"/>
+  <text class="heading red" x="1018" y="462" text-anchor="middle">×</text>
+
+  <rect x="106" y="628" width="948" height="42" rx="11" fill="#fff1f2"/>
+  <text class="body red" x="580" y="656" text-anchor="middle">Current is not a complete prefix · the matching overlap is not a saved snapshot · never trim Current</text>
+
+  <!-- Fallback recovery -->
+  <g filter="url(#shadow)">
+    <rect x="1120" y="302" width="728" height="390" rx="26" fill="#ffffff" stroke="#4ade80" stroke-width="3"/>
+  </g>
+  <rect x="1120" y="302" width="728" height="66" rx="26" fill="#dcfce7"/>
+  <path d="M 1120 336 Q 1120 368 1152 368 H 1816 Q 1848 368 1848 336" fill="#dcfce7"/>
+  <text class="eyebrow green" x="1156" y="343">2 · RECOVER</text>
+  <text class="section" x="1340" y="345">RESTORE FALLBACK</text>
+
+  <text class="eyebrow" x="1156" y="409" fill="#475569">COMPLETE FALLBACK SNAPSHOT</text>
+  <g>
+    <rect x="1156" y="430" width="132" height="50" rx="10" fill="#22c55e"/>
+    <rect x="1298" y="430" width="112" height="50" rx="10" fill="#22c55e"/>
+    <text class="pill white" x="1222" y="455">SYSTEM</text>
+    <text class="pill white" x="1354" y="455">USER 1</text>
+  </g>
+  <rect x="1434" y="423" width="370" height="64" rx="13" fill="#f0fdf4" stroke="#86efac" stroke-width="2"/>
+  <text class="body green" x="1619" y="450" text-anchor="middle">Serialized before the template</text>
+  <text class="body green" x="1619" y="475" text-anchor="middle">dependent assistant rendering</text>
+
+  <path d="M 1484 510 V 548" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+  <text class="eyebrow blue" x="1520" y="539">RECOMPUTE CHANGED SUFFIX</text>
+
+  <text class="eyebrow" x="1156" y="587" fill="#475569">NEW CURRENT</text>
+  <g>
+    <rect x="1156" y="605" width="132" height="50" rx="10" fill="#22c55e"/>
+    <rect x="1298" y="605" width="112" height="50" rx="10" fill="#22c55e"/>
+    <rect x="1420" y="605" width="124" height="50" rx="10" fill="#3b82f6"/>
+    <rect x="1554" y="605" width="112" height="50" rx="10" fill="#3b82f6"/>
+    <text class="pill white" x="1222" y="630">SYSTEM</text>
+    <text class="pill white" x="1354" y="630">USER 1</text>
+    <text class="pill white" x="1482" y="630">ASST 1</text>
+    <text class="pill white" x="1610" y="630">USER 2</text>
+  </g>
+  <text class="body green" x="1694" y="636">Publish</text>
+
+  <!-- Next compatible extension -->
+  <g filter="url(#shadow)">
+    <rect x="70" y="728" width="1778" height="254" rx="26" fill="#ffffff" stroke="#93c5fd" stroke-width="2"/>
+  </g>
+  <rect x="70" y="728" width="1778" height="64" rx="26" fill="#dbeafe"/>
+  <path d="M 70 760 Q 70 792 102 792 H 1816 Q 1848 792 1848 760" fill="#dbeafe"/>
+  <text class="eyebrow blue" x="106" y="769">3 · NEXT COMPATIBLE EXTENSION</text>
+  <text class="section" x="472" y="771">CURRENT WORKS AGAIN—AND FALLBACK CAN ADVANCE</text>
+
+  <text class="eyebrow" x="106" y="835" fill="#475569">NEW STABLE PLAN</text>
+  <g>
+    <rect x="106" y="853" width="116" height="48" rx="10" fill="#22c55e"/>
+    <rect x="230" y="853" width="98" height="48" rx="10" fill="#22c55e"/>
+    <rect x="336" y="853" width="108" height="48" rx="10" fill="#22c55e"/>
+    <rect x="452" y="853" width="98" height="48" rx="10" fill="#22c55e"/>
+    <rect x="558" y="853" width="108" height="48" rx="10" fill="#3b82f6"/>
+    <rect x="674" y="853" width="98" height="48" rx="10" fill="#3b82f6"/>
+    <text class="pill white" x="164" y="877">SYSTEM</text>
+    <text class="pill white" x="279" y="877">USER 1</text>
+    <text class="pill white" x="390" y="877">ASST 1</text>
+    <text class="pill white" x="501" y="877">USER 2</text>
+    <text class="pill white" x="612" y="877">ASST 2</text>
+    <text class="pill white" x="723" y="877">USER 3</text>
+  </g>
+  <text class="small green" x="106" y="937">Restore complete Current</text>
+  <text class="small blue" x="558" y="937">Append only new suffix</text>
+
+  <path d="M 810 877 H 884" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+
+  <rect x="914" y="821" width="390" height="128" rx="18" fill="#f0fdf4" stroke="#86efac" stroke-width="2"/>
+  <text class="eyebrow green" x="946" y="858">UPDATED CURRENT</text>
+  <text class="body" x="946" y="894">Complete six-message stable plan</text>
+  <text class="small muted" x="946" y="925">Ready for the next request</text>
+
+  <path d="M 1320 885 H 1370" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+  <text class="eyebrow" x="1345" y="851" fill="#c2410c" text-anchor="middle">PRIOR CURRENT</text>
+
+  <rect x="1390" y="821" width="422" height="128" rx="18" fill="#fff7ed" stroke="#fb923c" stroke-width="2"/>
+  <text class="eyebrow" x="1422" y="858" fill="#c2410c">FALLBACK ADVANCES</text>
+  <text class="body" x="1422" y="894">Complete state through User 2</text>
+  <text class="small muted" x="1422" y="925">A newer complete recovery point</text>
+
+  <rect x="70" y="1010" width="1778" height="48" rx="12" fill="#0f172a"/>
+  <text class="body white" x="959" y="1041" text-anchor="middle">Fallback turns a full rebuild into a partial rebuild when template-dependent rendering invalidates Current.</text>
+</svg>

@@ -15,8 +15,7 @@ func Test_CacheIMCDeterministic(t *testing.T) {
 	cfg := model.Config{
 		ModelFiles:          testlib.MPThinkToolChat.ModelFiles,
 		PtrContextWindow:    new(8192),
-		PtrNBatch:           new(2048),
-		PtrNUBatch:          new(512),
+		PtrPrefillBatchSize: new(512),
 		CacheTypeK:          model.GGMLTypeQ8_0,
 		CacheTypeV:          model.GGMLTypeQ8_0,
 		PtrNSeqMax:          new(1),
@@ -161,8 +160,7 @@ func Test_CacheIMCDeterministicMultiSlot(t *testing.T) {
 	cfg := model.Config{
 		ModelFiles:          testlib.MPThinkToolChat.ModelFiles,
 		PtrContextWindow:    new(8192),
-		PtrNBatch:           new(2048),
-		PtrNUBatch:          new(512),
+		PtrPrefillBatchSize: new(512),
 		CacheTypeK:          model.GGMLTypeQ8_0,
 		CacheTypeV:          model.GGMLTypeQ8_0,
 		PtrNSeqMax:          new(2),

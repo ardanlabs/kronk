@@ -12,14 +12,13 @@ import (
 
 func cfgSequenceModel(mp models.Path, nSeqMax int) model.Config {
 	return model.Config{
-		Log:              benchLog,
-		ModelFiles:       mp.ModelFiles,
-		PtrContextWindow: new(2048),
-		PtrNBatch:        new(2048),
-		PtrNUBatch:       new(512),
-		CacheTypeK:       model.GGMLTypeF16,
-		CacheTypeV:       model.GGMLTypeF16,
-		PtrNSeqMax:       new(nSeqMax),
+		Log:                 benchLog,
+		ModelFiles:          mp.ModelFiles,
+		PtrContextWindow:    new(2048),
+		PtrPrefillBatchSize: new(512),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(nSeqMax),
 	}
 }
 

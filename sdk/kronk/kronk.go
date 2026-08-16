@@ -166,6 +166,19 @@ func (krn *Kronk) IMCSessions() []model.IMCSessionDetail {
 	return krn.model.IMCSessions()
 }
 
+// BatchEngineSnapshot returns the latest generation scheduler state. Models
+// used only for embeddings or reranking do not expose a batch engine.
+func (krn *Kronk) BatchEngineSnapshot() (model.BatchEngineSnapshot, bool) {
+	krn.shutdown.Lock()
+	defer krn.shutdown.Unlock()
+
+	if krn.shutdownFlag {
+		return model.BatchEngineSnapshot{}, false
+	}
+
+	return krn.model.BatchEngineSnapshot()
+}
+
 // Unload will close down the loaded model. You should call this only when you
 // are completely done using Kronk.
 func (krn *Kronk) Unload(ctx context.Context) error {

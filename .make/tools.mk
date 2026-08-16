@@ -42,16 +42,16 @@ test-load:
 
 # Long-running multi-slot batch-isolation probe. Every turn starts all
 # conversations together, proves their streamed generation overlaps, and
-# verifies that no response contains another conversation's marker. Set both
-# BATCH_LOAD_SLOTS and BATCH_LOAD_CONVERSATIONS to 4 to exercise four slots.
+# verifies that no response contains another conversation's marker. Use
+# BATCH_LOAD_SLOTS and BATCH_LOAD_CONVERSATIONS to exercise N slots.
 BATCH_LOAD_HOST ?= http://localhost:11435
 BATCH_LOAD_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT
 BATCH_LOAD_TURNS ?= 21
 BATCH_LOAD_TARGET_TOKENS ?= 30000
 BATCH_LOAD_TOKENS_PER_TURN ?= 1400
 BATCH_LOAD_MAX_TOKENS ?= 128
-BATCH_LOAD_SLOTS ?= 3
-BATCH_LOAD_CONVERSATIONS ?= 3
+BATCH_LOAD_SLOTS ?= 4
+BATCH_LOAD_CONVERSATIONS ?= 4
 BATCH_LOAD_OUT ?= .tools/batch-load/output/summary.json
 
 test-batch-load:
@@ -65,6 +65,32 @@ test-batch-load:
 		--slots "$(BATCH_LOAD_SLOTS)" \
 		--conversations "$(BATCH_LOAD_CONVERSATIONS)" \
 		--out "$(BATCH_LOAD_OUT)"
+
+# ==============================================================================
+
+# Media-prefill concurrency probe. Starts a deterministic streaming text
+# generation, then submits an image and verifies phase-2 media prefill never
+# creates an excessive gap between text content events. The loaded multimodal
+# model must have at least two slots. All timing and output knobs are tunable.
+MEDIA_LOAD_HOST ?= http://localhost:11435
+MEDIA_LOAD_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT
+MEDIA_LOAD_IMAGE ?= examples/samples/giraffe.jpg
+MEDIA_LOAD_GENERATION_MAX_TOKENS ?= 512
+MEDIA_LOAD_IMAGE_MAX_TOKENS ?= 64
+MEDIA_LOAD_MAX_GENERATION_CONTENT_EVENT_GAP ?= 1.0
+MEDIA_LOAD_TIMEOUT ?= 1800
+MEDIA_LOAD_OUT ?= .tools/media-load/output/summary.json
+
+test-media-load:
+	python3 .tools/media-load/media-load.py \
+		--host "$(MEDIA_LOAD_HOST)" \
+		--model "$(MEDIA_LOAD_MODEL)" \
+		--image "$(MEDIA_LOAD_IMAGE)" \
+		--generation-max-tokens "$(MEDIA_LOAD_GENERATION_MAX_TOKENS)" \
+		--image-max-tokens "$(MEDIA_LOAD_IMAGE_MAX_TOKENS)" \
+		--max-generation-content-event-gap "$(MEDIA_LOAD_MAX_GENERATION_CONTENT_EVENT_GAP)" \
+		--timeout "$(MEDIA_LOAD_TIMEOUT)" \
+		--out "$(MEDIA_LOAD_OUT)"
 
 # ==============================================================================
 

@@ -249,6 +249,16 @@ func TestVRAMConfigFromRMCGPULayers(t *testing.T) {
 	}
 }
 
+func TestVRAMConfigFromRMCPrefillBatchSize(t *testing.T) {
+	prefillBatchSize := 4096
+	rmc := llamamodels.ModelConfig{PtrPrefillBatchSize: &prefillBatchSize}
+
+	got := vramConfigFromRMC(rmc)
+	if got.NUBatch != int64(prefillBatchSize) {
+		t.Errorf("NUBatch: got %d, want %d", got.NUBatch, prefillBatchSize)
+	}
+}
+
 func TestResolveSWAFull(t *testing.T) {
 	enabled := true
 	disabled := false

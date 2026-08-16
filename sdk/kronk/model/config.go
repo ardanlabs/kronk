@@ -14,30 +14,30 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
+	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
 /*
 Batch sizing defaults (applied in adjustConfig when left unset):
 
-	NUBatch = 2048                 physical batch (per-pass GPU chunk)
-	NBatch  = NUBatch * NSeqMax    logical batch (the round-robin tray)
+	Prefill = 2048
+	NBatch  = Prefill + generation reserve
+	NUBatch = Prefill (non-MTP) or NBatch (MTP)
 
-NUBatch defaults to 2048 because most models we serve are mtmd (vision)
-models whose image encoder uses non-causal attention and needs every patch
-token of an image chunk in a single physical ubatch; dropping below that
-breaks image input. Text-only models share the same value for one predictable
-setting. Workloads that benefit from a different size can override it.
+The 2048-token prefill capacity supports mtmd (vision) models whose image
+encoder uses non-causal attention and needs every patch token of an image
+chunk in one physical ubatch. Dropping below that can break image input.
 
-NBatch is the shared tray the round-robin batch engine fills across slots:
-each active slot may contribute up to NUBatch tokens per pass, so sizing it to
-NUBatch * NSeqMax lets every slot land a full chunk in one pass without
-starving the slots iterated last.
+One slot owns ordinary prefill until it finishes. Generation rows from all
+ready slots are staged first. Non-MTP reserves one row; MTP reserves 1 + nDraft
+rows per configured slot. Non-MTP can split the logical tray into physical
+ubatches. MTP keeps the complete tray in one physical batch because its dense
+NextN output is indexed in physical-ubatch order.
 
 Key principles:
 - NUBatch ≤ NBatch always (enforced in adjustConfig)
 - NUBatch primarily affects prompt processing speed and compute-buffer VRAM
-- Powers of 2 are slightly more efficient on most hardware
 */
 
 const (
@@ -50,13 +50,16 @@ const (
 
 const (
 	defContextWindow        = 8 * 1024
-	defNUBatch              = 2 * 1024
 	defMinCacheTokens       = 100
 	defThreadZero           = 0
 	defNSeqMax              = 1
 	defNDraft               = 5
 	defaultAdmissionTimeout = 3 * time.Minute
 )
+
+// DefaultPrefillBatchSize is the prompt-token capacity used when prefill batch
+// size is not explicitly configured.
+const DefaultPrefillBatchSize = int(vram.DefaultNUBatch)
 
 // DefaultQueueDepth is the admission-capacity multiplier used when queue depth
 // is not explicitly configured.
@@ -234,17 +237,14 @@ type AdapterConfig struct {
 //
 // ModelFiles is the path to the model files. This is mandatory to provide.
 //
-// NBatch is the logical batch size or the maximum number of tokens that can be
-// in a single forward pass through the model at any given time.  It defines
-// the maximum capacity of the processing batch. If you are processing a very
-// long prompt or multiple prompts simultaneously, the total number of tokens
-// processed in one go will not exceed NBatch. Increasing n_batch can improve
-// performance (throughput) if your hardware can handle it, as it better
-// utilizes parallel computation. However, a very high n_batch can lead to
-// out-of-memory errors on systems with limited VRAM.
-// When set to 0, generation models default to NUBatch * NSeqMax. Embedding and
-// reranking models default to NUBatch because non-causal pooled evaluation
-// cannot necessarily split a logical batch into smaller physical batches.
+// PrefillBatchSize is the maximum number of prompt tokens one prefill owner can
+// contribute to a decode iteration. The default is 2048. Larger values can
+// reduce the number of decode calls needed to reach generation, but each call
+// takes longer before already-generating slots can run again and requires
+// larger compute buffers. Kronk derives llama.cpp's logical and physical batch
+// capacities from this value, the configured slot count, and the generation
+// mode. Multimodal models may require a complete media-token chunk to fit in
+// this capacity.
 //
 // NGpuLayers is the number of model layers to offload to the GPU. When set to 0,
 // all layers are offloaded (default). Set to -1 to keep all layers on CPU. Any
@@ -262,16 +262,6 @@ type AdapterConfig struct {
 //
 // NThreadsBatch is the number of threads to use for batch processing. When set
 // to 0, the default llama.cpp value is used.
-//
-// NUBatch is the physical batch size or the maximum number of tokens processed
-// together during the initial prompt processing phase (also called "prompt
-// ingestion") to populate the KV cache. It specifically optimizes the initial
-// loading of prompt tokens into the KV cache. If a prompt is longer than
-// NUBatch, it will be broken down and processed in chunks of n_ubatch tokens
-// sequentially. This parameter is crucial for tuning performance on specific
-// hardware (especially GPUs) because different values might yield better prompt
-// processing times depending on the memory architecture.
-// When set to 0, the default value is 2048.
 //
 // NUMA controls the NUMA (Non-Uniform Memory Access) strategy. This matters
 // most when expert tensors are on CPU and the system has multiple NUMA nodes.
@@ -406,12 +396,11 @@ type Config struct {
 	PtrMainGPU                 *int
 	PtrMoE                     *MoEConfig
 	ModelFiles                 []string
-	PtrNBatch                  *int
 	PtrNGpuLayers              *int
 	PtrNSeqMax                 *int
 	PtrNThreads                *int
 	PtrNThreadsBatch           *int
-	PtrNUBatch                 *int
+	PtrPrefillBatchSize        *int
 	NUMA                       string
 	PtrOffloadKQV              *bool
 	PtrOpOffload               *bool
@@ -434,6 +423,8 @@ type Config struct {
 	PtrYarnBetaSlow            *float32
 	PtrYarnExtFactor           *float32
 	PtrYarnOrigCtx             *int
+	nBatch                     int
+	nUBatch                    int
 }
 
 func (cfg Config) AdmissionTimeout() time.Duration {
@@ -445,8 +436,14 @@ func (cfg Config) AdmissionTimeout() time.Duration {
 func (cfg Config) QueueDepth() int         { return intOr(cfg.PtrQueueDepth, 0) }
 func (cfg Config) IMCSessionCapacity() int { return intOr(cfg.PtrIMCSessionCapacity, 0) }
 func (cfg Config) ContextWindow() int      { return intOr(cfg.PtrContextWindow, 0) }
-func (cfg Config) NBatch() int             { return intOr(cfg.PtrNBatch, 0) }
-func (cfg Config) NUBatch() int            { return intOr(cfg.PtrNUBatch, 0) }
+func (cfg Config) PrefillBatchSize() int   { return intOr(cfg.PtrPrefillBatchSize, 0) }
+
+// EffectiveNBatch returns the derived llama.cpp logical batch capacity.
+func (cfg Config) EffectiveNBatch() int { return cfg.nBatch }
+
+// EffectiveNUBatch returns the derived llama.cpp physical batch capacity.
+func (cfg Config) EffectiveNUBatch() int { return cfg.nUBatch }
+
 func (cfg Config) NSeqMax() int            { return intOr(cfg.PtrNSeqMax, 0) }
 func (cfg Config) NThreads() int           { return intOr(cfg.PtrNThreads, 0) }
 func (cfg Config) NThreadsBatch() int      { return intOr(cfg.PtrNThreadsBatch, 0) }
@@ -522,12 +519,12 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("{mode:%s top_n:%s}", m.Mode, topN)
 	}
 
-	return fmt.Sprintf("\nAdapters[%v]\nAdmissionTimeout[%s]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nChatTemplateKwargs[%s]\nDevices[%v]\nFlashAttention[%s]\nIMCSessionCapacity[%d]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNBatch[%s]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nNUBatch[%s]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreFactory[%t]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
+	return fmt.Sprintf("\nAdapters[%v]\nAdmissionTimeout[%s]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nChatTemplateKwargs[%s]\nDevices[%v]\nFlashAttention[%s]\nIMCSessionCapacity[%d]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nPrefillBatchSize[%s]\nEffectiveNBatch[%d]\nEffectiveNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreFactory[%t]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
 		cfg.Adapters, formatDurationPtr(cfg.PtrAdmissionTimeout), cfg.AutoTune, formatIntPtr(cfg.PtrCacheMinTokens), cfg.CacheTypeK, cfg.CacheTypeV,
 		formatIntPtr(cfg.PtrContextWindow), cfg.DefaultParams.String(), chatTemplateKwargsSummary(cfg.ChatTemplateKwargs), cfg.Devices, cfg.FlashAttention(),
 		cfg.IMCSessionCapacity(), formatBoolPtr(cfg.PtrIncrementalCache), formatBoolPtr(cfg.PtrInsecureLogging), cfg.JinjaFile,
-		cfg.LoadMode, formatIntPtr(cfg.PtrMainGPU), formatMoEPtr(cfg.PtrMoE), cfg.ModelFiles, formatIntPtr(cfg.PtrNBatch),
-		formatIntPtr(cfg.PtrNGpuLayers), formatIntPtr(cfg.PtrNSeqMax), formatIntPtr(cfg.PtrNThreads), formatIntPtr(cfg.PtrNThreadsBatch), formatIntPtr(cfg.PtrNUBatch),
+		cfg.LoadMode, formatIntPtr(cfg.PtrMainGPU), formatMoEPtr(cfg.PtrMoE), cfg.ModelFiles,
+		formatIntPtr(cfg.PtrNGpuLayers), formatIntPtr(cfg.PtrNSeqMax), formatIntPtr(cfg.PtrNThreads), formatIntPtr(cfg.PtrNThreadsBatch), formatIntPtr(cfg.PtrPrefillBatchSize), cfg.EffectiveNBatch(), cfg.EffectiveNUBatch(),
 		cfg.NUMA,
 		formatBoolPtr(cfg.PtrOffloadKQV), formatBoolPtr(cfg.PtrOpOffload), formatIntPtr(cfg.PtrOpOffloadMinBatch), cfg.ProjFile, cfg.MTPDrafterFile, formatBoolPtr(cfg.PtrProjOnCPU), cfg.QueueDepth(),
 		formatFloat32Ptr(cfg.PtrRopeFreqBase), formatFloat32Ptr(cfg.PtrRopeFreqScale), cfg.RopeScaling,
@@ -579,6 +576,9 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 	}
 	if cfg.AdmissionTimeout() < 0 {
 		return fmt.Errorf("validate-config: admission timeout must be >= 0, got %s", cfg.AdmissionTimeout())
+	}
+	if cfg.PtrPrefillBatchSize != nil && cfg.PrefillBatchSize() <= 0 {
+		return fmt.Errorf("validate-config: prefill batch size must be > 0, got %d", cfg.PrefillBatchSize())
 	}
 
 	switch cfg.CacheTypeV {
@@ -766,27 +766,28 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 	}
 	cfg = adjustIMCSessionCapacity(cfg)
 
-	// Physical batch size (n_ubatch). Default to 2048. Most models we serve
-	// are mtmd (vision) models whose image encoder uses non-causal attention
-	// and requires every patch token of an image chunk to land in a single
-	// physical ubatch, so n_ubatch must never drop below the largest image
-	// chunk. We use the same value for every model for one shared, predictable
-	// setting. Workloads that benefit from a different size can override it.
-	if cfg.NUBatch() <= 0 {
-		cfg.PtrNUBatch = new(defNUBatch)
+	// Start batch sizing from a 2048-token prefill capacity. Most models
+	// we serve are mtmd (vision) models whose image encoder uses non-causal
+	// attention and requires every patch token of an image chunk to land in one
+	// physical ubatch, so this base must not drop below the largest image chunk.
+	// Generation-reserve rows are added below for generation models.
+	if cfg.PrefillBatchSize() <= 0 {
+		cfg.PtrPrefillBatchSize = new(DefaultPrefillBatchSize)
 	}
 
-	// Logical batch size (n_batch) is the shared "tray" the round-robin batch
-	// engine fills across slots. Generation models size it to n_ubatch *
-	// NSeqMax so every slot can land a full n_ubatch chunk in one pass. Pooled
-	// embedding and reranking evaluation cannot necessarily split a logical
-	// batch into smaller physical batches, so use n_ubatch as the safe default.
-	if cfg.NBatch() <= 0 {
-		nBatch := cfg.NUBatch() * cfg.NSeqMax()
-		if isEmbedOrRerankConfig(cfg) {
-			nBatch = cfg.NUBatch()
-		}
-		cfg.PtrNBatch = new(nBatch)
+	// Logical batch size (n_batch) is the shared "tray" the batch engine fills.
+	// Generation models reserve output rows after one full prefill contribution.
+	// The scheduler serves one prefill owner at a time, so the prefill capacity
+	// is not multiplied by NSeqMax; only the per-slot reserve is. Non-MTP
+	// leaves n_ubatch at the prefill capacity and may split the logical tray.
+	// MTP sizing is finalized after model loading, when MTP availability is
+	// known. Pooled embedding and reranking evaluation use n_ubatch directly
+	// because they do not mix generation and prefill rows.
+	if isEmbedOrRerankConfig(cfg) {
+		cfg.nBatch = cfg.PrefillBatchSize()
+		cfg.nUBatch = cfg.PrefillBatchSize()
+	} else {
+		cfg = adjustGenerationBatch(cfg, 1, false)
 	}
 
 	if cfg.NThreads() < 0 {
@@ -801,13 +802,6 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 	}
 	if cfg.PtrNThreadsBatch == nil {
 		cfg.PtrNThreadsBatch = new(defThreadZero)
-	}
-
-	// NBatch is generally greater than or equal to NUBatch. The entire
-	// NUBatch of tokens must fit into a physical batch for processing. This
-	// guards against an explicit NBatch override smaller than NUBatch.
-	if cfg.NUBatch() > cfg.NBatch() {
-		cfg.PtrNUBatch = new(cfg.NBatch())
 	}
 
 	// IMC is enabled by default.
@@ -839,6 +833,20 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 	}
 	if cfg.PtrOpOffloadMinBatch == nil {
 		cfg.PtrOpOffloadMinBatch = new(0)
+	}
+
+	return cfg
+}
+
+// adjustGenerationBatch derives llama.cpp's logical and physical generation
+// batch capacities from the user-facing prefill size and generation reserve.
+func adjustGenerationBatch(cfg Config, generationRowsPerSlot int, singlePhysicalBatch bool) Config {
+	base := cfg.PrefillBatchSize()
+	nBatch := base + cfg.NSeqMax()*max(generationRowsPerSlot, 1)
+	cfg.nBatch = nBatch
+	cfg.nUBatch = base
+	if singlePhysicalBatch {
+		cfg.nUBatch = nBatch
 	}
 
 	return cfg
@@ -904,21 +912,6 @@ func adjustContextWindow(cfg Config, model llama.Model) Config {
 	return cfg
 }
 
-func adjustMTPBatch(cfg Config, mtpEnabled bool) Config {
-	if !mtpEnabled || cfg.NSeqMax() <= 1 || cfg.NBatch() <= cfg.NUBatch() {
-		return cfg
-	}
-
-	// Dense NextN rows are emitted in physical-ubatch order. A logical batch
-	// larger than NUBatch can therefore interleave multiple sequences while
-	// Kronk's MTP mirror still indexes rows in logical-batch order. Keep each
-	// target decode within one physical ubatch until llama.cpp exposes a full
-	// physical-to-logical row mapping for dense NextN output.
-	cfg.PtrNBatch = new(cfg.NUBatch())
-
-	return cfg
-}
-
 func modelCtxParams(cfg Config, mi ModelInfo, mdl llama.Model) llama.ContextParams {
 	ctxParams := llama.ContextDefaultParams()
 
@@ -936,8 +929,8 @@ func modelCtxParams(cfg Config, mi ModelInfo, mdl llama.Model) llama.ContextPara
 	ctxParams = contextTopologyParams(ctxParams, cfg.ContextWindow(), nSeqMax)
 
 	if cfg.ContextWindow() > 0 {
-		ctxParams.NBatch = uint32(cfg.NBatch())
-		ctxParams.NUbatch = uint32(cfg.NUBatch())
+		ctxParams.NBatch = uint32(cfg.EffectiveNBatch())
+		ctxParams.NUbatch = uint32(cfg.EffectiveNUBatch())
 		ctxParams.NThreads = int32(cfg.NThreads())
 		ctxParams.NThreadsBatch = int32(cfg.NThreadsBatch())
 	}
@@ -1899,12 +1892,11 @@ func WithLog(v applog.Logger) Option            { return func(c *Config) { c.Log
 func WithMainGPU(v int) Option                  { return func(c *Config) { c.PtrMainGPU = new(v) } }
 func WithMoE(v *MoEConfig) Option               { return func(c *Config) { c.PtrMoE = v } }
 func WithModelFiles(v []string) Option          { return func(c *Config) { c.ModelFiles = v } }
-func WithNBatch(v int) Option                   { return func(c *Config) { c.PtrNBatch = new(v) } }
 func WithNGpuLayers(v int) Option               { return func(c *Config) { c.PtrNGpuLayers = new(v) } }
 func WithNSeqMax(v int) Option                  { return func(c *Config) { c.PtrNSeqMax = new(v) } }
 func WithNThreads(v int) Option                 { return func(c *Config) { c.PtrNThreads = new(v) } }
 func WithNThreadsBatch(v int) Option            { return func(c *Config) { c.PtrNThreadsBatch = new(v) } }
-func WithNUBatch(v int) Option                  { return func(c *Config) { c.PtrNUBatch = new(v) } }
+func WithPrefillBatchSize(v int) Option         { return func(c *Config) { c.PtrPrefillBatchSize = new(v) } }
 func WithNUMA(v string) Option                  { return func(c *Config) { c.NUMA = v } }
 func WithOffloadKQV(v bool) Option              { return func(c *Config) { c.PtrOffloadKQV = new(v) } }
 func WithOpOffload(v bool) Option               { return func(c *Config) { c.PtrOpOffload = new(v) } }

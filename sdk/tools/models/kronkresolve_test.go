@@ -345,6 +345,7 @@ func TestModelConfigAdmissionAndQueue(t *testing.T) {
 	data := []byte(`test-model:
   admission-timeout: 3m
   imc-session-capacity: 8
+  prefill-batch-size: 4096
   queue-depth: 2
 `)
 
@@ -364,13 +365,18 @@ func TestModelConfigAdmissionAndQueue(t *testing.T) {
 	if got := kronkCfg.IMCSessionCapacity(); got != 8 {
 		t.Errorf("IMCSessionCapacity() = %d, want 8", got)
 	}
+	if got := kronkCfg.PrefillBatchSize(); got != 4096 {
+		t.Errorf("PrefillBatchSize() = %d, want 4096", got)
+	}
 
 	overrideTimeout := Duration(45 * time.Second)
 	overrideDepth := 4
+	overridePrefillBatchSize := 1024
 	overrideSessions := 10
 	MergeModelConfig(&cfg, ModelConfig{
 		PtrAdmissionTimeout:   &overrideTimeout,
 		PtrIMCSessionCapacity: &overrideSessions,
+		PtrPrefillBatchSize:   &overridePrefillBatchSize,
 		PtrQueueDepth:         &overrideDepth,
 	})
 	kronkCfg = cfg.ToKronkConfig()
@@ -382,6 +388,9 @@ func TestModelConfigAdmissionAndQueue(t *testing.T) {
 	}
 	if got := kronkCfg.IMCSessionCapacity(); got != 10 {
 		t.Errorf("merged IMCSessionCapacity() = %d, want 10", got)
+	}
+	if got := kronkCfg.PrefillBatchSize(); got != 1024 {
+		t.Errorf("merged PrefillBatchSize() = %d, want 1024", got)
 	}
 }
 

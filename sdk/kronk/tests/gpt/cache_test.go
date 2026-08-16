@@ -13,8 +13,7 @@ func testCacheIMCNonDeterministic(t *testing.T) {
 	cfg := model.Config{
 		ModelFiles:          testlib.MPGPTChat.ModelFiles,
 		PtrContextWindow:    new(8192),
-		PtrNBatch:           new(2048),
-		PtrNUBatch:          new(512),
+		PtrPrefillBatchSize: new(512),
 		CacheTypeK:          model.GGMLTypeQ8_0,
 		CacheTypeV:          model.GGMLTypeQ8_0,
 		PtrNSeqMax:          new(1),

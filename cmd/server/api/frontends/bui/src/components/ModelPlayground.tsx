@@ -24,6 +24,7 @@ import type { SamplingParams } from '../contexts/SamplingContext';
 import { PARAM_TOOLTIPS, FieldLabel } from './ParamTooltips';
 import { formatBytes } from '../lib/format';
 import { extractContextInfo, formatContextHint } from '../lib/context';
+import { DEFAULT_PREFILL_BATCH_SIZE } from '../lib/modelDefaults';
 import { useDevicesInfo, isMoeModel, MOE_STRATEGY_OPTIONS } from './vram';
 
 const NEW_MODEL_VALUE = '__new__';
@@ -52,8 +53,7 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
     selectedTemplate, setSelectedTemplate,
     customScript, setCustomScript,
     contextWindow, setContextWindow,
-    nBatch, setNBatch,
-    nUBatch, setNUBatch,
+    prefillBatchSize, setPrefillBatchSize,
     nSeqMax, setNSeqMax,
     flashAttention, setFlashAttention,
     cacheType, setCacheType,
@@ -184,12 +184,10 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
         if (cancelled) return;
         const mc = info.model_config;
         if (mc) {
-          const nUBatch = mc.nubatch || 2048;
           const nSeqMax = mc['nseq-max'] || 1;
           setCatalogConfig(mc);
           setContextWindow(mc['context-window'] || 8192);
-          setNBatch(mc.nbatch || nUBatch * nSeqMax);
-          setNUBatch(nUBatch);
+          setPrefillBatchSize(mc['prefill-batch-size'] || DEFAULT_PREFILL_BATCH_SIZE);
           setNSeqMax(nSeqMax);
           setFlashAttention(mc['flash-attention'] || 'auto');
           setCacheType(mc['cache-type-k'] || mc['cache-type-v'] || '');
@@ -274,11 +272,6 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
   const handleCreateSession = async () => {
     if (!selectedModel) return;
 
-    if (nUBatch > nBatch) {
-      setSessionError(`nubatch (${nUBatch}) must not exceed nbatch (${nBatch})`);
-      return;
-    }
-
     setSessionLoading(true);
     setSessionError('');
 
@@ -289,13 +282,8 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
       if (!catalogConfig || contextWindow !== (catalogConfig['context-window'] || 8192)) {
         config['context_window'] = contextWindow;
       }
-      const catalogNUBatch = catalogConfig?.nubatch || 2048;
-      const catalogNSeqMax = catalogConfig?.['nseq-max'] || 1;
-      if (!catalogConfig || nBatch !== (catalogConfig.nbatch || catalogNUBatch * catalogNSeqMax)) {
-        config['nbatch'] = nBatch;
-      }
-      if (!catalogConfig || nUBatch !== catalogNUBatch) {
-        config['nubatch'] = nUBatch;
+      if (!catalogConfig || prefillBatchSize !== (catalogConfig['prefill-batch-size'] || DEFAULT_PREFILL_BATCH_SIZE)) {
+        config['prefill_batch_size'] = prefillBatchSize;
       }
       if (!catalogConfig || nSeqMax !== (catalogConfig['nseq-max'] || 1)) {
         config['nseq_max'] = nSeqMax;
@@ -746,8 +734,7 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
                   template_script: templateMode === 'custom' ? customScript : undefined,
                   base_config: {
                     context_window: contextWindow,
-                    nbatch: nBatch,
-                    nubatch: nUBatch,
+                    prefill_batch_size: prefillBatchSize,
                     nseq_max: nSeqMax,
                     flash_attention: flashAttention,
                     cache_type_k: cacheType || undefined,
@@ -813,22 +800,13 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
               )}
             </div>
             <div className="form-group">
-              <FieldLabel htmlFor="pg-nbatch" tooltipKey="nbatch">NBatch</FieldLabel>
+              <FieldLabel htmlFor="pg-prefill-batch-size" tooltipKey="prefillBatchSize">Prefill Batch Size</FieldLabel>
               <input
-                id="pg-nbatch"
+                id="pg-prefill-batch-size"
                 type="number"
-                value={nBatch}
-                onChange={(e) => setNBatch(Number(e.target.value))}
-                disabled={!!session}
-              />
-            </div>
-            <div className="form-group">
-              <FieldLabel htmlFor="pg-nubatch" tooltipKey="nubatch">NUBatch</FieldLabel>
-              <input
-                id="pg-nubatch"
-                type="number"
-                value={nUBatch}
-                onChange={(e) => setNUBatch(Number(e.target.value))}
+                value={prefillBatchSize}
+                onChange={(e) => setPrefillBatchSize(Number(e.target.value))}
+                min={1}
                 disabled={!!session}
               />
             </div>

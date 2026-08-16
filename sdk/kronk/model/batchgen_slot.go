@@ -123,9 +123,11 @@ type slot struct {
 	// -------------------------------------------------------------------------
 	// Text Prefill (text-only requests)
 
-	prefillTokens []llama.Token // Tokens awaiting prefill
-	nPrefilled    int           // Number of tokens already prefilled
-	prefillDone   bool          // True when prefill complete, generation started
+	prefillTokens []llama.Token   // Tokens awaiting prefill
+	nPrefilled    int             // Number of tokens already prefilled
+	prefillDone   bool            // True when prefill complete, generation started
+	imcPrep       *imcPreparation // Resumable text IMC build or extension state
+	imcRestoring  bool            // True while session sequence state is restored into this slot
 
 	// -------------------------------------------------------------------------
 	// MTMD Prefill (vision/audio requests)
@@ -356,6 +358,8 @@ func (s *slot) reset() {
 	s.prefillDone = false
 	s.prefillTokens = nil
 	s.nPrefilled = 0
+	s.imcPrep = nil
+	s.imcRestoring = false
 	s.logprobsData = nil
 	s.currentLogprob = nil
 	s.draftNPast = 0

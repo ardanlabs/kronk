@@ -1,0 +1,198 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+  <title id="title">How IMC selects a session</title>
+  <desc id="desc">IMC compares the complete Current working cache and Fallback cache in every available session. The longest complete prefix of the new stable plan wins globally, and Current wins equal-length ties. Reserved sessions are skipped. With no match, IMC chooses an empty session, then an available least-recently-used session, or returns retryable busy when all sessions are reserved.</desc>
+
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="135%">
+      <feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#334155"/>
+    </marker>
+    <style>
+      .title { font: 700 42px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; letter-spacing: 0.4px; }
+      .subtitle { font: 400 21px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .section { font: 700 25px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .heading { font: 700 21px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .body { font: 500 18px Inter, ui-sans-serif, system-ui, sans-serif; fill: #334155; }
+      .small { font: 500 18px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .eyebrow { font: 700 18px Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 1.2px; }
+      .token { font: 700 19px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-anchor: middle; dominant-baseline: middle; }
+      .white { fill: #ffffff; }
+      .green { fill: #15803d; }
+      .red { fill: #b91c1c; }
+      .blue { fill: #1d4ed8; }
+      .muted { fill: #64748b; }
+    </style>
+  </defs>
+
+  <rect width="1920" height="1080" fill="#f8fafc"/>
+  <rect x="0" y="0" width="1920" height="12" fill="#0f766e"/>
+
+  <text class="title" x="72" y="67">IMC SESSION SELECTION</text>
+  <text class="subtitle" x="72" y="105">Compare complete saved states across available sessions—then restore the one that avoids the most prefill work.</text>
+
+  <!-- New stable plan and selection rule -->
+  <g filter="url(#shadow)">
+    <rect x="70" y="140" width="1778" height="132" rx="24" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  </g>
+  <text class="eyebrow" x="106" y="179" fill="#475569">NEW STABLE TOKEN PLAN</text>
+  <g>
+    <rect x="106" y="198" width="46" height="46" rx="9" fill="#0f766e"/>
+    <rect x="161" y="198" width="46" height="46" rx="9" fill="#0f766e"/>
+    <rect x="216" y="198" width="46" height="46" rx="9" fill="#0f766e"/>
+    <rect x="271" y="198" width="46" height="46" rx="9" fill="#0f766e"/>
+    <rect x="326" y="198" width="46" height="46" rx="9" fill="#0f766e"/>
+    <rect x="381" y="198" width="46" height="46" rx="9" fill="#0f766e"/>
+    <rect x="436" y="198" width="46" height="46" rx="9" fill="#0f766e"/>
+    <text class="token white" x="129" y="221">A</text>
+    <text class="token white" x="184" y="221">B</text>
+    <text class="token white" x="239" y="221">C</text>
+    <text class="token white" x="294" y="221">D</text>
+    <text class="token white" x="349" y="221">E</text>
+    <text class="token white" x="404" y="221">F</text>
+    <text class="token white" x="459" y="221">G</text>
+  </g>
+  <path d="M 530 206 H 608" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+  <text class="heading" x="642" y="194">Selection rule</text>
+  <text class="body" x="642" y="225">Longest complete prefix wins across Current and Fallback.</text>
+  <rect x="1274" y="178" width="532" height="66" rx="14" fill="#ecfeff" stroke="#2dd4bf" stroke-width="2"/>
+  <text class="eyebrow" x="1304" y="205" fill="#0f766e">EQUAL LENGTH?</text>
+  <text class="body" x="1304" y="231">Prefer Current—the normal append path.</text>
+
+  <!-- Session candidates -->
+  <g filter="url(#shadow)">
+    <rect x="70" y="306" width="420" height="344" rx="24" fill="#ffffff" stroke="#86efac" stroke-width="2"/>
+  </g>
+  <rect x="70" y="306" width="420" height="62" rx="24" fill="#dcfce7"/>
+  <path d="M 70 338 Q 70 368 100 368 H 460 Q 490 368 490 338" fill="#dcfce7"/>
+  <text class="eyebrow green" x="104" y="345">SESSION 1</text>
+  <text class="heading" x="270" y="347">VALID CURRENT</text>
+  <text class="eyebrow" x="104" y="406" fill="#475569">CURRENT WORKING CACHE</text>
+  <g>
+    <rect x="104" y="424" width="42" height="42" rx="8" fill="#22c55e"/>
+    <rect x="155" y="424" width="42" height="42" rx="8" fill="#22c55e"/>
+    <rect x="206" y="424" width="42" height="42" rx="8" fill="#22c55e"/>
+    <text class="token white" x="125" y="445">A</text><text class="token white" x="176" y="445">B</text><text class="token white" x="227" y="445">C</text>
+  </g>
+  <text class="body green" x="268" y="451">Complete prefix · 3</text>
+  <line x1="104" y1="493" x2="456" y2="493" stroke="#e2e8f0" stroke-width="2"/>
+  <text class="eyebrow" x="104" y="529" fill="#475569">FALLBACK CACHE</text>
+  <g>
+    <rect x="104" y="547" width="42" height="42" rx="8" fill="#94a3b8"/>
+    <rect x="155" y="547" width="42" height="42" rx="8" fill="#94a3b8"/>
+    <text class="token white" x="125" y="568">A</text><text class="token white" x="176" y="568">B</text>
+  </g>
+  <text class="body" x="217" y="574">Complete prefix · 2</text>
+  <text class="small muted" x="104" y="625">Usable, but not the longest match.</text>
+
+  <g filter="url(#shadow)">
+    <rect x="514" y="306" width="420" height="344" rx="24" fill="#ffffff" stroke="#fca5a5" stroke-width="2"/>
+  </g>
+  <rect x="514" y="306" width="420" height="62" rx="24" fill="#fee2e2"/>
+  <path d="M 514 338 Q 514 368 544 368 H 904 Q 934 368 934 338" fill="#fee2e2"/>
+  <text class="eyebrow red" x="548" y="345">SESSION 2</text>
+  <text class="heading" x="714" y="347">VALID FALLBACK</text>
+  <text class="eyebrow" x="548" y="406" fill="#475569">CURRENT WORKING CACHE</text>
+  <g>
+    <rect x="548" y="424" width="42" height="42" rx="8" fill="#94a3b8"/>
+    <rect x="599" y="424" width="42" height="42" rx="8" fill="#94a3b8"/>
+    <rect x="650" y="424" width="42" height="42" rx="8" fill="#ef4444"/>
+    <text class="token white" x="569" y="445">A</text><text class="token white" x="620" y="445">B</text><text class="token white" x="671" y="445">X</text>
+  </g>
+  <text class="body red" x="712" y="451">Diverges · reject</text>
+  <line x1="548" y1="493" x2="900" y2="493" stroke="#e2e8f0" stroke-width="2"/>
+  <text class="eyebrow" x="548" y="529" fill="#475569">FALLBACK CACHE</text>
+  <g>
+    <rect x="548" y="547" width="42" height="42" rx="8" fill="#22c55e"/>
+    <rect x="599" y="547" width="42" height="42" rx="8" fill="#22c55e"/>
+    <text class="token white" x="569" y="568">A</text><text class="token white" x="620" y="568">B</text>
+  </g>
+  <text class="body green" x="661" y="574">Complete prefix · 2</text>
+  <text class="small muted" x="548" y="625">Fallback remains safe and complete.</text>
+
+  <g filter="url(#shadow)">
+    <rect x="958" y="306" width="510" height="344" rx="24" fill="#ffffff" stroke="#22c55e" stroke-width="4"/>
+  </g>
+  <rect x="958" y="306" width="510" height="62" rx="24" fill="#14532d"/>
+  <path d="M 958 338 Q 958 368 988 368 H 1438 Q 1468 368 1468 338" fill="#14532d"/>
+  <text class="eyebrow white" x="992" y="345">SESSION 3</text>
+  <text class="heading white" x="1160" y="347">SELECTED FALLBACK</text>
+  <text class="eyebrow" x="992" y="406" fill="#475569">CURRENT WORKING CACHE</text>
+  <g>
+    <rect x="992" y="424" width="42" height="42" rx="8" fill="#94a3b8"/>
+    <rect x="1043" y="424" width="42" height="42" rx="8" fill="#94a3b8"/>
+    <rect x="1094" y="424" width="42" height="42" rx="8" fill="#94a3b8"/>
+    <rect x="1145" y="424" width="42" height="42" rx="8" fill="#94a3b8"/>
+    <rect x="1196" y="424" width="42" height="42" rx="8" fill="#ef4444"/>
+    <text class="token white" x="1013" y="445">A</text><text class="token white" x="1064" y="445">B</text><text class="token white" x="1115" y="445">C</text><text class="token white" x="1166" y="445">D</text><text class="token white" x="1217" y="445">X</text>
+  </g>
+  <text class="body red" x="1260" y="451">Diverges · reject</text>
+  <line x1="992" y1="493" x2="1434" y2="493" stroke="#e2e8f0" stroke-width="2"/>
+  <text class="eyebrow" x="992" y="529" fill="#475569">FALLBACK CACHE</text>
+  <g>
+    <rect x="992" y="547" width="42" height="42" rx="8" fill="#22c55e"/>
+    <rect x="1043" y="547" width="42" height="42" rx="8" fill="#22c55e"/>
+    <rect x="1094" y="547" width="42" height="42" rx="8" fill="#22c55e"/>
+    <rect x="1145" y="547" width="42" height="42" rx="8" fill="#22c55e"/>
+    <text class="token white" x="1013" y="568">A</text><text class="token white" x="1064" y="568">B</text><text class="token white" x="1115" y="568">C</text><text class="token white" x="1166" y="568">D</text>
+  </g>
+  <text class="body green" x="1208" y="574">Complete prefix · 4</text>
+  <rect x="992" y="604" width="442" height="28" rx="8" fill="#dcfce7"/>
+  <text class="eyebrow green" x="1213" y="625" text-anchor="middle">FALLBACK 4 BEATS CURRENT 3 IN SESSION 1</text>
+
+  <g filter="url(#shadow)">
+    <rect x="1492" y="306" width="356" height="344" rx="24" fill="#ffffff" stroke="#93c5fd" stroke-width="2"/>
+  </g>
+  <rect x="1492" y="306" width="356" height="62" rx="24" fill="#dbeafe"/>
+  <path d="M 1492 338 Q 1492 368 1522 368 H 1818 Q 1848 368 1848 338" fill="#dbeafe"/>
+  <text class="eyebrow blue" x="1526" y="345">SESSION 4</text>
+  <text class="heading" x="1690" y="347">RESERVED</text>
+  <rect x="1526" y="402" width="288" height="92" rx="16" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+  <text class="heading" x="1670" y="439" text-anchor="middle">Skip this session</text>
+  <text class="small" x="1670" y="470" text-anchor="middle">Another request owns it.</text>
+  <text class="eyebrow" x="1526" y="539" fill="#475569">CURRENT WORKING CACHE</text>
+  <text class="body muted" x="1526" y="572">Not inspected</text>
+  <text class="eyebrow" x="1526" y="610" fill="#475569">FALLBACK CACHE</text>
+  <text class="body muted" x="1526" y="638">Not inspected</text>
+
+  <!-- Rebuild path -->
+  <line x1="70" y1="691" x2="1848" y2="691" stroke="#cbd5e1" stroke-width="2"/>
+  <text class="section" x="72" y="735">NO COMPLETE CACHE MATCH?</text>
+  <text class="subtitle" x="470" y="735">Choose where to rebuild the new Current state.</text>
+
+  <rect x="70" y="773" width="330" height="168" rx="20" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <text class="eyebrow" x="102" y="813" fill="#475569">START</text>
+  <text class="heading" x="102" y="853">No available cache is</text>
+  <text class="heading" x="102" y="883">a complete prefix</text>
+  <text class="small muted" x="102" y="918">Reusable tokens = 0</text>
+
+  <path d="M 414 857 H 482" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+
+  <rect x="502" y="773" width="338" height="168" rx="20" fill="#ffffff" stroke="#93c5fd" stroke-width="2"/>
+  <text class="eyebrow blue" x="534" y="813">FIRST CHOICE</text>
+  <text class="heading" x="534" y="853">Empty session available?</text>
+  <rect x="534" y="885" width="274" height="36" rx="9" fill="#dbeafe"/>
+  <text class="body blue" x="671" y="910" text-anchor="middle">Yes → select empty</text>
+
+  <path d="M 854 857 H 922" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+  <text class="eyebrow red" x="892" y="827" text-anchor="middle">NO</text>
+
+  <rect x="942" y="773" width="338" height="168" rx="20" fill="#ffffff" stroke="#fbbf24" stroke-width="2"/>
+  <text class="eyebrow" x="974" y="813" fill="#b45309">SECOND CHOICE</text>
+  <text class="heading" x="974" y="853">Available LRU session?</text>
+  <rect x="974" y="885" width="274" height="36" rx="9" fill="#fef3c7"/>
+  <text class="body" x="1111" y="910" text-anchor="middle">Yes → select and reset</text>
+
+  <path d="M 1294 857 H 1362" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+  <text class="eyebrow red" x="1332" y="827" text-anchor="middle">NO</text>
+
+  <rect x="1382" y="773" width="466" height="168" rx="20" fill="#fff1f2" stroke="#f87171" stroke-width="2"/>
+  <text class="eyebrow red" x="1416" y="813">ALL SESSIONS RESERVED</text>
+  <text class="heading" x="1416" y="853">Return retryable busy</text>
+  <text class="small" x="1416" y="885">No session can be safely reused</text>
+  <text class="small" x="1416" y="915">or reset while another request owns it.</text>
+
+  <rect x="70" y="978" width="1778" height="64" rx="14" fill="#0f172a"/>
+  <text class="body white" x="959" y="1017" text-anchor="middle">Safety rule: restore only a complete serialized Current or Fallback cache—never trim a divergent cache to its coincidental token overlap.</text>
+</svg>

@@ -398,20 +398,37 @@ See
 [Chapter 4](https://www.kronkai.com/manual#chapter-4-batch-processing) for request scheduling and the
 differences between model types.
 
-Two settings control prompt batching:
+One setting controls prompt batching:
 
 | Key | Load-time default | Purpose |
 | --- | ----------------- | ------- |
-| `nubatch` | `2048` | Physical compute chunk size |
-| `nbatch` | `nubatch × nseq-max` | Maximum logical decode batch; multi-slot MTP is capped at `nubatch` |
+| `prefill-batch-size` | `2048` | Maximum prompt-token contribution from the current prefill owner in one decode iteration |
 
-Most deployments should leave both unset. Larger values can improve prompt
-throughput but require larger compute buffers. `nubatch` must not exceed
-`nbatch`. For MTP with more than one slot, Kronk keeps `nbatch` equal to
-`nubatch` because dense NextN hidden-state rows are only safe to mirror while
-the logical decode fits in one physical batch. Multimodal encoders may require
-an entire media token chunk to fit in one `nubatch`, so do not lower it for a
-multimodal model without testing media input.
+Most deployments should use the default. A larger value can move a long prompt
+to generation in fewer decode calls, but requires larger compute buffers and
+each call runs longer before already-generating slots can run again. A smaller
+value gives generating slots more frequent scheduling opportunities at the
+cost of more prefill decode calls.
+
+Kronk derives llama.cpp's internal physical and logical batch capacities from
+this value. It reserves one output row per slot for non-MTP generation. MTP
+reserves `1 + ndraft` rows per slot because speculative verification includes
+the sampled token and its draft candidates. With four slots and the default
+`ndraft: 3`, the internal effective sizes are `NUBatch: 2048`, `NBatch: 2052`
+for non-MTP and `NUBatch: 2064`, `NBatch: 2064` for MTP. Both can stage
+generation rows and then add a complete 2048-token prefill contribution from
+the current owner in the same logical decode. Non-MTP may split that tray into
+physical ubatches; MTP keeps it in one physical batch so dense NextN rows retain
+their expected mapping.
+
+The `status[resolved]` `batch-sizing` debug log reports the configured prefill
+size, generation reserve, effective internal sizes, and MTP state. The Slots
+diagnostic screen also displays effective `NBatch / NUBatch` as read-only
+runtime values. Multimodal encoders may require an entire media-token chunk to
+fit in one physical batch, so do not lower `prefill-batch-size` for a multimodal
+model without testing media input.
+
+![How two requests move from prefill to generation and how non-MTP and MTP batch sizing supports them](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-04/batch-sizing-mtp-vs-non-mtp.svg)
 
 Incremental Message Caching is configured separately with
 `incremental-cache` and related cache settings. See
@@ -641,7 +658,7 @@ is normally supplied by analysis or by the load-time defaults.
 | `admission-timeout` | Go duration, default `3m` | Maximum SDK admission-permit wait; separate from the server's `KRONK_WEB_INFERENCE_TIMEOUT` (default `60m`) |
 | `queue-depth` | Non-negative integer, default `2` | Generation admission and handoff capacity multiplier |
 | `imc-session-capacity` | Positive integer; derived when omitted | Reusable IMC conversation identities retained in RAM or on disk |
-| `nubatch`, `nbatch` | Positive token counts | Physical and logical batch sizes |
+| `prefill-batch-size` | Positive token count, default `2048` | Prompt tokens contributed by the prefill owner per decode iteration |
 | `ngpu-layers` | `-1`, `0`, or a positive count | CPU/GPU layer placement |
 | `load-mode` | `auto`, `mmap`, `none`, `mlock`, `mmap+mlock`, `direct-io` | Model weight loading strategy |
 | `offload-kqv` | Boolean | Place KV cache on GPU when true |

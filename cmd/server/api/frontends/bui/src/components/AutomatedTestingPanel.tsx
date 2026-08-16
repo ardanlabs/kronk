@@ -296,8 +296,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
 
   // Raw text state for numeric sweep inputs so users can type freely (e.g. ", 1234").
   // We only parse into numbers on blur.
-  const [rawNBatch, setRawNBatch] = useState(() => initConfigSweepDef.nbatch.values.join(', '));
-  const [rawNUBatch, setRawNUBatch] = useState(() => initConfigSweepDef.nubatch.values.join(', '));
+  const [rawPrefillBatchSize, setRawPrefillBatchSize] = useState(() => initConfigSweepDef.prefillBatchSize.values.join(', '));
   const [rawContextWindow, setRawContextWindow] = useState(() => initConfigSweepDef.contextWindow.values.join(', '));
   const [rawNSeqMax, setRawNSeqMax] = useState(() => initConfigSweepDef.nSeqMax.values.join(', '));
   const [availableVRAMGB, setAvailableVRAMGB] = useState<number>(() => {
@@ -339,8 +338,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
       setSweepDirty(true);
     } else {
       setConfigSweepDef(structuredClone(run.configSweepDef));
-      setRawNBatch(run.configSweepDef.nbatch.values.join(', '));
-      setRawNUBatch(run.configSweepDef.nubatch.values.join(', '));
+      setRawPrefillBatchSize(run.configSweepDef.prefillBatchSize.values.join(', '));
       setRawContextWindow(run.configSweepDef.contextWindow.values.join(', '));
       setRawNSeqMax(run.configSweepDef.nSeqMax.values.join(', '));
       setRawMoeKeepExpertsTopN(run.configSweepDef.moeKeepExpertsTopN?.values.join(', ') ?? '0');
@@ -360,7 +358,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
 
   const commitNumericSweep = useCallback((
     raw: string,
-    field: 'nbatch' | 'nubatch' | 'contextWindow' | 'nSeqMax' | 'moeKeepExpertsTopN' | 'opOffloadMinBatch',
+    field: 'prefillBatchSize' | 'contextWindow' | 'nSeqMax' | 'moeKeepExpertsTopN' | 'opOffloadMinBatch',
     setRaw: (v: string) => void,
   ) => {
     const minVal = (field === 'moeKeepExpertsTopN' || field === 'opOffloadMinBatch') ? 0 : 1;
@@ -613,10 +611,8 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
           <ConfigSweepParams
             configSweepDef={configSweepDef}
             setConfigSweepDef={setConfigSweepDef}
-            rawNBatch={rawNBatch}
-            setRawNBatch={setRawNBatch}
-            rawNUBatch={rawNUBatch}
-            setRawNUBatch={setRawNUBatch}
+            rawPrefillBatchSize={rawPrefillBatchSize}
+            setRawPrefillBatchSize={setRawPrefillBatchSize}
             rawContextWindow={rawContextWindow}
             setRawContextWindow={setRawContextWindow}
             rawNSeqMax={rawNSeqMax}
@@ -708,8 +704,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
             onClick={() => {
               const moe = defaultMoESweepDef;
               setConfigSweepDef(structuredClone(moe));
-              setRawNBatch(moe.nbatch.values.join(', '));
-              setRawNUBatch(moe.nubatch.values.join(', '));
+              setRawPrefillBatchSize(moe.prefillBatchSize.values.join(', '));
               setRawContextWindow(moe.contextWindow.values.join(', '));
               setRawNSeqMax(moe.nSeqMax.values.join(', '));
               setRawMoeKeepExpertsTopN(moe.moeKeepExpertsTopN?.values.join(', ') ?? '0');
@@ -789,8 +784,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
                 {displayMode === 'config' && bestConfigTrial ? (
                   <>
                     <div><strong>Context Window:</strong> {bestConfigTrial.config?.['context_window'] ?? '—'}</div>
-                    <div><strong>NBatch:</strong> {bestConfigTrial.config?.nbatch ?? '—'}</div>
-                    <div><strong>NUBatch:</strong> {bestConfigTrial.config?.nubatch ?? '—'}</div>
+                    <div><strong>Prefill Batch Size:</strong> {bestConfigTrial.config?.['prefill_batch_size'] ?? '—'}</div>
                     <div><strong>NSeqMax:</strong> {bestConfigTrial.config?.['nseq_max'] ?? '—'}</div>
                     <div><strong>Flash Attention:</strong> {bestConfigTrial.config?.['flash_attention'] ?? '—'}</div>
                     <div><strong>KV Cache Type:</strong> {bestConfigTrial.config?.['cache_type'] ?? '—'}</div>

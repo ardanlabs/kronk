@@ -358,12 +358,11 @@ type ModelConfig struct {
 	PtrLoadMode           *model.LoadMode           `yaml:"load-mode,omitempty"`
 	PtrMainGPU            *int                      `yaml:"main-gpu,omitempty"`
 	MoE                   *model.MoEConfig          `yaml:"moe,omitempty"`
-	PtrNBatch             *int                      `yaml:"nbatch,omitempty"`
 	PtrNGpuLayers         *int                      `yaml:"ngpu-layers,omitempty"`
 	PtrNSeqMax            *int                      `yaml:"nseq-max,omitempty"`
 	PtrNThreads           *int                      `yaml:"nthreads,omitempty"`
 	PtrNThreadsBatch      *int                      `yaml:"nthreads-batch,omitempty"`
-	PtrNUBatch            *int                      `yaml:"nubatch,omitempty"`
+	PtrPrefillBatchSize   *int                      `yaml:"prefill-batch-size,omitempty"`
 	NUMA                  string                    `yaml:"numa,omitempty"`
 	PtrOffloadKQV         *bool                     `yaml:"offload-kqv,omitempty"`
 	PtrOpOffload          *bool                     `yaml:"op-offload,omitempty"`
@@ -429,12 +428,11 @@ func (mc ModelConfig) ToKronkConfig() model.Config {
 		LoadMode:              model.DerefLoadMode(mc.PtrLoadMode),
 		PtrMainGPU:            mc.PtrMainGPU,
 		PtrMoE:                mc.MoE,
-		PtrNBatch:             mc.PtrNBatch,
 		PtrNGpuLayers:         mc.PtrNGpuLayers,
 		PtrNSeqMax:            mc.PtrNSeqMax,
 		PtrNThreads:           mc.PtrNThreads,
 		PtrNThreadsBatch:      mc.PtrNThreadsBatch,
-		PtrNUBatch:            mc.PtrNUBatch,
+		PtrPrefillBatchSize:   mc.PtrPrefillBatchSize,
 		NUMA:                  mc.NUMA,
 		PtrOffloadKQV:         mc.PtrOffloadKQV,
 		PtrOpOffload:          mc.PtrOpOffload,

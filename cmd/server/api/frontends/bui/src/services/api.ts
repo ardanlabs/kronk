@@ -2,6 +2,7 @@ import type {
   ListModelInfoResponse,
   ModelDetailsResponse,
   IMCSessionsResponse,
+  BatchEngineSlotsResponse,
   ModelInfoResponse,
   PoolBudgetResponse,
   CatalogModelsResponse,
@@ -120,6 +121,10 @@ class ApiService {
 
   async listIMCSessions(): Promise<IMCSessionsResponse> {
     return this.request<IMCSessionsResponse>('/kronk/models/imc-sessions');
+  }
+
+  async listBatchEngineSlots(): Promise<BatchEngineSlotsResponse> {
+    return this.request<BatchEngineSlotsResponse>('/kronk/models/slots');
   }
 
   async getPoolBudget(): Promise<PoolBudgetResponse> {

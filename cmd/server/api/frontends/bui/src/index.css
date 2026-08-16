@@ -1138,6 +1138,90 @@ tr.selected:hover td {
     border-top-left-radius: 0;
 }
 
+.slot-model-card h3 {
+    margin: 0 0 6px;
+    overflow-wrap: anywhere;
+}
+
+.slot-model-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.slot-mode-badge,
+.slot-phase {
+    display: inline-block;
+    border-radius: 999px;
+    padding: 3px 9px;
+    background: var(--color-gray-100);
+    color: var(--color-gray-700);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.slot-iteration {
+    color: var(--color-gray-600);
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+.slot-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.slot-summary-grid > div {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px;
+    border: 1px solid var(--color-gray-200);
+    border-radius: 7px;
+    background: var(--color-gray-100);
+}
+
+.slot-summary-grid span,
+.slot-summary-grid small {
+    color: var(--color-gray-600);
+}
+
+.slot-summary-grid strong {
+    font-size: 17px;
+}
+
+.slot-phase-prefill,
+.slot-phase-media-prefill,
+.slot-phase-prefill-imc,
+.slot-phase-imc-restore {
+    background: color-mix(in srgb, var(--color-orange) 15%, transparent);
+    color: var(--color-orange);
+}
+
+.slot-phase-generation {
+    background: color-mix(in srgb, var(--color-light-blue) 15%, transparent);
+    color: var(--color-light-blue);
+}
+
+.slots-table tr.slot-prefill-owner td {
+    background: color-mix(in srgb, var(--color-orange) 6%, transparent);
+}
+
+.slot-request-id {
+    display: inline-block;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
+.slot-request-age {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
 .imc-table-groups th {
     vertical-align: middle;
 }
