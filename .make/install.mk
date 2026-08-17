@@ -126,11 +126,11 @@ install-class-models: install-kronk
 	kronk bucky model pull --local "ggml-tiny.bin"
 	@echo
 
-OPENWEBUI  := ghcr.io/open-webui/open-webui:v0.9.6
-GRAFANA    := grafana/grafana:13.0.2
-PROMETHEUS := prom/prometheus:v3.12.0
-TEMPO      := grafana/tempo:3.0.0
-LOKI       := grafana/loki:3.7.2
+OPENWEBUI  := ghcr.io/open-webui/open-webui:v0.11.0
+GRAFANA    := grafana/grafana:13.1.3
+PROMETHEUS := prom/prometheus:v3.13.2
+TEMPO      := grafana/tempo:3.0.3
+LOKI       := grafana/loki:3.7.6
 PROMTAIL   := grafana/promtail:3.6.11
 
 # Install the docker images.

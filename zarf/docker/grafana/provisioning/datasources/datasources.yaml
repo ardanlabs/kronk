@@ -41,7 +41,7 @@ datasources:
     jsonData:
       httpMethod: POST
       prometheusType: Prometheus
-      prometheusVersion: 2.44.0
+      prometheusVersion: 3.13.2
       nodeGraph:
         enabled: true
       search:
