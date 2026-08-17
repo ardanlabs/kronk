@@ -135,13 +135,14 @@ type slot struct {
 	// -------------------------------------------------------------------------
 	// MTMD Prefill (vision/audio requests)
 
-	mtmdCtx      mtmd.Context     // Per-request multimodal projector context (created in startSlot for media-bearing requests; freed in freeSlotResources). Zero for text-only requests and text-only models.
-	inputChunks  mtmd.InputChunks // Tokenized chunks (text + media interleaved)
-	chunkIdx     int              // Index of chunk currently being processed
-	chunkTokIdx  int              // Token index within current text chunk (for partial prefill)
-	bitmaps      []mtmd.Bitmap    // Image bitmaps to free when done
-	useMRoPE     bool             // Model uses M-RoPE 4D positioning
-	useNonCausal bool             // Model uses non-causal attention for media
+	mtmdCtx          mtmd.Context     // Per-request multimodal projector context (created in startSlot for media-bearing requests; freed in freeSlotResources). Zero for text-only requests and text-only models.
+	inputChunks      mtmd.InputChunks // Tokenized chunks (text + media interleaved)
+	chunkIdx         int              // Index of chunk currently being processed
+	chunkTokIdx      int              // Token index within current text chunk (for partial prefill)
+	mediaPrefillDone bool             // True after all chunks are consumed; inputChunks remains owned until slot teardown
+	bitmaps          []mtmd.Bitmap    // Image bitmaps to free when done
+	useMRoPE         bool             // Model uses M-RoPE 4D positioning
+	useNonCausal     bool             // Model uses non-causal attention for media
 
 	// -------------------------------------------------------------------------
 	// Response Accumulation
@@ -308,7 +309,6 @@ func (s *slot) reset() {
 		llama.SamplerFree(s.draftSampler)
 		s.draftSampler = 0
 	}
-	// Note: draftDistBuf, targetDistBuf, adjustedDistBuf are reused across requests
 	s.grammarSampler = nil
 	s.startTime = time.Time{}
 	s.prefillStart = time.Time{}
@@ -320,6 +320,7 @@ func (s *slot) reset() {
 	s.inputChunks = 0
 	s.chunkIdx = 0
 	s.chunkTokIdx = 0
+	s.mediaPrefillDone = false
 	s.bitmaps = nil
 	s.useMRoPE = false
 	s.useNonCausal = false

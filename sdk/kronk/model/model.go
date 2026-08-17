@@ -857,7 +857,9 @@ func (m *Model) cleanupGenerationRuntime(ctx context.Context, cause error) error
 		m.draft = nil
 	}
 	if m.batch != nil {
-		m.batch.stop(ctx)
+		if err := m.batch.stop(ctx); err != nil {
+			return errors.Join(cause, fmt.Errorf("cleanup-generation-runtime: %w", err))
+		}
 		m.batch.freeBatch()
 		m.batch = nil
 	}
@@ -1197,7 +1199,10 @@ func (m *Model) Unload(ctx context.Context) error {
 	// Stop the batch engine if running.
 	hasBatch := m.batch != nil
 	if hasBatch {
-		m.batch.stop(ctx)
+		if err := m.batch.stop(ctx); err != nil {
+			m.unloaded.Store(false)
+			return fmt.Errorf("unload: %w", err)
+		}
 	}
 
 	hasBatchSeq := m.batchSeq != nil
@@ -1211,6 +1216,7 @@ func (m *Model) Unload(ctx context.Context) error {
 	for m.activeStreams.Load() > 0 {
 		select {
 		case <-ctx.Done():
+			m.unloaded.Store(false)
 			return fmt.Errorf("unload: cannot unload %d active streams: %w", m.activeStreams.Load(), ctx.Err())
 
 		case <-time.After(100 * time.Millisecond):
@@ -1376,7 +1382,7 @@ func (m *Model) sendToolCallDeltaResponse(ctx context.Context, ch chan<- ChatRes
 	return nil
 }
 
-func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, finalContent *strings.Builder, finalReasoning *strings.Builder, respToolCalls []ResponseToolCall, terminalToolCallDeltas []ResponseToolCallDelta, logprobsData []ContentLogprob, finishReason string, stopSource string, finalChannel Channel, bufferedToolBytes int, streaming bool, includeUsage bool, usage Usage) {
+func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, finalContent *strings.Builder, finalReasoning *strings.Builder, respToolCalls []ResponseToolCall, terminalToolCallDeltas []ResponseToolCallDelta, logprobsData []ContentLogprob, finishReason string, stopSource string, finalChannel Channel, bufferedToolBytes int, streaming bool, includeUsage bool, usage Usage) error {
 	effectiveFinishReason := finishReason
 	if effectiveFinishReason == "" {
 		effectiveFinishReason = FinishReasonStop
@@ -1435,7 +1441,7 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 	}
 	for _, delta := range terminalToolCallDeltas {
 		if err := m.sendToolCallDeltaResponse(ctx, ch, id, object, choiceIndex, delta); err != nil {
-			return
+			return err
 		}
 	}
 
@@ -1454,7 +1460,7 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 		case ch <- ChatResponseErr(id, object, m.modelInfo.ID, choiceIndex, ctx.Err(), usage):
 		default:
 		}
-		return
+		return ctx.Err()
 
 	case ch <- finalResp:
 	}
@@ -1462,7 +1468,7 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 	if streaming && includeUsage {
 		select {
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 
 		case ch <- chatResponseUsage(finalResp, usage):
 		}
@@ -1475,6 +1481,8 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 
 	m.log(ctx, "chat-completion (send final response)", "prompt", usage.PromptTokens, "output", usage.CompletionTokens,
 		"context", contextTokens, "down", fmt.Sprintf("(%.0f%% of %.0fK) TPS: %.2f", percentage, of, usage.TokensPerSecond))
+
+	return nil
 }
 
 func (m *Model) sendErrorResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, err error, usage Usage) {

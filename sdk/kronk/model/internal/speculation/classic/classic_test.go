@@ -73,7 +73,7 @@ func TestVerifyProbabilisticAcceptance(t *testing.T) {
 	result := Verify(VerifyInput{
 		State:         &state,
 		Candidates:    []llama.Token{1},
-		Distributions: [][]Candidate{{{Token: 1, Probability: 0.4}}},
+		Distributions: [][]llama.DraftCandidate{{{Tok: 1, Prob: 0.4}}},
 		Target: func(int) Target {
 			return Target{Token: 2, Probabilities: []float32{0.1, 0.2, 0.7}}
 		},
@@ -95,7 +95,7 @@ func TestVerifyAdjustedRejectionSampling(t *testing.T) {
 	result := Verify(VerifyInput{
 		State:         &state,
 		Candidates:    []llama.Token{0},
-		Distributions: [][]Candidate{{{Token: 0, Probability: 0.8}}},
+		Distributions: [][]llama.DraftCandidate{{{Tok: 0, Prob: 0.8}}},
 		Target: func(int) Target {
 			return Target{Probabilities: []float32{0.2, 0.8}}
 		},
@@ -112,7 +112,7 @@ func TestVerifyAdjustedRejectionSampling(t *testing.T) {
 }
 
 func TestSlotStateReset(t *testing.T) {
-	state := SlotState{AcceptanceEMA: 0.2, ProbeTick: 7, Rounds: 4, DraftStartPosition: 12, DraftDistributions: [][]Candidate{{{Token: 1}}}, AdjustedScratch: []Candidate{{Token: 2}}}
+	state := SlotState{AcceptanceEMA: 0.2, ProbeTick: 7, Rounds: 4, DraftStartPosition: 12, DraftDistributions: [][]llama.DraftCandidate{{{Tok: 1}}}, AdjustedScratch: []llama.DraftCandidate{{Tok: 2}}}
 	state.Reset()
 	if state.AcceptanceEMA != 1 || state.ProbeTick != 0 || state.Rounds != 0 || state.DraftStartPosition != 0 || state.DraftDistributions != nil || len(state.AdjustedScratch) != 0 {
 		t.Errorf("Reset() state = %+v, want clean request state", state)

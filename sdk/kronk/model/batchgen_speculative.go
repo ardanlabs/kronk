@@ -222,24 +222,9 @@ func (e *batchEngine) generateClassicDraft(s *slot, nDraft int) (classicengine.G
 	s.draftNPast = finalPast
 	s.draftTokensBuf = s.draftTokensBuf[:drafted]
 
-	var distributions [][]classicengine.Candidate
-	if greedy {
-		s.classic.DraftDistributions = nil
-	} else {
-		if s.classic.DistributionBuffer == nil || cap(s.classic.DistributionBuffer) < drafted {
-			s.classic.DistributionBuffer = make([][]classicengine.Candidate, draft.nDraft)
-			for i := range s.classic.DistributionBuffer {
-				s.classic.DistributionBuffer[i] = make([]classicengine.Candidate, 0, 128)
-			}
-		}
-		for i := range drafted {
-			src := outDists[i]
-			s.classic.DistributionBuffer[i] = s.classic.DistributionBuffer[i][:0]
-			for _, c := range src {
-				s.classic.DistributionBuffer[i] = append(s.classic.DistributionBuffer[i], classicengine.Candidate{Token: c.Tok, Probability: c.Prob})
-			}
-		}
-		distributions = s.classic.DistributionBuffer[:drafted]
+	var distributions [][]llama.DraftCandidate
+	if !greedy {
+		distributions = outDists[:drafted]
 	}
 
 	e.model.log(s.job.ctx, "speculative", "status", "draft-generated",

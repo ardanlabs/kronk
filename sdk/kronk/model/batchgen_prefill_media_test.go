@@ -8,7 +8,7 @@ func TestNextMediaSlotStartsAtCursorAndSkipsIneligibleSlots(t *testing.T) {
 		slots: []*slot{
 			{id: 0, active: true, inputChunks: 1},
 			{id: 1, active: false, inputChunks: 1},
-			{id: 2, active: true},
+			{id: 2, active: true, inputChunks: 1, mediaPrefillDone: true},
 			{id: 3, active: true, inputChunks: 1},
 		},
 	}

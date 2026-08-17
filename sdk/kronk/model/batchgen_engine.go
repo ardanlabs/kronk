@@ -13,15 +13,18 @@ import (
 
 // batchEngine manages parallel generation inference slots.
 type batchEngine struct {
-	model      *Model
-	nSlots     int
-	slots      []*slot
-	batch      llama.Batch
-	requestQ   chan *chatJob
-	wakeCh     chan struct{}
-	shutdownCh chan struct{}
-	wg         sync.WaitGroup
-	stopped    atomic.Bool
+	model       *Model
+	nSlots      int
+	slots       []*slot
+	batch       llama.Batch
+	requestQ    chan *chatJob
+	wakeCh      chan struct{}
+	admissionCh chan struct{}
+	shutdownCh  chan struct{}
+	admissionMu sync.RWMutex
+	loopDone    chan struct{}
+	cleanupOnce sync.Once
+	stopped     atomic.Bool
 
 	// pendingJobs holds jobs that were dequeued from requestQ but couldn't
 	// be assigned to a slot yet (e.g., all slots busy, media slot occupied).
@@ -64,8 +67,8 @@ type batchEngine struct {
 // newBatchEngine creates a new batch engine for parallel inference.
 func newBatchEngine(m *Model, nSlots int) *batchEngine {
 	// Create batch buffer.
-	nCtx := llama.NCtx(m.lctx)
-	batch := llama.BatchInit(int32(nCtx), 0, int32(nSlots))
+	nBatch := m.cfg.EffectiveNBatch()
+	batch := llama.BatchInit(int32(nBatch), 0, int32(nSlots))
 
 	// Initialize slots. Each slot owns a state machine instance produced
 	// by the model's parser plugin. State machines are stateful
@@ -89,7 +92,9 @@ func newBatchEngine(m *Model, nSlots int) *batchEngine {
 		batch:                     batch,
 		requestQ:                  make(chan *chatJob, nSlots*m.cfg.QueueDepth()),
 		wakeCh:                    make(chan struct{}, 1),
+		admissionCh:               make(chan struct{}),
 		shutdownCh:                make(chan struct{}),
+		loopDone:                  make(chan struct{}),
 		batchReleased:             make([]bool, nSlots),
 		diagnosticPrefillSelected: -1,
 		diagnosticIMCSelected:     -1,
@@ -98,7 +103,6 @@ func newBatchEngine(m *Model, nSlots int) *batchEngine {
 	e.publishDiagnostics(true)
 
 	// Pre-allocate M-RoPE batch for vision model text chunk decoding.
-	nBatch := m.cfg.EffectiveNBatch()
 	if nBatch > 0 {
 		e.mropeBatch = llama.BatchInit(int32(nBatch), 0, 1)
 		e.mropeOrigPos = e.mropeBatch.Pos
@@ -112,30 +116,53 @@ func newBatchEngine(m *Model, nSlots int) *batchEngine {
 
 // start begins the batch processing loop.
 func (e *batchEngine) start(ctx context.Context) {
-	e.wg.Add(1)
 	go e.processLoop(ctx)
 	e.model.log(ctx, "batch-engine", "status", "started", "slots", e.nSlots)
 }
 
-// stop signals shutdown and waits for completion.
-func (e *batchEngine) stop(ctx context.Context) {
+// stop closes admission, signals shutdown, and waits for completion.
+func (e *batchEngine) stop(ctx context.Context) error {
 	if !e.stopped.CompareAndSwap(false, true) {
-		e.wg.Wait() // Still wait for processLoop to exit
-		return
-	}
+		select {
+		case <-e.loopDone:
+			e.cleanupSamplers()
+			return nil
 
-	close(e.shutdownCh)
-	e.wg.Wait()
-
-	// Free samplers - batch is freed separately in Unload.
-	for _, s := range e.slots {
-		if s.sampler != 0 {
-			llama.SamplerFree(s.sampler)
-			s.sampler = 0
+		case <-ctx.Done():
+			return fmt.Errorf("stop batch engine: %w", ctx.Err())
 		}
 	}
 
+	// Prevent new submissions, then wait for submissions that were already in
+	// progress to commit or observe admissionCh. Only after that barrier is it
+	// safe to let processLoop drain the request queue.
+	close(e.admissionCh)
+	e.admissionMu.Lock()
+	close(e.shutdownCh)
+	e.admissionMu.Unlock()
+
+	select {
+	case <-e.loopDone:
+		e.cleanupSamplers()
+
+	case <-ctx.Done():
+		return fmt.Errorf("stop batch engine: %w", ctx.Err())
+	}
+
 	e.model.log(ctx, "batch-engine", "status", "stopped")
+	return nil
+}
+
+func (e *batchEngine) cleanupSamplers() {
+	e.cleanupOnce.Do(func() {
+		// Free samplers - batch is freed separately in Unload.
+		for _, s := range e.slots {
+			if s.sampler != 0 {
+				llama.SamplerFree(s.sampler)
+				s.sampler = 0
+			}
+		}
+	})
 }
 
 // freeBatch frees the batch buffer. Called from Model.Unload.
@@ -151,6 +178,13 @@ func (e *batchEngine) freeBatch() {
 
 // submit adds a job to the processing queue.
 func (e *batchEngine) submit(job *chatJob) error {
+	if e.stopped.Load() {
+		return fmt.Errorf("submit: engine shutting down")
+	}
+
+	e.admissionMu.RLock()
+	defer e.admissionMu.RUnlock()
+
 	select {
 	case e.requestQ <- job:
 		select {
@@ -159,7 +193,7 @@ func (e *batchEngine) submit(job *chatJob) error {
 		}
 		return nil
 
-	case <-e.shutdownCh:
+	case <-e.admissionCh:
 		return fmt.Errorf("submit: engine shutting down")
 
 	case <-job.ctx.Done():
@@ -167,23 +201,12 @@ func (e *batchEngine) submit(job *chatJob) error {
 	}
 }
 
-// processLoop is the main batch processing goroutine using a signal-based wake
-// algorithm. Instead of polling at a fixed interval, it wakes immediately when
-// new requests arrive on requestQ, eliminating up to 1ms latency on request
-// pickup. When slots are actively generating, it polls at 100µs for low-latency
-// token streaming. When idle, it backs off to 5ms to reduce CPU usage.
+// processLoop is the main batch processing goroutine. Active work continues
+// immediately; when idle, the loop sleeps until submit signals new work.
 func (e *batchEngine) processLoop(ctx context.Context) {
-	defer e.wg.Done()
+	defer close(e.loopDone)
 
 	buf := make([]byte, 32*1024)
-
-	const (
-		activeInterval = 100 * time.Microsecond // Fast poll when slots are generating
-		idleInterval   = 5 * time.Millisecond   // Slow poll when no active slots
-	)
-
-	timer := time.NewTimer(idleInterval)
-	defer timer.Stop()
 
 	for {
 		select {
@@ -191,36 +214,20 @@ func (e *batchEngine) processLoop(ctx context.Context) {
 			e.drainSlots()
 			return
 
-		case <-e.wakeCh:
-			if !timer.Stop() {
-				select {
-				case <-timer.C:
-
-				default:
-				}
-			}
-
-			// Coalesce multiple wake signals to avoid redundant iterations.
-		drain:
-			for {
-				select {
-				case <-e.wakeCh:
-
-				default:
-					break drain
-				}
-			}
-
-		case <-timer.C:
+		default:
 		}
 
-		switch e.hasActiveSlots() || len(e.requestQ) > 0 || len(e.pendingJobs) > 0 {
-		case true:
+		if e.hasActiveSlots() || len(e.requestQ) > 0 || len(e.pendingJobs) > 0 {
 			e.processBatch(ctx, buf)
-			timer.Reset(activeInterval)
+			continue
+		}
 
-		case false:
-			timer.Reset(idleInterval)
+		select {
+		case <-e.shutdownCh:
+			e.drainSlots()
+			return
+
+		case <-e.wakeCh:
 		}
 	}
 }
@@ -317,13 +324,7 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 				continue
 			}
 
-			var token llama.Token
-			switch {
-			case s.grammarSampler != nil:
-				token = s.grammarSampler.SampleWithGrammar(e.model.lctx, s.sampler, -1)
-			default:
-				token = llama.SamplerSample(s.sampler, e.model.lctx, -1)
-			}
+			token := e.sampleSlotToken(s, -1)
 			if trackPrefillSchedule {
 				generationContributions = append(generationContributions,
 					fmt.Sprintf("slot=%d,rows=1,mode=mrope-direct", s.id))

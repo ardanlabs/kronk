@@ -2,12 +2,6 @@ package classic
 
 import "github.com/hybridgroup/yzma/pkg/llama"
 
-// Candidate contains one token probability from a sparse draft distribution.
-type Candidate struct {
-	Token       llama.Token
-	Probability float32
-}
-
 // Target contains the target model's decision for one verification row.
 type Target struct {
 	Token           llama.Token
@@ -19,7 +13,7 @@ type Target struct {
 type VerifyInput struct {
 	State         *SlotState
 	Candidates    []llama.Token
-	Distributions [][]Candidate
+	Distributions [][]llama.DraftCandidate
 	Greedy        bool
 	Target        func(index int) Target
 	Accept        func(index int, token llama.Token, samplerAccepted bool) bool
@@ -126,10 +120,10 @@ func random(input VerifyInput) float64 {
 	return input.Random()
 }
 
-func lookupProbability(entries []Candidate, token llama.Token) float32 {
+func lookupProbability(entries []llama.DraftCandidate, token llama.Token) float32 {
 	for _, entry := range entries {
-		if entry.Token == token {
-			return entry.Probability
+		if entry.Tok == token {
+			return entry.Prob
 		}
 	}
 	return 0
@@ -156,16 +150,16 @@ func sampleProbabilities(input VerifyInput, probabilities []float32) llama.Token
 	return llama.Token(last)
 }
 
-func sampleAdjusted(input VerifyInput, target []float32, draft []Candidate) llama.Token {
+func sampleAdjusted(input VerifyInput, target []float32, draft []llama.DraftCandidate) llama.Token {
 	scratch := input.State.AdjustedScratch[:0]
 	var adjustedSum float64
 	var draftTargetSum float64
 	for _, candidate := range draft {
-		pTarget := float64(target[candidate.Token])
+		pTarget := float64(target[candidate.Tok])
 		draftTargetSum += pTarget
-		difference := pTarget - float64(candidate.Probability)
+		difference := pTarget - float64(candidate.Prob)
 		if difference > 0 {
-			scratch = append(scratch, Candidate{Token: candidate.Token, Probability: float32(difference)})
+			scratch = append(scratch, llama.DraftCandidate{Tok: candidate.Tok, Prob: float32(difference)})
 			adjustedSum += difference
 		}
 	}
@@ -180,12 +174,12 @@ func sampleAdjusted(input VerifyInput, target []float32, draft []Candidate) llam
 	if r < adjustedSum && len(scratch) > 0 {
 		var cumulative float64
 		for _, candidate := range scratch {
-			cumulative += float64(candidate.Probability)
+			cumulative += float64(candidate.Prob)
 			if r < cumulative {
-				return candidate.Token
+				return candidate.Tok
 			}
 		}
-		return scratch[len(scratch)-1].Token
+		return scratch[len(scratch)-1].Tok
 	}
 
 	r -= adjustedSum

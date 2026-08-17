@@ -14,7 +14,7 @@ func (e *batchEngine) nextMediaSlot() (*slot, int) {
 	for offset := range e.slots {
 		idx := (e.mediaNext + offset) % len(e.slots)
 		s := e.slots[idx]
-		if s.active && s.inputChunks != 0 {
+		if s.active && s.inputChunks != 0 && !s.mediaPrefillDone {
 			return s, idx
 		}
 	}
@@ -23,7 +23,7 @@ func (e *batchEngine) nextMediaSlot() (*slot, int) {
 }
 
 func (e *batchEngine) mediaChunkUsesSharedBatch(s *slot) bool {
-	if s.inputChunks == 0 || s.chunkIdx >= int(mtmd.InputChunksSize(s.inputChunks)) {
+	if s.inputChunks == 0 || s.mediaPrefillDone || s.chunkIdx >= int(mtmd.InputChunksSize(s.inputChunks)) {
 		return false
 	}
 
@@ -157,7 +157,7 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot, buf []byte) bool {
 				// Non-M-RoPE text was added to shared batch, sample after decode.
 				s.iBatch = e.batch.NTokens - 1
 			}
-			s.inputChunks = 0
+			s.mediaPrefillDone = true
 			if s.span.IsRecording() {
 				s.span.SetAttributes(attribute.String("prefill-media", time.Since(prefillStart).String()))
 			}
@@ -217,7 +217,7 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot, buf []byte) bool {
 			if !e.sampleFirstToken(s, buf) {
 				return false
 			}
-			s.inputChunks = 0
+			s.mediaPrefillDone = true
 			if s.span.IsRecording() {
 				s.span.SetAttributes(attribute.String("prefill-media", time.Since(prefillStart).String()))
 			}
@@ -262,7 +262,7 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot, buf []byte) bool {
 			if !e.sampleFirstToken(s, buf) {
 				return false
 			}
-			s.inputChunks = 0
+			s.mediaPrefillDone = true
 			if s.span.IsRecording() {
 				s.span.SetAttributes(attribute.String("prefill-media", time.Since(prefillStart).String()))
 			}

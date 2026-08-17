@@ -51,7 +51,7 @@ export default function IMCSessions() {
   const [error, setError] = useState<string | null>(null);
   const [showFieldGuide, setShowFieldGuide] = useState(false);
   const [selectedModel, setSelectedModel] = useState(ALL_MODELS);
-  const [sortField, setSortField] = useState<SortField>('utilization');
+  const [sortField, setSortField] = useState<SortField>('last_used');
   const [sortAscending, setSortAscending] = useState(false);
 
   const loadSessions = async (silent = false) => {

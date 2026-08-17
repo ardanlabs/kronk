@@ -18,7 +18,7 @@ type GenerationInput struct {
 // GenerationResult contains one classic speculative proposal.
 type GenerationResult struct {
 	Candidates    []llama.Token
-	Distributions [][]Candidate
+	Distributions [][]llama.DraftCandidate
 }
 
 // Generate applies adaptive draft sizing and invokes the draft backend.

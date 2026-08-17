@@ -1211,7 +1211,9 @@ func TestLengthTerminatedToolOutputResponse(t *testing.T) {
 	if err := m.sendDeltaResponse(ctx, ch, "id", ObjectChatText, 0, deltaContent, ChannelAnswer, 0, 256, nil); err != nil {
 		t.Fatalf("send retained tool delta: %v", err)
 	}
-	m.sendFinalResponse(ctx, ch, "id", ObjectChatText, 0, &content, &strings.Builder{}, toolCalls, nil, nil, FinishReasonLength, "max-tokens", ChannelAnswer, len(tooling), true, false, Usage{CompletionTokens: 256})
+	if err := m.sendFinalResponse(ctx, ch, "id", ObjectChatText, 0, &content, &strings.Builder{}, toolCalls, nil, nil, FinishReasonLength, "max-tokens", ChannelAnswer, len(tooling), true, false, Usage{CompletionTokens: 256}); err != nil {
+		t.Fatalf("sendFinalResponse() error = %v, want nil", err)
+	}
 
 	answerDelta := <-ch
 	toolDelta := <-ch
@@ -1244,6 +1246,18 @@ func TestLengthTerminatedToolOutputResponse(t *testing.T) {
 	}
 	if got := choice.Delta.Content; got != "" {
 		t.Errorf("terminal delta content: got %q, want empty", got)
+	}
+}
+
+func TestSendFinalResponseReturnsCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	m := Model{log: applog.DiscardLogger}
+	ch := make(chan ChatResponse)
+	err := m.sendFinalResponse(ctx, ch, "id", ObjectChatText, 0, &strings.Builder{}, &strings.Builder{}, nil, nil, nil, FinishReasonStop, "request-cancel", ChannelAnswer, 0, false, false, Usage{})
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("sendFinalResponse() error = %v, want %v", err, context.Canceled)
 	}
 }
 

@@ -12,20 +12,18 @@ import (
 
 // processSlotToken samples and processes a generated token for a slot.
 func (e *batchEngine) processSlotToken(s *slot, buf []byte) {
-	// Sample the next token. If grammar is active, use grammar-aware sampling
-	// but only when the parser is in the completion phase. During the
-	// reasoning phase (<think>...</think>), grammar constraints would corrupt
-	// the thinking tokens and prevent the model from closing the think block.
-	var token llama.Token
-	switch {
-	case s.grammarSampler != nil && s.reasonFlag == 0:
-		token = s.grammarSampler.SampleWithGrammar(e.model.lctx, s.sampler, s.iBatch)
-
-	default:
-		token = llama.SamplerSample(s.sampler, e.model.lctx, s.iBatch)
-	}
-
+	token := e.sampleSlotToken(s, s.iBatch)
 	e.handleSampledToken(s, token, s.iBatch, buf)
+}
+
+// sampleSlotToken samples one target row. Grammar applies only in the answer
+// phase; constraining reasoning tokens can prevent the model from closing its
+// reasoning block.
+func (e *batchEngine) sampleSlotToken(s *slot, iBatch int32) llama.Token {
+	if s.grammarSampler != nil && s.reasonFlag == 0 {
+		return s.grammarSampler.SampleWithGrammar(e.model.lctx, s.sampler, iBatch)
+	}
+	return llama.SamplerSample(s.sampler, e.model.lctx, iBatch)
 }
 
 // handleSampledToken processes a sampled token through the full pipeline:
@@ -451,15 +449,8 @@ func (e *batchEngine) handleSpeculativeToken(s *slot, token llama.Token, iBatch 
 // or image embeddings) and nothing was added to the shared batch.
 // Returns false if slot finished (EOG or error), true otherwise.
 func (e *batchEngine) sampleFirstToken(s *slot, buf []byte) bool {
-	// Sample from last logits position (-1). Skip grammar during reasoning.
-	var token llama.Token
-	switch {
-	case s.grammarSampler != nil && s.reasonFlag == 0:
-		token = s.grammarSampler.SampleWithGrammar(e.model.lctx, s.sampler, -1)
-
-	default:
-		token = llama.SamplerSample(s.sampler, e.model.lctx, -1)
-	}
+	// Sample from last logits position (-1).
+	token := e.sampleSlotToken(s, -1)
 
 	// Process through full pipeline (logprobs, accept, stream, count).
 	// This may call finishSlot on EOG/error/maxTokens.

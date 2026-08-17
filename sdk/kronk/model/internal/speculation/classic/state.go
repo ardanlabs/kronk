@@ -8,9 +8,8 @@ type SlotState struct {
 	ProbeTick          int
 	Rounds             int
 	DraftStartPosition llama.Pos
-	DraftDistributions [][]Candidate
-	DistributionBuffer [][]Candidate
-	AdjustedScratch    []Candidate
+	DraftDistributions [][]llama.DraftCandidate
+	AdjustedScratch    []llama.DraftCandidate
 }
 
 // Reset begins a request while retaining reusable buffer capacity.
