@@ -93,7 +93,7 @@ function ModelSlots({ model }: { model: BatchEngineDetail }) {
       <div className="slot-summary-grid">
         <div><span>{labelWithTip('Batch sizing', 'slotBatchSizing')}</span><strong>{model.prefill_batch_size.toLocaleString()} / {model.nubatch.toLocaleString()} / {model.nbatch.toLocaleString()}</strong><small>Prefill batch / NUBatch / NBatch</small></div>
         <div><span>{labelWithTip('Request queue', 'slotQueue')}</span><strong>{model.queued_requests + model.pending_requests}</strong><small>{model.queued_requests} channel + {model.pending_requests} pending</small></div>
-        <div><span>{labelWithTip('Prefill stage 2 · IMC extension', 'slotIMCSelector')}</span><strong>{formatSelectedSlot(model.imc_selector_selected)}</strong><small>Next: {stage2IMCNext} · Waiting: {formatSlots(model.eligible_imc_slots)}</small></div>
+        <div><span>{labelWithTip('Prefill stage 1 · IMC extension', 'slotIMCSelector')}</span><strong>{formatSelectedSlot(model.imc_selector_selected)}</strong><small>Next: {stage2IMCNext} · Waiting: {formatSlots(model.eligible_imc_slots)}</small></div>
         <div><span>{labelWithTip('Prefill stage 2 · request', 'slotPrefillSelector')}</span><strong>{formatSelectedSlot(model.prefill_selector_selected)}</strong><small>Next: {stage2Next} · Waiting: {formatSlots(model.eligible_prefill_slots)}</small></div>
       </div>
 

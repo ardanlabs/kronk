@@ -182,7 +182,7 @@ export const PARAM_TOOLTIPS = {
   slotBatchSizing: 'Configured prefill contribution, effective physical micro-batch capacity (NUBatch), and effective logical batch capacity (NBatch) used by the loaded model.',
   slotQueue: 'Requests in the engine input channel plus requests already drained into the engine that are waiting for a free slot.',
   slotPrefillSelector: 'Prefill stage 2 decodes the remaining request-owned tokens that were not available in the IMC session. The large value is the active slot; Next always shows the next eligible slot or round-robin cursor; Waiting lists all currently eligible slots.',
-  slotIMCSelector: 'Prefill stage 2 decodes new stable-prefix tokens, such as completed tool calls, to extend an IMC session after reusable state has been restored. The active slot retains ownership until its extension is complete; Next always shows the next eligible slot or round-robin cursor; Waiting lists all slots with extensions to decode.',
+  slotIMCSelector: 'Prefill stage 1 decodes new stable-prefix tokens, such as completed tool calls, to extend an IMC session. The active slot retains ownership until its extension is complete; Next always shows the next eligible slot or round-robin cursor; Waiting lists all slots with extensions to decode.',
   slotEligible: 'Slot IDs with uncached request-tail tokens waiting for prefill stage 2. They remain listed while generation priority or another stage 2 owner delays their work.',
   slotID: 'Stable inference slot and llama.cpp sequence index within this loaded model.',
   slotPhase: 'Current request phase. Prefill stage 1 restores reusable IMC sequence state into the slot. Prefill stage 2 decodes new tokens into that sequence. Generation produces output tokens.',

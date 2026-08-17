@@ -864,8 +864,9 @@ func (e *batchEngine) finishStartSlot(s *slot, job *chatJob, cacheIdx llama.Pos,
 
 // startSlotText initializes a text-only slot. Returns true on success.
 func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) bool {
-	// Token-v2 plans supply the exact complete-render tail. Legacy/non-IMC
-	// requests still tokenize the rendered prompt here.
+	// Token-v2 plans supply the exact complete-render tail. Other text requests
+	// normally carry tokens from synchronous preparation; retain tokenization as
+	// a fallback for internal jobs constructed without that preparation.
 	addBOS := cacheIdx == 0 && e.model.addBOSToken
 
 	// Guard against passing a prompt that still carries an unresolved media
@@ -884,6 +885,8 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 	var tokens []llama.Token
 	if job.imcTokenPlan {
 		tokens = job.tailTokens
+	} else if job.textTokens != nil {
+		tokens = job.textTokens
 	} else {
 		tokens = llama.Tokenize(e.model.vocab, job.prompt, addBOS, true)
 	}
