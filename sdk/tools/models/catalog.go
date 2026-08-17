@@ -18,42 +18,9 @@ import (
 	"go.yaml.in/yaml/v2"
 )
 
-// SchemaVersion is bumped whenever a code change should force a
-// rebuild of every persisted catalog entry — typically because the
-// detection rules in CapabilitiesFor or ArchitectureClass changed, but
-// any future change that affects the shape or content of CatalogEntry
-// fields populated by enrichment qualifies. ReconcileCatalog compares
-// this code-side constant against the version stamped on catalog.yaml
-// and, when the disk is older, re-runs enrichment for every entry. On a
-// steady-state reconcile (versions match) only entries with empty
-// ModelType / Capabilities are touched, so the catalog stays cheap to
-// reconcile even as it grows large.
-//
-// Bump this when any field populated by enrichment can change for
-// existing entries — for example:
-//   - CapabilitiesFor's keyword set, endpoint mapping, or modality flags.
-//   - ArchitectureClass's hybrid / MoE detection rules.
-//   - A new field is added to CatalogEntry that enrichment populates.
-//
-// History:
-//   - v1: initial schema (model_type, capabilities, omni→audio+video on
-//     general.architecture).
-//   - v2: MTP drafter companion discovery. Entries persisted before MTP
-//     support never recorded a co-located mtp-*.gguf companion; the
-//     schema-upgrade reconcile re-scans HuggingFace once per entry to
-//     fill in MTP/MTPOrig and stamp mtp_checked.
-//   - v3: embedding capability detection also considers model name, basename,
-//     and tags when the architecture is generic. Replaced embedded defaults
-//     are retired from existing catalogs without deleting downloaded files.
-const SchemaVersion = 3
-
 // Catalog is the on-disk schema for catalog.yaml. It owns the provider
 // priority list and the cache of previously-resolved canonical model IDs.
-// Schema records the version of the enrichment rules used to populate the
-// entries; when it lags behind SchemaVersion the next reconcile rebuilds
-// every entry's enriched fields and stamps the new version.
 type Catalog struct {
-	Schema    int                     `yaml:"schema,omitempty"`
 	Providers []string                `yaml:"providers"`
 	Models    map[string]CatalogEntry `yaml:"models"`
 }
@@ -684,7 +651,7 @@ func (r *Resolver) enrichCatalogEntry(ctx context.Context, canonical string, log
 		return nil
 	}
 
-	updated, changed, _ := r.models.enrichEntry(ctx, entry, log)
+	updated, changed := r.models.enrichEntry(ctx, entry, log)
 	if !changed {
 		return nil
 	}

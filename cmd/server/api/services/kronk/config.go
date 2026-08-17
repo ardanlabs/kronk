@@ -11,6 +11,7 @@ import (
 	"github.com/ardanlabs/conf/v3"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
+	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"go.yaml.in/yaml/v2"
 )
 
@@ -137,6 +138,9 @@ func loadConfig(showHelp bool) (config, error) {
 	if err != nil {
 		return config{}, fmt.Errorf("resolving model config file: %w", err)
 	}
+	if err := models.UpgradeModelConfig(modelConfigFile); err != nil {
+		return config{}, fmt.Errorf("upgrading model config file: %w", err)
+	}
 
 	data, err := os.ReadFile(modelConfigFile)
 	if err != nil {
@@ -154,7 +158,6 @@ func loadConfig(showHelp bool) (config, error) {
 	}
 
 	switch doc.Version {
-	case 0:
 	case configVersion:
 		cfg = doc.KMS
 	default:

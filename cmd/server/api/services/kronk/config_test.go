@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
+	"go.yaml.in/yaml/v2"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -93,6 +94,24 @@ func TestLoadConfigVersionZero(t *testing.T) {
 	}
 	if cfg.Web.APIHost != "127.0.0.1:11435" {
 		t.Errorf("APIHost: got %q, want default", cfg.Web.APIHost)
+	}
+
+	upgraded, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	var doc struct {
+		Version int            `yaml:"version"`
+		Models  map[string]any `yaml:"models"`
+	}
+	if err := yaml.Unmarshal(upgraded, &doc); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if doc.Version != configVersion {
+		t.Errorf("Version: got %d, want %d", doc.Version, configVersion)
+	}
+	if _, exists := doc.Models["owner/model"]; !exists {
+		t.Errorf("Models: got %v, want owner/model", doc.Models)
 	}
 }
 

@@ -233,12 +233,10 @@ func (a *app) resolveCatalog(ctx context.Context, r *http.Request) web.Encoder {
 	}
 }
 
-// reconcileCatalog runs ReconcileCatalog. New on-disk models get added,
-// pre-existing entries are re-enriched when the persisted schema version
-// lags the code-side constant, and the new schema is stamped on save.
-// Steady-state runs (schema match, no missing entries) are nearly free;
-// the BUI Catalog Refresh button hits this so users pick up enrichment
-// fixes without having to also click Models → Rebuild Index.
+// reconcileCatalog runs ReconcileCatalog. New on-disk models get added and
+// entries missing model type or capability metadata are enriched. The BUI
+// Catalog Refresh button hits this without requiring users to also click
+// Models → Rebuild Index.
 func (a *app) reconcileCatalog(ctx context.Context, r *http.Request) web.Encoder {
 	if err := a.models.ReconcileCatalog(ctx, a.log.Info); err != nil {
 		return errs.Errorf(errs.Internal, "reconcile catalog: %s", err)
