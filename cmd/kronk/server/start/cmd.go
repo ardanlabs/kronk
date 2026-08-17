@@ -39,12 +39,14 @@ func init() {
 	Cmd.Flags().String("auth-tls-server-name", "", "TLS server name for the external auth service")
 	Cmd.Flags().String("auth-issuer", "", "Local auth issuer name")
 	Cmd.Flags().String("web-admin-password-sha-256", "", "SHA-256 digest for browser admin login")
+	Cmd.Flags().String("authorization-mode", "", "API authorization mode (open, management, authenticated, full-protected)")
 
 	// MCP settings
 	Cmd.Flags().Bool("mcp-enabled", true, "Enable or disable the embedded MCP service")
 	Cmd.Flags().String("mcp-host", "", "Disable the embedded MCP service when an external host is configured")
 	Cmd.Flags().Bool("mcp-auth-enabled", false, "Require a Kronk admin bearer token for MCP access")
 	Cmd.Flags().String("mcp-brave-api-key", "", "Brave Search API key for the embedded MCP service")
+	Cmd.Flags().Bool("download-enabled", false, "Allow server-side model downloads")
 
 	// Tempo/tracing settings
 	Cmd.Flags().String("tempo-host", "", "Tempo host address (e.g., localhost:4317)")
@@ -62,6 +64,7 @@ func init() {
 	// Runtime settings
 	Cmd.Flags().String("base-path", "", "Base path for kronk data")
 	Cmd.Flags().String("lib-path", "", "Path to llama library")
+	Cmd.Flags().String("bucky-lib-path", "", "Path to whisper library")
 	Cmd.Flags().String("lib-version", "", "Version of llama library")
 	Cmd.Flags().String("arch", "", "Architecture override")
 	Cmd.Flags().String("os", "", "OS override")

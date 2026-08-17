@@ -1,5 +1,67 @@
+version: 1
+
 # ==============================================================================
-# CONFIG OPTIONS
+# SERVER OPTIONS
+#
+# Kronk Model Server settings. Environment variables and `kronk server start`
+# flags override values configured here. See Chapter 8 of the manual for the
+# complete schema and precedence rules.
+#
+# Replace `kms: {}` below with the settings that need an override. For example:
+# kms:
+#   web:
+#     api-host: 127.0.0.1:11435
+#     debug-host: 127.0.0.1:11445
+#     read-timeout: 30s
+#     write-timeout: 61m
+#     inference-timeout: 60m
+#     idle-timeout: 1m
+#     shutdown-timeout: 1m
+#     cors-allowed-origins: ["*"]
+#     admin:
+#       enabled: true
+#       password-sha-256: <64 hexadecimal characters>
+#   auth:
+#     host: ""
+#     admin-enabled: false
+#     tls:
+#       enabled: false
+#       ca-file: ""
+#       server-name: ""
+#     local:
+#       issuer: kronk project
+#       enabled: false
+#   authorization:
+#     mode: open  # open, management, authenticated, full-protected
+#   mcp:
+#     enabled: true
+#     host: ""
+#     auth-enabled: false
+#     brave-api-key: ""
+#   download:
+#     enabled: false
+#   tempo:
+#     host: localhost:4317
+#     service-name: kronk
+#     probability: 0.25
+#   pool:
+#     budget-percent: 95
+#     models-in-pool: 10
+#     ttl: 0m
+#   base-path: ""
+#   lib-path: ""
+#   bucky-lib-path: ""
+#   lib-version: ""
+#   arch: ""
+#   os: ""
+#   processor: ""
+#   allow-upgrade: false
+#   insecure-logging: false
+#   hf-token: ""
+#   llama-log: 1
+
+# ==============================================================================
+# MODEL OPTIONS
 #
 # KMS runs AutoTune by default. An explicit context-window or nseq-max is a
 # fixed sizing constraint and is never silently reduced. Leave cache-type-k and
@@ -99,163 +161,84 @@
 #     grammar: ""                        # GBNF grammar constraint
 
 # ==============================================================================
-# MODEL SELECTION NOTES
-#
-# These suffixes define how a Large Language Model (LLM) is quantized—compressed
-# from its original size to fit into computer memory (RAM/VRAM). The primary
-# difference lies in the balance between model size, inference speed, and output
-# accuracy (intelligence).
-#
-# - F16 (FP16): Unquantized, maximum quality, largest size.
-# - Q8_0: 8-bit, near-lossless compression, very high quality. (Best for local)
-# - K_XL: K-quant (smart) method, high efficiency, better accuracy than
-#         standard _0 at similar sizes.
-#
-# GGUF names describe model-weight quantization. They are separate from
-# cache-type-k and cache-type-v, which control the runtime KV cache. Q8_0 is an
-# integer block quantization format, not the same format as hardware FP8.
 
-# ==============================================================================
-# ROPE AND YARN NOTES
-#
-# YaRN (Yet another RoPE extensioN) enables extended context windows beyond a
-# model's native training length. For example, Qwen3 models trained on 32k can
-# support 131k context with YaRN scaling.
-#
-# Minimal configuration for YaRN (llama.cpp auto-calculates the rest):
-#   rope-scaling-type: yarn
-#   yarn-orig-ctx: 32768       # Original training context size
-#   context-window: 131072     # Desired extended context
-#
-# Auto-calculated defaults when using YaRN:
-#   rope-freq-base    - Read from model metadata (Qwen3 = 1000000, Llama = 10000)
-#   rope-freq-scale   - Auto-calculated from context ratio
-#   yarn-ext-factor   - Auto-calculated (nil triggers this)
-#   yarn-attn-factor  - 1.0
-#   yarn-beta-fast    - 32.0
-#   yarn-beta-slow    - 1.0
-#
-# The advanced parameters exist for models with non-standard RoPE configurations
-# (e.g., DeepSeek-V2). For typical YaRN usage, the minimal config is sufficient.
-#
-# Note: Extended context increases KV cache memory proportionally. A 4x context
-# extension (32k → 131k) requires 4x the KV cache VRAM per slot.
+kms:
+  download:
+    enabled: true
+  insecure-logging: true
 
-# ==============================================================================
-# CONFIGURATION NOTES
-#
-# INCREMENTAL MESSAGE CACHE (IMC)
-# -------------------------------
-# Use IMC for agentic workflows (OpenCode, Kilo Code, etc). IMC dedicates each
-# slot to a conversation and caches all messages except the last one, so only
-# the new message needs prefilling on each turn.
-#
-# Two-tier hash design: IMC tracks separate hashes for the system prompt
-# (tier 1) and the full conversation (tier 2). When conversation history
-# changes but the system prompt stays the same, IMC keeps the system prompt
-# KV state and only re-decodes the conversation body — saving thousands of
-# tokens of redundant prefill.
-#
-# Works with any model template. Deterministic templates (Qwen, Gemma) use
-# fast hash matching. Non-deterministic templates (GPT-OSS, GLM) fall back
-# to token prefix matching, salvaging the longest common prefix in the KV
-# cache. Non-deterministic templates may also trigger rebuilds when
-# re-templating the same messages produces a different token count.
-#
-# Set nseq-max to at least the number of concurrent sub-agents your framework
-# spawns. Each slot independently tracks its own conversation branch.
-#
-#   nseq-max: 2
-#   incremental-cache: true
-#
-# KV CACHE PER SLOT (nseq-max > 1)
-# ---------------------------------
-# Kronk allocates context-window * nseq-max total tokens and uses split KV
-# streams. Every slot receives one fixed context-window partition; the context
-# window is not divided by nseq-max, and an idle slot's partition is not
-# borrowed by another slot.
-#
-# Example:
-#   context-window: 131072, nseq-max: 3
-#   → Total KV cache sized for 393k tokens
-#   → Each of the 3 slots receives a fixed 131k-token stream
-#
-# Increasing nseq-max therefore increases planned KV memory linearly.
+models:
+  # nseq-max: 1  ~54GB VRAM
+  # nseq-max: 2  ~82GB VRAM
+  unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
+    chat-template-kwargs:
+      preserve_thinking: true
+    context-window: 131072
+    sampling-parameters:
+      max_tokens: 16384
+      temperature: 1.0
+      top_k: 64
+      top_p: 1
+      enable_thinking: false
 
-# ==============================================================================
-# CODING MODELS
+  # nseq-max: 1  ~40GB VRAM
+  # nseq-max: 2  ~43GB VRAM
+  unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
+    chat-template-kwargs:
+      preserve_thinking: true
+    nseq-max: 2
+    context-window: 131072
+    sampling-parameters:
+      max_tokens: 16384
+      temperature: 0.6
+      top_k: 20
+      top_p: 1
+      enable_thinking: false
 
-# nseq-max: 1  ~54GB VRAM
-# nseq-max: 2  ~82GB VRAM
-unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
-  chat-template-kwargs:
-    preserve_thinking: true
-  context-window: 131072
-  sampling-parameters:
-    max_tokens: 16384
-    temperature: 1.0
-    top_k: 64
-    top_p: 1
-    enable_thinking: false
+  # nseq-max: 1  ~40GB VRAM
+  # nseq-max: 2  ~48GB VRAM
+  unsloth/Qwen3.8-27B-UD-Q8_K_XL/AGENT:
+    chat-template-kwargs:
+      preserve_thinking: true
+    nseq-max: 2
+    context-window: 131072
+    sampling-parameters:
+      max_tokens: 16384
+      temperature: 0.6
+      top_k: 20
+      top_p: 1
+      enable_thinking: false
 
-# nseq-max: 1  ~40GB VRAM
-# nseq-max: 2  ~43GB VRAM
-unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
-  chat-template-kwargs:
-    preserve_thinking: true
-  nseq-max: 2
-  context-window: 131072
-  sampling-parameters:
-    max_tokens: 16384
-    temperature: 0.6
-    top_k: 20
-    top_p: 1
-    enable_thinking: false
+  # nseq-max: 1  ~26GB VRAM
+  # nseq-max: 2  ~35GB VRAM
+  unsloth/Qwen3.8-27B-UD-Q4_K_XL/AGENT:
+    chat-template-kwargs:
+      preserve_thinking: true
+    nseq-max: 2
+    context-window: 131072
+    sampling-parameters:
+      max_tokens: 16384
+      temperature: 0.6
+      top_k: 20
+      top_p: 1
+      enable_thinking: false
 
-# nseq-max: 1  ~40GB VRAM
-# nseq-max: 2  ~48GB VRAM
-unsloth/Qwen3.8-27B-UD-Q8_K_XL/AGENT:
-  chat-template-kwargs:
-    preserve_thinking: true
-  nseq-max: 2
-  context-window: 131072
-  sampling-parameters:
-    max_tokens: 16384
-    temperature: 0.6
-    top_k: 20
-    top_p: 1
-    enable_thinking: false
+  # ~12GB VRAM
+  unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL/AGENT:
+    context-window: 131072
+    sampling-parameters:
+      max_tokens: 16384
+      temperature: 1.0
+      top_k: 64
+      top_p: 1
+      enable_thinking: false
 
-# nseq-max: 1  ~26GB VRAM
-# nseq-max: 2  ~35GB VRAM
-unsloth/Qwen3.8-27B-UD-Q4_K_XL/AGENT:
-  chat-template-kwargs:
-    preserve_thinking: true
-  nseq-max: 2
-  context-window: 131072
-  sampling-parameters:
-    max_tokens: 16384
-    temperature: 0.6
-    top_k: 20
-    top_p: 1
-    enable_thinking: false
-
-# ~12GB VRAM
-unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL/AGENT:
-  context-window: 131072
-  sampling-parameters:
-    max_tokens: 16384
-    temperature: 1.0
-    top_k: 64
-    top_p: 1
-    enable_thinking: false
-
-# ~8GB VRAM
-mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT:
-  context-window: 73728
-  sampling-parameters:
-    max_tokens: 16384
-    temperature: 0.6
-    top_k: 20
-    top_p: 1
-    enable_thinking: false
+  # ~8GB VRAM
+  mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT:
+    context-window: 73728
+    sampling-parameters:
+      max_tokens: 16384
+      temperature: 0.6
+      top_k: 20
+      top_p: 1
+      enable_thinking: false

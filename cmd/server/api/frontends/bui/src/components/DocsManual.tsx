@@ -379,24 +379,27 @@ kronk server stop`}</code></pre>
           <h3 id="31-configuration-file">3.1 Configuration File</h3>
           <p>The model server reads per-model overrides from:</p>
           <pre className="code-block"><code className="language-text">{`~/.kronk/models/model_config.yaml`}</code></pre>
-          <p>Kronk creates this file on first use. The file is a flat YAML map keyed by the canonical model ID. Use the same ID shown by <code>kronk model list</code> or the <code>/v1/models</code> endpoint:</p>
-          <pre className="code-block"><code className="language-yaml">{`unsloth/Qwen3-0.6B-Q8_0:
-  context-window: 32768
-  nseq-max: 2
-  admission-timeout: 3m
-  queue-depth: 2
-  imc-session-capacity: 8`}</code></pre>
-          <p>Do not add a <code>models:</code> wrapper. Top-level setting names use kebab-case, such as <code>context-window</code> and <code>nseq-max</code>. Keys nested under <code>sampling-parameters</code> use the API's snake_case names, such as <code>top_p</code>.</p>
+          <p>Kronk creates this file on first use. Version 1 stores per-model overrides under <code>models</code>, keyed by the canonical model ID. Use the same ID shown by <code>kronk model list</code> or the <code>/v1/models</code> endpoint:</p>
+          <pre className="code-block"><code className="language-yaml">{`version: 1
+models:
+  unsloth/Qwen3-0.6B-Q8_0:
+    context-window: 32768
+    nseq-max: 2
+    admission-timeout: 3m
+    queue-depth: 2
+    imc-session-capacity: 8`}</code></pre>
+          <p>Files without <code>version</code> use the legacy version-0 shape, where model IDs are top-level keys. The remaining examples in this chapter show individual entries as they appear below <code>models:</code>. Model setting names use kebab-case, such as <code>context-window</code> and <code>nseq-max</code>. Keys nested under <code>sampling-parameters</code> use the API's snake_case names, such as <code>top_p</code>.</p>
           <p>The server reads this file during startup. Restart the server after changing it. To test a different file without replacing the default, run:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --model-config-file=./my-model-config.yaml`}</code></pre>
           <p>You can also set <code>KRONK_POOL_MODEL_CONFIG_FILE</code> to an alternative path. See <a href="https://www.kronkai.com/manual#85-model-configuration-files">Chapter 8 §8.5</a> for model config file management and <a href="https://www.kronkai.com/manual#25-models-and-data-paths">Chapter 2 §2.5</a> for all data paths.</p>
           <h4 id="model-variants">Model variants</h4>
           <p>A suffix creates another configuration for the same downloaded model:</p>
-          <pre className="code-block"><code className="language-yaml">{`unsloth/Qwen3-0.6B-Q8_0:
-  context-window: 32768
+          <pre className="code-block"><code className="language-yaml">{`models:
+  unsloth/Qwen3-0.6B-Q8_0:
+    context-window: 32768
 
-unsloth/Qwen3-0.6B-Q8_0/LONG:
-  context-window: 65536`}</code></pre>
+  unsloth/Qwen3-0.6B-Q8_0/LONG:
+    context-window: 65536`}</code></pre>
           <p>Select the variant by sending the complete name, including <code>/LONG</code>, as the API request's <code>model</code> value. Variants let applications use different runtime settings without keeping duplicate model files.</p>
           <h4 id="other-configuration-surfaces">Other configuration surfaces</h4>
           <p>Applications embedding the Go SDK can construct a <code>model.Config</code> directly. Request fields such as <code>temperature</code>, <code>top_p</code>, <code>seed</code>, and <code>max_tokens</code> can override generation behavior for an individual request. A configured seed makes requests that omit <code>seed</code> repeatable; omit it from both places to use random sampling. Those request fields are documented in <a href="https://www.kronkai.com/manual#chapter-10-request-parameters">Chapter 10</a>.</p>
@@ -727,26 +730,29 @@ unsloth/Qwen3-0.6B-Q8_0/LONG:
           <p>This example shows the file structure and naming conventions. It is not a recommendation that every model needs these overrides:</p>
           <pre className="code-block"><code className="language-yaml">{`# ~/.kronk/models/model_config.yaml
 
-unsloth/Qwen3-0.6B-Q8_0:
-  context-window: 32768
-  nseq-max: 2
-  cache-type-k: q8_0
-  cache-type-v: q8_0
-  flash-attention: auto
-  incremental-cache: true
-  sampling-parameters:
-    temperature: 0.7
-    top_p: 0.8
+version: 1
+kms: {}
+models:
+  unsloth/Qwen3-0.6B-Q8_0:
+    context-window: 32768
+    nseq-max: 2
+    cache-type-k: q8_0
+    cache-type-v: q8_0
+    flash-attention: auto
+    incremental-cache: true
+    sampling-parameters:
+      temperature: 0.7
+      top_p: 0.8
 
-unsloth/Qwen3-0.6B-Q8_0/LONG:
-  context-window: 65536
-  nseq-max: 1
+  unsloth/Qwen3-0.6B-Q8_0/LONG:
+    context-window: 65536
+    nseq-max: 1
 
-some-provider/large-model:
-  context-window: 16384
-  ngpu-layers: 20
-  offload-kqv: false`}</code></pre>
-          <p>Common top-level keys are summarized below. An omitted hardware-related value is normally supplied by analysis or by the load-time defaults.</p>
+  some-provider/large-model:
+    context-window: 16384
+    ngpu-layers: 20
+    offload-kqv: false`}</code></pre>
+          <p>Common model-entry keys are summarized below. An omitted hardware-related value is normally supplied by analysis or by the load-time defaults.</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -1536,18 +1542,22 @@ krn, err := kronk.New(
           <p>The Qwen3-8B model documentation identifies 32,768 tokens as the native context and reports validation up to 131,072 tokens with YaRN. It recommends matching the scale to the context actually needed.</p>
           <p>For a 2× extension to 65,536 tokens:</p>
           <pre className="code-block"><code className="language-yaml">{`# ~/.kronk/models/model_config.yaml
-Qwen/Qwen3-8B-Q8_0:
-  context-window: 65536
-  rope-scaling-type: yarn
-  rope-freq-scale: 0.5
-  yarn-orig-ctx: 32768`}</code></pre>
+version: 1
+models:
+  Qwen/Qwen3-8B-Q8_0:
+    context-window: 65536
+    rope-scaling-type: yarn
+    rope-freq-scale: 0.5
+    yarn-orig-ctx: 32768`}</code></pre>
           <p>For a 4× extension to 131,072 tokens:</p>
           <pre className="code-block"><code className="language-yaml">{`# ~/.kronk/models/model_config.yaml
-Qwen/Qwen3-8B-Q8_0:
-  context-window: 131072
-  rope-scaling-type: yarn
-  rope-freq-scale: 0.25
-  yarn-orig-ctx: 32768`}</code></pre>
+version: 1
+models:
+  Qwen/Qwen3-8B-Q8_0:
+    context-window: 131072
+    rope-scaling-type: yarn
+    rope-freq-scale: 0.25
+    yarn-orig-ctx: 32768`}</code></pre>
           <p><code>rope-freq-scale</code> is the raw frequency multiplier, so it is the reciprocal of the extension factor:</p>
           <pre className="code-block"><code className="language-text">{`rope-freq-scale = native context / configured context`}</code></pre>
           <p>For this model, <code>0.5</code> represents a 2× extension and <code>0.25</code> represents a 4× extension. This is equivalent to llama.cpp's <code>--rope-scale 2</code> and <code>--rope-scale 4</code>, respectively.</p>
@@ -1731,6 +1741,12 @@ kronk libs --local`}</code></pre>
                 <td>Library-bundle operating-system override</td>
               </tr>
               <tr>
+                <td><code>--bucky-lib-path</code></td>
+                <td><code>KRONK_BUCKY_LIB_PATH</code></td>
+                <td>Detected bundle under <code>&lt;base&gt;/bucky-libraries</code></td>
+                <td>Exact whisper.cpp library directory</td>
+              </tr>
+              <tr>
                 <td><code>--model-config-file</code></td>
                 <td><code>KRONK_POOL_MODEL_CONFIG_FILE</code></td>
                 <td><code>&lt;base&gt;/models/model_config.yaml</code></td>
@@ -1751,7 +1767,7 @@ kronk libs --local`}</code></pre>
               <tr>
                 <td><code>--pool-ttl</code></td>
                 <td><code>KRONK_POOL_TTL</code></td>
-                <td><code>20m</code></td>
+                <td><code>0m</code></td>
                 <td>Idle model retention time; <code>0</code> disables idle expiration</td>
               </tr>
               <tr>
@@ -1759,6 +1775,12 @@ kronk libs --local`}</code></pre>
                 <td><code>KRONK_WEB_ADMIN_ENABLED</code></td>
                 <td><code>true</code></td>
                 <td>Serve the BUI under <code>/admin/</code></td>
+              </tr>
+              <tr>
+                <td><code>--authorization-mode</code></td>
+                <td><code>KRONK_AUTHORIZATION_MODE</code></td>
+                <td>unset</td>
+                <td>Select the API access policy</td>
               </tr>
               <tr>
                 <td><code>--auth-enabled</code></td>
@@ -1771,6 +1793,12 @@ kronk libs --local`}</code></pre>
                 <td><code>KRONK_AUTH_ADMIN_ENABLED</code></td>
                 <td><code>false</code></td>
                 <td>Protect administration without requiring inference authentication</td>
+              </tr>
+              <tr>
+                <td><code>--download-enabled</code></td>
+                <td><code>KRONK_DOWNLOAD_ENABLED</code></td>
+                <td><code>false</code></td>
+                <td>Allow server-side model downloads</td>
               </tr>
               <tr>
                 <td><code>--allow-upgrade</code></td>
@@ -1812,6 +1840,64 @@ kronk libs --local`}</code></pre>
           <p>The server reads per-model overrides from:</p>
           <pre className="code-block"><code className="language-text">{`~/.kronk/models/model_config.yaml`}</code></pre>
           <p>Kronk seeds the file on first use and preserves edits across upgrades. Entries are merged over hardware-analysis recommendations rather than replacing the entire runtime configuration.</p>
+          <p>Version 1 makes this the single configuration file for both the server and its models. The top-level shape is:</p>
+          <pre className="code-block"><code className="language-yaml">{`version: 1
+kms:
+  web:
+    api-host: 127.0.0.1:11435
+    debug-host: 127.0.0.1:11445
+    read-timeout: 30s
+    write-timeout: 61m
+    inference-timeout: 60m
+    idle-timeout: 1m
+    shutdown-timeout: 1m
+    cors-allowed-origins: ["*"]
+    admin:
+      enabled: true
+      password-sha-256: 18511e63760230cd17291273b607e7e13da2a2bb9a1750e0becdac08185a3c11
+  auth:
+    host: ""
+    admin-enabled: false
+    tls:
+      enabled: false
+      ca-file: ""
+      server-name: ""
+    local:
+      issuer: kronk project
+      enabled: false
+  authorization:
+    # mode: open, management, authenticated, or full-protected
+  mcp:
+    enabled: true
+    host: ""
+    auth-enabled: false
+    brave-api-key: ""
+  download:
+    enabled: false
+  tempo:
+    host: localhost:4317
+    service-name: kronk
+    probability: 0.25
+  pool:
+    budget-percent: 95
+    models-in-pool: 10
+    ttl: 0m
+  base-path: ""
+  lib-path: ""
+  bucky-lib-path: ""
+  lib-version: ""
+  arch: ""
+  os: ""
+  processor: ""
+  allow-upgrade: false
+  insecure-logging: false
+  hf-token: ""
+  llama-log: 1
+models:
+  owner/model:
+    context-window: 8192
+    nseq-max: 2`}</code></pre>
+          <p>The built-in defaults apply when a <code>kms</code> key is omitted. Configuration precedence is built-in defaults, then <code>kms</code> YAML, then <code>KRONK_*</code> environment variables, then explicitly supplied <code>kronk server start</code> flags. The <code>--model-config-file</code> flag and <code>KRONK_POOL_MODEL_CONFIG_FILE</code> environment variable select the YAML file itself and therefore remain outside the file. Files without <code>version</code> are version 0 and retain the legacy model-only shape, where model IDs are top-level keys.</p>
           <p>Automatic tuning is enabled by default in the model server. An explicit <code>context-window</code> or <code>nseq-max</code> in this file is treated as a fixed sizing constraint, not a value the tuner may reduce. When KV cache types are omitted, the server tries <code>f16</code> and then <code>q8_0</code> for that exact context and concurrency; it never automatically quantizes below <code>q8_0</code>. See <a href="https://www.kronkai.com/manual#32-automatic-tuning">Chapter 3 §3.2</a> for the complete selection order and recommended configuration style.</p>
           <p>Use another file without replacing the default:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --model-config-file=./my-model_config.yaml`}</code></pre>

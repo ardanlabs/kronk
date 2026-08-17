@@ -95,3 +95,44 @@ func TestBuildEnvVarsAuthTLS(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildEnvVarsServiceSettings(t *testing.T) {
+	cmd := &cobra.Command{}
+	cmd.Flags().String("authorization-mode", "", "")
+	cmd.Flags().Bool("download-enabled", false, "")
+	cmd.Flags().String("bucky-lib-path", "", "")
+
+	values := map[string]string{
+		"authorization-mode": "management",
+		"download-enabled":   "true",
+		"bucky-lib-path":     "/opt/bucky",
+	}
+	for name, value := range values {
+		if err := cmd.Flags().Set(name, value); err != nil {
+			t.Fatalf("Set %s: %v", name, err)
+		}
+	}
+
+	envVars := buildEnvVars(cmd)
+	wants := []string{
+		"KRONK_AUTHORIZATION_MODE=management",
+		"KRONK_DOWNLOAD_ENABLED=true",
+		"KRONK_BUCKY_LIB_PATH=/opt/bucky",
+	}
+	for _, want := range wants {
+		if !slices.Contains(envVars, want) {
+			t.Errorf("buildEnvVars: got %v, want entry %q", envVars, want)
+		}
+	}
+}
+
+func TestOverrideEnv(t *testing.T) {
+	base := []string{"PATH=/bin", "KRONK_WEB_API_HOST=env:9000"}
+	overrides := []string{"KRONK_WEB_API_HOST=flag:9001"}
+
+	got := overrideEnv(base, overrides)
+	want := "KRONK_WEB_API_HOST=flag:9001"
+	if !slices.Contains(got, want) {
+		t.Errorf("overrideEnv: got %v, want entry %q", got, want)
+	}
+}
