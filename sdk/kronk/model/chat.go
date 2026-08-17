@@ -94,16 +94,11 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) (<-chan ChatResponse, er
 func (m *Model) chatStreaming(ctx context.Context, d D, streaming bool) (<-chan ChatResponse, error) {
 	requestStart := time.Now()
 
-	// Increment active streams before launching the goroutine to prevent a race
-	// where Unload sees zero active streams and frees the model before the
-	// goroutine starts executing.
+	// Increment active streams before preparing the request to prevent Unload
+	// from freeing the model during template rendering or tokenization.
 	active := m.activeStreams.Add(1)
 	metrics.AddPoolActiveStreams(m.modelInfo.ID, 1)
 
-	// Establish ownership before asynchronous processing starts. Callers may
-	// reuse or modify their request after ChatStreaming returns; the queued job
-	// must retain a stable snapshot of all mutable JSON containers.
-	d = d.Clone()
 	id := "chatcmpl-" + uuid.NewString()
 
 	m.log(ctx, "chat-streaming", "status", "started", "id", id, "active_streams", active)
@@ -116,8 +111,9 @@ func (m *Model) chatStreaming(ctx context.Context, d D, streaming bool) (<-chan 
 
 	prepCtx, prepSpan := otel.AddSpan(ctx, "prepare-request")
 
-	params, d, err := m.validateOwnedDocument(prepCtx, d)
+	prepared, err := m.prepareChat(prepCtx, d, streaming, requestStart)
 	if err != nil {
+		m.releaseIMCReservationIfHeld(prepared.cache)
 		prepSpan.End()
 		m.log(ctx, "request-lifecycle", "stage", 2, "stage_name", "prepare-model-work",
 			"status", lifecycleStatus(err), "id", id, "elapsed", time.Since(requestStart).String(), "err", err)
@@ -128,19 +124,31 @@ func (m *Model) chatStreaming(ctx context.Context, d D, streaming bool) (<-chan 
 		return nil, err
 	}
 
-	params.Stream = streaming
+	if m.cfg.InsecureLogging() {
+		m.log(ctx, "chat-streaming", "IN-MESSAGES", prepared.d.Messages())
+	}
+
+	prepSpan.End()
+	m.log(ctx, "request-lifecycle",
+		"stage", 2,
+		"stage_name", "prepare-model-work",
+		"status", "complete",
+		"id", id,
+		"elapsed", time.Since(requestStart).String(),
+		"imc_session", prepared.cache.imcSessionID,
+		"imc_match_kind", prepared.cache.imcMatchKind,
+	)
 
 	returnCh := make(chan ChatResponse, streamChBuffer)
 	ch := m.wrapChannelForLogging(ctx, returnCh)
 
 	go func() {
 		batching := false
-		var cache cacheResult
 
 		defer func() {
 			if rec := recover(); rec != nil {
 				if !batching {
-					m.releaseIMCReservationIfHeld(cache)
+					m.releaseIMCReservationIfHeld(prepared.cache)
 				}
 				m.recordChatFailure(ctx, requestStart, fmt.Errorf("panic: %v", rec))
 				m.sendChatError(ctx, ch, id, fmt.Errorf("%v", rec))
@@ -163,52 +171,94 @@ func (m *Model) chatStreaming(ctx context.Context, d D, streaming bool) (<-chan 
 			}
 		}()
 
-		d, object, err := m.prepareContext(prepCtx, d)
-		if err != nil {
-			prepSpan.End()
-			m.log(ctx, "request-lifecycle", "stage", 2, "stage_name", "prepare-model-work",
-				"status", lifecycleStatus(err), "id", id, "elapsed", time.Since(requestStart).String(), "err", err)
-			m.recordChatFailure(ctx, requestStart, err)
-			m.sendChatError(ctx, ch, id, err)
-			return
-		}
-
-		var prompt string
-		var media [][]byte
-		prompt, media, cache, err = m.prepareCacheAndPrompt(prepCtx, d, object, requestStart)
-		if err != nil {
-			prepSpan.End()
-			m.log(ctx, "request-lifecycle", "stage", 2, "stage_name", "prepare-model-work",
-				"status", lifecycleStatus(err), "id", id, "elapsed", time.Since(requestStart).String(), "err", err)
-			m.recordChatFailure(ctx, requestStart, err)
-			m.sendChatError(ctx, ch, id, err)
-			return
-		}
-
-		d = cache.modifiedD
-
-		if m.cfg.InsecureLogging() {
-			m.log(ctx, "chat-streaming", "IN-MESSAGES", d.Messages())
-		}
-
-		prepSpan.End()
-		m.log(ctx, "request-lifecycle",
-			"stage", 2,
-			"stage_name", "prepare-model-work",
-			"status", "complete",
-			"id", id,
-			"elapsed", time.Since(requestStart).String(),
-			"imc_session", cache.imcSessionID,
-			"imc_match_kind", cache.imcMatchKind,
-		)
-
-		if m.submitToBatchEngine(ctx, ch, id, d, object, prompt, media, params, cache, requestStart) {
+		if m.submitToBatchEngine(ctx, ch, id, prepared, requestStart) {
 			batching = true
 			return
 		}
 	}()
 
 	return returnCh, nil
+}
+
+type preparedChat struct {
+	d          D
+	object     string
+	prompt     string
+	media      [][]byte
+	params     Params
+	cache      cacheResult
+	textTokens []llama.Token
+}
+
+func (m *Model) prepareChat(ctx context.Context, d D, streaming bool, requestStart time.Time) (preparedChat, error) {
+	// Establish ownership before preparation starts. Callers may reuse or modify
+	// their request after ChatStreaming returns; the queued job must retain a
+	// stable snapshot of all mutable JSON containers.
+	d = d.Clone()
+
+	params, d, err := m.validateOwnedDocument(ctx, d)
+	if err != nil {
+		return preparedChat{}, err
+	}
+	params.Stream = streaming
+
+	d, object, err := m.prepareContext(ctx, d)
+	if err != nil {
+		return preparedChat{}, err
+	}
+
+	prompt, media, cache, err := m.prepareCacheAndPrompt(ctx, d, object, requestStart)
+	prepared := preparedChat{
+		d:      cache.modifiedD,
+		object: object,
+		prompt: prompt,
+		media:  media,
+		params: params,
+		cache:  cache,
+	}
+	if err != nil {
+		return prepared, err
+	}
+
+	if err := m.prepareTextBudget(ctx, &prepared); err != nil {
+		return prepared, err
+	}
+
+	return prepared, nil
+}
+
+func (m *Model) prepareTextBudget(ctx context.Context, prepared *preparedChat) error {
+	// Multimodal token usage depends on mtmd processing performed by the batch
+	// slot. Text prompts can be fully tokenized and rejected before an HTTP
+	// streaming response is committed.
+	if prepared.object != ObjectChatText {
+		return nil
+	}
+
+	if prepared.cache.imcTokenPlan {
+		prepared.textTokens = prepared.cache.imcSamplerPromptTokens
+	} else {
+		prepared.textTokens = llama.Tokenize(m.vocab, prepared.prompt, m.addBOSToken, true)
+	}
+
+	contextWindow := m.cfg.ContextWindow()
+	requestedMaxTokens := prepared.params.MaxTokens
+	effectiveMaxTokens, ok := contextOutputBudget(len(prepared.textTokens), requestedMaxTokens, contextWindow)
+	if !ok {
+		return fmt.Errorf("%w: input tokens [%d] exceed context window [%d]", ErrInvalidRequest, len(prepared.textTokens), contextWindow)
+	}
+
+	prepared.params.MaxTokens = effectiveMaxTokens
+	if effectiveMaxTokens < requestedMaxTokens {
+		m.log(ctx, "prepare-chat",
+			"status", "max-tokens-clamped",
+			"prompt_tokens", len(prepared.textTokens),
+			"context_window", contextWindow,
+			"requested_max_tokens", requestedMaxTokens,
+			"effective_max_tokens", effectiveMaxTokens)
+	}
+
+	return nil
 }
 
 // wrapChannelForLogging wraps the response channel with logging when insecure
@@ -432,10 +482,11 @@ func (m *Model) releaseIMCReservationIfHeld(cache cacheResult) {
 	m.imcReleaseReservation(cache.imcSessionID)
 }
 
-// submitToBatchEngine attempts to submit the request to the batch engine.
+// submitToBatchEngine attempts to submit the prepared request to the batch engine.
 // Returns true if the job was submitted (caller should set batching=true),
 // false if batch engine is not available or not applicable.
-func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, id string, d D, object string, prompt string, media [][]byte, params Params, cache cacheResult, requestStart time.Time) bool {
+func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, id string, prepared preparedChat, requestStart time.Time) bool {
+	cache := prepared.cache
 	imcCacheHit := m.cfg.IncrementalCache() && (cache.cacheIdx > 0 || len(cache.imcNewCacheTokens) > 0 || cache.imcMediaBuild)
 
 	_, queueSpan := otel.AddSpan(ctx, "queue-wait")
@@ -452,12 +503,13 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		queueWaitSpan:       queueSpan,
 		queuedAt:            time.Now(),
 		requestStart:        requestStart,
-		d:                   d,
-		object:              object,
-		prompt:              prompt,
-		media:               media,
-		params:              params,
+		d:                   prepared.d,
+		object:              prepared.object,
+		prompt:              prepared.prompt,
+		media:               prepared.media,
+		params:              prepared.params,
 		ch:                  ch,
+		textTokens:          prepared.textTokens,
 		samplerPromptTokens: cache.imcSamplerPromptTokens,
 		tailTokens:          cache.imcTailTokens,
 		imcTokenPlan:        cache.imcTokenPlan,

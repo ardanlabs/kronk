@@ -35,6 +35,7 @@ type chatJob struct {
 	prompt              string        // Templated prompt string ready for tokenization
 	media               [][]byte      // Raw media bytes (images/audio) for vision/audio models
 	params              Params        // Sampling and generation parameters
+	textTokens          []llama.Token // Complete text prompt tokenized during synchronous request preparation.
 	samplerPromptTokens []llama.Token // Complete logical text-token prompt used to prime the request sampler.
 	tailTokens          []llama.Token // Non-empty inference tail after the stable cached target.
 	imcTokenPlan        bool          // True when samplerPromptTokens/tailTokens are authoritative.

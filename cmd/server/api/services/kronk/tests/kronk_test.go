@@ -45,6 +45,7 @@ func Test_API(t *testing.T) {
 
 	test.Run(t, chatNonStreamQwen3(t, tokens), "chat-nonstream-qwen3")
 	test.RunStreaming(t, chatStreamQwen3(t, tokens), "chat-stream-qwen3")
+	test.Run(t, chatContextOverflowQwen3(tokens), "chat-context-overflow-qwen3")
 	test.Run(t, chatArrayFormatQwen3(t, tokens), "chat-array-format-qwen3")
 	test.RunStreaming(t, chatArrayFormatStreamQwen3(t, tokens), "chat-array-format-stream-qwen3")
 	test.RunStreaming(t, chatStreamIMCQwen3(t, tokens), "chat-stream-imc-qwen3")

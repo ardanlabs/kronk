@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/applog"
+	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
 func TestChatResponseErrPreservesErrorIdentity(t *testing.T) {
@@ -18,6 +19,80 @@ func TestChatResponseErrPreservesErrorIdentity(t *testing.T) {
 
 	if !errors.Is(resp.internal.cause, ErrInvalidRequest) {
 		t.Errorf("response error: got %v, want %v", resp.internal.cause, ErrInvalidRequest)
+	}
+}
+
+func TestPrepareTextBudget(t *testing.T) {
+	contextWindow := 4
+	m := Model{
+		cfg: Config{PtrContextWindow: &contextWindow},
+		log: noopLog,
+	}
+
+	tests := []struct {
+		name          string
+		prepared      preparedChat
+		wantMaxTokens int
+		wantTokens    int
+		wantErr       bool
+	}{
+		{
+			name: "text budget clamped before submission",
+			prepared: preparedChat{
+				object: ObjectChatText,
+				params: Params{MaxTokens: 2},
+				cache: cacheResult{
+					imcTokenPlan:           true,
+					imcSamplerPromptTokens: []llama.Token{1, 2, 3},
+				},
+			},
+			wantMaxTokens: 1,
+			wantTokens:    3,
+		},
+		{
+			name: "text overflow rejected before submission",
+			prepared: preparedChat{
+				object: ObjectChatText,
+				params: Params{MaxTokens: 2},
+				cache: cacheResult{
+					imcTokenPlan:           true,
+					imcSamplerPromptTokens: []llama.Token{1, 2, 3, 4},
+				},
+			},
+			wantMaxTokens: 2,
+			wantTokens:    4,
+			wantErr:       true,
+		},
+		{
+			name: "media remains deferred to slot preparation",
+			prepared: preparedChat{
+				object: ObjectChatMedia,
+				params: Params{MaxTokens: 2},
+				cache: cacheResult{
+					imcTokenPlan:           true,
+					imcSamplerPromptTokens: []llama.Token{1, 2, 3, 4},
+				},
+			},
+			wantMaxTokens: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := m.prepareTextBudget(t.Context(), &tt.prepared)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("prepareTextBudget() error = %v, wantErr %t", err, tt.wantErr)
+			}
+			if tt.wantErr && !errors.Is(err, ErrInvalidRequest) {
+				t.Errorf("prepareTextBudget() error = %v, want %v", err, ErrInvalidRequest)
+			}
+			if got := tt.prepared.params.MaxTokens; got != tt.wantMaxTokens {
+				t.Errorf("MaxTokens: got %d, want %d", got, tt.wantMaxTokens)
+			}
+			if got := len(tt.prepared.textTokens); got != tt.wantTokens {
+				t.Errorf("text tokens: got %d, want %d", got, tt.wantTokens)
+			}
+		})
 	}
 }
 

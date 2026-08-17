@@ -2,7 +2,9 @@ package chatapi_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/apitest"
@@ -217,6 +219,61 @@ func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 				return cmp.Diff(resp.Choices[0].Message.Content, string(logprobBytes))
 			},
 		},
+	}
+}
+
+// chatContextOverflowQwen3 verifies oversized text requests fail before a
+// streaming or non-streaming response is committed.
+func chatContextOverflowQwen3(tokens map[string]string) []apitest.Table {
+	type errorResponse struct {
+		Error struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+			Code    string `json:"code"`
+		} `json:"error"`
+	}
+
+	oversizedPrompt := strings.Repeat("the quick brown fox jumps over the lazy dog. ", 3400)
+
+	table := func(name string, stream bool) apitest.Table {
+		return apitest.Table{
+			Name:       name,
+			URL:        "/v1/chat/completions",
+			Token:      tokens["chat-completions"],
+			Method:     http.MethodPost,
+			StatusCode: http.StatusBadRequest,
+			Input: model.D{
+				"model": "Qwen3-8B-Q8_0",
+				"messages": model.DocumentArray(
+					model.TextMessage(model.RoleUser, oversizedPrompt),
+				),
+				"max_tokens": 32,
+				"stream":     stream,
+			},
+			GotResp: &errorResponse{},
+			CmpFunc: func(got any, _ any) string {
+				gotErr := got.(*errorResponse).Error
+				if gotErr.Code != errs.InvalidArgument.String() {
+					return fmt.Sprintf("error code: got %s, want %s", gotErr.Code, errs.InvalidArgument)
+				}
+				if gotErr.Type != "invalid_request_error" {
+					return fmt.Sprintf("error type: got %s, want invalid_request_error", gotErr.Type)
+				}
+				if !strings.Contains(gotErr.Message, "input tokens") || !strings.Contains(gotErr.Message, "context window") {
+					return fmt.Sprintf("error message %q does not describe the context overflow", gotErr.Message)
+				}
+				if strings.Contains(gotErr.Message, "imc decode") || strings.Contains(gotErr.Message, "extension tokens") {
+					return fmt.Sprintf("error message exposes decoder internals: %q", gotErr.Message)
+				}
+
+				return ""
+			},
+		}
+	}
+
+	return []apitest.Table{
+		table("non-streaming", false),
+		table("streaming", true),
 	}
 }
 
