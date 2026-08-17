@@ -110,13 +110,16 @@ Common settings can be supplied as flags or environment variables:
 | `--processor` | `KRONK_PROCESSOR` | Detected host backend | Processor bundle such as `metal`, `cuda`, `rocm`, `vulkan`, or `cpu` |
 | `--arch` | `KRONK_ARCH` | Host architecture | Library-bundle architecture override |
 | `--os` | `KRONK_OS` | Host operating system | Library-bundle operating-system override |
+| `--bucky-lib-path` | `KRONK_BUCKY_LIB_PATH` | Detected bundle under `<base>/bucky-libraries` | Exact whisper.cpp library directory |
 | `--model-config-file` | `KRONK_POOL_MODEL_CONFIG_FILE` | `<base>/models/model_config.yaml` | Per-model overrides |
 | `--budget-percent` | `KRONK_POOL_BUDGET_PERCENT` | `95` | Memory-budget input for loaded models |
 | `--models-in-pool` | `KRONK_POOL_MODELS_IN_POOL` | `10` | Maximum loaded entries in each model pool |
-| `--pool-ttl` | `KRONK_POOL_TTL` | `20m` | Idle model retention time; `0` disables idle expiration |
+| `--pool-ttl` | `KRONK_POOL_TTL` | `0m` | Idle model retention time; `0` disables idle expiration |
 | `--web-admin-enabled` | `KRONK_WEB_ADMIN_ENABLED` | `true` | Serve the BUI under `/admin/` |
+| `--authorization-mode` | `KRONK_AUTHORIZATION_MODE` | unset | Select the API access policy |
 | `--auth-enabled` | `KRONK_AUTH_LOCAL_ENABLED` | `false` | Protect inference and administration with local authentication |
 | `--admin-auth-enabled` | `KRONK_AUTH_ADMIN_ENABLED` | `false` | Protect administration without requiring inference authentication |
+| `--download-enabled` | `KRONK_DOWNLOAD_ENABLED` | `false` | Allow server-side model downloads |
 | `--allow-upgrade` | `KRONK_ALLOW_UPGRADE` | `false` | Opt in to automatic native-library upgrades |
 | `--llama-log` | `KRONK_LLAMA_LOG` | `1` | Enable or disable llama.cpp logging |
 
@@ -220,6 +223,76 @@ The server reads per-model overrides from:
 Kronk seeds the file on first use and preserves edits across upgrades. Entries
 are merged over hardware-analysis recommendations rather than replacing the
 entire runtime configuration.
+
+Version 1 makes this the single configuration file for both the server and its
+models. The top-level shape is:
+
+```yaml
+version: 1
+kms:
+  web:
+    api-host: 127.0.0.1:11435
+    debug-host: 127.0.0.1:11445
+    read-timeout: 30s
+    write-timeout: 61m
+    inference-timeout: 60m
+    idle-timeout: 1m
+    shutdown-timeout: 1m
+    cors-allowed-origins: ["*"]
+    admin:
+      enabled: true
+      password-sha-256: 18511e63760230cd17291273b607e7e13da2a2bb9a1750e0becdac08185a3c11
+  auth:
+    host: ""
+    admin-enabled: false
+    tls:
+      enabled: false
+      ca-file: ""
+      server-name: ""
+    local:
+      issuer: kronk project
+      enabled: false
+  authorization:
+    # mode: open, management, authenticated, or full-protected
+  mcp:
+    enabled: true
+    host: ""
+    auth-enabled: false
+    brave-api-key: ""
+  download:
+    enabled: false
+  tempo:
+    host: localhost:4317
+    service-name: kronk
+    probability: 0.25
+  pool:
+    budget-percent: 95
+    models-in-pool: 10
+    ttl: 0m
+  base-path: ""
+  lib-path: ""
+  bucky-lib-path: ""
+  lib-version: ""
+  arch: ""
+  os: ""
+  processor: ""
+  allow-upgrade: false
+  insecure-logging: false
+  hf-token: ""
+  llama-log: 1
+models:
+  owner/model:
+    context-window: 8192
+    nseq-max: 2
+```
+
+The built-in defaults apply when a `kms` key is omitted. Configuration
+precedence is built-in defaults, then `kms` YAML, then `KRONK_*` environment
+variables, then explicitly supplied `kronk server start` flags. The
+`--model-config-file` flag and `KRONK_POOL_MODEL_CONFIG_FILE` environment
+variable select the YAML file itself and therefore remain outside the file.
+Files without `version` are version 0 and retain the legacy model-only shape,
+where model IDs are top-level keys.
 
 Automatic tuning is enabled by default in the model server. An explicit
 `context-window` or `nseq-max` in this file is treated as a fixed sizing

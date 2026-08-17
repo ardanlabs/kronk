@@ -31,22 +31,26 @@ The model server reads per-model overrides from:
 ~/.kronk/models/model_config.yaml
 ```
 
-Kronk creates this file on first use. The file is a flat YAML map keyed by the
-canonical model ID. Use the same ID shown by `kronk model list` or the
-`/v1/models` endpoint:
+Kronk creates this file on first use. Version 1 stores per-model overrides
+under `models`, keyed by the canonical model ID. Use the same ID shown by
+`kronk model list` or the `/v1/models` endpoint:
 
 ```yaml
-unsloth/Qwen3-0.6B-Q8_0:
-  context-window: 32768
-  nseq-max: 2
-  admission-timeout: 3m
-  queue-depth: 2
-  imc-session-capacity: 8
+version: 1
+models:
+  unsloth/Qwen3-0.6B-Q8_0:
+    context-window: 32768
+    nseq-max: 2
+    admission-timeout: 3m
+    queue-depth: 2
+    imc-session-capacity: 8
 ```
 
-Do not add a `models:` wrapper. Top-level setting names use kebab-case, such as
-`context-window` and `nseq-max`. Keys nested under `sampling-parameters` use
-the API's snake_case names, such as `top_p`.
+Files without `version` use the legacy version-0 shape, where model IDs are
+top-level keys. The remaining examples in this chapter show individual entries
+as they appear below `models:`. Model setting names use kebab-case, such as
+`context-window` and `nseq-max`. Keys nested under `sampling-parameters` use the
+API's snake_case names, such as `top_p`.
 
 The server reads this file during startup. Restart the server after changing
 it. To test a different file without replacing the default, run:
@@ -66,11 +70,12 @@ data paths.
 A suffix creates another configuration for the same downloaded model:
 
 ```yaml
-unsloth/Qwen3-0.6B-Q8_0:
-  context-window: 32768
+models:
+  unsloth/Qwen3-0.6B-Q8_0:
+    context-window: 32768
 
-unsloth/Qwen3-0.6B-Q8_0/LONG:
-  context-window: 65536
+  unsloth/Qwen3-0.6B-Q8_0/LONG:
+    context-window: 65536
 ```
 
 Select the variant by sending the complete name, including `/LONG`, as the API
@@ -636,28 +641,31 @@ recommendation that every model needs these overrides:
 ```yaml
 # ~/.kronk/models/model_config.yaml
 
-unsloth/Qwen3-0.6B-Q8_0:
-  context-window: 32768
-  nseq-max: 2
-  cache-type-k: q8_0
-  cache-type-v: q8_0
-  flash-attention: auto
-  incremental-cache: true
-  sampling-parameters:
-    temperature: 0.7
-    top_p: 0.8
+version: 1
+kms: {}
+models:
+  unsloth/Qwen3-0.6B-Q8_0:
+    context-window: 32768
+    nseq-max: 2
+    cache-type-k: q8_0
+    cache-type-v: q8_0
+    flash-attention: auto
+    incremental-cache: true
+    sampling-parameters:
+      temperature: 0.7
+      top_p: 0.8
 
-unsloth/Qwen3-0.6B-Q8_0/LONG:
-  context-window: 65536
-  nseq-max: 1
+  unsloth/Qwen3-0.6B-Q8_0/LONG:
+    context-window: 65536
+    nseq-max: 1
 
-some-provider/large-model:
-  context-window: 16384
-  ngpu-layers: 20
-  offload-kqv: false
+  some-provider/large-model:
+    context-window: 16384
+    ngpu-layers: 20
+    offload-kqv: false
 ```
 
-Common top-level keys are summarized below. An omitted hardware-related value
+Common model-entry keys are summarized below. An omitted hardware-related value
 is normally supplied by analysis or by the load-time defaults.
 
 | Key | Values | Purpose |

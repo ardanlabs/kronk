@@ -1,11 +1,131 @@
 package kronk
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
+	"go.yaml.in/yaml/v2"
 )
+
+func TestLoadConfig(t *testing.T) {
+	unsetEnv(t, "KRONK_HF_TOKEN")
+	unsetEnv(t, "KRONK_LLAMA_LOG")
+
+	path := filepath.Join(t.TempDir(), "model_config.yaml")
+	data := []byte(`version: 1
+models: {}
+kms:
+  web:
+    api-host: yaml.example:9000
+    read-timeout: 12s
+  authorization:
+    mode: authenticated
+  mcp:
+    enabled: false
+  pool:
+    budget-percent: 80
+    ttl: 5m
+  bucky-lib-path: /yaml/bucky
+  hf-token: yaml-token
+  llama-log: 0
+`)
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	t.Setenv("KRONK_POOL_MODEL_CONFIG_FILE", path)
+	t.Setenv("KRONK_WEB_API_HOST", "env.example:9001")
+	t.Setenv("KRONK_POOL_BUDGET_PERCENT", "75")
+
+	cfg, err := loadConfig(false)
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+
+	if cfg.Web.APIHost != "env.example:9001" {
+		t.Errorf("APIHost: got %q, want %q", cfg.Web.APIHost, "env.example:9001")
+	}
+	if cfg.Web.ReadTimeout != 12*time.Second {
+		t.Errorf("ReadTimeout: got %s, want %s", cfg.Web.ReadTimeout, 12*time.Second)
+	}
+	if cfg.MCP.Enabled {
+		t.Error("MCP.Enabled: got true, want false")
+	}
+	if cfg.Pool.BudgetPercent != 75 {
+		t.Errorf("BudgetPercent: got %d, want %d", cfg.Pool.BudgetPercent, 75)
+	}
+	if cfg.Pool.TTL != 5*time.Minute {
+		t.Errorf("TTL: got %s, want %s", cfg.Pool.TTL, 5*time.Minute)
+	}
+	if cfg.BuckyLibPath != "/yaml/bucky" {
+		t.Errorf("BuckyLibPath: got %q, want %q", cfg.BuckyLibPath, "/yaml/bucky")
+	}
+	if token := os.Getenv("KRONK_HF_TOKEN"); token != "yaml-token" {
+		t.Errorf("KRONK_HF_TOKEN: got %q, want %q", token, "yaml-token")
+	}
+	if level := os.Getenv("KRONK_LLAMA_LOG"); level != "0" {
+		t.Errorf("KRONK_LLAMA_LOG: got %q, want %q", level, "0")
+	}
+	if cfg.Authorization.Mode.String() != "authenticated" {
+		t.Errorf("Authorization.Mode: got %q, want %q", cfg.Authorization.Mode, "authenticated")
+	}
+	if cfg.Pool.ModelConfigFile != path {
+		t.Errorf("ModelConfigFile: got %q, want %q", cfg.Pool.ModelConfigFile, path)
+	}
+}
+
+func TestLoadConfigVersionZero(t *testing.T) {
+	unsetEnv(t, "KRONK_HF_TOKEN")
+	unsetEnv(t, "KRONK_LLAMA_LOG")
+
+	path := filepath.Join(t.TempDir(), "model_config.yaml")
+	data := []byte("owner/model:\n  context-window: 4096\nkms:\n  web:\n    api-host: ignored:9000\n")
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	t.Setenv("KRONK_POOL_MODEL_CONFIG_FILE", path)
+
+	cfg, err := loadConfig(false)
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	if cfg.Web.APIHost != "127.0.0.1:11435" {
+		t.Errorf("APIHost: got %q, want default", cfg.Web.APIHost)
+	}
+
+	upgraded, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	var doc struct {
+		Version int            `yaml:"version"`
+		Models  map[string]any `yaml:"models"`
+	}
+	if err := yaml.Unmarshal(upgraded, &doc); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if doc.Version != configVersion {
+		t.Errorf("Version: got %d, want %d", doc.Version, configVersion)
+	}
+	if _, exists := doc.Models["owner/model"]; !exists {
+		t.Errorf("Models: got %v, want owner/model", doc.Models)
+	}
+}
+
+func TestLoadConfigUnsupportedVersion(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "model_config.yaml")
+	if err := os.WriteFile(path, []byte("version: 2\nmodels: {}\n"), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	t.Setenv("KRONK_POOL_MODEL_CONFIG_FILE", path)
+
+	if _, err := loadConfig(false); err == nil {
+		t.Fatal("loadConfig: got nil error, want unsupported version error")
+	}
+}
 
 func TestResolveAuthorizationSettings(t *testing.T) {
 	tests := []struct {
@@ -100,4 +220,24 @@ func TestValidateAdminConfig(t *testing.T) {
 			}
 		})
 	}
+}
+
+func unsetEnv(t *testing.T, name string) {
+	t.Helper()
+
+	value, exists := os.LookupEnv(name)
+	if err := os.Unsetenv(name); err != nil {
+		t.Fatalf("Unsetenv %s: %v", name, err)
+	}
+	t.Cleanup(func() {
+		if exists {
+			if err := os.Setenv(name, value); err != nil {
+				t.Errorf("Setenv %s: %v", name, err)
+			}
+			return
+		}
+		if err := os.Unsetenv(name); err != nil {
+			t.Errorf("Unsetenv %s: %v", name, err)
+		}
+	})
 }

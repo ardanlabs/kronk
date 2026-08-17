@@ -53,22 +53,26 @@ For a 2× extension to 65,536 tokens:
 
 ```yaml
 # ~/.kronk/models/model_config.yaml
-Qwen/Qwen3-8B-Q8_0:
-  context-window: 65536
-  rope-scaling-type: yarn
-  rope-freq-scale: 0.5
-  yarn-orig-ctx: 32768
+version: 1
+models:
+  Qwen/Qwen3-8B-Q8_0:
+    context-window: 65536
+    rope-scaling-type: yarn
+    rope-freq-scale: 0.5
+    yarn-orig-ctx: 32768
 ```
 
 For a 4× extension to 131,072 tokens:
 
 ```yaml
 # ~/.kronk/models/model_config.yaml
-Qwen/Qwen3-8B-Q8_0:
-  context-window: 131072
-  rope-scaling-type: yarn
-  rope-freq-scale: 0.25
-  yarn-orig-ctx: 32768
+version: 1
+models:
+  Qwen/Qwen3-8B-Q8_0:
+    context-window: 131072
+    rope-scaling-type: yarn
+    rope-freq-scale: 0.25
+    yarn-orig-ctx: 32768
 ```
 
 `rope-freq-scale` is the raw frequency multiplier, so it is the reciprocal of

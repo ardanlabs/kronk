@@ -24,7 +24,6 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/debug"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mux"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/bucky"
@@ -82,93 +81,9 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	// existing behavior. WEB_ADMIN_ENABLED independently controls whether the
 	// BUI is served under /admin/.
 
-	cfg := struct {
-		conf.Version
-		Web struct {
-			ReadTimeout        time.Duration `conf:"default:30s"`
-			WriteTimeout       time.Duration `conf:"default:61m"`
-			InferenceTimeout   time.Duration `conf:"default:60m"`
-			IdleTimeout        time.Duration `conf:"default:1m"`
-			ShutdownTimeout    time.Duration `conf:"default:1m"`
-			APIHost            string        `conf:"default:127.0.0.1:11435"`
-			DebugHost          string        `conf:"default:127.0.0.1:11445"`
-			CORSAllowedOrigins []string      `conf:"default:*"`
-			Admin              struct {
-				Enabled        bool   `conf:"default:true"`
-				PasswordSHA256 string `conf:"default:18511e63760230cd17291273b607e7e13da2a2bb9a1750e0becdac08185a3c11,mask"` // kronk
-			}
-		}
-		Auth struct {
-			Host         string // Leave empty to run the local auth service.
-			AdminEnabled bool   `conf:"default:false"`
-			TLS          struct {
-				Enabled    bool `conf:"default:false"`
-				CAFile     string
-				ServerName string
-			}
-			Local struct {
-				Issuer  string `conf:"default:kronk project"`
-				Enabled bool   `conf:"default:false"`
-			}
-		}
-		Authorization struct {
-			Mode auth.Mode
-		}
-		MCP struct {
-			Enabled     bool   `conf:"default:true"`
-			Host        string // Leave empty to run the local MCP service.
-			AuthEnabled bool   `conf:"default:false"`
-			BraveAPIKey string `conf:"mask"`
-		}
-		Download struct {
-			Enabled bool `conf:"default:false"`
-		}
-		Tempo struct {
-			Host        string  `conf:"default:localhost:4317"`
-			ServiceName string  `conf:"default:kronk"`
-			Probability float64 `conf:"default:0.25"`
-			// Shouldn't use a high Probability value in non-developer systems.
-			// 25% should be enough for most systems. Some might want to have
-			// this even lower.
-		}
-		Pool struct {
-			ModelConfigFile string
-			BudgetPercent   int           `conf:"default:95"`
-			ModelsInPool    int           `conf:"default:10"`
-			TTL             time.Duration `conf:"default:0m"`
-		}
-		BasePath        string
-		LibPath         string
-		LibVersion      string
-		Arch            string
-		OS              string
-		Processor       string
-		AllowUpgrade    bool
-		InsecureLogging bool
-		HfToken         string `conf:"mask"`
-		LlamaLog        int    `conf:"default:1"`
-	}{
-		Version: conf.Version{
-			Build: tag,
-			Desc:  "Kronk",
-		},
-	}
-
-	const prefix = "KRONK"
-	if showHelp {
-		help, err := conf.UsageInfo(prefix, &cfg)
-		if err != nil {
-			return fmt.Errorf("parsing config: %w", err)
-		}
-		return fmt.Errorf("%s", help)
-	}
-
-	help, err := conf.Parse(prefix, &cfg)
+	cfg, err := loadConfig(showHelp)
 	if err != nil {
-		if errors.Is(err, conf.ErrHelpWanted) {
-			fmt.Println(help)
-		}
-		return fmt.Errorf("parsing config: %w", err)
+		return err
 	}
 	mcpAuthEnabled := cfg.MCP.Enabled && cfg.MCP.Host == "" && cfg.MCP.AuthEnabled
 	inferenceAuthEnabled, managementAuthEnabled, authServiceAdminEnabled := resolveAuthorizationSettings(
@@ -364,7 +279,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	buckyLibs, err := buckylibs.New(
 		buckylibs.WithBasePath(cfg.BasePath),
-		buckylibs.WithLibPath(os.Getenv("KRONK_BUCKY_LIB_PATH")),
+		buckylibs.WithLibPath(cfg.BuckyLibPath),
 		buckylibs.WithAllowUpgrade(cfg.AllowUpgrade),
 		buckylibs.WithDetect(ctx, log.Info),
 	)
@@ -393,10 +308,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	// -------------------------------------------------------------------------
 	// Model Config
 
-	modelConfigFile, err := defaults.ModelConfigFile(cfg.Pool.ModelConfigFile, cfg.BasePath)
-	if err != nil {
-		return fmt.Errorf("resolving model config file: %w", err)
-	}
+	modelConfigFile := cfg.Pool.ModelConfigFile
 
 	log.Info(ctx, "startup", "status", "model config", "path", modelConfigFile)
 

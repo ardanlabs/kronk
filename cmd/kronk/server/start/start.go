@@ -31,7 +31,7 @@ func runLocal(cmd *cobra.Command) error {
 		proc.Stdout = logFile
 		proc.Stderr = logFile
 		proc.Stdin = nil
-		proc.Env = append(os.Environ(), envVars...)
+		proc.Env = overrideEnv(os.Environ(), envVars)
 		setDetachAttrs(proc)
 
 		if err := proc.Start(); err != nil {
@@ -65,31 +65,46 @@ func runLocal(cmd *cobra.Command) error {
 func buildEnvVars(cmd *cobra.Command) []string {
 	var envVars []string
 
+	addString := func(flag string, env string) {
+		if cmd.Flags().Changed(flag) {
+			value, _ := cmd.Flags().GetString(flag)
+			envVars = append(envVars, env+"="+value)
+		}
+	}
+	addBool := func(flag string, env string) {
+		if cmd.Flags().Changed(flag) {
+			value, _ := cmd.Flags().GetBool(flag)
+			envVars = append(envVars, env+"="+strconv.FormatBool(value))
+		}
+	}
+	addInt := func(flag string, env string) {
+		if cmd.Flags().Changed(flag) {
+			value, _ := cmd.Flags().GetInt(flag)
+			envVars = append(envVars, env+"="+strconv.Itoa(value))
+		}
+	}
+	addFloat := func(flag string, env string) {
+		if cmd.Flags().Changed(flag) {
+			value, _ := cmd.Flags().GetFloat64(flag)
+			envVars = append(envVars, env+"="+strconv.FormatFloat(value, 'f', -1, 64))
+		}
+	}
+	addStringSlice := func(flag string, env string) {
+		if cmd.Flags().Changed(flag) {
+			value, _ := cmd.Flags().GetStringSlice(flag)
+			envVars = append(envVars, env+"="+strings.Join(value, ","))
+		}
+	}
+
 	// Web settings
-	if v, _ := cmd.Flags().GetString("api-host"); v != "" {
-		envVars = append(envVars, "KRONK_WEB_API_HOST="+v)
-	}
-	if v, _ := cmd.Flags().GetString("debug-host"); v != "" {
-		envVars = append(envVars, "KRONK_WEB_DEBUG_HOST="+v)
-	}
-	if v, _ := cmd.Flags().GetString("read-timeout"); v != "" {
-		envVars = append(envVars, "KRONK_WEB_READ_TIMEOUT="+v)
-	}
-	if v, _ := cmd.Flags().GetString("inference-timeout"); v != "" {
-		envVars = append(envVars, "KRONK_WEB_INFERENCE_TIMEOUT="+v)
-	}
-	if v, _ := cmd.Flags().GetString("write-timeout"); v != "" {
-		envVars = append(envVars, "KRONK_WEB_WRITE_TIMEOUT="+v)
-	}
-	if v, _ := cmd.Flags().GetString("idle-timeout"); v != "" {
-		envVars = append(envVars, "KRONK_WEB_IDLE_TIMEOUT="+v)
-	}
-	if v, _ := cmd.Flags().GetString("shutdown-timeout"); v != "" {
-		envVars = append(envVars, "KRONK_WEB_SHUTDOWN_TIMEOUT="+v)
-	}
-	if v, _ := cmd.Flags().GetStringSlice("cors-allowed-origins"); len(v) > 0 {
-		envVars = append(envVars, "KRONK_WEB_CORS_ALLOWED_ORIGINS="+strings.Join(v, ","))
-	}
+	addString("api-host", "KRONK_WEB_API_HOST")
+	addString("debug-host", "KRONK_WEB_DEBUG_HOST")
+	addString("read-timeout", "KRONK_WEB_READ_TIMEOUT")
+	addString("inference-timeout", "KRONK_WEB_INFERENCE_TIMEOUT")
+	addString("write-timeout", "KRONK_WEB_WRITE_TIMEOUT")
+	addString("idle-timeout", "KRONK_WEB_IDLE_TIMEOUT")
+	addString("shutdown-timeout", "KRONK_WEB_SHUTDOWN_TIMEOUT")
+	addStringSlice("cors-allowed-origins", "KRONK_WEB_CORS_ALLOWED_ORIGINS")
 
 	// Auth settings
 	if cmd.Flags().Changed("auth-enabled") {
@@ -106,106 +121,70 @@ func buildEnvVars(cmd *cobra.Command) []string {
 			envVars = append(envVars, "KRONK_AUTH_ADMIN_ENABLED="+strconv.FormatBool(v))
 		}
 	}
-	if cmd.Flags().Changed("web-admin-enabled") {
-		v, _ := cmd.Flags().GetBool("web-admin-enabled")
-		envVars = append(envVars, "KRONK_WEB_ADMIN_ENABLED="+strconv.FormatBool(v))
-	}
-	if v, _ := cmd.Flags().GetString("auth-host"); v != "" {
-		envVars = append(envVars, "KRONK_AUTH_HOST="+v)
-	}
-	if cmd.Flags().Changed("auth-tls-enabled") {
-		v, _ := cmd.Flags().GetBool("auth-tls-enabled")
-		envVars = append(envVars, "KRONK_AUTH_TLS_ENABLED="+strconv.FormatBool(v))
-	}
-	if v, _ := cmd.Flags().GetString("auth-tls-ca-file"); v != "" {
-		envVars = append(envVars, "KRONK_AUTH_TLS_CA_FILE="+v)
-	}
-	if v, _ := cmd.Flags().GetString("auth-tls-server-name"); v != "" {
-		envVars = append(envVars, "KRONK_AUTH_TLS_SERVER_NAME="+v)
-	}
-	if v, _ := cmd.Flags().GetString("auth-issuer"); v != "" {
-		envVars = append(envVars, "KRONK_AUTH_LOCAL_ISSUER="+v)
-	}
-	if v, _ := cmd.Flags().GetString("web-admin-password-sha-256"); v != "" {
-		envVars = append(envVars, "KRONK_WEB_ADMIN_PASSWORD_SHA_256="+v)
-	}
+	addBool("web-admin-enabled", "KRONK_WEB_ADMIN_ENABLED")
+	addString("auth-host", "KRONK_AUTH_HOST")
+	addBool("auth-tls-enabled", "KRONK_AUTH_TLS_ENABLED")
+	addString("auth-tls-ca-file", "KRONK_AUTH_TLS_CA_FILE")
+	addString("auth-tls-server-name", "KRONK_AUTH_TLS_SERVER_NAME")
+	addString("auth-issuer", "KRONK_AUTH_LOCAL_ISSUER")
+	addString("web-admin-password-sha-256", "KRONK_WEB_ADMIN_PASSWORD_SHA_256")
+	addString("authorization-mode", "KRONK_AUTHORIZATION_MODE")
 
 	// MCP settings
-	if cmd.Flags().Changed("mcp-enabled") {
-		v, _ := cmd.Flags().GetBool("mcp-enabled")
-		envVars = append(envVars, "KRONK_MCP_ENABLED="+strconv.FormatBool(v))
-	}
-	if v, _ := cmd.Flags().GetString("mcp-host"); v != "" {
-		envVars = append(envVars, "KRONK_MCP_HOST="+v)
-	}
-	if cmd.Flags().Changed("mcp-auth-enabled") {
-		v, _ := cmd.Flags().GetBool("mcp-auth-enabled")
-		envVars = append(envVars, "KRONK_MCP_AUTH_ENABLED="+strconv.FormatBool(v))
-	}
-	if v, _ := cmd.Flags().GetString("mcp-brave-api-key"); v != "" {
-		envVars = append(envVars, "KRONK_MCP_BRAVE_API_KEY="+v)
-	}
+	addBool("mcp-enabled", "KRONK_MCP_ENABLED")
+	addString("mcp-host", "KRONK_MCP_HOST")
+	addBool("mcp-auth-enabled", "KRONK_MCP_AUTH_ENABLED")
+	addString("mcp-brave-api-key", "KRONK_MCP_BRAVE_API_KEY")
+	addBool("download-enabled", "KRONK_DOWNLOAD_ENABLED")
 
 	// Tempo/tracing settings
-	if v, _ := cmd.Flags().GetString("tempo-host"); v != "" {
-		envVars = append(envVars, "KRONK_TEMPO_HOST="+v)
-	}
-	if v, _ := cmd.Flags().GetString("tempo-service-name"); v != "" {
-		envVars = append(envVars, "KRONK_TEMPO_SERVICE_NAME="+v)
-	}
-	if v, _ := cmd.Flags().GetFloat64("tempo-probability"); v >= 0 {
-		envVars = append(envVars, "KRONK_TEMPO_PROBABILITY="+strconv.FormatFloat(v, 'f', -1, 64))
-	}
+	addString("tempo-host", "KRONK_TEMPO_HOST")
+	addString("tempo-service-name", "KRONK_TEMPO_SERVICE_NAME")
+	addFloat("tempo-probability", "KRONK_TEMPO_PROBABILITY")
 
 	// Pool settings
-	if v, _ := cmd.Flags().GetString("model-config-file"); v != "" {
-		envVars = append(envVars, "KRONK_POOL_MODEL_CONFIG_FILE="+v)
-	}
-	if v, _ := cmd.Flags().GetInt("budget-percent"); v != 0 {
-		envVars = append(envVars, "KRONK_POOL_BUDGET_PERCENT="+strconv.Itoa(v))
-	}
-	if v, _ := cmd.Flags().GetInt("models-in-pool"); v != 0 {
-		envVars = append(envVars, "KRONK_POOL_MODELS_IN_POOL="+strconv.Itoa(v))
-	}
-	if v, _ := cmd.Flags().GetString("pool-ttl"); v != "" {
-		envVars = append(envVars, "KRONK_POOL_TTL="+v)
-	}
+	addString("model-config-file", "KRONK_POOL_MODEL_CONFIG_FILE")
+	addInt("budget-percent", "KRONK_POOL_BUDGET_PERCENT")
+	addInt("models-in-pool", "KRONK_POOL_MODELS_IN_POOL")
+	addString("pool-ttl", "KRONK_POOL_TTL")
 
 	// Runtime settings
-	if v, _ := cmd.Flags().GetString("base-path"); v != "" {
-		envVars = append(envVars, "KRONK_BASE_PATH="+v)
-	}
-	if v, _ := cmd.Flags().GetString("lib-path"); v != "" {
-		envVars = append(envVars, "KRONK_LIB_PATH="+v)
-	}
-	if v, _ := cmd.Flags().GetString("lib-version"); v != "" {
-		envVars = append(envVars, "KRONK_LIB_VERSION="+v)
-	}
-	if v, _ := cmd.Flags().GetString("arch"); v != "" {
-		envVars = append(envVars, "KRONK_ARCH="+v)
-	}
-	if v, _ := cmd.Flags().GetString("os"); v != "" {
-		envVars = append(envVars, "KRONK_OS="+v)
-	}
-	if v, _ := cmd.Flags().GetString("processor"); v != "" {
-		envVars = append(envVars, "KRONK_PROCESSOR="+v)
-	}
-	if v, _ := cmd.Flags().GetString("hf-token"); v != "" {
-		envVars = append(envVars, "KRONK_HF_TOKEN="+v)
-	}
-	if cmd.Flags().Changed("allow-upgrade") {
-		v, _ := cmd.Flags().GetBool("allow-upgrade")
-		envVars = append(envVars, "KRONK_ALLOW_UPGRADE="+strconv.FormatBool(v))
-	}
-	if v, _ := cmd.Flags().GetInt("llama-log"); v != -1 {
-		envVars = append(envVars, "KRONK_LLAMA_LOG="+strconv.Itoa(v))
-	}
-	if cmd.Flags().Changed("insecure-logging") {
-		v, _ := cmd.Flags().GetBool("insecure-logging")
-		envVars = append(envVars, "KRONK_INSECURE_LOGGING="+strconv.FormatBool(v))
-	}
+	addString("base-path", "KRONK_BASE_PATH")
+	addString("lib-path", "KRONK_LIB_PATH")
+	addString("bucky-lib-path", "KRONK_BUCKY_LIB_PATH")
+	addString("lib-version", "KRONK_LIB_VERSION")
+	addString("arch", "KRONK_ARCH")
+	addString("os", "KRONK_OS")
+	addString("processor", "KRONK_PROCESSOR")
+	addString("hf-token", "KRONK_HF_TOKEN")
+	addBool("allow-upgrade", "KRONK_ALLOW_UPGRADE")
+	addInt("llama-log", "KRONK_LLAMA_LOG")
+	addBool("insecure-logging", "KRONK_INSECURE_LOGGING")
 
 	return envVars
+}
+
+func overrideEnv(base []string, overrides []string) []string {
+	values := make(map[string]string, len(base)+len(overrides))
+	order := make([]string, 0, len(base)+len(overrides))
+
+	for _, env := range append(append([]string{}, base...), overrides...) {
+		parts := splitEnvVar(env)
+		if len(parts) != 2 {
+			continue
+		}
+		if _, exists := values[parts[0]]; !exists {
+			order = append(order, parts[0])
+		}
+		values[parts[0]] = parts[1]
+	}
+
+	env := make([]string, 0, len(order))
+	for _, key := range order {
+		env = append(env, key+"="+values[key])
+	}
+
+	return env
 }
 
 func splitEnvVar(env string) []string {
