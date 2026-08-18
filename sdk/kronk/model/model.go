@@ -113,13 +113,16 @@ type imcSession struct {
 type imcSystemCache struct {
 	id               int
 	cachedTokens     []llama.Token
+	buildingTokens   []llama.Token // Pending replacement identity while building keeps published metadata separate.
 	kvState          SessionStore
 	draftKVState     SessionStore
 	pendingH         []float32
 	allocatedContext int
+	snapshotBytes    int // Retained target, draft, and pending-H capacity, safe to read while the stores are rebuilt.
 	lastUsed         time.Time
 	activeRestores   int
 	restoreCount     uint64
+	building         bool // Exclusive rebuild reservation; planners must not restore this entry while true.
 }
 
 func (s *imcSession) logicalPosition() int {
@@ -1257,9 +1260,8 @@ func (m *Model) Unload(ctx context.Context) error {
 		m.mem = 0
 	}
 
-	// Release per-session SessionStore resources (e.g. on-disk files).
-	// The RAM impl is a no-op; the disk impl removes its file. Errors
-	// are logged and otherwise ignored — the model is going away.
+	// Release per-session SessionStore resources (e.g. RAM or on-disk files).
+	// Errors are logged and otherwise ignored — the model is going away.
 	for i, sess := range m.imcSessions {
 		if sess == nil {
 			continue
@@ -1290,7 +1292,6 @@ func (m *Model) Unload(ctx context.Context) error {
 			}
 		}
 	}
-
 	// Free the long-lived metadata mtmd context before the model. mtmd
 	// holds references into the loaded llama model, so the order matters.
 	// Per-request slot mtmd contexts are freed in freeSlotResources during

@@ -199,7 +199,7 @@ export const PARAM_TOOLTIPS = {
   imcState: 'Current cache-entry state. Active means a request holds the entry; Idle means it contains a reusable snapshot; Empty means it has no cached snapshot.',
   imcContext: 'Tokens represented by the current working cache. Kronk normally extends this snapshot when the next rendered prompt has the same prefix.',
   imcAllocated: 'Largest physical context retained by the current working cache. It does not include the System cache allocation.',
-  imcSnapshotBytes: 'Storage occupied by the working cache\'s target snapshot, compatible draft snapshot, and saved MTP hidden row. The configured session store determines whether these bytes reside in RAM or elsewhere.',
+  imcSnapshotBytes: 'Peak backing storage retained by the working cache for its target snapshot, compatible draft snapshot, and saved MTP hidden row. The configured session store determines whether these bytes reside in RAM or elsewhere.',
   imcSystemCacheID: 'Stable index of this entry in the model\'s bounded System cache pool.',
   imcSystemContext: 'Tokens represented by this immutable system-only cache. Kronk can preload a working cache from it when no working cache matches.',
   imcSystemAllocated: 'Largest token context represented by this System cache entry.',

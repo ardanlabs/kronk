@@ -150,6 +150,30 @@ func TestProcessIMCTokenPlanUsesSystemCacheAfterCurrentDiverges(t *testing.T) {
 	}
 }
 
+func TestProcessIMCTokenPlanSkipsSystemCacheBeingRebuilt(t *testing.T) {
+	session := &imcSession{id: 0, kvState: ramSessionStore()}
+	cache := &imcSystemCache{
+		id:           0,
+		cachedTokens: []llama.Token{1, 2},
+		kvState:      populatedTestSessionStore(),
+		building:     true,
+	}
+	m := Model{
+		cfg:             Config{PtrCacheMinTokens: new(1)},
+		log:             applog.DiscardLogger,
+		imcSessions:     []*imcSession{session},
+		imcSystemCaches: []*imcSystemCache{cache},
+	}
+	stable := []llama.Token{1, 2, 3, 4}
+
+	result := m.processIMCTokenPlan(context.Background(), D{"messages": []D{{"role": "system", "content": "rules"}}}, append(slices.Clone(stable), 9), stable, []llama.Token{1, 2}, time.Now())
+
+	if result.imcSystemCache != nil || cache.activeRestores != 0 {
+		t.Error("System cache was restored while its allocation was being rebuilt")
+	}
+	m.imcReleaseReservation(session.id)
+}
+
 func TestProcessIMCTokenPlanChecksAllCurrentCachesBeforeSystem(t *testing.T) {
 	current := &imcSession{
 		id:                0,

@@ -10,67 +10,94 @@ import (
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
-func TestIMCPublishSystemCacheDeduplicates(t *testing.T) {
+func TestIMCReserveSystemCacheDeduplicates(t *testing.T) {
 	cache := &imcSystemCache{id: 0, cachedTokens: []llama.Token{1, 2}, kvState: populatedTestSessionStore()}
-	incoming := populatedTrackingStore()
-	m := Model{log: applog.DiscardLogger, imcSystemCaches: []*imcSystemCache{cache}}
+	m := Model{imcSystemCaches: []*imcSystemCache{cache}}
 
-	if m.imcPublishSystemCache(context.Background(), []llama.Token{1, 2}, incoming, nil, nil) {
-		t.Fatal("publish = true, want duplicate to reuse existing entry")
-	}
-	if !incoming.closed {
-		t.Error("duplicate store was not closed")
+	if got := m.imcReserveSystemCache([]llama.Token{1, 2}); got != nil {
+		t.Fatalf("reserve = %p, want nil for an existing System cache", got)
 	}
 	if cache.restoreCount != 0 || !slices.Equal(cache.cachedTokens, []llama.Token{1, 2}) {
-		t.Error("duplicate publish changed the existing entry")
+		t.Error("duplicate reservation changed the existing entry")
 	}
 }
 
-func TestIMCPublishSystemCacheReplacesLeastRecentlyUsedAvailable(t *testing.T) {
+func TestIMCReserveSystemCacheReusesLeastRecentlyUsedAllocation(t *testing.T) {
 	now := time.Now()
-	oldActive := populatedTrackingStore()
-	oldAvailable := populatedTrackingStore()
-	newerAvailable := populatedTrackingStore()
+	oldActive := populatedTestSessionStore()
+	oldAvailable := ramSessionStore()
+	oldAvailable.Prepare(8)
+	oldAvailable.Commit(1)
+	newerAvailable := populatedTestSessionStore()
 	caches := []*imcSystemCache{
 		{id: 0, cachedTokens: []llama.Token{1}, kvState: oldActive, activeRestores: 1, lastUsed: now.Add(-3 * time.Minute)},
 		{id: 1, cachedTokens: []llama.Token{2}, kvState: oldAvailable, lastUsed: now.Add(-2 * time.Minute)},
 		{id: 2, cachedTokens: []llama.Token{3}, kvState: newerAvailable, lastUsed: now.Add(-time.Minute)},
 	}
 	m := Model{log: applog.DiscardLogger, imcSystemCaches: caches}
-	incoming := populatedTrackingStore()
 
-	if !m.imcPublishSystemCache(context.Background(), []llama.Token{9}, incoming, nil, nil) {
-		t.Fatal("publish = false, want LRU replacement")
+	selected := m.imcReserveSystemCache([]llama.Token{9})
+	if selected != caches[1] || !selected.building {
+		t.Fatalf("reserve = %p, want building LRU entry %p", selected, caches[1])
 	}
-	if caches[1].kvState != incoming || !slices.Equal(caches[1].cachedTokens, []llama.Token{9}) {
-		t.Error("least-recently-used available entry was not replaced")
+	store, err := m.imcSystemCacheStore(selected, false)
+	if err != nil {
+		t.Fatalf("imcSystemCacheStore: %v", err)
 	}
-	if !oldAvailable.closed {
-		t.Error("replaced store was not closed")
+	store.Reset()
+	store.Prepare(1)[0] = 9
+	store.Commit(1)
+	if !m.imcPublishSystemCache(context.Background(), selected, nil) {
+		t.Fatal("publish = false, want reserved entry publication")
 	}
-	if oldActive.closed || newerAvailable.closed {
-		t.Error("publish closed an entry that was not replaced")
+	if selected.kvState != oldAvailable || selected.kvState.Cap() != 8 {
+		t.Error("System cache did not retain and reuse its backing allocation")
+	}
+	if !slices.Equal(selected.cachedTokens, []llama.Token{9}) || selected.building {
+		t.Error("published entry does not contain the reserved System prompt")
 	}
 }
 
-func TestIMCPublishSystemCacheDoesNotEvictActiveEntries(t *testing.T) {
+func TestIMCReserveSystemCacheDoesNotEvictActiveEntries(t *testing.T) {
 	cache := &imcSystemCache{
 		id:             0,
 		cachedTokens:   []llama.Token{1},
-		kvState:        populatedTrackingStore(),
+		kvState:        populatedTestSessionStore(),
 		activeRestores: 1,
 	}
-	m := Model{log: applog.DiscardLogger, imcSystemCaches: []*imcSystemCache{cache}}
-	incoming := populatedTrackingStore()
+	m := Model{imcSystemCaches: []*imcSystemCache{cache}}
 
-	if m.imcPublishSystemCache(context.Background(), []llama.Token{2}, incoming, nil, nil) {
-		t.Fatal("publish = true, want retention miss while every entry is active")
-	}
-	if !incoming.closed {
-		t.Error("unretained store was not closed")
+	if got := m.imcReserveSystemCache([]llama.Token{2}); got != nil {
+		t.Fatalf("reserve = %p, want nil while every entry is active", got)
 	}
 	if !slices.Equal(cache.cachedTokens, []llama.Token{1}) {
-		t.Error("active entry was replaced")
+		t.Error("active entry was changed")
+	}
+}
+
+func TestIMCAbortSystemCacheRetainsAllocations(t *testing.T) {
+	target := ramSessionStore()
+	target.Prepare(8)
+	target.Commit(4)
+	draft := ramSessionStore()
+	draft.Prepare(6)
+	draft.Commit(3)
+	cache := &imcSystemCache{id: 0, cachedTokens: []llama.Token{1}, kvState: target, draftKVState: draft}
+	m := Model{imcSystemCaches: []*imcSystemCache{cache}}
+
+	if got := m.imcReserveSystemCache([]llama.Token{2}); got != cache {
+		t.Fatalf("reserve = %p, want %p", got, cache)
+	}
+	m.imcAbortSystemCache(cache)
+
+	if cache.building || len(cache.cachedTokens) != 0 || target.Len() != 0 || draft.Len() != 0 {
+		t.Error("abort did not empty the reserved System cache")
+	}
+	if target.Cap() != 8 || draft.Cap() != 6 {
+		t.Error("abort released a retained System cache allocation")
+	}
+	if got := m.IMCSystemCaches()[0].SnapshotBytes; got != 14 {
+		t.Errorf("SnapshotBytes after abort = %d, want retained capacity 14", got)
 	}
 }
 
@@ -131,18 +158,4 @@ func TestReleaseIMCReservationIfHeldReleasesSystemCache(t *testing.T) {
 	if session.reserved || systemCache.activeRestores != 0 {
 		t.Errorf("release left working/System reservations = %t/%d, want false/0", session.reserved, systemCache.activeRestores)
 	}
-}
-
-type trackingStore struct {
-	SessionStore
-	closed bool
-}
-
-func populatedTrackingStore() *trackingStore {
-	return &trackingStore{SessionStore: populatedTestSessionStore()}
-}
-
-func (s *trackingStore) Close() error {
-	s.closed = true
-	return s.SessionStore.Close()
 }

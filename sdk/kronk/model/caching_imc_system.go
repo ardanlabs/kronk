@@ -29,11 +29,15 @@ func (m *Model) IMCSystemCaches() []IMCSystemCacheDetail {
 		if cache == nil {
 			continue
 		}
+		snapshotBytes := cache.snapshotBytes
+		if snapshotBytes == 0 && !cache.building {
+			snapshotBytes = imcSnapshotBytes(cache.kvState, cache.draftKVState, cache.pendingH)
+		}
 		details = append(details, IMCSystemCacheDetail{
 			ID:             cache.id,
 			Tokens:         len(cache.cachedTokens),
 			Allocated:      max(cache.allocatedContext, len(cache.cachedTokens)),
-			SnapshotBytes:  imcSnapshotBytes(cache.kvState, cache.draftKVState, cache.pendingH),
+			SnapshotBytes:  snapshotBytes,
 			RestoreCount:   cache.restoreCount,
 			ActiveRestores: cache.activeRestores,
 			LastUsed:       cache.lastUsed,
@@ -55,57 +59,123 @@ func (m *Model) imcReleaseSystemCache(cache *imcSystemCache) {
 	m.cacheMu.Unlock()
 }
 
-// imcPublishSystemCache publishes an immutable system-only preload image.
-// Ownership of targetStore and draftStore always transfers to this function.
-func (m *Model) imcPublishSystemCache(ctx context.Context, tokens []llama.Token, targetStore, draftStore SessionStore, pendingH []float32) bool {
+func (m *Model) imcReserveSystemCache(tokens []llama.Token) *imcSystemCache {
 	m.cacheMu.Lock()
+	defer m.cacheMu.Unlock()
+
 	for _, cache := range m.imcSystemCaches {
-		if cache.kvState != nil && slices.Equal(cache.cachedTokens, tokens) {
+		if cache == nil {
+			continue
+		}
+		if cache.building && slices.Equal(cache.buildingTokens, tokens) {
+			return nil
+		}
+		if !cache.building && cache.kvState != nil && len(cache.kvState.Bytes()) > 0 && slices.Equal(cache.cachedTokens, tokens) {
 			cache.lastUsed = time.Now()
-			m.cacheMu.Unlock()
-			closeSystemCacheStores(targetStore, draftStore)
-			return false
+			return nil
 		}
 	}
 
 	var selected *imcSystemCache
 	for _, cache := range m.imcSystemCaches {
-		if cache.kvState == nil {
+		if cache == nil || cache.building || cache.activeRestores > 0 {
+			continue
+		}
+		if len(cache.cachedTokens) == 0 {
 			selected = cache
 			break
 		}
-		if cache.activeRestores == 0 && (selected == nil || cache.lastUsed.Before(selected.lastUsed)) {
+		if selected == nil || cache.lastUsed.Before(selected.lastUsed) {
 			selected = cache
 		}
 	}
 	if selected == nil {
-		m.cacheMu.Unlock()
-		closeSystemCacheStores(targetStore, draftStore)
+		return nil
+	}
+
+	selected.building = true
+	selected.buildingTokens = append(selected.buildingTokens[:0], tokens...)
+	return selected
+}
+
+func (m *Model) imcSystemCacheStore(cache *imcSystemCache, draft bool) (SessionStore, error) {
+	m.cacheMu.Lock()
+	var store SessionStore
+	if draft {
+		store = cache.draftKVState
+	} else {
+		store = cache.kvState
+	}
+	m.cacheMu.Unlock()
+	if store != nil {
+		return store, nil
+	}
+
+	store, err := newSystemCacheStore()
+	if err != nil {
+		return nil, err
+	}
+
+	m.cacheMu.Lock()
+	if draft {
+		cache.draftKVState = store
+	} else {
+		cache.kvState = store
+	}
+	m.cacheMu.Unlock()
+	return store, nil
+}
+
+func (m *Model) imcAbortSystemCache(cache *imcSystemCache) {
+	if cache == nil {
+		return
+	}
+
+	if cache.kvState != nil {
+		cache.kvState.Reset()
+	}
+	if cache.draftKVState != nil {
+		cache.draftKVState.Reset()
+	}
+	snapshotBytes := imcSnapshotBytes(cache.kvState, cache.draftKVState, cache.pendingH)
+
+	m.cacheMu.Lock()
+	cache.cachedTokens = cache.cachedTokens[:0]
+	cache.buildingTokens = cache.buildingTokens[:0]
+	cache.pendingH = cache.pendingH[:0]
+	cache.allocatedContext = 0
+	cache.snapshotBytes = snapshotBytes
+	cache.restoreCount = 0
+	cache.lastUsed = time.Time{}
+	cache.building = false
+	m.cacheMu.Unlock()
+}
+
+func (m *Model) imcPublishSystemCache(ctx context.Context, cache *imcSystemCache, pendingH []float32) bool {
+	if cache == nil || cache.kvState == nil || cache.kvState.Len() == 0 {
+		m.imcAbortSystemCache(cache)
 		return false
 	}
 
-	oldTarget := selected.kvState
-	oldDraft := selected.draftKVState
-	selected.cachedTokens = slices.Clone(tokens)
-	selected.kvState = targetStore
-	selected.draftKVState = draftStore
-	selected.pendingH = slices.Clone(pendingH)
-	selected.allocatedContext = len(tokens)
-	selected.lastUsed = time.Now()
-	selected.restoreCount = 0
+	m.cacheMu.Lock()
+	if !cache.building {
+		m.cacheMu.Unlock()
+		return false
+	}
+	cache.cachedTokens = append(cache.cachedTokens[:0], cache.buildingTokens...)
+	cache.buildingTokens = cache.buildingTokens[:0]
+	cache.pendingH = append(cache.pendingH[:0], pendingH...)
+	cache.allocatedContext = len(cache.cachedTokens)
+	cache.snapshotBytes = imcSnapshotBytes(cache.kvState, cache.draftKVState, cache.pendingH)
+	cache.lastUsed = time.Now()
+	cache.restoreCount = 0
+	cache.building = false
+	entryID := cache.id
+	tokens := len(cache.cachedTokens)
+	snapshotBytes := cache.snapshotBytes
 	m.cacheMu.Unlock()
 
-	closeSystemCacheStores(oldTarget, oldDraft)
-	m.log(ctx, "imc", "status", "system-cache-published", "system_cache_entry", selected.id,
-		"tokens", len(tokens), "snapshot_bytes", fmtBytes(uint64(targetStore.Len())))
+	m.log(ctx, "imc", "status", "system-cache-published", "system_cache_entry", entryID,
+		"tokens", tokens, "snapshot_bytes", fmtBytes(uint64(snapshotBytes)))
 	return true
-}
-
-func closeSystemCacheStores(target, draft SessionStore) {
-	if target != nil {
-		_ = target.Close()
-	}
-	if draft != nil {
-		_ = draft.Close()
-	}
 }
