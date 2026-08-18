@@ -122,52 +122,39 @@ func (a *app) retrieveModelIntegrity(ctx context.Context, r *http.Request) web.E
 	return toModelIntegrityDetail(integrity)
 }
 
-// collectModelFiles returns all on-disk model files plus any extension
-// models declared in the model config that inherit from a base model.
-// Extension models use "/" in their ID (e.g. "model/FMC") and reuse the
-// base model's file information.
+// collectModelFiles returns all on-disk model files plus any profiles declared
+// in the model config that inherit from a base model.
 func (a *app) collectModelFiles() ([]models.File, error) {
 	modelFiles, err := a.models.Files()
 	if err != nil {
 		return nil, err
 	}
 
-	// Build a map of existing models for quick lookup.
-	existing := make(map[string]models.File)
-	for _, mf := range modelFiles {
+	existing := make(map[string]models.File, len(modelFiles))
+	for i, mf := range modelFiles {
+		mf.ID = mf.OwnedBy + "/" + mf.ID
+		modelFiles[i] = mf
 		existing[mf.ID] = mf
 	}
 
-	// Add extension models from the model config that aren't already present.
 	modelConfig := a.pool.Kronk.ModelConfig()
 	for modelID := range modelConfig {
 		if _, exists := existing[modelID]; exists {
 			continue
 		}
 
-		// Check if this is an extension model (contains "/").
-		before, _, ok := strings.Cut(modelID, "/")
-		if !ok {
+		parsed, err := models.ParseModelID(modelID)
+		if err != nil || parsed.Profile == "" {
 			continue
 		}
 
-		// Extract the base model ID and check if it exists.
-		baseModel, exists := existing[before]
+		baseModel, exists := existing[parsed.Base()]
 		if !exists {
 			continue
 		}
 
-		// Create a new File entry for the extension model using the base model's info.
-		modelFiles = append(modelFiles, models.File{
-			ID:                   modelID,
-			OwnedBy:              baseModel.OwnedBy,
-			ModelFamily:          baseModel.ModelFamily,
-			TokenizerFingerprint: baseModel.TokenizerFingerprint,
-			Size:                 baseModel.Size,
-			Modified:             baseModel.Modified,
-			Validated:            baseModel.Validated,
-			HasProjection:        baseModel.HasProjection,
-		})
+		baseModel.ID = modelID
+		modelFiles = append(modelFiles, baseModel)
 	}
 
 	return modelFiles, nil

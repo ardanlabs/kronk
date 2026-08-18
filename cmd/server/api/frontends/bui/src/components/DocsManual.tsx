@@ -314,7 +314,7 @@ KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
           <p>List the starter catalog and download a model directly on the host:</p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog list --local
 kronk model pull unsloth/Qwen3-0.6B-Q8_0 --local`}</code></pre>
-          <p>Model sources may be bare IDs, canonical <code>provider/model</code> IDs, Hugging Face URLs, or repository-and-quantization shorthands. Run <code>kronk model pull --help</code> for all accepted forms. To pin both the repository and file, use <code>owner/repo/file.gguf</code> or a Hugging Face <code>blob</code> or <code>resolve</code> URL. Kronk then resolves that exact file only within that repository.</p>
+          <p>Model sources may be canonical <code>provider/model</code> IDs, Hugging Face URLs, or repository-and-quantization shorthands. Run <code>kronk model pull --help</code> for all accepted forms. To pin both the repository and file, use <code>owner/repo/file.gguf</code> or a Hugging Face <code>blob</code> or <code>resolve</code> URL. Kronk then resolves that exact file only within that repository.</p>
           <p>The default data layout is:</p>
           <pre className="code-block"><code className="language-text">{`~/.kronk/
 ├── catalog/

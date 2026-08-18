@@ -16,8 +16,7 @@ var Cmd = &cobra.Command{
 	Long: `Pull a model from the web.
 
 The source may be:
-  - A bare model id: Qwen3-0.6B-Q8_0 (resolved via the provider list)
-  - A canonical id: unsloth/Qwen3-0.6B-Q8_0 (skips provider walk)
+  - A canonical id: unsloth/Qwen3-0.6B-Q8_0
   - A full HuggingFace URL: https://huggingface.co/org/repo/resolve/main/model.gguf
   - A short form: org/repo/model.gguf
   - A shorthand: owner/repo:Q4_K_M (auto-resolves files via HuggingFace API)
@@ -25,11 +24,10 @@ The source may be:
   - With revision: owner/repo:Q4_K_M@revision
 
 By default the projection file (when applicable) is located automatically.
-Bare and canonical ids consult ~/.kronk/catalog.yaml first, then walk the
-configured provider list (unsloth, ggml-org, bartowski, ...) and persist
-the resolution. Multi-file (split) models are downloaded in full when
-the resolver expands them. Successful pulls update the catalog so the
-next request becomes a cache hit.
+Canonical ids consult ~/.kronk/catalog.yaml first, then query the specified
+provider and persist the resolution. Multi-file (split) models are downloaded
+in full when the resolver expands them. Successful pulls update the catalog so
+the next request becomes a cache hit.
 
 Use --proj <URL> to pin a specific projection file and --mtp-draft <URL>
 to pin a specific MTP drafter file. Each flag takes a fully qualified

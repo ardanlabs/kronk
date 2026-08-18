@@ -35,8 +35,8 @@ func TestModelDetailsNotFound(t *testing.T) {
 		t.Fatalf("NewWithPaths: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/models/missing", nil)
-	req.SetPathValue("model", "missing")
+	req := httptest.NewRequest(http.MethodGet, "/models/provider%2Fmissing", nil)
+	req.SetPathValue("model", "provider/missing")
 	resp := (&app{models: models}).showModel(t.Context(), req)
 
 	assertNotFound(t, resp)

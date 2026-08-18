@@ -20,12 +20,12 @@ func tokenize200(tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model": "Qwen3-8B-Q8_0",
+				"model": "Qwen/Qwen3-8B-Q8_0",
 				"input": "The quick brown fox jumps over the lazy dog",
 			},
 			GotResp: &model.TokenizeResponse{},
 			ExpResp: &model.TokenizeResponse{
-				Model:  "Qwen3-8B-Q8_0",
+				Model:  "Qwen/Qwen3-8B-Q8_0",
 				Object: "tokenize",
 			},
 			CmpFunc: func(got any, exp any) string {
@@ -56,13 +56,13 @@ func tokenize200(tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model":          "Qwen3-8B-Q8_0",
+				"model":          "Qwen/Qwen3-8B-Q8_0",
 				"input":          "The quick brown fox jumps over the lazy dog",
 				"apply_template": true,
 			},
 			GotResp: &model.TokenizeResponse{},
 			ExpResp: &model.TokenizeResponse{
-				Model:  "Qwen3-8B-Q8_0",
+				Model:  "Qwen/Qwen3-8B-Q8_0",
 				Object: "tokenize",
 			},
 			CmpFunc: func(got any, exp any) string {
@@ -100,7 +100,7 @@ func tokenize403(tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusForbidden,
 			Input: model.D{
-				"model": "Qwen3-8B-Q8_0",
+				"model": "Qwen/Qwen3-8B-Q8_0",
 				"input": "hello",
 			},
 			GotResp: &errs.Error{},

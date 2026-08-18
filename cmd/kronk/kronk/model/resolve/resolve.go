@@ -2,43 +2,21 @@ package resolve
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-// dropCacheEntry removes any resolver-file entries matching id so the next
-// Resolve call hits the HuggingFace API. The id may be bare or
-// "provider/modelID".
+// dropCacheEntry removes the resolver-file entry matching id so the next
+// Resolve call hits the HuggingFace API.
 func dropCacheEntry(r *models.Resolver, id string) error {
 	rm, err := r.Load()
 	if err != nil {
 		return err
 	}
 
-	provider, modelID := splitProviderID(id)
-
-	for key := range rm.Models {
-		_, keyModel := splitProviderID(key)
-
-		switch {
-		case provider != "" && key == id:
-			delete(rm.Models, key)
-		case provider == "" && keyModel == modelID:
-			delete(rm.Models, key)
-		}
-	}
+	delete(rm.Models, id)
 
 	return r.Save(rm)
-}
-
-// splitProviderID separates "provider/modelID" inputs.
-func splitProviderID(id string) (provider, modelID string) {
-	if before, after, ok := strings.Cut(id, "/"); ok {
-		return before, after
-	}
-
-	return "", id
 }
 
 // printResolution writes a human-readable summary of a Resolution.

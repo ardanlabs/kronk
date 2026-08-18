@@ -21,7 +21,7 @@ import (
 func TestFullPathNotFound(t *testing.T) {
 	var m Models
 
-	_, err := m.FullPath("missing")
+	_, err := m.FullPath("provider/missing")
 	if !errors.Is(err, ErrModelNotFound) {
 		t.Fatalf("FullPath: got %v, want %v", err, ErrModelNotFound)
 	}
@@ -272,7 +272,7 @@ func TestDownloadSplits_WithMTPCompanion(t *testing.T) {
 	}
 
 	// The companion must round-trip through the index onto the model's Path.
-	fp, err := m.FullPath("gemma-4-26B-A4B-it-UD-Q8_K_XL")
+	fp, err := m.FullPath("unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL")
 	if err != nil {
 		t.Fatalf("FullPath: %v", err)
 	}

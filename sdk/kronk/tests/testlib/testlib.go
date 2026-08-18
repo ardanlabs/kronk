@@ -61,16 +61,16 @@ func Setup() {
 		os.Exit(1)
 	}
 
-	resolveModel(mdls, "Qwen3-8B-Q8_0", &MPThinkToolChat)
-	resolveModel(mdls, "Qwen3.5-0.8B-Q8_0", &MPSimpleVision)
-	resolveModel(mdls, "gemma-4-26B-A4B-it-UD-Q4_K_M", &MPMoEVision)
-	resolveModel(mdls, "Qwen3-Embedding-0.6B-Q8_0", &MPEmbedBatchSeq)
-	resolveModel(mdls, "bge-reranker-v2-m3-Q8_0", &MPRerankBatchSeq)
-	resolveModel(mdls, "gpt-oss-20b-Q8_0", &MPGPTChat)
-	resolveModel(mdls, "Qwen2.5-Omni-3B-Q8_0", &MPAudio)
-	resolveModel(mdls, "Qwen3.6-35B-A3B-UD-Q4_K_M", &MPHybridVision)
-	resolveModel(mdls, "mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL", &MPMTP)
-	resolveModel(mdls, "Qwen3-0.6B-Q8_0", &MPDraft)
+	resolveModel(mdls, "Qwen/Qwen3-8B-Q8_0", &MPThinkToolChat)
+	resolveModel(mdls, "unsloth/Qwen3.5-0.8B-Q8_0", &MPSimpleVision)
+	resolveModel(mdls, "unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M", &MPMoEVision)
+	resolveModel(mdls, "Qwen/Qwen3-Embedding-0.6B-Q8_0", &MPEmbedBatchSeq)
+	resolveModel(mdls, "gpustack/bge-reranker-v2-m3-Q8_0", &MPRerankBatchSeq)
+	resolveModel(mdls, "unsloth/gpt-oss-20b-Q8_0", &MPGPTChat)
+	resolveModel(mdls, "ggml-org/Qwen2.5-Omni-3B-Q8_0", &MPAudio)
+	resolveModel(mdls, "unsloth/Qwen3.6-35B-A3B-UD-Q4_K_M", &MPHybridVision)
+	resolveModel(mdls, "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL", &MPMTP)
+	resolveModel(mdls, "unsloth/Qwen3-0.6B-Q8_0", &MPDraft)
 
 	printInfo(mdls)
 

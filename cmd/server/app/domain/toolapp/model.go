@@ -1597,10 +1597,10 @@ func (r LookupResponse) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-// ResolveRequest is the body for POST /v1/catalog/resolve. The source may
-// be a full HuggingFace URL, a canonical id ("provider/family"), or a
-// bare id ("family"). The resolver maps any of these to the canonical
-// download URLs without initiating a download.
+// ResolveRequest is the body for POST /v1/catalog/resolve. The source may be a
+// full HuggingFace URL or a canonical id ("provider/family"). The resolver
+// maps either form to the canonical download URLs without initiating a
+// download.
 type ResolveRequest struct {
 	Source string `json:"source"`
 }

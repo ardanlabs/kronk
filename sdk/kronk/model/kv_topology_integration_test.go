@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	kvTopologyModel         = "Qwen3-0.6B-Q8_0"
+	kvTopologyModel         = "unsloth/Qwen3-0.6B-Q8_0"
 	kvTopologyContextWindow = 512
 	kvTopologyChunkSize     = 64
 )

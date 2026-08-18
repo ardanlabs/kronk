@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	embeddingModelID   = "Qwen3-Embedding-0.6B-Q8_0"
+	embeddingModelID   = "Qwen/Qwen3-Embedding-0.6B-Q8_0"
 	embeddingDimension = 1024
 )
 

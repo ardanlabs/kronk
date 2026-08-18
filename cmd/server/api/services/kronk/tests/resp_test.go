@@ -27,7 +27,7 @@ func respNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model": "Qwen3-8B-Q8_0",
+				"model": "Qwen/Qwen3-8B-Q8_0",
 				"input": model.DocumentArray(
 					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
 				),
@@ -41,7 +41,7 @@ func respNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 				Object:          "response",
 				Status:          "completed",
 				MaxOutputTokens: new(2048),
-				Model:           "Qwen3-8B-Q8_0",
+				Model:           "Qwen/Qwen3-8B-Q8_0",
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
@@ -82,7 +82,7 @@ func respImageQwen35VL(t *testing.T, tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model": "Qwen3.5-0.8B-Q8_0",
+				"model": "unsloth/Qwen3.5-0.8B-Q8_0",
 				"input": []model.D{
 					{
 						"role": "user",
@@ -103,7 +103,7 @@ func respImageQwen35VL(t *testing.T, tokens map[string]string) []apitest.Table {
 				Object:          "response",
 				Status:          "completed",
 				MaxOutputTokens: new(2048),
-				Model:           "Qwen3.5-0.8B-Q8_0",
+				Model:           "unsloth/Qwen3.5-0.8B-Q8_0",
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
@@ -143,7 +143,7 @@ func respAudioQwen25Omni(t *testing.T, tokens map[string]string) []apitest.Table
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model":       "Qwen2.5-Omni-3B-Q8_0",
+				"model":       "ggml-org/Qwen2.5-Omni-3B-Q8_0",
 				"input":       model.AudioMessage("please describe if you hear speech or not in this clip.", audio, "wav"),
 				"max_tokens":  2048,
 				"temperature": 0.7,
@@ -155,7 +155,7 @@ func respAudioQwen25Omni(t *testing.T, tokens map[string]string) []apitest.Table
 				Object:          "response",
 				Status:          "completed",
 				MaxOutputTokens: new(2048),
-				Model:           "Qwen2.5-Omni-3B-Q8_0",
+				Model:           "ggml-org/Qwen2.5-Omni-3B-Q8_0",
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
@@ -189,7 +189,7 @@ func respStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model": "Qwen3-8B-Q8_0",
+				"model": "Qwen/Qwen3-8B-Q8_0",
 				"input": model.DocumentArray(
 					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
 				),
@@ -207,7 +207,7 @@ func respStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 				Object:          "response",
 				Status:          "completed",
 				MaxOutputTokens: new(2048),
-				Model:           "Qwen3-8B-Q8_0",
+				Model:           "Qwen/Qwen3-8B-Q8_0",
 			},
 			CmpFunc: func(got any, exp any) string {
 				event := got.(*kronk.ResponseStreamEvent)
@@ -247,7 +247,7 @@ func respEndpoint403(tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusForbidden,
 			Input: model.D{
-				"model": "Qwen3-8B-Q8_0",
+				"model": "Qwen/Qwen3-8B-Q8_0",
 				"input": model.DocumentArray(
 					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
 				),

@@ -35,7 +35,7 @@ func (m *Models) Files() ([]File, error) {
 
 	index := m.loadIndex()
 
-	for modelID, mp := range index {
+	for indexID, mp := range index {
 		if len(mp.ModelFiles) == 0 {
 			continue
 		}
@@ -70,6 +70,8 @@ func (m *Models) Files() ([]File, error) {
 			modelFamily = parts[1]
 		}
 
+		_, modelID := splitProviderID(indexID)
+
 		mf := File{
 			ID:                   modelID,
 			OwnedBy:              ownedBy,
@@ -86,7 +88,9 @@ func (m *Models) Files() ([]File, error) {
 	}
 
 	slices.SortFunc(list, func(a, b File) int {
-		return strings.Compare(strings.ToLower(a.ID), strings.ToLower(b.ID))
+		aID := canonicalID(a.OwnedBy, a.ID)
+		bID := canonicalID(b.OwnedBy, b.ID)
+		return strings.Compare(strings.ToLower(aID), strings.ToLower(bID))
 	})
 
 	return list, nil
@@ -96,6 +100,9 @@ func (m *Models) Files() ([]File, error) {
 func (m *Models) retrieveFile(modelID string) (File, error) {
 	if modelID == "" {
 		return File{}, fmt.Errorf("retrieve-file: missing model id")
+	}
+	if _, err := ParseModelID(modelID); err != nil {
+		return File{}, fmt.Errorf("retrieve-file: %w", err)
 	}
 
 	key, mp, exists := lookupIndex(m.loadIndex(), modelID)
@@ -189,9 +196,12 @@ type Path = backend.ModelPath
 // FullPath locates the physical location on disk and returns the full path.
 //
 // The index is keyed by canonical provider/modelID. A profile-qualified
-// provider/modelID/profile resolves to the same physical model. Bare IDs are
-// accepted only when they identify one unique installed model.
+// provider/modelID/profile resolves to the same physical model.
 func (m *Models) FullPath(modelID string) (Path, error) {
+	if _, err := ParseModelID(modelID); err != nil {
+		return Path{}, fmt.Errorf("retrieve-path: %w", err)
+	}
+
 	_, mp, exists := lookupIndex(m.loadIndex(), modelID)
 	if exists {
 		return mp, nil
@@ -203,6 +213,11 @@ func (m *Models) FullPath(modelID string) (Path, error) {
 // LookupFile resolves a model identifier to its catalog File entry using the
 // same rules as FullPath.
 func (m *Models) LookupFile(modelID string) (File, bool) {
+	id, err := ParseModelID(modelID)
+	if err != nil {
+		return File{}, false
+	}
+
 	files, err := m.Files()
 	if err != nil {
 		return File{}, false
@@ -210,15 +225,15 @@ func (m *Models) LookupFile(modelID string) (File, bool) {
 
 	byID := make(map[string]File, len(files))
 	for _, f := range files {
-		byID[f.ID] = f
+		byID[canonicalID(f.OwnedBy, f.ID)] = f
 	}
 
-	key, _, exists := lookupIndex(m.loadIndex(), modelID)
+	_, _, exists := lookupIndex(m.loadIndex(), modelID)
 	if !exists {
 		return File{}, false
 	}
 
-	f, exists := byID[key]
+	f, exists := byID[id.Base()]
 	return f, exists
 }
 
@@ -233,16 +248,14 @@ func (m *Models) MustFullPath(modelID string) Path {
 	return fi
 }
 
-// fullPathLookupKeys returns canonical and legacy index keys for modelID.
+// fullPathLookupKeys returns the physical index key for modelID.
 func fullPathLookupKeys(modelID string) []string {
-	parts := strings.Split(modelID, "/")
-
-	switch len(parts) {
-	case 1:
-		return []string{parts[0]}
-	default:
-		return []string{canonicalID(parts[0], parts[1]), parts[1]}
+	id, err := ParseModelID(modelID)
+	if err != nil {
+		return nil
 	}
+
+	return []string{id.Base()}
 }
 
 func lookupIndex(index map[string]Path, modelID string) (string, Path, bool) {
@@ -252,25 +265,7 @@ func lookupIndex(index map[string]Path, modelID string) (string, Path, bool) {
 		}
 	}
 
-	if strings.Contains(modelID, "/") {
-		return "", Path{}, false
-	}
-
-	var foundKey string
-	var found Path
-	for key, mp := range index {
-		_, indexedModel := splitProviderID(key)
-		if indexedModel != modelID {
-			continue
-		}
-		if foundKey != "" {
-			return "", Path{}, false
-		}
-		foundKey = key
-		found = mp
-	}
-
-	return foundKey, found, foundKey != ""
+	return "", Path{}, false
 }
 
 // =============================================================================

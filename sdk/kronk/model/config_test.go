@@ -420,6 +420,22 @@ func TestContextTopologyParamsProvidesFullContextPerSequence(t *testing.T) {
 	}
 }
 
+func TestContextParamsTraceDistinguishesTotalAndPerSequenceContext(t *testing.T) {
+	params := contextTopologyParams(llama.ContextParams{}, 131_072, 2)
+
+	var got string
+	log := func(_ context.Context, _ string, args ...any) {
+		got = fmt.Sprint(args[1])
+	}
+	logContextParamsTrace(t.Context(), params, 131_072, log)
+
+	for _, want := range []string{"NCtxTotal[262144]", "NCtxPerSeq[131072]"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("context params trace: got %q, want it to contain %q", got, want)
+		}
+	}
+}
+
 func TestBatchSeqTokenLimit(t *testing.T) {
 	tests := []struct {
 		name    string

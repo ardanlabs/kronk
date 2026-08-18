@@ -364,7 +364,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	l(ctx, "MODEL-CONFIG", "values", cfg.String())
 
 	logMoEConfig(ctx, cfg, l)
-	logContextParamsTrace(ctx, ctxParams, l)
+	logContextParamsTrace(ctx, ctxParams, cfg.ContextWindow(), l)
 
 	// -------------------------------------------------------------------------
 
@@ -677,7 +677,7 @@ func logMoEConfig(ctx context.Context, cfg Config, l applog.Logger) {
 
 // logContextParamsTrace emits the multi-line LLAMA-CONTEXT-PARAMS dump used
 // for post-load diagnostics.
-func logContextParamsTrace(ctx context.Context, ctxParams llama.ContextParams, l applog.Logger) {
+func logContextParamsTrace(ctx context.Context, ctxParams llama.ContextParams, contextWindow int, l applog.Logger) {
 	faName := "unknown"
 	switch ctxParams.FlashAttentionType {
 	case llama.FlashAttentionTypeAuto:
@@ -691,10 +691,10 @@ func logContextParamsTrace(ctx context.Context, ctxParams llama.ContextParams, l
 	typeKName := GGMLTypeFromYZMA(ctxParams.TypeK).String()
 	typeVName := GGMLTypeFromYZMA(ctxParams.TypeV).String()
 
-	l(ctx, "LLAMA-CONTEXT-PARAMS", "values", fmt.Sprintf("\nAbortCallbackSet[%t]\nAttentionType[%d]\nCtxOtherSet[%t]\nCtxType[%d]\nDefragThold[%g]\nEmbeddings[%d]\nEvalCallbackSet[%t]\nFlashAttentionType[%s]\nKVUnified[%d]\nNBatch[%d]\nNCtx[%d]\nNOutputsMax[%d]\nNOutputsMaxPerSeq[%d]\nNRsSeq[%d]\nNSamplers[%d]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nNoPerf[%d]\nOffloadKQV[%d]\nOpOffload[%d]\nPoolingType[%d]\nRopeFreqBase[%g]\nRopeFreqScale[%g]\nRopeScalingType[%d]\nSamplersSet[%t]\nSwaFull[%d]\nTypeK[%s]\nTypeV[%s]\nYarnAttnFactor[%g]\nYarnBetaFast[%g]\nYarnBetaSlow[%g]\nYarnExtFactor[%g]\nYarnOrigCtx[%d]\n",
+	l(ctx, "LLAMA-CONTEXT-PARAMS", "values", fmt.Sprintf("\nAbortCallbackSet[%t]\nAttentionType[%d]\nCtxOtherSet[%t]\nCtxType[%d]\nDefragThold[%g]\nEmbeddings[%d]\nEvalCallbackSet[%t]\nFlashAttentionType[%s]\nKVUnified[%d]\nNBatch[%d]\nNCtxTotal[%d]\nNCtxPerSeq[%d]\nNOutputsMax[%d]\nNOutputsMaxPerSeq[%d]\nNRsSeq[%d]\nNSamplers[%d]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nNoPerf[%d]\nOffloadKQV[%d]\nOpOffload[%d]\nPoolingType[%d]\nRopeFreqBase[%g]\nRopeFreqScale[%g]\nRopeScalingType[%d]\nSamplersSet[%t]\nSwaFull[%d]\nTypeK[%s]\nTypeV[%s]\nYarnAttnFactor[%g]\nYarnBetaFast[%g]\nYarnBetaSlow[%g]\nYarnExtFactor[%g]\nYarnOrigCtx[%d]\n",
 		ctxParams.AbortCallback != 0, ctxParams.AttentionType, ctxParams.CtxOther != 0, ctxParams.CtxType,
 		ctxParams.DefragThold, ctxParams.Embeddings, ctxParams.CbEval != 0, faName, ctxParams.KVUnified,
-		ctxParams.NBatch, ctxParams.NCtx, ctxParams.NOutputsMax, ctxParams.NOutputsMaxPerSeq, ctxParams.NRsSeq, ctxParams.NSamplers,
+		ctxParams.NBatch, ctxParams.NCtx, contextWindow, ctxParams.NOutputsMax, ctxParams.NOutputsMaxPerSeq, ctxParams.NRsSeq, ctxParams.NSamplers,
 		ctxParams.NSeqMax, ctxParams.NThreads, ctxParams.NThreadsBatch, ctxParams.NUbatch, ctxParams.NoPerf,
 		ctxParams.Offload_kqv, ctxParams.OpOffload, ctxParams.PoolingType, ctxParams.RopeFreqBase,
 		ctxParams.RopeFreqScale, ctxParams.RopeScalingType, ctxParams.Samplers != 0, ctxParams.SwaFull,

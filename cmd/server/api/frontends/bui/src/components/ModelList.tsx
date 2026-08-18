@@ -222,8 +222,8 @@ export default function ModelList() {
   };
 
   // Sort models
-  const mainModels = allModels.filter((m) => !m.id.includes('/'));
-  const extensionModels = allModels.filter((m) => m.id.includes('/'));
+  const mainModels = allModels.filter((m) => m.id.split('/').length === 2);
+  const profileModels = allModels.filter((m) => m.id.split('/').length === 3);
 
   const sortedModels = [...mainModels].sort((a, b) => {
     const va = getSortValue(a, sortField);
@@ -343,10 +343,10 @@ export default function ModelList() {
                 </thead>
                 <tbody>
                   {sortedModels.map((model) => {
-                    const extensions = extensionModels.filter((ext) => ext.id.startsWith(model.id + '/'));
+                    const profiles = profileModels.filter((profile) => profile.id.startsWith(model.id + '/'));
                     const isParentSelected = selectedModelId === model.id;
-                    const isExtensionSelected = selectedModelId?.startsWith(model.id + '/');
-                    const showExtensions = isParentSelected || isExtensionSelected;
+                    const isProfileSelected = selectedModelId?.startsWith(model.id + '/');
+                    const showProfiles = isParentSelected || isProfileSelected;
                     return (
                       <>{/* keyed fragment not needed; keys on tr */}
                         <tr
@@ -362,16 +362,16 @@ export default function ModelList() {
                           <td>{formatBytes(model.size)}</td>
                           <td>{formatDate(model.modified)}</td>
                         </tr>
-                        {showExtensions && extensions.map((ext) => (
+                        {showProfiles && profiles.map((profile) => (
                           <tr
-                            key={ext.id}
-                            className={selectedModelId === ext.id ? 'active' : ''}
-                            onClick={() => handleRowClick(ext.id)}
+                            key={profile.id}
+                            className={selectedModelId === profile.id ? 'active' : ''}
+                            onClick={() => handleRowClick(profile.id)}
                           >
                             <td></td>
-                            <td style={{ paddingLeft: '24px' }}><span className="catalog-table-cell-ellipsis">↳ {ext.id}</span></td>
+                            <td style={{ paddingLeft: '24px' }}><span className="catalog-table-cell-ellipsis">↳ {profile.id}</span></td>
                             <td></td>
-                            <td>Extension Model</td>
+                            <td>Configuration Profile</td>
                             <td></td>
                             <td></td>
                             <td></td>

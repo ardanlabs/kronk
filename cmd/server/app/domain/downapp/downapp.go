@@ -43,17 +43,13 @@ type modelDetail struct {
 }
 
 // modelListResponse is the JSON shape returned by /download/models. Only
-// physical pullable models are included; extension/variant entries (those
-// whose id contains "/") are excluded because they are not real files on
-// disk and cannot be served by the publisher.
+// physical pullable models are included.
 type modelListResponse struct {
 	Models []modelDetail `json:"models"`
 }
 
-// handleListModels returns the list of physical models the publisher has
-// on disk and is willing to serve over /download. Extension/variant
-// models from the model config are intentionally excluded because they
-// are not standalone files.
+// handleListModels returns the list of physical models the publisher has on
+// disk and is willing to serve over /download.
 func (a *app) handleListModels(w http.ResponseWriter, r *http.Request) {
 	if a.models == nil {
 		http.Error(w, "models not configured", http.StatusServiceUnavailable)
@@ -71,7 +67,7 @@ func (a *app) handleListModels(w http.ResponseWriter, r *http.Request) {
 
 	for _, f := range files {
 		out.Models = append(out.Models, modelDetail{
-			ID:            f.ID,
+			ID:            f.OwnedBy + "/" + f.ID,
 			OwnedBy:       f.OwnedBy,
 			ModelFamily:   f.ModelFamily,
 			Size:          f.Size,

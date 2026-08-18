@@ -509,8 +509,8 @@ func (r *Resolver) lookupCacheByTag(rm Catalog, provider, repo, tag string) (Res
 
 // =============================================================================
 
-// splitProviderID separates "provider/modelID" inputs. For bare ids the
-// provider is empty.
+// splitProviderID separates "provider/modelID" inputs. When no separator is
+// present, the provider is empty.
 func splitProviderID(id string) (provider, modelID string) {
 	if before, after, ok := strings.Cut(id, "/"); ok {
 		return before, after
