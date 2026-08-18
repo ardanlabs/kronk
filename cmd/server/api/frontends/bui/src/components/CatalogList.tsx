@@ -812,7 +812,7 @@ export default function CatalogList() {
                         onClick={() => handleRowClick(model.id)}
                       >
                         <td style={{ textAlign: 'center', color: model.validated ? 'inherit' : 'var(--color-error)' }}>{model.validated ? '✓' : '✗'}</td>
-                        <td><span className="catalog-table-cell-ellipsis">{model.id}</span></td>
+                        <td>{model.id}</td>
                         <td>{model.owned_by || '-'}</td>
                         <td>{model.model_family || '-'}</td>
                         <td>{model.model_type || '-'}</td>

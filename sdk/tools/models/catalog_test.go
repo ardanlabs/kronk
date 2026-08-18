@@ -132,6 +132,15 @@ func TestEmbeddedCatalogCapabilities(t *testing.T) {
 	if _, exists := catalog.Models["ggml-org/qwen3-reranker-0.6b-q8_0"]; exists {
 		t.Error("unproven Qwen3 reranker remains in the embedded catalog")
 	}
+	malformedIDs := []string{
+		"Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0",
+		"unsloth/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q8_0",
+	}
+	for _, id := range malformedIDs {
+		if _, exists := catalog.Models[id]; exists {
+			t.Errorf("malformed model ID %q remains in the embedded catalog", id)
+		}
+	}
 
 	const gemma4Q4 = "unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M"
 	entry, exists := catalog.Models[gemma4Q4]

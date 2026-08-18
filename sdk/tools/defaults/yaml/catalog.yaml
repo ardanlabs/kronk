@@ -6,22 +6,6 @@ providers:
   - gpustack
   - Qwen
 models:
-  Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0:
-    provider: Qwen
-    family: Qwen3-8B-GGUF
-    revision: main
-    files:
-      - Qwen3-8B-Q8_0.gguf
-    file_sizes:
-      - 8709518112
-    mtp_checked: true
-    model_type: Dense
-    capabilities:
-      endpoint: chat_completion
-      streaming: true
-      reasoning: true
-      tooling: true
-    resolved_at: 2026-08-11T05:01:43.06638Z
   Qwen/Qwen3-8B-Q8_0:
     provider: Qwen
     family: Qwen3-8B-GGUF
@@ -194,27 +178,6 @@ models:
       reasoning: true
       tooling: true
     resolved_at: 2026-04-28T00:03:50Z
-  ggml-org/gemma-4-E4B-it-Q4_K_M:
-    provider: ggml-org
-    family: gemma-4-E4B-it-GGUF
-    revision: main
-    files:
-      - gemma-4-E4B-it-Q4_K_M.gguf
-    file_sizes:
-      - 5335289824
-    mmproj: mmproj-gemma-4-E4B-it-Q4_K_M.gguf
-    mmproj_size: 991551968
-    mtp_checked: true
-    model_type: Dense
-    capabilities:
-      endpoint: chat_completion
-      images: true
-      audio: true
-      video: true
-      streaming: true
-      reasoning: true
-      tooling: true
-    resolved_at: 2026-06-03T16:44:52.082637Z
   ggml-org/jina-embeddings-v2-base-en-q8_0:
     provider: ggml-org
     family: jina-embeddings-v2-base-en-Q8_0-GGUF
@@ -451,25 +414,6 @@ models:
       reasoning: true
       tooling: true
     resolved_at: 2026-05-17T18:15:06.78074Z
-  unsloth/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q8_0:
-    provider: unsloth
-    family: Qwen3.5-0.8B-GGUF
-    revision: main
-    files:
-      - Qwen3.5-0.8B-Q8_0.gguf
-    file_sizes:
-      - 811843840
-    mmproj: mmproj-Qwen3.5-0.8B-Q8_0.gguf
-    mmproj_size: 204987232
-    mtp_checked: true
-    model_type: Hybrid
-    capabilities:
-      endpoint: chat_completion
-      images: true
-      streaming: true
-      reasoning: true
-      tooling: true
-    resolved_at: 2026-08-12T16:34:50.694402Z
   unsloth/Qwen3.5-0.8B-Q8_0:
     provider: unsloth
     family: Qwen3.5-0.8B-GGUF

@@ -271,7 +271,9 @@ func toOpenAIModels(modelFiles []models.File) OpenAIModelsResponse {
 	}
 
 	for _, mf := range modelFiles {
-		resp.Data = append(resp.Data, toOpenAIModel(mf))
+		model := toOpenAIModel(mf)
+		model.ID = model.OwnedBy + "/" + mf.ID
+		resp.Data = append(resp.Data, model)
 	}
 
 	slices.SortFunc(resp.Data, func(a, b OpenAIModel) int {

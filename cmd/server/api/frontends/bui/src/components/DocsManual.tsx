@@ -2149,7 +2149,7 @@ data: {"type":"response.completed",...}`}</code></pre>
   "tokens": 11
 }`}</code></pre>
           <h2 id="99-models-and-audio-transcription">9.9 Models and Audio Transcription</h2>
-          <p><code>GET /v1/models</code> returns an OpenAI-style list of models and configured model extensions available locally. It is not limited to models currently loaded in memory. Each item includes <code>id</code>, <code>object</code>, <code>created</code>, and <code>owned_by</code>. <code>owned_by</code> comes from model metadata when available and otherwise defaults to <code>kronk</code>.</p>
+          <p><code>GET /v1/models</code> returns an OpenAI-style list of models and configured model extensions available locally. It is not limited to models currently loaded in memory. Each item includes <code>id</code>, <code>object</code>, <code>created</code>, and <code>owned_by</code>. The <code>id</code> uses the canonical <code>provider/modelID</code> form. <code>owned_by</code> comes from model metadata when available and otherwise defaults to <code>kronk</code>.</p>
           <p><code>GET /v1/models/&#123;model&#125;</code> returns the corresponding OpenAI-style model object for one model ID. It returns <code>404 Not Found</code> when the model is not available.</p>
           <p><code>POST /v1/audio/transcriptions</code> accepts multipart audio uploads and uses the Bucky speech-to-text runtime. Its request fields, formats, and administrative operations are documented in <a href="https://www.kronkai.com/manual#1861-request-and-response">Chapter 18</a>.</p>
           <h2 id="910-kronk-administration">9.10 Kronk Administration</h2>

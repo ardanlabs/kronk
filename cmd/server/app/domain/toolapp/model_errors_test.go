@@ -64,6 +64,19 @@ func TestOpenAIModel(t *testing.T) {
 	}
 }
 
+func TestOpenAIModelsCanonicalID(t *testing.T) {
+	response := toOpenAIModels([]llamamodels.File{
+		{
+			ID:      "test-model",
+			OwnedBy: "test-provider",
+		},
+	})
+
+	if response.Data[0].ID != "test-provider/test-model" {
+		t.Errorf("ID: got %q, want %q", response.Data[0].ID, "test-provider/test-model")
+	}
+}
+
 func TestModelIntegrityResponse(t *testing.T) {
 	verifiedAt := time.Unix(123, 0).UTC()
 	response := toModelIntegrity([]llamamodels.IntegrityModel{
