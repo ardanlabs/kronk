@@ -150,43 +150,10 @@ func TestAnalyzeModelDense(t *testing.T) {
 	}
 }
 
-func TestBuildProfileUsesBackendAwareSplitMode(t *testing.T) {
-	tests := []struct {
-		name string
-		devs devices.Devices
-		want string
-	}{
-		{
-			"CUDA",
-			devices.Devices{
-				GPUCount: 2,
-				Devices: []devices.DeviceInfo{
-					{Name: "CUDA0", Type: "gpu_cuda"},
-					{Name: "CUDA1", Type: "gpu_cuda"},
-				},
-			},
-			"row",
-		},
-		{
-			"Vulkan",
-			devices.Devices{
-				GPUCount: 2,
-				Devices: []devices.DeviceInfo{
-					{Name: "Vulkan0", Type: "gpu_vulkan"},
-					{Name: "Vulkan1", Type: "gpu_vulkan"},
-				},
-			},
-			"layer",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			rec := buildProfile("balanced", profileInput{devs: tt.devs}, 0, 0)
-			if rec.SplitMode != tt.want {
-				t.Errorf("SplitMode = %q, want %q", rec.SplitMode, tt.want)
-			}
-		})
+func TestBuildProfileUsesLayerSplitDefault(t *testing.T) {
+	rec := buildProfile("balanced", profileInput{gpuCount: 2}, 0, 0)
+	if rec.SplitMode != "layer" {
+		t.Errorf("SplitMode = %q, want %q", rec.SplitMode, "layer")
 	}
 }
 
@@ -445,7 +412,7 @@ func TestBuildProfileContextAndCachePriority(t *testing.T) {
 				class:       "dense",
 				gpuBudget:   tt.gpuBudget,
 				hasGPU:      true,
-				devs:        devices.Devices{GPUCount: 1},
+				gpuCount:    1,
 			}
 
 			rec := buildProfile("balanced", p, 0, 0)
@@ -474,7 +441,7 @@ func TestBuildProfileZeroGPUBudgetUsesFallback(t *testing.T) {
 		trainingCtx: vram.ContextWindow128K,
 		class:       "dense",
 		hasGPU:      true,
-		devs:        devices.Devices{GPUCount: 1},
+		gpuCount:    1,
 	}
 
 	rec := buildProfile("balanced", p, 0, 0)
@@ -558,7 +525,7 @@ func TestBuildProfileExplicitCPUUsesRAMBudget(t *testing.T) {
 		class:       "dense",
 		ramBudget:   4_000_000_000,
 		hasGPU:      true,
-		devs:        devices.Devices{GPUCount: 1},
+		gpuCount:    1,
 		nGpuLayers:  &cpuOnly,
 	}
 
@@ -655,7 +622,7 @@ func TestBuildProfileExplicitConstraints(t *testing.T) {
 				class:         "dense",
 				gpuBudget:     tt.gpuBudget,
 				hasGPU:        true,
-				devs:          devices.Devices{GPUCount: 1},
+				gpuCount:      1,
 				contextWindow: tt.contextWindow,
 				nSeqMax:       tt.nSeqMax,
 				cacheTypeK:    tt.cacheTypeK,
@@ -692,7 +659,7 @@ func TestBuildProfileExplicitConstraints(t *testing.T) {
 		class:         "dense",
 		gpuBudget:     10_000_000_000,
 		hasGPU:        true,
-		devs:          devices.Devices{GPUCount: 1},
+		gpuCount:      1,
 		contextWindow: &context64K,
 		nSeqMax:       &twoSlots,
 	}

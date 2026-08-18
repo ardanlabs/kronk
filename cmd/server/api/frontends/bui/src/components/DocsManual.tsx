@@ -611,11 +611,11 @@ models:
               </tr>
               <tr>
                 <td><code>row</code></td>
-                <td>Split tensor rows across GPUs</td>
+                <td>Use deprecated row-split tensor parallelism where supported</td>
               </tr>
             </tbody>
           </table>
-          <p>When the setting is omitted, Kronk selects <code>row</code> when more than one GPU is present and <code>layer</code> otherwise. This is a hardware-derived default, not a rule that one mode is always fastest for a particular model architecture.</p>
+          <p>When the setting is omitted, Kronk selects <code>layer</code>, matching llama.cpp's default and most compatible multi-GPU mode. Layer mode can distribute a single GGUF file across multiple GPUs. <code>row</code> remains available for explicit legacy configurations but is not recommended for new deployments.</p>
           <p>For explicit placement, <code>devices</code> names the devices and <code>tensor-split</code> gives their proportional shares:</p>
           <pre className="code-block"><code className="language-yaml">{`some-provider/some-model:
   devices: [CUDA0, CUDA1]
@@ -4646,6 +4646,12 @@ if _, err := libs.Download(ctx, malina.FmtLogger); err != nil {
                 <td>6.9 GB</td>
               </tr>
               <tr>
+                <td><code>flux2-klein-4b</code></td>
+                <td>Diffusion model, VAE, and LLM text encoder</td>
+                <td>FLUX Non-Commercial</td>
+                <td>5.3 GB</td>
+              </tr>
+              <tr>
                 <td><code>flux2-klein-9b</code></td>
                 <td>Diffusion model, VAE, and LLM text encoder</td>
                 <td>FLUX Non-Commercial</td>
@@ -4676,7 +4682,7 @@ if err != nil {
     return err
 }`}</code></pre>
           <p>Downloads are staged, checked for all required non-empty files, recorded in <code>manifest.json</code>, and then activated atomically. A complete installed bundle is reused on later calls.</p>
-          <p>The FLUX.2 bundle is license-gated. Accept the model license on Hugging Face, then provide a read token through <code>KRONK_HF_TOKEN</code> or <code>HF_TOKEN</code> before downloading it.</p>
+          <p>The FLUX.2 bundles are license-gated. Accept the model license on Hugging Face, then provide a read token through <code>KRONK_HF_TOKEN</code> or <code>HF_TOKEN</code> before downloading them.</p>
           <h3 id="194-go-sdk">19.4 Go SDK</h3>
           <p>The complete Stable Diffusion 1.5 flow is demonstrated by <a href="../examples/malina/main.go"><code>examples/malina/main.go</code></a>. The important phases are initialization, model construction, generation, and unloading.</p>
           <h4 id="1941-initialize-malina">19.4.1 Initialize Malina</h4>

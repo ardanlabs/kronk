@@ -1,5 +1,5 @@
 // Package models manages the curated stable-diffusion model bundles supported
-// by Kronk's Malina SDK: sd-1.5, sdxl-base-1.0, and flux2-klein-9b.
+// by Kronk's Malina SDK, including SD 1.5, SDXL, and FLUX.2 Klein models.
 package models
 
 import (

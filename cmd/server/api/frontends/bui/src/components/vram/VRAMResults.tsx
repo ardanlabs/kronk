@@ -386,7 +386,6 @@ function buildComputedCatalogConfig(
     }
   }
 
-  let splitMode = '';
   let effectiveTensorSplit = '';
   if (gpuCount > 1) {
     const nums = tensorSplit
@@ -395,9 +394,6 @@ function buildComputedCatalogConfig(
       .filter(n => !isNaN(n)) ?? [];
     if (nums.length > 0) {
       effectiveTensorSplit = nums.join(', ');
-    }
-    if (isMoE) {
-      splitMode = 'row';
     }
   }
 
@@ -410,7 +406,7 @@ function buildComputedCatalogConfig(
     ngpuLayers,
     offloadKQV: kvCacheOnCPU ? false : null,
     swaFull: input.swa_full,
-    splitMode,
+    splitMode: '',
     tensorSplit: effectiveTensorSplit,
     moeMode,
     moeKeepTopN,

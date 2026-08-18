@@ -17,6 +17,9 @@ var (
 	// BundleSDXLBase10 identifies the Stable Diffusion XL base 1.0 bundle.
 	BundleSDXLBase10 = newBundleName("sdxl-base-1.0")
 
+	// BundleFlux2Klein4B identifies the FLUX.2 Klein 4B bundle.
+	BundleFlux2Klein4B = newBundleName("flux2-klein-4b")
+
 	// BundleFlux2Klein9B identifies the FLUX.2 Klein 9B bundle.
 	BundleFlux2Klein9B = newBundleName("flux2-klein-9b")
 )
@@ -191,6 +194,32 @@ func Catalog() []Bundle {
 					Filename: "sd_xl_base_1.0.safetensors",
 					URL:      "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors",
 					Size:     "6.9 GB",
+				},
+			},
+		},
+		{
+			Name:        BundleFlux2Klein4B,
+			Description: "FLUX.2 [klein] 4B — compact 4-step distilled model with Qwen3-4B text encoder. Three files (~5.3 GB total).",
+			License:     "FLUX Non-Commercial",
+			Gated:       true,
+			Files: []BundleFile{
+				{
+					Role:     RoleDiffusion,
+					Filename: "flux-2-klein-4b-Q4_0.gguf",
+					URL:      "https://huggingface.co/leejet/FLUX.2-klein-4B-GGUF/resolve/main/flux-2-klein-4b-Q4_0.gguf",
+					Size:     "2.5 GB",
+				},
+				{
+					Role:     RoleVAE,
+					Filename: "ae.safetensors",
+					URL:      "https://huggingface.co/black-forest-labs/FLUX.2-dev/resolve/main/ae.safetensors",
+					Size:     "335 MB",
+				},
+				{
+					Role:     RoleLLM,
+					Filename: "Qwen3-4B-Q4_K_M.gguf",
+					URL:      "https://huggingface.co/unsloth/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf",
+					Size:     "2.5 GB",
 				},
 			},
 		},

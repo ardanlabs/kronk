@@ -28,22 +28,33 @@ func TestCatalogValidity(t *testing.T) {
 	}
 }
 
-func TestCatalogMatchesMalina(t *testing.T) {
-	kronkCatalog, err := json.Marshal(Catalog())
-	if err != nil {
-		t.Fatalf("Marshal Kronk catalog: %v", err)
-	}
-	malinaCatalog, err := json.Marshal(malinadownload.Catalog())
-	if err != nil {
-		t.Fatalf("Marshal Malina catalog: %v", err)
-	}
-	if !bytes.Equal(kronkCatalog, malinaCatalog) {
-		t.Fatal("Kronk catalog does not match the Malina v1.0.2 catalog")
+func TestCatalogIncludesMalinaCatalog(t *testing.T) {
+	for _, malinaBundle := range malinadownload.Catalog() {
+		name, err := ParseBundleName(malinaBundle.Name)
+		if err != nil {
+			t.Fatalf("ParseBundleName(%q): %v", malinaBundle.Name, err)
+		}
+		kronkBundle, ok := BundleByName(name)
+		if !ok {
+			t.Fatalf("BundleByName(%q): not found", name)
+		}
+
+		kronkJSON, err := json.Marshal(kronkBundle)
+		if err != nil {
+			t.Fatalf("Marshal Kronk bundle %q: %v", name, err)
+		}
+		malinaJSON, err := json.Marshal(malinaBundle)
+		if err != nil {
+			t.Fatalf("Marshal Malina bundle %q: %v", name, err)
+		}
+		if !bytes.Equal(kronkJSON, malinaJSON) {
+			t.Errorf("Kronk bundle %q does not match the Malina catalog", name)
+		}
 	}
 }
 
 func TestBundleNameConstants(t *testing.T) {
-	want := []BundleName{BundleFlux2Klein9B, BundleSD15, BundleSDXLBase10}
+	want := []BundleName{BundleFlux2Klein4B, BundleFlux2Klein9B, BundleSD15, BundleSDXLBase10}
 	if !slices.Equal(SupportedBundles(), want) {
 		t.Errorf("SupportedBundles(): got %v, want %v", SupportedBundles(), want)
 	}
@@ -63,7 +74,7 @@ func TestParseBundleName(t *testing.T) {
 }
 
 func TestBundleNameTextRoundTrip(t *testing.T) {
-	data, err := BundleFlux2Klein9B.MarshalText()
+	data, err := BundleFlux2Klein4B.MarshalText()
 	if err != nil {
 		t.Fatalf("MarshalText() error = %v", err)
 	}
@@ -71,8 +82,27 @@ func TestBundleNameTextRoundTrip(t *testing.T) {
 	if err := name.UnmarshalText(data); err != nil {
 		t.Fatalf("UnmarshalText() error = %v", err)
 	}
-	if !name.Equal(BundleFlux2Klein9B) {
-		t.Errorf("UnmarshalText(): got %q, want %q", name, BundleFlux2Klein9B)
+	if !name.Equal(BundleFlux2Klein4B) {
+		t.Errorf("UnmarshalText(): got %q, want %q", name, BundleFlux2Klein4B)
+	}
+}
+
+func TestBundleFlux2Klein4B(t *testing.T) {
+	bundle, ok := BundleByName(BundleFlux2Klein4B)
+	if !ok {
+		t.Fatal("BundleByName(BundleFlux2Klein4B): not found")
+	}
+	if !bundle.Gated {
+		t.Error("Gated: got false, want true")
+	}
+
+	want := []BundleFile{
+		{Role: RoleDiffusion, Filename: "flux-2-klein-4b-Q4_0.gguf", URL: "https://huggingface.co/leejet/FLUX.2-klein-4B-GGUF/resolve/main/flux-2-klein-4b-Q4_0.gguf", Size: "2.5 GB"},
+		{Role: RoleVAE, Filename: "ae.safetensors", URL: "https://huggingface.co/black-forest-labs/FLUX.2-dev/resolve/main/ae.safetensors", Size: "335 MB"},
+		{Role: RoleLLM, Filename: "Qwen3-4B-Q4_K_M.gguf", URL: "https://huggingface.co/unsloth/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf", Size: "2.5 GB"},
+	}
+	if !slices.Equal(bundle.Files, want) {
+		t.Errorf("Files: got %v, want %v", bundle.Files, want)
 	}
 }
 

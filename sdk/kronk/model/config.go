@@ -15,7 +15,6 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
-	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -330,13 +329,11 @@ type AdapterConfig struct {
 // SplitMode controls how the model is split across multiple GPUs:
 //   - SplitModeNone (0): single GPU
 //   - SplitModeLayer (1): split layers and KV across GPUs
-//   - SplitModeRow (2): split layers and KV across GPUs with tensor parallelism
-//     (recommended for multi-GPU MoE models like Qwen3-MoE, Mixtral, DeepSeek)
+//   - SplitModeRow (2): deprecated row-split tensor parallelism
 //
-// When nil (not set), the default is device-count aware (see DefaultSplitMode):
-// SplitModeRow only when more than one GPU is present, otherwise SplitModeLayer.
-// Tensor parallelism on a single GPU is a no-op that performs worse and can
-// crash MoE models with view tensors (e.g. gemma4).
+// When nil (not set), the default is SplitModeLayer, matching llama.cpp. Layer
+// mode distributes a single GGUF across multiple GPUs without requiring the
+// backend-specific split buffers used by row mode.
 //
 // SWAFull controls whether models with sliding window attention (SWA) use a
 // full-size KV cache for SWA layers instead of the memory-efficient small
@@ -1485,19 +1482,16 @@ func DerefLoadMode(lm *LoadMode) LoadMode {
 // =============================================================================
 
 // SplitMode controls how the model is split across multiple GPUs.
-// This is particularly important for Mixture of Experts (MoE) models.
 type SplitMode int32
 
 const (
-	// SplitModeNone uses a single GPU (default).
+	// SplitModeNone uses a single GPU.
 	SplitModeNone SplitMode = 0
 
-	// SplitModeLayer splits layers and KV cache across GPUs.
+	// SplitModeLayer splits layers and KV cache across GPUs. This is the default.
 	SplitModeLayer SplitMode = 1
 
-	// SplitModeRow splits layers and KV across GPUs with tensor parallelism.
-	// This enables expert-parallel execution for MoE models (Qwen3-MoE, Mixtral, DeepSeek).
-	// Equivalent to vLLM's --enable-expert-parallel flag.
+	// SplitModeRow uses llama.cpp's deprecated row-split tensor parallelism.
 	SplitModeRow SplitMode = 2
 )
 
@@ -1523,33 +1517,11 @@ func (s SplitMode) ToYZMAType() llama.SplitMode {
 	return llama.SplitMode(s)
 }
 
-// DefaultSplitMode returns the split mode to use when the user has not set one
-// explicitly, given the number of GPU devices the model will load across.
-func DefaultSplitMode(gpuCount int) SplitMode {
-	if gpuCount > 1 {
-		return SplitModeRow
-	}
+// DefaultSplitMode returns llama.cpp's layer-split default when the user has
+// not set one explicitly. The GPU count parameter is retained for API
+// compatibility.
+func DefaultSplitMode(_ int) SplitMode {
 	return SplitModeLayer
-}
-
-// DefaultSplitModeForDevices returns the backend-aware split mode to use when
-// the user has not set one explicitly. Vulkan does not implement llama.cpp's
-// split-buffer backend required by row mode, so any multi-GPU selection
-// containing Vulkan uses layer mode.
-func DefaultSplitModeForDevices(devs devices.Devices) SplitMode {
-	if devs.GPUCount > 1 {
-		for _, device := range devs.Devices {
-			deviceType := device.Type
-			if deviceType == "" {
-				deviceType = devices.ClassifyDeviceType(device.Name)
-			}
-			if deviceType == "gpu_vulkan" {
-				return SplitModeLayer
-			}
-		}
-	}
-
-	return DefaultSplitMode(devs.GPUCount)
 }
 
 func (s SplitMode) MarshalYAML() (any, error) {
@@ -1594,7 +1566,8 @@ func (s *SplitMode) UnmarshalYAML(unmarshal func(any) error) error {
 }
 
 // ParseSplitMode parses a string into a SplitMode.
-// Supported values: "none", "layer", "row", "expert-parallel", "tensor-parallel".
+// Supported values are "none", "layer", and "row". The legacy aliases
+// "tensor", "tensor-parallel", and "expert-parallel" map to row mode.
 func ParseSplitMode(s string) (SplitMode, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "none", "single", "0", "":
@@ -1607,7 +1580,7 @@ func ParseSplitMode(s string) (SplitMode, error) {
 		return SplitModeRow, nil
 
 	default:
-		return SplitModeNone, fmt.Errorf("parse-split-mode: unknown split mode: %s (valid: none, layer, row, expert-parallel)", s)
+		return SplitModeNone, fmt.Errorf("parse-split-mode: unknown split mode: %s (valid: none, layer, row)", s)
 	}
 }
 

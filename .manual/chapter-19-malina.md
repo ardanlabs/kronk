@@ -150,6 +150,7 @@ The current bundles are:
 | ------ | ----- | ------- | -------------------- |
 | `sd-1.5` | Stable Diffusion 1.5 checkpoint | CreativeML Open RAIL-M | 4.3 GB |
 | `sdxl-base-1.0` | SDXL Base 1.0 checkpoint | CreativeML Open RAIL++-M | 6.9 GB |
+| `flux2-klein-4b` | Diffusion model, VAE, and LLM text encoder | FLUX Non-Commercial | 5.3 GB |
 | `flux2-klein-9b` | Diffusion model, VAE, and LLM text encoder | FLUX Non-Commercial | 11 GB |
 
 Use `models.SupportedBundles()` to enumerate names and `models.Catalog()` to
@@ -193,9 +194,9 @@ Downloads are staged, checked for all required non-empty files, recorded in
 `manifest.json`, and then activated atomically. A complete installed bundle is
 reused on later calls.
 
-The FLUX.2 bundle is license-gated. Accept the model license on Hugging Face,
+The FLUX.2 bundles are license-gated. Accept the model license on Hugging Face,
 then provide a read token through `KRONK_HF_TOKEN` or `HF_TOKEN` before
-downloading it.
+downloading them.
 
 ### 19.4 Go SDK
 

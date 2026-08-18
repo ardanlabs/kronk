@@ -511,15 +511,13 @@ func buildModelParams(ctx context.Context, cfg *Config, loadMTP bool, l applog.L
 		mParams.NGpuLayers = int32(*cfg.PtrNGpuLayers)
 	}
 
-	// Set split mode for multi-GPU and tensor parallelism (expert-parallel for MoE).
-	// When not explicitly configured, fall back to a backend-aware default
-	// (DefaultSplitMode): Vulkan uses SplitModeLayer because it does not support
-	// row split buffers. This is the universal floor every load path shares, so
-	// it protects callers (including direct SDK users) that never run the
-	// hardware analysis.
+	// Set split mode for multi-GPU distribution. Match llama.cpp's layer-split
+	// default unless the user explicitly selects another mode. Layer splitting
+	// works across backends and can distribute a single GGUF across GPUs without
+	// requiring row split-buffer support.
 	switch cfg.PtrSplitMode {
 	case nil:
-		split := DefaultSplitModeForDevices(configuredGPUDevices(cfg))
+		split := DefaultSplitMode(len(cfg.Devices))
 		mParams.SplitMode = split.ToYZMAType()
 		// Surface the resolved split mode back into cfg so ModelConfig() reports
 		// the effective value ("layer"/"row") instead of nil. This keeps
@@ -1595,30 +1593,6 @@ func resolveBackendDevice(name string) llama.GGMLBackendDevice {
 	}
 
 	return 0
-}
-
-// configuredGPUDevices reports the GPU devices the model will load across. When
-// the config pins an explicit device list, only those entries are reported;
-// otherwise llama.cpp uses every available GPU device.
-func configuredGPUDevices(cfg *Config) devices.Devices {
-	if len(cfg.Devices) > 0 {
-		var devs devices.Devices
-		for _, name := range cfg.Devices {
-			name = strings.TrimSpace(name)
-			deviceType := devices.ClassifyDeviceType(name)
-			if strings.HasPrefix(deviceType, "gpu_") {
-				devs.Devices = append(devs.Devices, devices.DeviceInfo{Name: name, Type: deviceType})
-				devs.GPUCount++
-			}
-		}
-		return devs
-	}
-
-	return devices.List(
-		devices.WithIncludeCPU(false),
-		devices.WithIncludeUnknown(false),
-		devices.WithIncludeMemory(false),
-	)
 }
 
 // resolveBackendDevices resolves a list of device names to ggml backend device

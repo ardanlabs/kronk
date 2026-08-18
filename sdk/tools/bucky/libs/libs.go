@@ -35,7 +35,7 @@ const (
 	// github.com/ardanlabs/bucky/pkg/download.DefaultWhisperVersion ships
 	// with, because the bucky module may not be bumped in lockstep with
 	// upstream whisper.cpp releases.
-	defaultVersion = "v1.9.2"
+	defaultVersion = download.DefaultWhisperVersion
 )
 
 // ErrReadOnly is returned by mutating operations on a Libs instance

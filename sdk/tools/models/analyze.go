@@ -290,7 +290,7 @@ func analyzeModelWithConfigAndBudget(info ModelInfo, devs devices.Devices, cfg M
 		ramBudget:      ramBudget,
 		hasGPU:         sf.SupportsGPUOffload,
 		unifiedMemory:  devs.UnifiedMemory,
-		devs:           devs,
+		gpuCount:       devs.GPUCount,
 		attn:           attn,
 		contextWindow:  cfg.PtrContextWindow,
 		nSeqMax:        cfg.PtrNSeqMax,
@@ -372,7 +372,7 @@ type profileInput struct {
 	ramBudget      int64
 	hasGPU         bool
 	unifiedMemory  bool
-	devs           devices.Devices
+	gpuCount       int
 	attn           AttentionFacts
 	contextWindow  *int
 	nSeqMax        *int
@@ -412,13 +412,12 @@ func buildProfile(name string, p profileInput, overrideSlots int64, overrideConc
 		rec.FlashAttention = "disabled"
 	}
 
-	// Determine split mode from the selected backends. Uses the same single
-	// source of truth as the in-load default so analysis and loading agree,
-	// including Vulkan's lack of row split-buffer support.
+	// Use the same layer-split default as the load path and llama.cpp. Explicit
+	// user configuration still wins.
 	if p.splitMode != nil {
 		rec.SplitMode = p.splitMode.String()
 	} else {
-		rec.SplitMode = model.DefaultSplitModeForDevices(p.devs).String()
+		rec.SplitMode = model.DefaultSplitMode(p.gpuCount).String()
 	}
 
 	// Determine target slots. An explicit value is a sizing constraint, not an
