@@ -2,6 +2,8 @@
 
 ## Index
 
+- [v1.31.4](#v1314)
+  - [Model Identifier Changes](#v1314-model-identifier-changes)
 - [v1.31.2](#v1312)
   - [Model Batch Configuration Changes](#v1312-model-batch-configuration-changes)
 - [v1.30.5](#v1305)
@@ -19,6 +21,61 @@
   - [HTTP Error Response Changes](#v1303-http-error-response-changes)
   - [Session Storage Changes](#v1303-session-storage-changes)
   - [Go SDK Changes](#v1303-go-sdk-changes)
+
+## v1.31.4
+
+### v1.31.4: Model Identifier Changes
+
+Kronk model identifiers now use the canonical `provider/modelID` form on all
+public model-facing APIs. Bare model IDs are rejected instead of being searched
+across a provider list:
+
+```text
+# Before
+Qwen3-8B-Q8_0
+
+# After
+Qwen/Qwen3-8B-Q8_0
+```
+
+Update the `model` field sent to Chat Completions, Responses, Messages,
+Embeddings, Reranking, Tokenize, and other inference endpoints. Also update
+model IDs supplied to model-management APIs and CLI commands. Discovery
+responses such as `GET /v1/models`, and inference responses that carry a model
+field, now report the canonical ID and should be treated as the source of truth.
+
+Keys in `~/.kronk/models/model_config.yaml` must also be canonical. A legacy
+bare key prevents the server pool from initializing:
+
+```yaml
+version: 1
+models:
+  # Before
+  Qwen3-8B-Q8_0:
+    context-window: 131072
+
+  # After
+  Qwen/Qwen3-8B-Q8_0:
+    context-window: 131072
+```
+
+Named configurations now append the profile after the canonical base ID. For
+example, replace `Qwen3-8B-Q8_0/AGENT` with:
+
+```yaml
+models:
+  Qwen/Qwen3-8B-Q8_0/AGENT:
+    context-window: 131072
+```
+
+Clients select that configuration by sending the complete
+`Qwen/Qwen3-8B-Q8_0/AGENT` value. The profile changes runtime settings but
+continues to use the files installed for `Qwen/Qwen3-8B-Q8_0`.
+
+Model pull and catalog resolution no longer walk a configured provider list
+for a bare ID. Use the canonical ID shown by `kronk catalog list --local`, or
+continue using an accepted explicit source such as a Hugging Face URL or
+`owner/repository/file.gguf`.
 
 ## v1.31.2
 
