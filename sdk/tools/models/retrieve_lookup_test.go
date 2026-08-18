@@ -24,12 +24,12 @@ func Test_fullPathLookupKeys(t *testing.T) {
 		{
 			name:    "provider/model",
 			modelID: "mradermacher/Qwopus3.5-4B-Coder.Q8_0",
-			want:    []string{"mradermacher/Qwopus3.5-4B-Coder.Q8_0"},
+			want:    []string{"mradermacher/Qwopus3.5-4B-Coder.Q8_0", "Qwopus3.5-4B-Coder.Q8_0"},
 		},
 		{
 			name:    "provider/model/profile resolves base model",
 			modelID: "mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT",
-			want:    []string{"mradermacher/Qwopus3.5-4B-Coder.Q8_0"},
+			want:    []string{"mradermacher/Qwopus3.5-4B-Coder.Q8_0", "Qwopus3.5-4B-Coder.Q8_0"},
 		},
 		{name: "too many segments", modelID: "mradermacher/Qwopus3.5-4B-Coder.Q8_0/playground/sess-1", want: nil},
 	}
@@ -104,6 +104,54 @@ func TestFilesPreservesPublicFileContract(t *testing.T) {
 	}
 	if !validated["provider/model"] {
 		t.Error("IndexState validated: got false, want true")
+	}
+
+	if _, err := m.FullPath("model"); !errors.Is(err, ErrInvalidModelID) {
+		t.Errorf("FullPath bare model: got %v, want ErrInvalidModelID", err)
+	}
+}
+
+func TestLegacyIndexKeysResolveCanonicalModelIDs(t *testing.T) {
+	m, err := NewWithPaths(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewWithPaths: %v", err)
+	}
+
+	modelFile := filepath.Join(m.Path(), "provider", "family", "model.gguf")
+	if err := os.MkdirAll(filepath.Dir(modelFile), 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(modelFile, []byte("model"), 0644); err != nil {
+		t.Fatalf("WriteFile model: %v", err)
+	}
+
+	index, err := yaml.Marshal(map[string]Path{
+		"model": {
+			ModelFiles: []string{modelFile},
+			Validated:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal index: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(m.Path(), indexFile), index, 0644); err != nil {
+		t.Fatalf("WriteFile index: %v", err)
+	}
+
+	path, err := m.FullPath("provider/model")
+	if err != nil {
+		t.Fatalf("FullPath canonical model: %v", err)
+	}
+	if !slices.Equal(path.ModelFiles, []string{modelFile}) {
+		t.Errorf("ModelFiles: got %q, want %q", path.ModelFiles, []string{modelFile})
+	}
+
+	file, ok := m.LookupFile("provider/model/AGENT")
+	if !ok {
+		t.Fatal("LookupFile profile: got false, want true")
+	}
+	if file.ID != "model" || file.OwnedBy != "provider" {
+		t.Errorf("LookupFile: got ID %q and provider %q, want model and provider", file.ID, file.OwnedBy)
 	}
 
 	if _, err := m.FullPath("model"); !errors.Is(err, ErrInvalidModelID) {

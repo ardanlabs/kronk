@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"go.yaml.in/yaml/v2"
 )
@@ -37,6 +38,57 @@ func TestMoEMode(t *testing.T) {
 			}
 			if !got.Equal(tt.want) {
 				t.Errorf("ParseMoEMode() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDefaultSplitMode(t *testing.T) {
+	tests := []struct {
+		name string
+		devs devices.Devices
+		want SplitMode
+	}{
+		{"single GPU uses layer", devices.Devices{GPUCount: 1}, SplitModeLayer},
+		{
+			"multiple CUDA GPUs use row",
+			devices.Devices{
+				GPUCount: 2,
+				Devices: []devices.DeviceInfo{
+					{Name: "CUDA0", Type: "gpu_cuda"},
+					{Name: "CUDA1", Type: "gpu_cuda"},
+				},
+			},
+			SplitModeRow,
+		},
+		{
+			"multiple Vulkan GPUs use layer",
+			devices.Devices{
+				GPUCount: 2,
+				Devices: []devices.DeviceInfo{
+					{Name: "Vulkan0", Type: "gpu_vulkan"},
+					{Name: "Vulkan1", Type: "gpu_vulkan"},
+				},
+			},
+			SplitModeLayer,
+		},
+		{
+			"mixed Vulkan GPUs use layer",
+			devices.Devices{
+				GPUCount: 2,
+				Devices: []devices.DeviceInfo{
+					{Name: "CUDA0", Type: "gpu_cuda"},
+					{Name: "Vulkan0"},
+				},
+			},
+			SplitModeLayer,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := DefaultSplitModeForDevices(tt.devs); got != tt.want {
+				t.Errorf("DefaultSplitModeForDevices() = %s, want %s", got, tt.want)
 			}
 		})
 	}

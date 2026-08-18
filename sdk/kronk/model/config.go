@@ -15,6 +15,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
+	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -1523,22 +1524,32 @@ func (s SplitMode) ToYZMAType() llama.SplitMode {
 }
 
 // DefaultSplitMode returns the split mode to use when the user has not set one
-// explicitly, given the number of GPU devices the model will load across. It is
-// the single source of truth for this decision: both the in-load default
-// (buildModelParams) and the hardware analysis (analyzeModel) call it so they
-// can never disagree.
-//
-// SplitModeRow (tensor parallelism) is only meaningful with two or more GPUs.
-// On a single GPU it is a no-op that still activates llama.cpp's CUDA
-// split-buffer path, which both performs worse than SplitModeLayer and crashes
-// on MoE models whose graphs contain view tensors (e.g. gemma4). So we default
-// to SplitModeRow only for multi-GPU and SplitModeLayer otherwise, matching
-// llama.cpp's own single-GPU default.
+// explicitly, given the number of GPU devices the model will load across.
 func DefaultSplitMode(gpuCount int) SplitMode {
 	if gpuCount > 1 {
 		return SplitModeRow
 	}
 	return SplitModeLayer
+}
+
+// DefaultSplitModeForDevices returns the backend-aware split mode to use when
+// the user has not set one explicitly. Vulkan does not implement llama.cpp's
+// split-buffer backend required by row mode, so any multi-GPU selection
+// containing Vulkan uses layer mode.
+func DefaultSplitModeForDevices(devs devices.Devices) SplitMode {
+	if devs.GPUCount > 1 {
+		for _, device := range devs.Devices {
+			deviceType := device.Type
+			if deviceType == "" {
+				deviceType = devices.ClassifyDeviceType(device.Name)
+			}
+			if deviceType == "gpu_vulkan" {
+				return SplitModeLayer
+			}
+		}
+	}
+
+	return DefaultSplitMode(devs.GPUCount)
 }
 
 func (s SplitMode) MarshalYAML() (any, error) {

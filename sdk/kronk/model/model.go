@@ -512,15 +512,14 @@ func buildModelParams(ctx context.Context, cfg *Config, loadMTP bool, l applog.L
 	}
 
 	// Set split mode for multi-GPU and tensor parallelism (expert-parallel for MoE).
-	// When not explicitly configured, fall back to a device-count aware default
-	// (DefaultSplitMode): SplitModeRow only with multiple GPUs, otherwise
-	// SplitModeLayer. This is the universal floor every load path shares, so it
-	// protects callers (including direct SDK users) that never run the hardware
-	// analysis. Tensor parallelism on a single GPU is a no-op that performs
-	// worse and crashes MoE models with view tensors (e.g. gemma4).
+	// When not explicitly configured, fall back to a backend-aware default
+	// (DefaultSplitMode): Vulkan uses SplitModeLayer because it does not support
+	// row split buffers. This is the universal floor every load path shares, so
+	// it protects callers (including direct SDK users) that never run the
+	// hardware analysis.
 	switch cfg.PtrSplitMode {
 	case nil:
-		split := DefaultSplitMode(gpuDeviceCount(cfg))
+		split := DefaultSplitModeForDevices(configuredGPUDevices(cfg))
 		mParams.SplitMode = split.ToYZMAType()
 		// Surface the resolved split mode back into cfg so ModelConfig() reports
 		// the effective value ("layer"/"row") instead of nil. This keeps
@@ -1598,26 +1597,28 @@ func resolveBackendDevice(name string) llama.GGMLBackendDevice {
 	return 0
 }
 
-// gpuDeviceCount reports how many GPU devices the model will load across. When
-// the config pins an explicit device list, only its GPU entries are counted;
-// otherwise llama.cpp uses every available device, so all enumerated GPUs are
-// counted. It is used to pick the device-count aware split-mode default.
-func gpuDeviceCount(cfg *Config) int {
+// configuredGPUDevices reports the GPU devices the model will load across. When
+// the config pins an explicit device list, only those entries are reported;
+// otherwise llama.cpp uses every available GPU device.
+func configuredGPUDevices(cfg *Config) devices.Devices {
 	if len(cfg.Devices) > 0 {
-		n := 0
+		var devs devices.Devices
 		for _, name := range cfg.Devices {
-			if !strings.EqualFold(strings.TrimSpace(name), "CPU") {
-				n++
+			name = strings.TrimSpace(name)
+			deviceType := devices.ClassifyDeviceType(name)
+			if strings.HasPrefix(deviceType, "gpu_") {
+				devs.Devices = append(devs.Devices, devices.DeviceInfo{Name: name, Type: deviceType})
+				devs.GPUCount++
 			}
 		}
-		return n
+		return devs
 	}
 
 	return devices.List(
 		devices.WithIncludeCPU(false),
 		devices.WithIncludeUnknown(false),
 		devices.WithIncludeMemory(false),
-	).GPUCount
+	)
 }
 
 // resolveBackendDevices resolves a list of device names to ggml backend device
