@@ -477,70 +477,30 @@ prepares and commits through the session's existing store; if snapshot publicati
 fails, invalidate that current state so later work rebuilds it rather than claiming the
 old or partial state is valid.
 
-Text planning compares complete token sequences and chooses the longest compatible
-current state or retained user-turn checkpoint. It never trims a snapshot at an
-internal token match. Before extending current state that ends at a real user message,
-move that complete state—including target KV and compatible own-KV MTP state—into the
-independent checkpoint and install fresh current stores. Current-state invalidation must not
-discard that checkpoint; full reset or LRU replacement must close both states.
+Text planning compares complete token sequences and searches every working session for
+exact or append reuse before considering System. Each model owns a separate RAM-only
+System cache pool with the same capacity as its working-session pool. Entries contain
+only independently rendered, nonempty, cache-worthy system prefixes whose complete
+token sequences prefix the stable request. They include target KV and compatible
+own-KV MTP state and never advance.
 
-##### Template stability and the one-alternate-snapshot tradeoff
+On a System hit, reserve the immutable source during restoration and copy it into a
+separately selected empty or least-recently-used working session. Multiple working
+sessions may preload the same System entry. On a miss, publish into an empty System
+entry or replace the least-recently-used entry that is not being restored. Retention
+failure must not fail inference. Never trim a working session at an internal token
+match.
 
-A text session retains the latest current snapshot and at most one additional
-alternate reusable snapshot. The alternate can begin as a complete user-turn checkpoint
-and later become a progressive token-boundary checkpoint when Kronk restores an earlier
-state, recomputes to a longer exact common prefix, and snapshots that prefix. Publishing
-the progressive checkpoint replaces the prior alternate; Kronk does not also retain the
-older user-turn state. Thus, "one alternate snapshot" can mean two complete model states
-are allocated for the session—current plus alternate—but it never means two alternate
-checkpoints. This is a deliberate host-memory tradeoff, not proof that the older boundary
-is unimportant.
+##### Template stability and the System cache pool
 
-Template behavior determines how often that tradeoff matters. Prefix-stable templates
-can append every assistant/tool iteration without changing previously rendered tokens.
-In an observed Qwen 3.5 MTP coding-agent trace, every tool-loop request was a
-`complete-prefix-append`. The complete user-turn checkpoint therefore remained
-available until the next real user message removed prior-turn reasoning. Kronk restored
-12,610 tokens, recomputed three tokens to the new 12,613-token common-prefix boundary,
-and reused the same cache entry. Follow-up requests restored compatible target and draft
-state normally.
+Prefix-stable templates normally append from a working session. Reasoning-aware or
+look-ahead templates may retroactively change an earlier assistant or tool turn; a
+matching System entry then provides a conservative restart point.
 
-An observed Gemma 4 MTP trace exposed a different pattern. The template's look-ahead
-continuation logic changed a previously rendered assistant/tool turn ending after later
-assistant messages were appended. Several tool-loop iterations diverged two tokens
-before the prior current boundary: 21,212 became a 21,210-token common prefix, 23,105
-became 23,103, and later turns showed the same pattern. Progressive checkpoints sped up
-those intra-turn recoveries, but they displaced the older 11,799-token complete-user
-turn checkpoint. When a new user message subsequently removed prior-turn reasoning,
-the prompt matched through approximately 11,802 tokens but Kronk could no longer restore
-the required 11,799-token state, so it rebuilt another cache entry.
-
-Do not infer from this case that reasoning-aware templates are categorically compatible
-or incompatible. There are two independent stability questions:
-
-1. Does appending an assistant/tool iteration retroactively change an earlier turn
-   boundary?
-2. Does appending a real user message remove or relocate prior assistant reasoning?
-
-The current design performs well when the first answer is no because the one alternate
-checkpoint remains available for the second transition. Preserve the
-current-plus-one-alternate design unless measurements justify its memory cost changing:
-native sequence snapshots in the observed traces consumed hundreds of megabytes each,
-RAM stores retain peak backing capacity, and own-KV MTP configurations may require
-matching draft state as well.
-
-If this tradeoff is revisited, the smallest alternatives are:
-
-- Keep the current snapshot and pin the one alternate as a complete-user-turn
-  checkpoint instead of replacing it with a progressive checkpoint. This preserves
-  cross-user-turn recovery without adding a third complete state, but a template such
-  as Gemma's may repeatedly recompute most of the current tool turn.
-- Add one on-demand progressive checkpoint, giving current, durable user-turn, and
-  progressive roles. Evict the progressive state first under memory pressure and
-  prefer a byte budget over a snapshot-count limit. This would cover the observed
-  Qwen and Gemma patterns but can add another full snapshot per affected session.
-- Place the infrequently used durable user-turn state in a colder custom
-  `SessionStore`, after measuring restore latency and actual compression behavior.
+Native sequence snapshots can consume hundreds of megabytes, RAM stores retain peak
+backing capacity, and own-KV MTP configurations may require matching draft state. Do
+not create System entries for empty or below-threshold system-only renderings, and do
+not add user-turn or progressive checkpoint roles.
 
 Do not attempt prefix sharing by slicing or pointing into the current serialized state
 buffers. The native interface exposes complete per-sequence size/get/set operations,
@@ -550,11 +510,9 @@ especially unsafe. Meaningful shared-prefix storage requires explicit native bac
 support rather than a different Go buffer layout.
 
 When investigating another template, correlate `match_reason`, `reusable_tokens`,
-`candidate_lcp_tokens`, `recomputed_to_checkpoint`, `reusable_snapshot_tokens`, and
-`full_input_snapshot_messages` from `plan-ready` records. Compare them with
-`reusable-snapshot-preserved`, `imc-progressive-snapshot-done`, and `slot-finished` to
-distinguish clean appends, intra-tool boundary rewrites, reasoning removal at a new user
-turn, checkpoint replacement, and actual restored-token reuse.
+`system_boundary_tokens`, and `full_input_snapshot_messages` from `plan-ready`
+records with System creation/restore and `slot-finished` events. Distinguish clean
+Current appends, System recovery, full rebuilds, and actual restored-token reuse.
 
 Media-anchor advancement has a stronger replacement contract: it writes a separately
 staged store and swaps the store plus matching plan/count metadata only after success,

@@ -364,6 +364,29 @@ func (p *Pool) IMCSessions() []IMCSessionDetail {
 	return details
 }
 
+// IMCSystemCaches returns System cache pool entries for loaded models.
+func (p *Pool) IMCSystemCaches() []IMCSystemCacheDetail {
+	details := make([]IMCSystemCacheDetail, 0)
+
+	for key, krn := range p.engine.All() {
+		for _, cache := range krn.IMCSystemCaches() {
+			details = append(details, IMCSystemCacheDetail{
+				ModelID:              key,
+				IMCSystemCacheDetail: cache,
+			})
+		}
+	}
+
+	slices.SortFunc(details, func(a, b IMCSystemCacheDetail) int {
+		if n := cmp.Compare(a.ModelID, b.ModelID); n != 0 {
+			return n
+		}
+		return cmp.Compare(a.ID, b.ID)
+	})
+
+	return details
+}
+
 // BatchEngineSnapshots returns the latest generation scheduler state for each
 // loaded language model. Embedding and reranking models are omitted.
 func (p *Pool) BatchEngineSnapshots() []BatchEngineDetail {

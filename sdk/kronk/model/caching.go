@@ -37,17 +37,18 @@ type cacheResult struct {
 	// Pure-hit snapshot-skip state. Token-v2 exact matches retain an exclusive
 	// reservation through restore and generation, so the externalized bytes
 	// can be reused without a redundant post-restore serialization.
-	imcExpectedCachedMsgs  int    // Expected cachedMsgCount at startSlot for the matched session.
-	imcExpectedTokens      int    // Expected physical KV cells at startSlot for the matched session.
-	imcExpectedPosition    int    // Expected next logical position at startSlot.
-	imcExpectedRenderHash  string // Expected cachedRenderInputHash at startSlot (set on hits; carried forward on builds/extends so commit can refresh the session field).
-	imcExpectedPromptPlan  promptPlan
-	imcReadOnlyReservation bool // True when the session is reserved for restore/use without metadata or snapshot mutation.
-	imcMediaAnchorAdvance  bool // True when text after a media anchor should be atomically committed as a larger snapshot.
-	imcNewLogicalPosition  int  // Next logical position after a media-anchor advance.
-	imcPureHitSkipSnapshot bool // True when startSlot may skip the post-restore snapshot.
-	imcPromoteCheckpoint   bool // True when the selected current user boundary must be retained before extension commit.
-	imcCheckpointTokens    int  // Exact target token boundary at which to publish a progressive reusable snapshot.
+	imcExpectedCachedMsgs   int    // Expected cachedMsgCount at startSlot for the matched session.
+	imcExpectedTokens       int    // Expected physical KV cells at startSlot for the matched session.
+	imcExpectedPosition     int    // Expected next logical position at startSlot.
+	imcExpectedRenderHash   string // Expected cachedRenderInputHash at startSlot (set on hits; carried forward on builds/extends so commit can refresh the session field).
+	imcExpectedPromptPlan   promptPlan
+	imcReadOnlyReservation  bool // True when the session is reserved for restore/use without metadata or snapshot mutation.
+	imcMediaAnchorAdvance   bool // True when a prompt-plan extension after a media anchor should be atomically committed as a larger snapshot.
+	imcMediaAppend          bool // True when the media-anchor extension contains new image or audio chunks.
+	imcNewLogicalPosition   int  // Next logical position after a media-anchor advance.
+	imcPureHitSkipSnapshot  bool // True when startSlot may skip the post-restore snapshot.
+	imcSystemBoundaryTokens int  // Exact system-prefix boundary at which to publish a missing immutable preload.
+	imcSystemCache          *imcSystemCache
 
 	// imcSession is the matched session pointer; the SessionStore on it
 	// is the authoritative source of the cached prefix bytes restored
@@ -59,7 +60,6 @@ type cacheResult struct {
 	imcNewTotalCached    int           // Total cached KV positions after extension
 	imcNewCachedMsgCount int           // New cachedMsgCount after extension
 	imcNewMsgsHash       string        // New cachedMsgsHash after extension
-	imcNewEndsAtUser     bool          // True when the new current snapshot ends at a real user message.
 	imcClearSeq          bool          // True if sequence must be cleared before decoding (rebuild from scratch)
 	imcNewCachedTokens   []llama.Token // Full token sequence to store in session after decode
 

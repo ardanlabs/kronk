@@ -102,6 +102,17 @@ export default function DocsSDKPool() {
               <p className="doc-description">IMCSessionDetail provides the current state of one allocated IMC cache entry belonging to a loaded model.</p>
             </div>
 
+            <div className="doc-section" id="type-imcsystemcachedetail">
+              <h4>IMCSystemCacheDetail</h4>
+              <pre className="code-block">
+                <code>{`type IMCSystemCacheDetail struct {
+	ModelID string
+	model.IMCSystemCacheDetail
+}`}</code>
+              </pre>
+              <p className="doc-description">IMCSystemCacheDetail provides one immutable System preload belonging to a loaded model.</p>
+            </div>
+
             <div className="doc-section" id="type-llama">
               <h4>Llama</h4>
               <pre className="code-block">
@@ -242,6 +253,14 @@ export default function DocsSDKPool() {
               <p className="doc-description">IMCSessions returns the current IMC cache entries for loaded models. It does not load models or retain session history.</p>
             </div>
 
+            <div className="doc-section" id="method-pool-imcsystemcaches">
+              <h4>Pool.IMCSystemCaches</h4>
+              <pre className="code-block">
+                <code>func (p *Pool) IMCSystemCaches() []IMCSystemCacheDetail</code>
+              </pre>
+              <p className="doc-description">IMCSystemCaches returns System cache pool entries for loaded models.</p>
+            </div>
+
             <div className="doc-section" id="method-pool-invalidate">
               <h4>Pool.Invalidate</h4>
               <pre className="code-block">
@@ -356,6 +375,7 @@ export default function DocsSDKPool() {
                 <li><a href="#type-batchenginedetail">BatchEngineDetail</a></li>
                 <li><a href="#type-config">Config</a></li>
                 <li><a href="#type-imcsessiondetail">IMCSessionDetail</a></li>
+                <li><a href="#type-imcsystemcachedetail">IMCSystemCacheDetail</a></li>
                 <li><a href="#type-llama">Llama</a></li>
                 <li><a href="#type-modeldetail">ModelDetail</a></li>
                 <li><a href="#type-pool">Pool</a></li>
@@ -376,6 +396,7 @@ export default function DocsSDKPool() {
                 <li><a href="#method-pool-batchenginesnapshots">Pool.BatchEngineSnapshots</a></li>
                 <li><a href="#method-pool-getexisting">Pool.GetExisting</a></li>
                 <li><a href="#method-pool-imcsessions">Pool.IMCSessions</a></li>
+                <li><a href="#method-pool-imcsystemcaches">Pool.IMCSystemCaches</a></li>
                 <li><a href="#method-pool-invalidate">Pool.Invalidate</a></li>
                 <li><a href="#method-pool-invalidatesync">Pool.InvalidateSync</a></li>
                 <li><a href="#method-pool-modelconfig">Pool.ModelConfig</a></li>

@@ -44,6 +44,13 @@ type IMCSessionDetail struct {
 	model.IMCSessionDetail
 }
 
+// IMCSystemCacheDetail provides one immutable System preload belonging to a
+// loaded model.
+type IMCSystemCacheDetail struct {
+	ModelID string
+	model.IMCSystemCacheDetail
+}
+
 // BatchEngineDetail provides the current generation scheduler state for one
 // loaded model.
 type BatchEngineDetail struct {

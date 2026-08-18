@@ -430,23 +430,33 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, r
 			actualTokens := llama.Tokenize(m.vocab, actualPrompt, m.addBOSToken, true)
 			stableTokens := llama.Tokenize(m.vocab, stablePrompt, m.addBOSToken, true)
 
-			var finalUserBoundary int
+			var systemTokens []llama.Token
 			messages := dMessages(stableD)
-			if len(messages) > 1 && messagesEndAtRealUser(messages) {
-				boundaryD := maps.Clone(stableD)
-				boundaryD["messages"] = messages[:len(messages)-1]
-				boundaryPrompt, _, boundaryErr := m.createPrompt(ctx, boundaryD)
-				if boundaryErr == nil {
-					boundaryTokens := llama.Tokenize(m.vocab, boundaryPrompt, m.addBOSToken, true)
-					if tokensHavePrefix(stableTokens, boundaryTokens) {
-						finalUserBoundary = len(boundaryTokens)
+			systemMessages := 0
+			for systemMessages < len(messages) {
+				role, _ := messages[systemMessages]["role"].(string)
+				if role != "system" {
+					break
+				}
+				systemMessages++
+			}
+			if systemMessages > 0 {
+				systemD := maps.Clone(stableD)
+				systemD["messages"] = messages[:systemMessages]
+				systemPrompt, _, systemErr := m.createPrompt(ctx, systemD)
+				if systemErr == nil {
+					candidate := llama.Tokenize(m.vocab, systemPrompt, m.addBOSToken, true)
+					if len(candidate) > 0 && len(candidate) < len(stableTokens) && tokensHavePrefix(stableTokens, candidate) {
+						systemTokens = candidate
+					} else {
+						m.log(ctx, "imc", "status", "system-cache-skipped", "reason", "render-not-prefix-compatible")
 					}
 				} else {
-					m.log(ctx, "imc", "status", "final-user-boundary-render-skipped", "err", boundaryErr)
+					m.log(ctx, "imc", "status", "system-cache-skipped", "reason", "render-failed", "err", systemErr)
 				}
 			}
 
-			cache = m.processIMCTokenPlan(ctx, d, actualTokens, stableTokens, finalUserBoundary, requestStart)
+			cache = m.processIMCTokenPlan(ctx, d, actualTokens, stableTokens, systemTokens, requestStart)
 		}
 		if cache.err != nil {
 			return "", nil, cache, cache.err
@@ -473,10 +483,11 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, r
 // batch engine does not take ownership. Pure cache read-only exact/anchor hits
 // carry an explicit reservation too.
 func (m *Model) releaseIMCReservationIfHeld(cache cacheResult) {
+	m.imcReleaseSystemCache(cache.imcSystemCache)
 	if cache.imcSession == nil {
 		return
 	}
-	if len(cache.imcNewCacheTokens) == 0 && !cache.imcMediaBuild && !cache.imcReadOnlyReservation {
+	if len(cache.imcNewCacheTokens) == 0 && !cache.imcMediaBuild && !cache.imcMediaAppend && !cache.imcReadOnlyReservation {
 		return
 	}
 	m.imcReleaseReservation(cache.imcSessionID)
@@ -487,7 +498,7 @@ func (m *Model) releaseIMCReservationIfHeld(cache cacheResult) {
 // false if batch engine is not available or not applicable.
 func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, id string, prepared preparedChat, requestStart time.Time) bool {
 	cache := prepared.cache
-	imcCacheHit := m.cfg.IncrementalCache() && (cache.cacheIdx > 0 || len(cache.imcNewCacheTokens) > 0 || cache.imcMediaBuild)
+	imcCacheHit := m.cfg.IncrementalCache() && (cache.cacheIdx > 0 || len(cache.imcNewCacheTokens) > 0 || cache.imcMediaBuild || cache.imcMediaAppend)
 
 	_, queueSpan := otel.AddSpan(ctx, "queue-wait")
 	m.log(ctx, "request-lifecycle",
@@ -525,24 +536,24 @@ func (m *Model) submitToBatchEngine(ctx context.Context, ch chan ChatResponse, i
 		reusedPromptTokens: int(cache.cacheIdx),
 		imcExpectedHash:    cache.imcExpectedHash,
 
-		imcExpectedCachedMsgs:  cache.imcExpectedCachedMsgs,
-		imcExpectedTokens:      cache.imcExpectedTokens,
-		imcExpectedPosition:    cache.imcExpectedPosition,
-		imcExpectedRenderHash:  cache.imcExpectedRenderHash,
-		imcExpectedPromptPlan:  cache.imcExpectedPromptPlan,
-		imcReadOnlyReservation: cache.imcReadOnlyReservation,
-		imcMediaAnchorAdvance:  cache.imcMediaAnchorAdvance,
-		imcNewLogicalPosition:  cache.imcNewLogicalPosition,
-		imcReservationHeld:     cache.imcReadOnlyReservation || len(cache.imcNewCacheTokens) > 0 || cache.imcMediaBuild,
-		imcPureHitSkipSnapshot: cache.imcPureHitSkipSnapshot,
-		imcPromoteCheckpoint:   cache.imcPromoteCheckpoint,
-		imcCheckpointTokens:    cache.imcCheckpointTokens,
+		imcExpectedCachedMsgs:   cache.imcExpectedCachedMsgs,
+		imcExpectedTokens:       cache.imcExpectedTokens,
+		imcExpectedPosition:     cache.imcExpectedPosition,
+		imcExpectedRenderHash:   cache.imcExpectedRenderHash,
+		imcExpectedPromptPlan:   cache.imcExpectedPromptPlan,
+		imcReadOnlyReservation:  cache.imcReadOnlyReservation,
+		imcMediaAnchorAdvance:   cache.imcMediaAnchorAdvance,
+		imcMediaAppend:          cache.imcMediaAppend,
+		imcNewLogicalPosition:   cache.imcNewLogicalPosition,
+		imcReservationHeld:      cache.imcReadOnlyReservation || len(cache.imcNewCacheTokens) > 0 || cache.imcMediaBuild || cache.imcMediaAppend,
+		imcPureHitSkipSnapshot:  cache.imcPureHitSkipSnapshot,
+		imcSystemBoundaryTokens: cache.imcSystemBoundaryTokens,
+		imcSystemCache:          cache.imcSystemCache,
 
 		imcNewCacheTokens:     cache.imcNewCacheTokens,
 		imcNewTotalCached:     cache.imcNewTotalCached,
 		imcNewCachedMsgCount:  cache.imcNewCachedMsgCount,
 		imcNewMsgsHash:        cache.imcNewMsgsHash,
-		imcNewEndsAtUser:      cache.imcNewEndsAtUser,
 		imcClearSeq:           cache.imcClearSeq,
 		imcNewCachedTokens:    cache.imcNewCachedTokens,
 		imcMediaBuild:         cache.imcMediaBuild,

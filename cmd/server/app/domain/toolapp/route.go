@@ -64,6 +64,7 @@ func Routes(app *web.App, cfg Config) {
 	app.HandlerFunc(http.MethodGet, version, "/kronk/models/ps", api.modelPS, managementAccess)
 	app.HandlerFunc(http.MethodGet, version, "/kronk/models/slots", api.batchEngineSlots, managementAccess)
 	app.HandlerFunc(http.MethodGet, version, "/kronk/models/imc-sessions", api.imcSessions, managementAccess)
+	app.HandlerFunc(http.MethodGet, version, "/kronk/models/imc-system-caches", api.imcSystemCaches, managementAccess)
 	app.HandlerFunc(http.MethodPost, version, "/kronk/models/index", api.indexModels, administrationAccess)
 	app.HandlerFunc(http.MethodPost, version, "/kronk/models/pull", api.pullModels, administrationAccess)
 	app.HandlerFunc(http.MethodPost, version, "/kronk/models/autotune", api.autoTuneModel, managementAccess)

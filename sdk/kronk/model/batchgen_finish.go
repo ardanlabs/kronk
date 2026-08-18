@@ -38,7 +38,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	imcInputMessages := messageCount(s.job.d)
 	imcStableInputTokens := len(s.job.imcNewCachedTokens)
 	imcReusedTokens := s.job.reusedPromptTokens
-	imcCheckpointTokens := s.job.imcCheckpointTokens
+	imcSystemBoundaryTokens := s.job.imcSystemBoundaryTokens
 	mtpResumeSource := s.mtp.ResumeSource
 	stageStarted := s.prefillStart
 
@@ -106,7 +106,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 			"imc_input_tokens", nPrompt,
 			"imc_stable_input_tokens", imcStableInputTokens,
 			"imc_actual_reused_tokens", imcReusedTokens,
-			"imc_progressive_reusable_tokens", imcCheckpointTokens,
+			"imc_system_boundary_tokens", imcSystemBoundaryTokens,
 			"imc_tail_tokens", imcTailTokens,
 			"elapsed", elapsed.String(),
 			"active_streams", remaining,
@@ -592,6 +592,7 @@ func (e *batchEngine) failJob(job *chatJob, err error) {
 	if job.hasIMCReservation() {
 		e.model.imcReleaseReservation(job.imcSessionID)
 	}
+	job.releaseIMCSystemCache(e.model)
 
 	// Decrement activeStreams BEFORE close(job.ch). See finishSlot's
 	// defer for the full rationale: closing first leaves a race window

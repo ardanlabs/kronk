@@ -73,6 +73,9 @@ type ModelDetail = kronkpool.ModelDetail
 // entry.
 type IMCSessionDetail = kronkpool.IMCSessionDetail
 
+// IMCSystemCacheDetail re-exports one immutable System preload entry.
+type IMCSystemCacheDetail = kronkpool.IMCSystemCacheDetail
+
 // BatchEngineDetail re-exports the current generation scheduler state for one
 // loaded model.
 type BatchEngineDetail = kronkpool.BatchEngineDetail

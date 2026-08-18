@@ -176,8 +176,9 @@ with and without the generation cue. After tokenization or media-plan
 construction, the no-cue plan is reusable only when it is a strict prefix of
 the generation-ready plan and leaves a nonempty inference tail; a media tail
 must also be text-only. Kronk then finds the longest complete safe reusable
-prefix—including a retained text user-turn checkpoint when compatible—and
-reserves the selected session before batch submission. It never treats a
+prefix from all working sessions first. Only when none matches does it search
+the model's System cache pool and preload a separately selected working
+session. It never treats a
 coincidental partial token overlap inside a saved snapshot as reusable state.
 [Chapter 5](https://www.kronkai.com/manual#chapter-5-message-caching) zooms
 further into this planning step.

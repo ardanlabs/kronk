@@ -1236,16 +1236,16 @@ tr.selected:hover td {
 .imc-table-group-capacity,
 .imc-sessions-table tbody td:nth-child(-n+3),
 .imc-sessions-table tbody td:nth-child(n+7):nth-child(-n+9),
-.imc-sessions-table tbody td:nth-child(n+14):nth-child(-n+15) {
+.imc-sessions-table tbody td:nth-child(n+12):nth-child(-n+13) {
     background: color-mix(in srgb, var(--color-blue) 5%, transparent);
 }
 
 .imc-table-group-request,
-.imc-table-group-fallback,
+.imc-table-group-system,
 .imc-table-group-details,
 .imc-sessions-table tbody td:nth-child(n+4):nth-child(-n+6),
-.imc-sessions-table tbody td:nth-child(n+10):nth-child(-n+13),
-.imc-sessions-table tbody td:nth-child(n+16):nth-child(-n+17) {
+.imc-sessions-table tbody td:nth-child(n+10):nth-child(-n+11),
+.imc-sessions-table tbody td:nth-child(n+14):nth-child(-n+15) {
     background: color-mix(in srgb, var(--color-orange) 5%, transparent);
 }
 

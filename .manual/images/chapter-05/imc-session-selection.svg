@@ -1,198 +1,85 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
-  <title id="title">How IMC selects a session</title>
-  <desc id="desc">IMC compares the complete Current working cache and Fallback cache in every available session. The longest complete prefix of the new stable plan wins globally, and Current wins equal-length ties. Reserved sessions are skipped. With no match, IMC chooses an empty session, then an available least-recently-used session, or returns retryable busy when all sessions are reserved.</desc>
-
+  <title id="title">How IMC populates and selects Working and System caches</title>
+  <desc id="desc">A cache-worthy request stores its complete stable conversation in a Working session and its independently rendered System-only prefix in the model System pool. New requests search all Working sessions first. Only when none matches does Kronk search the System pool, copy an exact System hit into a separate empty or least-recently-used Working session, and build the remaining prompt there.</desc>
   <defs>
-    <filter id="shadow" x="-10%" y="-10%" width="120%" height="135%">
-      <feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.10"/>
-    </filter>
-    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
-      <path d="M 0 0 L 12 6 L 0 12 z" fill="#334155"/>
-    </marker>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="135%"><feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.10"/></filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth"><path d="M0 0L12 6L0 12z" fill="#334155"/></marker>
     <style>
-      .title { font: 700 42px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; letter-spacing: 0.4px; }
-      .subtitle { font: 400 21px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
-      .section { font: 700 25px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
-      .heading { font: 700 21px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
-      .body { font: 500 18px Inter, ui-sans-serif, system-ui, sans-serif; fill: #334155; }
-      .small { font: 500 18px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
-      .eyebrow { font: 700 18px Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 1.2px; }
-      .token { font: 700 19px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-anchor: middle; dominant-baseline: middle; }
-      .white { fill: #ffffff; }
-      .green { fill: #15803d; }
-      .red { fill: #b91c1c; }
-      .blue { fill: #1d4ed8; }
-      .muted { fill: #64748b; }
+      .title{font:700 42px Inter,ui-sans-serif,system-ui,sans-serif;fill:#0f172a;letter-spacing:.4px}.subtitle{font:400 21px Inter,ui-sans-serif,system-ui,sans-serif;fill:#475569}
+      .section{font:700 24px Inter,ui-sans-serif,system-ui,sans-serif;fill:#0f172a}.heading{font:700 20px Inter,ui-sans-serif,system-ui,sans-serif;fill:#0f172a}
+      .body{font:500 18px Inter,ui-sans-serif,system-ui,sans-serif;fill:#334155}.small{font:500 16px Inter,ui-sans-serif,system-ui,sans-serif;fill:#475569}
+      .eyebrow{font:700 17px Inter,ui-sans-serif,system-ui,sans-serif;letter-spacing:1.1px}.token{font:700 16px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;text-anchor:middle;dominant-baseline:middle}
+      .white{fill:#fff}.blue{fill:#1d4ed8}.green{fill:#15803d}.red{fill:#b91c1c}.orange{fill:#c2410c}.muted{fill:#64748b}
     </style>
   </defs>
+  <rect width="1920" height="1080" fill="#f8fafc"/><rect width="1920" height="12" fill="#0f766e"/>
+  <text class="title" x="70" y="67">IMC CACHE POPULATION AND SESSION SELECTION</text>
+  <text class="subtitle" x="70" y="105">Working sessions are the normal path. The separate System pool is consulted only after every Working session misses.</text>
 
-  <rect width="1920" height="1080" fill="#f8fafc"/>
-  <rect x="0" y="0" width="1920" height="12" fill="#0f766e"/>
+  <!-- Population -->
+  <text class="section" x="70" y="157">1 · POPULATE BOTH MODEL-OWNED POOLS</text>
+  <g filter="url(#shadow)"><rect x="70" y="180" width="1780" height="225" rx="24" fill="#fff" stroke="#cbd5e1" stroke-width="2"/></g>
+  <rect x="105" y="220" width="335" height="135" rx="16" fill="#f1f5f9" stroke="#94a3b8" stroke-width="2"/>
+  <text class="eyebrow muted" x="135" y="255">CACHE-WORTHY REQUEST</text>
+  <rect x="135" y="278" width="100" height="48" rx="9" fill="#16a34a"/><rect x="245" y="278" width="90" height="48" rx="9" fill="#3b82f6"/><rect x="345" y="278" width="65" height="48" rx="9" fill="#3b82f6"/>
+  <text class="token white" x="185" y="302">SYSTEM A</text><text class="token white" x="290" y="302">USER 1</text><text class="token white" x="377" y="302">…</text>
 
-  <text class="title" x="72" y="67">IMC SESSION SELECTION</text>
-  <text class="subtitle" x="72" y="105">Compare complete saved states across available sessions—then restore the one that avoids the most prefill work.</text>
+  <path d="M440 287H535" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+  <text class="small blue" x="487" y="265" text-anchor="middle">stable</text>
+  <rect x="555" y="205" width="560" height="175" rx="18" fill="#eff6ff" stroke="#60a5fa" stroke-width="2"/>
+  <text class="eyebrow blue" x="590" y="245">WORKING SESSION POOL · N ENTRIES</text>
+  <text class="body" x="590" y="278">Save the complete stable conversation.</text>
+  <rect x="590" y="305" width="100" height="46" rx="8" fill="#16a34a"/><rect x="700" y="305" width="90" height="46" rx="8" fill="#3b82f6"/><rect x="800" y="305" width="65" height="46" rx="8" fill="#3b82f6"/>
+  <text class="token white" x="640" y="328">SYSTEM A</text><text class="token white" x="745" y="328">USER 1</text><text class="token white" x="832" y="328">…</text><text class="small blue" x="895" y="334">Working 2</text>
 
-  <!-- New stable plan and selection rule -->
-  <g filter="url(#shadow)">
-    <rect x="70" y="140" width="1778" height="132" rx="24" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
-  </g>
-  <text class="eyebrow" x="106" y="179" fill="#475569">NEW STABLE TOKEN PLAN</text>
-  <g>
-    <rect x="106" y="198" width="46" height="46" rx="9" fill="#0f766e"/>
-    <rect x="161" y="198" width="46" height="46" rx="9" fill="#0f766e"/>
-    <rect x="216" y="198" width="46" height="46" rx="9" fill="#0f766e"/>
-    <rect x="271" y="198" width="46" height="46" rx="9" fill="#0f766e"/>
-    <rect x="326" y="198" width="46" height="46" rx="9" fill="#0f766e"/>
-    <rect x="381" y="198" width="46" height="46" rx="9" fill="#0f766e"/>
-    <rect x="436" y="198" width="46" height="46" rx="9" fill="#0f766e"/>
-    <text class="token white" x="129" y="221">A</text>
-    <text class="token white" x="184" y="221">B</text>
-    <text class="token white" x="239" y="221">C</text>
-    <text class="token white" x="294" y="221">D</text>
-    <text class="token white" x="349" y="221">E</text>
-    <text class="token white" x="404" y="221">F</text>
-    <text class="token white" x="459" y="221">G</text>
-  </g>
-  <path d="M 530 206 H 608" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
-  <text class="heading" x="642" y="194">Selection rule</text>
-  <text class="body" x="642" y="225">Longest complete prefix wins across Current and Fallback.</text>
-  <rect x="1274" y="178" width="532" height="66" rx="14" fill="#ecfeff" stroke="#2dd4bf" stroke-width="2"/>
-  <text class="eyebrow" x="1304" y="205" fill="#0f766e">EQUAL LENGTH?</text>
-  <text class="body" x="1304" y="231">Prefer Current—the normal append path.</text>
+  <path d="M440 330C500 395 1060 395 1130 330" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+  <text class="small green" x="820" y="395" text-anchor="middle">independent System-only render</text>
+  <rect x="1150" y="205" width="665" height="175" rx="18" fill="#ecfdf5" stroke="#4ade80" stroke-width="2"/>
+  <text class="eyebrow green" x="1185" y="245">SYSTEM CACHE POOL · N ENTRIES · RAM ONLY</text>
+  <text class="body" x="1185" y="278">Save only the exact rendered System boundary.</text>
+  <rect x="1185" y="305" width="100" height="46" rx="8" fill="#16a34a"/>
+  <text class="token white" x="1235" y="328">SYSTEM A</text><text class="small green" x="1315" y="334">System 0 · immutable · shared</text>
+  <rect x="1580" y="294" width="200" height="64" rx="12" fill="#fff" stroke="#86efac" stroke-width="2"/>
+  <text class="small" x="1680" y="320" text-anchor="middle">Not [SYSTEM][USER]</text><text class="small green" x="1680" y="345" text-anchor="middle">[SYSTEM] only</text>
 
-  <!-- Session candidates -->
-  <g filter="url(#shadow)">
-    <rect x="70" y="306" width="420" height="344" rx="24" fill="#ffffff" stroke="#86efac" stroke-width="2"/>
-  </g>
-  <rect x="70" y="306" width="420" height="62" rx="24" fill="#dcfce7"/>
-  <path d="M 70 338 Q 70 368 100 368 H 460 Q 490 368 490 338" fill="#dcfce7"/>
-  <text class="eyebrow green" x="104" y="345">SESSION 1</text>
-  <text class="heading" x="270" y="347">VALID CURRENT</text>
-  <text class="eyebrow" x="104" y="406" fill="#475569">CURRENT WORKING CACHE</text>
-  <g>
-    <rect x="104" y="424" width="42" height="42" rx="8" fill="#22c55e"/>
-    <rect x="155" y="424" width="42" height="42" rx="8" fill="#22c55e"/>
-    <rect x="206" y="424" width="42" height="42" rx="8" fill="#22c55e"/>
-    <text class="token white" x="125" y="445">A</text><text class="token white" x="176" y="445">B</text><text class="token white" x="227" y="445">C</text>
-  </g>
-  <text class="body green" x="268" y="451">Complete prefix · 3</text>
-  <line x1="104" y1="493" x2="456" y2="493" stroke="#e2e8f0" stroke-width="2"/>
-  <text class="eyebrow" x="104" y="529" fill="#475569">FALLBACK CACHE</text>
-  <g>
-    <rect x="104" y="547" width="42" height="42" rx="8" fill="#94a3b8"/>
-    <rect x="155" y="547" width="42" height="42" rx="8" fill="#94a3b8"/>
-    <text class="token white" x="125" y="568">A</text><text class="token white" x="176" y="568">B</text>
-  </g>
-  <text class="body" x="217" y="574">Complete prefix · 2</text>
-  <text class="small muted" x="104" y="625">Usable, but not the longest match.</text>
+  <!-- Working selection -->
+  <text class="section" x="70" y="460">2 · START A REQUEST — SEARCH EVERY AVAILABLE WORKING SESSION FIRST</text>
+  <g filter="url(#shadow)"><rect x="70" y="485" width="1780" height="260" rx="24" fill="#fff" stroke="#cbd5e1" stroke-width="2"/></g>
+  <rect x="105" y="525" width="320" height="175" rx="18" fill="#f1f5f9" stroke="#94a3b8" stroke-width="2"/>
+  <text class="eyebrow muted" x="135" y="562">NEW STABLE PLAN</text>
+  <rect x="135" y="588" width="92" height="44" rx="8" fill="#0f766e"/><rect x="237" y="588" width="80" height="44" rx="8" fill="#0f766e"/><rect x="327" y="588" width="68" height="44" rx="8" fill="#0f766e"/>
+  <text class="token white" x="181" y="610">SYSTEM A</text><text class="token white" x="277" y="610">USER X</text><text class="token white" x="361" y="610">…</text>
+  <text class="small muted" x="135" y="670">Reserved sessions are skipped.</text>
+  <path d="M425 612H505" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
 
-  <g filter="url(#shadow)">
-    <rect x="514" y="306" width="420" height="344" rx="24" fill="#ffffff" stroke="#fca5a5" stroke-width="2"/>
-  </g>
-  <rect x="514" y="306" width="420" height="62" rx="24" fill="#fee2e2"/>
-  <path d="M 514 338 Q 514 368 544 368 H 904 Q 934 368 934 338" fill="#fee2e2"/>
-  <text class="eyebrow red" x="548" y="345">SESSION 2</text>
-  <text class="heading" x="714" y="347">VALID FALLBACK</text>
-  <text class="eyebrow" x="548" y="406" fill="#475569">CURRENT WORKING CACHE</text>
-  <g>
-    <rect x="548" y="424" width="42" height="42" rx="8" fill="#94a3b8"/>
-    <rect x="599" y="424" width="42" height="42" rx="8" fill="#94a3b8"/>
-    <rect x="650" y="424" width="42" height="42" rx="8" fill="#ef4444"/>
-    <text class="token white" x="569" y="445">A</text><text class="token white" x="620" y="445">B</text><text class="token white" x="671" y="445">X</text>
-  </g>
-  <text class="body red" x="712" y="451">Diverges · reject</text>
-  <line x1="548" y1="493" x2="900" y2="493" stroke="#e2e8f0" stroke-width="2"/>
-  <text class="eyebrow" x="548" y="529" fill="#475569">FALLBACK CACHE</text>
-  <g>
-    <rect x="548" y="547" width="42" height="42" rx="8" fill="#22c55e"/>
-    <rect x="599" y="547" width="42" height="42" rx="8" fill="#22c55e"/>
-    <text class="token white" x="569" y="568">A</text><text class="token white" x="620" y="568">B</text>
-  </g>
-  <text class="body green" x="661" y="574">Complete prefix · 2</text>
-  <text class="small muted" x="548" y="625">Fallback remains safe and complete.</text>
+  <rect x="525" y="525" width="330" height="175" rx="18" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+  <text class="eyebrow blue" x="555" y="562">WORKING 0</text><text class="body" x="555" y="594">[SYSTEM A][USER 1]…</text>
+  <text class="small red" x="555" y="628">Diverges · reject</text><text class="small muted" x="555" y="666">No partial-prefix trimming</text>
+  <rect x="885" y="525" width="330" height="175" rx="18" fill="#eff6ff" stroke="#22c55e" stroke-width="4"/>
+  <text class="eyebrow green" x="915" y="562">WORKING 1 · SELECTED</text><text class="body" x="915" y="594">[SYSTEM A][USER X]</text>
+  <text class="small green" x="915" y="628">Complete prefix · longest hit</text><text class="small" x="915" y="666">Restore and append normally</text>
+  <rect x="1245" y="525" width="270" height="175" rx="18" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+  <text class="eyebrow blue" x="1275" y="562">WORKING 2</text><text class="body" x="1275" y="594">[SYSTEM A]</text>
+  <text class="small green" x="1275" y="628">Complete prefix · shorter</text><text class="small muted" x="1275" y="666">Usable, not selected</text>
+  <rect x="1545" y="525" width="270" height="175" rx="18" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
+  <text class="eyebrow muted" x="1575" y="562">WORKING 3</text><text class="body muted" x="1575" y="594">Reserved</text>
+  <text class="small muted" x="1575" y="628">Another request owns it</text><text class="small muted" x="1575" y="666">Do not inspect or reset</text>
 
-  <g filter="url(#shadow)">
-    <rect x="958" y="306" width="510" height="344" rx="24" fill="#ffffff" stroke="#22c55e" stroke-width="4"/>
-  </g>
-  <rect x="958" y="306" width="510" height="62" rx="24" fill="#14532d"/>
-  <path d="M 958 338 Q 958 368 988 368 H 1438 Q 1468 368 1468 338" fill="#14532d"/>
-  <text class="eyebrow white" x="992" y="345">SESSION 3</text>
-  <text class="heading white" x="1160" y="347">SELECTED FALLBACK</text>
-  <text class="eyebrow" x="992" y="406" fill="#475569">CURRENT WORKING CACHE</text>
-  <g>
-    <rect x="992" y="424" width="42" height="42" rx="8" fill="#94a3b8"/>
-    <rect x="1043" y="424" width="42" height="42" rx="8" fill="#94a3b8"/>
-    <rect x="1094" y="424" width="42" height="42" rx="8" fill="#94a3b8"/>
-    <rect x="1145" y="424" width="42" height="42" rx="8" fill="#94a3b8"/>
-    <rect x="1196" y="424" width="42" height="42" rx="8" fill="#ef4444"/>
-    <text class="token white" x="1013" y="445">A</text><text class="token white" x="1064" y="445">B</text><text class="token white" x="1115" y="445">C</text><text class="token white" x="1166" y="445">D</text><text class="token white" x="1217" y="445">X</text>
-  </g>
-  <text class="body red" x="1260" y="451">Diverges · reject</text>
-  <line x1="992" y1="493" x2="1434" y2="493" stroke="#e2e8f0" stroke-width="2"/>
-  <text class="eyebrow" x="992" y="529" fill="#475569">FALLBACK CACHE</text>
-  <g>
-    <rect x="992" y="547" width="42" height="42" rx="8" fill="#22c55e"/>
-    <rect x="1043" y="547" width="42" height="42" rx="8" fill="#22c55e"/>
-    <rect x="1094" y="547" width="42" height="42" rx="8" fill="#22c55e"/>
-    <rect x="1145" y="547" width="42" height="42" rx="8" fill="#22c55e"/>
-    <text class="token white" x="1013" y="568">A</text><text class="token white" x="1064" y="568">B</text><text class="token white" x="1115" y="568">C</text><text class="token white" x="1166" y="568">D</text>
-  </g>
-  <text class="body green" x="1208" y="574">Complete prefix · 4</text>
-  <rect x="992" y="604" width="442" height="28" rx="8" fill="#dcfce7"/>
-  <text class="eyebrow green" x="1213" y="625" text-anchor="middle">FALLBACK 4 BEATS CURRENT 3 IN SESSION 1</text>
+  <!-- System selection -->
+  <text class="section" x="70" y="800">3 · ONLY WHEN ALL WORKING SESSIONS MISS — SEARCH SYSTEM, THEN CHOOSE A WORKING DESTINATION</text>
+  <g filter="url(#shadow)"><rect x="70" y="825" width="1780" height="180" rx="24" fill="#fff" stroke="#fbbf24" stroke-width="2"/></g>
+  <rect x="105" y="855" width="300" height="120" rx="16" fill="#fff7ed" stroke="#fb923c" stroke-width="2"/>
+  <text class="eyebrow orange" x="135" y="892">ALL WORKING MISS</text><text class="body" x="135" y="927">Now inspect System pool</text><text class="small muted" x="135" y="956">Never search System earlier</text>
+  <path d="M405 915H480" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+  <rect x="500" y="855" width="355" height="120" rx="16" fill="#ecfdf5" stroke="#22c55e" stroke-width="4"/>
+  <text class="eyebrow green" x="530" y="892">SYSTEM 0 · EXACT HIT</text><text class="body" x="530" y="927">[SYSTEM A] token sequence</text><text class="small green" x="530" y="956">Reserve immutable source during copy</text>
+  <path d="M855 915H930" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+  <rect x="950" y="855" width="380" height="120" rx="16" fill="#eff6ff" stroke="#60a5fa" stroke-width="2"/>
+  <text class="eyebrow blue" x="980" y="892">SELECT EMPTY OR AVAILABLE LRU</text><text class="body" x="980" y="927">Copy System 0 → Working destination</text><text class="small blue" x="980" y="956">Prefill suffix; publish complete Current</text>
+  <text class="eyebrow orange" x="1378" y="921" text-anchor="middle">OR</text>
+  <rect x="1425" y="855" width="390" height="120" rx="16" fill="#fff7ed" stroke="#fb923c" stroke-width="2"/>
+  <text class="eyebrow orange" x="1455" y="892">NO EXACT SYSTEM HIT</text><text class="body" x="1455" y="927">Build Working from the beginning</text><text class="small" x="1455" y="956">Publish System; rotate oldest available if full</text>
 
-  <g filter="url(#shadow)">
-    <rect x="1492" y="306" width="356" height="344" rx="24" fill="#ffffff" stroke="#93c5fd" stroke-width="2"/>
-  </g>
-  <rect x="1492" y="306" width="356" height="62" rx="24" fill="#dbeafe"/>
-  <path d="M 1492 338 Q 1492 368 1522 368 H 1818 Q 1848 368 1848 338" fill="#dbeafe"/>
-  <text class="eyebrow blue" x="1526" y="345">SESSION 4</text>
-  <text class="heading" x="1690" y="347">RESERVED</text>
-  <rect x="1526" y="402" width="288" height="92" rx="16" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
-  <text class="heading" x="1670" y="439" text-anchor="middle">Skip this session</text>
-  <text class="small" x="1670" y="470" text-anchor="middle">Another request owns it.</text>
-  <text class="eyebrow" x="1526" y="539" fill="#475569">CURRENT WORKING CACHE</text>
-  <text class="body muted" x="1526" y="572">Not inspected</text>
-  <text class="eyebrow" x="1526" y="610" fill="#475569">FALLBACK CACHE</text>
-  <text class="body muted" x="1526" y="638">Not inspected</text>
-
-  <!-- Rebuild path -->
-  <line x1="70" y1="691" x2="1848" y2="691" stroke="#cbd5e1" stroke-width="2"/>
-  <text class="section" x="72" y="735">NO COMPLETE CACHE MATCH?</text>
-  <text class="subtitle" x="470" y="735">Choose where to rebuild the new Current state.</text>
-
-  <rect x="70" y="773" width="330" height="168" rx="20" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
-  <text class="eyebrow" x="102" y="813" fill="#475569">START</text>
-  <text class="heading" x="102" y="853">No available cache is</text>
-  <text class="heading" x="102" y="883">a complete prefix</text>
-  <text class="small muted" x="102" y="918">Reusable tokens = 0</text>
-
-  <path d="M 414 857 H 482" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
-
-  <rect x="502" y="773" width="338" height="168" rx="20" fill="#ffffff" stroke="#93c5fd" stroke-width="2"/>
-  <text class="eyebrow blue" x="534" y="813">FIRST CHOICE</text>
-  <text class="heading" x="534" y="853">Empty session available?</text>
-  <rect x="534" y="885" width="274" height="36" rx="9" fill="#dbeafe"/>
-  <text class="body blue" x="671" y="910" text-anchor="middle">Yes → select empty</text>
-
-  <path d="M 854 857 H 922" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
-  <text class="eyebrow red" x="892" y="827" text-anchor="middle">NO</text>
-
-  <rect x="942" y="773" width="338" height="168" rx="20" fill="#ffffff" stroke="#fbbf24" stroke-width="2"/>
-  <text class="eyebrow" x="974" y="813" fill="#b45309">SECOND CHOICE</text>
-  <text class="heading" x="974" y="853">Available LRU session?</text>
-  <rect x="974" y="885" width="274" height="36" rx="9" fill="#fef3c7"/>
-  <text class="body" x="1111" y="910" text-anchor="middle">Yes → select and reset</text>
-
-  <path d="M 1294 857 H 1362" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
-  <text class="eyebrow red" x="1332" y="827" text-anchor="middle">NO</text>
-
-  <rect x="1382" y="773" width="466" height="168" rx="20" fill="#fff1f2" stroke="#f87171" stroke-width="2"/>
-  <text class="eyebrow red" x="1416" y="813">ALL SESSIONS RESERVED</text>
-  <text class="heading" x="1416" y="853">Return retryable busy</text>
-  <text class="small" x="1416" y="885">No session can be safely reused</text>
-  <text class="small" x="1416" y="915">or reset while another request owns it.</text>
-
-  <rect x="70" y="978" width="1778" height="64" rx="14" fill="#0f172a"/>
-  <text class="body white" x="959" y="1017" text-anchor="middle">Safety rule: restore only a complete serialized Current or Fallback cache—never trim a divergent cache to its coincidental token overlap.</text>
+  <rect x="70" y="1025" width="1780" height="40" rx="12" fill="#0f172a"/>
+  <text class="body white" x="960" y="1051" text-anchor="middle">Current-first invariant: a Working hit always wins. System is a shared preload source, never the Working destination and never a user-turn cache.</text>
 </svg>

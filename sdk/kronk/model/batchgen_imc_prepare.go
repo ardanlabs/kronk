@@ -80,9 +80,9 @@ func (e *batchEngine) advanceIMCPreparationSlot(s *slot, selectorStart, selected
 	prep := s.imcPrep
 	job := s.job
 	chunkSize := e.imcPreparationChunkSize()
-	checkpoint := job.imcCheckpointTokens
+	boundary := job.imcSystemBoundaryTokens
 	end := imcPreparationChunkEnd(prep.nextToken, prep.position, len(job.imcNewCacheTokens),
-		chunkSize, checkpoint, job.imcNewTotalCached)
+		chunkSize, boundary, job.imcNewTotalCached)
 
 	chunk := job.imcNewCacheTokens[prep.nextToken:end]
 	e.publishDiagnostics(true)
@@ -116,17 +116,8 @@ func (e *batchEngine) advanceIMCPreparationSlot(s *slot, selectorStart, selected
 		"next_position", prep.position, "remaining_tokens", len(job.imcNewCacheTokens)-prep.nextToken,
 		"elapsed", fmtDur(elapsed))
 
-	if checkpoint > int(prep.cacheIdx) && checkpoint < job.imcNewTotalCached && prep.position == checkpoint {
-		checkpointPublished := e.snapshotProgressiveCheckpoint(job.ctx, s, job, checkpoint)
-		if !checkpointPublished && job.reusedPromptTokens > 0 {
-			preserved, preserveErr := e.model.imcPreserveCurrentSnapshot(job.ctx, job.imcSession, false)
-			if preserveErr != nil || !preserved {
-				prep.sessionUpdateDisabled = true
-				e.model.log(job.ctx, "start-slot", "status", "imc-progressive-update-disabled",
-					"session_id", job.imcSessionID, "reused_tokens", job.reusedPromptTokens,
-					"checkpoint_tokens", checkpoint, "err", preserveErr)
-			}
-		}
+	if boundary > int(prep.cacheIdx) && boundary < job.imcNewTotalCached && prep.position == boundary {
+		e.snapshotSystemCache(job.ctx, s, job, boundary)
 	}
 
 	if prep.nextToken < len(job.imcNewCacheTokens) {
@@ -134,20 +125,13 @@ func (e *batchEngine) advanceIMCPreparationSlot(s *slot, selectorStart, selected
 	}
 
 	job.imcPhysicalCached = job.imcNewTotalCached
-	if job.imcPromoteCheckpoint && !prep.sessionUpdateDisabled {
-		if err := e.model.imcPromoteTurnCheckpoint(job.ctx, job.imcSession); err != nil {
-			prep.sessionUpdateDisabled = true
-			e.model.log(job.ctx, "start-slot", "status", "imc-reusable-preserve-failed",
-				"session_id", job.imcSessionID, "err", err)
-		}
-	}
 
 	sessionWasCommitted := false
 	if !prep.sessionUpdateDisabled {
 		hasMedia := len(job.imcMediaKVCounts) > 0
 		e.model.imcCommitSession(job.imcSession, job.imcNewMsgsHash, job.imcNewTotalCached,
 			job.imcNewCachedMsgCount, job.imcNewCachedTokens, hasMedia, job.imcMediaKVCounts,
-			job.imcExpectedRenderHash, job.imcNewEndsAtUser)
+			job.imcExpectedRenderHash)
 		e.model.cacheMu.Lock()
 		job.imcSession.promptPlan = job.imcPromptPlan
 		e.model.cacheMu.Unlock()
@@ -184,13 +168,13 @@ func (e *batchEngine) imcPreparationChunkSize() int {
 	return e.model.cfg.PrefillBatchSize()
 }
 
-func imcPreparationChunkEnd(nextToken, position, totalTokens, chunkSize, checkpoint, finalPosition int) int {
+func imcPreparationChunkEnd(nextToken, position, totalTokens, chunkSize, boundary, finalPosition int) int {
 	end := min(nextToken+chunkSize, totalTokens)
 
-	// Do not cross the progressive checkpoint boundary in a chunk. The
-	// checkpoint must describe exactly that target/draft position.
-	if checkpoint > position && checkpoint < finalPosition {
-		end = min(end, nextToken+checkpoint-position)
+	// Do not cross the System cache boundary in a chunk. The preload must
+	// describe exactly that target/draft position.
+	if boundary > position && boundary < finalPosition {
+		end = min(end, nextToken+boundary-position)
 	}
 
 	return end

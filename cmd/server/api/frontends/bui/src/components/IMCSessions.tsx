@@ -1,43 +1,55 @@
 import { useEffect, useState } from 'react';
 import { api } from '../services/api';
-import type { IMCSessionsResponse } from '../types';
+import type { IMCSessionDetail, IMCSessionsResponse, IMCSystemCacheDetail, IMCSystemCachesResponse } from '../types';
+import { formatBytes } from '../lib/format';
 import { labelWithTip, PARAM_TOOLTIPS, type TooltipKey } from './ParamTooltips';
 
-type SortField = 'model_id' | 'id' | 'state' | 'messages' | 'context' | 'allocated' | 'fallback_kind' | 'reusable_tokens' | 'checkpoint_allocated' | 'fallback_updates' | 'input_tokens' | 'output_tokens' | 'request_context' | 'peak_context' | 'utilization' | 'last_used' | 'has_media';
+type View = 'current' | 'system';
+type CurrentSort = 'model_id' | 'id' | 'state' | 'messages' | 'context' | 'allocated' | 'snapshot_bytes' | 'input_tokens' | 'output_tokens' | 'request_context' | 'peak_context' | 'utilization' | 'last_used' | 'has_media';
+type SystemSort = 'model_id' | 'id' | 'tokens' | 'allocated' | 'snapshot_bytes' | 'restore_count' | 'active_restores' | 'last_used';
 
-const STATE_ORDER = { active: 0, idle: 1, empty: 2 } as const;
 const ALL_MODELS = '';
-
-const FIELD_GUIDE: ReadonlyArray<{ label: string; tooltipKey: TooltipKey }> = [
-  { label: 'Model', tooltipKey: 'imcModelID' },
-  { label: 'Cache Entry', tooltipKey: 'imcSessionID' },
-  { label: 'State', tooltipKey: 'imcState' },
-  { label: 'Current Messages', tooltipKey: 'imcMessages' },
-  { label: 'Current Tokens', tooltipKey: 'imcContext' },
-  { label: 'Current Allocated', tooltipKey: 'imcAllocated' },
-  { label: 'Fallback Tokens', tooltipKey: 'imcFallbackTokens' },
-  { label: 'Fallback Allocated', tooltipKey: 'imcCheckpointAllocated' },
-  { label: 'Fallback Kind', tooltipKey: 'imcFallbackKind' },
-  { label: 'Fallback Updates', tooltipKey: 'imcFallbackUpdates' },
-  { label: 'Latest Request Input', tooltipKey: 'imcInputTokens' },
-  { label: 'Latest Request Output', tooltipKey: 'imcOutputTokens' },
-  { label: 'Latest Request Context', tooltipKey: 'imcRequestTotal' },
-  { label: 'Peak Context', tooltipKey: 'imcPeakContext' },
-  { label: 'Peak Used', tooltipKey: 'imcUtilization' },
-  { label: 'Media', tooltipKey: 'imcMedia' },
-  { label: 'Last Used', tooltipKey: 'imcLastUsed' },
+const STATE_ORDER = { active: 0, idle: 1, empty: 2 } as const;
+const CURRENT_GUIDE: ReadonlyArray<[string, TooltipKey]> = [
+  ['Model', 'imcModelID'], ['Cache Entry', 'imcSessionID'], ['State', 'imcState'],
+  ['Current Messages', 'imcMessages'], ['Current Tokens', 'imcContext'], ['Current Allocated', 'imcAllocated'],
+  ['Snapshot Memory', 'imcSnapshotBytes'],
+  ['Latest Request Input', 'imcInputTokens'], ['Latest Request Output', 'imcOutputTokens'],
+  ['Latest Request Context', 'imcRequestTotal'], ['Peak Context', 'imcPeakContext'],
+  ['Peak Used', 'imcUtilization'], ['Media', 'imcMedia'], ['Last Used', 'imcLastUsed'],
 ];
+const SYSTEM_GUIDE: ReadonlyArray<[string, TooltipKey]> = [
+  ['Model', 'imcModelID'], ['Cache Entry', 'imcSystemCacheID'], ['System Tokens', 'imcSystemContext'],
+  ['Allocated', 'imcSystemAllocated'], ['Snapshot Memory', 'imcSystemSnapshotBytes'], ['Restores', 'imcSystemRestores'],
+  ['Active Restores', 'imcSystemActiveRestores'], ['Last Used', 'imcLastUsed'],
+];
+const VIEW_STORAGE_KEY = 'kronk-imc-view';
+const MODEL_STORAGE_KEY = 'kronk-imc-model';
 
-function formatDate(dateStr: string): string {
-  if (!dateStr || dateStr.startsWith('0001-01-01')) return '—';
-  const date = new Date(dateStr);
-  if (Number.isNaN(date.getTime())) return '—';
-  return date.toLocaleString();
+function storedView(): View {
+  try {
+    return sessionStorage.getItem(VIEW_STORAGE_KEY) === 'system' ? 'system' : 'current';
+  } catch {
+    return 'current';
+  }
 }
 
-function utilization(peakContext: number, contextWindow: number): string {
-  if (contextWindow <= 0) return '0%';
-  return `${((peakContext / contextWindow) * 100).toFixed(1)}%`;
+function storedModel(): string {
+  try {
+    return sessionStorage.getItem(MODEL_STORAGE_KEY) ?? ALL_MODELS;
+  } catch {
+    return ALL_MODELS;
+  }
+}
+
+function formatDate(value: string): string {
+  if (!value || value.startsWith('0001-01-01')) return '—';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString();
+}
+
+function utilization(peak: number, window: number): string {
+  return window > 0 ? `${((peak / window) * 100).toFixed(1)}%` : '0%';
 }
 
 function modelTabLabel(modelID: string): string {
@@ -46,315 +58,169 @@ function modelTabLabel(modelID: string): string {
 }
 
 export default function IMCSessions() {
-  const [data, setData] = useState<IMCSessionsResponse | null>(null);
+  const [sessions, setSessions] = useState<IMCSessionsResponse | null>(null);
+  const [systemCaches, setSystemCaches] = useState<IMCSystemCachesResponse | null>(null);
+  const [view, setView] = useState<View>(storedView);
+  const [selectedModel, setSelectedModel] = useState(storedModel);
+  const [currentSort, setCurrentSort] = useState<CurrentSort>('last_used');
+  const [currentAscending, setCurrentAscending] = useState(false);
+  const [systemSort, setSystemSort] = useState<SystemSort>('last_used');
+  const [systemAscending, setSystemAscending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showFieldGuide, setShowFieldGuide] = useState(false);
-  const [selectedModel, setSelectedModel] = useState(ALL_MODELS);
-  const [sortField, setSortField] = useState<SortField>('last_used');
-  const [sortAscending, setSortAscending] = useState(false);
 
-  const loadSessions = async (silent = false) => {
+  const load = async (silent = false) => {
     if (!silent) setLoading(true);
     setError(null);
     try {
-      const sessions = await api.listIMCSessions();
-      setData(sessions);
-      setSelectedModel((current) => (
-        current === ALL_MODELS || sessions.some((session) => session.model_id === current)
-          ? current
-          : ALL_MODELS
-      ));
+      const [nextSessions, nextSystemCaches] = await Promise.all([
+        api.listIMCSessions(), api.listIMCSystemCaches(),
+      ]);
+      setSessions(nextSessions);
+      setSystemCaches(nextSystemCaches);
+      const models = new Set([...nextSessions, ...nextSystemCaches].map((entry) => entry.model_id));
+      setSelectedModel((current) => current === ALL_MODELS || models.has(current) ? current : ALL_MODELS);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load IMC sessions');
+      setError(err instanceof Error ? err.message : 'Failed to load IMC caches');
     } finally {
       if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadSessions();
-
-    const id = window.setInterval(() => {
-      loadSessions(true);
-    }, 5000);
-
+    load();
+    const id = window.setInterval(() => load(true), 5000);
     return () => window.clearInterval(id);
   }, []);
 
   useEffect(() => {
-    if (!showFieldGuide) return;
+    try { sessionStorage.setItem(VIEW_STORAGE_KEY, view); } catch { /* Storage may be unavailable. */ }
+  }, [view]);
 
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setShowFieldGuide(false);
-    };
+  useEffect(() => {
+    try { sessionStorage.setItem(MODEL_STORAGE_KEY, selectedModel); } catch { /* Storage may be unavailable. */ }
+  }, [selectedModel]);
+
+  useEffect(() => {
+    if (!showFieldGuide) return;
+    const handleKey = (event: KeyboardEvent) => event.key === 'Escape' && setShowFieldGuide(false);
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
   }, [showFieldGuide]);
 
-  const handleSort = (field: SortField) => {
-    if (field === sortField) {
-      setSortAscending((ascending) => !ascending);
-      return;
-    }
-
-    setSortField(field);
-    setSortAscending(true);
+  const sortCurrent = (field: CurrentSort) => {
+    if (field === currentSort) setCurrentAscending((ascending) => !ascending);
+    else { setCurrentSort(field); setCurrentAscending(true); }
   };
+  const sortSystem = (field: SystemSort) => {
+    if (field === systemSort) setSystemAscending((ascending) => !ascending);
+    else { setSystemSort(field); setSystemAscending(true); }
+  };
+  const currentIndicator = (field: CurrentSort) => currentSort === field ? (currentAscending ? ' ▲' : ' ▼') : '';
+  const systemIndicator = (field: SystemSort) => systemSort === field ? (systemAscending ? ' ▲' : ' ▼') : '';
 
-  const sortIndicator = (field: SortField) => (
-    <span className="catalog-table-sort-indicator">
-      {sortField === field ? (sortAscending ? ' ▲' : ' ▼') : ''}
-    </span>
-  );
-
-  const modelIDs = [...new Set((data ?? []).map((session) => session.model_id))]
+  const modelIDs = [...new Set([...(sessions ?? []), ...(systemCaches ?? [])].map((entry) => entry.model_id))]
     .sort((a, b) => a.localeCompare(b));
+  const filteredSessions = (sessions ?? []).filter((entry) => selectedModel === ALL_MODELS || entry.model_id === selectedModel);
+  const filteredSystemCaches = (systemCaches ?? []).filter((entry) => selectedModel === ALL_MODELS || entry.model_id === selectedModel);
 
-  const visibleData = selectedModel === ALL_MODELS
-    ? data
-    : data?.filter((session) => session.model_id === selectedModel);
-
-  const sortedData = visibleData ? [...visibleData].sort((a, b) => {
-    let comparison = 0;
-    switch (sortField) {
-      case 'model_id':
-        comparison = a.model_id.localeCompare(b.model_id);
-        break;
-      case 'id':
-        comparison = a.id - b.id;
-        break;
-      case 'state':
-        comparison = STATE_ORDER[a.state] - STATE_ORDER[b.state];
-        break;
-      case 'messages':
-        comparison = a.messages - b.messages;
-        break;
-      case 'context':
-        comparison = a.context - b.context;
-        break;
-      case 'allocated':
-        comparison = a.allocated - b.allocated;
-        break;
-      case 'fallback_kind':
-        comparison = a.fallback_kind.localeCompare(b.fallback_kind);
-        break;
-      case 'reusable_tokens':
-        comparison = a.reusable_tokens - b.reusable_tokens;
-        break;
-      case 'checkpoint_allocated':
-        comparison = a.checkpoint_allocated - b.checkpoint_allocated;
-        break;
-      case 'fallback_updates':
-        comparison = a.fallback_updates - b.fallback_updates;
-        break;
-      case 'input_tokens':
-        comparison = a.input_tokens - b.input_tokens;
-        break;
-      case 'output_tokens':
-        comparison = a.output_tokens - b.output_tokens;
-        break;
-      case 'request_context':
-        comparison = (a.input_tokens + a.output_tokens) - (b.input_tokens + b.output_tokens);
-        break;
-      case 'peak_context':
-        comparison = a.peak_context - b.peak_context;
-        break;
-      case 'utilization':
-        comparison = (a.context_window > 0 ? a.peak_context / a.context_window : 0)
-          - (b.context_window > 0 ? b.peak_context / b.context_window : 0);
-        break;
-      case 'last_used':
-        comparison = Date.parse(a.last_used) - Date.parse(b.last_used);
-        break;
-      case 'has_media':
-        comparison = Number(a.has_media) - Number(b.has_media);
-        break;
+  const sortedSessions = filteredSessions.sort((a, b) => {
+    let comparison: number;
+    switch (currentSort) {
+      case 'model_id': comparison = a.model_id.localeCompare(b.model_id); break;
+      case 'id': comparison = a.id - b.id; break;
+      case 'state': comparison = STATE_ORDER[a.state] - STATE_ORDER[b.state]; break;
+      case 'messages': comparison = a.messages - b.messages; break;
+      case 'context': comparison = a.context - b.context; break;
+      case 'allocated': comparison = a.allocated - b.allocated; break;
+      case 'snapshot_bytes': comparison = a.snapshot_bytes - b.snapshot_bytes; break;
+      case 'input_tokens': comparison = a.input_tokens - b.input_tokens; break;
+      case 'output_tokens': comparison = a.output_tokens - b.output_tokens; break;
+      case 'request_context': comparison = a.input_tokens + a.output_tokens - b.input_tokens - b.output_tokens; break;
+      case 'peak_context': comparison = a.peak_context - b.peak_context; break;
+      case 'utilization': comparison = ratio(a) - ratio(b); break;
+      case 'has_media': comparison = Number(a.has_media) - Number(b.has_media); break;
+      case 'last_used': comparison = Date.parse(a.last_used) - Date.parse(b.last_used); break;
     }
+    comparison ||= a.model_id.localeCompare(b.model_id) || a.id - b.id;
+    return currentAscending ? comparison : -comparison;
+  });
 
-    if (comparison === 0) {
-      comparison = a.model_id.localeCompare(b.model_id) || a.id - b.id;
+  const sortedSystemCaches = filteredSystemCaches.sort((a, b) => {
+    let comparison: number;
+    switch (systemSort) {
+      case 'model_id': comparison = a.model_id.localeCompare(b.model_id); break;
+      case 'id': comparison = a.id - b.id; break;
+      case 'tokens': comparison = a.tokens - b.tokens; break;
+      case 'allocated': comparison = a.allocated - b.allocated; break;
+      case 'snapshot_bytes': comparison = a.snapshot_bytes - b.snapshot_bytes; break;
+      case 'restore_count': comparison = a.restore_count - b.restore_count; break;
+      case 'active_restores': comparison = a.active_restores - b.active_restores; break;
+      case 'last_used': comparison = Date.parse(a.last_used) - Date.parse(b.last_used); break;
     }
-    return sortAscending ? comparison : -comparison;
-  }) : null;
+    comparison ||= a.model_id.localeCompare(b.model_id) || a.id - b.id;
+    return systemAscending ? comparison : -comparison;
+  });
+
+  const guide = view === 'current' ? CURRENT_GUIDE : SYSTEM_GUIDE;
 
   return (
     <div>
       <div className="page-header-with-action">
-        <div>
-          <h2>IMC Sessions</h2>
-          <p className="page-description">
-            Current working and fallback cache snapshots for loaded models
-          </p>
-        </div>
+        <div><h2>IMC Sessions</h2><p className="page-description">Working sessions and reusable System prompt caches for loaded models</p></div>
         <div style={{ display: 'flex', gap: '8px' }}>
-          <button className="btn btn-secondary" onClick={() => setShowFieldGuide(true)}>
-            Field Guide
-          </button>
-          <button className="btn btn-primary" onClick={() => loadSessions()} disabled={loading}>
-            Refresh
-          </button>
+          <button className="btn btn-secondary" onClick={() => setShowFieldGuide(true)}>Field Guide</button>
+          <button className="btn btn-primary" onClick={() => load()} disabled={loading}>Refresh</button>
         </div>
+      </div>
+
+      <div className="tabs" role="tablist" aria-label="IMC cache type">
+        <button type="button" role="tab" aria-selected={view === 'current'} className={`tab ${view === 'current' ? 'active' : ''}`} onClick={() => setView('current')}>Working Sessions</button>
+        <button type="button" role="tab" aria-selected={view === 'system'} className={`tab ${view === 'system' ? 'active' : ''}`} onClick={() => setView('system')}>System Caches</button>
       </div>
 
       {showFieldGuide && (
         <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="imc-field-guide-title" onClick={() => setShowFieldGuide(false)}>
           <div className="modal-content" onClick={(event) => event.stopPropagation()}>
-            <div className="modal-header">
-              <h3 id="imc-field-guide-title">IMC Session Field Guide</h3>
-              <button className="modal-close" onClick={() => setShowFieldGuide(false)} aria-label="Close field guide">
-                ×
-              </button>
-            </div>
-            <div className="modal-body">
-              <p style={{ marginTop: 0 }}>
-                Each loaded model owns an independent bounded set of cache entries. Unloading a model removes its entries.
-              </p>
-              <dl style={{ margin: '24px 0 0', display: 'grid', gap: '20px' }}>
-                {FIELD_GUIDE.map(({ label, tooltipKey }) => (
-                  <div key={tooltipKey}>
-                    <dt><strong>{label}</strong></dt>
-                    <dd style={{ margin: '4px 0 0' }}>{PARAM_TOOLTIPS[tooltipKey]}</dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
+            <div className="modal-header"><h3 id="imc-field-guide-title">IMC {view === 'current' ? 'Working Session' : 'System Cache'} Field Guide</h3><button className="modal-close" onClick={() => setShowFieldGuide(false)} aria-label="Close field guide">×</button></div>
+            <div className="modal-body"><dl style={{ margin: 0, display: 'grid', gap: '20px' }}>{guide.map(([label, key]) => <div key={key}><dt><strong>{label}</strong></dt><dd style={{ margin: '4px 0 0' }}>{PARAM_TOOLTIPS[key]}</dd></div>)}</dl></div>
           </div>
         </div>
       )}
 
       {error && <div className="alert alert-error">{error}</div>}
-
-      {data && data.length > 0 && (
-        <div className="tabs imc-model-tabs" role="tablist" aria-label="IMC sessions by model">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={selectedModel === ALL_MODELS}
-            className={`tab ${selectedModel === ALL_MODELS ? 'active' : ''}`}
-            onClick={() => setSelectedModel(ALL_MODELS)}
-          >
-            All
-          </button>
-          {modelIDs.map((modelID) => (
-            <button
-              key={modelID}
-              type="button"
-              role="tab"
-              aria-selected={selectedModel === modelID}
-              className={`tab imc-model-tab ${selectedModel === modelID ? 'active' : ''}`}
-              title={modelID}
-              onClick={() => setSelectedModel(modelID)}
-            >
-              <span className="imc-model-tab-label">{modelTabLabel(modelID)}</span>
-            </button>
-          ))}
+      {modelIDs.length > 0 && (
+        <div className="tabs imc-model-tabs" role="tablist" aria-label="IMC caches by model">
+          <button type="button" role="tab" aria-selected={selectedModel === ALL_MODELS} className={`tab ${selectedModel === ALL_MODELS ? 'active' : ''}`} onClick={() => setSelectedModel(ALL_MODELS)}>All</button>
+          {modelIDs.map((modelID) => <button key={modelID} type="button" role="tab" aria-selected={selectedModel === modelID} className={`tab imc-model-tab ${selectedModel === modelID ? 'active' : ''}`} title={modelID} onClick={() => setSelectedModel(modelID)}><span className="imc-model-tab-label">{modelTabLabel(modelID)}</span></button>)}
         </div>
       )}
 
       <div className="card">
-        {loading && !data ? (
-          <div className="loading">Loading IMC sessions...</div>
-        ) : sortedData && sortedData.length > 0 ? (
-          <div style={{ overflowX: 'auto' }}>
-            <table className="imc-sessions-table">
-              <thead>
-                <tr className="imc-table-groups">
-                  <th colSpan={3} className="imc-table-group imc-table-group-session">Session</th>
-                  <th colSpan={3} className="imc-table-group imc-table-group-request">Latest Request</th>
-                  <th colSpan={3} className="imc-table-group imc-table-group-current">
-                    Current Working Cache
-                  </th>
-                  <th colSpan={4} className="imc-table-group imc-table-group-fallback">Fallback Cache</th>
-                  <th colSpan={2} className="imc-table-group imc-table-group-capacity">Capacity / Usage</th>
-                  <th colSpan={2} className="imc-table-group imc-table-group-details">Details</th>
-                </tr>
-                <tr className="imc-table-columns">
-                  <th onClick={() => handleSort('model_id')} className="catalog-table-sortable">
-                    {labelWithTip('Model', 'imcModelID')}{sortIndicator('model_id')}
-                  </th>
-                  <th onClick={() => handleSort('id')} className="catalog-table-sortable">
-                    {labelWithTip('Cache Entry', 'imcSessionID')}{sortIndicator('id')}
-                  </th>
-                  <th onClick={() => handleSort('state')} className="catalog-table-sortable">
-                    {labelWithTip('State', 'imcState')}{sortIndicator('state')}
-                  </th>
-                  <th onClick={() => handleSort('input_tokens')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Input', 'imcInputTokens')}{sortIndicator('input_tokens')}
-                  </th>
-                  <th onClick={() => handleSort('output_tokens')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Output', 'imcOutputTokens')}{sortIndicator('output_tokens')}
-                  </th>
-                  <th onClick={() => handleSort('request_context')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Context', 'imcRequestTotal')}{sortIndicator('request_context')}
-                  </th>
-                  <th onClick={() => handleSort('messages')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Messages', 'imcMessages')}{sortIndicator('messages')}
-                  </th>
-                  <th onClick={() => handleSort('context')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Tokens', 'imcContext')}{sortIndicator('context')}
-                  </th>
-                  <th onClick={() => handleSort('allocated')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Allocated', 'imcAllocated')}{sortIndicator('allocated')}
-                  </th>
-                  <th onClick={() => handleSort('reusable_tokens')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Tokens', 'imcFallbackTokens')}{sortIndicator('reusable_tokens')}
-                  </th>
-                  <th onClick={() => handleSort('checkpoint_allocated')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Allocated', 'imcCheckpointAllocated')}{sortIndicator('checkpoint_allocated')}
-                  </th>
-                  <th onClick={() => handleSort('fallback_kind')} className="catalog-table-sortable">
-                    {labelWithTip('Kind', 'imcFallbackKind')}{sortIndicator('fallback_kind')}
-                  </th>
-                  <th onClick={() => handleSort('fallback_updates')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Updates', 'imcFallbackUpdates')}{sortIndicator('fallback_updates')}
-                  </th>
-                  <th onClick={() => handleSort('peak_context')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Peak Context', 'imcPeakContext')}{sortIndicator('peak_context')}
-                  </th>
-                  <th onClick={() => handleSort('utilization')} className="catalog-table-sortable" style={{ textAlign: 'right' }}>
-                    {labelWithTip('Peak Used', 'imcUtilization')}{sortIndicator('utilization')}
-                  </th>
-                  <th onClick={() => handleSort('has_media')} className="catalog-table-sortable">
-                    {labelWithTip('Media', 'imcMedia')}{sortIndicator('has_media')}
-                  </th>
-                  <th onClick={() => handleSort('last_used')} className="catalog-table-sortable">
-                    {labelWithTip('Last Used', 'imcLastUsed')}{sortIndicator('last_used')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedData.map((session) => (
-                  <tr key={`${session.model_id}-${session.id}`}>
-                    <td>{session.model_id}</td>
-                    <td>{session.id}</td>
-                    <td><span className={`badge badge-${session.state}`}>{session.state}</span></td>
-                    <td className="imc-request-cell" style={{ textAlign: 'right' }}>{session.input_tokens.toLocaleString()}</td>
-                    <td className="imc-request-cell" style={{ textAlign: 'right' }}>{session.output_tokens.toLocaleString()}</td>
-                    <td className="imc-request-cell" style={{ textAlign: 'right' }}>{(session.input_tokens + session.output_tokens).toLocaleString()}</td>
-                    <td className="imc-current-cell" style={{ textAlign: 'right' }}>{session.messages.toLocaleString()}</td>
-                    <td className="imc-current-cell" style={{ textAlign: 'right' }}>{session.context.toLocaleString()}</td>
-                    <td className="imc-current-cell" style={{ textAlign: 'right' }}>{session.allocated.toLocaleString()}</td>
-                    <td className="imc-fallback-cell" style={{ textAlign: 'right' }}>{session.reusable_tokens > 0 ? session.reusable_tokens.toLocaleString() : '—'}</td>
-                    <td className="imc-fallback-cell" style={{ textAlign: 'right' }}>{session.checkpoint_allocated > 0 ? session.checkpoint_allocated.toLocaleString() : '—'}</td>
-                    <td className="imc-fallback-cell">{session.fallback_kind || '—'}</td>
-                    <td className="imc-fallback-cell" style={{ textAlign: 'right' }}>{session.fallback_updates.toLocaleString()}</td>
-                    <td className="imc-capacity-cell" style={{ textAlign: 'right' }}>{session.peak_context.toLocaleString()}</td>
-                    <td className="imc-capacity-cell" style={{ textAlign: 'right' }}>{utilization(session.peak_context, session.context_window)}</td>
-                    <td><span className={`badge badge-${session.has_media ? 'yes' : 'no'}`}>{session.has_media ? 'yes' : 'no'}</span></td>
-                    <td style={{ whiteSpace: 'nowrap' }}>{formatDate(session.last_used)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="empty-state">
-            <h3>No IMC sessions</h3>
-            <p>Entries will appear when an IMC-enabled model is loaded</p>
-          </div>
-        )}
+        {loading && !sessions ? <div className="loading">Loading IMC caches...</div>
+          : view === 'current' ? <CurrentTable data={sortedSessions} sort={sortCurrent} indicator={currentIndicator} />
+            : <SystemTable data={sortedSystemCaches} sort={sortSystem} indicator={systemIndicator} />}
       </div>
     </div>
   );
+}
+
+function ratio(session: IMCSessionDetail): number {
+  return session.context_window > 0 ? session.peak_context / session.context_window : 0;
+}
+
+function CurrentTable({ data, sort, indicator }: { data: IMCSessionDetail[]; sort: (field: CurrentSort) => void; indicator: (field: CurrentSort) => string }) {
+  if (data.length === 0) return <div className="empty-state"><h3>No IMC working sessions</h3><p>Entries appear when an IMC-enabled model is loaded</p></div>;
+  const head = (label: string, tip: TooltipKey, field: CurrentSort, right = false) => <th onClick={() => sort(field)} className="catalog-table-sortable" style={right ? { textAlign: 'right' } : undefined}>{labelWithTip(label, tip)}<span className="catalog-table-sort-indicator">{indicator(field)}</span></th>;
+  return <div style={{ overflowX: 'auto' }}><table className="imc-sessions-table"><thead>
+    <tr className="imc-table-groups"><th colSpan={3} className="imc-table-group imc-table-group-session">Session</th><th colSpan={3} className="imc-table-group imc-table-group-request">Latest Request</th><th colSpan={4} className="imc-table-group imc-table-group-current">Working Cache</th><th colSpan={2} className="imc-table-group imc-table-group-capacity">Capacity / Usage</th><th colSpan={2} className="imc-table-group imc-table-group-details">Details</th></tr>
+    <tr>{head('Model', 'imcModelID', 'model_id')}{head('Cache Entry', 'imcSessionID', 'id')}{head('State', 'imcState', 'state')}{head('Input', 'imcInputTokens', 'input_tokens', true)}{head('Output', 'imcOutputTokens', 'output_tokens', true)}{head('Context', 'imcRequestTotal', 'request_context', true)}{head('Messages', 'imcMessages', 'messages', true)}{head('Tokens', 'imcContext', 'context', true)}{head('Allocated', 'imcAllocated', 'allocated', true)}{head('Snapshot Memory', 'imcSnapshotBytes', 'snapshot_bytes', true)}{head('Peak Context', 'imcPeakContext', 'peak_context', true)}{head('Peak Used', 'imcUtilization', 'utilization', true)}{head('Media', 'imcMedia', 'has_media')}{head('Last Used', 'imcLastUsed', 'last_used')}</tr>
+  </thead><tbody>{data.map((s) => <tr key={`${s.model_id}-${s.id}`}><td>{s.model_id}</td><td>{s.id}</td><td><span className={`badge badge-${s.state}`}>{s.state}</span></td><td className="imc-request-cell" style={{ textAlign: 'right' }}>{s.input_tokens.toLocaleString()}</td><td className="imc-request-cell" style={{ textAlign: 'right' }}>{s.output_tokens.toLocaleString()}</td><td className="imc-request-cell" style={{ textAlign: 'right' }}>{(s.input_tokens + s.output_tokens).toLocaleString()}</td><td className="imc-current-cell" style={{ textAlign: 'right' }}>{s.messages.toLocaleString()}</td><td className="imc-current-cell" style={{ textAlign: 'right' }}>{s.context.toLocaleString()}</td><td className="imc-current-cell" style={{ textAlign: 'right' }}>{s.allocated.toLocaleString()}</td><td className="imc-current-cell" style={{ textAlign: 'right' }}>{formatBytes(s.snapshot_bytes)}</td><td className="imc-capacity-cell" style={{ textAlign: 'right' }}>{s.peak_context.toLocaleString()}</td><td className="imc-capacity-cell" style={{ textAlign: 'right' }}>{utilization(s.peak_context, s.context_window)}</td><td><span className={`badge badge-${s.has_media ? 'yes' : 'no'}`}>{s.has_media ? 'yes' : 'no'}</span></td><td style={{ whiteSpace: 'nowrap' }}>{formatDate(s.last_used)}</td></tr>)}</tbody></table></div>;
+}
+
+function SystemTable({ data, sort, indicator }: { data: IMCSystemCacheDetail[]; sort: (field: SystemSort) => void; indicator: (field: SystemSort) => string }) {
+  if (data.length === 0) return <div className="empty-state"><h3>No System caches</h3><p>Entries appear after requests with System prompts</p></div>;
+  const head = (label: string, tip: TooltipKey, field: SystemSort, right = false) => <th onClick={() => sort(field)} className="catalog-table-sortable" style={right ? { textAlign: 'right' } : undefined}>{labelWithTip(label, tip)}<span className="catalog-table-sort-indicator">{indicator(field)}</span></th>;
+  return <div style={{ overflowX: 'auto' }}><table className="imc-sessions-table"><thead><tr>{head('Model', 'imcModelID', 'model_id')}{head('Cache Entry', 'imcSystemCacheID', 'id')}{head('System Tokens', 'imcSystemContext', 'tokens', true)}{head('Allocated', 'imcSystemAllocated', 'allocated', true)}{head('Snapshot Memory', 'imcSystemSnapshotBytes', 'snapshot_bytes', true)}{head('Restores', 'imcSystemRestores', 'restore_count', true)}{head('Active Restores', 'imcSystemActiveRestores', 'active_restores', true)}{head('Last Used', 'imcLastUsed', 'last_used')}</tr></thead><tbody>{data.map((cache) => <tr key={`${cache.model_id}-${cache.id}`}><td>{cache.model_id}</td><td>{cache.id}</td><td className="imc-system-cell" style={{ textAlign: 'right' }}>{cache.tokens.toLocaleString()}</td><td className="imc-system-cell" style={{ textAlign: 'right' }}>{cache.allocated.toLocaleString()}</td><td className="imc-system-cell" style={{ textAlign: 'right' }}>{formatBytes(cache.snapshot_bytes)}</td><td style={{ textAlign: 'right' }}>{cache.restore_count.toLocaleString()}</td><td style={{ textAlign: 'right' }}>{cache.active_restores.toLocaleString()}</td><td style={{ whiteSpace: 'nowrap' }}>{formatDate(cache.last_used)}</td></tr>)}</tbody></table></div>;
 }

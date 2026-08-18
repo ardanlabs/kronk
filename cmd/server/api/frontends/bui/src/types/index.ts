@@ -64,24 +64,32 @@ export interface IMCSessionDetail {
   state: IMCSessionState;
   context: number;
   allocated: number;
-  checkpoint_context: number;
-  checkpoint_allocated: number;
   total_allocated: number;
+  snapshot_bytes: number;
   peak_context: number;
   messages: number;
   input_messages: number;
   input_tokens: number;
   output_tokens: number;
-  reusable_messages: number;
-  reusable_tokens: number;
-  fallback_kind: 'calculating' | 'user' | '';
-  fallback_updates: number;
   context_window: number;
   last_used: string;
   has_media: boolean;
 }
 
 export type IMCSessionsResponse = IMCSessionDetail[];
+
+export interface IMCSystemCacheDetail {
+  model_id: string;
+  id: number;
+  tokens: number;
+  allocated: number;
+  snapshot_bytes: number;
+  restore_count: number;
+  active_restores: number;
+  last_used: string;
+}
+
+export type IMCSystemCachesResponse = IMCSystemCacheDetail[];
 
 export interface BatchGenerationContribution {
   slot_id: number;

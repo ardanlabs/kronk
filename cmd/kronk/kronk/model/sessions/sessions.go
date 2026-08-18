@@ -61,7 +61,7 @@ func run() error {
 
 func printSessions(output io.Writer, sessions toolapp.IMCSessionsResponse) {
 	w := tabwriter.NewWriter(output, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "MODEL\tENTRY\tSTATE\tMESSAGES\tCONTEXT\tALLOCATED\tCHECKPOINT\tCHECKPOINT ALLOCATED\tTOTAL ALLOCATED\tWINDOW\tUSED\tMEDIA\tLAST USED")
+	fmt.Fprintln(w, "MODEL\tENTRY\tSTATE\tMESSAGES\tCONTEXT\tALLOCATED\tTOTAL ALLOCATED\tWINDOW\tUSED\tMEDIA\tLAST USED")
 
 	for _, session := range sessions {
 		used := "0%"
@@ -79,15 +79,13 @@ func printSessions(output io.Writer, sessions toolapp.IMCSessionsResponse) {
 			media = "yes"
 		}
 
-		fmt.Fprintf(w, "%s\t%d\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%s\t%s\n",
+		fmt.Fprintf(w, "%s\t%d\t%s\t%d\t%d\t%d\t%d\t%d\t%s\t%s\t%s\n",
 			session.ModelID,
 			session.ID,
 			session.State,
 			session.Messages,
 			session.Context,
 			session.Allocated,
-			session.CheckpointContext,
-			session.CheckpointAllocated,
 			session.TotalAllocated,
 			session.ContextWindow,
 			used,
