@@ -57,7 +57,7 @@ func (a *app) messages(ctx context.Context, r *http.Request) web.Encoder {
 	d := toOpenAI(req)
 
 	if req.Stream {
-		committed, err := a.handleStreaming(ctx, krn, d, req.Model)
+		committed, err := a.handleStreaming(ctx, krn, d)
 		if err != nil {
 			if committed {
 				return web.NewNoResponseError(errs.FromSDK(err))
@@ -82,7 +82,7 @@ func (a *app) messages(ctx context.Context, r *http.Request) web.Encoder {
 	return toMessagesResponse(resp)
 }
 
-func (a *app) handleStreaming(ctx context.Context, krn *kronk.Kronk, d model.D, modelName string) (bool, error) {
+func (a *app) handleStreaming(ctx context.Context, krn *kronk.Kronk, d model.D) (bool, error) {
 	w := web.GetWriter(ctx)
 
 	if !supportsResponseFlush(w) {
@@ -100,8 +100,7 @@ func (a *app) handleStreaming(ctx context.Context, krn *kronk.Kronk, d model.D, 
 	w.Header().Set("Connection", "keep-alive")
 
 	state := streamState{
-		w:         w,
-		modelName: modelName,
+		w: w,
 	}
 	committed := false
 
@@ -133,7 +132,6 @@ func (a *app) handleStreaming(ctx context.Context, krn *kronk.Kronk, d model.D, 
 
 type streamState struct {
 	w            http.ResponseWriter
-	modelName    string
 	messageID    string
 	started      bool
 	blockStarted bool
@@ -317,7 +315,7 @@ func (s *streamState) sendMessageStart(resp model.ChatResponse) error {
 			Type:         "message",
 			Role:         "assistant",
 			Content:      []ResponseContentBlock{},
-			Model:        s.modelName,
+			Model:        resp.Model,
 			StopReason:   nil,
 			StopSequence: nil,
 			Usage: Usage{

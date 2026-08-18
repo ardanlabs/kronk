@@ -1031,7 +1031,7 @@ g_tokenize() {
   expect_status tok-short '200' 'tokenize a short input'
   expect_jq tok-short '.tokens > 0'          'a non-empty input has a positive token count'
   expect_jq tok-short '.object != null'      'tokenize response carries object'
-  expect_jq tok-short "((.model // \"\") | . == \"$MODEL\" or . == \"$MODEL_BASE\")" 'tokenize echoes the model id'
+  expect_jq tok-short "((.model // \"\") | . == \"$MODEL\")" 'tokenize echoes the complete model id'
 
   post tok-long /v1/tokenize \
     "$(jq -nc --arg m "$MODEL" --arg i "$long" '{model:$m,input:$i}')" >/dev/null
@@ -2102,10 +2102,12 @@ g_responsesapi() {
   # response.go declares these always present; clients branch on all of them.
   expect_jq rs-basic '.object != null'                'response carries object'
   expect_jq rs-basic '.id != null and .created_at != null' 'response carries id and created_at'
+  expect_jq rs-basic '.created_at > 1000000000 and .created_at <= .completed_at' \
+    'created_at and completed_at use ordered Unix seconds'
   expect_jq rs-basic '.status == "completed"'         'a finished response has status=completed'
   expect_jq rs-basic '(.output | type) == "array" and (.output | length) > 0' \
     'output is a non-empty array'
-  expect_jq rs-basic "((.model // \"\") | . == \"$MODEL\" or . == \"$MODEL_BASE\")" 'response echoes the model id'
+  expect_jq rs-basic "((.model // \"\") | . == \"$MODEL\")" 'response echoes the complete model id'
   expect_jq rs-basic '.usage.input_tokens > 0 and .usage.output_tokens > 0' \
     'usage carries input_tokens and output_tokens'
   expect_jq rs-basic '[.output[] | select(.type == "message")] | length > 0' \
@@ -2279,7 +2281,7 @@ g_messagesapi() {
   expect_jq ms-basic '.type == "message"'      'response has type=message'
   expect_jq ms-basic '.role == "assistant"'    'response has role=assistant'
   expect_jq ms-basic '.id != null'             'response carries an id'
-  expect_jq ms-basic "((.model // \"\") | . == \"$MODEL\" or . == \"$MODEL_BASE\")" 'response echoes the model id'
+  expect_jq ms-basic "((.model // \"\") | . == \"$MODEL\")" 'response echoes the complete model id'
   expect_jq ms-basic '(.content | type) == "array" and (.content | length) > 0' \
     'content is a non-empty array of blocks'
   expect_jq ms-basic '[.content[] | select(.type == "text") | .text] | join("") | length > 0' \

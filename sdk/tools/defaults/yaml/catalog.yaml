@@ -1,10 +1,3 @@
-providers:
-  - unsloth
-  - ggml-org
-  - bartowski
-  - mradermacher
-  - gpustack
-  - Qwen
 models:
   Qwen/Qwen3-8B-Q8_0:
     provider: Qwen

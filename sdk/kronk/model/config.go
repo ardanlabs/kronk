@@ -410,6 +410,7 @@ type Config struct {
 	MTPDrafterFile             string
 	PtrProjOnCPU               *bool
 	PtrQueueDepth              *int
+	ResponseModelID            string
 	PtrRopeFreqBase            *float32
 	PtrRopeFreqScale           *float32
 	RecordArtifactVerification ArtifactVerificationRecorder

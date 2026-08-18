@@ -427,11 +427,11 @@ func TestResolver_HFHit_PersistsAndReturnsURLs(t *testing.T) {
 
 	dir := t.TempDir()
 	rfile := filepath.Join(dir, "catalog.yaml")
-	mustWriteFile(t, rfile, "providers:\n  - unsloth\n  - ggml-org\nmodels: {}\n")
+	mustWriteFile(t, rfile, "models: {}\n")
 
 	r := NewResolverWithClient(nil, rfile, hf)
 
-	res, err := r.Resolve(context.Background(), "Qwen3.6-35B-A3B-UD-Q4_K_M")
+	res, err := r.Resolve(context.Background(), "unsloth/Qwen3.6-35B-A3B-UD-Q4_K_M")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -469,36 +469,15 @@ func TestResolver_HFHit_PersistsAndReturnsURLs(t *testing.T) {
 	}
 }
 
-func TestResolver_ProviderWalk_StopsAtFirstHit(t *testing.T) {
-	hf := &fakeHF{
-		search: map[string][]string{
-			"unsloth|Qwen3":  {}, // empty -> hf.ErrNotFound
-			"ggml-org|Qwen3": {"ggml-org/Qwen3-GGUF"},
-		},
-		metas: map[string][]string{
-			"ggml-org/Qwen3-GGUF": {"Qwen3-Q4_K_M.gguf"},
-		},
-	}
+func TestResolver_RejectsBareModelID(t *testing.T) {
 	dir := t.TempDir()
 	rfile := filepath.Join(dir, "catalog.yaml")
-	mustWriteFile(t, rfile, "providers:\n  - unsloth\n  - ggml-org\n  - bartowski\nmodels: {}\n")
+	mustWriteFile(t, rfile, "models: {}\n")
 
-	r := NewResolverWithClient(nil, rfile, hf)
+	r := NewResolverWithClient(nil, rfile, &fakeHF{})
 
-	res, err := r.Resolve(context.Background(), "Qwen3")
-	if err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
-
-	if res.Provider != "ggml-org" {
-		t.Errorf("Provider = %q, want ggml-org", res.Provider)
-	}
-
-	// We should not have queried bartowski.
-	for _, c := range hf.calls {
-		if strings.HasPrefix(c, "search:bartowski") {
-			t.Errorf("unexpectedly queried bartowski: %v", hf.calls)
-		}
+	if _, err := r.Resolve(context.Background(), "Qwen3"); !errors.Is(err, ErrInvalidModelID) {
+		t.Errorf("Resolve() error = %v, want ErrInvalidModelID", err)
 	}
 }
 
@@ -513,7 +492,7 @@ func TestResolver_ExplicitProvider(t *testing.T) {
 	}
 	dir := t.TempDir()
 	rfile := filepath.Join(dir, "catalog.yaml")
-	mustWriteFile(t, rfile, "providers:\n  - unsloth\n  - ggml-org\n  - bartowski\nmodels: {}\n")
+	mustWriteFile(t, rfile, "models: {}\n")
 
 	r := NewResolverWithClient(nil, rfile, hf)
 
@@ -539,7 +518,6 @@ func TestResolver_CacheHitNoHFCall(t *testing.T) {
 	rfile := filepath.Join(dir, "catalog.yaml")
 
 	cached := Catalog{
-		Providers: []string{"unsloth"},
 		Models: map[string]CatalogEntry{
 			"unsloth/Qwen3-Q4_K_M": {
 				Provider:   "unsloth",
@@ -556,7 +534,7 @@ func TestResolver_CacheHitNoHFCall(t *testing.T) {
 
 	r := NewResolverWithClient(nil, rfile, hf)
 
-	res, err := r.Resolve(context.Background(), "Qwen3-Q4_K_M")
+	res, err := r.Resolve(context.Background(), "unsloth/Qwen3-Q4_K_M")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -571,15 +549,15 @@ func TestResolver_CacheHitNoHFCall(t *testing.T) {
 	}
 }
 
-func TestResolver_NotFoundAcrossProviders(t *testing.T) {
+func TestResolver_NotFoundAtProvider(t *testing.T) {
 	hf := &fakeHF{}
 	dir := t.TempDir()
 	rfile := filepath.Join(dir, "catalog.yaml")
-	mustWriteFile(t, rfile, "providers:\n  - unsloth\n  - ggml-org\nmodels: {}\n")
+	mustWriteFile(t, rfile, "models: {}\n")
 
 	r := NewResolverWithClient(nil, rfile, hf)
 
-	_, err := r.Resolve(context.Background(), "DoesNotExist")
+	_, err := r.Resolve(context.Background(), "unsloth/DoesNotExist")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -601,11 +579,11 @@ func TestResolver_HFNotFoundIsNotFatal(t *testing.T) {
 	}
 	dir := t.TempDir()
 	rfile := filepath.Join(dir, "catalog.yaml")
-	mustWriteFile(t, rfile, "providers:\n  - unsloth\n  - ggml-org\nmodels: {}\n")
+	mustWriteFile(t, rfile, "models: {}\n")
 
 	r := NewResolverWithClient(nil, rfile, hf)
 
-	res, err := r.Resolve(context.Background(), "Qwen3")
+	res, err := r.Resolve(context.Background(), "ggml-org/Qwen3")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -671,7 +649,6 @@ func TestModelsResolveSource_AcceptedInputForms(t *testing.T) {
 	rfile := filepath.Join(catalogDir, "catalog.yaml")
 
 	cached := Catalog{
-		Providers: []string{"unsloth"},
 		Models: map[string]CatalogEntry{
 			"unsloth/Qwen3-0.6B-Q8_0": {
 				Provider:   "unsloth",
@@ -694,7 +671,6 @@ func TestModelsResolveSource_AcceptedInputForms(t *testing.T) {
 		name  string
 		input string
 	}{
-		{"bare-id", "Qwen3-0.6B-Q8_0"},
 		{"canonical-id", "unsloth/Qwen3-0.6B-Q8_0"},
 		{"canonical-id-with-gguf", "unsloth/Qwen3-0.6B-Q8_0.gguf"},
 		{"owner-repo-file", "unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q8_0.gguf"},
@@ -1031,7 +1007,7 @@ func TestResolver_TagForm_HFLookup(t *testing.T) {
 
 	dir := t.TempDir()
 	rfile := filepath.Join(dir, "catalog.yaml")
-	mustWriteFile(t, rfile, "providers: []\nmodels: {}\n")
+	mustWriteFile(t, rfile, "models: {}\n")
 
 	r := NewResolverWithClient(nil, rfile, hfc)
 
@@ -1086,7 +1062,6 @@ func TestResolver_PinnedFileIgnoresSameTagCacheEntries(t *testing.T) {
 	dir := t.TempDir()
 	rfile := filepath.Join(dir, "catalog.yaml")
 	cached := Catalog{
-		Providers: []string{"unsloth"},
 		Models: map[string]CatalogEntry{
 			"unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL": {
 				Provider:   "unsloth",
@@ -1151,7 +1126,7 @@ func TestResolver_PinnedFileDedicatedMTPRepo(t *testing.T) {
 
 	dir := t.TempDir()
 	rfile := filepath.Join(dir, "catalog.yaml")
-	mustWriteFile(t, rfile, "providers: [unsloth]\nmodels: {}\n")
+	mustWriteFile(t, rfile, "models: {}\n")
 
 	r := NewResolverWithClient(nil, rfile, hfc)
 	res, err := r.resolvePinned(context.Background(), "unsloth", "Qwen3.6-35B-A3B-MTP-GGUF", "Qwen3.6-35B-A3B-UD-Q8_K_XL", true)
@@ -1216,7 +1191,7 @@ func TestResolver_TagForm_PinsExplicitRepo(t *testing.T) {
 
 	dir := t.TempDir()
 	rfile := filepath.Join(dir, "catalog.yaml")
-	mustWriteFile(t, rfile, "providers: [unsloth]\nmodels: {}\n")
+	mustWriteFile(t, rfile, "models: {}\n")
 
 	r := NewResolverWithClient(nil, rfile, hfc)
 
@@ -1254,7 +1229,6 @@ func TestResolver_TagForm_CacheHit(t *testing.T) {
 	rfile := filepath.Join(dir, "catalog.yaml")
 
 	cached := Catalog{
-		Providers: []string{"unsloth"},
 		Models: map[string]CatalogEntry{
 			"unsloth/Qwen3.6-35B-A3B-UD-Q4_K_XL": {
 				Provider:   "unsloth",
@@ -1299,7 +1273,7 @@ func TestResolver_TagForm_TagNotFound(t *testing.T) {
 	}
 	dir := t.TempDir()
 	rfile := filepath.Join(dir, "catalog.yaml")
-	mustWriteFile(t, rfile, "providers: []\nmodels: {}\n")
+	mustWriteFile(t, rfile, "models: {}\n")
 
 	r := NewResolverWithClient(nil, rfile, hfc)
 
@@ -1320,7 +1294,7 @@ func TestResolver_TagForm_RepoNotFound(t *testing.T) {
 	}
 	dir := t.TempDir()
 	rfile := filepath.Join(dir, "catalog.yaml")
-	mustWriteFile(t, rfile, "providers: []\nmodels: {}\n")
+	mustWriteFile(t, rfile, "models: {}\n")
 
 	r := NewResolverWithClient(nil, rfile, hfc)
 
@@ -1339,7 +1313,6 @@ func TestResolver_AllInputForms_ProduceSameDownloadURL(t *testing.T) {
 	const wantURL = "https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/main/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"
 
 	cached := Catalog{
-		Providers: []string{"unsloth"},
 		Models: map[string]CatalogEntry{
 			"unsloth/Qwen3.6-35B-A3B-UD-Q4_K_XL": {
 				Provider: "unsloth",
@@ -1408,8 +1381,6 @@ func loadResolved(t *testing.T, path string) Catalog {
 	if err := yaml.Unmarshal(b, &rm); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	// Ensure deterministic provider ordering for any test that inspects it.
-	sort.Strings(rm.Providers)
 	return rm
 }
 
@@ -1542,7 +1513,7 @@ func TestResolver_DiscoverMTP(t *testing.T) {
 	}
 	dir := t.TempDir()
 	rfile := filepath.Join(dir, "catalog.yaml")
-	mustWriteFile(t, rfile, "providers:\n  - unsloth\nmodels: {}\n")
+	mustWriteFile(t, rfile, "models: {}\n")
 
 	r := NewResolverWithClient(nil, rfile, hfc)
 

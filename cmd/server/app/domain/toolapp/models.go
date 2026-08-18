@@ -261,9 +261,8 @@ func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 		f.Flush()
 	}
 
-	// Download handles both direct URLs and catalog ids (bare or
-	// canonical). Catalog ids are resolved through ~/.kronk/catalog.yaml
-	// and the configured HuggingFace provider list. When DownloadServer
+	// Download handles both direct URLs and canonical catalog ids. Catalog
+	// ids are resolved through ~/.kronk/catalog.yaml. When DownloadServer
 	// is set, the resolved HuggingFace URLs are rewritten to point at a
 	// peer Kronk server on the local network.
 	//

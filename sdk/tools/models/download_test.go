@@ -410,9 +410,7 @@ func TestDownload_MissingCompanion_ReDownloads(t *testing.T) {
 	if err := os.MkdirAll(catalogDir, 0o755); err != nil {
 		t.Fatalf("mkdir catalog: %v", err)
 	}
-	mustWriteFile(t, filepath.Join(catalogDir, "catalog.yaml"), `providers:
-  - unsloth
-models:
+	mustWriteFile(t, filepath.Join(catalogDir, "catalog.yaml"), `models:
   unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M:
     provider: unsloth
     family: gemma-4-26B-A4B-it-GGUF

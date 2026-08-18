@@ -87,6 +87,16 @@ func TestToChatResponseToResponsesWithoutUsage(t *testing.T) {
 	}
 }
 
+func TestToChatResponseToResponsesPreservesCreatedTimestamp(t *testing.T) {
+	const created = int64(1_787_077_112)
+
+	resp := toChatResponseToResponses(model.ChatResponse{Created: created}, model.D{})
+
+	if resp.CreatedAt != created {
+		t.Errorf("CreatedAt: got %d, want %d", resp.CreatedAt, created)
+	}
+}
+
 func TestToChatResponseToResponsesPreservesToolChoice(t *testing.T) {
 	toolChoice := model.D{"type": "function", "function": model.D{"name": "get_weather"}}
 	want := model.D{"type": "function", "name": "get_weather"}

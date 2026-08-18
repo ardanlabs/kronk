@@ -65,6 +65,10 @@ model config file management and
 [Chapter 2 §2.5](https://www.kronkai.com/manual#25-models-and-data-paths) for all
 data paths.
 
+Inference requests require the canonical `provider/modelID` shown by
+`/v1/models`. Bare model IDs are rejected rather than searched across a list of
+providers.
+
 #### Model variants
 
 A suffix creates another configuration for the same downloaded model:

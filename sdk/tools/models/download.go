@@ -41,7 +41,6 @@ var hasNetworkFn = hasNetwork
 //
 //   - A direct HuggingFace URL ("https://huggingface.co/.../Qwen3-0.6B-Q8_0.gguf")
 //   - A canonical model id ("unsloth/Qwen3-0.6B-Q8_0")
-//   - A bare model id ("Qwen3-0.6B-Q8_0")
 //   - A "provider/repo:tag" quant selector ("unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_XL")
 //
 // In every case the projection file (when applicable) is located
@@ -53,8 +52,8 @@ var hasNetworkFn = hasNetwork
 // from the URL.
 //
 // The resolver checks local disk first, then the resolver-file cache at
-// <basePath>/catalog.yaml (seeded from the embedded default on
-// first use), then walks the configured HuggingFace provider list.
+// <basePath>/catalog.yaml (seeded from the embedded default on first use),
+// then the specified HuggingFace provider.
 //
 // Successful downloads — whether triggered by URL or by id — are persisted
 // to the resolver file so subsequent lookups become cache hits.
@@ -144,9 +143,9 @@ func (m *Models) downloadByURL(ctx context.Context, log applog.Logger, modelURL 
 	return mp, nil
 }
 
-// downloadByID resolves a bare model id ("Qwen3-0.6B-Q8_0") or canonical
-// id ("unsloth/Qwen3-0.6B-Q8_0") through the resolver and downloads the
-// resulting files (including any companion mmproj).
+// downloadByID resolves a canonical id ("unsloth/Qwen3-0.6B-Q8_0") through
+// the resolver and downloads the resulting files, including any companion
+// projection or MTP file.
 func (m *Models) downloadByID(ctx context.Context, log applog.Logger, modelSource string) (Path, error) {
 	rfile, err := defaults.CatalogFile("", m.basePath)
 	if err != nil {
@@ -303,7 +302,7 @@ func (m *Models) downloadSplits(ctx context.Context, log applog.Logger, modelURL
 	if err != nil {
 		return Path{}, fmt.Errorf("download-splits: unable to derive model id: %w", err)
 	}
-	modelID := mLoc0.ModelID
+	modelID := canonicalID(mLoc0.Owner, mLoc0.ModelID)
 
 	if !hasNetworkFn() {
 		mp, err := m.FullPath(modelID)
@@ -624,7 +623,7 @@ func (m *Models) downloadCompanion(ctx context.Context, log applog.Logger, loc L
 // split download truncated a shard). On a miss the second return is false
 // and the caller falls through to the regular pull path.
 func (m *Models) checkValidatedIndex(ctx context.Context, log applog.Logger, mLoc Locator, projLoc *Locator, mtpLoc *Locator) (Path, bool) {
-	mp, found := m.loadIndex()[mLoc.ModelID]
+	_, mp, found := lookupIndex(m.loadIndex(), canonicalID(mLoc.Owner, mLoc.ModelID))
 	if !found || !mp.Validated {
 		return Path{}, false
 	}
@@ -1034,9 +1033,7 @@ func applyRenamePrefix(repoSegment, fileName string) string {
 
 // repoMatchesRenameRule reports whether repoSegment matches any active
 // rename-prefix rule (e.g. the unsloth "*-MTP-GGUF" sibling repos). The
-// catalog resolver uses this to de-prioritize sibling repos during HF
-// search so a bare model id never silently resolves to the renamed
-// variant.
+// catalog resolver uses this to de-prioritize sibling repos during HF search.
 func repoMatchesRenameRule(repoSegment string) bool {
 	for _, r := range renamePrefixRules {
 		if r.repoPattern.MatchString(repoSegment) {

@@ -346,7 +346,7 @@ and are not stored as catalog configuration.
 
 Source specificity controls catalog resolution:
 
-- A bare model ID can search the configured provider priority list.
+- A canonical `provider/modelID` selects one provider explicitly.
 - `provider/repo:quantization` pins the repository and selects the matching
   quantization there.
 - `owner/repo/file.gguf`, or an equivalent Hugging Face `blob` or `resolve`

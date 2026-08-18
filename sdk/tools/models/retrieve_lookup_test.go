@@ -17,24 +17,19 @@ func Test_fullPathLookupKeys(t *testing.T) {
 			want:    []string{"Qwopus3.5-4B-Coder.Q8_0"},
 		},
 		{
-			name:    "model/variant",
-			modelID: "Qwopus3.5-4B-Coder.Q8_0/AGENT",
-			want:    []string{"AGENT", "Qwopus3.5-4B-Coder.Q8_0"},
-		},
-		{
 			name:    "provider/model",
 			modelID: "mradermacher/Qwopus3.5-4B-Coder.Q8_0",
-			want:    []string{"Qwopus3.5-4B-Coder.Q8_0", "mradermacher"},
+			want:    []string{"mradermacher/Qwopus3.5-4B-Coder.Q8_0", "Qwopus3.5-4B-Coder.Q8_0"},
 		},
 		{
-			name:    "provider/model/user prefers bare model in the middle",
+			name:    "provider/model/profile resolves base model",
 			modelID: "mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT",
-			want:    []string{"Qwopus3.5-4B-Coder.Q8_0", "mradermacher", "AGENT"},
+			want:    []string{"mradermacher/Qwopus3.5-4B-Coder.Q8_0", "Qwopus3.5-4B-Coder.Q8_0"},
 		},
 		{
-			name:    "org/model/playground/session keeps bare model first",
+			name:    "playground composite key resolves base model",
 			modelID: "mradermacher/Qwopus3.5-4B-Coder.Q8_0/playground/sess-1",
-			want:    []string{"Qwopus3.5-4B-Coder.Q8_0", "mradermacher", "sess-1"},
+			want:    []string{"mradermacher/Qwopus3.5-4B-Coder.Q8_0", "Qwopus3.5-4B-Coder.Q8_0"},
 		},
 	}
 

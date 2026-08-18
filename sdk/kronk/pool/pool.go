@@ -136,6 +136,11 @@ func New(cfg Config) (*Pool, error) {
 	if mc == nil {
 		mc = map[string]models.ModelConfig{}
 	}
+	for modelID := range mc {
+		if _, err := models.ParseModelID(modelID); err != nil {
+			return nil, fmt.Errorf("new: model config key: %w", err)
+		}
+	}
 
 	var startupDevices devices.Devices
 	if cfg.StartupDevices == nil {
@@ -188,9 +193,19 @@ func (p *Pool) Shutdown(ctx context.Context) error {
 // AquireModel will provide a kronk API for the specified model. If
 // the model is not in the pool, an API for the model will be created.
 func (p *Pool) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, error) {
+	id, err := models.ParseModelID(modelID)
+	if err != nil {
+		return nil, fmt.Errorf("acquire-model: %w", err)
+	}
+	if id.Profile != "" {
+		if _, exists := p.llama.modelConfig[id.String()]; !exists {
+			return nil, fmt.Errorf("acquire-model: %w: configuration %q", models.ErrModelNotFound, id.String())
+		}
+	}
+
 	return p.engine.Acquire(ctx, loader.LoadRequest{
-		ModelID: modelID,
-		Key:     modelID,
+		ModelID: id.String(),
+		Key:     id.String(),
 	})
 }
 
@@ -200,7 +215,14 @@ func (p *Pool) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, e
 // ModelStatus can still match playground sessions to locally installed
 // models.
 func (p *Pool) AquireCustom(ctx context.Context, key string, cfg model.Config) (*kronk.Kronk, error) {
-	modelID, _, _ := strings.Cut(key, "/")
+	modelID, _, found := strings.Cut(key, "/playground/")
+	if !found {
+		return nil, fmt.Errorf("acquire-custom: invalid key %q", key)
+	}
+	if _, err := models.ParseModelID(modelID); err != nil {
+		return nil, fmt.Errorf("acquire-custom: %w", err)
+	}
+	cfg.ResponseModelID = modelID
 	if cfg.AutoTune && !cfg.AutoTuned {
 		cfg = kronk.AutoTuneConfig(ctx, cfg)
 	}

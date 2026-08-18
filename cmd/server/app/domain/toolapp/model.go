@@ -272,7 +272,9 @@ func toOpenAIModels(modelFiles []models.File) OpenAIModelsResponse {
 
 	for _, mf := range modelFiles {
 		model := toOpenAIModel(mf)
-		model.ID = model.OwnedBy + "/" + mf.ID
+		if !strings.Contains(model.ID, "/") {
+			model.ID = model.OwnedBy + "/" + model.ID
+		}
 		resp.Data = append(resp.Data, model)
 	}
 
@@ -300,9 +302,8 @@ func toOpenAIModel(mf models.File) OpenAIModel {
 // =============================================================================
 
 // PullRequest represents the input for the pull command. ModelURL
-// accepts a direct HuggingFace URL, an owner/repo/file.gguf path, a
-// canonical catalog id (e.g. "unsloth/Qwen3-8B-Q8_0"), or a bare model
-// id ("Qwen3-8B-Q8_0") which is resolved via the catalog/provider list.
+// accepts a direct HuggingFace URL, an owner/repo/file.gguf path, or a
+// canonical catalog id (e.g. "unsloth/Qwen3-8B-Q8_0").
 //
 // DownloadServer, when set, redirects the pull to a peer Kronk server
 // on the local network ("host:port"). The peer must be running with the

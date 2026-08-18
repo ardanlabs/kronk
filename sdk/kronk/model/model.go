@@ -1323,6 +1323,14 @@ func (m *Model) ModelInfo() ModelInfo {
 	return m.modelInfo
 }
 
+func (m *Model) responseModelID() string {
+	if m.cfg.ResponseModelID != "" {
+		return m.cfg.ResponseModelID
+	}
+
+	return m.modelInfo.ID
+}
+
 func (m *Model) isUnnecessaryCRLF(reasonFlag int, completionFlag int, content string) bool {
 	// We just started reasoning or tool calling so remove leading CR.
 	if reasonFlag == 1 && content == "\x0A" {
@@ -1354,13 +1362,13 @@ func (m *Model) sendDeltaResponse(ctx context.Context, ch chan<- ChatResponse, i
 	select {
 	case <-ctx.Done():
 		select {
-		case ch <- ChatResponseErr(id, object, m.modelInfo.ID, choiceIndex, ctx.Err(), Usage{}):
+		case ch <- ChatResponseErr(id, object, m.responseModelID(), choiceIndex, ctx.Err(), Usage{}):
 		default:
 		}
 
 		return ctx.Err()
 
-	case ch <- chatResponseDelta(id, object, m.modelInfo.ID, choiceIndex, content, channel == ChannelReasoning, logprob):
+	case ch <- chatResponseDelta(id, object, m.responseModelID(), choiceIndex, content, channel == ChannelReasoning, logprob):
 	}
 
 	return nil
@@ -1370,13 +1378,13 @@ func (m *Model) sendToolCallDeltaResponse(ctx context.Context, ch chan<- ChatRes
 	select {
 	case <-ctx.Done():
 		select {
-		case ch <- ChatResponseErr(id, object, m.modelInfo.ID, choiceIndex, ctx.Err(), Usage{}):
+		case ch <- ChatResponseErr(id, object, m.responseModelID(), choiceIndex, ctx.Err(), Usage{}):
 		default:
 		}
 
 		return ctx.Err()
 
-	case ch <- chatResponseToolCallDelta(id, object, m.modelInfo.ID, choiceIndex, delta):
+	case ch <- chatResponseToolCallDelta(id, object, m.responseModelID(), choiceIndex, delta):
 	}
 
 	return nil
@@ -1445,7 +1453,7 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 		}
 	}
 
-	finalResp := chatResponseFinal(id, object, m.modelInfo.ID, choiceIndex,
+	finalResp := chatResponseFinal(id, object, m.responseModelID(), choiceIndex,
 		finalContent.String(),
 		finalReasoning.String(),
 		respToolCalls,
@@ -1457,7 +1465,7 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 	select {
 	case <-ctx.Done():
 		select {
-		case ch <- ChatResponseErr(id, object, m.modelInfo.ID, choiceIndex, ctx.Err(), usage):
+		case ch <- ChatResponseErr(id, object, m.responseModelID(), choiceIndex, ctx.Err(), usage):
 		default:
 		}
 		return ctx.Err()
@@ -1491,7 +1499,7 @@ func (m *Model) sendErrorResponse(ctx context.Context, ch chan<- ChatResponse, i
 	select {
 	case <-ctx.Done():
 
-	case ch <- ChatResponseErr(id, object, m.modelInfo.ID, choiceIndex,
+	case ch <- ChatResponseErr(id, object, m.responseModelID(), choiceIndex,
 		err,
 		usage):
 	}

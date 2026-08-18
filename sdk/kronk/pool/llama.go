@@ -420,6 +420,7 @@ func (l *Llama) resolveConfig(req loader.LoadRequest) (model.Config, error) {
 	if err != nil {
 		return model.Config{}, fmt.Errorf("resolve-config: unable to retrieve model config: %w", err)
 	}
+	cfg.ResponseModelID = req.ModelID
 
 	return cfg, nil
 }

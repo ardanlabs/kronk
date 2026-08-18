@@ -392,6 +392,7 @@ models:
           <p>The server reads this file during startup. Restart the server after changing it. To test a different file without replacing the default, run:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --model-config-file=./my-model-config.yaml`}</code></pre>
           <p>You can also set <code>KRONK_POOL_MODEL_CONFIG_FILE</code> to an alternative path. See <a href="https://www.kronkai.com/manual#85-model-configuration-files">Chapter 8 §8.5</a> for model config file management and <a href="https://www.kronkai.com/manual#25-models-and-data-paths">Chapter 2 §2.5</a> for all data paths.</p>
+          <p>Inference requests require the canonical <code>provider/modelID</code> shown by <code>/v1/models</code>. Bare model IDs are rejected rather than searched across a list of providers.</p>
           <h4 id="model-variants">Model variants</h4>
           <p>A suffix creates another configuration for the same downloaded model:</p>
           <pre className="code-block"><code className="language-yaml">{`models:
@@ -1916,7 +1917,7 @@ kronk catalog remove unsloth/Qwen3-0.6B-Q8_0`}</code></pre>
           <p>Catalog entries identify the provider, source family, revision, files, sizes, and detected capabilities. Chat templates come from downloaded GGUF metadata and are not stored as catalog configuration.</p>
           <p>Source specificity controls catalog resolution:</p>
           <ul>
-            <li>A bare model ID can search the configured provider priority list.</li>
+            <li>A canonical <code>provider/modelID</code> selects one provider explicitly.</li>
             <li><code>provider/repo:quantization</code> pins the repository and selects the matching quantization there.</li>
             <li><code>owner/repo/file.gguf</code>, or an equivalent Hugging Face <code>blob</code> or <code>resolve</code> URL, pins both the repository and upstream filename.</li>
             <li>A repository root or tree URL returns its GGUF files for explicit selection rather than choosing one automatically.</li>
@@ -3890,7 +3891,7 @@ kronk model index --local`}</code></pre>
           <h4 id="a-model-is-missing-incomplete-or-corrupt">A model is missing, incomplete, or corrupt</h4>
           <p>Pull it again using any supported source form:</p>
           <pre className="code-block"><code className="language-shell">{`kronk model pull <model-id> --local`}</code></pre>
-          <p><code>model pull</code> checks the catalog and automatically walks configured providers when an ID has not been resolved before. A separate <code>model resolve</code> step is not normally required. Interrupted downloads are resumable; if a file remains invalid, remove that model through Kronk and pull it again:</p>
+          <p><code>model pull</code> requires a canonical <code>provider/modelID</code> and checks that provider when the ID has not been resolved before. A separate <code>model resolve</code> step is not normally required. Interrupted downloads are resumable; if a file remains invalid, remove that model through Kronk and pull it again:</p>
           <pre className="code-block"><code className="language-shell">{`kronk model remove <model-id> --local
 kronk model pull <model-id> --local`}</code></pre>
           <p>For a gated or private Hugging Face repository, provide a read token:</p>

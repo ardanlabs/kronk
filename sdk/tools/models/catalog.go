@@ -18,11 +18,10 @@ import (
 	"go.yaml.in/yaml/v2"
 )
 
-// Catalog is the on-disk schema for catalog.yaml. It owns the provider
-// priority list and the cache of previously-resolved canonical model IDs.
+// Catalog is the on-disk schema for catalog.yaml. It owns the cache of
+// previously resolved canonical model IDs.
 type Catalog struct {
-	Providers []string                `yaml:"providers"`
-	Models    map[string]CatalogEntry `yaml:"models"`
+	Models map[string]CatalogEntry `yaml:"models"`
 }
 
 // CatalogEntry is the persisted resolution for a single canonical
@@ -145,7 +144,7 @@ func (r *Resolver) FilePath() string {
 }
 
 // Load reads the resolver file from disk. If the file does not exist a
-// zero-value Catalog is returned (with no providers); callers
+// zero-value Catalog is returned; callers
 // should normally seed it from sdk/tools/defaults first.
 func (r *Resolver) Load() (Catalog, error) {
 	r.mu.Lock()
@@ -202,23 +201,12 @@ func (r *Resolver) saveLocked(rm Catalog) error {
 	return nil
 }
 
-// Providers returns the configured provider priority list. If the resolver
-// file has no providers (or cannot be loaded) the fallback list is used.
-func (r *Resolver) Providers() []string {
-	rm, err := r.Load()
-	if err != nil || len(rm.Providers) == 0 {
-		return []string{"unsloth", "ggml-org", "bartowski", "mradermacher", "gpustack"}
-	}
-	return rm.Providers
-}
-
-// Resolve maps an id to a Resolution. The id may be bare ("Qwen3-0.6B-Q8_0"),
-// include an explicit provider ("unsloth/Qwen3-0.6B-Q8_0"), or carry a
-// HuggingFace-style "provider/repo:tag" quant selector
+// Resolve maps a provider-qualified id to a Resolution. The id may be a
+// canonical model ID ("unsloth/Qwen3-0.6B-Q8_0") or carry a HuggingFace-style
+// "provider/repo:tag" quant selector
 // ("unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_XL"). Resolution proceeds in
-// order: resolver file (fast cache) → local disk → HF API across the
-// provider list. Local and HF hits are persisted to the resolver file
-// so subsequent lookups become cache hits.
+// order: resolver file (fast cache) → local disk → HF API. Local and HF hits
+// are persisted to the resolver file so subsequent lookups become cache hits.
 func (r *Resolver) Resolve(ctx context.Context, id string) (Resolution, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -237,9 +225,11 @@ func (r *Resolver) Resolve(ctx context.Context, id string) (Resolution, error) {
 	}
 
 	provider, modelID := splitProviderID(id)
+	if provider == "" || modelID == "" || strings.Contains(modelID, "/") {
+		return Resolution{}, fmt.Errorf("resolve: %w: %q must use provider/modelID", ErrInvalidModelID, id)
+	}
 
-	// 1. Resolver file cache. The fast path — look up by canonical
-	//    provider/modelID, or by bare modelID if no provider was given.
+	// 1. Resolver file cache. The fast path looks up provider/modelID.
 	rm, err := r.Load()
 	if err != nil {
 		return Resolution{}, fmt.Errorf("resolve: %w", err)
@@ -270,28 +260,16 @@ func (r *Resolver) Resolve(ctx context.Context, id string) (Resolution, error) {
 		preferredFamily = cached.Family
 	}
 
-	// 2. HuggingFace search. If a provider was given, search only that
-	//    provider; otherwise walk the priority list. The HF lookup is
-	//    the only path that can produce a correct DownloadProj URL —
+	// 2. HuggingFace search. The HF lookup is the only path that can produce
+	//    a correct DownloadProj URL —
 	//    the on-disk projection file has been renamed and the original
 	//    HF filename cannot be recovered from the local layout.
-	providers := []string{provider}
-	if provider == "" {
-		providers = rm.Providers
-		if len(providers) == 0 {
-			providers = r.Providers()
-		}
-	}
-
 	if online {
-		for _, p := range providers {
-			res, ok, err := r.resolveAtProvider(ctx, p, modelID, preferredFamily)
-			if err != nil {
-				return Resolution{}, fmt.Errorf("resolve: provider %q: %w", p, err)
-			}
-			if !ok {
-				continue
-			}
+		res, ok, err := r.resolveAtProvider(ctx, provider, modelID, preferredFamily)
+		if err != nil {
+			return Resolution{}, fmt.Errorf("resolve: provider %q: %w", provider, err)
+		}
+		if ok {
 
 			// Persist the new entry. MMProj records the local-renamed name
 			// (mmproj-<modelID>.gguf) so attachLocal can find the file on
@@ -337,7 +315,7 @@ func (r *Resolver) Resolve(ctx context.Context, id string) (Resolution, error) {
 		return Resolution{}, fmt.Errorf("resolve: model %q not found locally and no network available", id)
 	}
 
-	return Resolution{}, fmt.Errorf("resolve: model %q not found in any of %v", id, providers)
+	return Resolution{}, fmt.Errorf("resolve: model %q not found at provider %q", id, provider)
 }
 
 // resolvePinned resolves an exact upstream model id from an exact HuggingFace
@@ -701,15 +679,13 @@ func (r *Resolver) refreshSizes(canonical string) error {
 
 // =============================================================================
 
-// lookupLocal checks the local index for a model with the matching bare ID.
-// When provider is empty any provider on disk wins; when set, only entries
-// whose owning org matches are accepted.
+// lookupLocal checks the local index for a provider-qualified model ID.
 func (r *Resolver) lookupLocal(provider, modelID string) (Resolution, bool) {
 	if r.models == nil {
 		return Resolution{}, false
 	}
 
-	mp, err := r.models.FullPath(modelID)
+	mp, err := r.models.FullPath(canonicalID(provider, modelID))
 	if err != nil || len(mp.ModelFiles) == 0 {
 		return Resolution{}, false
 	}
@@ -728,7 +704,7 @@ func (r *Resolver) lookupLocal(provider, modelID string) (Resolution, bool) {
 	localProvider := parts[0]
 	localFamily := parts[1]
 
-	if provider != "" && !strings.EqualFold(provider, localProvider) {
+	if !strings.EqualFold(provider, localProvider) {
 		return Resolution{}, false
 	}
 
@@ -762,20 +738,9 @@ func (r *Resolver) lookupLocal(provider, modelID string) (Resolution, bool) {
 
 // lookupCache checks the persisted resolver file for a matching entry.
 func (r *Resolver) lookupCache(rm Catalog, provider, modelID string) (Resolution, bool) {
-	if provider != "" {
-		key := canonicalID(provider, modelID)
-		if entry, ok := rm.Models[key]; ok {
-			return entryToResolution(key, entry), true
-		}
-		return Resolution{}, false
-	}
-
-	// Bare ID: look for any entry whose modelID half matches.
-	for key, entry := range rm.Models {
-		_, m := splitProviderID(key)
-		if m == modelID {
-			return entryToResolution(key, entry), true
-		}
+	key := canonicalID(provider, modelID)
+	if entry, ok := rm.Models[key]; ok {
+		return entryToResolution(key, entry), true
 	}
 
 	return Resolution{}, false

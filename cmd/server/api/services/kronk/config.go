@@ -88,7 +88,6 @@ func newConfig() config {
 			Build: tag,
 			Desc:  "Kronk",
 		},
-		LlamaLog: 1,
 	}
 
 	cfg.Web.ReadTimeout = 30 * time.Second
