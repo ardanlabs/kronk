@@ -10,7 +10,8 @@ MTP_LOAD_OUT ?= .tools/mtp-load/output
 
 # Builds distinct prompts, calibrates each one with /v1/tokenize, releases all
 # requests through one barrier, and saves request/response JSON plus summary.json.
-# MTP_LOAD_OUT must not already exist so one experiment cannot overwrite another.
+# Replaces MTP_LOAD_OUT at startup so it contains only the current experiment.
+# Requires nseq-max: 1
 mtp-load-parallel:
 	python3 .tools/mtp-load/mtp-load.py \
 		--host "$(MTP_LOAD_HOST)" \
@@ -23,8 +24,9 @@ mtp-load-parallel:
 
 # Sends one known-good coding prompt through a barrier to verify a one-slot
 # model can complete five concurrent requests. Responses stay in memory.
+# Requires nseq-max: 1
 LOAD_HOST ?= http://localhost:11435
-LOAD_MODEL ?= mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT
+LOAD_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT
 LOAD_REQUESTS ?= 5
 LOAD_MAX_TOKENS ?= 4096
 LOAD_SEED ?= 42
@@ -44,6 +46,7 @@ test-load:
 # conversations together, proves their streamed generation overlaps, and
 # verifies that no response contains another conversation's marker. Use
 # BATCH_LOAD_SLOTS and BATCH_LOAD_CONVERSATIONS to exercise N slots.
+# Requires nseq-max: 4
 BATCH_LOAD_HOST ?= http://localhost:11435
 BATCH_LOAD_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT
 BATCH_LOAD_TURNS ?= 21
@@ -72,6 +75,7 @@ test-batch-load:
 # generation, then submits an image and verifies phase-2 media prefill never
 # creates an excessive gap between text content events. The loaded multimodal
 # model must have at least two slots. All timing and output knobs are tunable.
+# Requires nseq-max: >= 2
 MEDIA_LOAD_HOST ?= http://localhost:11435
 MEDIA_LOAD_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT
 MEDIA_LOAD_IMAGE ?= examples/samples/giraffe.jpg
@@ -102,6 +106,7 @@ HTTP_CAPTURE_UPSTREAM_HOST ?= 127.0.0.1
 HTTP_CAPTURE_UPSTREAM_PORT ?= 11435
 HTTP_CAPTURE_OUT ?= .tools/http-capture/output
 
+# Replaces HTTP_CAPTURE_OUT at startup so it contains only the current capture.
 http-capture:
 	python3 .tools/http-capture/capture-proxy.py \
 		--listen-host "$(HTTP_CAPTURE_LISTEN_HOST)" \
@@ -135,6 +140,7 @@ http-inspect-sse:
 #
 # The script exits 1 when it flags anything. Print the triage prompt regardless, then
 # re-raise the script's status so the target still fails on findings.
+# Requires nseq-max: >= 2
 test-adversarial:
 	@echo ========== RUN ADVERSARIAL PROBES ==========
 	@.tools/adversarial/adversarial.sh $(ARGS); \

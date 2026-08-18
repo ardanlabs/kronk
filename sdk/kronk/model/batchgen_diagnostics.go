@@ -140,7 +140,7 @@ func (e *batchEngine) slotSnapshot(now time.Time, s *slot) BatchSlotSnapshot {
 		snapshot.Phase = "prefill"
 		snapshot.PrefillRemaining = max(len(s.prefillTokens)-s.nPrefilled, 0)
 
-	case s.inputChunks != 0:
+	case s.mediaPrefilling || s.inputChunks != 0:
 		snapshot.Phase = "media-prefill"
 
 	case s.prefillDone:

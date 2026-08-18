@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import threading
 import time
 import urllib.error
@@ -140,6 +141,8 @@ def calibrated_prompt(host: str, model: str, index: int, target: int) -> tuple[s
 def main() -> int:
     args = arguments()
     if args.out:
+        if args.out.exists():
+            shutil.rmtree(args.out)
         args.out.mkdir(parents=True, exist_ok=False)
 
     prepared = []

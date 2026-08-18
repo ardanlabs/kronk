@@ -391,6 +391,15 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			s.imcRestoring = false
 		}
 
+		// IMC media builds and appends run synchronously during admission instead
+		// of through processMediaSlot. Publish their phase before the projector or
+		// embedding decode blocks this engine goroutine so diagnostics clients can
+		// observe the work and its overlap with slots already generating.
+		if job.imcMediaBuild || job.imcMediaAppend {
+			s.mediaPrefilling = true
+			e.publishDiagnostics(true)
+		}
+
 		// Decode new cache extension tokens into the slot's sequence if any.
 		switch {
 		case job.imcMediaBuild:
@@ -613,6 +622,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			e.model.log(job.ctx, "start-slot", "status", "imc-reuse", "slot", s.id, "seq", s.seqID,
 				"cached_tokens", cacheIdx)
 		}
+		s.mediaPrefilling = false
 
 	default:
 		// Non-IMC mode: clear the slot's sequence. Held under decodeMu to

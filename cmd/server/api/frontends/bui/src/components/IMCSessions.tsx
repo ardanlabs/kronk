@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../services/api';
 import type { IMCSessionDetail, IMCSessionsResponse, IMCSystemCacheDetail, IMCSystemCachesResponse } from '../types';
-import { formatBytes } from '../lib/format';
+import { formatBytes, formatModelID } from '../lib/format';
 import { labelWithTip, PARAM_TOOLTIPS, type TooltipKey } from './ParamTooltips';
 
 type View = 'current' | 'system';
@@ -49,11 +49,6 @@ function formatDate(value: string): string {
 
 function utilization(peak: number, window: number): string {
   return window > 0 ? `${((peak / window) * 100).toFixed(1)}%` : '0%';
-}
-
-function modelTabLabel(modelID: string): string {
-  const parts = modelID.split('/');
-  return parts[parts.length > 1 ? 1 : 0] || modelID;
 }
 
 export default function IMCSessions() {
@@ -192,7 +187,7 @@ export default function IMCSessions() {
       {modelIDs.length > 0 && (
         <div className="tabs imc-model-tabs" role="tablist" aria-label="IMC caches by model">
           <button type="button" role="tab" aria-selected={selectedModel === ALL_MODELS} className={`tab ${selectedModel === ALL_MODELS ? 'active' : ''}`} onClick={() => setSelectedModel(ALL_MODELS)}>All</button>
-          {modelIDs.map((modelID) => <button key={modelID} type="button" role="tab" aria-selected={selectedModel === modelID} className={`tab imc-model-tab ${selectedModel === modelID ? 'active' : ''}`} title={modelID} onClick={() => setSelectedModel(modelID)}><span className="imc-model-tab-label">{modelTabLabel(modelID)}</span></button>)}
+          {modelIDs.map((modelID) => <button key={modelID} type="button" role="tab" aria-selected={selectedModel === modelID} className={`tab imc-model-tab ${selectedModel === modelID ? 'active' : ''}`} title={modelID} onClick={() => setSelectedModel(modelID)}><span className="imc-model-tab-label">{formatModelID(modelID)}</span></button>)}
         </div>
       )}
 
