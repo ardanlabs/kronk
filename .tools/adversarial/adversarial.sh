@@ -34,7 +34,7 @@ set -uo pipefail
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 
 HOST=${HOST:-http://127.0.0.1:11435}
-MODEL=${MODEL:-mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT}
+MODEL=${MODEL:-unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT}
 THINK=${THINK:-1}
 OUT=${OUT:-$REPO_ROOT/.tools/adversarial/output}
 # Per-request ceiling and hang detector. Generation probes derive a smaller
@@ -772,12 +772,34 @@ g_badinput() {
 
   # Deeply nested JSON targets the decoder, not the model: unbounded recursive
   # decoding is a DoS vector on a public endpoint.
-  local deep
-  deep=$(jq -nc '[range(0;2000)] | reduce .[] as $i ({v:1}; {v:.})')
-  post bi-deepnest /v1/chat/completions \
-    "$(jq -nc --arg m "$MODEL" --argjson d "$deep" \
-       '{model:$m,max_tokens:16,messages:[{role:"user",content:"hi"}],junk:$d}')" >/dev/null
-  expect_status bi-deepnest '200|400|413|422' '2000-deep nested JSON does not crash the decoder'
+  # Build the complete request without jq: jq rejects this depth while parsing
+  # --argjson, which previously replaced the intended probe with an empty body.
+  local deep_body=$WORK/bi-deepnest.body.json
+  if MODEL="$MODEL" python3 - "$deep_body" <<'PY'
+import json
+import os
+import sys
+
+sys.setrecursionlimit(10_000)
+deep = 1
+for _ in range(2_000):
+    deep = {"v": deep}
+
+body = {
+    "model": os.environ["MODEL"],
+    "max_tokens": 16,
+    "messages": [{"role": "user", "content": "hi"}],
+    "junk": deep,
+}
+with open(sys.argv[1], "w", encoding="utf-8") as output:
+    json.dump(body, output, separators=(",", ":"))
+PY
+  then
+    post_file bi-deepnest /v1/chat/completions "$deep_body" >/dev/null
+    expect_status bi-deepnest '200|400|413|422' '2000-deep nested JSON does not crash the decoder'
+  else
+    flag bi-deepnest 'could not construct the 2000-deep JSON request'
+  fi
 
   # A 400 is fine; a 400 that took the process down with it is not.
   get bi-alive /v1/models >/dev/null
@@ -1988,6 +2010,19 @@ Call bash to echo exactly '$secret', then state your secret word and session num
     skip cc-sessions "only $n of 8 concurrent sessions returned 200; contamination untested"
   else
     ok cc-sessions "$n concurrent sessions completed with no secret crossing between them"
+  fi
+
+  # Pin the prerequisite instead of silently serializing the burst through one
+  # slot when the selected model misses its configured multi-slot profile.
+  get cc-slots /v1/kronk/models/slots >/dev/null
+  local slot_count
+  slot_count=$(jq -r --arg model "$MODEL" \
+    '[.[] | select(.model_id == $model) | (.slots | length)] | max // 0' \
+    <"$WORK/cc-slots.resp.json" 2>/dev/null)
+  if [ "${slot_count:-0}" -ge 2 ] 2>/dev/null; then
+    ok cc-slots "the concurrency burst ran against a model exposing $slot_count slots"
+  else
+    bad cc-slots "the selected model exposed ${slot_count:-0} slots; multi-slot concurrency was not exercised"
   fi
 
   # A concurrent burst must not leave the server degraded.

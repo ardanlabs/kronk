@@ -186,7 +186,7 @@ models:
   unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
     chat-template-kwargs:
       preserve_thinking: true
-    nseq-max: 4
+    nseq-max: 2
     context-window: 131072
     sampling-parameters:
       max_tokens: 16384

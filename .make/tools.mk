@@ -75,7 +75,7 @@ test-batch-load:
 # generation, then submits an image and verifies phase-2 media prefill never
 # creates an excessive gap between text content events. The loaded multimodal
 # model must have at least two slots. All timing and output knobs are tunable.
-# Requires nseq-max: >= 2
+# Requires nseq-max: 4
 MEDIA_LOAD_HOST ?= http://localhost:11435
 MEDIA_LOAD_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT
 MEDIA_LOAD_IMAGE ?= examples/samples/giraffe.jpg
@@ -140,7 +140,7 @@ http-inspect-sse:
 #
 # The script exits 1 when it flags anything. Print the triage prompt regardless, then
 # re-raise the script's status so the target still fails on findings.
-# Requires nseq-max: >= 2
+# Requires nseq-max: 4
 test-adversarial:
 	@echo ========== RUN ADVERSARIAL PROBES ==========
 	@.tools/adversarial/adversarial.sh $(ARGS); \
@@ -154,5 +154,12 @@ test-adversarial:
 
 # ==============================================================================
 
+# Exercises the server's four-stage request lifecycle with one execution slot
+# and two admission permits. It holds Stage 4 open, verifies a queued request
+# cancels in Stage 3, verifies a third request times out in Stage 1, then
+# cancels the holder and confirms the slot and admission permit are released.
+# The selected model must use nseq-max: 1, queue-depth: 2, and
+# admission-timeout: 100ms; see .tools/lifecycle-load/main.go for setup details.
+# Requires nseq-max: 1
 example-lifecycle-load:
-	cd examples && go run ./lifecycle-load/main.go
+	go run .tools/lifecycle-load/main.go
