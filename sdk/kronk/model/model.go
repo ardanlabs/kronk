@@ -86,6 +86,7 @@ type imcSession struct {
 	lastUsed            time.Time       // Last access time (for eviction)
 	reserved            bool            // True when a build/extend is in-flight on this session — protects kvState from concurrent writers.
 	allocatedContext    int             // Physical KV-cell capacity represented by the retained target SessionStore backing allocation.
+	snapshotBytes       int             // Retained target, compatible draft, and MTP hidden-row snapshot capacity in bytes.
 	highWaterContext    int             // Largest current context published for this session across reuse and snapshot ownership changes.
 	peakContext         int             // Largest live slot context observed for this session, including generated output.
 	inputMessages       int             // Message count from the latest request completed by this session.

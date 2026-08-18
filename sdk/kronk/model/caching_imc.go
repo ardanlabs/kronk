@@ -73,7 +73,7 @@ func (m *Model) IMCSessions() []IMCSessionDetail {
 			Context:        context,
 			Allocated:      allocated,
 			TotalAllocated: peakContext,
-			SnapshotBytes:  imcSnapshotBytes(session.kvState, session.draftKVState, session.pendingH),
+			SnapshotBytes:  session.snapshotBytes,
 			PeakContext:    peakContext,
 			Messages:       session.cachedMsgCount,
 			InputMessages:  session.inputMessages,
@@ -206,6 +206,7 @@ func imcResetCurrentSession(s *imcSession) {
 	}
 	clear(s.pendingH[:cap(s.pendingH)])
 	s.pendingH = s.pendingH[:0]
+	s.snapshotBytes = imcSnapshotBytes(s.kvState, s.draftKVState, s.pendingH)
 	s.hasMedia = false
 	s.useMRoPE = false
 	s.useNonCausal = false
@@ -371,6 +372,7 @@ func (m *Model) imcPublishSession(session *imcSession) {
 
 	m.cacheMu.Lock()
 	session.allocatedContext = max(session.allocatedContext, session.totalTokensCached)
+	session.snapshotBytes = imcSnapshotBytes(session.kvState, session.draftKVState, session.pendingH)
 	session.highWaterContext = max(session.highWaterContext, session.totalTokensCached)
 	session.reserved = false
 	m.cacheMu.Unlock()

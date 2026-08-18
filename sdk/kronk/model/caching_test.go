@@ -804,6 +804,7 @@ func TestIMCSessions(t *testing.T) {
 			{id: 4, reserved: true, totalTokensCached: 1024, allocatedContext: 1536, cachedMsgCount: 2, kvState: ramSessionStore()},
 		},
 	}
+	m.imcSessions[2].snapshotBytes = imcSnapshotBytes(m.imcSessions[2].kvState, m.imcSessions[2].draftKVState, m.imcSessions[2].pendingH)
 
 	got := m.IMCSessions()
 	if len(got) != len(m.imcSessions) {
