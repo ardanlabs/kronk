@@ -447,12 +447,24 @@ func (l *Llama) autoTuneBudget(modelID string) models.AutoTuneBudget {
 		usage.RAMBudget,
 	)
 
-	selected := gpuDevices(l.modelConfig[modelID].Devices)
-	for _, device := range usage.Devices {
-		if len(selected) > 0 && !slices.Contains(selected, device.Name) {
-			continue
+	cfg := l.modelConfig[modelID]
+	selected := gpuDevices(cfg.Devices)
+	devicesInUse := usage.Devices
+	if len(selected) > 0 {
+		devicesInUse = make([]resman.DeviceUsage, 0, len(selected))
+		for _, name := range selected {
+			idx := slices.IndexFunc(usage.Devices, func(device resman.DeviceUsage) bool {
+				return device.Name == name
+			})
+			if idx >= 0 {
+				devicesInUse = append(devicesInUse, usage.Devices[idx])
+			}
 		}
+	}
 
+	availableDevices := make([]resman.DeviceUsage, 0, len(devicesInUse))
+	deviceBudgets := make([]int64, 0, len(devicesInUse))
+	for _, device := range devicesInUse {
 		startup := slices.IndexFunc(l.startupDevices.Devices, func(candidate devices.DeviceInfo) bool {
 			return candidate.Name == device.Name
 		})
@@ -461,10 +473,52 @@ func (l *Llama) autoTuneBudget(modelID string) models.AutoTuneBudget {
 		}
 
 		startupBudget := int64(float64(l.startupDevices.Devices[startup].FreeBytes) * models.AutoTuneBudgetPercent / 100)
-		budget.GPUBytes = max(budget.GPUBytes, min(startupBudget, device.BudgetBytes))
+		availableDevices = append(availableDevices, device)
+		deviceBudgets = append(deviceBudgets, min(startupBudget, device.BudgetBytes))
 	}
 
+	budget.GPUBytes = autoTuneGPUCapacity(cfg, availableDevices, deviceBudgets)
+
 	return budget
+}
+
+func autoTuneGPUCapacity(cfg models.ModelConfig, devs []resman.DeviceUsage, budgets []int64) int64 {
+	if len(budgets) == 0 {
+		return 0
+	}
+
+	if len(budgets) == 1 || len(gpuDevices(cfg.Devices)) == 0 && cfg.PtrSplitMode != nil && *cfg.PtrSplitMode == model.SplitModeNone {
+		return slices.Max(budgets)
+	}
+
+	weights := make([]float64, len(budgets))
+	var weightTotal float64
+	if len(cfg.TensorSplit) == len(budgets) {
+		for i, split := range cfg.TensorSplit {
+			weights[i] = float64(split)
+			weightTotal += weights[i]
+		}
+	}
+	if weightTotal <= 0 {
+		for i, device := range devs {
+			weights[i] = float64(device.TotalBytes)
+			weightTotal += weights[i]
+		}
+	}
+
+	var capacity int64
+	for i, weight := range weights {
+		if weight <= 0 {
+			continue
+		}
+
+		deviceCapacity := int64(float64(budgets[i]) * weightTotal / weight)
+		if capacity == 0 || deviceCapacity < capacity {
+			capacity = deviceCapacity
+		}
+	}
+
+	return capacity
 }
 
 // predictResult returns the full VRAM calculator result for a given

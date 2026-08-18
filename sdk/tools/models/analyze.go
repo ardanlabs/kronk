@@ -101,7 +101,8 @@ const AutoTuneBudgetPercent = 85
 type AutoTuneBudget struct {
 	// Devices is the immutable hardware snapshot used for the analysis.
 	Devices devices.Devices
-	// GPUBytes is the largest single-device empty-pool budget.
+	// GPUBytes is the effective empty-pool capacity for the configured GPU
+	// placement. Multi-GPU split modes account for every participating device.
 	GPUBytes int64
 	// SystemRAMBytes is the empty-pool system RAM budget.
 	SystemRAMBytes int64
