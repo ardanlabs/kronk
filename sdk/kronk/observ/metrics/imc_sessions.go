@@ -12,23 +12,19 @@ import (
 // IMCSession describes the current scalar values for one bounded IMC cache
 // entry.
 type IMCSession struct {
-	ModelID           string
-	Entry             int
-	State             string
-	Messages          int
-	Context           int
-	Allocated         int
-	FallbackContext   int
-	FallbackAllocated int
-	FallbackKind      string
-	FallbackUpdates   uint64
-	InputMessages     int
-	InputTokens       int
-	OutputTokens      int
-	PeakContext       int
-	Window            int
-	HasMedia          bool
-	LastUsed          time.Time
+	ModelID       string
+	Entry         int
+	State         string
+	Messages      int
+	Context       int
+	Allocated     int
+	InputMessages int
+	InputTokens   int
+	OutputTokens  int
+	PeakContext   int
+	Window        int
+	HasMedia      bool
+	LastUsed      time.Time
 }
 
 // IMCSessionsProvider returns the current bounded IMC cache entries.
@@ -39,24 +35,20 @@ type imcSessionsCollector struct {
 	provider   IMCSessionsProvider
 	generation uint64
 
-	state             *prometheus.Desc
-	messages          *prometheus.Desc
-	context           *prometheus.Desc
-	allocated         *prometheus.Desc
-	fallbackContext   *prometheus.Desc
-	fallbackAllocated *prometheus.Desc
-	fallbackKind      *prometheus.Desc
-	fallbackUpdates   *prometheus.Desc
-	inputMessages     *prometheus.Desc
-	inputTokens       *prometheus.Desc
-	outputTokens      *prometheus.Desc
-	requestContext    *prometheus.Desc
-	peakContext       *prometheus.Desc
-	peakUsedPercent   *prometheus.Desc
-	window            *prometheus.Desc
-	usedPercent       *prometheus.Desc
-	hasMedia          *prometheus.Desc
-	lastUsed          *prometheus.Desc
+	state           *prometheus.Desc
+	messages        *prometheus.Desc
+	context         *prometheus.Desc
+	allocated       *prometheus.Desc
+	inputMessages   *prometheus.Desc
+	inputTokens     *prometheus.Desc
+	outputTokens    *prometheus.Desc
+	requestContext  *prometheus.Desc
+	peakContext     *prometheus.Desc
+	peakUsedPercent *prometheus.Desc
+	window          *prometheus.Desc
+	usedPercent     *prometheus.Desc
+	hasMedia        *prometheus.Desc
+	lastUsed        *prometheus.Desc
 }
 
 func newIMCSessionsCollector() *imcSessionsCollector {
@@ -84,30 +76,6 @@ func newIMCSessionsCollector() *imcSessionsCollector {
 		allocated: prometheus.NewDesc(
 			"imc_session_allocated_tokens",
 			"Largest physical context retained by the current IMC cache entry, in tokens.",
-			labels,
-			nil,
-		),
-		fallbackContext: prometheus.NewDesc(
-			"imc_session_fallback_context_tokens",
-			"Physical context represented by the fallback IMC cache entry, in tokens.",
-			labels,
-			nil,
-		),
-		fallbackAllocated: prometheus.NewDesc(
-			"imc_session_fallback_allocated_tokens",
-			"Largest physical context retained by the fallback IMC cache entry, in tokens.",
-			labels,
-			nil,
-		),
-		fallbackKind: prometheus.NewDesc(
-			"imc_session_fallback_kind",
-			"Current fallback state; value is 1 for the kind in the kind label and absent when no fallback exists.",
-			append(labels, "kind"),
-			nil,
-		),
-		fallbackUpdates: prometheus.NewDesc(
-			"imc_session_fallback_updates",
-			"Number of times Kronk installed or advanced this entry's fallback cache; resets when the entry is recycled.",
 			labels,
 			nil,
 		),
@@ -181,10 +149,6 @@ func (c *imcSessionsCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.messages
 	ch <- c.context
 	ch <- c.allocated
-	ch <- c.fallbackContext
-	ch <- c.fallbackAllocated
-	ch <- c.fallbackKind
-	ch <- c.fallbackUpdates
 	ch <- c.inputMessages
 	ch <- c.inputTokens
 	ch <- c.outputTokens
@@ -214,13 +178,6 @@ func (c *imcSessionsCollector) Collect(ch chan<- prometheus.Metric) {
 		c.collect(ch, c.messages, float64(session.Messages), modelID, entry)
 		c.collect(ch, c.context, float64(session.Context), modelID, entry)
 		c.collect(ch, c.allocated, float64(session.Allocated), modelID, entry)
-		c.collect(ch, c.fallbackContext, float64(session.FallbackContext), modelID, entry)
-		c.collect(ch, c.fallbackAllocated, float64(session.FallbackAllocated), modelID, entry)
-		switch session.FallbackKind {
-		case "user", "calculating":
-			c.collect(ch, c.fallbackKind, 1, modelID, entry, session.FallbackKind)
-		}
-		c.collect(ch, c.fallbackUpdates, float64(session.FallbackUpdates), modelID, entry)
 		c.collect(ch, c.inputMessages, float64(session.InputMessages), modelID, entry)
 		c.collect(ch, c.inputTokens, float64(session.InputTokens), modelID, entry)
 		c.collect(ch, c.outputTokens, float64(session.OutputTokens), modelID, entry)

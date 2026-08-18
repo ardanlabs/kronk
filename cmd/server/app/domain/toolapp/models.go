@@ -563,6 +563,14 @@ func (a *app) imcSessions(ctx context.Context, r *http.Request) web.Encoder {
 	return toIMCSessions(sessions)
 }
 
+func (a *app) imcSystemCaches(ctx context.Context, r *http.Request) web.Encoder {
+	caches := a.pool.Kronk.IMCSystemCaches()
+
+	a.log.Info(ctx, "imc-system-caches", "len", len(caches))
+
+	return toIMCSystemCaches(caches)
+}
+
 func (a *app) batchEngineSlots(ctx context.Context, r *http.Request) web.Encoder {
 	snapshots := a.pool.Kronk.BatchEngineSnapshots()
 

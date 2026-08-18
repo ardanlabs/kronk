@@ -85,8 +85,8 @@ The sidebar groups related operations by subsystem.
   have generation slots and are omitted. Each Stage 2 selector retains its
   selected slot until that decode path is complete, then advances to the next
   eligible slot.
-- **IMC Sessions** shows the bounded Incremental Message Cache entries owned by
-  loaded models, including current and fallback cache usage.
+- **IMC Sessions** has separate tabs for bounded working sessions and
+  model-owned, reusable System prompt caches.
 
 #### Kronk
 

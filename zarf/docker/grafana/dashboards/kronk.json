@@ -1155,42 +1155,6 @@
         {
           "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
           "editorMode": "code",
-          "expr": "imc_session_fallback_context_tokens{model_id=~\"$model_id\"}",
-          "format": "table",
-          "instant": true,
-          "range": false,
-          "refId": "I"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
-          "editorMode": "code",
-          "expr": "imc_session_fallback_allocated_tokens{model_id=~\"$model_id\"}",
-          "format": "table",
-          "instant": true,
-          "range": false,
-          "refId": "J"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
-          "editorMode": "code",
-          "expr": "imc_session_fallback_kind{model_id=~\"$model_id\"}",
-          "format": "table",
-          "instant": true,
-          "range": false,
-          "refId": "K"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
-          "editorMode": "code",
-          "expr": "imc_session_fallback_updates{model_id=~\"$model_id\"}",
-          "format": "table",
-          "instant": true,
-          "range": false,
-          "refId": "L"
-        },
-        {
-          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
-          "editorMode": "code",
           "expr": "imc_session_latest_request_messages{model_id=~\"$model_id\"}",
           "format": "table",
           "instant": true,
@@ -1252,7 +1216,6 @@
             "excludeByName": {
               "Time": true,
               "Value #A": true,
-              "Value #K": true,
               "__name__": true
             },
             "indexByName": {
@@ -1262,20 +1225,16 @@
               "Value #B": 3,
               "Value #C": 4,
               "Value #D": 5,
-              "Value #I": 6,
-              "Value #J": 7,
-              "kind": 8,
-              "Value #L": 9,
-              "Value #M": 10,
-              "Value #N": 11,
-              "Value #O": 12,
-              "Value #P": 13,
-              "Value #Q": 14,
-              "Value #R": 15,
-              "Value #E": 16,
-              "Value #F": 17,
-              "Value #G": 18,
-              "Value #H": 19
+              "Value #M": 6,
+              "Value #N": 7,
+              "Value #O": 8,
+              "Value #P": 9,
+              "Value #Q": 10,
+              "Value #R": 11,
+              "Value #E": 12,
+              "Value #F": 13,
+              "Value #G": 14,
+              "Value #H": 15
             },
             "renameByName": {
               "Value #B": "Current Messages",
@@ -1285,9 +1244,6 @@
               "Value #F": "Used",
               "Value #G": "Media",
               "Value #H": "Last Used",
-              "Value #I": "Fallback Tokens",
-              "Value #J": "Fallback Allocated",
-              "Value #L": "Fallback Updates",
               "Value #M": "Request Messages",
               "Value #N": "Request Input",
               "Value #O": "Request Output",
@@ -1295,7 +1251,6 @@
               "Value #Q": "Peak Context",
               "Value #R": "Peak Used",
               "entry": "Entry",
-              "kind": "Fallback Kind",
               "model_id": "Model",
               "state": "State"
             }
@@ -1305,7 +1260,7 @@
           "id": "sortBy",
           "options": {
             "fields": {},
-            "sort": [{ "desc": true, "field": "Peak Context" }]
+            "sort": [{ "desc": true, "field": "Last Used" }]
           }
         }
       ],

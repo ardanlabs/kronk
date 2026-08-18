@@ -2,8 +2,10 @@ package model
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"runtime"
+	"slices"
 	"strings"
 	"unsafe"
 
@@ -13,6 +15,84 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
+var errIMCMediaNativePrefix = errors.New("mtmd native prefix diverged")
+
+const (
+	imcMediaChunkText uint8 = iota + 1
+	imcMediaChunkImage
+	imcMediaChunkAudio
+)
+
+// imcMediaChunk records mtmd's authoritative native chunk stream. Logical
+// prompt-plan media markers cannot be used here because one marker may expand
+// into several native chunks and mtmd may inject text tokens around them.
+type imcMediaChunk struct {
+	kind    uint8
+	tokens  []llama.Token
+	nTokens int
+	nPos    int
+}
+
+type imcMediaPrefixCursor struct {
+	chunks      []imcMediaChunk
+	chunkOffset int
+	textOffset  int
+}
+
+func (c *imcMediaPrefixCursor) consumeText(tokens []llama.Token) ([]llama.Token, int, error) {
+	skipped := 0
+	for len(tokens) > 0 && !c.done() {
+		cached := c.chunks[c.chunkOffset]
+		if cached.kind != imcMediaChunkText {
+			return nil, skipped, fmt.Errorf("%w at chunk %d: got text, want media", errIMCMediaNativePrefix, c.chunkOffset)
+		}
+
+		remaining := cached.tokens[c.textOffset:]
+		n := min(len(tokens), len(remaining))
+		if !slices.Equal(tokens[:n], remaining[:n]) {
+			return nil, skipped, fmt.Errorf("%w at text chunk %d token %d", errIMCMediaNativePrefix, c.chunkOffset, c.textOffset)
+		}
+
+		tokens = tokens[n:]
+		skipped += n
+		c.textOffset += n
+		if c.textOffset == len(cached.tokens) {
+			c.chunkOffset++
+			c.textOffset = 0
+			c.skipEmptyText()
+		}
+	}
+
+	return tokens, skipped, nil
+}
+
+func (c *imcMediaPrefixCursor) consumeMedia(chunk imcMediaChunk) (bool, error) {
+	c.skipEmptyText()
+	if c.done() {
+		return false, nil
+	}
+
+	cached := c.chunks[c.chunkOffset]
+	if c.textOffset != 0 || cached.kind != chunk.kind || cached.nTokens != chunk.nTokens || cached.nPos != chunk.nPos {
+		return false, fmt.Errorf("%w at media chunk %d", errIMCMediaNativePrefix, c.chunkOffset)
+	}
+
+	c.chunkOffset++
+	c.skipEmptyText()
+	return true, nil
+}
+
+func (c *imcMediaPrefixCursor) done() bool {
+	c.skipEmptyText()
+	return c.chunkOffset == len(c.chunks)
+}
+
+func (c *imcMediaPrefixCursor) skipEmptyText() {
+	for c.chunkOffset < len(c.chunks) && c.chunks[c.chunkOffset].kind == imcMediaChunkText && len(c.chunks[c.chunkOffset].tokens) == 0 {
+		c.chunkOffset++
+	}
+}
+
 // decodeMediaIntoCache decodes a document containing text and media (images/audio)
 // into a KV cache sequence using the mtmd pipeline. This is used by IMC media
 // cache builds to populate the slot's KV cache with the full multi-modal prefix.
@@ -21,7 +101,14 @@ import (
 // projection file twice. Returns the next logical position, total physical KV
 // cells, physical KV cells consumed per media chunk, and the authoritative
 // mtmd text tokens decoded around the media embedding chunks.
-func (m *Model) decodeMediaIntoCache(ctx context.Context, cacheD D, seqID llama.SeqId, mtmdCtx mtmd.Context) (int, int, []int, []llama.Token, error) {
+func (m *Model) decodeMediaIntoCache(ctx context.Context, cacheD D, seqID llama.SeqId, mtmdCtx mtmd.Context) (int, int, []int, []llama.Token, []imcMediaChunk, error) {
+	return m.decodeMediaIntoCacheFromPlan(ctx, cacheD, nil, seqID, mtmdCtx, 0)
+}
+
+// decodeMediaIntoCacheFromPlan verifies the current mtmd-native stream against
+// a cached native prefix and decodes only the appended chunks. An empty prefix
+// performs a full media cache build.
+func (m *Model) decodeMediaIntoCacheFromPlan(ctx context.Context, cacheD D, prefix []imcMediaChunk, seqID llama.SeqId, mtmdCtx mtmd.Context, startPos int) (int, int, []int, []llama.Token, []imcMediaChunk, error) {
 	ctx, span := otel.AddSpan(ctx, "imc-media-cache-build",
 		attribute.Int("seq", int(seqID)),
 	)
@@ -30,7 +117,7 @@ func (m *Model) decodeMediaIntoCache(ctx context.Context, cacheD D, seqID llama.
 	// Step 1: Create prompt and extract media bytes from the cache document.
 	prompt, media, err := m.createPrompt(ctx, cacheD)
 	if err != nil {
-		return 0, 0, nil, nil, fmt.Errorf("imc-media-cache: unable to create prompt: %w", err)
+		return 0, 0, nil, nil, nil, fmt.Errorf("imc-media-cache: unable to create prompt: %w", err)
 	}
 
 	m.log(ctx, "imc-media-cache", "status", "prompt-created", "seq", seqID,
@@ -51,11 +138,11 @@ func (m *Model) decodeMediaIntoCache(ctx context.Context, cacheD D, seqID llama.
 	}()
 	for i, med := range media {
 		if len(med) == 0 {
-			return 0, 0, nil, nil, fmt.Errorf("imc-media-cache: media[%d] is empty", i)
+			return 0, 0, nil, nil, nil, fmt.Errorf("imc-media-cache: media[%d] is empty", i)
 		}
 		bmp, err := newMediaBitmap(mtmdCtx, med)
 		if err != nil {
-			return 0, 0, nil, nil, fmt.Errorf("imc-media-cache: media[%d]: %w", i, err)
+			return 0, 0, nil, nil, nil, fmt.Errorf("imc-media-cache: media[%d]: %w", i, err)
 		}
 		bitmaps[i] = bmp
 	}
@@ -67,7 +154,7 @@ func (m *Model) decodeMediaIntoCache(ctx context.Context, cacheD D, seqID llama.
 	// catches double-render or template bugs early.
 	markerCount := strings.Count(prompt, mtmd.DefaultMarker())
 	if markerCount != len(bitmaps) {
-		return 0, 0, nil, nil, fmt.Errorf("imc-media-cache: marker/bitmap count mismatch: prompt has %d %q markers but %d bitmaps were prepared", markerCount, mtmd.DefaultMarker(), len(bitmaps))
+		return 0, 0, nil, nil, nil, fmt.Errorf("imc-media-cache: marker/bitmap count mismatch: prompt has %d %q markers but %d bitmaps were prepared", markerCount, mtmd.DefaultMarker(), len(bitmaps))
 	}
 
 	inputChunks := mtmd.InputChunksInit()
@@ -75,7 +162,7 @@ func (m *Model) decodeMediaIntoCache(ctx context.Context, cacheD D, seqID llama.
 
 	input := mtmd.NewInputText(prompt, true, true)
 	if result := mtmd.Tokenize(mtmdCtx, inputChunks, input, bitmaps); result != 0 {
-		return 0, 0, nil, nil, fmt.Errorf("imc-media-cache: tokenization failed with code %d", result)
+		return 0, 0, nil, nil, nil, fmt.Errorf("imc-media-cache: tokenization failed with code %d", result)
 	}
 
 	useMRoPE := mtmd.DecodeUseMRope(mtmdCtx)
@@ -87,56 +174,74 @@ func (m *Model) decodeMediaIntoCache(ctx context.Context, cacheD D, seqID llama.
 		"num_chunks", numChunks, "use_mrope", useMRoPE, "use_noncausal", useNonCausal)
 
 	// Step 4: Process each chunk, decoding into the KV cache sequence.
-	var pos int
+	pos := startPos
 	var physicalKVCells int
 	var mediaKVCounts []int
 	var samplerPromptTokens []llama.Token
+	var nativeChunks []imcMediaChunk
+	prefixCursor := imcMediaPrefixCursor{chunks: prefix}
 
 	for i := range numChunks {
 		chunk := mtmd.InputChunksGet(inputChunks, i)
 		chunkType := mtmd.InputChunkGetType(chunk)
 		nTokens := mtmd.InputChunkGetNTokens(chunk)
 		nPos := int(mtmd.InputChunkGetNPos(chunk))
-		physicalKVCells += int(nTokens)
 
 		switch chunkType {
 		case mtmd.InputChunkTypeText:
 			tokens := mtmd.InputChunkGetTokensText(chunk)
+			nativeChunks = append(nativeChunks, imcMediaChunk{kind: imcMediaChunkText, tokens: slices.Clone(tokens)})
 			samplerPromptTokens = append(samplerPromptTokens, tokens...)
+			var skip int
+			tokens, skip, err = prefixCursor.consumeText(tokens)
+			if err != nil {
+				return 0, 0, nil, nil, nil, err
+			}
 			if len(tokens) == 0 {
 				continue
 			}
+			physicalKVCells += len(tokens)
 
 			m.log(ctx, "imc-media-cache", "status", "decoding-text-chunk", "seq", seqID,
-				"chunk", i, "tokens", len(tokens), "pos", pos, "mrope", useMRoPE)
+				"chunk", i, "tokens", len(tokens), "skipped_tokens", skip, "pos", pos, "mrope", useMRoPE)
 
 			switch {
 			case useMRoPE:
 				nDecoded, err := m.decodeTextMRoPEIntoCache(tokens, seqID, pos)
 				if err != nil {
-					return 0, 0, nil, nil, fmt.Errorf("imc-media-cache: text chunk %d (M-RoPE): %w", i, err)
+					return 0, 0, nil, nil, nil, fmt.Errorf("imc-media-cache: text chunk %d (M-RoPE): %w", i, err)
 				}
 				pos += nDecoded
 			default:
 				if err := m.decodeTokensIntoCache(ctx, tokens, seqID, pos); err != nil {
-					return 0, 0, nil, nil, fmt.Errorf("imc-media-cache: text chunk %d: %w", i, err)
+					return 0, 0, nil, nil, nil, fmt.Errorf("imc-media-cache: text chunk %d: %w", i, err)
 				}
 				pos += len(tokens)
 			}
 
 		case mtmd.InputChunkTypeImage:
+			nativeChunk := imcMediaChunk{kind: imcMediaChunkImage, nTokens: int(nTokens), nPos: nPos}
+			nativeChunks = append(nativeChunks, nativeChunk)
+			cached, err := prefixCursor.consumeMedia(nativeChunk)
+			if err != nil {
+				return 0, 0, nil, nil, nil, err
+			}
+			if cached {
+				continue
+			}
+			physicalKVCells += int(nTokens)
 			m.log(ctx, "imc-media-cache", "status", "encoding-image-chunk", "seq", seqID,
 				"chunk", i, "tokens", nTokens, "pos", pos)
 
 			if err := mtmd.EncodeChunk(mtmdCtx, chunk); err != nil {
-				return 0, 0, nil, nil, fmt.Errorf("imc-media-cache: encode image chunk %d: %w", i, err)
+				return 0, 0, nil, nil, nil, fmt.Errorf("imc-media-cache: encode image chunk %d: %w", i, err)
 			}
 
 			nEmbd := llama.ModelNEmbdInp(m.model)
 			embedSize := nEmbd * int32(nTokens)
 			embd, err := mtmd.GetOutputEmbd(mtmdCtx, embedSize)
 			if err != nil {
-				return 0, 0, nil, nil, fmt.Errorf("imc-media-cache: get image embeddings chunk %d: %w", i, err)
+				return 0, 0, nil, nil, nil, fmt.Errorf("imc-media-cache: get image embeddings chunk %d: %w", i, err)
 			}
 
 			switch {
@@ -150,49 +255,62 @@ func (m *Model) decodeMediaIntoCache(ctx context.Context, cacheD D, seqID llama.
 
 				nDecoded, err := m.decodeEmbeddingsMRoPEIntoCache(embd, nEmbd, int32(nTokens), nx, ny, seqID, pos, useNonCausal)
 				if err != nil {
-					return 0, 0, nil, nil, fmt.Errorf("imc-media-cache: decode image embeddings chunk %d (M-RoPE): %w", i, err)
+					return 0, 0, nil, nil, nil, fmt.Errorf("imc-media-cache: decode image embeddings chunk %d (M-RoPE): %w", i, err)
 				}
 				pos += nPos
 				mediaKVCounts = append(mediaKVCounts, nDecoded)
 			default:
 				nDecoded, err := m.decodeEmbeddingsIntoCache(embd, nEmbd, int32(nTokens), seqID, pos, useNonCausal)
 				if err != nil {
-					return 0, 0, nil, nil, fmt.Errorf("imc-media-cache: decode image embeddings chunk %d: %w", i, err)
+					return 0, 0, nil, nil, nil, fmt.Errorf("imc-media-cache: decode image embeddings chunk %d: %w", i, err)
 				}
 				pos += nDecoded
 				mediaKVCounts = append(mediaKVCounts, nDecoded)
 			}
 
 		case mtmd.InputChunkTypeAudio:
+			nativeChunk := imcMediaChunk{kind: imcMediaChunkAudio, nTokens: int(nTokens), nPos: nPos}
+			nativeChunks = append(nativeChunks, nativeChunk)
+			cached, err := prefixCursor.consumeMedia(nativeChunk)
+			if err != nil {
+				return 0, 0, nil, nil, nil, err
+			}
+			if cached {
+				continue
+			}
+			physicalKVCells += int(nTokens)
 			m.log(ctx, "imc-media-cache", "status", "encoding-audio-chunk", "seq", seqID,
 				"chunk", i, "tokens", nTokens, "pos", pos)
 
 			if err := mtmd.EncodeChunk(mtmdCtx, chunk); err != nil {
-				return 0, 0, nil, nil, fmt.Errorf("imc-media-cache: encode audio chunk %d: %w", i, err)
+				return 0, 0, nil, nil, nil, fmt.Errorf("imc-media-cache: encode audio chunk %d: %w", i, err)
 			}
 
 			nEmbd := llama.ModelNEmbdInp(m.model)
 			embedSize := nEmbd * int32(nTokens)
 			embd, err := mtmd.GetOutputEmbd(mtmdCtx, embedSize)
 			if err != nil {
-				return 0, 0, nil, nil, fmt.Errorf("imc-media-cache: get audio embeddings chunk %d: %w", i, err)
+				return 0, 0, nil, nil, nil, fmt.Errorf("imc-media-cache: get audio embeddings chunk %d: %w", i, err)
 			}
 
 			// Audio uses standard linear positioning (not M-RoPE).
 			nDecoded, err := m.decodeEmbeddingsIntoCache(embd, nEmbd, int32(nTokens), seqID, pos, useNonCausal)
 			if err != nil {
-				return 0, 0, nil, nil, fmt.Errorf("imc-media-cache: decode audio embeddings chunk %d: %w", i, err)
+				return 0, 0, nil, nil, nil, fmt.Errorf("imc-media-cache: decode audio embeddings chunk %d: %w", i, err)
 			}
 			pos += nDecoded
 			mediaKVCounts = append(mediaKVCounts, nDecoded)
 		}
 	}
+	if !prefixCursor.done() {
+		return 0, 0, nil, nil, nil, fmt.Errorf("%w: current stream ended first", errIMCMediaNativePrefix)
+	}
 
 	m.log(ctx, "imc-media-cache", "status", "complete", "seq", seqID,
 		"logical_positions", pos, "physical_kv_cells", physicalKVCells,
-		"media_kv_cells", mediaKVCounts, "num_chunks", numChunks)
+		"media_kv_cells", mediaKVCounts, "num_chunks", numChunks, "cached_prefix_chunks", len(prefix))
 
-	return pos, physicalKVCells, mediaKVCounts, samplerPromptTokens, nil
+	return pos, physicalKVCells, mediaKVCounts, samplerPromptTokens, nativeChunks, nil
 }
 
 // decodeEmbeddingsIntoCache decodes embeddings into a KV cache sequence with

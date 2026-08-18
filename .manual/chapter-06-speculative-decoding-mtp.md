@@ -259,8 +259,8 @@ Startup events under `draft-model`, `draft-model-mtp`, and
   remains valid. Shared-target-KV MTP resumes from the restored target state.
   Own-KV MTP resumes only when Kronk can restore the matching draft snapshot
   and saved final hidden row; if either is absent or invalid, that request runs
-  target-only rather than drafting from inconsistent state. Text user-turn
-  checkpoints retain this paired state when it is valid. See
+  target-only rather than drafting from inconsistent state. Text System cache
+  entries retain this paired state when it is valid. See
   [Chapter 5](https://www.kronkai.com/manual#chapter-5-message-caching).
 - **Media support is conservative.** Media projection and media prefill run on
   the target, and target IMC can cache and restore that media state. Kronk does

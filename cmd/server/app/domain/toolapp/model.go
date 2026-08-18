@@ -577,26 +577,21 @@ func toModelDetails(models []pool.ModelDetail) ModelDetailsResponse {
 // IMCSessionDetail provides the current state of one allocated IMC cache
 // entry.
 type IMCSessionDetail struct {
-	ModelID             string    `json:"model_id"`
-	ID                  int       `json:"id"`
-	State               string    `json:"state"`
-	Context             int       `json:"context"`
-	Allocated           int       `json:"allocated"`
-	CheckpointContext   int       `json:"checkpoint_context"`
-	CheckpointAllocated int       `json:"checkpoint_allocated"`
-	TotalAllocated      int       `json:"total_allocated"`
-	PeakContext         int       `json:"peak_context"`
-	Messages            int       `json:"messages"`
-	InputMessages       int       `json:"input_messages"`
-	InputTokens         int       `json:"input_tokens"`
-	OutputTokens        int       `json:"output_tokens"`
-	ReusableMessages    int       `json:"reusable_messages"`
-	ReusableTokens      int       `json:"reusable_tokens"`
-	FallbackKind        string    `json:"fallback_kind"`
-	FallbackUpdates     uint64    `json:"fallback_updates"`
-	ContextWindow       int       `json:"context_window"`
-	LastUsed            time.Time `json:"last_used"`
-	HasMedia            bool      `json:"has_media"`
+	ModelID        string    `json:"model_id"`
+	ID             int       `json:"id"`
+	State          string    `json:"state"`
+	Context        int       `json:"context"`
+	Allocated      int       `json:"allocated"`
+	TotalAllocated int       `json:"total_allocated"`
+	SnapshotBytes  int       `json:"snapshot_bytes"`
+	PeakContext    int       `json:"peak_context"`
+	Messages       int       `json:"messages"`
+	InputMessages  int       `json:"input_messages"`
+	InputTokens    int       `json:"input_tokens"`
+	OutputTokens   int       `json:"output_tokens"`
+	ContextWindow  int       `json:"context_window"`
+	LastUsed       time.Time `json:"last_used"`
+	HasMedia       bool      `json:"has_media"`
 }
 
 // IMCSessionsResponse is the current set of allocated IMC cache entries.
@@ -613,29 +608,62 @@ func toIMCSessions(sessions []pool.IMCSessionDetail) IMCSessionsResponse {
 
 	for i, session := range sessions {
 		details[i] = IMCSessionDetail{
-			ModelID:             session.ModelID,
-			ID:                  session.ID,
-			State:               string(session.State),
-			Context:             session.Context,
-			Allocated:           session.Allocated,
-			CheckpointContext:   session.CheckpointContext,
-			CheckpointAllocated: session.CheckpointAllocated,
-			TotalAllocated:      session.TotalAllocated,
-			PeakContext:         session.PeakContext,
-			Messages:            session.Messages,
-			InputMessages:       session.InputMessages,
-			InputTokens:         session.InputTokens,
-			OutputTokens:        session.OutputTokens,
-			ReusableMessages:    session.ReusableMessages,
-			ReusableTokens:      session.ReusableTokens,
-			FallbackKind:        session.FallbackKind,
-			FallbackUpdates:     session.FallbackUpdates,
-			ContextWindow:       session.ContextWindow,
-			LastUsed:            session.LastUsed,
-			HasMedia:            session.HasMedia,
+			ModelID:        session.ModelID,
+			ID:             session.ID,
+			State:          string(session.State),
+			Context:        session.Context,
+			Allocated:      session.Allocated,
+			TotalAllocated: session.TotalAllocated,
+			SnapshotBytes:  session.SnapshotBytes,
+			PeakContext:    session.PeakContext,
+			Messages:       session.Messages,
+			InputMessages:  session.InputMessages,
+			InputTokens:    session.InputTokens,
+			OutputTokens:   session.OutputTokens,
+			ContextWindow:  session.ContextWindow,
+			LastUsed:       session.LastUsed,
+			HasMedia:       session.HasMedia,
 		}
 	}
 
+	return details
+}
+
+// IMCSystemCacheDetail provides one immutable System preload entry.
+type IMCSystemCacheDetail struct {
+	ModelID        string    `json:"model_id"`
+	ID             int       `json:"id"`
+	Tokens         int       `json:"tokens"`
+	Allocated      int       `json:"allocated"`
+	SnapshotBytes  int       `json:"snapshot_bytes"`
+	RestoreCount   uint64    `json:"restore_count"`
+	ActiveRestores int       `json:"active_restores"`
+	LastUsed       time.Time `json:"last_used"`
+}
+
+// IMCSystemCachesResponse is the current set of System cache pool entries.
+type IMCSystemCachesResponse []IMCSystemCacheDetail
+
+// Encode implements the encoder interface.
+func (app IMCSystemCachesResponse) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}
+
+func toIMCSystemCaches(caches []pool.IMCSystemCacheDetail) IMCSystemCachesResponse {
+	details := make(IMCSystemCachesResponse, len(caches))
+	for i, cache := range caches {
+		details[i] = IMCSystemCacheDetail{
+			ModelID:        cache.ModelID,
+			ID:             cache.ID,
+			Tokens:         cache.Tokens,
+			Allocated:      cache.Allocated,
+			SnapshotBytes:  cache.SnapshotBytes,
+			RestoreCount:   cache.RestoreCount,
+			ActiveRestores: cache.ActiveRestores,
+			LastUsed:       cache.LastUsed,
+		}
+	}
 	return details
 }
 

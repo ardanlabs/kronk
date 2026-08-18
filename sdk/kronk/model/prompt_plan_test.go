@@ -35,16 +35,20 @@ func TestProcessIMCMediaPlansMatches(t *testing.T) {
 		stable    promptPlan
 		actual    promptPlan
 		kvBytes   bool
+		nonCausal bool
+		noNative  bool
 		wantMatch string
 	}{
 		{name: "exact", stable: base, actual: mediaPlan(text(1), media(imageA), text(2), text(9)), kvBytes: true, wantMatch: "exact"},
 		{name: "text append", stable: mediaPlan(text(1), media(imageA), text(2), text(3)), actual: mediaPlan(text(1), media(imageA), text(2), text(3), text(9)), kvBytes: true, wantMatch: "anchor"},
 		{name: "changed media", stable: mediaPlan(text(1), media(imageB), text(2)), actual: mediaPlan(text(1), media(imageB), text(2), text(9)), kvBytes: true, wantMatch: "rebuild"},
-		{name: "added media", stable: mediaPlan(text(1), media(imageA), text(2), media(imageB)), actual: mediaPlan(text(1), media(imageA), text(2), media(imageB), text(9)), kvBytes: true, wantMatch: "rebuild"},
+		{name: "added media", stable: mediaPlan(text(1), media(imageA), text(2), media(imageB)), actual: mediaPlan(text(1), media(imageA), text(2), media(imageB), text(9)), kvBytes: true, wantMatch: "media-append"},
+		{name: "added media non-causal", stable: mediaPlan(text(1), media(imageA), text(2), media(imageB)), actual: mediaPlan(text(1), media(imageA), text(2), media(imageB), text(9)), kvBytes: true, nonCausal: true, wantMatch: "rebuild"},
+		{name: "added media without native metadata", stable: mediaPlan(text(1), media(imageA), text(2), media(imageB)), actual: mediaPlan(text(1), media(imageA), text(2), media(imageB), text(9)), kvBytes: true, noNative: true, wantMatch: "rebuild"},
 		{name: "removed media", stable: mediaPlan(text(1), text(2)), actual: mediaPlan(text(1), text(2), text(9)), kvBytes: true, wantMatch: "rebuild"},
 		{name: "reordered media", stable: mediaPlan(text(1), media(imageB), media(imageA), text(2)), actual: mediaPlan(text(1), media(imageB), media(imageA), text(2), text(9)), kvBytes: true, wantMatch: "rebuild"},
 		{name: "text divergence before media", stable: mediaPlan(text(8), media(imageA), text(2)), actual: mediaPlan(text(8), media(imageA), text(2), text(9)), kvBytes: true, wantMatch: "rebuild"},
-		{name: "suffix contains media", stable: mediaPlan(text(1), media(imageA), text(2), media(imageB)), actual: mediaPlan(text(1), media(imageA), text(2), media(imageB), text(9)), kvBytes: true, wantMatch: "rebuild"},
+		{name: "suffix contains media", stable: mediaPlan(text(1), media(imageA), text(2), media(imageB)), actual: mediaPlan(text(1), media(imageA), text(2), media(imageB), text(9)), kvBytes: true, wantMatch: "media-append"},
 		{name: "empty snapshot", stable: base, actual: mediaPlan(text(1), media(imageA), text(2), text(9)), wantMatch: "rebuild"},
 	}
 
@@ -67,7 +71,12 @@ func TestProcessIMCMediaPlansMatches(t *testing.T) {
 				promptPlan:          base,
 				samplerPromptTokens: baseSamplerTokens,
 				mediaKVCounts:       []int{1},
+				mediaNativeChunks:   []imcMediaChunk{{kind: imcMediaChunkImage, nTokens: 1, nPos: 1}},
 				kvState:             store,
+			}
+			session.useNonCausal = tt.nonCausal
+			if tt.noNative {
+				session.mediaNativeChunks = nil
 			}
 			m := &Model{
 				imcSessions: []*imcSession{session},
@@ -89,11 +98,14 @@ func TestProcessIMCMediaPlansMatches(t *testing.T) {
 			if got := result.imcSamplerPromptTokens; !reflect.DeepEqual(got, wantSamplerTokens) {
 				t.Fatalf("imcSamplerPromptTokens = %v, want authoritative mtmd text prompt %v", got, wantSamplerTokens)
 			}
-			if (tt.wantMatch == "exact" || tt.wantMatch == "anchor") && !session.reserved {
+			if (tt.wantMatch == "exact" || tt.wantMatch == "anchor" || tt.wantMatch == "media-append") && !session.reserved {
 				t.Fatal("media match did not reserve the session")
 			}
 			if tt.wantMatch == "anchor" && (!result.imcMediaAnchorAdvance || result.imcReadOnlyReservation) {
 				t.Fatal("anchor did not select advancing-snapshot mode")
+			}
+			if tt.wantMatch == "media-append" && (!result.imcMediaAnchorAdvance || !result.imcMediaAppend || result.imcReadOnlyReservation) {
+				t.Fatal("media append did not select media advancing-snapshot mode")
 			}
 		})
 	}
@@ -170,7 +182,7 @@ func TestIMCCommitMediaAdvanceAndReuse(t *testing.T) {
 	d := D{"messages": []D{{"role": "user", "content": "test"}}}
 	renderHash, _ := m.imcRenderFingerprint(d, dMessages(d))
 
-	gotOld := m.imcCommitMediaAdvance(session, staged, "advanced", 13, 3, 6, advanced, []llama.Token{1, 2, 3}, renderHash, false)
+	gotOld := m.imcCommitMediaAdvance(session, staged, "advanced", 13, 3, 6, advanced, []llama.Token{1, 2, 3}, []int{8}, nil, true, false, renderHash)
 	if gotOld != oldStore || session.kvState != staged || session.totalTokensCached != 13 || session.nextLogicalPos != 6 || !session.promptPlan.equal(advanced) || !reflect.DeepEqual(session.samplerPromptTokens, []llama.Token{1, 2, 3}) {
 		t.Fatal("media advance did not atomically publish the staged state")
 	}
@@ -232,7 +244,7 @@ func TestIMCCommitMediaAdvanceRejectsMissingStage(t *testing.T) {
 	}
 	m := &Model{}
 
-	if old := m.imcCommitMediaAdvance(session, nil, "new", 13, 3, 6, promptPlan{}, nil, "render", false); old != nil {
+	if old := m.imcCommitMediaAdvance(session, nil, "new", 13, 3, 6, promptPlan{}, nil, nil, nil, false, false, "render"); old != nil {
 		t.Fatalf("old store = %T, want nil for rejected commit", old)
 	}
 	if session.kvState != oldStore || session.cachedMsgsHash != "old" || session.totalTokensCached != 12 || session.nextLogicalPos != 5 {
@@ -337,6 +349,69 @@ func TestPromptPlanTextTail(t *testing.T) {
 	mediaPlan := promptPlan{units: append(append([]promptUnit{}, base.units...), promptUnit{media: digest, isMedia: true})}
 	if _, ok := mediaPlan.textTail(base); ok {
 		t.Fatal("textTail() accepted a media tail")
+	}
+}
+
+func TestProcessIMCMediaPlansReusesTextSessionForFirstMedia(t *testing.T) {
+	digest := sha256.Sum256([]byte("image"))
+	stable := mediaPlan(promptUnit{token: 1}, promptUnit{token: 2}, promptUnit{media: digest, isMedia: true}, promptUnit{token: 3})
+	actual := mediaPlan(promptUnit{token: 1}, promptUnit{token: 2}, promptUnit{media: digest, isMedia: true}, promptUnit{token: 3}, promptUnit{token: 9})
+	session := &imcSession{
+		id:                0,
+		totalTokensCached: 2,
+		cachedTokens:      []llama.Token{1, 2},
+		cachedMsgCount:    2,
+		cachedMsgsHash:    "text",
+		kvState:           populatedTestSessionStore(),
+	}
+	m := &Model{imcSessions: []*imcSession{session}, log: func(context.Context, string, ...any) {}}
+	d := D{"messages": []D{{"role": "user", "content": "test"}}}
+
+	result := m.processIMCMediaPlans(context.Background(), d, d, actual, stable, []llama.Token{9}, time.Now())
+
+	if result.imcMatchKind != "media-append" || result.imcSession != session || result.cacheIdx != 2 {
+		t.Fatalf("text-to-media result = kind %q, session %p, cache index %d; want media-append, %p, 2", result.imcMatchKind, result.imcSession, result.cacheIdx, session)
+	}
+	if !result.imcMediaAppend || !result.imcMediaAnchorAdvance || !session.reserved {
+		t.Fatal("text-to-media append did not reserve the existing session for media advancement")
+	}
+}
+
+func TestIMCMediaPrefixCursor(t *testing.T) {
+	prefix := []imcMediaChunk{
+		{kind: imcMediaChunkText, tokens: []llama.Token{1, 2}},
+		{kind: imcMediaChunkImage, nTokens: 4, nPos: 3},
+		{kind: imcMediaChunkImage, nTokens: 5, nPos: 4},
+		{kind: imcMediaChunkText, tokens: []llama.Token{3, 4}},
+	}
+	cursor := imcMediaPrefixCursor{chunks: prefix}
+
+	if tokens, skipped, err := cursor.consumeText([]llama.Token{1}); err != nil || len(tokens) != 0 || skipped != 1 {
+		t.Fatalf("first split text = %v, %d, %v; want empty, 1, nil", tokens, skipped, err)
+	}
+	if tokens, skipped, err := cursor.consumeText([]llama.Token{2}); err != nil || len(tokens) != 0 || skipped != 1 {
+		t.Fatalf("second split text = %v, %d, %v; want empty, 1, nil", tokens, skipped, err)
+	}
+	for _, chunk := range prefix[1:3] {
+		if cached, err := cursor.consumeMedia(chunk); err != nil || !cached {
+			t.Fatalf("tiled media = %v, %v; want true, nil", cached, err)
+		}
+	}
+	tokens, skipped, err := cursor.consumeText([]llama.Token{3, 4, 5})
+	if err != nil || !reflect.DeepEqual(tokens, []llama.Token{5}) || skipped != 2 || !cursor.done() {
+		t.Fatalf("coalesced appended text = %v, %d, %v, done %v; want [5], 2, nil, true", tokens, skipped, err, cursor.done())
+	}
+}
+
+func TestIMCMediaPrefixCursorRejectsDivergence(t *testing.T) {
+	cursor := imcMediaPrefixCursor{chunks: []imcMediaChunk{{kind: imcMediaChunkText, tokens: []llama.Token{1, 2}}}}
+	if _, _, err := cursor.consumeText([]llama.Token{1, 9}); err == nil {
+		t.Fatal("consumeText accepted divergent native tokens")
+	}
+
+	cursor = imcMediaPrefixCursor{chunks: []imcMediaChunk{{kind: imcMediaChunkImage, nTokens: 4, nPos: 3}}}
+	if _, err := cursor.consumeMedia(imcMediaChunk{kind: imcMediaChunkImage, nTokens: 5, nPos: 3}); err == nil {
+		t.Fatal("consumeMedia accepted divergent native media dimensions")
 	}
 }
 

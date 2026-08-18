@@ -166,6 +166,18 @@ func (krn *Kronk) IMCSessions() []model.IMCSessionDetail {
 	return krn.model.IMCSessions()
 }
 
+// IMCSystemCaches returns the model's immutable System cache pool entries.
+func (krn *Kronk) IMCSystemCaches() []model.IMCSystemCacheDetail {
+	krn.shutdown.Lock()
+	defer krn.shutdown.Unlock()
+
+	if krn.shutdownFlag {
+		return nil
+	}
+
+	return krn.model.IMCSystemCaches()
+}
+
 // BatchEngineSnapshot returns the latest generation scheduler state. Models
 // used only for embeddings or reranking do not expose a batch engine.
 func (krn *Kronk) BatchEngineSnapshot() (model.BatchEngineSnapshot, bool) {

@@ -319,11 +319,12 @@ type AdapterConfig struct {
 // frequency scale required by that model.
 //
 // SessionStoreFactory constructs session stores for direct SDK use.
-// Kronk invokes it separately for every session and checkpoint store it needs,
-// and closes every successfully returned store. The factory must return a new,
-// independent store on each call. When nil, Kronk uses the built-in RAM
-// factory. Backend-specific constructor parameters belong to the backend
-// package and are captured by the injected factory.
+// Kronk invokes it separately for every working session store it needs and
+// closes every successfully returned store. The factory must return a new,
+// independent store on each call. System prompt preloads always remain in RAM.
+// When nil, Kronk uses the built-in RAM factory. Backend-specific constructor
+// parameters belong to the backend package and are captured by the injected
+// factory.
 //
 // SplitMode controls how the model is split across multiple GPUs:
 //   - SplitModeNone (0): single GPU

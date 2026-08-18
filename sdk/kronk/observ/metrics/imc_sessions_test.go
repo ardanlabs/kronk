@@ -20,36 +20,25 @@ func TestIMCSessionsCollector(t *testing.T) {
 		calls.Add(1)
 		return []IMCSession{
 			{
-				ModelID:           "test-model",
-				Entry:             2,
-				State:             "idle",
-				Messages:          17,
-				Context:           1024,
-				Allocated:         2048,
-				FallbackContext:   768,
-				FallbackAllocated: 1536,
-				FallbackKind:      "user",
-				FallbackUpdates:   3,
-				InputMessages:     19,
-				InputTokens:       1200,
-				OutputTokens:      300,
-				PeakContext:       1600,
-				Window:            4096,
-				HasMedia:          true,
-				LastUsed:          time.Unix(123, 500_000_000),
+				ModelID:       "test-model",
+				Entry:         2,
+				State:         "idle",
+				Messages:      17,
+				Context:       1024,
+				Allocated:     2048,
+				InputMessages: 19,
+				InputTokens:   1200,
+				OutputTokens:  300,
+				PeakContext:   1600,
+				Window:        4096,
+				HasMedia:      true,
+				LastUsed:      time.Unix(123, 500_000_000),
 			},
 			{
 				ModelID: "test-model",
 				Entry:   3,
 				State:   "empty",
 				Window:  4096,
-			},
-			{
-				ModelID:      "test-model",
-				Entry:        4,
-				State:        "idle",
-				FallbackKind: "unbounded-value",
-				Window:       4096,
 			},
 		}
 	}
@@ -95,26 +84,6 @@ func TestIMCSessionsCollector(t *testing.T) {
 			name:   "imc_session_allocated_tokens",
 			labels: map[string]string{"model_id": "test-model", "entry": "2"},
 			want:   2048,
-		},
-		{
-			name:   "imc_session_fallback_context_tokens",
-			labels: map[string]string{"model_id": "test-model", "entry": "2"},
-			want:   768,
-		},
-		{
-			name:   "imc_session_fallback_allocated_tokens",
-			labels: map[string]string{"model_id": "test-model", "entry": "2"},
-			want:   1536,
-		},
-		{
-			name:   "imc_session_fallback_kind",
-			labels: map[string]string{"model_id": "test-model", "entry": "2", "kind": "user"},
-			want:   1,
-		},
-		{
-			name:   "imc_session_fallback_updates",
-			labels: map[string]string{"model_id": "test-model", "entry": "2"},
-			want:   3,
 		},
 		{
 			name:   "imc_session_latest_request_messages",
@@ -184,13 +153,6 @@ func TestIMCSessionsCollector(t *testing.T) {
 			}
 		})
 	}
-	if metric := findMetric(families, "imc_session_fallback_kind", map[string]string{"model_id": "test-model", "entry": "3"}); metric != nil {
-		t.Error("fallback kind metric found for entry without a fallback")
-	}
-	if metric := findMetric(families, "imc_session_fallback_kind", map[string]string{"model_id": "test-model", "entry": "4"}); metric != nil {
-		t.Error("fallback kind metric found for unknown kind")
-	}
-
 	unregister()
 	unregister()
 

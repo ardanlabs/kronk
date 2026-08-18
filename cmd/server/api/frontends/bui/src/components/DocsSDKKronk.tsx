@@ -364,6 +364,14 @@ export default function DocsSDKKronk() {
               <p className="doc-description">IMCSessions returns the current state of the model's allocated IMC cache entries. An unloaded model has no sessions.</p>
             </div>
 
+            <div className="doc-section" id="method-kronk-imcsystemcaches">
+              <h4>Kronk.IMCSystemCaches</h4>
+              <pre className="code-block">
+                <code>func (krn *Kronk) IMCSystemCaches() []model.IMCSystemCacheDetail</code>
+              </pre>
+              <p className="doc-description">IMCSystemCaches returns the model's immutable System cache pool entries.</p>
+            </div>
+
             <div className="doc-section" id="method-kronk-modelconfig">
               <h4>Kronk.ModelConfig</h4>
               <pre className="code-block">
@@ -558,6 +566,7 @@ export default function DocsSDKKronk() {
                 <li><a href="#method-kronk-embeddings">Kronk.Embeddings</a></li>
                 <li><a href="#method-kronk-embeddingshttp">Kronk.EmbeddingsHTTP</a></li>
                 <li><a href="#method-kronk-imcsessions">Kronk.IMCSessions</a></li>
+                <li><a href="#method-kronk-imcsystemcaches">Kronk.IMCSystemCaches</a></li>
                 <li><a href="#method-kronk-modelconfig">Kronk.ModelConfig</a></li>
                 <li><a href="#method-kronk-modelinfo">Kronk.ModelInfo</a></li>
                 <li><a href="#method-kronk-rerank">Kronk.Rerank</a></li>

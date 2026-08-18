@@ -39,7 +39,7 @@ type chatJob struct {
 	samplerPromptTokens []llama.Token // Complete logical text-token prompt used to prime the request sampler.
 	tailTokens          []llama.Token // Non-empty inference tail after the stable cached target.
 	imcTokenPlan        bool          // True when samplerPromptTokens/tailTokens are authoritative.
-	imcMatchKind        string        // exact, append, or rebuild; used for diagnostics.
+	imcMatchKind        string        // exact, append, anchor, media-append, or rebuild; used for diagnostics.
 	imcPromptPlan       promptPlan    // Logical stable prefix committed with the session.
 
 	// -------------------------------------------------------------------------
@@ -57,37 +57,48 @@ type chatJob struct {
 	imcExpectedHash    string      // Expected cachedMsgsHash for stale detection at startSlot (a concurrent extend may have moved the session forward)
 
 	// Pure-hit snapshot-skip state mirrored from cacheResult.
-	imcExpectedCachedMsgs  int    // Expected cachedMsgCount at startSlot.
-	imcExpectedTokens      int    // Expected physical KV cells at startSlot.
-	imcExpectedPosition    int    // Expected next logical position at startSlot.
-	imcExpectedRenderHash  string // Expected cachedRenderInputHash at startSlot (carried forward on builds/extends so commit can refresh the session field).
-	imcExpectedPromptPlan  promptPlan
-	imcReadOnlyReservation bool // True when the session is reserved for restore/use without metadata or snapshot mutation.
-	imcMediaAnchorAdvance  bool // True when text after a media anchor should be atomically committed as a larger snapshot.
-	imcNewLogicalPosition  int  // Next logical position after a media-anchor advance.
-	imcReservationHeld     bool // True until this request publishes or releases its reservation.
-	imcPureHitSkipSnapshot bool // True when startSlot may skip the post-restore snapshot.
-	imcPromoteCheckpoint   bool // True when current state must be retained as a user-turn checkpoint before commit.
-	imcCheckpointTokens    int  // Exact target token boundary for a progressive reusable snapshot.
+	imcExpectedCachedMsgs   int    // Expected cachedMsgCount at startSlot.
+	imcExpectedTokens       int    // Expected physical KV cells at startSlot.
+	imcExpectedPosition     int    // Expected next logical position at startSlot.
+	imcExpectedRenderHash   string // Expected cachedRenderInputHash at startSlot (carried forward on builds/extends so commit can refresh the session field).
+	imcExpectedPromptPlan   promptPlan
+	imcReadOnlyReservation  bool // True when the session is reserved for restore/use without metadata or snapshot mutation.
+	imcMediaAnchorAdvance   bool // True when a prompt-plan extension after a media anchor should be atomically committed as a larger snapshot.
+	imcMediaAppend          bool // True when the media-anchor extension contains new image or audio chunks.
+	imcNewLogicalPosition   int  // Next logical position after a media-anchor advance.
+	imcReservationHeld      bool // True until this request publishes or releases its reservation.
+	imcPureHitSkipSnapshot  bool // True when startSlot may skip the post-restore snapshot.
+	imcSystemBoundaryTokens int  // Exact system-prefix boundary for publishing a missing immutable preload.
+	imcSystemCache          *imcSystemCache
 
 	// IMC dedicated slot fields.
 	imcNewCacheTokens    []llama.Token // New tokens to extend the cache in the slot's sequence
 	imcNewTotalCached    int           // Total cached KV positions after extension
 	imcNewCachedMsgCount int           // New cachedMsgCount after extension
 	imcNewMsgsHash       string        // New cachedMsgsHash after extension
-	imcNewEndsAtUser     bool          // True when the new current snapshot ends at a real user message.
 	imcClearSeq          bool          // True if sequence must be cleared before decoding (rebuild)
 	imcNewCachedTokens   []llama.Token // Full token sequence to store in session after decode
 
 	// IMC media cache build — deferred media decode using mtmd pipeline.
-	imcMediaBuild         bool          // True if cache build requires the mtmd pipeline (images/audio)
-	imcMediaCacheD        D             // Document with cacheable messages + tools for media cache build
-	imcMediaKVCounts      []int         // Media KV position counts to preserve during text-only media extend
-	imcMediaSamplerTokens []llama.Token // Authoritative mtmd text tokens in the stable media cache prefix.
+	imcMediaBuild         bool            // True if cache build requires the mtmd pipeline (images/audio)
+	imcMediaCacheD        D               // Document with cacheable messages + tools for media cache build
+	imcMediaKVCounts      []int           // Media KV position counts to preserve during text-only media extend
+	imcMediaSamplerTokens []llama.Token   // Authoritative mtmd text tokens in the stable media cache prefix.
+	imcMediaNativeChunks  []imcMediaChunk // Authoritative mtmd chunk stream for validating a media append.
 }
 
 func (j *chatJob) hasIMCReservation() bool {
 	return j != nil && j.imcSession != nil && j.imcReservationHeld
+}
+
+func (j *chatJob) releaseIMCSystemCache(m *Model) {
+	if j == nil || j.imcSystemCache == nil {
+		return
+	}
+
+	cache := j.imcSystemCache
+	j.imcSystemCache = nil
+	m.imcReleaseSystemCache(cache)
 }
 
 // slot represents a processing slot for parallel inference. Each slot can
@@ -135,13 +146,14 @@ type slot struct {
 	// -------------------------------------------------------------------------
 	// MTMD Prefill (vision/audio requests)
 
-	mtmdCtx      mtmd.Context     // Per-request multimodal projector context (created in startSlot for media-bearing requests; freed in freeSlotResources). Zero for text-only requests and text-only models.
-	inputChunks  mtmd.InputChunks // Tokenized chunks (text + media interleaved)
-	chunkIdx     int              // Index of chunk currently being processed
-	chunkTokIdx  int              // Token index within current text chunk (for partial prefill)
-	bitmaps      []mtmd.Bitmap    // Image bitmaps to free when done
-	useMRoPE     bool             // Model uses M-RoPE 4D positioning
-	useNonCausal bool             // Model uses non-causal attention for media
+	mtmdCtx          mtmd.Context     // Per-request multimodal projector context (created in startSlot for media-bearing requests; freed in freeSlotResources). Zero for text-only requests and text-only models.
+	inputChunks      mtmd.InputChunks // Tokenized chunks (text + media interleaved)
+	chunkIdx         int              // Index of chunk currently being processed
+	chunkTokIdx      int              // Token index within current text chunk (for partial prefill)
+	mediaPrefillDone bool             // True after all chunks are consumed; inputChunks remains owned until slot teardown
+	bitmaps          []mtmd.Bitmap    // Image bitmaps to free when done
+	useMRoPE         bool             // Model uses M-RoPE 4D positioning
+	useNonCausal     bool             // Model uses non-causal attention for media
 
 	// -------------------------------------------------------------------------
 	// Response Accumulation
@@ -308,7 +320,6 @@ func (s *slot) reset() {
 		llama.SamplerFree(s.draftSampler)
 		s.draftSampler = 0
 	}
-	// Note: draftDistBuf, targetDistBuf, adjustedDistBuf are reused across requests
 	s.grammarSampler = nil
 	s.startTime = time.Time{}
 	s.prefillStart = time.Time{}
@@ -320,6 +331,7 @@ func (s *slot) reset() {
 	s.inputChunks = 0
 	s.chunkIdx = 0
 	s.chunkTokIdx = 0
+	s.mediaPrefillDone = false
 	s.bitmaps = nil
 	s.useMRoPE = false
 	s.useNonCausal = false

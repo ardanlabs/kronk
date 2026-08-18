@@ -36,7 +36,6 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 	result.imcPromptPlan = stable
 	result.imcNewCachedMsgCount = messageCount(d)
 	result.imcNewMsgsHash = documentMessagesHash(d)
-	result.imcNewEndsAtUser = messagesEndAtRealUser(dMessages(d))
 	result.imcMediaCacheD = stableD
 	renderFingerprint, fingerprintOK := m.imcRenderFingerprint(d, dMessages(d))
 
@@ -46,8 +45,7 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 		if session.reserved {
 			continue
 		}
-		checkpointOccupied := session.turnCheckpoint != nil && session.turnCheckpoint.totalTokensCached > 0
-		if session.totalTokensCached == 0 && !checkpointOccupied {
+		if session.totalTokensCached == 0 {
 			if empty == nil {
 				empty = session
 			}
@@ -56,18 +54,25 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 		if lru == nil || session.lastUsed.Before(lru.lastUsed) {
 			lru = session
 		}
-		if !validMediaAnchorSession(session) || !stable.hasPrefix(session.promptPlan) {
+		mediaAnchor := validMediaAnchorSession(session) && stable.hasPrefix(session.promptPlan)
+		textAnchor := validTextToMediaAnchorSession(session, stable)
+		if !mediaAnchor && !textAnchor {
 			continue
 		}
-		if stable.equal(session.promptPlan) && !exactRenderFingerprintMatches(session.cachedRenderInputHash, renderFingerprint, fingerprintOK) {
+		if mediaAnchor && stable.equal(session.promptPlan) && !exactRenderFingerprintMatches(session.cachedRenderInputHash, renderFingerprint, fingerprintOK) {
 			continue
 		}
-		_, stableTextOnly := stable.textTail(session.promptPlan)
-		actualTail, actualTextOnly := actual.textTail(session.promptPlan)
-		if !stableTextOnly || !actualTextOnly || len(actualTail) == 0 || stable.mediaCount != session.promptPlan.mediaCount {
+		extensionHasMedia := slices.ContainsFunc(stable.units[len(session.promptPlan.units):], func(unit promptUnit) bool {
+			return unit.isMedia
+		})
+		if extensionHasMedia && (session.useNonCausal || (session.hasMedia && len(session.mediaNativeChunks) == 0)) {
 			continue
 		}
-		if match == nil || len(session.promptPlan.units) > len(match.promptPlan.units) {
+		actualTail, actualTextOnly := actual.textTail(stable)
+		if !actualTextOnly || len(actualTail) == 0 {
+			continue
+		}
+		if match == nil || session.logicalPosition() > match.logicalPosition() {
 			match = session
 		}
 	}
@@ -76,33 +81,46 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 	matchKind := "rebuild"
 	matchReason := "no-exact-media-plan"
 	if match != nil {
-		extension, _ := stable.textTail(match.promptPlan)
-		actualTail, _ := actual.textTail(match.promptPlan)
+		extension := stable.units[len(match.promptPlan.units):]
+		extensionHasMedia := slices.ContainsFunc(extension, func(unit promptUnit) bool {
+			return unit.isMedia
+		})
 		switch {
 		case len(extension) == 0 && stable.equal(match.promptPlan):
 			matchKind = "exact"
 			matchReason = "logical-plan-equal"
+		case extensionHasMedia:
+			matchKind = "media-append"
+			if match.hasMedia {
+				matchReason = "media-prefix-append"
+			} else {
+				matchReason = "text-prefix-media-append"
+			}
+			result.imcMediaAnchorAdvance = true
+			result.imcMediaAppend = true
+			result.imcMediaKVCounts = slices.Clone(match.mediaKVCounts)
 		case len(extension) > 0:
 			matchKind = "anchor"
 			matchReason = "media-prefix-text-replay"
 			result.imcMediaAnchorAdvance = true
-			result.imcNewCacheTokens = slices.Clone(extension)
+			result.imcNewCacheTokens = make([]llama.Token, 0, len(extension))
+			for _, unit := range extension {
+				result.imcNewCacheTokens = append(result.imcNewCacheTokens, unit.token)
+			}
 			result.imcNewTotalCached = match.totalTokensCached + len(extension)
 			result.imcNewLogicalPosition = match.logicalPosition() + len(extension)
 			result.imcMediaKVCounts = slices.Clone(match.mediaKVCounts)
-			result.imcTailTokens = slices.Clone(defaultTail)
 		default:
 			selected = nil
 		}
 		if selected != nil {
 			result.cacheIdx = llama.Pos(match.logicalPosition())
-			if !result.imcMediaAnchorAdvance {
-				result.imcTailTokens = slices.Clone(actualTail)
-			}
 			result.imcMediaSamplerTokens = slices.Clone(match.samplerPromptTokens)
-			result.imcMediaSamplerTokens = append(result.imcMediaSamplerTokens, extension...)
-			result.imcSamplerPromptTokens = slices.Clone(result.imcMediaSamplerTokens)
-			result.imcSamplerPromptTokens = append(result.imcSamplerPromptTokens, result.imcTailTokens...)
+			if !result.imcMediaAppend {
+				result.imcMediaSamplerTokens = append(result.imcMediaSamplerTokens, result.imcNewCacheTokens...)
+				result.imcSamplerPromptTokens = slices.Clone(result.imcMediaSamplerTokens)
+				result.imcSamplerPromptTokens = append(result.imcSamplerPromptTokens, result.imcTailTokens...)
+			}
 			match.reserved = true
 		}
 	}
@@ -139,11 +157,23 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 	result.imcPureHitSkipSnapshot = result.imcReadOnlyReservation
 	m.cacheMu.Unlock()
 
+	extensionText := len(result.imcNewCacheTokens)
+	extensionMedia := 0
+	if result.imcMediaAppend {
+		extension := stable.units[len(result.imcExpectedPromptPlan.units):]
+		for _, unit := range extension {
+			if unit.isMedia {
+				extensionMedia++
+			} else {
+				extensionText++
+			}
+		}
+	}
 	m.log(ctx, "imc-media-cache", "status", "plan-ready", "cache_mode", "token-v2", "session_format", "token-v2",
 		"imc_cache_entry", selected.id, "media_count", stable.mediaCount, "logical_units", len(stable.units), "text_tokens", stable.textTokens,
 		"match_kind", matchKind, "match_reason", matchReason, "reusable_logical_position", result.cacheIdx, "anchor_physical_kv", result.imcExpectedTokens,
-		"anchor_logical_position", result.imcExpectedPosition, "replay_text_tokens", len(result.imcTailTokens), "extension_text", len(result.imcNewCacheTokens),
-		"extension_media", 0, "position_mode", "linear-or-mrope", "request_age", fmtDur(time.Since(requestStart)))
+		"anchor_logical_position", result.imcExpectedPosition, "replay_text_tokens", len(result.imcTailTokens), "extension_text", extensionText,
+		"extension_media", extensionMedia, "position_mode", "linear-or-mrope", "request_age", fmtDur(time.Since(requestStart)))
 
 	return result
 }
@@ -151,7 +181,7 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 func validMediaAnchorSession(session *imcSession) bool {
 	if session == nil || !session.hasMedia || session.totalTokensCached <= 0 ||
 		session.promptPlan.mediaCount == 0 || session.kvState == nil || session.kvState.Len() == 0 ||
-		len(session.mediaKVCounts) != session.promptPlan.mediaCount || len(session.samplerPromptTokens) == 0 {
+		len(session.mediaKVCounts) < session.promptPlan.mediaCount || len(session.samplerPromptTokens) == 0 {
 		return false
 	}
 
@@ -172,4 +202,23 @@ func validMediaAnchorSession(session *imcSession) bool {
 	default:
 		return session.logicalPosition() == session.totalTokensCached
 	}
+}
+
+func validTextToMediaAnchorSession(session *imcSession, stable promptPlan) bool {
+	if session == nil || session.hasMedia || session.totalTokensCached <= 0 ||
+		len(session.cachedTokens) != session.totalTokensCached || session.logicalPosition() != session.totalTokensCached ||
+		session.kvState == nil || session.kvState.Len() == 0 || len(session.cachedTokens) >= len(stable.units) {
+		return false
+	}
+
+	for i, token := range session.cachedTokens {
+		unit := stable.units[i]
+		if unit.isMedia || unit.token != token {
+			return false
+		}
+	}
+
+	return slices.ContainsFunc(stable.units[len(session.cachedTokens):], func(unit promptUnit) bool {
+		return unit.isMedia
+	})
 }

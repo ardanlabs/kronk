@@ -250,15 +250,12 @@ func (e *batchEngine) ClassicVerifyInput(slotID int, buf []byte) (classicengine.
 		Greedy:        greedy,
 		Target: func(index int) classicengine.Target {
 			row := s.specBaseBatch + int32(index)
+			if s.grammarSampler != nil && s.reasonFlag == 0 {
+				return classicengine.Target{Token: e.sampleSlotToken(s, row), SamplerAccepted: true}
+			}
 			logits, err := llama.GetLogitsIth(e.model.lctx, row, nVocab)
 			if err != nil {
-				var token llama.Token
-				if s.grammarSampler != nil && s.reasonFlag == 0 {
-					token = s.grammarSampler.SampleWithGrammar(e.model.lctx, s.sampler, row)
-				} else {
-					token = llama.SamplerSample(s.sampler, e.model.lctx, row)
-				}
-				return classicengine.Target{Token: token, SamplerAccepted: true}
+				return classicengine.Target{Token: e.sampleSlotToken(s, row), SamplerAccepted: true}
 			}
 			if greedy {
 				maskSuppressTokenLogits(logits, e.model.suppressTokens)
@@ -394,10 +391,7 @@ func (e *batchEngine) MTPVerifyInput(slotID int, buf []byte) (mtp.VerifyInput, e
 		Candidates: s.specDraftTokens,
 		Sample: func(index int) llama.Token {
 			row := s.specBaseBatch + int32(index)
-			if s.grammarSampler != nil && s.reasonFlag == 0 {
-				return s.grammarSampler.SampleWithGrammar(e.model.lctx, s.sampler, row)
-			}
-			return llama.SamplerSample(s.sampler, e.model.lctx, row)
+			return e.sampleSlotToken(s, row)
 		},
 		Accept: func(index int, token llama.Token) bool {
 			s.specAcceptedTotal++

@@ -38,7 +38,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	imcInputMessages := messageCount(s.job.d)
 	imcStableInputTokens := len(s.job.imcNewCachedTokens)
 	imcReusedTokens := s.job.reusedPromptTokens
-	imcCheckpointTokens := s.job.imcCheckpointTokens
+	imcSystemBoundaryTokens := s.job.imcSystemBoundaryTokens
 	mtpResumeSource := s.mtp.ResumeSource
 	stageStarted := s.prefillStart
 
@@ -106,7 +106,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 			"imc_input_tokens", nPrompt,
 			"imc_stable_input_tokens", imcStableInputTokens,
 			"imc_actual_reused_tokens", imcReusedTokens,
-			"imc_progressive_reusable_tokens", imcCheckpointTokens,
+			"imc_system_boundary_tokens", imcSystemBoundaryTokens,
 			"imc_tail_tokens", imcTailTokens,
 			"elapsed", elapsed.String(),
 			"active_streams", remaining,
@@ -196,13 +196,10 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	// of whether they were produced by text tokens or media embeddings.
 	//
 	// Non-IMC: always clear.
-	switch {
-	default:
-		e.model.decodeMu.Lock()
-		llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
-		e.model.decodeMu.Unlock()
-		e.model.log(ctx, "finish-slot", "status", "seq-cleared", "slot", slotID, "seq", seqID)
-	}
+	e.model.decodeMu.Lock()
+	llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+	e.model.decodeMu.Unlock()
+	e.model.log(ctx, "finish-slot", "status", "seq-cleared", "slot", slotID, "seq", seqID)
 
 	// Unbind the IMC session from this slot's KV sequence. The session
 	// is now externalized (its bytes live in session.kvState in host
@@ -224,39 +221,37 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		e.model.imcReleaseReservation(s.job.imcSessionID)
 	}
 
+	outputTokens := s.reasonTokens + s.completionTokens
+	totalTokens := s.nPrompt + outputTokens
+	var tokensPerSecond float64
+	if elapsed.Seconds() > 0 && outputTokens > 1 {
+		tokensPerSecond = float64(outputTokens-1) / elapsed.Seconds()
+	}
+	usage := Usage{
+		PromptTokens: s.nPrompt,
+		PromptTokensDetails: PromptTokensDetails{
+			CachedTokens: s.reusedPromptTokens,
+		},
+		CompletionTokens: outputTokens,
+		CompletionTokensDetails: CompletionTokensDetails{
+			ReasoningTokens: s.reasonTokens,
+		},
+		TotalTokens:         totalTokens,
+		TokensPerSecond:     tokensPerSecond,
+		TimeToFirstTokenMS:  float64(s.ttft.Microseconds()) / 1000.0,
+		DraftTokens:         s.specDraftedTotal,
+		DraftAcceptedTokens: s.specAcceptedTotal,
+		DraftDisableReason:  s.mtp.DisableReason,
+	}
+	if usage.DraftTokens > 0 {
+		usage.DraftAcceptanceRate = float64(usage.DraftAcceptedTokens) / float64(usage.DraftTokens)
+	}
+	if outputTokens > 0 && e.model.draft != nil {
+		usage.DraftCoverage = float64(s.specCoveredTotal) / float64(outputTokens)
+	}
+
 	// Handle error case.
 	if err != nil {
-		outputTokens := s.reasonTokens + s.completionTokens
-
-		var tokensPerSecond float64
-		if elapsed.Seconds() > 0 && outputTokens > 1 {
-			tokensPerSecond = float64(outputTokens-1) / elapsed.Seconds()
-		}
-
-		usage := Usage{
-			PromptTokens: s.nPrompt,
-			PromptTokensDetails: PromptTokensDetails{
-				CachedTokens: s.reusedPromptTokens,
-			},
-			CompletionTokens: outputTokens,
-			CompletionTokensDetails: CompletionTokensDetails{
-				ReasoningTokens: s.reasonTokens,
-			},
-			TotalTokens:         s.nPrompt + outputTokens,
-			TokensPerSecond:     tokensPerSecond,
-			TimeToFirstTokenMS:  float64(s.ttft.Microseconds()) / 1000.0,
-			DraftTokens:         s.specDraftedTotal,
-			DraftAcceptedTokens: s.specAcceptedTotal,
-			DraftDisableReason:  s.mtp.DisableReason,
-		}
-
-		if usage.DraftTokens > 0 {
-			usage.DraftAcceptanceRate = float64(usage.DraftAcceptedTokens) / float64(usage.DraftTokens)
-		}
-		if outputTokens > 0 && e.model.draft != nil {
-			usage.DraftCoverage = float64(s.specCoveredTotal) / float64(outputTokens)
-		}
-
 		status := "error"
 		class := "active-slot"
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
@@ -332,10 +327,10 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	var toolCallErr error
 	var lengthTerminatedToolContent string
 	var lengthTerminatedToolOutput bool
+	var bufferedToolBytes int
 	if s.finalTooling.Len() > 0 {
 		content := strings.TrimSuffix(s.finalTooling.String(), "\n")
-		s.finalTooling.Reset()
-		s.finalTooling.WriteString(content)
+		bufferedToolBytes = len(content)
 		if len(content) > 0 {
 
 			// Log the decoded model output captured before parser classification
@@ -378,56 +373,16 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 						continue
 					}
 
-					argsJSON, err := json.Marshal(map[string]any(tc.Function.Arguments))
-					if err != nil {
+					if _, err := json.Marshal(map[string]any(tc.Function.Arguments)); err != nil {
 						e.model.log(ctx, "tool-call", "status", "invalid-args",
 							"index", i, "func", tc.Function.Name,
 							"error", err)
-					} else {
-						var check map[string]any
-						if err := json.Unmarshal(argsJSON, &check); err != nil {
-							e.model.log(ctx, "tool-call", "status", "invalid-args-json",
-								"index", i, "func", tc.Function.Name,
-								"error", err, "json", string(argsJSON))
-						}
 					}
 				}
 			}
 		}
 	}
 
-	// Calculate final metrics.
-	outputTokens := s.reasonTokens + s.completionTokens
-	totalTokens := s.nPrompt + outputTokens
-
-	var tokensPerSecond float64
-	if elapsed.Seconds() > 0 && outputTokens > 1 {
-		tokensPerSecond = float64(outputTokens-1) / elapsed.Seconds()
-	}
-
-	usage := Usage{
-		PromptTokens: s.nPrompt,
-		PromptTokensDetails: PromptTokensDetails{
-			CachedTokens: s.reusedPromptTokens,
-		},
-		CompletionTokens: outputTokens,
-		CompletionTokensDetails: CompletionTokensDetails{
-			ReasoningTokens: s.reasonTokens,
-		},
-		TotalTokens:         totalTokens,
-		TokensPerSecond:     tokensPerSecond,
-		TimeToFirstTokenMS:  float64(s.ttft.Microseconds()) / 1000.0,
-		DraftTokens:         s.specDraftedTotal,
-		DraftAcceptedTokens: s.specAcceptedTotal,
-		DraftDisableReason:  s.mtp.DisableReason,
-	}
-
-	if usage.DraftTokens > 0 {
-		usage.DraftAcceptanceRate = float64(usage.DraftAcceptedTokens) / float64(usage.DraftTokens)
-	}
-	if outputTokens > 0 && e.model.draft != nil {
-		usage.DraftCoverage = float64(s.specCoveredTotal) / float64(outputTokens)
-	}
 	if toolCallErr != nil && s.stopSource == "request-stop" {
 		valid := s.respToolCalls[:0]
 		for _, toolCall := range s.respToolCalls {
@@ -463,22 +418,13 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 		return
 	}
 
-	// Add metrics.
-	metrics.AddChatCompletionsUsage(e.model.modelInfo.ID, s.nPrompt, s.reasonTokens, s.completionTokens, outputTokens, totalTokens, tokensPerSecond)
-	metrics.AddChatRequest(e.model.modelInfo.ID, "ok")
-	if !s.job.requestStart.IsZero() {
-		metrics.ObserveChatRequestDuration(e.model.modelInfo.ID, time.Since(s.job.requestStart))
-	}
-
 	// Send final response.
 	if s.stopSource == "" {
 		s.stopSource = "unknown"
 	}
+	var deliveryErr error
 	if s.job.params.Stream && lengthTerminatedToolContent != "" {
-		if sendErr := e.model.sendDeltaResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, lengthTerminatedToolContent, ChannelAnswer, s.reasonTokens, outputTokens, nil); sendErr != nil {
-			err = sendErr
-			return
-		}
+		deliveryErr = e.model.sendDeltaResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, lengthTerminatedToolContent, ChannelAnswer, s.reasonTokens, outputTokens, nil)
 	}
 	var terminalToolCallDeltas []ResponseToolCallDelta
 	if s.job.params.Stream {
@@ -492,8 +438,34 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	if lengthTerminatedToolOutput {
 		finalChannel = ChannelAnswer
 	}
-	e.model.sendFinalResponse(ctx, s.job.ch, s.job.id, s.job.object, 0,
-		&s.finalContent, &s.finalReasoning, s.respToolCalls, terminalToolCallDeltas, s.logprobsData, s.finishReason, s.stopSource, finalChannel, s.finalTooling.Len(), s.job.params.Stream, !s.job.params.Stream || s.job.params.IncludeUsage, usage)
+	if deliveryErr == nil {
+		deliveryErr = e.model.sendFinalResponse(ctx, s.job.ch, s.job.id, s.job.object, 0,
+			&s.finalContent, &s.finalReasoning, s.respToolCalls, terminalToolCallDeltas, s.logprobsData, s.finishReason, s.stopSource, finalChannel, bufferedToolBytes, s.job.params.Stream, !s.job.params.Stream || s.job.params.IncludeUsage, usage)
+	}
+	if deliveryErr != nil {
+		err = deliveryErr
+		status := "error"
+		class := "terminal-delivery"
+		if errors.Is(deliveryErr, context.Canceled) || errors.Is(deliveryErr, context.DeadlineExceeded) {
+			status = "cancel"
+			class = "context-cancelled"
+		}
+		s.span.RecordError(deliveryErr)
+		s.span.SetAttributes(attribute.String("request_status", status))
+		metrics.AddChatRequest(e.model.modelInfo.ID, status)
+		metrics.AddChatError(e.model.modelInfo.ID, class)
+		if !s.job.requestStart.IsZero() {
+			metrics.ObserveChatRequestDuration(e.model.modelInfo.ID, time.Since(s.job.requestStart))
+		}
+		return
+	}
+
+	s.span.SetAttributes(attribute.String("request_status", "ok"))
+	metrics.AddChatCompletionsUsage(e.model.modelInfo.ID, s.nPrompt, s.reasonTokens, s.completionTokens, outputTokens, totalTokens, tokensPerSecond)
+	metrics.AddChatRequest(e.model.modelInfo.ID, "ok")
+	if !s.job.requestStart.IsZero() {
+		metrics.ObserveChatRequestDuration(e.model.modelInfo.ID, time.Since(s.job.requestStart))
+	}
 }
 
 const lengthTerminatedToolMessage = "Response truncated before completion."
@@ -620,6 +592,7 @@ func (e *batchEngine) failJob(job *chatJob, err error) {
 	if job.hasIMCReservation() {
 		e.model.imcReleaseReservation(job.imcSessionID)
 	}
+	job.releaseIMCSystemCache(e.model)
 
 	// Decrement activeStreams BEFORE close(job.ch). See finishSlot's
 	// defer for the full rationale: closing first leaves a race window

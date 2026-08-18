@@ -33,3 +33,17 @@ func newSessionStore(cfg Config) (SessionStore, error) {
 
 	return store, nil
 }
+
+// newSystemCacheStore constructs the RAM-only store used by immutable System
+// preloads. Working sessions remain responsible for configured persistence.
+func newSystemCacheStore() (SessionStore, error) {
+	store, err := ram.NewFactory()()
+	if err != nil {
+		return nil, fmt.Errorf("system-cache-store: create: %w", err)
+	}
+	if store == nil {
+		return nil, fmt.Errorf("system-cache-store: create: factory returned a nil store")
+	}
+
+	return store, nil
+}

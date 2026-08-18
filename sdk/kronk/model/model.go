@@ -73,64 +73,53 @@ const imcSeqIDUnbound llama.SeqId = -1
 // is dynamic: it holds the bound slot's KV sequence id while a
 // request is in flight, and imcSeqIDUnbound otherwise.
 type imcSession struct {
-	id                  int           // Stable session-pool index. Used by imcReleaseReservation lookup and for log correlation; not related to execution slot identity.
-	seqID               llama.SeqId   // KV sequence id the session is currently bound to, or imcSeqIDUnbound when externalized to RAM only.
-	cachedMsgsHash      string        // Hash of all cached messages
-	cachedTokens        []llama.Token // Full token sequence in KV cache (immutable; replaced, never mutated)
-	totalTokensCached   int           // Physical KV cells in the cached prefix.
-	nextLogicalPos      int           // Next logical decode position; equals totalTokensCached except for M-RoPE media.
-	cachedMsgCount      int           // Number of messages cached
-	kvState             SessionStore  // Externalized KV cache state, accessed via the pluggable SessionStore interface. The default RAM impl (kvstorage/ram.Store) restores into any slot via StateSeqSetData with lazy-grow / never-shrink semantics: backing storage is retained across snapshots and session rebinds to eliminate per-turn allocation churn.
-	draftKVState        SessionStore  // Externalized MTP draft seq KV state. Nil unless the model has an MTP drafter (allocated post-draft-load in initGenerationRuntime). Captured alongside kvState during cache build so a cache hit on the next request can restore the draft seq in lock-step with the target seq and MTP can keep running for IMC-cache-hit requests.
-	pendingH            []float32     // Copy of the slot's pre-norm hidden row taken at cache-build snapshot time (one row of nEmbd floats). Restored into slot.pendingH on cache hit so the very first MTP draft round can condition correctly on the cached prefix's last position. Empty when the session has no MTP draft snapshot.
-	lastUsed            time.Time     // Last access time (for eviction)
-	reserved            bool          // True when a build/extend is in-flight on this session — protects kvState from concurrent writers.
-	allocatedContext    int           // Physical KV-cell capacity represented by the retained target SessionStore backing allocation.
-	highWaterContext    int           // Largest current context published for this session across reuse and snapshot ownership changes.
-	peakContext         int           // Largest live slot context observed for this session, including generated output.
-	inputMessages       int           // Message count from the latest request completed by this session.
-	inputTokens         int           // Complete input token count from the latest request, including the generation-template tail.
-	outputTokens        int           // Generated reasoning and completion tokens from the latest request.
-	usageVersion        uint64        // Request generation used to prevent an older completion from replacing newer diagnostics.
-	samplingSeed        uint32        // Concrete master sampling seed retained for this conversation.
-	hasSamplingSeed     bool          // True once samplingSeed has been generated or explicitly supplied.
-	hasMedia            bool          // True if the cached content includes media tokens (image/audio)
-	useMRoPE            bool          // True if the cached media used M-RoPE 4D positional encoding
-	mediaKVCounts       []int         // Physical KV cells consumed per media chunk (image/audio), used to validate token-v2 media anchors.
-	promptPlan          promptPlan    // Immutable token-v2 logical plan for the cached prefix.
-	samplerPromptTokens []llama.Token // Authoritative mtmd text tokens in a cached media prefix; embedding cells are omitted.
+	id                  int             // Stable session-pool index. Used by imcReleaseReservation lookup and for log correlation; not related to execution slot identity.
+	seqID               llama.SeqId     // KV sequence id the session is currently bound to, or imcSeqIDUnbound when externalized to RAM only.
+	cachedMsgsHash      string          // Hash of all cached messages
+	cachedTokens        []llama.Token   // Full token sequence in KV cache (immutable; replaced, never mutated)
+	totalTokensCached   int             // Physical KV cells in the cached prefix.
+	nextLogicalPos      int             // Next logical decode position; equals totalTokensCached except for M-RoPE media.
+	cachedMsgCount      int             // Number of messages cached
+	kvState             SessionStore    // Externalized KV cache state, accessed via the pluggable SessionStore interface. The default RAM impl (kvstorage/ram.Store) restores into any slot via StateSeqSetData with lazy-grow / never-shrink semantics: backing storage is retained across snapshots and session rebinds to eliminate per-turn allocation churn.
+	draftKVState        SessionStore    // Externalized MTP draft seq KV state. Nil unless the model has an MTP drafter (allocated post-draft-load in initGenerationRuntime). Captured alongside kvState during cache build so a cache hit on the next request can restore the draft seq in lock-step with the target seq and MTP can keep running for IMC-cache-hit requests.
+	pendingH            []float32       // Copy of the slot's pre-norm hidden row taken at cache-build snapshot time (one row of nEmbd floats). Restored into slot.pendingH on cache hit so the very first MTP draft round can condition correctly on the cached prefix's last position. Empty when the session has no MTP draft snapshot.
+	lastUsed            time.Time       // Last access time (for eviction)
+	reserved            bool            // True when a build/extend is in-flight on this session — protects kvState from concurrent writers.
+	allocatedContext    int             // Physical KV-cell capacity represented by the retained target SessionStore backing allocation.
+	snapshotBytes       int             // Retained target, compatible draft, and MTP hidden-row snapshot capacity in bytes.
+	highWaterContext    int             // Largest current context published for this session across reuse and snapshot ownership changes.
+	peakContext         int             // Largest live slot context observed for this session, including generated output.
+	inputMessages       int             // Message count from the latest request completed by this session.
+	inputTokens         int             // Complete input token count from the latest request, including the generation-template tail.
+	outputTokens        int             // Generated reasoning and completion tokens from the latest request.
+	usageVersion        uint64          // Request generation used to prevent an older completion from replacing newer diagnostics.
+	samplingSeed        uint32          // Concrete master sampling seed retained for this conversation.
+	hasSamplingSeed     bool            // True once samplingSeed has been generated or explicitly supplied.
+	hasMedia            bool            // True if the cached content includes media tokens (image/audio)
+	useMRoPE            bool            // True if the cached media used M-RoPE 4D positional encoding
+	useNonCausal        bool            // True if media decode requires non-causal attention and cannot be suffix-appended safely.
+	mediaKVCounts       []int           // Physical KV cells consumed per media chunk (image/audio), used to validate token-v2 media anchors.
+	mediaNativeChunks   []imcMediaChunk // Authoritative mtmd chunk stream used to prove a media append preserves the cached native prefix.
+	promptPlan          promptPlan      // Immutable token-v2 logical plan for the cached prefix.
+	samplerPromptTokens []llama.Token   // Authoritative mtmd text tokens in a cached media prefix; embedding cells are omitted.
 
 	// cachedRenderInputHash guards token-v2 pure-hit snapshot reuse against
 	// changes to template inputs that are not represented by message tokens.
 	cachedRenderInputHash string
-
-	currentEndsAtUser bool         // True when the current snapshot ends at a real user-turn boundary.
-	turnCheckpoint    *imcSnapshot // Current reusable snapshot; it may end at a token-only boundary.
-	fallbackSelected  bool         // True while current temporarily owns the selected fallback during an in-flight rebuild.
-	fallbackUpdates   uint64       // Number of times the fallback snapshot was installed or advanced.
 }
 
-// imcSnapshot owns one externally restorable IMC state. Current
-// state remains directly on imcSession for the hot path; turnCheckpoint uses
-// this shape so the planner can atomically swap a checkpoint into the current
-// fields and then reuse the existing restore/extend machinery unchanged.
-type imcSnapshot struct {
-	cachedMsgsHash        string
-	cachedTokens          []llama.Token
-	totalTokensCached     int
-	nextLogicalPos        int
-	cachedMsgCount        int
-	kvState               SessionStore
-	draftKVState          SessionStore
-	pendingH              []float32
-	allocatedContext      int
-	hasMedia              bool
-	useMRoPE              bool
-	mediaKVCounts         []int
-	promptPlan            promptPlan
-	samplerPromptTokens   []llama.Token
-	cachedRenderInputHash string
-	endsAtUser            bool
+// imcSystemCache is one immutable, model-specific system-prompt preload image.
+// Working sessions restore it into a slot but never take ownership of it.
+type imcSystemCache struct {
+	id               int
+	cachedTokens     []llama.Token
+	kvState          SessionStore
+	draftKVState     SessionStore
+	pendingH         []float32
+	allocatedContext int
+	lastUsed         time.Time
+	activeRestores   int
+	restoreCount     uint64
 }
 
 func (s *imcSession) logicalPosition() int {
@@ -216,19 +205,20 @@ type Model struct {
 	// to a single request and cannot bleed across requests.
 	// Zero when projFile == "" (text-only models) or for embed/rerank
 	// models.
-	mtmdMetaCtx    mtmd.Context
-	modelInfo      ModelInfo
-	paramsResolved bool
-	activeStreams  atomic.Int32
-	unloaded       atomic.Bool
-	decodeMu       sync.Mutex
-	cacheMu        sync.RWMutex
-	imcSessions    []*imcSession   // IMC session pool, sized NSeqMax * max(imcMinSessionsPerSlot, QueueDepth); sessions migrate freely between slots via SessionStore. Idle sessions cost only the struct itself — the SessionStore buffer is allocated lazily on first use.
-	addBOSToken    bool            // Whether to add BOS token (from model metadata)
-	pool           *contextPool    // Context pool for parallel embed/rerank
-	batchSeq       *batchSeqEngine // Sequence-batch engine for supported embed/rerank models.
-	parser         Parser          // Selected via selectParser at load time; nil for embed/rerank.
-	draft          drafter         // Speculative-decoding strategy (nil, classic, or MTP); see draft.go
+	mtmdMetaCtx     mtmd.Context
+	modelInfo       ModelInfo
+	paramsResolved  bool
+	activeStreams   atomic.Int32
+	unloaded        atomic.Bool
+	decodeMu        sync.Mutex
+	cacheMu         sync.RWMutex
+	imcSessions     []*imcSession     // IMC session pool, sized NSeqMax * max(imcMinSessionsPerSlot, QueueDepth); sessions migrate freely between slots via SessionStore. Idle sessions cost only the struct itself — the SessionStore buffer is allocated lazily on first use.
+	imcSystemCaches []*imcSystemCache // Immutable system-prompt preload pool with the same capacity as imcSessions.
+	addBOSToken     bool              // Whether to add BOS token (from model metadata)
+	pool            *contextPool      // Context pool for parallel embed/rerank
+	batchSeq        *batchSeqEngine   // Sequence-batch engine for supported embed/rerank models.
+	parser          Parser            // Selected via selectParser at load time; nil for embed/rerank.
+	draft           drafter           // Speculative-decoding strategy (nil, classic, or MTP); see draft.go
 }
 
 // NewModel loads a model from the GGUF files specified in cfg and returns
@@ -760,6 +750,7 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int, plan specu
 	if m.cfg.IncrementalCache() {
 		nSessions := m.cfg.IMCSessionCapacity()
 		m.imcSessions = make([]*imcSession, nSessions)
+		m.imcSystemCaches = make([]*imcSystemCache, nSessions)
 		for i := range nSessions {
 			store, err := newSessionStore(m.cfg)
 			if err != nil {
@@ -770,6 +761,7 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int, plan specu
 				seqID:   imcSeqIDUnbound,
 				kvState: store,
 			}
+			m.imcSystemCaches[i] = &imcSystemCache{id: i}
 		}
 	}
 
@@ -857,7 +849,9 @@ func (m *Model) cleanupGenerationRuntime(ctx context.Context, cause error) error
 		m.draft = nil
 	}
 	if m.batch != nil {
-		m.batch.stop(ctx)
+		if err := m.batch.stop(ctx); err != nil {
+			return errors.Join(cause, fmt.Errorf("cleanup-generation-runtime: %w", err))
+		}
 		m.batch.freeBatch()
 		m.batch = nil
 	}
@@ -883,20 +877,24 @@ func (m *Model) cleanupGenerationRuntime(ctx context.Context, cause error) error
 				cleanupErrs = append(cleanupErrs, fmt.Errorf("cleanup-generation-runtime: session[%d] draft store: %w", i, err))
 			}
 		}
-		if sess.turnCheckpoint != nil {
-			if sess.turnCheckpoint.kvState != nil {
-				if err := sess.turnCheckpoint.kvState.Close(); err != nil {
-					cleanupErrs = append(cleanupErrs, fmt.Errorf("cleanup-generation-runtime: session[%d] checkpoint store: %w", i, err))
-				}
+	}
+	for i, cache := range m.imcSystemCaches {
+		if cache == nil {
+			continue
+		}
+		if cache.kvState != nil {
+			if err := cache.kvState.Close(); err != nil {
+				cleanupErrs = append(cleanupErrs, fmt.Errorf("cleanup-generation-runtime: system-cache[%d] store: %w", i, err))
 			}
-			if sess.turnCheckpoint.draftKVState != nil {
-				if err := sess.turnCheckpoint.draftKVState.Close(); err != nil {
-					cleanupErrs = append(cleanupErrs, fmt.Errorf("cleanup-generation-runtime: session[%d] checkpoint draft store: %w", i, err))
-				}
+		}
+		if cache.draftKVState != nil {
+			if err := cache.draftKVState.Close(); err != nil {
+				cleanupErrs = append(cleanupErrs, fmt.Errorf("cleanup-generation-runtime: system-cache[%d] draft store: %w", i, err))
 			}
 		}
 	}
 	m.imcSessions = nil
+	m.imcSystemCaches = nil
 	m.parser = nil
 
 	return errors.Join(cleanupErrs...)
@@ -1197,7 +1195,10 @@ func (m *Model) Unload(ctx context.Context) error {
 	// Stop the batch engine if running.
 	hasBatch := m.batch != nil
 	if hasBatch {
-		m.batch.stop(ctx)
+		if err := m.batch.stop(ctx); err != nil {
+			m.unloaded.Store(false)
+			return fmt.Errorf("unload: %w", err)
+		}
 	}
 
 	hasBatchSeq := m.batchSeq != nil
@@ -1211,6 +1212,7 @@ func (m *Model) Unload(ctx context.Context) error {
 	for m.activeStreams.Load() > 0 {
 		select {
 		case <-ctx.Done():
+			m.unloaded.Store(false)
 			return fmt.Errorf("unload: cannot unload %d active streams: %w", m.activeStreams.Load(), ctx.Err())
 
 		case <-time.After(100 * time.Millisecond):
@@ -1272,16 +1274,19 @@ func (m *Model) Unload(ctx context.Context) error {
 				m.log(ctx, "unload", "status", "draft-session-store-close-failed", "session", i, "err", err.Error())
 			}
 		}
-		if sess.turnCheckpoint != nil {
-			if sess.turnCheckpoint.kvState != nil {
-				if err := sess.turnCheckpoint.kvState.Close(); err != nil {
-					m.log(ctx, "unload", "status", "checkpoint-session-store-close-failed", "session", i, "err", err.Error())
-				}
+	}
+	for i, cache := range m.imcSystemCaches {
+		if cache == nil {
+			continue
+		}
+		if cache.kvState != nil {
+			if err := cache.kvState.Close(); err != nil {
+				m.log(ctx, "unload", "status", "system-cache-store-close-failed", "cache", i, "err", err.Error())
 			}
-			if sess.turnCheckpoint.draftKVState != nil {
-				if err := sess.turnCheckpoint.draftKVState.Close(); err != nil {
-					m.log(ctx, "unload", "status", "checkpoint-draft-session-store-close-failed", "session", i, "err", err.Error())
-				}
+		}
+		if cache.draftKVState != nil {
+			if err := cache.draftKVState.Close(); err != nil {
+				m.log(ctx, "unload", "status", "system-cache-draft-store-close-failed", "cache", i, "err", err.Error())
 			}
 		}
 	}
@@ -1376,7 +1381,7 @@ func (m *Model) sendToolCallDeltaResponse(ctx context.Context, ch chan<- ChatRes
 	return nil
 }
 
-func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, finalContent *strings.Builder, finalReasoning *strings.Builder, respToolCalls []ResponseToolCall, terminalToolCallDeltas []ResponseToolCallDelta, logprobsData []ContentLogprob, finishReason string, stopSource string, finalChannel Channel, bufferedToolBytes int, streaming bool, includeUsage bool, usage Usage) {
+func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, finalContent *strings.Builder, finalReasoning *strings.Builder, respToolCalls []ResponseToolCall, terminalToolCallDeltas []ResponseToolCallDelta, logprobsData []ContentLogprob, finishReason string, stopSource string, finalChannel Channel, bufferedToolBytes int, streaming bool, includeUsage bool, usage Usage) error {
 	effectiveFinishReason := finishReason
 	if effectiveFinishReason == "" {
 		effectiveFinishReason = FinishReasonStop
@@ -1435,7 +1440,7 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 	}
 	for _, delta := range terminalToolCallDeltas {
 		if err := m.sendToolCallDeltaResponse(ctx, ch, id, object, choiceIndex, delta); err != nil {
-			return
+			return err
 		}
 	}
 
@@ -1454,7 +1459,7 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 		case ch <- ChatResponseErr(id, object, m.modelInfo.ID, choiceIndex, ctx.Err(), usage):
 		default:
 		}
-		return
+		return ctx.Err()
 
 	case ch <- finalResp:
 	}
@@ -1462,7 +1467,7 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 	if streaming && includeUsage {
 		select {
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 
 		case ch <- chatResponseUsage(finalResp, usage):
 		}
@@ -1475,6 +1480,8 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 
 	m.log(ctx, "chat-completion (send final response)", "prompt", usage.PromptTokens, "output", usage.CompletionTokens,
 		"context", contextTokens, "down", fmt.Sprintf("(%.0f%% of %.0fK) TPS: %.2f", percentage, of, usage.TokensPerSecond))
+
+	return nil
 }
 
 func (m *Model) sendErrorResponse(ctx context.Context, ch chan<- ChatResponse, id string, object string, choiceIndex int, err error, usage Usage) {
