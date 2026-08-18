@@ -49,6 +49,12 @@ func TestBatchEngineSnapshotPublishesSlotAndSelectorState(t *testing.T) {
 				job:          &chatJob{id: "restore-request", requestStart: now.Add(-time.Second)},
 				imcRestoring: true,
 			},
+			{
+				id:              4,
+				active:          true,
+				job:             &chatJob{id: "media-request", requestStart: now.Add(-time.Second)},
+				mediaPrefilling: true,
+			},
 		},
 	}
 	e.batch.NTokens = 41
@@ -84,6 +90,9 @@ func TestBatchEngineSnapshotPublishesSlotAndSelectorState(t *testing.T) {
 	}
 	if got.Slots[3].Phase != "imc-restore" {
 		t.Errorf("slot 3 phase = %q, want imc-restore", got.Slots[3].Phase)
+	}
+	if got.Slots[4].Phase != "media-prefill" {
+		t.Errorf("slot 4 phase = %q, want media-prefill", got.Slots[4].Phase)
 	}
 
 	got.EligiblePrefillSlots[0] = 99

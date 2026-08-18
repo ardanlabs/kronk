@@ -336,7 +336,8 @@ applied and defaults to `true`.
 
 `GET /v1/models` returns an OpenAI-style list of models and configured model
 extensions available locally. It is not limited to models currently loaded in
-memory. Each item includes `id`, `object`, `created`, and `owned_by`.
+memory. Each item includes `id`, `object`, `created`, and `owned_by`. The `id`
+uses the canonical `provider/modelID` form.
 `owned_by` comes from model metadata when available and otherwise defaults to
 `kronk`.
 

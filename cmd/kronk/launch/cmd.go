@@ -144,28 +144,11 @@ func verifyServer(ctx context.Context, serverURL, modelID string) error {
 		ids[i] = model.ID
 	}
 
-	if !slices.ContainsFunc(modelLookupIDs(modelID), func(candidate string) bool {
-		return slices.Contains(ids, candidate)
-	}) {
+	if !slices.Contains(ids, modelID) {
 		return fmt.Errorf("model %q is not available from Kronk at %s", modelID, serverURL)
 	}
 
 	return nil
-}
-
-// modelLookupIDs mirrors Kronk's model resolution for bare IDs,
-// owner/model IDs, model/profile IDs, and owner/model/profile IDs.
-func modelLookupIDs(modelID string) []string {
-	parts := strings.Split(modelID, "/")
-
-	switch len(parts) {
-	case 1:
-		return []string{parts[0]}
-	case 2:
-		return []string{modelID, parts[0], parts[1]}
-	default:
-		return []string{modelID, parts[1], parts[0], parts[len(parts)-1]}
-	}
 }
 
 // parseArgs validates the supported agent and returns arguments following the

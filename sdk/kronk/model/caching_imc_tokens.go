@@ -72,7 +72,7 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable, sy
 	var systemCache *imcSystemCache
 	if best == nil {
 		for _, candidate := range m.imcSystemCaches {
-			if candidate != nil && candidate.kvState != nil && len(candidate.kvState.Bytes()) > 0 && slices.Equal(candidate.cachedTokens, system) {
+			if candidate != nil && !candidate.building && candidate.kvState != nil && len(candidate.kvState.Bytes()) > 0 && slices.Equal(candidate.cachedTokens, system) {
 				systemCache = candidate
 				candidate.activeRestores++
 				candidate.restoreCount++

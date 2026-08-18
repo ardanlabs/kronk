@@ -271,7 +271,11 @@ func toOpenAIModels(modelFiles []models.File) OpenAIModelsResponse {
 	}
 
 	for _, mf := range modelFiles {
-		resp.Data = append(resp.Data, toOpenAIModel(mf))
+		model := toOpenAIModel(mf)
+		if !strings.Contains(model.ID, "/") {
+			model.ID = model.OwnedBy + "/" + model.ID
+		}
+		resp.Data = append(resp.Data, model)
 	}
 
 	slices.SortFunc(resp.Data, func(a, b OpenAIModel) int {
@@ -298,9 +302,8 @@ func toOpenAIModel(mf models.File) OpenAIModel {
 // =============================================================================
 
 // PullRequest represents the input for the pull command. ModelURL
-// accepts a direct HuggingFace URL, an owner/repo/file.gguf path, a
-// canonical catalog id (e.g. "unsloth/Qwen3-8B-Q8_0"), or a bare model
-// id ("Qwen3-8B-Q8_0") which is resolved via the catalog/provider list.
+// accepts a direct HuggingFace URL, an owner/repo/file.gguf path, or a
+// canonical catalog id (e.g. "unsloth/Qwen3-8B-Q8_0").
 //
 // DownloadServer, when set, redirects the pull to a peer Kronk server
 // on the local network ("host:port"). The peer must be running with the
@@ -1594,10 +1597,10 @@ func (r LookupResponse) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-// ResolveRequest is the body for POST /v1/catalog/resolve. The source may
-// be a full HuggingFace URL, a canonical id ("provider/family"), or a
-// bare id ("family"). The resolver maps any of these to the canonical
-// download URLs without initiating a download.
+// ResolveRequest is the body for POST /v1/catalog/resolve. The source may be a
+// full HuggingFace URL or a canonical id ("provider/family"). The resolver
+// maps either form to the canonical download URLs without initiating a
+// download.
 type ResolveRequest struct {
 	Source string `json:"source"`
 }

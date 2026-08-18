@@ -35,8 +35,8 @@ func TestModelDetailsNotFound(t *testing.T) {
 		t.Fatalf("NewWithPaths: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/models/missing", nil)
-	req.SetPathValue("model", "missing")
+	req := httptest.NewRequest(http.MethodGet, "/models/provider%2Fmissing", nil)
+	req.SetPathValue("model", "provider/missing")
 	resp := (&app{models: models}).showModel(t.Context(), req)
 
 	assertNotFound(t, resp)
@@ -61,6 +61,19 @@ func TestOpenAIModel(t *testing.T) {
 	}
 	if model.OwnedBy != "kronk" {
 		t.Errorf("OwnedBy: got %q, want %q", model.OwnedBy, "kronk")
+	}
+}
+
+func TestOpenAIModelsCanonicalID(t *testing.T) {
+	response := toOpenAIModels([]llamamodels.File{
+		{
+			ID:      "test-model",
+			OwnedBy: "test-provider",
+		},
+	})
+
+	if response.Data[0].ID != "test-provider/test-model" {
+		t.Errorf("ID: got %q, want %q", response.Data[0].ID, "test-provider/test-model")
 	}
 }
 

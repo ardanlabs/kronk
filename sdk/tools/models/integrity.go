@@ -115,12 +115,8 @@ func (m *Models) IntegrityFor(modelID string) (IntegrityModel, error) {
 		return IntegrityModel{}, fmt.Errorf("integrity-for: %w", err)
 	}
 
-	for _, key := range fullPathLookupKeys(modelID) {
-		mp, exists := index[key]
-		if !exists || len(mp.ModelFiles) == 0 {
-			continue
-		}
-
+	key, mp, exists := lookupIndex(index, modelID)
+	if exists && len(mp.ModelFiles) > 0 {
 		return m.integrityModel(key, mp)
 	}
 

@@ -313,8 +313,8 @@ kronk catalog list --local
 kronk model pull unsloth/Qwen3-0.6B-Q8_0 --local
 ```
 
-Model sources may be bare IDs, canonical `provider/model` IDs, Hugging Face
-URLs, or repository-and-quantization shorthands. Run
+Model sources may be canonical `provider/model` IDs, Hugging Face URLs, or
+repository-and-quantization shorthands. Run
 `kronk model pull --help` for all accepted forms. To pin both the repository
 and file, use `owner/repo/file.gguf` or a Hugging Face `blob` or `resolve` URL.
 Kronk then resolves that exact file only within that repository.

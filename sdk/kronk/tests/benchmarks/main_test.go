@@ -104,29 +104,29 @@ func TestMain(m *testing.M) {
 	}
 
 	// Dense target — only needed for BenchmarkDense_* benchmarks.
-	if dp, err := mdls.FullPath("Qwen3-0.6B-Q8_0"); err == nil {
+	if dp, err := mdls.FullPath("unsloth/Qwen3-0.6B-Q8_0"); err == nil {
 		benchDenseModelPath = dp
 	}
 
 	// MoE target — only needed for BenchmarkMoE_* benchmarks.
-	if dp, err := mdls.FullPath("gemma-4-26B-A4B-it-UD-Q4_K_M"); err == nil {
+	if dp, err := mdls.FullPath("unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M"); err == nil {
 		benchMoEModelPath = dp
 	}
 
 	// Hybrid target — only needed for BenchmarkHybrid_* benchmarks.
-	if dp, err := mdls.FullPath("Qwen3.6-35B-A3B-UD-Q4_K_M"); err == nil {
+	if dp, err := mdls.FullPath("unsloth/Qwen3.6-35B-A3B-UD-Q4_K_M"); err == nil {
 		benchHybridModelPath = dp
 	}
 
 	// Embedding/reranking targets are resolved independently so each benchmark
 	// skips only when its model is unavailable.
-	if dp, err := mdls.FullPath("Qwen3-Embedding-0.6B-Q8_0"); err == nil {
+	if dp, err := mdls.FullPath("Qwen/Qwen3-Embedding-0.6B-Q8_0"); err == nil {
 		benchEmbedBatchSeq = dp
 	}
-	if dp, err := mdls.FullPath("qwen3-reranker-0.6b-q8_0"); err == nil {
+	if dp, err := mdls.FullPath("ggml-org/qwen3-reranker-0.6b-q8_0"); err == nil {
 		benchRerankFallback = dp
 	}
-	if dp, err := mdls.FullPath("bge-reranker-v2-m3-Q8_0"); err == nil {
+	if dp, err := mdls.FullPath("gpustack/bge-reranker-v2-m3-Q8_0"); err == nil {
 		benchRerankBatchSeq = dp
 	}
 

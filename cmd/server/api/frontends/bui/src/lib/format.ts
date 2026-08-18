@@ -15,3 +15,7 @@ export function fmtVal(v: unknown): string {
   if (typeof v === 'object') return JSON.stringify(v);
   return String(v);
 }
+
+export function formatModelID(modelID: string): string {
+  return modelID.endsWith('/AGENT') ? modelID.slice(0, -'/AGENT'.length) : modelID;
+}

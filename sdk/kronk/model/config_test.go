@@ -42,6 +42,25 @@ func TestMoEMode(t *testing.T) {
 	}
 }
 
+func TestDefaultSplitMode(t *testing.T) {
+	tests := []struct {
+		name     string
+		gpuCount int
+	}{
+		{"no GPU", 0},
+		{"single GPU", 1},
+		{"multiple GPUs", 2},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := DefaultSplitMode(tt.gpuCount); got != SplitModeLayer {
+				t.Errorf("DefaultSplitMode() = %s, want %s", got, SplitModeLayer)
+			}
+		})
+	}
+}
+
 func TestMoEModeYAML(t *testing.T) {
 	var cfg MoEConfig
 	if err := yaml.Unmarshal([]byte("mode: experts_cpu\n"), &cfg); err != nil {
@@ -417,6 +436,22 @@ func TestContextTopologyParamsProvidesFullContextPerSequence(t *testing.T) {
 	}
 	if got.KVUnified != 0 {
 		t.Errorf("KVUnified: got %d, want %d", got.KVUnified, 0)
+	}
+}
+
+func TestContextParamsTraceDistinguishesTotalAndPerSequenceContext(t *testing.T) {
+	params := contextTopologyParams(llama.ContextParams{}, 131_072, 2)
+
+	var got string
+	log := func(_ context.Context, _ string, args ...any) {
+		got = fmt.Sprint(args[1])
+	}
+	logContextParamsTrace(t.Context(), params, 131_072, log)
+
+	for _, want := range []string{"NCtxTotal[262144]", "NCtxPerSeq[131072]"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("context params trace: got %q, want it to contain %q", got, want)
+		}
 	}
 }
 

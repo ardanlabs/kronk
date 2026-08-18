@@ -150,6 +150,7 @@ type slot struct {
 	inputChunks      mtmd.InputChunks // Tokenized chunks (text + media interleaved)
 	chunkIdx         int              // Index of chunk currently being processed
 	chunkTokIdx      int              // Token index within current text chunk (for partial prefill)
+	mediaPrefilling  bool             // True while a synchronous IMC media build or append is running
 	mediaPrefillDone bool             // True after all chunks are consumed; inputChunks remains owned until slot teardown
 	bitmaps          []mtmd.Bitmap    // Image bitmaps to free when done
 	useMRoPE         bool             // Model uses M-RoPE 4D positioning
@@ -331,6 +332,7 @@ func (s *slot) reset() {
 	s.inputChunks = 0
 	s.chunkIdx = 0
 	s.chunkTokIdx = 0
+	s.mediaPrefilling = false
 	s.mediaPrefillDone = false
 	s.bitmaps = nil
 	s.useMRoPE = false

@@ -7,6 +7,7 @@ import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import shutil
 
 
 HOP_BY_HOP_HEADERS = {
@@ -117,7 +118,9 @@ def main():
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=False)
 
     server = ThreadingHTTPServer(
         (args.listen_host, args.listen_port), CaptureProxyHandler

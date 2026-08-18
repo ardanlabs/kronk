@@ -20,7 +20,7 @@ func rerank200(tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model": "bge-reranker-v2-m3-Q8_0",
+				"model": "gpustack/bge-reranker-v2-m3-Q8_0",
 				"query": "What is the capital of France?",
 				"documents": []string{
 					"Paris is the capital and largest city of France.",
@@ -32,7 +32,7 @@ func rerank200(tokens map[string]string) []apitest.Table {
 			},
 			GotResp: &model.RerankResponse{},
 			ExpResp: &model.RerankResponse{
-				Model:  "bge-reranker-v2-m3-Q8_0",
+				Model:  "gpustack/bge-reranker-v2-m3-Q8_0",
 				Object: "list",
 			},
 			CmpFunc: func(got any, exp any) string {
@@ -93,7 +93,7 @@ func rerank403(tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusForbidden,
 			Input: model.D{
-				"model": "bge-reranker-v2-m3-Q8_0",
+				"model": "gpustack/bge-reranker-v2-m3-Q8_0",
 				"query": "What is the capital of France?",
 				"documents": []string{
 					"Paris is the capital of France.",

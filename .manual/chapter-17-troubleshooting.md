@@ -154,9 +154,9 @@ Pull it again using any supported source form:
 kronk model pull <model-id> --local
 ```
 
-`model pull` checks the catalog and automatically walks configured providers
-when an ID has not been resolved before. A separate `model resolve` step is not
-normally required. Interrupted downloads are resumable; if a file remains
+`model pull` requires a canonical `provider/modelID` and checks that provider
+when the ID has not been resolved before. A separate `model resolve` step is
+not normally required. Interrupted downloads are resumable; if a file remains
 invalid, remove that model through Kronk and pull it again:
 
 ```shell

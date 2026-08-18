@@ -314,7 +314,7 @@ KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
           <p>List the starter catalog and download a model directly on the host:</p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog list --local
 kronk model pull unsloth/Qwen3-0.6B-Q8_0 --local`}</code></pre>
-          <p>Model sources may be bare IDs, canonical <code>provider/model</code> IDs, Hugging Face URLs, or repository-and-quantization shorthands. Run <code>kronk model pull --help</code> for all accepted forms. To pin both the repository and file, use <code>owner/repo/file.gguf</code> or a Hugging Face <code>blob</code> or <code>resolve</code> URL. Kronk then resolves that exact file only within that repository.</p>
+          <p>Model sources may be canonical <code>provider/model</code> IDs, Hugging Face URLs, or repository-and-quantization shorthands. Run <code>kronk model pull --help</code> for all accepted forms. To pin both the repository and file, use <code>owner/repo/file.gguf</code> or a Hugging Face <code>blob</code> or <code>resolve</code> URL. Kronk then resolves that exact file only within that repository.</p>
           <p>The default data layout is:</p>
           <pre className="code-block"><code className="language-text">{`~/.kronk/
 ├── catalog/
@@ -392,6 +392,7 @@ models:
           <p>The server reads this file during startup. Restart the server after changing it. To test a different file without replacing the default, run:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --model-config-file=./my-model-config.yaml`}</code></pre>
           <p>You can also set <code>KRONK_POOL_MODEL_CONFIG_FILE</code> to an alternative path. See <a href="https://www.kronkai.com/manual#85-model-configuration-files">Chapter 8 §8.5</a> for model config file management and <a href="https://www.kronkai.com/manual#25-models-and-data-paths">Chapter 2 §2.5</a> for all data paths.</p>
+          <p>Inference requests require the canonical <code>provider/modelID</code> shown by <code>/v1/models</code>. Bare model IDs are rejected rather than searched across a list of providers.</p>
           <h4 id="model-variants">Model variants</h4>
           <p>A suffix creates another configuration for the same downloaded model:</p>
           <pre className="code-block"><code className="language-yaml">{`models:
@@ -610,11 +611,11 @@ models:
               </tr>
               <tr>
                 <td><code>row</code></td>
-                <td>Split tensor rows across GPUs</td>
+                <td>Use deprecated row-split tensor parallelism where supported</td>
               </tr>
             </tbody>
           </table>
-          <p>When the setting is omitted, Kronk selects <code>row</code> when more than one GPU is present and <code>layer</code> otherwise. This is a hardware-derived default, not a rule that one mode is always fastest for a particular model architecture.</p>
+          <p>When the setting is omitted, Kronk selects <code>layer</code>, matching llama.cpp's default and most compatible multi-GPU mode. Layer mode can distribute a single GGUF file across multiple GPUs. <code>row</code> remains available for explicit legacy configurations but is not recommended for new deployments.</p>
           <p>For explicit placement, <code>devices</code> names the devices and <code>tensor-split</code> gives their proportional shares:</p>
           <pre className="code-block"><code className="language-yaml">{`some-provider/some-model:
   devices: [CUDA0, CUDA1]
@@ -1916,7 +1917,7 @@ kronk catalog remove unsloth/Qwen3-0.6B-Q8_0`}</code></pre>
           <p>Catalog entries identify the provider, source family, revision, files, sizes, and detected capabilities. Chat templates come from downloaded GGUF metadata and are not stored as catalog configuration.</p>
           <p>Source specificity controls catalog resolution:</p>
           <ul>
-            <li>A bare model ID can search the configured provider priority list.</li>
+            <li>A canonical <code>provider/modelID</code> selects one provider explicitly.</li>
             <li><code>provider/repo:quantization</code> pins the repository and selects the matching quantization there.</li>
             <li><code>owner/repo/file.gguf</code>, or an equivalent Hugging Face <code>blob</code> or <code>resolve</code> URL, pins both the repository and upstream filename.</li>
             <li>A repository root or tree URL returns its GGUF files for explicit selection rather than choosing one automatically.</li>
@@ -2149,7 +2150,7 @@ data: {"type":"response.completed",...}`}</code></pre>
   "tokens": 11
 }`}</code></pre>
           <h2 id="99-models-and-audio-transcription">9.9 Models and Audio Transcription</h2>
-          <p><code>GET /v1/models</code> returns an OpenAI-style list of models and configured model extensions available locally. It is not limited to models currently loaded in memory. Each item includes <code>id</code>, <code>object</code>, <code>created</code>, and <code>owned_by</code>. <code>owned_by</code> comes from model metadata when available and otherwise defaults to <code>kronk</code>.</p>
+          <p><code>GET /v1/models</code> returns an OpenAI-style list of models and configured model extensions available locally. It is not limited to models currently loaded in memory. Each item includes <code>id</code>, <code>object</code>, <code>created</code>, and <code>owned_by</code>. The <code>id</code> uses the canonical <code>provider/modelID</code> form. <code>owned_by</code> comes from model metadata when available and otherwise defaults to <code>kronk</code>.</p>
           <p><code>GET /v1/models/&#123;model&#125;</code> returns the corresponding OpenAI-style model object for one model ID. It returns <code>404 Not Found</code> when the model is not available.</p>
           <p><code>POST /v1/audio/transcriptions</code> accepts multipart audio uploads and uses the Bucky speech-to-text runtime. Its request fields, formats, and administrative operations are documented in <a href="https://www.kronkai.com/manual#1861-request-and-response">Chapter 18</a>.</p>
           <h2 id="910-kronk-administration">9.10 Kronk Administration</h2>
@@ -3890,7 +3891,7 @@ kronk model index --local`}</code></pre>
           <h4 id="a-model-is-missing-incomplete-or-corrupt">A model is missing, incomplete, or corrupt</h4>
           <p>Pull it again using any supported source form:</p>
           <pre className="code-block"><code className="language-shell">{`kronk model pull <model-id> --local`}</code></pre>
-          <p><code>model pull</code> checks the catalog and automatically walks configured providers when an ID has not been resolved before. A separate <code>model resolve</code> step is not normally required. Interrupted downloads are resumable; if a file remains invalid, remove that model through Kronk and pull it again:</p>
+          <p><code>model pull</code> requires a canonical <code>provider/modelID</code> and checks that provider when the ID has not been resolved before. A separate <code>model resolve</code> step is not normally required. Interrupted downloads are resumable; if a file remains invalid, remove that model through Kronk and pull it again:</p>
           <pre className="code-block"><code className="language-shell">{`kronk model remove <model-id> --local
 kronk model pull <model-id> --local`}</code></pre>
           <p>For a gated or private Hugging Face repository, provide a read token:</p>
@@ -4645,6 +4646,12 @@ if _, err := libs.Download(ctx, malina.FmtLogger); err != nil {
                 <td>6.9 GB</td>
               </tr>
               <tr>
+                <td><code>flux2-klein-4b</code></td>
+                <td>Diffusion model, VAE, and LLM text encoder</td>
+                <td>FLUX Non-Commercial</td>
+                <td>5.3 GB</td>
+              </tr>
+              <tr>
                 <td><code>flux2-klein-9b</code></td>
                 <td>Diffusion model, VAE, and LLM text encoder</td>
                 <td>FLUX Non-Commercial</td>
@@ -4675,7 +4682,7 @@ if err != nil {
     return err
 }`}</code></pre>
           <p>Downloads are staged, checked for all required non-empty files, recorded in <code>manifest.json</code>, and then activated atomically. A complete installed bundle is reused on later calls.</p>
-          <p>The FLUX.2 bundle is license-gated. Accept the model license on Hugging Face, then provide a read token through <code>KRONK_HF_TOKEN</code> or <code>HF_TOKEN</code> before downloading it.</p>
+          <p>The FLUX.2 bundles are license-gated. Accept the model license on Hugging Face, then provide a read token through <code>KRONK_HF_TOKEN</code> or <code>HF_TOKEN</code> before downloading them.</p>
           <h3 id="194-go-sdk">19.4 Go SDK</h3>
           <p>The complete Stable Diffusion 1.5 flow is demonstrated by <a href="../examples/malina/main.go"><code>examples/malina/main.go</code></a>. The important phases are initialization, model construction, generation, and unloading.</p>
           <h4 id="1941-initialize-malina">19.4.1 Initialize Malina</h4>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../services/api';
 import type { IMCSessionDetail, IMCSessionsResponse, IMCSystemCacheDetail, IMCSystemCachesResponse } from '../types';
-import { formatBytes } from '../lib/format';
+import { formatBytes, formatModelID } from '../lib/format';
 import { labelWithTip, PARAM_TOOLTIPS, type TooltipKey } from './ParamTooltips';
 
 type View = 'current' | 'system';
@@ -13,9 +13,8 @@ const STATE_ORDER = { active: 0, idle: 1, empty: 2 } as const;
 const CURRENT_GUIDE: ReadonlyArray<[string, TooltipKey]> = [
   ['Model', 'imcModelID'], ['Cache Entry', 'imcSessionID'], ['State', 'imcState'],
   ['Current Messages', 'imcMessages'], ['Current Tokens', 'imcContext'], ['Current Allocated', 'imcAllocated'],
-  ['Snapshot Memory', 'imcSnapshotBytes'],
   ['Latest Request Input', 'imcInputTokens'], ['Latest Request Output', 'imcOutputTokens'],
-  ['Latest Request Context', 'imcRequestTotal'], ['Peak Context', 'imcPeakContext'],
+  ['Latest Request Context', 'imcRequestTotal'], ['Peak Context', 'imcPeakContext'], ['Peak Memory', 'imcSnapshotBytes'],
   ['Peak Used', 'imcUtilization'], ['Media', 'imcMedia'], ['Last Used', 'imcLastUsed'],
 ];
 const SYSTEM_GUIDE: ReadonlyArray<[string, TooltipKey]> = [
@@ -50,11 +49,6 @@ function formatDate(value: string): string {
 
 function utilization(peak: number, window: number): string {
   return window > 0 ? `${((peak / window) * 100).toFixed(1)}%` : '0%';
-}
-
-function modelTabLabel(modelID: string): string {
-  const parts = modelID.split('/');
-  return parts[parts.length > 1 ? 1 : 0] || modelID;
 }
 
 export default function IMCSessions() {
@@ -193,7 +187,7 @@ export default function IMCSessions() {
       {modelIDs.length > 0 && (
         <div className="tabs imc-model-tabs" role="tablist" aria-label="IMC caches by model">
           <button type="button" role="tab" aria-selected={selectedModel === ALL_MODELS} className={`tab ${selectedModel === ALL_MODELS ? 'active' : ''}`} onClick={() => setSelectedModel(ALL_MODELS)}>All</button>
-          {modelIDs.map((modelID) => <button key={modelID} type="button" role="tab" aria-selected={selectedModel === modelID} className={`tab imc-model-tab ${selectedModel === modelID ? 'active' : ''}`} title={modelID} onClick={() => setSelectedModel(modelID)}><span className="imc-model-tab-label">{modelTabLabel(modelID)}</span></button>)}
+          {modelIDs.map((modelID) => <button key={modelID} type="button" role="tab" aria-selected={selectedModel === modelID} className={`tab imc-model-tab ${selectedModel === modelID ? 'active' : ''}`} title={modelID} onClick={() => setSelectedModel(modelID)}><span className="imc-model-tab-label">{formatModelID(modelID)}</span></button>)}
         </div>
       )}
 
@@ -214,9 +208,9 @@ function CurrentTable({ data, sort, indicator }: { data: IMCSessionDetail[]; sor
   if (data.length === 0) return <div className="empty-state"><h3>No IMC working sessions</h3><p>Entries appear when an IMC-enabled model is loaded</p></div>;
   const head = (label: string, tip: TooltipKey, field: CurrentSort, right = false) => <th onClick={() => sort(field)} className="catalog-table-sortable" style={right ? { textAlign: 'right' } : undefined}>{labelWithTip(label, tip)}<span className="catalog-table-sort-indicator">{indicator(field)}</span></th>;
   return <div style={{ overflowX: 'auto' }}><table className="imc-sessions-table"><thead>
-    <tr className="imc-table-groups"><th colSpan={3} className="imc-table-group imc-table-group-session">Session</th><th colSpan={3} className="imc-table-group imc-table-group-request">Latest Request</th><th colSpan={4} className="imc-table-group imc-table-group-current">Working Cache</th><th colSpan={2} className="imc-table-group imc-table-group-capacity">Capacity / Usage</th><th colSpan={2} className="imc-table-group imc-table-group-details">Details</th></tr>
-    <tr className="imc-table-columns">{head('Model', 'imcModelID', 'model_id')}{head('Cache Entry', 'imcSessionID', 'id')}{head('State', 'imcState', 'state')}{head('Input', 'imcInputTokens', 'input_tokens', true)}{head('Output', 'imcOutputTokens', 'output_tokens', true)}{head('Context', 'imcRequestTotal', 'request_context', true)}{head('Messages', 'imcMessages', 'messages', true)}{head('Tokens', 'imcContext', 'context', true)}{head('Allocated', 'imcAllocated', 'allocated', true)}{head('Snapshot Memory', 'imcSnapshotBytes', 'snapshot_bytes', true)}{head('Peak Context', 'imcPeakContext', 'peak_context', true)}{head('Peak Used', 'imcUtilization', 'utilization', true)}{head('Media', 'imcMedia', 'has_media')}{head('Last Used', 'imcLastUsed', 'last_used')}</tr>
-  </thead><tbody>{data.map((s) => <tr key={`${s.model_id}-${s.id}`}><td>{s.model_id}</td><td>{s.id}</td><td><span className={`badge badge-${s.state}`}>{s.state}</span></td><td className="imc-request-cell" style={{ textAlign: 'right' }}>{s.input_tokens.toLocaleString()}</td><td className="imc-request-cell" style={{ textAlign: 'right' }}>{s.output_tokens.toLocaleString()}</td><td className="imc-request-cell" style={{ textAlign: 'right' }}>{(s.input_tokens + s.output_tokens).toLocaleString()}</td><td className="imc-current-cell" style={{ textAlign: 'right' }}>{s.messages.toLocaleString()}</td><td className="imc-current-cell" style={{ textAlign: 'right' }}>{s.context.toLocaleString()}</td><td className="imc-current-cell" style={{ textAlign: 'right' }}>{s.allocated.toLocaleString()}</td><td className="imc-current-cell" style={{ textAlign: 'right' }}>{formatBytes(s.snapshot_bytes)}</td><td className="imc-capacity-cell" style={{ textAlign: 'right' }}>{s.peak_context.toLocaleString()}</td><td className="imc-capacity-cell" style={{ textAlign: 'right' }}>{utilization(s.peak_context, s.context_window)}</td><td><span className={`badge badge-${s.has_media ? 'yes' : 'no'}`}>{s.has_media ? 'yes' : 'no'}</span></td><td style={{ whiteSpace: 'nowrap' }}>{formatDate(s.last_used)}</td></tr>)}</tbody></table></div>;
+    <tr className="imc-table-groups"><th colSpan={3} className="imc-table-group imc-table-group-session">Session</th><th colSpan={3} className="imc-table-group imc-table-group-request">Latest Request</th><th colSpan={3} className="imc-table-group imc-table-group-current">Working Cache</th><th colSpan={3} className="imc-table-group imc-table-group-capacity">Peak / Usage</th><th colSpan={2} className="imc-table-group imc-table-group-details">Details</th></tr>
+    <tr className="imc-table-columns">{head('Model', 'imcModelID', 'model_id')}{head('Cache Entry', 'imcSessionID', 'id')}{head('State', 'imcState', 'state')}{head('Input', 'imcInputTokens', 'input_tokens', true)}{head('Output', 'imcOutputTokens', 'output_tokens', true)}{head('Context', 'imcRequestTotal', 'request_context', true)}{head('Messages', 'imcMessages', 'messages', true)}{head('Tokens', 'imcContext', 'context', true)}{head('Allocated', 'imcAllocated', 'allocated', true)}{head('Peak Context', 'imcPeakContext', 'peak_context', true)}{head('Peak Memory', 'imcSnapshotBytes', 'snapshot_bytes', true)}{head('Peak Used', 'imcUtilization', 'utilization', true)}{head('Media', 'imcMedia', 'has_media')}{head('Last Used', 'imcLastUsed', 'last_used')}</tr>
+  </thead><tbody>{data.map((s) => <tr key={`${s.model_id}-${s.id}`}><td>{s.model_id}</td><td>{s.id}</td><td><span className={`badge badge-${s.state}`}>{s.state}</span></td><td className="imc-request-cell" style={{ textAlign: 'right' }}>{s.input_tokens.toLocaleString()}</td><td className="imc-request-cell" style={{ textAlign: 'right' }}>{s.output_tokens.toLocaleString()}</td><td className="imc-request-cell" style={{ textAlign: 'right' }}>{(s.input_tokens + s.output_tokens).toLocaleString()}</td><td className="imc-current-cell" style={{ textAlign: 'right' }}>{s.messages.toLocaleString()}</td><td className="imc-current-cell" style={{ textAlign: 'right' }}>{s.context.toLocaleString()}</td><td className="imc-current-cell" style={{ textAlign: 'right' }}>{s.allocated.toLocaleString()}</td><td className="imc-capacity-cell" style={{ textAlign: 'right' }}>{s.peak_context.toLocaleString()}</td><td className="imc-capacity-cell" style={{ textAlign: 'right' }}>{formatBytes(s.snapshot_bytes)}</td><td className="imc-capacity-cell" style={{ textAlign: 'right' }}>{utilization(s.peak_context, s.context_window)}</td><td><span className={`badge badge-${s.has_media ? 'yes' : 'no'}`}>{s.has_media ? 'yes' : 'no'}</span></td><td style={{ whiteSpace: 'nowrap' }}>{formatDate(s.last_used)}</td></tr>)}</tbody></table></div>;
 }
 
 function SystemTable({ data, sort, indicator }: { data: IMCSystemCacheDetail[]; sort: (field: SystemSort) => void; indicator: (field: SystemSort) => string }) {

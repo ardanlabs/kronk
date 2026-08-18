@@ -17,13 +17,12 @@ var Cmd = &cobra.Command{
 	Long: `Resolve a model id to a provider, repo, files and download URLs.
 
 Resolution order:
-  1. Local on-disk index (re-uses any provider already downloaded)
+  1. Local on-disk index for the specified provider
   2. Resolver file (~/.kronk/catalog.yaml)
-  3. HuggingFace API across the configured provider list
+  3. HuggingFace API for the specified provider
 
-The id may be bare (Qwen3.6-35B-A3B-UD-Q4_K_M) or include an explicit
-provider (unsloth/Qwen3.6-35B-A3B-UD-Q4_K_M). On a successful HuggingFace
-lookup the resolution is cached in the resolver file.
+The id must include its provider (unsloth/Qwen3.6-35B-A3B-UD-Q4_K_M). On a
+successful HuggingFace lookup the resolution is cached in the resolver file.
 
 Environment Variables:
       KRONK_BASE_PATH  Base path for kronk data (defaults to $HOME/.kronk)

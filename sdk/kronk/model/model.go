@@ -113,13 +113,16 @@ type imcSession struct {
 type imcSystemCache struct {
 	id               int
 	cachedTokens     []llama.Token
+	buildingTokens   []llama.Token // Pending replacement identity while building keeps published metadata separate.
 	kvState          SessionStore
 	draftKVState     SessionStore
 	pendingH         []float32
 	allocatedContext int
+	snapshotBytes    int // Retained target, draft, and pending-H capacity, safe to read while the stores are rebuilt.
 	lastUsed         time.Time
 	activeRestores   int
 	restoreCount     uint64
+	building         bool // Exclusive rebuild reservation; planners must not restore this entry while true.
 }
 
 func (s *imcSession) logicalPosition() int {
@@ -361,7 +364,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	l(ctx, "MODEL-CONFIG", "values", cfg.String())
 
 	logMoEConfig(ctx, cfg, l)
-	logContextParamsTrace(ctx, ctxParams, l)
+	logContextParamsTrace(ctx, ctxParams, cfg.ContextWindow(), l)
 
 	// -------------------------------------------------------------------------
 
@@ -508,16 +511,13 @@ func buildModelParams(ctx context.Context, cfg *Config, loadMTP bool, l applog.L
 		mParams.NGpuLayers = int32(*cfg.PtrNGpuLayers)
 	}
 
-	// Set split mode for multi-GPU and tensor parallelism (expert-parallel for MoE).
-	// When not explicitly configured, fall back to a device-count aware default
-	// (DefaultSplitMode): SplitModeRow only with multiple GPUs, otherwise
-	// SplitModeLayer. This is the universal floor every load path shares, so it
-	// protects callers (including direct SDK users) that never run the hardware
-	// analysis. Tensor parallelism on a single GPU is a no-op that performs
-	// worse and crashes MoE models with view tensors (e.g. gemma4).
+	// Set split mode for multi-GPU distribution. Match llama.cpp's layer-split
+	// default unless the user explicitly selects another mode. Layer splitting
+	// works across backends and can distribute a single GGUF across GPUs without
+	// requiring row split-buffer support.
 	switch cfg.PtrSplitMode {
 	case nil:
-		split := DefaultSplitMode(gpuDeviceCount(cfg))
+		split := DefaultSplitMode(len(cfg.Devices))
 		mParams.SplitMode = split.ToYZMAType()
 		// Surface the resolved split mode back into cfg so ModelConfig() reports
 		// the effective value ("layer"/"row") instead of nil. This keeps
@@ -674,7 +674,7 @@ func logMoEConfig(ctx context.Context, cfg Config, l applog.Logger) {
 
 // logContextParamsTrace emits the multi-line LLAMA-CONTEXT-PARAMS dump used
 // for post-load diagnostics.
-func logContextParamsTrace(ctx context.Context, ctxParams llama.ContextParams, l applog.Logger) {
+func logContextParamsTrace(ctx context.Context, ctxParams llama.ContextParams, contextWindow int, l applog.Logger) {
 	faName := "unknown"
 	switch ctxParams.FlashAttentionType {
 	case llama.FlashAttentionTypeAuto:
@@ -688,10 +688,10 @@ func logContextParamsTrace(ctx context.Context, ctxParams llama.ContextParams, l
 	typeKName := GGMLTypeFromYZMA(ctxParams.TypeK).String()
 	typeVName := GGMLTypeFromYZMA(ctxParams.TypeV).String()
 
-	l(ctx, "LLAMA-CONTEXT-PARAMS", "values", fmt.Sprintf("\nAbortCallbackSet[%t]\nAttentionType[%d]\nCtxOtherSet[%t]\nCtxType[%d]\nDefragThold[%g]\nEmbeddings[%d]\nEvalCallbackSet[%t]\nFlashAttentionType[%s]\nKVUnified[%d]\nNBatch[%d]\nNCtx[%d]\nNOutputsMax[%d]\nNOutputsMaxPerSeq[%d]\nNRsSeq[%d]\nNSamplers[%d]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nNoPerf[%d]\nOffloadKQV[%d]\nOpOffload[%d]\nPoolingType[%d]\nRopeFreqBase[%g]\nRopeFreqScale[%g]\nRopeScalingType[%d]\nSamplersSet[%t]\nSwaFull[%d]\nTypeK[%s]\nTypeV[%s]\nYarnAttnFactor[%g]\nYarnBetaFast[%g]\nYarnBetaSlow[%g]\nYarnExtFactor[%g]\nYarnOrigCtx[%d]\n",
+	l(ctx, "LLAMA-CONTEXT-PARAMS", "values", fmt.Sprintf("\nAbortCallbackSet[%t]\nAttentionType[%d]\nCtxOtherSet[%t]\nCtxType[%d]\nDefragThold[%g]\nEmbeddings[%d]\nEvalCallbackSet[%t]\nFlashAttentionType[%s]\nKVUnified[%d]\nNBatch[%d]\nNCtxTotal[%d]\nNCtxPerSeq[%d]\nNOutputsMax[%d]\nNOutputsMaxPerSeq[%d]\nNRsSeq[%d]\nNSamplers[%d]\nNSeqMax[%d]\nNThreads[%d]\nNThreadsBatch[%d]\nNUBatch[%d]\nNoPerf[%d]\nOffloadKQV[%d]\nOpOffload[%d]\nPoolingType[%d]\nRopeFreqBase[%g]\nRopeFreqScale[%g]\nRopeScalingType[%d]\nSamplersSet[%t]\nSwaFull[%d]\nTypeK[%s]\nTypeV[%s]\nYarnAttnFactor[%g]\nYarnBetaFast[%g]\nYarnBetaSlow[%g]\nYarnExtFactor[%g]\nYarnOrigCtx[%d]\n",
 		ctxParams.AbortCallback != 0, ctxParams.AttentionType, ctxParams.CtxOther != 0, ctxParams.CtxType,
 		ctxParams.DefragThold, ctxParams.Embeddings, ctxParams.CbEval != 0, faName, ctxParams.KVUnified,
-		ctxParams.NBatch, ctxParams.NCtx, ctxParams.NOutputsMax, ctxParams.NOutputsMaxPerSeq, ctxParams.NRsSeq, ctxParams.NSamplers,
+		ctxParams.NBatch, ctxParams.NCtx, contextWindow, ctxParams.NOutputsMax, ctxParams.NOutputsMaxPerSeq, ctxParams.NRsSeq, ctxParams.NSamplers,
 		ctxParams.NSeqMax, ctxParams.NThreads, ctxParams.NThreadsBatch, ctxParams.NUbatch, ctxParams.NoPerf,
 		ctxParams.Offload_kqv, ctxParams.OpOffload, ctxParams.PoolingType, ctxParams.RopeFreqBase,
 		ctxParams.RopeFreqScale, ctxParams.RopeScalingType, ctxParams.Samplers != 0, ctxParams.SwaFull,
@@ -1257,9 +1257,8 @@ func (m *Model) Unload(ctx context.Context) error {
 		m.mem = 0
 	}
 
-	// Release per-session SessionStore resources (e.g. on-disk files).
-	// The RAM impl is a no-op; the disk impl removes its file. Errors
-	// are logged and otherwise ignored — the model is going away.
+	// Release per-session SessionStore resources (e.g. RAM or on-disk files).
+	// Errors are logged and otherwise ignored — the model is going away.
 	for i, sess := range m.imcSessions {
 		if sess == nil {
 			continue
@@ -1290,7 +1289,6 @@ func (m *Model) Unload(ctx context.Context) error {
 			}
 		}
 	}
-
 	// Free the long-lived metadata mtmd context before the model. mtmd
 	// holds references into the loaded llama model, so the order matters.
 	// Per-request slot mtmd contexts are freed in freeSlotResources during
@@ -1320,6 +1318,14 @@ func (m *Model) Config() Config {
 
 func (m *Model) ModelInfo() ModelInfo {
 	return m.modelInfo
+}
+
+func (m *Model) responseModelID() string {
+	if m.cfg.ResponseModelID != "" {
+		return m.cfg.ResponseModelID
+	}
+
+	return m.modelInfo.ID
 }
 
 func (m *Model) isUnnecessaryCRLF(reasonFlag int, completionFlag int, content string) bool {
@@ -1353,13 +1359,13 @@ func (m *Model) sendDeltaResponse(ctx context.Context, ch chan<- ChatResponse, i
 	select {
 	case <-ctx.Done():
 		select {
-		case ch <- ChatResponseErr(id, object, m.modelInfo.ID, choiceIndex, ctx.Err(), Usage{}):
+		case ch <- ChatResponseErr(id, object, m.responseModelID(), choiceIndex, ctx.Err(), Usage{}):
 		default:
 		}
 
 		return ctx.Err()
 
-	case ch <- chatResponseDelta(id, object, m.modelInfo.ID, choiceIndex, content, channel == ChannelReasoning, logprob):
+	case ch <- chatResponseDelta(id, object, m.responseModelID(), choiceIndex, content, channel == ChannelReasoning, logprob):
 	}
 
 	return nil
@@ -1369,13 +1375,13 @@ func (m *Model) sendToolCallDeltaResponse(ctx context.Context, ch chan<- ChatRes
 	select {
 	case <-ctx.Done():
 		select {
-		case ch <- ChatResponseErr(id, object, m.modelInfo.ID, choiceIndex, ctx.Err(), Usage{}):
+		case ch <- ChatResponseErr(id, object, m.responseModelID(), choiceIndex, ctx.Err(), Usage{}):
 		default:
 		}
 
 		return ctx.Err()
 
-	case ch <- chatResponseToolCallDelta(id, object, m.modelInfo.ID, choiceIndex, delta):
+	case ch <- chatResponseToolCallDelta(id, object, m.responseModelID(), choiceIndex, delta):
 	}
 
 	return nil
@@ -1444,7 +1450,7 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 		}
 	}
 
-	finalResp := chatResponseFinal(id, object, m.modelInfo.ID, choiceIndex,
+	finalResp := chatResponseFinal(id, object, m.responseModelID(), choiceIndex,
 		finalContent.String(),
 		finalReasoning.String(),
 		respToolCalls,
@@ -1456,7 +1462,7 @@ func (m *Model) sendFinalResponse(ctx context.Context, ch chan<- ChatResponse, i
 	select {
 	case <-ctx.Done():
 		select {
-		case ch <- ChatResponseErr(id, object, m.modelInfo.ID, choiceIndex, ctx.Err(), usage):
+		case ch <- ChatResponseErr(id, object, m.responseModelID(), choiceIndex, ctx.Err(), usage):
 		default:
 		}
 		return ctx.Err()
@@ -1490,7 +1496,7 @@ func (m *Model) sendErrorResponse(ctx context.Context, ch chan<- ChatResponse, i
 	select {
 	case <-ctx.Done():
 
-	case ch <- ChatResponseErr(id, object, m.modelInfo.ID, choiceIndex,
+	case ch <- ChatResponseErr(id, object, m.responseModelID(), choiceIndex,
 		err,
 		usage):
 	}
@@ -1587,28 +1593,6 @@ func resolveBackendDevice(name string) llama.GGMLBackendDevice {
 	}
 
 	return 0
-}
-
-// gpuDeviceCount reports how many GPU devices the model will load across. When
-// the config pins an explicit device list, only its GPU entries are counted;
-// otherwise llama.cpp uses every available device, so all enumerated GPUs are
-// counted. It is used to pick the device-count aware split-mode default.
-func gpuDeviceCount(cfg *Config) int {
-	if len(cfg.Devices) > 0 {
-		n := 0
-		for _, name := range cfg.Devices {
-			if !strings.EqualFold(strings.TrimSpace(name), "CPU") {
-				n++
-			}
-		}
-		return n
-	}
-
-	return devices.List(
-		devices.WithIncludeCPU(false),
-		devices.WithIncludeUnknown(false),
-		devices.WithIncludeMemory(false),
-	).GPUCount
 }
 
 // resolveBackendDevices resolves a list of device names to ggml backend device

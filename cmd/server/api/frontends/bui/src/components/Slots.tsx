@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../services/api';
 import type { BatchEngineDetail, BatchEngineSlotsResponse, BatchSlotDetail } from '../types';
+import { formatModelID } from '../lib/format';
 import { labelWithTip } from './ParamTooltips';
 
 function formatSlots(slots: number[] | null | undefined): string {
@@ -84,7 +85,7 @@ function ModelSlots({ model }: { model: BatchEngineDetail }) {
     <div className="card slot-model-card">
       <div className="slot-model-heading">
         <div>
-          <h3>{model.model_id}</h3>
+          <h3 title={model.model_id}>{formatModelID(model.model_id)}</h3>
           <span className="slot-mode-badge">{modelMode(model)}</span>
         </div>
         <span className="slot-iteration">Iteration {model.iteration.toLocaleString()}</span>

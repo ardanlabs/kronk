@@ -175,27 +175,6 @@ func TestFilterOpenCodeModelsPreservesOutputLimit(t *testing.T) {
 	}
 }
 
-func TestModelLookupIDs(t *testing.T) {
-	tests := []struct {
-		name  string
-		model string
-		want  []string
-	}{
-		{name: "bare", model: "model", want: []string{"model"}},
-		{name: "owner and model", model: "owner/model", want: []string{"owner/model", "owner", "model"}},
-		{name: "profile", model: "owner/model/AGENT", want: []string{"owner/model/AGENT", "model", "owner", "AGENT"}},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := modelLookupIDs(tt.model)
-			if strings.Join(got, "\x00") != strings.Join(tt.want, "\x00") {
-				t.Errorf("got %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestOpenCodeInstaller(t *testing.T) {
 	tests := []struct {
 		goos    string
@@ -265,7 +244,7 @@ func TestNormalizeServerURL(t *testing.T) {
 }
 
 func TestVerifyServer(t *testing.T) {
-	const downloadedID = "model"
+	const downloadedID = "owner/model/AGENT"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/models" {
 			t.Errorf("path: got %q, want /v1/models", r.URL.Path)

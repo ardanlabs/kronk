@@ -136,6 +136,11 @@ func New(cfg Config) (*Pool, error) {
 	if mc == nil {
 		mc = map[string]models.ModelConfig{}
 	}
+	for modelID := range mc {
+		if _, err := models.ParseModelID(modelID); err != nil {
+			return nil, fmt.Errorf("new: model config key: %w", err)
+		}
+	}
 
 	var startupDevices devices.Devices
 	if cfg.StartupDevices == nil {
@@ -188,19 +193,38 @@ func (p *Pool) Shutdown(ctx context.Context) error {
 // AquireModel will provide a kronk API for the specified model. If
 // the model is not in the pool, an API for the model will be created.
 func (p *Pool) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, error) {
+	id, err := models.ParseModelID(modelID)
+	if err != nil {
+		return nil, fmt.Errorf("acquire-model: %w", err)
+	}
+	if id.Profile != "" {
+		if _, exists := p.llama.modelConfig[id.String()]; !exists {
+			return nil, fmt.Errorf("acquire-model: %w: configuration %q", models.ErrModelNotFound, id.String())
+		}
+	}
+
 	return p.engine.Acquire(ctx, loader.LoadRequest{
-		ModelID: modelID,
-		Key:     modelID,
+		ModelID: id.String(),
+		Key:     id.String(),
 	})
 }
 
-// AquireCustom will provide a kronk API for a model using a pre-built
-// config. This bypasses the normal catalog resolution path. The key
-// should use format <modelID>/playground/<session_id> so that
-// ModelStatus can still match playground sessions to locally installed
-// models.
+// AquireCustom will provide a kronk API for a model using a pre-built config.
+// This bypasses the normal catalog resolution path. The key includes the
+// canonical model ID followed by the custom workload name.
 func (p *Pool) AquireCustom(ctx context.Context, key string, cfg model.Config) (*kronk.Kronk, error) {
-	modelID, _, _ := strings.Cut(key, "/")
+	modelID := strings.TrimSuffix(key, "/accuracy")
+	modelID = strings.TrimSuffix(modelID, "/efficiency")
+	if before, _, found := strings.Cut(modelID, "/playground/"); found {
+		modelID = before
+	}
+	if modelID == key {
+		return nil, fmt.Errorf("acquire-custom: invalid key %q", key)
+	}
+	if _, err := models.ParseModelID(modelID); err != nil {
+		return nil, fmt.Errorf("acquire-custom: %w", err)
+	}
+	cfg.ResponseModelID = modelID
 	if cfg.AutoTune && !cfg.AutoTuned {
 		cfg = kronk.AutoTuneConfig(ctx, cfg)
 	}
@@ -266,11 +290,8 @@ func (p *Pool) InvalidateSync(ctx context.Context, key string) error {
 // Status=ModelStatusLoading so BUI/observability can show them as
 // occupying budget while still being unavailable to serve requests.
 //
-// Cache keys may be the bare catalog ID, or any of the variants
-// accepted by Models.LookupFile (e.g. "<org>/<model>",
-// "<model>/<variant>", "<org>/<model>/<variant>"), so the catalog
-// resolver is used to recover the row metadata rather than splitting
-// the key here.
+// Cache keys use provider/modelID or provider/modelID/profile. The catalog
+// resolver recovers the physical model metadata without discarding a profile.
 func (p *Pool) ModelStatus() ([]ModelDetail, error) {
 	ps := make([]ModelDetail, 0)
 	loadedKeys := make(map[string]struct{})

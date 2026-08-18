@@ -110,7 +110,7 @@ func (m *Model) Embeddings(ctx context.Context, d D) (response EmbedReponse, err
 	er := EmbedReponse{
 		Object:  "list",
 		Created: time.Now().Unix(),
-		Model:   m.modelInfo.ID,
+		Model:   m.responseModelID(),
 		Data:    embedData,
 		Usage: EmbedUsage{
 			PromptTokens: totalPromptTokens,

@@ -3,6 +3,7 @@ package pool_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"sync"
@@ -143,8 +144,8 @@ func acquireModel(t *testing.T) {
 	t.Run("acquire non-existent model", func(t *testing.T) {
 		ctx := context.Background()
 		_, err := mgr.AquireModel(ctx, "non-existent-model-xyz")
-		if err == nil {
-			t.Fatal("expected error for non-existent model")
+		if !errors.Is(err, models.ErrInvalidModelID) {
+			t.Fatalf("error: got %v, want ErrInvalidModelID", err)
 		}
 	})
 }
@@ -420,8 +421,8 @@ func initKronk(t *testing.T) model.Logger {
 // lifecycle tests (acquire, eviction, shutdown). These tests load real
 // models but never run inference, so small is better.
 var cacheTestModels = []string{
-	"Qwen3-Embedding-0.6B-Q8_0",
-	"bge-reranker-v2-m3-Q8_0",
+	"Qwen/Qwen3-Embedding-0.6B-Q8_0",
+	"gpustack/bge-reranker-v2-m3-Q8_0",
 }
 
 func findAvailableModel(t *testing.T, notModelID string) string {

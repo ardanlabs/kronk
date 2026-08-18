@@ -180,7 +180,7 @@ func (krn *Kronk) ResponseStreaming(ctx context.Context, d model.D) (<-chan Resp
 	ss := &streamState{
 		responseID: "resp_" + uuid.New().String(),
 		createdAt:  time.Now().Unix(),
-		modelID:    krn.ModelInfo().ID,
+		modelID:    krn.ModelID(),
 		tools:      extractTools(d),
 		params:     extractInputParams(d),
 		d:          d,
@@ -700,7 +700,7 @@ func toChatResponseToResponses(chatResp model.ChatResponse, d model.D) ResponseR
 	return ResponseResponse{
 		ID:               "resp_" + chatResp.ID,
 		Object:           "response",
-		CreatedAt:        chatResp.Created / 1000,
+		CreatedAt:        chatResp.Created,
 		Status:           status,
 		CompletedAt:      completedAt,
 		Error:            respError,

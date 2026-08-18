@@ -126,7 +126,7 @@ func (m *Model) Rerank(ctx context.Context, d D) (response RerankResponse, err e
 	rr := RerankResponse{
 		Object:  "list",
 		Created: time.Now().Unix(),
-		Model:   m.modelInfo.ID,
+		Model:   m.responseModelID(),
 		Data:    results,
 		Usage: RerankUsage{
 			PromptTokens: totalPromptTokens,

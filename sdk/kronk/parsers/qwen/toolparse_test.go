@@ -184,7 +184,7 @@ func TestNormalizeXMLArguments(t *testing.T) {
 <parameter=text>{"name":"x"}</parameter>
 <parameter=object>{"name":"x"}</parameter>
 <parameter=array>[1,2]</parameter>
-<parameter=boolean>true</parameter>
+<parameter=boolean>True</parameter>
 <parameter=integer>42</parameter>
 <parameter=number>1.50</parameter>
 <parameter=null>null</parameter>

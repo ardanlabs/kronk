@@ -28,7 +28,7 @@ func msgsNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: msgsapp.MessagesRequest{
-				Model:     "Qwen3-8B-Q8_0",
+				Model:     "Qwen/Qwen3-8B-Q8_0",
 				MaxTokens: 2048,
 				Messages: []msgsapp.Message{
 					{
@@ -43,7 +43,7 @@ func msgsNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			ExpResp: &msgsapp.MessagesResponse{
 				Type:  "message",
 				Role:  "assistant",
-				Model: "Qwen3-8B-Q8_0",
+				Model: "Qwen/Qwen3-8B-Q8_0",
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
@@ -77,7 +77,7 @@ func msgsStreamQwen3(_ *testing.T, tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: msgsapp.MessagesRequest{
-				Model:     "Qwen3-8B-Q8_0",
+				Model:     "Qwen/Qwen3-8B-Q8_0",
 				MaxTokens: 2048,
 				Stream:    true,
 				Messages: []msgsapp.Message{
@@ -120,7 +120,7 @@ func msgsImageQwen35VL(t *testing.T, tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: msgsapp.MessagesRequest{
-				Model:     "Qwen3.5-0.8B-Q8_0",
+				Model:     "unsloth/Qwen3.5-0.8B-Q8_0",
 				MaxTokens: 2048,
 				Messages: []msgsapp.Message{
 					{
@@ -148,7 +148,7 @@ func msgsImageQwen35VL(t *testing.T, tokens map[string]string) []apitest.Table {
 			ExpResp: &msgsapp.MessagesResponse{
 				Type:  "message",
 				Role:  "assistant",
-				Model: "Qwen3.5-0.8B-Q8_0",
+				Model: "unsloth/Qwen3.5-0.8B-Q8_0",
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
@@ -182,7 +182,7 @@ func msgsEndpoint403(tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusForbidden,
 			Input: msgsapp.MessagesRequest{
-				Model:     "Qwen3-8B-Q8_0",
+				Model:     "Qwen/Qwen3-8B-Q8_0",
 				MaxTokens: 2048,
 				Messages: []msgsapp.Message{
 					{

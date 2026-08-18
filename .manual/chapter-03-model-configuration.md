@@ -65,6 +65,10 @@ model config file management and
 [Chapter 2 §2.5](https://www.kronkai.com/manual#25-models-and-data-paths) for all
 data paths.
 
+Inference requests require the canonical `provider/modelID` shown by
+`/v1/models`. Bare model IDs are rejected rather than searched across a list of
+providers.
+
 #### Model variants
 
 A suffix creates another configuration for the same downloaded model:
@@ -360,11 +364,12 @@ CPU without changing placement of the language model itself.
 | ----- | -------- |
 | `none` | Use one GPU |
 | `layer` | Distribute whole layers across GPUs |
-| `row` | Split tensor rows across GPUs |
+| `row` | Use deprecated row-split tensor parallelism where supported |
 
-When the setting is omitted, Kronk selects `row` when more than one GPU is
-present and `layer` otherwise. This is a hardware-derived default, not a rule
-that one mode is always fastest for a particular model architecture.
+When the setting is omitted, Kronk selects `layer`, matching llama.cpp's
+default and most compatible multi-GPU mode. Layer mode can distribute a single
+GGUF file across multiple GPUs. `row` remains available for explicit legacy
+configurations but is not recommended for new deployments.
 
 For explicit placement, `devices` names the devices and `tensor-split` gives
 their proportional shares:

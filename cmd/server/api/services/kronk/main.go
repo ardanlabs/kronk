@@ -332,7 +332,12 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	// The server may use a base path that differs from the process default.
 	// Initialize from the manager's resolved path so that base-path and
 	// library-path configuration remain authoritative.
-	if err := kronk.Init(kronk.WithLibPath(libs.LibsPath())); err != nil {
+	llamaLogLevel := kronk.LogSilent
+	if cfg.LlamaLog == 1 {
+		llamaLogLevel = kronk.LogNormal
+	}
+
+	if err := kronk.Init(kronk.WithLibPath(libs.LibsPath()), kronk.WithLogLevel(llamaLogLevel)); err != nil {
 		log.Info(ctx, "startup", "WARNING", "kronk init failed, running in degraded mode (use BUI to download libraries)", "ERROR", err)
 	}
 

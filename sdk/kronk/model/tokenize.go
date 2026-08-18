@@ -57,7 +57,7 @@ func (m *Model) Tokenize(ctx context.Context, d D) (TokenizeResponse, error) {
 	tr := TokenizeResponse{
 		Object:  "tokenize",
 		Created: time.Now().Unix(),
-		Model:   m.modelInfo.ID,
+		Model:   m.responseModelID(),
 		Tokens:  len(tokens),
 	}
 

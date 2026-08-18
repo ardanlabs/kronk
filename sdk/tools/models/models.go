@@ -163,7 +163,13 @@ func (m *Models) BuildIndex(log applog.Logger, checkSHA bool) error {
 			ctx := context.Background()
 
 			for modelID, files := range modelfiles {
-				prev := currentIndex[modelID]
+				indexKey := canonicalID(org, modelID)
+				prev := currentIndex[indexKey]
+				if len(prev.ModelFiles) == 0 {
+					// Compatibility with indexes built before provider-qualified
+					// keys were introduced. This entry is rewritten canonically.
+					prev = currentIndex[modelID]
+				}
 				isValidated := prev.Validated
 
 				slices.Sort(files)
@@ -227,7 +233,7 @@ func (m *Models) BuildIndex(log applog.Logger, checkSHA bool) error {
 				mp.Validated = validated
 				mp.TokenizerFingerprint = tokenizerFingerprintFromFile(files[0])
 
-				index[modelID] = mp
+				index[indexKey] = mp
 			}
 		}
 	}
@@ -295,7 +301,7 @@ func (m *Models) MarkValidated(modelID string) error {
 		return fmt.Errorf("mark-validated: unmarshal index: %w", err)
 	}
 
-	mp, exists := index[modelID]
+	key, mp, exists := lookupIndex(index, modelID)
 	if !exists {
 		return fmt.Errorf("mark-validated: model %q not found in index", modelID)
 	}
@@ -305,7 +311,7 @@ func (m *Models) MarkValidated(modelID string) error {
 	}
 
 	mp.Validated = true
-	index[modelID] = mp
+	index[key] = mp
 
 	out, err := yaml.Marshal(&index)
 	if err != nil {

@@ -64,8 +64,8 @@ func runWeb(ctx context.Context, source string, projURL string, mtpURL string) e
 }
 
 func runLocal(ctx context.Context, mdls *models.Models, basePath string, source string, projURL string, mtpURL string) error {
-	// Default workflow — Download handles every input form (bare id,
-	// canonical id, full URL, owner/repo/file.gguf path) and locates
+	// Default workflow — Download handles every input form (canonical id,
+	// full URL, owner/repo/file.gguf path) and locates
 	// both the projection and MTP drafter companions automatically. This
 	// mirrors the model server's pull endpoint (and the BUI).
 	if projURL == "" && mtpURL == "" {

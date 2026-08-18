@@ -154,6 +154,16 @@ func normalizeXMLArguments(toolCalls []model.ResponseToolCall, tools []model.D) 
 				continue
 			}
 
+			if schemaType == "boolean" {
+				switch strings.ToLower(strings.TrimSpace(raw)) {
+				case "true":
+					toolCalls[i].Function.Arguments[name] = true
+				case "false":
+					toolCalls[i].Function.Arguments[name] = false
+				}
+				continue
+			}
+
 			parsed, ok := decodeJSONValue(raw)
 			if !ok {
 				continue
@@ -177,11 +187,6 @@ func normalizeXMLArguments(toolCalls []model.ResponseToolCall, tools []model.D) 
 
 			case "integer":
 				if number, ok := parsed.(json.Number); ok && isJSONInteger(number) {
-					toolCalls[i].Function.Arguments[name] = parsed
-				}
-
-			case "boolean":
-				if _, ok := parsed.(bool); ok {
 					toolCalls[i].Function.Arguments[name] = parsed
 				}
 

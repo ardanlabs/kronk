@@ -156,8 +156,8 @@ func (a *app) lookupCatalog(ctx context.Context, r *http.Request) web.Encoder {
 	return LookupResponse{RepoFiles: ggufFiles}
 }
 
-// resolveCatalog runs the resolver for the given source (full HuggingFace
-// URL, canonical id, or bare id) and returns the canonical download
+// resolveCatalog runs the resolver for the given source (full HuggingFace URL
+// or canonical id) and returns the canonical download
 // URL(s), companion projection URL, and cache/local flags. No download
 // is initiated; this is the dry-run preview the BUI Pull screen uses to
 // show the user what Download would fetch.

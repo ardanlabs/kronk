@@ -3,6 +3,7 @@ package pool
 import (
 	"testing"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
@@ -35,7 +36,10 @@ func TestAutoTuneBudgetUsesStartupAvailability(t *testing.T) {
 		resman:         rm,
 		startupDevices: startup,
 		modelConfig: map[string]models.ModelConfig{
-			"selected": {Devices: []string{"CUDA0"}},
+			"selected":     {Devices: []string{"CUDA0"}},
+			"single":       {PtrSplitMode: new(model.SplitModeNone)},
+			"equal-split":  {TensorSplit: []float32{0.5, 0.5}},
+			"device-split": {Devices: []string{"CUDA0", "CUDA1"}, TensorSplit: []float32{0.5, 0.5}},
 		},
 	}
 
@@ -44,8 +48,11 @@ func TestAutoTuneBudgetUsesStartupAvailability(t *testing.T) {
 		modelID      string
 		wantGPUBytes int64
 	}{
-		{name: "largest available device", modelID: "unselected", wantGPUBytes: 850},
+		{name: "automatic split", modelID: "unselected", wantGPUBytes: 1_275},
 		{name: "selected device", modelID: "selected", wantGPUBytes: 510},
+		{name: "split disabled", modelID: "single", wantGPUBytes: 850},
+		{name: "automatic devices with equal split", modelID: "equal-split", wantGPUBytes: 1_020},
+		{name: "selected devices with equal split", modelID: "device-split", wantGPUBytes: 1_020},
 	}
 
 	for _, tt := range tests {

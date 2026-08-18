@@ -391,6 +391,15 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			s.imcRestoring = false
 		}
 
+		// IMC media builds and appends run synchronously during admission instead
+		// of through processMediaSlot. Publish their phase before the projector or
+		// embedding decode blocks this engine goroutine so diagnostics clients can
+		// observe the work and its overlap with slots already generating.
+		if job.imcMediaBuild || job.imcMediaAppend {
+			s.mediaPrefilling = true
+			e.publishDiagnostics(true)
+		}
+
 		// Decode new cache extension tokens into the slot's sequence if any.
 		switch {
 		case job.imcMediaBuild:
@@ -613,6 +622,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			e.model.log(job.ctx, "start-slot", "status", "imc-reuse", "slot", s.id, "seq", s.seqID,
 				"cached_tokens", cacheIdx)
 		}
+		s.mediaPrefilling = false
 
 	default:
 		// Non-IMC mode: clear the slot's sequence. Held under decodeMu to
@@ -1295,17 +1305,18 @@ func (e *batchEngine) applyContextTokenBudget(s *slot, operation string) bool {
 // immutable System preload pool. A missing draft snapshot degrades safely to
 // target-only reuse.
 func (e *batchEngine) snapshotSystemCache(ctx context.Context, s *slot, job *chatJob, boundary int) bool {
-	targetStore, err := newSystemCacheStore()
-	if err != nil {
-		e.model.log(ctx, "start-slot", "status", "imc-system-target-create-failed", "err", err)
+	cache := e.model.imcReserveSystemCache(job.imcNewCachedTokens[:boundary])
+	if cache == nil {
 		return false
 	}
 
-	closeTarget := func() {
-		if err := targetStore.Close(); err != nil {
-			e.model.log(ctx, "start-slot", "status", "imc-system-target-close-failed", "err", err)
-		}
+	targetStore, err := e.model.imcSystemCacheStore(cache, false)
+	if err != nil {
+		e.model.imcAbortSystemCache(cache)
+		e.model.log(ctx, "start-slot", "status", "imc-system-target-create-failed", "err", err)
+		return false
 	}
+	targetStore.Reset()
 
 	e.model.decodeMu.Lock()
 	llama.Synchronize(e.model.lctx)
@@ -1313,7 +1324,7 @@ func (e *batchEngine) snapshotSystemCache(ctx context.Context, s *slot, job *cha
 	targetExtracted := llama.StateSeqGetData(e.model.lctx, targetStore.Prepare(int(targetSize)), s.seqID)
 	e.model.decodeMu.Unlock()
 	if targetSize == 0 || targetExtracted != targetSize {
-		closeTarget()
+		e.model.imcAbortSystemCache(cache)
 		e.model.log(ctx, "start-slot", "status", "imc-system-target-snapshot-failed",
 			"extracted_bytes", targetExtracted, "expected_bytes", targetSize)
 		return false
@@ -1323,10 +1334,11 @@ func (e *batchEngine) snapshotSystemCache(ctx context.Context, s *slot, job *cha
 	var draftStore SessionStore
 	var pendingH []float32
 	if ext, ok := e.model.draft.(draftKVExternalizer); ok {
-		draftStore, err = newSystemCacheStore()
+		draftStore, err = e.model.imcSystemCacheStore(cache, true)
 		if err != nil {
 			e.model.log(ctx, "start-slot", "status", "imc-system-draft-create-failed", "err", err)
 		} else {
+			draftStore.Reset()
 			draft := ext.core()
 			dctx := ext.draftKVCtx()
 			e.model.decodeMu.Lock()
@@ -1336,19 +1348,18 @@ func (e *batchEngine) snapshotSystemCache(ctx context.Context, s *slot, job *cha
 			e.model.decodeMu.Unlock()
 			if validMTPDraftState(draftExtracted, draftSize, s.mtp.PendingHidden, draft.mtp.EmbeddingSize()) {
 				draftStore.Commit(int(draftExtracted))
-				pendingH = slices.Clone(s.mtp.PendingHidden)
+				pendingH = s.mtp.PendingHidden
 			} else {
-				if closeErr := draftStore.Close(); closeErr != nil {
-					e.model.log(ctx, "start-slot", "status", "imc-system-draft-close-failed", "err", closeErr)
-				}
-				draftStore = nil
+				draftStore.Reset()
 				e.model.log(ctx, "start-slot", "status", "imc-system-draft-snapshot-failed",
 					"extracted_bytes", draftExtracted, "expected_bytes", draftSize)
 			}
 		}
+	} else if cache.draftKVState != nil {
+		cache.draftKVState.Reset()
 	}
 
-	return e.model.imcPublishSystemCache(ctx, job.imcNewCachedTokens[:boundary], targetStore, draftStore, pendingH)
+	return e.model.imcPublishSystemCache(ctx, cache, pendingH)
 }
 
 func contextOutputBudget(promptTokens, requestedMaxTokens, contextWindow int) (int, bool) {

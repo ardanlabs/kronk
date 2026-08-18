@@ -101,7 +101,8 @@ const AutoTuneBudgetPercent = 85
 type AutoTuneBudget struct {
 	// Devices is the immutable hardware snapshot used for the analysis.
 	Devices devices.Devices
-	// GPUBytes is the largest single-device empty-pool budget.
+	// GPUBytes is the effective empty-pool capacity for the configured GPU
+	// placement. Multi-GPU split modes account for every participating device.
 	GPUBytes int64
 	// SystemRAMBytes is the empty-pool system RAM budget.
 	SystemRAMBytes int64
@@ -411,9 +412,8 @@ func buildProfile(name string, p profileInput, overrideSlots int64, overrideConc
 		rec.FlashAttention = "disabled"
 	}
 
-	// Determine split mode from the GPU count. Uses the same single source of
-	// truth as the in-load default so the analysis and the load path can never
-	// disagree: SplitModeRow only with multiple GPUs, otherwise SplitModeLayer.
+	// Use the same layer-split default as the load path and llama.cpp. Explicit
+	// user configuration still wins.
 	if p.splitMode != nil {
 		rec.SplitMode = p.splitMode.String()
 	} else {

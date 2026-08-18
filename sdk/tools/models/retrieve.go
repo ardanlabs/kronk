@@ -35,7 +35,7 @@ func (m *Models) Files() ([]File, error) {
 
 	index := m.loadIndex()
 
-	for modelID, mp := range index {
+	for indexID, mp := range index {
 		if len(mp.ModelFiles) == 0 {
 			continue
 		}
@@ -70,6 +70,12 @@ func (m *Models) Files() ([]File, error) {
 			modelFamily = parts[1]
 		}
 
+		_, modelID := splitProviderID(indexID)
+		if modelID == "" {
+			// TODO: Remove the legacy bare-key fallback after 2026-09-18.
+			modelID = indexID
+		}
+
 		mf := File{
 			ID:                   modelID,
 			OwnedBy:              ownedBy,
@@ -86,7 +92,9 @@ func (m *Models) Files() ([]File, error) {
 	}
 
 	slices.SortFunc(list, func(a, b File) int {
-		return strings.Compare(strings.ToLower(a.ID), strings.ToLower(b.ID))
+		aID := canonicalID(a.OwnedBy, a.ID)
+		bID := canonicalID(b.OwnedBy, b.ID)
+		return strings.Compare(strings.ToLower(aID), strings.ToLower(bID))
 	})
 
 	return list, nil
@@ -97,10 +105,13 @@ func (m *Models) retrieveFile(modelID string) (File, error) {
 	if modelID == "" {
 		return File{}, fmt.Errorf("retrieve-file: missing model id")
 	}
+	if _, err := ParseModelID(modelID); err != nil {
+		return File{}, fmt.Errorf("retrieve-file: %w", err)
+	}
 
-	mp, err := m.FullPath(modelID)
-	if err != nil {
-		return File{}, fmt.Errorf("retrieve-file: unable to retrieve path: %w", err)
+	key, mp, exists := lookupIndex(m.loadIndex(), modelID)
+	if !exists {
+		return File{}, fmt.Errorf("retrieve-file: unable to retrieve path: %w: %q", ErrModelNotFound, modelID)
 	}
 
 	if len(mp.ModelFiles) == 0 {
@@ -138,7 +149,7 @@ func (m *Models) retrieveFile(modelID string) (File, error) {
 	}
 
 	mf := File{
-		ID:          modelID,
+		ID:          key,
 		OwnedBy:     ownedBy,
 		ModelFamily: modelFamily,
 		Size:        totalSize,
@@ -188,28 +199,29 @@ type Path = backend.ModelPath
 
 // FullPath locates the physical location on disk and returns the full path.
 //
-// The index is keyed by the bare model name (e.g. "Qwen3-8B-Q8_0"). Callers
-// may pass a model name, a "<provider>/<model>" pair, or the full
-// "<provider>/<model>/<user>" form. This resolver tries the model segment
-// first, followed by compatibility fallbacks, until it finds an index key.
+// The index is keyed by canonical provider/modelID. A profile-qualified
+// provider/modelID/profile resolves to the same physical model.
 func (m *Models) FullPath(modelID string) (Path, error) {
-	index := m.loadIndex()
+	if _, err := ParseModelID(modelID); err != nil {
+		return Path{}, fmt.Errorf("retrieve-path: %w", err)
+	}
 
-	for _, key := range fullPathLookupKeys(modelID) {
-		if mp, ok := index[key]; ok {
-			return mp, nil
-		}
+	_, mp, exists := lookupIndex(m.loadIndex(), modelID)
+	if exists {
+		return mp, nil
 	}
 
 	return Path{}, fmt.Errorf("retrieve-path: %w: %q", ErrModelNotFound, modelID)
 }
 
-// LookupFile resolves a model identifier to its catalog File entry using
-// the same precedence rules as FullPath. The identifier may be the bare
-// model name ("Qwen3-8B-Q8_0"), a "<provider>/<model>" pair, or the full
-// "<provider>/<model>/<user>" form. Returns the matching File and true, or
-// the zero value and false.
+// LookupFile resolves a model identifier to its catalog File entry using the
+// same rules as FullPath.
 func (m *Models) LookupFile(modelID string) (File, bool) {
+	id, err := ParseModelID(modelID)
+	if err != nil {
+		return File{}, false
+	}
+
 	files, err := m.Files()
 	if err != nil {
 		return File{}, false
@@ -217,16 +229,16 @@ func (m *Models) LookupFile(modelID string) (File, bool) {
 
 	byID := make(map[string]File, len(files))
 	for _, f := range files {
-		byID[f.ID] = f
+		byID[canonicalID(f.OwnedBy, f.ID)] = f
 	}
 
-	for _, key := range fullPathLookupKeys(modelID) {
-		if f, ok := byID[key]; ok {
-			return f, true
-		}
+	_, _, exists := lookupIndex(m.loadIndex(), modelID)
+	if !exists {
+		return File{}, false
 	}
 
-	return File{}, false
+	f, exists := byID[id.Base()]
+	return f, exists
 }
 
 // MustFullPath finds a model and panics if the model was not found. This
@@ -240,26 +252,26 @@ func (m *Models) MustFullPath(modelID string) Path {
 	return fi
 }
 
-// fullPathLookupKeys returns the index-key candidates to try for the given
-// modelID, in order of preference. The bare-model segment is preferred over
-// org/variant segments so that ambiguous two-segment input is resolved
-// against actual index content.
+// fullPathLookupKeys returns the physical index keys for modelID.
 func fullPathLookupKeys(modelID string) []string {
-	parts := strings.Split(modelID, "/")
-
-	switch len(parts) {
-	case 1:
-		return []string{parts[0]}
-	case 2:
-		// "<provider>/<model>" — prefer the indexed model segment, then retain
-		// the leading segment as a compatibility fallback.
-		return []string{parts[1], parts[0]}
-	default:
-		// "<provider>/<model>/<user>..." — the bare model name lives in the
-		// middle. Prefer that, then fall back to the leading and trailing
-		// segments.
-		return []string{parts[1], parts[0], parts[len(parts)-1]}
+	id, err := ParseModelID(modelID)
+	if err != nil {
+		return nil
 	}
+
+	// TODO: Remove the bare model key after 2026-09-18. It keeps indexes
+	// created before provider-qualified keys readable during the transition.
+	return []string{id.Base(), id.Model}
+}
+
+func lookupIndex(index map[string]Path, modelID string) (string, Path, bool) {
+	for _, key := range fullPathLookupKeys(modelID) {
+		if mp, exists := index[key]; exists {
+			return key, mp, true
+		}
+	}
+
+	return "", Path{}, false
 }
 
 // =============================================================================

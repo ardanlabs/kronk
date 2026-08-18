@@ -161,7 +161,7 @@ func TestModelsIntegrity(t *testing.T) {
 	}
 
 	index := map[string]Path{
-		"Qwen": {
+		"unsloth/Qwen": {
 			ModelFiles: paths[:2],
 			ProjFile:   paths[2],
 			MTPFile:    paths[3],
@@ -213,15 +213,15 @@ func TestModelsIntegrity(t *testing.T) {
 		}
 	}
 
-	single, err := m.IntegrityFor("Qwen")
+	single, err := m.IntegrityFor("unsloth/Qwen")
 	if err != nil {
 		t.Fatalf("IntegrityFor: %v", err)
 	}
-	if single.ID != "Qwen" || len(single.Artifacts) != len(wantFiles) {
-		t.Errorf("IntegrityFor: got ID %q with %d artifacts, want Qwen with %d", single.ID, len(single.Artifacts), len(wantFiles))
+	if single.ID != "unsloth/Qwen" || len(single.Artifacts) != len(wantFiles) {
+		t.Errorf("IntegrityFor: got ID %q with %d artifacts, want unsloth/Qwen with %d", single.ID, len(single.Artifacts), len(wantFiles))
 	}
 
-	_, err = m.IntegrityFor("missing")
+	_, err = m.IntegrityFor("provider/missing")
 	if !errors.Is(err, ErrModelNotFound) {
 		t.Errorf("IntegrityFor missing: got %v, want ErrModelNotFound", err)
 	}

@@ -43,7 +43,7 @@ func TestModelMetadata(t *testing.T) {
 		t.Fatalf("Unable to create models api: %v", err)
 	}
 
-	modelID := "Qwen3-8B-Q8_0"
+	modelID := "Qwen/Qwen3-8B-Q8_0"
 
 	info, err := m.ModelInformation(modelID)
 	if err != nil {
@@ -117,16 +117,15 @@ func TestModelInformationQualifiedIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unable to create models api: %v", err)
 	}
-	wantFingerprint := m.TokenizerFingerprint("Qwen3-8B-Q8_0")
+	wantFingerprint := m.TokenizerFingerprint("Qwen/Qwen3-8B-Q8_0")
 	if wantFingerprint == "" {
-		t.Fatal("TokenizerFingerprint returned an empty fingerprint for the bare model ID")
+		t.Fatal("TokenizerFingerprint returned an empty fingerprint for the canonical model ID")
 	}
 
 	tests := []struct {
 		name    string
 		modelID string
 	}{
-		{name: "model profile", modelID: "Qwen3-8B-Q8_0/AGENT"},
 		{name: "provider model", modelID: "Qwen/Qwen3-8B-Q8_0"},
 		{name: "provider model profile", modelID: "Qwen/Qwen3-8B-Q8_0/AGENT"},
 	}

@@ -380,6 +380,14 @@ export default function DocsSDKKronk() {
               <p className="doc-description">ModelConfig returns a copy of the configuration being used. This may be different from the configuration passed to New() if the model has overridden any of the settings.</p>
             </div>
 
+            <div className="doc-section" id="method-kronk-modelid">
+              <h4>Kronk.ModelID</h4>
+              <pre className="code-block">
+                <code>func (krn *Kronk) ModelID() string</code>
+              </pre>
+              <p className="doc-description">ModelID returns the identifier emitted by public inference responses.</p>
+            </div>
+
             <div className="doc-section" id="method-kronk-modelinfo">
               <h4>Kronk.ModelInfo</h4>
               <pre className="code-block">
@@ -568,6 +576,7 @@ export default function DocsSDKKronk() {
                 <li><a href="#method-kronk-imcsessions">Kronk.IMCSessions</a></li>
                 <li><a href="#method-kronk-imcsystemcaches">Kronk.IMCSystemCaches</a></li>
                 <li><a href="#method-kronk-modelconfig">Kronk.ModelConfig</a></li>
+                <li><a href="#method-kronk-modelid">Kronk.ModelID</a></li>
                 <li><a href="#method-kronk-modelinfo">Kronk.ModelInfo</a></li>
                 <li><a href="#method-kronk-rerank">Kronk.Rerank</a></li>
                 <li><a href="#method-kronk-rerankhttp">Kronk.RerankHTTP</a></li>

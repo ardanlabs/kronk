@@ -148,6 +148,15 @@ func (krn *Kronk) ModelInfo() model.ModelInfo {
 	return krn.modelInfo
 }
 
+// ModelID returns the identifier emitted by public inference responses.
+func (krn *Kronk) ModelID() string {
+	if krn.cfg.ResponseModelID != "" {
+		return krn.cfg.ResponseModelID
+	}
+
+	return krn.modelInfo.ID
+}
+
 // ActiveStreams returns the number of active streams.
 func (krn *Kronk) ActiveStreams() int {
 	return int(krn.activeStreams.Load())

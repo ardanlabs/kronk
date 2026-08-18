@@ -150,6 +150,13 @@ func TestAnalyzeModelDense(t *testing.T) {
 	}
 }
 
+func TestBuildProfileUsesLayerSplitDefault(t *testing.T) {
+	rec := buildProfile("balanced", profileInput{gpuCount: 2}, 0, 0)
+	if rec.SplitMode != "layer" {
+		t.Errorf("SplitMode = %q, want %q", rec.SplitMode, "layer")
+	}
+}
+
 func TestAnalyzeModelMoE(t *testing.T) {
 
 	// Simulate a Qwen3-30B-A3B MoE model.

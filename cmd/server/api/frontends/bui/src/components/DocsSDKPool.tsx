@@ -218,7 +218,7 @@ export default function DocsSDKPool() {
               <pre className="code-block">
                 <code>func (p *Pool) AquireCustom(ctx context.Context, key string, cfg model.Config) (*kronk.Kronk, error)</code>
               </pre>
-              <p className="doc-description">AquireCustom will provide a kronk API for a model using a pre-built config. This bypasses the normal catalog resolution path. The key should use format &lt;modelID&gt;/playground/&lt;session_id&gt; so that ModelStatus can still match playground sessions to locally installed models.</p>
+              <p className="doc-description">AquireCustom will provide a kronk API for a model using a pre-built config. This bypasses the normal catalog resolution path. The key includes the canonical model ID followed by the custom workload name.</p>
             </div>
 
             <div className="doc-section" id="method-pool-aquiremodel">
@@ -290,7 +290,7 @@ export default function DocsSDKPool() {
               <pre className="code-block">
                 <code>func (p *Pool) ModelStatus() ([]ModelDetail, error)</code>
               </pre>
-              <p className="doc-description">ModelStatus returns information about the current models in the pool. The result includes both fully loaded models (entries currently in the cache) and in-flight loads (memory reservations that have not yet completed their GGUF read). The latter are returned with Status=ModelStatusLoading so BUI/observability can show them as occupying budget while still being unavailable to serve requests. Cache keys may be the bare catalog ID, or any of the variants accepted by Models.LookupFile (e.g. "&lt;org&gt;/&lt;model&gt;", "&lt;model&gt;/&lt;variant&gt;", "&lt;org&gt;/&lt;model&gt;/&lt;variant&gt;"), so the catalog resolver is used to recover the row metadata rather than splitting the key here.</p>
+              <p className="doc-description">ModelStatus returns information about the current models in the pool. The result includes both fully loaded models (entries currently in the cache) and in-flight loads (memory reservations that have not yet completed their GGUF read). The latter are returned with Status=ModelStatusLoading so BUI/observability can show them as occupying budget while still being unavailable to serve requests. Cache keys use provider/modelID or provider/modelID/profile. The catalog resolver recovers the physical model metadata without discarding a profile.</p>
             </div>
 
             <div className="doc-section" id="method-pool-resolvedmodelconfig">
