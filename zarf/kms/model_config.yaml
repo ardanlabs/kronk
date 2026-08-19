@@ -168,15 +168,25 @@ kms:
   insecure-logging: true
 
 models:
+  # nseq-max: 1  ~39GB VRAM
+  # nseq-max: 2  ~42GB VRAM
+  unsloth/Ornith-1.0-35B-UD-Q8_K_XL/AGENT:
+    nseq-max: 2
+    context-window: 131072
+    chat-template-kwargs:
+      preserve_thinking: true
+    sampling-parameters:
+      max_tokens: 16384
+      enable_thinking: false
+
   # nseq-max: 1  ~54GB VRAM
   # nseq-max: 2  ~82GB VRAM
   unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
     context-window: 131072
+    chat-template-kwargs:
+      preserve_thinking: true
     sampling-parameters:
       max_tokens: 16384
-      temperature: 1.0
-      top_k: 64
-      top_p: 1
       enable_thinking: false
 
   # nseq-max: 1  ~40GB VRAM
@@ -184,11 +194,10 @@ models:
   unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
     nseq-max: 2
     context-window: 131072
+    chat-template-kwargs:
+      preserve_thinking: true
     sampling-parameters:
       max_tokens: 16384
-      temperature: 0.6
-      top_k: 20
-      top_p: 1
       enable_thinking: false
 
   # nseq-max: 1  ~40GB VRAM
@@ -196,11 +205,10 @@ models:
   unsloth/Qwen3.8-27B-UD-Q8_K_XL/AGENT:
     nseq-max: 2
     context-window: 131072
+    chat-template-kwargs:
+      preserve_thinking: true
     sampling-parameters:
       max_tokens: 16384
-      temperature: 0.6
-      top_k: 20
-      top_p: 1
       enable_thinking: false
 
   # nseq-max: 1  ~26GB VRAM
@@ -208,21 +216,19 @@ models:
   unsloth/Qwen3.8-27B-UD-Q4_K_XL/AGENT:
     nseq-max: 2
     context-window: 131072
+    chat-template-kwargs:
+      preserve_thinking: true
     sampling-parameters:
       max_tokens: 16384
-      temperature: 0.6
-      top_k: 20
-      top_p: 1
       enable_thinking: false
 
   # ~12GB VRAM
   unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL/AGENT:
     context-window: 131072
+    chat-template-kwargs:
+      preserve_thinking: true
     sampling-parameters:
       max_tokens: 16384
-      temperature: 1.0
-      top_k: 64
-      top_p: 1
       enable_thinking: false
 
   # ~8GB VRAM
