@@ -741,6 +741,12 @@ releases automatically. Callers should still defer the idempotent `Close`, inclu
 when feed/event handling fails. Unload must not destroy the Whisper context while
 transcriptions or streams remain active.
 
+The handle semaphore and state pool are both sized by `Config.NSeqMax`, which defaults
+to 1. Calls beyond that capacity wait until their context is canceled or an operation
+releases its state; Bucky has no queue-depth or admission-timeout setting. The states
+isolate concurrent inference while sharing the handle's model weights and Whisper
+context.
+
 The audio HTTP handler delegates file decoding and transcription to
 `Bucky.TranscribeFile`. It explicitly enforces the 25 MB upload limit before allowing
 unbounded work. Keep protocol field validation/format selection in the handler and

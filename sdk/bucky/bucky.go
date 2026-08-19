@@ -16,11 +16,10 @@ const Version = kronk.Version
 
 // =============================================================================
 
-// Bucky provides a concurrently safe API for using whisper.cpp.
-// Each Bucky owns one model.Model (which in turn owns one
-// whisper.Context). The whisper context is single-stream so
-// concurrent transcribes are bounded by a per-handle semaphore sized
-// at construction time from Config.NSeqMax * Config.QueueDepth.
+// Bucky provides a concurrently safe API for using whisper.cpp. Each Bucky
+// owns one model.Model and shared whisper.Context. The model maintains a pool
+// of independent whisper.State values, and the per-handle semaphore permits
+// up to Config.NSeqMax concurrent operations against those states.
 type Bucky struct {
 	cfg           model.Config
 	model         *model.Model

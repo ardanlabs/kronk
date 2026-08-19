@@ -327,6 +327,18 @@ live streaming. See [`examples/bucky/main.go`](../examples/bucky/main.go) for a
 complete program that installs the current-host libraries, downloads a model,
 initializes Bucky, and handles errors.
 
+A `Bucky` handle is safe to call from multiple goroutines. It loads one Whisper
+model context and shares its weights while maintaining a pool of independent
+`whisper.State` values. Set the pool size with `model.WithNSeqMax` when creating
+the handle; the default is 1. Up to `NSeqMax` transcriptions, language-detection
+calls, or streams can use the handle concurrently without loading another copy
+of the model.
+
+When every state is in use, another call waits until a state becomes available
+or its context is canceled. Bucky has no separate queue-depth or admission-timeout
+setting. A stream reserves one state for its lifetime, so always close streams
+that are no longer needed.
+
 #### 18.7.1 Batch Transcription
 
 After calling `bucky.Init` and constructing a `*bucky.Bucky` with the path to
