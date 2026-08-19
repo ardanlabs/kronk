@@ -10,22 +10,20 @@ import (
 
 func TestToBatchEngineSnapshots(t *testing.T) {
 	snapshots := []pool.BatchEngineDetail{{
-		ModelID: "test/model",
-		BatchEngineSnapshot: model.BatchEngineSnapshot{
-			Iteration:        7,
-			PrefillBatchSize: 2048,
-			NBatch:           2056,
-			NUBatch:          2056,
-			MTP:              true,
-			NDraft:           3,
-			Slots: []model.BatchSlotSnapshot{{
-				ID:         1,
-				Phase:      "generation",
-				RequestID:  "request-1",
-				RequestAge: 1500 * time.Millisecond,
-				PastTokens: 100,
-			}},
-		},
+		ModelID:          "test/model",
+		Iteration:        7,
+		PrefillBatchSize: 2048,
+		NBatch:           2056,
+		NUBatch:          2056,
+		MTP:              true,
+		NDraft:           3,
+		Slots: []model.BatchSlotSnapshot{{
+			ID:         1,
+			Phase:      "generation",
+			RequestID:  "request-1",
+			RequestAge: 1500 * time.Millisecond,
+			PastTokens: 100,
+		}},
 	}}
 
 	got := toBatchEngineSnapshots(snapshots)

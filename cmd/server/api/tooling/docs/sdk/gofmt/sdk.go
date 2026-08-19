@@ -448,10 +448,9 @@ func parseFunctions(scanner *lineScanner) []function {
 func parseFunction(signature string, scanner *lineScanner) function {
 	fn := function{
 		signature: strings.TrimSpace(signature),
-	}
 
-	fn.name = extractFuncName(signature)
-	fn.receiver = extractReceiver(signature)
+		name:     extractFuncName(signature),
+		receiver: extractReceiver(signature)}
 
 	var commentLines []string
 

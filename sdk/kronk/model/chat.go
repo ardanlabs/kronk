@@ -10,9 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"uuid"
+
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
-	"github.com/google/uuid"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
 )
@@ -99,7 +100,7 @@ func (m *Model) chatStreaming(ctx context.Context, d D, streaming bool) (<-chan 
 	active := m.activeStreams.Add(1)
 	metrics.AddPoolActiveStreams(m.modelInfo.ID, 1)
 
-	id := "chatcmpl-" + uuid.NewString()
+	id := "chatcmpl-" + uuid.New().String()
 
 	m.log(ctx, "chat-streaming", "status", "started", "id", id, "active_streams", active)
 	m.log(ctx, "request-lifecycle",

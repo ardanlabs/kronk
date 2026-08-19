@@ -700,24 +700,24 @@ func batchClear(batch *llama.Batch) {
 func batchAdd(batch *llama.Batch, token llama.Token, pos llama.Pos, seqIDs []llama.SeqId, logits bool) {
 	i := batch.NTokens
 
-	tokenPtr := (*llama.Token)(unsafe.Pointer(uintptr(unsafe.Pointer(batch.Token)) + uintptr(i)*unsafe.Sizeof(llama.Token(0))))
+	tokenPtr := (*llama.Token)(unsafe.Add(unsafe.Pointer(batch.Token), uintptr(i)*unsafe.Sizeof(llama.Token(0))))
 	*tokenPtr = token
 
-	posPtr := (*llama.Pos)(unsafe.Pointer(uintptr(unsafe.Pointer(batch.Pos)) + uintptr(i)*unsafe.Sizeof(llama.Pos(0))))
+	posPtr := (*llama.Pos)(unsafe.Add(unsafe.Pointer(batch.Pos), uintptr(i)*unsafe.Sizeof(llama.Pos(0))))
 	*posPtr = pos
 
-	nSeqPtr := (*int32)(unsafe.Pointer(uintptr(unsafe.Pointer(batch.NSeqId)) + uintptr(i)*unsafe.Sizeof(int32(0))))
+	nSeqPtr := (*int32)(unsafe.Add(unsafe.Pointer(batch.NSeqId), uintptr(i)*unsafe.Sizeof(int32(0))))
 	*nSeqPtr = int32(len(seqIDs))
 
-	seqIDPtrPtr := (**llama.SeqId)(unsafe.Pointer(uintptr(unsafe.Pointer(batch.SeqId)) + uintptr(i)*unsafe.Sizeof(uintptr(0))))
+	seqIDPtrPtr := (**llama.SeqId)(unsafe.Add(unsafe.Pointer(batch.SeqId), uintptr(i)*unsafe.Sizeof(uintptr(0))))
 	if *seqIDPtrPtr != nil && len(seqIDs) > 0 {
 		for j, sid := range seqIDs {
-			seqPtr := (*llama.SeqId)(unsafe.Pointer(uintptr(unsafe.Pointer(*seqIDPtrPtr)) + uintptr(j)*unsafe.Sizeof(llama.SeqId(0))))
+			seqPtr := (*llama.SeqId)(unsafe.Add(unsafe.Pointer(*seqIDPtrPtr), uintptr(j)*unsafe.Sizeof(llama.SeqId(0))))
 			*seqPtr = sid
 		}
 	}
 
-	logitPtr := (*int8)(unsafe.Pointer(uintptr(unsafe.Pointer(batch.Logits)) + uintptr(i)*unsafe.Sizeof(int8(0))))
+	logitPtr := (*int8)(unsafe.Add(unsafe.Pointer(batch.Logits), uintptr(i)*unsafe.Sizeof(int8(0))))
 	switch logits {
 	case true:
 		*logitPtr = 1
@@ -729,7 +729,7 @@ func batchAdd(batch *llama.Batch, token llama.Token, pos llama.Pos, seqIDs []lla
 }
 
 func setLogit(batch *llama.Batch, idx int32, logits bool) {
-	logitPtr := (*int8)(unsafe.Pointer(uintptr(unsafe.Pointer(batch.Logits)) + uintptr(idx)*unsafe.Sizeof(int8(0))))
+	logitPtr := (*int8)(unsafe.Add(unsafe.Pointer(batch.Logits), uintptr(idx)*unsafe.Sizeof(int8(0))))
 	switch logits {
 	case true:
 		*logitPtr = 1

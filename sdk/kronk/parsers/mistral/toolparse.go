@@ -8,9 +8,10 @@ import (
 	"io"
 	"strings"
 
+	"uuid"
+
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/google/uuid"
 )
 
 const (
@@ -229,5 +230,5 @@ func skipASCIIWhitespace(content string, cursor int) int {
 }
 
 func newToolCallID() string {
-	return "call_" + uuid.NewString()
+	return "call_" + uuid.New().String()
 }

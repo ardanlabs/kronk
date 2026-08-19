@@ -633,13 +633,17 @@ parameter reference.
 
 `chat-template-kwargs` supplies model-specific Jinja variables independently
 from sampling defaults. Request-level `chat_template_kwargs` override matching
-model defaults, and explicit top-level request fields override both:
+model defaults. First-class request parameters such as `reasoning_effort`
+remain top-level and are resolved separately:
 
 ```yaml
 unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL:
   chat-template-kwargs:
     preserve_thinking: true
 ```
+
+`preserve_thinking` is template-only. Requests should send it inside
+`chat_template_kwargs`; it is not a sampling parameter.
 
 Only templates that reference a key respond to it. For example, Gemma 4 uses
 `preserve_thinking` to retain reasoning from earlier assistant messages that

@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"uuid"
+
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/google/uuid"
 )
 
 // parseGLM parses GLM-style tool calls with <arg_key>/<arg_value> tags.
@@ -112,5 +113,5 @@ func failedGLMToolCall(raw string, err error) model.ResponseToolCall {
 }
 
 func newToolCallID() string {
-	return "call_" + uuid.NewString()
+	return "call_" + uuid.New().String()
 }

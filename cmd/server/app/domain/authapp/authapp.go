@@ -8,13 +8,14 @@ import (
 	"net"
 	"time"
 
+	"uuid"
+
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/rate"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
-	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -57,7 +58,7 @@ func (a *App) Authenticate(ctx context.Context, req *AuthenticateRequest) (*Auth
 		a.log.Info(ctx, "auth", "status", "authentication disabled")
 
 		arb := AuthenticateResponse_builder{
-			Subject: new(uuid.Nil.String()),
+			Subject: new(uuid.Nil().String()),
 		}
 
 		return arb.Build(), nil

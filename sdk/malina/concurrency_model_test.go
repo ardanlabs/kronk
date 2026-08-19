@@ -60,7 +60,7 @@ func (po *progressOverlap) overlapped() bool {
 	return po.overlaps
 }
 
-func TestHandleGeneratesConcurrently(t *testing.T) {
+func TestMalinaModelInference(t *testing.T) {
 	if os.Getenv("GITHUB_ACTIONS") == "true" {
 		t.Skip("real-model Malina tests do not run in GitHub Actions")
 	}

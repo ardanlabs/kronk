@@ -5,11 +5,11 @@
 #
 # Contract:
 #   go.mod's `go` directive      — minimum language version the code
-#                                  uses (e.g. "go 1.26.0"). Sets the
+#                                  uses (e.g. "go 1.27.0"). Sets the
 #                                  floor for downstream consumers.
 #   .go-version                  — exact toolchain CI installs and
 #                                  what asdf/mise/goenv/gvm pick up
-#                                  for contributors (e.g. "1.26.4").
+#                                  for contributors (e.g. "1.27.1").
 #
 # The two are allowed to differ on the *patch* component (and should:
 # CI typically pins a patched toolchain ahead of the minimum). They
@@ -45,7 +45,7 @@ if [[ -z "$GOVERSION_RAW" ]]; then
     exit 1
 fi
 
-# Minor = first two dot-separated components ("1.26" from "1.26.4").
+# Minor = first two dot-separated components ("1.27" from "1.27.1").
 GOMOD_MINOR="$(echo "$GOMOD_RAW" | cut -d. -f1,2)"
 GOVERSION_MINOR="$(echo "$GOVERSION_RAW" | cut -d. -f1,2)"
 

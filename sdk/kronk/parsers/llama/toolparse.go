@@ -8,15 +8,16 @@ import (
 	"io"
 	"strings"
 
+	"uuid"
+
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/google/uuid"
 )
 
 const parseErrorStatus = 2
 
 func parseJSON(ctx context.Context, log applog.Logger, content string) []model.ResponseToolCall {
-	toolCall := model.ResponseToolCall{ID: "call_" + uuid.NewString(), Type: "function"}
+	toolCall := model.ResponseToolCall{ID: "call_" + uuid.New().String(), Type: "function"}
 	if err := unmarshalFunction(content, &toolCall.Function); err != nil {
 		if log != nil {
 			log(ctx, "tool-call", "status", "unmarshal-failed", "format", "llama", "error", err, "json", content)

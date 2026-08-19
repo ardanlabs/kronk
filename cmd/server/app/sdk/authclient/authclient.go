@@ -11,10 +11,11 @@ import (
 	"os"
 	"time"
 
+	"uuid"
+
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/authapp"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
-	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -137,7 +138,7 @@ func injectTrace(ctx context.Context) context.Context {
 // Authenticate calls the auth service to authenticate the user.
 func (cln *Client) Authenticate(ctx context.Context, bearerToken string, admin bool, endpoint string) (AuthenticateReponse, error) {
 	if cln.localAuth && !cln.authEnabled && !(admin && cln.adminAuthEnabled) {
-		return AuthenticateReponse{Subject: uuid.Nil.String()}, nil
+		return AuthenticateReponse{Subject: uuid.Nil().String()}, nil
 	}
 
 	arb := authapp.AuthenticateRequest_builder{
@@ -163,7 +164,7 @@ func (cln *Client) AuthenticateRequired(ctx context.Context, bearerToken string,
 	if err != nil {
 		return AuthenticateReponse{}, err
 	}
-	if resp.Subject == uuid.Nil.String() {
+	if resp.Subject == uuid.Nil().String() {
 		return AuthenticateReponse{}, errAuthenticationDisabled
 	}
 

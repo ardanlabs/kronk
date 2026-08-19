@@ -9,8 +9,9 @@ import (
 	"strconv"
 	"strings"
 
+	"uuid"
+
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/google/uuid"
 )
 
 const parseErrorStatus = 2
@@ -377,4 +378,4 @@ func failedToolCall(name string, args model.ToolCallArguments, raw string, err e
 	}
 }
 
-func newToolCallID() string { return "call_" + uuid.NewString() }
+func newToolCallID() string { return "call_" + uuid.New().String() }

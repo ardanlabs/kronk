@@ -416,9 +416,9 @@ func lineDiff(a, b []string) []AccuracyDiffLine {
 	for i := range dp {
 		dp[i] = make([]int, len(b)+1)
 	}
-	for i := len(a) - 1; i >= 0; i-- {
+	for i, v := range slices.Backward(a) {
 		for j := len(b) - 1; j >= 0; j-- {
-			if a[i] == b[j] {
+			if v == b[j] {
 				dp[i][j] = dp[i+1][j+1] + 1
 			} else {
 				dp[i][j] = max(dp[i+1][j], dp[i][j+1])

@@ -126,8 +126,7 @@ func TestIMCRenderFingerprintChangesWithInputs(t *testing.T) {
 		"tools":                baseTools,
 		"enable_thinking":      true,
 		"reasoning_effort":     ReasoningEffortMedium,
-		"preserve_thinking":    true,
-		"chat_template_kwargs": D{"custom_mode": "a"},
+		"chat_template_kwargs": D{"custom_mode": "a", "preserve_thinking": true},
 	}
 
 	m := newFingerprintTestModel("template-a")
@@ -167,35 +166,40 @@ func TestIMCRenderFingerprintChangesWithInputs(t *testing.T) {
 			name: "chat_template_kwargs change",
 			mut: func() (*Model, D, []D) {
 				d := maps.Clone(baseD)
-				d["chat_template_kwargs"] = D{"custom_mode": "b"}
+				d["chat_template_kwargs"] = D{"custom_mode": "b", "preserve_thinking": true}
 				return m, d, baseMsgs
 			},
 		},
 		{
 			name: "preserve_thinking flips",
 			mut: func() (*Model, D, []D) {
-				d := D{"tools": baseTools, "preserve_thinking": false}
+				d := maps.Clone(baseD)
+				d["chat_template_kwargs"] = D{"custom_mode": "a", "preserve_thinking": false}
 				return m, d, baseMsgs
 			},
 		},
 		{
 			name: "preserve_thinking omitted",
 			mut: func() (*Model, D, []D) {
-				d := D{"tools": baseTools}
+				d := maps.Clone(baseD)
+				d["chat_template_kwargs"] = D{"custom_mode": "a"}
 				return m, d, baseMsgs
 			},
 		},
 		{
 			name: "tools changed",
 			mut: func() (*Model, D, []D) {
-				d := D{"tools": []D{{"type": "function", "function": D{"name": "different"}}}, "preserve_thinking": true}
+				d := maps.Clone(baseD)
+				d["tools"] = []D{{"type": "function", "function": D{"name": "different"}}}
 				return m, d, baseMsgs
 			},
 		},
 		{
 			name: "tools removed",
 			mut: func() (*Model, D, []D) {
-				return m, D{"preserve_thinking": true}, baseMsgs
+				d := maps.Clone(baseD)
+				delete(d, "tools")
+				return m, d, baseMsgs
 			},
 		},
 		{

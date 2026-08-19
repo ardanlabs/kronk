@@ -1799,12 +1799,13 @@ import (
 	"sync"
 	"time"
 
+	"uuid"
+
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
-	"github.com/google/uuid"
 )
 
 const (
@@ -2001,7 +2002,7 @@ func classifyImages(krn *kronk.Kronk) error {
 }
 
 func processImage(krn *kronk.Kronk, workerID int, imageFile string) {
-	traceID := uuid.NewString()
+	traceID := uuid.New().String()
 
 	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
 	defer cancel()

@@ -1,6 +1,6 @@
 {
     "$schema": "https://opencode.ai/config.json",
-    "model": "kronk/unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT",
+    "model": "kronk/unsloth/Qwen3.8-27B-UD-Q4_K_XL/AGENT",
     "small_model": "kronk/unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL/AGENT",
     "provider": {
         "kronk": {

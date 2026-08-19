@@ -10,12 +10,13 @@ import (
 	"strings"
 	"time"
 
+	"uuid"
+
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/keystore"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/rate"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/google/uuid"
 )
 
 var (
@@ -132,12 +133,10 @@ func (sec *Security) Authenticate(ctx context.Context, bearerToken string, admin
 // GenerateToken generates a new token with the specified claims.
 func (sec *Security) GenerateToken(admin bool, endpoints map[string]auth.RateLimit, duration time.Duration) (string, error) {
 	claims := auth.Claims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    sec.cfg.Issuer,
-			Subject:   uuid.NewString(),
-			ExpiresAt: jwt.NewNumericDate(time.Now().UTC().Add(duration)),
-			IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
-		},
+		Issuer:    sec.cfg.Issuer,
+		Subject:   uuid.New().String(),
+		ExpiresAt: jwt.NewNumericDate(time.Now().UTC().Add(duration)),
+		IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
 		Admin:     admin,
 		Endpoints: endpoints,
 	}
@@ -193,7 +192,7 @@ func (sec *Security) AddPrivateKey() error {
 	basePath := defaults.BaseDir(sec.cfg.OverrideBaseKeysFolder)
 	keysPath := filepath.Join(basePath, localFolder)
 
-	if err := generatePrivateKey(keysPath, uuid.NewString()); err != nil {
+	if err := generatePrivateKey(keysPath, uuid.New().String()); err != nil {
 		return fmt.Errorf("add-private-key: unable to generate private key: %w", err)
 	}
 
@@ -287,7 +286,7 @@ func (sec *Security) addSystemKeys() error {
 		return fmt.Errorf("add-system-keys: unable to generate admin token: %w", err)
 	}
 
-	if err := generatePrivateKey(keysPath, uuid.NewString()); err != nil {
+	if err := generatePrivateKey(keysPath, uuid.New().String()); err != nil {
 		return fmt.Errorf("add-system-keys: unable to generate private key: %w", err)
 	}
 

@@ -8,8 +8,9 @@ import (
 	"slices"
 	"time"
 
+	"uuid"
+
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/google/uuid"
 )
 
 // =============================================================================

@@ -441,11 +441,11 @@ func (l *Llama) autoTuneBudget(modelID string) models.AutoTuneBudget {
 	usage := l.resman.Usage()
 	budget := models.AutoTuneBudget{
 		Devices: l.startupDevices,
-	}
-	budget.SystemRAMBytes = min(
-		int64(float64(l.startupDevices.SystemRAMBytes)*models.AutoTuneBudgetPercent/100),
-		usage.RAMBudget,
-	)
+
+		SystemRAMBytes: min(
+			int64(float64(l.startupDevices.SystemRAMBytes)*models.AutoTuneBudgetPercent/100),
+			usage.RAMBudget,
+		)}
 
 	cfg := l.modelConfig[modelID]
 	selected := gpuDevices(cfg.Devices)

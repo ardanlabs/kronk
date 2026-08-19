@@ -7,8 +7,9 @@ import (
 	"io"
 	"strings"
 
+	"uuid"
+
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/google/uuid"
 )
 
 const parseErrorStatus = 2
@@ -485,8 +486,8 @@ func isIdentStart(ch byte) bool { return ch == '_' || ch >= 'a' && ch <= 'z' || 
 func isIdent(ch byte) bool      { return isIdentStart(ch) || ch >= '0' && ch <= '9' }
 
 func successfulCall(name string, args model.ToolCallArguments) model.ResponseToolCall {
-	return model.ResponseToolCall{ID: "call_" + uuid.NewString(), Type: "function", Function: model.ResponseToolCallFunction{Name: name, Arguments: args}}
+	return model.ResponseToolCall{ID: "call_" + uuid.New().String(), Type: "function", Function: model.ResponseToolCallFunction{Name: name, Arguments: args}}
 }
 func failedCall(raw string, err error) model.ResponseToolCall {
-	return model.ResponseToolCall{ID: "call_" + uuid.NewString(), Type: "function", Status: parseErrorStatus, Raw: raw, Error: err.Error()}
+	return model.ResponseToolCall{ID: "call_" + uuid.New().String(), Type: "function", Status: parseErrorStatus, Raw: raw, Error: err.Error()}
 }

@@ -64,10 +64,8 @@ func run(ctx context.Context, log *logger.Logger) error {
 			}
 		}
 	}{
-		Version: conf.Version{
-			Build: tag,
-			Desc:  "MCP",
-		},
+		Build: tag,
+		Desc:  "MCP",
 	}
 
 	const prefix = "MCP"

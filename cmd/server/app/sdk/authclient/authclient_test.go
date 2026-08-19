@@ -15,8 +15,9 @@ import (
 	"testing"
 	"time"
 
+	"uuid"
+
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/authapp"
-	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -162,7 +163,7 @@ func (acs authClientStub) Authenticate(context.Context, *authapp.AuthenticateReq
 }
 
 func TestAuthenticateLocalModes(t *testing.T) {
-	subject := uuid.NewString()
+	subject := uuid.New().String()
 
 	tests := []struct {
 		name         string
@@ -174,9 +175,9 @@ func TestAuthenticateLocalModes(t *testing.T) {
 		wantSubject  string
 	}{
 		{name: "external configuration remains authoritative", wantCall: true, wantSubject: subject},
-		{name: "local authentication disabled", local: true, wantSubject: uuid.Nil.String()},
-		{name: "local admin authentication disabled", local: true, admin: true, wantSubject: uuid.Nil.String()},
-		{name: "local admin-only inference bypass", local: true, adminEnabled: true, wantSubject: uuid.Nil.String()},
+		{name: "local authentication disabled", local: true, wantSubject: uuid.Nil().String()},
+		{name: "local admin authentication disabled", local: true, admin: true, wantSubject: uuid.Nil().String()},
+		{name: "local admin-only inference bypass", local: true, adminEnabled: true, wantSubject: uuid.Nil().String()},
 		{name: "local admin-only admin call", local: true, adminEnabled: true, admin: true, wantCall: true, wantSubject: subject},
 		{name: "local authentication enabled", local: true, enabled: true, wantCall: true, wantSubject: subject},
 	}
@@ -215,8 +216,8 @@ func TestAuthenticateRequired(t *testing.T) {
 		subject string
 		wantErr error
 	}{
-		{name: "authenticated", subject: uuid.NewString()},
-		{name: "authentication disabled", subject: uuid.Nil.String(), wantErr: errAuthenticationDisabled},
+		{name: "authenticated", subject: uuid.New().String()},
+		{name: "authentication disabled", subject: uuid.Nil().String(), wantErr: errAuthenticationDisabled},
 	}
 
 	for _, tt := range tests {

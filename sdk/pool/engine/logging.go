@@ -116,9 +116,8 @@ func (c *Pool[H]) PublishMetrics() {
 		RAMTotal:      u.RAMTotal,
 		RAMBudget:     u.RAMBudget,
 		RAMUsed:       u.RAMUsed,
-	}
 
-	pu.Devices = make([]metrics.ResmanDeviceUsage, 0, len(u.Devices))
+		Devices: make([]metrics.ResmanDeviceUsage, 0, len(u.Devices))}
 	for _, d := range u.Devices {
 		pu.Devices = append(pu.Devices, metrics.ResmanDeviceUsage{
 			Name:        d.Name,

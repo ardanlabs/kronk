@@ -194,8 +194,6 @@ type imcRenderFingerprintInput struct {
 	AddGenerationPrompt bool   `json:"add_generation_prompt"`
 	EnableThinking      bool   `json:"enable_thinking"`
 	ReasoningEffort     any    `json:"reasoning_effort,omitempty"`
-	PreserveThinkingSet bool   `json:"preserve_thinking_set"`
-	PreserveThinking    bool   `json:"preserve_thinking"`
 	ChatTemplateKwargs  any    `json:"chat_template_kwargs,omitempty"`
 	Messages            []D    `json:"messages"`
 	ToolsPresent        bool   `json:"tools_present"`
@@ -214,14 +212,11 @@ type imcRenderFingerprintInput struct {
 func (m *Model) imcRenderFingerprint(d D, msgs []D) (string, bool) {
 	templateSum := sha256.Sum256([]byte(m.template.Script))
 
-	preserve, preserveSet := d["preserve_thinking"].(bool)
 	in := imcRenderFingerprintInput{
 		TemplateHash:        hex.EncodeToString(templateSum[:]),
 		AddGenerationPrompt: false,
 		EnableThinking:      d["enable_thinking"] == true,
 		ReasoningEffort:     d["reasoning_effort"],
-		PreserveThinkingSet: preserveSet,
-		PreserveThinking:    preserve,
 		ChatTemplateKwargs:  d["chat_template_kwargs"],
 		Messages:            msgs,
 	}

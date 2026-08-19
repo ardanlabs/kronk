@@ -2,6 +2,8 @@
 
 ## Index
 
+- [v1.31.6](#v1316)
+  - [Go Toolchain Changes](#v1316-go-toolchain-changes)
 - [v1.31.4](#v1314)
   - [Model Identifier Changes](#v1314-model-identifier-changes)
 - [v1.31.2](#v1312)
@@ -21,6 +23,32 @@
   - [HTTP Error Response Changes](#v1303-http-error-response-changes)
   - [Session Storage Changes](#v1303-session-storage-changes)
   - [Go SDK Changes](#v1303-go-sdk-changes)
+
+## v1.31.6
+
+### v1.31.6: Go Toolchain Changes
+
+Kronk now requires Go 1.27 or later. Go SDK consumers and users installing
+Kronk with `go install` must upgrade their Go toolchain before updating to this
+release. Consumers that need to remain on Go 1.26 must use Kronk v1.31.5 or
+earlier.
+
+Go 1.27 changes the implementation beneath the existing `encoding/json`
+package to use JSON v2 internally while preserving the v1 API and semantics.
+Kronk continues to import `encoding/json`; consumers do not need to change
+their JSON imports. Exact JSON error text can differ, and unmarshalling is
+generally faster. Go 1.27 temporarily supports building with
+`GOEXPERIMENT=nojsonv2` to diagnose compatibility problems with the new
+implementation.
+
+Kronk now uses Go 1.27's standard-library `uuid` package instead of
+`github.com/google/uuid` for its internal identifiers. This does not change
+the textual UUID format exposed by Kronk APIs.
+
+Go 1.27 requires macOS 13 Ventura or later. Kronk release binaries built with
+Go 1.27 no longer support older macOS releases. The Nix flake also no longer
+supports `x86_64-darwin`, which Nixpkgs 26.11 has dropped. The macOS `amd64`
+release archive remains available for Intel Macs running macOS 13 or later.
 
 ## v1.31.4
 

@@ -12,10 +12,11 @@ import (
 	"testing"
 	"time"
 
+	"uuid"
+
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/google/uuid"
 )
 
 type testOption struct {
@@ -247,12 +248,10 @@ func (at *Test) RunStreaming(t *testing.T, table []Table, testName string, optio
 // Token generates an authenticated token for a user.
 func Token(ath *auth.Auth, admin bool, endpoints map[string]auth.RateLimit) string {
 	claims := auth.Claims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			Subject:   uuid.NewString(),
-			Issuer:    ath.Issuer(),
-			ExpiresAt: jwt.NewNumericDate(time.Now().UTC().Add(time.Hour)),
-			IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
-		},
+		Subject:   uuid.New().String(),
+		Issuer:    ath.Issuer(),
+		ExpiresAt: jwt.NewNumericDate(time.Now().UTC().Add(time.Hour)),
+		IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
 		Admin:     admin,
 		Endpoints: endpoints,
 	}
