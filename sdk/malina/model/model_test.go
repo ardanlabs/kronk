@@ -24,21 +24,30 @@ func TestNewConfig(t *testing.T) {
 		{name: "checkpoint", opts: []Option{WithModelPath("model")}},
 		{name: "component", opts: []Option{WithDiffusionModelPath("diffusion"), WithVAEPath("vae"), WithLLMPath("llm")}},
 		{name: "no model", wantErr: true},
-		{name: "invalid queue", opts: []Option{WithModelPath("model"), WithQueueDepth(0)}, wantErr: true},
+		{name: "zero queue", opts: []Option{WithModelPath("model"), WithQueueDepth(0)}},
+		{name: "invalid concurrency", opts: []Option{WithModelPath("model"), WithConcurrency(0)}, wantErr: true},
+		{name: "invalid queue", opts: []Option{WithModelPath("model"), WithQueueDepth(-1)}, wantErr: true},
 		{name: "invalid timeout", opts: []Option{WithModelPath("model"), WithAdmissionTimeout(-time.Second)}, wantErr: true},
 		{name: "invalid threads", opts: []Option{WithModelPath("model"), WithCPUThreads(-1)}, wantErr: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg, err := NewConfig(tt.opts...)
+			_, err := NewConfig(tt.opts...)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("NewConfig() error = %v, wantErr %v", err, tt.wantErr)
 			}
-			if err == nil && (cfg.QueueDepth != defaultQueueDepth || cfg.AdmissionTimeout != defaultAdmissionTimeout) {
-				t.Errorf("defaults: got %d/%s, want %d/%s", cfg.QueueDepth, cfg.AdmissionTimeout, defaultQueueDepth, defaultAdmissionTimeout)
-			}
 		})
+	}
+}
+
+func TestNewConfigDefaults(t *testing.T) {
+	cfg, err := NewConfig(WithModelPath("model"))
+	if err != nil {
+		t.Fatalf("NewConfig() error = %v", err)
+	}
+	if cfg.Concurrency != defaultConcurrency || cfg.QueueDepth != defaultQueueDepth || cfg.AdmissionTimeout != defaultAdmissionTimeout {
+		t.Errorf("defaults: got %d/%d/%s, want %d/%d/%s", cfg.Concurrency, cfg.QueueDepth, cfg.AdmissionTimeout, defaultConcurrency, defaultQueueDepth, defaultAdmissionTimeout)
 	}
 }
 
@@ -174,7 +183,7 @@ func TestWithNativeCanceledWaitDoesNotRun(t *testing.T) {
 	}
 }
 
-func TestWithNativeStoppedWaitDoesNotRun(t *testing.T) {
+func TestWithGenerationStoppedWaitDoesNotRun(t *testing.T) {
 	entered := make(chan struct{})
 	release := make(chan struct{})
 	first := make(chan error, 1)
@@ -191,17 +200,17 @@ func TestWithNativeStoppedWaitDoesNotRun(t *testing.T) {
 	result := make(chan error, 1)
 	var called atomic.Bool
 	go func() {
-		result <- withNativeContexts(t.Context(), stop, func() error {
+		result <- withGeneration(t.Context(), stop, func() error {
 			called.Store(true)
 			return nil
 		})
 	}()
 	cancel()
 	if err := <-result; !errors.Is(err, context.Canceled) {
-		t.Fatalf("withNativeContexts() error = %v, want context.Canceled", err)
+		t.Fatalf("withGeneration() error = %v, want context.Canceled", err)
 	}
 	if called.Load() {
-		t.Fatal("withNativeContexts() ran stopped callback")
+		t.Fatal("withGeneration() ran stopped callback")
 	}
 
 	close(release)

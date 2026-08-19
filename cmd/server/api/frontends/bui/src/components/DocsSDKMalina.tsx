@@ -70,7 +70,7 @@ export default function DocsSDKMalina() {
               <pre className="code-block">
                 <code>func New(opts ...model.Option) (*Malina, error)</code>
               </pre>
-              <p className="doc-description">New provides image generation using a background model-loading context.</p>
+              <p className="doc-description">New provides pooled image generation using a background model-loading context.</p>
             </div>
 
             <div className="doc-section" id="func-newwithcontext">
@@ -78,7 +78,7 @@ export default function DocsSDKMalina() {
               <pre className="code-block">
                 <code>func NewWithContext(ctx context.Context, opts ...model.Option) (*Malina, error)</code>
               </pre>
-              <p className="doc-description">NewWithContext provides image generation and loads the model using ctx.</p>
+              <p className="doc-description">NewWithContext provides pooled image generation and loads every configured model context using ctx.</p>
             </div>
 
             <div className="doc-section" id="func-systeminfo">
@@ -124,7 +124,7 @@ export default function DocsSDKMalina() {
 	// Has unexported fields.
 }`}</code>
               </pre>
-              <p className="doc-description">Malina provides a concurrency-safe API around one reusable native model context. Generation calls are serialized because a stable-diffusion context is not safe for concurrent use.</p>
+              <p className="doc-description">Malina provides a concurrency-safe API around a pool of reusable native model contexts. Each context performs one generation at a time.</p>
             </div>
 
             <div className="doc-section" id="type-progressfunc">
@@ -157,7 +157,7 @@ export default function DocsSDKMalina() {
               <pre className="code-block">
                 <code>func (m *Malina) ActiveGenerations() int</code>
               </pre>
-              <p className="doc-description">ActiveGenerations returns the number of admitted generation calls.</p>
+              <p className="doc-description">ActiveGenerations returns the number of running and queued generation calls.</p>
             </div>
 
             <div className="doc-section" id="method-malina-generate">

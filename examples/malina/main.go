@@ -132,6 +132,8 @@ func newMalina(mp models.Path) (*malina.Malina, error) {
 	fmt.Println("- backend devices   :", si.BackendDeviceCount)
 	fmt.Println("- model             :", mi.ModelPath)
 	fmt.Println("- cpu threads       :", cfg.CPUThreads)
+	fmt.Println("- concurrency       :", cfg.Concurrency)
+	fmt.Println("- queue depth       :", cfg.QueueDepth)
 	fmt.Println("- active generations:", mln.ActiveGenerations())
 
 	return mln, nil

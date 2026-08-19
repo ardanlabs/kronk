@@ -53,6 +53,15 @@ test-gh-only: install-libraries-gh install-test-gh-models
 
 test-gh: test-gh-only lint vuln-check diff
 
+# Run the real-model Malina concurrency test locally. The build tag keeps this
+# test out of normal test runs, and the test skips defensively in GitHub Actions.
+test-malina-concurrency:
+	@echo ========== RUN MALINA CONCURRENCY TEST ==========
+	unset KRONK_BASE_PATH KRONK_MALINA_LIB_PATH MALINA_LIB KRONK_PROCESSOR KRONK_ARCH KRONK_OS && \
+	export RUN_IN_PARALLEL=yes && \
+	export GITHUB_WORKSPACE=$(shell pwd) && \
+	go test -v -count=1 -tags=malina_model_tests -run '^TestHandleGeneratesConcurrently$$' -timeout=30m ./sdk/malina
+
 # ==============================================================================
 # Benchmarks
 
