@@ -408,17 +408,31 @@ See
 [Chapter 4](https://www.kronkai.com/manual#chapter-4-batch-processing) for request scheduling and the
 differences between model types.
 
-One setting controls prompt batching:
+One setting controls prompt batching and sequence-batch token capacity:
 
 | Key | Load-time default | Purpose |
 | --- | ----------------- | ------- |
-| `prefill-batch-size` | `2048` | Maximum prompt-token contribution from the current prefill owner in one decode iteration |
+| `prefill-batch-size` | `2048` | Generation prefill contribution per decode iteration, or aggregate embedding/reranking tokens per native sequence batch |
 
-Most deployments should use the default. A larger value can move a long prompt
-to generation in fewer decode calls, but requires larger compute buffers and
-each call runs longer before already-generating slots can run again. A smaller
-value gives generating slots more frequent scheduling opportunities at the
-cost of more prefill decode calls.
+For generation models, a larger value can move a long prompt to generation in
+fewer decode calls, but requires larger compute buffers and each call runs
+longer before already-generating slots can run again. A smaller value gives
+generating slots more frequent scheduling opportunities at the cost of more
+prefill decode calls.
+
+For embedding and reranking models, Kronk sets both internal `NBatch` and
+`NUBatch` to `prefill-batch-size`. This is the aggregate token capacity of one
+native sequence batch, not a capacity granted separately to every sequence.
+The batch is constrained independently by `nseq-max` complete sequences and by
+`prefill-batch-size` combined tokens. For example, `nseq-max: 8` with
+`prefill-batch-size: 2048` can evaluate eight 256-token sequences, four
+512-token sequences, two 1024-token sequences, or one 2048-token sequence in a
+single native batch. Kronk does not multiply the token capacity by `nseq-max`;
+doing so would allocate a much larger physical compute batch. Increase
+`prefill-batch-size` explicitly when the expected embedding or reranking
+workload needs a larger aggregate batch.
+
+Most deployments should use the default.
 
 Kronk derives llama.cpp's internal physical and logical batch capacities from
 this value. It reserves one output row per slot for non-MTP generation. MTP
@@ -682,7 +696,7 @@ is normally supplied by analysis or by the load-time defaults.
 | `admission-timeout` | Go duration, default `3m` | Maximum SDK admission-permit wait; separate from the server's `KRONK_WEB_INFERENCE_TIMEOUT` (default `60m`) |
 | `queue-depth` | Non-negative integer, default `2` | Generation admission and handoff capacity multiplier |
 | `imc-session-capacity` | Positive integer; derived when omitted | Reusable IMC conversation identities retained in RAM or on disk |
-| `prefill-batch-size` | Positive token count, default `2048` | Prompt tokens contributed by the prefill owner per decode iteration |
+| `prefill-batch-size` | Positive token count, default `2048` | Generation prefill contribution per decode iteration, or aggregate embedding/reranking tokens per native sequence batch |
 | `ngpu-layers` | `-1`, `0`, or a positive count | CPU/GPU layer placement |
 | `load-mode` | `auto`, `mmap`, `none`, `mlock`, `mmap+mlock`, `direct-io` | Model weight loading strategy |
 | `offload-kqv` | Boolean | Place KV cache on GPU when true |

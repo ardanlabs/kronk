@@ -628,7 +628,7 @@ models:
   nseq-max: 4`}</code></pre>
           <p>For text generation, this creates up to four batch-engine slots. Their sequence state and KV capacity are isolated. Kronk allocates an aggregate context of <code>context-window × nseq-max</code>, which llama.cpp divides into one fixed <code>context-window</code> stream per slot. Increasing <code>nseq-max</code> therefore increases the capacity Kronk must budget and can substantially increase memory use.</p>
           <p>For supported embedding and reranking architectures, <code>nseq-max</code> is the maximum number of complete inputs or query-document pairs in one sequence batch on a shared context. Architectures that have not been proven safe for that runtime use <code>nseq-max</code> to size a pool of independent single-sequence contexts instead. See <a href="https://www.kronkai.com/manual#chapter-4-batch-processing">Chapter 4</a> for request scheduling and the differences between model types.</p>
-          <p>One setting controls prompt batching:</p>
+          <p>One setting controls prompt batching and sequence-batch token capacity:</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -641,11 +641,13 @@ models:
               <tr>
                 <td><code>prefill-batch-size</code></td>
                 <td><code>2048</code></td>
-                <td>Maximum prompt-token contribution from the current prefill owner in one decode iteration</td>
+                <td>Generation prefill contribution per decode iteration, or aggregate embedding/reranking tokens per native sequence batch</td>
               </tr>
             </tbody>
           </table>
-          <p>Most deployments should use the default. A larger value can move a long prompt to generation in fewer decode calls, but requires larger compute buffers and each call runs longer before already-generating slots can run again. A smaller value gives generating slots more frequent scheduling opportunities at the cost of more prefill decode calls.</p>
+          <p>For generation models, a larger value can move a long prompt to generation in fewer decode calls, but requires larger compute buffers and each call runs longer before already-generating slots can run again. A smaller value gives generating slots more frequent scheduling opportunities at the cost of more prefill decode calls.</p>
+          <p>For embedding and reranking models, Kronk sets both internal <code>NBatch</code> and <code>NUBatch</code> to <code>prefill-batch-size</code>. This is the aggregate token capacity of one native sequence batch, not a capacity granted separately to every sequence. The batch is constrained independently by <code>nseq-max</code> complete sequences and by <code>prefill-batch-size</code> combined tokens. For example, <code>nseq-max: 8</code> with <code>prefill-batch-size: 2048</code> can evaluate eight 256-token sequences, four 512-token sequences, two 1024-token sequences, or one 2048-token sequence in a single native batch. Kronk does not multiply the token capacity by <code>nseq-max</code>; doing so would allocate a much larger physical compute batch. Increase <code>prefill-batch-size</code> explicitly when the expected embedding or reranking workload needs a larger aggregate batch.</p>
+          <p>Most deployments should use the default.</p>
           <p>Kronk derives llama.cpp's internal physical and logical batch capacities from this value. It reserves one output row per slot for non-MTP generation. MTP reserves <code>1 + ndraft</code> rows per slot because speculative verification includes the sampled token and its draft candidates. With four slots and the default <code>ndraft: 3</code>, the internal effective sizes are <code>NUBatch: 2048</code>, <code>NBatch: 2052</code> for non-MTP and <code>NUBatch: 2064</code>, <code>NBatch: 2064</code> for MTP. Both can stage generation rows and then add a complete 2048-token prefill contribution from the current owner in the same logical decode. Non-MTP may split that tray into physical ubatches; MTP keeps it in one physical batch so dense NextN rows retain their expected mapping.</p>
           <p>The <code>status[resolved]</code> <code>batch-sizing</code> debug log reports the configured prefill size, generation reserve, effective internal sizes, and MTP state. The Slots diagnostic screen also displays effective <code>NBatch / NUBatch</code> as read-only runtime values. Multimodal encoders may require an entire media-token chunk to fit in one physical batch, so do not lower <code>prefill-batch-size</code> for a multimodal model without testing media input.</p>
           <p><img src="https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-04/batch-sizing-mtp-vs-non-mtp.svg" alt="How two requests move from prefill to generation and how non-MTP and MTP batch sizing supports them" /></p>
@@ -801,7 +803,7 @@ models:
               <tr>
                 <td><code>prefill-batch-size</code></td>
                 <td>Positive token count, default <code>2048</code></td>
-                <td>Prompt tokens contributed by the prefill owner per decode iteration</td>
+                <td>Generation prefill contribution per decode iteration, or aggregate embedding/reranking tokens per native sequence batch</td>
               </tr>
               <tr>
                 <td><code>ngpu-layers</code></td>
@@ -1019,6 +1021,10 @@ models:
                        │ One model context and weights │
                        └───────────────────────────────┘`}</code></pre>
           <p>The scheduler keeps each embedding input or reranking query-document pair as a complete sequence. It coalesces already queued requests, fills a native batch up to the <code>nseq-max</code> and token limits, and schedules requests round-robin when one request cannot fit in a single batch. The engine is intentionally separate from generation because it does not own long-lived generation slots, samplers, or streaming state.</p>
+          <p>The two limits control independent dimensions of a sequence batch:</p>
+          <pre className="code-block"><code className="language-text">{`number of sequences <= nseq-max
+sum of sequence tokens <= prefill-batch-size`}</code></pre>
+          <p>For these models, Kronk derives both llama.cpp <code>NBatch</code> and <code>NUBatch</code> directly from <code>prefill-batch-size</code>. The value is an aggregate native-batch token budget, not a per-sequence allowance. With <code>nseq-max: 8</code> and <code>prefill-batch-size: 2048</code>, one batch can hold eight 256-token sequences or two 1024-token sequences, but not eight 2048-token sequences. Kronk deliberately does not multiply <code>prefill-batch-size</code> by <code>nseq-max</code>: pooled evaluation must fit the complete batch in one physical ubatch, and automatic multiplication could substantially increase compute-buffer memory. Increase <code>prefill-batch-size</code> explicitly when measured workloads benefit from a larger aggregate token budget.</p>
           <p>Unknown or unsafe architectures use the context-pool fallback. Each admitted request acquires one independent single-sequence context, performs its work, and returns the context to the pool. This avoids native assertions seen with some architectures during multi-sequence initialization. Additional fallback contexts require memory even though model weights are shared.</p>
           <p>Runtime selection is conservative: a model name identifies the task, while GGUF <code>general.architecture</code> metadata must match the compatibility allowlist to select sequence batching. Missing or unrecognized architecture metadata uses the fallback. Raise <code>nseq-max</code> only after measuring throughput and memory for the selected runtime.</p>
           <h3 id="49-configuration-and-tuning">4.9 Configuration and Tuning</h3>
