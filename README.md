@@ -1,4 +1,4 @@
-![Kronk logo](./images/project/kronk_banner.jpg?v5)
+![Kronk logo](./images/project/kronk_banner.jpg?v6)
 
 # Kronk
 
