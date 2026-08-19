@@ -161,13 +161,15 @@ func initInputs() error {
 		}
 
 		DMedia = model.D{
-			"messages":   model.ImageMessage("What is in this picture?", mediaBytes, "jpeg"),
-			"max_tokens": 2048,
+			"messages":        model.ImageMessage("What is in this picture?", mediaBytes, "jpeg"),
+			"max_tokens":      2048,
+			"enable_thinking": false,
 		}
 
 		DMediaArray = model.D{
-			"messages":   model.ImageMessage("What is in this picture?", mediaBytes, "jpeg"),
-			"max_tokens": 2048,
+			"messages":        model.ImageMessage("What is in this picture?", mediaBytes, "jpeg"),
+			"max_tokens":      2048,
+			"enable_thinking": false,
 		}
 	}
 
