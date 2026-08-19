@@ -83,15 +83,24 @@ type TranscribeConfig struct {
 	// NThreads overrides Config.NThreads for this call when > 0.
 	NThreads int32
 
+	// Temperature overrides whisper.cpp's initial decoding temperature when
+	// non-nil. nil leaves the library default in place.
+	Temperature *float32
+
+	// TemperatureInc overrides the temperature increase used for fallback
+	// decoding when non-nil. nil leaves the library default in place.
+	TemperatureInc *float32
+
+	// EntropyThreshold overrides whisper.cpp's entropy threshold when non-nil.
+	// nil leaves the library default in place.
+	EntropyThreshold *float32
+
 	// NoSpeechThreshold overrides whisper.cpp's no-speech probability
 	// threshold when > 0 (the library default is 0.6). A segment whose
 	// no-speech probability exceeds this is treated as silence during
 	// the decode's temperature-fallback decision, reducing the chance a
 	// near-silent window is decoded into hallucinated text. The value is
-	// a probability in (0, 1]; a zero (or negative) value is the "unset"
-	// sentinel and leaves the library default in place. A >0 sentinel is
-	// sufficient here because 0 is not a useful threshold (it would flag
-	// nearly every segment as silence), so it need not be expressible.
+	// a probability in (0, 1]; zero leaves the library default in place.
 	NoSpeechThreshold float32
 
 	// LogProbThreshold overrides whisper.cpp's average log-probability
@@ -106,6 +115,18 @@ type TranscribeConfig struct {
 	// BeamSize, when > 0, switches the sampler to beam search with
 	// the specified beam size. Defaults to greedy.
 	BeamSize int32
+
+	// GreedyBestOf overrides the number of greedy candidates when non-nil.
+	// nil leaves the library default in place.
+	GreedyBestOf *int32
+
+	// BeamSearchPatience overrides beam-search patience when non-nil. It is
+	// only used when BeamSize selects beam search.
+	BeamSearchPatience *float32
+
+	// LengthPenalty overrides the decoder length penalty when non-nil. nil
+	// leaves the library default in place.
+	LengthPenalty *float32
 
 	// NoTimestamps suppresses per-segment t0/t1 emission in the
 	// rendered text output. Segment-level timestamps remain available
@@ -141,6 +162,22 @@ func WithTranscribeNThreads(v int32) TranscribeOption {
 	return func(c *TranscribeConfig) { c.NThreads = v }
 }
 
+// WithTemperature overrides whisper.cpp's initial decoding temperature.
+func WithTemperature(v float32) TranscribeOption {
+	return func(c *TranscribeConfig) { c.Temperature = &v }
+}
+
+// WithTemperatureInc overrides the temperature increase used for fallback
+// decoding.
+func WithTemperatureInc(v float32) TranscribeOption {
+	return func(c *TranscribeConfig) { c.TemperatureInc = &v }
+}
+
+// WithEntropyThreshold overrides whisper.cpp's entropy threshold.
+func WithEntropyThreshold(v float32) TranscribeOption {
+	return func(c *TranscribeConfig) { c.EntropyThreshold = &v }
+}
+
 // WithNoSpeechThreshold overrides whisper.cpp's no-speech probability
 // threshold for this call. 0 leaves the library default (0.6) in place.
 func WithNoSpeechThreshold(v float32) TranscribeOption {
@@ -159,6 +196,21 @@ func WithLogProbThreshold(v float32) TranscribeOption {
 // size.
 func WithBeamSize(v int32) TranscribeOption {
 	return func(c *TranscribeConfig) { c.BeamSize = v }
+}
+
+// WithGreedyBestOf overrides the number of greedy candidates.
+func WithGreedyBestOf(v int32) TranscribeOption {
+	return func(c *TranscribeConfig) { c.GreedyBestOf = &v }
+}
+
+// WithBeamSearchPatience overrides beam-search patience.
+func WithBeamSearchPatience(v float32) TranscribeOption {
+	return func(c *TranscribeConfig) { c.BeamSearchPatience = &v }
+}
+
+// WithLengthPenalty overrides the decoder length penalty.
+func WithLengthPenalty(v float32) TranscribeOption {
+	return func(c *TranscribeConfig) { c.LengthPenalty = &v }
 }
 
 // WithNoTimestamps disables timestamp emission in the rendered text
@@ -291,12 +343,7 @@ func (m *Model) TranscribeChannelsFile(ctx context.Context, r io.Reader, opts ..
 // =============================================================================
 
 func (m *Model) buildFullParams(tcfg TranscribeConfig) (whisper.WhisperFullParams, whisper.StringRefs, error) {
-	strategy := whisper.SamplingGreedy
-	if tcfg.BeamSize > 0 {
-		strategy = whisper.SamplingBeamSearch
-	}
-
-	params := whisper.FullDefaultParams(strategy)
+	params := whisper.FullDefaultParams(transcribeSamplingStrategy(tcfg))
 
 	switch {
 	case tcfg.NThreads > 0:
@@ -304,9 +351,39 @@ func (m *Model) buildFullParams(tcfg TranscribeConfig) (whisper.WhisperFullParam
 	case m.cfg.NThreads > 0:
 		params.NThreads = m.cfg.NThreads
 	}
+	applyFullParamOverrides(&params, tcfg)
 
+	var refs whisper.StringRefs
+	if err := refs.SetLanguage(&params, tcfg.Language); err != nil {
+		return whisper.WhisperFullParams{}, whisper.StringRefs{}, fmt.Errorf("build-params: language: %w", err)
+	}
+	if err := refs.SetInitialPrompt(&params, tcfg.InitialPrompt); err != nil {
+		return whisper.WhisperFullParams{}, whisper.StringRefs{}, fmt.Errorf("build-params: initial-prompt: %w", err)
+	}
+	refs.SetPromptTokens(&params, tcfg.PromptTokens)
+
+	return params, refs, nil
+}
+
+func transcribeSamplingStrategy(tcfg TranscribeConfig) whisper.SamplingStrategy {
+	if tcfg.BeamSize > 0 {
+		return whisper.SamplingBeamSearch
+	}
+	return whisper.SamplingGreedy
+}
+
+func applyFullParamOverrides(params *whisper.WhisperFullParams, tcfg TranscribeConfig) {
 	if tcfg.BeamSize > 0 {
 		params.BeamSearchBeamSize = tcfg.BeamSize
+	}
+	if tcfg.Temperature != nil {
+		params.Temperature = *tcfg.Temperature
+	}
+	if tcfg.TemperatureInc != nil {
+		params.TemperatureInc = *tcfg.TemperatureInc
+	}
+	if tcfg.EntropyThreshold != nil {
+		params.EntropyThold = *tcfg.EntropyThreshold
 	}
 	if tcfg.Translate {
 		params.Translate = 1
@@ -320,21 +397,19 @@ func (m *Model) buildFullParams(tcfg TranscribeConfig) (whisper.WhisperFullParam
 	if tcfg.LogProbThreshold != nil {
 		params.LogprobThold = *tcfg.LogProbThreshold
 	}
+	if tcfg.GreedyBestOf != nil {
+		params.GreedyBestOf = *tcfg.GreedyBestOf
+	}
+	if tcfg.BeamSearchPatience != nil {
+		params.BeamSearchPatience = *tcfg.BeamSearchPatience
+	}
+	if tcfg.LengthPenalty != nil {
+		params.LengthPenalty = *tcfg.LengthPenalty
+	}
 
 	params.PrintProgress = 0
 	params.PrintRealtime = 0
 	params.PrintTimestamps = 0
-
-	var refs whisper.StringRefs
-	if err := refs.SetLanguage(&params, tcfg.Language); err != nil {
-		return whisper.WhisperFullParams{}, whisper.StringRefs{}, fmt.Errorf("build-params: language: %w", err)
-	}
-	if err := refs.SetInitialPrompt(&params, tcfg.InitialPrompt); err != nil {
-		return whisper.WhisperFullParams{}, whisper.StringRefs{}, fmt.Errorf("build-params: initial-prompt: %w", err)
-	}
-	refs.SetPromptTokens(&params, tcfg.PromptTokens)
-
-	return params, refs, nil
 }
 
 func collectTranscription(state whisper.State, requestedLang string, onSegment func(Segment)) Transcription {

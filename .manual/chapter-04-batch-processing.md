@@ -355,6 +355,24 @@ one request cannot fit in a single batch. The engine is intentionally separate
 from generation because it does not own long-lived generation slots, samplers,
 or streaming state.
 
+The two limits control independent dimensions of a sequence batch:
+
+```text
+number of sequences <= nseq-max
+sum of sequence tokens <= prefill-batch-size
+```
+
+For these models, Kronk derives both llama.cpp `NBatch` and `NUBatch` directly
+from `prefill-batch-size`. The value is an aggregate native-batch token budget,
+not a per-sequence allowance. With `nseq-max: 8` and
+`prefill-batch-size: 2048`, one batch can hold eight 256-token sequences or two
+1024-token sequences, but not eight 2048-token sequences. Kronk deliberately
+does not multiply `prefill-batch-size` by `nseq-max`: pooled evaluation must fit
+the complete batch in one physical ubatch, and automatic multiplication could
+substantially increase compute-buffer memory. Increase `prefill-batch-size`
+explicitly when measured workloads benefit from a larger aggregate token
+budget.
+
 Unknown or unsafe architectures use the context-pool fallback. Each admitted
 request acquires one independent single-sequence context, performs its work,
 and returns the context to the pool. This avoids native assertions seen with

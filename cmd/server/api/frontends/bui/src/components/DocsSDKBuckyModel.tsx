@@ -335,6 +335,34 @@ export default function DocsSDKBuckyModel() {
 	// NThreads overrides Config.NThreads for this session when > 0.
 	NThreads int32
 
+	// Temperature overrides whisper.cpp's initial decoding temperature for
+	// every decode when non-nil. nil leaves the library default in place.
+	Temperature *float32
+
+	// TemperatureInc overrides the temperature increase used for fallback
+	// decoding when non-nil. nil leaves the library default in place.
+	TemperatureInc *float32
+
+	// EntropyThreshold overrides whisper.cpp's entropy threshold when non-nil.
+	// nil leaves the library default in place.
+	EntropyThreshold *float32
+
+	// GreedyBestOf overrides the number of greedy candidates when non-nil.
+	// nil leaves the library default in place.
+	GreedyBestOf *int32
+
+	// BeamSize, when > 0, switches every decode to beam search with the
+	// specified beam size. Defaults to greedy.
+	BeamSize int32
+
+	// BeamSearchPatience overrides beam-search patience when non-nil. It is
+	// only used when BeamSize selects beam search.
+	BeamSearchPatience *float32
+
+	// LengthPenalty overrides the decoder length penalty when non-nil. nil
+	// leaves the library default in place.
+	LengthPenalty *float32
+
 	// PartialEveryMs is the partial-emit cadence. 0 = 1000;
 	// <0 disables partials (final-only mode).
 	PartialEveryMs int
@@ -385,9 +413,7 @@ export default function DocsSDKBuckyModel() {
 
 	// NoSpeechThreshold overrides whisper.cpp's no-speech probability
 	// threshold for every decode in the session when > 0 (library default
-	// 0.6). A zero (or negative) value is the "unset" sentinel and leaves
-	// the default in place; see TranscribeConfig.NoSpeechThreshold for why
-	// >0 is a sufficient sentinel.
+	// 0.6). A zero value leaves the default in place.
 	NoSpeechThreshold float32
 
 	// LogProbThreshold overrides whisper.cpp's average log-probability
@@ -437,15 +463,24 @@ export default function DocsSDKBuckyModel() {
 	// NThreads overrides Config.NThreads for this call when > 0.
 	NThreads int32
 
+	// Temperature overrides whisper.cpp's initial decoding temperature when
+	// non-nil. nil leaves the library default in place.
+	Temperature *float32
+
+	// TemperatureInc overrides the temperature increase used for fallback
+	// decoding when non-nil. nil leaves the library default in place.
+	TemperatureInc *float32
+
+	// EntropyThreshold overrides whisper.cpp's entropy threshold when non-nil.
+	// nil leaves the library default in place.
+	EntropyThreshold *float32
+
 	// NoSpeechThreshold overrides whisper.cpp's no-speech probability
 	// threshold when > 0 (the library default is 0.6). A segment whose
 	// no-speech probability exceeds this is treated as silence during
 	// the decode's temperature-fallback decision, reducing the chance a
 	// near-silent window is decoded into hallucinated text. The value is
-	// a probability in (0, 1]; a zero (or negative) value is the "unset"
-	// sentinel and leaves the library default in place. A >0 sentinel is
-	// sufficient here because 0 is not a useful threshold (it would flag
-	// nearly every segment as silence), so it need not be expressible.
+	// a probability in (0, 1]; zero leaves the library default in place.
 	NoSpeechThreshold float32
 
 	// LogProbThreshold overrides whisper.cpp's average log-probability
@@ -460,6 +495,18 @@ export default function DocsSDKBuckyModel() {
 	// BeamSize, when > 0, switches the sampler to beam search with
 	// the specified beam size. Defaults to greedy.
 	BeamSize int32
+
+	// GreedyBestOf overrides the number of greedy candidates when non-nil.
+	// nil leaves the library default in place.
+	GreedyBestOf *int32
+
+	// BeamSearchPatience overrides beam-search patience when non-nil. It is
+	// only used when BeamSize selects beam search.
+	BeamSearchPatience *float32
+
+	// LengthPenalty overrides the decoder length penalty when non-nil. nil
+	// leaves the library default in place.
+	LengthPenalty *float32
 
 	// NoTimestamps suppresses per-segment t0/t1 emission in the
 	// rendered text output. Segment-level timestamps remain available

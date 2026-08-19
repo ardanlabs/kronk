@@ -628,7 +628,7 @@ models:
   nseq-max: 4`}</code></pre>
           <p>For text generation, this creates up to four batch-engine slots. Their sequence state and KV capacity are isolated. Kronk allocates an aggregate context of <code>context-window × nseq-max</code>, which llama.cpp divides into one fixed <code>context-window</code> stream per slot. Increasing <code>nseq-max</code> therefore increases the capacity Kronk must budget and can substantially increase memory use.</p>
           <p>For supported embedding and reranking architectures, <code>nseq-max</code> is the maximum number of complete inputs or query-document pairs in one sequence batch on a shared context. Architectures that have not been proven safe for that runtime use <code>nseq-max</code> to size a pool of independent single-sequence contexts instead. See <a href="https://www.kronkai.com/manual#chapter-4-batch-processing">Chapter 4</a> for request scheduling and the differences between model types.</p>
-          <p>One setting controls prompt batching:</p>
+          <p>One setting controls prompt batching and sequence-batch token capacity:</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -641,11 +641,13 @@ models:
               <tr>
                 <td><code>prefill-batch-size</code></td>
                 <td><code>2048</code></td>
-                <td>Maximum prompt-token contribution from the current prefill owner in one decode iteration</td>
+                <td>Generation prefill contribution per decode iteration, or aggregate embedding/reranking tokens per native sequence batch</td>
               </tr>
             </tbody>
           </table>
-          <p>Most deployments should use the default. A larger value can move a long prompt to generation in fewer decode calls, but requires larger compute buffers and each call runs longer before already-generating slots can run again. A smaller value gives generating slots more frequent scheduling opportunities at the cost of more prefill decode calls.</p>
+          <p>For generation models, a larger value can move a long prompt to generation in fewer decode calls, but requires larger compute buffers and each call runs longer before already-generating slots can run again. A smaller value gives generating slots more frequent scheduling opportunities at the cost of more prefill decode calls.</p>
+          <p>For embedding and reranking models, Kronk sets both internal <code>NBatch</code> and <code>NUBatch</code> to <code>prefill-batch-size</code>. This is the aggregate token capacity of one native sequence batch, not a capacity granted separately to every sequence. The batch is constrained independently by <code>nseq-max</code> complete sequences and by <code>prefill-batch-size</code> combined tokens. For example, <code>nseq-max: 8</code> with <code>prefill-batch-size: 2048</code> can evaluate eight 256-token sequences, four 512-token sequences, two 1024-token sequences, or one 2048-token sequence in a single native batch. Kronk does not multiply the token capacity by <code>nseq-max</code>; doing so would allocate a much larger physical compute batch. Increase <code>prefill-batch-size</code> explicitly when the expected embedding or reranking workload needs a larger aggregate batch.</p>
+          <p>Most deployments should use the default.</p>
           <p>Kronk derives llama.cpp's internal physical and logical batch capacities from this value. It reserves one output row per slot for non-MTP generation. MTP reserves <code>1 + ndraft</code> rows per slot because speculative verification includes the sampled token and its draft candidates. With four slots and the default <code>ndraft: 3</code>, the internal effective sizes are <code>NUBatch: 2048</code>, <code>NBatch: 2052</code> for non-MTP and <code>NUBatch: 2064</code>, <code>NBatch: 2064</code> for MTP. Both can stage generation rows and then add a complete 2048-token prefill contribution from the current owner in the same logical decode. Non-MTP may split that tray into physical ubatches; MTP keeps it in one physical batch so dense NextN rows retain their expected mapping.</p>
           <p>The <code>status[resolved]</code> <code>batch-sizing</code> debug log reports the configured prefill size, generation reserve, effective internal sizes, and MTP state. The Slots diagnostic screen also displays effective <code>NBatch / NUBatch</code> as read-only runtime values. Multimodal encoders may require an entire media-token chunk to fit in one physical batch, so do not lower <code>prefill-batch-size</code> for a multimodal model without testing media input.</p>
           <p><img src="https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-04/batch-sizing-mtp-vs-non-mtp.svg" alt="How two requests move from prefill to generation and how non-MTP and MTP batch sizing supports them" /></p>
@@ -801,7 +803,7 @@ models:
               <tr>
                 <td><code>prefill-batch-size</code></td>
                 <td>Positive token count, default <code>2048</code></td>
-                <td>Prompt tokens contributed by the prefill owner per decode iteration</td>
+                <td>Generation prefill contribution per decode iteration, or aggregate embedding/reranking tokens per native sequence batch</td>
               </tr>
               <tr>
                 <td><code>ngpu-layers</code></td>
@@ -1019,6 +1021,10 @@ models:
                        │ One model context and weights │
                        └───────────────────────────────┘`}</code></pre>
           <p>The scheduler keeps each embedding input or reranking query-document pair as a complete sequence. It coalesces already queued requests, fills a native batch up to the <code>nseq-max</code> and token limits, and schedules requests round-robin when one request cannot fit in a single batch. The engine is intentionally separate from generation because it does not own long-lived generation slots, samplers, or streaming state.</p>
+          <p>The two limits control independent dimensions of a sequence batch:</p>
+          <pre className="code-block"><code className="language-text">{`number of sequences <= nseq-max
+sum of sequence tokens <= prefill-batch-size`}</code></pre>
+          <p>For these models, Kronk derives both llama.cpp <code>NBatch</code> and <code>NUBatch</code> directly from <code>prefill-batch-size</code>. The value is an aggregate native-batch token budget, not a per-sequence allowance. With <code>nseq-max: 8</code> and <code>prefill-batch-size: 2048</code>, one batch can hold eight 256-token sequences or two 1024-token sequences, but not eight 2048-token sequences. Kronk deliberately does not multiply <code>prefill-batch-size</code> by <code>nseq-max</code>: pooled evaluation must fit the complete batch in one physical ubatch, and automatic multiplication could substantially increase compute-buffer memory. Increase <code>prefill-batch-size</code> explicitly when measured workloads benefit from a larger aggregate token budget.</p>
           <p>Unknown or unsafe architectures use the context-pool fallback. Each admitted request acquires one independent single-sequence context, performs its work, and returns the context to the pool. This avoids native assertions seen with some architectures during multi-sequence initialization. Additional fallback contexts require memory even though model weights are shared.</p>
           <p>Runtime selection is conservative: a model name identifies the task, while GGUF <code>general.architecture</code> metadata must match the compatibility allowlist to select sequence batching. Missing or unrecognized architecture metadata uses the fallback. Raise <code>nseq-max</code> only after measuring throughput and memory for the selected runtime.</p>
           <h3 id="49-configuration-and-tuning">4.9 Configuration and Tuning</h3>
@@ -4273,6 +4279,51 @@ kronk bucky model remove tiny`}</code></pre>
                 <td><code>true</code> translates supported source speech to English</td>
               </tr>
               <tr>
+                <td><code>temperature</code></td>
+                <td>No</td>
+                <td>Initial decoding temperature</td>
+              </tr>
+              <tr>
+                <td><code>temperature_inc</code></td>
+                <td>No</td>
+                <td>Temperature increase used for fallback decoding</td>
+              </tr>
+              <tr>
+                <td><code>entropy_threshold</code></td>
+                <td>No</td>
+                <td>Entropy threshold for deciding whether to retry a decode</td>
+              </tr>
+              <tr>
+                <td><code>logprob_threshold</code></td>
+                <td>No</td>
+                <td>Average log-probability threshold for deciding whether to retry a decode</td>
+              </tr>
+              <tr>
+                <td><code>no_speech_threshold</code></td>
+                <td>No</td>
+                <td>Probability threshold used to classify a segment as silence</td>
+              </tr>
+              <tr>
+                <td><code>greedy_best_of</code></td>
+                <td>No</td>
+                <td>Number of candidates considered by greedy sampling</td>
+              </tr>
+              <tr>
+                <td><code>beam_size</code></td>
+                <td>No</td>
+                <td>Positive beam size that selects beam-search sampling</td>
+              </tr>
+              <tr>
+                <td><code>beam_search_patience</code></td>
+                <td>No</td>
+                <td>Patience used by beam-search sampling</td>
+              </tr>
+              <tr>
+                <td><code>length_penalty</code></td>
+                <td>No</td>
+                <td>Decoder length penalty</td>
+              </tr>
+              <tr>
                 <td><code>response_format</code></td>
                 <td>No</td>
                 <td><code>json</code> (default), <code>verbose_json</code>, <code>text</code>, <code>srt</code>, or <code>vtt</code></td>
@@ -4284,11 +4335,13 @@ kronk bucky model remove tiny`}</code></pre>
               </tr>
             </tbody>
           </table>
+          <p>Omitted sampling fields retain the defaults supplied by the loaded whisper.cpp library. Sampling fields must contain valid numeric values.</p>
           <p>Example:</p>
           <pre className="code-block"><code className="language-sh">{`curl -X POST http://localhost:11435/v1/audio/transcriptions \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -F file=@samples/jfk.wav \\
   -F model=tiny \\
+  -F temperature=0 \\
   -F response_format=json`}</code></pre>
           <p>The default JSON response is:</p>
           <pre className="code-block"><code className="language-json">{`{"text":"And so my fellow Americans..."}`}</code></pre>
@@ -4363,7 +4416,17 @@ if err != nil {
 }
 
 fmt.Println(tr.Text)`}</code></pre>
-          <p>Use <code>Transcribe</code> instead when the audio is already decoded to 16 kHz mono <code>[]float32</code>. Options include language, translation, initial prompt, beam size, thread count, and no-speech or log-probability thresholds. Consult the Go API documentation for the complete option list.</p>
+          <p>Use <code>Transcribe</code> instead when the audio is already decoded to 16 kHz mono <code>[]float32</code>. Sampling options map directly to whisper.cpp's full parameters:</p>
+          <pre className="code-block"><code className="language-go">{`tr, err := b.Transcribe(ctx, samples,
+    model.WithTemperature(0),
+    model.WithTemperatureInc(0.2),
+    model.WithEntropyThreshold(2.4),
+    model.WithLogProbThreshold(-1),
+    model.WithNoSpeechThreshold(0.6),
+    model.WithGreedyBestOf(2),
+    model.WithLengthPenalty(-1),
+)`}</code></pre>
+          <p>Only specify values that should override the defaults supplied by the loaded whisper.cpp library. <code>WithBeamSize</code> selects beam search; use it with <code>WithBeamSearchPatience</code> instead of <code>WithGreedyBestOf</code>. Without a positive beam size, decoding uses greedy sampling.</p>
           <h4 id="1872-channel-separated-diarization">18.7.2 Channel-Separated Diarization</h4>
           <p><code>TranscribeChannelsFile</code> treats each source channel as a separate speaker and merges their timestamped segments:</p>
           <pre className="code-block"><code className="language-go">{`d, err := b.TranscribeChannelsFile(ctx, f, model.WithLanguage("en"))
@@ -4446,7 +4509,7 @@ if err := stream.FeedPCM(ctx, rawPCM, format); err != nil {
               </tr>
             </tbody>
           </table>
-          <p>Options such as <code>WithPartialEveryMs</code>, <code>WithCommitEveryMs</code>, <code>WithVAD</code>, and <code>WithPromptCarryover</code> change these behaviors. A negative partial interval disables partial events.</p>
+          <p>Options such as <code>WithPartialEveryMs</code>, <code>WithCommitEveryMs</code>, <code>WithVAD</code>, and <code>WithPromptCarryover</code> change these behaviors. A negative partial interval disables partial events. The <code>WithStreamTemperature</code>, <code>WithStreamTemperatureInc</code>, <code>WithStreamEntropyThreshold</code>, <code>WithStreamLogProbThreshold</code>, <code>WithStreamNoSpeechThreshold</code>, <code>WithStreamGreedyBestOf</code>, <code>WithStreamBeamSize</code>, <code>WithStreamBeamSearchPatience</code>, and <code>WithStreamLengthPenalty</code> options apply the same sampling controls to every decode in a streaming session.</p>
           <p><code>Reset</code> starts a new logical session while keeping the stream open. By default it flushes pending audio and restarts timestamps at zero. After an <code>EventError</code>, close the failed stream and open a new one instead of resetting it.</p>
           <p>Always close a stream. An open stream reserves SDK inference capacity and can prevent model unloading. SDK users that need concurrent streams can configure <code>model.WithNSeqMax</code> when creating the Bucky handle; this is an SDK setting, not a server configuration field.</p>
           <h3 id="188-languages">18.8 Languages</h3>
