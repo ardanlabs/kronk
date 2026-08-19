@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -78,17 +80,6 @@ func (a *app) transcriptions(ctx context.Context, r *http.Request) web.Encoder {
 		}
 	}
 
-	a.log.Info(ctx, "transcribe", "model", modelID, "filename", hdr.Filename, "size", hdr.Size, "language", language, "response-format", respFmt)
-
-	b, err := a.pool.Bucky.AquireModel(ctx, modelID)
-	if err != nil {
-		return errs.FromSDK(err)
-	}
-
-	if !b.ModelInfo().IsMultilingual && language != "" && language != "en" {
-		return errs.Errorf(errs.InvalidArgument, "model[%s] is english-only but language[%s] was requested", modelID, language)
-	}
-
 	opts := []model.TranscribeOption{}
 	if language != "" {
 		opts = append(opts, model.WithLanguage(language))
@@ -98,6 +89,22 @@ func (a *app) transcriptions(ctx context.Context, r *http.Request) web.Encoder {
 	}
 	if translate {
 		opts = append(opts, model.WithTranslate(true))
+	}
+	whisperOpts, err := parseWhisperOptions(r.Form)
+	if err != nil {
+		return errs.New(errs.InvalidArgument, err)
+	}
+	opts = append(opts, whisperOpts...)
+
+	a.log.Info(ctx, "transcribe", "model", modelID, "filename", hdr.Filename, "size", hdr.Size, "language", language, "response-format", respFmt)
+
+	b, err := a.pool.Bucky.AquireModel(ctx, modelID)
+	if err != nil {
+		return errs.FromSDK(err)
+	}
+
+	if !b.ModelInfo().IsMultilingual && language != "" && language != "en" {
+		return errs.Errorf(errs.InvalidArgument, "model[%s] is english-only but language[%s] was requested", modelID, language)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
@@ -135,6 +142,88 @@ func parseBool(s string) bool {
 		return false
 	}
 	return b
+}
+
+func parseWhisperOptions(form url.Values) ([]model.TranscribeOption, error) {
+	opts := make([]model.TranscribeOption, 0, 9)
+
+	floatFields := []struct {
+		name   string
+		option func(float32) model.TranscribeOption
+	}{
+		{name: "temperature", option: model.WithTemperature},
+		{name: "temperature_inc", option: model.WithTemperatureInc},
+		{name: "entropy_threshold", option: model.WithEntropyThreshold},
+		{name: "logprob_threshold", option: model.WithLogProbThreshold},
+		{name: "no_speech_threshold", option: model.WithNoSpeechThreshold},
+		{name: "beam_search_patience", option: model.WithBeamSearchPatience},
+		{name: "length_penalty", option: model.WithLengthPenalty},
+	}
+	for _, field := range floatFields {
+		value, exists, err := parseOptionalFloat32(form, field.name)
+		if err != nil {
+			return nil, err
+		}
+		if exists {
+			opts = append(opts, field.option(value))
+		}
+	}
+
+	intFields := []struct {
+		name   string
+		option func(int32) model.TranscribeOption
+	}{
+		{name: "greedy_best_of", option: model.WithGreedyBestOf},
+		{name: "beam_size", option: model.WithBeamSize},
+	}
+	for _, field := range intFields {
+		value, exists, err := parseOptionalInt32(form, field.name)
+		if err != nil {
+			return nil, err
+		}
+		if exists {
+			opts = append(opts, field.option(value))
+		}
+	}
+
+	return opts, nil
+}
+
+func parseOptionalFloat32(form url.Values, field string) (float32, bool, error) {
+	values, exists := form[field]
+	if !exists {
+		return 0, false, nil
+	}
+	if len(values) == 0 || values[0] == "" {
+		return 0, false, fmt.Errorf("field[%s] must be a number", field)
+	}
+
+	value, err := strconv.ParseFloat(values[0], 32)
+	if err != nil {
+		return 0, false, fmt.Errorf("field[%s] must be a number: %w", field, err)
+	}
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return 0, false, fmt.Errorf("field[%s] must be a finite number", field)
+	}
+
+	return float32(value), true, nil
+}
+
+func parseOptionalInt32(form url.Values, field string) (int32, bool, error) {
+	values, exists := form[field]
+	if !exists {
+		return 0, false, nil
+	}
+	if len(values) == 0 || values[0] == "" {
+		return 0, false, fmt.Errorf("field[%s] must be an integer", field)
+	}
+
+	value, err := strconv.ParseInt(values[0], 10, 32)
+	if err != nil {
+		return 0, false, fmt.Errorf("field[%s] must be an integer: %w", field, err)
+	}
+
+	return int32(value), true, nil
 }
 
 func verboseJSON(tr model.Transcription, duration float64, wantWordTimes bool) map[string]any {

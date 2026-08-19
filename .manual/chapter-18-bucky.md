@@ -260,8 +260,20 @@ server deadline.
 | `language`                  | No       | Whisper short language code such as `en`, `de`, or `fr`; empty means auto-detect |
 | `prompt`                    | No       | Text that biases the initial decoder output |
 | `translate`                 | No       | `true` translates supported source speech to English |
+| `temperature`               | No       | Initial decoding temperature |
+| `temperature_inc`           | No       | Temperature increase used for fallback decoding |
+| `entropy_threshold`         | No       | Entropy threshold for deciding whether to retry a decode |
+| `logprob_threshold`         | No       | Average log-probability threshold for deciding whether to retry a decode |
+| `no_speech_threshold`       | No       | Probability threshold used to classify a segment as silence |
+| `greedy_best_of`            | No       | Number of candidates considered by greedy sampling |
+| `beam_size`                 | No       | Positive beam size that selects beam-search sampling |
+| `beam_search_patience`      | No       | Patience used by beam-search sampling |
+| `length_penalty`            | No       | Decoder length penalty |
 | `response_format`           | No       | `json` (default), `verbose_json`, `text`, `srt`, or `vtt` |
 | `timestamp_granularities[]` | No       | `word` is accepted; word data is not yet available and returns an empty `words` array in `verbose_json` |
+
+Omitted sampling fields retain the defaults supplied by the loaded
+whisper.cpp library. Sampling fields must contain valid numeric values.
 
 Example:
 
@@ -270,6 +282,7 @@ curl -X POST http://localhost:11435/v1/audio/transcriptions \
   -H "Authorization: Bearer $KRONK_TOKEN" \
   -F file=@samples/jfk.wav \
   -F model=tiny \
+  -F temperature=0 \
   -F response_format=json
 ```
 
@@ -335,9 +348,24 @@ fmt.Println(tr.Text)
 ```
 
 Use `Transcribe` instead when the audio is already decoded to 16 kHz mono
-`[]float32`. Options include language, translation, initial prompt, beam size,
-thread count, and no-speech or log-probability thresholds. Consult the Go API
-documentation for the complete option list.
+`[]float32`. Sampling options map directly to whisper.cpp's full parameters:
+
+```go
+tr, err := b.Transcribe(ctx, samples,
+    model.WithTemperature(0),
+    model.WithTemperatureInc(0.2),
+    model.WithEntropyThreshold(2.4),
+    model.WithLogProbThreshold(-1),
+    model.WithNoSpeechThreshold(0.6),
+    model.WithGreedyBestOf(2),
+    model.WithLengthPenalty(-1),
+)
+```
+
+Only specify values that should override the defaults supplied by the loaded
+whisper.cpp library. `WithBeamSize` selects beam search; use it with
+`WithBeamSearchPatience` instead of `WithGreedyBestOf`. Without a positive beam
+size, decoding uses greedy sampling.
 
 #### 18.7.2 Channel-Separated Diarization
 
@@ -431,7 +459,12 @@ Important stream defaults are:
 
 Options such as `WithPartialEveryMs`, `WithCommitEveryMs`, `WithVAD`, and
 `WithPromptCarryover` change these behaviors. A negative partial interval
-disables partial events.
+disables partial events. The `WithStreamTemperature`,
+`WithStreamTemperatureInc`, `WithStreamEntropyThreshold`,
+`WithStreamLogProbThreshold`, `WithStreamNoSpeechThreshold`,
+`WithStreamGreedyBestOf`, `WithStreamBeamSize`,
+`WithStreamBeamSearchPatience`, and `WithStreamLengthPenalty` options apply the
+same sampling controls to every decode in a streaming session.
 
 `Reset` starts a new logical session while keeping the stream open. By default
 it flushes pending audio and restarts timestamps at zero. After an

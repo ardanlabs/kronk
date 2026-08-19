@@ -4279,6 +4279,51 @@ kronk bucky model remove tiny`}</code></pre>
                 <td><code>true</code> translates supported source speech to English</td>
               </tr>
               <tr>
+                <td><code>temperature</code></td>
+                <td>No</td>
+                <td>Initial decoding temperature</td>
+              </tr>
+              <tr>
+                <td><code>temperature_inc</code></td>
+                <td>No</td>
+                <td>Temperature increase used for fallback decoding</td>
+              </tr>
+              <tr>
+                <td><code>entropy_threshold</code></td>
+                <td>No</td>
+                <td>Entropy threshold for deciding whether to retry a decode</td>
+              </tr>
+              <tr>
+                <td><code>logprob_threshold</code></td>
+                <td>No</td>
+                <td>Average log-probability threshold for deciding whether to retry a decode</td>
+              </tr>
+              <tr>
+                <td><code>no_speech_threshold</code></td>
+                <td>No</td>
+                <td>Probability threshold used to classify a segment as silence</td>
+              </tr>
+              <tr>
+                <td><code>greedy_best_of</code></td>
+                <td>No</td>
+                <td>Number of candidates considered by greedy sampling</td>
+              </tr>
+              <tr>
+                <td><code>beam_size</code></td>
+                <td>No</td>
+                <td>Positive beam size that selects beam-search sampling</td>
+              </tr>
+              <tr>
+                <td><code>beam_search_patience</code></td>
+                <td>No</td>
+                <td>Patience used by beam-search sampling</td>
+              </tr>
+              <tr>
+                <td><code>length_penalty</code></td>
+                <td>No</td>
+                <td>Decoder length penalty</td>
+              </tr>
+              <tr>
                 <td><code>response_format</code></td>
                 <td>No</td>
                 <td><code>json</code> (default), <code>verbose_json</code>, <code>text</code>, <code>srt</code>, or <code>vtt</code></td>
@@ -4290,11 +4335,13 @@ kronk bucky model remove tiny`}</code></pre>
               </tr>
             </tbody>
           </table>
+          <p>Omitted sampling fields retain the defaults supplied by the loaded whisper.cpp library. Sampling fields must contain valid numeric values.</p>
           <p>Example:</p>
           <pre className="code-block"><code className="language-sh">{`curl -X POST http://localhost:11435/v1/audio/transcriptions \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -F file=@samples/jfk.wav \\
   -F model=tiny \\
+  -F temperature=0 \\
   -F response_format=json`}</code></pre>
           <p>The default JSON response is:</p>
           <pre className="code-block"><code className="language-json">{`{"text":"And so my fellow Americans..."}`}</code></pre>
@@ -4369,7 +4416,17 @@ if err != nil {
 }
 
 fmt.Println(tr.Text)`}</code></pre>
-          <p>Use <code>Transcribe</code> instead when the audio is already decoded to 16 kHz mono <code>[]float32</code>. Options include language, translation, initial prompt, beam size, thread count, and no-speech or log-probability thresholds. Consult the Go API documentation for the complete option list.</p>
+          <p>Use <code>Transcribe</code> instead when the audio is already decoded to 16 kHz mono <code>[]float32</code>. Sampling options map directly to whisper.cpp's full parameters:</p>
+          <pre className="code-block"><code className="language-go">{`tr, err := b.Transcribe(ctx, samples,
+    model.WithTemperature(0),
+    model.WithTemperatureInc(0.2),
+    model.WithEntropyThreshold(2.4),
+    model.WithLogProbThreshold(-1),
+    model.WithNoSpeechThreshold(0.6),
+    model.WithGreedyBestOf(2),
+    model.WithLengthPenalty(-1),
+)`}</code></pre>
+          <p>Only specify values that should override the defaults supplied by the loaded whisper.cpp library. <code>WithBeamSize</code> selects beam search; use it with <code>WithBeamSearchPatience</code> instead of <code>WithGreedyBestOf</code>. Without a positive beam size, decoding uses greedy sampling.</p>
           <h4 id="1872-channel-separated-diarization">18.7.2 Channel-Separated Diarization</h4>
           <p><code>TranscribeChannelsFile</code> treats each source channel as a separate speaker and merges their timestamped segments:</p>
           <pre className="code-block"><code className="language-go">{`d, err := b.TranscribeChannelsFile(ctx, f, model.WithLanguage("en"))
@@ -4452,7 +4509,7 @@ if err := stream.FeedPCM(ctx, rawPCM, format); err != nil {
               </tr>
             </tbody>
           </table>
-          <p>Options such as <code>WithPartialEveryMs</code>, <code>WithCommitEveryMs</code>, <code>WithVAD</code>, and <code>WithPromptCarryover</code> change these behaviors. A negative partial interval disables partial events.</p>
+          <p>Options such as <code>WithPartialEveryMs</code>, <code>WithCommitEveryMs</code>, <code>WithVAD</code>, and <code>WithPromptCarryover</code> change these behaviors. A negative partial interval disables partial events. The <code>WithStreamTemperature</code>, <code>WithStreamTemperatureInc</code>, <code>WithStreamEntropyThreshold</code>, <code>WithStreamLogProbThreshold</code>, <code>WithStreamNoSpeechThreshold</code>, <code>WithStreamGreedyBestOf</code>, <code>WithStreamBeamSize</code>, <code>WithStreamBeamSearchPatience</code>, and <code>WithStreamLengthPenalty</code> options apply the same sampling controls to every decode in a streaming session.</p>
           <p><code>Reset</code> starts a new logical session while keeping the stream open. By default it flushes pending audio and restarts timestamps at zero. After an <code>EventError</code>, close the failed stream and open a new one instead of resetting it.</p>
           <p>Always close a stream. An open stream reserves SDK inference capacity and can prevent model unloading. SDK users that need concurrent streams can configure <code>model.WithNSeqMax</code> when creating the Bucky handle; this is an SDK setting, not a server configuration field.</p>
           <h3 id="188-languages">18.8 Languages</h3>
