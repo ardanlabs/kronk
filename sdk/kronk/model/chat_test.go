@@ -351,6 +351,25 @@ func TestParseParamsUsesChatTemplateKwargs(t *testing.T) {
 	}
 }
 
+func TestParseParamsAcceptsModelSpecificReasoningEffort(t *testing.T) {
+	m := Model{log: noopLog}
+	d := D{
+		"messages":         []D{{"role": "user", "content": "hello"}},
+		"reasoning_effort": "xhigh",
+	}
+
+	params, normalized, err := m.validateOwnedDocument(context.Background(), d)
+	if err != nil {
+		t.Fatalf("validateOwnedDocument: %v", err)
+	}
+	if params.ReasoningEffort != "xhigh" {
+		t.Errorf("ReasoningEffort: got %q, want %q", params.ReasoningEffort, "xhigh")
+	}
+	if normalized["reasoning_effort"] != "xhigh" {
+		t.Errorf("normalized reasoning_effort: got %v, want %q", normalized["reasoning_effort"], "xhigh")
+	}
+}
+
 func TestChatPreservesValidationError(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -363,7 +382,6 @@ func TestChatPreservesValidationError(t *testing.T) {
 		{name: "invalid float parameter", field: "temperature", value: D{"invalid": true}},
 		{name: "invalid integer parameter", field: "max_tokens", value: D{"invalid": true}},
 		{name: "invalid boolean parameter", field: "logprobs", value: "invalid"},
-		{name: "invalid reasoning parameter", field: "reasoning_effort", value: "invalid"},
 		{name: "invalid reasoning parameter type", field: "reasoning_effort", value: 1},
 		{name: "unsupported choice count", field: "n", value: 4},
 	}

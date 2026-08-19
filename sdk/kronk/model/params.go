@@ -1163,13 +1163,5 @@ func parseReasoningString(fieldName string, val any) (string, error) {
 		return "", fmt.Errorf("parse-reasoning-string: field-name[%s] must be a string", fieldName)
 	}
 
-	if v != ReasoningEffortNone &&
-		v != ReasoningEffortMinimal &&
-		v != ReasoningEffortLow &&
-		v != ReasoningEffortMedium &&
-		v != ReasoningEffortHigh {
-		return "", fmt.Errorf("parse-reasoning-string: field-name[%s] is not valid option[%s]", fieldName, v)
-	}
-
 	return v, nil
 }

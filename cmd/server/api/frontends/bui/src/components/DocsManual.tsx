@@ -2773,12 +2773,12 @@ data: {"type":"response.completed",...}`}</code></pre>
                 <td><code>reasoning_effort</code></td>
                 <td>string</td>
                 <td>template default</td>
-                <td>Requests <code>none</code>, <code>minimal</code>, <code>low</code>, <code>medium</code>, or <code>high</code> effort from supported reasoning templates.</td>
+                <td>Requests a model-specific reasoning level, commonly <code>none</code>, <code>minimal</code>, <code>low</code>, <code>medium</code>, <code>high</code>, or <code>xhigh</code>.</td>
               </tr>
             </tbody>
           </table>
           <p>If neither the request nor model configuration supplies a positive output limit, Kronk uses the model's configured context window. The actual output can be shorter because the prompt and generated text share that window, the model can stop naturally, or another limit can end generation. See Chapter 9 for the limit and termination fields returned by each API format.</p>
-          <p>Reasoning controls are model- and template-dependent. Unsupported models may ignore them. A parser can also normalize <code>reasoning_effort</code> to values accepted by its template; for example, a template that supports only <code>none</code> and <code>high</code> cannot honor every intermediate value.</p>
+          <p>Reasoning controls are model- and template-dependent. Kronk accepts any string for <code>reasoning_effort</code> so newer templates can add levels without requiring a server change. Unsupported models may ignore the value, a parser can normalize it, and a strict template can reject values it does not support.</p>
           <p>When <code>reasoning_effort</code> is omitted from both the request and model configuration, Kronk leaves it undefined so the selected chat template can apply its native default.</p>
           <h2 id="106-structured-output">10.6 Structured Output</h2>
           <p>Kronk can convert JSON Schema to a GBNF grammar and constrain emitted tokens. For OpenAI-compatible clients, prefer <code>response_format</code>:</p>

@@ -267,15 +267,21 @@ func Test_LongTextNotMedia(t *testing.T) {
 	}
 }
 
-// Test_OpenAIToMediaMessage_PreservesRole verifies that toMediaMessage keeps
-// non-user roles (system, assistant) intact rather than collapsing every
-// output message to "user" as the legacy implementation did.
-func Test_OpenAIToMediaMessage_PreservesRole(t *testing.T) {
+// Test_OpenAIToMediaMessage_PreservesMessageFields verifies that
+// toMediaMessage normalizes content without rewriting the conversation history.
+func Test_OpenAIToMediaMessage_PreservesMessageFields(t *testing.T) {
 	d := D{
 		"messages": DocumentArray(
 			D{"role": "system", "content": "be helpful"},
-			D{"role": "assistant", "content": "ok"},
-			D{"role": "user", "content": "hi"},
+			D{
+				"role":              "assistant",
+				"content":           "",
+				"reasoning_content": "checking",
+				"tool_calls": []D{
+					{"id": "call_1", "function": D{"name": "inspect"}},
+				},
+			},
+			D{"role": "tool", "content": "ok", "tool_call_id": "call_1"},
 		),
 	}
 
@@ -302,7 +308,7 @@ func Test_OpenAIToMediaMessage_PreservesRole(t *testing.T) {
 	}
 
 	out := d["messages"].([]D)
-	wantRoles := []string{"system", "assistant", "user", "user"}
+	wantRoles := []string{"system", "assistant", "tool", "user"}
 	if len(out) != len(wantRoles) {
 		t.Fatalf("expected %d messages, got %d", len(wantRoles), len(out))
 	}
@@ -310,6 +316,17 @@ func Test_OpenAIToMediaMessage_PreservesRole(t *testing.T) {
 		if got, _ := out[i]["role"].(string); got != want {
 			t.Fatalf("msg[%d] role: got %q, want %q", i, got, want)
 		}
+	}
+
+	if got := out[1]["reasoning_content"]; got != "checking" {
+		t.Errorf("reasoning_content: got %v, want %q", got, "checking")
+	}
+	toolCalls, ok := out[1]["tool_calls"].([]D)
+	if !ok || len(toolCalls) != 1 || toolCalls[0]["id"] != "call_1" {
+		t.Errorf("tool_calls: got %v, want call_1", out[1]["tool_calls"])
+	}
+	if got := out[2]["tool_call_id"]; got != "call_1" {
+		t.Errorf("tool_call_id: got %v, want %q", got, "call_1")
 	}
 }
 

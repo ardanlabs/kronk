@@ -122,7 +122,7 @@ measure an improvement for a specific workload.
 | `max_completion_tokens` | integer | model-dependent | Chat Completions output limit; takes precedence over `max_tokens`. |
 | `max_output_tokens` | integer | model-dependent | Responses API output limit; takes precedence over `max_tokens`. |
 | `enable_thinking`  | boolean | `true`   | Requests thinking from models and templates that support it. |
-| `reasoning_effort` | string  | template default | Requests `none`, `minimal`, `low`, `medium`, or `high` effort from supported reasoning templates. |
+| `reasoning_effort` | string  | template default | Requests a model-specific reasoning level, commonly `none`, `minimal`, `low`, `medium`, `high`, or `xhigh`. |
 
 If neither the request nor model configuration supplies a positive output
 limit, Kronk uses the model's configured context window. The actual output can
@@ -130,10 +130,10 @@ be shorter because the prompt and generated text share that window, the model
 can stop naturally, or another limit can end generation. See Chapter 9 for the
 limit and termination fields returned by each API format.
 
-Reasoning controls are model- and template-dependent. Unsupported models may
-ignore them. A parser can also normalize `reasoning_effort` to values accepted
-by its template; for example, a template that supports only `none` and `high`
-cannot honor every intermediate value.
+Reasoning controls are model- and template-dependent. Kronk accepts any string
+for `reasoning_effort` so newer templates can add levels without requiring a
+server change. Unsupported models may ignore the value, a parser can normalize
+it, and a strict template can reject values it does not support.
 
 When `reasoning_effort` is omitted from both the request and model
 configuration, Kronk leaves it undefined so the selected chat template can

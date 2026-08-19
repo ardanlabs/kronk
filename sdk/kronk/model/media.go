@@ -231,8 +231,17 @@ func detectMediaType(s string) MediaType {
 // to pair text and media across separate user turns. That approach silently
 // dropped images, paired text from one message with media from another,
 // collapsed every output to the user role, and could not represent multiple
-// text or media parts in a single message.
+// text or media parts in a single message. Only content is normalized; fields
+// such as reasoning_content, tool_calls, and tool_call_id remain unchanged.
 func toMediaMessage(d D, msgs chatMessages) (D, error) {
+	original, err := coerceMessageSlice(d["messages"])
+	if err != nil {
+		return d, fmt.Errorf("normalize-media: messages: %w", err)
+	}
+	if len(original) != len(msgs.Messages) {
+		return d, fmt.Errorf("normalize-media: got %d source messages and %d normalized messages", len(original), len(msgs.Messages))
+	}
+
 	docs := make([]D, 0, len(msgs.Messages))
 
 	for i, msg := range msgs.Messages {
@@ -240,16 +249,18 @@ func toMediaMessage(d D, msgs chatMessages) (D, error) {
 		if role == "" {
 			role = RoleUser
 		}
+		out := original[i].ShallowClone()
+		out["role"] = role
 
 		switch content := msg.Content.(type) {
 		case nil:
-			docs = append(docs, D{"role": role})
+			delete(out, "content")
 
 		case string:
-			docs = append(docs, D{"role": role, "content": content})
+			out["content"] = content
 
 		case []byte:
-			docs = append(docs, D{"role": role, "content": content})
+			out["content"] = content
 
 		case []chatMessageContent:
 			parts, err := normalizePartsFromOpenAI(content, i)
@@ -257,15 +268,14 @@ func toMediaMessage(d D, msgs chatMessages) (D, error) {
 				return d, err
 			}
 
-			out := D{"role": role}
 			switch v := compactNormalizedParts(parts).(type) {
 			case nil:
-				// Empty content; leave the message with only its role.
+				delete(out, "content")
 			default:
 				out["content"] = v
 			}
-			docs = append(docs, out)
 		}
+		docs = append(docs, out)
 	}
 
 	d["messages"] = docs
