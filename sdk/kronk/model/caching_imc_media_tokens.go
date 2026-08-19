@@ -30,13 +30,13 @@ func (m *Model) processIMCMediaTokenPlan(ctx context.Context, d, stableD D, actu
 }
 
 func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, stable promptPlan, defaultTail []llama.Token, requestStart time.Time) cacheResult {
-	result := cacheResult{modifiedD: d}
-	result.imcTokenPlan = true
-	result.imcTailTokens = slices.Clone(defaultTail)
-	result.imcPromptPlan = stable
-	result.imcNewCachedMsgCount = messageCount(d)
-	result.imcNewMsgsHash = documentMessagesHash(d)
-	result.imcMediaCacheD = stableD
+	result := cacheResult{modifiedD: d,
+		imcTokenPlan:         true,
+		imcTailTokens:        slices.Clone(defaultTail),
+		imcPromptPlan:        stable,
+		imcNewCachedMsgCount: messageCount(d),
+		imcNewMsgsHash:       documentMessagesHash(d),
+		imcMediaCacheD:       stableD}
 	renderFingerprint, fingerprintOK := m.imcRenderFingerprint(d, dMessages(d))
 
 	m.cacheMu.Lock()

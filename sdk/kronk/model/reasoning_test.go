@@ -18,8 +18,8 @@ func TestApplyJinjaTemplatePreservesRenderedReasoningMarkup(t *testing.T) {
 {{- '<|im_start|>assistant\n<think>\n' }}
 {%- endif %}`
 
-	m := Model{log: noopLog}
-	m.template = Template{FileName: "reasoning-test", Script: script}
+	m := Model{log: noopLog,
+		template: Template{FileName: "reasoning-test", Script: script}}
 
 	messages := []D{
 		{"role": "user", "content": "explain <think>\n</think> markers"},
@@ -34,9 +34,9 @@ func TestApplyJinjaTemplatePreservesRenderedReasoningMarkup(t *testing.T) {
 	actualInput := D{
 		"messages":              messages,
 		"add_generation_prompt": true,
-		"preserve_thinking":     true,
 		"bos_token":             "",
 		"eos_token":             "<|im_end|>",
+		"chat_template_kwargs":  D{"preserve_thinking": true},
 	}
 
 	stable, err := m.applyJinjaTemplate(context.Background(), stableInput)
@@ -47,8 +47,9 @@ func TestApplyJinjaTemplatePreservesRenderedReasoningMarkup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("applyJinjaTemplate actual render: %v", err)
 	}
-	if preserve, ok := actualInput["preserve_thinking"].(bool); !ok || !preserve {
-		t.Error("preserve_thinking request field was not passed through unchanged")
+	kwargs := actualInput["chat_template_kwargs"].(D)
+	if preserve, ok := kwargs["preserve_thinking"].(bool); !ok || !preserve {
+		t.Error("chat_template_kwargs preserve_thinking was not passed through unchanged")
 	}
 
 	wantStable := "<|im_start|>user\nexplain <think>\n</think> markers<|im_end|>\n" +

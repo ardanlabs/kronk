@@ -1,6 +1,6 @@
 module github.com/ardanlabs/kronk
 
-go 1.26.0
+go 1.27.0
 
 require (
 	github.com/ardanlabs/bucky v1.0.8
@@ -11,7 +11,6 @@ require (
 	github.com/dgraph-io/badger/v4 v4.9.6
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/go-cmp v0.7.0
-	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-getter v1.8.8
 	github.com/hybridgroup/yzma v1.23.0
 	github.com/icza/mjpeg v0.0.0-20230330134156-38318e5ab8f4
@@ -88,6 +87,7 @@ require (
 	github.com/google/flatbuffers v25.12.19+incompatible // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.21 // indirect
 	github.com/googleapis/gax-go/v2 v2.23.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect

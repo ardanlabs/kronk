@@ -58,10 +58,8 @@ func (a *app) showCatalog(ctx context.Context, r *http.Request) web.Encoder {
 	downloaded, validated := a.models.IndexState()
 
 	detail := CatalogDetailResponse{
-		CatalogDetail: models.CatalogDetail{
-			CatalogSummary: models.NewSummary(id, entry, downloaded, validated),
-			Files:          models.NewFiles(entry),
-		},
+		CatalogSummary: models.NewSummary(id, entry, downloaded, validated),
+		Files:          models.NewFiles(entry),
 	}
 	configuredSWAFull := a.pool.Kronk.ModelConfig()[id].PtrSWAFull
 	detail.SWAFullDefault = resolveSWAFull(nil, configuredSWAFull)

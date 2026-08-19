@@ -9,8 +9,9 @@ import (
 	"sync"
 	"time"
 
+	"uuid"
+
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
-	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
@@ -176,7 +177,7 @@ func InjectTracing(ctx context.Context, tracer trace.Tracer) context.Context {
 
 	traceID := trace.SpanFromContext(ctx).SpanContext().TraceID().String()
 	if traceID == defaultTraceID {
-		traceID = uuid.NewString()
+		traceID = uuid.New().String()
 	}
 	ctx = SetTraceID(ctx, traceID)
 

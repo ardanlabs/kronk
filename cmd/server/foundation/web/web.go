@@ -10,7 +10,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/google/uuid"
+	"uuid"
+
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
@@ -162,7 +163,7 @@ func (a *App) handle(handlerFunc HandlerFunc, mw ...MidFunc) http.HandlerFunc {
 
 		traceID := trace.SpanFromContext(ctx).SpanContext().TraceID().String()
 		if traceID == defaultTraceID {
-			traceID = uuid.NewString()
+			traceID = uuid.New().String()
 		}
 
 		ctx = setTraceID(ctx, traceID)
@@ -202,7 +203,7 @@ func (a *App) RawHandlerFunc(method string, group string, path string, rawHandle
 
 		traceID := trace.SpanFromContext(ctx).SpanContext().TraceID().String()
 		if traceID == defaultTraceID {
-			traceID = uuid.NewString()
+			traceID = uuid.New().String()
 		}
 
 		ctx = setTraceID(ctx, traceID)

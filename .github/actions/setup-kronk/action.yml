@@ -48,7 +48,7 @@ runs:
         sudo rm -rf /opt/hostedtoolcache/CodeQL
 
     # CI's Go toolchain lives in /.go-version (not go.mod) so that
-    # contributors on any 1.26.x release build with their local toolchain
+    # contributors on any 1.27.x release build with their local toolchain
     # — no auto-download — while CI stays pinned to a known-patched
     # version for govulncheck. The .go-version file is also picked up
     # automatically by asdf, mise, goenv, gvm, and direnv's use_go.

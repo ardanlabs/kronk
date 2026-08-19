@@ -9,10 +9,11 @@ import (
 	"io"
 	"strings"
 
+	"uuid"
+
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/jsonrepair"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/google/uuid"
 )
 
 // parseJSON parses a strictly whitespace-separated sequence of JSON tool calls.
@@ -225,4 +226,4 @@ func findJSONObjectEnd(s string) int {
 	return -1
 }
 
-func newToolCallID() string { return "call_" + uuid.NewString() }
+func newToolCallID() string { return "call_" + uuid.New().String() }

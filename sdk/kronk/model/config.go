@@ -184,8 +184,8 @@ type AdapterConfig struct {
 // DefaultParams contains the default sampling parameters for requests.
 //
 // ChatTemplateKwargs contains model-level defaults passed only to the Jinja
-// chat template. Request-level chat_template_kwargs override matching keys,
-// and explicit top-level request fields override both.
+// chat template. Request-level chat_template_kwargs override matching keys.
+// Resolved first-class request parameters remain top-level template values.
 //
 // PtrDraftModel configures a separate speculative-decoding draft model or an
 // nDraft override for an auto-detected MTP head.

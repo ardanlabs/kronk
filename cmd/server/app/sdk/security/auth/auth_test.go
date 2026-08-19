@@ -7,9 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"uuid"
+
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/google/uuid"
 )
 
 func TestRateWindow(t *testing.T) {
@@ -118,13 +119,11 @@ func TestAuthenticateCanceledContext(t *testing.T) {
 func authenticate(ath *auth.Auth) func(t *testing.T) {
 	f := func(t *testing.T) {
 		claims := auth.Claims{
-			RegisteredClaims: jwt.RegisteredClaims{
-				Issuer:    ath.Issuer(),
-				Subject:   "5cf37266-3473-4006-984f-9325122678b7",
-				ExpiresAt: jwt.NewNumericDate(time.Now().UTC().Add(time.Hour)),
-				IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
-			},
-			Admin: true,
+			Issuer:    ath.Issuer(),
+			Subject:   "5cf37266-3473-4006-984f-9325122678b7",
+			ExpiresAt: jwt.NewNumericDate(time.Now().UTC().Add(time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
+			Admin:     true,
 			Endpoints: map[string]auth.RateLimit{
 				"chat-completions": {Limit: 0, Window: auth.RateUnlimited},
 			},
@@ -155,22 +154,18 @@ func authenticate(ath *auth.Auth) func(t *testing.T) {
 func authorize(ath *auth.Auth) func(t *testing.T) {
 	f := func(t *testing.T) {
 		userClaims := auth.Claims{
-			RegisteredClaims: jwt.RegisteredClaims{
-				Issuer:  "kronk project",
-				Subject: "bill",
-			},
-			Admin: false,
+			Issuer:  "kronk project",
+			Subject: "bill",
+			Admin:   false,
 			Endpoints: map[string]auth.RateLimit{
 				"chat-completions": {Limit: 1000, Window: auth.RateDay},
 			},
 		}
 
 		adminClaims := auth.Claims{
-			RegisteredClaims: jwt.RegisteredClaims{
-				Issuer:  "kronk project",
-				Subject: "admin",
-			},
-			Admin: true,
+			Issuer:  "kronk project",
+			Subject: "admin",
+			Admin:   true,
 			Endpoints: map[string]auth.RateLimit{
 				"chat-completions": {Limit: 0, Window: auth.RateUnlimited},
 				"embeddings":       {Limit: 0, Window: auth.RateUnlimited},

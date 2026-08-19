@@ -20,10 +20,11 @@ import (
 	"testing"
 	"time"
 
+	"uuid"
+
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/tests/testlib"
-	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
 

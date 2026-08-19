@@ -9,10 +9,11 @@ import (
 	"math/big"
 	"strings"
 
+	"uuid"
+
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/jsonrepair"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/google/uuid"
 )
 
 // parseGemma parses Gemma4-style tool calls.
@@ -552,5 +553,5 @@ func gemmaJSONInteger(number json.Number) bool {
 }
 
 func newToolCallID() string {
-	return "call_" + uuid.NewString()
+	return "call_" + uuid.New().String()
 }

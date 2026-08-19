@@ -19,7 +19,6 @@
       supportedSystems = [
         "x86_64-linux"
         "aarch64-linux"
-        "x86_64-darwin"
         "aarch64-darwin"
       ];
       forAllSystems = f: nixpkgs.lib.genAttrs supportedSystems (system: f system);
@@ -46,7 +45,7 @@
             subPackages = [ "cmd/kronk" ];
             modules = ./gomod2nix.toml;
 
-            go = pkgs.go_1_26;
+            go = pkgs.go_1_27;
           };
 
           # Wrap kronk with the runtime libs needed for dynamic library loading.
@@ -94,14 +93,13 @@
 
           # Shared packages across all dev shells.
           basePackages = [
-            pkgs.go_1_26
+            pkgs.go_1_27
             pkgs.gopls
             pkgs.gotools
             pkgs.go-tools
             pkgs.pre-commit
             pkgs.pkg-config
             pkgs.typescript
-            pkgs.vite
             pkgs.nodejs
             gomod2nix.legacyPackages.${system}.gomod2nix
           ];

@@ -98,10 +98,10 @@ install_node() {
 }
 
 install_go_tools() {
-	if ! staticcheck -version 2>/dev/null | grep -q 'staticcheck 2026.1'; then
-		go install honnef.co/go/tools/cmd/staticcheck@2026.1
+	if ! staticcheck -version 2>/dev/null | grep -q 'staticcheck 2026.2rc1'; then
+		go install honnef.co/go/tools/cmd/staticcheck@2026.2rc1
 	fi
-	if ! govulncheck -version 2>/dev/null | grep -q 'Go: go1.26'; then
+	if ! govulncheck -version 2>/dev/null | grep -q 'Go: go1.27'; then
 		go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
 	fi
 }

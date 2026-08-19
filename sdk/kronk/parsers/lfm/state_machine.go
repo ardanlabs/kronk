@@ -4,8 +4,9 @@ import (
 	"encoding/json"
 	"strings"
 
+	"uuid"
+
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/google/uuid"
 )
 
 type stateMachine struct {
@@ -172,7 +173,7 @@ func (sm *stateMachine) updateDeltas(content string) {
 		sm.seen = len(names)
 	}
 	for _, callName := range names[sm.seen:] {
-		delta := model.ResponseToolCallDelta{ID: "call_" + uuid.NewString(), Index: len(sm.started), Type: "function", Function: model.ResponseToolCallDeltaFunction{Name: callName}}
+		delta := model.ResponseToolCallDelta{ID: "call_" + uuid.New().String(), Index: len(sm.started), Type: "function", Function: model.ResponseToolCallDeltaFunction{Name: callName}}
 		sm.deltas = append(sm.deltas, delta)
 		sm.started = append(sm.started, delta)
 	}

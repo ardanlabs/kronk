@@ -76,8 +76,8 @@ version: 1
 #   queue-depth: 2                       # Generation admission capacity multiplier (default: 2)
 #   cache-type-k: q8_0                   # Explicit KV key type; omit for AutoTune (f16, then q8_0)
 #   cache-type-v: q8_0                   # Explicit KV value type; omit for AutoTune (f16, then q8_0)
-#   chat-template-kwargs:                # Model-level Jinja defaults; request values override matching keys
-#   preserve_thinking: true              # Preserve prior tool-call reasoning when supported by the template
+#   chat-template-kwargs:                # Model-level Jinja defaults; wire requests use chat_template_kwargs
+#     preserve_thinking: true            # Template-only; configure here rather than under sampling-parameters
 #   context-window: 8192                 # Per-sequence token capacity; explicit value is fixed
 #   devices: [CUDA0, CUDA1]              # Devices to use (run `kronk devices` to list)
 #   flash-attention: auto                # Flash Attention: enabled, disabled, auto (default: auto)
@@ -100,7 +100,7 @@ version: 1
 #   rope-scaling-type: yarn              # RoPE scaling: none, linear, yarn
 #   session-store-kind: ram              # IMC session storage backend (currently ram only)
 #   speculation: auto                    # auto, disabled, classic, or mtp
-#   split-mode: layer                    # Multi-GPU split: none, layer, row (default: layer; row is deprecated)
+#   split-mode: row                      # Multi-GPU split: none, layer, row (row recommended for MoE models)
 #   swa-full: true                       # Full KV cache for SWA layers (unset = llama.cpp default; false = compact SWA)
 #   template: qwen3.jinja                # Jinja template file override (from templates dir)
 #   tensor-buft-overrides: [all-ffn]     # Force tensors to CPU: all-ffn, block:N, or regex
@@ -157,7 +157,7 @@ version: 1
 #     frequency_penalty: 0.0             # Frequency penalty
 #     presence_penalty: 0.0              # Presence penalty
 #     enable_thinking: false             # Thinking mode for supported models (default: true)
-#     reasoning_effort: low              # none, minimal, low, medium, or high (model-specific)
+#     reasoning_effort: low              # Top-level request parameter: none, minimal, low, medium, or high
 #     grammar: ""                        # GBNF grammar constraint
 
 # ==============================================================================
@@ -168,8 +168,6 @@ models:
   # nseq-max: 1  ~54GB VRAM
   # nseq-max: 2  ~82GB VRAM
   unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
-    chat-template-kwargs:
-      preserve_thinking: true
     context-window: 131072
     sampling-parameters:
       max_tokens: 16384
@@ -181,8 +179,6 @@ models:
   # nseq-max: 1  ~40GB VRAM
   # nseq-max: 2  ~43GB VRAM
   unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
-    chat-template-kwargs:
-      preserve_thinking: true
     nseq-max: 2
     context-window: 131072
     sampling-parameters:
@@ -195,8 +191,6 @@ models:
   # nseq-max: 1  ~40GB VRAM
   # nseq-max: 2  ~48GB VRAM
   unsloth/Qwen3.8-27B-UD-Q8_K_XL/AGENT:
-    chat-template-kwargs:
-      preserve_thinking: true
     nseq-max: 2
     context-window: 131072
     sampling-parameters:
@@ -209,8 +203,6 @@ models:
   # nseq-max: 1  ~26GB VRAM
   # nseq-max: 2  ~35GB VRAM
   unsloth/Qwen3.8-27B-UD-Q4_K_XL/AGENT:
-    chat-template-kwargs:
-      preserve_thinking: true
     nseq-max: 2
     context-window: 131072
     sampling-parameters:

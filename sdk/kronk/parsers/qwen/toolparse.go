@@ -8,10 +8,11 @@ import (
 	"math/big"
 	"strings"
 
+	"uuid"
+
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/jsonrepair"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/google/uuid"
 )
 
 // parseQwenXML parses Qwen3-Coder style tool calls with XML-like tags.
@@ -366,5 +367,5 @@ func findJSONObjectEnd(s string) int {
 }
 
 func newToolCallID() string {
-	return "call_" + uuid.NewString()
+	return "call_" + uuid.New().String()
 }

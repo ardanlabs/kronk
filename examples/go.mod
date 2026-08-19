@@ -1,6 +1,6 @@
 module github.com/ardanlabs/kronk/examples
 
-go 1.26.0
+go 1.27.0
 
 replace github.com/ardanlabs/kronk => ../
 
@@ -9,7 +9,6 @@ require (
 	github.com/ardanlabs/kronk v1.31.3
 	github.com/duckdb/duckdb-go/v2 v2.10505.0
 	github.com/gen2brain/malgo v0.11.26
-	github.com/google/uuid v1.6.0
 	github.com/hybridgroup/yzma v1.23.0
 	golang.org/x/image v0.45.0
 )
@@ -69,6 +68,7 @@ require (
 	github.com/goccy/go-json v0.10.6 // indirect
 	github.com/google/flatbuffers v25.12.19+incompatible // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.21 // indirect
 	github.com/googleapis/gax-go/v2 v2.23.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect

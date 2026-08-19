@@ -346,17 +346,17 @@ func (m *Models) removeEmptyDirs() error {
 		return fmt.Errorf("walking directory tree: %w", err)
 	}
 
-	for i := len(dirs) - 1; i >= 0; i-- {
-		entries, err := os.ReadDir(dirs[i])
+	for _, dir := range slices.Backward(dirs) {
+		entries, err := os.ReadDir(dir)
 		if err != nil {
 			continue
 		}
 
 		if isDirEffectivelyEmpty(entries) {
 			// Remove any .DS_Store before removing directory
-			dsStore := filepath.Join(dirs[i], ".DS_Store")
+			dsStore := filepath.Join(dir, ".DS_Store")
 			os.Remove(dsStore)
-			os.Remove(dirs[i])
+			os.Remove(dir)
 		}
 	}
 

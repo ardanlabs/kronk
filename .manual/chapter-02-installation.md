@@ -92,7 +92,7 @@ The prerequisites depend on how you install Kronk:
 | ------ | --------- | ------------ |
 | Homebrew | macOS and Linux | Homebrew |
 | Release archive | Supported release platforms | None beyond the host OS |
-| `go install` | Platforms supported by the Go toolchain and Kronk libraries | Go 1.26 or later |
+| `go install` | Platforms supported by the Go toolchain and Kronk libraries | Go 1.27 or later |
 | Container | Any host supported by the selected Linux image | Docker or another OCI runtime |
 
 Regardless of installation method, model downloads require enough disk space,

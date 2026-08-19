@@ -270,18 +270,20 @@ func TestNormalizeChatTemplateKwargsMergesModelDefaults(t *testing.T) {
 	}
 }
 
-func TestNormalizeChatTemplateKwargsTopLevelOverridesModelDefault(t *testing.T) {
+func TestNormalizeChatTemplateKwargsRequestOverridesModelDefault(t *testing.T) {
 	d := D{
-		"messages":          []D{{"role": "user", "content": "hello"}},
-		"preserve_thinking": false,
+		"messages": []D{{"role": "user", "content": "hello"}},
+		"chat_template_kwargs": D{
+			"preserve_thinking": false,
+		},
 	}
 
 	if err := normalizeChatTemplateKwargs(d, D{"preserve_thinking": true}); err != nil {
 		t.Fatalf("normalizeChatTemplateKwargs: %v", err)
 	}
 
-	m := Model{log: noopLog}
-	m.template = Template{FileName: "kwargs-default-test", Script: `{{ preserve_thinking }}`}
+	m := Model{log: noopLog,
+		template: Template{FileName: "kwargs-default-test", Script: `{{ preserve_thinking }}`}}
 	prompt, err := m.applyJinjaTemplate(context.Background(), d)
 	if err != nil {
 		t.Fatalf("applyJinjaTemplate: %v", err)
@@ -292,8 +294,8 @@ func TestNormalizeChatTemplateKwargsTopLevelOverridesModelDefault(t *testing.T) 
 }
 
 func TestChatTemplateKwargsAreTemplateOnly(t *testing.T) {
-	m := Model{log: noopLog}
-	m.template = Template{FileName: "kwargs-test", Script: `{{ custom_mode }}:{{ temperature }}`}
+	m := Model{log: noopLog,
+		template: Template{FileName: "kwargs-test", Script: `{{ custom_mode }}:{{ temperature }}`}}
 	d := D{
 		"messages":              []D{{"role": "user", "content": "hello"}},
 		"add_generation_prompt": false,
@@ -679,11 +681,11 @@ func TestToolCallArgumentsMarshalNilAsEmptyObject(t *testing.T) {
 }
 
 func TestToolNumbersRenderWithoutPrecisionLoss(t *testing.T) {
-	m := Model{log: noopLog}
-	m.template = Template{
-		FileName: "number-preservation-test",
-		Script:   `{{ tools[0] | tojson }}|{{ messages[0].tool_calls[0].function.arguments.million | string }}|{{ messages[0].tool_calls[0].function.arguments.large | string }}`,
-	}
+	m := Model{log: noopLog,
+		template: Template{
+			FileName: "number-preservation-test",
+			Script:   `{{ tools[0] | tojson }}|{{ messages[0].tool_calls[0].function.arguments.million | string }}|{{ messages[0].tool_calls[0].function.arguments.large | string }}`,
+		}}
 
 	d := D{
 		"messages": []D{
@@ -1079,8 +1081,8 @@ func TestToolChoiceAvailableToJinjaTemplate(t *testing.T) {
 			}
 			applyToolChoice(d)
 
-			m := Model{log: noopLog}
-			m.template = Template{FileName: "tool-choice-test", Script: tt.script}
+			m := Model{log: noopLog,
+				template: Template{FileName: "tool-choice-test", Script: tt.script}}
 			prompt, err := m.applyJinjaTemplate(t.Context(), d)
 			if err != nil {
 				t.Fatalf("applyJinjaTemplate: %v", err)

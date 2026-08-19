@@ -104,8 +104,8 @@ func List(opts ...Option) Devices {
 
 	out := Devices{
 		UnifiedMemory: runtime.GOOS == "darwin" && runtime.GOARCH == "arm64",
-	}
-	out.Devices = make([]DeviceInfo, 0, count)
+
+		Devices: make([]DeviceInfo, 0, count)}
 
 	for i := range count {
 		dev := llama.GGMLBackendDeviceGet(i)

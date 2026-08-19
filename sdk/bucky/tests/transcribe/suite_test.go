@@ -7,10 +7,11 @@ import (
 	"testing"
 	"time"
 
+	"uuid"
+
 	"github.com/ardanlabs/kronk/sdk/bucky"
 	"github.com/ardanlabs/kronk/sdk/bucky/model"
 	"github.com/ardanlabs/kronk/sdk/bucky/tests/testlib"
-	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 )
 

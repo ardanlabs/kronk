@@ -84,10 +84,8 @@ type config struct {
 
 func newConfig() config {
 	cfg := config{
-		Version: conf.Version{
-			Build: tag,
-			Desc:  "Kronk",
-		},
+		Build: tag,
+		Desc:  "Kronk",
 	}
 
 	cfg.Web.ReadTimeout = 30 * time.Second

@@ -8,9 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"uuid"
+
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/tests/testlib"
-	"github.com/google/uuid"
 )
 
 func Test_ConTest1(t *testing.T) {

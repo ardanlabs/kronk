@@ -105,7 +105,7 @@ jobs:
       # / Dependabot bumps these intentionally.
       - name: Install static analysis tools
         run: |
-          go install honnef.co/go/tools/cmd/staticcheck@2026.1
+          go install honnef.co/go/tools/cmd/staticcheck@2026.2rc1
           go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
 
       - name: gofmt

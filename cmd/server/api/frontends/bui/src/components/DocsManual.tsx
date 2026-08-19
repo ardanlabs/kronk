@@ -193,7 +193,7 @@ export default function DocsManual() {
               <tr>
                 <td><code>go install</code></td>
                 <td>Platforms supported by the Go toolchain and Kronk libraries</td>
-                <td>Go 1.26 or later</td>
+                <td>Go 1.27 or later</td>
               </tr>
               <tr>
                 <td>Container</td>
@@ -723,10 +723,11 @@ models:
     top_k: 20`}</code></pre>
           <p>The nested keys use snake_case because they match request parameter names. Clients can provide request-specific values. See <a href="https://www.kronkai.com/manual#chapter-10-request-parameters">Chapter 10</a> for behavior and the full parameter reference.</p>
           <h4 id="per-model-chat-template-defaults">Per-model chat-template defaults</h4>
-          <p><code>chat-template-kwargs</code> supplies model-specific Jinja variables independently from sampling defaults. Request-level <code>chat_template_kwargs</code> override matching model defaults, and explicit top-level request fields override both:</p>
+          <p><code>chat-template-kwargs</code> supplies model-specific Jinja variables independently from sampling defaults. Request-level <code>chat_template_kwargs</code> override matching model defaults. First-class request parameters such as <code>reasoning_effort</code> remain top-level and are resolved separately:</p>
           <pre className="code-block"><code className="language-yaml">{`unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL:
   chat-template-kwargs:
     preserve_thinking: true`}</code></pre>
+          <p><code>preserve_thinking</code> is template-only. Requests should send it inside <code>chat_template_kwargs</code>; it is not a sampling parameter.</p>
           <p>Only templates that reference a key respond to it. For example, Gemma 4 uses <code>preserve_thinking</code> to retain reasoning from earlier assistant messages that contain tool calls. This can make rendered prompts more stable across user turns, but it increases input-token use and does not change Gemma's separate look-ahead behavior at some assistant/tool boundaries.</p>
           <p><code>MODEL-CONFIG</code> and per-request <code>FINAL-PARAMS</code> logs include the effective template-kwarg keys. Boolean values are shown directly so settings such as <code>preserve_thinking=true</code> can be verified; arbitrary non-boolean values are reported as <code>configured</code> instead of being written to logs.</p>
           <h3 id="38-complete-example-and-key-reference">3.8 Complete Example and Key Reference</h3>
