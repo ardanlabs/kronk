@@ -1,5 +1,3 @@
-//go:build malina_model_tests
-
 package malina_test
 
 import (

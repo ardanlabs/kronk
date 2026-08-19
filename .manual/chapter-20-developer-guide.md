@@ -741,11 +741,12 @@ releases automatically. Callers should still defer the idempotent `Close`, inclu
 when feed/event handling fails. Unload must not destroy the Whisper context while
 transcriptions or streams remain active.
 
-The handle semaphore and state pool are both sized by `Config.NSeqMax`, which defaults
-to 1. Calls beyond that capacity wait until their context is canceled or an operation
-releases its state; Bucky has no queue-depth or admission-timeout setting. The states
-isolate concurrent inference while sharing the handle's model weights and Whisper
-context.
+The state pool is sized by `Config.NSeqMax`, which defaults to 1. The admission channel
+is sized by `NSeqMax + QueueDepth`; queue depth defaults to 0. Calls beyond that capacity
+wait until their context is canceled, the configured admission timeout expires, or an
+operation releases admission capacity. The admission timeout defaults to three minutes
+and stops applying once capacity is acquired. The states isolate concurrent inference
+while sharing the handle's model weights and Whisper context.
 
 The audio HTTP handler delegates file decoding and transcription to
 `Bucky.TranscribeFile`. It explicitly enforces the 25 MB upload limit before allowing

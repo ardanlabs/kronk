@@ -14,16 +14,20 @@ import (
 // Version contains the current version of the bucky SDK package.
 const Version = kronk.Version
 
+// ErrAdmissionTimeout indicates that a request could not obtain an admission
+// permit within the configured admission timeout.
+var ErrAdmissionTimeout = kronk.ErrAdmissionTimeout
+
 // =============================================================================
 
 // Bucky provides a concurrently safe API for using whisper.cpp. Each Bucky
 // owns one model.Model and shared whisper.Context. The model maintains a pool
-// of independent whisper.State values, and the per-handle semaphore permits
-// up to Config.NSeqMax concurrent operations against those states.
+// of independent whisper.State values. The admission channel permits up to
+// Config.NSeqMax concurrent operations plus Config.QueueDepth waiting calls.
 type Bucky struct {
 	cfg           model.Config
 	model         *model.Model
-	sem           chan struct{}
+	admissionCh   chan struct{}
 	activeStreams atomic.Int32
 	shutdown      sync.Mutex
 	shutdownFlag  bool
@@ -55,17 +59,15 @@ func NewWithContext(ctx context.Context, opts ...model.Option) (*Bucky, error) {
 
 	resolved := mdl.Config()
 
-	// Whisper has no batch engine, so the outer semaphore is sized
-	// 1:1 with the model's state pool. This matches sdk/kronk's
-	// rule for embedding / rerank models (semCapacity = NSeqMax),
-	// not the text-generation rule (NSeqMax * QueueDepth).
-	semCapacity := max(resolved.NSeqMax, 1)
+	// The state pool limits active inference to NSeqMax. QueueDepth
+	// admits additional calls to wait for a state.
+	admissionCapacity := max(resolved.NSeqMax, 1) + resolved.QueueDepth
 
 	b := Bucky{
-		cfg:       resolved,
-		model:     mdl,
-		sem:       make(chan struct{}, semCapacity),
-		modelInfo: mdl.ModelInfo(),
+		cfg:         resolved,
+		model:       mdl,
+		admissionCh: make(chan struct{}, admissionCapacity),
+		modelInfo:   mdl.ModelInfo(),
 	}
 
 	return &b, nil

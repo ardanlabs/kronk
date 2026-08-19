@@ -116,7 +116,7 @@ export default function DocsSDKBucky() {
 	// Has unexported fields.
 }`}</code>
               </pre>
-              <p className="doc-description">Bucky provides a concurrently safe API for using whisper.cpp. Each Bucky owns one model.Model and shared whisper.Context. The model maintains a pool of independent whisper.State values, and the per-handle semaphore permits up to Config.NSeqMax concurrent operations against those states.</p>
+              <p className="doc-description">Bucky provides a concurrently safe API for using whisper.cpp. Each Bucky owns one model.Model and shared whisper.Context. The model maintains a pool of independent whisper.State values. The admission channel permits up to Config.NSeqMax concurrent operations plus Config.QueueDepth waiting calls.</p>
             </div>
 
             <div className="doc-section" id="type-initoption">
@@ -270,6 +270,14 @@ export default function DocsSDKBucky() {
               <p className="doc-description">DiscardLogger discards logging.</p>
             </div>
 
+            <div className="doc-section" id="var-erradmissiontimeout">
+              <h4>ErrAdmissionTimeout</h4>
+              <pre className="code-block">
+                <code>{`var ErrAdmissionTimeout = kronk.ErrAdmissionTimeout`}</code>
+              </pre>
+              <p className="doc-description">ErrAdmissionTimeout indicates that a request could not obtain an admission permit within the configured admission timeout.</p>
+            </div>
+
             <div className="doc-section" id="var-fmtlogger">
               <h4>FmtLogger</h4>
               <pre className="code-block">
@@ -331,6 +339,7 @@ export default function DocsSDKBucky() {
               <a href="#variables" className="doc-index-header">Variables</a>
               <ul>
                 <li><a href="#var-discardlogger">DiscardLogger</a></li>
+                <li><a href="#var-erradmissiontimeout">ErrAdmissionTimeout</a></li>
                 <li><a href="#var-fmtlogger">FmtLogger</a></li>
               </ul>
             </div>

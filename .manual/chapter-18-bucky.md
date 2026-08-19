@@ -335,9 +335,12 @@ calls, or streams can use the handle concurrently without loading another copy
 of the model.
 
 When every state is in use, another call waits until a state becomes available
-or its context is canceled. Bucky has no separate queue-depth or admission-timeout
-setting. A stream reserves one state for its lifetime, so always close streams
-that are no longer needed.
+or its context is canceled. The admission wait times out after three minutes by
+default and can be configured with `model.WithAdmissionTimeout`; the timeout
+ends once the call is admitted. `model.WithQueueDepth` controls how many calls
+are admitted to wait after every state is busy and defaults to 0. A stream
+reserves one state for its lifetime, so always close streams that are no longer
+needed.
 
 #### 18.7.1 Batch Transcription
 
