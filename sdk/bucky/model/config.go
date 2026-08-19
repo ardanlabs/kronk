@@ -6,8 +6,12 @@
 package model
 
 import (
+	"time"
+
 	"github.com/ardanlabs/kronk/sdk/applog"
 )
+
+const defaultAdmissionTimeout = 3 * time.Minute
 
 // Config carries the per-model whisper.cpp configuration. Fields are
 // resolved through the functional Option pattern (NewConfig +
@@ -46,6 +50,15 @@ type Config struct {
 	// Values <= 0 collapse to 1.
 	NSeqMax int
 
+	// QueueDepth is the number of calls admitted to wait after every
+	// model state is busy. Defaults to 0.
+	QueueDepth int
+
+	// AdmissionTimeout is the maximum time a call waits for handle
+	// capacity. Once admitted, the caller's context controls the
+	// operation. Values <= 0 default to three minutes.
+	AdmissionTimeout time.Duration
+
 	// Log is the logger the model uses for diagnostic output.
 	// Defaults to applog.DiscardLogger when nil.
 	Log applog.Logger
@@ -55,6 +68,9 @@ type Config struct {
 func (cfg Config) WithDefaults() Config {
 	if cfg.NSeqMax <= 0 {
 		cfg.NSeqMax = 1
+	}
+	if cfg.AdmissionTimeout <= 0 {
+		cfg.AdmissionTimeout = defaultAdmissionTimeout
 	}
 	if cfg.Log == nil {
 		cfg.Log = applog.DiscardLogger
@@ -101,6 +117,16 @@ func WithNThreads(v int32) Option { return func(c *Config) { c.NThreads = v } }
 // pool — the number of goroutines that may run Transcribe /
 // DetectLanguage concurrently against one Model.
 func WithNSeqMax(v int) Option { return func(c *Config) { c.NSeqMax = v } }
+
+// WithQueueDepth sets the number of calls admitted to wait after every model
+// state is busy.
+func WithQueueDepth(v int) Option { return func(c *Config) { c.QueueDepth = v } }
+
+// WithAdmissionTimeout sets the maximum time a call waits for handle
+// capacity. The timeout applies only while waiting for admission.
+func WithAdmissionTimeout(v time.Duration) Option {
+	return func(c *Config) { c.AdmissionTimeout = v }
+}
 
 // WithLog sets the logger the model and its operations use.
 func WithLog(v applog.Logger) Option { return func(c *Config) { c.Log = v } }

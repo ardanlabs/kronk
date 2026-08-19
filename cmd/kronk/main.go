@@ -11,6 +11,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/kronk/kronk/libs"
 	"github.com/ardanlabs/kronk/cmd/kronk/kronk/model"
 	"github.com/ardanlabs/kronk/cmd/kronk/launch"
+	"github.com/ardanlabs/kronk/cmd/kronk/malina"
 	"github.com/ardanlabs/kronk/cmd/kronk/security"
 	"github.com/ardanlabs/kronk/cmd/kronk/server"
 	k "github.com/ardanlabs/kronk/sdk/kronk"
@@ -46,6 +47,7 @@ COMMANDS
   security  Manage API keys and JWT tokens
   launch    Run OpenCode with a local Kronk model
   bucky     Whisper (whisper.cpp) backend: libs and model management
+  malina    Stable Diffusion backend: libs and model management
 
 QUICK START
   # Download a model (e.g., Qwen3-8B)
@@ -99,6 +101,9 @@ func init() {
 
 	// Whisper (bucky) backend verbs mount under "bucky".
 	rootCmd.AddCommand(bucky.Cmd)
+
+	// Stable Diffusion (malina) management verbs operate locally.
+	rootCmd.AddCommand(malina.Cmd)
 
 	// Cross-backend verbs.
 	rootCmd.AddCommand(server.Cmd)

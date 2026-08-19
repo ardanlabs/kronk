@@ -49,14 +49,14 @@ func (fb *fakeBackend) Unload() error {
 }
 
 func (fb *fakeBackend) Config() model.Config {
-	return model.Config{QueueDepth: 2, AdmissionTimeout: time.Minute}
+	return model.Config{Concurrency: 1, QueueDepth: 1, AdmissionTimeout: time.Minute}
 }
 
 func (fb *fakeBackend) Info() model.ModelInfo {
 	return model.ModelInfo{}
 }
 
-func newTestMalina(t *testing.T, fb *fakeBackend, depth int) *Malina {
+func newTestMalina(t *testing.T, fb *fakeBackend, concurrency int, queueDepth int) *Malina {
 	t.Helper()
 
 	initState.Lock()
@@ -81,15 +81,13 @@ func newTestMalina(t *testing.T, fb *fakeBackend, depth int) *Malina {
 
 	m, err := New(
 		model.WithModelPath("fake"),
-		model.WithQueueDepth(depth),
+		model.WithConcurrency(concurrency),
+		model.WithQueueDepth(queueDepth),
 		model.WithAdmissionTimeout(time.Minute),
 	)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	m.config.QueueDepth = depth
-	m.config.AdmissionTimeout = time.Minute
-
 	return m
 }
 
@@ -103,12 +101,15 @@ func testParams() model.GenerateParams {
 	return params
 }
 
-func TestGenerateSerializesAndUnload(t *testing.T) {
+func TestGenerateConcurrencyAndUnload(t *testing.T) {
 	fb := fakeBackend{
 		entered: make(chan struct{}, 2),
 		release: make(chan struct{}, 2),
 	}
-	m := newTestMalina(t, &fb, 2)
+	m := newTestMalina(t, &fb, 2, 0)
+	if cfg := m.ModelConfig(); cfg.Concurrency != 2 || cfg.QueueDepth != 0 {
+		t.Fatalf("ModelConfig(): got concurrency/queue %d/%d, want 2/0", cfg.Concurrency, cfg.QueueDepth)
+	}
 
 	results := make(chan error, 2)
 	go func() {
@@ -121,14 +122,9 @@ func TestGenerateSerializesAndUnload(t *testing.T) {
 		_, err := m.Generate(t.Context(), testParams())
 		results <- err
 	}()
-	select {
-	case <-fb.entered:
-		t.Fatal("second generation entered concurrently")
-	default:
-	}
+	<-fb.entered
 
 	fb.release <- struct{}{}
-	<-fb.entered
 	fb.release <- struct{}{}
 	for range 2 {
 		if err := <-results; err != nil {
@@ -145,8 +141,36 @@ func TestGenerateSerializesAndUnload(t *testing.T) {
 
 	fb.mu.Lock()
 	defer fb.mu.Unlock()
-	if fb.max != 1 || fb.unloads != 1 {
-		t.Errorf("max/unloads: got %d/%d, want 1/1", fb.max, fb.unloads)
+	if fb.max != 2 || fb.unloads != 2 {
+		t.Errorf("max/unloads: got %d/%d, want 2/2", fb.max, fb.unloads)
+	}
+}
+
+func TestAdmissionTimeoutWhenPoolAndQueueAreFull(t *testing.T) {
+	fb := fakeBackend{
+		entered: make(chan struct{}, 1),
+		release: make(chan struct{}, 1),
+	}
+	m := newTestMalina(t, &fb, 1, 0)
+	m.config.AdmissionTimeout = 10 * time.Millisecond
+
+	first := make(chan error, 1)
+	go func() {
+		_, err := m.Generate(t.Context(), testParams())
+		first <- err
+	}()
+	<-fb.entered
+
+	if _, err := m.Generate(t.Context(), testParams()); !errors.Is(err, ErrAdmissionTimeout) {
+		t.Fatalf("Generate() error = %v, want ErrAdmissionTimeout", err)
+	}
+
+	fb.release <- struct{}{}
+	if err := <-first; err != nil {
+		t.Fatalf("first Generate() error = %v", err)
+	}
+	if err := m.Unload(t.Context()); err != nil {
+		t.Fatalf("Unload() error = %v", err)
 	}
 }
 
@@ -155,7 +179,7 @@ func TestQueuedCancellationDoesNotGenerate(t *testing.T) {
 		entered: make(chan struct{}, 2),
 		release: make(chan struct{}, 1),
 	}
-	m := newTestMalina(t, &fb, 2)
+	m := newTestMalina(t, &fb, 1, 1)
 
 	first := make(chan error, 1)
 	go func() {
@@ -198,7 +222,7 @@ func TestCancellationWaitsForNativeCompletion(t *testing.T) {
 		entered: make(chan struct{}, 1),
 		release: make(chan struct{}, 1),
 	}
-	m := newTestMalina(t, &fb, 1)
+	m := newTestMalina(t, &fb, 1, 0)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	result := make(chan error, 1)
@@ -231,7 +255,7 @@ func TestNativeFailurePoisonsHandle(t *testing.T) {
 		release: make(chan struct{}, 1),
 		err:     errors.Join(model.ErrNativeGeneration, nativeErr),
 	}
-	m := newTestMalina(t, &fb, 1)
+	m := newTestMalina(t, &fb, 1, 0)
 
 	result := make(chan error, 1)
 	go func() {
@@ -249,6 +273,49 @@ func TestNativeFailurePoisonsHandle(t *testing.T) {
 	}
 	if err := m.Unload(t.Context()); err != nil {
 		t.Fatalf("Unload() error = %v", err)
+	}
+}
+
+func TestNewLoadFailureUnloadsLoadedContexts(t *testing.T) {
+	initState.Lock()
+	oldDone := initState.done
+	oldPath := initState.path
+	initState.done = true
+	initState.path = "test"
+	initState.Unlock()
+
+	oldBackend := newBackend
+	fb := fakeBackend{}
+	loads := 0
+	loadErr := errors.New("load failure")
+	newBackend = func(context.Context, model.Config) (backend, error) {
+		loads++
+		if loads == 2 {
+			return nil, loadErr
+		}
+		return &fb, nil
+	}
+
+	t.Cleanup(func() {
+		newBackend = oldBackend
+		initState.Lock()
+		initState.done = oldDone
+		initState.path = oldPath
+		initState.Unlock()
+	})
+
+	_, err := New(
+		model.WithModelPath("fake"),
+		model.WithConcurrency(2),
+	)
+	if !errors.Is(err, loadErr) {
+		t.Fatalf("New() error = %v, want load failure", err)
+	}
+
+	fb.mu.Lock()
+	defer fb.mu.Unlock()
+	if fb.unloads != 1 {
+		t.Errorf("unloads: got %d, want 1", fb.unloads)
 	}
 }
 

@@ -89,12 +89,13 @@ export default function DocsSDKMalinaModel() {
 	ControlNetPath              string
 	PhotoMakerPath              string
 	TensorTypeRules             string
+	Concurrency                 int
 	QueueDepth                  int
 	AdmissionTimeout            time.Duration
 	CPUThreads                  int32
 }`}</code>
               </pre>
-              <p className="doc-description">Config controls model loading and request admission. ModelPath loads an all-in-one checkpoint. DiffusionModelPath and its companion paths configure a component model. At least one of ModelPath or DiffusionModelPath is required.</p>
+              <p className="doc-description">Config controls model loading and request admission. Concurrency controls the number of independently loaded contexts and simultaneous generations. QueueDepth controls how many calls are admitted to wait after every context is busy. ModelPath loads an all-in-one checkpoint. DiffusionModelPath and its companion paths configure a component model. At least one of ModelPath or DiffusionModelPath is required.</p>
             </div>
 
             <div className="doc-section" id="type-generateparams">
@@ -183,7 +184,7 @@ export default function DocsSDKMalinaModel() {
               <pre className="code-block">
                 <code>func (m *Model) Generate(ctx context.Context, params GenerateParams) (GeneratedImage, error)</code>
               </pre>
-              <p className="doc-description">Generate runs synchronous text-to-image generation. The context controls waiting for the process-wide native gate; native execution itself cannot be interrupted after it starts.</p>
+              <p className="doc-description">Generate runs synchronous text-to-image generation. Calls on this Model are serialized, while independent Model contexts may generate concurrently. Native execution cannot be interrupted after it starts.</p>
             </div>
 
             <div className="doc-section" id="method-model-info">
@@ -199,7 +200,7 @@ export default function DocsSDKMalinaModel() {
               <pre className="code-block">
                 <code>func (m *Model) Stop()</code>
               </pre>
-              <p className="doc-description">Stop prevents generation calls waiting for the native gate from entering stable-diffusion.cpp. A native call that already started still runs to completion.</p>
+              <p className="doc-description">Stop prevents generation calls that have not started from entering stable-diffusion.cpp. A native call that already started still runs to completion.</p>
             </div>
 
             <div className="doc-section" id="method-model-unload">

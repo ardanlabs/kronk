@@ -28,12 +28,12 @@ install-kronk:
 	go install ./cmd/kronk
 	@echo
 
-# Use this to install or update llama.cpp + whisper.cpp to the latest
-# version. Used by the local `make test` target so developers exercise
-# the newest bundles before bumping the well-known defaultVersion in
-# sdk/tools/libs/libs.go (llama) and sdk/tools/bucky/libs/libs.go
-# (whisper) for a release. Both backends support --upgrade to track the
-# latest published release instead of the bundled default version.
+# Use this to install or update llama.cpp, whisper.cpp, and
+# stable-diffusion.cpp to the latest version. Used by the local `make test`
+# target so developers exercise the newest bundles before bumping each
+# backend's well-known defaultVersion for a release. All three backends
+# support --upgrade to track the latest published release instead of the
+# bundled default version.
 install-libraries: install-kronk
 	@echo "========== INSTALL LLAMA LIBRARIES (latest) =========="
 	kronk libs --local --upgrade
@@ -41,19 +41,24 @@ install-libraries: install-kronk
 	@echo "========== INSTALL WHISPER LIBRARIES (latest) =========="
 	kronk bucky libs --local --upgrade
 	@echo
+	@echo "========== INSTALL STABLE DIFFUSION LIBRARIES (latest) =========="
+	kronk malina libs --local --upgrade
+	@echo
 
-# Use this to install the well-known defaultVersion of llama.cpp +
-# whisper.cpp baked into the SDK. This mirrors what CI does so
-# `make test-gh` reproduces the GH workflow locally. Bumping
-# defaultVersion in sdk/tools/libs/libs.go (llama) and
-# download.DefaultWhisperVersion in github.com/ardanlabs/bucky is what
-# rolls both this target and the CI workflow forward.
+# Use this to install the well-known defaultVersion of llama.cpp,
+# whisper.cpp, and stable-diffusion.cpp baked into the SDK. This mirrors
+# what CI does so `make test-gh` reproduces the GH workflow locally.
+# Bumping each backend's pinned default is what rolls this target and the
+# CI workflow forward.
 install-libraries-gh: install-kronk
 	@echo "========== INSTALL LLAMA LIBRARIES (defaultVersion) =========="
 	kronk libs --local
 	@echo
 	@echo "========== INSTALL WHISPER LIBRARIES (defaultVersion) =========="
 	kronk bucky libs --local
+	@echo
+	@echo "========== INSTALL STABLE DIFFUSION LIBRARIES (defaultVersion) =========="
+	kronk malina libs --local
 	@echo
 
 # Use this to install the test GH models.
@@ -97,6 +102,9 @@ install-test-models: install-kronk
 	@echo
 	kronk bucky model pull --local "ggml-tiny.bin"
 	@echo
+	@echo ========== INSTALL MALINA MODEL BUNDLE ==========
+	kronk malina model pull --local "sd-1.5"
+	@echo
 
 # Use this to install models for the class.
 install-class-models: install-kronk
@@ -124,6 +132,9 @@ install-class-models: install-kronk
 	kronk model pull --local "gpustack/bge-reranker-v2-m3-Q8_0"
 	@echo
 	kronk bucky model pull --local "ggml-tiny.bin"
+	@echo
+	@echo ========== INSTALL MALINA MODEL BUNDLE ==========
+	kronk malina model pull --local "sd-1.5"
 	@echo
 
 OPENWEBUI  := ghcr.io/open-webui/open-webui:v0.11.0

@@ -34,7 +34,7 @@ test-only: install-libraries-gh install-test-models
 	# (e.g. KRONK_BASE_PATH=/data/kronk) cannot leak into the suite —
 	# defaults.BaseDir consults KRONK_BASE_PATH when no override is
 	# supplied, and several SDK tests rely on the $HOME/.kronk default.
-	unset KRONK_BASE_PATH KRONK_LIB_PATH KRONK_BUCKY_LIB_PATH KRONK_PROCESSOR KRONK_ARCH KRONK_OS && \
+	unset KRONK_BASE_PATH KRONK_LIB_PATH KRONK_BUCKY_LIB_PATH KRONK_MALINA_LIB_PATH MALINA_LIB KRONK_PROCESSOR KRONK_ARCH KRONK_OS && \
 	export RUN_IN_PARALLEL=yes && \
 	export GITHUB_WORKSPACE=$(shell pwd) && \
 	go test -v -p=1 -count=1 ./cmd/server/... && \

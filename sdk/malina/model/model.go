@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/malina/pkg/sd"
+	"golang.org/x/sync/semaphore"
 )
 
 var (
@@ -28,16 +29,20 @@ var (
 )
 
 const (
-	defaultQueueDepth       = 2
+	defaultConcurrency      = 1
+	defaultQueueDepth       = 0
 	defaultAdmissionTimeout = 3 * time.Minute
 	maxImageDimension       = 1024
 	maxImagePixels          = maxImageDimension * maxImageDimension
 )
 
-// Config controls model loading and request admission. ModelPath loads an
-// all-in-one checkpoint. DiffusionModelPath and its companion paths configure
-// a component model. At least one of ModelPath or DiffusionModelPath is
-// required.
+// Config controls model loading and request admission. Concurrency controls
+// the number of independently loaded contexts and simultaneous generations.
+// QueueDepth controls how many calls are admitted to wait after every context
+// is busy.
+// ModelPath loads an all-in-one checkpoint. DiffusionModelPath and its
+// companion paths configure a component model. At least one of ModelPath or
+// DiffusionModelPath is required.
 type Config struct {
 	ModelPath                   string
 	ClipLPath                   string
@@ -55,6 +60,7 @@ type Config struct {
 	ControlNetPath              string
 	PhotoMakerPath              string
 	TensorTypeRules             string
+	Concurrency                 int
 	QueueDepth                  int
 	AdmissionTimeout            time.Duration
 	CPUThreads                  int32
@@ -98,7 +104,16 @@ func WithLLMPath(path string) Option {
 	}
 }
 
-// WithQueueDepth sets total admitted capacity, including the running call.
+// WithConcurrency sets the number of independently loaded model contexts and
+// simultaneous generations.
+func WithConcurrency(concurrency int) Option {
+	return func(cfg *Config) {
+		cfg.Concurrency = concurrency
+	}
+}
+
+// WithQueueDepth sets the number of generation calls admitted to wait after all
+// model contexts are busy.
 func WithQueueDepth(depth int) Option {
 	return func(cfg *Config) {
 		cfg.QueueDepth = depth
@@ -122,6 +137,7 @@ func WithCPUThreads(threads int32) Option {
 // NewConfig constructs and validates Config.
 func NewConfig(opts ...Option) (Config, error) {
 	cfg := Config{
+		Concurrency:      defaultConcurrency,
 		QueueDepth:       defaultQueueDepth,
 		AdmissionTimeout: defaultAdmissionTimeout,
 	}
@@ -140,8 +156,11 @@ func validateConfig(cfg Config) error {
 	if strings.TrimSpace(cfg.ModelPath) == "" && strings.TrimSpace(cfg.DiffusionModelPath) == "" {
 		return errors.New("model configuration requires a model or diffusion model path")
 	}
-	if cfg.QueueDepth < 1 {
-		return errors.New("queue depth must be positive")
+	if cfg.Concurrency < 1 {
+		return errors.New("concurrency must be positive")
+	}
+	if cfg.QueueDepth < 0 {
+		return errors.New("queue depth cannot be negative")
 	}
 	if cfg.AdmissionTimeout <= 0 {
 		return errors.New("admission timeout must be positive")
@@ -233,25 +252,41 @@ type Model struct {
 	unloaded bool
 }
 
-// Native stable-diffusion callbacks and diagnostics are process-global. Keep
-// context construction, generation, and destruction serialized until native
-// coexistence testing proves a narrower gate is safe. A channel is used so a
-// caller can abandon the wait before it commits to native work.
-var nativeGate = make(chan struct{}, 1)
+// Native stable-diffusion callbacks and diagnostics are process-global. The
+// weighted gate gives generation shared access while keeping context
+// construction and destruction exclusive from all other native operations.
+// Each Model's mutex separately prevents concurrent use of one native context.
+var nativeGate = semaphore.NewWeighted(math.MaxInt64)
 
 func withNative(ctx context.Context, run func() error) error {
-	return withNativeContexts(ctx, context.Background(), run)
+	if err := nativeGate.Acquire(ctx, math.MaxInt64); err != nil {
+		return err
+	}
+	defer nativeGate.Release(math.MaxInt64)
+
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	return run()
 }
 
-func withNativeContexts(ctx context.Context, stop context.Context, run func() error) error {
-	select {
-	case nativeGate <- struct{}{}:
-		defer func() { <-nativeGate }()
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-stop.Done():
-		return stop.Err()
+func withGeneration(ctx context.Context, stop context.Context, run func() error) error {
+	wait, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stopWait := context.AfterFunc(stop, cancel)
+	defer stopWait()
+
+	if err := nativeGate.Acquire(wait, 1); err != nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := stop.Err(); err != nil {
+			return err
+		}
+		return err
 	}
+	defer nativeGate.Release(1)
 
 	if err := ctx.Err(); err != nil {
 		return err
@@ -325,9 +360,9 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	return &m, nil
 }
 
-// Generate runs synchronous text-to-image generation. The context controls
-// waiting for the process-wide native gate; native execution itself cannot be
-// interrupted after it starts.
+// Generate runs synchronous text-to-image generation. Calls on this Model are
+// serialized, while independent Model contexts may generate concurrently.
+// Native execution cannot be interrupted after it starts.
 func (m *Model) Generate(ctx context.Context, params GenerateParams) (GeneratedImage, error) {
 	if err := params.Validate(); err != nil {
 		return GeneratedImage{}, err
@@ -338,32 +373,45 @@ func (m *Model) Generate(ctx context.Context, params GenerateParams) (GeneratedI
 	if m.unloaded {
 		return GeneratedImage{}, errors.New("generate: model is unloaded")
 	}
-	var raw *sd.SDImage
-	err := withNativeContexts(ctx, m.stop, func() error {
-		p := sd.ImgGenParamsInit()
-		p.Prompt = params.Prompt
-		p.NegativePrompt = params.NegativePrompt
-		p.Width = int32(params.Width)
-		p.Height = int32(params.Height)
-		p.Steps = int32(params.Steps)
-		p.CFGScale = params.CFGScale
-		p.Seed = params.Seed
-		p.BatchCount = 1
-		p.Strength = params.Strength
-		if params.InitImage != nil {
-			var err error
-			p.InitImage, err = imageToRGB(params.InitImage)
-			if err != nil {
-				return err
-			}
-		}
+	if err := ctx.Err(); err != nil {
+		return GeneratedImage{}, err
+	}
+	if err := m.stop.Err(); err != nil {
+		return GeneratedImage{}, err
+	}
 
+	p := sd.ImgGenParamsInit()
+	p.Prompt = params.Prompt
+	p.NegativePrompt = params.NegativePrompt
+	p.Width = int32(params.Width)
+	p.Height = int32(params.Height)
+	p.Steps = int32(params.Steps)
+	p.CFGScale = params.CFGScale
+	p.Seed = params.Seed
+	p.BatchCount = 1
+	p.Strength = params.Strength
+	if params.InitImage != nil {
+		var err error
+		p.InitImage, err = imageToRGB(params.InitImage)
+		if err != nil {
+			return GeneratedImage{}, err
+		}
+	}
+
+	if err := ctx.Err(); err != nil {
+		return GeneratedImage{}, err
+	}
+	if err := m.stop.Err(); err != nil {
+		return GeneratedImage{}, err
+	}
+
+	var raw *sd.SDImage
+	err := withGeneration(ctx, m.stop, func() error {
 		var err error
 		raw, err = sd.GenerateImage(m.ctx, p)
 		if err != nil {
 			return errors.Join(ErrNativeGeneration, err)
 		}
-
 		return nil
 	})
 	if err != nil {
@@ -373,7 +421,7 @@ func (m *Model) Generate(ctx context.Context, params GenerateParams) (GeneratedI
 	return encodeImage(raw, params.Seed)
 }
 
-// Stop prevents generation calls waiting for the native gate from entering
+// Stop prevents generation calls that have not started from entering
 // stable-diffusion.cpp. A native call that already started still runs to
 // completion.
 func (m *Model) Stop() {

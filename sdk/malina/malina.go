@@ -51,15 +51,15 @@ type result struct {
 	err   error
 }
 
-// Malina provides a concurrency-safe API around one reusable native model
-// context. Generation calls are serialized because a stable-diffusion context
-// is not safe for concurrent use.
+// Malina provides a concurrency-safe API around a pool of reusable native
+// model contexts. Each context performs one generation at a time.
 type Malina struct {
-	backend   backend
+	backends  []backend
 	config    model.Config
 	jobs      chan *request
 	stop      chan struct{}
 	done      chan struct{}
+	workers   sync.WaitGroup
 	mu        sync.Mutex
 	closed    bool
 	terminal  error
@@ -68,12 +68,14 @@ type Malina struct {
 	admit     chan struct{}
 }
 
-// New provides image generation using a background model-loading context.
+// New provides pooled image generation using a background model-loading
+// context.
 func New(opts ...model.Option) (*Malina, error) {
 	return NewWithContext(context.Background(), opts...)
 }
 
-// NewWithContext provides image generation and loads the model using ctx.
+// NewWithContext provides pooled image generation and loads every configured
+// model context using ctx.
 func NewWithContext(ctx context.Context, opts ...model.Option) (*Malina, error) {
 	if !Initialized() {
 		return nil, errors.New("new: the Init() function has not been called")
@@ -84,20 +86,42 @@ func NewWithContext(ctx context.Context, opts ...model.Option) (*Malina, error) 
 		return nil, fmt.Errorf("new: %w", err)
 	}
 
-	b, err := newBackend(ctx, cfg)
-	if err != nil {
-		return nil, fmt.Errorf("new: loading model: %w", err)
+	backends := make([]backend, 0, cfg.Concurrency)
+	for range cfg.Concurrency {
+		b, err := newBackend(ctx, cfg)
+		if err != nil {
+			for _, loaded := range backends {
+				loaded.Stop()
+				if unloadErr := loaded.Unload(); unloadErr != nil {
+					err = errors.Join(err, fmt.Errorf("unloading model after load failure: %w", unloadErr))
+				}
+			}
+			return nil, fmt.Errorf("new: loading model: %w", err)
+		}
+		backends = append(backends, b)
 	}
 
+	resolved := backends[0].Config()
+	resolved.Concurrency = cfg.Concurrency
+	resolved.QueueDepth = cfg.QueueDepth
+	resolved.AdmissionTimeout = cfg.AdmissionTimeout
+
 	m := Malina{
-		backend: b,
-		config:  b.Config(),
-		jobs:    make(chan *request),
-		stop:    make(chan struct{}),
-		done:    make(chan struct{}),
-		admit:   make(chan struct{}, cfg.QueueDepth),
+		backends: backends,
+		config:   resolved,
+		jobs:     make(chan *request),
+		stop:     make(chan struct{}),
+		done:     make(chan struct{}),
+		admit:    make(chan struct{}, cfg.Concurrency+cfg.QueueDepth),
 	}
-	go m.worker()
+	m.workers.Add(len(backends))
+	for _, b := range backends {
+		go m.worker(b)
+	}
+	go func() {
+		m.workers.Wait()
+		close(m.done)
+	}()
 
 	return &m, nil
 }
@@ -192,7 +216,7 @@ func (m *Malina) ModelConfig() model.Config {
 
 // ModelInfo returns descriptive information for the loaded model.
 func (m *Malina) ModelInfo() model.ModelInfo {
-	return m.backend.Info()
+	return m.backends[0].Info()
 }
 
 // SystemInfo returns native library and host diagnostics.
@@ -200,7 +224,7 @@ func (m *Malina) SystemInfo() SystemDiagnostics {
 	return systemDiagnostics()
 }
 
-// ActiveGenerations returns the number of admitted generation calls.
+// ActiveGenerations returns the number of running and queued generation calls.
 func (m *Malina) ActiveGenerations() int {
 	return int(m.active.Load())
 }
@@ -216,7 +240,7 @@ func (m *Malina) Unload(ctx context.Context) error {
 	m.mu.Lock()
 	if !m.closed {
 		m.closed = true
-		m.backend.Stop()
+		m.stopBackends()
 		close(m.stop)
 	}
 	m.mu.Unlock()
@@ -233,13 +257,13 @@ func (m *Malina) Unload(ctx context.Context) error {
 	}
 }
 
-func (m *Malina) worker() {
-	defer close(m.done)
+func (m *Malina) worker(b backend) {
+	defer m.workers.Done()
+	defer m.unloadBackend(b)
 
 	for {
 		select {
 		case <-m.stop:
-			m.finishUnload()
 			return
 
 		case r := <-m.jobs:
@@ -248,7 +272,7 @@ func (m *Malina) worker() {
 				continue
 			}
 
-			image, err := m.backend.Generate(r.ctx, r.params)
+			image, err := b.Generate(r.ctx, r.params)
 			if errors.Is(err, context.Canceled) && r.ctx.Err() == nil {
 				if closedErr := m.closedError(); closedErr != nil {
 					err = closedErr
@@ -261,7 +285,6 @@ func (m *Malina) worker() {
 
 			r.done <- result{image: image, err: err}
 			if errors.Is(err, ErrPoisoned) {
-				m.finishUnload()
 				return
 			}
 		}
@@ -297,7 +320,7 @@ func (m *Malina) poison() {
 	m.terminal = ErrPoisoned
 	if !m.closed {
 		m.closed = true
-		m.backend.Stop()
+		m.stopBackends()
 		close(m.stop)
 	}
 }
@@ -312,9 +335,15 @@ func (m *Malina) closedError() error {
 	return errors.Join(ErrClosed, m.terminal)
 }
 
-func (m *Malina) finishUnload() {
-	err := m.backend.Unload()
+func (m *Malina) stopBackends() {
+	for _, b := range m.backends {
+		b.Stop()
+	}
+}
+
+func (m *Malina) unloadBackend(b backend) {
+	err := b.Unload()
 	m.mu.Lock()
-	m.unloadErr = err
+	m.unloadErr = errors.Join(m.unloadErr, err)
 	m.mu.Unlock()
 }

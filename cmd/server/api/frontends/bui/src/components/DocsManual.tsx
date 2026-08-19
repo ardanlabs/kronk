@@ -4402,6 +4402,8 @@ kronk bucky model remove tiny`}</code></pre>
           <p>Mutating management routes require administrator authorization when authentication is enabled.</p>
           <h3 id="187-go-sdk">18.7 Go SDK</h3>
           <p>The Go SDK supports batch transcription, channel-separated diarization, and live streaming. See <a href="../examples/bucky/main.go"><code>examples/bucky/main.go</code></a> for a complete program that installs the current-host libraries, downloads a model, initializes Bucky, and handles errors.</p>
+          <p>A <code>Bucky</code> handle is safe to call from multiple goroutines. It loads one Whisper model context and shares its weights while maintaining a pool of independent <code>whisper.State</code> values. Set the pool size with <code>model.WithNSeqMax</code> when creating the handle; the default is 1. Up to <code>NSeqMax</code> transcriptions, language-detection calls, or streams can use the handle concurrently without loading another copy of the model.</p>
+          <p>When every state is in use, another call waits until a state becomes available or its context is canceled. The admission wait times out after three minutes by default and can be configured with <code>model.WithAdmissionTimeout</code>; the timeout ends once the call is admitted. <code>model.WithQueueDepth</code> controls how many calls are admitted to wait after every state is busy and defaults to 0. A stream reserves one state for its lifetime, so always close streams that are no longer needed.</p>
           <h4 id="1871-batch-transcription">18.7.1 Batch Transcription</h4>
           <p>After calling <code>bucky.Init</code> and constructing a <code>*bucky.Bucky</code> with the path to an installed model, transcribe an audio reader directly:</p>
           <pre className="code-block"><code className="language-go">{`f, err := os.Open("samples/jfk.wav")
@@ -4590,12 +4592,15 @@ if err := stream.FeedPCM(ctx, rawPCM, format); err != nil {
             <li>Detect and install compatible native libraries.</li>
             <li>Initialize the process-wide native backend.</li>
             <li>Download a curated model bundle.</li>
-            <li>Construct a handle for one loaded model.</li>
+            <li>Construct a handle with one or more contexts for a loaded model.</li>
             <li>Perform work through the handle.</li>
             <li>Unload the handle.</li>
           </ol>
-          <p>Malina is currently an SDK and tooling integration. It is <strong>not yet an inference backend in the Kronk model server</strong>. There are no Malina HTTP generation endpoints, CLI management commands, BUI management screens, or Malina model pool in this release. Model-server integration depends on reliable memory and VRAM planning for stable-diffusion model bundles.</p>
+          <p>Malina is currently an SDK and local tooling integration. It is <strong>not yet an inference backend in the Kronk model server</strong>. The CLI manages local libraries and model bundles, but there are no Malina HTTP generation endpoints, BUI management screens, or Malina model pool in this release. Model-server integration depends on reliable memory and VRAM planning for stable-diffusion model bundles.</p>
           <h3 id="192-install-stable-diffusion-libraries">19.2 Install Stable Diffusion Libraries</h3>
+          <p>Install and validate the pinned stable-diffusion.cpp build for the current host:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk malina libs --local`}</code></pre>
+          <p>Use <code>kronk malina libs --help</code> for version selection, supported combinations, parallel installs for other platform triples, listing, and removal. Malina does not have model-server routes yet, so <code>--local</code> is currently required.</p>
           <p>The normal SDK flow detects the current host, resolves a compatible runtime, and installs Kronk's pinned stable-diffusion.cpp version:</p>
           <pre className="code-block"><code className="language-go">{`ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
 defer cancel()
@@ -4725,6 +4730,11 @@ if _, err := libs.Download(ctx, malina.FmtLogger); err != nil {
           <p>Use <code>models.SupportedBundles()</code> to enumerate names and <code>models.Catalog()</code> to inspect descriptions, licenses, gating, files, and component roles.</p>
           <p>Models are installed below <code>~/.kronk/malina-models/</code> by default:</p>
           <pre className="code-block"><code className="language-text">{`~/.kronk/malina-models/<bundle>/`}</code></pre>
+          <p>Manage curated bundles from the CLI:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk malina model catalog --local
+kronk malina model pull --local sd-1.5
+kronk malina model list --local
+kronk malina model remove --local sd-1.5`}</code></pre>
           <p>Download a single-file bundle with the backend-compatible <code>Download</code> method:</p>
           <pre className="code-block"><code className="language-go">{`mdls, err := models.New()
 if err != nil {
@@ -4771,7 +4781,13 @@ defer func() {
     }
 }()`}</code></pre>
           <p>Use <code>NewWithContext</code> when model loading needs a deadline or cancellation. <code>Unload</code> stops new admission and waits until native work can be released safely. If its context expires, cleanup continues in the background and a later <code>Unload</code> call can wait for completion.</p>
-          <p>Each handle serializes generation through one reusable native model context. Concurrent callers share a default total admitted capacity of 2, including the running generation, and a three-minute admission timeout. Configure these with <code>model.WithQueueDepth</code> and <code>model.WithAdmissionTimeout</code> when constructing the handle.</p>
+          <p>One handle can load a pool of independent native model contexts and dispatch concurrent <code>Generate</code> calls across them:</p>
+          <pre className="code-block"><code className="language-go">{`mln, err := malina.New(
+    model.WithModelPath(mp.ModelFiles[0]),
+    model.WithConcurrency(2),
+    model.WithQueueDepth(4),
+)`}</code></pre>
+          <p><code>Concurrency</code> is the number of model contexts loaded and therefore the maximum number of simultaneous generations. It defaults to 1 because each additional context consumes another model-sized allocation of RAM or VRAM. <code>QueueDepth</code> is the number of calls admitted to the internal queue after every context is busy and defaults to 0. Additional callers may wait for admission for up to the three-minute default admission timeout. Configure these with <code>model.WithConcurrency</code>, <code>model.WithQueueDepth</code>, and <code>model.WithAdmissionTimeout</code> when constructing the handle.</p>
           <h4 id="1943-generate-an-image">19.4.3 Generate an Image</h4>
           <p>Start with the stable-diffusion.cpp generation defaults and set a prompt:</p>
           <pre className="code-block"><code className="language-go">{`params := model.NewGenerateParams()
@@ -4923,7 +4939,7 @@ fmt.Println(info.Description)`}</code></pre>
             <li>Malina image inference is available through the Go SDK, not the Kronk model server or its HTTP API.</li>
             <li>Malina models are not managed by the shared Kronk/Bucky model pool and do not yet participate in model-server RAM or VRAM admission and eviction.</li>
             <li>The curated catalog is intentionally small. The high-level SDK guarantees its listed component roles; arbitrary user-created bundle layouts are not a supported catalog contract.</li>
-            <li>Native callbacks, backend initialization, model-context construction, generation, and destruction have process-wide synchronization constraints. Multiple handles are safe to construct, but native operations are currently serialized conservatively.</li>
+            <li>Native callbacks and backend initialization are process-wide. Model-context construction and destruction are serialized, while one handle may own multiple contexts and generate concurrently across them. Each concurrency slot loads another copy of the model and increases RAM or VRAM use.</li>
             <li>Native generation cannot be interrupted safely after it begins. Context cancellation prevents queued work and controls the returned result, but it does not free an active native context early.</li>
           </ul>
           <h3 id="1911-troubleshooting">19.11 Troubleshooting</h3>
@@ -5367,6 +5383,7 @@ examples source             -> example BUI documentation
           <h4 id="2082-lifecycle-invariants">20.8.2 Lifecycle invariants</h4>
           <p><code>Init</code> registers/resolves/loads the backend. Technically, a failed <code>Init</code> can be called again and retry. The current server calls it only during startup, however. Installing missing libraries through CLI or BUI does <strong>not</strong> promise automatic server re-init; restart the server so startup calls <code>Init</code> again.</p>
           <p>A transcription acquires handle capacity and a model state, performs decode/inference, then releases both on every completion path. A streaming session is longer-lived: opening it reserves a state and capacity until its worker exits. <code>Close</code> requests the normal final flush and waits for that exit; a terminal worker error also exits and releases automatically. Callers should still defer the idempotent <code>Close</code>, including when feed/event handling fails. Unload must not destroy the Whisper context while transcriptions or streams remain active.</p>
+          <p>The state pool is sized by <code>Config.NSeqMax</code>, which defaults to 1. The admission channel is sized by <code>NSeqMax + QueueDepth</code>; queue depth defaults to 0. Calls beyond that capacity wait until their context is canceled, the configured admission timeout expires, or an operation releases admission capacity. The admission timeout defaults to three minutes and stops applying once capacity is acquired. The states isolate concurrent inference while sharing the handle's model weights and Whisper context.</p>
           <p>The audio HTTP handler delegates file decoding and transcription to <code>Bucky.TranscribeFile</code>. It explicitly enforces the 25 MB upload limit before allowing unbounded work. Keep protocol field validation/format selection in the handler and audio/model mechanics in Bucky.</p>
           <p>Focused tests that exist include unit tests under <code>sdk/bucky/model/</code> and <code>sdk/bucky/ffmpeg/</code>, transcription/pool/stream suites under <code>sdk/bucky/tests/transcribe/</code>, and the server audio API tests under <code>cmd/server/api/services/kronk/tests/</code>. Choose the narrowest test whose native library and model prerequisites are available. Do not duplicate Chapter 18's usage matrix here.</p>
           <h3 id="209-verification-for-llm-agents">20.9 Verification for LLM Agents</h3>

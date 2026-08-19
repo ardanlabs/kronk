@@ -2,6 +2,7 @@ package bucky
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/ardanlabs/kronk/sdk/bucky/model"
@@ -24,19 +25,26 @@ func (b *Bucky) acquireModel(ctx context.Context) (*model.Model, error) {
 		return nil, err
 	}
 
-	// Acquire backpressure slot.
-	select {
-	case <-ctx.Done():
-		b.activeStreams.Add(-1)
-		return nil, ctx.Err()
+	// Bound only the admission wait. Once admitted, model processing continues
+	// under the caller's original context.
+	admissionCtx, cancel := context.WithTimeoutCause(ctx, b.cfg.AdmissionTimeout, ErrAdmissionTimeout)
+	defer cancel()
 
-	case b.sem <- struct{}{}:
+	select {
+	case <-admissionCtx.Done():
+		b.activeStreams.Add(-1)
+		if cause := context.Cause(admissionCtx); errors.Is(cause, ErrAdmissionTimeout) {
+			return nil, cause
+		}
+		return nil, admissionCtx.Err()
+
+	case b.admissionCh <- struct{}{}:
 	}
 
 	return b.model, nil
 }
 
 func (b *Bucky) releaseModel() {
-	<-b.sem
+	<-b.admissionCh
 	b.activeStreams.Add(-1)
 }

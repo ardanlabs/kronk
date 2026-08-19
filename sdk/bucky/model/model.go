@@ -49,6 +49,9 @@ type Model struct {
 func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	cfg = cfg.WithDefaults()
 
+	if cfg.QueueDepth < 0 {
+		return nil, fmt.Errorf("new-model: queue depth cannot be negative")
+	}
 	if cfg.ModelPath == "" {
 		return nil, fmt.Errorf("new-model: model path is required")
 	}
@@ -97,6 +100,8 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		"use-gpu", cfg.UseGPU,
 		"flash-attn", cfg.FlashAttn,
 		"n-seq-max", cfg.NSeqMax,
+		"queue-depth", cfg.QueueDepth,
+		"admission-timeout", cfg.AdmissionTimeout,
 	)
 
 	return &m, nil

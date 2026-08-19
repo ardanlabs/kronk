@@ -49,17 +49,28 @@ The Malina API follows the same high-level shape as the Kronk and Bucky SDKs:
 1. Detect and install compatible native libraries.
 2. Initialize the process-wide native backend.
 3. Download a curated model bundle.
-4. Construct a handle for one loaded model.
+4. Construct a handle with one or more contexts for a loaded model.
 5. Perform work through the handle.
 6. Unload the handle.
 
-Malina is currently an SDK and tooling integration. It is **not yet an
-inference backend in the Kronk model server**. There are no Malina HTTP
-generation endpoints, CLI management commands, BUI management screens, or
-Malina model pool in this release. Model-server integration depends on
-reliable memory and VRAM planning for stable-diffusion model bundles.
+Malina is currently an SDK and local tooling integration. It is **not yet an
+inference backend in the Kronk model server**. The CLI manages local libraries
+and model bundles, but there are no Malina HTTP generation endpoints, BUI
+management screens, or Malina model pool in this release. Model-server
+integration depends on reliable memory and VRAM planning for stable-diffusion
+model bundles.
 
 ### 19.2 Install Stable Diffusion Libraries
+
+Install and validate the pinned stable-diffusion.cpp build for the current host:
+
+```shell
+kronk malina libs --local
+```
+
+Use `kronk malina libs --help` for version selection, supported combinations,
+parallel installs for other platform triples, listing, and removal. Malina does
+not have model-server routes yet, so `--local` is currently required.
 
 The normal SDK flow detects the current host, resolves a compatible runtime,
 and installs Kronk's pinned stable-diffusion.cpp version:
@@ -162,6 +173,15 @@ Models are installed below `~/.kronk/malina-models/` by default:
 ~/.kronk/malina-models/<bundle>/
 ```
 
+Manage curated bundles from the CLI:
+
+```shell
+kronk malina model catalog --local
+kronk malina model pull --local sd-1.5
+kronk malina model list --local
+kronk malina model remove --local sd-1.5
+```
+
 Download a single-file bundle with the backend-compatible `Download` method:
 
 ```go
@@ -245,11 +265,25 @@ Use `NewWithContext` when model loading needs a deadline or cancellation.
 safely. If its context expires, cleanup continues in the background and a
 later `Unload` call can wait for completion.
 
-Each handle serializes generation through one reusable native model context.
-Concurrent callers share a default total admitted capacity of 2, including the
-running generation, and a three-minute admission timeout. Configure these with
-`model.WithQueueDepth` and `model.WithAdmissionTimeout` when constructing the
-handle.
+One handle can load a pool of independent native model contexts and dispatch
+concurrent `Generate` calls across them:
+
+```go
+mln, err := malina.New(
+    model.WithModelPath(mp.ModelFiles[0]),
+    model.WithConcurrency(2),
+    model.WithQueueDepth(4),
+)
+```
+
+`Concurrency` is the number of model contexts loaded and therefore the maximum
+number of simultaneous generations. It defaults to 1 because each additional
+context consumes another model-sized allocation of RAM or VRAM. `QueueDepth`
+is the number of calls admitted to the internal queue after every context is
+busy and defaults to 0. Additional callers may wait for admission for up to the
+three-minute default admission timeout. Configure these with
+`model.WithConcurrency`, `model.WithQueueDepth`, and
+`model.WithAdmissionTimeout` when constructing the handle.
 
 #### 19.4.3 Generate an Image
 
@@ -432,10 +466,10 @@ Later runs reuse complete installations.
 - The curated catalog is intentionally small. The high-level SDK guarantees
   its listed component roles; arbitrary user-created bundle layouts are not a
   supported catalog contract.
-- Native callbacks, backend initialization, model-context construction,
-  generation, and destruction have process-wide synchronization constraints.
-  Multiple handles are safe to construct, but native operations are currently
-  serialized conservatively.
+- Native callbacks and backend initialization are process-wide. Model-context
+  construction and destruction are serialized, while one handle may own
+  multiple contexts and generate concurrently across them. Each concurrency
+  slot loads another copy of the model and increases RAM or VRAM use.
 - Native generation cannot be interrupted safely after it begins. Context
   cancellation prevents queued work and controls the returned result, but it
   does not free an active native context early.

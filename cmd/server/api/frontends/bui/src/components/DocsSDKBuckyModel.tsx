@@ -164,6 +164,15 @@ export default function DocsSDKBuckyModel() {
 	// Values <= 0 collapse to 1.
 	NSeqMax int
 
+	// QueueDepth is the number of calls admitted to wait after every
+	// model state is busy. Defaults to 0.
+	QueueDepth int
+
+	// AdmissionTimeout is the maximum time a call waits for handle
+	// capacity. Once admitted, the caller's context controls the
+	// operation. Values <= 0 default to three minutes.
+	AdmissionTimeout time.Duration
+
 	// Log is the logger the model uses for diagnostic output.
 	// Defaults to applog.DiscardLogger when nil.
 	Log applog.Logger
