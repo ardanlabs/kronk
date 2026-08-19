@@ -106,7 +106,7 @@ jobs:
       - name: Install static analysis tools
         run: |
           go install honnef.co/go/tools/cmd/staticcheck@2026.2rc1
-          go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+          go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
 
       - name: gofmt
         # `git ls-files '*.go'` ignores generated files that are
