@@ -171,6 +171,20 @@ models:
       reasoning: true
       tooling: true
     resolved_at: 2026-04-28T00:03:50Z
+  ggml-org/embeddinggemma-300m-qat-Q8_0:
+    provider: ggml-org
+    family: embeddinggemma-300m-qat-q8_0-GGUF
+    revision: main
+    files:
+      - embeddinggemma-300m-qat-Q8_0.gguf
+    file_sizes:
+      - 328577056
+    mtp_checked: true
+    model_type: Dense
+    capabilities:
+      endpoint: embeddings
+      embedding: true
+    resolved_at: 2026-08-17T22:19:38.103225Z
   ggml-org/jina-embeddings-v2-base-en-q8_0:
     provider: ggml-org
     family: jina-embeddings-v2-base-en-Q8_0-GGUF
@@ -185,6 +199,22 @@ models:
       endpoint: rerank
       rerank: true
     resolved_at: 2026-07-30T01:18:36.132801Z
+  ggml-org/qwen3-reranker-0.6b-q8_0:
+    provider: ggml-org
+    family: Qwen3-Reranker-0.6B-Q8_0-GGUF
+    revision: main
+    files:
+      - qwen3-reranker-0.6b-q8_0.gguf
+    file_sizes:
+      - 639153184
+    mtp_checked: true
+    model_type: Dense
+    capabilities:
+      endpoint: chat_completion
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-08-11T04:03:46.439615Z
   gpustack/bge-reranker-v2-m3-Q8_0:
     provider: gpustack
     family: bge-reranker-v2-m3-GGUF
@@ -289,6 +319,26 @@ models:
       endpoint: rerank
       rerank: true
     resolved_at: 2026-07-30T01:18:34.52641Z
+  ornith-ai/Ornith-1.5-35B-Q8_0:
+    provider: ornith-ai
+    family: Ornith-1.5-35B-A3B-GGUF
+    revision: main
+    files:
+      - Ornith-1.5-35B-Q8_0.gguf
+    file_sizes:
+      - 37802149120
+    mmproj: mmproj-Ornith-1.5-35B-Q8_0.gguf
+    mmproj_orig: mmproj-Ornith-1.5-35B-BF16.gguf
+    mmproj_size: 902822016
+    mtp_checked: true
+    model_type: Hybrid
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-08-20T01:12:01.865865Z
   second-state/all-MiniLM-L6-v2-Q8_0:
     provider: second-state
     family: All-MiniLM-L6-v2-Embedding-GGUF
@@ -346,9 +396,6 @@ models:
     files:
       - Llama-3.3-70B-Instruct-Q8_0/Llama-3.3-70B-Instruct-Q8_0-00001-of-00002.gguf
       - Llama-3.3-70B-Instruct-Q8_0/Llama-3.3-70B-Instruct-Q8_0-00002-of-00002.gguf
-    file_sizes:
-      - 39808940448
-      - 35166113792
     mtp_checked: true
     model_type: Dense
     capabilities:
@@ -375,6 +422,26 @@ models:
       reasoning: true
       tooling: true
     resolved_at: 2026-04-28T00:03:50Z
+  unsloth/Ornith-1.0-35B-UD-Q8_K_XL:
+    provider: unsloth
+    family: Ornith-1.0-35B-GGUF
+    revision: main
+    files:
+      - Ornith-1.0-35B-UD-Q8_K_XL.gguf
+    file_sizes:
+      - 38201489824
+    mmproj: mmproj-Ornith-1.0-35B-UD-Q8_K_XL.gguf
+    mmproj_orig: mmproj-F16.gguf
+    mmproj_size: 899283680
+    mtp_checked: true
+    model_type: Hybrid
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-08-19T20:13:52.81644Z
   unsloth/Qwen3-0.6B-Q8_0:
     provider: unsloth
     family: Qwen3-0.6B-GGUF
@@ -456,8 +523,6 @@ models:
     revision: main
     files:
       - Qwen3.6-27B-IQ4_NL.gguf
-    file_sizes:
-      - 16071772384
     mmproj: mmproj-Qwen3.6-27B-IQ4_NL.gguf
     mmproj_orig: mmproj-F16.gguf
     mtp_checked: true
@@ -495,8 +560,6 @@ models:
     revision: main
     files:
       - Qwen3.6-27B-Q4_K_S.gguf
-    file_sizes:
-      - 15856158944
     mmproj: mmproj-Qwen3.6-27B-Q4_K_S.gguf
     mmproj_orig: mmproj-F16.gguf
     mtp_checked: true
@@ -514,8 +577,6 @@ models:
     revision: main
     files:
       - Qwen3.6-27B-Q6_K.gguf
-    file_sizes:
-      - 22523238624
     mmproj: mmproj-Qwen3.6-27B-Q6_K.gguf
     mmproj_orig: mmproj-F16.gguf
     mtp_checked: true
@@ -533,8 +594,6 @@ models:
     revision: main
     files:
       - Qwen3.6-27B-Q8_0.gguf
-    file_sizes:
-      - 28595763424
     mmproj: mmproj-Qwen3.6-27B-Q8_0.gguf
     mmproj_orig: mmproj-F16.gguf
     mtp_checked: true
@@ -552,8 +611,6 @@ models:
     revision: main
     files:
       - Qwen3.6-27B-UD-IQ2_XXS.gguf
-    file_sizes:
-      - 9567265920
     mmproj: mmproj-Qwen3.6-27B-UD-IQ2_XXS.gguf
     mmproj_orig: mmproj-F16.gguf
     mtp_checked: true
@@ -611,10 +668,12 @@ models:
     files:
       - Qwen3.8-27B-UD-Q4_K_XL.gguf
     file_sizes:
-      - 17923394624
+      - 17559178144
     mmproj: mmproj-Qwen3.8-27B-UD-Q4_K_XL.gguf
     mmproj_orig: mmproj-F16.gguf
     mmproj_size: 927607488
+    mtp: mtp-Qwen3.8-27B-UD-Q4_K_XL.gguf
+    mtp_orig: MTP/mtp-Qwen3.8-27B-Q4_0.gguf
     mtp_checked: true
     model_type: Hybrid
     capabilities:
@@ -635,6 +694,8 @@ models:
     mmproj: mmproj-Qwen3.8-27B-UD-Q8_K_XL.gguf
     mmproj_orig: mmproj-F16.gguf
     mmproj_size: 927607488
+    mtp: mtp-Qwen3.8-27B-UD-Q8_K_XL.gguf
+    mtp_orig: MTP/mtp-Qwen3.8-27B-Q4_0.gguf
     mtp_checked: true
     model_type: Hybrid
     capabilities:
@@ -697,11 +758,13 @@ models:
     files:
       - gemma-4-E4B-it-Q4_K_M.gguf
     file_sizes:
-      - 4977169568
+      - 4977171584
     mmproj: mmproj-gemma-4-E4B-it-Q4_K_M.gguf
+    mmproj_orig: mmproj-F16.gguf
     mmproj_size: 990372672
     mtp: mtp-gemma-4-E4B-it-Q4_K_M.gguf
     mtp_orig: mtp-gemma-4-E4B-it.gguf
+    mtp_size: 98653248
     mtp_checked: true
     model_type: Dense
     capabilities:
@@ -712,7 +775,7 @@ models:
       streaming: true
       reasoning: true
       tooling: true
-    resolved_at: 2026-06-03T16:26:05.397597Z
+    resolved_at: 2026-08-18T17:54:47.04641Z
   unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL:
     provider: unsloth
     family: gemma-4-E4B-it-qat-GGUF
@@ -778,8 +841,6 @@ models:
     revision: main
     files:
       - Qwen3.6-27B-Q4_K_S.gguf
-    file_sizes:
-      - 16121357440
     mmproj: mmproj-mtp-Qwen3.6-27B-Q4_K_S.gguf
     mmproj_orig: mmproj-F16.gguf
     mtp_checked: true
