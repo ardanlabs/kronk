@@ -18,7 +18,7 @@ import (
 // Tests grouped by model to minimize model loading/unloading in CI.
 // =============================================================================
 
-// chatNonStreamQwen3 returns chat tests for Qwen3-8B-Q8_0 model (text).
+// chatNonStreamQwen3 returns chat tests for the Qwen3-1.7B model (text).
 func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 	return []apitest.Table{
 		{
@@ -28,7 +28,7 @@ func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model": "Qwen/Qwen3-8B-Q8_0",
+				"model": qwen3ModelID,
 				"messages": model.DocumentArray(
 					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
 				),
@@ -47,7 +47,7 @@ func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 						FinishReasonPtr: new("stop"),
 					},
 				},
-				Model:             "Qwen/Qwen3-8B-Q8_0",
+				Model:             qwen3ModelID,
 				Object:            "chat.completion",
 				SystemFingerprint: "fp_kronk",
 			},
@@ -82,7 +82,7 @@ func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model": "Qwen/Qwen3-8B-Q8_0",
+				"model": qwen3ModelID,
 				"messages": model.DocumentArray(
 					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
 				),
@@ -103,7 +103,7 @@ func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 						FinishReasonPtr: new("stop"),
 					},
 				},
-				Model:             "Qwen/Qwen3-8B-Q8_0",
+				Model:             qwen3ModelID,
 				SystemFingerprint: "fp_kronk",
 				Object:            "chat.completion",
 			},
@@ -150,7 +150,7 @@ func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model": "Qwen/Qwen3-8B-Q8_0",
+				"model": qwen3ModelID,
 				"messages": model.DocumentArray(
 					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
 				),
@@ -172,7 +172,7 @@ func chatNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 						FinishReasonPtr: new("stop"),
 					},
 				},
-				Model:             "Qwen/Qwen3-8B-Q8_0",
+				Model:             qwen3ModelID,
 				SystemFingerprint: "fp_kronk",
 				Object:            "chat.completion",
 			},
@@ -243,7 +243,7 @@ func chatContextOverflowQwen3(tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusBadRequest,
 			Input: model.D{
-				"model": "Qwen/Qwen3-8B-Q8_0",
+				"model": qwen3ModelID,
 				"messages": model.DocumentArray(
 					model.TextMessage(model.RoleUser, oversizedPrompt),
 				),
@@ -277,7 +277,7 @@ func chatContextOverflowQwen3(tokens map[string]string) []apitest.Table {
 	}
 }
 
-// chatStreamQwen3 returns streaming chat tests for Qwen3-8B-Q8_0 model.
+// chatStreamQwen3 returns streaming chat tests for the Qwen3-1.7B model.
 func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 	return []apitest.Table{
 		{
@@ -287,7 +287,7 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model": "Qwen/Qwen3-8B-Q8_0",
+				"model": qwen3ModelID,
 				"messages": model.DocumentArray(
 					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
 				),
@@ -310,7 +310,7 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 						FinishReasonPtr: new("stop"),
 					},
 				},
-				Model:             "Qwen/Qwen3-8B-Q8_0",
+				Model:             qwen3ModelID,
 				SystemFingerprint: "fp_kronk",
 				Object:            "chat.completion.chunk",
 			},
@@ -340,7 +340,7 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model": "Qwen/Qwen3-8B-Q8_0",
+				"model": qwen3ModelID,
 				"messages": model.DocumentArray(
 					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
 				),
@@ -365,7 +365,7 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 						FinishReasonPtr: new("stop"),
 					},
 				},
-				Model:             "Qwen/Qwen3-8B-Q8_0",
+				Model:             qwen3ModelID,
 				SystemFingerprint: "fp_kronk",
 				Object:            "chat.completion.chunk",
 			},
@@ -408,7 +408,7 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model": "Qwen/Qwen3-8B-Q8_0",
+				"model": qwen3ModelID,
 				"messages": model.DocumentArray(
 					model.TextMessage(model.RoleSystem, "You are a helpful assistant."),
 					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
@@ -430,7 +430,7 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 						FinishReasonPtr: new("stop"),
 					},
 				},
-				Model:             "Qwen/Qwen3-8B-Q8_0",
+				Model:             qwen3ModelID,
 				SystemFingerprint: "fp_kronk",
 				Object:            "chat.completion.chunk",
 			},
@@ -460,7 +460,7 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model": "Qwen/Qwen3-8B-Q8_0",
+				"model": qwen3ModelID,
 				"messages": model.DocumentArray(
 					model.TextMessage(model.RoleSystem, "You are a helpful assistant."),
 					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
@@ -484,7 +484,7 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 						FinishReasonPtr: new("stop"),
 					},
 				},
-				Model:             "Qwen/Qwen3-8B-Q8_0",
+				Model:             qwen3ModelID,
 				SystemFingerprint: "fp_kronk",
 				Object:            "chat.completion.chunk",
 			},
@@ -514,7 +514,7 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model": "Qwen/Qwen3-8B-Q8_0",
+				"model": qwen3ModelID,
 				"messages": model.DocumentArray(
 					model.TextMessage(model.RoleSystem, "You are a helpful assistant."),
 					model.TextMessage(model.RoleUser, "Echo back the word: Tiger"),
@@ -536,7 +536,7 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 						FinishReasonPtr: new("stop"),
 					},
 				},
-				Model:             "Qwen/Qwen3-8B-Q8_0",
+				Model:             qwen3ModelID,
 				SystemFingerprint: "fp_kronk",
 				Object:            "chat.completion.chunk",
 			},
@@ -571,7 +571,7 @@ func chatArrayFormatQwen3(t *testing.T, tokens map[string]string) []apitest.Tabl
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model": "Qwen/Qwen3-8B-Q8_0",
+				"model": qwen3ModelID,
 				"messages": model.DocumentArray(
 					model.TextMessageArray(model.RoleUser, "Echo back the word: Gorilla"),
 				),
@@ -590,7 +590,7 @@ func chatArrayFormatQwen3(t *testing.T, tokens map[string]string) []apitest.Tabl
 						FinishReasonPtr: new("stop"),
 					},
 				},
-				Model:             "Qwen/Qwen3-8B-Q8_0",
+				Model:             qwen3ModelID,
 				SystemFingerprint: "fp_kronk",
 				Object:            "chat.completion",
 			},
@@ -631,7 +631,7 @@ func chatArrayFormatStreamQwen3(t *testing.T, tokens map[string]string) []apites
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model": "Qwen/Qwen3-8B-Q8_0",
+				"model": qwen3ModelID,
 				"messages": model.DocumentArray(
 					model.TextMessageArray(model.RoleUser, "Echo back the word: Gorilla"),
 				),
@@ -654,7 +654,7 @@ func chatArrayFormatStreamQwen3(t *testing.T, tokens map[string]string) []apites
 						FinishReasonPtr: new("stop"),
 					},
 				},
-				Model:             "Qwen/Qwen3-8B-Q8_0",
+				Model:             qwen3ModelID,
 				SystemFingerprint: "fp_kronk",
 				Object:            "chat.completion.chunk",
 			},
@@ -680,8 +680,8 @@ func chatArrayFormatStreamQwen3(t *testing.T, tokens map[string]string) []apites
 	}
 }
 
-// chatImageQwen35VL returns chat tests for Qwen3.5-0.8B-Q8_0 model (vision).
-func chatImageQwen35VL(t *testing.T, tokens map[string]string) []apitest.Table {
+// chatImageQwen35 returns chat tests for the Qwen3.5 vision model.
+func chatImageQwen35(t *testing.T, tokens map[string]string) []apitest.Table {
 	image, err := readFile(imageFile)
 	if err != nil {
 		t.Fatalf("read image: %s", err)
@@ -695,7 +695,7 @@ func chatImageQwen35VL(t *testing.T, tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model":                "unsloth/Qwen3.5-0.8B-Q8_0",
+				"model":                visionModelID,
 				"messages":             model.ImageMessage("what's in the picture", image, "jpg"),
 				"max_tokens":           2048,
 				"temperature":          0.7,
@@ -713,7 +713,7 @@ func chatImageQwen35VL(t *testing.T, tokens map[string]string) []apitest.Table {
 						FinishReasonPtr: new("stop"),
 					},
 				},
-				Model:             "unsloth/Qwen3.5-0.8B-Q8_0",
+				Model:             visionModelID,
 				SystemFingerprint: "fp_kronk",
 				Object:            "chat.media",
 			},
@@ -742,7 +742,7 @@ func chatImageQwen35VL(t *testing.T, tokens map[string]string) []apitest.Table {
 	}
 }
 
-// chatAudioQwen25Omni returns chat tests for Qwen2.5-Omni-3B-Q8_0 model (audio).
+// chatAudioQwen25Omni returns chat tests for Qwen2.5-Omni-3B-Q4_K_M model (audio).
 func chatAudioQwen25Omni(t *testing.T, tokens map[string]string) []apitest.Table {
 	audio, err := readFile(audioFile)
 	if err != nil {
@@ -758,7 +758,7 @@ func chatAudioQwen25Omni(t *testing.T, tokens map[string]string) []apitest.Table
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model":       "ggml-org/Qwen2.5-Omni-3B-Q8_0",
+				"model":       "ggml-org/Qwen2.5-Omni-3B-Q4_K_M",
 				"messages":    model.AudioMessage("please describe if you hear speech or not in this clip.", audio, "wav"),
 				"max_tokens":  2048,
 				"temperature": 0.7,
@@ -775,7 +775,7 @@ func chatAudioQwen25Omni(t *testing.T, tokens map[string]string) []apitest.Table
 						FinishReasonPtr: new("stop"),
 					},
 				},
-				Model:             "ggml-org/Qwen2.5-Omni-3B-Q8_0",
+				Model:             "ggml-org/Qwen2.5-Omni-3B-Q4_K_M",
 				SystemFingerprint: "fp_kronk",
 				Object:            "chat.media",
 			},
@@ -804,7 +804,7 @@ func chatAudioQwen25Omni(t *testing.T, tokens map[string]string) []apitest.Table
 	}
 }
 
-// chatGrammarQwen3 returns grammar-constrained chat tests for Qwen3-8B-Q8_0 model.
+// chatGrammarQwen3 returns grammar-constrained chat tests for the Qwen3-1.7B model.
 func chatGrammarQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 	return []apitest.Table{
 		{
@@ -815,7 +815,7 @@ func chatGrammarQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model": "Qwen/Qwen3-8B-Q8_0",
+				"model": qwen3ModelID,
 				"messages": model.DocumentArray(
 					model.TextMessage(model.RoleUser, "List 3 programming languages with their year of creation. Respond in JSON format."),
 				),
@@ -834,7 +834,7 @@ func chatGrammarQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 						FinishReasonPtr: new("stop"),
 					},
 				},
-				Model:             "Qwen/Qwen3-8B-Q8_0",
+				Model:             qwen3ModelID,
 				SystemFingerprint: "fp_kronk",
 				Object:            "chat.completion",
 			},
@@ -862,7 +862,7 @@ func chatGrammarQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 	}
 }
 
-// chatGrammarStreamQwen3 returns streaming grammar-constrained chat tests for Qwen3-8B-Q8_0 model.
+// chatGrammarStreamQwen3 returns streaming grammar-constrained chat tests for the Qwen3-1.7B model.
 func chatGrammarStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 	return []apitest.Table{
 		{
@@ -873,7 +873,7 @@ func chatGrammarStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Ta
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model": "Qwen/Qwen3-8B-Q8_0",
+				"model": qwen3ModelID,
 				"messages": model.DocumentArray(
 					model.TextMessage(model.RoleUser, "List 3 programming languages with their year of creation. Respond in JSON format."),
 				),
@@ -896,7 +896,7 @@ func chatGrammarStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Ta
 						FinishReasonPtr: new("stop"),
 					},
 				},
-				Model:             "Qwen/Qwen3-8B-Q8_0",
+				Model:             qwen3ModelID,
 				SystemFingerprint: "fp_kronk",
 				Object:            "chat.completion.chunk",
 			},
@@ -924,7 +924,7 @@ func chatGrammarStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Ta
 	}
 }
 
-// chatToolCallQwen3 returns tool call tests for Qwen3-8B-Q8_0 model.
+// chatToolCallQwen3 returns tool call tests for the Qwen3-1.7B model.
 func chatToolCallQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 	tools := model.DocumentArray(
 		model.D{
@@ -954,7 +954,7 @@ func chatToolCallQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model": "Qwen/Qwen3-8B-Q8_0",
+				"model": qwen3ModelID,
 				"messages": model.DocumentArray(
 					model.TextMessage(model.RoleUser, "What is the weather in NYC?"),
 				),
@@ -973,7 +973,7 @@ func chatToolCallQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 						FinishReasonPtr: new("tool_calls"),
 					},
 				},
-				Model:             "Qwen/Qwen3-8B-Q8_0",
+				Model:             qwen3ModelID,
 				SystemFingerprint: "fp_kronk",
 				Object:            "chat.completion",
 			},
@@ -1000,7 +1000,7 @@ func chatToolCallQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 	}
 }
 
-// chatToolCallStreamQwen3 returns streaming tool call tests for Qwen3-8B-Q8_0 model.
+// chatToolCallStreamQwen3 returns streaming tool call tests for the Qwen3-1.7B model.
 func chatToolCallStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 	tools := model.DocumentArray(
 		model.D{
@@ -1030,7 +1030,7 @@ func chatToolCallStreamQwen3(t *testing.T, tokens map[string]string) []apitest.T
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model": "Qwen/Qwen3-8B-Q8_0",
+				"model": qwen3ModelID,
 				"messages": model.DocumentArray(
 					model.TextMessage(model.RoleUser, "What is the weather in NYC?"),
 				),
@@ -1055,7 +1055,7 @@ func chatToolCallStreamQwen3(t *testing.T, tokens map[string]string) []apitest.T
 						FinishReasonPtr: new("tool_calls"),
 					},
 				},
-				Model:             "Qwen/Qwen3-8B-Q8_0",
+				Model:             qwen3ModelID,
 				SystemFingerprint: "fp_kronk",
 				Object:            "chat.completion.chunk",
 			},
@@ -1098,7 +1098,7 @@ func chatEndpoint403(tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusForbidden,
 			Input: model.D{
-				"model": "Qwen/Qwen3-8B-Q8_0",
+				"model": qwen3ModelID,
 				"messages": model.DocumentArray(
 					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
 				),

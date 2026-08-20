@@ -441,10 +441,10 @@ models:
             <li>If <code>q8_0</code> does not fit, keep the configured values and report that the recommendation does not fit. Automatic tuning does not select a cache type below <code>q8_0</code> and does not reduce the configured context or concurrency.</li>
           </ol>
           <p>This is the recommended server configuration style:</p>
-          <pre className="code-block"><code className="language-yaml">{`unsloth/Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
-  context-window: 131072
+          <pre className="code-block"><code className="language-yaml">{`ornith-ai/Ornith-1.5-35B-Q8_0/AGENT:
+  context-window: 262144
   nseq-max: 2`}</code></pre>
-          <p>Leave <code>cache-type-k</code> and <code>cache-type-v</code> out unless the workload requires a specific cache format. In this example, Kronk sizes the exact 131072-token, two-sequence configuration with <code>f16</code> first and then <code>q8_0</code> if necessary.</p>
+          <p>Leave <code>cache-type-k</code> and <code>cache-type-v</code> out unless the workload requires a specific cache format. In this example, Kronk sizes the exact 262144-token, two-sequence configuration with <code>f16</code> first and then <code>q8_0</code> if necessary.</p>
           <p>When context and concurrency are not specified, the balanced analysis limits the selected context to the model's training context and a maximum of 128K tokens. It searches supported context buckets from largest to smallest. At each context it tries <code>f16</code> first and then <code>q8_0</code> before considering a smaller context. The minimum recommendation is 4K. CPU-only analysis and systems without a known GPU budget cannot perform the same fit check. All recommendations are estimates, not a guarantee that every backend and workload will fit or have identical memory use.</p>
           <p>In the Go SDK, the same analysis is opt-in through <code>WithAutoTune</code>. It is not applied when an application uses the low-level <code>model</code> package directly. Explicit SDK options still take precedence over analyzed values.</p>
           <h3 id="33-core-runtime-settings">3.3 Core Runtime Settings</h3>
@@ -1274,7 +1274,7 @@ Next stable rendering retroactively changes an assistant turn:
           <p>See <a href="https://www.kronkai.com/manual#chapter-11-multimodal-models">Chapter 11</a> for supported media inputs and model requirements.</p>
           <h2 id="55-configuration-and-storage">5.5 Configuration and Storage</h2>
           <p>IMC settings belong under the model ID in <code>~/.kronk/models/model_config.yaml</code>:</p>
-          <pre className="code-block"><code className="language-yaml">{`Qwen/Qwen3-8B-Q8_0:
+          <pre className="code-block"><code className="language-yaml">{`unsloth/Qwen3-1.7B-UD-Q8_K_XL:
   incremental-cache: true
   cache-min-tokens: 100
   imc-session-capacity: 8
@@ -1542,12 +1542,12 @@ krn, err := kronk.New(
           </ul>
           <p>Avoid YaRN when the workload fits within the native context. llama.cpp uses static YaRN: the configured scale applies at short positions too and can reduce quality on shorter prompts. Do not assume that one model family's settings are valid for another model, even when both use RoPE.</p>
           <h2 id="73-qwen3-configuration">7.3 Qwen3 Configuration</h2>
-          <p>The Qwen3-8B model documentation identifies 32,768 tokens as the native context and reports validation up to 131,072 tokens with YaRN. It recommends matching the scale to the context actually needed.</p>
+          <p>The Qwen3-1.7B model documentation identifies 32,768 tokens as the native context and reports validation up to 131,072 tokens with YaRN. It recommends matching the scale to the context actually needed.</p>
           <p>For a 2× extension to 65,536 tokens:</p>
           <pre className="code-block"><code className="language-yaml">{`# ~/.kronk/models/model_config.yaml
 version: 1
 models:
-  Qwen/Qwen3-8B-Q8_0:
+  unsloth/Qwen3-1.7B-UD-Q8_K_XL:
     context-window: 65536
     rope-scaling-type: yarn
     rope-freq-scale: 0.5
@@ -1556,7 +1556,7 @@ models:
           <pre className="code-block"><code className="language-yaml">{`# ~/.kronk/models/model_config.yaml
 version: 1
 models:
-  Qwen/Qwen3-8B-Q8_0:
+  unsloth/Qwen3-1.7B-UD-Q8_K_XL:
     context-window: 131072
     rope-scaling-type: yarn
     rope-freq-scale: 0.25
@@ -1647,7 +1647,7 @@ models:
             <li>Compare short-prompt quality with scaling enabled and disabled.</li>
             <li>Reduce the extension factor if quality or performance is unacceptable.</li>
           </ol>
-          <p>Prefer the smallest context and scale that satisfy the workload. For Qwen3-8B, use the native context when average requests remain within 32,768 tokens, a 2× configuration for workloads around 65,536, and the documented 4× configuration only when requests genuinely require it.</p>
+          <p>Prefer the smallest context and scale that satisfy the workload. For Qwen3-1.7B, use the native context when average requests remain within 32,768 tokens, a 2× configuration for workloads around 65,536, and the documented 4× configuration only when requests genuinely require it.</p>
           <h2 id="chapter-8-model-server">Chapter 8: Model Server</h2>
           <p>The Kronk model server provides OpenAI-compatible inference APIs and manages downloaded models, native libraries, and loaded model instances. This chapter focuses on operating that server. Installation is covered in <a href="https://www.kronkai.com/manual#chapter-2-installation-quick-start">Chapter 2</a>, while model-level tuning belongs in <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3</a>.</p>
           <h2 id="81-server-lifecycle">8.1 Server Lifecycle</h2>
@@ -2044,7 +2044,7 @@ docker rm kronk
           <h2 id="93-chat-completions-and-tool-calls">9.3 Chat Completions and Tool Calls</h2>
           <p><code>POST /v1/chat/completions</code> accepts an OpenAI-style <code>model</code> and <code>messages</code> request:</p>
           <pre className="code-block"><code className="language-json">{`{
-  "model": "Qwen/Qwen3-8B-Q8_0",
+  "model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL",
   "messages": [
     {"role": "system", "content": "Be concise."},
     {"role": "user", "content": "What is the capital of France?"}
@@ -2081,7 +2081,7 @@ data: [DONE]`}</code></pre>
           <h2 id="94-responses-api">9.4 Responses API</h2>
           <p><code>POST /v1/responses</code> accepts <code>input</code> as a string:</p>
           <pre className="code-block"><code className="language-json">{`{
-  "model": "Qwen/Qwen3-8B-Q8_0",
+  "model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL",
   "input": "Explain quantum computing in simple terms."
 }`}</code></pre>
           <p>It also accepts an array of input messages for conversations. A non-streaming response places generated messages or function calls in <code>output</code>. Tools use Responses-style tool definitions. <code>tool_choice</code> accepts <code>"none"</code>, <code>"auto"</code>, or <code>"required"</code>. Select a specific function with the Responses form <code>&#123;"type":"function","name":"get_weather"&#125;</code>.</p>
@@ -2101,7 +2101,7 @@ data: {"type":"response.completed",...}`}</code></pre>
           <h2 id="95-anthropic-messages-api">9.5 Anthropic Messages API</h2>
           <p><code>POST /v1/messages</code> provides an Anthropic-style interface. <code>model</code> and a nonzero <code>max_tokens</code> are required:</p>
           <pre className="code-block"><code className="language-json">{`{
-  "model": "Qwen/Qwen3-8B-Q8_0",
+  "model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL",
   "max_tokens": 256,
   "system": "Be concise.",
   "messages": [
@@ -2144,7 +2144,7 @@ data: {"type":"response.completed",...}`}</code></pre>
           <h2 id="98-tokenization">9.8 Tokenization</h2>
           <p><code>POST /v1/tokenize</code> returns a token <strong>count</strong>, not token IDs:</p>
           <pre className="code-block"><code className="language-json">{`{
-  "model": "Qwen/Qwen3-8B-Q8_0",
+  "model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL",
   "input": "The quick brown fox",
   "apply_template": true,
   "add_generation_prompt": true
@@ -2153,7 +2153,7 @@ data: {"type":"response.completed",...}`}</code></pre>
           <pre className="code-block"><code className="language-json">{`{
   "object": "tokenize",
   "created": 1738857600,
-  "model": "Qwen/Qwen3-8B-Q8_0",
+  "model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL",
   "tokens": 11
 }`}</code></pre>
           <h2 id="99-models-and-audio-transcription">9.9 Models and Audio Transcription</h2>
@@ -2783,7 +2783,7 @@ data: {"type":"response.completed",...}`}</code></pre>
           <h2 id="106-structured-output">10.6 Structured Output</h2>
           <p>Kronk can convert JSON Schema to a GBNF grammar and constrain emitted tokens. For OpenAI-compatible clients, prefer <code>response_format</code>:</p>
           <pre className="code-block"><code className="language-json">{`{
-  "model": "Qwen/Qwen3-8B-Q8_0",
+  "model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL",
   "messages": [
     {"role": "user", "content": "Return a language and its year of creation."}
   ],
@@ -2808,7 +2808,7 @@ data: {"type":"response.completed",...}`}</code></pre>
           <h2 id="107-token-log-probabilities">10.7 Token Log Probabilities</h2>
           <p>Set <code>logprobs: true</code> to return the log probability of each generated token. <code>top_logprobs</code> requests likely alternatives and is clamped to the range 0–5. Any positive <code>top_logprobs</code> value implicitly enables <code>logprobs</code>.</p>
           <pre className="code-block"><code className="language-json">{`{
-  "model": "Qwen/Qwen3-8B-Q8_0",
+  "model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL",
   "messages": [
     {"role": "user", "content": "What is 2 + 2?"}
   ],
@@ -2825,12 +2825,12 @@ data: {"type":"response.completed",...}`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`kronk catalog list`}</code></pre>
           <p>The <code>MTMD</code> column identifies entries with a multimodal projector. The BUI catalog also provides image, audio, and video capability filters. The live catalog is the source of truth; examples in the seed catalog include:</p>
           <ul>
-            <li><code>unsloth/LFM2.5-VL-1.6B-Q8_0</code> for images;</li>
+            <li><code>ggml-org/Qwen2.5-VL-3B-Instruct-Q8_0</code> for images;</li>
             <li><code>ggml-org/Qwen2.5-Omni-3B-Q8_0</code> for images and audio; and</li>
             <li><code>ggml-org/Qwen3-Omni-30B-A3B-Instruct-Q8_0</code> for image, audio, and video-capable model metadata.</li>
           </ul>
           <p>Pulling a catalog model also pulls its companion projector when one is available:</p>
-          <pre className="code-block"><code className="language-shell">{`kronk model pull unsloth/LFM2.5-VL-1.6B-Q8_0`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`kronk model pull ggml-org/Qwen2.5-VL-3B-Instruct-Q8_0`}</code></pre>
           <p>The model and projector capabilities must match the submitted media. A model without a projector rejects media, as does a projector without support for the detected image or audio type.</p>
           <h2 id="112-supported-inputs">11.2 Supported Inputs</h2>
           <p>Kronk recognizes media from its decoded file signature rather than trusting a declared MIME type or extension:</p>
@@ -2867,7 +2867,7 @@ curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   --data-binary @- <<EOF
 {
-  "model": "unsloth/LFM2.5-VL-1.6B-Q8_0",
+  "model": "ggml-org/Qwen2.5-VL-3B-Instruct-Q8_0",
   "messages": [
     {
       "role": "user",
@@ -3039,7 +3039,7 @@ curl http://localhost:11435/v1/chat/completions \\
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "Qwen/Qwen3-8B-Q8_0",
+    "model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL",
     "messages": [{"role": "user", "content": "Hello"}]
   }'`}</code></pre>
           <p>Kronk verifies the signature, issuer, expiration, required admin status or endpoint grant, and quota before processing a protected request. Authentication, missing-grant, and exhausted-quota failures return <code>401 Unauthorized</code>, <code>403 Forbidden</code>, and <code>429 Too Many Requests</code>, respectively. Authentication service failures return <code>500 Internal Server Error</code>, while unavailable external auth services return <code>503 Service Unavailable</code>.</p>

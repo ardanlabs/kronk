@@ -171,7 +171,7 @@ func WithKronkVersion(version string) Option {
 }
 
 // WithModelSource sets the model to benchmark. It may be a model source (e.g.
-// "unsloth/Qwen3-8B-Q8_0") or a path to a local .gguf file. An empty value
+// "unsloth/Qwen3-1.7B-UD-Q8_K_XL") or a path to a local .gguf file. An empty value
 // keeps the small default model.
 func WithModelSource(source string) Option {
 	return func(o *options) {

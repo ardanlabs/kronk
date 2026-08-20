@@ -14,7 +14,7 @@
 # expectations. Do NOT add comments at the end of model lines.
 
 kronk unsloth/Qwen3.5-0.8B-Q8_0
-kronk Qwen/Qwen3-8B-Q8_0
-kronk Qwen/Qwen3-Embedding-0.6B-Q8_0.gguf
+kronk unsloth/Qwen3-1.7B-Q4_K_M
+kronk nomic-ai/nomic-embed-text-v1.5.Q8_0
 kronk gpustack/bge-reranker-v2-m3-Q8_0
 bucky ggml-tiny.bin

@@ -81,7 +81,7 @@ request:
 
 ```json
 {
-  "model": "Qwen/Qwen3-8B-Q8_0",
+  "model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL",
   "messages": [
     {"role": "system", "content": "Be concise."},
     {"role": "user", "content": "What is the capital of France?"}
@@ -174,7 +174,7 @@ also stream incrementally. Chat Completions selects a specific function with
 
 ```json
 {
-  "model": "Qwen/Qwen3-8B-Q8_0",
+  "model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL",
   "input": "Explain quantum computing in simple terms."
 }
 ```
@@ -229,7 +229,7 @@ nonzero `max_tokens` are required:
 
 ```json
 {
-  "model": "Qwen/Qwen3-8B-Q8_0",
+  "model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL",
   "max_tokens": 256,
   "system": "Be concise.",
   "messages": [
@@ -311,7 +311,7 @@ documents.
 
 ```json
 {
-  "model": "Qwen/Qwen3-8B-Q8_0",
+  "model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL",
   "input": "The quick brown fox",
   "apply_template": true,
   "add_generation_prompt": true
@@ -327,7 +327,7 @@ applied and defaults to `true`.
 {
   "object": "tokenize",
   "created": 1738857600,
-  "model": "Qwen/Qwen3-8B-Q8_0",
+  "model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL",
   "tokens": 11
 }
 ```

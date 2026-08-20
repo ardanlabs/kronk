@@ -180,13 +180,13 @@ omitted, automatic tuning uses this priority:
 This is the recommended server configuration style:
 
 ```yaml
-unsloth/Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
-  context-window: 131072
+ornith-ai/Ornith-1.5-35B-Q8_0/AGENT:
+  context-window: 262144
   nseq-max: 2
 ```
 
 Leave `cache-type-k` and `cache-type-v` out unless the workload requires a
-specific cache format. In this example, Kronk sizes the exact 131072-token,
+specific cache format. In this example, Kronk sizes the exact 262144-token,
 two-sequence configuration with `f16` first and then `q8_0` if necessary.
 
 When context and concurrency are not specified, the balanced analysis limits

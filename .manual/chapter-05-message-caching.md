@@ -517,7 +517,7 @@ IMC settings belong under the model ID in
 `~/.kronk/models/model_config.yaml`:
 
 ```yaml
-Qwen/Qwen3-8B-Q8_0:
+unsloth/Qwen3-1.7B-UD-Q8_K_XL:
   incremental-cache: true
   cache-min-tokens: 100
   imc-session-capacity: 8

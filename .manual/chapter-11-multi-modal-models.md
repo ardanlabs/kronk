@@ -29,7 +29,7 @@ The `MTMD` column identifies entries with a multimodal projector. The BUI
 catalog also provides image, audio, and video capability filters. The live
 catalog is the source of truth; examples in the seed catalog include:
 
-- `unsloth/LFM2.5-VL-1.6B-Q8_0` for images;
+- `ggml-org/Qwen2.5-VL-3B-Instruct-Q8_0` for images;
 - `ggml-org/Qwen2.5-Omni-3B-Q8_0` for images and audio; and
 - `ggml-org/Qwen3-Omni-30B-A3B-Instruct-Q8_0` for image, audio, and
   video-capable model metadata.
@@ -38,7 +38,7 @@ Pulling a catalog model also pulls its companion projector when one is
 available:
 
 ```shell
-kronk model pull unsloth/LFM2.5-VL-1.6B-Q8_0
+kronk model pull ggml-org/Qwen2.5-VL-3B-Instruct-Q8_0
 ```
 
 The model and projector capabilities must match the submitted media. A model
@@ -87,7 +87,7 @@ curl http://localhost:11435/v1/chat/completions \
   -H "Content-Type: application/json" \
   --data-binary @- <<EOF
 {
-  "model": "unsloth/LFM2.5-VL-1.6B-Q8_0",
+  "model": "ggml-org/Qwen2.5-VL-3B-Instruct-Q8_0",
   "messages": [
     {
       "role": "user",

@@ -32,6 +32,11 @@ var (
 	audioFile = filepath.Join(gw, "examples/samples/jfk.wav")
 )
 
+const (
+	qwen3ModelID  = "unsloth/Qwen3-1.7B-Q4_K_M"
+	visionModelID = "unsloth/Qwen3.5-0.8B-Q8_0"
+)
+
 func Test_API(t *testing.T) {
 	test := apitest.New(t, "Test_API")
 
@@ -42,7 +47,7 @@ func Test_API(t *testing.T) {
 	// Each model group runs all its tests before moving to the next model.
 
 	// -------------------------------------------------------------------------
-	// Model: Qwen3-8B-Q8_0 (text chat and responses)
+	// Model: Qwen3-1.7B-Q4_K_M (text chat and responses)
 
 	test.Run(t, chatNonStreamQwen3(t, tokens), "chat-nonstream-qwen3")
 	test.RunStreaming(t, chatStreamQwen3(t, tokens), "chat-stream-qwen3")
@@ -63,19 +68,19 @@ func Test_API(t *testing.T) {
 	// -------------------------------------------------------------------------
 	// Model: Qwen3.5-0.8B-Q8_0 (vision)
 
-	test.Run(t, chatImageQwen35VL(t, tokens), "chat-image-qwen35vl")
-	test.Run(t, respImageQwen35VL(t, tokens), "resp-image-qwen35vl")
-	test.Run(t, msgsImageQwen35VL(t, tokens), "msgs-image-qwen35vl")
+	test.Run(t, chatImageQwen35(t, tokens), "chat-image-qwen35")
+	test.Run(t, respImageQwen35(t, tokens), "resp-image-qwen35")
+	test.Run(t, msgsImageQwen35(t, tokens), "msgs-image-qwen35")
 
 	// -------------------------------------------------------------------------
-	// Model: Qwen2.5-Omni-3B-Q8_0 (audio)
+	// Model: Qwen2.5-Omni-3B-Q4_K_M (audio)
 
 	const audioSkipReason = "disabled until Qwen2.5-Omni audio generation is stable"
 	test.Run(t, chatAudioQwen25Omni(t, tokens), "chat-audio-qwen25omni", apitest.WithSkip(true, audioSkipReason))
 	test.Run(t, respAudioQwen25Omni(t, tokens), "resp-audio-qwen25omni", apitest.WithSkip(true, audioSkipReason))
 
 	// -------------------------------------------------------------------------
-	// Model: Qwen3-Embedding-0.6B-Q8_0
+	// Model: nomic-embed-text-v1.5.Q8_0
 
 	test.Run(t, chatEmbed200(tokens), "embedding-200")
 

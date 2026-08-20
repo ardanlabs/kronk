@@ -34,10 +34,10 @@ EXAMPLES
   kronk catalog list
 
   # Show full details for a single entry
-  kronk catalog show unsloth/Qwen3-8B-GGUF
+  kronk catalog show unsloth/Qwen3-1.7B-UD-Q8_K_XL
 
   # Remove an entry plus its downloaded files
-  kronk catalog remove unsloth/Qwen3-8B-GGUF`,
+  kronk catalog remove unsloth/Qwen3-1.7B-UD-Q8_K_XL`,
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()
 	},

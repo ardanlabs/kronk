@@ -1,5 +1,5 @@
 // Package draft_test exercises the TRADITIONAL separate-GGUF draft model
-// path for speculative decoding: a Qwen3-8B target paired with the
+// path for speculative decoding: a Qwen3-1.7B target paired with the
 // vocab-matched Qwen3-0.6B draft (testlib.CfgClassicDraftChat). This is
 // the classic drafter (*classicDrafter) — it owns its own llama_model and
 // KV cache and uses the token-only draft/verify loop — as distinct from

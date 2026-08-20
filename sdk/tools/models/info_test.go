@@ -6,24 +6,23 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-// Expected values for Qwen3-8B-Q8_0.gguf model.
+// Expected values for the Qwen3-1.7B-UD-Q8_K_XL.gguf model.
 var (
-	expDesc = "Qwen3 8B Instruct"
+	expDesc = "Qwen3-1.7B"
 
 	// Raw metadata key expectations (stored as strings).
 	expMetaArchitecture            = "qwen3"
 	expMetaGeneralType             = "model"
-	expMetaName                    = "Qwen3 8B Instruct"
-	expMetaFinetune                = "Instruct"
-	expMetaBaseName                = "Qwen3"
-	expMetaSizeLabel               = "8B"
+	expMetaName                    = "Qwen3-1.7B"
+	expMetaBaseName                = "Qwen3-1.7B"
+	expMetaSizeLabel               = "1.7B"
 	expMetaQuantizationVersion     = "2"
 	expMetaFileType                = "7"
 	expMetaContextLength           = "40960"
-	expMetaEmbeddingLength         = "4096"
-	expMetaBlockCount              = "36"
-	expMetaFeedForwardLength       = "12288"
-	expMetaHeadCount               = "32"
+	expMetaEmbeddingLength         = "2048"
+	expMetaBlockCount              = "28"
+	expMetaFeedForwardLength       = "6144"
+	expMetaHeadCount               = "16"
 	expMetaHeadCountKV             = "8"
 	expMetaLayerNormRMSEpsilon     = "1e-06"
 	expMetaAttentionKeyLength      = "128"
@@ -32,8 +31,7 @@ var (
 	expMetaTokenizerModel          = "gpt2"
 	expMetaTokenizerPre            = "qwen2"
 	expMetaTokenizerEOSTokenID     = "151645"
-	expMetaTokenizerPaddingTokenID = "151643"
-	expMetaTokenizerBOSTokenID     = "151643"
+	expMetaTokenizerPaddingTokenID = "151654"
 	expMetaTokenizerAddBOSToken    = "false"
 )
 
@@ -43,7 +41,7 @@ func TestModelMetadata(t *testing.T) {
 		t.Fatalf("Unable to create models api: %v", err)
 	}
 
-	modelID := "Qwen/Qwen3-8B-Q8_0"
+	modelID := "unsloth/Qwen3-1.7B-UD-Q8_K_XL"
 
 	info, err := m.ModelInformation(modelID)
 	if err != nil {
@@ -77,7 +75,6 @@ func TestModelMetadata(t *testing.T) {
 		{"general.architecture", expMetaArchitecture},
 		{"general.type", expMetaGeneralType},
 		{"general.name", expMetaName},
-		{"general.finetune", expMetaFinetune},
 		{"general.basename", expMetaBaseName},
 		{"general.size_label", expMetaSizeLabel},
 		{"general.quantization_version", expMetaQuantizationVersion},
@@ -96,7 +93,6 @@ func TestModelMetadata(t *testing.T) {
 		{"tokenizer.ggml.pre", expMetaTokenizerPre},
 		{"tokenizer.ggml.eos_token_id", expMetaTokenizerEOSTokenID},
 		{"tokenizer.ggml.padding_token_id", expMetaTokenizerPaddingTokenID},
-		{"tokenizer.ggml.bos_token_id", expMetaTokenizerBOSTokenID},
 		{"tokenizer.ggml.add_bos_token", expMetaTokenizerAddBOSToken},
 	}
 
@@ -117,7 +113,7 @@ func TestModelInformationQualifiedIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unable to create models api: %v", err)
 	}
-	wantFingerprint := m.TokenizerFingerprint("Qwen/Qwen3-8B-Q8_0")
+	wantFingerprint := m.TokenizerFingerprint("unsloth/Qwen3-1.7B-UD-Q8_K_XL")
 	if wantFingerprint == "" {
 		t.Fatal("TokenizerFingerprint returned an empty fingerprint for the canonical model ID")
 	}
@@ -126,8 +122,8 @@ func TestModelInformationQualifiedIDs(t *testing.T) {
 		name    string
 		modelID string
 	}{
-		{name: "provider model", modelID: "Qwen/Qwen3-8B-Q8_0"},
-		{name: "provider model profile", modelID: "Qwen/Qwen3-8B-Q8_0/AGENT"},
+		{name: "provider model", modelID: "unsloth/Qwen3-1.7B-UD-Q8_K_XL"},
+		{name: "provider model profile", modelID: "unsloth/Qwen3-1.7B-UD-Q8_K_XL/AGENT"},
 	}
 
 	for _, tt := range tests {

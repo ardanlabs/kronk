@@ -49,6 +49,14 @@ func TestCapabilitiesForSpecializedQwenModels(t *testing.T) {
 			want: CatalogCapabilities{Endpoint: "rerank", Rerank: true},
 		},
 		{
+			name: "Nomic BERT embedding basename",
+			metadata: map[string]string{
+				"general.architecture": "nomic-bert",
+				"general.basename":     "nomic-embed-text",
+			},
+			want: CatalogCapabilities{Endpoint: "embeddings", Embedding: true},
+		},
+		{
 			name: "Qwen3 chat remains generation",
 			metadata: map[string]string{
 				"general.architecture":    "qwen3",
@@ -116,8 +124,8 @@ func TestEmbeddedCatalogCapabilities(t *testing.T) {
 		t.Error("legacy EmbeddingGemma model remains in the embedded catalog")
 	}
 	wantEndpoints := map[string]string{
-		"Qwen/Qwen3-Embedding-0.6B-Q8_0":   "embeddings",
-		"gpustack/bge-reranker-v2-m3-Q8_0": "rerank",
+		"nomic-ai/nomic-embed-text-v1.5.Q8_0": "embeddings",
+		"gpustack/bge-reranker-v2-m3-Q8_0":    "rerank",
 	}
 	for id, wantEndpoint := range wantEndpoints {
 		entry, exists := catalog.Models[id]
@@ -131,6 +139,9 @@ func TestEmbeddedCatalogCapabilities(t *testing.T) {
 	}
 	if _, exists := catalog.Models["ggml-org/qwen3-reranker-0.6b-q8_0"]; exists {
 		t.Error("unproven Qwen3 reranker remains in the embedded catalog")
+	}
+	if _, exists := catalog.Models["unsloth/mtp-gemma-4-26B-A4B-it-UD-Q8_K_XL"]; exists {
+		t.Error("Gemma MTP companion remains as a standalone model")
 	}
 	malformedIDs := []string{
 		"Qwen/Qwen3-8B-GGUF/Qwen3-8B-Q8_0",
@@ -152,6 +163,71 @@ func TestEmbeddedCatalogCapabilities(t *testing.T) {
 		entry.MTPSize != 461766816 ||
 		!entry.MTPChecked {
 		t.Errorf("model %q has incomplete MTP companion metadata: %+v", gemma4Q4, entry)
+	}
+}
+
+func TestReconcileCatalogDoesNotRestoreRemovedModels(t *testing.T) {
+	basePath := t.TempDir()
+
+	m, err := NewWithPaths(basePath)
+	if err != nil {
+		t.Fatalf("NewWithPaths: unexpected error: %v", err)
+	}
+	filePath, err := defaults.CatalogFile("", basePath)
+	if err != nil {
+		t.Fatalf("CatalogFile: unexpected error: %v", err)
+	}
+	resolver := NewResolver(nil, filePath)
+	catalog, err := resolver.Load()
+	if err != nil {
+		t.Fatalf("Load: unexpected error: %v", err)
+	}
+	catalog.Models["example/custom-model-Q4_K_M"] = CatalogEntry{
+		Provider:   "example",
+		Family:     "custom-model-GGUF",
+		Revision:   "private",
+		Files:      []string{"custom-model-Q4_K_M.gguf"},
+		FileSizes:  []int64{1234},
+		MTPChecked: true,
+		ModelType:  "Dense",
+		Capabilities: CatalogCapabilities{
+			Endpoint:  "chat_completion",
+			Streaming: true,
+		},
+	}
+	if err := resolver.Save(catalog); err != nil {
+		t.Fatalf("Save: unexpected error: %v", err)
+	}
+
+	modelDir := filepath.Join(m.Path(), "example", "removed-model-GGUF")
+	if err := os.MkdirAll(modelDir, 0755); err != nil {
+		t.Fatalf("MkdirAll: unexpected error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "removed-model-Q8_0.gguf"), []byte("downloaded"), 0644); err != nil {
+		t.Fatalf("WriteFile: unexpected error: %v", err)
+	}
+
+	log := func(context.Context, string, ...any) {}
+	if err := m.BuildIndex(log, false); err != nil {
+		t.Fatalf("BuildIndex: unexpected error: %v", err)
+	}
+	if err := m.ReconcileCatalog(context.Background(), log); err != nil {
+		t.Fatalf("ReconcileCatalog: unexpected error: %v", err)
+	}
+
+	catalog, err = resolver.Load()
+	if err != nil {
+		t.Fatalf("Load: unexpected error: %v", err)
+	}
+	if _, exists := catalog.Models["example/removed-model-Q8_0"]; exists {
+		t.Error("ReconcileCatalog restored a removed on-disk model")
+	}
+	entry, exists := catalog.Models["example/custom-model-Q4_K_M"]
+	if !exists {
+		t.Fatal("ReconcileCatalog removed an existing custom entry")
+	}
+	if entry.Provider != "example" || entry.Revision != "private" || entry.FileSizes[0] != 1234 {
+		t.Errorf("custom entry changed: got %+v", entry)
 	}
 }
 

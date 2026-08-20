@@ -17,7 +17,7 @@ import (
 // Tests grouped by model to minimize model loading/unloading in CI.
 // =============================================================================
 
-// respNonStreamQwen3 returns response tests for Qwen3-8B-Q8_0 model (text).
+// respNonStreamQwen3 returns response tests for the Qwen3-1.7B model (text).
 func respNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 	return []apitest.Table{
 		{
@@ -27,7 +27,7 @@ func respNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model": "Qwen/Qwen3-8B-Q8_0",
+				"model": qwen3ModelID,
 				"input": model.DocumentArray(
 					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
 				),
@@ -41,7 +41,7 @@ func respNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 				Object:          "response",
 				Status:          "completed",
 				MaxOutputTokens: new(2048),
-				Model:           "Qwen/Qwen3-8B-Q8_0",
+				Model:           qwen3ModelID,
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
@@ -65,8 +65,8 @@ func respNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 	}
 }
 
-// respImageQwen35VL returns response tests for Qwen3.5-0.8B-Q8_0 model (vision).
-func respImageQwen35VL(t *testing.T, tokens map[string]string) []apitest.Table {
+// respImageQwen35 returns response tests for the Qwen3.5 vision model.
+func respImageQwen35(t *testing.T, tokens map[string]string) []apitest.Table {
 	image, err := readFile(imageFile)
 	if err != nil {
 		t.Fatalf("read image: %s", err)
@@ -82,7 +82,7 @@ func respImageQwen35VL(t *testing.T, tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model": "unsloth/Qwen3.5-0.8B-Q8_0",
+				"model": visionModelID,
 				"input": []model.D{
 					{
 						"role": "user",
@@ -103,7 +103,7 @@ func respImageQwen35VL(t *testing.T, tokens map[string]string) []apitest.Table {
 				Object:          "response",
 				Status:          "completed",
 				MaxOutputTokens: new(2048),
-				Model:           "unsloth/Qwen3.5-0.8B-Q8_0",
+				Model:           visionModelID,
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
@@ -127,7 +127,7 @@ func respImageQwen35VL(t *testing.T, tokens map[string]string) []apitest.Table {
 	}
 }
 
-// respAudioQwen25Omni returns response tests for Qwen2.5-Omni-3B-Q8_0 model (audio).
+// respAudioQwen25Omni returns response tests for Qwen2.5-Omni-3B-Q4_K_M model (audio).
 func respAudioQwen25Omni(t *testing.T, tokens map[string]string) []apitest.Table {
 	audio, err := readFile(audioFile)
 	if err != nil {
@@ -143,7 +143,7 @@ func respAudioQwen25Omni(t *testing.T, tokens map[string]string) []apitest.Table
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model":       "ggml-org/Qwen2.5-Omni-3B-Q8_0",
+				"model":       "ggml-org/Qwen2.5-Omni-3B-Q4_K_M",
 				"input":       model.AudioMessage("please describe if you hear speech or not in this clip.", audio, "wav"),
 				"max_tokens":  2048,
 				"temperature": 0.7,
@@ -155,7 +155,7 @@ func respAudioQwen25Omni(t *testing.T, tokens map[string]string) []apitest.Table
 				Object:          "response",
 				Status:          "completed",
 				MaxOutputTokens: new(2048),
-				Model:           "ggml-org/Qwen2.5-Omni-3B-Q8_0",
+				Model:           "ggml-org/Qwen2.5-Omni-3B-Q4_K_M",
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
@@ -179,7 +179,7 @@ func respAudioQwen25Omni(t *testing.T, tokens map[string]string) []apitest.Table
 	}
 }
 
-// respStreamQwen3 returns streaming response tests for Qwen3-8B-Q8_0 model.
+// respStreamQwen3 returns streaming response tests for the Qwen3-1.7B model.
 func respStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 	return []apitest.Table{
 		{
@@ -189,7 +189,7 @@ func respStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model": "Qwen/Qwen3-8B-Q8_0",
+				"model": qwen3ModelID,
 				"input": model.DocumentArray(
 					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
 				),
@@ -207,7 +207,7 @@ func respStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 				Object:          "response",
 				Status:          "completed",
 				MaxOutputTokens: new(2048),
-				Model:           "Qwen/Qwen3-8B-Q8_0",
+				Model:           qwen3ModelID,
 			},
 			CmpFunc: func(got any, exp any) string {
 				event := got.(*kronk.ResponseStreamEvent)
@@ -247,7 +247,7 @@ func respEndpoint403(tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusForbidden,
 			Input: model.D{
-				"model": "Qwen/Qwen3-8B-Q8_0",
+				"model": qwen3ModelID,
 				"input": model.DocumentArray(
 					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
 				),

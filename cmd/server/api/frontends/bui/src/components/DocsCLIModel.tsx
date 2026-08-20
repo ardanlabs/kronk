@@ -280,10 +280,10 @@ kronk model ps`}</code>
               <h5>Example</h5>
               <pre className="code-block">
                 <code>{`# Pull by canonical HuggingFace id (projection auto-resolved)
-kronk model pull unsloth/Qwen3-8B-GGUF
+kronk model pull unsloth/Qwen3-1.7B-GGUF
 
 # Pull with shorthand (auto-resolves files)
-kronk model pull unsloth/Qwen3-8B-GGUF:Q4_K_M
+kronk model pull unsloth/Qwen3-1.7B-GGUF:Q4_K_M
 
 # Pull a vision model and pin a specific projection file
 kronk model pull <MODEL_URL> --proj <MMPROJ_URL>
@@ -292,7 +292,7 @@ kronk model pull <MODEL_URL> --proj <MMPROJ_URL>
 kronk model pull <MODEL_URL> --mtp-draft <MTP_URL>
 
 # Pull with local mode
-kronk model pull unsloth/Qwen3-8B-GGUF --local`}</code>
+kronk model pull unsloth/Qwen3-1.7B-GGUF --local`}</code>
               </pre>
             </div>
 
@@ -355,10 +355,10 @@ kronk model pull unsloth/Qwen3-8B-GGUF --local`}</code>
               <h5>Example</h5>
               <pre className="code-block">
                 <code>{`# Remove a model
-kronk model remove unsloth/Qwen3-8B-GGUF
+kronk model remove unsloth/Qwen3-1.7B-GGUF
 
 # Remove with local mode
-kronk model remove unsloth/Qwen3-8B-GGUF --local`}</code>
+kronk model remove unsloth/Qwen3-1.7B-GGUF --local`}</code>
               </pre>
             </div>
 
@@ -459,10 +459,10 @@ kronk model resolve Qwen3-0.6B-Q8_0 --refresh`}</code>
               <h5>Example</h5>
               <pre className="code-block">
                 <code>{`# Show model information
-kronk model show unsloth/Qwen3-8B-GGUF
+kronk model show unsloth/Qwen3-1.7B-GGUF
 
 # Show with local mode
-kronk model show unsloth/Qwen3-8B-GGUF --local`}</code>
+kronk model show unsloth/Qwen3-1.7B-GGUF --local`}</code>
               </pre>
             </div>
 
