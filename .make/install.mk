@@ -109,31 +109,22 @@ install-test-models: install-kronk
 # Use this to install models for the class.
 install-class-models: install-kronk
 	@echo ========== INSTALL MODELS ==========
-	kronk model pull --local "unsloth/Qwen3.5-0.8B-Q8_0"
+	kronk model pull --local "unsloth/Qwen3-0.6B-Q8_0"
 	@echo
-	kronk model pull --local "unsloth/LFM2.5-VL-1.6B-Q8_0"
+	kronk model pull --local "unsloth/Qwen3.5-0.8B-Q8_0"
 	@echo
 	kronk model pull --local "mradermacher/Qwopus3.5-4B-Coder.Q8_0"
 	@echo
-	kronk model pull --local "unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL"
+	kronk model pull --local "ornith-ai/Ornith-1.5-9B-Q4_K_M"
 	@echo
 	kronk model pull --local "ggml-org/Qwen2.5-Omni-3B-Q8_0"
 	@echo
-	kronk model pull --local "unsloth/Qwen3-0.6B-Q8_0"
-	@echo
-	kronk model pull --local "unsloth/LFM2-700M-Q8_0"
-	@echo
-	kronk model pull --local "ggml-org/embeddinggemma-300m-qat-Q8_0"
-	@echo
 	kronk model pull --local "Qwen/Qwen3-Embedding-0.6B-Q8_0.gguf"
-	@echo
-	kronk model pull --local "ggml-org/qwen3-reranker-0.6b-q8_0"
 	@echo
 	kronk model pull --local "gpustack/bge-reranker-v2-m3-Q8_0"
 	@echo
 	kronk bucky model pull --local "ggml-tiny.bin"
 	@echo
-	@echo ========== INSTALL MALINA MODEL BUNDLE ==========
 	kronk malina model pull --local "sd-1.5"
 	@echo
 

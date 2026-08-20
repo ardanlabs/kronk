@@ -165,16 +165,15 @@ version: 1
 kms: {}
 
 models:
-  # nseq-max: 1  ~39GB VRAM
-  # nseq-max: 2  ~42GB VRAM
+  # nseq-max: 1  ~44GB VRAM
+  # nseq-max: 2  ~47GB VRAM
   ornith-ai/Ornith-1.5-35B-Q8_0/AGENT:
     nseq-max: 2
-    context-window: 131072
+    context-window: 262144
     chat-template-kwargs:
       preserve_thinking: true
     sampling-parameters:
       max_tokens: 16384
-      enable_thinking: true
 
   # nseq-max: 1  ~54GB VRAM
   # nseq-max: 2  ~82GB VRAM
@@ -184,7 +183,6 @@ models:
       preserve_thinking: true
     sampling-parameters:
       max_tokens: 16384
-      enable_thinking: true
 
   # nseq-max: 1  ~40GB VRAM
   # nseq-max: 2  ~43GB VRAM
@@ -195,7 +193,6 @@ models:
       preserve_thinking: true
     sampling-parameters:
       max_tokens: 16384
-      enable_thinking: true
 
   # nseq-max: 1  ~26GB VRAM
   # nseq-max: 2  ~35GB VRAM
@@ -206,23 +203,21 @@ models:
       preserve_thinking: true
     sampling-parameters:
       max_tokens: 16384
-      enable_thinking: true
 
-  # ~12GB VRAM
-  unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL/AGENT:
-    context-window: 131072
-    chat-template-kwargs:
-      preserve_thinking: true
+  # nseq-max: 1  ~8GB VRAM
+  ornith-ai/Ornith-1.5-9B-Q4_K_M/AGENT:
+    context-window: 65536
     sampling-parameters:
-      max_tokens: 16384
-      enable_thinking: false
-
-  # ~8GB VRAM
-  mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT:
-    context-window: 73728
-    sampling-parameters:
-      max_tokens: 16384
-      temperature: 0.6
+      max_tokens: 8192
+      temperature: 1
       top_k: 20
-      top_p: 1
-      enable_thinking: false
+      top_p: 0.95
+
+  # nseq-max: 1  ~7GB VRAM
+  mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT:
+    context-window: 65536
+    sampling-parameters:
+      max_tokens: 8192
+      temperature: 1
+      top_k: 20
+      top_p: 0.95

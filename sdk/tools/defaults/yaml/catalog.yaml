@@ -319,6 +319,25 @@ models:
       endpoint: rerank
       rerank: true
     resolved_at: 2026-07-30T01:18:34.52641Z
+  ornith-ai/Ornith-1.5-9B-Q4_K_M:
+    provider: ornith-ai
+    family: Ornith-1.5-9B-GGUF
+    revision: main
+    files:
+      - Ornith-1.5-9B-Q4_K_M.gguf
+    file_sizes:
+      - 5629108992
+    mmproj: mmproj-Ornith-1.5-9B-Q4_K_M.gguf
+    mmproj_orig: mmproj-Ornith-1.5-9B-BF16.gguf
+    mmproj_size: 921704416
+    model_type: Hybrid
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-08-20T16:40:28.515922Z
   ornith-ai/Ornith-1.5-35B-Q8_0:
     provider: ornith-ai
     family: Ornith-1.5-35B-A3B-GGUF
