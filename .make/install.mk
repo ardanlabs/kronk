@@ -77,7 +77,7 @@ install-test-gh-models: install-kronk
 
 # Use this to install the test models.
 install-test-models: install-kronk
-	@echo ========== INSTALL MODELS ==========
+	@echo ========== INSTALL KRONK MODELS ==========
 	kronk model pull --local "unsloth/Qwen3-0.6B-Q8_0"
 	@echo
 	kronk model pull --local "unsloth/Qwen3.5-0.8B-Q8_0"
@@ -98,9 +98,10 @@ install-test-models: install-kronk
 	@echo
 	kronk model pull --local "gpustack/bge-reranker-v2-m3-Q8_0"
 	@echo
+	@echo ========== INSTALL BUCKY MODELS ==========
 	kronk bucky model pull --local "ggml-tiny.bin"
 	@echo
-	@echo ========== INSTALL MALINA MODEL BUNDLE ==========
+	@echo ========== INSTALL MALINA MODELS ==========
 	kronk malina model pull --local "sd-1.5"
 	@echo
 

@@ -6,9 +6,10 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-// Expected values for the Qwen3-1.7B-UD-Q8_K_XL.gguf model.
+// Expected values for the Qwen3-1.7B-Q4_K_M.gguf model.
 var (
-	expDesc = "Qwen3-1.7B"
+	expDesc     = "Qwen3-1.7B"
+	testModelID = "unsloth/Qwen3-1.7B-Q4_K_M"
 
 	// Raw metadata key expectations (stored as strings).
 	expMetaArchitecture            = "qwen3"
@@ -17,7 +18,7 @@ var (
 	expMetaBaseName                = "Qwen3-1.7B"
 	expMetaSizeLabel               = "1.7B"
 	expMetaQuantizationVersion     = "2"
-	expMetaFileType                = "7"
+	expMetaFileType                = "15"
 	expMetaContextLength           = "40960"
 	expMetaEmbeddingLength         = "2048"
 	expMetaBlockCount              = "28"
@@ -41,9 +42,7 @@ func TestModelMetadata(t *testing.T) {
 		t.Fatalf("Unable to create models api: %v", err)
 	}
 
-	modelID := "unsloth/Qwen3-1.7B-UD-Q8_K_XL"
-
-	info, err := m.ModelInformation(modelID)
+	info, err := m.ModelInformation(testModelID)
 	if err != nil {
 		t.Fatalf("ModelMetadata failed: %v", err)
 	}
@@ -56,11 +55,11 @@ func TestModelMetadata(t *testing.T) {
 	if info.Size == 0 {
 		t.Error("Size should not be zero")
 	}
-	if info.FileType != 7 {
-		t.Errorf("FileType: got %d, want 7", info.FileType)
+	if info.FileType != 15 {
+		t.Errorf("FileType: got %d, want 15", info.FileType)
 	}
-	if info.Quantization != "Q8_0" {
-		t.Errorf("Quantization: got %q, want %q", info.Quantization, "Q8_0")
+	if info.Quantization != "Q4_K_M" {
+		t.Errorf("Quantization: got %q, want %q", info.Quantization, "Q4_K_M")
 	}
 
 	if info.HasProjection {
@@ -113,7 +112,7 @@ func TestModelInformationQualifiedIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unable to create models api: %v", err)
 	}
-	wantFingerprint := m.TokenizerFingerprint("unsloth/Qwen3-1.7B-UD-Q8_K_XL")
+	wantFingerprint := m.TokenizerFingerprint(testModelID)
 	if wantFingerprint == "" {
 		t.Fatal("TokenizerFingerprint returned an empty fingerprint for the canonical model ID")
 	}
@@ -122,8 +121,8 @@ func TestModelInformationQualifiedIDs(t *testing.T) {
 		name    string
 		modelID string
 	}{
-		{name: "provider model", modelID: "unsloth/Qwen3-1.7B-UD-Q8_K_XL"},
-		{name: "provider model profile", modelID: "unsloth/Qwen3-1.7B-UD-Q8_K_XL/AGENT"},
+		{name: "provider model", modelID: testModelID},
+		{name: "provider model profile", modelID: testModelID + "/AGENT"},
 	}
 
 	for _, tt := range tests {

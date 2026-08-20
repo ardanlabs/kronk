@@ -3191,8 +3191,6 @@ import (
 // a canonical "provider/modelID", or a bare model id.
 var modelSource = "Qwen/Qwen3-Embedding-0.6B-Q8_0.gguf"
 
-// var modelSource = "embeddinggemma-300m-qat-Q8_0"
-
 func main() {
 	if err := run(); err != nil {
 		fmt.Printf("\\nERROR: %s\\n", err)
