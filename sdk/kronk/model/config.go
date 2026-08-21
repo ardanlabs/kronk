@@ -298,6 +298,11 @@ type AdapterConfig struct {
 // — equivalent to llama-mtmd-cli's --no-mmproj-offload. The LLM itself is
 // unaffected and still runs on whatever device WithNGpuLayers selects.
 //
+// ProjDevice names the backend device used by the multimodal projector
+// (mmproj), such as "CUDA1" or "MTL0". When empty, llama.cpp selects the
+// projector device automatically. It cannot be combined with ProjOnCPU=true.
+// The LLM device selection is unaffected.
+//
 // QueueDepth sets the multiplier for semaphore capacity when using the
 // batch engine (NSeqMax > 1). This controls how many requests can queue while
 // the current batch is processing. Default is 2, meaning NSeqMax * 2 requests
@@ -407,6 +412,7 @@ type Config struct {
 	ProjFile                   string
 	MTPDrafterFile             string
 	PtrProjOnCPU               *bool
+	ProjDevice                 string
 	PtrQueueDepth              *int
 	ResponseModelID            string
 	PtrRopeFreqBase            *float32
@@ -530,14 +536,14 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("{mode:%s top_n:%s}", m.Mode, topN)
 	}
 
-	return fmt.Sprintf("\nAdapters[%v]\nAdmissionTimeout[%s]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nChatTemplateKwargs[%s]\nDevices[%v]\nFlashAttention[%s]\nIMCSessionCapacity[%d]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nPrefillBatchSize[%s]\nEffectiveNBatch[%d]\nEffectiveNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreFactory[%t]\nSpeculation[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
+	return fmt.Sprintf("\nAdapters[%v]\nAdmissionTimeout[%s]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nChatTemplateKwargs[%s]\nDevices[%v]\nFlashAttention[%s]\nIMCSessionCapacity[%d]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nPrefillBatchSize[%s]\nEffectiveNBatch[%d]\nEffectiveNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nProjDevice[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreFactory[%t]\nSpeculation[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
 		cfg.Adapters, formatDurationPtr(cfg.PtrAdmissionTimeout), cfg.AutoTune, formatIntPtr(cfg.PtrCacheMinTokens), cfg.CacheTypeK, cfg.CacheTypeV,
 		formatIntPtr(cfg.PtrContextWindow), cfg.DefaultParams.String(), chatTemplateKwargsSummary(cfg.ChatTemplateKwargs), cfg.Devices, cfg.FlashAttention(),
 		cfg.IMCSessionCapacity(), formatBoolPtr(cfg.PtrIncrementalCache), formatBoolPtr(cfg.PtrInsecureLogging), cfg.JinjaFile,
 		cfg.LoadMode, formatIntPtr(cfg.PtrMainGPU), formatMoEPtr(cfg.PtrMoE), cfg.ModelFiles,
 		formatIntPtr(cfg.PtrNGpuLayers), formatIntPtr(cfg.PtrNSeqMax), formatIntPtr(cfg.PtrNThreads), formatIntPtr(cfg.PtrNThreadsBatch), formatIntPtr(cfg.PtrPrefillBatchSize), cfg.EffectiveNBatch(), cfg.EffectiveNUBatch(),
 		cfg.NUMA,
-		formatBoolPtr(cfg.PtrOffloadKQV), formatBoolPtr(cfg.PtrOpOffload), formatIntPtr(cfg.PtrOpOffloadMinBatch), cfg.ProjFile, cfg.MTPDrafterFile, formatBoolPtr(cfg.PtrProjOnCPU), cfg.QueueDepth(),
+		formatBoolPtr(cfg.PtrOffloadKQV), formatBoolPtr(cfg.PtrOpOffload), formatIntPtr(cfg.PtrOpOffloadMinBatch), cfg.ProjFile, cfg.MTPDrafterFile, formatBoolPtr(cfg.PtrProjOnCPU), cfg.ProjDevice, cfg.QueueDepth(),
 		formatFloat32Ptr(cfg.PtrRopeFreqBase), formatFloat32Ptr(cfg.PtrRopeFreqScale), cfg.RopeScaling,
 		cfg.SessionStoreFactory != nil, cfg.SpeculationMode(),
 		formatSplitModePtr(cfg.PtrSplitMode),
@@ -590,6 +596,9 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 	}
 	if cfg.PtrPrefillBatchSize != nil && cfg.PrefillBatchSize() <= 0 {
 		return fmt.Errorf("validate-config: prefill batch size must be > 0, got %d", cfg.PrefillBatchSize())
+	}
+	if cfg.ProjDevice != "" && cfg.PtrProjOnCPU != nil && *cfg.PtrProjOnCPU {
+		return fmt.Errorf("validate-config: projector device cannot be combined with proj-on-cpu=true")
 	}
 
 	switch cfg.CacheTypeV {
@@ -1884,6 +1893,7 @@ func WithOpOffloadMinBatch(v int) Option       { return func(c *Config) { c.PtrO
 func WithProjFile(v string) Option             { return func(c *Config) { c.ProjFile = v } }
 func WithMTPDrafterFile(v string) Option       { return func(c *Config) { c.MTPDrafterFile = v } }
 func WithProjOnCPU(v bool) Option              { return func(c *Config) { c.PtrProjOnCPU = new(v) } }
+func WithProjDevice(v string) Option           { return func(c *Config) { c.ProjDevice = v } }
 func WithRopeFreqBase(v float32) Option        { return func(c *Config) { c.PtrRopeFreqBase = new(v) } }
 func WithRopeFreqScale(v float32) Option       { return func(c *Config) { c.PtrRopeFreqScale = new(v) } }
 func WithRopeScaling(v RopeScalingType) Option { return func(c *Config) { c.RopeScaling = v } }

@@ -207,6 +207,35 @@ func TestMergeModelConfigAdapters(t *testing.T) {
 	}
 }
 
+func TestModelConfigProjectorDevice(t *testing.T) {
+	data := []byte(`test-model:
+  proj-device: CUDA1
+  proj-on-cpu: false
+`)
+
+	var configs map[string]ModelConfig
+	if err := yaml.Unmarshal(data, &configs); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	cfg := configs["test-model"]
+	resolved := cfg.ToKronkConfig()
+	if resolved.ProjDevice != "CUDA1" {
+		t.Errorf("ProjDevice = %q, want %q", resolved.ProjDevice, "CUDA1")
+	}
+	if resolved.PtrProjOnCPU == nil || *resolved.PtrProjOnCPU {
+		t.Errorf("PtrProjOnCPU = %v, want pointer to false", resolved.PtrProjOnCPU)
+	}
+
+	MergeModelConfig(&cfg, ModelConfig{ProjDevice: "CUDA2", PtrProjOnCPU: new(true)})
+	if cfg.ProjDevice != "CUDA2" {
+		t.Errorf("merged ProjDevice = %q, want %q", cfg.ProjDevice, "CUDA2")
+	}
+	if cfg.PtrProjOnCPU == nil || !*cfg.PtrProjOnCPU {
+		t.Errorf("merged PtrProjOnCPU = %v, want pointer to true", cfg.PtrProjOnCPU)
+	}
+}
+
 func TestModelConfigChatTemplateKwargs(t *testing.T) {
 	data := []byte(`test-model:
   chat-template-kwargs:

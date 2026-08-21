@@ -3,6 +3,8 @@ package devices
 import (
 	"runtime"
 	"testing"
+
+	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
 func TestListNotReady(t *testing.T) {
@@ -31,26 +33,33 @@ func TestListNotReady(t *testing.T) {
 }
 
 func TestClassifyDeviceType(t *testing.T) {
+	if got := ClassifyDeviceType(0); got != "unknown" {
+		t.Errorf("ClassifyDeviceType(0) = %q, want %q", got, "unknown")
+	}
+
 	tests := []struct {
-		name string
-		want string
+		name       string
+		deviceType llama.GGMLBackendDeviceType
+		backend    string
+		want       string
 	}{
-		{"CPU", "cpu"},
-		{"CUDA0", "gpu_cuda"},
-		{"CUDA1", "gpu_cuda"},
-		{"Metal", "gpu_metal"},
-		{"MTL0", "gpu_metal"},
-		{"HIP0", "gpu_rocm"},
-		{"ROCm0", "gpu_rocm"},
-		{"ROCm1", "gpu_rocm"},
-		{"Vulkan0", "gpu_vulkan"},
-		{"SomethingElse", "unknown"},
+		{"CPU", llama.GGMLBackendDeviceTypeCPU, "CPU", "cpu"},
+		{"CUDA GPU", llama.GGMLBackendDeviceTypeGPU, "CUDA", "gpu_cuda"},
+		{"CUDA integrated GPU", llama.GGMLBackendDeviceTypeIGPU, "CUDA", "gpu_cuda"},
+		{"Metal", llama.GGMLBackendDeviceTypeGPU, "MTL", "gpu_metal"},
+		{"Metal legacy registry", llama.GGMLBackendDeviceTypeGPU, "Metal", "gpu_metal"},
+		{"HIP", llama.GGMLBackendDeviceTypeGPU, "HIP", "gpu_rocm"},
+		{"ROCm", llama.GGMLBackendDeviceTypeGPU, "ROCm", "gpu_rocm"},
+		{"Vulkan", llama.GGMLBackendDeviceTypeGPU, "Vulkan", "gpu_vulkan"},
+		{"unknown GPU", llama.GGMLBackendDeviceTypeGPU, "SomethingElse", "unknown"},
+		{"accelerator", llama.GGMLBackendDeviceTypeACCEL, "BLAS", "unknown"},
+		{"meta", llama.GGMLBackendDeviceTypeMETA, "RPC", "unknown"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := ClassifyDeviceType(tt.name); got != tt.want {
-				t.Errorf("ClassifyDeviceType(%q) = %q, want %q", tt.name, got, tt.want)
+			if got := classifyDeviceType(tt.deviceType, tt.backend); got != tt.want {
+				t.Errorf("classifyDeviceType(%s, %q) = %q, want %q", tt.deviceType, tt.backend, got, tt.want)
 			}
 		})
 	}

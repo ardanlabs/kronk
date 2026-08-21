@@ -198,6 +198,7 @@ type Model struct {
 	compiledTmpl   *compiledTemplate // Long-lived compiled jinja template (one-time init via templateOnce).
 	templateOnce   sync.Once         // Guards one-time compile of compiledTmpl.
 	projFile       string
+	projDevice     llama.GGMLBackendDevice
 	// mtmdMetaCtx is a single, long-lived multimodal projector context
 	// loaded in NewModel and freed in Unload. It is used ONLY for
 	// read-only metadata checks (SupportVision/SupportAudio) by chat
@@ -252,6 +253,14 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 
 	if err := validateConfig(ctx, cfg, l); err != nil {
 		return nil, fmt.Errorf("validate-config: unable to validate config: %w", err)
+	}
+
+	var projDevice llama.GGMLBackendDevice
+	if cfg.ProjDevice != "" {
+		projDevice = resolveBackendDevice(cfg.ProjDevice)
+		if projDevice == 0 {
+			return nil, fmt.Errorf("resolve projector device: unknown device: %s", cfg.ProjDevice)
+		}
 	}
 
 	// -------------------------------------------------------------------------
@@ -377,6 +386,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		ctxParams:      ctxParams,
 		template:       template,
 		projFile:       cfg.ProjFile,
+		projDevice:     projDevice,
 		modelInfo:      modelInfo,
 		paramsResolved: true,
 		addBOSToken:    addBOSToken,
@@ -398,7 +408,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 
 		start := time.Now()
 
-		mtmdCtx, err := mtmd.InitFromFile(m.projFile, m.model, mtmdContextParams(cfg))
+		mtmdCtx, err := mtmd.InitFromFile(m.projFile, m.model, mtmdContextParams(cfg, m.projDevice))
 		if err != nil {
 			llama.ModelFree(mdl)
 			return nil, fmt.Errorf("init-mtmd-meta-context: %w", err)
@@ -1578,15 +1588,13 @@ func resolveBackendDevice(name string) llama.GGMLBackendDevice {
 		return dev
 	}
 
-	// "rocm"/"hip" are aliases for the same backend. Newer llama.cpp builds
-	// name HIP devices "ROCm0", older builds "HIP0", so an exact by-name
-	// lookup misses them. Scan the registered devices by type instead, using
-	// the same classifier that drives device enumeration so the prefix
-	// knowledge lives in one place.
+	// "rocm"/"hip" are aliases for the same backend, but neither is
+	// necessarily an enumerated device name. Scan the registered devices by
+	// backend metadata when an exact by-name lookup misses.
 	if strings.EqualFold(name, "rocm") || strings.EqualFold(name, "hip") {
 		for i := range llama.GGMLBackendDeviceCount() {
 			dev := llama.GGMLBackendDeviceGet(i)
-			if dev != 0 && devices.ClassifyDeviceType(llama.GGMLBackendDeviceName(dev)) == "gpu_rocm" {
+			if dev != 0 && devices.ClassifyDeviceType(dev) == "gpu_rocm" {
 				return dev
 			}
 		}
@@ -1672,11 +1680,15 @@ func humanBytes(n int64) string {
 
 // mtmdContextParams returns the mtmd context parameters to use for the given
 // model configuration.
-func mtmdContextParams(cfg Config) mtmd.ContextParamsType {
+func mtmdContextParams(cfg Config, device llama.GGMLBackendDevice) mtmd.ContextParamsType {
 	params := mtmd.ContextParamsDefault()
 
 	if cfg.PtrProjOnCPU != nil {
 		params.UseGPU = !*cfg.PtrProjOnCPU
+	}
+	if device != 0 {
+		params.UseGPU = true
+		params.Device = device
 	}
 
 	return params

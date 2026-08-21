@@ -24,11 +24,14 @@ func Ready() bool {
 
 // DeviceInfo provides information about a single compute device.
 type DeviceInfo struct {
-	Index      int    `json:"index"`
-	Name       string `json:"name"`
-	Type       string `json:"type"`
-	FreeBytes  uint64 `json:"free_bytes"`
-	TotalBytes uint64 `json:"total_bytes"`
+	Index        int    `json:"index"`
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	Type         string `json:"type"`
+	HardwareType string `json:"hardware_type"`
+	Backend      string `json:"backend"`
+	FreeBytes    uint64 `json:"free_bytes"`
+	TotalBytes   uint64 `json:"total_bytes"`
 }
 
 // Devices returns information about available compute devices.
@@ -114,7 +117,9 @@ func List(opts ...Option) Devices {
 		}
 
 		name := llama.GGMLBackendDeviceName(dev)
-		devType := ClassifyDeviceType(name)
+		hardwareType := llama.GGMLBackendDevType(dev)
+		backend := llama.GGMLBackendRegName(llama.GGMLBackendDeviceBackendReg(dev))
+		devType := classifyDeviceType(hardwareType, backend)
 
 		if !cfg.includeCPU && devType == "cpu" {
 			continue
@@ -124,9 +129,12 @@ func List(opts ...Option) Devices {
 		}
 
 		di := DeviceInfo{
-			Index: int(i),
-			Name:  name,
-			Type:  devType,
+			Index:        int(i),
+			Name:         name,
+			Description:  llama.GGMLBackendDeviceDescription(dev),
+			Type:         devType,
+			HardwareType: hardwareType.String(),
+			Backend:      backend,
 		}
 
 		if cfg.includeMemory {
@@ -154,19 +162,36 @@ func List(opts ...Option) Devices {
 	return out
 }
 
-// ClassifyDeviceType maps a llama.cpp backend device name to a device type
-// string: cpu, gpu_cuda, gpu_metal, gpu_rocm, gpu_vulkan, or unknown.
-func ClassifyDeviceType(name string) string {
-	switch {
-	case name == "CPU":
+// ClassifyDeviceType maps a llama.cpp backend device to a device type string:
+// cpu, gpu_cuda, gpu_metal, gpu_rocm, gpu_vulkan, or unknown.
+func ClassifyDeviceType(device llama.GGMLBackendDevice) string {
+	if device == 0 {
+		return "unknown"
+	}
+
+	deviceType := llama.GGMLBackendDevType(device)
+	reg := llama.GGMLBackendDeviceBackendReg(device)
+
+	return classifyDeviceType(deviceType, llama.GGMLBackendRegName(reg))
+}
+
+func classifyDeviceType(deviceType llama.GGMLBackendDeviceType, backend string) string {
+	if deviceType == llama.GGMLBackendDeviceTypeCPU {
 		return "cpu"
-	case strings.HasPrefix(name, "CUDA"):
+	}
+
+	if deviceType != llama.GGMLBackendDeviceTypeGPU && deviceType != llama.GGMLBackendDeviceTypeIGPU {
+		return "unknown"
+	}
+
+	switch strings.ToUpper(backend) {
+	case "CUDA":
 		return "gpu_cuda"
-	case name == "Metal", strings.HasPrefix(name, "MTL"):
+	case "MTL", "METAL":
 		return "gpu_metal"
-	case strings.HasPrefix(name, "HIP"), strings.HasPrefix(name, "ROCm"):
+	case "HIP", "ROCM":
 		return "gpu_rocm"
-	case strings.HasPrefix(name, "Vulkan"):
+	case "VULKAN":
 		return "gpu_vulkan"
 	default:
 		return "unknown"
