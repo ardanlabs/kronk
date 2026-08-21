@@ -689,6 +689,11 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
                   {devicesInfo.gpuCount} GPU{devicesInfo.gpuCount > 1 ? 's' : ''}{devicesInfo.gpuType ? ` (${devicesInfo.gpuType})` : ''}
                 </span>
               )}
+              {devicesInfo.gpuDevices.map((device) => (
+                <span key={device.index}>
+                  {device.name}: {device.description || device.name} ({device.hardware_type}, {device.backend})
+                </span>
+              ))}
               {devicesInfo.gpuVramBytes > 0 && (
                 <span>Total VRAM: {formatBytes(devicesInfo.gpuVramBytes)}</span>
               )}

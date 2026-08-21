@@ -194,6 +194,7 @@ export interface ModelConfig {
   'op-offload': boolean | null;
   'op-offload-min-batch'?: number;
   'proj-on-cpu': boolean | null;
+  'proj-device'?: string;
   'ngpu-layers': number | null;
   'split-mode': string | null;
   'tensor-split': number[] | null;
@@ -1042,7 +1043,10 @@ export interface AutoTestSessionSeed {
 export interface DeviceInfo {
   index: number;
   name: string;
+  description: string;
   type: 'cpu' | 'gpu_cuda' | 'gpu_metal' | 'gpu_rocm' | 'gpu_vulkan' | 'unknown';
+  hardware_type: 'CPU' | 'GPU' | 'IGPU' | 'ACCEL' | 'META' | string;
+  backend: string;
   free_bytes: number;
   total_bytes: number;
 }

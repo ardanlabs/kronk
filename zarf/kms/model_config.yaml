@@ -95,6 +95,7 @@ version: 1
 #   op-offload: true                     # Offload tensor operations to GPU (false = keep on CPU)
 #   op-offload-min-batch: 0              # Min batch size before host tensor ops are offloaded (0 = default)
 #   proj-on-cpu: true                    # Force multimodal projector (mmproj) onto CPU
+#   proj-device: CUDA1                    # Explicit mmproj device; omit for automatic (conflicts with proj-on-cpu: true)
 #   rope-freq-base: 1000000              # RoPE base frequency (nil = from model, e.g., 10000 Llama, 1000000 Qwen)
 #   rope-freq-scale: 0.25                # RoPE frequency scale (nil = auto-calculated)
 #   rope-scaling-type: yarn              # RoPE scaling: none, linear, yarn

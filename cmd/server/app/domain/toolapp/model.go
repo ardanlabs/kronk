@@ -458,6 +458,7 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc models.ModelConfig
 			PtrOffloadKQV:         rmc.PtrOffloadKQV,
 			PtrOpOffload:          rmc.PtrOpOffload,
 			PtrProjOnCPU:          rmc.PtrProjOnCPU,
+			ProjDevice:            rmc.ProjDevice,
 			PtrNGpuLayers:         rmc.PtrNGpuLayers,
 			PtrSplitMode:          rmc.PtrSplitMode,
 			TensorSplit:           rmc.TensorSplit,
@@ -1057,6 +1058,7 @@ type ModelConfig struct {
 	PtrOffloadKQV         *bool                    `json:"offload-kqv"`
 	PtrOpOffload          *bool                    `json:"op-offload"`
 	PtrProjOnCPU          *bool                    `json:"proj-on-cpu"`
+	ProjDevice            string                   `json:"proj-device,omitempty"`
 	PtrNGpuLayers         *int                     `json:"ngpu-layers"`
 	PtrSplitMode          *model.SplitMode         `json:"split-mode"`
 	TensorSplit           []float32                `json:"tensor-split"`

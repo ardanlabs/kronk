@@ -431,6 +431,12 @@ func MergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	if src.PtrOpOffloadMinBatch != nil {
 		dst.PtrOpOffloadMinBatch = src.PtrOpOffloadMinBatch
 	}
+	if src.PtrProjOnCPU != nil {
+		dst.PtrProjOnCPU = src.PtrProjOnCPU
+	}
+	if src.ProjDevice != "" {
+		dst.ProjDevice = src.ProjDevice
+	}
 	if src.PtrNGpuLayers != nil {
 		dst.PtrNGpuLayers = src.PtrNGpuLayers
 	}

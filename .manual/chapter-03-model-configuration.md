@@ -354,7 +354,11 @@ host tensor operations on the CPU. These options can reduce discrete-GPU VRAM
 pressure at a performance cost. They do not reduce total memory requirements.
 
 For multimodal models, `proj-on-cpu: true` keeps the media projector on the
-CPU without changing placement of the language model itself.
+CPU without changing placement of the language model itself. To place the
+projector on a specific accelerator, set `proj-device` to a name reported by
+`kronk devices` (for example, `CUDA1` or `MTL0`). Omit both settings for
+automatic placement. `proj-device` cannot be combined with
+`proj-on-cpu: true`.
 
 #### Multiple GPUs
 
@@ -706,6 +710,7 @@ is normally supplied by analysis or by the load-time defaults.
 | `offload-kqv` | Boolean | Place KV cache on GPU when true |
 | `op-offload` | Boolean | Place host tensor operations on GPU when true |
 | `proj-on-cpu` | Boolean | Keep multimodal projector on CPU |
+| `proj-device` | Device name | Place multimodal projector on a specific accelerator |
 | `devices` | Device-name list | Devices available to the model |
 | `split-mode` | `none`, `layer`, `row` | Multi-GPU distribution mode |
 | `main-gpu` | Device index | Primary device in single-GPU mode |

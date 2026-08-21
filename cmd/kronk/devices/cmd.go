@@ -42,11 +42,12 @@ func run() error {
 	}
 
 	fmt.Printf("Available compute devices (%d):\n\n", len(d.Devices))
-	fmt.Printf("  %-8s  %-20s  %s\n", "INDEX", "NAME", "TYPE")
-	fmt.Printf("  %-8s  %-20s  %s\n", "-----", "----", "----")
+	fmt.Printf("  %-8s  %-20s  %-24s  %-10s  %-10s  %s\n", "INDEX", "NAME", "DESCRIPTION", "HARDWARE", "BACKEND", "TYPE")
+	fmt.Printf("  %-8s  %-20s  %-24s  %-10s  %-10s  %s\n", "-----", "----", "-----------", "--------", "-------", "----")
 
 	for _, dev := range d.Devices {
-		fmt.Printf("  %-8d  %-20s  %s\n", dev.Index, dev.Name, deviceType(dev))
+		fmt.Printf("  %-8d  %-20s  %-24s  %-10s  %-10s  %s\n",
+			dev.Index, dev.Name, dev.Description, dev.HardwareType, dev.Backend, deviceType(dev))
 	}
 
 	fmt.Printf("\nGPU offload supported: %t\n", d.SupportsGPUOffload)

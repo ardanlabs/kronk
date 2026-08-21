@@ -151,7 +151,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	needsMTMD := e.model.projFile != "" && (job.imcMediaBuild || job.imcMediaAppend ||
 		(job.object == ObjectChatMedia && len(job.media) > 0))
 	if needsMTMD {
-		mtmdCtx, err := mtmd.InitFromFile(e.model.projFile, e.model.model, mtmdContextParams(e.model.cfg))
+		mtmdCtx, err := mtmd.InitFromFile(e.model.projFile, e.model.model, mtmdContextParams(e.model.cfg, e.model.projDevice))
 		if err != nil {
 			// For IMC media builds token-v2 planner already reserved the
 			// session with reserved=true. We failed before reaching the

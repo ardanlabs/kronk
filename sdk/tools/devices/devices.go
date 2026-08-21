@@ -24,11 +24,14 @@ func Ready() bool {
 
 // DeviceInfo provides information about a single compute device.
 type DeviceInfo struct {
-	Index      int    `json:"index"`
-	Name       string `json:"name"`
-	Type       string `json:"type"`
-	FreeBytes  uint64 `json:"free_bytes"`
-	TotalBytes uint64 `json:"total_bytes"`
+	Index        int    `json:"index"`
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	Type         string `json:"type"`
+	HardwareType string `json:"hardware_type"`
+	Backend      string `json:"backend"`
+	FreeBytes    uint64 `json:"free_bytes"`
+	TotalBytes   uint64 `json:"total_bytes"`
 }
 
 // Devices returns information about available compute devices.
@@ -114,7 +117,9 @@ func List(opts ...Option) Devices {
 		}
 
 		name := llama.GGMLBackendDeviceName(dev)
-		devType := ClassifyDeviceType(dev)
+		hardwareType := llama.GGMLBackendDevType(dev)
+		backend := llama.GGMLBackendRegName(llama.GGMLBackendDeviceBackendReg(dev))
+		devType := classifyDeviceType(hardwareType, backend)
 
 		if !cfg.includeCPU && devType == "cpu" {
 			continue
@@ -124,9 +129,12 @@ func List(opts ...Option) Devices {
 		}
 
 		di := DeviceInfo{
-			Index: int(i),
-			Name:  name,
-			Type:  devType,
+			Index:        int(i),
+			Name:         name,
+			Description:  llama.GGMLBackendDeviceDescription(dev),
+			Type:         devType,
+			HardwareType: hardwareType.String(),
+			Backend:      backend,
 		}
 
 		if cfg.includeMemory {

@@ -97,6 +97,7 @@ func TestConfigStringIncludesCompleteDiagnostics(t *testing.T) {
 		"grammar[true]",
 		"IMCSessionCapacity[9]",
 		"QueueDepth[7]",
+		"ProjDevice[]",
 		"Speculation[auto]",
 	} {
 		if !strings.Contains(got, want) {
@@ -797,6 +798,20 @@ func TestValidateConfig(t *testing.T) {
 			WithCacheTypeV(GGMLTypeF16),
 			WithFlashAttention(FlashAttentionDisabled),
 		), false},
+		{"projector device is valid", NewConfig(
+			WithModelFiles([]string{"dummy.gguf"}),
+			WithProjDevice("CUDA1"),
+		), false},
+		{"projector device with explicit GPU offload is valid", NewConfig(
+			WithModelFiles([]string{"dummy.gguf"}),
+			WithProjDevice("CUDA1"),
+			WithProjOnCPU(false),
+		), false},
+		{"projector device conflicts with CPU placement", NewConfig(
+			WithModelFiles([]string{"dummy.gguf"}),
+			WithProjDevice("CUDA1"),
+			WithProjOnCPU(true),
+		), true},
 	}
 	{
 		for _, tt := range tests {
