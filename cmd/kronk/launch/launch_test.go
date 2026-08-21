@@ -149,18 +149,20 @@ func TestPrepareOpenCode(t *testing.T) {
 }
 
 func TestFilterOpenCodeModelsPreservesOutputLimit(t *testing.T) {
-	configDir := t.TempDir()
-	modelID := "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT"
-
-	if err := filterOpenCodeModels(configDir, []string{modelID}); err != nil {
-		t.Fatalf("filterOpenCodeModels: %v", err)
-	}
-
-	data, err := os.ReadFile(filepath.Join(configDir, "opencode.jsonc"))
+	data, err := os.ReadFile("testdata/opencode.jsonc")
 	if err != nil {
-		t.Fatalf("reading filtered OpenCode config: %v", err)
+		t.Fatalf("reading OpenCode test config: %v", err)
 	}
 	var config map[string]any
+	if err := json.Unmarshal(data, &config); err != nil {
+		t.Fatalf("OpenCode test config is not valid JSON: %v", err)
+	}
+
+	const modelID = "example/test-model/AGENT"
+	data, err = filteredOpenCodeConfig(config, []string{modelID})
+	if err != nil {
+		t.Fatalf("filteredOpenCodeConfig: %v", err)
+	}
 	if err := json.Unmarshal(data, &config); err != nil {
 		t.Fatalf("filtered OpenCode config is not valid JSON: %v", err)
 	}

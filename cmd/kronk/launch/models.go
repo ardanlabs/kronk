@@ -20,9 +20,23 @@ func filterOpenCodeModels(configDir string, available []string) error {
 		return err
 	}
 
-	entries, err := modelEntries(config)
+	data, err := filteredOpenCodeConfig(config, available)
 	if err != nil {
 		return err
+	}
+
+	path := filepath.Join(configDir, "opencode.jsonc")
+	if err := os.WriteFile(path, append(data, '\n'), 0o600); err != nil {
+		return fmt.Errorf("writing filtered OpenCode config: %w", err)
+	}
+
+	return nil
+}
+
+func filteredOpenCodeConfig(config map[string]any, available []string) ([]byte, error) {
+	entries, err := modelEntries(config)
+	if err != nil {
+		return nil, err
 	}
 
 	keep := make(map[string]bool, len(available))
@@ -53,15 +67,10 @@ func filterOpenCodeModels(configDir string, available []string) error {
 
 	data, err := json.MarshalIndent(config, "", "    ")
 	if err != nil {
-		return fmt.Errorf("encoding filtered OpenCode config: %w", err)
+		return nil, fmt.Errorf("encoding filtered OpenCode config: %w", err)
 	}
 
-	path := filepath.Join(configDir, "opencode.jsonc")
-	if err := os.WriteFile(path, append(data, '\n'), 0o600); err != nil {
-		return fmt.Errorf("writing filtered OpenCode config: %w", err)
-	}
-
-	return nil
+	return data, nil
 }
 
 func readOpenCodeConfig() (map[string]any, error) {

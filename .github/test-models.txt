@@ -12,9 +12,13 @@
 # renaming a model automatically invalidates the cache on the next run,
 # so the test environment never silently goes stale against the test
 # expectations. Do NOT add comments at the end of model lines.
+# The selected artifacts total about 6.6 GiB uncompressed, leaving headroom
+# beneath GitHub Actions' 10 GB cache quota.
 
 kronk unsloth/Qwen3.5-0.8B-Q8_0
 kronk unsloth/Qwen3-1.7B-Q4_K_M
+kronk unsloth/Qwen3-0.6B-Q8_0
+kronk mradermacher/Qwopus3.5-4B-Coder.Q4_K_M
 kronk nomic-ai/nomic-embed-text-v1.5.Q8_0
 kronk gpustack/bge-reranker-v2-m3-Q8_0
 bucky ggml-tiny.bin
