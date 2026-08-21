@@ -78,15 +78,15 @@
                 "ornith-ai/Ornith-1.5-9B-Q4_K_M/AGENT": {
                     "name": "Ornith 1.5 9B Q4_K_M",
                     "limit": {
-                        "context": 131072,
-                        "output": 16384
+                        "context": 65536,
+                        "output": 8192
                     }
                 },
                 "mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT": {
                     "name": "Qwopus3.5 4B-Coder Q8_0",
                     "limit": {
-                        "context": 73728,
-                        "output": 16384
+                        "context": 65536,
+                        "output": 8192
                     }
                 }
             }
