@@ -49,7 +49,15 @@ test-gh-only: install-libraries-gh install-test-gh-models
 	export GITHUB_WORKSPACE=$(shell pwd) && \
 	export GITHUB_ACTIONS=true && \
 	go test -v -p=1 -count=1 ./cmd/server/... && \
-	go test -v -p=1 -count=1 $(go list ./sdk/... | grep -v '/sdk/kronk/tests')
+	go test -v -p=1 -count=1 $(go list ./sdk/... | grep -v '/sdk/kronk/tests') && \
+	go test -v -p=1 -count=1 \
+		./sdk/kronk/tests/qwen3 \
+		./sdk/kronk/tests/qwen06 \
+		./sdk/kronk/tests/draft \
+		./sdk/kronk/tests/vision \
+		./sdk/kronk/tests/embed \
+		./sdk/kronk/tests/rerank \
+		./sdk/kronk/tests/hybrid
 
 test-gh: test-gh-only lint vuln-check diff
 

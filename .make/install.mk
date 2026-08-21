@@ -68,6 +68,10 @@ install-test-gh-models: install-kronk
 	@echo
 	kronk model pull --local "unsloth/Qwen3-1.7B-Q4_K_M"
 	@echo
+	kronk model pull --local "unsloth/Qwen3-0.6B-Q8_0"
+	@echo
+	kronk model pull --local "mradermacher/Qwopus3.5-4B-Coder.Q4_K_M"
+	@echo
 	kronk model pull --local "nomic-ai/nomic-embed-text-v1.5.Q8_0"
 	@echo
 	kronk model pull --local "gpustack/bge-reranker-v2-m3-Q8_0"

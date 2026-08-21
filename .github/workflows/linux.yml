@@ -252,3 +252,11 @@ jobs:
         run: |
           export RUN_IN_PARALLEL=no
           go test -v -p=1 -count=1 -timeout 20m $(go list ./sdk/... | grep -v '/sdk/kronk/tests')
+          go test -v -p=1 -count=1 -timeout 20m \
+            ./sdk/kronk/tests/qwen3 \
+            ./sdk/kronk/tests/qwen06 \
+            ./sdk/kronk/tests/draft \
+            ./sdk/kronk/tests/vision \
+            ./sdk/kronk/tests/embed \
+            ./sdk/kronk/tests/rerank \
+            ./sdk/kronk/tests/hybrid

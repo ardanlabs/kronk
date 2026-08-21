@@ -8,9 +8,9 @@ description: >
   identical environment and share setup-go's Go module + build cache
   via the common cache key.
 
-  Wall-clock note: the models cache restore is ~10 GB / ~65 s and the
-  `go install ./cmd/kronk` + native-libs install path is ~25 s on a
-  Go-module cache miss. The two are independent (the kronk binary
+  Wall-clock note: the models cache contains ~6.6 GiB of uncompressed
+  artifacts. The `go install ./cmd/kronk` + native-libs install path is
+  ~25 s on a Go-module cache miss. The two are independent (the kronk binary
   doesn't need any models on disk, and the libs install only needs
   the libraries cache), so this action overlaps them: it kicks off
   the kronk build + libs install in the background after the libs
@@ -122,10 +122,10 @@ runs:
         disown
         echo "Started background kronk install (pid $(cat /tmp/setup-kronk-bg.pid))"
 
-    # Long pole: ~10 GB / ~65 s on a hit. Runs in the foreground while
-    # the background step above builds kronk and installs the native
-    # libs. On a typical run the background work finishes before this
-    # step does, so the join below is effectively free.
+    # Long pole: restore the multi-GB model cache in the foreground while
+    # the background step above builds kronk and installs the native libs.
+    # On a typical run the background work finishes before this step does,
+    # so the join below is effectively free.
     - name: Restore models cache
       id: cache-models
       uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5
