@@ -6,6 +6,8 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/ardanlabs/bucky/pkg/whisper"
 )
@@ -19,16 +21,25 @@ type Segment struct {
 	NoSpeechProb float32
 }
 
+// Word is one decoded word with its position in the source audio.
+type Word struct {
+	Text    string
+	StartMs int64
+	EndMs   int64
+}
+
 // Transcription is the full result of a Transcribe call. Text is the
 // concatenation of Segment.Text trimmed of leading and trailing
 // whitespace. Language is the language code whisper.cpp detected (or
 // the hint that was passed in). Duration is the length of the
-// transcribed audio in seconds.
+// transcribed audio in seconds. Words is populated when the call uses
+// WithWordTimestamps.
 type Transcription struct {
 	Text     string
 	Language string
 	Duration float64
 	Segments []Segment
+	Words    []Word
 }
 
 // =============================================================================
@@ -133,6 +144,10 @@ type TranscribeConfig struct {
 	// on each Segment value.
 	NoTimestamps bool
 
+	// WordTimestamps enables word-level timestamps in the result. This
+	// adds token alignment work to the transcription.
+	WordTimestamps bool
+
 	// OnSegment, when non-nil, is invoked once per decoded segment
 	// after Full returns. The callback is synchronous and runs on the
 	// caller's goroutine.
@@ -219,6 +234,11 @@ func WithNoTimestamps(v bool) TranscribeOption {
 	return func(c *TranscribeConfig) { c.NoTimestamps = v }
 }
 
+// WithWordTimestamps enables word-level timestamps in the transcription.
+func WithWordTimestamps(v bool) TranscribeOption {
+	return func(c *TranscribeConfig) { c.WordTimestamps = v }
+}
+
 // WithOnSegment registers a callback invoked once per decoded
 // segment after Full returns.
 func WithOnSegment(fn func(Segment)) TranscribeOption {
@@ -264,7 +284,7 @@ func (m *Model) Transcribe(ctx context.Context, samples []float32, opts ...Trans
 		return Transcription{}, fmt.Errorf("transcribe: %w", err)
 	}
 
-	tr := collectTranscription(ps.state, tcfg.Language, tcfg.OnSegment)
+	tr := collectTranscription(m.handle, ps.state, tcfg.Language, tcfg.WordTimestamps, tcfg.OnSegment)
 	tr.Duration = float64(len(samples)) / float64(whisper.SampleRate)
 	return tr, nil
 }
@@ -391,6 +411,10 @@ func applyFullParamOverrides(params *whisper.WhisperFullParams, tcfg TranscribeC
 	if tcfg.NoTimestamps {
 		params.NoTimestamps = 1
 	}
+	if tcfg.WordTimestamps {
+		params.TokenTimestamps = 1
+		params.SplitOnWord = 1
+	}
 	if tcfg.NoSpeechThreshold > 0 {
 		params.NoSpeechThold = tcfg.NoSpeechThreshold
 	}
@@ -412,7 +436,7 @@ func applyFullParamOverrides(params *whisper.WhisperFullParams, tcfg TranscribeC
 	params.PrintTimestamps = 0
 }
 
-func collectTranscription(state whisper.State, requestedLang string, onSegment func(Segment)) Transcription {
+func collectTranscription(handle whisper.Context, state whisper.State, requestedLang string, wordTimestamps bool, onSegment func(Segment)) Transcription {
 	n := whisper.FullNSegmentsFromState(state)
 
 	out := Transcription{
@@ -438,7 +462,68 @@ func collectTranscription(state whisper.State, requestedLang string, onSegment f
 	}
 
 	out.Text = strings.TrimSpace(sb.String())
+	if wordTimestamps {
+		out.Words = collectWords(handle, state, n)
+	}
 	return out
+}
+
+func collectWords(handle whisper.Context, state whisper.State, nSegments int32) []Word {
+	var words []Word
+	eot := whisper.TokenEOT(handle)
+
+	for i := range nSegments {
+		var segmentWords []Word
+		var pending string
+		var startMs int64
+		var endMs int64
+
+		nTokens := whisper.FullNTokensFromState(state, i)
+		for j := range nTokens {
+			if whisper.FullGetTokenIDFromState(state, i, j) >= eot {
+				continue
+			}
+
+			text := whisper.FullGetTokenTextFromState(handle, state, i, j)
+			t0 := whisper.FullGetTokenT0FromState(state, i, j) * 10
+			t1 := whisper.FullGetTokenT1FromState(state, i, j) * 10
+			if text == "" || t0 < 0 || t1 < t0 {
+				continue
+			}
+
+			if pending == "" {
+				startMs = t0
+			}
+			pending += text
+			endMs = t1
+			if !utf8.ValidString(pending) {
+				continue
+			}
+
+			segmentWords = appendWordPiece(segmentWords, pending, startMs, endMs)
+			pending = ""
+		}
+
+		words = append(words, segmentWords...)
+	}
+
+	return words
+}
+
+func appendWordPiece(words []Word, piece string, startMs int64, endMs int64) []Word {
+	text := strings.TrimSpace(piece)
+	if text == "" {
+		return words
+	}
+
+	startsWord := len(strings.TrimLeftFunc(piece, unicode.IsSpace)) != len(piece)
+	if startsWord || len(words) == 0 {
+		return append(words, Word{Text: text, StartMs: startMs, EndMs: endMs})
+	}
+
+	words[len(words)-1].Text += text
+	words[len(words)-1].EndMs = endMs
+	return words
 }
 
 // resolveLanguage reports the language for a transcription. When the

@@ -18,6 +18,7 @@ import (
 func TestSuite(t *testing.T) {
 	testlib.WithWhisper(t, testlib.CfgTinyEn(), func(t *testing.T, w *bucky.Bucky) {
 		t.Run("Transcribe", func(t *testing.T) { testTranscribe(t, w) })
+		t.Run("TranscribeWords", func(t *testing.T) { testTranscribeWords(t, w) })
 		t.Run("TranscribeOnSegment", func(t *testing.T) { testTranscribeOnSegment(t, w) })
 		t.Run("TranscribeChannels", func(t *testing.T) { testTranscribeChannels(t, w) })
 		t.Run("DecodeChannels", func(t *testing.T) { testDecodeChannels(t, w) })
@@ -71,6 +72,36 @@ func testTranscribe(t *testing.T, w *bucky.Bucky) {
 
 	if err := g.Wait(); err != nil {
 		t.Errorf("error: %v", err)
+	}
+}
+
+func testTranscribeWords(t *testing.T, w *bucky.Bucky) {
+	if testlib.RunInParallel {
+		t.Parallel()
+	}
+
+	samples := testlib.LoadSamples(t, testlib.AudioFile)
+
+	ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
+	defer cancel()
+
+	tr, err := w.Transcribe(ctx, samples,
+		model.WithLanguage("en"),
+		model.WithWordTimestamps(true),
+	)
+	if err != nil {
+		t.Fatalf("transcribe: %v", err)
+	}
+	if len(tr.Words) == 0 {
+		t.Fatal("words: got 0, want at least 1")
+	}
+	for i, word := range tr.Words {
+		if word.Text == "" {
+			t.Errorf("Words[%d].Text: got empty, want text", i)
+		}
+		if word.StartMs < 0 || word.EndMs < word.StartMs {
+			t.Errorf("Words[%d] timestamps: got %d-%d, want ordered non-negative values", i, word.StartMs, word.EndMs)
+		}
 	}
 }
 

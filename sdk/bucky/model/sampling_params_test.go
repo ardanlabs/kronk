@@ -18,6 +18,7 @@ func TestTranscribeSamplingOptions(t *testing.T) {
 		WithBeamSize(5),
 		WithBeamSearchPatience(1.2),
 		WithLengthPenalty(-0.5),
+		WithWordTimestamps(true),
 	}
 	for _, option := range options {
 		option(&cfg)
@@ -61,8 +62,36 @@ func TestTranscribeSamplingOptions(t *testing.T) {
 	if params.LengthPenalty != -0.5 {
 		t.Errorf("LengthPenalty: got %v, want -0.5", params.LengthPenalty)
 	}
+	if params.TokenTimestamps != 1 {
+		t.Errorf("TokenTimestamps: got %d, want 1", params.TokenTimestamps)
+	}
+	if params.SplitOnWord != 1 {
+		t.Errorf("SplitOnWord: got %d, want 1", params.SplitOnWord)
+	}
 	if got := transcribeSamplingStrategy(cfg); got != whisper.SamplingBeamSearch {
 		t.Errorf("sampling strategy: got %v, want beam search", got)
+	}
+}
+
+func TestAppendWordPiece(t *testing.T) {
+	var words []Word
+	words = appendWordPiece(words, " Amer", 100, 200)
+	words = appendWordPiece(words, "icans", 200, 300)
+	words = appendWordPiece(words, ",", 300, 320)
+	words = appendWordPiece(words, " hello", 400, 500)
+	words = appendWordPiece(words, " ", 500, 510)
+
+	want := []Word{
+		{Text: "Americans,", StartMs: 100, EndMs: 320},
+		{Text: "hello", StartMs: 400, EndMs: 500},
+	}
+	if len(words) != len(want) {
+		t.Fatalf("words: got %d, want %d", len(words), len(want))
+	}
+	for i := range want {
+		if words[i] != want[i] {
+			t.Errorf("words[%d]: got %+v, want %+v", i, words[i], want[i])
+		}
 	}
 }
 

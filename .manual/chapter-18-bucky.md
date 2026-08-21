@@ -270,7 +270,7 @@ server deadline.
 | `beam_search_patience`      | No       | Patience used by beam-search sampling |
 | `length_penalty`            | No       | Decoder length penalty |
 | `response_format`           | No       | `json` (default), `verbose_json`, `text`, `srt`, or `vtt` |
-| `timestamp_granularities[]` | No       | `word` is accepted; word data is not yet available and returns an empty `words` array in `verbose_json` |
+| `timestamp_granularities[]` | No       | `word` enables word-level timestamps in `verbose_json` |
 
 Omitted sampling fields retain the defaults supplied by the loaded
 whisper.cpp library. Sampling fields must contain valid numeric values.
@@ -293,6 +293,8 @@ The default JSON response is:
 ```
 
 `verbose_json` adds the detected language, duration, and timestamped segments.
+When `timestamp_granularities[]=word` is requested, it also includes a `words`
+array whose entries contain `word`, `start`, and `end` fields.
 The `text`, `srt`, and `vtt` formats return their corresponding non-JSON media
 types.
 

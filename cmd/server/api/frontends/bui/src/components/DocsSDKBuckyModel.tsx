@@ -136,7 +136,7 @@ export default function DocsSDKBuckyModel() {
               <pre className="code-block">
                 <code>{`type Config struct {
 	// ModelPath is the absolute path to the GGML whisper model file
-	// the handle will load via whisper.InitFromFileWithParams.
+	// the handle will load via whisper.InitFromFileWithParamsNoState.
 	ModelPath string
 
 	// UseGPU enables GPU offload (Metal on darwin, CUDA / Vulkan on
@@ -522,6 +522,10 @@ export default function DocsSDKBuckyModel() {
 	// on each Segment value.
 	NoTimestamps bool
 
+	// WordTimestamps enables word-level timestamps in the result. This
+	// adds token alignment work to the transcription.
+	WordTimestamps bool
+
 	// OnSegment, when non-nil, is invoked once per decoded segment
 	// after Full returns. The callback is synchronous and runs on the
 	// caller's goroutine.
@@ -547,9 +551,22 @@ export default function DocsSDKBuckyModel() {
 	Language string
 	Duration float64
 	Segments []Segment
+	Words    []Word
 }`}</code>
               </pre>
-              <p className="doc-description">Transcription is the full result of a Transcribe call. Text is the concatenation of Segment.Text trimmed of leading and trailing whitespace. Language is the language code whisper.cpp detected (or the hint that was passed in). Duration is the length of the transcribed audio in seconds.</p>
+              <p className="doc-description">Transcription is the full result of a Transcribe call. Text is the concatenation of Segment.Text trimmed of leading and trailing whitespace. Language is the language code whisper.cpp detected (or the hint that was passed in). Duration is the length of the transcribed audio in seconds. Words is populated when the call uses WithWordTimestamps.</p>
+            </div>
+
+            <div className="doc-section" id="type-word">
+              <h4>Word</h4>
+              <pre className="code-block">
+                <code>{`type Word struct {
+	Text    string
+	StartMs int64
+	EndMs   int64
+}`}</code>
+              </pre>
+              <p className="doc-description">Word is one decoded word with its position in the source audio.</p>
             </div>
           </div>
 
@@ -715,6 +732,7 @@ export default function DocsSDKBuckyModel() {
                 <li><a href="#type-transcribeconfig">TranscribeConfig</a></li>
                 <li><a href="#type-transcribeoption">TranscribeOption</a></li>
                 <li><a href="#type-transcription">Transcription</a></li>
+                <li><a href="#type-word">Word</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
