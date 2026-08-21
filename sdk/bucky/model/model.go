@@ -67,7 +67,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	}
 	cp.GPUDevice = cfg.GPUDevice
 
-	handle, err := whisper.InitFromFileWithParams(cfg.ModelPath, cp)
+	handle, err := whisper.InitFromFileWithParamsNoState(cfg.ModelPath, cp)
 	if err != nil {
 		return nil, fmt.Errorf("new-model: init model %q: %w", cfg.ModelPath, err)
 	}

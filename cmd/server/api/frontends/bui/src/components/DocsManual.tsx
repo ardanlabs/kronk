@@ -4337,7 +4337,7 @@ kronk bucky model remove tiny`}</code></pre>
               <tr>
                 <td><code>timestamp_granularities[]</code></td>
                 <td>No</td>
-                <td><code>word</code> is accepted; word data is not yet available and returns an empty <code>words</code> array in <code>verbose_json</code></td>
+                <td><code>word</code> enables word-level timestamps in <code>verbose_json</code></td>
               </tr>
             </tbody>
           </table>
@@ -4351,7 +4351,7 @@ kronk bucky model remove tiny`}</code></pre>
   -F response_format=json`}</code></pre>
           <p>The default JSON response is:</p>
           <pre className="code-block"><code className="language-json">{`{"text":"And so my fellow Americans..."}`}</code></pre>
-          <p><code>verbose_json</code> adds the detected language, duration, and timestamped segments. The <code>text</code>, <code>srt</code>, and <code>vtt</code> formats return their corresponding non-JSON media types.</p>
+          <p><code>verbose_json</code> adds the detected language, duration, and timestamped segments. When <code>timestamp_granularities[]=word</code> is requested, it also includes a <code>words</code> array whose entries contain <code>word</code>, <code>start</code>, and <code>end</code> fields. The <code>text</code>, <code>srt</code>, and <code>vtt</code> formats return their corresponding non-JSON media types.</p>
           <p>English-only models (<code>base.en</code>, <code>small.en</code>, and <code>medium.en</code>) only accept an empty language hint or <code>en</code>. Use a multilingual model for other languages or translation.</p>
           <h4 id="1862-bucky-management-endpoints">18.6.2 Bucky Management Endpoints</h4>
           <p>The CLI and BUI use these management routes:</p>

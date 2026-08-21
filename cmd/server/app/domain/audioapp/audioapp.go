@@ -90,6 +90,9 @@ func (a *app) transcriptions(ctx context.Context, r *http.Request) web.Encoder {
 	if translate {
 		opts = append(opts, model.WithTranslate(true))
 	}
+	if wantWordTimes {
+		opts = append(opts, model.WithWordTimestamps(true))
+	}
 	whisperOpts, err := parseWhisperOptions(r.Form)
 	if err != nil {
 		return errs.New(errs.InvalidArgument, err)
@@ -251,12 +254,16 @@ func verboseJSON(tr model.Transcription, duration float64, wantWordTimes bool) m
 		"segments": segments,
 	}
 
-	// Word-level timestamps require per-word data from whisper.cpp,
-	// which the bucky SDK does not yet surface. Emit an empty list
-	// when the client asks for word granularity so the response shape
-	// stays compatible.
 	if wantWordTimes {
-		out["words"] = []map[string]any{}
+		words := make([]map[string]any, 0, len(tr.Words))
+		for _, w := range tr.Words {
+			words = append(words, map[string]any{
+				"word":  w.Text,
+				"start": float64(w.StartMs) / 1000.0,
+				"end":   float64(w.EndMs) / 1000.0,
+			})
+		}
+		out["words"] = words
 	}
 
 	return out

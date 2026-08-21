@@ -120,6 +120,7 @@ Here are some of the known compatible versions:
 
 | whisper.cpp | bucky  | kronk   |
 | ----------- | ------ | ------- |
+| v1.9.3      | v1.1.0 | 1.31.8+ |
 | v1.9.2      | v1.0.8 | 1.30.0+ |
 | v1.9.1      | v1.0.6 | 1.29.8+ |
 

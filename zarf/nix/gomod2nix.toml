@@ -26,20 +26,20 @@ schema = 3
     version = "v1.65.0"
     hash = "sha256-jYau7dfGG1JWurHdezvlzm+9Vi0zLxJUkTZTs4RilI0="
   [mod."github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp"]
-    version = "v1.35.0"
-    hash = "sha256-++3U3ooNJosPv8rTN1R0QhViPqkkWawH/LEZrsSvzp4="
+    version = "v1.36.0"
+    hash = "sha256-yrogjAEKHPetf3PRECHcwsjlnZTZ0aXDEWvISy/KuVk="
   [mod."github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric"]
-    version = "v0.59.0"
-    hash = "sha256-29hZTYPpFHrjoHtzCV8KBg8NXlZzTVzm3U+QlDGiPxo="
+    version = "v0.60.0"
+    hash = "sha256-ezT4aC2F0JVtFPDw8e5Jx1ZEc2radXxPr91E5NdPiao="
   [mod."github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping"]
-    version = "v0.59.0"
-    hash = "sha256-HMMjGdEbwBe26a5VKonuIr2qNu6xWaJ67pE1f6oI0TE="
+    version = "v0.60.0"
+    hash = "sha256-EjremEtNsvNgbXKyPYAasvVSdPVIFp2ayj0msyJyByg="
   [mod."github.com/agnivade/levenshtein"]
     version = "v1.2.1"
     hash = "sha256-3XnCzf7tFgEE0MmjxvjfWaw6qK6mKLabFZ3c23JIH9Y="
   [mod."github.com/ardanlabs/bucky"]
-    version = "v1.0.8"
-    hash = "sha256-nghLu5q1vuMTT0Ev6Edg2jaaaNhwhItBBg0CpiKUkr4="
+    version = "v1.1.0"
+    hash = "sha256-dnMOPJg7CXvJyTQCzlpFE8frgKZqswV0epDt8gbjKuk="
   [mod."github.com/ardanlabs/conf/v3"]
     version = "v3.13.0"
     hash = "sha256-WlPMHIHqJJVpe1tryI8si4jknRZr484+z0F/7ojYimw="
@@ -104,8 +104,8 @@ schema = 3
     version = "v1.45.7"
     hash = "sha256-jQEYG74V993mrwb00wOVThB1GglO4iJBogBqhwdThPI="
   [mod."github.com/aws/smithy-go"]
-    version = "v1.27.8"
-    hash = "sha256-fzgO5INWVQqHv2CCuecaaPTSy608y5uip9Usfy52jjM="
+    version = "v1.27.9"
+    hash = "sha256-ZKAItX27nM6VfDXOMMySvNtl43utfug4AsQDDDxpQ7w="
   [mod."github.com/beorn7/perks"]
     version = "v1.0.1"
     hash = "sha256-h75GUqfwJKngCJQVE5Ao5wnO3cfKD9lSIteoLp/3xJ4="
@@ -182,8 +182,8 @@ schema = 3
     version = "v0.3.21"
     hash = "sha256-h8t4jzU7hRY/KaSI51xAkxX2934i5k6XVvpuNPef4iE="
   [mod."github.com/googleapis/gax-go/v2"]
-    version = "v2.23.0"
-    hash = "sha256-aIJepJZI5PCsc9eteAP9x+n4RSSyOWi4kPnI5mmrBXk="
+    version = "v2.24.0"
+    hash = "sha256-uDcY93yvQS3wDkhM85bAxSo67Z+cWlwR1Vnv9hZRa5o="
   [mod."github.com/gorilla/websocket"]
     version = "v1.5.3"
     hash = "sha256-vTIGEFMEi+30ZdO6ffMNJ/kId6pZs5bbyqov8xe9BM0="

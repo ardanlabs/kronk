@@ -22,7 +22,7 @@ const defaultAdmissionTimeout = 3 * time.Minute
 // per-handle backpressure conventions used by sdk/kronk.
 type Config struct {
 	// ModelPath is the absolute path to the GGML whisper model file
-	// the handle will load via whisper.InitFromFileWithParams.
+	// the handle will load via whisper.InitFromFileWithParamsNoState.
 	ModelPath string
 
 	// UseGPU enables GPU offload (Metal on darwin, CUDA / Vulkan on
