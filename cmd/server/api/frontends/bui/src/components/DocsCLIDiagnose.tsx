@@ -61,7 +61,7 @@ export default function DocsCLIDiagnose() {
                 </tr>
                 <tr>
                   <td><code>--model &lt;string&gt;</code></td>
-                  <td>Model source or local <code>.gguf</code> path to benchmark (e.g. <code>unsloth/Qwen3-8B-Q8_0</code>)</td>
+                  <td>Model source or local <code>.gguf</code> path to benchmark (e.g. <code>unsloth/Qwen3-1.7B-UD-Q8_K_XL</code>)</td>
                 </tr>
                 <tr>
                   <td><code>--processor &lt;string&gt;</code></td>
@@ -92,7 +92,7 @@ kronk diagnose --format yaml
 kronk diagnose --no-bench
 
 # Benchmark a specific model (source or local .gguf path)
-kronk diagnose --model unsloth/Qwen3-8B-Q8_0
+kronk diagnose --model unsloth/Qwen3-1.7B-UD-Q8_K_XL
 
 # Benchmark on a specific processor (e.g. force CPU on a GPU machine)
 kronk diagnose --processor cpu`}</code>

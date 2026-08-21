@@ -64,7 +64,7 @@ export default function DocsAPITokenize() {
                     <td><code>model</code></td>
                     <td><code>string</code></td>
                     <td>Yes</td>
-                    <td>Model ID (e.g., 'Qwen3-8B-Q8_0'). Works with any model type.</td>
+                    <td>Model ID (e.g., 'unsloth/Qwen3-1.7B-UD-Q8_K_XL'). Works with any model type.</td>
                   </tr>
                   <tr>
                     <td><code>input</code></td>
@@ -95,7 +95,7 @@ export default function DocsAPITokenize() {
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "Qwen3-8B-Q8_0",
+    "model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL",
     "input": "The quick brown fox jumps over the lazy dog"
   }'`}</code>
               </pre>
@@ -105,7 +105,7 @@ export default function DocsAPITokenize() {
   -H "Authorization: Bearer $KRONK_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "Qwen3-8B-Q8_0",
+    "model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL",
     "input": "The quick brown fox jumps over the lazy dog",
     "apply_template": true
   }'`}</code>
@@ -115,7 +115,7 @@ export default function DocsAPITokenize() {
                 <code>{`{
   "object": "tokenize",
   "created": 1738857600,
-  "model": "Qwen3-8B-Q8_0",
+  "model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL",
   "tokens": 11
 }`}</code>
               </pre>

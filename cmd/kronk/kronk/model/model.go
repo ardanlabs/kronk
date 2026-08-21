@@ -45,10 +45,10 @@ EXAMPLES
   kronk model list
 
   # Download a model via catalog
-  kronk model pull Qwen3-8B-Q8_0
+  kronk model pull unsloth/Qwen3-1.7B-UD-Q8_K_XL
 
   # Show model details
-  kronk model show Qwen3-8B-Q8_0
+  kronk model show unsloth/Qwen3-1.7B-UD-Q8_K_XL
 
   # Check which models are loaded in memory
   kronk model ps`,

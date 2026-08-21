@@ -28,7 +28,7 @@ import (
 
 // modelSource is the model to download. It may be a HuggingFace URL,
 // a canonical "provider/modelID", or a bare model id.
-var modelSource = "unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL"
+var modelSource = "ornith-ai/Ornith-1.5-9B-Q4_K_M"
 
 // =============================================================================
 
@@ -430,6 +430,7 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 
 	krn, err := kronk.New(
 		model.WithModelFiles(mp.ModelFiles),
+		model.WithContextWindow(65536),
 		model.WithAutoTune(true),
 	)
 	if err != nil {

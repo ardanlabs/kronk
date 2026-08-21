@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	embeddingModelID   = "Qwen/Qwen3-Embedding-0.6B-Q8_0"
-	embeddingDimension = 1024
+	embeddingModelID   = "nomic-ai/nomic-embed-text-v1.5.Q8_0"
+	embeddingDimension = 768
 )
 
 func chatEmbed200(tokens map[string]string) []apitest.Table {

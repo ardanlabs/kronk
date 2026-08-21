@@ -252,13 +252,13 @@ func CapabilitiesFor(metadata map[string]string, hasProjection bool) CatalogCapa
 
 	hasTemplate := gguf.HasChatTemplate(metadata)
 	switch {
-	case strings.Contains(arch, "rerank") || strings.Contains(arch, "bert"):
-		caps.Endpoint = "rerank"
-		caps.Rerank = true
-		caps.Streaming = false
 	case strings.Contains(hint, "embed"):
 		caps.Endpoint = "embeddings"
 		caps.Embedding = true
+		caps.Streaming = false
+	case strings.Contains(arch, "rerank") || strings.Contains(arch, "bert"):
+		caps.Endpoint = "rerank"
+		caps.Rerank = true
 		caps.Streaming = false
 	default:
 		caps.Endpoint = "chat_completion"

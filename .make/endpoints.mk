@@ -98,7 +98,7 @@ curl-kronk-chat-tool:
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{ \
-	 	"model": "Qwen/Qwen3-8B-Q8_0", \
+		"model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL", \
 		"stream": true, \
 		"messages": [ \
 			{ \
@@ -168,7 +168,7 @@ curl-kronk-responses:
      -H "Content-Type: application/json" \
      -d '{ \
 	 	"stream": true, \
-	 	"model": "bartowski/cerebras_Qwen3-Coder-REAP-25B-A3B-Q8_0", \
+		"model": "ornith-ai/Ornith-1.5-35B-Q8_0", \
 		"input": "Hello model" \
     }'
 
@@ -196,7 +196,7 @@ curl-kronk-tool-response:
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{ \
-		"model": "Qwen/Qwen3-8B-Q8_0", \
+		"model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL", \
 		"max_tokens": 32768, \
 		"temperature": 0.1, \
 		"top_p": 0.1, \
@@ -252,7 +252,7 @@ curl-tokenize:
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{ \
-	 	"model": "Qwen/Qwen3-8B-Q8_0", \
+		"model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL", \
 		"input": "The quick brown fox jumps over the lazy dog" \
     }'
 
@@ -261,7 +261,7 @@ curl-tokenize-template:
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
      -d '{ \
-	 	"model": "Qwen/Qwen3-8B-Q8_0", \
+		"model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL", \
 		"input": "The quick brown fox jumps over the lazy dog", \
 		"apply_template": true \
     }'

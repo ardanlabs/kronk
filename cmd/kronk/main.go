@@ -50,8 +50,8 @@ COMMANDS
   malina    Stable Diffusion backend: libs and model management
 
 QUICK START
-  # Download a model (e.g., Qwen3-8B)
-  $ kronk model pull Qwen3-8B-Q8_0 --local
+  # Download a model
+  $ kronk model pull unsloth/Qwen3-1.7B-UD-Q8_K_XL --local
 
   # Start the server with the Browser UI
   $ kronk server start --web-admin-enabled

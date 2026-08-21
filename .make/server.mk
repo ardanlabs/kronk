@@ -67,14 +67,14 @@ kronk-server-logs:
 kronk-server-stop:
 	go run cmd/kronk/main.go server stop
 
-llama-qwen36:
+llama-ornith:
 	$(HOME)/.kronk/libraries/darwin/arm64/metal/llama-server \
-		-m $(HOME)/.kronk/models/unsloth/Qwen3.6-35B-A3B-GGUF/Qwen3.6-35B-A3B-UD-Q8_K_XL.gguf \
-		--alias unsloth/Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT \
+		-m $(HOME)/.kronk/models/ornith-ai/Ornith-1.5-35B-A3B-GGUF/Ornith-1.5-35B-Q8_0.gguf \
+		--alias ornith-ai/Ornith-1.5-35B-Q8_0/AGENT \
 		--host 127.0.0.1 \
 		--port 11435 \
 		--no-cache-prompt \
-		--ctx-size 131072 \
+		--ctx-size 262144 \
 		--parallel 2 \
 		--batch-size 4096 \
 		--ubatch-size 4096 \

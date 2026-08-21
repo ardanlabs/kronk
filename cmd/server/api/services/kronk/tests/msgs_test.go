@@ -17,7 +17,7 @@ import (
 // Tests grouped by model to minimize model loading/unloading in CI.
 // =============================================================================
 
-// msgsNonStreamQwen3 returns messages tests for Qwen3-8B-Q8_0 model (text).
+// msgsNonStreamQwen3 returns messages tests for the Qwen3-1.7B model (text).
 func msgsNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 	return []apitest.Table{
 		{
@@ -28,7 +28,7 @@ func msgsNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: msgsapp.MessagesRequest{
-				Model:     "Qwen/Qwen3-8B-Q8_0",
+				Model:     qwen3ModelID,
 				MaxTokens: 2048,
 				Messages: []msgsapp.Message{
 					{
@@ -43,7 +43,7 @@ func msgsNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 			ExpResp: &msgsapp.MessagesResponse{
 				Type:  "message",
 				Role:  "assistant",
-				Model: "Qwen/Qwen3-8B-Q8_0",
+				Model: qwen3ModelID,
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
@@ -66,7 +66,7 @@ func msgsNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 	}
 }
 
-// msgsStreamQwen3 returns streaming messages tests for Qwen3-8B-Q8_0 model.
+// msgsStreamQwen3 returns streaming messages tests for the Qwen3-1.7B model.
 func msgsStreamQwen3(_ *testing.T, tokens map[string]string) []apitest.Table {
 	return []apitest.Table{
 		{
@@ -77,7 +77,7 @@ func msgsStreamQwen3(_ *testing.T, tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: msgsapp.MessagesRequest{
-				Model:     "Qwen/Qwen3-8B-Q8_0",
+				Model:     qwen3ModelID,
 				MaxTokens: 2048,
 				Stream:    true,
 				Messages: []msgsapp.Message{
@@ -104,8 +104,8 @@ func msgsStreamQwen3(_ *testing.T, tokens map[string]string) []apitest.Table {
 	}
 }
 
-// msgsImageQwen35VL returns messages tests for Qwen3.5-0.8B-Q8_0 model (vision).
-func msgsImageQwen35VL(t *testing.T, tokens map[string]string) []apitest.Table {
+// msgsImageQwen35 returns messages tests for the Qwen3.5 vision model.
+func msgsImageQwen35(t *testing.T, tokens map[string]string) []apitest.Table {
 	image, err := readFile(imageFile)
 	if err != nil {
 		t.Fatalf("read image: %s", err)
@@ -120,7 +120,7 @@ func msgsImageQwen35VL(t *testing.T, tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: msgsapp.MessagesRequest{
-				Model:     "unsloth/Qwen3.5-0.8B-Q8_0",
+				Model:     visionModelID,
 				MaxTokens: 2048,
 				Messages: []msgsapp.Message{
 					{
@@ -148,7 +148,7 @@ func msgsImageQwen35VL(t *testing.T, tokens map[string]string) []apitest.Table {
 			ExpResp: &msgsapp.MessagesResponse{
 				Type:  "message",
 				Role:  "assistant",
-				Model: "unsloth/Qwen3.5-0.8B-Q8_0",
+				Model: visionModelID,
 			},
 			CmpFunc: func(got any, exp any) string {
 				diff := cmp.Diff(got, exp,
@@ -182,7 +182,7 @@ func msgsEndpoint403(tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusForbidden,
 			Input: msgsapp.MessagesRequest{
-				Model:     "Qwen/Qwen3-8B-Q8_0",
+				Model:     qwen3ModelID,
 				MaxTokens: 2048,
 				Messages: []msgsapp.Message{
 					{

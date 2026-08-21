@@ -6,24 +6,24 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-// Expected values for Qwen3-8B-Q8_0.gguf model.
+// Expected values for the Qwen3-1.7B-Q4_K_M.gguf model.
 var (
-	expDesc = "Qwen3 8B Instruct"
+	expDesc     = "Qwen3-1.7B"
+	testModelID = "unsloth/Qwen3-1.7B-Q4_K_M"
 
 	// Raw metadata key expectations (stored as strings).
 	expMetaArchitecture            = "qwen3"
 	expMetaGeneralType             = "model"
-	expMetaName                    = "Qwen3 8B Instruct"
-	expMetaFinetune                = "Instruct"
-	expMetaBaseName                = "Qwen3"
-	expMetaSizeLabel               = "8B"
+	expMetaName                    = "Qwen3-1.7B"
+	expMetaBaseName                = "Qwen3-1.7B"
+	expMetaSizeLabel               = "1.7B"
 	expMetaQuantizationVersion     = "2"
-	expMetaFileType                = "7"
+	expMetaFileType                = "15"
 	expMetaContextLength           = "40960"
-	expMetaEmbeddingLength         = "4096"
-	expMetaBlockCount              = "36"
-	expMetaFeedForwardLength       = "12288"
-	expMetaHeadCount               = "32"
+	expMetaEmbeddingLength         = "2048"
+	expMetaBlockCount              = "28"
+	expMetaFeedForwardLength       = "6144"
+	expMetaHeadCount               = "16"
 	expMetaHeadCountKV             = "8"
 	expMetaLayerNormRMSEpsilon     = "1e-06"
 	expMetaAttentionKeyLength      = "128"
@@ -32,8 +32,7 @@ var (
 	expMetaTokenizerModel          = "gpt2"
 	expMetaTokenizerPre            = "qwen2"
 	expMetaTokenizerEOSTokenID     = "151645"
-	expMetaTokenizerPaddingTokenID = "151643"
-	expMetaTokenizerBOSTokenID     = "151643"
+	expMetaTokenizerPaddingTokenID = "151654"
 	expMetaTokenizerAddBOSToken    = "false"
 )
 
@@ -43,9 +42,7 @@ func TestModelMetadata(t *testing.T) {
 		t.Fatalf("Unable to create models api: %v", err)
 	}
 
-	modelID := "Qwen/Qwen3-8B-Q8_0"
-
-	info, err := m.ModelInformation(modelID)
+	info, err := m.ModelInformation(testModelID)
 	if err != nil {
 		t.Fatalf("ModelMetadata failed: %v", err)
 	}
@@ -58,11 +55,11 @@ func TestModelMetadata(t *testing.T) {
 	if info.Size == 0 {
 		t.Error("Size should not be zero")
 	}
-	if info.FileType != 7 {
-		t.Errorf("FileType: got %d, want 7", info.FileType)
+	if info.FileType != 15 {
+		t.Errorf("FileType: got %d, want 15", info.FileType)
 	}
-	if info.Quantization != "Q8_0" {
-		t.Errorf("Quantization: got %q, want %q", info.Quantization, "Q8_0")
+	if info.Quantization != "Q4_K_M" {
+		t.Errorf("Quantization: got %q, want %q", info.Quantization, "Q4_K_M")
 	}
 
 	if info.HasProjection {
@@ -77,7 +74,6 @@ func TestModelMetadata(t *testing.T) {
 		{"general.architecture", expMetaArchitecture},
 		{"general.type", expMetaGeneralType},
 		{"general.name", expMetaName},
-		{"general.finetune", expMetaFinetune},
 		{"general.basename", expMetaBaseName},
 		{"general.size_label", expMetaSizeLabel},
 		{"general.quantization_version", expMetaQuantizationVersion},
@@ -96,7 +92,6 @@ func TestModelMetadata(t *testing.T) {
 		{"tokenizer.ggml.pre", expMetaTokenizerPre},
 		{"tokenizer.ggml.eos_token_id", expMetaTokenizerEOSTokenID},
 		{"tokenizer.ggml.padding_token_id", expMetaTokenizerPaddingTokenID},
-		{"tokenizer.ggml.bos_token_id", expMetaTokenizerBOSTokenID},
 		{"tokenizer.ggml.add_bos_token", expMetaTokenizerAddBOSToken},
 	}
 
@@ -117,7 +112,7 @@ func TestModelInformationQualifiedIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unable to create models api: %v", err)
 	}
-	wantFingerprint := m.TokenizerFingerprint("Qwen/Qwen3-8B-Q8_0")
+	wantFingerprint := m.TokenizerFingerprint(testModelID)
 	if wantFingerprint == "" {
 		t.Fatal("TokenizerFingerprint returned an empty fingerprint for the canonical model ID")
 	}
@@ -126,8 +121,8 @@ func TestModelInformationQualifiedIDs(t *testing.T) {
 		name    string
 		modelID string
 	}{
-		{name: "provider model", modelID: "Qwen/Qwen3-8B-Q8_0"},
-		{name: "provider model profile", modelID: "Qwen/Qwen3-8B-Q8_0/AGENT"},
+		{name: "provider model", modelID: testModelID},
+		{name: "provider model profile", modelID: testModelID + "/AGENT"},
 	}
 
 	for _, tt := range tests {

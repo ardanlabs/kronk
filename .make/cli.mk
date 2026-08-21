@@ -27,11 +27,11 @@ kronk-model-list-local:
 	go run cmd/kronk/main.go model list --local
 
 
-# make kronk-model-pull URL="Qwen/Qwen3-8B-Q8_0.gguf"
+# make kronk-model-pull URL="unsloth/Qwen3-1.7B-UD-Q8_K_XL"
 kronk-model-pull:
 	go run cmd/kronk/main.go model pull "$(URL)"
 
-# make kronk-model-pull-local URL="Qwen/Qwen3-8B-Q8_0.gguf"
+# make kronk-model-pull-local URL="unsloth/Qwen3-1.7B-UD-Q8_K_XL"
 kronk-model-pull-local:
 	go run cmd/kronk/main.go model pull --local "$(URL)"
 
@@ -49,11 +49,11 @@ kronk-model-remove-local:
 	go run cmd/kronk/main.go model remove --local "$(ID)"
 
 
-# make kronk-model-show ID="Qwen/Qwen3-8B-Q8_0"
+# make kronk-model-show ID="unsloth/Qwen3-1.7B-UD-Q8_K_XL"
 kronk-model-show:
 	go run cmd/kronk/main.go model show "$(ID)"
 
-# make kronk-model-show-local ID="Qwen/Qwen3-8B-Q8_0"
+# make kronk-model-show-local ID="unsloth/Qwen3-1.7B-UD-Q8_K_XL"
 kronk-model-show-local:
 	go run cmd/kronk/main.go model show --local "$(ID)"
 
@@ -66,11 +66,11 @@ kronk-catalog-list-local:
 	go run cmd/kronk/main.go catalog list --local
 
 
-# make kronk-catalog-show ID="Qwen/Qwen3-8B-Q8_0"
+# make kronk-catalog-show ID="unsloth/Qwen3-1.7B-UD-Q8_K_XL"
 kronk-catalog-show:
 	go run cmd/kronk/main.go catalog show "$(ID)"
 
-# make kronk-catalog-show-local ID="Qwen/Qwen3-8B-Q8_0"
+# make kronk-catalog-show-local ID="unsloth/Qwen3-1.7B-UD-Q8_K_XL"
 kronk-catalog-show-local:
 	go run cmd/kronk/main.go catalog show --local "$(ID)"
 

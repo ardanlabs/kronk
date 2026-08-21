@@ -41,7 +41,7 @@ EXAMPLES
   kronk diagnose --no-bench
 
   # Benchmark a specific model (source or local .gguf path)
-  kronk diagnose --model unsloth/Qwen3-8B-Q8_0`,
+  kronk diagnose --model unsloth/Qwen3-1.7B-UD-Q8_K_XL`,
 	Args: cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		code, err := run(cmd)

@@ -140,10 +140,10 @@ kronk catalog list --local`}</code>
               <h5>Example</h5>
               <pre className="code-block">
                 <code>{`# Show full details for a single entry
-kronk catalog show unsloth/Qwen3-8B-GGUF
+kronk catalog show unsloth/Qwen3-1.7B-UD-Q8_K_XL
 
 # Show with local mode
-kronk catalog show unsloth/Qwen3-8B-GGUF --local`}</code>
+kronk catalog show unsloth/Qwen3-1.7B-UD-Q8_K_XL --local`}</code>
               </pre>
             </div>
 
@@ -201,10 +201,10 @@ kronk catalog show unsloth/Qwen3-8B-GGUF --local`}</code>
               <h5>Example</h5>
               <pre className="code-block">
                 <code>{`# Remove an entry plus its downloaded files
-kronk catalog remove unsloth/Qwen3-8B-GGUF
+kronk catalog remove unsloth/Qwen3-1.7B-UD-Q8_K_XL
 
 # Remove with local mode
-kronk catalog remove unsloth/Qwen3-8B-GGUF --local`}</code>
+kronk catalog remove unsloth/Qwen3-1.7B-UD-Q8_K_XL --local`}</code>
               </pre>
             </div>
           </div>

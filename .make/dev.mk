@@ -56,96 +56,41 @@ test-gh: test-gh-only lint vuln-check diff
 # ==============================================================================
 # Benchmarks
 
-# BENCH_PROFILE_FLAGS passes optional go test profiling flags to one benchmark.
-# Run CPU and allocation profiles separately: -memprofilerate=1 intentionally
-# records every allocation and would distort a CPU profile collected in the
-# same run.
+# BENCH_PROFILE_FLAGS passes optional go test profiling flags to one model.
 BENCH_PROFILE_FLAGS ?=
+BENCH_CODEGEN_TIME ?= 1x
+BENCH_CODEGEN_TIMEOUT ?= 45m
 
-# CPU: make benchmark-dense-nc BENCH_PROFILE_FLAGS='-cpuprofile=/tmp/benchmark-dense-nc.cpu.pprof'
-# Allocations: make benchmark-dense-nc BENCH_PROFILE_FLAGS='-memprofile=/tmp/benchmark-dense-nc.mem.pprof -memprofilerate=1'
-benchmark-dense-nc:
-	go test -run=none -bench=BenchmarkDense_NonCaching -benchtime=3x -timeout=30m $(BENCH_PROFILE_FLAGS) ./sdk/kronk/tests/benchmarks/
+# Run the Ornith coding benchmark.
+benchmark-codegen-ornith:
+	RUN_IN_PARALLEL=yes GITHUB_WORKSPACE=$(shell pwd) go test -run='^$$' -bench='^BenchmarkCodeGen_Ornith15_35B_Q8$$' -benchtime=$(BENCH_CODEGEN_TIME) -timeout=$(BENCH_CODEGEN_TIMEOUT) $(BENCH_PROFILE_FLAGS) ./sdk/kronk/tests/benchmarks/
 
-# CPU: make benchmark-dense-imc BENCH_PROFILE_FLAGS='-cpuprofile=/tmp/benchmark-dense-imc.cpu.pprof'
-# Allocations: make benchmark-dense-imc BENCH_PROFILE_FLAGS='-memprofile=/tmp/benchmark-dense-imc.mem.pprof -memprofilerate=1'
-benchmark-dense-imc:
-	go test -run=none -bench=BenchmarkDense_IMC -benchtime=3x -timeout=30m $(BENCH_PROFILE_FLAGS) ./sdk/kronk/tests/benchmarks/
+# Run the MTP Qwen3.6 coding benchmark.
+benchmark-codegen-mtp-qwen36:
+	RUN_IN_PARALLEL=yes GITHUB_WORKSPACE=$(shell pwd) go test -run='^$$' -bench='^BenchmarkCodeGen_MTP_Qwen36_35B_A3B_Q8$$' -benchtime=$(BENCH_CODEGEN_TIME) -timeout=$(BENCH_CODEGEN_TIMEOUT) $(BENCH_PROFILE_FLAGS) ./sdk/kronk/tests/benchmarks/
 
-# CPU: make benchmark-moe-nc BENCH_PROFILE_FLAGS='-cpuprofile=/tmp/benchmark-moe-nc.cpu.pprof'
-# Allocations: make benchmark-moe-nc BENCH_PROFILE_FLAGS='-memprofile=/tmp/benchmark-moe-nc.mem.pprof -memprofilerate=1'
-benchmark-moe-nc:
-	go test -run=none -bench=BenchmarkMoE_NonCaching -benchtime=3x -timeout=30m $(BENCH_PROFILE_FLAGS) ./sdk/kronk/tests/benchmarks/
+# Run the Qwen3.8 coding benchmark.
+benchmark-codegen-qwen38:
+	RUN_IN_PARALLEL=yes GITHUB_WORKSPACE=$(shell pwd) go test -run='^$$' -bench='^BenchmarkCodeGen_Qwen38_27B_Q4$$' -benchtime=$(BENCH_CODEGEN_TIME) -timeout=$(BENCH_CODEGEN_TIMEOUT) $(BENCH_PROFILE_FLAGS) ./sdk/kronk/tests/benchmarks/
 
-# CPU: make benchmark-moe-imc BENCH_PROFILE_FLAGS='-cpuprofile=/tmp/benchmark-moe-imc.cpu.pprof'
-# Allocations: make benchmark-moe-imc BENCH_PROFILE_FLAGS='-memprofile=/tmp/benchmark-moe-imc.mem.pprof -memprofilerate=1'
-benchmark-moe-imc:
-	go test -run=none -bench=BenchmarkMoE_IMC -benchtime=3x -timeout=30m $(BENCH_PROFILE_FLAGS) ./sdk/kronk/tests/benchmarks/
+# Run the Gemma 4 coding benchmark.
+benchmark-codegen-gemma4:
+	RUN_IN_PARALLEL=yes GITHUB_WORKSPACE=$(shell pwd) go test -run='^$$' -bench='^BenchmarkCodeGen_Gemma4_26B_A4B_Q8$$' -benchtime=$(BENCH_CODEGEN_TIME) -timeout=$(BENCH_CODEGEN_TIMEOUT) $(BENCH_PROFILE_FLAGS) ./sdk/kronk/tests/benchmarks/
 
-# CPU: make benchmark-hybrid-nc BENCH_PROFILE_FLAGS='-cpuprofile=/tmp/benchmark-hybrid-nc.cpu.pprof'
-# Allocations: make benchmark-hybrid-nc BENCH_PROFILE_FLAGS='-memprofile=/tmp/benchmark-hybrid-nc.mem.pprof -memprofilerate=1'
-benchmark-hybrid-nc:
-	go test -run=none -bench=BenchmarkHybrid_NonCaching -benchtime=3x -timeout=30m $(BENCH_PROFILE_FLAGS) ./sdk/kronk/tests/benchmarks/
-
-# CPU: make benchmark-hybrid-imc BENCH_PROFILE_FLAGS='-cpuprofile=/tmp/benchmark-hybrid-imc.cpu.pprof'
-# Allocations: make benchmark-hybrid-imc BENCH_PROFILE_FLAGS='-memprofile=/tmp/benchmark-hybrid-imc.mem.pprof -memprofilerate=1'
-benchmark-hybrid-imc:
-	go test -run=none -bench=BenchmarkHybrid_IMC -benchtime=3x -timeout=30m $(BENCH_PROFILE_FLAGS) ./sdk/kronk/tests/benchmarks/
-
-# CPU: make benchmark-embedding-fallback BENCH_PROFILE_FLAGS='-cpuprofile=/tmp/benchmark-embedding-fallback.cpu.pprof'
-# Allocations: make benchmark-embedding-fallback BENCH_PROFILE_FLAGS='-memprofile=/tmp/benchmark-embedding-fallback.mem.pprof -memprofilerate=1'
-benchmark-embedding-fallback:
-	go test -tags=kronk_benchmark -run=none -bench='^BenchmarkEmbedding_Qwen3_ContextPoolFallback$$' -benchtime=10s -cpu=4 -timeout=30m $(BENCH_PROFILE_FLAGS) ./sdk/kronk/tests/benchmarks/
-
-# CPU: make benchmark-embedding-batchseq BENCH_PROFILE_FLAGS='-cpuprofile=/tmp/benchmark-embedding-batchseq.cpu.pprof'
-# Allocations: make benchmark-embedding-batchseq BENCH_PROFILE_FLAGS='-memprofile=/tmp/benchmark-embedding-batchseq.mem.pprof -memprofilerate=1'
-benchmark-embedding-batchseq:
-	go test -tags=kronk_benchmark -run=none -bench='^BenchmarkEmbedding_Qwen3_BatchSeq$$' -benchtime=10s -cpu=4 -timeout=30m $(BENCH_PROFILE_FLAGS) ./sdk/kronk/tests/benchmarks/
-
-# CPU: make benchmark-rerank-fallback BENCH_PROFILE_FLAGS='-cpuprofile=/tmp/benchmark-rerank-fallback.cpu.pprof'
-# Allocations: make benchmark-rerank-fallback BENCH_PROFILE_FLAGS='-memprofile=/tmp/benchmark-rerank-fallback.mem.pprof -memprofilerate=1'
-benchmark-rerank-fallback:
-	go test -run=none -bench=BenchmarkRerank_Qwen3_ContextPoolFallback -benchtime=10s -timeout=30m $(BENCH_PROFILE_FLAGS) ./sdk/kronk/tests/benchmarks/
-
-# CPU: make benchmark-rerank-batchseq BENCH_PROFILE_FLAGS='-cpuprofile=/tmp/benchmark-rerank-batchseq.cpu.pprof'
-# Allocations: make benchmark-rerank-batchseq BENCH_PROFILE_FLAGS='-memprofile=/tmp/benchmark-rerank-batchseq.mem.pprof -memprofilerate=1'
-benchmark-rerank-batchseq:
-	go test -run=none -bench=BenchmarkRerank_BGE_BatchSeq -benchtime=10s -timeout=30m $(BENCH_PROFILE_FLAGS) ./sdk/kronk/tests/benchmarks/
-
-# Run all benchmarks sequentially (each target loads/unloads its own model)
-# and write combined raw output to a single file under runs/.
-# Usage: make benchmark-all BENCH_KRONK=v1.20.4
-BENCH_KRONK ?= dev
-
-benchmark-all:
-	@FILE=sdk/kronk/tests/benchmarks/runs/$$(date +%Y-%m-%d).txt; \
-	mkdir -p sdk/kronk/tests/benchmarks/runs; \
-	echo "# Date: $$(date +%Y-%m-%d)" > $$FILE; \
-	echo "# Kronk: $(BENCH_KRONK)" >> $$FILE; \
-	echo "" >> $$FILE; \
+# Run all coding benchmarks sequentially and store their artifacts together.
+benchmark-codegen:
+	@RESULTS=sdk/kronk/tests/benchmarks/runs/$$(date +%Y%m%d-%H%M%S); \
+	mkdir -p $$RESULTS; \
 	for target in \
-		benchmark-dense-nc \
-		benchmark-dense-imc \
-		benchmark-moe-nc \
-		benchmark-moe-imc \
-		benchmark-hybrid-nc \
-		benchmark-hybrid-imc; \
+		benchmark-codegen-ornith \
+		benchmark-codegen-mtp-qwen36 \
+		benchmark-codegen-qwen38 \
+		benchmark-codegen-gemma4; \
 	do \
-		echo "" >> $$FILE; \
-		echo "## $$target" >> $$FILE; \
-		$(MAKE) $$target 2>&1 | tee -a $$FILE; \
+		CODEGEN_RESULTS_DIR=$$RESULTS $(MAKE) $$target || exit $$?; \
 	done; \
 	echo ""; \
-	echo "Results written to $$FILE"
-
-# Format benchmark results from runs/ into BENCH_RESULTS.txt.
-benchmark-fmt:
-	go run cmd/server/api/tooling/benchfmt/main.go
-
-# Append a single run file to the top of BENCH_RESULTS.txt with diffs.
-# Usage: make benchmark-fmt-file FILE=2026-03-01.txt
-benchmark-fmt-file:
-	go run cmd/server/api/tooling/benchfmt/main.go $(FILE)
+	echo "Results written to $$RESULTS"
 
 # ==============================================================================
 # Go Modules support

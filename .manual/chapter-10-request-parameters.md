@@ -146,7 +146,7 @@ For OpenAI-compatible clients, prefer `response_format`:
 
 ```json
 {
-  "model": "Qwen/Qwen3-8B-Q8_0",
+  "model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL",
   "messages": [
     {"role": "user", "content": "Return a language and its year of creation."}
   ],
@@ -189,7 +189,7 @@ Any positive `top_logprobs` value implicitly enables `logprobs`.
 
 ```json
 {
-  "model": "Qwen/Qwen3-8B-Q8_0",
+  "model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL",
   "messages": [
     {"role": "user", "content": "What is 2 + 2?"}
   ],

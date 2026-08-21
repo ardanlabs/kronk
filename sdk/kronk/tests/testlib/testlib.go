@@ -61,15 +61,15 @@ func Setup() {
 		os.Exit(1)
 	}
 
-	resolveModel(mdls, "Qwen/Qwen3-8B-Q8_0", &MPThinkToolChat)
+	resolveModel(mdls, "unsloth/Qwen3-1.7B-Q4_K_M", &MPThinkToolChat)
 	resolveModel(mdls, "unsloth/Qwen3.5-0.8B-Q8_0", &MPSimpleVision)
 	resolveModel(mdls, "unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M", &MPMoEVision)
-	resolveModel(mdls, "Qwen/Qwen3-Embedding-0.6B-Q8_0", &MPEmbedBatchSeq)
+	resolveModel(mdls, "nomic-ai/nomic-embed-text-v1.5.Q8_0", &MPEmbedBatchSeq)
 	resolveModel(mdls, "gpustack/bge-reranker-v2-m3-Q8_0", &MPRerankBatchSeq)
 	resolveModel(mdls, "unsloth/gpt-oss-20b-Q8_0", &MPGPTChat)
-	resolveModel(mdls, "ggml-org/Qwen2.5-Omni-3B-Q8_0", &MPAudio)
-	resolveModel(mdls, "unsloth/Qwen3.6-35B-A3B-UD-Q4_K_M", &MPHybridVision)
-	resolveModel(mdls, "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL", &MPMTP)
+	resolveModel(mdls, "ggml-org/Qwen2.5-Omni-3B-Q4_K_M", &MPAudio)
+	resolveModel(mdls, "mradermacher/Qwopus3.5-4B-Coder.Q4_K_M", &MPHybridVision)
+	resolveModel(mdls, "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL", &MPMTP)
 	resolveModel(mdls, "unsloth/Qwen3-0.6B-Q8_0", &MPDraft)
 
 	printInfo(mdls)
@@ -266,7 +266,7 @@ func CfgMoEVisionIMC() model.Config {
 	}
 }
 
-// CfgEmbedBatchSeq returns the Qwen3 sequence-batch configuration.
+// CfgEmbedBatchSeq returns the Nomic sequence-batch configuration.
 func CfgEmbedBatchSeq() model.Config {
 	return model.Config{
 		ModelFiles:          MPEmbedBatchSeq.ModelFiles,
@@ -374,7 +374,7 @@ func CfgMTPChatMultiSlot() model.Config {
 
 // CfgClassicDraftChat returns a single-slot chat config that uses a
 // TRADITIONAL separate-GGUF draft model for speculative decoding: the
-// Qwen3-8B target paired with the vocab-matched Qwen3-0.6B draft. This
+// Qwen3-1.7B target paired with the vocab-matched Qwen3-0.6B draft. This
 // exercises the classic drafter path (loadDraftModel / generateDraftTokens
 // / the classic rollback + unload-with-ModelFree branches), which is
 // distinct from the MTP path. NSeqMax=1 because the separate draft context

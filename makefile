@@ -35,18 +35,26 @@ endif
 #
 # Model Validation
 #
-# Start with `Qwen3-0.6B-Q8_0`, the smallest text model. Ask it a simple question,
-# such as how to write a Hello World program in Go. If it works, repeat the test
-# with `LFM2-700M-Q8_0`, `Qwen3-8B-Q8_0`, and `Qwopus3.5-4B-Coder.Q8_0`.
+# Start with `unsloth/Qwen3-0.6B-Q8_0`, the smallest text model. Ask it a simple question,
+# such as how to write a Hello World program in Go.
 #
-# For vision, start with `Qwen3.5-0.8B-Q8_0`. Upload
-# `examples/samples/giraffe.jpg` and ask the model what it sees. If it works,
-# repeat the test with `LFM2.5-VL-1.6B-Q8_0` and
-# `Qwen2.5-VL-3B-Instruct-Q8_0`.
+# For vision, start with `unsloth/Qwen3.5-0.8B-Q8_0`. Upload
+# `examples/samples/giraffe.jpg` and ask the model what it sees.
 #
-# Skip the audio example because llama.cpp currently has broken audio-model
-# support. A server panic generally means the selected model is too large for
-# the machine. Record which models work and continue with those.
+# Now try the audio model `ggml-org/Qwen2.5-Omni-3B-Q8_0`. There is a wav file under the
+# examples folder (examples/samples/jfk.wav). Select that wav file and ask the
+# model what it hears.
+#
+# Hopefully all the models work for you, but again don't worry if the model
+# server panics. Just send me an email (bill@ardanlabs.com) and I will try
+# to help you.
+#
+# You can also try running the examples such as:
+#
+# 	make example-question
+#	make example-agent
+#	make example-vision
+#	make example-audio
 #
 # Hardware Notes
 #
@@ -65,7 +73,7 @@ endif
 # received less testing.
 #
 # For help before class, email bill@ardanlabs.com.
-#
+
 # ==============================================================================
 # Target Index
 #
@@ -80,7 +88,7 @@ endif
 #   .make/ops.mk        Open WebUI, Grafana, Statsviz, website, and debugging.
 #   .make/server.mk     Browser UI, documentation, builds, and server lifecycle.
 #   .make/tools.mk      MTP load and adversarial probes.
-#
+
 # ==============================================================================
 # Includes
 

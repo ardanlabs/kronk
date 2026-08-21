@@ -141,7 +141,7 @@ curl http://localhost:11435/v1/chat/completions \
   -H "Authorization: Bearer $KRONK_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "Qwen/Qwen3-8B-Q8_0",
+    "model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL",
     "messages": [{"role": "user", "content": "Hello"}]
   }'
 ```

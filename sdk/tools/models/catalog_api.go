@@ -181,21 +181,12 @@ func (m *Models) CatalogEntry(canonicalID string) (CatalogEntry, bool, error) {
 	return entry, ok, nil
 }
 
-// ReconcileCatalog walks the local model index and adds any on-disk model
-// that is not yet recorded in catalog.yaml. This handles the upgrade case
-// where a user runs a build that introduces (or extends) the catalog while
-// already having models on disk: the embedded seed only ships curated
-// entries, so user-downloaded models would otherwise be invisible to the
-// catalog screen until something explicitly resolved them.
-//
-// New entries derive their provider/family/files from the on-disk layout
-// (<modelsPath>/<provider>/<family>/<file>) using the same logic as the
-// resolver's local-disk lookup.
-//
-// A second pass populates missing ModelType and Capabilities by reading the
+// ReconcileCatalog populates missing ModelType and Capabilities by reading the
 // GGUF head bytes (via GGUFHead's cache → local-file → HF Range lookup) so
 // the list page can filter by architecture class and capabilities without
-// paying GGUF I/O on every list call.
+// paying GGUF I/O on every list call. On-disk models missing from the catalog
+// are intentionally ignored so removing a curated entry remains durable while
+// retaining its downloaded files.
 //
 // Enrichment is best-effort throughout — when GGUFHead can't source the
 // bytes (offline + nothing cached + nothing downloaded) the entry is
@@ -217,36 +208,7 @@ func (m *Models) ReconcileCatalog(ctx context.Context, log applog.Logger) error 
 		cat.Models = map[string]CatalogEntry{}
 	}
 
-	files, err := m.Files()
-	if err != nil {
-		return fmt.Errorf("reconcile-catalog: files: %w", err)
-	}
-
 	var changed int
-
-	for _, mf := range files {
-		if mf.OwnedBy == "" || mf.ModelFamily == "" {
-			continue
-		}
-
-		canonical := canonicalID(mf.OwnedBy, mf.ID)
-		if _, ok := cat.Models[canonical]; ok {
-			continue
-		}
-
-		local, ok := r.lookupLocal(mf.OwnedBy, mf.ID)
-		if !ok {
-			continue
-		}
-
-		entry := r.buildEntry(local.Provider, local.Family, local.Revision, local.Files, local.MMProj, local.MTP)
-		entry.MMProjOrig = local.MMProjOrig
-		entry.MTPOrig = local.MTPOrig
-		cat.Models[canonical] = entry
-
-		log(ctx, "reconcile-catalog: added", "id", canonical)
-		changed++
-	}
 
 	for canonical, entry := range cat.Models {
 		var touched bool

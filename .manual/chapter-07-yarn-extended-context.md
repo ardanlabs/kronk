@@ -45,7 +45,7 @@ valid for another model, even when both use RoPE.
 
 ## 7.3 Qwen3 Configuration
 
-The Qwen3-8B model documentation identifies 32,768 tokens as the native context
+The Qwen3-1.7B model documentation identifies 32,768 tokens as the native context
 and reports validation up to 131,072 tokens with YaRN. It recommends matching
 the scale to the context actually needed.
 
@@ -55,7 +55,7 @@ For a 2× extension to 65,536 tokens:
 # ~/.kronk/models/model_config.yaml
 version: 1
 models:
-  Qwen/Qwen3-8B-Q8_0:
+  unsloth/Qwen3-1.7B-UD-Q8_K_XL:
     context-window: 65536
     rope-scaling-type: yarn
     rope-freq-scale: 0.5
@@ -68,7 +68,7 @@ For a 4× extension to 131,072 tokens:
 # ~/.kronk/models/model_config.yaml
 version: 1
 models:
-  Qwen/Qwen3-8B-Q8_0:
+  unsloth/Qwen3-1.7B-UD-Q8_K_XL:
     context-window: 131072
     rope-scaling-type: yarn
     rope-freq-scale: 0.25
@@ -150,7 +150,7 @@ context reliably. Test the intended model and GGUF with representative data:
 4. Compare short-prompt quality with scaling enabled and disabled.
 5. Reduce the extension factor if quality or performance is unacceptable.
 
-Prefer the smallest context and scale that satisfy the workload. For Qwen3-8B,
+Prefer the smallest context and scale that satisfy the workload. For Qwen3-1.7B,
 use the native context when average requests remain within 32,768 tokens, a 2×
 configuration for workloads around 65,536, and the documented 4× configuration
 only when requests genuinely require it.
