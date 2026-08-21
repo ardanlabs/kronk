@@ -1578,15 +1578,13 @@ func resolveBackendDevice(name string) llama.GGMLBackendDevice {
 		return dev
 	}
 
-	// "rocm"/"hip" are aliases for the same backend. Newer llama.cpp builds
-	// name HIP devices "ROCm0", older builds "HIP0", so an exact by-name
-	// lookup misses them. Scan the registered devices by type instead, using
-	// the same classifier that drives device enumeration so the prefix
-	// knowledge lives in one place.
+	// "rocm"/"hip" are aliases for the same backend, but neither is
+	// necessarily an enumerated device name. Scan the registered devices by
+	// backend metadata when an exact by-name lookup misses.
 	if strings.EqualFold(name, "rocm") || strings.EqualFold(name, "hip") {
 		for i := range llama.GGMLBackendDeviceCount() {
 			dev := llama.GGMLBackendDeviceGet(i)
-			if dev != 0 && devices.ClassifyDeviceType(llama.GGMLBackendDeviceName(dev)) == "gpu_rocm" {
+			if dev != 0 && devices.ClassifyDeviceType(dev) == "gpu_rocm" {
 				return dev
 			}
 		}
