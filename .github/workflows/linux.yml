@@ -220,6 +220,7 @@ jobs:
       - name: Run api/service tests
         run: |
           export RUN_IN_PARALLEL=no
+          go test -v -p=1 -count=1 -timeout 20m ./cmd/kronk/...
           go test -v -p=1 -count=1 -timeout 20m ./cmd/server/...
 
       # Only one of the two test jobs (api-tests) saves the cache so

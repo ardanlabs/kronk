@@ -48,8 +48,9 @@ test-gh-only: install-libraries-gh install-test-gh-models
 	export RUN_IN_PARALLEL=yes && \
 	export GITHUB_WORKSPACE=$(shell pwd) && \
 	export GITHUB_ACTIONS=true && \
+	go test -v -p=1 -count=1 ./cmd/kronk/... && \
 	go test -v -p=1 -count=1 ./cmd/server/... && \
-	go test -v -p=1 -count=1 $(go list ./sdk/... | grep -v '/sdk/kronk/tests') && \
+	go test -v -p=1 -count=1 $$(go list ./sdk/... | grep -v '/sdk/kronk/tests') && \
 	go test -v -p=1 -count=1 \
 		./sdk/kronk/tests/qwen3 \
 		./sdk/kronk/tests/qwen06 \

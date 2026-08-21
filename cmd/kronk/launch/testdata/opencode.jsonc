@@ -1,0 +1,30 @@
+{
+    "model": "kronk/example/test-model/AGENT",
+    "small_model": "kronk/example/test-model/AGENT",
+    "provider": {
+        "kronk": {
+            "models": {
+                "example/test-model/AGENT": {
+                    "name": "Test Model",
+                    "limit": {
+                        "context": 32768,
+                        "output": 8192
+                    }
+                },
+                "example/other-model/AGENT": {
+                    "name": "Other Model",
+                    "limit": {
+                        "context": 16384,
+                        "output": 4096
+                    }
+                }
+            }
+        }
+    },
+    "mcp": {
+        "kronk": {
+            "type": "remote",
+            "url": "http://localhost:9000/mcp"
+        }
+    }
+}
