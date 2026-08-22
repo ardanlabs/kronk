@@ -397,12 +397,10 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 
 // chatStreamIMCQwen3 returns streaming chat tests for IMC (Incremental Message Cache).
 // These tests verify multi-turn caching behavior.
-// Skipped in GitHub Actions as they require a model configured with IncrementalCache.
 func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 	return []apitest.Table{
 		{
 			Name:       "imc-first-turn",
-			SkipInGH:   true,
 			URL:        "/v1/chat/completions",
 			Token:      tokens["chat-completions"],
 			Method:     http.MethodPost,
@@ -454,7 +452,6 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 		},
 		{
 			Name:       "imc-second-turn-cache-hit",
-			SkipInGH:   true,
 			URL:        "/v1/chat/completions",
 			Token:      tokens["chat-completions"],
 			Method:     http.MethodPost,
@@ -508,7 +505,6 @@ func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 		},
 		{
 			Name:       "imc-different-session",
-			SkipInGH:   true,
 			URL:        "/v1/chat/completions",
 			Token:      tokens["chat-completions"],
 			Method:     http.MethodPost,
@@ -809,7 +805,6 @@ func chatGrammarQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 	return []apitest.Table{
 		{
 			Name:       "grammar-json",
-			SkipInGH:   true,
 			URL:        "/v1/chat/completions",
 			Token:      tokens["chat-completions"],
 			Method:     http.MethodPost,
@@ -867,7 +862,6 @@ func chatGrammarStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Ta
 	return []apitest.Table{
 		{
 			Name:       "grammar-json-stream",
-			SkipInGH:   true,
 			URL:        "/v1/chat/completions",
 			Token:      tokens["chat-completions"],
 			Method:     http.MethodPost,
