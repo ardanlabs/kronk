@@ -9,11 +9,6 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	if os.Getenv("GITHUB_ACTIONS") == "true" {
-		fmt.Println("skipping vision_imc tests in GitHub Actions")
-		os.Exit(0)
-	}
-
 	testlib.Setup()
 
 	if len(testlib.MPSimpleVision.ModelFiles) == 0 {
