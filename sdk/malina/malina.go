@@ -127,9 +127,9 @@ func NewWithContext(ctx context.Context, opts ...model.Option) (*Malina, error) 
 }
 
 // Generate admits and synchronously executes one image generation. Waiting
-// for admission is cancellable. Once native generation starts, the call waits
-// for native completion before returning a cancellation error so the context
-// cannot be reused or freed while native code is active.
+// for admission is cancellable. Canceling ctx requests native cancellation;
+// the call waits for native execution to stop and resets the model context
+// before returning.
 func (m *Malina) Generate(ctx context.Context, params model.GenerateParams) (model.GeneratedImage, error) {
 	if err := params.Validate(); err != nil {
 		return model.GeneratedImage{}, err

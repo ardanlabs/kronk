@@ -6,7 +6,7 @@ require (
 	github.com/ardanlabs/bucky v1.1.0
 	github.com/ardanlabs/conf/v3 v3.13.0
 	github.com/ardanlabs/jinja v1.6.0
-	github.com/ardanlabs/malina v1.0.3
+	github.com/ardanlabs/malina v1.0.4
 	github.com/arl/statsviz v0.8.1
 	github.com/dgraph-io/badger/v4 v4.9.6
 	github.com/golang-jwt/jwt/v4 v4.5.2

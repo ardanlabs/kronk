@@ -4845,7 +4845,7 @@ if err := os.WriteFile("malina.png", generated.PNG, 0o644); err != nil {
             </tbody>
           </table>
           <p>Dimensions must be multiples of 8 from 64 through 1024, with no more than 1,048,576 total pixels. A request needs a non-empty prompt, positive finite CFG scale, and between 1 and 1,000 steps.</p>
-          <p>Waiting for admission is cancellable. Once native generation starts, Malina waits for it to finish before returning a cancellation error; the native context cannot safely be reused or freed while stable-diffusion.cpp is still working.</p>
+          <p>Waiting for admission is cancellable. Canceling a request after native generation starts asks stable-diffusion.cpp to stop, waits for native execution to return, and resets that model context before returning the cancellation error. The context is never reused or freed while native code is still active.</p>
           <h3 id="195-multi-file-model-bundles">19.5 Multi-File Model Bundles</h3>
           <p>Some pipelines require several files with distinct roles. The FLUX.2 example downloads a manifest and maps its diffusion, VAE, and LLM components into the model configuration:</p>
           <pre className="code-block"><code className="language-go">{`manifest, err := mdls.DownloadBundle(ctx, models.BundleFlux2Klein9B)
@@ -4946,7 +4946,7 @@ fmt.Println(info.Description)`}</code></pre>
             <li>Malina models are not managed by the shared Kronk/Bucky model pool and do not yet participate in model-server RAM or VRAM admission and eviction.</li>
             <li>The curated catalog is intentionally small. The high-level SDK guarantees its listed component roles; arbitrary user-created bundle layouts are not a supported catalog contract.</li>
             <li>Native callbacks and backend initialization are process-wide. Model-context construction and destruction are serialized, while one handle may own multiple contexts and generate concurrently across them. Each concurrency slot loads another copy of the model and increases RAM or VRAM use.</li>
-            <li>Native generation cannot be interrupted safely after it begins. Context cancellation prevents queued work and controls the returned result, but it does not free an active native context early.</li>
+            <li>Context cancellation interrupts active native generation, waits for the native call to return, and resets the same context before reuse. It never frees a context while native code is active.</li>
           </ul>
           <h3 id="1911-troubleshooting">19.11 Troubleshooting</h3>
           <table className="flags-table">

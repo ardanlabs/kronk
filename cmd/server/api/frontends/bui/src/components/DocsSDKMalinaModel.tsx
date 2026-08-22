@@ -184,7 +184,7 @@ export default function DocsSDKMalinaModel() {
               <pre className="code-block">
                 <code>func (m *Model) Generate(ctx context.Context, params GenerateParams) (GeneratedImage, error)</code>
               </pre>
-              <p className="doc-description">Generate runs synchronous text-to-image generation. Calls on this Model are serialized, while independent Model contexts may generate concurrently. Native execution cannot be interrupted after it starts.</p>
+              <p className="doc-description">Generate runs synchronous text-to-image generation. Calls on this Model are serialized, while independent Model contexts may generate concurrently. Canceling ctx interrupts native generation and resets the context for reuse.</p>
             </div>
 
             <div className="doc-section" id="method-model-info">
@@ -200,7 +200,7 @@ export default function DocsSDKMalinaModel() {
               <pre className="code-block">
                 <code>func (m *Model) Stop()</code>
               </pre>
-              <p className="doc-description">Stop prevents generation calls that have not started from entering stable-diffusion.cpp. A native call that already started still runs to completion.</p>
+              <p className="doc-description">Stop prevents generation calls that have not started from entering stable-diffusion.cpp and requests cancellation of an active generation.</p>
             </div>
 
             <div className="doc-section" id="method-model-unload">

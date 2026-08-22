@@ -165,7 +165,7 @@ export default function DocsSDKMalina() {
               <pre className="code-block">
                 <code>func (m *Malina) Generate(ctx context.Context, params model.GenerateParams) (model.GeneratedImage, error)</code>
               </pre>
-              <p className="doc-description">Generate admits and synchronously executes one image generation. Waiting for admission is cancellable. Once native generation starts, the call waits for native completion before returning a cancellation error so the context cannot be reused or freed while native code is active.</p>
+              <p className="doc-description">Generate admits and synchronously executes one image generation. Waiting for admission is cancellable. Canceling ctx requests native cancellation; the call waits for native execution to stop and resets the model context before returning.</p>
             </div>
 
             <div className="doc-section" id="method-malina-modelconfig">
