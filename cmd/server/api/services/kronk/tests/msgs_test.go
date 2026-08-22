@@ -22,7 +22,6 @@ func msgsNonStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table 
 	return []apitest.Table{
 		{
 			Name:       "good-token",
-			SkipInGH:   true,
 			URL:        "/v1/messages",
 			Token:      tokens["messages"],
 			Method:     http.MethodPost,
@@ -71,7 +70,6 @@ func msgsStreamQwen3(_ *testing.T, tokens map[string]string) []apitest.Table {
 	return []apitest.Table{
 		{
 			Name:       "good-token",
-			SkipInGH:   true,
 			URL:        "/v1/messages",
 			Token:      tokens["messages"],
 			Method:     http.MethodPost,
@@ -114,7 +112,6 @@ func msgsImageQwen35(t *testing.T, tokens map[string]string) []apitest.Table {
 	return []apitest.Table{
 		{
 			Name:       "image-good-token",
-			SkipInGH:   true,
 			URL:        "/v1/messages",
 			Token:      tokens["messages"],
 			Method:     http.MethodPost,
