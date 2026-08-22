@@ -323,10 +323,10 @@ Dimensions must be multiples of 8 from 64 through 1024, with no more than
 1,048,576 total pixels. A request needs a non-empty prompt, positive finite
 CFG scale, and between 1 and 1,000 steps.
 
-Waiting for admission is cancellable. Once native generation starts, Malina
-waits for it to finish before returning a cancellation error; the native
-context cannot safely be reused or freed while stable-diffusion.cpp is still
-working.
+Waiting for admission is cancellable. Canceling a request after native
+generation starts asks stable-diffusion.cpp to stop, waits for native execution
+to return, and resets that model context before returning the cancellation
+error. The context is never reused or freed while native code is still active.
 
 ### 19.5 Multi-File Model Bundles
 
@@ -470,9 +470,9 @@ Later runs reuse complete installations.
   construction and destruction are serialized, while one handle may own
   multiple contexts and generate concurrently across them. Each concurrency
   slot loads another copy of the model and increases RAM or VRAM use.
-- Native generation cannot be interrupted safely after it begins. Context
-  cancellation prevents queued work and controls the returned result, but it
-  does not free an active native context early.
+- Context cancellation interrupts active native generation, waits for the
+  native call to return, and resets the same context before reuse. It never
+  frees a context while native code is active.
 
 ### 19.11 Troubleshooting
 

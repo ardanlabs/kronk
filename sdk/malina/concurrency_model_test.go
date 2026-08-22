@@ -2,6 +2,7 @@ package malina_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"sync"
 	"testing"
@@ -19,18 +20,27 @@ const (
 )
 
 type progressOverlap struct {
-	mu       sync.Mutex
-	enabled  bool
-	started  map[int]bool
-	finished map[int]bool
-	overlaps bool
+	mu          sync.Mutex
+	enabled     bool
+	started     map[int]bool
+	finished    map[int]bool
+	overlaps    bool
+	cancelSteps int
+	cancel      context.CancelFunc
 }
 
 func (po *progressOverlap) observe(step int, steps int, _ float32) {
 	po.mu.Lock()
 	defer po.mu.Unlock()
 
-	if !po.enabled || (steps != firstSteps && steps != secondSteps) || step <= 0 {
+	if !po.enabled || step <= 0 {
+		return
+	}
+	if steps == po.cancelSteps && po.cancel != nil {
+		po.cancel()
+		po.cancel = nil
+	}
+	if steps != firstSteps && steps != secondSteps {
 		return
 	}
 
@@ -58,6 +68,14 @@ func (po *progressOverlap) overlapped() bool {
 	defer po.mu.Unlock()
 
 	return po.overlaps
+}
+
+func (po *progressOverlap) cancelAt(steps int, cancel context.CancelFunc) {
+	po.mu.Lock()
+	defer po.mu.Unlock()
+
+	po.cancelSteps = steps
+	po.cancel = cancel
 }
 
 func TestMalinaModelInference(t *testing.T) {
@@ -121,6 +139,21 @@ func TestMalinaModelInference(t *testing.T) {
 	}
 	if !progress.overlapped() {
 		t.Fatal("pooled native generation progress did not overlap")
+	}
+
+	const cancelSteps = 100
+	cancelCtx, cancel := context.WithCancel(t.Context())
+	progress.cancelAt(cancelSteps, cancel)
+	canceled := params
+	canceled.Steps = cancelSteps
+	if _, err := handle.Generate(cancelCtx, canceled); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled Generate() error = %v, want context.Canceled", err)
+	}
+
+	reuse := params
+	reuse.Steps = 1
+	if _, err := handle.Generate(t.Context(), reuse); err != nil {
+		t.Fatalf("Generate() after cancellation error = %v", err)
 	}
 }
 

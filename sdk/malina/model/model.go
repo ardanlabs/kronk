@@ -337,6 +337,17 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		if err != nil {
 			return fmt.Errorf("creating context: %w", err)
 		}
+		supported, err := sd.ContextSupportsImageGeneration(handle)
+		if err != nil {
+			sd.FreeContext(handle)
+			handle = 0
+			return fmt.Errorf("checking image generation support: %w", err)
+		}
+		if !supported {
+			sd.FreeContext(handle)
+			handle = 0
+			return errors.New("loaded context does not support image generation")
+		}
 		if err := ctx.Err(); err != nil {
 			sd.FreeContext(handle)
 			handle = 0
@@ -362,7 +373,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 
 // Generate runs synchronous text-to-image generation. Calls on this Model are
 // serialized, while independent Model contexts may generate concurrently.
-// Native execution cannot be interrupted after it starts.
+// Canceling ctx interrupts native generation and resets the context for reuse.
 func (m *Model) Generate(ctx context.Context, params GenerateParams) (GeneratedImage, error) {
 	if err := params.Validate(); err != nil {
 		return GeneratedImage{}, err
@@ -407,10 +418,44 @@ func (m *Model) Generate(ctx context.Context, params GenerateParams) (GeneratedI
 
 	var raw *sd.SDImage
 	err := withGeneration(ctx, m.stop, func() error {
-		var err error
-		raw, err = sd.GenerateImage(m.ctx, p)
-		if err != nil {
-			return errors.Join(ErrNativeGeneration, err)
+		type cancelResult struct {
+			requested bool
+			err       error
+		}
+
+		nativeDone := make(chan struct{})
+		cancelDone := make(chan cancelResult, 1)
+		go func() {
+			select {
+			case <-ctx.Done():
+				cancelDone <- cancelResult{requested: true, err: sd.CancelGeneration(m.ctx, sd.CancelAll)}
+			case <-m.stop.Done():
+				cancelDone <- cancelResult{requested: true, err: sd.CancelGeneration(m.ctx, sd.CancelAll)}
+			case <-nativeDone:
+				cancelDone <- cancelResult{}
+			}
+		}()
+
+		var generateErr error
+		raw, generateErr = sd.GenerateImage(m.ctx, p)
+		close(nativeDone)
+
+		canceled := <-cancelDone
+		var cancelErr error
+		if canceled.requested {
+			cancelErr = errors.Join(canceled.err, sd.CancelGeneration(m.ctx, sd.CancelReset))
+		}
+		if err := ctx.Err(); err != nil {
+			return errors.Join(err, cancelErr)
+		}
+		if err := m.stop.Err(); err != nil {
+			return errors.Join(err, cancelErr)
+		}
+		if cancelErr != nil {
+			return fmt.Errorf("canceling generation: %w", cancelErr)
+		}
+		if generateErr != nil {
+			return errors.Join(ErrNativeGeneration, generateErr)
 		}
 		return nil
 	})
@@ -422,8 +467,7 @@ func (m *Model) Generate(ctx context.Context, params GenerateParams) (GeneratedI
 }
 
 // Stop prevents generation calls that have not started from entering
-// stable-diffusion.cpp. A native call that already started still runs to
-// completion.
+// stable-diffusion.cpp and requests cancellation of an active generation.
 func (m *Model) Stop() {
 	m.cancel()
 }
