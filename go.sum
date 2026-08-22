@@ -32,8 +32,8 @@ github.com/agnivade/levenshtein v1.2.1 h1:EHBY3UOn1gwdy/VbFwgo4cxecRznFk7fKWN1KO
 github.com/agnivade/levenshtein v1.2.1/go.mod h1:QVVI16kDrtSuwcpd0p1+xMC6Z/VfhtCyDIjcwga4/DU=
 github.com/arbovm/levenshtein v0.0.0-20160628152529-48b4e1c0c4d0 h1:jfIu9sQUG6Ig+0+Ap1h4unLjW6YQJpKZVmUzxsD4E/Q=
 github.com/arbovm/levenshtein v0.0.0-20160628152529-48b4e1c0c4d0/go.mod h1:t2tdKJDJF9BV14lnkjHmOQgcvEKgtqs5a1N3LNdJhGE=
-github.com/ardanlabs/bucky v1.1.0 h1:tQxIgIwoSyokKfMMXbTEIteUqXUGnZpEOk6nq/xvJhY=
-github.com/ardanlabs/bucky v1.1.0/go.mod h1:iq1gUg7DHQZWiTuWSEPfR0UzQoGnozXnBsLfGZqPGKA=
+github.com/ardanlabs/bucky v1.1.1 h1:bCoDqjU3kWcbJMvwbLLoFjW45rbCqCrfMFa4zrxAOwo=
+github.com/ardanlabs/bucky v1.1.1/go.mod h1:iq1gUg7DHQZWiTuWSEPfR0UzQoGnozXnBsLfGZqPGKA=
 github.com/ardanlabs/conf/v3 v3.13.0 h1:XKQXX35fFq/jencPu19xh0a6NPMT4NrpcRP/F9x7ejY=
 github.com/ardanlabs/conf/v3 v3.13.0/go.mod h1:XlL9P0quWP4m1weOVFmlezabinbZLI05niDof/+Ochk=
 github.com/ardanlabs/jinja v1.6.0 h1:CbqS/dxYM9qrmlBed1GsN64/tRY6SoWQWc5Sc+aw3iI=
