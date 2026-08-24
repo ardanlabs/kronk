@@ -46,9 +46,9 @@ These parameters control how Kronk selects the next token:
 
 | JSON key      | Type      | Baseline | Behavior |
 | ------------- | --------- | -------- | -------- |
-| `temperature` | number    | `0.8`    | Rescales token probabilities. Higher values generally increase variation. |
-| `top_k`       | integer   | `40`     | Keeps only the K most probable candidates. |
-| `top_p`       | number    | `0.9`    | Keeps the smallest candidate set whose cumulative probability reaches P. |
+| `temperature` | number    | `1.0`    | Rescales token probabilities. Higher values generally increase variation. |
+| `top_k`       | integer   | `20`     | Keeps only the K most probable candidates. |
+| `top_p`       | number    | `0.95`   | Keeps the smallest candidate set whose cumulative probability reaches P. |
 | `min_p`       | number    | `0.0`    | Removes candidates below `min_p × probability_of_most_likely_token`; `0` disables it. |
 | `seed`        | integer   | random    | Initializes sampling randomness; values from `0` through `4294967295` request repeatable sampling. |
 

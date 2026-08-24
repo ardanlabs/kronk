@@ -87,12 +87,11 @@ const (
 
 	// DefTemp controls the randomness of the output. It rescales the probability
 	// distribution of possible next tokens.
-	DefTemp = 0.8
+	DefTemp = 1.0
 
 	// DefTopK limits the pool of possible next tokens to the K number of most
-	// probable tokens. Default is 40 to match Ollama and cut off low-probability
-	// tokens that can break structured output like tool calls.
-	DefTopK int32 = 40
+	// probable tokens.
+	DefTopK int32 = 20
 
 	// DefTopLogprobs specifies how many of the most likely tokens to return at each
 	// position, along with their log probabilities. Must be between 0 and 5.
@@ -103,7 +102,7 @@ const (
 	// selecting a dynamic pool of tokens whose cumulative probability exceeds a
 	// threshold P. Instead of a fixed number of tokens (K), it selects the minimum
 	// number of most probable tokens required to reach the cumulative probability P.
-	DefTopP = 0.9
+	DefTopP = 0.95
 
 	// DefXtcMinKeep is the minimum tokens to keep after XTC culling.
 	DefXtcMinKeep = 1
@@ -235,7 +234,7 @@ type Params struct {
 	Stop []string `json:"stop,omitempty"`
 
 	// Temperature controls the randomness of the output. It rescales the
-	// probability distribution of possible next tokens. Default is 0.8.
+	// probability distribution of possible next tokens. Default is 1.0.
 	Temperature float32 `json:"temperature"`
 
 	// Thinking determines if the model should think or not. It is used for most
@@ -246,7 +245,7 @@ type Params struct {
 	// TopK limits the pool of possible next tokens to the K number of most
 	// probable tokens. If a model predicts 10,000 possible next tokens, setting
 	// top_k to 50 means only the 50 tokens with the highest probabilities are
-	// considered for selection (after temperature scaling). Default is 40.
+	// considered for selection (after temperature scaling). Default is 20.
 	TopK int32 `json:"top_k"`
 
 	// TopLogprobs specifies how many of the most likely tokens to return at
@@ -258,7 +257,7 @@ type Params struct {
 	// selecting a dynamic pool of tokens whose cumulative probability exceeds a
 	// threshold P. Instead of a fixed number of tokens (K), it selects the
 	// minimum number of most probable tokens required to reach the cumulative
-	// probability P. Default is 0.9.
+	// probability P. Default is 0.95.
 	TopP float32 `json:"top_p"`
 
 	// XtcMinKeep is the minimum tokens to keep after XTC culling. Default is 1.

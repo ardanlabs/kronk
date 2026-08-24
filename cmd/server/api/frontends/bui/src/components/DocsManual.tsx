@@ -2587,19 +2587,19 @@ data: {"type":"response.completed",...}`}</code></pre>
               <tr>
                 <td><code>temperature</code></td>
                 <td>number</td>
-                <td><code>0.8</code></td>
+                <td><code>1.0</code></td>
                 <td>Rescales token probabilities. Higher values generally increase variation.</td>
               </tr>
               <tr>
                 <td><code>top_k</code></td>
                 <td>integer</td>
-                <td><code>40</code></td>
+                <td><code>20</code></td>
                 <td>Keeps only the K most probable candidates.</td>
               </tr>
               <tr>
                 <td><code>top_p</code></td>
                 <td>number</td>
-                <td><code>0.9</code></td>
+                <td><code>0.95</code></td>
                 <td>Keeps the smallest candidate set whose cumulative probability reaches P.</td>
               </tr>
               <tr>
