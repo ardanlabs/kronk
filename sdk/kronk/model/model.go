@@ -165,8 +165,8 @@ type draftCore struct {
 	nDraft         int
 	promptBuf      []llama.Token // Reusable buffer for assembling draft prompt tokens
 	draftBuf       []llama.Token // Reusable buffer for generateDraftTokens output
-
-	mtp *mtpengine.Resources
+	mtp            *mtpengine.Resources
+	mtpPolicy      mtpengine.Policy
 
 	// Pre-allocated buffers for speculative sampling to avoid per-round
 	// allocations of vocab-sized slices (~600KB each for 152k vocab).

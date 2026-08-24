@@ -17,13 +17,6 @@ import (
 
 const graderTimeout = 20 * time.Second
 
-type gradeMode string
-
-const (
-	gradeBase gradeMode = "base"
-	gradeUndo gradeMode = "undo"
-)
-
 type gradeCheck struct {
 	Name   string `json:"name"`
 	Passed bool   `json:"passed"`
@@ -49,6 +42,15 @@ func (gr gradeResult) Percentage() float64 {
 		return 0
 	}
 	return 100 * float64(gr.Passed) / float64(gr.Total)
+}
+
+func (gr gradeResult) PassedCheck(name string) bool {
+	for _, check := range gr.Checks {
+		if check.Name == name {
+			return check.Passed
+		}
+	}
+	return false
 }
 
 func (gr gradeResult) Failures(turn string) []string {
@@ -96,11 +98,8 @@ func extractGoSource(response string) string {
 	return ""
 }
 
-func gradeProgram(parent context.Context, source string, mode gradeMode) gradeResult {
-	result := gradeResult{Total: 19}
-	if mode == gradeUndo {
-		result.Total = 24
-	}
+func gradeProgram(parent context.Context, source string) gradeResult {
+	result := gradeResult{Total: 20}
 	result.add("source-extracted", source != "", "no complete package main source found")
 	if source == "" {
 		return result
@@ -120,7 +119,7 @@ func gradeProgram(parent context.Context, source string, mode gradeMode) gradeRe
 	}
 	source = string(formatted)
 
-	checks := inspectStructure(file, mode)
+	checks := inspectStructure(file)
 	for _, check := range checks {
 		result.add(check.Name, check.Passed, check.Detail)
 	}
@@ -151,7 +150,7 @@ func gradeProgram(parent context.Context, source string, mode gradeMode) gradeRe
 		result.add("logic-tests", testErr == nil, commandDetail(ctx, testErr, testOutput))
 	}
 
-	for _, scenario := range scenarios(mode) {
+	for _, scenario := range scenarios() {
 		output, runErr := runProgram(parent, filepath.Join(dir, "tictactoe"), scenario.input)
 		passed, detail := assessScenario(output, runErr, scenario)
 		result.add("scenario-"+scenario.name, passed, detail)
@@ -160,7 +159,7 @@ func gradeProgram(parent context.Context, source string, mode gradeMode) gradeRe
 	return result
 }
 
-func inspectStructure(file *ast.File, mode gradeMode) []gradeCheck {
+func inspectStructure(file *ast.File) []gradeCheck {
 	checks := []gradeCheck{
 		{Name: "type-board", Detail: "want type Board [9]byte"},
 		{Name: "shared-stdin", Detail: "want package-level stdin initialized with bufio.NewReader(os.Stdin)"},
@@ -175,10 +174,6 @@ func inspectStructure(file *ast.File, mode gradeMode) []gradeCheck {
 	for name, signature := range required {
 		checks = append(checks, gradeCheck{Name: "function-" + name, Detail: "want " + signature})
 	}
-	if mode == gradeUndo {
-		checks = append(checks, gradeCheck{Name: "one-move-state", Detail: "want lastMove initialized to -1"})
-	}
-
 	ast.Inspect(file, func(node ast.Node) bool {
 		switch node := node.(type) {
 		case *ast.TypeSpec:
@@ -194,10 +189,6 @@ func inspectStructure(file *ast.File, mode gradeMode) []gradeCheck {
 			if signature, exists := required[node.Name.Name]; exists && exactFunctionSignature(node, node.Name.Name) {
 				passCheck(checks, "function-"+node.Name.Name)
 				_ = signature
-			}
-		case *ast.AssignStmt:
-			if mode == gradeUndo && node.Tok == token.DEFINE && len(node.Lhs) == 1 && len(node.Rhs) == 1 && identifier(node.Lhs[0], "lastMove") && negativeOne(node.Rhs[0]) {
-				passCheck(checks, "one-move-state")
 			}
 		}
 		return true
@@ -260,11 +251,6 @@ func integerLiteral(expr ast.Expr, value string) bool {
 	return ok && literal.Kind == token.INT && literal.Value == value
 }
 
-func negativeOne(expr ast.Expr) bool {
-	unary, ok := expr.(*ast.UnaryExpr)
-	return ok && unary.Op == token.SUB && integerLiteral(unary.X, "1")
-}
-
 func passCheck(checks []gradeCheck, name string) {
 	for idx := range checks {
 		if checks[idx].Name == name {
@@ -315,13 +301,18 @@ func runProgram(parent context.Context, binary, input string) (string, error) {
 	return string(output), err
 }
 
-func scenarios(mode gradeMode) []scenario {
+func scenarios() []scenario {
 	initialBoard := "Score: X: 0 | O: 0 | Draws: 0\n\n 1 | 2 | 3\n-----------\n 4 | 5 | 6\n-----------\n 7 | 8 | 9\n\n"
-	base := []scenario{
+	return []scenario{
+		{
+			name:  "initial-board",
+			input: "1\n4\n2\n5\n3\nn\n",
+			want:  []string{initialBoard},
+		},
 		{
 			name:  "x-win",
 			input: "1\n4\n2\n5\n3\nn\n",
-			want:  []string{initialBoard, "Score: X: 1 | O: 0 | Draws: 0", "Player X wins!", "Play again? (y/n): "},
+			want:  []string{"Score: X: 1 | O: 0 | Draws: 0", "Player X wins!", "Play again? (y/n): "},
 			ordered: []string{
 				" X | X | X",
 				"Player X wins!",
@@ -349,39 +340,6 @@ func scenarios(mode gradeMode) []scenario {
 			want:  []string{"Score: X: 1 | O: 1 | Draws: 0"},
 		},
 	}
-	if mode == gradeBase {
-		return base
-	}
-
-	return append(base,
-		scenario{
-			name:  "undo-x",
-			input: "5\n0\n1\n2\n4\n3\n7\nn\n",
-			want: []string{
-				"Player O's turn. Enter a number (1-9), or 0 to undo the last move:",
-				"Player X's turn. Enter a number (1-9), or 0 to undo the last move:",
-				"Player X wins!",
-			},
-			ordered: []string{" 4 | X | 6", " 4 | 5 | 6"},
-		},
-		scenario{
-			name:    "undo-o",
-			input:   "1\n2\n0\n5\n2\n9\n3\nn\n",
-			want:    []string{"Player X wins!"},
-			ordered: []string{" X | O | 3", " X | 2 | 3", " X | X | X"},
-		},
-		scenario{
-			name:  "undo-unavailable",
-			input: "0\n1\n2\n4\n3\n7\n5\nn\n",
-			count: map[string]int{"Invalid move. Enter an empty position from 1 to 9.": 1},
-		},
-		scenario{
-			name:  "undo-twice",
-			input: "5\n0\n0\n1\n2\n4\n3\n7\nn\n",
-			count: map[string]int{"Invalid move. Enter an empty position from 1 to 9.": 1},
-			want:  []string{"Player X wins!"},
-		},
-	)
 }
 
 func assessScenario(output string, runErr error, scenario scenario) (bool, string) {

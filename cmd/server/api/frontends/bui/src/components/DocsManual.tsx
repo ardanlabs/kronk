@@ -1427,7 +1427,8 @@ krn, err := kronk.New(
             <li><strong>Classic separate draft:</strong> 5</li>
             <li><strong>MTP:</strong> 3</li>
           </ul>
-          <p>MTP uses the configured draft count on every round, matching llama.cpp. Kronk adaptively reduces the count for classic separate drafts. It tracks an exponential moving average (EMA) of recent acceptance and chooses the next round's size from the configured ceiling:</p>
+          <p>MTP begins with the configured draft count. It evaluates acceptance every 8 rounds. Two consecutive windows below 0.55 EMA start one-time, 16-round trials at draft counts of 2 and 1. Kronk compares emitted tokens per second across the configured baseline and both trial windows, then keeps the fastest count for the lifetime of the loaded model. If acceptance remains healthy through 32 rounds, Kronk locks the configured count without running trials. A first low window at that boundary receives one final 8-round window before the decision. The learned count applies to later requests and resets when the model is unloaded and reloaded. The one-time <code>draft-policy-decided</code> log records the selected count and whether the reason was <code>healthy-acceptance</code> or <code>throughput-trial</code>. Throughput-trial decisions also report <code>baseline_tps</code>, <code>draft_2_tps</code>, and <code>draft_1_tps</code>. An explicitly configured count of 1 or 2 is used as-is and is not adapted.</p>
+          <p>Kronk separately adapts classic draft size directly from its acceptance EMA:</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -2587,19 +2588,19 @@ data: {"type":"response.completed",...}`}</code></pre>
               <tr>
                 <td><code>temperature</code></td>
                 <td>number</td>
-                <td><code>0.8</code></td>
+                <td><code>1.0</code></td>
                 <td>Rescales token probabilities. Higher values generally increase variation.</td>
               </tr>
               <tr>
                 <td><code>top_k</code></td>
                 <td>integer</td>
-                <td><code>40</code></td>
+                <td><code>20</code></td>
                 <td>Keeps only the K most probable candidates.</td>
               </tr>
               <tr>
                 <td><code>top_p</code></td>
                 <td>number</td>
-                <td><code>0.9</code></td>
+                <td><code>0.95</code></td>
                 <td>Keeps the smallest candidate set whose cumulative probability reaches P.</td>
               </tr>
               <tr>

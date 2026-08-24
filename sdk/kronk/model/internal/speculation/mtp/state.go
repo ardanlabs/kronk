@@ -1,6 +1,8 @@
 package mtp
 
 import (
+	"time"
+
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
 )
 
@@ -12,6 +14,13 @@ type SlotState struct {
 	VerifyHidden  []float32
 	AcceptanceEMA float64
 	Rounds        int
+	LowWindows    int
+	WindowTokens  int
+	WindowElapsed time.Duration
+	PriorTokens   int
+	PriorElapsed  time.Duration
+	RoundDraft    int
+	RoundStarted  time.Time
 	TargetRange   speculation.TargetRange
 	HasTargetRows bool
 	Disabled      bool
@@ -26,6 +35,13 @@ func (s *SlotState) Reset() {
 	s.VerifyHidden = s.VerifyHidden[:0]
 	s.AcceptanceEMA = 1
 	s.Rounds = 0
+	s.LowWindows = 0
+	s.WindowTokens = 0
+	s.WindowElapsed = 0
+	s.PriorTokens = 0
+	s.PriorElapsed = 0
+	s.RoundDraft = 0
+	s.RoundStarted = time.Time{}
 	s.TargetRange = speculation.TargetRange{}
 	s.HasTargetRows = false
 	s.Disabled = false

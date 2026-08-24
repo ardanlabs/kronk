@@ -2,10 +2,9 @@
 Package benchmarks_test measures code-generation performance and correctness
 for the configured agent models.
 
-The benchmark is a two-turn coding session sourced from
-examples/talks/tic-tac-toe.md. It captures the complete model response and
-reasoning separately, then grades the emitted program without using an LLM
-judge.
+The benchmark is a coding task sourced from examples/talks/tic-tac-toe.md. It
+captures the complete model response and reasoning separately, then grades the
+emitted program without using an LLM judge.
 */
 package benchmarks_test
 
@@ -30,7 +29,7 @@ import (
 const (
 	promptSeparator = "\n================================================================================\n"
 	turnTimeout     = 20 * time.Minute
-	systemProtocol  = `You are participating in a code-generation benchmark. You have no filesystem, shell, skills, or other tools. Follow the user's specification directly. Return the complete tictactoe/main.go source in exactly one fenced Go code block. On revision turns, return the complete updated file rather than a diff. Do not include a plan or ask questions.`
+	systemProtocol  = `You are participating in a code-generation benchmark. You have no filesystem, shell, skills, or other tools. Follow the user's specification directly. Return the complete tictactoe/main.go source in exactly one fenced Go code block. Do not include a plan or ask questions.`
 )
 
 type benchmarkModel struct {
@@ -64,11 +63,6 @@ func BenchmarkCodeGen_Gemma4_26B_A4B_Q8(b *testing.B) {
 		name: "Gemma4-26B-A4B-Q8",
 		id:   "unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT",
 	})
-}
-
-type promptTurns struct {
-	base string
-	undo string
 }
 
 type turnResult struct {
@@ -109,10 +103,8 @@ type iterationReport struct {
 	Model             configReport `json:"model"`
 	Iteration         int          `json:"iteration"`
 	SDKHeapDeltaBytes int64        `json:"sdk_go_heap_delta_bytes"`
-	Base              turnResult   `json:"base_turn"`
-	Undo              turnResult   `json:"undo_turn"`
-	BaseGrade         gradeResult  `json:"base_grade"`
-	UndoGrade         gradeResult  `json:"undo_grade"`
+	Generation        turnResult   `json:"generation"`
+	Grade             gradeResult  `json:"grade"`
 }
 
 type benchmarkTotals struct {
@@ -123,8 +115,9 @@ type benchmarkTotals struct {
 	wallTime          time.Duration
 	ttftMS            float64
 	tokensPerSecond   float64
-	baseScore         float64
-	undoScore         float64
+	score             float64
+	buildPasses       int
+	fullPasses        int
 	draftRate         float64
 	draftCoverage     float64
 	draftMeasurements int
@@ -139,7 +132,7 @@ func benchmarkCodeGeneration(b *testing.B, bm benchmarkModel) {
 		b.Fatal(err)
 	}
 
-	prompts, err := loadPromptTurns(root)
+	prompt, err := loadPrompt(root)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -149,7 +142,7 @@ func benchmarkCodeGeneration(b *testing.B, bm benchmarkModel) {
 	if err != nil {
 		b.Fatalf("creating results directory: %v", err)
 	}
-	if err := writeBenchmarkInputs(resultsDir, prompts); err != nil {
+	if err := writeBenchmarkInputs(resultsDir, prompt); err != nil {
 		b.Fatalf("writing benchmark inputs: %v", err)
 	}
 
@@ -170,60 +163,40 @@ func benchmarkCodeGeneration(b *testing.B, bm benchmarkModel) {
 		var heapBefore runtime.MemStats
 		runtime.ReadMemStats(&heapBefore)
 
-		base, baseErr := generateTurn(b.Context(), krn, []model.D{
+		generation, generationErr := generateTurn(b.Context(), krn, []model.D{
 			{"role": "system", "content": systemProtocol},
-			{"role": "user", "content": prompts.base},
-		})
-
-		assistant := model.D{"role": "assistant", "content": base.Content}
-		if base.Reasoning != "" {
-			assistant["reasoning_content"] = base.Reasoning
-		}
-		undo, undoErr := generateTurn(b.Context(), krn, []model.D{
-			{"role": "system", "content": systemProtocol},
-			{"role": "user", "content": prompts.base},
-			assistant,
-			{"role": "user", "content": prompts.undo},
+			{"role": "user", "content": prompt},
 		})
 		var heapAfter runtime.MemStats
 		runtime.ReadMemStats(&heapAfter)
 		heapDelta := int64(heapAfter.Alloc) - int64(heapBefore.Alloc)
-
 		b.StopTimer()
 
-		baseSource := extractGoSource(base.Content)
-		undoSource := extractGoSource(undo.Content)
-		baseGrade := gradeProgram(b.Context(), baseSource, gradeBase)
-		undoGrade := gradeProgram(b.Context(), undoSource, gradeUndo)
+		source := extractGoSource(generation.Content)
+		grade := gradeProgram(b.Context(), source)
 
 		result := iterationReport{
 			Model:             report,
 			Iteration:         iteration,
 			SDKHeapDeltaBytes: heapDelta,
-			Base:              base,
-			Undo:              undo,
-			BaseGrade:         baseGrade,
-			UndoGrade:         undoGrade,
+			Generation:        generation,
+			Grade:             grade,
 		}
-		if err := writeIterationArtifacts(resultsDir, result, baseSource, undoSource); err != nil {
+		if err := writeIterationArtifacts(resultsDir, result, source); err != nil {
 			b.Fatalf("writing iteration artifacts: %v", err)
 		}
 
-		if baseErr != nil {
-			b.Errorf("base generation: %v", baseErr)
-		}
-		if undoErr != nil {
-			b.Errorf("undo generation: %v", undoErr)
+		if generationErr != nil {
+			b.Errorf("generation: %v", generationErr)
 		}
 
-		b.Logf("iteration %d: base=%d/%d undo=%d/%d base-finish=%s undo-finish=%s",
-			iteration, baseGrade.Passed, baseGrade.Total, undoGrade.Passed, undoGrade.Total,
-			base.FinishReason, undo.FinishReason)
-		for _, failure := range append(baseGrade.Failures("base"), undoGrade.Failures("undo")...) {
+		b.Logf("iteration %d: score=%d/%d finish=%s",
+			iteration, grade.Passed, grade.Total, generation.FinishReason)
+		for _, failure := range grade.Failures("generation") {
 			b.Log(failure)
 		}
 
-		accumulateTotals(&totals, base, undo, baseGrade, undoGrade, heapDelta)
+		accumulateTotals(&totals, generation, grade, heapDelta)
 		b.StartTimer()
 	}
 
@@ -393,23 +366,26 @@ func generateTurn(parent context.Context, krn *kronk.Kronk, messages []model.D) 
 	return result, nil
 }
 
-func accumulateTotals(totals *benchmarkTotals, base, undo turnResult, baseGrade, undoGrade gradeResult, heapDelta int64) {
+func accumulateTotals(totals *benchmarkTotals, generation turnResult, grade gradeResult, heapDelta int64) {
 	totals.runs++
-	for _, turn := range []turnResult{base, undo} {
-		totals.promptTokens += turn.Usage.PromptTokens
-		totals.completionTokens += turn.Usage.CompletionTokens
-		totals.reasoningTokens += turn.Usage.CompletionTokensDetails.ReasoningTokens
-		totals.wallTime += turn.WallTime
-		totals.ttftMS += turn.Usage.TimeToFirstTokenMS
-		totals.tokensPerSecond += turn.Usage.TokensPerSecond
-		if turn.Usage.DraftTokens > 0 {
-			totals.draftRate += turn.Usage.DraftAcceptanceRate
-			totals.draftCoverage += turn.Usage.DraftCoverage
-			totals.draftMeasurements++
-		}
+	totals.promptTokens += generation.Usage.PromptTokens
+	totals.completionTokens += generation.Usage.CompletionTokens
+	totals.reasoningTokens += generation.Usage.CompletionTokensDetails.ReasoningTokens
+	totals.wallTime += generation.WallTime
+	totals.ttftMS += generation.Usage.TimeToFirstTokenMS
+	totals.tokensPerSecond += generation.Usage.TokensPerSecond
+	if generation.Usage.DraftTokens > 0 {
+		totals.draftRate += generation.Usage.DraftAcceptanceRate
+		totals.draftCoverage += generation.Usage.DraftCoverage
+		totals.draftMeasurements++
 	}
-	totals.baseScore += baseGrade.Percentage()
-	totals.undoScore += undoGrade.Percentage()
+	totals.score += grade.Percentage()
+	if grade.PassedCheck("go-build") {
+		totals.buildPasses++
+	}
+	if grade.Passed == grade.Total {
+		totals.fullPasses++
+	}
 	totals.sdkHeapDeltaBytes += heapDelta
 }
 
@@ -419,19 +395,20 @@ func reportMetrics(b *testing.B, totals benchmarkTotals, report configReport) {
 		return
 	}
 
-	turns := float64(totals.runs * 2)
-	b.ReportMetric(float64(totals.promptTokens)/float64(totals.runs), "prompt-tok/op")
-	b.ReportMetric(float64(totals.completionTokens)/float64(totals.runs), "completion-tok/op")
-	b.ReportMetric(float64(totals.reasoningTokens)/float64(totals.runs), "reasoning-tok/op")
-	b.ReportMetric(totals.tokensPerSecond/turns, "tok/s")
-	b.ReportMetric(totals.ttftMS/turns, "ttft-ms")
-	b.ReportMetric(float64(totals.wallTime.Milliseconds())/float64(totals.runs), "wall-ms/op")
-	b.ReportMetric(totals.baseScore/float64(totals.runs), "base-score-%")
-	b.ReportMetric(totals.undoScore/float64(totals.runs), "undo-score-%")
+	runs := float64(totals.runs)
+	b.ReportMetric(float64(totals.promptTokens)/runs, "prompt-tok/op")
+	b.ReportMetric(float64(totals.completionTokens)/runs, "completion-tok/op")
+	b.ReportMetric(float64(totals.reasoningTokens)/runs, "reasoning-tok/op")
+	b.ReportMetric(totals.tokensPerSecond/runs, "tok/s")
+	b.ReportMetric(totals.ttftMS/runs, "ttft-ms")
+	b.ReportMetric(float64(totals.wallTime.Milliseconds())/runs, "wall-ms/op")
+	b.ReportMetric(totals.score/runs, "score-%")
+	b.ReportMetric(100*float64(totals.buildPasses)/runs, "build-pass-%")
+	b.ReportMetric(100*float64(totals.fullPasses)/runs, "full-pass-%")
 	b.ReportMetric(float64(report.ModelBytes)/(1<<30), "model-GiB")
 	b.ReportMetric(float64(report.EstimatedSlotBytes)/(1<<20), "slot-MiB")
 	b.ReportMetric(float64(report.EstimatedVRAMBytes)/(1<<30), "memory-GiB")
-	b.ReportMetric(float64(totals.sdkHeapDeltaBytes)/float64(totals.runs)/(1<<20), "sdk-heap-MiB/op")
+	b.ReportMetric(float64(totals.sdkHeapDeltaBytes)/runs/(1<<20), "sdk-heap-MiB/op")
 	if totals.draftMeasurements > 0 {
 		measurements := float64(totals.draftMeasurements)
 		b.ReportMetric(100*totals.draftRate/measurements, "draft-accept-%")
@@ -439,19 +416,19 @@ func reportMetrics(b *testing.B, totals benchmarkTotals, report configReport) {
 	}
 }
 
-func loadPromptTurns(root string) (promptTurns, error) {
+func loadPrompt(root string) (string, error) {
 	path := filepath.Join(root, "examples", "talks", "tic-tac-toe.md")
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return promptTurns{}, fmt.Errorf("reading prompt %s: %w", path, err)
+		return "", fmt.Errorf("reading prompt %s: %w", path, err)
 	}
 
-	base, undo, ok := strings.Cut(string(data), promptSeparator)
+	base, _, ok := strings.Cut(string(data), promptSeparator)
 	if !ok {
-		return promptTurns{}, errors.New("tic-tac-toe prompt: turn separator is missing")
+		return "", errors.New("tic-tac-toe prompt: turn separator is missing")
 	}
 
-	return promptTurns{base: strings.TrimSpace(base), undo: strings.TrimSpace(undo)}, nil
+	return strings.TrimSpace(base), nil
 }
 
 func repositoryRoot() (string, error) {
@@ -480,19 +457,16 @@ func benchmarkResultsDir(root, modelName string) (string, error) {
 	return dir, nil
 }
 
-func writeIterationArtifacts(resultsDir string, result iterationReport, baseSource, undoSource string) error {
+func writeIterationArtifacts(resultsDir string, result iterationReport, source string) error {
 	dir := filepath.Join(resultsDir, fmt.Sprintf("iteration-%02d", result.Iteration))
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
 
 	files := map[string]string{
-		"base-response.md":  result.Base.Content,
-		"base-reasoning.md": result.Base.Reasoning,
-		"base-main.go":      baseSource,
-		"undo-response.md":  result.Undo.Content,
-		"undo-reasoning.md": result.Undo.Reasoning,
-		"undo-main.go":      undoSource,
+		"response.md":  result.Generation.Content,
+		"reasoning.md": result.Generation.Reasoning,
+		"main.go":      source,
 	}
 	for name, content := range files {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0644); err != nil {
@@ -507,11 +481,10 @@ func writeIterationArtifacts(resultsDir string, result iterationReport, baseSour
 	return os.WriteFile(filepath.Join(dir, "result.json"), append(data, '\n'), 0644)
 }
 
-func writeBenchmarkInputs(resultsDir string, prompts promptTurns) error {
+func writeBenchmarkInputs(resultsDir, prompt string) error {
 	files := map[string]string{
-		"base-prompt.md": prompts.base + "\n",
-		"undo-prompt.md": prompts.undo + "\n",
-		"protocol.txt":   systemProtocol + "\n",
+		"prompt.md":    prompt + "\n",
+		"protocol.txt": systemProtocol + "\n",
 	}
 	for name, content := range files {
 		if err := os.WriteFile(filepath.Join(resultsDir, name), []byte(content), 0644); err != nil {

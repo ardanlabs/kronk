@@ -4,6 +4,7 @@ import "github.com/hybridgroup/yzma/pkg/llama"
 
 // VerifyInput contains callbacks into target sampling and output processing.
 type VerifyInput struct {
+	State      *SlotState
 	Candidates []llama.Token
 	Sample     func(index int) llama.Token
 	Accept     func(index int, token llama.Token) bool
@@ -22,6 +23,12 @@ type VerifyResult struct {
 // request sampler at the corresponding output row.
 func Verify(input VerifyInput) VerifyResult {
 	result := VerifyResult{Drafted: len(input.Candidates), Complete: true}
+	defer func() {
+		if input.State != nil && result.Drafted > 0 {
+			rate := float64(result.Accepted) / float64(result.Drafted)
+			input.State.AcceptanceEMA = 0.9*input.State.AcceptanceEMA + 0.1*rate
+		}
+	}()
 	for i, candidate := range input.Candidates {
 		target := input.Sample(i)
 		if candidate != target {

@@ -65,7 +65,7 @@ test-gh: test-gh-only lint vuln-check diff
 
 # BENCH_PROFILE_FLAGS passes optional go test profiling flags to one model.
 BENCH_PROFILE_FLAGS ?=
-BENCH_CODEGEN_TIME ?= 1x
+BENCH_CODEGEN_TIME ?= 3x
 BENCH_CODEGEN_TIMEOUT ?= 45m
 
 # Run the Ornith coding benchmark.
@@ -96,8 +96,14 @@ benchmark-codegen:
 	do \
 		CODEGEN_RESULTS_DIR=$$RESULTS $(MAKE) $$target || exit $$?; \
 	done; \
+	go run ./sdk/kronk/tests/benchmarks/report -run "$$RESULTS" || exit $$?; \
 	echo ""; \
 	echo "Results written to $$RESULTS"
+
+# Generate the final report for an existing coding benchmark run.
+benchmark-codegen-report:
+	@test -n "$(CODEGEN_RESULTS_DIR)" || (echo "CODEGEN_RESULTS_DIR is required"; exit 1)
+	go run ./sdk/kronk/tests/benchmarks/report -run "$(CODEGEN_RESULTS_DIR)"
 
 # ==============================================================================
 # Go Modules support

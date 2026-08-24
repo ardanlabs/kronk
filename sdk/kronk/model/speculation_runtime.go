@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
 	classicengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/classic"
@@ -388,6 +389,7 @@ func (e *batchEngine) MTPVerifyInput(slotID int, buf []byte) (mtp.VerifyInput, e
 	s.specPendingOriginalSampled = s.sampled
 
 	return mtp.VerifyInput{
+		State:      &s.mtp,
 		Candidates: s.specDraftTokens,
 		Sample: func(index int) llama.Token {
 			row := s.specBaseBatch + int32(index)
@@ -404,10 +406,6 @@ func (e *batchEngine) MTPVerifyInput(slotID int, buf []byte) (mtp.VerifyInput, e
 
 func (e *batchEngine) CommitMTPVerify(slotID int, buf []byte, result mtp.VerifyResult) {
 	s := e.slots[slotID]
-	if result.Drafted > 0 {
-		rate := float64(result.Accepted) / float64(result.Drafted)
-		s.mtp.AcceptanceEMA = 0.9*s.mtp.AcceptanceEMA + 0.1*rate
-	}
 	if !result.Complete || !s.active {
 		return
 	}
@@ -504,7 +502,30 @@ func (e *batchEngine) CompleteMTPFinalize(slotID int, buf []byte, plan mtp.Final
 	s.specPendingLogprob = nil
 	s.specDraftTokens = nil
 	s.nPast = specAcceptedNPast(basePast, plan.Accepted)
-	s.mtp.Rounds++
+	round := e.model.draft.core().mtpPolicy.CompleteRound(
+		&s.mtp,
+		plan.Accepted+1,
+		time.Now(),
+	)
+	if round.Made {
+		args := []any{"status", "draft-policy-decided",
+			"mode", "mtp", "selected_nDraft", round.Draft,
+			"configured_nDraft", e.model.draft.core().nDraft, "reason", round.Reason}
+		if round.Reason == "throughput-trial" {
+			args = append(args,
+				"baseline_tps", fmt.Sprintf("%.2f", round.BaselineTPS),
+				"draft_2_tps", fmt.Sprintf("%.2f", round.Draft2TPS),
+				"draft_1_tps", fmt.Sprintf("%.2f", round.Draft1TPS))
+		}
+		e.model.log(s.job.ctx, "speculative", args...)
+	}
+	if round.Report {
+		e.model.log(s.job.ctx, "speculative", "status", "verify-done",
+			"mode", "mtp", "slot", s.id, "round", round.Round,
+			"accepted", plan.Accepted, "nDraft", plan.Drafted,
+			"target_nPast", s.nPast, "draft_nPast", s.draftNPast,
+			"acc_ema", fmt.Sprintf("%.2f", s.mtp.AcceptanceEMA))
+	}
 
 	bonusBatch := baseBatch + int32(plan.Accepted)
 	if hybridRestore {
