@@ -514,7 +514,8 @@ func (e *batchEngine) CompleteMTPFinalize(slotID int, buf []byte, plan mtp.Final
 		if round.Reason == "throughput-trial" {
 			args = append(args,
 				"baseline_tps", fmt.Sprintf("%.2f", round.BaselineTPS),
-				"trial_tps", fmt.Sprintf("%.2f", round.TrialTPS))
+				"draft_2_tps", fmt.Sprintf("%.2f", round.Draft2TPS),
+				"draft_1_tps", fmt.Sprintf("%.2f", round.Draft1TPS))
 		}
 		e.model.log(s.job.ctx, "speculative", args...)
 	}

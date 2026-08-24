@@ -14,7 +14,8 @@ type policyPhase uint8
 
 const (
 	policyObserving policyPhase = iota
-	policyTrial
+	policyTrialTwo
+	policyTrialOne
 	policyLocked
 )
 
@@ -27,6 +28,7 @@ type Policy struct {
 	pendingDecision      bool
 	baselineTokens       int
 	baselineElapsed      time.Duration
+	draft2TPS            float64
 	trialTokens          int
 	trialElapsed         time.Duration
 	trialCompletedRounds int
@@ -38,7 +40,8 @@ type RoundResult struct {
 	Draft       int
 	Reason      string
 	BaselineTPS float64
-	TrialTPS    float64
+	Draft2TPS   float64
+	Draft1TPS   float64
 	Round       int
 	Report      bool
 }
@@ -86,13 +89,9 @@ func (p *Policy) evaluateAcceptance(state *SlotState) {
 	}
 
 	if state.LowWindows >= lowAcceptanceWindows {
-		p.phase = policyTrial
-		p.activeDraft = 2
 		p.baselineTokens = state.PriorTokens + state.WindowTokens
 		p.baselineElapsed = state.PriorElapsed + state.WindowElapsed
-		p.trialTokens = 0
-		p.trialElapsed = 0
-		p.trialCompletedRounds = 0
+		p.beginTrial(policyTrialTwo, 2)
 		state.LowWindows = 0
 		state.PriorTokens = 0
 		state.PriorElapsed = 0
@@ -129,30 +128,55 @@ func (p *Policy) CompleteRound(state *SlotState, emittedTokens int, completedAt 
 		state.WindowTokens += emittedTokens
 		state.WindowElapsed += elapsed
 
-	case p.phase == policyTrial && state.RoundDraft == 2:
-		p.trialTokens += emittedTokens
-		p.trialElapsed += elapsed
-		p.trialCompletedRounds++
-		if p.trialCompletedRounds < trialRounds {
+	case p.phase == policyTrialTwo && state.RoundDraft == 2:
+		if !p.completeTrialRound(emittedTokens, elapsed) {
+			return result
+		}
+		p.draft2TPS = tokensPerSecond(p.trialTokens, p.trialElapsed)
+		p.beginTrial(policyTrialOne, 1)
+
+	case p.phase == policyTrialOne && state.RoundDraft == 1:
+		if !p.completeTrialRound(emittedTokens, elapsed) {
 			return result
 		}
 
 		baselineTPS := tokensPerSecond(p.baselineTokens, p.baselineElapsed)
-		trialTPS := tokensPerSecond(p.trialTokens, p.trialElapsed)
+		draft1TPS := tokensPerSecond(p.trialTokens, p.trialElapsed)
 		p.activeDraft = p.configuredDraft
-		if trialTPS > baselineTPS {
+		bestTPS := baselineTPS
+		if p.draft2TPS > bestTPS {
 			p.activeDraft = 2
+			bestTPS = p.draft2TPS
+		}
+		if draft1TPS > bestTPS {
+			p.activeDraft = 1
 		}
 		p.phase = policyLocked
 		result.Made = true
 		result.Draft = p.activeDraft
 		result.Reason = "throughput-trial"
 		result.BaselineTPS = baselineTPS
-		result.TrialTPS = trialTPS
+		result.Draft2TPS = p.draft2TPS
+		result.Draft1TPS = draft1TPS
 		return result
 	}
 
 	return result
+}
+
+func (p *Policy) beginTrial(phase policyPhase, draft int) {
+	p.phase = phase
+	p.activeDraft = draft
+	p.trialTokens = 0
+	p.trialElapsed = 0
+	p.trialCompletedRounds = 0
+}
+
+func (p *Policy) completeTrialRound(emittedTokens int, elapsed time.Duration) bool {
+	p.trialTokens += emittedTokens
+	p.trialElapsed += elapsed
+	p.trialCompletedRounds++
+	return p.trialCompletedRounds >= trialRounds
 }
 
 func tokensPerSecond(tokens int, elapsed time.Duration) float64 {

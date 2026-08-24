@@ -142,16 +142,18 @@ Defaults are:
 - **MTP:** 3
 
 MTP begins with the configured draft count. It evaluates acceptance every 8
-rounds. Two consecutive windows below 0.55 EMA start a one-time, 16-round trial
-at a draft count of 2. Kronk compares emitted tokens per second across the
-baseline and trial windows, then keeps the faster count for the lifetime of the
-loaded model. If acceptance remains healthy through 32 rounds, Kronk locks the
-configured count without running a trial. A first low window at that boundary
-receives one final 8-round window before the decision. The learned count applies
-to later requests, has a floor of 2, and resets when the model is unloaded and
-reloaded. The one-time `draft-policy-decided` log records the selected count and
-whether the reason was `healthy-acceptance` or `throughput-trial`. An explicitly
-configured count below 2 is used as-is and is not adapted.
+rounds. Two consecutive windows below 0.55 EMA start one-time, 16-round trials
+at draft counts of 2 and 1. Kronk compares emitted tokens per second across the
+configured baseline and both trial windows, then keeps the fastest count for
+the lifetime of the loaded model. If acceptance remains healthy through 32
+rounds, Kronk locks the configured count without running trials. A first low
+window at that boundary receives one final 8-round window before the decision.
+The learned count applies to later requests and resets when the model is
+unloaded and reloaded. The one-time `draft-policy-decided` log records the
+selected count and whether the reason was `healthy-acceptance` or
+`throughput-trial`. Throughput-trial decisions also report `baseline_tps`,
+`draft_2_tps`, and `draft_1_tps`. An explicitly configured count of 1 or 2 is
+used as-is and is not adapted.
 
 Kronk separately adapts classic draft size directly from its acceptance EMA:
 

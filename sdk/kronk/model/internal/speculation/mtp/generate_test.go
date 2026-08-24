@@ -10,38 +10,41 @@ import (
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
-func TestPolicyLocksBetterFloorAcrossRequests(t *testing.T) {
-	policy, state := startFloorTrial(t)
+func TestPolicyLocksDraftTwoWhenItIsFastest(t *testing.T) {
+	policy, state := startPolicyTrials(t)
 
-	var decision RoundResult
-	for range trialRounds {
-		state.RoundDraft = 2
-		decision = completePolicyRound(policy, state, 2, 5*time.Millisecond)
+	decision := runPolicyTrial(policy, state, 2, 2, 5*time.Millisecond)
+	if decision.Made || policy.phase != policyTrialOne {
+		t.Fatalf("draft 2 trial decided before draft 1 trial: decision=%+v policy=%+v", decision, policy)
 	}
+	if got := policy.draftCountAt(state, 3, 3, time.Now()); got != 1 {
+		t.Fatalf("draft count after draft 2 trial = %d, want draft 1 trial", got)
+	}
+	decision = runPolicyTrial(policy, state, 1, 2, 10*time.Millisecond)
 	if !decision.Made || decision.Draft != 2 {
 		t.Fatalf("decision = %+v, want locked draft 2", decision)
 	}
 	if decision.Reason != "throughput-trial" {
 		t.Fatalf("decision reason = %q, want throughput-trial", decision.Reason)
 	}
-	if math.Abs(decision.BaselineTPS-200) > 1e-9 || math.Abs(decision.TrialTPS-400) > 1e-9 {
-		t.Fatalf("throughput decision = %+v, want baseline 200 and trial 400", decision)
+	if math.Abs(decision.BaselineTPS-200) > 1e-9 || math.Abs(decision.Draft2TPS-400) > 1e-9 || math.Abs(decision.Draft1TPS-200) > 1e-9 {
+		t.Fatalf("throughput decision = %+v, want baseline 200, draft 2 at 400, and draft 1 at 200", decision)
 	}
 
 	state.Reset()
 	if got := policy.draftCountAt(state, 3, 3, time.Now()); got != 2 {
-		t.Fatalf("draft count for next request = %d, want learned floor 2", got)
+		t.Fatalf("draft count for next request = %d, want learned draft 2", got)
 	}
 }
 
-func TestPolicyLocksConfiguredDraftWhenFloorIsSlower(t *testing.T) {
-	policy, state := startFloorTrial(t)
+func TestPolicyLocksConfiguredDraftWhenTrialsAreSlower(t *testing.T) {
+	policy, state := startPolicyTrials(t)
 
-	var decision RoundResult
-	for range trialRounds {
-		state.RoundDraft = 2
-		decision = completePolicyRound(policy, state, 2, 20*time.Millisecond)
+	decision := runPolicyTrial(policy, state, 2, 2, 20*time.Millisecond)
+	if decision.Made {
+		t.Fatalf("draft 2 trial decided before draft 1 trial: %+v", decision)
 	}
+	decision = runPolicyTrial(policy, state, 1, 2, 20*time.Millisecond)
 	if !decision.Made || decision.Draft != 3 {
 		t.Fatalf("decision = %+v, want configured draft 3", decision)
 	}
@@ -49,6 +52,27 @@ func TestPolicyLocksConfiguredDraftWhenFloorIsSlower(t *testing.T) {
 	state.Reset()
 	if got := policy.draftCountAt(state, 3, 3, time.Now()); got != 3 {
 		t.Fatalf("draft count for next request = %d, want configured draft 3", got)
+	}
+}
+
+func TestPolicyLocksDraftOneWhenItIsFastest(t *testing.T) {
+	policy, state := startPolicyTrials(t)
+
+	decision := runPolicyTrial(policy, state, 2, 2, 5*time.Millisecond)
+	if decision.Made {
+		t.Fatalf("draft 2 trial decided before draft 1 trial: %+v", decision)
+	}
+	decision = runPolicyTrial(policy, state, 1, 2, 2500*time.Microsecond)
+	if !decision.Made || decision.Draft != 1 {
+		t.Fatalf("decision = %+v, want locked draft 1", decision)
+	}
+	if math.Abs(decision.BaselineTPS-200) > 1e-9 || math.Abs(decision.Draft2TPS-400) > 1e-9 || math.Abs(decision.Draft1TPS-800) > 1e-9 {
+		t.Fatalf("throughput decision = %+v, want baseline 200, draft 2 at 400, and draft 1 at 800", decision)
+	}
+
+	state.Reset()
+	if got := policy.draftCountAt(state, 3, 3, time.Now()); got != 1 {
+		t.Fatalf("draft count for next request = %d, want learned draft 1", got)
 	}
 }
 
@@ -130,7 +154,7 @@ func TestPolicyGivesLowBoundaryWindowOneMoreCheck(t *testing.T) {
 	}
 }
 
-func TestPolicyHonorsConfiguredCountsAtOrBelowFloor(t *testing.T) {
+func TestPolicyHonorsExplicitOneAndTwo(t *testing.T) {
 	for _, configured := range []int{1, 2} {
 		t.Run(fmt.Sprintf("nDraft=%d", configured), func(t *testing.T) {
 			var policy Policy
@@ -145,7 +169,7 @@ func TestPolicyHonorsConfiguredCountsAtOrBelowFloor(t *testing.T) {
 	}
 }
 
-func startFloorTrial(t *testing.T) (*Policy, *SlotState) {
+func startPolicyTrials(t *testing.T) (*Policy, *SlotState) {
 	t.Helper()
 
 	var policy Policy
@@ -164,10 +188,10 @@ func startFloorTrial(t *testing.T) (*Policy, *SlotState) {
 	state.WindowTokens = 16
 	state.WindowElapsed = 80 * time.Millisecond
 	if got := policy.draftCountAt(state, 3, 3, time.Now()); got != 2 {
-		t.Fatalf("draft count after second low window = %d, want floor 2", got)
+		t.Fatalf("draft count after second low window = %d, want draft 2 trial", got)
 	}
-	if policy.phase != policyTrial {
-		t.Fatalf("policy phase = %d, want trial", policy.phase)
+	if policy.phase != policyTrialTwo {
+		t.Fatalf("policy phase = %d, want draft 2 trial", policy.phase)
 	}
 
 	return &policy, state
@@ -176,6 +200,15 @@ func startFloorTrial(t *testing.T) (*Policy, *SlotState) {
 func completePolicyRound(policy *Policy, state *SlotState, tokens int, elapsed time.Duration) RoundResult {
 	state.RoundStarted = time.Unix(0, 0)
 	return policy.CompleteRound(state, tokens, state.RoundStarted.Add(elapsed))
+}
+
+func runPolicyTrial(policy *Policy, state *SlotState, draft, tokens int, elapsed time.Duration) RoundResult {
+	var result RoundResult
+	for range trialRounds {
+		state.RoundDraft = draft
+		result = completePolicyRound(policy, state, tokens, elapsed)
+	}
+	return result
 }
 
 func TestGenerate(t *testing.T) {
