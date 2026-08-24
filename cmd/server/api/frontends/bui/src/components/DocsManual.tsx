@@ -1427,7 +1427,8 @@ krn, err := kronk.New(
             <li><strong>Classic separate draft:</strong> 5</li>
             <li><strong>MTP:</strong> 3</li>
           </ul>
-          <p>MTP uses the configured draft count on every round, matching llama.cpp. Kronk adaptively reduces the count for classic separate drafts. It tracks an exponential moving average (EMA) of recent acceptance and chooses the next round's size from the configured ceiling:</p>
+          <p>MTP begins with the configured draft count. It evaluates acceptance every 8 rounds. Two consecutive windows below 0.55 EMA start a one-time, 16-round trial at a draft count of 2. Kronk compares emitted tokens per second across the baseline and trial windows, then keeps the faster count for the lifetime of the loaded model. If acceptance remains healthy through 32 rounds, Kronk locks the configured count without running a trial. A first low window at that boundary receives one final 8-round window before the decision. The learned count applies to later requests, has a floor of 2, and resets when the model is unloaded and reloaded. The one-time <code>draft-policy-decided</code> log records the selected count and whether the reason was <code>healthy-acceptance</code> or <code>throughput-trial</code>. An explicitly configured count below 2 is used as-is and is not adapted.</p>
+          <p>Kronk separately adapts classic draft size directly from its acceptance EMA:</p>
           <table className="flags-table">
             <thead>
               <tr>

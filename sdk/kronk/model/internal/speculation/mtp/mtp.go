@@ -90,12 +90,20 @@ func (c *Controller) AfterTargetDecode(buf []byte) {
 		}
 		input, err := c.host.MTPSyncInput(slot, 0)
 		if err != nil {
-			c.host.Fail(slot, fmt.Errorf("MTP sync: %w", err))
+			if disableErr := c.host.DisableMTP(slot, "sync-error", 0); disableErr != nil {
+				c.host.Fail(slot, disableErr)
+				continue
+			}
+			c.host.ProcessOrdinary(slot, buf)
 			continue
 		}
 		result, err := Synchronize(input)
 		if err != nil {
-			c.host.Fail(slot, fmt.Errorf("MTP sync: %w", err))
+			if disableErr := c.host.DisableMTP(slot, "sync-error", 0); disableErr != nil {
+				c.host.Fail(slot, disableErr)
+				continue
+			}
+			c.host.ProcessOrdinary(slot, buf)
 			continue
 		}
 		c.host.CommitMTPSync(slot, result)

@@ -101,6 +101,24 @@ func TestMTPController(t *testing.T) {
 	}
 }
 
+func TestMTPControllerDisablesSpeculationAfterOrdinarySyncError(t *testing.T) {
+	host := fakeHost{
+		active:   []bool{true},
+		hasRound: []bool{false},
+		pending:  []bool{false},
+		syncErr:  map[int]error{0: errors.New("sync")},
+	}
+	controller := mtp.New(&host)
+
+	controller.TargetRowsStaged(0, speculation.TargetRange{Start: 0, Count: 1, BasePos: 7})
+	controller.AfterTargetDecode(nil)
+
+	want := []string{"track:0", "sync:0", "disable:0", "ordinary:0"}
+	if !slices.Equal(host.events, want) {
+		t.Errorf("events = %v, want %v", host.events, want)
+	}
+}
+
 type fakeHost struct {
 	active       []bool
 	needsPrefill []bool
@@ -109,6 +127,7 @@ type fakeHost struct {
 	pending      []bool
 	candidates   map[int][]llama.Token
 	prefillErr   map[int]error
+	syncErr      map[int]error
 	events       []string
 }
 
@@ -187,7 +206,7 @@ func (fh *fakeHost) CompleteClassicFinalize(slot int, _ []byte, _ classic.Finali
 
 func (fh *fakeHost) MTPSyncInput(slot int, _ int) (mtp.SyncInput, error) {
 	fh.event("sync", slot)
-	return mtp.SyncInput{}, nil
+	return mtp.SyncInput{}, fh.syncErr[slot]
 }
 
 func (fh *fakeHost) CommitMTPSync(int, mtp.SyncResult) {}
@@ -210,7 +229,10 @@ func (fh *fakeHost) MTPFinalizePlan(int) (mtp.FinalizePlan, bool) {
 
 func (fh *fakeHost) RollbackMTPTarget(int, mtp.FinalizePlan) (bool, error) { return false, nil }
 func (fh *fakeHost) RollbackMTPDraft(int, mtp.FinalizePlan) error          { return nil }
-func (fh *fakeHost) DisableMTP(int, string, int) error                     { return nil }
+func (fh *fakeHost) DisableMTP(slot int, _ string, _ int) error {
+	fh.event("disable", slot)
+	return nil
+}
 func (fh *fakeHost) CompleteMTPFinalize(slot int, _ []byte, _ mtp.FinalizePlan, _ bool) {
 	fh.event("finalize", slot)
 }
