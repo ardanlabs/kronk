@@ -1,4 +1,4 @@
-package benchmarks_test
+package main
 
 import (
 	"context"
@@ -53,49 +53,11 @@ func (gr gradeResult) PassedCheck(name string) bool {
 	return false
 }
 
-func (gr gradeResult) Failures(turn string) []string {
-	var failures []string
-	for _, check := range gr.Checks {
-		if !check.Passed {
-			failures = append(failures, fmt.Sprintf("%s/%s: %s", turn, check.Name, check.Detail))
-		}
-	}
-	return failures
-}
-
 func (gr *gradeResult) add(name string, passed bool, detail string) {
 	if passed {
 		gr.Passed++
 	}
 	gr.Checks = append(gr.Checks, gradeCheck{Name: name, Passed: passed, Detail: detail})
-}
-
-func extractGoSource(response string) string {
-	response = strings.TrimSpace(response)
-
-	for _, marker := range []string{"```go", "```golang", "```"} {
-		for remainder := response; ; {
-			start := strings.Index(remainder, marker)
-			if start < 0 {
-				break
-			}
-			body := remainder[start+len(marker):]
-			before, after, ok := strings.Cut(body, "```")
-			if !ok {
-				break
-			}
-			candidate := strings.TrimSpace(before)
-			if strings.HasPrefix(candidate, "package main") {
-				return candidate + "\n"
-			}
-			remainder = after
-		}
-	}
-
-	if start := strings.Index(response, "package main"); start >= 0 {
-		return strings.TrimSpace(response[start:]) + "\n"
-	}
-	return ""
 }
 
 func gradeProgram(parent context.Context, source string) gradeResult {
@@ -267,7 +229,7 @@ func prepareProgram(source string) (string, error) {
 	}
 
 	files := map[string]string{
-		"go.mod":  "module tictactoe\n\ngo 1.24\n",
+		"go.mod":  "module tictactoe\n",
 		"main.go": source,
 	}
 	for name, content := range files {
@@ -323,11 +285,21 @@ func scenarios() []scenario {
 			name:  "o-win",
 			input: "1\n2\n3\n5\n4\n8\nn\n",
 			want:  []string{"Score: X: 0 | O: 1 | Draws: 0", "Player O wins!"},
+			ordered: []string{
+				" 7 | O | 9",
+				"Player O wins!",
+				"Play again? (y/n): ",
+			},
 		},
 		{
 			name:  "draw",
 			input: "1\n2\n3\n5\n4\n6\n8\n7\n9\nn\n",
 			want:  []string{"Score: X: 0 | O: 0 | Draws: 1", "It's a draw."},
+			ordered: []string{
+				" O | X | X",
+				"It's a draw.",
+				"Play again? (y/n): ",
+			},
 		},
 		{
 			name:  "invalid-input",
@@ -358,12 +330,17 @@ func assessScenario(output string, runErr error, scenario scenario) (bool, strin
 		}
 	}
 	position := 0
+	previous := ""
 	for _, want := range scenario.ordered {
 		idx := strings.Index(clean[position:], want)
 		if idx < 0 {
+			if previous != "" && strings.Contains(clean[:position], want) {
+				return false, fmt.Sprintf("%q appeared before %q; want it after; output: %s", want, previous, truncate(clean, 600))
+			}
 			return false, fmt.Sprintf("ordered output missing %q; output: %s", want, truncate(clean, 600))
 		}
 		position += idx + len(want)
+		previous = want
 	}
 	return true, ""
 }

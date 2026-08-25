@@ -31,6 +31,7 @@ var (
 	MPThinkToolChat  models.Path
 	MPGPTChat        models.Path
 	MPHybridVision   models.Path
+	MPLFMChat        models.Path
 	MPSimpleVision   models.Path
 	MPMoEVision      models.Path
 	MPAudio          models.Path
@@ -69,6 +70,7 @@ func Setup() {
 	resolveModel(mdls, "unsloth/gpt-oss-20b-Q8_0", &MPGPTChat)
 	resolveModel(mdls, "ggml-org/Qwen2.5-Omni-3B-Q4_K_M", &MPAudio)
 	resolveModel(mdls, "mradermacher/Qwopus3.5-4B-Coder.Q4_K_M", &MPHybridVision)
+	resolveModel(mdls, "unsloth/LFM2-700M-Q8_0", &MPLFMChat)
 	resolveModel(mdls, "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL", &MPMTP)
 	resolveModel(mdls, "unsloth/Qwen3-0.6B-Q8_0", &MPDraft)
 
@@ -327,6 +329,22 @@ func CfgHybridChat() model.Config {
 		CacheTypeK:          model.GGMLTypeF16,
 		CacheTypeV:          model.GGMLTypeF16,
 		PtrNSeqMax:          new(2),
+	}
+}
+
+// CfgLFMChat returns a two-slot LFM2 configuration with IMC enabled so the
+// model-backed suite exercises per-sequence recurrent-state save and restore.
+func CfgLFMChat() model.Config {
+	return model.Config{
+		ModelFiles:          MPLFMChat.ModelFiles,
+		PtrContextWindow:    new(4096),
+		PtrPrefillBatchSize: new(512),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(2),
+		PtrIncrementalCache: new(true),
+		PtrCacheMinTokens:   new(1),
+		Speculation:         model.SpeculationDisabled,
 	}
 }
 

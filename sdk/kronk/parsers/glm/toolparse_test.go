@@ -23,6 +23,19 @@ func TestParseGLM_Single(t *testing.T) {
 	}
 }
 
+func TestParseGLM_Multiline(t *testing.T) {
+	calls := parseGLM("skill\n<arg_key>name</arg_key>\n<arg_value>writing-go</arg_value>")
+	if len(calls) != 1 || calls[0].Status != 0 {
+		t.Fatalf("tool calls: got %+v, want one successful call", calls)
+	}
+	if calls[0].Function.Name != "skill" {
+		t.Errorf("name: got %q, want skill", calls[0].Function.Name)
+	}
+	if got := calls[0].Function.Arguments["name"]; got != "writing-go" {
+		t.Errorf("name argument: got %v, want writing-go", got)
+	}
+}
+
 func TestParseGLM_MultipleArgs(t *testing.T) {
 	calls := parseGLM(
 		"get_weather" +
@@ -38,7 +51,7 @@ func TestParseGLM_MultipleArgs(t *testing.T) {
 }
 
 func TestParseGLM_StructuralWhitespace(t *testing.T) {
-	calls := parseGLM("get_weather<arg_key>city</arg_key> \t<arg_value>NYC</arg_value> \r<arg_key>units</arg_key><arg_value>C</arg_value>")
+	calls := parseGLM("get_weather<arg_key>city</arg_key> \t\n<arg_value>NYC</arg_value> \r\n<arg_key>units</arg_key><arg_value>C</arg_value>")
 	if len(calls) != 1 || calls[0].Status != 0 {
 		t.Fatalf("tool calls: got %+v, want one successful call", calls)
 	}
@@ -100,7 +113,7 @@ func TestParseGLM_BackToBackCalls(t *testing.T) {
 func TestStateMachineToolCallDeltas(t *testing.T) {
 	var sm stateMachine
 	sm.Reset()
-	for _, token := range []string{"<tool_call>", "get_weather<arg_", "key>", "location", "</tool_call>", "<tool_call>", "forecast", "<arg_key>"} {
+	for _, token := range []string{"<tool_call>", "get_weather\n<arg_", "key>", "location", "</tool_call>", "<tool_call>", "forecast\n", "<arg_key>"} {
 		sm.Classify(token)
 	}
 

@@ -16,6 +16,7 @@ zarf/docker/promtail/positions/
 .tools/adversarial/output/
 .tools/batch-load/output/
 .tools/media-load/output/
+.tools/codegen-benchmark/output/
 
 # Binaries for programs and plugins
 *.exe

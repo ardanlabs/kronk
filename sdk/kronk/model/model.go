@@ -285,6 +285,25 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		return nil, err
 	}
 
+	if plan.Source == speculationSourceMTPEmbedded {
+		targetEmbeddingWidth := llama.ModelNEmbd(mdl)
+		mtpOutputWidth := llama.ModelNEmbdOut(mdl)
+		compatiblePlan, err := resolveEmbeddedMTPCompatibility(plan, targetEmbeddingWidth, mtpOutputWidth)
+		if err != nil {
+			llama.ModelFree(mdl)
+			return nil, fmt.Errorf("resolve speculation compatibility: %w", err)
+		}
+		if compatiblePlan.Source == speculationSourceNone {
+			l(ctx, "speculation", "status", "DISABLED",
+				"source", "embedded-mtp",
+				"reason", "embedding-width-mismatch",
+				"mtp-output-width", mtpOutputWidth,
+				"target-embedding-width", targetEmbeddingWidth)
+		}
+		plan = compatiblePlan
+		cfg.speculationPlan = plan
+	}
+
 	configuredPrefillBatchSize := cfg.PrefillBatchSize()
 	cfg = adjustConfig(cfg, mdl)
 	prefillChunk := cfg.PrefillBatchSize()

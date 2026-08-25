@@ -163,16 +163,17 @@ version: 1
 
 # ==============================================================================
 
-kms: {}
+kms:
+  download:
+    enabled: true
+  insecure-logging: true
 
 models:
-  # nseq-max: 1  ~44GB VRAM
-  # nseq-max: 2  ~47GB VRAM
-  ornith-ai/Ornith-1.5-35B-Q8_0/AGENT:
-    nseq-max: 2
-    context-window: 262144
-    chat-template-kwargs:
-      preserve_thinking: true
+  # nseq-max: 1  ~81GB VRAM
+  # nseq-max: 2  NOT SUPPORTED BY LLAMA.CPP YET
+  unsloth/GLM-4.5-Air-Q4_K_M/AGENT:
+    nseq-max: 1
+    context-window: 65536
     sampling-parameters:
       max_tokens: 16384
 
@@ -180,6 +181,16 @@ models:
   # nseq-max: 2  ~82GB VRAM
   unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
     context-window: 131072
+    chat-template-kwargs:
+      preserve_thinking: true
+    sampling-parameters:
+      max_tokens: 16384
+
+  # nseq-max: 1  ~44GB VRAM
+  # nseq-max: 2  ~47GB VRAM
+  ornith-ai/Ornith-1.5-35B-Q8_0/AGENT:
+    nseq-max: 2
+    context-window: 262144
     chat-template-kwargs:
       preserve_thinking: true
     sampling-parameters:
@@ -205,7 +216,7 @@ models:
     sampling-parameters:
       max_tokens: 16384
 
-  # nseq-max: 1  ~8GB VRAM
+  # nseq-max: 1  ~9GB VRAM
   ornith-ai/Ornith-1.5-9B-Q4_K_M/AGENT:
     context-window: 65536
     sampling-parameters:

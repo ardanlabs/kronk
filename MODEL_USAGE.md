@@ -65,15 +65,10 @@ rerankers.
 Benchmarks are selected for representative coding behavior rather than minimum
 download size. They are independent of the test-model reduction above.
 
-| Model | Benchmark |
-| --- | --- |
-| `ornith-ai/Ornith-1.5-35B-Q8_0/AGENT` | Ornith 1.5 35B Q8 |
-| `unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT` | Embedded-MTP Qwen3.6 35B Q8 |
-| `unsloth/Qwen3.8-27B-UD-Q4_K_XL/AGENT` | Qwen3.8 27B Q4 |
-| `unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT` | Gemma 4 26B Q8 |
-
-Benchmark ownership is `sdk/kronk/tests/benchmarks/main_test.go`, with commands
-and operating instructions in `sdk/kronk/tests/benchmarks/README.md`.
+The OpenCode coding benchmark discovers its models from
+`zarf/kms/model_config.yaml`. Every eligible model ID ends in `/AGENT`; there is
+no separate hard-coded benchmark model list. Benchmark ownership and operating
+instructions are in `.tools/codegen-benchmark`.
 
 ## Example models
 

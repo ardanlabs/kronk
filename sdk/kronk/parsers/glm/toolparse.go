@@ -15,28 +15,24 @@ import (
 func parseGLM(content string) []model.ResponseToolCall {
 	var toolCalls []model.ResponseToolCall
 	raw := content
+	remaining := strings.TrimSpace(content)
 
-	for call := range strings.SplitSeq(content, "\n") {
-		call = strings.TrimSpace(call)
-		if call == "" {
-			continue
-		}
-
-		argKeyIdx := strings.Index(call, "<arg_key>")
+	for remaining != "" {
+		argKeyIdx := strings.Index(remaining, "<arg_key>")
 		if argKeyIdx == -1 {
 			return []model.ResponseToolCall{failedGLMToolCall(raw,
 				errors.New("parse glm: call has no argument key"))}
 		}
 
-		name := strings.TrimSpace(call[:argKeyIdx])
+		name := strings.TrimSpace(remaining[:argKeyIdx])
 		if name == "" {
 			return []model.ResponseToolCall{failedGLMToolCall(raw,
 				errors.New("parse glm: function name is empty"))}
 		}
 		args := make(map[string]any)
 
-		remaining := call[argKeyIdx:]
-		for remaining != "" {
+		remaining = remaining[argKeyIdx:]
+		for {
 			if !strings.HasPrefix(remaining, "<arg_key>") {
 				return []model.ResponseToolCall{failedGLMToolCall(raw,
 					fmt.Errorf("parse glm: unexpected content in function %q", name))}
@@ -59,7 +55,7 @@ func parseGLM(content string) []model.ResponseToolCall {
 					fmt.Errorf("parse glm: argument %q in function %q is duplicated", key, name))}
 			}
 			remaining = remaining[keyEnd+len("</arg_key>"):]
-			remaining = strings.TrimLeft(remaining, " \t\r")
+			remaining = strings.TrimLeft(remaining, " \t\r\n")
 
 			if !strings.HasPrefix(remaining, "<arg_value>") {
 				return []model.ResponseToolCall{failedGLMToolCall(raw,
@@ -77,7 +73,10 @@ func parseGLM(content string) []model.ResponseToolCall {
 			args[key] = value
 
 			remaining = remaining[valEnd+12:]
-			remaining = strings.TrimLeft(remaining, " \t\r")
+			remaining = strings.TrimLeft(remaining, " \t\r\n")
+			if !strings.HasPrefix(remaining, "<arg_key>") {
+				break
+			}
 		}
 
 		toolCalls = append(toolCalls, newGLMToolCall(name, args))

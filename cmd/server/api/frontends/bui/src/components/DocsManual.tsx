@@ -5279,6 +5279,16 @@ Output — bullets, no prose, no preamble:
 Then one line per non-confirmed flag: \`Dismissed: <probe-id> — <reason>\`.`}</code></pre>
           <p>The yzma and llama.cpp trees the prompt cites are working checkouts under <code>.extras/</code>, which is untracked. Clone them there before triaging, or drop those two sources from the prompt and accept that a defect below the Kronk boundary can only be localized to the binding call site.</p>
           <p>Editing the prompt means editing <code>.tools/adversarial/adversarial-triage.md</code> and this chapter together; the file is what the Make target prints.</p>
+          <h4 id="2043-opencode-coding-benchmark">20.4.3 OpenCode coding benchmark</h4>
+          <p><code>.tools/codegen-benchmark</code> is a deliberate coding-agent benchmark against a separately managed Kronk server. It runs the tic-tac-toe prompt from <code>examples/talks/tic-tac-toe.md</code> through <code>opencode run</code>, preserving an isolated OpenCode home and nested Git repository for each attempt. The repository boundary keeps OpenCode inside the attempt directory, where it can compile and repair its program before the harness applies hidden structural tests and scripted gameplay checks.</p>
+          <p>The harness warms each model with a minimal <code>hello model</code> chat completion before its attempts, then unloads that model before continuing to the next configured model. Warm-up time and tokens are excluded from the OpenCode benchmark measurements.</p>
+          <p>Eligible models come exclusively from <code>zarf/kms/model_config.yaml</code>: every selected ID must be configured there, end in <code>/AGENT</code>, and be returned by the running server's <code>GET /v1/models</code> endpoint. The harness defaults to one attempt per eligible model.</p>
+          <pre className="code-block"><code className="language-shell">{`make benchmark-codegen-list
+make benchmark-codegen
+make benchmark-codegen \\
+    CODEGEN_MODEL=ornith-ai/Ornith-1.5-35B-Q8_0/AGENT \\
+    CODEGEN_ATTEMPTS=3`}</code></pre>
+          <p>Results land directly beneath <code>.tools/codegen-benchmark/output</code>. Each run clears the previous contents, stores every selected model beneath that directory, and writes one aggregate <code>report.md</code> for model comparison. Each attempt retains the generated program, OpenCode state and event stream, and grader result. See <code>.tools/codegen-benchmark/README.md</code> for all runtime knobs. This is not part of <code>make test</code>; starting the model server and running inference remain explicit human actions.</p>
           <h3 id="205-request-and-model-lifecycle">20.5 Request and Model Lifecycle</h3>
           <h4 id="2051-server-request-flow">20.5.1 Server request flow</h4>
           <p>The stable request path is:</p>

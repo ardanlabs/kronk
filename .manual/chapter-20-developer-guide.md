@@ -354,6 +354,39 @@ the binding call site.
 Editing the prompt means editing `.tools/adversarial/adversarial-triage.md` and this
 chapter together; the file is what the Make target prints.
 
+#### 20.4.3 OpenCode coding benchmark
+
+`.tools/codegen-benchmark` is a deliberate coding-agent benchmark against a separately
+managed Kronk server. It runs the tic-tac-toe prompt from
+`examples/talks/tic-tac-toe.md` through `opencode run`, preserving an isolated OpenCode
+home and nested Git repository for each attempt. The repository boundary keeps OpenCode
+inside the attempt directory, where it can compile and repair its program before the
+harness applies hidden structural tests and scripted gameplay checks.
+
+The harness warms each model with a minimal `hello model` chat completion before its
+attempts, then unloads that model before continuing to the next configured model. Warm-up
+time and tokens are excluded from the OpenCode benchmark measurements.
+
+Eligible models come exclusively from `zarf/kms/model_config.yaml`: every selected ID
+must be configured there, end in `/AGENT`, and be returned by the running server's
+`GET /v1/models` endpoint. The harness defaults to one attempt per eligible model.
+
+```shell
+make benchmark-codegen-list
+make benchmark-codegen
+make benchmark-codegen \
+    CODEGEN_MODEL=ornith-ai/Ornith-1.5-35B-Q8_0/AGENT \
+    CODEGEN_ATTEMPTS=3
+```
+
+Results land directly beneath `.tools/codegen-benchmark/output`. Each run clears the
+previous contents, stores every selected model beneath that directory, and writes one
+aggregate `report.md` for model comparison. Each attempt retains the generated program,
+OpenCode state and event stream, and grader result. See
+`.tools/codegen-benchmark/README.md` for all runtime knobs. This is not part of
+`make test`; starting the model server and running inference remain explicit human
+actions.
+
 ### 20.5 Request and Model Lifecycle
 
 #### 20.5.1 Server request flow
