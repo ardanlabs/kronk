@@ -111,12 +111,13 @@ Sometimes there are breaking changes to the family of ggml libraries that requir
 
 Here are some of the known compatible versions:
 
-| llama.cpp     | yzma    | kronk   |
-| ------------- | ------- | ------- |
-| b10355+       | v1.23.0 | 1.30.9+ |
-| b10212-b10354 | v1.22.0 | 1.30.0+ |
-| b10182-b10211 | v1.21.0 | 1.29.8+ |
-| b10105-b10181 | v1.20.0 | 1.29.1+ |
+| llama.cpp      | yzma    | kronk   |
+| -------------- | ------- | ------- |
+| v0.3.0/b10621+ | v1.25.0 | 1.32.0+ |
+| b10355-b10620  | v1.23.0 | 1.30.9+ |
+| b10212-b10354  | v1.22.0 | 1.30.0+ |
+| b10182-b10211  | v1.21.0 | 1.29.8+ |
+| b10105-b10181  | v1.20.0 | 1.29.1+ |
 
 | whisper.cpp | bucky  | kronk   |
 | ----------- | ------ | ------- |
@@ -126,6 +127,7 @@ Here are some of the known compatible versions:
 
 | stable-diffusion.cpp | malina | kronk    | Notes          |
 | -------------------- | ------ | -------- | -------------- |
+| master-827-97d2990   | v1.0.4 | v1.31.8+ | (experimental) |
 | master-813-bfbef5b   | v1.0.2 | v1.30.7+ | (experimental) |
 
 ## Documentation and Examples
