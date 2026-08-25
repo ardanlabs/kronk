@@ -61,51 +61,6 @@ test-gh-only: install-libraries-gh install-test-gh-models
 test-gh: test-gh-only lint vuln-check diff
 
 # ==============================================================================
-# Benchmarks
-
-# BENCH_PROFILE_FLAGS passes optional go test profiling flags to one model.
-BENCH_PROFILE_FLAGS ?=
-BENCH_CODEGEN_TIME ?= 3x
-BENCH_CODEGEN_TIMEOUT ?= 45m
-
-# Run the Ornith coding benchmark.
-benchmark-codegen-ornith:
-	RUN_IN_PARALLEL=yes GITHUB_WORKSPACE=$(shell pwd) go test -run='^$$' -bench='^BenchmarkCodeGen_Ornith15_35B_Q8$$' -benchtime=$(BENCH_CODEGEN_TIME) -timeout=$(BENCH_CODEGEN_TIMEOUT) $(BENCH_PROFILE_FLAGS) ./sdk/kronk/tests/benchmarks/
-
-# Run the MTP Qwen3.6 coding benchmark.
-benchmark-codegen-mtp-qwen36:
-	RUN_IN_PARALLEL=yes GITHUB_WORKSPACE=$(shell pwd) go test -run='^$$' -bench='^BenchmarkCodeGen_MTP_Qwen36_35B_A3B_Q8$$' -benchtime=$(BENCH_CODEGEN_TIME) -timeout=$(BENCH_CODEGEN_TIMEOUT) $(BENCH_PROFILE_FLAGS) ./sdk/kronk/tests/benchmarks/
-
-# Run the Qwen3.8 coding benchmark.
-benchmark-codegen-qwen38:
-	RUN_IN_PARALLEL=yes GITHUB_WORKSPACE=$(shell pwd) go test -run='^$$' -bench='^BenchmarkCodeGen_Qwen38_27B_Q4$$' -benchtime=$(BENCH_CODEGEN_TIME) -timeout=$(BENCH_CODEGEN_TIMEOUT) $(BENCH_PROFILE_FLAGS) ./sdk/kronk/tests/benchmarks/
-
-# Run the Gemma 4 coding benchmark.
-benchmark-codegen-gemma4:
-	RUN_IN_PARALLEL=yes GITHUB_WORKSPACE=$(shell pwd) go test -run='^$$' -bench='^BenchmarkCodeGen_Gemma4_26B_A4B_Q8$$' -benchtime=$(BENCH_CODEGEN_TIME) -timeout=$(BENCH_CODEGEN_TIMEOUT) $(BENCH_PROFILE_FLAGS) ./sdk/kronk/tests/benchmarks/
-
-# Run all coding benchmarks sequentially and store their artifacts together.
-benchmark-codegen:
-	@RESULTS=sdk/kronk/tests/benchmarks/runs/$$(date +%Y%m%d-%H%M%S); \
-	mkdir -p $$RESULTS; \
-	for target in \
-		benchmark-codegen-ornith \
-		benchmark-codegen-mtp-qwen36 \
-		benchmark-codegen-qwen38 \
-		benchmark-codegen-gemma4; \
-	do \
-		CODEGEN_RESULTS_DIR=$$RESULTS $(MAKE) $$target || exit $$?; \
-	done; \
-	go run ./sdk/kronk/tests/benchmarks/report -run "$$RESULTS" || exit $$?; \
-	echo ""; \
-	echo "Results written to $$RESULTS"
-
-# Generate the final report for an existing coding benchmark run.
-benchmark-codegen-report:
-	@test -n "$(CODEGEN_RESULTS_DIR)" || (echo "CODEGEN_RESULTS_DIR is required"; exit 1)
-	go run ./sdk/kronk/tests/benchmarks/report -run "$(CODEGEN_RESULTS_DIR)"
-
-# ==============================================================================
 # Go Modules support
 
 tidy:

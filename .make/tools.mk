@@ -163,3 +163,30 @@ test-adversarial:
 # Requires nseq-max: 1
 example-lifecycle-load:
 	go run .tools/lifecycle-load/main.go
+
+# ==============================================================================
+
+# OpenCode coding-agent benchmark against a separately managed Kronk server.
+# Eligible models come exclusively from /AGENT entries in zarf/kms/model_config.yaml.
+CODEGEN_HOST ?= http://localhost:11435
+CODEGEN_MODEL ?= all
+CODEGEN_ATTEMPTS ?= 1
+CODEGEN_STEPS ?= 40
+CODEGEN_TIMEOUT ?= 30m
+CODEGEN_OUT ?=
+
+benchmark-codegen:
+	go run ./.tools/codegen-benchmark \
+		-host "$(CODEGEN_HOST)" \
+		-model "$(CODEGEN_MODEL)" \
+		-attempts "$(CODEGEN_ATTEMPTS)" \
+		-steps "$(CODEGEN_STEPS)" \
+		-timeout "$(CODEGEN_TIMEOUT)" \
+		$(if $(CODEGEN_OUT),-out "$(CODEGEN_OUT)",)
+
+benchmark-codegen-list:
+	go run ./.tools/codegen-benchmark -list
+
+benchmark-codegen-report:
+	@test -n "$(CODEGEN_OUT)" || { echo "CODEGEN_OUT is required" >&2; exit 2; }
+	go run ./.tools/codegen-benchmark -report "$(CODEGEN_OUT)"
