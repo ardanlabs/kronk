@@ -97,8 +97,9 @@ func renderReport(runDir string, models []modelResults) string {
 	}
 
 	report.WriteString("\n## Agent work\n\n")
-	report.WriteString("| Model | Wall/attempt | Turns/attempt | Tools/attempt | Input tokens | Output tokens | Reasoning tokens | Cache read | Cache write |\n")
-	report.WriteString("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
+	report.WriteString("Token columns sum the usage from each agent turn's final OpenCode usage event.\n\n")
+	report.WriteString("| Model | Wall/attempt | Turns/attempt | Tools/attempt | Input tokens | Output tokens | Reasoning tokens | Cache read |\n")
+	report.WriteString("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
 	for _, model := range models {
 		var wall time.Duration
 		var turns, tools int
@@ -111,10 +112,9 @@ func renderReport(runDir string, models []modelResults) string {
 			usage.Output += attempt.OpenCode.Usage.Output
 			usage.Reasoning += attempt.OpenCode.Usage.Reasoning
 			usage.CacheRead += attempt.OpenCode.Usage.CacheRead
-			usage.CacheWrite += attempt.OpenCode.Usage.CacheWrite
 		}
 		count := len(model.Attempts)
-		fmt.Fprintf(&report, "| `%s` | %.2f s | %.1f | %.1f | %.0f | %.0f | %.0f | %.0f | %.0f |\n",
+		fmt.Fprintf(&report, "| `%s` | %.2f s | %.1f | %.1f | %.0f | %.0f | %.0f | %.0f |\n",
 			model.Model.ID,
 			wall.Seconds()/float64(count),
 			float64(turns)/float64(count),
@@ -123,7 +123,6 @@ func renderReport(runDir string, models []modelResults) string {
 			float64(usage.Output)/float64(count),
 			float64(usage.Reasoning)/float64(count),
 			float64(usage.CacheRead)/float64(count),
-			float64(usage.CacheWrite)/float64(count),
 		)
 	}
 

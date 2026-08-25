@@ -202,7 +202,7 @@ func TestWarmAndUnloadModel(t *testing.T) {
 func TestParseAgentResult(t *testing.T) {
 	events := strings.Join([]string{
 		`{"type":"tool_use","part":{"type":"tool","tool":"bash"}}`,
-		`{"type":"step_finish","part":{"type":"step-finish","tokens":{"input":100,"output":20,"reasoning":5,"cache":{"read":40,"write":3}}}}`,
+		`{"type":"step_finish","part":{"type":"step-finish","tokens":{"input":100,"output":20,"reasoning":5,"cache":{"read":40}}}}`,
 	}, "\n")
 
 	result, err := parseAgentResult([]byte(events))
@@ -215,7 +215,7 @@ func TestParseAgentResult(t *testing.T) {
 	if got, want := result.ToolCalls, 1; got != want {
 		t.Errorf("tool calls: got %d, want %d", got, want)
 	}
-	if got, want := result.Usage, (tokenUsage{Input: 100, Output: 20, Reasoning: 5, CacheRead: 40, CacheWrite: 3}); got != want {
+	if got, want := result.Usage, (tokenUsage{Input: 100, Output: 20, Reasoning: 5, CacheRead: 40}); got != want {
 		t.Errorf("usage: got %+v, want %+v", got, want)
 	}
 }
@@ -278,9 +278,12 @@ func TestRenderReportExplainsSummaryPercentages(t *testing.T) {
 		}},
 	}})
 
-	for _, want := range []string{"Checks passed", "Buildable attempts", "Perfect attempts", "does not indicate whether the program built or ran"} {
+	for _, want := range []string{"Checks passed", "Buildable attempts", "Perfect attempts", "does not indicate whether the program built or ran", "each agent turn's final OpenCode usage event"} {
 		if !strings.Contains(report, want) {
 			t.Errorf("report: missing %q", want)
 		}
+	}
+	if strings.Contains(report, "Cache write") {
+		t.Error("report: contains unsupported cache-write metric")
 	}
 }

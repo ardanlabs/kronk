@@ -80,6 +80,10 @@ In the report, `Checks passed` is the aggregate score across the 20 grader check
 mean the program failed to build or run. The separate `Buildable attempts` and
 `Agent completed` columns report those outcomes.
 
+Agent token statistics sum the final usage event from every OpenCode turn. Kronk
+reports reused prompt tokens as `Cache read`; the report omits provider cache-write
+usage because Kronk's OpenAI-compatible API does not expose that metric.
+
 Regenerate a report with:
 
 ```shell

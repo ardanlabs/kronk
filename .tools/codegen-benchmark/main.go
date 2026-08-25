@@ -54,11 +54,10 @@ type benchmarkModel struct {
 }
 
 type tokenUsage struct {
-	Input      int `json:"input"`
-	Output     int `json:"output"`
-	Reasoning  int `json:"reasoning"`
-	CacheRead  int `json:"cache_read"`
-	CacheWrite int `json:"cache_write"`
+	Input     int `json:"input"`
+	Output    int `json:"output"`
+	Reasoning int `json:"reasoning"`
+	CacheRead int `json:"cache_read"`
 }
 
 type agentResult struct {
@@ -567,8 +566,7 @@ func parseAgentResult(data []byte) (agentResult, error) {
 					Output    int `json:"output"`
 					Reasoning int `json:"reasoning"`
 					Cache     struct {
-						Read  int `json:"read"`
-						Write int `json:"write"`
+						Read int `json:"read"`
 					} `json:"cache"`
 				} `json:"tokens"`
 			} `json:"part"`
@@ -582,7 +580,6 @@ func parseAgentResult(data []byte) (agentResult, error) {
 			result.Usage.Output += event.Part.Tokens.Output
 			result.Usage.Reasoning += event.Part.Tokens.Reasoning
 			result.Usage.CacheRead += event.Part.Tokens.Cache.Read
-			result.Usage.CacheWrite += event.Part.Tokens.Cache.Write
 		}
 		if event.Type == "tool_use" || event.Part.Type == "tool" || event.Part.Tool != "" {
 			result.ToolCalls++
