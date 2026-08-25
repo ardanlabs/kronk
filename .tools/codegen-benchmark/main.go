@@ -40,11 +40,11 @@ type options struct {
 	configFile string
 	promptFile string
 	outputDir  string
-	reportDir  string
 	attempts   int
 	steps      int
 	timeout    time.Duration
 	list       bool
+	report     bool
 }
 
 type benchmarkModel struct {
@@ -97,21 +97,21 @@ func parseFlags() (options, error) {
 	var opts options
 	flag.StringVar(&opts.host, "host", defaultHost, "running Kronk server URL")
 	flag.StringVar(&opts.model, "model", "all", "configured /AGENT model ID, comma-separated IDs, or all")
-	flag.StringVar(&opts.outputDir, "out", "", "output directory (default .tools/codegen-benchmark/output/<timestamp>)")
-	flag.StringVar(&opts.reportDir, "report", "", "regenerate the report for an existing output directory")
 	flag.IntVar(&opts.attempts, "attempts", defaultAttempts, "fresh OpenCode attempts per model")
 	flag.IntVar(&opts.steps, "steps", defaultSteps, "maximum OpenCode agent steps per attempt")
 	flag.DurationVar(&opts.timeout, "timeout", defaultTimeout, "timeout per OpenCode attempt")
 	flag.BoolVar(&opts.list, "list", false, "list eligible models and exit")
+	flag.BoolVar(&opts.report, "report", false, "regenerate the report from the current output directory")
 	flag.Parse()
 	opts.configFile = filepath.Join(root, "zarf", "kms", "model_config.yaml")
 	opts.promptFile = filepath.Join(root, "examples", "talks", "tic-tac-toe.md")
+	opts.outputDir = filepath.Join(root, ".tools", "codegen-benchmark", "output")
 	return opts, nil
 }
 
 func run(opts options) error {
-	if opts.reportDir != "" {
-		return generateReport(opts.reportDir)
+	if opts.report {
+		return generateReport(opts.outputDir)
 	}
 	if opts.attempts < 1 {
 		return errors.New("codegen benchmark: attempts must be at least 1")
@@ -138,6 +138,10 @@ func run(opts options) error {
 	if err != nil {
 		return err
 	}
+	runDir, err := prepareRunDir(opts.outputDir)
+	if err != nil {
+		return err
+	}
 	host, err := normalizeHost(opts.host)
 	if err != nil {
 		return err
@@ -154,10 +158,6 @@ func run(opts options) error {
 	}
 
 	root, err := repositoryRoot()
-	if err != nil {
-		return err
-	}
-	runDir, err := prepareRunDir(root, opts.outputDir)
 	if err != nil {
 		return err
 	}
@@ -663,17 +663,9 @@ func normalizeHost(host string) (string, error) {
 	return strings.TrimSuffix(u.String(), "/"), nil
 }
 
-func prepareRunDir(root, requested string) (string, error) {
-	dir := requested
-	if dir == "" {
-		dir = filepath.Join(root, ".tools", "codegen-benchmark", "output", time.Now().Format("20060102-150405"))
-	} else if !filepath.IsAbs(dir) {
-		dir = filepath.Join(root, dir)
-	}
-	if entries, err := os.ReadDir(dir); err == nil && len(entries) > 0 {
-		return "", fmt.Errorf("codegen benchmark: output directory is not empty: %s", dir)
-	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return "", fmt.Errorf("codegen benchmark: reading output directory: %w", err)
+func prepareRunDir(dir string) (string, error) {
+	if err := os.RemoveAll(dir); err != nil {
+		return "", fmt.Errorf("codegen benchmark: clearing output directory: %w", err)
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("codegen benchmark: creating output directory: %w", err)

@@ -379,11 +379,13 @@ make benchmark-codegen \
     CODEGEN_ATTEMPTS=3
 ```
 
-Results land beneath `.tools/codegen-benchmark/output` by default. Each attempt retains
-the generated program, OpenCode state and event stream, grader result, and an aggregate
-Markdown report. See `.tools/codegen-benchmark/README.md` for all runtime knobs. This is
-not part of `make test`; starting the model server and running inference remain explicit
-human actions.
+Results land directly beneath `.tools/codegen-benchmark/output`. Each run clears the
+previous contents, stores every selected model beneath that directory, and writes one
+aggregate `report.md` for model comparison. Each attempt retains the generated program,
+OpenCode state and event stream, and grader result. See
+`.tools/codegen-benchmark/README.md` for all runtime knobs. This is not part of
+`make test`; starting the model server and running inference remain explicit human
+actions.
 
 ### 20.5 Request and Model Lifecycle
 

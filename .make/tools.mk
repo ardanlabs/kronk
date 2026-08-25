@@ -173,7 +173,6 @@ CODEGEN_MODEL ?= all
 CODEGEN_ATTEMPTS ?= 1
 CODEGEN_STEPS ?= 40
 CODEGEN_TIMEOUT ?= 30m
-CODEGEN_OUT ?=
 
 benchmark-codegen:
 	go run ./.tools/codegen-benchmark \
@@ -181,12 +180,10 @@ benchmark-codegen:
 		-model "$(CODEGEN_MODEL)" \
 		-attempts "$(CODEGEN_ATTEMPTS)" \
 		-steps "$(CODEGEN_STEPS)" \
-		-timeout "$(CODEGEN_TIMEOUT)" \
-		$(if $(CODEGEN_OUT),-out "$(CODEGEN_OUT)",)
+		-timeout "$(CODEGEN_TIMEOUT)"
 
 benchmark-codegen-list:
 	go run ./.tools/codegen-benchmark -list
 
 benchmark-codegen-report:
-	@test -n "$(CODEGEN_OUT)" || { echo "CODEGEN_OUT is required" >&2; exit 2; }
-	go run ./.tools/codegen-benchmark -report "$(CODEGEN_OUT)"
+	go run ./.tools/codegen-benchmark -report

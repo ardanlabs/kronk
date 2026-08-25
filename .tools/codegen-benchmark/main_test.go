@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -123,6 +124,32 @@ func TestPrepareAttemptDirectoryCreatesRepositoryBoundary(t *testing.T) {
 	}
 	if got != want {
 		t.Errorf("git root: got %q, want %q", got, want)
+	}
+}
+
+func TestPrepareRunDirClearsPreviousOutput(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "output")
+	oldAttempt := filepath.Join(dir, "old-model", "attempt-01")
+	if err := os.MkdirAll(oldAttempt, 0o755); err != nil {
+		t.Fatalf("create old attempt: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(oldAttempt, "result.json"), []byte("old result"), 0o644); err != nil {
+		t.Fatalf("write old result: %v", err)
+	}
+
+	got, err := prepareRunDir(dir)
+	if err != nil {
+		t.Fatalf("prepareRunDir: %v", err)
+	}
+	if got != dir {
+		t.Errorf("run directory: got %q, want %q", got, dir)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read run directory: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("run directory entries: got %d, want 0", len(entries))
 	}
 }
 

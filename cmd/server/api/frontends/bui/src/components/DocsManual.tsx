@@ -5288,7 +5288,7 @@ make benchmark-codegen
 make benchmark-codegen \\
     CODEGEN_MODEL=ornith-ai/Ornith-1.5-35B-Q8_0/AGENT \\
     CODEGEN_ATTEMPTS=3`}</code></pre>
-          <p>Results land beneath <code>.tools/codegen-benchmark/output</code> by default. Each attempt retains the generated program, OpenCode state and event stream, grader result, and an aggregate Markdown report. See <code>.tools/codegen-benchmark/README.md</code> for all runtime knobs. This is not part of <code>make test</code>; starting the model server and running inference remain explicit human actions.</p>
+          <p>Results land directly beneath <code>.tools/codegen-benchmark/output</code>. Each run clears the previous contents, stores every selected model beneath that directory, and writes one aggregate <code>report.md</code> for model comparison. Each attempt retains the generated program, OpenCode state and event stream, and grader result. See <code>.tools/codegen-benchmark/README.md</code> for all runtime knobs. This is not part of <code>make test</code>; starting the model server and running inference remain explicit human actions.</p>
           <h3 id="205-request-and-model-lifecycle">20.5 Request and Model Lifecycle</h3>
           <h4 id="2051-server-request-flow">20.5.1 Server request flow</h4>
           <p>The stable request path is:</p>

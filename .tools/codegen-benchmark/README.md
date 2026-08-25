@@ -68,9 +68,12 @@ The primary knobs are:
 | `CODEGEN_ATTEMPTS` | `1` | Fresh attempts per model |
 | `CODEGEN_STEPS` | `40` | Maximum OpenCode agent steps per attempt |
 | `CODEGEN_TIMEOUT` | `30m` | Timeout per attempt |
-| `CODEGEN_OUT` | timestamped directory | Output directory |
 
-Outputs are written beneath `.tools/codegen-benchmark/output/` by default.
+Outputs are written directly beneath `.tools/codegen-benchmark/output/`. Each
+benchmark run deletes that directory first, so it contains only the selected
+models and summary report from the current run. To compare models, select them
+together with `CODEGEN_MODEL=all` or a comma-separated list.
+
 Each generated `tictactoe/main.go` is stored directly beneath its `attempt-XX`
 directory. The attempt also preserves OpenCode configuration and state, the JSON
 event stream, stderr, grader result, and aggregate Markdown report.
@@ -87,5 +90,5 @@ usage because Kronk's OpenAI-compatible API does not expose that metric.
 Regenerate a report with:
 
 ```shell
-make benchmark-codegen-report CODEGEN_OUT=.tools/codegen-benchmark/output/<run>
+make benchmark-codegen-report
 ```
