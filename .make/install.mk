@@ -88,6 +88,8 @@ install-test-models: install-kronk
 	@echo
 	kronk model pull --local "mradermacher/Qwopus3.5-4B-Coder.Q4_K_M"
 	@echo
+	kronk model pull --local "unsloth/LFM2-700M-Q8_0"
+	@echo
 	kronk model pull --local "unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M"
 	@echo
 	kronk model pull --local "unsloth/Qwen3.6-35B-A3B-MTP-GGUF:UD-Q2_K_XL"

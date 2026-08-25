@@ -88,6 +88,13 @@
                         "context": 65536,
                         "output": 8192
                     }
+                },
+                "unsloth/GLM-4.5-Air-Q4_K_M/AGENT": {
+                    "name": "GLM-4.5 Air Q4_K_M",
+                    "limit": {
+                        "context": 65536,
+                        "output": 16384
+                    }
                 }
             }
         }

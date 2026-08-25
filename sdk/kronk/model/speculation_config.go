@@ -53,6 +53,22 @@ func resolveSpeculationPlan(ctx context.Context, log applog.Logger, cfg Config) 
 	})
 }
 
+// resolveEmbeddedMTPCompatibility verifies that the embedded MTP head consumes
+// the target model's hidden-state width. Automatic speculation falls back to
+// target-only generation when the widths differ; an explicitly required MTP
+// implementation fails instead.
+func resolveEmbeddedMTPCompatibility(plan speculationPlan, targetEmbeddingWidth, mtpOutputWidth int32) (speculationPlan, error) {
+	if plan.Source != speculationSourceMTPEmbedded || targetEmbeddingWidth == mtpOutputWidth {
+		return plan, nil
+	}
+
+	if plan.Mode == SpeculationMTP {
+		return speculationPlan{}, fmt.Errorf("embedded MTP output width %d does not match target embedding width %d", mtpOutputWidth, targetEmbeddingWidth)
+	}
+
+	return speculationPlan{Mode: plan.Mode}, nil
+}
+
 func configuredClassicNDraft(cfg Config) int {
 	if cfg.PtrDraftModel != nil && cfg.PtrDraftModel.NDraft > 0 {
 		return cfg.PtrDraftModel.NDraft

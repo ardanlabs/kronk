@@ -199,15 +199,17 @@ func (sm *stateMachine) updateToolCallDeltas() {
 }
 
 func glmToolCallNames(content string) []string {
-	var names []string
-	for line := range strings.SplitSeq(content, "\n") {
-		if before, _, ok := strings.Cut(line, "<arg_key>"); ok {
-			if name := strings.TrimSpace(before); name != "" {
-				names = append(names, name)
-			}
-		}
+	before, _, ok := strings.Cut(content, "<arg_key>")
+	if !ok {
+		return nil
 	}
-	return names
+
+	name := strings.TrimSpace(before)
+	if name == "" {
+		return nil
+	}
+
+	return []string{name}
 }
 
 // Flush drains tool-call content held while waiting for a closing marker.
