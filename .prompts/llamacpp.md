@@ -5,8 +5,8 @@ Find all meaningful llama.cpp changes since the last successfully reviewed upstr
 
 Review baseline:
 
-- Last reviewed upstream llama.cpp version: `b10612`
-- Initial baseline reason: this was the llama.cpp version locked when Kronk upgraded to yzma `v1.24.0`.
+- Last reviewed upstream llama.cpp version: `b10625`
+- Initial baseline reason: this was the llama.cpp version locked when Kronk upgraded to yzma `v1.25.0`.
 - Resolve and verify the exact upstream commit SHA for this version before comparing changes.
 - This value, rather than Kronk's currently pinned llama.cpp version, is the start of the review range.
 
