@@ -362,6 +362,7 @@ func runAttempt(root, runDir, host, prompt string, model benchmarkModel, attempt
 	cmd.Stderr = &stderr
 	err = cmd.Run()
 	wallTime := time.Since(started)
+	fmt.Printf("[%s] agent finished; grading attempt %d\n", model.ID, attempt)
 	if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), stdout.Bytes(), 0o644); err != nil {
 		return fmt.Errorf("codegen benchmark: writing OpenCode events: %w", err)
 	}
