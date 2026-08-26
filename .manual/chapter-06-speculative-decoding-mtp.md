@@ -150,9 +150,7 @@ and `ndraft + 1` tokens; a round is not the same as a token.
 MTP always uses its configured `ndraft` as the per-round maximum. Kronk does
 not evaluate acceptance to try lower values, run calibration rounds, or select
 a different value at runtime. An omitted or zero value uses the MTP default of
-3; an explicit positive value remains in effect for the loaded model. The BUI
-**System → Running** screen shows this fixed value for loaded MTP models and a
-dash for models that are not using MTP.
+3; an explicit positive value remains in effect for the loaded model.
 
 Prompt type, sampling settings, and output structure can change MTP acceptance
 and the amount of useful work produced by each round. Coding, summarization,

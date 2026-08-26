@@ -253,7 +253,6 @@ export default function ModelPs() {
                     <th style={{ textAlign: 'right' }}>{labelWithTip('VRAM', 'runningModelVRAMTotal')}</th>
                     <th style={{ textAlign: 'right' }}>{labelWithTip('KV', 'runningModelKVCache')}</th>
                     <th style={{ textAlign: 'right' }}>{labelWithTip('Slots', 'runningModelSlots')}</th>
-                    <th>{labelWithTip('MTP Draft', 'runningModelMTPDraft')}</th>
                     <th>{labelWithTip('Expires', 'runningModelExpiresAt')}</th>
                     <th style={{ textAlign: 'right' }}>{labelWithTip('Streams', 'runningModelActiveStreams')}</th>
                     <th></th>
@@ -279,9 +278,6 @@ export default function ModelPs() {
                         <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{formatBytes(model.vram_total)}</td>
                         <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{isLoading || model.kv_cache === 0 ? '—' : formatBytes(model.kv_cache)}</td>
                         <td style={{ textAlign: 'right' }}>{isLoading ? '—' : model.slots}</td>
-                        <td style={{ whiteSpace: 'nowrap' }}>
-                          {isLoading || !model.mtp_ndraft ? '—' : model.mtp_ndraft}
-                        </td>
                         <td style={{ whiteSpace: 'nowrap' }}>{isLoading ? '—' : formatDate(model.expires_at)}</td>
                         <td style={{ textAlign: 'right' }}>{isLoading ? '—' : model.active_streams}</td>
                         <td>
@@ -311,7 +307,7 @@ export default function ModelPs() {
                       <td style={{ textAlign: 'right', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatBytes(data.reduce((sum, m) => sum + m.vram_total, 0))}</td>
                       <td style={{ textAlign: 'right', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatBytes(data.reduce((sum, m) => sum + (m.status === 'loading' ? 0 : m.kv_cache), 0))}</td>
                       <td style={{ textAlign: 'right', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{data.reduce((sum, m) => sum + (m.status === 'loading' ? 0 : m.slots), 0)}</td>
-                      <td colSpan={4}></td>
+                      <td colSpan={3}></td>
                     </tr>
                   </tfoot>
                 )}

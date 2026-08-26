@@ -542,7 +542,6 @@ type ModelDetail struct {
 	VRAMTotal     int64     `json:"vram_total"`
 	KVCache       int64     `json:"kv_cache"`
 	Slots         int       `json:"slots"`
-	MTPNDraft     int       `json:"mtp_ndraft,omitempty"`
 	ExpiresAt     time.Time `json:"expires_at"`
 	ActiveStreams int       `json:"active_streams"`
 	Status        string    `json:"status"`
@@ -570,7 +569,6 @@ func toModelDetails(models []pool.ModelDetail) ModelDetailsResponse {
 			VRAMTotal:     model.VRAMTotal,
 			KVCache:       model.KVCache,
 			Slots:         model.Slots,
-			MTPNDraft:     model.MTPNDraft,
 			ExpiresAt:     model.ExpiresAt,
 			ActiveStreams: model.ActiveStreams,
 			Status:        model.Status,

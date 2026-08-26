@@ -49,7 +49,6 @@ export interface ModelDetail {
   vram_total: number;
   kv_cache: number;
   slots: number;
-  mtp_ndraft?: number;
   expires_at: string;
   active_streams: number;
   status: string;
