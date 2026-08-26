@@ -1,27 +1,20 @@
 package mtp
 
-import (
-	"time"
-
-	"github.com/hybridgroup/yzma/pkg/llama"
-)
+import "github.com/hybridgroup/yzma/pkg/llama"
 
 // DraftInput contains the MTP-owned inputs for one autoregressive draft round.
 // DecodeStep is deliberately limited to one llama decode operation; the token
 // loop, hidden-state progression, and fixed-position policy live here.
 type DraftInput struct {
-	State           *SlotState
-	Policy          *Policy
-	Token           llama.Token
-	Position        llama.Pos
-	Hidden          []float32
-	Count           int
-	ConfiguredCount int
-	FixedPosition   bool
-	Candidates      []llama.Token
-	HiddenScratch   []float32
-	IsEOG           func(llama.Token) bool
-	DecodeStep      func(token llama.Token, position llama.Pos, hidden []float32) (llama.Token, []float32, bool, error)
+	Token         llama.Token
+	Position      llama.Pos
+	Hidden        []float32
+	Count         int
+	FixedPosition bool
+	Candidates    []llama.Token
+	HiddenScratch []float32
+	IsEOG         func(llama.Token) bool
+	DecodeStep    func(token llama.Token, position llama.Pos, hidden []float32) (llama.Token, []float32, bool, error)
 }
 
 // DraftResult contains the candidates and resulting MTP position/state.
@@ -46,16 +39,12 @@ func Generate(input DraftInput) (DraftResult, error) {
 		Position:   input.Position,
 		Hidden:     hidden,
 	}
-	count := input.Count
-	if input.State != nil && input.Policy != nil {
-		count = input.Policy.draftCountAt(input.State, count, input.ConfiguredCount, time.Now())
-	}
-	if count <= 0 || len(input.Hidden) == 0 {
+	if input.Count <= 0 || len(input.Hidden) == 0 {
 		return result, nil
 	}
 
 	token := input.Token
-	for range count {
+	for range input.Count {
 		nextToken, nextHidden, decoded, err := input.DecodeStep(token, result.Position, result.Hidden)
 		if err != nil {
 			return DraftResult{}, err

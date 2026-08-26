@@ -19,9 +19,7 @@ func TestVerify(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			state := SlotState{AcceptanceEMA: 1}
 			result := Verify(VerifyInput{
-				State:      &state,
 				Candidates: []llama.Token{1, 2},
 				Sample:     func(index int) llama.Token { return tt.target[index] },
 				Accept:     func(int, llama.Token) bool { return true },
@@ -34,10 +32,6 @@ func TestVerify(t *testing.T) {
 			}
 			if !result.Complete {
 				t.Error("Complete = false, want true")
-			}
-			wantEMA := 0.9 + 0.1*float64(tt.wantAccepted)/2
-			if state.AcceptanceEMA != wantEMA {
-				t.Errorf("AcceptanceEMA = %f, want %f", state.AcceptanceEMA, wantEMA)
 			}
 		})
 	}

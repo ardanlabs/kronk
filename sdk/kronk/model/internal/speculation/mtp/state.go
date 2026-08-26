@@ -1,10 +1,6 @@
 package mtp
 
-import (
-	"time"
-
-	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
-)
+import "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
 
 // SlotState contains all request-local state owned by MTP. The batch engine
 // stores one value per execution slot but does not interpret its invariants.
@@ -12,15 +8,6 @@ type SlotState struct {
 	PendingHidden []float32
 	DraftHidden   []float32
 	VerifyHidden  []float32
-	AcceptanceEMA float64
-	Rounds        int
-	LowWindows    int
-	WindowTokens  int
-	WindowElapsed time.Duration
-	PriorTokens   int
-	PriorElapsed  time.Duration
-	RoundDraft    int
-	RoundStarted  time.Time
 	TargetRange   speculation.TargetRange
 	HasTargetRows bool
 	Disabled      bool
@@ -33,15 +20,6 @@ func (s *SlotState) Reset() {
 	s.PendingHidden = s.PendingHidden[:0]
 	s.DraftHidden = s.DraftHidden[:0]
 	s.VerifyHidden = s.VerifyHidden[:0]
-	s.AcceptanceEMA = 1
-	s.Rounds = 0
-	s.LowWindows = 0
-	s.WindowTokens = 0
-	s.WindowElapsed = 0
-	s.PriorTokens = 0
-	s.PriorElapsed = 0
-	s.RoundDraft = 0
-	s.RoundStarted = time.Time{}
 	s.TargetRange = speculation.TargetRange{}
 	s.HasTargetRows = false
 	s.Disabled = false

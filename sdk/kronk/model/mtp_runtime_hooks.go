@@ -42,16 +42,13 @@ func (e *batchEngine) mtpDraftInput(s *slot) (mtpengine.DraftInput, error) {
 	batch := draft.mtp.DraftBatch
 
 	return mtpengine.DraftInput{
-		State:           &s.mtp,
-		Policy:          &draft.mtpPolicy,
-		Token:           s.sampled,
-		Position:        s.draftNPast,
-		Hidden:          s.mtp.PendingHidden,
-		Count:           nDraft,
-		ConfiguredCount: draft.nDraft,
-		FixedPosition:   shared,
-		Candidates:      s.draftTokensBuf,
-		HiddenScratch:   s.mtp.DraftHidden,
+		Token:         s.sampled,
+		Position:      s.draftNPast,
+		Hidden:        s.mtp.PendingHidden,
+		Count:         nDraft,
+		FixedPosition: shared,
+		Candidates:    s.draftTokensBuf,
+		HiddenScratch: s.mtp.DraftHidden,
 		IsEOG: func(token llama.Token) bool {
 			return llama.VocabIsEOG(e.model.vocab, token)
 		},

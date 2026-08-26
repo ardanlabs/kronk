@@ -129,7 +129,7 @@ MTP availability is a property of the downloaded files and the loaded
 llama.cpp library. Naming a model “MTP” or adding an `ndraft` override cannot
 create an MTP head that is not present.
 
-### 6.4 Draft Size and Adaptive Throttling
+### 6.4 Draft Size and Classic Adaptive Throttling
 
 `ndraft` is the maximum number of candidates the drafter attempts in one
 round. Larger values can save more target passes when acceptance remains high,
@@ -141,21 +141,26 @@ Defaults are:
 - **Classic separate draft:** 5
 - **MTP:** 3
 
-MTP begins with the configured draft count. It evaluates acceptance every 8
-rounds. Two consecutive windows below 0.55 EMA start one-time, 16-round trials
-at draft counts of 2 and 1. Kronk compares emitted tokens per second across the
-configured baseline and both trial windows, then keeps the fastest count for
-the lifetime of the loaded model. If acceptance remains healthy through 32
-rounds, Kronk locks the configured count without running trials. A first low
-window at that boundary receives one final 8-round window before the decision.
-The learned count applies to later requests and resets when the model is
-unloaded and reloaded. The one-time `draft-policy-decided` log records the
-selected count and whether the reason was `healthy-acceptance` or
-`throughput-trial`. Throughput-trial decisions also report `baseline_tps`,
-`draft_2_tps`, and `draft_1_tps`. An explicitly configured count of 1 or 2 is
-used as-is and is not adapted.
+For MTP, one **round** is a complete
+speculative cycle: MTP proposes up to `ndraft` candidates, the target verifies
+them together, and Kronk emits the accepted prefix followed by one
+target-selected replacement or bonus token. A round therefore emits between 1
+and `ndraft + 1` tokens; a round is not the same as a token.
 
-Kronk separately adapts classic draft size directly from its acceptance EMA:
+MTP always uses its configured `ndraft` as the per-round maximum. Kronk does
+not evaluate acceptance to try lower values, run calibration rounds, or select
+a different value at runtime. An omitted or zero value uses the MTP default of
+3; an explicit positive value remains in effect for the loaded model.
+
+Prompt type, sampling settings, and output structure can change MTP acceptance
+and the amount of useful work produced by each round. Coding, summarization,
+prose, and structured output can therefore perform differently at the same
+`ndraft`. If a workload performs better with another value, benchmark that
+representative workload and configure the value explicitly. Compare end-to-end
+throughput and latency rather than selecting a value from acceptance rate alone.
+
+Classic separate-draft speculation does adapt its draft size directly from its
+acceptance EMA:
 
 | Acceptance EMA | Next draft size |
 | -------------- | --------------- |
@@ -169,8 +174,9 @@ When the EMA is below 0.30, Kronk normally bypasses speculation. It performs a
 one-token recovery probe every 32 fully throttled rounds so a slot can detect
 that its workload has become predictable again.
 
-The EMA belongs to the execution slot and resets at the start of each request,
-so acceptance history from an unrelated request does not affect the next one.
+Classic acceptance EMA also belongs to the execution slot and resets at the
+start of each request, so acceptance history from an unrelated request does not
+affect the next one.
 
 ### 6.5 Configuration
 
@@ -198,7 +204,7 @@ catalog-provided companion files is sufficient for automatic detection.
 
 #### 6.5.3 MTP draft-count override
 
-To change the MTP ceiling, set `ndraft` without a `model-id`:
+To change the fixed MTP draft count, set `ndraft` without a `model-id`:
 
 ```yaml
 some-provider/mtp-target-model:
