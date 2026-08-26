@@ -15,10 +15,6 @@ type SlotState struct {
 	AcceptanceEMA float64
 	Rounds        int
 	LowWindows    int
-	WindowTokens  int
-	WindowElapsed time.Duration
-	PriorTokens   int
-	PriorElapsed  time.Duration
 	RoundDraft    int
 	RoundStarted  time.Time
 	TargetRange   speculation.TargetRange
@@ -36,10 +32,6 @@ func (s *SlotState) Reset() {
 	s.AcceptanceEMA = 1
 	s.Rounds = 0
 	s.LowWindows = 0
-	s.WindowTokens = 0
-	s.WindowElapsed = 0
-	s.PriorTokens = 0
-	s.PriorElapsed = 0
 	s.RoundDraft = 0
 	s.RoundStarted = time.Time{}
 	s.TargetRange = speculation.TargetRange{}

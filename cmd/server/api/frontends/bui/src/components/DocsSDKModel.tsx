@@ -262,6 +262,8 @@ export default function DocsSDKModel() {
 	NUBatch                 int
 	MTP                     bool
 	NDraft                  int
+	MTPActiveNDraft         int
+	MTPPolicy               string
 	QueuedRequests          int
 	PendingRequests         int
 	PrefillSelectorStart    int

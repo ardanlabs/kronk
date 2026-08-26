@@ -304,6 +304,12 @@ func (p *Pool) ModelStatus() ([]ModelDetail, error) {
 
 		krn := entry.Value
 		disp := p.llama.Display(krn, mi.ID)
+		var mtpNDraft int
+		var mtpPolicy string
+		if snapshot, ok := krn.BatchEngineSnapshot(); ok && snapshot.MTP {
+			mtpNDraft = snapshot.MTPActiveNDraft
+			mtpPolicy = snapshot.MTPPolicy
+		}
 
 		ps = append(ps, ModelDetail{
 			ID:            entry.Key,
@@ -314,6 +320,8 @@ func (p *Pool) ModelStatus() ([]ModelDetail, error) {
 			VRAMTotal:     disp.VRAMTotal,
 			KVCache:       disp.KVCache,
 			Slots:         max(disp.Slots, 1),
+			MTPNDraft:     mtpNDraft,
+			MTPPolicy:     mtpPolicy,
 			ExpiresAt:     p.engine.EntryExpiresAt(entry),
 			ActiveStreams: krn.ActiveStreams(),
 			Status:        ModelStatusLoaded,

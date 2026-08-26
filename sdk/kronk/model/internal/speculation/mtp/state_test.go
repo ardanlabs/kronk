@@ -15,10 +15,6 @@ func TestSlotStateResetRetainsBuffersAndClearsLifecycle(t *testing.T) {
 		AcceptanceEMA: 0.2,
 		Rounds:        4,
 		LowWindows:    1,
-		WindowTokens:  8,
-		WindowElapsed: time.Second,
-		PriorTokens:   7,
-		PriorElapsed:  2 * time.Second,
 		RoundDraft:    2,
 		RoundStarted:  time.Now(),
 		TargetRange:   speculation.TargetRange{Count: 1},
@@ -37,7 +33,7 @@ func TestSlotStateResetRetainsBuffersAndClearsLifecycle(t *testing.T) {
 	if len(state.DraftHidden) != 0 || len(state.VerifyHidden) != 0 {
 		t.Fatalf("transient hidden buffers not reset")
 	}
-	if state.AcceptanceEMA != 1 || state.Rounds != 0 || state.LowWindows != 0 || state.WindowTokens != 0 || state.WindowElapsed != 0 || state.PriorTokens != 0 || state.PriorElapsed != 0 || state.RoundDraft != 0 || !state.RoundStarted.IsZero() {
+	if state.AcceptanceEMA != 1 || state.Rounds != 0 || state.LowWindows != 0 || state.RoundDraft != 0 || !state.RoundStarted.IsZero() {
 		t.Fatalf("acceptance state not reset: %+v", state)
 	}
 	if state.HasTargetRows || state.TargetRange.Count != 0 || state.Disabled || state.DisableReason != "" || state.ResumeSource != "" {

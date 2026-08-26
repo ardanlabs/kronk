@@ -13,14 +13,11 @@ import (
 func TestPolicyLocksDraftTwoWhenItIsFastest(t *testing.T) {
 	policy, state := startPolicyTrials(t)
 
-	decision := runPolicyTrial(policy, state, 2, 2, 5*time.Millisecond)
-	if decision.Made || policy.phase != policyTrialOne {
-		t.Fatalf("draft 2 trial decided before draft 1 trial: decision=%+v policy=%+v", decision, policy)
-	}
-	if got := policy.draftCountAt(state, 3, 3, time.Now()); got != 1 {
-		t.Fatalf("draft count after draft 2 trial = %d, want draft 1 trial", got)
-	}
-	decision = runPolicyTrial(policy, state, 1, 2, 10*time.Millisecond)
+	decision := runPolicyTrials(policy, state, map[int]time.Duration{
+		3: 10 * time.Millisecond,
+		2: 5 * time.Millisecond,
+		1: 10 * time.Millisecond,
+	})
 	if !decision.Made || decision.Draft != 2 {
 		t.Fatalf("decision = %+v, want locked draft 2", decision)
 	}
@@ -40,11 +37,11 @@ func TestPolicyLocksDraftTwoWhenItIsFastest(t *testing.T) {
 func TestPolicyLocksConfiguredDraftWhenTrialsAreSlower(t *testing.T) {
 	policy, state := startPolicyTrials(t)
 
-	decision := runPolicyTrial(policy, state, 2, 2, 20*time.Millisecond)
-	if decision.Made {
-		t.Fatalf("draft 2 trial decided before draft 1 trial: %+v", decision)
-	}
-	decision = runPolicyTrial(policy, state, 1, 2, 20*time.Millisecond)
+	decision := runPolicyTrials(policy, state, map[int]time.Duration{
+		3: 10 * time.Millisecond,
+		2: 20 * time.Millisecond,
+		1: 20 * time.Millisecond,
+	})
 	if !decision.Made || decision.Draft != 3 {
 		t.Fatalf("decision = %+v, want configured draft 3", decision)
 	}
@@ -58,11 +55,11 @@ func TestPolicyLocksConfiguredDraftWhenTrialsAreSlower(t *testing.T) {
 func TestPolicyLocksDraftOneWhenItIsFastest(t *testing.T) {
 	policy, state := startPolicyTrials(t)
 
-	decision := runPolicyTrial(policy, state, 2, 2, 5*time.Millisecond)
-	if decision.Made {
-		t.Fatalf("draft 2 trial decided before draft 1 trial: %+v", decision)
-	}
-	decision = runPolicyTrial(policy, state, 1, 2, 2500*time.Microsecond)
+	decision := runPolicyTrials(policy, state, map[int]time.Duration{
+		3: 10 * time.Millisecond,
+		2: 5 * time.Millisecond,
+		1: 2500 * time.Microsecond,
+	})
 	if !decision.Made || decision.Draft != 1 {
 		t.Fatalf("decision = %+v, want locked draft 1", decision)
 	}
@@ -76,13 +73,68 @@ func TestPolicyLocksDraftOneWhenItIsFastest(t *testing.T) {
 	}
 }
 
+func TestPolicyRequiresFivePercentGainToDowngrade(t *testing.T) {
+	policy, state := startPolicyTrials(t)
+
+	decision := runPolicyTrials(policy, state, map[int]time.Duration{
+		3: 10 * time.Millisecond,
+		2: 9600 * time.Microsecond,
+		1: 20 * time.Millisecond,
+	})
+	if !decision.Made || decision.Draft != 3 {
+		t.Fatalf("decision = %+v, want configured draft 3 for gain below threshold", decision)
+	}
+	if decision.Draft2TPS <= decision.BaselineTPS || decision.Draft2TPS >= decision.BaselineTPS*(1+minimumThroughputGain) {
+		t.Fatalf("draft 2 TPS = %f, want above baseline %f but below downgrade threshold", decision.Draft2TPS, decision.BaselineTPS)
+	}
+}
+
+func TestPolicyInterleavesTrialBlocks(t *testing.T) {
+	policy, state := startPolicyTrials(t)
+	wantDrafts := []int{3, 2, 1, 3, 2, 1, 3, 2, 1, 3, 2, 1}
+
+	for block, wantDraft := range wantDrafts {
+		for round := range trialBlockRounds {
+			gotDraft := policy.draftCountAt(state, 3, 3, time.Now())
+			if gotDraft != wantDraft {
+				t.Fatalf("trial draft = %d, want %d", gotDraft, wantDraft)
+			}
+			decision := completePolicyRound(policy, state, 2, time.Millisecond)
+			finalRound := block == len(wantDrafts)-1 && round == trialBlockRounds-1
+			if decision.Made != finalRound {
+				t.Fatalf("decision made before final trial block: %+v", decision)
+			}
+		}
+	}
+
+	if policy.phase != policyLocked {
+		t.Fatalf("policy phase = %d, want locked", policy.phase)
+	}
+}
+
+func TestPolicySnapshot(t *testing.T) {
+	var policy Policy
+	if got := policy.Snapshot(3); got.ActiveDraft != 3 || got.State != "observing" {
+		t.Fatalf("initial snapshot = %+v, want draft 3 observing", got)
+	}
+
+	trialPolicy, _ := startPolicyTrials(t)
+	if got := trialPolicy.Snapshot(3); got.ActiveDraft != 3 || got.State != "calibrating" {
+		t.Fatalf("trial snapshot = %+v, want draft 3 calibrating", got)
+	}
+
+	trialPolicy.phase = policyLocked
+	trialPolicy.activeDraft = 2
+	if got := trialPolicy.Snapshot(3); got.ActiveDraft != 2 || got.State != "locked" {
+		t.Fatalf("locked snapshot = %+v, want draft 2 locked", got)
+	}
+}
+
 func TestPolicyDoesNotTrialAfterTransientDip(t *testing.T) {
 	var policy Policy
 	state := SlotState{
 		AcceptanceEMA: 0.50,
 		Rounds:        8,
-		WindowTokens:  16,
-		WindowElapsed: 80 * time.Millisecond,
 	}
 	if got := policy.draftCountAt(&state, 3, 3, time.Now()); got != 3 {
 		t.Fatalf("draft count after low window = %d, want 3", got)
@@ -90,8 +142,6 @@ func TestPolicyDoesNotTrialAfterTransientDip(t *testing.T) {
 
 	state.Rounds = 16
 	state.AcceptanceEMA = 0.80
-	state.WindowTokens = 16
-	state.WindowElapsed = 80 * time.Millisecond
 	if got := policy.draftCountAt(&state, 3, 3, time.Now()); got != 3 {
 		t.Fatalf("draft count after recovery = %d, want 3", got)
 	}
@@ -105,8 +155,6 @@ func TestPolicyLocksHealthyConfiguredDraftAcrossRequests(t *testing.T) {
 	state := SlotState{
 		AcceptanceEMA: 0.90,
 		Rounds:        observationRounds,
-		WindowTokens:  24,
-		WindowElapsed: 80 * time.Millisecond,
 	}
 	if got := policy.draftCountAt(&state, 3, 3, time.Now()); got != 3 {
 		t.Fatalf("draft count after observation = %d, want 3", got)
@@ -132,8 +180,6 @@ func TestPolicyGivesLowBoundaryWindowOneMoreCheck(t *testing.T) {
 	state := SlotState{
 		AcceptanceEMA: 0.50,
 		Rounds:        observationRounds,
-		WindowTokens:  16,
-		WindowElapsed: 80 * time.Millisecond,
 	}
 	if got := policy.draftCountAt(&state, 3, 3, time.Now()); got != 3 {
 		t.Fatalf("draft count at low boundary = %d, want 3", got)
@@ -143,9 +189,7 @@ func TestPolicyGivesLowBoundaryWindowOneMoreCheck(t *testing.T) {
 	}
 
 	state.AcceptanceEMA = 0.80
-	state.Rounds += adaptationWindow
-	state.WindowTokens = 16
-	state.WindowElapsed = 80 * time.Millisecond
+	state.Rounds += acceptanceWindowRounds
 	if got := policy.draftCountAt(&state, 3, 3, time.Now()); got != 3 {
 		t.Fatalf("draft count after recovery = %d, want 3", got)
 	}
@@ -176,8 +220,6 @@ func startPolicyTrials(t *testing.T) (*Policy, *SlotState) {
 	state := &SlotState{
 		AcceptanceEMA: 0.40,
 		Rounds:        8,
-		WindowTokens:  16,
-		WindowElapsed: 80 * time.Millisecond,
 	}
 	if got := policy.draftCountAt(state, 3, 3, time.Now()); got != 3 {
 		t.Fatalf("draft count after first low window = %d, want 3", got)
@@ -185,13 +227,17 @@ func startPolicyTrials(t *testing.T) (*Policy, *SlotState) {
 
 	state.Rounds = 16
 	state.AcceptanceEMA = 0.34
-	state.WindowTokens = 16
-	state.WindowElapsed = 80 * time.Millisecond
-	if got := policy.draftCountAt(state, 3, 3, time.Now()); got != 2 {
-		t.Fatalf("draft count after second low window = %d, want draft 2 trial", got)
+	if got := policy.draftCountAt(state, 3, 3, time.Now()); got != 3 {
+		t.Fatalf("draft count after second low window = %d, want 3", got)
 	}
-	if policy.phase != policyTrialTwo {
-		t.Fatalf("policy phase = %d, want draft 2 trial", policy.phase)
+
+	state.Rounds = 24
+	state.AcceptanceEMA = 0.30
+	if got := policy.draftCountAt(state, 3, 3, time.Now()); got != 3 {
+		t.Fatalf("draft count after third low window = %d, want configured trial", got)
+	}
+	if policy.phase != policyTrialConfigured {
+		t.Fatalf("policy phase = %d, want configured draft trial", policy.phase)
 	}
 
 	return &policy, state
@@ -202,11 +248,11 @@ func completePolicyRound(policy *Policy, state *SlotState, tokens int, elapsed t
 	return policy.CompleteRound(state, tokens, state.RoundStarted.Add(elapsed))
 }
 
-func runPolicyTrial(policy *Policy, state *SlotState, draft, tokens int, elapsed time.Duration) RoundResult {
+func runPolicyTrials(policy *Policy, state *SlotState, elapsedByDraft map[int]time.Duration) RoundResult {
 	var result RoundResult
-	for range trialRounds {
-		state.RoundDraft = draft
-		result = completePolicyRound(policy, state, tokens, elapsed)
+	for range trialCycles * 3 * trialBlockRounds {
+		draft := policy.draftCountAt(state, 3, 3, time.Now())
+		result = completePolicyRound(policy, state, 2, elapsedByDraft[draft])
 	}
 	return result
 }

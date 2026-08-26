@@ -141,19 +141,63 @@ Defaults are:
 - **Classic separate draft:** 5
 - **MTP:** 3
 
-MTP begins with the configured draft count. It evaluates acceptance every 8
-rounds. Two consecutive windows below 0.55 EMA start one-time, 16-round trials
-at draft counts of 2 and 1. Kronk compares emitted tokens per second across the
-configured baseline and both trial windows, then keeps the fastest count for
-the lifetime of the loaded model. If acceptance remains healthy through 32
-rounds, Kronk locks the configured count without running trials. A first low
-window at that boundary receives one final 8-round window before the decision.
-The learned count applies to later requests and resets when the model is
-unloaded and reloaded. The one-time `draft-policy-decided` log records the
-selected count and whether the reason was `healthy-acceptance` or
-`throughput-trial`. Throughput-trial decisions also report `baseline_tps`,
-`draft_2_tps`, and `draft_1_tps`. An explicitly configured count of 1 or 2 is
-used as-is and is not adapted.
+MTP begins with the configured draft count. One **round** is a complete
+speculative cycle: MTP proposes up to `ndraft` candidates, the target verifies
+them together, and Kronk emits the accepted prefix followed by one
+target-selected replacement or bonus token. A round therefore emits between 1
+and `ndraft + 1` tokens; a round is not the same as a token.
+
+Kronk updates the request-local acceptance exponential moving average after
+each verified round:
+
+```text
+EMA = 0.9 × previous EMA + 0.1 × (accepted candidates / drafted candidates)
+```
+
+The EMA starts at 1.0 for each request and execution slot. Kronk evaluates it
+every 8 rounds. Three consecutive 8-round boundaries below 0.55 start a
+one-time throughput calibration, so the earliest trigger is after 24 rounds. A
+window at or above 0.55 clears the low-window count. If no low windows remain at
+an evaluation boundary after 32 rounds, Kronk locks the configured count
+without calibration. Low acceptance only triggers calibration; it does not
+select the final count.
+
+Calibration compares the configured count, 2, and 1 in interleaved 8-round
+blocks:
+
+```text
+configured → 2 → 1 → configured → 2 → 1
+           → configured → 2 → 1 → configured → 2 → 1
+```
+
+Each count receives four blocks, or 32 completed rounds, for 96 calibration
+rounds in total. Including the earliest possible trigger, a throughput decision
+therefore requires at least 120 completed rounds. Interleaving reduces bias when
+the generated response changes between prose, code, structured data, and other
+phases. Kronk aggregates emitted tokens and elapsed speculative-generation time
+for each count. It selects the faster of 2 and 1 only when that count's emitted
+tokens per second is greater than `configured TPS × 1.05`; otherwise it keeps
+the configured count. Acceptance rate is not the selection metric because a
+larger draft count can accept a smaller percentage while still emitting more
+tokens per expensive target verification.
+
+The policy and calibration totals belong to the loaded model, while acceptance
+EMA and observation counters belong to a request slot. The three consecutive
+low windows must therefore occur within one request on one slot. Once
+calibration starts, its interleaved blocks can continue across later requests
+and slots. The final count applies to all subsequent requests and slots for the
+lifetime of the loaded model; unloading and reloading resets it. This design is
+intended for consistent workloads. A materially different later workload does
+not reopen calibration, so production calibration traffic should represent the
+work the model will normally perform. Short requests may not trigger or finish
+calibration by themselves.
+
+The one-time `draft-policy-decided` log records the selected count and whether
+the reason was `healthy-acceptance` or `throughput-trial`. Throughput-trial
+decisions also report `baseline_tps`, `draft_2_tps`, and `draft_1_tps`. An
+explicitly configured count of 1 or 2 is used as-is and is not adapted. The
+BUI **System → Running** screen shows each loaded MTP model's current draft
+count and whether its policy is observing, calibrating, or locked.
 
 Kronk separately adapts classic draft size directly from its acceptance EMA:
 
@@ -169,8 +213,9 @@ When the EMA is below 0.30, Kronk normally bypasses speculation. It performs a
 one-token recovery probe every 32 fully throttled rounds so a slot can detect
 that its workload has become predictable again.
 
-The EMA belongs to the execution slot and resets at the start of each request,
-so acceptance history from an unrelated request does not affect the next one.
+Classic acceptance EMA also belongs to the execution slot and resets at the
+start of each request, so acceptance history from an unrelated request does not
+affect the next one.
 
 ### 6.5 Configuration
 
