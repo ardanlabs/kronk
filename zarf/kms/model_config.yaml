@@ -215,6 +215,7 @@ models:
       preserve_thinking: true
     sampling-parameters:
       max_tokens: 16384
+      reasoning_effort: low
 
   # nseq-max: 1  ~9GB VRAM
   ornith-ai/Ornith-1.5-9B-Q4_K_M/AGENT:
