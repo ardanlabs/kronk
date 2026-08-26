@@ -280,9 +280,7 @@ export default function ModelPs() {
                         <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{isLoading || model.kv_cache === 0 ? '—' : formatBytes(model.kv_cache)}</td>
                         <td style={{ textAlign: 'right' }}>{isLoading ? '—' : model.slots}</td>
                         <td style={{ whiteSpace: 'nowrap' }}>
-                          {isLoading || !model.mtp_ndraft || !model.mtp_policy
-                            ? '—'
-                            : `${model.mtp_ndraft} · ${model.mtp_policy}`}
+                          {isLoading || !model.mtp_ndraft ? '—' : model.mtp_ndraft}
                         </td>
                         <td style={{ whiteSpace: 'nowrap' }}>{isLoading ? '—' : formatDate(model.expires_at)}</td>
                         <td style={{ textAlign: 'right' }}>{isLoading ? '—' : model.active_streams}</td>

@@ -543,7 +543,6 @@ type ModelDetail struct {
 	KVCache       int64     `json:"kv_cache"`
 	Slots         int       `json:"slots"`
 	MTPNDraft     int       `json:"mtp_ndraft,omitempty"`
-	MTPPolicy     string    `json:"mtp_policy,omitempty"`
 	ExpiresAt     time.Time `json:"expires_at"`
 	ActiveStreams int       `json:"active_streams"`
 	Status        string    `json:"status"`
@@ -572,7 +571,6 @@ func toModelDetails(models []pool.ModelDetail) ModelDetailsResponse {
 			KVCache:       model.KVCache,
 			Slots:         model.Slots,
 			MTPNDraft:     model.MTPNDraft,
-			MTPPolicy:     model.MTPPolicy,
 			ExpiresAt:     model.ExpiresAt,
 			ActiveStreams: model.ActiveStreams,
 			Status:        model.Status,

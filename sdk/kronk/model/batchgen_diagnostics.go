@@ -40,8 +40,6 @@ type BatchEngineSnapshot struct {
 	NUBatch                 int
 	MTP                     bool
 	NDraft                  int
-	MTPActiveNDraft         int
-	MTPPolicy               string
 	QueuedRequests          int
 	PendingRequests         int
 	PrefillSelectorStart    int
@@ -90,11 +88,6 @@ func (e *batchEngine) publishDiagnostics(force bool) {
 	if e.model.draft != nil {
 		snapshot.MTP = e.model.draft.mtp()
 		snapshot.NDraft = e.model.draft.core().nDraft
-		if snapshot.MTP {
-			policy := e.model.draft.core().mtpPolicy.Snapshot(snapshot.NDraft)
-			snapshot.MTPActiveNDraft = policy.ActiveDraft
-			snapshot.MTPPolicy = policy.State
-		}
 	}
 
 	for i, s := range e.slots {

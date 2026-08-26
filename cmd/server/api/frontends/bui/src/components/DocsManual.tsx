@@ -1420,24 +1420,17 @@ krn, err := kronk.New(
           <p>MTP is normally the simpler choice when the downloaded model provides a supported embedded or companion head. It is architecture-matched to its target, supports multiple execution slots, and does not require a <code>model-id</code> in the <code>draft-model</code> configuration.</p>
           <p>An embedded head requires no companion file. A companion MTP assistant is an additional model-specific file, but Kronk's catalog and download flow can discover and associate it with the target automatically. It is not configured as a classic <code>draft-model</code>.</p>
           <p>MTP availability is a property of the downloaded files and the loaded llama.cpp library. Naming a model “MTP” or adding an <code>ndraft</code> override cannot create an MTP head that is not present.</p>
-          <h3 id="64-draft-size-and-adaptive-throttling">6.4 Draft Size and Adaptive Throttling</h3>
+          <h3 id="64-draft-size-and-classic-adaptive-throttling">6.4 Draft Size and Classic Adaptive Throttling</h3>
           <p><code>ndraft</code> is the maximum number of candidates the drafter attempts in one round. Larger values can save more target passes when acceptance remains high, but they also increase wasted draft and verification work when proposals are rejected.</p>
           <p>Defaults are:</p>
           <ul>
             <li><strong>Classic separate draft:</strong> 5</li>
             <li><strong>MTP:</strong> 3</li>
           </ul>
-          <p>MTP begins with the configured draft count. One <strong>round</strong> is a complete speculative cycle: MTP proposes up to <code>ndraft</code> candidates, the target verifies them together, and Kronk emits the accepted prefix followed by one target-selected replacement or bonus token. A round therefore emits between 1 and <code>ndraft + 1</code> tokens; a round is not the same as a token.</p>
-          <p>Kronk updates the request-local acceptance exponential moving average after each verified round:</p>
-          <pre className="code-block"><code className="language-text">{`EMA = 0.9 × previous EMA + 0.1 × (accepted candidates / drafted candidates)`}</code></pre>
-          <p>The EMA starts at 1.0 for each request and execution slot. Kronk evaluates it every 8 rounds. Three consecutive 8-round boundaries below 0.55 start a one-time throughput calibration, so the earliest trigger is after 24 rounds. A window at or above 0.55 clears the low-window count. If no low windows remain at an evaluation boundary after 32 rounds, Kronk locks the configured count without calibration. Low acceptance only triggers calibration; it does not select the final count.</p>
-          <p>Calibration compares the configured count, 2, and 1 in interleaved 8-round blocks:</p>
-          <pre className="code-block"><code className="language-text">{`configured → 2 → 1 → configured → 2 → 1
-           → configured → 2 → 1 → configured → 2 → 1`}</code></pre>
-          <p>Each count receives four blocks, or 32 completed rounds, for 96 calibration rounds in total. Including the earliest possible trigger, a throughput decision therefore requires at least 120 completed rounds. Interleaving reduces bias when the generated response changes between prose, code, structured data, and other phases. Kronk aggregates emitted tokens and elapsed speculative-generation time for each count. It selects the faster of 2 and 1 only when that count's emitted tokens per second is greater than <code>configured TPS × 1.05</code>; otherwise it keeps the configured count. Acceptance rate is not the selection metric because a larger draft count can accept a smaller percentage while still emitting more tokens per expensive target verification.</p>
-          <p>The policy and calibration totals belong to the loaded model, while acceptance EMA and observation counters belong to a request slot. The three consecutive low windows must therefore occur within one request on one slot. Once calibration starts, its interleaved blocks can continue across later requests and slots. The final count applies to all subsequent requests and slots for the lifetime of the loaded model; unloading and reloading resets it. This design is intended for consistent workloads. A materially different later workload does not reopen calibration, so production calibration traffic should represent the work the model will normally perform. Short requests may not trigger or finish calibration by themselves.</p>
-          <p>The one-time <code>draft-policy-decided</code> log records the selected count and whether the reason was <code>healthy-acceptance</code> or <code>throughput-trial</code>. Throughput-trial decisions also report <code>baseline_tps</code>, <code>draft_2_tps</code>, and <code>draft_1_tps</code>. An explicitly configured count of 1 or 2 is used as-is and is not adapted. The BUI <strong>System → Running</strong> screen shows each loaded MTP model's current draft count and whether its policy is observing, calibrating, or locked.</p>
-          <p>Kronk separately adapts classic draft size directly from its acceptance EMA:</p>
+          <p>For MTP, one <strong>round</strong> is a complete speculative cycle: MTP proposes up to <code>ndraft</code> candidates, the target verifies them together, and Kronk emits the accepted prefix followed by one target-selected replacement or bonus token. A round therefore emits between 1 and <code>ndraft + 1</code> tokens; a round is not the same as a token.</p>
+          <p>MTP always uses its configured <code>ndraft</code> as the per-round maximum. Kronk does not evaluate acceptance to try lower values, run calibration rounds, or select a different value at runtime. An omitted or zero value uses the MTP default of 3; an explicit positive value remains in effect for the loaded model. The BUI <strong>System → Running</strong> screen shows this fixed value for loaded MTP models and a dash for models that are not using MTP.</p>
+          <p>Prompt type, sampling settings, and output structure can change MTP acceptance and the amount of useful work produced by each round. Coding, summarization, prose, and structured output can therefore perform differently at the same <code>ndraft</code>. If a workload performs better with another value, benchmark that representative workload and configure the value explicitly. Compare end-to-end throughput and latency rather than selecting a value from acceptance rate alone.</p>
+          <p>Classic separate-draft speculation does adapt its draft size directly from its acceptance EMA:</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -1482,7 +1475,7 @@ krn, err := kronk.New(
           <h4 id="652-mtp-default">6.5.2 MTP default</h4>
           <p>No model configuration is required. Downloading a supported target and its catalog-provided companion files is sufficient for automatic detection.</p>
           <h4 id="653-mtp-draft-count-override">6.5.3 MTP draft-count override</h4>
-          <p>To change the MTP ceiling, set <code>ndraft</code> without a <code>model-id</code>:</p>
+          <p>To change the fixed MTP draft count, set <code>ndraft</code> without a <code>model-id</code>:</p>
           <pre className="code-block"><code className="language-yaml">{`some-provider/mtp-target-model:
   draft-model:
     ndraft: 6`}</code></pre>
@@ -5597,7 +5590,7 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
                 <li><a href="#61-what-speculative-decoding-does" className={activeSection === '61-what-speculative-decoding-does' ? 'active' : ''}>6.1 What Speculative Decoding Does</a></li>
                 <li><a href="#62-drafter-sources-and-selection" className={activeSection === '62-drafter-sources-and-selection' ? 'active' : ''}>6.2 Drafter Sources and Selection</a></li>
                 <li><a href="#63-choosing-a-drafter" className={activeSection === '63-choosing-a-drafter' ? 'active' : ''}>6.3 Choosing a Drafter</a></li>
-                <li><a href="#64-draft-size-and-adaptive-throttling" className={activeSection === '64-draft-size-and-adaptive-throttling' ? 'active' : ''}>6.4 Draft Size and Adaptive Throttling</a></li>
+                <li><a href="#64-draft-size-and-classic-adaptive-throttling" className={activeSection === '64-draft-size-and-classic-adaptive-throttling' ? 'active' : ''}>6.4 Draft Size and Classic Adaptive Throttling</a></li>
                 <li><a href="#65-configuration" className={activeSection === '65-configuration' ? 'active' : ''}>6.5 Configuration</a></li>
                 <li><a href="#66-measuring-the-result" className={activeSection === '66-measuring-the-result' ? 'active' : ''}>6.6 Measuring the Result</a></li>
                 <li><a href="#67-limitations-and-fallbacks" className={activeSection === '67-limitations-and-fallbacks' ? 'active' : ''}>6.7 Limitations and Fallbacks</a></li>

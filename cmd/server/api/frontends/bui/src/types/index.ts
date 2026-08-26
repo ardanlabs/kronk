@@ -50,7 +50,6 @@ export interface ModelDetail {
   kv_cache: number;
   slots: number;
   mtp_ndraft?: number;
-  mtp_policy?: 'observing' | 'calibrating' | 'locked';
   expires_at: string;
   active_streams: number;
   status: string;

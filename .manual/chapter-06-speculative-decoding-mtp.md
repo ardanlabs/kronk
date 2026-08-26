@@ -129,7 +129,7 @@ MTP availability is a property of the downloaded files and the loaded
 llama.cpp library. Naming a model “MTP” or adding an `ndraft` override cannot
 create an MTP head that is not present.
 
-### 6.4 Draft Size and Adaptive Throttling
+### 6.4 Draft Size and Classic Adaptive Throttling
 
 `ndraft` is the maximum number of candidates the drafter attempts in one
 round. Larger values can save more target passes when acceptance remains high,
@@ -141,65 +141,28 @@ Defaults are:
 - **Classic separate draft:** 5
 - **MTP:** 3
 
-MTP begins with the configured draft count. One **round** is a complete
+For MTP, one **round** is a complete
 speculative cycle: MTP proposes up to `ndraft` candidates, the target verifies
 them together, and Kronk emits the accepted prefix followed by one
 target-selected replacement or bonus token. A round therefore emits between 1
 and `ndraft + 1` tokens; a round is not the same as a token.
 
-Kronk updates the request-local acceptance exponential moving average after
-each verified round:
+MTP always uses its configured `ndraft` as the per-round maximum. Kronk does
+not evaluate acceptance to try lower values, run calibration rounds, or select
+a different value at runtime. An omitted or zero value uses the MTP default of
+3; an explicit positive value remains in effect for the loaded model. The BUI
+**System → Running** screen shows this fixed value for loaded MTP models and a
+dash for models that are not using MTP.
 
-```text
-EMA = 0.9 × previous EMA + 0.1 × (accepted candidates / drafted candidates)
-```
+Prompt type, sampling settings, and output structure can change MTP acceptance
+and the amount of useful work produced by each round. Coding, summarization,
+prose, and structured output can therefore perform differently at the same
+`ndraft`. If a workload performs better with another value, benchmark that
+representative workload and configure the value explicitly. Compare end-to-end
+throughput and latency rather than selecting a value from acceptance rate alone.
 
-The EMA starts at 1.0 for each request and execution slot. Kronk evaluates it
-every 8 rounds. Three consecutive 8-round boundaries below 0.55 start a
-one-time throughput calibration, so the earliest trigger is after 24 rounds. A
-window at or above 0.55 clears the low-window count. If no low windows remain at
-an evaluation boundary after 32 rounds, Kronk locks the configured count
-without calibration. Low acceptance only triggers calibration; it does not
-select the final count.
-
-Calibration compares the configured count, 2, and 1 in interleaved 8-round
-blocks:
-
-```text
-configured → 2 → 1 → configured → 2 → 1
-           → configured → 2 → 1 → configured → 2 → 1
-```
-
-Each count receives four blocks, or 32 completed rounds, for 96 calibration
-rounds in total. Including the earliest possible trigger, a throughput decision
-therefore requires at least 120 completed rounds. Interleaving reduces bias when
-the generated response changes between prose, code, structured data, and other
-phases. Kronk aggregates emitted tokens and elapsed speculative-generation time
-for each count. It selects the faster of 2 and 1 only when that count's emitted
-tokens per second is greater than `configured TPS × 1.05`; otherwise it keeps
-the configured count. Acceptance rate is not the selection metric because a
-larger draft count can accept a smaller percentage while still emitting more
-tokens per expensive target verification.
-
-The policy and calibration totals belong to the loaded model, while acceptance
-EMA and observation counters belong to a request slot. The three consecutive
-low windows must therefore occur within one request on one slot. Once
-calibration starts, its interleaved blocks can continue across later requests
-and slots. The final count applies to all subsequent requests and slots for the
-lifetime of the loaded model; unloading and reloading resets it. This design is
-intended for consistent workloads. A materially different later workload does
-not reopen calibration, so production calibration traffic should represent the
-work the model will normally perform. Short requests may not trigger or finish
-calibration by themselves.
-
-The one-time `draft-policy-decided` log records the selected count and whether
-the reason was `healthy-acceptance` or `throughput-trial`. Throughput-trial
-decisions also report `baseline_tps`, `draft_2_tps`, and `draft_1_tps`. An
-explicitly configured count of 1 or 2 is used as-is and is not adapted. The
-BUI **System → Running** screen shows each loaded MTP model's current draft
-count and whether its policy is observing, calibrating, or locked.
-
-Kronk separately adapts classic draft size directly from its acceptance EMA:
+Classic separate-draft speculation does adapt its draft size directly from its
+acceptance EMA:
 
 | Acceptance EMA | Next draft size |
 | -------------- | --------------- |
@@ -243,7 +206,7 @@ catalog-provided companion files is sufficient for automatic detection.
 
 #### 6.5.3 MTP draft-count override
 
-To change the MTP ceiling, set `ndraft` without a `model-id`:
+To change the fixed MTP draft count, set `ndraft` without a `model-id`:
 
 ```yaml
 some-provider/mtp-target-model:

@@ -136,7 +136,6 @@ export default function DocsSDKPool() {
 	KVCache       int64
 	Slots         int
 	MTPNDraft     int
-	MTPPolicy     string
 	ExpiresAt     time.Time
 	ActiveStreams int
 	Status        string

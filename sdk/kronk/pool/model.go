@@ -33,7 +33,6 @@ type ModelDetail struct {
 	KVCache       int64
 	Slots         int
 	MTPNDraft     int
-	MTPPolicy     string
 	ExpiresAt     time.Time
 	ActiveStreams int
 	Status        string
