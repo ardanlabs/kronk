@@ -1,6 +1,6 @@
 {
     "$schema": "https://opencode.ai/config.json",
-    "model": "kronk/ornith-ai/Ornith-1.5-35B-Q8_0/AGENT",
+    "model": "kronk/unsloth/Qwen3.8-27B-UD-Q4_K_XL/AGENT",
     "small_model": "kronk/ornith-ai/Ornith-1.5-9B-Q4_K_M/AGENT",
     "provider": {
         "kronk": {
@@ -10,22 +10,6 @@
                 "baseURL": "http://127.0.0.1:11435/v1"
             },
             "models": {
-                "ornith-ai/Ornith-1.5-35B-Q8_0/AGENT": {
-                    "name": "Ornith1.5 35B Q8_0",
-                    "modalities": {
-                        "input": [
-                            "text",
-                            "image"
-                        ],
-                        "output": [
-                            "text"
-                        ]
-                    },
-                    "limit": {
-                        "context": 262144,
-                        "output": 16384
-                    }
-                },
                 "unsloth/Qwen3.8-27B-UD-Q4_K_XL/AGENT": {
                     "name": "Qwen3.8 27B UD-Q4_K_XL",
                     "modalities": {
@@ -39,6 +23,22 @@
                     },
                     "limit": {
                         "context": 131072,
+                        "output": 16384
+                    }
+                },
+                "ornith-ai/Ornith-1.5-35B-Q8_0/AGENT": {
+                    "name": "Ornith1.5 35B Q8_0",
+                    "modalities": {
+                        "input": [
+                            "text",
+                            "image"
+                        ],
+                        "output": [
+                            "text"
+                        ]
+                    },
+                    "limit": {
+                        "context": 262144,
                         "output": 16384
                     }
                 },
