@@ -12,11 +12,7 @@ type MoEInfo struct {
 	HasSharedExperts bool
 }
 
-// detectMoE extracts Mixture of Experts information from GGUF metadata
-// via the shared gguf parser and translates the result back into the
-// models-side MoEInfo struct.
-func detectMoE(metadata map[string]string) MoEInfo {
-	g := gguf.DetectMoE(metadata)
+func moeInfoFromGGUF(g gguf.MoEInfo) MoEInfo {
 	return MoEInfo{
 		IsMoE:            g.IsMoE,
 		ExpertCount:      g.ExpertCount,

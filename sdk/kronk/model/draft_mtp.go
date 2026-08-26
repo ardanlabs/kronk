@@ -11,6 +11,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	mtpengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/mtp"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -38,7 +39,7 @@ func modelFilesLoadMTP(modelFiles []string) (bool, error) {
 		return false, err
 	}
 
-	return metadataHasMTP(metadata), nil
+	return modelprofile.Resolve(metadata).Speculation.NextNPredictLayers > 0, nil
 }
 
 // metadataHasMTP reports whether metadata contains a positive numeric
@@ -46,22 +47,11 @@ func modelFilesLoadMTP(modelFiles []string) (bool, error) {
 // constrained because llama.cpp uses the same metadata suffix across model
 // families.
 func metadataHasMTP(metadata map[string]string) bool {
-	for key, value := range metadata {
-		if !strings.Contains(key, "nextn_predict_layers") {
-			continue
-		}
-
-		n, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
-		if err == nil && n > 0 {
-			return true
-		}
-	}
-
-	return false
+	return modelprofile.Resolve(metadata).Speculation.NextNPredictLayers > 0
 }
 
 func metadataHasAssistantMTP(metadata map[string]string) bool {
-	return strings.Contains(metadata["general.architecture"], "assistant") && metadataHasMTP(metadata)
+	return modelprofile.Resolve(metadata).Speculation.SharedKVCompanion
 }
 
 // mtpNDraft returns the starting (ceiling) number of draft tokens for the
@@ -278,8 +268,8 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 	return &mtpDrafter{c: dm}, nil
 }
 
-// probeGemma4AssistantMTP reports whether file is a separate-file MTP
-// "assistant" drafter GGUF (Gemma4 gemma4-assistant). It reads only the
+// probeSharedKVCompanionMTP reports whether file is a separate-file MTP
+// companion GGUF. It reads only the
 // GGUF header metadata — avoiding a full model load for files that turn
 // out not to be assistants — and returns true only when:
 //
@@ -288,7 +278,7 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 //     (gemma5-assistant, ...) work without a new check, and
 //   - it declares at least one NextN (MTP) prediction layer
 //     ("<arch>.nextn_predict_layers" > 0).
-func probeGemma4AssistantMTP(ctx context.Context, log applog.Logger, file string) bool {
+func probeSharedKVCompanionMTP(ctx context.Context, log applog.Logger, file string) bool {
 	data, err := gguf.ReadHeaderBytes(file)
 	if err != nil {
 		log(ctx, "draft-model-mtp-shared", "status", "probe-skip", "file", file, "err", err)

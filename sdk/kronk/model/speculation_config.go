@@ -40,7 +40,7 @@ func resolveSpeculationPlan(ctx context.Context, log applog.Logger, cfg Config) 
 	if err != nil {
 		return speculationPlan{}, fmt.Errorf("detect embedded MTP: %w", err)
 	}
-	companion := cfg.MTPDrafterFile != "" && probeGemma4AssistantMTP(ctx, log, cfg.MTPDrafterFile)
+	companion := cfg.MTPDrafterFile != "" && probeSharedKVCompanionMTP(ctx, log, cfg.MTPDrafterFile)
 
 	return internalspec.Resolve(internalspec.Config{
 		Mode:              mode,

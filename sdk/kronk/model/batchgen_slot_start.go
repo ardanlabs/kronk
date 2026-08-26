@@ -804,7 +804,13 @@ func (e *batchEngine) finishStartSlot(s *slot, job *chatJob, cacheIdx llama.Pos,
 			// position hidden state. Gated on a successful target snapshot
 			// (nExtracted > 0) — without that the cache hit is going to
 			// fail anyway.
-			if ext, ok := e.model.draft.(draftKVExternalizer); ok && snapshotOK && !job.imcSession.hasMedia && job.imcSession.draftKVState != nil {
+			if s.mtp.Disabled && job.imcSession.draftKVState != nil {
+				e.model.cacheMu.Lock()
+				job.imcSession.draftKVState.Reset()
+				job.imcSession.pendingH = job.imcSession.pendingH[:0]
+				e.model.cacheMu.Unlock()
+			}
+			if ext, ok := e.model.draft.(draftKVExternalizer); ok && !s.mtp.Disabled && snapshotOK && !job.imcSession.hasMedia && job.imcSession.draftKVState != nil {
 				draft := ext.core()
 				dctx := ext.draftKVCtx()
 
@@ -1333,7 +1339,7 @@ func (e *batchEngine) snapshotSystemCache(ctx context.Context, s *slot, job *cha
 
 	var draftStore SessionStore
 	var pendingH []float32
-	if ext, ok := e.model.draft.(draftKVExternalizer); ok {
+	if ext, ok := e.model.draft.(draftKVExternalizer); ok && !s.mtp.Disabled {
 		draftStore, err = e.model.imcSystemCacheStore(cache, true)
 		if err != nil {
 			e.model.log(ctx, "start-slot", "status", "imc-system-draft-create-failed", "err", err)

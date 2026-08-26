@@ -169,6 +169,8 @@ func (e *batchEngine) MTPSyncInput(slotID int, effectiveCount int) (mtp.SyncInpu
 			copy(draft.mtp.MirrorHidden, hiddenRows)
 			ret, err := llama.Decode(draft.lctx, mirror)
 			if err != nil || ret != 0 {
+				e.model.log(s.job.ctx, "speculative", "status", "mtp-mirror-decode-error",
+					"slot", s.id, "seq", s.seqID, "ret", ret, "err", err)
 				return decodeError(ret, err)
 			}
 			llama.Synchronize(draft.lctx)
@@ -212,6 +214,8 @@ func (e *batchEngine) syncMTPCacheRows(s *slot, tokens []llama.Token, hiddenRows
 			copy(draft.mtp.MirrorHidden, hiddenRows)
 			ret, err := llama.Decode(draft.lctx, mirror)
 			if err != nil || ret != 0 {
+				e.model.log(s.job.ctx, "cache", "status", "mtp-mirror-decode-error",
+					"slot", s.id, "seq", s.seqID, "ret", ret, "err", err)
 				return decodeError(ret, err)
 			}
 			llama.Synchronize(draft.lctx)

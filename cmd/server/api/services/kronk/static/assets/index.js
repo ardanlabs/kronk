@@ -401,6 +401,7 @@ kronk server start`})]})]})}function As(e){let t=/^([\d.]+)\s*(MB|GB|KB|B)?$/i.e
 	IsRerankModel bool
 	Metadata      map[string]string
 	Template      Template
+	// Has unexported fields.
 }`})}),(0,W.jsx)(`p`,{className:`doc-description`,children:`ModelInfo represents the model's card information.`})]}),(0,W.jsxs)(`div`,{className:`doc-section`,id:`type-modeltype`,children:[(0,W.jsx)(`h4`,{children:`ModelType`}),(0,W.jsx)(`pre`,{className:`code-block`,children:(0,W.jsx)(`code`,{children:`type ModelType uint8`})}),(0,W.jsx)(`p`,{className:`doc-description`,children:`ModelType represents the model architecture for batch engine state management.`})]}),(0,W.jsxs)(`div`,{className:`doc-section`,id:`type-option`,children:[(0,W.jsx)(`h4`,{children:`Option`}),(0,W.jsx)(`pre`,{className:`code-block`,children:(0,W.jsx)(`code`,{children:`type Option func(*Config)`})}),(0,W.jsx)(`p`,{className:`doc-description`,children:`Option represents a functional option for configuring a Config.`})]}),(0,W.jsxs)(`div`,{className:`doc-section`,id:`type-params`,children:[(0,W.jsx)(`h4`,{children:`Params`}),(0,W.jsx)(`pre`,{className:`code-block`,children:(0,W.jsx)(`code`,{children:`type Params struct {
 	// AdaptivePDecay controls how quickly the Adaptive-P sampler adjusts.
 	// Default is 0.0.

@@ -8,14 +8,3 @@ func DetectArchitecture(metadata map[string]string) string {
 	}
 	return ""
 }
-
-// IsVisionEncoder reports whether the named architecture is a vision
-// encoder (CLIP-style projector), which sizes its KV cache differently
-// (effectively zero) from a transformer language model.
-func IsVisionEncoder(arch string) bool {
-	switch arch {
-	case "clip", "qwen2vl":
-		return true
-	}
-	return false
-}

@@ -11,10 +11,10 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -95,6 +95,7 @@ type ModelInfo struct {
 	IsRerankModel bool
 	Metadata      map[string]string
 	Template      Template
+	profile       modelprofile.Profile
 }
 
 func (mi ModelInfo) String() string {
@@ -152,7 +153,8 @@ func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 
 	isEmbedModel, isRerankModel := detectEmbedRerank(modelID)
 
-	modelType := detectModelType(model, metadata)
+	profile := modelprofile.Resolve(metadata)
+	modelType := detectModelType(model, profile)
 
 	return ModelInfo{
 		ID:            modelID,
@@ -166,6 +168,7 @@ func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 		IsEmbedModel:  isEmbedModel,
 		IsRerankModel: isRerankModel,
 		Metadata:      metadata,
+		profile:       profile,
 	}
 }
 
@@ -253,44 +256,29 @@ func DetectModelTypeFromFiles(modelFiles []string) (ModelType, string, error) {
 		}()
 	}
 
-	mt := detectModelType(mdl, metadata)
+	profile := modelprofile.Resolve(metadata)
+	mt := detectModelType(mdl, profile)
 
-	return mt, metadata["general.architecture"], nil
+	return mt, profile.Architecture, nil
 }
 
-// detectModelType determines the model architecture from llama.cpp detection
-// and GGUF metadata. Hybrid is detected via llama.ModelIsHybrid (recurrent
-// layers). MoE is detected via GGUF expert_count metadata (value > 0).
-// Everything else is Dense.
-func detectModelType(model llama.Model, metadata map[string]string) ModelType {
+// detectModelType determines the model architecture from llama.cpp's loaded
+// model facts and the normalized GGUF profile. Native hybrid detection remains
+// authoritative; the profile supplies the metadata fallback and MoE class.
+func detectModelType(model llama.Model, profile modelprofile.Profile) ModelType {
 	switch {
 	case llama.ModelIsHybrid(model):
 		return ModelTypeHybrid
 
-	case hasExperts(metadata):
+	case profile.Class == modelprofile.ClassHybrid:
+		return ModelTypeHybrid
+
+	case profile.Class == modelprofile.ClassMoE:
 		return ModelTypeMoE
 
 	default:
 		return ModelTypeDense
 	}
-}
-
-// hasExperts checks GGUF metadata for an expert_count key with a value > 0.
-// GGUF keys are typically prefixed with the architecture name (e.g.,
-// "qwen2moe.expert_count", "llama.expert_count").
-func hasExperts(metadata map[string]string) bool {
-	for key, val := range metadata {
-		if !strings.HasSuffix(key, ".expert_count") {
-			continue
-		}
-
-		n, err := strconv.Atoi(val)
-		if err == nil && n > 0 {
-			return true
-		}
-	}
-
-	return false
 }
 
 func detectEmbedRerank(modelID string) (isEmbed bool, isRerank bool) {

@@ -800,7 +800,7 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int, plan specu
 	// so m.parser stays nil for them.
 	fp := Fingerprint{
 		ChatTemplate: m.template.Script,
-		Architecture: m.modelInfo.Metadata["general.architecture"],
+		Architecture: m.modelInfo.profile.Architecture,
 		ModelName:    m.modelInfo.ID,
 	}
 
@@ -1568,7 +1568,7 @@ func calculateVRAMDiag(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory in
 	}
 
 	diag = fmt.Sprintf("ok arch[%s] block_count[%d] head_count_kv[%d] key_length[%d] value_length[%d] bytes_per_element[%d] context_window[%d] nseq[%d] n_swa[%d] swa_full[%t] swa_window_metadata[%d] swa_layers[%d] recurrent_layers[%d] recurrent_state_copies[%d] nextn_layers[%d]",
-		mi.Metadata["general.architecture"],
+		mi.profile.Architecture,
 		result.Input.BlockCount, result.Input.HeadCountKV,
 		result.Input.KeyLength, result.Input.ValueLength,
 		result.Input.BytesPerElement, result.Input.ContextWindow,

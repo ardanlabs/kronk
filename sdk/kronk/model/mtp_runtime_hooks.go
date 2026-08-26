@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 	"unsafe"
@@ -106,8 +107,7 @@ func (e *batchEngine) decodeTokensIntoCacheMTP(ctx context.Context, s *slot, tok
 	var mtpSyncElapsed time.Duration
 	var chunks int
 
-	for i := 0; i < nTokens; i += nBatch {
-		end := min(i+nBatch, nTokens)
+	err := decodeMTPMirrorChunks(nTokens, nBatch, func(i, end int) error {
 		batch.Clear()
 		for j := i; j < end; j++ {
 			pos := llama.Pos(startPos + j)
@@ -123,6 +123,8 @@ func (e *batchEngine) decodeTokensIntoCacheMTP(ctx context.Context, s *slot, tok
 		}
 		llama.Synchronize(e.model.lctx)
 		targetDecodeElapsed += time.Since(targetDecodeStart)
+		return nil
+	}, func(i, end int) error {
 
 		mtpSyncStart := time.Now()
 		hiddenRows := GetEmbeddingsPreNorm(e.model.lctx, end-i, e.model.draft.core().mtp.EmbeddingSize())
@@ -134,6 +136,16 @@ func (e *batchEngine) decodeTokensIntoCacheMTP(ctx context.Context, s *slot, tok
 		}
 		mtpSyncElapsed += time.Since(mtpSyncStart)
 		chunks++
+		return nil
+	}, func(syncErr error) error {
+		e.model.log(ctx, "cache", "status", "mtp-mirror-disabled", "slot", s.id, "seq", s.seqID, "err", syncErr)
+		if err := e.disableMTPForRequestSpec(ctx, s, "sync-error", 0); err != nil {
+			return fmt.Errorf("disabling MTP after cache sync failure: %w", errors.Join(syncErr, err))
+		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
 	elapsed := time.Since(start)
@@ -144,6 +156,26 @@ func (e *batchEngine) decodeTokensIntoCacheMTP(ctx context.Context, s *slot, tok
 		"decode_wait_elapsed", fmtDur(decodeWaitElapsed),
 		"elapsed", fmtDur(elapsed))
 
+	return nil
+}
+
+func decodeMTPMirrorChunks(tokenCount, chunkSize int, decodeTarget, syncMTP func(start, end int) error, disableMTP func(error) error) error {
+	mtpEnabled := true
+	for start := 0; start < tokenCount; start += chunkSize {
+		end := min(start+chunkSize, tokenCount)
+		if err := decodeTarget(start, end); err != nil {
+			return err
+		}
+		if !mtpEnabled {
+			continue
+		}
+		if err := syncMTP(start, end); err != nil {
+			if disableErr := disableMTP(err); disableErr != nil {
+				return disableErr
+			}
+			mtpEnabled = false
+		}
+	}
 	return nil
 }
 

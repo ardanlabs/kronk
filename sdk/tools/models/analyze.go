@@ -7,6 +7,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
 )
@@ -180,35 +181,33 @@ func analyzeModelWithConfigAndBudget(info ModelInfo, devs devices.Devices, cfg M
 	md := info.Metadata
 	devs = analysisDevices(devs, cfg.Devices)
 
-	arch := gguf.DetectArchitecture(md)
-	if arch == "" {
-		return Analysis{}, fmt.Errorf("model-analysis: unable to detect architecture")
+	profile := modelprofile.Resolve(md)
+	arch := profile.Architecture
+	if err := profile.ValidateForAnalysis(); err != nil {
+		return Analysis{}, fmt.Errorf("model-analysis: %w", err)
 	}
 
 	// -------------------------------------------------------------------------
 	// Parse model facts.
 
-	blockCount, err := gguf.ParseInt64WithFallback(md, arch+".block_count", ".block_count")
-	if err != nil {
-		return Analysis{}, fmt.Errorf("model-analysis: block_count: %w", err)
-	}
-
-	headCount, _ := gguf.ParseInt64(md, arch+".attention.head_count")
-	headCountKV, _ := gguf.ParseInt64OrArrayAvg(md, arch+".attention.head_count_kv")
-	keyLength, valueLength, _ := gguf.ResolveKVLengths(md, arch)
-	embeddingLength, _ := gguf.ParseInt64WithFallback(md, arch+".embedding_length", ".embedding_length")
-	feedForward, _ := gguf.ParseInt64WithFallback(md, arch+".feed_forward_length", ".feed_forward_length")
-	trainingCtx, _ := gguf.ParseInt64WithFallback(md, arch+".context_length", ".context_length")
-	vocabSize, _ := gguf.ParseInt64WithFallback(md, arch+".vocab_size", "tokenizer.ggml.tokens")
-
-	fileType, _ := gguf.ParseInt64(md, "general.file_type")
+	dimensions := profile.Dimensions
+	blockCount := dimensions.BlockCount
+	headCount := dimensions.HeadCount
+	headCountKV := dimensions.HeadCountKV
+	keyLength := dimensions.KeyLength
+	valueLength := dimensions.ValueLength
+	embeddingLength := dimensions.EmbeddingLength
+	feedForward := dimensions.FeedForwardLength
+	trainingCtx := dimensions.ContextLength
+	vocabSize := dimensions.VocabularySize
+	fileType := profile.FileType
 	quantName := gguf.FileTypeName(fileType)
 
-	moeInfo := detectMoE(md)
-	class := classifyModel(info, moeInfo, arch)
+	moeInfo := moeInfoFromGGUF(profile.MoE)
+	class := classifyModel(info, moeInfo, profile)
 
-	rope := ropeFactsFromGGUF(gguf.ParseRopeFacts(md, arch))
-	attn := attentionFactsFromGGUF(gguf.ParseAttentionFacts(md, arch, blockCount))
+	rope := ropeFactsFromGGUF(profile.Rope)
+	attn := attentionFactsFromGGUF(profile.Attention)
 
 	mf := ModelFacts{
 		ID:              info.ID,
@@ -705,8 +704,8 @@ func buildReason(name string, rec RuntimeRecommendation, p profileInput) string 
 // =============================================================================
 // Helpers
 
-func classifyModel(info ModelInfo, moe MoEInfo, arch string) string {
-	if gguf.IsVisionEncoder(arch) || info.HasProjection {
+func classifyModel(info ModelInfo, moe MoEInfo, profile modelprofile.Profile) string {
+	if profile.Role == modelprofile.RoleVisionEncoder || info.HasProjection {
 		return "vision"
 	}
 

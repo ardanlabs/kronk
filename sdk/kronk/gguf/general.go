@@ -45,39 +45,3 @@ func ParameterCount(metadata map[string]string) int64 {
 	n, _ := strconv.ParseInt(strings.TrimSpace(metadata["general.parameter_count"]), 10, 64)
 	return n
 }
-
-// hybridArchPrefixes lists architecture names known to combine
-// attention with recurrent (SSM/Mamba/DeltaNet) layers.
-var hybridArchPrefixes = []string{
-	"lfm2",
-	"jamba",
-	"mamba",
-	"recurrentgemma",
-	"qwen3next",
-	"qwen3-next",
-	"granite-hybrid",
-	"granitemoehybrid",
-	"nemotron-h",
-	"nemotronh",
-}
-
-// IsHybridArchitecture reports whether the metadata describes a model
-// with recurrent layers. Detection looks for SSM/Mamba metadata keys
-// and a known-hybrid architecture prefix.
-func IsHybridArchitecture(metadata map[string]string) bool {
-	arch := strings.ToLower(DetectArchitecture(metadata))
-	for _, p := range hybridArchPrefixes {
-		if strings.HasPrefix(arch, p) {
-			return true
-		}
-	}
-
-	for k := range metadata {
-		lk := strings.ToLower(k)
-		if strings.Contains(lk, ".ssm.") || strings.Contains(lk, ".mamba.") || strings.Contains(lk, ".recurrent.") {
-			return true
-		}
-	}
-
-	return false
-}

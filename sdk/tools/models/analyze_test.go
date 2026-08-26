@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
 )
@@ -926,45 +927,45 @@ func TestClassifyModel(t *testing.T) {
 		name string
 		info ModelInfo
 		moe  MoEInfo
-		arch string
+		role modelprofile.Role
 		want string
 	}{
 		{
 			name: "dense",
 			info: ModelInfo{ID: "model"},
-			arch: "llama",
+			role: modelprofile.RoleLanguage,
 			want: "dense",
 		},
 		{
 			name: "moe",
 			info: ModelInfo{ID: "model"},
 			moe:  MoEInfo{IsMoE: true, ExpertCount: 8},
-			arch: "qwen3moe",
+			role: modelprofile.RoleLanguage,
 			want: "moe",
 		},
 		{
 			name: "vision-projection",
 			info: ModelInfo{ID: "model", HasProjection: true},
-			arch: "llama",
+			role: modelprofile.RoleLanguage,
 			want: "vision",
 		},
 		{
 			name: "embedding",
 			info: ModelInfo{ID: "embed-model", IsEmbedModel: true},
-			arch: "bert",
+			role: modelprofile.RoleLanguage,
 			want: "embedding",
 		},
 		{
 			name: "rerank",
 			info: ModelInfo{ID: "rerank-model", IsRerankModel: true},
-			arch: "bert",
+			role: modelprofile.RoleLanguage,
 			want: "rerank",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := classifyModel(tt.info, tt.moe, tt.arch)
+			got := classifyModel(tt.info, tt.moe, modelprofile.Profile{Role: tt.role})
 			if got != tt.want {
 				t.Errorf("classifyModel() = %q, want %q", got, tt.want)
 			}
