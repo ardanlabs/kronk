@@ -8,6 +8,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/hf"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 )
 
 // FromHuggingFace fetches GGUF metadata from HuggingFace using HTTP
@@ -101,42 +102,24 @@ func FromHuggingFaceFiles(ctx context.Context, modelURLs []string, cfg Config) (
 // computes the VRAM requirements. When tensors is non-nil, a
 // gguf.WeightBreakdown is computed and attached to the result.
 func buildFromMetadata(metadata map[string]string, tensors []gguf.TensorInfo, modelSizeBytes int64, cfg Config) (Result, error) {
-	arch := gguf.DetectArchitecture(metadata)
-	if arch == "" {
-		return Result{}, fmt.Errorf("build-from-metadata: unable to detect model architecture")
+	profile := modelprofile.Resolve(metadata)
+	if err := profile.ValidateForVRAM(); err != nil {
+		return Result{}, fmt.Errorf("build-from-metadata: %w", err)
 	}
 
-	if gguf.IsVisionEncoder(arch) {
+	if profile.Role == modelprofile.RoleVisionEncoder {
 		return Result{
 			Input:     Input{ModelSizeBytes: modelSizeBytes},
 			TotalVRAM: modelSizeBytes,
 		}, nil
 	}
 
-	blockCount, err := gguf.ParseInt64WithFallback(metadata, arch+".block_count", ".block_count")
-	if err != nil {
-		return Result{}, fmt.Errorf("build-from-metadata: failed to parse block_count: %w", err)
-	}
-
-	// head_count_kv is optional. Architectures without GQA (notably BERT
-	// encoders used for embeddings/reranking) omit the key entirely; the
-	// llama.cpp convention is to fall back to head_count in that case.
-	headCountKV, err := gguf.ParseInt64OrArrayAvg(metadata, arch+".attention.head_count_kv")
-	if err != nil {
-		headCountKV, err = gguf.ParseInt64(metadata, arch+".attention.head_count")
-		if err != nil {
-			return Result{}, fmt.Errorf("build-from-metadata: failed to parse head_count_kv (and head_count fallback): %w", err)
-		}
-	}
-
-	keyLength, valueLength, err := gguf.ResolveKVLengths(metadata, arch)
-	if err != nil {
-		return Result{}, fmt.Errorf("build-from-metadata: %w", err)
-	}
-
-	embeddingLength, _ := gguf.ParseInt64WithFallback(metadata, arch+".embedding_length", ".embedding_length")
-
-	moeInfo := gguf.DetectMoE(metadata)
+	blockCount := profile.Dimensions.BlockCount
+	headCountKV := profile.Dimensions.HeadCountKV
+	keyLength := profile.Dimensions.KeyLength
+	valueLength := profile.Dimensions.ValueLength
+	embeddingLength := profile.Dimensions.EmbeddingLength
+	moeInfo := profile.MoE
 	var moePtr *gguf.MoEInfo
 	if moeInfo.IsMoE {
 		moePtr = &moeInfo
@@ -148,7 +131,7 @@ func buildFromMetadata(metadata map[string]string, tensors []gguf.TensorInfo, mo
 		weights = &wb
 	}
 
-	att := gguf.ParseAttentionFacts(metadata, arch, blockCount)
+	att := profile.Attention
 	if att.FullHeadCountKV > 0 {
 		headCountKV = att.FullHeadCountKV
 	}

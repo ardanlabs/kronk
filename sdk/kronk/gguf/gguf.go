@@ -3,10 +3,12 @@
 // dependency-free (no imports of sdk/kronk/model or sdk/tools/models) so
 // both sides can call into it without inducing a cycle.
 //
-// Higher-level orchestration (MoE detection, WeightBreakdown,
-// compute-buffer estimates, HuggingFace fetchers, GPU-layer splits)
-// remains in sdk/tools/models. SDK-side log diagnostics and the loaded
-// Model type stay in sdk/kronk/model.
+// The sibling sdk/kronk/modelprofile package owns architecture interpretation;
+// this package only exposes raw metadata and format-level parsers.
+//
+// Higher-level orchestration (compute-buffer estimates, HuggingFace fetchers,
+// GPU-layer splits) remains in sdk/tools/models. SDK-side log diagnostics and
+// the loaded Model type stay in sdk/kronk/model.
 package gguf
 
 // Bytes per element constants for KV cache types. Mirrors the byte width of

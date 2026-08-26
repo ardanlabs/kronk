@@ -667,6 +667,7 @@ export default function DocsSDKModel() {
 	IsRerankModel bool
 	Metadata      map[string]string
 	Template      Template
+	// Has unexported fields.
 }`}</code>
               </pre>
               <p className="doc-description">ModelInfo represents the model's card information.</p>

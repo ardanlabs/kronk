@@ -3,10 +3,10 @@ package models
 import (
 	"fmt"
 	"strconv"
-	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/hf"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 )
 
 // CatalogFile is one downloadable artifact (model or projection).
@@ -223,60 +223,33 @@ func TemplateName(metadata map[string]string) string {
 }
 
 // CapabilitiesFor derives a coarse capability set from GGUF metadata and
-// projection presence. The mappings are intentionally simple and may need
-// refinement as new architectures are added.
-//
-// Audio / video detection scans a wide hint string built from
-// general.architecture, general.name, general.basename, and general.tags
-// because each GGUF surfaces the multimodal signal in a different place:
-//
-//   - Some carry it in the architecture (e.g. "qwen3omni").
-//   - Some only carry it in the name / basename (e.g. "Qwen3-Omni-...").
-//   - Some report a generic architecture but list "any-to-any", "audio",
-//     "video", or "omni" in general.tags (the HuggingFace standard).
-//
-// "any-to-any" and "omni" both turn on audio and video; the explicit
-// "audio" and "video" tokens turn on the matching modality only.
+// projection presence. Architecture-specific interpretation is owned by the
+// normalized GGUF profile resolver.
 func CapabilitiesFor(metadata map[string]string, hasProjection bool) CatalogCapabilities {
-	arch := strings.ToLower(gguf.DetectArchitecture(metadata))
-	hint := strings.ToLower(strings.Join([]string{
-		arch,
-		gguf.GeneralName(metadata),
-		gguf.GeneralBasename(metadata),
-		gguf.GeneralTags(metadata),
-	}, " "))
-
+	profile := modelprofile.Resolve(metadata)
 	caps := CatalogCapabilities{
 		Streaming: true,
 	}
 
-	hasTemplate := gguf.HasChatTemplate(metadata)
-	switch {
-	case strings.Contains(hint, "embed"):
+	switch profile.Purpose {
+	case modelprofile.PurposeEmbedding:
 		caps.Endpoint = "embeddings"
 		caps.Embedding = true
 		caps.Streaming = false
-	case strings.Contains(arch, "rerank") || strings.Contains(arch, "bert"):
+	case modelprofile.PurposeRerank:
 		caps.Endpoint = "rerank"
 		caps.Rerank = true
 		caps.Streaming = false
 	default:
 		caps.Endpoint = "chat_completion"
-		caps.Tooling = hasTemplate
-		caps.Reasoning = hasTemplate
+		caps.Tooling = profile.HasChatTemplate
+		caps.Reasoning = profile.HasChatTemplate
 	}
 
 	if hasProjection {
 		caps.Images = true
-
-		anyToAny := strings.Contains(hint, "any-to-any") || strings.Contains(hint, "omni")
-
-		if anyToAny || strings.Contains(hint, "audio") {
-			caps.Audio = true
-		}
-		if anyToAny || strings.Contains(hint, "video") {
-			caps.Video = true
-		}
+		caps.Audio = profile.Modalities.Audio
+		caps.Video = profile.Modalities.Video
 	}
 
 	return caps
@@ -304,11 +277,12 @@ func ParametersLabel(metadata map[string]string) string {
 // the recurrent state cleanup path is the differentiator that matters
 // for the engine.
 func ArchitectureClass(metadata map[string]string) string {
-	if gguf.IsHybridArchitecture(metadata) {
+	switch modelprofile.Resolve(metadata).Class {
+	case modelprofile.ClassHybrid:
 		return "Hybrid"
-	}
-	if detectMoE(metadata).IsMoE {
+	case modelprofile.ClassMoE:
 		return "MoE"
+	default:
+		return "Dense"
 	}
-	return "Dense"
 }
