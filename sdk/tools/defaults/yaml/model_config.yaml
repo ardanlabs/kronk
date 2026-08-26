@@ -200,11 +200,12 @@ models:
   unsloth/Qwen3.8-27B-UD-Q4_K_XL/AGENT:
     nseq-max: 2
     context-window: 131072
-    chat-template-kwargs:
-      preserve_thinking: true
     sampling-parameters:
       max_tokens: 16384
-      reasoning_effort: low
+      temperature: 0.7
+      top_p: 0.80
+      top_k: 20
+      enable_thinking: false
 
   # nseq-max: 1  ~9GB VRAM
   ornith-ai/Ornith-1.5-9B-Q4_K_M/AGENT:

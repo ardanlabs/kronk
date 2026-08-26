@@ -6,7 +6,7 @@ replace github.com/ardanlabs/kronk => ../
 
 require (
 	github.com/ardanlabs/bucky v1.1.1
-	github.com/ardanlabs/kronk v1.31.9
+	github.com/ardanlabs/kronk v1.32.1
 	github.com/duckdb/duckdb-go/v2 v2.10505.0
 	github.com/gen2brain/malgo v0.11.26
 	github.com/hybridgroup/yzma v1.25.0
@@ -28,23 +28,23 @@ require (
 	github.com/apache/arrow-go/v18 v18.7.0 // indirect
 	github.com/ardanlabs/jinja v1.6.0 // indirect
 	github.com/ardanlabs/malina v1.0.4 // indirect
-	github.com/aws/aws-sdk-go-v2 v1.43.7 // indirect
-	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.18 // indirect
-	github.com/aws/aws-sdk-go-v2/config v1.32.38 // indirect
-	github.com/aws/aws-sdk-go-v2/credentials v1.19.37 // indirect
-	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.38 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.38 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.38 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.39 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.17 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.9.31 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.38 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.19.39 // indirect
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.107.3 // indirect
-	github.com/aws/aws-sdk-go-v2/service/signin v1.5.7 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sso v1.33.7 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.38.7 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sts v1.45.7 // indirect
+	github.com/aws/aws-sdk-go-v2 v1.43.8 // indirect
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.19 // indirect
+	github.com/aws/aws-sdk-go-v2/config v1.32.39 // indirect
+	github.com/aws/aws-sdk-go-v2/credentials v1.19.38 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.39 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.39 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.39 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.40 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.18 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.9.32 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.39 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.19.40 // indirect
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.107.4 // indirect
+	github.com/aws/aws-sdk-go-v2/service/signin v1.5.8 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sso v1.33.8 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.38.8 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sts v1.45.8 // indirect
 	github.com/aws/smithy-go v1.28.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bgentry/go-netrc v0.0.0-20140422174119-9fd32a8b3d3d // indirect
@@ -57,7 +57,7 @@ require (
 	github.com/duckdb/duckdb-go-bindings/lib/linux-amd64 v0.10505.0 // indirect
 	github.com/duckdb/duckdb-go-bindings/lib/linux-arm64 v0.10505.0 // indirect
 	github.com/duckdb/duckdb-go-bindings/lib/windows-amd64 v0.10505.0 // indirect
-	github.com/ebitengine/purego v0.10.2 // indirect
+	github.com/ebitengine/purego v0.11.0-alpha.9 // indirect
 	github.com/envoyproxy/go-control-plane/envoy v1.39.0 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.3.3 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
@@ -99,9 +99,9 @@ require (
 	github.com/ulikunitz/xz v0.5.16 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
-	go.opentelemetry.io/contrib/detectors/gcp v1.45.0 // indirect
-	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.70.0 // indirect
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.70.0 // indirect
+	go.opentelemetry.io/contrib/detectors/gcp v1.46.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.71.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0 // indirect
 	go.opentelemetry.io/otel v1.46.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.46.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.46.0 // indirect
@@ -121,9 +121,9 @@ require (
 	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/api v0.293.0 // indirect
-	google.golang.org/genproto v0.0.0-20260819154853-08b0e4226688 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20260819154853-08b0e4226688 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260819154853-08b0e4226688 // indirect
+	google.golang.org/genproto v0.0.0-20260825221802-da73d73af1c5 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260825221802-da73d73af1c5 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260825221802-da73d73af1c5 // indirect
 	google.golang.org/grpc v1.83.2 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 )
