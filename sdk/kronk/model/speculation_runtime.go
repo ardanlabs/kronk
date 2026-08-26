@@ -158,11 +158,11 @@ func (e *batchEngine) MTPSyncInput(slotID int, effectiveCount int) (mtp.SyncInpu
 		EmbeddingSize: nEmbd,
 		ChunkSize:     draft.mtp.MirrorCapacity(),
 		SharedKV:      shared,
-		DecodeOwnChunk: func(tokens []llama.Token, basePosition llama.Pos, hiddenRows []float32, finalChunk bool) error {
+		DecodeOwnChunk: func(tokens []llama.Token, basePosition llama.Pos, hiddenRows []float32) error {
 			mirror := draft.mtp.MirrorBatch
 			mirror.NTokens = 0
 			for i, token := range tokens {
-				if err := mirror.Add(token, basePosition+llama.Pos(i), s.seqIDs, finalChunk && i == len(tokens)-1); err != nil {
+				if err := mirror.Add(token, basePosition+llama.Pos(i), s.seqIDs, false); err != nil {
 					return fmt.Errorf("adding MTP mirror token: %w", err)
 				}
 			}
@@ -203,11 +203,11 @@ func (e *batchEngine) syncMTPCacheRows(s *slot, tokens []llama.Token, hiddenRows
 		EmbeddingSize: nEmbd,
 		ChunkSize:     draft.mtp.MirrorCapacity(),
 		SharedKV:      shared,
-		DecodeOwnChunk: func(tokens []llama.Token, basePosition llama.Pos, hiddenRows []float32, finalChunk bool) error {
+		DecodeOwnChunk: func(tokens []llama.Token, basePosition llama.Pos, hiddenRows []float32) error {
 			mirror := draft.mtp.MirrorBatch
 			mirror.NTokens = 0
 			for i, token := range tokens {
-				if err := mirror.Add(token, basePosition+llama.Pos(i), s.seqIDs, finalChunk && i == len(tokens)-1); err != nil {
+				if err := mirror.Add(token, basePosition+llama.Pos(i), s.seqIDs, false); err != nil {
 					return fmt.Errorf("adding MTP cache mirror token: %w", err)
 				}
 			}

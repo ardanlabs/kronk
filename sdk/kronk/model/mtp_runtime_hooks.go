@@ -62,6 +62,11 @@ func (e *batchEngine) mtpDraftInput(s *slot) (mtpengine.DraftInput, error) {
 
 			ret, err := llama.Decode(draft.lctx, batch)
 			if err != nil || ret != 0 {
+				e.model.log(s.job.ctx, "speculative", "status", "mtp-draft-decode-error",
+					"slot", s.id, "seq", s.seqID, "mode", mode, "position", position, "token", token, "ret", ret, "err", err)
+				if disableErr := e.disableMTPForRequestSpec(s.job.ctx, s, "draft-decode-error", 0); disableErr != nil {
+					return 0, nil, false, fmt.Errorf("%s draft decode at pos %d: %w", mode, position, errors.Join(decodeError(ret, err), disableErr))
+				}
 				return 0, nil, false, nil
 			}
 			llama.Synchronize(draft.lctx)

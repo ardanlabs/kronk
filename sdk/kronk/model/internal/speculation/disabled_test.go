@@ -119,16 +119,39 @@ func TestMTPControllerDisablesSpeculationAfterOrdinarySyncError(t *testing.T) {
 	}
 }
 
+func TestMTPControllerDiscardsDraftWhenDecodeDisablesMTP(t *testing.T) {
+	host := fakeHost{
+		active:             []bool{true},
+		canSpeculate:       []bool{true},
+		candidates:         map[int][]llama.Token{0: {21}},
+		disableDuringDraft: map[int]bool{0: true},
+	}
+	controller := mtp.New(&host)
+
+	generation, err := controller.PlanGeneration(0)
+	if err != nil {
+		t.Fatalf("PlanGeneration() error = %v, want nil", err)
+	}
+	if len(generation.Candidates) != 0 || generation.Mode != "" {
+		t.Errorf("generation = %+v, want ordinary fallback", generation)
+	}
+	if len(host.mtpCommits) != 0 {
+		t.Errorf("MTP commits = %v, want none", host.mtpCommits)
+	}
+}
+
 type fakeHost struct {
-	active       []bool
-	needsPrefill []bool
-	canSpeculate []bool
-	hasRound     []bool
-	pending      []bool
-	candidates   map[int][]llama.Token
-	prefillErr   map[int]error
-	syncErr      map[int]error
-	events       []string
+	active             []bool
+	needsPrefill       []bool
+	canSpeculate       []bool
+	hasRound           []bool
+	pending            []bool
+	candidates         map[int][]llama.Token
+	disableDuringDraft map[int]bool
+	prefillErr         map[int]error
+	syncErr            map[int]error
+	mtpCommits         []int
+	events             []string
 }
 
 func (fh *fakeHost) SlotCount() int                      { return len(fh.active) }
@@ -167,6 +190,10 @@ func (fh *fakeHost) MTPDraftInput(slot int) (mtp.DraftInput, error) {
 		Count:  len(candidates),
 		IsEOG:  func(llama.Token) bool { return false },
 		DecodeStep: func(_ llama.Token, _ llama.Pos, _ []float32) (llama.Token, []float32, bool, error) {
+			if fh.disableDuringDraft[slot] {
+				fh.canSpeculate[slot] = false
+				return 0, nil, false, nil
+			}
 			next := candidates[0]
 			candidates = candidates[1:]
 			return next, []float32{1}, true, nil
@@ -174,7 +201,9 @@ func (fh *fakeHost) MTPDraftInput(slot int) (mtp.DraftInput, error) {
 	}, nil
 }
 
-func (fh *fakeHost) CommitMTPDraft(int, mtp.DraftResult) {}
+func (fh *fakeHost) CommitMTPDraft(slot int, _ mtp.DraftResult) {
+	fh.mtpCommits = append(fh.mtpCommits, slot)
+}
 
 func (fh *fakeHost) CommitSpeculative(slot int, _ []llama.Token, _ speculation.TargetRange) error {
 	fh.event("commit", slot)

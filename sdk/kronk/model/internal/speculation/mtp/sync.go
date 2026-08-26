@@ -16,7 +16,7 @@ type SyncInput struct {
 	EmbeddingSize  int
 	ChunkSize      int
 	SharedKV       bool
-	DecodeOwnChunk func(tokens []llama.Token, basePosition llama.Pos, hiddenRows []float32, finalChunk bool) error
+	DecodeOwnChunk func(tokens []llama.Token, basePosition llama.Pos, hiddenRows []float32) error
 }
 
 // SyncResult contains MTP state after target synchronization.
@@ -60,7 +60,7 @@ func Synchronize(input SyncInput) (SyncResult, error) {
 					copy(dst, input.HiddenRows[(i-1)*input.EmbeddingSize:i*input.EmbeddingSize])
 				}
 			}
-			if err := input.DecodeOwnChunk(input.Tokens[start:end], input.BasePosition+llama.Pos(start), hidden, end == nTokens); err != nil {
+			if err := input.DecodeOwnChunk(input.Tokens[start:end], input.BasePosition+llama.Pos(start), hidden); err != nil {
 				return SyncResult{}, err
 			}
 		}

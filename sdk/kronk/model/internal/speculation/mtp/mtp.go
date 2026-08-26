@@ -67,6 +67,12 @@ func (c *Controller) PlanGeneration(slot int) (speculation.Generation, error) {
 	if err != nil {
 		return speculation.Generation{}, fmt.Errorf("generating MTP draft tokens: %w", err)
 	}
+	// DecodeStep may disable MTP after a native draft failure. Discard any
+	// candidates produced before that failure instead of committing state from
+	// a draft context that has been cleared or may be poisoned.
+	if !c.host.CanSpeculate(slot) {
+		return speculation.Generation{}, nil
+	}
 	c.host.CommitMTPDraft(slot, result)
 	return speculation.Generation{Candidates: result.Candidates, Mode: "mtp"}, nil
 }

@@ -28,7 +28,7 @@ func TestSynchronize(t *testing.T) {
 				EmbeddingSize: 2,
 				ChunkSize:     2,
 				SharedKV:      tt.sharedKV,
-				DecodeOwnChunk: func(_ []llama.Token, _ llama.Pos, hiddenRows []float32, _ bool) error {
+				DecodeOwnChunk: func(_ []llama.Token, _ llama.Pos, hiddenRows []float32) error {
 					mirrored = append(mirrored, hiddenRows...)
 					return nil
 				},
