@@ -8,7 +8,43 @@ import (
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
+	"github.com/hybridgroup/yzma/pkg/llama"
 )
+
+func TestEmbeddedMTPContextParamsCapsOutputs(t *testing.T) {
+	target := llama.ContextParams{
+		NCtx:               4096,
+		NBatch:             2064,
+		NUbatch:            2064,
+		NSeqMax:            4,
+		NRsSeq:             3,
+		NThreads:           6,
+		NThreadsBatch:      8,
+		FlashAttentionType: llama.FlashAttentionTypeAuto,
+		TypeK:              llama.GGMLTypeF16,
+		TypeV:              llama.GGMLTypeF16,
+		Offload_kqv:        1,
+		OpOffload:          1,
+		KVUnified:          1,
+		SwaFull:            1,
+	}
+
+	got := embeddedMTPContextParams(llama.ContextParams{}, target)
+	if got.CtxType != llama.ContextTypeMTP {
+		t.Errorf("CtxType = %d, want %d", got.CtxType, llama.ContextTypeMTP)
+	}
+	if got.NOutputsMax != target.NSeqMax {
+		t.Errorf("NOutputsMax = %d, want %d", got.NOutputsMax, target.NSeqMax)
+	}
+	if got.NOutputsMaxPerSeq != 1 {
+		t.Errorf("NOutputsMaxPerSeq = %d, want 1", got.NOutputsMaxPerSeq)
+	}
+	if got.NCtx != target.NCtx || got.NBatch != target.NBatch || got.NUbatch != target.NUbatch || got.NSeqMax != target.NSeqMax {
+		t.Errorf("context sizing = (%d, %d, %d, %d), want (%d, %d, %d, %d)",
+			got.NCtx, got.NBatch, got.NUbatch, got.NSeqMax,
+			target.NCtx, target.NBatch, target.NUbatch, target.NSeqMax)
+	}
+}
 
 func TestMetadataHasMTP(t *testing.T) {
 	tests := []struct {

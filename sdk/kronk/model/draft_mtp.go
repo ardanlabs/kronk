@@ -139,30 +139,7 @@ func mtpNextNLayers(model llama.Model) int {
 // On success the returned *mtpDrafter shares the target's llama_model, so
 // its unload skips the model free.
 func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.Context, targetModel llama.Model, targetCtxParams llama.ContextParams, nDraft int) (*mtpDrafter, error) {
-
-	// Build context params for the MTP draft context. We inherit thread
-	// layout, KV cache types, and offload behavior from the target so
-	// the MTP head runs on the same backend. NCtx / NBatch / NUbatch /
-	// NSeqMax are inherited so the drafter can host the same number of
-	// concurrent sequences the target serves and score the same prompts
-	// the target sees. NRsSeq is required for rolling back draft positions
-	// when the MTP context contains recurrent layers.
-	params := llama.ContextDefaultParams()
-	params.CtxType = llama.ContextTypeMTP
-	params.NCtx = targetCtxParams.NCtx
-	params.NBatch = targetCtxParams.NBatch
-	params.NUbatch = targetCtxParams.NUbatch
-	params.NSeqMax = targetCtxParams.NSeqMax
-	params.NRsSeq = targetCtxParams.NRsSeq
-	params.NThreads = targetCtxParams.NThreads
-	params.NThreadsBatch = targetCtxParams.NThreadsBatch
-	params.FlashAttentionType = targetCtxParams.FlashAttentionType
-	params.TypeK = targetCtxParams.TypeK
-	params.TypeV = targetCtxParams.TypeV
-	params.Offload_kqv = targetCtxParams.Offload_kqv
-	params.OpOffload = targetCtxParams.OpOffload
-	params.KVUnified = targetCtxParams.KVUnified
-	params.SwaFull = targetCtxParams.SwaFull
+	params := embeddedMTPContextParams(llama.ContextDefaultParams(), targetCtxParams)
 
 	nEmbd := int(llama.ModelNEmbd(targetModel))
 	if nEmbd <= 0 {
@@ -176,7 +153,9 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 		"nBatch", params.NBatch,
 		"nUbatch", params.NUbatch,
 		"nSeqMax", params.NSeqMax,
-		"nRsSeq", params.NRsSeq)
+		"nRsSeq", params.NRsSeq,
+		"nOutputsMax", params.NOutputsMax,
+		"nOutputsMaxPerSeq", params.NOutputsMaxPerSeq)
 
 	lctx, err := llama.InitFromModel(targetModel, params)
 	if err != nil {
@@ -266,6 +245,32 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 	}
 
 	return &mtpDrafter{c: dm}, nil
+}
+
+// embeddedMTPContextParams builds the embedded MTP context to match the
+// target's execution layout while limiting graph outputs to one row per
+// sequence. Mirror-only MTP decodes do not request logits, and draft steps
+// request at most one output per active sequence. Leaving these limits at
+// zero makes llama.cpp reserve NBatch vocabulary outputs unnecessarily.
+func embeddedMTPContextParams(params, target llama.ContextParams) llama.ContextParams {
+	params.CtxType = llama.ContextTypeMTP
+	params.NCtx = target.NCtx
+	params.NBatch = target.NBatch
+	params.NUbatch = target.NUbatch
+	params.NSeqMax = target.NSeqMax
+	params.NRsSeq = target.NRsSeq
+	params.NOutputsMax = target.NSeqMax
+	params.NOutputsMaxPerSeq = 1
+	params.NThreads = target.NThreads
+	params.NThreadsBatch = target.NThreadsBatch
+	params.FlashAttentionType = target.FlashAttentionType
+	params.TypeK = target.TypeK
+	params.TypeV = target.TypeV
+	params.Offload_kqv = target.Offload_kqv
+	params.OpOffload = target.OpOffload
+	params.KVUnified = target.KVUnified
+	params.SwaFull = target.SwaFull
+	return params
 }
 
 // probeSharedKVCompanionMTP reports whether file is a separate-file MTP
