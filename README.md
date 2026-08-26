@@ -192,7 +192,7 @@ and talks about Kronk.
 | Sep 1st - 4th   | GopherCon LATAM            | Florianópolis, Brazil | Workshop, Talk |
 | Sep 23rd        | Meetup NYC                 | NYC, NY               | Talk           |
 | Oct 6th - 9th   | Crusoe Corporate Training  | San Francisco, USA    | Workshop       |
-| Oct 12th - 18th | GopherCon Africa           | Kenya, East Africa    | Workshop, Talk |
+| Oct 12th - 14th | Optus Corporate Training   | Sydney, Australia     | Workshop       |
 | Oct 27th        | Meetup Bostom              | Boston, MA            | Talk           |
 | Oct 29th - 4th  | GoLab (GopherCon Italy)    | Bologna, Italy        | Workshop, Talk |
 
