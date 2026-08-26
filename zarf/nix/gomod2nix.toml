@@ -134,8 +134,8 @@ schema = 3
     version = "v1.0.1"
     hash = "sha256-yuvxYYngpfVkUg9yAmG99IUVmADTQA0tMbBXe0Fq0Mc="
   [mod."github.com/ebitengine/purego"]
-    version = "v0.10.2"
-    hash = "sha256-p2g0NoOOM3kEIaXQ48tgtn1gB5o0YlWoO8FTUD5w+lE="
+    version = "v0.11.0-alpha.9"
+    hash = "sha256-dRNlfIorCtSLLl588HvgL3SCbdB7RsLsQaOSlzGb0c4="
   [mod."github.com/envoyproxy/go-control-plane/envoy"]
     version = "v1.39.0"
     hash = "sha256-EjlqubUTPeOSGsIxn+2VcjHAZqbZTTESxUaIzRkPby4="

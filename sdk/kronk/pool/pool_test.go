@@ -25,6 +25,25 @@ var (
 	testModels *models.Models
 )
 
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return b.buf.String()
+}
+
 // newTestResman returns a fresh resource manager wired to the host's
 // detected device topology with a generous (95%) budget. Each test gets
 // its own manager so leaked reservations from one subtest never bleed
@@ -405,7 +424,7 @@ func initKronk(t *testing.T) model.Logger {
 	}
 	testModels = mdls
 
-	var b bytes.Buffer
+	var b syncBuffer
 	log := newTestLogger(&b)
 
 	t.Cleanup(func() {
