@@ -1,0 +1,85 @@
+name: macOS
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - ".go-version"
+      - ".github/workflows/macos.yml"
+      - ".github/actions/setup-kronk/**"
+      - ".github/test-models.txt"
+  workflow_dispatch:
+
+# Do not run untrusted pull-request code on the persistent self-hosted runner.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: write # actions/cache/save uses the actions API
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  tests:
+    name: Tests
+    runs-on: [self-hosted, macOS, ARM64, sand]
+    timeout-minutes: 90
+    steps:
+      - name: Runner specs
+        run: |
+          echo "CPU: $(sysctl -n machdep.cpu.brand_string)"
+          echo "CPU cores: $(sysctl -n hw.ncpu)"
+          echo "Memory bytes: $(sysctl -n hw.memsize)"
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Set up Kronk
+        id: setup
+        uses: ./.github/actions/setup-kronk
+        with:
+          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
+
+      - name: Run race detector
+        run: |
+          go test -race -short -count=1 -timeout 10m \
+            $(go list ./sdk/... \
+              | grep -v '/sdk/kronk/tests' \
+              | grep -v '/sdk/kronk/pool' \
+              | grep -v '/sdk/bucky/tests')
+
+      - name: Run api/service tests
+        run: |
+          export RUN_IN_PARALLEL=no
+          go test -v -p=1 -count=1 -timeout 20m ./cmd/kronk/...
+          go test -v -p=1 -count=1 -timeout 20m ./cmd/server/...
+
+      - name: Run sdk tests
+        run: |
+          export RUN_IN_PARALLEL=no
+          go -C examples test -v -count=1 -timeout 2m ./session-store
+          go test -v -p=1 -count=1 -timeout 20m $(go list ./sdk/... | grep -v '/sdk/kronk/tests')
+          go test -v -count=1 -timeout 6m -run '^(TestSuite|TestUsageCounting|Test_BatchChatConcurrent)$' ./sdk/kronk/tests/qwen3
+          go test -v -count=1 -timeout 6m -run '^TestLengthTerminatedToolCallBecomesContent$' ./sdk/kronk/tests/qwen06
+          go test -v -count=1 -timeout 6m -run '^TestSuite$' ./sdk/kronk/tests/draft
+          go test -v -count=1 -timeout 6m -run '^(TestSuite|Test_PooledVision)$' ./sdk/kronk/tests/vision
+          go test -v -count=1 -timeout 6m -run '^TestSuite$' ./sdk/kronk/tests/vision_imc
+          go test -v -count=1 -timeout 6m -run '^(TestSuite|TestConcurrentRerank)$' ./sdk/kronk/tests/rerank
+          go test -v -count=1 -timeout 6m -run '^(TestSuite|TestUsageCountingHybrid)$' ./sdk/kronk/tests/hybrid
+
+      - name: Save models cache
+        if: github.ref == 'refs/heads/main' && steps.setup.outputs.models-cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        with:
+          path: |
+            ~/.kronk/models
+            ~/.kronk/bucky-models
+          key: ${{ steps.setup.outputs.models-cache-key }}
