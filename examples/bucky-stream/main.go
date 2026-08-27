@@ -11,11 +11,13 @@
 //
 // Run the example like this from the root of the project:
 // $ make example-bucky-stream
+// $ make example-bucky-stream-vad
 
 package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -31,6 +33,9 @@ import (
 
 // modelSource names the bucky whisper model to download.
 const modelSource = "ggml-tiny.bin"
+
+// vadModelSource names the optional Silero VAD model to download.
+const vadModelSource = "silero-vad"
 
 // micRate / micChannels are the format we ask the capture device for.
 // miniaudio converts the hardware's native format to this for us, so we
@@ -51,20 +56,33 @@ const (
 	colReset  = "\033[0m"
 )
 
+type installedModels struct {
+	whisper buckymodels.Path
+	vadPath string
+}
+
 func main() {
-	if err := run(); err != nil {
+	sileroVAD := flag.Bool("silero-vad", false, "use the Silero model instead of energy-based VAD")
+	vadThreshold := flag.Float64("vad-threshold", 0.5, "Silero speech probability threshold (0, 1]")
+	flag.Parse()
+
+	if err := run(*sileroVAD, float32(*vadThreshold)); err != nil {
 		fmt.Printf("\nERROR: %s\n", err)
 		os.Exit(1)
 	}
 }
 
-func run() error {
-	mp, err := installSystem()
+func run(sileroVAD bool, vadThreshold float32) error {
+	if sileroVAD && (vadThreshold <= 0 || vadThreshold > 1) {
+		return fmt.Errorf("vad threshold %v is outside (0, 1]", vadThreshold)
+	}
+
+	models, err := installSystem(sileroVAD)
 	if err != nil {
 		return fmt.Errorf("install system: %w", err)
 	}
 
-	b, err := newBucky(mp)
+	b, err := newBucky(models.whisper)
 	if err != nil {
 		return fmt.Errorf("new bucky: %w", err)
 	}
@@ -75,7 +93,7 @@ func run() error {
 		}
 	}()
 
-	if err := liveTranscribe(b); err != nil {
+	if err := liveTranscribe(b, models.vadPath, vadThreshold); err != nil {
 		return fmt.Errorf("live transcribe: %w", err)
 	}
 
@@ -87,17 +105,25 @@ func run() error {
 // liveTranscribe opens a streaming session, wires the default microphone
 // into it, and renders the transcript live until the speaker says "STOP"
 // (or presses Ctrl-C).
-func liveTranscribe(b *bucky.Bucky) error {
+func liveTranscribe(b *bucky.Bucky, vadPath string, vadThreshold float32) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	// VAD is on by default, so Finals commit when you pause — cuts land in
-	// the gaps between phrases instead of mid-word. PartialEveryMs is kept
-	// short for a snappy live feel.
-	stream, err := b.NewStream(ctx,
+	// Energy-based VAD remains the zero-configuration default. When
+	// --silero-vad is set, these options replace it with learned speech
+	// probabilities from the downloaded Silero model.
+	streamOpts := []model.StreamOption{
 		model.WithStreamLanguage("en"),
 		model.WithPartialEveryMs(700),
-	)
+	}
+	if vadPath != "" {
+		streamOpts = append(streamOpts,
+			model.WithVADModel(vadPath),
+			model.WithVADSpeechThreshold(vadThreshold),
+		)
+	}
+
+	stream, err := b.NewStream(ctx, streamOpts...)
 	if err != nil {
 		return fmt.Errorf("new stream: %w", err)
 	}
@@ -235,35 +261,51 @@ func openMic(onFrames malgo.DataProc) (*malgo.Device, *malgo.AllocatedContext, e
 
 // =============================================================================
 
-func installSystem() (buckymodels.Path, error) {
+func installSystem(sileroVAD bool) (installedModels, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
 	lib, err := buckylibs.New(buckylibs.WithDetect(ctx, bucky.FmtLogger))
 	if err != nil {
-		return buckymodels.Path{}, fmt.Errorf("libs new: %w", err)
+		return installedModels{}, fmt.Errorf("libs new: %w", err)
 	}
 
 	if _, err := lib.Download(ctx, bucky.FmtLogger); err != nil {
-		return buckymodels.Path{}, fmt.Errorf("download whisper.cpp libs: %w", err)
+		return installedModels{}, fmt.Errorf("download whisper.cpp libs: %w", err)
 	}
 	if err := bucky.Init(bucky.WithLibPath(lib.LibsPath())); err != nil {
-		return buckymodels.Path{}, fmt.Errorf("bucky init: %w", err)
+		return installedModels{}, fmt.Errorf("bucky init: %w", err)
 	}
 
 	mdls, err := buckymodels.New()
 	if err != nil {
-		return buckymodels.Path{}, fmt.Errorf("models new: %w", err)
+		return installedModels{}, fmt.Errorf("models new: %w", err)
 	}
 
 	fmt.Println("Downloading whisper model:", modelSource)
 
 	mp, err := mdls.Download(ctx, bucky.FmtLogger, modelSource)
 	if err != nil {
-		return buckymodels.Path{}, fmt.Errorf("download model: %w", err)
+		return installedModels{}, fmt.Errorf("download model: %w", err)
 	}
 
-	return mp, nil
+	models := installedModels{whisper: mp}
+	if !sileroVAD {
+		return models, nil
+	}
+
+	fmt.Println("Downloading VAD model:", vadModelSource)
+
+	vad, err := mdls.Download(ctx, bucky.FmtLogger, vadModelSource)
+	if err != nil {
+		return installedModels{}, fmt.Errorf("download VAD model: %w", err)
+	}
+	if len(vad.ModelFiles) == 0 {
+		return installedModels{}, fmt.Errorf("download VAD model: no model files on disk")
+	}
+	models.vadPath = vad.ModelFiles[0]
+
+	return models, nil
 }
 
 func newBucky(mp buckymodels.Path) (*bucky.Bucky, error) {

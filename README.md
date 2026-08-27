@@ -145,8 +145,9 @@ Representative examples:
 make example-question  # Ask a local language model a question.
 make example-agent     # Run a small coding agent.
 make example-vision    # Prompt a vision model with an image.
-make example-bucky     # Transcribe an audio file with Bucky.
-make example-malina    # Generate an image with experimental Malina.
+make example-bucky            # Transcribe an audio file with Bucky.
+make example-bucky-stream-vad # Stream transcription with Silero VAD boundaries.
+make example-malina           # Generate an image with experimental Malina.
 ```
 
 Examples download compatible libraries and models on their first run. Browse the

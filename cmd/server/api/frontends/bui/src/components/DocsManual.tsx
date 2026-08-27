@@ -4193,7 +4193,7 @@ kronk bucky libs --remove-install --arch=amd64 --os=linux --processor=cuda`}</co
               </tr>
             </tbody>
           </table>
-          <p>The catalog also contains <code>silero-vad</code>, an auxiliary voice-activity detection model. It is not a transcription model and is not required by the SDK's built-in streaming silence detection.</p>
+          <p>The catalog also contains <code>silero-vad</code>, an auxiliary voice-activity detection model. It is not a transcription model. Streaming uses its built-in energy detector unless a caller explicitly supplies the downloaded Silero model with <code>model.WithVADModel</code>.</p>
           <p>Pull, list, and remove models with:</p>
           <pre className="code-block"><code className="language-sh">{`kronk bucky model pull tiny
 kronk bucky model list
@@ -4522,6 +4522,13 @@ if err := stream.FeedPCM(ctx, rawPCM, format); err != nil {
             </tbody>
           </table>
           <p>Options such as <code>WithPartialEveryMs</code>, <code>WithCommitEveryMs</code>, <code>WithVAD</code>, and <code>WithPromptCarryover</code> change these behaviors. A negative partial interval disables partial events. The <code>WithStreamTemperature</code>, <code>WithStreamTemperatureInc</code>, <code>WithStreamEntropyThreshold</code>, <code>WithStreamLogProbThreshold</code>, <code>WithStreamNoSpeechThreshold</code>, <code>WithStreamGreedyBestOf</code>, <code>WithStreamBeamSize</code>, <code>WithStreamBeamSearchPatience</code>, and <code>WithStreamLengthPenalty</code> options apply the same sampling controls to every decode in a streaming session.</p>
+          <p>For model-backed voice-activity detection, download the cataloged Silero model and pass its resolved path when opening the stream:</p>
+          <pre className="code-block"><code className="language-go">{`stream, err := b.NewStream(ctx,
+    model.WithVADModel("/path/to/ggml-silero-v5.1.2.bin"),
+    model.WithVADSpeechThreshold(0.5),
+)`}</code></pre>
+          <p><code>WithVADSpeechThreshold</code> overrides whisper.cpp's Silero speech-probability threshold. Without <code>WithVADModel</code>, the existing <code>WithVADThreshold</code> option continues to tune the built-in energy-ratio detector.</p>
+          <p>The <a href="../examples/bucky-stream/main.go"><code>examples/bucky-stream</code></a> program uses the built-in energy detector by default. Run <code>make example-bucky-stream-vad</code> to invoke the same program with <code>--silero-vad --vad-threshold=0.5</code>; it downloads the additional model and enables Silero. Silero changes utterance-boundary detection, not Whisper's transcription. Compared with the built-in energy ratio, learned speech probabilities are more robust to quiet speech, steady background noise, and changing microphone gain.</p>
           <p><code>Reset</code> starts a new logical session while keeping the stream open. By default it flushes pending audio and restarts timestamps at zero. After an <code>EventError</code>, close the failed stream and open a new one instead of resetting it.</p>
           <p>Always close a stream. An open stream reserves SDK inference capacity and can prevent model unloading. SDK users that need concurrent streams can configure <code>model.WithNSeqMax</code> when creating the Bucky handle; this is an SDK setting, not a server configuration field.</p>
           <h3 id="188-languages">18.8 Languages</h3>

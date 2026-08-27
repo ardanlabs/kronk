@@ -62,4 +62,14 @@ func TestStreamThresholdOptions(t *testing.T) {
 	if *cfg.LogProbThreshold != 0 {
 		t.Errorf("WithStreamLogProbThreshold(0): got %v, want 0", *cfg.LogProbThreshold)
 	}
+
+	WithVADModel("vad.bin")(&cfg)
+	if cfg.VADModelPath != "vad.bin" {
+		t.Errorf("WithVADModel: got %q, want %q", cfg.VADModelPath, "vad.bin")
+	}
+
+	WithVADSpeechThreshold(0.7)(&cfg)
+	if cfg.VADSpeechThreshold != 0.7 {
+		t.Errorf("WithVADSpeechThreshold: got %v, want 0.7", cfg.VADSpeechThreshold)
+	}
 }

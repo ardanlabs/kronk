@@ -39,7 +39,8 @@ var (
 // short whisper model name. Tests check for an empty ModelFiles
 // slice and skip cleanly when the model has not been downloaded.
 var (
-	MPTinyEn buckymodels.Path
+	MPTinyEn    buckymodels.Path
+	MPSileroVAD buckymodels.Path
 )
 
 // =============================================================================
@@ -69,6 +70,7 @@ func Setup() {
 	}
 
 	resolveModel(mdls, "ggml-tiny.bin", &MPTinyEn)
+	resolveModel(mdls, "ggml-silero-v5.1.2.bin", &MPSileroVAD)
 
 	printInfo(mdls)
 

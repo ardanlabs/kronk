@@ -167,8 +167,9 @@ The transcription models currently included in that catalog are:
 | `large-v3-turbo` | 1.5 GB           | Multilingual; faster large-model variant |
 
 The catalog also contains `silero-vad`, an auxiliary voice-activity detection
-model. It is not a transcription model and is not required by the SDK's
-built-in streaming silence detection.
+model. It is not a transcription model. Streaming uses its built-in energy
+detector unless a caller explicitly supplies the downloaded Silero model with
+`model.WithVADModel`.
 
 Pull, list, and remove models with:
 
@@ -482,6 +483,28 @@ disables partial events. The `WithStreamTemperature`,
 `WithStreamGreedyBestOf`, `WithStreamBeamSize`,
 `WithStreamBeamSearchPatience`, and `WithStreamLengthPenalty` options apply the
 same sampling controls to every decode in a streaming session.
+
+For model-backed voice-activity detection, download the cataloged Silero model
+and pass its resolved path when opening the stream:
+
+```go
+stream, err := b.NewStream(ctx,
+    model.WithVADModel("/path/to/ggml-silero-v5.1.2.bin"),
+    model.WithVADSpeechThreshold(0.5),
+)
+```
+
+`WithVADSpeechThreshold` overrides whisper.cpp's Silero speech-probability
+threshold. Without `WithVADModel`, the existing `WithVADThreshold` option
+continues to tune the built-in energy-ratio detector.
+
+The [`examples/bucky-stream`](../examples/bucky-stream/main.go) program uses the
+built-in energy detector by default. Run `make example-bucky-stream-vad` to
+invoke the same program with `--silero-vad --vad-threshold=0.5`; it downloads
+the additional model and enables Silero. Silero changes utterance-boundary
+detection, not Whisper's transcription. Compared with the built-in energy
+ratio, learned speech probabilities are more robust to quiet speech, steady
+background noise, and changing microphone gain.
 
 `Reset` starts a new logical session while keeping the stream open. By default
 it flushes pending audio and restarts timestamps at zero. After an
