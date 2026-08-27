@@ -32,17 +32,100 @@ concurrency:
 
 permissions:
   contents: read
-  actions: write # actions/cache/save uses the actions API
 
 env:
   GOTOOLCHAIN: local
 
 jobs:
-  tests:
-    name: Tests
+  static:
+    name: Static checks
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, macOS, ARM64, sand]
-    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Check Go version pin
+        run: ./.github/scripts/check-go-version.sh
+
+      - name: Install Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: .go-version
+
+      - name: Install static analysis tools
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@2026.2rc1
+          go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+
+      - name: gofmt
+        run: |
+          fmt="$(gofmt -l $(git ls-files '*.go'))"
+          if [[ -n "$fmt" ]]; then
+            printf '%s\n' "$fmt"
+            echo "::error::Go files need gofmt -s -w"
+            exit 1
+          fi
+
+      - name: go mod tidy
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: staticcheck
+        run: staticcheck -checks=all ./...
+
+      - name: govulncheck
+        run: govulncheck ./...
+
+      - name: go fix
+        run: |
+          fix_diff="$(go fix -diff ./...)"
+          if [[ -n "$fix_diff" ]]; then
+            printf '%s\n' "$fix_diff"
+            echo "::error::go fix would modify files"
+            exit 1
+          fi
+
+      - name: goreleaser check
+        uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89 # v7
+        with:
+          version: "~> v2"
+          args: check
+
+  race:
+    name: Race detector (sdk unit packages)
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, macOS, ARM64, sand]
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Set up Kronk
+        uses: ./.github/actions/setup-kronk
+        with:
+          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
+
+      - name: go test -race -short (sdk unit packages)
+        run: |
+          go test -race -short -count=1 -timeout 10m \
+            $(go list ./sdk/... \
+              | grep -v '/sdk/kronk/tests' \
+              | grep -v '/sdk/kronk/pool' \
+              | grep -v '/sdk/bucky/tests')
+
+  api-tests:
+    name: api/service tests
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, macOS, ARM64, sand]
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: write # actions/cache/save uses the actions API
     steps:
       - name: Runner specs
         run: |
@@ -73,6 +156,30 @@ jobs:
           go test -v -p=1 -count=1 -timeout 20m ./cmd/kronk/...
           go test -v -p=1 -count=1 -timeout 20m ./cmd/server/...
 
+      - name: Save models cache
+        if: github.ref == 'refs/heads/main' && steps.setup.outputs.models-cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        with:
+          path: |
+            ~/.kronk/models
+            ~/.kronk/bucky-models
+          key: ${{ steps.setup.outputs.models-cache-key }}
+
+  sdk-tests:
+    name: sdk tests
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, macOS, ARM64, sand]
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Set up Kronk
+        uses: ./.github/actions/setup-kronk
+        with:
+          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
+
       - name: Run sdk tests
         run: |
           export RUN_IN_PARALLEL=no
@@ -85,13 +192,3 @@ jobs:
           go test -v -count=1 -timeout 6m -run '^TestSuite$' ./sdk/kronk/tests/vision_imc
           go test -v -count=1 -timeout 6m -run '^(TestSuite|TestConcurrentRerank)$' ./sdk/kronk/tests/rerank
           go test -v -count=1 -timeout 6m -run '^(TestSuite|TestUsageCountingHybrid)$' ./sdk/kronk/tests/hybrid
-
-      - name: Save models cache
-        if: github.ref == 'refs/heads/main' && steps.setup.outputs.models-cache-hit != 'true'
-        continue-on-error: true
-        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: |
-            ~/.kronk/models
-            ~/.kronk/bucky-models
-          key: ${{ steps.setup.outputs.models-cache-key }}
