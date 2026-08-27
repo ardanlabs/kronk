@@ -202,4 +202,22 @@ func TestAdditionalMemoryAccountsForProjectionAndCompanionMTPFiles(t *testing.T)
 	if vramBytes != 0 || ramBytes != 300 {
 		t.Errorf("unified bytes: got VRAM=%d RAM=%d, want VRAM=0 RAM=300", vramBytes, ramBytes)
 	}
+
+	cpuRM, err := resman.New(resman.Config{
+		Snapshot: resman.Snapshot{RAMBytes: 1 << 30},
+	})
+	if err != nil {
+		t.Fatalf("new CPU resource manager: %v", err)
+	}
+	cpu := newLlama(func(context.Context, string, ...any) {}, nil, nil, cpuRM, devices.Devices{}, false)
+	vramBytes, ramBytes, err = cpu.additionalMemory(model.Config{
+		ProjFile:       projection,
+		MTPDrafterFile: mtp,
+	}, vram.Config{})
+	if err != nil {
+		t.Fatalf("additionalMemory CPU: %v", err)
+	}
+	if vramBytes != 0 || ramBytes != 300 {
+		t.Errorf("CPU bytes: got VRAM=%d RAM=%d, want VRAM=0 RAM=300", vramBytes, ramBytes)
+	}
 }

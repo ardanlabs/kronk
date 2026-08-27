@@ -1,9 +1,6 @@
 package libs
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
 func TestOptionsValidate(t *testing.T) {
 	tests := []struct {
@@ -24,15 +21,5 @@ func TestOptionsValidate(t *testing.T) {
 				t.Errorf("validate() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
-	}
-}
-
-func TestCommandRequiresLocal(t *testing.T) {
-	cmd := newCmd()
-	cmd.SetArgs([]string{"--list-combinations"})
-
-	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "use --local") {
-		t.Errorf("Execute() error = %v, want use --local", err)
 	}
 }

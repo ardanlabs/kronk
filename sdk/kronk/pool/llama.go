@@ -262,11 +262,12 @@ func (l *Llama) additionalMemory(cfg model.Config, targetCfg vram.Config) (vramB
 		return nil
 	}
 
-	projOnCPU := cfg.PtrProjOnCPU != nil && *cfg.PtrProjOnCPU
+	projOnCPU := !l.resman.HasGPUs() || (cfg.PtrProjOnCPU != nil && *cfg.PtrProjOnCPU)
 	if err := addFile(cfg.ProjFile, projOnCPU); err != nil {
 		return 0, 0, err
 	}
-	if err := addFile(cfg.MTPDrafterFile, cfg.NGpuLayers() == -1); err != nil {
+	mtpOnCPU := !l.resman.HasGPUs() || cfg.NGpuLayers() == -1
+	if err := addFile(cfg.MTPDrafterFile, mtpOnCPU); err != nil {
 		return 0, 0, err
 	}
 
