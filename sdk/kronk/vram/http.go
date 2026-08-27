@@ -145,6 +145,10 @@ func buildFromMetadata(metadata map[string]string, tensors []gguf.TensorInfo, mo
 	if recurrentStateCopies == 1 && att.NextNPredictLayers > 0 {
 		recurrentStateCopies = max(cfg.EmbeddedMTPStateCopies, 1)
 	}
+	computeContexts := max(cfg.ComputeContexts, 1)
+	if computeContexts == 1 && att.NextNPredictLayers > 0 && cfg.EmbeddedMTPStateCopies > 1 {
+		computeContexts = 2
+	}
 
 	input := Input{
 		ModelSizeBytes:       modelSizeBytes,
@@ -172,6 +176,7 @@ func buildFromMetadata(metadata map[string]string, tensors []gguf.TensorInfo, mo
 		NUBatch:              cfg.NUBatch,
 		KVUnified:            false,
 		EmbeddingLength:      embeddingLength,
+		ComputeContexts:      computeContexts,
 		MoE:                  moePtr,
 		Weights:              weights,
 		GPULayers:            cfg.GPULayers,

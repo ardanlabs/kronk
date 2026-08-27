@@ -96,6 +96,25 @@ func (c *Pool[H]) Acquire(ctx context.Context, req loader.LoadRequest) (H, error
 			return zero, fmt.Errorf("acquire: %w", err)
 		}
 
+		if validator, ok := c.loader.(loader.Validator[H]); ok {
+			if err := validator.Validate(ctx, req, h); err != nil {
+				unloadErr := h.Unload(context.WithoutCancel(ctx))
+				c.resman.Release(ticket)
+				c.log(ctx, "acquire",
+					"status", "validation-failed-reservation-released",
+					"key", req.Key,
+					"ERROR", err,
+					"unload-error", unloadErr,
+				)
+				c.LogResmanUsage(ctx, "post-failed-validation", "key", req.Key)
+				metrics.AddPoolLoadFailure("validate")
+				if unloadErr != nil {
+					return zero, fmt.Errorf("acquire: validate loaded handle: %w", errors.Join(err, fmt.Errorf("unload: %w", unloadErr)))
+				}
+				return zero, fmt.Errorf("acquire: validate loaded handle: %w", err)
+			}
+		}
+
 		c.storeTicket(req.Key, ticket)
 		c.cache.Set(req.Key, h)
 		c.itemsInPool.Add(1)

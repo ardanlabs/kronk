@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 
 type preparedHandle struct {
 	unloadCalls atomic.Int32
+	unloadErr   error
 }
 
 func (*preparedHandle) ActiveStreams() int {
@@ -20,7 +22,7 @@ func (*preparedHandle) ActiveStreams() int {
 
 func (h *preparedHandle) Unload(context.Context) error {
 	h.unloadCalls.Add(1)
-	return nil
+	return h.unloadErr
 }
 
 type preparedLoader struct {
@@ -28,6 +30,7 @@ type preparedLoader struct {
 	planPrepared any
 	loadPrepared any
 	handles      map[string]*preparedHandle
+	validateErr  error
 }
 
 func (pl *preparedLoader) Prepare(context.Context, loader.LoadRequest) (any, error) {
@@ -53,6 +56,10 @@ func (pl *preparedLoader) Load(_ context.Context, req loader.LoadRequest) (*prep
 
 func (*preparedLoader) Display(*preparedHandle, string) loader.Display {
 	return loader.Display{}
+}
+
+func (pl *preparedLoader) Validate(context.Context, loader.LoadRequest, *preparedHandle) error {
+	return pl.validateErr
 }
 
 func newTestResourceManager(t *testing.T) *resman.Manager {
@@ -94,6 +101,37 @@ func TestAcquirePreparesRequestOnceForPlanAndLoad(t *testing.T) {
 	}
 	if pl.planPrepared != pl.loadPrepared {
 		t.Error("prepared value differs between Plan and Load")
+	}
+}
+
+func TestAcquireValidationFailureUnloadsAndReleases(t *testing.T) {
+	wantErr := errors.New("backend memory exhausted")
+	pl := &preparedLoader{
+		handles:     make(map[string]*preparedHandle),
+		validateErr: wantErr,
+	}
+	rm := newTestResourceManager(t)
+	p, err := New(Config{
+		Log:      func(context.Context, string, ...any) {},
+		Resman:   rm,
+		MaxItems: 1,
+	}, pl)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	_, err = p.Acquire(context.Background(), loader.LoadRequest{ModelID: "model", Key: "model"})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Acquire error: got %v, want %v", err, wantErr)
+	}
+	if got := pl.handles["model"].unloadCalls.Load(); got != 1 {
+		t.Errorf("Unload calls: got %d, want 1", got)
+	}
+	if got := len(rm.Usage().Reservations); got != 0 {
+		t.Errorf("Reservations: got %d, want 0", got)
+	}
+	if _, exists := p.cache.GetIfPresent("model"); exists {
+		t.Error("cache contains handle after validation failure")
 	}
 }
 

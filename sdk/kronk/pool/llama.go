@@ -11,6 +11,8 @@ package pool
 import (
 	"context"
 	"fmt"
+	"math"
+	"os"
 	"slices"
 	"strings"
 
@@ -131,6 +133,7 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 		VTransposed:            cfg.FlashAttention() == model.FlashAttentionDisabled,
 		RecurrentStateCopies:   model.RecurrentStateCopies(cfg, false),
 		EmbeddedMTPStateCopies: model.RecurrentStateCopies(cfg, true),
+		ComputeContexts:        model.SpeculativeContextCount(cfg),
 	}
 
 	result, source, err := predictResult(l.models, req.ModelID, vramCfg)
@@ -180,6 +183,13 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 		planReq.VRAMBytes = 0
 		planReq.RAMBytes = result.TotalVRAM + result.TotalSystemRAMEst
 	}
+
+	extraVRAM, extraRAM, err := l.additionalMemory(cfg, vramCfg)
+	if err != nil {
+		return resman.PlanRequest{}, fmt.Errorf("plan: additional memory: %w", err)
+	}
+	planReq.VRAMBytes += extraVRAM
+	planReq.RAMBytes += extraRAM
 
 	memoryTopology := "cpu-only"
 	switch {
@@ -233,6 +243,59 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 	)
 
 	return planReq, nil
+}
+
+func (l *Llama) additionalMemory(cfg model.Config, targetCfg vram.Config) (vramBytes, ramBytes int64, err error) {
+	addFile := func(path string, onCPU bool) error {
+		if path == "" {
+			return nil
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			return fmt.Errorf("stat %s: %w", path, err)
+		}
+		if l.resman.UnifiedMemory() || onCPU {
+			ramBytes += info.Size()
+		} else {
+			vramBytes += info.Size()
+		}
+		return nil
+	}
+
+	projOnCPU := !l.resman.HasGPUs() || (cfg.PtrProjOnCPU != nil && *cfg.PtrProjOnCPU)
+	if err := addFile(cfg.ProjFile, projOnCPU); err != nil {
+		return 0, 0, err
+	}
+	mtpOnCPU := !l.resman.HasGPUs() || cfg.NGpuLayers() == -1
+	if err := addFile(cfg.MTPDrafterFile, mtpOnCPU); err != nil {
+		return 0, 0, err
+	}
+
+	if cfg.PtrDraftModel == nil || !cfg.PtrDraftModel.IsSeparate() || cfg.SpeculationMode() == model.SpeculationDisabled {
+		return vramBytes, ramBytes, nil
+	}
+
+	draftCfg := targetCfg
+	draftCfg.Slots = 1
+	draftCfg.GPULayers = int64(cfg.PtrDraftModel.NGpuLayers())
+	draftCfg.RecurrentStateCopies = 1
+	draftCfg.EmbeddedMTPStateCopies = 1
+	draftCfg.ComputeContexts = 1
+	draft, err := vram.FromFiles(cfg.PtrDraftModel.ModelFiles, draftCfg)
+	if err != nil {
+		return 0, 0, fmt.Errorf("draft: %w", err)
+	}
+	switch {
+	case l.resman.UnifiedMemory():
+		ramBytes += draft.UnifiedFootprint()
+	case l.resman.HasGPUs() && cfg.PtrDraftModel.NGpuLayers() != -1:
+		vramBytes += draft.TotalVRAM
+		ramBytes += draft.TotalSystemRAMEst
+	default:
+		ramBytes += draft.TotalVRAM + draft.TotalSystemRAMEst
+	}
+
+	return vramBytes, ramBytes, nil
 }
 
 // Load implements loader.Loader.Load for the llama backend.
@@ -310,6 +373,220 @@ func (l *Llama) Load(ctx context.Context, req loader.LoadRequest) (*kronk.Kronk,
 	return krn, nil
 }
 
+// Validate checks live backend headroom after every native context has been
+// created but before the pool publishes the handle. GGML's device query is the
+// backend's own capacity view: on Metal it uses recommendedMaxWorkingSetSize;
+// CUDA and HIP report runtime device memory. Vulkan remains advisory because
+// drivers without VK_EXT_memory_budget report the whole heap as free.
+func (l *Llama) Validate(ctx context.Context, req loader.LoadRequest, _ *kronk.Kronk) error {
+	cfg, err := l.configForRequest(req)
+	if err != nil {
+		return fmt.Errorf("validate: %w", err)
+	}
+
+	usage := l.resman.Usage()
+	checks := backendMemoryChecks(cfg, devices.List(), usage.BudgetPercent, usage.HeadroomBytes)
+	for _, check := range checks {
+		status := "ok"
+		if !check.enforced {
+			status = "advisory"
+		}
+		if check.exhausted {
+			status = "insufficient"
+		}
+		l.log(ctx, "backend-memory",
+			"status", status,
+			"model-id", req.ModelID,
+			"device", check.name,
+			"backend", check.backend,
+			"free", backendMemoryBytes(check.displayFree()),
+			"total", backendMemoryBytes(check.total),
+			"required-free", backendMemoryBytes(check.requiredFree),
+			"report-wrapped", check.wrapped,
+			"budget-percent", usage.BudgetPercent,
+			"context-window", cfg.ContextWindow(),
+			"slots", cfg.NSeqMax(),
+		)
+		if check.enforced && check.exhausted {
+			return fmt.Errorf("validate: model[%s] does not fit backend memory budget: device[%s] backend[%s] free[%s] total[%s] required-free[%s] report-wrapped[%t] context-window[%d] slots[%d]: reduce nseq-max, context-window, or cache precision: %w",
+				req.ModelID, check.name, check.backend,
+				backendMemoryBytes(check.displayFree()), backendMemoryBytes(check.total), backendMemoryBytes(check.requiredFree), check.wrapped,
+				cfg.ContextWindow(), cfg.NSeqMax(), resman.ErrNoCapacity)
+		}
+	}
+
+	return nil
+}
+
+type backendMemoryCheck struct {
+	name         string
+	backend      string
+	free         uint64
+	total        uint64
+	requiredFree uint64
+	enforced     bool
+	exhausted    bool
+	wrapped      bool
+}
+
+func (check backendMemoryCheck) displayFree() uint64 {
+	if check.wrapped {
+		return 0
+	}
+	return check.free
+}
+
+func backendMemoryBytes(value uint64) string {
+	return humanBytes(int64(min(value, uint64(math.MaxInt64))))
+}
+
+func backendMemoryChecks(cfg model.Config, snapshot devices.Devices, budgetPercent int, headroomBytes int64) []backendMemoryCheck {
+	if !configUsesGPU(cfg) {
+		return nil
+	}
+
+	selected := selectedBackendDevices(cfg, snapshot.Devices)
+	checks := make([]backendMemoryCheck, 0, len(selected))
+	for _, device := range selected {
+		if check, ok := backendMemoryCheckForDevice(device, budgetPercent, headroomBytes); ok {
+			checks = append(checks, check)
+		}
+	}
+
+	return checks
+}
+
+func backendMemoryCheckForDevice(device devices.DeviceInfo, budgetPercent int, headroomBytes int64) (backendMemoryCheck, bool) {
+	switch device.Type {
+	case "gpu_metal":
+		return metalBackendMemoryCheck(device, budgetPercent, headroomBytes)
+	case "gpu_cuda":
+		return cudaBackendMemoryCheck(device, budgetPercent, headroomBytes)
+	case "gpu_rocm":
+		return rocmBackendMemoryCheck(device, budgetPercent, headroomBytes)
+	case "gpu_vulkan":
+		return vulkanBackendMemoryCheck(device, budgetPercent, headroomBytes)
+	case "cpu":
+		return cpuBackendMemoryCheck(device, budgetPercent, headroomBytes)
+	default:
+		return unsupportedBackendMemoryCheck(device, budgetPercent, headroomBytes)
+	}
+}
+
+// metalBackendMemoryCheck is enforceable because llama.cpp reports
+// recommendedMaxWorkingSetSize and currentAllocatedSize from Metal.
+func metalBackendMemoryCheck(device devices.DeviceInfo, budgetPercent int, headroomBytes int64) (backendMemoryCheck, bool) {
+	return reportedBackendMemoryCheck(device, budgetPercent, headroomBytes, true)
+}
+
+// cudaBackendMemoryCheck is enforceable because the CUDA runtime reports live
+// free and total device memory.
+func cudaBackendMemoryCheck(device devices.DeviceInfo, budgetPercent int, headroomBytes int64) (backendMemoryCheck, bool) {
+	return reportedBackendMemoryCheck(device, budgetPercent, headroomBytes, true)
+}
+
+// rocmBackendMemoryCheck is enforceable because the HIP runtime reports live
+// free and total device memory.
+func rocmBackendMemoryCheck(device devices.DeviceInfo, budgetPercent int, headroomBytes int64) (backendMemoryCheck, bool) {
+	return reportedBackendMemoryCheck(device, budgetPercent, headroomBytes, true)
+}
+
+// vulkanBackendMemoryCheck is advisory. Without VK_EXT_memory_budget, Vulkan
+// drivers may report the entire heap as free instead of live available memory.
+func vulkanBackendMemoryCheck(device devices.DeviceInfo, budgetPercent int, headroomBytes int64) (backendMemoryCheck, bool) {
+	return reportedBackendMemoryCheck(device, budgetPercent, headroomBytes, false)
+}
+
+// cpuBackendMemoryCheck intentionally skips validation. llama.cpp does not
+// currently expose a portable live host-memory value through this device API.
+func cpuBackendMemoryCheck(devices.DeviceInfo, int, int64) (backendMemoryCheck, bool) {
+	return backendMemoryCheck{}, false
+}
+
+// unsupportedBackendMemoryCheck is the boundary for future GGML backends.
+// Unknown memory-reporting semantics must remain non-enforcing until verified.
+func unsupportedBackendMemoryCheck(devices.DeviceInfo, int, int64) (backendMemoryCheck, bool) {
+	return backendMemoryCheck{}, false
+}
+
+func reportedBackendMemoryCheck(device devices.DeviceInfo, budgetPercent int, headroomBytes int64, enforced bool) (backendMemoryCheck, bool) {
+	if device.TotalBytes == 0 && device.FreeBytes == 0 {
+		return backendMemoryCheck{}, false
+	}
+
+	reservePercent := max(100-budgetPercent, 0)
+	requiredFree := device.TotalBytes * uint64(reservePercent) / 100
+	if headroomBytes > 0 {
+		requiredFree += uint64(headroomBytes)
+	}
+
+	return backendMemoryCheck{
+		name:         device.Name,
+		backend:      device.Backend,
+		free:         device.FreeBytes,
+		total:        device.TotalBytes,
+		requiredFree: requiredFree,
+		enforced:     enforced,
+		exhausted:    device.FreeBytes > device.TotalBytes || device.FreeBytes < requiredFree,
+		wrapped:      device.FreeBytes > device.TotalBytes,
+	}, true
+}
+
+func configUsesGPU(cfg model.Config) bool {
+	if cfg.NGpuLayers() != -1 {
+		return true
+	}
+	if cfg.ProjFile != "" && (cfg.PtrProjOnCPU == nil || !*cfg.PtrProjOnCPU) {
+		return true
+	}
+	if cfg.MTPDrafterFile != "" {
+		return true
+	}
+	return cfg.PtrDraftModel != nil && cfg.PtrDraftModel.IsSeparate() && cfg.PtrDraftModel.NGpuLayers() != -1
+}
+
+func selectedBackendDevices(cfg model.Config, available []devices.DeviceInfo) []devices.DeviceInfo {
+	gpus := slices.DeleteFunc(slices.Clone(available), func(device devices.DeviceInfo) bool {
+		return !strings.HasPrefix(device.Type, "gpu_")
+	})
+
+	names := append([]string(nil), cfg.Devices...)
+	if cfg.NGpuLayers() != -1 && len(gpuDevices(cfg.Devices)) == 0 {
+		if cfg.PtrSplitMode == nil || *cfg.PtrSplitMode != model.SplitModeNone {
+			return gpus
+		}
+		if mainGPU := cfg.MainGPU(); mainGPU >= 0 && mainGPU < len(gpus) {
+			names = append(names, gpus[mainGPU].Name)
+		}
+	}
+
+	if cfg.PtrDraftModel != nil && cfg.PtrDraftModel.IsSeparate() {
+		if cfg.PtrDraftModel.NGpuLayers() != -1 && len(gpuDevices(cfg.PtrDraftModel.Devices)) == 0 {
+			return gpus
+		}
+		names = append(names, cfg.PtrDraftModel.Devices...)
+	}
+	if cfg.ProjDevice != "" {
+		names = append(names, cfg.ProjDevice)
+	} else if cfg.ProjFile != "" && (cfg.PtrProjOnCPU == nil || !*cfg.PtrProjOnCPU) {
+		return gpus
+	}
+
+	if len(names) > 0 {
+		return slices.DeleteFunc(slices.Clone(available), func(device devices.DeviceInfo) bool {
+			return !slices.Contains(names, device.Name)
+		})
+	}
+
+	if cfg.PtrSplitMode != nil && *cfg.PtrSplitMode == model.SplitModeNone {
+		if mainGPU := cfg.MainGPU(); mainGPU >= 0 && mainGPU < len(gpus) {
+			return gpus[mainGPU : mainGPU+1]
+		}
+	}
+
+	return gpus
+}
+
 func splitModeName(p *model.SplitMode) string {
 	if p == nil {
 		return "auto"
@@ -361,6 +638,7 @@ func (l *Llama) Display(krn *kronk.Kronk, modelID string) loader.Display {
 		VTransposed:            cfg.FlashAttention() == model.FlashAttentionDisabled,
 		RecurrentStateCopies:   model.RecurrentStateCopies(cfg, false),
 		EmbeddedMTPStateCopies: model.RecurrentStateCopies(cfg, true),
+		ComputeContexts:        model.SpeculativeContextCount(cfg),
 	}
 
 	out := loader.Display{

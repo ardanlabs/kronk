@@ -10,6 +10,12 @@ import (
 	"go.yaml.in/yaml/v2"
 )
 
+func TestNewConfigMemoryBudget(t *testing.T) {
+	if got := newConfig().Pool.BudgetPercent; got != 90 {
+		t.Errorf("BudgetPercent: got %d, want 90", got)
+	}
+}
+
 func TestLoadConfig(t *testing.T) {
 	unsetEnv(t, "KRONK_HF_TOKEN")
 	unsetEnv(t, "KRONK_LLAMA_LOG")

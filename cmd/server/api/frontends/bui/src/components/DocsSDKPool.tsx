@@ -213,6 +213,14 @@ export default function DocsSDKPool() {
               <p className="doc-description">ResolvedModelConfig returns the same budgeted configuration used to prepare a model for planning and loading.</p>
             </div>
 
+            <div className="doc-section" id="method-llama-validate">
+              <h4>Llama.Validate</h4>
+              <pre className="code-block">
+                <code>func (l *Llama) Validate(ctx context.Context, req loader.LoadRequest, _ *kronk.Kronk) error</code>
+              </pre>
+              <p className="doc-description">Validate checks live backend headroom after every native context has been created but before the pool publishes the handle. GGML's device query is the backend's own capacity view: on Metal it uses recommendedMaxWorkingSetSize; CUDA and HIP report runtime device memory. Vulkan remains advisory because drivers without VK_EXT_memory_budget report the whole heap as free.</p>
+            </div>
+
             <div className="doc-section" id="method-pool-aquirecustom">
               <h4>Pool.AquireCustom</h4>
               <pre className="code-block">
@@ -391,6 +399,7 @@ export default function DocsSDKPool() {
                 <li><a href="#method-llama-plan">Llama.Plan</a></li>
                 <li><a href="#method-llama-prepare">Llama.Prepare</a></li>
                 <li><a href="#method-llama-resolvedmodelconfig">Llama.ResolvedModelConfig</a></li>
+                <li><a href="#method-llama-validate">Llama.Validate</a></li>
                 <li><a href="#method-pool-aquirecustom">Pool.AquireCustom</a></li>
                 <li><a href="#method-pool-aquiremodel">Pool.AquireModel</a></li>
                 <li><a href="#method-pool-batchenginesnapshots">Pool.BatchEngineSnapshots</a></li>

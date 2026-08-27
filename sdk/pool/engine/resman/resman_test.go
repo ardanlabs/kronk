@@ -65,11 +65,19 @@ func Test_New_Defaults(t *testing.T) {
 		t.Fatalf("Devices: want 1, got %d", len(u.Devices))
 	}
 
-	// 95% of 16 GiB minus 256 MiB headroom.
+	// 90% of 16 GiB minus 256 MiB headroom.
 	total := float64(16 * GiB)
-	wantBudget := int64(total*0.95) - int64(resman.DefaultHeadroomBytes)
+	wantBudget := int64(total*0.90) - int64(resman.DefaultHeadroomBytes)
 	if u.Devices[0].BudgetBytes != wantBudget {
 		t.Errorf("BudgetBytes: want %d, got %d", wantBudget, u.Devices[0].BudgetBytes)
+	}
+
+	// Host and unified memory retain an additional 5% for the OS and
+	// allocations outside the estimator, making the default effective
+	// host budget 85%.
+	wantRAMBudget := 32 * GiB * 85 / 100
+	if u.RAMBudget != wantRAMBudget {
+		t.Errorf("RAMBudget: want %d, got %d", wantRAMBudget, u.RAMBudget)
 	}
 }
 

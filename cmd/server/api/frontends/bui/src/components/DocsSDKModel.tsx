@@ -161,6 +161,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">SetEmbeddingsPreNorm enables (or disables) pre-norm hidden-state extraction on the given context. - value == true: the next llama_decode will produce a pre-norm embedding buffer accessible via GetEmbeddingsPreNorm / GetEmbeddingsPreNormIth. - masked == false: rows are stored densely, indexed by raw batch position. Used on the target context (caller wants every row). - masked == true: rows are stored only for batch positions whose logits flag is non-zero, indexed via the output_ids table. Used on the MTP draft context (caller only needs the output rows). Mirrors llama_set_embeddings_pre_norm in src/llama-ext.h.</p>
             </div>
 
+            <div className="doc-section" id="func-speculativecontextcount">
+              <h4>SpeculativeContextCount</h4>
+              <pre className="code-block">
+                <code>func SpeculativeContextCount(cfg Config) int64</code>
+              </pre>
+              <p className="doc-description">SpeculativeContextCount returns the native contexts known from configuration before the target GGUF metadata is inspected. A companion MTP model creates a second target-shaped context. A separate classic drafter is estimated from its own GGUF, while embedded MTP is detected from the target's NextN metadata.</p>
+            </div>
+
             <div className="doc-section" id="func-validatechatrequest">
               <h4>ValidateChatRequest</h4>
               <pre className="code-block">
@@ -2183,6 +2191,7 @@ export default function DocsSDKModel() {
                 <li><a href="#func-recurrentstatecopies">RecurrentStateCopies</a></li>
                 <li><a href="#func-registerparser">RegisterParser</a></li>
                 <li><a href="#func-setembeddingsprenorm">SetEmbeddingsPreNorm</a></li>
+                <li><a href="#func-speculativecontextcount">SpeculativeContextCount</a></li>
                 <li><a href="#func-validatechatrequest">ValidateChatRequest</a></li>
                 <li><a href="#func-validatemessages">ValidateMessages</a></li>
                 <li><a href="#func-verifyartifact">VerifyArtifact</a></li>

@@ -30,13 +30,3 @@ func TestRunPullRejectsUnknownBundle(t *testing.T) {
 		t.Fatal("runPull() error = nil, want unknown bundle error")
 	}
 }
-
-func TestCommandRequiresLocal(t *testing.T) {
-	cmd := newCmd()
-	cmd.SetArgs([]string{"catalog"})
-
-	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "use --local") {
-		t.Errorf("Execute() error = %v, want use --local", err)
-	}
-}

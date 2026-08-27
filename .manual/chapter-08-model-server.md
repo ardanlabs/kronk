@@ -112,7 +112,7 @@ Common settings can be supplied as flags or environment variables:
 | `--os` | `KRONK_OS` | Host operating system | Library-bundle operating-system override |
 | `--bucky-lib-path` | `KRONK_BUCKY_LIB_PATH` | Detected bundle under `<base>/bucky-libraries` | Exact whisper.cpp library directory |
 | `--model-config-file` | `KRONK_POOL_MODEL_CONFIG_FILE` | `<base>/models/model_config.yaml` | Per-model overrides |
-| `--budget-percent` | `KRONK_POOL_BUDGET_PERCENT` | `95` | Memory-budget input for loaded models |
+| `--budget-percent` | `KRONK_POOL_BUDGET_PERCENT` | `90` | Memory-budget input for loaded models |
 | `--models-in-pool` | `KRONK_POOL_MODELS_IN_POOL` | `10` | Maximum loaded entries in each model pool |
 | `--pool-ttl` | `KRONK_POOL_TTL` | `0m` | Idle model retention time; `0` disables idle expiration |
 | `--web-admin-enabled` | `KRONK_WEB_ADMIN_ENABLED` | `true` | Serve the BUI under `/admin/` |
@@ -182,8 +182,8 @@ request. Three settings govern retention:
   does not prevent eviction caused by the pool-count limit, memory pressure,
   explicit unload, or server shutdown.
 
-At the default `budget-percent: 95`, each discrete GPU receives a 95% budget
-minus 256 MiB of headroom. Host RAM receives a 90% budget because Kronk reserves
+At the default `budget-percent: 90`, each discrete GPU receives a 90% budget
+minus 256 MiB of headroom. Host RAM receives an 85% budget because Kronk reserves
 an additional five percentage points for the operating system, allocators, and
 memory not represented in model estimates. Apple Silicon unified memory is
 accounted as one host-memory pool rather than independent RAM and Metal VRAM.
@@ -192,6 +192,14 @@ Admission uses predicted model, KV-cache, and runtime memory. These predictions
 are planning estimates, not a guarantee that every backend allocation will
 succeed. Context size, cache types, sequence count, CPU offload, and model
 architecture all affect the estimate.
+
+After a model and its target, draft/MTP, and projection contexts are initialized,
+Kronk checks the backend's live free-memory report before publishing the model to
+the pool. Metal, CUDA, and ROCm loads that no longer retain the configured
+headroom are unloaded and rejected with an insufficient-memory error. Vulkan is
+logged as advisory because drivers without the memory-budget extension can
+report the entire heap as free. CPU backends do not expose a portable live-memory
+value and skip this check.
 
 On multi-GPU systems, Kronk accounts for llama.cpp's model distribution across
 the selected devices. Automatic splits use available GPUs, while explicit
@@ -266,7 +274,7 @@ kms:
     service-name: kronk
     probability: 0.25
   pool:
-    budget-percent: 95
+    budget-percent: 90
     models-in-pool: 10
     ttl: 0m
   base-path: ""

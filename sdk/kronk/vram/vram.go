@@ -66,6 +66,7 @@ type Config struct {
 	VTransposed            bool  // Size V using the model-wide transposed layout.
 	RecurrentStateCopies   int64 // State copies for separate-model or companion-MTP speculation.
 	EmbeddedMTPStateCopies int64 // State copies when the GGUF contains an embedded MTP layer.
+	ComputeContexts        int64 // Native contexts that reserve independent compute buffers.
 }
 
 // Input contains all parameters needed to calculate VRAM requirements.
@@ -95,6 +96,7 @@ type Input struct {
 	NUBatch              int64                 // Effective physical batch size.
 	KVUnified            bool                  // Whether all sequence slots share one KV pool.
 	EmbeddingLength      int64                 // needed for compute buffer estimate
+	ComputeContexts      int64                 // Native contexts that reserve independent compute buffers.
 	MoE                  *gguf.MoEInfo         //
 	Weights              *gguf.WeightBreakdown //
 	GPULayers            int64                 // Number of layers on GPU (0 = all, -1 = none)
@@ -239,7 +241,8 @@ func Calculate(input Input) Result {
 		}
 	}
 
-	computeBufferEst := EstimateComputeBuffer(input)
+	computeContexts := max(input.ComputeContexts, 1)
+	computeBufferEst := EstimateComputeBuffer(input) * computeContexts
 
 	var kvVRAMBytes, kvCPUBytes int64
 	gpuLayerStart := input.BlockCount - gpuLayers

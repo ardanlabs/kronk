@@ -41,7 +41,7 @@ import (
 // least one must be supplied; either may be nil to disable that
 // backend (the corresponding p.Kronk / p.Bucky will be nil).
 //
-// BudgetPercent feeds the shared resman.Manager (defaults to 95 when
+// BudgetPercent feeds the shared resman.Manager (defaults to 90 when
 // zero). ModelsInPool applies to both backend pools and defaults to 10
 // when zero. TTL also applies to both pools; zero disables idle
 // expiration and negative values are invalid.

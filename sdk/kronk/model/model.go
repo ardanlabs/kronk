@@ -1559,6 +1559,7 @@ func calculateVRAMDiag(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory in
 		SWAFull:                effectiveSWAFull(cfg.PtrSWAFull, llama.ContextDefaultParams().SwaFull != 0),
 		RecurrentStateCopies:   RecurrentStateCopies(cfg, false),
 		EmbeddedMTPStateCopies: RecurrentStateCopies(cfg, true),
+		ComputeContexts:        SpeculativeContextCount(cfg),
 	}
 	swaFull := vramCfg.SWAFull
 

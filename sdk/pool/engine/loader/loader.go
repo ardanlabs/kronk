@@ -63,6 +63,13 @@ type Preparer interface {
 	Prepare(ctx context.Context, req LoadRequest) (any, error)
 }
 
+// Validator is an optional loader extension for checking a fully initialized
+// handle before the pool publishes it. The pool unloads the handle and releases
+// its reservation when validation fails.
+type Validator[H Handle] interface {
+	Validate(ctx context.Context, req LoadRequest, h H) error
+}
+
 // Display is the per-handle observability data ModelStatus surfaces.
 // Backends with no concept of a particular field return 0 for that
 // field (Slots returns 1).
