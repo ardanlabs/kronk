@@ -127,6 +127,7 @@ Here are some of the known compatible versions:
 
 | stable-diffusion.cpp | malina | kronk    | Notes          |
 | -------------------- | ------ | -------- | -------------- |
+| master-830-50d6405   | v1.0.5 | v1.32.2+ | (experimental) |
 | master-827-97d2990   | v1.0.4 | v1.31.8+ | (experimental) |
 | master-813-bfbef5b   | v1.0.2 | v1.30.7+ | (experimental) |
 
