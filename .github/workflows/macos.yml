@@ -12,9 +12,20 @@ on:
       - ".github/workflows/macos.yml"
       - ".github/actions/setup-kronk/**"
       - ".github/test-models.txt"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - ".go-version"
+      - ".github/workflows/macos.yml"
+      - ".github/actions/setup-kronk/**"
+      - ".github/test-models.txt"
   workflow_dispatch:
 
-# Do not run untrusted pull-request code on the persistent self-hosted runner.
+# The job below blocks forked pull requests from the persistent self-hosted runner.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -29,6 +40,7 @@ env:
 jobs:
   tests:
     name: Tests
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, macOS, ARM64, sand]
     timeout-minutes: 90
     steps:
