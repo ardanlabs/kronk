@@ -185,6 +185,18 @@ func TestAdditionalMemoryAccountsForProjectionAndCompanionMTPFiles(t *testing.T)
 		t.Errorf("discrete bytes: got VRAM=%d RAM=%d, want VRAM=300 RAM=0", vramBytes, ramBytes)
 	}
 
+	vramBytes, ramBytes, err = discrete.additionalMemory(model.Config{
+		ProjFile:       projection,
+		MTPDrafterFile: mtp,
+		Speculation:    model.SpeculationDisabled,
+	}, vram.Config{})
+	if err != nil {
+		t.Fatalf("additionalMemory disabled speculation: %v", err)
+	}
+	if vramBytes != 100 || ramBytes != 0 {
+		t.Errorf("disabled speculation bytes: got VRAM=%d RAM=%d, want VRAM=100 RAM=0", vramBytes, ramBytes)
+	}
+
 	unifiedRM, err := resman.New(resman.Config{
 		Snapshot: resman.Snapshot{RAMBytes: 1 << 30, UnifiedMemory: true},
 	})
