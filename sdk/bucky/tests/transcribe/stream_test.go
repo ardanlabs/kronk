@@ -107,6 +107,92 @@ func Test_StreamTranscribe(t *testing.T) {
 	})
 }
 
+// Test_StreamSileroVAD verifies that the cataloged Silero model can drive
+// streaming final boundaries and can be reused after Reset. The fixed commit
+// intervals are set beyond the test audio, so a Final before Close proves the
+// model-backed VAD path detected the speech-to-silence transition.
+func Test_StreamSileroVAD(t *testing.T) {
+	if len(testlib.MPSileroVAD.ModelFiles) == 0 {
+		t.Skip("model ggml-silero-v5.1.2.bin not downloaded")
+	}
+
+	testlib.WithWhisper(t, testlib.CfgTinyEn(), func(t *testing.T, w *bucky.Bucky) {
+		samples := testlib.LoadSamples(t, testlib.AudioFile)
+		samples = append(samples, make([]float32, 16000)...)
+
+		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
+		defer cancel()
+
+		s, err := w.NewStream(ctx,
+			model.WithStreamLanguage("en"),
+			model.WithPartialEveryMs(-1),
+			model.WithCommitEveryMs(100000),
+			model.WithMaxUtteranceMs(100000),
+			model.WithVADModel(testlib.MPSileroVAD.ModelFiles[0]),
+		)
+		if err != nil {
+			t.Fatalf("NewStream: %v", err)
+		}
+		defer s.Close()
+
+		finalC := make(chan model.Event, 2)
+		errC := make(chan error, 1)
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			for ev := range s.Events() {
+				switch ev.Kind {
+				case model.EventFinal:
+					finalC <- ev
+				case model.EventError:
+					errC <- ev.Err
+				}
+			}
+		}()
+
+		waitForFinal := func() model.Event {
+			t.Helper()
+			select {
+			case ev := <-finalC:
+				return ev
+			case err := <-errC:
+				t.Fatalf("stream error: %v", err)
+			case <-ctx.Done():
+				t.Fatalf("waiting for VAD Final: %v", ctx.Err())
+			}
+			return model.Event{}
+		}
+
+		if err := s.Feed(ctx, samples); err != nil {
+			t.Fatalf("Feed first session: %v", err)
+		}
+		first := waitForFinal()
+		if first.Text == "" {
+			t.Fatal("first VAD Final: got empty text")
+		}
+
+		if err := s.Reset(ctx, model.WithFlushPending(false)); err != nil {
+			t.Fatalf("Reset: %v", err)
+		}
+		if err := s.Feed(ctx, samples); err != nil {
+			t.Fatalf("Feed after Reset: %v", err)
+		}
+		second := waitForFinal()
+		if second.Text == "" {
+			t.Fatal("VAD Final after Reset: got empty text")
+		}
+
+		if err := s.Close(); err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+		<-done
+
+		if got := w.ActiveStreams(); got != 0 {
+			t.Errorf("ActiveStreams after Close: got %d, want 0", got)
+		}
+	})
+}
+
 // Test_StreamReset verifies a single stream is reusable across logical
 // sessions: after transcribing JFK, Reset clears all state, and a second
 // pass over the same audio still produces the phrase with no bleed-over.

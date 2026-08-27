@@ -11,7 +11,10 @@ example-bucky:
 	cd examples && go run ./bucky/main.go
 
 example-bucky-stream:
-	cd examples && go run ./bucky-stream/main.go
+	cd examples && go run ./bucky-stream/main.go $(ARGS)
+
+example-bucky-stream-vad:
+	$(MAKE) example-bucky-stream ARGS="--silero-vad --vad-threshold=0.5"
 
 example-bucky-diar:
 	cd examples && go run ./bucky-diar/main.go

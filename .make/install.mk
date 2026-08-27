@@ -107,6 +107,8 @@ install-test-models: install-kronk
 	@echo ========== INSTALL BUCKY MODELS ==========
 	kronk bucky model pull --local "ggml-tiny.bin"
 	@echo
+	kronk bucky model pull --local "silero-vad"
+	@echo
 	@echo ========== INSTALL MALINA MODELS ==========
 	kronk malina model pull --local "sd-1.5"
 	@echo

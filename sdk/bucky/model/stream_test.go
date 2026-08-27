@@ -769,6 +769,54 @@ func TestDetectSilenceEnergy(t *testing.T) {
 	}
 }
 
+func TestStreamVADObserve(t *testing.T) {
+	vad := streamVAD{
+		threshold:         0.5,
+		negativeThreshold: 0.35,
+		minSpeechMs:       250,
+		minSilenceMs:      100,
+	}
+
+	for _, probability := range []float32{0.1, 0.2} {
+		if vad.observe(probability) {
+			t.Fatalf("observe(%v): pure silence reported as end of speech", probability)
+		}
+	}
+	for range 10 {
+		if vad.observe(0.6) {
+			t.Fatal("observe: speech reported as end of speech")
+		}
+	}
+	for _, probability := range []float32{0.4, 0.3, 0.4, 0.4, 0.4} {
+		if vad.observe(probability) {
+			t.Fatalf("observe(%v): detected silence too early", probability)
+		}
+	}
+
+	if !vad.observe(0.4) {
+		t.Fatal("observe: did not detect silence after the minimum duration")
+	}
+
+	vad = streamVAD{
+		threshold:         0.5,
+		negativeThreshold: 0.35,
+		minSpeechMs:       250,
+		minSilenceMs:      100,
+	}
+	for range 10 {
+		if vad.observe(0.1) {
+			t.Fatal("observe: pure silence reported as end of speech")
+		}
+	}
+
+	vad.observe(0.6)
+	for range 10 {
+		if vad.observe(0.1) {
+			t.Fatal("observe: short speech reported as an utterance")
+		}
+	}
+}
+
 func TestSamplesMsRoundTrip(t *testing.T) {
 	if got := samplesForMs(1000); got != 16000 {
 		t.Fatalf("samplesForMs(1000): got %d, want 16000", got)

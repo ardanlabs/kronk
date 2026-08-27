@@ -407,6 +407,17 @@ export default function DocsSDKBuckyModel() {
 	// eager to cut. 0 = 0.6.
 	VADThreshold float32
 
+	// VADModelPath enables whisper.cpp's Silero VAD in place of the
+	// built-in energy-ratio detector. It must identify a compatible VAD
+	// model such as ggml-silero-v5.1.2.bin. Empty keeps the built-in
+	// detector and requires no additional model.
+	VADModelPath string
+
+	// VADSpeechThreshold overrides the Silero speech probability threshold
+	// when > 0. Zero leaves whisper.cpp's VAD default in place. It is only
+	// used when VADModelPath is set.
+	VADSpeechThreshold float32
+
 	// DisablePromptCarryover turns OFF the cross-window prompt-token
 	// continuity. By default (zero value) each committed window's tail
 	// tokens are harvested and seeded into the next window's decode, the
@@ -690,7 +701,7 @@ export default function DocsSDKBuckyModel() {
               <pre className="code-block">
                 <code>func (s *Stream) Reset(ctx context.Context, opts ...ResetOption) error</code>
               </pre>
-              <p className="doc-description">Reset clears the audio buffer and rolling linguistic context so the same Stream can begin a fresh logical session WITHOUT releasing its pool slot or worker. The whisper.State, pool slot, Events channel, and ActiveStreams count all survive; the energy-VAD state is cleared. Behavior is tunable via ResetOption. Reset blocks until any in-flight decode finishes and the worker has applied the reset.</p>
+              <p className="doc-description">Reset clears the audio buffer and rolling linguistic context so the same Stream can begin a fresh logical session WITHOUT releasing its pool slot or worker. The whisper.State, pool slot, Events channel, and ActiveStreams count all survive; voice-activity detection state is cleared. Behavior is tunable via ResetOption. Reset blocks until any in-flight decode finishes and the worker has applied the reset.</p>
             </div>
           </div>
         </div>

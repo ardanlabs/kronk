@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math"
 	"sync"
@@ -25,6 +26,7 @@ const (
 const (
 	heartbeatInterval = 100 * time.Millisecond // worker poll cadence
 	vadTailMs         = 700                    // trailing window measured for silence
+	vadFrameSamples   = 512                    // Silero v5.1.2 frame size at 16 kHz (32 ms)
 	minNewAudioMs     = 200                    // skip a partial re-decode below this much new audio
 	speechFloor       = 1e-4                   // mean energy below this is treated as no speech
 	inChanBatches     = 64                     // Feed backpressure: queued batches before Feed blocks
@@ -196,6 +198,17 @@ type StreamConfig struct {
 	// eager to cut. 0 = 0.6.
 	VADThreshold float32
 
+	// VADModelPath enables whisper.cpp's Silero VAD in place of the
+	// built-in energy-ratio detector. It must identify a compatible VAD
+	// model such as ggml-silero-v5.1.2.bin. Empty keeps the built-in
+	// detector and requires no additional model.
+	VADModelPath string
+
+	// VADSpeechThreshold overrides the Silero speech probability threshold
+	// when > 0. Zero leaves whisper.cpp's VAD default in place. It is only
+	// used when VADModelPath is set.
+	VADSpeechThreshold float32
+
 	// DisablePromptCarryover turns OFF the cross-window prompt-token
 	// continuity. By default (zero value) each committed window's tail
 	// tokens are harvested and seeded into the next window's decode, the
@@ -341,6 +354,18 @@ func WithVADThreshold(v float32) StreamOption {
 	return func(c *StreamConfig) { c.VADThreshold = v }
 }
 
+// WithVADModel enables whisper.cpp's Silero VAD using the model at path.
+// An empty path keeps the built-in energy-ratio detector.
+func WithVADModel(path string) StreamOption {
+	return func(c *StreamConfig) { c.VADModelPath = path }
+}
+
+// WithVADSpeechThreshold overrides the Silero speech probability threshold.
+// It is only used when WithVADModel enables model-backed VAD.
+func WithVADSpeechThreshold(v float32) StreamOption {
+	return func(c *StreamConfig) { c.VADSpeechThreshold = v }
+}
+
 // WithPromptCarryover toggles cross-window prompt-token continuity
 // (the manual condition_on_previous_text). Carryover is ON by default;
 // pass false to decode each window independently and stop a committed
@@ -447,6 +472,7 @@ type Stream struct {
 	cfg     StreamConfig
 	decode  transcribeFunc
 	release func()
+	vad     *streamVAD
 
 	inC    chan []float32
 	events chan Event
@@ -491,6 +517,15 @@ func (m *Model) NewStream(ctx context.Context, onClose func(), opts ...StreamOpt
 		return nil, fmt.Errorf("new-stream: %w", err)
 	}
 
+	var vad *streamVAD
+	if !cfg.DisableVAD && cfg.VADModelPath != "" {
+		vad, err = newStreamVAD(cfg, m.cfg)
+		if err != nil {
+			m.pool.release(ps)
+			return nil, fmt.Errorf("new-stream: %w", err)
+		}
+	}
+
 	decode := func(samples []float32, firstWindow bool, prompt []whisper.Token) (Transcription, []whisper.Token, error) {
 		tcfg := streamTranscribeConfig(cfg, prompt)
 		if firstWindow {
@@ -511,13 +546,16 @@ func (m *Model) NewStream(ctx context.Context, onClose func(), opts ...StreamOpt
 	}
 
 	release := func() {
+		if vad != nil {
+			vad.close()
+		}
 		m.pool.release(ps)
 		if onClose != nil {
 			onClose()
 		}
 	}
 
-	return newStream(cfg, decode, release), nil
+	return newStreamWithVAD(cfg, decode, release, vad), nil
 }
 
 func streamTranscribeConfig(cfg StreamConfig, prompt []whisper.Token) TranscribeConfig {
@@ -542,10 +580,15 @@ func streamTranscribeConfig(cfg StreamConfig, prompt []whisper.Token) Transcribe
 // It never fails, so it is the unit-test entry point: tests pass a fake
 // decode and a no-op release.
 func newStream(cfg StreamConfig, decode transcribeFunc, release func()) *Stream {
+	return newStreamWithVAD(cfg, decode, release, nil)
+}
+
+func newStreamWithVAD(cfg StreamConfig, decode transcribeFunc, release func(), vad *streamVAD) *Stream {
 	s := Stream{
 		cfg:         cfg,
 		decode:      decode,
 		release:     release,
+		vad:         vad,
 		inC:         make(chan []float32, inChanBatches),
 		events:      make(chan Event, eventsBuffer),
 		resetC:      make(chan resetReq),
@@ -688,7 +731,7 @@ func (s *Stream) Events() <-chan Event {
 // Reset clears the audio buffer and rolling linguistic context so the
 // same Stream can begin a fresh logical session WITHOUT releasing its
 // pool slot or worker. The whisper.State, pool slot, Events channel, and
-// ActiveStreams count all survive; the energy-VAD state is cleared.
+// ActiveStreams count all survive; voice-activity detection state is cleared.
 //
 // Behavior is tunable via ResetOption. Reset blocks until any in-flight
 // decode finishes and the worker has applied the reset.
@@ -792,12 +835,23 @@ func (s *Stream) process() error {
 		return nil
 	}
 
-	switch {
-	case len(s.buf) >= samplesForMs(s.cfg.MaxUtteranceMs):
+	if len(s.buf) >= samplesForMs(s.cfg.MaxUtteranceMs) {
 		return s.commit()
-	case !s.cfg.DisableVAD && detectSilenceEnergy(s.buf, vadTailMs, s.cfg.VADThreshold):
+	}
+
+	if s.vad != nil {
+		silence, err := s.vad.detect(s.buf)
+		if err != nil {
+			return err
+		}
+		if silence {
+			return s.commit()
+		}
+	} else if !s.cfg.DisableVAD && detectSilenceEnergy(s.buf, vadTailMs, s.cfg.VADThreshold) {
 		return s.commit()
-	case len(s.buf) >= samplesForMs(s.cfg.CommitEveryMs):
+	}
+
+	if len(s.buf) >= samplesForMs(s.cfg.CommitEveryMs) {
 		return s.commit()
 	}
 
@@ -849,6 +903,9 @@ func (s *Stream) commit() error {
 	s.buf = tail
 	s.lastDecode = 0
 	s.lastPartial = time.Time{}
+	if s.vad != nil {
+		s.vad.reset()
+	}
 
 	return nil
 }
@@ -890,6 +947,9 @@ func (s *Stream) doReset(rc ResetConfig) error {
 	s.lastDecode = 0
 	s.firstWindow = true
 	s.lastPartial = time.Time{}
+	if s.vad != nil {
+		s.vad.reset()
+	}
 	if !rc.KeepPromptTokens {
 		s.promptTokens = s.promptTokens[:0]
 	}
@@ -945,6 +1005,122 @@ func (s *Stream) emitFinal(tr Transcription) {
 
 // =============================================================================
 // Helpers
+
+// streamVAD owns one Silero VAD context and the incremental end-of-speech
+// state for a Stream. The worker is its only caller.
+type streamVAD struct {
+	ctx               whisper.VadContext
+	threshold         float32
+	negativeThreshold float32
+	minSpeechMs       int
+	minSilenceMs      int
+	processed         int
+	seenSpeech        bool
+	speechFrames      int
+	silenceFrames     int
+}
+
+func newStreamVAD(cfg StreamConfig, modelCfg Config) (*streamVAD, error) {
+	contextParams := whisper.VadDefaultContextParams()
+	if cfg.NThreads > 0 {
+		contextParams.NThreads = cfg.NThreads
+	} else if modelCfg.NThreads > 0 {
+		contextParams.NThreads = modelCfg.NThreads
+	}
+	// Keep the small VAD model on CPU. A second Metal-backed context can
+	// conflict with the loaded Whisper model's pre-allocated scheduler
+	// buffers, while Silero's CPU cost is negligible.
+	contextParams.UseGPU = 0
+
+	ctx, err := whisper.VadInitFromFileWithParams(cfg.VADModelPath, contextParams)
+	if err != nil {
+		return nil, fmt.Errorf("init VAD model %q: %w", cfg.VADModelPath, err)
+	}
+
+	params := whisper.VadDefaultParams()
+	if cfg.VADSpeechThreshold > 0 {
+		params.Threshold = cfg.VADSpeechThreshold
+	}
+
+	vad := streamVAD{
+		ctx:               ctx,
+		threshold:         params.Threshold,
+		negativeThreshold: max(params.Threshold-0.15, 0.01),
+		minSpeechMs:       int(params.MinSpeechDurationMs),
+		minSilenceMs:      int(params.MinSilenceDurationMs),
+	}
+
+	return &vad, nil
+}
+
+func (vad *streamVAD) detect(samples []float32) (bool, error) {
+	for len(samples)-vad.processed >= vadFrameSamples {
+		frame := samples[vad.processed : vad.processed+vadFrameSamples]
+		vad.processed += vadFrameSamples
+
+		if !whisper.VadDetectSpeechNoReset(vad.ctx, frame) {
+			return false, errors.New("detect speech with VAD model")
+		}
+
+		probs := whisper.VadProbs(vad.ctx)
+		if len(probs) != 1 {
+			return false, fmt.Errorf("detect speech with VAD model: got %d probabilities for one frame", len(probs))
+		}
+		if vad.observe(probs[0]) {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+func (vad *streamVAD) observe(probability float32) bool {
+	if probability >= vad.threshold {
+		if vad.seenSpeech {
+			vad.speechFrames++
+		}
+		vad.seenSpeech = true
+		vad.silenceFrames = 0
+		return false
+	}
+	if !vad.seenSpeech {
+		return false
+	}
+
+	if vad.silenceFrames == 0 {
+		vad.speechFrames++
+		if probability < vad.negativeThreshold {
+			vad.silenceFrames = 1
+		}
+		return false
+	}
+
+	if msForSamples(vad.silenceFrames*vadFrameSamples) >= int64(vad.minSilenceMs) {
+		if msForSamples(vad.speechFrames*vadFrameSamples) > int64(vad.minSpeechMs) {
+			return true
+		}
+		vad.seenSpeech = false
+		vad.speechFrames = 0
+		vad.silenceFrames = 0
+		return false
+	}
+	vad.silenceFrames++
+
+	return false
+}
+
+func (vad *streamVAD) reset() {
+	whisper.VadResetState(vad.ctx)
+	vad.processed = 0
+	vad.seenSpeech = false
+	vad.speechFrames = 0
+	vad.silenceFrames = 0
+}
+
+func (vad *streamVAD) close() {
+	whisper.VadFree(vad.ctx)
+	vad.ctx = 0
+}
 
 // detectSilenceEnergy reports whether the trailing tailMs of samples is
 // quiet relative to the whole window, indicating an end of speech. It is
