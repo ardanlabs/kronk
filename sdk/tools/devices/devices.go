@@ -105,10 +105,8 @@ func List(opts ...Option) Devices {
 
 	count := llama.GGMLBackendDeviceCount()
 
-	out := Devices{
-		UnifiedMemory: runtime.GOOS == "darwin" && runtime.GOARCH == "arm64",
-
-		Devices: make([]DeviceInfo, 0, count)}
+	out := Devices{Devices: make([]DeviceInfo, 0, count)}
+	var unifiedGPUs, discreteGPUs int
 
 	for i := range count {
 		dev := llama.GGMLBackendDeviceGet(i)
@@ -146,11 +144,14 @@ func List(opts ...Option) Devices {
 		if strings.HasPrefix(devType, "gpu_") {
 			out.GPUCount++
 			out.GPUTotalBytes += di.TotalBytes
-		}
-		if devType == "gpu_metal" {
-			out.UnifiedMemory = true
+			if usesUnifiedMemory(hardwareType, devType) {
+				unifiedGPUs++
+			} else {
+				discreteGPUs++
+			}
 		}
 	}
+	out.UnifiedMemory = unifiedGPUs > 0 && discreteGPUs == 0
 
 	out.SupportsGPUOffload = llama.SupportsGpuOffload()
 	out.MaxDevices = llama.MaxDevices()
@@ -196,4 +197,8 @@ func classifyDeviceType(deviceType llama.GGMLBackendDeviceType, backend string) 
 	default:
 		return "unknown"
 	}
+}
+
+func usesUnifiedMemory(deviceType llama.GGMLBackendDeviceType, classifiedType string) bool {
+	return deviceType == llama.GGMLBackendDeviceTypeIGPU || classifiedType == "gpu_metal"
 }

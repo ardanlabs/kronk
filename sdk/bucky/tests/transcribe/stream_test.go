@@ -14,17 +14,14 @@ import (
 // feedChunks feeds samples into s in chunkMs-sized blocks, pacing the
 // producer so the worker sees audio arriving over time the way a live
 // microphone delivers it.
-func feedChunks(t *testing.T, s *model.Stream, samples []float32, chunkMs int) {
+func feedChunks(ctx context.Context, t *testing.T, s *model.Stream, samples []float32, chunkMs int) {
 	t.Helper()
 
 	chunk := chunkMs * 16000 / 1000
 	for off := 0; off < len(samples); off += chunk {
 		end := min(off+chunk, len(samples))
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		err := s.Feed(ctx, samples[off:end])
-		cancel()
-		if err != nil {
+		if err := s.Feed(ctx, samples[off:end]); err != nil {
 			t.Fatalf("Feed: %v", err)
 		}
 
@@ -79,7 +76,7 @@ func Test_StreamTranscribe(t *testing.T) {
 			text, partials, finals, errs, lastErr = collectTranscript(s)
 		}()
 
-		feedChunks(t, s, samples, 100)
+		feedChunks(ctx, t, s, samples, 100)
 
 		if err := s.Close(); err != nil {
 			t.Fatalf("Close: %v", err)
@@ -243,7 +240,7 @@ func Test_StreamReset(t *testing.T) {
 			}
 		}()
 
-		feedChunks(t, s, samples, 100)
+		feedChunks(ctx, t, s, samples, 100)
 
 		// Reset (default flush) commits the first session and clears state.
 		if err := s.Reset(ctx); err != nil {
@@ -257,7 +254,7 @@ func Test_StreamReset(t *testing.T) {
 		}
 
 		// Second session over the same audio.
-		feedChunks(t, s, samples, 100)
+		feedChunks(ctx, t, s, samples, 100)
 
 		if err := s.Close(); err != nil {
 			t.Fatalf("Close: %v", err)
@@ -301,7 +298,7 @@ func Test_StreamUnloadDrain(t *testing.T) {
 
 	// Feed a little audio so the stream is genuinely active.
 	half := samples[:len(samples)/2]
-	feedChunks(t, s, half, 100)
+	feedChunks(ctx, t, s, half, 100)
 
 	if got := w.ActiveStreams(); got == 0 {
 		t.Fatal("ActiveStreams: never observed > 0 with open stream")

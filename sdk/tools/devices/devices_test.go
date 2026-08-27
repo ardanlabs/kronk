@@ -64,3 +64,26 @@ func TestClassifyDeviceType(t *testing.T) {
 		})
 	}
 }
+
+func TestUsesUnifiedMemory(t *testing.T) {
+	tests := []struct {
+		name           string
+		deviceType     llama.GGMLBackendDeviceType
+		classifiedType string
+		want           bool
+	}{
+		{"Vulkan integrated GPU", llama.GGMLBackendDeviceTypeIGPU, "gpu_vulkan", true},
+		{"ROCm integrated GPU", llama.GGMLBackendDeviceTypeIGPU, "gpu_rocm", true},
+		{"Metal GPU", llama.GGMLBackendDeviceTypeGPU, "gpu_metal", true},
+		{"Vulkan discrete GPU", llama.GGMLBackendDeviceTypeGPU, "gpu_vulkan", false},
+		{"CPU", llama.GGMLBackendDeviceTypeCPU, "cpu", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := usesUnifiedMemory(tt.deviceType, tt.classifiedType); got != tt.want {
+				t.Errorf("usesUnifiedMemory(%s, %q) = %t, want %t", tt.deviceType, tt.classifiedType, got, tt.want)
+			}
+		})
+	}
+}
