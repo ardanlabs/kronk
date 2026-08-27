@@ -1,31 +1,8 @@
 name: macOS
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "**.go"
-      - "go.mod"
-      - "go.sum"
-      - ".go-version"
-      - ".github/workflows/macos.yml"
-      - ".github/actions/setup-kronk/**"
-      - ".github/test-models.txt"
-  pull_request:
-    branches:
-      - main
-    paths:
-      - "**.go"
-      - "go.mod"
-      - "go.sum"
-      - ".go-version"
-      - ".github/workflows/macos.yml"
-      - ".github/actions/setup-kronk/**"
-      - ".github/test-models.txt"
   workflow_dispatch:
 
-# The job below blocks forked pull requests from the persistent self-hosted runner.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -39,7 +16,6 @@ env:
 jobs:
   static:
     name: Static checks
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, macOS, ARM64, sand]
     steps:
       - name: Checkout
@@ -98,7 +74,6 @@ jobs:
 
   race:
     name: Race detector (sdk unit packages)
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, macOS, ARM64, sand]
     timeout-minutes: 30
     steps:
@@ -120,7 +95,6 @@ jobs:
 
   api-tests:
     name: api/service tests
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, macOS, ARM64, sand]
     timeout-minutes: 30
     permissions:
@@ -168,7 +142,6 @@ jobs:
 
   sdk-tests:
     name: sdk tests
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, macOS, ARM64, sand]
     timeout-minutes: 30
     steps:
