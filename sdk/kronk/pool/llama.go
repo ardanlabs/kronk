@@ -155,7 +155,7 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 
 	// Map the calculator's GPU/CPU split onto resman buckets.
 	//
-	// Unified memory (Apple Silicon Metal) is special-cased first.
+	// Unified memory is special-cased first.
 	// The GPU and CPU share one physical pool, and llama.cpp mmaps
 	// the GGUF — so even an MoE model with "experts on CPU" will
 	// eventually have every page resident in the same shared pool

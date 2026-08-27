@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
+	"github.com/ardanlabs/kronk/sdk/tools/devices"
 )
 
 // Common byte-size constants for readable test scenarios.
@@ -126,6 +127,26 @@ func Test_New_IgnoresCPU(t *testing.T) {
 	}
 	if u.Devices[0].Name != "CUDA0" {
 		t.Errorf("device: want CUDA0, got %s", u.Devices[0].Name)
+	}
+}
+
+func TestFromDevicesUnifiedMemoryUsesOnlyRAM(t *testing.T) {
+	snapshot := resman.FromDevices(devices.Devices{
+		Devices: []devices.DeviceInfo{
+			{Name: "Vulkan0", Type: "gpu_vulkan", TotalBytes: 32 * uint64(GiB)},
+		},
+		SystemRAMBytes: 64 * uint64(GiB),
+		UnifiedMemory:  true,
+	})
+
+	if !snapshot.UnifiedMemory {
+		t.Fatal("UnifiedMemory: got false, want true")
+	}
+	if len(snapshot.Devices) != 0 {
+		t.Errorf("Devices: got %d, want 0", len(snapshot.Devices))
+	}
+	if snapshot.RAMBytes != 64*GiB {
+		t.Errorf("RAMBytes: got %d, want %d", snapshot.RAMBytes, 64*GiB)
 	}
 }
 

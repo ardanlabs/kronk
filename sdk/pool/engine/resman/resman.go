@@ -100,24 +100,21 @@ func New(cfg Config) (*Manager, error) {
 // FromDevices builds a Snapshot from a live devices.Devices result. The
 // production wiring uses this to feed the manager from devices.List().
 //
-// On systems with unified memory (Apple Silicon Metal) the GPU and CPU
-// share one physical pool. To avoid double-counting the same bytes against
-// two budgets, FromDevices preserves the device snapshot's UnifiedMemory
-// classification and drops any gpu_metal entries; the manager then tracks
-// only system RAM.
+// On systems with unified memory the GPU and CPU share one physical pool.
+// To avoid double-counting the same bytes against two budgets, FromDevices
+// preserves the device snapshot's UnifiedMemory classification and drops
+// GPU entries; the manager then tracks only system RAM.
 func FromDevices(d devices.Devices) Snapshot {
 	out := Snapshot{
 		RAMBytes:      int64(d.SystemRAMBytes),
 		UnifiedMemory: d.UnifiedMemory,
 	}
+	if out.UnifiedMemory {
+		return out
+	}
 
 	for _, di := range d.Devices {
 		if !strings.HasPrefix(di.Type, "gpu_") {
-			continue
-		}
-
-		if di.Type == "gpu_metal" {
-			out.UnifiedMemory = true
 			continue
 		}
 
@@ -137,7 +134,7 @@ func (m *Manager) HasGPUs() bool {
 }
 
 // UnifiedMemory reports whether the manager was built against a
-// unified-memory snapshot (Apple Silicon Metal). Callers use this to
+// unified-memory snapshot. Callers use this to
 // switch their reservation/display math: on unified-memory systems
 // the GPU and CPU share one physical pool, so charging the
 // MoE-split-aware planner totals (TotalVRAM/TotalSystemRAMEst
