@@ -27,6 +27,21 @@ func TestEstimateComputeBufferUsesNUBatch(t *testing.T) {
 	}
 }
 
+func TestCalculateChargesEveryComputeContext(t *testing.T) {
+	input := Input{
+		ModelSizeBytes:  100,
+		NUBatch:         DefaultNUBatch,
+		EmbeddingLength: 4096,
+		ComputeContexts: 2,
+	}
+
+	result := Calculate(input)
+	want := 2 * EstimateComputeBuffer(input)
+	if result.ComputeBufferEst != want {
+		t.Errorf("ComputeBufferEst: got %d, want %d", result.ComputeBufferEst, want)
+	}
+}
+
 func TestAutoFitCPUOnly(t *testing.T) {
 	const mib = 1024 * 1024
 

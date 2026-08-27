@@ -45,7 +45,7 @@ version: 1
 #     service-name: kronk
 #     probability: 0.25
 #   pool:
-#     budget-percent: 95
+#     budget-percent: 90
 #     models-in-pool: 10
 #     ttl: 0m
 #   base-path: ""

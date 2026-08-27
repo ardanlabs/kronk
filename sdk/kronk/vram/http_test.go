@@ -148,6 +148,9 @@ func TestBuildFromMetadataQwen35Hybrid(t *testing.T) {
 	if got.Input.RecurrentStateCopies != 3 {
 		t.Fatalf("RecurrentStateCopies: got %d, want 3", got.Input.RecurrentStateCopies)
 	}
+	if got.Input.ComputeContexts != 2 {
+		t.Fatalf("ComputeContexts: got %d, want 2", got.Input.ComputeContexts)
+	}
 }
 
 func TestIsFolderURL(t *testing.T) {

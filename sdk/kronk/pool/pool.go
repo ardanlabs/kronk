@@ -203,10 +203,11 @@ func (p *Pool) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, e
 		}
 	}
 
-	return p.engine.Acquire(ctx, loader.LoadRequest{
+	krn, err := p.engine.Acquire(ctx, loader.LoadRequest{
 		ModelID: id.String(),
 		Key:     id.String(),
 	})
+	return krn, translateCapacityError(err)
 }
 
 // AquireCustom will provide a kronk API for a model using a pre-built config.
@@ -233,17 +234,16 @@ func (p *Pool) AquireCustom(ctx context.Context, key string, cfg model.Config) (
 		Key:     key,
 		Custom:  cfg,
 	})
-	if err != nil {
-		// Translate the internal capacity error into the pool's public
-		// sentinel so callers match on pool.ErrNoCapacity without importing
-		// resman. The original error is wrapped to preserve its detail (the
-		// requested vs available VRAM) for logs and debugging.
-		if errors.Is(err, resman.ErrNoCapacity) {
-			return nil, fmt.Errorf("%w: %w", ErrNoCapacity, err)
-		}
-		return nil, err
+	return krn, translateCapacityError(err)
+}
+
+// translateCapacityError exposes resource-manager capacity failures through
+// this package's public sentinel while preserving the detailed original error.
+func translateCapacityError(err error) error {
+	if errors.Is(err, resman.ErrNoCapacity) {
+		return fmt.Errorf("%w: %w", ErrNoCapacity, err)
 	}
-	return krn, nil
+	return err
 }
 
 // ModelConfig returns the loaded per-model configuration overrides.

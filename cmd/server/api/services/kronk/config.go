@@ -103,7 +103,7 @@ func newConfig() config {
 	cfg.Tempo.Host = "localhost:4317"
 	cfg.Tempo.ServiceName = "kronk"
 	cfg.Tempo.Probability = 0.25
-	cfg.Pool.BudgetPercent = 95
+	cfg.Pool.BudgetPercent = 90
 	cfg.Pool.ModelsInPool = 10
 
 	return cfg

@@ -96,6 +96,20 @@ func RecurrentStateCopies(cfg Config, embeddedMTP bool) int64 {
 	return 1
 }
 
+// SpeculativeContextCount returns the native contexts known from configuration
+// before the target GGUF metadata is inspected. A companion MTP model creates
+// a second target-shaped context. A separate classic drafter is estimated from
+// its own GGUF, while embedded MTP is detected from the target's NextN metadata.
+func SpeculativeContextCount(cfg Config) int64 {
+	if cfg.SpeculationMode() == SpeculationDisabled {
+		return 1
+	}
+	if cfg.MTPDrafterFile != "" {
+		return 2
+	}
+	return 1
+}
+
 // mtpNextNLayers returns the number of NextN (MTP) prediction layers
 // declared in the target GGUF's metadata. A return value of 0 means the
 // model does not contain an MTP head and the MTP drafter must not be
