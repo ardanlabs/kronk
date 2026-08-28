@@ -756,23 +756,17 @@ func TestReleaseIMCReservationIfHeld(t *testing.T) {
 	}
 }
 
-// TestIMCSessionCapacity guards the minimum session retention, queue-depth
-// expansion, and admission-capacity invariant. The minimum controls how many
-// conversation prefixes the server can keep warm at once; changing it affects
-// worst-case host RAM use and should be deliberate.
+// TestIMCSessionCapacity guards the admission-capacity invariant used for the
+// default IMC session pool.
 func TestIMCSessionCapacity(t *testing.T) {
-	if imcMinSessionsPerSlot != 3 {
-		t.Errorf("imcMinSessionsPerSlot = %d, want 3", imcMinSessionsPerSlot)
-	}
-
 	tests := []struct {
 		name       string
 		nSlots     int
 		queueDepth int
 		want       int
 	}{
-		{"default retention", 2, 2, 6},
-		{"depth one retains three", 4, 1, 12},
+		{"default retention", 2, 2, 4},
+		{"depth one", 4, 1, 4},
 		{"depth three", 3, 3, 9},
 		{"depth four expands", 2, 4, 8},
 		{"depth seven expands", 3, 7, 21},

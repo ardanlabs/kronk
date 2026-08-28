@@ -406,8 +406,9 @@ An IMC **session** is a reusable conversation identity and its saved model
 state. An execution **slot** is a lane that can actively run a request. These
 are deliberately separate:
 
-- By default, Kronk retains `max(nseq-max, 1) × max(3, queue-depth)` IMC
-  sessions; `imc-session-capacity` can override that count.
+- By default, Kronk retains `max(nseq-max, 1) × queue-depth` working sessions
+  and the same number of System cache entries; `imc-session-capacity` can
+  increase both pool capacities.
 - Only `nseq-max` requests can decode concurrently.
 - A session can be restored into any available execution slot; it is not tied
   permanently to one slot.
@@ -415,9 +416,9 @@ are deliberately separate:
   begin using them.
 
 For example, `nseq-max: 2` with the default `queue-depth: 2` provides two
-concurrent decode slots and six warm IMC session identities. A queue depth
-greater than 3 expands the session pool so it remains at least as large as the
-generation admission capacity. Raising `nseq-max` also adds another full
+concurrent decode slots and four warm IMC session identities. The default
+working-session pool therefore matches generation admission capacity, and the
+System pool has four entries as well. Raising `nseq-max` also adds another full
 `context-window` KV stream and its memory cost, so do not raise it solely to
 retain more conversation branches without considering the effects described in
 [Chapter 4](https://www.kronkai.com/manual#chapter-4-batch-processing).

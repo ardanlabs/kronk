@@ -203,9 +203,9 @@ type AdapterConfig struct {
 // it on, or FlashAttentionDisabled to force it off.
 //
 // IMCSessionCapacity sets the number of reusable IMC session identities. When
-// left unset or set to 0, generation models default to NSeqMax *
-// max(3, QueueDepth). An explicit value must be at least NSeqMax * QueueDepth
-// so every admitted generation request can reserve a session.
+// left unset or set to 0, generation models default to NSeqMax * QueueDepth.
+// An explicit value must be at least that large so every admitted generation
+// request can reserve a session.
 //
 // IncrementalCache enables Incremental Message Caching (IMC) for agentic
 // workflows. It caches all messages except the last one (which triggers

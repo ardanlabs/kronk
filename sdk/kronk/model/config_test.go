@@ -183,7 +183,7 @@ func TestAdjustIMCSessionCapacity(t *testing.T) {
 		cfg  Config
 		want int
 	}{
-		{"derived default", NewConfig(WithNSeqMax(2), WithQueueDepth(2)), 6},
+		{"derived default", NewConfig(WithNSeqMax(2), WithQueueDepth(2)), 4},
 		{"queue expansion", NewConfig(WithNSeqMax(2), WithQueueDepth(4)), 8},
 		{"explicit capacity preserved", NewConfig(WithNSeqMax(2), WithQueueDepth(2), WithIMCSessionCapacity(8)), 8},
 		{"embedding has no session pool", NewConfig(WithModelFiles([]string{"Qwen3-Embedding-0.6B-Q8_0.gguf"}), WithNSeqMax(2), WithQueueDepth(2)), 0},
