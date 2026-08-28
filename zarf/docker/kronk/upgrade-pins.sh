@@ -8,7 +8,7 @@
 #   make deps-upgrade
 #
 # What gets updated:
-#   - ubuntu:24.04 image index digest (3 occurrences)
+#   - ubuntu:24.04 image index digest (4 occurrences)
 #   - nvcr.io/nvidia/l4t-cuda:<tag> image digest
 #   - NODE_SHA256_X64 / NODE_SHA256_ARM64 for the currently pinned NODE_VERSION
 #   - ROCM_KEY_FINGERPRINT from repo.radeon.com

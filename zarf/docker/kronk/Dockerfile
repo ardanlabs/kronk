@@ -461,7 +461,7 @@ ARG KRONK_VERSION="dev"
 #   docker buildx imagetools inspect ubuntu:24.04
 # and copy the index digest from the `Digest:` line. The same digest is
 # reused for the libs-fetcher and runtime stages below.
-FROM --platform=$BUILDPLATFORM ubuntu:24.04@sha256:c4a8d5503dfb2a3eb8ab5f807da5bc69a85730fb49b5cfca2330194ebcc41c7b AS builder
+FROM --platform=$BUILDPLATFORM ubuntu:24.04@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517 AS builder
 
 ARG BUILDPLATFORM
 ARG TARGETOS
@@ -621,7 +621,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 # `kronk libs` is network-bound, not CPU-bound.
 # =============================================================================
 
-FROM ubuntu:24.04@sha256:c4a8d5503dfb2a3eb8ab5f807da5bc69a85730fb49b5cfca2330194ebcc41c7b AS libs-fetcher
+FROM ubuntu:24.04@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517 AS libs-fetcher
 
 ARG TARGETARCH
 ARG LLAMA_PROCESSORS
@@ -679,7 +679,7 @@ RUN set -eux; \
 # llama libs-fetcher under BuildKit.
 # =============================================================================
 
-FROM ubuntu:24.04@sha256:c4a8d5503dfb2a3eb8ab5f807da5bc69a85730fb49b5cfca2330194ebcc41c7b AS bucky-libs-fetcher
+FROM ubuntu:24.04@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517 AS bucky-libs-fetcher
 
 ARG TARGETARCH
 ARG BUCKY_PROCESSORS
@@ -735,7 +735,7 @@ RUN set -eux; \
 # driver libraries surfaced via NVIDIA_* / LD_LIBRARY_PATH.
 # =============================================================================
 
-FROM ubuntu:24.04@sha256:c4a8d5503dfb2a3eb8ab5f807da5bc69a85730fb49b5cfca2330194ebcc41c7b AS runtime
+FROM ubuntu:24.04@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517 AS runtime
 
 ARG KRONK_VERSION
 ARG LLAMA_PROCESSORS
