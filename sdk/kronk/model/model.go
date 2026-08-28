@@ -40,20 +40,8 @@ type compiledTemplate struct {
 	err  error
 }
 
-// imcMinSessionsPerSlot is the minimum per-slot size of the default IMC
-// session pool. With NSeqMax execution slots the default holds NSeqMax *
-// max(imcMinSessionsPerSlot, QueueDepth) cache identities, which decouples
-// how many distinct conversation prefixes the server can keep warm from
-// how many requests can decode in parallel. 3x matches the realistic
-// agentic shape of a driver loop plus a handful of sub-agents plus
-// the occasional side conversation. Session structs cost only a few
-// hundred bytes when idle; the SessionStore backing buffer is
-// allocated lazily on first use, so unused sessions cost essentially
-// nothing.
-const imcMinSessionsPerSlot = 3
-
 func imcSessionCapacity(nSlots, queueDepth int) int {
-	return nSlots * max(imcMinSessionsPerSlot, queueDepth)
+	return nSlots * queueDepth
 }
 
 // imcSeqIDUnbound marks an IMC session that is not currently resident
@@ -215,7 +203,7 @@ type Model struct {
 	unloaded        atomic.Bool
 	decodeMu        sync.Mutex
 	cacheMu         sync.RWMutex
-	imcSessions     []*imcSession     // IMC session pool, sized NSeqMax * max(imcMinSessionsPerSlot, QueueDepth); sessions migrate freely between slots via SessionStore. Idle sessions cost only the struct itself — the SessionStore buffer is allocated lazily on first use.
+	imcSessions     []*imcSession     // IMC session pool, sized by IMCSessionCapacity; sessions migrate freely between slots via SessionStore. Idle sessions cost only the struct itself — the SessionStore buffer is allocated lazily on first use.
 	imcSystemCaches []*imcSystemCache // Immutable system-prompt preload pool with the same capacity as imcSessions.
 	addBOSToken     bool              // Whether to add BOS token (from model metadata)
 	pool            *contextPool      // Context pool for parallel embed/rerank
@@ -765,11 +753,11 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int, plan specu
 	m.mem = mem
 	m.ctxParams.NRsSeq = llama.NRsSeq(lctx)
 
-	// Initialize the IMC session pool. The default retains at least three
-	// sessions per execution slot, while an explicit IMCSessionCapacity lets
-	// operators tune the warm conversation working set independently. Config
-	// validation keeps the identity count at least as large as generation
-	// admission capacity. Actual decode concurrency stays capped at nSlots.
+	// Initialize the IMC session pool. The default matches generation admission
+	// capacity, while an explicit IMCSessionCapacity lets operators retain a
+	// larger warm conversation working set. Config validation keeps the identity
+	// count at least as large as generation admission capacity. Actual decode
+	// concurrency stays capped at nSlots.
 	// Sessions
 	// externalize their KV state via SessionStore so any session can
 	// run on any free slot. The SessionStore backing buffer is
