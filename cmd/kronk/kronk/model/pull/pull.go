@@ -40,14 +40,16 @@ func runWeb(ctx context.Context, source string, projURL string, mtpURL string) e
 		return fmt.Errorf("do: unable to download model: %w", err)
 	}
 
+	prt := newProgressPrinter(os.Stdout, isTerminal(os.Stdout))
+
 	var lastStatus string
 	var downloaded bool
 	for ver := range ch {
-		fmt.Print(ver.Status)
+		prt.print(ver)
 		lastStatus = ver.Status
 		downloaded = downloaded || ver.Downloaded || ver.Status == "downloaded"
 	}
-	fmt.Println()
+	prt.close()
 
 	if err := <-errCh; err != nil {
 		return fmt.Errorf("download stream: %w", err)
