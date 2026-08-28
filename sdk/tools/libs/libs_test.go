@@ -73,11 +73,14 @@ func TestVersionGreater(t *testing.T) {
 		{"b8937", "b8937", false},
 		{"", "b1000", false},
 		{"b1000", "", false},
-		{"v1.0", "1.0", false}, // equal after stripping prefix
-		{"V2", "v1", true},
-		{"10", "9", true}, // numeric, not lexicographic
-		{"9", "10", false},
 		{"b20000", "b8937", true},
+		{"v0.4.1", "v0.4.0", true},
+		{"v0.4.0", "v0.4.1", false},
+		{"v0.4.0-rc.2", "v0.4.0-rc.1", true},
+		{"v0.4.0", "v0.4.0-rc.2", true},
+		{"v0.4.0", "b10675", false},
+		{"b10675", "v0.4.0", false},
+		{"invalid", "v0.4.0", false},
 	}
 
 	for _, tt := range tests {

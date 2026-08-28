@@ -7,20 +7,20 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 )
 
-type qwen35Adapter struct{}
+type qwenHybridAdapter struct{}
 
-func (qwen35Adapter) Name() string { return "qwen35" }
+func (qwenHybridAdapter) Name() string { return "qwen-hybrid" }
 
-func (qwen35Adapter) Claims(architecture string) bool {
+func (qwenHybridAdapter) Claims(architecture string) bool {
 	switch strings.ToLower(architecture) {
-	case "qwen35", "qwen35moe":
+	case "qwen35", "qwen35moe", "qwen4exp":
 		return true
 	default:
 		return false
 	}
 }
 
-func (qwen35Adapter) Apply(metadata metadata, profile *Profile) error {
+func (qwenHybridAdapter) Apply(metadata metadata, profile *Profile) error {
 	profile.MemorySemantics = MemoryRecurrent
 
 	arch := profile.Architecture
