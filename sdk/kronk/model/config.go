@@ -61,8 +61,8 @@ const (
 // size is not explicitly configured.
 const DefaultPrefillBatchSize = int(vram.DefaultNUBatch)
 
-// DefaultQueueDepth is the admission-capacity multiplier used when queue depth
-// is not explicitly configured.
+// DefaultQueueDepth is the number of admitted request layers used when queue
+// depth is not explicitly configured.
 const DefaultQueueDepth = 2
 
 // Logger provides a function for logging messages from different APIs.
@@ -303,10 +303,11 @@ type AdapterConfig struct {
 // projector device automatically. It cannot be combined with ProjOnCPU=true.
 // The LLM device selection is unaffected.
 //
-// QueueDepth sets the multiplier for semaphore capacity when using the
-// batch engine (NSeqMax > 1). This controls how many requests can queue while
-// the current batch is processing. Default is 2, meaning NSeqMax * 2 requests
-// can be in-flight. Only applies to text inference models.
+// QueueDepth sets the number of admitted request layers for generation models.
+// The admission capacity is NSeqMax * QueueDepth. A depth of 1 admits only the
+// requests that can occupy execution slots; the default depth of 2 admits one
+// additional waiting layer. QueueDepth also determines the default IMC session
+// capacity. It only applies to text inference models.
 //
 // RopeFreqBase overrides the RoPE base frequency. When nil, uses model default.
 // Common values: 10000 (Llama), 1000000 (Qwen3).

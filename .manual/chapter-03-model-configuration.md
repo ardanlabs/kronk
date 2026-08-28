@@ -702,7 +702,7 @@ is normally supplied by analysis or by the load-time defaults.
 | `flash-attention` | `enabled`, `disabled`, `auto` | Attention implementation mode |
 | `nseq-max` | Positive integer | Generation slots, sequence-batch width, or fallback context-pool size |
 | `admission-timeout` | Go duration, default `3m` | Maximum SDK admission-permit wait; separate from the server's `KRONK_WEB_INFERENCE_TIMEOUT` (default `60m`) |
-| `queue-depth` | Non-negative integer, default `2` | Generation admission and handoff capacity multiplier |
+| `queue-depth` | Non-negative integer, default `2` | Admitted request layers: `1` allows slot occupants only; `2` adds one waiting layer |
 | `imc-session-capacity` | Positive integer; derived when omitted | Reusable IMC conversation identities retained in RAM or on disk |
 | `prefill-batch-size` | Positive token count, default `2048` | Generation prefill contribution per decode iteration, or aggregate embedding/reranking tokens per native sequence batch |
 | `ngpu-layers` | `-1`, `0`, or a positive count | CPU/GPU layer placement |

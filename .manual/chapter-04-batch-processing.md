@@ -135,9 +135,13 @@ reaches model preparation. For generation, the capacity is:
 admission capacity = max(nseq-max, 1) × queue-depth
 ```
 
-An unset `queue-depth` resolves to 2. Negative values are invalid. Embedding
-and reranking do not use the queue-depth multiplier; their admission capacity
-is `max(nseq-max, 1)`.
+`queue-depth` counts admitted request layers rather than a literal number of
+waiting requests. A depth of `1` admits only enough requests to occupy the
+execution slots, so `nseq-max: 2` admits two requests. The default depth of `2`
+admits one active layer and one additional waiting layer, so the same two-slot
+model admits four requests. An unset value resolves to `2`, and negative values
+are invalid. Embedding and reranking do not use this multiplier; their
+admission capacity is `max(nseq-max, 1)`.
 
 If admission is full, Kronk waits for a permit for at most `admission-timeout`,
 a per-model SDK setting that defaults to three minutes. This deadline is local
@@ -195,6 +199,8 @@ The channel is not a second user-visible queue budget. The direct Go SDK option
 `model.WithQueueDepth(n)` changes both the outer admission multiplier and the
 handoff channel capacity. The handoff capacity is `NSeqMax × QueueDepth`;
 `pendingJobs` remains responsible for jobs drained while every slot is busy.
+Queue depth does not change execution concurrency; `NSeqMax` remains the number
+of requests that can occupy slots simultaneously.
 
 Waiting honors request cancellation. If a request's context is cancelled
 while waiting for admission, preparing, submitting, waiting for a slot, or
@@ -458,15 +464,13 @@ differ from the number of concurrent execution slots.
 The IMC pool contains:
 
 ```text
-default session capacity = max(nseq-max, 1) × max(3, queue-depth)
+default session capacity = max(nseq-max, 1) × queue-depth
 ```
 
-The minimum of three sessions per execution slot preserves reusable
-conversation state beyond the number of requests that can execute at once.
-When `queue-depth` is greater than 3, the pool expands with admission capacity.
-Set `imc-session-capacity` to a larger explicit value when the measured warm
-conversation working set warrants it. An explicit value may reduce the default
-but cannot be smaller than generation admission capacity.
+The default session pool matches generation admission capacity. Set
+`imc-session-capacity` to a larger explicit value when the measured warm
+conversation working set warrants it. An explicit value cannot be smaller than
+generation admission capacity.
 Therefore, for generation through the Kronk SDK:
 
 ```text

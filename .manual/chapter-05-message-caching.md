@@ -423,6 +423,11 @@ System pool has four entries as well. Raising `nseq-max` also adds another full
 retain more conversation branches without considering the effects described in
 [Chapter 4](https://www.kronkai.com/manual#chapter-4-batch-processing).
 
+Setting `queue-depth: 1` with two slots instead provides two working sessions
+and two System entries. It does not reduce two-request execution concurrency;
+it prevents additional requests from passing admission until a slot's request
+finishes.
+
 An explicit `imc-session-capacity` must be at least
 `nseq-max × queue-depth`. This preserves one reservable session identity for
 every admitted generation request. Values above that floor retain more
