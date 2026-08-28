@@ -93,7 +93,7 @@ zarf/docker/compose.yaml
 zarf/docker/grafana
 zarf/docker/loki
 zarf/docker/prometheus
-zarf/docker/promtail
+zarf/docker/alloy
 zarf/docker/tempo
 zarf/nix
 mp

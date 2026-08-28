@@ -135,19 +135,19 @@ install-class-models: install-kronk
 	kronk malina model pull --local "sd-1.5"
 	@echo
 
-OPENWEBUI  := ghcr.io/open-webui/open-webui:v0.11.0
-GRAFANA    := grafana/grafana:13.1.3
-PROMETHEUS := prom/prometheus:v3.13.2
+OPENWEBUI  := ghcr.io/open-webui/open-webui:v0.11.1
+GRAFANA    := grafana/grafana:13.2.0
+PROMETHEUS := prom/prometheus:v3.14.0
 TEMPO      := grafana/tempo:3.0.3
-LOKI       := grafana/loki:3.7.6
-PROMTAIL   := grafana/promtail:3.6.11
+LOKI       := grafana/loki:3.7.7
+ALLOY      := grafana/alloy:v1.19.2
 
 # Install the docker images.
 install-docker:
-	docker pull docker.io/$(OPENWEBUI) & \
-	docker pull docker.io/$(GRAFANA) & \
-	docker pull docker.io/$(PROMETHEUS) & \
-	docker pull docker.io/$(TEMPO) & \
-	docker pull docker.io/$(LOKI) & \
-	docker pull docker.io/$(PROMTAIL) & \
+	docker pull $(OPENWEBUI) & \
+	docker pull $(GRAFANA) & \
+	docker pull $(PROMETHEUS) & \
+	docker pull $(TEMPO) & \
+	docker pull $(LOKI) & \
+	docker pull $(ALLOY) & \
 	wait;

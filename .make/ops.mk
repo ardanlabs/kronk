@@ -27,10 +27,10 @@ statsviz:
 	$(OPEN_CMD) http://localhost:11445/debug/statsviz
 
 grafana-up:
-	docker compose -f zarf/docker/compose.yaml up grafana loki prometheus promtail tempo
+	docker compose -f zarf/docker/compose.yaml up grafana loki prometheus alloy tempo
 
 grafana-down:
-	docker compose -f zarf/docker/compose.yaml down grafana loki prometheus promtail tempo
+	docker compose -f zarf/docker/compose.yaml down grafana loki prometheus alloy tempo
 
 grafana-browse:
 	$(OPEN_CMD) http://localhost:3100/

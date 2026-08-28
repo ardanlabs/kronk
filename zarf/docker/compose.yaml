@@ -1,6 +1,6 @@
 services:
   openwebui:
-    image: ghcr.io/open-webui/open-webui:v0.11.0
+    image: ghcr.io/open-webui/open-webui:v0.11.1
     container_name: openwebui
     restart: always
     pull_policy: never
@@ -22,7 +22,7 @@ services:
       - ./openwebui:/app/backend/data
 
   grafana:
-    image: grafana/grafana:13.1.3
+    image: grafana/grafana:13.2.0
     container_name: grafana
     restart: always
     pull_policy: never
@@ -50,7 +50,7 @@ services:
       - tempo
 
   loki:
-    image: grafana/loki:3.7.6
+    image: grafana/loki:3.7.7
     container_name: loki
     restart: always
     pull_policy: never
@@ -63,7 +63,7 @@ services:
       - kronk-net
 
   prometheus:
-    image: prom/prometheus:v3.13.2
+    image: prom/prometheus:v3.14.0
     container_name: prometheus
     restart: always
     pull_policy: never
@@ -82,19 +82,22 @@ services:
     networks:
       - kronk-net
 
-  promtail:
-    image: grafana/promtail:3.6.11
-    container_name: promtail
+  alloy:
+    image: grafana/alloy:v1.19.2
+    container_name: alloy
     restart: always
     pull_policy: never
-    command: -config.file=/etc/promtail/promtail.yaml
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:3102
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
     ports:
       - "3102:3102"
     volumes:
-      - ./promtail:/etc/promtail
-      - promtail-positions:/run/promtail
+      - ./alloy:/etc/alloy:ro
+      - alloy-data:/var/lib/alloy/data
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
     networks:
       - kronk-net
     depends_on:
@@ -122,4 +125,4 @@ networks:
     driver: bridge
 
 volumes:
-  promtail-positions:
+  alloy-data:
