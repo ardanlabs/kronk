@@ -73,7 +73,7 @@ version: 1
 # example-model:
 #   cache-min-tokens: 100                # Min tokens before IMC caches a message (default: 100)
 #   admission-timeout: 3m                # Maximum wait for an SDK admission permit (default: 3m)
-#   queue-depth: 2                       # Generation admission capacity multiplier (default: 2)
+#   queue-depth: 2                       # Admission layers: 1 = slots only; 2 = one waiting layer (default: 2)
 #   cache-type-k: q8_0                   # Explicit KV key type; omit for AutoTune (f16, then q8_0)
 #   cache-type-v: q8_0                   # Explicit KV value type; omit for AutoTune (f16, then q8_0)
 #   chat-template-kwargs:                # Model-level Jinja defaults; wire requests use chat_template_kwargs
@@ -81,7 +81,7 @@ version: 1
 #   context-window: 8192                 # Per-sequence token capacity; explicit value is fixed
 #   devices: [CUDA0, CUDA1]              # Devices to use (run `kronk devices` to list)
 #   flash-attention: auto                # Flash Attention: enabled, disabled, auto (default: auto)
-#   imc-session-capacity: 8              # Reusable IMC identities (default: nseq-max * max(3, queue-depth))
+#   imc-session-capacity: 8              # Reusable IMC identities (default: nseq-max * queue-depth)
 #   incremental-cache: true              # Incremental message caching (IMC) for agentic workflows (default: true)
 #   insecure-logging: false              # Log potentially sensitive data like message content (debug only)
 #   main-gpu: 0                          # Primary GPU index for single-GPU mode
