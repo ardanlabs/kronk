@@ -113,7 +113,7 @@ Here are some of the known compatible versions:
 
 | llama.cpp     | yzma    | kronk   | notes |
 | ------------- | ------- | ------- | ----- |
-| b10675        | c4fed786 | v0.4.0 | Development inference set; Yzma quantization ABI update is pending. |
+| b10679        | ae7ed0a  | v0.4.0 | Development inference set; Yzma quantization ABI update is pending. |
 | v0.3.0-b10646 | v1.25.0 | 1.32.3+ |       |
 | b10355-b10620 | v1.23.0 | 1.30.9+ |       |
 | b10212-b10354 | v1.22.0 | 1.30.0+ |       |
