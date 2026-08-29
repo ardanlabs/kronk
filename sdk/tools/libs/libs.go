@@ -17,6 +17,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/backend"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/downloader"
+	version "github.com/hashicorp/go-version"
 	"github.com/hybridgroup/yzma/pkg/download"
 )
 
@@ -26,7 +27,7 @@ const (
 
 	// defaultVersion is the well-known working version of llama.cpp used
 	// when no explicit version is provided and AllowUpgrade is false.
-	defaultVersion = "b10646"
+	defaultVersion = "b10679"
 )
 
 // ErrReadOnly is returned by mutating operations on a Libs instance whose
@@ -960,39 +961,34 @@ func chooseVersion(override string, allowUpgrade bool, installed string, latest 
 	}
 }
 
-// versionGreater reports whether v1 is greater than v2.
-// Versions are expected to be llama.cpp build tags like "b8937" or plain
-// version strings. It strips a single leading non-digit character (covering
-// both "b<num>" build tags and "v<num>" version tags) and compares the
-// numeric suffixes; when both are purely numeric it does a numeric
-// comparison, otherwise it falls back to lexicographic comparison.
+// versionGreater reports whether v1 is greater than v2. Nightly build tags
+// are compared numerically, and semantic release tags use semantic version
+// precedence. Tags from different schemes are not ordered so the configured
+// default wins when Kronk moves from nightly to semantic releases.
 func versionGreater(v1, v2 string) bool {
 	if v1 == "" || v2 == "" {
 		return false
 	}
 
-	stripPrefix := func(s string) string {
-		if len(s) > 0 && (s[0] < '0' || s[0] > '9') {
-			return s[1:]
+	if v1[0] == 'b' && v2[0] == 'b' {
+		n1, err1 := strconv.Atoi(v1[1:])
+		n2, err2 := strconv.Atoi(v2[1:])
+		if err1 == nil && err2 == nil {
+			return n1 > n2
 		}
-		return s
 	}
 
-	n1 := stripPrefix(v1)
-	n2 := stripPrefix(v2)
-
-	if n1 == n2 {
+	if v1[0] != 'v' || v2[0] != 'v' {
 		return false
 	}
 
-	// Try numeric comparison for plain numbers (e.g. "8937" vs "7406").
-	if i1, e1 := strconv.Atoi(n1); e1 == nil {
-		if i2, e2 := strconv.Atoi(n2); e2 == nil {
-			return i1 > i2
-		}
+	sem1, err1 := version.NewVersion(v1)
+	sem2, err2 := version.NewVersion(v2)
+	if err1 != nil || err2 != nil {
+		return false
 	}
 
-	return n1 > n2
+	return sem1.GreaterThan(sem2)
 }
 
 // hasNetwork reports whether Kronk can reach the internet. It issues a real

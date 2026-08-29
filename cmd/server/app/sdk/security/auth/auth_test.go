@@ -10,7 +10,7 @@ import (
 	"uuid"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 func TestRateWindow(t *testing.T) {
@@ -92,6 +92,63 @@ func TestAuthenticateInvalidToken(t *testing.T) {
 	_, err = ath.Authenticate(context.Background(), "not a bearer token")
 	if !errors.Is(err, auth.ErrInvalidToken) {
 		t.Fatalf("Authenticate: got %v, want ErrInvalidToken", err)
+	}
+}
+
+func TestAuthenticateSigningMethod(t *testing.T) {
+	privateKey, err := jwt.ParseRSAPrivateKeyFromPEM([]byte(privateKeyPEM))
+	if err != nil {
+		t.Fatalf("parse private key: %v", err)
+	}
+
+	claims := auth.Claims{
+		Issuer:    "service project",
+		Subject:   "5cf37266-3473-4006-984f-9325122678b7",
+		ExpiresAt: jwt.NewNumericDate(time.Now().UTC().Add(time.Hour)),
+		IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
+		Admin:     true,
+	}
+
+	tests := []struct {
+		name    string
+		method  jwt.SigningMethod
+		key     any
+		wantErr bool
+	}{
+		{name: "rs256", method: jwt.SigningMethodRS256, key: privateKey},
+		{name: "rs384", method: jwt.SigningMethodRS384, key: privateKey, wantErr: true},
+		{name: "ps256", method: jwt.SigningMethodPS256, key: privateKey, wantErr: true},
+		{name: "hs256", method: jwt.SigningMethodHS256, key: []byte("secret"), wantErr: true},
+		{name: "none", method: jwt.SigningMethodNone, key: jwt.UnsafeAllowNoneSignatureType, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ath, err := auth.New(auth.Config{
+				KeyLookup: &keyStore{},
+				Issuer:    claims.Issuer,
+			})
+			if err != nil {
+				t.Fatalf("construct auth api: %v", err)
+			}
+
+			token := jwt.NewWithClaims(tt.method, claims)
+			token.Header["kid"] = kid
+
+			signedToken, err := token.SignedString(tt.key)
+			if err != nil {
+				t.Fatalf("sign token: %v", err)
+			}
+
+			_, err = ath.Authenticate(t.Context(), "Bearer "+signedToken)
+			switch {
+			case tt.wantErr && err == nil:
+				t.Fatal("Authenticate: expected an error")
+
+			case !tt.wantErr && err != nil:
+				t.Fatalf("Authenticate: unexpected error: %v", err)
+			}
+		})
 	}
 }
 

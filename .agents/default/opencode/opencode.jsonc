@@ -1,6 +1,6 @@
 {
     "$schema": "https://opencode.ai/config.json",
-    "model": "kronk/unsloth/Qwen3.8-27B-UD-Q4_K_XL/AGENT",
+    "model": "kronk/unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT",
     "small_model": "kronk/ornith-ai/Ornith-1.5-9B-Q4_K_M/AGENT",
     "provider": {
         "kronk": {
@@ -10,6 +10,13 @@
                 "baseURL": "http://127.0.0.1:11435/v1"
             },
             "models": {
+                "unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT": {
+                    "name": "Qwen3.8 Flash Next UD-Q2_K_XL",
+                    "limit": {
+                        "context": 131072,
+                        "output": 16384
+                    }
+                },
                 "unsloth/Qwen3.8-27B-UD-Q4_K_XL/AGENT": {
                     "name": "Qwen3.8 27B UD-Q4_K_XL",
                     "modalities": {

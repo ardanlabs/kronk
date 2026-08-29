@@ -738,7 +738,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/ardanlabs/bucky/pkg/audio"
 	"github.com/ardanlabs/kronk/sdk/bucky"
 	"github.com/ardanlabs/kronk/sdk/bucky/model"
 	buckylibs "github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
@@ -862,7 +861,7 @@ func loadSamples(path string) ([]float32, error) {
 	}
 	defer f.Close()
 
-	samples, err := audio.Decode(f)
+	samples, err := model.Decode(context.Background(), f)
 	if err != nil {
 		return nil, fmt.Errorf("decode %q: %w", path, err)
 	}

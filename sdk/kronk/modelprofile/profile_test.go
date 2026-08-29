@@ -66,6 +66,26 @@ func TestResolveArchitectureParity(t *testing.T) {
 			fullLayers: 10,
 		},
 		{
+			name: "qwen4 experimental hybrid",
+			metadata: map[string]string{
+				"general.architecture":             "qwen4exp",
+				"qwen4exp.block_count":             "48",
+				"qwen4exp.expert_count":            "512",
+				"qwen4exp.ssm.conv_kernel":         "4",
+				"qwen4exp.ssm.inner_size":          "8",
+				"qwen4exp.ssm.state_size":          "4",
+				"qwen4exp.ssm.group_count":         "2",
+				"qwen4exp.attention.head_count":    "16",
+				"qwen4exp.attention.head_count_kv": "2",
+			},
+			class:      ClassHybrid,
+			role:       RoleLanguage,
+			purpose:    PurposeGeneration,
+			memory:     MemoryRecurrent,
+			recurrent:  36,
+			fullLayers: 12,
+		},
+		{
 			name: "known recurrent family",
 			metadata: map[string]string{
 				"general.architecture":  "qwen3next",
