@@ -166,6 +166,24 @@ version: 1
 kms: {}
 
 models:
+  # nseq-max: 1  ~87GB VRAM
+  unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT:
+    nseq-max: 1
+    context-window: 131072
+    chat-template-kwargs:
+      preserve_thinking: true
+    sampling-parameters:
+      max_tokens: 16384
+      reasoning_effort: low
+
+  # nseq-max: 1  ~81GB VRAM
+  # nseq-max: 2  NOT SUPPORTED BY LLAMA.CPP YET
+  unsloth/GLM-4.5-Air-Q4_K_M/AGENT:
+    nseq-max: 1
+    context-window: 65536
+    sampling-parameters:
+      max_tokens: 16384
+
   # nseq-max: 1  ~54GB VRAM
   # nseq-max: 2  ~82GB VRAM
   unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
