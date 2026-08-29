@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/open-policy-agent/opa/v1/rego"
 )
 
@@ -75,7 +75,7 @@ func New(cfg Config) (*Auth, error) {
 	return &Auth{
 		keyLookup:         cfg.KeyLookup,
 		method:            jwt.GetSigningMethod(jwt.SigningMethodRS256.Name),
-		parser:            jwt.NewParser(jwt.WithValidMethods([]string{jwt.SigningMethodRS256.Name})),
+		parser:            jwt.NewParser(),
 		issuer:            cfg.Issuer,
 		authenticateQuery: authenticateQuery,
 		authorizeQuery:    authorizeQuery,

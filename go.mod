@@ -9,7 +9,7 @@ require (
 	github.com/ardanlabs/malina v1.0.5
 	github.com/arl/statsviz v0.8.1
 	github.com/dgraph-io/badger/v4 v4.9.6
-	github.com/golang-jwt/jwt/v4 v4.5.2
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/go-cmp v0.7.0
 	github.com/hashicorp/go-getter v1.8.8
 	github.com/hashicorp/go-version v1.9.0

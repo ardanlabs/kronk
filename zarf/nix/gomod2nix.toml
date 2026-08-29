@@ -160,9 +160,9 @@ schema = 3
   [mod."github.com/goccy/go-json"]
     version = "v0.10.6"
     hash = "sha256-/REW1EDZ3Ta45hrDNR9YTIlhkxQQI8OeK5TxBNJ47Ho="
-  [mod."github.com/golang-jwt/jwt/v4"]
-    version = "v4.5.2"
-    hash = "sha256-rTSqYEPooi8Uu4aXMW6k9dynOV+URYTGzVmbG3EQ7uo="
+  [mod."github.com/golang-jwt/jwt/v5"]
+    version = "v5.3.1"
+    hash = "sha256-h7AszH+3YWL3IV0+miY9vbtU0gM/2RpuASSGAYAgWcA="
   [mod."github.com/google/flatbuffers"]
     version = "v25.12.19+incompatible"
     hash = "sha256-NOYL9CWJgjdY1u4j/Ccyz2i50RjvZfNm/K+EFj7GIYk="

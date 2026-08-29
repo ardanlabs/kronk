@@ -16,7 +16,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/keystore"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/rate"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 var (
