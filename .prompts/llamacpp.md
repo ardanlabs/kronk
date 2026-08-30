@@ -1,28 +1,37 @@
-Perform an incremental llama.cpp upstream review for Kronk.
+Perform an incremental llama.cpp and/or yzma upstream review for Kronk.
 
 Goal:
-Find all meaningful llama.cpp changes since the last successfully reviewed upstream version, determine their impact on Kronk and yzma, and identify required fixes, upgrade risks, performance opportunities, and features Kronk could adopt.
+Find all meaningful upstream changes since the last successfully reviewed versions, determine their impact on Kronk, and identify required fixes, upgrade risks, performance opportunities, and features Kronk could adopt.
+
+Review mode:
+
+- Accept `llama.cpp`, `yzma`, or `both` as the requested scope. Default to `both` when no scope is supplied.
+- For `llama.cpp`, review upstream llama.cpp and the yzma binding boundary it may affect.
+- For `yzma`, review yzma itself and any llama.cpp revision or API assumptions it changes.
+- For `both`, review both ranges and analyze their compatibility together.
 
 Review baseline:
 
-- Last reviewed upstream llama.cpp version: `b10625`
-- Initial baseline reason: this was the llama.cpp version locked when Kronk upgraded to yzma `v1.25.0`.
-- Resolve and verify the exact upstream commit SHA for this version before comparing changes.
-- This value, rather than Kronk's currently pinned llama.cpp version, is the start of the review range.
+- Last reviewed upstream llama.cpp version: `b10698` (`742347b2e717dcebd432437ddf5d088dc4fd9232`)
+- Last reviewed yzma main commit: `3306fd1cf58fa46f6f2d273c58efda3b7581e06c`
+- Resolve and verify both baseline revisions before comparing changes.
+- These values, rather than Kronk's currently pinned dependencies, are the starts of their respective review ranges.
 
 Research range:
 
-1. Read Kronk’s current llama.cpp pin and yzma version.
-2. Find the latest available upstream llama.cpp build and commit.
-3. Compare the last-reviewed upstream version above through the latest upstream commit.
-4. If upstream build numbers or tags do not map cleanly to commits, verify the exact SHAs before drawing conclusions.
-5. If there are no new upstream commits, report that clearly and stop without changing the review baseline.
+1. Read Kronk’s current llama.cpp pin and yzma version from all Go modules and generated dependency files.
+2. For the requested scope, find the latest upstream llama.cpp release/commit and/or yzma main commit.
+3. Compare each applicable last-reviewed revision above through the latest applicable upstream revision.
+4. If llama.cpp build numbers, tags, yzma pseudo-versions, or commits do not map cleanly, verify exact SHAs before drawing conclusions.
+5. If an applicable upstream has no new commits, report that clearly and leave that baseline unchanged.
 
 Investigation:
 
 - Use authoritative llama.cpp source, commit history, release notes, and documentation.
-- Inspect the yzma source for Kronk’s currently selected version to understand which llama.cpp APIs it exposes and which upstream version it supports.
+- Use authoritative yzma source, commit history, Go module metadata, tests, and documentation.
+- Inspect both Kronk’s selected yzma revision and latest yzma main to understand which llama.cpp APIs they expose and support.
 - Inspect Kronk’s code to identify the affected execution paths. Do not assume an upstream change affects Kronk merely because it exists.
+- Separate native `pkg/llama` and `pkg/mtmd` changes from platform-specific packages and build-tagged code such as `pkg/llamawasm`.
 - Pay particular attention to:
   - Breaking or deprecated C/C++ API changes
   - Model architecture and GGUF support
@@ -67,14 +76,15 @@ Do not:
 - Recommend features Kronk already implements.
 - Mix speculative ideas with verified findings.
 - Modify Kronk production code during this review.
-- Update the review baseline if the research is incomplete or an exact comparison range could not be established.
+- Update dependency pins or generated files during this review.
+- Update either review baseline if that upstream's research is incomplete or its exact comparison range could not be established.
 
 Deliverable:
-Write or update `.agents/llama-cpp-upstream-review.md` with:
+Write or update `.agents/llama-yzma-upstream-review.md` with:
 
 1. Executive summary
-2. Exact comparison range
-3. Current Kronk llama.cpp and yzma versions
+2. Exact comparison ranges and review mode
+3. Current and latest llama.cpp and yzma revisions
 4. Required changes
 5. Recommended changes
 6. Opportunities
@@ -91,4 +101,4 @@ At the end:
 
 - Present the key conclusions to me.
 - Do not implement recommendations unless I explicitly ask.
-- If and only if the review completed successfully, update the "Last reviewed upstream llama.cpp version" value in this prompt to the latest upstream version reviewed.
+- If and only if an upstream review completed successfully, update that upstream's baseline in this prompt to the exact latest revision reviewed. Do not advance the other baseline unless it was also reviewed successfully.
