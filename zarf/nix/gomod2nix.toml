@@ -155,8 +155,8 @@ schema = 3
     version = "v1.2.2"
     hash = "sha256-rRweAP7XIb4egtT1f2gkz4sYOu7LDHmcJ5iNsJUd0sE="
   [mod."github.com/gobwas/glob"]
-    version = "v1.0.0"
-    hash = "sha256-kydtAp8CZeF63bT87R08ik72eBvJS5ysL+zEtMRmiu0="
+    version = "v0.2.3"
+    hash = "sha256-hYHMUdwxVkMOjSKjR7UWO0D0juHdI4wL8JEy5plu/Jc="
   [mod."github.com/goccy/go-json"]
     version = "v0.10.6"
     hash = "sha256-/REW1EDZ3Ta45hrDNR9YTIlhkxQQI8OeK5TxBNJ47Ho="
