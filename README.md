@@ -111,26 +111,10 @@ Sometimes there are breaking changes to the family of ggml libraries that requir
 
 Here are some of the known compatible versions:
 
-| llama.cpp     | yzma    | kronk   | notes |
-| ------------- | ------- | ------- | ----- |
-| b10679        | ae7ed0a  | v0.4.0 | Development inference set; Yzma quantization ABI update is pending. |
-| v0.3.0-b10646 | v1.25.0 | 1.32.3+ |       |
-| b10355-b10620 | v1.23.0 | 1.30.9+ |       |
-| b10212-b10354 | v1.22.0 | 1.30.0+ |       |
-| b10182-b10211 | v1.21.0 | 1.29.8+ |       |
-| b10105-b10181 | v1.20.0 | 1.29.1+ |       |
-
-| whisper.cpp | bucky  | kronk   |
-| ----------- | ------ | ------- |
-| v1.9.3      | v1.1.0 | 1.31.8+ |
-| v1.9.2      | v1.0.8 | 1.30.0+ |
-| v1.9.1      | v1.0.6 | 1.29.8+ |
-
-| stable-diffusion.cpp | malina | kronk    | Notes          |
-| -------------------- | ------ | -------- | -------------- |
-| master-830-50d6405   | v1.0.5 | v1.32.2+ | (experimental) |
-| master-827-97d2990   | v1.0.4 | v1.31.8+ | (experimental) |
-| master-813-bfbef5b   | v1.0.2 | v1.30.7+ | (experimental) |
+| kronk      | yzma    | llama.cpp     | bucky  | whisper.cpp | malina | stable-diffusion.cpp |
+| ---------- | ------- | ------------- | ------ | ----------- | ------ | -------------------- |
+| 1.32.4-rc2 | 3306fd1 | b10647-b10698 | v1.1.0 | v1.9.3      | v1.0.5 | master-830-50d6405   |
+| 1.32.3     | v1.25.0 | v0.3.0-b10646 | v1.1.0 | v1.9.3      | v1.0.5 | master-830-50d6405   |
 
 ## Documentation and Examples
 
