@@ -1,0 +1,80 @@
+name: Windows
+
+# Compile + vet gate for windows/amd64.
+#
+# Kronk publishes Windows library bundles (sdk/tools/libs/combinations.go
+# lists windows cpu/cuda/vulkan/rocm) and .goreleaser.yaml ships Windows
+# binaries, but nothing in CI ever built for Windows. A GOOS-specific build
+# tag, a filepath separator assumption, or a syscall that does not exist on
+# Windows would only surface at release time.
+#
+# This runs on GitHub-hosted `windows-latest`, so unlike linux.yml and
+# macos.yml there is no self-hosted runner and no fork carve-out — fork PRs
+# get the same coverage as everyone else.
+#
+# SCOPE: build and vet only, deliberately. Running the test suites would
+# require the native llama.cpp + whisper.cpp bundles, and the setup-kronk
+# composite action has no Windows path today — its build/install steps are
+# gated on `runner.os == 'Linux'` and `'macOS'`, so a Windows job falls
+# through both and never gets a kronk binary. Note that `go vet` type-checks
+# _test.go files too, so test code that fails to compile on Windows is still
+# caught here. Executing them is a follow-up that needs setup-kronk extended.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - ".go-version"
+      - ".github/workflows/windows.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - ".go-version"
+      - ".github/workflows/windows.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  build:
+    name: Build and vet
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Install Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
+        with:
+          go-version-file: .go-version
+
+      - name: go build
+        run: go build ./...
+
+      # Compiles test files as well as package code, so a _test.go that
+      # doesn't build on Windows fails here even though no test is executed.
+      - name: go vet
+        run: go vet ./...
+
+      # The one artifact users actually download. Proves the CLI links.
+      - name: Build kronk CLI
+        run: go build -o "${RUNNER_TEMP}/kronk.exe" ./cmd/kronk

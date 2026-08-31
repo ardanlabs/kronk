@@ -39,7 +39,11 @@ runs:
   using: composite
   steps:
     - name: Free disk space
-      if: runner.os == 'Linux'
+      # Only the GitHub-hosted images need — or permit — this. The
+      # self-hosted Linux runner has no passwordless sudo, so an
+      # unconditional `sudo rm -rf` aborts the whole setup there, and it
+      # has plenty of disk anyway.
+      if: runner.os == 'Linux' && runner.environment == 'github-hosted'
       shell: bash
       run: |
         sudo rm -rf /usr/share/dotnet
@@ -83,10 +87,13 @@ runs:
     # between composite-action steps, so setsid + nohup + disown is
     # enough to keep the child alive across the step boundary.
     #
-    # Exit code, log, and pid are written to /tmp/setup-kronk-bg.* so
+    # Exit code, log, and pid are written to ${RUNNER_TEMP}/setup-kronk-bg.* so
     # the "Wait for background kronk install" step can surface
     # failures (and the build log) without losing the kronk install
     # being the actual cause of a downstream "command not found".
+    # RUNNER_TEMP (not a fixed /tmp path) because the self-hosted Linux
+    # runner persists /tmp across jobs — two runs would otherwise read
+    # each other's stale .exit/.pid files.
     #
     # Why all three commands run in one background shell:
     #   - `go install ./cmd/kronk` produces the kronk binary on PATH
@@ -102,7 +109,7 @@ runs:
       run: |
         set -euo pipefail
         mkdir -p "$HOME/.kronk/libraries"
-        rm -f /tmp/setup-kronk-bg.exit /tmp/setup-kronk-bg.log /tmp/setup-kronk-bg.pid
+        rm -f "${RUNNER_TEMP}/setup-kronk-bg.exit" "${RUNNER_TEMP}/setup-kronk-bg.log" "${RUNNER_TEMP}/setup-kronk-bg.pid"
 
         # setsid detaches from the controlling terminal; nohup + the
         # explicit fd redirections make the child immune to SIGHUP
@@ -117,11 +124,11 @@ runs:
           go install ./cmd/kronk \
             && kronk libs --local \
             && kronk bucky libs --local
-          echo "$?" > /tmp/setup-kronk-bg.exit
-        ' </dev/null >/tmp/setup-kronk-bg.log 2>&1 &
-        echo $! > /tmp/setup-kronk-bg.pid
+          echo "$?" > "${RUNNER_TEMP}/setup-kronk-bg.exit"
+        ' </dev/null >"${RUNNER_TEMP}/setup-kronk-bg.log" 2>&1 &
+        echo $! > "${RUNNER_TEMP}/setup-kronk-bg.pid"
         disown
-        echo "Started background kronk install (pid $(cat /tmp/setup-kronk-bg.pid))"
+        echo "Started background kronk install (pid $(cat "${RUNNER_TEMP}/setup-kronk-bg.pid"))"
 
     # macOS does not provide setsid, so perform the same setup in the
     # foreground. The self-hosted runner keeps its Go build cache between
@@ -162,7 +169,7 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        PID="$(cat /tmp/setup-kronk-bg.pid)"
+        PID="$(cat "${RUNNER_TEMP}/setup-kronk-bg.pid")"
         echo "Waiting for background kronk install (pid $PID)..."
         # `kill -0 PID` is a portable existence probe (Linux runners
         # are the only place this composite is consumed today, but
@@ -171,13 +178,13 @@ runs:
         # appears, so we don't keep watching a recycled PID in the
         # (vanishingly small) window between the child writing its
         # result and the kernel reaping it.
-        while [[ ! -f /tmp/setup-kronk-bg.exit ]] && kill -0 "$PID" 2>/dev/null; do
+        while [[ ! -f "${RUNNER_TEMP}/setup-kronk-bg.exit" ]] && kill -0 "$PID" 2>/dev/null; do
           sleep 1
         done
         echo "::group::Background kronk install log"
-        cat /tmp/setup-kronk-bg.log
+        cat "${RUNNER_TEMP}/setup-kronk-bg.log"
         echo "::endgroup::"
-        EXIT="$(cat /tmp/setup-kronk-bg.exit 2>/dev/null || echo 1)"
+        EXIT="$(cat "${RUNNER_TEMP}/setup-kronk-bg.exit" 2>/dev/null || echo 1)"
         if [[ "$EXIT" != "0" ]]; then
           echo "::error::Background kronk install failed (exit=$EXIT)"
           exit "$EXIT"
