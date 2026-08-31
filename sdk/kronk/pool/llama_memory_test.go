@@ -25,8 +25,8 @@ func TestBackendMemoryChecks(t *testing.T) {
 	if len(checks) != 3 {
 		t.Fatalf("checks: got %d, want 3", len(checks))
 	}
-	if !checks[0].enforced || !checks[0].exhausted {
-		t.Errorf("Metal check: got enforced=%t exhausted=%t, want true true", checks[0].enforced, checks[0].exhausted)
+	if checks[0].enforced || !checks[0].exhausted {
+		t.Errorf("Metal check: got enforced=%t exhausted=%t, want false true", checks[0].enforced, checks[0].exhausted)
 	}
 	if !checks[1].enforced || checks[1].exhausted {
 		t.Errorf("CUDA check: got enforced=%t exhausted=%t, want true false", checks[1].enforced, checks[1].exhausted)
@@ -81,7 +81,7 @@ func TestBackendMemoryCheckPolicies(t *testing.T) {
 		wantCheck    bool
 		wantEnforced bool
 	}{
-		{name: "Metal enforced", deviceType: "gpu_metal", wantCheck: true, wantEnforced: true},
+		{name: "Metal advisory", deviceType: "gpu_metal", wantCheck: true, wantEnforced: false},
 		{name: "CUDA enforced", deviceType: "gpu_cuda", wantCheck: true, wantEnforced: true},
 		{name: "ROCm enforced", deviceType: "gpu_rocm", wantCheck: true, wantEnforced: true},
 		{name: "Vulkan advisory", deviceType: "gpu_vulkan", wantCheck: true, wantEnforced: false},

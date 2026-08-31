@@ -376,10 +376,11 @@ func (l *Llama) Load(ctx context.Context, req loader.LoadRequest) (*kronk.Kronk,
 }
 
 // Validate checks live backend headroom after every native context has been
-// created but before the pool publishes the handle. GGML's device query is the
-// backend's own capacity view: on Metal it uses recommendedMaxWorkingSetSize;
-// CUDA and HIP report runtime device memory. Vulkan remains advisory because
-// drivers without VK_EXT_memory_budget report the whole heap as free.
+// created but before the pool publishes the handle. CUDA and HIP report
+// runtime device memory. Metal remains advisory because GGML reports
+// recommendedMaxWorkingSetSize rather than physical unified-memory capacity.
+// Vulkan also remains advisory because drivers without VK_EXT_memory_budget
+// report the whole heap as free.
 func (l *Llama) Validate(ctx context.Context, req loader.LoadRequest, _ *kronk.Kronk) error {
 	cfg, err := l.configForRequest(req)
 	if err != nil {
@@ -475,10 +476,11 @@ func backendMemoryCheckForDevice(device devices.DeviceInfo, budgetPercent int, h
 	}
 }
 
-// metalBackendMemoryCheck is enforceable because llama.cpp reports
-// recommendedMaxWorkingSetSize and currentAllocatedSize from Metal.
+// metalBackendMemoryCheck is advisory because llama.cpp reports
+// recommendedMaxWorkingSetSize and currentAllocatedSize from Metal. The former
+// is a performance recommendation, not a hard limit on unified memory.
 func metalBackendMemoryCheck(device devices.DeviceInfo, budgetPercent int, headroomBytes int64) (backendMemoryCheck, bool) {
-	return reportedBackendMemoryCheck(device, budgetPercent, headroomBytes, true)
+	return reportedBackendMemoryCheck(device, budgetPercent, headroomBytes, false)
 }
 
 // cudaBackendMemoryCheck is enforceable because the CUDA runtime reports live
