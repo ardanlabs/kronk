@@ -150,7 +150,7 @@ jobs:
         if: inputs.deep || github.event_name == 'pull_request'
         uses: ./.github/actions/setup-kronk
         with:
-          models-cache-key: ${{ runner.os }}-${{ runner.environment }}-models-${{ hashFiles('.github/test-models.txt') }}
+          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
 
       # What Kronk itself resolves to. Both backends, since the gating
       # workflows use both.
@@ -280,7 +280,7 @@ jobs:
         if: inputs.deep || github.event_name == 'pull_request'
         uses: ./.github/actions/setup-kronk
         with:
-          models-cache-key: ${{ runner.os }}-${{ runner.environment }}-models-${{ hashFiles('.github/test-models.txt') }}
+          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
 
       - name: Kronk device + backend report
         if: inputs.deep || github.event_name == 'pull_request'

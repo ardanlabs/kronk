@@ -64,6 +64,10 @@ jobs:
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version-file: .go-version
+          # Hosted only: on self-hosted the module and build caches
+          # already persist in a local volume, so the upload is pure
+          # cost and fails once the cache budget is exhausted.
+          cache: ${{ runner.environment == 'github-hosted' }}
 
       - name: Install static analysis tools
         run: |
@@ -120,7 +124,7 @@ jobs:
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
         with:
-          models-cache-key: ${{ runner.os }}-${{ runner.environment }}-models-${{ hashFiles('.github/test-models.txt') }}
+          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
 
       - name: go test -race -short (sdk unit packages)
         run: |
@@ -152,7 +156,7 @@ jobs:
         id: setup
         uses: ./.github/actions/setup-kronk
         with:
-          models-cache-key: ${{ runner.os }}-${{ runner.environment }}-models-${{ hashFiles('.github/test-models.txt') }}
+          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
 
       - name: Run api/service tests
         run: |
@@ -161,7 +165,7 @@ jobs:
           go test -v -p=1 -count=1 -timeout 20m ./cmd/server/...
 
       - name: Save models cache
-        if: github.ref == 'refs/heads/main' && steps.setup.outputs.models-cache-hit != 'true'
+        if: runner.environment == 'github-hosted' && github.ref == 'refs/heads/main' && steps.setup.outputs.models-cache-hit != 'true'
         continue-on-error: true
         uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
@@ -182,7 +186,7 @@ jobs:
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
         with:
-          models-cache-key: ${{ runner.os }}-${{ runner.environment }}-models-${{ hashFiles('.github/test-models.txt') }}
+          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
 
       - name: Run sdk tests
         run: |
@@ -214,7 +218,7 @@ jobs:
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
         with:
-          models-cache-key: ${{ runner.os }}-${{ runner.environment }}-models-${{ hashFiles('.github/test-models.txt') }}
+          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
 
       - name: Verify Metal backend
         run: |

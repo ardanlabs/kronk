@@ -37,6 +37,7 @@
 #     --security-opt seccomp=unconfined \
 #     -v kronk-runner-kronk:/root/.kronk \
 #     -v kronk-runner-go:/root/go \
+#     -v kronk-runner-gocache:/root/.cache/go-build \
 #     -e APP_ID=... -e APP_PRIVATE_KEY="$(cat key.pem)" -e APP_LOGIN=ardanlabs \
 #     -e RUNNER_SCOPE=org -e ORG_NAME=ardanlabs \
 #     -e RUNNER_GROUP=kronk \
@@ -55,10 +56,14 @@
 #                   may not exist. An unset variable yields --group-add ""
 #                   and docker fails with "unable to find group".
 #   volumes       — EPHEMERAL=1 destroys the container after every job, so
-#                   ~/.kronk does not survive and each job would re-download
-#                   ~6.6 GB of models. The named volumes keep the model and
-#                   Go module caches across jobs. Safe because fork PRs are
-#                   never scheduled onto this runner (see linux.yml).
+#                   nothing under / survives. The three volumes are this
+#                   runner's entire cache, and replace actions/cache, which
+#                   the workflows skip on self-hosted:
+#                     /root/.kronk         models (~6.6 GB) and native libs
+#                     /root/go             GOMODCACHE and GOPATH/bin
+#                     /root/.cache/go-build GOCACHE, the compile cache
+#                   Safe because fork PRs are never scheduled onto this
+#                   runner (see linux.yml).
 #
 # The labels only need to carry `gpu`; linux.yml picks the backend through
 # KRONK_PROCESSOR, so moving between Vulkan and ROCm needs no relabelling.

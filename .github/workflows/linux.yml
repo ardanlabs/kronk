@@ -111,6 +111,10 @@ jobs:
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
         with:
           go-version-file: .go-version
+          # Hosted only: on self-hosted the module and build caches
+          # already persist in a local volume, so the upload is pure
+          # cost and fails once the cache budget is exhausted.
+          cache: ${{ runner.environment == 'github-hosted' }}
 
       # Pinned to specific tags (not @latest) so a tool release that
       # raises its required Go version doesn't silently bump our CI
@@ -185,7 +189,7 @@ jobs:
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
         with:
-          models-cache-key: ${{ runner.os }}-${{ runner.environment }}-models-${{ hashFiles('.github/test-models.txt') }}
+          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
 
       # Race detector pass on SDK unit packages. The model/library-heavy
       # integration suites still belong to sdk-tests; this job stays
@@ -228,7 +232,7 @@ jobs:
           # automatically invalidates the cache. Old keys age out via
           # GHA's 7-day-unused eviction policy (also see
           # cache-cleanup.yml).
-          models-cache-key: ${{ runner.os }}-${{ runner.environment }}-models-${{ hashFiles('.github/test-models.txt') }}
+          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
 
       - name: Run api/service tests
         run: |
@@ -240,7 +244,7 @@ jobs:
       # they can't race. Save only on main branch and only on a cache
       # miss — PR builds and cache hits don't need to re-save.
       - name: Save models cache
-        if: github.ref == 'refs/heads/main' && steps.setup.outputs.models-cache-hit != 'true'
+        if: runner.environment == 'github-hosted' && github.ref == 'refs/heads/main' && steps.setup.outputs.models-cache-hit != 'true'
         continue-on-error: true
         uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5
         with:
@@ -260,7 +264,7 @@ jobs:
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
         with:
-          models-cache-key: ${{ runner.os }}-${{ runner.environment }}-models-${{ hashFiles('.github/test-models.txt') }}
+          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
 
       - name: Run sdk tests
         run: |
@@ -309,7 +313,7 @@ jobs:
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
         with:
-          models-cache-key: ${{ runner.os }}-${{ runner.environment }}-models-${{ hashFiles('.github/test-models.txt') }}
+          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
 
       # Fail fast and readably if the GPU is invisible, rather than letting
       # every suite below time out.
