@@ -218,7 +218,7 @@ export default function DocsSDKPool() {
               <pre className="code-block">
                 <code>func (l *Llama) Validate(ctx context.Context, req loader.LoadRequest, _ *kronk.Kronk) error</code>
               </pre>
-              <p className="doc-description">Validate checks live backend headroom after every native context has been created but before the pool publishes the handle. GGML's device query is the backend's own capacity view: on Metal it uses recommendedMaxWorkingSetSize; CUDA and HIP report runtime device memory. Vulkan remains advisory because drivers without VK_EXT_memory_budget report the whole heap as free.</p>
+              <p className="doc-description">Validate checks live backend headroom after every native context has been created but before the pool publishes the handle. CUDA and HIP report runtime device memory. Metal remains advisory because GGML reports recommendedMaxWorkingSetSize rather than physical unified-memory capacity. Vulkan also remains advisory because drivers without VK_EXT_memory_budget report the whole heap as free.</p>
             </div>
 
             <div className="doc-section" id="method-pool-aquirecustom">

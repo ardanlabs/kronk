@@ -47,8 +47,8 @@ schema = 3
     version = "v1.6.0"
     hash = "sha256-xK0llBUpxqQXLdFCs/WRBSJSLjYQbqDj1cvOWCioxdc="
   [mod."github.com/ardanlabs/malina"]
-    version = "v1.0.5"
-    hash = "sha256-wnSwuiqSeeU7TgNRner6rLPKlJ5oj/NsX7h70hlVa48="
+    version = "v1.0.6"
+    hash = "sha256-kfRyZrdCzS0LgStCEW9PJLEjLxbB9NFl17H8d3oRP2w="
   [mod."github.com/arl/statsviz"]
     version = "v0.8.2"
     hash = "sha256-8KmSQolXTl2aBo9bY8/dmby82ItHVHiYLRu/UNGRF8Q="
@@ -134,8 +134,8 @@ schema = 3
     version = "v1.0.1"
     hash = "sha256-yuvxYYngpfVkUg9yAmG99IUVmADTQA0tMbBXe0Fq0Mc="
   [mod."github.com/ebitengine/purego"]
-    version = "v0.11.0-alpha.10"
-    hash = "sha256-ATGIP3jYtORzbNMsfWXL8z2aGPiG8+ZtMHiRJnswKvg="
+    version = "v0.11.0-alpha.11"
+    hash = "sha256-JjleZ8TbDFCUrV2whfa/utBtz/xnGiLx3LcC+VemN2U="
   [mod."github.com/envoyproxy/go-control-plane/envoy"]
     version = "v1.39.0"
     hash = "sha256-EjlqubUTPeOSGsIxn+2VcjHAZqbZTTESxUaIzRkPby4="
@@ -206,8 +206,8 @@ schema = 3
     version = "v1.9.0"
     hash = "sha256-sRr/50k8Wra0PJLCJgSkIxvR+ce3PItx4HpFvVijGYk="
   [mod."github.com/hybridgroup/yzma"]
-    version = "v1.25.1-0.20260830132541-3306fd1cf58f"
-    hash = "sha256-gAx1cD3DzyRu7Z+DS/nuHgWAmoAViqw79kQ+2ztafX0="
+    version = "v1.25.1-0.20260831114346-d0abb7d5acda"
+    hash = "sha256-Db/iLzPgrWp3VaUGnsmq3DfEoWLCdZW06lwoaeuXcAk="
   [mod."github.com/icza/bitio"]
     version = "v1.1.0"
     hash = "sha256-CtV/dr1L46cZ65EnK9DrBduZCaMnTGf4N2MnElCymtM="
@@ -275,11 +275,11 @@ schema = 3
     version = "v1.24.1"
     hash = "sha256-HAOFVYyPiU7hVS1XXMMjkbGgTT7/UN0zVHXYOnjr7is="
   [mod."github.com/prometheus/client_model"]
-    version = "v0.6.2"
-    hash = "sha256-q6Fh6v8iNJN9ypD47LjWmx66YITa3FyRjZMRsuRTFeQ="
+    version = "v0.6.3"
+    hash = "sha256-uYXpFkXMT4AXWJShrCRnu51vhGQAuAU3LFQhhGVJ+74="
   [mod."github.com/prometheus/common"]
-    version = "v0.70.1"
-    hash = "sha256-xlhVEswCWaBnAXn53KOUzquoDEnZVd/NcTbj52EJ6rE="
+    version = "v0.71.0"
+    hash = "sha256-94kki7QNQjmL5UFgJfqN5qeLC/dCqMEevxCHHKyMqUk="
   [mod."github.com/prometheus/procfs"]
     version = "v0.22.0"
     hash = "sha256-TRwVHKgW4NnPuC6Me38OD57ccM8AfnS7IxtcAx2TAH4="

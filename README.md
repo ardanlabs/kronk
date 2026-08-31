@@ -111,10 +111,10 @@ Sometimes there are breaking changes to the family of ggml libraries that requir
 
 Here are some of the known compatible versions:
 
-| kronk      | yzma    | llama.cpp     | bucky  | whisper.cpp | malina | stable-diffusion.cpp |
-| ---------- | ------- | ------------- | ------ | ----------- | ------ | -------------------- |
-| 1.32.4-rc3 | 3306fd1 | b10647-b10702 | v1.1.0 | v1.9.3      | v1.0.5 | master-830-50d6405   |
-| 1.32.3     | v1.25.0 | v0.3.0-b10646 | v1.1.0 | v1.9.3      | v1.0.5 | master-830-50d6405   |
+| kronk      | yzma    | llama.cpp | bucky  | whisper.cpp | malina | stable-diffusion.cpp |
+| ---------- | ------- | --------- | ------ | ----------- | ------ | -------------------- |
+| 1.32.4-rc4 | d0abb7d | b10715    | v1.1.0 | v1.9.3      | v1.0.6 | master-841-6b3edaa   |
+| 1.32.3     | v1.25.0 | v0.3.0    | v1.1.0 | v1.9.3      | v1.0.5 | master-830-50d6405   |
 
 ## Documentation and Examples
 

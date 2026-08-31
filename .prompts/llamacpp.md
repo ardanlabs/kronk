@@ -17,8 +17,8 @@ Review mode:
 
 Review baseline:
 
-- Last reviewed upstream llama.cpp version: `b10698` (`742347b2e717dcebd432437ddf5d088dc4fd9232`)
-- Last reviewed yzma main commit: `3306fd1cf58fa46f6f2d273c58efda3b7581e06c`
+- Last reviewed upstream llama.cpp version: `b10715` (`662a0b0121a53c23b825a71e64ab6eff59b7f4d8`)
+- Last reviewed yzma main commit: `d0abb7d5acdaa8132cb3fa4c06e364dda44fc4b2`
 - Resolve and verify both baseline revisions before comparing changes.
 - These values, rather than Kronk's currently pinned dependencies, are the starts of their respective review ranges.
 
@@ -85,9 +85,10 @@ Do not:
 - Update either review baseline if that upstream's research is incomplete or its exact comparison range could not be established.
 
 Deliverable:
-Write or update `.agents/llama-yzma-upstream-review.md` with:
+Provide the following information with a plan of changes to implement. Use the following
+list to help determine this plan.
 
-1. Executive summary
+1. Are there any ABI changes that break YZMA or anything that breaks Kronk.
 2. Exact comparison ranges and review mode
 3. Current and latest llama.cpp and yzma revisions
 4. Required changes

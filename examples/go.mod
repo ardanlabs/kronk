@@ -8,7 +8,7 @@ require (
 	github.com/ardanlabs/kronk v1.32.3
 	github.com/duckdb/duckdb-go/v2 v2.10505.0
 	github.com/gen2brain/malgo v0.11.26
-	github.com/hybridgroup/yzma v1.25.1-0.20260830132541-3306fd1cf58f
+	github.com/hybridgroup/yzma v1.25.1-0.20260831114346-d0abb7d5acda
 	golang.org/x/image v0.45.0
 )
 
@@ -27,7 +27,7 @@ require (
 	github.com/apache/arrow-go/v18 v18.7.0 // indirect
 	github.com/ardanlabs/bucky v1.1.1 // indirect
 	github.com/ardanlabs/jinja v1.6.0 // indirect
-	github.com/ardanlabs/malina v1.0.5 // indirect
+	github.com/ardanlabs/malina v1.0.6 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.45.1 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.20 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.33.1 // indirect
@@ -57,7 +57,7 @@ require (
 	github.com/duckdb/duckdb-go-bindings/lib/linux-amd64 v0.10505.0 // indirect
 	github.com/duckdb/duckdb-go-bindings/lib/linux-arm64 v0.10505.0 // indirect
 	github.com/duckdb/duckdb-go-bindings/lib/windows-amd64 v0.10505.0 // indirect
-	github.com/ebitengine/purego v0.11.0-alpha.10 // indirect
+	github.com/ebitengine/purego v0.11.0-alpha.11 // indirect
 	github.com/envoyproxy/go-control-plane/envoy v1.39.0 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.3.3 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
@@ -91,8 +91,8 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.29 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/prometheus/client_golang v1.24.1 // indirect
-	github.com/prometheus/client_model v0.6.2 // indirect
-	github.com/prometheus/common v0.70.1 // indirect
+	github.com/prometheus/client_model v0.6.3 // indirect
+	github.com/prometheus/common v0.71.0 // indirect
 	github.com/prometheus/procfs v0.22.0 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.8.1 // indirect
 	github.com/stretchr/testify v1.12.1 // indirect

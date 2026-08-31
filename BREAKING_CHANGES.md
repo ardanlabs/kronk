@@ -2,6 +2,9 @@
 
 ## Index
 
+- [v1.32.4](#v1324)
+  - [IMC Session Capacity Changes](#v1324-imc-session-capacity-changes)
+  - [Docker Observability Changes](#v1324-docker-observability-changes)
 - [v1.31.6](#v1316)
   - [Go Toolchain Changes](#v1316-go-toolchain-changes)
 - [v1.31.4](#v1314)
@@ -23,6 +26,46 @@
   - [HTTP Error Response Changes](#v1303-http-error-response-changes)
   - [Session Storage Changes](#v1303-session-storage-changes)
   - [Go SDK Changes](#v1303-go-sdk-changes)
+
+## v1.32.4
+
+### v1.32.4: IMC Session Capacity Changes
+
+The default Incremental Message Cache (IMC) session capacity now matches the
+generation admission capacity:
+
+```text
+# Before
+max(nseq-max, 1) × max(3, queue-depth)
+
+# After
+max(nseq-max, 1) × queue-depth
+```
+
+With `nseq-max: 2` and the default `queue-depth: 2`, Kronk now retains four
+working IMC sessions and four System cache entries instead of six of each.
+This does not reduce execution concurrency or request admission capacity, but a
+workload with more than four active conversation branches may evict reusable
+state sooner and perform additional prompt prefill.
+
+Set `imc-session-capacity` explicitly when the desired warm conversation
+working set is larger than the new default. For example, use
+`imc-session-capacity: 6` to preserve the previous default for two slots and a
+queue depth of two. An explicit value must be at least
+`nseq-max × queue-depth`.
+
+### v1.32.4: Docker Observability Changes
+
+The bundled Docker Compose observability stack now uses Grafana Alloy instead
+of Promtail to collect container logs for Loki. Custom commands, Compose
+overrides, automation, or monitoring that refer to the `promtail` service or
+container must use `alloy` instead. The configuration directory changed from
+`zarf/docker/promtail` to `zarf/docker/alloy`.
+
+The Compose volume `promtail-positions` was replaced by `alloy-data`. Existing
+Promtail position data is not migrated or reused. The standard `make
+grafana-up` and `make grafana-down` commands already use Alloy and require no
+manual changes.
 
 ## v1.31.6
 
