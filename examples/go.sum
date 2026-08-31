@@ -38,8 +38,8 @@ github.com/ardanlabs/bucky v1.1.1 h1:bCoDqjU3kWcbJMvwbLLoFjW45rbCqCrfMFa4zrxAOwo
 github.com/ardanlabs/bucky v1.1.1/go.mod h1:iq1gUg7DHQZWiTuWSEPfR0UzQoGnozXnBsLfGZqPGKA=
 github.com/ardanlabs/jinja v1.6.0 h1:CbqS/dxYM9qrmlBed1GsN64/tRY6SoWQWc5Sc+aw3iI=
 github.com/ardanlabs/jinja v1.6.0/go.mod h1:aXXzlJfjA+T3XNKA/YT5ZtDq2VJxt5a5siZ8cl9B35Q=
-github.com/ardanlabs/malina v1.0.5 h1:MbWGn77r5UmWYkO5BBu9KJyzWOPMsdEQ1EPuX17JYWo=
-github.com/ardanlabs/malina v1.0.5/go.mod h1:g7CGFc8TWWGmcoJzuPfKyc23/59n1WhZZJH9MF7SV30=
+github.com/ardanlabs/malina v1.0.6 h1:zWdyrViG3jD8YhZr7V9wi+iYCm9IpoLSCiwnv0x5M0s=
+github.com/ardanlabs/malina v1.0.6/go.mod h1:g7CGFc8TWWGmcoJzuPfKyc23/59n1WhZZJH9MF7SV30=
 github.com/aws/aws-sdk-go-v2 v1.45.1 h1:iIoG3NaLhV6UZpPXyPXlDj2I9oS8tV/nMcMnITCC6Ks=
 github.com/aws/aws-sdk-go-v2 v1.45.1/go.mod h1:bttEH6JqnUL8LepvDVfdrds/fZ5bCIxzpe3abyUrhDU=
 github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.20 h1:GPRlPwz40I2B2VrBEASOA3Bi77NyeqejNLkifosX0rs=
@@ -100,8 +100,8 @@ github.com/duckdb/duckdb-go-bindings/lib/windows-amd64 v0.10505.0 h1:DjqZl9rYreH
 github.com/duckdb/duckdb-go-bindings/lib/windows-amd64 v0.10505.0/go.mod h1:K25pJL26ARblGDeuAkrdblFvUen92+CwksLtPEHRqqQ=
 github.com/duckdb/duckdb-go/v2 v2.10505.0 h1:SWwvLn2Qx/RQSnQNupwgIF8VbnJ5A6OQU9lYb/mDETI=
 github.com/duckdb/duckdb-go/v2 v2.10505.0/go.mod h1:m0PW4J4FG9hlFlVdXi6Ds9owpyIDaBdE2jyce00fGcE=
-github.com/ebitengine/purego v0.11.0-alpha.10 h1:B0yFFCFj03T9HKzbQoGts27dbNqLL0tdzLj4GMaU4zg=
-github.com/ebitengine/purego v0.11.0-alpha.10/go.mod h1:DCHPP08djqhNSoTfImcnHYQRZmd0qhakvrozqaEYhGQ=
+github.com/ebitengine/purego v0.11.0-alpha.11 h1:M0Rv0h9UejkDKQnlPF8/OzcMkpnlrTreUxtX+zOMqDE=
+github.com/ebitengine/purego v0.11.0-alpha.11/go.mod h1:DCHPP08djqhNSoTfImcnHYQRZmd0qhakvrozqaEYhGQ=
 github.com/envoyproxy/go-control-plane v0.14.0 h1:hbG2kr4RuFj222B6+7T83thSPqLjwBIfQawTkC++2HA=
 github.com/envoyproxy/go-control-plane v0.14.0/go.mod h1:NcS5X47pLl/hfqxU70yPwL9ZMkUlwlKxtAohpi2wBEU=
 github.com/envoyproxy/go-control-plane/envoy v1.39.0 h1:1uwRDYPYG8BIBU9Mj1sUAebNmlM6beu/ZKKweSLDxk8=
@@ -186,10 +186,10 @@ github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 h1:GFCKgm
 github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10/go.mod h1:t/avpk3KcrXxUnYOhZhMXJlSEyie6gQbtLq5NM3loB8=
 github.com/prometheus/client_golang v1.24.1 h1:JnJkREXzWxUdCuPFpIWZiPispT9xVV59uiuyR2bPlnU=
 github.com/prometheus/client_golang v1.24.1/go.mod h1:F+oSRECHg4sse5ucfYpYDeIv/hu68Zo0uoHKetWnzcE=
-github.com/prometheus/client_model v0.6.2 h1:oBsgwpGs7iVziMvrGhE53c/GrLUsZdHnqNwqPLxwZyk=
-github.com/prometheus/client_model v0.6.2/go.mod h1:y3m2F6Gdpfy6Ut/GBsUqTWZqCUvMVzSfMLjcu6wAwpE=
-github.com/prometheus/common v0.70.1 h1:1HvjP4D5oL3t8RsPlwxA9onvvStjtIHYE5XuuwOi/PY=
-github.com/prometheus/common v0.70.1/go.mod h1:VdFUQDMZK3VLkurFUVhia6uys/0suUp86TJz5qbJRhc=
+github.com/prometheus/client_model v0.6.3 h1:O0jaTVAYNxTHYInEPFJt5I3+sN8zqBtVMPTB1qyxiEo=
+github.com/prometheus/client_model v0.6.3/go.mod h1:gpN5P9S7Rr6Yr92PiQ+Ixvhf6JZEkF1dnxsYL2aPBEM=
+github.com/prometheus/common v0.71.0 h1:9KDAKb7Mj3HEVKyFCK6Dc/HIwlBzZIN2l7/lrHl3KK8=
+github.com/prometheus/common v0.71.0/go.mod h1:CLJ5H8TEsGX8bl31BdMkfhIZ+QmZ9tBPPotUxUbfcmk=
 github.com/prometheus/procfs v0.22.0 h1:6q9+/JL9IKAPbCmBrv9n5O5Ty3NKnciV5X7YGw0oics=
 github.com/prometheus/procfs v0.22.0/go.mod h1:CvmFr/GVhIjIvWJZW3tgkODBQMRIf0EyWMQLHCHab58=
 github.com/spiffe/go-spiffe/v2 v2.8.1 h1:eXZMLsu+3MLEPJyGJkolqtVrteZfQdUpOWj6LTiDl/E=
