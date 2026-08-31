@@ -273,11 +273,10 @@ kronk libs --local --upgrade
 ```
 
 Kronk, its Yzma Go binding, and llama.cpp form a tested compatibility set.
-Kronk 1.30.0 introduced Yzma v1.22.0 and requires llama.cpp b10212 or newer in
-that compatibility line. Do not infer compatibility from version ordering or
-upgrade only one member of the set. The current and historical matrix is kept
-in the repository [README](../README.md#llamacpp-versions), while the normal
-non-`--upgrade` command installs the build pinned for the Kronk release.
+Do not infer compatibility from version ordering or upgrade only one member of
+the set. The current and historical matrix is kept in the repository
+[README](../README.md#project-status), while the normal non-`--upgrade` command
+installs the build pinned for the Kronk release.
 
 Use `kronk libs --help` for cross-platform bundle installation and removal.
 Changing the active library path requires a server restart; libraries are not
