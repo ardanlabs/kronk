@@ -1,0 +1,21 @@
+# actionlint configuration.
+#
+# Declares the custom labels carried by the self-hosted runners so that
+# `runs-on:` entries referencing them are validated instead of reported as
+# unknown. Keep this in sync when a runner is added, relabeled, or removed.
+#
+#   kronk-linux-gpu-1  (org runner, Default group)
+#     self-hosted, Linux, X64, gpu, rocm
+#     AMD GPU box. Runs the Linux gating jobs plus the ROCm gpu-tests job.
+#     No passwordless sudo — workflows must never call sudo on it.
+#
+#   kronk-runner-1     (repo runner, Default group)
+#     self-hosted, macOS, ARM64, sand
+#     Apple Silicon. Runs the macOS gating jobs plus the Metal gpu-tests job.
+#
+# Run locally with:  actionlint
+self-hosted-runner:
+  labels:
+    - gpu
+    - rocm
+    - sand

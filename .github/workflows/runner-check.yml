@@ -1,0 +1,340 @@
+name: Runner check
+
+# Manual-only probe of the self-hosted runners. Run this BEFORE relying on
+# them in the gating workflows, and any time a runner is rebuilt, moved, or
+# re-registered.
+#
+# It answers the questions that otherwise only surface as a confusing CI
+# failure twenty minutes into a real run:
+#
+#   * Does the job get picked up at all? (org runner groups deny public
+#     repositories by default — a misconfigured group leaves jobs queued
+#     forever with no error message.)
+#   * What hardware, disk, and privileges does the runner actually have?
+#   * Is the GPU visible, and which llama.cpp backend does Kronk's own
+#     auto-detection choose on it?
+#   * Can the runner reach the endpoints setup-kronk needs?
+#   * What state has a previous job left behind in ~/.kronk?
+#
+# Every diagnostic step is `continue-on-error` so a single missing tool
+# produces a full report instead of a truncated one. The final "Summary"
+# step is the one that fails the job, and only on conditions that would
+# genuinely break the gating workflows.
+
+# Triggers
+#
+# `workflow_dispatch` is the intended everyday entry point — but a
+# dispatch-only workflow cannot be dispatched until the file exists on the
+# default branch, which would make this workflow untestable in the very PR
+# that introduces it. The narrow `pull_request` trigger closes that gap: any
+# PR touching this file or the setup-kronk composite re-runs the probe
+# automatically, so runner changes are verified before they land.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/runner-check.yml"
+      - ".github/actions/setup-kronk/**"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Which runner(s) to probe
+        type: choice
+        default: both
+        options:
+          - both
+          - linux
+          - macos
+      deep:
+        description: >
+          Also build kronk, install the native libs, and run `kronk diagnose`.
+          Slower (downloads library bundles on a cold runner) but it is the
+          only check that proves the real inference stack loads.
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  linux:
+    name: Linux self-hosted (kronk-linux-gpu-1)
+    if: >-
+      (github.event.pull_request.head.repo.full_name || github.repository) == github.repository
+      && (github.event_name == 'pull_request' || inputs.target == 'both' || inputs.target == 'linux')
+    runs-on: [self-hosted, Linux, X64, gpu, rocm]
+    timeout-minutes: 30
+    steps:
+      - name: Identity
+        continue-on-error: true
+        run: |
+          echo "runner name   : ${RUNNER_NAME:-?}"
+          echo "runner os/arch: ${RUNNER_OS:-?}/${RUNNER_ARCH:-?}"
+          echo "environment   : ${RUNNER_ENVIRONMENT:-?}"
+          echo "workspace     : ${GITHUB_WORKSPACE:-?}"
+          echo "runner temp   : ${RUNNER_TEMP:-?}"
+          echo "tool cache    : ${RUNNER_TOOL_CACHE:-?}"
+          echo "hostname      : $(hostname)"
+          echo "user          : $(id -un) (uid $(id -u), groups: $(id -Gn))"
+          echo "kernel        : $(uname -srmo)"
+          echo "distro        : $(. /etc/os-release 2>/dev/null && echo "$PRETTY_NAME")"
+
+      - name: Hardware
+        continue-on-error: true
+        run: |
+          echo "cores : $(nproc)"
+          echo "model : $(awk -F': ' '/model name/{print $2; exit}' /proc/cpuinfo)"
+          echo
+          free -h
+          echo
+          df -h / "$HOME" "${RUNNER_TEMP:-/tmp}"
+
+      # The gating workflows must never assume sudo. setup-kronk's
+      # disk-reclaim step is gated on runner.environment for exactly this
+      # reason; this step records the ground truth.
+      - name: Privileges
+        continue-on-error: true
+        run: |
+          if sudo -n true 2>/dev/null; then
+            echo "passwordless sudo: YES"
+          else
+            echo "passwordless sudo: NO (workflows must not call sudo)"
+          fi
+
+      - name: Tooling
+        continue-on-error: true
+        run: |
+          for t in go git curl wget tar unzip jq docker rocminfo rocm-smi vulkaninfo clinfo; do
+            if command -v "$t" >/dev/null 2>&1; then
+              printf '%-12s %s\n' "$t" "$(command -v "$t")"
+            else
+              printf '%-12s %s\n' "$t" "MISSING"
+            fi
+          done
+
+      # Kronk probes exactly these two binaries to pick a backend
+      # (sdk/tools/libs/runtime_selection.go: hasROCmHostSupport runs
+      # `rocminfo`, hasVulkanHostSupport runs `vulkaninfo --summary`).
+      # If rocminfo is absent or reports no GPU, auto-detection silently
+      # falls back to Vulkan and then CPU — which would make the "GPU"
+      # job a very slow CPU job.
+      - name: GPU probe
+        continue-on-error: true
+        run: |
+          echo "::group::rocminfo"
+          rocminfo 2>&1 | grep -Ei 'Name:|Marketing|gfx|Compute Unit' | head -40 || echo "rocminfo unavailable"
+          echo "::endgroup::"
+          echo "::group::rocm-smi"
+          rocm-smi 2>&1 | head -30 || echo "rocm-smi unavailable"
+          echo "::endgroup::"
+          echo "::group::vulkaninfo --summary"
+          vulkaninfo --summary 2>&1 | head -40 || echo "vulkaninfo unavailable"
+          echo "::endgroup::"
+          echo "::group::kernel amdgpu"
+          ls -l /dev/kfd /dev/dri 2>&1 || true
+          echo "::endgroup::"
+
+      # A self-hosted runner reuses $HOME between jobs, so models and
+      # library bundles survive. Knowing what is already there explains
+      # why a run was fast (or why it re-downloaded 6.6 GiB).
+      - name: Persistent ~/.kronk state
+        continue-on-error: true
+        run: |
+          if [[ -d "$HOME/.kronk" ]]; then
+            du -sh "$HOME"/.kronk/* 2>/dev/null || true
+            echo
+            echo "installed library triples:"
+            find "$HOME/.kronk/libraries" "$HOME/.kronk/bucky-libraries" \
+              -mindepth 3 -maxdepth 3 -type d 2>/dev/null | sed 's|.*/libraries/||' || true
+          else
+            echo "no ~/.kronk yet (cold runner)"
+          fi
+
+      - name: Network egress
+        continue-on-error: true
+        run: |
+          for u in https://proxy.golang.org https://github.com https://objects.githubusercontent.com https://huggingface.co; do
+            code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$u" || echo FAILED)"
+            printf '%-45s %s\n' "$u" "$code"
+          done
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      # Proves the workspace is usable. actions/checkout cleans the
+      # workspace between runs, and a leftover read-only directory from a
+      # previous job makes that clean fail with EACCES.
+      - name: Workspace writability
+        continue-on-error: true
+        run: |
+          find "$GITHUB_WORKSPACE" ! -writable -print 2>/dev/null | head -20 || true
+          echo "checkout ok: $(git -C "$GITHUB_WORKSPACE" rev-parse --short HEAD)"
+
+      - name: Set up Kronk
+        if: inputs.deep || github.event_name == 'pull_request'
+        uses: ./.github/actions/setup-kronk
+        with:
+          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
+
+      # The payoff: what does Kronk itself decide to run on? `devices`
+      # lists what the loaded llama.cpp build can see; `diagnose` reports
+      # the resolved (arch, os, processor) triple. Run once with the
+      # backend forced to rocm and once forced to cpu, because the gating
+      # workflows use both.
+      - name: Kronk device + backend report
+        if: inputs.deep || github.event_name == 'pull_request'
+        continue-on-error: true
+        run: |
+          echo "::group::auto-detected"
+          kronk diagnose --no-bench --format json || true
+          echo "::endgroup::"
+          echo "::group::forced rocm"
+          KRONK_PROCESSOR=rocm kronk diagnose --no-bench --format json --processor rocm || true
+          KRONK_PROCESSOR=rocm kronk devices || true
+          echo "::endgroup::"
+          echo "::group::forced cpu"
+          KRONK_PROCESSOR=cpu kronk devices || true
+          echo "::endgroup::"
+
+      # Fails the job only on things that would break the gating
+      # workflows. Everything above is advisory.
+      - name: Summary
+        run: |
+          fail=0
+          command -v go >/dev/null || { echo "::error::go not on PATH"; fail=1; }
+          command -v git >/dev/null || { echo "::error::git not on PATH"; fail=1; }
+          avail="$(df -Pk "$HOME" | awk 'NR==2{print int($4/1024/1024)}')"
+          echo "free space on \$HOME: ${avail} GiB"
+          if (( avail < 25 )); then
+            echo "::error::only ${avail} GiB free on \$HOME; models alone need ~6.6 GiB plus build caches"
+            fail=1
+          fi
+          if ! rocminfo >/dev/null 2>&1; then
+            echo "::warning::rocminfo missing or failing — the rocm job will fall back to Vulkan/CPU"
+          fi
+          exit $fail
+
+  macos:
+    name: macOS self-hosted (kronk-runner-1)
+    if: >-
+      (github.event.pull_request.head.repo.full_name || github.repository) == github.repository
+      && (github.event_name == 'pull_request' || inputs.target == 'both' || inputs.target == 'macos')
+    runs-on: [self-hosted, macOS, ARM64, sand]
+    timeout-minutes: 30
+    steps:
+      - name: Identity
+        continue-on-error: true
+        run: |
+          echo "runner name   : ${RUNNER_NAME:-?}"
+          echo "runner os/arch: ${RUNNER_OS:-?}/${RUNNER_ARCH:-?}"
+          echo "environment   : ${RUNNER_ENVIRONMENT:-?}"
+          echo "workspace     : ${GITHUB_WORKSPACE:-?}"
+          echo "runner temp   : ${RUNNER_TEMP:-?}"
+          echo "tool cache    : ${RUNNER_TOOL_CACHE:-?}"
+          echo "hostname      : $(hostname)"
+          echo "user          : $(id -un) (uid $(id -u))"
+          echo "macOS         : $(sw_vers -productVersion) ($(sw_vers -buildVersion))"
+          echo "kernel        : $(uname -srm)"
+
+      - name: Hardware
+        continue-on-error: true
+        run: |
+          echo "chip   : $(sysctl -n machdep.cpu.brand_string)"
+          echo "cores  : $(sysctl -n hw.ncpu) (perf $(sysctl -n hw.perflevel0.logicalcpu 2>/dev/null || echo ?))"
+          echo "memory : $(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 )) GiB"
+          echo
+          df -h / "$HOME" "${RUNNER_TEMP:-/tmp}"
+
+      - name: Privileges
+        continue-on-error: true
+        run: |
+          if sudo -n true 2>/dev/null; then
+            echo "passwordless sudo: YES"
+          else
+            echo "passwordless sudo: NO (workflows must not call sudo)"
+          fi
+
+      # `setsid` is deliberately checked: setup-kronk takes a different
+      # code path on macOS precisely because setsid does not exist there.
+      - name: Tooling
+        continue-on-error: true
+        run: |
+          for t in go git curl wget tar unzip jq setsid xcrun; do
+            if command -v "$t" >/dev/null 2>&1; then
+              printf '%-10s %s\n' "$t" "$(command -v "$t")"
+            else
+              printf '%-10s %s\n' "$t" "MISSING"
+            fi
+          done
+          echo
+          xcode-select -p 2>/dev/null || echo "no Xcode command line tools"
+
+      - name: GPU probe
+        continue-on-error: true
+        run: |
+          system_profiler SPDisplaysDataType 2>/dev/null | head -30 || echo "SPDisplaysDataType unavailable"
+
+      - name: Persistent ~/.kronk state
+        continue-on-error: true
+        run: |
+          if [[ -d "$HOME/.kronk" ]]; then
+            du -sh "$HOME"/.kronk/* 2>/dev/null || true
+            echo
+            echo "installed library triples:"
+            find "$HOME/.kronk/libraries" "$HOME/.kronk/bucky-libraries" \
+              -mindepth 3 -maxdepth 3 -type d 2>/dev/null | sed 's|.*/libraries/||' || true
+          else
+            echo "no ~/.kronk yet (cold runner)"
+          fi
+
+      - name: Network egress
+        continue-on-error: true
+        run: |
+          for u in https://proxy.golang.org https://github.com https://objects.githubusercontent.com https://huggingface.co; do
+            code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$u" || echo FAILED)"
+            printf '%-45s %s\n' "$u" "$code"
+          done
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Workspace writability
+        continue-on-error: true
+        run: |
+          find "$GITHUB_WORKSPACE" ! -perm -u+w -print 2>/dev/null | head -20 || true
+          echo "checkout ok: $(git -C "$GITHUB_WORKSPACE" rev-parse --short HEAD)"
+
+      - name: Set up Kronk
+        if: inputs.deep || github.event_name == 'pull_request'
+        uses: ./.github/actions/setup-kronk
+        with:
+          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
+
+      - name: Kronk device + backend report
+        if: inputs.deep || github.event_name == 'pull_request'
+        continue-on-error: true
+        run: |
+          echo "::group::auto-detected"
+          kronk diagnose --no-bench --format json || true
+          echo "::endgroup::"
+          echo "::group::forced metal"
+          KRONK_PROCESSOR=metal kronk devices || true
+          echo "::endgroup::"
+          echo "::group::forced cpu"
+          KRONK_PROCESSOR=cpu kronk devices || true
+          echo "::endgroup::"
+
+      - name: Summary
+        run: |
+          fail=0
+          command -v go >/dev/null || { echo "::error::go not on PATH"; fail=1; }
+          command -v git >/dev/null || { echo "::error::git not on PATH"; fail=1; }
+          avail="$(df -Pk "$HOME" | awk 'NR==2{print int($4/1024/1024)}')"
+          echo "free space on \$HOME: ${avail} GiB"
+          if (( avail < 25 )); then
+            echo "::error::only ${avail} GiB free on \$HOME; models alone need ~6.6 GiB plus build caches"
+            fail=1
+          fi
+          exit $fail
