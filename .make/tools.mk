@@ -5,13 +5,14 @@ MTP_LOAD_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT
 MTP_LOAD_REQUESTS ?= 2
 MTP_LOAD_PROMPT_TOKENS ?= 2200
 MTP_LOAD_MAX_TOKENS ?= 256
+MTP_LOAD_EXPECTED_SLOTS ?= 4
 MTP_LOAD_SEED ?= 42
 MTP_LOAD_OUT ?= .tools/mtp-load/output
 
 # Builds distinct prompts, calibrates each one with /v1/tokenize, releases all
 # requests through one barrier, and saves request/response JSON plus summary.json.
 # Replaces MTP_LOAD_OUT at startup so it contains only the current experiment.
-# Requires nseq-max: 1
+# Requires nseq-max: MTP_LOAD_EXPECTED_SLOTS.
 mtp-load-parallel:
 	python3 .tools/mtp-load/mtp-load.py \
 		--host "$(MTP_LOAD_HOST)" \
@@ -19,14 +20,16 @@ mtp-load-parallel:
 		--requests "$(MTP_LOAD_REQUESTS)" \
 		--prompt-tokens "$(MTP_LOAD_PROMPT_TOKENS)" \
 		--max-tokens "$(MTP_LOAD_MAX_TOKENS)" \
+		--expected-slots "$(MTP_LOAD_EXPECTED_SLOTS)" \
 		--seed "$(MTP_LOAD_SEED)" \
+		--require-mtp \
 		--out "$(MTP_LOAD_OUT)"
 
 # Sends one known-good coding prompt through a barrier to verify a one-slot
 # model can complete five concurrent requests. Responses stay in memory.
 # Requires nseq-max: 1
 LOAD_HOST ?= http://localhost:11435
-LOAD_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT
+LOAD_MODEL ?= unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT
 LOAD_REQUESTS ?= 5
 LOAD_MAX_TOKENS ?= 4096
 LOAD_SEED ?= 42
@@ -39,6 +42,65 @@ test-load:
 		--max-tokens "$(LOAD_MAX_TOKENS)" \
 		--seed "$(LOAD_SEED)" \
 		--scenario tic-tac-toe
+
+# ==============================================================================
+
+# Single-slot hybrid state-integrity probe. Exercises deterministic cold/warm
+# generation, IMC exact and append reuse, cancellation recovery, and MTP usage
+# when the selected model exposes an embedded head.
+HYBRID_LOAD_HOST ?= http://localhost:11435
+HYBRID_LOAD_MODEL ?= unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT
+HYBRID_LOAD_TIMEOUT ?= 1800
+HYBRID_LOAD_OUT ?= .tools/hybrid-load/output/summary.json
+
+test-hybrid-load:
+	python3 .tools/hybrid-load/hybrid-load.py \
+		--host "$(HYBRID_LOAD_HOST)" \
+		--model "$(HYBRID_LOAD_MODEL)" \
+		--timeout "$(HYBRID_LOAD_TIMEOUT)" \
+		--out "$(HYBRID_LOAD_OUT)"
+
+# ==============================================================================
+
+# Staged exact-needle retrieval and warm-IMC probe. Targets beyond the model's
+# configured context are reported as skipped.
+LONG_CONTEXT_LOAD_HOST ?= http://localhost:11435
+LONG_CONTEXT_LOAD_MODEL ?= unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT
+LONG_CONTEXT_LOAD_STAGES ?= 4096,8192,16384,32768,65536,131072
+LONG_CONTEXT_LOAD_MAX_TOKENS ?= 96
+LONG_CONTEXT_LOAD_TIMEOUT ?= 1800
+LONG_CONTEXT_LOAD_SEED ?= 42
+LONG_CONTEXT_LOAD_OUT ?= .tools/long-context-load/output/summary.json
+
+test-long-context-load:
+	python3 .tools/long-context-load/long-context-load.py \
+		--host "$(LONG_CONTEXT_LOAD_HOST)" \
+		--model "$(LONG_CONTEXT_LOAD_MODEL)" \
+		--stages "$(LONG_CONTEXT_LOAD_STAGES)" \
+		--max-tokens "$(LONG_CONTEXT_LOAD_MAX_TOKENS)" \
+		--timeout "$(LONG_CONTEXT_LOAD_TIMEOUT)" \
+		--seed "$(LONG_CONTEXT_LOAD_SEED)" \
+		--out "$(LONG_CONTEXT_LOAD_OUT)"
+
+# ==============================================================================
+
+# One-slot multimodal correctness and modality-state isolation probe. This is
+# complementary to test-media-load, which requires concurrent slots.
+MEDIA_SMOKE_HOST ?= http://localhost:11435
+MEDIA_SMOKE_MODEL ?= unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT
+MEDIA_SMOKE_IMAGE ?= examples/samples/giraffe.jpg
+MEDIA_SMOKE_MAX_TOKENS ?= 128
+MEDIA_SMOKE_TIMEOUT ?= 1800
+MEDIA_SMOKE_OUT ?= .tools/media-smoke/output/summary.json
+
+test-media-smoke:
+	python3 .tools/media-smoke/media-smoke.py \
+		--host "$(MEDIA_SMOKE_HOST)" \
+		--model "$(MEDIA_SMOKE_MODEL)" \
+		--image "$(MEDIA_SMOKE_IMAGE)" \
+		--max-tokens "$(MEDIA_SMOKE_MAX_TOKENS)" \
+		--timeout "$(MEDIA_SMOKE_TIMEOUT)" \
+		--out "$(MEDIA_SMOKE_OUT)"
 
 # ==============================================================================
 

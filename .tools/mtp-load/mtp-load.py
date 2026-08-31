@@ -49,8 +49,14 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--requests", type=int, required=True)
     parser.add_argument("--prompt-tokens", type=int)
     parser.add_argument("--max-tokens", type=int, required=True)
+    parser.add_argument("--expected-slots", type=int, default=1)
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--out", type=Path)
+    parser.add_argument(
+        "--require-mtp",
+        action="store_true",
+        help="fail unless the scheduler reports MTP and requests draft tokens",
+    )
     parser.add_argument(
         "--scenario", choices=("calibrated", "tic-tac-toe"), default="calibrated"
     )
@@ -59,6 +65,8 @@ def arguments() -> argparse.Namespace:
         parser.error("--requests must be at least 1")
     if args.max_tokens < 1:
         parser.error("--max-tokens must be positive")
+    if args.expected_slots < 1:
+        parser.error("--expected-slots must be positive")
     if args.scenario == "calibrated" and (
         args.prompt_tokens is None or args.prompt_tokens < 1
     ):
@@ -217,19 +225,6 @@ def main() -> int:
         results = [future.result() for future in futures]
 
     results.sort(key=lambda result: result["request"])
-    summary = {
-        "host": args.host,
-        "model": args.model,
-        "requests": args.requests,
-        "scenario": args.scenario,
-        "requested_prompt_tokens": args.prompt_tokens,
-        "max_tokens": args.max_tokens,
-        "seed": args.seed,
-        "results": results,
-    }
-    if args.out:
-        (args.out / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
-
     for result in results:
         usage = result["usage"]
         if error := result.get("error"):
@@ -253,9 +248,6 @@ def main() -> int:
                 finish=result["finish_reason"],
             )
         )
-    if args.out:
-        print(f"saved experiment artifacts to {args.out}")
-
     passed = sum(result["passed"] for result in results)
     models = get(args.host, "/v1/kronk/models/ps")
     loaded = next(
@@ -267,11 +259,82 @@ def main() -> int:
         None,
     )
     slots = loaded.get("slots") if loaded else None
-    one_slot = slots == 1
+    expected_slots = slots == args.expected_slots
+    engines = get(args.host, "/v1/kronk/models/slots")
+    engine = next(
+        (
+            item
+            for item in engines
+            if item.get("model_id") == args.model
+            or item.get("model_id", "").endswith(args.model)
+        ),
+        None,
+    )
+    mtp_active = bool(engine and engine.get("mtp"))
+    draft_tokens = sum(
+        int(result["usage"].get("draft_tokens", 0)) for result in results
+    )
+    draft_coverage = max(
+        (float(result["usage"].get("draft_coverage", 0)) for result in results),
+        default=0,
+    )
+    draft_disable_reasons = sorted(
+        {
+            str(result["usage"].get("draft_disable_reason"))
+            for result in results
+            if result["usage"].get("draft_disable_reason")
+        }
+    )
+    mtp_passed = (
+        not args.require_mtp
+        or (
+            mtp_active
+            and draft_tokens > 0
+            and draft_coverage > 0
+            and not draft_disable_reasons
+        )
+    )
+    summary = {
+        "host": args.host,
+        "model": args.model,
+        "requests": args.requests,
+        "scenario": args.scenario,
+        "requested_prompt_tokens": args.prompt_tokens,
+        "max_tokens": args.max_tokens,
+        "expected_slots": args.expected_slots,
+        "seed": args.seed,
+        "require_mtp": args.require_mtp,
+        "loaded_model": loaded,
+        "scheduler": {
+            "mtp": mtp_active,
+            "ndraft": engine.get("ndraft") if engine else None,
+            "slots": len(engine.get("slots") or []) if engine else None,
+        },
+        "draft_totals": {
+            "draft_tokens": draft_tokens,
+            "maximum_draft_coverage": draft_coverage,
+            "disable_reasons": draft_disable_reasons,
+        },
+        "results": results,
+    }
+    if args.out:
+        (args.out / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+        print(f"saved experiment artifacts to {args.out}")
+
     print(f"completed {passed}/{args.requests} meaningful responses; model slots={slots}")
-    if not one_slot:
-        print(f"FAIL: expected one loaded slot for {args.model}, got {slots}")
-    return 0 if passed == args.requests and one_slot else 1
+    if not expected_slots:
+        print(
+            f"FAIL: expected {args.expected_slots} loaded slots for "
+            f"{args.model}, got {slots}"
+        )
+    if args.require_mtp and not mtp_passed:
+        print(
+            "FAIL: MTP required but "
+            f"scheduler_mtp={mtp_active}, draft_tokens={draft_tokens}, "
+            f"maximum_draft_coverage={draft_coverage}, "
+            f"disable_reasons={draft_disable_reasons}"
+        )
+    return 0 if passed == args.requests and expected_slots and mtp_passed else 1
 
 
 if __name__ == "__main__":
