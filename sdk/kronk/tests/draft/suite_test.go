@@ -38,19 +38,26 @@ var sawAcceptedDraft atomic.Bool
 
 func TestSuite(t *testing.T) {
 	testlib.WithModel(t, testlib.CfgClassicDraftChat(), func(t *testing.T, krn *kronk.Kronk) {
-		t.Run("DraftChat", func(t *testing.T) { testChat(t, krn, testlib.DChatNoTool) })
-		t.Run("DraftStreamingChat", func(t *testing.T) { testChatStreaming(t, krn, testlib.DChatNoTool) })
-	})
+		// The chat subtests may call t.Parallel, in which case they do not
+		// complete until their parent returns. Grouping them under a single
+		// subtest gives the acceptance check below a point where every
+		// request has finished, so it can be a real subtest rather than a
+		// parent-level t.Cleanup. A cleanup would fail TestSuite while every
+		// visible subtest passed, which reads as a false alarm and hides the
+		// failure from tools that only report leaf results.
+		t.Run("Chats", func(t *testing.T) {
+			t.Run("DraftChat", func(t *testing.T) { testChat(t, krn, testlib.DChatNoTool) })
+			t.Run("DraftStreamingChat", func(t *testing.T) { testChatStreaming(t, krn, testlib.DChatNoTool) })
+		})
 
-	// Registered after WithModel's unload cleanup, so by LIFO order this
-	// runs first — after every (parallel) subtest has completed, before
-	// the model unloads. At least one request must have produced an
-	// accepted draft token for the classic drafter path to be considered
-	// exercised.
-	t.Cleanup(func() {
-		if !sawAcceptedDraft.Load() {
-			t.Error("classic drafter produced no accepted draft tokens across the suite; the separate-GGUF draft path may have regressed (drafter failed to load or every draft was rejected)")
-		}
+		// At least one request must have produced an accepted draft token
+		// for the classic drafter path to be considered exercised. Runs
+		// before WithModel's unload cleanup, so the model is still loaded.
+		t.Run("DraftAcceptance", func(t *testing.T) {
+			if !sawAcceptedDraft.Load() {
+				t.Error("classic drafter produced no accepted draft tokens across the suite; the separate-GGUF draft path may have regressed (drafter failed to load or every draft was rejected)")
+			}
+		})
 	})
 }
 
@@ -69,22 +76,27 @@ func checkDraftUsage(t *testing.T, id string, usage *model.Usage) {
 		t.Errorf("%s: draft request returned no usage block", id)
 		return
 	}
-	if usage.DraftTokens == 0 {
-		t.Logf("%s: drafted 0 tokens (adaptive throttle disabled speculation for this request)", id)
-		return
-	}
-	if usage.DraftAcceptedTokens > 0 {
-		sawAcceptedDraft.Store(true)
-	} else {
-		t.Logf("%s: WARNING drafted %d tokens but accepted 0 (acceptance EMA may have collapsed)", id, usage.DraftTokens)
-		return
-	}
 	reason := usage.DraftDisableReason
 	if reason == "" {
 		reason = "active"
 	}
+
+	// Logged before any branch: these are exactly the fields needed to tell
+	// a real regression from the adaptive throttle doing its job, so they
+	// must be present on the failing runs, not only the passing ones.
 	t.Logf("%s: draft=%d accepted=%d rate=%.2f coverage=%.2f reason=%s",
 		id, usage.DraftTokens, usage.DraftAcceptedTokens, usage.DraftAcceptanceRate, usage.DraftCoverage, reason)
+
+	switch {
+	case usage.DraftTokens == 0:
+		t.Logf("%s: drafted 0 tokens (adaptive throttle disabled speculation for this request)", id)
+
+	case usage.DraftAcceptedTokens == 0:
+		t.Logf("%s: WARNING drafted %d tokens but accepted 0 (acceptance EMA may have collapsed)", id, usage.DraftTokens)
+
+	default:
+		sawAcceptedDraft.Store(true)
+	}
 }
 
 func testChat(t *testing.T, krn *kronk.Kronk, d model.D) {

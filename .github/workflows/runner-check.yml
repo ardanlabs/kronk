@@ -1,34 +1,15 @@
 name: Runner check
 
-# Manual-only probe of the self-hosted runners. Run this BEFORE relying on
-# them in the gating workflows, and any time a runner is rebuilt, moved, or
-# re-registered.
+# Manual probe of the self-hosted runners. Run before relying on them, and
+# whenever one is rebuilt, moved, or re-registered. Reports hardware,
+# privileges, tooling, GPU visibility, persistent ~/.kronk state, network
+# egress, and the backend Kronk's own detection resolves to.
 #
-# It answers the questions that otherwise only surface as a confusing CI
-# failure twenty minutes into a real run:
-#
-#   * Does the job get picked up at all? (org runner groups deny public
-#     repositories by default — a misconfigured group leaves jobs queued
-#     forever with no error message.)
-#   * What hardware, disk, and privileges does the runner actually have?
-#   * Is the GPU visible, and which llama.cpp backend does Kronk's own
-#     auto-detection choose on it?
-#   * Can the runner reach the endpoints setup-kronk needs?
-#   * What state has a previous job left behind in ~/.kronk?
-#
-# Every diagnostic step is `continue-on-error` so a single missing tool
-# produces a full report instead of a truncated one. The final "Summary"
-# step is the one that fails the job, and only on conditions that would
-# genuinely break the gating workflows.
+# Diagnostic steps are continue-on-error so one missing tool still yields a
+# full report; the Summary step is what fails the job.
 
-# Triggers
-#
-# `workflow_dispatch` is the intended everyday entry point — but a
-# dispatch-only workflow cannot be dispatched until the file exists on the
-# default branch, which would make this workflow untestable in the very PR
-# that introduces it. The narrow `pull_request` trigger closes that gap: any
-# PR touching this file or the setup-kronk composite re-runs the probe
-# automatically, so runner changes are verified before they land.
+# The pull_request trigger exists because a dispatch-only workflow cannot
+# be dispatched until it reaches the default branch.
 on:
   pull_request:
     paths:
@@ -91,9 +72,8 @@ jobs:
           echo
           df -h / "$HOME" "${RUNNER_TEMP:-/tmp}"
 
-      # The gating workflows must never assume sudo. setup-kronk's
-      # disk-reclaim step is gated on runner.environment for exactly this
-      # reason; this step records the ground truth.
+      # setup-kronk's disk-reclaim step is gated on runner.environment
+      # because of this.
       - name: Privileges
         continue-on-error: true
         run: |
@@ -114,12 +94,9 @@ jobs:
             fi
           done
 
-      # Kronk probes exactly these two binaries to pick a backend
-      # (sdk/tools/libs/runtime_selection.go: hasROCmHostSupport runs
-      # `rocminfo`, hasVulkanHostSupport runs `vulkaninfo --summary`).
-      # If rocminfo is absent or reports no GPU, auto-detection silently
-      # falls back to Vulkan and then CPU — which would make the "GPU"
-      # job a very slow CPU job.
+      # Kronk probes exactly these binaries to pick a backend
+      # (sdk/tools/libs/runtime_selection.go). Neither present means the GPU
+      # job silently becomes a slow CPU job.
       - name: GPU probe
         continue-on-error: true
         run: |
@@ -136,9 +113,7 @@ jobs:
           ls -l /dev/kfd /dev/dri 2>&1 || true
           echo "::endgroup::"
 
-      # A self-hosted runner reuses $HOME between jobs, so models and
-      # library bundles survive. Knowing what is already there explains
-      # why a run was fast (or why it re-downloaded 6.6 GiB).
+      # $HOME is reused between jobs, so models and bundles survive.
       - name: Persistent ~/.kronk state
         continue-on-error: true
         run: |
@@ -163,9 +138,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
-      # Proves the workspace is usable. actions/checkout cleans the
-      # workspace between runs, and a leftover read-only directory from a
-      # previous job makes that clean fail with EACCES.
+      # A read-only dir left by a previous job makes checkout's clean
+      # fail with EACCES.
       - name: Workspace writability
         continue-on-error: true
         run: |
@@ -176,12 +150,9 @@ jobs:
         if: inputs.deep || github.event_name == 'pull_request'
         uses: ./.github/actions/setup-kronk
         with:
-          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
+          models-cache-key: ${{ runner.os }}-${{ runner.environment }}-models-${{ hashFiles('.github/test-models.txt') }}
 
-      # The payoff: what does Kronk itself decide to run on? `devices`
-      # lists what the loaded llama.cpp build can see; `diagnose` reports
-      # the resolved (arch, os, processor) triple. Run once with the
-      # backend forced to rocm and once forced to cpu, because the gating
+      # What Kronk itself resolves to. Both backends, since the gating
       # workflows use both.
       - name: Kronk device + backend report
         if: inputs.deep || github.event_name == 'pull_request'
@@ -190,16 +161,15 @@ jobs:
           echo "::group::auto-detected"
           kronk diagnose --no-bench --format json || true
           echo "::endgroup::"
-          echo "::group::forced rocm"
-          KRONK_PROCESSOR=rocm kronk diagnose --no-bench --format json --processor rocm || true
-          KRONK_PROCESSOR=rocm kronk devices || true
+          echo "::group::forced vulkan"
+          KRONK_PROCESSOR=vulkan kronk diagnose --no-bench --format json --processor vulkan || true
+          KRONK_PROCESSOR=vulkan kronk devices || true
           echo "::endgroup::"
           echo "::group::forced cpu"
           KRONK_PROCESSOR=cpu kronk devices || true
           echo "::endgroup::"
 
-      # Fails the job only on things that would break the gating
-      # workflows. Everything above is advisory.
+      # Everything above is advisory; this is the gate.
       - name: Summary
         run: |
           fail=0
@@ -211,8 +181,8 @@ jobs:
             echo "::error::only ${avail} GiB free on \$HOME; models alone need ~6.6 GiB plus build caches"
             fail=1
           fi
-          if ! rocminfo >/dev/null 2>&1; then
-            echo "::warning::rocminfo missing or failing — the rocm job will fall back to Vulkan/CPU"
+          if ! vulkaninfo --summary >/dev/null 2>&1; then
+            echo "::warning::vulkaninfo missing or failing — gpu-tests will not find a Vulkan device"
           fi
           exit $fail
 
@@ -256,8 +226,8 @@ jobs:
             echo "passwordless sudo: NO (workflows must not call sudo)"
           fi
 
-      # `setsid` is deliberately checked: setup-kronk takes a different
-      # code path on macOS precisely because setsid does not exist there.
+      # setsid is checked because setup-kronk takes a different macOS path
+      # precisely because it does not exist there.
       - name: Tooling
         continue-on-error: true
         run: |
@@ -310,7 +280,7 @@ jobs:
         if: inputs.deep || github.event_name == 'pull_request'
         uses: ./.github/actions/setup-kronk
         with:
-          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
+          models-cache-key: ${{ runner.os }}-${{ runner.environment }}-models-${{ hashFiles('.github/test-models.txt') }}
 
       - name: Kronk device + backend report
         if: inputs.deep || github.event_name == 'pull_request'
