@@ -225,11 +225,10 @@ web/server operation is the default and there is no `--web` flag.
 #### 20.4.1 Native-library compatibility and SDK initialization
 
 The versions in `go.mod`, `sdk/tools/libs` defaults, and the README compatibility
-matrix describe one tested Kronk/Yzma/llama.cpp set. The Kronk 1.30.0 line uses Yzma
-v1.22.0 with llama.cpp b10212 or newer. A dependency update is incomplete unless the
-binding, pinned native build, root and examples modules, generated Nix module data,
-and focused model tests remain aligned. Do not update Yzma or select a newer
-llama.cpp build independently merely because it is available upstream.
+matrix describe one tested Kronk/Yzma/llama.cpp set. A dependency update is incomplete
+unless the binding, pinned native build, root and examples modules, generated Nix
+module data, and focused model tests remain aligned. Do not update Yzma or select a
+newer llama.cpp build independently merely because it is available upstream.
 
 Runnable language-model examples should resolve and initialize the same runtime they
 install:
