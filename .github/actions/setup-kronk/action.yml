@@ -60,7 +60,31 @@ runs:
       uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
       with:
         go-version-file: .go-version
+        # setup-go defaults this to true, which pushes the module and build
+        # caches through the same GitHub cache service. On a self-hosted
+        # runner those directories already persist in a local volume, so the
+        # upload is pure cost — and it fails outright once the cache budget
+        # is exhausted.
+        cache: ${{ runner.environment == 'github-hosted' }}
 
+    # CACHING, hosted vs self-hosted
+    #
+    # actions/cache is a GitHub-hosted service: a self-hosted runner still
+    # uploads and downloads over the network, and is billed for it. Two
+    # things make it the wrong tool on our own hardware:
+    #
+    #   * It records paths relative to the workspace. ~/.kronk sits two
+    #     levels above the workspace on a hosted runner and nowhere near it
+    #     on ours (HOME=/root, workspace under /_work), so an archive saved
+    #     on one cannot be restored onto the other.
+    #   * ~/.kronk and ~/go already persist between jobs in Docker volumes,
+    #     which is the same cache without the transfer or the bill.
+    #
+    # So the cache layers run on hosted runners only. Self-hosted skips
+    # straight to the install/pull steps, which short-circuit on files the
+    # volume already holds. Hosted keeps its original cache keys so the
+    # existing entries stay valid.
+    #
     # Native llama.cpp + whisper.cpp library cache. Keyed on the version
     # constants in their installer packages, so a defaultVersion bump in
     # code invalidates this cache without bumping any cache-key suffix
@@ -72,12 +96,13 @@ runs:
     # the on-disk library trees that this cache restores.
     - name: Restore libraries cache
       id: cache-libs
+      if: runner.environment == 'github-hosted'
       uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5
       with:
         path: |
           ~/.kronk/libraries
           ~/.kronk/bucky-libraries
-        key: ${{ runner.os }}-${{ runner.environment }}-kronk-libs-${{ hashFiles('sdk/tools/libs/libs.go', 'sdk/tools/bucky/libs/**/*.go') }}
+        key: ${{ runner.os }}-kronk-libs-${{ hashFiles('sdk/tools/libs/libs.go', 'sdk/tools/bucky/libs/**/*.go') }}
 
     # Kick off the kronk build + native-libs install in the background
     # so it runs concurrently with the (much slower) models-cache
@@ -148,6 +173,7 @@ runs:
     # its foreground build/install completes.
     - name: Restore models cache
       id: cache-models
+      if: runner.environment == 'github-hosted'
       uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5
       with:
         path: |
