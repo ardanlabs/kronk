@@ -1,10 +1,5 @@
 name: macOS
 
-# Darwin/Apple-Silicon coverage on the self-hosted mac (kronk-runner-1).
-#
-# This workflow was previously `workflow_dispatch`-only, so nothing on a PR
-# ever exercised the macOS build or the Metal backend. It now gates pushes to
-# main and same-repo pull requests, matching linux.yml.
 on:
   push:
     branches:
@@ -34,9 +29,6 @@ on:
       - ".github/test-models.txt"
   workflow_dispatch:
 
-# There is exactly one macOS runner, so cancelling superseded runs is what
-# keeps a burst of pushes from queueing behind itself. `head_ref || ref`
-# collapses the duplicate push+pull_request runs on a PR branch.
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
@@ -44,36 +36,14 @@ concurrency:
 permissions:
   contents: read
 
-# ---------------------------------------------------------------------------
-# Fork policy
+# Every job is skipped on a fork PR. kronk is public and this runner is
+# not ephemeral, so untrusted code must never land on it. There is no
+# hosted fallback: macos-latest cannot hold the 6.6 GiB model set.
+# Forks are covered by linux.yml. Skipped counts as passing for branch
+# protection, so these stay safe to mark required.
 #
-# Unlike linux.yml, which falls back to `ubuntu-latest` for fork PRs, every
-# job here is SKIPPED on a fork PR. There is no hosted fallback in play:
-# `macos-latest` is a ~3-core / 7 GiB machine with ~14 GiB free disk, and the
-# model suites alone pull ~6.6 GiB of GGUFs, so routing forks there would buy
-# flaky OOM/disk-full failures rather than signal. Fork contributors are
-# covered by the Linux workflow on hosted runners.
-#
-# Never remove the `if:` guard without adding a hosted fallback. kronk is a
-# public repository and the mac runner is not ephemeral — a fork PR scheduled
-# onto it would run untrusted code against a $HOME that persists into every
-# later job.
-#
-# Skipped jobs report as "skipped", which GitHub counts as passing for branch
-# protection, so these can safely be marked required.
-# ---------------------------------------------------------------------------
-
-# KRONK_PROCESSOR=cpu pins the four gating jobs to the CPU llama.cpp bundle.
-# This is a deliberate change from the previous behavior, where every macOS
-# job silently ran on Metal via host auto-detection: the gate is now
-# byte-for-byte comparable with the Linux gate, and Metal gets its own
-# explicit, clearly-labeled job below rather than being an implicit default
-# nobody could see in the logs. Net coverage goes up, not down — both run on
-# every PR.
-#
-# An explicit processor is strict; Kronk does not substitute another runtime
-# (sdk/tools/libs/libs.go:234). Both `darwin/arm64/cpu` and `darwin/arm64/metal`
-# are published combinations (sdk/tools/libs/combinations.go).
+# KRONK_PROCESSOR=cpu pins the gate; these jobs previously auto-detected
+# Metal. Metal now has its own explicit job, so both run on every PR.
 env:
   GOTOOLCHAIN: local
   KRONK_PROCESSOR: cpu
@@ -150,7 +120,7 @@ jobs:
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
         with:
-          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
+          models-cache-key: ${{ runner.os }}-${{ runner.environment }}-models-${{ hashFiles('.github/test-models.txt') }}
 
       - name: go test -race -short (sdk unit packages)
         run: |
@@ -182,12 +152,7 @@ jobs:
         id: setup
         uses: ./.github/actions/setup-kronk
         with:
-          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
-
-      # NOTE: this job used to re-run the exact `go test -race -short` command
-      # that the `race` job above already runs. With a single macOS runner the
-      # jobs execute back to back rather than in parallel, so the duplicate was
-      # pure added wall-clock on the critical path. Removed.
+          models-cache-key: ${{ runner.os }}-${{ runner.environment }}-models-${{ hashFiles('.github/test-models.txt') }}
 
       - name: Run api/service tests
         run: |
@@ -217,7 +182,7 @@ jobs:
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
         with:
-          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
+          models-cache-key: ${{ runner.os }}-${{ runner.environment }}-models-${{ hashFiles('.github/test-models.txt') }}
 
       - name: Run sdk tests
         run: |
@@ -232,20 +197,9 @@ jobs:
           go test -v -count=1 -timeout 6m -run '^(TestSuite|TestConcurrentRerank)$' ./sdk/kronk/tests/rerank
           go test -v -count=1 -timeout 6m -run '^(TestSuite|TestUsageCountingHybrid)$' ./sdk/kronk/tests/hybrid
 
-  # ---------------------------------------------------------------------------
-  # gpu-tests
-  #
-  # The Metal counterpart to linux.yml's ROCm job, and the reason the mac
-  # runner is worth gating on: Apple Silicon GPU inference is what most Kronk
-  # users on macOS actually run, and no hosted runner can exercise it.
-  #
-  # KRONK_PROCESSOR=metal overrides the workflow-level `cpu` pin and is
-  # strict, so a missing Metal bundle fails this job instead of quietly
-  # degrading to CPU and reporting green.
-  #
-  # Library bundles install per-triple (<root>/<os>/<arch>/<processor>/), so
-  # the metal bundle coexists with the cpu bundle the gating jobs use.
-  # ---------------------------------------------------------------------------
+  # Apple Silicon GPU inference is what macOS users actually run, and no
+  # hosted runner can exercise it. KRONK_PROCESSOR is strict, so a missing
+  # Metal bundle fails here rather than degrading to CPU.
   gpu-tests:
     name: GPU tests (Metal)
     if: (github.event.pull_request.head.repo.full_name || github.repository) == github.repository
@@ -254,22 +208,14 @@ jobs:
     env:
       KRONK_PROCESSOR: metal
     steps:
-      - name: Runner specs
-        run: |
-          echo "CPU: $(sysctl -n machdep.cpu.brand_string)"
-          echo "CPU cores: $(sysctl -n hw.ncpu)"
-          echo "Memory bytes: $(sysctl -n hw.memsize)"
-
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
         with:
-          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
+          models-cache-key: ${{ runner.os }}-${{ runner.environment }}-models-${{ hashFiles('.github/test-models.txt') }}
 
-      # Fail fast with a readable message if the Metal bundle did not land,
-      # instead of letting every suite below time out.
       - name: Verify Metal backend
         run: |
           kronk diagnose --no-bench --format json

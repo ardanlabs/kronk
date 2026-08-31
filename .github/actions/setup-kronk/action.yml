@@ -39,10 +39,8 @@ runs:
   using: composite
   steps:
     - name: Free disk space
-      # Only the GitHub-hosted images need — or permit — this. The
-      # self-hosted Linux runner has no passwordless sudo, so an
-      # unconditional `sudo rm -rf` aborts the whole setup there, and it
-      # has plenty of disk anyway.
+      # Only the hosted images ship the toolchains this reclaims. The
+      # self-hosted runner has 800+ GB free and none of these paths.
       if: runner.os == 'Linux' && runner.environment == 'github-hosted'
       shell: bash
       run: |
@@ -79,7 +77,7 @@ runs:
         path: |
           ~/.kronk/libraries
           ~/.kronk/bucky-libraries
-        key: ${{ runner.os }}-kronk-libs-${{ hashFiles('sdk/tools/libs/libs.go', 'sdk/tools/bucky/libs/**/*.go') }}
+        key: ${{ runner.os }}-${{ runner.environment }}-kronk-libs-${{ hashFiles('sdk/tools/libs/libs.go', 'sdk/tools/bucky/libs/**/*.go') }}
 
     # Kick off the kronk build + native-libs install in the background
     # so it runs concurrently with the (much slower) models-cache
@@ -91,9 +89,8 @@ runs:
     # the "Wait for background kronk install" step can surface
     # failures (and the build log) without losing the kronk install
     # being the actual cause of a downstream "command not found".
-    # RUNNER_TEMP (not a fixed /tmp path) because the self-hosted Linux
-    # runner persists /tmp across jobs — two runs would otherwise read
-    # each other's stale .exit/.pid files.
+    # RUNNER_TEMP, not /tmp: the self-hosted runner persists /tmp across
+    # jobs, so two runs would read each other's stale .exit/.pid files.
     #
     # Why all three commands run in one background shell:
     #   - `go install ./cmd/kronk` produces the kronk binary on PATH
@@ -190,8 +187,16 @@ runs:
           exit "$EXIT"
         fi
 
+    # Deliberately NOT gated on the cache hit. actions/cache records paths
+    # relative to the workspace, and ~/.kronk sits at a different depth on a
+    # hosted runner (HOME=/home/runner, workspace two levels below) than on a
+    # self-hosted one (HOME=/root, workspace under /_work). A hit restored
+    # across that boundary reports success while the files land somewhere the
+    # tests never look, and gating the download on the hit turned that into a
+    # green run that tested nothing. The pull loop short-circuits on verified
+    # files (sdk/tools/models/download.go), so running it unconditionally
+    # costs a verification pass and repairs any such mismatch.
     - name: Download test models
-      if: steps.cache-models.outputs.cache-hit != 'true'
       shell: bash
       # The model list lives in .github/test-models.txt (one
       # `<backend> <model-id>` per line). The same file is hashed into

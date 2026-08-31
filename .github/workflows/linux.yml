@@ -33,10 +33,6 @@ on:
 # otherwise fire from both the `push` and `pull_request` events on a PR
 # branch (they have different github.ref values and would not cancel
 # each other if grouped by ref alone).
-#
-# This matters more now than it did on hosted runners: there is a single
-# self-hosted Linux runner, so a superseded run that is not cancelled
-# occupies the only executor and delays the run that replaced it.
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
@@ -49,41 +45,9 @@ concurrency:
 permissions:
   contents: read
 
-# ---------------------------------------------------------------------------
-# Runner selection
-#
-# `runs-on` below resolves to the self-hosted Linux runner for anything
-# originating in this repository (pushes to main, same-repo PR branches,
-# manual dispatch) and to `ubuntu-latest` for pull requests opened from a
-# fork.
-#
-# The fork carve-out is not optional. kronk is a PUBLIC repository and does
-# receive fork PRs, and the self-hosted runners are NOT ephemeral: a fork PR
-# scheduled onto one would execute attacker-controlled code on hardware we
-# own, with a $HOME that persists into every subsequent job (models, library
-# bundles, Go module cache, and the runner's own credentials). GitHub's
-# guidance is explicit that self-hosted runners must not be used with public
-# repositories for this reason. Routing forks to hosted runners keeps outside
-# contributors fully covered by CI without ever touching our hardware.
-#
-# The expression reads as "the head repo, defaulting to this repo when the
-# event has no head repo at all". For push/workflow_dispatch the left side is
-# empty and collapses to github.repository, so the comparison is trivially
-# true; for a same-repo PR both sides are `ardanlabs/kronk`; for a fork PR the
-# left side is the fork and the comparison is false.
-#
-#   ${{ (github.event.pull_request.head.repo.full_name || github.repository)
-#        == github.repository && fromJSON('[...]') || 'ubuntu-latest' }}
-#
-# Note the labels requested for the CPU jobs are only `self-hosted, Linux,
-# X64` — deliberately NOT `gpu`/`rocm`. Those jobs do not need a GPU, so
-# they stay schedulable on any future Linux runner that gets added. Only the
-# `gpu-tests` job pins the accelerator labels.
-# ---------------------------------------------------------------------------
-
-# The workflow runs four independent jobs in parallel on hosted runners.
-# They all use `actions/setup-go@v6` pinned to `go-version-file: .go-version`,
-# which gives them an identical setup-go cache key (OS + Go version + go.sum
+# The workflow runs four independent jobs in parallel. They all use
+# `actions/setup-go@v6` pinned to `go-version-file: .go-version`, which
+# gives them an identical setup-go cache key (OS + Go version + go.sum
 # hash) so the Go module download cache and the build cache ($GOCACHE)
 # are shared across jobs and across runs.
 #
@@ -104,14 +68,7 @@ permissions:
 #                Owns the models-cache save so the two test jobs don't
 #                race on save.
 #   sdk-tests  — full kronk + libs + models setup, runs sdk/...
-#   gpu-tests  — the model-backed capability suites again, but with the
-#                ROCm llama.cpp bundle on the AMD GPU. Self-hosted only.
-#
-# SERIALIZATION WARNING: a self-hosted runner executes ONE job at a time, and
-# there is currently a single Linux runner (kronk-linux-gpu-1). The five jobs
-# below therefore run back to back rather than in parallel, so wall-clock time
-# for a PR is roughly their sum. Registering additional runner processes on
-# the same host restores the parallelism.
+#   gpu-tests  — the model suites again under Vulkan. Self-hosted only.
 #
 # On the rare cache miss both test jobs download the models in parallel.
 # That's wasted CPU but no wall-clock penalty, and avoids a serial
@@ -121,19 +78,17 @@ permissions:
 # bumps its `go` directive above .go-version cannot silently force a
 # toolchain auto-download in CI — better to fail loudly and bump
 # .go-version + check-go-version.sh together.
+# Self-hosted for anything from this repo; ubuntu-latest for fork PRs.
+# kronk is public and the runners are not ephemeral, so a fork PR must
+# never be scheduled onto them. The CPU jobs ask only for self-hosted/
+# Linux/X64 so they stay schedulable on any future Linux runner.
 #
-# KRONK_PROCESSOR=cpu pins the llama.cpp bundle for the four gating jobs.
-# Without it, `kronk libs --local` probes the host (sdk/tools/libs/
-# runtime_selection.go:312 runs `rocminfo`) and would silently pick ROCm on
-# the GPU runner, making the gate's results depend on which runner picked up
-# the job. An explicit processor is strict — Kronk does not substitute
-# another runtime — so the gate stays byte-for-byte comparable with the
-# hosted-runner path that fork PRs take. GPU coverage is the separate
-# `gpu-tests` job's responsibility.
+# One runner means one job at a time: the five jobs below serialize.
 #
-# `kronk bucky libs --local` is intentionally left on auto-detect: whisper.cpp
-# publishes no ROCm bundle (sdk/tools/bucky/libs/combinations.go), so bucky
-# already degrades rocm -> vulkan -> cpu on its own.
+# KRONK_PROCESSOR=cpu keeps the gate's results independent of which
+# runner took the job — without it, `kronk libs --local` probes the host
+# and would pick a GPU backend on the GPU runner. That is gpu-tests' job.
+# Bucky stays on auto-detect; it has no ROCm bundle and degrades on its own.
 env:
   GOTOOLCHAIN: local
   KRONK_PROCESSOR: cpu
@@ -230,7 +185,7 @@ jobs:
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
         with:
-          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
+          models-cache-key: ${{ runner.os }}-${{ runner.environment }}-models-${{ hashFiles('.github/test-models.txt') }}
 
       # Race detector pass on SDK unit packages. The model/library-heavy
       # integration suites still belong to sdk-tests; this job stays
@@ -273,7 +228,7 @@ jobs:
           # automatically invalidates the cache. Old keys age out via
           # GHA's 7-day-unused eviction policy (also see
           # cache-cleanup.yml).
-          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
+          models-cache-key: ${{ runner.os }}-${{ runner.environment }}-models-${{ hashFiles('.github/test-models.txt') }}
 
       - name: Run api/service tests
         run: |
@@ -305,7 +260,7 @@ jobs:
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
         with:
-          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
+          models-cache-key: ${{ runner.os }}-${{ runner.environment }}-models-${{ hashFiles('.github/test-models.txt') }}
 
       - name: Run sdk tests
         run: |
@@ -324,42 +279,29 @@ jobs:
           go test -v -count=1 -timeout 6m -run '^(TestSuite|TestConcurrentRerank)$' ./sdk/kronk/tests/rerank
           go test -v -count=1 -timeout 6m -run '^(TestSuite|TestUsageCountingHybrid)$' ./sdk/kronk/tests/hybrid
 
-  # ---------------------------------------------------------------------------
-  # gpu-tests
+  # GPU coverage the hosted runners cannot provide. Vulkan rather than ROCm:
+  # the runner's Radeon 8060S is an iGPU, whisper.cpp ships no ROCm bundle so
+  # bucky lands on Vulkan regardless, and it avoids ~2 GB of ROCm packages.
+  # Switching later means changing KRONK_PROCESSOR and the runner image target.
   #
-  # The reason the self-hosted Linux runner exists. kronk ships a `rocm`
-  # Docker variant (see docker.yml) that until now had no test coverage at
-  # all, because GitHub's hosted runners have no GPU. This job runs the
-  # model-backed capability suites against the ROCm llama.cpp bundle on
-  # kronk-linux-gpu-1's AMD GPU.
+  # The `gpu` label means "has a GPU"; the backend is this job's choice, so
+  # the runner needs no relabelling to move between the two.
   #
-  # Self-hosted only, by construction: there is no hosted fallback that could
-  # run it, so the job is skipped outright on fork PRs rather than routed.
-  #
-  # KRONK_PROCESSOR=rocm overrides the workflow-level `cpu` pin. It is strict
-  # (sdk/tools/libs/libs.go:234 skips host detection entirely when the
-  # variable is set), so if the ROCm bundle is missing or the GPU is not
-  # visible this job FAILS rather than quietly falling back to CPU and
-  # reporting green. That is the intended behavior — a silent CPU fallback
-  # here would mean the rocm path is untested while claiming otherwise.
-  #
-  # Library bundles install per-triple (<root>/<os>/<arch>/<processor>/), so
-  # the rocm bundle coexists with the cpu bundle the other jobs use; they do
-  # not overwrite each other despite sharing the libs cache key.
-  # ---------------------------------------------------------------------------
+  # KRONK_PROCESSOR is strict (sdk/tools/libs/libs.go:234), so a missing
+  # bundle fails here instead of silently degrading to CPU.
   gpu-tests:
-    name: GPU tests (ROCm)
+    name: GPU tests (Vulkan)
     if: (github.event.pull_request.head.repo.full_name || github.repository) == github.repository
-    runs-on: [self-hosted, Linux, X64, gpu, rocm]
+    runs-on: [self-hosted, Linux, X64, gpu]
     timeout-minutes: 45
     env:
-      KRONK_PROCESSOR: rocm
+      KRONK_PROCESSOR: vulkan
     steps:
       - name: Runner specs
         run: |
           nproc
           free -h
-          rocminfo 2>/dev/null | grep -Ei 'Marketing Name|gfx' | head -10 || echo "rocminfo unavailable"
+          vulkaninfo --summary 2>/dev/null | head -20 || echo "vulkaninfo unavailable"
 
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
@@ -367,11 +309,11 @@ jobs:
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
         with:
-          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
+          models-cache-key: ${{ runner.os }}-${{ runner.environment }}-models-${{ hashFiles('.github/test-models.txt') }}
 
-      # Fail fast with a readable message if the ROCm bundle did not land or
-      # the GPU is invisible, instead of letting every suite below time out.
-      - name: Verify ROCm backend
+      # Fail fast and readably if the GPU is invisible, rather than letting
+      # every suite below time out.
+      - name: Verify Vulkan backend
         run: |
           kronk diagnose --no-bench --format json
           kronk devices

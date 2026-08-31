@@ -95,11 +95,23 @@ func Setup() {
 	}
 }
 
+// resolveModel populates mp when the model is present on disk. A miss is not
+// fatal: testlib resolves every model any suite might want, while CI installs
+// only the subset in .github/test-models.txt, so absent models are normal and
+// the suites that need them fail on their own when they load.
+//
+// The miss IS reported, though. Swallowing the error silently meant a runner
+// with no models at all produced suites that quietly did nothing and a green
+// build — the failure mode is indistinguishable from success in the log.
 func resolveModel(mdls *models.Models, name string, mp *models.Path) {
-	if dp, err := mdls.FullPath(name); err == nil {
-		fmt.Printf("RetrieveModel %s...\n", name)
-		*mp = dp
+	dp, err := mdls.FullPath(name)
+	if err != nil {
+		fmt.Printf("RetrieveModel %s... MISSING (%s)\n", name, err)
+		return
 	}
+
+	fmt.Printf("RetrieveModel %s...\n", name)
+	*mp = dp
 }
 
 func printInfo(mdls *models.Models) {
@@ -107,7 +119,10 @@ func printInfo(mdls *models.Models) {
 	fmt.Println("useLibVersion    :", defaults.LibVersion(""))
 	fmt.Println("modelPath        :", mdls.Path())
 	fmt.Println("imageFile        :", ImageFile)
-	fmt.Println("processor        :", "cpu")
+	// Library bundles install to <root>/<os>/<arch>/<processor>, so the last
+	// path element is the backend actually loaded. This used to be a
+	// hardcoded "cpu", which reported the wrong backend on every GPU run.
+	fmt.Println("processor        :", filepath.Base(libs.Path("")))
 	fmt.Println("goroutines       :", Goroutines)
 	fmt.Println("maxRetries       :", MaxRetries)
 	fmt.Println("testDuration     :", TestDuration)
