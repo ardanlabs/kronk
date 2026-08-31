@@ -113,7 +113,7 @@ Here are some of the known compatible versions:
 
 | kronk      | yzma    | llama.cpp     | bucky  | whisper.cpp | malina | stable-diffusion.cpp |
 | ---------- | ------- | ------------- | ------ | ----------- | ------ | -------------------- |
-| 1.32.4-rc2 | 3306fd1 | b10647-b10698 | v1.1.0 | v1.9.3      | v1.0.5 | master-830-50d6405   |
+| 1.32.4-rc3 | 3306fd1 | b10647-b10702 | v1.1.0 | v1.9.3      | v1.0.5 | master-830-50d6405   |
 | 1.32.3     | v1.25.0 | v0.3.0-b10646 | v1.1.0 | v1.9.3      | v1.0.5 | master-830-50d6405   |
 
 ## Documentation and Examples
@@ -128,9 +128,9 @@ Here are some of the known compatible versions:
 Representative examples:
 
 ```shell
-make example-question  # Ask a local language model a question.
-make example-agent     # Run a small coding agent.
-make example-vision    # Prompt a vision model with an image.
+make example-question         # Ask a local language model a question.
+make example-agent            # Run a small coding agent.
+make example-vision           # Prompt a vision model with an image.
 make example-bucky            # Transcribe an audio file with Bucky.
 make example-bucky-stream-vad # Stream transcription with Silero VAD boundaries.
 make example-malina           # Generate an image with experimental Malina.

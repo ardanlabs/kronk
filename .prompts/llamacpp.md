@@ -3,6 +3,11 @@ Perform an incremental llama.cpp and/or yzma upstream review for Kronk.
 Goal:
 Find all meaningful upstream changes since the last successfully reviewed versions, determine their impact on Kronk, and identify required fixes, upgrade risks, performance opportunities, and features Kronk could adopt.
 
+Only review llama.cpp versions that have a completed release in
+https://github.com/hybridgroup/llama-cpp-builder/releases. Do not recommend or
+advance the baseline to a newer upstream llama.cpp version that this project has
+not built.
+
 Review mode:
 
 - Accept `llama.cpp`, `yzma`, or `both` as the requested scope. Default to `both` when no scope is supplied.
@@ -101,4 +106,8 @@ At the end:
 
 - Present the key conclusions to me.
 - Do not implement recommendations unless I explicitly ask.
+- If the review identifies any REQUIRED yzma change, draft a ready-to-submit yzma
+  GitHub issue containing a title, problem statement, reproduction, expected
+  behavior, suggested fix, compatibility notes, and evidence links, then copy the
+  complete issue text to the clipboard.
 - If and only if an upstream review completed successfully, update that upstream's baseline in this prompt to the exact latest revision reviewed. Do not advance the other baseline unless it was also reviewed successfully.
