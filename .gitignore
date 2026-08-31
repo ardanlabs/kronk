@@ -15,6 +15,9 @@ zarf/docker/openwebui/
 .tools/adversarial/output/
 .tools/batch-load/output/
 .tools/media-load/output/
+.tools/hybrid-load/output/
+.tools/long-context-load/output/
+.tools/media-smoke/output/
 .tools/codegen-benchmark/output/
 
 # Binaries for programs and plugins
