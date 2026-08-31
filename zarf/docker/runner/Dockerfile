@@ -2,13 +2,7 @@
 # (kronk-linux-gpu-1, AMD Ryzen AI MAX+ 395 w/ Radeon 8060S).
 #
 # Base is ubuntu-noble (24.04) to match kronk's own runtime image
-# (zarf/docker/kronk/Dockerfile) and GitHub's ubuntu-latest. The
-# ubuntu-focal (20.04) image that myoung34/github-runner:latest points at
-# ships libffi7, and Kronk's purego FFI dependency panics at init without
-# libffi.so.8:
-#
-#   panic: libffi.so.8: cannot open shared object file
-#   github.com/jupiterrider/ffi.init.0()
+# (zarf/docker/kronk/Dockerfile) and GitHub's ubuntu-latest.
 #
 # STAGES
 #
@@ -103,8 +97,22 @@ RUN apt-get update \
 # -----------------------------------------------------------------------------
 FROM base AS rocm
 
-# Keep in sync with the ROCm block in zarf/docker/kronk/Dockerfile.
-ARG ROCM_VERSION="6.4.3"
+# Deliberately NEWER than the 6.4.3 pin in zarf/docker/kronk/Dockerfile.
+# This runner is a Ryzen AI MAX+ 395 (Strix Halo, gfx1151), and the 6.4.x
+# line predates usable support for that target — it needs the 7.x line.
+# The kronk runtime image is a separate decision: bumping it changes what
+# ships to users, so it is left alone here.
+#
+# repo.radeon.com/rocm/apt publishes noble packages for every 7.x release;
+# 7.2.4 is the newest at time of writing. The signing key is shared across
+# versions, so the fingerprint pin below survives a version bump.
+#
+# NOT YET EXERCISED: linux.yml runs gpu-tests on Vulkan, so nothing builds
+# this stage today. Before switching KRONK_PROCESSOR back to rocm, check
+# that the llama.cpp ROCm bundle Kronk downloads is built against a
+# compatible HIP runtime — a bundle compiled for 6.x may not load against
+# a 7.x userspace.
+ARG ROCM_VERSION="7.2.4"
 ARG ROCM_KEY_FINGERPRINT="CA8BB4727A47B4D09B4EE8969386B48A1A693C5C"
 
 # The key fingerprint is verified before the repo is trusted, so a swapped
