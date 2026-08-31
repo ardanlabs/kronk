@@ -206,8 +206,8 @@ schema = 3
     version = "v1.9.0"
     hash = "sha256-sRr/50k8Wra0PJLCJgSkIxvR+ce3PItx4HpFvVijGYk="
   [mod."github.com/hybridgroup/yzma"]
-    version = "v1.25.1-0.20260830132541-3306fd1cf58f"
-    hash = "sha256-gAx1cD3DzyRu7Z+DS/nuHgWAmoAViqw79kQ+2ztafX0="
+    version = "v1.25.1-0.20260831114346-d0abb7d5acda"
+    hash = "sha256-Db/iLzPgrWp3VaUGnsmq3DfEoWLCdZW06lwoaeuXcAk="
   [mod."github.com/icza/bitio"]
     version = "v1.1.0"
     hash = "sha256-CtV/dr1L46cZ65EnK9DrBduZCaMnTGf4N2MnElCymtM="
