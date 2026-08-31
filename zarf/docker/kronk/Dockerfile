@@ -932,7 +932,7 @@ COPY --from=bucky-libs-fetcher /kronk/bucky-libraries /kronk/bucky-libraries
 
 # Default model config — overridable by bind-mounting another file at the
 # path referenced by KRONK_POOL_MODEL_CONFIG_FILE below.
-COPY zarf/kms/model_config.yaml /etc/kronk/model_config.yaml
+COPY zarf/kms/model_config.yaml /kronk/models/model_config.yaml
 
 # Persistent state lives under /kronk. Models are huge and must be mounted;
 # libraries are baked above; catalog/keys/logs land under /kronk too. All
@@ -952,7 +952,7 @@ ENV KRONK_BASE_PATH=/kronk \
     KRONK_WEB_API_HOST=0.0.0.0:11435 \
     KRONK_DOWNLOAD_ENABLED=false \
     KRONK_INSECURE_LOGGING=false \
-    KRONK_POOL_MODEL_CONFIG_FILE=/etc/kronk/model_config.yaml
+    KRONK_POOL_MODEL_CONFIG_FILE=/kronk/models/model_config.yaml
 
 # Note on KRONK_DOWNLOAD_ENABLED: defaults to `false` for a security-
 # conscious production posture (no outbound model fetches from the
@@ -1119,7 +1119,7 @@ COPY --from=bucky-libs-fetcher /kronk/bucky-libraries /kronk/bucky-libraries
 
 # Default model config — overridable by bind-mounting another file at the
 # path referenced by KRONK_POOL_MODEL_CONFIG_FILE below.
-COPY zarf/kms/model_config.yaml /etc/kronk/model_config.yaml
+COPY zarf/kms/model_config.yaml /kronk/models/model_config.yaml
 
 # `bucky-models` is the whisper.cpp model root (see runtime stage above).
 RUN mkdir -p /kronk/models /kronk/bucky-models /kronk/catalog /kronk/keys \
@@ -1139,7 +1139,7 @@ ENV KRONK_BASE_PATH=/kronk \
     KRONK_WEB_API_HOST=0.0.0.0:11435 \
     KRONK_DOWNLOAD_ENABLED=false \
     KRONK_INSECURE_LOGGING=false \
-    KRONK_POOL_MODEL_CONFIG_FILE=/etc/kronk/model_config.yaml \
+    KRONK_POOL_MODEL_CONFIG_FILE=/kronk/models/model_config.yaml \
     KRONK_PROCESSOR=cuda
 
 # See note on KRONK_DOWNLOAD_ENABLED in the default runtime stage.
