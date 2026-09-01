@@ -315,12 +315,17 @@ jobs:
         with:
           models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
 
-      # Fail fast and readably if the GPU is invisible, rather than letting
-      # every suite below time out.
+      # KRONK_PROCESSOR only guarantees the library bundle. ggml can load
+      # the Vulkan build and still enumerate zero Vulkan devices, in which
+      # case every suite below runs on the CPU backend and passes.
       - name: Verify Vulkan backend
         run: |
           kronk diagnose --no-bench --format json
-          kronk devices
+          kronk devices | tee "$RUNNER_TEMP/devices.txt"
+          if ! grep -q 'GPU (Vulkan)' "$RUNNER_TEMP/devices.txt"; then
+            echo "::error::no Vulkan device enumerated; the suites would run on CPU"
+            exit 1
+          fi
 
       - name: Run model suites on GPU
         run: |

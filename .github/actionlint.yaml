@@ -1,10 +1,14 @@
 # Custom labels on the self-hosted runners, so `runs-on:` entries using them
 # are validated rather than reported as unknown.
 #
-#   kronk-linux-gpu-1  self-hosted, Linux, X64, gpu, rocm
+#   kronk-linux-gpu-N  self-hosted, Linux, X64, gpu, <backend>
+#                      where <backend> is vulkan or rocm, set from the
+#                      runner image (zarf/docker/runner). Workflows select
+#                      on `gpu` only — see that Dockerfile's LABELS note.
 #   kronk-runner-1     self-hosted, macOS, ARM64, sand
 self-hosted-runner:
   labels:
     - gpu
     - rocm
+    - vulkan
     - sand
