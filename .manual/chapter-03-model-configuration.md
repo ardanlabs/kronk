@@ -490,10 +490,12 @@ learned router to select a small subset independently for each token and layer.
 All experts remain in memory even though only the selected experts compute.
 
 Hybrid describes a separate design choice: which sequence-processing mechanism
-each layer uses. For example, Qwen 3.6 combines Gated DeltaNet and full-attention
-layers while using an MoE feed-forward block in every layer. Every token still
-traverses every layer; the hybrid stack changes how context is processed, and
-the MoE router changes which feed-forward experts activate.
+each layer uses. A hybrid stack can pair those mechanisms with dense
+feed-forward networks or MoE blocks. Qwen 3.6 combines Gated DeltaNet and
+full-attention layers with MoE; qwen4exp combines Gated DeltaNet and sparse
+attention with MoE. Every token still traverses every layer. The hybrid stack
+changes how context is processed, while an MoE router independently changes
+which feed-forward experts activate.
 
 ![Dense, Mixture-of-Experts, and hybrid inference compared](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-03/dense-moe-hybrid-inference.svg)
 
