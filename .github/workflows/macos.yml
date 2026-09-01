@@ -220,10 +220,17 @@ jobs:
         with:
           models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
 
+      # KRONK_PROCESSOR only guarantees the library bundle. ggml can load
+      # the Metal build and still enumerate zero Metal devices, in which
+      # case every suite below runs on the CPU backend and passes.
       - name: Verify Metal backend
         run: |
           kronk diagnose --no-bench --format json
-          kronk devices
+          kronk devices | tee "$RUNNER_TEMP/devices.txt"
+          if ! grep -q 'GPU (Metal)' "$RUNNER_TEMP/devices.txt"; then
+            echo "::error::no Metal device enumerated; the suites would run on CPU"
+            exit 1
+          fi
 
       - name: Run model suites on GPU
         run: |

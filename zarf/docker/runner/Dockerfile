@@ -22,25 +22,19 @@
 #
 # RUN
 #
-#   VIDEO_GID=$(getent group video  | cut -d: -f3)
-#   RENDER_GID=$(getent group render | cut -d: -f3)
+# Use start-runners.sh beside this file — it fills in the GIDs, volumes and
+# registration env, and starts COUNT runners named <prefix>-1 .. <prefix>-N:
 #
-#   docker run -d --restart=always --name kronk-linux-gpu-1 \
-#     --device /dev/kfd --device /dev/dri \
-#     --group-add "$VIDEO_GID" --group-add "$RENDER_GID" \
-#     --security-opt seccomp=unconfined \
-#     -v kronk-runner-kronk:/root/.kronk \
-#     -v kronk-runner-go:/root/go \
-#     -v kronk-runner-gocache:/root/.cache/go-build \
-#     -e APP_ID=... -e APP_PRIVATE_KEY="$(cat key.pem)" -e APP_LOGIN=ardanlabs \
-#     -e RUNNER_SCOPE=org -e ORG_NAME=ardanlabs \
-#     -e RUNNER_GROUP=kronk \
-#     -e RUNNER_NAME=kronk-linux-gpu-1 \
-#     -e EPHEMERAL=1 \
-#     -e LABELS=gpu,rocm \
-#     kronk-runner:vulkan
+#   docker build -t kronk-runner:vulkan zarf/docker/runner
+#   COUNT=5 APP_ID=... APP_KEY=~/kronk-runners.pem \
+#       ./zarf/docker/runner/start-runners.sh
 #
-# Three things that are easy to get wrong:
+# COUNT matters: a runner process executes ONE job at a time, so a single
+# container makes every job in a workflow run back to back. linux.yml has
+# five jobs, so COUNT=5 is the point where they stop queueing behind each
+# other.
+#
+# Three things that are easy to get wrong, all handled by the script:
 #
 #   RUNNER_GROUP  — omitting it registers into the Default group. That group
 #                   does not allow public repositories, so every job queues
@@ -50,17 +44,31 @@
 #                   may not exist. An unset variable yields --group-add ""
 #                   and docker fails with "unable to find group".
 #   volumes       — EPHEMERAL=1 destroys the container after every job, so
-#                   nothing under / survives. The three volumes are this
-#                   runner's entire cache, and replace actions/cache, which
-#                   the workflows skip on self-hosted:
-#                     /root/.kronk         models (~6.6 GB) and native libs
-#                     /root/go             GOMODCACHE and GOPATH/bin
+#                   nothing under / survives. The volumes are this runner's
+#                   entire cache, and replace actions/cache, which the
+#                   workflows skip on self-hosted:
+#                     /root/.kronk          models (~6.6 GB) and native libs
+#                     /root/go              GOMODCACHE and GOPATH/bin
 #                     /root/.cache/go-build GOCACHE, the compile cache
-#                   Safe because fork PRs are never scheduled onto this
-#                   runner (see linux.yml).
+#                   The Go caches are shared across runners (the toolchain
+#                   locks them); ~/.kronk is per-runner, because concurrent
+#                   `kronk model pull` runs against one directory can race.
+#                   Safe because fork PRs are never scheduled onto these
+#                   runners (see linux.yml).
 #
-# The labels only need to carry `gpu`; linux.yml picks the backend through
-# KRONK_PROCESSOR, so moving between Vulkan and ROCm needs no relabelling.
+# LABELS
+#
+# Workflows select on `gpu` alone and pick the backend through
+# KRONK_PROCESSOR, so switching between Vulkan and ROCm needs no
+# relabelling and no workflow edit. The backend label is descriptive: it
+# says what the runner can actually do, which matters when reading the
+# runner list in GitHub settings. start-runners.sh derives it from the
+# image's com.ardanlabs.kronk.backend label rather than hardcoding it, so
+# a vulkan image can never advertise itself as rocm.
+#
+# Do NOT add the backend to a workflow's runs-on. A job requiring `rocm`
+# stops matching the moment the runner is rebuilt on Vulkan, and an
+# unmatched job queues forever with no error message.
 
 ARG RUNNER_TAG="ubuntu-noble"
 
@@ -97,21 +105,21 @@ RUN apt-get update \
 # -----------------------------------------------------------------------------
 FROM base AS rocm
 
-# Deliberately NEWER than the 6.4.3 pin in zarf/docker/kronk/Dockerfile.
-# This runner is a Ryzen AI MAX+ 395 (Strix Halo, gfx1151), and the 6.4.x
-# line predates usable support for that target — it needs the 7.x line.
-# The kronk runtime image is a separate decision: bumping it changes what
-# ships to users, so it is left alone here.
-#
-# repo.radeon.com/rocm/apt publishes noble packages for every 7.x release;
-# 7.2.4 is the newest at time of writing. The signing key is shared across
-# versions, so the fingerprint pin below survives a version bump.
+# The backend this image provides. start-runners.sh reads it to derive the
+# runner's GitHub labels, so a rocm image cannot end up advertising vulkan
+# or the reverse.
+LABEL com.ardanlabs.kronk.backend="rocm"
+LABEL org.opencontainers.image.title="kronk-runner-rocm"
+LABEL org.opencontainers.image.description="GitHub Actions runner for kronk CI, ROCm backend"
+
+# Keep in sync with ROCM_VERSION in zarf/docker/kronk/Dockerfile, which
+# documents why 7.x is required: libggml-hip.so needs libamdhip64.so.7,
+# librocblas.so.5 and libhipblas.so.3, none of which the 6.4.x line
+# provides. This runner is also a Strix Halo part (gfx1151), which wants
+# the 7.x line regardless.
 #
 # NOT YET EXERCISED: linux.yml runs gpu-tests on Vulkan, so nothing builds
-# this stage today. Before switching KRONK_PROCESSOR back to rocm, check
-# that the llama.cpp ROCm bundle Kronk downloads is built against a
-# compatible HIP runtime — a bundle compiled for 6.x may not load against
-# a 7.x userspace.
+# this stage today.
 ARG ROCM_VERSION="7.2.4"
 ARG ROCM_KEY_FINGERPRINT="CA8BB4727A47B4D09B4EE8969386B48A1A693C5C"
 
@@ -150,5 +158,8 @@ RUN set -eux; \
 # -----------------------------------------------------------------------------
 FROM base AS vulkan
 
+# See the note on the rocm stage: this is what start-runners.sh turns into
+# the runner's GitHub labels.
+LABEL com.ardanlabs.kronk.backend="vulkan"
 LABEL org.opencontainers.image.title="kronk-runner-vulkan"
 LABEL org.opencontainers.image.description="GitHub Actions runner for kronk CI, Vulkan backend"
