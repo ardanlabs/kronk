@@ -41,7 +41,7 @@ env:
 
 jobs:
   linux:
-    name: Linux self-hosted (kronk-linux-gpu-1)
+    name: Linux self-hosted
     if: >-
       (github.event.pull_request.head.repo.full_name || github.repository) == github.repository
       && (github.event_name == 'pull_request' || inputs.target == 'both' || inputs.target == 'linux')
@@ -187,7 +187,7 @@ jobs:
           exit $fail
 
   macos:
-    name: macOS self-hosted (kronk-runner-1)
+    name: macOS self-hosted
     if: >-
       (github.event.pull_request.head.repo.full_name || github.repository) == github.repository
       && (github.event_name == 'pull_request' || inputs.target == 'both' || inputs.target == 'macos')
