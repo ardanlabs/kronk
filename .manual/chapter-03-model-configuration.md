@@ -481,6 +481,22 @@ to inspect the GGUF metadata and estimate a specific configuration. Treat the
 result as planning guidance and retain headroom for the backend and other
 processes.
 
+#### Dense, MoE, and hybrid inference
+
+Dense and Mixture-of-Experts (MoE) describe how each layer's feed-forward
+weights are activated. A dense layer uses its complete feed-forward network for
+every token. An MoE layer stores many expert feed-forward networks and uses a
+learned router to select a small subset independently for each token and layer.
+All experts remain in memory even though only the selected experts compute.
+
+Hybrid describes a separate design choice: which sequence-processing mechanism
+each layer uses. For example, Qwen 3.6 combines Gated DeltaNet and full-attention
+layers while using an MoE feed-forward block in every layer. Every token still
+traverses every layer; the hybrid stack changes how context is processed, and
+the MoE router changes which feed-forward experts activate.
+
+![Dense, Mixture-of-Experts, and hybrid inference compared](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-03/dense-moe-hybrid-inference.svg)
+
 The estimator follows the model's per-layer attention topology when the GGUF
 provides it. Full-attention and sliding-window layers can have different KV
 head counts and dimensions; compact SWA includes its physical-batch headroom,
