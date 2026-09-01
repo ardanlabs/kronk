@@ -1,0 +1,195 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+  <title id="title">One generation step in dense, mixture-of-experts, and hybrid models</title>
+  <desc id="desc">Three top-to-bottom flows show how the current token and saved model state pass through every layer, then through the output head to select the next token. Dense models use all learned weights in each layer. Mixture-of-experts models use all non-expert weights but route each token through selected experts. Qwen3.6 is a hybrid that combines DeltaNet and full-attention layers with MoE feed-forward blocks.</desc>
+
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="4" stdDeviation="7" flood-color="#0f172a" flood-opacity="0.09"/>
+    </filter>
+    <marker id="arrow-cyan" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#0891b2"/>
+    </marker>
+    <marker id="arrow-amber" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#d97706"/>
+    </marker>
+    <marker id="arrow-violet" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#7c3aed"/>
+    </marker>
+    <style>
+      .title { font: 700 40px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .subtitle { font: 400 19px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .panel-title { font: 700 28px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .heading { font: 700 19px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .body { font: 500 17px Inter, ui-sans-serif, system-ui, sans-serif; fill: #334155; }
+      .small { font: 500 15px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .tiny { font: 600 13px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .label { font: 700 14px Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 0.5px; }
+      .white { fill: #ffffff; }
+      .cyan { fill: #0e7490; }
+      .amber { fill: #b45309; }
+      .violet { fill: #6d28d9; }
+    </style>
+  </defs>
+
+  <rect width="1920" height="1080" fill="#f8fafc"/>
+  <rect width="1920" height="10" fill="#0f766e"/>
+  <text class="title" x="54" y="58">ONE GENERATION STEP: HOW THE MODEL PICKS THE NEXT TOKEN</text>
+  <text class="subtitle" x="54" y="94">Weights are learned numbers that stay fixed during inference; each layer uses them to transform the token representation.</text>
+
+  <!-- Panel backgrounds -->
+  <g filter="url(#shadow)"><rect x="40" y="125" width="590" height="800" rx="24" fill="#ffffff" stroke="#22d3ee" stroke-width="3"/></g>
+  <g filter="url(#shadow)"><rect x="665" y="125" width="590" height="800" rx="24" fill="#ffffff" stroke="#f59e0b" stroke-width="3"/></g>
+  <g filter="url(#shadow)"><rect x="1290" y="125" width="590" height="800" rx="24" fill="#ffffff" stroke="#8b5cf6" stroke-width="3"/></g>
+
+  <!-- Dense -->
+  <rect x="40" y="125" width="590" height="72" rx="24" fill="#cffafe"/>
+  <path d="M 40 173 Q 40 197 64 197 H 606 Q 630 197 630 173" fill="#cffafe"/>
+  <text class="panel-title" x="74" y="174">DENSE</text>
+  <text class="body" x="74" y="230">Each layer owns a different set of learned weights.</text>
+  <text class="body" x="74" y="256">All learned weights in every layer participate.</text>
+
+  <rect x="110" y="282" width="450" height="48" rx="12" fill="#f8fafc" stroke="#22d3ee" stroke-width="2"/>
+  <text class="heading" x="186" y="313">Current token + saved model state</text>
+  <path d="M 335 334 V 354" stroke="#0891b2" stroke-width="4" marker-end="url(#arrow-cyan)"/>
+
+  <rect x="85" y="364" width="500" height="76" rx="14" fill="#ecfeff" stroke="#22d3ee" stroke-width="2"/>
+  <text class="label cyan" x="104" y="407">LAYER 1</text>
+  <rect x="188" y="379" width="148" height="46" rx="10" fill="#ffffff" stroke="#67e8f9" stroke-width="2"/>
+  <text class="body" x="225" y="408">Attention</text>
+  <path d="M 342 402 H 365" stroke="#0891b2" stroke-width="3" marker-end="url(#arrow-cyan)"/>
+  <rect x="375" y="374" width="178" height="56" rx="10" fill="#ccfbf1" stroke="#14b8a6" stroke-width="2"/>
+  <text class="small" x="421" y="397">Feed-forward</text>
+  <text class="small" x="436" y="417">network</text>
+  <path d="M 335 444 V 464" stroke="#0891b2" stroke-width="4" marker-end="url(#arrow-cyan)"/>
+
+  <rect x="85" y="474" width="500" height="76" rx="14" fill="#ecfeff" stroke="#22d3ee" stroke-width="2"/>
+  <text class="label cyan" x="104" y="496">LAYERS 2 … N−1</text>
+  <text class="small" x="104" y="518">Same path, with different attention and feed-forward</text>
+  <text class="small" x="104" y="537">network weights in each layer</text>
+  <path d="M 335 554 V 574" stroke="#0891b2" stroke-width="4" marker-end="url(#arrow-cyan)"/>
+
+  <rect x="85" y="584" width="500" height="76" rx="14" fill="#ecfeff" stroke="#22d3ee" stroke-width="2"/>
+  <text class="label cyan" x="104" y="627">LAYER N</text>
+  <rect x="188" y="599" width="148" height="46" rx="10" fill="#ffffff" stroke="#67e8f9" stroke-width="2"/>
+  <text class="body" x="225" y="628">Attention</text>
+  <path d="M 342 622 H 365" stroke="#0891b2" stroke-width="3" marker-end="url(#arrow-cyan)"/>
+  <rect x="375" y="594" width="178" height="56" rx="10" fill="#ccfbf1" stroke="#14b8a6" stroke-width="2"/>
+  <text class="small" x="421" y="617">Feed-forward</text>
+  <text class="small" x="436" y="637">network</text>
+  <path d="M 335 664 V 684" stroke="#0891b2" stroke-width="4" marker-end="url(#arrow-cyan)"/>
+
+  <rect x="110" y="694" width="450" height="52" rx="12" fill="#e0f2fe" stroke="#0ea5e9" stroke-width="2"/>
+  <text class="heading" x="335" y="727" text-anchor="middle">Output head scores every vocabulary token</text>
+  <path d="M 335 750 V 770" stroke="#0891b2" stroke-width="4" marker-end="url(#arrow-cyan)"/>
+  <rect x="110" y="780" width="450" height="52" rx="12" fill="#0e7490"/>
+  <text class="heading white" x="259" y="813">Pick next token</text>
+  <rect x="70" y="842" width="530" height="68" rx="10" fill="#0f172a"/>
+  <text class="small white" x="94" y="865"><tspan fill="#67e8f9" font-weight="700">Attention:</tspan><tspan dx="5">gathers relevant information from earlier tokens.</tspan></text>
+  <text class="small white" x="94" y="886"><tspan fill="#67e8f9" font-weight="700">Feed-forward network:</tspan><tspan dx="5">processes that information to recognize</tspan></text>
+  <text class="small white" x="255" y="905">and refine useful features.</text>
+
+  <!-- Mixture of Experts -->
+  <rect x="665" y="125" width="590" height="72" rx="24" fill="#fef3c7"/>
+  <path d="M 665 173 Q 665 197 689 197 H 1231 Q 1255 197 1255 173" fill="#fef3c7"/>
+  <text class="panel-title" x="699" y="174">MIXTURE OF EXPERTS (MoE)</text>
+  <text class="body" x="699" y="226">Every layer runs all non-expert weights and its router.</text>
+  <text class="body" x="699" y="252">The router selects 8 of 256 experts + one shared expert.</text>
+
+  <rect x="735" y="282" width="450" height="48" rx="12" fill="#fffbeb" stroke="#f59e0b" stroke-width="2"/>
+  <text class="heading" x="811" y="313">Current token + saved model state</text>
+  <path d="M 960 334 V 354" stroke="#d97706" stroke-width="4" marker-end="url(#arrow-amber)"/>
+
+  <rect x="700" y="364" width="520" height="76" rx="14" fill="#fffbeb" stroke="#f59e0b" stroke-width="2"/>
+  <text class="label amber" x="718" y="407">LAYER 1</text>
+  <rect x="798" y="379" width="116" height="46" rx="10" fill="#ffffff" stroke="#fbbf24" stroke-width="2"/>
+  <text class="small" x="823" y="408">Attention</text>
+  <path d="M 920 402 H 940" stroke="#d97706" stroke-width="3" marker-end="url(#arrow-amber)"/>
+  <rect x="950" y="379" width="92" height="46" rx="10" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+  <text class="small" x="971" y="408">Router</text>
+  <path d="M 1048 402 H 1068" stroke="#d97706" stroke-width="3" marker-end="url(#arrow-amber)"/>
+  <rect x="1078" y="373" width="124" height="58" rx="10" fill="#fde68a" stroke="#d97706" stroke-width="2"/>
+  <text class="tiny amber" x="1094" y="397">8 SELECTED</text><text class="tiny" x="1089" y="418">+ 1 shared expert</text>
+  <path d="M 960 444 V 464" stroke="#d97706" stroke-width="4" marker-end="url(#arrow-amber)"/>
+
+  <rect x="700" y="474" width="520" height="76" rx="14" fill="#fffbeb" stroke="#f59e0b" stroke-width="2"/>
+  <text class="label amber" x="718" y="505">LAYERS 2 … N−1</text>
+  <text class="body" x="718" y="532">Each layer’s router makes a new expert choice from its input</text>
+  <path d="M 960 554 V 574" stroke="#d97706" stroke-width="4" marker-end="url(#arrow-amber)"/>
+
+  <rect x="700" y="584" width="520" height="76" rx="14" fill="#fffbeb" stroke="#f59e0b" stroke-width="2"/>
+  <text class="label amber" x="718" y="627">LAYER N</text>
+  <rect x="798" y="599" width="116" height="46" rx="10" fill="#ffffff" stroke="#fbbf24" stroke-width="2"/>
+  <text class="small" x="823" y="628">Attention</text>
+  <path d="M 920 622 H 940" stroke="#d97706" stroke-width="3" marker-end="url(#arrow-amber)"/>
+  <rect x="950" y="599" width="92" height="46" rx="10" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+  <text class="small" x="971" y="628">Router</text>
+  <path d="M 1048 622 H 1068" stroke="#d97706" stroke-width="3" marker-end="url(#arrow-amber)"/>
+  <rect x="1078" y="593" width="124" height="58" rx="10" fill="#fde68a" stroke="#d97706" stroke-width="2"/>
+  <text class="tiny amber" x="1094" y="617">8 SELECTED</text><text class="tiny" x="1089" y="638">+ 1 shared expert</text>
+  <path d="M 960 664 V 684" stroke="#d97706" stroke-width="4" marker-end="url(#arrow-amber)"/>
+
+  <rect x="735" y="694" width="450" height="52" rx="12" fill="#fff7ed" stroke="#f59e0b" stroke-width="2"/>
+  <text class="heading" x="960" y="727" text-anchor="middle">Output head scores every vocabulary token</text>
+  <path d="M 960 750 V 770" stroke="#d97706" stroke-width="4" marker-end="url(#arrow-amber)"/>
+  <rect x="735" y="780" width="450" height="52" rx="12" fill="#b45309"/>
+  <text class="heading white" x="884" y="813">Pick next token</text>
+  <rect x="717" y="852" width="486" height="58" rx="10" fill="#0f172a"/>
+  <text class="small white" x="748" y="877">All experts stay stored; unselected experts do not compute.</text>
+  <text class="small white" x="787" y="899">The selected set can change in every layer.</text>
+
+  <!-- Hybrid -->
+  <rect x="1290" y="125" width="590" height="72" rx="24" fill="#ede9fe"/>
+  <path d="M 1290 173 Q 1290 197 1314 197 H 1856 Q 1880 197 1880 173" fill="#ede9fe"/>
+  <text class="panel-title" x="1324" y="174">HYBRID · QWEN3.6 EXAMPLE</text>
+  <text class="body" x="1324" y="226">Three DeltaNet layers, then one full-attention layer.</text>
+  <text class="body" x="1324" y="252">Repeat that block 10 times; every layer also uses MoE.</text>
+
+  <rect x="1360" y="282" width="450" height="48" rx="12" fill="#faf5ff" stroke="#8b5cf6" stroke-width="2"/>
+  <text class="heading" x="1436" y="313">Current token + saved model state</text>
+  <path d="M 1585 334 V 354" stroke="#7c3aed" stroke-width="4" marker-end="url(#arrow-violet)"/>
+
+  <text class="label violet" x="1332" y="380">4-LAYER BLOCK · REPEAT ×10</text>
+  <rect x="1330" y="394" width="510" height="58" rx="12" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="2"/>
+  <text class="label violet" x="1348" y="429">1 / 4</text><text class="body" x="1415" y="429">Gated DeltaNet</text>
+  <path d="M 1555 423 H 1580" stroke="#7c3aed" stroke-width="3" marker-end="url(#arrow-violet)"/>
+  <rect x="1590" y="405" width="228" height="36" rx="9" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+  <text class="small" x="1626" y="429">MoE: 8 experts + shared</text>
+  <path d="M 1585 456 V 470" stroke="#7c3aed" stroke-width="4" marker-end="url(#arrow-violet)"/>
+
+  <rect x="1330" y="480" width="510" height="58" rx="12" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="2"/>
+  <text class="label violet" x="1348" y="515">2 / 4</text><text class="body" x="1415" y="515">Gated DeltaNet</text>
+  <path d="M 1555 509 H 1580" stroke="#7c3aed" stroke-width="3" marker-end="url(#arrow-violet)"/>
+  <rect x="1590" y="491" width="228" height="36" rx="9" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+  <text class="small" x="1626" y="515">MoE: 8 experts + shared</text>
+  <path d="M 1585 542 V 556" stroke="#7c3aed" stroke-width="4" marker-end="url(#arrow-violet)"/>
+
+  <rect x="1330" y="566" width="510" height="58" rx="12" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="2"/>
+  <text class="label violet" x="1348" y="601">3 / 4</text><text class="body" x="1415" y="601">Gated DeltaNet</text>
+  <path d="M 1555 595 H 1580" stroke="#7c3aed" stroke-width="3" marker-end="url(#arrow-violet)"/>
+  <rect x="1590" y="577" width="228" height="36" rx="9" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+  <text class="small" x="1626" y="601">MoE: 8 experts + shared</text>
+  <path d="M 1585 628 V 642" stroke="#7c3aed" stroke-width="4" marker-end="url(#arrow-violet)"/>
+
+  <rect x="1330" y="652" width="510" height="58" rx="12" fill="#eff6ff" stroke="#3b82f6" stroke-width="2"/>
+  <text class="label violet" x="1348" y="687">4 / 4</text><text class="body" x="1415" y="687">Full attention</text>
+  <path d="M 1555 681 H 1580" stroke="#7c3aed" stroke-width="3" marker-end="url(#arrow-violet)"/>
+  <rect x="1590" y="663" width="228" height="36" rx="9" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+  <text class="small" x="1626" y="687">MoE: 8 experts + shared</text>
+  <path d="M 1585 714 V 728" stroke="#7c3aed" stroke-width="4" marker-end="url(#arrow-violet)"/>
+
+  <rect x="1360" y="738" width="450" height="52" rx="12" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="2"/>
+  <text class="heading" x="1585" y="771" text-anchor="middle">Output head scores every vocabulary token</text>
+  <path d="M 1585 794 V 808" stroke="#7c3aed" stroke-width="4" marker-end="url(#arrow-violet)"/>
+  <rect x="1360" y="818" width="450" height="52" rx="12" fill="#6d28d9"/>
+  <text class="heading white" x="1509" y="851">Pick next token</text>
+  <rect x="1342" y="880" width="486" height="30" rx="9" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="2"/>
+  <text class="small" x="1420" y="901">Hybrid changes layer type; it does not skip layers</text>
+
+  <!-- Takeaway -->
+  <rect x="70" y="955" width="1780" height="82" rx="20" fill="#0f172a"/>
+  <text class="label" x="106" y="986" fill="#5eead4">ONE CURRENT TOKEN → ONE NEXT TOKEN</text>
+  <text x="106" y="1019" style="font:600 20px Inter, ui-sans-serif, system-ui, sans-serif; fill:#ffffff">
+    <tspan fill="#67e8f9">Attention and feed-forward process the current token once through every layer</tspan><tspan>—not once per vocabulary item.</tspan>
+    <tspan dx="20" fill="#fde68a">Then the output head scores the vocabulary and sampling picks one.</tspan>
+  </text>
+</svg>
