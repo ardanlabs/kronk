@@ -93,7 +93,7 @@
   <path d="M 665 173 Q 665 197 689 197 H 1231 Q 1255 197 1255 173" fill="#fef3c7"/>
   <text class="panel-title" x="699" y="174">MIXTURE OF EXPERTS (MoE)</text>
   <text class="body" x="699" y="226">Every layer runs all non-expert weights and its router.</text>
-  <text class="body" x="699" y="252">The router selects 8 of 256 experts + one shared expert.</text>
+  <text class="body" x="699" y="252">The router selects a small top-k subset from an expert bank.</text>
 
   <rect x="735" y="282" width="450" height="48" rx="12" fill="#fffbeb" stroke="#f59e0b" stroke-width="2"/>
   <text class="heading" x="811" y="313">Current token + saved model state</text>
@@ -108,7 +108,7 @@
   <text class="small" x="971" y="408">Router</text>
   <path d="M 1048 402 H 1068" stroke="#d97706" stroke-width="3" marker-end="url(#arrow-amber)"/>
   <rect x="1078" y="373" width="124" height="58" rx="10" fill="#fde68a" stroke="#d97706" stroke-width="2"/>
-  <text class="tiny amber" x="1094" y="397">8 SELECTED</text><text class="tiny" x="1089" y="418">+ 1 shared expert</text>
+  <text class="tiny amber" x="1101" y="397">TOP-K</text><text class="tiny" x="1092" y="418">selected experts</text>
   <path d="M 960 444 V 464" stroke="#d97706" stroke-width="4" marker-end="url(#arrow-amber)"/>
 
   <rect x="700" y="474" width="520" height="76" rx="14" fill="#fffbeb" stroke="#f59e0b" stroke-width="2"/>
@@ -125,7 +125,7 @@
   <text class="small" x="971" y="628">Router</text>
   <path d="M 1048 622 H 1068" stroke="#d97706" stroke-width="3" marker-end="url(#arrow-amber)"/>
   <rect x="1078" y="593" width="124" height="58" rx="10" fill="#fde68a" stroke="#d97706" stroke-width="2"/>
-  <text class="tiny amber" x="1094" y="617">8 SELECTED</text><text class="tiny" x="1089" y="638">+ 1 shared expert</text>
+  <text class="tiny amber" x="1101" y="617">TOP-K</text><text class="tiny" x="1092" y="638">selected experts</text>
   <path d="M 960 664 V 684" stroke="#d97706" stroke-width="4" marker-end="url(#arrow-amber)"/>
 
   <rect x="735" y="694" width="450" height="52" rx="12" fill="#fff7ed" stroke="#f59e0b" stroke-width="2"/>
@@ -134,48 +134,48 @@
   <rect x="735" y="780" width="450" height="52" rx="12" fill="#b45309"/>
   <text class="heading white" x="884" y="813">Pick next token</text>
   <rect x="717" y="852" width="486" height="58" rx="10" fill="#0f172a"/>
-  <text class="small white" x="748" y="877">All experts stay stored; unselected experts do not compute.</text>
-  <text class="small white" x="787" y="899">The selected set can change in every layer.</text>
+  <text class="small white" x="755" y="877">All experts stay stored; only selected experts compute.</text>
+  <text class="small white" x="752" y="899">Some architectures also include an always-used shared expert.</text>
 
   <!-- Hybrid -->
   <rect x="1290" y="125" width="590" height="72" rx="24" fill="#ede9fe"/>
   <path d="M 1290 173 Q 1290 197 1314 197 H 1856 Q 1880 197 1880 173" fill="#ede9fe"/>
-  <text class="panel-title" x="1324" y="174">HYBRID · QWEN3.6 EXAMPLE</text>
-  <text class="body" x="1324" y="226">Three DeltaNet layers, then one full-attention layer.</text>
-  <text class="body" x="1324" y="252">Repeat that block 10 times; every layer also uses MoE.</text>
+  <text class="panel-title" x="1324" y="174">HYBRID SEQUENCE PROCESSING</text>
+  <text class="body" x="1324" y="226">A hybrid stack mixes context-processing layer types.</text>
+  <text class="small" x="1324" y="252">Every layer runs; its feed-forward stage may be dense or MoE.</text>
 
   <rect x="1360" y="282" width="450" height="48" rx="12" fill="#faf5ff" stroke="#8b5cf6" stroke-width="2"/>
   <text class="heading" x="1436" y="313">Current token + saved model state</text>
   <path d="M 1585 334 V 354" stroke="#7c3aed" stroke-width="4" marker-end="url(#arrow-violet)"/>
 
-  <text class="label violet" x="1332" y="380">4-LAYER BLOCK · REPEAT ×10</text>
-  <rect x="1330" y="394" width="510" height="58" rx="12" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="2"/>
-  <text class="label violet" x="1348" y="429">1 / 4</text><text class="body" x="1415" y="429">Gated DeltaNet</text>
-  <path d="M 1555 423 H 1580" stroke="#7c3aed" stroke-width="3" marker-end="url(#arrow-violet)"/>
-  <rect x="1590" y="405" width="228" height="36" rx="9" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
-  <text class="small" x="1626" y="429">MoE: 8 experts + shared</text>
-  <path d="M 1585 456 V 470" stroke="#7c3aed" stroke-width="4" marker-end="url(#arrow-violet)"/>
+  <text class="label violet" x="1332" y="380">LAYER MIX · PATTERN VARIES BY MODEL</text>
+  <rect x="1330" y="394" width="510" height="70" rx="12" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="2"/>
+  <text class="label violet" x="1348" y="434">LAYER 1</text>
+  <rect x="1420" y="404" width="168" height="50" rx="9" fill="#ffffff" stroke="#a78bfa" stroke-width="2"/>
+  <text class="small" x="1452" y="425">Linear / recurrent</text><text class="small" x="1472" y="444">attention</text>
+  <path d="M 1594 429 H 1612" stroke="#7c3aed" stroke-width="3" marker-end="url(#arrow-violet)"/>
+  <rect x="1622" y="404" width="198" height="50" rx="9" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+  <text class="tiny" x="1658" y="425">FEED-FORWARD STAGE</text><text class="tiny amber" x="1672" y="444">dense or MoE</text>
+  <path d="M 1585 468 V 482" stroke="#7c3aed" stroke-width="4" marker-end="url(#arrow-violet)"/>
 
-  <rect x="1330" y="480" width="510" height="58" rx="12" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="2"/>
-  <text class="label violet" x="1348" y="515">2 / 4</text><text class="body" x="1415" y="515">Gated DeltaNet</text>
-  <path d="M 1555 509 H 1580" stroke="#7c3aed" stroke-width="3" marker-end="url(#arrow-violet)"/>
-  <rect x="1590" y="491" width="228" height="36" rx="9" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
-  <text class="small" x="1626" y="515">MoE: 8 experts + shared</text>
-  <path d="M 1585 542 V 556" stroke="#7c3aed" stroke-width="4" marker-end="url(#arrow-violet)"/>
+  <rect x="1330" y="492" width="510" height="58" rx="12" fill="#faf5ff" stroke="#c4b5fd" stroke-width="2"/>
+  <text class="label violet" x="1348" y="518">OTHER LAYERS</text>
+  <text class="small" x="1348" y="540">Mix context mechanisms in a model-specific pattern</text>
+  <path d="M 1585 554 V 568" stroke="#7c3aed" stroke-width="4" marker-end="url(#arrow-violet)"/>
 
-  <rect x="1330" y="566" width="510" height="58" rx="12" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="2"/>
-  <text class="label violet" x="1348" y="601">3 / 4</text><text class="body" x="1415" y="601">Gated DeltaNet</text>
-  <path d="M 1555 595 H 1580" stroke="#7c3aed" stroke-width="3" marker-end="url(#arrow-violet)"/>
-  <rect x="1590" y="577" width="228" height="36" rx="9" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
-  <text class="small" x="1626" y="601">MoE: 8 experts + shared</text>
-  <path d="M 1585 628 V 642" stroke="#7c3aed" stroke-width="4" marker-end="url(#arrow-violet)"/>
+  <rect x="1330" y="578" width="510" height="70" rx="12" fill="#eff6ff" stroke="#3b82f6" stroke-width="2"/>
+  <text class="label violet" x="1348" y="618">LAYER N</text>
+  <rect x="1420" y="588" width="168" height="50" rx="9" fill="#ffffff" stroke="#60a5fa" stroke-width="2"/>
+  <text class="small" x="1441" y="609">Full or sparse</text><text class="small" x="1472" y="628">attention</text>
+  <path d="M 1594 613 H 1612" stroke="#7c3aed" stroke-width="3" marker-end="url(#arrow-violet)"/>
+  <rect x="1622" y="588" width="198" height="50" rx="9" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+  <text class="tiny" x="1658" y="609">FEED-FORWARD STAGE</text><text class="tiny amber" x="1672" y="628">dense or MoE</text>
+  <path d="M 1585 652 V 662" stroke="#7c3aed" stroke-width="4" marker-end="url(#arrow-violet)"/>
 
-  <rect x="1330" y="652" width="510" height="58" rx="12" fill="#eff6ff" stroke="#3b82f6" stroke-width="2"/>
-  <text class="label violet" x="1348" y="687">4 / 4</text><text class="body" x="1415" y="687">Full attention</text>
-  <path d="M 1555 681 H 1580" stroke="#7c3aed" stroke-width="3" marker-end="url(#arrow-violet)"/>
-  <rect x="1590" y="663" width="228" height="36" rx="9" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
-  <text class="small" x="1626" y="687">MoE: 8 experts + shared</text>
-  <path d="M 1585 714 V 728" stroke="#7c3aed" stroke-width="4" marker-end="url(#arrow-violet)"/>
+  <rect x="1330" y="672" width="510" height="48" rx="10" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="2"/>
+  <text class="tiny" x="1350" y="693"><tspan fill="#6d28d9" font-weight="700">EXAMPLES</tspan><tspan dx="8">Qwen3.6: DeltaNet + full attention</tspan></text>
+  <text class="tiny" x="1435" y="712">qwen4exp: DeltaNet + sparse attention</text>
+  <path d="M 1585 724 V 728" stroke="#7c3aed" stroke-width="4" marker-end="url(#arrow-violet)"/>
 
   <rect x="1360" y="738" width="450" height="52" rx="12" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="2"/>
   <text class="heading" x="1585" y="771" text-anchor="middle">Output head scores every vocabulary token</text>
@@ -183,7 +183,7 @@
   <rect x="1360" y="818" width="450" height="52" rx="12" fill="#6d28d9"/>
   <text class="heading white" x="1509" y="851">Pick next token</text>
   <rect x="1342" y="880" width="486" height="30" rx="9" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="2"/>
-  <text class="small" x="1420" y="901">Hybrid changes layer type; it does not skip layers</text>
+  <text class="small" x="1395" y="901">Hybrid layers can use dense or MoE feed-forward stages</text>
 
   <!-- Takeaway -->
   <rect x="70" y="955" width="1780" height="82" rx="20" fill="#0f172a"/>
