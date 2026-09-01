@@ -3,11 +3,15 @@
 # Start N self-hosted GitHub Actions runners on this host.
 #
 # A runner process executes ONE job at a time, so a single container makes
-# every job in a workflow run back to back. linux.yml has five jobs; with
-# COUNT=5 they run concurrently instead of serially.
+# every job in a workflow run back to back. linux.yml expands to six jobs
+# (the GPU matrix runs Vulkan and ROCm), so six runners across the fleets
+# on this host is where they stop queueing behind each other.
 #
-#   COUNT=4 ./start-runners.sh
-#   COUNT=4 ./start-runners.sh --recreate    # replace running containers
+#   COUNT=6 ./start-runners.sh
+#   COUNT=6 ./start-runners.sh --recreate    # replace running containers
+#
+# Runners started under different PREFIXes are independent fleets and can
+# coexist on one host; see TWO FLEETS below.
 #
 # Configuration comes from the environment:
 #
@@ -24,6 +28,27 @@
 # Build the image first:
 #
 #   docker build -t kronk-runner:vulkan zarf/docker/runner
+#   docker build -t kronk-runner:rocm --target rocm zarf/docker/runner
+#
+# TWO FLEETS ON ONE HOST
+#
+# One backend per image, one fleet per backend. linux.yml's GPU matrix
+# puts the backend in runs-on, so the vulkan fleet takes the Vulkan leg
+# and the rocm fleet takes the ROCm leg — never the other way round, and
+# never left to whichever runner GitHub picks first. Both fleets must be
+# running, or the unmatched leg queues silently until the 24h run limit.
+#
+# The second fleet needs a PREFIX of its own: that is what keeps container
+# names, runner names and the per-runner ~/.kronk volume distinct, so
+# neither fleet disturbs the other.
+#
+#   COUNT=4 APP_ID=... APP_KEY=~/kronk-runners.pem ./start-runners.sh
+#   PREFIX=kronk-linux-rocm COUNT=2 IMAGE=kronk-runner:rocm \
+#       APP_ID=... APP_KEY=~/kronk-runners.pem ./start-runners.sh
+#
+# The CPU jobs ask only for self-hosted/Linux/X64, so either fleet serves
+# them and the split between the two is a capacity choice, not a
+# correctness one. Only the GPU legs are pinned.
 
 set -euo pipefail
 
@@ -36,9 +61,10 @@ APP_ID="${APP_ID:-}"
 APP_KEY="${APP_KEY:-}"
 
 # The backend is read off the image rather than hardcoded, so a vulkan
-# image can never register runners advertising rocm. Workflows select on
-# `gpu` alone, so this label is descriptive — but a wrong one is actively
-# misleading when reading the runner list in GitHub settings.
+# image can never register runners advertising rocm. This label is
+# load-bearing, not cosmetic: linux.yml's GPU matrix puts the backend in
+# runs-on, so a wrong one here sends ROCm suites to a runner with no HIP
+# userspace, and a missing one leaves that leg queued with no error.
 if [[ -z "${LABELS:-}" ]]; then
     backend="$(docker image inspect \
         -f '{{ index .Config.Labels "com.ardanlabs.kronk.backend" }}' \
@@ -87,10 +113,16 @@ fi
 
 # The Go module and build caches are safe to share: the toolchain locks
 # them and is designed for concurrent use, and sharing is what makes a
-# second runner cheap. ~/.kronk is per-runner instead — concurrent
-# `kronk model pull` runs against one directory can race while writing
-# the same partial file, and 6.6 GB per runner is nothing against the
-# disk this host has.
+# second runner cheap. They are shared across FLEETS too — a vulkan and a
+# rocm fleet on one host compile the same code.
+#
+# ~/.kronk is per-runner instead — concurrent `kronk model pull` runs
+# against one directory can race while writing the same partial file, and
+# 6.6 GB per runner is nothing against the disk this host has. The volume
+# is therefore named after the runner ("<prefix>-<n>-kronk"), not the
+# index alone: two fleets sharing a host both start at index 1, and an
+# index-keyed name would hand kronk-linux-gpu-1 and kronk-linux-rocm-1
+# the same directory — reintroducing exactly that race.
 docker volume create kronk-runner-go      >/dev/null
 docker volume create kronk-runner-gocache >/dev/null
 
@@ -107,14 +139,14 @@ for (( i = 1; i <= COUNT; i++ )); do
         fi
     fi
 
-    docker volume create "kronk-runner-kronk-${i}" >/dev/null
+    docker volume create "${name}-kronk" >/dev/null
 
     docker run -d --restart=always \
         --name "$name" \
         --device /dev/kfd --device /dev/dri \
         --group-add "$VIDEO_GID" --group-add "$RENDER_GID" \
         --security-opt seccomp=unconfined \
-        -v "kronk-runner-kronk-${i}:/root/.kronk" \
+        -v "${name}-kronk:/root/.kronk" \
         -v kronk-runner-go:/root/go \
         -v kronk-runner-gocache:/root/.cache/go-build \
         -e APP_ID="$APP_ID" \

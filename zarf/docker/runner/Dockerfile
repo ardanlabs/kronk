@@ -8,12 +8,18 @@
 #
 #   base    — runner plus the shared library runtime deps, including the
 #             Vulkan loader and Mesa ICDs. Vulkan lives here rather than in
-#             its own stage because whisper.cpp publishes no ROCm bundle, so
-#             bucky falls back to Vulkan even on a ROCm host.
-#   rocm    — base plus the ROCm userspace. Not used yet; `rocminfo` is what
-#             Kronk probes to select the backend, so this is what a future
-#             KRONK_PROCESSOR=rocm job needs.
-#   vulkan  — the default target, and what CI uses today.
+#             its own stage because whisper.cpp publishes no ROCm bundle,
+#             so bucky falls back to Vulkan even on a ROCm host. That is a
+#             runtime fallback inside the container, not a scheduling
+#             claim: the rocm image is still labelled `rocm` alone.
+#   rocm    — base plus the ROCm userspace; `rocminfo` is what Kronk probes
+#             to select ROCm. Labelled `rocm`, and takes linux.yml's ROCm
+#             matrix leg. Build it with --target rocm.
+#   vulkan  — the default target. Labelled `vulkan`, and takes linux.yml's
+#             Vulkan leg.
+#
+# linux.yml gates on both backends and each leg asks for its own label, so
+# BOTH fleets have to be running. See TWO FLEETS in start-runners.sh.
 #
 # BUILD
 #
@@ -23,16 +29,24 @@
 # RUN
 #
 # Use start-runners.sh beside this file — it fills in the GIDs, volumes and
-# registration env, and starts COUNT runners named <prefix>-1 .. <prefix>-N:
+# registration env, and starts COUNT runners named <prefix>-1 .. <prefix>-N.
+# IMAGE selects the backend and defaults to the vulkan image, so the rocm
+# fleet names its image and takes a PREFIX of its own:
 #
-#   docker build -t kronk-runner:vulkan zarf/docker/runner
-#   COUNT=5 APP_ID=... APP_KEY=~/kronk-runners.pem \
+#   COUNT=6 APP_ID=... APP_KEY=~/kronk-runners.pem \
 #       ./zarf/docker/runner/start-runners.sh
+#   PREFIX=kronk-linux-rocm COUNT=2 IMAGE=kronk-runner:rocm APP_ID=... \
+#       APP_KEY=~/kronk-runners.pem ./zarf/docker/runner/start-runners.sh
+#
+# Two fleets on one host: the second needs a PREFIX of its own, and the
+# labels route each matrix leg to its own fleet. See TWO FLEETS in
+# start-runners.sh.
 #
 # COUNT matters: a runner process executes ONE job at a time, so a single
 # container makes every job in a workflow run back to back. linux.yml has
-# five jobs, so COUNT=5 is the point where they stop queueing behind each
-# other.
+# six jobs once the GPU matrix expands — four CPU jobs that either fleet
+# can take, plus one GPU leg pinned to each — so six runners across the
+# two fleets is the point where nothing queues.
 #
 # Three things that are easy to get wrong, all handled by the script:
 #
@@ -58,17 +72,20 @@
 #
 # LABELS
 #
-# Workflows select on `gpu` alone and pick the backend through
-# KRONK_PROCESSOR, so switching between Vulkan and ROCm needs no
-# relabelling and no workflow edit. The backend label is descriptive: it
-# says what the runner can actually do, which matters when reading the
-# runner list in GitHub settings. start-runners.sh derives it from the
-# image's com.ardanlabs.kronk.backend label rather than hardcoding it, so
-# a vulkan image can never advertise itself as rocm.
+# A runner is labelled `gpu` plus exactly ONE backend, and linux.yml's GPU
+# matrix selects on it: the ROCm leg asks for `rocm`, the Vulkan leg for
+# `vulkan`. One backend per image, one fleet per backend — that is what
+# keeps ROCm suites off the Vulkan runners and vice versa, instead of
+# leaving it to whichever runner GitHub picks first.
 #
-# Do NOT add the backend to a workflow's runs-on. A job requiring `rocm`
-# stops matching the moment the runner is rebuilt on Vulkan, and an
-# unmatched job queues forever with no error message.
+# start-runners.sh derives the GitHub labels from
+# com.ardanlabs.kronk.backend rather than hardcoding them, so a rebuilt
+# image cannot register runners advertising the wrong backend.
+#
+# THE RULE, because an unmatched runs-on does not fail — it queues,
+# silently, until the run hits the 24h limit: every backend gated in
+# linux.yml needs a fleet claiming it. Retiring a fleet means dropping its
+# matrix entry in .github/workflows/linux.yml in the same change.
 
 ARG RUNNER_TAG="ubuntu-noble"
 
@@ -101,13 +118,15 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
-# rocm — not built today; kept so the switch is a --target away
+# rocm — the CI target: ROCm on top of base, so it carries both backends
 # -----------------------------------------------------------------------------
 FROM base AS rocm
 
-# The backend this image provides. start-runners.sh reads it to derive the
-# runner's GitHub labels, so a rocm image cannot end up advertising vulkan
-# or the reverse.
+# The backend this image is FOR. base's Vulkan loader is still underneath
+# — bucky needs it, since whisper.cpp has no ROCm bundle — but this runner
+# takes ROCm work only, and linux.yml's Vulkan leg goes to the vulkan
+# fleet. start-runners.sh reads this to derive the runner's GitHub labels,
+# so a rocm image cannot end up advertising vulkan or the reverse.
 LABEL com.ardanlabs.kronk.backend="rocm"
 LABEL org.opencontainers.image.title="kronk-runner-rocm"
 LABEL org.opencontainers.image.description="GitHub Actions runner for kronk CI, ROCm backend"
@@ -118,8 +137,8 @@ LABEL org.opencontainers.image.description="GitHub Actions runner for kronk CI, 
 # provides. This runner is also a Strix Halo part (gfx1151), which wants
 # the 7.x line regardless.
 #
-# NOT YET EXERCISED: linux.yml runs gpu-tests on Vulkan, so nothing builds
-# this stage today.
+# Bumping this without checking the bundle's NEEDED sonames is how the
+# ROCm matrix leg starts failing to dlopen libggml-hip.so.
 ARG ROCM_VERSION="7.2.4"
 ARG ROCM_KEY_FINGERPRINT="CA8BB4727A47B4D09B4EE8969386B48A1A693C5C"
 
@@ -154,12 +173,14 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
-# vulkan — default target (last stage), what CI runs on today
+# vulkan — default target (last stage). Vulkan only: skips the ROCm
+#          layer's ~2 GB, and cannot run linux.yml's ROCm matrix leg.
 # -----------------------------------------------------------------------------
 FROM base AS vulkan
 
 # See the note on the rocm stage: this is what start-runners.sh turns into
-# the runner's GitHub labels.
+# the runner's GitHub labels. This fleet takes linux.yml's Vulkan leg; the
+# ROCm leg is never scheduled onto it.
 LABEL com.ardanlabs.kronk.backend="vulkan"
 LABEL org.opencontainers.image.title="kronk-runner-vulkan"
 LABEL org.opencontainers.image.description="GitHub Actions runner for kronk CI, Vulkan backend"

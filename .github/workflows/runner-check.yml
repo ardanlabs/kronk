@@ -165,6 +165,10 @@ jobs:
           KRONK_PROCESSOR=vulkan kronk diagnose --no-bench --format json --processor vulkan || true
           KRONK_PROCESSOR=vulkan kronk devices || true
           echo "::endgroup::"
+          echo "::group::forced rocm"
+          KRONK_PROCESSOR=rocm kronk diagnose --no-bench --format json --processor rocm || true
+          KRONK_PROCESSOR=rocm kronk devices || true
+          echo "::endgroup::"
           echo "::group::forced cpu"
           KRONK_PROCESSOR=cpu kronk devices || true
           echo "::endgroup::"
@@ -182,7 +186,13 @@ jobs:
             fail=1
           fi
           if ! vulkaninfo --summary >/dev/null 2>&1; then
-            echo "::warning::vulkaninfo missing or failing — gpu-tests will not find a Vulkan device"
+            echo "::warning::vulkaninfo missing or failing — gpu-tests (Vulkan) will not find a device"
+          fi
+          # A Vulkan-only runner image is a valid build target, so this is a
+          # warning too — but linux.yml's ROCm matrix leg fails on such a
+          # runner, and this is where that is visible before it does.
+          if ! rocminfo >/dev/null 2>&1; then
+            echo "::warning::rocminfo missing or failing — gpu-tests (ROCm) will not find a device"
           fi
           exit $fail
 

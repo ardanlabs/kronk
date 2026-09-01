@@ -1,10 +1,13 @@
 # Custom labels on the self-hosted runners, so `runs-on:` entries using them
 # are validated rather than reported as unknown.
 #
-#   kronk-linux-gpu-N  self-hosted, Linux, X64, gpu, <backend>
-#                      where <backend> is vulkan or rocm, set from the
-#                      runner image (zarf/docker/runner). Workflows select
-#                      on `gpu` only — see that Dockerfile's LABELS note.
+#   kronk-linux-gpu-N   self-hosted, Linux, X64, gpu, vulkan
+#   kronk-linux-rocm-N  self-hosted, Linux, X64, gpu, rocm
+#                       One backend per runner image (zarf/docker/runner),
+#                       one fleet per backend. linux.yml's GPU matrix
+#                       selects on the backend label, so each leg runs on
+#                       the fleet built for it — see that Dockerfile's
+#                       LABELS note.
 #   kronk-runner-1     self-hosted, macOS, ARM64, sand
 self-hosted-runner:
   labels:
