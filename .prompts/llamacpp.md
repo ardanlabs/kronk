@@ -17,7 +17,7 @@ Review mode:
 
 Review baseline:
 
-- Last reviewed upstream llama.cpp version: `b10731` (`0eadefebd3f8f92a86d634a0e5b8fffc9dc792c0`)
+- Last reviewed upstream llama.cpp version: `b10743` (`8887a48f050554f0ee59f56753860c061836b02d`)
 - Last reviewed yzma main commit: `385dd04a1671023c38d1a768589c5f59f93386f5`
 - Resolve and verify both baseline revisions before comparing changes.
 - These values, rather than Kronk's currently pinned dependencies, are the starts of their respective review ranges.
