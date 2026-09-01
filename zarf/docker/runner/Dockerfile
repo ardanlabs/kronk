@@ -13,12 +13,12 @@
 #             runtime fallback inside the container, not a scheduling
 #             claim: the rocm image is still labelled `rocm` alone.
 #   rocm    — base plus the ROCm userspace; `rocminfo` is what Kronk probes
-#             to select ROCm. Labelled `rocm`, and takes linux.yml's ROCm
+#             to select ROCm. Labelled `rocm`, and takes gpu.yml's ROCm
 #             matrix leg. Build it with --target rocm.
-#   vulkan  — the default target. Labelled `vulkan`, and takes linux.yml's
+#   vulkan  — the default target. Labelled `vulkan`, and takes gpu.yml's
 #             Vulkan leg.
 #
-# linux.yml gates on both backends and each leg asks for its own label, so
+# gpu.yml gates on both backends and each leg asks for its own label, so
 # BOTH fleets have to be running. See TWO FLEETS in start-runners.sh.
 #
 # BUILD
@@ -43,10 +43,10 @@
 # start-runners.sh.
 #
 # COUNT matters: a runner process executes ONE job at a time, so a single
-# container makes every job in a workflow run back to back. linux.yml has
-# six jobs once the GPU matrix expands — four CPU jobs that either fleet
-# can take, plus one GPU leg pinned to each — so six runners across the
-# two fleets is the point where nothing queues.
+# container makes every job run back to back. This host peaks at six —
+# linux.yml's four CPU jobs, which either fleet can take, plus gpu.yml's
+# Vulkan and ROCm legs, one pinned to each fleet — so six runners across
+# the two fleets is the point where nothing queues.
 #
 # Three things that are easy to get wrong, all handled by the script:
 #
@@ -72,7 +72,7 @@
 #
 # LABELS
 #
-# A runner is labelled `gpu` plus exactly ONE backend, and linux.yml's GPU
+# A runner is labelled `gpu` plus exactly ONE backend, and gpu.yml's
 # matrix selects on it: the ROCm leg asks for `rocm`, the Vulkan leg for
 # `vulkan`. One backend per image, one fleet per backend — that is what
 # keeps ROCm suites off the Vulkan runners and vice versa, instead of
@@ -84,8 +84,8 @@
 #
 # THE RULE, because an unmatched runs-on does not fail — it queues,
 # silently, until the run hits the 24h limit: every backend gated in
-# linux.yml needs a fleet claiming it. Retiring a fleet means dropping its
-# matrix entry in .github/workflows/linux.yml in the same change.
+# gpu.yml needs a fleet claiming it. Retiring a fleet means dropping its
+# matrix entry in .github/workflows/gpu.yml in the same change.
 
 ARG RUNNER_TAG="ubuntu-noble"
 
@@ -124,7 +124,7 @@ FROM base AS rocm
 
 # The backend this image is FOR. base's Vulkan loader is still underneath
 # — bucky needs it, since whisper.cpp has no ROCm bundle — but this runner
-# takes ROCm work only, and linux.yml's Vulkan leg goes to the vulkan
+# takes ROCm work only, and gpu.yml's Vulkan leg goes to the vulkan
 # fleet. start-runners.sh reads this to derive the runner's GitHub labels,
 # so a rocm image cannot end up advertising vulkan or the reverse.
 LABEL com.ardanlabs.kronk.backend="rocm"
@@ -179,7 +179,7 @@ RUN set -eux; \
 FROM base AS vulkan
 
 # See the note on the rocm stage: this is what start-runners.sh turns into
-# the runner's GitHub labels. This fleet takes linux.yml's Vulkan leg; the
+# the runner's GitHub labels. This fleet takes gpu.yml's Vulkan leg; the
 # ROCm leg is never scheduled onto it.
 LABEL com.ardanlabs.kronk.backend="vulkan"
 LABEL org.opencontainers.image.title="kronk-runner-vulkan"

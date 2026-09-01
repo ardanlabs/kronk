@@ -3,9 +3,9 @@
 # Start N self-hosted GitHub Actions runners on this host.
 #
 # A runner process executes ONE job at a time, so a single container makes
-# every job in a workflow run back to back. linux.yml expands to six jobs
-# (the GPU matrix runs Vulkan and ROCm), so six runners across the fleets
-# on this host is where they stop queueing behind each other.
+# every job run back to back. This host peaks at six — linux.yml's four
+# CPU jobs plus gpu.yml's Vulkan and ROCm legs — so six runners across the
+# fleets is where they stop queueing behind each other.
 #
 #   COUNT=6 ./start-runners.sh
 #   COUNT=6 ./start-runners.sh --recreate    # replace running containers
@@ -32,8 +32,8 @@
 #
 # TWO FLEETS ON ONE HOST
 #
-# One backend per image, one fleet per backend. linux.yml's GPU matrix
-# puts the backend in runs-on, so the vulkan fleet takes the Vulkan leg
+# One backend per image, one fleet per backend. gpu.yml's matrix puts the
+# backend in runs-on, so the vulkan fleet takes the Vulkan leg
 # and the rocm fleet takes the ROCm leg — never the other way round, and
 # never left to whichever runner GitHub picks first. Both fleets must be
 # running, or the unmatched leg queues silently until the 24h run limit.
@@ -62,7 +62,7 @@ APP_KEY="${APP_KEY:-}"
 
 # The backend is read off the image rather than hardcoded, so a vulkan
 # image can never register runners advertising rocm. This label is
-# load-bearing, not cosmetic: linux.yml's GPU matrix puts the backend in
+# load-bearing, not cosmetic: gpu.yml's matrix puts the backend in
 # runs-on, so a wrong one here sends ROCm suites to a runner with no HIP
 # userspace, and a missing one leaves that leg queued with no error.
 if [[ -z "${LABELS:-}" ]]; then

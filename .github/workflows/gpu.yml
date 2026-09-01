@@ -1,0 +1,162 @@
+name: GPU
+
+# The model suites again on real GPUs — the coverage no hosted runner can
+# provide. One workflow rather than a job in each of linux.yml / macos.yml
+# so the suite list at the bottom exists once instead of three times, and
+# so every backend is gated by the same rules.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - ".go-version"
+      - ".github/workflows/gpu.yml"
+      - ".github/actions/setup-kronk/**"
+      - ".github/test-models.txt"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - ".go-version"
+      - ".github/workflows/gpu.yml"
+      - ".github/actions/setup-kronk/**"
+      - ".github/test-models.txt"
+  workflow_dispatch:
+
+# Same grouping as linux.yml / macos.yml: `head_ref || ref` collapses the
+# duplicate runs a PR branch gets from both push and pull_request.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# GOTOOLCHAIN=local so a dependency that raises its `go` directive above
+# .go-version fails loudly instead of pulling a toolchain. KRONK_PROCESSOR
+# is per-matrix-entry, not here — picking the backend is this workflow's
+# entire job.
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  # Every backend Kronk ships a GPU bundle for and we own hardware to run:
+  #
+  #   Vulkan — what bucky lands on regardless (whisper.cpp publishes no
+  #            ROCm bundle) and what non-ROCm AMD hosts use.
+  #   ROCm   — what detectHostFallback picks whenever rocminfo reports a
+  #            GPU (sdk/tools/libs/runtime_selection.go:313), so it is the
+  #            default path for a user with an AMD box.
+  #   Metal  — what every macOS user runs.
+  #
+  # A matrix rather than a job per backend so the suite list cannot drift
+  # between them. fail-fast is off: one backend regressing must not cancel
+  # the others, or the report can't say which broke.
+  #
+  # runs-on comes from the matrix, so each leg lands on the fleet built for
+  # it — a runner image is built for one backend and labelled for that one
+  # alone (zarf/docker/runner/Dockerfile for the Linux fleets; the macOS
+  # runners are Sand-managed and carry `sand,metal`).
+  #
+  # THE COST: an unmatched runs-on does not fail, it queues, silently,
+  # until the 24h run limit. Every backend listed here needs a fleet
+  # claiming its label. Retiring a fleet means dropping its entry in the
+  # same change.
+  #
+  # KRONK_PROCESSOR is strict (sdk/tools/libs/libs.go:234), so a missing
+  # bundle fails here instead of silently degrading to CPU. Only llama is
+  # strict: `kronk bucky libs --local` maps rocm to vulkan on its own,
+  # since whisper.cpp has no ROCm build.
+  #
+  # Fork PRs are skipped outright. kronk is public and none of these
+  # runners are ephemeral, so untrusted code must never land on them.
+  # Skipped counts as passing for branch protection, so these stay safe to
+  # mark required; linux.yml's hosted fallback is what covers forks.
+  gpu-tests:
+    name: GPU tests (${{ matrix.backend }})
+    if: (github.event.pull_request.head.repo.full_name || github.repository) == github.repository
+    runs-on: ${{ matrix.runs_on }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # `processor` is both KRONK_PROCESSOR's value and the runner
+          # label, because the runner images use Kronk's own backend names.
+          # `device` is the TYPE column `kronk devices` prints for that
+          # backend (cmd/kronk/devices/cmd.go deviceType).
+          - backend: Vulkan
+            processor: vulkan
+            device: GPU (Vulkan)
+            runs_on: [self-hosted, Linux, X64, gpu, vulkan]
+          - backend: ROCm
+            processor: rocm
+            device: GPU (ROCm)
+            runs_on: [self-hosted, Linux, X64, gpu, rocm]
+          - backend: Metal
+            processor: metal
+            device: GPU (Metal)
+            runs_on: [self-hosted, macOS, ARM64, sand, metal]
+    env:
+      KRONK_PROCESSOR: ${{ matrix.processor }}
+    steps:
+      # Both GPU probes, not just this leg's: when the assertion below
+      # fails, the first question is whether the other backend saw the
+      # device either (driver/permission problem) or not (bundle problem).
+      - name: Runner specs (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          nproc
+          free -h
+          vulkaninfo --summary 2>/dev/null | head -20 || echo "vulkaninfo unavailable"
+          rocminfo 2>/dev/null | grep -Ei 'Name:|Marketing|gfx' | head -20 || echo "rocminfo unavailable"
+
+      - name: Runner specs (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          sysctl -n machdep.cpu.brand_string
+          echo "cores : $(sysctl -n hw.ncpu)"
+          echo "memory: $(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 )) GiB"
+          system_profiler SPDisplaysDataType 2>/dev/null | head -20 || echo "SPDisplaysDataType unavailable"
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Set up Kronk
+        uses: ./.github/actions/setup-kronk
+        with:
+          # Same key the CPU workflows use, so all jobs on a given OS share
+          # one models cache.
+          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
+
+      # KRONK_PROCESSOR only guarantees the library bundle. ggml can load
+      # the Vulkan, HIP or Metal build and still enumerate zero devices of
+      # that type, in which case every suite below runs on the CPU backend
+      # and passes.
+      - name: Verify ${{ matrix.backend }} backend
+        env:
+          DEVICE_TYPE: ${{ matrix.device }}
+        run: |
+          kronk diagnose --no-bench --format json
+          kronk devices | tee "$RUNNER_TEMP/devices.txt"
+          if ! grep -qF "$DEVICE_TYPE" "$RUNNER_TEMP/devices.txt"; then
+            echo "::error::no $DEVICE_TYPE device enumerated; the suites would run on CPU"
+            exit 1
+          fi
+
+      - name: Run model suites on GPU
+        run: |
+          export RUN_IN_PARALLEL=no
+          go test -v -count=1 -timeout 10m -run '^(TestSuite|TestUsageCounting|Test_BatchChatConcurrent)$' ./sdk/kronk/tests/qwen3
+          go test -v -count=1 -timeout 10m -run '^TestLengthTerminatedToolCallBecomesContent$' ./sdk/kronk/tests/qwen06
+          go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/draft
+          go test -v -count=1 -timeout 10m -run '^(TestSuite|Test_PooledVision)$' ./sdk/kronk/tests/vision
+          go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/vision_imc
+          go test -v -count=1 -timeout 10m -run '^(TestSuite|TestConcurrentRerank)$' ./sdk/kronk/tests/rerank
+          go test -v -count=1 -timeout 10m -run '^(TestSuite|TestUsageCountingHybrid)$' ./sdk/kronk/tests/hybrid

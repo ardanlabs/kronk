@@ -68,8 +68,10 @@ permissions:
 #                Owns the models-cache save so the two test jobs don't
 #                race on save.
 #   sdk-tests  — full kronk + libs + models setup, runs sdk/...
-#   gpu-tests  — the model suites again on the GPU, once per backend
-#                (Vulkan and ROCm) via a matrix. Self-hosted only.
+#
+# The GPU suites are NOT here: gpu.yml runs them for every backend, on
+# both OSes, from one matrix. Its two Linux legs share this host with
+# these four jobs.
 #
 # On the rare cache miss both test jobs download the models in parallel.
 # That's wasted CPU but no wall-clock penalty, and avoids a serial
@@ -84,13 +86,13 @@ permissions:
 # never be scheduled onto them. The CPU jobs ask only for self-hosted/
 # Linux/X64 so they stay schedulable on any future Linux runner.
 #
-# One runner means one job at a time, and the matrix below expands to six
-# jobs, so a fleet smaller than that serializes them (see COUNT in
-# zarf/docker/runner/start-runners.sh).
+# One runner means one job at a time. These four jobs plus gpu.yml's two
+# Linux legs peak at six concurrent jobs on this host, so a smaller fleet
+# serializes them (see COUNT in zarf/docker/runner/start-runners.sh).
 #
 # KRONK_PROCESSOR=cpu keeps the gate's results independent of which
 # runner took the job — without it, `kronk libs --local` probes the host
-# and would pick a GPU backend on the GPU runner. That is gpu-tests' job.
+# and would pick a GPU backend on the GPU runner. That is gpu.yml's job.
 # Bucky stays on auto-detect; it has no ROCm bundle and degrades on its own.
 env:
   GOTOOLCHAIN: local
@@ -285,100 +287,3 @@ jobs:
           go test -v -count=1 -timeout 6m -run '^TestSuite$' ./sdk/kronk/tests/vision_imc
           go test -v -count=1 -timeout 6m -run '^(TestSuite|TestConcurrentRerank)$' ./sdk/kronk/tests/rerank
           go test -v -count=1 -timeout 6m -run '^(TestSuite|TestUsageCountingHybrid)$' ./sdk/kronk/tests/hybrid
-
-  # GPU coverage the hosted runners cannot provide: the same model suites
-  # sdk-tests runs on the CPU, once per GPU backend the runner supports.
-  #
-  # Vulkan and ROCm are both gated because they are different code paths,
-  # not two names for one. ROCm is the backend a user with this hardware
-  # gets by auto-detection (detectHostFallback prefers it whenever
-  # rocminfo reports a GPU — sdk/tools/libs/runtime_selection.go:313), so
-  # leaving it ungated means the default AMD path is the untested one.
-  # Vulkan stays gated because it is what bucky lands on regardless
-  # (whisper.cpp publishes no ROCm bundle) and what non-ROCm AMD hosts use.
-  #
-  # A matrix rather than two jobs so the suite list below cannot drift
-  # between backends. fail-fast is off: a ROCm regression must not cancel
-  # the Vulkan run, or the report can't say which backend broke.
-  #
-  # runs-on carries the backend, so each leg lands on its own fleet: the
-  # Vulkan leg on the `vulkan` runners, the ROCm leg on the `rocm` ones.
-  # A runner image is built for one backend and labelled for that one
-  # alone (zarf/docker/runner/Dockerfile), so this is a partition, not a
-  # preference — before it, the ROCm leg could be handed to a Vulkan
-  # runner and would fail the device assertion below.
-  #
-  # THE COST: an unmatched `runs-on` does not fail, it queues, silently,
-  # until the 24h run limit. Both fleets must therefore be running. If one
-  # is retired, drop its matrix entry in the same change — see the LABELS
-  # note in zarf/docker/runner/Dockerfile.
-  #
-  # KRONK_PROCESSOR is strict (sdk/tools/libs/libs.go:234), so a missing
-  # bundle fails here instead of silently degrading to CPU. Only llama is
-  # strict: `kronk bucky libs --local` maps rocm to vulkan on its own,
-  # since whisper.cpp has no ROCm build.
-  gpu-tests:
-    name: GPU tests (${{ matrix.backend }})
-    if: (github.event.pull_request.head.repo.full_name || github.repository) == github.repository
-    runs-on: [self-hosted, Linux, X64, gpu, "${{ matrix.processor }}"]
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # `processor` is both KRONK_PROCESSOR's value and the runner
-          # label, because the runner images use Kronk's own backend names.
-          # `device` is the TYPE column `kronk devices` prints for that
-          # backend (cmd/kronk/devices/cmd.go deviceType).
-          - backend: Vulkan
-            processor: vulkan
-            device: GPU (Vulkan)
-          - backend: ROCm
-            processor: rocm
-            device: GPU (ROCm)
-    env:
-      KRONK_PROCESSOR: ${{ matrix.processor }}
-    steps:
-      # Both probes, not just this backend's: when the assertion below
-      # fails, the first question is whether the other backend saw the
-      # device either (driver/permission problem) or not (bundle problem).
-      - name: Runner specs
-        run: |
-          nproc
-          free -h
-          vulkaninfo --summary 2>/dev/null | head -20 || echo "vulkaninfo unavailable"
-          rocminfo 2>/dev/null | grep -Ei 'Name:|Marketing|gfx' | head -20 || echo "rocminfo unavailable"
-
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
-
-      - name: Set up Kronk
-        uses: ./.github/actions/setup-kronk
-        with:
-          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
-
-      # KRONK_PROCESSOR only guarantees the library bundle. ggml can load
-      # the Vulkan or HIP build and still enumerate zero devices of that
-      # type, in which case every suite below runs on the CPU backend and
-      # passes.
-      - name: Verify ${{ matrix.backend }} backend
-        env:
-          DEVICE_TYPE: ${{ matrix.device }}
-        run: |
-          kronk diagnose --no-bench --format json
-          kronk devices | tee "$RUNNER_TEMP/devices.txt"
-          if ! grep -qF "$DEVICE_TYPE" "$RUNNER_TEMP/devices.txt"; then
-            echo "::error::no $DEVICE_TYPE device enumerated; the suites would run on CPU"
-            exit 1
-          fi
-
-      - name: Run model suites on GPU
-        run: |
-          export RUN_IN_PARALLEL=no
-          go test -v -count=1 -timeout 10m -run '^(TestSuite|TestUsageCounting|Test_BatchChatConcurrent)$' ./sdk/kronk/tests/qwen3
-          go test -v -count=1 -timeout 10m -run '^TestLengthTerminatedToolCallBecomesContent$' ./sdk/kronk/tests/qwen06
-          go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/draft
-          go test -v -count=1 -timeout 10m -run '^(TestSuite|Test_PooledVision)$' ./sdk/kronk/tests/vision
-          go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/vision_imc
-          go test -v -count=1 -timeout 10m -run '^(TestSuite|TestConcurrentRerank)$' ./sdk/kronk/tests/rerank
-          go test -v -count=1 -timeout 10m -run '^(TestSuite|TestUsageCountingHybrid)$' ./sdk/kronk/tests/hybrid
