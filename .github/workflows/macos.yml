@@ -43,7 +43,8 @@ permissions:
 # protection, so these stay safe to mark required.
 #
 # KRONK_PROCESSOR=cpu pins the gate; these jobs previously auto-detected
-# Metal. Metal now has its own explicit job, so both run on every PR.
+# Metal. Metal is covered by gpu.yml's matrix, which runs on this same
+# runner, so both paths are exercised on every PR.
 env:
   GOTOOLCHAIN: local
   KRONK_PROCESSOR: cpu
@@ -200,45 +201,3 @@ jobs:
           go test -v -count=1 -timeout 6m -run '^TestSuite$' ./sdk/kronk/tests/vision_imc
           go test -v -count=1 -timeout 6m -run '^(TestSuite|TestConcurrentRerank)$' ./sdk/kronk/tests/rerank
           go test -v -count=1 -timeout 6m -run '^(TestSuite|TestUsageCountingHybrid)$' ./sdk/kronk/tests/hybrid
-
-  # Apple Silicon GPU inference is what macOS users actually run, and no
-  # hosted runner can exercise it. KRONK_PROCESSOR is strict, so a missing
-  # Metal bundle fails here rather than degrading to CPU.
-  gpu-tests:
-    name: GPU tests (Metal)
-    if: (github.event.pull_request.head.repo.full_name || github.repository) == github.repository
-    runs-on: [self-hosted, macOS, ARM64, sand]
-    timeout-minutes: 45
-    env:
-      KRONK_PROCESSOR: metal
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
-      - name: Set up Kronk
-        uses: ./.github/actions/setup-kronk
-        with:
-          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
-
-      # KRONK_PROCESSOR only guarantees the library bundle. ggml can load
-      # the Metal build and still enumerate zero Metal devices, in which
-      # case every suite below runs on the CPU backend and passes.
-      - name: Verify Metal backend
-        run: |
-          kronk diagnose --no-bench --format json
-          kronk devices | tee "$RUNNER_TEMP/devices.txt"
-          if ! grep -q 'GPU (Metal)' "$RUNNER_TEMP/devices.txt"; then
-            echo "::error::no Metal device enumerated; the suites would run on CPU"
-            exit 1
-          fi
-
-      - name: Run model suites on GPU
-        run: |
-          export RUN_IN_PARALLEL=no
-          go test -v -count=1 -timeout 10m -run '^(TestSuite|TestUsageCounting|Test_BatchChatConcurrent)$' ./sdk/kronk/tests/qwen3
-          go test -v -count=1 -timeout 10m -run '^TestLengthTerminatedToolCallBecomesContent$' ./sdk/kronk/tests/qwen06
-          go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/draft
-          go test -v -count=1 -timeout 10m -run '^(TestSuite|Test_PooledVision)$' ./sdk/kronk/tests/vision
-          go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/vision_imc
-          go test -v -count=1 -timeout 10m -run '^(TestSuite|TestConcurrentRerank)$' ./sdk/kronk/tests/rerank
-          go test -v -count=1 -timeout 10m -run '^(TestSuite|TestUsageCountingHybrid)$' ./sdk/kronk/tests/hybrid

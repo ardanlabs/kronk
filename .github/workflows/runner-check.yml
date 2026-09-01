@@ -186,13 +186,13 @@ jobs:
             fail=1
           fi
           if ! vulkaninfo --summary >/dev/null 2>&1; then
-            echo "::warning::vulkaninfo missing or failing — gpu-tests (Vulkan) will not find a device"
+            echo "::warning::vulkaninfo missing or failing — gpu.yml's Vulkan leg will not find a device"
           fi
-          # A Vulkan-only runner image is a valid build target, so this is a
-          # warning too — but linux.yml's ROCm matrix leg fails on such a
-          # runner, and this is where that is visible before it does.
+          # Each fleet serves one backend, so exactly one of these two
+          # warnings is expected on a healthy runner; both firing means
+          # this box serves neither leg of gpu.yml.
           if ! rocminfo >/dev/null 2>&1; then
-            echo "::warning::rocminfo missing or failing — gpu-tests (ROCm) will not find a device"
+            echo "::warning::rocminfo missing or failing — gpu.yml's ROCm leg will not find a device"
           fi
           exit $fail
 
