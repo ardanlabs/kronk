@@ -394,7 +394,7 @@ The exact token lengths depend on the template; the brackets show logical
 regions, not token counts. The diagram combines normal deterministic growth
 with the System-only recovery path used when every Current cache diverges.
 
-![IMC cache population and session selection](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-05/imc-session-selection.svg)
+![IMC cache population and session selection](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/07-select-imc-session.svg)
 
 System never advances to a user, assistant, tool, or computed token boundary.
 The pool has the same number of entries as the working-session pool, and one

@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
-  <title id="title">Kronk software architecture</title>
+  <title id="title">Kronk Architecture</title>
   <desc id="desc">Applications use Kronk directly through its public Go SDKs or through the Kronk model server and shared model pool. The Kronk SDK uses yzma bindings to run GGUF models with llama.cpp. The Bucky SDK uses Bucky bindings to run speech-to-text models with whisper.cpp. Both branches use FFI and purego and run on compatible native compute backends.</desc>
 
   <defs>

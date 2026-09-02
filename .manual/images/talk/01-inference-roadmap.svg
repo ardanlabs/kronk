@@ -1,0 +1,125 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+  <title id="title">Inference Roadmap</title>
+  <desc id="desc">A four-step workshop roadmap covering Kronk architecture, example programs, Hugging Face and model selection, and the generation inference lifecycle.</desc>
+
+  <defs>
+    <filter id="shadow" x="-12%" y="-8%" width="124%" height="124%">
+      <feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+    </marker>
+    <style>
+      .title { font: 700 42px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; letter-spacing: 0.5px; }
+      .subtitle { font: 400 21px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .eyebrow { font: 700 14px Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 1.1px; }
+      .heading { font: 700 25px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .body { font: 500 19px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .number { font: 700 24px Inter, ui-sans-serif, system-ui, sans-serif; fill: #ffffff; }
+      .phase { font: 700 16px Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 1px; }
+      .footer { font: 500 18px Inter, ui-sans-serif, system-ui, sans-serif; fill: #e2e8f0; }
+    </style>
+  </defs>
+
+  <rect width="1920" height="1080" fill="#f8fafc"/>
+  <rect width="1920" height="12" fill="#0f766e"/>
+
+  <text class="title" x="60" y="70">KRONK INFERENCE ROADMAP</text>
+  <text class="subtitle" x="60" y="108">Four stops from system architecture to the complete generation path.</text>
+
+  <!-- Step connectors -->
+  <g fill="none" stroke="#64748b" stroke-width="4" marker-end="url(#arrow)">
+    <path d="M 460 515 H 503"/>
+    <path d="M 915 515 H 958"/>
+    <path d="M 1370 515 H 1413"/>
+  </g>
+
+  <!-- Step 1: Kronk Architecture -->
+  <g filter="url(#shadow)">
+    <rect x="60" y="160" width="400" height="710" rx="24" fill="#ffffff" stroke="#60a5fa" stroke-width="3"/>
+  </g>
+  <circle cx="260" cy="218" r="31" fill="#2563eb"/>
+  <text class="number" x="260" y="227" text-anchor="middle">1</text>
+  <text class="eyebrow" x="260" y="282" text-anchor="middle" fill="#1d4ed8">SYSTEM MAP</text>
+  <text class="heading" x="260" y="330" text-anchor="middle">KRONK ARCHITECTURE</text>
+  <rect x="143" y="404" width="234" height="190" rx="20" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+  <rect x="194" y="439" width="132" height="29" rx="8" fill="#bfdbfe" stroke="#2563eb" stroke-width="2"/>
+  <rect x="174" y="488" width="172" height="29" rx="8" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
+  <rect x="194" y="537" width="132" height="29" rx="8" fill="#bfdbfe" stroke="#2563eb" stroke-width="2"/>
+  <path d="M 260 468 V 488 M 260 517 V 537" stroke="#2563eb" stroke-width="3"/>
+  <text class="body" x="260" y="665" text-anchor="middle">
+    <tspan x="260">APIs, SDKs, model pools,</tspan>
+    <tspan x="260" dy="30">native engines, and hardware.</tspan>
+  </text>
+
+  <!-- Step 2: Example Programs -->
+  <g filter="url(#shadow)">
+    <rect x="515" y="160" width="400" height="710" rx="24" fill="#ffffff" stroke="#2dd4bf" stroke-width="3"/>
+  </g>
+  <circle cx="715" cy="218" r="31" fill="#0f766e"/>
+  <text class="number" x="715" y="227" text-anchor="middle">2</text>
+  <text class="eyebrow" x="715" y="282" text-anchor="middle" fill="#0f766e">HANDS ON</text>
+  <text class="heading" x="715" y="330" text-anchor="middle">EXAMPLE PROGRAMS</text>
+  <rect x="598" y="404" width="234" height="190" rx="20" fill="#ecfdf5" stroke="#5eead4" stroke-width="2"/>
+  <rect x="625" y="435" width="180" height="128" rx="12" fill="#0f172a"/>
+  <circle cx="648" cy="457" r="5" fill="#f87171"/>
+  <circle cx="666" cy="457" r="5" fill="#fbbf24"/>
+  <circle cx="684" cy="457" r="5" fill="#4ade80"/>
+  <text x="646" y="500" style="font:700 18px ui-monospace, monospace; fill:#5eead4">$ go run</text>
+  <path d="M 646 525 H 757" stroke="#cbd5e1" stroke-width="4"/>
+  <path d="M 646 544 H 721" stroke="#64748b" stroke-width="4"/>
+  <text class="body" x="715" y="665" text-anchor="middle">
+    <tspan x="715">Connect the concepts</tspan>
+    <tspan x="715" dy="30">to focused, working code.</tspan>
+  </text>
+
+  <!-- Step 3: Hugging Face and Model Selection -->
+  <g filter="url(#shadow)">
+    <rect x="970" y="160" width="400" height="710" rx="24" fill="#ffffff" stroke="#fbbf24" stroke-width="3"/>
+  </g>
+  <circle cx="1170" cy="218" r="31" fill="#d97706"/>
+  <text class="number" x="1170" y="227" text-anchor="middle">3</text>
+  <text class="eyebrow" x="1170" y="282" text-anchor="middle" fill="#b45309">MODEL CHOICE</text>
+  <text class="heading" x="1170" y="324" text-anchor="middle">
+    <tspan x="1170">HUGGING FACE AND</tspan>
+    <tspan x="1170" dy="32">MODEL SELECTION</tspan>
+  </text>
+  <rect x="1053" y="404" width="234" height="190" rx="20" fill="#fffbeb" stroke="#fcd34d" stroke-width="2"/>
+  <rect x="1080" y="438" width="180" height="31" rx="8" fill="#fef3c7" stroke="#d97706" stroke-width="2"/>
+  <rect x="1080" y="484" width="180" height="31" rx="8" fill="#fde68a" stroke="#d97706" stroke-width="2"/>
+  <rect x="1080" y="530" width="180" height="31" rx="8" fill="#fef3c7" stroke="#d97706" stroke-width="2"/>
+  <text x="1096" y="459" style="font:700 15px Inter, sans-serif; fill:#92400e">DENSE</text>
+  <text x="1096" y="505" style="font:700 15px Inter, sans-serif; fill:#92400e">MIXTURE OF EXPERTS</text>
+  <text x="1096" y="551" style="font:700 15px Inter, sans-serif; fill:#92400e">HYBRID</text>
+  <text class="body" x="1170" y="665" text-anchor="middle">
+    <tspan x="1170">Find the right architecture,</tspan>
+    <tspan x="1170" dy="30">size, and quantization.</tspan>
+  </text>
+
+  <!-- Step 4: Generation Inference Lifecycle -->
+  <g filter="url(#shadow)">
+    <rect x="1425" y="160" width="400" height="710" rx="24" fill="#ffffff" stroke="#a78bfa" stroke-width="3"/>
+  </g>
+  <circle cx="1625" cy="218" r="31" fill="#7c3aed"/>
+  <text class="number" x="1625" y="227" text-anchor="middle">4</text>
+  <text class="eyebrow" x="1625" y="282" text-anchor="middle" fill="#6d28d9">EXECUTION MAP</text>
+  <text class="heading" x="1625" y="324" text-anchor="middle">
+    <tspan x="1625">GENERATION INFERENCE</tspan>
+    <tspan x="1625" dy="32">LIFECYCLE</tspan>
+  </text>
+  <rect x="1508" y="404" width="234" height="190" rx="20" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="2"/>
+  <rect x="1535" y="438" width="180" height="38" rx="10" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/>
+  <text x="1625" y="463" text-anchor="middle" style="font:700 16px Inter, sans-serif; fill:#6d28d9">CPU PLANNING</text>
+  <path d="M 1625 476 V 510" stroke="#7c3aed" stroke-width="3" marker-end="url(#arrow)"/>
+  <rect x="1535" y="520" width="180" height="44" rx="10" fill="#ddd6fe" stroke="#7c3aed" stroke-width="2"/>
+  <text x="1625" y="548" text-anchor="middle" style="font:700 16px Inter, sans-serif; fill:#6d28d9">MODEL EXECUTION</text>
+  <text class="body" x="1625" y="665" text-anchor="middle">
+    <tspan x="1625">Follow the request from</tspan>
+    <tspan x="1625" dy="30">admission through streaming.</tspan>
+  </text>
+
+  <!-- Story summary -->
+  <rect x="60" y="925" width="1765" height="94" rx="20" fill="#0f172a"/>
+  <text class="phase" x="92" y="960" fill="#5eead4">THE WORKSHOP PATH</text>
+  <text class="footer" x="92" y="994">Kronk Architecture → Example Programs → Hugging Face and Model Selection → Generation Inference Lifecycle</text>
+</svg>

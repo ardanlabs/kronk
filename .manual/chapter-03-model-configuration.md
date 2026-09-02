@@ -456,7 +456,7 @@ runtime values. Multimodal encoders may require an entire media-token chunk to
 fit in one physical batch, so do not lower `prefill-batch-size` for a multimodal
 model without testing media input.
 
-![How two requests move from prefill to generation and how non-MTP and MTP batch sizing supports them](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-04/batch-sizing-mtp-vs-non-mtp.svg)
+![How two requests move from prefill to generation and how non-MTP and MTP batch sizing supports them](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/08-wait-for-execution-slot.svg)
 
 Incremental Message Caching is configured separately with
 `incremental-cache` and related cache settings. See
@@ -497,7 +497,7 @@ attention with MoE. Every token still traverses every layer. The hybrid stack
 changes how context is processed, while an MoE router independently changes
 which feed-forward experts activate.
 
-![Dense, Mixture-of-Experts, and hybrid inference compared](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-03/dense-moe-hybrid-inference.svg)
+![Dense, Mixture-of-Experts, and hybrid inference compared](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/03c-dense-moe-and-hybrid-inference.svg)
 
 The estimator follows the model's per-layer attention topology when the GGUF
 provides it. Full-attention and sliding-window layers can have different KV

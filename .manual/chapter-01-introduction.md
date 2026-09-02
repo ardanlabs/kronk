@@ -96,7 +96,7 @@ Kronk is layered so applications and the model server use the same inference
 SDKs. The two engine paths provide different model capabilities and may have
 different platform support.
 
-![Kronk architecture: application access, SDKs, bindings, native engines, and models](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-01/kronk-architecture.svg)
+![Kronk architecture: application access, SDKs, bindings, native engines, and models](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/02-kronk-architecture.svg)
 
 The SDK layer owns model loading, inference, caching, and concurrency. The
 model server adds HTTP transport, model pooling, the BUI, security, and

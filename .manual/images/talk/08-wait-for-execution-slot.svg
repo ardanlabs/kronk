@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
-  <title id="title">Two requests move from prefill to generation</title>
+  <title id="title">Wait for Execution Slot</title>
   <desc id="desc">With two slots, Request 1 first owns prefill while Request 2 waits. When Request 1 begins generation, Request 2 becomes the prefill owner and Request 1 generation is staged first. Finally both requests generate together. With the default prefill batch size of 2048, non-MTP resolves to internal NUBatch 2048 and NBatch 2050, while MTP with ndraft 3 resolves both values to 2056. A larger prefill batch size moves more prompt tokens per decode call but makes each call longer.</desc>
 
   <defs>

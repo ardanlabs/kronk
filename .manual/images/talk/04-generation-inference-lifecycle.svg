@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
-  <title id="title">Generation Request from Host Planning to Model Execution</title>
+  <title id="title">Generation Inference Lifecycle</title>
   <desc id="desc">A high-level generation lifecycle divided by hardware responsibility. The host CPU receives and admits the request, renders and plans the prompt, reserves a compatible session, submits the job, and waits for a slot. Once assigned, session state is restored into the GPU KV cache, uncached prompt tokens are prefetched, and generation inference runs on the GPU. Parsing and stream delivery run on the host CPU. Cleanup clears GPU model state and releases host resources.</desc>
 
   <defs>

@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
-  <title id="title">From Chat Request to Model Prompt</title>
+  <title id="title">Render + Plan Prompt</title>
   <desc id="desc">Messages and optional tools enter a model-specific Jinja chat template. The template renders the exact role markers, tool syntax, message boundaries, content, and assistant generation cue expected by the selected model. A compatible template reproduces the protocol used during training; a mismatched template can degrade or break responses.</desc>
 
   <defs>
