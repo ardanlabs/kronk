@@ -33,7 +33,7 @@
 # IMAGE selects the backend and defaults to the vulkan image, so the rocm
 # fleet names its image and takes a PREFIX of its own:
 #
-#   COUNT=6 APP_ID=... APP_KEY=~/kronk-runners.pem \
+#   COUNT=2 APP_ID=... APP_KEY=~/kronk-runners.pem \
 #       ./zarf/docker/runner/start-runners.sh
 #   PREFIX=kronk-linux-rocm COUNT=2 IMAGE=kronk-runner:rocm APP_ID=... \
 #       APP_KEY=~/kronk-runners.pem ./zarf/docker/runner/start-runners.sh
@@ -43,10 +43,11 @@
 # start-runners.sh.
 #
 # COUNT matters: a runner process executes ONE job at a time, so a single
-# container makes every job run back to back. This host peaks at six —
+# container makes every job run back to back. Six jobs can be in flight —
 # linux.yml's four CPU jobs, which either fleet can take, plus gpu.yml's
-# Vulkan and ROCm legs, one pinned to each fleet — so six runners across
-# the two fleets is the point where nothing queues.
+# Vulkan and ROCm legs, one pinned to each fleet — but what bounds COUNT
+# is RAM, not that number. This host runs two per fleet, each capped by
+# MEMORY; see HOST MEMORY BUDGET in start-runners.sh.
 #
 # Three things that are easy to get wrong, all handled by the script:
 #
@@ -57,10 +58,15 @@
 #                   against the container's /etc/group, where render/video
 #                   may not exist. An unset variable yields --group-add ""
 #                   and docker fails with "unable to find group".
-#   volumes       — EPHEMERAL=1 destroys the container after every job, so
-#                   nothing under / survives. The volumes are this runner's
-#                   entire cache, and replace actions/cache, which the
-#                   workflows skip on self-hosted:
+#   volumes       — EPHEMERAL=1 ends the runner process after one job, and
+#                   --restart=always brings the SAME container back, so the
+#                   writable layer does survive: _diag logs, _work and the
+#                   last checkout accumulate across restarts, unbounded but
+#                   slow. What does not survive is anything a job expects to
+#                   find from a PREVIOUS job, since the runner re-registers
+#                   fresh each time. The volumes are this runner's entire
+#                   cache, and replace actions/cache, which the workflows
+#                   skip on self-hosted:
 #                     /root/.kronk          models (~6.6 GB) and native libs
 #                     /root/go              GOMODCACHE and GOPATH/bin
 #                     /root/.cache/go-build GOCACHE, the compile cache
@@ -100,9 +106,17 @@ USER root
 # explicitly rather than relied on as a transitive dependency, since it is the
 # one that broke here. ffmpeg is required by bucky's audio decoder
 # (sdk/bucky/model/decode.go) to transcode non-WAV/MP3/FLAC uploads.
+#
+# clinfo is here for runner-check.yml's Tooling step, which probed it while
+# nothing installed it. Nothing in Kronk selects a backend on OpenCL
+# (runtime_selection.go probes nvidia-smi, rocminfo and vulkaninfo only), so
+# it is a diagnostic. It enumerates devices only through an installed ICD:
+# the rocm stage adds one, base ships none, so on the vulkan image clinfo
+# resolves but reports 0 platforms. That is expected, not a defect.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
+        clinfo \
         curl \
         ffmpeg \
         libcurl4 \
@@ -142,6 +156,13 @@ LABEL org.opencontainers.image.description="GitHub Actions runner for kronk CI, 
 ARG ROCM_VERSION="7.2.4"
 ARG ROCM_KEY_FINGERPRINT="CA8BB4727A47B4D09B4EE8969386B48A1A693C5C"
 
+# rocm-opencl-runtime below is the OpenCL ICD, and exists only so base's
+# clinfo has a platform to report on this fleet. It is the version-tracking
+# metapackage (7.2.4.x) over rocm-opencl (2.0.0.x, ~3.8 MB), which brings the
+# ocl-icd-libopencl1 loader with it; rocm-opencl-sdk would pull rocm-llvm and
+# is the wrong one. Nothing in Kronk reads OpenCL — dropping this and base's
+# clinfo together is a valid change if the diagnostic stops earning its ~4 MB.
+#
 # The key fingerprint is verified before the repo is trusted, so a swapped
 # key fails the build instead of silently installing from an unknown source.
 RUN set -eux; \
@@ -164,6 +185,7 @@ RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
         rocm-hip-libraries \
+        rocm-opencl-runtime \
         rocm-smi-lib \
         rocminfo; \
     echo "/opt/rocm/lib" > /etc/ld.so.conf.d/rocm.conf; \
@@ -171,6 +193,14 @@ RUN set -eux; \
     apt-get purge -y --auto-remove gnupg; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/*
+
+# rocm-smi-lib installs /opt/rocm/bin/rocm-smi, and the ld.so.conf line
+# above covers only the libraries — nothing puts that bin directory on
+# PATH, so rocm-smi reported MISSING in runner-check.yml's Tooling step
+# while rocminfo resolved. Mirrors PATH in zarf/docker/kronk/Dockerfile,
+# which prepends the same directory; diverging from that image is its own
+# hazard, since this one exists to reproduce it.
+ENV PATH="/opt/rocm/bin:${PATH}"
 
 # -----------------------------------------------------------------------------
 # vulkan — default target (last stage). Vulkan only: skips the ROCm
