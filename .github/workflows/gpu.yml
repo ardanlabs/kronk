@@ -107,16 +107,21 @@ jobs:
             processor: metal
             device: GPU (Metal)
             runs_on: [self-hosted, macOS, ARM64, sand, metal]
-            # Empty for now, deliberately. The macOS runners are ephemeral
-            # VMs; setup-kronk redirects their models onto a persistent host
-            # mount, so the download is no longer per-job — but those models
-            # are then read over virtiofs, and nothing has yet measured what
-            # mmap-ing a 35B GGUF across that share costs. The base 6.6 GiB
-            # set will answer that. Until it does, the extra 26B/35B targets
-            # stay on the Linux legs, where they cover the MTP path on two
-            # backends already. Flip this to the GPU list once the Metal
-            # timings look sane.
-            extra_models: ""
+            # Held empty until the base 6.6 GiB set showed what reading
+            # models over virtiofs actually costs. It has: on 2026-09-02 the
+            # Metal leg beat Vulkan on six of the seven shared suites —
+            # vision 14.5s vs 33.4s, vision_imc 19.0s vs 54.0s, qwen3 35.1s
+            # vs 41.8s, hybrid 28.5s vs 40.6s — with rerank the lone
+            # exception at 16.2s vs 3.8s. The share is not the bottleneck.
+            #
+            # Both targets here are far larger than anything in the base
+            # set, so the first run against a cold cache pulls them onto the
+            # shared host mount. Pre-seed that mount if two GPU runs might
+            # overlap: the two macOS runners share one models directory and
+            # kronk has no cross-process download lock, so a concurrent cold
+            # fetch of the same model can lose the rename race in
+            # sdk/tools/models/download.go.
+            extra_models: .github/test-models-gpu.txt
     env:
       KRONK_PROCESSOR: ${{ matrix.processor }}
     steps:
