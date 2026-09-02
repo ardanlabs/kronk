@@ -166,28 +166,52 @@ jobs:
       - name: Stage Metal capability shim
         if: matrix.processor == 'metal'
         run: |
-          src="/Volumes/My Shared Files/kronk-tools/LumeMetalCapabilities-arm64.dylib"
+          src="/Volumes/My Shared Files/kronk-tools/LumeMetalCapabilities.dylib"
           if [[ ! -f "$src" ]]; then
             echo "::error::$src is missing. On the runner host, build it with zarf/macos/build-metal-shim.sh and add the kronk-tools mount to ~/sand.yml."
             exit 1
           fi
-          cp "$src" "$RUNNER_TEMP/LumeMetalCapabilities-arm64.dylib"
+          cp "$src" "$RUNNER_TEMP/LumeMetalCapabilities.dylib"
+
+          # DYLD_INSERT_LIBRARIES reaches every child process, and /usr/bin is
+          # arm64e: a single-slice arm64 dylib aborts `tee`, `sw_vers` and
+          # everything else in the tree with "incompatible architecture".
+          if [[ "$(lipo -archs "$RUNNER_TEMP/LumeMetalCapabilities.dylib")" != *arm64e* ]]; then
+            echo "::error::staged shim has no arm64e slice; rebuild it on the host with zarf/macos/build-metal-shim.sh"
+            exit 1
+          fi
 
       # KRONK_PROCESSOR only guarantees the library bundle. ggml can load
       # the Vulkan, HIP or Metal build and still enumerate zero devices of
       # that type, in which case every suite below runs on the CPU backend
       # and passes.
+      # The shim is scoped to `kronk devices` alone here, not set for the
+      # whole step. DYLD_INSERT_LIBRARIES is inherited by children, and
+      # `kronk diagnose` shells out to sw_vers/sysctl/vm_stat and parses
+      # their COMBINED output (sdk/tools/diagnose/system_darwin.go:15), so an
+      # injected process writing a banner to stderr lands in the field that
+      # parser reads and turns cpuModel and ramBytes into nonsense. Keeping
+      # diagnose unshimmed keeps the first thing you read when a runner
+      # misbehaves trustworthy.
+      #
+      # A shell prefix rather than `env`, and `>` rather than `tee`, so no
+      # extra process joins the shimmed environment just to move bytes.
       - name: Verify ${{ matrix.backend }} backend
         env:
           DEVICE_TYPE: ${{ matrix.device }}
-          DYLD_INSERT_LIBRARIES: ${{ matrix.processor == 'metal' && format('{0}/LumeMetalCapabilities-arm64.dylib', runner.temp) || '' }}
-          LUME_METAL_APPLE_FAMILY_MAX: ${{ matrix.processor == 'metal' && '1009' || '' }}
-          LUME_METAL_MAX_THREADGROUP_MEMORY: ${{ matrix.processor == 'metal' && '32768' || '' }}
+          METAL_SHIM: ${{ matrix.processor == 'metal' && format('{0}/LumeMetalCapabilities.dylib', runner.temp) || '' }}
         run: |
           kronk diagnose --no-bench --format json
-          # 2>&1: ggml's device banner and the shim's activation line are on
-          # stderr, and both are asserted below.
-          kronk devices 2>&1 | tee "$RUNNER_TEMP/devices.txt"
+
+          if [[ -n "$METAL_SHIM" ]]; then
+            DYLD_INSERT_LIBRARIES="$METAL_SHIM" \
+            LUME_METAL_APPLE_FAMILY_MAX=1009 \
+            LUME_METAL_MAX_THREADGROUP_MEMORY=32768 \
+              kronk devices > "$RUNNER_TEMP/devices.txt" 2>&1
+          else
+            kronk devices > "$RUNNER_TEMP/devices.txt" 2>&1
+          fi
+          cat "$RUNNER_TEMP/devices.txt"
           if ! grep -qF "$DEVICE_TYPE" "$RUNNER_TEMP/devices.txt"; then
             echo "::error::no $DEVICE_TYPE device enumerated; the suites would run on CPU"
             exit 1
@@ -228,7 +252,7 @@ jobs:
           # MTLGPUFamilyApple5, below llama.cpp's Apple7/Metal3 gate, so
           # without this the Metal leg exercises CPU fallbacks no real Mac
           # ever takes. See zarf/macos/README.md. Empty on the Linux legs.
-          DYLD_INSERT_LIBRARIES: ${{ matrix.processor == 'metal' && format('{0}/LumeMetalCapabilities-arm64.dylib', runner.temp) || '' }}
+          DYLD_INSERT_LIBRARIES: ${{ matrix.processor == 'metal' && format('{0}/LumeMetalCapabilities.dylib', runner.temp) || '' }}
           LUME_METAL_APPLE_FAMILY_MAX: ${{ matrix.processor == 'metal' && '1009' || '' }}
           # Pinned to what real Apple Silicon reports. The shim defaults to
           # 65536, which no shipping Mac has.
@@ -253,7 +277,7 @@ jobs:
         # Skipped on Metal today (extra_models is empty), but carried here so
         # that flipping the matrix on cannot silently drop the shim.
         env:
-          DYLD_INSERT_LIBRARIES: ${{ matrix.processor == 'metal' && format('{0}/LumeMetalCapabilities-arm64.dylib', runner.temp) || '' }}
+          DYLD_INSERT_LIBRARIES: ${{ matrix.processor == 'metal' && format('{0}/LumeMetalCapabilities.dylib', runner.temp) || '' }}
           LUME_METAL_APPLE_FAMILY_MAX: ${{ matrix.processor == 'metal' && '1009' || '' }}
           LUME_METAL_MAX_THREADGROUP_MEMORY: ${{ matrix.processor == 'metal' && '32768' || '' }}
         run: |

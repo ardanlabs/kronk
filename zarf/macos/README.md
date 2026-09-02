@@ -132,6 +132,35 @@ Three things to take from that run:
 - Threadgroup memory stayed at 32768 because of the explicit override. Without it
   the guest would advertise 65536, which no shipping Apple Silicon Mac reports.
 
+### Two traps that cost a CI run
+
+**Inject a universal dylib, never a single arch.** `DYLD_INSERT_LIBRARIES` is
+inherited by every child process, and macOS ships `/usr/bin` as **arm64e** while
+Go emits plain **arm64**. Staging only the arm64 slice aborts every system binary
+in the tree:
+
+```
+dyld[4185]: terminating because inserted dylib '...-arm64.dylib' could not be
+loaded: (mach-o file, but is an incompatible architecture (have 'arm64',
+need 'arm64e'))
+```
+
+That killed `tee` in the verify step (exit 134) and every command
+`kronk diagnose` shells out to. `build-metal-shim.sh` now `lipo`s both slices
+into one `LumeMetalCapabilities.dylib` and refuses to stage a file without an
+arm64e slice; the CI stage step re-checks with `lipo -archs`.
+
+**Keep `kronk diagnose` out of the shimmed environment.**
+`sdk/tools/diagnose/system_darwin.go:15` parses the *combined* output of
+`sysctl`, so once the arch is fixed and those binaries run, the shim's NSLog
+banner lands on stderr, becomes line 0 of what the parser reads, and turns
+`cpuModel` and `ramBytes` into nonsense. `gpu.yml` scopes the injection to the
+`kronk devices` invocation with a shell prefix, and redirects with `>` rather
+than `tee`, so no extra process joins the shimmed environment just to move
+bytes. The library path is unaffected either way —
+`sdk/tools/devices/system_memory_darwin.go:9` uses `unix.SysctlUint64`, a
+syscall, not a shell-out.
+
 ### Host setup, once per runner host
 
 CI now depends on this being in place; without it the Metal leg fails at the
@@ -193,7 +222,23 @@ Tighten it to a hard requirement once a real run shows both lines present.
 4. ~~Drop `metal` from `SkipOnBackends`~~ — done, in
    `sdk/kronk/tests/draft/suite_test.go`. Metal now runs the acceptance
    assertion for real.
-5. **Open:** run the Metal leg and read the result. If `DraftAcceptance` passes,
+5. ~~Confirm the capabilities reach llama.cpp in CI~~ — 2026-09-02, from the
+   runner:
+
+   ```
+   ggml_metal_device_init: GPU family: MTLGPUFamilyApple9  (1009)
+   ggml_metal_device_init: simdgroup reduction   = true
+   ggml_metal_device_init: simdgroup matrix mul. = true
+   ggml_metal_device_init: has bfloat            = true
+   ggml_metal_device_init: use residency sets    = true
+   ```
+
+   The NSLog banner *does* reach stderr in a CI step, contrary to the caution
+   that shaped the asymmetric assertions — `[LumeMetalCapabilities] Enabled for
+   kronk`, `for llama-cli`, `for llama-bench` all appeared. Those checks can be
+   tightened to hard requirements once a green run confirms which lines land in
+   `devices.txt` specifically.
+6. **Open:** run the Metal leg to completion and read the result. If `DraftAcceptance` passes,
    the Metal rows come out of `upstream.md` — that evidence was a paravirtual
    artifact. If it fails, instrument the candidate readback before concluding
    anything; do not widen the upstream report on a VM signature a second time.
