@@ -18,7 +18,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
 	"uuid"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
@@ -54,6 +53,15 @@ func TestSuite(t *testing.T) {
 		// for the classic drafter path to be considered exercised. Runs
 		// before WithModel's unload cleanup, so the model is still loaded.
 		t.Run("DraftAcceptance", func(t *testing.T) {
+			// The ROCm backend accepts llama_set_sampler and then never
+			// populates the sampled-candidate buffers during llama_decode, so
+			// every draft distribution arrives empty. With no q(x) there is no
+			// correct rejection-sampling decision to make, and classic.Verify
+			// rightly declines to accept — sampling from the target instead,
+			// which preserves the output distribution but zeroes acceptance
+			// for the whole suite. A backend defect, not a regression here.
+			testlib.SkipIfROCm(t, "llama_decode does not populate sampled candidates, so every draft distribution is empty")
+
 			if !sawAcceptedDraft.Load() {
 				t.Error("classic drafter produced no accepted draft tokens across the suite; the separate-GGUF draft path may have regressed (drafter failed to load or every draft was rejected)")
 			}

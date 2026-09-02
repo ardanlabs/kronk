@@ -146,6 +146,30 @@ func printInfo(mdls *models.Models) {
 // =========================================================================
 
 // WithModel creates a Kronk instance for the duration of fn, handling cleanup.
+// Processor reports the backend whose library bundle is loaded, taken from
+// the last element of the bundle install path — bundles install to
+// <root>/<os>/<arch>/<processor>, the same basis printInfo reports on. It
+// reflects what actually loaded rather than what was asked for, so it is
+// correct whether the backend came from KRONK_PROCESSOR or from Kronk's own
+// host detection.
+func Processor() string {
+	return filepath.Base(libs.Path(""))
+}
+
+// SkipIfROCm skips a test that fails because of a defect in the ROCm
+// backend rather than anything in Kronk. reason is printed with the skip so
+// the test output explains itself without a trip to the git log.
+//
+// Use this only for a failure traced to the backend and reported upstream.
+// A Kronk bug that happens to surface on one backend must stay failing.
+func SkipIfROCm(t *testing.T, reason string) {
+	t.Helper()
+
+	if Processor() == "rocm" {
+		t.Skipf("ROCm backend: %s", reason)
+	}
+}
+
 func WithModel(t *testing.T, cfg model.Config, fn func(t *testing.T, krn *kronk.Kronk)) {
 	t.Helper()
 
