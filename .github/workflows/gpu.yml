@@ -16,6 +16,7 @@ on:
       - ".github/workflows/gpu.yml"
       - ".github/actions/setup-kronk/**"
       - ".github/test-models.txt"
+      - ".github/test-models-gpu.txt"
   pull_request:
     branches:
       - main
@@ -27,6 +28,7 @@ on:
       - ".github/workflows/gpu.yml"
       - ".github/actions/setup-kronk/**"
       - ".github/test-models.txt"
+      - ".github/test-models-gpu.txt"
   workflow_dispatch:
 
 # Same grouping as linux.yml / macos.yml: `head_ref || ref` collapses the
@@ -132,8 +134,13 @@ jobs:
         uses: ./.github/actions/setup-kronk
         with:
           # Same key the CPU workflows use, so all jobs on a given OS share
-          # one models cache.
-          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
+          # one models cache. The GPU-only list is folded in so the key still
+          # tracks every model these jobs need; it changes nothing today
+          # because every leg here is self-hosted and setup-kronk gates its
+          # cache layers on hosted runners.
+          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt', '.github/test-models-gpu.txt') }}
+          # Models too large for the base list — see that file's header.
+          extra-models-file: .github/test-models-gpu.txt
 
       # KRONK_PROCESSOR only guarantees the library bundle. ggml can load
       # the Vulkan, HIP or Metal build and still enumerate zero devices of
@@ -160,3 +167,8 @@ jobs:
           go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/vision_imc
           go test -v -count=1 -timeout 10m -run '^(TestSuite|TestConcurrentRerank)$' ./sdk/kronk/tests/rerank
           go test -v -count=1 -timeout 10m -run '^(TestSuite|TestUsageCountingHybrid)$' ./sdk/kronk/tests/hybrid
+          # The MTP speculation path, which the classic drafter above does
+          # not cover. Longer timeout: these targets are 26B/35B rather than
+          # the 1.7B the other suites load.
+          go test -v -count=1 -timeout 20m -run '^(TestSuite|TestSuiteMultiSlot)$' ./sdk/kronk/tests/mtp
+          go test -v -count=1 -timeout 20m -run '^(TestSuite|TestSuiteMultiSlot)$' ./sdk/kronk/tests/gemma4mtp
