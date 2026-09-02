@@ -53,21 +53,30 @@ func TestSuite(t *testing.T) {
 		// for the classic drafter path to be considered exercised. Runs
 		// before WithModel's unload cleanup, so the model is still loaded.
 		t.Run("DraftAcceptance", func(t *testing.T) {
-			// ROCm and Metal accept llama_set_sampler and then never populate
-			// the sampled-candidate buffers during llama_decode, so every
-			// draft distribution arrives empty. With no q(x) there is no
-			// correct rejection-sampling decision to make, and classic.Verify
-			// rightly declines to accept — sampling from the target instead,
-			// which preserves the output distribution but zeroes acceptance
-			// for the whole suite. A backend defect, not a regression here.
+			// ROCm accepts llama_set_sampler and then never populates the
+			// sampled-candidate buffers during llama_decode, so every draft
+			// distribution arrives empty. With no q(x) there is no correct
+			// rejection-sampling decision to make, and classic.Verify rightly
+			// declines to accept — sampling from the target instead, which
+			// preserves the output distribution but zeroes acceptance for the
+			// whole suite. A backend defect, not a regression here. Confirmed
+			// by instrumenting the readback directly:
+			// llama_get_sampled_candidates_count_ith returned 0 at every draft
+			// position.
 			//
-			// ROCm was confirmed by instrumenting the readback directly
-			// (llama_get_sampled_candidates_count_ith returned 0 at every
-			// draft position). Metal is listed on the matching signature —
-			// drafting active, acceptance 0.00 across every request, where
-			// Vulkan on the same commit sits at 0.36-0.39 — not on an
-			// instrumented run.
-			testlib.SkipOnBackends(t, "llama_decode does not populate sampled candidates, so every draft distribution is empty", "rocm", "metal")
+			// Metal was skipped here too, on the matching signature rather
+			// than an instrumented run — drafting active, acceptance 0.00
+			// across every request, where Vulkan on the same commit sits at
+			// 0.36-0.39. That evidence came entirely from the CI runners,
+			// which are VMs whose paravirtual GPU reported MTLGPUFamilyApple5.
+			// Below Apple7, ggml refuses SOFT_MAX, CUMSUM and SUM
+			// (ggml-metal-device.m:1214-1234) — exactly the three ops top_p's
+			// backend sampler graph is built from — so an empty distribution
+			// there says nothing about Metal on real hardware. gpu.yml now
+			// raises those capabilities (zarf/macos/README.md), so Metal runs
+			// this assertion for real. If it fails, instrument the readback
+			// before concluding anything: the upstream report covers ROCm.
+			testlib.SkipOnBackends(t, "llama_decode does not populate sampled candidates, so every draft distribution is empty", "rocm")
 
 			if !sawAcceptedDraft.Load() {
 				t.Error("classic drafter produced no accepted draft tokens across the suite; the separate-GGUF draft path may have regressed (drafter failed to load or every draft was rejected)")
