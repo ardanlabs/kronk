@@ -238,7 +238,11 @@ Tighten it to a hard requirement once a real run shows both lines present.
    kronk`, `for llama-cli`, `for llama-bench` all appeared. Those checks can be
    tightened to hard requirements once a green run confirms which lines land in
    `devices.txt` specifically.
-6. **Open:** run the Metal leg to completion and read the result. If `DraftAcceptance` passes,
+6. ~~Run the Metal leg and read the result~~ — 2026-09-02, all three GPU legs
+   green. `sdk/kronk/tests/draft` on Metal: `draft=67 accepted=26 rate=0.39`
+   and `draft=126 accepted=70 rate=0.56`, against 0.00 on every request
+   before. `DraftAcceptance` passes. The Metal rows have been withdrawn from
+   the upstream report; it now covers ROCm alone, with Metal as a control. If `DraftAcceptance` passes,
    the Metal rows come out of `upstream.md` — that evidence was a paravirtual
    artifact. If it fails, instrument the candidate readback before concluding
    anything; do not widen the upstream report on a VM signature a second time.
