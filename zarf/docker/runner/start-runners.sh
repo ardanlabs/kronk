@@ -3,12 +3,13 @@
 # Start N self-hosted GitHub Actions runners on this host.
 #
 # A runner process executes ONE job at a time, so a single container makes
-# every job run back to back. This host peaks at six — linux.yml's four
-# CPU jobs plus gpu.yml's Vulkan and ROCm legs — so six runners across the
-# fleets is where they stop queueing behind each other.
+# every job run back to back. Six jobs can be in flight — linux.yml's four
+# CPU jobs plus gpu.yml's Vulkan and ROCm legs — but COUNT is bounded by
+# RAM rather than by that number, so it is a memory budget and not a job
+# count: see HOST MEMORY BUDGET below. This host runs two per fleet.
 #
-#   COUNT=6 ./start-runners.sh
-#   COUNT=6 ./start-runners.sh --recreate    # replace running containers
+#   COUNT=2 ./start-runners.sh
+#   COUNT=2 ./start-runners.sh --recreate    # replace running containers
 #
 # Runners started under different PREFIXes are independent fleets and can
 # coexist on one host; see TWO FLEETS below.
@@ -24,11 +25,38 @@
 #   GROUP       runner group                                (default kronk)
 #   LABELS      runner labels  (default: gpu,<backend>, where <backend>
 #               comes from the image's com.ardanlabs.kronk.backend label)
+#   MEMORY      per-container memory cap, docker size    (default 20g)
+#               0 or empty leaves the container uncapped
 #
 # Build the image first:
 #
 #   docker build -t kronk-runner:vulkan zarf/docker/runner
 #   docker build -t kronk-runner:rocm --target rocm zarf/docker/runner
+#
+# HOST MEMORY BUDGET
+#
+# An uncapped container sees every byte the host has, so one runaway job
+# takes the box down with it — including the other fleet's runner and
+# whatever job that was half way through. MEMORY caps each container, and
+# --memory-swap is pinned to the same value: left alone docker allows
+# swap up to twice the limit, which turns the cap into a push into the
+# host's 8 GiB of swap, and swapping a 16 GiB test is slower than failing
+# it.
+#
+# Measured on this host:
+#
+#   ~6.6 GiB   the base model set (.github/test-models.txt), per runner
+#   ~16 GiB    peak for the MTP targets in .github/test-models-gpu.txt
+#
+# 20g therefore clears the largest job with headroom. Four of them
+# nominally oversubscribe 62 GiB, and that is on purpose: the cap is a
+# blast radius, not admission control. What holds the fleets inside the
+# host is gpu.yml scheduling one leg per fleet, so the realistic peak is
+# two GPU legs at ~16 GiB beside two CPU jobs — roughly 48 GiB.
+#
+# The cap bounds system RAM only. It is not a VRAM budget: this is a
+# Strix Halo part whose GPU carves its memory out of the same 62 GiB, and
+# that carve-out is not charged to the container's cgroup.
 #
 # TWO FLEETS ON ONE HOST
 #
@@ -42,7 +70,7 @@
 # names, runner names and the per-runner ~/.kronk volume distinct, so
 # neither fleet disturbs the other.
 #
-#   COUNT=4 APP_ID=... APP_KEY=~/kronk-runners.pem ./start-runners.sh
+#   COUNT=2 APP_ID=... APP_KEY=~/kronk-runners.pem ./start-runners.sh
 #   PREFIX=kronk-linux-rocm COUNT=2 IMAGE=kronk-runner:rocm \
 #       APP_ID=... APP_KEY=~/kronk-runners.pem ./start-runners.sh
 #
@@ -59,6 +87,7 @@ ORG="${ORG:-ardanlabs}"
 GROUP="${GROUP:-kronk}"
 APP_ID="${APP_ID:-}"
 APP_KEY="${APP_KEY:-}"
+MEMORY="${MEMORY-20g}"
 
 # The backend is read off the image rather than hardcoded, so a vulkan
 # image can never register runners advertising rocm. This label is
@@ -99,6 +128,22 @@ fi
 if ! [[ "$COUNT" =~ ^[0-9]+$ ]] || (( COUNT < 1 )); then
     echo "COUNT must be a positive integer, got: $COUNT" >&2
     exit 1
+fi
+
+# Both flags carry the same value so the cap is a ceiling: --memory on its
+# own leaves --memory-swap at twice the limit. Docker reads 0 as
+# unlimited, so an explicit 0 (or an empty MEMORY) omits the flags rather
+# than passing something docker would silently ignore.
+mem_args=()
+mem_desc="uncapped"
+if [[ -n "$MEMORY" && "$MEMORY" != "0" ]]; then
+    if ! [[ "$MEMORY" =~ ^[0-9]+[bkmgBKMG]?$ ]]; then
+        echo "MEMORY must be a docker size such as 20g, 8g or 512m, got: $MEMORY" >&2
+        exit 1
+    fi
+
+    mem_args=(--memory "$MEMORY" --memory-swap "$MEMORY")
+    mem_desc="$MEMORY"
 fi
 
 # Numeric GIDs from the host. Group NAMES would resolve against the
@@ -143,6 +188,7 @@ for (( i = 1; i <= COUNT; i++ )); do
 
     docker run -d --restart=always \
         --name "$name" \
+        "${mem_args[@]}" \
         --device /dev/kfd --device /dev/dri \
         --group-add "$VIDEO_GID" --group-add "$RENDER_GID" \
         --security-opt seccomp=unconfined \
@@ -160,7 +206,7 @@ for (( i = 1; i <= COUNT; i++ )); do
         -e LABELS="$LABELS" \
         "$IMAGE" >/dev/null
 
-    echo "started $name (labels: ${LABELS})"
+    echo "started $name (labels: ${LABELS}, memory: ${mem_desc})"
 done
 
 echo
