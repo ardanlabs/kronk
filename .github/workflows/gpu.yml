@@ -150,31 +150,6 @@ jobs:
             exit 1
           fi
 
-      # TEMPORARY DIAGNOSTIC — remove with sdk/kronk/model/speculation_diag.go.
-      #
-      # ROCm fails sdk/kronk/tests/draft with accepted=0 on every run while
-      # Vulkan on the same silicon and the same llama.cpp build reaches
-      # rate≈0.45. Both legs run the probes so Vulkan is the control: the
-      # comparison is what identifies the culprit, a ROCm log on its own
-      # cannot say which side of the draft/verify pair is wrong.
-      #
-      # Runs BEFORE the real suite step, which aborts at the first failing
-      # `go test` under bash -e and would otherwise never reach this.
-      # continue-on-error so a probe crash cannot mask the actual results.
-      - name: Speculation diagnostics (${{ matrix.backend }})
-        continue-on-error: true
-        env:
-          RUN_IN_PARALLEL: "no"
-          KRONK_SPEC_DIAG: "1"
-        run: |
-          echo "::group::capped n_outputs_max (current default)"
-          go test -v -count=1 -timeout 5m -run '^TestSuite$' ./sdk/kronk/tests/draft || true
-          echo "::endgroup::"
-          echo "::group::uncapped n_outputs_max (KRONK_SPEC_UNCAP_OUTPUTS=1)"
-          KRONK_SPEC_UNCAP_OUTPUTS=1 \
-            go test -v -count=1 -timeout 5m -run '^TestSuite$' ./sdk/kronk/tests/draft || true
-          echo "::endgroup::"
-
       - name: Run model suites on GPU
         run: |
           export RUN_IN_PARALLEL=no
