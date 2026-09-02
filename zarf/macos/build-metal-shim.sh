@@ -36,10 +36,20 @@
 # produced. That is why this does not build inside the VM: the VMs are ephemeral
 # and would repeat the work every job for an identical artifact.
 #
-# WHY arm64 AND NOT arm64e
+# WHY A UNIVERSAL DYLIB
 #
-# The consumer is a Go test binary. Go emits plain arm64, so the arm64 dylib is
-# the one that loads. Both are built; only arm64 is staged by default.
+# The obvious choice is the arm64 slice alone: the consumer is a Go test binary
+# and Go emits plain arm64. That fails in practice, because DYLD_INSERT_LIBRARIES
+# is inherited by every child process, and macOS ships /usr/bin as arm64e. A
+# single-slice arm64 dylib makes dyld abort any system binary in the tree:
+#
+#   dyld[4185]: terminating because inserted dylib '...arm64.dylib' could not be
+#   loaded: (mach-o file, but is an incompatible architecture (have 'arm64',
+#   need 'arm64e'))
+#
+# which took out `tee` in the CI step and every command `kronk diagnose` shells
+# out to. So the two slices are lipo'd into one universal dylib that loads into
+# anything. See zarf/macos/README.md.
 #
 # CAVEATS THAT BELONG IN YOUR HEAD, NOT JUST IN THE README
 #
@@ -60,7 +70,7 @@ set -euo pipefail
 
 readonly REPO="https://github.com/trycua/cua.git"
 readonly SUBDIR="libs/lume/metal-capability-shim"
-readonly DYLIB="LumeMetalCapabilities-arm64.dylib"
+readonly DYLIB="LumeMetalCapabilities.dylib"
 
 CUA_REF="${CUA_REF:-main}"
 # STAGE_DIR is mounted into the guests, so it holds the artifact only; the
@@ -104,12 +114,25 @@ resolved_ref="$(git -C "$WORK_DIR/cua" rev-parse HEAD)"
 echo "building..."
 ( cd "$src" && ./Scripts/build.sh && ./Scripts/verify.sh )
 
-if [[ ! -f "$src/dist/$DYLIB" ]]; then
-    echo "build produced no $DYLIB under $src/dist" >&2
+for slice in arm64 arm64e; do
+    if [[ ! -f "$src/dist/LumeMetalCapabilities-$slice.dylib" ]]; then
+        echo "build produced no $slice dylib under $src/dist" >&2
+        exit 1
+    fi
+done
+
+# One file with both slices, so injection is safe into arm64 Go binaries and
+# arm64e platform binaries alike.
+lipo -create \
+    "$src/dist/LumeMetalCapabilities-arm64.dylib" \
+    "$src/dist/LumeMetalCapabilities-arm64e.dylib" \
+    -output "$STAGE_DIR/$DYLIB"
+
+if [[ "$(lipo -archs "$STAGE_DIR/$DYLIB")" != *arm64e* ]]; then
+    echo "lipo produced no arm64e slice; injection would abort system binaries" >&2
     exit 1
 fi
 
-cp "$src/dist/$DYLIB" "$STAGE_DIR/$DYLIB"
 shasum -a 256 "$STAGE_DIR/$DYLIB" > "$STAGE_DIR/SHA256SUMS"
 
 cat > "$STAGE_DIR/PROVENANCE.txt" <<PROV
@@ -122,6 +145,7 @@ sdk      : $(xcode-select -p)
 source   : $REPO
 revision : $resolved_ref
 subdir   : $SUBDIR
+slices  : $(lipo -archs "$STAGE_DIR/$DYLIB")
 artifact : $(cat "$STAGE_DIR/SHA256SUMS")
 
 Upstream's own release binaries were built with Command Line Tools 26.4 and
