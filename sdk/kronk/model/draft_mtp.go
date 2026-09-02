@@ -262,10 +262,11 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 }
 
 // embeddedMTPContextParams builds the embedded MTP context to match the
-// target's execution layout while limiting graph outputs to one row per
-// sequence. Mirror-only MTP decodes do not request logits, and draft steps
-// request at most one output per active sequence. Leaving these limits at
-// zero makes llama.cpp reserve NBatch vocabulary outputs unnecessarily.
+// target's execution and positional-encoding layout while limiting graph
+// outputs to one row per sequence. Mirror-only MTP decodes do not request
+// logits, and draft steps request at most one output per active sequence.
+// Leaving these limits at zero makes llama.cpp reserve NBatch vocabulary
+// outputs unnecessarily.
 func embeddedMTPContextParams(params, target llama.ContextParams) llama.ContextParams {
 	params.CtxType = llama.ContextTypeMTP
 	params.NCtx = target.NCtx
@@ -284,6 +285,14 @@ func embeddedMTPContextParams(params, target llama.ContextParams) llama.ContextP
 	params.OpOffload = target.OpOffload
 	params.KVUnified = target.KVUnified
 	params.SwaFull = target.SwaFull
+	params.RopeScalingType = target.RopeScalingType
+	params.RopeFreqBase = target.RopeFreqBase
+	params.RopeFreqScale = target.RopeFreqScale
+	params.YarnExtFactor = target.YarnExtFactor
+	params.YarnAttnFactor = target.YarnAttnFactor
+	params.YarnBetaFast = target.YarnBetaFast
+	params.YarnBetaSlow = target.YarnBetaSlow
+	params.YarnOrigCtx = target.YarnOrigCtx
 	return params
 }
 

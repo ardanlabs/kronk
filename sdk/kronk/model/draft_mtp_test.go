@@ -27,6 +27,14 @@ func TestEmbeddedMTPContextParamsCapsOutputs(t *testing.T) {
 		OpOffload:          1,
 		KVUnified:          1,
 		SwaFull:            1,
+		RopeScalingType:    llama.RopeScalingTypeYARN,
+		RopeFreqBase:       1_000_000,
+		RopeFreqScale:      0.25,
+		YarnExtFactor:      1.5,
+		YarnAttnFactor:     1.25,
+		YarnBetaFast:       32,
+		YarnBetaSlow:       1,
+		YarnOrigCtx:        32_768,
 	}
 
 	got := embeddedMTPContextParams(llama.ContextParams{}, target)
@@ -43,6 +51,16 @@ func TestEmbeddedMTPContextParamsCapsOutputs(t *testing.T) {
 		t.Errorf("context sizing = (%d, %d, %d, %d), want (%d, %d, %d, %d)",
 			got.NCtx, got.NBatch, got.NUbatch, got.NSeqMax,
 			target.NCtx, target.NBatch, target.NUbatch, target.NSeqMax)
+	}
+	if got.RopeScalingType != target.RopeScalingType || got.RopeFreqBase != target.RopeFreqBase || got.RopeFreqScale != target.RopeFreqScale {
+		t.Errorf("RoPE params = (%d, %g, %g), want (%d, %g, %g)",
+			got.RopeScalingType, got.RopeFreqBase, got.RopeFreqScale,
+			target.RopeScalingType, target.RopeFreqBase, target.RopeFreqScale)
+	}
+	if got.YarnExtFactor != target.YarnExtFactor || got.YarnAttnFactor != target.YarnAttnFactor || got.YarnBetaFast != target.YarnBetaFast || got.YarnBetaSlow != target.YarnBetaSlow || got.YarnOrigCtx != target.YarnOrigCtx {
+		t.Errorf("YaRN params = (%g, %g, %g, %g, %d), want (%g, %g, %g, %g, %d)",
+			got.YarnExtFactor, got.YarnAttnFactor, got.YarnBetaFast, got.YarnBetaSlow, got.YarnOrigCtx,
+			target.YarnExtFactor, target.YarnAttnFactor, target.YarnBetaFast, target.YarnBetaSlow, target.YarnOrigCtx)
 	}
 }
 
