@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
-  <title id="title">One generation step in dense, mixture-of-experts, and hybrid models</title>
+  <title id="title">Dense, MoE, and Hybrid Inference</title>
   <desc id="desc">Three top-to-bottom flows show how the current token and saved model state pass through every layer, then through the output head to select the next token. Dense models use all learned weights in each layer. Mixture-of-experts models use all non-expert weights but route each token through selected experts. Qwen3.6 is a hybrid that combines DeltaNet and full-attention layers with MoE feed-forward blocks.</desc>
 
   <defs>

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
-  <title id="title">Kronk ordinary token generation loop</title>
-  <desc id="desc">After prefill, Kronk repeatedly decodes the previously selected token into per-sequence KV state, obtains vocabulary logits, applies grammar constraints and sampling controls, selects a token, converts it to text, classifies parser output, and streams a content delta. The selected token becomes input to the next decode iteration. Normal completion occurs for vocabulary end-of-generation, parser-signaled completion, or max tokens. Cancellation, decode failure, streaming failure, and shutdown are error exits.</desc>
+  <title id="title">Run Generation Inference</title>
+  <desc id="desc">After prompt prefill, Kronk repeatedly decodes the previously selected token into per-sequence KV state, obtains vocabulary logits, applies grammar constraints and sampling controls, selects a token, converts it to text, classifies parser output, and streams a content delta. The selected token becomes input to the next decode iteration. Normal completion occurs for vocabulary end-of-generation, parser-signaled completion, or max tokens. Cancellation, decode failure, streaming failure, and shutdown are error exits.</desc>
 
   <defs>
     <filter id="shadow" x="-10%" y="-10%" width="120%" height="135%">

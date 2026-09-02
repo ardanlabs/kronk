@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
-  <title id="title">How IMC populates and selects Working and System caches</title>
+  <title id="title">Select IMC Session</title>
   <desc id="desc">A cache-worthy request stores its complete stable conversation in a Working session and its independently rendered System-only prefix in the model System pool. New requests search all Working sessions first. Only when none matches does Kronk search the System pool, copy an exact System hit into a separate empty or least-recently-used Working session, and build the remaining prompt there.</desc>
   <defs>
     <filter id="shadow" x="-10%" y="-10%" width="120%" height="135%"><feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.10"/></filter>

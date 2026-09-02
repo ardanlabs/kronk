@@ -105,7 +105,7 @@ Every generation request passes through the same four lifecycle stages:
    slot's sequence, restore or prefill model state, generate output, then clear
    the sequence and release ownership.
 
-![The four stages of a Kronk generation request](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-04/request-lifecycle.svg)
+![The four stages of a Kronk generation request](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/05-acquire-admission.svg)
 
 An IMC session and an execution slot are deliberately separate. A session is a
 reusable conversation and model-state identity selected during Stage 2. A slot
@@ -119,7 +119,7 @@ The four stages describe ownership and waiting. The next view zooms into the
 generation path: Stage 2 turns portable request objects into an exact prompt
 plan, Stage 3 schedules that plan, and Stage 4 executes it in one slot.
 
-![Generation inference from request preparation through slot execution](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-04/generation-inference-lifecycle.svg)
+![Generation inference from request preparation through slot execution](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/04-generation-inference-lifecycle.svg)
 
 This lifecycle is the map for the detailed views below. Chat-template rendering
 is part of Stage 2. Prefill batching and token generation are parts of Stage 4.
@@ -172,7 +172,7 @@ portable request into exact model work. A model-specific chat template renders
 messages, roles, tools, media markers, reasoning controls, and the assistant
 generation cue into the protocol the selected model learned during training.
 
-![A chat template translates request context into the selected model's prompt protocol](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-04/chat-template-protocol.svg)
+![A chat template translates request context into the selected model's prompt protocol](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/06-render-plan-prompt.svg)
 
 The rendered prompt—not the original message objects—is tokenized and executed.
 For an IMC-eligible request, Kronk independently renders the complete prompt
@@ -269,7 +269,7 @@ the complete logical tray, `status[prefill-deferred]` records the same slot and
 selector snapshot without a prefill contribution. The older `next_slot` field
 remains as an alias for `selector_next`.
 
-![The two prefill phases: restore reusable IMC state, then compute missing request state](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-04/prefill-batching.svg)
+![The two prefill phases: restore reusable IMC state, then compute missing request state](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/09-restore-session-state.svg)
 
 Kronk adds a generation reserve to the 2048-token default prefill contribution.
 Non-MTP reserves one row per slot and keeps the internal physical capacity at
@@ -305,7 +305,7 @@ logits, processes and streams the resulting text, and retains the selected token
 for the next iteration. A newly selected token is therefore not committed to KV
 state until the following decode.
 
-![Stage 4 ordinary token generation from batched decode through sampling and streaming](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-04/token-generation-loop.svg)
+![Stage 4 ordinary token generation from batched decode through sampling and streaming](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/10-run-generation-inference.svg)
 
 Vocabulary EOG, parser-signaled completion, and `max_tokens` end generation
 normally. Cancellation, context or decode failure, streaming failure, and

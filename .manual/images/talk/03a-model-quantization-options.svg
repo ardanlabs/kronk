@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+  <title id="title">Model Quantization Options</title>
+  <desc id="desc">The available GGUF quantizations and file sizes for a 36-billion-parameter Qwen 3.5 mixture-of-experts model, ranging from 1-bit at 11.4 gigabytes to BF16 at 71.1 gigabytes.</desc>
+
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="4" stdDeviation="7" flood-color="#0f172a" flood-opacity="0.09"/>
+    </filter>
+    <style>
+      .title { font: 700 42px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .subtitle { font: 400 21px Inter, ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .meta-label { font: 600 17px Inter, ui-sans-serif, system-ui, sans-serif; fill: #64748b; }
+      .meta-value { font: 700 20px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .bit { font: 700 23px Inter, ui-sans-serif, system-ui, sans-serif; fill: #334155; }
+      .pill { font: 600 17px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #334155; }
+      .size { font: 700 17px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #0f766e; }
+      .eyebrow { font: 700 15px Inter, ui-sans-serif, system-ui, sans-serif; fill: #0f766e; letter-spacing: 1px; }
+      .body { font: 500 19px Inter, ui-sans-serif, system-ui, sans-serif; fill: #334155; }
+      .footer { font: 600 20px Inter, ui-sans-serif, system-ui, sans-serif; fill: #ffffff; }
+    </style>
+  </defs>
+
+  <rect width="1920" height="1080" fill="#f8fafc"/>
+  <rect width="1920" height="12" fill="#0f766e"/>
+  <text class="title" x="60" y="68">ONE MODEL, MANY GGUF QUANTIZATIONS</text>
+  <text class="subtitle" x="60" y="106">Lower precision reduces the model file and memory footprint; the architecture and parameter count stay the same.</text>
+
+  <!-- Model identity -->
+  <g filter="url(#shadow)">
+    <rect x="60" y="140" width="1800" height="92" rx="20" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  </g>
+  <text class="meta-label" x="96" y="176">FORMAT</text>
+  <text class="meta-value" x="96" y="207">GGUF</text>
+  <path d="M 255 160 V 212" stroke="#e2e8f0" stroke-width="2"/>
+  <text class="meta-label" x="291" y="176">MODEL SIZE</text>
+  <text class="meta-value" x="291" y="207">36B parameters</text>
+  <path d="M 525 160 V 212" stroke="#e2e8f0" stroke-width="2"/>
+  <text class="meta-label" x="561" y="176">ARCHITECTURE</text>
+  <text class="meta-value" x="561" y="207">qwen35moe</text>
+  <path d="M 795 160 V 212" stroke="#e2e8f0" stroke-width="2"/>
+  <text class="meta-label" x="831" y="176">SAME MODEL</text>
+  <text class="meta-value" x="831" y="207">Different numeric representations of its weights</text>
+
+  <!-- Quantization matrix -->
+  <g filter="url(#shadow)">
+    <rect x="60" y="264" width="1800" height="650" rx="24" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  </g>
+
+  <!-- Row backgrounds -->
+  <rect x="78" y="282" width="1764" height="68" rx="12" fill="#f8fafc"/>
+  <rect x="78" y="356" width="1764" height="68" rx="12" fill="#f1f5f9"/>
+  <rect x="78" y="430" width="1764" height="68" rx="12" fill="#f8fafc"/>
+  <rect x="78" y="504" width="1764" height="110" rx="12" fill="#ecfdf5" stroke="#5eead4" stroke-width="2"/>
+  <rect x="78" y="620" width="1764" height="68" rx="12" fill="#f8fafc"/>
+  <rect x="78" y="694" width="1764" height="68" rx="12" fill="#f1f5f9"/>
+  <rect x="78" y="768" width="1764" height="68" rx="12" fill="#f8fafc"/>
+  <rect x="78" y="842" width="1764" height="54" rx="12" fill="#f1f5f9"/>
+
+  <!-- Bit labels -->
+  <text class="bit" x="105" y="326">1-bit</text>
+  <text class="bit" x="105" y="400">2-bit</text>
+  <text class="bit" x="105" y="474">3-bit</text>
+  <text class="bit" x="105" y="557">4-bit</text>
+  <text class="bit" x="105" y="664">5-bit</text>
+  <text class="bit" x="105" y="738">6-bit</text>
+  <text class="bit" x="105" y="812">8-bit</text>
+  <text class="bit" x="105" y="880">16-bit</text>
+
+  <!-- 1-bit -->
+  <rect x="238" y="296" width="255" height="42" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <text class="pill" x="258" y="323">UD-IQ1_M</text><text class="size" x="405" y="323">11.4 GB</text>
+
+  <!-- 2-bit -->
+  <rect x="238" y="370" width="285" height="42" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <text class="pill" x="258" y="397">UD-IQ2_XXS</text><text class="size" x="431" y="397">11.8 GB</text>
+  <rect x="540" y="370" width="260" height="42" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <text class="pill" x="560" y="397">UD-IQ2_M</text><text class="size" x="711" y="397">11.9 GB</text>
+  <rect x="817" y="370" width="285" height="42" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <text class="pill" x="837" y="397">UD-Q2_K_XL</text><text class="size" x="1010" y="397">12.6 GB</text>
+
+  <!-- 3-bit -->
+  <rect x="238" y="444" width="285" height="42" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <text class="pill" x="258" y="471">UD-IQ3_XXS</text><text class="size" x="431" y="471">14.1 GB</text>
+  <rect x="540" y="444" width="260" height="42" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <text class="pill" x="560" y="471">UD-IQ3_S</text><text class="size" x="711" y="471">15.3 GB</text>
+  <rect x="817" y="444" width="285" height="42" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <text class="pill" x="837" y="471">UD-Q3_K_M</text><text class="size" x="1010" y="471">17.1 GB</text>
+  <rect x="1119" y="444" width="285" height="42" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <text class="pill" x="1139" y="471">UD-Q3_K_XL</text><text class="size" x="1312" y="471">17.2 GB</text>
+
+  <!-- 4-bit -->
+  <text class="eyebrow" x="1660" y="535">COMMON BALANCE</text>
+  <rect x="238" y="518" width="270" height="42" rx="10" fill="#ffffff" stroke="#2dd4bf" stroke-width="2"/>
+  <text class="pill" x="258" y="545">UD-IQ4_XS</text><text class="size" x="416" y="545">18.2 GB</text>
+  <rect x="525" y="518" width="270" height="42" rx="10" fill="#ffffff" stroke="#2dd4bf" stroke-width="2"/>
+  <text class="pill" x="545" y="545">UD-IQ4_NL</text><text class="size" x="703" y="545">18.5 GB</text>
+  <rect x="812" y="518" width="280" height="42" rx="10" fill="#ffffff" stroke="#2dd4bf" stroke-width="2"/>
+  <text class="pill" x="832" y="545">UD-Q4_K_S</text><text class="size" x="1000" y="545">21.4 GB</text>
+  <rect x="1109" y="518" width="285" height="42" rx="10" fill="#ffffff" stroke="#2dd4bf" stroke-width="2"/>
+  <text class="pill" x="1129" y="545">MXFP4_MOE</text><text class="size" x="1302" y="545">22.2 GB</text>
+  <rect x="238" y="566" width="280" height="42" rx="10" fill="#ffffff" stroke="#2dd4bf" stroke-width="2"/>
+  <text class="pill" x="258" y="593">UD-Q4_K_M</text><text class="size" x="426" y="593">22.7 GB</text>
+  <rect x="535" y="566" width="290" height="42" rx="10" fill="#ffffff" stroke="#2dd4bf" stroke-width="2"/>
+  <text class="pill" x="555" y="593">UD-Q4_K_XL</text><text class="size" x="733" y="593">22.9 GB</text>
+
+  <!-- 5-bit -->
+  <rect x="238" y="634" width="280" height="42" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <text class="pill" x="258" y="661">UD-Q5_K_S</text><text class="size" x="426" y="661">25.5 GB</text>
+  <rect x="535" y="634" width="280" height="42" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <text class="pill" x="555" y="661">UD-Q5_K_M</text><text class="size" x="723" y="661">27.1 GB</text>
+  <rect x="832" y="634" width="290" height="42" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <text class="pill" x="852" y="661">UD-Q5_K_XL</text><text class="size" x="1030" y="661">27.2 GB</text>
+
+  <!-- 6-bit -->
+  <rect x="238" y="708" width="255" height="42" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <text class="pill" x="258" y="735">UD-Q6_K</text><text class="size" x="411" y="735">30 GB</text>
+  <rect x="510" y="708" width="290" height="42" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <text class="pill" x="530" y="735">UD-Q6_K_XL</text><text class="size" x="708" y="735">32.6 GB</text>
+
+  <!-- 8-bit -->
+  <rect x="238" y="782" width="250" height="42" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <text class="pill" x="258" y="809">Q8_0</text><text class="size" x="396" y="809">37.8 GB</text>
+  <rect x="505" y="782" width="290" height="42" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <text class="pill" x="525" y="809">UD-Q8_K_XL</text><text class="size" x="703" y="809">39.1 GB</text>
+
+  <!-- 16-bit -->
+  <rect x="238" y="850" width="250" height="38" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+  <text class="pill" x="258" y="876">BF16</text><text class="size" x="396" y="876">71.1 GB</text>
+
+  <!-- Takeaway -->
+  <rect x="60" y="946" width="1800" height="82" rx="20" fill="#0f172a"/>
+  <text class="eyebrow" x="96" y="979" fill="#5eead4">SELECTION IS A TRADE-OFF</text>
+  <text class="footer" x="96" y="1010">Fit the model first. Then choose the highest-quality quantization that leaves enough memory for context, cache, and runtime buffers.</text>
+</svg>

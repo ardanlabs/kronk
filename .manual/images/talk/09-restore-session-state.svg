@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
-  <title id="title">Prefill has two phases: restore reusable state, then compute missing state</title>
+  <title id="title">Restore Session State</title>
   <desc id="desc">A complete logical prompt is split into a reusable prefix and an uncached request suffix. Phase one copies a compatible IMC snapshot into the assigned slot without running model decode. Phase two decodes only the missing request tokens and appends their KV state to the restored prefix. If there is no compatible IMC snapshot, phase one restores nothing and phase two computes the full prompt.</desc>
 
   <defs>

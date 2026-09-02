@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
-  <title id="title">From Chat API to Generation Slot</title>
+  <title id="title">Acquire Admission</title>
   <desc id="desc">A Chat or ChatStreaming request crosses two bounded shared channels before execution. The admission channel limits all accepted requests and has a three-minute admission timeout by default. After admission, Kronk prepares the job and sends it through the scheduler channel, where it waits in FIFO order for the first free generation slot. The admission permit remains held through completion, so no additional slot-wait timeout is required.</desc>
 
   <defs>
