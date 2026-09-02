@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -597,8 +598,16 @@ func (m *Models) downloadCompanion(ctx context.Context, log applog.Logger, loc L
 	}
 
 	// Rename the downloaded sha file to match our naming convention.
+	//
+	// A vanished source is the one rename failure that is not an error: a
+	// second process sharing this models directory pulled the same pointer
+	// under the same upstream name and renamed it first. See
+	// adoptedFromPeer.
 	if err := os.Rename(orgShaFileName, shaFileName); err != nil {
-		return "", false, fmt.Errorf("download-model: unable to rename %s sha file: %w", kind.label, err)
+		if !adoptedFromPeer(err, shaFileName, nil) {
+			return "", false, fmt.Errorf("download-model: unable to rename %s sha file: %w", kind.label, err)
+		}
+		log(ctx, "download-model: sha pointer already in place, adopting", "kind", kind.label, "file", filepath.Base(shaFileName))
 	}
 
 	orgFile, _, err := m.pull(ctx, loc, pullBody, progress)
@@ -606,8 +615,17 @@ func (m *Models) downloadCompanion(ctx context.Context, log applog.Logger, loc L
 		return "", false, err
 	}
 
+	// The same race one step later. Here the destination can be verified
+	// properly — the sha pointer is in place above, so checkModel re-hashes
+	// the peer's file — which makes adopting it exactly as strong a
+	// guarantee as renaming our own copy over it would have been.
 	if err := os.Rename(orgFile, dstFileName); err != nil {
-		return "", false, fmt.Errorf("download-model: unable to rename %s file: %w", kind.label, err)
+		if !adoptedFromPeer(err, dstFileName, func() error { return checkModel(dstFileName, true) }) {
+			return "", false, fmt.Errorf("download-model: unable to rename %s file: %w", kind.label, err)
+		}
+		log(ctx, "download-model: companion already in place, adopting", "kind", kind.label, "file", filepath.Base(dstFileName))
+
+		return dstFileName, true, nil
 	}
 
 	if err := checkModel(dstFileName, true); err != nil {
@@ -615,6 +633,38 @@ func (m *Models) downloadCompanion(ctx context.Context, log applog.Logger, loc L
 	}
 
 	return dstFileName, true, nil
+}
+
+// adoptedFromPeer reports whether a failed rename can be treated as already
+// done because another process got there first.
+//
+// Nothing serializes writers into a models directory, so two concurrent
+// pulls of the same model — two CI jobs on one shared cache, a running
+// server beside a `kronk model pull` — both fetch a companion under its
+// upstream name and both rename it to the canonical one. The loser's source
+// is gone by the time it renames and it fails with ENOENT, holding a
+// complete, correct file it is about to reject. Only a missing source
+// qualifies: any other rename failure is a real one and stays loud.
+//
+// verify is the check to run against the destination, or nil when presence
+// is all that can be established for it (the sha pointer has no size or
+// digest of its own to check against).
+//
+// This makes the loser recover; it does not make a shared models directory
+// safe in general. Two writers that are still mid-download of the same file
+// append into one destination and end up with a size mismatch, which is a
+// loud failure rather than a corrupt model, but a failure all the same. A
+// directory per writer remains the way to avoid the race outright.
+func adoptedFromPeer(renameErr error, dst string, verify func() error) bool {
+	if !errors.Is(renameErr, os.ErrNotExist) {
+		return false
+	}
+
+	if _, err := os.Stat(dst); err != nil {
+		return false
+	}
+
+	return verify == nil || verify() == nil
 }
 
 // checkValidatedIndex returns an existing Path when the index already has a
