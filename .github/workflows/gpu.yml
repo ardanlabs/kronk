@@ -97,14 +97,26 @@ jobs:
             processor: vulkan
             device: GPU (Vulkan)
             runs_on: [self-hosted, Linux, X64, gpu, vulkan]
+            extra_models: .github/test-models-gpu.txt
           - backend: ROCm
             processor: rocm
             device: GPU (ROCm)
             runs_on: [self-hosted, Linux, X64, gpu, rocm]
+            extra_models: .github/test-models-gpu.txt
           - backend: Metal
             processor: metal
             device: GPU (Metal)
             runs_on: [self-hosted, macOS, ARM64, sand, metal]
+            # Empty for now, deliberately. The macOS runners are ephemeral
+            # VMs; setup-kronk redirects their models onto a persistent host
+            # mount, so the download is no longer per-job — but those models
+            # are then read over virtiofs, and nothing has yet measured what
+            # mmap-ing a 35B GGUF across that share costs. The base 6.6 GiB
+            # set will answer that. Until it does, the extra 26B/35B targets
+            # stay on the Linux legs, where they cover the MTP path on two
+            # backends already. Flip this to the GPU list once the Metal
+            # timings look sane.
+            extra_models: ""
     env:
       KRONK_PROCESSOR: ${{ matrix.processor }}
     steps:
@@ -140,7 +152,7 @@ jobs:
           # cache layers on hosted runners.
           models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt', '.github/test-models-gpu.txt') }}
           # Models too large for the base list — see that file's header.
-          extra-models-file: .github/test-models-gpu.txt
+          extra-models-file: ${{ matrix.extra_models }}
 
       # KRONK_PROCESSOR only guarantees the library bundle. ggml can load
       # the Vulkan, HIP or Metal build and still enumerate zero devices of
@@ -167,8 +179,15 @@ jobs:
           go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/vision_imc
           go test -v -count=1 -timeout 10m -run '^(TestSuite|TestConcurrentRerank)$' ./sdk/kronk/tests/rerank
           go test -v -count=1 -timeout 10m -run '^(TestSuite|TestUsageCountingHybrid)$' ./sdk/kronk/tests/hybrid
-          # The MTP speculation path, which the classic drafter above does
-          # not cover. Longer timeout: these targets are 26B/35B rather than
-          # the 1.7B the other suites load.
+
+      # The MTP speculation path, which the classic drafter above does not
+      # cover. Separate step because it needs the 26B/35B targets in
+      # .github/test-models-gpu.txt, which only the legs with a persistent
+      # ~/.kronk pull — see the matrix's extra_models. Longer timeout: those
+      # targets are far larger than the 1.7B the other suites load.
+      - name: Run MTP suites on GPU
+        if: matrix.extra_models != ''
+        run: |
+          export RUN_IN_PARALLEL=no
           go test -v -count=1 -timeout 20m -run '^(TestSuite|TestSuiteMultiSlot)$' ./sdk/kronk/tests/mtp
           go test -v -count=1 -timeout 20m -run '^(TestSuite|TestSuiteMultiSlot)$' ./sdk/kronk/tests/gemma4mtp
