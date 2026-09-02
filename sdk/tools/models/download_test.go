@@ -1,6 +1,7 @@
 package models
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"errors"
@@ -466,5 +467,87 @@ func TestDownload_MissingCompanion_ReDownloads(t *testing.T) {
 	}
 	if _, err := os.Stat(mp2.MTPFile); err != nil {
 		t.Errorf("mtp drafter not restored after re-download: %v", err)
+	}
+}
+
+// TestDownloadSplits_CompanionRenamedByPeer reproduces the shared-models-
+// directory race that broke a macOS CI job: two runners pointed at one
+// models mount pulled the same model seconds apart, and the second one
+// died with
+//
+//	unable to rename proj file: rename .../X.mmproj-f16.gguf
+//	  .../mmproj-X.Q4_K_M.gguf: no such file or directory
+//
+// because the first had already renamed the upstream-named file to the
+// canonical one. The peer's file is complete and verifiable, so the loser
+// must adopt it rather than fail. Both rename sites in downloadCompanion
+// are exercised: the sha pointer and the companion body.
+func TestDownloadSplits_CompanionRenamedByPeer(t *testing.T) {
+	body := []byte("model-body-bytes\n")
+	proj := []byte("proj-body-bytes\n")
+
+	g := &fakeGetter{
+		contents: map[string][]byte{
+			"/Qwen/Qwen3-VL-GGUF/resolve/main/Qwen3-VL-Q8_0.gguf": body,
+			"/Qwen/Qwen3-VL-GGUF/resolve/main/mmproj-F16.gguf":    proj,
+		},
+	}
+	withFakeGetter(t, g)
+
+	m := newTestModels(t)
+	dir := filepath.Join(m.modelsPath, "Qwen", "Qwen3-VL-GGUF")
+
+	// Stand in for the competing process: the instant this one has pulled a
+	// projection artifact, move it to the canonical name the peer's own
+	// rename would have used. That leaves our rename with no source and a
+	// finished destination — the exact state CI hit.
+	pull := downloadFn
+	downloadFn = func(ctx context.Context, src string, dest string, p downloader.ProgressFunc, interval int64) (bool, error) {
+		downloaded, err := pull(ctx, src, dest, p, interval)
+		if err != nil || !strings.Contains(src, "mmproj-F16.gguf") {
+			return downloaded, err
+		}
+
+		from, to := filepath.Join(dir, "mmproj-F16.gguf"), filepath.Join(dir, "mmproj-Qwen3-VL-Q8_0.gguf")
+		if strings.Contains(src, "/raw/") {
+			from, to = filepath.Join(dir, "sha", "mmproj-F16.gguf"), filepath.Join(dir, "sha", "mmproj-Qwen3-VL-Q8_0.gguf")
+		}
+		if err := os.Rename(from, to); err != nil {
+			return false, fmt.Errorf("peer rename: %w", err)
+		}
+
+		return downloaded, nil
+	}
+
+	mp, err := m.downloadSplits(
+		context.Background(), testLog,
+		[]string{"https://huggingface.co/Qwen/Qwen3-VL-GGUF/resolve/main/Qwen3-VL-Q8_0.gguf"},
+		"https://huggingface.co/Qwen/Qwen3-VL-GGUF/resolve/main/mmproj-F16.gguf",
+		"",
+	)
+	if err != nil {
+		t.Fatalf("downloadSplits: %v", err)
+	}
+
+	if filepath.Base(mp.ProjFile) != "mmproj-Qwen3-VL-Q8_0.gguf" {
+		t.Errorf("ProjFile basename = %q, want mmproj-Qwen3-VL-Q8_0.gguf", filepath.Base(mp.ProjFile))
+	}
+
+	got, err := os.ReadFile(mp.ProjFile)
+	if err != nil {
+		t.Fatalf("read adopted proj file: %v", err)
+	}
+	if !bytes.Equal(got, proj) {
+		t.Errorf("adopted proj file = %q, want %q", got, proj)
+	}
+}
+
+// TestDownloadSplits_CompanionRenameFailureStaysFatal is the other half of
+// TestDownloadSplits_CompanionRenamedByPeer: adoption is keyed on the
+// source having vanished, so a destination that happens to exist must not
+// paper over a rename that failed for any other reason.
+func TestDownloadSplits_CompanionRenameFailureStaysFatal(t *testing.T) {
+	if adoptedFromPeer(errors.New("read-only file system"), ".", nil) {
+		t.Error("adoptedFromPeer accepted a non-ENOENT rename failure")
 	}
 }
