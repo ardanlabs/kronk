@@ -232,6 +232,41 @@ runs:
     # green run that tested nothing. The pull loop short-circuits on verified
     # files (sdk/tools/models/download.go), so running it unconditionally
     # costs a verification pass and repairs any such mismatch.
+    # The macOS runners are ephemeral VMs — sand recreates one per job — so
+    # ~/.kronk never survives and every run would re-download the whole model
+    # set (6.6 GiB, ~4m30s measured). sand mounts a persistent host directory
+    # at the share below (the `mounts` block in sand.yml), so pointing the
+    # models directory at it makes the download a one-time cost per runner.
+    #
+    # Only the models are redirected. KRONK_BASE_PATH would move the whole
+    # base directory, but that drags badger and the library bundles onto
+    # virtiofs for no real gain — the libraries are ~30 MiB and the models are
+    # three orders of magnitude bigger. Every rename in the download path
+    # stays inside the models tree (sdk/tools/models/download.go), so the
+    # symlink introduces no cross-device rename.
+    #
+    # A missing share is a warning, not an error: a macOS runner without the
+    # mount still works, it just re-downloads like before.
+    - name: Persist models on ephemeral macOS VMs
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        set -euo pipefail
+        share="/Volumes/My Shared Files/kronk-models"
+        if [[ ! -d "$share" ]]; then
+          echo "::warning::$share is not mounted; models will not persist between jobs"
+          exit 0
+        fi
+        mkdir -p "$HOME/.kronk"
+        if [[ -L "$HOME/.kronk/models" ]]; then
+          echo "already linked: $HOME/.kronk/models -> $(readlink "$HOME/.kronk/models")"
+        else
+          rm -rf "$HOME/.kronk/models"
+          ln -s "$share" "$HOME/.kronk/models"
+          echo "linked: $HOME/.kronk/models -> $share"
+        fi
+        echo "persisted models: $(du -sh "$share" 2>/dev/null | cut -f1 || echo unknown)"
+
     - name: Download test models
       shell: bash
       # The model list lives in .github/test-models.txt (one
