@@ -259,6 +259,9 @@ func (e *batchEngine) ClassicVerifyInput(slotID int, buf []byte) (classicengine.
 			}
 			logits, err := llama.GetLogitsIth(e.model.lctx, row, nVocab)
 			if err != nil {
+				if specDiagEnabled {
+					e.specDiagLogitsError(s.job.ctx, s.id, index, row, err)
+				}
 				return classicengine.Target{Token: e.sampleSlotToken(s, row), SamplerAccepted: true}
 			}
 			if greedy {
@@ -268,6 +271,25 @@ func (e *batchEngine) ClassicVerifyInput(slotID int, buf []byte) (classicengine.
 			draft.sortIndices = applySamplerFilters(logits, draft.targetProbs, e.model.suppressTokens,
 				s.job.params.Temperature, s.job.params.TopP, s.job.params.MinP, s.job.params.TopK,
 				draft.sortIndices, &draft.filterBuf)
+			if specDiagEnabled {
+				r := specDiagRow{
+					slotID:    s.id,
+					index:     index,
+					row:       row,
+					baseBatch: s.specBaseBatch,
+					logits:    logits,
+					probs:     draft.targetProbs,
+					survivors: draft.sortIndices,
+				}
+				if index < len(s.specDraftTokens) {
+					r.candidate = s.specDraftTokens[index]
+					r.hasCand = true
+				}
+				if index < len(distributions) {
+					r.draftDist = distributions[index]
+				}
+				e.specDiag(s.job.ctx, r)
+			}
 			return classicengine.Target{Probabilities: draft.targetProbs}
 		},
 		Accept: func(index int, token llama.Token, samplerAccepted bool) bool {
@@ -283,6 +305,9 @@ func (e *batchEngine) ClassicVerifyInput(slotID int, buf []byte) (classicengine.
 
 func (e *batchEngine) CommitClassicVerify(slotID int, buf []byte, result classicengine.VerifyResult) {
 	s := e.slots[slotID]
+	if specDiagEnabled {
+		e.specDiagVerifyResult(s.job.ctx, s.id, result.Accepted, result.Drafted, s.classic.AcceptanceEMA, result.Complete)
+	}
 	if !result.Complete || !s.active {
 		return
 	}

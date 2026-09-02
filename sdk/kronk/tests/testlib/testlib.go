@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
@@ -148,6 +149,15 @@ func printInfo(mdls *models.Models) {
 // WithModel creates a Kronk instance for the duration of fn, handling cleanup.
 func WithModel(t *testing.T, cfg model.Config, fn func(t *testing.T, krn *kronk.Kronk)) {
 	t.Helper()
+
+	// TEMPORARY: KRONK_SPEC_DIAG wires a real logger so the speculation
+	// probes in sdk/kronk/model/speculation_diag.go reach the test output.
+	// Config.Log is nil here otherwise, and model.New installs a no-op
+	// logger in that case (sdk/kronk/model/model.go:229), which would
+	// silently swallow every probe.
+	if cfg.Log == nil && os.Getenv("KRONK_SPEC_DIAG") != "" {
+		cfg.Log = applog.FmtLogger
+	}
 
 	krn, err := kronk.New(model.WithConfig(cfg))
 	if err != nil {
