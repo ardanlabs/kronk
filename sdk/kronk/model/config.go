@@ -995,16 +995,8 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 			rollbackDepth = cfg.speculationPlan.NDraft
 		}
 
-		// specDiagUncapOutputs is a TEMPORARY diagnostic switch — see
-		// speculation_diag.go. Leaving both limits at 0 restores
-		// llama.cpp's own default of n_batch rows, to test whether the
-		// HIP backend mishandles a capped n_outputs_max. Scoped to these
-		// two fields so NRsSeq below keeps its value either way.
-		if !specDiagUncapOutputs {
-			ctxParams.NOutputsMax = uint32(nSeqMax * perSlot)
-			ctxParams.NOutputsMaxPerSeq = uint32(perSlot)
-		}
-
+		ctxParams.NOutputsMax = uint32(nSeqMax * perSlot)
+		ctxParams.NOutputsMaxPerSeq = uint32(perSlot)
 		if mi.Type == ModelTypeHybrid {
 			ctxParams.NRsSeq = uint32(rollbackDepth)
 		}
