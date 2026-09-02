@@ -26,6 +26,16 @@ inputs:
       that adding or changing a required model automatically
       invalidates the cache instead of silently reusing a stale set.
     required: true
+  extra-models-file:
+    description: >
+      Optional second model list, pulled after .github/test-models.txt and
+      in the same `<backend> <model-id>` format. It exists because the base
+      list is bounded by GitHub's 10 GB cache quota (the cache layers here
+      run on hosted runners only), while a self-hosted fleet has hundreds of
+      GB of persistent volume and can host models no hosted runner could.
+      Callers that pass this should bake it into models-cache-key too.
+    required: false
+    default: ""
 
 outputs:
   models-cache-hit:
@@ -229,24 +239,44 @@ runs:
       # the cache key by the caller, so any change here forces a
       # download on the next run instead of silently reusing a stale
       # cache that's missing the new entry.
+      env:
+        EXTRA_MODELS_FILE: ${{ inputs.extra-models-file }}
       run: |
         set -euo pipefail
         mkdir -p $HOME/.kronk/models
-        while IFS= read -r line || [[ -n "$line" ]]; do
-          # Strip comments / blanks.
-          line="${line%%#*}"
-          line="${line#"${line%%[![:space:]]*}"}"
-          line="${line%"${line##*[![:space:]]}"}"
-          [[ -z "$line" ]] && continue
-          # shellcheck disable=SC2086  # intentional word-splitting on the space.
-          set -- $line
-          backend="$1"; model="$2"
-          case "$backend" in
-            kronk) kronk model pull --local "$model" ;;
-            bucky) kronk bucky model pull --local "$model" ;;
-            *)
-              echo "::error file=.github/test-models.txt::Unknown backend '$backend' (expected 'kronk' or 'bucky')"
-              exit 1
-              ;;
-          esac
-        done <.github/test-models.txt
+
+        # One function over both lists so the backend dispatch and the
+        # comment/blank stripping cannot drift between them.
+        pull_list() {
+          local list="$1"
+          if [[ ! -f "$list" ]]; then
+            echo "::error::model list '$list' not found"
+            exit 1
+          fi
+          echo "::group::models from $list"
+          while IFS= read -r line || [[ -n "$line" ]]; do
+            # Strip comments / blanks.
+            line="${line%%#*}"
+            line="${line#"${line%%[![:space:]]*}"}"
+            line="${line%"${line##*[![:space:]]}"}"
+            [[ -z "$line" ]] && continue
+            # shellcheck disable=SC2086  # intentional word-splitting on the space.
+            set -- $line
+            backend="$1"; model="$2"
+            case "$backend" in
+              kronk) kronk model pull --local "$model" ;;
+              bucky) kronk bucky model pull --local "$model" ;;
+              *)
+                echo "::error file=${list}::Unknown backend '$backend' (expected 'kronk' or 'bucky')"
+                exit 1
+                ;;
+            esac
+          done <"$list"
+          echo "::endgroup::"
+        }
+
+        pull_list .github/test-models.txt
+
+        if [[ -n "${EXTRA_MODELS_FILE}" ]]; then
+          pull_list "${EXTRA_MODELS_FILE}"
+        fi

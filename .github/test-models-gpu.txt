@@ -1,0 +1,26 @@
+# Models pulled ONLY by gpu.yml, on top of .github/test-models.txt. Same
+# format: `<backend> <model-id>`, one per line, blank lines and `#` ignored.
+#
+# WHY A SECOND FILE. The base list is deliberately capped near 6.6 GiB
+# because linux.yml falls back to `ubuntu-latest` for fork PRs and those
+# jobs pull the whole list through setup-kronk, where the actions/cache
+# layers apply and GitHub's cache quota is 10 GB. The models below are far
+# past that on their own.
+#
+# gpu.yml has no such ceiling: all three of its legs are self-hosted, the
+# cache layers in setup-kronk are gated on `runner.environment ==
+# 'github-hosted'` and so never run for them, and the fleet keeps ~750 GiB
+# free on a persistent volume. Models land there once and survive between
+# jobs.
+#
+# So anything a hosted runner could never hold belongs here, not in the
+# base list. Adding to the base list instead breaks fork PRs.
+
+# The two speculative-decoding MTP targets. Both drafters auto-enable from
+# GGUF metadata rather than explicit config: mtp-Qwen3.6 owns its draft KV
+# (sdk/kronk/tests/mtp), while gemma-4 shares the target's via the
+# mtp-*.gguf companion (sdk/kronk/tests/gemma4mtp). They are the only GPU
+# coverage of the MTP path, which is separate from the classic separate-GGUF
+# drafter that sdk/kronk/tests/draft covers with the small Qwen3 pair.
+kronk unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL
+kronk unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M
