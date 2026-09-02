@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -145,7 +146,6 @@ func printInfo(mdls *models.Models) {
 
 // =========================================================================
 
-// WithModel creates a Kronk instance for the duration of fn, handling cleanup.
 // Processor reports the backend whose library bundle is loaded, taken from
 // the last element of the bundle install path — bundles install to
 // <root>/<os>/<arch>/<processor>, the same basis printInfo reports on. It
@@ -156,20 +156,28 @@ func Processor() string {
 	return filepath.Base(libs.Path(""))
 }
 
-// SkipIfROCm skips a test that fails because of a defect in the ROCm
-// backend rather than anything in Kronk. reason is printed with the skip so
-// the test output explains itself without a trip to the git log.
+// SkipOnBackends skips a test that fails because of a defect in one of the
+// named ggml backends rather than anything in Kronk. reason is printed with
+// the skip so the test output explains itself without a trip to the git log.
+//
+// Backends are Kronk processor names ("rocm", "metal", "vulkan"), matched
+// against the loaded library bundle. Naming them explicitly rather than
+// probing for the defect is deliberate: the list is the record of which
+// backends the bug was actually observed on, so a backend that starts
+// working has to be removed here by hand instead of silently staying
+// skipped.
 //
 // Use this only for a failure traced to the backend and reported upstream.
 // A Kronk bug that happens to surface on one backend must stay failing.
-func SkipIfROCm(t *testing.T, reason string) {
+func SkipOnBackends(t *testing.T, reason string, backends ...string) {
 	t.Helper()
 
-	if Processor() == "rocm" {
-		t.Skipf("ROCm backend: %s", reason)
+	if processor := Processor(); slices.Contains(backends, processor) {
+		t.Skipf("%s backend: %s", processor, reason)
 	}
 }
 
+// WithModel creates a Kronk instance for the duration of fn, handling cleanup.
 func WithModel(t *testing.T, cfg model.Config, fn func(t *testing.T, krn *kronk.Kronk)) {
 	t.Helper()
 
