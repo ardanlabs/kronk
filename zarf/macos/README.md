@@ -286,3 +286,20 @@ writes its own `PROVENANCE.txt` instead.
 `system_profiler SPDisplaysDataType` returns nothing in the guest — the VMs run
 `--no-graphics`, so the `Runner specs (macOS)` step in `gpu.yml` prints an empty
 display section. Use `kronk devices` for GPU facts there.
+
+## Result
+
+The Metal leg now runs the full suite set, MTP included, on a GPU reporting
+Apple 9. Measured 2026-09-02 against the Vulkan leg of the same run:
+
+| suite | Metal | Vulkan |
+|---|---|---|
+| qwen3 | 33.4s | 41.8s |
+| vision | 17.6s | 33.4s |
+| vision_imc | 16.9s | 54.0s |
+| hybrid | 41.4s | 40.6s |
+| mtp | 12.6s | 23.6s |
+| gemma4mtp | 10.3s | 30.5s |
+
+Reading models over virtiofs is not a bottleneck at any size in these lists,
+which is what released the 26B/35B MTP targets onto this leg.
