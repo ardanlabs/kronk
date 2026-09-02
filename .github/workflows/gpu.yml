@@ -154,6 +154,25 @@ jobs:
           # Models too large for the base list — see that file's header.
           extra-models-file: ${{ matrix.extra_models }}
 
+      # Raises the Metal capabilities the guest reports to what real Apple
+      # Silicon has, so the suites below run the kernels users actually run
+      # rather than the Apple5 fallback path. Host-side setup (build the
+      # dylib, mount kronk-tools) is zarf/macos/build-metal-shim.sh and the
+      # sand.yml stanza documented beside it.
+      #
+      # Copied to RUNNER_TEMP rather than injected straight off the share:
+      # dyld loading a dylib over virtiofs is a question nobody needs to
+      # answer at 3am.
+      - name: Stage Metal capability shim
+        if: matrix.processor == 'metal'
+        run: |
+          src="/Volumes/My Shared Files/kronk-tools/LumeMetalCapabilities-arm64.dylib"
+          if [[ ! -f "$src" ]]; then
+            echo "::error::$src is missing. On the runner host, build it with zarf/macos/build-metal-shim.sh and add the kronk-tools mount to ~/sand.yml."
+            exit 1
+          fi
+          cp "$src" "$RUNNER_TEMP/LumeMetalCapabilities-arm64.dylib"
+
       # KRONK_PROCESSOR only guarantees the library bundle. ggml can load
       # the Vulkan, HIP or Metal build and still enumerate zero devices of
       # that type, in which case every suite below runs on the CPU backend
@@ -161,15 +180,59 @@ jobs:
       - name: Verify ${{ matrix.backend }} backend
         env:
           DEVICE_TYPE: ${{ matrix.device }}
+          DYLD_INSERT_LIBRARIES: ${{ matrix.processor == 'metal' && format('{0}/LumeMetalCapabilities-arm64.dylib', runner.temp) || '' }}
+          LUME_METAL_APPLE_FAMILY_MAX: ${{ matrix.processor == 'metal' && '1009' || '' }}
+          LUME_METAL_MAX_THREADGROUP_MEMORY: ${{ matrix.processor == 'metal' && '32768' || '' }}
         run: |
           kronk diagnose --no-bench --format json
-          kronk devices | tee "$RUNNER_TEMP/devices.txt"
+          # 2>&1: ggml's device banner and the shim's activation line are on
+          # stderr, and both are asserted below.
+          kronk devices 2>&1 | tee "$RUNNER_TEMP/devices.txt"
           if ! grep -qF "$DEVICE_TYPE" "$RUNNER_TEMP/devices.txt"; then
             echo "::error::no $DEVICE_TYPE device enumerated; the suites would run on CPU"
             exit 1
           fi
 
+          # The shim fails OPEN: a guest image bump that moves the private
+          # Metal internals it hooks leaves every process untouched, and the
+          # leg then runs llama.cpp's Apple5 fallback kernels — which no real
+          # Mac uses — while staying green. These checks are what notice.
+          #
+          # Deliberately asymmetric: an explicit `false` fails the leg, an
+          # ABSENT line only warns. Neither line is guaranteed to reach this
+          # log. ggml's banner appears only when device init logs here, and
+          # the shim announces itself through NSLog, which reaches stderr when
+          # attached to a terminal and the unified log otherwise — a CI step
+          # is not a terminal. Treating "missing" as "broken" would fail the
+          # leg for a logging detail rather than a capability regression.
+          # Tighten to a hard requirement once a real run shows both lines
+          # present.
+          if [[ "${{ matrix.processor }}" == "metal" ]]; then
+            if grep -qE 'simdgroup reduction *= *false' "$RUNNER_TEMP/devices.txt"; then
+              echo "::error::Metal capability shim is not in effect: llama.cpp resolved simdgroup reduction = false, so the suites would run the Apple5 fallback path. See zarf/macos/README.md."
+              exit 1
+            fi
+
+            if ! grep -qE 'simdgroup reduction *= *true' "$RUNNER_TEMP/devices.txt"; then
+              echo "::warning::could not confirm Metal capabilities from this log; ggml printed no simdgroup line. Check whether the shim is live before trusting this leg."
+            fi
+
+            if ! grep -q 'LumeMetalCapabilities. Enabled' "$RUNNER_TEMP/devices.txt"; then
+              echo "::notice::shim activation banner absent from this log (expected if NSLog went to the unified log rather than stderr); the capability check above is authoritative."
+            fi
+          fi
+
       - name: Run model suites on GPU
+        env:
+          # The macOS runners are VMs whose paravirtual GPU reports
+          # MTLGPUFamilyApple5, below llama.cpp's Apple7/Metal3 gate, so
+          # without this the Metal leg exercises CPU fallbacks no real Mac
+          # ever takes. See zarf/macos/README.md. Empty on the Linux legs.
+          DYLD_INSERT_LIBRARIES: ${{ matrix.processor == 'metal' && format('{0}/LumeMetalCapabilities-arm64.dylib', runner.temp) || '' }}
+          LUME_METAL_APPLE_FAMILY_MAX: ${{ matrix.processor == 'metal' && '1009' || '' }}
+          # Pinned to what real Apple Silicon reports. The shim defaults to
+          # 65536, which no shipping Mac has.
+          LUME_METAL_MAX_THREADGROUP_MEMORY: ${{ matrix.processor == 'metal' && '32768' || '' }}
         run: |
           export RUN_IN_PARALLEL=no
           go test -v -count=1 -timeout 10m -run '^(TestSuite|TestUsageCounting|Test_BatchChatConcurrent)$' ./sdk/kronk/tests/qwen3
@@ -187,6 +250,12 @@ jobs:
       # targets are far larger than the 1.7B the other suites load.
       - name: Run MTP suites on GPU
         if: matrix.extra_models != ''
+        # Skipped on Metal today (extra_models is empty), but carried here so
+        # that flipping the matrix on cannot silently drop the shim.
+        env:
+          DYLD_INSERT_LIBRARIES: ${{ matrix.processor == 'metal' && format('{0}/LumeMetalCapabilities-arm64.dylib', runner.temp) || '' }}
+          LUME_METAL_APPLE_FAMILY_MAX: ${{ matrix.processor == 'metal' && '1009' || '' }}
+          LUME_METAL_MAX_THREADGROUP_MEMORY: ${{ matrix.processor == 'metal' && '32768' || '' }}
         run: |
           export RUN_IN_PARALLEL=no
           go test -v -count=1 -timeout 20m -run '^(TestSuite|TestSuiteMultiSlot)$' ./sdk/kronk/tests/mtp
