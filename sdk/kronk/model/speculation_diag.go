@@ -134,6 +134,27 @@ func (e *batchEngine) specDiagVerifyResult(ctx context.Context, slotID int, acce
 	)
 }
 
+// specDiagSampler records whether backend (GPU-side) sampling was armed
+// on the draft context. This is the fork the row probes leave open:
+// empty distributions mean llama_get_sampled_candidates_count_ith
+// returned 0, and that has two very different causes.
+//
+//	ok=false  llama_set_sampler refused. Kronk can see this and does not
+//	          look: batchgen_speculative.go zeroes registeredSampler and
+//	          carries on, so speculation silently degrades to nothing.
+//	ok=true   the backend accepted the sampler but produced no candidates
+//	          during llama_decode, which is an upstream HIP graph-sampling
+//	          gap rather than anything Kronk did.
+func (e *batchEngine) specDiagSampler(ctx context.Context, slotID int, seqID llama.SeqId, sampler llama.Sampler, ok bool, greedy bool) {
+	e.model.log(ctx, "spec-diag-sampler",
+		"slot", slotID,
+		"seq_id", seqID,
+		"sampler", uintptr(sampler),
+		"set_sampler_ok", ok,
+		"greedy", greedy,
+	)
+}
+
 // specDiagLogitsError records the GetLogitsIth failure that the
 // verification path otherwise swallows: on error it returns
 // SamplerAccepted true, so a broken read shows up as an acceptance rather

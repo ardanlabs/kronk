@@ -172,7 +172,11 @@ func (e *batchEngine) generateClassicDraft(s *slot, nDraft int) (classicengine.G
 		if draft.registeredSampler != 0 {
 			llama.SetSampler(draft.lctx, draft.registeredSeqID, 0)
 		}
-		if llama.SetSampler(draft.lctx, s.seqID, sampler) {
+		ok := llama.SetSampler(draft.lctx, s.seqID, sampler)
+		if specDiagEnabled {
+			e.specDiagSampler(s.job.ctx, s.id, s.seqID, sampler, ok, greedy)
+		}
+		if ok {
 			draft.registeredSampler = sampler
 			draft.registeredSeqID = s.seqID
 		} else {
