@@ -74,12 +74,12 @@ type testCloseStore struct {
 	err    error
 }
 
-func (s *testCloseStore) Len() int           { return 0 }
-func (s *testCloseStore) Cap() int           { return 0 }
-func (s *testCloseStore) Bytes() []byte      { return nil }
-func (s *testCloseStore) Prepare(int) []byte { return nil }
-func (s *testCloseStore) Commit(int)         {}
-func (s *testCloseStore) Reset()             {}
+func (s *testCloseStore) Len() int                                     { return 0 }
+func (s *testCloseStore) Cap() int                                     { return 0 }
+func (s *testCloseStore) Bytes(context.Context) ([]byte, error)        { return nil, nil }
+func (s *testCloseStore) Prepare(context.Context, int) ([]byte, error) { return nil, nil }
+func (s *testCloseStore) Commit(context.Context, int) error            { return nil }
+func (s *testCloseStore) Reset(context.Context) error                  { return nil }
 func (s *testCloseStore) Close() error {
 	s.closes++
 	return s.err

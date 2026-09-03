@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -11,7 +12,7 @@ import (
 
 // ramSessionStore returns a fresh in-process RAM SessionStore for use
 // in tests that need to construct an imcSession with a non-nil
-// kvState. The production code path goes through newSessionStore(cfg)
+// kvState. The production code path goes through newSessionStore(ctx, cfg)
 // which dispatches by config; tests don't exercise that dispatch and
 // just need the default backend.
 func ramSessionStore() SessionStore {
@@ -223,7 +224,9 @@ func TestClearCaches(t *testing.T) {
 	}
 
 	// Clear caches.
-	m.clearCaches()
+	if err := m.clearCaches(context.Background()); err != nil {
+		t.Fatalf("clearCaches() error = %v, want nil", err)
+	}
 
 	// Verify IMC sessions cleared.
 	for i, slot := range m.imcSessions {
@@ -259,7 +262,7 @@ func TestCacheResultFields(t *testing.T) {
 // Externalized KV State Tests
 // =============================================================================
 
-// TestIMCResetSessionClearsKVState verifies that imcResetSession zeroes the
+// TestIMCResetSessionClearsKVState verifies that resetting a session zeroes the
 // externalized target, draft, and hidden state. Backing allocations are
 // retained so the next conversation can reuse them without allocation.
 func TestIMCResetSessionClearsKVState(t *testing.T) {
@@ -280,14 +283,14 @@ func TestIMCResetSessionClearsKVState(t *testing.T) {
 		samplerPromptTokens: []llama.Token{4, 5, 6},
 		pendingH:            make([]float32, 4, 8),
 	}
-	buf := s.kvState.Prepare(16)
-	draftBuf := s.draftKVState.Prepare(16)
+	buf := prepareTestStore(t, s.kvState, 16)
+	draftBuf := prepareTestStore(t, s.draftKVState, 16)
 	for i := range buf {
 		buf[i] = 0xA5
 		draftBuf[i] = 0x5A
 	}
-	s.kvState.Commit(8)
-	s.draftKVState.Commit(8)
+	commitTestStore(t, s.kvState, 8)
+	commitTestStore(t, s.draftKVState, 8)
 	retainedKV := buf[:cap(buf)]
 	retainedDraftKV := draftBuf[:cap(draftBuf)]
 	retainedH := s.pendingH[:cap(s.pendingH)]
@@ -295,7 +298,7 @@ func TestIMCResetSessionClearsKVState(t *testing.T) {
 		retainedH[i] = float32(i + 1)
 	}
 
-	imcResetSession(s)
+	resetTestSession(t, s)
 
 	if s.kvState.Len() != 0 {
 		t.Errorf("kvState.Len() = %d, want 0 (contents cleared)", s.kvState.Len())
@@ -377,10 +380,12 @@ func TestClearCachesResetsKVState(t *testing.T) {
 			totalTokensCached: 500,
 			cachedMsgCount:    3,
 		}
-		m.imcSessions[i].kvState.Prepare(1024)
+		prepareTestStore(t, m.imcSessions[i].kvState, 1024)
 	}
 
-	m.clearCaches()
+	if err := m.clearCaches(context.Background()); err != nil {
+		t.Fatalf("clearCaches() error = %v, want nil", err)
+	}
 
 	for i, s := range m.imcSessions {
 		if s.kvState.Len() != 0 {
@@ -461,11 +466,12 @@ func TestIMCCommitSessionPreservesKVState(t *testing.T) {
 		seqID:    0,
 		reserved: true,
 	}
-	buf := session.kvState.Prepare(3)
+	buf := prepareTestStore(t, session.kvState, 3)
 	copy(buf, []byte{0x01, 0x02, 0x03})
+	commitTestStore(t, session.kvState, len(buf))
 	m.imcSessions[0] = session
 
-	m.imcCommitSession(session, "newhash", 1000, 5,
+	m.imcCommitSession(context.Background(), session, "newhash", 1000, 5,
 		[]llama.Token{1, 2, 3}, false, nil, "")
 
 	// kvState should be preserved — only startSlot snapshots update it.
@@ -501,11 +507,11 @@ func TestIMCCommitMediaInvalidatesOwnDraftState(t *testing.T) {
 		draftKVState: ramSessionStore(),
 		pendingH:     []float32{1, 2, 3},
 	}
-	buf := session.draftKVState.Prepare(3)
+	buf := prepareTestStore(t, session.draftKVState, 3)
 	copy(buf, []byte{1, 2, 3})
-	session.draftKVState.Commit(len(buf))
+	commitTestStore(t, session.draftKVState, len(buf))
 
-	m.imcCommitSession(session, "hash", 100, 2, nil, true, []int{50}, "")
+	m.imcCommitSession(context.Background(), session, "hash", 100, 2, nil, true, []int{50}, "")
 
 	if session.draftKVState.Len() != 0 {
 		t.Errorf("draftKVState.Len() = %d, want 0", session.draftKVState.Len())
@@ -515,16 +521,47 @@ func TestIMCCommitMediaInvalidatesOwnDraftState(t *testing.T) {
 	}
 }
 
+func TestIMCCommitMediaInvalidatesDraftMetadataWhenResetFails(t *testing.T) {
+	wantErr := errors.New("reset failed")
+	session := &imcSession{
+		draftKVState: &resetErrorStore{err: wantErr},
+		pendingH:     []float32{1, 2, 3},
+		reserved:     true,
+	}
+	var loggedErr error
+	m := Model{log: func(_ context.Context, _ string, args ...any) {
+		for i := 0; i+1 < len(args); i += 2 {
+			if args[i] == "err" {
+				loggedErr, _ = args[i+1].(error)
+			}
+		}
+	}}
+
+	m.imcCommitSession(context.Background(), session, "hash", 100, 2, nil, true, []int{50}, "")
+
+	if !errors.Is(loggedErr, wantErr) {
+		t.Errorf("logged error = %v, want %v", loggedErr, wantErr)
+	}
+	if len(session.pendingH) != 0 {
+		t.Errorf("len(pendingH) = %d, want 0", len(session.pendingH))
+	}
+	if !session.hasMedia || session.totalTokensCached != 100 {
+		t.Errorf("target metadata was not committed: hasMedia=%t totalTokensCached=%d", session.hasMedia, session.totalTokensCached)
+	}
+}
+
 func TestIMCInvalidateReservedSessionRetainsOwnership(t *testing.T) {
 	m := &Model{}
 	session := &imcSession{
 		cachedMsgsHash:    "hash",
 		totalTokensCached: 10,
 		reserved:          true,
-		kvState:           populatedTestSessionStore(),
+		kvState:           populatedTestSessionStore(t),
 	}
 
-	m.imcInvalidateReservedSession(session)
+	if err := m.imcInvalidateReservedSession(context.Background(), session); err != nil {
+		t.Fatalf("imcInvalidateReservedSession() error = %v, want nil", err)
+	}
 
 	if session.totalTokensCached != 0 || session.kvState.Len() != 0 {
 		t.Fatalf("invalidated session still has cache state: tokens=%d bytes=%d", session.totalTokensCached, session.kvState.Len())
@@ -542,7 +579,7 @@ func TestIMCCommitSessionNilSafe(t *testing.T) {
 		log: func(ctx context.Context, msg string, args ...any) {},
 	}
 	// Should not panic.
-	m.imcCommitSession(nil, "hash", 100, 2, nil, false, nil, "")
+	m.imcCommitSession(context.Background(), nil, "hash", 100, 2, nil, false, nil, "")
 }
 
 // TestIMCFillSlotsAnySlot verifies that all IMC jobs (text and media) are
@@ -589,9 +626,9 @@ func TestIMCSessionMediaTransitions(t *testing.T) {
 	// snapshot simulates startSlot writing kvState by going through the
 	// kvBuffer Prepare/Commit lifecycle.
 	snapshot := func(b byte) {
-		buf := s.kvState.Prepare(1)
+		buf := prepareTestStore(t, s.kvState, 1)
 		buf[0] = b
-		s.kvState.Commit(1)
+		commitTestStore(t, s.kvState, 1)
 	}
 
 	// Turn 1: Text build. hasMedia=false.
@@ -643,11 +680,11 @@ func TestIMCSessionMediaTransitions(t *testing.T) {
 	// store, then both media anchors are committed atomically.
 	oldStore := s.kvState
 	staged := ramSessionStore()
-	stagedBuf := staged.Prepare(1)
+	stagedBuf := prepareTestStore(t, staged, 1)
 	stagedBuf[0] = 0x03
-	staged.Commit(1)
+	commitTestStore(t, staged, 1)
 	plan := mediaPlan(promptUnit{isMedia: true}, promptUnit{isMedia: true})
-	gotOld := (&Model{}).imcCommitMediaAdvance(s, staged, "media2", 800, 6, 700, plan, []llama.Token{1, 2}, []int{200, 150}, nil, true, false, "render")
+	gotOld := (&Model{}).imcCommitMediaAdvance(context.Background(), s, staged, "media2", 800, 6, 700, plan, []llama.Token{1, 2}, []int{200, 150}, nil, true, false, "render")
 	if gotOld != oldStore || s.kvState != staged || !s.hasMedia || len(s.mediaKVCounts) != 2 {
 		t.Fatal("turn 5: second media append did not atomically replace the session snapshot")
 	}
@@ -793,7 +830,7 @@ func TestIMCSessions(t *testing.T) {
 		imcSessions: []*imcSession{
 			{id: 0, kvState: ramSessionStore()},
 			{id: 1, reserved: true, totalTokensCached: 1024, kvState: ramSessionStore()},
-			{id: 2, totalTokensCached: 2048, allocatedContext: 4096, nextLogicalPos: 2100, cachedMsgCount: 4, inputMessages: 4, inputTokens: 2200, outputTokens: 300, lastUsed: lastUsed, hasMedia: true, kvState: populatedTestSessionStore(), pendingH: make([]float32, 2)},
+			{id: 2, totalTokensCached: 2048, allocatedContext: 4096, nextLogicalPos: 2100, cachedMsgCount: 4, inputMessages: 4, inputTokens: 2200, outputTokens: 300, lastUsed: lastUsed, hasMedia: true, kvState: populatedTestSessionStore(t), pendingH: make([]float32, 2)},
 			{id: 3, totalTokensCached: 2048, allocatedContext: 1536, kvState: ramSessionStore()},
 			{id: 4, reserved: true, totalTokensCached: 1024, allocatedContext: 1536, cachedMsgCount: 2, kvState: ramSessionStore()},
 		},
@@ -836,14 +873,14 @@ func TestIMCSessions(t *testing.T) {
 		t.Errorf("session 2 transition detail = %+v, want empty Current", got[2])
 	}
 
-	m.imcCommitSession(m.imcSessions[0], "hash", 3000, 2, nil, false, nil, "")
+	m.imcCommitSession(context.Background(), m.imcSessions[0], "hash", 3000, 2, nil, false, nil, "")
 	m.imcPublishSession(m.imcSessions[0])
-	m.imcCommitSession(m.imcSessions[0], "hash", 1000, 2, nil, false, nil, "")
+	m.imcCommitSession(context.Background(), m.imcSessions[0], "hash", 1000, 2, nil, false, nil, "")
 	m.imcPublishSession(m.imcSessions[0])
 	if m.imcSessions[0].allocatedContext != 3000 {
 		t.Errorf("allocatedContext = %d, want high-water context 3000", m.imcSessions[0].allocatedContext)
 	}
-	imcResetSession(m.imcSessions[0])
+	resetTestSession(t, m.imcSessions[0])
 	if m.imcSessions[0].allocatedContext != 3000 {
 		t.Errorf("allocatedContext after reset = %d, want retained high-water context 3000", m.imcSessions[0].allocatedContext)
 	}
@@ -865,7 +902,7 @@ func TestIMCSessions(t *testing.T) {
 		t.Errorf("request usage = %+v, want latest 8/3000/1000 and peak 5000", got[0])
 	}
 
-	imcResetSession(m.imcSessions[3])
+	resetTestSession(t, m.imcSessions[3])
 	got = m.IMCSessions()
 	if got[3].TotalAllocated != 1536 {
 		t.Errorf("TotalAllocated after Current reset = %d, want retained session capacity 1536", got[3].TotalAllocated)
@@ -930,14 +967,14 @@ func TestIMCCommitDoesNotPublishUntilSnapshot(t *testing.T) {
 	m := &Model{imcSessions: make([]*imcSession, 1)}
 	m.imcSessions[0] = &imcSession{kvState: ramSessionStore(), seqID: imcSeqIDUnbound, id: 0, reserved: true}
 
-	m.imcCommitSession(m.imcSessions[0], "hash", 500, 2, []llama.Token{1, 2}, false, nil, "")
+	m.imcCommitSession(context.Background(), m.imcSessions[0], "hash", 500, 2, []llama.Token{1, 2}, false, nil, "")
 	if !m.imcSessions[0].reserved {
 		t.Fatal("committed session must remain reserved before publish")
 	}
 
-	buf := m.imcSessions[0].kvState.Prepare(3)
+	buf := prepareTestStore(t, m.imcSessions[0].kvState, 3)
 	copy(buf, []byte{1, 2, 3})
-	m.imcSessions[0].kvState.Commit(3)
+	commitTestStore(t, m.imcSessions[0].kvState, 3)
 	m.imcPublishSession(m.imcSessions[0])
 	if m.imcSessions[0].reserved {
 		t.Fatal("published session must be unreserved")

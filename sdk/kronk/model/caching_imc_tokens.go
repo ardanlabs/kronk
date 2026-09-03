@@ -57,7 +57,7 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable, sy
 		}
 		currentExact := len(session.cachedTokens) == len(target)
 		currentFingerprintOK := !currentExact || exactRenderFingerprintMatches(session.cachedRenderInputHash, renderFingerprint, fingerprintOK)
-		if !session.hasMedia && len(session.cachedTokens) > 0 && session.kvState != nil && len(session.kvState.Bytes()) > 0 &&
+		if !session.hasMedia && len(session.cachedTokens) > 0 && session.kvState != nil && session.kvState.Len() > 0 &&
 			tokensHavePrefix(target, session.cachedTokens) && currentFingerprintOK {
 			if len(session.cachedTokens) > bestLen {
 				best = session
@@ -72,7 +72,7 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable, sy
 	var systemCache *imcSystemCache
 	if best == nil {
 		for _, candidate := range m.imcSystemCaches {
-			if candidate != nil && !candidate.building && candidate.kvState != nil && len(candidate.kvState.Bytes()) > 0 && slices.Equal(candidate.cachedTokens, system) {
+			if candidate != nil && !candidate.building && candidate.kvState != nil && candidate.kvState.Len() > 0 && slices.Equal(candidate.cachedTokens, system) {
 				systemCache = candidate
 				candidate.activeRestores++
 				candidate.restoreCount++
@@ -115,8 +115,21 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable, sy
 			result.err = fmt.Errorf("imc: server busy processing other requests, try again shortly")
 			return result
 		}
-		imcResetSession(selected)
 		selected.reserved = true
+		m.cacheMu.Unlock()
+		resetErr := resetSessionStores(ctx, selected)
+		m.cacheMu.Lock()
+		resetSessionMetadata(selected)
+		selected.reserved = true
+		if resetErr != nil {
+			selected.reserved = false
+			if systemCache != nil {
+				systemCache.activeRestores--
+			}
+			m.cacheMu.Unlock()
+			result.err = fmt.Errorf("imc: reset session store: %w", resetErr)
+			return result
+		}
 		if systemCache != nil {
 			reusable = len(systemCache.cachedTokens)
 			extension = slices.Clone(target[reusable:])

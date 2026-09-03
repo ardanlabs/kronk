@@ -212,7 +212,7 @@ func TestResolveRequestSamplingSeedsSession(t *testing.T) {
 		t.Errorf("master after explicit: got %d source[%s], want %d source[session]", fourth.master, source, explicit)
 	}
 
-	imcResetSession(&session)
+	resetTestSession(t, &session)
 	if session.hasSamplingSeed || session.samplingSeed != 0 {
 		t.Errorf("reset session seed: got %d present[%t], want 0 present[false]", session.samplingSeed, session.hasSamplingSeed)
 	}

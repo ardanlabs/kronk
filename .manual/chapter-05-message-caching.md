@@ -569,8 +569,8 @@ captures the implementation's own dependencies and configuration, and inject
 that factory into the model:
 
 ```go
-factory := func() (kvstorage.Store, error) {
-	return myStore.New(dependency)
+factory := func(ctx context.Context) (kvstorage.Store, error) {
+	return myStore.New(ctx, dependency)
 }
 
 krn, err := kronk.New(
@@ -580,19 +580,22 @@ krn, err := kronk.New(
 )
 ```
 
-Kronk calls the factory independently for every Current, draft, and System
-store it needs. Each call must return a new store; Kronk owns that store and
-calls `Close` when it is no longer needed. Direct SDK use defaults to RAM when
-no factory is injected.
+Kronk calls the factory independently for every working target, draft, or
+staged checkpoint store it needs. Each call must return a new store; Kronk owns
+that store and calls `Close` when it is no longer needed. Factory calls and
+store reads, prepares, commits, and resets receive the current operation's
+`context.Context` and report failures as errors. System preloads remain in a
+model-owned RAM pool. Direct SDK use defaults to RAM when no factory is
+injected.
 
 The [`examples/session-store`](https://github.com/ardanlabs/kronk/tree/main/examples/session-store)
 program provides a complete custom implementation and shows how to inject it.
 Its implementation writes snapshots to anonymous temporary files and deletes
 them on `Close`. It exists only to demonstrate the extension contract: it has
 no stable session identity, persisted request history, startup recovery,
-atomic commits, or reliable way to report I/O failures. **Do not use the
-example as durable session storage.** A durable implementation needs a higher
-level persistence design in addition to the byte-store contract.
+or atomic commits. **Do not use the example as durable session storage.** A
+durable implementation needs a higher-level persistence design in addition to
+the byte-store contract.
 
 Some MTP configurations maintain draft-model cached state and saved hidden
 state in addition to the target model snapshot. Account for this extra storage

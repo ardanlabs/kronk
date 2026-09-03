@@ -48,7 +48,7 @@ func run() error {
 		}
 	}()
 
-	factory, err := NewFactory(storeDir)
+	factory, err := NewFactory(context.Background(), storeDir)
 	if err != nil {
 		return fmt.Errorf("construct session-store factory: %w", err)
 	}

@@ -1,6 +1,7 @@
 package models
 
 import (
+	"context"
 	"math"
 	"os"
 	"path/filepath"
@@ -34,7 +35,7 @@ func TestResolveSessionStoreFactory(t *testing.T) {
 				return
 			}
 
-			store, err := factory()
+			store, err := factory(context.Background())
 			if err != nil {
 				t.Fatalf("factory() error = %v, want nil", err)
 			}

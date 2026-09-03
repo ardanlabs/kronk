@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -100,6 +101,23 @@ func imcSnapshotBytes(targetStore, draftStore SessionStore, pendingH []float32) 
 	return bytes
 }
 
+func prepareSessionSnapshot(ctx context.Context, store SessionStore, size uint64) ([]byte, error) {
+	n := int(size)
+	if n < 0 || uint64(n) != size {
+		return nil, fmt.Errorf("snapshot size %d exceeds platform limit", size)
+	}
+
+	buf, err := store.Prepare(ctx, n)
+	if err != nil {
+		return nil, err
+	}
+	if len(buf) != n {
+		return nil, fmt.Errorf("session store Prepare returned %d bytes, want %d", len(buf), n)
+	}
+
+	return buf, nil
+}
+
 func (m *Model) imcBeginRequestUsage(session *imcSession) uint64 {
 	if session == nil {
 		return 0
@@ -186,7 +204,7 @@ func (m *Model) decodeTokensIntoCache(ctx context.Context, tokens []llama.Token,
 	return nil
 }
 
-func imcResetCurrentSession(s *imcSession) {
+func resetCurrentSessionMetadata(s *imcSession) {
 	if s == nil {
 		return
 	}
@@ -194,16 +212,10 @@ func imcResetCurrentSession(s *imcSession) {
 	s.cachedMsgsHash = ""
 	s.cachedTokens = nil
 	s.totalTokensCached = 0
-	// allocatedContext is intentionally preserved because Reset retains the
-	// zeroed SessionStore backing allocation represented by this high-water mark.
+	// allocatedContext is a historical high-water mark and remains useful even
+	// when the configured store releases its staging capacity during Reset.
 	s.nextLogicalPos = 0
 	s.cachedMsgCount = 0
-	if s.kvState != nil {
-		s.kvState.Reset()
-	}
-	if s.draftKVState != nil {
-		s.draftKVState.Reset()
-	}
 	clear(s.pendingH[:cap(s.pendingH)])
 	s.pendingH = s.pendingH[:0]
 	s.snapshotBytes = imcSnapshotBytes(s.kvState, s.draftKVState, s.pendingH)
@@ -217,15 +229,35 @@ func imcResetCurrentSession(s *imcSession) {
 	s.cachedRenderInputHash = ""
 }
 
-// imcResetSession clears all metadata on an IMC session, returning it to
+func resetSessionStores(ctx context.Context, s *imcSession) error {
+	if s == nil {
+		return nil
+	}
+
+	var errs []error
+	if s.kvState != nil {
+		if err := s.kvState.Reset(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("reset target store: %w", err))
+		}
+	}
+	if s.draftKVState != nil {
+		if err := s.draftKVState.Reset(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("reset draft store: %w", err))
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+// resetSessionMetadata clears all metadata on an IMC session, returning it to
 // an empty state. The session's pool index (id) is preserved; seqID is
 // reset to imcSeqIDUnbound because a reset session is no longer bound
 // to any execution slot's KV sequence. The caller must hold m.cacheMu
 // (write lock).
-func imcResetSession(s *imcSession) {
+func resetSessionMetadata(s *imcSession) {
 	s.seqID = imcSeqIDUnbound
 	s.usageVersion++
-	imcResetCurrentSession(s)
+	resetCurrentSessionMetadata(s)
 	s.inputMessages = 0
 	s.inputTokens = 0
 	s.outputTokens = 0
@@ -250,16 +282,20 @@ func (m *Model) imcReleaseReservation(sessionID int) {
 
 // imcInvalidateReservedSession removes corrupt Current state while retaining
 // this request's reservation.
-func (m *Model) imcInvalidateReservedSession(session *imcSession) {
+func (m *Model) imcInvalidateReservedSession(ctx context.Context, session *imcSession) error {
 	if session == nil {
-		return
+		return nil
 	}
 
+	resetErr := resetSessionStores(ctx, session)
+
 	m.cacheMu.Lock()
-	imcResetCurrentSession(session)
+	resetCurrentSessionMetadata(session)
 	session.seqID = imcSeqIDUnbound
 	session.reserved = true
 	m.cacheMu.Unlock()
+
+	return resetErr
 }
 
 // imcCommitSession updates a session's metadata after a successful cache
@@ -283,9 +319,15 @@ func (m *Model) imcInvalidateReservedSession(session *imcSession) {
 // renderInputHash is the imcRenderFingerprint of the inputs that produced
 // the just-cached prefix; pass "" when no fingerprint was computed (the
 // session simply will not qualify for the pure-hit snapshot-skip path).
-func (m *Model) imcCommitSession(session *imcSession, hash string, totalCached int, cachedMsgCount int, cachedTokens []llama.Token, hasMedia bool, mediaKVCounts []int, renderInputHash string) {
+func (m *Model) imcCommitSession(ctx context.Context, session *imcSession, hash string, totalCached int, cachedMsgCount int, cachedTokens []llama.Token, hasMedia bool, mediaKVCounts []int, renderInputHash string) {
 	if session == nil {
 		return
+	}
+
+	if hasMedia && session.draftKVState != nil {
+		if err := session.draftKVState.Reset(ctx); err != nil {
+			m.log(ctx, "imc", "status", "draft-store-reset-failed", "err", err)
+		}
 	}
 
 	m.cacheMu.Lock()
@@ -311,9 +353,6 @@ func (m *Model) imcCommitSession(session *imcSession, hash string, totalCached i
 		// carrying it across a media commit would pair target and draft states
 		// from different prefixes. Shared-target-KV MTP does not use these
 		// fields and continues to resume from the target snapshot.
-		if session.draftKVState != nil {
-			session.draftKVState.Reset()
-		}
 		clear(session.pendingH[:cap(session.pendingH)])
 		session.pendingH = session.pendingH[:0]
 	case len(cachedTokens) > 0:
@@ -326,9 +365,15 @@ func (m *Model) imcCommitSession(session *imcSession, hash string, totalCached i
 // its matching media-prefix metadata. The caller owns the returned old store
 // and closes it after the swap. reserved remains set until the caller publishes
 // or releases the reservation.
-func (m *Model) imcCommitMediaAdvance(session *imcSession, staged SessionStore, hash string, totalCached, cachedMsgCount, nextLogicalPos int, plan promptPlan, samplerPromptTokens []llama.Token, mediaKVCounts []int, mediaNativeChunks []imcMediaChunk, useMRoPE, useNonCausal bool, renderInputHash string) SessionStore {
+func (m *Model) imcCommitMediaAdvance(ctx context.Context, session *imcSession, staged SessionStore, hash string, totalCached, cachedMsgCount, nextLogicalPos int, plan promptPlan, samplerPromptTokens []llama.Token, mediaKVCounts []int, mediaNativeChunks []imcMediaChunk, useMRoPE, useNonCausal bool, renderInputHash string) SessionStore {
 	if session == nil || staged == nil {
 		return nil
+	}
+
+	if session.draftKVState != nil {
+		if err := session.draftKVState.Reset(ctx); err != nil {
+			m.log(ctx, "imc", "status", "draft-store-reset-failed", "err", err)
+		}
 	}
 
 	m.cacheMu.Lock()
@@ -350,9 +395,6 @@ func (m *Model) imcCommitMediaAdvance(session *imcSession, staged SessionStore, 
 	session.cachedTokens = nil
 	session.allocatedContext = max(session.allocatedContext, totalCached)
 	session.highWaterContext = max(session.highWaterContext, totalCached)
-	if session.draftKVState != nil {
-		session.draftKVState.Reset()
-	}
 	clear(session.pendingH[:cap(session.pendingH)])
 	session.pendingH = session.pendingH[:0]
 	m.cacheMu.Unlock()

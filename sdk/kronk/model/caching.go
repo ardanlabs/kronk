@@ -1,9 +1,11 @@
 package model
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -72,18 +74,31 @@ type cacheResult struct {
 
 // clearCaches clears all cached prompt states.
 // This is useful when the model context is reset.
-func (m *Model) clearCaches() {
+func (m *Model) clearCaches(ctx context.Context) error {
 	m.cacheMu.Lock()
+	for _, s := range m.imcSessions {
+		if s != nil {
+			s.reserved = true
+		}
+	}
+	m.cacheMu.Unlock()
 
 	// Reset all IMC sessions in place (preserving id; seqID is dynamic
 	// and is set when a session binds to a slot in startSlot).
+	var errs []error
 	for _, s := range m.imcSessions {
 		if s != nil {
-			imcResetSession(s)
+			if err := resetSessionStores(ctx, s); err != nil {
+				errs = append(errs, err)
+			}
+
+			m.cacheMu.Lock()
+			resetSessionMetadata(s)
+			m.cacheMu.Unlock()
 		}
 	}
 
-	m.cacheMu.Unlock()
+	return errors.Join(errs...)
 }
 
 // =============================================================================

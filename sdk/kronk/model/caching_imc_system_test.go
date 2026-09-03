@@ -11,7 +11,7 @@ import (
 )
 
 func TestIMCReserveSystemCacheDeduplicates(t *testing.T) {
-	cache := &imcSystemCache{id: 0, cachedTokens: []llama.Token{1, 2}, kvState: populatedTestSessionStore()}
+	cache := &imcSystemCache{id: 0, cachedTokens: []llama.Token{1, 2}, kvState: populatedTestSessionStore(t)}
 	m := Model{imcSystemCaches: []*imcSystemCache{cache}}
 
 	if got := m.imcReserveSystemCache([]llama.Token{1, 2}); got != nil {
@@ -24,11 +24,11 @@ func TestIMCReserveSystemCacheDeduplicates(t *testing.T) {
 
 func TestIMCReserveSystemCacheReusesLeastRecentlyUsedAllocation(t *testing.T) {
 	now := time.Now()
-	oldActive := populatedTestSessionStore()
+	oldActive := populatedTestSessionStore(t)
 	oldAvailable := ramSessionStore()
-	oldAvailable.Prepare(8)
-	oldAvailable.Commit(1)
-	newerAvailable := populatedTestSessionStore()
+	prepareTestStore(t, oldAvailable, 8)
+	commitTestStore(t, oldAvailable, 1)
+	newerAvailable := populatedTestSessionStore(t)
 	caches := []*imcSystemCache{
 		{id: 0, cachedTokens: []llama.Token{1}, kvState: oldActive, activeRestores: 1, lastUsed: now.Add(-3 * time.Minute)},
 		{id: 1, cachedTokens: []llama.Token{2}, kvState: oldAvailable, lastUsed: now.Add(-2 * time.Minute)},
@@ -40,13 +40,13 @@ func TestIMCReserveSystemCacheReusesLeastRecentlyUsedAllocation(t *testing.T) {
 	if selected != caches[1] || !selected.building {
 		t.Fatalf("reserve = %p, want building LRU entry %p", selected, caches[1])
 	}
-	store, err := m.imcSystemCacheStore(selected, false)
+	store, err := m.imcSystemCacheStore(context.Background(), selected, false)
 	if err != nil {
 		t.Fatalf("imcSystemCacheStore: %v", err)
 	}
-	store.Reset()
-	store.Prepare(1)[0] = 9
-	store.Commit(1)
+	resetTestStore(t, store)
+	prepareTestStore(t, store, 1)[0] = 9
+	commitTestStore(t, store, 1)
 	if !m.imcPublishSystemCache(context.Background(), selected, nil) {
 		t.Fatal("publish = false, want reserved entry publication")
 	}
@@ -62,7 +62,7 @@ func TestIMCReserveSystemCacheDoesNotEvictActiveEntries(t *testing.T) {
 	cache := &imcSystemCache{
 		id:             0,
 		cachedTokens:   []llama.Token{1},
-		kvState:        populatedTestSessionStore(),
+		kvState:        populatedTestSessionStore(t),
 		activeRestores: 1,
 	}
 	m := Model{imcSystemCaches: []*imcSystemCache{cache}}
@@ -77,18 +77,20 @@ func TestIMCReserveSystemCacheDoesNotEvictActiveEntries(t *testing.T) {
 
 func TestIMCAbortSystemCacheRetainsAllocations(t *testing.T) {
 	target := ramSessionStore()
-	target.Prepare(8)
-	target.Commit(4)
+	prepareTestStore(t, target, 8)
+	commitTestStore(t, target, 4)
 	draft := ramSessionStore()
-	draft.Prepare(6)
-	draft.Commit(3)
+	prepareTestStore(t, draft, 6)
+	commitTestStore(t, draft, 3)
 	cache := &imcSystemCache{id: 0, cachedTokens: []llama.Token{1}, kvState: target, draftKVState: draft}
 	m := Model{imcSystemCaches: []*imcSystemCache{cache}}
 
 	if got := m.imcReserveSystemCache([]llama.Token{2}); got != cache {
 		t.Fatalf("reserve = %p, want %p", got, cache)
 	}
-	m.imcAbortSystemCache(cache)
+	if err := m.imcAbortSystemCache(context.Background(), cache); err != nil {
+		t.Fatalf("imcAbortSystemCache() error = %v, want nil", err)
+	}
 
 	if cache.building || len(cache.cachedTokens) != 0 || target.Len() != 0 || draft.Len() != 0 {
 		t.Error("abort did not empty the reserved System cache")
@@ -106,7 +108,7 @@ func TestIMCSystemCacheDetailsAndRelease(t *testing.T) {
 	cache := &imcSystemCache{
 		id:               3,
 		cachedTokens:     []llama.Token{1, 2},
-		kvState:          populatedTestSessionStore(),
+		kvState:          populatedTestSessionStore(t),
 		allocatedContext: 4,
 		restoreCount:     7,
 		activeRestores:   1,

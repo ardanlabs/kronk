@@ -11,7 +11,7 @@ func noopLog(ctx context.Context, msg string, args ...any) {}
 
 // newFingerprintTestModel constructs a minimal *Model wired with a fixed
 // template script. It is the smallest fixture required to exercise
-// imcRenderFingerprint, imcCommitSession, and imcResetSession.
+// imcRenderFingerprint, imcCommitSession, and session reset behavior.
 func newFingerprintTestModel(templateScript string) *Model {
 	m := &Model{
 		cfg: Config{
@@ -296,7 +296,7 @@ func cloneMessages(msgs []D) []D {
 }
 
 // TestIMCCommitAndResetRenderInputHash verifies that imcCommitSession stores
-// the render-input fingerprint and imcResetSession clears it. The lifecycle
+// the render-input fingerprint and resetting the session clears it. The lifecycle
 // is what makes the snapshot-skip predicate safe across session evictions.
 func TestIMCCommitAndResetRenderInputHash(t *testing.T) {
 	m := newFingerprintTestModel("template-x")
@@ -309,7 +309,7 @@ func TestIMCCommitAndResetRenderInputHash(t *testing.T) {
 	}
 	m.imcSessions[0] = session
 
-	m.imcCommitSession(session, "h1", 500, 3, nil, false, nil, "render-hash-1")
+	m.imcCommitSession(context.Background(), session, "h1", 500, 3, nil, false, nil, "render-hash-1")
 
 	if session.cachedRenderInputHash != "render-hash-1" {
 		t.Errorf("after commit: cachedRenderInputHash = %q, want %q",
@@ -329,7 +329,7 @@ func TestIMCCommitAndResetRenderInputHash(t *testing.T) {
 	}
 
 	// A subsequent commit (e.g. extend) refreshes the fingerprint.
-	m.imcCommitSession(session, "h2", 700, 4, nil, false, nil, "render-hash-2")
+	m.imcCommitSession(context.Background(), session, "h2", 700, 4, nil, false, nil, "render-hash-2")
 	if session.cachedRenderInputHash != "render-hash-2" {
 		t.Errorf("after re-commit: cachedRenderInputHash = %q, want %q",
 			session.cachedRenderInputHash, "render-hash-2")
@@ -337,7 +337,7 @@ func TestIMCCommitAndResetRenderInputHash(t *testing.T) {
 
 	// Reset clears it.
 	m.cacheMu.Lock()
-	imcResetSession(session)
+	resetTestSession(t, session)
 	m.cacheMu.Unlock()
 
 	if session.cachedRenderInputHash != "" {
@@ -359,7 +359,7 @@ func TestIMCCommitEmptyRenderHashDisqualifiesSkip(t *testing.T) {
 	}
 	m.imcSessions[0] = session
 
-	m.imcCommitSession(session, "h", 100, 2, nil, false, nil, "")
+	m.imcCommitSession(context.Background(), session, "h", 100, 2, nil, false, nil, "")
 
 	if session.cachedRenderInputHash != "" {
 		t.Errorf("cachedRenderInputHash = %q, want empty (pre-rollout sentinel)",

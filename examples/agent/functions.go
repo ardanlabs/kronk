@@ -1,4 +1,3 @@
-// BILL CAN'T TYPE
 package main
 
 import (

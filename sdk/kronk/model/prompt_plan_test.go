@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"reflect"
 	"testing"
 	"time"
@@ -56,9 +57,9 @@ func TestProcessIMCMediaPlansMatches(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			store := ramSessionStore()
 			if tt.kvBytes {
-				buf := store.Prepare(3)
+				buf := prepareTestStore(t, store, 3)
 				copy(buf, []byte{1, 2, 3})
-				store.Commit(len(buf))
+				commitTestStore(t, store, len(buf))
 			}
 			session := &imcSession{
 				id:                  0,
@@ -116,7 +117,7 @@ func TestProcessIMCMediaAnchorPlanningIsImmutableAndUsesLogicalPosition(t *testi
 	base := mediaPlan(promptUnit{token: 1}, promptUnit{media: digest, isMedia: true}, promptUnit{token: 2})
 	stable := mediaPlan(promptUnit{token: 1}, promptUnit{media: digest, isMedia: true}, promptUnit{token: 2}, promptUnit{token: 3})
 	actual := mediaPlan(promptUnit{token: 1}, promptUnit{media: digest, isMedia: true}, promptUnit{token: 2}, promptUnit{token: 3}, promptUnit{token: 4})
-	store := populatedTestSessionStore()
+	store := populatedTestSessionStore(t)
 	session := &imcSession{
 		id:                  0,
 		totalTokensCached:   12,
@@ -130,7 +131,7 @@ func TestProcessIMCMediaAnchorPlanningIsImmutableAndUsesLogicalPosition(t *testi
 		mediaKVCounts:       []int{8},
 		kvState:             store,
 	}
-	originalBytes := append([]byte(nil), store.Bytes()...)
+	originalBytes := append([]byte(nil), bytesTestStore(t, store)...)
 	originalPlan := append([]promptUnit(nil), session.promptPlan.units...)
 	originalLastUsed := session.lastUsed
 	m := &Model{imcSessions: []*imcSession{session}, log: func(context.Context, string, ...any) {}}
@@ -153,7 +154,7 @@ func TestProcessIMCMediaAnchorPlanningIsImmutableAndUsesLogicalPosition(t *testi
 	if want := []llama.Token{100, 1, 2, 101, 3}; !reflect.DeepEqual(result.imcMediaSamplerTokens, want) {
 		t.Fatalf("cached sampler prompt = %v, want %v", result.imcMediaSamplerTokens, want)
 	}
-	if !reflect.DeepEqual(session.promptPlan.units, originalPlan) || !reflect.DeepEqual(store.Bytes(), originalBytes) || session.lastUsed != originalLastUsed {
+	if !reflect.DeepEqual(session.promptPlan.units, originalPlan) || !reflect.DeepEqual(bytesTestStore(t, store), originalBytes) || session.lastUsed != originalLastUsed {
 		t.Fatal("anchor planning mutated stored session metadata or snapshot")
 	}
 }
@@ -163,8 +164,8 @@ func TestIMCCommitMediaAdvanceAndReuse(t *testing.T) {
 	base := mediaPlan(promptUnit{token: 1}, promptUnit{media: digest, isMedia: true}, promptUnit{token: 2})
 	advanced := mediaPlan(promptUnit{token: 1}, promptUnit{media: digest, isMedia: true}, promptUnit{token: 2}, promptUnit{token: 3})
 	next := mediaPlan(promptUnit{token: 1}, promptUnit{media: digest, isMedia: true}, promptUnit{token: 2}, promptUnit{token: 3}, promptUnit{token: 4})
-	oldStore := populatedTestSessionStore()
-	staged := populatedTestSessionStore()
+	oldStore := populatedTestSessionStore(t)
+	staged := populatedTestSessionStore(t)
 	session := &imcSession{
 		id:                0,
 		totalTokensCached: 12,
@@ -182,7 +183,7 @@ func TestIMCCommitMediaAdvanceAndReuse(t *testing.T) {
 	d := D{"messages": []D{{"role": "user", "content": "test"}}}
 	renderHash, _ := m.imcRenderFingerprint(d, dMessages(d))
 
-	gotOld := m.imcCommitMediaAdvance(session, staged, "advanced", 13, 3, 6, advanced, []llama.Token{1, 2, 3}, []int{8}, nil, true, false, renderHash)
+	gotOld := m.imcCommitMediaAdvance(context.Background(), session, staged, "advanced", 13, 3, 6, advanced, []llama.Token{1, 2, 3}, []int{8}, nil, true, false, renderHash)
 	if gotOld != oldStore || session.kvState != staged || session.totalTokensCached != 13 || session.nextLogicalPos != 6 || !session.promptPlan.equal(advanced) || !reflect.DeepEqual(session.samplerPromptTokens, []llama.Token{1, 2, 3}) {
 		t.Fatal("media advance did not atomically publish the staged state")
 	}
@@ -220,7 +221,7 @@ func TestProcessIMCMediaPlansRebuildsExactPlanWhenRenderFingerprintChanges(t *te
 		promptPlan:          stable,
 		samplerPromptTokens: []llama.Token{1, 2},
 		mediaKVCounts:       []int{1},
-		kvState:             populatedTestSessionStore(),
+		kvState:             populatedTestSessionStore(t),
 	}
 	m := &Model{imcSessions: []*imcSession{session}, log: func(context.Context, string, ...any) {}}
 	session.cachedRenderInputHash, _ = m.imcRenderFingerprint(priorD, dMessages(priorD))
@@ -235,7 +236,7 @@ func TestProcessIMCMediaPlansRebuildsExactPlanWhenRenderFingerprintChanges(t *te
 }
 
 func TestIMCCommitMediaAdvanceRejectsMissingStage(t *testing.T) {
-	oldStore := populatedTestSessionStore()
+	oldStore := populatedTestSessionStore(t)
 	session := &imcSession{
 		cachedMsgsHash:    "old",
 		totalTokensCached: 12,
@@ -244,11 +245,44 @@ func TestIMCCommitMediaAdvanceRejectsMissingStage(t *testing.T) {
 	}
 	m := &Model{}
 
-	if old := m.imcCommitMediaAdvance(session, nil, "new", 13, 3, 6, promptPlan{}, nil, nil, nil, false, false, "render"); old != nil {
+	old := m.imcCommitMediaAdvance(context.Background(), session, nil, "new", 13, 3, 6, promptPlan{}, nil, nil, nil, false, false, "render")
+	if old != nil {
 		t.Fatalf("old store = %T, want nil for rejected commit", old)
 	}
 	if session.kvState != oldStore || session.cachedMsgsHash != "old" || session.totalTokensCached != 12 || session.nextLogicalPos != 5 {
 		t.Fatal("rejected media advance mutated the prior valid session")
+	}
+}
+
+func TestIMCCommitMediaAdvanceInvalidatesDraftMetadataWhenResetFails(t *testing.T) {
+	wantErr := errors.New("reset failed")
+	oldStore := populatedTestSessionStore(t)
+	staged := populatedTestSessionStore(t)
+	session := &imcSession{
+		kvState:      oldStore,
+		draftKVState: &resetErrorStore{err: wantErr},
+		pendingH:     []float32{1, 2, 3},
+		reserved:     true,
+	}
+	var loggedErr error
+	m := Model{log: func(_ context.Context, _ string, args ...any) {
+		for i := 0; i+1 < len(args); i += 2 {
+			if args[i] == "err" {
+				loggedErr, _ = args[i+1].(error)
+			}
+		}
+	}}
+
+	gotOld := m.imcCommitMediaAdvance(context.Background(), session, staged, "advanced", 13, 3, 6, promptPlan{}, nil, nil, nil, false, false, "render")
+
+	if !errors.Is(loggedErr, wantErr) {
+		t.Errorf("logged error = %v, want %v", loggedErr, wantErr)
+	}
+	if gotOld != oldStore || session.kvState != staged {
+		t.Fatal("target snapshot was not advanced")
+	}
+	if len(session.pendingH) != 0 {
+		t.Errorf("len(pendingH) = %d, want 0", len(session.pendingH))
 	}
 }
 
@@ -362,7 +396,7 @@ func TestProcessIMCMediaPlansReusesTextSessionForFirstMedia(t *testing.T) {
 		cachedTokens:      []llama.Token{1, 2},
 		cachedMsgCount:    2,
 		cachedMsgsHash:    "text",
-		kvState:           populatedTestSessionStore(),
+		kvState:           populatedTestSessionStore(t),
 	}
 	m := &Model{imcSessions: []*imcSession{session}, log: func(context.Context, string, ...any) {}}
 	d := D{"messages": []D{{"role": "user", "content": "test"}}}

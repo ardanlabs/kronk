@@ -2,6 +2,8 @@ package model
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"slices"
 	"time"
 
@@ -70,7 +72,7 @@ func (m *Model) imcReserveSystemCache(tokens []llama.Token) *imcSystemCache {
 		if cache.building && slices.Equal(cache.buildingTokens, tokens) {
 			return nil
 		}
-		if !cache.building && cache.kvState != nil && len(cache.kvState.Bytes()) > 0 && slices.Equal(cache.cachedTokens, tokens) {
+		if !cache.building && cache.kvState != nil && cache.kvState.Len() > 0 && slices.Equal(cache.cachedTokens, tokens) {
 			cache.lastUsed = time.Now()
 			return nil
 		}
@@ -98,7 +100,7 @@ func (m *Model) imcReserveSystemCache(tokens []llama.Token) *imcSystemCache {
 	return selected
 }
 
-func (m *Model) imcSystemCacheStore(cache *imcSystemCache, draft bool) (SessionStore, error) {
+func (m *Model) imcSystemCacheStore(ctx context.Context, cache *imcSystemCache, draft bool) (SessionStore, error) {
 	m.cacheMu.Lock()
 	var store SessionStore
 	if draft {
@@ -111,7 +113,7 @@ func (m *Model) imcSystemCacheStore(cache *imcSystemCache, draft bool) (SessionS
 		return store, nil
 	}
 
-	store, err := newSystemCacheStore()
+	store, err := newSystemCacheStore(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -126,16 +128,21 @@ func (m *Model) imcSystemCacheStore(cache *imcSystemCache, draft bool) (SessionS
 	return store, nil
 }
 
-func (m *Model) imcAbortSystemCache(cache *imcSystemCache) {
+func (m *Model) imcAbortSystemCache(ctx context.Context, cache *imcSystemCache) error {
 	if cache == nil {
-		return
+		return nil
 	}
 
+	var errs []error
 	if cache.kvState != nil {
-		cache.kvState.Reset()
+		if err := cache.kvState.Reset(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("reset target store: %w", err))
+		}
 	}
 	if cache.draftKVState != nil {
-		cache.draftKVState.Reset()
+		if err := cache.draftKVState.Reset(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("reset draft store: %w", err))
+		}
 	}
 	snapshotBytes := imcSnapshotBytes(cache.kvState, cache.draftKVState, cache.pendingH)
 
@@ -149,11 +156,15 @@ func (m *Model) imcAbortSystemCache(cache *imcSystemCache) {
 	cache.lastUsed = time.Time{}
 	cache.building = false
 	m.cacheMu.Unlock()
+
+	return errors.Join(errs...)
 }
 
 func (m *Model) imcPublishSystemCache(ctx context.Context, cache *imcSystemCache, pendingH []float32) bool {
 	if cache == nil || cache.kvState == nil || cache.kvState.Len() == 0 {
-		m.imcAbortSystemCache(cache)
+		if err := m.imcAbortSystemCache(ctx, cache); err != nil {
+			m.log(ctx, "imc", "status", "system-cache-abort-failed", "err", err)
+		}
 		return false
 	}
 

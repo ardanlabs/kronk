@@ -12,8 +12,8 @@ func (e *batchEngine) hasActiveSlots() bool {
 
 // fillSlots assigns pending requests to available slots.
 //
-// All IMC jobs (text and media) use first-available slot — KV state is
-// restored from RAM via StateSeqSetData. Non-IMC jobs also use
+// All IMC jobs (text and media) use first-available slot — externalized KV
+// state is restored via StateSeqSetData. Non-IMC jobs also use
 // first-available.
 //
 // Jobs that can't be assigned yet are held in pendingJobs (engine-local

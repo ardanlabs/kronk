@@ -91,7 +91,7 @@ type drafter interface {
 
 // draftKVExternalizer is implemented ONLY by strategies that OWN their
 // draft KV cache and participate in IMC draft-KV state externalization
-// (snapshot to / restore from host RAM in lock-step with the target seq).
+// (snapshot to / restore from a SessionStore in lock-step with the target seq).
 //
 // A shared-KV strategy (future Gemma4 gemma4-assistant, ctx_other==target)
 // MUST NOT implement this: llama.StateSeqSetData on a shared draft context

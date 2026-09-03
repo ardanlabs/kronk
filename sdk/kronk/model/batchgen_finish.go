@@ -191,7 +191,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 
 	// IMC: clear the entire sequence. The cached prefix KV state was
 	// snapshotted into session.kvState in startSlot and will be restored
-	// from RAM on the next request. This applies to both text-only and
+	// from its SessionStore on the next request. This applies to both text-only and
 	// media sessions — StateSeqGetData captures raw KV bytes regardless
 	// of whether they were produced by text tokens or media embeddings.
 	//
@@ -202,8 +202,8 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	e.model.log(ctx, "finish-slot", "status", "seq-cleared", "slot", slotID, "seq", seqID)
 
 	// Unbind the IMC session from this slot's KV sequence. The session
-	// is now externalized (its bytes live in session.kvState in host
-	// RAM) and not resident in any VRAM seq, so the defensive
+	// is now externalized in session.kvState and not resident in any
+	// model KV sequence, so the defensive
 	// KV-pressure eviction path should no longer issue MemorySeqRm
 	// against this session's seqID.
 	if s.job.imcSession != nil {

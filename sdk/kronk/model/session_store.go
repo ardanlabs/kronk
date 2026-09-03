@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
@@ -17,13 +18,13 @@ type SessionStoreFactory = kvstorage.Factory
 //
 // SDK callers inject Config.SessionStoreFactory. A zero-value Config uses the
 // built-in RAM factory.
-func newSessionStore(cfg Config) (SessionStore, error) {
+func newSessionStore(ctx context.Context, cfg Config) (SessionStore, error) {
 	factory := cfg.SessionStoreFactory
 	if factory == nil {
 		factory = ram.NewFactory()
 	}
 
-	store, err := factory()
+	store, err := factory(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("session-store: create: %w", err)
 	}
@@ -36,8 +37,8 @@ func newSessionStore(cfg Config) (SessionStore, error) {
 
 // newSystemCacheStore constructs the RAM-only store used by immutable System
 // preloads. Working sessions remain responsible for configured persistence.
-func newSystemCacheStore() (SessionStore, error) {
-	store, err := ram.NewFactory()()
+func newSystemCacheStore(ctx context.Context) (SessionStore, error) {
+	store, err := ram.NewFactory()(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("system-cache-store: create: %w", err)
 	}
