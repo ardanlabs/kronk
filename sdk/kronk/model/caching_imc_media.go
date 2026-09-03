@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"runtime"
 	"slices"
-	"strings"
 	"unsafe"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
@@ -126,8 +125,8 @@ func (m *Model) decodeMediaIntoCacheFromPlan(ctx context.Context, cacheD D, pref
 	// Step 2: Create bitmaps from raw media bytes. Images are decoded in Go
 	// (newMediaBitmap) and built via the stable mtmd_bitmap_init core API;
 	// audio still goes through the mtmd-helper. Reject any payload that fails
-	// to decode so we surface a precise error instead of the generic
-	// "tokenization failed with code 1" from mtmd.Tokenize.
+	// to decode so we surface a precise error instead of a generic tokenization
+	// failure.
 	bitmaps := make([]mtmd.Bitmap, len(media))
 	defer func() {
 		for _, b := range bitmaps {
@@ -147,22 +146,13 @@ func (m *Model) decodeMediaIntoCacheFromPlan(ctx context.Context, cacheD D, pref
 		bitmaps[i] = bmp
 	}
 
-	// Step 3: Tokenize the prompt with media into interleaved chunks.
-	// Verify the marker count in the rendered prompt matches the number of
-	// bitmaps before calling mtmd.Tokenize. mtmd returns an opaque code 1
-	// when these don't match; pre-checking here gives a precise error and
-	// catches double-render or template bugs early.
-	markerCount := strings.Count(prompt, mtmd.DefaultMarker())
-	if markerCount != len(bitmaps) {
-		return 0, 0, nil, nil, nil, fmt.Errorf("imc-media-cache: marker/bitmap count mismatch: prompt has %d %q markers but %d bitmaps were prepared", markerCount, mtmd.DefaultMarker(), len(bitmaps))
-	}
-
+	// Step 3: Tokenize the rendered prompt as explicit ordered text and bitmap
+	// parts, producing the same interleaved chunk stream used for generation.
 	inputChunks := mtmd.InputChunksInit()
 	defer mtmd.InputChunksFree(inputChunks)
 
-	input := mtmd.NewInputText(prompt, true, true)
-	if result := mtmd.Tokenize(mtmdCtx, inputChunks, input, bitmaps); result != 0 {
-		return 0, 0, nil, nil, nil, fmt.Errorf("imc-media-cache: tokenization failed with code %d", result)
+	if err := tokenizeMedia(mtmdCtx, inputChunks, prompt, bitmaps); err != nil {
+		return 0, 0, nil, nil, nil, fmt.Errorf("imc-media-cache: %w", err)
 	}
 
 	useMRoPE := mtmd.DecodeUseMRope(mtmdCtx)
