@@ -52,6 +52,7 @@ version: 1
 #   lib-path: ""
 #   bucky-lib-path: ""
 #   lib-version: ""
+#   lib-download-enabled: true
 #   arch: ""
 #   os: ""
 #   processor: ""

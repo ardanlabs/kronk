@@ -218,8 +218,6 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	// -------------------------------------------------------------------------
 	// Library System
 
-	log.Info(ctx, "startup", "status", "downloading libraries")
-
 	libs, err := libs.New(
 		libs.WithDetectOverrides(ctx, log.Info, cfg.LibPath, cfg.Arch, cfg.OS, cfg.Processor),
 		libs.WithBasePath(cfg.BasePath),
@@ -230,13 +228,17 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		return fmt.Errorf("unable to create libs api: %w", err)
 	}
 
-	log.Info(ctx, "startup", "status", "installing/updating libraries", "libPath", libs.LibsPath(), "arch", libs.Arch(), "os", libs.OS(), "processor", libs.Processor(), "update", true)
+	if cfg.LibDownloadEnabled {
+		log.Info(ctx, "startup", "status", "installing/updating libraries", "libPath", libs.LibsPath(), "arch", libs.Arch(), "os", libs.OS(), "processor", libs.Processor(), "update", true)
 
-	downloadCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
-	defer cancel()
-
-	if _, err := libs.Download(downloadCtx, log.Info); err != nil {
-		log.Info(ctx, "startup", "WARNING", "unable to install llama.cpp, running in degraded mode", "ERROR", err)
+		downloadCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+		_, err := libs.Download(downloadCtx, log.Info)
+		cancel()
+		if err != nil {
+			log.Info(ctx, "startup", "WARNING", "unable to install llama.cpp, running in degraded mode", "ERROR", err)
+		}
+	} else {
+		log.Info(ctx, "startup", "status", "automatic llama.cpp library download disabled", "libPath", libs.LibsPath())
 	}
 
 	// Capability fallback applies only to automatic processor selection. An
@@ -289,7 +291,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	log.Info(ctx, "startup", "status", "bucky libs ready", "libPath", buckyLibs.LibsPath(), "arch", buckyLibs.Arch(), "os", buckyLibs.OS(), "processor", buckyLibs.Processor())
 
-	ctx, cancel = context.WithTimeout(context.Background(), 3*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
 	if _, err := buckyLibs.Download(ctx, log.Info); err != nil {
