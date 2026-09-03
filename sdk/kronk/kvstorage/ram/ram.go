@@ -65,9 +65,9 @@ func (s *Store) Cap() int {
 }
 
 // Bytes returns the valid byte slice for read access (e.g., to pass to
-// llama.StateSeqSetData when restoring KV state). The returned slice
-// aliases the internal buffer; callers must not retain it past the next
-// Prepare/Commit/Reset call.
+// llama.StateSeqSetData when restoring KV state). The returned read-only slice
+// aliases the internal buffer; callers must not modify it or retain it past the
+// next Prepare, Commit, Reset, or Close call.
 func (s *Store) Bytes(ctx context.Context) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -76,10 +76,11 @@ func (s *Store) Bytes(ctx context.Context) ([]byte, error) {
 	return s.buf[:s.length], nil
 }
 
-// Prepare returns a slice of length size, ready to be filled (e.g., by
-// llama.StateSeqGetData). The backing array is reused if its capacity
-// is already sufficient, otherwise a new array is allocated and the old
-// one is released. The previous contents are not preserved across a
+// Prepare returns a borrowed slice of length size, ready to be filled (e.g.,
+// by llama.StateSeqGetData). The caller may write it only until the next
+// Prepare, Commit, Reset, or Close call. The backing array is reused if its
+// capacity is already sufficient, otherwise a new array is allocated and the
+// old one is released. The previous contents are not preserved across a
 // resize.
 //
 // On grow, the new capacity is max(size, oldCap + oldCap/4) — i.e. at

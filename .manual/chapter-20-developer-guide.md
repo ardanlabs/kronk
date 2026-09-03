@@ -494,10 +494,26 @@ between batch slots. A slot is short-lived compute capacity; binding a session t
 slot would reduce concurrency and make slot reuse unsafe.
 
 The `SessionStore` contract externalizes each session's native KV snapshot. RAM and
-disk implementations differ in storage and I/O, but the model layer owns when a
+custom implementations differ in storage and I/O, but the model layer owns when a
 snapshot is read, prepared, committed, reset, and closed. Session metadata—cached
 tokens, render-sensitive identity/version, and snapshot—must describe the same prefix.
 Do not update one independently and call the session valid.
+
+Store slices are borrowed rather than transferred. Treat `Bytes` results as read-only,
+and do not retain a `Bytes` or `Prepare` result across the next prepare, commit, reset,
+or close operation. `Prepare` invalidates the committed length until `Commit` succeeds;
+a partial or failed snapshot must never become readable. `Len` and `Cap` are metadata
+operations and must not perform storage I/O. Kronk serializes one store through the
+session reservation, but stores returned by the same factory may run concurrently. A
+factory may share a connection pool, quota, or eviction manager only when that shared
+resource is concurrency-safe.
+
+Pass operation contexts into cancellable backend calls and preserve storage failures
+with wrapped errors. Durable implementations must publish complete replacements
+atomically and validate length, format version, and integrity before returning bytes.
+They also need expiration or out-of-band garbage collection because process failure can
+bypass `Close`. The per-session byte-store contract does not itself provide stable
+conversation identity or restart recovery.
 
 The session's `reserved` state serializes mutation and hides the session from competing
 selection until metadata and snapshot bytes agree. The reservation begins in prompt
@@ -551,7 +567,8 @@ staged store and swaps the store plus matching plan/count metadata only after su
 so failure leaves the previous media snapshot published. Do not generalize that staged
 replacement guarantee to every IMC path. A `SessionStore` implementation must honor
 the interface's read/prepare/commit/reset lifetime rules and clean up temporary
-resources; callers must not assume bytes remain stable across the next mutation.
+resources; callers must not assume bytes remain stable across the next mutation or
+modify bytes returned for reading.
 
 Restored KV and sampler history are separate correctness concerns. Prime sampler
 penalties and DRY with the complete logical prompt after restore. An own-KV MTP session

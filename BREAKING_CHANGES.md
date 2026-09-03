@@ -81,6 +81,14 @@ exactly matches the requested size. It starts an uncommitted replacement, so
 outside the prepared slice, and a commit error after `Prepare` must leave `Len`
 at zero.
 
+Slices returned by `Bytes` and `Prepare` are borrowed. Callers must treat
+`Bytes` as read-only and must not retain either result across the next
+`Prepare`, `Commit`, `Reset`, or `Close`. Implementations may reuse their
+storage. Kronk serializes access to each individual store, but separate stores
+returned by one factory may be used concurrently; shared factory resources must
+therefore be concurrency-safe. `Len` and `Cap` must remain cheap metadata
+operations without storage I/O.
+
 Kronk now handles working-session factory, read, reset, prepare, and commit
 errors instead of assuming those operations succeed. Target restore and reset
 failures fail the affected request; snapshot write failures leave the session

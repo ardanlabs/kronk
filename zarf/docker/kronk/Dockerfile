@@ -745,8 +745,24 @@ ARG LLAMA_PROCESSORS
 ARG TARGETARCH
 # ROCm version installed when LLAMA_PROCESSORS contains `rocm`. Pin to a
 # specific patch release for reproducibility; bump in lockstep with the
-# llama.cpp ROCm bundle if upstream advances its build target.
-ARG ROCM_VERSION="6.4.3"
+# llama.cpp ROCm bundle when upstream advances its build target.
+#
+# MUST satisfy the bundle's NEEDED sonames. llama.cpp ships its Linux ROCm
+# build as llama-<tag>-bin-ubuntu-rocm-7.14-x64.tar.gz (see yzma
+# pkg/download/resolver.go) and vendors no ROCm runtime of its own, so
+# libggml-hip.so resolves against whatever this installs. At b10760 it
+# needs:
+#
+#   libamdhip64.so.7   librocblas.so.5   libhipblas.so.3
+#
+# The 6.4.x line provides libamdhip64.so.6 and cannot load it. Discover the
+# current requirements with:
+#   ldd libggml-hip.so   (or: strings libggml-hip.so | grep -oE 'lib.*\.so[0-9.]*')
+#
+# The check after the bundle COPY below asserts this at build time. Without
+# it a mismatch installs cleanly and fails only when a user loads a model
+# on a real GPU — which no CI job has.
+ARG ROCM_VERSION="7.2.4"
 
 # CUDA runtime major-minor installed when LLAMA_PROCESSORS contains `cuda`.
 # The llama.cpp cuda bundle is built as `ubuntu-cuda-13-x64` (see
@@ -923,6 +939,27 @@ COPY --from=builder /out/kronk /usr/local/bin/kronk
 
 # Pre-baked llama.cpp bundles for the target arch.
 COPY --from=libs-fetcher /kronk/libraries /kronk/libraries
+
+# Assert the installed ROCm runtime actually satisfies the bundle. A
+# ROCM_VERSION that predates the bundle's sonames apt-installs cleanly and
+# then fails only at model load on a real GPU, which no CI job has — so the
+# image can ship broken. Turn that into a build failure.
+RUN set -eux; \
+    if [ "${TARGETARCH}" = "amd64" ] && echo " ${LLAMA_PROCESSORS} " | grep -q ' rocm '; then \
+        hip="$(find /kronk/libraries -name libggml-hip.so -print -quit)"; \
+        if [ -z "${hip}" ]; then \
+            echo "rocm requested but no libggml-hip.so in the bundle" >&2; \
+            exit 1; \
+        fi; \
+        missing="$(ldd "${hip}" | awk '/not found/ {print $1}')"; \
+        if [ -n "${missing}" ]; then \
+            echo "ROCm runtime does not satisfy ${hip}:" >&2; \
+            echo "${missing}" >&2; \
+            echo "bump ROCM_VERSION to match the llama.cpp rocm bundle" >&2; \
+            exit 1; \
+        fi; \
+        echo "ROCm linkage OK: $(ldd "${hip}" | grep -cE 'amdhip|rocblas|hipblas') AMD libs resolved"; \
+    fi
 
 # Pre-baked whisper.cpp (bucky) bundles for the target arch. The server
 # auto-selects the bundle matching the detected processor via
