@@ -232,6 +232,10 @@ export default function DocsCLIServer() {
                   <td>Version of the llama library</td>
                 </tr>
                 <tr>
+                  <td><code>--lib-download-enabled</code></td>
+                  <td>Download or update the llama library at startup (default: <code>true</code>)</td>
+                </tr>
+                <tr>
                   <td><code>--arch &lt;string&gt;</code></td>
                   <td>Architecture override (<code>amd64</code>, <code>arm64</code>)</td>
                 </tr>
@@ -343,6 +347,10 @@ export default function DocsCLIServer() {
                 <tr>
                   <td><code>KRONK_LIB_PATH</code> / <code>KRONK_LIB_VERSION</code></td>
                   <td>llama library path and version</td>
+                </tr>
+                <tr>
+                  <td><code>KRONK_LIB_DOWNLOAD_ENABLED</code></td>
+                  <td>Enable or disable automatic llama library downloads at startup</td>
                 </tr>
                 <tr>
                   <td><code>KRONK_ARCH</code> / <code>KRONK_OS</code> / <code>KRONK_PROCESSOR</code></td>

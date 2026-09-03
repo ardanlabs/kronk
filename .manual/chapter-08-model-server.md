@@ -120,6 +120,7 @@ Common settings can be supplied as flags or environment variables:
 | `--auth-enabled` | `KRONK_AUTH_LOCAL_ENABLED` | `false` | Protect inference and administration with local authentication |
 | `--admin-auth-enabled` | `KRONK_AUTH_ADMIN_ENABLED` | `false` | Protect administration without requiring inference authentication |
 | `--download-enabled` | `KRONK_DOWNLOAD_ENABLED` | `false` | Allow server-side model downloads |
+| `--lib-download-enabled` | `KRONK_LIB_DOWNLOAD_ENABLED` | `true` | Download or update the llama.cpp library during server startup |
 | `--allow-upgrade` | `KRONK_ALLOW_UPGRADE` | `false` | Opt in to automatic native-library upgrades |
 | `--llama-log` | `KRONK_LLAMA_LOG` | `1` | Enable or disable llama.cpp logging |
 
@@ -162,6 +163,10 @@ the server loads it but does not upgrade or replace it. `--base-path` moves the
 managed library root along with other Kronk data, while `--lib-path` selects the
 llama.cpp location specifically. Restart the server after changing any native
 library selection setting.
+
+Set `--lib-download-enabled=false` or `KRONK_LIB_DOWNLOAD_ENABLED=false` to
+skip the automatic llama.cpp download at startup. Kronk still loads the library
+selected by `--lib-path` or `KRONK_LIB_PATH`.
 
 Bucky performs separate whisper.cpp runtime selection. Its managed bundles
 live below `<base>/bucky-libraries`, and `KRONK_BUCKY_LIB_PATH` authoritatively
@@ -281,6 +286,7 @@ kms:
   lib-path: ""
   bucky-lib-path: ""
   lib-version: ""
+  lib-download-enabled: true
   arch: ""
   os: ""
   processor: ""

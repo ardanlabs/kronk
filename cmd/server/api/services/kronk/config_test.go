@@ -16,6 +16,12 @@ func TestNewConfigMemoryBudget(t *testing.T) {
 	}
 }
 
+func TestNewConfigLibraryDownloadEnabled(t *testing.T) {
+	if !newConfig().LibDownloadEnabled {
+		t.Error("LibDownloadEnabled: got false, want true")
+	}
+}
+
 func TestLoadConfig(t *testing.T) {
 	unsetEnv(t, "KRONK_HF_TOKEN")
 	unsetEnv(t, "KRONK_LLAMA_LOG")
@@ -45,6 +51,7 @@ kms:
 	t.Setenv("KRONK_POOL_MODEL_CONFIG_FILE", path)
 	t.Setenv("KRONK_WEB_API_HOST", "env.example:9001")
 	t.Setenv("KRONK_POOL_BUDGET_PERCENT", "75")
+	t.Setenv("KRONK_LIB_DOWNLOAD_ENABLED", "false")
 
 	cfg, err := loadConfig(false)
 	if err != nil {
@@ -68,6 +75,9 @@ kms:
 	}
 	if cfg.BuckyLibPath != "/yaml/bucky" {
 		t.Errorf("BuckyLibPath: got %q, want %q", cfg.BuckyLibPath, "/yaml/bucky")
+	}
+	if cfg.LibDownloadEnabled {
+		t.Error("LibDownloadEnabled: got true, want false")
 	}
 	if token := os.Getenv("KRONK_HF_TOKEN"); token != "yaml-token" {
 		t.Errorf("KRONK_HF_TOKEN: got %q, want %q", token, "yaml-token")

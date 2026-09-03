@@ -66,6 +66,7 @@ func init() {
 	Cmd.Flags().String("lib-path", "", "Path to llama library")
 	Cmd.Flags().String("bucky-lib-path", "", "Path to whisper library")
 	Cmd.Flags().String("lib-version", "", "Version of llama library")
+	Cmd.Flags().Bool("lib-download-enabled", true, "Enable automatic llama library downloads at startup")
 	Cmd.Flags().String("arch", "", "Architecture override")
 	Cmd.Flags().String("os", "", "OS override")
 	Cmd.Flags().String("processor", "", "Processor type (e.g., vulkan, metal, cuda, rocm)")

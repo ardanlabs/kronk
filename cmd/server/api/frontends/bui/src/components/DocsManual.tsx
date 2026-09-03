@@ -1827,6 +1827,12 @@ kronk libs --local`}</code></pre>
                 <td>Allow server-side model downloads</td>
               </tr>
               <tr>
+                <td><code>--lib-download-enabled</code></td>
+                <td><code>KRONK_LIB_DOWNLOAD_ENABLED</code></td>
+                <td><code>true</code></td>
+                <td>Download or update the llama.cpp library during server startup</td>
+              </tr>
+              <tr>
                 <td><code>--allow-upgrade</code></td>
                 <td><code>KRONK_ALLOW_UPGRADE</code></td>
                 <td><code>false</code></td>
@@ -1848,6 +1854,7 @@ kronk libs --local`}</code></pre>
           <p>With no processor or library-path override, server startup detects a preferred llama.cpp backend and verifies it before native libraries are loaded. CUDA 13 requires compute capability 7.5 or newer on every visible NVIDIA GPU. Older or hidden CUDA devices cause host detection to prefer an available ROCm or Vulkan runtime and then CPU. If compatibility cannot be determined conclusively, Kronk retains the preferred backend.</p>
           <p>Kronk also probes the installed preferred accelerator bundle. It changes to a different installed bundle only when the preferred bundle positively reports no accelerator and a same-version alternative positively reports a device. This probe never installs another bundle. The startup log records the preferred and selected processors and the reason for the decision.</p>
           <p><code>--processor</code> and <code>--lib-path</code>, or their environment equivalents, are strict operator choices and disable automatic fallback. A custom non-empty library directory without <code>version.json</code> is treated as a read-only user-managed build; the server loads it but does not upgrade or replace it. <code>--base-path</code> moves the managed library root along with other Kronk data, while <code>--lib-path</code> selects the llama.cpp location specifically. Restart the server after changing any native library selection setting.</p>
+          <p>Set <code>--lib-download-enabled=false</code> or <code>KRONK_LIB_DOWNLOAD_ENABLED=false</code> to skip the automatic llama.cpp download at startup. Kronk still loads the library selected by <code>--lib-path</code> or <code>KRONK_LIB_PATH</code>.</p>
           <p>Bucky performs separate whisper.cpp runtime selection. Its managed bundles live below <code>&lt;base&gt;/bucky-libraries</code>, and <code>KRONK_BUCKY_LIB_PATH</code> authoritatively selects a different bundle or user-managed build. It does not use <code>--lib-path</code>/<code>KRONK_LIB_PATH</code>. See <a href="https://www.kronkai.com/manual#182-install-whisper-libraries">Chapter 18 §18.2</a> for Bucky's CUDA, Vulkan, and CPU fallback rules.</p>
           <h2 id="84-model-pool-and-resource-budgets">8.4 Model Pool and Resource Budgets</h2>
           <p>Kronk keeps loaded models in memory to avoid paying model-load latency on every request. Three settings govern retention:</p>
@@ -1913,6 +1920,7 @@ kms:
   lib-path: ""
   bucky-lib-path: ""
   lib-version: ""
+  lib-download-enabled: true
   arch: ""
   os: ""
   processor: ""
