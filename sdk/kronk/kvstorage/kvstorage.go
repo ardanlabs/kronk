@@ -2,7 +2,10 @@
 // session state.
 package kvstorage
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
 // Set of known session-storage kinds.
 var kinds = make(map[string]Kind)
@@ -87,25 +90,32 @@ func MustParse(value string) Kind {
 // Implementations are not required to be safe for concurrent use. Kronk
 // serializes access to each store and owns it until Close.
 type Store interface {
-	// Len returns the number of valid bytes in the committed snapshot.
+	// Len returns the number of valid bytes in the committed snapshot. It must
+	// be a cheap metadata operation and must not perform storage I/O.
 	Len() int
 
-	// Cap returns the current backing capacity.
+	// Cap returns the current staging-buffer capacity. It must be a cheap
+	// metadata operation and must not perform storage I/O.
 	Cap() int
 
 	// Bytes returns the committed snapshot for read access. The returned slice
 	// is valid until the next Prepare, Commit, Reset, or Close call.
-	Bytes() []byte
+	Bytes(ctx context.Context) ([]byte, error)
 
-	// Prepare returns a writable slice of length size. The returned slice is
-	// valid until the next Prepare, Commit, Reset, or Close call.
-	Prepare(size int) []byte
+	// Prepare starts replacing the committed snapshot and returns a writable
+	// slice of exactly size bytes. Until Commit succeeds, Len must return zero.
+	// The returned slice is valid until the next Prepare, Commit, Reset, or
+	// Close call.
+	Prepare(ctx context.Context, size int) ([]byte, error)
 
-	// Commit publishes the first n bytes written to the prepared slice.
-	Commit(n int)
+	// Commit publishes the first n bytes written to the prepared slice. It must
+	// return an error when n is outside the prepared slice. After Prepare, a
+	// Commit error must leave Len at zero so callers cannot restore a partial
+	// snapshot.
+	Commit(ctx context.Context, n int) error
 
 	// Reset clears the committed snapshot.
-	Reset()
+	Reset(ctx context.Context) error
 
 	// Close releases the store's resources. The store must not be used again.
 	Close() error
@@ -113,4 +123,4 @@ type Store interface {
 
 // Factory constructs an independent Store. Kronk invokes the factory for each
 // target, draft, or checkpoint store it needs and owns each returned store.
-type Factory func() (Store, error)
+type Factory func(ctx context.Context) (Store, error)

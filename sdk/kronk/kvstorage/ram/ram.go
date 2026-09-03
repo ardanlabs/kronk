@@ -14,7 +14,13 @@
 // SDK users can provide alternative backends behind the same contract.
 package ram
 
-import "github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
+)
 
 // Store is the in-process RAM session store. It is NOT safe for
 // concurrent use; the IMC scheduler serializes access via the
@@ -23,14 +29,20 @@ import "github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
 //
 // The zero value is a usable, empty Store.
 type Store struct {
-	buf []byte
+	buf      []byte
+	length   int
+	prepared int
 }
 
 var _ kvstorage.Store = (*Store)(nil)
 
 // NewFactory constructs a factory for independent RAM stores.
 func NewFactory() kvstorage.Factory {
-	return func() (kvstorage.Store, error) {
+	return func(ctx context.Context) (kvstorage.Store, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
 		return New(), nil
 	}
 }
@@ -43,7 +55,7 @@ func New() *Store {
 // Len returns the number of valid bytes currently held in the store.
 // This is the size of the most recently Commit'ed snapshot.
 func (s *Store) Len() int {
-	return len(s.buf)
+	return s.length
 }
 
 // Cap returns the current backing-array capacity. Useful for
@@ -56,8 +68,12 @@ func (s *Store) Cap() int {
 // llama.StateSeqSetData when restoring KV state). The returned slice
 // aliases the internal buffer; callers must not retain it past the next
 // Prepare/Commit/Reset call.
-func (s *Store) Bytes() []byte {
-	return s.buf
+func (s *Store) Bytes(ctx context.Context) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	return s.buf[:s.length], nil
 }
 
 // Prepare returns a slice of length size, ready to be filled (e.g., by
@@ -82,12 +98,17 @@ func (s *Store) Bytes() []byte {
 // build), the requested size is honored directly with no extra
 // headroom. This mirrors Go's "newLen > 2*oldCap" shortcut.
 //
-// A negative size is treated as 0.
-func (s *Store) Prepare(size int) []byte {
+// A negative size returns an error.
+func (s *Store) Prepare(ctx context.Context, size int) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if size < 0 {
-		size = 0
+		return nil, errors.New("ram: prepare size must not be negative")
 	}
 
+	s.length = 0
+	s.prepared = size
 	oldCap := cap(s.buf)
 	if oldCap < size {
 		// Add 25% headroom over the previous capacity, but never less
@@ -98,31 +119,42 @@ func (s *Store) Prepare(size int) []byte {
 		s.buf = s.buf[:size]
 	}
 
-	return s.buf
+	return s.buf, nil
 }
 
 // Commit truncates the store to the actual length n after a fill
 // operation (e.g., when llama.StateSeqGetData returns fewer bytes than
 // the prepared size, or zero on failure). The backing array is retained.
 //
-// n is clamped to [0, cap(buf)].
-func (s *Store) Commit(n int) {
-	switch {
-	case n < 0:
-		n = 0
-	case n > cap(s.buf):
-		n = cap(s.buf)
+// n must be within the slice returned by Prepare.
+func (s *Store) Commit(ctx context.Context, n int) error {
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-	s.buf = s.buf[:n]
+	s.length = 0
+	if n < 0 || n > s.prepared {
+		return fmt.Errorf("ram: commit length %d outside prepared length %d", n, s.prepared)
+	}
+
+	s.length = n
+	s.prepared = 0
+	return nil
 }
 
 // Reset zeroes the entire backing array and clears the valid contents
 // (Len becomes 0), while retaining capacity for the next Prepare. Called
 // when a session is rebound to a different conversation so no bytes from
 // the prior conversation survive reuse.
-func (s *Store) Reset() {
+func (s *Store) Reset(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	clear(s.buf[:cap(s.buf)])
 	s.buf = s.buf[:0]
+	s.length = 0
+	s.prepared = 0
+	return nil
 }
 
 // Close releases the backing array. Always returns nil; satisfies the
@@ -131,5 +163,7 @@ func (s *Store) Reset() {
 // the backing array once no caller retains a reference.
 func (s *Store) Close() error {
 	s.buf = nil
+	s.length = 0
+	s.prepared = 0
 	return nil
 }

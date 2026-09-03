@@ -1,18 +1,62 @@
 package ram
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"unsafe"
 )
 
+type checkedStore struct {
+	*Store
+	t *testing.T
+}
+
+func newCheckedStore(t *testing.T) *checkedStore {
+	t.Helper()
+	return &checkedStore{Store: &Store{}, t: t}
+}
+
+func (cs *checkedStore) Bytes() []byte {
+	cs.t.Helper()
+	buf, err := cs.Store.Bytes(context.Background())
+	if err != nil {
+		cs.t.Fatalf("Bytes() error = %v, want nil", err)
+	}
+	return buf
+}
+
+func (cs *checkedStore) Prepare(size int) []byte {
+	cs.t.Helper()
+	buf, err := cs.Store.Prepare(context.Background(), size)
+	if err != nil {
+		cs.t.Fatalf("Prepare(%d) error = %v, want nil", size, err)
+	}
+	return buf
+}
+
+func (cs *checkedStore) Commit(n int) {
+	cs.t.Helper()
+	if err := cs.Store.Commit(context.Background(), n); err != nil {
+		cs.t.Fatalf("Commit(%d) error = %v, want nil", n, err)
+	}
+}
+
+func (cs *checkedStore) Reset() {
+	cs.t.Helper()
+	if err := cs.Store.Reset(context.Background()); err != nil {
+		cs.t.Fatalf("Reset() error = %v, want nil", err)
+	}
+}
+
 func TestNewFactory(t *testing.T) {
 	factory := NewFactory()
 
-	store1, err := factory()
+	store1, err := factory(context.Background())
 	if err != nil {
 		t.Fatalf("factory() error = %v, want nil", err)
 	}
-	store2, err := factory()
+	store2, err := factory(context.Background())
 	if err != nil {
 		t.Fatalf("factory() second error = %v, want nil", err)
 	}
@@ -24,7 +68,7 @@ func TestNewFactory(t *testing.T) {
 // TestStore_ZeroValue verifies that a zero-value Store is usable
 // without initialization.
 func TestStore_ZeroValue(t *testing.T) {
-	var k Store
+	k := newCheckedStore(t)
 
 	if got := k.Len(); got != 0 {
 		t.Errorf("zero value Len() = %d, want 0", got)
@@ -40,14 +84,14 @@ func TestStore_ZeroValue(t *testing.T) {
 // TestStore_PrepareGrows verifies that Prepare allocates when the
 // requested size exceeds the current capacity.
 func TestStore_PrepareGrows(t *testing.T) {
-	var k Store
+	k := newCheckedStore(t)
 
 	buf := k.Prepare(1024)
 	if len(buf) != 1024 {
 		t.Errorf("Prepare(1024) returned slice of len %d, want 1024", len(buf))
 	}
-	if k.Len() != 1024 {
-		t.Errorf("after Prepare(1024) Len() = %d, want 1024", k.Len())
+	if k.Len() != 0 {
+		t.Errorf("after Prepare(1024) Len() = %d, want 0 until Commit", k.Len())
 	}
 	if k.Cap() < 1024 {
 		t.Errorf("after Prepare(1024) Cap() = %d, want ≥ 1024", k.Cap())
@@ -58,7 +102,7 @@ func TestStore_PrepareGrows(t *testing.T) {
 // the requested size fits in the existing capacity, no new allocation
 // happens and the same backing array is reused.
 func TestStore_PrepareReusesBackingArray(t *testing.T) {
-	var k Store
+	k := newCheckedStore(t)
 
 	first := k.Prepare(2048)
 	firstAddr := unsafe.SliceData(first)
@@ -74,13 +118,13 @@ func TestStore_PrepareReusesBackingArray(t *testing.T) {
 	if k.Cap() != 2048 {
 		t.Errorf("Cap() shrank to %d after Prepare(1024); want 2048 retained", k.Cap())
 	}
-	if k.Len() != 1024 {
-		t.Errorf("Len() = %d after Prepare(1024), want 1024", k.Len())
+	if k.Len() != 0 {
+		t.Errorf("Len() = %d after Prepare(1024), want 0 until Commit", k.Len())
 	}
 }
 
 func TestStore_ResetZeroesRetainedCapacity(t *testing.T) {
-	var k Store
+	k := newCheckedStore(t)
 	buf := k.Prepare(16)
 	for i := range buf {
 		buf[i] = 0xA5
@@ -107,7 +151,7 @@ func TestStore_ResetZeroesRetainedCapacity(t *testing.T) {
 // a fresh backing array when the requested size exceeds current capacity,
 // and the new capacity is at least the requested size.
 func TestStore_PrepareGrowsWhenExceeding(t *testing.T) {
-	var k Store
+	k := newCheckedStore(t)
 
 	first := k.Prepare(1024)
 	firstAddr := unsafe.SliceData(first)
@@ -122,20 +166,23 @@ func TestStore_PrepareGrowsWhenExceeding(t *testing.T) {
 	if k.Cap() < 4096 {
 		t.Errorf("after Prepare(4096) Cap() = %d, want ≥ 4096", k.Cap())
 	}
-	if k.Len() != 4096 {
-		t.Errorf("after Prepare(4096) Len() = %d, want 4096", k.Len())
+	if k.Len() != 0 {
+		t.Errorf("after Prepare(4096) Len() = %d, want 0 until Commit", k.Len())
 	}
 }
 
-// TestStore_PrepareNegativeSize verifies that a negative size is
-// clamped to zero rather than panicking.
+// TestStore_PrepareNegativeSize verifies that a negative size returns an
+// error rather than panicking.
 func TestStore_PrepareNegativeSize(t *testing.T) {
-	var k Store
+	k := newCheckedStore(t)
 	_ = k.Prepare(1024)
 
-	buf := k.Prepare(-1)
-	if len(buf) != 0 {
-		t.Errorf("Prepare(-1) returned slice of len %d, want 0", len(buf))
+	buf, err := k.Store.Prepare(context.Background(), -1)
+	if err == nil {
+		t.Fatal("Prepare(-1) error = nil, want non-nil")
+	}
+	if buf != nil {
+		t.Errorf("Prepare(-1) returned %d bytes, want nil", len(buf))
 	}
 	if k.Cap() != 1024 {
 		t.Errorf("Cap() = %d after Prepare(-1); want 1024 retained", k.Cap())
@@ -145,7 +192,7 @@ func TestStore_PrepareNegativeSize(t *testing.T) {
 // TestStore_Commit verifies that Commit truncates Len without
 // affecting Cap.
 func TestStore_Commit(t *testing.T) {
-	var k Store
+	k := newCheckedStore(t)
 	_ = k.Prepare(1024)
 
 	k.Commit(512)
@@ -158,19 +205,43 @@ func TestStore_Commit(t *testing.T) {
 	}
 }
 
-// TestStore_CommitClamps verifies that Commit clamps to [0, cap].
-func TestStore_CommitClamps(t *testing.T) {
-	var k Store
+// TestStore_CommitRejectsInvalidLength verifies that Commit rejects lengths
+// outside the prepared slice and leaves the snapshot uncommitted.
+func TestStore_CommitRejectsInvalidLength(t *testing.T) {
+	k := newCheckedStore(t)
 	_ = k.Prepare(1024)
 
-	k.Commit(-50)
+	if err := k.Store.Commit(context.Background(), -50); err == nil {
+		t.Fatal("Commit(-50) error = nil, want non-nil")
+	}
 	if k.Len() != 0 {
 		t.Errorf("Commit(-50) → Len() = %d, want 0", k.Len())
 	}
 
-	k.Commit(99999)
-	if k.Len() != 1024 {
-		t.Errorf("Commit(99999) → Len() = %d, want 1024 (clamped to cap)", k.Len())
+	if err := k.Store.Commit(context.Background(), 99999); err == nil {
+		t.Fatal("Commit(99999) error = nil, want non-nil")
+	}
+	if k.Len() != 0 {
+		t.Errorf("Commit(99999) → Len() = %d, want 0", k.Len())
+	}
+}
+
+func TestStore_CanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	store := New()
+	if _, err := store.Prepare(ctx, 1); !errors.Is(err, context.Canceled) {
+		t.Errorf("Prepare() error = %v, want context.Canceled", err)
+	}
+	if _, err := store.Bytes(ctx); !errors.Is(err, context.Canceled) {
+		t.Errorf("Bytes() error = %v, want context.Canceled", err)
+	}
+	if err := store.Commit(ctx, 0); !errors.Is(err, context.Canceled) {
+		t.Errorf("Commit() error = %v, want context.Canceled", err)
+	}
+	if err := store.Reset(ctx); !errors.Is(err, context.Canceled) {
+		t.Errorf("Reset() error = %v, want context.Canceled", err)
 	}
 }
 
@@ -178,7 +249,7 @@ func TestStore_CommitClamps(t *testing.T) {
 // the same backing array — that's the whole point of the never-shrink
 // design.
 func TestStore_Reset(t *testing.T) {
-	var k Store
+	k := newCheckedStore(t)
 	first := k.Prepare(2048)
 	firstAddr := unsafe.SliceData(first)
 
@@ -204,12 +275,13 @@ func TestStore_Reset(t *testing.T) {
 // observable via Bytes again, and via Len which reflects the slice
 // length).
 func TestStore_BytesAliasesBuffer(t *testing.T) {
-	var k Store
+	k := newCheckedStore(t)
 	buf := k.Prepare(4)
 	buf[0] = 0xAA
 	buf[1] = 0xBB
 	buf[2] = 0xCC
 	buf[3] = 0xDD
+	k.Commit(4)
 
 	got := k.Bytes()
 	want := []byte{0xAA, 0xBB, 0xCC, 0xDD}
@@ -228,7 +300,7 @@ func TestStore_BytesAliasesBuffer(t *testing.T) {
 // is the central optimization that eliminates per-turn reallocations
 // when conversations grow monotonically by small deltas.
 func TestStore_PrepareAddsHeadroomOnGrow(t *testing.T) {
-	var k Store
+	k := newCheckedStore(t)
 
 	// Establish an initial capacity.
 	_ = k.Prepare(1000)
@@ -244,8 +316,8 @@ func TestStore_PrepareAddsHeadroomOnGrow(t *testing.T) {
 	if k.Cap() < wantMin {
 		t.Errorf("after small grow Cap() = %d, want ≥ %d (25%% headroom)", k.Cap(), wantMin)
 	}
-	if k.Len() != 1100 {
-		t.Errorf("after Prepare(1100) Len() = %d, want 1100", k.Len())
+	if k.Len() != 0 {
+		t.Errorf("after Prepare(1100) Len() = %d, want 0 until Commit", k.Len())
 	}
 }
 
@@ -254,7 +326,7 @@ func TestStore_PrepareAddsHeadroomOnGrow(t *testing.T) {
 // the practical payoff: after one headroom grow, many turns of small
 // deltas hit the reuse path with zero allocation.
 func TestStore_PrepareReusesAfterHeadroomGrow(t *testing.T) {
-	var k Store
+	k := newCheckedStore(t)
 	_ = k.Prepare(1000)
 
 	// Small grow allocates with 25% headroom (cap becomes ≥ 1250).
@@ -286,7 +358,7 @@ func TestStore_PrepareReusesAfterHeadroomGrow(t *testing.T) {
 // shortcut and prevents accidental over-allocation when matching into
 // a session whose previous conversation was much smaller.
 func TestStore_PrepareLargeJumpHonorsExactSize(t *testing.T) {
-	var k Store
+	k := newCheckedStore(t)
 	_ = k.Prepare(1000)
 
 	// 5000 is well over 1000 + 250 = 1250, so the size wins and
@@ -303,7 +375,7 @@ func TestStore_PrepareLargeJumpHonorsExactSize(t *testing.T) {
 // first allocation (oldCap == 0) is sized exactly to the request.
 // 0 + 0/4 = 0 < size, so size wins.
 func TestStore_PrepareFirstAllocNoHeadroom(t *testing.T) {
-	var k Store
+	k := newCheckedStore(t)
 
 	_ = k.Prepare(1024)
 
@@ -319,7 +391,7 @@ func TestStore_PrepareFirstAllocNoHeadroom(t *testing.T) {
 // rather than O(N). This is the practical performance guarantee of the
 // 25% headroom strategy.
 func TestStore_PrepareLogarithmicGrowCount(t *testing.T) {
-	var k Store
+	k := newCheckedStore(t)
 
 	// Simulate 200 turns where each turn is 1% larger than the last,
 	// starting at 1 MiB and growing to ~7.3 MiB. Without headroom this
@@ -353,7 +425,7 @@ func TestStore_PrepareLogarithmicGrowCount(t *testing.T) {
 // should happen — assert by comparing the backing array address across
 // many iterations.
 func TestStore_NoChurnUnderRepeatedSnapshots(t *testing.T) {
-	var k Store
+	k := newCheckedStore(t)
 
 	// Establish peak capacity.
 	first := k.Prepare(1 << 20) // 1 MiB

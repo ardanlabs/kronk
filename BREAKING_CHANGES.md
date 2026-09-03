@@ -4,6 +4,7 @@
 
 - [v1.32.4](#v1324)
   - [IMC Session Capacity Changes](#v1324-imc-session-capacity-changes)
+  - [IMC Session Store Interface Changes](#v1324-imc-session-store-interface-changes)
   - [Docker Observability Changes](#v1324-docker-observability-changes)
 - [v1.31.6](#v1316)
   - [Go Toolchain Changes](#v1316-go-toolchain-changes)
@@ -53,6 +54,40 @@ working set is larger than the new default. For example, use
 `imc-session-capacity: 6` to preserve the previous default for two slots and a
 queue depth of two. An explicit value must be at least
 `nseq-max × queue-depth`.
+
+### v1.32.4: IMC Session Store Interface Changes
+
+The `kvstorage.Store` and `kvstorage.Factory` contracts now accept operation
+contexts and return storage failures:
+
+```go
+type Store interface {
+	Len() int
+	Cap() int
+	Bytes(context.Context) ([]byte, error)
+	Prepare(context.Context, int) ([]byte, error)
+	Commit(context.Context, int) error
+	Reset(context.Context) error
+	Close() error
+}
+
+type Factory func(context.Context) (Store, error)
+```
+
+Custom stores supplied through `model.WithSessionStoreFactory` must update
+their method and factory signatures. `Prepare` must return a slice whose length
+exactly matches the requested size. It starts an uncommitted replacement, so
+`Len` must return zero until `Commit` succeeds. `Commit` must reject lengths
+outside the prepared slice, and a commit error after `Prepare` must leave `Len`
+at zero.
+
+Kronk now handles working-session factory, read, reset, prepare, and commit
+errors instead of assuming those operations succeed. Target restore and reset
+failures fail the affected request; snapshot write failures leave the session
+unpublished or invalidated. Draft/MTP storage errors that do not invalidate the
+target snapshot safely disable draft reuse for that request. See
+[`examples/session-store`](examples/session-store) for an updated file-backed
+implementation.
 
 ### v1.32.4: Docker Observability Changes
 

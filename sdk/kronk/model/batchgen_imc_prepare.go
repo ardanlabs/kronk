@@ -129,7 +129,7 @@ func (e *batchEngine) advanceIMCPreparationSlot(s *slot, selectorStart, selected
 	sessionWasCommitted := false
 	if !prep.sessionUpdateDisabled {
 		hasMedia := len(job.imcMediaKVCounts) > 0
-		e.model.imcCommitSession(job.imcSession, job.imcNewMsgsHash, job.imcNewTotalCached,
+		e.model.imcCommitSession(job.ctx, job.imcSession, job.imcNewMsgsHash, job.imcNewTotalCached,
 			job.imcNewCachedMsgCount, job.imcNewCachedTokens, hasMedia, job.imcMediaKVCounts,
 			job.imcExpectedRenderHash)
 		e.model.cacheMu.Lock()

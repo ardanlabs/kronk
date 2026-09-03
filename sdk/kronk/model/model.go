@@ -1,4 +1,6 @@
-// Package model provides the low-level api for working with models.
+// Package model provides the low-level api for working with models. This is an
+// internal package and should not be used directly. If you use this package
+// directly you are on your own. The project reserves the right to break this API.
 package model
 
 import (
@@ -48,8 +50,8 @@ func imcSessionCapacity(nSlots, queueDepth int) int {
 // in any execution slot's KV sequence. A session's seqID is set when
 // startSlot binds it to a slot and reset to imcSeqIDUnbound in
 // finishSlot after the slot's sequence is cleared. The KV-pressure
-// eviction path uses this sentinel to skip MemorySeqRm calls for
-// sessions whose bytes only live in host RAM (via SessionStore).
+// eviction path uses this sentinel to skip MemorySeqRm calls for sessions
+// whose state has been externalized from the live model context.
 const imcSeqIDUnbound llama.SeqId = -1
 
 // imcSession holds the state for a single IMC (Incremental Message Cache)
@@ -62,19 +64,19 @@ const imcSeqIDUnbound llama.SeqId = -1
 // request is in flight, and imcSeqIDUnbound otherwise.
 type imcSession struct {
 	id                  int             // Stable session-pool index. Used by imcReleaseReservation lookup and for log correlation; not related to execution slot identity.
-	seqID               llama.SeqId     // KV sequence id the session is currently bound to, or imcSeqIDUnbound when externalized to RAM only.
+	seqID               llama.SeqId     // KV sequence id the session is currently bound to, or imcSeqIDUnbound when its state is externalized.
 	cachedMsgsHash      string          // Hash of all cached messages
 	cachedTokens        []llama.Token   // Full token sequence in KV cache (immutable; replaced, never mutated)
 	totalTokensCached   int             // Physical KV cells in the cached prefix.
 	nextLogicalPos      int             // Next logical decode position; equals totalTokensCached except for M-RoPE media.
 	cachedMsgCount      int             // Number of messages cached
-	kvState             SessionStore    // Externalized KV cache state, accessed via the pluggable SessionStore interface. The default RAM impl (kvstorage/ram.Store) restores into any slot via StateSeqSetData with lazy-grow / never-shrink semantics: backing storage is retained across snapshots and session rebinds to eliminate per-turn allocation churn.
+	kvState             SessionStore    // Externalized KV cache state, accessed only through the pluggable SessionStore interface.
 	draftKVState        SessionStore    // Externalized MTP draft seq KV state. Nil unless the model has an MTP drafter (allocated post-draft-load in initGenerationRuntime). Captured alongside kvState during cache build so a cache hit on the next request can restore the draft seq in lock-step with the target seq and MTP can keep running for IMC-cache-hit requests.
 	pendingH            []float32       // Copy of the slot's pre-norm hidden row taken at cache-build snapshot time (one row of nEmbd floats). Restored into slot.pendingH on cache hit so the very first MTP draft round can condition correctly on the cached prefix's last position. Empty when the session has no MTP draft snapshot.
 	lastUsed            time.Time       // Last access time (for eviction)
 	reserved            bool            // True when a build/extend is in-flight on this session — protects kvState from concurrent writers.
-	allocatedContext    int             // Physical KV-cell capacity represented by the retained target SessionStore backing allocation.
-	snapshotBytes       int             // Retained target, compatible draft, and MTP hidden-row snapshot capacity in bytes.
+	allocatedContext    int             // Largest physical KV-cell count allocated for this session.
+	snapshotBytes       int             // Reported target, compatible draft, and MTP hidden-row snapshot capacity in bytes.
 	highWaterContext    int             // Largest current context published for this session across reuse and snapshot ownership changes.
 	peakContext         int             // Largest live slot context observed for this session, including generated output.
 	inputMessages       int             // Message count from the latest request completed by this session.
@@ -768,7 +770,7 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int, plan specu
 		m.imcSessions = make([]*imcSession, nSessions)
 		m.imcSystemCaches = make([]*imcSystemCache, nSessions)
 		for i := range nSessions {
-			store, err := newSessionStore(m.cfg)
+			store, err := newSessionStore(ctx, m.cfg)
 			if err != nil {
 				return m.cleanupGenerationRuntime(ctx, fmt.Errorf("init-generation-runtime: session-store: %w", err))
 			}
@@ -843,7 +845,7 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int, plan specu
 	_, externalizesDraftKV := m.draft.(draftKVExternalizer)
 	if m.cfg.IncrementalCache() && externalizesDraftKV {
 		for _, sess := range m.imcSessions {
-			store, err := newSessionStore(m.cfg)
+			store, err := newSessionStore(ctx, m.cfg)
 			if err != nil {
 				return m.cleanupGenerationRuntime(ctx, fmt.Errorf("init-generation-runtime: draft session-store: %w", err))
 			}

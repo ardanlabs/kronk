@@ -2,29 +2,70 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 )
 
+type checkedStore struct {
+	*Store
+	t *testing.T
+}
+
+func (cs *checkedStore) Bytes() []byte {
+	cs.t.Helper()
+	buf, err := cs.Store.Bytes(context.Background())
+	if err != nil {
+		cs.t.Fatalf("Bytes() error = %v, want nil", err)
+	}
+	return buf
+}
+
+func (cs *checkedStore) Prepare(size int) []byte {
+	cs.t.Helper()
+	buf, err := cs.Store.Prepare(context.Background(), size)
+	if err != nil {
+		cs.t.Fatalf("Prepare(%d) error = %v, want nil", size, err)
+	}
+	return buf
+}
+
+func (cs *checkedStore) Commit(n int) {
+	cs.t.Helper()
+	if err := cs.Store.Commit(context.Background(), n); err != nil {
+		cs.t.Fatalf("Commit(%d) error = %v, want nil", n, err)
+	}
+}
+
+func (cs *checkedStore) Reset() {
+	cs.t.Helper()
+	if err := cs.Store.Reset(context.Background()); err != nil {
+		cs.t.Fatalf("Reset() error = %v, want nil", err)
+	}
+}
+
 // newTestStore creates a Store rooted under t.TempDir(); the dir is
 // auto-cleaned by the test framework so leftover files don't matter.
-func newTestStore(t *testing.T) *Store {
+func newTestStore(t *testing.T) *checkedStore {
 	t.Helper()
-	store, err := New(t.TempDir())
+	store, err := New(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatalf("New(tempdir) err = %v, want nil", err)
 	}
 	t.Cleanup(func() {
-		_ = store.Close()
+		if err := store.Close(); err != nil {
+			t.Errorf("Close() error = %v, want nil", err)
+		}
 	})
-	return store
+	return &checkedStore{Store: store, t: t}
 }
 
 // TestNewRequiresDir verifies that an empty dir returns an error
 // rather than silently writing to the process CWD.
 func TestNewRequiresDir(t *testing.T) {
-	store, err := New("")
+	store, err := New(context.Background(), "")
 	if err == nil {
 		t.Fatalf("New(\"\") err = nil, want non-nil")
 	}
@@ -34,12 +75,12 @@ func TestNewRequiresDir(t *testing.T) {
 }
 
 func TestNewFactory(t *testing.T) {
-	factory, err := NewFactory(t.TempDir())
+	factory, err := NewFactory(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatalf("NewFactory() error = %v, want nil", err)
 	}
 
-	store1, err := factory()
+	store1, err := factory(context.Background())
 	if err != nil {
 		t.Fatalf("factory() error = %v, want nil", err)
 	}
@@ -49,7 +90,7 @@ func TestNewFactory(t *testing.T) {
 		}
 	})
 
-	store2, err := factory()
+	store2, err := factory(context.Background())
 	if err != nil {
 		t.Fatalf("factory() second error = %v, want nil", err)
 	}
@@ -81,7 +122,7 @@ func TestNewFactoryRequiresDirectory(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			factory, err := NewFactory(tt.dir)
+			factory, err := NewFactory(context.Background(), tt.dir)
 			if err == nil {
 				t.Fatal("NewFactory() error = nil, want non-nil")
 			}
@@ -92,11 +133,37 @@ func TestNewFactoryRequiresDirectory(t *testing.T) {
 	}
 }
 
+func TestCanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if factory, err := NewFactory(ctx, t.TempDir()); !errors.Is(err, context.Canceled) || factory != nil {
+		t.Errorf("NewFactory() = (%v, %v), want (nil, context.Canceled)", factory, err)
+	}
+	if store, err := New(ctx, t.TempDir()); !errors.Is(err, context.Canceled) || store != nil {
+		t.Errorf("New() = (%v, %v), want (nil, context.Canceled)", store, err)
+	}
+
+	store := newTestStore(t)
+	if _, err := store.Store.Prepare(ctx, 1); !errors.Is(err, context.Canceled) {
+		t.Errorf("Prepare() error = %v, want context.Canceled", err)
+	}
+	if _, err := store.Store.Bytes(ctx); !errors.Is(err, context.Canceled) {
+		t.Errorf("Bytes() error = %v, want context.Canceled", err)
+	}
+	if err := store.Store.Commit(ctx, 0); !errors.Is(err, context.Canceled) {
+		t.Errorf("Commit() error = %v, want context.Canceled", err)
+	}
+	if err := store.Store.Reset(ctx); !errors.Is(err, context.Canceled) {
+		t.Errorf("Reset() error = %v, want context.Canceled", err)
+	}
+}
+
 // TestNewMissingDirErrors verifies that pointing at a nonexistent
 // directory returns an error rather than creating it.
 func TestNewMissingDirErrors(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "does-not-exist")
-	store, err := New(missing)
+	store, err := New(context.Background(), missing)
 	if err == nil {
 		t.Fatalf("New(missing) err = nil, want non-nil")
 	}
@@ -161,11 +228,9 @@ func TestBytesIsCachedAfterFirstRead(t *testing.T) {
 	}
 }
 
-// TestPrepareInvalidatesReadCache verifies that the contract on
-// Bytes — slice valid until next Prepare/Commit/Reset — is honored.
-// After Prepare the read buffer is cleared so the next Bytes re-reads
-// from disk.
-func TestPrepareInvalidatesReadCache(t *testing.T) {
+// TestPrepareUnpublishesSnapshot verifies that Prepare starts an uncommitted
+// replacement and prevents the previous snapshot from being restored.
+func TestPrepareUnpublishesSnapshot(t *testing.T) {
 	s := newTestStore(t)
 
 	buf := s.Prepare(4)
@@ -177,13 +242,12 @@ func TestPrepareInvalidatesReadCache(t *testing.T) {
 		t.Fatalf("first Bytes() = %v, want [1 2 3 4]", first)
 	}
 
-	// Calling Prepare invalidates the previously returned slice.
+	// Calling Prepare invalidates the previously returned slice and unpublishes
+	// the prior snapshot until Commit succeeds.
 	_ = s.Prepare(4)
 
-	// The new Bytes call should re-read from disk.
-	got := s.Bytes()
-	if !bytes.Equal(got, []byte{1, 2, 3, 4}) {
-		t.Errorf("Bytes() after Prepare = %v, want [1 2 3 4] (re-read from disk)", got)
+	if got := s.Bytes(); got != nil {
+		t.Errorf("Bytes() after Prepare = %v, want nil", got)
 	}
 }
 
@@ -216,30 +280,32 @@ func TestCommitTruncatesShorter(t *testing.T) {
 	}
 }
 
-// TestCommitClampsTooLarge verifies that an oversize Commit is
-// clamped to the scratch capacity rather than panicking on the out-of-
-// bounds slice.
-func TestCommitClampsTooLarge(t *testing.T) {
+// TestCommitRejectsTooLarge verifies that an oversize Commit returns an error
+// and leaves the replacement snapshot uncommitted.
+func TestCommitRejectsTooLarge(t *testing.T) {
 	s := newTestStore(t)
 
 	_ = s.Prepare(8)
-	s.Commit(99999)
+	if err := s.Store.Commit(context.Background(), 99999); err == nil {
+		t.Fatal("Commit(99999) error = nil, want non-nil")
+	}
 
-	if got := s.Len(); got != 8 {
-		t.Errorf("Len() after oversize Commit = %d, want 8 (clamped to cap)", got)
+	if got := s.Len(); got != 0 {
+		t.Errorf("Len() after oversize Commit = %d, want 0", got)
 	}
 }
 
-// TestCommitClampsNegative verifies that a negative Commit is
-// treated as zero rather than panicking.
-func TestCommitClampsNegative(t *testing.T) {
+// TestCommitRejectsNegative verifies that a negative Commit returns an error.
+func TestCommitRejectsNegative(t *testing.T) {
 	s := newTestStore(t)
 
 	buf := s.Prepare(8)
 	copy(buf, []byte{1, 2, 3, 4, 5, 6, 7, 8})
 	s.Commit(8)
 
-	s.Commit(-1)
+	if err := s.Store.Commit(context.Background(), -1); err == nil {
+		t.Fatal("Commit(-1) error = nil, want non-nil")
+	}
 
 	if got := s.Len(); got != 0 {
 		t.Errorf("Len() after negative Commit = %d, want 0", got)
@@ -249,16 +315,18 @@ func TestCommitClampsNegative(t *testing.T) {
 	}
 }
 
-// TestPrepareNegativeSize verifies the negative-size path matches the
-// RAM impl — a negative size becomes zero, no panic.
+// TestPrepareNegativeSize verifies the negative-size path matches the RAM
+// implementation by returning an error.
 func TestPrepareNegativeSize(t *testing.T) {
 	s := newTestStore(t)
 
 	_ = s.Prepare(1024)
-	buf := s.Prepare(-1)
-
-	if len(buf) != 0 {
-		t.Errorf("Prepare(-1) returned slice of len %d, want 0", len(buf))
+	buf, err := s.Store.Prepare(context.Background(), -1)
+	if err == nil {
+		t.Fatal("Prepare(-1) error = nil, want non-nil")
+	}
+	if buf != nil {
+		t.Errorf("Prepare(-1) returned %d bytes, want nil", len(buf))
 	}
 	if s.Cap() != 1024 {
 		t.Errorf("Cap() = %d after Prepare(-1); want 1024 retained", s.Cap())
@@ -327,7 +395,9 @@ func TestResetFailsClosedWhenTruncateFails(t *testing.T) {
 	}
 	s.file = readOnly
 
-	s.Reset()
+	if err := s.Store.Reset(context.Background()); err == nil {
+		t.Fatal("Reset() error = nil, want non-nil")
+	}
 
 	if got := s.Len(); got != 0 {
 		t.Errorf("Len() after failed truncate = %d, want 0", got)
@@ -337,12 +407,44 @@ func TestResetFailsClosedWhenTruncateFails(t *testing.T) {
 	}
 }
 
+func TestBytesReturnsReadError(t *testing.T) {
+	s := newTestStore(t)
+	buf := s.Prepare(4)
+	copy(buf, []byte{1, 2, 3, 4})
+	s.Commit(4)
+
+	if err := s.file.Close(); err != nil {
+		t.Fatalf("Close() error = %v, want nil", err)
+	}
+	if _, err := s.Store.Bytes(context.Background()); err == nil {
+		t.Fatal("Bytes() error = nil, want non-nil")
+	}
+	s.file = nil
+}
+
+func TestCommitReturnsWriteError(t *testing.T) {
+	s := newTestStore(t)
+	buf := s.Prepare(4)
+	copy(buf, []byte{1, 2, 3, 4})
+
+	if err := s.file.Close(); err != nil {
+		t.Fatalf("Close() error = %v, want nil", err)
+	}
+	if err := s.Store.Commit(context.Background(), 4); err == nil {
+		t.Fatal("Commit() error = nil, want non-nil")
+	}
+	if s.Len() != 0 {
+		t.Errorf("Len() = %d, want 0 after failed commit", s.Len())
+	}
+	s.file = nil
+}
+
 // TestCloseRemovesFile verifies that Close removes the per-session
 // file from disk so the configured factory directory does not accumulate
 // leaked files during normal model unloads.
 func TestCloseRemovesFile(t *testing.T) {
 	dir := t.TempDir()
-	store, err := New(dir)
+	store, err := New(context.Background(), dir)
 	if err != nil {
 		t.Fatalf("New err = %v, want nil", err)
 	}
@@ -364,7 +466,7 @@ func TestCloseRemovesFile(t *testing.T) {
 // TestCloseIdempotent verifies that calling Close twice does not
 // return an error — the second call is a no-op.
 func TestCloseIdempotent(t *testing.T) {
-	store, err := New(t.TempDir())
+	store, err := New(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatalf("New err = %v, want nil", err)
 	}

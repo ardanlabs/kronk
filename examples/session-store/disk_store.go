@@ -14,14 +14,14 @@
 // Store's Close cleanup never runs. They live under the directory passed to
 // NewFactory and are named "kronk-sess-*.kv"; an external
 // cleanup can reclaim them. The implementation also cannot report I/O errors
-// through the current Bytes, Commit, and Reset method signatures. It is an
-// API example only, not a production storage recommendation.
+// caused by process termination. It is an API example only, not a production
+// storage recommendation.
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
@@ -37,10 +37,11 @@ const filePattern = "kronk-sess-*.kv"
 // access via the per-session pending invariant — at most one in-flight
 // request touches a given session's Store at a time.
 type Store struct {
-	file    *os.File // open handle to the per-session file
-	length  int      // bytes committed to the file (= file size)
-	scratch []byte   // RAM buffer used by Prepare; written to file in Commit
-	read    []byte   // RAM buffer used by Bytes; lazily filled from the file
+	file     *os.File // open handle to the per-session file
+	length   int      // bytes committed to the file (= file size)
+	prepared int      // writable bytes handed out by the latest Prepare
+	scratch  []byte   // RAM buffer used by Prepare; written to file in Commit
+	read     []byte   // RAM buffer used by Bytes; lazily filled from the file
 }
 
 var _ kvstorage.Store = (*Store)(nil)
@@ -48,7 +49,10 @@ var _ kvstorage.Store = (*Store)(nil)
 // NewFactory constructs a factory for independent disk stores rooted in dir.
 // The directory must already exist and be a directory. Each factory call
 // creates a new per-session file under dir.
-func NewFactory(dir string) (kvstorage.Factory, error) {
+func NewFactory(ctx context.Context, dir string) (kvstorage.Factory, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if dir == "" {
 		return nil, errors.New("disk: directory is required")
 	}
@@ -61,8 +65,8 @@ func NewFactory(dir string) (kvstorage.Factory, error) {
 		return nil, fmt.Errorf("disk: path %q is not a directory", dir)
 	}
 
-	return func() (kvstorage.Store, error) {
-		return New(dir)
+	return func(ctx context.Context) (kvstorage.Store, error) {
+		return New(ctx, dir)
 	}, nil
 }
 
@@ -74,7 +78,10 @@ func NewFactory(dir string) (kvstorage.Factory, error) {
 // The returned *Store owns the file; the caller must invoke Close to
 // remove it. On Close failure the file is leaked under dir and must be
 // reclaimed out-of-band.
-func New(dir string) (*Store, error) {
+func New(ctx context.Context, dir string) (*Store, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if dir == "" {
 		return nil, errors.New("disk: directory is required")
 	}
@@ -107,14 +114,17 @@ func (s *Store) Cap() int {
 // store must not be used concurrently while a caller holds the slice.
 //
 // Returns nil when the store is empty.
-func (s *Store) Bytes() []byte {
+func (s *Store) Bytes(ctx context.Context) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if s.length == 0 {
-		return nil
+		return nil, nil
 	}
 
 	// Reuse the read buffer when it already holds the latest snapshot.
 	if len(s.read) == s.length {
-		return s.read
+		return s.read, nil
 	}
 
 	// Grow the read buffer if needed; otherwise reuse the backing
@@ -126,14 +136,17 @@ func (s *Store) Bytes() []byte {
 		s.read = s.read[:s.length]
 	}
 
-	if _, err := s.file.ReadAt(s.read, 0); err != nil && !errors.Is(err, io.EOF) {
-		// Surface the failure as an empty result; callers treat zero
-		// bytes as "nothing to restore" and rebuild from scratch.
+	n, err := s.file.ReadAt(s.read, 0)
+	if err != nil {
 		s.read = s.read[:0]
-		return nil
+		return nil, fmt.Errorf("disk: read session snapshot: %w", err)
+	}
+	if n != s.length {
+		s.read = s.read[:0]
+		return nil, fmt.Errorf("disk: read session snapshot: got %d bytes, want %d", n, s.length)
 	}
 
-	return s.read
+	return s.read, nil
 }
 
 // Prepare returns a writable scratch buffer of length size, ready to
@@ -146,14 +159,19 @@ func (s *Store) Bytes() []byte {
 // 25% headroom policy as the RAM backend, amortizing per-turn churn
 // when conversations grow monotonically by small deltas.
 //
-// A negative size is treated as 0.
-func (s *Store) Prepare(size int) []byte {
+// A negative size returns an error.
+func (s *Store) Prepare(ctx context.Context, size int) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if size < 0 {
-		size = 0
+		return nil, errors.New("disk: prepare size must not be negative")
 	}
 
 	// Drop the read cache; the next Bytes call will re-read from disk.
 	s.read = nil
+	s.length = 0
+	s.prepared = size
 
 	oldCap := cap(s.scratch)
 	if oldCap < size {
@@ -163,66 +181,88 @@ func (s *Store) Prepare(size int) []byte {
 		s.scratch = s.scratch[:size]
 	}
 
-	return s.scratch
+	return s.scratch, nil
 }
 
 // Commit writes the first n bytes of the scratch buffer to the
-// per-session file, truncating the file to exactly n bytes. n is
-// clamped to [0, cap(scratch)]. After Commit the on-disk file
+// per-session file, truncating the file to exactly n bytes. n must be
+// within the slice returned by Prepare. After Commit the on-disk file
 // contains the new snapshot and Len returns n.
 //
-// On write failure the file's contents are undefined; the next Bytes
-// call will return whatever the partial write left behind. Callers
-// detect the inconsistency via Len() == 0 and rebuild from scratch.
-func (s *Store) Commit(n int) {
-	switch {
-	case n < 0:
-		n = 0
-	case n > cap(s.scratch):
-		n = cap(s.scratch)
+// After Prepare, a failure leaves Len at zero so callers cannot restore
+// partial contents.
+func (s *Store) Commit(ctx context.Context, n int) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.length = 0
+
+	if n < 0 || n > s.prepared {
+		return fmt.Errorf("disk: commit length %d outside prepared length %d", n, s.prepared)
 	}
 
 	// Drop the read cache; it's about to be stale.
 	s.read = nil
+	s.prepared = 0
 
 	if n == 0 {
 		// Truncate to zero so Bytes returns nil and Len reports 0.
-		_ = s.file.Truncate(0)
-		s.length = 0
-		return
+		if err := s.file.Truncate(0); err != nil {
+			return fmt.Errorf("disk: truncate session snapshot: %w", err)
+		}
+		return nil
 	}
 
-	if _, err := s.file.WriteAt(s.scratch[:n], 0); err != nil {
-		_ = s.file.Truncate(0)
-		s.length = 0
-		return
+	written, err := s.file.WriteAt(s.scratch[:n], 0)
+	if err != nil {
+		writeErr := fmt.Errorf("disk: write session snapshot: %w", err)
+		if truncateErr := s.file.Truncate(0); truncateErr != nil {
+			return errors.Join(writeErr, fmt.Errorf("disk: truncate failed snapshot: %w", truncateErr))
+		}
+		return writeErr
+	}
+	if written != n {
+		writeErr := fmt.Errorf("disk: write session snapshot: wrote %d bytes, want %d", written, n)
+		if truncateErr := s.file.Truncate(0); truncateErr != nil {
+			return errors.Join(writeErr, fmt.Errorf("disk: truncate failed snapshot: %w", truncateErr))
+		}
+		return writeErr
 	}
 
 	if err := s.file.Truncate(int64(n)); err != nil {
-		s.length = 0
-		return
+		return fmt.Errorf("disk: truncate session snapshot to %d bytes: %w", n, err)
 	}
 
 	s.length = n
+	return nil
 }
 
 // Reset truncates the on-disk file to zero bytes and zeroes all retained
 // scratch and read-buffer capacity. The scratch allocation is retained for
 // reuse on the next Prepare, but no bytes from the prior conversation survive.
-func (s *Store) Reset() {
+func (s *Store) Reset(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	clear(s.scratch[:cap(s.scratch)])
 	clear(s.read[:cap(s.read)])
 	s.read = nil
 	s.length = 0
-	_ = s.file.Truncate(0)
+	s.prepared = 0
+	if err := s.file.Truncate(0); err != nil {
+		return fmt.Errorf("disk: reset session snapshot: %w", err)
+	}
+
+	return nil
 }
 
 // Close releases the file descriptor and removes the per-session
 // file. After Close the store must not be used again.
 //
-// Returns the first non-nil error from close-or-remove; both
-// operations are attempted regardless of intermediate failure so a
-// failed Close still removes the file when possible.
+// Both operations are attempted regardless of intermediate failure so a
+// failed Close still removes the file when possible. Close joins both errors
+// when both operations fail.
 func (s *Store) Close() error {
 	if s.file == nil {
 		return nil
@@ -236,13 +276,14 @@ func (s *Store) Close() error {
 	s.scratch = nil
 	s.read = nil
 	s.length = 0
+	s.prepared = 0
 
-	switch {
-	case closeErr != nil:
-		return fmt.Errorf("disk: close session file %q: %w", name, closeErr)
-	case removeErr != nil:
-		return fmt.Errorf("disk: remove session file %q: %w", name, removeErr)
+	if closeErr != nil {
+		closeErr = fmt.Errorf("disk: close session file %q: %w", name, closeErr)
+	}
+	if removeErr != nil {
+		removeErr = fmt.Errorf("disk: remove session file %q: %w", name, removeErr)
 	}
 
-	return nil
+	return errors.Join(closeErr, removeErr)
 }

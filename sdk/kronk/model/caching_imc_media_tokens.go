@@ -134,8 +134,18 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 			result.err = fmt.Errorf("imc: server busy processing other requests, try again shortly")
 			return result
 		}
-		imcResetSession(selected)
 		selected.reserved = true
+		m.cacheMu.Unlock()
+		resetErr := resetSessionStores(ctx, selected)
+		m.cacheMu.Lock()
+		resetSessionMetadata(selected)
+		selected.reserved = true
+		if resetErr != nil {
+			selected.reserved = false
+			m.cacheMu.Unlock()
+			result.err = fmt.Errorf("imc: reset session store: %w", resetErr)
+			return result
+		}
 		result.imcMediaBuild = true
 		result.imcClearSeq = true
 	}

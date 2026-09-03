@@ -1328,8 +1328,8 @@ Next stable rendering retroactively changes an assistant turn:
           <p>The built-in <code>ram</code> store keeps snapshots in process memory. It is selected by default when <code>session-store-kind</code> is omitted. Each session buffer grows as needed and retains its peak allocation for reuse. Actual memory use depends on the model, cached conversation lengths, KV data types, and number of sessions that have been used. Budget for peak conversation state across the branches you expect to keep warm, not just the <code>nseq-max</code> requests that can run simultaneously.</p>
           <h3 id="custom-sdk-storage">Custom SDK storage</h3>
           <p>Direct SDK users can implement <code>kvstorage.Store</code>, construct a factory that captures the implementation's own dependencies and configuration, and inject that factory into the model:</p>
-          <pre className="code-block"><code className="language-go">{`factory := func() (kvstorage.Store, error) {
-	return myStore.New(dependency)
+          <pre className="code-block"><code className="language-go">{`factory := func(ctx context.Context) (kvstorage.Store, error) {
+	return myStore.New(ctx, dependency)
 }
 
 krn, err := kronk.New(
@@ -1337,8 +1337,8 @@ krn, err := kronk.New(
 	model.WithIncrementalCache(true),
 	model.WithSessionStoreFactory(factory),
 )`}</code></pre>
-          <p>Kronk calls the factory independently for every Current, draft, and System store it needs. Each call must return a new store; Kronk owns that store and calls <code>Close</code> when it is no longer needed. Direct SDK use defaults to RAM when no factory is injected.</p>
-          <p>The <a href="https://github.com/ardanlabs/kronk/tree/main/examples/session-store"><code>examples/session-store</code></a> program provides a complete custom implementation and shows how to inject it. Its implementation writes snapshots to anonymous temporary files and deletes them on <code>Close</code>. It exists only to demonstrate the extension contract: it has no stable session identity, persisted request history, startup recovery, atomic commits, or reliable way to report I/O failures. <strong>Do not use the example as durable session storage.</strong> A durable implementation needs a higher level persistence design in addition to the byte-store contract.</p>
+          <p>Kronk calls the factory independently for every working target, draft, or staged checkpoint store it needs. Each call must return a new store; Kronk owns that store and calls <code>Close</code> when it is no longer needed. Factory calls and store reads, prepares, commits, and resets receive the current operation's <code>context.Context</code> and report failures as errors. System preloads remain in a model-owned RAM pool. Direct SDK use defaults to RAM when no factory is injected.</p>
+          <p>The <a href="https://github.com/ardanlabs/kronk/tree/main/examples/session-store"><code>examples/session-store</code></a> program provides a complete custom implementation and shows how to inject it. Its implementation writes snapshots to anonymous temporary files and deletes them on <code>Close</code>. It exists only to demonstrate the extension contract: it has no stable session identity, persisted request history, startup recovery, or atomic commits. <strong>Do not use the example as durable session storage.</strong> A durable implementation needs a higher-level persistence design in addition to the byte-store contract.</p>
           <p>Some MTP configurations maintain draft-model cached state and saved hidden state in addition to the target model snapshot. Account for this extra storage when sizing memory. See <a href="https://www.kronkai.com/manual#chapter-6-speculative-decoding-and-mtp">Chapter 6</a> for MTP configuration and behavior.</p>
           <h2 id="56-invalidation-and-limitations">5.6 Invalidation and Limitations</h2>
           <p>IMC favors safe reuse over partial recovery. A session is rebuilt when Kronk cannot prove that its complete saved prefix matches the new stable prompt. Common causes include:</p>
