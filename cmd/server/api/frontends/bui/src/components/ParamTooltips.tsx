@@ -112,8 +112,8 @@ export const PARAM_TOOLTIPS = {
   paddingTokenId: 'Padding token ID used to fill sequences to a uniform length in batch processing. Not used during generation.',
 
   // ── Model detail / config tooltips ──────────────────────────────────────────
-  nthreads: 'Number of CPU threads used for inference operations. More threads can speed up CPU-bound work but may cause contention on busy systems. 0 or empty = auto (typically physical core count).',
-  nthreadsBatch: 'Number of CPU threads used during prompt (batch) processing. Can differ from inference threads to optimize throughput during the prefill phase. 0 or empty = same as Threads.',
+  nthreads: 'Number of CPU threads used for single-token generation. More threads can speed up CPU-bound work but may cause contention on busy systems. 0 or empty = the number of logical CPUs available to Kronk.',
+  nthreadsBatch: 'Number of CPU threads used for prompt processing and other multi-token batches. 0 or empty = the number of logical CPUs available to Kronk.',
   cacheTypeK: 'Precision format for the key portion of the KV cache. f16 = full precision (best quality), q8_0 = 8-bit quantized (less VRAM, minimal quality loss), q4_0 = 4-bit (most savings).',
   cacheTypeV: 'Precision format for the value portion of the KV cache. Same options as Cache Type K. Some models benefit from asymmetric K/V quantization.',
   cacheMinTokens: 'Minimum token count required before cache reuse kicks in. Higher values avoid caching very short prompts; lower values maximize reuse but can consume more memory for small requests.',

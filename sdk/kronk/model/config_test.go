@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -348,6 +349,32 @@ func TestAdjustConfigUsesConfiguredPrefillBatchSize(t *testing.T) {
 	}
 	if got.EffectiveNBatch() != 4100 || got.EffectiveNUBatch() != 4096 {
 		t.Errorf("effective batch: got %d/%d, want 4100/4096", got.EffectiveNBatch(), got.EffectiveNUBatch())
+	}
+}
+
+func TestAdjustConfigUsesRuntimeCPUThreadDefault(t *testing.T) {
+	tests := []struct {
+		name             string
+		cfg              Config
+		wantThreads      int
+		wantThreadsBatch int
+	}{
+		{"unset", NewConfig(WithContextWindow(8192)), runtime.NumCPU(), runtime.NumCPU()},
+		{"zero", NewConfig(WithContextWindow(8192), WithNThreads(0), WithNThreadsBatch(0)), runtime.NumCPU(), runtime.NumCPU()},
+		{"negative", NewConfig(WithContextWindow(8192), WithNThreads(-1), WithNThreadsBatch(-1)), runtime.NumCPU(), runtime.NumCPU()},
+		{"configured", NewConfig(WithContextWindow(8192), WithNThreads(2), WithNThreadsBatch(6)), 2, 6},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := adjustConfig(tt.cfg, 0)
+			if got := cfg.NThreads(); got != tt.wantThreads {
+				t.Errorf("NThreads: got %d, want %d", got, tt.wantThreads)
+			}
+			if got := cfg.NThreadsBatch(); got != tt.wantThreadsBatch {
+				t.Errorf("NThreadsBatch: got %d, want %d", got, tt.wantThreadsBatch)
+			}
+		})
 	}
 }
 
