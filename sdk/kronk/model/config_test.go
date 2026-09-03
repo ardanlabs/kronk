@@ -353,15 +353,16 @@ func TestAdjustConfigUsesConfiguredPrefillBatchSize(t *testing.T) {
 }
 
 func TestAdjustConfigUsesRuntimeCPUThreadDefault(t *testing.T) {
+	defaultThreads := max(defNThreads, runtime.NumCPU())
 	tests := []struct {
 		name             string
 		cfg              Config
 		wantThreads      int
 		wantThreadsBatch int
 	}{
-		{"unset", NewConfig(WithContextWindow(8192)), runtime.NumCPU(), runtime.NumCPU()},
-		{"zero", NewConfig(WithContextWindow(8192), WithNThreads(0), WithNThreadsBatch(0)), runtime.NumCPU(), runtime.NumCPU()},
-		{"negative", NewConfig(WithContextWindow(8192), WithNThreads(-1), WithNThreadsBatch(-1)), runtime.NumCPU(), runtime.NumCPU()},
+		{"unset", NewConfig(WithContextWindow(8192)), defaultThreads, defaultThreads},
+		{"zero", NewConfig(WithContextWindow(8192), WithNThreads(0), WithNThreadsBatch(0)), defaultThreads, defaultThreads},
+		{"negative", NewConfig(WithContextWindow(8192), WithNThreads(-1), WithNThreadsBatch(-1)), defaultThreads, defaultThreads},
 		{"configured", NewConfig(WithContextWindow(8192), WithNThreads(2), WithNThreadsBatch(6)), 2, 6},
 	}
 
