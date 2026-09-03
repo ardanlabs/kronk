@@ -11,12 +11,13 @@
 #   - ubuntu:24.04 image index digest (4 occurrences)
 #   - nvcr.io/nvidia/l4t-cuda:<tag> image digest
 #   - NODE_SHA256_X64 / NODE_SHA256_ARM64 for the currently pinned NODE_VERSION
-#   - ROCM_KEY_FINGERPRINT from repo.radeon.com
+#   - ROCM_KEY_FINGERPRINT from stable.repo.amd.com
 #   - LIBSTDCXX_VERSION from ppa:ubuntu-toolchain-r/test on jammy
 #     (requires a working `docker` daemon; slow ~30s — skip with --no-libstdcxx)
 #
 # What deliberately does NOT auto-bump:
-#   - NODE_VERSION, ROCM_VERSION  → semantic version bumps are a decision
+#   - NODE_VERSION, ROCM_VERSION, ROCM_PKG_VERSION
+#                                  → semantic version bumps are a decision
 #   - Go toolchain version       → driven by `go.mod`, fetched live at build
 #
 # Review the result with `git diff` before committing.
@@ -150,7 +151,7 @@ sed_inplace \
 # 4. ROCm apt key fingerprint
 # -----------------------------------------------------------------------------
 log "Fetching ROCm apt key fingerprint"
-ROCM_FPR="$(curl -fsSL https://repo.radeon.com/rocm/rocm.gpg.key \
+ROCM_FPR="$(curl -fsSL https://stable.repo.amd.com/rocm/gpg/packages.gpg \
     | gpg --show-keys --with-colons 2>/dev/null \
     | awk -F: '/^fpr:/ {print $10; exit}')"
 [[ "$ROCM_FPR" =~ ^[A-F0-9]{40}$ ]] \

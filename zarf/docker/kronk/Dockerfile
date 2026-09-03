@@ -743,26 +743,28 @@ ARG LLAMA_PROCESSORS
 # install block below can gate on architecture (ROCm has no upstream
 # arm64 build).
 ARG TARGETARCH
-# ROCm version installed when LLAMA_PROCESSORS contains `rocm`. Pin to a
-# specific patch release for reproducibility; bump in lockstep with the
-# llama.cpp ROCm bundle when upstream advances its build target.
+# ROCm version installed when LLAMA_PROCESSORS contains `rocm`. The package
+# name and exact package release are pinned separately because ROCm 10 uses
+# an unversioned stable apt repository. Bump in lockstep with the llama.cpp
+# ROCm bundle when upstream advances its build target.
 #
 # MUST satisfy the bundle's NEEDED sonames. llama.cpp ships its Linux ROCm
-# build as llama-<tag>-bin-ubuntu-rocm-7.14-x64.tar.gz (see yzma
+# build as llama-<tag>-bin-ubuntu-rocm-10.0-x64.tar.gz (see yzma
 # pkg/download/resolver.go) and vendors no ROCm runtime of its own, so
-# libggml-hip.so resolves against whatever this installs. At b10760 it
+# libggml-hip.so resolves against whatever this installs. At b10780 it
 # needs:
 #
 #   libamdhip64.so.7   librocblas.so.5   libhipblas.so.3
 #
-# The 6.4.x line provides libamdhip64.so.6 and cannot load it. Discover the
-# current requirements with:
+# Discover the current requirements with:
 #   ldd libggml-hip.so   (or: strings libggml-hip.so | grep -oE 'lib.*\.so[0-9.]*')
 #
 # The check after the bundle COPY below asserts this at build time. Without
 # it a mismatch installs cleanly and fails only when a user loads a model
 # on a real GPU — which no CI job has.
-ARG ROCM_VERSION="7.2.4"
+ARG ROCM_VERSION="10.0"
+ARG ROCM_PKG_VERSION="10.0.0-4"
+ENV ROCM_PATH="/opt/rocm/core-${ROCM_VERSION}"
 
 # CUDA runtime major-minor installed when LLAMA_PROCESSORS contains `cuda`.
 # The llama.cpp cuda bundle is built as `ubuntu-cuda-13-x64` (see
@@ -774,12 +776,12 @@ ARG ROCM_VERSION="7.2.4"
 ARG CUDA_PKG_VERSION="13-0"
 
 # Expected fingerprint of AMD's ROCm apt repo signing key. Verified
-# after fetching rocm.gpg.key over HTTPS; build fails loudly if AMD
+# after fetching packages.gpg over HTTPS; build fails loudly if AMD
 # rotates keys. Discover the current fingerprint with:
-#   curl -fsSL https://repo.radeon.com/rocm/rocm.gpg.key \
+#   curl -fsSL https://stable.repo.amd.com/rocm/gpg/packages.gpg \
 #       | gpg --show-keys --with-colons \
 #       | awk -F: '/^fpr:/ {print $10; exit}'
-ARG ROCM_KEY_FINGERPRINT="CA8BB4727A47B4D09B4EE8969386B48A1A693C5C"
+ARG ROCM_KEY_FINGERPRINT="D0F004A0025A1145C7807FCD0701EAC4D5E02107"
 
 LABEL org.opencontainers.image.source="https://github.com/ardanlabs/kronk" \
       org.opencontainers.image.title="kronk" \
@@ -828,9 +830,9 @@ RUN apt-get update \
 # AMD has no equivalent of the NVIDIA Container Toolkit — the host
 # kernel module is exposed via /dev/kfd + /dev/dri but the userspace
 # HIP/HSA libraries that llama.cpp's ROCm bundle dlopens must live
-# inside the container. Adds ~2 GB to images that bundle the ROCm
-# backend; zero impact on images that do not (e.g. `:cpu`, `:cuda`,
-# `:vulkan`).
+# inside the container. This substantially increases images that bundle
+# the ROCm backend; it has zero impact on images that do not (e.g. `:cpu`,
+# `:cuda`, `:vulkan`).
 #
 # `rocminfo` doubles as the GPU detection probe for `DetectGPU()` (see
 # sdk/tools/devices/gpu_detect_linux.go), so installing it lets the
@@ -839,7 +841,7 @@ RUN set -eux; \
     if [ "${TARGETARCH}" = "amd64" ] && echo " ${LLAMA_PROCESSORS} " | grep -q ' rocm '; then \
         apt-get update; \
         apt-get install -y --no-install-recommends gnupg; \
-        curl -fsSL https://repo.radeon.com/rocm/rocm.gpg.key -o /tmp/rocm.gpg.key; \
+        curl -fsSL https://stable.repo.amd.com/rocm/gpg/packages.gpg -o /tmp/rocm.gpg.key; \
         ACTUAL_FPR="$(gpg --show-keys --with-colons /tmp/rocm.gpg.key \
             | awk -F: '/^fpr:/ {print $10; exit}')"; \
         if [ "${ACTUAL_FPR}" != "${ROCM_KEY_FINGERPRINT}" ]; then \
@@ -850,18 +852,18 @@ RUN set -eux; \
         fi; \
         gpg --dearmor < /tmp/rocm.gpg.key > /usr/share/keyrings/rocm-archive-keyring.gpg; \
         rm /tmp/rocm.gpg.key; \
-        echo "deb [arch=amd64 signed-by=/usr/share/keyrings/rocm-archive-keyring.gpg] \
-            https://repo.radeon.com/rocm/apt/${ROCM_VERSION} noble main" \
-            > /etc/apt/sources.list.d/rocm.list; \
-        echo "Package: *" > /etc/apt/preferences.d/rocm-pin-600; \
-        echo "Pin: release o=repo.radeon.com" >> /etc/apt/preferences.d/rocm-pin-600; \
-        echo "Pin-Priority: 600" >> /etc/apt/preferences.d/rocm-pin-600; \
+        printf '%s\n' \
+            'Types: deb' \
+            'URIs: https://stable.repo.amd.com/rocm/core/packages/ubuntu2404/' \
+            'Suites: stable' \
+            'Components: main' \
+            'Architectures: amd64' \
+            'Signed-By: /usr/share/keyrings/rocm-archive-keyring.gpg' \
+            > /etc/apt/sources.list.d/amdrocm-stable.sources; \
         apt-get update; \
         apt-get install -y --no-install-recommends \
-            rocm-hip-libraries \
-            rocm-smi-lib \
-            rocminfo; \
-        echo "/opt/rocm/lib" > /etc/ld.so.conf.d/rocm.conf; \
+            "amdrocm${ROCM_VERSION}=${ROCM_PKG_VERSION}"; \
+        echo "${ROCM_PATH}/lib" > /etc/ld.so.conf.d/rocm.conf; \
         ldconfig; \
         apt-get purge -y --auto-remove gnupg; \
         apt-get clean; \
@@ -999,17 +1001,17 @@ ENV KRONK_BASE_PATH=/kronk \
 
 # NVIDIA GPU passthrough hints — honoured by the NVIDIA Container Runtime
 # when the user runs with `--gpus all` (or equivalent). Harmless on hosts
-# without NVIDIA drivers. /opt/rocm/lib is appended for images that
+# without NVIDIA drivers. ROCM_PATH/lib is appended for images that
 # bundled the ROCm backend (the conditional install above also wires it
 # into ld.so.conf.d, but exporting it here covers callers that bypass
 # the dynamic linker cache, e.g. dlopen with absolute paths).
 # /usr/local/cuda/lib64 is included so dlopen() of explicit CUDA libs
 # (libcudart, libcublas, ...) resolves when the NVIDIA Container
 # Runtime injects them under that prefix instead of /usr/local/nvidia.
-ENV LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/usr/local/cuda/lib64:/opt/rocm/lib \
+ENV LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/usr/local/cuda/lib64:${ROCM_PATH}/lib \
     NVIDIA_DRIVER_CAPABILITIES=compute,utility \
     NVIDIA_VISIBLE_DEVICES=all \
-    PATH=/opt/rocm/bin:${PATH}
+    PATH=${ROCM_PATH}/bin:${PATH}
 
 # Persistence is the caller's responsibility: mount a host directory or a
 # named volume on /kronk to keep models, catalog, keys, libraries, and
