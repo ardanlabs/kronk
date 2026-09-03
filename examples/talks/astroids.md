@@ -70,26 +70,33 @@ Implement `static/index.html` as a minimal, valid HTML document that:
   - `W or ↑: Thrust`
   - `A/D or ←/→: Rotate`
   - `Space: Fire`
-- Contains an initially hidden game-over overlay or message.
+- Wraps the canvas in a positioned container and contains one HTML game-over overlay in that container.
+- The game-over overlay must have the HTML `hidden` attribute in the initial markup. It is the only game-over message; do not also draw one on the canvas.
 - Does not contain inline JavaScript or inline CSS.
 
 Use accessible text for the canvas and game-over state, but do not build additional menus or settings.
 
+The stylesheet must preserve the semantics of the overlay's `hidden` attribute. Include a rule such as `.game-over[hidden] { display: none; }`, and apply flex or grid display only to `.game-over:not([hidden])`. Do not give the overlay an unconditional `display: flex`, `display: grid`, or other display value that overrides the browser's default `[hidden]` rule.
+
 ## Visual design
 
-Keep the visuals simple and recognizable:
+Use a restrained neon-vector style that makes the game feel lively without adding gameplay systems:
 
-- Page background: very dark or black.
+- Page background: deep navy-black.
 - Canvas background: black.
-- Ship: white outlined triangle.
-- Asteroids: irregular white or light-gray outlined polygons.
-- Bullets: small solid white circles.
-- HUD and controls: readable light-colored text.
+- Define a small color palette as named constants near the top of `game.js` rather than scattering color strings through rendering code.
+- Ship: a bright cyan outlined spacecraft with swept-back wings, a small dark-blue cockpit, and short orange accent lines. It must still have a clear triangular silhouette and pointed nose.
+- When thrust is active, draw a flickering orange-to-yellow engine flame behind the ship using one or two simple filled triangles. The flame is part of ship rendering, not a particle system, and disappears immediately when thrust stops.
+- Give the ship outline a subtle cyan glow using canvas shadow settings. Keep the glow tight enough that the ship remains crisp.
+- Asteroids: irregular outlined polygons in two or three muted blue, violet, and light-gray variations assigned when each asteroid is created.
+- Bullets: small solid warm-yellow circles with a subtle matching glow.
+- Draw a sparse star field behind gameplay using small dim blue-white dots. Generate and store the star positions once when the script initializes so they do not shimmer or move between frames.
+- HUD and controls: readable light-colored text with cyan labels and warm-yellow values or accents.
 - Use no image assets.
 - Keep the canvas centered on the page.
 - Scale the canvas down with CSS when the browser viewport is narrower than 960 pixels while preserving its `3:2` aspect ratio.
 - Keep the canvas's internal coordinate system fixed at `960 × 640`; CSS scaling must not change the gameplay coordinates.
-- Do not add decorative panels, animations unrelated to gameplay, or elaborate visual effects.
+- A thin cyan canvas border and subtle CSS glow are allowed, but do not add decorative panels, animations unrelated to gameplay, or elaborate visual effects.
 
 ## Game state
 
@@ -97,6 +104,7 @@ Store all game state in JavaScript memory.
 
 At minimum, represent:
 
+- A stable, pre-generated set of background stars
 - The ship:
   - Position
   - Velocity
@@ -110,6 +118,7 @@ At minimum, represent:
   - Rotation speed
   - Collision radius
   - A stable set of polygon vertices generated when the asteroid is created
+  - A stroke color selected from the asteroid palette when the asteroid is created
 - Each bullet:
   - Position
   - Velocity
@@ -129,6 +138,7 @@ Use clear constants near the top of `game.js` for gameplay values. Do not scatte
 When the page first loads:
 
 - Start the game immediately.
+- Set the game-over state to `false` before starting the animation loop.
 - Set the score to `0`.
 - Give the player exactly `3` lives.
 - Place the ship in the center of the canvas.
@@ -136,8 +146,10 @@ When the page first loads:
 - Give the ship zero initial velocity.
 - Create exactly `6` asteroids.
 - Do not place an asteroid within `180` pixels of the ship's initial position.
-- Hide the game-over message.
+- Set the game-over overlay element's `hidden` property to `true`.
 - Give the ship two seconds of spawn invulnerability so an asteroid cannot immediately remove a life.
+
+Use the same reset function for initial startup and an Enter-key restart. After registering event listeners once, call the reset function before the first `requestAnimationFrame` call. The reset function must explicitly set the game-over state to `false` and `gameOverElement.hidden = true`; do not rely only on the initial HTML or CSS state.
 
 ## Controls
 
@@ -335,23 +347,30 @@ Clear and redraw the entire canvas every frame.
 Render in this order:
 
 1. Black background
-2. Asteroids
-3. Bullets
-4. Ship
-5. Game-over message, if applicable
+2. Stable star field
+3. Asteroids
+4. Bullets
+5. Ship
+
+The HTML overlay owns the game-over message. Do not render game-over text on the canvas.
 
 Ship rendering:
 
-- Draw a clearly recognizable outlined triangle.
-- The triangle's nose must point in the ship's facing direction.
+- Draw one closed outer hull path with a pointed nose, small swept-back wings, and a notched engine tail. Keep the silhouette compact and clearly recognizable as the player's ship.
+- Stroke the hull in bright cyan with a subtle cyan glow and a dark translucent fill.
+- Draw a small dark-blue filled cockpit with a lighter blue outline inside the forward half of the hull.
+- Draw two short orange accent strokes symmetrically on the wings.
+- While thrust is held, draw a simple orange outer flame and smaller yellow inner flame extending from the engine notch. Vary the flame length slightly using time or a small random amount, but do not create or store particles.
+- The ship's nose must point in the ship's facing direction.
 - Use canvas transforms with `save`, `translate`, `rotate`, and `restore`, or equivalent correct geometry.
-- Ensure the visual nose position uses the same ship length used to place bullets.
+- Ensure the visual nose position uses the same ship length used to place bullets. The wings, cockpit, accents, and flame must not change the ship's collision radius.
+- Reset canvas shadow settings before restoring or drawing other objects so the glow does not leak.
 
 Asteroid rendering:
 
 - Draw each asteroid from its stored local polygon vertices.
 - Translate and rotate the canvas for that asteroid.
-- Close and stroke the path.
+- Close and stroke the path using the asteroid's stored palette color and a very subtle matching glow.
 - Do not randomize its appearance during rendering.
 
 All canvas transform operations must be balanced so transforms do not leak into later objects.
@@ -360,7 +379,8 @@ All canvas transform operations must be balanced so transforms do not leak into 
 
 When lives reach zero:
 
-- Show a centered message over the canvas containing:
+- Set the game-over state to `true` and set the HTML overlay element's `hidden` property to `false`.
+- Show a centered overlay over the canvas containing:
   - `Game Over`
   - The final score
   - `Press Enter to restart`
@@ -375,7 +395,7 @@ When Enter is pressed during game over:
 - Replace all asteroids with six newly generated asteroids.
 - Reset the ship to the center, facing upward, with zero velocity.
 - Restore two seconds of spawn invulnerability.
-- Hide the game-over message.
+- Set the game-over state to `false` and set the overlay element's `hidden` property to `true`.
 - Resume using the existing animation loop.
 - Do not reload the page.
 - Do not register duplicate event listeners.
@@ -413,6 +433,8 @@ Before considering the task complete, confirm all of the following from the impl
 - The executable serves embedded assets without relying on the source directory.
 - The browser loads the HTML, CSS, and JavaScript without external resources.
 - The initial HUD reads `Score: 0` and `Lives: 3`.
+- The game-over state is `false` before the first animation frame, and the HTML game-over overlay is hidden both by its initial markup and by the reset function.
+- CSS does not override the overlay's `hidden` attribute with an unconditional display rule.
 - Exactly six asteroids appear initially.
 - The ship begins centered, facing upward.
 - The ship rotates smoothly.
