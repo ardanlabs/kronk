@@ -10,11 +10,13 @@
 // The scratch allocation is retained for reuse, so this example does not
 // eliminate snapshot-sized RAM allocations.
 //
-// Crash safety: per-session files leak on process crash because the
-// Store's Close cleanup never runs. They live under the directory passed to
-// NewFactory and are named "kronk-sess-*.kv"; an external
-// cleanup can reclaim them. The implementation also cannot report I/O errors
-// caused by process termination. It is an API example only, not a production
+// Crash safety: per-session files leak on process crash because the Store's
+// Close cleanup never runs. They live under the directory passed to NewFactory
+// and are named "kronk-sess-*.kv"; an external cleanup can reclaim them. The
+// implementation also cannot report I/O errors caused by process termination.
+// A production file store should use stable identities, atomically replace a
+// validated temporary file, and reclaim abandoned data with expiration or an
+// external cleanup process. It is an API example only, not a production
 // storage recommendation.
 package main
 
@@ -107,11 +109,12 @@ func (s *Store) Cap() int {
 	return cap(s.scratch)
 }
 
-// Bytes returns a slice containing the most recently committed
-// snapshot bytes, lazily reading them from disk into a RAM buffer the
-// first time it is called after a Commit. The returned slice is valid
-// until the next Prepare/Commit/Reset/Close call on this store; the
-// store must not be used concurrently while a caller holds the slice.
+// Bytes returns a read-only slice containing the most recently committed
+// snapshot bytes, lazily reading them from disk into a RAM buffer the first
+// time it is called after a Commit. The returned slice is borrowed: callers
+// must not modify it or retain it after the next Prepare, Commit, Reset, or
+// Close call. The store must not be used concurrently while a caller holds the
+// slice.
 //
 // Returns nil when the store is empty.
 func (s *Store) Bytes(ctx context.Context) ([]byte, error) {
@@ -149,11 +152,12 @@ func (s *Store) Bytes(ctx context.Context) ([]byte, error) {
 	return s.read, nil
 }
 
-// Prepare returns a writable scratch buffer of length size, ready to
-// be filled (typically by cgo via llama.StateSeqGetData). The scratch
+// Prepare returns a borrowed, writable scratch buffer of length size, ready to
+// be filled (typically by cgo via llama.StateSeqGetData). The caller must not
+// retain it after the next Prepare, Commit, Reset, or Close call. The scratch
 // is reused when its capacity is sufficient; otherwise a new array is
-// allocated. Calling Prepare invalidates any slice previously returned
-// by Bytes.
+// allocated. Calling Prepare invalidates any slice previously returned by
+// Bytes.
 //
 // On grow, the new capacity is max(size, oldCap + oldCap/4) — the same
 // 25% headroom policy as the RAM backend, amortizing per-turn churn

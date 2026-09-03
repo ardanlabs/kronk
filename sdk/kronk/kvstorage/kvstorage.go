@@ -88,7 +88,8 @@ func MustParse(value string) Kind {
 // Store externalizes a single IMC session's KV cache bytes.
 //
 // Implementations are not required to be safe for concurrent use. Kronk
-// serializes access to each store and owns it until Close.
+// serializes access to each store and owns it until Close. Different stores
+// returned by the same Factory can be used concurrently.
 type Store interface {
 	// Len returns the number of valid bytes in the committed snapshot. It must
 	// be a cheap metadata operation and must not perform storage I/O.
@@ -98,14 +99,16 @@ type Store interface {
 	// metadata operation and must not perform storage I/O.
 	Cap() int
 
-	// Bytes returns the committed snapshot for read access. The returned slice
-	// is valid until the next Prepare, Commit, Reset, or Close call.
+	// Bytes returns the committed snapshot as a borrowed, read-only slice. The
+	// caller must not modify it or retain it after the next Prepare, Commit,
+	// Reset, or Close call. Implementations may reuse the slice's storage.
 	Bytes(ctx context.Context) ([]byte, error)
 
 	// Prepare starts replacing the committed snapshot and returns a writable
 	// slice of exactly size bytes. Until Commit succeeds, Len must return zero.
-	// The returned slice is valid until the next Prepare, Commit, Reset, or
-	// Close call.
+	// The slice is borrowed: the caller may modify it only until the next
+	// Prepare, Commit, Reset, or Close call and must not retain it afterward.
+	// Implementations may reuse its storage.
 	Prepare(ctx context.Context, size int) ([]byte, error)
 
 	// Commit publishes the first n bytes written to the prepared slice. It must
@@ -122,5 +125,7 @@ type Store interface {
 }
 
 // Factory constructs an independent Store. Kronk invokes the factory for each
-// target, draft, or checkpoint store it needs and owns each returned store.
+// target, draft, or checkpoint store it needs and owns each returned store. A
+// factory may share concurrency-safe backend resources such as connection
+// pools, quotas, and eviction accounting across the stores it returns.
 type Factory func(ctx context.Context) (Store, error)

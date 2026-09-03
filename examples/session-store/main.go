@@ -1,7 +1,9 @@
 // This example shows how SDK users can implement and inject a custom IMC
 // session-store factory. The included disk store is intentionally temporary:
 // it creates anonymous files and removes them on Close. It demonstrates the
-// extension contract, not durable session persistence.
+// extension contract, not durable session persistence. Production stores need
+// atomic replacement, integrity validation, resource limits, and cleanup that
+// does not depend exclusively on Close.
 //
 // The first time you run this program the system will download and install
 // the model and libraries.

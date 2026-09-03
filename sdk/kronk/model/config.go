@@ -327,12 +327,13 @@ type AdapterConfig struct {
 // SessionStoreFactory constructs session stores for direct SDK use.
 // Kronk invokes it separately for every working session store it needs and
 // closes every successfully returned store. The factory must return a new,
-// independent store on each call and receives the context for the operation
-// that needs the store. Store read, prepare, commit, and reset operations also
-// receive that context and return errors. System prompt preloads always remain
-// in RAM. When nil, Kronk uses the built-in RAM factory. Backend-specific
-// constructor parameters belong to the backend package and are captured by the
-// injected factory.
+// independent store on each call. The factory may capture shared,
+// concurrency-safe resources such as a connection pool or process-wide quota.
+// It receives the context for the operation that needs the store. Store read,
+// prepare, commit, and reset operations also receive that context and return
+// errors. System prompt preloads always remain in RAM. When nil, Kronk uses the
+// built-in RAM factory. Backend-specific constructor parameters belong to the
+// backend package and are captured by the injected factory.
 //
 // SplitMode controls how the model is split across multiple GPUs:
 //   - SplitModeNone (0): single GPU

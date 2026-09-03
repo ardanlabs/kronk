@@ -588,6 +588,30 @@ store reads, prepares, commits, and resets receive the current operation's
 model-owned RAM pool. Direct SDK use defaults to RAM when no factory is
 injected.
 
+Each returned store represents one session snapshot. Kronk serializes access to
+that individual store, so implementations do not need per-store locking.
+Different stores can be active concurrently, however. A factory may capture a
+shared database client, connection pool, byte budget, or eviction manager, but
+the implementation must synchronize any such shared resource.
+
+The byte slices cross a borrowed-memory boundary:
+
+- `Bytes` returns read-only bytes. Kronk does not modify them, and callers must
+  not retain them after the next `Prepare`, `Commit`, `Reset`, or `Close`.
+- `Prepare` returns exactly the requested writable length. Kronk owns that
+  write access only until the next `Prepare`, `Commit`, `Reset`, or `Close`.
+- Implementations may reuse storage for either slice. They do not need to
+  allocate or copy on every operation.
+- `Len` and `Cap` are cheap metadata operations and must not perform storage
+  I/O. After `Prepare`, `Len` remains zero until `Commit` succeeds.
+
+Implementations should check the supplied context before starting work and
+pass it to cancellable backend operations. A context cannot interrupt every
+local filesystem syscall, but it still prevents canceled requests from
+starting additional I/O. Return wrapped operation errors rather than turning a
+failed read or write into an empty snapshot. Kronk validates returned lengths
+and publishes only complete snapshots.
+
 The [`examples/session-store`](https://github.com/ardanlabs/kronk/tree/main/examples/session-store)
 program provides a complete custom implementation and shows how to inject it.
 Its implementation writes snapshots to anonymous temporary files and deletes
@@ -596,6 +620,17 @@ no stable session identity, persisted request history, startup recovery,
 or atomic commits. **Do not use the example as durable session storage.** A
 durable implementation needs a higher-level persistence design in addition to
 the byte-store contract.
+
+In particular, a production file or object store should write and validate a
+replacement before atomically publishing it—for example, by writing a temporary
+file, syncing it when durability is required, and renaming it over the previous
+snapshot, or by committing a database transaction. A versioned envelope with
+the expected length and checksum can reject truncated or corrupt data before it
+reaches the model runtime. Cleanup must not depend exclusively on `Close`:
+process termination can bypass it, so persistent backends need expiration,
+leases, or an external garbage collector. Shared factories should also enforce
+an explicit total storage budget and reject an oversized snapshot rather than
+silently exceeding that budget.
 
 Some MTP configurations maintain draft-model cached state and saved hidden
 state in addition to the target model snapshot. Account for this extra storage

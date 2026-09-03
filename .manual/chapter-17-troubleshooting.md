@@ -302,8 +302,8 @@ key rotation, and production hardening are covered in
 
 ### 17.7 IMC
 
-IMC is enabled by default. It externalizes cached session state to RAM by
-default or to the configured disk session store. See
+IMC is enabled by default. It externalizes cached session state to the built-in
+RAM store or, for direct SDK use, a configured custom session store. See
 [Chapter 5](https://www.kronkai.com/manual#chapter-5-message-caching) for its lifecycle and settings.
 
 #### Every turn rebuilds the cache
