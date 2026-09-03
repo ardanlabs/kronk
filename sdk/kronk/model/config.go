@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -51,7 +52,7 @@ const (
 const (
 	defContextWindow        = 8 * 1024
 	defMinCacheTokens       = 100
-	defThreadZero           = 0
+	defNThreads             = 4
 	defNSeqMax              = 1
 	defNDraft               = 5
 	defaultAdmissionTimeout = 3 * time.Minute
@@ -257,11 +258,11 @@ type AdapterConfig struct {
 // reranking architectures use it as the context-pool size. When set to 0, a
 // default of 1 is used.
 //
-// NThreads is the number of threads to use for generation. When set to 0, the
-// default llama.cpp value is used.
+// NThreads is the number of threads to use for generation. When unset or set
+// to 0, it defaults to the greater of 4 and runtime.NumCPU().
 //
-// NThreadsBatch is the number of threads to use for batch processing. When set
-// to 0, the default llama.cpp value is used.
+// NThreadsBatch is the number of threads to use for batch processing. When
+// unset or set to 0, it defaults to the greater of 4 and runtime.NumCPU().
 //
 // NUMA controls the NUMA (Non-Uniform Memory Access) strategy. This matters
 // most when expert tensors are on CPU and the system has multiple NUMA nodes.
@@ -821,18 +822,13 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 		cfg = adjustGenerationBatch(cfg, 1, false)
 	}
 
-	if cfg.NThreads() < 0 {
-		cfg.PtrNThreads = new(defThreadZero)
-	}
-	if cfg.PtrNThreads == nil {
-		cfg.PtrNThreads = new(defThreadZero)
+	nThreads := max(defNThreads, runtime.NumCPU())
+	if cfg.NThreads() <= 0 {
+		cfg.PtrNThreads = new(nThreads)
 	}
 
-	if cfg.NThreadsBatch() < 0 {
-		cfg.PtrNThreadsBatch = new(defThreadZero)
-	}
-	if cfg.PtrNThreadsBatch == nil {
-		cfg.PtrNThreadsBatch = new(defThreadZero)
+	if cfg.NThreadsBatch() <= 0 {
+		cfg.PtrNThreadsBatch = new(nThreads)
 	}
 
 	// IMC is enabled by default.

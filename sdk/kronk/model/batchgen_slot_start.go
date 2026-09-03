@@ -1256,8 +1256,7 @@ func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos, 
 	// encoder. Images are decoded in Go (newMediaBitmap) and built via the
 	// stable mtmd_bitmap_init core API; audio still goes through the
 	// mtmd-helper. Reject empty payloads or any bytes that fail to decode so
-	// we surface a precise error instead of the generic "tokenization failed
-	// with code 1" from mtmd.Tokenize.
+	// we surface a precise error instead of a generic tokenization failure.
 	if len(job.media) > 0 {
 		s.bitmaps = make([]mtmd.Bitmap, len(job.media))
 		for i, med := range job.media {
@@ -1274,26 +1273,12 @@ func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos, 
 		}
 	}
 
-	// Verify the marker count in the rendered prompt matches the number of
-	// bitmaps before calling mtmd.Tokenize. mtmd returns an opaque code 1
-	// when these don't match; pre-checking here gives a precise error and
-	// catches double-render or template bugs early.
-	markerCount := strings.Count(job.prompt, mtmd.DefaultMarker())
-	if markerCount != len(s.bitmaps) {
-		e.finishSlot(s, fmt.Errorf("start-slot-media: marker/bitmap count mismatch: prompt has %d %q markers but %d bitmaps were prepared", markerCount, mtmd.DefaultMarker(), len(s.bitmaps)))
-		return false
-	}
-
 	// Create input chunks that interleave text tokens with image embeddings.
 	s.inputChunks = mtmd.InputChunksInit()
 
-	// Tokenize produces a sequence of chunks: text tokens and image patches.
-	input := mtmd.NewInputText(job.prompt, true, true)
-
-	result := mtmd.Tokenize(s.mtmdCtx, s.inputChunks, input, s.bitmaps)
-	if result != 0 {
-		err := fmt.Errorf("start-slot-media: tokenization failed with code %d", result)
-		e.finishSlot(s, err)
+	// Tokenize the rendered prompt as explicit ordered text and bitmap parts.
+	if err := tokenizeMedia(s.mtmdCtx, s.inputChunks, job.prompt, s.bitmaps); err != nil {
+		e.finishSlot(s, fmt.Errorf("start-slot-media: %w", err))
 		return false
 	}
 

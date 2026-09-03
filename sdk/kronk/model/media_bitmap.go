@@ -6,6 +6,7 @@ import (
 	"image"
 	"image/draw"
 	"runtime"
+	"strings"
 	"unsafe"
 
 	"github.com/hybridgroup/yzma/pkg/mtmd"
@@ -48,6 +49,33 @@ func newMediaBitmap(ctx mtmd.Context, med []byte) (mtmd.Bitmap, error) {
 	default:
 		return 0, fmt.Errorf("media payload does not match any supported image or audio format")
 	}
+}
+
+// tokenizeMedia converts the rendered prompt and its ordered bitmaps into
+// explicit mtmd input parts. The Jinja renderer uses media markers as
+// placeholders, but mtmd receives the final text and bitmap sequence without
+// having to infer their relationship from those markers.
+func tokenizeMedia(ctx mtmd.Context, chunks mtmd.InputChunks, prompt string, bitmaps []mtmd.Bitmap) error {
+	marker := mtmd.DefaultMarker()
+	segments := strings.Split(prompt, marker)
+	if len(segments) != len(bitmaps)+1 {
+		return fmt.Errorf("prompt has %d %q markers but %d bitmaps were prepared", len(segments)-1, marker, len(bitmaps))
+	}
+
+	parts := make([]*mtmd.InputPart, 0, len(segments)+len(bitmaps))
+	for i, segment := range segments {
+		text := mtmd.NewInputText(segment, false, true)
+		parts = append(parts, mtmd.NewInputTextPart(text))
+		if i < len(bitmaps) {
+			parts = append(parts, mtmd.NewInputBitmapPart(bitmaps[i]))
+		}
+	}
+
+	if result := mtmd.TokenizeFromParts(ctx, chunks, parts, true); result != 0 {
+		return fmt.Errorf("tokenization failed with code %d", result)
+	}
+
+	return nil
 }
 
 // newImageBitmap decodes an encoded image (JPEG/PNG/GIF/WEBP) into packed

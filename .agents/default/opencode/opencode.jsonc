@@ -12,6 +12,15 @@
             "models": {
                 "unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT": {
                     "name": "Qwen3.8 Flash Next UD-Q2_K_XL",
+                    "modalities": {
+                        "input": [
+                            "text",
+                            "image"
+                        ],
+                        "output": [
+                            "text"
+                        ]
+                    },
                     "limit": {
                         "context": 131072,
                         "output": 16384
@@ -84,6 +93,15 @@
                 },
                 "ornith-ai/Ornith-1.5-9B-Q4_K_M/AGENT": {
                     "name": "Ornith 1.5 9B Q4_K_M",
+                    "modalities": {
+                        "input": [
+                            "text",
+                            "image"
+                        ],
+                        "output": [
+                            "text"
+                        ]
+                    },
                     "limit": {
                         "context": 65536,
                         "output": 8192
@@ -91,6 +109,15 @@
                 },
                 "mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT": {
                     "name": "Qwopus3.5 4B-Coder Q8_0",
+                    "modalities": {
+                        "input": [
+                            "text",
+                            "image"
+                        ],
+                        "output": [
+                            "text"
+                        ]
+                    },
                     "limit": {
                         "context": 65536,
                         "output": 8192

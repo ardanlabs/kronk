@@ -8,7 +8,7 @@ require (
 	github.com/ardanlabs/kronk v1.32.3
 	github.com/duckdb/duckdb-go/v2 v2.10505.0
 	github.com/gen2brain/malgo v0.11.26
-	github.com/hybridgroup/yzma v1.25.1-0.20260831183726-385dd04a1671
+	github.com/hybridgroup/yzma v1.25.1-0.20260903130709-6bd0208c33c6
 	golang.org/x/image v0.45.0
 )
 

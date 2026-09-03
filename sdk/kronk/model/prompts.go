@@ -34,8 +34,7 @@ func (m *Model) applyRequestJinjaTemplate(ctx context.Context, d D) (string, [][
 		// place, which caused subtle bugs when the same message map was
 		// rendered more than once: the second pass would find no []byte
 		// (already replaced with marker text) but the rendered prompt would
-		// still contain the markers, producing a marker/bitmap mismatch and
-		// mtmd.Tokenize returning code 1.
+		// still contain the markers, producing a marker/bitmap mismatch.
 		msgs, ok := d["messages"].([]D)
 		if !ok {
 			prompt, err := m.applyJinjaTemplate(ctx, d)
@@ -81,7 +80,7 @@ func (m *Model) applyRequestJinjaTemplate(ctx context.Context, d D) (string, [][
 				// Reject literal marker text in non-media content. A user
 				// supplying a string that already contains the media marker
 				// would inflate the prompt's marker count without providing
-				// a matching bitmap, causing mtmd.Tokenize to fail.
+				// a matching bitmap.
 				if strings.Contains(value, defaultMarker) {
 					return "", nil, fmt.Errorf("apply-request-jinja-template: message[%d] content contains reserved media marker %q", i, defaultMarker)
 				}
@@ -193,7 +192,7 @@ func cloneDocWithContent(doc D, content any) D {
 // Invariant: the returned string contains exactly one marker per []byte part
 // in parts, and the returned media slice has exactly that many entries in the
 // same order. This guarantees the marker count emitted into the prompt equals
-// the bitmap count fed to mtmd.Tokenize.
+// the bitmap count converted into explicit mtmd input parts.
 func renderNormalizedParts(parts []any, marker, defaultMarker string, msgIdx int) (string, [][]byte, error) {
 	var b strings.Builder
 	var media [][]byte

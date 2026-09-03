@@ -87,8 +87,8 @@ version: 1
 #   main-gpu: 0                          # Primary GPU index for single-GPU mode
 #   ngpu-layers: 0                       # GPU layers to offload (0 = all, -1 = none, N = specific count)
 #   nseq-max: 2                          # Parallel sequences; explicit value is fixed
-#   nthreads: 0                          # Threads for generation (0 = llama.cpp default)
-#   nthreads-batch: 0                    # Threads for batch processing (0 = llama.cpp default)
+#   nthreads: 0                          # Threads for generation (0 = max(4, runtime.NumCPU()))
+#   nthreads-batch: 0                    # Threads for batch processing (0 = max(4, runtime.NumCPU()))
 #   prefill-batch-size: 2048             # Prompt tokens processed per prefill decode contribution (default: 2048)
 #   numa: distribute                     # NUMA strategy: "" (off), distribute, isolate, numactl, mirror
 #   offload-kqv: true                    # Offload KV cache to GPU (false = keep on CPU)
