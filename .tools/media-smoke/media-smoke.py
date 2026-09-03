@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check multimodal correctness and state isolation on a single model slot."""
+"""Check multimodal correctness, IMC reuse, and state isolation on one model slot."""
 
 from __future__ import annotations
 
@@ -148,11 +148,12 @@ def main() -> int:
 
         media_type = mimetypes.guess_type(args.image.name)[0] or "image/jpeg"
         image_url = f"data:{media_type};base64,{base64.b64encode(args.image.read_bytes()).decode()}"
-        first_prefix = "MEDIA-OBSERVATION:"
-        responses["first_image"] = completion(args, [
+        first_prefix = f"MEDIA-OBSERVATION-{run_id}:"
+        image_content = [
             {"type": "text", "text": f"Describe the main subject concisely. Start your response with exactly {first_prefix}"},
             {"type": "image_url", "image_url": {"url": image_url}},
-        ])
+        ]
+        responses["first_image"] = completion(args, image_content)
         first_text = responses["first_image"]["text"].strip()
         if not first_text.startswith(first_prefix) or not first_text[len(first_prefix):].strip():
             failures.append(f"first image response lacks nonempty {first_prefix} prefix")
@@ -170,16 +171,16 @@ def main() -> int:
         if first_prefix in text_only:
             failures.append(f"text-only response leaked {first_prefix}")
 
-        repeat_prefix = f"MEDIA-RECHECK-{run_id}:"
-        responses["repeat_image"] = completion(args, [
-            {"type": "text", "text": f"Describe the main subject concisely. Start your response with exactly {repeat_prefix}"},
-            {"type": "image_url", "image_url": {"url": image_url}},
-        ])
+        responses["repeat_image"] = completion(args, image_content)
         repeat_text = responses["repeat_image"]["text"].strip()
-        if not repeat_text.startswith(repeat_prefix) or not repeat_text[len(repeat_prefix):].strip():
-            failures.append(f"repeat image response lacks nonempty {repeat_prefix} prefix")
+        if repeat_text != first_text:
+            failures.append("repeat image response differs from the first deterministic response")
         if not any(term.casefold() in repeat_text.casefold() for term in args.expect):
             failures.append("repeat image response lacks an expected subject term")
+        repeat_usage = responses["repeat_image"].get("usage", {})
+        repeat_details = repeat_usage.get("prompt_tokens_details") or {}
+        if int(repeat_details.get("cached_tokens", 0)) <= 0:
+            failures.append("repeat image response reported no cached tokens")
     except Exception as exc:
         failures.append(str(exc))
 

@@ -84,8 +84,8 @@ test-long-context-load:
 
 # ==============================================================================
 
-# One-slot multimodal correctness and modality-state isolation probe. This is
-# complementary to test-media-load, which requires concurrent slots.
+# One-slot multimodal correctness, media IMC reuse, and modality-state isolation
+# probe. This is complementary to test-media-load, which requires concurrent slots.
 MEDIA_SMOKE_HOST ?= http://localhost:11435
 MEDIA_SMOKE_MODEL ?= unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT
 MEDIA_SMOKE_IMAGE ?= examples/samples/giraffe.jpg
