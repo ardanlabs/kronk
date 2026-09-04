@@ -97,33 +97,14 @@ jobs:
             processor: vulkan
             device: GPU (Vulkan)
             runs_on: [self-hosted, Linux, X64, gpu, vulkan]
-            extra_models: .github/test-models-gpu.txt
           - backend: ROCm
             processor: rocm
             device: GPU (ROCm)
             runs_on: [self-hosted, Linux, X64, gpu, rocm]
-            extra_models: .github/test-models-gpu.txt
           - backend: Metal
             processor: metal
             device: GPU (Metal)
             runs_on: [self-hosted, macOS, ARM64, sand, metal]
-            # Held empty until the base 6.6 GiB set showed what reading
-            # models over virtiofs actually costs. It has: on 2026-09-02 the
-            # Metal leg beat Vulkan on six of the seven shared suites —
-            # vision 14.5s vs 33.4s, vision_imc 19.0s vs 54.0s, qwen3 35.1s
-            # vs 41.8s, hybrid 28.5s vs 40.6s — with rerank the lone
-            # exception at 16.2s vs 3.8s. The share is not the bottleneck,
-            # and the MTP suites themselves settled it: 12.6s and 10.3s here
-            # against Vulkan's 23.6s and 30.5s.
-            #
-            # Both targets here are far larger than anything in the base
-            # set, so the first run against a cold cache pulls them onto the
-            # shared host mount. Pre-seed that mount if two GPU runs might
-            # overlap: the two macOS runners share one models directory and
-            # kronk has no cross-process download lock, so a concurrent cold
-            # fetch of the same model can lose the rename race in
-            # sdk/tools/models/download.go.
-            extra_models: .github/test-models-gpu.txt
     env:
       KRONK_PROCESSOR: ${{ matrix.processor }}
     steps:
@@ -158,8 +139,17 @@ jobs:
           # because every leg here is self-hosted and setup-kronk gates its
           # cache layers on hosted runners.
           models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt', '.github/test-models-gpu.txt') }}
-          # Models too large for the base list — see that file's header.
-          extra-models-file: ${{ matrix.extra_models }}
+          # Models too large for the base list — see that file's header. A
+          # literal, not a matrix field: every leg here has a persistent
+          # ~/.kronk and pulls the same two MTP targets, so per-leg values
+          # only ever drifted apart by accident.
+          #
+          # Cold-cache hazard on the macOS leg: the two macOS runners share
+          # one models directory and kronk has no cross-process download
+          # lock, so two concurrent cold fetches of the same model can lose
+          # the rename race in sdk/tools/models/download.go. Pre-seed the
+          # mount if two GPU runs might overlap.
+          extra-models-file: .github/test-models-gpu.txt
 
       # KRONK_PROCESSOR only guarantees the library bundle. ggml can load
       # the Vulkan, HIP or Metal build and still enumerate zero devices of
@@ -226,14 +216,14 @@ jobs:
           go test -v -count=1 -timeout 10m -run '^(TestSuite|TestUsageCountingHybrid)$' ./sdk/kronk/tests/hybrid
 
       # The MTP speculation path, which the classic drafter above does not
-      # cover. Separate step because it needs the 26B/35B targets in
-      # .github/test-models-gpu.txt, which only the legs with a persistent
-      # ~/.kronk pull — see the matrix's extra_models. Longer timeout: those
-      # targets are far larger than the 1.7B the other suites load.
+      # cover. A separate step only because it needs the 26B/35B targets in
+      # .github/test-models-gpu.txt and a longer timeout; every leg runs it.
+      #
+      # It carried `if: matrix.extra_models != ''` until 2026-09-04, from when
+      # the Metal leg was held back from these targets. Every leg has set
+      # extra_models since 28ace421, so the condition could not be false and
+      # the comment under it claimed the opposite of what the matrix did.
       - name: Run MTP suites on GPU
-        if: matrix.extra_models != ''
-        # Skipped on Metal today (extra_models is empty), but carried here so
-        # that flipping the matrix on cannot silently drop the shim.
         env:
           DYLD_INSERT_LIBRARIES: ${{ matrix.processor == 'metal' && format('{0}/LumeMetalCapabilities.dylib', runner.temp) || '' }}
           LUME_METAL_APPLE_FAMILY_MAX: ${{ matrix.processor == 'metal' && '1009' || '' }}
