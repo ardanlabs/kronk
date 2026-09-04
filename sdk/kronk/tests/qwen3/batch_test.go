@@ -16,8 +16,13 @@ func Test_BatchChatConcurrent(t *testing.T) {
 	// This is the only suite that decodes two sequences concurrently, so a
 	// ROCm failure with an empty message is most likely upstream2.md's defect:
 	// two sequences sharing one decode batch come back with corrupted logits.
-	// That skip is gone because ROCm passed here at b10798 (run 33928022827);
-	// upstream2.md's defect is fixed, and a red run means it came back.
+	//
+	// Measured on ROCm 7.2.x, where it was intermittent rather than constant:
+	// passed in run 33928022827, then failed in 33929435557 with "request 6:
+	// empty content". The runner fleet is now on ROCm 10.0 with gfx1151 code
+	// objects, a different execution path, so the skip comes off to find out
+	// whether it survived. Intermittent means one green run proves nothing —
+	// it takes several before this can be called fixed.
 	testlib.WithModel(t, testlib.CfgThinkToolChat(), func(t *testing.T, krn *kronk.Kronk) {
 		g := 10
 
