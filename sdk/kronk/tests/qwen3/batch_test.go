@@ -13,12 +13,9 @@ import (
 )
 
 func Test_BatchChatConcurrent(t *testing.T) {
-	// ROCm returns corrupted logits when two sequences share one decode batch,
-	// which can leave a message empty and trip the check below. A backend
-	// defect (upstream2.md), never seen on Vulkan against the same GPU and
-	// build; this is the only suite that decodes two sequences concurrently.
-	testlib.SkipOnBackends(t, "two sequences sharing one decode batch come back with corrupted logits", "rocm")
-
+	// This is the only suite that decodes two sequences concurrently, so a
+	// ROCm failure with an empty message is most likely upstream2.md's defect:
+	// two sequences sharing one decode batch come back with corrupted logits.
 	testlib.WithModel(t, testlib.CfgThinkToolChat(), func(t *testing.T, krn *kronk.Kronk) {
 		g := 10
 
