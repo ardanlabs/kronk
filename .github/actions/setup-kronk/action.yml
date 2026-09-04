@@ -3,9 +3,12 @@ description: >
   Frees disk space on Linux, installs Go pinned to .go-version, restores the
   shared libraries + models caches, builds the kronk CLI, installs the
   llama.cpp + whisper.cpp libraries and (on cache miss) pulls every
-  model listed in .github/test-models.txt. Re-used by the Linux and macOS
-  test workflows so jobs start from an identical environment and share
-  setup-go's Go module + build cache via the common cache key.
+  model listed in .github/test-models.txt. On macOS it also stages and
+  verifies the Metal capability shim, which every macOS job needs because
+  darwin/arm64 has one llama.cpp bundle and it always carries Metal
+  (zarf/macos/README.md). Re-used by the Linux and macOS test workflows so
+  jobs start from an identical environment and share setup-go's Go module +
+  build cache via the common cache key.
 
   Wall-clock note: the models cache contains ~6.6 GiB of uncompressed
   artifacts. The `go install ./cmd/kronk` + native-libs install path is
@@ -175,6 +178,114 @@ runs:
         go install ./cmd/kronk
         kronk libs --local
         kronk bucky libs --local
+
+    # THE METAL SHIM, and why it lives in the shared action rather than in
+    # gpu.yml alone.
+    #
+    # The macOS runners are Tart VMs, and a macOS guest on Apple Silicon only
+    # ever sees a paravirtual GPU: MTLGPUFamilyApple5, no passthrough, no
+    # setting that exposes a feature level. Below Apple7 ggml-metal refuses
+    # SOFT_MAX, CUMSUM, SUM and flash attention
+    # (ggml-metal-device.m:1214-1234, :1344-1390), so an unshimmed macOS job
+    # runs fallback kernels no shipping Mac takes and skips the ones every
+    # Mac takes. cua's Lume capability shim raises the reported family for one
+    # process; zarf/macos/README.md holds the host setup and the measurements.
+    #
+    # Staging it here, for every macOS job, because using Metal is a property
+    # of the platform and not of a workflow. darwin/arm64 publishes exactly
+    # ONE llama.cpp artifact — `cpu` and `metal` both resolve to
+    # llama-<tag>-bin-macos-arm64 (yzma pkg/download/resolver.go:202-217) —
+    # so the bundle carries libggml-metal whatever KRONK_PROCESSOR says, and
+    # NGpuLayers defaults to all-layers-on-GPU
+    # (sdk/kronk/model/model.go:522-523). macos.yml believed for a while that
+    # KRONK_PROCESSOR=cpu kept it off the GPU; run 33859967144 printed
+    # `MTLGPUFamilyApple5 (1005)` and `simdgroup reduction = false` from that
+    # supposed CPU gate, and its classic-draft acceptance was 0.00 on every
+    # request where the shimmed Metal leg sits at 0.38-0.49.
+    #
+    # Staging is not injecting. This step only puts the dylib where a
+    # consumer can reach it, at $RUNNER_TEMP/LumeMetalCapabilities.dylib; the
+    # workflow decides which steps get DYLD_INSERT_LIBRARIES, because it is
+    # inherited by every child process and must stay off any step whose
+    # output a parser reads.
+    #
+    # Copied to RUNNER_TEMP rather than injected straight off the share: dyld
+    # loading a dylib over virtiofs is a question nobody needs to answer at
+    # 3am.
+    - name: Stage Metal capability shim
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        set -euo pipefail
+        src="/Volumes/My Shared Files/kronk-tools/LumeMetalCapabilities.dylib"
+        if [[ ! -f "$src" ]]; then
+          echo "::error::$src is missing. On the runner host, build it with zarf/macos/build-metal-shim.sh and add the kronk-tools mount to ~/sand.yml."
+          exit 1
+        fi
+        cp "$src" "$RUNNER_TEMP/LumeMetalCapabilities.dylib"
+
+        # DYLD_INSERT_LIBRARIES reaches every child process, and /usr/bin is
+        # arm64e while Go emits plain arm64: a single-slice arm64 dylib aborts
+        # `tee`, `sw_vers` and everything else in the tree with "incompatible
+        # architecture". This cost a CI run once already.
+        if [[ "$(lipo -archs "$RUNNER_TEMP/LumeMetalCapabilities.dylib")" != *arm64e* ]]; then
+          echo "::error::staged shim has no arm64e slice; rebuild it on the host with zarf/macos/build-metal-shim.sh"
+          exit 1
+        fi
+
+    # The shim fails OPEN: a guest image bump that moves the private Metal
+    # internals it hooks leaves every process untouched, and the jobs then run
+    # the Apple5 fallback path while staying green. This is what notices, and
+    # it belongs beside the staging so no macOS job can consume the dylib
+    # without the check having run.
+    #
+    # Deliberately asymmetric: an explicit `false` fails, an ABSENT line only
+    # warns. ggml prints its capability banner only when device init logs to
+    # this step, so treating "missing" as "broken" would fail the job for a
+    # logging detail rather than a capability regression.
+    #
+    # Scoped to this one `kronk devices` invocation with a shell prefix, never
+    # exported and never through $GITHUB_ENV: `kronk diagnose` parses the
+    # COMBINED output of the commands it shells out to
+    # (sdk/tools/diagnose/system_darwin.go:15), and the shim's NSLog banner
+    # would land on the line that parser reads as the CPU model. `>` rather
+    # than `tee` so no extra process joins the shimmed environment just to
+    # move bytes.
+    - name: Verify Metal capability shim
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        set -euo pipefail
+        # rc captured rather than left to `set -e`, so the log below is
+        # printed even when the probe itself fails — that output is the only
+        # thing that explains why.
+        rc=0
+        DYLD_INSERT_LIBRARIES="$RUNNER_TEMP/LumeMetalCapabilities.dylib" \
+        LUME_METAL_APPLE_FAMILY_MAX=1009 \
+        LUME_METAL_MAX_THREADGROUP_MEMORY=32768 \
+          kronk devices > "$RUNNER_TEMP/shim-devices.txt" 2>&1 || rc=$?
+        cat "$RUNNER_TEMP/shim-devices.txt"
+        if [[ "$rc" -ne 0 ]]; then
+          echo "::error::kronk devices failed (exit=$rc) under the Metal shim"
+          exit "$rc"
+        fi
+
+        if grep -qE 'simdgroup reduction *= *false' "$RUNNER_TEMP/shim-devices.txt"; then
+          echo "::error::Metal capability shim is not in effect: llama.cpp resolved simdgroup reduction = false, so this job would run the Apple5 fallback path. See zarf/macos/README.md."
+          exit 1
+        fi
+
+        if ! grep -qE 'simdgroup reduction *= *true' "$RUNNER_TEMP/shim-devices.txt"; then
+          echo "::warning::could not confirm Metal capabilities from this log; ggml printed no simdgroup line. Check whether the shim is live before trusting this job."
+        fi
+
+        # The shim announces itself through NSLog, which reaches stderr when
+        # attached to a terminal and the unified log otherwise; a CI step is
+        # not a terminal, so its absence proves nothing. A notice, never a
+        # failure — the capability check above is the authoritative one.
+        if ! grep -q 'LumeMetalCapabilities. Enabled' "$RUNNER_TEMP/shim-devices.txt"; then
+          echo "::notice::shim activation banner absent from this log (expected if NSLog went to the unified log rather than stderr); the capability check above is authoritative."
+        fi
 
     # On Linux, restore the multi-GB model cache in the foreground while the
     # background step above builds kronk and installs the native libs. On a
