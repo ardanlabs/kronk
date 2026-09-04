@@ -2,6 +2,7 @@ package toolapp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -21,6 +22,27 @@ func (a *app) listBuckyLibs(ctx context.Context, r *http.Request) web.Encoder {
 	}
 
 	return toAppVersionTag("retrieve", tag, a.buckyLibs.AllowUpgrade)
+}
+
+func (a *app) verifyBuckyLibs(ctx context.Context, r *http.Request) web.Encoder {
+	version := r.URL.Query().Get("version")
+	if version == "" {
+		tag, err := a.buckyLibs.InstalledVersion()
+		if err != nil {
+			return errs.Errorf(errs.Internal, "unable to read whisper.cpp library version: %s", err)
+		}
+		version = tag.Version
+	}
+
+	report, err := a.buckyLibs.Verify(ctx, version)
+	if err != nil {
+		if errors.Is(err, buckylibs.ErrInvalidDigest) || errors.Is(err, buckylibs.ErrInvalidVersion) {
+			return errs.Errorf(errs.InvalidArgument, "invalid library version: %s", err)
+		}
+		return errs.Errorf(errs.Internal, "unable to verify whisper.cpp libraries: %s", err)
+	}
+
+	return toAppBuckyLibIntegrity(report, a.buckyLibs)
 }
 
 // pullBuckyLibs streams a whisper.cpp library install. With no triple

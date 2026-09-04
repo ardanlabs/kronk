@@ -1749,6 +1749,18 @@ kronk libs --local`}</code></pre>
                 <td>Exact llama.cpp library directory or libraries root</td>
               </tr>
               <tr>
+                <td><code>--lib-version</code></td>
+                <td><code>KRONK_LIB_VERSION</code></td>
+                <td>unset</td>
+                <td>llama.cpp release, optionally pinned as <code>VERSION@sha256:&lt;64-hex-digest&gt;</code></td>
+              </tr>
+              <tr>
+                <td><code>--lib-verify-enabled</code></td>
+                <td><code>KRONK_LIB_VERIFY_ENABLED</code></td>
+                <td><code>true</code></td>
+                <td>Verify the selected llama.cpp and whisper.cpp bundles before loading them</td>
+              </tr>
+              <tr>
                 <td><code>--processor</code></td>
                 <td><code>KRONK_PROCESSOR</code></td>
                 <td>Detected host backend</td>
@@ -1855,6 +1867,8 @@ kronk libs --local`}</code></pre>
           <p>Kronk also probes the installed preferred accelerator bundle. It changes to a different installed bundle only when the preferred bundle positively reports no accelerator and a same-version alternative positively reports a device. This probe never installs another bundle. The startup log records the preferred and selected processors and the reason for the decision.</p>
           <p><code>--processor</code> and <code>--lib-path</code>, or their environment equivalents, are strict operator choices and disable automatic fallback. A custom non-empty library directory without <code>version.json</code> is treated as a read-only user-managed build; the server loads it but does not upgrade or replace it. <code>--base-path</code> moves the managed library root along with other Kronk data, while <code>--lib-path</code> selects the llama.cpp location specifically. Restart the server after changing any native library selection setting.</p>
           <p>Set <code>--lib-download-enabled=false</code> or <code>KRONK_LIB_DOWNLOAD_ENABLED=false</code> to skip the automatic llama.cpp download at startup. Kronk still loads the library selected by <code>--lib-path</code> or <code>KRONK_LIB_PATH</code>.</p>
+          <p>Library verification is enabled by default. Set <code>--lib-verify-enabled=false</code> or <code>KRONK_LIB_VERIFY_ENABLED=false</code> to disable it. Kronk verifies the selected llama.cpp bundle before its device probe and verifies the selected whisper.cpp bundle before either backend loads native code. A failure leaves only the affected backend in degraded mode.</p>
+          <p>For an externally pinned llama.cpp check, set <code>--lib-version</code> or <code>KRONK_LIB_VERSION</code> to <code>VERSION@sha256:&lt;64-hex-digest&gt;</code>. The digest identifies Yzma's release manifest, which identifies the platform archives and their installed files. Bucky's default whisper.cpp version already includes its published manifest digest. Bucky validates that manifest and the selected archive during download; startup verification then hashes the extracted files against the authenticated manifest. Post-install verification requires an install record and per-file hashes in the release manifest.</p>
           <p>Bucky performs separate whisper.cpp runtime selection. Its managed bundles live below <code>&lt;base&gt;/bucky-libraries</code>, and <code>KRONK_BUCKY_LIB_PATH</code> authoritatively selects a different bundle or user-managed build. It does not use <code>--lib-path</code>/<code>KRONK_LIB_PATH</code>. See <a href="https://www.kronkai.com/manual#182-install-whisper-libraries">Chapter 18 §18.2</a> for Bucky's CUDA, Vulkan, and CPU fallback rules.</p>
           <h2 id="84-model-pool-and-resource-budgets">8.4 Model Pool and Resource Budgets</h2>
           <p>Kronk keeps loaded models in memory to avoid paying model-load latency on every request. Three settings govern retention:</p>
@@ -2208,6 +2222,10 @@ data: {"type":"response.completed",...}`}</code></pre>
                 <td>Show the active llama.cpp library installation and upgrade state</td>
               </tr>
               <tr>
+                <td><code>GET /v1/kronk/libs/integrity</code></td>
+                <td>Hash and verify the selected llama.cpp bundle against Yzma's release manifest</td>
+              </tr>
+              <tr>
                 <td><code>GET /v1/kronk/libs/combinations</code></td>
                 <td>List supported operating-system, architecture, and processor combinations</td>
               </tr>
@@ -2225,7 +2243,8 @@ data: {"type":"response.completed",...}`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <p><code>POST /v1/kronk/libs/pull</code> accepts optional <code>arch</code>, <code>os</code>, <code>processor</code>, and <code>version</code> query parameters. Supply <code>arch</code>, <code>os</code>, and <code>processor</code> together for a cross-platform bundle; omit all three to operate on the active platform.</p>
+          <p><code>POST /v1/kronk/libs/pull</code> accepts optional <code>arch</code>, <code>os</code>, <code>processor</code>, and <code>version</code> query parameters. Supply <code>arch</code>, <code>os</code>, and <code>processor</code> together for a cross-platform bundle; omit all three to operate on the active platform. A version can be externally pinned as <code>VERSION@sha256:&lt;64-hex-digest&gt;</code>. Yzma checks the raw release-manifest bytes against that digest and then verifies the selected archive before extraction.</p>
+          <p><code>GET /v1/kronk/libs/integrity</code> hashes the installed files and compares them with the file digests in Yzma's release manifest. Its optional <code>version</code> query parameter accepts the same pinned syntax, allowing the caller to supply the trusted manifest digest rather than trusting the server's install record or manifest host. The response identifies the backend, version, platform triple, overall result, per-file states, and changed, missing, or unexpected counts. Verification requires a Yzma install record and a release manifest containing per-file hashes. A release or upstream asset with archive hashes only returns an error rather than claiming the installed files are verified.</p>
           <h3 id="models">Models</h3>
           <table className="flags-table">
             <thead>
@@ -2487,6 +2506,10 @@ data: {"type":"response.completed",...}`}</code></pre>
                 <td>Show the active whisper.cpp library installation</td>
               </tr>
               <tr>
+                <td><code>GET /v1/bucky/libs/integrity</code></td>
+                <td>Hash and verify the selected whisper.cpp bundle against Bucky's release manifest</td>
+              </tr>
+              <tr>
                 <td><code>GET /v1/bucky/libs/combinations</code></td>
                 <td>List supported platform combinations</td>
               </tr>
@@ -2524,6 +2547,8 @@ data: {"type":"response.completed",...}`}</code></pre>
               </tr>
             </tbody>
           </table>
+          <p><code>POST /v1/bucky/libs/pull</code> accepts the same optional platform and <code>version</code> query parameters as the Kronk library route. Bucky always verifies the selected archive against its release manifest before extraction. A version in <code>VERSION@sha256:&lt;64-hex-digest&gt;</code> form also authenticates the manifest itself. The default Bucky version already includes its published manifest digest.</p>
+          <p><code>GET /v1/bucky/libs/integrity</code> hashes the installed files. With no <code>version</code> query parameter, Kronk uses the version recorded for the active installation; the default installation therefore retains its authenticated manifest pin. The response includes <code>manifest_authenticated</code> and <code>source</code> in addition to the common library integrity fields.</p>
           <p>See <a href="https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription">Chapter 18</a> for installation, model naming, transcription formats, and Bucky-specific runtime behavior.</p>
           <h2 id="912-operations-and-evaluation">9.12 Operations and Evaluation</h2>
           <table className="flags-table">

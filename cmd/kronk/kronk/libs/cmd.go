@@ -46,6 +46,9 @@ EXAMPLES
   # Download a specific version
   kronk libs --local --version=b7406
 
+  # Download a specific version pinned to its digest manifest SHA-256
+  kronk libs --local --version=b10785@sha256:<64-hex-digest>
+
   # List supported (arch, os, processor) combinations
   kronk libs --list-combinations
 
@@ -74,7 +77,7 @@ ENVIRONMENT VARIABLES (Local Mode)
 func init() {
 	Cmd.Flags().Bool("local", false, "Run without the model server")
 	Cmd.Flags().Bool("upgrade", false, "Track the latest llama.cpp release instead of the well-known default version")
-	Cmd.Flags().String("version", "", "Download a specific llama.cpp version instead of the default")
+	Cmd.Flags().String("version", "", "Download a specific llama.cpp version, optionally VERSION@sha256:DIGEST")
 
 	Cmd.Flags().Bool("install", false, "Install for the supplied --arch/--os/--processor triple (lands in its own folder under the libraries root)")
 	Cmd.Flags().String("arch", "", "Architecture for triple-aware install operations (amd64, arm64)")

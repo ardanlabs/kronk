@@ -2,6 +2,7 @@ package toolapp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -19,6 +20,18 @@ func (a *app) listLibs(ctx context.Context, r *http.Request) web.Encoder {
 	}
 
 	return toAppVersionTag("retrieve", versionTag, a.libs.AllowUpgrade)
+}
+
+func (a *app) verifyLibs(ctx context.Context, r *http.Request) web.Encoder {
+	report, err := a.libs.Verify(ctx, r.URL.Query().Get("version"))
+	if err != nil {
+		if errors.Is(err, libs.ErrInvalidDigest) || errors.Is(err, libs.ErrInvalidVersion) {
+			return errs.Errorf(errs.InvalidArgument, "invalid library version: %s", err)
+		}
+		return errs.Errorf(errs.Internal, "unable to verify llama.cpp libraries: %s", err)
+	}
+
+	return toAppLibIntegrity(report, a.libs)
 }
 
 // pullLibs streams a library install. With no triple query parameters it
@@ -138,6 +151,17 @@ func (a *app) pullLibs(ctx context.Context, r *http.Request) web.Encoder {
 	// downloaded libraries. This allows the server to recover from a
 	// degraded state without a restart.
 	if !kronk.Initialized() {
+		if a.libVerifyEnabled {
+			verifyVersion := a.libVersion
+			if verifyVersion == "" {
+				verifyVersion = version
+			}
+			report, err := a.libs.Verify(ctx, verifyVersion)
+			if err != nil || !report.OK() {
+				a.log.Info(ctx, "pull-libs", "WARNING", "libraries downloaded but verification failed; kronk was not initialized", "ERROR", err)
+				return web.NewNoResponse()
+			}
+		}
 		if err := kronk.Init(kronk.WithLibPath(a.libs.LibsPath())); err != nil {
 			a.log.Info(ctx, "pull-libs", "WARNING", "libraries downloaded but failed to initialize kronk", "ERROR", err)
 		} else {

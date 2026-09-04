@@ -121,6 +121,8 @@ type runtimeProbe struct {
 	err       error
 }
 
+type runtimeVerifier func(context.Context, runtimeCandidate) error
+
 type hostCUDAState uint8
 
 const (
@@ -380,11 +382,53 @@ func (lib *Libs) SelectInstalledRuntime(ctx context.Context, log Logger) (*Libs,
 	return lib.selectInstalledRuntime(ctx, log, probeRuntime)
 }
 
-func (lib *Libs) selectInstalledRuntime(ctx context.Context, log Logger, probeFn func(context.Context, runtimeCandidate) runtimeProbe) (*Libs, RuntimeSelection, error) {
+// SelectVerifiedInstalledRuntime selects an installed accelerator bundle only
+// after verifying every bundle before its executable probe runs. Version may
+// include an externally trusted manifest digest as VERSION@sha256:DIGEST.
+func (lib *Libs) SelectVerifiedInstalledRuntime(ctx context.Context, log Logger, version string) (*Libs, RuntimeSelection, error) {
+	verifyFn := func(ctx context.Context, candidate runtimeCandidate) error {
+		return verifyRuntime(ctx, candidate, version)
+	}
+
+	return lib.selectInstalledRuntime(ctx, log, probeRuntime, verifyFn)
+}
+
+func (lib *Libs) selectInstalledRuntime(ctx context.Context, log Logger, probeFn func(context.Context, runtimeCandidate) runtimeProbe, verifyFns ...runtimeVerifier) (*Libs, RuntimeSelection, error) {
 	selection := RuntimeSelection{
 		PreferredProcessor: lib.Processor(),
 		SelectedProcessor:  lib.Processor(),
 		Reason:             "preferred runtime retained",
+	}
+
+	if len(verifyFns) == 0 {
+		if lib.hostDemoted {
+			selection.Reason = "host compatibility fallback retained"
+			return lib, selection, nil
+		}
+
+		if !isAcceleratorProcessor(lib.Processor()) || lib.readOnly {
+			return lib, selection, nil
+		}
+	}
+
+	installed, err := lib.InstalledVersion()
+	if err != nil {
+		if len(verifyFns) > 0 {
+			return nil, RuntimeSelection{}, fmt.Errorf("select-installed-runtime: read installed version: %w", err)
+		}
+		selection.Reason = "preferred runtime is not installed"
+		return lib, selection, nil
+	}
+
+	preferred := runtimeCandidate{
+		processor: lib.processor,
+		path:      lib.path,
+		version:   installed.Version,
+	}
+	if len(verifyFns) > 0 {
+		if err := verifyFns[0](ctx, preferred); err != nil {
+			return nil, RuntimeSelection{}, fmt.Errorf("select-installed-runtime: %w", err)
+		}
 	}
 
 	if lib.hostDemoted {
@@ -396,17 +440,6 @@ func (lib *Libs) selectInstalledRuntime(ctx context.Context, log Logger, probeFn
 		return lib, selection, nil
 	}
 
-	installed, err := lib.InstalledVersion()
-	if err != nil {
-		selection.Reason = "preferred runtime is not installed"
-		return lib, selection, nil
-	}
-
-	preferred := runtimeCandidate{
-		processor: lib.processor,
-		path:      lib.path,
-		version:   installed.Version,
-	}
 	preferredProbe := probeFn(ctx, preferred)
 	logRuntimeProbe(ctx, log, preferredProbe)
 
@@ -426,6 +459,14 @@ func (lib *Libs) selectInstalledRuntime(ctx context.Context, log Logger, probeFn
 
 	probes := make([]runtimeProbe, 0, len(candidates))
 	for _, candidate := range candidates {
+		if len(verifyFns) > 0 {
+			if err := verifyFns[0](ctx, candidate); err != nil {
+				if log != nil {
+					log(ctx, "runtime verification", "processor", candidate.processor, "path", candidate.path, "ERROR", err)
+				}
+				continue
+			}
+		}
 		probe := probeFn(ctx, candidate)
 		logRuntimeProbe(ctx, log, probe)
 		probes = append(probes, probe)

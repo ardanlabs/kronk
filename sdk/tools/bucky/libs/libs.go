@@ -29,12 +29,9 @@ const (
 	versionFile = "version.json"
 	localFolder = "bucky-libraries"
 
-	// defaultVersion is the well-known working version of whisper.cpp used
-	// when no explicit version is provided and AllowUpgrade is false.
-	// This pin is owned by Kronk and intentionally overrides whatever
-	// github.com/ardanlabs/bucky/pkg/download.DefaultWhisperVersion ships
-	// with, because the bucky module may not be bumped in lockstep with
-	// upstream whisper.cpp releases.
+	// defaultVersion is Bucky's authenticated whisper.cpp version. Keeping the
+	// manifest digest attached ensures callers that use Kronk's default verify
+	// the publisher manifest as well as the selected archive.
 	defaultVersion = download.DefaultWhisperVersion
 )
 
@@ -739,6 +736,10 @@ func chooseVersion(override string, allowUpgrade bool, installed string, latest 
 	case override != "":
 		// Matrix row 1: an explicit override always wins.
 		return override
+	case allowUpgrade && bareVersion(latest) == bareVersion(def):
+		// Preserve the authenticated default when the discovery endpoint
+		// reports the same release without its manifest digest.
+		return def
 	case allowUpgrade:
 		// Matrix row 2: track the latest published version.
 		return latest
@@ -765,6 +766,7 @@ func versionGreater(v1, v2 string) bool {
 	}
 
 	stripPrefix := func(s string) string {
+		s = bareVersion(s)
 		if len(s) > 0 && (s[0] < '0' || s[0] > '9') {
 			return s[1:]
 		}
@@ -802,6 +804,11 @@ func versionGreater(v1, v2 string) bool {
 	}
 
 	return false
+}
+
+func bareVersion(version string) string {
+	version, _, _ = strings.Cut(version, "@")
+	return version
 }
 
 // hasNetwork reports whether Kronk can reach the internet. It issues a real

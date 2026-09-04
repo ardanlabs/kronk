@@ -37,6 +37,8 @@ func (all) Add(app *web.App, cfg mux.Config) {
 		AuthClient:             cfg.AuthClient,
 		Pool:                   cfg.Pool,
 		Libs:                   cfg.Libs,
+		LibVersion:             cfg.LibVersion,
+		LibVerifyEnabled:       cfg.LibVerifyEnabled,
 		Models:                 cfg.Models,
 		BuckyLibs:              cfg.BuckyLibs,
 		BuckyModels:            cfg.BuckyModels,

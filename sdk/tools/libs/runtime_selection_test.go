@@ -581,3 +581,66 @@ func TestSelectInstalledRuntime(t *testing.T) {
 		t.Errorf("primary path mutated: got %q, want %q", got, want)
 	}
 }
+
+func TestSelectInstalledRuntimeVerifiesBeforeProbe(t *testing.T) {
+	scrubKronkEnv(t)
+
+	root := filepath.Join(t.TempDir(), localFolder)
+	arch, err := download.ParseArch("amd64")
+	if err != nil {
+		t.Fatalf("parse arch: %v", err)
+	}
+	opSys, err := download.ParseOS("linux")
+	if err != nil {
+		t.Fatalf("parse os: %v", err)
+	}
+
+	cudaPath := installPathFor(root, arch, opSys, download.CUDA)
+	vulkanPath := installPathFor(root, arch, opSys, download.Vulkan)
+	for path, processor := range map[string]download.Processor{
+		cudaPath:   download.CUDA,
+		vulkanPath: download.Vulkan,
+	} {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", path, err)
+		}
+		if err := writeVersionFile(path, "b100", arch, opSys, processor); err != nil {
+			t.Fatalf("write version %s: %v", path, err)
+		}
+	}
+
+	primary := &Libs{
+		root:      root,
+		path:      cudaPath,
+		arch:      arch,
+		os:        opSys,
+		processor: download.CUDA,
+	}
+
+	verified := make(map[string]bool)
+	verifyFn := func(_ context.Context, candidate runtimeCandidate) error {
+		verified[candidate.path] = true
+		return nil
+	}
+	probeFn := func(_ context.Context, candidate runtimeCandidate) runtimeProbe {
+		if !verified[candidate.path] {
+			t.Errorf("probe ran before verification for %q", candidate.path)
+		}
+		state := runtimeProbeNone
+		if candidate.processor.Equal(download.Vulkan) {
+			state = runtimeProbeDevices
+		}
+		return runtimeProbe{candidate: candidate, state: state}
+	}
+
+	selected, _, err := primary.selectInstalledRuntime(context.Background(), noopLog, probeFn, verifyFn)
+	if err != nil {
+		t.Fatalf("select runtime: %v", err)
+	}
+	if got, want := selected.Processor(), "vulkan"; got != want {
+		t.Errorf("processor: got %q, want %q", got, want)
+	}
+	if !verified[cudaPath] || !verified[vulkanPath] {
+		t.Errorf("verified paths: got %v, want %q and %q", verified, cudaPath, vulkanPath)
+	}
+}

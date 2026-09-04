@@ -62,6 +62,8 @@ type Config struct {
 	AuthClient          *authclient.Client
 	Pool                *pool.Pool
 	Libs                *libs.Libs
+	LibVersion          string
+	LibVerifyEnabled    bool
 	Models              *models.Models
 	BuckyLibs           *buckylibs.Libs
 	BuckyModels         *buckymodels.Models

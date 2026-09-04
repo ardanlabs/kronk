@@ -107,6 +107,8 @@ Common settings can be supplied as flags or environment variables:
 | `--write-timeout` | `KRONK_WEB_WRITE_TIMEOUT` | `61m` | HTTP response write timeout; `0` disables it, otherwise it must exceed the inference timeout |
 | `--base-path` | `KRONK_BASE_PATH` | `~/.kronk` | Root for Kronk data |
 | `--lib-path` | `KRONK_LIB_PATH` | Detected bundle under `<base>/libraries` | Exact llama.cpp library directory or libraries root |
+| `--lib-version` | `KRONK_LIB_VERSION` | unset | llama.cpp release, optionally pinned as `VERSION@sha256:<64-hex-digest>` |
+| `--lib-verify-enabled` | `KRONK_LIB_VERIFY_ENABLED` | `true` | Verify the selected llama.cpp and whisper.cpp bundles before loading them |
 | `--processor` | `KRONK_PROCESSOR` | Detected host backend | Processor bundle such as `metal`, `cuda`, `rocm`, `vulkan`, or `cpu` |
 | `--arch` | `KRONK_ARCH` | Host architecture | Library-bundle architecture override |
 | `--os` | `KRONK_OS` | Host operating system | Library-bundle operating-system override |
@@ -167,6 +169,21 @@ library selection setting.
 Set `--lib-download-enabled=false` or `KRONK_LIB_DOWNLOAD_ENABLED=false` to
 skip the automatic llama.cpp download at startup. Kronk still loads the library
 selected by `--lib-path` or `KRONK_LIB_PATH`.
+
+Library verification is enabled by default. Set `--lib-verify-enabled=false` or
+`KRONK_LIB_VERIFY_ENABLED=false` to disable it. Kronk verifies the selected
+llama.cpp bundle before its device probe and verifies the selected whisper.cpp
+bundle before either backend loads native code. A failure leaves only the
+affected backend in degraded mode.
+
+For an externally pinned llama.cpp check, set `--lib-version` or
+`KRONK_LIB_VERSION` to `VERSION@sha256:<64-hex-digest>`. The digest identifies
+Yzma's release manifest, which identifies the platform archives and their
+installed files. Bucky's default whisper.cpp version already includes its
+published manifest digest. Bucky validates that manifest and the selected
+archive during download; startup verification then hashes the extracted files
+against the authenticated manifest. Post-install verification requires an
+install record and per-file hashes in the release manifest.
 
 Bucky performs separate whisper.cpp runtime selection. Its managed bundles
 live below `<base>/bucky-libraries`, and `KRONK_BUCKY_LIB_PATH` authoritatively

@@ -21,6 +21,8 @@ type Config struct {
 	AuthClient             *authclient.Client
 	Pool                   *pool.Pool
 	Libs                   *libs.Libs
+	LibVersion             string
+	LibVerifyEnabled       bool
 	Models                 *models.Models
 	BuckyLibs              *buckylibs.Libs
 	BuckyModels            *buckymodels.Models
@@ -51,6 +53,7 @@ func Routes(app *web.App, cfg Config) {
 	// Kronk (llama.cpp) backend — libs, models, catalog.
 
 	app.HandlerFunc(http.MethodGet, version, "/kronk/libs", api.listLibs, managementAccess)
+	app.HandlerFunc(http.MethodGet, version, "/kronk/libs/integrity", api.verifyLibs, managementAccess)
 	app.HandlerFunc(http.MethodPost, version, "/kronk/libs/pull", api.pullLibs, administrationAccess)
 	app.HandlerFunc(http.MethodGet, version, "/kronk/libs/combinations", api.listLibsCombinations, managementAccess)
 	app.HandlerFunc(http.MethodGet, version, "/kronk/libs/installs", api.listLibsInstalls, managementAccess)
@@ -85,6 +88,7 @@ func Routes(app *web.App, cfg Config) {
 	// under /bucky/models/catalog.
 
 	app.HandlerFunc(http.MethodGet, version, "/bucky/libs", api.listBuckyLibs, managementAccess)
+	app.HandlerFunc(http.MethodGet, version, "/bucky/libs/integrity", api.verifyBuckyLibs, managementAccess)
 	app.HandlerFunc(http.MethodPost, version, "/bucky/libs/pull", api.pullBuckyLibs, administrationAccess)
 	app.HandlerFunc(http.MethodGet, version, "/bucky/libs/combinations", api.listBuckyLibsCombinations, managementAccess)
 	app.HandlerFunc(http.MethodGet, version, "/bucky/libs/installs", api.listBuckyLibsInstalls, managementAccess)

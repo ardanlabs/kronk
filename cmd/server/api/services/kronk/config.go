@@ -74,6 +74,7 @@ type config struct {
 	BuckyLibPath       string `yaml:"bucky-lib-path"`
 	LibVersion         string `yaml:"lib-version"`
 	LibDownloadEnabled bool   `yaml:"lib-download-enabled"`
+	LibVerifyEnabled   bool   `yaml:"lib-verify-enabled"`
 	Arch               string `yaml:"arch"`
 	OS                 string `yaml:"os"`
 	Processor          string `yaml:"processor"`
@@ -107,6 +108,7 @@ func newConfig() config {
 	cfg.Pool.BudgetPercent = 90
 	cfg.Pool.ModelsInPool = 10
 	cfg.LibDownloadEnabled = true
+	cfg.LibVerifyEnabled = true
 
 	return cfg
 }

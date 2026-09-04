@@ -32,8 +32,8 @@ github.com/agnivade/levenshtein v1.2.1 h1:EHBY3UOn1gwdy/VbFwgo4cxecRznFk7fKWN1KO
 github.com/agnivade/levenshtein v1.2.1/go.mod h1:QVVI16kDrtSuwcpd0p1+xMC6Z/VfhtCyDIjcwga4/DU=
 github.com/arbovm/levenshtein v0.0.0-20160628152529-48b4e1c0c4d0 h1:jfIu9sQUG6Ig+0+Ap1h4unLjW6YQJpKZVmUzxsD4E/Q=
 github.com/arbovm/levenshtein v0.0.0-20160628152529-48b4e1c0c4d0/go.mod h1:t2tdKJDJF9BV14lnkjHmOQgcvEKgtqs5a1N3LNdJhGE=
-github.com/ardanlabs/bucky v1.1.1 h1:bCoDqjU3kWcbJMvwbLLoFjW45rbCqCrfMFa4zrxAOwo=
-github.com/ardanlabs/bucky v1.1.1/go.mod h1:iq1gUg7DHQZWiTuWSEPfR0UzQoGnozXnBsLfGZqPGKA=
+github.com/ardanlabs/bucky v1.1.2 h1:C8s67DQjL90waWk/giE8nNkX8pMWxHnDfb5pe8DrvMw=
+github.com/ardanlabs/bucky v1.1.2/go.mod h1:iq1gUg7DHQZWiTuWSEPfR0UzQoGnozXnBsLfGZqPGKA=
 github.com/ardanlabs/conf/v3 v3.13.0 h1:XKQXX35fFq/jencPu19xh0a6NPMT4NrpcRP/F9x7ejY=
 github.com/ardanlabs/conf/v3 v3.13.0/go.mod h1:XlL9P0quWP4m1weOVFmlezabinbZLI05niDof/+Ochk=
 github.com/ardanlabs/jinja v1.6.0 h1:CbqS/dxYM9qrmlBed1GsN64/tRY6SoWQWc5Sc+aw3iI=
@@ -164,8 +164,8 @@ github.com/hashicorp/go-getter v1.8.8 h1:sRakhf+EH6s0LZLO2IgBwZ6hAFp+fZOZMNREwVE
 github.com/hashicorp/go-getter v1.8.8/go.mod h1:fqFlibKpwfns/s4oljLB3upJspyfFLQhS7031PlfUDc=
 github.com/hashicorp/go-version v1.9.0 h1:CeOIz6k+LoN3qX9Z0tyQrPtiB1DFYRPfCIBtaXPSCnA=
 github.com/hashicorp/go-version v1.9.0/go.mod h1:fltr4n8CU8Ke44wwGCBoEymUuxUHl09ZGVZPK5anwXA=
-github.com/hybridgroup/yzma v1.25.1-0.20260903130709-6bd0208c33c6 h1:Mj1XX7092suxoZNc/px7e/1ZYajiKGeGd8C2IeOTb1k=
-github.com/hybridgroup/yzma v1.25.1-0.20260903130709-6bd0208c33c6/go.mod h1:wAMtNTjSnE79jTWzaeFSsuraam0TXKCPajMHA5s+OX8=
+github.com/hybridgroup/yzma v1.25.1-0.20260904102343-1e8d073c20d4 h1:hxcTJ4ful0iznrttZEpPUb+RAaqqbBK5nQmUjKjgZw0=
+github.com/hybridgroup/yzma v1.25.1-0.20260904102343-1e8d073c20d4/go.mod h1:wAMtNTjSnE79jTWzaeFSsuraam0TXKCPajMHA5s+OX8=
 github.com/icza/bitio v1.1.0 h1:ysX4vtldjdi3Ygai5m1cWy4oLkhWTAi+SyO6HC8L9T0=
 github.com/icza/bitio v1.1.0/go.mod h1:0jGnlLAx8MKMr9VGnn/4YrvZiprkvBelsVIbA9Jjr9A=
 github.com/icza/mighty v0.0.0-20180919140131-cfd07d671de6 h1:8UsGZ2rr2ksmEru6lToqnXgA8Mz1DP11X4zSJ159C3k=

@@ -218,38 +218,69 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	// -------------------------------------------------------------------------
 	// Library System
 
-	libs, err := libs.New(
+	libVersion := defaults.LibVersion(cfg.LibVersion)
+	llamaLibs, err := libs.New(
 		libs.WithDetectOverrides(ctx, log.Info, cfg.LibPath, cfg.Arch, cfg.OS, cfg.Processor),
 		libs.WithBasePath(cfg.BasePath),
 		libs.WithAllowUpgrade(cfg.AllowUpgrade),
-		libs.WithVersion(defaults.LibVersion(cfg.LibVersion)),
+		libs.WithVersion(libVersion),
 	)
 	if err != nil {
 		return fmt.Errorf("unable to create libs api: %w", err)
 	}
 
 	if cfg.LibDownloadEnabled {
-		log.Info(ctx, "startup", "status", "installing/updating libraries", "libPath", libs.LibsPath(), "arch", libs.Arch(), "os", libs.OS(), "processor", libs.Processor(), "update", true)
+		log.Info(ctx, "startup", "status", "installing/updating libraries", "libPath", llamaLibs.LibsPath(), "arch", llamaLibs.Arch(), "os", llamaLibs.OS(), "processor", llamaLibs.Processor(), "update", true)
 
 		downloadCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
-		_, err := libs.Download(downloadCtx, log.Info)
+		_, err := llamaLibs.Download(downloadCtx, log.Info)
 		cancel()
 		if err != nil {
 			log.Info(ctx, "startup", "WARNING", "unable to install llama.cpp, running in degraded mode", "ERROR", err)
 		}
 	} else {
-		log.Info(ctx, "startup", "status", "automatic llama.cpp library download disabled", "libPath", libs.LibsPath())
+		log.Info(ctx, "startup", "status", "automatic llama.cpp library download disabled", "libPath", llamaLibs.LibsPath())
 	}
 
+	libVerified := !cfg.LibVerifyEnabled
+
 	// Capability fallback applies only to automatic processor selection. An
-	// explicit processor or library path remains a strict user choice.
+	// explicit processor or library path remains a strict user choice. When
+	// verification is enabled, every bundle is checked before its executable
+	// device probe runs.
 	if cfg.Processor == "" && cfg.LibPath == "" {
-		selected, decision, err := libs.SelectInstalledRuntime(ctx, log.Info)
-		if err != nil {
-			log.Info(ctx, "startup", "WARNING", "unable to select installed llama.cpp runtime", "ERROR", err)
+		var selected *libs.Libs
+		var decision libs.RuntimeSelection
+		var err error
+		if cfg.LibVerifyEnabled {
+			verifyCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+			selected, decision, err = llamaLibs.SelectVerifiedInstalledRuntime(verifyCtx, log.Info, libVersion)
+			cancel()
 		} else {
-			libs = selected
+			selected, decision, err = llamaLibs.SelectInstalledRuntime(ctx, log.Info)
+		}
+		if err != nil {
+			status := "unable to select installed llama.cpp runtime"
+			if cfg.LibVerifyEnabled {
+				status = "unable to select and verify installed llama.cpp runtime"
+			}
+			log.Info(ctx, "startup", "WARNING", status, "ERROR", err)
+		} else {
+			llamaLibs = selected
+			libVerified = true
 			log.Info(ctx, "startup", "status", "selected llama.cpp runtime", "preferred", decision.PreferredProcessor, "selected", decision.SelectedProcessor, "reason", decision.Reason)
+		}
+	} else if cfg.LibVerifyEnabled {
+		verifyCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+		report, err := llamaLibs.Verify(verifyCtx, libVersion)
+		cancel()
+		if err != nil {
+			log.Info(ctx, "startup", "WARNING", "unable to verify selected llama.cpp runtime", "ERROR", err)
+		} else if !report.OK() {
+			log.Info(ctx, "startup", "WARNING", "selected llama.cpp runtime failed verification", "changed", report.Changed, "missing", report.Missing)
+		} else {
+			libVerified = true
+			log.Info(ctx, "startup", "status", "verified llama.cpp runtime", "version", report.Tag, "files", report.Verified, "unexpected", report.Unexpected)
 		}
 	}
 
@@ -291,11 +322,24 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	log.Info(ctx, "startup", "status", "bucky libs ready", "libPath", buckyLibs.LibsPath(), "arch", buckyLibs.Arch(), "os", buckyLibs.OS(), "processor", buckyLibs.Processor())
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	defer cancel()
-
-	if _, err := buckyLibs.Download(ctx, log.Info); err != nil {
+	buckyLibVerified := !cfg.LibVerifyEnabled
+	downloadCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	buckyVersion, err := buckyLibs.Download(downloadCtx, log.Info)
+	cancel()
+	if err != nil {
 		log.Info(ctx, "startup", "WARNING", "unable to install whisper.cpp, running in degraded mode", "ERROR", err)
+	} else if cfg.LibVerifyEnabled {
+		verifyCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+		report, err := buckyLibs.Verify(verifyCtx, buckyVersion.Version)
+		cancel()
+		if err != nil {
+			log.Info(ctx, "startup", "WARNING", "unable to verify selected whisper.cpp runtime", "ERROR", err)
+		} else if !report.OK() {
+			log.Info(ctx, "startup", "WARNING", "selected whisper.cpp runtime failed verification", "changed", report.Changed, "missing", report.Missing, "unexpected", report.Unexpected)
+		} else {
+			buckyLibVerified = true
+			log.Info(ctx, "startup", "status", "verified whisper.cpp runtime", "version", report.Tag, "files", report.Verified, "manifestAuthenticated", report.ManifestAuthenticated)
+		}
 	}
 
 	buckyModels, err := buckymodels.NewWithPaths(cfg.BasePath)
@@ -339,11 +383,15 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		llamaLogLevel = kronk.LogNormal
 	}
 
-	if err := kronk.Init(kronk.WithLibPath(libs.LibsPath()), kronk.WithLogLevel(llamaLogLevel)); err != nil {
+	if !libVerified {
+		log.Info(ctx, "startup", "WARNING", "kronk init skipped because llama.cpp runtime verification did not succeed")
+	} else if err := kronk.Init(kronk.WithLibPath(llamaLibs.LibsPath()), kronk.WithLogLevel(llamaLogLevel)); err != nil {
 		log.Info(ctx, "startup", "WARNING", "kronk init failed, running in degraded mode (use BUI to download libraries)", "ERROR", err)
 	}
 
-	if err := bucky.Init(bucky.WithLibPath(buckyLibs.LibsPath())); err != nil {
+	if !buckyLibVerified {
+		log.Info(ctx, "startup", "WARNING", "bucky init skipped because whisper.cpp runtime verification did not succeed")
+	} else if err := bucky.Init(bucky.WithLibPath(buckyLibs.LibsPath())); err != nil {
 		log.Info(ctx, "startup", "WARNING", "bucky init failed, running in degraded mode (use BUI to download whisper libraries)", "ERROR", err)
 	}
 
@@ -440,7 +488,9 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		Log:                 log,
 		AuthClient:          authClient,
 		Pool:                p,
-		Libs:                libs,
+		Libs:                llamaLibs,
+		LibVersion:          libVersion,
+		LibVerifyEnabled:    cfg.LibVerifyEnabled,
 		Models:              models,
 		BuckyLibs:           buckyLibs,
 		BuckyModels:         buckyModels,

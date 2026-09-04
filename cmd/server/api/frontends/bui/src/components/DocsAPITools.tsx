@@ -33,6 +33,7 @@ const endpointGroups: EndpointGroup[] = [
     description: 'Manage llama.cpp runtime library bundles.',
     endpoints: [
       { method: 'GET', path: '/v1/kronk/libs', description: 'Show the active library installation and upgrade state.', auth: 'Admin' },
+      { method: 'GET', path: '/v1/kronk/libs/integrity', description: 'Hash and verify the selected library bundle.', auth: 'Admin' },
       { method: 'GET', path: '/v1/kronk/libs/combinations', description: 'List supported operating-system, architecture, and processor combinations.', auth: 'Admin' },
       { method: 'GET', path: '/v1/kronk/libs/installs', description: 'List installed library bundles.', auth: 'Admin' },
       { method: 'POST', path: '/v1/kronk/libs/pull', description: 'Install a library bundle and stream progress.', auth: 'Admin' },
@@ -181,6 +182,7 @@ const endpointGroups: EndpointGroup[] = [
     description: 'Manage whisper.cpp runtime library bundles.',
     endpoints: [
       { method: 'GET', path: '/v1/bucky/libs', description: 'Show the active library installation.', auth: 'Admin' },
+      { method: 'GET', path: '/v1/bucky/libs/integrity', description: 'Hash and verify the selected library bundle.', auth: 'Admin' },
       { method: 'GET', path: '/v1/bucky/libs/combinations', description: 'List supported platform combinations.', auth: 'Admin' },
       { method: 'GET', path: '/v1/bucky/libs/installs', description: 'List installed library bundles.', auth: 'Admin' },
       { method: 'POST', path: '/v1/bucky/libs/pull', description: 'Install a library bundle and stream progress.', auth: 'Admin' },
