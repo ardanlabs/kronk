@@ -1,8 +1,10 @@
-# Pulled by .github/scripts/pull-models.sh. One `<backend> <model-id>` per line,
-# backend `kronk` or `bucky`; blank lines and `#` comments are ignored.
+# Pulled by .github/scripts/pull-models.sh. One `<backend> <model-id> [tier]`
+# per line, backend `kronk` or `bucky`; blank lines and `#` comments ignored.
 #
-# ~6.6 GiB uncompressed. Fork PRs re-pull the whole list on ubuntu-latest every
-# run, so anything bigger belongs in .github/test-models-gpu.txt.
+# tier is `base` when omitted: every runner pulls it, fork PRs included, so
+# the base set stays at ~6.6 GiB — what an ubuntu-latest runner can hold.
+# `gpu` is pulled only by gpu.yml's self-hosted legs, which have the disk and
+# keep it between jobs. Anything a hosted runner could not hold goes there.
 
 kronk unsloth/Qwen3.5-0.8B-Q8_0
 kronk unsloth/Qwen3-1.7B-Q4_K_M
@@ -11,3 +13,10 @@ kronk mradermacher/Qwopus3.5-4B-Coder.Q4_K_M
 kronk nomic-ai/nomic-embed-text-v1.5.Q8_0
 kronk gpustack/bge-reranker-v2-m3-Q8_0
 bucky ggml-tiny.bin
+
+# The two speculative-decoding MTP targets, the only GPU coverage of that path
+# (the classic separate-GGUF drafter is sdk/kronk/tests/draft). Both auto-enable
+# from GGUF metadata: mtp-Qwen3.6 owns its draft KV (sdk/kronk/tests/mtp),
+# gemma-4 shares the target's via its mtp-*.gguf companion (tests/gemma4mtp).
+kronk unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL gpu
+kronk unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M gpu

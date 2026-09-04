@@ -39,7 +39,7 @@
 # Measured on this host:
 #
 #   ~6.6 GiB   the base model set (.github/test-models.txt), per runner
-#   ~16 GiB    peak for the MTP targets in .github/test-models-gpu.txt
+#   ~16 GiB    peak for the `gpu`-tier MTP targets in .github/test-models.txt
 #
 # 20g therefore clears the largest job with headroom. Four of them nominally
 # oversubscribe 62 GiB on purpose: the cap is a blast radius, not admission
