@@ -2,17 +2,12 @@
 #
 # Start N self-hosted GitHub Actions runners on this host.
 #
-# A runner process executes ONE job at a time, so a single container makes
-# every job run back to back. Six jobs can be in flight — linux.yml's four
-# CPU jobs plus gpu.yml's Vulkan and ROCm legs — but COUNT is bounded by
-# RAM rather than by that number, so it is a memory budget and not a job
-# count: see HOST MEMORY BUDGET below. This host runs two per fleet.
-#
 #   COUNT=2 ./start-runners.sh
 #   COUNT=2 ./start-runners.sh --recreate    # replace running containers
 #
-# Runners started under different PREFIXes are independent fleets and can
-# coexist on one host; see TWO FLEETS below.
+# A runner process executes ONE job at a time, but COUNT is a memory budget
+# rather than a job count: see HOST MEMORY BUDGET below. This host runs two
+# per fleet, and fleets are told apart by PREFIX; see TWO FLEETS below.
 #
 # Configuration comes from the environment:
 #
@@ -35,48 +30,42 @@
 #
 # HOST MEMORY BUDGET
 #
-# An uncapped container sees every byte the host has, so one runaway job
-# takes the box down with it — including the other fleet's runner and
-# whatever job that was half way through. MEMORY caps each container, and
-# --memory-swap is pinned to the same value: left alone docker allows
-# swap up to twice the limit, which turns the cap into a push into the
-# host's 8 GiB of swap, and swapping a 16 GiB test is slower than failing
-# it.
+# An uncapped container sees every byte the host has, so one runaway job takes
+# the box down with it — the other fleet's runner included. MEMORY caps each
+# container, and --memory-swap is pinned to the same value because docker
+# otherwise allows swap to twice the limit, and swapping a 16 GiB test into
+# this host's 8 GiB of swap is slower than failing it.
 #
 # Measured on this host:
 #
 #   ~6.6 GiB   the base model set (.github/test-models.txt), per runner
 #   ~16 GiB    peak for the MTP targets in .github/test-models-gpu.txt
 #
-# 20g therefore clears the largest job with headroom. Four of them
-# nominally oversubscribe 62 GiB, and that is on purpose: the cap is a
-# blast radius, not admission control. What holds the fleets inside the
-# host is gpu.yml scheduling one leg per fleet, so the realistic peak is
-# two GPU legs at ~16 GiB beside two CPU jobs — roughly 48 GiB.
+# 20g therefore clears the largest job with headroom. Four of them nominally
+# oversubscribe 62 GiB on purpose: the cap is a blast radius, not admission
+# control, and gpu.yml schedules one GPU leg per fleet, so the realistic peak
+# is two GPU legs at ~16 GiB beside two CPU jobs.
 #
-# The cap bounds system RAM only. It is not a VRAM budget: this is a
-# Strix Halo part whose GPU carves its memory out of the same 62 GiB, and
-# that carve-out is not charged to the container's cgroup.
+# The cap bounds system RAM only, not VRAM: this Strix Halo part carves GPU
+# memory out of the same 62 GiB and that is not charged to the cgroup.
 #
 # TWO FLEETS ON ONE HOST
 #
 # One backend per image, one fleet per backend. gpu.yml's matrix puts the
-# backend in runs-on, so the vulkan fleet takes the Vulkan leg
-# and the rocm fleet takes the ROCm leg — never the other way round, and
-# never left to whichever runner GitHub picks first. Both fleets must be
-# running, or the unmatched leg queues silently until the 24h run limit.
+# backend in runs-on, so each leg lands on its own fleet instead of on
+# whichever runner GitHub picks first. Both fleets must be running, or the
+# unmatched leg queues silently until the 24h run limit.
 #
 # The second fleet needs a PREFIX of its own: that is what keeps container
-# names, runner names and the per-runner ~/.kronk volume distinct, so
-# neither fleet disturbs the other.
+# names, runner names and the per-runner ~/.kronk volume distinct.
 #
 #   COUNT=2 APP_ID=... APP_KEY=~/kronk-runners.pem ./start-runners.sh
 #   PREFIX=kronk-linux-rocm COUNT=2 IMAGE=kronk-runner:rocm \
 #       APP_ID=... APP_KEY=~/kronk-runners.pem ./start-runners.sh
 #
-# The CPU jobs ask only for self-hosted/Linux/X64, so either fleet serves
-# them and the split between the two is a capacity choice, not a
-# correctness one. Only the GPU legs are pinned.
+# The CPU jobs ask only for self-hosted/Linux/X64, so either fleet serves them
+# and the split between the two is a capacity choice. Only the GPU legs are
+# pinned.
 
 set -euo pipefail
 
@@ -89,11 +78,10 @@ APP_ID="${APP_ID:-}"
 APP_KEY="${APP_KEY:-}"
 MEMORY="${MEMORY-20g}"
 
-# The backend is read off the image rather than hardcoded, so a vulkan
-# image can never register runners advertising rocm. This label is
-# load-bearing, not cosmetic: gpu.yml's matrix puts the backend in
-# runs-on, so a wrong one here sends ROCm suites to a runner with no HIP
-# userspace, and a missing one leaves that leg queued with no error.
+# The backend is read off the image rather than hardcoded, so a vulkan image
+# can never register runners advertising rocm. gpu.yml's matrix puts the
+# backend in runs-on: a wrong label here sends ROCm suites to a runner with no
+# HIP userspace, and a missing one leaves that leg queued with no error.
 if [[ -z "${LABELS:-}" ]]; then
     backend="$(docker image inspect \
         -f '{{ index .Config.Labels "com.ardanlabs.kronk.backend" }}' \
@@ -130,10 +118,9 @@ if ! [[ "$COUNT" =~ ^[0-9]+$ ]] || (( COUNT < 1 )); then
     exit 1
 fi
 
-# Both flags carry the same value so the cap is a ceiling: --memory on its
-# own leaves --memory-swap at twice the limit. Docker reads 0 as
-# unlimited, so an explicit 0 (or an empty MEMORY) omits the flags rather
-# than passing something docker would silently ignore.
+# Both flags carry the same value so the cap is a ceiling: --memory on its own
+# leaves --memory-swap at twice the limit. Docker reads 0 as unlimited, so an
+# explicit 0 (or an empty MEMORY) omits the flags instead.
 mem_args=()
 mem_desc="uncapped"
 if [[ -n "$MEMORY" && "$MEMORY" != "0" ]]; then
@@ -156,18 +143,14 @@ if [[ -z "$VIDEO_GID" || -z "$RENDER_GID" ]]; then
     exit 1
 fi
 
-# The Go module and build caches are safe to share: the toolchain locks
-# them and is designed for concurrent use, and sharing is what makes a
-# second runner cheap. They are shared across FLEETS too — a vulkan and a
-# rocm fleet on one host compile the same code.
+# The Go module and build caches are safe to share — the toolchain locks them
+# and is designed for concurrent use — and they are shared across FLEETS too,
+# since both compile the same code.
 #
-# ~/.kronk is per-runner instead — concurrent `kronk model pull` runs
-# against one directory can race while writing the same partial file, and
-# 6.6 GB per runner is nothing against the disk this host has. The volume
-# is therefore named after the runner ("<prefix>-<n>-kronk"), not the
-# index alone: two fleets sharing a host both start at index 1, and an
-# index-keyed name would hand kronk-linux-gpu-1 and kronk-linux-rocm-1
-# the same directory — reintroducing exactly that race.
+# ~/.kronk is per-runner instead: concurrent `kronk model pull` runs against
+# one directory can race on the same partial file. The volume is named after
+# the runner ("<prefix>-<n>-kronk") rather than the index, because two fleets
+# both start at index 1 and an index-keyed name would reintroduce that race.
 docker volume create kronk-runner-go      >/dev/null
 docker volume create kronk-runner-gocache >/dev/null
 

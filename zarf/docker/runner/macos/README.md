@@ -24,11 +24,8 @@ brew install khoi/sand/sand              # 1.4.0
 
 Budget per runner: `ramGb: 48`, `cpuCores: 8`, ~520 GB sparse disk (inherited
 from the image, not settable in sand 1.4.0). Two runners on a 128 GiB / 16-core
-host is 96 GiB RAM and 1:1 vCPU — no host headroom at 2 runners, so do not add a
-third.
-
-Disk: each VM's sparse disk plus the shared model cache land on the same host
-volume. Budget ~700 GiB before the model set is warm.
+host is 96 GiB and 1:1 vCPU — no headroom left, so do not add a third. The
+sparse disks and the shared model cache share one volume: budget ~700 GiB.
 
 ## 2. GitHub App
 
@@ -44,7 +41,7 @@ group. Move them in GitHub org settings if you need them scoped.
 ## 3. `~/sand.yml`
 
 Not versioned in this repo — the live copy is on the host. These are the fields
-CI depends on, with the fleet's current values (derived from the running config,
+CI depends on, with the fleet's current values (from the running config,
 2026-09-02):
 
 ```yaml
@@ -94,14 +91,14 @@ not selectable):
 | `kronk-tools` | `setup-kronk` → `Stage Metal capability shim` | **every macOS job fails** |
 | `kronk-models` | `setup-kronk` → `Persist models on ephemeral macOS VMs` | warning; re-downloads the model set per job |
 
-**Ephemeral is the point.** The guest is cold every job: `~/.kronk`, `~/go` and
-the Go build cache do not survive. That is why the model cache is a host mount
+**Ephemeral is the point.** The guest is cold every job — `~/.kronk`, `~/go` and
+the Go build cache do not survive — which is why the model cache is a host mount
 and not a runner volume.
 
 **Cold-cache race.** Both runners share one models directory and kronk has no
 cross-process download lock; `sdk/tools/models/download.go` finishes a download
-with a rename. Two concurrent cold fetches of the same *missing* model can lose
-that race:
+with a rename, so two concurrent cold fetches of the same *missing* model can
+lose that race:
 
 ```
 ERROR[download-model: unable to rename proj file: rename
@@ -144,18 +141,16 @@ Fix: cua's
 process.
 
 ```bash
-cd zarf/macos
+cd zarf/docker/runner/macos
 ./build-metal-shim.sh                            # clone, build, verify, stage
 CUA_REF=<sha> ./build-metal-shim.sh              # pin a known-good upstream rev
 STAGE_DIR=~/ci-cache/kronk-tools ./build-metal-shim.sh
 ```
 
 Defaults: stages to `~/ci-cache/kronk-tools` (one 69 KB universal dylib plus a
-`PROVENANCE.txt` it generates), clones into `~/.cache/kronk-metal-shim`.
-
-Then add the `kronk-tools` mount from §3 and restart sand (§5). Keep the
+`PROVENANCE.txt` it generates), clones into `~/.cache/kronk-metal-shim`. Keep the
 upstream checkout out of `STAGE_DIR` — that whole directory is mounted into both
-guests.
+guests. Then add the `kronk-tools` mount from §3 and restart sand (§5).
 
 Shimmed guest:
 
@@ -167,11 +162,12 @@ ggml_metal_device_init: simdgroup matrix mul. = true
 ggml_metal_device_init: has bfloat            = true
 ```
 
+- Both `LUME_*` values are pinned to what real silicon reports:
+  `LUME_METAL_APPLE_FAMILY_MAX=1009` is Apple9, and `32768` for
+  `LUME_METAL_MAX_THREADGROUP_MEMORY` replaces the shim's 65536, which no Mac has.
 - `Metal3` stays `no`, deliberately. MLX-LM uses it to select residency sets the
   paravirtual device cannot create, and it is the one probe the shim will not
   fool — an honest "is this real hardware" gate.
-- `LUME_METAL_MAX_THREADGROUP_MEMORY=32768` pins what real silicon reports. The
-  shim defaults to 65536, which no Mac has.
 - Guest SIP must be **disabled** or `DYLD_INSERT_LIBRARIES` is stripped. The
   `macos-runner:tahoe` image ships it disabled.
 
@@ -187,10 +183,9 @@ launchctl kickstart -k "gui/$(id -u)/io.khoi.sand"
 ```
 
 The launchd agent (`~/Library/LaunchAgents/io.khoi.sand.plist`, KeepAlive +
-RunAtLoad) supervises sand. `launchctl kickstart -k` restarts from launchd's
-already-loaded definition and never re-reads the plist — a plist edit needs
-`bootout`/`bootstrap`. A malformed plist will not bootstrap and takes the host
-offline at the next reboot, so `plutil -lint` it first.
+RunAtLoad) supervises sand. `kickstart -k` never re-reads the plist, so a plist
+edit needs `bootout`/`bootstrap` — and `plutil -lint` first: one that will not
+bootstrap takes the host offline at the next reboot.
 
 Verify from the host:
 
@@ -206,7 +201,7 @@ Verify inside the guest — the shim and the GPU:
 lipo -archs ~/…/LumeMetalCapabilities.dylib           # must include arm64e
 
 # what the device reports, with and without the shim
-clang -fobjc-arc -framework Metal -framework Foundation zarf/macos/metal-caps.m -o /tmp/metal-caps
+clang -fobjc-arc -framework Metal -framework Foundation zarf/docker/runner/macos/metal-caps.m -o /tmp/metal-caps
 /tmp/metal-caps
 DYLD_INSERT_LIBRARIES=/Volumes/My\ Shared\ Files/kronk-tools/LumeMetalCapabilities.dylib \
 LUME_METAL_APPLE_FAMILY_MAX=1009 LUME_METAL_MAX_THREADGROUP_MEMORY=32768 \
@@ -223,14 +218,14 @@ llama.cpp gates: simdgroup_reduction=true  simdgroup_mm=true  bfloat=true
 ```
 
 `system_profiler SPDisplaysDataType` returns nothing in these VMs
-(`--no-graphics`) — it exits 0 with no output, so even an `|| echo` fallback
-never fires. Use `kronk devices` or `llama-bench --list-devices` for GPU facts.
+(`--no-graphics`) and exits 0, so even an `|| echo` fallback never fires. Use
+`kronk devices` or `llama-bench --list-devices` for GPU facts.
 
 ## 6. What CI does with the shim
 
 Staging and verification live in `.github/actions/setup-kronk`, gated on
-`runner.os == 'macOS'`, so every macOS job in every workflow gets them. Metal is
-a property of the platform, not of a workflow:
+`runner.os == 'macOS'`, so every macOS job in every workflow gets them: Metal is
+a property of the platform, not of a workflow.
 
 ```
 darwin/arm64 publishes ONE llama.cpp artifact
@@ -241,9 +236,8 @@ darwin/arm64 publishes ONE llama.cpp artifact
 ⇒ any macOS job that loads a model runs Metal, whatever KRONK_PROCESSOR says
 ```
 
-`Stage Metal capability shim` copies the dylib to `$RUNNER_TEMP` (dyld loading
-over virtiofs is a question nobody needs to answer at 3am) and rejects one with
-no arm64e slice.
+`Stage Metal capability shim` copies the dylib to `$RUNNER_TEMP` rather than
+loading it over virtiofs, and rejects one with no arm64e slice.
 
 `Verify Metal capability shim` runs two probes, both hard failures, because no
 single binary answers both questions:
@@ -287,11 +281,10 @@ arm64e; the CI stage step re-checks with `lipo -archs`.
 
 **Keep `kronk diagnose` out of the shimmed environment.**
 `sdk/tools/diagnose/system_darwin.go:15` parses the *combined* output of the
-commands it shells out to, so the shim's NSLog banner becomes the line it reads
-as `cpuModel`. Scope injection with a shell prefix and redirect with `>`, not
-`tee`, so no extra process joins the environment just to move bytes. Library
-paths are unaffected — `sdk/tools/devices/system_memory_darwin.go:9` uses
-`unix.SysctlUint64`, a syscall.
+commands it shells out to, so the shim's NSLog banner lands in `cpuModel`. Scope
+injection with a shell prefix and redirect with `>`, not `tee`, so no extra
+process joins the environment. Library paths are unaffected
+(`sdk/tools/devices/system_memory_darwin.go:9` uses a syscall).
 
 **Never grep `kronk devices` for the ggml banner.** It cannot print one:
 
@@ -300,10 +293,8 @@ cmd/kronk/devices/cmd.go:34   kronk.Init()          // no options
 sdk/kronk/init.go:134-141     logLevel → LogSilent  // llama.LogSet(llama.LogSilent())
 ```
 
-The first version of the verify step did exactly that and took its "could not
-confirm" warning branch on every run for its whole life — the capability
-assertion never once executed. An assertion that cannot fail is worse than none;
-it reads as coverage.
+The first verify step did exactly that and took its "could not confirm" branch
+on every run — an assertion that cannot fail reads as coverage.
 
 ## 8. Is the shim working? Read the numbers
 
@@ -317,14 +308,12 @@ gated on `has_simdgroup_reduction`:
 | shimmed, Apple9 | 0.39 - 0.49 |
 | bare metal M4 Max, no VM (control) | 0.35 - 0.46 |
 
-A 0.00 here was once filed upstream as a Metal defect. It was **withdrawn** — the
-cause was the Apple5 gate refusing those three ops, not llama.cpp. Do not re-add
-a Metal skip on a 0.00 without instrumenting the candidate readback first.
+A 0.00 is the Apple5 gate refusing those three ops, not a llama.cpp defect (one
+such upstream report was withdrawn). Do not re-add a Metal skip on a 0.00
+without instrumenting the candidate readback first.
 
-Shimming is also faster, because real kernels beat the Apple5 fallback:
-`macos.yml`'s `sdk tests` job went 601s → 338s.
-
-Suite wall-clock on a healthy shimmed leg, for comparison when one looks slow:
+Real kernels are also faster: `macos.yml`'s `sdk tests` went 601s → 338s. Suite
+wall-clock on a healthy shimmed leg, for comparison when one looks slow:
 
 | suite | time |
 |---|---|
@@ -337,7 +326,7 @@ Suite wall-clock on a healthy shimmed leg, for comparison when one looks slow:
 | hybrid | 41.4s |
 
 Reading models over virtiofs is not a bottleneck at any size in that list, which
-is what released the 26B/35B MTP targets onto this runner.
+is why the 26B/35B MTP targets run here.
 
 ## 9. `ForceUnrestrictedDeviceFeatureLevel` — not needed, keep as a lead
 
@@ -350,35 +339,33 @@ shim. Tested under control 2026-09-02, confirming the preference state and that
 | set | off | no |
 | unset | on | **yes** |
 
-Shim-only output is byte-identical to shim+preference, so the preference is not a
-prerequisite. It is **not** "does nothing": `metal-caps.m` measures what the
-device *reports*, not what it *executes*. Re-enable it first if a shimmed run starts failing
-inside kernels rather than at capability detection:
+Shim-only output is byte-identical to shim+preference, so the preference is not
+a prerequisite — but `metal-caps.m` measures what the device *reports*, not what
+it *executes*. Re-enable it first if a shimmed run starts failing inside kernels
+rather than at capability detection:
 
 ```bash
 ./pvg-feature-level.sh status | enable | disable   # restarts the VMs; no sudo
 ```
 
 It is a CFPreferences key read by ParavirtualizedGraphics.framework, not
-`getenv`, so it does not belong in the launchd plist — and env vars set there
-would reach `tart run` on the host, never the process inside the guest. Use
-`defaults write`.
+`getenv`, so it does not belong in the launchd plist: env vars set there reach
+`tart run` on the host, never the guest process. Use `defaults write`.
 
 ## 10. Guardrails
 
-- **Check that the assertion can fail.** The shim fails *open*: a moved hook or a
-  malformed `LUME_METAL_APPLE_FAMILY_MAX` leaves the process untouched, so a
-  guest image bump returns you to Apple5 with a green build. When you touch the
-  verify step, confirm from a real log that the line you grep for is emitted.
-- **A reported capability is not a working one.** `metal-caps.m` reads what the
-  device advertises. Only real Metal work proves the kernels run. Keep bare metal
-  as the control for anything going upstream.
+- **Check that the assertion can fail.** The shim fails *open*: a moved hook or
+  a malformed `LUME_METAL_APPLE_FAMILY_MAX` leaves the process untouched, so a
+  guest image bump returns you to Apple5 with a green build. Touching the verify
+  step means confirming from a real log that the line you grep for is emitted.
+- **A reported capability is not a working one.** Only real Metal work proves
+  the kernels run, so keep bare metal as the control for anything going
+  upstream.
 - **Version sensitivity.** The shim relies on private guest Metal internals.
   Re-verify after any host or `macos-runner` image bump.
-- The attach-banner check is hard on the strength of NSLog reaching stderr in a
-  CI step — observed on every run to date, per test binary down to `draft.test`.
-  If a future image routes it to the unified log, that check fails on a logging
-  detail rather than a capability regression.
+- The attach-banner check rests on NSLog reaching stderr in a CI step — true on
+  every run to date. If a future image routes it to the unified log, that check
+  fails on a logging detail rather than a capability regression.
 
 ## 11. Verified environment
 
@@ -396,11 +383,10 @@ would reach `tart run` on the host, never the process inside the guest. Use
 
 Host and guest carry the same compiler, so a host build is what the guest would
 have produced. cua's release used CLT 26.4, so their `Release/SHA256SUMS` will
-not match a local build — expected; `build-metal-shim.sh` writes its own
-`PROVENANCE.txt`.
+not match a local build; `build-metal-shim.sh` writes its own `PROVENANCE.txt`.
 
-Guest gaps worth knowing: passwordless sudo is on, there is no `go` (setup-go
-installs it per job), and there is no `setsid`.
+Guest gaps: passwordless sudo is on, there is no `go` (setup-go installs it per
+job), and there is no `setsid`.
 
 ## 12. History
 

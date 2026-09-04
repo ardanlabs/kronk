@@ -1,10 +1,9 @@
 // =============================================================================
 // metal-caps.m
 //
-// Print what Metal actually reports on the machine it runs on, including the
-// three capability flags llama.cpp derives from it. Built for probing the
-// ephemeral macOS runner VMs without a CI round trip, a kronk build, or a model
-// download.
+// Print what Metal reports on the machine it runs on, including the three
+// capability flags llama.cpp derives from it. Probes the ephemeral macOS runner
+// VMs without a CI round trip, a kronk build or a model download.
 //
 //   clang -fobjc-arc -framework Metal -framework Foundation -o metal-caps metal-caps.m
 //   ./metal-caps
@@ -15,11 +14,9 @@
 //   LUME_METAL_APPLE_FAMILY_MAX=1009 ./metal-caps
 //
 // The gate arithmetic below mirrors ggml/src/ggml-metal/ggml-metal-device.m:
-// 731-738. Keep them in sync; if llama.cpp changes a gate, this probe stops
-// answering the question it exists to answer.
-//
-// A "yes" here is a REPORTED capability, not a working one. On a paravirtual
-// GPU the two can differ, which is the whole reason this file exists.
+// 731-738; keep them in sync or this probe stops answering its question. A
+// "yes" here is a REPORTED capability, not a working one — on a paravirtual GPU
+// the two can differ, which is why this file exists.
 // =============================================================================
 
 #import <Foundation/Foundation.h>
@@ -58,11 +55,10 @@ int main(void) {
                    [dev supportsFamily:families[i].family] ? "yes" : "no");
         }
 
-        // Metal3 is the honest probe: the cua shim deliberately never fakes it,
-        // because MLX-LM uses that answer to select residency sets a
-        // paravirtual device cannot create. It therefore stays "no" both on a
-        // stock VM and on a shimmed one, which makes it the one capability that
-        // still distinguishes a VM from real hardware.
+        // Metal3 is the honest probe: the cua shim deliberately never fakes
+        // it, because MLX-LM uses that answer to select residency sets a
+        // paravirtual device cannot create. It stays "no" on stock and
+        // shimmed VMs alike, so it still distinguishes a VM from hardware.
         const BOOL apple6 = [dev supportsFamily:MTLGPUFamilyApple6];
         const BOOL apple7 = [dev supportsFamily:MTLGPUFamilyApple7];
         const BOOL metal3 = [dev supportsFamily:MTLGPUFamilyMetal3];
