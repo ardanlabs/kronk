@@ -13,20 +13,10 @@ import (
 )
 
 func Test_BatchChatConcurrent(t *testing.T) {
-	// ROCm decodes two sequences that share one batch incorrectly: both come
-	// back with corrupted logits, so one request repeats a single token until
-	// it reaches max_tokens while the other stops after a handful. Either
-	// shape can leave the message empty, which is what the check below trips
-	// on. Deterministic with two concurrent requests on a fresh context, and
-	// never reproduced on Vulkan against the same GPU, host and llama.cpp
-	// build (b10760, gfx1151) — the report is upstream2.md. A backend defect,
-	// not a regression here.
-	//
-	// The condition is two sequences in one decode batch, nothing narrower:
-	// the same run is clean with NSeqMax=1, and clean at NSeqMax=2 as long as
-	// the requests never overlap. So this suite is the one that meets it —
-	// everything else the GPU workflow runs is serial. Drop the skip when the
-	// fix lands, because this test is what notices.
+	// ROCm returns corrupted logits when two sequences share one decode batch,
+	// which can leave a message empty and trip the check below. A backend
+	// defect (upstream2.md), never seen on Vulkan against the same GPU and
+	// build; this is the only suite that decodes two sequences concurrently.
 	testlib.SkipOnBackends(t, "two sequences sharing one decode batch come back with corrupted logits", "rocm")
 
 	testlib.WithModel(t, testlib.CfgThinkToolChat(), func(t *testing.T, krn *kronk.Kronk) {

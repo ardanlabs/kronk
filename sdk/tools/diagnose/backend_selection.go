@@ -15,7 +15,8 @@ const (
 )
 
 // backendSelectionHints reports a verified installed accelerator alternative
-// when the backend selected by the engine explicitly detects no GPU.
+// when the backend selected by the engine explicitly detects no GPU. It is the
+// preferred hint over engineCPUFallbackHints: it names a bundle that saw one.
 func backendSelectionHints(engine Engine, backends []Backend) []Hint {
 	if !engine.Probed {
 		return nil
@@ -119,6 +120,23 @@ func nonEmptyLineCount(value string) int {
 		}
 	}
 	return count
+}
+
+// engineCPUFallbackHints reports that an accelerator bundle loaded but ggml
+// enumerated no GPU, so the server will execute on the CPU. It reads the
+// in-process probe, where an empty Backend means unknown and fires nothing.
+func engineCPUFallbackHints(engine Engine) []Hint {
+	if !engine.Probed || !engine.Loaded || engine.Backend != "cpu" || !isAcceleratorBackend(engine.Processor) {
+		return nil
+	}
+
+	return []Hint{{
+		Severity: "warn",
+		Message: fmt.Sprintf("The %s bundle loaded, but ggml enumerated no GPU device: inference will run on the CPU.",
+			engine.Processor),
+		Remedy: fmt.Sprintf("install or repair the %s driver/runtime so ggml can see the GPU, or set KRONK_PROCESSOR=cpu to run on the CPU deliberately",
+			engine.Processor),
+	}}
 }
 
 func isAcceleratorBackend(processor string) bool {

@@ -470,18 +470,10 @@ func TestDownload_MissingCompanion_ReDownloads(t *testing.T) {
 	}
 }
 
-// TestDownloadSplits_CompanionRenamedByPeer reproduces the shared-models-
-// directory race that broke a macOS CI job: two runners pointed at one
-// models mount pulled the same model seconds apart, and the second one
-// died with
-//
-//	unable to rename proj file: rename .../X.mmproj-f16.gguf
-//	  .../mmproj-X.Q4_K_M.gguf: no such file or directory
-//
-// because the first had already renamed the upstream-named file to the
-// canonical one. The peer's file is complete and verifiable, so the loser
-// must adopt it rather than fail. Both rename sites in downloadCompanion
-// are exercised: the sha pointer and the companion body.
+// TestDownloadSplits_CompanionRenamedByPeer covers two pulls sharing one
+// models directory: the peer renames the upstream-named file to the canonical
+// one first, so the loser's rename fails with ENOENT over a complete file it
+// must adopt. Both rename sites are exercised: sha pointer and body.
 func TestDownloadSplits_CompanionRenamedByPeer(t *testing.T) {
 	body := []byte("model-body-bytes\n")
 	proj := []byte("proj-body-bytes\n")
@@ -497,10 +489,8 @@ func TestDownloadSplits_CompanionRenamedByPeer(t *testing.T) {
 	m := newTestModels(t)
 	dir := filepath.Join(m.modelsPath, "Qwen", "Qwen3-VL-GGUF")
 
-	// Stand in for the competing process: the instant this one has pulled a
-	// projection artifact, move it to the canonical name the peer's own
-	// rename would have used. That leaves our rename with no source and a
-	// finished destination — the exact state CI hit.
+	// Stand in for the competing process: rename each pulled projection
+	// artifact to the canonical name, leaving our rename with no source.
 	pull := downloadFn
 	downloadFn = func(ctx context.Context, src string, dest string, p downloader.ProgressFunc, interval int64) (bool, error) {
 		downloaded, err := pull(ctx, src, dest, p, interval)
@@ -542,10 +532,8 @@ func TestDownloadSplits_CompanionRenamedByPeer(t *testing.T) {
 	}
 }
 
-// TestDownloadSplits_CompanionRenameFailureStaysFatal is the other half of
-// TestDownloadSplits_CompanionRenamedByPeer: adoption is keyed on the
-// source having vanished, so a destination that happens to exist must not
-// paper over a rename that failed for any other reason.
+// TestDownloadSplits_CompanionRenameFailureStaysFatal: adoption is keyed on
+// the source having vanished, so any other rename failure must stay fatal.
 func TestDownloadSplits_CompanionRenameFailureStaysFatal(t *testing.T) {
 	if adoptedFromPeer(errors.New("read-only file system"), ".", nil) {
 		t.Error("adoptedFromPeer accepted a non-ENOENT rename failure")
@@ -555,11 +543,9 @@ func TestDownloadSplits_CompanionRenameFailureStaysFatal(t *testing.T) {
 // =============================================================================
 // pull — oversized destination handling
 
-// TestPullBody_RemovesOversizedDestination covers the one on-disk state the
-// getter cannot recover from on its own: a body longer than the size its sha
-// pointer records. The getter treats such a destination as already complete
-// and returns it untouched, so unless the pull clears it first the file fails
-// its size check forever.
+// TestPullBody_RemovesOversizedDestination covers the one state the getter
+// cannot recover from: a body longer than its sha pointer's size, which the
+// getter returns untouched, so it fails its size check until pull clears it.
 func TestPullBody_RemovesOversizedDestination(t *testing.T) {
 	body := []byte("body-bytes-for-Qwen3-0.6B-Q8_0\n")
 	rawURL := "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf"
@@ -612,9 +598,8 @@ func TestPullBody_RemovesOversizedDestination(t *testing.T) {
 	}
 }
 
-// TestRemoveOversizedBody_KeepsEverythingElse pins the states that must
-// survive: a short file is exactly what the getter's resume exists for, and a
-// body with no readable pointer has no expected size to be measured against.
+// TestRemoveOversizedBody_KeepsEverythingElse pins the states that survive: a
+// short file is what resume is for, and no readable pointer means no size.
 func TestRemoveOversizedBody_KeepsEverythingElse(t *testing.T) {
 	body := []byte("body-bytes-for-Qwen3-0.6B-Q8_0\n")
 
@@ -660,8 +645,7 @@ func TestRemoveOversizedBody_KeepsEverythingElse(t *testing.T) {
 		})
 	}
 
-	// A destination that is not there at all is the common case on a cold
-	// pull and must not be an error.
+	// An absent destination is the cold-pull case and must not be an error.
 	absent := filepath.Join(t.TempDir(), "absent.gguf")
 	if err := removeOversizedBody(absent, artifactDigestPath(absent)); err != nil {
 		t.Errorf("removeOversizedBody on a missing file: %v", err)
@@ -669,11 +653,8 @@ func TestRemoveOversizedBody_KeepsEverythingElse(t *testing.T) {
 }
 
 // TestDownloadSplits_OversizedCompanionLeftover is the companion half of the
-// same brick. A prior run left the upstream-named projection on disk longer
-// than its pointer says (two writers appending into one destination), and the
-// getter hands back such a file untouched. Unless the download clears it, the
-// oversized leftover is renamed over the canonical name and fails its sha
-// check on this run and every run after it.
+// same brick: an oversized upstream-named leftover is handed back untouched
+// and, unless cleared, renamed over the canonical name to fail its sha check.
 func TestDownloadSplits_OversizedCompanionLeftover(t *testing.T) {
 	body := []byte("body-bytes-for-Qwen3-VL-Q8_0\n")
 	proj := []byte("proj-bytes-for-Qwen3-VL-Q8_0\n")
@@ -697,17 +678,15 @@ func TestDownloadSplits_OversizedCompanionLeftover(t *testing.T) {
 		t.Fatalf("write oversized leftover: %v", err)
 	}
 
-	// The state a killed run really leaves: the pointer made it to its
-	// canonical name, the body did not, so the leftover carries the upstream
-	// name and there is a pointer to measure it against.
+	// The state a killed run leaves: the pointer reached its canonical name,
+	// the body did not, so the leftover is measurable against that pointer.
 	canonicalSha := filepath.Join(dir, "sha", "mmproj-Qwen3-VL-Q8_0.gguf")
 	if err := os.WriteFile(canonicalSha, makeShaPointer(proj), 0o644); err != nil {
 		t.Fatalf("write canonical sha pointer: %v", err)
 	}
 
-	// The fake getter always writes; the real one does not. Stand in for
-	// go-getter's actual behavior on the one URL that matters here: a
-	// destination at or past the expected length is left exactly as it is.
+	// The fake getter always writes; go-getter does not. Stand in for it on
+	// the one URL that matters: an at-or-past-length destination is left be.
 	pull := downloadFn
 	downloadFn = func(ctx context.Context, src string, dest string, p downloader.ProgressFunc, interval int64) (bool, error) {
 		if strings.Contains(src, "mmproj-F16.gguf") && !strings.Contains(src, "/raw/") {
@@ -742,18 +721,9 @@ func TestDownloadSplits_OversizedCompanionLeftover(t *testing.T) {
 // adopt-or-download decisions — unverifiable is not verified
 
 // TestDownloadCompanion_ReuseByURLNameRequiresPointer covers the reuse
-// shortcut in tryReuseCompanionFromURLName. A previous pull can leave the
-// companion under its upstream name ("mmproj-F16.gguf"), and the shortcut
-// copies that file over the canonical name rather than fetch the body again.
-// That is only a shortcut when the leftover can actually be verified: the
-// sha pointer is copied along with the body *if one exists*, so a leftover
-// with no pointer under either name reached a check with nothing to check
-// against — which the lenient checkModel reported as success. An arbitrary,
-// truncated, or oversized body was then adopted as the finished companion
-// and the real one never downloaded.
-//
-// The third case is the other half of the rule: a leftover that does verify
-// must still short-circuit the body download, or the optimization is gone.
+// shortcut in tryReuseCompanionFromURLName: the pointer beside an
+// upstream-named leftover is copied only if one exists, so an unverifiable
+// leftover must not be adopted — while a verifiable one still short-circuits.
 func TestDownloadCompanion_ReuseByURLNameRequiresPointer(t *testing.T) {
 	proj := []byte("proj-bytes-for-Qwen3-VL-Q8_0\n")
 
@@ -799,9 +769,8 @@ func TestDownloadCompanion_ReuseByURLNameRequiresPointer(t *testing.T) {
 				t.Fatalf("mkdir: %v", err)
 			}
 
-			// The state a killed pull (or a hand-rolled wget) leaves behind:
-			// the companion under its upstream name, with or without a
-			// pointer beside it.
+			// The state a killed pull leaves: the companion under its
+			// upstream name, with or without a pointer beside it.
 			if err := os.WriteFile(filepath.Join(dir, "mmproj-F16.gguf"), test.leftover, 0o644); err != nil {
 				t.Fatalf("write leftover: %v", err)
 			}
@@ -838,9 +807,8 @@ func TestDownloadCompanion_ReuseByURLNameRequiresPointer(t *testing.T) {
 				t.Errorf("body pulls = %d, want any = %v (calls: %v)", bodyPulls, test.wantBodyPull, g.calls)
 			}
 
-			// Whatever route was taken, the installed companion has to be
-			// the upstream file — never the leftover that could not be
-			// verified.
+			// Whatever route was taken, the installed companion must be the
+			// upstream file, never the unverifiable leftover.
 			content, err := os.ReadFile(got)
 			if err != nil {
 				t.Fatalf("read companion: %v", err)
@@ -853,18 +821,9 @@ func TestDownloadCompanion_ReuseByURLNameRequiresPointer(t *testing.T) {
 }
 
 // TestDownloadModelFile_UnverifiableBodyIsNotAdopted pins the same rule for
-// the model body. pull reports downloaded==false when the getter decided the
-// destination was already complete and left it untouched — downloader.Download
-// maps "no bytes transferred" onto exactly that — so the check after the pull
-// is the only thing standing between a leftover body and being reported as
-// the installed model. When there is no pointer on disk to check it against
-// (a peer's `kronk model remove` clearing the sha directory between the two
-// pulls, a mirror that answers the pointer request with nothing) the lenient
-// check passed and an unverified body was installed as the model.
-//
-// A body that cannot be verified must fail the pull, not pass it: unlike a
-// reuse site there is no shortcut to fall through here, the download already
-// happened.
+// the model body: the getter leaves a complete-looking destination untouched,
+// so with no pointer on disk to check it against the pull must fail — there
+// is no reuse shortcut to fall through to here.
 func TestDownloadModelFile_UnverifiableBodyIsNotAdopted(t *testing.T) {
 	body := []byte("body-bytes-for-Qwen3-0.6B-Q8_0\n")
 	leftover := bytes.Repeat([]byte("x"), len(body))
@@ -888,9 +847,8 @@ func TestDownloadModelFile_UnverifiableBodyIsNotAdopted(t *testing.T) {
 		t.Fatalf("write leftover body: %v", err)
 	}
 
-	// Stand in for the getter's "nothing to transfer" answer on both
-	// artifacts: the pointer never reaches disk, and the body already there
-	// is left exactly as it was found.
+	// Stand in for the getter's "nothing to transfer" on both artifacts: no
+	// pointer reaches disk, and the body already there is left as found.
 	pull := downloadFn
 	downloadFn = func(ctx context.Context, src string, dest string, p downloader.ProgressFunc, interval int64) (bool, error) {
 		if strings.Contains(src, "/raw/") {
@@ -913,13 +871,10 @@ func TestDownloadModelFile_UnverifiableBodyIsNotAdopted(t *testing.T) {
 	}
 }
 
-// TestDownloadCompanion_ReuseBySHAStillShortCircuits guards the other two
-// reuse decisions, in tryReuseCompanionFromSHA, against the same tightening:
-// both are strict now, and both must still take their shortcut. A companion
-// whose pointer matches the freshly pulled one is verifiable by construction
-// — the pointer is either already at the canonical path (the in-place adopt,
-// existingName == the canonical name) or copied there before the check (the
-// cross-id copy) — so strictness may not cost a body download here.
+// TestDownloadCompanion_ReuseBySHAStillShortCircuits guards the two reuse
+// decisions in tryReuseCompanionFromSHA: a matching pointer is at the
+// canonical path either already (in-place adopt) or by the copy before the
+// check (cross-id), so going strict may not cost a body download here.
 func TestDownloadCompanion_ReuseBySHAStillShortCircuits(t *testing.T) {
 	proj := []byte("proj-bytes-shared-across-quants\n")
 
@@ -947,8 +902,8 @@ func TestDownloadCompanion_ReuseBySHAStillShortCircuits(t *testing.T) {
 				t.Fatalf("mkdir: %v", err)
 			}
 
-			// The identical companion, already installed and verifiable —
-			// either under another quant's id or under this one's.
+			// The identical companion, already installed and verifiable,
+			// under another quant's id or under this one's.
 			if err := os.WriteFile(filepath.Join(dir, test.existingName), proj, 0o644); err != nil {
 				t.Fatalf("write existing companion: %v", err)
 			}

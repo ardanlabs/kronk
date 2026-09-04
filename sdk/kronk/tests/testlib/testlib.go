@@ -91,9 +91,7 @@ func Setup() {
 	}
 
 	// After Init, never before: ggml enumerates its devices when the library
-	// loads, so this is the first moment the executing backend is knowable
-	// rather than guessable. It is also the line to read first when a suite
-	// behaves like it is on hardware it should not be on.
+	// loads, so this is the first moment the executing backend is knowable.
 	fmt.Println("processor        :", Processor())
 
 	fmt.Println("Initializing test inputs...")
@@ -104,13 +102,8 @@ func Setup() {
 }
 
 // resolveModel populates mp when the model is present on disk. A miss is not
-// fatal: testlib resolves every model any suite might want, while CI installs
-// only the subset in .github/test-models.txt, so absent models are normal and
-// the suites that need them fail on their own when they load.
-//
-// The miss IS reported, though. Swallowing the error silently meant a runner
-// with no models at all produced suites that quietly did nothing and a green
-// build — the failure mode is indistinguishable from success in the log.
+// fatal — CI installs only the subset in .github/test-models.txt — but it is
+// printed, so a runner with no models cannot look like a passing run.
 func resolveModel(mdls *models.Models, name string, mp *models.Path) {
 	dp, err := mdls.FullPath(name)
 	if err != nil {
@@ -127,11 +120,8 @@ func printInfo(mdls *models.Models) {
 	fmt.Println("useLibVersion    :", defaults.LibVersion(""))
 	fmt.Println("modelPath        :", mdls.Path())
 	fmt.Println("imageFile        :", ImageFile)
-	// The BUNDLE, not the backend. Those are the same thing everywhere but
-	// darwin/arm64, where one artifact serves both "cpu" and "metal" — see
-	// Processor, which Setup prints once kronk.Init has made the real answer
-	// knowable. This line was a hardcoded "cpu" once, then the bundle name;
-	// keep it labelled for what it is.
+	// The BUNDLE, which need not be the backend it executes on — see
+	// Processor, which Setup prints once kronk.Init has enumerated devices.
 	fmt.Println("libBundle        :", filepath.Base(libs.Path("")))
 	fmt.Println("goroutines       :", Goroutines)
 	fmt.Println("maxRetries       :", MaxRetries)
@@ -155,25 +145,10 @@ func printInfo(mdls *models.Models) {
 
 // =========================================================================
 
-// Processor reports the ggml backend the suites actually execute on, asked of
-// the devices ggml enumerated (devices.Backend) rather than inferred from the
-// name of the library bundle on disk.
-//
-// The distinction cost a green build. It used to return the last element of
-// the bundle install path (<root>/<os>/<arch>/<processor>), which is a
-// truthful name for the bundle and a guess about the backend — and on
-// darwin/arm64 the guess is wrong, because one artifact serves both "cpu" and
-// "metal". No config here pins NGpuLayers, so every suite offloads all layers
-// to whatever GPU ggml found (sdk/kronk/model/model.go:522-523). macos.yml set
-// KRONK_PROCESSOR=cpu, believed it, and ran the whole gate on a paravirtual
-// Metal device: run 33859967144 printed MTLGPUFamilyApple5 and
-// `simdgroup reduction = false`, and classic-draft acceptance was 0.00 on
-// every request where Metal proper sits at 0.38-0.49.
-//
-// Needs the llama.cpp bindings loaded, which Setup does via kronk.Init before
-// any test body runs, so callers need no ordering care. Falls back to the
-// bundle name when they are not: a package with its own TestMain that skips
-// Setup gets the old guess rather than an empty string.
+// Processor reports the ggml backend the suites execute on (devices.Backend),
+// not the bundle name on disk; the two diverge. No config here pins
+// NGpuLayers, so suites offload to whatever GPU ggml found
+// (sdk/kronk/model/model.go:522-523). Falls back to the bundle name pre-Init.
 func Processor() string {
 	if backend := devices.Backend(); backend != "" {
 		return backend
@@ -182,20 +157,10 @@ func Processor() string {
 	return filepath.Base(libs.Path(""))
 }
 
-// SkipOnBackends skips a test that fails because of a defect in one of the
-// named ggml backends rather than anything in Kronk. reason is printed with
-// the skip so the test output explains itself without a trip to the git log.
-//
-// Backends are Kronk processor names ("rocm", "metal", "vulkan"), matched
-// against the backend Processor resolved from ggml's enumerated devices — so
-// naming "metal" here skips any run that reached Metal, including one that
-// got there through the darwin/arm64 "cpu" bundle. Naming them explicitly
-// rather than probing for the defect is deliberate: the list is the record of
-// which backends the bug was actually observed on, so a backend that starts
-// working has to be removed here by hand instead of silently staying skipped.
-//
-// Use this only for a failure traced to the backend and reported upstream.
-// A Kronk bug that happens to surface on one backend must stay failing.
+// SkipOnBackends skips a test failing because of a defect in one of the named
+// ggml backends rather than in Kronk; reason is printed with the skip.
+// Backends are Kronk processor names matched against Processor — the executing
+// backend, not the bundle. Never use it for a Kronk bug seen on one backend.
 func SkipOnBackends(t *testing.T, reason string, backends ...string) {
 	t.Helper()
 

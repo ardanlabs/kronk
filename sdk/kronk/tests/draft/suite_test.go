@@ -37,13 +37,9 @@ var sawAcceptedDraft atomic.Bool
 
 func TestSuite(t *testing.T) {
 	testlib.WithModel(t, testlib.CfgClassicDraftChat(), func(t *testing.T, krn *kronk.Kronk) {
-		// The chat subtests may call t.Parallel, in which case they do not
-		// complete until their parent returns. Grouping them under a single
-		// subtest gives the acceptance check below a point where every
-		// request has finished, so it can be a real subtest rather than a
-		// parent-level t.Cleanup. A cleanup would fail TestSuite while every
-		// visible subtest passed, which reads as a false alarm and hides the
-		// failure from tools that only report leaf results.
+		// Parallel subtests only finish when their parent returns, so this
+		// grouping is what lets the acceptance check below be a real subtest
+		// rather than a t.Cleanup that fails TestSuite with every leaf green.
 		t.Run("Chats", func(t *testing.T) {
 			t.Run("DraftChat", func(t *testing.T) { testChat(t, krn, testlib.DChatNoTool) })
 			t.Run("DraftStreamingChat", func(t *testing.T) { testChatStreaming(t, krn, testlib.DChatNoTool) })
@@ -53,29 +49,10 @@ func TestSuite(t *testing.T) {
 		// for the classic drafter path to be considered exercised. Runs
 		// before WithModel's unload cleanup, so the model is still loaded.
 		t.Run("DraftAcceptance", func(t *testing.T) {
-			// ROCm accepts llama_set_sampler and then never populates the
-			// sampled-candidate buffers during llama_decode, so every draft
-			// distribution arrives empty. With no q(x) there is no correct
-			// rejection-sampling decision to make, and classic.Verify rightly
-			// declines to accept — sampling from the target instead, which
-			// preserves the output distribution but zeroes acceptance for the
-			// whole suite. A backend defect, not a regression here. Confirmed
-			// by instrumenting the readback directly:
-			// llama_get_sampled_candidates_count_ith returned 0 at every draft
-			// position.
-			//
-			// Metal was skipped here too, on the matching signature rather
-			// than an instrumented run — drafting active, acceptance 0.00
-			// across every request, where Vulkan on the same commit sits at
-			// 0.36-0.39. That evidence came entirely from the CI runners,
-			// which are VMs whose paravirtual GPU reported MTLGPUFamilyApple5.
-			// Below Apple7, ggml refuses SOFT_MAX, CUMSUM and SUM
-			// (ggml-metal-device.m:1214-1234) — exactly the three ops top_p's
-			// backend sampler graph is built from — so an empty distribution
-			// there says nothing about Metal on real hardware. gpu.yml now
-			// raises those capabilities (zarf/macos/README.md), so Metal runs
-			// this assertion for real. If it fails, instrument the readback
-			// before concluding anything: the upstream report covers ROCm.
+			// ROCm leaves every draft distribution empty (llama_decode never
+			// populates the sampled candidates), so classic.Verify declines to
+			// accept. On a Metal failure check the GPU family first: below
+			// Apple7 ggml refuses SOFT_MAX/CUMSUM/SUM (ggml-metal-device.m:1214-1234).
 			testlib.SkipOnBackends(t, "llama_decode does not populate sampled candidates, so every draft distribution is empty", "rocm")
 
 			if !sawAcceptedDraft.Load() {
@@ -105,9 +82,8 @@ func checkDraftUsage(t *testing.T, id string, usage *model.Usage) {
 		reason = "active"
 	}
 
-	// Logged before any branch: these are exactly the fields needed to tell
-	// a real regression from the adaptive throttle doing its job, so they
-	// must be present on the failing runs, not only the passing ones.
+	// Logged before any branch: these fields separate a real regression from
+	// the adaptive throttle, so they must appear on failing runs too.
 	t.Logf("%s: draft=%d accepted=%d rate=%.2f coverage=%.2f reason=%s",
 		id, usage.DraftTokens, usage.DraftAcceptedTokens, usage.DraftAcceptanceRate, usage.DraftCoverage, reason)
 

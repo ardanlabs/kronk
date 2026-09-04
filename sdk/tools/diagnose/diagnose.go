@@ -116,20 +116,13 @@ type Device struct {
 type Engine struct {
 	Probed bool `json:"probed" yaml:"probed"`
 	Loaded bool `json:"loaded" yaml:"loaded"`
-	// Processor is the library BUNDLE that was selected — the ambient
-	// KRONK_PROCESSOR or auto-detection's pick. It is a bundle key, matched
-	// against Backend.Processor in selectedEngineBackend, not a statement
-	// about what will run.
+	// Processor is the library BUNDLE selected (ambient KRONK_PROCESSOR or
+	// auto-detection), matched against Backend.Processor in
+	// selectedEngineBackend. It is not a statement about what will execute.
 	Processor string `json:"processor" yaml:"processor"`
-	// Backend is the ggml backend the loaded libraries actually enumerate and
-	// will execute on (devices.Backend). Empty when the load probe failed or
-	// was not run, since nothing has been enumerated to ask.
-	//
-	// It differs from Processor on darwin/arm64, where "cpu" and "metal" are
-	// one artifact: a Mac with KRONK_PROCESSOR=cpu reports processor "cpu"
-	// and backend "metal", and the backend is the one that answers "why is
-	// this machine behaving like a GPU box". Reporting only Processor here
-	// let macos.yml call itself a CPU gate for weeks.
+	// Backend is the ggml backend those libraries will execute on, empty when
+	// the probe failed or did not run. It diverges from Processor in both
+	// directions — see devices.Backend.
 	Backend string `json:"backend,omitempty" yaml:"backend,omitempty"`
 	LibPath string `json:"libPath" yaml:"libPath"`
 	Error   string `json:"error,omitempty" yaml:"error,omitempty"`
@@ -290,7 +283,14 @@ func Collect(ctx context.Context, log applog.Logger, opts ...Option) (Report, er
 		if !r.Engine.Loaded {
 			r.Hints = append(r.Hints, engineLoadHint(r.Engine.Error)...)
 		}
-		r.Hints = append(r.Hints, backendSelectionHints(r.Engine, backends)...)
+
+		// One hint about a GPU-less selection, not two: backendSelectionHints
+		// wins when it fires, because it names a bundle that did see a GPU.
+		if hints := backendSelectionHints(r.Engine, backends); len(hints) > 0 {
+			r.Hints = append(r.Hints, hints...)
+		} else {
+			r.Hints = append(r.Hints, engineCPUFallbackHints(r.Engine)...)
+		}
 	}
 
 	if len(backends) > 0 && !o.skipBench {
@@ -397,14 +397,8 @@ func collectBench(processor, binDir, modelPath string, forceCPU bool) Bench {
 
 // collectEngine runs the injected in-process engine load probe and records the
 // outcome. Processor and LibPath describe the bundle the real server selects
-// (the ambient KRONK_PROCESSOR or auto-detection), so a failure here mirrors
-// what the server hits at startup. It deliberately ignores any benchmark
-// processor override so the health check always reflects the actual server.
-//
-// Backend is filled in only after a successful probe, and only then: the
-// devices it reads are enumerated by the library load the probe performs, so
-// before that there is nothing to ask and devices.Backend rightly says
-// nothing.
+// (any benchmark override is ignored), so a failure here mirrors startup.
+// Backend is read only after a probe, which is what enumerates the devices.
 func collectEngine(probe EngineProbe) Engine {
 	e := Engine{
 		Probed:  true,
