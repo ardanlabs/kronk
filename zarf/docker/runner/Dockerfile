@@ -120,23 +120,45 @@ LABEL org.opencontainers.image.description="GitHub Actions runner for kronk CI, 
 
 # Keep in sync with ROCM_VERSION in zarf/docker/kronk/Dockerfile: libggml-hip.so
 # needs libamdhip64.so.7, librocblas.so.5 and libhipblas.so.3, none of which the
-# 6.4.x line provides, and this Strix Halo part (gfx1151) wants 7.x regardless.
-# Bump only after checking the bundle's NEEDED sonames, or the ROCm matrix leg
-# starts failing to dlopen libggml-hip.so.
-ARG ROCM_VERSION="7.2.4"
-ARG ROCM_KEY_FINGERPRINT="CA8BB4727A47B4D09B4EE8969386B48A1A693C5C"
+# 6.4.x line provides, and this Strix Halo part (gfx1151) wants 7.x or newer
+# regardless. Bump only after checking the bundle's NEEDED sonames, or the ROCm
+# matrix leg starts failing to dlopen libggml-hip.so.
+#
+# 10.0 is a repo change, not just a version bump: AMD moved the core packages
+# off repo.radeon.com (whose apt channel stops at 7.2.4) onto stable.repo.amd.com
+# under an `amdrocm<ver>` naming scheme, and the tree moved from /opt/rocm to
+# /opt/rocm/core-<ver>. zarf/docker/kronk/Dockerfile made that move in #924 and
+# this file was left behind on 7.2.4, so the ROCm CI leg was testing a runtime
+# the product no longer ships.
+ARG ROCM_VERSION="10.0"
+ARG ROCM_PKG_VERSION="10.0.0-4"
+ARG ROCM_KEY_FINGERPRINT="D0F004A0025A1145C7807FCD0701EAC4D5E02107"
 
-# rocm-opencl-runtime is the OpenCL ICD, here only so base's clinfo has a
-# platform to report on this fleet. It is the version-tracking metapackage over
-# rocm-opencl, and brings the ocl-icd-libopencl1 loader with it; rocm-opencl-sdk
-# would pull rocm-llvm and is the wrong one. Nothing in Kronk reads OpenCL.
+# 10.0 splits the device code per GPU target, and this fleet is Strix Halo only.
+# The full `amdrocm10.0` metapackage pulls all 25 gfx targets (~6.6 GB of
+# downloads) to ship 24 sets of code objects no runner here can execute; the
+# gfx1151 leaf pulls ~184 MB and drags in the same amdrocm-base10.0 /
+# amdrocm-runtime10.0 / amdrocm-llvm10.0 the metapackage would. Set this to a
+# different target if the fleet ever gains a non-Strix-Halo part; use the bare
+# `amdrocm${ROCM_VERSION}` metapackage if it gains several.
+ARG ROCM_GFX_TARGET="gfx1151"
+
+# 10.0 installs under /opt/rocm/core-<ver> rather than /opt/rocm, so both the
+# loader config and PATH below have to follow it.
+ENV ROCM_PATH="/opt/rocm/core-${ROCM_VERSION}"
+
+# amdrocm-opencl is the OpenCL ICD, here only so base's clinfo has a platform to
+# report on this fleet; it brings the ocl-icd-libopencl1 loader with it. Nothing
+# in Kronk reads OpenCL. rocminfo, rocm-smi and rocm_agent_enumerator arrive via
+# amdrocm-base10.0, which amdrocm-core10.0-gfx1151 depends on — runner-check.yml
+# requires all three on PATH, so a packaging change that drops them fails there.
 #
 # The key fingerprint is verified before the repo is trusted, so a swapped key
 # fails the build instead of silently installing from an unknown source.
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends gnupg; \
-    curl -fsSL https://repo.radeon.com/rocm/rocm.gpg.key -o /tmp/rocm.gpg.key; \
+    curl -fsSL https://stable.repo.amd.com/rocm/gpg/packages.gpg -o /tmp/rocm.gpg.key; \
     ACTUAL_FPR="$(gpg --show-keys --with-colons /tmp/rocm.gpg.key \
         | awk -F: '/^fpr:/ {print $10; exit}')"; \
     if [ "${ACTUAL_FPR}" != "${ROCM_KEY_FINGERPRINT}" ]; then \
@@ -145,28 +167,34 @@ RUN set -eux; \
     fi; \
     gpg --dearmor < /tmp/rocm.gpg.key > /usr/share/keyrings/rocm-archive-keyring.gpg; \
     rm /tmp/rocm.gpg.key; \
-    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/rocm-archive-keyring.gpg] \
-        https://repo.radeon.com/rocm/apt/${ROCM_VERSION} noble main" \
-        > /etc/apt/sources.list.d/rocm.list; \
-    printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600\n' \
-        > /etc/apt/preferences.d/rocm-pin-600; \
+    printf '%s\n' \
+        'Types: deb' \
+        'URIs: https://stable.repo.amd.com/rocm/core/packages/ubuntu2404/' \
+        'Suites: stable' \
+        'Components: main' \
+        'Architectures: amd64' \
+        'Signed-By: /usr/share/keyrings/rocm-archive-keyring.gpg' \
+        > /etc/apt/sources.list.d/amdrocm-stable.sources; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
-        rocm-hip-libraries \
-        rocm-opencl-runtime \
-        rocm-smi-lib \
-        rocminfo; \
-    echo "/opt/rocm/lib" > /etc/ld.so.conf.d/rocm.conf; \
+        "amdrocm${ROCM_VERSION}-${ROCM_GFX_TARGET}=${ROCM_PKG_VERSION}" \
+        "amdrocm-opencl${ROCM_VERSION}=${ROCM_PKG_VERSION}"; \
+    echo "${ROCM_PATH}/lib" > /etc/ld.so.conf.d/rocm.conf; \
     ldconfig; \
+    for t in rocminfo rocm-smi; do \
+        [ -x "${ROCM_PATH}/bin/${t}" ] || { \
+            echo "${t} missing from ${ROCM_PATH}/bin after install; runner-check.yml requires it" >&2; \
+            exit 1; \
+        }; \
+    done; \
     apt-get purge -y --auto-remove gnupg; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/*
 
-# rocm-smi-lib installs /opt/rocm/bin/rocm-smi, and the ld.so.conf line above
-# covers only the libraries, so without this rocm-smi reports MISSING in
-# runner-check.yml's Tooling step. Mirrors PATH in zarf/docker/kronk/Dockerfile,
-# the image this one exists to reproduce.
-ENV PATH="/opt/rocm/bin:${PATH}"
+# The ld.so.conf line above covers only the libraries, so without this rocminfo
+# and rocm-smi report MISSING in runner-check.yml's Tooling step. Mirrors PATH in
+# zarf/docker/kronk/Dockerfile, the image this one exists to reproduce.
+ENV PATH="${ROCM_PATH}/bin:${PATH}"
 
 # -----------------------------------------------------------------------------
 # vulkan — default target (last stage). Vulkan only: skips the ROCm
