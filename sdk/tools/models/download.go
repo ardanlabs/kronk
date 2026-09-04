@@ -597,12 +597,8 @@ func (m *Models) downloadCompanion(ctx context.Context, log applog.Logger, loc L
 		return path, false, nil
 	}
 
-	// Rename the downloaded sha file to match our naming convention.
-	//
-	// A vanished source is the one rename failure that is not an error: a
-	// second process sharing this models directory pulled the same pointer
-	// under the same upstream name and renamed it first. See
-	// adoptedFromPeer.
+	// Rename the downloaded sha file to match our naming convention. A
+	// vanished source means a peer renamed it first; see adoptedFromPeer.
 	if err := os.Rename(orgShaFileName, shaFileName); err != nil {
 		if !adoptedFromPeer(err, shaFileName, nil) {
 			return "", false, fmt.Errorf("download-model: unable to rename %s sha file: %w", kind.label, err)
@@ -610,11 +606,8 @@ func (m *Models) downloadCompanion(ctx context.Context, log applog.Logger, loc L
 		log(ctx, "download-model: sha pointer already in place, adopting", "kind", kind.label, "file", filepath.Base(shaFileName))
 	}
 
-	// The companion body lands under its upstream name and is renamed to the
-	// canonical one below, so pull's own oversize guard cannot see it: that
-	// one measures a destination against the pointer beside it, and this
-	// pointer was just renamed to the canonical name. Same brick, same fix,
-	// measured against the pointer where it now lives.
+	// pull's own oversize guard cannot see this body: it lands under the
+	// upstream name, and the pointer just moved to the canonical one.
 	if err := removeOversizedBody(loc.ModelPath(m), shaFileName); err != nil {
 		return "", false, err
 	}
@@ -624,13 +617,8 @@ func (m *Models) downloadCompanion(ctx context.Context, log applog.Logger, loc L
 		return "", false, err
 	}
 
-	// The same race one step later. Here the destination can be verified
-	// properly — the sha pointer is in place above, so checkModelStrict
-	// re-hashes the peer's file — which makes adopting it exactly as strong
-	// a guarantee as renaming our own copy over it would have been. Strict
-	// is what makes that sentence true: the pointer being in place is the
-	// whole argument, so a pointer that somehow is not there (a peer's
-	// concurrent remove) must stop the adoption rather than wave it through.
+	// The same race one step later, but the pointer is in place by now, so
+	// the peer's file is re-hashed and adopting it is as strong as renaming.
 	if err := os.Rename(orgFile, dstFileName); err != nil {
 		if !adoptedFromPeer(err, dstFileName, func() error { return checkModelStrict(dstFileName) }) {
 			return "", false, fmt.Errorf("download-model: unable to rename %s file: %w", kind.label, err)
@@ -640,12 +628,8 @@ func (m *Models) downloadCompanion(ctx context.Context, log applog.Logger, loc L
 		return dstFileName, true, nil
 	}
 
-	// Strict: this is the gate that declares the companion installed, and the
-	// body it just renamed into place is not necessarily one this run
-	// fetched — the getter no-ops on a destination that already looks
-	// complete, so a leftover under the upstream name is adopted here too.
-	// The pointer was renamed (or adopted) above, so an absent one means
-	// something removed it underneath us and nothing was verified.
+	// Strict: the getter no-ops on a complete-looking destination, so the
+	// body renamed into place need not be one this run actually fetched.
 	if err := checkModelStrict(dstFileName); err != nil {
 		return "", false, fmt.Errorf("download-model: unable to check model: %w", err)
 	}
@@ -653,26 +637,10 @@ func (m *Models) downloadCompanion(ctx context.Context, log applog.Logger, loc L
 	return dstFileName, true, nil
 }
 
-// adoptedFromPeer reports whether a failed rename can be treated as already
-// done because another process got there first.
-//
-// Nothing serializes writers into a models directory, so two concurrent
-// pulls of the same model — two CI jobs on one shared cache, a running
-// server beside a `kronk model pull` — both fetch a companion under its
-// upstream name and both rename it to the canonical one. The loser's source
-// is gone by the time it renames and it fails with ENOENT, holding a
-// complete, correct file it is about to reject. Only a missing source
-// qualifies: any other rename failure is a real one and stays loud.
-//
-// verify is the check to run against the destination, or nil when presence
-// is all that can be established for it (the sha pointer has no size or
-// digest of its own to check against).
-//
-// This makes the loser recover; it does not make a shared models directory
-// safe in general. Two writers that are still mid-download of the same file
-// append into one destination and end up with a size mismatch, which is a
-// loud failure rather than a corrupt model, but a failure all the same. A
-// directory per writer remains the way to avoid the race outright.
+// adoptedFromPeer reports whether a failed rename can be treated as done
+// because a concurrent writer in the same models directory renamed its own
+// copy into place first. Only a missing source qualifies; verify checks the
+// destination, or is nil when presence is all a sha pointer can establish.
 func adoptedFromPeer(renameErr error, dst string, verify func() error) bool {
 	if !errors.Is(renameErr, os.ErrNotExist) {
 		return false
@@ -755,12 +723,8 @@ func (m *Models) downloadModelFile(ctx context.Context, mLoc Locator, progress d
 		return "", false, err
 	}
 
-	// Strict: downloaded==false means the getter found the destination
-	// already at the expected length and left it alone, so this check is the
-	// only thing standing between a leftover body and being reported as the
-	// installed model. The sha pointer was pulled above, so there is always
-	// one to check against unless it was removed underneath us — and an
-	// unverifiable body must fail loudly rather than install silently.
+	// Strict: on downloaded==false the getter left an existing destination
+	// alone, so this is all that stands between a leftover and "installed".
 	if err := checkModelStrict(modelFileName); err != nil {
 		return "", false, fmt.Errorf("download-model: unable to check model: %w", err)
 	}
@@ -768,12 +732,10 @@ func (m *Models) downloadModelFile(ctx context.Context, mLoc Locator, progress d
 	return modelFileName, downloaded, nil
 }
 
-// tryReuseCompanionFromURLName is optimization 1: if a previous download
-// landed the companion under its upstream basename, copy it into place
-// under the canonical "<prefix><modelID>" name instead of re-fetching the
-// body. Misses (returns hit=false) when the URL-name file is absent, fails
-// its sha re-check, or has no pointer to be re-checked against at all. On a
-// hit it returns the canonical companion path.
+// tryReuseCompanionFromURLName is optimization 1: copy a companion left under
+// its upstream basename into the canonical "<prefix><modelID>" name instead of
+// re-fetching the body. Misses when that file is absent, fails its sha
+// re-check, or has no pointer to check against.
 func (m *Models) tryReuseCompanionFromURLName(ctx context.Context, log applog.Logger, kind companionKind, loc Locator, dstFileName string) (string, bool, error) {
 	urlFileName := loc.DiskFile
 	urlFilePath := filepath.Join(filepath.Dir(dstFileName), urlFileName)
@@ -796,18 +758,11 @@ func (m *Models) tryReuseCompanionFromURLName(ctx context.Context, log applog.Lo
 		}
 	}
 
-	// Strict: this is an adopt-or-download decision, and the file being
-	// adopted is a leftover nobody has vouched for. The pointer copy above
-	// is conditional — an upstream-named body with no pointer beside it
-	// leaves nothing at the canonical pointer path either — so the lenient
-	// check would pass on "no pointer to compare against" and hand back an
-	// arbitrary body as the finished companion.
+	// Strict: the pointer copy above is conditional, so a lenient check would
+	// pass on "no pointer" and hand back an arbitrary leftover.
 	if err := checkModelStrict(dstFileName); err != nil {
-		// Copied file failed verification (or cannot be verified at all) —
-		// fall through to the regular download. The copy stays where it is:
-		// the fall-through renames the freshly pulled body over it, and
-		// deleting it here would race a peer that has just put its own
-		// verified copy at that name.
+		// Unverifiable — fall through to the download, which renames over the
+		// copy. Deleting it here would race a peer's own verified copy.
 		return "", false, nil
 	}
 
@@ -832,14 +787,8 @@ func (m *Models) tryReuseCompanionFromSHA(ctx context.Context, log applog.Logger
 	// than copying. Note: orgShaFileName is left in place on the miss return
 	// so the caller's fall-through rename still has its source pointer.
 	if filepath.Clean(existing) == filepath.Clean(dstFileName) {
-		// Strict, though this branch is already safe by construction: a
-		// match means findMatchingCompanionBySha read a pointer at
-		// sha/<name> whose contents equal the freshly pulled one, and
-		// existing==dstFileName means <name> is the canonical companion's
-		// basename — i.e. that pointer is exactly the one checkModel would
-		// look for. Strict states the invariant instead of arguing it, and
-		// closes the window where the pointer is unlinked between the scan
-		// and the check.
+		// Strict: the matched pointer is the canonical one by construction,
+		// and this closes the unlink window between that scan and here.
 		if err := checkModelStrict(dstFileName); err != nil {
 			// On-disk companion is bad — fall through to a fresh download.
 			return "", false, nil
@@ -863,10 +812,7 @@ func (m *Models) tryReuseCompanionFromSHA(ctx context.Context, log applog.Logger
 		return "", false, fmt.Errorf("download-model: unable to copy %s sha file: %w", kind.label, err)
 	}
 
-	// Strict for the same reason as the branch above, and here too the
-	// pointer is in place by construction: the copy of existingSha onto
-	// shaFileName immediately above is unconditional and its failure is
-	// fatal, so reaching this line means the canonical pointer exists.
+	// Strict: the unconditional copy above guarantees the canonical pointer.
 	if err := checkModelStrict(dstFileName); err != nil {
 		// Copied file failed verification — fall through to regular download.
 		// orgShaFileName is intentionally left in place for the caller's
@@ -934,9 +880,8 @@ func (m *Models) pull(ctx context.Context, loc Locator, kind pullKind, progress 
 		srcURL = loc.RawURL
 		interval = downloader.SizeIntervalMB100
 
-		// Offline: the getter refuses to run anyway, so leave the
-		// destination alone rather than deleting a file this pull has no
-		// way to replace.
+		// Offline: the getter refuses to run anyway, so leave the destination
+		// alone rather than deleting a file this pull cannot replace.
 		if hasNetworkFn() {
 			if err := removeOversizedBody(destFile, artifactDigestPath(destFile)); err != nil {
 				return "", false, err
@@ -960,21 +905,10 @@ func (m *Models) pull(ctx context.Context, loc Locator, kind pullKind, progress 
 	return destFile, downloaded, nil
 }
 
-// removeOversizedBody deletes destFile when it is longer than the size its
-// sha pointer records, so the pull that follows refetches it from scratch.
-//
-// The getter resumes a short file with a Range request, but a destination
-// at or past the expected length is treated as already complete and
-// returned untouched — no request, no error. An oversized body therefore
-// fails its size check on every load and no number of pulls can repair it.
-// Two writers appending into one destination (see adoptedFromPeer) or a
-// server that answers 200 to a Range request both land there, so the one
-// state the getter cannot recover from is the one worth clearing here.
-//
-// Everything else stays: a short file is what resume exists for, and an
-// absent, unreadable, or pointer-less body is left to the pull and the
-// strict check that follows it — a pointer-less body cannot be measured
-// here, and checkModelStrict refuses to adopt it either way.
+// removeOversizedBody deletes destFile when it is longer than the size its sha
+// pointer records, so the pull that follows refetches it. The getter treats a
+// destination at or past the expected length as complete and returns it
+// untouched, so an oversized body is the one state no pull can repair.
 func removeOversizedBody(destFile string, shaFile string) error {
 	info, err := os.Stat(destFile)
 	if err != nil {

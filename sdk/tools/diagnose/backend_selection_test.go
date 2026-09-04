@@ -102,3 +102,69 @@ func TestBackendSelectionHints(t *testing.T) {
 		})
 	}
 }
+
+func TestEngineCPUFallbackHints(t *testing.T) {
+	tests := []struct {
+		name     string
+		engine   Engine
+		wantHint bool
+	}{
+		{
+			name:     "accelerator bundle running on cpu",
+			engine:   Engine{Probed: true, Loaded: true, Processor: "vulkan", Backend: "cpu"},
+			wantHint: true,
+		},
+		{
+			name:     "rocm bundle running on cpu",
+			engine:   Engine{Probed: true, Loaded: true, Processor: "rocm", Backend: "cpu"},
+			wantHint: true,
+		},
+		{
+			name:   "bundle and backend agree",
+			engine: Engine{Probed: true, Loaded: true, Processor: "vulkan", Backend: "vulkan"},
+		},
+		{
+			// Empty is "unknown" (no probe result), never "cpu".
+			name:   "backend unknown",
+			engine: Engine{Probed: true, Loaded: true, Processor: "vulkan"},
+		},
+		{
+			// darwin/arm64: the cpu bundle carries Metal and runs on it.
+			name:   "cpu bundle running on metal",
+			engine: Engine{Probed: true, Loaded: true, Processor: "cpu", Backend: "metal"},
+		},
+		{
+			name:   "cpu bundle running on cpu",
+			engine: Engine{Probed: true, Loaded: true, Processor: "cpu", Backend: "cpu"},
+		},
+		{
+			name:   "engine did not load",
+			engine: Engine{Probed: true, Processor: "vulkan", Backend: "cpu"},
+		},
+		{
+			name:   "engine not probed",
+			engine: Engine{Loaded: true, Processor: "vulkan", Backend: "cpu"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hints := engineCPUFallbackHints(tt.engine)
+			if got := len(hints) > 0; got != tt.wantHint {
+				t.Errorf("hint: got %v, want %v", got, tt.wantHint)
+			}
+			if !tt.wantHint {
+				return
+			}
+			if !strings.Contains(hints[0].Message, tt.engine.Processor) {
+				t.Errorf("message: got %q, want the %s bundle named", hints[0].Message, tt.engine.Processor)
+			}
+			if !strings.Contains(hints[0].Remedy, "KRONK_PROCESSOR=cpu") {
+				t.Errorf("remedy: got %q, want the cpu override", hints[0].Remedy)
+			}
+			if hints[0].Severity != "warn" {
+				t.Errorf("severity: got %q, want %q", hints[0].Severity, "warn")
+			}
+		})
+	}
+}
