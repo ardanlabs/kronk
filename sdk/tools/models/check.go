@@ -26,12 +26,45 @@ type verifiedSentinel struct {
 	KronkVersion string `json:"kronk_version,omitempty"`
 }
 
+// checkModel verifies modelFile against the sha pointer that sits beside it
+// in <dir>/sha/<base>. A file with no pointer verifies vacuously: a user is
+// allowed to drop a .gguf into the models directory by hand, and such a file
+// must still load and still appear in the index. Call checkModelStrict where
+// "there is no pointer" must not be read as "verified".
 func checkModel(modelFile string, checkSHA bool) error {
+	return checkModelFile(modelFile, checkSHA, false)
+}
+
+// checkModelStrict is checkModel with the pointer-less pass removed: a
+// missing sha pointer is a verification failure.
+//
+// The download path asks these checks a different question than the load
+// path does. Not "is this file valid?" but "is the file already on disk good
+// enough to adopt as the finished artifact instead of downloading it?" — and
+// for that question "there is nothing to check it against" is not a yes.
+// Answering yes adopts whatever bytes happen to carry the right name: a
+// truncated body from a killed run, a leftover from a different quant, an
+// HTML error page saved under a .gguf extension. Every download-path caller
+// pulls (or has just renamed) the pointer before it decides, so an absent
+// pointer there is an anomaly — never the ordinary hand-placed model that
+// checkModel's leniency exists for.
+func checkModelStrict(modelFile string) error {
+	return checkModelFile(modelFile, true, true)
+}
+
+// checkModelFile is the body behind checkModel and checkModelStrict. The two
+// differ only in how they read a missing pointer, so the verification itself
+// lives in one place.
+func checkModelFile(modelFile string, checkSHA bool, requirePointer bool) error {
 	integrity, exists, err := loadArtifactIntegrity(modelFile)
 	if err != nil {
 		return fmt.Errorf("check-model: %w", err)
 	}
 	if !exists {
+		if requirePointer {
+			return fmt.Errorf("check-model: no sha pointer for %s: nothing to verify the file against", filepath.Base(modelFile))
+		}
+
 		return nil
 	}
 
@@ -105,7 +138,15 @@ func configureArtifactIntegrity(cfg *model.Config) error {
 }
 
 func readArtifactDigest(modelFile string) (model.ArtifactDigest, error) {
-	data, err := os.Open(artifactDigestPath(modelFile))
+	return readArtifactDigestFile(artifactDigestPath(modelFile))
+}
+
+// readArtifactDigestFile parses a HuggingFace LFS pointer at an explicit
+// path. Callers that hold a model file use readArtifactDigest; this one is
+// for the download path, where a body and the pointer that describes it are
+// briefly under different names.
+func readArtifactDigestFile(shaFile string) (model.ArtifactDigest, error) {
+	data, err := os.Open(shaFile)
 	if err != nil {
 		return model.ArtifactDigest{}, fmt.Errorf("open artifact digest: %w", err)
 	}
