@@ -13,6 +13,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
+	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
@@ -89,6 +90,12 @@ func Setup() {
 		os.Exit(1)
 	}
 
+	// After Init, never before: ggml enumerates its devices when the library
+	// loads, so this is the first moment the executing backend is knowable
+	// rather than guessable. It is also the line to read first when a suite
+	// behaves like it is on hardware it should not be on.
+	fmt.Println("processor        :", Processor())
+
 	fmt.Println("Initializing test inputs...")
 	if err := initInputs(); err != nil {
 		fmt.Printf("Failed to init test inputs: %s\n", err)
@@ -120,10 +127,12 @@ func printInfo(mdls *models.Models) {
 	fmt.Println("useLibVersion    :", defaults.LibVersion(""))
 	fmt.Println("modelPath        :", mdls.Path())
 	fmt.Println("imageFile        :", ImageFile)
-	// Library bundles install to <root>/<os>/<arch>/<processor>, so the last
-	// path element is the backend actually loaded. This used to be a
-	// hardcoded "cpu", which reported the wrong backend on every GPU run.
-	fmt.Println("processor        :", filepath.Base(libs.Path("")))
+	// The BUNDLE, not the backend. Those are the same thing everywhere but
+	// darwin/arm64, where one artifact serves both "cpu" and "metal" — see
+	// Processor, which Setup prints once kronk.Init has made the real answer
+	// knowable. This line was a hardcoded "cpu" once, then the bundle name;
+	// keep it labelled for what it is.
+	fmt.Println("libBundle        :", filepath.Base(libs.Path("")))
 	fmt.Println("goroutines       :", Goroutines)
 	fmt.Println("maxRetries       :", MaxRetries)
 	fmt.Println("testDuration     :", TestDuration)
@@ -146,13 +155,30 @@ func printInfo(mdls *models.Models) {
 
 // =========================================================================
 
-// Processor reports the backend whose library bundle is loaded, taken from
-// the last element of the bundle install path — bundles install to
-// <root>/<os>/<arch>/<processor>, the same basis printInfo reports on. It
-// reflects what actually loaded rather than what was asked for, so it is
-// correct whether the backend came from KRONK_PROCESSOR or from Kronk's own
-// host detection.
+// Processor reports the ggml backend the suites actually execute on, asked of
+// the devices ggml enumerated (devices.Backend) rather than inferred from the
+// name of the library bundle on disk.
+//
+// The distinction cost a green build. It used to return the last element of
+// the bundle install path (<root>/<os>/<arch>/<processor>), which is a
+// truthful name for the bundle and a guess about the backend — and on
+// darwin/arm64 the guess is wrong, because one artifact serves both "cpu" and
+// "metal". No config here pins NGpuLayers, so every suite offloads all layers
+// to whatever GPU ggml found (sdk/kronk/model/model.go:522-523). macos.yml set
+// KRONK_PROCESSOR=cpu, believed it, and ran the whole gate on a paravirtual
+// Metal device: run 33859967144 printed MTLGPUFamilyApple5 and
+// `simdgroup reduction = false`, and classic-draft acceptance was 0.00 on
+// every request where Metal proper sits at 0.38-0.49.
+//
+// Needs the llama.cpp bindings loaded, which Setup does via kronk.Init before
+// any test body runs, so callers need no ordering care. Falls back to the
+// bundle name when they are not: a package with its own TestMain that skips
+// Setup gets the old guess rather than an empty string.
 func Processor() string {
+	if backend := devices.Backend(); backend != "" {
+		return backend
+	}
+
 	return filepath.Base(libs.Path(""))
 }
 
@@ -161,11 +187,12 @@ func Processor() string {
 // the skip so the test output explains itself without a trip to the git log.
 //
 // Backends are Kronk processor names ("rocm", "metal", "vulkan"), matched
-// against the loaded library bundle. Naming them explicitly rather than
-// probing for the defect is deliberate: the list is the record of which
-// backends the bug was actually observed on, so a backend that starts
-// working has to be removed here by hand instead of silently staying
-// skipped.
+// against the backend Processor resolved from ggml's enumerated devices — so
+// naming "metal" here skips any run that reached Metal, including one that
+// got there through the darwin/arm64 "cpu" bundle. Naming them explicitly
+// rather than probing for the defect is deliberate: the list is the record of
+// which backends the bug was actually observed on, so a backend that starts
+// working has to be removed here by hand instead of silently staying skipped.
 //
 // Use this only for a failure traced to the backend and reported upstream.
 // A Kronk bug that happens to surface on one backend must stay failing.

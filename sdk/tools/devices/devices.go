@@ -163,6 +163,46 @@ func List(opts ...Option) Devices {
 	return out
 }
 
+// Backend reports the ggml backend the loaded libraries will actually execute
+// on, as a Kronk processor name: "cuda", "metal", "rocm", "vulkan", or "cpu"
+// when ggml enumerated no GPU at all. It is the first enumerated GPU device's
+// backend; a library bundle ships exactly one GPU backend, so the first one
+// settles it.
+//
+// This is the answer the NAME OF THE BUNDLE only approximates. The two agree
+// everywhere except darwin/arm64, where "cpu" and "metal" resolve to the same
+// artifact (llama-<tag>-bin-macos-arm64, yzma
+// pkg/download/resolver.go:202-217): that bundle always carries
+// libggml-metal, libggml.dylib links it at load time, and a caller that
+// leaves NGpuLayers unset offloads every layer to it. So "cpu" on a Mac names
+// a bundle, never a backend, and anything that reports it as one is wrong.
+//
+// Returns "" when Ready is false, since llama.cpp functions dereference
+// unresolved FFI bindings before Load has succeeded. Callers pick their own
+// fallback rather than being handed a guess dressed as an answer.
+func Backend() string {
+	if !Ready() {
+		return ""
+	}
+
+	// Memory stats are a per-device FFI call apiece and are not read here.
+	return backendFromDevices(List(WithIncludeMemory(false)).Devices)
+}
+
+// backendFromDevices is the enumeration-to-name half of Backend, split out so
+// the mapping is testable without a loaded llama.cpp. Order-independent by
+// construction: ggml is free to enumerate the CPU device first, and does on
+// some backends.
+func backendFromDevices(devs []DeviceInfo) string {
+	for _, dev := range devs {
+		if backend, ok := strings.CutPrefix(dev.Type, "gpu_"); ok {
+			return backend
+		}
+	}
+
+	return "cpu"
+}
+
 // ClassifyDeviceType maps a llama.cpp backend device to a device type string:
 // cpu, gpu_cuda, gpu_metal, gpu_rocm, gpu_vulkan, or unknown.
 func ClassifyDeviceType(device llama.GGMLBackendDevice) string {

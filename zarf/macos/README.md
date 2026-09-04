@@ -41,15 +41,18 @@ coverage defect, not just a slow runner.
 
 ### It may also be poisoning an upstream bug report
 
-`sdk/kronk/tests/draft` skips its acceptance assertion on Metal
-(`suite_test.go:63-70`) because acceptance is 0.00 there, and `upstream.md`
-reports Metal alongside ROCm on that symptom. But `top_p`'s backend sampler graph
+**Resolved — kept for the reasoning.** `sdk/kronk/tests/draft` used to skip its
+acceptance assertion on Metal because acceptance was 0.00 there, and
+`upstream.md` reported Metal alongside ROCm on that symptom. But `top_p`'s backend sampler graph
 is `soft_max` + `cumsum` + `sum` — all three gated on `has_simdgroup_reduction`,
 all three false in this VM. Metal was never instrumented at the API level; it was
 inferred from the acceptance number alone.
 
-**Re-run that suite with capabilities raised before filing.** If acceptance goes
-non-zero, the Metal row is a VM artifact and does not belong in the report.
+It was re-run with capabilities raised: `draft=67 accepted=26 rate=0.39` and
+`draft=126 accepted=70 rate=0.56`. The Metal row was a VM artifact and has been
+withdrawn; the report covers ROCm alone, with Metal as the control. Do not
+re-add a Metal skip on the 0.00 signature without instrumenting the candidate
+readback first.
 
 ## The mechanism
 
@@ -163,8 +166,9 @@ syscall, not a shell-out.
 
 ### Host setup, once per runner host
 
-CI now depends on this being in place; without it the Metal leg fails at the
-`Stage Metal capability shim` step with a pointer back here.
+CI now depends on this being in place; without it EVERY macOS job — in
+`gpu.yml` and `macos.yml` alike — fails at setup-kronk's `Stage Metal
+capability shim` step with a pointer back here.
 
 1. Build and stage the dylib:
 
@@ -191,25 +195,50 @@ script puts it in `~/.cache/kronk-metal-shim` for that reason.
 
 ### What CI does with it
 
-`gpu.yml` copies the dylib to `$RUNNER_TEMP` (dyld loading over virtiofs is a
-question nobody needs to answer at 3am) and injects it per-step, never through
-`$GITHUB_ENV`, so it never reaches checkout or cleanup:
+**Staging and verifying live in `.github/actions/setup-kronk`, on every macOS
+job.** Not in `gpu.yml`, because using Metal is a property of the platform and
+not of a workflow: darwin/arm64 publishes exactly one llama.cpp artifact —
+`cpu` and `metal` both resolve to `llama-<tag>-bin-macos-arm64` (yzma
+`pkg/download/resolver.go:202-217`) — so the bundle always carries
+`libggml-metal`, `libggml.dylib` links it at load time, and `NGpuLayers`
+defaults to all-layers-on-GPU (`sdk/kronk/model/model.go:522-523`). Any macOS
+job that loads a model runs Metal whatever `KRONK_PROCESSOR` says.
+
+`macos.yml` learned that the hard way. It set `KRONK_PROCESSOR=cpu` and called
+itself a CPU gate; run 33859967144 printed `MTLGPUFamilyApple5 (1005)` and
+`simdgroup reduction = false` from that job, and `sdk/kronk/tests/draft`
+failed there with acceptance 0.00 on every request while the shimmed Metal leg
+of the same commit sat at 0.38-0.49. It is `KRONK_PROCESSOR=metal` now, and
+shimmed.
+
+- `Stage Metal capability shim` copies the dylib to `$RUNNER_TEMP` (dyld
+  loading over virtiofs is a question nobody needs to answer at 3am) and
+  refuses a file without an arm64e slice.
+- `Verify Metal capability shim` runs one shimmed `kronk devices` and checks
+  the capabilities llama.cpp actually resolved, deliberately asymmetric: an
+  explicit `simdgroup reduction = false` fails the job, an *absent* line only
+  warns. ggml prints that banner only when device init logs to the step, so
+  failing on a missing line would red the job for a logging detail rather than
+  a capability regression. Tighten it once a run confirms the line always
+  lands.
+
+Staging is not injecting. Each workflow decides which of its steps get the
+environment, per-step and never through `$GITHUB_ENV`, so it reaches neither
+checkout nor cleanup:
 
 ```yaml
         env:
-          DYLD_INSERT_LIBRARIES: ${{ matrix.processor == 'metal' && format('{0}/LumeMetalCapabilities-arm64.dylib', runner.temp) || '' }}
-          LUME_METAL_APPLE_FAMILY_MAX: ${{ matrix.processor == 'metal' && '1009' || '' }}
-          LUME_METAL_MAX_THREADGROUP_MEMORY: ${{ matrix.processor == 'metal' && '32768' || '' }}
+          DYLD_INSERT_LIBRARIES: ${{ runner.temp }}/LumeMetalCapabilities.dylib
+          LUME_METAL_APPLE_FAMILY_MAX: "1009"
+          LUME_METAL_MAX_THREADGROUP_MEMORY: "32768"
 ```
 
-`Verify Metal backend` then checks the capabilities llama.cpp actually resolved,
-deliberately asymmetric: an explicit `simdgroup reduction = false` fails the leg,
-an *absent* line only warns. Neither log line is guaranteed to be there — ggml
-prints its banner only when device init logs to that step, and the shim announces
-itself through NSLog, which reaches stderr when attached to a terminal and the
-unified log otherwise, and a CI step is not a terminal. Failing on a missing line
-would red the leg for a logging detail rather than a capability regression.
-Tighten it to a hard requirement once a real run shows both lines present.
+`gpu.yml` injects on its two suite steps (matrix-conditional, since the Linux
+legs must not see it) and keeps its own `Verify <backend> backend` step for the
+per-matrix *device* assertion, which cannot move into the action.
+`macos.yml` injects on `Run api/service tests` and `Run sdk tests`. Its
+`race` job is left unshimmed on purpose: `-short` skips everything there that
+loads a model.
 
 ## Order of work
 
@@ -218,7 +247,8 @@ Tighten it to a hard requirement once a real run shows both lines present.
 2. ~~Build and inject the shim~~ — 2026-09-02. Works, with the preference absent.
    Apple 9 reported, all three llama.cpp gates true, `Metal3` still false.
 3. ~~Wire it into `gpu.yml`~~ — done. Stage step, per-step injection, and the
-   two assertions in `Verify Metal backend`.
+   two assertions in `Verify Metal backend`. Since moved into
+   `setup-kronk` so `macos.yml` gets the same treatment; see above.
 4. ~~Drop `metal` from `SkipOnBackends`~~ — done, in
    `sdk/kronk/tests/draft/suite_test.go`. Metal now runs the acceptance
    assertion for real.

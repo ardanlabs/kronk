@@ -161,37 +161,17 @@ jobs:
           # Models too large for the base list — see that file's header.
           extra-models-file: ${{ matrix.extra_models }}
 
-      # Raises the Metal capabilities the guest reports to what real Apple
-      # Silicon has, so the suites below run the kernels users actually run
-      # rather than the Apple5 fallback path. Host-side setup (build the
-      # dylib, mount kronk-tools) is zarf/macos/build-metal-shim.sh and the
-      # sand.yml stanza documented beside it.
-      #
-      # Copied to RUNNER_TEMP rather than injected straight off the share:
-      # dyld loading a dylib over virtiofs is a question nobody needs to
-      # answer at 3am.
-      - name: Stage Metal capability shim
-        if: matrix.processor == 'metal'
-        run: |
-          src="/Volumes/My Shared Files/kronk-tools/LumeMetalCapabilities.dylib"
-          if [[ ! -f "$src" ]]; then
-            echo "::error::$src is missing. On the runner host, build it with zarf/macos/build-metal-shim.sh and add the kronk-tools mount to ~/sand.yml."
-            exit 1
-          fi
-          cp "$src" "$RUNNER_TEMP/LumeMetalCapabilities.dylib"
-
-          # DYLD_INSERT_LIBRARIES reaches every child process, and /usr/bin is
-          # arm64e: a single-slice arm64 dylib aborts `tee`, `sw_vers` and
-          # everything else in the tree with "incompatible architecture".
-          if [[ "$(lipo -archs "$RUNNER_TEMP/LumeMetalCapabilities.dylib")" != *arm64e* ]]; then
-            echo "::error::staged shim has no arm64e slice; rebuild it on the host with zarf/macos/build-metal-shim.sh"
-            exit 1
-          fi
-
       # KRONK_PROCESSOR only guarantees the library bundle. ggml can load
       # the Vulkan, HIP or Metal build and still enumerate zero devices of
       # that type, in which case every suite below runs on the CPU backend
       # and passes.
+      #
+      # This asserts the DEVICE, which is per-matrix and can only be checked
+      # here. Whether the Metal capability shim is live is asserted by
+      # setup-kronk's "Verify Metal capability shim" step, which runs on every
+      # macOS job in every workflow — the shim is a property of the runner
+      # fleet, not of this matrix.
+      #
       # The shim is scoped to `kronk devices` alone here, not set for the
       # whole step. DYLD_INSERT_LIBRARIES is inherited by children, and
       # `kronk diagnose` shells out to sw_vers/sysctl/vm_stat and parses
@@ -222,35 +202,6 @@ jobs:
           if ! grep -qF "$DEVICE_TYPE" "$RUNNER_TEMP/devices.txt"; then
             echo "::error::no $DEVICE_TYPE device enumerated; the suites would run on CPU"
             exit 1
-          fi
-
-          # The shim fails OPEN: a guest image bump that moves the private
-          # Metal internals it hooks leaves every process untouched, and the
-          # leg then runs llama.cpp's Apple5 fallback kernels — which no real
-          # Mac uses — while staying green. These checks are what notice.
-          #
-          # Deliberately asymmetric: an explicit `false` fails the leg, an
-          # ABSENT line only warns. Neither line is guaranteed to reach this
-          # log. ggml's banner appears only when device init logs here, and
-          # the shim announces itself through NSLog, which reaches stderr when
-          # attached to a terminal and the unified log otherwise — a CI step
-          # is not a terminal. Treating "missing" as "broken" would fail the
-          # leg for a logging detail rather than a capability regression.
-          # Tighten to a hard requirement once a real run shows both lines
-          # present.
-          if [[ "${{ matrix.processor }}" == "metal" ]]; then
-            if grep -qE 'simdgroup reduction *= *false' "$RUNNER_TEMP/devices.txt"; then
-              echo "::error::Metal capability shim is not in effect: llama.cpp resolved simdgroup reduction = false, so the suites would run the Apple5 fallback path. See zarf/macos/README.md."
-              exit 1
-            fi
-
-            if ! grep -qE 'simdgroup reduction *= *true' "$RUNNER_TEMP/devices.txt"; then
-              echo "::warning::could not confirm Metal capabilities from this log; ggml printed no simdgroup line. Check whether the shim is live before trusting this leg."
-            fi
-
-            if ! grep -q 'LumeMetalCapabilities. Enabled' "$RUNNER_TEMP/devices.txt"; then
-              echo "::notice::shim activation banner absent from this log (expected if NSLog went to the unified log rather than stderr); the capability check above is authoritative."
-            fi
           fi
 
       - name: Run model suites on GPU

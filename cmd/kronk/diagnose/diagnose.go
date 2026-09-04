@@ -136,6 +136,14 @@ func printText(report diagnose.Report, noBench bool) {
 		fmt.Println("\n========== ENGINE ==========")
 		fmt.Println("- loaded    :", report.Engine.Loaded)
 		fmt.Println("- processor :", valueOrUnknown(report.Engine.Processor))
+		// The bundle above, the backend that runs here. They differ on
+		// darwin/arm64, where one artifact serves both "cpu" and "metal".
+		if report.Engine.Backend != "" && report.Engine.Backend != report.Engine.Processor {
+			fmt.Printf("- backend   : %s (the %s bundle runs on %s)\n",
+				report.Engine.Backend, report.Engine.Processor, report.Engine.Backend)
+		} else {
+			fmt.Println("- backend   :", valueOrUnknown(report.Engine.Backend))
+		}
 		fmt.Println("- libPath   :", report.Engine.LibPath)
 		if report.Engine.Error != "" {
 			fmt.Println("- error     :", report.Engine.Error)

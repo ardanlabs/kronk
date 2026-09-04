@@ -20,6 +20,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/applog"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
+	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
@@ -113,11 +114,25 @@ type Device struct {
 // subprocess probes do not see. Probed is false when no engine probe was
 // supplied or no libraries are installed; in that case Loaded/Error are unset.
 type Engine struct {
-	Probed    bool   `json:"probed" yaml:"probed"`
-	Loaded    bool   `json:"loaded" yaml:"loaded"`
+	Probed bool `json:"probed" yaml:"probed"`
+	Loaded bool `json:"loaded" yaml:"loaded"`
+	// Processor is the library BUNDLE that was selected — the ambient
+	// KRONK_PROCESSOR or auto-detection's pick. It is a bundle key, matched
+	// against Backend.Processor in selectedEngineBackend, not a statement
+	// about what will run.
 	Processor string `json:"processor" yaml:"processor"`
-	LibPath   string `json:"libPath" yaml:"libPath"`
-	Error     string `json:"error,omitempty" yaml:"error,omitempty"`
+	// Backend is the ggml backend the loaded libraries actually enumerate and
+	// will execute on (devices.Backend). Empty when the load probe failed or
+	// was not run, since nothing has been enumerated to ask.
+	//
+	// It differs from Processor on darwin/arm64, where "cpu" and "metal" are
+	// one artifact: a Mac with KRONK_PROCESSOR=cpu reports processor "cpu"
+	// and backend "metal", and the backend is the one that answers "why is
+	// this machine behaving like a GPU box". Reporting only Processor here
+	// let macos.yml call itself a CPU gate for weeks.
+	Backend string `json:"backend,omitempty" yaml:"backend,omitempty"`
+	LibPath string `json:"libPath" yaml:"libPath"`
+	Error   string `json:"error,omitempty" yaml:"error,omitempty"`
 }
 
 // Bench holds the llama-bench results for the selected model. Processor is the
@@ -381,10 +396,15 @@ func collectBench(processor, binDir, modelPath string, forceCPU bool) Bench {
 }
 
 // collectEngine runs the injected in-process engine load probe and records the
-// outcome. Processor and LibPath describe the real server backend (the ambient
-// KRONK_PROCESSOR or auto-detection), so a failure here mirrors what the server
-// hits at startup. It deliberately ignores any benchmark processor override so
-// the health check always reflects the actual server.
+// outcome. Processor and LibPath describe the bundle the real server selects
+// (the ambient KRONK_PROCESSOR or auto-detection), so a failure here mirrors
+// what the server hits at startup. It deliberately ignores any benchmark
+// processor override so the health check always reflects the actual server.
+//
+// Backend is filled in only after a successful probe, and only then: the
+// devices it reads are enumerated by the library load the probe performs, so
+// before that there is nothing to ask and devices.Backend rightly says
+// nothing.
 func collectEngine(probe EngineProbe) Engine {
 	e := Engine{
 		Probed:  true,
@@ -401,6 +421,8 @@ func collectEngine(probe EngineProbe) Engine {
 	}
 
 	e.Loaded = true
+	e.Backend = devices.Backend()
+
 	return e
 }
 
