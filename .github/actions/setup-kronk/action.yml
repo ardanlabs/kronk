@@ -1,52 +1,13 @@
 name: Set up Kronk test environment
 description: >
-  Frees disk space on Linux, installs Go pinned to .go-version, restores the
-  shared libraries + models caches, builds the kronk CLI, installs the
-  llama.cpp + whisper.cpp libraries and (on cache miss) pulls every
-  model listed in .github/test-models.txt. On macOS it also stages and
-  verifies the Metal capability shim, which every macOS job needs because
-  darwin/arm64 has one llama.cpp bundle and it always carries Metal
-  (zarf/macos/README.md). Re-used by the Linux and macOS test workflows so
-  jobs start from an identical environment and share setup-go's Go module +
-  build cache via the common cache key.
-
-  Wall-clock note: the models cache contains ~6.6 GiB of uncompressed
-  artifacts. The `go install ./cmd/kronk` + native-libs install path is
-  ~25 s on a Go-module cache miss. The two are independent (the kronk binary
-  doesn't need any models on disk, and the libs install only needs
-  the libraries cache), so on Linux this action overlaps them: it kicks
-  off the kronk build + libs install in the background after the libs
-  cache restore, then restores the models cache in the foreground, then
-  joins the background work before any downstream step that needs the
-  kronk binary on PATH. On a typical Linux run this hides the full
-  go-install cost behind the models-cache restore.
-
-inputs:
-  models-cache-key:
-    description: >
-      The cache key for the kronk + bucky model directories. Callers
-      should bake hashFiles('.github/test-models.txt') into the key so
-      that adding or changing a required model automatically
-      invalidates the cache instead of silently reusing a stale set.
-    required: true
-  extra-models-file:
-    description: >
-      Optional second model list, pulled after .github/test-models.txt and
-      in the same `<backend> <model-id>` format. It exists because the base
-      list is bounded by GitHub's 10 GB cache quota (the cache layers here
-      run on hosted runners only), while a self-hosted fleet has hundreds of
-      GB of persistent volume and can host models no hosted runner could.
-      Callers that pass this should bake it into models-cache-key too.
-    required: false
-    default: ""
-
-outputs:
-  models-cache-hit:
-    description: "Whether the models cache was a hit."
-    value: ${{ steps.cache-models.outputs.cache-hit }}
-  models-cache-key:
-    description: "The resolved models-cache key (echoed back so the caller can re-use it for the save step)."
-    value: ${{ inputs.models-cache-key }}
+  Frees disk space on hosted Linux, installs Go pinned to .go-version,
+  restores the shared libraries cache, builds the kronk CLI, installs the
+  llama.cpp + whisper.cpp libraries and pulls every model listed in
+  .github/test-models.txt. On macOS it also stages and verifies the Metal
+  capability shim, which every macOS job needs because darwin/arm64 has one
+  llama.cpp bundle and it always carries Metal
+  (zarf/docker/runner/macos/README.md). Re-used by the Linux, macOS and GPU
+  workflows so every job starts from an identical environment.
 
 runs:
   using: composite
@@ -62,51 +23,18 @@ runs:
         sudo rm -rf /opt/ghc
         sudo rm -rf /opt/hostedtoolcache/CodeQL
 
-    # CI's Go toolchain lives in /.go-version (not go.mod) so that
-    # contributors on any 1.27.x release build with their local toolchain
-    # — no auto-download — while CI stays pinned to a known-patched
-    # version for govulncheck. The .go-version file is also picked up
-    # automatically by asdf, mise, goenv, gvm, and direnv's use_go.
-    # setup-go's cache key includes the resolved Go version, so all jobs
-    # using this file share the same Go module + build cache.
+    # CI's Go toolchain is pinned in .go-version, not go.mod: contributors keep
+    # their local toolchain, CI stays on a known-patched one for govulncheck.
     - name: Install Go
       uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
       with:
         go-version-file: .go-version
-        # setup-go defaults this to true, which pushes the module and build
-        # caches through the same GitHub cache service. On a self-hosted
-        # runner those directories already persist in a local volume, so the
-        # upload is pure cost — and it fails outright once the cache budget
-        # is exhausted.
+        # Hosted only: self-hosted already persists the module and build
+        # caches in a local volume, so the upload is pure cost.
         cache: ${{ runner.environment == 'github-hosted' }}
 
-    # CACHING, hosted vs self-hosted
-    #
-    # actions/cache is a GitHub-hosted service: a self-hosted runner still
-    # uploads and downloads over the network, and is billed for it. Two
-    # things make it the wrong tool on our own hardware:
-    #
-    #   * It records paths relative to the workspace. ~/.kronk sits two
-    #     levels above the workspace on a hosted runner and nowhere near it
-    #     on ours (HOME=/root, workspace under /_work), so an archive saved
-    #     on one cannot be restored onto the other.
-    #   * ~/.kronk and ~/go already persist between jobs in Docker volumes,
-    #     which is the same cache without the transfer or the bill.
-    #
-    # So the cache layers run on hosted runners only. Self-hosted skips
-    # straight to the install/pull steps, which short-circuit on files the
-    # volume already holds. Hosted keeps its original cache keys so the
-    # existing entries stay valid.
-    #
-    # Native llama.cpp + whisper.cpp library cache. Keyed on the version
-    # constants in their installer packages, so a defaultVersion bump in
-    # code invalidates this cache without bumping any cache-key suffix
-    # by hand. Separate from the models cache because libs change far
-    # less often.
-    #
-    # Must complete BEFORE the platform-specific build/install step below,
-    # because `kronk libs --local` and `kronk bucky libs --local` read/write
-    # the on-disk library trees that this cache restores.
+    # Hosted-only: self-hosted persists ~/.kronk itself. Keyed on the installer
+    # packages' version constants; must restore before the build/install step.
     - name: Restore libraries cache
       id: cache-libs
       if: runner.environment == 'github-hosted'
@@ -117,60 +45,9 @@ runs:
           ~/.kronk/bucky-libraries
         key: ${{ runner.os }}-kronk-libs-${{ hashFiles('sdk/tools/libs/libs.go', 'sdk/tools/bucky/libs/**/*.go') }}
 
-    # Kick off the kronk build + native-libs install in the background
-    # so it runs concurrently with the (much slower) models-cache
-    # restore below. The runner does NOT reap orphaned processes
-    # between composite-action steps, so setsid + nohup + disown is
-    # enough to keep the child alive across the step boundary.
-    #
-    # Exit code, log, and pid are written to ${RUNNER_TEMP}/setup-kronk-bg.* so
-    # the "Wait for background kronk install" step can surface
-    # failures (and the build log) without losing the kronk install
-    # being the actual cause of a downstream "command not found".
-    # RUNNER_TEMP, not /tmp: the self-hosted runner persists /tmp across
-    # jobs, so two runs would read each other's stale .exit/.pid files.
-    #
-    # Why all three commands run in one background shell:
-    #   - `go install ./cmd/kronk` produces the kronk binary on PATH
-    #     (setup-go added GOPATH/bin to PATH for subsequent steps).
-    #   - `kronk libs --local` and `kronk bucky libs --local` need
-    #     the binary AND the libraries cache (already restored).
-    #   - All three are pure CPU+disk work that doesn't touch the
-    #     models cache, so chaining them inside the background lets
-    #     the whole sequence overlap the models restore.
-    - name: Build kronk + install libs (background)
-      if: runner.os == 'Linux'
-      shell: bash
-      run: |
-        set -euo pipefail
-        mkdir -p "$HOME/.kronk/libraries"
-        rm -f "${RUNNER_TEMP}/setup-kronk-bg.exit" "${RUNNER_TEMP}/setup-kronk-bg.log" "${RUNNER_TEMP}/setup-kronk-bg.pid"
-
-        # setsid detaches from the controlling terminal; nohup + the
-        # explicit fd redirections make the child immune to SIGHUP
-        # and prevent it from holding the step's stdout/stderr pipes
-        # open (which would block the step from completing).
-        # NOTE: do NOT wrap the chain in `{ set -e; ... } || rc=$?` —
-        # bash suppresses `set -e` inside a compound command on the LHS
-        # of `||`, so a failing `go install` would be swallowed and
-        # the next command would still run. A plain `&&` chain stops
-        # at the first failure and propagates its exit status via $?.
-        setsid nohup bash -c '
-          go install ./cmd/kronk \
-            && kronk libs --local \
-            && kronk bucky libs --local
-          echo "$?" > "${RUNNER_TEMP}/setup-kronk-bg.exit"
-        ' </dev/null >"${RUNNER_TEMP}/setup-kronk-bg.log" 2>&1 &
-        echo $! > "${RUNNER_TEMP}/setup-kronk-bg.pid"
-        disown
-        echo "Started background kronk install (pid $(cat "${RUNNER_TEMP}/setup-kronk-bg.pid"))"
-
-    # macOS does not provide setsid, so perform the same setup in the
-    # foreground. The self-hosted runner keeps its Go build cache between
-    # jobs, making the lost overlap less important than portable process
-    # management here.
+    # Must precede every step below that shells out to kronk. The libraries
+    # root is $HOME/.kronk, the same tree the cache above restores into.
     - name: Build kronk + install libs
-      if: runner.os == 'macOS'
       shell: bash
       run: |
         set -euo pipefail
@@ -179,39 +56,12 @@ runs:
         kronk libs --local
         kronk bucky libs --local
 
-    # THE METAL SHIM, and why it lives in the shared action rather than in
-    # gpu.yml alone.
+    # The macOS runners are VMs whose paravirtual GPU reports
+    # MTLGPUFamilyApple5, below ggml-metal's Apple7 gate, so every unshimmed
+    # macOS job runs fallback kernels (zarf/docker/runner/macos/README.md).
     #
-    # The macOS runners are Tart VMs, and a macOS guest on Apple Silicon only
-    # ever sees a paravirtual GPU: MTLGPUFamilyApple5, no passthrough, no
-    # setting that exposes a feature level. Below Apple7 ggml-metal refuses
-    # SOFT_MAX, CUMSUM, SUM and flash attention
-    # (ggml-metal-device.m:1214-1234, :1344-1390), so an unshimmed macOS job
-    # runs fallback kernels no shipping Mac takes and skips the ones every
-    # Mac takes. cua's Lume capability shim raises the reported family for one
-    # process; zarf/macos/README.md holds the host setup and the measurements.
-    #
-    # Staging it here, for every macOS job, because using Metal is a property
-    # of the platform and not of a workflow. darwin/arm64 publishes exactly
-    # ONE llama.cpp artifact — `cpu` and `metal` both resolve to
-    # llama-<tag>-bin-macos-arm64 (yzma pkg/download/resolver.go:202-217) —
-    # so the bundle carries libggml-metal whatever KRONK_PROCESSOR says, and
-    # NGpuLayers defaults to all-layers-on-GPU
-    # (sdk/kronk/model/model.go:522-523). macos.yml believed for a while that
-    # KRONK_PROCESSOR=cpu kept it off the GPU; run 33859967144 printed
-    # `MTLGPUFamilyApple5 (1005)` and `simdgroup reduction = false` from that
-    # supposed CPU gate, and its classic-draft acceptance was 0.00 on every
-    # request where the shimmed Metal leg sits at 0.38-0.49.
-    #
-    # Staging is not injecting. This step only puts the dylib where a
-    # consumer can reach it, at $RUNNER_TEMP/LumeMetalCapabilities.dylib; the
-    # workflow decides which steps get DYLD_INSERT_LIBRARIES, because it is
-    # inherited by every child process and must stay off any step whose
-    # output a parser reads.
-    #
-    # Copied to RUNNER_TEMP rather than injected straight off the share: dyld
-    # loading a dylib over virtiofs is a question nobody needs to answer at
-    # 3am.
+    # Staging is not injecting. DYLD_INSERT_LIBRARIES is inherited by every
+    # child, so each workflow scopes it to steps whose output no parser reads.
     - name: Stage Metal capability shim
       if: runner.os == 'macOS'
       shell: bash
@@ -219,62 +69,37 @@ runs:
         set -euo pipefail
         src="/Volumes/My Shared Files/kronk-tools/LumeMetalCapabilities.dylib"
         if [[ ! -f "$src" ]]; then
-          echo "::error::$src is missing. On the runner host, build it with zarf/macos/build-metal-shim.sh and add the kronk-tools mount to ~/sand.yml."
+          echo "::error::$src is missing. On the runner host, build it with zarf/docker/runner/macos/build-metal-shim.sh and add the kronk-tools mount to ~/sand.yml."
           exit 1
         fi
         cp "$src" "$RUNNER_TEMP/LumeMetalCapabilities.dylib"
 
-        # DYLD_INSERT_LIBRARIES reaches every child process, and /usr/bin is
-        # arm64e while Go emits plain arm64: a single-slice arm64 dylib aborts
-        # `tee`, `sw_vers` and everything else in the tree with "incompatible
-        # architecture". This cost a CI run once already.
+        # /usr/bin is arm64e while Go emits plain arm64, and the dylib loads
+        # into every child: a single-slice arm64 build aborts `tee`, `sw_vers`
+        # and the rest with "incompatible architecture".
         if [[ "$(lipo -archs "$RUNNER_TEMP/LumeMetalCapabilities.dylib")" != *arm64e* ]]; then
-          echo "::error::staged shim has no arm64e slice; rebuild it on the host with zarf/macos/build-metal-shim.sh"
+          echo "::error::staged shim has no arm64e slice; rebuild it on the host with zarf/docker/runner/macos/build-metal-shim.sh"
           exit 1
         fi
 
-    # The shim fails OPEN: a guest image bump that moves the private Metal
-    # internals it hooks leaves every process untouched, and the jobs then run
-    # the Apple5 fallback path while staying green. This is what notices, and
-    # it belongs beside the staging so no macOS job can consume the dylib
-    # without the check having run.
+    # The shim fails OPEN: a guest image bump that moves the internals it hooks
+    # leaves jobs green on the Apple5 fallback path, so this step is the notice.
     #
-    # TWO probes, because one binary cannot answer both questions.
+    # Two probes. llama-bench prints ggml's capability banner, which `kronk
+    # devices` cannot (LogSilent, sdk/kronk/init.go:134-141); `kronk devices`
+    # proves injection reaches a plain-arm64 Go binary.
     #
-    #   llama-bench answers WHAT GGML RESOLVED. It is a subprocess with
-    #   ordinary logging, so it prints the capability banner. `kronk devices`
-    #   never will: cmd/kronk/devices/cmd.go calls kronk.Init() with no
-    #   options, logLevel falls to LogSilent and installs llama.LogSilent()
-    #   (sdk/kronk/init.go:134-141). An earlier version of this step grepped
-    #   `kronk devices` for that banner and passed on the absent-line branch
-    #   in every run of both workflows — an assertion that could not fail is
-    #   worse than none, because it reads as coverage.
-    #
-    #   `kronk devices` answers WHETHER INJECTION REACHES A GO BINARY, which
-    #   is the arch trap that cost a run once (/usr/bin is arm64e, Go emits
-    #   plain arm64). Only the shim's own NSLog banner shows that, and run
-    #   33874959831 has it firing right down to `draft.test`, so it is a
-    #   reliable signal and a hard requirement here.
-    #
-    # Both are hard failures. Nothing here warns: a signal that is known to
-    # be emitted is either present or something regressed.
-    #
-    # Scoped to these invocations with a shell prefix, never exported and
-    # never through $GITHUB_ENV: `kronk diagnose` parses the COMBINED output
-    # of the commands it shells out to
-    # (sdk/tools/diagnose/system_darwin.go:15), and the shim's banner would
-    # land on the line that parser reads as the CPU model. `>` rather than
-    # `tee` so no extra process joins the shimmed environment just to move
-    # bytes.
+    # Scoped with a shell prefix, never exported nor set in $GITHUB_ENV: the
+    # banner would land in the combined output `kronk diagnose` parses as the
+    # CPU model (sdk/tools/diagnose/system_darwin.go:15).
     - name: Verify Metal capability shim
       if: runner.os == 'macOS'
       shell: bash
       run: |
         set -euo pipefail
 
-        # kronk's own answer for which bundle is active, so this cannot drift
-        # from what the suites load. The libraries root is $HOME/.kronk, the
-        # same assumption the install step above makes with its mkdir.
+        # kronk's own answer for the active bundle, so this cannot drift from
+        # what the suites load. Libraries root is $HOME/.kronk, as above.
         read -r bos barch bproc <<< "$(kronk libs --local --list-installs | awk '/\(active\)/{print $1, $2, $3; exit}')"
         bench="$HOME/.kronk/libraries/$bos/$barch/$bproc/llama-bench"
         if [[ ! -x "$bench" ]]; then
@@ -282,9 +107,8 @@ runs:
           exit 1
         fi
 
-        # rc captured rather than left to `set -e`, so the log is printed
-        # even when a probe fails — that output is the only thing that
-        # explains why.
+        # rc captured rather than left to `set -e`, so the log still prints on
+        # failure — that output is the only thing that explains why.
         rc=0
         DYLD_INSERT_LIBRARIES="$RUNNER_TEMP/LumeMetalCapabilities.dylib" \
         LUME_METAL_APPLE_FAMILY_MAX=1009 \
@@ -297,7 +121,7 @@ runs:
         fi
 
         if grep -qE 'simdgroup reduction *= *false' "$RUNNER_TEMP/shim-caps.txt"; then
-          echo "::error::Metal capability shim is not in effect: ggml resolved simdgroup reduction = false, so this job would run the Apple5 fallback path. See zarf/macos/README.md."
+          echo "::error::Metal capability shim is not in effect: ggml resolved simdgroup reduction = false, so this job would run the Apple5 fallback path. See zarf/docker/runner/macos/README.md."
           exit 1
         fi
 
@@ -322,77 +146,8 @@ runs:
           exit 1
         fi
 
-    # On Linux, restore the multi-GB model cache in the foreground while the
-    # background step above builds kronk and installs the native libs. On a
-    # typical Linux run the background work finishes before this step does,
-    # so the join below is effectively free. macOS reaches this step after
-    # its foreground build/install completes.
-    - name: Restore models cache
-      id: cache-models
-      if: runner.environment == 'github-hosted'
-      uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5
-      with:
-        path: |
-          ~/.kronk/models
-          ~/.kronk/bucky-models
-        key: ${{ inputs.models-cache-key }}
-
-    # Join the background work before any downstream step needs the
-    # kronk binary on PATH (either the conditional model-download
-    # step below, or the test runs in the caller workflow). Polls
-    # the pid since `wait` only works on children of the current
-    # shell — and the background process was spawned in a previous
-    # step's shell.
-    - name: Wait for background kronk install
-      if: runner.os == 'Linux'
-      shell: bash
-      run: |
-        set -euo pipefail
-        PID="$(cat "${RUNNER_TEMP}/setup-kronk-bg.pid")"
-        echo "Waiting for background kronk install (pid $PID)..."
-        # `kill -0 PID` is a portable existence probe (Linux runners
-        # are the only place this composite is consumed today, but
-        # the same idiom works on macOS for local debugging).
-        # Belt-and-braces: stop polling as soon as the exit file
-        # appears, so we don't keep watching a recycled PID in the
-        # (vanishingly small) window between the child writing its
-        # result and the kernel reaping it.
-        while [[ ! -f "${RUNNER_TEMP}/setup-kronk-bg.exit" ]] && kill -0 "$PID" 2>/dev/null; do
-          sleep 1
-        done
-        echo "::group::Background kronk install log"
-        cat "${RUNNER_TEMP}/setup-kronk-bg.log"
-        echo "::endgroup::"
-        EXIT="$(cat "${RUNNER_TEMP}/setup-kronk-bg.exit" 2>/dev/null || echo 1)"
-        if [[ "$EXIT" != "0" ]]; then
-          echo "::error::Background kronk install failed (exit=$EXIT)"
-          exit "$EXIT"
-        fi
-
-    # Deliberately NOT gated on the cache hit. actions/cache records paths
-    # relative to the workspace, and ~/.kronk sits at a different depth on a
-    # hosted runner (HOME=/home/runner, workspace two levels below) than on a
-    # self-hosted one (HOME=/root, workspace under /_work). A hit restored
-    # across that boundary reports success while the files land somewhere the
-    # tests never look, and gating the download on the hit turned that into a
-    # green run that tested nothing. The pull loop short-circuits on verified
-    # files (sdk/tools/models/download.go), so running it unconditionally
-    # costs a verification pass and repairs any such mismatch.
-    # The macOS runners are ephemeral VMs — sand recreates one per job — so
-    # ~/.kronk never survives and every run would re-download the whole model
-    # set (6.6 GiB, ~4m30s measured). sand mounts a persistent host directory
-    # at the share below (the `mounts` block in sand.yml), so pointing the
-    # models directory at it makes the download a one-time cost per runner.
-    #
-    # Only the models are redirected. KRONK_BASE_PATH would move the whole
-    # base directory, but that drags badger and the library bundles onto
-    # virtiofs for no real gain — the libraries are ~30 MiB and the models are
-    # three orders of magnitude bigger. Every rename in the download path
-    # stays inside the models tree (sdk/tools/models/download.go), so the
-    # symlink introduces no cross-device rename.
-    #
-    # A missing share is a warning, not an error: a macOS runner without the
-    # mount still works, it just re-downloads like before.
+    # sand recreates the macOS VM per job, so ~/.kronk never survives; the host
+    # mount makes that a one-time cost. Only models: their renames stay in-tree.
     - name: Persist models on ephemeral macOS VMs
       if: runner.os == 'macOS'
       shell: bash
@@ -413,51 +168,11 @@ runs:
         fi
         echo "persisted models: $(du -sh "$share" 2>/dev/null | cut -f1 || echo unknown)"
 
+    # Unconditional: the pull short-circuits on verified files, so a warm
+    # ~/.kronk costs a verify pass (sdk/tools/models/download.go).
     - name: Download test models
       shell: bash
-      # The model list lives in .github/test-models.txt (one
-      # `<backend> <model-id>` per line). The same file is hashed into
-      # the cache key by the caller, so any change here forces a
-      # download on the next run instead of silently reusing a stale
-      # cache that's missing the new entry.
-      env:
-        EXTRA_MODELS_FILE: ${{ inputs.extra-models-file }}
       run: |
         set -euo pipefail
-        mkdir -p $HOME/.kronk/models
-
-        # One function over both lists so the backend dispatch and the
-        # comment/blank stripping cannot drift between them.
-        pull_list() {
-          local list="$1"
-          if [[ ! -f "$list" ]]; then
-            echo "::error::model list '$list' not found"
-            exit 1
-          fi
-          echo "::group::models from $list"
-          while IFS= read -r line || [[ -n "$line" ]]; do
-            # Strip comments / blanks.
-            line="${line%%#*}"
-            line="${line#"${line%%[![:space:]]*}"}"
-            line="${line%"${line##*[![:space:]]}"}"
-            [[ -z "$line" ]] && continue
-            # shellcheck disable=SC2086  # intentional word-splitting on the space.
-            set -- $line
-            backend="$1"; model="$2"
-            case "$backend" in
-              kronk) kronk model pull --local "$model" ;;
-              bucky) kronk bucky model pull --local "$model" ;;
-              *)
-                echo "::error file=${list}::Unknown backend '$backend' (expected 'kronk' or 'bucky')"
-                exit 1
-                ;;
-            esac
-          done <"$list"
-          echo "::endgroup::"
-        }
-
-        pull_list .github/test-models.txt
-
-        if [[ -n "${EXTRA_MODELS_FILE}" ]]; then
-          pull_list "${EXTRA_MODELS_FILE}"
-        fi
+        mkdir -p "$HOME/.kronk/models"
+        ./.github/scripts/pull-models.sh .github/test-models.txt

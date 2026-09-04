@@ -13,6 +13,7 @@ on:
       - ".github/workflows/macos.yml"
       - ".github/actions/setup-kronk/**"
       - ".github/scripts/check-go-version.sh"
+      - ".github/scripts/pull-models.sh"
       - ".github/test-models.txt"
   pull_request:
     branches:
@@ -26,6 +27,7 @@ on:
       - ".github/workflows/macos.yml"
       - ".github/actions/setup-kronk/**"
       - ".github/scripts/check-go-version.sh"
+      - ".github/scripts/pull-models.sh"
       - ".github/test-models.txt"
   workflow_dispatch:
 
@@ -36,36 +38,16 @@ concurrency:
 permissions:
   contents: read
 
-# Every job is skipped on a fork PR. kronk is public and this runner is
-# not ephemeral, so untrusted code must never land on it. There is no
-# hosted fallback: macos-latest cannot hold the 6.6 GiB model set.
-# Forks are covered by linux.yml. Skipped counts as passing for branch
-# protection, so these stay safe to mark required.
+# Every job is skipped on a fork PR: this runner is not ephemeral, and
+# macos-latest cannot hold the 6.6 GiB model set, so there is no hosted
+# fallback — linux.yml covers forks. Skipped counts as passing for protection.
 #
-# KRONK_PROCESSOR=metal, and it is not a choice: it is the truth this gate
-# spent a while denying. It read `cpu` before, on the theory that Metal was
-# gpu.yml's business alone. But darwin/arm64 publishes exactly ONE llama.cpp
-# artifact — `cpu` and `metal` both resolve to llama-<tag>-bin-macos-arm64
-# (yzma pkg/download/resolver.go:202-217) — so the bundle always contains
-# libggml-metal, libggml.dylib links it at load time, and NGpuLayers defaults
-# to all-layers-on-GPU (sdk/kronk/model/model.go:522-523). Every job below
-# that loads a model ran Metal regardless of this value; run 33859967144
-# printed `MTLGPUFamilyApple5 (1005)` and `simdgroup reduction = false` while
-# claiming to be a CPU gate.
+# KRONK_PROCESSOR=metal, not cpu: darwin/arm64 publishes ONE llama.cpp artifact
+# (yzma pkg/download/resolver.go:202-217), so these jobs run Metal whatever this
+# says. Setting it also bypasses host detection — a missing bundle fails loudly.
 #
-# So name it. Not to fix the test suites' idea of the backend — testlib's
-# Processor() asks ggml which devices it enumerated, so it answers "metal"
-# whatever this says — but because the log, the bundle directory and the
-# install path all carry this value, and every one of them lied. Setting it
-# at all also bypasses host detection (sdk/tools/libs/libs.go:234), so a
-# darwin/arm64 metal bundle that stops publishing fails here rather than
-# degrading quietly to something else.
-#
-# Naming it also obliges us to make it representative: setup-kronk stages the
-# Metal capability shim on every macOS job, and the steps that run models
-# inject it. Without that, this gate is a strictly worse copy of gpu.yml's
-# Metal leg — same backend, minus the thing that makes the VM's paravirtual
-# GPU behave like the hardware users have. See zarf/macos/README.md.
+# Naming it obliges us to be representative: setup-kronk stages the Metal shim
+# and the model steps inject it. See zarf/docker/runner/macos/README.md.
 env:
   GOTOOLCHAIN: local
   KRONK_PROCESSOR: metal
@@ -86,9 +68,8 @@ jobs:
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version-file: .go-version
-          # Hosted only: on self-hosted the module and build caches
-          # already persist in a local volume, so the upload is pure
-          # cost and fails once the cache budget is exhausted.
+          # Hosted only: on self-hosted the module and build caches already
+          # persist locally, so the upload is pure cost.
           cache: ${{ runner.environment == 'github-hosted' }}
 
       - name: Install static analysis tools
@@ -145,15 +126,10 @@ jobs:
 
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
-        with:
-          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
 
-      # Not shimmed, deliberately. -short skips every test here that loads a
-      # model, so nothing in this job reaches a Metal kernel — run
-      # 33859967144's race job printed no ggml_metal_device_init at all. If a
-      # test here starts loading a model, inject the shim the way api-tests
-      # and sdk-tests below do; otherwise it would quietly run the Apple5
-      # fallback path.
+      # Not shimmed, deliberately: -short skips every test here that loads a
+      # model, so nothing reaches a Metal kernel. If one starts to, inject the
+      # shim the way api-tests and sdk-tests below do.
       - name: go test -race -short (sdk unit packages)
         run: |
           go test -race -short -count=1 -timeout 10m \
@@ -167,9 +143,6 @@ jobs:
     if: (github.event.pull_request.head.repo.full_name || github.repository) == github.repository
     runs-on: [self-hosted, macOS, ARM64, sand]
     timeout-minutes: 30
-    permissions:
-      contents: read
-      actions: write # actions/cache/save uses the actions API
     steps:
       - name: Runner specs
         run: |
@@ -181,21 +154,12 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Set up Kronk
-        id: setup
         uses: ./.github/actions/setup-kronk
-        with:
-          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
 
       - name: Run api/service tests
         env:
-          # The shim setup-kronk staged. Injected per-step, never through
-          # $GITHUB_ENV, so it reaches neither checkout nor cleanup nor any
-          # `kronk diagnose` invocation — that parser reads the combined
-          # output of the commands it shells out to, and the shim's NSLog
-          # banner would become the CPU model. Whole-step injection is safe
-          # here because the only shell-out under test is ffmpeg
-          # (sdk/bucky/ffmpeg/ffmpeg.go:95), which carries its data on stdout
-          # and reads stderr only for an error tail. See zarf/macos/README.md.
+          # The shim setup-kronk staged. Per-step, never $GITHUB_ENV: the banner
+          # would poison what `kronk diagnose` parses as the CPU model.
           DYLD_INSERT_LIBRARIES: ${{ runner.temp }}/LumeMetalCapabilities.dylib
           LUME_METAL_APPLE_FAMILY_MAX: "1009"
           # Pinned to what real Apple Silicon reports. The shim defaults to
@@ -205,16 +169,6 @@ jobs:
           export RUN_IN_PARALLEL=no
           go test -v -p=1 -count=1 -timeout 20m ./cmd/kronk/...
           go test -v -p=1 -count=1 -timeout 20m ./cmd/server/...
-
-      - name: Save models cache
-        if: runner.environment == 'github-hosted' && github.ref == 'refs/heads/main' && steps.setup.outputs.models-cache-hit != 'true'
-        continue-on-error: true
-        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: |
-            ~/.kronk/models
-            ~/.kronk/bucky-models
-          key: ${{ steps.setup.outputs.models-cache-key }}
 
   sdk-tests:
     name: sdk tests
@@ -227,19 +181,11 @@ jobs:
 
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
-        with:
-          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
 
       - name: Run sdk tests
         env:
-          # The shim setup-kronk staged. Injected per-step, never through
-          # $GITHUB_ENV, so it reaches neither checkout nor cleanup nor any
-          # `kronk diagnose` invocation — that parser reads the combined
-          # output of the commands it shells out to, and the shim's NSLog
-          # banner would become the CPU model. Whole-step injection is safe
-          # here because the only shell-out under test is ffmpeg
-          # (sdk/bucky/ffmpeg/ffmpeg.go:95), which carries its data on stdout
-          # and reads stderr only for an error tail. See zarf/macos/README.md.
+          # The shim setup-kronk staged. Per-step, never $GITHUB_ENV: the banner
+          # would poison what `kronk diagnose` parses as the CPU model.
           DYLD_INSERT_LIBRARIES: ${{ runner.temp }}/LumeMetalCapabilities.dylib
           LUME_METAL_APPLE_FAMILY_MAX: "1009"
           # Pinned to what real Apple Silicon reports. The shim defaults to

@@ -5,10 +5,8 @@
 #   kronk-linux-rocm-N  self-hosted, Linux, X64, gpu, rocm
 #   kronk-runner-N      self-hosted, macOS, ARM64, sand, metal
 #
-# One backend per runner, one fleet per backend: gpu.yml's matrix selects
-# on the backend label, so each leg runs on hardware built for it. The
-# Linux fleets come from zarf/docker/runner (see its LABELS note); the
-# macOS runners are Sand-managed, and `metal` has to be set there.
+# One backend per runner, one fleet per backend: gpu.yml's matrix selects on the
+# backend label. Linux fleets: zarf/docker/runner; macOS `metal` is set in Sand.
 self-hosted-runner:
   labels:
     - gpu

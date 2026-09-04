@@ -1,9 +1,7 @@
 name: GPU
 
-# The model suites again on real GPUs — the coverage no hosted runner can
-# provide. One workflow rather than a job in each of linux.yml / macos.yml
-# so the suite list at the bottom exists once instead of three times, and
-# so every backend is gated by the same rules.
+# The model suites on real GPUs. One workflow rather than a job per OS, so the
+# suite list exists once and every backend is gated by the same rules.
 on:
   push:
     branches:
@@ -15,6 +13,7 @@ on:
       - ".go-version"
       - ".github/workflows/gpu.yml"
       - ".github/actions/setup-kronk/**"
+      - ".github/scripts/pull-models.sh"
       - ".github/test-models.txt"
       - ".github/test-models-gpu.txt"
   pull_request:
@@ -27,6 +26,7 @@ on:
       - ".go-version"
       - ".github/workflows/gpu.yml"
       - ".github/actions/setup-kronk/**"
+      - ".github/scripts/pull-models.sh"
       - ".github/test-models.txt"
       - ".github/test-models-gpu.txt"
   workflow_dispatch:
@@ -41,45 +41,22 @@ permissions:
   contents: read
 
 # GOTOOLCHAIN=local so a dependency that raises its `go` directive above
-# .go-version fails loudly instead of pulling a toolchain. KRONK_PROCESSOR
-# is per-matrix-entry, not here — picking the backend is this workflow's
-# entire job.
+# .go-version fails loudly. KRONK_PROCESSOR is per-matrix-entry, not here.
 env:
   GOTOOLCHAIN: local
 
 jobs:
-  # Every backend Kronk ships a GPU bundle for and we own hardware to run:
+  # A matrix rather than a job per backend so the suite list cannot drift;
+  # fail-fast off so one backend regressing does not cancel the others.
   #
-  #   Vulkan — what bucky lands on regardless (whisper.cpp publishes no
-  #            ROCm bundle) and what non-ROCm AMD hosts use.
-  #   ROCm   — what detectHostFallback picks whenever rocminfo reports a
-  #            GPU (sdk/tools/libs/runtime_selection.go:313), so it is the
-  #            default path for a user with an AMD box.
-  #   Metal  — what every macOS user runs.
+  # THE COST: an unmatched runs-on does not fail, it queues silently until the
+  # 24h run limit — every backend here needs a fleet claiming its label.
   #
-  # A matrix rather than a job per backend so the suite list cannot drift
-  # between them. fail-fast is off: one backend regressing must not cancel
-  # the others, or the report can't say which broke.
+  # KRONK_PROCESSOR is strict (sdk/tools/libs/libs.go:234), so a missing bundle
+  # fails here instead of degrading to CPU. Only llama: bucky maps rocm→vulkan.
   #
-  # runs-on comes from the matrix, so each leg lands on the fleet built for
-  # it — a runner image is built for one backend and labelled for that one
-  # alone (zarf/docker/runner/Dockerfile for the Linux fleets; the macOS
-  # runners are Sand-managed and carry `sand,metal`).
-  #
-  # THE COST: an unmatched runs-on does not fail, it queues, silently,
-  # until the 24h run limit. Every backend listed here needs a fleet
-  # claiming its label. Retiring a fleet means dropping its entry in the
-  # same change.
-  #
-  # KRONK_PROCESSOR is strict (sdk/tools/libs/libs.go:234), so a missing
-  # bundle fails here instead of silently degrading to CPU. Only llama is
-  # strict: `kronk bucky libs --local` maps rocm to vulkan on its own,
-  # since whisper.cpp has no ROCm build.
-  #
-  # Fork PRs are skipped outright. kronk is public and none of these
-  # runners are ephemeral, so untrusted code must never land on them.
-  # Skipped counts as passing for branch protection, so these stay safe to
-  # mark required; linux.yml's hosted fallback is what covers forks.
+  # Fork PRs are skipped outright — none of these runners are ephemeral.
+  # Skipped counts as passing, so these stay safe to mark required.
   gpu-tests:
     name: GPU tests (${{ matrix.backend }})
     if: (github.event.pull_request.head.repo.full_name || github.repository) == github.repository
@@ -89,10 +66,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # `processor` is both KRONK_PROCESSOR's value and the runner
-          # label, because the runner images use Kronk's own backend names.
-          # `device` is the TYPE column `kronk devices` prints for that
-          # backend (cmd/kronk/devices/cmd.go deviceType).
+          # `processor` is both KRONK_PROCESSOR's value and the runner label.
+          # `device` is `kronk devices`' TYPE column (cmd/kronk/devices/cmd.go).
           - backend: Vulkan
             processor: vulkan
             device: GPU (Vulkan)
@@ -108,9 +83,8 @@ jobs:
     env:
       KRONK_PROCESSOR: ${{ matrix.processor }}
     steps:
-      # Both GPU probes, not just this leg's: when the assertion below
-      # fails, the first question is whether the other backend saw the
-      # device either (driver/permission problem) or not (bundle problem).
+      # Both GPU probes, not just this leg's: when the assertion below fails,
+      # the first question is whether the other backend saw the device either.
       - name: Runner specs (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -132,47 +106,19 @@ jobs:
 
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
-        with:
-          # Same key the CPU workflows use, so all jobs on a given OS share
-          # one models cache. The GPU-only list is folded in so the key still
-          # tracks every model these jobs need; it changes nothing today
-          # because every leg here is self-hosted and setup-kronk gates its
-          # cache layers on hosted runners.
-          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt', '.github/test-models-gpu.txt') }}
-          # Models too large for the base list — see that file's header. A
-          # literal, not a matrix field: every leg here has a persistent
-          # ~/.kronk and pulls the same two MTP targets, so per-leg values
-          # only ever drifted apart by accident.
-          #
-          # Cold-cache hazard on the macOS leg: the two macOS runners share
-          # one models directory and kronk has no cross-process download
-          # lock, so two concurrent cold fetches of the same model can lose
-          # the rename race in sdk/tools/models/download.go. Pre-seed the
-          # mount if two GPU runs might overlap.
-          extra-models-file: .github/test-models-gpu.txt
 
-      # KRONK_PROCESSOR only guarantees the library bundle. ggml can load
-      # the Vulkan, HIP or Metal build and still enumerate zero devices of
-      # that type, in which case every suite below runs on the CPU backend
-      # and passes.
+      # GPU-only targets on top of setup-kronk's base list. Cold-pull hazard on
+      # macOS: its two runners share one models directory and kronk has no
+      # cross-process lock, so overlapping cold pulls can lose the rename race.
+      - name: Download GPU-only test models
+        run: ./.github/scripts/pull-models.sh .github/test-models-gpu.txt
+
+      # KRONK_PROCESSOR only guarantees the bundle: ggml can load it and still
+      # enumerate zero devices, so assert the DEVICE. setup-kronk asserts the shim.
       #
-      # This asserts the DEVICE, which is per-matrix and can only be checked
-      # here. Whether the Metal capability shim is live is asserted by
-      # setup-kronk's "Verify Metal capability shim" step, which runs on every
-      # macOS job in every workflow — the shim is a property of the runner
-      # fleet, not of this matrix.
-      #
-      # The shim is scoped to `kronk devices` alone here, not set for the
-      # whole step. DYLD_INSERT_LIBRARIES is inherited by children, and
-      # `kronk diagnose` shells out to sw_vers/sysctl/vm_stat and parses
-      # their COMBINED output (sdk/tools/diagnose/system_darwin.go:15), so an
-      # injected process writing a banner to stderr lands in the field that
-      # parser reads and turns cpuModel and ramBytes into nonsense. Keeping
-      # diagnose unshimmed keeps the first thing you read when a runner
-      # misbehaves trustworthy.
-      #
-      # A shell prefix rather than `env`, and `>` rather than `tee`, so no
-      # extra process joins the shimmed environment just to move bytes.
+      # The shim is scoped to `kronk devices` alone: DYLD_INSERT_LIBRARIES is
+      # inherited by children, and an injected banner lands in the combined
+      # output `kronk diagnose` parses (sdk/tools/diagnose/system_darwin.go:15).
       - name: Verify ${{ matrix.backend }} backend
         env:
           DEVICE_TYPE: ${{ matrix.device }}
@@ -196,10 +142,8 @@ jobs:
 
       - name: Run model suites on GPU
         env:
-          # The macOS runners are VMs whose paravirtual GPU reports
-          # MTLGPUFamilyApple5, below llama.cpp's Apple7/Metal3 gate, so
-          # without this the Metal leg exercises CPU fallbacks no real Mac
-          # ever takes. See zarf/macos/README.md. Empty on the Linux legs.
+          # The macOS runners' paravirtual GPU reports MTLGPUFamilyApple5,
+          # below llama.cpp's Apple7 gate. zarf/docker/runner/macos/README.md.
           DYLD_INSERT_LIBRARIES: ${{ matrix.processor == 'metal' && format('{0}/LumeMetalCapabilities.dylib', runner.temp) || '' }}
           LUME_METAL_APPLE_FAMILY_MAX: ${{ matrix.processor == 'metal' && '1009' || '' }}
           # Pinned to what real Apple Silicon reports. The shim defaults to
@@ -216,13 +160,7 @@ jobs:
           go test -v -count=1 -timeout 10m -run '^(TestSuite|TestUsageCountingHybrid)$' ./sdk/kronk/tests/hybrid
 
       # The MTP speculation path, which the classic drafter above does not
-      # cover. A separate step only because it needs the 26B/35B targets in
-      # .github/test-models-gpu.txt and a longer timeout; every leg runs it.
-      #
-      # It carried `if: matrix.extra_models != ''` until 2026-09-04, from when
-      # the Metal leg was held back from these targets. Every leg has set
-      # extra_models since 28ace421, so the condition could not be false and
-      # the comment under it claimed the opposite of what the matrix did.
+      # cover. Separate for the 26B/35B targets and the longer timeout.
       - name: Run MTP suites on GPU
         env:
           DYLD_INSERT_LIBRARIES: ${{ matrix.processor == 'metal' && format('{0}/LumeMetalCapabilities.dylib', runner.temp) || '' }}

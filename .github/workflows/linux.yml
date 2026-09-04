@@ -12,6 +12,7 @@ on:
       - ".github/workflows/linux.yml"
       - ".github/actions/setup-kronk/**"
       - ".github/scripts/check-go-version.sh"
+      - ".github/scripts/pull-models.sh"
       - ".github/test-models.txt"
   pull_request:
     branches:
@@ -25,75 +26,32 @@ on:
       - ".github/workflows/linux.yml"
       - ".github/actions/setup-kronk/**"
       - ".github/scripts/check-go-version.sh"
+      - ".github/scripts/pull-models.sh"
       - ".github/test-models.txt"
   workflow_dispatch:
 
-# Cancel any in-progress run for the same branch when a new commit
-# arrives. Using `head_ref || ref` collapses the duplicate runs that
-# otherwise fire from both the `push` and `pull_request` events on a PR
-# branch (they have different github.ref values and would not cancel
-# each other if grouped by ref alone).
+# Cancel in-progress runs for the same branch. `head_ref || ref` collapses the
+# duplicate runs a PR branch gets from both push and pull_request.
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
-# Minimum-required token scopes per job. Nothing in this workflow
-# writes to the repo, modifies issues/PRs, publishes packages, or
-# talks to OIDC. The api-tests / sdk-tests jobs need `actions: write`
-# only to be able to save the models cache (actions/cache/save uses
-# the actions API).
+# Minimum-required token scopes: nothing here writes to the repo, issues,
+# packages or OIDC.
 permissions:
   contents: read
 
-# The workflow runs four independent jobs in parallel. They all use
-# `actions/setup-go@v6` pinned to `go-version-file: .go-version`, which
-# gives them an identical setup-go cache key (OS + Go version + go.sum
-# hash) so the Go module download cache and the build cache ($GOCACHE)
-# are shared across jobs and across runs.
+# Four independent jobs — static, race, api-tests, sdk-tests — sharing one
+# setup-go cache key via .go-version. The GPU suites are gpu.yml's.
 #
-# CI's toolchain version lives in /.go-version (not go.mod) so that
-# contributors building locally with any supported Go release don't get
-# silently dragged into a toolchain auto-download by the build system.
-# go.mod's `go` directive declares the minimum language version only.
+# GOTOOLCHAIN=local so a dependency that bumps its `go` directive above
+# .go-version fails loudly instead of auto-downloading a toolchain.
 #
-#   static     — vet / staticcheck / govulncheck / go fix / gofmt /
-#                go mod tidy / goreleaser check. No models, no kronk
-#                binary, no libs, no test run. Finishes fast.
-#   race       — `go test -race -short` on the SDK unit packages.
-#                Uses setup-kronk so unit tests that read real GGUFs
-#                (e.g. sdk/tools/models) can run under -race. Split out
-#                from static so a flaky/slow race run never gates fast
-#                lint feedback.
-#   api-tests  — full kronk + libs + models setup, runs cmd/server/...
-#                Owns the models-cache save so the two test jobs don't
-#                race on save.
-#   sdk-tests  — full kronk + libs + models setup, runs sdk/...
+# Self-hosted for this repo, ubuntu-latest for fork PRs: kronk is public and
+# these runners are not ephemeral, so untrusted code must never reach them.
 #
-# The GPU suites are NOT here: gpu.yml runs them for every backend, on
-# both OSes, from one matrix. Its two Linux legs share this host with
-# these four jobs.
-#
-# On the rare cache miss both test jobs download the models in parallel.
-# That's wasted CPU but no wall-clock penalty, and avoids a serial
-# "prepare-models" job that would slow the common cache-hit case.
-#
-# GOTOOLCHAIN=local is set on every job so a transitive dependency that
-# bumps its `go` directive above .go-version cannot silently force a
-# toolchain auto-download in CI — better to fail loudly and bump
-# .go-version + check-go-version.sh together.
-# Self-hosted for anything from this repo; ubuntu-latest for fork PRs.
-# kronk is public and the runners are not ephemeral, so a fork PR must
-# never be scheduled onto them. The CPU jobs ask only for self-hosted/
-# Linux/X64 so they stay schedulable on any future Linux runner.
-#
-# One runner means one job at a time. These four jobs plus gpu.yml's two
-# Linux legs peak at six concurrent jobs on this host, so a smaller fleet
-# serializes them (see COUNT in zarf/docker/runner/start-runners.sh).
-#
-# KRONK_PROCESSOR=cpu keeps the gate's results independent of which
-# runner took the job — without it, `kronk libs --local` probes the host
-# and would pick a GPU backend on the GPU runner. That is gpu.yml's job.
-# Bucky stays on auto-detect; it has no ROCm bundle and degrades on its own.
+# KRONK_PROCESSOR=cpu keeps results independent of which runner took the job;
+# `kronk libs --local` would otherwise pick a GPU backend. Bucky auto-detects.
 env:
   GOTOOLCHAIN: local
   KRONK_PROCESSOR: cpu
@@ -106,9 +64,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
-      # Guard: catch the case where someone bumps the `go` directive in
-      # go.mod (or .go-version) but forgets the other file. Patch-level
-      # drift is allowed; minor-level drift fails the workflow.
+      # Catches a bump to go.mod's `go` directive without .go-version, or the
+      # reverse. Patch-level drift is allowed; minor-level drift fails.
       - name: Check Go version pin
         run: ./.github/scripts/check-go-version.sh
 
@@ -116,24 +73,20 @@ jobs:
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
         with:
           go-version-file: .go-version
-          # Hosted only: on self-hosted the module and build caches
-          # already persist in a local volume, so the upload is pure
-          # cost and fails once the cache budget is exhausted.
+          # Hosted only: on self-hosted the module and build caches already
+          # persist locally, so the upload is pure cost.
           cache: ${{ runner.environment == 'github-hosted' }}
 
-      # Pinned to specific tags (not @latest) so a tool release that
-      # raises its required Go version doesn't silently bump our CI
-      # toolchain or, with GOTOOLCHAIN=local, fail the install. Renovate
-      # / Dependabot bumps these intentionally.
+      # Pinned tags, not @latest: a tool release that raises its required Go
+      # version would otherwise fail the install under GOTOOLCHAIN=local.
       - name: Install static analysis tools
         run: |
           go install honnef.co/go/tools/cmd/staticcheck@2026.2rc1
           go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
 
       - name: gofmt
-        # `git ls-files '*.go'` ignores generated files that are
-        # gitignored. We deliberately don't run gofmt on vendored or
-        # generated code.
+        # `git ls-files` skips gitignored files: vendored and generated code
+        # is deliberately not gofmt'd.
         run: |
           fmt="$(gofmt -l $(git ls-files '*.go'))"
           if [[ -n "$fmt" ]]; then
@@ -143,8 +96,8 @@ jobs:
           fi
 
       - name: go mod tidy
-        # If `tidy` mutates go.mod or go.sum, the diff is non-empty and
-        # the step exits non-zero. Keeps the module graph honest.
+        # If `tidy` mutates go.mod or go.sum the diff is non-empty and the
+        # step exits non-zero.
         run: |
           go mod tidy
           git diff --exit-code -- go.mod go.sum
@@ -159,8 +112,8 @@ jobs:
         run: govulncheck ./...
 
       - name: go fix
-        # `go fix -diff` only prints; it does not fail. Capture the diff
-        # and fail if it had rewritten anything.
+        # `go fix -diff` only prints; it does not fail. Capture the diff and
+        # fail if it would have rewritten anything.
         run: |
           fix_diff="$(go fix -diff ./...)"
           if [[ -n "$fix_diff" ]]; then
@@ -169,9 +122,8 @@ jobs:
             exit 1
           fi
 
-      # Validates .goreleaser.yaml on every PR/main run, instead of
-      # discovering syntax errors only when cutting a release tag.
-      # No artifacts are produced — pure config lint.
+      # Lints .goreleaser.yaml on every run instead of at tag time. No
+      # artifacts are produced.
       - name: goreleaser check
         uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89  # v7
         with:
@@ -186,23 +138,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
-      # Same setup as api-tests / sdk-tests so unit tests that read real
-      # GGUFs on disk (e.g. sdk/tools/models TestModelMetadata) can
-      # exercise their full code path under the race detector. The libs
-      # + models caches are shared across all three jobs, so on a cache
-      # hit this adds only seconds.
+      # Same setup as api-tests / sdk-tests so unit tests that read real GGUFs
+      # (sdk/tools/models) exercise their full path under -race.
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
-        with:
-          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
 
-      # Race detector pass on SDK unit packages. The model/library-heavy
-      # integration suites still belong to sdk-tests; this job stays
-      # scoped to fast unit tests so the race walltime doesn't approach
-      # the integration job's:
-      #   /sdk/kronk/tests     — integration suite owned by sdk-tests.
-      #   /sdk/kronk/pool      — boots the llama runtime + real models.
-      #   /sdk/bucky/tests     — boots the whisper runtime + real models.
+      # Fast unit tests only. The excluded trees boot the llama/whisper
+      # runtimes against real models and belong to sdk-tests.
       - name: go test -race -short (sdk unit packages)
         run: |
           go test -race -short -count=1 -timeout 10m \
@@ -215,9 +157,6 @@ jobs:
     name: api/service tests
     runs-on: ${{ (github.event.pull_request.head.repo.full_name || github.repository) == github.repository && fromJSON('["self-hosted","Linux","X64"]') || 'ubuntu-latest' }}
     timeout-minutes: 30
-    permissions:
-      contents: read
-      actions: write   # actions/cache/save uses the actions API
     steps:
       - name: Runner specs
         run: |
@@ -229,34 +168,13 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
       - name: Set up Kronk
-        id: setup
         uses: ./.github/actions/setup-kronk
-        with:
-          # The models cache key is bound to the model manifest's hash
-          # so adding/removing a model in .github/test-models.txt
-          # automatically invalidates the cache. Old keys age out via
-          # GHA's 7-day-unused eviction policy (also see
-          # cache-cleanup.yml).
-          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
 
       - name: Run api/service tests
         run: |
           export RUN_IN_PARALLEL=no
           go test -v -p=1 -count=1 -timeout 20m ./cmd/kronk/...
           go test -v -p=1 -count=1 -timeout 20m ./cmd/server/...
-
-      # Only one of the two test jobs (api-tests) saves the cache so
-      # they can't race. Save only on main branch and only on a cache
-      # miss — PR builds and cache hits don't need to re-save.
-      - name: Save models cache
-        if: runner.environment == 'github-hosted' && github.ref == 'refs/heads/main' && steps.setup.outputs.models-cache-hit != 'true'
-        continue-on-error: true
-        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5
-        with:
-          path: |
-            ~/.kronk/models
-            ~/.kronk/bucky-models
-          key: ${{ steps.setup.outputs.models-cache-key }}
 
   sdk-tests:
     name: sdk tests
@@ -268,18 +186,14 @@ jobs:
 
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
-        with:
-          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
 
       - name: Run sdk tests
         run: |
           export RUN_IN_PARALLEL=no
           go -C examples test -v -count=1 -timeout 2m ./session-store
           go test -v -p=1 -count=1 -timeout 20m $(go list ./sdk/... | grep -v '/sdk/kronk/tests')
-          # Run the model-backed capability suites that fit the CPU-only runner.
-          # Additional standalone stress and cache tests remain deliberate local runs.
-          # Embeddings remain covered by cmd/server; its SDK model load is
-          # omitted because it triggered Go heap corruption on the Linux runner.
+          # The model-backed suites that fit a CPU-only runner. Embeddings stay
+          # covered by cmd/server; its SDK model load caused heap corruption here.
           go test -v -count=1 -timeout 6m -run '^(TestSuite|TestUsageCounting|Test_BatchChatConcurrent)$' ./sdk/kronk/tests/qwen3
           go test -v -count=1 -timeout 6m -run '^TestLengthTerminatedToolCallBecomesContent$' ./sdk/kronk/tests/qwen06
           go test -v -count=1 -timeout 6m -run '^TestSuite$' ./sdk/kronk/tests/draft

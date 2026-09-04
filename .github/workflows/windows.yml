@@ -1,12 +1,7 @@
 name: Windows
 
-# .goreleaser.yaml ships Windows binaries and sdk/tools/libs/combinations.go
-# lists Windows bundles, but nothing in CI ever built for Windows.
-#
-# Build and vet only: running the suites needs the native bundles, and
-# setup-kronk has no Windows path (its install steps are gated on Linux and
-# macOS). `go vet` type-checks _test.go files, so test code that won't
-# compile on Windows is still caught. Executing them is a follow-up.
+# Build and vet only: the suites need native bundles and setup-kronk has no
+# Windows path. `go vet` type-checks _test.go, so uncompilable tests still fail.
 on:
   push:
     branches:
