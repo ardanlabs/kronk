@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -17,6 +18,26 @@ func TestWithValidation(t *testing.T) {
 
 	if !options.Validation {
 		t.Error("Validation: got false, want true")
+	}
+}
+
+func TestAllowUnavailableFileValidation(t *testing.T) {
+	var logged bool
+	log := func(_ context.Context, _ string, _ ...any) {
+		logged = true
+	}
+
+	err := fmt.Errorf("verify: %w", ErrNoFileDigests)
+	if err := allowUnavailableFileValidation(t.Context(), log, "b10798", err); err != nil {
+		t.Fatalf("allowUnavailableFileValidation: %v", err)
+	}
+	if !logged {
+		t.Error("log: got no warning, want warning")
+	}
+
+	want := errors.New("changed file")
+	if got := allowUnavailableFileValidation(t.Context(), log, "b10798", want); !errors.Is(got, want) {
+		t.Errorf("other error: got %v, want %v", got, want)
 	}
 }
 

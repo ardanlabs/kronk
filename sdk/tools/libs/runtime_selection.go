@@ -387,7 +387,8 @@ func (lib *Libs) SelectInstalledRuntime(ctx context.Context, log Logger) (*Libs,
 				version = lib.version
 			}
 
-			return verifyRuntime(ctx, candidate, version)
+			err := verifyRuntime(ctx, candidate, version)
+			return allowUnavailableFileValidation(ctx, log, version, err)
 		}
 
 		return lib.selectInstalledRuntime(ctx, log, probeRuntime, verifyFn)

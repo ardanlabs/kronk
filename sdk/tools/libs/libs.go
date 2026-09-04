@@ -327,7 +327,7 @@ func (lib *Libs) SetVersion(version string) {
 func (lib *Libs) Download(ctx context.Context, log Logger) (tag VersionTag, retErr error) {
 	defer func() {
 		if retErr == nil && lib.validation {
-			retErr = lib.validateDownload(ctx, tag)
+			retErr = lib.validateDownload(ctx, log, tag)
 		}
 	}()
 

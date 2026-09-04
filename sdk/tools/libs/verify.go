@@ -2,6 +2,7 @@ package libs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/hybridgroup/yzma/pkg/download"
@@ -13,6 +14,10 @@ var (
 
 	// ErrInvalidVersion means a pinned digest does not name an exact release.
 	ErrInvalidVersion = download.ErrInvalidVersion
+
+	// ErrNoFileDigests means the available release metadata provides archive
+	// digests but not the per-file digests needed for post-install validation.
+	ErrNoFileDigests = download.ErrNoFileDigests
 )
 
 // VerifyReport describes the files checked in an installed llama.cpp bundle.
@@ -31,20 +36,33 @@ func (lib *Libs) Verify(ctx context.Context, version string) (*VerifyReport, err
 	return report, nil
 }
 
-func (lib *Libs) validateDownload(ctx context.Context, tag VersionTag) error {
+func (lib *Libs) validateDownload(ctx context.Context, log Logger, tag VersionTag) error {
 	version := tag.Version
 	if lib.version != "" {
 		version = lib.version
 	}
 
 	report, err := lib.Verify(ctx, version)
+	err = allowUnavailableFileValidation(ctx, log, version, err)
 	if err != nil {
 		return fmt.Errorf("download: validate libraries: %w", err)
+	}
+	if report == nil {
+		return nil
 	}
 	if !report.OK() {
 		return fmt.Errorf("download: validate libraries: %d changed, %d missing, and %d unexpected files", report.Changed, report.Missing, report.Unexpected)
 	}
 
+	return nil
+}
+
+func allowUnavailableFileValidation(ctx context.Context, log Logger, version string, err error) error {
+	if !errors.Is(err, ErrNoFileDigests) {
+		return err
+	}
+
+	log(ctx, "validate-libraries: post-install validation unavailable", "version", version, "WARNING", err)
 	return nil
 }
 
