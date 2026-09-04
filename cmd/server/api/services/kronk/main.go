@@ -223,12 +223,14 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		libs.WithDetectOverrides(ctx, log.Info, cfg.LibPath, cfg.Arch, cfg.OS, cfg.Processor),
 		libs.WithBasePath(cfg.BasePath),
 		libs.WithAllowUpgrade(cfg.AllowUpgrade),
+		libs.WithValidation(cfg.LibVerifyEnabled),
 		libs.WithVersion(libVersion),
 	)
 	if err != nil {
 		return fmt.Errorf("unable to create libs api: %w", err)
 	}
 
+	libVerified := !cfg.LibVerifyEnabled
 	if cfg.LibDownloadEnabled {
 		log.Info(ctx, "startup", "status", "installing/updating libraries", "libPath", llamaLibs.LibsPath(), "arch", llamaLibs.Arch(), "os", llamaLibs.OS(), "processor", llamaLibs.Processor(), "update", true)
 
@@ -237,12 +239,12 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		cancel()
 		if err != nil {
 			log.Info(ctx, "startup", "WARNING", "unable to install llama.cpp, running in degraded mode", "ERROR", err)
+		} else {
+			libVerified = true
 		}
 	} else {
 		log.Info(ctx, "startup", "status", "automatic llama.cpp library download disabled", "libPath", llamaLibs.LibsPath())
 	}
-
-	libVerified := !cfg.LibVerifyEnabled
 
 	// Capability fallback applies only to automatic processor selection. An
 	// explicit processor or library path remains a strict user choice. When
@@ -254,7 +256,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		var err error
 		if cfg.LibVerifyEnabled {
 			verifyCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
-			selected, decision, err = llamaLibs.SelectVerifiedInstalledRuntime(verifyCtx, log.Info, libVersion)
+			selected, decision, err = llamaLibs.SelectInstalledRuntime(verifyCtx, log.Info)
 			cancel()
 		} else {
 			selected, decision, err = llamaLibs.SelectInstalledRuntime(ctx, log.Info)
@@ -270,7 +272,10 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 			libVerified = true
 			log.Info(ctx, "startup", "status", "selected llama.cpp runtime", "preferred", decision.PreferredProcessor, "selected", decision.SelectedProcessor, "reason", decision.Reason)
 		}
-	} else if cfg.LibVerifyEnabled {
+	} else if cfg.LibVerifyEnabled && !libVerified {
+		// Download normally validates the selected bundle through
+		// WithValidation. Verify directly only when Download was disabled or
+		// failed and the explicit runtime bypassed selection-time validation.
 		verifyCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 		report, err := llamaLibs.Verify(verifyCtx, libVersion)
 		cancel()
@@ -314,6 +319,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		buckylibs.WithBasePath(cfg.BasePath),
 		buckylibs.WithLibPath(cfg.BuckyLibPath),
 		buckylibs.WithAllowUpgrade(cfg.AllowUpgrade),
+		buckylibs.WithValidation(cfg.LibVerifyEnabled),
 		buckylibs.WithDetect(ctx, log.Info),
 	)
 	if err != nil {
@@ -328,9 +334,20 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	cancel()
 	if err != nil {
 		log.Info(ctx, "startup", "WARNING", "unable to install whisper.cpp, running in degraded mode", "ERROR", err)
-	} else if cfg.LibVerifyEnabled {
+	} else {
+		buckyLibVerified = true
+		if cfg.LibVerifyEnabled {
+			log.Info(ctx, "startup", "status", "verified whisper.cpp runtime", "version", buckyVersion.Version)
+		}
+	}
+
+	if cfg.LibVerifyEnabled && !buckyLibVerified {
+		// Download normally validates the selected bundle through
+		// WithValidation. Unlike llama.cpp, Bucky always attempts Download;
+		// verify directly only when that attempt failed and an older bundle
+		// may still be usable.
 		verifyCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
-		report, err := buckyLibs.Verify(verifyCtx, buckyVersion.Version)
+		report, err := buckyLibs.Verify(verifyCtx, "")
 		cancel()
 		if err != nil {
 			log.Info(ctx, "startup", "WARNING", "unable to verify selected whisper.cpp runtime", "ERROR", err)

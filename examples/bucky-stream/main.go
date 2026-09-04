@@ -265,7 +265,10 @@ func installSystem(sileroVAD bool) (installedModels, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
-	lib, err := buckylibs.New(buckylibs.WithDetect(ctx, bucky.FmtLogger))
+	lib, err := buckylibs.New(
+		buckylibs.WithDetect(ctx, bucky.FmtLogger),
+		buckylibs.WithValidation(true),
+	)
 	if err != nil {
 		return installedModels{}, fmt.Errorf("libs new: %w", err)
 	}

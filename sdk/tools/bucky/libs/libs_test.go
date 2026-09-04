@@ -6,6 +6,15 @@ import (
 	"github.com/ardanlabs/bucky/pkg/download"
 )
 
+func TestWithValidation(t *testing.T) {
+	var options Options
+	WithValidation(true)(&options)
+
+	if !options.Validation {
+		t.Error("Validation: got false, want true")
+	}
+}
+
 func TestDefaultVersionIsPinned(t *testing.T) {
 	tag, digest, err := download.ParsePinnedVersion(defaultVersion)
 	if err != nil {

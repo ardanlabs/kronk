@@ -31,6 +31,23 @@ func (lib *Libs) Verify(ctx context.Context, version string) (*VerifyReport, err
 	return report, nil
 }
 
+func (lib *Libs) validateDownload(ctx context.Context, tag VersionTag) error {
+	version := tag.Version
+	if lib.version != "" {
+		version = lib.version
+	}
+
+	report, err := lib.Verify(ctx, version)
+	if err != nil {
+		return fmt.Errorf("download: validate libraries: %w", err)
+	}
+	if !report.OK() {
+		return fmt.Errorf("download: validate libraries: %d changed, %d missing, and %d unexpected files", report.Changed, report.Missing, report.Unexpected)
+	}
+
+	return nil
+}
+
 func verifyRuntime(ctx context.Context, candidate runtimeCandidate, version string) error {
 	report, err := download.VerifyInstall(ctx, candidate.path, version)
 	if err != nil {

@@ -377,8 +377,22 @@ func hasVulkanGPU(output string) bool {
 // only when the receiver explicitly reports no devices and a same-version
 // installed bundle positively reports at least one device.
 //
+// WithValidation(true) verifies each candidate before its executable probe.
 // Selection never downloads libraries and never mutates the receiver.
 func (lib *Libs) SelectInstalledRuntime(ctx context.Context, log Logger) (*Libs, RuntimeSelection, error) {
+	if lib.validation {
+		verifyFn := func(ctx context.Context, candidate runtimeCandidate) error {
+			version := candidate.version
+			if lib.version != "" {
+				version = lib.version
+			}
+
+			return verifyRuntime(ctx, candidate, version)
+		}
+
+		return lib.selectInstalledRuntime(ctx, log, probeRuntime, verifyFn)
+	}
+
 	return lib.selectInstalledRuntime(ctx, log, probeRuntime)
 }
 
