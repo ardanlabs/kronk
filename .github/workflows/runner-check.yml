@@ -1,9 +1,7 @@
 name: Runner check
 
-# Manual probe of the self-hosted runners. Run before relying on them, and
-# whenever one is rebuilt, moved, or re-registered. Reports hardware,
-# privileges, tooling, GPU visibility, persistent ~/.kronk state, network
-# egress, and the backend Kronk's own detection resolves to.
+# Manual probe of the self-hosted runners. Run before relying on one, and
+# whenever one is rebuilt, moved, or re-registered.
 #
 # Diagnostic steps are continue-on-error so one missing tool still yields a
 # full report; the Summary step is what fails the job.
@@ -95,8 +93,7 @@ jobs:
           done
 
       # Kronk probes exactly these binaries to pick a backend
-      # (sdk/tools/libs/runtime_selection.go). Neither present means the GPU
-      # job silently becomes a slow CPU job.
+      # (sdk/tools/libs/runtime_selection.go); neither means a slow CPU job.
       - name: GPU probe
         continue-on-error: true
         run: |
@@ -138,8 +135,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
-      # A read-only dir left by a previous job makes checkout's clean
-      # fail with EACCES.
+      # A read-only dir left by a previous job makes checkout's clean fail
+      # with EACCES.
       - name: Workspace writability
         continue-on-error: true
         run: |
@@ -149,11 +146,9 @@ jobs:
       - name: Set up Kronk
         if: inputs.deep || github.event_name == 'pull_request'
         uses: ./.github/actions/setup-kronk
-        with:
-          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
 
-      # What Kronk itself resolves to. Both backends, since the gating
-      # workflows use both.
+      # What Kronk itself resolves to, for both backends the gating workflows
+      # use.
       - name: Kronk device + backend report
         if: inputs.deep || github.event_name == 'pull_request'
         continue-on-error: true
@@ -188,9 +183,8 @@ jobs:
           if ! vulkaninfo --summary >/dev/null 2>&1; then
             echo "::warning::vulkaninfo missing or failing — gpu.yml's Vulkan leg will not find a device"
           fi
-          # Each fleet serves one backend, so exactly one of these two
-          # warnings is expected on a healthy runner; both firing means
-          # this box serves neither leg of gpu.yml.
+          # Each fleet serves one backend, so exactly one of these warnings is
+          # expected; both firing means this box serves neither gpu.yml leg.
           if ! rocminfo >/dev/null 2>&1; then
             echo "::warning::rocminfo missing or failing — gpu.yml's ROCm leg will not find a device"
           fi
@@ -236,12 +230,10 @@ jobs:
             echo "passwordless sudo: NO (workflows must not call sudo)"
           fi
 
-      # setsid is checked because setup-kronk takes a different macOS path
-      # precisely because it does not exist there.
       - name: Tooling
         continue-on-error: true
         run: |
-          for t in go git curl wget tar unzip jq setsid xcrun; do
+          for t in go git curl wget tar unzip jq xcrun; do
             if command -v "$t" >/dev/null 2>&1; then
               printf '%-10s %s\n' "$t" "$(command -v "$t")"
             else
@@ -289,8 +281,6 @@ jobs:
       - name: Set up Kronk
         if: inputs.deep || github.event_name == 'pull_request'
         uses: ./.github/actions/setup-kronk
-        with:
-          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
 
       - name: Kronk device + backend report
         if: inputs.deep || github.event_name == 'pull_request'
