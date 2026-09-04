@@ -15,7 +15,6 @@ on:
       - ".github/actions/setup-kronk/**"
       - ".github/scripts/pull-models.sh"
       - ".github/test-models.txt"
-      - ".github/test-models-gpu.txt"
   pull_request:
     branches:
       - main
@@ -28,7 +27,6 @@ on:
       - ".github/actions/setup-kronk/**"
       - ".github/scripts/pull-models.sh"
       - ".github/test-models.txt"
-      - ".github/test-models-gpu.txt"
   workflow_dispatch:
 
 # Same grouping as linux.yml / macos.yml: `head_ref || ref` collapses the
@@ -107,11 +105,12 @@ jobs:
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
 
-      # GPU-only targets on top of setup-kronk's base list. Cold-pull hazard on
-      # macOS: its two runners share one models directory and kronk has no
-      # cross-process lock, so overlapping cold pulls can lose the rename race.
+      # The `gpu`-tier lines, on top of the base set setup-kronk pulled. Cold-
+      # pull hazard on macOS: its two runners share one models directory and
+      # kronk has no cross-process lock, so overlapping cold pulls can lose the
+      # rename race.
       - name: Download GPU-only test models
-        run: ./.github/scripts/pull-models.sh .github/test-models-gpu.txt
+        run: ./.github/scripts/pull-models.sh .github/test-models.txt gpu
 
       # KRONK_PROCESSOR only guarantees the bundle: ggml can load it and still
       # enumerate zero devices, so assert the DEVICE. setup-kronk asserts the shim.
