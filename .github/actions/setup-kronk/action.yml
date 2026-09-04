@@ -239,26 +239,73 @@ runs:
     # it belongs beside the staging so no macOS job can consume the dylib
     # without the check having run.
     #
-    # Deliberately asymmetric: an explicit `false` fails, an ABSENT line only
-    # warns. ggml prints its capability banner only when device init logs to
-    # this step, so treating "missing" as "broken" would fail the job for a
-    # logging detail rather than a capability regression.
+    # TWO probes, because one binary cannot answer both questions.
     #
-    # Scoped to this one `kronk devices` invocation with a shell prefix, never
-    # exported and never through $GITHUB_ENV: `kronk diagnose` parses the
-    # COMBINED output of the commands it shells out to
-    # (sdk/tools/diagnose/system_darwin.go:15), and the shim's NSLog banner
-    # would land on the line that parser reads as the CPU model. `>` rather
-    # than `tee` so no extra process joins the shimmed environment just to
-    # move bytes.
+    #   llama-bench answers WHAT GGML RESOLVED. It is a subprocess with
+    #   ordinary logging, so it prints the capability banner. `kronk devices`
+    #   never will: cmd/kronk/devices/cmd.go calls kronk.Init() with no
+    #   options, logLevel falls to LogSilent and installs llama.LogSilent()
+    #   (sdk/kronk/init.go:134-141). An earlier version of this step grepped
+    #   `kronk devices` for that banner and passed on the absent-line branch
+    #   in every run of both workflows — an assertion that could not fail is
+    #   worse than none, because it reads as coverage.
+    #
+    #   `kronk devices` answers WHETHER INJECTION REACHES A GO BINARY, which
+    #   is the arch trap that cost a run once (/usr/bin is arm64e, Go emits
+    #   plain arm64). Only the shim's own NSLog banner shows that, and run
+    #   33874959831 has it firing right down to `draft.test`, so it is a
+    #   reliable signal and a hard requirement here.
+    #
+    # Both are hard failures. Nothing here warns: a signal that is known to
+    # be emitted is either present or something regressed.
+    #
+    # Scoped to these invocations with a shell prefix, never exported and
+    # never through $GITHUB_ENV: `kronk diagnose` parses the COMBINED output
+    # of the commands it shells out to
+    # (sdk/tools/diagnose/system_darwin.go:15), and the shim's banner would
+    # land on the line that parser reads as the CPU model. `>` rather than
+    # `tee` so no extra process joins the shimmed environment just to move
+    # bytes.
     - name: Verify Metal capability shim
       if: runner.os == 'macOS'
       shell: bash
       run: |
         set -euo pipefail
-        # rc captured rather than left to `set -e`, so the log below is
-        # printed even when the probe itself fails — that output is the only
-        # thing that explains why.
+
+        # kronk's own answer for which bundle is active, so this cannot drift
+        # from what the suites load. The libraries root is $HOME/.kronk, the
+        # same assumption the install step above makes with its mkdir.
+        read -r bos barch bproc <<< "$(kronk libs --local --list-installs | awk '/\(active\)/{print $1, $2, $3; exit}')"
+        bench="$HOME/.kronk/libraries/$bos/$barch/$bproc/llama-bench"
+        if [[ ! -x "$bench" ]]; then
+          echo "::error::no llama-bench in the active bundle ($bos/$barch/$bproc); expected $bench"
+          exit 1
+        fi
+
+        # rc captured rather than left to `set -e`, so the log is printed
+        # even when a probe fails — that output is the only thing that
+        # explains why.
+        rc=0
+        DYLD_INSERT_LIBRARIES="$RUNNER_TEMP/LumeMetalCapabilities.dylib" \
+        LUME_METAL_APPLE_FAMILY_MAX=1009 \
+        LUME_METAL_MAX_THREADGROUP_MEMORY=32768 \
+          "$bench" --list-devices > "$RUNNER_TEMP/shim-caps.txt" 2>&1 || rc=$?
+        cat "$RUNNER_TEMP/shim-caps.txt"
+        if [[ "$rc" -ne 0 ]]; then
+          echo "::error::llama-bench --list-devices failed (exit=$rc) under the Metal shim"
+          exit "$rc"
+        fi
+
+        if grep -qE 'simdgroup reduction *= *false' "$RUNNER_TEMP/shim-caps.txt"; then
+          echo "::error::Metal capability shim is not in effect: ggml resolved simdgroup reduction = false, so this job would run the Apple5 fallback path. See zarf/macos/README.md."
+          exit 1
+        fi
+
+        if ! grep -qE 'simdgroup reduction *= *true' "$RUNNER_TEMP/shim-caps.txt"; then
+          echo "::error::ggml printed no 'simdgroup reduction' line at all. It has printed one on every run to date, so either the probe never initialized Metal or ggml renamed the banner — read the output above and fix this check rather than deleting it."
+          exit 1
+        fi
+
         rc=0
         DYLD_INSERT_LIBRARIES="$RUNNER_TEMP/LumeMetalCapabilities.dylib" \
         LUME_METAL_APPLE_FAMILY_MAX=1009 \
@@ -270,21 +317,9 @@ runs:
           exit "$rc"
         fi
 
-        if grep -qE 'simdgroup reduction *= *false' "$RUNNER_TEMP/shim-devices.txt"; then
-          echo "::error::Metal capability shim is not in effect: llama.cpp resolved simdgroup reduction = false, so this job would run the Apple5 fallback path. See zarf/macos/README.md."
-          exit 1
-        fi
-
-        if ! grep -qE 'simdgroup reduction *= *true' "$RUNNER_TEMP/shim-devices.txt"; then
-          echo "::warning::could not confirm Metal capabilities from this log; ggml printed no simdgroup line. Check whether the shim is live before trusting this job."
-        fi
-
-        # The shim announces itself through NSLog, which reaches stderr when
-        # attached to a terminal and the unified log otherwise; a CI step is
-        # not a terminal, so its absence proves nothing. A notice, never a
-        # failure — the capability check above is the authoritative one.
         if ! grep -q 'LumeMetalCapabilities. Enabled' "$RUNNER_TEMP/shim-devices.txt"; then
-          echo "::notice::shim activation banner absent from this log (expected if NSLog went to the unified log rather than stderr); the capability check above is authoritative."
+          echo "::error::the shim did not attach to kronk, a plain-arm64 Go binary, so it will not attach to the test binaries either. Check the staged dylib's slices (lipo -archs) before anything else."
+          exit 1
         fi
 
     # On Linux, restore the multi-GB model cache in the foreground while the

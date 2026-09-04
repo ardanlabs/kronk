@@ -214,13 +214,23 @@ shimmed.
 - `Stage Metal capability shim` copies the dylib to `$RUNNER_TEMP` (dyld
   loading over virtiofs is a question nobody needs to answer at 3am) and
   refuses a file without an arm64e slice.
-- `Verify Metal capability shim` runs one shimmed `kronk devices` and checks
-  the capabilities llama.cpp actually resolved, deliberately asymmetric: an
-  explicit `simdgroup reduction = false` fails the job, an *absent* line only
-  warns. ggml prints that banner only when device init logs to the step, so
-  failing on a missing line would red the job for a logging detail rather than
-  a capability regression. Tighten it once a run confirms the line always
-  lands.
+- `Verify Metal capability shim` runs **two** shimmed probes, both hard
+  failures, because no single binary answers both questions:
+  - `llama-bench --list-devices` (from the active bundle, per
+    `kronk libs --list-installs`) answers *what ggml resolved*. It is a
+    subprocess with ordinary logging, so it prints the capability banner, and
+    the step requires `simdgroup reduction = true`.
+  - `kronk devices` answers *whether injection reaches a Go binary* — the
+    arm64e-vs-arm64 trap below — which only the shim's own NSLog banner shows.
+
+  **Do not grep `kronk devices` for the ggml banner.** It cannot ever print
+  one: `cmd/kronk/devices/cmd.go` calls `kronk.Init()` with no options, so
+  `logLevel` falls to `LogSilent` and installs `llama.LogSilent()`
+  (`sdk/kronk/init.go:134-141`). An earlier version of this step did exactly
+  that and took its "could not confirm" warning branch on *every* run of both
+  workflows — the capability assertion never once executed. An assertion that
+  cannot fail is worse than none, because it reads as coverage. Found on
+  2026-09-04 by reading a green log instead of trusting it.
 
 Staging is not injecting. Each workflow decides which of its steps get the
 environment, per-step and never through `$GITHUB_ENV`, so it reaches neither
@@ -264,10 +274,12 @@ loads a model.
    ```
 
    The NSLog banner *does* reach stderr in a CI step, contrary to the caution
-   that shaped the asymmetric assertions — `[LumeMetalCapabilities] Enabled for
-   kronk`, `for llama-cli`, `for llama-bench` all appeared. Those checks can be
-   tightened to hard requirements once a green run confirms which lines land in
-   `devices.txt` specifically.
+   that shaped the original asymmetric assertions — `[LumeMetalCapabilities]
+   Enabled for kronk`, `for llama-cli`, `for llama-bench` all appeared. Run
+   33874959831 went further and showed it firing per test binary, down to
+   `Enabled for draft.test`, so it is now a hard requirement. The ggml
+   capability banner, by contrast, never lands in `kronk devices` output at
+   all — see the note above; that is why `llama-bench` carries that half.
 6. ~~Run the Metal leg and read the result~~ — 2026-09-02, all three GPU legs
    green. `sdk/kronk/tests/draft` on Metal: `draft=67 accepted=26 rate=0.39`
    and `draft=126 accepted=70 rate=0.56`, against 0.00 on every request
@@ -277,13 +289,27 @@ loads a model.
    artifact. If it fails, instrument the candidate readback before concluding
    anything; do not widen the upstream report on a VM signature a second time.
 
+7. ~~Ship the shim to `macos.yml`~~ — 2026-09-04, commit 322b1dd3. Staging and
+   verification moved into `setup-kronk` so every macOS job gets them;
+   `KRONK_PROCESSOR=metal` there now, since `cpu` never kept that gate off the
+   GPU. All six runs green, and `sdk/kronk/tests/draft` on the macOS gate went
+   0.00 → `rate=0.39` / `rate=0.43`, matching the GPU leg (0.48/0.49), the
+   Linux CPU gate (0.38/0.47) and bare metal on an M4 Max (0.35-0.46). The
+   0.00 was the paravirtual GPU and nothing else.
+8. ~~Make the capability assertion real~~ — 2026-09-04. It had been grepping
+   `kronk devices`, which logs silently, so it had never executed. Now two
+   hard probes; see "What CI does with it".
+
 ## Guardrails
 
-- **Assert the family in CI.** The shim fails *open*: a missing hook or a
-  malformed `LUME_METAL_APPLE_FAMILY_MAX` leaves the process unchanged, so a
-  guest image bump silently returns you to the Apple 5 path with a green build.
-  Extend `gpu.yml`'s `Verify Metal backend` step, which already greps
-  `kronk devices`.
+- **Assert the family in CI, and check that the assertion can fail.** The shim
+  fails *open*: a missing hook or a malformed `LUME_METAL_APPLE_FAMILY_MAX`
+  leaves the process unchanged, so a guest image bump silently returns you to
+  the Apple 5 path with a green build. `setup-kronk`'s
+  `Verify Metal capability shim` step owns this for every macOS job. When you
+  touch it, confirm from a real log that the line you grep for is actually
+  emitted — the first version of that step grepped a binary that runs with
+  logging silenced, and passed on a warning branch for its whole life.
 - **Never advertise `MTLGPUFamilyMetal3`.** Upstream is explicit that MLX-LM uses
   it to select residency sets the paravirtual device cannot create. The useful
   side effect: Metal 3 is the one probe the shim will not fool, which makes
