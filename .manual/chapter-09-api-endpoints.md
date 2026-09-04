@@ -360,6 +360,7 @@ operations. Clients should use the exact `/v1/kronk/...` prefix; the shorter
 | Method and path | Purpose |
 | ---------------- | ------- |
 | `GET /v1/kronk/libs` | Show the active llama.cpp library installation and upgrade state |
+| `GET /v1/kronk/libs/integrity` | Hash and verify the selected llama.cpp bundle against Yzma's release manifest |
 | `GET /v1/kronk/libs/combinations` | List supported operating-system, architecture, and processor combinations |
 | `GET /v1/kronk/libs/installs` | List installed library bundles |
 | `POST /v1/kronk/libs/pull` | Install a library bundle and stream progress |
@@ -367,7 +368,20 @@ operations. Clients should use the exact `/v1/kronk/...` prefix; the shorter
 
 `POST /v1/kronk/libs/pull` accepts optional `arch`, `os`, `processor`, and
 `version` query parameters. Supply `arch`, `os`, and `processor` together for a
-cross-platform bundle; omit all three to operate on the active platform.
+cross-platform bundle; omit all three to operate on the active platform. A
+version can be externally pinned as `VERSION@sha256:<64-hex-digest>`. Yzma
+checks the raw release-manifest bytes against that digest and then verifies the
+selected archive before extraction.
+
+`GET /v1/kronk/libs/integrity` hashes the installed files and compares them
+with the file digests in Yzma's release manifest. Its optional `version` query
+parameter accepts the same pinned syntax, allowing the caller to supply the
+trusted manifest digest rather than trusting the server's install record or
+manifest host. The response identifies the backend, version, platform triple,
+overall result, per-file states, and changed, missing, or unexpected counts.
+Verification requires a Yzma install record and a release manifest containing
+per-file hashes. A release or upstream asset with archive hashes only returns
+an error rather than claiming the installed files are verified.
 
 ### Models
 
@@ -524,6 +538,7 @@ whisper.cpp backend:
 | Method and path | Purpose |
 | ---------------- | ------- |
 | `GET /v1/bucky/libs` | Show the active whisper.cpp library installation |
+| `GET /v1/bucky/libs/integrity` | Hash and verify the selected whisper.cpp bundle against Bucky's release manifest |
 | `GET /v1/bucky/libs/combinations` | List supported platform combinations |
 | `GET /v1/bucky/libs/installs` | List installed library bundles |
 | `POST /v1/bucky/libs/pull` | Install a library bundle and stream progress |
@@ -533,6 +548,18 @@ whisper.cpp backend:
 | `POST /v1/bucky/models/pull` | Download a whisper model and stream progress |
 | `GET /v1/bucky/models/{model}/details` | Show model header and file details |
 | `DELETE /v1/bucky/models/{model}` | Remove an installed whisper model |
+
+`POST /v1/bucky/libs/pull` accepts the same optional platform and `version`
+query parameters as the Kronk library route. Bucky always verifies the selected
+archive against its release manifest before extraction. A version in
+`VERSION@sha256:<64-hex-digest>` form also authenticates the manifest itself.
+The default Bucky version already includes its published manifest digest.
+
+`GET /v1/bucky/libs/integrity` hashes the installed files. With no `version`
+query parameter, Kronk uses the version recorded for the active installation;
+the default installation therefore retains its authenticated manifest pin. The
+response includes `manifest_authenticated` and `source` in addition to the
+common library integrity fields.
 
 See [Chapter 18](https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription)
 for installation, model naming, transcription formats, and Bucky-specific

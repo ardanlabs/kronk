@@ -101,12 +101,14 @@ func TestBuildEnvVarsServiceSettings(t *testing.T) {
 	cmd.Flags().String("authorization-mode", "", "")
 	cmd.Flags().Bool("download-enabled", false, "")
 	cmd.Flags().Bool("lib-download-enabled", true, "")
+	cmd.Flags().Bool("lib-verify-enabled", false, "")
 	cmd.Flags().String("bucky-lib-path", "", "")
 
 	values := map[string]string{
 		"authorization-mode":   "management",
 		"download-enabled":     "true",
 		"lib-download-enabled": "false",
+		"lib-verify-enabled":   "true",
 		"bucky-lib-path":       "/opt/bucky",
 	}
 	for name, value := range values {
@@ -120,6 +122,7 @@ func TestBuildEnvVarsServiceSettings(t *testing.T) {
 		"KRONK_AUTHORIZATION_MODE=management",
 		"KRONK_DOWNLOAD_ENABLED=true",
 		"KRONK_LIB_DOWNLOAD_ENABLED=false",
+		"KRONK_LIB_VERIFY_ENABLED=true",
 		"KRONK_BUCKY_LIB_PATH=/opt/bucky",
 	}
 	for _, want := range wants {

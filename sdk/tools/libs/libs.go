@@ -27,7 +27,7 @@ const (
 
 	// defaultVersion is the well-known working version of llama.cpp used
 	// when no explicit version is provided and AllowUpgrade is false.
-	defaultVersion = "b10785"
+	defaultVersion = "b10798"
 )
 
 // ErrReadOnly is returned by mutating operations on a Libs instance whose
@@ -55,6 +55,7 @@ type Options struct {
 	OS           download.OS
 	Processor    download.Processor
 	AllowUpgrade bool
+	Validation   bool
 	Version      string
 
 	detect *detectOptions
@@ -116,6 +117,14 @@ func WithAllowUpgrade(allow bool) Option {
 	}
 }
 
+// WithValidation sets whether Download verifies the selected library bundle
+// before reporting success.
+func WithValidation(enabled bool) Option {
+	return func(o *Options) {
+		o.Validation = enabled
+	}
+}
+
 // WithVersion sets a specific version to download instead of the default.
 func WithVersion(version string) Option {
 	return func(o *Options) {
@@ -146,6 +155,7 @@ type Libs struct {
 	readOnly     bool
 	hostDemoted  bool
 	AllowUpgrade bool
+	validation   bool
 	testMode     bool
 	testLatest   string
 }
@@ -221,6 +231,7 @@ func New(opts ...Option) (*Libs, error) {
 		version:      options.Version,
 		readOnly:     readOnly,
 		AllowUpgrade: options.AllowUpgrade,
+		validation:   options.Validation,
 	}
 
 	detect := options.detect
@@ -311,7 +322,15 @@ func (lib *Libs) SetVersion(version string) {
 //     call fails.
 //   - If the desired version is already installed for the active (arch,
 //     os, processor) triple, no download occurs.
-func (lib *Libs) Download(ctx context.Context, log Logger) (VersionTag, error) {
+//   - WithValidation(true) verifies the selected installed bundle before
+//     Download reports success.
+func (lib *Libs) Download(ctx context.Context, log Logger) (tag VersionTag, retErr error) {
+	defer func() {
+		if retErr == nil && lib.validation {
+			retErr = lib.validateDownload(ctx, log, tag)
+		}
+	}()
+
 	if lib.readOnly {
 		tag, err := lib.InstalledVersion()
 		if err != nil {
@@ -351,32 +370,16 @@ func (lib *Libs) Download(ctx context.Context, log Logger) (VersionTag, error) {
 		latest = info.Latest
 	}
 
-	tag := installed
-	tag.Latest = chooseVersion(lib.version, lib.AllowUpgrade, installed.Version, latest, defaultVersion)
+	version := chooseVersion(lib.version, lib.AllowUpgrade, installed.Version, latest, defaultVersion)
 
-	log(ctx, "download-libraries: check llama.cpp installation", "arch", lib.arch, "os", lib.os, "processor", lib.processor, "latest", tag.Latest, "current", tag.Version)
+	log(ctx, "download-libraries: check llama.cpp installation", "arch", lib.arch, "os", lib.os, "processor", lib.processor, "requested", version, "current", installed.Version)
 
-	if isTagMatch(tag, lib) {
-		log(ctx, "download-libraries: already installed", "latest", tag.Latest, "current", tag.Version)
-		return tag, nil
+	if installed.Version == version && installed.Arch == lib.arch.String() && installed.OS == lib.os.String() && installed.Processor == lib.processor.String() {
+		log(ctx, "download-libraries: already installed", "version", version)
+		return installed, nil
 	}
 
-	log(ctx, "download-libraries: waiting to start download...", "tag", tag.Latest)
-
-	newTag, err := lib.DownloadVersion(ctx, log, tag.Latest)
-	if err != nil {
-		log(ctx, "download-libraries: llama.cpp installation", "ERROR", err)
-
-		if _, err := lib.InstalledVersion(); err != nil {
-			return VersionTag{}, fmt.Errorf("download: failed to install llama: %q: error: %w", lib.path, err)
-		}
-
-		log(ctx, "download-libraries: failed to install new version, using current version")
-	}
-
-	log(ctx, "download-libraries: updated llama.cpp installed", "old-version", tag.Version, "current", newTag.Version)
-
-	return newTag, nil
+	return lib.downloadInto(ctx, log, lib.path, lib.arch, lib.os, lib.processor, version)
 }
 
 // InstalledVersion retrieves the current version of llama.cpp installed at
@@ -483,12 +486,18 @@ func (lib *Libs) downloadInto(ctx context.Context, log Logger, path string, arch
 		return VersionTag{}, fmt.Errorf("download-into: unable to install llama.cpp: %w", err)
 	}
 
+	record, err := download.ReadInstallRecord(tempPath)
+	if err != nil {
+		os.RemoveAll(tempPath)
+		return VersionTag{}, fmt.Errorf("download-into: unable to read install record: %w", err)
+	}
+
 	if err := swapTempForLibAt(path, tempPath); err != nil {
 		os.RemoveAll(tempPath)
 		return VersionTag{}, fmt.Errorf("download-into: unable to swap temp for lib: %w", err)
 	}
 
-	if err := writeVersionFile(path, version, arch, opSys, processor); err != nil {
+	if err := writeVersionFile(path, record.Tag, arch, opSys, processor); err != nil {
 		return VersionTag{}, fmt.Errorf("download-into: unable to create version file: %w", err)
 	}
 
@@ -924,12 +933,6 @@ func resolveProcessor(opt download.Processor, fallback string) (download.Process
 		}
 	}
 	return defaults.Processor("")
-}
-
-// =============================================================================
-
-func isTagMatch(tag VersionTag, libs *Libs) bool {
-	return tag.Latest == tag.Version && tag.Arch == libs.arch.String() && tag.OS == libs.os.String() && tag.Processor == libs.processor.String()
 }
 
 // chooseVersion implements the Download policy matrix as a pure function.

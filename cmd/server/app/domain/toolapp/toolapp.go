@@ -12,23 +12,27 @@ import (
 )
 
 type app struct {
-	log         *logger.Logger
-	pool        *pool.Pool
-	authClient  *authclient.Client
-	libs        *libs.Libs
-	models      *models.Models
-	buckyLibs   *buckylibs.Libs
-	buckyModels *buckymodels.Models
+	log              *logger.Logger
+	pool             *pool.Pool
+	authClient       *authclient.Client
+	libs             *libs.Libs
+	libVersion       string
+	libVerifyEnabled bool
+	models           *models.Models
+	buckyLibs        *buckylibs.Libs
+	buckyModels      *buckymodels.Models
 }
 
 func newApp(cfg Config) *app {
 	return &app{
-		log:         cfg.Log,
-		pool:        cfg.Pool,
-		authClient:  cfg.AuthClient,
-		libs:        cfg.Libs,
-		models:      cfg.Models,
-		buckyLibs:   cfg.BuckyLibs,
-		buckyModels: cfg.BuckyModels,
+		log:              cfg.Log,
+		pool:             cfg.Pool,
+		authClient:       cfg.AuthClient,
+		libs:             cfg.Libs,
+		libVersion:       cfg.LibVersion,
+		libVerifyEnabled: cfg.LibVerifyEnabled,
+		models:           cfg.Models,
+		buckyLibs:        cfg.BuckyLibs,
+		buckyModels:      cfg.BuckyModels,
 	}
 }

@@ -38,8 +38,8 @@ schema = 3
     version = "v1.2.1"
     hash = "sha256-3XnCzf7tFgEE0MmjxvjfWaw6qK6mKLabFZ3c23JIH9Y="
   [mod."github.com/ardanlabs/bucky"]
-    version = "v1.1.1"
-    hash = "sha256-n5x5OYyksvser3+a0zEY3AQEFeikvDYEJhCp4woaMns="
+    version = "v1.1.2"
+    hash = "sha256-kiHQ40QaMufu7vMMuMbu62brPsTqw0EF6iPZ3f6jbh4="
   [mod."github.com/ardanlabs/conf/v3"]
     version = "v3.13.0"
     hash = "sha256-WlPMHIHqJJVpe1tryI8si4jknRZr484+z0F/7ojYimw="
@@ -206,8 +206,8 @@ schema = 3
     version = "v1.9.0"
     hash = "sha256-sRr/50k8Wra0PJLCJgSkIxvR+ce3PItx4HpFvVijGYk="
   [mod."github.com/hybridgroup/yzma"]
-    version = "v1.25.1-0.20260903130709-6bd0208c33c6"
-    hash = "sha256-wZ2HvcgZFKMQ/0Ri0glynCWUxizARZSn6xrOdxthPUY="
+    version = "v1.25.1-0.20260904102343-1e8d073c20d4"
+    hash = "sha256-a5LgcDLOEgQEh0JFr13pJXprpn7laRjN2UvdRdPyscU="
   [mod."github.com/icza/bitio"]
     version = "v1.1.0"
     hash = "sha256-CtV/dr1L46cZ65EnK9DrBduZCaMnTGf4N2MnElCymtM="

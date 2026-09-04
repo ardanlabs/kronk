@@ -15,6 +15,8 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/pool"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
+	"github.com/ardanlabs/kronk/sdk/tools/backend"
+	buckylibs "github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
@@ -58,6 +60,91 @@ func toAppVersion(status string, vt libs.VersionTag, allowUpgrade bool) string {
 	}
 
 	return fmt.Sprintf("data: %s\n", string(d))
+}
+
+// =============================================================================
+
+// LibIntegrityFile describes the verification state of one installed library
+// file.
+type LibIntegrityFile struct {
+	Name  string `json:"name"`
+	State string `json:"state"`
+}
+
+// LibIntegrityResponse provides verification results for the selected
+// llama.cpp bundle.
+type LibIntegrityResponse struct {
+	Object                string             `json:"object"`
+	Backend               string             `json:"backend"`
+	Version               string             `json:"version"`
+	Arch                  string             `json:"arch"`
+	OS                    string             `json:"os"`
+	Processor             string             `json:"processor"`
+	Verified              bool               `json:"verified"`
+	ManifestAuthenticated bool               `json:"manifest_authenticated,omitempty"`
+	Source                string             `json:"source,omitempty"`
+	Files                 []LibIntegrityFile `json:"files"`
+	Changed               int                `json:"changed"`
+	Missing               int                `json:"missing"`
+	Unexpected            int                `json:"unexpected"`
+}
+
+// Encode implements the encoder interface.
+func (app LibIntegrityResponse) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(app)
+	return data, "application/json", err
+}
+
+func toAppLibIntegrity(report *libs.VerifyReport, lib *libs.Libs) LibIntegrityResponse {
+	response := LibIntegrityResponse{
+		Object:     "lib_integrity",
+		Backend:    backend.KindLlama,
+		Version:    report.Tag,
+		Arch:       lib.Arch(),
+		OS:         lib.OS(),
+		Processor:  lib.Processor(),
+		Verified:   report.OK(),
+		Files:      make([]LibIntegrityFile, 0, len(report.Files)),
+		Changed:    report.Changed,
+		Missing:    report.Missing,
+		Unexpected: report.Unexpected,
+	}
+
+	for _, file := range report.Files {
+		response.Files = append(response.Files, LibIntegrityFile{
+			Name:  file.Name,
+			State: file.State.String(),
+		})
+	}
+
+	return response
+}
+
+func toAppBuckyLibIntegrity(report *buckylibs.VerifyReport, lib *buckylibs.Libs) LibIntegrityResponse {
+	response := LibIntegrityResponse{
+		Object:                "lib_integrity",
+		Backend:               backend.KindWhisper,
+		Version:               report.Tag,
+		Arch:                  lib.Arch(),
+		OS:                    lib.OS(),
+		Processor:             lib.Processor(),
+		Verified:              report.OK(),
+		ManifestAuthenticated: report.ManifestAuthenticated,
+		Source:                report.Source,
+		Files:                 make([]LibIntegrityFile, 0, len(report.Files)),
+		Changed:               report.Changed,
+		Missing:               report.Missing,
+		Unexpected:            report.Unexpected,
+	}
+
+	for _, file := range report.Files {
+		response.Files = append(response.Files, LibIntegrityFile{
+			Name:  file.Name,
+			State: file.State.String(),
+		})
+	}
+
+	return response
 }
 
 // =============================================================================

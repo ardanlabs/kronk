@@ -21,19 +21,6 @@ bui-upgrade-latest:
 # ==============================================================================
 # Kronk Server
 
-install-latest-llamacpp:
-	@echo "========== INSTALL LLAMA LIBRARIES (upgrade) =========="
-	go run cmd/kronk/main.go libs --local --upgrade
-	@echo
-
-install-latest-libs: install-latest-llamacpp
-	@echo "========== INSTALL WHISPER LIBRARIES (upgrade) =========="
-	go run cmd/kronk/main.go bucky libs --local --upgrade
-	@echo
-	@echo "========== INSTALL STABLE DIFFUSION LIBRARIES (upgrade) =========="
-	go run cmd/kronk/main.go malina libs --local --upgrade
-	@echo
-
 kronk-build: kronk-docs bui-build
 
 kronk-docs:
@@ -46,12 +33,6 @@ kronk-server:
 
 kronk-server-build: kronk-build
 	. .env 2>/dev/null || true && \
-	export KRONK_POOL_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
-	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
-
-kronk-server-upgrade: install-latest-llamacpp kronk-build
-	. .env 2>/dev/null || true && \
-	export KRONK_ALLOW_UPGRADE=true && \
 	export KRONK_POOL_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
 	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
 

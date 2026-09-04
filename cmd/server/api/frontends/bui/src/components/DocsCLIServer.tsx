@@ -229,11 +229,15 @@ export default function DocsCLIServer() {
                 </tr>
                 <tr>
                   <td><code>--lib-version &lt;string&gt;</code></td>
-                  <td>Version of the llama library</td>
+                  <td>Version of the llama library, optionally <code>VERSION@sha256:DIGEST</code></td>
                 </tr>
                 <tr>
                   <td><code>--lib-download-enabled</code></td>
                   <td>Download or update the llama library at startup (default: <code>true</code>)</td>
+                </tr>
+                <tr>
+                  <td><code>--lib-verify-enabled</code></td>
+                  <td>Verify the selected llama and whisper libraries before loading them (default: <code>true</code>)</td>
                 </tr>
                 <tr>
                   <td><code>--arch &lt;string&gt;</code></td>

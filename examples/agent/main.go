@@ -396,6 +396,7 @@ func installSystem() (models.Path, error) {
 	// Install llama.cpp libraries.
 	libs, err := libs.New(
 		libs.WithDetect(ctx, kronk.FmtLogger),
+		libs.WithValidation(true),
 	)
 	if err != nil {
 		return models.Path{}, err

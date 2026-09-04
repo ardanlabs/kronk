@@ -97,6 +97,7 @@ func installSystem() (*models.Models, error) {
 
 	libs, err := libs.New(
 		libs.WithDetect(ctx, kronk.FmtLogger),
+		libs.WithValidation(true),
 	)
 	if err != nil {
 		return nil, err

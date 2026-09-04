@@ -29,12 +29,9 @@ const (
 	versionFile = "version.json"
 	localFolder = "bucky-libraries"
 
-	// defaultVersion is the well-known working version of whisper.cpp used
-	// when no explicit version is provided and AllowUpgrade is false.
-	// This pin is owned by Kronk and intentionally overrides whatever
-	// github.com/ardanlabs/bucky/pkg/download.DefaultWhisperVersion ships
-	// with, because the bucky module may not be bumped in lockstep with
-	// upstream whisper.cpp releases.
+	// defaultVersion is Bucky's authenticated whisper.cpp version. Keeping the
+	// manifest digest attached ensures callers that use Kronk's default verify
+	// the publisher manifest as well as the selected archive.
 	defaultVersion = download.DefaultWhisperVersion
 )
 
@@ -71,6 +68,7 @@ type Options struct {
 	Processor    string
 	Version      string
 	AllowUpgrade bool
+	Validation   bool
 	detect       *detectOptions
 }
 
@@ -148,6 +146,14 @@ func WithAllowUpgrade(allow bool) Option {
 	}
 }
 
+// WithValidation sets whether Download verifies the selected library bundle
+// before reporting success.
+func WithValidation(enabled bool) Option {
+	return func(o *Options) {
+		o.Validation = enabled
+	}
+}
+
 // =============================================================================
 
 // Libs manages the whisper.cpp library system. Each Libs instance
@@ -171,6 +177,7 @@ type Libs struct {
 	version      string
 	readOnly     bool
 	AllowUpgrade bool
+	validation   bool
 }
 
 // New constructs a Libs with system defaults and applies any provided
@@ -256,6 +263,7 @@ func New(opts ...Option) (*Libs, error) {
 		version:      options.Version,
 		readOnly:     readOnly,
 		AllowUpgrade: options.AllowUpgrade,
+		validation:   options.Validation,
 	}
 
 	return &lib, nil
@@ -414,7 +422,15 @@ func (lib *Libs) List() ([]VersionTag, error) {
 //     call fails.
 //   - If the desired version is already installed for the active (arch,
 //     os, processor) triple, no download occurs.
-func (lib *Libs) Download(ctx context.Context, log Logger) (VersionTag, error) {
+//   - WithValidation(true) verifies the selected installed bundle before
+//     Download reports success.
+func (lib *Libs) Download(ctx context.Context, log Logger) (tag VersionTag, retErr error) {
+	defer func() {
+		if retErr == nil && lib.validation {
+			retErr = lib.validateDownload(ctx, tag)
+		}
+	}()
+
 	if lib.readOnly {
 		tag, err := lib.InstalledVersion()
 		if err != nil {
@@ -739,6 +755,10 @@ func chooseVersion(override string, allowUpgrade bool, installed string, latest 
 	case override != "":
 		// Matrix row 1: an explicit override always wins.
 		return override
+	case allowUpgrade && bareVersion(latest) == bareVersion(def):
+		// Preserve the authenticated default when the discovery endpoint
+		// reports the same release without its manifest digest.
+		return def
 	case allowUpgrade:
 		// Matrix row 2: track the latest published version.
 		return latest
@@ -765,6 +785,7 @@ func versionGreater(v1, v2 string) bool {
 	}
 
 	stripPrefix := func(s string) string {
+		s = bareVersion(s)
 		if len(s) > 0 && (s[0] < '0' || s[0] > '9') {
 			return s[1:]
 		}
@@ -802,6 +823,11 @@ func versionGreater(v1, v2 string) bool {
 	}
 
 	return false
+}
+
+func bareVersion(version string) string {
+	version, _, _ = strings.Cut(version, "@")
+	return version
 }
 
 // hasNetwork reports whether Kronk can reach the internet. It issues a real

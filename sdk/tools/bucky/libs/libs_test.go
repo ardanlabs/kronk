@@ -1,6 +1,32 @@
 package libs
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/ardanlabs/bucky/pkg/download"
+)
+
+func TestWithValidation(t *testing.T) {
+	var options Options
+	WithValidation(true)(&options)
+
+	if !options.Validation {
+		t.Error("Validation: got false, want true")
+	}
+}
+
+func TestDefaultVersionIsPinned(t *testing.T) {
+	tag, digest, err := download.ParsePinnedVersion(defaultVersion)
+	if err != nil {
+		t.Fatalf("parse default version: %v", err)
+	}
+	if tag != "v1.9.3" {
+		t.Errorf("tag: got %q, want %q", tag, "v1.9.3")
+	}
+	if digest == "" {
+		t.Error("digest: got empty value")
+	}
+}
 
 func TestVersionGreater(t *testing.T) {
 	tests := []struct {
@@ -20,6 +46,8 @@ func TestVersionGreater(t *testing.T) {
 		{"missing segment greater", "v1.8.1", "v1.8", true},
 		{"missing segment equal", "v1.8", "v1.8.0", false},
 		{"no prefix numeric", "1.8.6", "1.8.4", true},
+		{"pin ignored when equal", "v1.9.3@sha256:abc", "v1.9.3", false},
+		{"pin ignored when greater", "v1.9.4@sha256:abc", "v1.9.3@sha256:def", true},
 		{"empty v1", "", "v1.8.6", false},
 		{"empty v2", "v1.8.6", "", false},
 	}
@@ -31,5 +59,12 @@ func TestVersionGreater(t *testing.T) {
 				t.Errorf("versionGreater(%q, %q) = %v, want %v", tt.v1, tt.v2, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestChooseVersionPreservesDefaultPin(t *testing.T) {
+	got := chooseVersion("", true, "", "v1.9.3", defaultVersion)
+	if got != defaultVersion {
+		t.Errorf("chooseVersion: got %q, want %q", got, defaultVersion)
 	}
 }

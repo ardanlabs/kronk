@@ -17,8 +17,8 @@ Review mode:
 
 Review baseline:
 
-- Last reviewed upstream llama.cpp version: `b10785` (`7bb0fc18f61a9111e33501d4800c4f97cbafd968`)
-- Last reviewed yzma main commit: `6bd0208c33c6847d32606bf8f66213ea8268d58e`
+- Last reviewed upstream llama.cpp version: `b10798` (`c390d0abbccb529e270d389122c674dd74589180`)
+- Last reviewed yzma main commit: `1e8d073c20d4c5feec478defa1e20db135626ec2`
 - Resolve and verify both baseline revisions before comparing changes.
 - These values, rather than Kronk's currently pinned dependencies, are the starts of their respective review ranges.
 
@@ -112,3 +112,5 @@ At the end:
   behavior, suggested fix, compatibility notes, and evidence links, then copy the
   complete issue text to the clipboard.
 - If and only if an upstream review completed successfully, update that upstream's baseline in this prompt to the exact latest revision reviewed. Do not advance the other baseline unless it was also reviewed successfully.
+- We need to update the README.md for the next kronk version-rc. If a next version-rc entry doesn't exist add it.
+- Update an existing version-rc line with the latest values for each column.

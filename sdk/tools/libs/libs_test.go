@@ -4,12 +4,42 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/hybridgroup/yzma/pkg/download"
 )
+
+func TestWithValidation(t *testing.T) {
+	var options Options
+	WithValidation(true)(&options)
+
+	if !options.Validation {
+		t.Error("Validation: got false, want true")
+	}
+}
+
+func TestAllowUnavailableFileValidation(t *testing.T) {
+	var logged bool
+	log := func(_ context.Context, _ string, _ ...any) {
+		logged = true
+	}
+
+	err := fmt.Errorf("verify: %w", ErrNoFileDigests)
+	if err := allowUnavailableFileValidation(t.Context(), log, "b10798", err); err != nil {
+		t.Fatalf("allowUnavailableFileValidation: %v", err)
+	}
+	if !logged {
+		t.Error("log: got no warning, want warning")
+	}
+
+	want := errors.New("changed file")
+	if got := allowUnavailableFileValidation(t.Context(), log, "b10798", want); !errors.Is(got, want) {
+		t.Errorf("other error: got %v, want %v", got, want)
+	}
+}
 
 // =============================================================================
 // Pure-function tests for the Download policy matrix.
@@ -103,8 +133,8 @@ func TestVersionGreater(t *testing.T) {
 //   - Pinning the (arch, os, processor) triple explicitly.
 //   - Setting testMode so hasNetwork() and VersionInformation() are bypassed.
 //   - Pre-populating version.json so that the chosen version matches the
-//     installed version, which makes isTagMatch short-circuit Download
-//     before it would otherwise call out to download libraries.
+//     installed version, which makes Download return before calling out to
+//     download libraries.
 
 const (
 	testArch = "arm64"
@@ -205,9 +235,6 @@ func TestDownload_AlreadyInstalled_Default(t *testing.T) {
 	if tag.Version != defaultVersion {
 		t.Errorf("Version = %q, want %q", tag.Version, defaultVersion)
 	}
-	if tag.Latest != defaultVersion {
-		t.Errorf("Latest = %q, want %q", tag.Latest, defaultVersion)
-	}
 }
 
 // TestDownload_AlreadyInstalled_NewerKept covers matrix row 5: an installed
@@ -225,8 +252,8 @@ func TestDownload_AlreadyInstalled_NewerKept(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Download: %v", err)
 	}
-	if tag.Latest != installed {
-		t.Errorf("Latest = %q, want %q (never downgrade)", tag.Latest, installed)
+	if tag.Version != installed {
+		t.Errorf("Version = %q, want %q (never downgrade)", tag.Version, installed)
 	}
 }
 
@@ -249,8 +276,8 @@ func TestDownload_OverrideMatchesInstalled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Download: %v", err)
 	}
-	if tag.Latest != pinned {
-		t.Errorf("Latest = %q, want %q", tag.Latest, pinned)
+	if tag.Version != pinned {
+		t.Errorf("Version = %q, want %q", tag.Version, pinned)
 	}
 }
 
@@ -270,8 +297,28 @@ func TestDownload_AllowUpgrade_AlreadyAtLatest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Download: %v", err)
 	}
-	if tag.Latest != installed {
-		t.Errorf("Latest = %q, want %q", tag.Latest, installed)
+	if tag.Version != installed {
+		t.Errorf("Version = %q, want %q", tag.Version, installed)
+	}
+}
+
+func TestDownload_InstallFailure(t *testing.T) {
+	scrubKronkEnv(t)
+	tmp := t.TempDir()
+	writeInstalled(t, tmp, defaultVersion)
+
+	lib := newTestLibs(t, tmp, WithVersion("invalid"))
+
+	if _, err := lib.Download(context.Background(), noopLog); !errors.Is(err, download.ErrInvalidVersion) {
+		t.Errorf("Download error = %v, want wrapping ErrInvalidVersion", err)
+	}
+
+	tag, err := lib.InstalledVersion()
+	if err != nil {
+		t.Fatalf("InstalledVersion: %v", err)
+	}
+	if tag.Version != defaultVersion {
+		t.Errorf("Version = %q, want preserved %q", tag.Version, defaultVersion)
 	}
 }
 
