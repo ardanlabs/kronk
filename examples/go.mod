@@ -27,7 +27,7 @@ require (
 	github.com/apache/arrow-go/v18 v18.7.0 // indirect
 	github.com/ardanlabs/bucky v1.1.2 // indirect
 	github.com/ardanlabs/jinja v1.6.0 // indirect
-	github.com/ardanlabs/malina v1.0.6 // indirect
+	github.com/ardanlabs/malina v1.0.7 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.45.1 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.20 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.33.1 // indirect
