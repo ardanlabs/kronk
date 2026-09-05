@@ -18,7 +18,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
 	"uuid"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
@@ -38,19 +37,38 @@ var sawAcceptedDraft atomic.Bool
 
 func TestSuite(t *testing.T) {
 	testlib.WithModel(t, testlib.CfgClassicDraftChat(), func(t *testing.T, krn *kronk.Kronk) {
-		t.Run("DraftChat", func(t *testing.T) { testChat(t, krn, testlib.DChatNoTool) })
-		t.Run("DraftStreamingChat", func(t *testing.T) { testChatStreaming(t, krn, testlib.DChatNoTool) })
-	})
+		// Parallel subtests only finish when their parent returns, so this
+		// grouping is what lets the acceptance check below be a real subtest
+		// rather than a t.Cleanup that fails TestSuite with every leaf green.
+		t.Run("Chats", func(t *testing.T) {
+			t.Run("DraftChat", func(t *testing.T) { testChat(t, krn, testlib.DChatNoTool) })
+			t.Run("DraftStreamingChat", func(t *testing.T) { testChatStreaming(t, krn, testlib.DChatNoTool) })
+		})
 
-	// Registered after WithModel's unload cleanup, so by LIFO order this
-	// runs first — after every (parallel) subtest has completed, before
-	// the model unloads. At least one request must have produced an
-	// accepted draft token for the classic drafter path to be considered
-	// exercised.
-	t.Cleanup(func() {
-		if !sawAcceptedDraft.Load() {
-			t.Error("classic drafter produced no accepted draft tokens across the suite; the separate-GGUF draft path may have regressed (drafter failed to load or every draft was rejected)")
-		}
+		// At least one request must have produced an accepted draft token
+		// for the classic drafter path to be considered exercised. Runs
+		// before WithModel's unload cleanup, so the model is still loaded.
+		t.Run("DraftAcceptance", func(t *testing.T) {
+			// upstream.md's defect: llama_decode never populates the sampled
+			// candidates, so every draft distribution is empty and
+			// classic.Verify cannot accept. Deterministic on ROCm, and it
+			// survived the runtime upgrade — accepted=0 on every request in
+			// all three runs, across two ROCm major versions at b10798:
+			//
+			//   7.2.4  run 33928022827  draft=28 accepted=0
+			//   7.2.4  run 33929435557  draft=28 accepted=0
+			//   10.0   run 33931520320  draft=31 accepted=0, draft=29 accepted=0
+			//
+			// Unlike upstream2.md's batch defect this one never passes, so a
+			// single green ROCm run here is enough to retire the skip.
+			// On Metal, check the reported GPU family first: below Apple7 ggml
+			// refuses SOFT_MAX/CUMSUM/SUM (ggml-metal-device.m:1214-1234).
+			testlib.SkipOnBackends(t, "llama_decode does not populate sampled candidates, so every draft distribution is empty", "rocm")
+
+			if !sawAcceptedDraft.Load() {
+				t.Error("classic drafter produced no accepted draft tokens across the suite; the separate-GGUF draft path may have regressed (drafter failed to load or every draft was rejected)")
+			}
+		})
 	})
 }
 
@@ -69,22 +87,26 @@ func checkDraftUsage(t *testing.T, id string, usage *model.Usage) {
 		t.Errorf("%s: draft request returned no usage block", id)
 		return
 	}
-	if usage.DraftTokens == 0 {
-		t.Logf("%s: drafted 0 tokens (adaptive throttle disabled speculation for this request)", id)
-		return
-	}
-	if usage.DraftAcceptedTokens > 0 {
-		sawAcceptedDraft.Store(true)
-	} else {
-		t.Logf("%s: WARNING drafted %d tokens but accepted 0 (acceptance EMA may have collapsed)", id, usage.DraftTokens)
-		return
-	}
 	reason := usage.DraftDisableReason
 	if reason == "" {
 		reason = "active"
 	}
+
+	// Logged before any branch: these fields separate a real regression from
+	// the adaptive throttle, so they must appear on failing runs too.
 	t.Logf("%s: draft=%d accepted=%d rate=%.2f coverage=%.2f reason=%s",
 		id, usage.DraftTokens, usage.DraftAcceptedTokens, usage.DraftAcceptanceRate, usage.DraftCoverage, reason)
+
+	switch {
+	case usage.DraftTokens == 0:
+		t.Logf("%s: drafted 0 tokens (adaptive throttle disabled speculation for this request)", id)
+
+	case usage.DraftAcceptedTokens == 0:
+		t.Logf("%s: WARNING drafted %d tokens but accepted 0 (acceptance EMA may have collapsed)", id, usage.DraftTokens)
+
+	default:
+		sawAcceptedDraft.Store(true)
+	}
 }
 
 func testChat(t *testing.T, krn *kronk.Kronk, d model.D) {

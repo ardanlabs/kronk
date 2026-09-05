@@ -32,6 +32,48 @@ func TestListNotReady(t *testing.T) {
 	}
 }
 
+func TestBackendNotReady(t *testing.T) {
+	wasReady := Ready()
+	SetReady(false)
+	t.Cleanup(func() {
+		SetReady(wasReady)
+	})
+
+	if got := Backend(); got != "" {
+		t.Errorf("Backend(): got %q, want \"\" (nothing has been enumerated to ask)", got)
+	}
+}
+
+func TestBackendFromDevices(t *testing.T) {
+	tests := []struct {
+		name string
+		devs []DeviceInfo
+		want string
+	}{
+		{"no devices", nil, "cpu"},
+		{"cpu only", []DeviceInfo{{Type: "cpu"}}, "cpu"},
+		{"metal", []DeviceInfo{{Type: "gpu_metal"}, {Type: "cpu"}}, "metal"},
+		// What an Apple Silicon Mac actually enumerates: the BLAS
+		// accelerator classifies as "unknown" and must not win.
+		{"metal behind blas", []DeviceInfo{{Type: "gpu_metal"}, {Type: "unknown"}, {Type: "cpu"}}, "metal"},
+		// ggml may list the CPU device first; the GPU still decides.
+		{"gpu after cpu", []DeviceInfo{{Type: "cpu"}, {Type: "gpu_vulkan"}}, "vulkan"},
+		{"rocm", []DeviceInfo{{Type: "gpu_rocm"}}, "rocm"},
+		{"cuda", []DeviceInfo{{Type: "gpu_cuda"}}, "cuda"},
+		// A GPU ggml could not classify is not a backend name; the honest
+		// answer is that no usable GPU backend was found.
+		{"unclassified gpu", []DeviceInfo{{Type: "unknown"}, {Type: "cpu"}}, "cpu"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := backendFromDevices(tt.devs); got != tt.want {
+				t.Errorf("backendFromDevices() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestClassifyDeviceType(t *testing.T) {
 	if got := ClassifyDeviceType(0); got != "unknown" {
 		t.Errorf("ClassifyDeviceType(0) = %q, want %q", got, "unknown")

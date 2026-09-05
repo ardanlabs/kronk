@@ -1,0 +1,171 @@
+name: GPU
+
+# The model suites on real GPUs. One workflow rather than a job per OS, so the
+# suite list exists once and every backend is gated by the same rules.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - ".go-version"
+      - ".github/workflows/gpu.yml"
+      - ".github/actions/setup-kronk/**"
+      - ".github/scripts/pull-models.sh"
+      - ".github/test-models.txt"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - ".go-version"
+      - ".github/workflows/gpu.yml"
+      - ".github/actions/setup-kronk/**"
+      - ".github/scripts/pull-models.sh"
+      - ".github/test-models.txt"
+  workflow_dispatch:
+
+# Same grouping as linux.yml / macos.yml: `head_ref || ref` collapses the
+# duplicate runs a PR branch gets from both push and pull_request.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# GOTOOLCHAIN=local so a dependency that raises its `go` directive above
+# .go-version fails loudly. KRONK_PROCESSOR is per-matrix-entry, not here.
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  # A matrix rather than a job per backend so the suite list cannot drift;
+  # fail-fast off so one backend regressing does not cancel the others.
+  #
+  # THE COST: an unmatched runs-on does not fail, it queues silently until the
+  # 24h run limit — every backend here needs a fleet claiming its label.
+  #
+  # KRONK_PROCESSOR is strict (sdk/tools/libs/libs.go:234), so a missing bundle
+  # fails here instead of degrading to CPU. Only llama: bucky maps rocm→vulkan.
+  #
+  # Fork PRs are skipped outright — none of these runners are ephemeral.
+  # Skipped counts as passing, so these stay safe to mark required.
+  gpu-tests:
+    name: GPU tests (${{ matrix.backend }})
+    if: (github.event.pull_request.head.repo.full_name || github.repository) == github.repository
+    runs-on: ${{ matrix.runs_on }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # `processor` is both KRONK_PROCESSOR's value and the runner label.
+          # `device` is `kronk devices`' TYPE column (cmd/kronk/devices/cmd.go).
+          - backend: Vulkan
+            processor: vulkan
+            device: GPU (Vulkan)
+            runs_on: [self-hosted, Linux, X64, gpu, vulkan]
+          - backend: ROCm
+            processor: rocm
+            device: GPU (ROCm)
+            runs_on: [self-hosted, Linux, X64, gpu, rocm]
+          - backend: Metal
+            processor: metal
+            device: GPU (Metal)
+            runs_on: [self-hosted, macOS, ARM64, sand, metal]
+    env:
+      KRONK_PROCESSOR: ${{ matrix.processor }}
+    steps:
+      # Both GPU probes, not just this leg's: when the assertion below fails,
+      # the first question is whether the other backend saw the device either.
+      - name: Runner specs (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          nproc
+          free -h
+          vulkaninfo --summary 2>/dev/null | head -20 || echo "vulkaninfo unavailable"
+          rocminfo 2>/dev/null | grep -Ei 'Name:|Marketing|gfx' | head -20 || echo "rocminfo unavailable"
+
+      - name: Runner specs (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          sysctl -n machdep.cpu.brand_string
+          echo "cores : $(sysctl -n hw.ncpu)"
+          echo "memory: $(( $(sysctl -n hw.memsize) / 1024 / 1024 / 1024 )) GiB"
+          system_profiler SPDisplaysDataType 2>/dev/null | head -20 || echo "SPDisplaysDataType unavailable"
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Set up Kronk
+        uses: ./.github/actions/setup-kronk
+
+      # The `gpu`-tier lines, on top of the base set setup-kronk pulled. Cold-
+      # pull hazard on macOS: its two runners share one models directory and
+      # kronk has no cross-process lock, so overlapping cold pulls can lose the
+      # rename race.
+      - name: Download GPU-only test models
+        run: ./.github/scripts/pull-models.sh .github/test-models.txt gpu
+
+      # KRONK_PROCESSOR only guarantees the bundle: ggml can load it and still
+      # enumerate zero devices, so assert the DEVICE. setup-kronk asserts the shim.
+      #
+      # The shim is scoped to `kronk devices` alone: DYLD_INSERT_LIBRARIES is
+      # inherited by children, and an injected banner lands in the combined
+      # output `kronk diagnose` parses (sdk/tools/diagnose/system_darwin.go:15).
+      - name: Verify ${{ matrix.backend }} backend
+        env:
+          DEVICE_TYPE: ${{ matrix.device }}
+          METAL_SHIM: ${{ matrix.processor == 'metal' && format('{0}/LumeMetalCapabilities.dylib', runner.temp) || '' }}
+        run: |
+          kronk diagnose --no-bench --format json
+
+          if [[ -n "$METAL_SHIM" ]]; then
+            DYLD_INSERT_LIBRARIES="$METAL_SHIM" \
+            LUME_METAL_APPLE_FAMILY_MAX=1009 \
+            LUME_METAL_MAX_THREADGROUP_MEMORY=32768 \
+              kronk devices > "$RUNNER_TEMP/devices.txt" 2>&1
+          else
+            kronk devices > "$RUNNER_TEMP/devices.txt" 2>&1
+          fi
+          cat "$RUNNER_TEMP/devices.txt"
+          if ! grep -qF "$DEVICE_TYPE" "$RUNNER_TEMP/devices.txt"; then
+            echo "::error::no $DEVICE_TYPE device enumerated; the suites would run on CPU"
+            exit 1
+          fi
+
+      - name: Run model suites on GPU
+        env:
+          # The macOS runners' paravirtual GPU reports MTLGPUFamilyApple5,
+          # below llama.cpp's Apple7 gate. zarf/docker/runner/macos/README.md.
+          DYLD_INSERT_LIBRARIES: ${{ matrix.processor == 'metal' && format('{0}/LumeMetalCapabilities.dylib', runner.temp) || '' }}
+          LUME_METAL_APPLE_FAMILY_MAX: ${{ matrix.processor == 'metal' && '1009' || '' }}
+          # Pinned to what real Apple Silicon reports. The shim defaults to
+          # 65536, which no shipping Mac has.
+          LUME_METAL_MAX_THREADGROUP_MEMORY: ${{ matrix.processor == 'metal' && '32768' || '' }}
+        run: |
+          export RUN_IN_PARALLEL=no
+          go test -v -count=1 -timeout 10m -run '^(TestSuite|TestUsageCounting|Test_BatchChatConcurrent)$' ./sdk/kronk/tests/qwen3
+          go test -v -count=1 -timeout 10m -run '^TestLengthTerminatedToolCallBecomesContent$' ./sdk/kronk/tests/qwen06
+          go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/draft
+          go test -v -count=1 -timeout 10m -run '^(TestSuite|Test_PooledVision)$' ./sdk/kronk/tests/vision
+          go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/vision_imc
+          go test -v -count=1 -timeout 10m -run '^(TestSuite|TestConcurrentRerank)$' ./sdk/kronk/tests/rerank
+          go test -v -count=1 -timeout 10m -run '^(TestSuite|TestUsageCountingHybrid)$' ./sdk/kronk/tests/hybrid
+
+      # The MTP speculation path, which the classic drafter above does not
+      # cover. Separate for the 26B/35B targets and the longer timeout.
+      - name: Run MTP suites on GPU
+        env:
+          DYLD_INSERT_LIBRARIES: ${{ matrix.processor == 'metal' && format('{0}/LumeMetalCapabilities.dylib', runner.temp) || '' }}
+          LUME_METAL_APPLE_FAMILY_MAX: ${{ matrix.processor == 'metal' && '1009' || '' }}
+          LUME_METAL_MAX_THREADGROUP_MEMORY: ${{ matrix.processor == 'metal' && '32768' || '' }}
+        run: |
+          export RUN_IN_PARALLEL=no
+          go test -v -count=1 -timeout 20m -run '^(TestSuite|TestSuiteMultiSlot)$' ./sdk/kronk/tests/mtp
+          go test -v -count=1 -timeout 20m -run '^(TestSuite|TestSuiteMultiSlot)$' ./sdk/kronk/tests/gemma4mtp

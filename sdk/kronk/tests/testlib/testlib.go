@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
+	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
@@ -88,6 +90,10 @@ func Setup() {
 		os.Exit(1)
 	}
 
+	// After Init, never before: ggml enumerates its devices when the library
+	// loads, so this is the first moment the executing backend is knowable.
+	fmt.Println("processor        :", Processor())
+
 	fmt.Println("Initializing test inputs...")
 	if err := initInputs(); err != nil {
 		fmt.Printf("Failed to init test inputs: %s\n", err)
@@ -95,11 +101,18 @@ func Setup() {
 	}
 }
 
+// resolveModel populates mp when the model is present on disk. A miss is not
+// fatal — CI installs only the subset in .github/test-models.txt — but it is
+// printed, so a runner with no models cannot look like a passing run.
 func resolveModel(mdls *models.Models, name string, mp *models.Path) {
-	if dp, err := mdls.FullPath(name); err == nil {
-		fmt.Printf("RetrieveModel %s...\n", name)
-		*mp = dp
+	dp, err := mdls.FullPath(name)
+	if err != nil {
+		fmt.Printf("RetrieveModel %s... MISSING (%s)\n", name, err)
+		return
 	}
+
+	fmt.Printf("RetrieveModel %s...\n", name)
+	*mp = dp
 }
 
 func printInfo(mdls *models.Models) {
@@ -107,7 +120,9 @@ func printInfo(mdls *models.Models) {
 	fmt.Println("useLibVersion    :", defaults.LibVersion(""))
 	fmt.Println("modelPath        :", mdls.Path())
 	fmt.Println("imageFile        :", ImageFile)
-	fmt.Println("processor        :", "cpu")
+	// The BUNDLE, which need not be the backend it executes on — see
+	// Processor, which Setup prints once kronk.Init has enumerated devices.
+	fmt.Println("libBundle        :", filepath.Base(libs.Path("")))
 	fmt.Println("goroutines       :", Goroutines)
 	fmt.Println("maxRetries       :", MaxRetries)
 	fmt.Println("testDuration     :", TestDuration)
@@ -129,6 +144,30 @@ func printInfo(mdls *models.Models) {
 }
 
 // =========================================================================
+
+// Processor reports the ggml backend the suites execute on (devices.Backend),
+// not the bundle name on disk; the two diverge. No config here pins
+// NGpuLayers, so suites offload to whatever GPU ggml found
+// (sdk/kronk/model/model.go:522-523). Falls back to the bundle name pre-Init.
+func Processor() string {
+	if backend := devices.Backend(); backend != "" {
+		return backend
+	}
+
+	return filepath.Base(libs.Path(""))
+}
+
+// SkipOnBackends skips a test failing because of a defect in one of the named
+// ggml backends rather than in Kronk; reason is printed with the skip.
+// Backends are Kronk processor names matched against Processor — the executing
+// backend, not the bundle. Never use it for a Kronk bug seen on one backend.
+func SkipOnBackends(t *testing.T, reason string, backends ...string) {
+	t.Helper()
+
+	if processor := Processor(); slices.Contains(backends, processor) {
+		t.Skipf("%s backend: %s", processor, reason)
+	}
+}
 
 // WithModel creates a Kronk instance for the duration of fn, handling cleanup.
 func WithModel(t *testing.T, cfg model.Config, fn func(t *testing.T, krn *kronk.Kronk)) {

@@ -1,21 +1,61 @@
 name: macOS
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - ".go-version"
+      - ".goreleaser.yaml"
+      - ".github/workflows/macos.yml"
+      - ".github/actions/setup-kronk/**"
+      - ".github/scripts/check-go-version.sh"
+      - ".github/scripts/pull-models.sh"
+      - ".github/test-models.txt"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - ".go-version"
+      - ".goreleaser.yaml"
+      - ".github/workflows/macos.yml"
+      - ".github/actions/setup-kronk/**"
+      - ".github/scripts/check-go-version.sh"
+      - ".github/scripts/pull-models.sh"
+      - ".github/test-models.txt"
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 permissions:
   contents: read
 
+# Every job is skipped on a fork PR: this runner is not ephemeral, and
+# macos-latest cannot hold the 6.6 GiB model set, so there is no hosted
+# fallback — linux.yml covers forks. Skipped counts as passing for protection.
+#
+# KRONK_PROCESSOR=metal, not cpu: darwin/arm64 publishes ONE llama.cpp artifact
+# (yzma pkg/download/resolver.go:202-217), so these jobs run Metal whatever this
+# says. Setting it also bypasses host detection — a missing bundle fails loudly.
+#
+# Naming it obliges us to be representative: setup-kronk stages the Metal shim
+# and the model steps inject it. See zarf/docker/runner/macos/README.md.
 env:
   GOTOOLCHAIN: local
+  KRONK_PROCESSOR: metal
 
 jobs:
   static:
     name: Static checks
+    if: (github.event.pull_request.head.repo.full_name || github.repository) == github.repository
     runs-on: [self-hosted, macOS, ARM64, sand]
     steps:
       - name: Checkout
@@ -28,6 +68,9 @@ jobs:
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version-file: .go-version
+          # Hosted only: on self-hosted the module and build caches already
+          # persist locally, so the upload is pure cost.
+          cache: ${{ runner.environment == 'github-hosted' }}
 
       - name: Install static analysis tools
         run: |
@@ -74,6 +117,7 @@ jobs:
 
   race:
     name: Race detector (sdk unit packages)
+    if: (github.event.pull_request.head.repo.full_name || github.repository) == github.repository
     runs-on: [self-hosted, macOS, ARM64, sand]
     timeout-minutes: 30
     steps:
@@ -82,9 +126,10 @@ jobs:
 
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
-        with:
-          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
 
+      # Not shimmed, deliberately: -short skips every test here that loads a
+      # model, so nothing reaches a Metal kernel. If one starts to, inject the
+      # shim the way api-tests and sdk-tests below do.
       - name: go test -race -short (sdk unit packages)
         run: |
           go test -race -short -count=1 -timeout 10m \
@@ -95,11 +140,9 @@ jobs:
 
   api-tests:
     name: api/service tests
+    if: (github.event.pull_request.head.repo.full_name || github.repository) == github.repository
     runs-on: [self-hosted, macOS, ARM64, sand]
     timeout-minutes: 30
-    permissions:
-      contents: read
-      actions: write # actions/cache/save uses the actions API
     steps:
       - name: Runner specs
         run: |
@@ -111,37 +154,25 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Set up Kronk
-        id: setup
         uses: ./.github/actions/setup-kronk
-        with:
-          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
-
-      - name: Run race detector
-        run: |
-          go test -race -short -count=1 -timeout 10m \
-            $(go list ./sdk/... \
-              | grep -v '/sdk/kronk/tests' \
-              | grep -v '/sdk/kronk/pool' \
-              | grep -v '/sdk/bucky/tests')
 
       - name: Run api/service tests
+        env:
+          # The shim setup-kronk staged. Per-step, never $GITHUB_ENV: the banner
+          # would poison what `kronk diagnose` parses as the CPU model.
+          DYLD_INSERT_LIBRARIES: ${{ runner.temp }}/LumeMetalCapabilities.dylib
+          LUME_METAL_APPLE_FAMILY_MAX: "1009"
+          # Pinned to what real Apple Silicon reports. The shim defaults to
+          # 65536, which no shipping Mac has.
+          LUME_METAL_MAX_THREADGROUP_MEMORY: "32768"
         run: |
           export RUN_IN_PARALLEL=no
           go test -v -p=1 -count=1 -timeout 20m ./cmd/kronk/...
           go test -v -p=1 -count=1 -timeout 20m ./cmd/server/...
 
-      - name: Save models cache
-        if: github.ref == 'refs/heads/main' && steps.setup.outputs.models-cache-hit != 'true'
-        continue-on-error: true
-        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
-        with:
-          path: |
-            ~/.kronk/models
-            ~/.kronk/bucky-models
-          key: ${{ steps.setup.outputs.models-cache-key }}
-
   sdk-tests:
     name: sdk tests
+    if: (github.event.pull_request.head.repo.full_name || github.repository) == github.repository
     runs-on: [self-hosted, macOS, ARM64, sand]
     timeout-minutes: 30
     steps:
@@ -150,10 +181,16 @@ jobs:
 
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
-        with:
-          models-cache-key: ${{ runner.os }}-models-${{ hashFiles('.github/test-models.txt') }}
 
       - name: Run sdk tests
+        env:
+          # The shim setup-kronk staged. Per-step, never $GITHUB_ENV: the banner
+          # would poison what `kronk diagnose` parses as the CPU model.
+          DYLD_INSERT_LIBRARIES: ${{ runner.temp }}/LumeMetalCapabilities.dylib
+          LUME_METAL_APPLE_FAMILY_MAX: "1009"
+          # Pinned to what real Apple Silicon reports. The shim defaults to
+          # 65536, which no shipping Mac has.
+          LUME_METAL_MAX_THREADGROUP_MEMORY: "32768"
         run: |
           export RUN_IN_PARALLEL=no
           go -C examples test -v -count=1 -timeout 2m ./session-store
