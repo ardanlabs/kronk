@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
+	version "github.com/hashicorp/go-version"
 	"github.com/hybridgroup/yzma/pkg/download"
 )
 
@@ -243,6 +245,26 @@ func newTestLibs(t *testing.T, baseDir string, opts ...Option) *Libs {
 
 func noopLog(_ context.Context, _ string, _ ...any) {}
 
+func versionAfterDefault(t *testing.T) string {
+	t.Helper()
+
+	tag := versionTag(defaultVersion)
+	if build, ok := strings.CutPrefix(tag, "b"); ok {
+		n, err := strconv.Atoi(build)
+		if err != nil {
+			t.Fatalf("parse default build %q: %v", tag, err)
+		}
+		return fmt.Sprintf("b%d", n+1)
+	}
+
+	semantic, err := version.NewVersion(tag)
+	if err != nil || !strings.HasPrefix(tag, "v") {
+		t.Fatalf("default version %q uses an unsupported version scheme", tag)
+	}
+
+	return fmt.Sprintf("v%d.0.0", semantic.Segments()[0]+1)
+}
+
 // TestDownload_AlreadyInstalled_Default covers matrix rows 3 and 4 in the
 // "already installed" form: default version is on disk, AllowUpgrade is
 // false, no override -> Download returns without attempting a download.
@@ -269,7 +291,7 @@ func TestDownload_AlreadyInstalled_Default(t *testing.T) {
 func TestDownload_AlreadyInstalled_NewerKept(t *testing.T) {
 	scrubKronkEnv(t)
 	tmp := t.TempDir()
-	const installed = "v0.4.1"
+	installed := versionAfterDefault(t)
 	writeInstalled(t, tmp, installed)
 
 	lib := newTestLibs(t, tmp)

@@ -20,8 +20,14 @@ export default function DocsCLILibs() {
               into the SDK; pass <code>--upgrade</code> to track the latest
               published release. The command auto-detects your system
               architecture (amd64/arm64), operating system
-              (linux/darwin/windows), and processor type
+              (linux/bookworm/trixie/darwin/windows), and processor type
               (cpu/metal/cuda/rocm/vulkan).
+            </p>
+            <p>
+              The well-known default is pinned to the SHA-256 of its release
+              manifest. The manifest authenticates the selected platform
+              archive and is cached with the installation so subsequent
+              library verification can run without network access.
             </p>
             <h5>Hardware Backends</h5>
             <ul>
@@ -53,7 +59,7 @@ export default function DocsCLILibs() {
                 </tr>
                 <tr>
                   <td><code>--version &lt;string&gt;</code></td>
-                  <td>Download a specific llama.cpp version instead of the default (e.g. <code>b5540</code>). See <a href="https://github.com/ggml-org/llama.cpp/releases" target="_blank" rel="noopener noreferrer">available releases</a>. An explicit version overrides both the default and <code>--upgrade</code>.</td>
+                  <td>Download a specific llama.cpp version instead of the default, optionally pinned as <code>VERSION@sha256:DIGEST</code>. See <a href="https://github.com/ggml-org/llama.cpp/releases" target="_blank" rel="noopener noreferrer">available releases</a>. An explicit version overrides both the default and <code>--upgrade</code>.</td>
                 </tr>
                 <tr>
                   <td><code>--install</code></td>
@@ -125,7 +131,7 @@ export default function DocsCLILibs() {
                 <tr>
                   <td><code>KRONK_OS</code></td>
                   <td>auto-detected</td>
-                  <td>Operating system override (local mode): <code>linux</code>, <code>darwin</code>, <code>windows</code></td>
+                  <td>Operating system override (local mode): <code>linux</code>, <code>bookworm</code>, <code>trixie</code>, <code>darwin</code>, <code>windows</code></td>
                 </tr>
                 <tr>
                   <td><code>KRONK_PROCESSOR</code></td>
@@ -153,8 +159,9 @@ kronk libs --local
 # Track and install the latest llama.cpp release
 kronk libs --local --upgrade
 
-# Install a specific version
-kronk libs --local --version=b7406
+# Install the supported version using its exact release manifest pin
+kronk libs --local \\
+  --version=b10819@sha256:ae04b9bdfb0c4a7c9fb31a8474e400b28db904fa60222b2cc68d12405877bbac
 
 # Install CUDA libraries explicitly via env override
 KRONK_PROCESSOR=cuda kronk libs --local
