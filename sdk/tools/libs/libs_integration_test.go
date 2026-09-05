@@ -91,10 +91,10 @@ func intLog(_ context.Context, _ string, _ ...any) {}
 
 // TestIntegration_Download_Default exercises matrix row 3: empty libraries
 // root, no override, no upgrade -> defaultVersion is downloaded and
-// installed. Asserts the install lands under t.TempDir() and the
-// version.json on disk reports the default version.
+// installed. It validates the extracted bundle, then asserts the install
+// lands under t.TempDir() and version.json reports the default version.
 func TestIntegration_Download_Default(t *testing.T) {
-	lib, tmp := integrationLibs(t)
+	lib, tmp := integrationLibs(t, WithValidation(true))
 
 	tag, err := lib.Download(context.Background(), intLog)
 	if err != nil {

@@ -28,7 +28,7 @@ func TestAllowUnavailableFileValidation(t *testing.T) {
 	}
 
 	err := fmt.Errorf("verify: %w", ErrNoFileDigests)
-	if err := allowUnavailableFileValidation(t.Context(), log, "b10798", err); err != nil {
+	if err := allowUnavailableFileValidation(t.Context(), log, "b10809", err); err != nil {
 		t.Fatalf("allowUnavailableFileValidation: %v", err)
 	}
 	if !logged {
@@ -36,7 +36,7 @@ func TestAllowUnavailableFileValidation(t *testing.T) {
 	}
 
 	want := errors.New("changed file")
-	if got := allowUnavailableFileValidation(t.Context(), log, "b10798", want); !errors.Is(got, want) {
+	if got := allowUnavailableFileValidation(t.Context(), log, "b10809", want); !errors.Is(got, want) {
 		t.Errorf("other error: got %v, want %v", got, want)
 	}
 }
