@@ -265,8 +265,11 @@ KRONK_PROCESSOR=cpu kronk libs --local
 ```
 
 The normal command installs the llama.cpp version selected for the installed
-Kronk release. `--upgrade` opts into the latest published llama.cpp build,
-which may introduce upstream compatibility changes:
+Kronk release. That default includes the SHA-256 of the release manifest. The
+manifest contains the digests of every platform archive, allowing Kronk to
+authenticate the manifest before verifying the selected download. `--upgrade`
+opts into the latest published llama.cpp build, which may introduce upstream
+compatibility changes:
 
 ```shell
 kronk libs --local --upgrade

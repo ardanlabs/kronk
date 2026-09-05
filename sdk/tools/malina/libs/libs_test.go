@@ -7,8 +7,45 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/ardanlabs/malina/pkg/download"
 	"github.com/hashicorp/go-getter"
 )
+
+func TestWithValidation(t *testing.T) {
+	var options Options
+	WithValidation(true)(&options)
+
+	if !options.Validation {
+		t.Error("Validation: got false, want true")
+	}
+}
+
+func TestDownloadValidationRequiresInstallRecord(t *testing.T) {
+	originalNetwork := networkAvailable
+	t.Cleanup(func() { networkAvailable = originalNetwork })
+	networkAvailable = func(context.Context) bool { return true }
+
+	lib, err := New(
+		WithBasePath(t.TempDir()),
+		WithArch("arm64"),
+		WithOS("darwin"),
+		WithProcessor("metal"),
+		WithValidation(true),
+	)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if err := os.MkdirAll(lib.LibsPath(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeVersionFile(lib.LibsPath(), defaultVersion, lib.Arch(), lib.OS(), lib.Processor()); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := lib.Download(t.Context(), nil); !errors.Is(err, download.ErrNoInstallRecord) {
+		t.Errorf("Download() error = %v, want ErrNoInstallRecord", err)
+	}
+}
 
 func TestVersionGreater(t *testing.T) {
 	tests := []struct {

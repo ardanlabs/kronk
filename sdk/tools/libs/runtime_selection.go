@@ -382,10 +382,7 @@ func hasVulkanGPU(output string) bool {
 func (lib *Libs) SelectInstalledRuntime(ctx context.Context, log Logger) (*Libs, RuntimeSelection, error) {
 	if lib.validation {
 		verifyFn := func(ctx context.Context, candidate runtimeCandidate) error {
-			version := candidate.version
-			if lib.version != "" {
-				version = lib.version
-			}
+			version := lib.verificationVersion(candidate.version)
 
 			err := verifyRuntime(ctx, candidate, version)
 			return allowUnavailableFileValidation(ctx, log, version, err)

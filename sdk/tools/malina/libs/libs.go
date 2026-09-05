@@ -74,6 +74,7 @@ type Options struct {
 	Processor    string
 	Version      string
 	AllowUpgrade bool
+	Validation   bool
 	detect       *detectOptions
 }
 
@@ -149,6 +150,14 @@ func WithAllowUpgrade(allow bool) Option {
 	}
 }
 
+// WithValidation sets whether Download verifies the selected installed bundle
+// before reporting success.
+func WithValidation(enabled bool) Option {
+	return func(o *Options) {
+		o.Validation = enabled
+	}
+}
+
 // =============================================================================
 
 // Libs manages the stable-diffusion.cpp library system. Each Libs instance
@@ -172,6 +181,7 @@ type Libs struct {
 	version      string
 	readOnly     bool
 	AllowUpgrade bool
+	validation   bool
 }
 
 // New constructs a Libs with system defaults and applies any provided
@@ -265,6 +275,7 @@ func New(opts ...Option) (*Libs, error) {
 		version:      options.Version,
 		readOnly:     readOnly,
 		AllowUpgrade: options.AllowUpgrade,
+		validation:   options.Validation,
 	}
 
 	return &lib, nil
@@ -423,7 +434,15 @@ func (lib *Libs) List() ([]VersionTag, error) {
 //     call fails.
 //   - If the desired version is already installed for the active (arch,
 //     os, processor) triple, no download occurs.
-func (lib *Libs) Download(ctx context.Context, log Logger) (VersionTag, error) {
+//   - WithValidation(true) verifies the selected installed bundle against
+//     Malina's embedded manifest before Download reports success.
+func (lib *Libs) Download(ctx context.Context, log Logger) (tag VersionTag, retErr error) {
+	defer func() {
+		if retErr == nil && lib.validation {
+			retErr = lib.validateDownload(ctx, tag)
+		}
+	}()
+
 	log = normalizeLogger(log)
 	if err := ctx.Err(); err != nil {
 		return VersionTag{}, fmt.Errorf("download-libraries: %w", err)

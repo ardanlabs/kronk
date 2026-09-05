@@ -71,6 +71,7 @@ func installSystem() (models.Manifest, error) {
 
 	libs, err := libs.New(
 		libs.WithDetect(ctx, malina.FmtLogger),
+		libs.WithValidation(true),
 	)
 	if err != nil {
 		return models.Manifest{}, err
