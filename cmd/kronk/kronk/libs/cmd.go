@@ -17,7 +17,12 @@ Kronk requires llama.cpp shared libraries for runtime inference. This command
 downloads and installs the appropriate library version for your hardware platform.
 
 The command auto-detects your system architecture (amd64/arm64), operating system
-(linux/darwin/windows), and processor type (cpu/metal/cuda/rocm/vulkan).
+(linux/bookworm/trixie/darwin/windows), and processor type
+(cpu/metal/cuda/rocm/vulkan).
+
+The well-known default version is pinned to the SHA-256 of its release manifest.
+The manifest authenticates the selected platform archive and is cached with the
+installation so subsequent library verification can run without network access.
 
 HARDWARE BACKENDS
 
@@ -25,7 +30,7 @@ HARDWARE BACKENDS
   metal - Apple Silicon GPU acceleration (macOS)
   cuda  - NVIDIA GPU acceleration
   rocm  - AMD GPU acceleration
-  vulkan- Cross-platform GPU acceleration
+  vulkan - Cross-platform GPU acceleration
 
 MODES
 
@@ -43,11 +48,9 @@ EXAMPLES
   # Install CUDA libraries explicitly
   KRONK_PROCESSOR=cuda kronk libs --local
 
-  # Download a specific version
-  kronk libs --local --version=b7406
-
-  # Download a specific version pinned to its digest manifest SHA-256
-  kronk libs --local --version=b10785@sha256:<64-hex-digest>
+  # Download the supported version pinned to its release manifest SHA-256
+  kronk libs --local \
+    --version=b10819@sha256:ae04b9bdfb0c4a7c9fb31a8474e400b28db904fa60222b2cc68d12405877bbac
 
   # List supported (arch, os, processor) combinations
   kronk libs --list-combinations
@@ -68,7 +71,7 @@ ENVIRONMENT VARIABLES (Local Mode)
 
   KRONK_ARCH       - Architecture: amd64, arm64
   KRONK_LIB_PATH   - Library directory path
-  KRONK_OS         - Operating system: linux, darwin, windows
+  KRONK_OS         - Operating system: linux, bookworm, trixie, darwin, windows
   KRONK_PROCESSOR  - Hardware backend: cpu, cuda, metal, rocm, vulkan`,
 	Args: cobra.NoArgs,
 	Run:  main,

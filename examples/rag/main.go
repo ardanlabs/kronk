@@ -150,6 +150,7 @@ func installSystem() (models.Path, models.Path, error) {
 
 	libs, err := libs.New(
 		libs.WithDetect(ctx, kronk.FmtLogger),
+		libs.WithValidation(true),
 	)
 	if err != nil {
 		return models.Path{}, models.Path{}, err

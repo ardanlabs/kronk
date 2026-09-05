@@ -296,12 +296,13 @@ kronk libs --list-combinations
 # Show installed bundles.
 kronk libs --list-installs
 
-# Install a particular published version.
-kronk libs --local --version=<llama.cpp-build>
+# Install the supported version using its exact release manifest pin.
+kronk libs --local \\
+  --version=b10819@sha256:ae04b9bdfb0c4a7c9fb31a8474e400b28db904fa60222b2cc68d12405877bbac
 
 # Explicitly select CPU instead of an available GPU.
 KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
-          <p>The normal command installs the llama.cpp version selected for the installed Kronk release. That default includes the SHA-256 of the release manifest. The manifest contains the digests of every platform archive, allowing Kronk to authenticate the manifest before verifying the selected download. <code>--upgrade</code> opts into the latest published llama.cpp build, which may introduce upstream compatibility changes:</p>
+          <p>The normal command installs the llama.cpp version selected for the installed Kronk release. That default includes the SHA-256 of the release manifest. The manifest contains the digests of every platform archive, allowing Kronk to authenticate the manifest before verifying the selected download. Yzma caches the authenticated manifest and its digest beside the installed libraries so subsequent verification can run without network access. An installation made before Yzma 1.26.1 needs one online verification to populate that cache. <code>--upgrade</code> opts into the latest published llama.cpp build, which may introduce upstream compatibility changes:</p>
           <pre className="code-block"><code className="language-shell">{`kronk libs --local --upgrade`}</code></pre>
           <p>Kronk, its Yzma Go binding, and llama.cpp form a tested compatibility set. Do not infer compatibility from version ordering or upgrade only one member of the set. The current and historical matrix is kept in the repository <a href="../README.md#project-status">README</a>, while the normal non-<code>--upgrade</code> command installs the build pinned for the Kronk release.</p>
           <p>Use <code>kronk libs --help</code> for cross-platform bundle installation and removal. Changing the active library path requires a server restart; libraries are not hot-reloaded.</p>
@@ -5273,7 +5274,10 @@ make kronk-server-stop`}</code></pre>
           <h4 id="2041-native-library-compatibility-and-sdk-initialization">20.4.1 Native-library compatibility and SDK initialization</h4>
           <p>The versions in <code>go.mod</code>, <code>sdk/tools/libs</code> defaults, and the README compatibility matrix describe one tested Kronk/Yzma/llama.cpp set. A dependency update is incomplete unless the binding, pinned native build, root and examples modules, generated Nix module data, and focused model tests remain aligned. Do not update Yzma or select a newer llama.cpp build independently merely because it is available upstream.</p>
           <p>Runnable language-model examples should resolve and initialize the same runtime they install:</p>
-          <pre className="code-block"><code className="language-go">{`lib, err := libs.New(libs.WithDetect(ctx, kronk.FmtLogger))
+          <pre className="code-block"><code className="language-go">{`lib, err := libs.New(
+    libs.WithDetect(ctx, kronk.FmtLogger),
+    libs.WithValidation(true),
+)
 if err != nil {
     return err
 }

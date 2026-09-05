@@ -400,6 +400,7 @@ func installSystem() (models.Path, error) {
 	// Install llama.cpp libraries.
 	libs, err := libs.New(
 		libs.WithDetect(ctx, kronk.FmtLogger),
+		libs.WithValidation(true),
 	)
 	if err != nil {
 		return models.Path{}, err
@@ -540,6 +541,7 @@ func installSystem() (models.Path, error) {
 
 	libs, err := libs.New(
 		libs.WithDetect(ctx, kronk.FmtLogger),
+		libs.WithValidation(true),
 	)
 	if err != nil {
 		return models.Path{}, err
@@ -799,6 +801,7 @@ func installSystem() (buckymodels.Path, error) {
 
 	lib, err := buckylibs.New(
 		buckylibs.WithDetect(ctx, bucky.FmtLogger),
+		buckylibs.WithValidation(true),
 	)
 	if err != nil {
 		return buckymodels.Path{}, fmt.Errorf("libs new: %w", err)
@@ -1072,6 +1075,7 @@ func installSystem() (buckymodels.Path, error) {
 
 	lib, err := buckylibs.New(
 		buckylibs.WithDetect(ctx, bucky.FmtLogger),
+		buckylibs.WithValidation(true),
 	)
 	if err != nil {
 		return buckymodels.Path{}, fmt.Errorf("libs new: %w", err)
@@ -1394,6 +1398,7 @@ func installSystem(sileroVAD bool) (installedModels, error) {
 
 	lib, err := buckylibs.New(
 		buckylibs.WithDetect(ctx, bucky.FmtLogger),
+		buckylibs.WithValidation(true),
 	)
 	if err != nil {
 		return installedModels{}, fmt.Errorf("libs new: %w", err)
@@ -1531,6 +1536,7 @@ func installSystem() (models.Path, error) {
 
 	libs, err := libs.New(
 		libs.WithDetect(ctx, kronk.FmtLogger),
+		libs.WithValidation(true),
 	)
 	if err != nil {
 		return models.Path{}, err
@@ -1898,6 +1904,7 @@ func installSystem() (models.Path, error) {
 
 	libs, err := libs.New(
 		libs.WithDetect(ctx, kronk.FmtLogger),
+		libs.WithValidation(true),
 	)
 	if err != nil {
 		return models.Path{}, err
@@ -2172,6 +2179,7 @@ func installSystem() (models.Path, error) {
 
 	libs, err := libs.New(
 		libs.WithDetect(ctx, kronk.FmtLogger),
+		libs.WithValidation(true),
 	)
 	if err != nil {
 		return models.Path{}, err
@@ -2363,6 +2371,7 @@ func installSystem() (models.Path, error) {
 
 	libs, err := libs.New(
 		libs.WithDetect(ctx, kronk.FmtLogger),
+		libs.WithValidation(true),
 	)
 	if err != nil {
 		return models.Path{}, err
@@ -3559,6 +3568,7 @@ func installSystem() (*models.Models, error) {
 
 	libs, err := libs.New(
 		libs.WithDetect(ctx, kronk.FmtLogger),
+		libs.WithValidation(true),
 	)
 	if err != nil {
 		return nil, err
@@ -3796,6 +3806,7 @@ func installSystem() (models.Path, error) {
 
 	libs, err := libs.New(
 		libs.WithDetect(ctx, kronk.FmtLogger),
+		libs.WithValidation(true),
 	)
 	if err != nil {
 		return models.Path{}, err
@@ -4077,6 +4088,7 @@ func installSystem() (models.Path, models.Path, error) {
 
 	libs, err := libs.New(
 		libs.WithDetect(ctx, kronk.FmtLogger),
+		libs.WithValidation(true),
 	)
 	if err != nil {
 		return models.Path{}, models.Path{}, err
@@ -4355,6 +4367,7 @@ func installSystem() (models.Path, error) {
 
 	libs, err := libs.New(
 		libs.WithDetect(ctx, kronk.FmtLogger),
+		libs.WithValidation(true),
 	)
 	if err != nil {
 		return models.Path{}, err
@@ -4540,6 +4553,7 @@ func installSystem() (models.Path, error) {
 
 	libs, err := libs.New(
 		libs.WithDetect(ctx, kronk.FmtLogger),
+		libs.WithValidation(true),
 	)
 	if err != nil {
 		return models.Path{}, err
@@ -4921,6 +4935,7 @@ func installSystem() (models.Path, error) {
 
 	libraryManager, err := libs.New(
 		libs.WithDetect(ctx, kronk.FmtLogger),
+		libs.WithValidation(true),
 	)
 	if err != nil {
 		return models.Path{}, err
@@ -5044,6 +5059,7 @@ func installSystem() (models.Path, error) {
 
 	libs, err := libs.New(
 		libs.WithDetect(ctx, kronk.FmtLogger),
+		libs.WithValidation(true),
 	)
 	if err != nil {
 		return models.Path{}, err

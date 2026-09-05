@@ -1207,6 +1207,50 @@ func TestRetainLengthTerminatedToolOutput(t *testing.T) {
 	}
 }
 
+func TestRecoverInvalidToolCallOutput(t *testing.T) {
+	badCall := ResponseToolCall{ID: "bad", Status: 2}
+	goodCall := ResponseToolCall{ID: "good", Function: ResponseToolCallFunction{Name: "lookup"}}
+	tests := []struct {
+		name        string
+		streaming   bool
+		started     []ResponseToolCallDelta
+		content     string
+		toolCalls   []ResponseToolCall
+		wantDelta   string
+		wantContent string
+		wantCalls   int
+		want        bool
+	}{
+		{name: "non-streaming failure", toolCalls: []ResponseToolCall{badCall}, wantDelta: invalidToolCallMessage, wantContent: invalidToolCallMessage, want: true},
+		{name: "unannounced streaming failure", streaming: true, toolCalls: []ResponseToolCall{badCall}, wantDelta: invalidToolCallMessage, wantContent: invalidToolCallMessage, want: true},
+		{name: "existing content", content: "answer", toolCalls: []ResponseToolCall{badCall}, wantDelta: "\n\n" + invalidToolCallMessage, wantContent: "answer\n\n" + invalidToolCallMessage, want: true},
+		{name: "valid sibling", toolCalls: []ResponseToolCall{badCall, goodCall}, wantCalls: 1, want: true},
+		{name: "announced streaming failure", streaming: true, started: []ResponseToolCallDelta{{ID: "bad"}}, toolCalls: []ResponseToolCall{badCall}, wantCalls: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var content strings.Builder
+			content.WriteString(tt.content)
+			toolCalls := append([]ResponseToolCall(nil), tt.toolCalls...)
+
+			gotDelta, got := recoverInvalidToolCallOutput(tt.streaming, tt.started, &content, &toolCalls)
+			if got != tt.want {
+				t.Errorf("recovered: got %t, want %t", got, tt.want)
+			}
+			if gotDelta != tt.wantDelta {
+				t.Errorf("delta: got %q, want %q", gotDelta, tt.wantDelta)
+			}
+			if content.String() != tt.wantContent {
+				t.Errorf("content: got %q, want %q", content.String(), tt.wantContent)
+			}
+			if len(toolCalls) != tt.wantCalls {
+				t.Errorf("tool calls: got %d, want %d", len(toolCalls), tt.wantCalls)
+			}
+		})
+	}
+}
+
 func TestLengthTerminatedToolOutputResponse(t *testing.T) {
 	const answer = "I will update the file. "
 	const tooling = `<tool_call>{"name":"write_file","arguments":{"path":"main.go","content":"package main</tool_ca`

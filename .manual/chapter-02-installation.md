@@ -257,8 +257,9 @@ kronk libs --list-combinations
 # Show installed bundles.
 kronk libs --list-installs
 
-# Install a particular published version.
-kronk libs --local --version=<llama.cpp-build>
+# Install the supported version using its exact release manifest pin.
+kronk libs --local \
+  --version=b10819@sha256:ae04b9bdfb0c4a7c9fb31a8474e400b28db904fa60222b2cc68d12405877bbac
 
 # Explicitly select CPU instead of an available GPU.
 KRONK_PROCESSOR=cpu kronk libs --local
@@ -267,9 +268,12 @@ KRONK_PROCESSOR=cpu kronk libs --local
 The normal command installs the llama.cpp version selected for the installed
 Kronk release. That default includes the SHA-256 of the release manifest. The
 manifest contains the digests of every platform archive, allowing Kronk to
-authenticate the manifest before verifying the selected download. `--upgrade`
-opts into the latest published llama.cpp build, which may introduce upstream
-compatibility changes:
+authenticate the manifest before verifying the selected download. Yzma caches
+the authenticated manifest and its digest beside the installed libraries so
+subsequent verification can run without network access. An installation made
+before Yzma 1.26.1 needs one online verification to populate that cache.
+`--upgrade` opts into the latest published llama.cpp build, which may introduce
+upstream compatibility changes:
 
 ```shell
 kronk libs --local --upgrade

@@ -49,6 +49,15 @@ func TestParseGPTToolCall_NoCalls(t *testing.T) {
 	}
 }
 
+func TestParserToolCallReportsMalformedHarmonyFraming(t *testing.T) {
+	const input = `.glob code <|message|>{"path":"", "pattern":"TODO.md"}`
+
+	calls := (Parser{}).ToolCall(context.Background(), noopLog, input)
+	if len(calls) != 1 || calls[0].Status != 2 || calls[0].Error != "missing message marker" {
+		t.Errorf("got %+v, want one non-executable missing-marker failure", calls)
+	}
+}
+
 // TestParseGPTToolCall_MultilineJSON covers JSON arguments that span
 // multiple lines (the GPT-OSS format permits this).
 func TestParseGPTToolCall_MultilineJSON(t *testing.T) {

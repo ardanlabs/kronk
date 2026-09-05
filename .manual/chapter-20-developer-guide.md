@@ -234,7 +234,10 @@ Runnable language-model examples should resolve and initialize the same runtime 
 install:
 
 ```go
-lib, err := libs.New(libs.WithDetect(ctx, kronk.FmtLogger))
+lib, err := libs.New(
+    libs.WithDetect(ctx, kronk.FmtLogger),
+    libs.WithValidation(true),
+)
 if err != nil {
     return err
 }
