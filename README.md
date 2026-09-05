@@ -111,11 +111,15 @@ Sometimes there are breaking changes to the family of ggml libraries that requir
 
 Here are some of the known compatible versions:
 
-| kronk     | yzma    | llama.cpp | bucky  | whisper.cpp | malina | stable-diffusion.cpp |
-| --------- | ------- | --------- | ------ | ----------- | ------ | -------------------- |
-| 1.32.5-rc | 1e8d073 | b10809    | v1.1.2 | v1.9.3      | v1.0.7 | master-841-6b3edaa   |
-| 1.32.4    | 6bd0208 | b10785    | v1.1.1 | v1.9.3      | v1.0.6 | master-841-6b3edaa   |
-| 1.32.3    | v1.25.0 | v0.3.0    | v1.1.0 | v1.9.3      | v1.0.5 | master-830-50d6405   |
+| kronk  | yzma    | llama.cpp | bucky  | whisper.cpp | malina | stable-diffusion.cpp |
+| ------ | ------- | --------- | ------ | ----------- | ------ | -------------------- |
+| 1.32.5 | v1.26.0 | v0.4.0    | v1.1.2 | v1.9.3      | v1.0.8 | master-841-6b3edaa   |
+| 1.32.4 | 6bd0208 | b10785    | v1.1.1 | v1.9.3      | v1.0.6 | master-841-6b3edaa   |
+| 1.32.3 | v1.25.0 | v0.3.0    | v1.1.0 | v1.9.3      | v1.0.5 | master-830-50d6405   |
+
+Kronk 1.32.5 pins the llama.cpp `v0.4.0` manifest by SHA-256. The manifest
+authenticates the platform-specific archives selected by the downloader, so the
+default installation verifies both the manifest and the downloaded libraries.
 
 ## Documentation and Examples
 

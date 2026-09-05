@@ -379,6 +379,10 @@ parameter accepts the same pinned syntax, allowing the caller to supply the
 trusted manifest digest rather than trusting the server's install record or
 manifest host. The response identifies the backend, version, platform triple,
 overall result, per-file states, and changed, missing, or unexpected counts.
+Kronk's default llama.cpp version already carries its published manifest
+digest, so default downloads and startup verification use the authenticated
+manifest without an operator-supplied version.
+
 Verification requires a Yzma install record and a release manifest containing
 per-file hashes. A release or upstream asset with archive hashes only returns
 an error rather than claiming the installed files are verified.

@@ -101,8 +101,8 @@ func TestIntegration_Download_Default(t *testing.T) {
 		t.Fatalf("Download: %v", err)
 	}
 
-	if tag.Version != defaultVersion {
-		t.Errorf("installed Version = %q, want default %q", tag.Version, defaultVersion)
+	if want := versionTag(defaultVersion); tag.Version != want {
+		t.Errorf("installed Version = %q, want default %q", tag.Version, want)
 	}
 
 	// Confirm files actually landed under the temp dir, not somewhere else.
@@ -130,7 +130,7 @@ func TestIntegration_Download_AllowUpgrade(t *testing.T) {
 	if tag.Version == "" {
 		t.Fatalf("installed Version is empty after Download")
 	}
-	if tag.Version != defaultVersion && !versionGreater(tag.Version, defaultVersion) {
+	if tag.Version != versionTag(defaultVersion) && !versionGreater(tag.Version, defaultVersion) {
 		t.Errorf("installed Version = %q, want >= default %q", tag.Version, defaultVersion)
 	}
 }

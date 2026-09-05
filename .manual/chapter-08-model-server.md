@@ -179,11 +179,13 @@ affected backend in degraded mode.
 For an externally pinned llama.cpp check, set `--lib-version` or
 `KRONK_LIB_VERSION` to `VERSION@sha256:<64-hex-digest>`. The digest identifies
 Yzma's release manifest, which identifies the platform archives and their
-installed files. Bucky's default whisper.cpp version already includes its
-published manifest digest. Bucky validates that manifest and the selected
-archive during download; startup verification then hashes the extracted files
-against the authenticated manifest. Post-install verification requires an
-install record and per-file hashes in the release manifest.
+installed files. The default llama.cpp and whisper.cpp versions already include
+their published manifest digests. The builders publish each manifest as a
+release asset, GitHub records its SHA-256, and Kronk carries that digest as the
+trust anchor. Yzma and Bucky validate the manifest and selected archive during
+download; startup verification then hashes the extracted files against the
+authenticated manifest. Post-install verification requires an install record
+and per-file hashes in the release manifest.
 
 Bucky performs separate whisper.cpp runtime selection. Its managed bundles
 live below `<base>/bucky-libraries`, and `KRONK_BUCKY_LIB_PATH` authoritatively

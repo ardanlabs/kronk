@@ -25,9 +25,10 @@ const (
 	versionFile = "version.json"
 	localFolder = "libraries"
 
-	// defaultVersion is the well-known working version of llama.cpp used
-	// when no explicit version is provided and AllowUpgrade is false.
-	defaultVersion = "b10809"
+	// defaultVersion is the pinned llama.cpp release used when no explicit
+	// version is provided and AllowUpgrade is false. The SHA-256 authenticates
+	// the release manifest, which contains the digests of every platform asset.
+	defaultVersion = "v0.4.0@sha256:b95e8680b4d30761492bbc2d4a6fed656f124c5756dd4387cf02c30d27c13d90"
 )
 
 // ErrReadOnly is returned by mutating operations on a Libs instance whose
@@ -374,7 +375,7 @@ func (lib *Libs) Download(ctx context.Context, log Logger) (tag VersionTag, retE
 
 	log(ctx, "download-libraries: check llama.cpp installation", "arch", lib.arch, "os", lib.os, "processor", lib.processor, "requested", version, "current", installed.Version)
 
-	if installed.Version == version && installed.Arch == lib.arch.String() && installed.OS == lib.os.String() && installed.Processor == lib.processor.String() {
+	if installed.Version == versionTag(version) && installed.Arch == lib.arch.String() && installed.OS == lib.os.String() && installed.Processor == lib.processor.String() {
 		log(ctx, "download-libraries: already installed", "version", version)
 		return installed, nil
 	}
@@ -969,6 +970,9 @@ func chooseVersion(override string, allowUpgrade bool, installed string, latest 
 // precedence. Tags from different schemes are not ordered so the configured
 // default wins when Kronk moves from nightly to semantic releases.
 func versionGreater(v1, v2 string) bool {
+	v1 = versionTag(v1)
+	v2 = versionTag(v2)
+
 	if v1 == "" || v2 == "" {
 		return false
 	}
@@ -992,6 +996,17 @@ func versionGreater(v1, v2 string) bool {
 	}
 
 	return sem1.GreaterThan(sem2)
+}
+
+// versionTag removes an optional manifest digest from a version. Invalid pins
+// are returned unchanged so the installer can report the validation error.
+func versionTag(value string) string {
+	tag, _, err := download.ParsePinnedVersion(value)
+	if err != nil {
+		return value
+	}
+
+	return tag
 }
 
 // hasNetwork reports whether Kronk can reach the internet. It issues a real

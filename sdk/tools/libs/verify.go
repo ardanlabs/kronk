@@ -37,10 +37,7 @@ func (lib *Libs) Verify(ctx context.Context, version string) (*VerifyReport, err
 }
 
 func (lib *Libs) validateDownload(ctx context.Context, log Logger, tag VersionTag) error {
-	version := tag.Version
-	if lib.version != "" {
-		version = lib.version
-	}
+	version := lib.verificationVersion(tag.Version)
 
 	report, err := lib.Verify(ctx, version)
 	err = allowUnavailableFileValidation(ctx, log, version, err)
@@ -64,6 +61,17 @@ func allowUnavailableFileValidation(ctx context.Context, log Logger, version str
 
 	log(ctx, "validate-libraries: post-install validation unavailable", "version", version, "WARNING", err)
 	return nil
+}
+
+func (lib *Libs) verificationVersion(version string) string {
+	if lib.version != "" {
+		return lib.version
+	}
+	if version == versionTag(defaultVersion) {
+		return defaultVersion
+	}
+
+	return version
 }
 
 func verifyRuntime(ctx context.Context, candidate runtimeCandidate, version string) error {

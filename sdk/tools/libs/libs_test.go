@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/hybridgroup/yzma/pkg/download"
@@ -38,6 +39,28 @@ func TestAllowUnavailableFileValidation(t *testing.T) {
 	want := errors.New("changed file")
 	if got := allowUnavailableFileValidation(t.Context(), log, "b10809", want); !errors.Is(got, want) {
 		t.Errorf("other error: got %v, want %v", got, want)
+	}
+}
+
+func TestVerificationVersion(t *testing.T) {
+	tests := []struct {
+		name     string
+		version  string
+		override string
+		want     string
+	}{
+		{"default tag uses pin", versionTag(defaultVersion), "", defaultVersion},
+		{"other tag stays unchanged", "v0.4.1", "", "v0.4.1"},
+		{"override wins", versionTag(defaultVersion), "v0.4.0", "v0.4.0"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lib := Libs{version: tt.override}
+			if got := lib.verificationVersion(tt.version); got != tt.want {
+				t.Errorf("verificationVersion(%q) = %q, want %q", tt.version, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -108,6 +131,8 @@ func TestVersionGreater(t *testing.T) {
 		{"v0.4.0", "v0.4.1", false},
 		{"v0.4.0-rc.2", "v0.4.0-rc.1", true},
 		{"v0.4.0", "v0.4.0-rc.2", true},
+		{"v0.4.1", "v0.4.0@sha256:" + strings.Repeat("a", 64), true},
+		{"v0.4.0@sha256:" + strings.Repeat("a", 64), "v0.4.1", false},
 		{"v0.4.0", "b10675", false},
 		{"b10675", "v0.4.0", false},
 		{"invalid", "v0.4.0", false},
@@ -224,7 +249,8 @@ func noopLog(_ context.Context, _ string, _ ...any) {}
 func TestDownload_AlreadyInstalled_Default(t *testing.T) {
 	scrubKronkEnv(t)
 	tmp := t.TempDir()
-	writeInstalled(t, tmp, defaultVersion)
+	want := versionTag(defaultVersion)
+	writeInstalled(t, tmp, want)
 
 	lib := newTestLibs(t, tmp)
 
@@ -232,8 +258,8 @@ func TestDownload_AlreadyInstalled_Default(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Download: %v", err)
 	}
-	if tag.Version != defaultVersion {
-		t.Errorf("Version = %q, want %q", tag.Version, defaultVersion)
+	if tag.Version != want {
+		t.Errorf("Version = %q, want %q", tag.Version, want)
 	}
 }
 
@@ -243,7 +269,7 @@ func TestDownload_AlreadyInstalled_Default(t *testing.T) {
 func TestDownload_AlreadyInstalled_NewerKept(t *testing.T) {
 	scrubKronkEnv(t)
 	tmp := t.TempDir()
-	const installed = "b99999"
+	const installed = "v0.4.1"
 	writeInstalled(t, tmp, installed)
 
 	lib := newTestLibs(t, tmp)
@@ -305,7 +331,8 @@ func TestDownload_AllowUpgrade_AlreadyAtLatest(t *testing.T) {
 func TestDownload_InstallFailure(t *testing.T) {
 	scrubKronkEnv(t)
 	tmp := t.TempDir()
-	writeInstalled(t, tmp, defaultVersion)
+	want := versionTag(defaultVersion)
+	writeInstalled(t, tmp, want)
 
 	lib := newTestLibs(t, tmp, WithVersion("invalid"))
 
@@ -317,8 +344,8 @@ func TestDownload_InstallFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InstalledVersion: %v", err)
 	}
-	if tag.Version != defaultVersion {
-		t.Errorf("Version = %q, want preserved %q", tag.Version, defaultVersion)
+	if tag.Version != want {
+		t.Errorf("Version = %q, want preserved %q", tag.Version, want)
 	}
 }
 
