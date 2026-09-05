@@ -79,10 +79,20 @@ jobs:
 
       # Pinned tags, not @latest: a tool release that raises its required Go
       # version would otherwise fail the install under GOTOOLCHAIN=local.
+      #
+      # Per-job GOBIN for the same reason as setup-kronk's: the self-hosted
+      # Linux fleet shares one $GOPATH across all four containers, so a job
+      # installing these while another executes them kills the reader with
+      # ETXTBSY. $RUNNER_TEMP is per-job; GITHUB_PATH puts it ahead of the
+      # shared $GOPATH/bin for the staticcheck and govulncheck steps below.
       - name: Install static analysis tools
         run: |
+          set -euo pipefail
+          export GOBIN="$RUNNER_TEMP/gobin"
+          mkdir -p "$GOBIN"
           go install honnef.co/go/tools/cmd/staticcheck@2026.2rc1
           go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+          echo "$GOBIN" >> "$GITHUB_PATH"
 
       - name: gofmt
         # `git ls-files` skips gitignored files: vendored and generated code

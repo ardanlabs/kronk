@@ -47,14 +47,33 @@ runs:
 
     # Must precede every step below that shells out to kronk. The libraries
     # root is $HOME/.kronk, the same tree the cache above restores into.
+    #
+    # GOBIN is per-job, not the default $GOPATH/bin. The Linux fleet shares one
+    # kronk-runner-go volume across all four containers, and every job on
+    # [self-hosted, Linux, X64] — linux.yml alone schedules four — installs the
+    # same $GOPATH/bin/kronk. Two overlapping jobs then have one rewriting the
+    # binary while the other executes it, and the reader dies with ETXTBSY
+    # ("Text file busy", exit 126) somewhere unrelated: seen in run 33931520288
+    # from pull-models.sh, several steps after the install that clobbered it.
+    #
+    # $RUNNER_TEMP is per-job on every runner here, so the binary stops being
+    # shared while $GOPATH/pkg/mod — the reason the volume is shared at all —
+    # still is. GITHUB_PATH prepends, so later steps and pull-models.sh resolve
+    # this kronk ahead of any stale copy; this step predates that and calls it
+    # by absolute path.
     - name: Build kronk + install libs
       shell: bash
       run: |
         set -euo pipefail
         mkdir -p "$HOME/.kronk/libraries"
+
+        export GOBIN="$RUNNER_TEMP/gobin"
+        mkdir -p "$GOBIN"
         go install ./cmd/kronk
-        kronk libs --local
-        kronk bucky libs --local
+        echo "$GOBIN" >> "$GITHUB_PATH"
+
+        "$GOBIN/kronk" libs --local
+        "$GOBIN/kronk" bucky libs --local
 
     # The macOS runners are VMs whose paravirtual GPU reports
     # MTLGPUFamilyApple5, below ggml-metal's Apple7 gate, so every unshimmed
