@@ -377,12 +377,25 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 						e.model.log(ctx, "tool-call", "status", "invalid-args",
 							"index", i, "func", tc.Function.Name,
 							"error", err)
+						s.respToolCalls[i].Status = 2
+						s.respToolCalls[i].Error = err.Error()
+						if toolCallErr == nil {
+							toolCallErr = fmt.Errorf("model emitted invalid tool call arguments at index %d: %w", i, err)
+						}
 					}
 				}
 			}
 		}
 	}
 
+	var startedToolCalls []ResponseToolCallDelta
+	if s.job.params.Stream {
+		if streamer, ok := s.stateMachine.(ToolCallDeltaStreamer); ok {
+			startedToolCalls = streamer.StartedToolCalls()
+		}
+	}
+
+	var invalidToolCallContent string
 	if toolCallErr != nil && s.stopSource == "request-stop" {
 		valid := s.respToolCalls[:0]
 		for _, toolCall := range s.respToolCalls {
@@ -391,6 +404,14 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 			}
 		}
 		s.respToolCalls = valid
+	} else if toolCallErr != nil {
+		var recovered bool
+		invalidToolCallContent, recovered = recoverInvalidToolCallOutput(s.job.params.Stream, startedToolCalls, &s.finalContent, &s.respToolCalls)
+		if recovered {
+			e.model.log(ctx, "tool-call", "status", "parse-error-recovered",
+				"parser", e.model.parser.Name(), "remaining", len(s.respToolCalls))
+			toolCallErr = nil
+		}
 	}
 
 	// Add span attributes and end span.
@@ -426,16 +447,15 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	if s.job.params.Stream && lengthTerminatedToolContent != "" {
 		deliveryErr = e.model.sendDeltaResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, lengthTerminatedToolContent, ChannelAnswer, s.reasonTokens, outputTokens, nil)
 	}
+	if s.job.params.Stream && invalidToolCallContent != "" && deliveryErr == nil {
+		deliveryErr = e.model.sendDeltaResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, invalidToolCallContent, ChannelAnswer, s.reasonTokens, outputTokens, nil)
+	}
 	var terminalToolCallDeltas []ResponseToolCallDelta
 	if s.job.params.Stream {
-		var started []ResponseToolCallDelta
-		if streamer, ok := s.stateMachine.(ToolCallDeltaStreamer); ok {
-			started = streamer.StartedToolCalls()
-		}
-		terminalToolCallDeltas = reconcileStartedToolCalls(s.respToolCalls, started)
+		terminalToolCallDeltas = reconcileStartedToolCalls(s.respToolCalls, startedToolCalls)
 	}
 	finalChannel := slotChannel(s)
-	if lengthTerminatedToolOutput {
+	if lengthTerminatedToolOutput || invalidToolCallContent != "" {
 		finalChannel = ChannelAnswer
 	}
 	if deliveryErr == nil {
@@ -470,6 +490,8 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 
 const lengthTerminatedToolMessage = "Response truncated before completion."
 
+const invalidToolCallMessage = "The model produced an invalid tool call. Please try again."
+
 func retainLengthTerminatedToolOutput(finishReason string, finalContent *strings.Builder, respToolCalls *[]ResponseToolCall) (string, bool) {
 	if finishReason != FinishReasonLength {
 		return "", false
@@ -478,6 +500,30 @@ func retainLengthTerminatedToolOutput(finishReason string, finalContent *strings
 	finalContent.WriteString(lengthTerminatedToolMessage)
 	*respToolCalls = nil
 	return lengthTerminatedToolMessage, true
+}
+
+func recoverInvalidToolCallOutput(streaming bool, started []ResponseToolCallDelta, finalContent *strings.Builder, respToolCalls *[]ResponseToolCall) (string, bool) {
+	if streaming && len(started) > 0 {
+		return "", false
+	}
+
+	valid := (*respToolCalls)[:0]
+	for _, toolCall := range *respToolCalls {
+		if toolCall.Status == 0 {
+			valid = append(valid, toolCall)
+		}
+	}
+	*respToolCalls = valid
+	if len(valid) > 0 {
+		return "", true
+	}
+
+	delta := invalidToolCallMessage
+	if finalContent.Len() > 0 {
+		delta = "\n\n" + delta
+	}
+	finalContent.WriteString(delta)
+	return delta, true
 }
 
 func reconcileStartedToolCalls(toolCalls []ResponseToolCall, started []ResponseToolCallDelta) []ResponseToolCallDelta {
