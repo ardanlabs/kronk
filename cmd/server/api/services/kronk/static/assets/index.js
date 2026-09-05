@@ -1539,6 +1539,7 @@ func installSystem() (models.Path, error) {
 	// Install llama.cpp libraries.
 	libs, err := libs.New(
 		libs.WithDetect(ctx, kronk.FmtLogger),
+		libs.WithValidation(true),
 	)
 	if err != nil {
 		return models.Path{}, err
@@ -1677,6 +1678,7 @@ func installSystem() (models.Path, error) {
 
 	libs, err := libs.New(
 		libs.WithDetect(ctx, kronk.FmtLogger),
+		libs.WithValidation(true),
 	)
 	if err != nil {
 		return models.Path{}, err
@@ -1934,6 +1936,7 @@ func installSystem() (buckymodels.Path, error) {
 
 	lib, err := buckylibs.New(
 		buckylibs.WithDetect(ctx, bucky.FmtLogger),
+		buckylibs.WithValidation(true),
 	)
 	if err != nil {
 		return buckymodels.Path{}, fmt.Errorf("libs new: %w", err)
@@ -2205,6 +2208,7 @@ func installSystem() (buckymodels.Path, error) {
 
 	lib, err := buckylibs.New(
 		buckylibs.WithDetect(ctx, bucky.FmtLogger),
+		buckylibs.WithValidation(true),
 	)
 	if err != nil {
 		return buckymodels.Path{}, fmt.Errorf("libs new: %w", err)
@@ -2525,6 +2529,7 @@ func installSystem(sileroVAD bool) (installedModels, error) {
 
 	lib, err := buckylibs.New(
 		buckylibs.WithDetect(ctx, bucky.FmtLogger),
+		buckylibs.WithValidation(true),
 	)
 	if err != nil {
 		return installedModels{}, fmt.Errorf("libs new: %w", err)
@@ -2660,6 +2665,7 @@ func installSystem() (models.Path, error) {
 
 	libs, err := libs.New(
 		libs.WithDetect(ctx, kronk.FmtLogger),
+		libs.WithValidation(true),
 	)
 	if err != nil {
 		return models.Path{}, err
@@ -3025,6 +3031,7 @@ func installSystem() (models.Path, error) {
 
 	libs, err := libs.New(
 		libs.WithDetect(ctx, kronk.FmtLogger),
+		libs.WithValidation(true),
 	)
 	if err != nil {
 		return models.Path{}, err
@@ -3297,6 +3304,7 @@ func installSystem() (models.Path, error) {
 
 	libs, err := libs.New(
 		libs.WithDetect(ctx, kronk.FmtLogger),
+		libs.WithValidation(true),
 	)
 	if err != nil {
 		return models.Path{}, err
@@ -3486,6 +3494,7 @@ func installSystem() (models.Path, error) {
 
 	libs, err := libs.New(
 		libs.WithDetect(ctx, kronk.FmtLogger),
+		libs.WithValidation(true),
 	)
 	if err != nil {
 		return models.Path{}, err
@@ -4670,6 +4679,7 @@ func installSystem() (*models.Models, error) {
 
 	libs, err := libs.New(
 		libs.WithDetect(ctx, kronk.FmtLogger),
+		libs.WithValidation(true),
 	)
 	if err != nil {
 		return nil, err
@@ -4905,6 +4915,7 @@ func installSystem() (models.Path, error) {
 
 	libs, err := libs.New(
 		libs.WithDetect(ctx, kronk.FmtLogger),
+		libs.WithValidation(true),
 	)
 	if err != nil {
 		return models.Path{}, err
@@ -5184,6 +5195,7 @@ func installSystem() (models.Path, models.Path, error) {
 
 	libs, err := libs.New(
 		libs.WithDetect(ctx, kronk.FmtLogger),
+		libs.WithValidation(true),
 	)
 	if err != nil {
 		return models.Path{}, models.Path{}, err
@@ -5460,6 +5472,7 @@ func installSystem() (models.Path, error) {
 
 	libs, err := libs.New(
 		libs.WithDetect(ctx, kronk.FmtLogger),
+		libs.WithValidation(true),
 	)
 	if err != nil {
 		return models.Path{}, err
@@ -5643,6 +5656,7 @@ func installSystem() (models.Path, error) {
 
 	libs, err := libs.New(
 		libs.WithDetect(ctx, kronk.FmtLogger),
+		libs.WithValidation(true),
 	)
 	if err != nil {
 		return models.Path{}, err
@@ -6022,6 +6036,7 @@ func installSystem() (models.Path, error) {
 
 	libraryManager, err := libs.New(
 		libs.WithDetect(ctx, kronk.FmtLogger),
+		libs.WithValidation(true),
 	)
 	if err != nil {
 		return models.Path{}, err
@@ -6143,6 +6158,7 @@ func installSystem() (models.Path, error) {
 
 	libs, err := libs.New(
 		libs.WithDetect(ctx, kronk.FmtLogger),
+		libs.WithValidation(true),
 	)
 	if err != nil {
 		return models.Path{}, err
@@ -7903,7 +7919,10 @@ make install-gotooling
 make install-tooling`})}),(0,G.jsxs)(`p`,{children:[(0,G.jsx)(`code`,{children:`make setup`}),` configures the repository's hook workflow. Tool installation is separate; inspect the Make targets before running them on a platform where package-manager changes are undesirable. The pre-commit hook regenerates the manual and BUI and, when `,(0,G.jsx)(`code`,{children:`gomod2nix`}),` is installed, refreshes `,(0,G.jsx)(`code`,{children:`zarf/nix/gomod2nix.toml`}),`. It stages only the generated BUI source/bundle paths and the Nix dependency file; it does not run `,(0,G.jsx)(`code`,{children:`git add -A`}),` or stage unrelated working-tree changes. Review the resulting staged diff before committing, especially when committing only part of the worktree.`]}),(0,G.jsx)(`p`,{children:`Common service commands include:`}),(0,G.jsx)(`pre`,{className:`code-block`,children:(0,G.jsx)(`code`,{className:`language-shell`,children:`make kronk-server
 make kronk-server-detach
 make kronk-server-logs
-make kronk-server-stop`})}),(0,G.jsxs)(`p`,{children:[`Native llama and Whisper libraries and test models are large external prerequisites. Use the CLI and Make targets appropriate to the focused test rather than downloading every supported artifact. The Bucky CLI uses `,(0,G.jsx)(`code`,{children:`--local`}),` for direct filesystem work; web/server operation is the default and there is no `,(0,G.jsx)(`code`,{children:`--web`}),` flag.`]}),(0,G.jsx)(`h4`,{id:`2041-native-library-compatibility-and-sdk-initialization`,children:`20.4.1 Native-library compatibility and SDK initialization`}),(0,G.jsxs)(`p`,{children:[`The versions in `,(0,G.jsx)(`code`,{children:`go.mod`}),`, `,(0,G.jsx)(`code`,{children:`sdk/tools/libs`}),` defaults, and the README compatibility matrix describe one tested Kronk/Yzma/llama.cpp set. A dependency update is incomplete unless the binding, pinned native build, root and examples modules, generated Nix module data, and focused model tests remain aligned. Do not update Yzma or select a newer llama.cpp build independently merely because it is available upstream.`]}),(0,G.jsx)(`p`,{children:`Runnable language-model examples should resolve and initialize the same runtime they install:`}),(0,G.jsx)(`pre`,{className:`code-block`,children:(0,G.jsx)(`code`,{className:`language-go`,children:`lib, err := libs.New(libs.WithDetect(ctx, kronk.FmtLogger))
+make kronk-server-stop`})}),(0,G.jsxs)(`p`,{children:[`Native llama and Whisper libraries and test models are large external prerequisites. Use the CLI and Make targets appropriate to the focused test rather than downloading every supported artifact. The Bucky CLI uses `,(0,G.jsx)(`code`,{children:`--local`}),` for direct filesystem work; web/server operation is the default and there is no `,(0,G.jsx)(`code`,{children:`--web`}),` flag.`]}),(0,G.jsx)(`h4`,{id:`2041-native-library-compatibility-and-sdk-initialization`,children:`20.4.1 Native-library compatibility and SDK initialization`}),(0,G.jsxs)(`p`,{children:[`The versions in `,(0,G.jsx)(`code`,{children:`go.mod`}),`, `,(0,G.jsx)(`code`,{children:`sdk/tools/libs`}),` defaults, and the README compatibility matrix describe one tested Kronk/Yzma/llama.cpp set. A dependency update is incomplete unless the binding, pinned native build, root and examples modules, generated Nix module data, and focused model tests remain aligned. Do not update Yzma or select a newer llama.cpp build independently merely because it is available upstream.`]}),(0,G.jsx)(`p`,{children:`Runnable language-model examples should resolve and initialize the same runtime they install:`}),(0,G.jsx)(`pre`,{className:`code-block`,children:(0,G.jsx)(`code`,{className:`language-go`,children:`lib, err := libs.New(
+    libs.WithDetect(ctx, kronk.FmtLogger),
+    libs.WithValidation(true),
+)
 if err != nil {
     return err
 }

@@ -5273,7 +5273,10 @@ make kronk-server-stop`}</code></pre>
           <h4 id="2041-native-library-compatibility-and-sdk-initialization">20.4.1 Native-library compatibility and SDK initialization</h4>
           <p>The versions in <code>go.mod</code>, <code>sdk/tools/libs</code> defaults, and the README compatibility matrix describe one tested Kronk/Yzma/llama.cpp set. A dependency update is incomplete unless the binding, pinned native build, root and examples modules, generated Nix module data, and focused model tests remain aligned. Do not update Yzma or select a newer llama.cpp build independently merely because it is available upstream.</p>
           <p>Runnable language-model examples should resolve and initialize the same runtime they install:</p>
-          <pre className="code-block"><code className="language-go">{`lib, err := libs.New(libs.WithDetect(ctx, kronk.FmtLogger))
+          <pre className="code-block"><code className="language-go">{`lib, err := libs.New(
+    libs.WithDetect(ctx, kronk.FmtLogger),
+    libs.WithValidation(true),
+)
 if err != nil {
     return err
 }
