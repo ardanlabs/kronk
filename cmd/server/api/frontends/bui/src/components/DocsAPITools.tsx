@@ -202,6 +202,14 @@ const endpointGroups: EndpointGroup[] = [
     ],
   },
   {
+    id: 'malina-libraries',
+    title: 'Malina Libraries',
+    description: 'Inspect stable-diffusion.cpp runtime library bundles.',
+    endpoints: [
+      { method: 'GET', path: '/v1/malina/libs/integrity', description: 'Hash, identify, and verify the selected library bundle.', auth: 'Admin' },
+    ],
+  },
+  {
     id: 'operations',
     title: 'Operations',
     description: 'Inspect resources, hardware, and server diagnostics.',

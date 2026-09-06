@@ -35,6 +35,7 @@ import (
 	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
+	malinalibs "github.com/ardanlabs/kronk/sdk/tools/malina/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"google.golang.org/grpc/test/bufconn"
 )
@@ -360,6 +361,19 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	}
 
 	// -------------------------------------------------------------------------
+	// Malina (stable-diffusion.cpp) Library System
+
+	malinaLibs, err := malinalibs.New(
+		malinalibs.WithBasePath(cfg.BasePath),
+		malinalibs.WithDetect(ctx, log.Info),
+	)
+	if err != nil {
+		return fmt.Errorf("unable to create malina libs api: %w", err)
+	}
+
+	log.Info(ctx, "startup", "status", "malina libs ready", "libPath", malinaLibs.LibsPath(), "arch", malinaLibs.Arch(), "os", malinaLibs.OS(), "processor", malinaLibs.Processor())
+
+	// -------------------------------------------------------------------------
 	// Model Config
 
 	modelConfigFile := cfg.Pool.ModelConfigFile
@@ -502,6 +516,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		Models:              models,
 		BuckyLibs:           buckyLibs,
 		BuckyModels:         buckyModels,
+		MalinaLibs:          malinaLibs,
 		DownloadEnabled:     cfg.Download.Enabled,
 		AuthorizationMode:   cfg.Authorization.Mode,
 		AdminAuthEnabled:    managementAuthEnabled,

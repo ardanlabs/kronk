@@ -55,10 +55,11 @@ The Malina API follows the same high-level shape as the Kronk and Bucky SDKs:
 
 Malina is currently an SDK and local tooling integration. It is **not yet an
 inference backend in the Kronk model server**. The CLI manages local libraries
-and model bundles, but there are no Malina HTTP generation endpoints, BUI
-management screens, or Malina model pool in this release. Model-server
-integration depends on reliable memory and VRAM planning for stable-diffusion
-model bundles.
+and model bundles. The server exposes only the read-only
+`GET /v1/malina/libs/integrity` runtime identity endpoint; there are no Malina
+HTTP generation endpoints, BUI management screens, or Malina model pool in this
+release. Model-server integration depends on reliable memory and VRAM planning
+for stable-diffusion model bundles.
 
 ### 19.2 Install Stable Diffusion Libraries
 
@@ -70,7 +71,8 @@ kronk malina libs --local
 
 Use `kronk malina libs --help` for version selection, supported combinations,
 parallel installs for other platform triples, listing, and removal. Malina does
-not have model-server routes yet, so `--local` is currently required.
+not have model-server library-management routes, so `--local` is currently
+required for these operations.
 
 The normal SDK flow detects the current host, resolves a compatible runtime,
 and installs Kronk's pinned stable-diffusion.cpp version:

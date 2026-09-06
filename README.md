@@ -113,13 +113,13 @@ Here are some of the known compatible versions:
 
 | kronk     | yzma    | llama.cpp | bucky  | whisper.cpp | malina | stable-diffusion.cpp |
 | --------- | ------- | --------- | ------ | ----------- | ------ | -------------------- |
-| 1.32.6-rc | v1.26.1 | b10819    | v1.1.2 | v1.9.3      | v1.0.8 | master-841-6b3edaa   |
+| 1.32.6-rc | ece4890 | b10826    | v1.1.2 | v1.9.3      | v1.0.8 | master-841-6b3edaa   |
 | 1.32.5    | v1.26.0 | v0.4.0    | v1.1.2 | v1.9.3      | v1.0.8 | master-841-6b3edaa   |
 | 1.32.4    | 6bd0208 | b10785    | v1.1.1 | v1.9.3      | v1.0.6 | master-841-6b3edaa   |
 | 1.32.3    | v1.25.0 | v0.3.0    | v1.1.0 | v1.9.3      | v1.0.5 | master-830-50d6405   |
 
 Kronk 1.32.6-rc pins the llama.cpp manifest as
-`b10819@sha256:ae04b9bdfb0c4a7c9fb31a8474e400b28db904fa60222b2cc68d12405877bbac`.
+`b10826@sha256:e26298d30a7196e5715b9066cd3f6d9eddc70b56dcb3bbcb1df83cf2d8a81109`.
 The manifest authenticates the platform-specific archives selected by the downloader,
 so the default installation verifies both the manifest and the downloaded libraries.
 

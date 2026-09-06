@@ -12,7 +12,7 @@
 - [9.8 Tokenization](#98-tokenization)
 - [9.9 Models and Audio Transcription](#99-models-and-audio-transcription)
 - [9.10 Kronk Administration](#910-kronk-administration)
-- [9.11 Bucky Administration](#911-bucky-administration)
+- [9.11 Bucky and Malina Administration](#911-bucky-and-malina-administration)
 - [9.12 Operations and Evaluation](#912-operations-and-evaluation)
 - [9.13 Security Administration](#913-security-administration)
 
@@ -383,6 +383,24 @@ Kronk's default llama.cpp version already carries its published manifest
 digest, so default downloads and startup verification use the authenticated
 manifest without an operator-supplied version.
 
+Every successful runtime-integrity response includes `verified_at`,
+`bundle_manifest_version`, and `bundle_digest`. The digest is a stable identity
+for the selected runtime files, independent of archive serialization. Version
+`kronk-runtime-v1` sorts verified slash-separated paths lexicographically and
+hashes a length-prefixed field stream with SHA-256. The first field is
+`kronk-runtime-v1`. Each regular file then contributes `file`, relative path,
+decimal byte size, and lowercase file SHA-256; each symbolic link contributes
+`symlink`, relative path, and its exact target. A field is encoded as
+its decimal UTF-8 byte length, a colon, and its raw bytes, with no separator.
+The response's per-file entries expose the same size, SHA-256, or symlink target
+so an independent allowlist owner can reproduce the digest. When verification
+fails, the digest and verification time are omitted.
+
+This digest identifies the installed bytes; it does not establish that they are
+acceptable. Compare it with an allowlist obtained outside the server's mutable
+runtime environment. `manifest_authenticated` separately reports whether the
+publisher manifest was authenticated by an externally supplied pin.
+
 Verification requires a Yzma install record and a release manifest containing
 per-file hashes. A release or upstream asset with archive hashes only returns
 an error rather than claiming the installed files are verified.
@@ -534,7 +552,7 @@ bytes through a new content read.
 accepts `{"source":"..."}` and may add successfully resolved metadata to the
 personal catalog even though it does not download model files.
 
-## 9.11 Bucky Administration
+## 9.11 Bucky and Malina Administration
 
 The Bucky management API mirrors the library and model lifecycle for the
 whisper.cpp backend:
@@ -568,6 +586,20 @@ common library integrity fields.
 See [Chapter 18](https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription)
 for installation, model naming, transcription formats, and Bucky-specific
 runtime behavior.
+
+### Malina Runtime Integrity
+
+Malina remains an SDK-only inference backend, but the server exposes the
+selected stable-diffusion.cpp runtime identity for remote integrity checks:
+
+| Method and path | Purpose |
+| ---------------- | ------- |
+| `GET /v1/malina/libs/integrity` | Hash and verify the selected stable-diffusion.cpp bundle against Malina's trusted manifest |
+
+The endpoint accepts an optional `version` query parameter, including
+`VERSION@sha256:<64-hex-digest>`. Its response uses the same canonical bundle
+identity and per-file evidence as the llama.cpp and whisper.cpp endpoints and
+reports `backend` as `stable-diffusion`.
 
 ## 9.12 Operations and Evaluation
 

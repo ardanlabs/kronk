@@ -50,7 +50,7 @@ EXAMPLES
 
   # Download the supported version pinned to its release manifest SHA-256
   kronk libs --local \
-    --version=b10819@sha256:ae04b9bdfb0c4a7c9fb31a8474e400b28db904fa60222b2cc68d12405877bbac
+    --version=b10826@sha256:e26298d30a7196e5715b9066cd3f6d9eddc70b56dcb3bbcb1df83cf2d8a81109
 
   # List supported (arch, os, processor) combinations
   kronk libs --list-combinations

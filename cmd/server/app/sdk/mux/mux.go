@@ -17,6 +17,7 @@ import (
 	buckylibs "github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
 	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
+	malinalibs "github.com/ardanlabs/kronk/sdk/tools/malina/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
@@ -67,6 +68,7 @@ type Config struct {
 	Models              *models.Models
 	BuckyLibs           *buckylibs.Libs
 	BuckyModels         *buckymodels.Models
+	MalinaLibs          *malinalibs.Libs
 	DownloadEnabled     bool
 	AuthorizationMode   auth.Mode
 	AdminAuthEnabled    bool

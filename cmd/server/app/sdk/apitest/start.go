@@ -23,6 +23,7 @@ import (
 	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
+	malinalibs "github.com/ardanlabs/kronk/sdk/tools/malina/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"google.golang.org/grpc/test/bufconn"
 )
@@ -158,6 +159,14 @@ func New(t *testing.T, testName string) *Test {
 	}
 
 	// -------------------------------------------------------------------------
+	// Malina (stable-diffusion) Libs
+
+	malinaLibs, err := malinalibs.New(malinalibs.WithDetect(ctx, log.Info))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// -------------------------------------------------------------------------
 	// Jinja Templates
 	//
 	// Seed the embedded chat templates to disk so model loads that rely on
@@ -224,6 +233,7 @@ func New(t *testing.T, testName string) *Test {
 		Models:           models,
 		BuckyLibs:        buckyLibs,
 		BuckyModels:      buckyModels,
+		MalinaLibs:       malinaLibs,
 		InferenceTimeout: 60 * time.Minute,
 	}
 

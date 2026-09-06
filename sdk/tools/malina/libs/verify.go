@@ -7,6 +7,14 @@ import (
 	"github.com/ardanlabs/malina/pkg/download"
 )
 
+var (
+	// ErrInvalidDigest means a pinned manifest digest is malformed.
+	ErrInvalidDigest = download.ErrInvalidDigest
+
+	// ErrInvalidVersion means a pinned digest does not name an exact release.
+	ErrInvalidVersion = download.ErrInvalidVersion
+)
+
 // VerifyReport describes the files checked in an installed
 // stable-diffusion.cpp bundle.
 type VerifyReport = download.VerifyReport

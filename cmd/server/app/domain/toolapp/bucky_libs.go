@@ -42,7 +42,18 @@ func (a *app) verifyBuckyLibs(ctx context.Context, r *http.Request) web.Encoder 
 		return errs.Errorf(errs.Internal, "unable to verify whisper.cpp libraries: %s", err)
 	}
 
-	return toAppBuckyLibIntegrity(report, a.buckyLibs)
+	var verifiedPaths []string
+	for _, file := range report.Files {
+		if file.State.String() == "verified" {
+			verifiedPaths = append(verifiedPaths, file.Name)
+		}
+	}
+	manifest, verifiedAt, err := buildRuntimeBundleManifest(ctx, a.buckyLibs.LibsPath(), verifiedPaths, report.OK())
+	if err != nil {
+		return errs.Errorf(errs.Internal, "unable to identify whisper.cpp libraries: %s", err)
+	}
+
+	return toAppBuckyLibIntegrity(report, a.buckyLibs, manifest, verifiedAt)
 }
 
 // pullBuckyLibs streams a whisper.cpp library install. With no triple
