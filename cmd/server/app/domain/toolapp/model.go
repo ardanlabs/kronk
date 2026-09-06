@@ -104,7 +104,7 @@ func (app LibIntegrityResponse) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-func toAppLibIntegrity(report *libs.VerifyReport, lib *libs.Libs, manifest backend.BundleManifest, verifiedAt *time.Time) LibIntegrityResponse {
+func toAppLibIntegrity(report *libs.VerifyReport, lib *libs.Libs, manifest backend.BundleManifest, verifiedAt *time.Time, manifestAuthenticated bool) LibIntegrityResponse {
 	response := LibIntegrityResponse{
 		Object:                "lib_integrity",
 		Backend:               backend.KindLlama,
@@ -116,6 +116,7 @@ func toAppLibIntegrity(report *libs.VerifyReport, lib *libs.Libs, manifest backe
 		VerifiedAt:            verifiedAt,
 		BundleManifestVersion: manifest.Version,
 		BundleDigest:          manifest.Digest,
+		ManifestAuthenticated: manifestAuthenticated,
 		Files:                 make([]LibIntegrityFile, 0, len(report.Files)),
 		Changed:               report.Changed,
 		Missing:               report.Missing,

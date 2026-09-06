@@ -23,7 +23,8 @@ func (a *app) listLibs(ctx context.Context, r *http.Request) web.Encoder {
 }
 
 func (a *app) verifyLibs(ctx context.Context, r *http.Request) web.Encoder {
-	report, err := a.libs.Verify(ctx, r.URL.Query().Get("version"))
+	version := r.URL.Query().Get("version")
+	report, err := a.libs.Verify(ctx, version)
 	if err != nil {
 		if errors.Is(err, libs.ErrInvalidDigest) || errors.Is(err, libs.ErrInvalidVersion) {
 			return errs.Errorf(errs.InvalidArgument, "invalid library version: %s", err)
@@ -42,7 +43,7 @@ func (a *app) verifyLibs(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.Errorf(errs.Internal, "unable to identify llama.cpp libraries: %s", err)
 	}
 
-	return toAppLibIntegrity(report, a.libs, manifest, verifiedAt)
+	return toAppLibIntegrity(report, a.libs, manifest, verifiedAt, strings.Contains(version, "@"))
 }
 
 // pullLibs streams a library install. With no triple query parameters it

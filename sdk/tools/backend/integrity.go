@@ -101,7 +101,7 @@ func inspectBundleFile(ctx context.Context, root string, name string) (BundleFil
 		if err != nil {
 			return BundleFile{}, fmt.Errorf("build-bundle-manifest: read link %q: %w", name, err)
 		}
-		return BundleFile{Name: name, Kind: bundleSymlinkKind, SymlinkTarget: filepath.ToSlash(target)}, nil
+		return BundleFile{Name: name, Kind: bundleSymlinkKind, SymlinkTarget: target}, nil
 	}
 	if !info.Mode().IsRegular() {
 		return BundleFile{}, fmt.Errorf("build-bundle-manifest: unsupported file type for %q", name)

@@ -52,7 +52,7 @@ func TestToAppLibIntegrity(t *testing.T) {
 		},
 	}
 
-	got := toAppLibIntegrity(&report, lib, manifest, &verifiedAt)
+	got := toAppLibIntegrity(&report, lib, manifest, &verifiedAt, true)
 	if got.Object != "lib_integrity" {
 		t.Errorf("Object: got %q, want %q", got.Object, "lib_integrity")
 	}
@@ -62,8 +62,8 @@ func TestToAppLibIntegrity(t *testing.T) {
 	if got.Backend != "llama" {
 		t.Errorf("Backend: got %q, want %q", got.Backend, "llama")
 	}
-	if !got.Verified {
-		t.Error("Verified: got false, want true")
+	if !got.Verified || !got.ManifestAuthenticated {
+		t.Errorf("Verification: got verified=%t authenticated=%t, want true/true", got.Verified, got.ManifestAuthenticated)
 	}
 	if got.BundleManifestVersion != backend.BundleManifestVersion || got.BundleDigest != "sha256:bundle" || !got.VerifiedAt.Equal(verifiedAt) {
 		t.Errorf("Bundle evidence: got version=%q digest=%q verifiedAt=%v", got.BundleManifestVersion, got.BundleDigest, got.VerifiedAt)

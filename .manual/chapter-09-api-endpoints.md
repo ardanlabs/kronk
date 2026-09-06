@@ -390,7 +390,7 @@ for the selected runtime files, independent of archive serialization. Version
 hashes a length-prefixed field stream with SHA-256. The first field is
 `kronk-runtime-v1`. Each regular file then contributes `file`, relative path,
 decimal byte size, and lowercase file SHA-256; each symbolic link contributes
-`symlink`, relative path, and its slash-separated target. A field is encoded as
+`symlink`, relative path, and its exact target. A field is encoded as
 its decimal UTF-8 byte length, a colon, and its raw bytes, with no separator.
 The response's per-file entries expose the same size, SHA-256, or symlink target
 so an independent allowlist owner can reproduce the digest. When verification
