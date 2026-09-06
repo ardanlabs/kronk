@@ -31,7 +31,18 @@ func (a *app) verifyLibs(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.Errorf(errs.Internal, "unable to verify llama.cpp libraries: %s", err)
 	}
 
-	return toAppLibIntegrity(report, a.libs)
+	var verifiedPaths []string
+	for _, file := range report.Files {
+		if file.State.String() == "verified" {
+			verifiedPaths = append(verifiedPaths, file.Name)
+		}
+	}
+	manifest, verifiedAt, err := buildRuntimeBundleManifest(ctx, a.libs.LibsPath(), verifiedPaths, report.OK())
+	if err != nil {
+		return errs.Errorf(errs.Internal, "unable to identify llama.cpp libraries: %s", err)
+	}
+
+	return toAppLibIntegrity(report, a.libs, manifest, verifiedAt)
 }
 
 // pullLibs streams a library install. With no triple query parameters it

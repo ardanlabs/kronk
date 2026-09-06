@@ -12,6 +12,7 @@ import (
 	buckylibs "github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
 	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
+	malinalibs "github.com/ardanlabs/kronk/sdk/tools/malina/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
@@ -26,6 +27,7 @@ type Config struct {
 	Models                 *models.Models
 	BuckyLibs              *buckylibs.Libs
 	BuckyModels            *buckymodels.Models
+	MalinaLibs             *malinalibs.Libs
 	AuthorizationMode      auth.Mode
 	LegacyManagementAccess bool
 }
@@ -99,6 +101,12 @@ func Routes(app *web.App, cfg Config) {
 	app.HandlerFunc(http.MethodPost, version, "/bucky/models/pull", api.pullBuckyModel, administrationAccess)
 	app.HandlerFunc(http.MethodGet, version, "/bucky/models/{model}/details", api.detailsBuckyModel, managementAccess)
 	app.HandlerFunc(http.MethodDelete, version, "/bucky/models/{model}", api.removeBuckyModel, administrationAccess)
+
+	// -------------------------------------------------------------------------
+	// Malina (stable-diffusion.cpp) runtime integrity. Malina remains an SDK
+	// backend and does not expose model-server inference routes yet.
+
+	app.HandlerFunc(http.MethodGet, version, "/malina/libs/integrity", api.verifyMalinaLibs, managementAccess)
 
 	// -------------------------------------------------------------------------
 	// Cross-backend infrastructure.

@@ -2246,6 +2246,8 @@ data: {"type":"response.completed",...}`}</code></pre>
           </table>
           <p><code>POST /v1/kronk/libs/pull</code> accepts optional <code>arch</code>, <code>os</code>, <code>processor</code>, and <code>version</code> query parameters. Supply <code>arch</code>, <code>os</code>, and <code>processor</code> together for a cross-platform bundle; omit all three to operate on the active platform. A version can be externally pinned as <code>VERSION@sha256:&lt;64-hex-digest&gt;</code>. Yzma checks the raw release-manifest bytes against that digest and then verifies the selected archive before extraction.</p>
           <p><code>GET /v1/kronk/libs/integrity</code> hashes the installed files and compares them with the file digests in Yzma's release manifest. Its optional <code>version</code> query parameter accepts the same pinned syntax, allowing the caller to supply the trusted manifest digest rather than trusting the server's install record or manifest host. The response identifies the backend, version, platform triple, overall result, per-file states, and changed, missing, or unexpected counts. Kronk's default llama.cpp version already carries its published manifest digest, so default downloads and startup verification use the authenticated manifest without an operator-supplied version.</p>
+          <p>Every successful runtime-integrity response includes <code>verified_at</code>, <code>bundle_manifest_version</code>, and <code>bundle_digest</code>. The digest is a stable identity for the selected runtime files, independent of archive serialization. Version <code>kronk-runtime-v1</code> sorts verified slash-separated paths lexicographically and hashes a length-prefixed field stream with SHA-256. The first field is <code>kronk-runtime-v1</code>. Each regular file then contributes <code>file</code>, relative path, decimal byte size, and lowercase file SHA-256; each symbolic link contributes <code>symlink</code>, relative path, and its slash-separated target. A field is encoded as its decimal UTF-8 byte length, a colon, and its raw bytes, with no separator. The response's per-file entries expose the same size, SHA-256, or symlink target so an independent allowlist owner can reproduce the digest. When verification fails, the digest and verification time are omitted.</p>
+          <p>This digest identifies the installed bytes; it does not establish that they are acceptable. Compare it with an allowlist obtained outside the server's mutable runtime environment. <code>manifest_authenticated</code> separately reports whether the publisher manifest was authenticated by an externally supplied pin.</p>
           <p>Verification requires a Yzma install record and a release manifest containing per-file hashes. A release or upstream asset with archive hashes only returns an error rather than claiming the installed files are verified.</p>
           <h3 id="models">Models</h3>
           <table className="flags-table">
@@ -2493,7 +2495,7 @@ data: {"type":"response.completed",...}`}</code></pre>
             </tbody>
           </table>
           <p><code>POST /v1/kronk/catalog/lookup</code> accepts <code>&#123;"input":"..."&#125;</code>. The resolve route accepts <code>&#123;"source":"..."&#125;</code> and may add successfully resolved metadata to the personal catalog even though it does not download model files.</p>
-          <h2 id="911-bucky-administration">9.11 Bucky Administration</h2>
+          <h2 id="911-bucky-and-malina-administration">9.11 Bucky and Malina Administration</h2>
           <p>The Bucky management API mirrors the library and model lifecycle for the whisper.cpp backend:</p>
           <table className="flags-table">
             <thead>
@@ -2552,6 +2554,23 @@ data: {"type":"response.completed",...}`}</code></pre>
           <p><code>POST /v1/bucky/libs/pull</code> accepts the same optional platform and <code>version</code> query parameters as the Kronk library route. Bucky always verifies the selected archive against its release manifest before extraction. A version in <code>VERSION@sha256:&lt;64-hex-digest&gt;</code> form also authenticates the manifest itself. The default Bucky version already includes its published manifest digest.</p>
           <p><code>GET /v1/bucky/libs/integrity</code> hashes the installed files. With no <code>version</code> query parameter, Kronk uses the version recorded for the active installation; the default installation therefore retains its authenticated manifest pin. The response includes <code>manifest_authenticated</code> and <code>source</code> in addition to the common library integrity fields.</p>
           <p>See <a href="https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription">Chapter 18</a> for installation, model naming, transcription formats, and Bucky-specific runtime behavior.</p>
+          <h3 id="malina-runtime-integrity">Malina Runtime Integrity</h3>
+          <p>Malina remains an SDK-only inference backend, but the server exposes the selected stable-diffusion.cpp runtime identity for remote integrity checks:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Method and path</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>GET /v1/malina/libs/integrity</code></td>
+                <td>Hash and verify the selected stable-diffusion.cpp bundle against Malina's trusted manifest</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>The endpoint accepts an optional <code>version</code> query parameter, including <code>VERSION@sha256:&lt;64-hex-digest&gt;</code>. Its response uses the same canonical bundle identity and per-file evidence as the llama.cpp and whisper.cpp endpoints and reports <code>backend</code> as <code>stable-diffusion</code>.</p>
           <h2 id="912-operations-and-evaluation">9.12 Operations and Evaluation</h2>
           <table className="flags-table">
             <thead>
@@ -4663,11 +4682,11 @@ if err := stream.FeedPCM(ctx, rawPCM, format); err != nil {
             <li>Perform work through the handle.</li>
             <li>Unload the handle.</li>
           </ol>
-          <p>Malina is currently an SDK and local tooling integration. It is <strong>not yet an inference backend in the Kronk model server</strong>. The CLI manages local libraries and model bundles, but there are no Malina HTTP generation endpoints, BUI management screens, or Malina model pool in this release. Model-server integration depends on reliable memory and VRAM planning for stable-diffusion model bundles.</p>
+          <p>Malina is currently an SDK and local tooling integration. It is <strong>not yet an inference backend in the Kronk model server</strong>. The CLI manages local libraries and model bundles. The server exposes only the read-only <code>GET /v1/malina/libs/integrity</code> runtime identity endpoint; there are no Malina HTTP generation endpoints, BUI management screens, or Malina model pool in this release. Model-server integration depends on reliable memory and VRAM planning for stable-diffusion model bundles.</p>
           <h3 id="192-install-stable-diffusion-libraries">19.2 Install Stable Diffusion Libraries</h3>
           <p>Install and validate the pinned stable-diffusion.cpp build for the current host:</p>
           <pre className="code-block"><code className="language-shell">{`kronk malina libs --local`}</code></pre>
-          <p>Use <code>kronk malina libs --help</code> for version selection, supported combinations, parallel installs for other platform triples, listing, and removal. Malina does not have model-server routes yet, so <code>--local</code> is currently required.</p>
+          <p>Use <code>kronk malina libs --help</code> for version selection, supported combinations, parallel installs for other platform triples, listing, and removal. Malina does not have model-server library-management routes, so <code>--local</code> is currently required for these operations.</p>
           <p>The normal SDK flow detects the current host, resolves a compatible runtime, and installs Kronk's pinned stable-diffusion.cpp version:</p>
           <pre className="code-block"><code className="language-go">{`ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
 defer cancel()
@@ -5752,7 +5771,10 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#911-bucky-administration" className={`doc-index-header ${activeSection === '911-bucky-administration' ? 'active' : ''}`}>9.11 Bucky Administration</a>
+              <a href="#911-bucky-and-malina-administration" className={`doc-index-header ${activeSection === '911-bucky-and-malina-administration' ? 'active' : ''}`}>9.11 Bucky and Malina Administration</a>
+              <ul>
+                <li><a href="#malina-runtime-integrity" className={activeSection === 'malina-runtime-integrity' ? 'active' : ''}>Malina Runtime Integrity</a></li>
+              </ul>
             </div>
             <div className="doc-index-section">
               <a href="#912-operations-and-evaluation" className={`doc-index-header ${activeSection === '912-operations-and-evaluation' ? 'active' : ''}`}>9.12 Operations and Evaluation</a>

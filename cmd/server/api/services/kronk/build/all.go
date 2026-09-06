@@ -42,6 +42,7 @@ func (all) Add(app *web.App, cfg mux.Config) {
 		Models:                 cfg.Models,
 		BuckyLibs:              cfg.BuckyLibs,
 		BuckyModels:            cfg.BuckyModels,
+		MalinaLibs:             cfg.MalinaLibs,
 		AuthorizationMode:      cfg.AuthorizationMode,
 		LegacyManagementAccess: cfg.AdminAuthEnabled,
 	})

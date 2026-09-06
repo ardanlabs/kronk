@@ -1,6 +1,7 @@
 package toolapp
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -19,6 +20,7 @@ import (
 	buckylibs "github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
+	malinalibs "github.com/ardanlabs/kronk/sdk/tools/malina/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
@@ -67,8 +69,12 @@ func toAppVersion(status string, vt libs.VersionTag, allowUpgrade bool) string {
 // LibIntegrityFile describes the verification state of one installed library
 // file.
 type LibIntegrityFile struct {
-	Name  string `json:"name"`
-	State string `json:"state"`
+	Name          string `json:"name"`
+	State         string `json:"state"`
+	Kind          string `json:"kind,omitempty"`
+	Size          *int64 `json:"size,omitempty"`
+	SHA256        string `json:"sha256,omitempty"`
+	SymlinkTarget string `json:"symlink_target,omitempty"`
 }
 
 // LibIntegrityResponse provides verification results for the selected
@@ -81,6 +87,9 @@ type LibIntegrityResponse struct {
 	OS                    string             `json:"os"`
 	Processor             string             `json:"processor"`
 	Verified              bool               `json:"verified"`
+	VerifiedAt            *time.Time         `json:"verified_at,omitempty"`
+	BundleManifestVersion string             `json:"bundle_manifest_version,omitempty"`
+	BundleDigest          string             `json:"bundle_digest,omitempty"`
 	ManifestAuthenticated bool               `json:"manifest_authenticated,omitempty"`
 	Source                string             `json:"source,omitempty"`
 	Files                 []LibIntegrityFile `json:"files"`
@@ -95,19 +104,22 @@ func (app LibIntegrityResponse) Encode() ([]byte, string, error) {
 	return data, "application/json", err
 }
 
-func toAppLibIntegrity(report *libs.VerifyReport, lib *libs.Libs) LibIntegrityResponse {
+func toAppLibIntegrity(report *libs.VerifyReport, lib *libs.Libs, manifest backend.BundleManifest, verifiedAt *time.Time) LibIntegrityResponse {
 	response := LibIntegrityResponse{
-		Object:     "lib_integrity",
-		Backend:    backend.KindLlama,
-		Version:    report.Tag,
-		Arch:       lib.Arch(),
-		OS:         lib.OS(),
-		Processor:  lib.Processor(),
-		Verified:   report.OK(),
-		Files:      make([]LibIntegrityFile, 0, len(report.Files)),
-		Changed:    report.Changed,
-		Missing:    report.Missing,
-		Unexpected: report.Unexpected,
+		Object:                "lib_integrity",
+		Backend:               backend.KindLlama,
+		Version:               report.Tag,
+		Arch:                  lib.Arch(),
+		OS:                    lib.OS(),
+		Processor:             lib.Processor(),
+		Verified:              report.OK(),
+		VerifiedAt:            verifiedAt,
+		BundleManifestVersion: manifest.Version,
+		BundleDigest:          manifest.Digest,
+		Files:                 make([]LibIntegrityFile, 0, len(report.Files)),
+		Changed:               report.Changed,
+		Missing:               report.Missing,
+		Unexpected:            report.Unexpected,
 	}
 
 	for _, file := range report.Files {
@@ -117,10 +129,11 @@ func toAppLibIntegrity(report *libs.VerifyReport, lib *libs.Libs) LibIntegrityRe
 		})
 	}
 
+	addBundleFileEvidence(&response, manifest)
 	return response
 }
 
-func toAppBuckyLibIntegrity(report *buckylibs.VerifyReport, lib *buckylibs.Libs) LibIntegrityResponse {
+func toAppBuckyLibIntegrity(report *buckylibs.VerifyReport, lib *buckylibs.Libs, manifest backend.BundleManifest, verifiedAt *time.Time) LibIntegrityResponse {
 	response := LibIntegrityResponse{
 		Object:                "lib_integrity",
 		Backend:               backend.KindWhisper,
@@ -129,6 +142,9 @@ func toAppBuckyLibIntegrity(report *buckylibs.VerifyReport, lib *buckylibs.Libs)
 		OS:                    lib.OS(),
 		Processor:             lib.Processor(),
 		Verified:              report.OK(),
+		VerifiedAt:            verifiedAt,
+		BundleManifestVersion: manifest.Version,
+		BundleDigest:          manifest.Digest,
 		ManifestAuthenticated: report.ManifestAuthenticated,
 		Source:                report.Source,
 		Files:                 make([]LibIntegrityFile, 0, len(report.Files)),
@@ -144,7 +160,73 @@ func toAppBuckyLibIntegrity(report *buckylibs.VerifyReport, lib *buckylibs.Libs)
 		})
 	}
 
+	addBundleFileEvidence(&response, manifest)
 	return response
+}
+
+func toAppMalinaLibIntegrity(report *malinalibs.VerifyReport, lib *malinalibs.Libs, manifest backend.BundleManifest, verifiedAt *time.Time) LibIntegrityResponse {
+	response := LibIntegrityResponse{
+		Object:                "lib_integrity",
+		Backend:               backend.KindStableDiffusion,
+		Version:               report.Tag,
+		Arch:                  lib.Arch(),
+		OS:                    lib.OS(),
+		Processor:             lib.Processor(),
+		Verified:              report.OK(),
+		VerifiedAt:            verifiedAt,
+		BundleManifestVersion: manifest.Version,
+		BundleDigest:          manifest.Digest,
+		ManifestAuthenticated: report.ManifestAuthenticated,
+		Source:                report.Source,
+		Files:                 make([]LibIntegrityFile, 0, len(report.Files)),
+		Changed:               report.Changed,
+		Missing:               report.Missing,
+		Unexpected:            report.Unexpected,
+	}
+
+	for _, file := range report.Files {
+		response.Files = append(response.Files, LibIntegrityFile{
+			Name:  file.Name,
+			State: file.State.String(),
+		})
+	}
+
+	addBundleFileEvidence(&response, manifest)
+	return response
+}
+
+func buildRuntimeBundleManifest(ctx context.Context, path string, names []string, verified bool) (backend.BundleManifest, *time.Time, error) {
+	if !verified {
+		return backend.BundleManifest{}, nil, nil
+	}
+
+	manifest, err := backend.BuildBundleManifest(ctx, path, names)
+	if err != nil {
+		return backend.BundleManifest{}, nil, err
+	}
+	verifiedAt := time.Now().UTC()
+
+	return manifest, &verifiedAt, nil
+}
+
+func addBundleFileEvidence(response *LibIntegrityResponse, manifest backend.BundleManifest) {
+	files := make(map[string]backend.BundleFile, len(manifest.Files))
+	for _, file := range manifest.Files {
+		files[file.Name] = file
+	}
+
+	for i := range response.Files {
+		file, exists := files[response.Files[i].Name]
+		if !exists {
+			continue
+		}
+		response.Files[i].Kind = file.Kind
+		response.Files[i].SHA256 = file.SHA256
+		response.Files[i].SymlinkTarget = file.SymlinkTarget
+		if file.Kind == "file" {
+			response.Files[i].Size = &file.Size
+		}
+	}
 }
 
 // =============================================================================

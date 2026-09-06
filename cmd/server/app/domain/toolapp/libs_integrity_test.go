@@ -2,10 +2,14 @@ package toolapp
 
 import (
 	"testing"
+	"time"
 
 	buckydownload "github.com/ardanlabs/bucky/pkg/download"
+	"github.com/ardanlabs/kronk/sdk/tools/backend"
 	buckylibs "github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
+	malinalibs "github.com/ardanlabs/kronk/sdk/tools/malina/libs"
+	malinadownload "github.com/ardanlabs/malina/pkg/download"
 	"github.com/hybridgroup/yzma/pkg/download"
 )
 
@@ -39,8 +43,16 @@ func TestToAppLibIntegrity(t *testing.T) {
 		Verified:   1,
 		Unexpected: 1,
 	}
+	verifiedAt := time.Unix(123, 0).UTC()
+	manifest := backend.BundleManifest{
+		Version: backend.BundleManifestVersion,
+		Digest:  "sha256:bundle",
+		Files: []backend.BundleFile{
+			{Name: "libllama.dylib", Kind: "file", Size: 42, SHA256: "file-sha"},
+		},
+	}
 
-	got := toAppLibIntegrity(&report, lib)
+	got := toAppLibIntegrity(&report, lib, manifest, &verifiedAt)
 	if got.Object != "lib_integrity" {
 		t.Errorf("Object: got %q, want %q", got.Object, "lib_integrity")
 	}
@@ -53,10 +65,13 @@ func TestToAppLibIntegrity(t *testing.T) {
 	if !got.Verified {
 		t.Error("Verified: got false, want true")
 	}
+	if got.BundleManifestVersion != backend.BundleManifestVersion || got.BundleDigest != "sha256:bundle" || !got.VerifiedAt.Equal(verifiedAt) {
+		t.Errorf("Bundle evidence: got version=%q digest=%q verifiedAt=%v", got.BundleManifestVersion, got.BundleDigest, got.VerifiedAt)
+	}
 	if got.Arch != "arm64" || got.OS != "darwin" || got.Processor != "metal" {
 		t.Errorf("triple: got %s/%s/%s, want arm64/darwin/metal", got.Arch, got.OS, got.Processor)
 	}
-	if len(got.Files) != 1 || got.Files[0].State != "verified" {
+	if len(got.Files) != 1 || got.Files[0].State != "verified" || got.Files[0].Size == nil || *got.Files[0].Size != 42 || got.Files[0].SHA256 != "file-sha" {
 		t.Errorf("Files: got %+v, want one verified file", got.Files)
 	}
 }
@@ -79,8 +94,16 @@ func TestToAppBuckyLibIntegrity(t *testing.T) {
 		Files:                 []buckydownload.FileReport{{Name: "libwhisper.dylib", State: buckydownload.FileVerified}},
 		Verified:              1,
 	}
+	verifiedAt := time.Unix(123, 0).UTC()
+	manifest := backend.BundleManifest{
+		Version: backend.BundleManifestVersion,
+		Digest:  "sha256:bundle",
+		Files: []backend.BundleFile{
+			{Name: "libwhisper.dylib", Kind: "file", Size: 42, SHA256: "file-sha"},
+		},
+	}
 
-	got := toAppBuckyLibIntegrity(&report, lib)
+	got := toAppBuckyLibIntegrity(&report, lib, manifest, &verifiedAt)
 	if got.Object != "lib_integrity" {
 		t.Errorf("Object: got %q, want %q", got.Object, "lib_integrity")
 	}
@@ -101,5 +124,47 @@ func TestToAppBuckyLibIntegrity(t *testing.T) {
 	}
 	if len(got.Files) != 1 || got.Files[0].State != "verified" {
 		t.Errorf("Files: got %+v, want one verified file", got.Files)
+	}
+}
+
+func TestToAppMalinaLibIntegrity(t *testing.T) {
+	lib, err := malinalibs.New(
+		malinalibs.WithBasePath(t.TempDir()),
+		malinalibs.WithArch("arm64"),
+		malinalibs.WithOS("darwin"),
+		malinalibs.WithProcessor("metal"),
+	)
+	if err != nil {
+		t.Fatalf("new malina libs: %v", err)
+	}
+
+	report := malinalibs.VerifyReport{
+		Tag:                   "master-a1b2c3d",
+		ManifestAuthenticated: true,
+		Source:                "trusted-manifest",
+		Files:                 []malinadownload.FileReport{{Name: "libstable-diffusion.dylib", State: malinadownload.FileVerified}},
+		Verified:              1,
+	}
+	verifiedAt := time.Unix(123, 0).UTC()
+	manifest := backend.BundleManifest{
+		Version: backend.BundleManifestVersion,
+		Digest:  "sha256:bundle",
+		Files: []backend.BundleFile{
+			{Name: "libstable-diffusion.dylib", Kind: "file", Size: 42, SHA256: "file-sha"},
+		},
+	}
+
+	got := toAppMalinaLibIntegrity(&report, lib, manifest, &verifiedAt)
+	if got.Backend != backend.KindStableDiffusion {
+		t.Errorf("Backend: got %q, want %q", got.Backend, backend.KindStableDiffusion)
+	}
+	if !got.Verified || !got.ManifestAuthenticated {
+		t.Errorf("Verification: got verified=%t authenticated=%t, want true/true", got.Verified, got.ManifestAuthenticated)
+	}
+	if got.BundleDigest != "sha256:bundle" || got.VerifiedAt == nil {
+		t.Errorf("Bundle evidence: got digest=%q verifiedAt=%v", got.BundleDigest, got.VerifiedAt)
+	}
+	if len(got.Files) != 1 || got.Files[0].SHA256 != "file-sha" {
+		t.Errorf("Files: got %+v, want one hashed file", got.Files)
 	}
 }
