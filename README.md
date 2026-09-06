@@ -174,20 +174,26 @@ and talks about Kronk.
 | Dates           | Event                      | Location              | Comments       |
 | --------------- | -------------------------- | --------------------- | -------------- |
 | Jan 29th - 2nd  | AI Plumbers Fringe, FOSDEM | Brussels, Belgium     | Talk           |
-| Mar 4th - 5th   | Ardan Connect              | São Paulo, Brazil     | Workshop       |
-| Apr 20th - 25th | Gophercamp 2026            | Brno, Czech Republic  | Workshop, Talk |
+| Mar 4th - 5th   | Ardan Connect              | São Paulo, Brazil     | Training       |
+| Apr 20th - 25th | Gophercamp 2026            | Brno, Czech Republic  | Training, Talk |
 | Apr 27th - 29th | AI Dev 26                  | San Francisco, USA    | Attendee       |
-| May 17th - 23rd | GopherCon Singapore        | Singapore             | Workshop, Talk |
-| Jun 8th - 12th  | Genetec Corporate Training | Montreal, Canada      | Workshop       |
-| Jun 14th - 19th | GopherCon EU               | Berlin, Germany       | Workshop, Talk |
+| May 17th - 23rd | GopherCon Singapore        | Singapore             | Training, Talk |
+| Jun 8th - 12th  | Genetec Corporate Training | Montreal, Canada      | Training       |
+| Jun 14th - 19th | GopherCon EU               | Berlin, Germany       | Training, Talk |
 | JULY            | Summer Vacation            | Huntsville, AL        | Rest           |
-| Aug 3rd - 6th   | GopherCon USA              | Seattle, Washington   | Workshop, Talk |
-| Aug 11th - 13th | GopherCon UK               | London, England       | Workshop, Talk |
-| Sep 1st - 4th   | GopherCon LATAM            | Florianópolis, Brazil | Workshop, Talk |
-| Sep 23rd        | Meetup NYC                 | NYC, NY               | Talk           |
-| Oct 6th - 9th   | Crusoe Corporate Training  | San Francisco, USA    | Workshop       |
-| Oct 12th - 14th | Optus Corporate Training   | Sydney, Australia     | Workshop       |
-| Oct 27th        | Meetup Bostom              | Boston, MA            | Talk           |
-| Oct 29th - 4th  | GoLab (GopherCon Italy)    | Bologna, Italy        | Workshop, Talk |
+| Aug 3rd - 6th   | GopherCon USA              | Seattle, Washington   | Training, Talk |
+| Aug 11th - 13th | GopherCon UK               | London, England       | Training, Talk |
+| Sep 1st - 4th   | GopherCon LATAM            | Florianópolis, Brazil | Training, Talk |
+| Sep 5st - 8th   | Personal Travel            | Roanoke, VA           | Personal       |
+| Sep 17th - 20th | Personal Travel            | Syracuse, NY          | Personal       |
+| Sep 21st - 24th | Meetup NYC                 | NYC, NY               | Talk           |
+| Oct 6th - 9th   | Crusoe Corporate Training  | San Francisco, USA    | Training       |
+| Oct 12th - 14th | Optus Corporate Training   | Sydney, Australia     | Training       |
+| Oct 22nd - 23rd | Meetup Austin              | Austin, TX            | Talk           |
+| Oct 27th - 28th | Meetup Bostom              | Boston, MA            | Talk           |
+| Oct 31th - 4th  | GoLab (GopherCon Italy)    | Bologna, Italy        | Training, Talk |
+| Nov 6th - 8th   | UM v ND                    | Southbend, IN         | Game Day       |
+| Nov 9th - 11th  |                            | Las Vegas, NV         | Training       |
+| DECEMBER        | Winter Vacation            | Miami, FL             | Rest           |
 
 Copyright 2025-2026 Ardan Labs
