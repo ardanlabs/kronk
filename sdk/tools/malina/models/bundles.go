@@ -14,6 +14,18 @@ var (
 	// BundleSD15 identifies the Stable Diffusion 1.5 bundle.
 	BundleSD15 = newBundleName("sd-1.5")
 
+	// BundleControlNetCannySD15 identifies the SD 1.5 Canny ControlNet bundle.
+	BundleControlNetCannySD15 = newBundleName("controlnet-canny-sd1.5")
+
+	// BundleRealESRGANX4Anime identifies the Real-ESRGAN 4x anime upscaler bundle.
+	BundleRealESRGANX4Anime = newBundleName("realesrgan-x4-anime")
+
+	// BundleADetailerFaceYOLOv8N identifies the YOLOv8n ADetailer face detector bundle.
+	BundleADetailerFaceYOLOv8N = newBundleName("adetailer-face-yolov8n")
+
+	// BundleAnimateDiffSD15 identifies the SD 1.5 AnimateDiff bundle.
+	BundleAnimateDiffSD15 = newBundleName("animatediff-sd1.5")
+
 	// BundleSDXLBase10 identifies the Stable Diffusion XL base 1.0 bundle.
 	BundleSDXLBase10 = newBundleName("sdxl-base-1.0")
 
@@ -119,6 +131,9 @@ const (
 	RoleClipVision     FileRole = "clip_vision"
 	RoleHighNoise      FileRole = "high_noise"
 	RoleEmbeddingsConn FileRole = "embeddings_conn"
+	RoleMotionModule   FileRole = "motion_module"
+	RoleUpscaler       FileRole = "upscaler"
+	RoleADetailer      FileRole = "adetailer"
 )
 
 // BundleFile describes one bundle file.
@@ -179,8 +194,78 @@ func Catalog() []Bundle {
 				{
 					Role:     RoleModel,
 					Filename: "v1-5-pruned-emaonly.safetensors",
-					URL:      "https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/main/v1-5-pruned-emaonly.safetensors",
+					URL:      "https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5/resolve/451f4fe16113bff5a5d2269ed5ad43b0592e9a14/v1-5-pruned-emaonly.safetensors",
 					Size:     "4.3 GB",
+				},
+			},
+		},
+		{
+			Name:        BundleControlNetCannySD15,
+			Description: "Quantized SD 1.5 with fp16 Canny ControlNet conditioning. Two files (~2.3 GB total).",
+			License:     "CreativeML Open RAIL-M / OpenRAIL",
+			Files: []BundleFile{
+				{
+					Role:     RoleModel,
+					Filename: "stable-diffusion-v1-5-pruned-emaonly-Q4_0.gguf",
+					URL:      "https://huggingface.co/second-state/stable-diffusion-v1-5-GGUF/resolve/031b5f5df991f511b3f5fa8fed6d99048ababb69/stable-diffusion-v1-5-pruned-emaonly-Q4_0.gguf",
+					Size:     "1.6 GB",
+				},
+				{
+					Role:     RoleControlNet,
+					Filename: "control_canny-fp16.safetensors",
+					URL:      "https://huggingface.co/webui/ControlNet-modules-safetensors/resolve/5194dff6fe5e3d26310a12c527eae8bc02d3a482/control_canny-fp16.safetensors",
+					Size:     "723 MB",
+				},
+			},
+		},
+		{
+			Name:        BundleRealESRGANX4Anime,
+			Description: "Real-ESRGAN 4x anime image upscaler (~18 MB).",
+			License:     "BSD-3-Clause",
+			Files: []BundleFile{
+				{
+					Role:     RoleUpscaler,
+					Filename: "RealESRGAN_x4plus_anime_6B.pth",
+					URL:      "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.2.4/RealESRGAN_x4plus_anime_6B.pth",
+					Size:     "18 MB",
+				},
+			},
+		},
+		{
+			Name:        BundleADetailerFaceYOLOv8N,
+			Description: "Quantized SD 1.5 with a converted YOLOv8n ADetailer face detector. Two files (~1.6 GB total).",
+			License:     "CreativeML Open RAIL-M / AGPL-3.0",
+			Files: []BundleFile{
+				{
+					Role:     RoleModel,
+					Filename: "stable-diffusion-v1-5-pruned-emaonly-Q4_0.gguf",
+					URL:      "https://huggingface.co/second-state/stable-diffusion-v1-5-GGUF/resolve/031b5f5df991f511b3f5fa8fed6d99048ababb69/stable-diffusion-v1-5-pruned-emaonly-Q4_0.gguf",
+					Size:     "1.6 GB",
+				},
+				{
+					Role:     RoleADetailer,
+					Filename: "face_yolov8n.safetensors",
+					URL:      "https://huggingface.co/exeterminal/adetailer-yolov8-safetensors/resolve/07ca0bd47f67955bf49e26c24d5aff8d161d81f2/face_yolov8n.safetensors",
+					Size:     "6 MB",
+				},
+			},
+		},
+		{
+			Name:        BundleAnimateDiffSD15,
+			Description: "Quantized SD 1.5 with the fp16 AnimateDiff v3 motion module. Two files (~2.4 GB total).",
+			License:     "CreativeML Open RAIL-M / Apache-2.0",
+			Files: []BundleFile{
+				{
+					Role:     RoleModel,
+					Filename: "stable-diffusion-v1-5-pruned-emaonly-Q4_0.gguf",
+					URL:      "https://huggingface.co/second-state/stable-diffusion-v1-5-GGUF/resolve/031b5f5df991f511b3f5fa8fed6d99048ababb69/stable-diffusion-v1-5-pruned-emaonly-Q4_0.gguf",
+					Size:     "1.6 GB",
+				},
+				{
+					Role:     RoleMotionModule,
+					Filename: "mm_sd15_v3.safetensors",
+					URL:      "https://huggingface.co/conrevo/AnimateDiff-A1111/resolve/aa4a0ef5bd366a0ec898e7a64b6fc0f612e37444/motion_module/mm_sd15_v3.safetensors",
+					Size:     "837 MB",
 				},
 			},
 		},

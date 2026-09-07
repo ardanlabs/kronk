@@ -88,6 +88,14 @@ export default function DocsSDKMalina() {
               </pre>
               <p className="doc-description">SystemInfo returns native library and host diagnostics after initialization.</p>
             </div>
+
+            <div className="doc-section" id="func-newupscaler">
+              <h4>NewUpscaler</h4>
+              <pre className="code-block">
+                <code>func NewUpscaler(ctx context.Context, cfg UpscalerConfig) (*Upscaler, error)</code>
+              </pre>
+              <p className="doc-description">NewUpscaler loads a standalone ESRGAN upscaler using ctx.</p>
+            </div>
           </div>
 
           <div className="card" id="types">
@@ -147,6 +155,22 @@ export default function DocsSDKMalina() {
               </pre>
               <p className="doc-description">SystemDiagnostics contains native library and host diagnostics.</p>
             </div>
+
+            <div className="doc-section" id="type-upscaler">
+              <h4>Upscaler</h4>
+              <pre className="code-block">
+                <code>{`type Upscaler = model.Upscaler`}</code>
+              </pre>
+              <p className="doc-description">Upscaler provides a concurrency-safe standalone ESRGAN upscaler.</p>
+            </div>
+
+            <div className="doc-section" id="type-upscalerconfig">
+              <h4>UpscalerConfig</h4>
+              <pre className="code-block">
+                <code>{`type UpscalerConfig = model.UpscalerConfig`}</code>
+              </pre>
+              <p className="doc-description">UpscalerConfig controls loading a standalone ESRGAN upscaler.</p>
+            </div>
           </div>
 
           <div className="card" id="methods">
@@ -160,12 +184,28 @@ export default function DocsSDKMalina() {
               <p className="doc-description">ActiveGenerations returns the number of running and queued generation calls.</p>
             </div>
 
+            <div className="doc-section" id="method-malina-detail">
+              <h4>Malina.Detail</h4>
+              <pre className="code-block">
+                <code>func (m *Malina) Detail(ctx context.Context, params model.DetailParams) (model.GeneratedImage, error)</code>
+              </pre>
+              <p className="doc-description">Detail admits and synchronously executes one ADetailer refinement.</p>
+            </div>
+
             <div className="doc-section" id="method-malina-generate">
               <h4>Malina.Generate</h4>
               <pre className="code-block">
                 <code>func (m *Malina) Generate(ctx context.Context, params model.GenerateParams) (model.GeneratedImage, error)</code>
               </pre>
               <p className="doc-description">Generate admits and synchronously executes one image generation. Waiting for admission is cancellable. Canceling ctx requests native cancellation; the call waits for native execution to stop and resets the model context before returning.</p>
+            </div>
+
+            <div className="doc-section" id="method-malina-generatevideo">
+              <h4>Malina.GenerateVideo</h4>
+              <pre className="code-block">
+                <code>func (m *Malina) GenerateVideo(ctx context.Context, params model.VideoParams) (model.GeneratedVideo, error)</code>
+              </pre>
+              <p className="doc-description">GenerateVideo admits and synchronously executes one AnimateDiff generation.</p>
             </div>
 
             <div className="doc-section" id="method-malina-modelconfig">
@@ -272,6 +312,7 @@ export default function DocsSDKMalina() {
                 <li><a href="#func-new">New</a></li>
                 <li><a href="#func-newwithcontext">NewWithContext</a></li>
                 <li><a href="#func-systeminfo">SystemInfo</a></li>
+                <li><a href="#func-newupscaler">NewUpscaler</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
@@ -283,13 +324,17 @@ export default function DocsSDKMalina() {
                 <li><a href="#type-malina">Malina</a></li>
                 <li><a href="#type-progressfunc">ProgressFunc</a></li>
                 <li><a href="#type-systemdiagnostics">SystemDiagnostics</a></li>
+                <li><a href="#type-upscaler">Upscaler</a></li>
+                <li><a href="#type-upscalerconfig">UpscalerConfig</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
               <a href="#methods" className="doc-index-header">Methods</a>
               <ul>
                 <li><a href="#method-malina-activegenerations">Malina.ActiveGenerations</a></li>
+                <li><a href="#method-malina-detail">Malina.Detail</a></li>
                 <li><a href="#method-malina-generate">Malina.Generate</a></li>
+                <li><a href="#method-malina-generatevideo">Malina.GenerateVideo</a></li>
                 <li><a href="#method-malina-modelconfig">Malina.ModelConfig</a></li>
                 <li><a href="#method-malina-modelinfo">Malina.ModelInfo</a></li>
                 <li><a href="#method-malina-ready">Malina.Ready</a></li>

@@ -80,6 +80,149 @@ func TestGenerateParamsValidate(t *testing.T) {
 	}
 }
 
+func TestWorkflowConfigOptions(t *testing.T) {
+	cfg, err := NewConfig(
+		WithModelPath("model"),
+		WithControlNetPath("controlnet"),
+		WithMotionModulePath("motion"),
+		WithADetailerPath("adetailer"),
+	)
+	if err != nil {
+		t.Fatalf("NewConfig() error = %v", err)
+	}
+
+	if cfg.ControlNetPath != "controlnet" || cfg.MotionModulePath != "motion" || cfg.ADetailerPath != "adetailer" {
+		t.Errorf("workflow paths: got %q/%q/%q, want controlnet/motion/adetailer", cfg.ControlNetPath, cfg.MotionModulePath, cfg.ADetailerPath)
+	}
+
+	mdl := Model{config: cfg}
+	if got := mdl.Config(); got != cfg {
+		t.Errorf("Config(): got %+v, want %+v", got, cfg)
+	}
+
+	info := mdl.Info()
+	if info.MotionModulePath != "motion" || info.ADetailerPath != "adetailer" {
+		t.Errorf("Info() workflow paths: got %q/%q, want motion/adetailer", info.MotionModulePath, info.ADetailerPath)
+	}
+}
+
+func TestCannyParams(t *testing.T) {
+	got := NewCannyParams()
+	want := CannyParams{HighThreshold: 0.08, LowThreshold: 0.08, Weak: 0.8, Strong: 1}
+	if got != want {
+		t.Errorf("NewCannyParams(): got %+v, want %+v", got, want)
+	}
+
+	valid := NewGenerateParams()
+	valid.Prompt = "cat"
+	valid.ControlImage = image.NewRGBA(image.Rect(0, 0, 64, 64))
+	valid.Canny = &got
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*GenerateParams)
+	}{
+		{name: "zero control strength", mutate: func(p *GenerateParams) { p.ControlStrength = 0 }},
+		{name: "NaN control strength", mutate: func(p *GenerateParams) { p.ControlStrength = float32(math.NaN()) }},
+		{name: "high threshold", mutate: func(p *GenerateParams) { p.Canny.HighThreshold = 1.1 }},
+		{name: "low threshold", mutate: func(p *GenerateParams) { p.Canny.LowThreshold = -0.1 }},
+		{name: "weak", mutate: func(p *GenerateParams) { p.Canny.Weak = float32(math.NaN()) }},
+		{name: "strong", mutate: func(p *GenerateParams) { p.Canny.Strong = float32(math.Inf(1)) }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			params := NewGenerateParams()
+			params.Prompt = "cat"
+			params.ControlImage = image.NewRGBA(image.Rect(0, 0, 64, 64))
+			canny := NewCannyParams()
+			params.Canny = &canny
+			tt.mutate(&params)
+
+			if err := params.Validate(); !errors.Is(err, ErrInvalidRequest) {
+				t.Errorf("Validate() error = %v, want ErrInvalidRequest", err)
+			}
+		})
+	}
+}
+
+func TestDetailParams(t *testing.T) {
+	got := NewDetailParams()
+	if got.ExtraArgs != "input_size=640,confidence=0.3,inpaint_width=64,inpaint_height=64" || got.Steps != 20 || got.CFGScale != 7 || got.Seed != -1 {
+		t.Errorf("NewDetailParams(): got %+v, want default detail parameters", got)
+	}
+
+	valid := NewDetailParams()
+	valid.Image = image.NewRGBA(image.Rect(0, 0, 64, 64))
+	valid.Prompt = "portrait"
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*DetailParams)
+	}{
+		{name: "missing image", mutate: func(p *DetailParams) { p.Image = nil }},
+		{name: "invalid width", mutate: func(p *DetailParams) { p.Image = image.NewRGBA(image.Rect(0, 0, 65, 64)) }},
+		{name: "invalid height", mutate: func(p *DetailParams) { p.Image = image.NewRGBA(image.Rect(0, 0, 64, 65)) }},
+		{name: "missing prompt", mutate: func(p *DetailParams) { p.Prompt = "" }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			params := NewDetailParams()
+			params.Image = image.NewRGBA(image.Rect(0, 0, 64, 64))
+			params.Prompt = "portrait"
+			tt.mutate(&params)
+
+			if err := params.Validate(); !errors.Is(err, ErrInvalidRequest) {
+				t.Errorf("Validate() error = %v, want ErrInvalidRequest", err)
+			}
+		})
+	}
+}
+
+func TestVideoParams(t *testing.T) {
+	got := NewVideoParams()
+	want := VideoParams{Width: 128, Height: 128, Steps: 4, Seed: -1, Frames: 4, FPS: 1}
+	if got != want {
+		t.Errorf("NewVideoParams(): got %+v, want %+v", got, want)
+	}
+
+	valid := NewVideoParams()
+	valid.Prompt = "walking cat"
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*VideoParams)
+	}{
+		{name: "zero frames", mutate: func(p *VideoParams) { p.Frames = 0 }},
+		{name: "too many frames", mutate: func(p *VideoParams) { p.Frames = 1_001 }},
+		{name: "zero FPS", mutate: func(p *VideoParams) { p.FPS = 0 }},
+		{name: "too much FPS", mutate: func(p *VideoParams) { p.FPS = 1_001 }},
+		{name: "missing prompt", mutate: func(p *VideoParams) { p.Prompt = "" }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			params := NewVideoParams()
+			params.Prompt = "walking cat"
+			tt.mutate(&params)
+
+			if err := params.Validate(); !errors.Is(err, ErrInvalidRequest) {
+				t.Errorf("Validate() error = %v, want ErrInvalidRequest", err)
+			}
+		})
+	}
+}
+
 func TestInitImageValidationAndConversion(t *testing.T) {
 	source := image.NewRGBA(image.Rect(3, 4, 5, 5))
 	source.Set(3, 4, color.RGBA{R: 10, G: 20, B: 30, A: 255})
