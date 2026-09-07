@@ -194,12 +194,10 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 	SetEmbeddingsPreNorm(targetCtx, true, false)
 	SetEmbeddingsPreNorm(lctx, true, true)
 
-	// Greedy sampler for the draft (temperature=0 for speed). The
-	// HEAP-CORRUPTION WORKAROUND mirrors loadDraftModel; see the
-	// detailed comment on toSampler in params.go.
+	// Greedy sampler for the draft (temperature=0 for speed).
 	targetVocab := llama.ModelGetVocab(targetModel)
 	suppressTokens := copySuppressTokens(targetVocab)
-	sampler := llama.SamplerChainInit(llama.SamplerChainParams{NoPerf: 1})
+	sampler := llama.SamplerChainInit(llama.SamplerChainDefaultParams())
 	addSuppressTokenSampler(sampler, targetVocab, suppressTokens)
 	llama.SamplerChainAdd(sampler, llama.SamplerInitGreedy())
 
@@ -434,7 +432,7 @@ func loadDraftModelMTPShared(ctx context.Context, log applog.Logger, cfg Config,
 	// MTP verification is greedy.
 	assistantVocab := llama.ModelGetVocab(asstModel)
 	suppressTokens := copySuppressTokens(assistantVocab)
-	sampler := llama.SamplerChainInit(llama.SamplerChainParams{NoPerf: 1})
+	sampler := llama.SamplerChainInit(llama.SamplerChainDefaultParams())
 	addSuppressTokenSampler(sampler, assistantVocab, suppressTokens)
 	llama.SamplerChainAdd(sampler, llama.SamplerInitGreedy())
 

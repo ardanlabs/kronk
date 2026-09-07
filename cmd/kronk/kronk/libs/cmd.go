@@ -48,10 +48,6 @@ EXAMPLES
   # Install CUDA libraries explicitly
   KRONK_PROCESSOR=cuda kronk libs --local
 
-  # Download the supported version pinned to its release manifest SHA-256
-  kronk libs --local \
-    --version=b10826@sha256:e26298d30a7196e5715b9066cd3f6d9eddc70b56dcb3bbcb1df83cf2d8a81109
-
   # List supported (arch, os, processor) combinations
   kronk libs --list-combinations
 

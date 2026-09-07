@@ -1025,12 +1025,8 @@ func loadDraftModel(ctx context.Context, log applog.Logger, cfg Config, targetMo
 	llama.MemoryClear(dMem, true)
 
 	// Create greedy sampler for draft model (temperature=0 for speed).
-	// HEAP-CORRUPTION WORKAROUND: do NOT call SamplerChainDefaultParams
-	// (yzma FFI return-type mismatch overruns Go heap by 7 bytes). See
-	// detailed comment in toSampler in params.go.
-	// TODO: fix yzma's ffiSamplerChainParams type registration upstream.
 	draftSuppressTokens := copySuppressTokens(dVocab)
-	sampler := llama.SamplerChainInit(llama.SamplerChainParams{NoPerf: 1})
+	sampler := llama.SamplerChainInit(llama.SamplerChainDefaultParams())
 	addSuppressTokenSampler(sampler, dVocab, draftSuppressTokens)
 	llama.SamplerChainAdd(sampler, llama.SamplerInitGreedy())
 
@@ -1063,11 +1059,7 @@ func loadDraftModel(ctx context.Context, log applog.Logger, cfg Config, targetMo
 // proposal distribution q(x) is consistent with the request's temperature,
 // top-k, and other settings.
 func buildDraftSampler(vocab llama.Vocab, suppressTokens []llama.Token, params Params, seed uint32) llama.Sampler {
-	// HEAP-CORRUPTION WORKAROUND: do NOT call SamplerChainDefaultParams
-	// (yzma FFI return-type mismatch overruns Go heap by 7 bytes). See
-	// detailed comment in toSampler in params.go.
-	// TODO: fix yzma's ffiSamplerChainParams type registration upstream.
-	chain := llama.SamplerChainInit(llama.SamplerChainParams{NoPerf: 1})
+	chain := llama.SamplerChainInit(llama.SamplerChainDefaultParams())
 	addSuppressTokenSampler(chain, vocab, suppressTokens)
 
 	// Build chain in the standard order: truncation → temperature → dist.

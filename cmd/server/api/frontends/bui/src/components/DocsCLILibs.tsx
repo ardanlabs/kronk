@@ -159,10 +159,6 @@ kronk libs --local
 # Track and install the latest llama.cpp release
 kronk libs --local --upgrade
 
-# Install the supported version using its exact release manifest pin
-kronk libs --local \\
-  --version=b10826@sha256:e26298d30a7196e5715b9066cd3f6d9eddc70b56dcb3bbcb1df83cf2d8a81109
-
 # Install CUDA libraries explicitly via env override
 KRONK_PROCESSOR=cuda kronk libs --local
 
