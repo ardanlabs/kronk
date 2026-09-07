@@ -40,14 +40,8 @@ func TestSuite(t *testing.T) {
 // cap, and the post-verify mirror across multiple active spec slots.
 // Single-slot behavior remains covered by TestSuite above.
 func TestSuiteMultiSlot(t *testing.T) {
-	// Multi-slot means two sequences share one decode batch, which on ROCm
-	// hits upstream2.md's defect: the logits come back corrupted and a
-	// message lands empty. Same defect the qwen3 batch suite is skipped for.
-	//
-	// It only surfaced here once CI stopped pinning testlib.Goroutines to 1:
-	// a single request into a multi-slot model never shares a batch. First
-	// seen in run 34160698424, MTPChat empty on all three retries while
-	// MTPStreamingChat passed, and both green on Vulkan and Metal.
+	// Two sequences sharing one decode batch come back with corrupted logits on
+	// ROCm — upstream2.md, same as sdk/kronk/tests/qwen3's batch suite.
 	testlib.SkipOnBackends(t, "two sequences sharing one decode batch come back with corrupted logits", "rocm")
 
 	testlib.WithModel(t, testlib.CfgMTPChatMultiSlot(), func(t *testing.T, krn *kronk.Kronk) {
