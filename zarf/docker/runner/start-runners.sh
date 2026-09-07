@@ -57,7 +57,7 @@
 # unmatched leg queues silently until the 24h run limit.
 #
 # The second fleet needs a PREFIX of its own: that is what keeps container
-# names, runner names and the per-runner ~/.kronk volume distinct.
+# names, runner names and the per-runner cache volumes distinct.
 #
 #   COUNT=2 APP_ID=... APP_KEY=~/kronk-runners.pem ./start-runners.sh
 #   PREFIX=kronk-linux-rocm COUNT=2 IMAGE=kronk-runner:rocm \
@@ -143,17 +143,9 @@ if [[ -z "$VIDEO_GID" || -z "$RENDER_GID" ]]; then
     exit 1
 fi
 
-# The Go module and build caches are safe to share — the toolchain locks them
-# and is designed for concurrent use — and they are shared across FLEETS too,
-# since both compile the same code.
-#
-# ~/.kronk is per-runner instead: concurrent `kronk model pull` runs against
-# one directory can race on the same partial file. The volume is named after
-# the runner ("<prefix>-<n>-kronk") rather than the index, because two fleets
-# both start at index 1 and an index-keyed name would reintroduce that race.
-docker volume create kronk-runner-go      >/dev/null
-docker volume create kronk-runner-gocache >/dev/null
-
+# Every cache is per-runner: ~/.kronk, the Go module cache and the Go build
+# cache. Named after the runner ("<prefix>-<n>-...") rather than the index,
+# because two fleets both start at index 1 and would collide.
 for (( i = 1; i <= COUNT; i++ )); do
     name="${PREFIX}-${i}"
 
@@ -167,7 +159,9 @@ for (( i = 1; i <= COUNT; i++ )); do
         fi
     fi
 
-    docker volume create "${name}-kronk" >/dev/null
+    docker volume create "${name}-kronk"   >/dev/null
+    docker volume create "${name}-go"      >/dev/null
+    docker volume create "${name}-gocache" >/dev/null
 
     docker run -d --restart=always \
         --name "$name" \
@@ -176,8 +170,8 @@ for (( i = 1; i <= COUNT; i++ )); do
         --group-add "$VIDEO_GID" --group-add "$RENDER_GID" \
         --security-opt seccomp=unconfined \
         -v "${name}-kronk:/root/.kronk" \
-        -v kronk-runner-go:/root/go \
-        -v kronk-runner-gocache:/root/.cache/go-build \
+        -v "${name}-go:/root/go" \
+        -v "${name}-gocache:/root/.cache/go-build" \
         -e APP_ID="$APP_ID" \
         -e APP_PRIVATE_KEY="$(cat "$APP_KEY")" \
         -e APP_LOGIN="$ORG" \

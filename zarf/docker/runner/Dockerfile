@@ -53,11 +53,10 @@
 #                     /root/.kronk          models (~6.6 GB) and native libs
 #                     /root/go              GOMODCACHE and GOPATH/bin
 #                     /root/.cache/go-build GOCACHE, the compile cache
-#                   The Go caches are shared across runners (the toolchain
-#                   locks them); ~/.kronk is per-runner, because concurrent
-#                   `kronk model pull` runs against one directory can race.
-#                   Sharing is safe only because fork PRs are never
-#                   scheduled onto these runners (see linux.yml).
+#                   All three are per-runner: nothing is shared between
+#                   runners or fleets. They still outlive a job, which is
+#                   safe only because fork PRs are never scheduled onto
+#                   these runners (see linux.yml).
 #
 # LABELS AND TWO FLEETS
 #

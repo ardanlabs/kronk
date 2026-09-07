@@ -25,7 +25,7 @@ brew install khoi/sand/sand              # 1.4.0
 Budget per runner: `ramGb: 48`, `cpuCores: 8`, ~520 GB sparse disk (inherited
 from the image, not settable in sand 1.4.0). Two runners on a 128 GiB / 16-core
 host is 96 GiB and 1:1 vCPU — no headroom left, so do not add a third. The
-sparse disks and the shared model cache share one volume: budget ~700 GiB.
+sparse disks and the per-runner model caches share one volume: budget ~700 GiB.
 
 ## 2. GitHub App
 
@@ -59,8 +59,8 @@ runners:
       org: ardanlabs
       privateKey: ~/<app-id>-kronk-runners.<date>.private-key.pem
     mounts:
-      - host: ~/ci-cache/kronk-models
-        name: kronk-models          # shared between runners, rw
+      - host: ~/ci-cache/kronk-models-1
+        name: kronk-models          # per-runner, rw
       - host: ~/ci-cache/kronk-tools
         name: kronk-tools           # the Metal shim
       - host: ~/.cache/sand/actions-runner
@@ -69,7 +69,7 @@ runners:
       command: pgrep -fl /Users/admin/actions-runner/run.sh
       interval: 30
       startDelay: 60
-  # - name: kronk-macos-metal-2   (identical, same two ci-cache mounts)
+  # - name: kronk-macos-metal-2   (identical, but host: ~/ci-cache/kronk-models-2)
 ```
 
 **Labels.** sand supplies `self-hosted, macOS, ARM64` plus `sand`; `extraLabels`
@@ -95,18 +95,12 @@ not selectable):
 the Go build cache do not survive — which is why the model cache is a host mount
 and not a runner volume.
 
-**Cold-cache race.** Both runners share one models directory and kronk has no
-cross-process download lock; `sdk/tools/models/download.go` finishes a download
-with a rename, so two concurrent cold fetches of the same *missing* model can
-lose that race:
-
-```
-ERROR[download-model: unable to rename proj file: rename
-.../mmproj-F16.gguf .../mmproj-Qwen3.5-0.8B-Q8_0.gguf: no such file or directory]
-```
-
-Dormant while the cache is complete; re-arms whenever `.github/test-models.txt`
-grows. Pre-seed `~/ci-cache/kronk-models` serially after any model-list change.
+**One models directory per runner**, mounted under the same name so the guest
+path never changes. A runner takes one job at a time, so nothing else writes
+that directory: kronk has no cross-process download lock and
+`sdk/tools/models/download.go` finishes a download with a rename, which two
+concurrent cold fetches of the same *missing* model used to lose. Seeding a new
+directory from a warm one is a plain `cp -Rc` (APFS clones, no extra space).
 
 ## 4. The Metal capability shim
 
