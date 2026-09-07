@@ -2,7 +2,6 @@ package models
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -597,13 +596,9 @@ func (m *Models) downloadCompanion(ctx context.Context, log applog.Logger, loc L
 		return path, false, nil
 	}
 
-	// Rename the downloaded sha file to match our naming convention. A
-	// vanished source means a peer renamed it first; see adoptedFromPeer.
+	// Rename the downloaded sha file to match our naming convention.
 	if err := os.Rename(orgShaFileName, shaFileName); err != nil {
-		if !adoptedFromPeer(err, shaFileName, nil) {
-			return "", false, fmt.Errorf("download-model: unable to rename %s sha file: %w", kind.label, err)
-		}
-		log(ctx, "download-model: sha pointer already in place, adopting", "kind", kind.label, "file", filepath.Base(shaFileName))
+		return "", false, fmt.Errorf("download-model: unable to rename %s sha file: %w", kind.label, err)
 	}
 
 	// pull's own oversize guard cannot see this body: it lands under the
@@ -617,15 +612,8 @@ func (m *Models) downloadCompanion(ctx context.Context, log applog.Logger, loc L
 		return "", false, err
 	}
 
-	// The same race one step later, but the pointer is in place by now, so
-	// the peer's file is re-hashed and adopting it is as strong as renaming.
 	if err := os.Rename(orgFile, dstFileName); err != nil {
-		if !adoptedFromPeer(err, dstFileName, func() error { return checkModelStrict(dstFileName) }) {
-			return "", false, fmt.Errorf("download-model: unable to rename %s file: %w", kind.label, err)
-		}
-		log(ctx, "download-model: companion already in place, adopting", "kind", kind.label, "file", filepath.Base(dstFileName))
-
-		return dstFileName, true, nil
+		return "", false, fmt.Errorf("download-model: unable to rename %s file: %w", kind.label, err)
 	}
 
 	// Strict: the getter no-ops on a complete-looking destination, so the
@@ -635,22 +623,6 @@ func (m *Models) downloadCompanion(ctx context.Context, log applog.Logger, loc L
 	}
 
 	return dstFileName, true, nil
-}
-
-// adoptedFromPeer reports whether a failed rename can be treated as done
-// because a concurrent writer in the same models directory renamed its own
-// copy into place first. Only a missing source qualifies; verify checks the
-// destination, or is nil when presence is all a sha pointer can establish.
-func adoptedFromPeer(renameErr error, dst string, verify func() error) bool {
-	if !errors.Is(renameErr, os.ErrNotExist) {
-		return false
-	}
-
-	if _, err := os.Stat(dst); err != nil {
-		return false
-	}
-
-	return verify == nil || verify() == nil
 }
 
 // checkValidatedIndex returns an existing Path when the index already has a
@@ -762,7 +734,7 @@ func (m *Models) tryReuseCompanionFromURLName(ctx context.Context, log applog.Lo
 	// pass on "no pointer" and hand back an arbitrary leftover.
 	if err := checkModelStrict(dstFileName); err != nil {
 		// Unverifiable — fall through to the download, which renames over the
-		// copy. Deleting it here would race a peer's own verified copy.
+		// copy.
 		return "", false, nil
 	}
 
