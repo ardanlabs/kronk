@@ -96,6 +96,13 @@ func Setup() {
 	// loads, so this is the first moment the executing backend is knowable.
 	fmt.Println("processor        :", Processor())
 
+	// ROCm returns corrupted logits when two sequences share one decode batch
+	// (upstream2.md), which breaks every suite that fans out below.
+	if Processor() == "rocm" {
+		Goroutines = 1
+		fmt.Println("goroutines       : 1 (rocm)")
+	}
+
 	fmt.Println("Initializing test inputs...")
 	if err := initInputs(); err != nil {
 		fmt.Printf("Failed to init test inputs: %s\n", err)
