@@ -14,8 +14,8 @@ import (
 
 func Test_BatchChatConcurrent(t *testing.T) {
 	// This is the only suite that decodes two sequences concurrently, and on
-	// ROCm it hits upstream2.md's defect: two sequences sharing one decode
-	// batch come back with corrupted logits, which leaves a message empty.
+	// ROCm it hits a HIP defect: two sequences sharing one llama_decode batch
+	// come back with corrupted logits, which leaves a message empty.
 	//
 	// Confirmed across two ROCm major versions at llama.cpp b10798, so the
 	// runtime is not what carries it:
