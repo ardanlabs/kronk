@@ -1,76 +1,77 @@
-# Ultimate Local AI
+# Ultimate AI
+
+Go with your own intelligence
 
 ### Description
 
-Self-hosted inference — running models on hardware you control — means no per-token costs, no data leaving your environment, no vendor lock-in, and access to the long tail of open-source models that go well beyond the LLMs everyone is talking about. And contrary to popular belief, you don't need a GPU rack: small models like `Qwen3.5-0.8B-Q8_0` run comfortably on the same laptop you're using right now. The hard part has been doing it from Go without CGO, Python, or a network hop to something like Ollama.
+Running open-source models is about much more than loading weights and sending a prompt. Every model server must make the same kinds of decisions: which model and quantization fit the available hardware, how requests are admitted and batched, how prompts are rendered, how context is cached, how tokens are sampled, and how concurrent generations share compute without sharing state.
 
-This is a lecture and hands-on full-day workshop where you'll go from zero to running open-source models directly inside your Go applications on your own local machine — no cloud APIs, no external servers, no data leaving your machine. Throughout the day, you will learn all the internals of the Kronk SDK which will teach you about model architectures, KV caching, batch processing, token/decoding, prompt caching, token sampling, and more.
+This full-day lecture and hands-on workshop teaches the foundations of open-source model serving through Kronk, a model SDK and server written for Go. Kronk gives us a concrete system to examine, but the concepts apply broadly to model servers built on inference engines such as llama.cpp.
 
-With that solid foundation, you'll build real applications:
+We begin with the architecture of an inference stack and small working programs. From there, we learn how to navigate Hugging Face, compare dense, mixture-of-experts, and hybrid models, choose a GGUF quantization, and estimate the memory needed for model weights, context, cache, and runtime buffers.
 
-- Retrieval-Augmented Generation (RAG) pipeline that grounds model responses in your own documents using embeddings and vector search.
+Then we follow a generation request through the entire serving lifecycle: admission control, model-specific prompt rendering, incremental message-cache selection, scheduling, slot assignment, KV-cache restoration, prompt prefill, batched decoding, sampling, parsing, and streaming. Along the way, we connect the settings exposed by a model server to the work they control and the trade-offs they create in memory use, throughput, latency, and output quality.
 
-- Natural language to SQL system where the model generates database queries from plain English, with grammar constraints ensuring the output is always valid executable SQL.
-
-By the end of the day, you won't just understand how AI model inference works — you'll have built applications that load models, cache intelligently, retrieve context, and generate code, all running locally on your own hardware.
+By the end of the day, you will be able to reason about how an open-source model server works, configure one intentionally, diagnose performance and capacity problems, and use Kronk to run models on hardware you control.
 
 ### What a Student Is Expected to Learn
 
-By the end of this workshop, you'll leave with working code, a deep understanding of model inference, and hands-on experience across the full stack: model configuration, performance tuning, intelligent caching, retrieval-augmented generation, and structured code generation.
+By the end of this workshop, you will be able to:
+
+- Explain the layers between an application, a model server or SDK, a native inference engine, model artifacts, and compute hardware.
+- Find and evaluate open-source models on Hugging Face.
+- Compare dense, mixture-of-experts, and hybrid model architectures.
+- Choose a GGUF quantization and account for the memory used by weights, context, KV cache, and runtime buffers.
+- Explain how context size, batch size, sequence count, queue depth, and timeouts affect capacity, latency, and throughput.
+- Trace a request from admission and prompt rendering through prefill, decoding, sampling, parsing, and streaming.
+- Explain how incremental message caching and KV-cache restoration avoid repeated computation.
+- Configure sampling and structured-output controls with an understanding of their effect on generation.
+- Apply these concepts when operating Kronk or evaluating another open-source model server.
 
 ### Hardware Requirements
 
-Don't worry if you don't have the full hardware required for this.
-The instructor will provide everything you need to follow along and be able to run the examples.
+Don't worry if you don't have all the hardware listed below. The instructor will provide what you need to follow along and run the examples.
 
 - Mac M1+ series with at least 16 GB RAM.
-- Any Linux/Windows laptop with a dedicated GPU with at least 8GB VRAM (not system RAM) (pref 16GB).
-- Access to a cloud-based instance with a dedicated GPU with at least 8GB VRAM (pref 16GB).
+- Any Linux or Windows laptop with a dedicated GPU and at least 8 GB of VRAM (16 GB preferred).
+- Access to a cloud instance with a dedicated GPU and at least 8 GB of VRAM (16 GB preferred).
 
 ### Prerequisites
 
-- It's expected that you will have been coding in Go for several months.
-- A working Go environment running on the device you will be bringing to class.
+- Several months of experience writing Go.
+- A working Go development environment on the device you will bring to class.
 
 ### Recommended Preparation
 
-- Please clone the main repo (https://github.com/ardanlabs/kronk) for the class.
-- Please read the notes in the makefile for installing all the tooling and testing the code before class.
-- Please email the instructor, Bill Kennedy, for assistance.
+- Clone the [Kronk repository](https://github.com/ardanlabs/kronk).
+- Read the notes in the makefile and install the required tooling before class.
+- Contact the instructor, Bill Kennedy, if you need assistance preparing your environment.
 
 ### Outline
 
-- Why Local Inference? (Privacy, latency, cost, no vendor lock-in, offline)
-  - What is Kronk? (Go SDK + optional Model Server)
-  - Architecture: SDK-first design, non-CGO via yzma
-  - Show the layered architecture diagram
-- Hello World — Question example (simplest SDK usage)
-  - Walk through the code, show it running
-- Architecture and Configuration
-  - Navigation Hugging Face and Model Types
-  - VRAM Calculations
-  - Batch Engine Architecure
-  - Caching System Semantics
-  - Sampling parameters
-- Tool Calling with a Local Model
-  - Use the chat example's get_weather function
-  - Show a local model deciding to call tools
-- Vision App
-  - What projectors are and why vision models need them
-  - Memory overhead: model + projector + KV cache
-- Kronk Model Server (KMS)
-  - Catalog system — kronk catalog pull, verified models
-  - Show the BUI and all the tools/apps
-  - Chat App with a coding model
-  - Batch processing — concurrent requests with n_seq_max slots
-  - Quick flash of observability: Prometheus metrics / Statsviz
-- AI Agent Integration
-  - Cline driving real coding work through KMS
-  - MCP service with Brave Search — local model doing web searches
-  - Mention compatibility: Claude Code, OpenWebUI, any OpenAI client
-- RAG Application
-  - Take Go Notebook and show how the model can use it to provide
-    specific answers to questions.
-- SQL Application
-  - Create a relational database with data and using natural language
-    query the database.
+- The Open-Source Inference Stack
+  - Why run models on hardware you control?
+  - Kronk's embedded SDK and network model-server paths
+  - Go APIs, native inference engines, model artifacts, and compute backends
+- Hands-On Example Programs
+  - Load and run a model from Go
+  - Connect SDK settings to observable model behavior
+- Hugging Face and Model Selection
+  - Repositories, model families, capabilities, and GGUF files
+  - Dense, mixture-of-experts, and hybrid architectures
+  - Quantization trade-offs: model quality, file size, RAM, and VRAM
+  - Memory planning for weights, context, KV cache, and runtime buffers
+- The Generation Inference Lifecycle
+  - Receive a request and acquire admission
+  - Render a model-specific prompt and tool definitions
+  - Select and reserve an incremental message-cache session
+  - Submit work, wait for an execution slot, and preserve cancellation
+  - Restore reusable KV state and prefill uncached prompt tokens
+  - Batch concurrent sequences while keeping request state isolated
+  - Decode, constrain, sample, parse, and stream generated tokens
+  - Finish the response and release slots, cache reservations, and admission permits
+- Configuration and Performance Trade-offs
+  - Context size, batch size, sequence count, queue depth, and timeouts
+  - Prompt caching, throughput, latency, and memory pressure
+  - Sampling parameters, grammars, structured output, and output quality
+  - Using metrics and request behavior to diagnose a model server
