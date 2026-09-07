@@ -49,7 +49,8 @@ func TestSuite(t *testing.T) {
 		// for the classic drafter path to be considered exercised. Runs
 		// before WithModel's unload cleanup, so the model is still loaded.
 		t.Run("DraftAcceptance", func(t *testing.T) {
-			// upstream.md's defect: llama_decode never populates the sampled
+			// A HIP defect (https://github.com/ggml-org/llama.cpp/issues/28513):
+			// llama_decode never populates the sampled
 			// candidates, so every draft distribution is empty and
 			// classic.Verify cannot accept. Deterministic on ROCm, and it
 			// survived the runtime upgrade — accepted=0 on every request in
@@ -59,8 +60,8 @@ func TestSuite(t *testing.T) {
 			//   7.2.4  run 33929435557  draft=28 accepted=0
 			//   10.0   run 33931520320  draft=31 accepted=0, draft=29 accepted=0
 			//
-			// Unlike upstream2.md's batch defect this one never passes, so a
-			// single green ROCm run here is enough to retire the skip.
+			// Unlike the shared-batch defect in qwen3's batch suite this one
+			// never passes, so a single green ROCm run retires the skip.
 			// On Metal, check the reported GPU family first: below Apple7 ggml
 			// refuses SOFT_MAX/CUMSUM/SUM (ggml-metal-device.m:1214-1234).
 			testlib.SkipOnBackends(t, "llama_decode does not populate sampled candidates, so every draft distribution is empty", "rocm")

@@ -117,10 +117,8 @@ jobs:
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
 
-      # The `gpu`-tier lines, on top of the base set setup-kronk pulled. Cold-
-      # pull hazard on macOS: its two runners share one models directory and
-      # kronk has no cross-process lock, so overlapping cold pulls can lose the
-      # rename race.
+      # The `gpu`-tier lines, on top of the base set setup-kronk pulled. Every
+      # runner has its own models directory, so a cold pull has no peer.
       - name: Download GPU-only test models
         run: ./.github/scripts/pull-models.sh .github/test-models.txt gpu
 
