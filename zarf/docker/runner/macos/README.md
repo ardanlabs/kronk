@@ -63,6 +63,7 @@ runners:
         name: kronk-models          # per-runner, rw
       - host: ~/ci-cache/kronk-tools
         name: kronk-tools           # the Metal shim
+        mode: ro                    # a job must not be able to swap it
       - host: ~/.cache/sand/actions-runner
         name: sand-cache
     healthCheck:
@@ -89,6 +90,7 @@ not selectable):
 | share | consumed by | missing ⇒ |
 |---|---|---|
 | `kronk-tools` | `setup-kronk` → `Stage Metal capability shim` | **every macOS job fails** |
+| `sand-cache` | sand, to provision the runner | sand re-downloads the runner per VM |
 | `kronk-models` | `setup-kronk` → `Persist models on ephemeral macOS VMs` | warning; re-downloads the model set per job |
 
 **Ephemeral is the point.** The guest is cold every job — `~/.kronk`, `~/go` and
@@ -144,7 +146,8 @@ STAGE_DIR=~/ci-cache/kronk-tools ./build-metal-shim.sh
 Defaults: stages to `~/ci-cache/kronk-tools` (one 69 KB universal dylib plus a
 `PROVENANCE.txt` it generates), clones into `~/.cache/kronk-metal-shim`. Keep the
 upstream checkout out of `STAGE_DIR` — that whole directory is mounted into both
-guests. Then add the `kronk-tools` mount from §3 and restart sand (§5).
+guests, read-only: every job injects this dylib into every child process, so a
+job that could overwrite it would own every job after it. Then add the `kronk-tools` mount from §3 and restart sand (§5).
 
 Shimmed guest:
 

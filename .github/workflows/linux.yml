@@ -29,6 +29,14 @@ on:
       - ".github/scripts/pull-models.sh"
       - ".github/test-models.txt"
   workflow_dispatch:
+    inputs:
+      sha:
+        description: >
+          Reviewed commit SHA to run on the self-hosted runners. This is how a
+          fork PR gets tested here: read the diff first, then dispatch its head
+          SHA. Everything checked out comes from that commit, .github/
+          included. Blank runs this ref.
+        type: string
 
 # Cancel in-progress runs for the same branch. `head_ref || ref` collapses the
 # duplicate runs a PR branch gets from both push and pull_request.
@@ -47,8 +55,14 @@ permissions:
 # GOTOOLCHAIN=local so a dependency that bumps its `go` directive above
 # .go-version fails loudly instead of auto-downloading a toolchain.
 #
-# Self-hosted for this repo, ubuntu-latest for fork PRs: kronk is public and
-# these runners are not ephemeral, so untrusted code must never reach them.
+# Self-hosted for this repo, ubuntu-latest for fork PRs: kronk is public, and
+# while each job now gets a throwaway container, the model, module and build
+# caches outlive it — so a job running unreviewed code could poison the next
+# one. Untrusted code therefore never reaches these runners automatically.
+#
+# A maintainer who has read the diff can run a fork PR here by dispatching its
+# head SHA with the `sha` input. That is a deliberate, reviewed act; the gate
+# below is what keeps it from happening on its own.
 #
 # KRONK_PROCESSOR=cpu keeps results independent of which runner took the job;
 # `kronk libs --local` would otherwise pick a GPU backend. Bucky auto-detects.
@@ -63,6 +77,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          ref: ${{ inputs.sha || github.sha }}
 
       # Catches a bump to go.mod's `go` directive without .go-version, or the
       # reverse. Patch-level drift is allowed; minor-level drift fails.
@@ -137,6 +153,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          ref: ${{ inputs.sha || github.sha }}
 
       # Same setup as api-tests / sdk-tests so unit tests that read real GGUFs
       # (sdk/tools/models) exercise their full path under -race.
@@ -166,6 +184,8 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          ref: ${{ inputs.sha || github.sha }}
 
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
@@ -183,6 +203,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          ref: ${{ inputs.sha || github.sha }}
 
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk

@@ -28,6 +28,14 @@ on:
       - ".github/scripts/pull-models.sh"
       - ".github/test-models.txt"
   workflow_dispatch:
+    inputs:
+      sha:
+        description: >
+          Reviewed commit SHA to run on the self-hosted runners. This is how a
+          fork PR gets tested here: read the diff first, then dispatch its head
+          SHA. Everything checked out comes from that commit, .github/
+          included. Blank runs this ref.
+        type: string
 
 # Same grouping as linux.yml / macos.yml: `head_ref || ref` collapses the
 # duplicate runs a PR branch gets from both push and pull_request.
@@ -53,8 +61,10 @@ jobs:
   # KRONK_PROCESSOR is strict (sdk/tools/libs/libs.go:234), so a missing bundle
   # fails here instead of degrading to CPU. Only llama: bucky maps rocm→vulkan.
   #
-  # Fork PRs are skipped outright — none of these runners are ephemeral.
-  # Skipped counts as passing, so these stay safe to mark required.
+  # Fork PRs are skipped outright; the caches outlive a job, so unreviewed
+  # code never lands here on its own (see linux.yml). Dispatch the reviewed
+  # head SHA to run one anyway. Skipped counts as passing, so these stay safe
+  # to mark required.
   gpu-tests:
     name: GPU tests (${{ matrix.backend }})
     if: (github.event.pull_request.head.repo.full_name || github.repository) == github.repository
@@ -101,6 +111,8 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          ref: ${{ inputs.sha || github.sha }}
 
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk

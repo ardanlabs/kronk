@@ -9,6 +9,14 @@
 # rather than a job count: see HOST MEMORY BUDGET below. This host runs two
 # per fleet, and fleets are told apart by PREFIX; see TWO FLEETS below.
 #
+# Each runner is a supervise-runner.sh loop, not a long-lived container: it
+# mints a single-use JIT config per job and runs it in a --rm container, so the
+# App private key never enters a container and no job inherits the previous
+# job's writable layer. Nothing restarts the loops after a reboot, so add a
+# crontab line for that (crontab -e, no root needed):
+#
+#   @reboot COUNT=2 APP_ID=... APP_KEY=$HOME/key.pem $HOME/start-runners.sh
+#
 # Configuration comes from the environment:
 #
 #   COUNT       how many runners to start                   (default 1)
@@ -22,6 +30,7 @@
 #               comes from the image's com.ardanlabs.kronk.backend label)
 #   MEMORY      per-container memory cap, docker size    (default 20g)
 #               0 or empty leaves the container uncapped
+#   LOG_DIR     where the supervisor loops log         (default ~/.kronk-runners)
 #
 # Build the image first:
 #
@@ -77,6 +86,9 @@ GROUP="${GROUP:-kronk}"
 APP_ID="${APP_ID:-}"
 APP_KEY="${APP_KEY:-}"
 MEMORY="${MEMORY-20g}"
+LOG_DIR="${LOG_DIR:-$HOME/.kronk-runners}"
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # The backend is read off the image rather than hardcoded, so a vulkan image
 # can never register runners advertising rocm. gpu.yml's matrix puts the
@@ -118,10 +130,9 @@ if ! [[ "$COUNT" =~ ^[0-9]+$ ]] || (( COUNT < 1 )); then
     exit 1
 fi
 
-# Both flags carry the same value so the cap is a ceiling: --memory on its own
-# leaves --memory-swap at twice the limit. Docker reads 0 as unlimited, so an
-# explicit 0 (or an empty MEMORY) omits the flags instead.
-mem_args=()
+# Validated here rather than in the supervisor, so a typo fails at the prompt
+# instead of in a background loop's log. Docker reads 0 as unlimited, so an
+# explicit 0 (or an empty MEMORY) means uncapped.
 mem_desc="uncapped"
 if [[ -n "$MEMORY" && "$MEMORY" != "0" ]]; then
     if ! [[ "$MEMORY" =~ ^[0-9]+[bkmgBKMG]?$ ]]; then
@@ -129,7 +140,6 @@ if [[ -n "$MEMORY" && "$MEMORY" != "0" ]]; then
         exit 1
     fi
 
-    mem_args=(--memory "$MEMORY" --memory-swap "$MEMORY")
     mem_desc="$MEMORY"
 fi
 
@@ -143,18 +153,24 @@ if [[ -z "$VIDEO_GID" || -z "$RENDER_GID" ]]; then
     exit 1
 fi
 
-# Every cache is per-runner: ~/.kronk, the Go module cache and the Go build
-# cache. Named after the runner ("<prefix>-<n>-...") rather than the index,
+# Every cache is per-runner: ~/.kronk, the Go module cache, the Go build cache
+# and _diag. Named after the runner ("<prefix>-<n>-...") rather than the index,
 # because two fleets both start at index 1 and would collide.
+#
+# _diag is a volume because the containers are --rm: those logs are the only
+# place llama.cpp's stderr survives a job.
+mkdir -p "$LOG_DIR"
+
 for (( i = 1; i <= COUNT; i++ )); do
     name="${PREFIX}-${i}"
 
-    if docker inspect "$name" >/dev/null 2>&1; then
+    if pgrep -f "supervise-runner.sh $name\$" >/dev/null; then
         if [[ "$RECREATE" == true ]]; then
-            echo "removing existing $name"
-            docker rm -f "$name" >/dev/null
+            echo "stopping existing supervisor for $name"
+            pkill -f "supervise-runner.sh $name\$" || true
+            docker rm -f "$name" >/dev/null 2>&1 || true
         else
-            echo "$name already exists, skipping (use --recreate to replace)"
+            echo "$name is already supervised, skipping (use --recreate to replace)"
             continue
         fi
     fi
@@ -162,34 +178,26 @@ for (( i = 1; i <= COUNT; i++ )); do
     docker volume create "${name}-kronk"   >/dev/null
     docker volume create "${name}-go"      >/dev/null
     docker volume create "${name}-gocache" >/dev/null
+    docker volume create "${name}-diag"    >/dev/null
 
-    docker run -d --restart=always \
-        --name "$name" \
-        "${mem_args[@]}" \
-        --device /dev/kfd --device /dev/dri \
-        --group-add "$VIDEO_GID" --group-add "$RENDER_GID" \
-        --security-opt seccomp=unconfined \
-        -v "${name}-kronk:/root/.kronk" \
-        -v "${name}-go:/root/go" \
-        -v "${name}-gocache:/root/.cache/go-build" \
-        -e APP_ID="$APP_ID" \
-        -e APP_PRIVATE_KEY="$(cat "$APP_KEY")" \
-        -e APP_LOGIN="$ORG" \
-        -e RUNNER_SCOPE=org \
-        -e ORG_NAME="$ORG" \
-        -e RUNNER_GROUP="$GROUP" \
-        -e RUNNER_NAME="$name" \
-        -e EPHEMERAL=1 \
-        -e LABELS="$LABELS" \
-        "$IMAGE" >/dev/null
+    # setsid so the loop outlives this shell and its ssh session.
+    IMAGE="$IMAGE" LABELS="$LABELS" MEMORY="$MEMORY" ORG="$ORG" GROUP="$GROUP" \
+    APP_ID="$APP_ID" APP_KEY="$APP_KEY" \
+    VIDEO_GID="$VIDEO_GID" RENDER_GID="$RENDER_GID" \
+        setsid nohup "${here}/supervise-runner.sh" "$name" \
+        >>"$LOG_DIR/${name}.log" 2>&1 &
+    disown || true
 
-    echo "started $name (labels: ${LABELS}, memory: ${mem_desc})"
+    echo "started $name (labels: ${LABELS}, memory: ${mem_desc}, log: $LOG_DIR/${name}.log)"
 done
 
 echo
-echo "running runners:"
-docker ps --filter "name=^${PREFIX}-" --format '  {{.Names}}\t{{.Status}}'
+echo "supervisors:"
+sleep 1
+pgrep -af "supervise-runner.sh ${PREFIX}-" | sed 's/^/  /'
 echo
-echo "Confirm they registered into the '${GROUP}' group — registering into"
-echo "Default leaves jobs queued forever with no error, because kronk is public:"
-echo "  docker logs ${PREFIX}-1 | tail -20"
+echo "A runner takes ~10s to appear. The group is baked into the JIT config, and"
+echo "the wrong one leaves jobs queued forever with no error, because kronk is"
+echo "public and Default excludes public repos:"
+echo "  tail -20 $LOG_DIR/${PREFIX}-1.log"
+echo "  docker ps --filter name=^${PREFIX}-"

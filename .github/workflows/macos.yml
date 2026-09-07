@@ -30,6 +30,14 @@ on:
       - ".github/scripts/pull-models.sh"
       - ".github/test-models.txt"
   workflow_dispatch:
+    inputs:
+      sha:
+        description: >
+          Reviewed commit SHA to run on the self-hosted runners. This is how a
+          fork PR gets tested here: read the diff first, then dispatch its head
+          SHA. Everything checked out comes from that commit, .github/
+          included. Blank runs this ref.
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
@@ -38,9 +46,10 @@ concurrency:
 permissions:
   contents: read
 
-# Every job is skipped on a fork PR: this runner is not ephemeral, and
+# Every job is skipped on a fork PR: the model share outlives the VM, and
 # macos-latest cannot hold the 6.6 GiB model set, so there is no hosted
-# fallback — linux.yml covers forks. Skipped counts as passing for protection.
+# fallback — linux.yml covers forks. Dispatch the reviewed head SHA to run one
+# anyway. Skipped counts as passing for protection.
 #
 # KRONK_PROCESSOR=metal, not cpu: darwin/arm64 publishes ONE llama.cpp artifact
 # (yzma pkg/download/resolver.go:202-217), so these jobs run Metal whatever this
@@ -60,6 +69,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ inputs.sha || github.sha }}
 
       - name: Check Go version pin
         run: ./.github/scripts/check-go-version.sh
@@ -123,6 +134,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ inputs.sha || github.sha }}
 
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
@@ -152,6 +165,8 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ inputs.sha || github.sha }}
 
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
@@ -178,6 +193,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ inputs.sha || github.sha }}
 
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk

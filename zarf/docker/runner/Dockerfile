@@ -23,8 +23,11 @@
 #
 # RUN
 #
-# Use start-runners.sh beside this file — it fills in the GIDs, volumes and
-# registration env, and starts COUNT runners named <prefix>-1 .. <prefix>-N.
+# Use start-runners.sh beside this file — it fills in the GIDs and volumes and
+# starts COUNT supervisor loops for runners named <prefix>-1 .. <prefix>-N.
+# Each loop mints a single-use JIT config on the host and runs one job in a
+# --rm container, so the image's own entrypoint is bypassed: run.sh --jitconfig
+# needs no registration token, and therefore no App key in the container.
 # IMAGE selects the backend, so the rocm fleet names its image and takes a
 # PREFIX of its own:
 #
@@ -39,24 +42,27 @@
 #
 # Three things that are easy to get wrong, all handled by the script:
 #
-#   RUNNER_GROUP  — omitting it registers into the Default group, which does
-#                   not allow public repositories, so every job queues
-#                   forever with no error message. kronk is public.
+#   runner group  — mint-jitconfig.sh resolves it by name and bakes the id
+#                   into the config. The Default group does not allow public
+#                   repositories, so landing there queues every job forever
+#                   with no error message. kronk is public.
 #   --group-add   — pass numeric GIDs from the host. Group NAMES resolve
 #                   against the container's /etc/group, where render/video
 #                   may not exist, and an unset variable yields
 #                   --group-add "", which docker rejects.
-#   volumes       — EPHEMERAL=1 re-registers the runner fresh each job, so
-#                   nothing a job leaves outside these volumes reaches the
-#                   next one. They are this runner's whole cache, replacing
-#                   actions/cache, which the workflows skip on self-hosted:
+#   volumes       — the container is --rm per job, so nothing a job leaves
+#                   outside these volumes reaches the next one. They are this
+#                   runner's whole cache, replacing actions/cache, which the
+#                   workflows skip on self-hosted:
 #                     /root/.kronk          models (~6.6 GB) and native libs
 #                     /root/go              GOMODCACHE and GOPATH/bin
 #                     /root/.cache/go-build GOCACHE, the compile cache
-#                   All three are per-runner: nothing is shared between
-#                   runners or fleets. They still outlive a job, which is
-#                   safe only because fork PRs are never scheduled onto
-#                   these runners (see linux.yml).
+#                     /actions-runner/_diag runner logs, the only place
+#                                           llama.cpp stderr survives a job
+#                   All four are per-runner: nothing is shared between
+#                   runners or fleets. They still outlive a job, so a job
+#                   that runs unreviewed code can poison the next one — see
+#                   the dispatch note in linux.yml.
 #
 # LABELS AND TWO FLEETS
 #
