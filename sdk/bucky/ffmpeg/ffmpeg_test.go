@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -13,15 +11,6 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/bucky/ffmpeg"
 )
-
-func TestMain(m *testing.M) {
-	if os.Getenv("GITHUB_ACTIONS") == "true" {
-		fmt.Println("skipping ffmpeg tests in GitHub Actions")
-		os.Exit(0)
-	}
-
-	os.Exit(m.Run())
-}
 
 func TestNew_NotInstalled(t *testing.T) {
 	t.Setenv("PATH", "")

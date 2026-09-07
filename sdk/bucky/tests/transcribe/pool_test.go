@@ -159,10 +159,12 @@ func Test_PooledTranscribe(t *testing.T) {
 	// when the pool is genuinely concurrent. Check 1 (peak
 	// ActiveStreams) is the authoritative signal in that case.
 	//
-	// GitHub Actions runners have no GPU, so skip the wall-clock
-	// assertion there and rely on the in-flight ActiveStreams probe.
-	if os.Getenv("GITHUB_ACTIONS") == "true" {
-		t.Logf("parallel wall-clock: %s, baseline: %s (GITHUB_ACTIONS=true: skipping CPU-bound wall-clock check)",
+	// So the gate is the hardware, not CI: skip the assertion when the run
+	// is pinned to the cpu backend or lands on a hosted runner, which has
+	// no GPU. Everything else asserts — the self-hosted GPU legs, and a
+	// local run, where KRONK_PROCESSOR is unset.
+	if os.Getenv("KRONK_PROCESSOR") == "cpu" || os.Getenv("KRONK_TEST_HOSTED") != "" {
+		t.Logf("parallel wall-clock: %s, baseline: %s (CPU-bound run: skipping wall-clock check)",
 			parallelElapsed, baseline)
 	} else {
 		threshold := time.Duration(float64(baseline) * concurrencyFactor)

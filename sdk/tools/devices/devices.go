@@ -163,6 +163,31 @@ func List(opts ...Option) Devices {
 	return out
 }
 
+// Backend reports the ggml backend the loaded libraries execute on, as a Kronk
+// processor name ("cuda", "metal", "rocm", "vulkan", or "cpu" when ggml found
+// no GPU), or "" when Ready is false. Not the bundle name: darwin/arm64 serves
+// cpu and metal from one artifact (yzma pkg/download/resolver.go:202-217).
+func Backend() string {
+	if !Ready() {
+		return ""
+	}
+
+	// Memory stats are a per-device FFI call apiece and are not read here.
+	return backendFromDevices(List(WithIncludeMemory(false)).Devices)
+}
+
+// backendFromDevices maps enumerated devices to a backend name, split out so
+// it is testable. The first GPU device decides; ggml may list the CPU first.
+func backendFromDevices(devs []DeviceInfo) string {
+	for _, dev := range devs {
+		if backend, ok := strings.CutPrefix(dev.Type, "gpu_"); ok {
+			return backend
+		}
+	}
+
+	return "cpu"
+}
+
 // ClassifyDeviceType maps a llama.cpp backend device to a device type string:
 // cpu, gpu_cuda, gpu_metal, gpu_rocm, gpu_vulkan, or unknown.
 func ClassifyDeviceType(device llama.GGMLBackendDevice) string {

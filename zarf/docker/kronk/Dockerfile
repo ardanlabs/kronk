@@ -830,9 +830,9 @@ RUN apt-get update \
 # AMD has no equivalent of the NVIDIA Container Toolkit — the host
 # kernel module is exposed via /dev/kfd + /dev/dri but the userspace
 # HIP/HSA libraries that llama.cpp's ROCm bundle dlopens must live
-# inside the container. This substantially increases images that bundle
-# the ROCm backend; it has zero impact on images that do not (e.g. `:cpu`,
-# `:cuda`, `:vulkan`).
+# inside the container. Adds ~2 GB to images that bundle the ROCm
+# backend; zero impact on images that do not (e.g. `:cpu`, `:cuda`,
+# `:vulkan`).
 #
 # `rocminfo` doubles as the GPU detection probe for `DetectGPU()` (see
 # sdk/tools/devices/gpu_detect_linux.go), so installing it lets the

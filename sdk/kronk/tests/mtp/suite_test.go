@@ -40,6 +40,10 @@ func TestSuite(t *testing.T) {
 // cap, and the post-verify mirror across multiple active spec slots.
 // Single-slot behavior remains covered by TestSuite above.
 func TestSuiteMultiSlot(t *testing.T) {
+	// Two sequences sharing one decode batch come back with corrupted logits on
+	// ROCm — upstream2.md, same as sdk/kronk/tests/qwen3's batch suite.
+	testlib.SkipOnBackends(t, "two sequences sharing one decode batch come back with corrupted logits", "rocm")
+
 	testlib.WithModel(t, testlib.CfgMTPChatMultiSlot(), func(t *testing.T, krn *kronk.Kronk) {
 		t.Run("MTPChat", func(t *testing.T) { testChat(t, krn, testlib.DChatNoTool) })
 		t.Run("MTPStreamingChat", func(t *testing.T) { testChatStreaming(t, krn, testlib.DChatNoTool) })

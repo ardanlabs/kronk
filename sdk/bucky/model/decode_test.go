@@ -18,8 +18,6 @@ import (
 )
 
 func TestDecode_NativeWAV(t *testing.T) {
-	skipDecodeInGitHubActions(t)
-
 	// Native WAV path must work even without ffmpeg on PATH.
 	t.Setenv("PATH", "")
 
@@ -40,8 +38,6 @@ func TestDecode_NativeWAV(t *testing.T) {
 }
 
 func TestDecode_WebMOpus_ViaFFmpeg(t *testing.T) {
-	skipDecodeInGitHubActions(t)
-
 	requireFFmpeg(t)
 
 	in := synthesizeContainer(t, "webm", "libopus")
@@ -61,8 +57,6 @@ func TestDecode_WebMOpus_ViaFFmpeg(t *testing.T) {
 }
 
 func TestDecode_NonNative_FFmpegMissing(t *testing.T) {
-	skipDecodeInGitHubActions(t)
-
 	const helperEnv = "KRONK_TEST_FFMPEG_MISSING"
 	if os.Getenv(helperEnv) == "1" {
 		_, err := model.Decode(t.Context(), strings.NewReader("non-native audio"))
@@ -83,8 +77,6 @@ func TestDecode_NonNative_FFmpegMissing(t *testing.T) {
 }
 
 func TestDecode_Garbage(t *testing.T) {
-	skipDecodeInGitHubActions(t)
-
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 
@@ -98,13 +90,6 @@ func TestDecode_Garbage(t *testing.T) {
 }
 
 // =============================================================================
-
-func skipDecodeInGitHubActions(t *testing.T) {
-	t.Helper()
-	if os.Getenv("GITHUB_ACTIONS") == "true" {
-		t.Skip("bucky/model decode tests do not run in GitHub Actions")
-	}
-}
 
 func requireFFmpeg(t *testing.T) {
 	t.Helper()

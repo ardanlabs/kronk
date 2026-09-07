@@ -3,7 +3,6 @@ package malina_test
 import (
 	"context"
 	"errors"
-	"os"
 	"sync"
 	"testing"
 	"time"
@@ -79,10 +78,6 @@ func (po *progressOverlap) cancelAt(steps int, cancel context.CancelFunc) {
 }
 
 func TestMalinaModelInference(t *testing.T) {
-	if os.Getenv("GITHUB_ACTIONS") == "true" {
-		t.Skip("real-model Malina tests do not run in GitHub Actions")
-	}
-
 	mdls, err := malinamodels.New()
 	if err != nil {
 		t.Fatalf("models.New() error = %v", err)
@@ -91,8 +86,10 @@ func TestMalinaModelInference(t *testing.T) {
 	if err != nil {
 		t.Skipf("%s bundle is not installed: %v", malinamodels.BundleSD15, err)
 	}
+	// No runner pulls the malina bundles, so an indexed-but-empty bundle
+	// means the model is not on this machine, not that anything is broken.
 	if len(mp.ModelFiles) == 0 {
-		t.Fatal("sd-1.5 bundle contains no model files")
+		t.Skipf("%s bundle contains no model files", malinamodels.BundleSD15)
 	}
 
 	var progress progressOverlap

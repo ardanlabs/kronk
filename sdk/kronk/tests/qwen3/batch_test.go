@@ -13,6 +13,23 @@ import (
 )
 
 func Test_BatchChatConcurrent(t *testing.T) {
+	// This is the only suite that decodes two sequences concurrently, and on
+	// ROCm it hits upstream2.md's defect: two sequences sharing one decode
+	// batch come back with corrupted logits, which leaves a message empty.
+	//
+	// Confirmed across two ROCm major versions at llama.cpp b10798, so the
+	// runtime is not what carries it:
+	//
+	//   7.2.4  run 33928022827  pass
+	//   7.2.4  run 33929435557  fail, 1 empty (request 6)
+	//   10.0   run 33931215130  fail, 2 empty (requests 0 and 9)
+	//
+	// Intermittent, so a green run does not clear it — dropping this skip
+	// needs several consecutive green ROCm runs, not one. It also runs first
+	// in gpu.yml's suite list, so while it is un-skipped a failure here aborts
+	// the step and costs the answer for every suite behind it.
+	testlib.SkipOnBackends(t, "two sequences sharing one decode batch come back with corrupted logits", "rocm")
+
 	testlib.WithModel(t, testlib.CfgThinkToolChat(), func(t *testing.T, krn *kronk.Kronk) {
 		g := 10
 

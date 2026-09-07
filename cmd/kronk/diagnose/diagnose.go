@@ -136,6 +136,18 @@ func printText(report diagnose.Report, noBench bool) {
 		fmt.Println("\n========== ENGINE ==========")
 		fmt.Println("- loaded    :", report.Engine.Loaded)
 		fmt.Println("- processor :", valueOrUnknown(report.Engine.Processor))
+		// The bundle is named above; this is what ggml will execute on. The
+		// two diverge in both directions, so each gets its own wording.
+		switch {
+		case report.Engine.Backend == "" || report.Engine.Processor == "" || report.Engine.Backend == report.Engine.Processor:
+			fmt.Println("- backend   :", valueOrUnknown(report.Engine.Backend))
+		case report.Engine.Backend == "cpu":
+			fmt.Printf("- backend   : cpu (the %s bundle found no GPU, so inference runs on the CPU)\n",
+				report.Engine.Processor)
+		default:
+			fmt.Printf("- backend   : %s (the %s bundle runs on %s)\n",
+				report.Engine.Backend, report.Engine.Processor, report.Engine.Backend)
+		}
 		fmt.Println("- libPath   :", report.Engine.LibPath)
 		if report.Engine.Error != "" {
 			fmt.Println("- error     :", report.Engine.Error)

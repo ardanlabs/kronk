@@ -137,7 +137,6 @@ func respAudioQwen25Omni(t *testing.T, tokens map[string]string) []apitest.Table
 	return []apitest.Table{
 		{
 			Name:       "audio-good-token",
-			SkipInGH:   true,
 			URL:        "/v1/responses",
 			Token:      tokens["responses"],
 			Method:     http.MethodPost,

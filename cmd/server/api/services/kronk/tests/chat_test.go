@@ -748,7 +748,6 @@ func chatAudioQwen25Omni(t *testing.T, tokens map[string]string) []apitest.Table
 	return []apitest.Table{
 		{
 			Name:       "audio-good-token",
-			SkipInGH:   true,
 			URL:        "/v1/chat/completions",
 			Token:      tokens["chat-completions"],
 			Method:     http.MethodPost,

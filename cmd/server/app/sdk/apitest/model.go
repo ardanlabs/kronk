@@ -11,7 +11,6 @@ import "encoding/json"
 // Headers so the server sees the right MIME type.
 type Table struct {
 	Name          string
-	SkipInGH      bool
 	URL           string
 	Token         string
 	Headers       map[string]string

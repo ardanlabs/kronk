@@ -20,6 +20,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/applog"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
+	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
@@ -113,11 +114,18 @@ type Device struct {
 // subprocess probes do not see. Probed is false when no engine probe was
 // supplied or no libraries are installed; in that case Loaded/Error are unset.
 type Engine struct {
-	Probed    bool   `json:"probed" yaml:"probed"`
-	Loaded    bool   `json:"loaded" yaml:"loaded"`
+	Probed bool `json:"probed" yaml:"probed"`
+	Loaded bool `json:"loaded" yaml:"loaded"`
+	// Processor is the library BUNDLE selected (ambient KRONK_PROCESSOR or
+	// auto-detection), matched against Backend.Processor in
+	// selectedEngineBackend. It is not a statement about what will execute.
 	Processor string `json:"processor" yaml:"processor"`
-	LibPath   string `json:"libPath" yaml:"libPath"`
-	Error     string `json:"error,omitempty" yaml:"error,omitempty"`
+	// Backend is the ggml backend those libraries will execute on, empty when
+	// the probe failed or did not run. It diverges from Processor in both
+	// directions — see devices.Backend.
+	Backend string `json:"backend,omitempty" yaml:"backend,omitempty"`
+	LibPath string `json:"libPath" yaml:"libPath"`
+	Error   string `json:"error,omitempty" yaml:"error,omitempty"`
 }
 
 // Bench holds the llama-bench results for the selected model. Processor is the
@@ -275,7 +283,14 @@ func Collect(ctx context.Context, log applog.Logger, opts ...Option) (Report, er
 		if !r.Engine.Loaded {
 			r.Hints = append(r.Hints, engineLoadHint(r.Engine.Error)...)
 		}
-		r.Hints = append(r.Hints, backendSelectionHints(r.Engine, backends)...)
+
+		// One hint about a GPU-less selection, not two: backendSelectionHints
+		// wins when it fires, because it names a bundle that did see a GPU.
+		if hints := backendSelectionHints(r.Engine, backends); len(hints) > 0 {
+			r.Hints = append(r.Hints, hints...)
+		} else {
+			r.Hints = append(r.Hints, engineCPUFallbackHints(r.Engine)...)
+		}
 	}
 
 	if len(backends) > 0 && !o.skipBench {
@@ -381,10 +396,9 @@ func collectBench(processor, binDir, modelPath string, forceCPU bool) Bench {
 }
 
 // collectEngine runs the injected in-process engine load probe and records the
-// outcome. Processor and LibPath describe the real server backend (the ambient
-// KRONK_PROCESSOR or auto-detection), so a failure here mirrors what the server
-// hits at startup. It deliberately ignores any benchmark processor override so
-// the health check always reflects the actual server.
+// outcome. Processor and LibPath describe the bundle the real server selects
+// (any benchmark override is ignored), so a failure here mirrors startup.
+// Backend is read only after a probe, which is what enumerates the devices.
 func collectEngine(probe EngineProbe) Engine {
 	e := Engine{
 		Probed:  true,
@@ -401,6 +415,8 @@ func collectEngine(probe EngineProbe) Engine {
 	}
 
 	e.Loaded = true
+	e.Backend = devices.Backend()
+
 	return e
 }
 

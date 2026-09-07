@@ -601,6 +601,12 @@ func (m *Models) downloadCompanion(ctx context.Context, log applog.Logger, loc L
 		return "", false, fmt.Errorf("download-model: unable to rename %s sha file: %w", kind.label, err)
 	}
 
+	// pull's own oversize guard cannot see this body: it lands under the
+	// upstream name, and the pointer just moved to the canonical one.
+	if err := removeOversizedBody(loc.ModelPath(m), shaFileName); err != nil {
+		return "", false, err
+	}
+
 	orgFile, _, err := m.pull(ctx, loc, pullBody, progress)
 	if err != nil {
 		return "", false, err
@@ -610,7 +616,9 @@ func (m *Models) downloadCompanion(ctx context.Context, log applog.Logger, loc L
 		return "", false, fmt.Errorf("download-model: unable to rename %s file: %w", kind.label, err)
 	}
 
-	if err := checkModel(dstFileName, true); err != nil {
+	// Strict: the getter no-ops on a complete-looking destination, so the
+	// body renamed into place need not be one this run actually fetched.
+	if err := checkModelStrict(dstFileName); err != nil {
 		return "", false, fmt.Errorf("download-model: unable to check model: %w", err)
 	}
 
@@ -687,18 +695,19 @@ func (m *Models) downloadModelFile(ctx context.Context, mLoc Locator, progress d
 		return "", false, err
 	}
 
-	if err := checkModel(modelFileName, true); err != nil {
+	// Strict: on downloaded==false the getter left an existing destination
+	// alone, so this is all that stands between a leftover and "installed".
+	if err := checkModelStrict(modelFileName); err != nil {
 		return "", false, fmt.Errorf("download-model: unable to check model: %w", err)
 	}
 
 	return modelFileName, downloaded, nil
 }
 
-// tryReuseCompanionFromURLName is optimization 1: if a previous download
-// landed the companion under its upstream basename, copy it into place
-// under the canonical "<prefix><modelID>" name instead of re-fetching the
-// body. Misses (returns hit=false) when the URL-name file is absent or
-// fails its sha re-check. On a hit it returns the canonical companion path.
+// tryReuseCompanionFromURLName is optimization 1: copy a companion left under
+// its upstream basename into the canonical "<prefix><modelID>" name instead of
+// re-fetching the body. Misses when that file is absent, fails its sha
+// re-check, or has no pointer to check against.
 func (m *Models) tryReuseCompanionFromURLName(ctx context.Context, log applog.Logger, kind companionKind, loc Locator, dstFileName string) (string, bool, error) {
 	urlFileName := loc.DiskFile
 	urlFilePath := filepath.Join(filepath.Dir(dstFileName), urlFileName)
@@ -721,8 +730,11 @@ func (m *Models) tryReuseCompanionFromURLName(ctx context.Context, log applog.Lo
 		}
 	}
 
-	if err := checkModel(dstFileName, true); err != nil {
-		// Copied file failed verification — fall through to regular download.
+	// Strict: the pointer copy above is conditional, so a lenient check would
+	// pass on "no pointer" and hand back an arbitrary leftover.
+	if err := checkModelStrict(dstFileName); err != nil {
+		// Unverifiable — fall through to the download, which renames over the
+		// copy.
 		return "", false, nil
 	}
 
@@ -747,7 +759,9 @@ func (m *Models) tryReuseCompanionFromSHA(ctx context.Context, log applog.Logger
 	// than copying. Note: orgShaFileName is left in place on the miss return
 	// so the caller's fall-through rename still has its source pointer.
 	if filepath.Clean(existing) == filepath.Clean(dstFileName) {
-		if err := checkModel(dstFileName, true); err != nil {
+		// Strict: the matched pointer is the canonical one by construction,
+		// and this closes the unlink window between that scan and here.
+		if err := checkModelStrict(dstFileName); err != nil {
 			// On-disk companion is bad — fall through to a fresh download.
 			return "", false, nil
 		}
@@ -770,7 +784,8 @@ func (m *Models) tryReuseCompanionFromSHA(ctx context.Context, log applog.Logger
 		return "", false, fmt.Errorf("download-model: unable to copy %s sha file: %w", kind.label, err)
 	}
 
-	if err := checkModel(dstFileName, true); err != nil {
+	// Strict: the unconditional copy above guarantees the canonical pointer.
+	if err := checkModelStrict(dstFileName); err != nil {
 		// Copied file failed verification — fall through to regular download.
 		// orgShaFileName is intentionally left in place for the caller's
 		// rename step.
@@ -837,6 +852,14 @@ func (m *Models) pull(ctx context.Context, loc Locator, kind pullKind, progress 
 		srcURL = loc.RawURL
 		interval = downloader.SizeIntervalMB100
 
+		// Offline: the getter refuses to run anyway, so leave the destination
+		// alone rather than deleting a file this pull cannot replace.
+		if hasNetworkFn() {
+			if err := removeOversizedBody(destFile, artifactDigestPath(destFile)); err != nil {
+				return "", false, err
+			}
+		}
+
 	default:
 		return "", false, fmt.Errorf("pull: unknown kind %d", kind)
 	}
@@ -852,6 +875,32 @@ func (m *Models) pull(ctx context.Context, loc Locator, kind pullKind, progress 
 	}
 
 	return destFile, downloaded, nil
+}
+
+// removeOversizedBody deletes destFile when it is longer than the size its sha
+// pointer records, so the pull that follows refetches it. The getter treats a
+// destination at or past the expected length as complete and returns it
+// untouched, so an oversized body is the one state no pull can repair.
+func removeOversizedBody(destFile string, shaFile string) error {
+	info, err := os.Stat(destFile)
+	if err != nil {
+		return nil
+	}
+
+	digest, err := readArtifactDigestFile(shaFile)
+	if err != nil {
+		return nil
+	}
+
+	if info.Size() <= digest.Size {
+		return nil
+	}
+
+	if err := os.Remove(destFile); err != nil {
+		return fmt.Errorf("pull: unable to remove oversized body %s: %w", filepath.Base(destFile), err)
+	}
+
+	return nil
 }
 
 // =============================================================================
