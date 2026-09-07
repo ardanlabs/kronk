@@ -41,7 +41,7 @@ func TestSuite(t *testing.T) {
 // Single-slot behavior remains covered by TestSuite above.
 func TestSuiteMultiSlot(t *testing.T) {
 	// Two sequences sharing one llama_decode batch come back with corrupted
-	// logits on HIP, as in sdk/kronk/tests/qwen3's batch suite.
+	// logits on HIP: https://github.com/ggml-org/llama.cpp/issues/28537
 	testlib.SkipOnBackends(t, "two sequences sharing one decode batch come back with corrupted logits", "rocm")
 
 	testlib.WithModel(t, testlib.CfgMTPChatMultiSlot(), func(t *testing.T, krn *kronk.Kronk) {

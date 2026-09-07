@@ -96,8 +96,9 @@ func Setup() {
 	// loads, so this is the first moment the executing backend is knowable.
 	fmt.Println("processor        :", Processor())
 
-	// On HIP a sequence sharing a llama_decode batch with another comes back
-	// with corrupted logits, which breaks every suite that fans out below.
+	// A sequence sharing a llama_decode batch with another comes back with
+	// corrupted logits on HIP, breaking every suite that fans out below:
+	// https://github.com/ggml-org/llama.cpp/issues/28537
 	if Processor() == "rocm" {
 		Goroutines = 1
 		fmt.Println("goroutines       : 1 (rocm)")

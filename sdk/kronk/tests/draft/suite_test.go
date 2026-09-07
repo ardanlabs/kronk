@@ -49,7 +49,8 @@ func TestSuite(t *testing.T) {
 		// for the classic drafter path to be considered exercised. Runs
 		// before WithModel's unload cleanup, so the model is still loaded.
 		t.Run("DraftAcceptance", func(t *testing.T) {
-			// A HIP defect: llama_decode never populates the sampled
+			// A HIP defect (https://github.com/ggml-org/llama.cpp/issues/28513):
+			// llama_decode never populates the sampled
 			// candidates, so every draft distribution is empty and
 			// classic.Verify cannot accept. Deterministic on ROCm, and it
 			// survived the runtime upgrade — accepted=0 on every request in
