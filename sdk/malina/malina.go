@@ -27,6 +27,8 @@ var (
 
 type backend interface {
 	Generate(context.Context, model.GenerateParams) (model.GeneratedImage, error)
+	Detail(context.Context, model.DetailParams) (model.GeneratedImage, error)
+	GenerateVideo(context.Context, model.VideoParams) (model.GeneratedVideo, error)
 	Stop()
 	Unload() error
 	Config() model.Config
@@ -38,16 +40,16 @@ var newBackend = func(ctx context.Context, cfg model.Config) (backend, error) {
 }
 
 type request struct {
-	ctx    context.Context
-	params model.GenerateParams
-	done   chan result
-	mu     sync.Mutex
-	start  bool
-	stop   bool
+	ctx   context.Context
+	run   func(backend) (any, error)
+	done  chan result
+	mu    sync.Mutex
+	start bool
+	stop  bool
 }
 
 type result struct {
-	image model.GeneratedImage
+	value any
 	err   error
 }
 
@@ -134,8 +136,50 @@ func (m *Malina) Generate(ctx context.Context, params model.GenerateParams) (mod
 	if err := params.Validate(); err != nil {
 		return model.GeneratedImage{}, err
 	}
-	if err := m.closedError(); err != nil {
+	value, err := m.submit(ctx, func(b backend) (any, error) {
+		return b.Generate(ctx, params)
+	})
+	if err != nil {
 		return model.GeneratedImage{}, err
+	}
+	return value.(model.GeneratedImage), nil
+}
+
+// Detail admits and synchronously executes one ADetailer refinement.
+func (m *Malina) Detail(ctx context.Context, params model.DetailParams) (model.GeneratedImage, error) {
+	if err := params.Validate(); err != nil {
+		return model.GeneratedImage{}, err
+	}
+
+	value, err := m.submit(ctx, func(b backend) (any, error) {
+		return b.Detail(ctx, params)
+	})
+	if err != nil {
+		return model.GeneratedImage{}, err
+	}
+
+	return value.(model.GeneratedImage), nil
+}
+
+// GenerateVideo admits and synchronously executes one AnimateDiff generation.
+func (m *Malina) GenerateVideo(ctx context.Context, params model.VideoParams) (model.GeneratedVideo, error) {
+	if err := params.Validate(); err != nil {
+		return model.GeneratedVideo{}, err
+	}
+
+	value, err := m.submit(ctx, func(b backend) (any, error) {
+		return b.GenerateVideo(ctx, params)
+	})
+	if err != nil {
+		return model.GeneratedVideo{}, err
+	}
+
+	return value.(model.GeneratedVideo), nil
+}
+
+func (m *Malina) submit(ctx context.Context, run func(backend) (any, error)) (any, error) {
+	if err := m.closedError(); err != nil {
+		return nil, err
 	}
 
 	timer := time.NewTimer(m.config.AdmissionTimeout)
@@ -144,11 +188,11 @@ func (m *Malina) Generate(ctx context.Context, params model.GenerateParams) (mod
 	select {
 	case m.admit <- struct{}{}:
 	case <-ctx.Done():
-		return model.GeneratedImage{}, ctx.Err()
+		return nil, ctx.Err()
 	case <-timer.C:
-		return model.GeneratedImage{}, errors.Join(ErrAdmissionTimeout, context.DeadlineExceeded)
+		return nil, errors.Join(ErrAdmissionTimeout, context.DeadlineExceeded)
 	case <-m.stop:
-		return model.GeneratedImage{}, m.closedError()
+		return nil, m.closedError()
 	}
 	defer func() { <-m.admit }()
 
@@ -156,17 +200,17 @@ func (m *Malina) Generate(ctx context.Context, params model.GenerateParams) (mod
 	defer m.active.Add(-1)
 
 	r := request{
-		ctx:    ctx,
-		params: params,
-		done:   make(chan result, 1),
+		ctx:  ctx,
+		run:  run,
+		done: make(chan result, 1),
 	}
 
 	select {
 	case m.jobs <- &r:
 	case <-ctx.Done():
-		return model.GeneratedImage{}, ctx.Err()
+		return nil, ctx.Err()
 	case <-m.stop:
-		return model.GeneratedImage{}, m.closedError()
+		return nil, m.closedError()
 	}
 
 	select {
@@ -175,26 +219,28 @@ func (m *Malina) Generate(ctx context.Context, params model.GenerateParams) (mod
 
 	case <-ctx.Done():
 		if r.cancel() {
-			return model.GeneratedImage{}, ctx.Err()
+			return nil, ctx.Err()
 		}
 		return generationResult(ctx, <-r.done)
 
 	case <-m.stop:
 		if r.cancel() {
-			return model.GeneratedImage{}, m.closedError()
+			return nil, m.closedError()
 		}
 		return generationResult(ctx, <-r.done)
 	}
 }
 
-func generationResult(ctx context.Context, out result) (model.GeneratedImage, error) {
+func generationResult(ctx context.Context, out result) (any, error) {
 	if out.err != nil {
-		return out.image, out.err
+		return out.value, out.err
 	}
+
 	if err := ctx.Err(); err != nil {
-		return model.GeneratedImage{}, err
+		return nil, err
 	}
-	return out.image, nil
+
+	return out.value, nil
 }
 
 func (r *request) cancel() bool {
@@ -272,7 +318,7 @@ func (m *Malina) worker(b backend) {
 				continue
 			}
 
-			image, err := b.Generate(r.ctx, r.params)
+			value, err := r.run(b)
 			if errors.Is(err, context.Canceled) && r.ctx.Err() == nil {
 				if closedErr := m.closedError(); closedErr != nil {
 					err = closedErr
@@ -283,7 +329,7 @@ func (m *Malina) worker(b backend) {
 				m.poison()
 			}
 
-			r.done <- result{image: image, err: err}
+			r.done <- result{value: value, err: err}
 			if errors.Is(err, ErrPoisoned) {
 				return
 			}

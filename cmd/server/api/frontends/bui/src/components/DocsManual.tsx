@@ -4666,6 +4666,8 @@ if err := stream.FeedPCM(ctx, rawPCM, format); err != nil {
           <ul>
             <li>text-to-image generation;</li>
             <li>image-to-image generation from a Go <code>image.Image</code>;</li>
+            <li>Canny ControlNet conditioning and ADetailer face refinement;</li>
+            <li>AnimateDiff video generation and Real-ESRGAN upscaling;</li>
             <li>single-checkpoint and multi-file diffusion pipelines;</li>
             <li>curated model-bundle download and validation;</li>
             <li>native library detection, installation, and version management;</li>
@@ -4794,6 +4796,30 @@ if _, err := libs.Download(ctx, malina.FmtLogger); err != nil {
                 <td>4.3 GB</td>
               </tr>
               <tr>
+                <td><code>controlnet-canny-sd1.5</code></td>
+                <td>Quantized SD 1.5 and Canny ControlNet</td>
+                <td>CreativeML Open RAIL-M / OpenRAIL</td>
+                <td>2.3 GB</td>
+              </tr>
+              <tr>
+                <td><code>realesrgan-x4-anime</code></td>
+                <td>Real-ESRGAN 4× anime upscaler</td>
+                <td>BSD-3-Clause</td>
+                <td>18 MB</td>
+              </tr>
+              <tr>
+                <td><code>adetailer-face-yolov8n</code></td>
+                <td>Quantized SD 1.5 and face detector</td>
+                <td>CreativeML Open RAIL-M / AGPL-3.0</td>
+                <td>1.6 GB</td>
+              </tr>
+              <tr>
+                <td><code>animatediff-sd1.5</code></td>
+                <td>Quantized SD 1.5 and AnimateDiff v3 motion module</td>
+                <td>CreativeML Open RAIL-M / Apache-2.0</td>
+                <td>2.4 GB</td>
+              </tr>
+              <tr>
                 <td><code>sdxl-base-1.0</code></td>
                 <td>SDXL Base 1.0 checkpoint</td>
                 <td>CreativeML Open RAIL++-M</td>
@@ -4809,7 +4835,7 @@ if _, err := libs.Download(ctx, malina.FmtLogger); err != nil {
                 <td><code>flux2-klein-9b</code></td>
                 <td>Diffusion model, VAE, and LLM text encoder</td>
                 <td>FLUX Non-Commercial</td>
-                <td>11 GB</td>
+                <td>11 GB of unique downloads, 16 GB installed</td>
               </tr>
             </tbody>
           </table>
@@ -4953,6 +4979,55 @@ params.Height = 512
 
 generated, err := mln.Generate(ctx, params)`}</code></pre>
           <p>The requested dimensions are the generation dimensions; prepare the source image and choose valid dimensions for the desired aspect ratio. The <a href="../examples/malina-img2img/main.go"><code>malina-img2img</code></a> example accepts PNG and JPEG input, constrains the image to 1024 pixels per side, and rounds dimensions down to multiples of 8.</p>
+          <h4 id="1961-controlnet">19.6.1 ControlNet</h4>
+          <p>Load the model and ControlNet roles from the curated bundle, then supply a control image. Set <code>Canny</code> to preprocess a copy of the source image before generation:</p>
+          <pre className="code-block"><code className="language-go">{`mln, err := malina.New(
+    model.WithModelPath(manifest.Files[string(models.RoleModel)]),
+    model.WithControlNetPath(manifest.Files[string(models.RoleControlNet)]),
+)
+
+params := model.NewGenerateParams()
+params.Prompt = "a detailed astronaut portrait"
+params.ControlImage = source
+canny := model.NewCannyParams()
+params.Canny = &canny
+generated, err := mln.Generate(ctx, params)`}</code></pre>
+          <h4 id="1962-adetailer">19.6.2 ADetailer</h4>
+          <p>An ADetailer bundle loads one detector beside every configured generation context. <code>Detail</code> detects faces and returns the final inpainted image:</p>
+          <pre className="code-block"><code className="language-go">{`mln, err := malina.New(
+    model.WithModelPath(manifest.Files[string(models.RoleModel)]),
+    model.WithADetailerPath(manifest.Files[string(models.RoleADetailer)]),
+)
+
+params := model.NewDetailParams()
+params.Image = portrait
+params.Prompt = "a detailed portrait photo"
+generated, err := mln.Detail(ctx, params)`}</code></pre>
+          <h4 id="1963-animatediff">19.6.3 AnimateDiff</h4>
+          <p>Configure a motion module and call <code>GenerateVideo</code>. The result owns standard Go images that can be passed directly to <code>model.SaveAVI</code>:</p>
+          <pre className="code-block"><code className="language-go">{`mln, err := malina.New(
+    model.WithModelPath(manifest.Files[string(models.RoleModel)]),
+    model.WithMotionModulePath(manifest.Files[string(models.RoleMotionModule)]),
+)
+
+params := model.NewVideoParams()
+params.Prompt = "a cat walking through a garden"
+video, err := mln.GenerateVideo(ctx, params)
+if err == nil {
+    err = model.SaveAVI("animatediff.avi", video.Frames, video.FPS, 90)
+}`}</code></pre>
+          <h4 id="1964-upscaling">19.6.4 Upscaling</h4>
+          <p>Upscalers use a standalone handle because their bundles do not contain a diffusion model:</p>
+          <pre className="code-block"><code className="language-go">{`upscaler, err := malina.NewUpscaler(ctx, malina.UpscalerConfig{
+    ModelPath: manifest.Files[string(models.RoleUpscaler)],
+})
+if err != nil {
+    return err
+}
+defer upscaler.Unload()
+
+images, err := upscaler.Upscale(ctx, source)`}</code></pre>
+          <p>An ESRGAN call already executing in native code cannot be interrupted. A canceled context prevents queued work from starting and causes completed work to be discarded.</p>
           <h3 id="197-logging-progress-and-diagnostics">19.7 Logging, Progress, and Diagnostics</h3>
           <p>Native stable-diffusion.cpp and GGML diagnostics are silent by default. Enable them when diagnosing native behavior:</p>
           <pre className="code-block"><code className="language-go">{`malina.Init(
@@ -5001,12 +5076,24 @@ fmt.Println(info.Description)`}</code></pre>
                 <td>Generate a deterministic Stable Diffusion 1.5 PNG.</td>
               </tr>
               <tr>
-                <td><code>make example-malina-flux2</code></td>
-                <td>Generate a PNG with the multi-file FLUX.2 Klein 9B bundle.</td>
-              </tr>
-              <tr>
                 <td><code>make example-malina-img2img</code></td>
                 <td>Transform a PNG or JPEG with a prompt and strength.</td>
+              </tr>
+              <tr>
+                <td><code>make example-malina-controlnet</code></td>
+                <td>Generate an image using Canny edge conditioning.</td>
+              </tr>
+              <tr>
+                <td><code>make example-malina-adetailer</code></td>
+                <td>Detect and refine faces in a portrait.</td>
+              </tr>
+              <tr>
+                <td><code>make example-malina-animatediff</code></td>
+                <td>Generate AnimateDiff frames and write an AVI.</td>
+              </tr>
+              <tr>
+                <td><code>make example-malina-upscale</code></td>
+                <td>Enlarge a PNG or JPEG with Real-ESRGAN.</td>
               </tr>
               <tr>
                 <td><code>make example-malina-sd-encode</code></td>

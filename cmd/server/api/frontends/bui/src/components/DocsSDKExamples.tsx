@@ -2811,25 +2811,17 @@ func progress(step int, steps int, secondsPerStep float32) {
 }
 `;
 
-const malinaFlux2Example = `// This example shows you how to generate an image with the Malina SDK and a
-// multi-file FLUX.2 model.
-//
-// Experimental: The Malina SDK public API is subject to change.
-//
-// The first time you run this program the system will download and install the
-// stable-diffusion.cpp libraries and the FLUX.2 Klein 9B model bundle.
-//
-// Run the example like this from the root of the project:
-// $ make example-malina-flux2
-
+const malinaAdetailerExample = `// This example detects and refines faces using ADetailer.
 package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
 	"os"
-	"strings"
-	"sync"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/malina"
@@ -2838,166 +2830,269 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/malina/models"
 )
 
-var (
-	modelSource = models.BundleFlux2Klein9B
-	progressMu  sync.Mutex
-)
-
-const outputFile = "malina-flux2.png"
+const imageFile = "samples/adetailer-face.png"
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Printf("\\nERROR: %s\\n", err)
+		fmt.Println("ERROR:", err)
 		os.Exit(1)
 	}
 }
 
 func run() error {
-	manifest, err := installSystem()
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
+	defer cancel()
+
+	manifest, err := install(ctx)
 	if err != nil {
-		return fmt.Errorf("unable to install system: %w", err)
+		return err
 	}
 
-	mln, err := newMalina(manifest)
+	input, err := loadImage(imageFile)
 	if err != nil {
-		return fmt.Errorf("unable to init Malina: %w", err)
+		return err
 	}
+
+	mln, err := malina.New(
+		model.WithModelPath(manifest.Files[string(models.RoleModel)]),
+		model.WithADetailerPath(manifest.Files[string(models.RoleADetailer)]),
+	)
+	if err != nil {
+		return err
+	}
+
 	defer func() {
-		fmt.Println("\\nUnloading Malina")
 		if err := mln.Unload(context.Background()); err != nil {
-			fmt.Printf("unload: %v\\n", err)
+			fmt.Println("unload:", err)
 		}
 	}()
 
-	if err := generate(mln); err != nil {
-		return fmt.Errorf("generate: %w", err)
+	params := model.NewDetailParams()
+	params.Image = input
+	params.Prompt = "a detailed portrait photo"
+
+	result, err := mln.Detail(ctx, params)
+	if err != nil {
+		return err
 	}
 
-	return nil
+	return os.WriteFile("malina-adetailer.png", result.PNG, 0o644)
 }
 
-// =============================================================================
-
-func installSystem() (models.Manifest, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Minute)
-	defer cancel()
-
-	libs, err := libs.New(
-		libs.WithDetect(ctx, malina.FmtLogger),
-		libs.WithValidation(true),
-	)
+func install(ctx context.Context) (models.Manifest, error) {
+	lib, err := libs.New(libs.WithDetect(ctx, malina.FmtLogger), libs.WithValidation(true))
 	if err != nil {
 		return models.Manifest{}, err
 	}
 
-	if _, err := libs.Download(ctx, malina.FmtLogger); err != nil {
-		return models.Manifest{}, fmt.Errorf("unable to install stable-diffusion.cpp: %w", err)
+	if _, err := lib.Download(ctx, malina.FmtLogger); err != nil {
+		return models.Manifest{}, err
 	}
 
-	if err := malina.Init(
-		malina.WithLibPath(libs.LibsPath()),
-		malina.WithProgress(progress),
-	); err != nil {
-		return models.Manifest{}, fmt.Errorf("unable to init Malina: %w", err)
+	if err := malina.Init(malina.WithLibPath(lib.LibsPath())); err != nil {
+		return models.Manifest{}, err
 	}
-
-	// -------------------------------------------------------------------------
 
 	mdls, err := models.New()
 	if err != nil {
-		return models.Manifest{}, fmt.Errorf("unable to init models: %w", err)
+		return models.Manifest{}, err
 	}
 
-	fmt.Println("Downloading model bundle:", modelSource)
-
-	manifest, err := mdls.DownloadBundle(ctx, modelSource)
-	if err != nil {
-		return models.Manifest{}, fmt.Errorf("unable to install model bundle: %w", err)
-	}
-
-	return manifest, nil
+	return mdls.DownloadBundle(ctx, models.BundleADetailerFaceYOLOv8N)
 }
 
-func newMalina(manifest models.Manifest) (*malina.Malina, error) {
-	fmt.Println("Loading model...")
-
-	mln, err := malina.New(
-		model.WithDiffusionModelPath(manifest.Files[string(models.RoleDiffusion)]),
-		model.WithVAEPath(manifest.Files[string(models.RoleVAE)]),
-		model.WithLLMPath(manifest.Files[string(models.RoleLLM)]),
-	)
+func loadImage(filename string) (image.Image, error) {
+	file, err := os.Open(filename)
 	if err != nil {
-		return nil, fmt.Errorf("unable to create image generation model: %w", err)
+		return nil, err
 	}
 
-	si := mln.SystemInfo()
-	cfg := mln.ModelConfig()
-	mi := mln.ModelInfo()
+	img, _, err := image.Decode(file)
+	return img, errors.Join(err, file.Close())
+}
+`;
 
-	fmt.Println("- native version    :", si.NativeVersion)
-	fmt.Println("- physical cores    :", si.PhysicalCores)
-	fmt.Println("- backend devices   :", si.BackendDeviceCount)
-	fmt.Println("- model             :", mi.DiffusionModelPath)
-	fmt.Println("- cpu threads       :", cfg.CPUThreads)
-	fmt.Println("- active generations:", mln.ActiveGenerations())
+const malinaAnimatediffExample = `// This example generates an AnimateDiff video and writes a Motion-JPEG AVI.
+package main
 
-	return mln, nil
+import (
+	"context"
+	"fmt"
+	"os"
+	"time"
+
+	"github.com/ardanlabs/kronk/sdk/malina"
+	"github.com/ardanlabs/kronk/sdk/malina/model"
+	"github.com/ardanlabs/kronk/sdk/tools/malina/libs"
+	"github.com/ardanlabs/kronk/sdk/tools/malina/models"
+)
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Println("ERROR:", err)
+		os.Exit(1)
+	}
 }
 
-// =============================================================================
-
-func generate(mln *malina.Malina) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+func run() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
 	defer cancel()
 
-	params := model.NewGenerateParams()
-	params.Prompt = "an orange cat on a tropical beach playing with oranges"
-	params.NegativePrompt = "mascots, watermark, signature"
-	params.Steps = 4
-
-	fmt.Println("\\nGenerating FLUX.2 image...")
-	start := time.Now()
-
-	image, err := mln.Generate(ctx, params)
+	manifest, err := install(ctx)
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(outputFile, image.PNG, 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", outputFile, err)
+
+	mln, err := malina.New(
+		model.WithModelPath(manifest.Files[string(models.RoleModel)]),
+		model.WithMotionModulePath(manifest.Files[string(models.RoleMotionModule)]),
+	)
+	if err != nil {
+		return err
 	}
 
-	fmt.Printf("Wrote %s (%dx%d) in %s\\n", outputFile, image.Width, image.Height, time.Since(start).Round(time.Millisecond))
+	defer func() {
+		if err := mln.Unload(context.Background()); err != nil {
+			fmt.Println("unload:", err)
+		}
+	}()
 
-	return nil
+	params := model.NewVideoParams()
+	params.Prompt = "a cat walking through a garden"
+
+	video, err := mln.GenerateVideo(ctx, params)
+	if err != nil {
+		return err
+	}
+
+	return model.SaveAVI("malina-animatediff.avi", video.Frames, video.FPS, 90)
 }
 
-// progress renders model loading and image generation progress reported by
-// stable-diffusion.cpp.
-func progress(step int, steps int, secondsPerStep float32) {
-	if step <= 0 || steps <= 0 {
-		return
+func install(ctx context.Context) (models.Manifest, error) {
+	lib, err := libs.New(libs.WithDetect(ctx, malina.FmtLogger), libs.WithValidation(true))
+	if err != nil {
+		return models.Manifest{}, err
 	}
 
-	progressMu.Lock()
-	defer progressMu.Unlock()
-
-	const width = 50
-	current := min(step, steps)
-	filled := min(current*width/steps, width)
-	bar := strings.Repeat("=", filled)
-	if filled < width {
-		bar += ">"
+	if _, err := lib.Download(ctx, malina.FmtLogger); err != nil {
+		return models.Manifest{}, err
 	}
 
-	speed := fmt.Sprintf("%.2fs/it", secondsPerStep)
-	if secondsPerStep > 0 && secondsPerStep < 1 {
-		speed = fmt.Sprintf("%.2fit/s", 1/secondsPerStep)
+	if err := malina.Init(malina.WithLibPath(lib.LibsPath())); err != nil {
+		return models.Manifest{}, err
 	}
 
-	fmt.Printf("\\r  |%-50s| %d/%d - %s\\x1b[K", bar, current, steps, speed)
-	if current == steps {
-		fmt.Println()
+	mdls, err := models.New()
+	if err != nil {
+		return models.Manifest{}, err
 	}
+
+	return mdls.DownloadBundle(ctx, models.BundleAnimateDiffSD15)
+}
+`;
+
+const malinaControlnetExample = `// This example generates an image using Canny ControlNet conditioning.
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
+	"os"
+	"time"
+
+	"github.com/ardanlabs/kronk/sdk/malina"
+	"github.com/ardanlabs/kronk/sdk/malina/model"
+	"github.com/ardanlabs/kronk/sdk/tools/malina/libs"
+	"github.com/ardanlabs/kronk/sdk/tools/malina/models"
+)
+
+const imageFile = "samples/adetailer-face.png"
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Println("ERROR:", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
+	defer cancel()
+
+	manifest, err := install(ctx, models.BundleControlNetCannySD15)
+	if err != nil {
+		return err
+	}
+
+	input, err := loadImage(imageFile)
+	if err != nil {
+		return err
+	}
+
+	mln, err := malina.New(
+		model.WithModelPath(manifest.Files[string(models.RoleModel)]),
+		model.WithControlNetPath(manifest.Files[string(models.RoleControlNet)]),
+	)
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		if err := mln.Unload(context.Background()); err != nil {
+			fmt.Println("unload:", err)
+		}
+	}()
+
+	params := model.NewGenerateParams()
+	params.Prompt = "a detailed astronaut portrait"
+	params.Width = input.Bounds().Dx()
+	params.Height = input.Bounds().Dy()
+	params.ControlImage = input
+	canny := model.NewCannyParams()
+	params.Canny = &canny
+
+	result, err := mln.Generate(ctx, params)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile("malina-controlnet.png", result.PNG, 0o644)
+}
+
+func install(ctx context.Context, bundle models.BundleName) (models.Manifest, error) {
+	lib, err := libs.New(libs.WithDetect(ctx, malina.FmtLogger), libs.WithValidation(true))
+	if err != nil {
+		return models.Manifest{}, err
+	}
+
+	if _, err := lib.Download(ctx, malina.FmtLogger); err != nil {
+		return models.Manifest{}, err
+	}
+
+	if err := malina.Init(malina.WithLibPath(lib.LibsPath())); err != nil {
+		return models.Manifest{}, err
+	}
+
+	mdls, err := models.New()
+	if err != nil {
+		return models.Manifest{}, err
+	}
+
+	return mdls.DownloadBundle(ctx, bundle)
+}
+
+func loadImage(filename string) (image.Image, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	img, _, err := image.Decode(file)
+	return img, errors.Join(err, file.Close())
 }
 `;
 
@@ -3466,6 +3561,108 @@ func installSystem() error {
 	}
 
 	return nil
+}
+`;
+
+const malinaUpscaleExample = `// This example enlarges a PNG or JPEG using Real-ESRGAN.
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"image"
+	_ "image/jpeg"
+	"image/png"
+	"os"
+	"time"
+
+	"github.com/ardanlabs/kronk/sdk/malina"
+	"github.com/ardanlabs/kronk/sdk/tools/malina/libs"
+	"github.com/ardanlabs/kronk/sdk/tools/malina/models"
+)
+
+const imageFile = "samples/adetailer-face.png"
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Println("ERROR:", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+
+	manifest, err := install(ctx)
+	if err != nil {
+		return err
+	}
+
+	input, err := loadImage(imageFile)
+	if err != nil {
+		return err
+	}
+
+	upscaler, err := malina.NewUpscaler(ctx, malina.UpscalerConfig{ModelPath: manifest.Files[string(models.RoleUpscaler)]})
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		if err := upscaler.Unload(); err != nil {
+			fmt.Println("unload:", err)
+		}
+	}()
+
+	images, err := upscaler.Upscale(ctx, input)
+	if err != nil {
+		return err
+	}
+
+	if len(images) == 0 {
+		return fmt.Errorf("upscaler returned no images")
+	}
+
+	file, err := os.Create("malina-upscaled.png")
+	if err != nil {
+		return err
+	}
+
+	return errors.Join(png.Encode(file, images[0]), file.Close())
+}
+
+func install(ctx context.Context) (models.Manifest, error) {
+	lib, err := libs.New(libs.WithDetect(ctx, malina.FmtLogger), libs.WithValidation(true))
+	if err != nil {
+		return models.Manifest{}, err
+	}
+
+	if _, err := lib.Download(ctx, malina.FmtLogger); err != nil {
+		return models.Manifest{}, err
+	}
+
+	if err := malina.Init(malina.WithLibPath(lib.LibsPath())); err != nil {
+		return models.Manifest{}, err
+	}
+
+	mdls, err := models.New()
+	if err != nil {
+		return models.Manifest{}, err
+	}
+
+	return mdls.DownloadBundle(ctx, models.BundleRealESRGANX4Anime)
+}
+
+func loadImage(filename string) (image.Image, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	img, _, err := image.Decode(file)
+	return img, errors.Join(err, file.Close())
 }
 `;
 
@@ -5332,10 +5529,22 @@ export default function DocsSDKExamples() {
             <CodeBlock code={malinaExample} language="go" />
           </div>
 
-          <div className="card" id="example-malina-flux2">
-            <h3>Malina-Flux2</h3>
-            <p className="doc-description">This example shows you how to generate an image with the Malina SDK and a</p>
-            <CodeBlock code={malinaFlux2Example} language="go" />
+          <div className="card" id="example-malina-adetailer">
+            <h3>Malina-Adetailer</h3>
+            <p className="doc-description">This example detects and refines faces using ADetailer.</p>
+            <CodeBlock code={malinaAdetailerExample} language="go" />
+          </div>
+
+          <div className="card" id="example-malina-animatediff">
+            <h3>Malina-Animatediff</h3>
+            <p className="doc-description">This example generates an AnimateDiff video and writes a Motion-JPEG AVI.</p>
+            <CodeBlock code={malinaAnimatediffExample} language="go" />
+          </div>
+
+          <div className="card" id="example-malina-controlnet">
+            <h3>Malina-Controlnet</h3>
+            <p className="doc-description">This example generates an image using Canny ControlNet conditioning.</p>
+            <CodeBlock code={malinaControlnetExample} language="go" />
           </div>
 
           <div className="card" id="example-malina-img2img">
@@ -5354,6 +5563,12 @@ export default function DocsSDKExamples() {
             <h3>Malina-System</h3>
             <p className="doc-description">This example prints Malina and stable-diffusion.cpp system information.</p>
             <CodeBlock code={malinaSystemExample} language="go" />
+          </div>
+
+          <div className="card" id="example-malina-upscale">
+            <h3>Malina-Upscale</h3>
+            <p className="doc-description">This example enlarges a PNG or JPEG using Real-ESRGAN.</p>
+            <CodeBlock code={malinaUpscaleExample} language="go" />
           </div>
 
           <div className="card" id="example-pool">
@@ -5414,10 +5629,13 @@ export default function DocsSDKExamples() {
                 <li><a href="#example-embedding">Embedding</a></li>
                 <li><a href="#example-grammar">Grammar</a></li>
                 <li><a href="#example-malina">Malina</a></li>
-                <li><a href="#example-malina-flux2">Malina-Flux2</a></li>
+                <li><a href="#example-malina-adetailer">Malina-Adetailer</a></li>
+                <li><a href="#example-malina-animatediff">Malina-Animatediff</a></li>
+                <li><a href="#example-malina-controlnet">Malina-Controlnet</a></li>
                 <li><a href="#example-malina-img2img">Malina-Img2img</a></li>
                 <li><a href="#example-malina-sd-encode">Malina-Sd-Encode</a></li>
                 <li><a href="#example-malina-system">Malina-System</a></li>
+                <li><a href="#example-malina-upscale">Malina-Upscale</a></li>
                 <li><a href="#example-pool">Pool</a></li>
                 <li><a href="#example-question">Question</a></li>
                 <li><a href="#example-rag">Rag</a></li>

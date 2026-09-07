@@ -11,6 +11,10 @@
   - [19.4.3 Generate an Image](#1943-generate-an-image)
 - [19.5 Multi-File Model Bundles](#195-multi-file-model-bundles)
 - [19.6 Image-to-Image Generation](#196-image-to-image-generation)
+  - [19.6.1 ControlNet](#1961-controlnet)
+  - [19.6.2 ADetailer](#1962-adetailer)
+  - [19.6.3 AnimateDiff](#1963-animatediff)
+  - [19.6.4 Upscaling](#1964-upscaling)
 - [19.7 Logging, Progress, and Diagnostics](#197-logging-progress-and-diagnostics)
 - [19.8 Motion-JPEG Encoding](#198-motion-jpeg-encoding)
 - [19.9 Examples](#199-examples)
@@ -37,6 +41,8 @@ The current SDK supports:
 
 - text-to-image generation;
 - image-to-image generation from a Go `image.Image`;
+- Canny ControlNet conditioning and ADetailer face refinement;
+- AnimateDiff video generation and Real-ESRGAN upscaling;
 - single-checkpoint and multi-file diffusion pipelines;
 - curated model-bundle download and validation;
 - native library detection, installation, and version management;
@@ -162,9 +168,13 @@ The current bundles are:
 | Bundle | Files | License | Approximate download |
 | ------ | ----- | ------- | -------------------- |
 | `sd-1.5` | Stable Diffusion 1.5 checkpoint | CreativeML Open RAIL-M | 4.3 GB |
+| `controlnet-canny-sd1.5` | Quantized SD 1.5 and Canny ControlNet | CreativeML Open RAIL-M / OpenRAIL | 2.3 GB |
+| `realesrgan-x4-anime` | Real-ESRGAN 4× anime upscaler | BSD-3-Clause | 18 MB |
+| `adetailer-face-yolov8n` | Quantized SD 1.5 and face detector | CreativeML Open RAIL-M / AGPL-3.0 | 1.6 GB |
+| `animatediff-sd1.5` | Quantized SD 1.5 and AnimateDiff v3 motion module | CreativeML Open RAIL-M / Apache-2.0 | 2.4 GB |
 | `sdxl-base-1.0` | SDXL Base 1.0 checkpoint | CreativeML Open RAIL++-M | 6.9 GB |
 | `flux2-klein-4b` | Diffusion model, VAE, and LLM text encoder | FLUX Non-Commercial | 5.3 GB |
-| `flux2-klein-9b` | Diffusion model, VAE, and LLM text encoder | FLUX Non-Commercial | 11 GB |
+| `flux2-klein-9b` | Diffusion model, VAE, and LLM text encoder | FLUX Non-Commercial | 11 GB of unique downloads, 16 GB installed |
 
 Use `models.SupportedBundles()` to enumerate names and `models.Catalog()` to
 inspect descriptions, licenses, gating, files, and component roles.
@@ -379,6 +389,83 @@ image and choose valid dimensions for the desired aspect ratio. The
 JPEG input, constrains the image to 1024 pixels per side, and rounds dimensions
 down to multiples of 8.
 
+#### 19.6.1 ControlNet
+
+Load the model and ControlNet roles from the curated bundle, then supply a
+control image. Set `Canny` to preprocess a copy of the source image before
+generation:
+
+```go
+mln, err := malina.New(
+    model.WithModelPath(manifest.Files[string(models.RoleModel)]),
+    model.WithControlNetPath(manifest.Files[string(models.RoleControlNet)]),
+)
+
+params := model.NewGenerateParams()
+params.Prompt = "a detailed astronaut portrait"
+params.ControlImage = source
+canny := model.NewCannyParams()
+params.Canny = &canny
+generated, err := mln.Generate(ctx, params)
+```
+
+#### 19.6.2 ADetailer
+
+An ADetailer bundle loads one detector beside every configured generation
+context. `Detail` detects faces and returns the final inpainted image:
+
+```go
+mln, err := malina.New(
+    model.WithModelPath(manifest.Files[string(models.RoleModel)]),
+    model.WithADetailerPath(manifest.Files[string(models.RoleADetailer)]),
+)
+
+params := model.NewDetailParams()
+params.Image = portrait
+params.Prompt = "a detailed portrait photo"
+generated, err := mln.Detail(ctx, params)
+```
+
+#### 19.6.3 AnimateDiff
+
+Configure a motion module and call `GenerateVideo`. The result owns standard Go
+images that can be passed directly to `model.SaveAVI`:
+
+```go
+mln, err := malina.New(
+    model.WithModelPath(manifest.Files[string(models.RoleModel)]),
+    model.WithMotionModulePath(manifest.Files[string(models.RoleMotionModule)]),
+)
+
+params := model.NewVideoParams()
+params.Prompt = "a cat walking through a garden"
+video, err := mln.GenerateVideo(ctx, params)
+if err == nil {
+    err = model.SaveAVI("animatediff.avi", video.Frames, video.FPS, 90)
+}
+```
+
+#### 19.6.4 Upscaling
+
+Upscalers use a standalone handle because their bundles do not contain a
+diffusion model:
+
+```go
+upscaler, err := malina.NewUpscaler(ctx, malina.UpscalerConfig{
+    ModelPath: manifest.Files[string(models.RoleUpscaler)],
+})
+if err != nil {
+    return err
+}
+defer upscaler.Unload()
+
+images, err := upscaler.Upscale(ctx, source)
+```
+
+An ESRGAN call already executing in native code cannot be interrupted. A
+canceled context prevents queued work from starting and causes completed work
+to be discarded.
+
 ### 19.7 Logging, Progress, and Diagnostics
 
 Native stable-diffusion.cpp and GGML diagnostics are silent by default. Enable
@@ -449,8 +536,11 @@ default Kronk paths. They do not require path environment variables.
 | Command | Purpose |
 | ------- | ------- |
 | `make example-malina` | Generate a deterministic Stable Diffusion 1.5 PNG. |
-| `make example-malina-flux2` | Generate a PNG with the multi-file FLUX.2 Klein 9B bundle. |
 | `make example-malina-img2img` | Transform a PNG or JPEG with a prompt and strength. |
+| `make example-malina-controlnet` | Generate an image using Canny edge conditioning. |
+| `make example-malina-adetailer` | Detect and refine faces in a portrait. |
+| `make example-malina-animatediff` | Generate AnimateDiff frames and write an AVI. |
+| `make example-malina-upscale` | Enlarge a PNG or JPEG with Real-ESRGAN. |
 | `make example-malina-sd-encode` | Encode a directory of PNG/JPEG frames as Motion-JPEG AVI. |
 | `make example-malina-system` | Install libraries and print native system diagnostics. |
 

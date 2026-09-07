@@ -38,8 +38,8 @@ github.com/ardanlabs/conf/v3 v3.13.0 h1:XKQXX35fFq/jencPu19xh0a6NPMT4NrpcRP/F9x7
 github.com/ardanlabs/conf/v3 v3.13.0/go.mod h1:XlL9P0quWP4m1weOVFmlezabinbZLI05niDof/+Ochk=
 github.com/ardanlabs/jinja v1.6.0 h1:CbqS/dxYM9qrmlBed1GsN64/tRY6SoWQWc5Sc+aw3iI=
 github.com/ardanlabs/jinja v1.6.0/go.mod h1:aXXzlJfjA+T3XNKA/YT5ZtDq2VJxt5a5siZ8cl9B35Q=
-github.com/ardanlabs/malina v1.0.8 h1:ZGWNMtwzYyj22vLiTEG0rNadGZrfBJcyONHejyzqNmo=
-github.com/ardanlabs/malina v1.0.8/go.mod h1:KSnlOa6fLMobBuj+pgJouonG2LPYmTIkU4aorrVmQdA=
+github.com/ardanlabs/malina v1.0.9 h1:oZw7N57WuK8zjemfw8/ckMOFQBi2c24bSWX1C6tbzEM=
+github.com/ardanlabs/malina v1.0.9/go.mod h1:KSnlOa6fLMobBuj+pgJouonG2LPYmTIkU4aorrVmQdA=
 github.com/arl/statsviz v0.8.2 h1:sceiee7nGyPCEFq3y25krycRqwefBJbC5xnNZjSfLiE=
 github.com/arl/statsviz v0.8.2/go.mod h1:z3rQqviSGmoVkR/09Z7ygIwWlE/1Rdslvw3azST/4rQ=
 github.com/aws/aws-sdk-go-v2 v1.46.0 h1:1kt7m/EKcEHt5mlyyxx9cSlMddRPIKbjb6DIQsu4HPk=

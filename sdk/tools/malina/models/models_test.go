@@ -1,7 +1,6 @@
 package models
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -28,8 +27,14 @@ func TestCatalogValidity(t *testing.T) {
 	}
 }
 
-func TestCatalogIncludesMalinaCatalog(t *testing.T) {
-	for _, malinaBundle := range malinadownload.Catalog() {
+func TestCatalogMatchesMalinaCatalog(t *testing.T) {
+	malinaCatalog := malinadownload.Catalog()
+	kronkCatalog := Catalog()
+	if len(kronkCatalog) != len(malinaCatalog) {
+		t.Fatalf("Catalog length: got %d, want %d", len(kronkCatalog), len(malinaCatalog))
+	}
+
+	for _, malinaBundle := range malinaCatalog {
 		name, err := ParseBundleName(malinaBundle.Name)
 		if err != nil {
 			t.Fatalf("ParseBundleName(%q): %v", malinaBundle.Name, err)
@@ -39,22 +44,39 @@ func TestCatalogIncludesMalinaCatalog(t *testing.T) {
 			t.Fatalf("BundleByName(%q): not found", name)
 		}
 
-		kronkJSON, err := json.Marshal(kronkBundle)
-		if err != nil {
-			t.Fatalf("Marshal Kronk bundle %q: %v", name, err)
+		if kronkBundle.Description != malinaBundle.Description || kronkBundle.License != malinaBundle.License || kronkBundle.Gated != malinaBundle.Gated {
+			t.Errorf("Kronk bundle %q metadata does not match the Malina catalog", name)
 		}
-		malinaJSON, err := json.Marshal(malinaBundle)
-		if err != nil {
-			t.Fatalf("Marshal Malina bundle %q: %v", name, err)
+		if len(kronkBundle.Files) != len(malinaBundle.Files) {
+			t.Errorf("Kronk bundle %q file count: got %d, want %d", name, len(kronkBundle.Files), len(malinaBundle.Files))
+			continue
 		}
-		if !bytes.Equal(kronkJSON, malinaJSON) {
-			t.Errorf("Kronk bundle %q does not match the Malina catalog", name)
+		for i, malinaFile := range malinaBundle.Files {
+			kronkFile := kronkBundle.Files[i]
+			if string(kronkFile.Role) != string(malinaFile.Role) || kronkFile.Filename != malinaFile.Filename || kronkFile.URL != malinaFile.URL || kronkFile.Size != malinaFile.Size {
+				t.Errorf("Kronk bundle %q file %d: got %+v, want %+v", name, i, kronkFile, malinaFile)
+			}
+		}
+	}
+
+	for _, kronkBundle := range kronkCatalog {
+		if _, ok := malinadownload.BundleByName(kronkBundle.Name.String()); !ok {
+			t.Errorf("Kronk bundle %q is absent from the Malina catalog", kronkBundle.Name)
 		}
 	}
 }
 
 func TestBundleNameConstants(t *testing.T) {
-	want := []BundleName{BundleFlux2Klein4B, BundleFlux2Klein9B, BundleSD15, BundleSDXLBase10}
+	want := []BundleName{
+		BundleADetailerFaceYOLOv8N,
+		BundleAnimateDiffSD15,
+		BundleControlNetCannySD15,
+		BundleFlux2Klein4B,
+		BundleFlux2Klein9B,
+		BundleRealESRGANX4Anime,
+		BundleSD15,
+		BundleSDXLBase10,
+	}
 	if !slices.Equal(SupportedBundles(), want) {
 		t.Errorf("SupportedBundles(): got %v, want %v", SupportedBundles(), want)
 	}

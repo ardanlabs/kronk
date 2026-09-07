@@ -73,7 +73,9 @@ The Kronk SDK supports text generation, streaming, reasoning, tool calls, vision
 embeddings, reranking, concurrent processing, and incremental message caching. Bucky
 supports file transcription, translation, channel-separated diarization, and live
 streaming transcription. Experimental Malina supports text-to-image, image-to-image,
-single-checkpoint and multi-file diffusion pipelines, and Motion-JPEG encoding.
+Canny ControlNet conditioning, ADetailer face refinement, AnimateDiff video generation,
+Real-ESRGAN upscaling, single-checkpoint and multi-file diffusion pipelines, and
+Motion-JPEG encoding.
 
 ## Platform Support
 
@@ -113,7 +115,7 @@ Here are some of the known compatible versions:
 
 | kronk     | yzma    | llama.cpp | bucky  | whisper.cpp | malina | stable-diffusion.cpp |
 | --------- | ------- | --------- | ------ | ----------- | ------ | -------------------- |
-| 1.32.6-rc | ece4890 | b10826    | v1.1.2 | v1.9.3      | v1.0.8 | master-841-6b3edaa   |
+| 1.32.6-rc | ece4890 | b10826    | v1.1.2 | v1.9.3      | v1.0.9 | master-846-d8fb10c   |
 | 1.32.5    | v1.26.0 | v0.4.0    | v1.1.2 | v1.9.3      | v1.0.8 | master-841-6b3edaa   |
 | 1.32.4    | 6bd0208 | b10785    | v1.1.1 | v1.9.3      | v1.0.6 | master-841-6b3edaa   |
 | 1.32.3    | v1.25.0 | v0.3.0    | v1.1.0 | v1.9.3      | v1.0.5 | master-830-50d6405   |
@@ -141,12 +143,16 @@ make example-vision           # Prompt a vision model with an image.
 make example-bucky            # Transcribe an audio file with Bucky.
 make example-bucky-stream-vad # Stream transcription with Silero VAD boundaries.
 make example-malina           # Generate an image with experimental Malina.
+make example-malina-controlnet # Generate an image with Canny edge conditioning.
+make example-malina-adetailer  # Detect and refine faces in a portrait.
+make example-malina-animatediff # Generate AnimateDiff frames and write an AVI.
+make example-malina-upscale    # Enlarge an image with Real-ESRGAN.
 ```
 
 Examples download compatible libraries and models on their first run. Browse the
 [complete examples module](examples/) for chat, Responses, embeddings, reranking,
-RAG, streaming transcription, image-to-image generation, model pools, session stores,
-and lower-level yzma usage.
+RAG, streaming transcription, image-to-image generation, ControlNet, ADetailer,
+AnimateDiff, image upscaling, model pools, session stores, and lower-level yzma usage.
 
 ## Community and Support
 

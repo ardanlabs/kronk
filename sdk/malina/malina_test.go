@@ -3,6 +3,7 @@ package malina
 import (
 	"context"
 	"errors"
+	"image"
 	"runtime"
 	"sync"
 	"testing"
@@ -35,6 +36,14 @@ func (fb *fakeBackend) Generate(context.Context, model.GenerateParams) (model.Ge
 	fb.mu.Unlock()
 
 	return model.GeneratedImage{PNG: []byte("png")}, fb.err
+}
+
+func (fb *fakeBackend) Detail(context.Context, model.DetailParams) (model.GeneratedImage, error) {
+	return model.GeneratedImage{PNG: []byte("detail")}, fb.err
+}
+
+func (fb *fakeBackend) GenerateVideo(context.Context, model.VideoParams) (model.GeneratedVideo, error) {
+	return model.GeneratedVideo{FPS: 1}, fb.err
 }
 
 func (fb *fakeBackend) Stop() {}
@@ -143,6 +152,36 @@ func TestGenerateConcurrencyAndUnload(t *testing.T) {
 	defer fb.mu.Unlock()
 	if fb.max != 2 || fb.unloads != 2 {
 		t.Errorf("max/unloads: got %d/%d, want 2/2", fb.max, fb.unloads)
+	}
+}
+
+func TestWorkflowDispatch(t *testing.T) {
+	fb := fakeBackend{}
+	m := newTestMalina(t, &fb, 1, 0)
+
+	detail := model.NewDetailParams()
+	detail.Image = image.NewRGBA(image.Rect(0, 0, 64, 64))
+	detail.Prompt = "portrait"
+	result, err := m.Detail(t.Context(), detail)
+	if err != nil {
+		t.Fatalf("Detail() error = %v", err)
+	}
+	if string(result.PNG) != "detail" {
+		t.Errorf("Detail() PNG = %q, want detail", result.PNG)
+	}
+
+	video := model.NewVideoParams()
+	video.Prompt = "walking cat"
+	generated, err := m.GenerateVideo(t.Context(), video)
+	if err != nil {
+		t.Fatalf("GenerateVideo() error = %v", err)
+	}
+	if generated.FPS != 1 {
+		t.Errorf("GenerateVideo() FPS = %d, want 1", generated.FPS)
+	}
+
+	if err := m.Unload(t.Context()); err != nil {
+		t.Fatalf("Unload() error = %v", err)
 	}
 }
 
