@@ -49,7 +49,9 @@ func Setup() {
 	ImageFile = filepath.Join(gw, "examples/samples/giraffe.jpg")
 	AudioFile = filepath.Join(gw, "examples/samples/jfk.wav")
 
-	if os.Getenv("GITHUB_ACTIONS") == "true" {
+	// Only the hosted runners are too small to carry the default; the
+	// self-hosted fleets have the cores and the GPUs to run concurrently.
+	if os.Getenv("KRONK_TEST_HOSTED") != "" {
 		Goroutines = 1
 	}
 

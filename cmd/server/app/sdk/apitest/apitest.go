@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -60,10 +59,6 @@ func (at *Test) Run(t *testing.T, table []Table, testName string, options ...Opt
 		f := func(t *testing.T) {
 			if to.skip {
 				t.Skipf("%v: %v", testName, to.skipMsg)
-			}
-
-			if tt.SkipInGH && os.Getenv("GITHUB_ACTIONS") == "true" {
-				t.Skip("Skipping test in GitHub Actions")
 			}
 
 			maxAttempts := to.retries + 1
@@ -142,10 +137,6 @@ func (at *Test) RunStreaming(t *testing.T, table []Table, testName string, optio
 		f := func(t *testing.T) {
 			if to.skip {
 				t.Skipf("%v: %v", testName, to.skipMsg)
-			}
-
-			if tt.SkipInGH && os.Getenv("GITHUB_ACTIONS") == "true" {
-				t.Skip("Skipping test in GitHub Actions")
 			}
 
 			maxAttempts := to.retries + 1

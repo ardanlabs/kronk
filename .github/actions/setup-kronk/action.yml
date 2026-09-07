@@ -7,11 +7,21 @@ description: >
   capability shim, which every macOS job needs because darwin/arm64 has one
   llama.cpp bundle and it always carries Metal
   (zarf/docker/runner/macos/README.md). Re-used by the Linux, macOS and GPU
-  workflows so every job starts from an identical environment.
+  workflows so every job starts from an identical environment. Also exports
+  KRONK_TEST_HOSTED=1 on hosted runners, the one signal the suites use to
+  recognize a small CPU-only box.
 
 runs:
   using: composite
   steps:
+    # GITHUB_ACTIONS cannot carry this: the runner agent sets it on the
+    # self-hosted fleets too. Exported here, not in each workflow's job-level
+    # env:, because the runner context is not available there.
+    - name: Flag hosted runners for the test suites
+      if: runner.environment == 'github-hosted'
+      shell: bash
+      run: echo "KRONK_TEST_HOSTED=1" >> "$GITHUB_ENV"
+
     - name: Free disk space
       # Only the hosted images ship the toolchains this reclaims. The
       # self-hosted runner has 800+ GB free and none of these paths.

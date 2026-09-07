@@ -9,8 +9,11 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	if os.Getenv("GITHUB_ACTIONS") == "true" {
-		fmt.Println("skipping hybrid_vision_imc tests in GitHub Actions")
+	// The model is base-tier, so a hosted runner does have it, but this
+	// suite is interleaved multi-modal inference: it needs the GPU fleets,
+	// not a small CPU-only box.
+	if os.Getenv("KRONK_TEST_HOSTED") != "" {
+		fmt.Println("skipping hybrid_vision_imc tests on a hosted runner")
 		os.Exit(0)
 	}
 
