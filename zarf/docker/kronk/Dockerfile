@@ -930,8 +930,8 @@ COPY --from=libs-fetcher /kronk/libraries /kronk/libraries
 # side — and falls through to KRONK_BUCKY_LIB_PATH when set.
 COPY --from=bucky-libs-fetcher /kronk/bucky-libraries /kronk/bucky-libraries
 
-# Default model config — overridable by bind-mounting another file at the
-# path referenced by KRONK_POOL_MODEL_CONFIG_FILE below.
+# Default model config, at the location kronk uses natively. A named volume
+# on /kronk seeds from the image; a bind mount shadows this file.
 COPY zarf/kms/model_config.yaml /kronk/models/model_config.yaml
 
 # Persistent state lives under /kronk. Models are huge and must be mounted;
@@ -941,7 +941,7 @@ COPY zarf/kms/model_config.yaml /kronk/models/model_config.yaml
 # whisper.cpp model root (default `~/.kronk/bucky-models/` per
 # sdk/tools/bucky/models/models.go).
 RUN mkdir -p /kronk/models /kronk/bucky-models /kronk/catalog /kronk/keys \
- && chown -R kronk:kronk /kronk /etc/kronk
+ && chown -R kronk:kronk /kronk
 
 USER kronk:kronk
 
@@ -1117,13 +1117,13 @@ COPY --from=libs-fetcher /kronk/libraries /kronk/libraries
 # can transcribe on Jetson out of the box.
 COPY --from=bucky-libs-fetcher /kronk/bucky-libraries /kronk/bucky-libraries
 
-# Default model config — overridable by bind-mounting another file at the
-# path referenced by KRONK_POOL_MODEL_CONFIG_FILE below.
+# Default model config, at the location kronk uses natively. A named volume
+# on /kronk seeds from the image; a bind mount shadows this file.
 COPY zarf/kms/model_config.yaml /kronk/models/model_config.yaml
 
 # `bucky-models` is the whisper.cpp model root (see runtime stage above).
 RUN mkdir -p /kronk/models /kronk/bucky-models /kronk/catalog /kronk/keys \
- && chown -R kronk:kronk /kronk /etc/kronk
+ && chown -R kronk:kronk /kronk
 
 USER kronk:kronk
 
