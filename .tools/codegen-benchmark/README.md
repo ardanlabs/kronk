@@ -10,9 +10,9 @@ The harness creates a fresh nested Git repository and isolated OpenCode home for
 every attempt. The repository boundary prevents OpenCode from treating the
 surrounding Kronk checkout as its workspace. It installs only the repository's
 `writing-go` skill, disables project configuration, plugins, MCP, web access, and
-subagents, and denies filesystem access outside the attempt directory through
-OpenCode's file tools. The structural tests and scripted game inputs remain hidden
-from OpenCode.
+subagents, disables OpenCode's Git-backed workspace snapshots, and denies
+filesystem access outside the attempt directory through OpenCode's file tools.
+The structural tests and scripted game inputs remain hidden from OpenCode.
 
 Before a model's attempts begin, the harness warms it with a one-token response
 to `hello model`. After all attempts for that model, it unloads the model before

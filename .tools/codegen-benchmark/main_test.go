@@ -51,6 +51,9 @@ func TestOpenCodeConfig(t *testing.T) {
 	if got, want := config["model"], "kronk/org/model/AGENT"; got != want {
 		t.Errorf("model: got %v, want %v", got, want)
 	}
+	if got, want := config["snapshot"], false; got != want {
+		t.Errorf("snapshot: got %v, want %v", got, want)
+	}
 	providers := config["provider"].(map[string]any)
 	kronk := providers["kronk"].(map[string]any)
 	options := kronk["options"].(map[string]any)
@@ -89,6 +92,9 @@ func TestOpenCodeAcceptsConfig(t *testing.T) {
 	}
 	if got, want := resolved["model"], "kronk/org/model/AGENT"; got != want {
 		t.Errorf("resolved model: got %v, want %v", got, want)
+	}
+	if got, want := resolved["snapshot"], false; got != want {
+		t.Errorf("resolved snapshot: got %v, want %v", got, want)
 	}
 }
 
