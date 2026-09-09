@@ -496,6 +496,7 @@ func openCodeConfig(host string, model benchmarkModel, steps int) ([]byte, error
 		"lsp":        true,
 		"mcp":        map[string]any{},
 		"plugin":     []string{},
+		"snapshot":   false,
 		"autoupdate": false,
 		"share":      "disabled",
 		"compaction": map[string]bool{"auto": false, "prune": false},
