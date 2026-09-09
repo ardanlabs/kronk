@@ -212,10 +212,12 @@ jobs:
           export RUN_IN_PARALLEL=no
           go -C examples test -v -count=1 -timeout 2m ./session-store
           go test -v -p=1 -count=1 -timeout 20m $(go list ./sdk/... | grep -v '/sdk/kronk/tests')
-          go test -v -count=1 -timeout 6m -run '^(TestSuite|TestUsageCounting|Test_BatchChatConcurrent)$' ./sdk/kronk/tests/qwen3
+          go test -v -count=1 -timeout 20m ./sdk/kronk/tests/qwen3
           go test -v -count=1 -timeout 6m -run '^TestLengthTerminatedToolCallBecomesContent$' ./sdk/kronk/tests/qwen06
           go test -v -count=1 -timeout 6m -run '^TestSuite$' ./sdk/kronk/tests/draft
           go test -v -count=1 -timeout 6m -run '^(TestSuite|Test_PooledVision)$' ./sdk/kronk/tests/vision
           go test -v -count=1 -timeout 6m -run '^TestSuite$' ./sdk/kronk/tests/vision_imc
+          go test -v -count=1 -timeout 6m -run '^(TestSuite|TestConcurrentEmbeddings)$' ./sdk/kronk/tests/embed
           go test -v -count=1 -timeout 6m -run '^(TestSuite|TestConcurrentRerank)$' ./sdk/kronk/tests/rerank
-          go test -v -count=1 -timeout 6m -run '^(TestSuite|TestUsageCountingHybrid)$' ./sdk/kronk/tests/hybrid
+          go test -v -count=1 -timeout 20m ./sdk/kronk/tests/hybrid
+          go test -v -count=1 -timeout 6m -run '^TestSuite$' ./sdk/kronk/tests/hybrid_vision_imc

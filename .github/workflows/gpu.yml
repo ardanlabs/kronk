@@ -160,13 +160,15 @@ jobs:
           LUME_METAL_MAX_THREADGROUP_MEMORY: ${{ matrix.processor == 'metal' && '32768' || '' }}
         run: |
           export RUN_IN_PARALLEL=no
-          go test -v -count=1 -timeout 10m -run '^(TestSuite|TestUsageCounting|Test_BatchChatConcurrent)$' ./sdk/kronk/tests/qwen3
+          go test -v -count=1 -timeout 20m ./sdk/kronk/tests/qwen3
           go test -v -count=1 -timeout 10m -run '^TestLengthTerminatedToolCallBecomesContent$' ./sdk/kronk/tests/qwen06
           go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/draft
           go test -v -count=1 -timeout 10m -run '^(TestSuite|Test_PooledVision)$' ./sdk/kronk/tests/vision
           go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/vision_imc
+          go test -v -count=1 -timeout 10m -run '^(TestSuite|TestConcurrentEmbeddings)$' ./sdk/kronk/tests/embed
           go test -v -count=1 -timeout 10m -run '^(TestSuite|TestConcurrentRerank)$' ./sdk/kronk/tests/rerank
-          go test -v -count=1 -timeout 10m -run '^(TestSuite|TestUsageCountingHybrid)$' ./sdk/kronk/tests/hybrid
+          go test -v -count=1 -timeout 20m ./sdk/kronk/tests/hybrid
+          go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/hybrid_vision_imc
 
       # The MTP speculation path, which the classic drafter above does not
       # cover. Separate for the 26B/35B targets and the longer timeout.
