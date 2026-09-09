@@ -32,17 +32,15 @@ install-kronk:
 # stable-diffusion.cpp to the latest version. Used by the local `make test`
 # target so developers exercise the newest bundles before bumping each
 # backend's well-known defaultVersion for a release. All three backends
-# support --upgrade to track the latest published release instead of the
-# bundled default version.
 install-libraries: install-kronk
 	@echo "========== INSTALL LLAMA LIBRARIES (latest) =========="
-	kronk libs --local --upgrade
+	kronk libs --local
 	@echo
 	@echo "========== INSTALL WHISPER LIBRARIES (latest) =========="
-	kronk bucky libs --local --upgrade
+	kronk bucky libs --local
 	@echo
 	@echo "========== INSTALL STABLE DIFFUSION LIBRARIES (latest) =========="
-	kronk malina libs --local --upgrade
+	kronk malina libs --local
 	@echo
 
 # Use this to install the well-known defaultVersion of llama.cpp,
