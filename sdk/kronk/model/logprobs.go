@@ -1,9 +1,10 @@
 package model
 
 import (
+	"cmp"
 	"container/heap"
 	"math"
-	"sort"
+	"slices"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
@@ -110,8 +111,7 @@ type filterHeapEntry struct {
 // filterState holds pre-allocated buffers for applySamplerFilters to avoid
 // per-call allocations. Stored on draftCore and reused across calls.
 type filterState struct {
-	heap     []filterHeapEntry
-	rawProbs []float64
+	heap []filterHeapEntry
 }
 
 // applySamplerFilters zeroes out tokens that would be removed by the sampler
@@ -123,52 +123,145 @@ type filterState struct {
 // function uses raw logits for filter decisions, then computes temperature-scaled
 // probabilities only for the surviving tokens.
 //
-// Performance: finds top-K logits via min-heap in O(n log K), sorts the small
-// K-element set, computes temperature-scaled softmax restricted to survivors.
-// For K=20 and n=152k this is ~100x faster than a full sort.
+// Performance: finds an enabled top-K via min-heap and uses an adaptive
+// candidate prefix for top-P when top-K is disabled. If truncation is disabled,
+// it computes the distribution without ordering the vocabulary.
 func applySamplerFilters(logits, probs []float32, suppressTokens []llama.Token, temperature, topP, minP float32, topK int32, indices []int, fs *filterState) []int {
 	maskSuppressTokenLogits(logits, suppressTokens)
 	n := len(logits)
-
-	// Determine the candidate set size for top-K selection.
-	selectK := n
-	if topK > 0 {
-		selectK = int(topK)
+	if n == 0 {
+		return indices[:0]
 	}
 
-	// Reuse or grow the top-K index buffer.
-	if cap(indices) < selectK {
-		indices = make([]int, selectK)
+	// The returned indices are the non-zero entries from the previous call.
+	// Clear only those entries before reusing the buffer for this row.
+	for _, idx := range indices {
+		probs[idx] = 0
 	}
 	indices = indices[:0]
 
-	// Reuse or grow the heap buffer.
-	if cap(fs.heap) < selectK {
-		fs.heap = make([]filterHeapEntry, 0, selectK)
+	topPEnabled := topP < 1
+	sorted := false
+
+	switch {
+	case topK > 0:
+		indices = selectTopLogits(logits, min(int(topK), n), indices, fs)
+		sorted = true
+
+	case topPEnabled:
+		// Match llama.cpp's adaptive top-P strategy: first inspect a small
+		// ordered prefix, then expand to the full vocabulary only when the
+		// requested cumulative mass requires it.
+		candidateCount := min(256, n)
+		if topP <= 0 {
+			candidateCount = 1
+		}
+		indices = selectTopLogits(logits, candidateCount, indices, fs)
+		sorted = true
+
+	default:
+		indices = linearIndices(n, indices)
+	}
+
+	maxIdx := indices[0]
+	maxLogit := logits[maxIdx]
+	if !sorted {
+		for _, idx := range indices[1:] {
+			if logits[idx] > maxLogit {
+				maxIdx = idx
+				maxLogit = logits[idx]
+			}
+		}
+	}
+
+	if topPEnabled && topP <= 0 {
+		indices = indices[:1]
+	} else if topPEnabled {
+		var rawSum float64
+		if topK > 0 {
+			for _, idx := range indices {
+				rawSum += math.Exp(float64(logits[idx] - maxLogit))
+			}
+		} else {
+			for _, logit := range logits {
+				rawSum += math.Exp(float64(logit - maxLogit))
+			}
+		}
+
+		cutoff, complete := topPCutoff(logits, indices, maxLogit, rawSum, topP)
+		if !complete && topK <= 0 && len(indices) < n {
+			indices = linearIndices(n, indices)
+			sortLogitIndices(logits, indices)
+			cutoff, _ = topPCutoff(logits, indices, maxLogit, rawSum, topP)
+		}
+		indices = indices[:cutoff]
+	}
+
+	// Min-P compares each pre-temperature probability with a fraction of the
+	// maximum probability. The common normalization term cancels, so this is
+	// linear even when the candidates are not ordered.
+	if minP > 0 {
+		kept := 0
+		for _, idx := range indices {
+			relative := math.Exp(float64(logits[idx] - maxLogit))
+			if relative >= float64(minP) {
+				indices[kept] = idx
+				kept++
+			}
+		}
+		if kept == 0 {
+			indices[0] = maxIdx
+			kept = 1
+		}
+		indices = indices[:kept]
+	}
+
+	// Compute temperature-scaled probabilities for survivors only.
+	var invT float64 = 1.0
+	if temperature > 0 && temperature != 1.0 {
+		invT = 1.0 / float64(temperature)
+	}
+
+	var tempSum float64
+	for _, idx := range indices {
+		p := math.Exp(float64(logits[idx]-maxLogit) * invT)
+		probs[idx] = float32(p)
+		tempSum += p
+	}
+
+	if tempSum > 0 {
+		invSum := float32(1.0 / tempSum)
+		for _, idx := range indices {
+			probs[idx] *= invSum
+		}
+	}
+
+	return indices
+}
+
+func selectTopLogits(logits []float32, count int, indices []int, fs *filterState) []int {
+	if cap(fs.heap) < count {
+		fs.heap = make([]filterHeapEntry, 0, count)
 	}
 	h := fs.heap[:0]
 
-	// Find top-K logits using a min-heap. O(n log K).
-	for i, l := range logits {
-		if len(h) < selectK {
-			h = append(h, filterHeapEntry{i, l})
-			// Sift up.
-			j := len(h) - 1
-			for j > 0 {
-				parent := (j - 1) / 2
-				if h[parent].val <= h[j].val {
+	for idx, logit := range logits {
+		if len(h) < count {
+			h = append(h, filterHeapEntry{idx: idx, val: logit})
+			for child := len(h) - 1; child > 0; {
+				parent := (child - 1) / 2
+				if h[parent].val <= h[child].val {
 					break
 				}
-				h[parent], h[j] = h[j], h[parent]
-				j = parent
+				h[parent], h[child] = h[child], h[parent]
+				child = parent
 			}
 			continue
 		}
-		if l > h[0].val {
-			h[0] = filterHeapEntry{i, l}
-			j := 0
-			for {
-				left := 2*j + 1
+		if logit > h[0].val {
+			h[0] = filterHeapEntry{idx: idx, val: logit}
+			for parent := 0; ; {
+				left := 2*parent + 1
 				if left >= len(h) {
 					break
 				}
@@ -176,97 +269,64 @@ func applySamplerFilters(logits, probs []float32, suppressTokens []llama.Token, 
 				if right := left + 1; right < len(h) && h[right].val < h[left].val {
 					smallest = right
 				}
-				if h[j].val <= h[smallest].val {
+				if h[parent].val <= h[smallest].val {
 					break
 				}
-				h[j], h[smallest] = h[smallest], h[j]
-				j = smallest
+				h[parent], h[smallest] = h[smallest], h[parent]
+				parent = smallest
 			}
 		}
 	}
 	fs.heap = h
 
-	// Extract indices and sort by logit descending for top-p/min-p.
-	indices = indices[:len(h)]
-	for i, e := range h {
-		indices[i] = e.idx
+	if cap(indices) < len(h) {
+		indices = make([]int, len(h))
+	} else {
+		indices = indices[:len(h)]
 	}
-	sort.Slice(indices, func(a, b int) bool {
-		return logits[indices[a]] > logits[indices[b]]
-	})
-
-	cutoff := len(indices)
-	maxLogit := logits[indices[0]]
-
-	// Compute raw softmax (T=1) for the selected candidates only,
-	// used for top-p and min-p filter decisions.
-	if cap(fs.rawProbs) < cutoff {
-		fs.rawProbs = make([]float64, cutoff)
+	for i, entry := range h {
+		indices[i] = entry.idx
 	}
-	rawProbs := fs.rawProbs[:cutoff]
-
-	var rawSum float64
-	for i, idx := range indices {
-		p := math.Exp(float64(logits[idx] - maxLogit))
-		rawProbs[i] = p
-		rawSum += p
-	}
-	invRawSum := 1.0 / rawSum
-	for i := range rawProbs {
-		rawProbs[i] *= invRawSum
-	}
-
-	maxProb := rawProbs[0]
-
-	// Top-P (nucleus): keep smallest set whose cumulative probability >= topP.
-	if topP > 0 && topP < 1.0 {
-		var cumulative float64
-		for i := 0; i < cutoff; i++ {
-			cumulative += rawProbs[i]
-			if cumulative >= float64(topP) {
-				cutoff = i + 1
-				break
-			}
-		}
-	}
-
-	// Min-P: remove tokens with probability < minP * maxProb.
-	if minP > 0 && maxProb > 0 {
-		threshold := float64(minP) * maxProb
-		for i := 0; i < cutoff; i++ {
-			if rawProbs[i] < threshold {
-				cutoff = i
-				break
-			}
-		}
-		if cutoff == 0 {
-			cutoff = 1
-		}
-	}
-
-	// Compute temperature-scaled probabilities for survivors only.
-	clear(probs)
-
-	var invT float64 = 1.0
-	if temperature > 0 && temperature != 1.0 {
-		invT = 1.0 / float64(temperature)
-	}
-
-	var tempSum float64
-	for i := 0; i < cutoff; i++ {
-		p := math.Exp(float64(logits[indices[i]]-maxLogit) * invT)
-		probs[indices[i]] = float32(p)
-		tempSum += p
-	}
-
-	if tempSum > 0 {
-		invSum := float32(1.0 / tempSum)
-		for i := 0; i < cutoff; i++ {
-			probs[indices[i]] *= invSum
-		}
-	}
+	sortLogitIndices(logits, indices)
 
 	return indices
+}
+
+func linearIndices(n int, indices []int) []int {
+	if cap(indices) < n {
+		indices = make([]int, n)
+	} else {
+		indices = indices[:n]
+	}
+	for i := range indices {
+		indices[i] = i
+	}
+	return indices
+}
+
+func sortLogitIndices(logits []float32, indices []int) {
+	slices.SortFunc(indices, func(a, b int) int {
+		if logits[a] > logits[b] {
+			return -1
+		}
+		if logits[a] < logits[b] {
+			return 1
+		}
+		return cmp.Compare(a, b)
+	})
+}
+
+func topPCutoff(logits []float32, indices []int, maxLogit float32, rawSum float64, topP float32) (int, bool) {
+	// llama.cpp stores each softmax probability and the nucleus cumulative
+	// mass as float. Keep that precision here so boundary decisions agree.
+	var cumulative float32
+	for i, idx := range indices {
+		cumulative += float32(math.Exp(float64(logits[idx]-maxLogit)) / rawSum)
+		if cumulative >= topP {
+			return i + 1, true
+		}
+	}
+	return len(indices), false
 }
 
 // getTopKLogprobs returns the top-k tokens by log probability.
