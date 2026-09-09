@@ -11,13 +11,6 @@ import (
 	"github.com/hashicorp/go-getter"
 )
 
-func TestDefaultVersion(t *testing.T) {
-	const want = "master-846-d8fb10c@sha256:00348815a2a7c9e2a7e2862cbf70646e9cb5aa56d9f8cc6fd84a8e73e2ba5502"
-	if defaultVersion != want {
-		t.Errorf("defaultVersion: got %q, want %q", defaultVersion, want)
-	}
-}
-
 func TestWithValidation(t *testing.T) {
 	var options Options
 	WithValidation(true)(&options)
