@@ -246,13 +246,13 @@ Models, libraries, catalog data, and API keys are all stored under `/kronk`. Nam
 
 ## Environment Variables
 
-| Variable                       | Default                        | Description                                                                          |
-| ------------------------------ | ------------------------------ | ------------------------------------------------------------------------------------ |
-| `KRONK_DOWNLOAD_ENABLED`       | `false`                        | Allow model/library downloads from the browser UI (disabled by default for security) |
-| `KRONK_WEB_API_HOST`           | `0.0.0.0:11435`                | API bind address                                                                     |
-| `KRONK_WEB_DEBUG_HOST`         | `:11445`                       | Debug server bind address                                                            |
-| `KRONK_POOL_MODEL_CONFIG_FILE` | `/etc/kronk/model_config.yaml` | Path to model configuration file                                                     |
-| `KRONK_BASE_PATH`              | `/kronk`                       | Base path for all Kronk data                                                         |
+| Variable                       | Default                           | Description                                                                          |
+| ------------------------------ | --------------------------------- | ------------------------------------------------------------------------------------ |
+| `KRONK_DOWNLOAD_ENABLED`       | `false`                           | Allow model/library downloads from the browser UI (disabled by default for security) |
+| `KRONK_WEB_API_HOST`           | `0.0.0.0:11435`                   | API bind address                                                                     |
+| `KRONK_WEB_DEBUG_HOST`         | `:11445`                          | Debug server bind address                                                            |
+| `KRONK_POOL_MODEL_CONFIG_FILE` | `/kronk/models/model_config.yaml` | Path to model configuration file                                                     |
+| `KRONK_BASE_PATH`              | `/kronk`                          | Base path for all Kronk data                                                         |
 
 ---
 
