@@ -14,8 +14,8 @@ description: >
 runs:
   using: composite
   steps:
-    # GITHUB_ACTIONS cannot carry this: the runner agent sets it on the
-    # self-hosted fleets too. Exported here, not in each workflow's job-level
+    # The standard Actions environment cannot distinguish hosted runners from
+    # the self-hosted fleets. Exported here, not in each workflow's job-level
     # env:, because the runner context is not available there.
     - name: Flag hosted runners for the test suites
       if: runner.environment == 'github-hosted'
