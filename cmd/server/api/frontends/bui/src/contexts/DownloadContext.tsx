@@ -61,8 +61,6 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   const progressStartRef = useRef<{ src: string; startMs: number } | null>(null);
   const lastProgressUpdateRef = useRef<number>(0);
 
-  const ANSI_INLINE = '\r\x1b[K';
-
   const addMessage = useCallback((text: string, type: DownloadMessage['type']) => {
     setDownload((prev) => {
       if (!prev) return prev;
@@ -152,12 +150,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
           return;
         }
         if (data.status) {
-          if (data.status.startsWith(ANSI_INLINE)) {
-            const cleanText = data.status.slice(ANSI_INLINE.length);
-            updateLastMessage(cleanText, 'info');
-          } else {
-            addMessage(data.status, 'info');
-          }
+          addMessage(data.status, 'info');
         }
         if (data.model_file) {
           addMessage(`Model file: ${data.model_file}`, 'info');
@@ -292,12 +285,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
           return;
         }
         if (data.status) {
-          if (data.status.startsWith(ANSI_INLINE)) {
-            const cleanText = data.status.slice(ANSI_INLINE.length);
-            updateLastMessage(cleanText, 'info');
-          } else {
-            addMessage(data.status, 'info');
-          }
+          addMessage(data.status, 'info');
         }
         if (data.model_file) {
           addMessage(`Model file: ${data.model_file}`, 'info');

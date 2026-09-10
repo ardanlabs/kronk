@@ -40,14 +40,19 @@ func runWeb(ctx context.Context, source string, projURL string, mtpURL string) e
 		return fmt.Errorf("do: unable to download model: %w", err)
 	}
 
+	prt := progressPrinter{
+		w:       os.Stdout,
+		rewrite: isTerminal(os.Stdout),
+	}
+
 	var lastStatus string
 	var downloaded bool
 	for ver := range ch {
-		fmt.Print(ver.Status)
+		prt.print(ver)
 		lastStatus = ver.Status
 		downloaded = downloaded || ver.Downloaded || ver.Status == "downloaded"
 	}
-	fmt.Println()
+	prt.close()
 
 	if err := <-errCh; err != nil {
 		return fmt.Errorf("download stream: %w", err)
@@ -64,12 +69,33 @@ func runWeb(ctx context.Context, source string, projURL string, mtpURL string) e
 }
 
 func runLocal(ctx context.Context, mdls *models.Models, basePath string, source string, projURL string, mtpURL string) error {
+	prt := progressPrinter{
+		w:       os.Stdout,
+		rewrite: isTerminal(os.Stdout),
+	}
+	defer prt.close()
+
+	log := func(ctx context.Context, msg string, args ...any) {
+		prt.close()
+		kronk.FmtLogger(ctx, msg, args...)
+	}
+
+	progress := func(progress models.DownloadProgress) {
+		status := fmt.Sprintf("download-model: Downloading %s... %d MB of %d MB (%.2f MB/s)",
+			progress.Src,
+			progress.CurrentBytes/(1000*1000),
+			progress.TotalBytes/(1000*1000),
+			progress.MBPerSec,
+		)
+		prt.progress(status, progress.Src, progress.Complete)
+	}
+
 	// Default workflow — Download handles every input form (canonical id,
 	// full URL, owner/repo/file.gguf path) and locates
 	// both the projection and MTP drafter companions automatically. This
 	// mirrors the model server's pull endpoint (and the BUI).
 	if projURL == "" && mtpURL == "" {
-		if _, err := mdls.Download(ctx, kronk.FmtLogger, source); err != nil {
+		if _, err := mdls.DownloadWithProgress(ctx, log, source, progress); err != nil {
 			return fmt.Errorf("download-model: %w", err)
 		}
 
@@ -79,7 +105,7 @@ func runLocal(ctx context.Context, mdls *models.Models, basePath string, source 
 	// Explicit companion override — full-control workflow. When the
 	// source is a URL, pair it directly with the supplied companion URLs.
 	if isURL(source) {
-		if _, err := mdls.DownloadURLs(ctx, kronk.FmtLogger, []string{source}, projURL, mtpURL); err != nil {
+		if _, err := mdls.DownloadURLsWithProgress(ctx, log, []string{source}, projURL, mtpURL, progress); err != nil {
 			return fmt.Errorf("download-model: %w", err)
 		}
 
@@ -109,7 +135,7 @@ func runLocal(ctx context.Context, mdls *models.Models, basePath string, source 
 
 	fmt.Printf("Resolved %s → %s/%s (%d file(s))\n", source, res.Provider, res.Family, len(res.DownloadURLs))
 
-	if _, err := mdls.DownloadURLs(ctx, kronk.FmtLogger, res.DownloadURLs, projURL, mtpURL); err != nil {
+	if _, err := mdls.DownloadURLsWithProgress(ctx, log, res.DownloadURLs, projURL, mtpURL, progress); err != nil {
 		return fmt.Errorf("download-model: %w", err)
 	}
 

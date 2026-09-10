@@ -58,7 +58,7 @@ type fakeGetter struct {
 	calls []string
 }
 
-func (f *fakeGetter) download(_ context.Context, src string, dest string, _ downloader.ProgressFunc, _ int64) (bool, error) {
+func (f *fakeGetter) download(_ context.Context, src string, dest string, progress downloader.ProgressFunc, _ int64) (bool, error) {
 	f.mu.Lock()
 	f.calls = append(f.calls, src)
 	f.mu.Unlock()
@@ -115,7 +115,75 @@ func (f *fakeGetter) download(_ context.Context, src string, dest string, _ down
 		return false, fmt.Errorf("fake-getter: write %s: %w", name, err)
 	}
 
+	if progress != nil {
+		progress(src, int64(len(body)), int64(len(body)), 12.5, true)
+	}
+
 	return true, nil
+}
+
+func TestDownloadURLsWithProgress(t *testing.T) {
+	modelURL := "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf"
+	body := []byte("model-body")
+	g := &fakeGetter{
+		contents: map[string][]byte{
+			"/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf": body,
+		},
+	}
+	withFakeGetter(t, g)
+
+	m := newTestModels(t)
+
+	var got []DownloadProgress
+	_, err := m.DownloadURLsWithProgress(context.Background(), testLog, []string{modelURL}, "", "", func(progress DownloadProgress) {
+		got = append(got, progress)
+	})
+	if err != nil {
+		t.Fatalf("DownloadURLsWithProgress: %v", err)
+	}
+
+	if len(got) != 1 {
+		t.Fatalf("progress events: got %d, want 1", len(got))
+	}
+
+	progress := got[0]
+	if !strings.Contains(progress.Src, "Qwen3-0.6B-Q8_0.gguf") {
+		t.Errorf("Src: got %q, want model filename", progress.Src)
+	}
+	if progress.CurrentBytes != int64(len(body)) {
+		t.Errorf("CurrentBytes: got %d, want %d", progress.CurrentBytes, len(body))
+	}
+	if progress.TotalBytes != int64(len(body)) {
+		t.Errorf("TotalBytes: got %d, want %d", progress.TotalBytes, len(body))
+	}
+	if progress.MBPerSec != 12.5 {
+		t.Errorf("MBPerSec: got %f, want 12.5", progress.MBPerSec)
+	}
+	if !progress.Complete {
+		t.Error("Complete: got false, want true")
+	}
+}
+
+func TestLogDownloadProgressContainsNoTerminalControls(t *testing.T) {
+	var got string
+	log := func(_ context.Context, msg string, _ ...any) {
+		got = msg
+	}
+
+	logDownloadProgress(context.Background(), log)(DownloadProgress{
+		Src:          "model.gguf",
+		CurrentBytes: 1_234_567,
+		TotalBytes:   9_876_543,
+		MBPerSec:     12.34,
+	})
+
+	want := "download-model: Downloading model.gguf... 1 MB of 9 MB (12.34 MB/s)"
+	if got != want {
+		t.Errorf("message: got %q, want %q", got, want)
+	}
+	if strings.ContainsAny(got, "\r\x1b") {
+		t.Errorf("message contains terminal controls: %q", got)
+	}
 }
 
 // makeShaPointer builds a HuggingFace-format sha pointer file containing
@@ -179,6 +247,7 @@ func TestDownloadSplits_BareModel(t *testing.T) {
 		[]string{"https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf"},
 		"",
 		"",
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("downloadSplits: %v", err)
@@ -227,6 +296,7 @@ func TestDownloadSplits_WithProjection(t *testing.T) {
 		[]string{"https://huggingface.co/Qwen/Qwen3-VL-GGUF/resolve/main/Qwen3-VL-Q8_0.gguf"},
 		"https://huggingface.co/Qwen/Qwen3-VL-GGUF/resolve/main/mmproj-F16.gguf",
 		"",
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("downloadSplits: %v", err)
@@ -259,6 +329,7 @@ func TestDownloadSplits_WithMTPCompanion(t *testing.T) {
 		[]string{"https://huggingface.co/unsloth/gemma-4-26B-A4B-it-GGUF/resolve/main/gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf"},
 		"",
 		"https://huggingface.co/unsloth/gemma-4-26B-A4B-it-GGUF/resolve/main/mtp-gemma-4-26B-A4B-it.gguf",
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("downloadSplits: %v", err)
@@ -304,7 +375,7 @@ func TestDownloadSplits_MultiShard(t *testing.T) {
 		"https://huggingface.co/unsloth/Llama-3.3-70B-Instruct-GGUF/resolve/main/Llama-3.3-70B-Instruct-Q8_0-00002-of-00002.gguf",
 	}
 
-	mp, err := m.downloadSplits(context.Background(), testLog, urls, "", "")
+	mp, err := m.downloadSplits(context.Background(), testLog, urls, "", "", nil)
 	if err != nil {
 		t.Fatalf("downloadSplits: %v", err)
 	}
@@ -339,7 +410,7 @@ func TestDownloadSplits_IndexHit_SecondCallNoNetwork(t *testing.T) {
 
 	url := "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf"
 
-	if _, err := m.downloadSplits(context.Background(), testLog, []string{url}, "", ""); err != nil {
+	if _, err := m.downloadSplits(context.Background(), testLog, []string{url}, "", "", nil); err != nil {
 		t.Fatalf("first downloadSplits: %v", err)
 	}
 
@@ -349,7 +420,7 @@ func TestDownloadSplits_IndexHit_SecondCallNoNetwork(t *testing.T) {
 	// when every shard short-circuited on the index, so the aggregate
 	// flag is not a reliable signal for "fetched any bytes". Assert via
 	// the call count instead.
-	if _, err := m.downloadSplits(context.Background(), testLog, []string{url}, "", ""); err != nil {
+	if _, err := m.downloadSplits(context.Background(), testLog, []string{url}, "", "", nil); err != nil {
 		t.Fatalf("second downloadSplits: %v", err)
 	}
 
@@ -371,7 +442,7 @@ func TestDownloadSplits_IndexStale_FileDeleted(t *testing.T) {
 
 	url := "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf"
 
-	mp, err := m.downloadSplits(context.Background(), testLog, []string{url}, "", "")
+	mp, err := m.downloadSplits(context.Background(), testLog, []string{url}, "", "", nil)
 	if err != nil {
 		t.Fatalf("first downloadSplits: %v", err)
 	}
@@ -383,7 +454,7 @@ func TestDownloadSplits_IndexStale_FileDeleted(t *testing.T) {
 
 	callsBefore := len(g.calls)
 
-	if _, err := m.downloadSplits(context.Background(), testLog, []string{url}, "", ""); err != nil {
+	if _, err := m.downloadSplits(context.Background(), testLog, []string{url}, "", "", nil); err != nil {
 		t.Fatalf("second downloadSplits: %v", err)
 	}
 
@@ -633,6 +704,7 @@ func TestDownloadSplits_OversizedCompanionLeftover(t *testing.T) {
 		[]string{"https://huggingface.co/Qwen/Qwen3-VL-GGUF/resolve/main/Qwen3-VL-Q8_0.gguf"},
 		"https://huggingface.co/Qwen/Qwen3-VL-GGUF/resolve/main/mmproj-F16.gguf",
 		"",
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("downloadSplits: %v", err)
@@ -792,7 +864,7 @@ func TestDownloadModelFile_UnverifiableBodyIsNotAdopted(t *testing.T) {
 	}
 	t.Cleanup(func() { downloadFn = pull })
 
-	if _, err := m.downloadSplits(context.Background(), testLog, []string{modelURL}, "", ""); err == nil {
+	if _, err := m.downloadSplits(context.Background(), testLog, []string{modelURL}, "", "", nil); err == nil {
 		t.Fatal("downloadSplits: got nil, want a failure — nothing on disk could verify the model body")
 	}
 
