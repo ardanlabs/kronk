@@ -64,11 +64,30 @@ var hasNetworkFn = hasNetwork
 //
 // Set KRONK_HF_TOKEN to access gated models.
 func (m *Models) Download(ctx context.Context, log applog.Logger, modelSource string) (Path, error) {
+	return m.DownloadWithProgress(ctx, log, modelSource, logDownloadProgress(ctx, log))
+}
+
+// DownloadProgress reports the current state of a model file download.
+type DownloadProgress struct {
+	Src          string
+	CurrentBytes int64
+	TotalBytes   int64
+	MBPerSec     float64
+	Complete     bool
+}
+
+// DownloadProgressFunc receives model file download progress.
+type DownloadProgressFunc func(progress DownloadProgress)
+
+// DownloadWithProgress performs the default download workflow and reports
+// structured progress to the supplied function. A nil function suppresses
+// progress reporting.
+func (m *Models) DownloadWithProgress(ctx context.Context, log applog.Logger, modelSource string, progress DownloadProgressFunc) (Path, error) {
 	if isURL(modelSource) {
-		return m.downloadByURL(ctx, log, modelSource)
+		return m.downloadByURL(ctx, log, modelSource, progress)
 	}
 
-	return m.downloadByID(ctx, log, modelSource)
+	return m.downloadByID(ctx, log, modelSource, progress)
 }
 
 // DownloadURLs performs a complete workflow using explicit URLs for both
@@ -87,6 +106,13 @@ func (m *Models) Download(ctx context.Context, log applog.Logger, modelSource st
 //
 // Set KRONK_HF_TOKEN to access gated models.
 func (m *Models) DownloadURLs(ctx context.Context, log applog.Logger, modelURLs []string, projURL, mtpURL string) (Path, error) {
+	return m.DownloadURLsWithProgress(ctx, log, modelURLs, projURL, mtpURL, logDownloadProgress(ctx, log))
+}
+
+// DownloadURLsWithProgress performs the explicit URL download workflow and
+// reports structured progress to the supplied function. A nil function
+// suppresses progress reporting.
+func (m *Models) DownloadURLsWithProgress(ctx context.Context, log applog.Logger, modelURLs []string, projURL, mtpURL string, progress DownloadProgressFunc) (Path, error) {
 	if len(modelURLs) == 0 {
 		return Path{}, fmt.Errorf("download-urls: no model URLs provided")
 	}
@@ -105,7 +131,7 @@ func (m *Models) DownloadURLs(ctx context.Context, log applog.Logger, modelURLs 
 		return Path{}, fmt.Errorf("download-urls: mtp URL must be fully qualified: %q", mtpURL)
 	}
 
-	mp, err := m.downloadSplits(ctx, log, modelURLs, projURL, mtpURL)
+	mp, err := m.downloadSplits(ctx, log, modelURLs, projURL, mtpURL, progress)
 	if err != nil {
 		return mp, err
 	}
@@ -126,10 +152,10 @@ func (m *Models) DownloadURLs(ctx context.Context, log applog.Logger, modelURLs 
 // resolves a companion projection file by deriving the canonical id
 // from the URL. When the projection lookup fails the model is still
 // downloaded; only the projection is skipped.
-func (m *Models) downloadByURL(ctx context.Context, log applog.Logger, modelURL string) (Path, error) {
+func (m *Models) downloadByURL(ctx context.Context, log applog.Logger, modelURL string, progress DownloadProgressFunc) (Path, error) {
 	projURL, mtpURL := m.lookupCompanionsForURL(ctx, modelURL)
 
-	mp, err := m.downloadSplits(ctx, log, []string{modelURL}, projURL, mtpURL)
+	mp, err := m.downloadSplits(ctx, log, []string{modelURL}, projURL, mtpURL, progress)
 	if err != nil {
 		return mp, err
 	}
@@ -146,7 +172,7 @@ func (m *Models) downloadByURL(ctx context.Context, log applog.Logger, modelURL 
 // downloadByID resolves a canonical id ("unsloth/Qwen3-0.6B-Q8_0") through
 // the resolver and downloads the resulting files, including any companion
 // projection or MTP file.
-func (m *Models) downloadByID(ctx context.Context, log applog.Logger, modelSource string) (Path, error) {
+func (m *Models) downloadByID(ctx context.Context, log applog.Logger, modelSource string, progress DownloadProgressFunc) (Path, error) {
 	rfile, err := defaults.CatalogFile("", m.basePath)
 	if err != nil {
 		return Path{}, fmt.Errorf("download: resolver-file: %w", err)
@@ -207,7 +233,7 @@ func (m *Models) downloadByID(ctx context.Context, log applog.Logger, modelSourc
 		return Path{}, fmt.Errorf("download: resolve %q: resolver returned no download URLs", modelSource)
 	}
 
-	mp, err := m.downloadSplits(ctx, log, res.DownloadURLs, res.DownloadProj, res.DownloadMTP)
+	mp, err := m.downloadSplits(ctx, log, res.DownloadURLs, res.DownloadProj, res.DownloadMTP, progress)
 	if err != nil {
 		return Path{}, fmt.Errorf("download: download %q: %w", modelSource, err)
 	}
@@ -287,13 +313,24 @@ func isURL(input string) bool {
 	return strings.HasPrefix(input, "https://") || strings.HasPrefix(input, "http://")
 }
 
+func logDownloadProgress(ctx context.Context, log applog.Logger) DownloadProgressFunc {
+	return func(progress DownloadProgress) {
+		log(ctx, fmt.Sprintf("download-model: Downloading %s... %d MB of %d MB (%.2f MB/s)",
+			progress.Src,
+			progress.CurrentBytes/(1000*1000),
+			progress.TotalBytes/(1000*1000),
+			progress.MBPerSec,
+		))
+	}
+}
+
 // =============================================================================
 // Orchestration: split download + index/validation lifecycle
 
 // downloadSplits performs a complete workflow for downloading and installing
 // the specified model. If you need to set your HuggingFace token, use the
 // environment variable KRONK_HF_TOKEN.
-func (m *Models) downloadSplits(ctx context.Context, log applog.Logger, modelURLs []string, projURL, mtpURL string) (result Path, retErr error) {
+func (m *Models) downloadSplits(ctx context.Context, log applog.Logger, modelURLs []string, projURL, mtpURL string, report DownloadProgressFunc) (result Path, retErr error) {
 	if len(modelURLs) == 0 {
 		return Path{}, fmt.Errorf("download-splits: no model URLs provided")
 	}
@@ -317,6 +354,19 @@ func (m *Models) downloadSplits(ctx context.Context, log applog.Logger, modelURL
 
 	result = Path{
 		ModelFiles: make([]string, len(modelURLs)),
+	}
+
+	var progress downloader.ProgressFunc
+	if report != nil {
+		progress = func(src string, currentBytes int64, totalBytes int64, mbPerSec float64, complete bool) {
+			report(DownloadProgress{
+				Src:          src,
+				CurrentBytes: currentBytes,
+				TotalBytes:   totalBytes,
+				MBPerSec:     mbPerSec,
+				Complete:     complete,
+			})
+		}
 	}
 
 	projURL = hf.NormalizeDownloadURL(projURL)
@@ -368,10 +418,6 @@ func (m *Models) downloadSplits(ctx context.Context, log applog.Logger, modelURL
 		}
 
 		log(ctx, fmt.Sprintf("download-model: model-url[%s] proj-url[%s] mtp-url[%s] model-id[%s] file[%d/%d]", mLoc.RawURL, logProjURL, logMTPURL, modelID, i+1, len(modelURLs)))
-
-		progress := func(src string, currentSize int64, totalSize int64, mbPerSec float64, complete bool) {
-			log(ctx, fmt.Sprintf("\r\x1b[Kdownload-model: Downloading %s... %d MB of %d MB (%.2f MB/s)", src, currentSize/(1000*1000), totalSize/(1000*1000), mbPerSec))
-		}
 
 		mp, errOrg := m.downloadModel(ctx, log, mLoc, pLoc, dLoc, progress)
 		if errOrg != nil {

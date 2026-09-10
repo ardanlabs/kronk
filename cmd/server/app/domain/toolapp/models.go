@@ -22,7 +22,9 @@ import (
 )
 
 var (
-	reDownloadMeta     = regexp.MustCompile(`download-model: model-url\[([^\]]*)\] proj-url\[([^\]]*)\] mtp-url\[([^\]]*)\] model-id\[([^\]]*)\] file\[(\d+)/(\d+)\]`)
+	reDownloadMeta = regexp.MustCompile(`download-model: model-url\[([^\]]*)\] proj-url\[([^\]]*)\] mtp-url\[([^\]]*)\] model-id\[([^\]]*)\] file\[(\d+)/(\d+)\]`)
+
+	// Bucky model downloads still report progress through logger text.
 	reDownloadProgress = regexp.MustCompile(`download-model: Downloading ([^ ]+)\.\.\. (\d+) MB of (\d+) MB \(([\d.]+) MB/s\)`)
 )
 
@@ -189,6 +191,13 @@ func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 
 	// -------------------------------------------------------------------------
 
+	emit := func(pr PullResponse) {
+		ver := toAppPullResponse(pr)
+		a.log.Info(ctx, "pull-model", "info", ver[:len(ver)-1])
+		fmt.Fprint(w, ver)
+		f.Flush()
+	}
+
 	logger := func(ctx context.Context, msg string, args ...any) {
 		var sb strings.Builder
 		for i := 0; i < len(args); i += 2 {
@@ -197,55 +206,32 @@ func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 			}
 		}
 
-		cleanMsg := strings.TrimPrefix(msg, "\r\x1b[K")
-
-		clean := cleanMsg
+		clean := msg
 		if sb.Len() > 0 {
-			clean = fmt.Sprintf("%s:%s", cleanMsg, sb.String())
+			clean = fmt.Sprintf("%s:%s", msg, sb.String())
 		}
 
-		var ver string
+		pr := PullResponse{Status: clean}
 
-		switch {
-		case reDownloadMeta.MatchString(clean):
+		if reDownloadMeta.MatchString(clean) {
 			m := reDownloadMeta.FindStringSubmatch(clean)
 			fileIdx, _ := strconv.Atoi(m[5])
 			fileTotal, _ := strconv.Atoi(m[6])
-			ver = toAppPullResponse(PullResponse{
-				Status: clean,
-				Meta: &PullMeta{
-					ModelURL:  m[1],
-					ProjURL:   m[2],
-					MTPURL:    m[3],
-					ModelID:   m[4],
-					FileIndex: fileIdx,
-					FileTotal: fileTotal,
-				},
-			})
-
-		case reDownloadProgress.MatchString(clean):
-			m := reDownloadProgress.FindStringSubmatch(clean)
-			cur, _ := strconv.ParseInt(m[2], 10, 64)
-			total, _ := strconv.ParseInt(m[3], 10, 64)
-			mbps, _ := strconv.ParseFloat(m[4], 64)
-			ver = toAppPullResponse(PullResponse{
-				Status: clean,
-				Progress: &PullProgress{
-					Src:          m[1],
-					CurrentBytes: cur * 1000 * 1000,
-					TotalBytes:   total * 1000 * 1000,
-					MBPerSec:     mbps,
-					Complete:     total > 0 && cur >= total,
-				},
-			})
-
-		default:
-			ver = toAppPullResponse(PullResponse{Status: clean})
+			pr.Meta = &PullMeta{
+				ModelURL:  m[1],
+				ProjURL:   m[2],
+				MTPURL:    m[3],
+				ModelID:   m[4],
+				FileIndex: fileIdx,
+				FileTotal: fileTotal,
+			}
 		}
 
-		a.log.Info(ctx, "pull-model", "info", ver[:len(ver)-1])
-		fmt.Fprint(w, ver)
-		f.Flush()
+		emit(pr)
+	}
+
+	progress := func(progress models.DownloadProgress) {
+		emit(toPullProgress(progress))
 	}
 
 	// Download handles both direct URLs and canonical catalog ids. Catalog
@@ -262,7 +248,7 @@ func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 	var err error
 	switch {
 	case req.DownloadServer != "":
-		mp, err = a.downloadFromPeer(ctx, logger, req)
+		mp, err = a.downloadFromPeer(ctx, logger, req, progress)
 	case req.ProjURL != "" || req.MTPURL != "":
 		modelURLs := []string{req.ModelURL}
 		projURL := req.ProjURL
@@ -290,9 +276,9 @@ func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 				mtpURL = res.DownloadMTP
 			}
 		}
-		mp, err = a.models.DownloadURLs(ctx, logger, modelURLs, projURL, mtpURL)
+		mp, err = a.models.DownloadURLsWithProgress(ctx, logger, modelURLs, projURL, mtpURL, progress)
 	default:
-		mp, err = a.models.Download(ctx, logger, req.ModelURL)
+		mp, err = a.models.DownloadWithProgress(ctx, logger, req.ModelURL, progress)
 	}
 	if err != nil {
 		ver := toAppPull(err.Error(), models.Path{})
@@ -311,6 +297,24 @@ func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 	f.Flush()
 
 	return web.NewNoResponse()
+}
+
+func toPullProgress(progress models.DownloadProgress) PullResponse {
+	return PullResponse{
+		Status: fmt.Sprintf("download-model: Downloading %s... %d MB of %d MB (%.2f MB/s)",
+			progress.Src,
+			progress.CurrentBytes/(1000*1000),
+			progress.TotalBytes/(1000*1000),
+			progress.MBPerSec,
+		),
+		Progress: &PullProgress{
+			Src:          progress.Src,
+			CurrentBytes: progress.CurrentBytes,
+			TotalBytes:   progress.TotalBytes,
+			MBPerSec:     progress.MBPerSec,
+			Complete:     progress.Complete,
+		},
+	}
 }
 
 func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
@@ -667,7 +671,7 @@ func fetchVRAMRepoFiles(ctx context.Context, modelURL string) []HFRepoFile {
 // begins. SHA pointer files are fetched the same way (the peer's
 // /download/{path...} handler serves both /resolve/main/ and
 // /raw/main/).
-func (a *app) downloadFromPeer(ctx context.Context, log kronk.Logger, req PullRequest) (models.Path, error) {
+func (a *app) downloadFromPeer(ctx context.Context, log kronk.Logger, req PullRequest, progress models.DownloadProgressFunc) (models.Path, error) {
 	modelURLs, projURL, mtpURL, err := a.resolvePeerURLs(ctx, req.ModelURL, req.ProjURL, req.MTPURL)
 	if err != nil {
 		return models.Path{}, fmt.Errorf("download-from-peer: resolve %q: %w", req.ModelURL, err)
@@ -683,7 +687,7 @@ func (a *app) downloadFromPeer(ctx context.Context, log kronk.Logger, req PullRe
 		mtpURL = toDownloadServerURL(req.DownloadServer, mtpURL)
 	}
 
-	return a.models.DownloadURLs(ctx, log, modelURLs, projURL, mtpURL)
+	return a.models.DownloadURLsWithProgress(ctx, log, modelURLs, projURL, mtpURL, progress)
 }
 
 // resolvePeerURLs returns the HuggingFace download URLs for the given
