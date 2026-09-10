@@ -8,17 +8,28 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
+var fenceTools = []model.D{
+	{"type": "function", "function": model.D{"name": "submit_findings"}},
+}
+
+func fencedMachine(t *testing.T) model.StateMachine {
+	t.Helper()
+	c := Parser{}.NewStateMachine()
+	c.(model.ToolAwareStateMachine).SetTools(fenceTools)
+	return c
+}
+
 // TestParser_FencedJSONToolCall verifies that a tool-call envelope emitted
 // inside a markdown code fence as visible text — the shape Qwen2.5-Coder
 // produces at larger prompt sizes — is delivered through the tool channel
 // with the fences stripped, exactly like a marked <tool_call> envelope.
 func TestParser_FencedJSONToolCall(t *testing.T) {
-	c := Parser{}.NewStateMachine()
+	c := fencedMachine(t)
 	runSteps(t, "fenced-json-tool-call", c, []step{
 		{token: "```json\n", channel: model.ChannelNone},
-		{token: `{"name":"get_weather","arguments":{"location":"Paris"}}`, channel: model.ChannelNone},
+		{token: `{"name":"submit_findings","arguments":{"location":"Paris"}}`, channel: model.ChannelNone},
 		{token: "\n```", channel: model.ChannelTool,
-			content: `{"name":"get_weather","arguments":{"location":"Paris"}}` + "\n"},
+			content: `{"name":"submit_findings","arguments":{"location":"Paris"}}` + "\n"},
 	})
 	_, eog := c.Classify("done")
 	if !eog {
@@ -27,34 +38,75 @@ func TestParser_FencedJSONToolCall(t *testing.T) {
 }
 
 func TestParser_FencedJSONToolCallSingleToken(t *testing.T) {
-	c := Parser{}.NewStateMachine()
+	c := fencedMachine(t)
 	runSteps(t, "fenced-json-tool-call-single-token", c, []step{
-		{token: "```json\n{\"name\":\"a\",\"arguments\":{}}\n```", channel: model.ChannelTool,
-			content: `{"name":"a","arguments":{}}` + "\n"},
+		{token: "```json\n{\"name\":\"submit_findings\",\"arguments\":{}}\n```", channel: model.ChannelTool,
+			content: `{"name":"submit_findings","arguments":{}}` + "\n"},
 	})
 }
 
 func TestParser_FencedJSONToolCallSplitTokens(t *testing.T) {
-	c := Parser{}.NewStateMachine()
+	c := fencedMachine(t)
 	runSteps(t, "fenced-json-tool-call-split-tokens", c, []step{
 		{token: "`", channel: model.ChannelNone},
 		{token: "`", channel: model.ChannelNone},
 		{token: "`json\n", channel: model.ChannelNone},
 		{token: `{"name":`, channel: model.ChannelNone},
-		{token: `"a","arguments":{}}`, channel: model.ChannelNone},
+		{token: `"submit_findings","arguments":{}}`, channel: model.ChannelNone},
 		{token: "\n", channel: model.ChannelNone},
 		{token: "```", channel: model.ChannelTool,
-			content: `{"name":"a","arguments":{}}` + "\n"},
+			content: `{"name":"submit_findings","arguments":{}}` + "\n"},
 	})
 }
 
 func TestParser_FencedBareTagToolCall(t *testing.T) {
-	c := Parser{}.NewStateMachine()
+	c := fencedMachine(t)
 	runSteps(t, "fenced-bare-tag-tool-call", c, []step{
 		{token: "```\n", channel: model.ChannelNone},
-		{token: `{"name":"a","arguments":{}}`, channel: model.ChannelNone},
+		{token: `{"name":"submit_findings","arguments":{}}`, channel: model.ChannelNone},
 		{token: "\n```", channel: model.ChannelTool,
-			content: `{"name":"a","arguments":{}}` + "\n"},
+			content: `{"name":"submit_findings","arguments":{}}` + "\n"},
+	})
+}
+
+// TestParser_FencedUndeclaredNameStreamsAsAnswer verifies the declared-tool
+// gate: fenced JSON naming a function the request did not declare is ordinary
+// content and passes through verbatim, never delivered as a call.
+func TestParser_FencedUndeclaredNameStreamsAsAnswer(t *testing.T) {
+	c := fencedMachine(t)
+	const undeclared = "```json\n" + `{"name":"other_tool","arguments":{}}` + "\n```"
+	runSteps(t, "fenced-undeclared-name", c, []step{
+		{token: "```json\n", channel: model.ChannelNone},
+		// The body is envelope-shaped, so it is held until the close fence;
+		// only the complete JSON reveals the undeclared name.
+		{token: `{"name":"other_tool","arguments":{}}`, channel: model.ChannelNone},
+		{token: "\n```", channel: model.ChannelAnswer, content: undeclared},
+	})
+}
+
+// TestParser_FencedJSONWithoutDeclaredToolsStreamsAsAnswer verifies the hold
+// never engages when the request declares no tools: fenced JSON answers
+// stream untouched.
+func TestParser_FencedJSONWithoutDeclaredToolsStreamsAsAnswer(t *testing.T) {
+	c := Parser{}.NewStateMachine()
+	runSteps(t, "fenced-json-no-tools", c, []step{
+		{token: "```json\n", channel: model.ChannelAnswer, content: "```json\n"},
+		{token: `{"name":"submit_findings"}`, channel: model.ChannelAnswer, content: `{"name":"submit_findings"}`},
+		{token: "\n```", channel: model.ChannelAnswer, content: "\n```"},
+	})
+}
+
+// TestParser_WhitespaceThenTaggedToolCallUnaffected verifies the fence hold
+// does not disturb an ordinary marked call whose reply begins with
+// whitespace: the whitespace streams and the marker still opens the call.
+func TestParser_WhitespaceThenTaggedToolCallUnaffected(t *testing.T) {
+	c := fencedMachine(t)
+	runSteps(t, "whitespace-then-tagged-tool-call", c, []step{
+		{token: "\n", channel: model.ChannelAnswer, content: "\n"},
+		{token: "<tool_call>", channel: model.ChannelTool},
+		{token: `{"name":"submit_findings","arguments":{}}`, channel: model.ChannelNone},
+		{token: "</tool_call>", channel: model.ChannelTool,
+			content: `{"name":"submit_findings","arguments":{}}` + "\n"},
 	})
 }
 
@@ -63,7 +115,7 @@ func TestParser_FencedBareTagToolCall(t *testing.T) {
 // it is released as soon as the body proves it is not an envelope rather than
 // held to end of generation.
 func TestParser_FencedCodeStreamsAsAnswer(t *testing.T) {
-	c := Parser{}.NewStateMachine()
+	c := fencedMachine(t)
 	runSteps(t, "fenced-code-streams-as-answer", c, []step{
 		{token: "```go\n", channel: model.ChannelNone},
 		{token: "func", channel: model.ChannelAnswer, content: "```go\nfunc"},
@@ -73,7 +125,7 @@ func TestParser_FencedCodeStreamsAsAnswer(t *testing.T) {
 }
 
 func TestParser_FencedProseInfoStringStreamsAsAnswer(t *testing.T) {
-	c := Parser{}.NewStateMachine()
+	c := fencedMachine(t)
 	runSteps(t, "fenced-prose-info-string", c, []step{
 		{token: "```here is a note\n", channel: model.ChannelAnswer, content: "```here is a note\n"},
 		{token: "hello", channel: model.ChannelAnswer, content: "hello"},
@@ -81,7 +133,7 @@ func TestParser_FencedProseInfoStringStreamsAsAnswer(t *testing.T) {
 }
 
 func TestParser_InlineBacktickProseStreamsAsAnswer(t *testing.T) {
-	c := Parser{}.NewStateMachine()
+	c := fencedMachine(t)
 	runSteps(t, "inline-backtick-prose", c, []step{
 		{token: "`", channel: model.ChannelNone},
 		{token: "code` is inline", channel: model.ChannelAnswer, content: "`code` is inline"},
@@ -91,19 +143,20 @@ func TestParser_InlineBacktickProseStreamsAsAnswer(t *testing.T) {
 // TestParser_FenceAfterProseIgnored verifies the hold engages only at the
 // start of a reply: prose containing a fence later on streams untouched.
 func TestParser_FenceAfterProseIgnored(t *testing.T) {
-	c := Parser{}.NewStateMachine()
+	c := fencedMachine(t)
 	runSteps(t, "fence-after-prose", c, []step{
 		{token: "Here is code:", channel: model.ChannelAnswer, content: "Here is code:"},
-		{token: "```json\n{\"name\":\"a\",\"arguments\":{}}\n```",
-			channel: model.ChannelAnswer, content: "```json\n{\"name\":\"a\",\"arguments\":{}}\n```"},
+		{token: "```json\n{\"name\":\"submit_findings\",\"arguments\":{}}\n```",
+			channel: model.ChannelAnswer, content: "```json\n{\"name\":\"submit_findings\",\"arguments\":{}}\n```"},
 	})
 }
 
 func TestFlush_UnclosedFenceEnvelope(t *testing.T) {
 	c := Parser{}.NewStateMachine()
+	c.(model.ToolAwareStateMachine).SetTools(fenceTools)
 
 	var tooling strings.Builder
-	for _, token := range []string{"```json\n", `{"name":"get_weather","arguments":{"location":"Paris"}}`} {
+	for _, token := range []string{"```json\n", `{"name":"submit_findings","arguments":{"location":"Paris"}}`} {
 		result, eog := c.Classify(token)
 		if eog {
 			t.Fatalf("Classify(%q): got EOG before tool call completed", token)
@@ -119,13 +172,13 @@ func TestFlush_UnclosedFenceEnvelope(t *testing.T) {
 	if len(calls) != 1 {
 		t.Fatalf("ToolCall: got %d calls, want 1", len(calls))
 	}
-	if got, want := calls[0].Function.Name, "get_weather"; got != want {
+	if got, want := calls[0].Function.Name, "submit_findings"; got != want {
 		t.Errorf("Function.Name: got %q, want %q", got, want)
 	}
 }
 
 func TestParser_FencedNonEnvelopeUnderJsonTagReleased(t *testing.T) {
-	c := Parser{}.NewStateMachine()
+	c := fencedMachine(t)
 	runSteps(t, "fenced-non-envelope-under-json-tag", c, []step{
 		{token: "```json\n", channel: model.ChannelNone},
 		{token: "not an envelope", channel: model.ChannelAnswer, content: "```json\nnot an envelope"},

@@ -33,13 +33,17 @@ type stateMachine struct {
 
 	// Reply-leading markdown code fence. Some Qwen models (notably
 	// Qwen2.5-Coder at larger prompt sizes) emit a valid tool-call envelope
-	// inside a ``` fence as visible text instead of the marked format, so
-	// the fence is held until its body resolves as a call or ordinary
-	// content rather than streamed as answer.
+	// inside a ``` fence as visible text instead of the marked format. When
+	// tools are declared, the fence is held until its body resolves as one
+	// of those calls or as ordinary content.
 	fenceBuf    strings.Builder
 	fenceActive bool
 	fenceBody   bool
 	emitted     bool
+
+	// Declared tool names from the request, used to tell a fenced tool-call
+	// envelope apart from ordinary fenced JSON.
+	toolNames map[string]struct{}
 
 	// OpenAI-compatible activity deltas for tool-call starts.
 	toolCallDeltas []model.ResponseToolCallDelta
@@ -63,6 +67,7 @@ func (sm *stateMachine) Reset() {
 	sm.fenceActive = false
 	sm.fenceBody = false
 	sm.emitted = false
+	sm.toolNames = nil
 	sm.toolCallDeltas = nil
 	sm.startedCalls = nil
 	sm.deltaCallID = ""
@@ -79,10 +84,11 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 		return sm.classifyFenced(content)
 	}
 
-	// The fence hold engages only before anything has been emitted, so
-	// prose containing a fence later in the reply streams untouched.
-	if !sm.emitted && !sm.inPendingTag && !sm.inToolCall && !sm.toolCallDone && sm.status == model.ChannelAnswer &&
-		content != "" && (strings.HasPrefix(content, fenceOpen) || strings.HasPrefix(fenceOpen, content) || strings.TrimSpace(content) == "") {
+	// The fence hold engages only when tools are declared and the reply's
+	// very first token opens a fence — anything else (prose, whitespace, a
+	// marked call) must stream through the normal paths untouched.
+	if len(sm.toolNames) > 0 && !sm.emitted && !sm.inPendingTag && !sm.inToolCall && !sm.toolCallDone && sm.status == model.ChannelAnswer &&
+		content != "" && (strings.HasPrefix(content, fenceOpen) || strings.HasPrefix(fenceOpen, content)) {
 		sm.fenceActive = true
 		return sm.classifyFenced(content)
 	}
@@ -266,7 +272,7 @@ func (sm *stateMachine) classifyFenced(content string) (model.Result, bool) {
 		return model.Result{}, false
 	}
 	trimmedInner := strings.TrimSpace(inner)
-	if !isJSONEnvelope(trimmedInner) {
+	if name, ok := envelopeName(trimmedInner); !ok || !sm.declaresTool(name) {
 		return sm.fenceBail(candidate)
 	}
 
@@ -296,16 +302,50 @@ func (sm *stateMachine) fenceBail(candidate string) (model.Result, bool) {
 	return model.Result{Channel: model.ChannelAnswer, Content: candidate}, false
 }
 
-// isJSONEnvelope reports whether content is a JSON object carrying a name,
-// the shape of an unmarked Qwen tool-call envelope.
-func isJSONEnvelope(content string) bool {
+// envelopeName parses content as a JSON tool-call envelope and returns its
+// declared function name.
+func envelopeName(content string) (string, bool) {
 	if !strings.HasPrefix(content, "{") {
-		return false
+		return "", false
 	}
 	var envelope struct {
 		Name string `json:"name"`
 	}
-	return json.Unmarshal([]byte(content), &envelope) == nil && envelope.Name != ""
+	if json.Unmarshal([]byte(content), &envelope) != nil || envelope.Name == "" {
+		return "", false
+	}
+	return envelope.Name, true
+}
+
+// declaresTool reports whether name matches a tool declared in the request.
+func (sm *stateMachine) declaresTool(name string) bool {
+	_, declared := sm.toolNames[name]
+	return declared
+}
+
+// SetTools supplies the request's declared tools, telling a fenced JSON
+// envelope apart from ordinary fenced JSON by its function name.
+func (sm *stateMachine) SetTools(tools []model.D) {
+	sm.toolNames = make(map[string]struct{}, len(tools))
+	for _, tool := range tools {
+		if name := declaredToolName(tool); name != "" {
+			sm.toolNames[name] = struct{}{}
+		}
+	}
+}
+
+// declaredToolName returns the function name of an OpenAI-style tool
+// declaration.
+func declaredToolName(tool model.D) string {
+	if tool["type"] != "function" {
+		return ""
+	}
+	function, ok := tool["function"].(model.D)
+	if !ok {
+		return ""
+	}
+	name, _ := function["name"].(string)
+	return name
 }
 
 // isLanguageTag reports whether s is a bare markdown info string.
@@ -497,8 +537,8 @@ func (sm *stateMachine) Flush() model.Result {
 		sm.fenceBuf.Reset()
 
 		if body, ok := fenceBodyOf(candidate); ok {
-			if trimmed := strings.TrimSpace(body); isJSONEnvelope(trimmed) {
-				sm.startToolCall(true, trimmed)
+			if name, ok := envelopeName(strings.TrimSpace(body)); ok && sm.declaresTool(name) {
+				sm.startToolCall(true, strings.TrimSpace(body))
 				return sm.completeToolCall()
 			}
 		}
