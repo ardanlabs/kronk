@@ -13,6 +13,7 @@ import (
 //   - <think>…</think>       reasoning wrap
 //   - <tool_call>…</tool_call> JSON envelope (also <|tool_call>/<tool_call|>)
 //   - <function=name>…</function> direct XML format (Qwen-Coder)
+//   - ```json fenced envelope  a tool call emitted as fenced text
 //
 // The split-tag lookahead handles tokenizers that fragment "<function=" into
 // "<", "f", "function", "=", etc.
@@ -29,6 +30,16 @@ type stateMachine struct {
 	// Lookahead buffer for split <function=… tokens.
 	pendingTagBuf strings.Builder
 	inPendingTag  bool
+
+	// Reply-leading markdown code fence. Some Qwen models (notably
+	// Qwen2.5-Coder at larger prompt sizes) emit a valid tool-call envelope
+	// inside a ``` fence as visible text instead of the marked format, so
+	// the fence is held until its body resolves as a call or ordinary
+	// content rather than streamed as answer.
+	fenceBuf    strings.Builder
+	fenceActive bool
+	fenceBody   bool
+	emitted     bool
 
 	// OpenAI-compatible activity deltas for tool-call starts.
 	toolCallDeltas []model.ResponseToolCallDelta
@@ -48,6 +59,10 @@ func (sm *stateMachine) Reset() {
 	sm.directToolCallDone = false
 	sm.pendingTagBuf.Reset()
 	sm.inPendingTag = false
+	sm.fenceBuf.Reset()
+	sm.fenceActive = false
+	sm.fenceBody = false
+	sm.emitted = false
 	sm.toolCallDeltas = nil
 	sm.startedCalls = nil
 	sm.deltaCallID = ""
@@ -59,6 +74,20 @@ func (sm *stateMachine) Reset() {
 // Behavior is undefined if Classify is called after a previous call returned
 // eog=true. Reset must be invoked between requests.
 func (sm *stateMachine) Classify(content string) (model.Result, bool) {
+	// A reply-leading markdown code fence being held for classification.
+	if sm.fenceActive {
+		return sm.classifyFenced(content)
+	}
+
+	// The fence hold engages only before anything has been emitted, so
+	// prose containing a fence later in the reply streams untouched.
+	if !sm.emitted && !sm.inPendingTag && !sm.inToolCall && !sm.toolCallDone && sm.status == model.ChannelAnswer &&
+		content != "" && (strings.HasPrefix(content, fenceOpen) || strings.HasPrefix(fenceOpen, content) || strings.TrimSpace(content) == "") {
+		sm.fenceActive = true
+		return sm.classifyFenced(content)
+	}
+	sm.emitted = true
+
 	// Lookahead for split <function= openers.
 	if sm.inPendingTag {
 		sm.pendingTagBuf.WriteString(content)
@@ -196,6 +225,99 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 
 		return model.Result{Channel: sm.status, Content: content}, false
 	}
+}
+
+const fenceOpen = "```"
+
+// classifyFenced resolves reply-leading fenced content. The opener line is
+// held until its newline arrives; the body is held until a closing fence, an
+// early bail-out, or end of generation (Flush). A body that is a JSON
+// tool-call envelope is delivered through the same completion path as a
+// marked call; anything else is released verbatim as answer content, fences
+// included.
+func (sm *stateMachine) classifyFenced(content string) (model.Result, bool) {
+	sm.fenceBuf.WriteString(content)
+	candidate := sm.fenceBuf.String()
+
+	if !sm.fenceBody {
+		trimmed := strings.TrimLeft(candidate, " \t\r\n")
+		if trimmed != "" && !strings.HasPrefix(trimmed, fenceOpen) && !strings.HasPrefix(fenceOpen, trimmed) {
+			return sm.fenceBail(candidate)
+		}
+		line, _, found := strings.Cut(trimmed, "\n")
+		if !found {
+			return model.Result{}, false
+		}
+		if tag := strings.TrimPrefix(line, fenceOpen); tag != "" && !isLanguageTag(tag) {
+			return sm.fenceBail(candidate)
+		}
+		sm.fenceBody = true
+	}
+
+	body := sm.fenceBodyText(candidate)
+	inner, _, found := strings.Cut(body, "\n"+fenceOpen)
+	if !found {
+		// A body that cannot be an envelope is released immediately so
+		// ordinary fenced content still streams rather than buffering to
+		// end of generation.
+		if b := strings.TrimLeft(body, " \t\r\n"); b != "" && !strings.HasPrefix(b, "{") {
+			return sm.fenceBail(candidate)
+		}
+		return model.Result{}, false
+	}
+	trimmedInner := strings.TrimSpace(inner)
+	if !isJSONEnvelope(trimmedInner) {
+		return sm.fenceBail(candidate)
+	}
+
+	sm.fenceActive = false
+	sm.fenceBody = false
+	sm.fenceBuf.Reset()
+	sm.startToolCall(true, trimmedInner)
+	return sm.completeToolCall(), false
+}
+
+// fenceBodyText returns the fenced body following the opener line.
+func (sm *stateMachine) fenceBodyText(candidate string) string {
+	open := strings.Index(candidate, fenceOpen)
+	if nl := strings.Index(candidate[open:], "\n"); nl >= 0 {
+		return candidate[open+nl+1:]
+	}
+	return ""
+}
+
+// fenceBail releases a fence candidate as ordinary answer content, fences
+// included, when it did not resolve to a tool-call envelope.
+func (sm *stateMachine) fenceBail(candidate string) (model.Result, bool) {
+	sm.fenceActive = false
+	sm.fenceBody = false
+	sm.fenceBuf.Reset()
+	sm.emitted = true
+	return model.Result{Channel: model.ChannelAnswer, Content: candidate}, false
+}
+
+// isJSONEnvelope reports whether content is a JSON object carrying a name,
+// the shape of an unmarked Qwen tool-call envelope.
+func isJSONEnvelope(content string) bool {
+	if !strings.HasPrefix(content, "{") {
+		return false
+	}
+	var envelope struct {
+		Name string `json:"name"`
+	}
+	return json.Unmarshal([]byte(content), &envelope) == nil && envelope.Name != ""
+}
+
+// isLanguageTag reports whether s is a bare markdown info string.
+func isLanguageTag(s string) bool {
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func (sm *stateMachine) startToolCall(wrapped bool, content string) {
@@ -368,6 +490,21 @@ func jsonStringEnd(content string, start int) (int, bool) {
 // Flush drains a buffered tool call or unresolved direct-function prefix when
 // generation ends before the state machine sees its closing delimiter.
 func (sm *stateMachine) Flush() model.Result {
+	if sm.fenceActive {
+		candidate := sm.fenceBuf.String()
+		sm.fenceActive = false
+		sm.fenceBody = false
+		sm.fenceBuf.Reset()
+
+		if body, ok := fenceBodyOf(candidate); ok {
+			if trimmed := strings.TrimSpace(body); isJSONEnvelope(trimmed) {
+				sm.startToolCall(true, trimmed)
+				return sm.completeToolCall()
+			}
+		}
+		return model.Result{Channel: model.ChannelAnswer, Content: candidate}
+	}
+
 	if sm.inToolCall {
 		return sm.completeToolCall()
 	}
@@ -383,4 +520,27 @@ func (sm *stateMachine) Flush() model.Result {
 	sm.directToolCallDone = false
 
 	return result
+}
+
+// fenceBodyOf splits a reply-leading fenced block, returning the body between
+// the opener line and a closing fence. A missing closing fence is tolerated
+// so truncated generation still classifies. It reports false when the content
+// does not begin with a valid fence opener.
+func fenceBodyOf(content string) (string, bool) {
+	s := strings.TrimLeft(content, " \t\r\n")
+	rest, ok := strings.CutPrefix(s, fenceOpen)
+	if !ok {
+		return "", false
+	}
+	tag, body, found := strings.Cut(rest, "\n")
+	if !found {
+		return "", false
+	}
+	if tag = strings.TrimSpace(tag); tag != "" && !isLanguageTag(tag) {
+		return "", false
+	}
+	if inner, _, found := strings.Cut(body, "\n"+fenceOpen); found {
+		return inner, true
+	}
+	return body, true
 }
