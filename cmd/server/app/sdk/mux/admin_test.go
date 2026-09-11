@@ -175,8 +175,8 @@ func TestRemoteHost(t *testing.T) {
 
 func TestAdminLoginSession(t *testing.T) {
 	sec, err := security.New(security.Config{
-		OverrideBaseKeysFolder: t.TempDir(),
-		Issuer:                 "test",
+		BasePath: t.TempDir(),
+		Issuer:   "test",
 	})
 	if err != nil {
 		t.Fatalf("security.New: %v", err)

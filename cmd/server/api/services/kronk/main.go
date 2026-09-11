@@ -157,7 +157,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	// with a bufconn listener.
 	if cfg.Auth.Host == "" {
 		sec, err = security.New(security.Config{
-			Issuer: cfg.Auth.Local.Issuer,
+			BasePath: cfg.BasePath,
+			Issuer:   cfg.Auth.Local.Issuer,
 		})
 
 		if err != nil {

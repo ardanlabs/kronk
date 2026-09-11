@@ -76,7 +76,8 @@ func New(t *testing.T, testName string) *Test {
 	// If no host is provided for the auth service, we will start it ourselves
 	// with a bufconn listener.
 	sec, err := security.New(security.Config{
-		Issuer: auth.Issuer(),
+		BasePath: t.TempDir(),
+		Issuer:   auth.Issuer(),
 	})
 
 	if err != nil {
