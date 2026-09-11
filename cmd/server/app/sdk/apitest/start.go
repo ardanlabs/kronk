@@ -18,12 +18,14 @@ import (
 	"github.com/ardanlabs/kronk/sdk/bucky"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
+	"github.com/ardanlabs/kronk/sdk/malina"
 	"github.com/ardanlabs/kronk/sdk/pool"
 	buckylibs "github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
 	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	malinalibs "github.com/ardanlabs/kronk/sdk/tools/malina/libs"
+	malinamodels "github.com/ardanlabs/kronk/sdk/tools/malina/models"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"google.golang.org/grpc/test/bufconn"
 )
@@ -159,10 +161,19 @@ func New(t *testing.T, testName string) *Test {
 	}
 
 	// -------------------------------------------------------------------------
-	// Malina (stable-diffusion) Libs
+	// Malina (stable-diffusion) Libs + Models
 
 	malinaLibs, err := malinalibs.New(malinalibs.WithDetect(ctx, log.Info))
 	if err != nil {
+		t.Fatal(err)
+	}
+
+	malinaModels, err := malinamodels.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := malinaModels.BuildIndex(log.Info, false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -178,7 +189,7 @@ func New(t *testing.T, testName string) *Test {
 	}
 
 	// -------------------------------------------------------------------------
-	// Init Kronk + Bucky
+	// Init Kronk + Bucky + Malina
 
 	if err := kronk.Init(); err != nil {
 		t.Fatal(err)
@@ -188,10 +199,15 @@ func New(t *testing.T, testName string) *Test {
 		log.Info(ctx, "startup", "WARNING", "bucky init failed, audio transcription tests will fail", "ERROR", err)
 	}
 
+	if err := malina.Init(malina.WithLibPath(malinaLibs.LibsPath()), malina.WithProgress(malina.DiscardProgress)); err != nil {
+		log.Info(ctx, "startup", "WARNING", "malina init failed, image generation tests will fail", "ERROR", err)
+	}
+
 	p, err := pool.New(pool.Config{
 		Log:             log.Info,
 		KronkModels:     models,
 		BuckyModels:     buckyModels,
+		MalinaModels:    malinaModels,
 		ModelConfigFile: "../../../../../../zarf/kms/model_config.yaml",
 		BudgetPercent:   90,
 		ModelsInPool:    10,

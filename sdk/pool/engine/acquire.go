@@ -292,8 +292,8 @@ func (c *Pool[H]) checkRequestFitsBudget(newKey string, req resman.PlanRequest) 
 	usage := c.resman.Usage()
 
 	if req.RAMBytes > 0 && usage.RAMBudget > 0 && req.RAMBytes > usage.RAMBudget {
-		return fmt.Errorf("request[%s] needs ram=%s but max ram budget is %s",
-			newKey, HumanBytes(req.RAMBytes), HumanBytes(usage.RAMBudget))
+		return fmt.Errorf("request[%s] needs ram=%s but max ram budget is %s: %w",
+			newKey, HumanBytes(req.RAMBytes), HumanBytes(usage.RAMBudget), resman.ErrNoCapacity)
 	}
 
 	// Delegate the VRAM verdict to the resman so the feasibility check

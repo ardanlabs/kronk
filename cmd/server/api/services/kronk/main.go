@@ -30,12 +30,14 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
+	"github.com/ardanlabs/kronk/sdk/malina"
 	"github.com/ardanlabs/kronk/sdk/pool"
 	buckylibs "github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
 	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	malinalibs "github.com/ardanlabs/kronk/sdk/tools/malina/libs"
+	malinamodels "github.com/ardanlabs/kronk/sdk/tools/malina/models"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"google.golang.org/grpc/test/bufconn"
 )
@@ -373,6 +375,15 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	log.Info(ctx, "startup", "status", "malina libs ready", "libPath", malinaLibs.LibsPath(), "arch", malinaLibs.Arch(), "os", malinaLibs.OS(), "processor", malinaLibs.Processor())
 
+	malinaModels, err := malinamodels.NewWithPaths(cfg.BasePath)
+	if err != nil {
+		return fmt.Errorf("unable to create malina models api: %w", err)
+	}
+
+	if err := malinaModels.BuildIndex(log.Info, false); err != nil {
+		log.Info(ctx, "startup", "WARNING", "malina build index", "ERROR", err)
+	}
+
 	// -------------------------------------------------------------------------
 	// Model Config
 
@@ -417,17 +428,22 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		log.Info(ctx, "startup", "WARNING", "bucky init failed, running in degraded mode (use BUI to download whisper libraries)", "ERROR", err)
 	}
 
+	if err := malina.Init(malina.WithLibPath(malinaLibs.LibsPath()), malina.WithProgress(malina.DiscardProgress)); err != nil {
+		log.Info(ctx, "startup", "WARNING", "malina init failed, running in degraded mode (install stable-diffusion libraries and restart)", "ERROR", err)
+	}
+
 	// -------------------------------------------------------------------------
 	// Pool
 
 	// One call to pool.New constructs the shared resource manager and
-	// every enabled backend pool (kronk + bucky). The resman is
+	// every enabled backend pool (kronk + bucky + malina). The resman is
 	// shared so VRAM/RAM budgeting is unified across backends.
 
 	p, err := pool.New(pool.Config{
 		Log:             log.Info,
 		KronkModels:     models,
 		BuckyModels:     buckyModels,
+		MalinaModels:    malinaModels,
 		ModelConfigFile: modelConfigFile,
 		BudgetPercent:   cfg.Pool.BudgetPercent,
 		ModelsInPool:    cfg.Pool.ModelsInPool,

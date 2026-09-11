@@ -6,7 +6,8 @@
 //   - a shared resman.Manager (built from the host's detected device
 //     topology),
 //   - a kronk (llama) pool wired around it,
-//   - a bucky (whisper) pool wired around it.
+//   - a bucky (whisper) pool wired around it,
+//   - a malina (stable-diffusion) pool wired around it.
 //
 // Each domain-level HTTP handler then takes the typed sub-pool it
 // needs: embedapp / chatapp / etc. take p.Kronk; audioapp takes
@@ -28,18 +29,19 @@ import (
 	"github.com/ardanlabs/kronk/sdk/applog"
 	buckypool "github.com/ardanlabs/kronk/sdk/bucky/pool"
 	kronkpool "github.com/ardanlabs/kronk/sdk/kronk/pool"
+	malinapool "github.com/ardanlabs/kronk/sdk/malina/pool"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
+	malinamodels "github.com/ardanlabs/kronk/sdk/tools/malina/models"
 	kronkmodels "github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
 // Config carries the settings for the application-facing pool.
 //
-// KronkModels and BuckyModels are the pre-built catalogs the
+// KronkModels, BuckyModels, and MalinaModels are the pre-built catalogs the
 // underlying backend pools consult for path / size resolution. At
-// least one must be supplied; either may be nil to disable that
-// backend (the corresponding p.Kronk / p.Bucky will be nil).
+// least one must be supplied; any may be nil to disable that backend.
 //
 // BudgetPercent feeds the shared resman.Manager (defaults to 90 when
 // zero). ModelsInPool applies to both backend pools and defaults to 10
@@ -49,6 +51,7 @@ type Config struct {
 	Log             applog.Logger
 	KronkModels     *kronkmodels.Models
 	BuckyModels     *buckymodels.Models
+	MalinaModels    *malinamodels.Models
 	ModelConfigFile string
 	BudgetPercent   int
 	ModelsInPool    int
@@ -62,6 +65,7 @@ type Pool struct {
 	Resman *resman.Manager
 	Kronk  *kronkpool.Pool
 	Bucky  *buckypool.Pool
+	Malina *malinapool.Pool
 }
 
 // ModelDetail re-exports so observability code (BUI, toolapp) does not
@@ -92,14 +96,14 @@ func HumanBytes(n int64) string {
 
 // New builds the resource manager and every enabled backend pool.
 //
-// At least one of cfg.KronkModels or cfg.BuckyModels must be set;
+// At least one model catalog must be set;
 // otherwise no pools would be built and the facade would be useless.
 func New(cfg Config) (*Pool, error) {
 	if cfg.Log == nil {
 		return nil, errors.New("new: log is required")
 	}
-	if cfg.KronkModels == nil && cfg.BuckyModels == nil {
-		return nil, errors.New("new: at least one of kronk-models or bucky-models is required")
+	if cfg.KronkModels == nil && cfg.BuckyModels == nil && cfg.MalinaModels == nil {
+		return nil, errors.New("new: at least one model catalog is required")
 	}
 
 	devs := devices.List()
@@ -146,6 +150,20 @@ func New(cfg Config) (*Pool, error) {
 		p.Bucky = bp
 	}
 
+	if cfg.MalinaModels != nil {
+		mp, err := malinapool.New(malinapool.Config{
+			Log:          cfg.Log,
+			Models:       cfg.MalinaModels,
+			Resman:       rm,
+			ModelsInPool: cfg.ModelsInPool,
+			TTL:          cfg.TTL,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("new: malina pool: %w", err)
+		}
+		p.Malina = mp
+	}
+
 	return &p, nil
 }
 
@@ -159,9 +177,16 @@ func (p *Pool) Shutdown(ctx context.Context) error {
 			errs = append(errs, fmt.Errorf("kronk: %w", err))
 		}
 	}
+
 	if p.Bucky != nil {
 		if err := p.Bucky.Shutdown(ctx); err != nil {
 			errs = append(errs, fmt.Errorf("bucky: %w", err))
+		}
+	}
+
+	if p.Malina != nil {
+		if err := p.Malina.Shutdown(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("malina: %w", err))
 		}
 	}
 
