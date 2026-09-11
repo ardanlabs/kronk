@@ -7,7 +7,42 @@ import type {
 } from '../types';
 import { FieldLabel } from './ParamTooltips';
 
+interface LibsManagerBackend {
+  id: string;
+  engine: string;
+  backend: string;
+  environmentVariable: string;
+  rootFolder: string;
+  getVersion: () => Promise<VersionResponse>;
+  getCombinations: () => Promise<{ combinations: LibsCombination[] }>;
+  listInstalls: () => Promise<{ bundles: LibsBundleTag[] }>;
+  removeInstall: (arch: string, os: string, processor: string) => Promise<unknown>;
+  pull: (
+    onMessage: (data: VersionResponse) => void,
+    onError: (error: string) => void,
+    onComplete: () => void,
+    opts?: { version?: string; arch?: string; os?: string; processor?: string },
+  ) => () => void;
+}
+
+const buckyBackend: LibsManagerBackend = {
+  id: 'bucky',
+  engine: 'Whisper.cpp',
+  backend: 'Bucky',
+  environmentVariable: 'KRONK_BUCKY_LIB_PATH',
+  rootFolder: 'bucky-libraries',
+  getVersion: () => api.getBuckyLibsVersion(),
+  getCombinations: () => api.getBuckyLibsCombinations(),
+  listInstalls: () => api.listBuckyLibsInstalls(),
+  removeInstall: (arch, os, processor) => api.removeBuckyLibsInstall(arch, os, processor),
+  pull: (onMessage, onError, onComplete, opts) => api.pullBuckyLibs(onMessage, onError, onComplete, opts),
+};
+
 export default function BuckyLibs() {
+  return <LibsManager backend={buckyBackend} />;
+}
+
+export function LibsManager({ backend }: { backend: LibsManagerBackend }) {
   const [pulling, setPulling] = useState(false);
   const [messages, setMessages] = useState<Array<{ text: string; type: 'info' | 'error' | 'success' }>>([]);
   const [versionInfo, setVersionInfo] = useState<VersionResponse | null>(null);
@@ -18,21 +53,21 @@ export default function BuckyLibs() {
 
   const loadBundles = useCallback(async () => {
     try {
-      const resp = await api.listBuckyLibsInstalls();
+      const resp = await backend.listInstalls();
       setBundles(resp.bundles ?? []);
     } catch {
       setBundles([]);
     }
-  }, []);
+  }, [backend]);
 
   useEffect(() => {
-    api
-      .getBuckyLibsVersion()
+    backend
+      .getVersion()
       .then(setVersionInfo)
       .catch(() => {})
       .finally(() => setLoadingVersion(false));
     loadBundles();
-  }, [loadBundles]);
+  }, [backend, loadBundles]);
 
   const handlePull = () => {
     setPulling(true);
@@ -43,7 +78,7 @@ export default function BuckyLibs() {
       setMessages((prev) => [...prev, { text, type }]);
     };
 
-    closeRef.current = api.pullBuckyLibs(
+    closeRef.current = backend.pull(
       (data: VersionResponse) => {
         if (data.status) {
           addMessage(data.status, 'info');
@@ -77,8 +112,8 @@ export default function BuckyLibs() {
   return (
     <div>
       <div className="page-header">
-        <h2>Whisper.cpp Libs</h2>
-        <p>Download, update, and manage whisper.cpp libraries</p>
+        <h2>{backend.engine} Libs</h2>
+        <p>Download, update, and manage {backend.engine} libraries</p>
       </div>
 
       <div className="card">
@@ -114,17 +149,17 @@ export default function BuckyLibs() {
           </div>
         ) : (
           <p style={{ marginBottom: '24px', color: 'var(--color-gray-600)' }}>
-            No bucky libs installed yet for the active triple.
+            No {backend.backend} libs installed yet for the active triple.
           </p>
         )}
 
         <div className="form-group">
-          <label htmlFor="bucky-version">
+          <FieldLabel tooltipKey="bundleVersion" htmlFor={`${backend.id}-version`}>
             Version (leave empty for default)
-          </label>
+          </FieldLabel>
           <input
             type="text"
-            id="bucky-version"
+            id={`${backend.id}-version`}
             value={version}
             onChange={(e) => setVersion(e.target.value)}
             disabled={pulling}
@@ -155,21 +190,21 @@ export default function BuckyLibs() {
         )}
       </div>
 
-      <InstalledBundlesSection bundles={bundles} onChanged={loadBundles} />
+      <InstalledBundlesSection backend={backend} bundles={bundles} onChanged={loadBundles} />
 
-      <LibraryInstallsSection onChanged={loadBundles} />
+      <LibraryInstallsSection backend={backend} onChanged={loadBundles} />
     </div>
   );
 }
 
-function InstalledBundlesSection({ bundles, onChanged }: { bundles: LibsBundleTag[]; onChanged: () => void }) {
+function InstalledBundlesSection({ backend, bundles, onChanged }: { backend: LibsManagerBackend; bundles: LibsBundleTag[]; onChanged: () => void }) {
   const [error, setError] = useState<string | null>(null);
 
   const handleRemove = async (b: LibsBundleTag) => {
     if (!confirm(`Remove install ${b.os}/${b.arch}/${b.processor}?`)) return;
     setError(null);
     try {
-      await api.removeBuckyLibsInstall(b.arch, b.os, b.processor);
+      await backend.removeInstall(b.arch, b.os, b.processor);
       onChanged();
     } catch (err) {
       setError(`Remove failed: ${(err as Error).message}`);
@@ -180,8 +215,8 @@ function InstalledBundlesSection({ bundles, onChanged }: { bundles: LibsBundleTa
     <div className="card" style={{ marginTop: 24 }}>
       <h3 style={{ marginTop: 0, marginBottom: 8 }}>Installed Bundles</h3>
       <p style={{ marginBottom: 16, color: 'var(--color-gray-600)', fontSize: 14 }}>
-        whisper.cpp library bundles currently installed on disk under the bucky libraries
-        root. To switch the active install, set <code>KRONK_BUCKY_LIB_PATH</code> to a
+        {backend.engine} library bundles currently installed on disk under the {backend.backend} libraries
+        root. To switch the active install, set <code>{backend.environmentVariable}</code> to a
         bundle's folder and restart the server.
       </p>
 
@@ -225,7 +260,7 @@ function InstalledBundlesSection({ bundles, onChanged }: { bundles: LibsBundleTa
   );
 }
 
-function LibraryInstallsSection({ onChanged }: { onChanged: () => void }) {
+function LibraryInstallsSection({ backend, onChanged }: { backend: LibsManagerBackend; onChanged: () => void }) {
   const [combinations, setCombinations] = useState<LibsCombination[]>([]);
   const [arch, setArch] = useState('');
   const [os, setOS] = useState('');
@@ -237,10 +272,10 @@ function LibraryInstallsSection({ onChanged }: { onChanged: () => void }) {
   const closeRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
-    api.getBuckyLibsCombinations()
+    backend.getCombinations()
       .then((resp) => setCombinations(resp.combinations ?? []))
       .catch(() => setCombinations([]));
-  }, []);
+  }, [backend]);
 
   // Filter the dropdowns so users can only pick valid (os, arch, processor) triples.
   const osOptions = useMemo(() => Array.from(new Set(combinations.map((c) => c.os))).sort(), [combinations]);
@@ -265,7 +300,7 @@ function LibraryInstallsSection({ onChanged }: { onChanged: () => void }) {
     setMessages([]);
     setActivationHint(null);
 
-    closeRef.current = api.pullBuckyLibs(
+    closeRef.current = backend.pull(
       (data: VersionResponse) => {
         if (data.status) addMessage(data.status, 'info');
       },
@@ -296,39 +331,39 @@ function LibraryInstallsSection({ onChanged }: { onChanged: () => void }) {
     <div className="card" style={{ marginTop: 24 }}>
       <h3 style={{ marginTop: 0, marginBottom: 8 }}>Library Installs</h3>
       <p style={{ marginBottom: 16, color: 'var(--color-gray-600)', fontSize: 14 }}>
-        Install whisper.cpp library bundles for any supported (arch, os, processor) combination.
-        Each install lives in its own folder under the bucky libraries root. To run Kronk against
-        a non-default install, set <code>KRONK_BUCKY_LIB_PATH</code> to that folder and restart
+        Install {backend.engine} library bundles for any supported (arch, os, processor) combination.
+        Each install lives in its own folder under the {backend.backend} libraries root. To run Kronk against
+        a non-default install, set <code>{backend.environmentVariable}</code> to that folder and restart
         the server.
       </p>
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
         <div className="form-group" style={{ minWidth: 160 }}>
-          <FieldLabel tooltipKey="bundleOS" htmlFor="bucky-bundle-os">OS</FieldLabel>
-          <select id="bucky-bundle-os" value={os} onChange={(e) => { setOS(e.target.value); setArch(''); setProcessor(''); }} disabled={pulling}>
+          <FieldLabel tooltipKey="bundleOS" htmlFor={`${backend.id}-bundle-os`}>OS</FieldLabel>
+          <select id={`${backend.id}-bundle-os`} value={os} onChange={(e) => { setOS(e.target.value); setArch(''); setProcessor(''); }} disabled={pulling}>
             <option value="">Select…</option>
             {osOptions.map((v) => <option key={v} value={v}>{v}</option>)}
           </select>
         </div>
         <div className="form-group" style={{ minWidth: 160 }}>
-          <FieldLabel tooltipKey="bundleArch" htmlFor="bucky-bundle-arch">Architecture</FieldLabel>
-          <select id="bucky-bundle-arch" value={arch} onChange={(e) => { setArch(e.target.value); setProcessor(''); }} disabled={pulling || !os}>
+          <FieldLabel tooltipKey="bundleArch" htmlFor={`${backend.id}-bundle-arch`}>Architecture</FieldLabel>
+          <select id={`${backend.id}-bundle-arch`} value={arch} onChange={(e) => { setArch(e.target.value); setProcessor(''); }} disabled={pulling || !os}>
             <option value="">Select…</option>
             {archOptions.map((v) => <option key={v} value={v}>{v}</option>)}
           </select>
         </div>
         <div className="form-group" style={{ minWidth: 160 }}>
-          <FieldLabel tooltipKey="bundleProcessor" htmlFor="bucky-bundle-processor">Processor</FieldLabel>
-          <select id="bucky-bundle-processor" value={processor} onChange={(e) => setProcessor(e.target.value)} disabled={pulling || !arch}>
+          <FieldLabel tooltipKey="bundleProcessor" htmlFor={`${backend.id}-bundle-processor`}>Processor</FieldLabel>
+          <select id={`${backend.id}-bundle-processor`} value={processor} onChange={(e) => setProcessor(e.target.value)} disabled={pulling || !arch}>
             <option value="">Select…</option>
             {processorOptions.map((v) => <option key={v} value={v}>{v}</option>)}
           </select>
         </div>
         <div className="form-group" style={{ minWidth: 160 }}>
-          <label htmlFor="bucky-bundle-version">Version (optional)</label>
+          <FieldLabel tooltipKey="bundleVersion" htmlFor={`${backend.id}-bundle-version`}>Version (optional)</FieldLabel>
           <input
             type="text"
-            id="bucky-bundle-version"
+            id={`${backend.id}-bundle-version`}
             value={version}
             onChange={(e) => setVersion(e.target.value)}
             placeholder="default"
@@ -357,7 +392,7 @@ function LibraryInstallsSection({ onChanged }: { onChanged: () => void }) {
       {activationHint && (
         <div className="status-box" style={{ marginTop: 8 }}>
           <div className="status-line info" style={{ marginBottom: 8 }}>
-            To activate this bundle, set <code>KRONK_BUCKY_LIB_PATH</code> to its folder
+            To activate this bundle, set <code>{backend.environmentVariable}</code> to its folder
             and restart the server. Libraries are not hot-reloaded.
           </div>
           <pre style={{
@@ -367,7 +402,7 @@ function LibraryInstallsSection({ onChanged }: { onChanged: () => void }) {
             whiteSpace: 'pre',
             overflowX: 'auto',
           }}>
-{`export KRONK_BUCKY_LIB_PATH=~/.kronk/bucky-libraries/${activationHint.os}/${activationHint.arch}/${activationHint.processor}
+{`export ${backend.environmentVariable}=~/.kronk/${backend.rootFolder}/${activationHint.os}/${activationHint.arch}/${activationHint.processor}
 kronk server start`}
           </pre>
         </div>

@@ -140,7 +140,7 @@ install-class-models: install-kronk
 	@echo
 
 OPENWEBUI  := ghcr.io/open-webui/open-webui:v0.11.1
-GRAFANA    := grafana/grafana:13.2.0
+GRAFANA    := grafana/grafana:13.2.1
 PROMETHEUS := prom/prometheus:v3.14.0
 TEMPO      := grafana/tempo:3.0.3
 LOKI       := grafana/loki:3.7.7

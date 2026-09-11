@@ -1,19 +1,11 @@
-import { useState, useRef, useEffect, useCallback, useMemo, Fragment } from 'react';
+import { useState, useEffect, useCallback, useMemo, Fragment } from 'react';
 import { api } from '../services/api';
 import type {
   BuckyCatalogEntry,
   BuckyModelEntry,
   BuckyModelDetails,
-  PullResponse,
 } from '../types';
-
-interface PullState {
-  status: string;
-  currentBytes?: number;
-  totalBytes?: number;
-  mbPerSec?: number;
-  error?: string;
-}
+import { useDownload } from '../contexts/DownloadContext';
 
 type SortColumn = 'name' | 'size';
 type SortDir = 'asc' | 'desc';
@@ -38,14 +30,13 @@ export default function BuckyModels() {
   const [installed, setInstalled] = useState<BuckyModelEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [pullStates, setPullStates] = useState<Record<string, PullState>>({});
   const [sortCol, setSortCol] = useState<SortColumn>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [selectedID, setSelectedID] = useState<string | null>(null);
   const [detailsByID, setDetailsByID] = useState<Record<string, BuckyModelDetails>>({});
   const [detailsLoading, setDetailsLoading] = useState<Record<string, boolean>>({});
   const [detailsError, setDetailsError] = useState<Record<string, string>>({});
-  const cancelRefs = useRef<Record<string, (() => void) | null>>({});
+  const { download, isDownloading, startBuckyDownload, cancelDownload } = useDownload();
 
   const loadInstalled = useCallback(async () => {
     try {
@@ -69,6 +60,12 @@ export default function BuckyModels() {
   useEffect(() => {
     Promise.all([loadCatalog(), loadInstalled()]).finally(() => setLoading(false));
   }, [loadCatalog, loadInstalled]);
+
+  useEffect(() => {
+    if (download?.origin === 'bucky' && download.status === 'complete') {
+      void loadInstalled();
+    }
+  }, [download?.origin, download?.status, loadInstalled]);
 
   const installedMap = useMemo(() => {
     const m = new Map<string, BuckyModelEntry>();
@@ -105,49 +102,7 @@ export default function BuckyModels() {
   };
 
   const handlePull = (entry: BuckyCatalogEntry) => {
-    setPullStates((prev) => ({ ...prev, [entry.id]: { status: 'starting' } }));
-
-    cancelRefs.current[entry.id] = api.pullBuckyModel(
-      entry.id,
-      (data: PullResponse) => {
-        setPullStates((prev) => ({
-          ...prev,
-          [entry.id]: {
-            status: data.status,
-            currentBytes: data.progress?.current_bytes,
-            totalBytes: data.progress?.total_bytes,
-            mbPerSec: data.progress?.mb_per_sec,
-          },
-        }));
-      },
-      (errMsg: string) => {
-        setPullStates((prev) => ({
-          ...prev,
-          [entry.id]: { ...(prev[entry.id] || { status: 'error' }), status: 'error', error: errMsg },
-        }));
-        cancelRefs.current[entry.id] = null;
-      },
-      () => {
-        setPullStates((prev) => ({
-          ...prev,
-          [entry.id]: { ...(prev[entry.id] || { status: 'complete' }), status: 'complete' },
-        }));
-        cancelRefs.current[entry.id] = null;
-        loadInstalled();
-      },
-    );
-  };
-
-  const handleCancel = (id: string) => {
-    const cancel = cancelRefs.current[id];
-    if (cancel) {
-      cancel();
-      cancelRefs.current[id] = null;
-    }
-    setPullStates((prev) => ({
-      ...prev,
-      [id]: { ...(prev[id] || { status: 'cancelled' }), status: 'cancelled' },
-    }));
+    startBuckyDownload(entry.id);
   };
 
   const handleRemove = async (id: string) => {
@@ -212,13 +167,14 @@ export default function BuckyModels() {
               {sorted.map((entry) => {
                 const installedEntry = installedMap.get(entry.id);
                 const isInstalled = !!installedEntry;
-                const state = pullStates[entry.id];
-                const inFlight = !!state && state.status !== 'complete' && state.status !== 'error' && state.status !== 'cancelled';
-                const total = state?.totalBytes ?? 0;
-                const cur = state?.currentBytes ?? 0;
+                const state = download?.origin === 'bucky' && download.modelUrl === entry.id ? download : null;
+                const inFlight = state?.status === 'downloading';
+                const total = state?.progress?.totalBytes ?? 0;
+                const cur = state?.progress?.currentBytes ?? 0;
                 const pct = total > 0 ? Math.min(100, Math.round((cur / total) * 100)) : 0;
                 const isSelected = selectedID === entry.id;
                 const stop = (e: React.MouseEvent) => e.stopPropagation();
+                const lastMessage = state?.messages[state.messages.length - 1];
 
                 return (
                   <Fragment key={entry.id}>
@@ -234,18 +190,18 @@ export default function BuckyModels() {
                         {state ? (
                           <div>
                             <div>
-                              {state.status}
+                              {lastMessage?.text || state.status}
                               {inFlight && total > 0 && (
-                                <> — {formatBytes(cur)} / {formatBytes(total)} ({pct}%) {state.mbPerSec ? `@ ${state.mbPerSec.toFixed(1)} MB/s` : ''}</>
+                                <> — {formatBytes(cur)} / {formatBytes(total)} ({pct}%) {state.progress?.mbPerSec ? `@ ${state.progress.mbPerSec.toFixed(1)} MB/s` : ''}</>
                               )}
                             </div>
                             {inFlight && total > 0 && (
-                              <div style={{ marginTop: 4, height: 6, background: 'var(--color-gray-200)', borderRadius: 3, overflow: 'hidden' }}>
-                                <div style={{ width: `${pct}%`, height: '100%', background: 'var(--color-primary, #2563eb)', transition: 'width 200ms linear' }} />
+                              <div className="model-download-progress-track">
+                                <div className="model-download-progress-fill" style={{ width: `${pct}%` }} />
                               </div>
                             )}
-                            {state.error && (
-                              <div className="status-line error" style={{ marginTop: 4 }}>{state.error}</div>
+                            {lastMessage?.type === 'error' && (
+                              <div className="status-line error" style={{ marginTop: 4 }}>{lastMessage.text}</div>
                             )}
                           </div>
                         ) : isInstalled ? (
@@ -258,11 +214,11 @@ export default function BuckyModels() {
                       </td>
                       <td style={{ textAlign: 'right' }} onClick={stop}>
                         {inFlight ? (
-                          <button className="btn btn-danger" onClick={() => handleCancel(entry.id)}>Cancel</button>
+                          <button className="btn btn-danger" onClick={cancelDownload}>Cancel</button>
                         ) : isInstalled ? (
                           <button className="btn btn-danger" onClick={() => handleRemove(entry.id)}>Remove</button>
                         ) : (
-                          <button className="btn btn-primary" onClick={() => handlePull(entry)}>Pull</button>
+                          <button className="btn btn-primary" onClick={() => handlePull(entry)} disabled={isDownloading}>Pull</button>
                         )}
                       </td>
                     </tr>

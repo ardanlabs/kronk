@@ -107,8 +107,17 @@ func Routes(app *web.App, cfg Config) {
 	// -------------------------------------------------------------------------
 	// Malina (stable-diffusion.cpp) backend.
 
+	app.HandlerFunc(http.MethodGet, version, "/malina/libs", api.listMalinaLibs, managementAccess)
 	app.HandlerFunc(http.MethodGet, version, "/malina/libs/integrity", api.verifyMalinaLibs, managementAccess)
+	app.HandlerFunc(http.MethodPost, version, "/malina/libs/pull", api.pullMalinaLibs, administrationAccess)
+	app.HandlerFunc(http.MethodGet, version, "/malina/libs/combinations", api.listMalinaLibsCombinations, managementAccess)
+	app.HandlerFunc(http.MethodGet, version, "/malina/libs/installs", api.listMalinaLibsInstalls, managementAccess)
+	app.HandlerFunc(http.MethodDelete, version, "/malina/libs/installs", api.removeMalinaLibsInstall, administrationAccess)
+
 	app.HandlerFunc(http.MethodGet, version, "/malina/models", api.listMalinaModels, managementAccess)
+	app.HandlerFunc(http.MethodGet, version, "/malina/models/catalog", api.listMalinaCatalog, managementAccess)
+	app.HandlerFunc(http.MethodPost, version, "/malina/models/pull", api.pullMalinaModel, administrationAccess)
+	app.HandlerFunc(http.MethodDelete, version, "/malina/models/{model}", api.removeMalinaModel, administrationAccess)
 
 	// -------------------------------------------------------------------------
 	// Cross-backend infrastructure.

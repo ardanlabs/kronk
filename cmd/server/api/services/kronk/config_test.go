@@ -47,6 +47,7 @@ kms:
     budget-percent: 80
     ttl: 5m
   bucky-lib-path: /yaml/bucky
+  malina-lib-path: /yaml/malina
   hf-token: yaml-token
   llama-log: 0
 `)
@@ -82,6 +83,9 @@ kms:
 	}
 	if cfg.BuckyLibPath != "/yaml/bucky" {
 		t.Errorf("BuckyLibPath: got %q, want %q", cfg.BuckyLibPath, "/yaml/bucky")
+	}
+	if cfg.MalinaLibPath != "/yaml/malina" {
+		t.Errorf("MalinaLibPath: got %q, want %q", cfg.MalinaLibPath, "/yaml/malina")
 	}
 	if cfg.LibDownloadEnabled {
 		t.Error("LibDownloadEnabled: got true, want false")

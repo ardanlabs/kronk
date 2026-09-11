@@ -42,6 +42,8 @@ import type {
   BuckyModelDetails,
   TranscriptionResponse,
   MalinaModelsResponse,
+  MalinaCatalogResponse,
+  MalinaModelActionResponse,
   ImageGenerationRequest,
   ImageEditRequest,
   ImageGenerationResponse,
@@ -670,6 +672,117 @@ class ApiService {
     return this.request<DevicesResponse>('/devices');
   }
 
+  private streamBackendRequest<T extends { status?: string }>(
+    endpoint: string,
+    init: RequestInit,
+    onMessage: (data: T) => void,
+    onError: (error: string) => void,
+    onComplete: () => void,
+    complete: (data: T) => boolean,
+  ): () => void {
+    const controller = new AbortController();
+
+    this.fetch(`${this.baseUrl}${endpoint}`, { ...init, signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) {
+          onError(await this.parseErrorMessage(response));
+          return;
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+          onError('Streaming not supported');
+          return;
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let lastStatus = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            const jsonStr = line.startsWith('data: ') ? line.slice(6) : line;
+            if (!jsonStr.trim()) continue;
+
+            try {
+              const data = JSON.parse(jsonStr) as T;
+              lastStatus = data.status || lastStatus;
+              onMessage(data);
+              if (complete(data)) {
+                onComplete();
+                return;
+              }
+            } catch {
+              onError('Failed to parse response');
+              return;
+            }
+          }
+        }
+
+        onError(lastStatus || 'Download ended before completion');
+      })
+      .catch((err) => {
+        if (err.name !== 'AbortError') {
+          onError(err.message || 'Connection error');
+        }
+      });
+
+    return () => controller.abort();
+  }
+
+  private pullBackendLibs(
+    backend: string,
+    onMessage: (data: VersionResponse) => void,
+    onError: (error: string) => void,
+    onComplete: () => void,
+    opts?: { version?: string; arch?: string; os?: string; processor?: string },
+  ): () => void {
+    const params = new URLSearchParams();
+    if (opts?.version) params.set('version', opts.version);
+    if (opts?.arch) params.set('arch', opts.arch);
+    if (opts?.os) params.set('os', opts.os);
+    if (opts?.processor) params.set('processor', opts.processor);
+    const query = params.toString();
+
+    return this.streamBackendRequest<VersionResponse>(
+      `/${backend}/libs/pull${query ? `?${query}` : ''}`,
+      { method: 'POST', headers: this.headers() },
+      onMessage,
+      onError,
+      onComplete,
+      (data) => data.status === 'downloaded',
+    );
+  }
+
+  private pullBackendModel(
+    backend: string,
+    source: string,
+    onMessage: (data: PullResponse) => void,
+    onError: (error: string) => void,
+    onComplete: () => void,
+  ): () => void {
+    return this.streamBackendRequest<PullResponse>(
+      `/${backend}/models/pull`,
+      {
+        method: 'POST',
+        headers: this.headers({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ source }),
+      },
+      onMessage,
+      onError,
+      onComplete,
+      (data) => !!data.status?.startsWith('downloaded'),
+    );
+  }
+
   async getLibsCombinations(): Promise<LibsCombinationsResponse> {
     return this.request<LibsCombinationsResponse>('/kronk/libs/combinations');
   }
@@ -988,6 +1101,49 @@ class ApiService {
 
   async listMalinaModels(): Promise<MalinaModelsResponse> {
     return this.request<MalinaModelsResponse>('/malina/models');
+  }
+
+  async listMalinaCatalog(): Promise<MalinaCatalogResponse> {
+    return this.request<MalinaCatalogResponse>('/malina/models/catalog');
+  }
+
+  async removeMalinaModel(id: string): Promise<MalinaModelActionResponse> {
+    return this.request<MalinaModelActionResponse>(`/malina/models/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+
+  async getMalinaLibsVersion(): Promise<VersionResponse> {
+    return this.request<VersionResponse>('/malina/libs');
+  }
+
+  async getMalinaLibsCombinations(): Promise<LibsCombinationsResponse> {
+    return this.request<LibsCombinationsResponse>('/malina/libs/combinations');
+  }
+
+  async listMalinaLibsInstalls(): Promise<LibsBundleListResponse> {
+    return this.request<LibsBundleListResponse>('/malina/libs/installs');
+  }
+
+  async removeMalinaLibsInstall(arch: string, os: string, processor: string): Promise<LibsBundleActionResponse> {
+    const params = new URLSearchParams({ arch, os, processor });
+    return this.request<LibsBundleActionResponse>(`/malina/libs/installs?${params.toString()}`, { method: 'DELETE' });
+  }
+
+  pullMalinaLibs(
+    onMessage: (data: VersionResponse) => void,
+    onError: (error: string) => void,
+    onComplete: () => void,
+    opts?: { version?: string; arch?: string; os?: string; processor?: string },
+  ): () => void {
+    return this.pullBackendLibs('malina', onMessage, onError, onComplete, opts);
+  }
+
+  pullMalinaModel(
+    source: string,
+    onMessage: (data: PullResponse) => void,
+    onError: (error: string) => void,
+    onComplete: () => void,
+  ): () => void {
+    return this.pullBackendModel('malina', source, onMessage, onError, onComplete);
   }
 
   streamImageProgress(

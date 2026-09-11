@@ -369,6 +369,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	malinaLibs, err := malinalibs.New(
 		malinalibs.WithBasePath(cfg.BasePath),
+		malinalibs.WithLibPath(cfg.MalinaLibPath),
 		malinalibs.WithDetect(ctx, log.Info),
 	)
 	if err != nil {

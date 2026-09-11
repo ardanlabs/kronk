@@ -222,7 +222,8 @@ export const PARAM_TOOLTIPS = {
   // Library bundles
   bundleArch: 'Target CPU architecture for this library bundle download (amd64 or arm64). Each bundle lives in its own folder under the libraries root and does not replace the active install.',
   bundleOS: 'Target operating system for this library bundle download (linux, bookworm, trixie, darwin, windows). Each bundle lives in its own folder under the libraries root and does not replace the active install.',
-  bundleProcessor: 'Target processor backend for this library bundle download (cpu, cuda, metal, rocm, vulkan). Only combinations published by the upstream llama.cpp build matrix can be selected.',
+  bundleProcessor: 'Target processor backend for this library bundle download (cpu, cuda, metal, rocm, vulkan). Only combinations published by the selected backend can be chosen.',
+  bundleVersion: 'Exact upstream library version to install. Leave empty to use the version pinned by this Kronk release.',
   bundleRemove: 'Delete this bundle directory. Does not affect the active install unless this bundle is the active one.',
   peerLibsHost: 'Address of another Kronk server on the local network in the form ip:port. The peer must be running with download enabled. Useful in workshop environments where Internet access is slow or unavailable.',
   peerLibsConnect: 'Query the peer Kronk server for the list of library bundles it has installed and is willing to share.',
@@ -246,7 +247,7 @@ export const PARAM_TOOLTIPS = {
   imageGeneratorSize: 'Output dimensions. Automatic uses 512×512 for text generation and preserves the uploaded image aspect ratio for image-to-image generation.',
   imageGeneratorSteps: 'Number of denoising iterations. More steps can improve detail but increase generation time. The model default is 20.',
   imageGeneratorCFGScale: 'How strongly generation follows the prompt. Higher values adhere more closely but can reduce natural variation. The model default is 7.',
-  imageGeneratorSeed: 'Random seed used to reproduce a result. Use -1 to choose a random seed for each generation.',
+  imageGeneratorSeed: 'Positive values reproduce a result. Values of 0 or below choose a random seed for each generation.',
   imageGeneratorStrength: 'How much the generated result may depart from the uploaded image. Lower values preserve more of the source; 1 allows the largest transformation.',
 } as const satisfies Record<string, string>;
 

@@ -103,6 +103,7 @@ func TestBuildEnvVarsServiceSettings(t *testing.T) {
 	cmd.Flags().Bool("lib-download-enabled", true, "")
 	cmd.Flags().Bool("lib-verify-enabled", false, "")
 	cmd.Flags().String("bucky-lib-path", "", "")
+	cmd.Flags().String("malina-lib-path", "", "")
 
 	values := map[string]string{
 		"authorization-mode":   "management",
@@ -110,6 +111,7 @@ func TestBuildEnvVarsServiceSettings(t *testing.T) {
 		"lib-download-enabled": "false",
 		"lib-verify-enabled":   "true",
 		"bucky-lib-path":       "/opt/bucky",
+		"malina-lib-path":      "/opt/malina",
 	}
 	for name, value := range values {
 		if err := cmd.Flags().Set(name, value); err != nil {
@@ -124,6 +126,7 @@ func TestBuildEnvVarsServiceSettings(t *testing.T) {
 		"KRONK_LIB_DOWNLOAD_ENABLED=false",
 		"KRONK_LIB_VERIFY_ENABLED=true",
 		"KRONK_BUCKY_LIB_PATH=/opt/bucky",
+		"KRONK_MALINA_LIB_PATH=/opt/malina",
 	}
 	for _, want := range wants {
 		if !slices.Contains(envVars, want) {

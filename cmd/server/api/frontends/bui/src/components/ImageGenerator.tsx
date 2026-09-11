@@ -34,7 +34,7 @@ export default function ImageGenerator() {
   const [size, setSize] = useState('');
   const [steps, setSteps] = useState(20);
   const [cfgScale, setCFGScale] = useState(7);
-  const [seed, setSeed] = useState(-1);
+  const [seed, setSeed] = useState(0);
   const [strength, setStrength] = useState(0.75);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +49,7 @@ export default function ImageGenerator() {
     setModelsError(null);
     try {
       const response = await api.listMalinaModels();
-      setModels(response.models ?? []);
+      setModels((response.models ?? []).filter((model) => model.basic_text_to_image));
     } catch (err) {
       setModelsError((err as Error).message);
       setModels([]);
@@ -133,7 +133,7 @@ export default function ImageGenerator() {
         size: size || undefined,
         steps,
         cfg_scale: cfgScale,
-        seed,
+        seed: seed <= 0 ? -1 : seed,
       };
       if (mode === 'image' && source) {
         request.strength = strength;
@@ -311,8 +311,8 @@ export default function ImageGenerator() {
                 <input id="image-generator-cfg" className="form-input" type="number" min={0.1} step={0.1} value={cfgScale} onChange={(event) => setCFGScale(Number(event.target.value))} disabled={submitting} />
               </div>
               <div>
-                <FieldLabel htmlFor="image-generator-seed" tooltipKey="imageGeneratorSeed">Seed</FieldLabel>
-                <input id="image-generator-seed" className="form-input" type="number" min={-1} step={1} value={seed} onChange={(event) => setSeed(Number(event.target.value))} disabled={submitting} />
+                <FieldLabel htmlFor="image-generator-seed" tooltipKey="imageGeneratorSeed">Seed (≤ 0 = random)</FieldLabel>
+                <input id="image-generator-seed" className="form-input" type="number" step={1} value={seed} onChange={(event) => setSeed(Number(event.target.value))} disabled={submitting} />
               </div>
               {mode === 'image' && (
                 <div>

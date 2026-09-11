@@ -5710,6 +5710,20 @@ button.autotest-detail-log-header:focus-visible {
     background: transparent !important;
 }
 
+.model-download-progress-track {
+    margin-top: 4px;
+    height: 6px;
+    overflow: hidden;
+    background: var(--color-gray-200);
+    border-radius: 3px;
+}
+
+.model-download-progress-fill {
+    height: 100%;
+    background: var(--color-warning-text-alt);
+    transition: width 200ms linear;
+}
+
 [data-theme="dark"] .catalog-table tbody tr.active,
 [data-theme="dark"] .catalog-table tbody tr.active:hover {
     background: #1e5bb8 !important;
