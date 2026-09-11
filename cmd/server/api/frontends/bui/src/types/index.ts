@@ -1203,6 +1203,54 @@ export interface TranscriptionResponse {
 }
 
 // =============================================================================
+// Malina image generation
+
+export interface MalinaModelEntry {
+  id: string;
+  description: string;
+  size: number;
+}
+
+export interface MalinaModelsResponse {
+  models: MalinaModelEntry[];
+}
+
+export interface ImageGenerationRequest {
+  model: string;
+  prompt: string;
+  negative_prompt?: string;
+  size?: string;
+  steps?: number;
+  cfg_scale?: number;
+  seed?: number;
+}
+
+export interface ImageEditRequest extends ImageGenerationRequest {
+  strength?: number;
+}
+
+export interface ImageGenerationData {
+  b64_json: string;
+  seed: number;
+  width: number;
+  height: number;
+}
+
+export interface ImageGenerationResponse {
+  created: number;
+  data: ImageGenerationData[];
+}
+
+export interface ImageProgressEvent {
+  scope: 'global';
+  status: 'connected' | 'progress';
+  step?: number;
+  steps?: number;
+  percent?: number;
+  seconds_per_step?: number;
+}
+
+// =============================================================================
 // Accuracy app — model code-recall comparison
 
 export interface AccuracyFunction {

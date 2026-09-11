@@ -38,6 +38,7 @@ const menuStructure: MenuCategory[] = [
       { page: 'chat', label: 'Chat' },
       { page: 'vram-calculator', label: 'VRAM Calculator' },
       { page: 'translator', label: 'Translator' },
+      { page: 'image-generator', label: 'Image Generator' },
     ],
   },
   {

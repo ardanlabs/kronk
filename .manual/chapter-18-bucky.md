@@ -157,6 +157,7 @@ The transcription models currently included in that catalog are:
 | Model            | Approximate size | Language support                         |
 | ---------------- | ---------------- | ---------------------------------------- |
 | `tiny`           | 75 MB            | Multilingual; fastest, lowest accuracy   |
+| `tiny.en`        | 75 MB            | English only                             |
 | `base`           | 142 MB           | Multilingual; fast                       |
 | `base.en`        | 142 MB           | English only                             |
 | `small`          | 466 MB           | Multilingual; balanced                   |
@@ -299,9 +300,9 @@ array whose entries contain `word`, `start`, and `end` fields.
 The `text`, `srt`, and `vtt` formats return their corresponding non-JSON media
 types.
 
-English-only models (`base.en`, `small.en`, and `medium.en`) only accept an
-empty language hint or `en`. Use a multilingual model for other languages or
-translation.
+English-only models (`tiny.en`, `base.en`, `small.en`, and `medium.en`) only
+accept an empty language hint or `en`. Use a multilingual model for other
+languages or translation.
 
 #### 18.6.2 Bucky Management Endpoints
 

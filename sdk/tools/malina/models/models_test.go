@@ -128,6 +128,33 @@ func TestBundleFlux2Klein4B(t *testing.T) {
 	}
 }
 
+func TestBundleBasicTextToImage(t *testing.T) {
+	tests := []struct {
+		name string
+		id   BundleName
+		want bool
+	}{
+		{name: "stable diffusion", id: BundleSD15, want: true},
+		{name: "diffusion components", id: BundleFlux2Klein4B, want: true},
+		{name: "control net workflow", id: BundleControlNetCannySD15, want: false},
+		{name: "adetailer workflow", id: BundleADetailerFaceYOLOv8N, want: false},
+		{name: "animation workflow", id: BundleAnimateDiffSD15, want: false},
+		{name: "upscaler only", id: BundleRealESRGANX4Anime, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bundle, ok := BundleByName(tt.id)
+			if !ok {
+				t.Fatalf("BundleByName(%q) not found", tt.id)
+			}
+			if got := bundle.BasicTextToImage; got != tt.want {
+				t.Errorf("BasicTextToImage: got %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDownloadFileAuthorization(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -322,6 +349,13 @@ func TestIndexFullPathRemoveLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FullPath() error = %v", err)
 	}
+	installed, err := m.Installed()
+	if err != nil {
+		t.Fatalf("Installed() error = %v", err)
+	}
+	if len(installed) != 1 || !installed[0].Name.Equal(bundle.Name) || installed[0].Size != int64(len("model")) || !installed[0].BasicTextToImage {
+		t.Errorf("Installed(): got %+v, want bundle %q with size %d", installed, bundle.Name, len("model"))
+	}
 	originalDownload := downloadModelFile
 	t.Cleanup(func() { downloadModelFile = originalDownload })
 	called := false
@@ -340,6 +374,13 @@ func TestIndexFullPathRemoveLifecycle(t *testing.T) {
 	}
 	if _, err := m.FullPath(bundle.Name.String()); !errors.Is(err, ErrModelNotFound) {
 		t.Errorf("FullPath() error = %v, want ErrModelNotFound", err)
+	}
+	installed, err = m.Installed()
+	if err != nil {
+		t.Fatalf("Installed() after remove error = %v", err)
+	}
+	if len(installed) != 0 {
+		t.Errorf("Installed() after remove: got %+v, want empty", installed)
 	}
 }
 

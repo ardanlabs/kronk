@@ -236,6 +236,18 @@ export const PARAM_TOOLTIPS = {
   translatorPrompt: 'Optional text passed to whisper as decoder context. Useful to bias spelling of proper nouns, technical terms, or to provide style/punctuation hints. Keep it short (a sentence or two).',
   translatorRealtimeFactor: 'Audio duration divided by wall-clock time. A value of 5x means the run processed 5 seconds of audio per second of real time. Higher is faster.',
   translatorNoSpeechProb: 'Whisper\'s estimated probability that this segment contains no speech. Values close to 1 typically indicate silence or background noise.',
+
+  // Image Generator
+  imageGeneratorModel: 'Installed Malina stable-diffusion model bundle used to generate the image.',
+  imageGeneratorMode: 'Text to image creates an image from the prompt alone. Image to image uses an uploaded PNG or JPEG as the starting composition.',
+  imageGeneratorPrompt: 'Text description of the image to generate. Include the subject, setting, composition, lighting, and style details that matter.',
+  imageGeneratorSource: 'PNG or JPEG used as the starting image. It is resized to the selected output dimensions before generation.',
+  imageGeneratorNegativePrompt: 'Features to discourage in the generated image, such as blur, artifacts, or unwanted objects.',
+  imageGeneratorSize: 'Output dimensions. Automatic uses 512×512 for text generation and preserves the uploaded image aspect ratio for image-to-image generation.',
+  imageGeneratorSteps: 'Number of denoising iterations. More steps can improve detail but increase generation time. The model default is 20.',
+  imageGeneratorCFGScale: 'How strongly generation follows the prompt. Higher values adhere more closely but can reduce natural variation. The model default is 7.',
+  imageGeneratorSeed: 'Random seed used to reproduce a result. Use -1 to choose a random seed for each generation.',
+  imageGeneratorStrength: 'How much the generated result may depart from the uploaded image. Lower values preserve more of the source; 1 allows the largest transformation.',
 } as const satisfies Record<string, string>;
 
 export type TooltipKey = keyof typeof PARAM_TOOLTIPS;

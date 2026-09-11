@@ -61,9 +61,11 @@ The Malina API follows the same high-level shape as the Kronk and Bucky SDKs:
 
 Malina is available through the SDK, local tooling, and the Kronk model server.
 The CLI manages local libraries and model bundles. The server's shared resource
-manager performs RAM and VRAM admission and eviction for Malina models, and the
-basic `POST /v1/images/generations` endpoint generates images. Advanced image
-editing, ControlNet, ADetailer, video, and upscaling operations remain SDK-only.
+manager performs RAM and VRAM admission and eviction for Malina models. The
+basic `POST /v1/images/generations` and `POST /v1/images/edits` endpoints create
+and transform images. `GET /v1/images/events` streams process-global model
+loading and generation progress for those operations. ControlNet, ADetailer,
+video, and upscaling operations remain SDK-only.
 
 ### 19.2 Install Stable Diffusion Libraries
 

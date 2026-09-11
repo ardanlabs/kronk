@@ -44,6 +44,7 @@ func (all) Add(app *web.App, cfg mux.Config) {
 		BuckyLibs:              cfg.BuckyLibs,
 		BuckyModels:            cfg.BuckyModels,
 		MalinaLibs:             cfg.MalinaLibs,
+		MalinaModels:           cfg.MalinaModels,
 		AuthorizationMode:      cfg.AuthorizationMode,
 		LegacyManagementAccess: cfg.AdminAuthEnabled,
 	})
@@ -75,6 +76,7 @@ func (all) Add(app *web.App, cfg mux.Config) {
 		Log:               cfg.Log,
 		AuthClient:        cfg.AuthClient,
 		Pool:              cfg.Pool,
+		MalinaProgress:    cfg.MalinaProgress,
 		AuthorizationMode: cfg.AuthorizationMode,
 		InferenceTimeout:  cfg.InferenceTimeout,
 	})

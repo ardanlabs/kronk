@@ -187,11 +187,6 @@ func (m *Models) Header(modelID string) (Header, error) {
 func (m *Models) CatalogHeader(ctx context.Context, modelID string) (Header, error) {
 	short := normalizeShortName(modelID)
 
-	entry, ok := catalog[short]
-	if !ok {
-		return Header{}, fmt.Errorf("catalog-header: %w: %q", ErrModelNotFound, modelID)
-	}
-
 	cacheFile := m.headerCacheFile(short)
 
 	if data, err := os.ReadFile(cacheFile); err == nil && isValidHeaderBytes(data) {
@@ -203,6 +198,11 @@ func (m *Models) CatalogHeader(ctx context.Context, modelID string) (Header, err
 			_ = writeHeaderCache(cacheFile, data)
 			return parseHeader(data)
 		}
+	}
+
+	entry, ok := catalog[short]
+	if !ok {
+		return Header{}, fmt.Errorf("catalog-header: %w: %q", ErrModelNotFound, modelID)
 	}
 
 	data, err := fetchHeaderBytes(ctx, entry.URL)

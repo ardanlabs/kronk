@@ -10,6 +10,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/api/services/kronk/build"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/authapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/malinaprogress"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mux"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
@@ -250,6 +251,7 @@ func New(t *testing.T, testName string) *Test {
 		BuckyLibs:        buckyLibs,
 		BuckyModels:      buckyModels,
 		MalinaLibs:       malinaLibs,
+		MalinaProgress:   malinaprogress.New(),
 		InferenceTimeout: 60 * time.Minute,
 	}
 

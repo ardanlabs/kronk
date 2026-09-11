@@ -66,6 +66,8 @@ statuses such as 400, 401, 403, 404, 409, 429, 500, 501, or 503.
 | `/v1/models`                   | GET    | List locally available models          |
 | `/v1/models/{model}`           | GET    | Retrieve one locally available model   |
 | `/v1/images/generations`       | POST   | Generate an image with Malina           |
+| `/v1/images/edits`             | POST   | Transform an image with Malina          |
+| `/v1/images/events`            | GET    | Stream server-wide Malina progress      |
 | `/v1/audio/transcriptions`     | POST   | Transcribe audio with Bucky            |
 
 Sections 9.10 through 9.13 inventory the administration, diagnostics, and
@@ -364,8 +366,34 @@ and generates one PNG with a locally installed Malina model bundle:
 `size` defaults to `512x512`. The response contains `created` and a `data`
 array whose single item contains `b64_json`, `seed`, `width`, and `height`.
 Only `n: 1`, `response_format: "b64_json"`, and PNG output are supported.
-Image editing, ControlNet, ADetailer, video generation, and upscaling remain
-available through the Malina SDK rather than the model-server API.
+
+`POST /v1/images/edits` accepts the same controls as multipart form fields and
+requires an `image` PNG or JPEG file. The optional `strength` field controls
+how far the result may depart from the source and defaults to `0.75`; its range
+is greater than zero through `1`. When `size` is omitted, Kronk preserves the
+source aspect ratio, scales dimensions down to at most 1024 pixels per side,
+and aligns them to multiples of eight. Uploads are limited to 25 MB. Both image
+routes support `negative_prompt`, `steps`, `cfg_scale`, and `seed` and require
+the `image-generations` inference permission when authentication is enabled.
+
+```sh
+curl http://localhost:11435/v1/images/edits \
+  -F model=sd-1.5 \
+  -F prompt='A watercolor illustration at sunset' \
+  -F image=@source.png \
+  -F strength=0.6 \
+  -F steps=20
+```
+
+`GET /v1/images/events` is a persistent server-sent event stream for Malina
+model-loading and image-generation progress. Each event reports `scope:
+"global"`, `step`, `steps`, `percent`, and `seconds_per_step`. The native
+callback is process-global, so an event describes server-wide Malina activity
+and is not attributable to the client or request consuming the stream. This
+route also requires the `image-generations` inference permission.
+
+ControlNet, ADetailer, video generation, and upscaling remain available through
+the Malina SDK rather than the model-server API.
 
 `POST /v1/audio/transcriptions` accepts multipart audio uploads and uses the
 Bucky speech-to-text runtime. Its request fields, formats, and administrative
@@ -610,16 +638,17 @@ See [Chapter 18](https://www.kronkai.com/manual#chapter-18-bucky-audio-transcrip
 for installation, model naming, transcription formats, and Bucky-specific
 runtime behavior.
 
-### Malina Runtime Integrity
+### Malina Models and Runtime Integrity
 
-Malina remains an SDK-only inference backend, but the server exposes the
-selected stable-diffusion.cpp runtime identity for remote integrity checks:
+The Malina management API exposes installed text-to-image bundles and the
+selected stable-diffusion.cpp runtime identity:
 
 | Method and path | Purpose |
 | ---------------- | ------- |
+| `GET /v1/malina/models` | List installed model bundles intended for basic text-to-image generation |
 | `GET /v1/malina/libs/integrity` | Hash and verify the selected stable-diffusion.cpp bundle against Malina's trusted manifest |
 
-The endpoint accepts an optional `version` query parameter, including
+The integrity endpoint accepts an optional `version` query parameter, including
 `VERSION@sha256:<64-hex-digest>`. Its response uses the same canonical bundle
 identity and per-file evidence as the llama.cpp and whisper.cpp endpoints and
 reports `backend` as `stable-diffusion`.

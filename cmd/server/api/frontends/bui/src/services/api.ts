@@ -41,6 +41,11 @@ import type {
   BuckyModelActionResponse,
   BuckyModelDetails,
   TranscriptionResponse,
+  MalinaModelsResponse,
+  ImageGenerationRequest,
+  ImageEditRequest,
+  ImageGenerationResponse,
+  ImageProgressEvent,
   AccuracyFunctionsResponse,
   AccuracyResponse,
   EfficiencyResponse,
@@ -974,6 +979,97 @@ class ApiService {
       body: form,
     });
 
+    if (!response.ok) {
+      throw new Error(await this.parseErrorMessage(response));
+    }
+
+    return response.json();
+  }
+
+  async listMalinaModels(): Promise<MalinaModelsResponse> {
+    return this.request<MalinaModelsResponse>('/malina/models');
+  }
+
+  streamImageProgress(
+    onMessage: (data: ImageProgressEvent) => void,
+    onError: (error: string) => void,
+  ): () => void {
+    const controller = new AbortController();
+
+    this.fetch(`${this.baseUrl}/images/events`, {
+      method: 'GET',
+      headers: this.headers(),
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          onError(`HTTP ${response.status}`);
+          return;
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+          onError('Streaming not supported');
+          return;
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            try {
+              onMessage(JSON.parse(line.slice(6)) as ImageProgressEvent);
+            } catch {
+              // Ignore malformed events and keep listening for progress.
+            }
+          }
+        }
+
+        if (!controller.signal.aborted) {
+          onError('Progress stream ended');
+        }
+      })
+      .catch((err) => {
+        if (err.name !== 'AbortError') {
+          onError(err.message || 'Connection error');
+        }
+      });
+
+    return () => controller.abort();
+  }
+
+  async generateImage(request: ImageGenerationRequest): Promise<ImageGenerationResponse> {
+    return this.request<ImageGenerationResponse>('/images/generations', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async editImage(request: ImageEditRequest, image: File): Promise<ImageGenerationResponse> {
+    const form = new FormData();
+    form.append('model', request.model);
+    form.append('prompt', request.prompt);
+    form.append('image', image, image.name);
+    form.append('response_format', 'b64_json');
+    if (request.negative_prompt) form.append('negative_prompt', request.negative_prompt);
+    if (request.size) form.append('size', request.size);
+    if (request.steps !== undefined) form.append('steps', String(request.steps));
+    if (request.cfg_scale !== undefined) form.append('cfg_scale', String(request.cfg_scale));
+    if (request.seed !== undefined) form.append('seed', String(request.seed));
+    if (request.strength !== undefined) form.append('strength', String(request.strength));
+
+    const response = await this.fetch(`${this.baseUrl}/images/edits`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: form,
+    });
     if (!response.ok) {
       throw new Error(await this.parseErrorMessage(response));
     }

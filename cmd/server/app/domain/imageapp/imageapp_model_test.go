@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"image/png"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -93,5 +94,47 @@ func TestImageGenerationModel(t *testing.T) {
 	}
 	if generated.Data[0].Seed != 42 {
 		t.Errorf("seed: got %d, want 42", generated.Data[0].Seed)
+	}
+
+	var body bytes.Buffer
+	form := multipart.NewWriter(&body)
+	if err := form.WriteField("model", "sd-1.5"); err != nil {
+		t.Fatal(err)
+	}
+	if err := form.WriteField("prompt", "a blue square"); err != nil {
+		t.Fatal(err)
+	}
+	if err := form.WriteField("steps", "2"); err != nil {
+		t.Fatal(err)
+	}
+	if err := form.WriteField("seed", "43"); err != nil {
+		t.Fatal(err)
+	}
+	if err := form.WriteField("strength", "0.6"); err != nil {
+		t.Fatal(err)
+	}
+	file, err := form.CreateFormFile("image", "source.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := png.Encode(file, image); err != nil {
+		t.Fatal(err)
+	}
+	if err := form.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	request = httptest.NewRequest(http.MethodPost, "/v1/images/edits", &body)
+	request.Header.Set("Content-Type", form.FormDataContentType())
+	response = api.edits(t.Context(), request)
+	generated, ok = response.(generationResponse)
+	if !ok {
+		t.Fatalf("edits() response = %T, want generationResponse", response)
+	}
+	if len(generated.Data) != 1 || generated.Data[0].Width != 128 || generated.Data[0].Height != 128 {
+		t.Errorf("edited image: got %+v, want one 128x128 image", generated.Data)
+	}
+	if generated.Data[0].Seed != 43 {
+		t.Errorf("edited seed: got %d, want 43", generated.Data[0].Seed)
 	}
 }

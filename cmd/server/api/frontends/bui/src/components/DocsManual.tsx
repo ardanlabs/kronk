@@ -2086,6 +2086,16 @@ docker rm kronk
                 <td>Generate an image with Malina</td>
               </tr>
               <tr>
+                <td><code>/v1/images/edits</code></td>
+                <td>POST</td>
+                <td>Transform an image with Malina</td>
+              </tr>
+              <tr>
+                <td><code>/v1/images/events</code></td>
+                <td>GET</td>
+                <td>Stream server-wide Malina progress</td>
+              </tr>
+              <tr>
                 <td><code>/v1/audio/transcriptions</code></td>
                 <td>POST</td>
                 <td>Transcribe audio with Bucky</td>
@@ -2222,7 +2232,16 @@ data: {"type":"response.completed",...}`}</code></pre>
   "cfg_scale": 7,
   "seed": -1
 }`}</code></pre>
-          <p><code>size</code> defaults to <code>512x512</code>. The response contains <code>created</code> and a <code>data</code> array whose single item contains <code>b64_json</code>, <code>seed</code>, <code>width</code>, and <code>height</code>. Only <code>n: 1</code>, <code>response_format: "b64_json"</code>, and PNG output are supported. Image editing, ControlNet, ADetailer, video generation, and upscaling remain available through the Malina SDK rather than the model-server API.</p>
+          <p><code>size</code> defaults to <code>512x512</code>. The response contains <code>created</code> and a <code>data</code> array whose single item contains <code>b64_json</code>, <code>seed</code>, <code>width</code>, and <code>height</code>. Only <code>n: 1</code>, <code>response_format: "b64_json"</code>, and PNG output are supported.</p>
+          <p><code>POST /v1/images/edits</code> accepts the same controls as multipart form fields and requires an <code>image</code> PNG or JPEG file. The optional <code>strength</code> field controls how far the result may depart from the source and defaults to <code>0.75</code>; its range is greater than zero through <code>1</code>. When <code>size</code> is omitted, Kronk preserves the source aspect ratio, scales dimensions down to at most 1024 pixels per side, and aligns them to multiples of eight. Uploads are limited to 25 MB. Both image routes support <code>negative_prompt</code>, <code>steps</code>, <code>cfg_scale</code>, and <code>seed</code> and require the <code>image-generations</code> inference permission when authentication is enabled.</p>
+          <pre className="code-block"><code className="language-sh">{`curl http://localhost:11435/v1/images/edits \\
+  -F model=sd-1.5 \\
+  -F prompt='A watercolor illustration at sunset' \\
+  -F image=@source.png \\
+  -F strength=0.6 \\
+  -F steps=20`}</code></pre>
+          <p><code>GET /v1/images/events</code> is a persistent server-sent event stream for Malina model-loading and image-generation progress. Each event reports <code>scope: "global"</code>, <code>step</code>, <code>steps</code>, <code>percent</code>, and <code>seconds_per_step</code>. The native callback is process-global, so an event describes server-wide Malina activity and is not attributable to the client or request consuming the stream. This route also requires the <code>image-generations</code> inference permission.</p>
+          <p>ControlNet, ADetailer, video generation, and upscaling remain available through the Malina SDK rather than the model-server API.</p>
           <p><code>POST /v1/audio/transcriptions</code> accepts multipart audio uploads and uses the Bucky speech-to-text runtime. Its request fields, formats, and administrative operations are documented in <a href="https://www.kronkai.com/manual#1861-request-and-response">Chapter 18</a>.</p>
           <h2 id="910-kronk-administration">9.10 Kronk Administration</h2>
           <p>These routes manage the llama.cpp runtime, local GGUF models, and the personal model catalog. Mutating routes may stream progress or perform network and disk operations. Clients should use the exact <code>/v1/kronk/...</code> prefix; the shorter <code>/v1/libs</code>, <code>/v1/models/pull</code>, and <code>/v1/catalog</code> forms are not aliases.</p>
@@ -2571,8 +2590,8 @@ data: {"type":"response.completed",...}`}</code></pre>
           <p><code>POST /v1/bucky/libs/pull</code> accepts the same optional platform and <code>version</code> query parameters as the Kronk library route. Bucky always verifies the selected archive against its release manifest before extraction. A version in <code>VERSION@sha256:&lt;64-hex-digest&gt;</code> form also authenticates the manifest itself. The default Bucky version already includes its published manifest digest.</p>
           <p><code>GET /v1/bucky/libs/integrity</code> hashes the installed files. With no <code>version</code> query parameter, Kronk uses the version recorded for the active installation; the default installation therefore retains its authenticated manifest pin. The response includes <code>manifest_authenticated</code> and <code>source</code> in addition to the common library integrity fields.</p>
           <p>See <a href="https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription">Chapter 18</a> for installation, model naming, transcription formats, and Bucky-specific runtime behavior.</p>
-          <h3 id="malina-runtime-integrity">Malina Runtime Integrity</h3>
-          <p>Malina remains an SDK-only inference backend, but the server exposes the selected stable-diffusion.cpp runtime identity for remote integrity checks:</p>
+          <h3 id="malina-models-and-runtime-integrity">Malina Models and Runtime Integrity</h3>
+          <p>The Malina management API exposes installed text-to-image bundles and the selected stable-diffusion.cpp runtime identity:</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -2582,12 +2601,16 @@ data: {"type":"response.completed",...}`}</code></pre>
             </thead>
             <tbody>
               <tr>
+                <td><code>GET /v1/malina/models</code></td>
+                <td>List installed model bundles intended for basic text-to-image generation</td>
+              </tr>
+              <tr>
                 <td><code>GET /v1/malina/libs/integrity</code></td>
                 <td>Hash and verify the selected stable-diffusion.cpp bundle against Malina's trusted manifest</td>
               </tr>
             </tbody>
           </table>
-          <p>The endpoint accepts an optional <code>version</code> query parameter, including <code>VERSION@sha256:&lt;64-hex-digest&gt;</code>. Its response uses the same canonical bundle identity and per-file evidence as the llama.cpp and whisper.cpp endpoints and reports <code>backend</code> as <code>stable-diffusion</code>.</p>
+          <p>The integrity endpoint accepts an optional <code>version</code> query parameter, including <code>VERSION@sha256:&lt;64-hex-digest&gt;</code>. Its response uses the same canonical bundle identity and per-file evidence as the llama.cpp and whisper.cpp endpoints and reports <code>backend</code> as <code>stable-diffusion</code>.</p>
           <h2 id="912-operations-and-evaluation">9.12 Operations and Evaluation</h2>
           <table className="flags-table">
             <thead>
@@ -3116,7 +3139,7 @@ kronk server start`}</code></pre>
               </tr>
               <tr>
                 <td><code>image-generations</code></td>
-                <td><code>POST /v1/images/generations</code></td>
+                <td><code>POST /v1/images/generations</code>, <code>POST /v1/images/edits</code>, <code>GET /v1/images/events</code></td>
               </tr>
             </tbody>
           </table>
@@ -3248,6 +3271,7 @@ kronk server start`}</code></pre>
             <li><strong>Chat</strong> provides multi-turn conversations, model selection, system prompts, chat history, and sampling controls.</li>
             <li><strong>VRAM Calculator</strong> estimates model memory requirements from a HuggingFace model without downloading the entire model. A calculator is also available in local model and catalog details. Set the intended context, sequence slots, KV precision and placement, layer/expert offload, devices, and tensor split before comparing the result with available memory. The estimate reads per-layer GGUF metadata, including full/SWA topology, recurrent layers, and embedded MTP/NextN layers when present.</li>
             <li><strong>Translator</strong> records or uploads audio for transcription through Bucky. You can select a whisper model, language, and response format and inspect timestamped segments. See <a href="https://www.kronkai.com/manual#185-browser-ui">Chapter 18 §18.5</a>.</li>
+            <li><strong>Image Generator</strong> creates an image from a text prompt or transforms an uploaded PNG or JPEG with an installed Malina model. Generation settings include negative prompt, output size, steps, CFG scale, seed, and image-to-image strength. The result includes a download action and image dimensions. A server-wide activity panel displays Malina model-loading and generation progress. See <a href="https://www.kronkai.com/manual#chapter-19-malina-image-generation">Chapter 19</a>.</li>
           </ul>
           <h4 id="system">System</h4>
           <ul>
@@ -4242,6 +4266,11 @@ kronk bucky libs --remove-install --arch=amd64 --os=linux --processor=cuda`}</co
                 <td>Multilingual; fastest, lowest accuracy</td>
               </tr>
               <tr>
+                <td><code>tiny.en</code></td>
+                <td>75 MB</td>
+                <td>English only</td>
+              </tr>
+              <tr>
                 <td><code>base</code></td>
                 <td>142 MB</td>
                 <td>Multilingual; fast</td>
@@ -4446,7 +4475,7 @@ kronk bucky model remove tiny`}</code></pre>
           <p>The default JSON response is:</p>
           <pre className="code-block"><code className="language-json">{`{"text":"And so my fellow Americans..."}`}</code></pre>
           <p><code>verbose_json</code> adds the detected language, duration, and timestamped segments. When <code>timestamp_granularities[]=word</code> is requested, it also includes a <code>words</code> array whose entries contain <code>word</code>, <code>start</code>, and <code>end</code> fields. The <code>text</code>, <code>srt</code>, and <code>vtt</code> formats return their corresponding non-JSON media types.</p>
-          <p>English-only models (<code>base.en</code>, <code>small.en</code>, and <code>medium.en</code>) only accept an empty language hint or <code>en</code>. Use a multilingual model for other languages or translation.</p>
+          <p>English-only models (<code>tiny.en</code>, <code>base.en</code>, <code>small.en</code>, and <code>medium.en</code>) only accept an empty language hint or <code>en</code>. Use a multilingual model for other languages or translation.</p>
           <h4 id="1862-bucky-management-endpoints">18.6.2 Bucky Management Endpoints</h4>
           <p>The CLI and BUI use these management routes:</p>
           <table className="flags-table">
@@ -4705,7 +4734,7 @@ if err := stream.FeedPCM(ctx, rawPCM, format); err != nil {
             <li>Perform work through the handle.</li>
             <li>Unload the handle.</li>
           </ol>
-          <p>Malina is available through the SDK, local tooling, and the Kronk model server. The CLI manages local libraries and model bundles. The server's shared resource manager performs RAM and VRAM admission and eviction for Malina models, and the basic <code>POST /v1/images/generations</code> endpoint generates images. Advanced image editing, ControlNet, ADetailer, video, and upscaling operations remain SDK-only.</p>
+          <p>Malina is available through the SDK, local tooling, and the Kronk model server. The CLI manages local libraries and model bundles. The server's shared resource manager performs RAM and VRAM admission and eviction for Malina models. The basic <code>POST /v1/images/generations</code> and <code>POST /v1/images/edits</code> endpoints create and transform images. <code>GET /v1/images/events</code> streams process-global model loading and generation progress for those operations. ControlNet, ADetailer, video, and upscaling operations remain SDK-only.</p>
           <h3 id="192-install-stable-diffusion-libraries">19.2 Install Stable Diffusion Libraries</h3>
           <p>Install and validate the pinned stable-diffusion.cpp build for the current host:</p>
           <pre className="code-block"><code className="language-shell">{`kronk malina libs --local`}</code></pre>
@@ -5880,7 +5909,7 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
             <div className="doc-index-section">
               <a href="#911-bucky-and-malina-administration" className={`doc-index-header ${activeSection === '911-bucky-and-malina-administration' ? 'active' : ''}`}>9.11 Bucky and Malina Administration</a>
               <ul>
-                <li><a href="#malina-runtime-integrity" className={activeSection === 'malina-runtime-integrity' ? 'active' : ''}>Malina Runtime Integrity</a></li>
+                <li><a href="#malina-models-and-runtime-integrity" className={activeSection === 'malina-models-and-runtime-integrity' ? 'active' : ''}>Malina Models and Runtime Integrity</a></li>
               </ul>
             </div>
             <div className="doc-index-section">

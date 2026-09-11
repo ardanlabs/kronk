@@ -22,6 +22,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/mcpapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/debug"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/malinaprogress"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mux"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
@@ -428,7 +429,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		log.Info(ctx, "startup", "WARNING", "bucky init failed, running in degraded mode (use BUI to download whisper libraries)", "ERROR", err)
 	}
 
-	if err := malina.Init(malina.WithLibPath(malinaLibs.LibsPath()), malina.WithProgress(malina.DiscardProgress)); err != nil {
+	malinaProgress := malinaprogress.New()
+	if err := malina.Init(malina.WithLibPath(malinaLibs.LibsPath()), malina.WithProgress(malinaProgress.Publish)); err != nil {
 		log.Info(ctx, "startup", "WARNING", "malina init failed, running in degraded mode (install stable-diffusion libraries and restart)", "ERROR", err)
 	}
 
@@ -533,6 +535,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		BuckyLibs:           buckyLibs,
 		BuckyModels:         buckyModels,
 		MalinaLibs:          malinaLibs,
+		MalinaModels:        malinaModels,
+		MalinaProgress:      malinaProgress,
 		DownloadEnabled:     cfg.Download.Enabled,
 		AuthorizationMode:   cfg.Authorization.Mode,
 		AdminAuthEnabled:    managementAuthEnabled,

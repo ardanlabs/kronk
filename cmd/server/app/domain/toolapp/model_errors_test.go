@@ -12,6 +12,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
+	malinamodels "github.com/ardanlabs/kronk/sdk/tools/malina/models"
 	llamamodels "github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
@@ -213,6 +214,22 @@ func TestBuckyModelDetailsNotFound(t *testing.T) {
 	resp := (&app{buckyModels: models}).detailsBuckyModel(t.Context(), req)
 
 	assertNotFound(t, resp)
+}
+
+func TestListMalinaModelsEmpty(t *testing.T) {
+	models, err := malinamodels.NewWithPaths(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewWithPaths() error = %v", err)
+	}
+
+	resp := (&app{malinaModels: models}).listMalinaModels(t.Context(), httptest.NewRequest(http.MethodGet, "/malina/models", nil))
+	list, ok := resp.(MalinaModelsResponse)
+	if !ok {
+		t.Fatalf("listMalinaModels() response = %T, want MalinaModelsResponse", resp)
+	}
+	if len(list.Models) != 0 {
+		t.Errorf("models: got %+v, want empty", list.Models)
+	}
 }
 
 func TestVRAMConfigFromRMCSWAFull(t *testing.T) {
