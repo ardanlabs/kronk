@@ -2081,6 +2081,11 @@ docker rm kronk
                 <td>Retrieve one locally available model</td>
               </tr>
               <tr>
+                <td><code>/v1/images/generations</code></td>
+                <td>POST</td>
+                <td>Generate an image with Malina</td>
+              </tr>
+              <tr>
                 <td><code>/v1/audio/transcriptions</code></td>
                 <td>POST</td>
                 <td>Transcribe audio with Bucky</td>
@@ -2203,9 +2208,21 @@ data: {"type":"response.completed",...}`}</code></pre>
   "model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL",
   "tokens": 11
 }`}</code></pre>
-          <h2 id="99-models-and-audio-transcription">9.9 Models and Audio Transcription</h2>
+          <h2 id="99-models-image-generation-and-audio-transcription">9.9 Models, Image Generation, and Audio Transcription</h2>
           <p><code>GET /v1/models</code> returns an OpenAI-style list of models and configured model extensions available locally. It is not limited to models currently loaded in memory. Each item includes <code>id</code>, <code>object</code>, <code>created</code>, and <code>owned_by</code>. The <code>id</code> uses the canonical <code>provider/modelID</code> form. <code>owned_by</code> comes from model metadata when available and otherwise defaults to <code>kronk</code>.</p>
           <p><code>GET /v1/models/&#123;model&#125;</code> returns the corresponding OpenAI-style model object for one model ID. It returns <code>404 Not Found</code> when the model is not available.</p>
+          <p><code>POST /v1/images/generations</code> accepts an OpenAI-style text-to-image request and generates one PNG with a locally installed Malina model bundle:</p>
+          <pre className="code-block"><code className="language-json">{`{
+  "model": "sd-1.5",
+  "prompt": "A lighthouse during a thunderstorm",
+  "size": "512x512",
+  "response_format": "b64_json",
+  "negative_prompt": "blurry",
+  "steps": 20,
+  "cfg_scale": 7,
+  "seed": -1
+}`}</code></pre>
+          <p><code>size</code> defaults to <code>512x512</code>. The response contains <code>created</code> and a <code>data</code> array whose single item contains <code>b64_json</code>, <code>seed</code>, <code>width</code>, and <code>height</code>. Only <code>n: 1</code>, <code>response_format: "b64_json"</code>, and PNG output are supported. Image editing, ControlNet, ADetailer, video generation, and upscaling remain available through the Malina SDK rather than the model-server API.</p>
           <p><code>POST /v1/audio/transcriptions</code> accepts multipart audio uploads and uses the Bucky speech-to-text runtime. Its request fields, formats, and administrative operations are documented in <a href="https://www.kronkai.com/manual#1861-request-and-response">Chapter 18</a>.</p>
           <h2 id="910-kronk-administration">9.10 Kronk Administration</h2>
           <p>These routes manage the llama.cpp runtime, local GGUF models, and the personal model catalog. Mutating routes may stream progress or perform network and disk operations. Clients should use the exact <code>/v1/kronk/...</code> prefix; the shorter <code>/v1/libs</code>, <code>/v1/models/pull</code>, and <code>/v1/catalog</code> forms are not aliases.</p>
@@ -3096,6 +3113,10 @@ kronk server start`}</code></pre>
               <tr>
                 <td><code>transcriptions</code></td>
                 <td><code>POST /v1/audio/transcriptions</code></td>
+              </tr>
+              <tr>
+                <td><code>image-generations</code></td>
+                <td><code>POST /v1/images/generations</code></td>
               </tr>
             </tbody>
           </table>
@@ -4035,7 +4056,7 @@ data: [DONE]`}</code></pre>
           <p>Create a replacement user token with only the required grants:</p>
           <pre className="code-block"><code className="language-shell">{`kronk security token create \\
   --duration 720h \\
-  --endpoints chat-completions,embeddings,rerank,responses,messages,tokenize,transcriptions`}</code></pre>
+  --endpoints chat-completions,embeddings,rerank,responses,messages,tokenize,transcriptions,image-generations`}</code></pre>
           <p>Rate limits use forms such as <code>chat-completions:10000/day</code>. Token creation, key rotation, and production hardening are covered in <a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication">Chapter 12</a>.</p>
           <h3 id="177-imc">17.7 IMC</h3>
           <p>IMC is enabled by default. It externalizes cached session state to the built-in RAM store or, for direct SDK use, a configured custom session store. See <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a> for its lifecycle and settings.</p>
@@ -4684,7 +4705,7 @@ if err := stream.FeedPCM(ctx, rawPCM, format); err != nil {
             <li>Perform work through the handle.</li>
             <li>Unload the handle.</li>
           </ol>
-          <p>Malina is currently an SDK and local tooling integration. It is <strong>not yet an inference backend in the Kronk model server</strong>. The CLI manages local libraries and model bundles. The server exposes only the read-only <code>GET /v1/malina/libs/integrity</code> runtime identity endpoint; there are no Malina HTTP generation endpoints, BUI management screens, or Malina model pool in this release. Model-server integration depends on reliable memory and VRAM planning for stable-diffusion model bundles.</p>
+          <p>Malina is available through the SDK, local tooling, and the Kronk model server. The CLI manages local libraries and model bundles. The server's shared resource manager performs RAM and VRAM admission and eviction for Malina models, and the basic <code>POST /v1/images/generations</code> endpoint generates images. Advanced image editing, ControlNet, ADetailer, video, and upscaling operations remain SDK-only.</p>
           <h3 id="192-install-stable-diffusion-libraries">19.2 Install Stable Diffusion Libraries</h3>
           <p>Install and validate the pinned stable-diffusion.cpp build for the current host:</p>
           <pre className="code-block"><code className="language-shell">{`kronk malina libs --local`}</code></pre>
@@ -5109,8 +5130,7 @@ fmt.Println(info.Description)`}</code></pre>
           <h3 id="1910-current-scope-and-limitations">19.10 Current Scope and Limitations</h3>
           <ul>
             <li>The public API is experimental and may change between Kronk releases.</li>
-            <li>Malina image inference is available through the Go SDK, not the Kronk model server or its HTTP API.</li>
-            <li>Malina models are not managed by the shared Kronk/Bucky model pool and do not yet participate in model-server RAM or VRAM admission and eviction.</li>
+            <li>The model server exposes basic text-to-image generation. Advanced Malina operations remain available only through the Go SDK.</li>
             <li>The curated catalog is intentionally small. The high-level SDK guarantees its listed component roles; arbitrary user-created bundle layouts are not a supported catalog contract.</li>
             <li>Native callbacks and backend initialization are process-wide. Model-context construction and destruction are serialized, while one handle may own multiple contexts and generate concurrently across them. Each concurrency slot loads another copy of the model and increases RAM or VRAM use.</li>
             <li>Context cancellation interrupts active native generation, waits for the native call to return, and resets the same context before reuse. It never frees a context while native code is active.</li>
@@ -5847,7 +5867,7 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
               <a href="#98-tokenization" className={`doc-index-header ${activeSection === '98-tokenization' ? 'active' : ''}`}>9.8 Tokenization</a>
             </div>
             <div className="doc-index-section">
-              <a href="#99-models-and-audio-transcription" className={`doc-index-header ${activeSection === '99-models-and-audio-transcription' ? 'active' : ''}`}>9.9 Models and Audio Transcription</a>
+              <a href="#99-models-image-generation-and-audio-transcription" className={`doc-index-header ${activeSection === '99-models-image-generation-and-audio-transcription' ? 'active' : ''}`}>9.9 Models, Image Generation, and Audio Transcription</a>
             </div>
             <div className="doc-index-section">
               <a href="#910-kronk-administration" className={`doc-index-header ${activeSection === '910-kronk-administration' ? 'active' : ''}`}>9.10 Kronk Administration</a>

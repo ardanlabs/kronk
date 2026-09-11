@@ -64,6 +64,17 @@ test-gh-only: install-libraries-gh install-test-gh-models
 
 test-gh: test-gh-only lint vuln-check diff
 
+# Run the native Malina SDK and model-server integration tests explicitly.
+# These tests require stable-diffusion.cpp and the sd-1.5 model, and are not
+# part of the ordinary local or GitHub test suites.
+test-malina: install-test-malina
+	@echo ========== RUN MALINA INTEGRATION TESTS ==========
+	unset KRONK_TEST_HOSTED KRONK_BASE_PATH KRONK_LIB_PATH KRONK_BUCKY_LIB_PATH KRONK_MALINA_LIB_PATH MALINA_LIB KRONK_PROCESSOR KRONK_ARCH KRONK_OS && \
+	export RUN_IN_PARALLEL=no && \
+	export GITHUB_WORKSPACE=$(shell pwd) && \
+	go test -v -p=1 -count=1 -timeout 20m -tags=malina_integration -run '^TestMalinaModelInference$$' ./sdk/malina && \
+	go test -v -p=1 -count=1 -timeout 20m -tags=malina_integration -run '^TestImageGenerationModel$$' ./cmd/server/app/domain/imageapp
+
 # ==============================================================================
 # Go Modules support
 

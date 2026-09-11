@@ -59,13 +59,11 @@ The Malina API follows the same high-level shape as the Kronk and Bucky SDKs:
 5. Perform work through the handle.
 6. Unload the handle.
 
-Malina is currently an SDK and local tooling integration. It is **not yet an
-inference backend in the Kronk model server**. The CLI manages local libraries
-and model bundles. The server exposes only the read-only
-`GET /v1/malina/libs/integrity` runtime identity endpoint; there are no Malina
-HTTP generation endpoints, BUI management screens, or Malina model pool in this
-release. Model-server integration depends on reliable memory and VRAM planning
-for stable-diffusion model bundles.
+Malina is available through the SDK, local tooling, and the Kronk model server.
+The CLI manages local libraries and model bundles. The server's shared resource
+manager performs RAM and VRAM admission and eviction for Malina models, and the
+basic `POST /v1/images/generations` endpoint generates images. Advanced image
+editing, ControlNet, ADetailer, video, and upscaling operations remain SDK-only.
 
 ### 19.2 Install Stable Diffusion Libraries
 
@@ -551,10 +549,8 @@ Later runs reuse complete installations.
 ### 19.10 Current Scope and Limitations
 
 - The public API is experimental and may change between Kronk releases.
-- Malina image inference is available through the Go SDK, not the Kronk model
-  server or its HTTP API.
-- Malina models are not managed by the shared Kronk/Bucky model pool and do
-  not yet participate in model-server RAM or VRAM admission and eviction.
+- The model server exposes basic text-to-image generation. Advanced Malina
+  operations remain available only through the Go SDK.
 - The curated catalog is intentionally small. The high-level SDK guarantees
   its listed component roles; arbitrary user-created bundle layouts are not a
   supported catalog contract.

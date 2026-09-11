@@ -10,7 +10,7 @@
 - [9.6 Embeddings](#96-embeddings)
 - [9.7 Reranking](#97-reranking)
 - [9.8 Tokenization](#98-tokenization)
-- [9.9 Models and Audio Transcription](#99-models-and-audio-transcription)
+- [9.9 Models, Image Generation, and Audio Transcription](#99-models-image-generation-and-audio-transcription)
 - [9.10 Kronk Administration](#910-kronk-administration)
 - [9.11 Bucky and Malina Administration](#911-bucky-and-malina-administration)
 - [9.12 Operations and Evaluation](#912-operations-and-evaluation)
@@ -65,6 +65,7 @@ statuses such as 400, 401, 403, 404, 409, 429, 500, 501, or 503.
 | `/v1/tokenize`                 | POST   | Count tokens for text                  |
 | `/v1/models`                   | GET    | List locally available models          |
 | `/v1/models/{model}`           | GET    | Retrieve one locally available model   |
+| `/v1/images/generations`       | POST   | Generate an image with Malina           |
 | `/v1/audio/transcriptions`     | POST   | Transcribe audio with Bucky            |
 
 Sections 9.10 through 9.13 inventory the administration, diagnostics, and
@@ -332,7 +333,7 @@ applied and defaults to `true`.
 }
 ```
 
-## 9.9 Models and Audio Transcription
+## 9.9 Models, Image Generation, and Audio Transcription
 
 `GET /v1/models` returns an OpenAI-style list of models and configured model
 extensions available locally. It is not limited to models currently loaded in
@@ -343,6 +344,28 @@ uses the canonical `provider/modelID` form.
 
 `GET /v1/models/{model}` returns the corresponding OpenAI-style model object
 for one model ID. It returns `404 Not Found` when the model is not available.
+
+`POST /v1/images/generations` accepts an OpenAI-style text-to-image request
+and generates one PNG with a locally installed Malina model bundle:
+
+```json
+{
+  "model": "sd-1.5",
+  "prompt": "A lighthouse during a thunderstorm",
+  "size": "512x512",
+  "response_format": "b64_json",
+  "negative_prompt": "blurry",
+  "steps": 20,
+  "cfg_scale": 7,
+  "seed": -1
+}
+```
+
+`size` defaults to `512x512`. The response contains `created` and a `data`
+array whose single item contains `b64_json`, `seed`, `width`, and `height`.
+Only `n: 1`, `response_format: "b64_json"`, and PNG output are supported.
+Image editing, ControlNet, ADetailer, video generation, and upscaling remain
+available through the Malina SDK rather than the model-server API.
 
 `POST /v1/audio/transcriptions` accepts multipart audio uploads and uses the
 Bucky speech-to-text runtime. Its request fields, formats, and administrative

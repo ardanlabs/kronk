@@ -41,11 +41,11 @@ func (sd *StableDiffusion) Prepare(_ context.Context, req loader.LoadRequest) (a
 		return nil, fmt.Errorf("prepare: custom model configurations are not supported")
 	}
 
-	cfg, err := sd.resolveConfig(req.ModelID)
+	modelSize, err := sd.modelSize(req.ModelID)
 	if err != nil {
 		return nil, fmt.Errorf("prepare: %w", err)
 	}
-	modelSize, err := sd.modelSize(req.ModelID)
+	cfg, err := sd.resolveConfig(req.ModelID)
 	if err != nil {
 		return nil, fmt.Errorf("prepare: %w", err)
 	}
@@ -135,7 +135,7 @@ func preparedForRequest(req loader.LoadRequest) (preparedModel, error) {
 func (sd *StableDiffusion) resolveConfig(modelID string) (model.Config, error) {
 	name, err := malinamodels.ParseBundleName(modelID)
 	if err != nil {
-		return model.Config{}, fmt.Errorf("resolve-config: %w", err)
+		return model.Config{}, fmt.Errorf("resolve-config: %w: %v", malinamodels.ErrModelNotFound, err)
 	}
 
 	manifest, err := sd.models.LoadManifest(name)

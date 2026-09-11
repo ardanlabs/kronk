@@ -301,13 +301,14 @@ func (sec *Security) generateAdminToken(keysPath string) error {
 	const admin = true
 
 	endpoints := map[string]auth.RateLimit{
-		"chat-completions": {Limit: 0, Window: auth.RateUnlimited},
-		"embeddings":       {Limit: 0, Window: auth.RateUnlimited},
-		"rerank":           {Limit: 0, Window: auth.RateUnlimited},
-		"responses":        {Limit: 0, Window: auth.RateUnlimited},
-		"transcriptions":   {Limit: 0, Window: auth.RateUnlimited},
-		"messages":         {Limit: 0, Window: auth.RateUnlimited},
-		"tokenize":         {Limit: 0, Window: auth.RateUnlimited},
+		"chat-completions":  {Limit: 0, Window: auth.RateUnlimited},
+		"embeddings":        {Limit: 0, Window: auth.RateUnlimited},
+		"image-generations": {Limit: 0, Window: auth.RateUnlimited},
+		"rerank":            {Limit: 0, Window: auth.RateUnlimited},
+		"responses":         {Limit: 0, Window: auth.RateUnlimited},
+		"transcriptions":    {Limit: 0, Window: auth.RateUnlimited},
+		"messages":          {Limit: 0, Window: auth.RateUnlimited},
+		"tokenize":          {Limit: 0, Window: auth.RateUnlimited},
 	}
 
 	const tenYears = 10 * 365 * 24 * time.Hour

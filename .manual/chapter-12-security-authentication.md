@@ -105,6 +105,7 @@ The grant names used by inference middleware are:
 | `rerank` | `POST /v1/rerank` and `/v1/reranking` |
 | `tokenize` | `POST /v1/tokenize` |
 | `transcriptions` | `POST /v1/audio/transcriptions` |
+| `image-generations` | `POST /v1/images/generations` |
 
 Grant names are not validated when a token is created. Use the names above
 exactly; a typo produces a valid token with an unusable grant.

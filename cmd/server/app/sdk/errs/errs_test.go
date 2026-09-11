@@ -16,11 +16,14 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/hf"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	kronkpool "github.com/ardanlabs/kronk/sdk/kronk/pool"
+	"github.com/ardanlabs/kronk/sdk/malina"
+	malinamodel "github.com/ardanlabs/kronk/sdk/malina/model"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 	buckylibs "github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
 	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
 	"github.com/ardanlabs/kronk/sdk/tools/github"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
+	malinamodels "github.com/ardanlabs/kronk/sdk/tools/malina/models"
 	llamamodels "github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
@@ -31,15 +34,18 @@ func TestFromSDK(t *testing.T) {
 		code ErrCode
 	}{
 		{name: "admission timeout", err: kronk.ErrAdmissionTimeout, code: ResourceExhausted},
+		{name: "malina admission timeout", err: malina.ErrAdmissionTimeout, code: ResourceExhausted},
 		{name: "context canceled", err: context.Canceled, code: Canceled},
 		{name: "context deadline", err: context.DeadlineExceeded, code: DeadlineExceeded},
 		{name: "file inputs unsupported", err: model.ErrFileInputsUnsupported, code: InvalidArgument},
 		{name: "messages missing", err: model.ErrMessagesMissing, code: InvalidArgument},
 		{name: "messages invalid", err: model.ErrMessagesInvalid, code: InvalidArgument},
 		{name: "invalid request", err: model.ErrInvalidRequest, code: InvalidArgument},
+		{name: "malina invalid request", err: malinamodel.ErrInvalidRequest, code: InvalidArgument},
 		{name: "invalid model id", err: llamamodels.ErrInvalidModelID, code: InvalidArgument},
 		{name: "llama model not found", err: llamamodels.ErrModelNotFound, code: NotFound},
 		{name: "bucky model not found", err: buckymodels.ErrModelNotFound, code: NotFound},
+		{name: "malina model not found", err: malinamodels.ErrModelNotFound, code: NotFound},
 		{name: "server busy", err: kronkpool.ErrServerBusy, code: Unavailable},
 		{name: "pool no capacity", err: kronkpool.ErrNoCapacity, code: ResourceExhausted},
 		{name: "resource manager no capacity", err: resman.ErrNoCapacity, code: ResourceExhausted},
