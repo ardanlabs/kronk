@@ -531,6 +531,8 @@ func (a *app) modelPS(ctx context.Context, r *http.Request) web.Encoder {
 	}
 
 	resp := toModelDetails(kronkModels)
+	buckyCount := 0
+	malinaCount := 0
 
 	if a.pool.Bucky != nil {
 		buckyModels, err := a.pool.Bucky.ModelStatus()
@@ -538,9 +540,19 @@ func (a *app) modelPS(ctx context.Context, r *http.Request) web.Encoder {
 			return errs.New(errs.Internal, err)
 		}
 		resp = append(resp, fromBuckyDetails(buckyModels)...)
+		buckyCount = len(buckyModels)
 	}
 
-	a.log.Info(ctx, "models", "len", len(resp), "kronk", len(kronkModels), "bucky", len(resp)-len(kronkModels))
+	if a.pool.Malina != nil {
+		malinaModels, err := a.pool.Malina.ModelStatus()
+		if err != nil {
+			return errs.New(errs.Internal, err)
+		}
+		resp = append(resp, fromMalinaDetails(malinaModels)...)
+		malinaCount = len(malinaModels)
+	}
+
+	a.log.Info(ctx, "models", "len", len(resp), "kronk", len(kronkModels), "bucky", buckyCount, "malina", malinaCount)
 
 	return resp
 }
@@ -625,6 +637,20 @@ func (a *app) unloadModel(ctx context.Context, r *http.Request) web.Encoder {
 			}
 
 			if err := a.pool.Bucky.InvalidateSync(ctx, req.ID); err != nil {
+				return errs.FromSDK(fmt.Errorf("unload: %w", err))
+			}
+
+			return UnloadResponse{Status: "unloaded", ID: req.ID}
+		}
+	}
+
+	if a.pool.Malina != nil {
+		if m, exists := a.pool.Malina.GetExisting(req.ID); exists {
+			if n := m.ActiveGenerations(); n > 0 {
+				return errs.Errorf(errs.FailedPrecondition, "model has %d active generation(s); cannot unload", n)
+			}
+
+			if err := a.pool.Malina.InvalidateSync(ctx, req.ID); err != nil {
 				return errs.FromSDK(fmt.Errorf("unload: %w", err))
 			}
 

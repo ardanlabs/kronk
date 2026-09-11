@@ -152,6 +152,7 @@ func buildEnvVars(cmd *cobra.Command) []string {
 	addString("base-path", "KRONK_BASE_PATH")
 	addString("lib-path", "KRONK_LIB_PATH")
 	addString("bucky-lib-path", "KRONK_BUCKY_LIB_PATH")
+	addString("malina-lib-path", "KRONK_MALINA_LIB_PATH")
 	addString("lib-version", "KRONK_LIB_VERSION")
 	addBool("lib-download-enabled", "KRONK_LIB_DOWNLOAD_ENABLED")
 	addBool("lib-verify-enabled", "KRONK_LIB_VERIFY_ENABLED")

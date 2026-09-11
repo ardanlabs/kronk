@@ -184,6 +184,14 @@ export default function DocsSDKMalina() {
               <p className="doc-description">ActiveGenerations returns the number of running and queued generation calls.</p>
             </div>
 
+            <div className="doc-section" id="method-malina-activestreams">
+              <h4>Malina.ActiveStreams</h4>
+              <pre className="code-block">
+                <code>func (m *Malina) ActiveStreams() int</code>
+              </pre>
+              <p className="doc-description">ActiveStreams returns the number of running and queued generation calls. It provides the common handle contract used by model pools.</p>
+            </div>
+
             <div className="doc-section" id="method-malina-detail">
               <h4>Malina.Detail</h4>
               <pre className="code-block">
@@ -332,6 +340,7 @@ export default function DocsSDKMalina() {
               <a href="#methods" className="doc-index-header">Methods</a>
               <ul>
                 <li><a href="#method-malina-activegenerations">Malina.ActiveGenerations</a></li>
+                <li><a href="#method-malina-activestreams">Malina.ActiveStreams</a></li>
                 <li><a href="#method-malina-detail">Malina.Detail</a></li>
                 <li><a href="#method-malina-generate">Malina.Generate</a></li>
                 <li><a href="#method-malina-generatevideo">Malina.GenerateVideo</a></li>

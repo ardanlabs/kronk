@@ -14,6 +14,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
+	malinapool "github.com/ardanlabs/kronk/sdk/malina/pool"
 	"github.com/ardanlabs/kronk/sdk/pool"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 	"github.com/ardanlabs/kronk/sdk/tools/backend"
@@ -998,6 +999,28 @@ func fromBuckyDetails(models []buckypool.ModelDetail) ModelDetailsResponse {
 			Slots:         slots,
 			ExpiresAt:     m.ExpiresAt,
 			ActiveStreams: m.ActiveStreams,
+			Status:        m.Status,
+		}
+	}
+
+	return details
+}
+
+// fromMalinaDetails converts Malina pool entries into the shared model status
+// response shape.
+func fromMalinaDetails(models []malinapool.ModelDetail) ModelDetailsResponse {
+	details := make(ModelDetailsResponse, len(models))
+
+	for i, m := range models {
+		details[i] = ModelDetail{
+			ID:            m.ID,
+			Backend:       m.Backend,
+			ModelFamily:   m.ModelFamily,
+			Size:          m.Size,
+			VRAMTotal:     m.VRAMTotal,
+			Slots:         m.Slots,
+			ExpiresAt:     m.ExpiresAt,
+			ActiveStreams: m.ActiveGenerations,
 			Status:        m.Status,
 		}
 	}

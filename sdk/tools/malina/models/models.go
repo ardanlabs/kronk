@@ -44,6 +44,14 @@ type Models struct {
 	index      map[string]backend.ModelPath
 }
 
+// InstalledBundle describes one complete model bundle in the local index.
+type InstalledBundle struct {
+	Name             BundleName
+	Description      string
+	Size             int64
+	BasicTextToImage bool
+}
+
 // New constructs a model catalog at the default base directory.
 func New() (*Models, error) { return NewWithPaths("") }
 
@@ -234,6 +242,39 @@ func (m *Models) BuildIndex(log applog.Logger, checkSHA bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.buildIndexLocked()
+}
+
+// Installed returns the complete model bundles in catalog order.
+func (m *Models) Installed() ([]InstalledBundle, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if err := m.buildIndexLocked(); err != nil {
+		return nil, err
+	}
+
+	var installed []InstalledBundle
+
+	for _, bundle := range Catalog() {
+		path, exists := m.index[bundle.Name.String()]
+		if !exists {
+			continue
+		}
+
+		var size int64
+		for _, fileSize := range path.FileSizes {
+			size += fileSize
+		}
+
+		installed = append(installed, InstalledBundle{
+			Name:             bundle.Name,
+			Description:      bundle.Description,
+			Size:             size,
+			BasicTextToImage: bundle.BasicTextToImage,
+		})
+	}
+
+	return installed, nil
 }
 
 func (m *Models) buildIndexLocked() error {

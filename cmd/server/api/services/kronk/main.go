@@ -22,6 +22,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/mcpapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/debug"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/malinaprogress"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mux"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
@@ -30,12 +31,14 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
+	"github.com/ardanlabs/kronk/sdk/malina"
 	"github.com/ardanlabs/kronk/sdk/pool"
 	buckylibs "github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
 	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	malinalibs "github.com/ardanlabs/kronk/sdk/tools/malina/libs"
+	malinamodels "github.com/ardanlabs/kronk/sdk/tools/malina/models"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"google.golang.org/grpc/test/bufconn"
 )
@@ -154,7 +157,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	// with a bufconn listener.
 	if cfg.Auth.Host == "" {
 		sec, err = security.New(security.Config{
-			Issuer: cfg.Auth.Local.Issuer,
+			BasePath: cfg.BasePath,
+			Issuer:   cfg.Auth.Local.Issuer,
 		})
 
 		if err != nil {
@@ -365,6 +369,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	malinaLibs, err := malinalibs.New(
 		malinalibs.WithBasePath(cfg.BasePath),
+		malinalibs.WithLibPath(cfg.MalinaLibPath),
 		malinalibs.WithDetect(ctx, log.Info),
 	)
 	if err != nil {
@@ -372,6 +377,15 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	}
 
 	log.Info(ctx, "startup", "status", "malina libs ready", "libPath", malinaLibs.LibsPath(), "arch", malinaLibs.Arch(), "os", malinaLibs.OS(), "processor", malinaLibs.Processor())
+
+	malinaModels, err := malinamodels.NewWithPaths(cfg.BasePath)
+	if err != nil {
+		return fmt.Errorf("unable to create malina models api: %w", err)
+	}
+
+	if err := malinaModels.BuildIndex(log.Info, false); err != nil {
+		log.Info(ctx, "startup", "WARNING", "malina build index", "ERROR", err)
+	}
 
 	// -------------------------------------------------------------------------
 	// Model Config
@@ -417,17 +431,23 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		log.Info(ctx, "startup", "WARNING", "bucky init failed, running in degraded mode (use BUI to download whisper libraries)", "ERROR", err)
 	}
 
+	malinaProgress := malinaprogress.New()
+	if err := malina.Init(malina.WithLibPath(malinaLibs.LibsPath()), malina.WithProgress(malinaProgress.Publish)); err != nil {
+		log.Info(ctx, "startup", "WARNING", "malina init failed, running in degraded mode (install stable-diffusion libraries and restart)", "ERROR", err)
+	}
+
 	// -------------------------------------------------------------------------
 	// Pool
 
 	// One call to pool.New constructs the shared resource manager and
-	// every enabled backend pool (kronk + bucky). The resman is
+	// every enabled backend pool (kronk + bucky + malina). The resman is
 	// shared so VRAM/RAM budgeting is unified across backends.
 
 	p, err := pool.New(pool.Config{
 		Log:             log.Info,
 		KronkModels:     models,
 		BuckyModels:     buckyModels,
+		MalinaModels:    malinaModels,
 		ModelConfigFile: modelConfigFile,
 		BudgetPercent:   cfg.Pool.BudgetPercent,
 		ModelsInPool:    cfg.Pool.ModelsInPool,
@@ -517,6 +537,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		BuckyLibs:           buckyLibs,
 		BuckyModels:         buckyModels,
 		MalinaLibs:          malinaLibs,
+		MalinaModels:        malinaModels,
+		MalinaProgress:      malinaProgress,
 		DownloadEnabled:     cfg.Download.Enabled,
 		AuthorizationMode:   cfg.Authorization.Mode,
 		AdminAuthEnabled:    managementAuthEnabled,

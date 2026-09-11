@@ -38,6 +38,7 @@ const menuStructure: MenuCategory[] = [
       { page: 'chat', label: 'Chat' },
       { page: 'vram-calculator', label: 'VRAM Calculator' },
       { page: 'translator', label: 'Translator' },
+      { page: 'image-generator', label: 'Image Generator' },
     ],
   },
   {
@@ -90,6 +91,22 @@ const menuStructure: MenuCategory[] = [
         id: 'bucky-libs',
         label: 'Libs',
         items: [{ page: 'bucky-libs', label: 'Manage' }],
+      },
+    ],
+  },
+  {
+    id: 'malina',
+    label: 'Malina',
+    subcategories: [
+      {
+        id: 'malina-model',
+        label: 'Models',
+        items: [{ page: 'malina-model-list', label: 'List' }],
+      },
+      {
+        id: 'malina-libs',
+        label: 'Libs',
+        items: [{ page: 'malina-libs', label: 'Manage' }],
       },
     ],
   },
@@ -248,6 +265,13 @@ const categoryIcons: Record<string, JSX.Element> = {
       <path d="M5 11a7 7 0 0 0 14 0" />
       <line x1="12" y1="18" x2="12" y2="22" />
       <line x1="8" y1="22" x2="16" y2="22" />
+    </svg>
+  ),
+  malina: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <circle cx="8.5" cy="8.5" r="1.5" />
+      <path d="M21 15l-5-5L5 21" />
     </svg>
   ),
   apps: (
@@ -422,6 +446,13 @@ export default function Layout({ children }: LayoutProps) {
   const showAccuracyIndicator = !!accuracyRun || !!accuracyCompleted;
   const showEfficiencyIndicator = !!efficiencyRun || !!efficiencyCompleted;
   const showSessionIndicator = !!session;
+  const downloadTarget = download?.origin === 'catalog'
+    ? routeMap['catalog-list']
+    : download?.origin === 'bucky'
+      ? routeMap['bucky-model-list']
+      : download?.origin === 'malina'
+        ? routeMap['malina-model-list']
+        : routeMap['model-pull'];
 
   const accuracyTitle = accuracyRun
     ? accuracyRun.mode === 'manual'
@@ -686,7 +717,7 @@ export default function Layout({ children }: LayoutProps) {
             )}
             {showDownloadIndicator && (
               <div className="download-indicator">
-                <Link to={download.origin === 'catalog' ? routeMap['catalog-list'] : routeMap['model-pull']} className="download-indicator-link">
+                <Link to={downloadTarget} className="download-indicator-link">
                   <div className="download-indicator-header">
                     {isDownloading ? (
                       <span className="download-indicator-spinner" />

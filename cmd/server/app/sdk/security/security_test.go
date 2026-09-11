@@ -16,8 +16,8 @@ func TestGenerateToken(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	sec, err := security.New(security.Config{
-		OverrideBaseKeysFolder: tmpDir,
-		Issuer:                 "test-issuer",
+		BasePath: tmpDir,
+		Issuer:   "test-issuer",
 	})
 	if err != nil {
 		t.Fatalf("failed to create security: %v", err)
@@ -39,12 +39,43 @@ func TestGenerateToken(t *testing.T) {
 	}
 }
 
+func TestMasterTokenInferenceEndpoints(t *testing.T) {
+	basePath := t.TempDir()
+	sec, err := security.New(security.Config{
+		BasePath: basePath,
+		Issuer:   "test-issuer",
+	})
+	if err != nil {
+		t.Fatalf("security.New() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := sec.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	})
+
+	token, err := os.ReadFile(filepath.Join(basePath, "keys", "master.jwt"))
+	if err != nil {
+		t.Fatalf("ReadFile(master.jwt) error = %v", err)
+	}
+	claims, err := sec.Authenticate(context.Background(), "Bearer "+string(token), true, "")
+	if err != nil {
+		t.Fatalf("Authenticate(master.jwt) error = %v", err)
+	}
+
+	for _, endpoint := range []string{"transcriptions", "image-generations"} {
+		if _, exists := claims.Endpoints[endpoint]; !exists {
+			t.Errorf("master token endpoint %q is missing", endpoint)
+		}
+	}
+}
+
 func TestAuthenticateWithoutEndpointRestriction(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	sec, err := security.New(security.Config{
-		OverrideBaseKeysFolder: tmpDir,
-		Issuer:                 "test-issuer",
+		BasePath: tmpDir,
+		Issuer:   "test-issuer",
 	})
 	if err != nil {
 		t.Fatalf("failed to create security: %v", err)
@@ -65,12 +96,56 @@ func TestAuthenticateWithoutEndpointRestriction(t *testing.T) {
 	}
 }
 
+func TestInferenceEndpointGrants(t *testing.T) {
+	sec, err := security.New(security.Config{
+		BasePath: t.TempDir(),
+		Issuer:   "test-issuer",
+	})
+	if err != nil {
+		t.Fatalf("security.New() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := sec.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	})
+
+	tests := []struct {
+		name  string
+		grant string
+		deny  string
+	}{
+		{name: "audio transcription", grant: "transcriptions", deny: "image-generations"},
+		{name: "image generation", grant: "image-generations", deny: "transcriptions"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			endpoints := map[string]auth.RateLimit{
+				tt.grant: {Limit: 0, Window: auth.RateUnlimited},
+			}
+			token, err := sec.GenerateToken(false, endpoints, time.Hour)
+			if err != nil {
+				t.Fatalf("GenerateToken() error = %v", err)
+			}
+
+			ctx := context.Background()
+			if _, err := sec.Authenticate(ctx, "Bearer "+token, false, tt.grant); err != nil {
+				t.Fatalf("Authenticate(%q) error = %v", tt.grant, err)
+			}
+			if _, err := sec.Authenticate(ctx, "Bearer "+token, false, tt.deny); err == nil {
+				t.Fatalf("Authenticate(%q) error = nil, want authorization error", tt.deny)
+			}
+		})
+	}
+}
+
 func TestAuthenticateClassifiesInternalFailure(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	sec, err := security.New(security.Config{
-		OverrideBaseKeysFolder: tmpDir,
-		Issuer:                 "test-issuer",
+		BasePath: tmpDir,
+		Issuer:   "test-issuer",
 	})
 	if err != nil {
 		t.Fatalf("failed to create security: %v", err)
@@ -98,8 +173,8 @@ func TestAddPrivateKey(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	sec, err := security.New(security.Config{
-		OverrideBaseKeysFolder: tmpDir,
-		Issuer:                 "test-issuer",
+		BasePath: tmpDir,
+		Issuer:   "test-issuer",
 	})
 
 	if err != nil {
@@ -123,8 +198,8 @@ func TestDeletePrivateKey(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	sec, err := security.New(security.Config{
-		OverrideBaseKeysFolder: tmpDir,
-		Issuer:                 "test-issuer",
+		BasePath: tmpDir,
+		Issuer:   "test-issuer",
 	})
 
 	if err != nil {
@@ -152,8 +227,8 @@ func TestDeletePrivateKey_NotFound(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	sec, err := security.New(security.Config{
-		OverrideBaseKeysFolder: tmpDir,
-		Issuer:                 "test-issuer",
+		BasePath: tmpDir,
+		Issuer:   "test-issuer",
 	})
 
 	if err != nil {
@@ -170,8 +245,8 @@ func TestDeletePrivateKey_Master(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	sec, err := security.New(security.Config{
-		OverrideBaseKeysFolder: tmpDir,
-		Issuer:                 "test-issuer",
+		BasePath: tmpDir,
+		Issuer:   "test-issuer",
 	})
 	if err != nil {
 		t.Fatalf("failed to create security: %v", err)
@@ -191,8 +266,8 @@ func TestDeletePrivateKey_InvalidID(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	sec, err := security.New(security.Config{
-		OverrideBaseKeysFolder: tmpDir,
-		Issuer:                 "test-issuer",
+		BasePath: tmpDir,
+		Issuer:   "test-issuer",
 	})
 	if err != nil {
 		t.Fatalf("failed to create security: %v", err)
@@ -230,8 +305,8 @@ func TestDeletePrivateKey_LegacyID(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	sec, err := security.New(security.Config{
-		OverrideBaseKeysFolder: tmpDir,
-		Issuer:                 "test-issuer",
+		BasePath: tmpDir,
+		Issuer:   "test-issuer",
 	})
 	if err != nil {
 		t.Fatalf("failed to create security: %v", err)

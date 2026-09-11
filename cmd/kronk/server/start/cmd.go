@@ -65,6 +65,7 @@ func init() {
 	Cmd.Flags().String("base-path", "", "Base path for kronk data")
 	Cmd.Flags().String("lib-path", "", "Path to llama library")
 	Cmd.Flags().String("bucky-lib-path", "", "Path to whisper library")
+	Cmd.Flags().String("malina-lib-path", "", "Path to stable-diffusion library")
 	Cmd.Flags().String("lib-version", "", "Version of llama library, optionally VERSION@sha256:DIGEST")
 	Cmd.Flags().Bool("lib-download-enabled", true, "Enable automatic llama library downloads at startup")
 	Cmd.Flags().Bool("lib-verify-enabled", true, "Verify the selected llama and whisper libraries before loading them")

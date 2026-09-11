@@ -9,6 +9,7 @@ import (
 	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	malinalibs "github.com/ardanlabs/kronk/sdk/tools/malina/libs"
+	malinamodels "github.com/ardanlabs/kronk/sdk/tools/malina/models"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
@@ -23,6 +24,7 @@ type app struct {
 	buckyLibs        *buckylibs.Libs
 	buckyModels      *buckymodels.Models
 	malinaLibs       *malinalibs.Libs
+	malinaModels     *malinamodels.Models
 }
 
 func newApp(cfg Config) *app {
@@ -37,5 +39,6 @@ func newApp(cfg Config) *app {
 		buckyLibs:        cfg.BuckyLibs,
 		buckyModels:      cfg.BuckyModels,
 		malinaLibs:       cfg.MalinaLibs,
+		malinaModels:     cfg.MalinaModels,
 	}
 }

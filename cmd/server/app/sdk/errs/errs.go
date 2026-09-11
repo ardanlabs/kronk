@@ -14,11 +14,14 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/hf"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	kronkpool "github.com/ardanlabs/kronk/sdk/kronk/pool"
+	"github.com/ardanlabs/kronk/sdk/malina"
+	malinamodel "github.com/ardanlabs/kronk/sdk/malina/model"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 	buckylibs "github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
 	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
 	"github.com/ardanlabs/kronk/sdk/tools/github"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
+	malinamodels "github.com/ardanlabs/kronk/sdk/tools/malina/models"
 	llamamodels "github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
@@ -104,6 +107,8 @@ func FromSDK(err error) *Error {
 	switch {
 	case errors.Is(err, kronk.ErrAdmissionTimeout):
 		code = ResourceExhausted
+	case errors.Is(err, malina.ErrAdmissionTimeout):
+		code = ResourceExhausted
 	case errors.Is(err, context.Canceled):
 		code = Canceled
 	case errors.Is(err, context.DeadlineExceeded):
@@ -116,11 +121,15 @@ func FromSDK(err error) *Error {
 		code = InvalidArgument
 	case errors.Is(err, model.ErrInvalidRequest):
 		code = InvalidArgument
+	case errors.Is(err, malinamodel.ErrInvalidRequest):
+		code = InvalidArgument
 	case errors.Is(err, llamamodels.ErrInvalidModelID):
 		code = InvalidArgument
 	case errors.Is(err, llamamodels.ErrModelNotFound):
 		code = NotFound
 	case errors.Is(err, buckymodels.ErrModelNotFound):
+		code = NotFound
+	case errors.Is(err, malinamodels.ErrModelNotFound):
 		code = NotFound
 	case errors.Is(err, kronkpool.ErrServerBusy):
 		code = Unavailable

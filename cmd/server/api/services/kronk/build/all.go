@@ -7,6 +7,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/checkapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/downapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/embedapp"
+	"github.com/ardanlabs/kronk/cmd/server/app/domain/imageapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/msgsapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/playgroundapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/rerankapp"
@@ -43,6 +44,7 @@ func (all) Add(app *web.App, cfg mux.Config) {
 		BuckyLibs:              cfg.BuckyLibs,
 		BuckyModels:            cfg.BuckyModels,
 		MalinaLibs:             cfg.MalinaLibs,
+		MalinaModels:           cfg.MalinaModels,
 		AuthorizationMode:      cfg.AuthorizationMode,
 		LegacyManagementAccess: cfg.AdminAuthEnabled,
 	})
@@ -68,6 +70,15 @@ func (all) Add(app *web.App, cfg mux.Config) {
 		AuthClient:        cfg.AuthClient,
 		Pool:              cfg.Pool,
 		AuthorizationMode: cfg.AuthorizationMode,
+	})
+
+	imageapp.Routes(app, imageapp.Config{
+		Log:               cfg.Log,
+		AuthClient:        cfg.AuthClient,
+		Pool:              cfg.Pool,
+		MalinaProgress:    cfg.MalinaProgress,
+		AuthorizationMode: cfg.AuthorizationMode,
+		InferenceTimeout:  cfg.InferenceTimeout,
 	})
 
 	rerankapp.Routes(app, rerankapp.Config{

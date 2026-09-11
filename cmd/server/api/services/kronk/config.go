@@ -72,6 +72,7 @@ type config struct {
 	BasePath           string `yaml:"base-path"`
 	LibPath            string `yaml:"lib-path"`
 	BuckyLibPath       string `yaml:"bucky-lib-path"`
+	MalinaLibPath      string `yaml:"malina-lib-path"`
 	LibVersion         string `yaml:"lib-version"`
 	LibDownloadEnabled bool   `yaml:"lib-download-enabled"`
 	LibVerifyEnabled   bool   `yaml:"lib-verify-enabled"`

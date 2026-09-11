@@ -146,11 +146,12 @@ type BundleFile struct {
 
 // Bundle describes a curated model bundle.
 type Bundle struct {
-	Name        BundleName
-	Description string
-	License     string
-	Gated       bool
-	Files       []BundleFile
+	Name             BundleName
+	Description      string
+	License          string
+	Gated            bool
+	BasicTextToImage bool
+	Files            []BundleFile
 }
 
 // Validate reports whether a bundle has the metadata required by the
@@ -187,9 +188,10 @@ const ManifestFilename = "manifest.json"
 func Catalog() []Bundle {
 	return []Bundle{
 		{
-			Name:        BundleSD15,
-			Description: "Stable Diffusion v1.5 — classic baseline model, single safetensors file (~4.3 GB).",
-			License:     "CreativeML Open RAIL-M",
+			Name:             BundleSD15,
+			Description:      "Stable Diffusion v1.5 — classic baseline model, single safetensors file (~4.3 GB).",
+			License:          "CreativeML Open RAIL-M",
+			BasicTextToImage: true,
 			Files: []BundleFile{
 				{
 					Role:     RoleModel,
@@ -270,9 +272,10 @@ func Catalog() []Bundle {
 			},
 		},
 		{
-			Name:        BundleSDXLBase10,
-			Description: "Stable Diffusion XL base 1.0 — mainstream high-quality baseline, single safetensors file (~6.9 GB).",
-			License:     "CreativeML Open RAIL++-M",
+			Name:             BundleSDXLBase10,
+			Description:      "Stable Diffusion XL base 1.0 — mainstream high-quality baseline, single safetensors file (~6.9 GB).",
+			License:          "CreativeML Open RAIL++-M",
+			BasicTextToImage: true,
 			Files: []BundleFile{
 				{
 					Role:     RoleModel,
@@ -283,10 +286,11 @@ func Catalog() []Bundle {
 			},
 		},
 		{
-			Name:        BundleFlux2Klein4B,
-			Description: "FLUX.2 [klein] 4B — compact 4-step distilled model with Qwen3-4B text encoder. Three files (~5.3 GB total).",
-			License:     "FLUX Non-Commercial",
-			Gated:       true,
+			Name:             BundleFlux2Klein4B,
+			Description:      "FLUX.2 [klein] 4B — compact 4-step distilled model with Qwen3-4B text encoder. Three files (~5.3 GB total).",
+			License:          "FLUX Non-Commercial",
+			Gated:            true,
+			BasicTextToImage: true,
 			Files: []BundleFile{
 				{
 					Role:     RoleDiffusion,
@@ -309,10 +313,11 @@ func Catalog() []Bundle {
 			},
 		},
 		{
-			Name:        BundleFlux2Klein9B,
-			Description: "FLUX.2 [klein] 9B — flagship 4-step distilled model with Qwen3-8B text encoder. Three files (~16 GB total).",
-			License:     "FLUX Non-Commercial",
-			Gated:       true,
+			Name:             BundleFlux2Klein9B,
+			Description:      "FLUX.2 [klein] 9B — flagship 4-step distilled model with Qwen3-8B text encoder. Three files (~16 GB total).",
+			License:          "FLUX Non-Commercial",
+			Gated:            true,
+			BasicTextToImage: true,
 			Files: []BundleFile{
 				{
 					Role:     RoleDiffusion,

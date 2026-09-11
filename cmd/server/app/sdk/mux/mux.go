@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/malinaprogress"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mid"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
@@ -18,6 +19,7 @@ import (
 	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	malinalibs "github.com/ardanlabs/kronk/sdk/tools/malina/libs"
+	malinamodels "github.com/ardanlabs/kronk/sdk/tools/malina/models"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
@@ -69,6 +71,8 @@ type Config struct {
 	BuckyLibs           *buckylibs.Libs
 	BuckyModels         *buckymodels.Models
 	MalinaLibs          *malinalibs.Libs
+	MalinaModels        *malinamodels.Models
+	MalinaProgress      *malinaprogress.Broker
 	DownloadEnabled     bool
 	AuthorizationMode   auth.Mode
 	AdminAuthEnabled    bool

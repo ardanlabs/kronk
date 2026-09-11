@@ -8,9 +8,9 @@ export interface DownloadMessage {
   type: 'info' | 'error' | 'success';
 }
 
-type DownloadKind = 'model' | 'catalog';
+type DownloadKind = 'model' | 'catalog' | 'bucky' | 'malina';
 
-export type DownloadOrigin = 'model-pull' | 'catalog';
+export type DownloadOrigin = 'model-pull' | 'catalog' | 'bucky' | 'malina';
 
 export interface DownloadMeta {
   model_id?: string;
@@ -48,6 +48,8 @@ interface DownloadContextType {
   startDownload: (modelUrl: string, projUrl?: string, mtpUrl?: string) => void;
   startBatchDownload: (modelUrls: string[], projUrl?: string) => void;
   startCatalogDownload: (catalogId: string, downloadServer?: string) => void;
+  startBuckyDownload: (modelID: string) => void;
+  startMalinaDownload: (bundleID: string) => void;
   cancelDownload: () => void;
   clearDownload: () => void;
 }
@@ -306,6 +308,58 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     );
   }, [addMessage, updateLastMessage, handleProgress, invalidate]);
 
+  const startBackendDownload = useCallback((origin: 'bucky' | 'malina', modelID: string) => {
+    if (abortRef.current) {
+      return;
+    }
+
+    setDownload({
+      kind: origin,
+      origin,
+      modelUrl: modelID,
+      messages: [],
+      status: 'downloading',
+    });
+
+    progressStartRef.current = null;
+    lastProgressUpdateRef.current = 0;
+
+    const onMessage = (data: PullResponse) => {
+      if (data.progress) {
+        handleProgress(data);
+        if (data.status) {
+          updateLastMessage(data.status, 'info');
+        }
+        return;
+      }
+      if (data.status) {
+        addMessage(data.status, 'info');
+      }
+    };
+    const onError = (error: string) => {
+      addMessage(error, 'error');
+      setDownload((prev) => (prev ? { ...prev, status: 'error' } : prev));
+      abortRef.current = null;
+    };
+    const onComplete = () => {
+      addMessage(`${origin === 'bucky' ? 'Bucky' : 'Malina'} pull complete!`, 'success');
+      setDownload((prev) => (prev ? { ...prev, status: 'complete' } : prev));
+      abortRef.current = null;
+    };
+
+    abortRef.current = origin === 'bucky'
+      ? api.pullBuckyModel(modelID, onMessage, onError, onComplete)
+      : api.pullMalinaModel(modelID, onMessage, onError, onComplete);
+  }, [addMessage, updateLastMessage, handleProgress]);
+
+  const startBuckyDownload = useCallback((modelID: string) => {
+    startBackendDownload('bucky', modelID);
+  }, [startBackendDownload]);
+
+  const startMalinaDownload = useCallback((bundleID: string) => {
+    startBackendDownload('malina', bundleID);
+  }, [startBackendDownload]);
+
   const cancelDownload = useCallback(() => {
     if (abortRef.current) {
       abortRef.current();
@@ -333,7 +387,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
 
   return (
     <DownloadContext.Provider
-      value={{ download, isDownloading, startDownload, startBatchDownload, startCatalogDownload, cancelDownload, clearDownload }}
+      value={{ download, isDownloading, startDownload, startBatchDownload, startCatalogDownload, startBuckyDownload, startMalinaDownload, cancelDownload, clearDownload }}
     >
       {children}
     </DownloadContext.Provider>

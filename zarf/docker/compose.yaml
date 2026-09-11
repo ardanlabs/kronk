@@ -22,7 +22,7 @@ services:
       - ./openwebui:/app/backend/data
 
   grafana:
-    image: grafana/grafana:13.2.0
+    image: grafana/grafana:13.2.1
     container_name: grafana
     restart: always
     pull_policy: never

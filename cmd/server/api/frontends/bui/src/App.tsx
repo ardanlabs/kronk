@@ -12,6 +12,8 @@ import CatalogList from './components/CatalogList';
 import LibsPull from './components/LibsPull';
 import BuckyLibs from './components/BuckyLibs';
 import BuckyModels from './components/BuckyModels';
+import MalinaLibs from './components/MalinaLibs';
+import MalinaModels from './components/MalinaModels';
 import SecurityKeyList from './components/SecurityKeyList';
 import SecurityKeyCreate from './components/SecurityKeyCreate';
 import SecurityKeyDelete from './components/SecurityKeyDelete';
@@ -19,6 +21,7 @@ import SecurityTokenCreate from './components/SecurityTokenCreate';
 import Settings from './components/Settings';
 import Chat from './components/Chat';
 import Translator from './components/Translator';
+import ImageGenerator from './components/ImageGenerator';
 import DocsSDK from './components/DocsSDK';
 import DocsSDKKronk from './components/DocsSDKKronk';
 import DocsSDKModel from './components/DocsSDKModel';
@@ -84,7 +87,10 @@ export type Page =
   | 'libs-pull'
   | 'bucky-libs'
   | 'bucky-model-list'
+  | 'malina-libs'
+  | 'malina-model-list'
   | 'translator'
+  | 'image-generator'
   | 'security-key-list'
   | 'security-key-create'
   | 'security-key-delete'
@@ -138,7 +144,10 @@ export const routeMap: Record<Page, string> = {
   'libs-pull': '/libs/pull',
   'bucky-libs': '/bucky/libs',
   'bucky-model-list': '/bucky/models',
+  'malina-libs': '/malina/libs',
+  'malina-model-list': '/malina/models',
   'translator': '/bucky/translator',
+  'image-generator': '/malina/image-generator',
   'security-key-list': '/security/keys',
   'security-key-create': '/security/keys/create',
   'security-key-delete': '/security/keys/delete',
@@ -289,6 +298,9 @@ function App() {
                 <Route path="/bucky/libs" element={<BuckyLibs />} />
                 <Route path="/bucky/models" element={<BuckyModels />} />
                 <Route path="/bucky/translator" element={<Translator />} />
+                <Route path="/malina/libs" element={<MalinaLibs />} />
+                <Route path="/malina/models" element={<MalinaModels />} />
+                <Route path="/malina/image-generator" element={<ImageGenerator />} />
                 <Route path="/security/keys" element={<SecurityKeyList />} />
                 <Route path="/security/keys/create" element={<SecurityKeyCreate />} />
                 <Route path="/security/keys/delete" element={<SecurityKeyDelete />} />

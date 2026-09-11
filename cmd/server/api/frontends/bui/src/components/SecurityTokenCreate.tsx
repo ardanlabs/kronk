@@ -7,6 +7,7 @@ const AVAILABLE_ENDPOINTS = [
   { label: '/v1/embeddings', value: 'embeddings' },
   { label: '/v1/rerank', value: 'rerank' },
   { label: '/v1/responses', value: 'responses' },
+  { label: '/v1/images/*', value: 'image-generations' },
   { label: '/v1/audio/transcriptions', value: 'transcriptions' },
   { label: '/v1/messages', value: 'messages' },
   { label: '/v1/tokenize', value: 'tokenize' },

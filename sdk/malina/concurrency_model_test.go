@@ -1,3 +1,5 @@
+//go:build malina_integration
+
 package malina_test
 
 import (

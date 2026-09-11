@@ -13,6 +13,7 @@ import (
 	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	malinalibs "github.com/ardanlabs/kronk/sdk/tools/malina/libs"
+	malinamodels "github.com/ardanlabs/kronk/sdk/tools/malina/models"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
@@ -28,6 +29,7 @@ type Config struct {
 	BuckyLibs              *buckylibs.Libs
 	BuckyModels            *buckymodels.Models
 	MalinaLibs             *malinalibs.Libs
+	MalinaModels           *malinamodels.Models
 	AuthorizationMode      auth.Mode
 	LegacyManagementAccess bool
 }
@@ -103,10 +105,19 @@ func Routes(app *web.App, cfg Config) {
 	app.HandlerFunc(http.MethodDelete, version, "/bucky/models/{model}", api.removeBuckyModel, administrationAccess)
 
 	// -------------------------------------------------------------------------
-	// Malina (stable-diffusion.cpp) runtime integrity. Malina remains an SDK
-	// backend and does not expose model-server inference routes yet.
+	// Malina (stable-diffusion.cpp) backend.
 
+	app.HandlerFunc(http.MethodGet, version, "/malina/libs", api.listMalinaLibs, managementAccess)
 	app.HandlerFunc(http.MethodGet, version, "/malina/libs/integrity", api.verifyMalinaLibs, managementAccess)
+	app.HandlerFunc(http.MethodPost, version, "/malina/libs/pull", api.pullMalinaLibs, administrationAccess)
+	app.HandlerFunc(http.MethodGet, version, "/malina/libs/combinations", api.listMalinaLibsCombinations, managementAccess)
+	app.HandlerFunc(http.MethodGet, version, "/malina/libs/installs", api.listMalinaLibsInstalls, managementAccess)
+	app.HandlerFunc(http.MethodDelete, version, "/malina/libs/installs", api.removeMalinaLibsInstall, administrationAccess)
+
+	app.HandlerFunc(http.MethodGet, version, "/malina/models", api.listMalinaModels, managementAccess)
+	app.HandlerFunc(http.MethodGet, version, "/malina/models/catalog", api.listMalinaCatalog, managementAccess)
+	app.HandlerFunc(http.MethodPost, version, "/malina/models/pull", api.pullMalinaModel, administrationAccess)
+	app.HandlerFunc(http.MethodDelete, version, "/malina/models/{model}", api.removeMalinaModel, administrationAccess)
 
 	// -------------------------------------------------------------------------
 	// Cross-backend infrastructure.

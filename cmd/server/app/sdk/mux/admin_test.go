@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -65,6 +66,17 @@ func TestAdminCookieMiddleware(t *testing.T) {
 			t.Errorf("status: got %d, want %d", rr.Code, http.StatusForbidden)
 		}
 	})
+}
+
+func TestSecurityHeadersAllowLocalImagePreview(t *testing.T) {
+	rr := httptest.NewRecorder()
+
+	securityHeaders(rr)
+
+	policy := rr.Header().Get("Content-Security-Policy")
+	if !strings.Contains(policy, "img-src 'self' https: data: blob:") {
+		t.Errorf("Content-Security-Policy: got %q, want blob image sources", policy)
+	}
 }
 
 func TestSetAdminCookie(t *testing.T) {
@@ -163,8 +175,8 @@ func TestRemoteHost(t *testing.T) {
 
 func TestAdminLoginSession(t *testing.T) {
 	sec, err := security.New(security.Config{
-		OverrideBaseKeysFolder: t.TempDir(),
-		Issuer:                 "test",
+		BasePath: t.TempDir(),
+		Issuer:   "test",
 	})
 	if err != nil {
 		t.Fatalf("security.New: %v", err)

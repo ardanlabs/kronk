@@ -107,7 +107,13 @@ install-test-models: install-kronk
 	@echo
 	kronk bucky model pull --local "silero-vad"
 	@echo
-	@echo ========== INSTALL MALINA MODELS ==========
+
+# Use this to install the library and model required by the opt-in Malina tests.
+install-test-malina: install-kronk
+	@echo ========== INSTALL STABLE DIFFUSION LIBRARIES ==========
+	kronk malina libs --local
+	@echo
+	@echo ========== INSTALL MALINA TEST MODEL ==========
 	kronk malina model pull --local "sd-1.5"
 	@echo
 
@@ -134,7 +140,7 @@ install-class-models: install-kronk
 	@echo
 
 OPENWEBUI  := ghcr.io/open-webui/open-webui:v0.11.1
-GRAFANA    := grafana/grafana:13.2.0
+GRAFANA    := grafana/grafana:13.2.1
 PROMETHEUS := prom/prometheus:v3.14.0
 TEMPO      := grafana/tempo:3.0.3
 LOKI       := grafana/loki:3.7.7

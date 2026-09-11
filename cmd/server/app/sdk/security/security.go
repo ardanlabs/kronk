@@ -29,8 +29,8 @@ var ErrUnauthenticated = errors.New("authentication failed")
 
 // Config represents the config needed to construct the security API.
 type Config struct {
-	OverrideBaseKeysFolder string
-	Issuer                 string
+	BasePath string
+	Issuer   string
 }
 
 // Security provides security support APIs.
@@ -56,7 +56,7 @@ func New(cfg Config) (*Security, error) {
 
 	// -------------------------------------------------------------------------
 
-	basePath := defaults.BaseDir(cfg.OverrideBaseKeysFolder)
+	basePath := defaults.BaseDir(cfg.BasePath)
 	dbPath := filepath.Join(basePath, "badger")
 
 	limiter, err := rate.New(rate.Config{
@@ -88,9 +88,9 @@ func (sec *Security) Close() error {
 	return sec.limiter.Close()
 }
 
-// BaseKeysFolder returns the location of the base keys folder being used.
-func (sec *Security) BaseKeysFolder() string {
-	return sec.cfg.OverrideBaseKeysFolder
+// BasePath returns the configured base path.
+func (sec *Security) BasePath() string {
+	return sec.cfg.BasePath
 }
 
 // Authenticate tests the token against the requirements.
@@ -151,7 +151,7 @@ func (sec *Security) GenerateToken(admin bool, endpoints map[string]auth.RateLim
 
 // ListKeys returns the set of keys that currently exist.
 func (sec *Security) ListKeys() ([]Key, error) {
-	basePath := defaults.BaseDir(sec.cfg.OverrideBaseKeysFolder)
+	basePath := defaults.BaseDir(sec.cfg.BasePath)
 	keysPath := filepath.Join(basePath, localFolder)
 
 	entries, err := os.ReadDir(keysPath)
@@ -186,10 +186,9 @@ func (sec *Security) ListKeys() ([]Key, error) {
 	return keys, nil
 }
 
-// AddPrivateKey adds a new private key to the system. You can override the
-// default location of the keys folder by passing a non-empty string.
+// AddPrivateKey adds a new private key to the system.
 func (sec *Security) AddPrivateKey() error {
-	basePath := defaults.BaseDir(sec.cfg.OverrideBaseKeysFolder)
+	basePath := defaults.BaseDir(sec.cfg.BasePath)
 	keysPath := filepath.Join(basePath, localFolder)
 
 	if err := generatePrivateKey(keysPath, uuid.New().String()); err != nil {
@@ -213,7 +212,7 @@ func (sec *Security) DeletePrivateKey(keyID string) error {
 		return fmt.Errorf("delete-private-key: invalid key ID %q", keyID)
 	}
 
-	basePath := defaults.BaseDir(sec.cfg.OverrideBaseKeysFolder)
+	basePath := defaults.BaseDir(sec.cfg.BasePath)
 	keysPath := filepath.Join(basePath, localFolder)
 	absKeysPath, err := filepath.Abs(keysPath)
 	if err != nil {
@@ -243,7 +242,7 @@ func (sec *Security) DeletePrivateKey(keyID string) error {
 // =============================================================================
 
 func (sec *Security) addSystemKeys() error {
-	basePath := defaults.BaseDir(sec.cfg.OverrideBaseKeysFolder)
+	basePath := defaults.BaseDir(sec.cfg.BasePath)
 	keysPath := filepath.Join(basePath, localFolder)
 
 	if err := os.MkdirAll(keysPath, 0700); err != nil {
@@ -301,13 +300,14 @@ func (sec *Security) generateAdminToken(keysPath string) error {
 	const admin = true
 
 	endpoints := map[string]auth.RateLimit{
-		"chat-completions": {Limit: 0, Window: auth.RateUnlimited},
-		"embeddings":       {Limit: 0, Window: auth.RateUnlimited},
-		"rerank":           {Limit: 0, Window: auth.RateUnlimited},
-		"responses":        {Limit: 0, Window: auth.RateUnlimited},
-		"transcriptions":   {Limit: 0, Window: auth.RateUnlimited},
-		"messages":         {Limit: 0, Window: auth.RateUnlimited},
-		"tokenize":         {Limit: 0, Window: auth.RateUnlimited},
+		"chat-completions":  {Limit: 0, Window: auth.RateUnlimited},
+		"embeddings":        {Limit: 0, Window: auth.RateUnlimited},
+		"image-generations": {Limit: 0, Window: auth.RateUnlimited},
+		"rerank":            {Limit: 0, Window: auth.RateUnlimited},
+		"responses":         {Limit: 0, Window: auth.RateUnlimited},
+		"transcriptions":    {Limit: 0, Window: auth.RateUnlimited},
+		"messages":          {Limit: 0, Window: auth.RateUnlimited},
+		"tokenize":          {Limit: 0, Window: auth.RateUnlimited},
 	}
 
 	const tenYears = 10 * 365 * 24 * time.Hour

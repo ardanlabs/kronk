@@ -67,6 +67,13 @@ The sidebar groups related operations by subsystem.
   You can select a whisper model, language, and response format and inspect
   timestamped segments. See
   [Chapter 18 §18.5](https://www.kronkai.com/manual#185-browser-ui).
+- **Image Generator** creates an image from a text prompt or transforms an
+  uploaded PNG or JPEG with an installed Malina model. Generation settings
+  include negative prompt, output size, steps, CFG scale, seed, and
+  image-to-image strength. The result includes a download action and image
+  dimensions. A server-wide activity panel displays Malina model-loading and
+  generation progress. See
+  [Chapter 19](https://www.kronkai.com/manual#chapter-19-malina-image-generation).
 
 #### System
 

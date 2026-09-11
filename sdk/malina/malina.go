@@ -275,6 +275,12 @@ func (m *Malina) ActiveGenerations() int {
 	return int(m.active.Load())
 }
 
+// ActiveStreams returns the number of running and queued generation calls.
+// It provides the common handle contract used by model pools.
+func (m *Malina) ActiveStreams() int {
+	return m.ActiveGenerations()
+}
+
 // Ready reports whether the model can accept generation requests.
 func (m *Malina) Ready() bool {
 	return m.closedError() == nil

@@ -293,7 +293,7 @@ Create a replacement user token with only the required grants:
 ```shell
 kronk security token create \
   --duration 720h \
-  --endpoints chat-completions,embeddings,rerank,responses,messages,tokenize,transcriptions
+  --endpoints chat-completions,embeddings,rerank,responses,messages,tokenize,transcriptions,image-generations
 ```
 
 Rate limits use forms such as `chat-completions:10000/day`. Token creation,

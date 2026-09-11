@@ -222,7 +222,8 @@ export const PARAM_TOOLTIPS = {
   // Library bundles
   bundleArch: 'Target CPU architecture for this library bundle download (amd64 or arm64). Each bundle lives in its own folder under the libraries root and does not replace the active install.',
   bundleOS: 'Target operating system for this library bundle download (linux, bookworm, trixie, darwin, windows). Each bundle lives in its own folder under the libraries root and does not replace the active install.',
-  bundleProcessor: 'Target processor backend for this library bundle download (cpu, cuda, metal, rocm, vulkan). Only combinations published by the upstream llama.cpp build matrix can be selected.',
+  bundleProcessor: 'Target processor backend for this library bundle download (cpu, cuda, metal, rocm, vulkan). Only combinations published by the selected backend can be chosen.',
+  bundleVersion: 'Exact upstream library version to install. Leave empty to use the version pinned by this Kronk release.',
   bundleRemove: 'Delete this bundle directory. Does not affect the active install unless this bundle is the active one.',
   peerLibsHost: 'Address of another Kronk server on the local network in the form ip:port. The peer must be running with download enabled. Useful in workshop environments where Internet access is slow or unavailable.',
   peerLibsConnect: 'Query the peer Kronk server for the list of library bundles it has installed and is willing to share.',
@@ -236,6 +237,18 @@ export const PARAM_TOOLTIPS = {
   translatorPrompt: 'Optional text passed to whisper as decoder context. Useful to bias spelling of proper nouns, technical terms, or to provide style/punctuation hints. Keep it short (a sentence or two).',
   translatorRealtimeFactor: 'Audio duration divided by wall-clock time. A value of 5x means the run processed 5 seconds of audio per second of real time. Higher is faster.',
   translatorNoSpeechProb: 'Whisper\'s estimated probability that this segment contains no speech. Values close to 1 typically indicate silence or background noise.',
+
+  // Image Generator
+  imageGeneratorModel: 'Installed Malina stable-diffusion model bundle used to generate the image.',
+  imageGeneratorMode: 'Text to image creates an image from the prompt alone. Image to image uses an uploaded PNG or JPEG as the starting composition.',
+  imageGeneratorPrompt: 'Text description of the image to generate. Include the subject, setting, composition, lighting, and style details that matter.',
+  imageGeneratorSource: 'PNG or JPEG used as the starting image. It is resized to the selected output dimensions before generation.',
+  imageGeneratorNegativePrompt: 'Features to discourage in the generated image, such as blur, artifacts, or unwanted objects.',
+  imageGeneratorSize: 'Output dimensions. Automatic uses 512×512 for text generation and preserves the uploaded image aspect ratio for image-to-image generation.',
+  imageGeneratorSteps: 'Number of denoising iterations. More steps can improve detail but increase generation time. The model default is 20.',
+  imageGeneratorCFGScale: 'How strongly generation follows the prompt. Higher values adhere more closely but can reduce natural variation. The model default is 7.',
+  imageGeneratorSeed: 'Positive values reproduce a result. Values of 0 or below choose a random seed for each generation.',
+  imageGeneratorStrength: 'How much the generated result may depart from the uploaded image. Lower values preserve more of the source; 1 allows the largest transformation.',
 } as const satisfies Record<string, string>;
 
 export type TooltipKey = keyof typeof PARAM_TOOLTIPS;
