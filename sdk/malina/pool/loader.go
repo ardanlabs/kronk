@@ -103,6 +103,7 @@ func (sd *StableDiffusion) Load(ctx context.Context, req loader.LoadRequest) (*m
 	sd.log(ctx, "malina-load",
 		"status", "load new model",
 		"model-id", req.ModelID,
+		"model-version", handle.ModelInfo().ModelVersion,
 		"contexts", prepared.config.Concurrency,
 	)
 

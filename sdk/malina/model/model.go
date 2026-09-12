@@ -66,6 +66,8 @@ type Config struct {
 	QueueDepth                  int
 	AdmissionTimeout            time.Duration
 	CPUThreads                  int32
+	LinearScale                 float32
+	AttnScale                   float32
 }
 
 // Option modifies Config.
@@ -157,6 +159,22 @@ func WithCPUThreads(threads int32) Option {
 	}
 }
 
+// WithLinearScale sets the linear-operation numerical scale override. Zero
+// preserves the model default.
+func WithLinearScale(scale float32) Option {
+	return func(cfg *Config) {
+		cfg.LinearScale = scale
+	}
+}
+
+// WithAttnScale sets the attention numerical scale override used with flash
+// attention. Zero preserves the model default.
+func WithAttnScale(scale float32) Option {
+	return func(cfg *Config) {
+		cfg.AttnScale = scale
+	}
+}
+
 // NewConfig constructs and validates Config.
 func NewConfig(opts ...Option) (Config, error) {
 	cfg := Config{
@@ -190,6 +208,12 @@ func validateConfig(cfg Config) error {
 	}
 	if cfg.CPUThreads < 0 {
 		return errors.New("CPU threads cannot be negative")
+	}
+	if cfg.LinearScale < 0 || cfg.LinearScale != 0 && !finite(float64(cfg.LinearScale)) {
+		return errors.New("linear scale must be zero or positive and finite")
+	}
+	if cfg.AttnScale < 0 || cfg.AttnScale != 0 && !finite(float64(cfg.AttnScale)) {
+		return errors.New("attention scale must be zero or positive and finite")
 	}
 
 	return nil
@@ -398,6 +422,7 @@ type ModelInfo struct {
 	DiffusionModelPath string
 	MotionModulePath   string
 	ADetailerPath      string
+	ModelVersion       string
 	CPUThreads         int32
 }
 
@@ -407,6 +432,7 @@ type Model struct {
 	config   Config
 	ctx      sd.Context
 	detailer sd.ADetailerContext
+	version  string
 	stop     context.Context
 	cancel   context.CancelFunc
 	unloaded bool
@@ -474,6 +500,8 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 
 	var handle sd.Context
 	var detailer sd.ADetailerContext
+	var modelVersion string
+
 	err := withNative(ctx, func() error {
 		params := sd.ContextParamsInit()
 		params.ModelPath = cfg.ModelPath
@@ -493,6 +521,8 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		params.MotionModulePath = cfg.MotionModulePath
 		params.PhotoMakerPath = cfg.PhotoMakerPath
 		params.TensorTypeRules = cfg.TensorTypeRules
+		params.LinearScale = cfg.LinearScale
+		params.AttnScale = cfg.AttnScale
 		if cfg.CPUThreads > 0 {
 			params.NThreads = cfg.CPUThreads
 		}
@@ -516,6 +546,13 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 			sd.FreeContext(handle)
 			handle = 0
 			return errors.New("loaded context does not support image generation")
+		}
+
+		modelVersion, err = sd.ModelVersionName(handle)
+		if err != nil && !errors.Is(err, sd.ErrUnsupportedAPI) {
+			sd.FreeContext(handle)
+			handle = 0
+			return fmt.Errorf("reading model version: %w", err)
 		}
 
 		if cfg.ADetailerPath != "" {
@@ -548,6 +585,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		config:   cfg,
 		ctx:      handle,
 		detailer: detailer,
+		version:  modelVersion,
 		stop:     stop,
 		cancel:   cancel,
 	}
@@ -851,6 +889,7 @@ func (m *Model) Info() ModelInfo {
 		DiffusionModelPath: m.config.DiffusionModelPath,
 		MotionModulePath:   m.config.MotionModulePath,
 		ADetailerPath:      m.config.ADetailerPath,
+		ModelVersion:       m.version,
 		CPUThreads:         m.config.CPUThreads,
 	}
 }

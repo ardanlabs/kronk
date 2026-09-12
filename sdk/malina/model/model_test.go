@@ -29,6 +29,12 @@ func TestNewConfig(t *testing.T) {
 		{name: "invalid queue", opts: []Option{WithModelPath("model"), WithQueueDepth(-1)}, wantErr: true},
 		{name: "invalid timeout", opts: []Option{WithModelPath("model"), WithAdmissionTimeout(-time.Second)}, wantErr: true},
 		{name: "invalid threads", opts: []Option{WithModelPath("model"), WithCPUThreads(-1)}, wantErr: true},
+		{name: "linear scale", opts: []Option{WithModelPath("model"), WithLinearScale(0.125)}},
+		{name: "negative linear scale", opts: []Option{WithModelPath("model"), WithLinearScale(-1)}, wantErr: true},
+		{name: "infinite linear scale", opts: []Option{WithModelPath("model"), WithLinearScale(float32(math.Inf(1)))}, wantErr: true},
+		{name: "attention scale", opts: []Option{WithModelPath("model"), WithAttnScale(0.25)}},
+		{name: "negative attention scale", opts: []Option{WithModelPath("model"), WithAttnScale(-1)}, wantErr: true},
+		{name: "NaN attention scale", opts: []Option{WithModelPath("model"), WithAttnScale(float32(math.NaN()))}, wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -48,6 +54,24 @@ func TestNewConfigDefaults(t *testing.T) {
 	}
 	if cfg.Concurrency != defaultConcurrency || cfg.QueueDepth != defaultQueueDepth || cfg.AdmissionTimeout != defaultAdmissionTimeout {
 		t.Errorf("defaults: got %d/%d/%s, want %d/%d/%s", cfg.Concurrency, cfg.QueueDepth, cfg.AdmissionTimeout, defaultConcurrency, defaultQueueDepth, defaultAdmissionTimeout)
+	}
+	if cfg.LinearScale != 0 || cfg.AttnScale != 0 {
+		t.Errorf("scale defaults: got %g/%g, want 0/0", cfg.LinearScale, cfg.AttnScale)
+	}
+}
+
+func TestScaleOptions(t *testing.T) {
+	cfg, err := NewConfig(
+		WithModelPath("model"),
+		WithLinearScale(0.125),
+		WithAttnScale(0.25),
+	)
+	if err != nil {
+		t.Fatalf("NewConfig() error = %v", err)
+	}
+
+	if cfg.LinearScale != 0.125 || cfg.AttnScale != 0.25 {
+		t.Errorf("scales: got %g/%g, want 0.125/0.25", cfg.LinearScale, cfg.AttnScale)
 	}
 }
 
@@ -95,14 +119,14 @@ func TestWorkflowConfigOptions(t *testing.T) {
 		t.Errorf("workflow paths: got %q/%q/%q, want controlnet/motion/adetailer", cfg.ControlNetPath, cfg.MotionModulePath, cfg.ADetailerPath)
 	}
 
-	mdl := Model{config: cfg}
+	mdl := Model{config: cfg, version: "Stable Diffusion 1.x"}
 	if got := mdl.Config(); got != cfg {
 		t.Errorf("Config(): got %+v, want %+v", got, cfg)
 	}
 
 	info := mdl.Info()
-	if info.MotionModulePath != "motion" || info.ADetailerPath != "adetailer" {
-		t.Errorf("Info() workflow paths: got %q/%q, want motion/adetailer", info.MotionModulePath, info.ADetailerPath)
+	if info.MotionModulePath != "motion" || info.ADetailerPath != "adetailer" || info.ModelVersion != "Stable Diffusion 1.x" {
+		t.Errorf("Info(): got motion=%q adetailer=%q version=%q, want motion/adetailer/Stable Diffusion 1.x", info.MotionModulePath, info.ADetailerPath, info.ModelVersion)
 	}
 }
 

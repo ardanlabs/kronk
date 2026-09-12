@@ -129,6 +129,8 @@ export default function DocsSDKMalinaModel() {
 	QueueDepth                  int
 	AdmissionTimeout            time.Duration
 	CPUThreads                  int32
+	LinearScale                 float32
+	AttnScale                   float32
 }`}</code>
               </pre>
               <p className="doc-description">Config controls model loading and request admission. Concurrency controls the number of independently loaded contexts and simultaneous generations. QueueDepth controls how many calls are admitted to wait after every context is busy. ModelPath loads an all-in-one checkpoint. DiffusionModelPath and its companion paths configure a component model. At least one of ModelPath or DiffusionModelPath is required.</p>
@@ -215,6 +217,7 @@ export default function DocsSDKMalinaModel() {
 	DiffusionModelPath string
 	MotionModulePath   string
 	ADetailerPath      string
+	ModelVersion       string
 	CPUThreads         int32
 }`}</code>
               </pre>

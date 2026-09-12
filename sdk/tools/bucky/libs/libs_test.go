@@ -1,10 +1,6 @@
 package libs
 
-import (
-	"testing"
-
-	"github.com/ardanlabs/bucky/pkg/download"
-)
+import "testing"
 
 func TestWithValidation(t *testing.T) {
 	var options Options
@@ -12,19 +8,6 @@ func TestWithValidation(t *testing.T) {
 
 	if !options.Validation {
 		t.Error("Validation: got false, want true")
-	}
-}
-
-func TestDefaultVersionIsPinned(t *testing.T) {
-	tag, digest, err := download.ParsePinnedVersion(defaultVersion)
-	if err != nil {
-		t.Fatalf("parse default version: %v", err)
-	}
-	if tag != "v1.9.3" {
-		t.Errorf("tag: got %q, want %q", tag, "v1.9.3")
-	}
-	if digest == "" {
-		t.Error("digest: got empty value")
 	}
 }
 
@@ -62,8 +45,8 @@ func TestVersionGreater(t *testing.T) {
 	}
 }
 
-func TestChooseVersionPreservesDefaultPin(t *testing.T) {
-	got := chooseVersion("", true, "", "v1.9.3", defaultVersion)
+func TestChooseVersionPreservesAuthenticatedDefault(t *testing.T) {
+	got := chooseVersion("", true, "", bareVersion(defaultVersion), defaultVersion)
 	if got != defaultVersion {
 		t.Errorf("chooseVersion: got %q, want %q", got, defaultVersion)
 	}

@@ -297,6 +297,22 @@ three-minute default admission timeout. Configure these with
 `model.WithConcurrency`, `model.WithQueueDepth`, and
 `model.WithAdmissionTimeout` when constructing the handle.
 
+Stable-diffusion.cpp also provides numerical scale overrides for models that
+produce black or white images because of NaN values on a particular backend,
+device, or weight format:
+
+```go
+mln, err := malina.New(
+    model.WithModelPath(mp.ModelFiles[0]),
+    model.WithLinearScale(0.125),
+    model.WithAttnScale(0.25),
+)
+```
+
+Both values default to zero, which preserves the model defaults. Set only the
+override recommended for the affected model and backend. `AttnScale` applies
+to the flash-attention path. Non-zero values must be positive and finite.
+
 #### 19.4.3 Generate an Image
 
 Start with the stable-diffusion.cpp generation defaults and set a prompt:
@@ -512,6 +528,8 @@ fmt.Println(info.Description)
 
 A loaded handle also exposes `SystemInfo`, `ModelInfo`, `ModelConfig`,
 `ActiveGenerations`, and `Ready` for application observability.
+`ModelInfo.ModelVersion` reports the model family detected by
+stable-diffusion.cpp, or `Unknown` when the native library cannot identify it.
 
 ### 19.8 Motion-JPEG Encoding
 
@@ -573,6 +591,7 @@ Later runs reuse complete installations.
 | A custom library directory cannot be upgraded or removed | A non-empty directory without `version.json` is intentionally read-only. Manage that build yourself or use a Kronk-managed install directory. |
 | A gated FLUX.2 download returns 401 or 403 | Accept the Hugging Face license and set `KRONK_HF_TOKEN` or `HF_TOKEN` to a token with read access. |
 | Generation reports an invalid request | Start with `model.NewGenerateParams`; provide a prompt and valid dimensions, steps, CFG scale, and image-to-image strength. |
+| Generation produces a solid black or white image and native logs report NaN values | Try the positive finite `model.WithLinearScale` or `model.WithAttnScale` override recommended for that model, backend, and weight format. Leave both at zero otherwise. |
 | Generation waits and then returns an admission timeout | Other calls are using the handle's admitted capacity. Increase admitted capacity or the admission timeout only when the application can tolerate the additional work or wait. |
 | Native diagnostic output is too verbose | Remove `malina.WithLogLevel(malina.LogNormal)`; native logging is silent by default. |
 | Progress output is unwanted | Pass `malina.WithProgress(malina.DiscardProgress)` during initialization. |
