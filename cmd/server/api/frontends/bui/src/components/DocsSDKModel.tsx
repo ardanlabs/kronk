@@ -73,12 +73,20 @@ export default function DocsSDKModel() {
               <p className="doc-description">GetEmbeddingsPreNormIth returns the pre-norm hidden-state row for the ith output of the most recent llama_decode on ctx. nEmbd is the model's embedding width. On a masked context (ctx_dft for MTP) i indexes through the output_ids table, so it must correspond to a batch position whose logits flag was set. On an unmasked context (ctx_tgt) i is the raw batch position. Returns nil when the binding isn't loaded, the context is zero, or the row isn't available. The returned slice aliases C-owned memory; don't retain past the next decode/synchronize.</p>
             </div>
 
+            <div className="doc-section" id="func-imagetokensdecoderpositions">
+              <h4>ImageTokensDecoderPositions</h4>
+              <pre className="code-block">
+                <code>func ImageTokensDecoderPositions(imageTokens mtmd.ImageTokens, start llama.Pos, nTokens int32) ([]llama.Pos, error)</code>
+              </pre>
+              <p className="doc-description">ImageTokensDecoderPositions returns the four section-major decoder position planes for image tokens. The returned planes follow llama_batch ordering: temporal, y, x, then z.</p>
+            </div>
+
             <div className="doc-section" id="func-inityzmaworkarounds">
               <h4>InitYzmaWorkarounds</h4>
               <pre className="code-block">
                 <code>func InitYzmaWorkarounds(libPath string) error</code>
               </pre>
-              <p className="doc-description">InitYzmaWorkarounds loads the llama library and preps our extra FFI functions that yzma upstream doesn't bind yet. Safe to call multiple times; only the first call does any work. Pre-norm bindings are BEST-EFFORT: if the loaded llama library doesn't export them (older build, e.g. b9222), the corresponding ffi.Fun stays zero-valued and MTPAvailable() returns false. Init never fails on a missing pre-norm symbol so kronk still boots and can serve non-MTP models.</p>
+              <p className="doc-description">InitYzmaWorkarounds loads the llama library and preps our extra FFI functions that yzma upstream doesn't bind yet. Safe to call multiple times; only the first call does any work. Pre-norm bindings are BEST-EFFORT: if the loaded llama library doesn't export them (older build, e.g. b9222), the corresponding ffi.Fun stays zero-valued and MTPAvailable() returns false. Init never fails on a missing pre-norm symbol so kronk still boots and can serve non-MTP models. The MTMD decoder-position binding is required because this version of Kronk requires llama.cpp b10930 or newer.</p>
             </div>
 
             <div className="doc-section" id="func-mtpavailable">
@@ -2180,6 +2188,7 @@ export default function DocsSDKModel() {
                 <li><a href="#func-detectmodeltypefromfiles">DetectModelTypeFromFiles</a></li>
                 <li><a href="#func-getembeddingsprenorm">GetEmbeddingsPreNorm</a></li>
                 <li><a href="#func-getembeddingsprenormith">GetEmbeddingsPreNormIth</a></li>
+                <li><a href="#func-imagetokensdecoderpositions">ImageTokensDecoderPositions</a></li>
                 <li><a href="#func-inityzmaworkarounds">InitYzmaWorkarounds</a></li>
                 <li><a href="#func-mtpavailable">MTPAvailable</a></li>
                 <li><a href="#func-newmodel">NewModel</a></li>

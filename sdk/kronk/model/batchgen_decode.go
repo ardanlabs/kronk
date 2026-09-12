@@ -112,23 +112,14 @@ func (e *batchEngine) decodeEmbeddingsNormal(s *slot, embd []float32, nEmbd, nTo
 	return nil
 }
 
-// decodeEmbeddingsMRoPE decodes image embeddings with M-RoPE 2D positioning.
-// For M-RoPE, positions are laid out as 4 contiguous arrays:
+// decodeEmbeddingsMRoPE decodes image embeddings with projector-defined M-RoPE
+// positioning. Positions are laid out as 4 contiguous arrays:
 //
 //	[dim0: n_tokens] [dim1: n_tokens] [dim2: n_tokens] [dim3: n_tokens]
-//
-// For an image grid of nx columns × ny rows:
-//   - dim0 (temporal): pos_0
-//   - dim1 (row/y):   pos_0 + y
-//   - dim2 (col/x):   pos_0 + x
-//   - dim3 (unused):  0
-func (e *batchEngine) decodeEmbeddingsMRoPE(s *slot, embd []float32, nEmbd, nTokens int32, nx, ny int32) error {
-	if nTokens != nx*ny {
-		return fmt.Errorf("mrope image layout: unsupported token count %d for grid %dx%d", nTokens, nx, ny)
+func (e *batchEngine) decodeEmbeddingsMRoPE(s *slot, embd []float32, nEmbd, nTokens int32, positions []llama.Pos, nPos llama.Pos) error {
+	if len(positions) != int(nTokens*4) {
+		return fmt.Errorf("mrope image positions: got %d, want %d", len(positions), nTokens*4)
 	}
-
-	// For M-RoPE, we need 4x the position slots (4D positions).
-	nPosPerEmbd := int32(4)
 
 	batch := llama.BatchInit(nTokens, nEmbd, 1)
 
@@ -142,12 +133,7 @@ func (e *batchEngine) decodeEmbeddingsMRoPE(s *slot, embd []float32, nEmbd, nTok
 	embdSlice := unsafeSlice(batch.Embd, int(nTokens*nEmbd))
 	copy(embdSlice, embd)
 
-	// Allocate our own position array for M-RoPE (4D).
-	posData := make([]llama.Pos, nTokens*nPosPerEmbd)
-
-	pos0 := s.nPast
-	fillMRoPEImagePositions(posData, nTokens, nx, ny, pos0)
-	batch.Pos = &posData[0]
+	batch.Pos = &positions[0]
 
 	nSeqIDSlice := unsafeSlice(batch.NSeqId, int(nTokens))
 	seqIDPtrs := unsafeSlice(batch.SeqId, int(nTokens))
@@ -177,7 +163,7 @@ func (e *batchEngine) decodeEmbeddingsMRoPE(s *slot, embd []float32, nEmbd, nTok
 	if err == nil && ret == 0 {
 		llama.Synchronize(e.model.lctx)
 	}
-	runtime.KeepAlive(posData)
+	runtime.KeepAlive(positions)
 
 	e.model.decodeMu.Unlock()
 
@@ -185,7 +171,7 @@ func (e *batchEngine) decodeEmbeddingsMRoPE(s *slot, embd []float32, nEmbd, nTok
 		return decodeError(ret, err)
 	}
 
-	s.nPast += llama.Pos(max(nx, ny))
+	s.nPast += nPos
 
 	return nil
 }
@@ -197,21 +183,6 @@ func fillMRoPETextPositions(positions []llama.Pos, n int32, start llama.Pos) {
 		positions[i+n] = pos
 		positions[i+n*2] = pos
 		positions[i+n*3] = pos
-	}
-}
-
-func fillMRoPEImagePositions(positions []llama.Pos, nTokens, nx, ny int32, start llama.Pos) {
-	for y := range ny {
-		for x := range nx {
-			i := y*nx + x
-			if i >= nTokens {
-				break
-			}
-			positions[i] = start
-			positions[i+nTokens] = start + llama.Pos(y)
-			positions[i+nTokens*2] = start + llama.Pos(x)
-			positions[i+nTokens*3] = 0
-		}
 	}
 }
 

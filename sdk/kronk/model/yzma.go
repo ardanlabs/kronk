@@ -7,6 +7,7 @@ import (
 
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/loader"
+	"github.com/hybridgroup/yzma/pkg/mtmd"
 	"github.com/jupiterrider/ffi"
 )
 
@@ -49,6 +50,26 @@ var (
 	getEmbeddingsPreNormIthFunc ffi.Fun
 )
 
+// mtmdDecoderPos mirrors struct mtmd_decoder_pos in tools/mtmd/mtmd.h.
+// llama.cpp returns this 16-byte aggregate by value.
+type mtmdDecoderPos struct {
+	t uint32
+	x uint32
+	y uint32
+	z uint32
+}
+
+var (
+	ffiTypeMTMDDecoderPos = ffi.NewType(
+		&ffi.TypeUint32,
+		&ffi.TypeUint32,
+		&ffi.TypeUint32,
+		&ffi.TypeUint32,
+	)
+
+	imageTokensGetDecoderPosFunc ffi.Fun
+)
+
 var (
 	yzmaOnce    sync.Once
 	yzmaInitErr error
@@ -74,7 +95,9 @@ func MTPAvailable() bool {
 // doesn't export them (older build, e.g. b9222), the corresponding
 // ffi.Fun stays zero-valued and MTPAvailable() returns false. Init
 // never fails on a missing pre-norm symbol so kronk still boots and
-// can serve non-MTP models.
+// can serve non-MTP models. The MTMD decoder-position binding is
+// required because this version of Kronk requires llama.cpp b10930 or
+// newer.
 func InitYzmaWorkarounds(libPath string) error {
 	yzmaOnce.Do(func() {
 		lib, err := loader.LoadLibrary(libPath, "llama")
@@ -156,6 +179,23 @@ func InitYzmaWorkarounds(libPath string) error {
 		); ok {
 			getEmbeddingsPreNormIthFunc = fn
 		}
+
+		mtmdLib, err := loader.LoadLibrary(libPath, "mtmd")
+		if err != nil {
+			yzmaInitErr = fmt.Errorf("load mtmd library: %w", err)
+			return
+		}
+
+		imageTokensGetDecoderPosFunc, err = mtmdLib.Prep(
+			"mtmd_image_tokens_get_decoder_pos",
+			&ffiTypeMTMDDecoderPos,
+			&ffi.TypePointer, // const mtmd_image_tokens *
+			&ffi.TypeSint32,  // llama_pos pos_0
+			&ffi.TypeUint64,  // size_t i (Kronk supports 64-bit targets)
+		)
+		if err != nil {
+			yzmaInitErr = fmt.Errorf("prepare mtmd_image_tokens_get_decoder_pos: %w", err)
+		}
 	})
 
 	return yzmaInitErr
@@ -227,4 +267,33 @@ func GetEmbeddingsPreNormIth(ctx llama.Context, i int32, nEmbd int) []float32 {
 		return nil
 	}
 	return unsafe.Slice(result, nEmbd)
+}
+
+// ImageTokensDecoderPositions returns the four section-major decoder position
+// planes for image tokens. The returned planes follow llama_batch ordering:
+// temporal, y, x, then z.
+func ImageTokensDecoderPositions(imageTokens mtmd.ImageTokens, start llama.Pos, nTokens int32) ([]llama.Pos, error) {
+	if imageTokens == 0 {
+		return nil, fmt.Errorf("image tokens are nil")
+	}
+	if nTokens <= 0 {
+		return nil, fmt.Errorf("invalid image token count %d", nTokens)
+	}
+	if imageTokensGetDecoderPosFunc.Cif == nil {
+		return nil, fmt.Errorf("mtmd_image_tokens_get_decoder_pos is not loaded")
+	}
+
+	positions := make([]llama.Pos, nTokens*4)
+	for i := range nTokens {
+		var pos mtmdDecoderPos
+		idx := uint64(i)
+		imageTokensGetDecoderPosFunc.Call(unsafe.Pointer(&pos), unsafe.Pointer(&imageTokens), &start, &idx)
+
+		positions[i] = llama.Pos(pos.t)
+		positions[i+nTokens] = llama.Pos(pos.y)
+		positions[i+nTokens*2] = llama.Pos(pos.x)
+		positions[i+nTokens*3] = llama.Pos(pos.z)
+	}
+
+	return positions, nil
 }
