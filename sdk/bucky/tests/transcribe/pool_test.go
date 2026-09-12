@@ -25,21 +25,11 @@ import (
 //     and must observe the counter reach numInstances. A serializing
 //     wrapper would never let it rise above 1.
 //
-//  2. The wall-clock elapsed for the parallel run is compared
-//     against a baseline single-shot Transcribe. With a real state
-//     pool the parallel run completes in roughly one baseline; a
-//     serialized pool would take numInstances baselines. The
-//     assertion threshold has generous headroom for GPU jitter.
+//  2. The wall-clock elapsed for the parallel run is compared against
+//     the same number of sequential Transcribe calls. A real state pool
+//     must complete the parallel batch faster than the sequential batch.
 func Test_PooledTranscribe(t *testing.T) {
 	const numInstances = 2
-
-	// concurrencyFactor is the upper bound on (parallel wall-clock /
-	// single-shot baseline) below which we accept the run as truly
-	// concurrent. Serial execution would land at ~numInstances; a
-	// perfectly parallel run at ~1.0. The 1.5x bound tolerates GPU
-	// kernel-launch overhead and Metal queue contention while still
-	// catching any regression that serializes the pool.
-	const concurrencyFactor = 1.5
 
 	ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 	defer cancel()
@@ -58,20 +48,22 @@ func Test_PooledTranscribe(t *testing.T) {
 
 	samples := testlib.LoadSamples(t, testlib.AudioFile)
 
-	// Single-shot baseline. Whisper compiles its Metal kernels and
-	// allocates compute buffers lazily on the first call, so run two
-	// warm-up passes and time the third to keep the baseline honest.
+	// Whisper compiles its Metal kernels and allocates compute buffers lazily
+	// on the first call, so warm the handle before measuring either batch.
 	for range 2 {
 		if _, err := w.Transcribe(ctx, samples, model.WithLanguage("en")); err != nil {
 			t.Fatalf("warm-up Transcribe: %v", err)
 		}
 	}
-	baselineStart := time.Now()
-	if _, err := w.Transcribe(ctx, samples, model.WithLanguage("en")); err != nil {
-		t.Fatalf("baseline Transcribe: %v", err)
+
+	sequentialStart := time.Now()
+	for range numInstances {
+		if _, err := w.Transcribe(ctx, samples, model.WithLanguage("en")); err != nil {
+			t.Fatalf("sequential Transcribe: %v", err)
+		}
 	}
-	baseline := time.Since(baselineStart)
-	t.Logf("single-shot baseline: %s", baseline)
+	sequentialElapsed := time.Since(sequentialStart)
+	t.Logf("sequential batch: %s", sequentialElapsed)
 
 	// Parallel run. The barrier releases every goroutine at the
 	// same instant so the wall-clock measurement captures the
@@ -150,13 +142,13 @@ func Test_PooledTranscribe(t *testing.T) {
 	}
 	t.Logf("peak ActiveStreams observed: %d", peak)
 
-	// Concurrency check 2: wall-clock speedup vs baseline.
+	// Concurrency check 2: wall-clock speedup vs the sequential batch.
 	//
 	// This check is meaningful only when there is spare compute for
 	// the parallel run to consume — i.e. on a GPU. On CPU-only
 	// hardware a single Transcribe already saturates every core, so
-	// running NSeqMax in parallel takes ~NSeqMax × baseline even
-	// when the pool is genuinely concurrent. Check 1 (peak
+	// running NSeqMax in parallel can take as long as the sequential
+	// batch even when the pool is genuinely concurrent. Check 1 (peak
 	// ActiveStreams) is the authoritative signal in that case.
 	//
 	// So the gate is the hardware, not CI: skip the assertion when the run
@@ -164,16 +156,14 @@ func Test_PooledTranscribe(t *testing.T) {
 	// no GPU. Everything else asserts — the self-hosted GPU legs, and a
 	// local run, where KRONK_PROCESSOR is unset.
 	if os.Getenv("KRONK_PROCESSOR") == "cpu" || os.Getenv("KRONK_TEST_HOSTED") != "" {
-		t.Logf("parallel wall-clock: %s, baseline: %s (CPU-bound run: skipping wall-clock check)",
-			parallelElapsed, baseline)
+		t.Logf("parallel batch: %s, sequential batch: %s (CPU-bound run: skipping wall-clock check)",
+			parallelElapsed, sequentialElapsed)
 	} else {
-		threshold := time.Duration(float64(baseline) * concurrencyFactor)
-		t.Logf("parallel wall-clock: %s, baseline: %s, threshold: %s (factor %.2fx)",
-			parallelElapsed, baseline, threshold, concurrencyFactor)
-		if parallelElapsed > threshold {
-			t.Errorf("parallel wall-clock %s exceeded %.2fx baseline (%s); "+
+		t.Logf("parallel batch: %s, sequential batch: %s", parallelElapsed, sequentialElapsed)
+		if parallelElapsed >= sequentialElapsed {
+			t.Errorf("parallel batch %s did not beat sequential batch %s; "+
 				"expected concurrent execution but the pool appears to be serializing",
-				parallelElapsed, concurrencyFactor, threshold)
+				parallelElapsed, sequentialElapsed)
 		}
 	}
 

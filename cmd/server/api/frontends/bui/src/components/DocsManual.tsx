@@ -4950,6 +4950,13 @@ defer func() {
     model.WithQueueDepth(4),
 )`}</code></pre>
           <p><code>Concurrency</code> is the number of model contexts loaded and therefore the maximum number of simultaneous generations. It defaults to 1 because each additional context consumes another model-sized allocation of RAM or VRAM. <code>QueueDepth</code> is the number of calls admitted to the internal queue after every context is busy and defaults to 0. Additional callers may wait for admission for up to the three-minute default admission timeout. Configure these with <code>model.WithConcurrency</code>, <code>model.WithQueueDepth</code>, and <code>model.WithAdmissionTimeout</code> when constructing the handle.</p>
+          <p>Stable-diffusion.cpp also provides numerical scale overrides for models that produce black or white images because of NaN values on a particular backend, device, or weight format:</p>
+          <pre className="code-block"><code className="language-go">{`mln, err := malina.New(
+    model.WithModelPath(mp.ModelFiles[0]),
+    model.WithLinearScale(0.125),
+    model.WithAttnScale(0.25),
+)`}</code></pre>
+          <p>Both values default to zero, which preserves the model defaults. Set only the override recommended for the affected model and backend. <code>AttnScale</code> applies to the flash-attention path. Non-zero values must be positive and finite.</p>
           <h4 id="1943-generate-an-image">19.4.3 Generate an Image</h4>
           <p>Start with the stable-diffusion.cpp generation defaults and set a prompt:</p>
           <pre className="code-block"><code className="language-go">{`params := model.NewGenerateParams()
@@ -5104,7 +5111,7 @@ fmt.Println(info.NativeVersion)
 fmt.Println(info.PhysicalCores)
 fmt.Println(info.BackendDeviceCount)
 fmt.Println(info.Description)`}</code></pre>
-          <p>A loaded handle also exposes <code>SystemInfo</code>, <code>ModelInfo</code>, <code>ModelConfig</code>, <code>ActiveGenerations</code>, and <code>Ready</code> for application observability.</p>
+          <p>A loaded handle also exposes <code>SystemInfo</code>, <code>ModelInfo</code>, <code>ModelConfig</code>, <code>ActiveGenerations</code>, and <code>Ready</code> for application observability. <code>ModelInfo.ModelVersion</code> reports the model family detected by stable-diffusion.cpp, or <code>Unknown</code> when the native library cannot identify it.</p>
           <h3 id="198-motion-jpeg-encoding">19.8 Motion-JPEG Encoding</h3>
           <p><code>model.SaveAVI</code> writes same-sized Go images as a Motion-JPEG AVI without loading stable-diffusion.cpp or a model:</p>
           <pre className="code-block"><code className="language-go">{`if err := model.SaveAVI("output.avi", frames, 24, 90); err != nil {
@@ -5192,6 +5199,10 @@ fmt.Println(info.Description)`}</code></pre>
               <tr>
                 <td>Generation reports an invalid request</td>
                 <td>Start with <code>model.NewGenerateParams</code>; provide a prompt and valid dimensions, steps, CFG scale, and image-to-image strength.</td>
+              </tr>
+              <tr>
+                <td>Generation produces a solid black or white image and native logs report NaN values</td>
+                <td>Try the positive finite <code>model.WithLinearScale</code> or <code>model.WithAttnScale</code> override recommended for that model, backend, and weight format. Leave both at zero otherwise.</td>
               </tr>
               <tr>
                 <td>Generation waits and then returns an admission timeout</td>
