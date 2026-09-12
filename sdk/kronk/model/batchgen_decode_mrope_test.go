@@ -23,21 +23,6 @@ func TestFillMRoPETextPositions(t *testing.T) {
 	}
 }
 
-func TestFillMRoPEImagePositions(t *testing.T) {
-	positions := make([]llama.Pos, 24)
-	fillMRoPEImagePositions(positions, 6, 3, 2, 10)
-
-	want := []llama.Pos{
-		10, 10, 10, 10, 10, 10,
-		10, 10, 10, 11, 11, 11,
-		10, 11, 12, 10, 11, 12,
-		0, 0, 0, 0, 0, 0,
-	}
-	if !slices.Equal(positions, want) {
-		t.Errorf("positions = %v, want %v", positions, want)
-	}
-}
-
 func TestIMCSessionLogicalPosition(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -57,14 +42,14 @@ func TestIMCSessionLogicalPosition(t *testing.T) {
 	}
 }
 
-func TestMRoPERejectsNonRectangularLayout(t *testing.T) {
+func TestMRoPERejectsWrongPositionCount(t *testing.T) {
 	engine := batchEngine{}
-	if err := engine.decodeEmbeddingsMRoPE(&slot{}, nil, 0, 5, 2, 2); err == nil {
-		t.Fatal("decodeEmbeddingsMRoPE() error = nil, want unsupported layout error")
+	if err := engine.decodeEmbeddingsMRoPE(&slot{}, nil, 0, 5, make([]llama.Pos, 19), 0); err == nil {
+		t.Fatal("decodeEmbeddingsMRoPE() error = nil, want position count error")
 	}
 
 	m := Model{}
-	if _, err := m.decodeEmbeddingsMRoPEIntoCache(nil, 0, 5, 2, 2, 0, 0, false); err == nil {
-		t.Fatal("decodeEmbeddingsMRoPEIntoCache() error = nil, want unsupported layout error")
+	if _, err := m.decodeEmbeddingsMRoPEIntoCache(nil, 0, 5, make([]llama.Pos, 19), 0, false); err == nil {
+		t.Fatal("decodeEmbeddingsMRoPEIntoCache() error = nil, want position count error")
 	}
 }

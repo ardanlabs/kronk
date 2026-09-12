@@ -189,13 +189,17 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot, buf []byte) bool {
 		switch s.useMRoPE {
 		case true:
 			imageTokens := mtmd.InputChunkGetTokensImage(chunk)
-			nx := int32(mtmd.ImageTokensGetNX(imageTokens))
-			ny := int32(mtmd.ImageTokensGetNY(imageTokens))
+			positions, err := ImageTokensDecoderPositions(imageTokens, s.nPast, int32(nTokens))
+			if err != nil {
+				e.finishSlot(s, fmt.Errorf("get image decoder positions: %w", err))
+				return false
+			}
+			nPos := llama.Pos(mtmd.InputChunkGetNPos(chunk))
 
 			e.model.log(s.job.ctx, "prefill-media", "status", "decoding-image-mrope",
-				"slot", s.id, "nx", nx, "ny", ny)
+				"slot", s.id, "tokens", nTokens, "positions", nPos)
 
-			if err := e.decodeEmbeddingsMRoPE(s, embd, nEmbd, int32(nTokens), nx, ny); err != nil {
+			if err := e.decodeEmbeddingsMRoPE(s, embd, nEmbd, int32(nTokens), positions, nPos); err != nil {
 				e.finishSlot(s, fmt.Errorf("decode image embeddings (M-RoPE) failed: %w", err))
 				return false
 			}

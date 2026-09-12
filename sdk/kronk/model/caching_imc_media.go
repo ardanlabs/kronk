@@ -237,13 +237,15 @@ func (m *Model) decodeMediaIntoCacheFromPlan(ctx context.Context, cacheD D, pref
 			switch {
 			case useMRoPE:
 				imageTokens := mtmd.InputChunkGetTokensImage(chunk)
-				nx := int32(mtmd.ImageTokensGetNX(imageTokens))
-				ny := int32(mtmd.ImageTokensGetNY(imageTokens))
+				positions, err := ImageTokensDecoderPositions(imageTokens, llama.Pos(pos), int32(nTokens))
+				if err != nil {
+					return 0, 0, nil, nil, nil, fmt.Errorf("imc-media-cache: get image decoder positions for chunk %d: %w", i, err)
+				}
 
 				m.log(ctx, "imc-media-cache", "status", "decoding-image-mrope", "seq", seqID,
-					"chunk", i, "nx", nx, "ny", ny, "pos", pos)
+					"chunk", i, "tokens", nTokens, "positions", nPos, "pos", pos)
 
-				nDecoded, err := m.decodeEmbeddingsMRoPEIntoCache(embd, nEmbd, int32(nTokens), nx, ny, seqID, pos, useNonCausal)
+				nDecoded, err := m.decodeEmbeddingsMRoPEIntoCache(embd, nEmbd, int32(nTokens), positions, seqID, useNonCausal)
 				if err != nil {
 					return 0, 0, nil, nil, nil, fmt.Errorf("imc-media-cache: decode image embeddings chunk %d (M-RoPE): %w", i, err)
 				}
@@ -360,22 +362,18 @@ func (m *Model) decodeEmbeddingsIntoCache(embd []float32, nEmbd, nTokens int32, 
 	return int(nTokens), nil
 }
 
-// decodeEmbeddingsMRoPEIntoCache decodes embeddings with M-RoPE 2D positioning
-// into a KV cache sequence. Returns the number of KV positions consumed.
-func (m *Model) decodeEmbeddingsMRoPEIntoCache(embd []float32, nEmbd, nTokens, nx, ny int32, seqID llama.SeqId, startPos int, useNonCausal bool) (int, error) {
-	if nTokens != nx*ny {
-		return 0, fmt.Errorf("mrope image layout: unsupported token count %d for grid %dx%d", nTokens, nx, ny)
+// decodeEmbeddingsMRoPEIntoCache decodes embeddings with projector-defined
+// M-RoPE positioning into a KV cache sequence. Returns the number of physical
+// KV cells consumed.
+func (m *Model) decodeEmbeddingsMRoPEIntoCache(embd []float32, nEmbd, nTokens int32, positions []llama.Pos, seqID llama.SeqId, useNonCausal bool) (int, error) {
+	if len(positions) != int(nTokens*4) {
+		return 0, fmt.Errorf("mrope image positions: got %d, want %d", len(positions), nTokens*4)
 	}
 
 	nBatch := int32(m.cfg.EffectiveNBatch())
 	if nBatch <= 0 {
 		nBatch = 512
 	}
-
-	// Pre-compute the full 4D position array for all tokens.
-	fullPosData := make([]llama.Pos, nTokens*4)
-	pos0 := llama.Pos(startPos)
-	fillMRoPEImagePositions(fullPosData, nTokens, nx, ny, pos0)
 
 	m.decodeMu.Lock()
 	defer m.decodeMu.Unlock()
@@ -401,10 +399,10 @@ func (m *Model) decodeEmbeddingsMRoPEIntoCache(embd []float32, nEmbd, nTokens, n
 		// llama.cpp expects 4 contiguous planes of batchN positions each.
 		subPosData := make([]llama.Pos, batchN*4)
 		for i := range batchN {
-			subPosData[i] = fullPosData[start+i]
-			subPosData[i+batchN] = fullPosData[start+i+nTokens]
-			subPosData[i+batchN*2] = fullPosData[start+i+nTokens*2]
-			subPosData[i+batchN*3] = fullPosData[start+i+nTokens*3]
+			subPosData[i] = positions[start+i]
+			subPosData[i+batchN] = positions[start+i+nTokens]
+			subPosData[i+batchN*2] = positions[start+i+nTokens*2]
+			subPosData[i+batchN*3] = positions[start+i+nTokens*3]
 		}
 		batch.Pos = &subPosData[0]
 
