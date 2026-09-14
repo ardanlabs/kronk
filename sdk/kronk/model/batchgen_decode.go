@@ -112,13 +112,13 @@ func (e *batchEngine) decodeEmbeddingsNormal(s *slot, embd []float32, nEmbd, nTo
 	return nil
 }
 
-// decodeEmbeddingsMRoPE decodes image embeddings with projector-defined M-RoPE
-// positioning. Positions are laid out as 4 contiguous arrays:
+// decodeEmbeddingsMRoPE decodes embeddings with M-RoPE positioning. Positions
+// are laid out as 4 contiguous arrays:
 //
 //	[dim0: n_tokens] [dim1: n_tokens] [dim2: n_tokens] [dim3: n_tokens]
 func (e *batchEngine) decodeEmbeddingsMRoPE(s *slot, embd []float32, nEmbd, nTokens int32, positions []llama.Pos, nPos llama.Pos) error {
 	if len(positions) != int(nTokens*4) {
-		return fmt.Errorf("mrope image positions: got %d, want %d", len(positions), nTokens*4)
+		return fmt.Errorf("mrope embedding positions: got %d, want %d", len(positions), nTokens*4)
 	}
 
 	batch := llama.BatchInit(nTokens, nEmbd, 1)
@@ -184,6 +184,12 @@ func fillMRoPETextPositions(positions []llama.Pos, n int32, start llama.Pos) {
 		positions[i+n*2] = pos
 		positions[i+n*3] = pos
 	}
+}
+
+func linearMRoPEPositions(n int32, start llama.Pos) []llama.Pos {
+	positions := make([]llama.Pos, n*4)
+	fillMRoPETextPositions(positions, n, start)
+	return positions
 }
 
 // unsafeSlice creates a Go slice from a C pointer. This is used to access

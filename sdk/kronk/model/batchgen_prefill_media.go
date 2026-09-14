@@ -275,10 +275,21 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot, buf []byte) bool {
 		}
 
 		// Step 3: Decode embeddings into the LLM's KV cache.
-		// Audio uses standard linear positioning (not M-RoPE).
-		if err := e.decodeEmbeddingsNormal(s, embd, nEmbd, int32(nTokens)); err != nil {
-			e.finishSlot(s, fmt.Errorf("decode audio embeddings failed: %w", err))
-			return false
+		switch s.useMRoPE {
+		case true:
+			positions := linearMRoPEPositions(int32(nTokens), s.nPast)
+			nPos := llama.Pos(mtmd.InputChunkGetNPos(chunk))
+
+			if err := e.decodeEmbeddingsMRoPE(s, embd, nEmbd, int32(nTokens), positions, nPos); err != nil {
+				e.finishSlot(s, fmt.Errorf("decode audio embeddings (M-RoPE) failed: %w", err))
+				return false
+			}
+
+		case false:
+			if err := e.decodeEmbeddingsNormal(s, embd, nEmbd, int32(nTokens)); err != nil {
+				e.finishSlot(s, fmt.Errorf("decode audio embeddings failed: %w", err))
+				return false
+			}
 		}
 
 		s.chunkIdx++

@@ -285,13 +285,24 @@ func (m *Model) decodeMediaIntoCacheFromPlan(ctx context.Context, cacheD D, pref
 				return 0, 0, nil, nil, nil, fmt.Errorf("imc-media-cache: get audio embeddings chunk %d: %w", i, err)
 			}
 
-			// Audio uses standard linear positioning (not M-RoPE).
-			nDecoded, err := m.decodeEmbeddingsIntoCache(embd, nEmbd, int32(nTokens), seqID, pos, useNonCausal)
-			if err != nil {
-				return 0, 0, nil, nil, nil, fmt.Errorf("imc-media-cache: decode audio embeddings chunk %d: %w", i, err)
+			switch {
+			case useMRoPE:
+				positions := linearMRoPEPositions(int32(nTokens), llama.Pos(pos))
+				nDecoded, err := m.decodeEmbeddingsMRoPEIntoCache(embd, nEmbd, int32(nTokens), positions, seqID, useNonCausal)
+				if err != nil {
+					return 0, 0, nil, nil, nil, fmt.Errorf("imc-media-cache: decode audio embeddings chunk %d (M-RoPE): %w", i, err)
+				}
+				pos += nPos
+				mediaKVCounts = append(mediaKVCounts, nDecoded)
+
+			default:
+				nDecoded, err := m.decodeEmbeddingsIntoCache(embd, nEmbd, int32(nTokens), seqID, pos, useNonCausal)
+				if err != nil {
+					return 0, 0, nil, nil, nil, fmt.Errorf("imc-media-cache: decode audio embeddings chunk %d: %w", i, err)
+				}
+				pos += nDecoded
+				mediaKVCounts = append(mediaKVCounts, nDecoded)
 			}
-			pos += nDecoded
-			mediaKVCounts = append(mediaKVCounts, nDecoded)
 		}
 	}
 	if !prefixCursor.done() {
@@ -362,12 +373,11 @@ func (m *Model) decodeEmbeddingsIntoCache(embd []float32, nEmbd, nTokens int32, 
 	return int(nTokens), nil
 }
 
-// decodeEmbeddingsMRoPEIntoCache decodes embeddings with projector-defined
-// M-RoPE positioning into a KV cache sequence. Returns the number of physical
-// KV cells consumed.
+// decodeEmbeddingsMRoPEIntoCache decodes embeddings with M-RoPE positioning
+// into a KV cache sequence. Returns the number of physical KV cells consumed.
 func (m *Model) decodeEmbeddingsMRoPEIntoCache(embd []float32, nEmbd, nTokens int32, positions []llama.Pos, seqID llama.SeqId, useNonCausal bool) (int, error) {
 	if len(positions) != int(nTokens*4) {
-		return 0, fmt.Errorf("mrope image positions: got %d, want %d", len(positions), nTokens*4)
+		return 0, fmt.Errorf("mrope embedding positions: got %d, want %d", len(positions), nTokens*4)
 	}
 
 	nBatch := int32(m.cfg.EffectiveNBatch())

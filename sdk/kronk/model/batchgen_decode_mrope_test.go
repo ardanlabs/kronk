@@ -23,6 +23,20 @@ func TestFillMRoPETextPositions(t *testing.T) {
 	}
 }
 
+func TestLinearMRoPEPositions(t *testing.T) {
+	positions := linearMRoPEPositions(3, 7)
+
+	want := []llama.Pos{
+		7, 8, 9,
+		7, 8, 9,
+		7, 8, 9,
+		7, 8, 9,
+	}
+	if !slices.Equal(positions, want) {
+		t.Errorf("positions = %v, want %v", positions, want)
+	}
+}
+
 func TestIMCSessionLogicalPosition(t *testing.T) {
 	tests := []struct {
 		name    string
