@@ -104,7 +104,7 @@ func TestVerboseJSONWordTimestamps(t *testing.T) {
 		},
 	}
 
-	got := verboseJSON(tr, 1, true)
+	got := verboseJSON(tr, 1, true, false)
 	words, ok := got["words"].([]map[string]any)
 	if !ok {
 		t.Fatalf("words: got %T, want []map[string]any", got["words"])
@@ -117,5 +117,20 @@ func TestVerboseJSONWordTimestamps(t *testing.T) {
 	}
 	if words[1]["word"] != "world" || words[1]["start"] != 0.5 || words[1]["end"] != 0.9 {
 		t.Errorf("words[1]: got %+v, want world from 0.5 to 0.9", words[1])
+	}
+}
+
+func TestVerboseJSONTranslation(t *testing.T) {
+	tr := model.Transcription{
+		Text:     "hello world",
+		Language: "fr",
+	}
+
+	got := verboseJSON(tr, 1, false, true)
+	if got["task"] != "translate" {
+		t.Errorf("task: got %q, want translate", got["task"])
+	}
+	if got["language"] != "english" {
+		t.Errorf("language: got %q, want english", got["language"])
 	}
 }

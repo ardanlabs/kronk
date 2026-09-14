@@ -21,8 +21,14 @@ type audioTranscriptionsResponse struct {
 	Text string `json:"text"`
 }
 
-// buildAudioForm produces a multipart/form-data body suitable for the
-// /v1/audio/transcriptions endpoint. Returns the body bytes and the
+type audioTranslationsResponse struct {
+	Task     string `json:"task"`
+	Language string `json:"language"`
+	Text     string `json:"text"`
+}
+
+// buildAudioForm produces a multipart/form-data body suitable for the audio
+// transcription and translation endpoints. Returns the body bytes and the
 // Content-Type header (which includes the random boundary).
 func buildAudioForm(t *testing.T, audioPath, modelID, language, respFmt string) ([]byte, string) {
 	t.Helper()
@@ -105,6 +111,46 @@ func audioTranscriptions200(t *testing.T, tokens map[string]string) []apitest.Ta
 	return table
 }
 
+func audioTranslations200(t *testing.T, tokens map[string]string) []apitest.Table {
+	body, contentType := buildAudioForm(t, audioFile, "ggml-tiny.bin", "en", "verbose_json")
+
+	table := []apitest.Table{
+		{
+			Name:       "good-token",
+			URL:        "/v1/audio/translations",
+			Token:      tokens["transcriptions"],
+			Method:     http.MethodPost,
+			StatusCode: http.StatusOK,
+			Headers: map[string]string{
+				"Content-Type": contentType,
+			},
+			RawBody: body,
+			GotResp: &audioTranslationsResponse{},
+			ExpResp: &audioTranslationsResponse{},
+			CmpFunc: func(got any, exp any) string {
+				gotResp, ok := got.(*audioTranslationsResponse)
+				if !ok {
+					return fmt.Sprintf("response wrong type: %T", got)
+				}
+
+				if gotResp.Task != "translate" {
+					return fmt.Sprintf("expected task translate, got %q", gotResp.Task)
+				}
+				if gotResp.Language != "english" {
+					return fmt.Sprintf("expected language english, got %q", gotResp.Language)
+				}
+				if !strings.Contains(strings.ToLower(gotResp.Text), "ask not") {
+					return fmt.Sprintf("expected translation to contain \"ask not\", got: %q", gotResp.Text)
+				}
+
+				return ""
+			},
+		},
+	}
+
+	return table
+}
+
 func audioTranscriptions403(t *testing.T, tokens map[string]string) []apitest.Table {
 	body, contentType := buildAudioForm(t, audioFile, "ggml-tiny.bin", "en", "json")
 
@@ -134,6 +180,36 @@ func audioTranscriptions403(t *testing.T, tokens map[string]string) []apitest.Ta
 				}
 
 				return ""
+			},
+		},
+	}
+
+	return table
+}
+
+func audioTranslations403(t *testing.T, tokens map[string]string) []apitest.Table {
+	body, contentType := buildAudioForm(t, audioFile, "ggml-tiny.bin", "en", "json")
+
+	table := []apitest.Table{
+		{
+			Name:       "bad-token",
+			URL:        "/v1/audio/translations",
+			Token:      tokens["chat-completions"],
+			Method:     http.MethodPost,
+			StatusCode: http.StatusForbidden,
+			Headers: map[string]string{
+				"Content-Type": contentType,
+			},
+			RawBody: body,
+			GotResp: &errs.Error{},
+			ExpResp: &errs.Error{
+				Code:    errs.PermissionDenied,
+				Message: "rpc error: code = PermissionDenied desc = permission denied",
+			},
+			CmpFunc: func(got any, exp any) string {
+				return cmp.Diff(got, exp,
+					cmpopts.IgnoreFields(errs.Error{}, "FuncName", "FileName"),
+				)
 			},
 		},
 	}

@@ -28,4 +28,5 @@ func Routes(app *web.App, cfg Config) {
 	inferenceAccess := mid.NewAccess(cfg.AuthClient, cfg.AuthorizationMode, false).Inference("transcriptions")
 
 	app.HandlerFunc(http.MethodPost, version, "/audio/transcriptions", api.transcriptions, inferenceAccess)
+	app.HandlerFunc(http.MethodPost, version, "/audio/translations", api.translations, inferenceAccess)
 }

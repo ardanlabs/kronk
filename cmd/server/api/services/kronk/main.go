@@ -321,10 +321,11 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	// The server exposes both the /v1/bucky/* admin endpoints (library
 	// installs + downloaded whisper model management) and the
-	// /v1/audio/transcriptions inference endpoint. bucky.Init wires up
-	// the whisper.cpp shared library so the bucky pool can load
-	// models on demand; failure is non-fatal so the admin endpoints
-	// still work when the runtime library has not been downloaded yet.
+	// /v1/audio/transcriptions and /v1/audio/translations inference
+	// endpoints. bucky.Init wires up the whisper.cpp shared library so
+	// the bucky pool can load models on demand; failure is non-fatal so
+	// the admin endpoints still work when the runtime library has not
+	// been downloaded yet.
 
 	buckyLibs, err := buckylibs.New(
 		buckylibs.WithBasePath(cfg.BasePath),

@@ -69,6 +69,7 @@ statuses such as 400, 401, 403, 404, 409, 429, 500, 501, or 503.
 | `/v1/images/edits`             | POST   | Transform an image with Malina          |
 | `/v1/images/events`            | GET    | Stream server-wide Malina progress      |
 | `/v1/audio/transcriptions`     | POST   | Transcribe audio with Bucky            |
+| `/v1/audio/translations`       | POST   | Translate audio into English with Bucky |
 
 Sections 9.10 through 9.13 inventory the administration, diagnostics, and
 evaluation endpoints used by the CLI and BUI. Administration endpoints are
@@ -396,8 +397,11 @@ ControlNet, ADetailer, video generation, and upscaling remain available through
 the Malina SDK rather than the model-server API.
 
 `POST /v1/audio/transcriptions` accepts multipart audio uploads and uses the
-Bucky speech-to-text runtime. Its request fields, formats, and administrative
-operations are documented in [Chapter 18](https://www.kronkai.com/manual#1861-request-and-response).
+Bucky speech-to-text runtime. `POST /v1/audio/translations` accepts the same
+file, model, prompt, temperature, and response-format fields and translates
+speech from a supported language into English. Their request fields, formats,
+and administrative operations are documented in
+[Chapter 18](https://www.kronkai.com/manual#1861-request-and-response).
 
 ## 9.10 Kronk Administration
 

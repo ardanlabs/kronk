@@ -23,7 +23,7 @@ Bucky is Kronk's speech-to-text subsystem. It uses
 [`whisper.cpp`](https://github.com/ggerganov/whisper.cpp) and is available
 through:
 
-- the `/v1/audio/transcriptions` HTTP endpoint;
+- the `/v1/audio/transcriptions` and `/v1/audio/translations` HTTP endpoints;
 - the Browser UI (BUI) Translator;
 - the `kronk bucky` management commands; and
 - the Go packages under `sdk/bucky`.
@@ -242,7 +242,7 @@ It does not expose every field or response format supported by the HTTP API.
 Use the API directly when you need plain text, SRT, WebVTT, or explicit
 timestamp options.
 
-### 18.6 Transcriptions API
+### 18.6 Transcriptions and Translations API
 
 #### 18.6.1 Request and Response
 
@@ -250,6 +250,13 @@ Send a `multipart/form-data` request to:
 
 ```text
 POST /v1/audio/transcriptions
+```
+
+To translate supported source speech into English, use the OpenAI-compatible
+translation route instead:
+
+```text
+POST /v1/audio/translations
 ```
 
 The uploaded file is limited to **25 MB**. Each transcription has a 30-minute
@@ -261,7 +268,7 @@ server deadline.
 | `model`                     | Yes      | Installed model ID, such as `tiny` or `base.en` |
 | `language`                  | No       | Whisper short language code such as `en`, `de`, or `fr`; empty means auto-detect |
 | `prompt`                    | No       | Text that biases the initial decoder output |
-| `translate`                 | No       | `true` translates supported source speech to English |
+| `translate`                 | No       | Kronk extension on the transcription route; `true` translates supported source speech to English |
 | `temperature`               | No       | Initial decoding temperature |
 | `temperature_inc`           | No       | Temperature increase used for fallback decoding |
 | `entropy_threshold`         | No       | Entropy threshold for deciding whether to retry a decode |
@@ -293,6 +300,12 @@ The default JSON response is:
 ```json
 {"text":"And so my fellow Americans..."}
 ```
+
+The translation route accepts `file`, `model`, `prompt`, `temperature`, and
+`response_format`. It always enables source-to-English translation, so it does
+not require the Kronk-specific `translate` field. Its default JSON response has
+the same `text` shape. A `verbose_json` translation identifies its task as
+`translate` and its output language as `english`.
 
 `verbose_json` adds the detected language, duration, and timestamped segments.
 When `timestamp_granularities[]=word` is requested, it also includes a `words`

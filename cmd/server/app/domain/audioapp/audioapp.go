@@ -39,6 +39,14 @@ func newApp(cfg Config) *app {
 }
 
 func (a *app) transcriptions(ctx context.Context, r *http.Request) web.Encoder {
+	return a.transcribe(ctx, r, false)
+}
+
+func (a *app) translations(ctx context.Context, r *http.Request) web.Encoder {
+	return a.transcribe(ctx, r, true)
+}
+
+func (a *app) transcribe(ctx context.Context, r *http.Request, forceTranslate bool) web.Encoder {
 	r.Body = http.MaxBytesReader(nil, r.Body, maxUploadBytes+maxMultipartOverhead)
 	if err := r.ParseMultipartForm(maxUploadBytes); err != nil {
 		return errs.New(errs.InvalidArgument, fmt.Errorf("parse multipart form: %w", err))
@@ -61,7 +69,7 @@ func (a *app) transcriptions(ctx context.Context, r *http.Request) web.Encoder {
 
 	language := r.FormValue("language")
 	prompt := r.FormValue("prompt")
-	translate := parseBool(r.FormValue("translate"))
+	translate := forceTranslate || parseBool(r.FormValue("translate"))
 
 	respFmt := r.FormValue("response_format")
 	if respFmt == "" {
@@ -99,13 +107,20 @@ func (a *app) transcriptions(ctx context.Context, r *http.Request) web.Encoder {
 	}
 	opts = append(opts, whisperOpts...)
 
-	a.log.Info(ctx, "transcribe", "model", modelID, "filename", hdr.Filename, "size", hdr.Size, "language", language, "response-format", respFmt)
+	task := "transcribe"
+	if forceTranslate {
+		task = "translate"
+	}
+	a.log.Info(ctx, task, "model", modelID, "filename", hdr.Filename, "size", hdr.Size, "language", language, "response-format", respFmt)
 
 	b, err := a.pool.Bucky.AquireModel(ctx, modelID)
 	if err != nil {
 		return errs.FromSDK(err)
 	}
 
+	if translate && !b.ModelInfo().IsMultilingual {
+		return errs.Errorf(errs.InvalidArgument, "model[%s] is english-only but translation was requested", modelID)
+	}
 	if !b.ModelInfo().IsMultilingual && language != "" && language != "en" {
 		return errs.Errorf(errs.InvalidArgument, "model[%s] is english-only but language[%s] was requested", modelID, language)
 	}
@@ -128,7 +143,7 @@ func (a *app) transcriptions(ctx context.Context, r *http.Request) web.Encoder {
 	case "vtt":
 		return rawResponse{data: []byte(formatVTT(tr)), contentType: "text/vtt; charset=utf-8"}
 	case "verbose_json":
-		return jsonResponse(verboseJSON(tr, duration, wantWordTimes))
+		return jsonResponse(verboseJSON(tr, duration, wantWordTimes, forceTranslate))
 	default:
 		return jsonResponse(map[string]any{"text": tr.Text})
 	}
@@ -229,7 +244,7 @@ func parseOptionalInt32(form url.Values, field string) (int32, bool, error) {
 	return int32(value), true, nil
 }
 
-func verboseJSON(tr model.Transcription, duration float64, wantWordTimes bool) map[string]any {
+func verboseJSON(tr model.Transcription, duration float64, wantWordTimes, translation bool) map[string]any {
 	segments := make([]map[string]any, 0, len(tr.Segments))
 	for i, s := range tr.Segments {
 		segments = append(segments, map[string]any{
@@ -246,9 +261,16 @@ func verboseJSON(tr model.Transcription, duration float64, wantWordTimes bool) m
 		})
 	}
 
+	task := "transcribe"
+	language := tr.Language
+	if translation {
+		task = "translate"
+		language = "english"
+	}
+
 	out := map[string]any{
-		"task":     "transcribe",
-		"language": tr.Language,
+		"task":     task,
+		"language": language,
 		"duration": duration,
 		"text":     tr.Text,
 		"segments": segments,

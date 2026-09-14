@@ -93,6 +93,7 @@ func Test_API(t *testing.T) {
 	// Model: ggml-tiny.bin (whisper / bucky)
 
 	test.Run(t, audioTranscriptions200(t, tokens), "audio-transcriptions-200")
+	test.Run(t, audioTranslations200(t, tokens), "audio-translations-200")
 
 	// -------------------------------------------------------------------------
 	// Auth tests (don't require model loading, use tokens without the required grant)
@@ -104,6 +105,7 @@ func Test_API(t *testing.T) {
 	test.Run(t, rerank403(tokens), "rerank-403")
 	test.Run(t, tokenize403(tokens), "tokenize-403")
 	test.Run(t, audioTranscriptions403(t, tokens), "audio-transcriptions-403")
+	test.Run(t, audioTranslations403(t, tokens), "audio-translations-403")
 }
 
 // =============================================================================

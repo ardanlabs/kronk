@@ -2100,6 +2100,11 @@ docker rm kronk
                 <td>POST</td>
                 <td>Transcribe audio with Bucky</td>
               </tr>
+              <tr>
+                <td><code>/v1/audio/translations</code></td>
+                <td>POST</td>
+                <td>Translate audio into English with Bucky</td>
+              </tr>
             </tbody>
           </table>
           <p>Sections 9.10 through 9.13 inventory the administration, diagnostics, and evaluation endpoints used by the CLI and BUI. Administration endpoints are open when administration authentication is disabled. When it is enabled, they require an administrator token. <code>GET /v1/models</code> and <code>GET /v1/models/&#123;model&#125;</code> instead follow inference authentication and do not require a separate endpoint grant.</p>
@@ -2242,7 +2247,7 @@ data: {"type":"response.completed",...}`}</code></pre>
   -F steps=20`}</code></pre>
           <p><code>GET /v1/images/events</code> is a persistent server-sent event stream for Malina model-loading and image-generation progress. Each event reports <code>scope: "global"</code>, <code>step</code>, <code>steps</code>, <code>percent</code>, and <code>seconds_per_step</code>. The native callback is process-global, so an event describes server-wide Malina activity and is not attributable to the client or request consuming the stream. This route also requires the <code>image-generations</code> inference permission.</p>
           <p>ControlNet, ADetailer, video generation, and upscaling remain available through the Malina SDK rather than the model-server API.</p>
-          <p><code>POST /v1/audio/transcriptions</code> accepts multipart audio uploads and uses the Bucky speech-to-text runtime. Its request fields, formats, and administrative operations are documented in <a href="https://www.kronkai.com/manual#1861-request-and-response">Chapter 18</a>.</p>
+          <p><code>POST /v1/audio/transcriptions</code> accepts multipart audio uploads and uses the Bucky speech-to-text runtime. <code>POST /v1/audio/translations</code> accepts the same file, model, prompt, temperature, and response-format fields and translates speech from a supported language into English. Their request fields, formats, and administrative operations are documented in <a href="https://www.kronkai.com/manual#1861-request-and-response">Chapter 18</a>.</p>
           <h2 id="910-kronk-administration">9.10 Kronk Administration</h2>
           <p>These routes manage the llama.cpp runtime, local GGUF models, and the personal model catalog. Mutating routes may stream progress or perform network and disk operations. Clients should use the exact <code>/v1/kronk/...</code> prefix; the shorter <code>/v1/libs</code>, <code>/v1/models/pull</code>, and <code>/v1/catalog</code> forms are not aliases.</p>
           <h3 id="libraries">Libraries</h3>
@@ -3135,7 +3140,7 @@ kronk server start`}</code></pre>
               </tr>
               <tr>
                 <td><code>transcriptions</code></td>
-                <td><code>POST /v1/audio/transcriptions</code></td>
+                <td><code>POST /v1/audio/transcriptions</code>, <code>POST /v1/audio/translations</code></td>
               </tr>
               <tr>
                 <td><code>image-generations</code></td>
@@ -4130,7 +4135,7 @@ lsof -nP -iTCP:9000 -sTCP:LISTEN`}</code></pre>
           <h2 id="chapter-18-bucky-audio-transcription">Chapter 18: Bucky (Audio Transcription)</h2>
           <p>Bucky is Kronk's speech-to-text subsystem. It uses <a href="https://github.com/ggerganov/whisper.cpp"><code>whisper.cpp</code></a> and is available through:</p>
           <ul>
-            <li>the <code>/v1/audio/transcriptions</code> HTTP endpoint;</li>
+            <li>the <code>/v1/audio/transcriptions</code> and <code>/v1/audio/translations</code> HTTP endpoints;</li>
             <li>the Browser UI (BUI) Translator;</li>
             <li>the <code>kronk bucky</code> management commands; and</li>
             <li>the Go packages under <code>sdk/bucky</code>.</li>
@@ -4368,10 +4373,12 @@ kronk bucky model remove tiny`}</code></pre>
             <li>Select <strong>Transcribe</strong> or <strong>Translate</strong>.</li>
           </ol>
           <p>Translator requests <code>verbose_json</code> and displays the text and segment timing. It does not expose every field or response format supported by the HTTP API. Use the API directly when you need plain text, SRT, WebVTT, or explicit timestamp options.</p>
-          <h3 id="186-transcriptions-api">18.6 Transcriptions API</h3>
+          <h3 id="186-transcriptions-and-translations-api">18.6 Transcriptions and Translations API</h3>
           <h4 id="1861-request-and-response">18.6.1 Request and Response</h4>
           <p>Send a <code>multipart/form-data</code> request to:</p>
           <pre className="code-block"><code className="language-text">{`POST /v1/audio/transcriptions`}</code></pre>
+          <p>To translate supported source speech into English, use the OpenAI-compatible translation route instead:</p>
+          <pre className="code-block"><code className="language-text">{`POST /v1/audio/translations`}</code></pre>
           <p>The uploaded file is limited to <strong>25 MB</strong>. Each transcription has a 30-minute server deadline.</p>
           <table className="flags-table">
             <thead>
@@ -4405,7 +4412,7 @@ kronk bucky model remove tiny`}</code></pre>
               <tr>
                 <td><code>translate</code></td>
                 <td>No</td>
-                <td><code>true</code> translates supported source speech to English</td>
+                <td>Kronk extension on the transcription route; <code>true</code> translates supported source speech to English</td>
               </tr>
               <tr>
                 <td><code>temperature</code></td>
@@ -4474,6 +4481,7 @@ kronk bucky model remove tiny`}</code></pre>
   -F response_format=json`}</code></pre>
           <p>The default JSON response is:</p>
           <pre className="code-block"><code className="language-json">{`{"text":"And so my fellow Americans..."}`}</code></pre>
+          <p>The translation route accepts <code>file</code>, <code>model</code>, <code>prompt</code>, <code>temperature</code>, and <code>response_format</code>. It always enables source-to-English translation, so it does not require the Kronk-specific <code>translate</code> field. Its default JSON response has the same <code>text</code> shape. A <code>verbose_json</code> translation identifies its task as <code>translate</code> and its output language as <code>english</code>.</p>
           <p><code>verbose_json</code> adds the detected language, duration, and timestamped segments. When <code>timestamp_granularities[]=word</code> is requested, it also includes a <code>words</code> array whose entries contain <code>word</code>, <code>start</code>, and <code>end</code> fields. The <code>text</code>, <code>srt</code>, and <code>vtt</code> formats return their corresponding non-JSON media types.</p>
           <p>English-only models (<code>tiny.en</code>, <code>base.en</code>, <code>small.en</code>, and <code>medium.en</code>) only accept an empty language hint or <code>en</code>. Use a multilingual model for other languages or translation.</p>
           <h4 id="1862-bucky-management-endpoints">18.6.2 Bucky Management Endpoints</h4>
@@ -6072,7 +6080,7 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
                 <li><a href="#183-manage-models" className={activeSection === '183-manage-models' ? 'active' : ''}>18.3 Manage Models</a></li>
                 <li><a href="#184-server-configuration" className={activeSection === '184-server-configuration' ? 'active' : ''}>18.4 Server Configuration</a></li>
                 <li><a href="#185-browser-ui" className={activeSection === '185-browser-ui' ? 'active' : ''}>18.5 Browser UI</a></li>
-                <li><a href="#186-transcriptions-api" className={activeSection === '186-transcriptions-api' ? 'active' : ''}>18.6 Transcriptions API</a></li>
+                <li><a href="#186-transcriptions-and-translations-api" className={activeSection === '186-transcriptions-and-translations-api' ? 'active' : ''}>18.6 Transcriptions and Translations API</a></li>
                 <li><a href="#187-go-sdk" className={activeSection === '187-go-sdk' ? 'active' : ''}>18.7 Go SDK</a></li>
                 <li><a href="#188-languages" className={activeSection === '188-languages' ? 'active' : ''}>18.8 Languages</a></li>
                 <li><a href="#189-troubleshooting" className={activeSection === '189-troubleshooting' ? 'active' : ''}>18.9 Troubleshooting</a></li>
