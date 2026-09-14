@@ -10,6 +10,30 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
+// imageTokensDecoderPositions returns the four section-major decoder position
+// planes for image tokens. The returned planes follow llama_batch ordering:
+// temporal, y, x, then z.
+func imageTokensDecoderPositions(imageTokens mtmd.ImageTokens, start llama.Pos, nTokens int32) ([]llama.Pos, error) {
+	if imageTokens == 0 {
+		return nil, fmt.Errorf("image tokens are nil")
+	}
+	if nTokens <= 0 {
+		return nil, fmt.Errorf("invalid image token count %d", nTokens)
+	}
+
+	positions := make([]llama.Pos, nTokens*4)
+	for i := range nTokens {
+		pos := mtmd.ImageTokensGetDecoderPos(imageTokens, start, uint64(i))
+
+		positions[i] = llama.Pos(pos.T)
+		positions[i+nTokens] = llama.Pos(pos.Y)
+		positions[i+nTokens*2] = llama.Pos(pos.X)
+		positions[i+nTokens*3] = llama.Pos(pos.Z)
+	}
+
+	return positions, nil
+}
+
 func (e *batchEngine) nextMediaSlot() (*slot, int) {
 	for offset := range e.slots {
 		idx := (e.mediaNext + offset) % len(e.slots)
@@ -189,7 +213,7 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot, buf []byte) bool {
 		switch s.useMRoPE {
 		case true:
 			imageTokens := mtmd.InputChunkGetTokensImage(chunk)
-			positions, err := ImageTokensDecoderPositions(imageTokens, s.nPast, int32(nTokens))
+			positions, err := imageTokensDecoderPositions(imageTokens, s.nPast, int32(nTokens))
 			if err != nil {
 				e.finishSlot(s, fmt.Errorf("get image decoder positions: %w", err))
 				return false

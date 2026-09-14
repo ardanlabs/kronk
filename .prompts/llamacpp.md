@@ -1,5 +1,10 @@
 Review the proposed llama.cpp and/or yzma upgrade for Kronk and produce a decision-ready report and implementation plan.
 
+This prompt has two outcomes:
+
+1. **Review gate:** If the upgrade changes an ABI or C API used by yzma or Kronk, or adds an API that Kronk might reasonably adopt, stop after the report and implementation plan. Do not modify files or run tests. The change requires review before implementation.
+2. **Routine upgrade:** If the proposed versions are compatible and require only coordinated llama.cpp and yzma version updates, implement the upgrade without waiting for approval. Keep all version references aligned, update generated dependency data and documentation derived from changed sources, and run the focused verification required by the repository instructions. Report the changes and verification results.
+
 ## Upgrade range
 
 - Treat the `defaultVersion` change in `sdk/tools/libs/libs.go` as the proposed llama.cpp upgrade. Compare its previous committed value with the new value.
@@ -38,4 +43,6 @@ Keep the report concise and include:
 - Evidence links for every required change and compatibility conclusion.
 - Open questions or items that could not be verified.
 
-Do not modify code, dependencies, generated files, documentation, or this prompt, and do not run tests. Stop after the report and plan so I can choose what to implement and in what order.
+When the review gate applies, do not modify code, dependencies, generated files, documentation, or this prompt, and do not run tests. Stop after the report and plan so I can choose what to implement and in what order.
+
+When the routine-upgrade path applies, make the smallest complete version-alignment change after the review. Do not introduce API migrations, behavior changes, refactors, or unrelated cleanup under that path. Follow repository guidance for formatting, generated files, dependency updates, and focused checks; never run a prohibited full-repository test suite.

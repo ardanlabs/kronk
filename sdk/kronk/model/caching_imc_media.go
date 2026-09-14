@@ -237,7 +237,7 @@ func (m *Model) decodeMediaIntoCacheFromPlan(ctx context.Context, cacheD D, pref
 			switch {
 			case useMRoPE:
 				imageTokens := mtmd.InputChunkGetTokensImage(chunk)
-				positions, err := ImageTokensDecoderPositions(imageTokens, llama.Pos(pos), int32(nTokens))
+				positions, err := imageTokensDecoderPositions(imageTokens, llama.Pos(pos), int32(nTokens))
 				if err != nil {
 					return 0, 0, nil, nil, nil, fmt.Errorf("imc-media-cache: get image decoder positions for chunk %d: %w", i, err)
 				}
