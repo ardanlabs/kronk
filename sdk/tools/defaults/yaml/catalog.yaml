@@ -271,6 +271,26 @@ models:
       endpoint: rerank
       rerank: true
     resolved_at: 2026-07-30T01:18:32.85876Z
+  ukisai/Swift-Qwen3.8-27B-Q8_0:
+    provider: ukisai
+    family: Swift-Qwen3.8-27B-GGUF
+    revision: main
+    files:
+      - Swift-Qwen3.8-27B-Q8_0.gguf
+    file_sizes:
+      - 29116389280
+    mmproj: mmproj-Swift-Qwen3.8-27B-Q8_0.gguf
+    mmproj_orig: mmproj-Swift-Qwen3.8-27B-F16.gguf
+    mmproj_size: 927606976
+    mtp_checked: true
+    model_type: Hybrid
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      streaming: true
+      reasoning: true
+      tooling: true
+    resolved_at: 2026-09-14T14:06:33.630788Z
   unsloth/Ministral-3-14B-Instruct-2512-Q4_0:
     provider: unsloth
     family: Ministral-3-14B-Instruct-2512-GGUF

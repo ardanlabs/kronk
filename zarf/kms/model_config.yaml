@@ -200,6 +200,16 @@ models:
     sampling-parameters:
       max_tokens: 16384
 
+  # nseq-max: 1  ~38GB VRAM
+  # nseq-max: 2  ~47GB VRAM
+  ukisai/Swift-Qwen3.8-27B-Q8_0/AGENT:
+    nseq-max: 2
+    context-window: 131072
+    chat-template-kwargs:
+      preserve_thinking: true
+    sampling-parameters:
+      max_tokens: 16384
+
   # nseq-max: 1  ~40GB VRAM
   # nseq-max: 2  ~43GB VRAM
   unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
