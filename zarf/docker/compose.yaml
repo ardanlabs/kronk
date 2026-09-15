@@ -1,4 +1,18 @@
 services:
+  docling:
+    image: quay.io/docling-project/docling-serve:v1.12.0@sha256:4a699ae26eee5654b41f539d2662baf7f8831009760c4be24179816331fbbc8c
+    container_name: moxie-docling
+    restart: unless-stopped
+    labels:
+      com.ardanlabs.moxie.service: docling
+      com.ardanlabs.moxie.extraction-profile: docling-v1.12.0-dlparse_v4-accurate-v1
+    environment:
+      - DOCLING_SERVE_ENABLE_UI=0
+    ports:
+      - "127.0.0.1:5001:5001"
+    volumes:
+      - ${HOME}/.moxie/docling:/scratch
+
   openwebui:
     image: ghcr.io/open-webui/open-webui:v0.11.1
     container_name: openwebui

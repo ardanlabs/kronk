@@ -1,6 +1,15 @@
 import { useRef, useCallback, type ReactNode } from 'react';
 
 export const PARAM_TOOLTIPS = {
+  // Fine-tuning
+  fineTuningSource: 'A PDF or DOCX document containing the source material used to create grounded training examples. Files can be up to 100 MiB.',
+  fineTuningDataset: 'A training-ready JSONL file containing validated prompt, target, and evidence records. Use this directly when dataset preparation is already complete.',
+  fineTuningGoal: 'The kind of behavior the prepared examples should teach: answering questions, assigning categories, predicting numbers, or generating text.',
+  fineTuningModel: 'The installed model used to generate and verify preparation examples, and later selected as the base model for fine-tuning.',
+  fineTuningPreviewCount: 'Number of examples generated for review before building the complete training dataset. Choose between 1 and 5.',
+  fineTuningPrompt: 'The instruction or question presented to the model in one training example.',
+  fineTuningTarget: 'The expected model response, grounded in the source evidence for this training example.',
+
   // Sampling – Generation
   temperature: 'Scales the probability distribution to control randomness. Lower values (e.g. 0.2) make output more focused and deterministic; higher values (e.g. 1.5) increase variety and creativity. Leave empty to use the model default.',
   top_p: 'Nucleus sampling — samples only from the smallest set of tokens whose cumulative probability reaches this value. Lower values (e.g. 0.5) focus on the most likely tokens; 1.0 effectively disables top-p filtering. Works alongside temperature.',
