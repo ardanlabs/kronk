@@ -53,6 +53,15 @@ import type {
   EfficiencyResponse,
   DecisionRequest,
   DecisionResponse,
+  FineTuningBuildRequest,
+  FineTuningBuildResponse,
+  FineTuningDatasetResponse,
+  FineTuningHistoryResponse,
+  FineTuningPreparationProgress,
+  FineTuningPreparationModelsResponse,
+  FineTuningPreviewRequest,
+  FineTuningPreviewResponse,
+  FineTuningRun,
 } from '../types';
 
 export const SESSION_EXPIRED_EVENT = 'kronk:session-expired';
@@ -1277,6 +1286,76 @@ class ApiService {
       body: JSON.stringify({ model, prompt, max_tokens: maxTokens }),
       signal,
     });
+  }
+
+  // ── Fine-tuning app ──
+
+  async uploadFineTuningDataset(file: File, signal?: AbortSignal): Promise<FineTuningDatasetResponse> {
+    const form = new FormData();
+    form.append('file', file, file.name);
+
+    const response = await this.fetch(`${this.baseUrl}/fine-tuning/datasets`, {
+      method: 'POST',
+      body: form,
+      signal,
+    });
+    if (!response.ok) {
+      throw new Error(await this.parseErrorMessage(response));
+    }
+    return response.json();
+  }
+
+  async fineTuningPreparationModels(): Promise<FineTuningPreparationModelsResponse> {
+    return this.request<FineTuningPreparationModelsResponse>('/fine-tuning/prepare/models');
+  }
+
+  async currentFineTuningPreparation(): Promise<FineTuningPreparationProgress> {
+    return this.request<FineTuningPreparationProgress>('/fine-tuning/prepare/current');
+  }
+
+  async stopFineTuningPreparation(): Promise<void> {
+    await this.request('/fine-tuning/prepare/current/stop', { method: 'POST' });
+  }
+
+  async previewFineTuningDataset(request: FineTuningPreviewRequest, signal?: AbortSignal): Promise<FineTuningPreviewResponse> {
+    return this.request<FineTuningPreviewResponse>('/fine-tuning/prepare/preview', {
+      method: 'POST',
+      body: JSON.stringify(request),
+      signal,
+    });
+  }
+
+  async buildFineTuningDataset(request: FineTuningBuildRequest, signal?: AbortSignal): Promise<FineTuningBuildResponse> {
+    return this.request<FineTuningBuildResponse>('/fine-tuning/prepare/build', {
+      method: 'POST',
+      body: JSON.stringify(request),
+      signal,
+    });
+  }
+
+  async startFineTuningRun(datasetID: string, modelID: string): Promise<FineTuningRun> {
+    return this.request<FineTuningRun>('/fine-tuning/runs', {
+      method: 'POST',
+      body: JSON.stringify({ dataset_id: datasetID, model_id: modelID }),
+    });
+  }
+
+  async currentFineTuningRun(): Promise<FineTuningRun> {
+    return this.request<FineTuningRun>('/fine-tuning/runs/current');
+  }
+
+  async fineTuningHistory(): Promise<FineTuningHistoryResponse> {
+    return this.request<FineTuningHistoryResponse>('/fine-tuning/runs');
+  }
+
+  async resumeFineTuningRun(id: string): Promise<FineTuningRun> {
+    return this.request<FineTuningRun>(`/fine-tuning/runs/${encodeURIComponent(id)}/resume`, {
+      method: 'POST',
+    });
+  }
+
+  async stopFineTuningRun(): Promise<void> {
+    await this.request('/fine-tuning/runs/current/stop', { method: 'POST' });
   }
 
 }

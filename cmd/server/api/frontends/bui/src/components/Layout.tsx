@@ -37,6 +37,7 @@ const menuStructure: MenuCategory[] = [
     items: [
       { page: 'chat', label: 'Chat' },
       { page: 'decision', label: 'Decision' },
+      { page: 'fine-tuning', label: 'Fine-tuning' },
       { page: 'vram-calculator', label: 'VRAM Calculator' },
       { page: 'translator', label: 'Translator' },
       { page: 'image-generator', label: 'Image Generator' },

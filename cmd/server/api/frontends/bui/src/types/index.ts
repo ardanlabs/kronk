@@ -1379,3 +1379,114 @@ export interface EfficiencyResponse {
   usage: EfficiencyUsage;
   ran_at: number;
 }
+
+// =============================================================================
+// Fine-tuning
+
+export type FineTuningGoal =
+  | 'question_answer'
+  | 'classification'
+  | 'numeric_prediction'
+  | 'text_generation';
+
+export interface FineTuningDatasetResponse {
+  dataset_id: string;
+  source_name: string;
+}
+
+export interface FineTuningPreparationModelsResponse {
+  models: string[];
+}
+
+export interface FineTuningRecord {
+  prompt: string;
+  target: string;
+  evidence: string;
+  fact_id?: string;
+  independent_prompt?: boolean;
+}
+
+export interface FineTuningVerification {
+  record_number: number;
+  passed: boolean;
+  expected_target: string;
+  reason: string;
+}
+
+export interface FineTuningPreviewRequest {
+  dataset_id: string;
+  goal: FineTuningGoal;
+  model_id: string;
+  record_count: number;
+}
+
+export interface FineTuningPreviewResponse {
+  dataset_id: string;
+  records: FineTuningRecord[];
+  verification: FineTuningVerification[];
+  generation_attempts: number;
+  verification_attempts: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+}
+
+export interface FineTuningBuildRequest {
+  dataset_id: string;
+  goal: FineTuningGoal;
+  model_id: string;
+  reviewed_records: FineTuningRecord[];
+  verified_preview_records: FineTuningRecord[];
+}
+
+export interface FineTuningBuildResponse {
+  dataset_id: string;
+  record_count: number;
+  reviewed_record_count: number;
+  generated_record_count: number;
+  generation_attempts: number;
+  verification_attempts: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  excluded_evidence: number;
+}
+
+export interface FineTuningPreparationProgress {
+  operation: 'extraction' | 'prepared-upload' | 'preview' | 'build';
+  status: 'running' | 'stopping' | 'completed' | 'stopped' | 'failed';
+  stage: string;
+  completed: number;
+  total: number;
+  accepted_records: number;
+  error?: string;
+  started_at: string;
+  updated_at: string;
+}
+
+export interface FineTuningProgress {
+  stage: string;
+  completed: number;
+  total: number;
+  message: string;
+  resumable?: boolean;
+  selected_epoch?: number;
+}
+
+export interface FineTuningRun {
+  id: string;
+  dataset_id: string;
+  model: string;
+  status: string;
+  progress: FineTuningProgress;
+  error?: string;
+  resumable?: boolean;
+  has_adapter: boolean;
+  has_report: boolean;
+  selected_epoch?: number;
+  started_at: string;
+  updated_at: string;
+  finished_at?: string;
+}
+
+export interface FineTuningHistoryResponse {
+  runs: FineTuningRun[];
+}

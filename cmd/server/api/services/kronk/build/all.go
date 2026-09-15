@@ -2,12 +2,16 @@
 package build
 
 import (
+	"maps"
+	"slices"
+
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/audioapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/chatapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/checkapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/decisionapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/downapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/embedapp"
+	"github.com/ardanlabs/kronk/cmd/server/app/domain/fineapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/imageapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/msgsapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/playgroundapp"
@@ -21,18 +25,32 @@ import (
 
 // Routes constructs the all value which provides the implementation of
 // of RouteAdder for specifying what routes to bind to this instance.
-func Routes() all {
-	return all{}
+func Routes(fineConfigs ...fineapp.Config) all {
+	var fineConfig fineapp.Config
+	if len(fineConfigs) > 0 {
+		fineConfig = fineConfigs[0]
+	}
+
+	return all{fineConfig: fineConfig}
 }
 
-type all struct{}
+type all struct {
+	fineConfig fineapp.Config
+}
 
 // Add implements the RouterAdder interface.
-func (all) Add(app *web.App, cfg mux.Config) {
+func (routes all) Add(app *web.App, cfg mux.Config) {
 	checkapp.Routes(app, checkapp.Config{
 		Build: cfg.Build,
 		Log:   cfg.Log,
 	})
+
+	fineConfig := routes.fineConfig
+	fineConfig.AuthClient = cfg.AuthClient
+	fineConfig.Models = cfg.Models
+	fineConfig.ConfiguredModelIDs = slices.Sorted(maps.Keys(cfg.Pool.Kronk.ModelConfig()))
+	fineConfig.AuthorizationMode = cfg.AuthorizationMode
+	fineapp.Routes(app, fineConfig)
 
 	toolapp.Routes(app, toolapp.Config{
 		Log:               cfg.Log,

@@ -57,6 +57,7 @@ import TestingSampling from './components/TestingSampling';
 import TestingConfiguration from './components/TestingConfiguration';
 import Accuracy from './components/Accuracy';
 import Efficiency from './components/Efficiency';
+import FineTuning from './components/FineTuning';
 import { ModelListProvider } from './contexts/ModelListContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { DownloadProvider } from './contexts/DownloadContext';
@@ -76,6 +77,7 @@ export type Page =
   | 'vram-calculator'
   | 'accuracy'
   | 'efficiency'
+  | 'fine-tuning'
   | 'testing-basic'
   | 'testing-sampling'
   | 'testing-configurator'
@@ -135,6 +137,7 @@ export const routeMap: Record<Page, string> = {
   'vram-calculator': '/vram-calculator',
   'accuracy': '/accuracy',
   'efficiency': '/efficiency',
+  'fine-tuning': '/fine-tuning',
   'testing-basic': '/testing/basic',
   'testing-sampling': '/testing/sampling',
   'testing-configurator': '/testing/configurator',
@@ -290,6 +293,7 @@ function App() {
                 <Route path="/vram-calculator" element={<VRAMCalculator />} />
                 <Route path="/accuracy" element={<Accuracy />} />
                 <Route path="/efficiency" element={<Efficiency />} />
+                <Route path="/fine-tuning" element={<FineTuning />} />
                 <Route path="/testing/basic" element={<TestingBasic />} />
                 <Route path="/testing/sampling" element={<TestingSampling />} />
                 <Route path="/testing/configurator" element={<TestingConfiguration />} />

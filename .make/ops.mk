@@ -1,4 +1,17 @@
 # ==============================================================================
+# Running Docling
+
+docling-up:
+	mkdir -p "$$HOME/.moxie/docling"
+	docker compose -f zarf/docker/compose.yaml up -d docling
+
+docling-down:
+	docker compose -f zarf/docker/compose.yaml stop docling
+
+docling-logs:
+	docker compose -f zarf/docker/compose.yaml logs -f docling
+
+# ==============================================================================
 # Running OpenWebUI
 
 owu-up:

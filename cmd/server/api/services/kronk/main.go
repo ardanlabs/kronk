@@ -19,9 +19,12 @@ import (
 	"github.com/ardanlabs/conf/v3"
 	"github.com/ardanlabs/kronk/cmd/server/api/services/kronk/build"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/authapp"
+	"github.com/ardanlabs/kronk/cmd/server/app/domain/fineapp"
+	"github.com/ardanlabs/kronk/cmd/server/app/domain/fineapp/finetune"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/mcpapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/authclient"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/debug"
+	finetunegomlx "github.com/ardanlabs/kronk/cmd/server/app/sdk/gomlx"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/malinaprogress"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/mux"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
@@ -603,7 +606,37 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool, ready func()) e
 	if cfg.Web.Admin.Enabled {
 		options = append(options, mux.WithFileServer(true, static, "static", "/admin/", []string{"admin/api", "v1"}))
 	}
-	webAPI := mux.WebAPI(cfgMux, build.Routes(), options...)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("locating fine-tuning data directory: %w", err)
+	}
+	fineTuner, err := finetune.NewManager(filepath.Join(home, ".moxie", "runs"), finetunegomlx.New())
+	if err != nil {
+		return fmt.Errorf("initializing fine-tuning manager: %w", err)
+	}
+	if _, err := fineTuner.Recover(); err != nil {
+		return fmt.Errorf("recovering fine-tuning runs: %w", err)
+	}
+	documentPreparer, datasetBuilder, err := fineapp.NewPreparation(cfgMux.Pool.Kronk)
+	if err != nil {
+		return fmt.Errorf("initializing fine-tuning preparation: %w", err)
+	}
+	llamaServer := filepath.Join(llamaLibs.LibsPath(), "llama-server")
+	if runtime.GOOS == "windows" {
+		llamaServer += ".exe"
+	}
+	fineConfig := fineapp.Config{
+		DatasetsPath: filepath.Join(home, ".moxie", "datasets"),
+		Preparer:     documentPreparer,
+		Builder:      datasetBuilder,
+		FineTuner:    fineTuner,
+		Runtime: finetune.Runtime{
+			LlamaServer: llamaServer,
+			ContextSize: 512,
+		},
+	}
+
+	webAPI := mux.WebAPI(cfgMux, build.Routes(fineConfig), options...)
 
 	api := http.Server{
 		Addr:         cfg.Web.APIHost,
