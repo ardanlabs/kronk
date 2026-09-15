@@ -15,6 +15,9 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.10
 	github.com/dgraph-io/badger/v4 v4.9.6
 	github.com/golang-jwt/jwt/v5 v5.3.1
+	github.com/gomlx/compute v0.1.9
+	github.com/gomlx/go-xla v0.4.8
+	github.com/gomlx/gomlx v0.28.11
 	github.com/google/go-cmp v0.7.0
 	github.com/hashicorp/go-getter v1.8.10
 	github.com/hashicorp/go-version v1.9.0
@@ -134,6 +137,7 @@ require (
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/pandatix/go-abnf v0.5.5 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/prometheus/common v0.74.0 // indirect
 	github.com/prometheus/procfs v0.23.0 // indirect
@@ -158,6 +162,7 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.47.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.1 // indirect
 	golang.org/x/crypto v0.59.0 // indirect
+	golang.org/x/exp v0.0.0-20261113113407-e3970619a1a4 // indirect
 	golang.org/x/net v0.63.0 // indirect
 	golang.org/x/oauth2 v0.38.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
@@ -166,4 +171,5 @@ require (
 	google.golang.org/genproto v0.0.0-20261123191846-1e707ab9fbc2 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20261123191846-1e707ab9fbc2 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261123191846-1e707ab9fbc2 // indirect
+	k8s.io/klog/v2 v2.140.0 // indirect
 )
