@@ -6,6 +6,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	internalspec "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
+	"github.com/hybridgroup/yzma/exp/speculative"
 )
 
 // SpeculationMode selects the speculative-decoding implementation for a model.
@@ -49,7 +50,7 @@ func resolveSpeculationPlan(ctx context.Context, log applog.Logger, cfg Config) 
 		MTPNDraft:         mtpNDraft(cfg),
 		EmbeddedMTP:       embedded,
 		CompanionMTP:      companion,
-		MTPAvailable:      MTPAvailable(),
+		MTPAvailable:      speculative.Available(),
 	})
 }
 

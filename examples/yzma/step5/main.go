@@ -20,8 +20,8 @@ import (
 	"path/filepath"
 	"unsafe"
 
-	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
+	"github.com/hybridgroup/yzma/exp/speculative"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
 )
@@ -566,8 +566,8 @@ func initYzma() error {
 		return fmt.Errorf("unable to load mtmd library: %w", err)
 	}
 
-	if err := model.InitYzmaWorkarounds(libPath); err != nil {
-		return fmt.Errorf("unable to init yzma workarounds: %w", err)
+	if err := speculative.Load(libPath); err != nil {
+		return fmt.Errorf("unable to load speculative decoding functions: %w", err)
 	}
 
 	llama.Init()

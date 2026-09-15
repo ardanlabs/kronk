@@ -7,11 +7,11 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/backend"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
+	"github.com/hybridgroup/yzma/exp/speculative"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
 )
@@ -160,8 +160,8 @@ func Init(opts ...InitOption) error {
 		}
 	}
 
-	if err := model.InitYzmaWorkarounds(libPath); err != nil {
-		return fmt.Errorf("unable to init yzma workarounds: %w", err)
+	if err := speculative.Load(libPath); err != nil {
+		return fmt.Errorf("unable to load speculative decoding functions: %w", err)
 	}
 
 	initDone = true

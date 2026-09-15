@@ -13,9 +13,8 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/hashicorp/go-getter v1.8.9
 	github.com/hashicorp/go-version v1.9.0
-	github.com/hybridgroup/yzma v1.26.2-0.20260914121620-e8562a08d1d0
+	github.com/hybridgroup/yzma v1.27.1-0.20260915185616-51bc945d7997
 	github.com/icza/mjpeg v0.0.0-20230330134156-38318e5ab8f4
-	github.com/jupiterrider/ffi v0.7.0
 	github.com/maypok86/otter/v2 v2.3.0
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/open-policy-agent/opa v1.20.2
@@ -98,6 +97,7 @@ require (
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/icza/bitio v1.1.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/jupiterrider/ffi v0.7.0 // indirect
 	github.com/klauspost/compress v1.20.0 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.4 // indirect
 	github.com/lestrrat-go/dsig v1.4.0 // indirect
