@@ -12,6 +12,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
+	yzmaspec "github.com/hybridgroup/yzma/exp/speculative"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
 )
@@ -160,8 +161,12 @@ func Init(opts ...InitOption) error {
 		}
 	}
 
+	if err := yzmaspec.Load(libPath); err != nil {
+		return fmt.Errorf("init: unable to load yzma speculative bindings: %w", err)
+	}
+
 	if err := model.InitYzmaWorkarounds(libPath); err != nil {
-		return fmt.Errorf("unable to init yzma workarounds: %w", err)
+		return fmt.Errorf("init: unable to initialize yzma workarounds: %w", err)
 	}
 
 	initDone = true

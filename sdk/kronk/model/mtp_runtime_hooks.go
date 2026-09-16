@@ -8,6 +8,7 @@ import (
 	"unsafe"
 
 	mtpengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/mtp"
+	yzmaspec "github.com/hybridgroup/yzma/exp/speculative"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -72,7 +73,7 @@ func (e *batchEngine) mtpDraftInput(s *slot) (mtpengine.DraftInput, error) {
 			llama.Synchronize(draft.lctx)
 
 			nextToken := llama.SamplerSample(draft.sampler, draft.lctx, -1)
-			nextHidden := GetEmbeddingsPreNormIth(draft.lctx, 0, nEmbd)
+			nextHidden := yzmaspec.GetEmbeddingsNextNIth(draft.lctx, 0, nEmbd)
 			return nextToken, nextHidden, true, nil
 		},
 	}, nil
@@ -132,7 +133,7 @@ func (e *batchEngine) decodeTokensIntoCacheMTP(ctx context.Context, s *slot, tok
 	}, func(i, end int) error {
 
 		mtpSyncStart := time.Now()
-		hiddenRows := GetEmbeddingsPreNorm(e.model.lctx, end-i, e.model.draft.core().mtp.EmbeddingSize())
+		hiddenRows := yzmaspec.GetEmbeddingsNextN(e.model.lctx, end-i, e.model.draft.core().mtp.EmbeddingSize())
 		if hiddenRows == nil {
 			return fmt.Errorf("imc-mtp: target pre-norm rows unavailable at pos %d", startPos+i)
 		}
@@ -199,10 +200,10 @@ func (e *batchEngine) captureVerifyPreNorm(s *slot, count int) error {
 		return fmt.Errorf("verify-prenorm-capture: slot range [%d..%d) out of target batch (size %d)", start, start+count, totalRows)
 	}
 
-	embd := GetEmbeddingsPreNorm(e.model.lctx, totalRows, nEmbd)
+	embd := yzmaspec.GetEmbeddingsNextN(e.model.lctx, totalRows, nEmbd)
 	if embd == nil {
 		s.mtp.VerifyHidden = s.mtp.VerifyHidden[:0]
-		return fmt.Errorf("verify-prenorm-capture: target pre-norm buffer is nil (SetEmbeddingsPreNorm may not be enabled)")
+		return fmt.Errorf("verify-prenorm-capture: target pre-norm buffer is nil (SetEmbeddingsNextN may not be enabled)")
 	}
 
 	need := count * nEmbd

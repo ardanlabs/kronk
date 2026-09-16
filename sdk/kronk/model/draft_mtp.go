@@ -12,6 +12,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	mtpengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/mtp"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
+	yzmaspec "github.com/hybridgroup/yzma/exp/speculative"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -76,7 +77,7 @@ func RecurrentStateCopies(cfg Config, embeddedMTP bool) int64 {
 	}
 
 	if embeddedMTP {
-		if mode != SpeculationClassic && MTPAvailable() {
+		if mode != SpeculationClassic && yzmaspec.Available() {
 			return int64(1 + mtpNDraft(cfg))
 		}
 		return 1
@@ -89,7 +90,7 @@ func RecurrentStateCopies(cfg Config, embeddedMTP bool) int64 {
 		}
 		return int64(1 + nDraft)
 	}
-	if mode != SpeculationClassic && cfg.MTPDrafterFile != "" && MTPAvailable() {
+	if mode != SpeculationClassic && cfg.MTPDrafterFile != "" && yzmaspec.Available() {
 		return int64(1 + mtpNDraft(cfg))
 	}
 
@@ -141,7 +142,7 @@ func mtpNextNLayers(model llama.Model) int {
 // Two pieces of plumbing distinguish MTP from a normal draft context and
 // MUST be done here:
 //
-//  1. SetEmbeddingsPreNorm enables pre-norm hidden-state extraction:
+//  1. speculative.SetEmbeddingsNextN enables pre-norm hidden-state extraction:
 //     - target ctx:  (true, false) — dense, every row available by
 //     raw batch index for the mirror step.
 //     - draft  ctx:  (true, true)  — masked, only logits-flagged rows
@@ -184,15 +185,15 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 
 	llama.MemoryClear(mem, true)
 
-	// Enable pre-norm hidden-state extraction. Order is:
+	// Enable NextN hidden-state extraction. Order is:
 	//   target  → masked=false (dense, all rows accessible by raw batch idx)
 	//   draft   → masked=true  (sparse, only logits-flagged rows)
 	//
 	// This mirrors common_speculative_impl_draft_mtp (common/speculative.cpp).
 	// Must be set BEFORE any decode on either context — the cparams flag
 	// is read at graph build time.
-	SetEmbeddingsPreNorm(targetCtx, true, false)
-	SetEmbeddingsPreNorm(lctx, true, true)
+	yzmaspec.SetEmbeddingsNextN(targetCtx, true, false)
+	yzmaspec.SetEmbeddingsNextN(lctx, true, true)
 
 	// Greedy sampler for the draft (temperature=0 for speed).
 	targetVocab := llama.ModelGetVocab(targetModel)
@@ -331,7 +332,7 @@ func probeSharedKVCompanionMTP(ctx context.Context, log applog.Logger, file stri
 //
 //  1. params.CtxOther = targetCtx — REQUIRED; the assistant graph pulls the
 //     target's token embeddings through ctx_other and shares its memory.
-//  2. params.CtxType = MTP and SetEmbeddingsPreNorm enable pre-norm
+//  2. params.CtxType = MTP and speculative.SetEmbeddingsNextN enable pre-norm
 //     hidden-state extraction (target dense, draft masked), exactly as the
 //     embedded-MTP path.
 //  3. The embd buffer on the AR draft batch is sized to the TARGET's
@@ -422,11 +423,11 @@ func loadDraftModelMTPShared(ctx context.Context, log applog.Logger, cfg Config,
 		return nil, fmt.Errorf("mtp-shared-get-memory: %w", err)
 	}
 
-	// Enable pre-norm hidden-state extraction: target dense (all rows),
+	// Enable NextN hidden-state extraction: target dense (all rows),
 	// draft masked (only logits-flagged rows). Must be set before any
 	// decode on either context.
-	SetEmbeddingsPreNorm(targetCtx, true, false)
-	SetEmbeddingsPreNorm(lctx, true, true)
+	yzmaspec.SetEmbeddingsNextN(targetCtx, true, false)
+	yzmaspec.SetEmbeddingsNextN(lctx, true, true)
 
 	// Greedy sampler (temperature=0) — matches the embedded-MTP hot path;
 	// MTP verification is greedy.
@@ -491,8 +492,8 @@ func selectAndLoadDraft(ctx context.Context, log applog.Logger, cfg Config, targ
 		return d, nil
 
 	case speculationSourceMTPCompanion:
-		if !MTPAvailable() {
-			const reason = "MTPDrafterFile is a gemma4-assistant MTP head but the loaded llama library does not export the pre-norm hidden-state APIs (llama_set_embeddings_nextn / llama_get_embeddings_nextn / _ith). MTP speculative decoding is DISABLED for this model. Update sdk/kronk/model/yzma.go with the symbol names exported by your llama build."
+		if !yzmaspec.Available() {
+			const reason = "MTPDrafterFile is a gemma4-assistant MTP head but the loaded llama library does not export the NextN hidden-state APIs required by Yzma. MTP speculative decoding is DISABLED for this model."
 
 			log(ctx, "draft-model-mtp-shared", "status", "DISABLED", "reason", reason)
 			fmt.Fprintf(os.Stderr, "WARN: MTP DISABLED for this model: %s\n", reason)
@@ -524,7 +525,7 @@ func selectAndLoadDraft(ctx context.Context, log applog.Logger, cfg Config, targ
 	}
 
 	// The target GGUF declares MTP (nextn_predict_layers > 0) but the
-	// loaded llama library does not export the pre-norm hidden-state
+	// loaded llama library does not export the NextN hidden-state
 	// APIs MTP needs. Without those, the MTP head would predict blind.
 	// Kronk continues to run (without speculation) rather than crashing
 	// mid-request, but this is almost always wrong for the user — the
@@ -532,12 +533,8 @@ func selectAndLoadDraft(ctx context.Context, log applog.Logger, cfg Config, targ
 	// both the structured logger and stderr so it is visible even when
 	// the host has wired a discard logger (e.g. test harnesses).
 	//
-	// The most common cause is a llama.cpp upstream rename of the
-	// pre-norm symbols (e.g. b9222 "pre_norm" → b9496+ "nextn"). When
-	// that happens the fix is to add the new symbol names to
-	// InitYzmaWorkarounds in sdk/kronk/model/yzma.go.
-	if !MTPAvailable() {
-		const reason = "target GGUF declares MTP (nextn_predict_layers>0) but the loaded llama library does not export the pre-norm hidden-state APIs (llama_set_embeddings_nextn / llama_get_embeddings_nextn / _ith, formerly llama_*_pre_norm). MTP speculative decoding is DISABLED for this model. Update sdk/kronk/model/yzma.go with the symbol names exported by your llama build, or downgrade/upgrade libllama to a version that exports a known name set."
+	if !yzmaspec.Available() {
+		const reason = "target GGUF declares MTP (nextn_predict_layers>0) but the loaded llama library does not export the NextN hidden-state APIs required by Yzma. MTP speculative decoding is DISABLED for this model. Install the llama.cpp version pinned for this Kronk release."
 
 		log(ctx, "draft-model-mtp", "status", "DISABLED",
 			"nextn-layers", nLayers,

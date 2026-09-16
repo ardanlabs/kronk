@@ -259,7 +259,7 @@ kronk libs --list-installs
 
 # Install the supported version using its exact release manifest pin.
 kronk libs --local \
-  --version=b10955@sha256:7f6913891c2dbe82fdd1112bb585414fbdd5d1e3aeeeb9b314429d31bde70cbb
+  --version=b11000@sha256:561aff68f1e1000bada2f6dff811bcd4e9c9a397c50a7eb389c9c0e6da3c5cda
 
 # Explicitly select CPU instead of an available GPU.
 KRONK_PROCESSOR=cpu kronk libs --local

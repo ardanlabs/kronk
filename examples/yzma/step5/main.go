@@ -20,8 +20,8 @@ import (
 	"path/filepath"
 	"unsafe"
 
-	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
+	yzmaspec "github.com/hybridgroup/yzma/exp/speculative"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
 )
@@ -338,11 +338,9 @@ func processChunksManually(mtmdCtx mtmd.Context, lctx llama.Context, mdl llama.M
 			switch useMRoPE {
 			case true:
 				imageTokens := mtmd.InputChunkGetTokensImage(chunk)
-				nx := int32(mtmd.ImageTokensGetNX(imageTokens))
-				ny := int32(mtmd.ImageTokensGetNY(imageTokens))
-				fmt.Printf("    M-RoPE 2D: nx=%d, ny=%d\n", nx, ny)
+				fmt.Println("    M-RoPE decoder positions")
 
-				if err := decodeEmbeddingsMRoPE(lctx, embd, nEmbd, int32(nTokens), nx, ny, &nPast, 0, useNonCausal); err != nil {
+				if err := decodeEmbeddingsMRoPE(lctx, embd, nEmbd, int32(nTokens), imageTokens, &nPast, 0, useNonCausal); err != nil {
 					return 0, fmt.Errorf("decode image embeddings (M-RoPE) failed: %w", err)
 				}
 
@@ -471,17 +469,14 @@ func decodeEmbeddingsNormal(lctx llama.Context, embd []float32, nEmbd, nTokens i
 	return nil
 }
 
-// decodeEmbeddingsMRoPE decodes image embeddings with M-RoPE 2D positioning.
+// decodeEmbeddingsMRoPE decodes image embeddings with M-RoPE positioning.
 // For M-RoPE, positions are laid out as 4 contiguous arrays:
 //
 //	[dim0: n_tokens] [dim1: n_tokens] [dim2: n_tokens] [dim3: n_tokens]
 //
-// For an image grid of nx columns × ny rows:
-//   - dim0 (linear):  pos_0 + i (unique per token for KV cache placement)
-//   - dim1 (row/y):   pos_0 + y
-//   - dim2 (col/x):   pos_0 + x
-//   - dim3 (unused):  0
-func decodeEmbeddingsMRoPE(lctx llama.Context, embd []float32, nEmbd, nTokens int32, nx, ny int32, nPast *llama.Pos, seqID llama.SeqId, useNonCausal bool) error {
+// The projector supplies each token's decoder position. The C struct field
+// order is T, X, Y, Z, while llama batches require T, Y, X, Z planes.
+func decodeEmbeddingsMRoPE(lctx llama.Context, embd []float32, nEmbd, nTokens int32, imageTokens mtmd.ImageTokens, nPast *llama.Pos, seqID llama.SeqId, useNonCausal bool) error {
 	// For M-RoPE, we need 4x the position slots (4D positions)
 	nPosPerEmbd := int32(4)
 
@@ -497,24 +492,12 @@ func decodeEmbeddingsMRoPE(lctx llama.Context, embd []float32, nEmbd, nTokens in
 	// and replace the batch's pos pointer
 	posData := make([]llama.Pos, nTokens*nPosPerEmbd)
 
-	// Set up 2D M-RoPE positions for image grid
-	// Layout: positions for dim0, then dim1, then dim2, then dim3
-	pos0 := *nPast
-	for y := range ny {
-		for x := range nx {
-			i := y*nx + x
-			if i >= nTokens {
-				break
-			}
-			// dim 0: linear position for unique KV cache placement
-			posData[i] = pos0 + llama.Pos(i)
-			// dim 1: y position (row)
-			posData[i+nTokens] = pos0 + llama.Pos(y)
-			// dim 2: x position (column)
-			posData[i+nTokens*2] = pos0 + llama.Pos(x)
-			// dim 3: unused (always 0)
-			posData[i+nTokens*3] = 0
-		}
+	for i := range nTokens {
+		pos := mtmd.ImageTokensGetDecoderPos(imageTokens, *nPast, uint64(i))
+		posData[i] = llama.Pos(pos.T)
+		posData[i+nTokens] = llama.Pos(pos.Y)
+		posData[i+nTokens*2] = llama.Pos(pos.X)
+		posData[i+nTokens*3] = llama.Pos(pos.Z)
 	}
 	batch.Pos = &posData[0]
 
@@ -566,8 +549,8 @@ func initYzma() error {
 		return fmt.Errorf("unable to load mtmd library: %w", err)
 	}
 
-	if err := model.InitYzmaWorkarounds(libPath); err != nil {
-		return fmt.Errorf("unable to init yzma workarounds: %w", err)
+	if err := yzmaspec.Load(libPath); err != nil {
+		return fmt.Errorf("unable to load yzma speculative bindings: %w", err)
 	}
 
 	llama.Init()

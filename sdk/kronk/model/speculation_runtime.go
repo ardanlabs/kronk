@@ -6,6 +6,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
 	classicengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/classic"
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/mtp"
+	yzmaspec "github.com/hybridgroup/yzma/exp/speculative"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -137,7 +138,7 @@ func (e *batchEngine) MTPSyncInput(slotID int, effectiveCount int) (mtp.SyncInpu
 		hiddenRows = s.mtp.VerifyHidden[:count*nEmbd]
 	} else {
 		totalRows := int(e.batch.NTokens)
-		hidden := GetEmbeddingsPreNorm(e.model.lctx, totalRows, nEmbd)
+		hidden := yzmaspec.GetEmbeddingsNextN(e.model.lctx, totalRows, nEmbd)
 		if hidden == nil || start < 0 || start+count > totalRows {
 			return mtp.SyncInput{}, fmt.Errorf("target pre-norm rows unavailable for range [%d..%d)", start, start+count)
 		}
