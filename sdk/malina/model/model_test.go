@@ -8,6 +8,7 @@ import (
 	"image/color"
 	"image/png"
 	"math"
+	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -107,6 +108,8 @@ func TestGenerateParamsValidate(t *testing.T) {
 func TestWorkflowConfigOptions(t *testing.T) {
 	cfg, err := NewConfig(
 		WithModelPath("model"),
+		WithT5XXLPath("t5xxl"),
+		WithAudioEncoderPath("audio-encoder"),
 		WithControlNetPath("controlnet"),
 		WithMotionModulePath("motion"),
 		WithADetailerPath("adetailer"),
@@ -115,8 +118,8 @@ func TestWorkflowConfigOptions(t *testing.T) {
 		t.Fatalf("NewConfig() error = %v", err)
 	}
 
-	if cfg.ControlNetPath != "controlnet" || cfg.MotionModulePath != "motion" || cfg.ADetailerPath != "adetailer" {
-		t.Errorf("workflow paths: got %q/%q/%q, want controlnet/motion/adetailer", cfg.ControlNetPath, cfg.MotionModulePath, cfg.ADetailerPath)
+	if cfg.T5XXLPath != "t5xxl" || cfg.AudioEncoderPath != "audio-encoder" || cfg.ControlNetPath != "controlnet" || cfg.MotionModulePath != "motion" || cfg.ADetailerPath != "adetailer" {
+		t.Errorf("workflow paths: got %+v, want configured component paths", cfg)
 	}
 
 	mdl := Model{config: cfg, version: "Stable Diffusion 1.x"}
@@ -213,7 +216,7 @@ func TestDetailParams(t *testing.T) {
 func TestVideoParams(t *testing.T) {
 	got := NewVideoParams()
 	want := VideoParams{Width: 128, Height: 128, Steps: 4, Seed: -1, Frames: 4, FPS: 1}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("NewVideoParams(): got %+v, want %+v", got, want)
 	}
 
@@ -221,6 +224,13 @@ func TestVideoParams(t *testing.T) {
 	valid.Prompt = "walking cat"
 	if err := valid.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
+	}
+
+	s2v := valid
+	s2v.InitImage = image.NewRGBA(image.Rect(0, 0, 64, 64))
+	s2v.RefAudios = []Audio{{SampleRate: 16_000, Channels: 1, Data: []float32{0}}}
+	if err := s2v.Validate(); err != nil {
+		t.Fatalf("Validate() S2V error = %v", err)
 	}
 
 	tests := []struct {
@@ -232,6 +242,19 @@ func TestVideoParams(t *testing.T) {
 		{name: "zero FPS", mutate: func(p *VideoParams) { p.FPS = 0 }},
 		{name: "too much FPS", mutate: func(p *VideoParams) { p.FPS = 1_001 }},
 		{name: "missing prompt", mutate: func(p *VideoParams) { p.Prompt = "" }},
+		{name: "audio without image", mutate: func(p *VideoParams) { p.RefAudios = []Audio{{SampleRate: 16_000, Channels: 1, Data: []float32{0}}} }},
+		{name: "multiple audio tracks", mutate: func(p *VideoParams) {
+			p.InitImage = image.NewRGBA(image.Rect(0, 0, 64, 64))
+			p.RefAudios = []Audio{{SampleRate: 16_000, Channels: 1, Data: []float32{0}}, {SampleRate: 16_000, Channels: 1, Data: []float32{0}}}
+		}},
+		{name: "zero audio sample rate", mutate: func(p *VideoParams) {
+			p.InitImage = image.NewRGBA(image.Rect(0, 0, 64, 64))
+			p.RefAudios = []Audio{{Channels: 1, Data: []float32{0}}}
+		}},
+		{name: "partial audio frame", mutate: func(p *VideoParams) {
+			p.InitImage = image.NewRGBA(image.Rect(0, 0, 64, 64))
+			p.RefAudios = []Audio{{SampleRate: 16_000, Channels: 2, Data: []float32{0}}}
+		}},
 	}
 
 	for _, tt := range tests {

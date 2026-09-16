@@ -14,7 +14,8 @@
   - [19.6.1 ControlNet](#1961-controlnet)
   - [19.6.2 ADetailer](#1962-adetailer)
   - [19.6.3 AnimateDiff](#1963-animatediff)
-  - [19.6.4 Upscaling](#1964-upscaling)
+  - [19.6.4 Wan2.2 S2V](#1964-wan22-s2v)
+  - [19.6.5 Upscaling](#1965-upscaling)
 - [19.7 Logging, Progress, and Diagnostics](#197-logging-progress-and-diagnostics)
 - [19.8 Motion-JPEG Encoding](#198-motion-jpeg-encoding)
 - [19.9 Examples](#199-examples)
@@ -471,7 +472,36 @@ if err == nil {
 necessarily the requested `params.FPS`. Always use the returned value when
 encoding the frames because some video models require a fixed frame rate.
 
-#### 19.6.4 Upscaling
+#### 19.6.4 Wan2.2 S2V
+
+Wan2.2 S2V animates a source image from a driving WAV speech track. It requires
+four model components that are not in Kronk's curated catalog: the Wan2.2 S2V
+diffusion model, Wan 2.1 VAE, UMT5-XXL text encoder, and wav2vec2 audio encoder.
+Download the paths listed in stable-diffusion.cpp's
+[`docs/wan.md`](https://github.com/leejet/stable-diffusion.cpp/blob/master/docs/wan.md),
+then run:
+
+```shell
+make example-malina-s2v ARGS='\
+  -diffusion /path/to/wan2.2-s2v.safetensors \
+  -vae /path/to/wan_2.1_vae.safetensors \
+  -t5xxl /path/to/umt5-xxl.safetensors \
+  -audio-encoder /path/to/wav2vec2_large_english_fp16.safetensors \
+  -image /path/to/portrait.png \
+  -audio /path/to/speech.wav'
+```
+
+The example resizes the source image to the requested generation dimensions,
+decodes PCM or floating-point WAV audio, and passes both through
+`VideoParams.InitImage` and `VideoParams.RefAudios`. Its defaults follow the
+upstream S2V example: 832×480, 81 frames, 16 FPS, and 20 steps. S2V enforces
+16 FPS, so encoding uses the effective `GeneratedVideo.FPS` value returned by
+stable-diffusion.cpp.
+
+`model.SaveAVI` does not mux audio. The example writes a Motion-JPEG AVI and a
+PCM WAV sidecar, then prints an `ffmpeg` command that combines them into an MP4.
+
+#### 19.6.5 Upscaling
 
 Upscalers use a standalone handle because their bundles do not contain a
 diffusion model:
@@ -558,8 +588,10 @@ frame sequence; it is not a streaming video-generation API.
 
 ### 19.9 Examples
 
-The examples install their own compatible libraries and model bundles using
-default Kronk paths. They do not require path environment variables.
+The examples install their own compatible libraries. Examples backed by the
+curated catalog also install their model bundles using default Kronk paths.
+Wan2.2 S2V accepts explicit component paths because the workflow is not in the
+curated catalog.
 
 | Command | Purpose |
 | ------- | ------- |
@@ -568,6 +600,7 @@ default Kronk paths. They do not require path environment variables.
 | `make example-malina-controlnet` | Generate an image using Canny edge conditioning. |
 | `make example-malina-adetailer` | Detect and refine faces in a portrait. |
 | `make example-malina-animatediff` | Generate AnimateDiff frames and write an AVI. |
+| `make example-malina-s2v ARGS='...'` | Animate a source image from WAV speech with Wan2.2 S2V. |
 | `make example-malina-upscale` | Enlarge a PNG or JPEG with Real-ESRGAN. |
 | `make example-malina-sd-encode` | Encode a directory of PNG/JPEG frames as Motion-JPEG AVI. |
 | `make example-malina-system` | Install libraries and print native system diagnostics. |
@@ -584,8 +617,8 @@ Later runs reuse complete installations.
 - The curated catalog is intentionally small. The high-level SDK guarantees
   its listed component roles; arbitrary user-created bundle layouts are not a
   supported catalog contract.
-- Audio-conditioned video pipelines such as Wan2.2 S2V are not currently
-  exposed by Kronk's high-level Malina API or curated model catalog.
+- Wan2.2 S2V is available through explicit SDK model paths, but it is not in
+  Kronk's curated model catalog or model-server API.
 - Native callbacks and backend initialization are process-wide. Model-context
   construction and destruction are serialized, while one handle may own
   multiple contexts and generate concurrently across them. Each concurrency

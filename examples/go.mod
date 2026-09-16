@@ -5,6 +5,7 @@ go 1.27.0
 replace github.com/ardanlabs/kronk => ../
 
 require (
+	github.com/ardanlabs/bucky v1.1.3
 	github.com/ardanlabs/kronk v1.32.6
 	github.com/duckdb/duckdb-go/v2 v2.10505.0
 	github.com/gen2brain/malgo v0.11.26
@@ -25,7 +26,6 @@ require (
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.62.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.62.0 // indirect
 	github.com/apache/arrow-go/v18 v18.8.0 // indirect
-	github.com/ardanlabs/bucky v1.1.3 // indirect
 	github.com/ardanlabs/jinja v1.6.0 // indirect
 	github.com/ardanlabs/malina v1.1.2 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.47.0 // indirect

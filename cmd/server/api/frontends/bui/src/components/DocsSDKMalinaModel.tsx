@@ -119,6 +119,7 @@ export default function DocsSDKMalinaModel() {
 	EmbeddingsConnectorsPath    string
 	VAEPath                     string
 	AudioVAEPath                string
+	AudioEncoderPath            string
 	TAESDPath                   string
 	ControlNetPath              string
 	MotionModulePath            string
@@ -269,9 +270,11 @@ export default function DocsSDKMalinaModel() {
 	Seed           int64
 	Frames         int
 	FPS            int
+	InitImage      image.Image
+	RefAudios      []Audio
 }`}</code>
               </pre>
-              <p className="doc-description">VideoParams controls one AnimateDiff generation.</p>
+              <p className="doc-description">VideoParams controls one video generation.</p>
             </div>
           </div>
 
@@ -323,7 +326,7 @@ export default function DocsSDKMalinaModel() {
               <pre className="code-block">
                 <code>func (m *Model) GenerateVideo(ctx context.Context, params VideoParams) (GeneratedVideo, error)</code>
               </pre>
-              <p className="doc-description">GenerateVideo runs synchronous AnimateDiff generation.</p>
+              <p className="doc-description">GenerateVideo runs synchronous video generation.</p>
             </div>
 
             <div className="doc-section" id="method-model-info">

@@ -5083,7 +5083,18 @@ if err == nil {
     err = model.SaveAVI("animatediff.avi", video.Frames, video.FPS, 90)
 }`}</code></pre>
           <p><code>video.FPS</code> is the effective frame rate reported by stable-diffusion.cpp, not necessarily the requested <code>params.FPS</code>. Always use the returned value when encoding the frames because some video models require a fixed frame rate.</p>
-          <h4 id="1964-upscaling">19.6.4 Upscaling</h4>
+          <h4 id="1964-wan22-s2v">19.6.4 Wan2.2 S2V</h4>
+          <p>Wan2.2 S2V animates a source image from a driving WAV speech track. It requires four model components that are not in Kronk's curated catalog: the Wan2.2 S2V diffusion model, Wan 2.1 VAE, UMT5-XXL text encoder, and wav2vec2 audio encoder. Download the paths listed in stable-diffusion.cpp's <a href="https://github.com/leejet/stable-diffusion.cpp/blob/master/docs/wan.md"><code>docs/wan.md</code></a>, then run:</p>
+          <pre className="code-block"><code className="language-shell">{`make example-malina-s2v ARGS='\\
+  -diffusion /path/to/wan2.2-s2v.safetensors \\
+  -vae /path/to/wan_2.1_vae.safetensors \\
+  -t5xxl /path/to/umt5-xxl.safetensors \\
+  -audio-encoder /path/to/wav2vec2_large_english_fp16.safetensors \\
+  -image /path/to/portrait.png \\
+  -audio /path/to/speech.wav'`}</code></pre>
+          <p>The example resizes the source image to the requested generation dimensions, decodes PCM or floating-point WAV audio, and passes both through <code>VideoParams.InitImage</code> and <code>VideoParams.RefAudios</code>. Its defaults follow the upstream S2V example: 832×480, 81 frames, 16 FPS, and 20 steps. S2V enforces 16 FPS, so encoding uses the effective <code>GeneratedVideo.FPS</code> value returned by stable-diffusion.cpp.</p>
+          <p><code>model.SaveAVI</code> does not mux audio. The example writes a Motion-JPEG AVI and a PCM WAV sidecar, then prints an <code>ffmpeg</code> command that combines them into an MP4.</p>
+          <h4 id="1965-upscaling">19.6.5 Upscaling</h4>
           <p>Upscalers use a standalone handle because their bundles do not contain a diffusion model:</p>
           <pre className="code-block"><code className="language-go">{`upscaler, err := malina.NewUpscaler(ctx, malina.UpscalerConfig{
     ModelPath: manifest.Files[string(models.RoleUpscaler)],
@@ -5129,7 +5140,7 @@ fmt.Println(info.Description)`}</code></pre>
 }`}</code></pre>
           <p>The frame rate must be positive, JPEG quality must be from 1 through 100, and all frames must have the same dimensions. This helper encodes an in-memory frame sequence; it is not a streaming video-generation API.</p>
           <h3 id="199-examples">19.9 Examples</h3>
-          <p>The examples install their own compatible libraries and model bundles using default Kronk paths. They do not require path environment variables.</p>
+          <p>The examples install their own compatible libraries. Examples backed by the curated catalog also install their model bundles using default Kronk paths. Wan2.2 S2V accepts explicit component paths because the workflow is not in the curated catalog.</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -5159,6 +5170,10 @@ fmt.Println(info.Description)`}</code></pre>
                 <td>Generate AnimateDiff frames and write an AVI.</td>
               </tr>
               <tr>
+                <td><code>make example-malina-s2v ARGS='...'</code></td>
+                <td>Animate a source image from WAV speech with Wan2.2 S2V.</td>
+              </tr>
+              <tr>
                 <td><code>make example-malina-upscale</code></td>
                 <td>Enlarge a PNG or JPEG with Real-ESRGAN.</td>
               </tr>
@@ -5178,7 +5193,7 @@ fmt.Println(info.Description)`}</code></pre>
             <li>The public API is experimental and may change between Kronk releases.</li>
             <li>The model server exposes basic text-to-image generation. Advanced Malina operations remain available only through the Go SDK.</li>
             <li>The curated catalog is intentionally small. The high-level SDK guarantees its listed component roles; arbitrary user-created bundle layouts are not a supported catalog contract.</li>
-            <li>Audio-conditioned video pipelines such as Wan2.2 S2V are not currently exposed by Kronk's high-level Malina API or curated model catalog.</li>
+            <li>Wan2.2 S2V is available through explicit SDK model paths, but it is not in Kronk's curated model catalog or model-server API.</li>
             <li>Native callbacks and backend initialization are process-wide. Model-context construction and destruction are serialized, while one handle may own multiple contexts and generate concurrently across them. Each concurrency slot loads another copy of the model and increases RAM or VRAM use.</li>
             <li>Context cancellation interrupts active native generation, waits for the native call to return, and resets the same context before reuse. It never frees a context while native code is active.</li>
           </ul>

@@ -56,6 +56,7 @@ type Config struct {
 	EmbeddingsConnectorsPath    string
 	VAEPath                     string
 	AudioVAEPath                string
+	AudioEncoderPath            string
 	TAESDPath                   string
 	ControlNetPath              string
 	MotionModulePath            string
@@ -98,6 +99,20 @@ func WithDiffusionModelPath(path string) Option {
 func WithVAEPath(path string) Option {
 	return func(cfg *Config) {
 		cfg.VAEPath = path
+	}
+}
+
+// WithT5XXLPath sets a component T5-XXL text encoder path.
+func WithT5XXLPath(path string) Option {
+	return func(cfg *Config) {
+		cfg.T5XXLPath = path
+	}
+}
+
+// WithAudioEncoderPath sets an audio encoder path for audio-conditioned video.
+func WithAudioEncoderPath(path string) Option {
+	return func(cfg *Config) {
+		cfg.AudioEncoderPath = path
 	}
 }
 
@@ -351,7 +366,7 @@ func (p DetailParams) Validate() error {
 	return request.Validate()
 }
 
-// VideoParams controls one AnimateDiff generation.
+// VideoParams controls one video generation.
 type VideoParams struct {
 	Prompt         string
 	NegativePrompt string
@@ -361,6 +376,8 @@ type VideoParams struct {
 	Seed           int64
 	Frames         int
 	FPS            int
+	InitImage      image.Image
+	RefAudios      []Audio
 }
 
 // NewVideoParams returns conservative AnimateDiff generation defaults.
@@ -388,6 +405,26 @@ func (p VideoParams) Validate() error {
 
 	if p.FPS < 1 || p.FPS > 1_000 {
 		return errors.Join(ErrInvalidRequest, errors.New("video FPS must be between 1 and 1000"))
+	}
+
+	if p.InitImage != nil {
+		if err := validateInitImage(p.InitImage); err != nil {
+			return err
+		}
+	}
+
+	if len(p.RefAudios) > 1 {
+		return errors.Join(ErrInvalidRequest, errors.New("video generation accepts at most one reference audio track"))
+	}
+
+	if len(p.RefAudios) > 0 && p.InitImage == nil {
+		return errors.Join(ErrInvalidRequest, errors.New("reference audio requires an init image"))
+	}
+
+	for _, audio := range p.RefAudios {
+		if audio.SampleRate == 0 || audio.Channels == 0 || len(audio.Data) == 0 || len(audio.Data)%int(audio.Channels) != 0 {
+			return errors.Join(ErrInvalidRequest, errors.New("reference audio requires a sample rate, channels, and complete sample frames"))
+		}
 	}
 
 	return nil
@@ -517,6 +554,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		params.EmbeddingsConnectorsPath = cfg.EmbeddingsConnectorsPath
 		params.VAEPath = cfg.VAEPath
 		params.AudioVAEPath = cfg.AudioVAEPath
+		params.AudioEncoderPath = cfg.AudioEncoderPath
 		params.TAESDPath = cfg.TAESDPath
 		params.ControlNetPath = cfg.ControlNetPath
 		params.MotionModulePath = cfg.MotionModulePath
@@ -536,17 +574,23 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 			return fmt.Errorf("creating context: %w", err)
 		}
 
-		supported, err := sd.ContextSupportsImageGeneration(handle)
+		videoModel := cfg.MotionModulePath != "" || cfg.AudioEncoderPath != ""
+		var supported bool
+		if videoModel {
+			supported, err = sd.ContextSupportsVideoGeneration(handle)
+		} else {
+			supported, err = sd.ContextSupportsImageGeneration(handle)
+		}
+
 		if err != nil {
 			sd.FreeContext(handle)
 			handle = 0
-			return fmt.Errorf("checking image generation support: %w", err)
+			return fmt.Errorf("checking generation support: %w", err)
 		}
-
 		if !supported {
 			sd.FreeContext(handle)
 			handle = 0
-			return errors.New("loaded context does not support image generation")
+			return errors.New("loaded context does not support configured generation mode")
 		}
 
 		modelVersion, err = sd.ModelVersionName(handle)
@@ -783,7 +827,7 @@ func (m *Model) Detail(ctx context.Context, params DetailParams) (GeneratedImage
 	return encodeImage(images[len(images)-1], params.Seed)
 }
 
-// GenerateVideo runs synchronous AnimateDiff generation.
+// GenerateVideo runs synchronous video generation.
 func (m *Model) GenerateVideo(ctx context.Context, params VideoParams) (GeneratedVideo, error) {
 	if err := params.Validate(); err != nil {
 		return GeneratedVideo{}, err
@@ -796,8 +840,8 @@ func (m *Model) GenerateVideo(ctx context.Context, params VideoParams) (Generate
 		return GeneratedVideo{}, errors.New("generate-video: model is unloaded")
 	}
 
-	if m.config.MotionModulePath == "" {
-		return GeneratedVideo{}, errors.Join(ErrInvalidRequest, errors.New("video generation requires a motion module"))
+	if m.config.MotionModulePath == "" && m.config.AudioEncoderPath == "" {
+		return GeneratedVideo{}, errors.Join(ErrInvalidRequest, errors.New("video generation requires a motion module or audio encoder"))
 	}
 
 	p, err := sd.VideoGenParamsInit()
@@ -813,6 +857,23 @@ func (m *Model) GenerateVideo(ctx context.Context, params VideoParams) (Generate
 	p.Seed = params.Seed
 	p.VideoFrames = int32(params.Frames)
 	p.FPS = int32(params.FPS)
+
+	if params.InitImage != nil {
+		p.InitImage, err = imageToRGB(params.InitImage)
+		if err != nil {
+			return GeneratedVideo{}, err
+		}
+	}
+
+	p.RefAudios = make([]sd.Audio, len(params.RefAudios))
+
+	for i, audio := range params.RefAudios {
+		p.RefAudios[i] = sd.Audio{
+			SampleRate: audio.SampleRate,
+			Channels:   audio.Channels,
+			Data:       append([]float32(nil), audio.Data...),
+		}
+	}
 
 	var raw []*sd.SDImage
 	var audio *sd.Audio

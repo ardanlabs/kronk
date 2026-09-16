@@ -200,6 +200,7 @@ const menuStructure: MenuCategory[] = [
             { page: 'docs-sdk-examples', label: 'Malina-Animatediff', hash: 'example-malina-animatediff' },
             { page: 'docs-sdk-examples', label: 'Malina-Controlnet', hash: 'example-malina-controlnet' },
             { page: 'docs-sdk-examples', label: 'Malina-Img2img', hash: 'example-malina-img2img' },
+            { page: 'docs-sdk-examples', label: 'Malina-S2v', hash: 'example-malina-s2v' },
             { page: 'docs-sdk-examples', label: 'Malina-Sd-Encode', hash: 'example-malina-sd-encode' },
             { page: 'docs-sdk-examples', label: 'Malina-System', hash: 'example-malina-system' },
             { page: 'docs-sdk-examples', label: 'Malina-Upscale', hash: 'example-malina-upscale' },

@@ -55,6 +55,9 @@ example-malina-adetailer:
 example-malina-animatediff:
 	cd examples && go run ./malina-animatediff/main.go
 
+example-malina-s2v:
+	cd examples && go run ./malina-s2v/main.go $(ARGS)
+
 example-pool:
 	cd examples && go run ./pool/main.go
 
