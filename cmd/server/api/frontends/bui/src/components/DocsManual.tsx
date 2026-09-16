@@ -4834,6 +4834,7 @@ if _, err := libs.Download(ctx, malina.FmtLogger); err != nil {
     libs.WithAllowUpgrade(true),
 )`}</code></pre>
           <p>An upgraded upstream library may not be ABI-compatible with the Malina and Kronk versions in use. Use this option for testing, not as a compatibility guarantee. Library installation is staged and activated atomically so a failed download does not replace a working installation.</p>
+          <p>Malina v1.1.2 requires stable-diffusion.cpp <code>master-869-07a85c7</code>. Its native context layout and video-generation call are not ABI-compatible with the <code>master-859</code> bundle used by Malina v1.1.1. <code>Download</code> replaces an older Kronk-managed installation with the pinned bundle. A user-managed library directory is read-only to Kronk and must be rebuilt or replaced by its owner.</p>
           <h3 id="193-manage-model-bundles">19.3 Manage Model Bundles</h3>
           <p>Kronk provides a small, curated catalog rather than accepting arbitrary model repository layouts. This keeps component roles and known-compatible files in the high-level SDK instead of requiring applications to use Malina's raw download API.</p>
           <p>The current bundles are:</p>
@@ -5081,6 +5082,7 @@ video, err := mln.GenerateVideo(ctx, params)
 if err == nil {
     err = model.SaveAVI("animatediff.avi", video.Frames, video.FPS, 90)
 }`}</code></pre>
+          <p><code>video.FPS</code> is the effective frame rate reported by stable-diffusion.cpp, not necessarily the requested <code>params.FPS</code>. Always use the returned value when encoding the frames because some video models require a fixed frame rate.</p>
           <h4 id="1964-upscaling">19.6.4 Upscaling</h4>
           <p>Upscalers use a standalone handle because their bundles do not contain a diffusion model:</p>
           <pre className="code-block"><code className="language-go">{`upscaler, err := malina.NewUpscaler(ctx, malina.UpscalerConfig{
@@ -5176,6 +5178,7 @@ fmt.Println(info.Description)`}</code></pre>
             <li>The public API is experimental and may change between Kronk releases.</li>
             <li>The model server exposes basic text-to-image generation. Advanced Malina operations remain available only through the Go SDK.</li>
             <li>The curated catalog is intentionally small. The high-level SDK guarantees its listed component roles; arbitrary user-created bundle layouts are not a supported catalog contract.</li>
+            <li>Audio-conditioned video pipelines such as Wan2.2 S2V are not currently exposed by Kronk's high-level Malina API or curated model catalog.</li>
             <li>Native callbacks and backend initialization are process-wide. Model-context construction and destruction are serialized, while one handle may own multiple contexts and generate concurrently across them. Each concurrency slot loads another copy of the model and increases RAM or VRAM use.</li>
             <li>Context cancellation interrupts active native generation, waits for the native call to return, and resets the same context before reuse. It never frees a context while native code is active.</li>
           </ul>

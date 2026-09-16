@@ -196,7 +196,7 @@ export default function DocsSDKMalinaModel() {
 	Seed   int64
 }`}</code>
               </pre>
-              <p className="doc-description">GeneratedVideo contains owned frames and optional generated audio.</p>
+              <p className="doc-description">GeneratedVideo contains owned frames, optional generated audio, and the effective frame rate reported by stable-diffusion.cpp.</p>
             </div>
 
             <div className="doc-section" id="type-model">

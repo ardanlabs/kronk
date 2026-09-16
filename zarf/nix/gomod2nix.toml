@@ -47,8 +47,8 @@ schema = 3
     version = "v1.6.0"
     hash = "sha256-xK0llBUpxqQXLdFCs/WRBSJSLjYQbqDj1cvOWCioxdc="
   [mod."github.com/ardanlabs/malina"]
-    version = "v1.1.1"
-    hash = "sha256-qzh7+KRy9lSGyadACgIm6no38ZdVG3qBGm/Hv1MPamg="
+    version = "v1.1.2"
+    hash = "sha256-Icjz8vZMAHm92IhAlfINipBNWJQ3p8zJR0qsWvxBbjc="
   [mod."github.com/arl/statsviz"]
     version = "v0.8.2"
     hash = "sha256-8KmSQolXTl2aBo9bY8/dmby82ItHVHiYLRu/UNGRF8Q="
@@ -59,11 +59,11 @@ schema = 3
     version = "v1.7.20"
     hash = "sha256-ICB2yD83Gl628LRkg3HhYlDtsL4xgGhOmphZ5D0bJXI="
   [mod."github.com/aws/aws-sdk-go-v2/config"]
-    version = "v1.33.4"
-    hash = "sha256-FMa24a9qS/hO05LxvA3eSH0tCfkomWUsO64md58aFZI="
+    version = "v1.33.5"
+    hash = "sha256-YqWh/i+/QUKRyLzsgoy+5JyMmSRlfhJVIONBv1gJjms="
   [mod."github.com/aws/aws-sdk-go-v2/credentials"]
-    version = "v1.20.4"
-    hash = "sha256-kV/FP7H9Eluh/PzRddD2tba4p/R3mEzKW/l6c3a7IS0="
+    version = "v1.20.5"
+    hash = "sha256-qWQEQTQ4Nk3s1JDV3PWCA5tA8DBTPjv1U2CPR+72t7o="
   [mod."github.com/aws/aws-sdk-go-v2/feature/ec2/imds"]
     version = "v1.20.0"
     hash = "sha256-L2PZL7Is+YKgnIhNp9ueohGpEph815oJAWUUJJgAbC8="
@@ -101,8 +101,8 @@ schema = 3
     version = "v1.43.0"
     hash = "sha256-ApmzyPAcNJwaG7NDYEfXE5q5OvxFhwmPmyTtMMyVsXQ="
   [mod."github.com/aws/aws-sdk-go-v2/service/sts"]
-    version = "v1.50.0"
-    hash = "sha256-MT1ixJGBvKcLB+2EVv11WP5tEo9Gg/yFKuJi4H2mfcg="
+    version = "v1.51.0"
+    hash = "sha256-ABOk+bWt9Ayg+Irte6Yj6zaHgiFTwFQmWYDcNC5JbHM="
   [mod."github.com/aws/smithy-go"]
     version = "v1.28.1"
     hash = "sha256-52wJGnuZVxhZtqgp4Gf7mgYrK6DOL8hFgtjo8e1NlCA="
@@ -260,8 +260,8 @@ schema = 3
     version = "v1.1.0"
     hash = "sha256-oduBKXHAQG8X6aqLEpqZHs5DOKe84u6WkBwi4W6cv3k="
   [mod."github.com/modelcontextprotocol/go-sdk"]
-    version = "v1.7.0"
-    hash = "sha256-+XbqHCwhQ8nDq3qheb50FanzJJToWVfcv4tDSf2u2Kc="
+    version = "v1.8.0"
+    hash = "sha256-MrAf2ChF1ikahpJDZ3zeXt59j9/cXMYocn46esn5+6E="
   [mod."github.com/munnerz/goautoneg"]
     version = "v0.0.0-20191010083416-a7dc8b61c822"
     hash = "sha256-79URDDFenmGc9JZu+5AXHToMrtTREHb3BC84b/gym9Q="
@@ -398,8 +398,8 @@ schema = 3
     version = "v0.16.0"
     hash = "sha256-OvekWcaTHMs5n3Img4EmYaORRgSmybBS+tObSnPqftY="
   [mod."google.golang.org/api"]
-    version = "v0.297.0"
-    hash = "sha256-2xvIgAA44TkUlztwYsUz8AmG87Xlcr/w78G7RFimiuk="
+    version = "v0.298.0"
+    hash = "sha256-gX+bHkKc6ZBpfVTMd4vYgIwaiAfVV5ZHfHdb8K7yMZQ="
   [mod."google.golang.org/genproto"]
     version = "v0.0.0-20260911204522-f61a6ca850bd"
     hash = "sha256-bRXxx4MsC1P5sQR9RbeGcwsZhlRInhkpDJ18re1BBUk="

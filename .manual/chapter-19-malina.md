@@ -156,6 +156,12 @@ Kronk versions in use. Use this option for testing, not as a compatibility
 guarantee. Library installation is staged and activated atomically so a
 failed download does not replace a working installation.
 
+Malina v1.1.2 requires stable-diffusion.cpp `master-869-07a85c7`. Its native
+context layout and video-generation call are not ABI-compatible with the
+`master-859` bundle used by Malina v1.1.1. `Download` replaces an older
+Kronk-managed installation with the pinned bundle. A user-managed library
+directory is read-only to Kronk and must be rebuilt or replaced by its owner.
+
 ### 19.3 Manage Model Bundles
 
 Kronk provides a small, curated catalog rather than accepting arbitrary model
@@ -461,6 +467,10 @@ if err == nil {
 }
 ```
 
+`video.FPS` is the effective frame rate reported by stable-diffusion.cpp, not
+necessarily the requested `params.FPS`. Always use the returned value when
+encoding the frames because some video models require a fixed frame rate.
+
 #### 19.6.4 Upscaling
 
 Upscalers use a standalone handle because their bundles do not contain a
@@ -574,6 +584,8 @@ Later runs reuse complete installations.
 - The curated catalog is intentionally small. The high-level SDK guarantees
   its listed component roles; arbitrary user-created bundle layouts are not a
   supported catalog contract.
+- Audio-conditioned video pipelines such as Wan2.2 S2V are not currently
+  exposed by Kronk's high-level Malina API or curated model catalog.
 - Native callbacks and backend initialization are process-wide. Model-context
   construction and destruction are serialized, while one handle may own
   multiple contexts and generate concurrently across them. Each concurrency

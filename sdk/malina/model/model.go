@@ -400,7 +400,8 @@ type Audio struct {
 	Data       []float32
 }
 
-// GeneratedVideo contains owned frames and optional generated audio.
+// GeneratedVideo contains owned frames, optional generated audio, and the
+// effective frame rate reported by stable-diffusion.cpp.
 type GeneratedVideo struct {
 	Frames []image.Image
 	Audio  *Audio
@@ -815,9 +816,11 @@ func (m *Model) GenerateVideo(ctx context.Context, params VideoParams) (Generate
 
 	var raw []*sd.SDImage
 	var audio *sd.Audio
+	var fps int32
+
 	err = m.runGeneration(ctx, func() error {
 		var err error
-		raw, audio, err = sd.GenerateVideo(m.ctx, p)
+		raw, audio, fps, err = sd.GenerateVideoWithFPS(m.ctx, p)
 		return err
 	})
 	if err != nil {
@@ -832,7 +835,7 @@ func (m *Model) GenerateVideo(ctx context.Context, params VideoParams) (Generate
 		}
 	}
 
-	result := GeneratedVideo{Frames: frames, FPS: params.FPS, Seed: params.Seed}
+	result := GeneratedVideo{Frames: frames, FPS: int(fps), Seed: params.Seed}
 	if audio != nil {
 		result.Audio = &Audio{
 			SampleRate: audio.SampleRate,

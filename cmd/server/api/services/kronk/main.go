@@ -68,7 +68,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	// GOMAXPROCS
 
 	if !showHelp {
-		log.Info(ctx, "startup", "GOMAXPROCS", runtime.GOMAXPROCS(0))
+		log.Info(ctx, "startup", "GOMAXPROCS", runtime.GOMAXPROCS(0), "VERSION", kronk.Version)
 	}
 
 	// -------------------------------------------------------------------------
