@@ -154,11 +154,11 @@ make example-malina-s2v ARGS='...' # Animate a portrait from WAV speech with Wan
 make example-malina-upscale    # Enlarge an image with Real-ESRGAN.
 ```
 
-Examples download compatible libraries and models on their first run. Browse the
-[complete examples module](examples/) for chat, Responses, embeddings, reranking,
-RAG, streaming transcription, image-to-image generation, ControlNet, ADetailer,
-AnimateDiff, Wan2.2 S2V, image upscaling, model pools, session stores, and lower-level
-yzma usage.
+Examples download compatible libraries and catalog-backed models on their first run;
+Wan2.2 S2V takes explicit component paths. Browse the [complete examples module](examples/)
+for chat, Responses, embeddings, reranking, RAG, streaming transcription,
+image-to-image generation, ControlNet, ADetailer, AnimateDiff, Wan2.2 S2V, image
+upscaling, model pools, session stores, and lower-level yzma usage.
 
 ## Community and Support
 
