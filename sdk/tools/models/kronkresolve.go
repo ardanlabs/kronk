@@ -313,10 +313,14 @@ func autoTuneWithConfigAndBudget(info ModelInfo, devs devices.Devices, constrain
 		cfg.FlashAttention = new(model.FlashAttentionEnabled)
 	}
 
-	// Preserve an explicit split mode. When unset, leave it unset so the load
-	// path can resolve it from the devices selected by the final configuration,
-	// rather than all devices visible during analysis.
-	cfg.PtrSplitMode = constraints.PtrSplitMode
+	// Preserve an explicit split mode. AutoTune otherwise leaves the ordinary
+	// layer default unset for load-time device resolution, but records a tensor
+	// recommendation because it is based on the selected ROCm device topology.
+	if constraints.PtrSplitMode != nil {
+		cfg.PtrSplitMode = constraints.PtrSplitMode
+	} else if rec.SplitMode == model.SplitModeTensor.String() {
+		cfg.PtrSplitMode = new(model.SplitModeTensor)
+	}
 
 	// model.Config: PtrNGpuLayers nil = all on GPU, 0 = all on GPU, -1 = all on CPU.
 	// Preserve an explicit constraint, including pointer-to-zero. Otherwise only

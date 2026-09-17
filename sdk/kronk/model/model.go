@@ -538,9 +538,8 @@ func buildModelParams(ctx context.Context, cfg *Config, loadMTP bool, l applog.L
 		split := DefaultSplitMode(len(cfg.Devices))
 		mParams.SplitMode = split.ToYZMAType()
 		// Surface the resolved split mode back into cfg so ModelConfig() reports
-		// the effective value ("layer"/"row") instead of nil. This keeps
-		// diagnostics honest whether or not auto-tune ran, and confirms tensor
-		// parallelism is never silently used on a single GPU.
+		// the effective value instead of nil. Tensor mode is only present when
+		// the caller or AutoTune selected it before model parameter construction.
 		cfg.PtrSplitMode = &split
 		l(ctx, "BUILD-MODEL-PARAMS", "split_mode", split.String(), "source", "resolved")
 	default:

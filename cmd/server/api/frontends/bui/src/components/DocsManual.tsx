@@ -612,11 +612,16 @@ models:
               </tr>
               <tr>
                 <td><code>row</code></td>
-                <td>Use deprecated row-split tensor parallelism where supported</td>
+                <td>Use legacy row-split parallelism where supported</td>
+              </tr>
+              <tr>
+                <td><code>tensor</code></td>
+                <td>Use experimental tensor parallelism where supported</td>
               </tr>
             </tbody>
           </table>
-          <p>When the setting is omitted, Kronk selects <code>layer</code>, matching llama.cpp's default and most compatible multi-GPU mode. Layer mode can distribute a single GGUF file across multiple GPUs. <code>row</code> remains available for explicit legacy configurations but is not recommended for new deployments.</p>
+          <p>When the setting is omitted, Kronk selects <code>layer</code>, matching llama.cpp's default and most compatible multi-GPU mode. Layer mode can distribute a single GGUF file across multiple GPUs. <code>row</code> remains available for legacy configurations.</p>
+          <p>With AutoTune enabled, Kronk selects <code>tensor</code> when exactly two selected devices use the ROCm backend, the model architecture supports llama.cpp tensor parallelism, Flash Attention is not disabled, and GPU offload is enabled. This allows llama.cpp to use RCCL when available or its two-GPU HIP AllReduce path otherwise. An explicit <code>split-mode</code>, disabled Flash Attention, CPU-only placement, a different backend, or any other GPU count keeps the normal selection behavior. Tensor mode is experimental and requires Flash Attention; set <code>split-mode: layer</code> to opt out.</p>
           <p>For explicit placement, <code>devices</code> names the devices and <code>tensor-split</code> gives their proportional shares:</p>
           <pre className="code-block"><code className="language-yaml">{`some-provider/some-model:
   devices: [CUDA0, CUDA1]
@@ -848,7 +853,7 @@ models:
               </tr>
               <tr>
                 <td><code>split-mode</code></td>
-                <td><code>none</code>, <code>layer</code>, <code>row</code></td>
+                <td><code>none</code>, <code>layer</code>, <code>row</code>, <code>tensor</code></td>
                 <td>Multi-GPU distribution mode</td>
               </tr>
               <tr>

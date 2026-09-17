@@ -62,6 +62,38 @@ func TestDefaultSplitMode(t *testing.T) {
 	}
 }
 
+func TestParseSplitMode(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  SplitMode
+	}{
+		{"legacy row", "row", SplitModeRow},
+		{"legacy row number", "2", SplitModeRow},
+		{"tensor", "tensor", SplitModeTensor},
+		{"tensor parallel alias", "tensor-parallel", SplitModeTensor},
+		{"tensor number", "3", SplitModeTensor},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseSplitMode(tt.value)
+			if err != nil {
+				t.Fatalf("ParseSplitMode() error = %v, want nil", err)
+			}
+			if got != tt.want {
+				t.Errorf("ParseSplitMode() = %s, want %s", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSplitModeTensorToYZMAType(t *testing.T) {
+	if got := SplitModeTensor.ToYZMAType(); got != llama.SplitMode(3) {
+		t.Errorf("ToYZMAType() = %d, want 3", got)
+	}
+}
+
 func TestMoEModeYAML(t *testing.T) {
 	var cfg MoEConfig
 	if err := yaml.Unmarshal([]byte("mode: experts_cpu\n"), &cfg); err != nil {

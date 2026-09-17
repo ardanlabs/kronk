@@ -776,6 +776,86 @@ func TestAutoTuneLeavesSplitModeUnset(t *testing.T) {
 	}
 }
 
+func TestAutoTuneSelectsTensorParallelForTwoROCmGPUs(t *testing.T) {
+	info := ModelInfo{
+		ID:   "Qwen3-8B-Q8_0",
+		Size: 8_000_000_000,
+		Metadata: map[string]string{
+			"general.architecture":          "qwen3",
+			"qwen3.block_count":             "24",
+			"qwen3.context_length":          "32768",
+			"qwen3.embedding_length":        "2048",
+			"qwen3.attention.head_count":    "16",
+			"qwen3.attention.head_count_kv": "8",
+			"qwen3.attention.key_length":    "128",
+			"qwen3.attention.value_length":  "128",
+		},
+	}
+	rocm := devices.Devices{
+		GPUCount:           2,
+		SupportsGPUOffload: true,
+		Devices: []devices.DeviceInfo{
+			{Name: "ROCm0", Type: "gpu_rocm", FreeBytes: 24_000_000_000},
+			{Name: "ROCm1", Type: "gpu_rocm", FreeBytes: 24_000_000_000},
+		},
+	}
+
+	tests := []struct {
+		name        string
+		info        ModelInfo
+		devs        devices.Devices
+		constraints ModelConfig
+		want        *model.SplitMode
+	}{
+		{"two ROCm GPUs", info, rocm, ModelConfig{}, new(model.SplitModeTensor)},
+		{"one selected ROCm GPU", info, rocm, ModelConfig{Devices: []string{"ROCm0"}}, nil},
+		{"three ROCm GPUs", info, devices.Devices{
+			GPUCount: 3, SupportsGPUOffload: true,
+			Devices: append(append([]devices.DeviceInfo{}, rocm.Devices...),
+				devices.DeviceInfo{Name: "ROCm2", Type: "gpu_rocm", FreeBytes: 24_000_000_000}),
+		}, ModelConfig{}, nil},
+		{"two CUDA GPUs", info, devices.Devices{
+			GPUCount: 2, SupportsGPUOffload: true,
+			Devices: []devices.DeviceInfo{
+				{Name: "CUDA0", Type: "gpu_cuda", FreeBytes: 24_000_000_000},
+				{Name: "CUDA1", Type: "gpu_cuda", FreeBytes: 24_000_000_000},
+			},
+		}, ModelConfig{}, nil},
+		{"unsupported architecture", ModelInfo{
+			ID: "Mamba", Size: info.Size,
+			Metadata: map[string]string{
+				"general.architecture": "mamba",
+				"mamba.block_count":    "24",
+			},
+		}, rocm, ModelConfig{}, nil},
+		{"flash attention disabled", info, rocm, ModelConfig{
+			FlashAttention: new(model.FlashAttentionDisabled),
+		}, nil},
+		{"CPU-only placement", info, rocm, ModelConfig{PtrNGpuLayers: new(-1)}, nil},
+		{"explicit layer mode", info, rocm, ModelConfig{
+			PtrSplitMode: new(model.SplitModeLayer),
+		}, new(model.SplitModeLayer)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := AutoTuneWithConfig(tt.info, tt.devs, tt.constraints)
+			if err != nil {
+				t.Fatalf("AutoTuneWithConfig failed: %v", err)
+			}
+			if tt.want == nil {
+				if cfg.PtrSplitMode != nil {
+					t.Errorf("PtrSplitMode: got %s, want nil", cfg.PtrSplitMode.String())
+				}
+				return
+			}
+			if cfg.PtrSplitMode == nil || *cfg.PtrSplitMode != *tt.want {
+				t.Errorf("PtrSplitMode: got %v, want %s", cfg.PtrSplitMode, tt.want.String())
+			}
+		})
+	}
+}
+
 func TestAnalyzeUsesSelectedDevices(t *testing.T) {
 	info := ModelInfo{
 		ID:   "Qwen3-8B-Q8_0",

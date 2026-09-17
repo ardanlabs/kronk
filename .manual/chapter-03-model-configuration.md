@@ -368,12 +368,22 @@ automatic placement. `proj-device` cannot be combined with
 | ----- | -------- |
 | `none` | Use one GPU |
 | `layer` | Distribute whole layers across GPUs |
-| `row` | Use deprecated row-split tensor parallelism where supported |
+| `row` | Use legacy row-split parallelism where supported |
+| `tensor` | Use experimental tensor parallelism where supported |
 
 When the setting is omitted, Kronk selects `layer`, matching llama.cpp's
 default and most compatible multi-GPU mode. Layer mode can distribute a single
-GGUF file across multiple GPUs. `row` remains available for explicit legacy
-configurations but is not recommended for new deployments.
+GGUF file across multiple GPUs. `row` remains available for legacy
+configurations.
+
+With AutoTune enabled, Kronk selects `tensor` when exactly two selected devices
+use the ROCm backend, the model architecture supports llama.cpp tensor
+parallelism, Flash Attention is not disabled, and GPU offload is enabled. This
+allows llama.cpp to use RCCL when available or its two-GPU HIP AllReduce path
+otherwise. An explicit `split-mode`, disabled Flash Attention, CPU-only
+placement, a different backend, or any other GPU count keeps the normal
+selection behavior. Tensor mode is experimental and requires Flash Attention;
+set `split-mode: layer` to opt out.
 
 For explicit placement, `devices` names the devices and `tensor-split` gives
 their proportional shares:
@@ -730,7 +740,7 @@ is normally supplied by analysis or by the load-time defaults.
 | `proj-on-cpu` | Boolean | Keep multimodal projector on CPU |
 | `proj-device` | Device name | Place multimodal projector on a specific accelerator |
 | `devices` | Device-name list | Devices available to the model |
-| `split-mode` | `none`, `layer`, `row` | Multi-GPU distribution mode |
+| `split-mode` | `none`, `layer`, `row`, `tensor` | Multi-GPU distribution mode |
 | `main-gpu` | Device index | Primary device in single-GPU mode |
 | `tensor-split` | Numeric share list | Proportional multi-GPU placement |
 | `swa-full` | Boolean | Full or compact SWA cache |

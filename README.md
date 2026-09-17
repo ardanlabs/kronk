@@ -83,11 +83,11 @@ Hardware acceleration depends on the operating system, architecture, inference
 engine, and library bundle. Kronk downloads native libraries that are compatible with
 the installed release.
 
-| OS      | CPU architectures | Available GPU backends          |
-| ------- | ----------------- | ------------------------------- |
-| Linux   | amd64, arm64      | CUDA, Vulkan, HIP, ROCm, SYCL   |
-| macOS   | arm64             | Metal                           |
-| Windows | amd64             | CUDA, Vulkan, HIP, SYCL, OpenCL |
+| OS      | CPU architectures | Available GPU backends                         |
+| ------- | ----------------- | ---------------------------------------------- |
+| Linux   | amd64, arm64      | CUDA and Vulkan; ROCm on amd64                 |
+| macOS   | amd64, arm64      | Metal on arm64                                 |
+| Windows | amd64, arm64      | CUDA, Vulkan, and ROCm on amd64; arm64 is CPU-only |
 
 Not every backend is available for every SDK or architecture. Use the CLI or SDK
 library manager as the source of truth for combinations supported by your installed

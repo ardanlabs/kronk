@@ -339,11 +339,12 @@ type AdapterConfig struct {
 // SplitMode controls how the model is split across multiple GPUs:
 //   - SplitModeNone (0): single GPU
 //   - SplitModeLayer (1): split layers and KV across GPUs
-//   - SplitModeRow (2): deprecated row-split tensor parallelism
+//   - SplitModeRow (2): legacy row-split parallelism
+//   - SplitModeTensor (3): tensor parallelism
 //
 // When nil (not set), the default is SplitModeLayer, matching llama.cpp. Layer
 // mode distributes a single GGUF across multiple GPUs without requiring the
-// backend-specific split buffers used by row mode.
+// backend-specific support used by row and tensor modes.
 //
 // SWAFull controls whether models with sliding window attention (SWA) use a
 // full-size KV cache for SWA layers instead of the memory-efficient small
@@ -1500,8 +1501,11 @@ const (
 	// SplitModeLayer splits layers and KV cache across GPUs. This is the default.
 	SplitModeLayer SplitMode = 1
 
-	// SplitModeRow uses llama.cpp's deprecated row-split tensor parallelism.
+	// SplitModeRow uses llama.cpp's legacy row-split parallelism.
 	SplitModeRow SplitMode = 2
+
+	// SplitModeTensor uses llama.cpp's tensor parallel implementation.
+	SplitModeTensor SplitMode = 3
 )
 
 // String returns the string representation of a SplitMode.
@@ -1515,6 +1519,9 @@ func (s SplitMode) String() string {
 
 	case SplitModeRow:
 		return "row"
+
+	case SplitModeTensor:
+		return "tensor"
 
 	default:
 		return fmt.Sprintf("unknown(%d)", s)
@@ -1575,8 +1582,7 @@ func (s *SplitMode) UnmarshalYAML(unmarshal func(any) error) error {
 }
 
 // ParseSplitMode parses a string into a SplitMode.
-// Supported values are "none", "layer", and "row". The legacy aliases
-// "tensor", "tensor-parallel", and "expert-parallel" map to row mode.
+// Supported values are "none", "layer", "row", and "tensor".
 func ParseSplitMode(s string) (SplitMode, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "none", "single", "0", "":
@@ -1585,11 +1591,14 @@ func ParseSplitMode(s string) (SplitMode, error) {
 	case "layer", "1":
 		return SplitModeLayer, nil
 
-	case "row", "tensor", "tensor-parallel", "expert-parallel", "2":
+	case "row", "2":
 		return SplitModeRow, nil
 
+	case "tensor", "tensor-parallel", "expert-parallel", "3":
+		return SplitModeTensor, nil
+
 	default:
-		return SplitModeNone, fmt.Errorf("parse-split-mode: unknown split mode: %s (valid: none, layer, row)", s)
+		return SplitModeNone, fmt.Errorf("parse-split-mode: unknown split mode: %s (valid: none, layer, row, tensor)", s)
 	}
 }
 

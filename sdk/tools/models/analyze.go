@@ -290,6 +290,7 @@ func analyzeModelWithConfigAndBudget(info ModelInfo, devs devices.Devices, cfg M
 		hasGPU:         sf.SupportsGPUOffload,
 		unifiedMemory:  devs.UnifiedMemory,
 		gpuCount:       devs.GPUCount,
+		tensorParallel: autoTensorParallel(profile, devs, cfg),
 		attn:           attn,
 		contextWindow:  cfg.PtrContextWindow,
 		nSeqMax:        cfg.PtrNSeqMax,
@@ -372,6 +373,7 @@ type profileInput struct {
 	hasGPU         bool
 	unifiedMemory  bool
 	gpuCount       int
+	tensorParallel bool
 	attn           AttentionFacts
 	contextWindow  *int
 	nSeqMax        *int
@@ -415,6 +417,8 @@ func buildProfile(name string, p profileInput, overrideSlots int64, overrideConc
 	// user configuration still wins.
 	if p.splitMode != nil {
 		rec.SplitMode = p.splitMode.String()
+	} else if p.tensorParallel {
+		rec.SplitMode = model.SplitModeTensor.String()
 	} else {
 		rec.SplitMode = model.DefaultSplitMode(p.gpuCount).String()
 	}
@@ -580,6 +584,27 @@ func analysisDevices(devs devices.Devices, selected []string) devices.Devices {
 		}
 	}
 	return filtered
+}
+
+func autoTensorParallel(profile modelprofile.Profile, devs devices.Devices, cfg ModelConfig) bool {
+	if !profile.SupportsTensorParallel || cfg.PtrSplitMode != nil || devs.GPUCount != 2 {
+		return false
+	}
+	if cfg.FlashAttention != nil && *cfg.FlashAttention == model.FlashAttentionDisabled {
+		return false
+	}
+	if cfg.PtrNGpuLayers != nil && *cfg.PtrNGpuLayers == -1 {
+		return false
+	}
+
+	count := 0
+	for _, device := range devs.Devices {
+		if device.Type == "gpu_rocm" {
+			count++
+		}
+	}
+
+	return count == 2
 }
 
 func calculateProfile(p profileInput, contextWindow, slots int64, cache cacheRecommendation) vram.Result {

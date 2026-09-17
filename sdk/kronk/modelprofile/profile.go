@@ -73,19 +73,20 @@ type Modalities struct {
 
 // Profile is the normalized view of one model artifact.
 type Profile struct {
-	Architecture    string
-	Class           Class
-	Role            Role
-	Purpose         Purpose
-	MemorySemantics MemorySemantics
-	Dimensions      Dimensions
-	Attention       gguf.AttentionFacts
-	MoE             gguf.MoEInfo
-	Rope            gguf.RopeFacts
-	Speculation     Speculation
-	Modalities      Modalities
-	FileType        int64
-	HasChatTemplate bool
+	Architecture           string
+	Class                  Class
+	Role                   Role
+	Purpose                Purpose
+	MemorySemantics        MemorySemantics
+	Dimensions             Dimensions
+	Attention              gguf.AttentionFacts
+	MoE                    gguf.MoEInfo
+	Rope                   gguf.RopeFacts
+	Speculation            Speculation
+	Modalities             Modalities
+	FileType               int64
+	HasChatTemplate        bool
+	SupportsTensorParallel bool
 
 	issues []error
 }
@@ -105,6 +106,7 @@ func Resolve(values map[string]string) Profile {
 			profile.issues = append(profile.issues, fmt.Errorf("%s profile: %w", adapter.Name(), err))
 		}
 	}
+	profile.SupportsTensorParallel = profile.Role == RoleLanguage && supportsTensorParallel(profile.Architecture)
 
 	profile.Attention.NextNPredictLayers = profile.Speculation.NextNPredictLayers
 	switch {
