@@ -84,8 +84,10 @@ tidy:
 
 deps-upgrade: bui-upgrade
 	go get -u -v ./...
+	go get github.com/hybridgroup/yzma@main
 	go mod tidy
 	cd examples && go get -u -v ./...
+	cd examples && go get github.com/hybridgroup/yzma@main
 	cd examples && go mod tidy
 
 build-deps-upgrade: deps-upgrade

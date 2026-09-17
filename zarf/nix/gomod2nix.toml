@@ -23,8 +23,8 @@ schema = 3
     version = "v1.30.0"
     hash = "sha256-AOxUKDkE75OQV1Jp43Nh8mgAu/SzvNKjzt1+R7Nb/HM="
   [mod."cloud.google.com/go/storage"]
-    version = "v1.67.1"
-    hash = "sha256-D0RB6nrzHLK9mBQsOvG44IVdpDXeiKIU36Ao/IYSIrE="
+    version = "v1.68.0"
+    hash = "sha256-ohfDuIG0/R/wn8iWOznrhMSvrQO3qtWAhXHUqHdPMIU="
   [mod."github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp"]
     version = "v1.38.0"
     hash = "sha256-Zng5YdYZvLZE45BHWMn+0i6hbq/pgUeCnzpndQnmWgI="
@@ -206,8 +206,8 @@ schema = 3
     version = "v1.9.0"
     hash = "sha256-sRr/50k8Wra0PJLCJgSkIxvR+ce3PItx4HpFvVijGYk="
   [mod."github.com/hybridgroup/yzma"]
-    version = "v1.27.1-0.20260916134945-b5f55bd9404f"
-    hash = "sha256-alX6memhG6klrvAqfLbPS2G53WGj+uY7soxkz5Z2CJ8="
+    version = "v1.27.1-0.20260917101309-d48a589de711"
+    hash = "sha256-85sqKAiS0hfk0xgFj7s52yhyPzJqBm5r9k/LfmAvLZU="
   [mod."github.com/icza/bitio"]
     version = "v1.1.0"
     hash = "sha256-CtV/dr1L46cZ65EnK9DrBduZCaMnTGf4N2MnElCymtM="
