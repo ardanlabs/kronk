@@ -25,6 +25,7 @@ var supportedCombinations = []Combination{
 	{Arch: "amd64", OS: "linux", Processor: "vulkan"},
 	{Arch: "arm64", OS: "linux", Processor: "vulkan"},
 	{Arch: "amd64", OS: "linux", Processor: "rocm"},
+	{Arch: "amd64", OS: "linux", Processor: "openvino"},
 
 	// Debian Bookworm (ARM64-only build matrix).
 	{Arch: "arm64", OS: "bookworm", Processor: "cpu"},
@@ -49,6 +50,7 @@ var supportedCombinations = []Combination{
 	{Arch: "amd64", OS: "windows", Processor: "cuda"},
 	{Arch: "amd64", OS: "windows", Processor: "vulkan"},
 	{Arch: "amd64", OS: "windows", Processor: "rocm"},
+	{Arch: "amd64", OS: "windows", Processor: "openvino"},
 }
 
 // SupportedCombinations returns every (architecture, operating system,

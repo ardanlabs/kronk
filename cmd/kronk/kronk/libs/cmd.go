@@ -31,6 +31,7 @@ HARDWARE BACKENDS
   cuda  - NVIDIA GPU acceleration
   rocm  - AMD GPU acceleration
   vulkan - Cross-platform GPU acceleration
+  openvino - Downloadable Intel OpenVINO bundle (Linux/Windows amd64)
 
 MODES
 
@@ -81,7 +82,7 @@ func init() {
 	Cmd.Flags().Bool("install", false, "Install for the supplied --arch/--os/--processor triple (lands in its own folder under the libraries root)")
 	Cmd.Flags().String("arch", "", "Architecture for triple-aware install operations (amd64, arm64)")
 	Cmd.Flags().String("os", "", "Operating system for triple-aware install operations (linux, bookworm, trixie, darwin, windows)")
-	Cmd.Flags().String("processor", "", "Processor for triple-aware install operations (cpu, cuda, metal, rocm, vulkan)")
+	Cmd.Flags().String("processor", "", "Processor for triple-aware install operations (cpu, cuda, metal, openvino, rocm, vulkan)")
 	Cmd.Flags().Bool("list-combinations", false, "List supported (arch, os, processor) combinations and exit")
 	Cmd.Flags().Bool("list-installs", false, "List installed library bundles under the libraries root and exit")
 	Cmd.Flags().Bool("remove-install", false, "Remove the install matching --arch/--os/--processor")

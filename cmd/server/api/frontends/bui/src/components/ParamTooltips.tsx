@@ -222,7 +222,7 @@ export const PARAM_TOOLTIPS = {
   // Library bundles
   bundleArch: 'Target CPU architecture for this library bundle download (amd64 or arm64). Each bundle lives in its own folder under the libraries root and does not replace the active install.',
   bundleOS: 'Target operating system for this library bundle download (linux, bookworm, trixie, darwin, windows). Each bundle lives in its own folder under the libraries root and does not replace the active install.',
-  bundleProcessor: 'Target processor backend for this library bundle download (cpu, cuda, metal, rocm, vulkan). Only combinations published by the selected backend can be chosen.',
+  bundleProcessor: 'Target processor backend for this library bundle download (cpu, cuda, metal, openvino, rocm, vulkan). OpenVINO is currently available for bundle download only. Only published combinations can be chosen.',
   bundleVersion: 'Exact upstream library version to install. Leave empty to use the version pinned by this Kronk release.',
   bundleRemove: 'Delete this bundle directory. Does not affect the active install unless this bundle is the active one.',
   peerLibsHost: 'Address of another Kronk server on the local network in the form ip:port. The peer must be running with download enabled. Useful in workshop environments where Internet access is slow or unavailable.',

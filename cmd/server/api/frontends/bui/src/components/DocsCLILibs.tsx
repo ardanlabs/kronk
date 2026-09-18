@@ -36,6 +36,7 @@ export default function DocsCLILibs() {
               <li><code>cuda</code> — NVIDIA GPU acceleration</li>
               <li><code>rocm</code> — AMD GPU acceleration</li>
               <li><code>vulkan</code> — Cross-platform GPU acceleration</li>
+              <li><code>openvino</code> — Downloadable Intel OpenVINO bundle (Linux/Windows amd64)</li>
             </ul>
           </div>
 
@@ -75,7 +76,7 @@ export default function DocsCLILibs() {
                 </tr>
                 <tr>
                   <td><code>--processor &lt;string&gt;</code></td>
-                  <td>Processor for triple-aware install operations: <code>cpu</code>, <code>cuda</code>, <code>metal</code>, <code>rocm</code>, <code>vulkan</code></td>
+                  <td>Processor for triple-aware install operations: <code>cpu</code>, <code>cuda</code>, <code>metal</code>, <code>openvino</code>, <code>rocm</code>, <code>vulkan</code></td>
                 </tr>
                 <tr>
                   <td><code>--list-combinations</code></td>
