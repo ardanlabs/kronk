@@ -13,7 +13,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/hashicorp/go-getter v1.8.9
 	github.com/hashicorp/go-version v1.9.0
-	github.com/hybridgroup/yzma v1.27.1-0.20260917101309-d48a589de711
+	github.com/hybridgroup/yzma v1.27.1-0.20260918082757-8ddb0055ea97
 	github.com/icza/mjpeg v0.0.0-20230330134156-38318e5ab8f4
 	github.com/maypok86/otter/v2 v2.3.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
