@@ -289,6 +289,30 @@ sudo chown -R 10001:10001 /srv/kronk`}</code></pre>
           <p>Examples include <code>darwin/arm64/metal</code> and <code>linux/amd64/cuda</code>. Multiple bundles can coexist. During automatic selection, Kronk first resolves the preferred processor for the host. A CUDA 13 bundle requires every visible NVIDIA GPU to have compute capability 7.5 or newer. If the visible devices are older, or <code>CUDA_VISIBLE_DEVICES</code> leaves no CUDA device visible, Kronk selects a supported ROCm or Vulkan host runtime when one is available and otherwise selects CPU. An inconclusive NVIDIA probe retains CUDA rather than silently changing the backend.</p>
           <p>After installation, Kronk probes the preferred accelerator bundle before loading it. If that bundle positively reports no accelerator and another installed bundle for the same llama.cpp version positively reports a device, Kronk selects the working installed bundle. This second check does not download another bundle. Startup logs report the preferred processor, selected processor, and reason for either retaining or changing it.</p>
           <p>Explicit settings take precedence over both automatic checks. Setting <code>KRONK_ARCH</code>, <code>KRONK_OS</code>, <code>KRONK_PROCESSOR</code>, or <code>KRONK_LIB_PATH</code> selects that value strictly; Kronk does not substitute another runtime. Use an explicit processor when automatic detection is not appropriate, such as deliberately running CPU inference on a GPU host.</p>
+          <h4 id="openvino-preview-bundles">OpenVINO preview bundles</h4>
+          <p>Kronk can download llama.cpp OpenVINO bundles for Linux amd64 and Windows amd64. OpenVINO remains an explicit, preview backend: automatic detection does not select it, and CPU, GPU, and NPU execution must be validated on the target Intel system before production use.</p>
+          <p>Two environment variables select the runtime:</p>
+          <ul>
+            <li><code>KRONK_PROCESSOR=openvino</code> selects the OpenVINO llama.cpp bundle.</li>
+            <li><code>GGML_OPENVINO_DEVICE=CPU|GPU|GPU.&lt;index&gt;|NPU</code> selects the device used by OpenVINO. OpenVINO defaults to <code>CPU</code> when this variable is unset, but setting it explicitly makes the intended target clear.</li>
+          </ul>
+          <p>For example:</p>
+          <pre className="code-block"><code className="language-shell">{`# Install the Linux amd64 bundle without making it the automatic default.
+kronk libs --local --install \\
+  --arch=amd64 \\
+  --os=linux \\
+  --processor=openvino
+
+# Select the bundle and an Intel GPU for one server process.
+KRONK_PROCESSOR=openvino \\
+GGML_OPENVINO_DEVICE=GPU \\
+kronk server start`}</code></pre>
+          <p>The OpenVINO runtime reads <code>GGML_OPENVINO_DEVICE</code> once during initialization; restart Kronk after changing it. GPU and NPU targets require the corresponding Intel host drivers and device permissions. If a requested device is not available, upstream OpenVINO can fall back to CPU, so validate the installation with the opt-in probe from a Kronk source checkout:</p>
+          <pre className="code-block"><code className="language-shell">{`make test-openvino                         # CPU
+make test-openvino OPENVINO_DEVICE=GPU
+make test-openvino OPENVINO_DEVICE=GPU.0
+make test-openvino OPENVINO_DEVICE=NPU`}</code></pre>
+          <p>The probe is supported on Linux/Windows amd64, downloads the pinned bundle and small diagnostic model, loads the library in-process, enumerates <code>OPENVINO0</code>, runs <code>llama-bench</code>, and fails if OpenVINO reports a fallback to CPU. It is not part of the normal test suite.</p>
           <p>Useful commands:</p>
           <pre className="code-block"><code className="language-shell">{`# Show supported bundles.
 kronk libs --list-combinations
@@ -5474,6 +5498,7 @@ make kronk-server-detach
 make kronk-server-logs
 make kronk-server-stop`}</code></pre>
           <p>Native llama and Whisper libraries and test models are large external prerequisites. Use the CLI and Make targets appropriate to the focused test rather than downloading every supported artifact. The Bucky CLI uses <code>--local</code> for direct filesystem work; web/server operation is the default and there is no <code>--web</code> flag.</p>
+          <p>OpenVINO validation is deliberately opt-in and never runs in the normal local or GitHub suites. On Linux/Windows amd64, run <code>make test-openvino</code> for the CPU target or set <code>OPENVINO_DEVICE=GPU</code>, <code>GPU.&lt;index&gt;</code>, or <code>NPU</code>. The target uses the <code>openvino_integration</code> build tag, installs the pinned llama.cpp bundle and diagnostic model, and rejects an unavailable device that silently falls back to CPU. See <a href="https://www.kronkai.com/manual#24-libraries">Chapter 2 §2.4</a> for runtime selection and host requirements.</p>
           <h4 id="2041-native-library-compatibility-and-sdk-initialization">20.4.1 Native-library compatibility and SDK initialization</h4>
           <p>The versions in <code>go.mod</code>, <code>sdk/tools/libs</code> defaults, and the README compatibility matrix describe one tested Kronk/Yzma/llama.cpp set. A dependency update is incomplete unless the binding, pinned native build, root and examples modules, generated Nix module data, and focused model tests remain aligned. Do not update Yzma or select a newer llama.cpp build independently merely because it is available upstream.</p>
           <p>Runnable language-model examples should resolve and initialize the same runtime they install:</p>

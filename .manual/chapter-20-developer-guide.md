@@ -222,6 +222,14 @@ Use the CLI and Make targets appropriate to the focused test rather than downloa
 every supported artifact. The Bucky CLI uses `--local` for direct filesystem work;
 web/server operation is the default and there is no `--web` flag.
 
+OpenVINO validation is deliberately opt-in and never runs in the normal local or
+GitHub suites. On Linux/Windows amd64, run `make test-openvino` for the CPU target or
+set `OPENVINO_DEVICE=GPU`, `GPU.<index>`, or `NPU`. The target uses the
+`openvino_integration` build tag, installs the pinned llama.cpp bundle and diagnostic
+model, and rejects an unavailable device that silently falls back to CPU. See
+[Chapter 2 §2.4](https://www.kronkai.com/manual#24-libraries) for runtime selection and
+host requirements.
+
 #### 20.4.1 Native-library compatibility and SDK initialization
 
 The versions in `go.mod`, `sdk/tools/libs` defaults, and the README compatibility
