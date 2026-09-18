@@ -75,6 +75,29 @@ test-malina: install-test-malina
 	go test -v -p=1 -count=1 -timeout 20m -tags=malina_integration -run '^TestMalinaModelInference$$' ./sdk/malina && \
 	go test -v -p=1 -count=1 -timeout 20m -tags=malina_integration -run '^TestImageGenerationModel$$' ./cmd/server/app/domain/imageapp
 
+# Run the native OpenVINO diagnostic and inference probe explicitly. This test
+# downloads the pinned llama.cpp bundle and small diagnostic model, and is not
+# part of the ordinary local or GitHub test suites. OPENVINO_DEVICE selects the
+# OpenVINO target: CPU, GPU, GPU.<index>, or NPU.
+OPENVINO_DEVICE ?= CPU
+test-openvino:
+	@platform="$$(go env GOOS)/$$(go env GOARCH)"; \
+	case "$$platform" in \
+		linux/amd64|windows/amd64) ;; \
+		*) echo "test-openvino requires linux/amd64 or windows/amd64; got $$platform" >&2; exit 1 ;; \
+	esac
+	@case "$(OPENVINO_DEVICE)" in \
+		CPU|GPU|NPU|GPU.[0-9]*) ;; \
+		*) echo "OPENVINO_DEVICE must be CPU, GPU, GPU.<index>, or NPU" >&2; exit 1 ;; \
+	esac
+	@echo ========== RUN OPENVINO INTEGRATION TEST device[$(OPENVINO_DEVICE)] ==========
+	unset KRONK_LIB_PATH KRONK_ARCH KRONK_OS && \
+	export KRONK_PROCESSOR=openvino && \
+	export GGML_OPENVINO_DEVICE=$(OPENVINO_DEVICE) && \
+	export RUN_IN_PARALLEL=no && \
+	export GITHUB_WORKSPACE=$(shell pwd) && \
+	go test -v -p=1 -count=1 -timeout 20m -tags=openvino_integration -run '^TestOpenVINOInference$$' ./sdk/tools/diagnose
+
 # ==============================================================================
 # Go Modules support
 
