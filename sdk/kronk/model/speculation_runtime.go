@@ -19,7 +19,7 @@ func newSpeculationController(e *batchEngine) speculation.Controller {
 	switch plan.Source {
 	case speculationSourceClassic:
 		return classicengine.New(e)
-	case speculationSourceMTPCompanion, speculationSourceMTPEmbedded:
+	case speculationSourceMTP:
 		return mtp.New(e)
 	}
 	return speculation.NewDisabled(e)
@@ -79,7 +79,7 @@ func (e *batchEngine) CommitMTPDraft(slotID int, result mtp.DraftResult) {
 	s.draftTokensBuf = result.Candidates
 	s.mtp.DraftHidden = result.Hidden
 	s.draftNPast = result.Position
-	if _, shared := e.model.draft.(*sharedMTPDrafter); shared && len(result.Hidden) == e.model.draft.core().mtp.EmbeddingSize() {
+	if mtpUsesSharedKV(e.model.draft) && len(result.Hidden) == e.model.draft.core().mtp.EmbeddingSize() {
 		s.mtp.PendingHidden = append(s.mtp.PendingHidden[:0], result.Hidden...)
 	}
 	s.specDraftedTotal += len(result.Candidates)
@@ -148,7 +148,7 @@ func (e *batchEngine) MTPSyncInput(slotID int, effectiveCount int) (mtp.SyncInpu
 	if tokens == nil {
 		return mtp.SyncInput{}, fmt.Errorf("target tokens unavailable for range [%d..%d)", start, start+count)
 	}
-	_, shared := e.model.draft.(*sharedMTPDrafter)
+	shared := mtpUsesSharedKV(e.model.draft)
 
 	return mtp.SyncInput{
 		Tokens:        tokens,
@@ -194,7 +194,7 @@ func (e *batchEngine) CommitMTPSync(slotID int, result mtp.SyncResult) {
 func (e *batchEngine) syncMTPCacheRows(s *slot, tokens []llama.Token, hiddenRows []float32, basePosition llama.Pos) error {
 	draft := e.model.draft.core()
 	nEmbd := draft.mtp.EmbeddingSize()
-	_, shared := e.model.draft.(*sharedMTPDrafter)
+	shared := mtpUsesSharedKV(e.model.draft)
 	input := mtp.SyncInput{
 		Tokens:        tokens,
 		HiddenRows:    hiddenRows,

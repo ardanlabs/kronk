@@ -11,6 +11,7 @@ import (
 
 // SpeculationMode selects the speculative-decoding implementation for a model.
 type SpeculationMode = internalspec.Mode
+type mtpArtifact = internalspec.MTPArtifact
 
 const (
 	SpeculationAuto     = internalspec.ModeAuto
@@ -18,10 +19,15 @@ const (
 	SpeculationClassic  = internalspec.ModeClassic
 	SpeculationMTP      = internalspec.ModeMTP
 
-	speculationSourceNone         = internalspec.SourceNone
-	speculationSourceClassic      = internalspec.SourceClassic
-	speculationSourceMTPCompanion = internalspec.SourceMTPCompanion
-	speculationSourceMTPEmbedded  = internalspec.SourceMTPEmbedded
+	speculationSourceNone    = internalspec.SourceNone
+	speculationSourceClassic = internalspec.SourceClassic
+	speculationSourceMTP     = internalspec.SourceMTP
+
+	mtpArchitectureQwen35OwnKV   = internalspec.MTPArchitectureQwen35OwnKV
+	mtpArchitectureGemmaSharedKV = internalspec.MTPArchitectureGemmaSharedKV
+
+	mtpArtifactEmbedded  = internalspec.MTPArtifactEmbedded
+	mtpArtifactCompanion = internalspec.MTPArtifactCompanion
 )
 
 type speculationPlan = internalspec.Plan
@@ -41,7 +47,10 @@ func resolveSpeculationPlan(ctx context.Context, log applog.Logger, cfg Config) 
 	if err != nil {
 		return speculationPlan{}, fmt.Errorf("detect embedded MTP: %w", err)
 	}
-	companion := cfg.MTPDrafterFile != "" && probeSharedKVCompanionMTP(ctx, log, cfg.MTPDrafterFile)
+	var sharedCompanion, ownKVCompanion bool
+	if cfg.MTPDrafterFile != "" {
+		sharedCompanion, ownKVCompanion = probeMTPCompanion(ctx, log, cfg.MTPDrafterFile)
+	}
 
 	return internalspec.Resolve(internalspec.Config{
 		Mode:              mode,
@@ -49,7 +58,8 @@ func resolveSpeculationPlan(ctx context.Context, log applog.Logger, cfg Config) 
 		ClassicNDraft:     configuredClassicNDraft(cfg),
 		MTPNDraft:         mtpNDraft(cfg),
 		EmbeddedMTP:       embedded,
-		CompanionMTP:      companion,
+		CompanionMTP:      sharedCompanion,
+		OwnKVCompanionMTP: ownKVCompanion,
 		MTPAvailable:      yzmaspec.Available(),
 	})
 }
@@ -59,7 +69,7 @@ func resolveSpeculationPlan(ctx context.Context, log applog.Logger, cfg Config) 
 // target-only generation when the widths differ; an explicitly required MTP
 // implementation fails instead.
 func resolveEmbeddedMTPCompatibility(plan speculationPlan, targetEmbeddingWidth, mtpOutputWidth int32) (speculationPlan, error) {
-	if plan.Source != speculationSourceMTPEmbedded || targetEmbeddingWidth == mtpOutputWidth {
+	if plan.Source != speculationSourceMTP || plan.MTPArtifact != mtpArtifactEmbedded || targetEmbeddingWidth == mtpOutputWidth {
 		return plan, nil
 	}
 

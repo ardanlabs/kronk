@@ -25,6 +25,25 @@ mtp-load-parallel:
 		--require-mtp \
 		--out "$(MTP_LOAD_OUT)"
 
+# Qwen3.8-27B separate-file MTP probe. The catalog downloads the qwen35
+# companion from the repository's MTP/ folder and this check fails unless the
+# server actually activates it.
+QWEN38_MTP_LOAD_MODEL ?= unsloth/Qwen3.8-27B-UD-Q4_K_XL/AGENT
+QWEN38_MTP_LOAD_EXPECTED_SLOTS ?= 2
+QWEN38_MTP_LOAD_OUT ?= .tools/mtp-load/qwen38-output
+
+test-qwen38-mtp:
+	python3 .tools/mtp-load/mtp-load.py \
+		--host "$(MTP_LOAD_HOST)" \
+		--model "$(QWEN38_MTP_LOAD_MODEL)" \
+		--requests "$(MTP_LOAD_REQUESTS)" \
+		--prompt-tokens "$(MTP_LOAD_PROMPT_TOKENS)" \
+		--max-tokens "$(MTP_LOAD_MAX_TOKENS)" \
+		--expected-slots "$(QWEN38_MTP_LOAD_EXPECTED_SLOTS)" \
+		--seed "$(MTP_LOAD_SEED)" \
+		--require-mtp \
+		--out "$(QWEN38_MTP_LOAD_OUT)"
+
 # Sends one known-good coding prompt through a barrier to verify a one-slot
 # model can complete five concurrent requests. Responses stay in memory.
 # Requires nseq-max: 1

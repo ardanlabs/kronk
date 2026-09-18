@@ -157,7 +157,9 @@ func (e *batchEngine) clearFailedIMCPreparation(s *slot) {
 	e.model.decodeMu.Lock()
 	llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
 	if e.model.draft != nil && e.model.draft.mtp() {
-		llama.MemorySeqRm(e.model.draft.core().mem, s.seqID, -1, -1)
+		if _, ownDraftKV := e.model.draft.(draftKVExternalizer); ownDraftKV {
+			llama.MemorySeqRm(e.model.draft.core().mem, s.seqID, -1, -1)
+		}
 		s.draftNPast = 0
 		s.mtp.PendingHidden = s.mtp.PendingHidden[:0]
 	}

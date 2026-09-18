@@ -213,12 +213,12 @@ func (m *Models) ReconcileCatalog(ctx context.Context, log applog.Logger) error 
 	for canonical, entry := range cat.Models {
 		var touched bool
 
-		// Companion discovery: pre-MTP entries (mtp_checked == false) get a
-		// one-time HuggingFace sibling scan so a co-located mtp-*.gguf
-		// drafter is surfaced, and entries whose mmproj metadata was
-		// clobbered by a URL-based pull recover their projection. The scan
-		// is a no-op when nothing needs looking up; network failures leave
-		// the work for a later retry.
+		// Companion discovery: entries from an older MTP discovery version
+		// get a one-time HuggingFace sibling scan so co-located and nested
+		// mtp-*.gguf drafters are surfaced. Entries whose mmproj metadata was
+		// clobbered by a URL-based pull also recover their projection. The
+		// scan is a no-op when nothing needs looking up; network failures
+		// leave the work for a later retry.
 		if updated, ok := r.discoverCompanions(ctx, entry, log); ok {
 			entry = updated
 			touched = true

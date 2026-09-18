@@ -16,10 +16,10 @@ func TestResolveEmbeddedMTPCompatibility(t *testing.T) {
 		wantSource      internalspec.Source
 		wantErrContains string
 	}{
-		{"matching widths preserve embedded MTP", speculationPlan{Mode: SpeculationAuto, Source: speculationSourceMTPEmbedded, Available: true}, 4096, 4096, speculationSourceMTPEmbedded, ""},
-		{"automatic mode falls back on mismatch", speculationPlan{Mode: SpeculationAuto, Source: speculationSourceMTPEmbedded, Available: true}, 4096, 3584, speculationSourceNone, ""},
-		{"explicit MTP rejects mismatch", speculationPlan{Mode: SpeculationMTP, Source: speculationSourceMTPEmbedded, Available: true}, 4096, 3584, speculationSourceNone, "output width 3584 does not match target embedding width 4096"},
-		{"non-embedded source is unchanged", speculationPlan{Mode: SpeculationAuto, Source: speculationSourceMTPCompanion, Available: true}, 4096, 3584, speculationSourceMTPCompanion, ""},
+		{"matching widths preserve embedded MTP", speculationPlan{Mode: SpeculationAuto, Source: speculationSourceMTP, MTPArchitecture: mtpArchitectureQwen35OwnKV, MTPArtifact: mtpArtifactEmbedded, Available: true}, 4096, 4096, speculationSourceMTP, ""},
+		{"automatic mode falls back on mismatch", speculationPlan{Mode: SpeculationAuto, Source: speculationSourceMTP, MTPArchitecture: mtpArchitectureQwen35OwnKV, MTPArtifact: mtpArtifactEmbedded, Available: true}, 4096, 3584, speculationSourceNone, ""},
+		{"explicit MTP rejects mismatch", speculationPlan{Mode: SpeculationMTP, Source: speculationSourceMTP, MTPArchitecture: mtpArchitectureQwen35OwnKV, MTPArtifact: mtpArtifactEmbedded, Available: true}, 4096, 3584, speculationSourceNone, "output width 3584 does not match target embedding width 4096"},
+		{"non-embedded source is unchanged", speculationPlan{Mode: SpeculationAuto, Source: speculationSourceMTP, MTPArchitecture: mtpArchitectureGemmaSharedKV, MTPArtifact: mtpArtifactCompanion, Available: true}, 4096, 3584, speculationSourceMTP, ""},
 	}
 
 	for _, tt := range tests {

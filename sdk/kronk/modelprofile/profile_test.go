@@ -12,6 +12,7 @@ func TestResolveArchitectureParity(t *testing.T) {
 		memory     MemorySemantics
 		mtpLayers  int64
 		companion  bool
+		ownKV      bool
 		audio      bool
 		video      bool
 		recurrent  int64
@@ -62,6 +63,7 @@ func TestResolveArchitectureParity(t *testing.T) {
 			purpose:    PurposeGeneration,
 			memory:     MemoryRecurrent,
 			mtpLayers:  1,
+			ownKV:      true,
 			recurrent:  30,
 			fullLayers: 10,
 		},
@@ -166,6 +168,19 @@ func TestResolveArchitectureParity(t *testing.T) {
 			mtpLayers: 1,
 			companion: true,
 		},
+		{
+			name: "own KV MTP companion",
+			metadata: map[string]string{
+				"general.architecture":        "qwen35",
+				"qwen35.nextn_predict_layers": "1",
+			},
+			class:     ClassHybrid,
+			role:      RoleLanguage,
+			purpose:   PurposeGeneration,
+			memory:    MemoryRecurrent,
+			mtpLayers: 1,
+			ownKV:     true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -176,8 +191,8 @@ func TestResolveArchitectureParity(t *testing.T) {
 					got.Class, got.Role, got.Purpose, got.MemorySemantics,
 					tt.class, tt.role, tt.purpose, tt.memory)
 			}
-			if got.Speculation.NextNPredictLayers != tt.mtpLayers || got.Speculation.SharedKVCompanion != tt.companion {
-				t.Errorf("speculation = %+v, want layers %d companion %t", got.Speculation, tt.mtpLayers, tt.companion)
+			if got.Speculation.NextNPredictLayers != tt.mtpLayers || got.Speculation.SharedKVCompanion != tt.companion || got.Speculation.OwnKVCompanion != tt.ownKV {
+				t.Errorf("speculation = %+v, want layers %d shared companion %t own-KV companion %t", got.Speculation, tt.mtpLayers, tt.companion, tt.ownKV)
 			}
 			if got.Modalities.Audio != tt.audio || got.Modalities.Video != tt.video {
 				t.Errorf("modalities = %+v, want audio %t video %t", got.Modalities, tt.audio, tt.video)

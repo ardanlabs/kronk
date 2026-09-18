@@ -12,6 +12,7 @@ zarf/docker/openwebui/
 .tools/http-capture/output/
 .tools/http-replay/output/
 .tools/mtp-load/output/
+.tools/mtp-load/qwen38-output/
 .tools/adversarial/output/
 .tools/batch-load/output/
 .tools/media-load/output/

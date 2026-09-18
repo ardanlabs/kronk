@@ -596,12 +596,13 @@ func TestResolver_CacheHitNoHFCall(t *testing.T) {
 	cached := Catalog{
 		Models: map[string]CatalogEntry{
 			"unsloth/Qwen3-Q4_K_M": {
-				Provider:   "unsloth",
-				Family:     "Qwen3-GGUF",
-				Revision:   "main",
-				Files:      []string{"Qwen3-Q4_K_M.gguf"},
-				MMProj:     "mmproj-Qwen3-Q4_K_M.gguf",
-				MMProjOrig: "mmproj-F16.gguf",
+				Provider:            "unsloth",
+				Family:              "Qwen3-GGUF",
+				Revision:            "main",
+				Files:               []string{"Qwen3-Q4_K_M.gguf"},
+				MMProj:              "mmproj-Qwen3-Q4_K_M.gguf",
+				MMProjOrig:          "mmproj-F16.gguf",
+				MTPDiscoveryVersion: currentMTPDiscoveryVersion,
 			},
 		},
 	}
@@ -622,6 +623,51 @@ func TestResolver_CacheHitNoHFCall(t *testing.T) {
 	}
 	if !reflect.DeepEqual(res.Files, []string{"Qwen3-Q4_K_M.gguf"}) {
 		t.Errorf("Files = %v", res.Files)
+	}
+}
+
+func TestResolver_OldCacheDiscoversNestedMTP(t *testing.T) {
+	hfc := &fakeHF{
+		search: map[string][]string{
+			"unsloth|Qwen3.8-27B": {"unsloth/Qwen3.8-27B-GGUF"},
+		},
+		metas: map[string][]string{
+			"unsloth/Qwen3.8-27B-GGUF": {
+				"Qwen3.8-27B-UD-Q4_K_XL.gguf",
+				"MTP/mtp-Qwen3.8-27B-Q4_0.gguf",
+			},
+		},
+	}
+	rfile := filepath.Join(t.TempDir(), "catalog.yaml")
+	cached := Catalog{Models: map[string]CatalogEntry{
+		"unsloth/Qwen3.8-27B-UD-Q4_K_XL": {
+			Provider:   "unsloth",
+			Family:     "Qwen3.8-27B-GGUF",
+			Revision:   "main",
+			Files:      []string{"Qwen3.8-27B-UD-Q4_K_XL.gguf"},
+			MTPChecked: true,
+		},
+	}}
+	data, _ := yaml.Marshal(cached)
+	mustWriteFile(t, rfile, string(data))
+
+	r := NewResolverWithClient(nil, rfile, hfc)
+	res, err := r.Resolve(context.Background(), "unsloth/Qwen3.8-27B-UD-Q4_K_XL")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	want := "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/MTP/mtp-Qwen3.8-27B-Q4_0.gguf"
+	if res.DownloadMTP != want {
+		t.Errorf("DownloadMTP = %q, want %q", res.DownloadMTP, want)
+	}
+
+	got, err := r.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	entry := got.Models[res.CanonicalID]
+	if entry.MTPDiscoveryVersion != currentMTPDiscoveryVersion {
+		t.Errorf("MTPDiscoveryVersion = %d, want %d", entry.MTPDiscoveryVersion, currentMTPDiscoveryVersion)
 	}
 }
 
@@ -727,11 +773,12 @@ func TestModelsResolveSource_AcceptedInputForms(t *testing.T) {
 	cached := Catalog{
 		Models: map[string]CatalogEntry{
 			"unsloth/Qwen3-0.6B-Q8_0": {
-				Provider:   "unsloth",
-				Family:     "Qwen3-0.6B-GGUF",
-				Revision:   "main",
-				Files:      []string{"Qwen3-0.6B-Q8_0.gguf"},
-				MTPChecked: true,
+				Provider:            "unsloth",
+				Family:              "Qwen3-0.6B-GGUF",
+				Revision:            "main",
+				Files:               []string{"Qwen3-0.6B-Q8_0.gguf"},
+				MTPChecked:          true,
+				MTPDiscoveryVersion: currentMTPDiscoveryVersion,
 			},
 		},
 	}
@@ -1307,12 +1354,13 @@ func TestResolver_TagForm_CacheHit(t *testing.T) {
 	cached := Catalog{
 		Models: map[string]CatalogEntry{
 			"unsloth/Qwen3.6-35B-A3B-UD-Q4_K_XL": {
-				Provider:   "unsloth",
-				Family:     "Qwen3.6-35B-A3B-GGUF",
-				Revision:   "main",
-				Files:      []string{"Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"},
-				MMProj:     "mmproj-Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
-				MMProjOrig: "mmproj-F16.gguf",
+				Provider:            "unsloth",
+				Family:              "Qwen3.6-35B-A3B-GGUF",
+				Revision:            "main",
+				Files:               []string{"Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"},
+				MMProj:              "mmproj-Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+				MMProjOrig:          "mmproj-F16.gguf",
+				MTPDiscoveryVersion: currentMTPDiscoveryVersion,
 			},
 		},
 	}
@@ -1391,10 +1439,11 @@ func TestResolver_AllInputForms_ProduceSameDownloadURL(t *testing.T) {
 	cached := Catalog{
 		Models: map[string]CatalogEntry{
 			"unsloth/Qwen3.6-35B-A3B-UD-Q4_K_XL": {
-				Provider: "unsloth",
-				Family:   "Qwen3.6-35B-A3B-GGUF",
-				Revision: "main",
-				Files:    []string{"Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"},
+				Provider:            "unsloth",
+				Family:              "Qwen3.6-35B-A3B-GGUF",
+				Revision:            "main",
+				Files:               []string{"Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"},
+				MTPDiscoveryVersion: currentMTPDiscoveryVersion,
 			},
 		},
 	}
@@ -1490,6 +1539,41 @@ func TestSelectFiles_MTPCompanionCoLocated(t *testing.T) {
 	}
 }
 
+func TestSelectFiles_MTPCompanionSubdirectory(t *testing.T) {
+	siblings := []string{
+		"Qwen3.8-27B-UD-Q4_K_XL.gguf",
+		"MTP/mtp-Qwen3.8-27B-Q4_0.gguf",
+	}
+
+	files, _, mtp, ok := selectFiles(siblings, "Qwen3.8-27B-GGUF", "Qwen3.8-27B-UD-Q4_K_XL")
+	if !ok {
+		t.Fatal("expected match")
+	}
+	if !reflect.DeepEqual(files, []string{"Qwen3.8-27B-UD-Q4_K_XL.gguf"}) {
+		t.Errorf("files = %v, want Qwen3.8 target only", files)
+	}
+	if mtp != "MTP/mtp-Qwen3.8-27B-Q4_0.gguf" {
+		t.Errorf("mtp = %q, want nested Qwen3.8 companion", mtp)
+	}
+}
+
+func TestSelectFiles_MTPCompanionSkipsUnsupportedFlashNext(t *testing.T) {
+	siblings := []string{
+		"Qwen3.8-Flash-Next-UD-Q2_K_XL.gguf",
+		"MTP/mtp-Qwen3.8-Flash-Next-BF16.gguf",
+		"MTP/mtp-Qwen3.8-Flash-Next-Q4_K_M.gguf",
+		"MTP/mtp-Qwen3.8-Flash-Next-Q8_0.gguf",
+	}
+
+	_, _, mtp, ok := selectFiles(siblings, "Qwen3.8-Flash-Next-GGUF", "Qwen3.8-Flash-Next-UD-Q2_K_XL")
+	if !ok {
+		t.Fatal("expected match")
+	}
+	if mtp != "" {
+		t.Errorf("mtp = %q, want no unsupported qwen4exp companion", mtp)
+	}
+}
+
 func TestSelectFiles_MTPDedicatedRepoIsStandalone(t *testing.T) {
 	// A dedicated "*-MTP-GGUF" repo holds standalone MTP models. Its files
 	// must remain selectable as the model and never be treated as a
@@ -1569,10 +1653,9 @@ func TestMatchMTPToModel(t *testing.T) {
 	}
 }
 
-// TestResolver_DiscoverMTP verifies the schema-v2 migration path: an
-// existing catalog entry that predates MTP companion support gets a
-// co-located mtp-*.gguf drafter discovered and recorded by a single HF
-// sibling scan, with mtp_checked stamped so the work runs only once.
+// TestResolver_DiscoverMTP verifies the MTP discovery migration path: an
+// existing catalog entry whose discovery version predates nested MTP folders
+// gets a companion discovered and recorded by a single HF sibling scan.
 func TestResolver_DiscoverMTP(t *testing.T) {
 	if !hasNetwork() {
 		t.Skip("discoverCompanions requires network for the hasNetwork() guard")
@@ -1580,10 +1663,9 @@ func TestResolver_DiscoverMTP(t *testing.T) {
 
 	hfc := &fakeHF{
 		metas: map[string][]string{
-			"unsloth/gemma-4-26B-A4B-it-GGUF": {
-				"gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf",
-				"mmproj-F16.gguf",
-				"mtp-gemma-4-26B-A4B-it.gguf",
+			"unsloth/Qwen3.8-27B-GGUF": {
+				"Qwen3.8-27B-UD-Q4_K_XL.gguf",
+				"MTP/mtp-Qwen3.8-27B-Q4_0.gguf",
 			},
 		},
 	}
@@ -1594,10 +1676,11 @@ func TestResolver_DiscoverMTP(t *testing.T) {
 	r := NewResolverWithClient(nil, rfile, hfc)
 
 	entry := CatalogEntry{
-		Provider: "unsloth",
-		Family:   "gemma-4-26B-A4B-it-GGUF",
-		Revision: "main",
-		Files:    []string{"gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf"},
+		Provider:   "unsloth",
+		Family:     "Qwen3.8-27B-GGUF",
+		Revision:   "main",
+		Files:      []string{"Qwen3.8-27B-UD-Q4_K_XL.gguf"},
+		MTPChecked: true,
 	}
 
 	got, ok := r.discoverCompanions(context.Background(), entry, testLog)
@@ -1607,11 +1690,14 @@ func TestResolver_DiscoverMTP(t *testing.T) {
 	if !got.MTPChecked {
 		t.Error("MTPChecked not set after a successful scan")
 	}
-	if got.MTPOrig != "mtp-gemma-4-26B-A4B-it.gguf" {
-		t.Errorf("MTPOrig = %q, want mtp-gemma-4-26B-A4B-it.gguf", got.MTPOrig)
+	if got.MTPDiscoveryVersion != currentMTPDiscoveryVersion {
+		t.Errorf("MTPDiscoveryVersion = %d, want %d", got.MTPDiscoveryVersion, currentMTPDiscoveryVersion)
 	}
-	if got.MTP != "mtp-gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf" {
-		t.Errorf("MTP = %q, want mtp-gemma-4-26B-A4B-it-UD-Q8_K_XL.gguf", got.MTP)
+	if got.MTPOrig != "MTP/mtp-Qwen3.8-27B-Q4_0.gguf" {
+		t.Errorf("MTPOrig = %q, want nested Qwen3.8 companion", got.MTPOrig)
+	}
+	if got.MTP != "mtp-Qwen3.8-27B-UD-Q4_K_XL.gguf" {
+		t.Errorf("MTP = %q, want canonical Qwen3.8 companion name", got.MTP)
 	}
 
 	// A repo with no mtp sibling still stamps mtp_checked so the scan is
@@ -1689,11 +1775,12 @@ func TestResolver_DiscoverCompanions_RecoverMMProj(t *testing.T) {
 	// look up: no HF call, ok=false.
 	hfc.calls = nil
 	done := CatalogEntry{
-		Provider:   "unsloth",
-		Family:     "gemma-4-26B-A4B-it-GGUF",
-		Revision:   "main",
-		Files:      []string{"some-other-model-Q8_0.gguf"},
-		MTPChecked: true,
+		Provider:            "unsloth",
+		Family:              "gemma-4-26B-A4B-it-GGUF",
+		Revision:            "main",
+		Files:               []string{"some-other-model-Q8_0.gguf"},
+		MTPChecked:          true,
+		MTPDiscoveryVersion: currentMTPDiscoveryVersion,
 	}
 	if _, ok := r.discoverCompanions(context.Background(), done, testLog); ok {
 		t.Error("discoverCompanions ok=true, want false (nothing to discover)")

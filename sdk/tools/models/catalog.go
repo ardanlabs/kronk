@@ -24,6 +24,8 @@ type Catalog struct {
 	Models map[string]CatalogEntry `yaml:"models"`
 }
 
+const currentMTPDiscoveryVersion = 2
+
 // CatalogEntry is the persisted resolution for a single canonical
 // model id ("provider/modelID"). Files and MMProj are family-relative paths.
 //
@@ -37,21 +39,22 @@ type Catalog struct {
 // HF HEAD when the seeding tool builds the embedded default) so the BUI
 // can render total_size for entries that have not been downloaded yet.
 type CatalogEntry struct {
-	Provider     string              `yaml:"provider"`
-	Family       string              `yaml:"family"`
-	Revision     string              `yaml:"revision"`
-	Files        []string            `yaml:"files"`
-	FileSizes    []int64             `yaml:"file_sizes,omitempty"`
-	MMProj       string              `yaml:"mmproj,omitempty"`
-	MMProjOrig   string              `yaml:"mmproj_orig,omitempty"`
-	MMProjSize   int64               `yaml:"mmproj_size,omitempty"`
-	MTP          string              `yaml:"mtp,omitempty"`
-	MTPOrig      string              `yaml:"mtp_orig,omitempty"`
-	MTPSize      int64               `yaml:"mtp_size,omitempty"`
-	MTPChecked   bool                `yaml:"mtp_checked,omitempty"`
-	ModelType    string              `yaml:"model_type,omitempty"`
-	Capabilities CatalogCapabilities `yaml:"capabilities,omitempty"`
-	ResolvedAt   time.Time           `yaml:"resolved_at"`
+	Provider            string              `yaml:"provider"`
+	Family              string              `yaml:"family"`
+	Revision            string              `yaml:"revision"`
+	Files               []string            `yaml:"files"`
+	FileSizes           []int64             `yaml:"file_sizes,omitempty"`
+	MMProj              string              `yaml:"mmproj,omitempty"`
+	MMProjOrig          string              `yaml:"mmproj_orig,omitempty"`
+	MMProjSize          int64               `yaml:"mmproj_size,omitempty"`
+	MTP                 string              `yaml:"mtp,omitempty"`
+	MTPOrig             string              `yaml:"mtp_orig,omitempty"`
+	MTPSize             int64               `yaml:"mtp_size,omitempty"`
+	MTPChecked          bool                `yaml:"mtp_checked,omitempty"`
+	MTPDiscoveryVersion int                 `yaml:"mtp_discovery_version,omitempty"`
+	ModelType           string              `yaml:"model_type,omitempty"`
+	Capabilities        CatalogCapabilities `yaml:"capabilities,omitempty"`
+	ResolvedAt          time.Time           `yaml:"resolved_at"`
 }
 
 // Resolution is the result of a Resolve call. It holds both the persisted
@@ -77,11 +80,11 @@ type Resolution struct {
 	FromLocal    bool
 	FromCache    bool
 
-	// MTPChecked carries the persisted entry's mtp_checked flag through a
-	// cache hit. It reports whether the entry was built by an HF sibling
-	// scan that looked for an MTP drafter companion. Pre-MTP-support
-	// entries leave it false so the resolver knows to re-scan once.
-	MTPChecked bool
+	// MTPChecked and MTPDiscoveryVersion carry the persisted discovery state
+	// through a cache hit. Entries from an older discovery implementation are
+	// re-scanned once during catalog reconciliation.
+	MTPChecked          bool
+	MTPDiscoveryVersion int
 
 	// RepoFiles is populated only when the input identified a repository
 	// without selecting a specific model file (e.g. "owner/repo" or a
@@ -246,7 +249,8 @@ func (r *Resolver) Resolve(ctx context.Context, id string) (Resolution, error) {
 		// can be repaired with the canonical mmproj source name. When
 		// offline, return what we have. The same self-heal applies to a
 		// tracked MTP companion missing its DownloadMTP URL.
-		needsRepair := (cached.MMProj != "" && cached.DownloadProj == "") ||
+		needsRepair := cached.MTPDiscoveryVersion < currentMTPDiscoveryVersion ||
+			(cached.MMProj != "" && cached.DownloadProj == "") ||
 			(cached.MTP != "" && cached.DownloadMTP == "")
 		if !needsRepair || !online {
 			cached.FromCache = true
@@ -280,6 +284,7 @@ func (r *Resolver) Resolve(ctx context.Context, id string) (Resolution, error) {
 			entry.MMProjOrig = res.MMProjOrig
 			entry.MTPOrig = res.MTPOrig
 			entry.MTPChecked = true
+			entry.MTPDiscoveryVersion = currentMTPDiscoveryVersion
 			rm.Models[res.CanonicalID] = entry
 			if err := r.Save(rm); err != nil {
 				return Resolution{}, fmt.Errorf("resolve: persist: %w", err)
@@ -336,7 +341,7 @@ func (r *Resolver) resolvePinned(ctx context.Context, provider, repo, modelID st
 		len(entry.Files) > 0 &&
 		strings.EqualFold(siblingModelID(entry.Files[0]), modelID) {
 		cached := entryToResolution(canonical, entry)
-		needsRepair := !cached.MTPChecked ||
+		needsRepair := cached.MTPDiscoveryVersion < currentMTPDiscoveryVersion ||
 			(cached.MMProj != "" && cached.DownloadProj == "") ||
 			(cached.MTP != "" && cached.DownloadMTP == "")
 		if (!refresh && !needsRepair) || !online {
@@ -364,17 +369,18 @@ func (r *Resolver) resolvePinned(ctx context.Context, provider, repo, modelID st
 	}
 
 	res := Resolution{
-		CanonicalID:  canonical,
-		Provider:     provider,
-		Family:       repo,
-		Revision:     "main",
-		Files:        files,
-		MMProj:       localProjName(repo, mmproj, files),
-		MMProjOrig:   mmproj,
-		MTP:          localMTPName(repo, mtp, files),
-		MTPOrig:      mtp,
-		MTPChecked:   true,
-		DownloadURLs: buildDownloadURLs(provider, repo, "main", files),
+		CanonicalID:         canonical,
+		Provider:            provider,
+		Family:              repo,
+		Revision:            "main",
+		Files:               files,
+		MMProj:              localProjName(repo, mmproj, files),
+		MMProjOrig:          mmproj,
+		MTP:                 localMTPName(repo, mtp, files),
+		MTPOrig:             mtp,
+		MTPChecked:          true,
+		MTPDiscoveryVersion: currentMTPDiscoveryVersion,
+		DownloadURLs:        buildDownloadURLs(provider, repo, "main", files),
 	}
 	if mmproj != "" {
 		res.DownloadProj = buildDownloadURL(provider, repo, "main", mmproj)
@@ -387,6 +393,7 @@ func (r *Resolver) resolvePinned(ctx context.Context, provider, repo, modelID st
 	entry.MMProjOrig = mmproj
 	entry.MTPOrig = mtp
 	entry.MTPChecked = true
+	entry.MTPDiscoveryVersion = currentMTPDiscoveryVersion
 	if rm.Models == nil {
 		rm.Models = map[string]CatalogEntry{}
 	}
@@ -415,7 +422,8 @@ func (r *Resolver) resolveByTag(ctx context.Context, provider, repo, tag string)
 	online := hasNetwork()
 
 	if cached, ok := r.lookupCacheByTag(rm, provider, repo, tag); ok {
-		needsRepair := (cached.MMProj != "" && cached.DownloadProj == "") ||
+		needsRepair := cached.MTPDiscoveryVersion < currentMTPDiscoveryVersion ||
+			(cached.MMProj != "" && cached.DownloadProj == "") ||
 			(cached.MTP != "" && cached.DownloadMTP == "")
 		if !needsRepair || !online {
 			cached.FromCache = true
@@ -445,16 +453,18 @@ func (r *Resolver) resolveByTag(ctx context.Context, provider, repo, tag string)
 	canonical := canonicalID(provider, modelID)
 
 	res := Resolution{
-		CanonicalID:  canonical,
-		Provider:     provider,
-		Family:       repo,
-		Revision:     "main",
-		Files:        files,
-		MMProj:       localProjName(repo, mmproj, files),
-		MMProjOrig:   mmproj,
-		MTP:          localMTPName(repo, mtp, files),
-		MTPOrig:      mtp,
-		DownloadURLs: buildDownloadURLs(provider, repo, "main", files),
+		CanonicalID:         canonical,
+		Provider:            provider,
+		Family:              repo,
+		Revision:            "main",
+		Files:               files,
+		MMProj:              localProjName(repo, mmproj, files),
+		MMProjOrig:          mmproj,
+		MTP:                 localMTPName(repo, mtp, files),
+		MTPOrig:             mtp,
+		MTPChecked:          true,
+		MTPDiscoveryVersion: currentMTPDiscoveryVersion,
+		DownloadURLs:        buildDownloadURLs(provider, repo, "main", files),
 	}
 
 	if mmproj != "" {
@@ -468,6 +478,7 @@ func (r *Resolver) resolveByTag(ctx context.Context, provider, repo, tag string)
 	entry.MMProjOrig = mmproj
 	entry.MTPOrig = mtp
 	entry.MTPChecked = true
+	entry.MTPDiscoveryVersion = currentMTPDiscoveryVersion
 
 	if rm.Models == nil {
 		rm.Models = map[string]CatalogEntry{}
@@ -664,6 +675,8 @@ func (r *Resolver) refreshSizes(canonical string) error {
 	// timestamp.
 	updated.MMProjOrig = entry.MMProjOrig
 	updated.MTPOrig = entry.MTPOrig
+	updated.MTPChecked = entry.MTPChecked
+	updated.MTPDiscoveryVersion = entry.MTPDiscoveryVersion
 	updated.ModelType = entry.ModelType
 	updated.Capabilities = entry.Capabilities
 	updated.ResolvedAt = entry.ResolvedAt
@@ -748,17 +761,18 @@ func (r *Resolver) lookupCache(rm Catalog, provider, modelID string) (Resolution
 
 func entryToResolution(canonical string, entry CatalogEntry) Resolution {
 	res := Resolution{
-		CanonicalID:  canonical,
-		Provider:     entry.Provider,
-		Family:       entry.Family,
-		Revision:     entry.Revision,
-		Files:        append([]string(nil), entry.Files...),
-		MMProj:       entry.MMProj,
-		MMProjOrig:   entry.MMProjOrig,
-		MTP:          entry.MTP,
-		MTPOrig:      entry.MTPOrig,
-		MTPChecked:   entry.MTPChecked,
-		DownloadURLs: buildDownloadURLs(entry.Provider, entry.Family, entry.Revision, entry.Files),
+		CanonicalID:         canonical,
+		Provider:            entry.Provider,
+		Family:              entry.Family,
+		Revision:            entry.Revision,
+		Files:               append([]string(nil), entry.Files...),
+		MMProj:              entry.MMProj,
+		MMProjOrig:          entry.MMProjOrig,
+		MTP:                 entry.MTP,
+		MTPOrig:             entry.MTPOrig,
+		MTPChecked:          entry.MTPChecked,
+		MTPDiscoveryVersion: entry.MTPDiscoveryVersion,
+		DownloadURLs:        buildDownloadURLs(entry.Provider, entry.Family, entry.Revision, entry.Files),
 	}
 
 	// DownloadProj is built from the HuggingFace source name (MMProjOrig),
@@ -853,16 +867,18 @@ func (r *Resolver) resolveAtProvider(ctx context.Context, provider, modelID, pre
 		}
 
 		res := Resolution{
-			CanonicalID:  canonicalID(provider, modelID),
-			Provider:     provider,
-			Family:       repo,
-			Revision:     "main",
-			Files:        files,
-			MMProj:       localProjName(repo, mmproj, files),
-			MMProjOrig:   mmproj,
-			MTP:          localMTPName(repo, mtp, files),
-			MTPOrig:      mtp,
-			DownloadURLs: buildDownloadURLs(provider, repo, "main", files),
+			CanonicalID:         canonicalID(provider, modelID),
+			Provider:            provider,
+			Family:              repo,
+			Revision:            "main",
+			Files:               files,
+			MMProj:              localProjName(repo, mmproj, files),
+			MMProjOrig:          mmproj,
+			MTP:                 localMTPName(repo, mtp, files),
+			MTPOrig:             mtp,
+			MTPChecked:          true,
+			MTPDiscoveryVersion: currentMTPDiscoveryVersion,
+			DownloadURLs:        buildDownloadURLs(provider, repo, "main", files),
 		}
 
 		if mmproj != "" {
@@ -884,9 +900,9 @@ func (r *Resolver) resolveAtProvider(ctx context.Context, provider, modelID, pre
 // two jobs run during a reconcile:
 //
 //   - MTP migration: entries persisted before MTP companion support
-//     (MTPChecked == false) get the drafter discovered and recorded.
-//     MTPChecked is stamped on every successful scan — including when no
-//     companion is found — so the work runs at most once per entry.
+//     (or an older MTPDiscoveryVersion) get the drafter discovered and
+//     recorded. The current version is stamped on every successful scan —
+//     including when no companion is found — so each migration runs once.
 //
 //   - mmproj recovery: when the entry has no mmproj recorded but the
 //     renamed projection file is present on disk (the signature of a
@@ -905,7 +921,7 @@ func (r *Resolver) discoverCompanions(ctx context.Context, entry CatalogEntry, l
 
 	recoverMMProj := entry.MMProj == "" && r.companionOnDisk(entry, projOnDiskName(entry))
 
-	if entry.MTPChecked && !recoverMMProj {
+	if entry.MTPChecked && entry.MTPDiscoveryVersion >= currentMTPDiscoveryVersion && !recoverMMProj {
 		return entry, false
 	}
 
@@ -930,8 +946,9 @@ func (r *Resolver) discoverCompanions(ctx context.Context, entry CatalogEntry, l
 	_, proj, mtpc := classifySiblings(meta.Siblings, repoMatchesRenameRule(entry.Family))
 	target := entry.Files[0]
 
-	if !entry.MTPChecked {
+	if !entry.MTPChecked || entry.MTPDiscoveryVersion < currentMTPDiscoveryVersion {
 		entry.MTPChecked = true
+		entry.MTPDiscoveryVersion = currentMTPDiscoveryVersion
 		if mtp := pickMTPCompanion(mtpc, target); mtp != "" {
 			entry.MTP = localMTPName(entry.Family, mtp, entry.Files)
 			entry.MTPOrig = mtp
@@ -1141,6 +1158,7 @@ func (m *Models) persistURLResolution(modelURLs []string, projURL, mtpURL string
 	entry.MTPOrig = mtpOrig
 	if mtpURL != "" {
 		entry.MTPChecked = true
+		entry.MTPDiscoveryVersion = currentMTPDiscoveryVersion
 	}
 
 	// A URL-based download only carries the companions it was asked to
@@ -1159,6 +1177,7 @@ func (m *Models) persistURLResolution(modelURLs []string, projURL, mtpURL string
 			entry.MTPOrig = prev.MTPOrig
 			entry.MTPSize = prev.MTPSize
 			entry.MTPChecked = prev.MTPChecked
+			entry.MTPDiscoveryVersion = prev.MTPDiscoveryVersion
 		}
 	}
 

@@ -129,7 +129,7 @@ func (s *imcSession) logicalPosition() int {
 // mode. The strategy TYPE — not a flag on this struct — decides which
 // code paths run; see draft.go for the mode separation.
 //
-// Two strategies use draftCore today:
+// The strategies using draftCore include:
 //
 //   - Separate-GGUF draft (*classicDrafter): a distinct, smaller GGUF
 //     loaded into its own llama_model + context. Token-only decode loop
@@ -143,6 +143,12 @@ func (s *imcSession) logicalPosition() int {
 //     draft context with batch.embd populated from
 //     llama_get_embeddings_pre_norm. See loadDraftModelMTP and the MTP
 //     speculation package.
+//
+//   - Separate MTP draft (*separateMTPDrafter): the same own-KV MTP runtime
+//     with the prediction head loaded from a companion GGUF.
+//
+//   - Shared MTP draft (*sharedMTPDrafter): a companion assistant model whose
+//     context shares the target's KV memory.
 type draftCore struct {
 	model          llama.Model
 	vocab          llama.Vocab
@@ -274,7 +280,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		return nil, err
 	}
 
-	if plan.Source == speculationSourceMTPEmbedded {
+	if plan.Source == speculationSourceMTP && plan.MTPArtifact == mtpArtifactEmbedded {
 		targetEmbeddingWidth := llama.ModelNEmbd(mdl)
 		mtpOutputWidth := llama.ModelNEmbdOut(mdl)
 		compatiblePlan, err := resolveEmbeddedMTPCompatibility(plan, targetEmbeddingWidth, mtpOutputWidth)
@@ -817,10 +823,9 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int, plan specu
 	}
 
 	// Initialize draft model for speculative decoding. selectAndLoadDraft
-	// picks between an explicit separate-GGUF draft (cfg.PtrDraftModel) and
-	// an auto-detected MTP head living inside the target GGUF
-	// (nextn_predict_layers > 0, qwen35 architecture). Returns (nil, nil)
-	// when no draft applies.
+	// picks between an explicit separate-GGUF draft, a compatible separate-file
+	// MTP head, and an auto-detected MTP head inside the target GGUF. Returns
+	// (nil, nil) when no draft applies.
 	draft, err := selectAndLoadDraft(ctx, m.log, m.cfg, lctx, m.model, m.ctxParams, plan)
 	if err != nil {
 		return m.cleanupGenerationRuntime(ctx, fmt.Errorf("load-draft-model: %w", err))

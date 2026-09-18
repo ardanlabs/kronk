@@ -1393,7 +1393,7 @@ krn, err := kronk.New(
           <p>Classic speculative sampling uses the target and draft distributions to decide acceptance and replacement. Kronk's MTP path uses exact token-match verification against the target sampler. Both paths keep the target authoritative and emit an accepted prefix of zero to <code>ndraft</code> candidates followed by a target-derived replacement or bonus token.</p>
           <p>When a request supplies <code>seed</code>, Kronk derives request-local random streams for the target sampler, classic draft sampler, and speculative acceptance and replacement decisions. This prevents concurrent requests from consuming one another's random stream. See <a href="https://www.kronkai.com/manual#chapter-10-request-parameters">Chapter 10</a> for the repeatability contract and its environment constraints.</p>
           <h3 id="62-drafter-sources-and-selection">6.2 Drafter Sources and Selection</h3>
-          <p>Kronk can load a drafter from three sources:</p>
+          <p>Kronk can load a drafter from four sources:</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -1409,18 +1409,23 @@ krn, err := kronk.New(
                 <td>Requires <code>nseq-max: 1</code></td>
               </tr>
               <tr>
-                <td><strong>Companion MTP assistant</strong></td>
+                <td><strong>Shared-KV companion MTP assistant</strong></td>
                 <td>A model-specific assistant GGUF, currently used by Gemma4 models, is discovered with the downloaded target.</td>
                 <td>Supports multiple slots</td>
               </tr>
               <tr>
+                <td><strong>Own-KV companion MTP head</strong></td>
+                <td>A supported MTP GGUF under the repository's <code>MTP/</code> folder, currently used by Qwen3.8-27B, is downloaded with the target.</td>
+                <td>Supports multiple slots</td>
+              </tr>
+              <tr>
                 <td><strong>Embedded MTP head</strong></td>
-                <td>The target GGUF contains supported <code>nextn_predict_layers</code> metadata, currently used by Qwen3.5, Qwen3.6, and Qwen3.8 models.</td>
+                <td>The target GGUF contains supported <code>nextn_predict_layers</code> metadata, currently used by Qwen3.5 and Qwen3.6 models.</td>
                 <td>Supports multiple slots</td>
               </tr>
             </tbody>
           </table>
-          <p>Kronk checks these sources in that order. A <code>draft-model</code> block containing a <code>model-id</code> explicitly selects the classic separate draft and takes precedence over either MTP form. Without one, Kronk uses a compatible companion MTP file when present, then checks the target for an embedded MTP head. If no source is available, the model runs normally without speculation.</p>
+          <p>Kronk checks these sources in that order. A <code>draft-model</code> block containing a <code>model-id</code> explicitly selects the classic separate draft and takes precedence over the MTP forms. Without one, Kronk uses a compatible companion MTP file when present, then checks the target for an embedded MTP head. If no source is available, the model runs normally without speculation.</p>
           <p>A <code>draft-model</code> block containing only <code>ndraft</code> is different: it changes the MTP draft ceiling and does not select a classic draft or disable MTP.</p>
           <p>The model-level <code>speculation</code> setting selects the implementation. <code>auto</code> keeps the normal priority order, <code>disabled</code> runs target-only, <code>classic</code> requires a separate draft model, and <code>mtp</code> requires a compatible companion or embedded head. Explicit selection makes it possible to benchmark the same target with MTP enabled and disabled without changing downloaded model files.</p>
           <p>Embedded detection happens before llama.cpp loads the target. Kronk reads the first GGUF shard, where model metadata is stored, and enables MTP tensor loading when any positive <code>nextn_predict_layers</code> metadata value is present. The lookup uses the metadata suffix rather than a hard-coded architecture name, so a supported future architecture can advertise the same contract. This early step is required because llama.cpp otherwise omits gated MTP tensors during model load; adding an <code>ndraft</code> setting after load cannot recover them.</p>
@@ -1439,7 +1444,8 @@ krn, err := kronk.New(
           <p>Do not select a draft using a universal model-pair or quantization rule. Acceptance and cost can change substantially with sampling parameters and task type.</p>
           <h4 id="632-mtp">6.3.2 MTP</h4>
           <p>MTP is normally the simpler choice when the downloaded model provides a supported embedded or companion head. It is architecture-matched to its target, supports multiple execution slots, and does not require a <code>model-id</code> in the <code>draft-model</code> configuration.</p>
-          <p>An embedded head requires no companion file. A companion MTP assistant is an additional model-specific file, but Kronk's catalog and download flow can discover and associate it with the target automatically. It is not configured as a classic <code>draft-model</code>.</p>
+          <p>An embedded head requires no companion file. A companion MTP head is an additional model-specific file, but Kronk's catalog and download flow can discover and associate files at the repository root or under <code>MTP/</code> with the target automatically. It is not configured as a classic <code>draft-model</code>.</p>
+          <p>Qwen3.8 Flash Next's separate <code>qwen4exp</code> sidecars are not selected yet. Their runtime differs from the supported Qwen3.8-27B <code>qwen35</code> companion and requires additional llama.cpp and Kronk support.</p>
           <p>MTP availability is a property of the downloaded files and the loaded llama.cpp library. Naming a model “MTP” or adding an <code>ndraft</code> override cannot create an MTP head that is not present.</p>
           <h3 id="64-draft-size-and-classic-adaptive-throttling">6.4 Draft Size and Classic Adaptive Throttling</h3>
           <p><code>ndraft</code> is the maximum number of candidates the drafter attempts in one round. Larger values can save more target passes when acceptance remains high, but they also increase wasted draft and verification work when proposals are rejected.</p>

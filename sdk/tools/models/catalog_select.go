@@ -231,12 +231,17 @@ func classifySiblings(siblings []string, mtpStandalone bool) (gguf, proj, mtp []
 // "gemma-4-26B-A4B-it-UD-Q8_K_XL" matches companion "mtp-gemma-4-26B-A4B-it".
 // Same-directory candidates are preferred so a repo that ships drafters in
 // an "MTP/" subfolder still resolves the top-level convenience copy first.
+// Qwen3.8 Flash Next companions are deliberately excluded until Kronk and its
+// llama.cpp dependency support their qwen4exp sidecar runtime.
 func pickMTPCompanion(mtp []string, target string) string {
 	if len(mtp) == 0 {
 		return ""
 	}
 
 	tFam := strings.ToLower(stripQuantSuffix(siblingModelID(target)))
+	if strings.Contains(tFam, "qwen3.8-flash-next") {
+		return ""
+	}
 
 	var matches []string
 	for _, p := range mtp {

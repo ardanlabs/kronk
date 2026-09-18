@@ -36,7 +36,7 @@ func (e *batchEngine) mtpDraftInput(s *slot) (mtpengine.DraftInput, error) {
 		return mtpengine.DraftInput{}, nil
 	}
 
-	_, shared := e.model.draft.(*sharedMTPDrafter)
+	shared := mtpUsesSharedKV(e.model.draft)
 	mode := "mtp"
 	if shared {
 		mode = "mtp shared"
@@ -48,7 +48,7 @@ func (e *batchEngine) mtpDraftInput(s *slot) (mtpengine.DraftInput, error) {
 		Position:      s.draftNPast,
 		Hidden:        s.mtp.PendingHidden,
 		Count:         nDraft,
-		FixedPosition: shared,
+		FixedPosition: mtpUsesFixedDraftPosition(e.model.draft),
 		Candidates:    s.draftTokensBuf,
 		HiddenScratch: s.mtp.DraftHidden,
 		IsEOG: func(token llama.Token) bool {

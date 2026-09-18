@@ -52,17 +52,18 @@ for the repeatability contract and its environment constraints.
 
 ### 6.2 Drafter Sources and Selection
 
-Kronk can load a drafter from three sources:
+Kronk can load a drafter from four sources:
 
 | Source | How it is supplied | Slots |
 | ------ | ------------------ | ----- |
 | **Classic separate draft** | A `draft-model` configuration names another compatible GGUF. | Requires `nseq-max: 1` |
-| **Companion MTP assistant** | A model-specific assistant GGUF, currently used by Gemma4 models, is discovered with the downloaded target. | Supports multiple slots |
-| **Embedded MTP head** | The target GGUF contains supported `nextn_predict_layers` metadata, currently used by Qwen3.5, Qwen3.6, and Qwen3.8 models. | Supports multiple slots |
+| **Shared-KV companion MTP assistant** | A model-specific assistant GGUF, currently used by Gemma4 models, is discovered with the downloaded target. | Supports multiple slots |
+| **Own-KV companion MTP head** | A supported MTP GGUF under the repository's `MTP/` folder, currently used by Qwen3.8-27B, is downloaded with the target. | Supports multiple slots |
+| **Embedded MTP head** | The target GGUF contains supported `nextn_predict_layers` metadata, currently used by Qwen3.5 and Qwen3.6 models. | Supports multiple slots |
 
 Kronk checks these sources in that order. A `draft-model` block containing a
 `model-id` explicitly selects the classic separate draft and takes precedence
-over either MTP form. Without one, Kronk uses a compatible companion MTP file
+over the MTP forms. Without one, Kronk uses a compatible companion MTP file
 when present, then checks the target for an embedded MTP head. If no source is
 available, the model runs normally without speculation.
 
@@ -120,10 +121,14 @@ supported embedded or companion head. It is architecture-matched to its target,
 supports multiple execution slots, and does not require a `model-id` in the
 `draft-model` configuration.
 
-An embedded head requires no companion file. A companion MTP assistant is an
+An embedded head requires no companion file. A companion MTP head is an
 additional model-specific file, but Kronk's catalog and download flow can
-discover and associate it with the target automatically. It is not configured
-as a classic `draft-model`.
+discover and associate files at the repository root or under `MTP/` with the
+target automatically. It is not configured as a classic `draft-model`.
+
+Qwen3.8 Flash Next's separate `qwen4exp` sidecars are not selected yet. Their
+runtime differs from the supported Qwen3.8-27B `qwen35` companion and requires
+additional llama.cpp and Kronk support.
 
 MTP availability is a property of the downloaded files and the loaded
 llama.cpp library. Naming a model “MTP” or adding an `ndraft` override cannot

@@ -25,7 +25,7 @@ const (
 	ModeMTP Mode = "mtp"
 )
 
-// Source identifies the concrete implementation selected for a model.
+// Source identifies the broad speculation engine selected for a model.
 type Source uint8
 
 const (
@@ -35,11 +35,28 @@ const (
 	// SourceClassic selects a separate-GGUF drafter.
 	SourceClassic
 
-	// SourceMTPCompanion selects a separate-file, shared-KV MTP assistant.
-	SourceMTPCompanion
+	// SourceMTP selects an architecture-specific MTP backend.
+	SourceMTP
+)
 
-	// SourceMTPEmbedded selects an embedded, own-KV MTP head.
-	SourceMTPEmbedded
+// MTPArchitecture identifies the model-family runtime contract. It is kept
+// separate from MTPArtifact because embedded and companion Qwen35 heads use
+// the same own-KV synchronization and rollback behavior.
+type MTPArchitecture uint8
+
+const (
+	MTPArchitectureNone MTPArchitecture = iota
+	MTPArchitectureQwen35OwnKV
+	MTPArchitectureGemmaSharedKV
+)
+
+// MTPArtifact identifies where an MTP head's weights are stored.
+type MTPArtifact uint8
+
+const (
+	MTPArtifactNone MTPArtifact = iota
+	MTPArtifactEmbedded
+	MTPArtifactCompanion
 )
 
 // Config contains the capabilities needed to resolve one speculation plan.
@@ -50,17 +67,20 @@ type Config struct {
 	MTPNDraft         int
 	EmbeddedMTP       bool
 	CompanionMTP      bool
+	OwnKVCompanionMTP bool
 	MTPAvailable      bool
 }
 
 // Plan is the immutable decision shared by model loading, context sizing, and
 // runtime controller construction.
 type Plan struct {
-	Mode      Mode
-	Source    Source
-	NDraft    int
-	LoadMTP   bool
-	Available bool
+	Mode            Mode
+	Source          Source
+	MTPArchitecture MTPArchitecture
+	MTPArtifact     MTPArtifact
+	NDraft          int
+	LoadMTP         bool
+	Available       bool
 }
 
 // Active reports whether the selected implementation can run.
@@ -70,7 +90,7 @@ func (p Plan) Active() bool {
 
 // MTP reports whether the plan selects an MTP implementation.
 func (p Plan) MTP() bool {
-	return p.Source == SourceMTPCompanion || p.Source == SourceMTPEmbedded
+	return p.Source == SourceMTP
 }
 
 // RowsPerSequence returns the worst-case target rows contributed per sequence.
@@ -110,14 +130,22 @@ func Resolve(cfg Config) (Plan, error) {
 	plan := Plan{
 		Mode:      cfg.Mode,
 		NDraft:    cfg.MTPNDraft,
-		LoadMTP:   cfg.EmbeddedMTP,
 		Available: cfg.MTPAvailable,
 	}
 	switch {
 	case cfg.CompanionMTP:
-		plan.Source = SourceMTPCompanion
+		plan.Source = SourceMTP
+		plan.MTPArchitecture = MTPArchitectureGemmaSharedKV
+		plan.MTPArtifact = MTPArtifactCompanion
+	case cfg.OwnKVCompanionMTP:
+		plan.Source = SourceMTP
+		plan.MTPArchitecture = MTPArchitectureQwen35OwnKV
+		plan.MTPArtifact = MTPArtifactCompanion
 	case cfg.EmbeddedMTP:
-		plan.Source = SourceMTPEmbedded
+		plan.Source = SourceMTP
+		plan.MTPArchitecture = MTPArchitectureQwen35OwnKV
+		plan.MTPArtifact = MTPArtifactEmbedded
+		plan.LoadMTP = true
 	case cfg.Mode == ModeMTP:
 		return Plan{}, fmt.Errorf("speculation mode %q requested but the model has no companion or embedded MTP implementation", cfg.Mode)
 	}

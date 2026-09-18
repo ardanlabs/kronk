@@ -16,4 +16,5 @@ var architectureAdapters = []architectureAdapter{
 	knownRecurrentAdapter{},
 	qwenHybridAdapter{},
 	sharedKVCompanionAdapter{},
+	ownKVCompanionAdapter{},
 }

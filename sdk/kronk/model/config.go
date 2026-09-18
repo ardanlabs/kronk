@@ -284,14 +284,11 @@ type AdapterConfig struct {
 // ProjFile is the path to the projection files. This is mandatory for media
 // based models like vision and audio.
 //
-// MTPDrafterFile is the path to a separate-file MTP "assistant" drafter GGUF
-// that ships alongside the main model (e.g. Gemma4's
-// "mtp-gemma-4-26B-A4B-it-*.gguf"). It is NOT the main model and NOT a
-// vocab-matched classic draft model: it is a per-model speculative head
-// loaded as its own llama_model whose context shares the target's KV
-// memory. Auto-wired from disk when the companion file is present; empty
-// otherwise. Distinct from the embedded MTP head carried inside some
-// target GGUFs (Qwen3.5/3.6), which has no separate file.
+// MTPDrafterFile is the path to a separate-file MTP drafter GGUF that ships
+// alongside the main model. Supported files are Gemma assistant heads that
+// share target KV and Qwen35 heads that own their draft KV. It is not the main
+// model or a vocab-matched classic draft model. The catalog wires this field
+// when it downloads a compatible companion from the model repository.
 //
 // ProjOnCPU forces the multimodal projector (mmproj) to run on the CPU. When
 // nil or false, the projector runs on whichever device llama.cpp picks by

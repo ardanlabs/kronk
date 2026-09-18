@@ -165,8 +165,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	// Trim generated tokens from draft KV, keeping the cached prompt prefix
 	// for incremental reuse on the next request.
 	if e.model.draft != nil {
-		_, sharedMTP := e.model.draft.(*sharedMTPDrafter)
-		if !sharedMTP {
+		if !mtpUsesSharedKV(e.model.draft) {
 			trimPos := llama.Pos(len(s.draftCachedTokens))
 			switch {
 			case trimPos > 0:

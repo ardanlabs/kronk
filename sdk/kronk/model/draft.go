@@ -4,8 +4,9 @@ import "github.com/hybridgroup/yzma/pkg/llama"
 
 // This file defines the speculative-decoding strategy types. The goal is
 // CLEAR CODE-PATH SEPARATION between the runtime drafting modes so that
-// each mode is a distinct Go type rather than a set of boolean flags
-// (mtp/ownsModel/sharedKV) interpreted at every call site.
+// each resource-ownership mode is a distinct Go type. Architecture-specific
+// loading and runtime behavior is selected through mtpBackend instead of
+// concrete-type checks at call sites.
 //
 // Modes today:
 //
@@ -16,6 +17,9 @@ import "github.com/hybridgroup/yzma/pkg/llama"
 //	                   (Qwen3.5 / Qwen3.6, arch qwen35). Shares the
 //	                   target's llama_model but has its OWN draft KV; the
 //	                   engine mirror-replays each target batch into it.
+//	*separateMTPDrafter — separate-file Qwen MTP head. Owns its llama_model
+//	                   and draft KV; otherwise uses the same mirror-replay
+//	                   runtime as the embedded MTP head.
 //	*sharedMTPDrafter — separate-file MTP "assistant" (Gemma4
 //	                   gemma4-assistant). Loads its OWN llama_model from
 //	                   Config.MTPDrafterFile but creates its context with
@@ -34,14 +38,15 @@ import "github.com/hybridgroup/yzma/pkg/llama"
 // rather than guarded by a runtime flag.
 
 // draftKind identifies the speculative-decoding strategy. It is used only
-// for logging/metrics; behavioral dispatch is via concrete types and
-// capability interfaces, never a switch on this value.
+// for logging/metrics; behavioral dispatch is via backend and capability
+// interfaces, never a switch on this value.
 type draftKind uint8
 
 const (
-	draftClassic   draftKind = iota // separate-GGUF, vocab-matched draft
-	draftMTPQwen                    // embedded MTP head, own draft KV (Qwen)
-	draftMTPGemma4                  // separate-file MTP assistant, shared KV (Gemma4)
+	draftClassic         draftKind = iota // separate-GGUF, vocab-matched draft
+	draftMTPQwen                          // embedded MTP head, own draft KV (Qwen)
+	draftMTPQwenSeparate                  // separate-file MTP head, own draft KV (Qwen)
+	draftMTPGemma4                        // separate-file MTP assistant, shared KV (Gemma4)
 )
 
 func (k draftKind) String() string {
@@ -50,6 +55,8 @@ func (k draftKind) String() string {
 		return "classic-separate"
 	case draftMTPQwen:
 		return "mtp-qwen"
+	case draftMTPQwenSeparate:
+		return "mtp-qwen-separate"
 	case draftMTPGemma4:
 		return "mtp-gemma4-shared"
 	default:
@@ -151,12 +158,14 @@ func (d *classicDrafter) unload() {
 // KV state for IMC cache hits.
 type mtpDrafter struct {
 	c *draftCore
+	b mtpBackend
 }
 
-func (*mtpDrafter) sealedDrafter()     {}
-func (*mtpDrafter) kind() draftKind    { return draftMTPQwen }
-func (*mtpDrafter) mtp() bool          { return true }
-func (d *mtpDrafter) core() *draftCore { return d.c }
+func (*mtpDrafter) sealedDrafter()           {}
+func (*mtpDrafter) kind() draftKind          { return draftMTPQwen }
+func (*mtpDrafter) mtp() bool                { return true }
+func (d *mtpDrafter) core() *draftCore       { return d.c }
+func (d *mtpDrafter) mtpBackend() mtpBackend { return d.b }
 
 func (d *mtpDrafter) draftKVCtx() llama.Context { return d.c.lctx }
 
@@ -170,6 +179,31 @@ func (d *mtpDrafter) unload() {
 
 // =============================================================================
 
+// separateMTPDrafter is a separate-file Qwen MTP head. It owns its model and
+// KV cache, and participates in the same mirroring and IMC state lifecycle as
+// an embedded MTP head.
+type separateMTPDrafter struct {
+	c *draftCore
+	b mtpBackend
+}
+
+func (*separateMTPDrafter) sealedDrafter()           {}
+func (*separateMTPDrafter) kind() draftKind          { return draftMTPQwenSeparate }
+func (*separateMTPDrafter) mtp() bool                { return true }
+func (d *separateMTPDrafter) core() *draftCore       { return d.c }
+func (d *separateMTPDrafter) mtpBackend() mtpBackend { return d.b }
+
+func (d *separateMTPDrafter) draftKVCtx() llama.Context { return d.c.lctx }
+
+func (d *separateMTPDrafter) unload() {
+	d.c.freeCommon()
+	d.c.mtp.Free()
+	llama.Free(d.c.lctx)
+	llama.ModelFree(d.c.model)
+}
+
+// =============================================================================
+
 // sharedMTPDrafter is a separate-file MTP "assistant" head (Gemma4
 // gemma4-assistant). It loads its OWN llama_model from Config.MTPDrafterFile,
 // but its context is created with ctx_other==target so it SHARES the
@@ -177,12 +211,14 @@ func (d *mtpDrafter) unload() {
 // mirror into, so it does NOT implement draftKVExternalizer.
 type sharedMTPDrafter struct {
 	c *draftCore
+	b mtpBackend
 }
 
-func (*sharedMTPDrafter) sealedDrafter()     {}
-func (*sharedMTPDrafter) kind() draftKind    { return draftMTPGemma4 }
-func (*sharedMTPDrafter) mtp() bool          { return true }
-func (d *sharedMTPDrafter) core() *draftCore { return d.c }
+func (*sharedMTPDrafter) sealedDrafter()           {}
+func (*sharedMTPDrafter) kind() draftKind          { return draftMTPGemma4 }
+func (*sharedMTPDrafter) mtp() bool                { return true }
+func (d *sharedMTPDrafter) core() *draftCore       { return d.c }
+func (d *sharedMTPDrafter) mtpBackend() mtpBackend { return d.b }
 
 func (d *sharedMTPDrafter) unload() {
 	d.c.freeCommon()
@@ -202,6 +238,11 @@ func (d *sharedMTPDrafter) unload() {
 var (
 	_ drafter             = (*classicDrafter)(nil)
 	_ drafter             = (*mtpDrafter)(nil)
+	_ drafter             = (*separateMTPDrafter)(nil)
 	_ drafter             = (*sharedMTPDrafter)(nil)
+	_ mtpBackendDrafter   = (*mtpDrafter)(nil)
+	_ mtpBackendDrafter   = (*separateMTPDrafter)(nil)
+	_ mtpBackendDrafter   = (*sharedMTPDrafter)(nil)
 	_ draftKVExternalizer = (*mtpDrafter)(nil)
+	_ draftKVExternalizer = (*separateMTPDrafter)(nil)
 )

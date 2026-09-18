@@ -545,7 +545,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 				case job.imcSessionUseMRoPE:
 					_, decodeErr = e.model.decodeTextMRoPEIntoCache(advanceTokens, s.seqID, oldLogicalPosition)
 				case e.model.draft != nil:
-					if _, shared := e.model.draft.(*sharedMTPDrafter); shared {
+					if mtpUsesSharedKV(e.model.draft) {
 						decodeErr = e.decodeTokensIntoCacheMTP(job.ctx, s, advanceTokens, oldLogicalPosition)
 					} else {
 						decodeErr = e.model.decodeTokensIntoCache(job.ctx, advanceTokens, s.seqID, oldLogicalPosition)
@@ -1103,7 +1103,7 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 		// Gemma4's assistant shares the target KV. Restoring the target
 		// therefore restores the assistant's resume point as well; the
 		// guaranteed token-v2 tail captures pendingH before drafting.
-		if _, shared := e.model.draft.(*sharedMTPDrafter); shared && job.imcCacheHit {
+		if mtpUsesSharedKV(e.model.draft) && job.imcCacheHit {
 			s.draftNPast = cacheIdx
 			s.mtp.ResumeSource = "shared-target-kv"
 			e.model.log(job.ctx, "speculative", "status", "mtp-resume", "slot", s.id,

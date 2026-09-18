@@ -62,6 +62,7 @@ type Dimensions struct {
 type Speculation struct {
 	NextNPredictLayers int64
 	SharedKVCompanion  bool
+	OwnKVCompanion     bool
 }
 
 // Modalities contains modalities declared by model metadata. Image support
