@@ -2,6 +2,7 @@
 
 $BuiDirectory = Join-Path $RepoRoot "cmd/server/api/frontends/bui"
 
-Invoke-InRepoRoot {
-    Invoke-NativeCommand -Command "npm" -Arguments @("--prefix", $BuiDirectory, "install")
+Invoke-InDirectory -Path $BuiDirectory -Action {
+    npm install
+    Assert-NativeCommandSucceeded -Command "npm"
 }

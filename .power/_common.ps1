@@ -5,29 +5,27 @@ $ErrorActionPreference = "Stop"
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 
-function Invoke-NativeCommand {
+function Assert-NativeCommandSucceeded {
     param(
         [Parameter(Mandatory)]
-        [string]$Command,
-
-        [Parameter()]
-        [string[]]$Arguments = @()
+        [string]$Command
     )
-
-    & $Command @Arguments
 
     if ($LASTEXITCODE -ne 0) {
         throw "$Command exited with code $LASTEXITCODE"
     }
 }
 
-function Invoke-InRepoRoot {
+function Invoke-InDirectory {
     param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+
         [Parameter(Mandatory)]
         [scriptblock]$Action
     )
 
-    Push-Location $RepoRoot
+    Push-Location $Path
     try {
         & $Action
     }

@@ -1,5 +1,6 @@
 . "$PSScriptRoot\..\_common.ps1"
 
-Invoke-InRepoRoot {
-    Invoke-NativeCommand -Command "go" -Arguments @("run", "./cmd/server/api/tooling/docs")
+Invoke-InDirectory -Path $RepoRoot -Action {
+    go run ./cmd/server/api/tooling/docs
+    Assert-NativeCommandSucceeded -Command "go"
 }

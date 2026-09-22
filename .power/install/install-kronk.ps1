@@ -1,5 +1,6 @@
 . "$PSScriptRoot\..\_common.ps1"
 
-Invoke-InRepoRoot {
-    Invoke-NativeCommand -Command "go" -Arguments @("install", "./cmd/kronk")
+Invoke-InDirectory -Path $RepoRoot -Action {
+    go install ./cmd/kronk
+    Assert-NativeCommandSucceeded -Command "go"
 }
