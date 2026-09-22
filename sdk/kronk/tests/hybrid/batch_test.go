@@ -20,6 +20,12 @@ func Test_BatchChatConcurrent(t *testing.T) {
 
 	testlib.WithModel(t, testlib.CfgHybridChat(), func(t *testing.T, krn *kronk.Kronk) {
 		g := 10
+		// Keep this a batching/isolation test. Random thinking can consume the
+		// entire output budget without producing answer content.
+		request := testlib.DChatNoTool.Clone()
+		request["enable_thinking"] = false
+		request["max_tokens"] = 128
+		request["temperature"] = 0
 
 		t.Logf("Testing Hybrid batch inference with %d concurrent requests", g)
 
@@ -46,7 +52,7 @@ func Test_BatchChatConcurrent(t *testing.T) {
 
 				start := time.Now()
 
-				ch, err := krn.ChatStreaming(ctx, testlib.DChatNoTool)
+				ch, err := krn.ChatStreaming(ctx, request)
 				if err != nil {
 					results[idx].err = fmt.Errorf("goroutine %d: chat streaming error: %w", idx, err)
 					return

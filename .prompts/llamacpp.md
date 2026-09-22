@@ -16,6 +16,15 @@ This prompt has two outcomes:
 
 Use authoritative llama.cpp and yzma source, history, release notes, tests, and documentation. Inspect Kronk's actual usage before deciding that a change applies.
 
+Audit the complete upstream commit range, commit by commit; do not sample commits or rely only on release summaries. Review every llama.cpp commit between the exact old and proposed revisions against Kronk's actual llama, MTMD, speculative decoding/MTP, batching, cache, sampler, tokenizer, grammar and tool-calling, model-loading, multimodal, and backend usage. If yzma changes, perform the same commit-by-commit audit for its exact old-to-proposed range. For each commit, inspect the source diff and classify it as:
+
+- an internal fix or optimization Kronk inherits automatically;
+- an API, ABI, behavioral-contract, model-support, or packaging change that requires Kronk or yzma work;
+- a new capability or better API that Kronk could reasonably adopt; or
+- unrelated to Kronk.
+
+Account for every commit in the report. Commits with no Kronk impact may be grouped, but material changes and opportunities must be discussed individually with supporting evidence. Complete this audit before changing any files. The review itself is read-only; only proceed to implementation afterward when the routine-upgrade path applies.
+
 Determine:
 
 1. Whether llama.cpp changed any ABI or C API used by yzma, including symbols, signatures, structs, enums, ownership, lifetimes, or behavioral contracts.
