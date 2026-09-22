@@ -1687,6 +1687,7 @@ func humanBytes(n int64) string {
 // model configuration.
 func mtmdContextParams(cfg Config, device llama.GGMLBackendDevice) mtmd.ContextParamsType {
 	params := mtmd.ContextParamsDefault()
+	params.Threads = int32(cfg.NThreads())
 
 	if cfg.PtrProjOnCPU != nil {
 		params.UseGPU = !*cfg.PtrProjOnCPU

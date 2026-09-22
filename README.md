@@ -83,10 +83,10 @@ Hardware acceleration depends on the operating system, architecture, inference
 engine, and library bundle. Kronk downloads native libraries that are compatible with
 the installed release.
 
-| OS      | CPU architectures | Available GPU backends                         |
-| ------- | ----------------- | ---------------------------------------------- |
-| Linux   | amd64, arm64      | CUDA and Vulkan; ROCm on amd64                 |
-| macOS   | amd64, arm64      | Metal on arm64                                 |
+| OS      | CPU architectures | Available GPU backends                             |
+| ------- | ----------------- | -------------------------------------------------- |
+| Linux   | amd64, arm64      | CUDA and Vulkan; ROCm on amd64                     |
+| macOS   | amd64, arm64      | Metal on arm64                                     |
 | Windows | amd64, arm64      | CUDA, Vulkan, and ROCm on amd64; arm64 is CPU-only |
 
 Not every backend is available for every SDK or architecture. Use the CLI or SDK
@@ -115,13 +115,13 @@ Here are some of the known compatible versions:
 
 | kronk     | yzma    | llama.cpp | bucky  | whisper.cpp | malina | stable-diffusion.cpp |
 | --------- | ------- | --------- | ------ | ----------- | ------ | -------------------- |
-| 1.32.7-rc | 8ddb005 | b11037    | v1.1.3 | v1.9.4      | v1.1.2 | master-869-07a85c7   |
+| 1.32.7-rc | c134e34 | b11105    | v1.1.3 | v1.9.4      | v1.1.2 | master-869-07a85c7   |
 | 1.32.6    | ece4890 | b10896    | v1.1.2 | v1.9.3      | v1.1.0 | master-849-d04e895   |
 | 1.32.5    | v1.26.0 | v0.4.0    | v1.1.2 | v1.9.3      | v1.0.8 | master-841-6b3edaa   |
 | 1.32.4    | 6bd0208 | b10785    | v1.1.1 | v1.9.3      | v1.0.6 | master-841-6b3edaa   |
 
 Kronk 1.32.7-rc pins the llama.cpp manifest as
-`b11037@sha256:a6970a03e30d1070a69ca61986f7339beb18874d55b179e2f81ba38d73f116c5`.
+`b11105@sha256:3ae3d37bdf5ab057f367ce85dc75fa656a9274478c8f2dbb51a34dd7159f7fdd`.
 The manifest authenticates the platform-specific archives selected by the downloader,
 so the default installation verifies both the manifest and the downloaded libraries.
 Malina v1.1.2 pins stable-diffusion.cpp as
@@ -205,7 +205,6 @@ and talks about Kronk.
 | Oct 27th - 28th | Meetup Bostom              | Boston, MA            | Talk           |
 | Oct 31th - 4th  | GoLab (GopherCon Italy)    | Bologna, Italy        | Training, Talk |
 | Nov 6th - 8th   | UM v ND                    | Southbend, IN         | Game Day       |
-| Nov 9th - 11th  |                            | Las Vegas, NV         | Training       |
 | DECEMBER        | Winter Vacation            | Miami, FL             | Rest           |
 
 Copyright 2025-2026 Ardan Labs
