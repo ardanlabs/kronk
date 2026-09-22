@@ -1,3 +1,7 @@
+# Native Windows equivalents of the development Make targets.
+# From the repository root, run `./pwr.ps1 <target>` or `./pwr.ps1` to list targets.
+# These commands require neither GNU Make nor a Unix shell.
+
 #Requires -Version 5.1
 
 [CmdletBinding()]
@@ -13,6 +17,61 @@ param(
     )]
     [string]$Target = "help"
 )
+
+# ==============================================================================
+# Install
+
+# Install the Kronk CLI.
+# ./pwr.ps1 install-kronk
+function Install-Kronk {
+    Invoke-InDirectory -Path $RepoRoot -Action {
+        go install ./cmd/kronk
+        Assert-NativeCommandSucceeded -Command "go"
+    }
+}
+
+# ==============================================================================
+# Kronk BUI
+
+# Install the Kronk BUI dependencies.
+# ./pwr.ps1 bui-install
+function Install-Bui {
+    Invoke-InDirectory -Path $BuiDirectory -Action {
+        npm install
+        Assert-NativeCommandSucceeded -Command "npm"
+    }
+}
+
+# Build the Kronk BUI.
+# ./pwr.ps1 bui-build
+function Build-Bui {
+    Invoke-InDirectory -Path $BuiDirectory -Action {
+        npm run build
+        Assert-NativeCommandSucceeded -Command "npm"
+    }
+}
+
+# ==============================================================================
+# Kronk Server
+
+# Generate the Kronk documentation.
+# ./pwr.ps1 kronk-docs
+function Build-KronkDocs {
+    Invoke-InDirectory -Path $RepoRoot -Action {
+        go run ./cmd/server/api/tooling/docs
+        Assert-NativeCommandSucceeded -Command "go"
+    }
+}
+
+# Generate the Kronk documentation and build the BUI.
+# ./pwr.ps1 kronk-build
+function Build-Kronk {
+    Build-KronkDocs
+    Build-Bui
+}
+
+# ==============================================================================
+# Runtime Setup
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -54,7 +113,7 @@ function Invoke-InDirectory {
 
 function Show-Targets {
     Write-Host @"
-Usage: .\pwr.ps1 <target>
+Usage: ./pwr.ps1 <target>
 
 Targets:
   install-kronk
@@ -63,48 +122,6 @@ Targets:
   kronk-docs
   kronk-build
 "@
-}
-
-# ==============================================================================
-# Install
-
-function Install-Kronk {
-    Invoke-InDirectory -Path $RepoRoot -Action {
-        go install ./cmd/kronk
-        Assert-NativeCommandSucceeded -Command "go"
-    }
-}
-
-# ==============================================================================
-# Kronk BUI
-
-function Install-Bui {
-    Invoke-InDirectory -Path $BuiDirectory -Action {
-        npm install
-        Assert-NativeCommandSucceeded -Command "npm"
-    }
-}
-
-function Build-Bui {
-    Invoke-InDirectory -Path $BuiDirectory -Action {
-        npm run build
-        Assert-NativeCommandSucceeded -Command "npm"
-    }
-}
-
-# ==============================================================================
-# Kronk Server
-
-function Build-KronkDocs {
-    Invoke-InDirectory -Path $RepoRoot -Action {
-        go run ./cmd/server/api/tooling/docs
-        Assert-NativeCommandSucceeded -Command "go"
-    }
-}
-
-function Build-Kronk {
-    Build-KronkDocs
-    Build-Bui
 }
 
 # ==============================================================================
