@@ -12,11 +12,12 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/fineapp/finetune"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/fineapp/prepare"
 	"github.com/ardanlabs/kronk/sdk/tools/backend"
+	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
 // DocumentPreparer extracts and stores an uploaded source document.
 type DocumentPreparer interface {
-	Extract(ctx context.Context, sourcePath string) (prepare.Artifact, error)
+	ExtractDocuments(ctx context.Context, sourcePaths []string, progress prepare.ExtractionProgressFunc) (prepare.Artifact, error)
 }
 
 // DatasetBuilder creates preview and complete training datasets.
@@ -34,44 +35,102 @@ type FineTuner interface {
 	History() ([]finetune.RunInfo, error)
 }
 
+// TrainingRecipeProvider reports the settings used by the fine-tuning backend
+// for a resolved model file.
+type TrainingRecipeProvider interface {
+	Recipe(modelPath string) (finetune.Recipe, error)
+}
+
 // ModelResolver locates an installed model without exposing its path through
 // the HTTP API.
 type ModelResolver interface {
 	FullPath(modelID string) (backend.ModelPath, error)
 }
 
+// PreparationModelCatalog reports catalog membership, installation state,
+// and installed GGUF metadata used to select dataset preparation models.
+type PreparationModelCatalog interface {
+	Catalog() (models.Catalog, error)
+	IndexState() (downloaded, validated map[string]bool)
+	ModelInformation(modelID string) (models.ModelInfo, error)
+}
+
 type app struct {
-	preparer           DocumentPreparer
-	builder            DatasetBuilder
-	preparations       *preparationOperations
-	finetuner          FineTuner
-	models             ModelResolver
-	configuredModelIDs []string
-	datasetsPath       string
-	runtime            finetune.Runtime
+	preparer                DocumentPreparer
+	builder                 DatasetBuilder
+	preparations            *preparationOperations
+	finetuner               FineTuner
+	recipes                 TrainingRecipeProvider
+	models                  ModelResolver
+	preparationModelCatalog PreparationModelCatalog
+	datasetsPath            string
+	runtime                 finetune.Runtime
 }
 
 func newApp(cfg Config) *app {
-	configuredModelIDs := slices.Clone(cfg.ConfiguredModelIDs)
-	slices.Sort(configuredModelIDs)
-
 	return &app{
-		preparer:           cfg.Preparer,
-		builder:            cfg.Builder,
-		preparations:       newPreparationOperations(),
-		finetuner:          cfg.FineTuner,
-		models:             cfg.Models,
-		configuredModelIDs: configuredModelIDs,
-		datasetsPath:       cfg.DatasetsPath,
-		runtime:            cfg.Runtime,
+		preparer:                cfg.Preparer,
+		builder:                 cfg.Builder,
+		preparations:            newPreparationOperations(),
+		finetuner:               cfg.FineTuner,
+		recipes:                 cfg.Recipes,
+		models:                  cfg.Models,
+		preparationModelCatalog: cfg.PreparationModels,
+		datasetsPath:            cfg.DatasetsPath,
+		runtime:                 cfg.Runtime,
 	}
 }
 
 func (a *app) validatePreparationModel(id string) error {
-	if !slices.Contains(a.configuredModelIDs, id) {
-		return fmt.Errorf("model_id %q is not in the active model configuration", id)
+	available, err := a.preparationModelIDs()
+	if err != nil {
+		return err
+	}
+	if !slices.Contains(available, id) {
+		return fmt.Errorf("model_id %q is not available for dataset preparation", id)
 	}
 	return nil
+}
+
+func (a *app) preparationModelIDs() ([]string, error) {
+	if a.preparationModelCatalog == nil {
+		return nil, fmt.Errorf("preparation model catalog is not configured")
+	}
+
+	catalog, err := a.preparationModelCatalog.Catalog()
+	if err != nil {
+		return nil, fmt.Errorf("load preparation model catalog: %w", err)
+	}
+	downloaded, validated := a.preparationModelCatalog.IndexState()
+
+	available := make([]string, 0, len(catalog.Models))
+	for id, entry := range catalog.Models {
+		if !downloaded[id] || !validated[id] || !supportsDatasetPreparation(entry.Capabilities) {
+			continue
+		}
+
+		info, err := a.preparationModelCatalog.ModelInformation(id)
+		if err != nil || info.IsEmbedModel || info.IsRerankModel {
+			continue
+		}
+		if !supportsDatasetPreparation(models.CapabilitiesFor(info.Metadata, info.HasProjection)) {
+			continue
+		}
+
+		available = append(available, id)
+	}
+
+	slices.Sort(available)
+	return available, nil
+}
+
+func supportsDatasetPreparation(capabilities models.CatalogCapabilities) bool {
+	return capabilities.Endpoint == "chat_completion" &&
+		!capabilities.Embedding &&
+		!capabilities.Rerank &&
+		!capabilities.Images &&
+		!capabilities.Audio &&
+		!capabilities.Video
 }
 
 func (a *app) datasetFile(id, name string) (string, error) {

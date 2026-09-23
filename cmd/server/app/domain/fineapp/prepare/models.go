@@ -9,6 +9,18 @@ type Document struct {
 	ProcessingTime float64
 }
 
+// ExtractionProgress reports one document's position in a collection extraction.
+type ExtractionProgress struct {
+	Index     int
+	Stage     string
+	Completed bool
+	Cached    bool
+	Error     string
+}
+
+// ExtractionProgressFunc receives collection extraction updates.
+type ExtractionProgressFunc func(ExtractionProgress)
+
 // Message is one model-completion message.
 type Message struct {
 	Role    string `json:"role"`

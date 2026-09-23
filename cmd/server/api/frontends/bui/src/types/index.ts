@@ -1392,10 +1392,48 @@ export type FineTuningGoal =
 export interface FineTuningDatasetResponse {
   dataset_id: string;
   source_name: string;
+  source_names?: string[];
+  documents?: FineTuningDatasetDocument[];
+}
+
+export interface FineTuningDatasetDocument {
+  id: string;
+  name: string;
 }
 
 export interface FineTuningPreparationModelsResponse {
   models: string[];
+}
+
+export interface FineTuningRecipeResponse {
+  model_id: string;
+  method: string;
+  base_weights: string;
+  optimizer: string;
+  learning_rate: number;
+  weight_decay: number;
+  batch_size: number;
+  maximum_epochs: number;
+  seed: number;
+  lora: {
+    rank: number;
+    alpha: number;
+    scale: number;
+    target_modules: string[];
+  };
+  sequence: {
+    maximum_tokens: number;
+    source: string;
+    overflow: string;
+    padding: string;
+  };
+  loss: string;
+  checkpoint_selection: string;
+  output: {
+    format: string;
+    precision: string;
+    filename: string;
+  };
 }
 
 export interface FineTuningRecord {
@@ -1403,6 +1441,7 @@ export interface FineTuningRecord {
   target: string;
   evidence: string;
   fact_id?: string;
+  source_document?: string;
   independent_prompt?: boolean;
 }
 
@@ -1418,6 +1457,20 @@ export interface FineTuningPreviewRequest {
   goal: FineTuningGoal;
   model_id: string;
   record_count: number;
+  dataset_instructions: string;
+  document_ids?: string[];
+}
+
+export interface FineTuningDocumentPreview {
+  id: string;
+  name: string;
+  records: FineTuningRecord[];
+  verified_records: FineTuningRecord[];
+  verification: FineTuningVerification[];
+  generation_attempts: number;
+  verification_attempts: number;
+  prompt_tokens: number;
+  completion_tokens: number;
 }
 
 export interface FineTuningPreviewResponse {
@@ -1428,14 +1481,30 @@ export interface FineTuningPreviewResponse {
   verification_attempts: number;
   prompt_tokens: number;
   completion_tokens: number;
+  documents?: Omit<FineTuningDocumentPreview, 'verified_records'>[];
+}
+
+export interface FineTuningDocumentBuildRequest {
+  id: string;
+  reviewed_records: FineTuningRecord[];
+  verified_preview_records: FineTuningRecord[];
 }
 
 export interface FineTuningBuildRequest {
   dataset_id: string;
   goal: FineTuningGoal;
   model_id: string;
-  reviewed_records: FineTuningRecord[];
-  verified_preview_records: FineTuningRecord[];
+  dataset_instructions: string;
+  reviewed_records?: FineTuningRecord[];
+  verified_preview_records?: FineTuningRecord[];
+  documents?: FineTuningDocumentBuildRequest[];
+}
+
+export interface FineTuningDocumentBuildResponse {
+  id: string;
+  name: string;
+  fact_count: number;
+  record_count: number;
 }
 
 export interface FineTuningBuildResponse {
@@ -1448,6 +1517,7 @@ export interface FineTuningBuildResponse {
   prompt_tokens: number;
   completion_tokens: number;
   excluded_evidence: number;
+  documents?: FineTuningDocumentBuildResponse[];
 }
 
 export interface FineTuningPreparationProgress {
@@ -1457,9 +1527,24 @@ export interface FineTuningPreparationProgress {
   completed: number;
   total: number;
   accepted_records: number;
+  documents?: FineTuningPreparationDocumentProgress[];
   error?: string;
   started_at: string;
   updated_at: string;
+}
+
+export interface FineTuningPreparationDocumentProgress {
+  id?: string;
+  name: string;
+  status: 'queued' | 'extracting' | 'processing' | 'completed' | 'failed' | 'stopped';
+  stage: string;
+  accepted_records?: number;
+  accepted_facts?: number;
+  target_facts?: number;
+  completed_batches?: number;
+  total_batches?: number;
+  cached?: boolean;
+  error?: string;
 }
 
 export interface FineTuningProgress {

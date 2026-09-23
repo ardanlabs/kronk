@@ -42,7 +42,7 @@ func TestQuestionPoolRetainsReviewedQuestionAndLockedFact(t *testing.T) {
 
 func TestQuestionPoolPromptRequestsDistinctQuestionForms(t *testing.T) {
 	reviewed := Record{Prompt: "Which signal interrupts a program?", Target: "SIGPROF", Evidence: "The profiler uses SIGPROF to interrupt the program.", FactID: "fact-1"}
-	prompt := questionPoolMessages([]Record{reviewed})[1].Content
+	prompt := questionPoolMessages([]Record{reviewed}, "")[1].Content
 	for _, instruction := range []string{
 		fmt.Sprintf("exactly %d natural candidate questions", questionCandidatePoolSize),
 		"fill all 10 array positions; do not stop after the first four",
@@ -64,6 +64,27 @@ func TestQuestionPoolPromptRequestsDistinctQuestionForms(t *testing.T) {
 		if !strings.Contains(prompt, instruction) {
 			t.Fatalf("prompt does not contain %q", instruction)
 		}
+	}
+}
+
+func TestQuestionPoolCustomInstructionsReplaceDefaultStyles(t *testing.T) {
+	reviewed := Record{Prompt: "Which signal interrupts a program?", Target: "SIGPROF", Evidence: "The profiler uses SIGPROF to interrupt the program.", FactID: "fact-1"}
+	messages := questionPoolMessages([]Record{reviewed}, "Create big questions with detailed technical context.")
+	for _, defaultStyle := range []string{"concise and direct", "realistic scenario", "conversational"} {
+		if strings.Contains(messages[1].Content, defaultStyle) {
+			t.Fatalf("custom question pool retained conflicting default style %q: %s", defaultStyle, messages[1].Content)
+		}
+	}
+	for _, requirement := range []string{"Create big questions with detailed technical context.", "Every question must differ in framing or information need"} {
+		if !strings.Contains(messages[1].Content, requirement) {
+			t.Fatalf("custom question pool omitted %q: %s", requirement, messages[1].Content)
+		}
+	}
+	if !strings.HasPrefix(messages[1].Content, "USER INSTRUCTION — FOLLOW WHEN WRITING EVERY RECORD:\nCreate big questions with detailed technical context.") {
+		t.Fatalf("custom question pool did not begin with the exact user instruction: %s", messages[1].Content)
+	}
+	if !strings.Contains(messages[0].Content, "user's instruction controls how every question is written") {
+		t.Fatalf("question pool system prompt did not prioritize custom requirements: %s", messages[0].Content)
 	}
 }
 
@@ -217,7 +238,7 @@ func TestQuestionAnswerTargetPreferencesNeverRemoveFallbacks(t *testing.T) {
 		t.Fatalf("ranked candidates = %q, want %q", candidates[0], want)
 	}
 
-	prompt := questionAnswerTargetPrompt(candidates, nil, []string{"SIGPROF"})
+	prompt := questionAnswerTargetPrompt(candidates, nil, []string{"SIGPROF"}, "")
 	for _, text := range []string{"these are preferences", "reuse the best available target", "[PREVIOUSLY SELECTED TARGETS", "- SIGPROF"} {
 		if !strings.Contains(prompt, text) {
 			t.Fatalf("target prompt does not preserve fallback instruction %q", text)
@@ -225,8 +246,24 @@ func TestQuestionAnswerTargetPreferencesNeverRemoveFallbacks(t *testing.T) {
 	}
 }
 
+func TestBuildFingerprintIncludesDatasetInstructions(t *testing.T) {
+	request := FullBuildRequest{Goal: GoalQuestionAnswer, Model: "model", DatasetInstructions: "Prefer beginner questions."}
+	first, err := buildFingerprint([]byte("source"), request, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.DatasetInstructions = "Prefer advanced questions."
+	second, err := buildFingerprint([]byte("source"), request, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == second {
+		t.Fatal("changing dataset instructions did not invalidate the build checkpoint fingerprint")
+	}
+}
+
 func TestQuestionAnswerTargetPromptAlignsAnswerScope(t *testing.T) {
-	prompt := questionAnswerTargetPrompt([][]string{{"Routes", "The Routes function registers the sendJSON handler."}}, nil, nil)
+	prompt := questionAnswerTargetPrompt([][]string{{"Routes", "The Routes function registers the sendJSON handler."}}, nil, nil, "")
 	for _, instruction := range []string{
 		"most useful central instructional fact",
 		"complete answer users will be trained to return",
@@ -237,6 +274,27 @@ func TestQuestionAnswerTargetPromptAlignsAnswerScope(t *testing.T) {
 		if !strings.Contains(prompt, instruction) {
 			t.Fatalf("target prompt does not contain %q", instruction)
 		}
+	}
+}
+
+func TestCustomInstructionsControlAnswerDetailDefaults(t *testing.T) {
+	const instructions = "Use detailed answers that explain the complete supported behavior."
+	previewPrompt := previewUserPrompt(GoalQuestionAnswer, 1, "[PASSAGE 1]\nThe complete supported behavior.", instructions, generationExclusions{})
+	if strings.Contains(previewPrompt, "Prefer the shortest atomic") || !strings.Contains(previewPrompt, "Select only a grounded target") {
+		t.Fatalf("preview prompt retained the shortest-answer default: %s", previewPrompt)
+	}
+	targetPrompt := questionAnswerTargetPrompt([][]string{{"The complete supported behavior."}}, nil, nil, instructions)
+	if strings.Contains(targetPrompt, "Choose the shortest target") || strings.Contains(targetPrompt, "prefer that atomic answer") || !strings.Contains(targetPrompt, "scope and level of detail by following the user instruction") {
+		t.Fatalf("target-selection prompt retained the shortest-answer default: %s", targetPrompt)
+	}
+	if !strings.HasPrefix(targetPrompt, "USER INSTRUCTION — FOLLOW WHEN WRITING EVERY RECORD:\n"+instructions) {
+		t.Fatalf("target-selection prompt did not begin with the exact user instruction: %s", targetPrompt)
+	}
+
+	defaultPreview := previewUserPrompt(GoalQuestionAnswer, 1, "[PASSAGE 1]\nThe complete supported behavior.", "", generationExclusions{})
+	defaultTarget := questionAnswerTargetPrompt([][]string{{"The complete supported behavior."}}, nil, nil, "")
+	if !strings.Contains(defaultPreview, "Prefer the shortest atomic") || !strings.Contains(defaultTarget, "Choose the shortest target") {
+		t.Fatal("default generation lost the established concise-answer behavior")
 	}
 }
 
@@ -253,7 +311,7 @@ func TestQuestionAnswerTargetSelectionCanSkipUnusablePassage(t *testing.T) {
 	if len(records) != 1 || records[0].Evidence != passages[1] {
 		t.Fatalf("selected records = %+v", records)
 	}
-	prompt := questionAnswerTargetPrompt(candidates, nil, nil)
+	prompt := questionAnswerTargetPrompt(candidates, nil, nil, "")
 	if !strings.Contains(prompt, "Return target_id 0 for navigation, tables of contents, malformed tables") {
 		t.Fatalf("target selection prompt cannot skip unusable passages: %s", prompt)
 	}
@@ -317,7 +375,7 @@ func TestQuestionAnswerTargetCandidatesPreserveStandaloneFacts(t *testing.T) {
 
 func TestQuestionPromptsPreserveCodeSymbolProvenance(t *testing.T) {
 	passages := []string{"func (e *errorString) Error() string"}
-	targetPrompt := questionAnswerTargetPrompt(questionAnswerTargetCandidates(passages), nil, nil)
+	targetPrompt := questionAnswerTargetPrompt(questionAnswerTargetCandidates(passages), nil, nil, "")
 	for _, instruction := range []string{"exact role and capitalization", "method name must not become a type", "Do not merge facts from alternative packages or APIs"} {
 		if !strings.Contains(targetPrompt, instruction) {
 			t.Fatalf("target selection prompt does not contain %q", instruction)
@@ -325,7 +383,7 @@ func TestQuestionPromptsPreserveCodeSymbolProvenance(t *testing.T) {
 	}
 
 	record := Record{Prompt: "Which method returns an error string?", Target: "Error", Evidence: "func (e *errorString) Error() string", FactID: "fact-1"}
-	poolPrompt := questionPoolMessages([]Record{record})[1].Content
+	poolPrompt := questionPoolMessages([]Record{record}, "")[1].Content
 	for _, instruction := range []string{"code-symbol role, package, and capitalization", "combine alternate APIs"} {
 		if !strings.Contains(poolPrompt, instruction) {
 			t.Fatalf("question pool prompt does not contain %q", instruction)

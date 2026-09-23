@@ -6,6 +6,7 @@ import { useDownload } from '../contexts/DownloadContext';
 import { useAutoTestRunner } from '../contexts/AutoTestRunnerContext';
 import { useAccuracyRunner } from '../contexts/AccuracyRunnerContext';
 import { useEfficiencyRunner } from '../contexts/EfficiencyRunnerContext';
+import { useFineTuningRunner, type FineTuningActivity } from '../contexts/FineTuningRunnerContext';
 import { usePlayground } from '../contexts/PlaygroundContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -327,6 +328,12 @@ export default function Layout({ children }: LayoutProps) {
     completedRun: efficiencyCompleted,
     dismissCompleted: dismissEfficiency,
   } = useEfficiencyRunner();
+  const {
+    preparationActivity: fineTuningPreparation,
+    trainingActivity: fineTuningTraining,
+    cancelPreparation: stopFineTuningPreparation,
+    stopRun: stopFineTuningTraining,
+  } = useFineTuningRunner();
   const { session, setSession, selectedModel, setChatMessages } = usePlayground();
   const { theme, toggleTheme } = useTheme();
   const { authenticationRequired, logout } = useAuth();
@@ -473,6 +480,7 @@ export default function Layout({ children }: LayoutProps) {
   const showDownloadIndicator = !!download;
   const showAccuracyIndicator = !!accuracyRun || !!accuracyCompleted;
   const showEfficiencyIndicator = !!efficiencyRun || !!efficiencyCompleted;
+  const showFineTuningIndicator = !!fineTuningPreparation || !!fineTuningTraining;
   const showSessionIndicator = !!session;
   const downloadTarget = download?.origin === 'catalog'
     ? routeMap['catalog-list']
@@ -489,6 +497,12 @@ export default function Layout({ children }: LayoutProps) {
         ? 'Accuracy batch...'
         : 'Accuracy compare...'
     : '';
+
+  const fineTuningProgress = (activity: FineTuningActivity) => {
+    if (activity.total <= 0) return activity.stage;
+    const percent = Math.min(100, Math.round((activity.completed / activity.total) * 100));
+    return `${activity.stage} · ${activity.completed}/${activity.total} (${percent}%)`;
+  };
 
   // Auto-expand categories that contain the current page
   useEffect(() => {
@@ -678,8 +692,56 @@ export default function Layout({ children }: LayoutProps) {
           </Link>
         </div>
         <nav>{menuStructure.map((category) => renderCategory(category))}</nav>
-        {(showAutoTestIndicator || showDownloadIndicator || showAccuracyIndicator || showEfficiencyIndicator || showSessionIndicator) && (
+        {(showAutoTestIndicator || showDownloadIndicator || showAccuracyIndicator || showEfficiencyIndicator || showFineTuningIndicator || showSessionIndicator) && (
           <div className="sidebar-indicators">
+            {fineTuningPreparation && (
+              <div className="download-indicator">
+                <div className="download-indicator-link autotest-indicator-link">
+                  <Link to={`${routeMap['fine-tuning']}?view=prepare`} className="autotest-indicator-top">
+                    <div className="download-indicator-header">
+                      <span className="download-indicator-spinner" />
+                      <span className="download-indicator-title">{fineTuningPreparation.title}</span>
+                    </div>
+                    <div className="download-indicator-url" title={fineTuningProgress(fineTuningPreparation)}>
+                      {fineTuningProgress(fineTuningPreparation)}
+                    </div>
+                  </Link>
+                  <button
+                    type="button"
+                    className="autotest-indicator-stop"
+                    onClick={stopFineTuningPreparation}
+                    aria-label="Stop dataset preparation"
+                    title="Stop dataset preparation"
+                  >
+                    ■
+                  </button>
+                </div>
+              </div>
+            )}
+            {fineTuningTraining && (
+              <div className="download-indicator">
+                <div className="download-indicator-link autotest-indicator-link">
+                  <Link to={`${routeMap['fine-tuning']}?view=run`} className="autotest-indicator-top">
+                    <div className="download-indicator-header">
+                      <span className="download-indicator-spinner" />
+                      <span className="download-indicator-title">{fineTuningTraining.title}</span>
+                    </div>
+                    <div className="download-indicator-url" title={fineTuningProgress(fineTuningTraining)}>
+                      {fineTuningProgress(fineTuningTraining)}
+                    </div>
+                  </Link>
+                  <button
+                    type="button"
+                    className="autotest-indicator-stop"
+                    onClick={stopFineTuningTraining}
+                    aria-label="Stop fine-tuning run"
+                    title="Stop fine-tuning run"
+                  >
+                    ■
+                  </button>
+                </div>
+              </div>
+            )}
             {showSessionIndicator && (
               <div className="download-indicator">
                 <div className="download-indicator-link autotest-indicator-link">

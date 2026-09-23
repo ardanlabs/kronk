@@ -67,6 +67,7 @@ import { SamplingProvider } from './contexts/SamplingContext';
 import { AutoTestRunnerProvider } from './contexts/AutoTestRunnerContext';
 import { AccuracyRunnerProvider } from './contexts/AccuracyRunnerContext';
 import { EfficiencyRunnerProvider } from './contexts/EfficiencyRunnerContext';
+import { FineTuningRunnerProvider } from './contexts/FineTuningRunnerContext';
 import { PlaygroundProvider } from './contexts/PlaygroundContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 
@@ -279,6 +280,7 @@ function App() {
         <ModelListProvider>
           <AccuracyRunnerProvider>
           <EfficiencyRunnerProvider>
+          <FineTuningRunnerProvider>
           <DownloadProvider>
             <AutoTestRunnerProvider>
             <PlaygroundProvider>
@@ -353,6 +355,7 @@ function App() {
             </PlaygroundProvider>
             </AutoTestRunnerProvider>
           </DownloadProvider>
+          </FineTuningRunnerProvider>
           </EfficiencyRunnerProvider>
           </AccuracyRunnerProvider>
         </ModelListProvider>

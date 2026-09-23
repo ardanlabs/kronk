@@ -20,7 +20,7 @@ const (
 	fullEvidenceRunes         = 3000
 	buildCheckpointFile       = ".dataset-build.json"
 	datasetSpareFile          = "dataset-spares.jsonl"
-	datasetContract           = 44
+	datasetContract           = 45
 	questionCandidatePoolSize = 10
 	maximumTargetSimilarity   = 0.20
 )
@@ -44,6 +44,7 @@ type FullBuildRequest struct {
 	DatasetDirectory           string
 	Goal                       Goal
 	Model                      string
+	DatasetInstructions        string
 	ReviewedRecords            []Record
 	VerifiedPreviewRecords     []Record
 	MinimumQuestionAnswerFacts int
@@ -55,6 +56,7 @@ type FullBuildProgress struct {
 	CompletedBatches int
 	TotalBatches     int
 	AcceptedRecords  int
+	AcceptedFacts    int
 	CompletedUnits   int
 	TotalUnits       int
 	Stage            string
@@ -63,6 +65,7 @@ type FullBuildProgress struct {
 // FullBuildArtifact describes a persisted complete canonical dataset.
 type FullBuildArtifact struct {
 	Records              []Record
+	SpareRecords         []Record
 	RecordsPath          string
 	SpareRecordsPath     string
 	ReportPath           string
@@ -75,22 +78,50 @@ type FullBuildArtifact struct {
 	ExcludedEvidence     int
 }
 
+// FullBuildDocument is one independently prepared source included in a
+// combined training dataset.
+type FullBuildDocument struct {
+	ID       string
+	Name     string
+	Artifact FullBuildArtifact
+}
+
+// FullBuildMergeRequest describes the independently prepared sources that
+// should become one training dataset.
+type FullBuildMergeRequest struct {
+	DatasetDirectory    string
+	Goal                Goal
+	Model               string
+	DatasetInstructions string
+	Documents           []FullBuildDocument
+}
+
+// FullBuildDocumentReport records one source's contribution to a combined build.
+type FullBuildDocumentReport struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Facts   int    `json:"facts"`
+	Records int    `json:"records"`
+}
+
 // FullBuildReport records the provenance and model cost of a complete build.
 type FullBuildReport struct {
-	Version              int       `json:"version"`
-	CompletedAt          time.Time `json:"completed_at"`
-	Goal                 Goal      `json:"goal"`
-	Model                string    `json:"model"`
-	TotalRecords         int       `json:"total_records"`
-	ReviewedSeedInput    int       `json:"reviewed_seed_input_count"`
-	ReviewedSeedCount    int       `json:"reviewed_seed_count"`
-	GeneratedCount       int       `json:"generated_count"`
-	GenerationAttempts   int       `json:"generation_attempts"`
-	VerificationAttempts int       `json:"verification_attempts"`
-	PromptTokens         int       `json:"prompt_tokens"`
-	CompletionTokens     int       `json:"completion_tokens"`
-	ExcludedEvidence     int       `json:"excluded_evidence"`
-	SpareFacts           int       `json:"spare_facts"`
+	Version              int                       `json:"version"`
+	CompletedAt          time.Time                 `json:"completed_at"`
+	Goal                 Goal                      `json:"goal"`
+	Model                string                    `json:"model"`
+	DatasetInstructions  string                    `json:"dataset_instructions,omitempty"`
+	TotalRecords         int                       `json:"total_records"`
+	ReviewedSeedInput    int                       `json:"reviewed_seed_input_count"`
+	ReviewedSeedCount    int                       `json:"reviewed_seed_count"`
+	GeneratedCount       int                       `json:"generated_count"`
+	GenerationAttempts   int                       `json:"generation_attempts"`
+	VerificationAttempts int                       `json:"verification_attempts"`
+	PromptTokens         int                       `json:"prompt_tokens"`
+	CompletionTokens     int                       `json:"completion_tokens"`
+	ExcludedEvidence     int                       `json:"excluded_evidence"`
+	SpareFacts           int                       `json:"spare_facts"`
+	Documents            []FullBuildDocumentReport `json:"documents,omitempty"`
 }
 
 // BuildFull creates, independently verifies, and atomically persists a
@@ -105,6 +136,11 @@ func (p *Previewer) BuildFull(ctx context.Context, request FullBuildRequest) (Fu
 	if !request.Goal.valid() {
 		return FullBuildArtifact{}, fmt.Errorf("build dataset: unsupported goal %q", request.Goal)
 	}
+	instructions, err := normalizeDatasetInstructions(request.DatasetInstructions)
+	if err != nil {
+		return FullBuildArtifact{}, fmt.Errorf("build dataset: %w", err)
+	}
+	request.DatasetInstructions = instructions
 	if err := ctx.Err(); err != nil {
 		return FullBuildArtifact{}, fmt.Errorf("build dataset: %w", err)
 	}
@@ -120,7 +156,6 @@ func (p *Previewer) BuildFull(ctx context.Context, request FullBuildRequest) (Fu
 	reviewedSeedInput := len(seeds)
 	previewAligned := len(seeds) == len(verifiedPreview)
 	usableSeeds := make([]Record, 0, len(seeds))
-	usableVerifiedPreview := make([]Record, 0, len(verifiedPreview))
 	for index, record := range seeds {
 		qualityErr := validateRecordShape(request.Goal, record.Prompt, record.Target)
 		if qualityErr == nil && request.Goal == GoalQuestionAnswer {
@@ -137,15 +172,13 @@ func (p *Previewer) BuildFull(ctx context.Context, request FullBuildRequest) (Fu
 			record.FactID = recordFactID(record.Evidence, record.Target)
 		}
 		usableSeeds = append(usableSeeds, record)
-		if previewAligned {
-			usableVerifiedPreview = append(usableVerifiedPreview, verifiedPreview[index])
-		}
 	}
 	seeds = usableSeeds
-	if previewAligned {
-		verifiedPreview = usableVerifiedPreview
+	reviewedToVerify := seeds
+	reviewedIndexes := make([]int, len(seeds))
+	for index := range reviewedIndexes {
+		reviewedIndexes[index] = index
 	}
-	reviewedToVerify, reviewedIndexes := changedReviewedRecords(seeds, verifiedPreview)
 	markdown, err := os.ReadFile(filepath.Join(request.DatasetDirectory, "extracted.md"))
 	if err != nil {
 		return FullBuildArtifact{}, fmt.Errorf("read extracted Markdown: %w", err)
@@ -195,6 +228,7 @@ func (p *Previewer) BuildFull(ctx context.Context, request FullBuildRequest) (Fu
 			CompletedBatches: completedBatches,
 			TotalBatches:     len(batches),
 			AcceptedRecords:  len(records),
+			AcceptedFacts:    questionAnswerFactCount(records),
 			CompletedUnits:   units,
 			TotalUnits:       totalUnits,
 			Stage:            stage,
@@ -204,29 +238,23 @@ func (p *Previewer) BuildFull(ctx context.Context, request FullBuildRequest) (Fu
 		if !questionAnswerProgress && len(reviewedToVerify) > 0 {
 			totalUnits++
 		}
-		previewStage := "Using verified preview"
-		if len(reviewedToVerify) > 0 {
-			previewStage = "Checking edited preview rows"
-			if len(verifiedPreview) == 0 {
-				previewStage = "Checking reviewed preview"
-			}
-		}
+		previewStage := "Checking reviewed preview"
 		reportProgress(previewStage, completedUnits)
 		if len(reviewedToVerify) > 0 {
-			verification, verificationMetrics, err := p.verifyRecords(ctx, request.Model, request.Goal, reviewedToVerify)
+			verification, verificationMetrics, err := p.verifyRecords(ctx, request.Model, request.Goal, request.DatasetInstructions, reviewedToVerify)
 			metrics.add(verificationMetrics)
 			if err != nil {
-				return FullBuildArtifact{}, fmt.Errorf("build dataset: verify edited preview: %w", err)
+				return FullBuildArtifact{}, fmt.Errorf("build dataset: verify reviewed preview: %w", err)
 			}
 			if failed := failedVerification(verification); len(failed) > 0 {
 				recordNumber := reviewedIndexes[failed[0].RecordNumber-1] + 1
-				return FullBuildArtifact{}, fmt.Errorf("build dataset: edited preview record %d is not supported by its prompt and evidence: %s", recordNumber, failed[0].Reason)
+				return FullBuildArtifact{}, fmt.Errorf("build dataset: reviewed preview record %d is not supported by its prompt, evidence, and dataset requirements: %s", recordNumber, failed[0].Reason)
 			}
 		}
 		if request.Goal == GoalQuestionAnswer {
 			reportProgress("Creating question pools for reviewed facts", completedUnits)
 			exclusions := generationExclusions{prompts: recordPrompts(records)}
-			expanded, expansionMetrics, expansionErr := p.expandQuestionAnswerRecords(ctx, request.Model, records, exclusions)
+			expanded, expansionMetrics, expansionErr := p.expandQuestionAnswerRecords(ctx, request.Model, request.DatasetInstructions, records, exclusions)
 			metrics.add(expansionMetrics)
 			if expansionErr != nil {
 				if !isRecordQualityError(expansionErr) {
@@ -237,7 +265,7 @@ func (p *Previewer) BuildFull(ctx context.Context, request FullBuildRequest) (Fu
 				reportProgress("Verifying reviewed question pools", completedUnits)
 				var repairMetrics previewMetrics
 				var repairErr error
-				records, repairMetrics, repairErr = p.verifyQuestionAnswerRecords(ctx, request.Model, seeds, expanded)
+				records, repairMetrics, repairErr = p.verifyQuestionAnswerRecords(ctx, request.Model, request.DatasetInstructions, seeds, expanded)
 				metrics.add(repairMetrics)
 				if repairErr != nil {
 					return FullBuildArtifact{}, repairErr
@@ -338,12 +366,12 @@ func (p *Previewer) BuildFull(ctx context.Context, request FullBuildRequest) (Fu
 		}
 	}
 	artifact := FullBuildArtifact{
-		Records: records, ReviewedRecordCount: reviewedRecordCount, GeneratedRecordCount: len(records) - reviewedRecordCount,
+		Records: records, SpareRecords: spareRecords, ReviewedRecordCount: reviewedRecordCount, GeneratedRecordCount: len(records) - reviewedRecordCount,
 		GenerationAttempts: metrics.generationAttempts, VerificationAttempts: metrics.verificationAttempts,
 		PromptTokens: metrics.promptTokens, CompletionTokens: metrics.completionTokens, ExcludedEvidence: excludedEvidence,
 	}
 	report := FullBuildReport{
-		Version: datasetContract, CompletedAt: p.now().UTC(), Goal: request.Goal, Model: request.Model,
+		Version: datasetContract, CompletedAt: p.now().UTC(), Goal: request.Goal, Model: request.Model, DatasetInstructions: request.DatasetInstructions,
 		TotalRecords: len(artifact.Records), ReviewedSeedInput: reviewedSeedInput, ReviewedSeedCount: artifact.ReviewedRecordCount, GeneratedCount: artifact.GeneratedRecordCount,
 		GenerationAttempts: artifact.GenerationAttempts, VerificationAttempts: artifact.VerificationAttempts,
 		PromptTokens: artifact.PromptTokens, CompletionTokens: artifact.CompletionTokens, ExcludedEvidence: artifact.ExcludedEvidence,
@@ -356,6 +384,78 @@ func (p *Previewer) BuildFull(ctx context.Context, request FullBuildRequest) (Fu
 	reportProgress("Dataset preparation complete", totalUnits)
 
 	return artifact, nil
+}
+
+// MergeFullBuildArtifacts namespaces independently prepared source facts and
+// atomically publishes one combined dataset for a single training run.
+func MergeFullBuildArtifacts(request FullBuildMergeRequest) (FullBuildArtifact, error) {
+	if request.DatasetDirectory == "" {
+		return FullBuildArtifact{}, fmt.Errorf("merge dataset: dataset directory is required")
+	}
+	if len(request.Documents) == 0 {
+		return FullBuildArtifact{}, fmt.Errorf("merge dataset: at least one document is required")
+	}
+
+	artifact := FullBuildArtifact{}
+	report := FullBuildReport{
+		Version: datasetContract, CompletedAt: time.Now().UTC(), Goal: request.Goal,
+		Model: request.Model, DatasetInstructions: request.DatasetInstructions,
+		Documents: make([]FullBuildDocumentReport, 0, len(request.Documents)),
+	}
+	seenPrompts := make(map[string]string)
+	for _, document := range request.Documents {
+		if document.ID == "" || document.Name == "" {
+			return FullBuildArtifact{}, fmt.Errorf("merge dataset: document id and name are required")
+		}
+		records := namespaceDocumentRecords(document, document.Artifact.Records)
+		for _, record := range records {
+			key := strings.ToLower(strings.TrimSpace(record.Prompt))
+			if source, duplicate := seenPrompts[key]; duplicate {
+				return FullBuildArtifact{}, fmt.Errorf("merge dataset: duplicate prompt %q from %q and %q", record.Prompt, source, document.Name)
+			}
+			seenPrompts[key] = document.Name
+		}
+		artifact.Records = append(artifact.Records, records...)
+		artifact.SpareRecords = append(artifact.SpareRecords, namespaceDocumentRecords(document, document.Artifact.SpareRecords)...)
+		artifact.ReviewedRecordCount += document.Artifact.ReviewedRecordCount
+		artifact.GeneratedRecordCount += document.Artifact.GeneratedRecordCount
+		artifact.GenerationAttempts += document.Artifact.GenerationAttempts
+		artifact.VerificationAttempts += document.Artifact.VerificationAttempts
+		artifact.PromptTokens += document.Artifact.PromptTokens
+		artifact.CompletionTokens += document.Artifact.CompletionTokens
+		artifact.ExcludedEvidence += document.Artifact.ExcludedEvidence
+		report.Documents = append(report.Documents, FullBuildDocumentReport{
+			ID: document.ID, Name: document.Name,
+			Facts: questionAnswerFactCount(document.Artifact.Records), Records: len(document.Artifact.Records),
+		})
+	}
+	if len(artifact.Records) == 0 {
+		return FullBuildArtifact{}, fmt.Errorf("merge dataset: documents produced no training records")
+	}
+	report.TotalRecords = len(artifact.Records)
+	report.ReviewedSeedInput = artifact.ReviewedRecordCount
+	report.ReviewedSeedCount = artifact.ReviewedRecordCount
+	report.GeneratedCount = artifact.GeneratedRecordCount
+	report.GenerationAttempts = artifact.GenerationAttempts
+	report.VerificationAttempts = artifact.VerificationAttempts
+	report.PromptTokens = artifact.PromptTokens
+	report.CompletionTokens = artifact.CompletionTokens
+	report.ExcludedEvidence = artifact.ExcludedEvidence
+	report.SpareFacts = questionAnswerFactCount(artifact.SpareRecords)
+
+	return writeFullBuildArtifacts(request.DatasetDirectory, artifact, artifact.SpareRecords, report)
+}
+
+func namespaceDocumentRecords(document FullBuildDocument, records []Record) []Record {
+	converted := make([]Record, len(records))
+	for index, record := range records {
+		record.SourceDocument = document.Name
+		if record.FactID != "" {
+			record.FactID = document.ID + "-" + record.FactID
+		}
+		converted[index] = record
+	}
+	return converted
 }
 
 func writeFullBuildArtifacts(directory string, artifact FullBuildArtifact, spareRecords []Record, report FullBuildReport) (FullBuildArtifact, error) {
@@ -389,14 +489,14 @@ func writeFullBuildArtifacts(directory string, artifact FullBuildArtifact, spare
 }
 
 func (p *Previewer) prepareFullBatch(ctx context.Context, request FullBuildRequest, passages []string, exclusions generationExclusions, progress func(string)) ([]Record, int, previewMetrics, error) {
-	previewRequest := PreviewRequest{Goal: request.Goal, Model: request.Model}
+	previewRequest := PreviewRequest{Goal: request.Goal, Model: request.Model, DatasetInstructions: request.DatasetInstructions}
 	recordCount := len(passages)
 	var generated []Record
 	var metrics previewMetrics
 	var err error
 	if request.Goal == GoalQuestionAnswer {
 		progress("Selecting grounded answers")
-		generated, metrics, err = p.selectQuestionAnswerFacts(ctx, request.Model, passages, exclusions)
+		generated, metrics, err = p.selectQuestionAnswerFacts(ctx, request.Model, request.DatasetInstructions, passages, exclusions)
 	} else {
 		generated, metrics, err = p.generateRecords(ctx, previewRequest, formatPassages(passages), passages, recordCount, exclusions, true, maxGenerationAttempts)
 	}
@@ -405,11 +505,11 @@ func (p *Previewer) prepareFullBatch(ctx context.Context, request FullBuildReque
 	}
 	if err == nil && request.Goal == GoalQuestionAnswer {
 		progress("Creating questions for grounded answers")
-		expanded, expansionMetrics, expansionErr := p.expandQuestionAnswerRecords(ctx, request.Model, generated, exclusions)
+		expanded, expansionMetrics, expansionErr := p.expandQuestionAnswerRecords(ctx, request.Model, request.DatasetInstructions, generated, exclusions)
 		metrics.add(expansionMetrics)
 		if expansionErr == nil {
 			progress("Independently verifying generated records")
-			generated, expansionMetrics, expansionErr = p.verifyQuestionAnswerRecords(ctx, request.Model, generated, expanded)
+			generated, expansionMetrics, expansionErr = p.verifyQuestionAnswerRecords(ctx, request.Model, request.DatasetInstructions, generated, expanded)
 			metrics.add(expansionMetrics)
 		}
 		err = expansionErr
@@ -418,7 +518,7 @@ func (p *Previewer) prepareFullBatch(ctx context.Context, request FullBuildReque
 		verified := generated
 		if request.Goal != GoalQuestionAnswer {
 			progress("Independently verifying generated records")
-			verification, verificationMetrics, verifyErr := p.verifyRecords(ctx, request.Model, request.Goal, generated)
+			verification, verificationMetrics, verifyErr := p.verifyRecords(ctx, request.Model, request.Goal, request.DatasetInstructions, generated)
 			metrics.add(verificationMetrics)
 			if verifyErr != nil {
 				err = verifyErr
@@ -447,11 +547,11 @@ func (p *Previewer) prepareFullBatch(ctx context.Context, request FullBuildReque
 	return nil, len(passages), metrics, nil
 }
 
-func (p *Previewer) selectQuestionAnswerFacts(ctx context.Context, model string, passages []string, exclusions generationExclusions) ([]Record, previewMetrics, error) {
+func (p *Previewer) selectQuestionAnswerFacts(ctx context.Context, model, datasetInstructions string, passages []string, exclusions generationExclusions) ([]Record, previewMetrics, error) {
 	var metrics previewMetrics
 	targetCandidates := questionAnswerTargetCandidates(passages)
 	prioritizeQuestionAnswerTargets(targetCandidates, passages, exclusions.targets)
-	userPrompt := questionAnswerTargetPrompt(targetCandidates, exclusions.examples, exclusions.targets)
+	userPrompt := questionAnswerTargetPrompt(targetCandidates, exclusions.examples, exclusions.targets, datasetInstructions)
 	metrics.generationAttempts++
 	completion, err := p.completer.Complete(ctx, CompletionRequest{
 		Model:          model,
@@ -479,10 +579,18 @@ func (p *Previewer) selectQuestionAnswerFacts(ctx context.Context, model string,
 	return records, metrics, nil
 }
 
-func questionAnswerTargetPrompt(targetCandidates [][]string, examples []Record, previousTargets []string) string {
+func questionAnswerTargetPrompt(targetCandidates [][]string, examples []Record, previousTargets []string, datasetInstructions string) string {
 	var prompt strings.Builder
+	targetDetailRequirement := "Choose the shortest target that completely expresses that fact."
+	targetScopeRequirement := "When the central fact naturally asks for a name, function, method, value, signal, duration, or identifier, prefer that atomic answer over a sentence containing it. Choose a sentence when the useful fact is a behavior, comparison, condition, relationship, or effect, and retain every clause needed to express that proposition."
+	if datasetInstructions != "" {
+		prompt.WriteString(datasetInstructionsPrompt(datasetInstructions))
+		prompt.WriteString("\n\n")
+		targetDetailRequirement = "Choose a grounded target that completely expresses one useful fact."
+		targetScopeRequirement = "Choose the target's scope and level of detail by following the user instruction."
+	}
 	fmt.Fprintf(&prompt, "Review %d source passages and select at most one useful training answer from each. Do not write questions yet.\n", len(targetCandidates))
-	prompt.WriteString("Choose the most useful central instructional fact in each passage, then choose the shortest target that completely expresses that fact. The target is the complete answer users will be trained to return. Do not choose an incidental package name, declaration, heading, or example detail merely because it is shorter than the passage's useful behavior or principle. When the central fact naturally asks for a name, function, method, value, signal, duration, or identifier, prefer that atomic answer over a sentence containing it. Choose a sentence when the useful fact is a behavior, comparison, condition, relationship, or effect, and retain every clause needed to express that proposition. Prefer durable facts over one-run benchmark or profile measurements, and prefer a new target over one already selected; these are preferences, so reuse the best available target rather than skipping an otherwise useful passage. Avoid targets containing unrelated surrounding text, unresolved words such as this or it, incomplete code declarations, or additional clauses. Preserve the exact role and capitalization of code symbols: a method name must not become a type, interface, package, or unrelated API. Do not merge facts from alternative packages or APIs. Return one target_id per passage in passage order. Return target_id 0 for navigation, tables of contents, malformed tables, presentation-only text, quotations without useful context, or any passage that cannot support a natural standalone question without revealing its answer.\n")
+	fmt.Fprintf(&prompt, "Choose the most useful central instructional fact in each passage. %s The target is the complete answer users will be trained to return. Do not choose an incidental package name, declaration, heading, or example detail merely because it is shorter than the passage's useful behavior or principle. %s Prefer durable facts over one-run benchmark or profile measurements, and prefer a new target over one already selected; these are preferences, so reuse the best available target rather than skipping an otherwise useful passage. Avoid targets containing unrelated surrounding text, unresolved words such as this or it, incomplete code declarations, or additional clauses. Preserve the exact role and capitalization of code symbols: a method name must not become a type, interface, package, or unrelated API. Do not merge facts from alternative packages or APIs. Return one target_id per passage in passage order. Return target_id 0 for navigation, tables of contents, malformed tables, presentation-only text, quotations without useful context, or any passage that cannot support a natural standalone question without revealing its answer.\n", targetDetailRequirement, targetScopeRequirement)
 	for index, example := range examples {
 		fmt.Fprintf(&prompt, "\n[APPROVED EXAMPLE %d]\nTARGET: %s\n", index+1, example.Target)
 	}
@@ -630,8 +738,8 @@ type generatedQuestionPool struct {
 	Questions    []string `json:"questions"`
 }
 
-func (p *Previewer) verifyQuestionAnswerRecords(ctx context.Context, model string, seeds, candidates []Record) ([]Record, previewMetrics, error) {
-	verification, metrics, err := p.verifyRecords(ctx, model, GoalQuestionAnswer, candidates)
+func (p *Previewer) verifyQuestionAnswerRecords(ctx context.Context, model, datasetInstructions string, seeds, candidates []Record) ([]Record, previewMetrics, error) {
+	verification, metrics, err := p.verifyRecords(ctx, model, GoalQuestionAnswer, datasetInstructions, candidates)
 	if err != nil {
 		return nil, metrics, fmt.Errorf("build dataset: verify question pools: %w", err)
 	}
@@ -664,12 +772,12 @@ func selectReviewedQuestionAnswerGroups(seeds, records []Record) []Record {
 	return selected
 }
 
-func (p *Previewer) expandQuestionAnswerRecords(ctx context.Context, model string, facts []Record, exclusions generationExclusions) ([]Record, previewMetrics, error) {
+func (p *Previewer) expandQuestionAnswerRecords(ctx context.Context, model, datasetInstructions string, facts []Record, exclusions generationExclusions) ([]Record, previewMetrics, error) {
 	var metrics previewMetrics
 	metrics.generationAttempts++
 	completion, err := p.completer.Complete(ctx, CompletionRequest{
 		Model:          model,
-		Messages:       questionPoolMessages(facts),
+		Messages:       questionPoolMessages(facts, datasetInstructions),
 		ResponseSchema: questionPoolSchema(len(facts)),
 		MaxTokens:      max(generationMaxTokens, len(facts)*questionCandidatePoolSize*96),
 		Seed:           preparationGenerationSeed,
@@ -812,15 +920,23 @@ func maximumWordSimilarity(text string, previous []string) float64 {
 	return maximum
 }
 
-func questionPoolMessages(facts []Record) []Message {
+func questionPoolMessages(facts []Record, datasetInstructions string) []Message {
 	var prompt strings.Builder
-	fmt.Fprintf(&prompt, "Write exactly %d natural candidate questions for each locked fact and fill all %d array positions; do not stop after the first four. Use these forms in order: (1) concise and direct, (2) contextual with the subject named, (3) a realistic scenario, (4) conversational, (5) a different concise framing, (6) a different contextual framing, (7) a different scenario, (8) a different conversational framing, and (9-10) two additional natural alternatives. Every position is required. Each conversational form must directly ask a question and end with a question mark. Every question must differ in framing or information need, not only synonyms or what/which substitutions. For an identifier answer, describe what the code does without repeating words contained in that identifier.\n", questionCandidatePoolSize, questionCandidatePoolSize)
+	if datasetInstructions != "" {
+		prompt.WriteString(datasetInstructionsPrompt(datasetInstructions))
+		prompt.WriteString("\n\n")
+	}
+	styleRequirements := "Every question must differ in framing or information need, not only synonyms or what/which substitutions."
+	if datasetInstructions == "" {
+		styleRequirements = "Use these forms in order: (1) concise and direct, (2) contextual with the subject named, (3) a realistic scenario, (4) conversational, (5) a different concise framing, (6) a different contextual framing, (7) a different scenario, (8) a different conversational framing, and (9-10) two additional natural alternatives. Each conversational form must directly ask a question and end with a question mark. Every question must differ in framing or information need, not only synonyms or what/which substitutions."
+	}
+	fmt.Fprintf(&prompt, "Write exactly %d natural candidate questions for each locked fact and fill all %d array positions; do not stop after the first four. Every position is required. %s For an identifier answer, describe what the code does without repeating words contained in that identifier.\n", questionCandidatePoolSize, questionCandidatePoolSize, styleRequirements)
 	prompt.WriteString("Every question must stand alone, end with a question mark, and be answered exactly and completely by the locked target and evidence. Match the question's scope to the complete target: if the target is a sentence, ask for its entire proposition rather than one name or detail embedded in it; if the question asks only for a name or value, the locked target must be only that name or value. Name the subject needed to understand the question. Never use context-dependent wording such as this program, this function, this type, this example, it, or they unless the question itself uniquely identifies what those words mean. Preserve the target's answer type, direction, scope, code-symbol role, package, and capitalization. Never reveal the answer, reverse the relationship, combine alternate APIs, invent context, or infer a stronger effect than the evidence states; registering handlers, for example, does not start a server. Do not refer to provided evidence, code, examples, output, text, documents, listings, sections, or tables. Return only the record number and questions.\n")
 	for index, fact := range facts {
 		fmt.Fprintf(&prompt, "\n[LOCKED FACT %d]\nEVIDENCE: %s\nLOCKED TARGET: %s\n", index+1, verificationEvidence(fact), fact.Target)
 	}
 	return []Message{
-		{Role: "system", Content: "You create natural, meaningfully distinct questions for locked source-grounded facts. Never change or add facts."},
+		{Role: "system", Content: "You create natural, meaningfully distinct questions for locked source-grounded facts. Never change or add facts. The user's instruction controls how every question is written and must be followed. Only source grounding, factual correctness, and the required output structure take priority over the user's instruction."},
 		{Role: "user", Content: strings.TrimSpace(prompt.String())},
 	}
 }
@@ -1101,11 +1217,12 @@ func completeQuestionAnswerFacts(records []Record) map[string]struct{} {
 
 func buildFingerprint(markdown []byte, request FullBuildRequest, seeds []Record) (string, error) {
 	contract, err := json.Marshal(struct {
-		Version int      `json:"version"`
-		Goal    Goal     `json:"goal"`
-		Model   string   `json:"model"`
-		Seeds   []Record `json:"seeds"`
-	}{Version: datasetContract, Goal: request.Goal, Model: request.Model, Seeds: seeds})
+		Version             int      `json:"version"`
+		Goal                Goal     `json:"goal"`
+		Model               string   `json:"model"`
+		DatasetInstructions string   `json:"dataset_instructions,omitempty"`
+		Seeds               []Record `json:"seeds"`
+	}{Version: datasetContract, Goal: request.Goal, Model: request.Model, DatasetInstructions: request.DatasetInstructions, Seeds: seeds})
 	if err != nil {
 		return "", fmt.Errorf("encode dataset checkpoint identity: %w", err)
 	}
@@ -1177,28 +1294,6 @@ func ValidateReviewedRecords(records []Record) ([]Record, error) {
 	return validated, nil
 }
 
-func changedReviewedRecords(reviewed, verified []Record) ([]Record, []int) {
-	if len(reviewed) != len(verified) {
-		indexes := make([]int, len(reviewed))
-		for index := range indexes {
-			indexes[index] = index
-		}
-		return reviewed, indexes
-	}
-
-	var changed []Record
-	var indexes []int
-	for index, record := range reviewed {
-		original := verified[index]
-		if sameReviewedRecord(record, original) {
-			continue
-		}
-		changed = append(changed, record)
-		indexes = append(indexes, index)
-	}
-	return changed, indexes
-}
-
 func sameReviewedRecord(left, right Record) bool {
 	return left.Prompt == right.Prompt && left.Target == right.Target && left.Evidence == right.Evidence
 }
@@ -1265,6 +1360,10 @@ func fullPassages(markdown string, seeds []Record) []string {
 		}
 	}
 	for _, part := range parts {
+		if strings.HasPrefix(strings.TrimSpace(part), "# Source Document:") {
+			flush()
+			continue
+		}
 		part = stripMarkdownHeadings(part)
 		if part == "" || len(quoteCandidates(part)) == 0 {
 			continue

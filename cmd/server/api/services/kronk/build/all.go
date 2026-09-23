@@ -2,9 +2,6 @@
 package build
 
 import (
-	"maps"
-	"slices"
-
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/audioapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/chatapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/checkapp"
@@ -48,7 +45,7 @@ func (routes all) Add(app *web.App, cfg mux.Config) {
 	fineConfig := routes.fineConfig
 	fineConfig.AuthClient = cfg.AuthClient
 	fineConfig.Models = cfg.Models
-	fineConfig.ConfiguredModelIDs = slices.Sorted(maps.Keys(cfg.Pool.Kronk.ModelConfig()))
+	fineConfig.PreparationModels = cfg.Models
 	fineConfig.AuthorizationMode = cfg.AuthorizationMode
 	fineapp.Routes(app, fineConfig)
 

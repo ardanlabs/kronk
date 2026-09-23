@@ -30,30 +30,41 @@ const (
 	defaultLoRARank                     = 8
 	defaultLoRAAlpha                    = 8
 	defaultSeed                         = 3407
+	defaultMethod                       = "lora"
+	defaultBaseWeights                  = "frozen"
+	defaultOptimizer                    = "adam"
+	defaultSequenceSource               = "model_gguf"
+	defaultSequenceOverflow             = "reject"
+	defaultSequencePadding              = "power_of_two"
+	defaultLoss                         = "answer_only_cross_entropy"
+	defaultCheckpointSelection          = "lowest_validation_loss"
+	defaultOutputFormat                 = "gguf"
+	defaultOutputPrecision              = "f32"
+	defaultOutputFilename               = "adapter-f32.gguf"
 )
 
 var checkpointProbeEpochs []int
 
-// Recipe describes the fixed local Gemma training settings shown by Moxie.
-type Recipe struct {
-	Workflow                     string
-	MaximumEpochs                int
-	EarlyStoppingPatience        int
-	MinimumValidationImprovement float64
-	LearningRate                 float64
-	LoRARank                     int
-	TrainingPhases               int
-	CandidateCount               int
-}
-
 // CurrentRecipe returns the backend-owned settings for a new training run.
-func CurrentRecipe() Recipe {
-	return Recipe{
-		Workflow: trainingStateSchema, MaximumEpochs: defaultMaximumEpochs,
+func CurrentRecipe() finetune.Recipe {
+	return finetune.Recipe{
+		Workflow: trainingStateSchema, Method: defaultMethod, BaseWeights: defaultBaseWeights,
+		Optimizer: defaultOptimizer, LearningRate: defaultLearningRate, WeightDecay: defaultWeightDecay,
+		BatchSize: defaultBatchSize, MaximumEpochs: defaultMaximumEpochs, Seed: defaultSeed,
+		LoRA: finetune.LoRARecipe{
+			Rank: defaultLoRARank, Alpha: defaultLoRAAlpha, Scale: 1,
+			TargetModules: []string{"query", "key", "value", "output", "gate", "up", "down"},
+		},
+		Sequence: finetune.SequenceRecipe{
+			Source: defaultSequenceSource, Overflow: defaultSequenceOverflow, Padding: defaultSequencePadding,
+		},
+		Loss: defaultLoss, CheckpointSelection: defaultCheckpointSelection,
+		Output: finetune.OutputRecipe{
+			Format: defaultOutputFormat, Precision: defaultOutputPrecision, Filename: defaultOutputFilename,
+		},
 		EarlyStoppingPatience:        defaultEarlyStoppingPatience,
 		MinimumValidationImprovement: defaultMinimumValidationImprovement,
-		LearningRate:                 defaultLearningRate, LoRARank: defaultLoRARank,
-		TrainingPhases: 1, CandidateCount: 1,
+		TrainingPhases:               1, CandidateCount: 1,
 	}
 }
 
@@ -130,6 +141,18 @@ func New() *Backend {
 	backend.train = backend.trainGemma
 	backend.evaluate = evaluateProtectedTest
 	return backend
+}
+
+// Recipe reports the fixed training preset and the selected model's native
+// sequence limit without loading its tensors.
+func (*Backend) Recipe(modelPath string) (finetune.Recipe, error) {
+	maximumTokens, err := inspectGemmaModel(modelPath, true)
+	if err != nil {
+		return finetune.Recipe{}, err
+	}
+	recipe := CurrentRecipe()
+	recipe.Sequence.MaximumTokens = maximumTokens
+	return recipe, nil
 }
 
 // Preflight checks local inputs without creating a managed run directory or
@@ -303,20 +326,8 @@ func (backend *Backend) preflightRequest(ctx context.Context, request finetune.R
 	if err := requireRegularFile("Gemma GGUF", request.Model); err != nil {
 		return err
 	}
-	reader, err := gguf.OpenReader(request.Model)
-	if err != nil {
-		return fmt.Errorf("inspect Gemma GGUF: %w", err)
-	}
-	architecture, architectureErr := reader.String("general.architecture")
-	closeErr := reader.Close()
-	if architectureErr != nil {
-		return fmt.Errorf("inspect Gemma GGUF architecture: %w", architectureErr)
-	}
-	if closeErr != nil {
-		return fmt.Errorf("close Gemma GGUF: %w", closeErr)
-	}
-	if architecture != "gemma3" {
-		return fmt.Errorf("model architecture is %q, want gemma3", architecture)
+	if _, err := inspectGemmaModel(request.Model, false); err != nil {
+		return err
 	}
 	if request.Runtime.Port < 0 || request.Runtime.Port > 65535 {
 		return fmt.Errorf("llama-server port must be between 0 and 65535")
@@ -324,8 +335,42 @@ func (backend *Backend) preflightRequest(ctx context.Context, request finetune.R
 	if request.Runtime.ContextSize < 0 {
 		return fmt.Errorf("llama-server context size must not be negative")
 	}
-	_, err = resolveLlamaServer(request.Runtime.LlamaServer)
+	_, err := resolveLlamaServer(request.Runtime.LlamaServer)
 	return err
+}
+
+func inspectGemmaModel(modelPath string, includeContext bool) (int, error) {
+	reader, err := gguf.OpenReader(modelPath)
+	if err != nil {
+		return 0, fmt.Errorf("inspect Gemma GGUF: %w", err)
+	}
+	architecture, architectureErr := reader.String("general.architecture")
+	if architectureErr != nil {
+		_ = reader.Close()
+		return 0, fmt.Errorf("inspect Gemma GGUF architecture: %w", architectureErr)
+	}
+	if architecture != "gemma3" {
+		_ = reader.Close()
+		return 0, fmt.Errorf("model architecture is %q, want gemma3", architecture)
+	}
+	if !includeContext {
+		if err := reader.Close(); err != nil {
+			return 0, fmt.Errorf("close Gemma GGUF: %w", err)
+		}
+		return 0, nil
+	}
+	maximumTokens, contextErr := reader.Uint32("gemma3.context_length")
+	closeErr := reader.Close()
+	if contextErr != nil {
+		return 0, fmt.Errorf("inspect Gemma GGUF context length: %w", contextErr)
+	}
+	if closeErr != nil {
+		return 0, fmt.Errorf("close Gemma GGUF: %w", closeErr)
+	}
+	if maximumTokens == 0 {
+		return 0, fmt.Errorf("gemma context length must be greater than zero")
+	}
+	return int(maximumTokens), nil
 }
 
 func (backend *Backend) trainGemma(ctx context.Context, request finetune.Request, contract finetune.DatasetContract, progress finetune.ProgressFunc) (trainingOutput, error) {

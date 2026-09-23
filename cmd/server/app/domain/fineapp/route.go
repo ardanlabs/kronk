@@ -12,15 +12,16 @@ import (
 
 // Config contains the systems required by the fine-tuning handlers.
 type Config struct {
-	AuthClient         *authclient.Client
-	AuthorizationMode  auth.Mode
-	Preparer           DocumentPreparer
-	Builder            DatasetBuilder
-	FineTuner          FineTuner
-	Models             ModelResolver
-	ConfiguredModelIDs []string
-	DatasetsPath       string
-	Runtime            finetune.Runtime
+	AuthClient        *authclient.Client
+	AuthorizationMode auth.Mode
+	Preparer          DocumentPreparer
+	Builder           DatasetBuilder
+	FineTuner         FineTuner
+	Recipes           TrainingRecipeProvider
+	Models            ModelResolver
+	PreparationModels PreparationModelCatalog
+	DatasetsPath      string
+	Runtime           finetune.Runtime
 }
 
 // Routes registers the fine-tuning API.
@@ -39,6 +40,7 @@ func Routes(webApp *web.App, cfg Config) {
 	webApp.HandlerFunc(http.MethodPost, version, "/fine-tuning/prepare/preview", api.previewDataset, administrationAccess)
 	webApp.HandlerFunc(http.MethodPost, version, "/fine-tuning/prepare/build", api.buildDataset, administrationAccess)
 
+	webApp.HandlerFunc(http.MethodGet, version, "/fine-tuning/recipe", api.trainingRecipe, managementAccess)
 	webApp.HandlerFunc(http.MethodPost, version, "/fine-tuning/runs", api.startRun, administrationAccess)
 	webApp.HandlerFunc(http.MethodGet, version, "/fine-tuning/runs", api.history, managementAccess)
 	webApp.HandlerFunc(http.MethodGet, version, "/fine-tuning/runs/current", api.currentRun, managementAccess)

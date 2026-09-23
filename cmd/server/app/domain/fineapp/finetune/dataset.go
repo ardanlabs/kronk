@@ -43,6 +43,7 @@ type DatasetRecord struct {
 	Target            string `json:"target"`
 	Evidence          string `json:"evidence"`
 	FactID            string `json:"fact_id,omitempty"`
+	SourceDocument    string `json:"source_document,omitempty"`
 	IndependentPrompt bool   `json:"independent_prompt,omitempty"`
 }
 

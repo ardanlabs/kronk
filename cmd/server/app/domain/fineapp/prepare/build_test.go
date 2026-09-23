@@ -43,12 +43,7 @@ func (qualityRejectingCompleter) Complete(_ context.Context, request prepare.Com
 	content := request.Messages[1].Content
 	if strings.Contains(content, "[RECORD 1]") {
 		count := strings.Count(content, "[RECORD ")
-		results := make([]map[string]any, count)
-		for index := range results {
-			results[index] = map[string]any{"record_number": index + 1, "expected_target_id": 1, "reason": "The reviewed target is supported."}
-		}
-		data, _ := json.Marshal(map[string]any{"results": results})
-		return prepare.Completion{Content: string(data)}, nil
+		return verificationCompletion(count, func(int) bool { return true }), nil
 	}
 	return prepare.Completion{Content: `{"records":[]}`}, nil
 }
@@ -123,19 +118,15 @@ func variantCompletion(count int, prefix string) prepare.Completion {
 }
 
 func verificationCompletion(count int, passes func(int) bool) prepare.Completion {
-	results := make([]map[string]any, count)
-	for index := range results {
-		expectedTargetID := 0
+	verdicts := make(map[string]string, count)
+	for index := range count {
+		outcome := "task_quality"
 		if passes(index) {
-			expectedTargetID = 1
+			outcome = "pass"
 		}
-		results[index] = map[string]any{
-			"record_number":      index + 1,
-			"expected_target_id": expectedTargetID,
-			"reason":             "Deterministic test verification result.",
-		}
+		verdicts[fmt.Sprintf("record_%d", index+1)] = outcome
 	}
-	data, _ := json.Marshal(map[string]any{"results": results})
+	data, _ := json.Marshal(verdicts)
 	return prepare.Completion{Content: string(data)}
 }
 
@@ -169,12 +160,10 @@ func (c *fullBuildCompleter) Complete(_ context.Context, request prepare.Complet
 	content := request.Messages[1].Content
 	if strings.Contains(content, "[RECORD 1]") {
 		count := strings.Count(content, "[RECORD ")
-		results := make([]map[string]any, count)
-		for index := range results {
-			results[index] = map[string]any{"record_number": index + 1, "expected_target_id": 1, "reason": "The target directly answers the prompt."}
-		}
-		data, _ := json.Marshal(map[string]any{"results": results})
-		return prepare.Completion{Content: string(data), PromptTokens: 2, CompletionTokens: 1}, nil
+		completion := verificationCompletion(count, func(int) bool { return true })
+		completion.PromptTokens = 2
+		completion.CompletionTokens = 1
+		return completion, nil
 	}
 	if strings.Contains(content, "[LOCKED FACT 1]") {
 		count := strings.Count(content, "[LOCKED FACT ")
@@ -195,6 +184,9 @@ func (c *fullBuildCompleter) Complete(_ context.Context, request prepare.Complet
 
 func requestedRecordCount(prompt string) int {
 	var count int
+	if start := strings.Index(prompt, "Review "); start >= 0 {
+		prompt = prompt[start:]
+	}
 	_, _ = fmt.Sscanf(prompt, "Review %d source passages", &count)
 	return count
 }
@@ -233,6 +225,7 @@ func TestBuildFullProcessesTheCompleteSourceAndPersists(t *testing.T) {
 		DatasetDirectory:       directory,
 		Goal:                   prepare.GoalQuestionAnswer,
 		Model:                  "model",
+		DatasetInstructions:    "Write for experienced Go developers.",
 		ReviewedRecords:        []prepare.Record{verifiedSeed},
 		VerifiedPreviewRecords: []prepare.Record{verifiedSeed},
 		Progress: func(update prepare.FullBuildProgress) {
@@ -266,25 +259,32 @@ func TestBuildFullProcessesTheCompleteSourceAndPersists(t *testing.T) {
 	}
 	assertBuildProgressContract(t, progress)
 	lastProgress := progress[len(progress)-1]
-	if progress[0].Stage != "Using verified preview" || !slices.ContainsFunc(progress, func(update prepare.FullBuildProgress) bool {
+	if progress[0].Stage != "Checking reviewed preview" || !slices.ContainsFunc(progress, func(update prepare.FullBuildProgress) bool {
 		return update.Stage == "Independently verifying generated records"
 	}) || lastProgress.Stage != "Dataset preparation complete" || lastProgress.CompletedBatches != 1 || lastProgress.CompletedUnits != lastProgress.TotalUnits || lastProgress.AcceptedRecords != 12 {
 		t.Fatalf("progress: %+v", progress)
 	}
-	if len(model.requests) == 0 || !strings.Contains(model.requests[0].Messages[1].Content, "[LOCKED FACT 1]") {
-		t.Fatal("full build did not proceed directly from the unchanged verified preview to question expansion")
+	if len(model.requests) == 0 || !strings.Contains(model.requests[0].Messages[1].Content, "[RECORD 1]") {
+		t.Fatal("full build did not independently verify the reviewed preview")
 	}
-	wantCalls := []string{"create questions", "verify", "select answers", "create questions", "verify"}
+	wantCalls := []string{"verify", "create questions", "verify", "select answers", "create questions", "verify"}
 	if got := completionPurposes(model.requests); !slices.Equal(got, wantCalls) {
 		t.Fatalf("model calls = %v, want %v", got, wantCalls)
 	}
-	if artifact.GenerationAttempts != 3 || artifact.VerificationAttempts != 2 || artifact.PromptTokens != 13 || artifact.CompletionTokens != 8 {
+	if artifact.GenerationAttempts != 3 || artifact.VerificationAttempts != 3 || artifact.PromptTokens != 15 || artifact.CompletionTokens != 9 {
 		t.Fatalf("model cost = generations %d, verifications %d, prompt tokens %d, completion tokens %d",
 			artifact.GenerationAttempts, artifact.VerificationAttempts, artifact.PromptTokens, artifact.CompletionTokens)
 	}
 	for _, request := range model.requests {
 		if request.Seed != 3407 {
 			t.Fatalf("preparation request seed = %d, want 3407", request.Seed)
+		}
+		hasInstructions := strings.Contains(request.Messages[1].Content, "experienced Go developers")
+		if !hasInstructions {
+			t.Fatalf("dataset instructions missing from model request: %s", request.Messages[1].Content)
+		}
+		if !strings.HasPrefix(request.Messages[1].Content, "USER INSTRUCTION — FOLLOW WHEN WRITING EVERY RECORD:\n") {
+			t.Fatalf("model request did not begin with the exact user instruction: %s", request.Messages[1].Content)
 		}
 	}
 	selectionRequestIndex := slices.IndexFunc(model.requests, func(request prepare.CompletionRequest) bool {
@@ -359,6 +359,9 @@ func TestBuildFullProcessesTheCompleteSourceAndPersists(t *testing.T) {
 		report.VerificationAttempts != artifact.VerificationAttempts || report.PromptTokens != artifact.PromptTokens ||
 		report.CompletionTokens != artifact.CompletionTokens {
 		t.Fatalf("persisted report disagrees with artifact: report %+v, artifact %+v", report, artifact)
+	}
+	if report.DatasetInstructions != "Write for experienced Go developers." {
+		t.Fatalf("persisted instructions = %q", report.DatasetInstructions)
 	}
 }
 
@@ -904,7 +907,7 @@ func TestBuildFullRejectsSemanticallyInvalidReviewedRecord(t *testing.T) {
 	}
 
 	model := &sequenceCompleter{completions: []prepare.Completion{
-		{Content: `{"results":[{"record_number":1,"expected_target_id":0,"reason":"The prompt asks about protection but the evidence only describes communication."}]}`},
+		verificationCompletion(1, func(int) bool { return false }),
 	}}
 	previewer, err := prepare.NewPreviewer(model)
 	if err != nil {
@@ -926,8 +929,43 @@ func TestBuildFullRejectsSemanticallyInvalidReviewedRecord(t *testing.T) {
 			Evidence: evidence,
 		}},
 	})
-	if err == nil || !strings.Contains(err.Error(), "edited preview record 1 is not supported") {
+	if err == nil || !strings.Contains(err.Error(), "reviewed preview record 1 is not supported") {
 		t.Fatalf("error: %v", err)
+	}
+}
+
+func TestBuildFullReverifiesUnchangedReviewedRecord(t *testing.T) {
+	directory := t.TempDir()
+	evidence := "Write a concise explanation of the supported behavior."
+	if err := os.WriteFile(filepath.Join(directory, "extracted.md"), []byte(evidence), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	model := &sequenceCompleter{completions: []prepare.Completion{
+		verificationCompletion(1, func(int) bool { return false }),
+	}}
+	previewer, err := prepare.NewPreviewer(model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := prepare.Record{Prompt: "Write the supported explanation.", Target: evidence, Evidence: evidence}
+
+	_, err = previewer.BuildFull(t.Context(), prepare.FullBuildRequest{
+		DatasetDirectory:       directory,
+		Goal:                   prepare.GoalTextGeneration,
+		Model:                  "model",
+		DatasetInstructions:    "Use detailed explanations for an expert audience.",
+		ReviewedRecords:        []prepare.Record{record},
+		VerifiedPreviewRecords: []prepare.Record{record},
+	})
+	if err == nil || !strings.Contains(err.Error(), "reviewed preview record 1 is not supported") {
+		t.Fatalf("build error = %v, want unchanged reviewed row to be rejected", err)
+	}
+	if len(model.requests) != 1 || !strings.Contains(model.requests[0].Messages[1].Content, "Use detailed explanations for an expert audience.") {
+		t.Fatalf("full build did not independently verify the unchanged row against active instructions: %+v", model.requests)
+	}
+	if _, statErr := os.Stat(filepath.Join(directory, "dataset.jsonl")); !os.IsNotExist(statErr) {
+		t.Fatalf("failed build published dataset: %v", statErr)
 	}
 }
 
@@ -1102,5 +1140,69 @@ func TestBuildFullResumesFromOneAtomicCheckpoint(t *testing.T) {
 	}
 	if _, err := os.Stat(checkpointPath); !os.IsNotExist(err) {
 		t.Fatalf("completed checkpoint still exists: %v", err)
+	}
+}
+
+func TestMergeFullBuildArtifactsPreservesDocumentProvenance(t *testing.T) {
+	directory := t.TempDir()
+	artifact, err := prepare.MergeFullBuildArtifacts(prepare.FullBuildMergeRequest{
+		DatasetDirectory: directory,
+		Goal:             prepare.GoalQuestionAnswer,
+		Model:            "preparation-model",
+		Documents: []prepare.FullBuildDocument{
+			{
+				ID: "001", Name: "guide.pdf",
+				Artifact: prepare.FullBuildArtifact{
+					Records:             []prepare.Record{{Prompt: "What does the guide explain?", Target: "The first fact.", Evidence: "Guide evidence.", FactID: "fact-a"}},
+					SpareRecords:        []prepare.Record{{Prompt: "What spare detail does the guide provide?", Target: "The spare fact.", Evidence: "Spare guide evidence.", FactID: "spare-a"}},
+					ReviewedRecordCount: 1, GenerationAttempts: 2,
+				},
+			},
+			{
+				ID: "002", Name: "manual.docx",
+				Artifact: prepare.FullBuildArtifact{
+					Records:              []prepare.Record{{Prompt: "What does the manual explain?", Target: "The second fact.", Evidence: "Manual evidence.", FactID: "fact-b"}},
+					GeneratedRecordCount: 1, VerificationAttempts: 3,
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("merge full builds: %v", err)
+	}
+	if len(artifact.Records) != 2 || len(artifact.SpareRecords) != 1 {
+		t.Fatalf("merged artifact sizes = records:%d spares:%d", len(artifact.Records), len(artifact.SpareRecords))
+	}
+	wantFacts := []string{"001-fact-a", "002-fact-b"}
+	wantSources := []string{"guide.pdf", "manual.docx"}
+	for index, record := range artifact.Records {
+		if record.FactID != wantFacts[index] || record.SourceDocument != wantSources[index] {
+			t.Fatalf("record %d provenance = %+v", index, record)
+		}
+	}
+	if artifact.SpareRecords[0].FactID != "001-spare-a" || artifact.SpareRecords[0].SourceDocument != "guide.pdf" {
+		t.Fatalf("spare provenance = %+v", artifact.SpareRecords[0])
+	}
+	if artifact.ReviewedRecordCount != 1 || artifact.GeneratedRecordCount != 1 || artifact.GenerationAttempts != 2 || artifact.VerificationAttempts != 3 {
+		t.Fatalf("merged metrics = %+v", artifact)
+	}
+
+	data, err := os.ReadFile(artifact.RecordsPath)
+	if err != nil {
+		t.Fatalf("read merged records: %v", err)
+	}
+	if !strings.Contains(string(data), `"source_document":"guide.pdf"`) || !strings.Contains(string(data), `"source_document":"manual.docx"`) {
+		t.Fatalf("merged JSONL lost document provenance: %s", data)
+	}
+	var report prepare.FullBuildReport
+	reportData, err := os.ReadFile(artifact.ReportPath)
+	if err != nil {
+		t.Fatalf("read merged report: %v", err)
+	}
+	if err := json.Unmarshal(reportData, &report); err != nil {
+		t.Fatalf("decode merged report: %v", err)
+	}
+	if len(report.Documents) != 2 || report.Documents[0].Name != "guide.pdf" || report.Documents[1].Name != "manual.docx" {
+		t.Fatalf("merged document report = %+v", report.Documents)
 	}
 }
