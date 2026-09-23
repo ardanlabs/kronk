@@ -221,7 +221,12 @@ function Install-DockerImages {
     )
 
     $processes = foreach ($image in $images) {
-        Start-Process -FilePath "docker" -ArgumentList @("pull", $image) -NoNewWindow -PassThru
+        $process = Start-Process -FilePath "docker" -ArgumentList @("pull", $image) -NoNewWindow -PassThru
+
+        # Cache the handle before a fast process exits so Windows PowerShell 5.1
+        # can reliably populate ExitCode after WaitForExit.
+        $null = $process.Handle
+        $process
     }
 
     foreach ($process in $processes) {
