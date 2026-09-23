@@ -1,22 +1,29 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import {
+  DEFAULT_FINE_TUNING_DATASET_INSTRUCTIONS,
+  FINE_TUNING_MODEL_ID,
+  MAX_FINE_TUNING_COLLECTION_BYTES,
+  MAX_FINE_TUNING_DATASET_INSTRUCTIONS,
+  MAX_FINE_TUNING_DOCUMENTS,
+  MAX_FINE_TUNING_PREVIEW_RECORDS,
+  MAX_FINE_TUNING_UPLOAD_BYTES,
+  isTerminalFineTuningStatus,
+  preparedFineTuningDatasetError,
+  useFineTuningRunner,
+} from '../contexts/FineTuningRunnerContext';
 import { useModelList } from '../contexts/ModelListContext';
 import { api } from '../services/api';
 import type {
   FineTuningGoal,
   FineTuningPreparationProgress,
-  FineTuningRecord,
+  FineTuningRecipeResponse,
   FineTuningRun,
-  FineTuningVerification,
 } from '../types';
-import { FieldLabel } from './ParamTooltips';
+import KeyValueTable from './KeyValueTable';
+import { FieldLabel, labelWithTip } from './ParamTooltips';
 
 type View = 'configure' | 'run' | 'history' | 'prepare';
-type PreparationOperation = 'prepared-upload' | 'preview' | 'build';
-
-const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
-const MAX_PREVIEW_RECORDS = 5;
-const TRAINING_MODEL_ID = 'ggml-org/gemma-3-1b-it-Q8_0';
-const terminalStatuses = new Set(['completed', 'needs_improvement', 'failed', 'stopped']);
 
 function formatDate(value?: string): string {
   if (!value || value.startsWith('0001-')) return '—';
@@ -25,16 +32,6 @@ function formatDate(value?: string): string {
 
 function statusLabel(status: string): string {
   return status.replaceAll('_', ' ');
-}
-
-function preparedDatasetError(file: File): string {
-  if (file.name.split('.').pop()?.toLowerCase() !== 'jsonl') return 'Choose a training-ready JSONL dataset.';
-  if (file.size > MAX_UPLOAD_BYTES) return 'The selected file exceeds the 100 MiB limit.';
-  return '';
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === 'AbortError';
 }
 
 function formatDuration(milliseconds: number): string {
@@ -65,7 +62,6 @@ function ProgressMetrics({
   acceptedRecords?: number;
 }) {
   const [now, setNow] = useState(Date.now());
-  const samples = useRef<Array<{ completed: number; at: number }>>([]);
 
   useEffect(() => {
     if (!active) return;
@@ -73,27 +69,10 @@ function ProgressMetrics({
     return () => window.clearInterval(timer);
   }, [active]);
 
-  useEffect(() => {
-    if (!active || completed <= 0 || total <= 0) return;
-    const last = samples.current.at(-1);
-    if (last && completed <= last.completed) return;
-    samples.current.push({ completed, at: Date.now() });
-    if (samples.current.length > 6) samples.current.shift();
-  }, [active, completed, total]);
-
   const percent = total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0;
   const started = Date.parse(startedAt);
   const stopped = active ? now : endedAt ? Date.parse(endedAt) : now;
   const elapsed = Number.isFinite(started) && Number.isFinite(stopped) ? Math.max(0, stopped - started) : 0;
-  let remaining = active ? 'Estimating…' : '—';
-  const first = samples.current[0];
-  const last = samples.current.at(-1);
-  if (active && first && last && last.completed > first.completed && last.at > first.at && completed < total) {
-    const millisecondsPerUnit = (last.at - first.at) / (last.completed - first.completed);
-    remaining = formatDuration(millisecondsPerUnit * (total - completed));
-  } else if (active && total > 0 && completed >= total) {
-    remaining = 'Finishing…';
-  }
 
   return (
     <>
@@ -105,7 +84,6 @@ function ProgressMetrics({
         <span><strong>Completed / Total</strong>{total > 0 ? `${completed} / ${total}` : `${completed} / —`}</span>
         <span><strong>Percentage</strong>{total > 0 ? `${percent}%` : 'Estimating…'}</span>
         <span><strong>Elapsed Time</strong>{formatDuration(elapsed)}</span>
-        <span><strong>Estimated Remaining</strong>{remaining}</span>
         {!!acceptedRecords && <span><strong>Verified Records</strong>{acceptedRecords}</span>}
       </div>
     </>
@@ -118,6 +96,7 @@ function PreparationProgress({
   progress,
   startedAt,
   cancelLabel,
+  sourceNames = [],
   onCancel,
 }: {
   title: string;
@@ -125,6 +104,7 @@ function PreparationProgress({
   progress: FineTuningPreparationProgress | null;
   startedAt: string;
   cancelLabel: string;
+  sourceNames?: string[];
   onCancel: () => void;
 }) {
   const stage = progress?.stage || message;
@@ -146,13 +126,41 @@ function PreparationProgress({
         active
         acceptedRecords={progress?.accepted_records}
       />
+      {!!progress?.documents?.length && (
+        <div className="fine-document-progress" aria-label="Document extraction progress">
+          {progress.documents.map((document, index) => (
+            <div className={`fine-document-progress-row ${document.status}`} key={`${document.name}-${index}`}>
+              <span className="fine-document-progress-mark" aria-hidden="true">
+                {document.status === 'completed' ? '✓' : document.status === 'failed' ? '!' : document.status === 'stopped' ? '×' : index + 1}
+              </span>
+              <span className="fine-document-progress-name" title={document.name}>{document.name}</span>
+              <span className="fine-document-progress-stage">
+                {document.cached ? 'Cached extraction' : document.error || document.stage}
+                {document.target_facts ? ` · ${document.accepted_facts ?? 0}/${document.target_facts} facts` : ''}
+                {document.total_batches ? ` · batch ${document.completed_batches ?? 0}/${document.total_batches}` : ''}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {!progress?.documents?.length && sourceNames.length > 0 && (
+        <div className="fine-document-progress" aria-label="Source documents included in dataset build">
+          {sourceNames.map((name, index) => (
+            <div className="fine-document-progress-row completed" key={`${name}-${index}`}>
+              <span className="fine-document-progress-mark" aria-hidden="true">✓</span>
+              <span className="fine-document-progress-name" title={name}>{name}</span>
+              <span className="fine-document-progress-stage">Waiting</span>
+            </div>
+          ))}
+        </div>
+      )}
       <button className="btn btn-danger" onClick={onCancel}>{cancelLabel}</button>
     </section>
   );
 }
 
 function RunStatus({ run, busy, onStop }: { run: FineTuningRun; busy: boolean; onStop: () => void }) {
-  const active = !terminalStatuses.has(run.status);
+  const active = !isTerminalFineTuningStatus(run.status);
 
   return (
     <section className="fine-run-card" aria-live="polite">
@@ -186,247 +194,163 @@ function RunStatus({ run, busy, onStop }: { run: FineTuningRun; busy: boolean; o
 export default function FineTuning() {
   const { models, loading: modelsLoading, error: modelsError, loadModels } = useModelList();
   const installedModels = useMemo(() => models?.data ?? [], [models]);
-  const [configuredModelIDs, setConfiguredModelIDs] = useState<string[]>([]);
-  const [configuredModelsLoading, setConfiguredModelsLoading] = useState(true);
-  const [configuredModelsError, setConfiguredModelsError] = useState('');
-  const [view, setView] = useState<View>('prepare');
-  const [sourceFile, setSourceFile] = useState<File | null>(null);
-  const [preparedFile, setPreparedFile] = useState<File | null>(null);
-  const [datasetID, setDatasetID] = useState('');
-  const [sourceName, setSourceName] = useState('');
-  const [goal, setGoal] = useState<FineTuningGoal>('question_answer');
-  const [preparationModelID, setPreparationModelID] = useState('');
-  const [previewCount, setPreviewCount] = useState(MAX_PREVIEW_RECORDS);
-  const [records, setRecords] = useState<FineTuningRecord[]>([]);
-  const [verifiedRecords, setVerifiedRecords] = useState<FineTuningRecord[]>([]);
-  const [verification, setVerification] = useState<FineTuningVerification[]>([]);
-  const [datasetBuilt, setDatasetBuilt] = useState(false);
-  const [currentRun, setCurrentRun] = useState<FineTuningRun | null>(null);
-  const [history, setHistory] = useState<FineTuningRun[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [preparationOperation, setPreparationOperation] = useState<PreparationOperation | null>(null);
-  const [preparationProgress, setPreparationProgress] = useState<FineTuningPreparationProgress | null>(null);
-  const [preparationStartedAt, setPreparationStartedAt] = useState('');
-  const [error, setError] = useState('');
+  const [preparationModelIDs, setPreparationModelIDs] = useState<string[]>([]);
+  const [preparationModelsLoading, setPreparationModelsLoading] = useState(true);
+  const [preparationModelsError, setPreparationModelsError] = useState('');
+  const [trainingRecipe, setTrainingRecipe] = useState<FineTuningRecipeResponse | null>(null);
+  const [trainingRecipeLoading, setTrainingRecipeLoading] = useState(false);
+  const [trainingRecipeError, setTrainingRecipeError] = useState('');
+  const {
+    sourceFiles,
+    preparedFile,
+    datasetID,
+    sourceName,
+    goal,
+    preparationModelID,
+    previewCount,
+    customDatasetInstructions,
+    datasetInstructions,
+    documentPreviews,
+    datasetBuilt,
+    currentRun,
+    activeRun,
+    history,
+    busy,
+    preparationOperation,
+    preparationProgress,
+    preparationStartedAt,
+    error,
+    setSourceFiles,
+    setGoal,
+    setPreparationModelID,
+    setPreviewCount,
+    setCustomDatasetInstructions,
+    setDatasetInstructions,
+    setError,
+    choosePreparedDataset,
+    preparePreview,
+    regenerateDocumentPreview,
+    updateRecord,
+    removeDocumentPreview,
+    buildDataset,
+    returnToSourceSetup,
+    resetPreparation,
+    cancelPreparation,
+    startRun,
+    stopRun,
+    resumeRun,
+    selectRun,
+    refreshRuns,
+  } = useFineTuningRunner();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeDocumentIndex, setActiveDocumentIndex] = useState(0);
+  const [view, setView] = useState<View>(() => {
+    const requested = searchParams.get('view');
+    if (requested === 'prepare' || requested === 'run') return requested;
+    return preparationOperation ? 'prepare' : activeRun ? 'run' : datasetBuilt ? 'configure' : 'prepare';
+  });
+  const sourceInputRef = useRef<HTMLInputElement>(null);
   const preparedInputRef = useRef<HTMLInputElement>(null);
-  const preparationAbortRef = useRef<AbortController | null>(null);
-  const trainingModelInstalled = installedModels.some((model) => model.id === TRAINING_MODEL_ID);
-  const preparationModels = useMemo(() => {
-    const configured = new Set(configuredModelIDs);
-    return installedModels.filter((model) => configured.has(model.id));
-  }, [configuredModelIDs, installedModels]);
+  const trainingModelInstalled = installedModels.some((model) => model.id === FINE_TUNING_MODEL_ID);
 
   useEffect(() => {
     void loadModels();
   }, [loadModels]);
 
   useEffect(() => {
+    const requested = searchParams.get('view');
+    if (requested !== 'prepare' && requested !== 'run') return;
+    setView(requested);
+    setSearchParams({}, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  useEffect(() => {
     let cancelled = false;
     api.fineTuningPreparationModels()
       .then((response) => {
-        if (!cancelled) setConfiguredModelIDs(response.models ?? []);
+        if (!cancelled) setPreparationModelIDs(response.models ?? []);
       })
       .catch((err) => {
-        if (!cancelled) setConfiguredModelsError(err instanceof Error ? err.message : 'Could not load configured models');
+        if (!cancelled) setPreparationModelsError(err instanceof Error ? err.message : 'Could not load preparation models');
       })
       .finally(() => {
-        if (!cancelled) setConfiguredModelsLoading(false);
+        if (!cancelled) setPreparationModelsLoading(false);
       });
     return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
-    if (!preparationModels.some((model) => model.id === preparationModelID)) {
-      setPreparationModelID(preparationModels[0]?.id ?? '');
+    if (!preparationModelIDs.includes(preparationModelID)) {
+      setPreparationModelID(preparationModelIDs[0] ?? '');
     }
-  }, [preparationModelID, preparationModels]);
+  }, [preparationModelID, preparationModelIDs]);
 
-  const refreshRuns = useCallback(async (showError = false) => {
-    try {
-      const [current, saved] = await Promise.all([
-        api.currentFineTuningRun().catch(() => null),
-        api.fineTuningHistory(),
-      ]);
-      setCurrentRun(current);
-      setHistory(saved.runs ?? []);
-    } catch (err) {
-      if (showError) setError(err instanceof Error ? err.message : 'Could not load fine-tuning runs');
+  useEffect(() => {
+    if (!trainingModelInstalled) {
+      setTrainingRecipe(null);
+      setTrainingRecipeError('');
+      setTrainingRecipeLoading(false);
+      return;
     }
-  }, []);
-
-  useEffect(() => {
-    void refreshRuns(false);
-  }, [refreshRuns]);
-
-  useEffect(() => () => preparationAbortRef.current?.abort(), []);
-
-  useEffect(() => {
-    if (!currentRun || terminalStatuses.has(currentRun.status)) return;
-    const timer = window.setInterval(() => void refreshRuns(false), 2000);
-    return () => window.clearInterval(timer);
-  }, [currentRun, refreshRuns]);
-
-  useEffect(() => {
-    if (!preparationOperation) return;
     let cancelled = false;
-    const refresh = async () => {
-      try {
-        const progress = await api.currentFineTuningPreparation();
-        const matches = preparationOperation === 'preview'
-          ? progress.operation === 'extraction' || progress.operation === 'preview'
-          : progress.operation === preparationOperation;
-        if (!cancelled && matches) setPreparationProgress(progress);
-      } catch {
-        // The operation may still be parsing its request before progress exists.
-      }
-    };
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 1000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [preparationOperation]);
+    setTrainingRecipeLoading(true);
+    setTrainingRecipeError('');
+    api.fineTuningRecipe(FINE_TUNING_MODEL_ID)
+      .then((recipe) => {
+        if (!cancelled) setTrainingRecipe(recipe);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setTrainingRecipe(null);
+          setTrainingRecipeError(err instanceof Error ? err.message : 'Could not load training recipe');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setTrainingRecipeLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [trainingModelInstalled]);
 
-  const stage = preparationOperation === 'build' ? 2 : records.length > 0 ? 1 : 0;
+  useEffect(() => {
+    setActiveDocumentIndex((current) => Math.max(0, Math.min(current, documentPreviews.length - 1)));
+  }, [documentPreviews.length]);
+
+  const activeDocument = documentPreviews[activeDocumentIndex];
+  const stage = preparationOperation === 'build' ? 2 : documentPreviews.length > 0 ? 1 : 0;
   const sourceFileError = useMemo(() => {
-    if (!sourceFile) return '';
-    const extension = sourceFile.name.split('.').pop()?.toLowerCase();
-    if (extension !== 'pdf' && extension !== 'docx') return 'Choose a PDF or DOCX document.';
-    if (sourceFile.size > MAX_UPLOAD_BYTES) return 'The selected file exceeds the 100 MiB limit.';
+    if (sourceFiles.length === 0) return '';
+    if (sourceFiles.length > MAX_FINE_TUNING_DOCUMENTS) return `Choose no more than ${MAX_FINE_TUNING_DOCUMENTS} documents.`;
+    for (const file of sourceFiles) {
+      const extension = file.name.split('.').pop()?.toLowerCase();
+      if (extension !== 'pdf' && extension !== 'docx') return `${file.name} must be a PDF or DOCX document.`;
+      if (file.size > MAX_FINE_TUNING_UPLOAD_BYTES) return `${file.name} exceeds the 100 MiB limit.`;
+    }
+    if (sourceFiles.reduce((total, file) => total + file.size, 0) > MAX_FINE_TUNING_COLLECTION_BYTES) return 'The selected documents exceed the 500 MiB combined limit.';
     return '';
-  }, [sourceFile]);
+  }, [sourceFiles]);
 
   const preparedFileError = useMemo(() => {
     if (!preparedFile) return '';
-    return preparedDatasetError(preparedFile);
+    return preparedFineTuningDatasetError(preparedFile);
   }, [preparedFile]);
 
-  const runAction = async (action: () => Promise<void>) => {
-    setBusy(true);
-    setError('');
-    try {
-      await action();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'The request failed');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const runPreparationAction = async (
-    operation: PreparationOperation,
-    action: (signal: AbortSignal) => Promise<void>,
-  ) => {
-    const controller = new AbortController();
-    preparationAbortRef.current = controller;
-    setPreparationOperation(operation);
-    setPreparationProgress(null);
-    setPreparationStartedAt(new Date().toISOString());
-    setBusy(true);
-    setError('');
-    try {
-      await action(controller.signal);
-    } catch (err) {
-      if (!isAbortError(err)) setError(err instanceof Error ? err.message : 'The request failed');
-    } finally {
-      if (preparationAbortRef.current === controller) {
-        preparationAbortRef.current = null;
-        setPreparationOperation(null);
-        setBusy(false);
-      }
-    }
-  };
-
-  const cancelPreparation = () => {
+  const cancel = () => {
     const operation = preparationOperation;
-    void api.stopFineTuningPreparation().catch(() => undefined);
-    preparationAbortRef.current?.abort();
-    setPreparationOperation(null);
-    setPreparationProgress(null);
-    setBusy(false);
-    setError('');
-    if (operation === 'prepared-upload') {
-      setPreparedFile(null);
-      return;
-    }
-    setRecords([]);
-    setVerifiedRecords([]);
-    setVerification([]);
-    setDatasetBuilt(false);
-    setView('prepare');
+    cancelPreparation();
+    if (operation !== 'prepared-upload') setView('prepare');
   };
 
-  const uploadPrepared = (selectedFile: File) => runPreparationAction('prepared-upload', async (signal) => {
-    if (preparedDatasetError(selectedFile)) return;
-    const dataset = await api.uploadFineTuningDataset(selectedFile, signal);
-    setDatasetID(dataset.dataset_id);
-    setSourceName(dataset.source_name);
-    setRecords([]);
-    setVerifiedRecords([]);
-    setVerification([]);
-    setDatasetBuilt(true);
-  });
-
-  const choosePreparedDataset = (selectedFile: File | null) => {
-    setPreparedFile(selectedFile);
-    if (selectedFile && !preparedDatasetError(selectedFile)) void uploadPrepared(selectedFile);
+  const build = async () => {
+    if (await buildDataset()) setView('configure');
   };
 
-  const preparePreview = () => runPreparationAction('preview', async (signal) => {
-    if (!sourceFile || sourceFileError || !preparationModelID) return;
-    const dataset = datasetID
-      ? { dataset_id: datasetID, source_name: sourceName }
-      : await api.uploadFineTuningDataset(sourceFile, signal);
-    setDatasetID(dataset.dataset_id);
-    setSourceName(dataset.source_name);
-    const result = await api.previewFineTuningDataset({
-      dataset_id: dataset.dataset_id,
-      goal,
-      model_id: preparationModelID,
-      record_count: previewCount,
-    }, signal);
-    setRecords(result.records);
-    setVerifiedRecords(result.records.map((record) => ({ ...record })));
-    setVerification(result.verification);
-    setDatasetBuilt(false);
-  });
-
-  const updateRecord = (index: number, field: 'prompt' | 'target', value: string) => {
-    setRecords((current) => current.map((record, recordIndex) =>
-      recordIndex === index ? { ...record, [field]: value } : record));
+  const start = async () => {
+    if (await startRun()) setView('run');
   };
 
-  const build = () => runPreparationAction('build', async (signal) => {
-    await api.buildFineTuningDataset({
-      dataset_id: datasetID,
-      goal,
-      model_id: preparationModelID,
-      reviewed_records: records,
-      verified_preview_records: verifiedRecords,
-    }, signal);
-    setDatasetBuilt(true);
-    setView('configure');
-  });
-
-  const start = () => runAction(async () => {
-    const run = await api.startFineTuningRun(datasetID, TRAINING_MODEL_ID);
-    setCurrentRun(run);
-    setView('run');
-    await refreshRuns(false);
-  });
-
-  const stop = () => runAction(async () => {
-    await api.stopFineTuningRun();
-    await refreshRuns(true);
-  });
-
-  const resume = (id: string) => runAction(async () => {
-    const run = await api.resumeFineTuningRun(id);
-    setCurrentRun(run);
-    setView('run');
-    await refreshRuns(false);
-  });
+  const resume = async (id: string) => {
+    if (await resumeRun(id)) setView('run');
+  };
 
   return (
     <div className="fine-page">
@@ -440,7 +364,10 @@ export default function FineTuning() {
 
       <div className="tabs fine-tabs" role="tablist" aria-label="Fine-tuning views">
         {(['prepare', 'configure', 'run', 'history'] as View[]).map((item) => (
-          <button key={item} className={`tab ${view === item ? 'active' : ''}`} disabled={preparationOperation !== null} onClick={() => {
+          <button key={item} className={`tab ${view === item ? 'active' : ''}`} disabled={
+            preparationOperation !== null
+            && (preparationOperation !== 'build' || (item !== 'prepare' && item !== 'history'))
+          } onClick={() => {
             setView(item);
             setError('');
             if (item === 'history') void refreshRuns(true);
@@ -453,7 +380,7 @@ export default function FineTuning() {
 
       {error && <div className="fine-error" role="alert">{error}</div>}
       {modelsError && <div className="fine-error" role="alert">Could not load installed models: {modelsError}</div>}
-      {configuredModelsError && <div className="fine-error" role="alert">Could not load models from the active configuration: {configuredModelsError}</div>}
+      {preparationModelsError && <div className="fine-error" role="alert">Could not load preparation models from the catalog: {preparationModelsError}</div>}
 
       {view === 'configure' && (
         <div className="fine-configure-view">
@@ -465,16 +392,7 @@ export default function FineTuning() {
             {datasetBuilt ? (
               <div className="fine-dataset-ready">
                 <div><strong>{sourceName || datasetID}</strong><span>Validated and stored for local fine-tuning</span></div>
-                <button className="btn btn-primary" onClick={() => {
-                  setDatasetBuilt(false);
-                  setDatasetID('');
-                  setSourceName('');
-                  setSourceFile(null);
-                  setPreparedFile(null);
-                  setRecords([]);
-                  setVerifiedRecords([]);
-                  setVerification([]);
-                }}>Change dataset</button>
+                <button className="btn btn-primary" onClick={resetPreparation}>Change dataset</button>
               </div>
             ) : (
               <>
@@ -499,7 +417,7 @@ export default function FineTuning() {
                           startedAt={preparationProgress?.started_at ?? preparationStartedAt}
                           active
                         />
-                        <button className="btn btn-danger" onClick={cancelPreparation}>Cancel Upload</button>
+                        <button className="btn btn-danger" onClick={cancel}>Cancel Upload</button>
                       </div>
                     ) : (
                       <>
@@ -519,20 +437,57 @@ export default function FineTuning() {
             <div className="fine-panel-heading"><div><span>Required</span><h3>Base Model</h3></div></div>
             <p className="fine-panel-copy">Fine-tuning currently uses the single validated Gemma 3 1B recipe.</p>
             <div className="fine-supported-model">
-              <div><strong>Gemma 3 1B IT</strong><code>{TRAINING_MODEL_ID}</code></div>
+              <div><strong>Gemma 3 1B IT</strong><code>{FINE_TUNING_MODEL_ID}</code></div>
               <span className={`fine-status ${trainingModelInstalled ? 'fine-status-completed' : 'fine-status-stopped'}`}>{modelsLoading ? 'Checking' : trainingModelInstalled ? 'Installed' : 'Not installed'}</span>
             </div>
           </section>
 
           <section className="fine-panel fine-recipe-panel">
-            <div className="fine-panel-heading"><div><span>Validated preset</span><h3>Training Configuration</h3></div><strong>LoRA</strong></div>
-            <p className="fine-panel-copy">Moxie chooses the validated recipe for the selected model. These are safeguards, not extra inputs.</p>
-            <div className="fine-recipe-grid">
-              <span><strong>Method</strong>LoRA</span>
-              <span><strong>Selection</strong>Early stopping</span>
-              <span><strong>Context</strong>512 tokens</span>
-              <span><strong>Output</strong>F32 GGUF adapter</span>
-            </div>
+            <div className="fine-panel-heading"><div><span>Validated preset</span><h3>Training Configuration</h3></div></div>
+            <p className="fine-panel-copy">This validated preset comes directly from the GoMLX backend. Training uses each example's actual tokenized length up to the model's context limit.</p>
+            {trainingRecipeLoading ? (
+              <p className="fine-panel-copy">Loading training settings…</p>
+            ) : trainingRecipeError ? (
+              <div className="fine-inline-error">Could not load training settings: {trainingRecipeError}</div>
+            ) : !trainingRecipe ? (
+              <p className="fine-panel-copy">Install Gemma 3 1B IT to inspect its complete training recipe.</p>
+            ) : (
+              <>
+                <div className="fine-recipe-columns">
+                  <KeyValueTable rows={[
+                    { key: 'method', label: labelWithTip('Training Method', 'fineTuningTrainingMethod'), value: trainingRecipe.method === 'lora' ? 'LoRA' : statusLabel(trainingRecipe.method) },
+                    { key: 'epochs', label: labelWithTip('Maximum Epochs', 'fineTuningMaximumEpochs'), value: trainingRecipe.maximum_epochs },
+                    { key: 'batch-size', label: labelWithTip('Batch Size', 'fineTuningBatchSize'), value: `${trainingRecipe.batch_size} examples` },
+                    { key: 'learning-rate', label: labelWithTip('Learning Rate', 'fineTuningLearningRate'), value: trainingRecipe.learning_rate },
+                  ]} />
+                  <KeyValueTable rows={[
+                    { key: 'rank', label: labelWithTip('LoRA Rank', 'fineTuningLoRARank'), value: trainingRecipe.lora.rank },
+                    { key: 'sequence-limit', label: labelWithTip('Sequence Limit', 'fineTuningSequenceLimit'), value: `${trainingRecipe.sequence.maximum_tokens.toLocaleString()} tokens · model GGUF` },
+                    { key: 'checkpoint', label: labelWithTip('Checkpoint Selection', 'fineTuningCheckpointSelection'), value: trainingRecipe.checkpoint_selection === 'lowest_validation_loss' ? 'Lowest validation loss' : statusLabel(trainingRecipe.checkpoint_selection) },
+                    { key: 'output', label: labelWithTip('Output Adapter', 'fineTuningOutputAdapter'), value: `${trainingRecipe.output.precision.toUpperCase()} ${trainingRecipe.output.format.toUpperCase()} adapter` },
+                  ]} />
+                </div>
+                <details className="fine-recipe-details">
+                  <summary>Advanced Recipe Details</summary>
+                  <div className="fine-recipe-columns">
+                    <KeyValueTable rows={[
+                      { key: 'optimizer', label: labelWithTip('Optimizer', 'fineTuningOptimizer'), value: trainingRecipe.optimizer === 'adam' ? 'Adaptive Moment Estimation' : statusLabel(trainingRecipe.optimizer) },
+                      { key: 'weight-decay', label: labelWithTip('Weight Decay', 'fineTuningWeightDecay'), value: trainingRecipe.weight_decay },
+                      { key: 'alpha', label: labelWithTip('LoRA Alpha', 'fineTuningLoRAAlpha'), value: trainingRecipe.lora.alpha },
+                      { key: 'scale', label: labelWithTip('LoRA Scale', 'fineTuningLoRAScale'), value: trainingRecipe.lora.scale },
+                      { key: 'target-modules', label: labelWithTip('Target Modules', 'fineTuningTargetModules'), value: `${trainingRecipe.lora.target_modules.join(', ')} projections` },
+                    ]} />
+                    <KeyValueTable rows={[
+                      { key: 'base-weights', label: labelWithTip('Base Model Weights', 'fineTuningBaseWeights'), value: trainingRecipe.base_weights === 'frozen' ? 'Frozen' : statusLabel(trainingRecipe.base_weights) },
+                      { key: 'loss', label: labelWithTip('Loss', 'fineTuningLoss'), value: trainingRecipe.loss === 'answer_only_cross_entropy' ? 'Answer-only cross-entropy' : statusLabel(trainingRecipe.loss) },
+                      { key: 'seed', label: labelWithTip('Shuffle Seed', 'fineTuningShuffleSeed'), value: trainingRecipe.seed },
+                      { key: 'oversized', label: labelWithTip('Oversized Examples', 'fineTuningOversizedExamples'), value: trainingRecipe.sequence.overflow === 'reject' ? 'Rejected' : statusLabel(trainingRecipe.sequence.overflow) },
+                      { key: 'padding', label: labelWithTip('Batch Padding', 'fineTuningBatchPadding'), value: trainingRecipe.sequence.padding === 'power_of_two' ? 'Power-of-two sequence buckets' : statusLabel(trainingRecipe.sequence.padding) },
+                    ]} />
+                  </div>
+                </details>
+              </>
+            )}
           </section>
 
           <section className="fine-panel fine-generation-summary">
@@ -541,7 +496,7 @@ export default function FineTuning() {
               <h3>{datasetBuilt && trainingModelInstalled ? 'Ready to Fine-tune' : 'Complete the Training Configuration'}</h3>
               <p>{datasetBuilt && trainingModelInstalled ? `${sourceName || datasetID} will train against Gemma 3 1B IT.` : 'Choose a prepared dataset and install the supported Gemma 3 1B model.'}</p>
             </div>
-            <button className="btn btn-primary" disabled={!datasetBuilt || !datasetID || !trainingModelInstalled || busy || (!!currentRun && !terminalStatuses.has(currentRun.status))} onClick={start}>Start fine-tuning</button>
+            <button className="btn btn-primary" disabled={!datasetBuilt || !datasetID || !trainingModelInstalled || busy || !!activeRun} onClick={start}>Start fine-tuning</button>
           </section>
         </div>
       )}
@@ -570,14 +525,33 @@ export default function FineTuning() {
               </div>
               <div className="fine-form-grid">
                 <div className="form-group fine-file-field">
-                  <FieldLabel htmlFor="fine-source" tooltipKey="fineTuningSource">Source Document</FieldLabel>
-                  <input id="fine-source" type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(event) => {
-                    setSourceFile(event.target.files?.[0] ?? null);
-                    setDatasetID('');
-                    setSourceName('');
-                    setDatasetBuilt(false);
+                  <FieldLabel htmlFor="fine-source" tooltipKey="fineTuningSource">Source Documents</FieldLabel>
+                  <input ref={sourceInputRef} className="fine-hidden-input" id="fine-source" type="file" multiple accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(event) => {
+                    const selected = Array.from(event.target.files ?? []);
+                    const known = new Set(sourceFiles.map((file) => `${file.name}:${file.size}:${file.lastModified}`));
+                    setSourceFiles([...sourceFiles, ...selected.filter((file) => {
+                      const key = `${file.name}:${file.size}:${file.lastModified}`;
+                      if (known.has(key)) return false;
+                      known.add(key);
+                      return true;
+                    })]);
+                    event.currentTarget.value = '';
                   }} />
-                  <small>{sourceFile ? `${sourceFile.name} · ${(sourceFile.size / 1024 / 1024).toFixed(1)} MiB` : 'PDF or DOCX · 100 MiB maximum'}</small>
+                  <div className="fine-file-picker">
+                    <button type="button" className="btn btn-secondary" onClick={() => sourceInputRef.current?.click()}>{sourceFiles.length ? 'Add Documents' : 'Choose Documents'}</button>
+                    <span>{sourceFiles.length ? `${sourceFiles.length} document${sourceFiles.length === 1 ? '' : 's'} selected` : 'No documents chosen'}</span>
+                  </div>
+                  {!!sourceFiles.length && (
+                    <ul className="fine-source-files">
+                      {sourceFiles.map((file, index) => (
+                        <li key={`${file.name}-${file.size}-${file.lastModified}`}>
+                          <span><strong title={file.name}>{file.name}</strong><small>{(file.size / 1024 / 1024).toFixed(1)} MiB</small></span>
+                          <button type="button" className="btn btn-small btn-secondary" onClick={() => setSourceFiles(sourceFiles.filter((_, fileIndex) => fileIndex !== index))}>Remove</button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <small>{sourceFiles.length ? `${(sourceFiles.reduce((total, file) => total + file.size, 0) / 1024 / 1024).toFixed(1)} MiB combined` : `PDF or DOCX · up to ${MAX_FINE_TUNING_DOCUMENTS} documents · 100 MiB each`}</small>
                 </div>
                 <div className="form-group">
                   <FieldLabel htmlFor="fine-goal" tooltipKey="fineTuningGoal">Training Goal</FieldLabel>
@@ -590,21 +564,66 @@ export default function FineTuning() {
                 </div>
                 <div className="form-group">
                   <FieldLabel htmlFor="fine-model" tooltipKey="fineTuningModel">Model</FieldLabel>
-                  <select id="fine-model" value={preparationModelID} onChange={(event) => setPreparationModelID(event.target.value)} disabled={modelsLoading || configuredModelsLoading}>
-                    {(modelsLoading || configuredModelsLoading) && <option>Loading models…</option>}
-                    {!modelsLoading && !configuredModelsLoading && configuredModelIDs.length === 0 && <option value="">No models in model config</option>}
-                    {!modelsLoading && !configuredModelsLoading && configuredModelIDs.length > 0 && preparationModels.length === 0 && <option value="">No configured models installed</option>}
-                    {preparationModels.map((model) => <option key={model.id} value={model.id}>{model.id}</option>)}
+                  <select id="fine-model" value={preparationModelID} onChange={(event) => setPreparationModelID(event.target.value)} disabled={preparationModelsLoading}>
+                    {preparationModelsLoading && <option>Loading models…</option>}
+                    {!preparationModelsLoading && preparationModelIDs.length === 0 && <option value="">No compatible catalog models installed</option>}
+                    {preparationModelIDs.map((modelID) => <option key={modelID} value={modelID}>{modelID}</option>)}
                   </select>
                 </div>
                 <div className="form-group">
                   <FieldLabel htmlFor="fine-preview-count" tooltipKey="fineTuningPreviewCount">Preview Examples</FieldLabel>
-                  <input id="fine-preview-count" type="number" min={1} max={MAX_PREVIEW_RECORDS} value={previewCount} onChange={(event) => setPreviewCount(Math.min(MAX_PREVIEW_RECORDS, Math.max(1, Number(event.target.value))))} />
+                  <input id="fine-preview-count" type="number" min={1} max={MAX_FINE_TUNING_PREVIEW_RECORDS} value={previewCount} onChange={(event) => setPreviewCount(Math.min(MAX_FINE_TUNING_PREVIEW_RECORDS, Math.max(1, Number(event.target.value))))} />
                 </div>
+              </div>
+              <div className="fine-prompt-editor">
+                <div className="fine-prompt-heading">
+                  <div>
+                    <h4>Dataset Instructions <span>Optional</span></h4>
+                    <p>Describe the audience, topics, question style, and answer detail you want in the prepared examples.</p>
+                  </div>
+                </div>
+                <FieldLabel className="fine-prompt-toggle" tooltipKey="fineTuningDatasetInstructions">
+                  <input type="checkbox" checked={customDatasetInstructions} onChange={(event) => setCustomDatasetInstructions(event.target.checked)} />
+                  <span>Customize how examples are written</span>
+                </FieldLabel>
+                {!customDatasetInstructions && (
+                  <p className="fine-prompt-default">Using Kronk’s grounded defaults for natural, standalone examples.</p>
+                )}
+                {customDatasetInstructions && (
+                  <div className="form-group fine-prompt-custom">
+                    <FieldLabel htmlFor="fine-preparation-instructions">Custom Instructions</FieldLabel>
+                    <textarea
+                      id="fine-preparation-instructions"
+                      rows={4}
+                      maxLength={MAX_FINE_TUNING_DATASET_INSTRUCTIONS}
+                      value={datasetInstructions}
+                      onChange={(event) => setDatasetInstructions(event.target.value)}
+                    />
+                    <div className="fine-prompt-footer">
+                      <span>{datasetInstructions.length} / {MAX_FINE_TUNING_DATASET_INSTRUCTIONS} characters</span>
+                      <button type="button" className="btn-link" onClick={() => setDatasetInstructions(DEFAULT_FINE_TUNING_DATASET_INSTRUCTIONS)}>Restore Default Text</button>
+                    </div>
+                  </div>
+                )}
+                <details className="fine-prompt-rules">
+                  <summary>View Default Instructions and Required Rules</summary>
+                  <div className="fine-prompt-rules-content">
+                    <strong>Default Instructions</strong>
+                    <p className="fine-prompt-default-copy">{DEFAULT_FINE_TUNING_DATASET_INSTRUCTIONS}</p>
+                    <strong>Required Rules</strong>
+                    <p>These protections always apply, even when custom instructions are used.</p>
+                    <ul>
+                      <li>Use only facts found in the selected source passage.</li>
+                      <li>Keep every question understandable without the original document.</li>
+                      <li>Require one directly supported answer and reject outside knowledge.</li>
+                      <li>Verify grounding and dataset quality before accepting an example.</li>
+                    </ul>
+                  </div>
+                </details>
               </div>
               {sourceFileError && <div className="fine-inline-error">{sourceFileError}</div>}
               <div className="fine-actions">
-                <button className="btn btn-primary" disabled={!sourceFile || !!sourceFileError || !preparationModelID || busy} onClick={preparePreview}>Generate Preview</button>
+                <button className="btn btn-primary" disabled={sourceFiles.length === 0 || !!sourceFileError || !preparationModelID || busy} onClick={preparePreview}>Generate Preview</button>
                 {sourceName && <span className="fine-source-ready">Source Ready · {sourceName}</span>}
               </div>
             </section>
@@ -617,23 +636,39 @@ export default function FineTuning() {
               progress={preparationProgress}
               startedAt={preparationStartedAt}
               cancelLabel="Cancel Preparation"
-              onCancel={cancelPreparation}
+              onCancel={cancel}
             />
           )}
 
-          {stage === 1 && (
+          {stage === 1 && preparationOperation !== 'preview' && activeDocument && (
             <section className="fine-panel fine-review-panel">
-              <div className="fine-panel-heading"><div><span>Step 2</span><h3>Review Examples</h3></div><strong>{records.length} Records</strong></div>
+              <button
+                className="btn btn-small btn-secondary"
+                style={{ marginBottom: 12 }}
+                disabled={busy}
+                onClick={returnToSourceSetup}
+              >
+                ← Back to Source Setup
+              </button>
+              <div className="fine-panel-heading">
+                <div><span>Step 2 · Document {activeDocumentIndex + 1} of {documentPreviews.length}</span><h3>Review Examples</h3></div>
+                <strong>{activeDocument.records.length} Records</strong>
+              </div>
+              <div className="fine-document-review-nav">
+                <button className="btn btn-small btn-secondary" disabled={activeDocumentIndex === 0 || busy} onClick={() => setActiveDocumentIndex((index) => index - 1)}>← Previous</button>
+                <div><strong title={activeDocument.name}>{activeDocument.name}</strong><span>Review this document’s examples independently.</span></div>
+                <button className="btn btn-small btn-secondary" disabled={activeDocumentIndex === documentPreviews.length - 1 || busy} onClick={() => setActiveDocumentIndex((index) => index + 1)}>Next →</button>
+              </div>
               <p className="fine-panel-copy">Edit prompts or targets before building. Evidence stays read-only so each target remains traceable to the source.</p>
               <div className="fine-records">
-                {records.map((record, index) => {
-                  const result = verification[index];
+                {activeDocument.records.map((record, index) => {
+                  const result = activeDocument.verification[index];
                   return (
                     <article className="fine-record" key={`${record.fact_id ?? 'record'}-${index}`}>
                       <div className="fine-record-number">{String(index + 1).padStart(2, '0')}</div>
                       <div className="fine-record-fields">
-                        <FieldLabel tooltipKey="fineTuningPrompt">Prompt<textarea value={record.prompt} onChange={(event) => updateRecord(index, 'prompt', event.target.value)} /></FieldLabel>
-                        <FieldLabel tooltipKey="fineTuningTarget">Target<textarea value={record.target} onChange={(event) => updateRecord(index, 'target', event.target.value)} /></FieldLabel>
+                        <FieldLabel tooltipKey="fineTuningPrompt">{goal === 'question_answer' ? 'Question' : 'Prompt'}<textarea value={record.prompt} onChange={(event) => updateRecord(activeDocument.id, index, 'prompt', event.target.value)} /></FieldLabel>
+                        <FieldLabel tooltipKey="fineTuningTarget">{goal === 'question_answer' ? 'Answer' : 'Target'}<textarea value={record.target} onChange={(event) => updateRecord(activeDocument.id, index, 'target', event.target.value)} /></FieldLabel>
                         <details><summary>Source evidence</summary><p>{record.evidence}</p></details>
                       </div>
                       <span className={`fine-verification ${result?.passed ? 'passed' : 'review'}`}>{result?.passed ? 'Verified' : 'Review'}</span>
@@ -641,18 +676,23 @@ export default function FineTuning() {
                   );
                 })}
               </div>
-              <div className="fine-actions fine-actions-end"><button className="btn btn-primary" disabled={busy || records.some((record) => !record.prompt.trim() || !record.target.trim())} onClick={build}>Build Training Dataset</button></div>
+              <div className="fine-review-actions">
+                <button className="btn btn-secondary" disabled={busy} onClick={() => regenerateDocumentPreview(activeDocument.id)}>Regenerate This Preview</button>
+                <button className="btn btn-danger" disabled={busy} onClick={() => removeDocumentPreview(activeDocument.id)}>Remove Document</button>
+                <button className="btn btn-primary" disabled={busy || documentPreviews.some((preview) => preview.records.some((record) => !record.prompt.trim() || !record.target.trim()))} onClick={build}>Build Training Dataset</button>
+              </div>
             </section>
           )}
 
           {preparationOperation === 'build' && (
             <PreparationProgress
               title="Building Training Dataset"
-              message="Generating and validating the complete dataset from your reviewed examples."
+              message="Generating and validating one training dataset from all selected documents."
               progress={preparationProgress}
               startedAt={preparationStartedAt}
               cancelLabel="Stop Build"
-              onCancel={cancelPreparation}
+              sourceNames={documentPreviews.map((document) => document.name)}
+              onCancel={cancel}
             />
           )}
         </div>
@@ -661,7 +701,7 @@ export default function FineTuning() {
       {view === 'run' && (
         <div className="fine-train-view">
           {currentRun && <div className="fine-actions"><button className="btn btn-primary" onClick={() => setView('history')}>Back to History</button></div>}
-          {currentRun ? <RunStatus run={currentRun} busy={busy} onStop={stop} /> : (
+          {currentRun ? <RunStatus run={currentRun} busy={busy} onStop={stopRun} /> : (
             <section className="fine-empty-run">
               <div className="fine-empty-symbol">→</div>
               <div><h3>No Training Run Yet</h3><p>Configure a prepared dataset and base model, then start fine-tuning.</p></div>
@@ -683,7 +723,7 @@ export default function FineTuning() {
                 <thead><tr><th>Run</th><th>Status</th><th>Started</th><th /></tr></thead>
                 <tbody>{history.map((run) => (
                   <tr key={run.id}>
-                    <td><button className="fine-run-link" onClick={() => { setCurrentRun(run); setView('run'); }}>{run.id}</button></td>
+                    <td><button className="fine-run-link" onClick={() => { selectRun(run); setView('run'); }}>{run.id}</button></td>
                     <td><span className={`fine-status fine-status-${run.status}`}>{statusLabel(run.status)}</span></td>
                     <td>{formatDate(run.started_at)}</td>
                     <td>{run.resumable && <button className="btn btn-primary" disabled={busy} onClick={() => resume(run.id)}>Resume</button>}</td>

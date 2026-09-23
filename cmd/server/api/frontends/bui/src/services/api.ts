@@ -61,6 +61,7 @@ import type {
   FineTuningPreparationModelsResponse,
   FineTuningPreviewRequest,
   FineTuningPreviewResponse,
+  FineTuningRecipeResponse,
   FineTuningRun,
 } from '../types';
 
@@ -1290,9 +1291,11 @@ class ApiService {
 
   // ── Fine-tuning app ──
 
-  async uploadFineTuningDataset(file: File, signal?: AbortSignal): Promise<FineTuningDatasetResponse> {
+  async uploadFineTuningDataset(file: File | File[], signal?: AbortSignal): Promise<FineTuningDatasetResponse> {
     const form = new FormData();
-    form.append('file', file, file.name);
+    const files = Array.isArray(file) ? file : [file];
+    const field = Array.isArray(file) ? 'files' : 'file';
+    files.forEach((item) => form.append(field, item, item.name));
 
     const response = await this.fetch(`${this.baseUrl}/fine-tuning/datasets`, {
       method: 'POST',
@@ -1307,6 +1310,10 @@ class ApiService {
 
   async fineTuningPreparationModels(): Promise<FineTuningPreparationModelsResponse> {
     return this.request<FineTuningPreparationModelsResponse>('/fine-tuning/prepare/models');
+  }
+
+  async fineTuningRecipe(modelID: string): Promise<FineTuningRecipeResponse> {
+    return this.request<FineTuningRecipeResponse>(`/fine-tuning/recipe?model_id=${encodeURIComponent(modelID)}`);
   }
 
   async currentFineTuningPreparation(): Promise<FineTuningPreparationProgress> {

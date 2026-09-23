@@ -3,8 +3,10 @@ package prepare_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/fineapp/prepare"
@@ -84,6 +86,138 @@ func TestExtractStoresMoxieDataset(t *testing.T) {
 	if got, want := manifest["extraction_profile"], "docling-v1.12.0-dlparse_v4-accurate-v1"; got != want {
 		t.Fatalf("manifest extraction profile: got %v want %v", got, want)
 	}
+}
+
+func TestExtractDocumentsPublishesOneDatasetCollection(t *testing.T) {
+	root := filepath.Join(t.TempDir(), ".moxie")
+	extractor := &pathExtractor{documents: map[string]prepare.Document{
+		"guide.pdf":   {Markdown: "# Guide\n\nGuide content.", StructuredJSON: json.RawMessage(`{"title":"guide"}`)},
+		"manual.docx": {Markdown: "# Manual\n\nManual content.", StructuredJSON: json.RawMessage(`{"title":"manual"}`)},
+	}}
+	manager, err := prepare.NewAt(extractor, root)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	sourceDirectory := t.TempDir()
+	paths := []string{filepath.Join(sourceDirectory, "guide.pdf"), filepath.Join(sourceDirectory, "manual.docx")}
+	for index, path := range paths {
+		if err := os.WriteFile(path, []byte(fmt.Sprintf("source-%d", index+1)), 0o600); err != nil {
+			t.Fatalf("write source: %v", err)
+		}
+	}
+
+	var updates []prepare.ExtractionProgress
+	artifact, err := manager.ExtractDocuments(t.Context(), paths, func(progress prepare.ExtractionProgress) {
+		updates = append(updates, progress)
+	})
+	if err != nil {
+		t.Fatalf("extract documents: %v", err)
+	}
+
+	if artifact.ID == "" || filepath.Base(artifact.Directory) != artifact.ID {
+		t.Fatalf("collection artifact: %+v", artifact)
+	}
+	assertFileContents(t, artifact.MarkdownPath, "# Source Document: guide.pdf\n\n# Guide\n\nGuide content.\n\n# Source Document: manual.docx\n\n# Manual\n\nManual content.")
+	assertFileContents(t, filepath.Join(artifact.Directory, "source", "001-guide.pdf"), "source-1")
+	assertFileContents(t, filepath.Join(artifact.Directory, "source", "002-manual.docx"), "source-2")
+	assertFileContents(t, filepath.Join(artifact.Directory, "documents", "001", "extracted.md"), "# Guide\n\nGuide content.")
+	assertFileContents(t, filepath.Join(artifact.Directory, "documents", "002", "extracted.md"), "# Manual\n\nManual content.")
+	if got, want := len(updates), 4; got != want {
+		t.Fatalf("progress updates = %d, want %d: %+v", got, want, updates)
+	}
+	for index := range 2 {
+		started := updates[index*2]
+		completed := updates[index*2+1]
+		if started.Index != index || started.Completed || completed.Index != index || !completed.Completed {
+			t.Fatalf("document %d progress = (%+v, %+v)", index, started, completed)
+		}
+	}
+
+	manifestData, err := os.ReadFile(artifact.ManifestPath)
+	if err != nil {
+		t.Fatalf("read collection manifest: %v", err)
+	}
+	var manifest struct {
+		Version int `json:"version"`
+		Sources []struct {
+			Name string `json:"name"`
+		} `json:"sources"`
+	}
+	if err := json.Unmarshal(manifestData, &manifest); err != nil {
+		t.Fatalf("decode collection manifest: %v", err)
+	}
+	if manifest.Version != 3 || len(manifest.Sources) != 2 || manifest.Sources[0].Name != "guide.pdf" || manifest.Sources[1].Name != "manual.docx" {
+		t.Fatalf("collection manifest: %+v", manifest)
+	}
+
+	var structured struct {
+		Documents []json.RawMessage `json:"documents"`
+	}
+	structuredData, err := os.ReadFile(artifact.StructuredPath)
+	if err != nil {
+		t.Fatalf("read collection JSON: %v", err)
+	}
+	if err := json.Unmarshal(structuredData, &structured); err != nil || len(structured.Documents) != 2 {
+		t.Fatalf("collection JSON: documents=%d err=%v", len(structured.Documents), err)
+	}
+
+	documents, err := prepare.DatasetDocuments(artifact.Directory)
+	if err != nil {
+		t.Fatalf("enumerate dataset documents: %v", err)
+	}
+	wantDocuments := []prepare.DatasetDocument{
+		{ID: "001", Name: "guide.pdf", Directory: filepath.Join(artifact.Directory, "documents", "001")},
+		{ID: "002", Name: "manual.docx", Directory: filepath.Join(artifact.Directory, "documents", "002")},
+	}
+	if !reflect.DeepEqual(documents, wantDocuments) {
+		t.Fatalf("dataset documents = %#v, want %#v", documents, wantDocuments)
+	}
+}
+
+func TestDatasetDocumentsSupportsSingleDocumentArtifacts(t *testing.T) {
+	root := filepath.Join(t.TempDir(), ".moxie")
+	manager, err := prepare.NewAt(&pathExtractor{documents: map[string]prepare.Document{
+		"guide.pdf": {Markdown: "Guide content."},
+	}}, root)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	source := filepath.Join(t.TempDir(), "guide.pdf")
+	if err := os.WriteFile(source, []byte("guide"), 0o600); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	artifact, err := manager.Extract(t.Context(), source)
+	if err != nil {
+		t.Fatalf("extract document: %v", err)
+	}
+
+	documents, err := prepare.DatasetDocuments(artifact.Directory)
+	if err != nil {
+		t.Fatalf("enumerate dataset documents: %v", err)
+	}
+	want := []prepare.DatasetDocument{{ID: "001", Name: "guide.pdf", Directory: artifact.Directory}}
+	if !reflect.DeepEqual(documents, want) {
+		t.Fatalf("dataset documents = %#v, want %#v", documents, want)
+	}
+}
+
+type pathExtractor struct {
+	documents map[string]prepare.Document
+	calls     int
+}
+
+func (e *pathExtractor) Convert(_ context.Context, sourcePath string) (prepare.Document, error) {
+	e.calls++
+	document, exists := e.documents[filepath.Base(sourcePath)]
+	if !exists {
+		return prepare.Document{}, fmt.Errorf("unexpected source %q", sourcePath)
+	}
+	return document, nil
+}
+
+func (*pathExtractor) ExtractionProfile() string {
+	return extractionProfile
 }
 
 func TestExtractReusesExactContentsAcrossPaths(t *testing.T) {

@@ -12,6 +12,10 @@ const (
 	maxVerificationAttempts      = 2
 	maxVerificationTokens        = 2048
 	maxVerificationEvidenceRunes = 1200
+	verificationPass             = "pass"
+	verificationGrounding        = "grounding"
+	verificationTaskQuality      = "task_quality"
+	verificationUserRequirements = "user_requirements"
 )
 
 // VerificationResult records the semantic grounding decision for one preview record.
@@ -25,6 +29,7 @@ type VerificationResult struct {
 type generatedVerification struct {
 	RecordNumber     int `json:"record_number"`
 	ExpectedTargetID int `json:"expected_target_id"`
+	FailureCategory  string
 }
 
 type replacementHistory struct {
@@ -37,7 +42,7 @@ func (p *Previewer) verifyAndRepair(ctx context.Context, request PreviewRequest,
 	history := replacementHistory{evidenceIDs: make(map[int]struct{})}
 
 	for repair := range maxRepairAttempts {
-		verification, verificationMetrics, err := p.verifyRecords(ctx, request.Model, request.Goal, records)
+		verification, verificationMetrics, err := p.verifyRecords(ctx, request.Model, request.Goal, request.DatasetInstructions, records)
 		metrics.add(verificationMetrics)
 		if err != nil {
 			return nil, nil, metrics, err
@@ -110,9 +115,10 @@ func filterPassages(passages []string, excluded map[int]struct{}) []string {
 	return available
 }
 
-func (p *Previewer) verifyRecords(ctx context.Context, model string, goal Goal, records []Record) ([]VerificationResult, previewMetrics, error) {
-	userPrompt := verificationUserPrompt(records)
-	messages := verificationMessages(goal, userPrompt, "")
+func (p *Previewer) verifyRecords(ctx context.Context, model string, goal Goal, datasetInstructions string, records []Record) ([]VerificationResult, previewMetrics, error) {
+	userPrompt := verificationUserPrompt(records, datasetInstructions)
+	enforceDatasetInstructions := datasetInstructions != ""
+	messages := verificationMessages(goal, enforceDatasetInstructions, userPrompt, "")
 
 	var metrics previewMetrics
 	var validationErr error
@@ -132,20 +138,22 @@ func (p *Previewer) verifyRecords(ctx context.Context, model string, goal Goal, 
 		metrics.promptTokens += completion.PromptTokens
 		metrics.completionTokens += completion.CompletionTokens
 
-		var generated struct {
-			Results []generatedVerification `json:"results"`
-		}
-		if err := json.Unmarshal([]byte(completion.Content), &generated); err != nil {
+		var verdicts map[string]string
+		if err := json.Unmarshal([]byte(completion.Content), &verdicts); err != nil {
 			validationErr = fmt.Errorf("decode verification results: %w", err)
 		} else {
-			verification, err := validateVerification(goal, generated.Results, records)
+			generated, err := generatedVerifications(verdicts, len(records), enforceDatasetInstructions)
 			validationErr = err
 			if validationErr == nil {
-				return verification, metrics, nil
+				verification, err := validateVerification(goal, generated, records)
+				validationErr = err
+				if validationErr == nil {
+					return verification, metrics, nil
+				}
 			}
 		}
 
-		messages = verificationMessages(goal, userPrompt, fmt.Sprintf("Retry %d: the previous response failed validation: %s. Return a fresh response with one valid result for every record.", attempt+2, validationErr))
+		messages = verificationMessages(goal, enforceDatasetInstructions, userPrompt, fmt.Sprintf("Retry %d: the previous response failed validation: %s. Return a fresh response containing every required record_N property with a permitted outcome.", attempt+2, validationErr))
 	}
 
 	return nil, metrics, recordQualityError{err: fmt.Errorf("build preview: verification response failed validation after %d attempts: %w", maxVerificationAttempts, validationErr)}
@@ -159,17 +167,17 @@ func verificationTokenLimit(recordCount int) int {
 	return tokens
 }
 
-func verificationMessages(goal Goal, userPrompt, correction string) []Message {
+func verificationMessages(goal Goal, enforceDatasetInstructions bool, userPrompt, correction string) []Message {
 	if correction != "" {
 		userPrompt += "\n\nCORRECTION:\n" + correction
 	}
 	return []Message{
-		{Role: "system", Content: verificationSystemPrompt(goal)},
+		{Role: "system", Content: verificationSystemPrompt(goal, enforceDatasetInstructions)},
 		{Role: "user", Content: userPrompt},
 	}
 }
 
-func verificationSystemPrompt(goal Goal) string {
+func verificationSystemPrompt(goal Goal, enforceDatasetInstructions bool) string {
 	rules := "The pair must be a useful standalone training example for its stated task. The prompt must contain the subject and setup needed to answer it without an unseen document, table, listing, example, or earlier conversation. Reject unresolved references such as 'this manner'. The target must contain every fact requested by the prompt and no additional fact or clause. The prompt and target must request the same answer type and action: reject a flag when an environment-variable name was requested, and reject a disabling target when the prompt asks how to enable the feature. Reject a prompt that states or substantially restates the answer before asking for it. Reject targets with clearly unrelated code, logs, terminal output, or surrounding prose. Do not reject a focused source sentence merely because a shorter answer could be written when no concise target candidate is available."
 	switch goal {
 	case GoalQuestionAnswer:
@@ -181,12 +189,22 @@ func verificationSystemPrompt(goal Goal) string {
 	case GoalTextGeneration:
 		rules += " The prompt must clearly request the target text and the response must be focused on that request."
 	}
-	return "You are a careful verifier for supervised fine-tuning data. Evaluate the prompt, source evidence, and selected target. Return expected_target_id 1 when the selected target exactly answers the prompt, otherwise return 0. Accept faithful paraphrases, ordinary synonyms, concise answers, and focused source sentences when the relationship remains exact. Shared topic words are not enough: return 0 when the prompt names a different field, entity, operation, or measurement than the target, or when the target is only one fragment of the requested output. Preserve the exact role and capitalization of code symbols: reject a prompt that reinterprets a method as a type or interface, attributes an API to the wrong package, or combines alternate APIs. A why question must be answered with the causal reason, not merely a repetition of its conclusion. A yes-or-no question must receive an explicit yes or no. Reject a prompt whose premise conflicts with the evidence, supplies the answer, or depends on an unseen example or output. Do not require the target to repeat its subject when the evidence clearly connects that subject to the answer. Return 0 for a defect: a necessary entity, relationship, number, or qualifier is unsupported; the relationship is ambiguous; or the target does not answer what was asked. In particular, reject an isolated value when its label or subject from the prompt is absent from the evidence. Do not reject merely for stylistic preference. " + rules + " Return 0 if answering requires outside knowledge or another source passage. Return only record_number and expected_target_id."
+	instructionRules := "No user-provided dataset requirements apply. Do not reject merely for stylistic preference."
+	outcomeRules := "Return one outcome for each record_N property: pass when the record satisfies every requirement; grounding when a necessary fact is unsupported, contradictory, ambiguous, or requires outside knowledge; or task_quality when the prompt and target do not form a useful standalone example for the requested task."
+	if enforceDatasetInstructions {
+		instructionRules = "The user's instruction controls how every record is written and is an acceptance requirement. Reject a record that does not follow it. Only source grounding, factual correctness, and the required output structure take priority over the user's instruction."
+		outcomeRules = "Return one outcome for each record_N property: pass when the record satisfies every requirement; grounding when a necessary fact is unsupported, contradictory, ambiguous, or requires outside knowledge; task_quality when the prompt and target do not form a useful standalone example for the requested task; or user_requirements when the record is otherwise valid but does not follow the user-provided dataset requirements."
+	}
+	return "You are a careful verifier for supervised fine-tuning data. Evaluate the prompt, source evidence, and selected target. " + instructionRules + " " + outcomeRules + " Accept faithful paraphrases, ordinary synonyms, concise answers, and focused source sentences when the relationship remains exact. Shared topic words are not enough: use grounding when the prompt names a different field, entity, operation, or measurement than the target, or when the target is only one fragment of the requested output. Preserve the exact role and capitalization of code symbols: reject a prompt that reinterprets a method as a type or interface, attributes an API to the wrong package, or combines alternate APIs. A why question must be answered with the causal reason, not merely a repetition of its conclusion. A yes-or-no question must receive an explicit yes or no. Reject a prompt whose premise conflicts with the evidence, supplies the answer, or depends on an unseen example or output. Do not require the target to repeat its subject when the evidence clearly connects that subject to the answer. Use grounding for a defect where a necessary entity, relationship, number, or qualifier is unsupported, the relationship is ambiguous, or the target does not answer what was asked. In particular, reject an isolated value when its label or subject from the prompt is absent from the evidence. " + rules + " Use grounding if answering requires outside knowledge or another source passage. Return every required record_N property."
 }
 
-func verificationUserPrompt(records []Record) string {
+func verificationUserPrompt(records []Record, datasetInstructions string) string {
 	var prompt strings.Builder
-	prompt.WriteString("Verify whether each selected target is explicitly grounded by its evidence and independently satisfies its prompt and task quality requirements. TARGET 1 is the selected training target.\n\n")
+	if datasetInstructions != "" {
+		prompt.WriteString(datasetInstructionsPrompt(datasetInstructions))
+		prompt.WriteString("\n\n")
+	}
+	prompt.WriteString("Verify whether each selected target is explicitly grounded by its evidence and independently satisfies its prompt, task quality requirements, and the user instruction when one is provided. TARGET 1 is the selected training target.\n\n")
 	for index, record := range records {
 		fmt.Fprintf(&prompt, "[RECORD %d]\nPROMPT: %s\nEVIDENCE: %s\n", index+1, record.Prompt, verificationEvidence(record))
 		fmt.Fprintf(&prompt, "[TARGET 1] %s\n", record.Target)
@@ -214,33 +232,50 @@ func verificationEvidence(record Record) string {
 }
 
 func verificationSchema(count int) map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"results": map[string]any{
-				"type":     "array",
-				"minItems": count,
-				"maxItems": count,
-				"items": map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"record_number": map[string]any{
-							"type":    "integer",
-							"minimum": 1,
-							"maximum": count,
-						},
-						"expected_target_id": map[string]any{
-							"type":    "integer",
-							"minimum": 0,
-							"maximum": 1,
-						},
-					},
-					"required": []string{"record_number", "expected_target_id"},
-				},
-			},
-		},
-		"required": []string{"results"},
+	properties := make(map[string]any, count)
+	required := make([]string, count)
+	for index := range count {
+		name := fmt.Sprintf("record_%d", index+1)
+		properties[name] = map[string]any{"type": "string"}
+		required[index] = name
 	}
+
+	return map[string]any{
+		"type":       "object",
+		"properties": properties,
+		"required":   required,
+	}
+}
+
+func generatedVerifications(verdicts map[string]string, count int, enforceDatasetInstructions bool) ([]generatedVerification, error) {
+	if len(verdicts) != count {
+		return nil, fmt.Errorf("model returned %d verification results; expected %d", len(verdicts), count)
+	}
+
+	generated := make([]generatedVerification, count)
+	for index := range count {
+		name := fmt.Sprintf("record_%d", index+1)
+		outcome, exists := verdicts[name]
+		if !exists {
+			return nil, fmt.Errorf("model omitted verification result %q", name)
+		}
+		expectedTargetID := 0
+		failureCategory := outcome
+		switch outcome {
+		case verificationPass:
+			expectedTargetID = 1
+			failureCategory = ""
+		case verificationGrounding, verificationTaskQuality:
+		case verificationUserRequirements:
+			if !enforceDatasetInstructions {
+				return nil, fmt.Errorf("model returned outcome %q for %s without user-provided dataset requirements", outcome, name)
+			}
+		default:
+			return nil, fmt.Errorf("model returned invalid verification outcome %q for %s", outcome, name)
+		}
+		generated[index] = generatedVerification{RecordNumber: index + 1, ExpectedTargetID: expectedTargetID, FailureCategory: failureCategory}
+	}
+	return generated, nil
 }
 
 func validateVerification(goal Goal, generated []generatedVerification, records []Record) ([]VerificationResult, error) {
@@ -263,7 +298,7 @@ func validateVerification(goal Goal, generated []generatedVerification, records 
 			return nil, fmt.Errorf("verification result %d has invalid expected_target_id %d", index+1, result.ExpectedTargetID)
 		}
 		passed := result.ExpectedTargetID == 1
-		reason := "The prompt and selected target satisfy the task quality contract."
+		reason := ""
 		expectedTarget := ""
 		if passed {
 			expectedTarget = record.Target
@@ -287,9 +322,11 @@ func validateVerification(goal Goal, generated []generatedVerification, records 
 			if result.ExpectedTargetID == 1 {
 				expectedTarget = ""
 			}
-			if reason == "The prompt and selected target satisfy the task quality contract." {
-				reason = "The prompt and selected target do not satisfy the task quality contract."
+			if reason == "" {
+				reason = verificationFailureReason(result.FailureCategory)
 			}
+		} else {
+			reason = "The prompt and selected target satisfy the task quality contract."
 		}
 		seen[result.RecordNumber] = struct{}{}
 		results[result.RecordNumber-1] = VerificationResult{
@@ -301,6 +338,17 @@ func validateVerification(goal Goal, generated []generatedVerification, records 
 	}
 
 	return results, nil
+}
+
+func verificationFailureReason(category string) string {
+	switch category {
+	case verificationGrounding:
+		return "The selected target is not grounded in the source evidence."
+	case verificationUserRequirements:
+		return "The record does not satisfy the user-provided dataset requirements."
+	default:
+		return "The prompt and selected target do not form a useful standalone example for the requested task."
+	}
 }
 
 func isUnsupportedIsolatedValue(record Record) bool {

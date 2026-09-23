@@ -610,7 +610,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool, ready func()) e
 	if err != nil {
 		return fmt.Errorf("locating fine-tuning data directory: %w", err)
 	}
-	fineTuner, err := finetune.NewManager(filepath.Join(home, ".moxie", "runs"), finetunegomlx.New())
+	trainingBackend := finetunegomlx.New()
+	fineTuner, err := finetune.NewManager(filepath.Join(home, ".moxie", "runs"), trainingBackend)
 	if err != nil {
 		return fmt.Errorf("initializing fine-tuning manager: %w", err)
 	}
@@ -630,6 +631,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool, ready func()) e
 		Preparer:     documentPreparer,
 		Builder:      datasetBuilder,
 		FineTuner:    fineTuner,
+		Recipes:      trainingBackend,
 		Runtime: finetune.Runtime{
 			LlamaServer: llamaServer,
 			ContextSize: 512,

@@ -108,7 +108,7 @@ func TestLiveQualityBenchmark(t *testing.T) {
 	var trueAccept, trueReject, falseAccept, falseReject int
 	for start := 0; start < len(records); start += batchSize {
 		end := min(start+batchSize, len(records))
-		results, _, err := previewer.verifyRecords(t.Context(), model, GoalQuestionAnswer, records[start:end])
+		results, _, err := previewer.verifyRecords(t.Context(), model, GoalQuestionAnswer, "", records[start:end])
 		if err != nil {
 			t.Fatalf("verify benchmark cases %d-%d: %v", start+1, end, err)
 		}
@@ -163,7 +163,7 @@ func TestLiveQuestionFormCanary(t *testing.T) {
 
 	completion, err := client.Complete(t.Context(), CompletionRequest{
 		Model:          model,
-		Messages:       questionPoolMessages(facts),
+		Messages:       questionPoolMessages(facts, ""),
 		ResponseSchema: questionPoolSchema(len(facts)),
 		MaxTokens:      max(generationMaxTokens, len(facts)*questionCandidatePoolSize*96),
 	})
@@ -181,7 +181,7 @@ func TestLiveQuestionFormCanary(t *testing.T) {
 	if len(expanded) == 0 {
 		t.Fatal("no source fact produced usable alternate questions")
 	}
-	verification, review, err := previewer.verifyRecords(t.Context(), model, GoalQuestionAnswer, expanded)
+	verification, review, err := previewer.verifyRecords(t.Context(), model, GoalQuestionAnswer, "", expanded)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,6 +217,79 @@ func TestLiveQuestionFormCanary(t *testing.T) {
 					t.Errorf("target %q has overly similar questions %.2f: %s", fact.Target, similarity, fmt.Sprintf("%q and %q", questions[left], questions[right]))
 				}
 			}
+		}
+	}
+}
+
+func TestLiveCustomDatasetInstructionsAffectQuestions(t *testing.T) {
+	model := os.Getenv("MOXIE_QUALITY_MODEL")
+	if model == "" {
+		t.Skip("MOXIE_QUALITY_MODEL is not set")
+	}
+	client := newLiveKronkCompleter()
+	previewer, err := NewPreviewer(client)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	facts := []Record{
+		{Target: "SIGPROF", Evidence: "Go CPU profiling uses SIGPROF to interrupt a running program for sampling."},
+		{Target: "context", Evidence: "The standard context package lets callers control cancellation and deadlines for blocking operations."},
+		{Target: "go test", Evidence: "The go test tool compiles and runs Go tests."},
+	}
+	for index := range facts {
+		facts[index].FactID = recordFactID(facts[index].Evidence, facts[index].Target)
+	}
+
+	generate := func(instructions string) []Record {
+		t.Helper()
+		completion, err := client.Complete(t.Context(), CompletionRequest{
+			Model:          model,
+			Messages:       questionPoolMessages(facts, instructions),
+			ResponseSchema: questionPoolSchema(len(facts)),
+			MaxTokens:      max(generationMaxTokens, len(facts)*questionCandidatePoolSize*96),
+			Seed:           preparationGenerationSeed,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var response struct {
+			Pools []generatedQuestionPool `json:"pools"`
+		}
+		if err := json.Unmarshal([]byte(completion.Content), &response); err != nil {
+			t.Fatalf("decode question pool: %v\n%s", err, completion.Content)
+		}
+		selected := selectQuestionPools(facts, response.Pools, nil)
+		if want := len(facts) * (questionAnswerRequiredVariants + 1); len(selected) != want {
+			t.Fatalf("selected %d usable questions, want %d: %s", len(selected), want, completion.Content)
+		}
+		return selected
+	}
+
+	defaultRecords := generate("")
+	const instructions = "create big questions"
+	customRecords := generate(instructions)
+	averageWords := func(records []Record) float64 {
+		total := 0
+		for _, record := range records {
+			total += len(strings.Fields(record.Prompt))
+		}
+		return float64(total) / float64(len(records))
+	}
+	defaultAverage := averageWords(defaultRecords)
+	customAverage := averageWords(customRecords)
+	t.Logf("average question words: default=%.1f custom=%.1f", defaultAverage, customAverage)
+	if customAverage < defaultAverage+2 {
+		t.Fatalf("custom instructions did not materially increase question detail: default=%.1f custom=%.1f", defaultAverage, customAverage)
+	}
+
+	results, _, err := previewer.verifyRecords(t.Context(), model, GoalQuestionAnswer, instructions, customRecords)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, result := range results {
+		if !result.Passed {
+			t.Errorf("custom question %q failed verification: %s", customRecords[index].Prompt, result.Reason)
 		}
 	}
 }

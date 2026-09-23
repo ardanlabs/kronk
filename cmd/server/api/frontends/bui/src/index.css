@@ -1161,7 +1161,7 @@ tr.selected:hover td {
 
 .fine-configure-view {
     display: grid;
-    grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+    grid-template-columns: minmax(0, 1fr);
     gap: 18px;
     align-items: start;
 }
@@ -1243,30 +1243,27 @@ tr.selected:hover td {
     white-space: nowrap;
 }
 
-.fine-recipe-grid {
+.fine-recipe-details {
+    margin-top: 16px;
+}
+
+.fine-recipe-columns {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1px;
-    overflow: hidden;
-    border: 1px solid var(--color-gray-200);
-    border-radius: 8px;
-    background: var(--color-gray-200);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    align-items: start;
 }
 
-.fine-recipe-grid span {
-    padding: 14px;
-    background: var(--color-gray-50);
-    color: var(--color-gray-800);
+.fine-recipe-details > summary {
+    width: fit-content;
+    cursor: pointer;
+    color: var(--color-gray-700);
     font-size: 13px;
+    font-weight: 600;
 }
 
-.fine-recipe-grid strong {
-    display: block;
-    margin-bottom: 4px;
-    color: var(--color-gray-500);
-    font-size: 10px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+.fine-recipe-details .fine-recipe-columns {
+    margin-top: 12px;
 }
 
 .fine-generation-summary {
@@ -1392,6 +1389,54 @@ tr.selected:hover td {
     grid-column: 2;
 }
 
+.fine-document-review-nav {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 14px;
+    align-items: center;
+    margin-bottom: 18px;
+    padding: 12px;
+    border: 1px solid var(--color-gray-200);
+    border-radius: 7px;
+    background: var(--color-gray-50);
+}
+
+.fine-document-review-nav > div {
+    min-width: 0;
+    text-align: center;
+}
+
+.fine-document-review-nav strong,
+.fine-document-review-nav span {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.fine-document-review-nav strong {
+    color: var(--color-gray-900);
+    font-size: 14px;
+}
+
+.fine-document-review-nav span {
+    margin-top: 2px;
+    color: var(--color-gray-500);
+    font-size: 12px;
+}
+
+.fine-review-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 20px;
+}
+
+.fine-review-actions .btn-primary {
+    margin-left: auto;
+}
+
 .fine-panel,
 .fine-run-card,
 .fine-empty-run {
@@ -1449,10 +1494,194 @@ tr.selected:hover td {
     display: none;
 }
 
+.fine-file-picker {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 42px;
+    padding: 4px;
+    border: 1px solid var(--color-gray-300);
+    border-radius: 6px;
+    background: var(--color-white);
+}
+
+.fine-file-picker > span {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--color-gray-700);
+    font-size: 13px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .fine-file-field small {
     display: block;
     margin-top: 6px;
     color: var(--color-gray-500);
+}
+
+.fine-source-files {
+    display: grid;
+    gap: 6px;
+    max-height: 220px;
+    overflow-y: auto;
+    margin: 8px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.fine-source-files li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+    padding: 8px 10px;
+    border: 1px solid var(--color-gray-200);
+    border-radius: 6px;
+    background: var(--color-gray-50);
+}
+
+.fine-source-files li > span {
+    min-width: 0;
+}
+
+.fine-source-files strong {
+    display: block;
+    overflow: hidden;
+    color: var(--color-gray-800);
+    font-size: 13px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.fine-source-files li small {
+    margin-top: 2px;
+    font-size: 11px;
+}
+
+.fine-prompt-editor {
+    margin: 4px 0 20px;
+    padding-top: 20px;
+    border-top: 1px solid var(--color-gray-200);
+}
+
+.fine-prompt-heading {
+    margin-bottom: 14px;
+}
+
+.fine-prompt-heading h4 {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    color: var(--color-gray-900);
+    font-size: 15px;
+}
+
+.fine-prompt-heading h4 span {
+    color: var(--color-gray-500);
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.fine-prompt-heading p {
+    max-width: 680px;
+    margin: 4px 0 0;
+    color: var(--color-gray-600);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.fine-prompt-toggle {
+    display: flex;
+    width: fit-content;
+    gap: 9px;
+    align-items: center;
+    margin-bottom: 10px;
+    color: var(--color-gray-800);
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.fine-prompt-toggle input {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: var(--color-orange);
+}
+
+.fine-prompt-default {
+    margin: 0;
+    padding-left: 25px;
+    color: var(--color-gray-600);
+    font-size: 12px;
+}
+
+.fine-prompt-custom {
+    margin: 14px 0 0;
+}
+
+.fine-prompt-custom textarea {
+    width: 100%;
+    min-height: 104px;
+    resize: vertical;
+    font-family: inherit;
+    line-height: 1.55;
+}
+
+.fine-prompt-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 30px;
+    color: var(--color-gray-500);
+    font-size: 12px;
+}
+
+.fine-prompt-rules {
+    margin-top: 14px;
+    padding-left: 25px;
+    color: var(--color-gray-600);
+    font-size: 12px;
+}
+
+.fine-prompt-rules summary {
+    width: fit-content;
+    color: var(--color-gray-700);
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.fine-prompt-rules-content {
+    max-width: 720px;
+    margin-top: 12px;
+    padding: 14px;
+    border-left: 3px solid var(--color-gray-300);
+    background: var(--color-gray-50);
+}
+
+.fine-prompt-rules-content > strong {
+    display: block;
+    margin-top: 12px;
+    color: var(--color-gray-800);
+}
+
+.fine-prompt-rules-content > strong:first-child {
+    margin-top: 0;
+}
+
+.fine-prompt-rules-content p {
+    margin: 10px 0 5px;
+}
+
+.fine-prompt-default-copy {
+    line-height: 1.6;
+}
+
+.fine-prompt-rules-content ul {
+    margin: 0;
+    padding-left: 20px;
+    line-height: 1.7;
 }
 
 .fine-actions {
@@ -1666,6 +1895,70 @@ tr.selected:hover td {
     justify-self: end;
 }
 
+.fine-document-progress {
+    display: grid;
+    overflow: hidden;
+    border: 1px solid var(--color-gray-200);
+    border-radius: 6px;
+    background: var(--color-white);
+}
+
+.fine-document-progress-row {
+    display: grid;
+    grid-template-columns: 26px minmax(0, 1fr) minmax(120px, auto);
+    gap: 10px;
+    align-items: center;
+    min-height: 42px;
+    padding: 7px 10px;
+    color: var(--color-gray-600);
+    font-size: 12px;
+}
+
+.fine-document-progress-row + .fine-document-progress-row {
+    border-top: 1px solid var(--color-gray-200);
+}
+
+.fine-document-progress-mark {
+    display: grid;
+    width: 22px;
+    height: 22px;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--color-gray-200);
+    color: var(--color-gray-700);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.fine-document-progress-row.extracting .fine-document-progress-mark,
+.fine-document-progress-row.processing .fine-document-progress-mark {
+    background: var(--color-orange);
+    color: var(--color-white);
+}
+
+.fine-document-progress-row.completed .fine-document-progress-mark {
+    background: var(--color-success);
+    color: var(--color-white);
+}
+
+.fine-document-progress-row.failed .fine-document-progress-mark,
+.fine-document-progress-row.stopped .fine-document-progress-mark {
+    background: var(--color-error);
+    color: var(--color-white);
+}
+
+.fine-document-progress-name {
+    overflow: hidden;
+    color: var(--color-gray-800);
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.fine-document-progress-stage {
+    text-align: right;
+}
+
 .fine-upload-progress {
     display: grid;
     width: 100%;
@@ -1865,6 +2158,10 @@ tr.selected:hover td {
     .fine-run-facts {
         grid-template-columns: 1fr 1fr;
     }
+
+    .fine-recipe-columns {
+        grid-template-columns: 1fr;
+    }
 }
 
 @media (max-width: 560px) {
@@ -1879,10 +2176,6 @@ tr.selected:hover td {
     .fine-supported-model {
         align-items: stretch;
         flex-direction: column;
-    }
-
-    .fine-recipe-grid {
-        grid-template-columns: 1fr;
     }
 
     .fine-stage-rail {
@@ -1906,6 +2199,11 @@ tr.selected:hover td {
     .fine-source-ready {
         width: 100%;
         margin-left: 0;
+    }
+
+    .fine-prompt-footer {
+        align-items: flex-start;
+        flex-direction: column;
     }
 }
 

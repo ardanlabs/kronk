@@ -2,6 +2,7 @@
 package prepare
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -38,6 +39,14 @@ type Artifact struct {
 	MarkdownPath   string
 	StructuredPath string
 	ManifestPath   string
+	Cached         bool
+}
+
+// DatasetDocument identifies one extracted source within a managed dataset.
+type DatasetDocument struct {
+	ID        string
+	Name      string
+	Directory string
 }
 
 // New creates a manager that stores application data below ~/.moxie.
@@ -87,6 +96,7 @@ func (m *Manager) Extract(ctx context.Context, sourcePath string) (Artifact, err
 		return Artifact{}, err
 	}
 	if artifact, found := m.findCachedExtraction(sourceHash, filepath.Ext(sourcePath)); found {
+		artifact.Cached = true
 		return artifact, nil
 	}
 
@@ -189,6 +199,265 @@ func (m *Manager) Extract(ctx context.Context, sourcePath string) (Artifact, err
 		MarkdownPath:   filepath.Join(finalPath, "extracted.md"),
 		StructuredPath: filepath.Join(finalPath, "extracted.docling.json"),
 		ManifestPath:   filepath.Join(finalPath, "manifest.json"),
+	}, nil
+}
+
+// ExtractDocuments converts source documents one at a time and publishes one
+// collection that the existing preview and build pipeline can consume.
+func (m *Manager) ExtractDocuments(ctx context.Context, sourcePaths []string, progress ExtractionProgressFunc) (Artifact, error) {
+	if len(sourcePaths) == 0 {
+		return Artifact{}, fmt.Errorf("extract documents: at least one source document is required")
+	}
+
+	artifacts := make([]Artifact, 0, len(sourcePaths))
+	for index, sourcePath := range sourcePaths {
+		if progress != nil {
+			progress(ExtractionProgress{Index: index, Stage: "Extracting with Docling"})
+		}
+		artifact, err := m.Extract(ctx, sourcePath)
+		if err != nil {
+			if progress != nil {
+				progress(ExtractionProgress{Index: index, Stage: "Extraction failed", Error: err.Error()})
+			}
+			return Artifact{}, fmt.Errorf("extract document %q: %w", filepath.Base(sourcePath), err)
+		}
+		artifacts = append(artifacts, artifact)
+		if progress != nil {
+			stage := "Extraction complete"
+			if artifact.Cached {
+				stage = "Using cached extraction"
+			}
+			progress(ExtractionProgress{Index: index, Stage: stage, Completed: true, Cached: artifact.Cached})
+		}
+	}
+
+	if len(artifacts) == 1 {
+		return artifacts[0], nil
+	}
+	return m.publishCollection(ctx, sourcePaths, artifacts)
+}
+
+type collectionDocument struct {
+	SourceName string          `json:"source_name"`
+	Document   json.RawMessage `json:"document"`
+}
+
+type collectionManifest struct {
+	Version              int                        `json:"version"`
+	ID                   string                     `json:"id"`
+	CreatedAt            time.Time                  `json:"created_at"`
+	Extractor            string                     `json:"extractor"`
+	ExtractionProfile    string                     `json:"extraction_profile"`
+	MarkdownSHA256       string                     `json:"markdown_sha256"`
+	StructuredSHA256     string                     `json:"structured_sha256"`
+	MarkdownFile         string                     `json:"markdown_file"`
+	StructuredFile       string                     `json:"structured_file"`
+	OriginalSourceFolder string                     `json:"original_source_folder"`
+	DocumentsFolder      string                     `json:"documents_folder"`
+	Sources              []collectionManifestSource `json:"sources"`
+}
+
+type collectionManifestSource struct {
+	Name           string `json:"name"`
+	SourceFile     string `json:"source_file"`
+	SourceSHA256   string `json:"source_sha256"`
+	MarkdownFile   string `json:"markdown_file"`
+	StructuredFile string `json:"structured_file"`
+}
+
+// DatasetDocuments returns the independently extracted sources in a managed
+// dataset. Version 2 single-document datasets remain one document rooted at
+// the dataset directory; version 3 collections use their numbered document
+// directories.
+func DatasetDocuments(directory string) ([]DatasetDocument, error) {
+	manifestPath := filepath.Join(directory, "manifest.json")
+	data, err := os.ReadFile(manifestPath)
+	if os.IsNotExist(err) {
+		if _, markdownErr := os.Stat(filepath.Join(directory, "extracted.md")); markdownErr == nil {
+			return []DatasetDocument{{ID: "001", Name: "Source document", Directory: directory}}, nil
+		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read dataset manifest: %w", err)
+	}
+	var header struct {
+		Version int `json:"version"`
+	}
+	if err := json.Unmarshal(data, &header); err != nil {
+		return nil, fmt.Errorf("decode dataset manifest: %w", err)
+	}
+
+	switch header.Version {
+	case 2:
+		var single manifest
+		if err := json.Unmarshal(data, &single); err != nil {
+			return nil, fmt.Errorf("decode single-document manifest: %w", err)
+		}
+		if single.SourceName == "" {
+			return nil, fmt.Errorf("decode single-document manifest: source_name is required")
+		}
+		if _, err := os.Stat(filepath.Join(directory, "extracted.md")); err != nil {
+			return nil, fmt.Errorf("locate extracted Markdown for %q: %w", single.SourceName, err)
+		}
+		return []DatasetDocument{{ID: "001", Name: single.SourceName, Directory: directory}}, nil
+
+	case 3:
+		var collection collectionManifest
+		if err := json.Unmarshal(data, &collection); err != nil {
+			return nil, fmt.Errorf("decode collection manifest: %w", err)
+		}
+		if len(collection.Sources) == 0 {
+			return nil, fmt.Errorf("decode collection manifest: sources are required")
+		}
+		documents := make([]DatasetDocument, len(collection.Sources))
+		for index, source := range collection.Sources {
+			id := fmt.Sprintf("%03d", index+1)
+			documentDirectory := filepath.Join(directory, collection.DocumentsFolder, id)
+			if source.Name == "" {
+				return nil, fmt.Errorf("decode collection manifest: source %s name is required", id)
+			}
+			if filepath.Clean(source.MarkdownFile) != filepath.Join(collection.DocumentsFolder, id, "extracted.md") {
+				return nil, fmt.Errorf("decode collection manifest: source %s Markdown path is invalid", id)
+			}
+			if _, err := os.Stat(filepath.Join(documentDirectory, "extracted.md")); err != nil {
+				return nil, fmt.Errorf("locate extracted Markdown for %q: %w", source.Name, err)
+			}
+			documents[index] = DatasetDocument{ID: id, Name: source.Name, Directory: documentDirectory}
+		}
+		return documents, nil
+
+	default:
+		return nil, fmt.Errorf("decode dataset manifest: unsupported version %d", header.Version)
+	}
+}
+
+func (m *Manager) publishCollection(ctx context.Context, sourcePaths []string, artifacts []Artifact) (Artifact, error) {
+	id, err := m.newID()
+	if err != nil {
+		return Artifact{}, err
+	}
+	datasetsPath := filepath.Join(m.root, "datasets")
+	if err := os.MkdirAll(datasetsPath, 0o700); err != nil {
+		return Artifact{}, fmt.Errorf("create datasets directory: %w", err)
+	}
+	if err := os.Chmod(datasetsPath, 0o700); err != nil {
+		return Artifact{}, fmt.Errorf("secure datasets directory: %w", err)
+	}
+
+	temporaryPath, err := os.MkdirTemp(datasetsPath, ".building-")
+	if err != nil {
+		return Artifact{}, fmt.Errorf("create dataset collection workspace: %w", err)
+	}
+	published := false
+	defer func() {
+		if !published {
+			_ = os.RemoveAll(temporaryPath)
+		}
+	}()
+
+	sourceDirectory := filepath.Join(temporaryPath, "source")
+	documentsDirectory := filepath.Join(temporaryPath, "documents")
+	for _, directory := range []string{sourceDirectory, documentsDirectory} {
+		if err := os.Mkdir(directory, 0o700); err != nil {
+			return Artifact{}, fmt.Errorf("create dataset collection directory: %w", err)
+		}
+	}
+
+	var markdown strings.Builder
+	structuredDocuments := make([]collectionDocument, 0, len(artifacts))
+	sources := make([]collectionManifestSource, 0, len(artifacts))
+	for index, artifact := range artifacts {
+		if err := ctx.Err(); err != nil {
+			return Artifact{}, fmt.Errorf("publish document collection: %w", err)
+		}
+
+		number := fmt.Sprintf("%03d", index+1)
+		sourceName := filepath.Base(sourcePaths[index])
+		storedSourceName := number + "-" + sourceName
+		storedSource := filepath.Join(sourceDirectory, storedSourceName)
+		sourceHash, err := copySource(storedSource, artifact.SourcePath)
+		if err != nil {
+			return Artifact{}, err
+		}
+
+		documentDirectory := filepath.Join(documentsDirectory, number)
+		if err := os.Mkdir(documentDirectory, 0o700); err != nil {
+			return Artifact{}, fmt.Errorf("create collection document directory: %w", err)
+		}
+		documentMarkdown, err := os.ReadFile(artifact.MarkdownPath)
+		if err != nil {
+			return Artifact{}, fmt.Errorf("read extracted Markdown for %q: %w", sourceName, err)
+		}
+		documentStructured, err := os.ReadFile(artifact.StructuredPath)
+		if err != nil {
+			return Artifact{}, fmt.Errorf("read structured extraction for %q: %w", sourceName, err)
+		}
+		documentStructured = bytes.TrimSpace(documentStructured)
+		if !json.Valid(documentStructured) {
+			return Artifact{}, fmt.Errorf("read structured extraction for %q: invalid JSON", sourceName)
+		}
+
+		markdownRelative := filepath.Join("documents", number, "extracted.md")
+		structuredRelative := filepath.Join("documents", number, "extracted.docling.json")
+		if err := os.WriteFile(filepath.Join(temporaryPath, markdownRelative), documentMarkdown, 0o600); err != nil {
+			return Artifact{}, fmt.Errorf("write collection Markdown for %q: %w", sourceName, err)
+		}
+		if err := os.WriteFile(filepath.Join(temporaryPath, structuredRelative), append(documentStructured, '\n'), 0o600); err != nil {
+			return Artifact{}, fmt.Errorf("write collection structured extraction for %q: %w", sourceName, err)
+		}
+
+		if markdown.Len() > 0 {
+			markdown.WriteString("\n\n")
+		}
+		fmt.Fprintf(&markdown, "# Source Document: %s\n\n%s", sourceName, strings.TrimSpace(string(documentMarkdown)))
+		structuredDocuments = append(structuredDocuments, collectionDocument{SourceName: sourceName, Document: json.RawMessage(documentStructured)})
+		sources = append(sources, collectionManifestSource{
+			Name: sourceName, SourceFile: filepath.Join("source", storedSourceName), SourceSHA256: sourceHash,
+			MarkdownFile: markdownRelative, StructuredFile: structuredRelative,
+		})
+	}
+
+	markdownData := []byte(markdown.String())
+	structuredData, err := json.MarshalIndent(struct {
+		Documents []collectionDocument `json:"documents"`
+	}{Documents: structuredDocuments}, "", "  ")
+	if err != nil {
+		return Artifact{}, fmt.Errorf("encode collection structured extraction: %w", err)
+	}
+	structuredData = append(structuredData, '\n')
+	markdownPath := filepath.Join(temporaryPath, "extracted.md")
+	structuredPath := filepath.Join(temporaryPath, "extracted.docling.json")
+	if err := os.WriteFile(markdownPath, markdownData, 0o600); err != nil {
+		return Artifact{}, fmt.Errorf("write collection Markdown: %w", err)
+	}
+	if err := os.WriteFile(structuredPath, structuredData, 0o600); err != nil {
+		return Artifact{}, fmt.Errorf("write collection structured extraction: %w", err)
+	}
+
+	manifest := collectionManifest{
+		Version: 3, ID: id, CreatedAt: m.now().UTC(), Extractor: "docling", ExtractionProfile: m.extractor.ExtractionProfile(),
+		MarkdownSHA256: hashBytes(markdownData), StructuredSHA256: hashBytes(structuredData),
+		MarkdownFile: "extracted.md", StructuredFile: "extracted.docling.json",
+		OriginalSourceFolder: "source", DocumentsFolder: "documents", Sources: sources,
+	}
+	manifestData, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return Artifact{}, fmt.Errorf("encode collection manifest: %w", err)
+	}
+	manifestPath := filepath.Join(temporaryPath, "manifest.json")
+	if err := os.WriteFile(manifestPath, append(manifestData, '\n'), 0o600); err != nil {
+		return Artifact{}, fmt.Errorf("write collection manifest: %w", err)
+	}
+
+	finalPath := filepath.Join(datasetsPath, id)
+	if err := os.Rename(temporaryPath, finalPath); err != nil {
+		return Artifact{}, fmt.Errorf("publish dataset collection: %w", err)
+	}
+	published = true
+	return Artifact{
+		ID: id, Directory: finalPath, SourcePath: filepath.Join(finalPath, sources[0].SourceFile),
+		MarkdownPath: filepath.Join(finalPath, "extracted.md"), StructuredPath: filepath.Join(finalPath, "extracted.docling.json"),
+		ManifestPath: filepath.Join(finalPath, "manifest.json"),
 	}, nil
 }
 
