@@ -65,11 +65,12 @@ func TestBuildPreview(t *testing.T) {
 			PromptTokens:     120,
 			CompletionTokens: 40,
 		},
-		{
-			Content:          `{"results":[{"record_number":1,"expected_target_id":1,"reason":"The target follows from passage 2."},{"record_number":2,"expected_target_id":1,"reason":"The target follows from passage 3."}]}`,
-			PromptTokens:     60,
-			CompletionTokens: 20,
-		},
+		func() prepare.Completion {
+			completion := verificationCompletion(2, func(int) bool { return true })
+			completion.PromptTokens = 60
+			completion.CompletionTokens = 20
+			return completion
+		}(),
 	}}
 	previewer, err := prepare.NewPreviewer(model)
 	if err != nil {
@@ -78,10 +79,11 @@ func TestBuildPreview(t *testing.T) {
 
 	var progress []prepare.PreviewProgress
 	artifact, err := previewer.Build(context.Background(), prepare.PreviewRequest{
-		DatasetDirectory: datasetDirectory,
-		Goal:             prepare.GoalQuestionAnswer,
-		Model:            "Qwen3-8B-Q8_0",
-		RecordCount:      2,
+		DatasetDirectory:    datasetDirectory,
+		Goal:                prepare.GoalQuestionAnswer,
+		Model:               "Qwen3-8B-Q8_0",
+		RecordCount:         2,
+		DatasetInstructions: "  Write for beginning Go developers.  ",
 		Progress: func(update prepare.PreviewProgress) {
 			progress = append(progress, update)
 		},
@@ -100,8 +102,19 @@ func TestBuildPreview(t *testing.T) {
 	if model.requests[0].Model != "Qwen3-8B-Q8_0" ||
 		model.requests[0].MaxTokens != 1024 ||
 		!strings.Contains(requestContent, "[PASSAGE 1]") ||
-		!strings.Contains(requestContent, "A goroutine is an independently executing function in Go.") {
-		t.Fatalf("completion request did not contain the selected model and source")
+		!strings.Contains(requestContent, "A goroutine is an independently executing function in Go.") ||
+		!strings.Contains(requestContent, "USER INSTRUCTION — FOLLOW WHEN WRITING EVERY RECORD:\nWrite for beginning Go developers.") ||
+		strings.Contains(requestContent, `"Write for beginning Go developers."`) ||
+		strings.Index(requestContent, "USER INSTRUCTION") > strings.Index(requestContent, "Requirements:") {
+		t.Fatalf("completion request did not contain the selected model, source, and required user instructions")
+	}
+	if !strings.Contains(model.requests[0].Messages[0].Content, "user's instruction controls how every record is written") ||
+		!strings.Contains(model.requests[0].Messages[0].Content, "must be followed") {
+		t.Fatalf("generation system prompt did not give user instructions priority over defaults: %s", model.requests[0].Messages[0].Content)
+	}
+	if !strings.HasPrefix(model.requests[1].Messages[1].Content, "USER INSTRUCTION — FOLLOW WHEN WRITING EVERY RECORD:\nWrite for beginning Go developers.") ||
+		!strings.Contains(model.requests[1].Messages[1].Content, "beginning Go developers") {
+		t.Fatal("independent verification did not evaluate user dataset requirements")
 	}
 	verificationSchema, err := json.Marshal(model.requests[1].ResponseSchema)
 	if err != nil {
@@ -109,6 +122,13 @@ func TestBuildPreview(t *testing.T) {
 	}
 	if strings.Contains(string(verificationSchema), `"reason"`) || model.requests[1].MaxTokens != 144 {
 		t.Fatalf("verification request includes unnecessary model output: schema=%s max_tokens=%d", verificationSchema, model.requests[1].MaxTokens)
+	}
+	report, err := os.ReadFile(artifact.ReportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(report), `"dataset_instructions": "Write for beginning Go developers."`) {
+		t.Fatalf("preview report omitted normalized dataset instructions: %s", report)
 	}
 	verificationRules := model.requests[1].Messages[0].Content
 	if !strings.Contains(verificationRules, "natural question ending with a question mark") || !strings.Contains(verificationRules, "entire function, transcript, trace, benchmark report") {
@@ -135,7 +155,7 @@ func TestBuildPreviewUsesAvailablePassagesForShortDocument(t *testing.T) {
 
 	model := &sequenceCompleter{completions: []prepare.Completion{
 		{Content: `{"records":[{"prompt":"What do channels communicate?","evidence_id":1,"target_id":1}]}`},
-		{Content: `{"results":[{"record_number":1,"expected_target_id":1,"reason":"The target directly answers the prompt."}]}`},
+		verificationCompletion(1, func(int) bool { return true }),
 	}}
 	previewer, err := prepare.NewPreviewer(model)
 	if err != nil {
@@ -168,7 +188,7 @@ func TestBuildPreviewIgnoresHeadingsAndDuplicatePassages(t *testing.T) {
 
 	model := &sequenceCompleter{completions: []prepare.Completion{
 		{Content: `{"records":[{"prompt":"What do channels communicate?","evidence_id":1,"target_id":1}]}`},
-		{Content: `{"results":[{"record_number":1,"expected_target_id":1,"reason":"The target directly answers the prompt."}]}`},
+		verificationCompletion(1, func(int) bool { return true }),
 	}}
 	previewer, err := prepare.NewPreviewer(model)
 	if err != nil {
@@ -224,7 +244,7 @@ func TestBuildPreviewRetriesInvalidGeneration(t *testing.T) {
 	model := &sequenceCompleter{completions: []prepare.Completion{
 		{Content: `{"records":[{"prompt":"First question?","evidence_id":1,"target_id":1},{"prompt":"Second question?","evidence_id":1,"target_id":1}]}`},
 		{Content: `{"records":[{"prompt":"Second question?","evidence_id":1,"target_id":1}]}`},
-		{Content: `{"results":[{"record_number":1,"expected_target_id":1,"reason":"The first target is supported."},{"record_number":2,"expected_target_id":1,"reason":"The second target is supported."}]}`},
+		verificationCompletion(2, func(int) bool { return true }),
 	}}
 	previewer, err := prepare.NewPreviewer(model)
 	if err != nil {
@@ -261,7 +281,7 @@ func TestBuildPreviewReplacesInvalidPercentageRecord(t *testing.T) {
 	model := &sequenceCompleter{completions: []prepare.Completion{
 		{Content: `{"records":[{"prompt":"Where was Go created?","evidence_id":1,"target_id":1},{"prompt":"What percent of the paper is recycled?","evidence_id":2,"target_id":1}]}`},
 		{Content: `{"records":[{"prompt":"What percent of the paper is recycled?","evidence_id":1,"target_id":2}]}`},
-		{Content: `{"results":[{"record_number":1,"expected_target_id":1},{"record_number":2,"expected_target_id":1}]}`},
+		verificationCompletion(2, func(int) bool { return true }),
 	}}
 	previewer, err := prepare.NewPreviewer(model)
 	if err != nil {
@@ -295,7 +315,7 @@ func TestBuildPreviewRetriesStatementShapedQuestion(t *testing.T) {
 		{Content: `{"records":[{"prompt":"What is Go.","evidence_id":1,"target_id":1}]}`},
 		{Content: `{"records":[{"prompt":"What is Go.","evidence_id":1,"target_id":1}]}`},
 		{Content: `{"records":[{"prompt":"What is Go?","evidence_id":1,"target_id":1}]}`},
-		{Content: `{"results":[{"record_number":1,"expected_target_id":1}]}`},
+		verificationCompletion(1, func(int) bool { return true }),
 	}}
 	previewer, err := prepare.NewPreviewer(model)
 	if err != nil {
@@ -331,7 +351,7 @@ func TestBuildPreviewReturnsLocallyRejectedRowsForReview(t *testing.T) {
 		completion,
 		completion,
 		completion,
-		{Content: `{"results":[{"record_number":1,"expected_target_id":1}]}`},
+		verificationCompletion(1, func(int) bool { return true }),
 	}}
 	previewer, err := prepare.NewPreviewer(model)
 	if err != nil {
@@ -364,9 +384,9 @@ func TestBuildPreviewReplacesSemanticFailure(t *testing.T) {
 
 	model := &sequenceCompleter{completions: []prepare.Completion{
 		{Content: `{"records":[{"prompt":"Where was Go created?","evidence_id":1,"target_id":1},{"prompt":"What do channels protect?","evidence_id":2,"target_id":1}]}`},
-		{Content: `{"results":[{"record_number":1,"expected_target_id":1,"reason":"The evidence directly states the answer."},{"record_number":2,"expected_target_id":0,"reason":"The evidence discusses communication, not protecting shared state."}]}`},
+		verificationCompletion(2, func(index int) bool { return index == 0 }),
 		{Content: `{"records":[{"prompt":"What protects shared state?","evidence_id":1,"target_id":1}]}`},
-		{Content: `{"results":[{"record_number":1,"expected_target_id":1,"reason":"The evidence directly states the answer."},{"record_number":2,"expected_target_id":1,"reason":"The evidence directly states the answer."}]}`},
+		verificationCompletion(2, func(int) bool { return true }),
 	}}
 	previewer, err := prepare.NewPreviewer(model)
 	if err != nil {
@@ -391,13 +411,58 @@ func TestBuildPreviewReplacesSemanticFailure(t *testing.T) {
 	if strings.Contains(model.requests[2].Messages[1].Content, "Go was created at Google") ||
 		strings.Contains(model.requests[2].Messages[1].Content, "Channels communicate values") ||
 		!strings.Contains(model.requests[2].Messages[1].Content, "A mutex protects shared state") ||
-		!strings.Contains(model.requests[2].Messages[1].Content, "do not satisfy the task quality contract") {
+		!strings.Contains(model.requests[2].Messages[1].Content, "do not form a useful standalone example") {
 		t.Fatalf("replacement request did not contain only unused evidence and failure feedback")
 	}
 	for _, result := range artifact.Verification {
 		if !result.Passed {
 			t.Fatalf("verification: got %+v", artifact.Verification)
 		}
+	}
+}
+
+func TestBuildPreviewRegeneratesRecordRejectedForDatasetRequirements(t *testing.T) {
+	datasetDirectory := t.TempDir()
+	if err := os.WriteFile(filepath.Join(datasetDirectory, "extracted.md"), []byte("Go is a programming language."), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	const instructions = "Write longer questions that include relevant context."
+	model := &sequenceCompleter{completions: []prepare.Completion{
+		{Content: `{"records":[{"prompt":"What is Go?","evidence_id":1,"target_id":1}]}`},
+		verificationCompletion(1, func(int) bool { return false }),
+		{Content: `{"records":[{"prompt":"In software development, how would you describe the role and purpose of Go?","evidence_id":1,"target_id":1}]}`},
+		verificationCompletion(1, func(int) bool { return true }),
+	}}
+	previewer, err := prepare.NewPreviewer(model)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	artifact, err := previewer.Build(t.Context(), prepare.PreviewRequest{
+		DatasetDirectory:    datasetDirectory,
+		Goal:                prepare.GoalQuestionAnswer,
+		Model:               "model",
+		RecordCount:         1,
+		DatasetInstructions: instructions,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(artifact.Records) != 1 || artifact.Records[0].Prompt != "In software development, how would you describe the role and purpose of Go?" {
+		t.Fatalf("preview did not replace the rejected question: %+v", artifact.Records)
+	}
+	if len(model.requests) != 4 {
+		t.Fatalf("model requests = %d, want generation, verification, replacement, and verification", len(model.requests))
+	}
+	for _, index := range []int{1, 3} {
+		if !strings.HasPrefix(model.requests[index].Messages[1].Content, "USER INSTRUCTION — FOLLOW WHEN WRITING EVERY RECORD:") ||
+			!strings.Contains(model.requests[index].Messages[1].Content, instructions) {
+			t.Fatalf("verification request %d omitted user requirements: %s", index, model.requests[index].Messages[1].Content)
+		}
+	}
+	if !strings.Contains(model.requests[2].Messages[1].Content, instructions) {
+		t.Fatalf("replacement generation omitted user requirements: %s", model.requests[2].Messages[1].Content)
 	}
 }
 
@@ -413,11 +478,11 @@ func TestBuildPreviewBackfillsFourRejectedRowsWithoutReplacingSurvivor(t *testin
 
 	model := &sequenceCompleter{completions: []prepare.Completion{
 		{Content: `{"records":[{"prompt":"What is fact one?","evidence_id":1,"target_id":1},{"prompt":"What is fact two?","evidence_id":2,"target_id":1},{"prompt":"What is fact three?","evidence_id":3,"target_id":1},{"prompt":"What is fact four?","evidence_id":4,"target_id":1},{"prompt":"What is fact five?","evidence_id":5,"target_id":1}]}`},
-		{Content: `{"results":[{"record_number":1,"expected_target_id":1},{"record_number":2,"expected_target_id":0},{"record_number":3,"expected_target_id":0},{"record_number":4,"expected_target_id":0},{"record_number":5,"expected_target_id":0}]}`},
+		verificationCompletion(5, func(index int) bool { return index == 0 }),
 		{Content: `{"records":[{"prompt":"What is replacement fact six?","evidence_id":1,"target_id":1},{"prompt":"What is replacement fact seven?","evidence_id":2,"target_id":1},{"prompt":"What is replacement fact eight?","evidence_id":3,"target_id":1},{"prompt":"What is replacement fact nine?","evidence_id":4,"target_id":1}]}`},
-		{Content: `{"results":[{"record_number":1,"expected_target_id":1},{"record_number":2,"expected_target_id":0},{"record_number":3,"expected_target_id":0},{"record_number":4,"expected_target_id":0},{"record_number":5,"expected_target_id":0}]}`},
+		verificationCompletion(5, func(index int) bool { return index == 0 }),
 		{Content: `{"records":[{"prompt":"How is replacement fact six stated?","evidence_id":1,"target_id":1},{"prompt":"How is replacement fact seven stated?","evidence_id":2,"target_id":1},{"prompt":"How is replacement fact eight stated?","evidence_id":3,"target_id":1},{"prompt":"How is replacement fact nine stated?","evidence_id":4,"target_id":1}]}`},
-		{Content: `{"results":[{"record_number":1,"expected_target_id":1},{"record_number":2,"expected_target_id":1},{"record_number":3,"expected_target_id":1},{"record_number":4,"expected_target_id":1},{"record_number":5,"expected_target_id":1}]}`},
+		verificationCompletion(5, func(int) bool { return true }),
 	}}
 	previewer, err := prepare.NewPreviewer(model)
 	if err != nil {
@@ -452,9 +517,9 @@ func TestBuildPreviewBackfillsRowsMissingFromInitialGeneration(t *testing.T) {
 		{Content: `{"records":[{"prompt":"What is fact one?","evidence_id":1,"target_id":1}]}`},
 		{Content: `{"records":[{"prompt":"What is fact one?","evidence_id":1,"target_id":1}]}`},
 		{Content: `{"records":[{"prompt":"What is fact one?","evidence_id":1,"target_id":1}]}`},
-		{Content: `{"results":[{"record_number":1,"expected_target_id":1}]}`},
+		verificationCompletion(1, func(int) bool { return true }),
 		{Content: `{"records":[{"prompt":"What is fact two?","evidence_id":1,"target_id":1},{"prompt":"What is fact three?","evidence_id":2,"target_id":1},{"prompt":"What is fact four?","evidence_id":3,"target_id":1},{"prompt":"What is fact five?","evidence_id":4,"target_id":1}]}`},
-		{Content: `{"results":[{"record_number":1,"expected_target_id":1},{"record_number":2,"expected_target_id":1},{"record_number":3,"expected_target_id":1},{"record_number":4,"expected_target_id":1},{"record_number":5,"expected_target_id":1}]}`},
+		verificationCompletion(5, func(int) bool { return true }),
 	}}
 	previewer, err := prepare.NewPreviewer(model)
 	if err != nil {
@@ -490,9 +555,9 @@ func TestBuildPreviewSelectsFiveFromOversampledRepairCandidates(t *testing.T) {
 
 	model := &sequenceCompleter{completions: []prepare.Completion{
 		{Content: `{"records":[{"prompt":"What is fact one?","evidence_id":1,"target_id":1},{"prompt":"What is fact two?","evidence_id":2,"target_id":1},{"prompt":"What is fact three?","evidence_id":3,"target_id":1},{"prompt":"What is fact four?","evidence_id":4,"target_id":1},{"prompt":"What is fact five?","evidence_id":5,"target_id":1}]}`},
-		{Content: `{"results":[{"record_number":1,"expected_target_id":1},{"record_number":2,"expected_target_id":1},{"record_number":3,"expected_target_id":1},{"record_number":4,"expected_target_id":0},{"record_number":5,"expected_target_id":0}]}`},
+		verificationCompletion(5, func(index int) bool { return index < 3 }),
 		{Content: `{"records":[{"prompt":"What is fact six?","evidence_id":1,"target_id":1},{"prompt":"What is fact seven?","evidence_id":2,"target_id":1},{"prompt":"What is fact eight?","evidence_id":3,"target_id":1},{"prompt":"What is fact nine?","evidence_id":4,"target_id":1}]}`},
-		{Content: `{"results":[{"record_number":1,"expected_target_id":1},{"record_number":2,"expected_target_id":1},{"record_number":3,"expected_target_id":1},{"record_number":4,"expected_target_id":1},{"record_number":5,"expected_target_id":1},{"record_number":6,"expected_target_id":0},{"record_number":7,"expected_target_id":0}]}`},
+		verificationCompletion(7, func(index int) bool { return index < 5 }),
 	}}
 	previewer, err := prepare.NewPreviewer(model)
 	if err != nil {
@@ -528,11 +593,11 @@ func TestBuildPreviewReturnsReviewableRowsAfterFinalSemanticRejection(t *testing
 
 	model := &sequenceCompleter{completions: []prepare.Completion{
 		{Content: `{"records":[{"prompt":"Where was Go created?","evidence_id":1,"target_id":1},{"prompt":"What do channels protect?","evidence_id":2,"target_id":1}]}`},
-		{Content: `{"results":[{"record_number":1,"expected_target_id":1,"reason":"The target directly answers the prompt."},{"record_number":2,"expected_target_id":0,"reason":"The passage does not answer the prompt."}]}`},
+		verificationCompletion(2, func(index int) bool { return index == 0 }),
 		{Content: `{"records":[{"prompt":"What color is a mutex?","evidence_id":1,"target_id":1}]}`},
-		{Content: `{"results":[{"record_number":1,"expected_target_id":1,"reason":"The target directly answers the prompt."},{"record_number":2,"expected_target_id":0,"reason":"The passage does not state a color."}]}`},
+		verificationCompletion(2, func(index int) bool { return index == 0 }),
 		{Content: `{"records":[{"prompt":"What shape is a mutex?","evidence_id":1,"target_id":1}]}`},
-		{Content: `{"results":[{"record_number":1,"expected_target_id":1,"reason":"The target directly answers the prompt."},{"record_number":2,"expected_target_id":0,"reason":"The passage does not state a shape."}]}`},
+		verificationCompletion(2, func(index int) bool { return index == 0 }),
 	}}
 	previewer, err := prepare.NewPreviewer(model)
 	if err != nil {
@@ -565,11 +630,11 @@ func TestBuildPreviewReusesRejectedEvidenceOnFinalRepair(t *testing.T) {
 
 	model := &sequenceCompleter{completions: []prepare.Completion{
 		{Content: `{"records":[{"prompt":"What is fact one?","evidence_id":1,"target_id":1},{"prompt":"What is unsupported fact two?","evidence_id":2,"target_id":1}]}`},
-		{Content: `{"results":[{"record_number":1,"expected_target_id":1},{"record_number":2,"expected_target_id":0}]}`},
+		verificationCompletion(2, func(index int) bool { return index == 0 }),
 		{Content: `{"records":[{"prompt":"What is unsupported fact three?","evidence_id":1,"target_id":1},{"prompt":"What is unsupported fact four?","evidence_id":2,"target_id":1}]}`},
-		{Content: `{"results":[{"record_number":1,"expected_target_id":1},{"record_number":2,"expected_target_id":0},{"record_number":3,"expected_target_id":0}]}`},
+		verificationCompletion(3, func(index int) bool { return index == 0 }),
 		{Content: `{"records":[{"prompt":"What is fact three?","evidence_id":1,"target_id":1},{"prompt":"What is fact four?","evidence_id":2,"target_id":1}]}`},
-		{Content: `{"results":[{"record_number":1,"expected_target_id":1},{"record_number":2,"expected_target_id":1},{"record_number":3,"expected_target_id":1}]}`},
+		verificationCompletion(3, func(int) bool { return true }),
 	}}
 	previewer, err := prepare.NewPreviewer(model)
 	if err != nil {
@@ -603,9 +668,9 @@ func TestBuildPreviewAllowsRejectedPromptWithCorrectedEvidence(t *testing.T) {
 
 	model := &sequenceCompleter{completions: []prepare.Completion{
 		{Content: `{"records":[{"prompt":"What do channels communicate?","evidence_id":1,"target_id":1},{"prompt":"Where was Go created?","evidence_id":2,"target_id":1}]}`},
-		{Content: `{"results":[{"record_number":1,"expected_target_id":1,"reason":"The target directly answers the prompt."},{"record_number":2,"expected_target_id":0,"reason":"The passage does not state where Go was created."}]}`},
+		verificationCompletion(2, func(index int) bool { return index == 0 }),
 		{Content: `{"records":[{"prompt":"Where was Go created?","evidence_id":1,"target_id":1}]}`},
-		{Content: `{"results":[{"record_number":1,"expected_target_id":1,"reason":"The target directly answers the prompt."},{"record_number":2,"expected_target_id":1,"reason":"The corrected target directly answers the prompt."}]}`},
+		verificationCompletion(2, func(int) bool { return true }),
 	}}
 	previewer, err := prepare.NewPreviewer(model)
 	if err != nil {

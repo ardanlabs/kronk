@@ -22,6 +22,51 @@ type Request struct {
 	Runtime Runtime `json:"runtime"`
 }
 
+// LoRARecipe describes the low-rank adapters trained by a recipe.
+type LoRARecipe struct {
+	Rank          int
+	Alpha         float64
+	Scale         float64
+	TargetModules []string
+}
+
+// SequenceRecipe describes how tokenized examples are bounded and padded.
+type SequenceRecipe struct {
+	MaximumTokens int
+	Source        string
+	Overflow      string
+	Padding       string
+}
+
+// OutputRecipe describes the adapter artifact produced by a recipe.
+type OutputRecipe struct {
+	Format    string
+	Precision string
+	Filename  string
+}
+
+// Recipe describes the backend-owned settings for a fine-tuning run.
+type Recipe struct {
+	Workflow                     string
+	Method                       string
+	BaseWeights                  string
+	Optimizer                    string
+	LearningRate                 float64
+	WeightDecay                  float64
+	BatchSize                    int
+	MaximumEpochs                int
+	Seed                         uint64
+	LoRA                         LoRARecipe
+	Sequence                     SequenceRecipe
+	Loss                         string
+	CheckpointSelection          string
+	Output                       OutputRecipe
+	EarlyStoppingPatience        int
+	MinimumValidationImprovement float64
+	TrainingPhases               int
+	CandidateCount               int
+}
+
 // Stage identifies a user-understandable part of a training run.
 type Stage string
 

@@ -17,7 +17,9 @@ import (
 
 const (
 	// MaxPreviewRecords keeps the manual review step intentionally small.
-	MaxPreviewRecords              = 5
+	MaxPreviewRecords = 5
+	// MaxDatasetInstructionsRunes bounds optional user guidance added to model prompts.
+	MaxDatasetInstructionsRunes    = 2000
 	maxGenerationAttempts          = 2
 	maxPreviewGenerationAttempts   = 3
 	generationMaxTokens            = 1024
@@ -53,11 +55,12 @@ type Previewer struct {
 
 // PreviewRequest selects the extraction, task, model, and preview size.
 type PreviewRequest struct {
-	DatasetDirectory string
-	Goal             Goal
-	Model            string
-	RecordCount      int
-	Progress         func(PreviewProgress)
+	DatasetDirectory    string
+	Goal                Goal
+	Model               string
+	RecordCount         int
+	DatasetInstructions string
+	Progress            func(PreviewProgress)
 }
 
 // PreviewProgress reports completed model-backed preview stages.
@@ -73,6 +76,7 @@ type Record struct {
 	Target            string `json:"target"`
 	Evidence          string `json:"evidence"`
 	FactID            string `json:"fact_id,omitempty"`
+	SourceDocument    string `json:"source_document,omitempty"`
 	IndependentPrompt bool   `json:"independent_prompt,omitempty"`
 }
 
@@ -173,6 +177,11 @@ func (p *Previewer) Build(ctx context.Context, request PreviewRequest) (PreviewA
 	if request.RecordCount < 1 || request.RecordCount > MaxPreviewRecords {
 		return PreviewArtifact{}, fmt.Errorf("build preview: record count must be between 1 and %d", MaxPreviewRecords)
 	}
+	instructions, err := normalizeDatasetInstructions(request.DatasetInstructions)
+	if err != nil {
+		return PreviewArtifact{}, fmt.Errorf("build preview: %w", err)
+	}
+	request.DatasetInstructions = instructions
 
 	markdownPath := filepath.Join(request.DatasetDirectory, "extracted.md")
 	markdown, err := os.ReadFile(markdownPath)
@@ -209,6 +218,7 @@ func (p *Previewer) Build(ctx context.Context, request PreviewRequest) (PreviewA
 		CreatedAt            time.Time            `json:"created_at"`
 		Goal                 Goal                 `json:"goal"`
 		Model                string               `json:"model"`
+		DatasetInstructions  string               `json:"dataset_instructions,omitempty"`
 		RecordCount          int                  `json:"record_count"`
 		GenerationAttempts   int                  `json:"generation_attempts"`
 		VerificationAttempts int                  `json:"verification_attempts"`
@@ -221,6 +231,7 @@ func (p *Previewer) Build(ctx context.Context, request PreviewRequest) (PreviewA
 		CreatedAt:            p.now().UTC(),
 		Goal:                 request.Goal,
 		Model:                request.Model,
+		DatasetInstructions:  request.DatasetInstructions,
 		RecordCount:          len(records),
 		GenerationAttempts:   metrics.generationAttempts,
 		VerificationAttempts: metrics.verificationAttempts,
@@ -267,7 +278,7 @@ func (p *Previewer) generateRecords(ctx context.Context, request PreviewRequest,
 	correction := ""
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		userPrompt := previewUserPrompt(request.Goal, remaining, remainingSource, exclusions)
+		userPrompt := previewUserPrompt(request.Goal, remaining, remainingSource, request.DatasetInstructions, exclusions)
 		metrics.generationAttempts++
 		completion, err := p.completer.Complete(ctx, CompletionRequest{
 			Model:          request.Model,
@@ -355,18 +366,20 @@ func generationMessages(userPrompt, correction string) []Message {
 	}
 }
 
-const previewSystemPrompt = `You prepare supervised fine-tuning records from user-provided source material. Use only the supplied source passages. Never add outside facts. Every target must be supported by the selected evidence passage.`
+const previewSystemPrompt = `You prepare supervised fine-tuning records from user-provided source material. Use only the supplied source passages. Never add outside facts. Every target must be supported by the selected evidence passage. The user's instruction controls how every record is written and must be followed. Only source grounding, factual correctness, and the required output structure take priority over the user's instruction.`
 
-func previewUserPrompt(goal Goal, count int, source string, exclusions generationExclusions) string {
+func previewUserPrompt(goal Goal, count int, source, datasetInstructions string, exclusions generationExclusions) string {
 	return fmt.Sprintf(`Create exactly %d training records.
 
 Training goal: %s
+
+%s
 
 Requirements:
 - Write useful, unambiguous prompts.
 - For question answering, write a natural question that ends with a question mark.
 - Set target_id to the numbered target under the selected evidence passage that directly answers the prompt.
-- Prefer the shortest atomic name, value, flag, signal, duration, identifier, or sentence that completely answers the prompt; never select unrelated surrounding text or code.
+%s
 - Ask for exactly the facts contained in the selected target. Do not select a target with an extra clause or fact the prompt did not request.
 - Write the prompt with every subject and setup detail needed to answer it without seeing the source. Do not use references such as this manner, the example, the listing, or the table.
 - Skip a fact when making its prompt standalone would require revealing the answer.
@@ -390,7 +403,30 @@ Requirements:
 %s
 
 SOURCE:
-%s`, count, goal.instruction(), generationConstraintPrompt(exclusions), source)
+%s`, count, goal.instruction(), datasetInstructionsPrompt(datasetInstructions), answerDetailRequirement(datasetInstructions), generationConstraintPrompt(exclusions), source)
+}
+
+func answerDetailRequirement(datasetInstructions string) string {
+	requirement := "- Prefer the shortest atomic name, value, flag, signal, duration, identifier, or sentence that completely answers the prompt; never select unrelated surrounding text or code."
+	if datasetInstructions != "" {
+		requirement = "- Select only a grounded target that completely answers the prompt; never select unrelated surrounding text or code."
+	}
+	return requirement
+}
+
+func normalizeDatasetInstructions(instructions string) (string, error) {
+	instructions = strings.TrimSpace(instructions)
+	if utf8.RuneCountInString(instructions) > MaxDatasetInstructionsRunes {
+		return "", fmt.Errorf("dataset instructions must not exceed %d characters", MaxDatasetInstructionsRunes)
+	}
+	return instructions, nil
+}
+
+func datasetInstructionsPrompt(instructions string) string {
+	if instructions == "" {
+		return ""
+	}
+	return "USER INSTRUCTION — FOLLOW WHEN WRITING EVERY RECORD:\n" + instructions
 }
 
 func generationConstraintPrompt(exclusions generationExclusions) string {

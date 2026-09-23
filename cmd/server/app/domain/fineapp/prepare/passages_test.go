@@ -51,3 +51,15 @@ func TestFullPassagesCombinesSmallParagraphsIntoBoundedEvidence(t *testing.T) {
 		}
 	}
 }
+
+func TestFullPassagesDoesNotCombineDifferentSourceDocuments(t *testing.T) {
+	source := "# Source Document: guide.pdf\n\nThe guide contains the first supported fact.\n\n# Source Document: manual.docx\n\nThe manual contains the second supported fact."
+
+	passages := fullPassages(source, nil)
+	if len(passages) != 2 {
+		t.Fatalf("evidence passages = %d, want one passage for each source document: %#v", len(passages), passages)
+	}
+	if strings.Contains(passages[0], "manual") || strings.Contains(passages[1], "guide") {
+		t.Fatalf("evidence crossed source-document boundaries: %#v", passages)
+	}
+}

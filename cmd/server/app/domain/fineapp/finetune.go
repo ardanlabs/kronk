@@ -4,11 +4,51 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/fineapp/finetune"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 )
+
+func (a *app) trainingRecipe(_ context.Context, r *http.Request) web.Encoder {
+	if a.recipes == nil {
+		return errs.Errorf(errs.FailedPrecondition, "fine-tuning recipe is not configured")
+	}
+	modelID := r.URL.Query().Get("model_id")
+	if modelID == "" {
+		return errs.Errorf(errs.InvalidArgument, "model_id is required")
+	}
+	modelPath, err := a.modelFile(modelID)
+	if err != nil {
+		return errs.New(errs.InvalidArgument, err)
+	}
+	recipe, err := a.recipes.Recipe(modelPath)
+	if err != nil {
+		return errs.New(errs.FailedPrecondition, fmt.Errorf("inspect fine-tuning recipe: %w", err))
+	}
+	return jsonResponse{value: fromBusRecipeResponse(modelID, recipe)}
+}
+
+func fromBusRecipeResponse(modelID string, recipe finetune.Recipe) RecipeResponse {
+	return RecipeResponse{
+		ModelID: modelID, Method: recipe.Method, BaseWeights: recipe.BaseWeights,
+		Optimizer: recipe.Optimizer, LearningRate: recipe.LearningRate, WeightDecay: recipe.WeightDecay,
+		BatchSize: recipe.BatchSize, MaximumEpochs: recipe.MaximumEpochs, Seed: int(recipe.Seed),
+		LoRA: LoRARecipeResponse{
+			Rank: recipe.LoRA.Rank, Alpha: recipe.LoRA.Alpha, Scale: recipe.LoRA.Scale,
+			TargetModules: slices.Clone(recipe.LoRA.TargetModules),
+		},
+		Sequence: SequenceRecipeResponse{
+			MaximumTokens: recipe.Sequence.MaximumTokens, Source: recipe.Sequence.Source,
+			Overflow: recipe.Sequence.Overflow, Padding: recipe.Sequence.Padding,
+		},
+		Loss: recipe.Loss, CheckpointSelection: recipe.CheckpointSelection,
+		Output: OutputRecipeResponse{
+			Format: recipe.Output.Format, Precision: recipe.Output.Precision, Filename: recipe.Output.Filename,
+		},
+	}
+}
 
 func (a *app) startRun(ctx context.Context, r *http.Request) web.Encoder {
 	if a.finetuner == nil {

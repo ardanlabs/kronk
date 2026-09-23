@@ -88,11 +88,30 @@ func TestBackendConnectsManagedRunToDatasetAndTrainingOutputs(t *testing.T) {
 
 func TestCurrentRecipeMatchesTrainingBackend(t *testing.T) {
 	recipe := CurrentRecipe()
-	if recipe.Workflow != trainingStateSchema || recipe.MaximumEpochs != defaultMaximumEpochs || recipe.EarlyStoppingPatience != defaultEarlyStoppingPatience || recipe.MinimumValidationImprovement != defaultMinimumValidationImprovement || recipe.LearningRate != defaultLearningRate || recipe.LoRARank != defaultLoRARank || recipe.TrainingPhases != 1 || recipe.CandidateCount != 1 {
+	if recipe.Workflow != trainingStateSchema || recipe.Method != defaultMethod || recipe.BaseWeights != defaultBaseWeights || recipe.Optimizer != defaultOptimizer || recipe.MaximumEpochs != defaultMaximumEpochs || recipe.EarlyStoppingPatience != defaultEarlyStoppingPatience || recipe.MinimumValidationImprovement != defaultMinimumValidationImprovement || recipe.LearningRate != defaultLearningRate || recipe.WeightDecay != defaultWeightDecay || recipe.BatchSize != defaultBatchSize || recipe.Seed != defaultSeed || recipe.LoRA.Rank != defaultLoRARank || recipe.LoRA.Alpha != defaultLoRAAlpha || recipe.LoRA.Scale != 1 || recipe.Loss != defaultLoss || recipe.CheckpointSelection != defaultCheckpointSelection || recipe.Output.Format != defaultOutputFormat || recipe.Output.Precision != defaultOutputPrecision || recipe.Output.Filename != defaultOutputFilename || recipe.TrainingPhases != 1 || recipe.CandidateCount != 1 {
 		t.Fatalf("recipe = %+v", recipe)
 	}
-	if recipe.MaximumEpochs != 3 || recipe.LoRARank != 8 || len(checkpointProbeEpochs) != 0 {
-		t.Fatalf("training schedule = %d epochs at rank %d with probes %v", recipe.MaximumEpochs, recipe.LoRARank, checkpointProbeEpochs)
+	wantModules := []string{"query", "key", "value", "output", "gate", "up", "down"}
+	if recipe.MaximumEpochs != 3 || recipe.LoRA.Rank != 8 || !slices.Equal(recipe.LoRA.TargetModules, wantModules) || recipe.Sequence.MaximumTokens != 0 || recipe.Sequence.Source != defaultSequenceSource || recipe.Sequence.Overflow != defaultSequenceOverflow || recipe.Sequence.Padding != defaultSequencePadding || len(checkpointProbeEpochs) != 0 {
+		t.Fatalf("training schedule = %+v with probes %v", recipe, checkpointProbeEpochs)
+	}
+}
+
+func TestRecipeReadsModelContextFromGGUF(t *testing.T) {
+	modelPath := filepath.Join(t.TempDir(), "gemma.gguf")
+	writer := gguf.Writer{}
+	writer.String("general.architecture", "gemma3")
+	writer.Uint32("gemma3.context_length", 32768)
+	if err := writer.WriteFile(modelPath); err != nil {
+		t.Fatal(err)
+	}
+
+	recipe, err := New().Recipe(modelPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recipe.Sequence.MaximumTokens != 32768 {
+		t.Fatalf("maximum tokens: got %d, want 32768", recipe.Sequence.MaximumTokens)
 	}
 }
 
