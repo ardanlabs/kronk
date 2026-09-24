@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
@@ -17,12 +18,13 @@ import (
 func runWeb(args []string) error {
 	modelID := args[0]
 
-	url, err := client.DefaultURL(fmt.Sprintf("/v1/kronk/models/%s", modelID))
+	base, err := client.DefaultURL("/v1/kronk/models")
 	if err != nil {
 		return fmt.Errorf("default-url: %w", err)
 	}
+	endpoint := fmt.Sprintf("%s/%s", base, url.PathEscape(modelID))
 
-	fmt.Println("URL:", url)
+	fmt.Println("URL:", endpoint)
 
 	cln := client.New(
 		client.FmtLogger,
@@ -33,7 +35,7 @@ func runWeb(args []string) error {
 	defer cancel()
 
 	var info toolapp.ModelInfoResponse
-	if err := cln.Do(ctx, http.MethodGet, url, nil, &info); err != nil {
+	if err := cln.Do(ctx, http.MethodGet, endpoint, nil, &info); err != nil {
 		return fmt.Errorf("do: unable to get model information: %w", err)
 	}
 
