@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
@@ -14,14 +15,13 @@ import (
 )
 
 func runWeb(args []string) error {
-	url, err := client.DefaultURL("/v1/kronk/models")
+	base, err := client.DefaultURL("/v1/kronk/models")
 	if err != nil {
 		return fmt.Errorf("default-url: %w", err)
 	}
+	endpoint := fmt.Sprintf("%s/%s", base, url.PathEscape(args[0]))
 
-	url = fmt.Sprintf("%s/%s", url, args[0])
-
-	fmt.Println("URL:", url)
+	fmt.Println("URL:", endpoint)
 
 	fmt.Printf("\nAre you sure you want to remove %q? (y/n): ", args[0])
 
@@ -41,7 +41,7 @@ func runWeb(args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
-	if err := cln.Do(ctx, http.MethodDelete, url, nil, nil); err != nil {
+	if err := cln.Do(ctx, http.MethodDelete, endpoint, nil, nil); err != nil {
 		return fmt.Errorf("remove-model: %w", err)
 	}
 
