@@ -212,7 +212,11 @@ function Install-LibrariesGh {
 # Use this to install the test GH models.
 # ./pwr.ps1 install-test-gh-models
 function Install-TestGhModels {
-    Install-Kronk
+    param([switch]$SkipKronkInstall)
+
+    if (-not $SkipKronkInstall) {
+        Install-Kronk
+    }
 
     Write-Section "INSTALL MODELS"
     Install-KronkModel "unsloth/Qwen3.5-0.8B-Q8_0"
@@ -227,7 +231,11 @@ function Install-TestGhModels {
 # Use this to install the test models.
 # ./pwr.ps1 install-test-models
 function Install-TestModels {
-    Install-Kronk
+    param([switch]$SkipKronkInstall)
+
+    if (-not $SkipKronkInstall) {
+        Install-Kronk
+    }
 
     Write-Section "INSTALL KRONK MODELS"
     Install-KronkModel "unsloth/Qwen3-0.6B-Q8_0"
@@ -374,7 +382,7 @@ function Show-GoFixDiff {
 # ./pwr.ps1 test-only
 function Invoke-TestsOnly {
     Install-Libraries
-    Install-TestModels
+    Install-TestModels -SkipKronkInstall
 
     Write-Section "RUN TESTS"
     Invoke-WithEnvironment `
@@ -413,7 +421,7 @@ function Invoke-Tests {
 # ./pwr.ps1 test-gh-only
 function Invoke-GhTestsOnly {
     Install-LibrariesGh
-    Install-TestGhModels
+    Install-TestGhModels -SkipKronkInstall
 
     Write-Section "RUN GH ONLY TESTS"
     Invoke-WithEnvironment `
