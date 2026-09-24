@@ -384,8 +384,8 @@ func TestAdjustConfigUsesConfiguredPrefillBatchSize(t *testing.T) {
 	}
 }
 
-func TestAdjustConfigUsesLargestCPUThreadDefault(t *testing.T) {
-	defaultThreads := max(int(llama.Threads()), runtime.NumCPU())
+func TestAdjustConfigUsesRuntimeCPUThreadDefault(t *testing.T) {
+	defaultThreads := max(defNThreads, runtime.NumCPU())
 	tests := []struct {
 		name             string
 		cfg              Config
