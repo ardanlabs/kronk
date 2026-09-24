@@ -8,7 +8,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -52,7 +51,6 @@ const (
 const (
 	defContextWindow        = 8 * 1024
 	defMinCacheTokens       = 100
-	defNThreads             = 4
 	defNSeqMax              = 1
 	defNDraft               = 5
 	defaultAdmissionTimeout = 3 * time.Minute
@@ -259,10 +257,10 @@ type AdapterConfig struct {
 // default of 1 is used.
 //
 // NThreads is the number of threads to use for generation. When unset or set
-// to 0, it defaults to the greater of 4 and runtime.NumCPU().
+// to 0, it defaults to Yzma's hardware-aware CPU thread count.
 //
 // NThreadsBatch is the number of threads to use for batch processing. When
-// unset or set to 0, it defaults to the greater of 4 and runtime.NumCPU().
+// unset or set to 0, it defaults to Yzma's hardware-aware CPU thread count.
 //
 // NUMA controls the NUMA (Non-Uniform Memory Access) strategy. This matters
 // most when expert tensors are on CPU and the system has multiple NUMA nodes.
@@ -820,7 +818,7 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 		cfg = adjustGenerationBatch(cfg, 1, false)
 	}
 
-	nThreads := max(defNThreads, runtime.NumCPU())
+	nThreads := int(llama.Threads())
 	if cfg.NThreads() <= 0 {
 		cfg.PtrNThreads = new(nThreads)
 	}
