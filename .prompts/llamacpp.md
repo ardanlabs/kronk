@@ -7,8 +7,8 @@ This prompt has two outcomes:
 
 ## Upgrade range
 
-- Treat the `defaultVersion` change in `sdk/tools/libs/libs.go` as the proposed llama.cpp upgrade. Compare its previous committed value with the new value.
-- If yzma was also changed, compare the previous and proposed versions in every Go module.
+- Upgrade llama.cpp to the latest completed release published at `https://github.com/hybridgroup/llama-cpp-builder/releases` at the time this prompt is run. Compare the currently committed `defaultVersion` in `sdk/tools/libs/libs.go` with that release and update its authenticated manifest digest only if the routine-upgrade path applies.
+- Upgrade yzma to the latest commit on the upstream `hybridgroup/yzma` `main` branch at the time this prompt is run. Always use the head of `main`, not the latest tag or the version currently selected by a Go module. Compare every Go module's currently committed yzma version with that commit and keep all modules aligned if the routine-upgrade path applies.
 - Resolve build numbers, tags, pseudo-versions, and commits to exact upstream SHAs.
 - Verify the proposed llama.cpp build has a completed release in `hybridgroup/llama-cpp-builder`. Do not recommend a build Kronk cannot download.
 
