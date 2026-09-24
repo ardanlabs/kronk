@@ -208,7 +208,6 @@ models:
       preserve_thinking: true
     sampling-parameters:
       max_tokens: 16384
-      seed: 3003519699
 
   # nseq-max: 1  ~40GB VRAM
   # nseq-max: 2  ~43GB VRAM
