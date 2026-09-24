@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -383,8 +384,8 @@ func TestAdjustConfigUsesConfiguredPrefillBatchSize(t *testing.T) {
 	}
 }
 
-func TestAdjustConfigUsesYZMAThreadDefault(t *testing.T) {
-	defaultThreads := int(llama.Threads())
+func TestAdjustConfigUsesLargestCPUThreadDefault(t *testing.T) {
+	defaultThreads := max(int(llama.Threads()), runtime.NumCPU())
 	tests := []struct {
 		name             string
 		cfg              Config
