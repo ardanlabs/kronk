@@ -150,9 +150,8 @@ func mtpNextNLayers(model llama.Model) int {
 //     raw batch index for the mirror step.
 //     - draft  ctx:  (true, true)  — masked, only logits-flagged rows
 //     stored; indexed via the output_ids table.
-//  2. Batches are allocated with embd=nEmbd so Batch.Embd is a real
-//     C buffer the MTP graph can read. (BatchInit with embd=0 only
-//     allocates the token slot, no embd buffer.)
+//  2. Extended batches carry both the token ID and pre-norm hidden row for
+//     each MTP input without mutating the legacy llama.Batch layout.
 //
 // On success the returned *mtpDrafter shares the target's llama_model, so
 // its unload skips the model free.
@@ -205,29 +204,11 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 	addSuppressTokenSampler(sampler, targetVocab, suppressTokens)
 	llama.SamplerChainAdd(sampler, llama.SamplerInitGreedy())
 
-	// MTP-specific batches: every position carries both a token id and a
-	// pre-norm hidden-state vector.
-	//
-	// llama_batch_init allocates EITHER the token buffer OR the embd
-	// buffer, never both — controlled by its embd arg. MTP needs both
-	// per position, so we call BatchInit(N, 0, 1) to get a token-only
-	// batch (with pos/seq_id/logits arrays sized to N) and then attach
-	// a Go-allocated []float32 of size N*nEmbd as the embd buffer.
-	//
-	//   draftBatchMTP   : capacity 1 token, used by generateDraftTokensMTP.
-	//   mirrorBatchMTP  : capacity NBatch tokens, used to mirror a target
-	//                     decode into the draft KV (prefill chunk, gen
-	//                     token, or spec verify accepted prefix).
-	//
-	// The Go slices must be pinned (runtime.Pinner) for the lifetime of
-	// the batch — the C side reads through Batch.Embd repeatedly across
-	// decode calls, and Go's GC is allowed to move heap objects. The
-	// pin and the slice are both stored on draftCore so unload can
-	// release them in lock-step with BatchFree.
-	//
-	// batch and prefillBatch remain zero because MTP doesn't use them,
-	// but they're kept allocated for type-uniformity with the
-	// separate-GGUF draft (BatchFree on a zero struct is harmless).
+	// MTP-specific extended batches carry both a token ID and a pre-norm
+	// hidden-state row per entry. Yzma copies each hidden row into llama.cpp's
+	// batch storage, so these resources need no pinned Go memory. The draft
+	// batch is reused for one autoregressive token at a time; the mirror batch
+	// replays target rows into the draft KV in NBatch-sized chunks.
 	//
 	// Note: draftBuf and targetProbs are intentionally left nil/empty
 	// for MTP. Speculative verification
@@ -238,12 +219,13 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 	// same reason. Skipping the full-vocab allocations avoids ~1-2 MB
 	// of unused memory per drafter on large-vocab models.
 
-	// Construct the *draftCore BEFORE pinning so the runtime.Pinner
-	// fields stay at their final addresses. runtime.Pinner is invalid
-	// to copy once it holds pinned pointers, so we can't Pin into a
-	// local var and then move the Pinner into the struct literal.
-	// Wrapping the *draftCore pointer in *mtpDrafter below does not move
-	// dm, so the pins stay valid.
+	resources, err := mtpengine.NewResources(lctx, int(params.NBatch), nEmbd)
+	if err != nil {
+		llama.SamplerFree(sampler)
+		llama.Free(lctx)
+		return nil, fmt.Errorf("init-mtp-batches: %w", err)
+	}
+
 	dm := &draftCore{
 		model:          targetModel,
 		vocab:          targetVocab,
@@ -251,12 +233,9 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 		lctx:           lctx,
 		mem:            mem,
 		sampler:        sampler,
-		// batch and prefillBatch stay zero for MTP — MTP code paths use
-		// draftBatchMTP / mirrorBatchMTP directly. Unload's
-		// BatchFree(zero) is a safe no-op (llama_batch_free NULL-checks
-		// each member), and avoids the double-free that would happen if
-		// we aliased batch:=draftBatchMTP and then freed both.
-		mtp:    mtpengine.NewResources(int(params.NBatch), nEmbd),
+		// batch and prefillBatch stay zero for MTP. MTP code paths use the
+		// extended batches in resources, which own their native handles.
+		mtp:    resources,
 		nDraft: nDraft,
 	}
 
@@ -374,6 +353,13 @@ func loadDraftModelMTPSeparate(ctx context.Context, log applog.Logger, cfg Confi
 	sampler := llama.SamplerChainInit(llama.SamplerChainDefaultParams())
 	addSuppressTokenSampler(sampler, draftVocab, suppressTokens)
 	llama.SamplerChainAdd(sampler, llama.SamplerInitGreedy())
+	resources, err := mtpengine.NewResources(lctx, int(params.NBatch), nEmbd)
+	if err != nil {
+		llama.SamplerFree(sampler)
+		llama.Free(lctx)
+		llama.ModelFree(draftModel)
+		return nil, fmt.Errorf("mtp-separate-init-batches: %w", err)
+	}
 
 	dm := &draftCore{
 		model:          draftModel,
@@ -382,7 +368,7 @@ func loadDraftModelMTPSeparate(ctx context.Context, log applog.Logger, cfg Confi
 		lctx:           lctx,
 		mem:            mem,
 		sampler:        sampler,
-		mtp:            mtpengine.NewResources(int(params.NBatch), nEmbd),
+		mtp:            resources,
 		nDraft:         nDraft,
 	}
 
@@ -403,7 +389,7 @@ func loadDraftModelMTPSeparate(ctx context.Context, log applog.Logger, cfg Confi
 //  2. params.CtxType = MTP and speculative.SetEmbeddingsNextN enable pre-norm
 //     hidden-state extraction (target dense, draft masked), exactly as the
 //     embedded-MTP path.
-//  3. The embd buffer on the AR draft batch is sized to the TARGET's
+//  3. Each AR extended-batch entry carries a hidden row with the TARGET's
 //     embedding width (== ModelNEmbdOut(assistant)), the row width the MTP
 //     head consumes.
 //  4. The shared memory is NOT cleared here — clearing it would wipe the
@@ -504,13 +490,16 @@ func loadDraftModelMTPShared(ctx context.Context, log applog.Logger, cfg Config,
 	sampler := llama.SamplerChainInit(llama.SamplerChainDefaultParams())
 	addSuppressTokenSampler(sampler, assistantVocab, suppressTokens)
 	llama.SamplerChainAdd(sampler, llama.SamplerInitGreedy())
+	resources, err := mtpengine.NewResources(lctx, 0, nEmbd)
+	if err != nil {
+		llama.SamplerFree(sampler)
+		llama.Free(lctx)
+		llama.ModelFree(asstModel)
+		return nil, fmt.Errorf("mtp-shared-init-batches: %w", err)
+	}
 
-	// Construct *draftCore BEFORE pinning so the runtime.Pinner fields stay
-	// at their final addresses (see the loadDraftModelMTP note).
-	//
 	// Shared-KV needs only the AR draft batch (capacity 1) — there is no
-	// mirror-replay, so mirrorBatchMTP / mirrorEmbdSlice stay zero
-	// (BatchFree on a zero batch and Unpin on an empty Pinner are no-ops).
+	// mirror replay, so Resources does not allocate a mirror batch.
 	dm := &draftCore{
 		model:          asstModel,
 		vocab:          llama.ModelGetVocab(targetModel),
@@ -518,7 +507,7 @@ func loadDraftModelMTPShared(ctx context.Context, log applog.Logger, cfg Config,
 		lctx:           lctx,
 		mem:            mem,
 		sampler:        sampler,
-		mtp:            mtpengine.NewResources(0, nEmbd),
+		mtp:            resources,
 		nDraft:         nDraft,
 	}
 

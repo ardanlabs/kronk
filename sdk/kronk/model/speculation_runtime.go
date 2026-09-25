@@ -161,14 +161,16 @@ func (e *batchEngine) MTPSyncInput(slotID int, effectiveCount int) (mtp.SyncInpu
 		SharedKV:      shared,
 		DecodeOwnChunk: func(tokens []llama.Token, basePosition llama.Pos, hiddenRows []float32) error {
 			mirror := draft.mtp.MirrorBatch
-			mirror.NTokens = 0
+			if err := llama.BatchExtClear(mirror); err != nil {
+				return fmt.Errorf("clearing MTP mirror batch: %w", err)
+			}
 			for i, token := range tokens {
-				if err := mirror.Add(token, basePosition+llama.Pos(i), s.seqIDs, false); err != nil {
+				hidden := hiddenRows[i*nEmbd : (i+1)*nEmbd]
+				if err := addMTPBatchEntry(mirror, token, basePosition+llama.Pos(i), s.seqIDs, hidden, nEmbd, false); err != nil {
 					return fmt.Errorf("adding MTP mirror token: %w", err)
 				}
 			}
-			copy(draft.mtp.MirrorHidden, hiddenRows)
-			ret, err := llama.Decode(draft.lctx, mirror)
+			ret, err := llama.Process(draft.lctx, llama.ProcessTypeDecode, mirror)
 			if err != nil || ret != 0 {
 				e.model.log(s.job.ctx, "speculative", "status", "mtp-mirror-decode-error",
 					"slot", s.id, "seq", s.seqID, "ret", ret, "err", err)
@@ -206,14 +208,16 @@ func (e *batchEngine) syncMTPCacheRows(s *slot, tokens []llama.Token, hiddenRows
 		SharedKV:      shared,
 		DecodeOwnChunk: func(tokens []llama.Token, basePosition llama.Pos, hiddenRows []float32) error {
 			mirror := draft.mtp.MirrorBatch
-			mirror.NTokens = 0
+			if err := llama.BatchExtClear(mirror); err != nil {
+				return fmt.Errorf("clearing MTP cache mirror batch: %w", err)
+			}
 			for i, token := range tokens {
-				if err := mirror.Add(token, basePosition+llama.Pos(i), s.seqIDs, false); err != nil {
+				hidden := hiddenRows[i*nEmbd : (i+1)*nEmbd]
+				if err := addMTPBatchEntry(mirror, token, basePosition+llama.Pos(i), s.seqIDs, hidden, nEmbd, false); err != nil {
 					return fmt.Errorf("adding MTP cache mirror token: %w", err)
 				}
 			}
-			copy(draft.mtp.MirrorHidden, hiddenRows)
-			ret, err := llama.Decode(draft.lctx, mirror)
+			ret, err := llama.Process(draft.lctx, llama.ProcessTypeDecode, mirror)
 			if err != nil || ret != 0 {
 				e.model.log(s.job.ctx, "cache", "status", "mtp-mirror-decode-error",
 					"slot", s.id, "seq", s.seqID, "ret", ret, "err", err)

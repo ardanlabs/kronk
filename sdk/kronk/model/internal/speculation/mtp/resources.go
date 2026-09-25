@@ -1,45 +1,46 @@
 package mtp
 
 import (
-	"runtime"
-	"unsafe"
+	"fmt"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
-// Resources owns the llama batches and pinned hidden-state buffers used by an
+// Resources owns the llama batches and hidden-state buffers used by an
 // MTP backend. Context/model lifetime remains with the model loader.
 type Resources struct {
-	DraftBatch    llama.Batch
-	MirrorBatch   llama.Batch
-	DraftHidden   []float32
-	MirrorHidden  []float32
-	embeddingSize int
-	draftPin      runtime.Pinner
-	mirrorPin     runtime.Pinner
+	DraftBatch     llama.BatchExt
+	MirrorBatch    llama.BatchExt
+	DraftHidden    []float32
+	MirrorHidden   []float32
+	embeddingSize  int
+	mirrorCapacity int
 }
 
 // NewResources allocates MTP token+embedding batches. A zero mirror capacity
 // selects a shared-KV backend, which does not replay target rows.
-func NewResources(mirrorCapacity, embeddingSize int) *Resources {
+func NewResources(ctx llama.Context, mirrorCapacity, embeddingSize int) (*Resources, error) {
+	draftBatch, err := llama.BatchExtInit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("initializing MTP draft batch: %w", err)
+	}
+
 	r := &Resources{
-		DraftBatch:    llama.BatchInit(1, 0, 1),
-		DraftHidden:   make([]float32, embeddingSize),
-		embeddingSize: embeddingSize,
+		DraftBatch:     draftBatch,
+		DraftHidden:    make([]float32, embeddingSize),
+		embeddingSize:  embeddingSize,
+		mirrorCapacity: mirrorCapacity,
 	}
 	if mirrorCapacity > 0 {
-		r.MirrorBatch = llama.BatchInit(int32(mirrorCapacity), 0, 1)
+		r.MirrorBatch, err = llama.BatchExtInit(ctx)
+		if err != nil {
+			llama.BatchExtFree(r.DraftBatch)
+			return nil, fmt.Errorf("initializing MTP mirror batch: %w", err)
+		}
 		r.MirrorHidden = make([]float32, mirrorCapacity*embeddingSize)
 	}
-	if len(r.DraftHidden) > 0 {
-		r.draftPin.Pin(&r.DraftHidden[0])
-		r.DraftBatch.Embd = (*float32)(unsafe.Pointer(&r.DraftHidden[0]))
-	}
-	if len(r.MirrorHidden) > 0 {
-		r.mirrorPin.Pin(&r.MirrorHidden[0])
-		r.MirrorBatch.Embd = (*float32)(unsafe.Pointer(&r.MirrorHidden[0]))
-	}
-	return r
+
+	return r, nil
 }
 
 // EmbeddingSize returns the width of one pre-norm hidden row.
@@ -47,18 +48,15 @@ func (r *Resources) EmbeddingSize() int { return r.embeddingSize }
 
 // MirrorCapacity returns the maximum rows in one own-KV synchronization chunk.
 func (r *Resources) MirrorCapacity() int {
-	if r.embeddingSize == 0 {
-		return 0
-	}
-	return len(r.MirrorHidden) / r.embeddingSize
+	return r.mirrorCapacity
 }
 
-// Free releases batches after detaching their Go-owned embedding buffers.
+// Free releases the extended batches.
 func (r *Resources) Free() {
-	r.DraftBatch.Embd = nil
-	r.MirrorBatch.Embd = nil
-	llama.BatchFree(r.DraftBatch)
-	llama.BatchFree(r.MirrorBatch)
-	r.draftPin.Unpin()
-	r.mirrorPin.Unpin()
+	if r.DraftBatch != 0 {
+		llama.BatchExtFree(r.DraftBatch)
+	}
+	if r.MirrorBatch != 0 {
+		llama.BatchExtFree(r.MirrorBatch)
+	}
 }

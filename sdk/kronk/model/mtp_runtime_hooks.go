@@ -28,6 +28,35 @@ func batchTokensAt(b llama.Batch, start, count int) []llama.Token {
 	return all[start : start+count]
 }
 
+func addMTPBatchEntry(batch llama.BatchExt, token llama.Token, position llama.Pos, seqIDs []llama.SeqId, hidden []float32, nEmbd int, outputLogits bool) error {
+	if len(seqIDs) == 0 {
+		return errors.New("adding MTP batch entry: no sequence ID")
+	}
+
+	idx, err := llama.BatchExtAddToken(batch, seqIDs[0], token)
+	if err != nil {
+		return fmt.Errorf("adding token: %w", err)
+	}
+	for _, seqID := range seqIDs[1:] {
+		if err := llama.BatchExtAddSeq(batch, idx, seqID); err != nil {
+			return fmt.Errorf("adding sequence %d: %w", seqID, err)
+		}
+	}
+	if err := llama.BatchExtSetEmbdToken(batch, idx, hidden, nEmbd); err != nil {
+		return fmt.Errorf("setting token embedding: %w", err)
+	}
+	if err := llama.BatchExtSetPos(batch, idx, position); err != nil {
+		return fmt.Errorf("setting position %d: %w", position, err)
+	}
+	if outputLogits {
+		if err := llama.BatchExtSetOutputLogits(batch, idx, true); err != nil {
+			return fmt.Errorf("requesting logits: %w", err)
+		}
+	}
+
+	return nil
+}
+
 func (e *batchEngine) mtpDraftInput(s *slot) (mtpengine.DraftInput, error) {
 	draft := e.model.draft.core()
 	nEmbd := draft.mtp.EmbeddingSize()
@@ -55,13 +84,14 @@ func (e *batchEngine) mtpDraftInput(s *slot) (mtpengine.DraftInput, error) {
 			return llama.VocabIsEOG(e.model.vocab, token)
 		},
 		DecodeStep: func(token llama.Token, position llama.Pos, hidden []float32) (llama.Token, []float32, bool, error) {
-			batch.NTokens = 0
-			if err := batch.Add(token, position, s.seqIDs, true); err != nil {
+			if err := llama.BatchExtClear(batch); err != nil {
+				return 0, nil, false, fmt.Errorf("%s draft: clearing batch: %w", mode, err)
+			}
+			if err := addMTPBatchEntry(batch, token, position, s.seqIDs, hidden, nEmbd, true); err != nil {
 				return 0, nil, false, fmt.Errorf("%s draft: add token at pos %d: %w", mode, position, err)
 			}
-			copy(draft.mtp.DraftHidden, hidden)
 
-			ret, err := llama.Decode(draft.lctx, batch)
+			ret, err := llama.Process(draft.lctx, llama.ProcessTypeDecode, batch)
 			if err != nil || ret != 0 {
 				e.model.log(s.job.ctx, "speculative", "status", "mtp-draft-decode-error",
 					"slot", s.id, "seq", s.seqID, "mode", mode, "position", position, "token", token, "ret", ret, "err", err)

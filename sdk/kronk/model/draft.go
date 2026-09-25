@@ -92,7 +92,7 @@ type drafter interface {
 
 	// unload releases the strategy's resources. Implementations differ in
 	// whether they free the llama_model (classic owns it; MTP shares it
-	// with the target) and whether MTP batches/pins exist.
+	// with the target) and whether MTP extended batches exist.
 	unload()
 }
 
