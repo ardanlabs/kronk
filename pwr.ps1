@@ -311,6 +311,7 @@ function Invoke-WithEnvironment {
 function Write-KronkLogLine {
     param(
         [Parameter(Mandatory)]
+        [AllowEmptyString()]
         [string]$Line
     )
 
