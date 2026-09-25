@@ -80,10 +80,39 @@ function Start-KronkServer {
 
     Invoke-WithEnvironment -Variables $variables -Action {
         Invoke-InDirectory -Path $RepoRoot -Action {
-            go run ./cmd/kronk server start | ForEach-Object {
-                Write-KronkLogLine -Line ([string]$_)
+            $go = Get-Command go -CommandType Application -ErrorAction Stop
+            $startInfo = New-Object Diagnostics.ProcessStartInfo
+            $startInfo.FileName = $go.Source
+            $startInfo.Arguments = "run ./cmd/kronk server start"
+            $startInfo.WorkingDirectory = $RepoRoot
+            $startInfo.UseShellExecute = $false
+            $startInfo.RedirectStandardOutput = $true
+
+            $process = New-Object Diagnostics.Process
+            $process.StartInfo = $startInfo
+            $processStarted = $false
+            try {
+                if (-not $process.Start()) {
+                    throw "unable to start go run ./cmd/kronk server start"
+                }
+                $processStarted = $true
+
+                while (($line = $process.StandardOutput.ReadLine()) -ne $null) {
+                    Write-KronkLogLine -Line $line
+                }
+
+                $process.WaitForExit()
+                if ($process.ExitCode -ne 0) {
+                    throw "go run ./cmd/kronk server start exited with code $($process.ExitCode)"
+                }
             }
-            Assert-NativeCommandSucceeded -Command "go run ./cmd/kronk server start"
+            finally {
+                if ($processStarted -and -not $process.HasExited) {
+                    $process.Kill()
+                    $process.WaitForExit()
+                }
+                $process.Dispose()
+            }
         }
     }
 }
