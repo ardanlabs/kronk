@@ -92,7 +92,11 @@ func runWeb(modelID string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
-	if err := cln.Do(ctx, http.MethodDelete, full, nil, nil); err != nil {
+	var result struct {
+		Status string `json:"status"`
+		ID     string `json:"id"`
+	}
+	if err := cln.Do(ctx, http.MethodDelete, full, nil, &result); err != nil {
 		return fmt.Errorf("remove-bucky-model: %w", err)
 	}
 

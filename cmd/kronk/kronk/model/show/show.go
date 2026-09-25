@@ -5,11 +5,12 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
+	"github.com/ardanlabs/kronk/cmd/kronk/kronk/metadatafmt"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
@@ -17,12 +18,13 @@ import (
 func runWeb(args []string) error {
 	modelID := args[0]
 
-	url, err := client.DefaultURL(fmt.Sprintf("/v1/kronk/models/%s", modelID))
+	base, err := client.DefaultURL("/v1/kronk/models")
 	if err != nil {
 		return fmt.Errorf("default-url: %w", err)
 	}
+	endpoint := fmt.Sprintf("%s/%s", base, url.PathEscape(modelID))
 
-	fmt.Println("URL:", url)
+	fmt.Println("URL:", endpoint)
 
 	cln := client.New(
 		client.FmtLogger,
@@ -33,7 +35,7 @@ func runWeb(args []string) error {
 	defer cancel()
 
 	var info toolapp.ModelInfoResponse
-	if err := cln.Do(ctx, http.MethodGet, url, nil, &info); err != nil {
+	if err := cln.Do(ctx, http.MethodGet, endpoint, nil, &info); err != nil {
 		return fmt.Errorf("do: unable to get model information: %w", err)
 	}
 
@@ -162,28 +164,11 @@ func printLocal(fi models.FileInfo, mi models.ModelInfo, rmc models.ModelConfig)
 	fmt.Println("Metadata")
 	fmt.Println("--------")
 	for k, v := range mi.Metadata {
-		fmt.Printf("  %s: %s\n", k, formatMetadataValue(v))
+		fmt.Printf("  %s: %s\n", k, metadatafmt.Value(v))
 	}
 }
 
 // =============================================================================
-
-func formatMetadataValue(value string) string {
-	if len(value) < 2 || value[0] != '[' {
-		return value
-	}
-
-	inner := value[1 : len(value)-1]
-	elements := strings.Split(inner, " ")
-
-	if len(elements) <= 6 {
-		return value
-	}
-
-	first := elements[:3]
-
-	return fmt.Sprintf("[%s, ...]", strings.Join(first, ", "))
-}
 
 func formatBytes(b int64) string {
 	const (

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
+	"github.com/ardanlabs/kronk/cmd/kronk/kronk/metadatafmt"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
@@ -142,7 +143,7 @@ func print(d models.CatalogDetail) {
 		fmt.Println("Model Metadata")
 		fmt.Println("--------------")
 		for k, v := range d.ModelMetadata {
-			fmt.Printf("  %s: %s\n", k, v)
+			fmt.Printf("  %s: %s\n", k, metadatafmt.Value(v))
 		}
 	}
 }
