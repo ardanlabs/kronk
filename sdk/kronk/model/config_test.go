@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -383,16 +384,17 @@ func TestAdjustConfigUsesConfiguredPrefillBatchSize(t *testing.T) {
 	}
 }
 
-func TestAdjustConfigPreservesYZMAThreadDefaults(t *testing.T) {
+func TestAdjustConfigUsesKronkThreadDefault(t *testing.T) {
+	defaultThreads := max(defNThreads, runtime.NumCPU())
 	tests := []struct {
 		name             string
 		cfg              Config
 		wantThreads      int
 		wantThreadsBatch int
 	}{
-		{"unset", NewConfig(WithContextWindow(8192)), 0, 0},
-		{"zero", NewConfig(WithContextWindow(8192), WithNThreads(0), WithNThreadsBatch(0)), 0, 0},
-		{"negative", NewConfig(WithContextWindow(8192), WithNThreads(-1), WithNThreadsBatch(-1)), 0, 0},
+		{"unset", NewConfig(WithContextWindow(8192)), defaultThreads, defaultThreads},
+		{"zero", NewConfig(WithContextWindow(8192), WithNThreads(0), WithNThreadsBatch(0)), defaultThreads, defaultThreads},
+		{"negative", NewConfig(WithContextWindow(8192), WithNThreads(-1), WithNThreadsBatch(-1)), defaultThreads, defaultThreads},
 		{"configured", NewConfig(WithContextWindow(8192), WithNThreads(2), WithNThreadsBatch(6)), 2, 6},
 	}
 
