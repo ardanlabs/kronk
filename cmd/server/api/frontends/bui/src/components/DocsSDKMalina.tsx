@@ -27,6 +27,7 @@ export default function DocsSDKMalina() {
       <div className="page-header">
         <h2>Malina Package</h2>
         <p>Package malina provides a concurrency-safe API for generating images with stable-diffusion.cpp through the Malina raw bindings.</p>
+        <p>Experimental: This package's public API is subject to change.</p>
       </div>
 
       <div className="doc-layout">
@@ -288,7 +289,10 @@ export default function DocsSDKMalina() {
               <pre className="code-block">
                 <code>{`var (`}</code>
               </pre>
-              <p className="doc-description">// ErrInvalidRequest identifies invalid generation parameters. ErrInvalidRequest = model.ErrInvalidRequest // ErrAdmissionTimeout identifies expiration while waiting for admission. ErrAdmissionTimeout = errors.New("generation admission timed out") // ErrClosed identifies use after unloading has begun. ErrClosed = errors.New("malina is closed") // ErrPoisoned identifies a terminal native generation failure. ErrPoisoned = errors.New("malina is poisoned")</p>
+              <p className="doc-description">// ErrInvalidRequest identifies invalid generation parameters. ErrInvalidRequest = model.ErrInvalidRequest</p>
+              <p className="doc-description">// ErrAdmissionTimeout identifies expiration while waiting for admission. ErrAdmissionTimeout = errors.New("generation admission timed out")</p>
+              <p className="doc-description">// ErrClosed identifies use after unloading has begun. ErrClosed = errors.New("malina is closed")</p>
+              <p className="doc-description">// ErrPoisoned identifies a terminal native generation failure. ErrPoisoned = errors.New("malina is poisoned")</p>
             </div>
 
             <div className="doc-section" id="var-discardlogger">

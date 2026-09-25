@@ -250,12 +250,23 @@ func (s *lineScanner) back() {
 }
 
 func parseDescription(scanner *lineScanner) string {
-	var desc []string
+	var paragraphs []string
+	var lines []string
+
+	flush := func() {
+		if len(lines) == 0 {
+			return
+		}
+
+		paragraphs = append(paragraphs, strings.Join(lines, " "))
+		lines = nil
+	}
 
 	for scanner.hasNext() {
 		line := scanner.next()
 		if line == "" {
-			break
+			flush()
+			continue
 		}
 
 		if strings.HasPrefix(line, "CONSTANTS") || strings.HasPrefix(line, "VARIABLES") ||
@@ -264,10 +275,44 @@ func parseDescription(scanner *lineScanner) string {
 			break
 		}
 
-		desc = append(desc, strings.TrimSpace(line))
+		lines = append(lines, strings.TrimSpace(line))
+	}
+	flush()
+
+	return strings.Join(paragraphs, "\n\n")
+}
+
+func parseIndentedComment(scanner *lineScanner) string {
+	var paragraphs []string
+	var lines []string
+
+	flush := func() {
+		if len(lines) == 0 {
+			return
+		}
+
+		paragraphs = append(paragraphs, strings.Join(lines, " "))
+		lines = nil
 	}
 
-	return strings.Join(desc, " ")
+	for scanner.hasNext() {
+		line := scanner.peek()
+		if line == "" {
+			scanner.next()
+			flush()
+			continue
+		}
+
+		if !strings.HasPrefix(line, "    ") && !strings.HasPrefix(line, "\t") {
+			break
+		}
+
+		scanner.next()
+		lines = append(lines, strings.TrimSpace(line))
+	}
+	flush()
+
+	return strings.Join(paragraphs, "\n\n")
 }
 
 func parseConstants(scanner *lineScanner) []constGroup {
@@ -312,25 +357,7 @@ func parseConstBlock(firstLine string, scanner *lineScanner) (string, string) {
 		}
 	}
 
-	var commentLines []string
-
-	for scanner.hasNext() {
-		line := scanner.peek()
-		if line == "" {
-			scanner.next()
-			continue
-		}
-
-		if !strings.HasPrefix(line, "    ") && !strings.HasPrefix(line, "\t") {
-			break
-		}
-
-		scanner.next()
-
-		commentLines = append(commentLines, strings.TrimSpace(line))
-	}
-
-	return strings.Join(codeLines, "\n"), strings.Join(commentLines, " ")
+	return strings.Join(codeLines, "\n"), parseIndentedComment(scanner)
 }
 
 var reConstName1 = regexp.MustCompile(`(\w+)\s*=`)
@@ -392,25 +419,7 @@ func parseVarBlock(firstLine string, scanner *lineScanner) (string, string) {
 		braceCount += strings.Count(line, "{") - strings.Count(line, "}")
 	}
 
-	var commentLines []string
-
-	for scanner.hasNext() {
-		line := scanner.peek()
-		if line == "" {
-			scanner.next()
-			continue
-		}
-
-		if !strings.HasPrefix(line, "    ") && !strings.HasPrefix(line, "\t") {
-			break
-		}
-
-		scanner.next()
-
-		commentLines = append(commentLines, strings.TrimSpace(line))
-	}
-
-	return strings.Join(codeLines, "\n"), strings.Join(commentLines, " ")
+	return strings.Join(codeLines, "\n"), parseIndentedComment(scanner)
 }
 
 var reVarName = regexp.MustCompile(`var\s+(\w+)`)
@@ -452,25 +461,7 @@ func parseFunction(signature string, scanner *lineScanner) function {
 		name:     extractFuncName(signature),
 		receiver: extractReceiver(signature)}
 
-	var commentLines []string
-
-	for scanner.hasNext() {
-		line := scanner.peek()
-		if line == "" {
-			scanner.next()
-			continue
-		}
-
-		if !strings.HasPrefix(line, "    ") && !strings.HasPrefix(line, "\t") {
-			break
-		}
-
-		scanner.next()
-
-		commentLines = append(commentLines, strings.TrimSpace(line))
-	}
-
-	fn.comment = strings.Join(commentLines, " ")
+	fn.comment = parseIndentedComment(scanner)
 
 	return fn
 }
@@ -587,27 +578,23 @@ func parseType(firstLine string, scanner *lineScanner) typeDef {
 
 	td.code = strings.Join(codeLines, "\n")
 
-	var commentLines []string
+	td.comment = parseIndentedComment(scanner)
 
-	for scanner.hasNext() {
-		line := scanner.peek()
-		if line == "" {
-			scanner.next()
+	return td
+}
+
+func writeDescription(b *strings.Builder, indent, className, description string) {
+	for paragraph := range strings.SplitSeq(description, "\n\n") {
+		if paragraph == "" {
 			continue
 		}
 
-		if !strings.HasPrefix(line, "    ") && !strings.HasPrefix(line, "\t") {
-			break
+		class := ""
+		if className != "" {
+			class = fmt.Sprintf(" className=\"%s\"", className)
 		}
-
-		scanner.next()
-
-		commentLines = append(commentLines, strings.TrimSpace(line))
+		fmt.Fprintf(b, "%s<p%s>%s</p>\n", indent, class, escapeJSX(paragraph))
 	}
-
-	td.comment = strings.Join(commentLines, " ")
-
-	return td
 }
 
 func generateTSX(docs *packageDocs, displayName string) string {
@@ -655,7 +642,7 @@ func generateTSX(docs *packageDocs, displayName string) string {
 
 	b.WriteString("      <div className=\"page-header\">\n")
 	b.WriteString(fmt.Sprintf("        <h2>%s Package</h2>\n", displayName))
-	b.WriteString(fmt.Sprintf("        <p>%s</p>\n", escapeJSX(docs.description)))
+	writeDescription(&b, "        ", "", docs.description)
 	b.WriteString("      </div>\n\n")
 
 	b.WriteString("      <div className=\"doc-layout\">\n")
@@ -679,7 +666,7 @@ func generateTSX(docs *packageDocs, displayName string) string {
 			b.WriteString(fmt.Sprintf("                <code>%s</code>\n", escapeJSX(f.signature)))
 			b.WriteString("              </pre>\n")
 			if f.comment != "" {
-				b.WriteString(fmt.Sprintf("              <p className=\"doc-description\">%s</p>\n", escapeJSX(f.comment)))
+				writeDescription(&b, "              ", "doc-description", f.comment)
 			}
 			b.WriteString("            </div>\n")
 		}
@@ -697,7 +684,7 @@ func generateTSX(docs *packageDocs, displayName string) string {
 			b.WriteString(fmt.Sprintf("                <code>{`%s`}</code>\n", escapeTemplateLiteral(t.code)))
 			b.WriteString("              </pre>\n")
 			if t.comment != "" {
-				b.WriteString(fmt.Sprintf("              <p className=\"doc-description\">%s</p>\n", escapeJSX(t.comment)))
+				writeDescription(&b, "              ", "doc-description", t.comment)
 			}
 			b.WriteString("            </div>\n")
 		}
@@ -719,7 +706,7 @@ func generateTSX(docs *packageDocs, displayName string) string {
 			b.WriteString(fmt.Sprintf("                <code>%s</code>\n", escapeJSX(m.signature)))
 			b.WriteString("              </pre>\n")
 			if m.comment != "" {
-				b.WriteString(fmt.Sprintf("              <p className=\"doc-description\">%s</p>\n", escapeJSX(m.comment)))
+				writeDescription(&b, "              ", "doc-description", m.comment)
 			}
 			b.WriteString("            </div>\n")
 		}
@@ -737,7 +724,7 @@ func generateTSX(docs *packageDocs, displayName string) string {
 			b.WriteString(fmt.Sprintf("                <code>{`%s`}</code>\n", escapeTemplateLiteral(c.code)))
 			b.WriteString("              </pre>\n")
 			if c.comment != "" {
-				b.WriteString(fmt.Sprintf("              <p className=\"doc-description\">%s</p>\n", escapeJSX(c.comment)))
+				writeDescription(&b, "              ", "doc-description", c.comment)
 			}
 			b.WriteString("            </div>\n")
 		}
@@ -755,7 +742,7 @@ func generateTSX(docs *packageDocs, displayName string) string {
 			b.WriteString(fmt.Sprintf("                <code>{`%s`}</code>\n", escapeTemplateLiteral(v.code)))
 			b.WriteString("              </pre>\n")
 			if v.comment != "" {
-				b.WriteString(fmt.Sprintf("              <p className=\"doc-description\">%s</p>\n", escapeJSX(v.comment)))
+				writeDescription(&b, "              ", "doc-description", v.comment)
 			}
 			b.WriteString("            </div>\n")
 		}

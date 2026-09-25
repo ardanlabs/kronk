@@ -27,6 +27,7 @@ export default function DocsSDKPool() {
       <div className="page-header">
         <h2>Pool Package</h2>
         <p>Package pool manages a pool of kronk APIs for specific llama models. Used by the model server to manage the number of models that are maintained in memory at any given time.</p>
+        <p>The pool is a thin, llama-typed wrapper around the generic engine in sdk/pool. The cache, eviction policy, budget reservations, and concurrent-load deduplication live in the core; the llama-specific planning, loading, and display logic lives in this package's llama.go (which implements loader.Loader[*kronk.Kronk]). Sibling wrappers in sdk/bucky/pool (whisper) follow the same shape and share the resman.Manager passed in via Config.Resman so VRAM/RAM budgeting is unified across every backend.</p>
       </div>
 
       <div className="doc-layout">
@@ -88,7 +89,13 @@ export default function DocsSDKPool() {
 	InsecureLogging bool
 }`}</code>
               </pre>
-              <p className="doc-description">Config represents settings for the kronk (llama) pool. Models is the pre-built catalog the pool consults for path / size resolution. Required. Resman is the shared resource manager. Building it outside the pool lets every backend (kronk, bucky, …) charge the same byte budget. Required. ModelConfigFile is the optional per-model override file. Empty means no overrides. ModelsInPool is the safety-net cap on the number of distinct entries the pool keeps, independent of the byte budget. Defaults to 10 when zero. TTL is the time an existing model can live in the pool without being used. Zero disables idle expiration. Negative values are invalid. InsecureLogging, when true, logs potentially sensitive data such as message content and detailed model configuration.</p>
+              <p className="doc-description">Config represents settings for the kronk (llama) pool.</p>
+              <p className="doc-description">Models is the pre-built catalog the pool consults for path / size resolution. Required.</p>
+              <p className="doc-description">Resman is the shared resource manager. Building it outside the pool lets every backend (kronk, bucky, …) charge the same byte budget. Required.</p>
+              <p className="doc-description">ModelConfigFile is the optional per-model override file. Empty means no overrides.</p>
+              <p className="doc-description">ModelsInPool is the safety-net cap on the number of distinct entries the pool keeps, independent of the byte budget. Defaults to 10 when zero.</p>
+              <p className="doc-description">TTL is the time an existing model can live in the pool without being used. Zero disables idle expiration. Negative values are invalid.</p>
+              <p className="doc-description">InsecureLogging, when true, logs potentially sensitive data such as message content and detailed model configuration.</p>
             </div>
 
             <div className="doc-section" id="type-imcsessiondetail">
@@ -140,7 +147,8 @@ export default function DocsSDKPool() {
 	Status        string
 }`}</code>
               </pre>
-              <p className="doc-description">ModelDetail provides details for the models in the pool. Backend identifies which pool produced the entry ("kronk" for llama.cpp models, "bucky" for whisper models). The BUI uses it to tag rows and tailor the unload path.</p>
+              <p className="doc-description">ModelDetail provides details for the models in the pool.</p>
+              <p className="doc-description">Backend identifies which pool produced the entry ("kronk" for llama.cpp models, "bucky" for whisper models). The BUI uses it to tag rows and tailor the unload path.</p>
             </div>
 
             <div className="doc-section" id="type-pool">
@@ -162,7 +170,8 @@ export default function DocsSDKPool() {
               <pre className="code-block">
                 <code>func (l *Llama) Display(krn *kronk.Kronk, modelID string) loader.Display</code>
               </pre>
-              <p className="doc-description">Display implements loader.Loader.Display for the llama backend. It returns the KV cache and total VRAM values to surface in BUI/observability output for a loaded model. Both this path and the SDK-internal calculateVRAMDiag route through vram.FromFiles, so the two computations are byte-identical for any well-formed local model. The dedicated lookup is retained so a hypothetical resman-side failure (e.g. an index miss) cleanly falls back to the values the SDK stored at load time rather than zeroing out the BUI display.</p>
+              <p className="doc-description">Display implements loader.Loader.Display for the llama backend.</p>
+              <p className="doc-description">It returns the KV cache and total VRAM values to surface in BUI/observability output for a loaded model. Both this path and the SDK-internal calculateVRAMDiag route through vram.FromFiles, so the two computations are byte-identical for any well-formed local model. The dedicated lookup is retained so a hypothetical resman-side failure (e.g. an index miss) cleanly falls back to the values the SDK stored at load time rather than zeroing out the BUI display.</p>
             </div>
 
             <div className="doc-section" id="method-llama-load">
@@ -194,7 +203,8 @@ export default function DocsSDKPool() {
               <pre className="code-block">
                 <code>func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRequest, error)</code>
               </pre>
-              <p className="doc-description">Plan implements loader.Loader.Plan for the llama backend. It charges the predicted VRAM and system-RAM footprints to the resman independently so MoE models — whose routed experts can live on either side depending on the runtime placement — are accounted for accurately. Charging only the GPU side silently drops the CPU-resident expert weights, producing under-counts of the real resident footprint and exposing the pool to OOM on multi-load scenarios.</p>
+              <p className="doc-description">Plan implements loader.Loader.Plan for the llama backend.</p>
+              <p className="doc-description">It charges the predicted VRAM and system-RAM footprints to the resman independently so MoE models — whose routed experts can live on either side depending on the runtime placement — are accounted for accurately. Charging only the GPU side silently drops the CPU-resident expert weights, producing under-counts of the real resident footprint and exposing the pool to OOM on multi-load scenarios.</p>
             </div>
 
             <div className="doc-section" id="method-llama-prepare">
@@ -274,7 +284,8 @@ export default function DocsSDKPool() {
               <pre className="code-block">
                 <code>func (p *Pool) Invalidate(key string)</code>
               </pre>
-              <p className="doc-description">Invalidate removes a single entry from the pool, triggering unload. This is fire-and-forget: the eviction callback runs asynchronously, so the resource manager's reservation may not be released by the time this returns. Callers that need a consistent post-eviction view of the pool should use InvalidateSync instead.</p>
+              <p className="doc-description">Invalidate removes a single entry from the pool, triggering unload.</p>
+              <p className="doc-description">This is fire-and-forget: the eviction callback runs asynchronously, so the resource manager's reservation may not be released by the time this returns. Callers that need a consistent post-eviction view of the pool should use InvalidateSync instead.</p>
             </div>
 
             <div className="doc-section" id="method-pool-invalidatesync">
@@ -298,7 +309,9 @@ export default function DocsSDKPool() {
               <pre className="code-block">
                 <code>func (p *Pool) ModelStatus() ([]ModelDetail, error)</code>
               </pre>
-              <p className="doc-description">ModelStatus returns information about the current models in the pool. The result includes both fully loaded models (entries currently in the cache) and in-flight loads (memory reservations that have not yet completed their GGUF read). The latter are returned with Status=ModelStatusLoading so BUI/observability can show them as occupying budget while still being unavailable to serve requests. Cache keys use provider/modelID or provider/modelID/profile. The catalog resolver recovers the physical model metadata without discarding a profile.</p>
+              <p className="doc-description">ModelStatus returns information about the current models in the pool.</p>
+              <p className="doc-description">The result includes both fully loaded models (entries currently in the cache) and in-flight loads (memory reservations that have not yet completed their GGUF read). The latter are returned with Status=ModelStatusLoading so BUI/observability can show them as occupying budget while still being unavailable to serve requests.</p>
+              <p className="doc-description">Cache keys use provider/modelID or provider/modelID/profile. The catalog resolver recovers the physical model metadata without discarding a profile.</p>
             </div>
 
             <div className="doc-section" id="method-pool-resolvedmodelconfig">

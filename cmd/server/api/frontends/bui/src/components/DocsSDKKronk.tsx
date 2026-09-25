@@ -345,7 +345,9 @@ export default function DocsSDKKronk() {
               <pre className="code-block">
                 <code>func (krn *Kronk) Embeddings(ctx context.Context, d model.D) (model.EmbedReponse, error)</code>
               </pre>
-              <p className="doc-description">Embeddings provides support to interact with an embedding model. Supported options in d: - input (string): the text to embed (required) - truncate (bool): if true, truncate input to fit context window (default: false) - truncate_direction (string): "right" (default) or "left" - dimensions (int): reduce output to first N dimensions (for Matryoshka models) Each model instance processes calls sequentially (llama.cpp only supports sequence 0 for embedding extraction). Use NSeqMax &gt; 1 to create multiple model instances for concurrent request handling. Batch multiple texts in the input parameter for better performance within a single request.</p>
+              <p className="doc-description">Embeddings provides support to interact with an embedding model.</p>
+              <p className="doc-description">Supported options in d: - input (string): the text to embed (required) - truncate (bool): if true, truncate input to fit context window (default: false) - truncate_direction (string): "right" (default) or "left" - dimensions (int): reduce output to first N dimensions (for Matryoshka models)</p>
+              <p className="doc-description">Each model instance processes calls sequentially (llama.cpp only supports sequence 0 for embedding extraction). Use NSeqMax &gt; 1 to create multiple model instances for concurrent request handling. Batch multiple texts in the input parameter for better performance within a single request.</p>
             </div>
 
             <div className="doc-section" id="method-kronk-embeddingshttp">
@@ -401,7 +403,9 @@ export default function DocsSDKKronk() {
               <pre className="code-block">
                 <code>func (krn *Kronk) Rerank(ctx context.Context, d model.D) (model.RerankResponse, error)</code>
               </pre>
-              <p className="doc-description">Rerank provides support to interact with a reranker model. Supported options in d: - query (string): the query to rank documents against (required) - documents ([]string): the documents to rank (required) - top_n (int): return only the top N results (optional, default: all) - return_documents (bool): include document text in results (default: false) Each model instance processes calls sequentially (llama.cpp only supports sequence 0 for rerank extraction). Use NSeqMax &gt; 1 to create multiple model instances for concurrent request handling. Batch multiple texts in the input parameter for better performance within a single request.</p>
+              <p className="doc-description">Rerank provides support to interact with a reranker model.</p>
+              <p className="doc-description">Supported options in d: - query (string): the query to rank documents against (required) - documents ([]string): the documents to rank (required) - top_n (int): return only the top N results (optional, default: all) - return_documents (bool): include document text in results (default: false)</p>
+              <p className="doc-description">Each model instance processes calls sequentially (llama.cpp only supports sequence 0 for rerank extraction). Use NSeqMax &gt; 1 to create multiple model instances for concurrent request handling. Batch multiple texts in the input parameter for better performance within a single request.</p>
             </div>
 
             <div className="doc-section" id="method-kronk-rerankhttp">
@@ -449,7 +453,9 @@ export default function DocsSDKKronk() {
               <pre className="code-block">
                 <code>func (krn *Kronk) Tokenize(ctx context.Context, d model.D) (model.TokenizeResponse, error)</code>
               </pre>
-              <p className="doc-description">Tokenize returns the token count for a text input. Supported options in d: - input (string): the text to tokenize (required) - apply_template (bool): if true, wrap input as a user message and apply the model's chat template before tokenizing (default: false) - add_generation_prompt (bool): when apply_template is true, controls whether the assistant role prefix is appended to the prompt (default: true) When apply_template is true, the returned count includes all template overhead (role markers, separators, generation prompt). This reflects the actual number of tokens that would be fed to the model.</p>
+              <p className="doc-description">Tokenize returns the token count for a text input.</p>
+              <p className="doc-description">Supported options in d: - input (string): the text to tokenize (required) - apply_template (bool): if true, wrap input as a user message and apply the model's chat template before tokenizing (default: false) - add_generation_prompt (bool): when apply_template is true, controls whether the assistant role prefix is appended to the prompt (default: true)</p>
+              <p className="doc-description">When apply_template is true, the returned count includes all template overhead (role markers, separators, generation prompt). This reflects the actual number of tokens that would be fed to the model.</p>
             </div>
 
             <div className="doc-section" id="method-kronk-tokenizehttp">

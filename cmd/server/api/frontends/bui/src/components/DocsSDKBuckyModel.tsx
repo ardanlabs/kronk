@@ -46,7 +46,9 @@ export default function DocsSDKBuckyModel() {
               <pre className="code-block">
                 <code>func Decode(ctx context.Context, r io.Reader) ([]float32, error)</code>
               </pre>
-              <p className="doc-description">Decode reads audio in any format the bucky SDK supports and returns the 16 kHz mono float32 PCM that Transcribe expects. WAV, MP3, and FLAC are decoded in-process by the upstream github.com/ardanlabs/bucky/pkg/audio package. Anything else (WebM / Opus, MP4 / AAC, OGG, M4A, ...) is transcoded to WAV by shelling out to ffmpeg via sdk/bucky/ffmpeg. ffmpeg is located once on first use and reused for the lifetime of the process. When ffmpeg is not installed or the transcode fails, Decode returns an error that wraps audio.ErrUnsupportedFormat so callers that already match the upstream sentinel keep working and the user-visible error category remains "unsupported format".</p>
+              <p className="doc-description">Decode reads audio in any format the bucky SDK supports and returns the 16 kHz mono float32 PCM that Transcribe expects.</p>
+              <p className="doc-description">WAV, MP3, and FLAC are decoded in-process by the upstream github.com/ardanlabs/bucky/pkg/audio package. Anything else (WebM / Opus, MP4 / AAC, OGG, M4A, ...) is transcoded to WAV by shelling out to ffmpeg via sdk/bucky/ffmpeg. ffmpeg is located once on first use and reused for the lifetime of the process.</p>
+              <p className="doc-description">When ffmpeg is not installed or the transcode fails, Decode returns an error that wraps audio.ErrUnsupportedFormat so callers that already match the upstream sentinel keep working and the user-visible error category remains "unsupported format".</p>
             </div>
 
             <div className="doc-section" id="func-decodechannels">
@@ -54,7 +56,8 @@ export default function DocsSDKBuckyModel() {
               <pre className="code-block">
                 <code>func DecodeChannels(ctx context.Context, r io.Reader) ([][]float32, error)</code>
               </pre>
-              <p className="doc-description">DecodeChannels reads audio in any format the bucky SDK supports and returns one 16 kHz mono float32 PCM slice per source channel, ready for channel-separated (per-speaker) transcription. Mono input yields a one-element result. Native formats (WAV, FLAC, MP3) are decoded in-process via audio.DecodeRaw, which preserves the source channel layout: each channel is de-interleaved with audio.SplitChannels and resampled to 16 kHz with audio.ResampleLinear. Anything that requires ffmpeg (WebM / Opus, MP4 / AAC, OGG, M4A, ...) is downmixed to a single mono channel by the transcode, so such inputs also return a one-element result.</p>
+              <p className="doc-description">DecodeChannels reads audio in any format the bucky SDK supports and returns one 16 kHz mono float32 PCM slice per source channel, ready for channel-separated (per-speaker) transcription. Mono input yields a one-element result.</p>
+              <p className="doc-description">Native formats (WAV, FLAC, MP3) are decoded in-process via audio.DecodeRaw, which preserves the source channel layout: each channel is de-interleaved with audio.SplitChannels and resampled to 16 kHz with audio.ResampleLinear. Anything that requires ffmpeg (WebM / Opus, MP4 / AAC, OGG, M4A, ...) is downmixed to a single mono channel by the transcode, so such inputs also return a one-element result.</p>
             </div>
 
             <div className="doc-section" id="func-langid">
@@ -62,7 +65,8 @@ export default function DocsSDKBuckyModel() {
               <pre className="code-block">
                 <code>func LangID(lang string) int32</code>
               </pre>
-              <p className="doc-description">LangID returns the whisper.cpp internal id for the supplied language code (e.g. "de" → 2). Returns -1 if the code is unknown. The bucky Init function must have been called before LangID, since the underlying FFI symbol is resolved by whisper.Load.</p>
+              <p className="doc-description">LangID returns the whisper.cpp internal id for the supplied language code (e.g. "de" → 2). Returns -1 if the code is unknown.</p>
+              <p className="doc-description">The bucky Init function must have been called before LangID, since the underlying FFI symbol is resolved by whisper.Load.</p>
             </div>
 
             <div className="doc-section" id="func-langmaxid">
@@ -178,7 +182,8 @@ export default function DocsSDKBuckyModel() {
 	Log applog.Logger
 }`}</code>
               </pre>
-              <p className="doc-description">Config carries the per-model whisper.cpp configuration. Fields are resolved through the functional Option pattern (NewConfig + WithX) at construction time and treated as read-only thereafter. ModelPath is required. The remaining fields all have sensible zero defaults that match whisper_context_default_params and the per-handle backpressure conventions used by sdk/kronk.</p>
+              <p className="doc-description">Config carries the per-model whisper.cpp configuration. Fields are resolved through the functional Option pattern (NewConfig + WithX) at construction time and treated as read-only thereafter.</p>
+              <p className="doc-description">ModelPath is required. The remaining fields all have sensible zero defaults that match whisper_context_default_params and the per-handle backpressure conventions used by sdk/kronk.</p>
             </div>
 
             <div className="doc-section" id="type-diarization">
@@ -215,7 +220,8 @@ export default function DocsSDKBuckyModel() {
 	Err      error // non-nil only when Kind == EventError
 }`}</code>
               </pre>
-              <p className="doc-description">Event is one item delivered on a Stream's Events channel. Text semantics depend on Kind (see EventPartial / EventFinal): a Partial carries the full replaceable hypothesis for the un-committed window, a Final carries the committed text to append. Consumers render live by replacing on Partial and committing on Final.</p>
+              <p className="doc-description">Event is one item delivered on a Stream's Events channel.</p>
+              <p className="doc-description">Text semantics depend on Kind (see EventPartial / EventFinal): a Partial carries the full replaceable hypothesis for the un-committed window, a Final carries the committed text to append. Consumers render live by replacing on Partial and committing on Final.</p>
             </div>
 
             <div className="doc-section" id="type-eventkind">
@@ -233,7 +239,8 @@ export default function DocsSDKBuckyModel() {
 	// Has unexported fields.
 }`}</code>
               </pre>
-              <p className="doc-description">Model owns a single whisper.Context (the model weights) plus an internal statePool that allocates Config.NSeqMax whisper.State instances against that context. Each state carries its own mel spectrogram, KV cache, and compute buffer, so concurrent transcribe / language-detect calls can run in parallel against one set of shared weights. This mirrors how sdk/kronk/model handles embedding and rerank concurrency: one llama.Model + NSeqMax llama.Context instances behind a small pool.</p>
+              <p className="doc-description">Model owns a single whisper.Context (the model weights) plus an internal statePool that allocates Config.NSeqMax whisper.State instances against that context. Each state carries its own mel spectrogram, KV cache, and compute buffer, so concurrent transcribe / language-detect calls can run in parallel against one set of shared weights.</p>
+              <p className="doc-description">This mirrors how sdk/kronk/model handles embedding and rerank concurrency: one llama.Model + NSeqMax llama.Context instances behind a small pool.</p>
             </div>
 
             <div className="doc-section" id="type-modelinfo">
@@ -324,7 +331,8 @@ export default function DocsSDKBuckyModel() {
 	// Has unexported fields.
 }`}</code>
               </pre>
-              <p className="doc-description">Stream is a long-lived transcription session. It borrows one whisper.State from the model's pool for its entire lifetime and emits transcript Events incrementally as audio is fed in. A Stream is reusable indefinitely via Reset. Close must be called exactly once when done. Feed/FeedPCM are producer-side (single goroutine). Consumers must range over Events() until it is closed. Reset and Close are safe to call from any goroutine; both serialize with the worker.</p>
+              <p className="doc-description">Stream is a long-lived transcription session. It borrows one whisper.State from the model's pool for its entire lifetime and emits transcript Events incrementally as audio is fed in. A Stream is reusable indefinitely via Reset. Close must be called exactly once when done.</p>
+              <p className="doc-description">Feed/FeedPCM are producer-side (single goroutine). Consumers must range over Events() until it is closed. Reset and Close are safe to call from any goroutine; both serialize with the worker.</p>
             </div>
 
             <div className="doc-section" id="type-streamconfig">
@@ -605,7 +613,8 @@ export default function DocsSDKBuckyModel() {
               <pre className="code-block">
                 <code>func (m *Model) DetectLanguage(ctx context.Context, samples []float32, withProbs bool) (string, []float32, error)</code>
               </pre>
-              <p className="doc-description">DetectLanguage runs a short whisper pass on the supplied 16 kHz mono float32 PCM samples and returns the detected language code along with the per-language probability vector (length LangMaxID()+1) when withProbs is true. DetectLanguage acquires a whisper.State from the model's internal pool, so up to Config.NSeqMax goroutines may run DetectLanguage in parallel against the same Model.</p>
+              <p className="doc-description">DetectLanguage runs a short whisper pass on the supplied 16 kHz mono float32 PCM samples and returns the detected language code along with the per-language probability vector (length LangMaxID()+1) when withProbs is true.</p>
+              <p className="doc-description">DetectLanguage acquires a whisper.State from the model's internal pool, so up to Config.NSeqMax goroutines may run DetectLanguage in parallel against the same Model.</p>
             </div>
 
             <div className="doc-section" id="method-model-modelinfo">
@@ -629,7 +638,8 @@ export default function DocsSDKBuckyModel() {
               <pre className="code-block">
                 <code>func (m *Model) Transcribe(ctx context.Context, samples []float32, opts ...TranscribeOption) (Transcription, error)</code>
               </pre>
-              <p className="doc-description">Transcribe runs the whisper.cpp pipeline on the provided 16 kHz mono float32 PCM samples and returns the decoded text along with per-segment metadata. Transcribe acquires a whisper.State from the model's internal pool, so up to Config.NSeqMax goroutines may run Transcribe in parallel against the same Model. The acquired state is released back to the pool when Transcribe returns.</p>
+              <p className="doc-description">Transcribe runs the whisper.cpp pipeline on the provided 16 kHz mono float32 PCM samples and returns the decoded text along with per-segment metadata.</p>
+              <p className="doc-description">Transcribe acquires a whisper.State from the model's internal pool, so up to Config.NSeqMax goroutines may run Transcribe in parallel against the same Model. The acquired state is released back to the pool when Transcribe returns.</p>
             </div>
 
             <div className="doc-section" id="method-model-transcribechannels">
@@ -637,7 +647,8 @@ export default function DocsSDKBuckyModel() {
               <pre className="code-block">
                 <code>func (m *Model) TranscribeChannels(ctx context.Context, channels [][]float32, opts ...TranscribeOption) (Diarization, error)</code>
               </pre>
-              <p className="doc-description">TranscribeChannels transcribes each supplied channel of 16 kHz mono float32 PCM separately and merges the results into a diarized transcript. Each channel is treated as one speaker, the common layout for call-center and meeting recordings where every participant has a dedicated channel. Pass the slices returned by DecodeChannels. Channels are transcribed sequentially. Each channel acquires and releases a whisper.State from the model's internal pool, so other goroutines may still run Transcribe against the same Model between channels. Empty channels are skipped.</p>
+              <p className="doc-description">TranscribeChannels transcribes each supplied channel of 16 kHz mono float32 PCM separately and merges the results into a diarized transcript. Each channel is treated as one speaker, the common layout for call-center and meeting recordings where every participant has a dedicated channel. Pass the slices returned by DecodeChannels.</p>
+              <p className="doc-description">Channels are transcribed sequentially. Each channel acquires and releases a whisper.State from the model's internal pool, so other goroutines may still run Transcribe against the same Model between channels. Empty channels are skipped.</p>
             </div>
 
             <div className="doc-section" id="method-model-transcribechannelsfile">
@@ -661,7 +672,8 @@ export default function DocsSDKBuckyModel() {
               <pre className="code-block">
                 <code>func (m *Model) Unload(ctx context.Context) error</code>
               </pre>
-              <p className="doc-description">Unload releases the state pool followed by the underlying whisper context. Unload is single-use per Model; subsequent calls return an error. The supplied ctx is accepted for parity with sdk/kronk.Model.Unload — whisper has no in-flight requests to drain at this layer because concurrency is owned by the sdk/bucky wrapper.</p>
+              <p className="doc-description">Unload releases the state pool followed by the underlying whisper context. Unload is single-use per Model; subsequent calls return an error.</p>
+              <p className="doc-description">The supplied ctx is accepted for parity with sdk/kronk.Model.Unload — whisper has no in-flight requests to drain at this layer because concurrency is owned by the sdk/bucky wrapper.</p>
             </div>
 
             <div className="doc-section" id="method-stream-close">
@@ -685,7 +697,8 @@ export default function DocsSDKBuckyModel() {
               <pre className="code-block">
                 <code>func (s *Stream) Feed(ctx context.Context, samples []float32) error</code>
               </pre>
-              <p className="doc-description">Feed pushes 16 kHz mono float32 PCM into the stream. It blocks, respecting ctx, when the internal buffer is full, back-pressuring a fast producer. Returns ctx.Err() on cancellation. The samples slice may be reused by the caller after Feed returns. This is the zero-conversion fast path: callers that already hold normalized 16 kHz mono float32 (browser Web Audio, CoreAudio) feed it directly. Callers with raw microphone PCM should use FeedPCM.</p>
+              <p className="doc-description">Feed pushes 16 kHz mono float32 PCM into the stream. It blocks, respecting ctx, when the internal buffer is full, back-pressuring a fast producer. Returns ctx.Err() on cancellation. The samples slice may be reused by the caller after Feed returns.</p>
+              <p className="doc-description">This is the zero-conversion fast path: callers that already hold normalized 16 kHz mono float32 (browser Web Audio, CoreAudio) feed it directly. Callers with raw microphone PCM should use FeedPCM.</p>
             </div>
 
             <div className="doc-section" id="method-stream-feedpcm">
@@ -693,7 +706,10 @@ export default function DocsSDKBuckyModel() {
               <pre className="code-block">
                 <code>func (s *Stream) FeedPCM(ctx context.Context, raw []byte, f AudioFormat) error</code>
               </pre>
-              <p className="doc-description">FeedPCM is the raw-microphone adapter for Feed. A capture device never hands you 16 kHz mono float32; it hands you raw interleaved PCM at the hardware rate (commonly 48 kHz) as int16 or float32, in arbitrary-size blocks. FeedPCM interprets, downmixes, resamples, and normalizes raw into the 16 kHz mono float32 the engine consumes, then funnels it into the same buffer Feed writes to. All conversion is pure Go with NO ffmpeg or other subprocess, reusing the helpers already in github.com/ardanlabs/bucky/pkg/audio. The pipeline is: 1. interpret raw bytes -&gt; []float32 per f.Sample (int16 -&gt; v/32768, or reinterpret little-endian float32); 2. downmix f.Channels interleaved -&gt; mono via audio.DownmixToMono; 3. resample f.SampleRate -&gt; 16000 via a per-stream audio.Resampler, the stateful streaming resampler that carries fractional phase across calls so block seams introduce no discontinuity or drift (linear interpolation, no anti-alias filter — adequate for whisper, which is trained on 16 kHz); 4. normalize clamp to [-1, 1]. raw need not contain a whole number of frames; a partial trailing frame is buffered until the next call so block boundaries that fall mid-frame do not corrupt the stream.</p>
+              <p className="doc-description">FeedPCM is the raw-microphone adapter for Feed. A capture device never hands you 16 kHz mono float32; it hands you raw interleaved PCM at the hardware rate (commonly 48 kHz) as int16 or float32, in arbitrary-size blocks. FeedPCM interprets, downmixes, resamples, and normalizes raw into the 16 kHz mono float32 the engine consumes, then funnels it into the same buffer Feed writes to.</p>
+              <p className="doc-description">All conversion is pure Go with NO ffmpeg or other subprocess, reusing the helpers already in github.com/ardanlabs/bucky/pkg/audio. The pipeline is:</p>
+              <p className="doc-description">1. interpret raw bytes -&gt; []float32 per f.Sample (int16 -&gt; v/32768, or reinterpret little-endian float32); 2. downmix f.Channels interleaved -&gt; mono via audio.DownmixToMono; 3. resample f.SampleRate -&gt; 16000 via a per-stream audio.Resampler, the stateful streaming resampler that carries fractional phase across calls so block seams introduce no discontinuity or drift (linear interpolation, no anti-alias filter — adequate for whisper, which is trained on 16 kHz); 4. normalize clamp to [-1, 1].</p>
+              <p className="doc-description">raw need not contain a whole number of frames; a partial trailing frame is buffered until the next call so block boundaries that fall mid-frame do not corrupt the stream.</p>
             </div>
 
             <div className="doc-section" id="method-stream-reset">
@@ -701,7 +717,8 @@ export default function DocsSDKBuckyModel() {
               <pre className="code-block">
                 <code>func (s *Stream) Reset(ctx context.Context, opts ...ResetOption) error</code>
               </pre>
-              <p className="doc-description">Reset clears the audio buffer and rolling linguistic context so the same Stream can begin a fresh logical session WITHOUT releasing its pool slot or worker. The whisper.State, pool slot, Events channel, and ActiveStreams count all survive; voice-activity detection state is cleared. Behavior is tunable via ResetOption. Reset blocks until any in-flight decode finishes and the worker has applied the reset.</p>
+              <p className="doc-description">Reset clears the audio buffer and rolling linguistic context so the same Stream can begin a fresh logical session WITHOUT releasing its pool slot or worker. The whisper.State, pool slot, Events channel, and ActiveStreams count all survive; voice-activity detection state is cleared.</p>
+              <p className="doc-description">Behavior is tunable via ResetOption. Reset blocks until any in-flight decode finishes and the worker has applied the reset.</p>
             </div>
           </div>
         </div>

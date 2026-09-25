@@ -27,6 +27,7 @@ export default function DocsSDKBucky() {
       <div className="page-header">
         <h2>Bucky Package</h2>
         <p>Package bucky is the high-level whisper SDK entry point. It mirrors the role sdk/kronk plays for the llama backend: cross-cutting initialization, library loading, and the Acquire / Transcribe surface.</p>
+        <p>Init publishes the whisper backend's libraries + catalog factories to the cross-backend registry and loads the whisper.cpp shared library so subsequent New / NewWithContext calls can construct a model handle. Callers that do not use whisper simply skip the Init call and the backend is never registered.</p>
       </div>
 
       <div className="doc-layout">
@@ -62,7 +63,8 @@ export default function DocsSDKBucky() {
               <pre className="code-block">
                 <code>func LangID(lang string) int32</code>
               </pre>
-              <p className="doc-description">LangID returns the whisper.cpp internal id for the supplied language code (e.g. "de" → 2). Returns -1 if the code is unknown. Init must have been called before LangID, since the FFI symbol is resolved by whisper.Load.</p>
+              <p className="doc-description">LangID returns the whisper.cpp internal id for the supplied language code (e.g. "de" → 2). Returns -1 if the code is unknown.</p>
+              <p className="doc-description">Init must have been called before LangID, since the FFI symbol is resolved by whisper.Load.</p>
             </div>
 
             <div className="doc-section" id="func-langmaxid">
@@ -160,7 +162,8 @@ export default function DocsSDKBucky() {
               <pre className="code-block">
                 <code>func (b *Bucky) DetectLanguage(ctx context.Context, samples []float32, withProbs bool) (string, []float32, error)</code>
               </pre>
-              <p className="doc-description">DetectLanguage runs a short whisper pass on the supplied 16 kHz mono float32 PCM samples and returns the detected language code along with the per-language probability vector (length LangMaxID()+1) when withProbs is true. DetectLanguage participates in the per-handle backpressure semaphore and blocks until a slot is available.</p>
+              <p className="doc-description">DetectLanguage runs a short whisper pass on the supplied 16 kHz mono float32 PCM samples and returns the detected language code along with the per-language probability vector (length LangMaxID()+1) when withProbs is true.</p>
+              <p className="doc-description">DetectLanguage participates in the per-handle backpressure semaphore and blocks until a slot is available.</p>
             </div>
 
             <div className="doc-section" id="method-bucky-modelconfig">

@@ -27,6 +27,7 @@ export default function DocsSDKMalinaModel() {
       <div className="page-header">
         <h2>MalinaModel Package</h2>
         <p>Package model configures and owns reusable stable-diffusion model contexts for the Malina SDK.</p>
+        <p>Experimental: This package's public API is subject to change.</p>
       </div>
 
       <div className="doc-layout">
@@ -402,7 +403,8 @@ export default function DocsSDKMalinaModel() {
               <pre className="code-block">
                 <code>{`var (`}</code>
               </pre>
-              <p className="doc-description">// ErrInvalidRequest identifies invalid generation parameters. ErrInvalidRequest = errors.New("invalid generation request") // ErrNativeGeneration identifies a failure returned by stable-diffusion. ErrNativeGeneration = errors.New("native generation failed")</p>
+              <p className="doc-description">// ErrInvalidRequest identifies invalid generation parameters. ErrInvalidRequest = errors.New("invalid generation request")</p>
+              <p className="doc-description">// ErrNativeGeneration identifies a failure returned by stable-diffusion. ErrNativeGeneration = errors.New("native generation failed")</p>
             </div>
           </div>
         </div>

@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	runtimeProbeTimeout = 10 * time.Second
+	runtimeProbeTimeout = 30 * time.Second
 	hostProbeTimeout    = 2 * time.Second
 
 	minimumCUDA13ComputeCapability = 7.5
