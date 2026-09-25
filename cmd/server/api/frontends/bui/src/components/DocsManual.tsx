@@ -4869,7 +4869,7 @@ if _, err := libs.Download(ctx, malina.FmtLogger); err != nil {
     libs.WithAllowUpgrade(true),
 )`}</code></pre>
           <p>An upgraded upstream library may not be ABI-compatible with the Malina and Kronk versions in use. Use this option for testing, not as a compatibility guarantee. Library installation is staged and activated atomically so a failed download does not replace a working installation.</p>
-          <p>Malina v1.1.2 requires stable-diffusion.cpp <code>master-869-07a85c7</code>. Its native context layout and video-generation call are not ABI-compatible with the <code>master-859</code> bundle used by Malina v1.1.1. <code>Download</code> replaces an older Kronk-managed installation with the pinned bundle. A user-managed library directory is read-only to Kronk and must be rebuilt or replaced by its owner.</p>
+          <p>Malina v1.1.3 requires stable-diffusion.cpp <code>master-908-88411ef</code>. Its native context, image-generation, and video-generation parameter layouts are not ABI-compatible with the <code>master-869</code> bundle used by Malina v1.1.2. <code>Download</code> replaces an older Kronk-managed installation with the pinned bundle. A user-managed library directory is read-only to Kronk and must be rebuilt or replaced by its owner. Do not combine Malina v1.1.3 with an older native bundle, or older Malina bindings with <code>master-908</code>.</p>
           <h3 id="193-manage-model-bundles">19.3 Manage Model Bundles</h3>
           <p>Kronk provides a small, curated catalog rather than accepting arbitrary model repository layouts. This keeps component roles and known-compatible files in the high-level SDK instead of requiring applications to use Malina's raw download API.</p>
           <p>The current bundles are:</p>
@@ -4920,6 +4920,12 @@ if _, err := libs.Download(ctx, malina.FmtLogger); err != nil {
                 <td>6.9 GB</td>
               </tr>
               <tr>
+                <td><code>llada-image-turbo</code></td>
+                <td>Quantized diffusion and text encoder, connectors, VAE, and tokenizer</td>
+                <td>Apache-2.0</td>
+                <td>20.2 GB</td>
+              </tr>
+              <tr>
                 <td><code>flux2-klein-4b</code></td>
                 <td>Diffusion model, VAE, and LLM text encoder</td>
                 <td>FLUX Non-Commercial</td>
@@ -4934,6 +4940,7 @@ if _, err := libs.Download(ctx, malina.FmtLogger); err != nil {
             </tbody>
           </table>
           <p>Use <code>models.SupportedBundles()</code> to enumerate names and <code>models.Catalog()</code> to inspect descriptions, licenses, gating, files, and component roles.</p>
+          <p>The target native release also supports Qwen Image 2.1, but Kronk does not curate it because its license restricts use to non-commercial research and evaluation.</p>
           <p>Models are installed below <code>~/.kronk/malina-models/</code> by default:</p>
           <pre className="code-block"><code className="language-text">{`~/.kronk/malina-models/<bundle>/`}</code></pre>
           <p>Manage curated bundles from the CLI:</p>
@@ -5001,6 +5008,13 @@ defer func() {
     model.WithAttnScale(0.25),
 )`}</code></pre>
           <p>Both values default to zero, which preserves the model defaults. Set only the override recommended for the affected model and backend. <code>AttnScale</code> applies to the flash-attention path. Non-zero values must be positive and finite.</p>
+          <p>Malina v1.1.3 also exposes SageAttention and a per-context conditioning cache:</p>
+          <pre className="code-block"><code className="language-go">{`mln, err := malina.New(
+    model.WithModelPath(mp.ModelFiles[0]),
+    model.WithSageAttention(true),
+    model.WithConditioningCacheSize(8),
+)`}</code></pre>
+          <p>The conditioning cache defaults to four entries per model context. Set it to zero to disable caching. SageAttention is useful only for native backends and models that support it.</p>
           <h4 id="1943-generate-an-image">19.4.3 Generate an Image</h4>
           <p>Start with the stable-diffusion.cpp generation defaults and set a prompt:</p>
           <pre className="code-block"><code className="language-go">{`params := model.NewGenerateParams()
@@ -5052,6 +5066,7 @@ if err := os.WriteFile("malina.png", generated.PNG, 0o644); err != nil {
             </tbody>
           </table>
           <p>Dimensions must be multiples of 8 from 64 through 1024, with no more than 1,048,576 total pixels. A request needs a non-empty prompt, positive finite CFG scale, and between 1 and 1,000 steps.</p>
+          <p><code>GenerateParams.ImagePreprocessRules</code> and <code>VideoParams.ImagePreprocessRules</code> pass stable-diffusion.cpp's shared image preprocessing rules to native generation. Rules are semicolon-separated, and each rule starts with <code>target=...</code> followed by comma-separated key-value pairs, for example <code>target=init,mode=none,canny=true</code>. An empty string preserves the model defaults. Preprocessing uses temporary native pixels and does not mutate the caller's Go images.</p>
           <p>Waiting for admission is cancellable. Canceling a request after native generation starts asks stable-diffusion.cpp to stop, waits for native execution to return, and resets that model context before returning the cancellation error. The context is never reused or freed while native code is still active.</p>
           <h3 id="195-multi-file-model-bundles">19.5 Multi-File Model Bundles</h3>
           <p>Some pipelines require several files with distinct roles. The FLUX.2 example downloads a manifest and maps its diffusion, VAE, and LLM components into the model configuration:</p>
@@ -5069,6 +5084,22 @@ if err != nil {
     return err
 }`}</code></pre>
           <p>Use the exported <code>models.Role...</code> values instead of relying on filenames or file ordering. This keeps application configuration tied to the curated bundle contract.</p>
+          <p>LLaDA-Image-Turbo adds an external tokenizer and embeddings connectors to the usual diffusion, VAE, and LLM components. The pool and model server map all five roles automatically. Direct SDK users can configure it explicitly:</p>
+          <pre className="code-block"><code className="language-go">{`manifest, err := mdls.DownloadBundle(ctx, models.BundleLLaDAImageTurbo)
+if err != nil {
+    return err
+}
+
+mln, err := malina.New(
+    model.WithDiffusionModelPath(manifest.Files[string(models.RoleDiffusion)]),
+    model.WithVAEPath(manifest.Files[string(models.RoleVAE)]),
+    model.WithLLMPath(manifest.Files[string(models.RoleLLM)]),
+    model.WithTokenizerPath(manifest.Files[string(models.RoleTokenizer)]),
+    model.WithEmbeddingsConnectorsPath(
+        manifest.Files[string(models.RoleEmbeddingsConn)],
+    ),
+)`}</code></pre>
+          <p>LLaDA-Image-Turbo is tuned for four steps and CFG scale 1.0; set those values on <code>GenerateParams</code>. Stable-diffusion.cpp selects its LLaDA-Image scheduler from the model. The native model also supports reference-image instruction editing, but Kronk's high-level SDK does not yet expose that distinct reference-image input path.</p>
           <h3 id="196-image-to-image-generation">19.6 Image-to-Image Generation</h3>
           <p>Set <code>GenerateParams.InitImage</code> to transform an existing Go image. The request still needs a prompt, and <code>Strength</code> must be greater than zero and no more than one:</p>
           <pre className="code-block"><code className="language-go">{`params := model.NewGenerateParams()
@@ -5229,6 +5260,7 @@ fmt.Println(info.Description)`}</code></pre>
             <li>The model server exposes basic text-to-image generation. Advanced Malina operations remain available only through the Go SDK.</li>
             <li>The curated catalog is intentionally small. The high-level SDK guarantees its listed component roles; arbitrary user-created bundle layouts are not a supported catalog contract.</li>
             <li>Wan2.2 S2V is available through explicit SDK model paths, but it is not in Kronk's curated model catalog or model-server API.</li>
+            <li>LLaDA-Image-Turbo is available for text-to-image generation. Its native reference-image instruction-editing workflow is not yet exposed by the high-level SDK.</li>
             <li>Native callbacks and backend initialization are process-wide. Model-context construction and destruction are serialized, while one handle may own multiple contexts and generate concurrently across them. Each concurrency slot loads another copy of the model and increases RAM or VRAM use.</li>
             <li>Context cancellation interrupts active native generation, waits for the native call to return, and resets the same context before reuse. It never frees a context while native code is active.</li>
           </ul>

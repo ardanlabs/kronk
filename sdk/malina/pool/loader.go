@@ -170,6 +170,7 @@ func (sd *StableDiffusion) resolveConfig(modelID string) (model.Config, error) {
 	cfg.T5XXLPath = files[string(malinamodels.RoleT5XXL)]
 	cfg.LLMPath = files[string(malinamodels.RoleLLM)]
 	cfg.LLMVisionPath = files[string(malinamodels.RoleLLMVision)]
+	cfg.TokenizerPath = files[string(malinamodels.RoleTokenizer)]
 	cfg.HighNoiseDiffusionModelPath = files[string(malinamodels.RoleHighNoise)]
 	cfg.EmbeddingsConnectorsPath = files[string(malinamodels.RoleEmbeddingsConn)]
 	cfg.VAEPath = files[string(malinamodels.RoleVAE)]

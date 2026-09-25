@@ -69,10 +69,10 @@ func TestPlanMemoryTopology(t *testing.T) {
 }
 
 func TestResolveConfigMapsBundleComponents(t *testing.T) {
-	models, files := testModels(t, malinamodels.BundleFlux2Klein4B, 1)
+	models, files := testModels(t, malinamodels.BundleLLaDAImageTurbo, 1)
 	sd := newStableDiffusion(discardLog, models, nil)
 
-	cfg, err := sd.resolveConfig(malinamodels.BundleFlux2Klein4B.String())
+	cfg, err := sd.resolveConfig(malinamodels.BundleLLaDAImageTurbo.String())
 	if err != nil {
 		t.Fatalf("resolveConfig() error = %v", err)
 	}
@@ -84,6 +84,12 @@ func TestResolveConfigMapsBundleComponents(t *testing.T) {
 	}
 	if cfg.LLMPath != files[string(malinamodels.RoleLLM)] {
 		t.Errorf("LLMPath: got %q, want %q", cfg.LLMPath, files[string(malinamodels.RoleLLM)])
+	}
+	if cfg.EmbeddingsConnectorsPath != files[string(malinamodels.RoleEmbeddingsConn)] {
+		t.Errorf("EmbeddingsConnectorsPath: got %q, want %q", cfg.EmbeddingsConnectorsPath, files[string(malinamodels.RoleEmbeddingsConn)])
+	}
+	if cfg.TokenizerPath != files[string(malinamodels.RoleTokenizer)] {
+		t.Errorf("TokenizerPath: got %q, want %q", cfg.TokenizerPath, files[string(malinamodels.RoleTokenizer)])
 	}
 }
 
