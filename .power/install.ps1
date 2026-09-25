@@ -53,48 +53,23 @@ function Install-Kronk {
     }
 }
 
-# Use this to install or update llama.cpp, whisper.cpp, and
-# stable-diffusion.cpp to the latest version. Used by the local test target so
-# developers exercise the newest bundles before bumping each backend's
-# well-known defaultVersion for a release.
+# Use this to install llama.cpp, whisper.cpp, and stable-diffusion.cpp at their
+# pinned versions.
 # ./pwr.ps1 install-libraries
 function Install-Libraries {
     Install-Kronk
 
-    Write-Section "INSTALL LLAMA LIBRARIES (latest)"
+    Write-Section "INSTALL LLAMA LIBRARIES (pinned)"
     kronk libs --local
     Assert-NativeCommandSucceeded -Command "kronk"
     Write-Host
 
-    Write-Section "INSTALL WHISPER LIBRARIES (latest)"
+    Write-Section "INSTALL WHISPER LIBRARIES (pinned)"
     kronk bucky libs --local
     Assert-NativeCommandSucceeded -Command "kronk"
     Write-Host
 
-    Write-Section "INSTALL STABLE DIFFUSION LIBRARIES (latest)"
-    kronk malina libs --local
-    Assert-NativeCommandSucceeded -Command "kronk"
-    Write-Host
-}
-
-# Use this to install the well-known defaultVersion of llama.cpp, whisper.cpp,
-# and stable-diffusion.cpp baked into the SDK. This mirrors what CI does so the
-# GH test target can be reproduced locally.
-# ./pwr.ps1 install-libraries-gh
-function Install-LibrariesGh {
-    Install-Kronk
-
-    Write-Section "INSTALL LLAMA LIBRARIES (defaultVersion)"
-    kronk libs --local
-    Assert-NativeCommandSucceeded -Command "kronk"
-    Write-Host
-
-    Write-Section "INSTALL WHISPER LIBRARIES (defaultVersion)"
-    kronk bucky libs --local
-    Assert-NativeCommandSucceeded -Command "kronk"
-    Write-Host
-
-    Write-Section "INSTALL STABLE DIFFUSION LIBRARIES (defaultVersion)"
+    Write-Section "INSTALL STABLE DIFFUSION LIBRARIES (pinned)"
     kronk malina libs --local
     Assert-NativeCommandSucceeded -Command "kronk"
     Write-Host

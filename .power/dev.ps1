@@ -61,7 +61,7 @@ function Show-GoFixDiff {
     }
 }
 
-# Install the latest libraries and local test models, then run the local tests.
+# Install the pinned libraries and local test models, then run the local tests.
 # ./pwr.ps1 test-only
 function Invoke-TestsOnly {
     Install-Libraries
@@ -103,7 +103,7 @@ function Invoke-Tests {
 # Install the pinned libraries and GH models, then reproduce the GH test set.
 # ./pwr.ps1 test-gh-only
 function Invoke-GhTestsOnly {
-    Install-LibrariesGh
+    Install-Libraries
     Install-TestGhModels -SkipKronkInstall
 
     Write-Section "RUN GH ONLY TESTS"

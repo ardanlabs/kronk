@@ -23,7 +23,6 @@ param(
         "install-tooling",
         "install-kronk",
         "install-libraries",
-        "install-libraries-gh",
         "install-test-gh-models",
         "install-test-models",
         "install-test-malina",
@@ -626,7 +625,6 @@ Install (.power/install.ps1):
   install-tooling
   install-kronk
   install-libraries
-  install-libraries-gh
   install-test-gh-models
   install-test-models
   install-test-malina
@@ -737,9 +735,6 @@ switch ($Target) {
     }
     "install-libraries" {
         Install-Libraries
-    }
-    "install-libraries-gh" {
-        Install-LibrariesGh
     }
     "install-test-gh-models" {
         Install-TestGhModels

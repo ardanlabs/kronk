@@ -7,13 +7,14 @@ function Invoke-KronkDiagnose {
     Invoke-KronkCli -CommandArguments @("diagnose")
 }
 
-# Install or update the Kronk libraries through the running model server.
+# Install the pinned llama.cpp libraries through the running model server.
 # ./pwr.ps1 kronk-libs
 function Install-KronkLibraries {
     Invoke-KronkCli -CommandArguments @("libs")
 }
 
-# Install or update all local backend libraries without a running server.
+# Install the pinned llama.cpp, whisper.cpp, and stable-diffusion.cpp libraries
+# locally without a running server.
 # ./pwr.ps1 kronk-libs-local
 function Install-KronkLibrariesLocal {
     Install-Libraries
