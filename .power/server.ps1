@@ -80,25 +80,10 @@ function Start-KronkServer {
 
     Invoke-WithEnvironment -Variables $variables -Action {
         Invoke-InDirectory -Path $RepoRoot -Action {
-            $serverExitCodeFile = [IO.Path]::GetTempFileName()
-            try {
-                & {
-                    go run ./cmd/kronk server start
-                    [IO.File]::WriteAllText($serverExitCodeFile, [string]$LASTEXITCODE)
-                } | go run ./cmd/server/api/tooling/logfmt
-                $logFormatterExitCode = $LASTEXITCODE
-
-                $serverExitCode = [int][IO.File]::ReadAllText($serverExitCodeFile)
-                if ($serverExitCode -ne 0) {
-                    throw "go run ./cmd/kronk server start exited with code $serverExitCode"
-                }
-                if ($logFormatterExitCode -ne 0) {
-                    throw "go run ./cmd/server/api/tooling/logfmt exited with code $logFormatterExitCode"
-                }
+            go run ./cmd/kronk server start | ForEach-Object {
+                Write-KronkLogLine -Line ([string]$_)
             }
-            finally {
-                Remove-Item -LiteralPath $serverExitCodeFile -Force -ErrorAction SilentlyContinue
-            }
+            Assert-NativeCommandSucceeded -Command "go run ./cmd/kronk server start"
         }
     }
 }

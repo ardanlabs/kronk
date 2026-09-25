@@ -308,6 +308,48 @@ function Invoke-WithEnvironment {
     }
 }
 
+function Write-KronkLogLine {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Line
+    )
+
+    try {
+        $record = ConvertFrom-Json -InputObject $Line -ErrorAction Stop
+    }
+    catch {
+        Write-Host $Line
+        return
+    }
+
+    $values = @{}
+    foreach ($property in $record.PSObject.Properties) {
+        $values[$property.Name] = $property.Value
+    }
+
+    $traceId = "00000000-0000-0000-0000-000000000000"
+    if ($values.ContainsKey("trace_id")) {
+        $traceId = $values["trace_id"]
+    }
+
+    $output = "{0}: {1}: {2}: {3}: {4}: {5}" -f `
+        $values["service"],
+        $values["time"],
+        $values["file"],
+        $values["level"],
+        $traceId,
+        $values["msg"]
+
+    foreach ($property in $record.PSObject.Properties) {
+        if ($property.Name -in @("service", "time", "file", "level", "trace_id", "msg")) {
+            continue
+        }
+        $output += (": {0}[{1}]" -f $property.Name, $property.Value)
+    }
+
+    Write-Host $output
+}
+
 function Read-DotEnvFile {
     param(
         [Parameter(Mandatory)]
