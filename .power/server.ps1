@@ -80,7 +80,7 @@ function Start-KronkServer {
 
     Invoke-WithEnvironment -Variables $variables -Action {
         Invoke-InDirectory -Path $RepoRoot -Action {
-            $go = Get-Command go -CommandType Application -ErrorAction Stop
+            $go = Get-Command go -CommandType Application -ErrorAction Stop | Select-Object -First 1
             $startInfo = New-Object Diagnostics.ProcessStartInfo
             $startInfo.FileName = $go.Source
             $startInfo.Arguments = "run ./cmd/kronk server start"

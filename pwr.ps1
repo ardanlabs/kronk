@@ -315,10 +315,29 @@ function Write-KronkLogLine {
         [string]$Line
     )
 
+    if ($Line.Length -eq 0) {
+        Write-Host
+        return
+    }
+    if (-not $Line.TrimStart().StartsWith("{")) {
+        Write-Host $Line
+        return
+    }
+
     try {
-        $record = ConvertFrom-Json -InputObject $Line -ErrorAction Stop
+        if ($PSVersionTable.PSVersion.Major -ge 7) {
+            $record = ConvertFrom-Json -InputObject $Line -DateKind String -ErrorAction Stop
+        }
+        else {
+            $record = ConvertFrom-Json -InputObject $Line -ErrorAction Stop
+        }
     }
     catch {
+        Write-Host $Line
+        return
+    }
+
+    if ($null -eq $record -or $record -isnot [PSCustomObject]) {
         Write-Host $Line
         return
     }
