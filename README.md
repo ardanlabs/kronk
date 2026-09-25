@@ -115,7 +115,7 @@ Here are some of the known compatible versions:
 
 | kronk     | yzma    | llama.cpp | bucky  | whisper.cpp | malina | stable-diffusion.cpp |
 | --------- | ------- | --------- | ------ | ----------- | ------ | -------------------- |
-| 1.32.7-rc | e890466 | b11178    | v1.1.3 | v1.9.4      | v1.1.2 | master-869-07a85c7   |
+| 1.32.7-rc | e890466 | b11178    | v1.1.3 | v1.9.4      | v1.1.3 | master-908-88411ef   |
 | 1.32.6    | ece4890 | b10896    | v1.1.2 | v1.9.3      | v1.1.0 | master-849-d04e895   |
 | 1.32.5    | v1.26.0 | v0.4.0    | v1.1.2 | v1.9.3      | v1.0.8 | master-841-6b3edaa   |
 | 1.32.4    | 6bd0208 | b10785    | v1.1.1 | v1.9.3      | v1.0.6 | master-841-6b3edaa   |
@@ -124,10 +124,11 @@ Kronk 1.32.7-rc pins the llama.cpp manifest as
 `b11178@sha256:b0216c8b2da29953d09abfc8e35bd4a234eb2588b041a052178b45d597a0b3fb`.
 The manifest authenticates the platform-specific archives selected by the downloader,
 so the default installation verifies both the manifest and the downloaded libraries.
-Malina v1.1.2 pins stable-diffusion.cpp as
-`master-869-07a85c7@sha256:b27f800a8178d75d2202d93d4b5a0c2310f4e37caaade6e768c6ce454a580f3d`.
-Its native ABI is incompatible with the preceding `master-859` build, so upgrade the
-Malina dependency and native library bundle together.
+Malina v1.1.3 pins stable-diffusion.cpp as
+`master-908-88411ef@sha256:dc901bf8fc112c984dd9bfdf3c36337707557dcfa687e05d6f0205ea24c03907`.
+Its native ABI changes the context, image-generation, and video-generation
+parameter layouts from `master-869`, so upgrade the Malina dependency and native
+library bundle together.
 
 ## Documentation and Examples
 

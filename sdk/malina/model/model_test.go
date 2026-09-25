@@ -36,6 +36,8 @@ func TestNewConfig(t *testing.T) {
 		{name: "attention scale", opts: []Option{WithModelPath("model"), WithAttnScale(0.25)}},
 		{name: "negative attention scale", opts: []Option{WithModelPath("model"), WithAttnScale(-1)}, wantErr: true},
 		{name: "NaN attention scale", opts: []Option{WithModelPath("model"), WithAttnScale(float32(math.NaN()))}, wantErr: true},
+		{name: "conditioning cache disabled", opts: []Option{WithModelPath("model"), WithConditioningCacheSize(0)}},
+		{name: "invalid conditioning cache", opts: []Option{WithModelPath("model"), WithConditioningCacheSize(-1)}, wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -53,8 +55,8 @@ func TestNewConfigDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewConfig() error = %v", err)
 	}
-	if cfg.Concurrency != defaultConcurrency || cfg.QueueDepth != defaultQueueDepth || cfg.AdmissionTimeout != defaultAdmissionTimeout {
-		t.Errorf("defaults: got %d/%d/%s, want %d/%d/%s", cfg.Concurrency, cfg.QueueDepth, cfg.AdmissionTimeout, defaultConcurrency, defaultQueueDepth, defaultAdmissionTimeout)
+	if cfg.Concurrency != defaultConcurrency || cfg.QueueDepth != defaultQueueDepth || cfg.AdmissionTimeout != defaultAdmissionTimeout || cfg.ConditioningCacheSize != defaultConditioningCacheSize {
+		t.Errorf("defaults: got %d/%d/%s/%d, want %d/%d/%s/%d", cfg.Concurrency, cfg.QueueDepth, cfg.AdmissionTimeout, cfg.ConditioningCacheSize, defaultConcurrency, defaultQueueDepth, defaultAdmissionTimeout, defaultConditioningCacheSize)
 	}
 	if cfg.LinearScale != 0 || cfg.AttnScale != 0 {
 		t.Errorf("scale defaults: got %g/%g, want 0/0", cfg.LinearScale, cfg.AttnScale)
@@ -89,6 +91,7 @@ func TestGenerateParamsValidate(t *testing.T) {
 	}{
 		{name: "missing prompt", mutate: func(p *GenerateParams) { p.Prompt = "" }},
 		{name: "NUL prompt", mutate: func(p *GenerateParams) { p.Prompt = "cat\x00dog" }},
+		{name: "NUL image preprocessing rules", mutate: func(p *GenerateParams) { p.ImagePreprocessRules = "target=init\x00" }},
 		{name: "invalid width", mutate: func(p *GenerateParams) { p.Width = 63 }},
 		{name: "invalid steps", mutate: func(p *GenerateParams) { p.Steps = 0 }},
 		{name: "invalid CFG", mutate: func(p *GenerateParams) { p.CFGScale = float32(math.NaN()) }},
@@ -109,16 +112,20 @@ func TestWorkflowConfigOptions(t *testing.T) {
 	cfg, err := NewConfig(
 		WithModelPath("model"),
 		WithT5XXLPath("t5xxl"),
+		WithTokenizerPath("tokenizer"),
+		WithEmbeddingsConnectorsPath("embeddings-connectors"),
 		WithAudioEncoderPath("audio-encoder"),
 		WithControlNetPath("controlnet"),
 		WithMotionModulePath("motion"),
 		WithADetailerPath("adetailer"),
+		WithSageAttention(true),
+		WithConditioningCacheSize(8),
 	)
 	if err != nil {
 		t.Fatalf("NewConfig() error = %v", err)
 	}
 
-	if cfg.T5XXLPath != "t5xxl" || cfg.AudioEncoderPath != "audio-encoder" || cfg.ControlNetPath != "controlnet" || cfg.MotionModulePath != "motion" || cfg.ADetailerPath != "adetailer" {
+	if cfg.T5XXLPath != "t5xxl" || cfg.TokenizerPath != "tokenizer" || cfg.EmbeddingsConnectorsPath != "embeddings-connectors" || cfg.AudioEncoderPath != "audio-encoder" || cfg.ControlNetPath != "controlnet" || cfg.MotionModulePath != "motion" || cfg.ADetailerPath != "adetailer" || !cfg.SageAttention || cfg.ConditioningCacheSize != 8 {
 		t.Errorf("workflow paths: got %+v, want configured component paths", cfg)
 	}
 
@@ -242,6 +249,7 @@ func TestVideoParams(t *testing.T) {
 		{name: "zero FPS", mutate: func(p *VideoParams) { p.FPS = 0 }},
 		{name: "too much FPS", mutate: func(p *VideoParams) { p.FPS = 1_001 }},
 		{name: "missing prompt", mutate: func(p *VideoParams) { p.Prompt = "" }},
+		{name: "NUL image preprocessing rules", mutate: func(p *VideoParams) { p.ImagePreprocessRules = "target=init\x00" }},
 		{name: "audio without image", mutate: func(p *VideoParams) { p.RefAudios = []Audio{{SampleRate: 16_000, Channels: 1, Data: []float32{0}}} }},
 		{name: "multiple audio tracks", mutate: func(p *VideoParams) {
 			p.InitImage = image.NewRGBA(image.Rect(0, 0, 64, 64))

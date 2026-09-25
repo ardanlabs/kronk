@@ -73,6 +73,7 @@ func TestBundleNameConstants(t *testing.T) {
 		BundleControlNetCannySD15,
 		BundleFlux2Klein4B,
 		BundleFlux2Klein9B,
+		BundleLLaDAImageTurbo,
 		BundleRealESRGANX4Anime,
 		BundleSD15,
 		BundleSDXLBase10,
@@ -128,6 +129,25 @@ func TestBundleFlux2Klein4B(t *testing.T) {
 	}
 }
 
+func TestBundleLLaDAImageTurbo(t *testing.T) {
+	bundle, ok := BundleByName(BundleLLaDAImageTurbo)
+	if !ok {
+		t.Fatal("BundleByName(BundleLLaDAImageTurbo): not found")
+	}
+	if bundle.Gated || !bundle.BasicTextToImage {
+		t.Errorf("bundle capabilities: got gated=%t basic=%t, want false/true", bundle.Gated, bundle.BasicTextToImage)
+	}
+
+	wantRoles := []FileRole{RoleDiffusion, RoleLLM, RoleEmbeddingsConn, RoleVAE, RoleTokenizer}
+	gotRoles := make([]FileRole, len(bundle.Files))
+	for i, file := range bundle.Files {
+		gotRoles[i] = file.Role
+	}
+	if !slices.Equal(gotRoles, wantRoles) {
+		t.Errorf("roles: got %v, want %v", gotRoles, wantRoles)
+	}
+}
+
 func TestBundleBasicTextToImage(t *testing.T) {
 	tests := []struct {
 		name string
@@ -136,6 +156,7 @@ func TestBundleBasicTextToImage(t *testing.T) {
 	}{
 		{name: "stable diffusion", id: BundleSD15, want: true},
 		{name: "diffusion components", id: BundleFlux2Klein4B, want: true},
+		{name: "LLaDA image", id: BundleLLaDAImageTurbo, want: true},
 		{name: "control net workflow", id: BundleControlNetCannySD15, want: false},
 		{name: "adetailer workflow", id: BundleADetailerFaceYOLOv8N, want: false},
 		{name: "animation workflow", id: BundleAnimateDiffSD15, want: false},

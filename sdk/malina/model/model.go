@@ -29,11 +29,12 @@ var (
 )
 
 const (
-	defaultConcurrency      = 1
-	defaultQueueDepth       = 0
-	defaultAdmissionTimeout = 3 * time.Minute
-	maxImageDimension       = 1024
-	maxImagePixels          = maxImageDimension * maxImageDimension
+	defaultConcurrency           = 1
+	defaultQueueDepth            = 0
+	defaultAdmissionTimeout      = 3 * time.Minute
+	defaultConditioningCacheSize = 4
+	maxImageDimension            = 1024
+	maxImagePixels               = maxImageDimension * maxImageDimension
 )
 
 // Config controls model loading and request admission. Concurrency controls
@@ -42,7 +43,10 @@ const (
 // is busy.
 // ModelPath loads an all-in-one checkpoint. DiffusionModelPath and its
 // companion paths configure a component model. At least one of ModelPath or
-// DiffusionModelPath is required.
+// DiffusionModelPath is required. TokenizerPath loads an external tokenizer
+// JSON file. SageAttention enables the native optimization for supported
+// models and backends. ConditioningCacheSize limits cached conditioning
+// entries per context; NewConfig defaults it to four, while zero disables it.
 type Config struct {
 	ModelPath                   string
 	ClipLPath                   string
@@ -51,6 +55,7 @@ type Config struct {
 	T5XXLPath                   string
 	LLMPath                     string
 	LLMVisionPath               string
+	TokenizerPath               string
 	DiffusionModelPath          string
 	HighNoiseDiffusionModelPath string
 	EmbeddingsConnectorsPath    string
@@ -69,6 +74,8 @@ type Config struct {
 	CPUThreads                  int32
 	LinearScale                 float32
 	AttnScale                   float32
+	SageAttention               bool
+	ConditioningCacheSize       int32
 }
 
 // Option modifies Config.
@@ -120,6 +127,20 @@ func WithAudioEncoderPath(path string) Option {
 func WithLLMPath(path string) Option {
 	return func(cfg *Config) {
 		cfg.LLMPath = path
+	}
+}
+
+// WithTokenizerPath sets an external tokenizer JSON path.
+func WithTokenizerPath(path string) Option {
+	return func(cfg *Config) {
+		cfg.TokenizerPath = path
+	}
+}
+
+// WithEmbeddingsConnectorsPath sets an embeddings-connectors model path.
+func WithEmbeddingsConnectorsPath(path string) Option {
+	return func(cfg *Config) {
+		cfg.EmbeddingsConnectorsPath = path
 	}
 }
 
@@ -190,12 +211,28 @@ func WithAttnScale(scale float32) Option {
 	}
 }
 
+// WithSageAttention enables SageAttention for supported diffusion models.
+func WithSageAttention(enabled bool) Option {
+	return func(cfg *Config) {
+		cfg.SageAttention = enabled
+	}
+}
+
+// WithConditioningCacheSize sets the maximum cached conditioning entries per
+// model context. Zero disables the cache.
+func WithConditioningCacheSize(size int32) Option {
+	return func(cfg *Config) {
+		cfg.ConditioningCacheSize = size
+	}
+}
+
 // NewConfig constructs and validates Config.
 func NewConfig(opts ...Option) (Config, error) {
 	cfg := Config{
-		Concurrency:      defaultConcurrency,
-		QueueDepth:       defaultQueueDepth,
-		AdmissionTimeout: defaultAdmissionTimeout,
+		Concurrency:           defaultConcurrency,
+		QueueDepth:            defaultQueueDepth,
+		AdmissionTimeout:      defaultAdmissionTimeout,
+		ConditioningCacheSize: defaultConditioningCacheSize,
 	}
 	for _, opt := range opts {
 		opt(&cfg)
@@ -230,24 +267,30 @@ func validateConfig(cfg Config) error {
 	if cfg.AttnScale < 0 || cfg.AttnScale != 0 && !finite(float64(cfg.AttnScale)) {
 		return errors.New("attention scale must be zero or positive and finite")
 	}
+	if cfg.ConditioningCacheSize < 0 {
+		return errors.New("conditioning cache size cannot be negative")
+	}
 
 	return nil
 }
 
-// GenerateParams controls one text-to-image generation.
+// GenerateParams controls one text-to-image generation. ImagePreprocessRules
+// contains semicolon-separated native target=...,key=value rules applied to
+// temporary input-image pixels; it does not mutate the caller's images.
 type GenerateParams struct {
-	Prompt          string
-	NegativePrompt  string
-	Width           int
-	Height          int
-	Steps           int
-	CFGScale        float32
-	Seed            int64
-	InitImage       image.Image
-	Strength        float32
-	ControlImage    image.Image
-	ControlStrength float32
-	Canny           *CannyParams
+	Prompt               string
+	NegativePrompt       string
+	ImagePreprocessRules string
+	Width                int
+	Height               int
+	Steps                int
+	CFGScale             float32
+	Seed                 int64
+	InitImage            image.Image
+	Strength             float32
+	ControlImage         image.Image
+	ControlStrength      float32
+	Canny                *CannyParams
 }
 
 // CannyParams controls edge detection applied to a ControlNet image.
@@ -283,8 +326,8 @@ func (p GenerateParams) Validate() error {
 	if strings.TrimSpace(p.Prompt) == "" {
 		return errors.Join(ErrInvalidRequest, errors.New("prompt is required"))
 	}
-	if strings.IndexByte(p.Prompt, 0) >= 0 || strings.IndexByte(p.NegativePrompt, 0) >= 0 {
-		return errors.Join(ErrInvalidRequest, errors.New("prompts cannot contain NUL bytes"))
+	if strings.IndexByte(p.Prompt, 0) >= 0 || strings.IndexByte(p.NegativePrompt, 0) >= 0 || strings.IndexByte(p.ImagePreprocessRules, 0) >= 0 {
+		return errors.Join(ErrInvalidRequest, errors.New("prompts and image preprocessing rules cannot contain NUL bytes"))
 	}
 	if p.Width < 64 || p.Width > maxImageDimension || p.Height < 64 || p.Height > maxImageDimension || p.Width%8 != 0 || p.Height%8 != 0 || p.Width*p.Height > maxImagePixels {
 		return errors.Join(ErrInvalidRequest, fmt.Errorf("dimensions must be multiples of 8 between 64 and %d and at most %d pixels", maxImageDimension, maxImagePixels))
@@ -366,18 +409,21 @@ func (p DetailParams) Validate() error {
 	return request.Validate()
 }
 
-// VideoParams controls one video generation.
+// VideoParams controls one video generation. ImagePreprocessRules contains
+// semicolon-separated native target=...,key=value rules applied to temporary
+// input-image pixels; it does not mutate the caller's images.
 type VideoParams struct {
-	Prompt         string
-	NegativePrompt string
-	Width          int
-	Height         int
-	Steps          int
-	Seed           int64
-	Frames         int
-	FPS            int
-	InitImage      image.Image
-	RefAudios      []Audio
+	Prompt               string
+	NegativePrompt       string
+	ImagePreprocessRules string
+	Width                int
+	Height               int
+	Steps                int
+	Seed                 int64
+	Frames               int
+	FPS                  int
+	InitImage            image.Image
+	RefAudios            []Audio
 }
 
 // NewVideoParams returns conservative AnimateDiff generation defaults.
@@ -390,6 +436,7 @@ func (p VideoParams) Validate() error {
 	request := NewGenerateParams()
 	request.Prompt = p.Prompt
 	request.NegativePrompt = p.NegativePrompt
+	request.ImagePreprocessRules = p.ImagePreprocessRules
 	request.Width = p.Width
 	request.Height = p.Height
 	request.Steps = p.Steps
@@ -549,6 +596,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		params.T5XXLPath = cfg.T5XXLPath
 		params.LLMPath = cfg.LLMPath
 		params.LLMVisionPath = cfg.LLMVisionPath
+		params.Tokenizer = cfg.TokenizerPath
 		params.DiffusionModelPath = cfg.DiffusionModelPath
 		params.HighNoiseDiffusionModelPath = cfg.HighNoiseDiffusionModelPath
 		params.EmbeddingsConnectorsPath = cfg.EmbeddingsConnectorsPath
@@ -562,6 +610,8 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		params.TensorTypeRules = cfg.TensorTypeRules
 		params.LinearScale = cfg.LinearScale
 		params.AttnScale = cfg.AttnScale
+		params.SageAttn = cfg.SageAttention
+		params.ConditioningCacheSize = cfg.ConditioningCacheSize
 		if cfg.CPUThreads > 0 {
 			params.NThreads = cfg.CPUThreads
 		}
@@ -664,6 +714,7 @@ func (m *Model) Generate(ctx context.Context, params GenerateParams) (GeneratedI
 	p := sd.ImgGenParamsInit()
 	p.Prompt = params.Prompt
 	p.NegativePrompt = params.NegativePrompt
+	p.ImagePreprocess.Rules = params.ImagePreprocessRules
 	p.Width = int32(params.Width)
 	p.Height = int32(params.Height)
 	p.Steps = int32(params.Steps)
@@ -851,6 +902,7 @@ func (m *Model) GenerateVideo(ctx context.Context, params VideoParams) (Generate
 
 	p.Prompt = params.Prompt
 	p.NegativePrompt = params.NegativePrompt
+	p.ImagePreprocess.Rules = params.ImagePreprocessRules
 	p.Width = int32(params.Width)
 	p.Height = int32(params.Height)
 	p.Sample.Steps = int32(params.Steps)

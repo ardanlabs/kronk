@@ -157,11 +157,13 @@ Kronk versions in use. Use this option for testing, not as a compatibility
 guarantee. Library installation is staged and activated atomically so a
 failed download does not replace a working installation.
 
-Malina v1.1.2 requires stable-diffusion.cpp `master-869-07a85c7`. Its native
-context layout and video-generation call are not ABI-compatible with the
-`master-859` bundle used by Malina v1.1.1. `Download` replaces an older
-Kronk-managed installation with the pinned bundle. A user-managed library
-directory is read-only to Kronk and must be rebuilt or replaced by its owner.
+Malina v1.1.3 requires stable-diffusion.cpp `master-908-88411ef`. Its native
+context, image-generation, and video-generation parameter layouts are not
+ABI-compatible with the `master-869` bundle used by Malina v1.1.2. `Download`
+replaces an older Kronk-managed installation with the pinned bundle. A
+user-managed library directory is read-only to Kronk and must be rebuilt or
+replaced by its owner. Do not combine Malina v1.1.3 with an older native bundle,
+or older Malina bindings with `master-908`.
 
 ### 19.3 Manage Model Bundles
 
@@ -180,11 +182,16 @@ The current bundles are:
 | `adetailer-face-yolov8n` | Quantized SD 1.5 and face detector | CreativeML Open RAIL-M / AGPL-3.0 | 1.6 GB |
 | `animatediff-sd1.5` | Quantized SD 1.5 and AnimateDiff v3 motion module | CreativeML Open RAIL-M / Apache-2.0 | 2.4 GB |
 | `sdxl-base-1.0` | SDXL Base 1.0 checkpoint | CreativeML Open RAIL++-M | 6.9 GB |
+| `llada-image-turbo` | Quantized diffusion and text encoder, connectors, VAE, and tokenizer | Apache-2.0 | 20.2 GB |
 | `flux2-klein-4b` | Diffusion model, VAE, and LLM text encoder | FLUX Non-Commercial | 5.3 GB |
 | `flux2-klein-9b` | Diffusion model, VAE, and LLM text encoder | FLUX Non-Commercial | 11 GB of unique downloads, 16 GB installed |
 
 Use `models.SupportedBundles()` to enumerate names and `models.Catalog()` to
 inspect descriptions, licenses, gating, files, and component roles.
+
+The target native release also supports Qwen Image 2.1, but Kronk does not
+curate it because its license restricts use to non-commercial research and
+evaluation.
 
 Models are installed below `~/.kronk/malina-models/` by default:
 
@@ -320,6 +327,20 @@ Both values default to zero, which preserves the model defaults. Set only the
 override recommended for the affected model and backend. `AttnScale` applies
 to the flash-attention path. Non-zero values must be positive and finite.
 
+Malina v1.1.3 also exposes SageAttention and a per-context conditioning cache:
+
+```go
+mln, err := malina.New(
+    model.WithModelPath(mp.ModelFiles[0]),
+    model.WithSageAttention(true),
+    model.WithConditioningCacheSize(8),
+)
+```
+
+The conditioning cache defaults to four entries per model context. Set it to
+zero to disable caching. SageAttention is useful only for native backends and
+models that support it.
+
 #### 19.4.3 Generate an Image
 
 Start with the stable-diffusion.cpp generation defaults and set a prompt:
@@ -358,6 +379,14 @@ Dimensions must be multiples of 8 from 64 through 1024, with no more than
 1,048,576 total pixels. A request needs a non-empty prompt, positive finite
 CFG scale, and between 1 and 1,000 steps.
 
+`GenerateParams.ImagePreprocessRules` and
+`VideoParams.ImagePreprocessRules` pass stable-diffusion.cpp's shared image
+preprocessing rules to native generation. Rules are semicolon-separated, and
+each rule starts with `target=...` followed by comma-separated key-value pairs,
+for example `target=init,mode=none,canny=true`. An empty string preserves the
+model defaults. Preprocessing uses temporary native pixels and does not mutate
+the caller's Go images.
+
 Waiting for admission is cancellable. Canceling a request after native
 generation starts asks stable-diffusion.cpp to stop, waits for native execution
 to return, and resets that model context before returning the cancellation
@@ -388,6 +417,33 @@ if err != nil {
 Use the exported `models.Role...` values instead of relying on filenames or
 file ordering. This keeps application configuration tied to the curated
 bundle contract.
+
+LLaDA-Image-Turbo adds an external tokenizer and embeddings connectors to the
+usual diffusion, VAE, and LLM components. The pool and model server map all
+five roles automatically. Direct SDK users can configure it explicitly:
+
+```go
+manifest, err := mdls.DownloadBundle(ctx, models.BundleLLaDAImageTurbo)
+if err != nil {
+    return err
+}
+
+mln, err := malina.New(
+    model.WithDiffusionModelPath(manifest.Files[string(models.RoleDiffusion)]),
+    model.WithVAEPath(manifest.Files[string(models.RoleVAE)]),
+    model.WithLLMPath(manifest.Files[string(models.RoleLLM)]),
+    model.WithTokenizerPath(manifest.Files[string(models.RoleTokenizer)]),
+    model.WithEmbeddingsConnectorsPath(
+        manifest.Files[string(models.RoleEmbeddingsConn)],
+    ),
+)
+```
+
+LLaDA-Image-Turbo is tuned for four steps and CFG scale 1.0; set those values
+on `GenerateParams`. Stable-diffusion.cpp selects its LLaDA-Image scheduler
+from the model. The native model also supports reference-image instruction
+editing, but Kronk's high-level SDK does not yet expose that distinct
+reference-image input path.
 
 ### 19.6 Image-to-Image Generation
 
@@ -619,6 +675,9 @@ Later runs reuse complete installations.
   supported catalog contract.
 - Wan2.2 S2V is available through explicit SDK model paths, but it is not in
   Kronk's curated model catalog or model-server API.
+- LLaDA-Image-Turbo is available for text-to-image generation. Its native
+  reference-image instruction-editing workflow is not yet exposed by the
+  high-level SDK.
 - Native callbacks and backend initialization are process-wide. Model-context
   construction and destruction are serialized, while one handle may own
   multiple contexts and generate concurrently across them. Each concurrency

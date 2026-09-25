@@ -18,8 +18,8 @@ func TestListMalinaCatalog(t *testing.T) {
 		t.Fatalf("listMalinaCatalog() response = %T, want MalinaCatalogResponse", resp)
 	}
 
-	if len(catalog.Models) != 8 {
-		t.Fatalf("models: got %d, want 8", len(catalog.Models))
+	if len(catalog.Models) != 9 {
+		t.Fatalf("models: got %d, want 9", len(catalog.Models))
 	}
 
 	entries := make(map[string]MalinaCatalogEntry, len(catalog.Models))
@@ -30,6 +30,11 @@ func TestListMalinaCatalog(t *testing.T) {
 	flux := entries["flux2-klein-9b"]
 	if !flux.Gated || !flux.BasicTextToImage || len(flux.Files) != 3 {
 		t.Errorf("flux2-klein-9b: got %+v, want gated text-to-image bundle with 3 files", flux)
+	}
+
+	llada := entries["llada-image-turbo"]
+	if llada.Gated || !llada.BasicTextToImage || len(llada.Files) != 5 {
+		t.Errorf("llada-image-turbo: got %+v, want ungated text-to-image bundle with 5 files", llada)
 	}
 
 	upscaler := entries["realesrgan-x4-anime"]

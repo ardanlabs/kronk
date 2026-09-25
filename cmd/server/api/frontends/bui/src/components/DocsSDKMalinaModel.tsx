@@ -115,6 +115,7 @@ export default function DocsSDKMalinaModel() {
 	T5XXLPath                   string
 	LLMPath                     string
 	LLMVisionPath               string
+	TokenizerPath               string
 	DiffusionModelPath          string
 	HighNoiseDiffusionModelPath string
 	EmbeddingsConnectorsPath    string
@@ -133,9 +134,11 @@ export default function DocsSDKMalinaModel() {
 	CPUThreads                  int32
 	LinearScale                 float32
 	AttnScale                   float32
+	SageAttention               bool
+	ConditioningCacheSize       int32
 }`}</code>
               </pre>
-              <p className="doc-description">Config controls model loading and request admission. Concurrency controls the number of independently loaded contexts and simultaneous generations. QueueDepth controls how many calls are admitted to wait after every context is busy. ModelPath loads an all-in-one checkpoint. DiffusionModelPath and its companion paths configure a component model. At least one of ModelPath or DiffusionModelPath is required.</p>
+              <p className="doc-description">Config controls model loading and request admission. Concurrency controls the number of independently loaded contexts and simultaneous generations. QueueDepth controls how many calls are admitted to wait after every context is busy. ModelPath loads an all-in-one checkpoint. DiffusionModelPath and its companion paths configure a component model. At least one of ModelPath or DiffusionModelPath is required. TokenizerPath loads an external tokenizer JSON file. SageAttention enables the native optimization for supported models and backends. ConditioningCacheSize limits cached conditioning entries per context; NewConfig defaults it to four, while zero disables it.</p>
             </div>
 
             <div className="doc-section" id="type-detailparams">
@@ -158,21 +161,22 @@ export default function DocsSDKMalinaModel() {
               <h4>GenerateParams</h4>
               <pre className="code-block">
                 <code>{`type GenerateParams struct {
-	Prompt          string
-	NegativePrompt  string
-	Width           int
-	Height          int
-	Steps           int
-	CFGScale        float32
-	Seed            int64
-	InitImage       image.Image
-	Strength        float32
-	ControlImage    image.Image
-	ControlStrength float32
-	Canny           *CannyParams
+	Prompt               string
+	NegativePrompt       string
+	ImagePreprocessRules string
+	Width                int
+	Height               int
+	Steps                int
+	CFGScale             float32
+	Seed                 int64
+	InitImage            image.Image
+	Strength             float32
+	ControlImage         image.Image
+	ControlStrength      float32
+	Canny                *CannyParams
 }`}</code>
               </pre>
-              <p className="doc-description">GenerateParams controls one text-to-image generation.</p>
+              <p className="doc-description">GenerateParams controls one text-to-image generation. ImagePreprocessRules contains semicolon-separated native target=...,key=value rules applied to temporary input-image pixels; it does not mutate the caller's images.</p>
             </div>
 
             <div className="doc-section" id="type-generatedimage">
@@ -263,19 +267,20 @@ export default function DocsSDKMalinaModel() {
               <h4>VideoParams</h4>
               <pre className="code-block">
                 <code>{`type VideoParams struct {
-	Prompt         string
-	NegativePrompt string
-	Width          int
-	Height         int
-	Steps          int
-	Seed           int64
-	Frames         int
-	FPS            int
-	InitImage      image.Image
-	RefAudios      []Audio
+	Prompt               string
+	NegativePrompt       string
+	ImagePreprocessRules string
+	Width                int
+	Height               int
+	Steps                int
+	Seed                 int64
+	Frames               int
+	FPS                  int
+	InitImage            image.Image
+	RefAudios            []Audio
 }`}</code>
               </pre>
-              <p className="doc-description">VideoParams controls one video generation.</p>
+              <p className="doc-description">VideoParams controls one video generation. ImagePreprocessRules contains semicolon-separated native target=...,key=value rules applied to temporary input-image pixels; it does not mutate the caller's images.</p>
             </div>
           </div>
 
