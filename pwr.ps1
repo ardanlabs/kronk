@@ -488,6 +488,8 @@ function Show-Targets {
 Usage: ./pwr.ps1 <target> [options]
 
 Targets:
+
+Install (.power/install.ps1):
   setup
   install-gotooling
   install-tooling
@@ -499,6 +501,8 @@ Targets:
   install-test-malina
   install-class-models
   install-docker
+
+Development (.power/dev.ps1):
   llama-bench
   authapp-proto-gen
   lint
@@ -514,10 +518,14 @@ Targets:
   deps-upgrade
   build-deps-upgrade
   yzma-latest
+
+Server (.power/server.ps1):
   bui-install
   bui-build
   kronk-docs
   kronk-build
+
+CLI (.power/cli.ps1):
   kronk-diagnose
   kronk-libs
   kronk-libs-local
