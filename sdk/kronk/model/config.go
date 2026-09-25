@@ -257,10 +257,10 @@ type AdapterConfig struct {
 // default of 1 is used.
 //
 // NThreads is the number of threads to use for generation. When unset or set
-// to 0, it defaults to Yzma's hardware-aware CPU thread count.
+// to 0, Yzma derives the count from the loaded model and available CPU cores.
 //
 // NThreadsBatch is the number of threads to use for batch processing. When
-// unset or set to 0, it defaults to Yzma's hardware-aware CPU thread count.
+// unset or set to 0, Yzma derives the count from the available CPU cores.
 //
 // NUMA controls the NUMA (Non-Uniform Memory Access) strategy. This matters
 // most when expert tensors are on CPU and the system has multiple NUMA nodes.
@@ -818,13 +818,12 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 		cfg = adjustGenerationBatch(cfg, 1, false)
 	}
 
-	nThreads := int(llama.Threads())
-	if cfg.NThreads() <= 0 {
-		cfg.PtrNThreads = new(nThreads)
+	if cfg.NThreads() < 0 {
+		cfg.PtrNThreads = new(0)
 	}
 
-	if cfg.NThreadsBatch() <= 0 {
-		cfg.PtrNThreadsBatch = new(nThreads)
+	if cfg.NThreadsBatch() < 0 {
+		cfg.PtrNThreadsBatch = new(0)
 	}
 
 	// IMC is enabled by default.
@@ -954,8 +953,12 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 	if cfg.ContextWindow() > 0 {
 		ctxParams.NBatch = uint32(cfg.EffectiveNBatch())
 		ctxParams.NUbatch = uint32(cfg.EffectiveNUBatch())
-		ctxParams.NThreads = int32(cfg.NThreads())
-		ctxParams.NThreadsBatch = int32(cfg.NThreadsBatch())
+		if cfg.NThreads() > 0 {
+			ctxParams.NThreads = int32(cfg.NThreads())
+		}
+		if cfg.NThreadsBatch() > 0 {
+			ctxParams.NThreadsBatch = int32(cfg.NThreadsBatch())
+		}
 	}
 
 	if cfg.CacheTypeK != GGMLTypeAuto {
