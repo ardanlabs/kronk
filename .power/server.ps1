@@ -126,11 +126,36 @@ function Start-BuiltKronkServer {
 }
 
 # Build the documentation and BUI, then start the repository server as a
-# detached process.
+# detached process. Use a stable executable because Windows locks the detached
+# child binary, preventing `go run` from removing its temporary executable.
 # ./pwr.ps1 kronk-server-detach
 function Start-DetachedKronkServer {
     Build-Kronk
-    Invoke-KronkCli -CommandArguments @("server", "start", "--detach")
+
+    $basePath = if ([string]::IsNullOrWhiteSpace($env:KRONK_BASE_PATH)) {
+        Join-Path $HOME ".kronk"
+    }
+    else {
+        $env:KRONK_BASE_PATH
+    }
+    $binDirectory = Join-Path $basePath "bin"
+    $executableName = if ($env:OS -eq "Windows_NT") {
+        "kronk-dev.exe"
+    }
+    else {
+        "kronk-dev"
+    }
+    $executable = Join-Path $binDirectory $executableName
+
+    New-Item -ItemType Directory -Path $binDirectory -Force | Out-Null
+
+    Invoke-InDirectory -Path $RepoRoot -Action {
+        go build -o $executable ./cmd/kronk
+        Assert-NativeCommandSucceeded -Command "go build ./cmd/kronk"
+
+        & $executable server start --detach
+        Assert-NativeCommandSucceeded -Command "$executable server start --detach"
+    }
 }
 
 # Follow the detached server log with native PowerShell. The CLI currently
