@@ -45,9 +45,18 @@ param(
         "build-deps-upgrade",
         "yzma-latest",
         "bui-install",
+        "bui-run",
         "bui-build",
-        "kronk-docs",
+        "bui-upgrade",
+        "bui-upgrade-latest",
         "kronk-build",
+        "kronk-docs",
+        "kronk-server",
+        "kronk-server-build",
+        "kronk-server-detach",
+        "kronk-server-logs",
+        "kronk-server-stop",
+        "llama-ornith",
         "kronk-diagnose",
         "kronk-libs",
         "kronk-libs-local",
@@ -299,13 +308,65 @@ function Invoke-WithEnvironment {
     }
 }
 
-function Resolve-LlamaBench {
-    if (-not [string]::IsNullOrWhiteSpace($env:KRONK_LIB_PATH)) {
-        $bench = Join-Path $env:KRONK_LIB_PATH "llama-bench.exe"
-        if (Test-Path -LiteralPath $bench -PathType Leaf) {
-            return $bench
+function Read-DotEnvFile {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path
+    )
+
+    $variables = @{}
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return $variables
+    }
+
+    $lineNumber = 0
+    foreach ($line in Get-Content -LiteralPath $Path) {
+        $lineNumber++
+        $entry = $line.Trim()
+        if ($entry.Length -eq 0 -or $entry.StartsWith("#")) {
+            continue
         }
-        throw "llama-bench.exe was not found under KRONK_LIB_PATH: $env:KRONK_LIB_PATH"
+        if ($entry.StartsWith("export ")) {
+            $entry = $entry.Substring(7).TrimStart()
+        }
+
+        $separator = $entry.IndexOf('=')
+        if ($separator -lt 1) {
+            throw "invalid .env entry at ${Path}:$lineNumber"
+        }
+
+        $name = $entry.Substring(0, $separator).Trim()
+        if ($name -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') {
+            throw "invalid .env variable name at ${Path}:$lineNumber"
+        }
+
+        $value = $entry.Substring($separator + 1).Trim()
+        if ($value.Length -ge 2) {
+            $doubleQuoted = $value.StartsWith('"') -and $value.EndsWith('"')
+            $singleQuoted = $value.StartsWith("'") -and $value.EndsWith("'")
+            if ($doubleQuoted -or $singleQuoted) {
+                $value = $value.Substring(1, $value.Length - 2)
+            }
+        }
+
+        $variables[$name] = $value
+    }
+
+    return $variables
+}
+
+function Resolve-LlamaProgram {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Program
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($env:KRONK_LIB_PATH)) {
+        $executable = Join-Path $env:KRONK_LIB_PATH $Program
+        if (Test-Path -LiteralPath $executable -PathType Leaf) {
+            return $executable
+        }
+        throw "$Program was not found under KRONK_LIB_PATH: $env:KRONK_LIB_PATH"
     }
 
     $basePath = if ([string]::IsNullOrWhiteSpace($env:KRONK_BASE_PATH)) {
@@ -325,7 +386,7 @@ function Resolve-LlamaBench {
     }
 
     $libraries = Join-Path $basePath "libraries/windows/$arch"
-    $candidates = @(Get-ChildItem -LiteralPath $libraries -Filter "llama-bench.exe" -File -Recurse -ErrorAction SilentlyContinue)
+    $candidates = @(Get-ChildItem -LiteralPath $libraries -Filter $Program -File -Recurse -ErrorAction SilentlyContinue)
     if (-not [string]::IsNullOrWhiteSpace($env:KRONK_PROCESSOR)) {
         $processorPath = Join-Path $libraries $env:KRONK_PROCESSOR
         $candidates = @($candidates | Where-Object { $_.DirectoryName -eq $processorPath })
@@ -335,10 +396,18 @@ function Resolve-LlamaBench {
         return $candidates[0].FullName
     }
     if ($candidates.Count -eq 0) {
-        throw "llama-bench.exe was not found under $libraries; install llama libraries first"
+        throw "$Program was not found under $libraries; install llama libraries first"
     }
 
-    throw "multiple llama-bench installations were found; set KRONK_PROCESSOR or KRONK_LIB_PATH to select one"
+    throw "multiple $Program installations were found; set KRONK_PROCESSOR or KRONK_LIB_PATH to select one"
+}
+
+function Resolve-LlamaBench {
+    return Resolve-LlamaProgram -Program "llama-bench.exe"
+}
+
+function Resolve-LlamaServer {
+    return Resolve-LlamaProgram -Program "llama-server.exe"
 }
 
 function Get-DockerImageDigest {
@@ -521,9 +590,18 @@ Development (.power/dev.ps1):
 
 Server (.power/server.ps1):
   bui-install
+  bui-run
   bui-build
-  kronk-docs
+  bui-upgrade
+  bui-upgrade-latest
   kronk-build
+  kronk-docs
+  kronk-server
+  kronk-server-build
+  kronk-server-detach
+  kronk-server-logs
+  kronk-server-stop
+  llama-ornith
 
 CLI (.power/cli.ps1):
   kronk-diagnose
@@ -664,14 +742,41 @@ switch ($Target) {
     "bui-install" {
         Install-Bui
     }
+    "bui-run" {
+        Start-Bui
+    }
     "bui-build" {
         Build-Bui
+    }
+    "bui-upgrade" {
+        Update-Bui
+    }
+    "bui-upgrade-latest" {
+        Update-BuiLatest
+    }
+    "kronk-build" {
+        Build-Kronk
     }
     "kronk-docs" {
         Build-KronkDocs
     }
-    "kronk-build" {
-        Build-Kronk
+    "kronk-server" {
+        Start-KronkServer
+    }
+    "kronk-server-build" {
+        Start-BuiltKronkServer
+    }
+    "kronk-server-detach" {
+        Start-DetachedKronkServer
+    }
+    "kronk-server-logs" {
+        Show-KronkServerLogs
+    }
+    "kronk-server-stop" {
+        Stop-KronkServer
+    }
+    "llama-ornith" {
+        Start-LlamaOrnith
     }
     "kronk-diagnose" {
         Invoke-KronkDiagnose
