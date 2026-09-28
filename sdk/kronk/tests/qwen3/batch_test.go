@@ -3,6 +3,7 @@ package qwen3_test
 import (
 	"context"
 	"fmt"
+	"maps"
 	"sync"
 	"testing"
 	"time"
@@ -31,8 +32,19 @@ func Test_BatchChatConcurrent(t *testing.T) {
 	// the step and costs the answer for every suite behind it.
 	testlib.SkipOnBackends(t, "two sequences sharing one decode batch come back with corrupted logits", "rocm")
 
-	testlib.WithModel(t, testlib.CfgThinkToolChat(), func(t *testing.T, krn *kronk.Kronk) {
-		g := 10
+	const concurrentRequests = 10
+
+	// Exercise batching rather than admission backpressure or long-form
+	// reasoning: admit the complete burst and keep each echo response bounded.
+	cfg := testlib.CfgThinkToolChat()
+	cfg.PtrQueueDepth = new((concurrentRequests + cfg.NSeqMax() - 1) / cfg.NSeqMax())
+
+	d := maps.Clone(testlib.DChatNoTool)
+	d["max_tokens"] = 128
+	d["chat_template_kwargs"] = model.D{"enable_thinking": false}
+
+	testlib.WithModel(t, cfg, func(t *testing.T, krn *kronk.Kronk) {
+		g := concurrentRequests
 
 		t.Logf("Testing batch inference with %d concurrent requests", g)
 
@@ -59,7 +71,7 @@ func Test_BatchChatConcurrent(t *testing.T) {
 
 				start := time.Now()
 
-				ch, err := krn.ChatStreaming(ctx, testlib.DChatNoTool)
+				ch, err := krn.ChatStreaming(ctx, d)
 				if err != nil {
 					results[idx].err = fmt.Errorf("goroutine %d: chat streaming error: %w", idx, err)
 					return
