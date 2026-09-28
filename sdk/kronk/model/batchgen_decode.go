@@ -92,12 +92,14 @@ func (e *batchEngine) decodeEmbeddingsNormal(s *slot, embd []float32, nEmbd, nTo
 	batch.NTokens = nTokens
 
 	e.model.decodeMu.Lock()
+	wasCausal := false
 	if s.useNonCausal {
+		wasCausal = GetCausalAttn(e.model.lctx)
 		llama.SetCausalAttn(e.model.lctx, false)
 	}
 	ret, err := llama.Decode(e.model.lctx, batch)
 	if s.useNonCausal {
-		llama.SetCausalAttn(e.model.lctx, true)
+		llama.SetCausalAttn(e.model.lctx, wasCausal)
 	}
 	if err == nil && ret == 0 {
 		llama.Synchronize(e.model.lctx)
@@ -152,13 +154,15 @@ func (e *batchEngine) decodeEmbeddingsMRoPE(s *slot, embd []float32, nEmbd, nTok
 	batch.NTokens = nTokens
 
 	e.model.decodeMu.Lock()
+	wasCausal := false
 	if s.useNonCausal {
+		wasCausal = GetCausalAttn(e.model.lctx)
 		llama.SetCausalAttn(e.model.lctx, false)
 	}
 
 	ret, err := llama.Decode(e.model.lctx, batch)
 	if s.useNonCausal {
-		llama.SetCausalAttn(e.model.lctx, true)
+		llama.SetCausalAttn(e.model.lctx, wasCausal)
 	}
 	if err == nil && ret == 0 {
 		llama.Synchronize(e.model.lctx)

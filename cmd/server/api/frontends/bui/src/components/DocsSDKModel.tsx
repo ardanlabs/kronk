@@ -49,12 +49,20 @@ export default function DocsSDKModel() {
               <p className="doc-description">AddParams adds the values from the Params struct into the provided D map. Only non-zero values are added.</p>
             </div>
 
+            <div className="doc-section" id="func-getcausalattn">
+              <h4>GetCausalAttn</h4>
+              <pre className="code-block">
+                <code>func GetCausalAttn(ctx llama.Context) bool</code>
+              </pre>
+              <p className="doc-description">GetCausalAttn reports whether the context is using causal attention.</p>
+            </div>
+
             <div className="doc-section" id="func-inityzmaworkarounds">
               <h4>InitYzmaWorkarounds</h4>
               <pre className="code-block">
                 <code>func InitYzmaWorkarounds(libPath string) error</code>
               </pre>
-              <p className="doc-description">InitYzmaWorkarounds initializes Kronk-specific Yzma compatibility code. It is intentionally a no-op until Kronk requires another local workaround.</p>
+              <p className="doc-description">InitYzmaWorkarounds initializes Kronk-specific Yzma compatibility code.</p>
             </div>
 
             <div className="doc-section" id="func-recurrentstatecopies">
@@ -2212,6 +2220,7 @@ export default function DocsSDKModel() {
               <a href="#functions" className="doc-index-header">Functions</a>
               <ul>
                 <li><a href="#func-addparams">AddParams</a></li>
+                <li><a href="#func-getcausalattn">GetCausalAttn</a></li>
                 <li><a href="#func-inityzmaworkarounds">InitYzmaWorkarounds</a></li>
                 <li><a href="#func-recurrentstatecopies">RecurrentStateCopies</a></li>
                 <li><a href="#func-registerparser">RegisterParser</a></li>
