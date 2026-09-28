@@ -371,6 +371,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	malinaLibs, err := malinalibs.New(
 		malinalibs.WithBasePath(cfg.BasePath),
 		malinalibs.WithLibPath(cfg.MalinaLibPath),
+		malinalibs.WithAllowUpgrade(cfg.AllowUpgrade),
+		malinalibs.WithValidation(cfg.LibVerifyEnabled),
 		malinalibs.WithDetect(ctx, log.Info),
 	)
 	if err != nil {
@@ -378,6 +380,22 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	}
 
 	log.Info(ctx, "startup", "status", "malina libs ready", "libPath", malinaLibs.LibsPath(), "arch", malinaLibs.Arch(), "os", malinaLibs.OS(), "processor", malinaLibs.Processor())
+
+	malinaLibVerified := !cfg.LibVerifyEnabled
+	downloadCtx, cancel = context.WithTimeout(ctx, 3*time.Minute)
+	malinaVersion, err := malinaLibs.Download(downloadCtx, log.Info)
+	cancel()
+	if err != nil {
+		if cfg.LibVerifyEnabled {
+			return fmt.Errorf("unable to install and verify stable-diffusion.cpp: %w", err)
+		}
+		log.Info(ctx, "startup", "WARNING", "unable to install stable-diffusion.cpp, running in degraded mode", "ERROR", err)
+	} else {
+		malinaLibVerified = true
+		if cfg.LibVerifyEnabled {
+			log.Info(ctx, "startup", "status", "verified stable-diffusion.cpp runtime", "version", malinaVersion.Version)
+		}
+	}
 
 	malinaModels, err := malinamodels.NewWithPaths(cfg.BasePath)
 	if err != nil {
@@ -433,7 +451,9 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	}
 
 	malinaProgress := malinaprogress.New()
-	if err := malina.Init(malina.WithLibPath(malinaLibs.LibsPath()), malina.WithProgress(malinaProgress.Publish)); err != nil {
+	if !malinaLibVerified {
+		return errors.New("malina init blocked because stable-diffusion.cpp runtime verification did not succeed")
+	} else if err := malina.Init(malina.WithLibPath(malinaLibs.LibsPath()), malina.WithProgress(malinaProgress.Publish)); err != nil {
 		log.Info(ctx, "startup", "WARNING", "malina init failed, running in degraded mode (install stable-diffusion libraries and restart)", "ERROR", err)
 	}
 
