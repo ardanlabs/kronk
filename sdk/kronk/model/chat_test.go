@@ -388,7 +388,7 @@ func TestChatPreservesValidationError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := Model{log: noopLog}
+			m := Model{log: noopLog, batch: &batchEngine{}}
 			d := D{
 				"messages": []D{{"role": "user", "content": "hello"}},
 				tt.field:   tt.value,
@@ -402,7 +402,7 @@ func TestChatPreservesValidationError(t *testing.T) {
 }
 
 func TestChatStreamingReturnsValidationError(t *testing.T) {
-	m := Model{log: noopLog}
+	m := Model{log: noopLog, batch: &batchEngine{}}
 	d := D{
 		"messages": []D{{"role": "user", "content": "hello"}},
 		"seed":     -1,

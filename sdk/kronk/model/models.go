@@ -81,21 +81,23 @@ func (mt ModelType) String() string {
 
 // ModelInfo represents the model's card information.
 type ModelInfo struct {
-	ID            string
-	HasProjection bool
-	Desc          string
-	Size          uint64
-	FileType      int32
-	Quantization  string
-	VRAMTotal     int64
-	SlotMemory    int64
-	NSWA          int32 // Effective SWA window in tokens; zero means the model does not use SWA.
-	Type          ModelType
-	IsEmbedModel  bool
-	IsRerankModel bool
-	Metadata      map[string]string
-	Template      Template
-	profile       modelprofile.Profile
+	ID               string
+	HasProjection    bool
+	Desc             string
+	Size             uint64
+	FileType         int32
+	Quantization     string
+	VRAMTotal        int64
+	SlotMemory       int64
+	NSWA             int32 // Effective SWA window in tokens; zero means the model does not use SWA.
+	Type             ModelType
+	IsEmbedModel     bool
+	IsRerankModel    bool
+	IsDecisionModel  bool
+	Metadata         map[string]string
+	Template         Template
+	decisionProtocol DecisionProtocol
+	profile          modelprofile.Profile
 }
 
 func (mi ModelInfo) String() string {
@@ -108,6 +110,9 @@ func (mi ModelInfo) String() string {
 	}
 	if mi.IsRerankModel {
 		flags = append(flags, "rerank")
+	}
+	if mi.IsDecisionModel {
+		flags = append(flags, "decision:"+mi.decisionProtocol.String())
 	}
 
 	flagStr := "none"
@@ -152,23 +157,47 @@ func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 	modelID := modelIDFromFiles(cfg.ModelFiles)
 
 	isEmbedModel, isRerankModel := detectEmbedRerank(modelID)
+	decisionProtocol := detectDecisionProtocol(cfg.DecisionProtocol, modelID, metadata)
 
 	profile := modelprofile.Resolve(metadata)
 	modelType := detectModelType(model, profile)
 
 	return ModelInfo{
-		ID:            modelID,
-		HasProjection: cfg.ProjFile != "",
-		Desc:          desc,
-		Size:          size,
-		FileType:      int32(fileType),
-		Quantization:  llama.FtypeName(fileType),
-		NSWA:          llama.ModelNSWA(model),
-		Type:          modelType,
-		IsEmbedModel:  isEmbedModel,
-		IsRerankModel: isRerankModel,
-		Metadata:      metadata,
-		profile:       profile,
+		ID:               modelID,
+		HasProjection:    cfg.ProjFile != "",
+		Desc:             desc,
+		Size:             size,
+		FileType:         int32(fileType),
+		Quantization:     llama.FtypeName(fileType),
+		NSWA:             llama.ModelNSWA(model),
+		Type:             modelType,
+		IsEmbedModel:     isEmbedModel,
+		IsRerankModel:    isRerankModel,
+		IsDecisionModel:  !decisionProtocol.IsZero(),
+		Metadata:         metadata,
+		decisionProtocol: decisionProtocol,
+		profile:          profile,
+	}
+}
+
+func detectDecisionProtocol(configured DecisionProtocol, modelID string, metadata map[string]string) DecisionProtocol {
+	if !configured.IsZero() {
+		return configured
+	}
+
+	modelName := strings.ToLower(metadata["general.name"])
+	if strings.Contains(modelName, "jev-style") {
+		return DecisionProtocolJevStyle
+	}
+
+	name := strings.ToLower(modelID)
+	switch {
+	case strings.Contains(name, "openjev"):
+		return DecisionProtocolOpenJEV
+	case strings.Contains(name, "jev-style"):
+		return DecisionProtocolJevStyle
+	default:
+		return DecisionProtocol{}
 	}
 }
 

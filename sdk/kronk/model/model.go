@@ -189,6 +189,8 @@ type Model struct {
 	adapterHandles []llama.AdapterLora
 	adapterScales  []float32
 	batch          *batchEngine
+	decision       *decisionEngine
+	protocol       decisionProtocol
 	template       Template
 	compiledTmpl   *compiledTemplate // Long-lived compiled jinja template (one-time init via templateOnce).
 	templateOnce   sync.Once         // Guards one-time compile of compiledTmpl.
@@ -302,13 +304,15 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	configuredPrefillBatchSize := cfg.PrefillBatchSize()
 	cfg = adjustConfig(cfg, mdl)
 	prefillChunk := cfg.PrefillBatchSize()
+	modelInfo := toModelInfo(cfg, mdl)
+	cfg.DecisionProtocol = modelInfo.decisionProtocol
 
 	pooled := isEmbedOrRerankConfig(cfg)
 	generationRowsPerSlot := 0
-	if !pooled {
+	if !pooled && cfg.DecisionProtocol.IsZero() {
 		generationRowsPerSlot = plan.RowsPerSequence()
 	}
-	if !pooled {
+	if !pooled && cfg.DecisionProtocol.IsZero() {
 		cfg = adjustGenerationBatch(cfg, generationRowsPerSlot, plan.MTP() && plan.Active())
 	}
 
@@ -330,8 +334,6 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		"speculation-mode", plan.Mode,
 		"speculation-active", plan.Active(),
 		"automatic-padding", true)
-
-	modelInfo := toModelInfo(cfg, mdl)
 
 	cfg.DefaultParams = resolveSamplingDefaults(cfg.DefaultParams, modelInfo.Metadata, cfg.ContextWindow())
 
@@ -416,7 +418,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	// processing contexts are created by each slot in startSlot and
 	// freed in freeSlotResources — see Model.mtmdMetaCtx for the
 	// rationale.
-	isGenerationModel := !(modelInfo.IsEmbedModel || modelInfo.IsRerankModel)
+	isGenerationModel := !(modelInfo.IsEmbedModel || modelInfo.IsRerankModel || modelInfo.IsDecisionModel)
 	if isGenerationModel && m.projFile != "" {
 		l(ctx, "loading-prof-file", "status", "started", "proj", path.Base(m.projFile))
 
@@ -443,6 +445,27 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	}
 
 	switch {
+	case modelInfo.IsDecisionModel:
+		if err := initDecisionRuntime(&m); err != nil {
+			if m.mtmdMetaCtx != 0 {
+				mtmd.Free(m.mtmdMetaCtx)
+			}
+			adapterErr := m.freeAdapters()
+			llama.ModelFree(mdl)
+			return nil, errors.Join(err, adapterErr)
+		}
+		if err := initDecisionProtocol(&m); err != nil {
+			llama.Free(m.lctx)
+			m.lctx = 0
+			m.mem = 0
+			if m.mtmdMetaCtx != 0 {
+				mtmd.Free(m.mtmdMetaCtx)
+			}
+			adapterErr := m.freeAdapters()
+			llama.ModelFree(mdl)
+			return nil, errors.Join(err, adapterErr)
+		}
+
 	case useBatchSeq(modelInfo):
 		if err := initBatchSeqRuntime(ctx, &m); err != nil {
 			adapterErr := m.freeAdapters()

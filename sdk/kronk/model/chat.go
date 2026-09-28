@@ -93,6 +93,10 @@ func (m *Model) ChatStreaming(ctx context.Context, d D) (<-chan ChatResponse, er
 }
 
 func (m *Model) chatStreaming(ctx context.Context, d D, streaming bool) (<-chan ChatResponse, error) {
+	if m.batch == nil {
+		return nil, fmt.Errorf("chat: model %q doesn't support chat", m.modelInfo.ID)
+	}
+
 	requestStart := time.Now()
 
 	// Increment active streams before preparing the request to prevent Unload
