@@ -29,33 +29,15 @@ install-kronk:
 	@echo
 
 # Use this to install or update llama.cpp, whisper.cpp, and
-# stable-diffusion.cpp to the latest version. Used by the local `make test`
-# target so developers exercise the newest bundles before bumping each
-# backend's well-known defaultVersion for a release. All three backends
+# stable-diffusion.cpp to the pinned version.
 install-libraries: install-kronk
-	@echo "========== INSTALL LLAMA LIBRARIES (latest) =========="
+	@echo "========== INSTALL LLAMA LIBRARIES (pinned) =========="
 	kronk libs --local
 	@echo
-	@echo "========== INSTALL WHISPER LIBRARIES (latest) =========="
+	@echo "========== INSTALL WHISPER LIBRARIES (pinned) =========="
 	kronk bucky libs --local
 	@echo
-	@echo "========== INSTALL STABLE DIFFUSION LIBRARIES (latest) =========="
-	kronk malina libs --local
-	@echo
-
-# Use this to install the well-known defaultVersion of llama.cpp,
-# whisper.cpp, and stable-diffusion.cpp baked into the SDK. This mirrors
-# what CI does so `make test-gh` reproduces the GH workflow locally.
-# Bumping each backend's pinned default is what rolls this target and the
-# CI workflow forward.
-install-libraries-gh: install-kronk
-	@echo "========== INSTALL LLAMA LIBRARIES (defaultVersion) =========="
-	kronk libs --local
-	@echo
-	@echo "========== INSTALL WHISPER LIBRARIES (defaultVersion) =========="
-	kronk bucky libs --local
-	@echo
-	@echo "========== INSTALL STABLE DIFFUSION LIBRARIES (defaultVersion) =========="
+	@echo "========== INSTALL STABLE DIFFUSION LIBRARIES (pinned) =========="
 	kronk malina libs --local
 	@echo
 

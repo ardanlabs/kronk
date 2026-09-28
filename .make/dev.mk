@@ -44,7 +44,7 @@ test-only: install-libraries install-test-models
 
 test: test-only lint vuln-check diff
 
-test-gh-only: install-libraries-gh install-test-gh-models
+test-gh-only: install-libraries install-test-gh-models
 	@echo ========== RUN GH ONLY TESTS ==========
 	unset KRONK_BASE_PATH KRONK_LIB_PATH KRONK_BUCKY_LIB_PATH KRONK_PROCESSOR KRONK_ARCH KRONK_OS && \
 	export RUN_IN_PARALLEL=no && \

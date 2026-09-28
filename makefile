@@ -4,6 +4,8 @@
 # Use ash in Alpine images and otherwise default to Bash. On Windows/MSYS2,
 # derive bash.exe from the default sh.exe path. On Unix, use `which` to support
 # environments such as NixOS, where Bash may live outside /bin.
+# Windows users who prefer native PowerShell without GNU Make or a Unix shell
+# can use the supported targets in `pwr.ps1`; run it without a target for help.
 ifeq ($(OS),Windows_NT)
     SHELL := $(subst sh.exe,bash.exe,$(SHELL))
 else
