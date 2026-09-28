@@ -39,6 +39,7 @@ var (
 	MPAudio          models.Path
 	MPEmbedBatchSeq  models.Path
 	MPRerankBatchSeq models.Path
+	MPDecision       models.Path
 	MPMTP            models.Path
 	MPDraft          models.Path
 )
@@ -71,6 +72,7 @@ func Setup() {
 	resolveModel(mdls, "unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M", &MPMoEVision)
 	resolveModel(mdls, "nomic-ai/nomic-embed-text-v1.5.Q8_0", &MPEmbedBatchSeq)
 	resolveModel(mdls, "gpustack/bge-reranker-v2-m3-Q8_0", &MPRerankBatchSeq)
+	resolveModel(mdls, "chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0", &MPDecision)
 	resolveModel(mdls, "unsloth/gpt-oss-20b-Q8_0", &MPGPTChat)
 	resolveModel(mdls, "ggml-org/Qwen2.5-Omni-3B-Q4_K_M", &MPAudio)
 	resolveModel(mdls, "mradermacher/Qwopus3.5-4B-Coder.Q4_K_M", &MPHybridVision)
@@ -334,6 +336,18 @@ func CfgRerankBatchSeq() model.Config {
 	return model.Config{
 		ModelFiles:          MPRerankBatchSeq.ModelFiles,
 		PtrContextWindow:    new(2048),
+		PtrPrefillBatchSize: new(512),
+		CacheTypeK:          model.GGMLTypeF16,
+		CacheTypeV:          model.GGMLTypeF16,
+		PtrNSeqMax:          new(4),
+	}
+}
+
+// CfgDecision returns the Jev-Style decision configuration.
+func CfgDecision() model.Config {
+	return model.Config{
+		ModelFiles:          MPDecision.ModelFiles,
+		PtrContextWindow:    new(4096),
 		PtrPrefillBatchSize: new(512),
 		CacheTypeK:          model.GGMLTypeF16,
 		CacheTypeV:          model.GGMLTypeF16,

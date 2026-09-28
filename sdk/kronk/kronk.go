@@ -106,8 +106,8 @@ func embedOrRerankAdmissionCapacity(cfg model.Config) int {
 	return max(cfg.NSeqMax(), 1)
 }
 
-func decisionAdmissionCapacity(_ model.Config) int {
-	return 1
+func decisionAdmissionCapacity(cfg model.Config) int {
+	return max(cfg.NSeqMax(), 1) * cfg.QueueDepth()
 }
 
 func generationAdmissionCapacity(cfg model.Config) int {

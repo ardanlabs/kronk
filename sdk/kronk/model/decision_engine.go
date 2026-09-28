@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
@@ -25,21 +24,23 @@ type decisionWork struct {
 // decisionEngine performs only model execution. Protocol implementations own
 // prompting, candidate selection, calibration, and multi-pass decisions.
 type decisionEngine struct {
-	lctx      llama.Context
-	mem       llama.Memory
-	nVocab    int
-	nCtx      int
-	ubatch    int
-	cached    []llama.Token
-	admission chan struct{}
+	lctx          llama.Context
+	mem           llama.Memory
+	nVocab        int
+	contextWindow int
+	maxTokens     int
+	maxSequences  int
+	maxOutputs    int
+	scheduler     *decisionScheduler
 }
 
 func decisionContextParams(base llama.ContextParams, cfg Config) llama.ContextParams {
 	params := base
-	params.NCtx = uint32(cfg.ContextWindow())
-	params.NBatch = params.NCtx
-	params.NUbatch = min(uint32(cfg.EffectiveNUBatch()), params.NCtx)
-	params.NSeqMax = 2
+	nSeqMax := max(cfg.NSeqMax(), 1)
+	params.NCtx = uint32(cfg.ContextWindow() * nSeqMax)
+	params.NBatch = uint32(cfg.ContextWindow())
+	params.NUbatch = min(uint32(cfg.EffectiveNUBatch()), params.NBatch)
+	params.NSeqMax = uint32(nSeqMax)
 	params.NOutputsMax = decisionMaxReadouts
 	params.NOutputsMaxPerSeq = decisionMaxReadouts
 	params.KVUnified = 1
@@ -73,14 +74,19 @@ func initDecisionRuntime(m *Model) error {
 	m.ctxParams = params
 	m.lctx = lctx
 	m.mem = mem
-	m.decision = &decisionEngine{
-		lctx:      lctx,
-		mem:       mem,
-		nVocab:    int(llama.VocabNTokens(m.vocab)),
-		nCtx:      int(params.NCtx),
-		ubatch:    int(params.NUbatch),
-		admission: make(chan struct{}, 1),
+
+	engine := decisionEngine{
+		lctx:          lctx,
+		mem:           mem,
+		nVocab:        int(llama.VocabNTokens(m.vocab)),
+		contextWindow: m.cfg.ContextWindow(),
+		maxTokens:     int(params.NBatch),
+		maxSequences:  int(params.NSeqMax),
+		maxOutputs:    int(params.NOutputsMax),
 	}
+	engine.scheduler = newDecisionScheduler(&engine, m.cfg.QueueDepth())
+	engine.scheduler.start()
+	m.decision = &engine
 
 	return nil
 }
@@ -93,23 +99,7 @@ func (e *decisionEngine) run(ctx context.Context, work []decisionWork) ([][][]fl
 		return nil, err
 	}
 
-	select {
-	case e.admission <- struct{}{}:
-		defer func() { <-e.admission }()
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-
-	result, err := e.exact(ctx, work)
-	if err != nil {
-		return nil, errors.Join(err, e.clear())
-	}
-
-	return result, nil
+	return e.scheduler.run(ctx, work)
 }
 
 func (e *decisionEngine) validate(work []decisionWork) error {
@@ -118,8 +108,8 @@ func (e *decisionEngine) validate(work []decisionWork) error {
 			return fmt.Errorf("decision work[%d] has no tokens", i)
 		}
 
-		if len(item.tokens) > e.nCtx {
-			return fmt.Errorf("decision work[%d] has %d tokens, context window is %d", i, len(item.tokens), e.nCtx)
+		if len(item.tokens) > e.contextWindow {
+			return fmt.Errorf("decision work[%d] has %d tokens, context window is %d", i, len(item.tokens), e.contextWindow)
 		}
 
 		if item.prefixLen < 0 || item.prefixLen > len(item.tokens) {
@@ -153,111 +143,7 @@ func (e *decisionEngine) validate(work []decisionWork) error {
 	return nil
 }
 
-func decisionSharedLen(work []decisionWork) int {
-	shared := work[0].prefixLen
-	for _, item := range work[1:] {
-		shared = min(shared, item.prefixLen)
-		for i := range shared {
-			if item.tokens[i] != work[0].tokens[i] {
-				shared = i
-				break
-			}
-		}
-	}
-
-	return shared
-}
-
-func (e *decisionEngine) exact(ctx context.Context, work []decisionWork) ([][][]float32, error) {
-	shared := decisionSharedLen(work) / e.ubatch * e.ubatch
-	if shared == 0 {
-		return e.separate(ctx, work)
-	}
-
-	if err := e.keepPrefix(ctx, work[0].tokens[:shared]); err != nil {
-		return nil, err
-	}
-
-	result := make([][][]float32, len(work))
-	for i, item := range work {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-
-		if _, err := llama.MemorySeqRm(e.mem, 1, -1, -1); err != nil {
-			return nil, fmt.Errorf("decision remove sequence 1: %w", err)
-		}
-
-		if err := llama.MemorySeqCp(e.mem, 0, 1, -1, -1); err != nil {
-			return nil, fmt.Errorf("decision copy shared prefix: %w", err)
-		}
-
-		logits, err := e.decode(decisionPart{
-			tokens:   item.tokens[shared:],
-			position: shared,
-			sequence: 1,
-			readouts: item.readouts,
-		})
-
-		if _, removeErr := llama.MemorySeqRm(e.mem, 1, -1, -1); err == nil && removeErr != nil {
-			err = fmt.Errorf("decision remove completed sequence 1: %w", removeErr)
-		}
-
-		if err != nil {
-			return nil, err
-		}
-
-		result[i] = logits[0]
-	}
-
-	return result, nil
-}
-
-func (e *decisionEngine) separate(ctx context.Context, work []decisionWork) ([][][]float32, error) {
-	result := make([][][]float32, len(work))
-	for i, item := range work {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-
-		if err := e.clear(); err != nil {
-			return nil, err
-		}
-
-		logits, err := e.decode(decisionPart{tokens: item.tokens, readouts: item.readouts})
-		if err != nil {
-			return nil, err
-		}
-
-		result[i] = logits[0]
-	}
-	return result, e.clear()
-}
-
-func (e *decisionEngine) keepPrefix(ctx context.Context, prefix []llama.Token) error {
-	if slices.Equal(e.cached, prefix) {
-		return nil
-	}
-
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-
-	if err := e.clear(); err != nil {
-		return err
-	}
-
-	if _, err := e.decode(decisionPart{tokens: prefix}); err != nil {
-		return err
-	}
-
-	e.cached = slices.Clone(prefix)
-
-	return nil
-}
-
 func (e *decisionEngine) clear() error {
-	e.cached = nil
 	if err := llama.MemoryClear(e.mem, true); err != nil {
 		return fmt.Errorf("decision clear memory: %w", err)
 	}
@@ -341,4 +227,28 @@ func (e *decisionEngine) decode(parts ...decisionPart) ([][][]float32, error) {
 	}
 
 	return result, nil
+}
+
+func (e *decisionEngine) evaluate(entries []decisionScheduledEntry) ([][][]float32, error) {
+	parts := make([]decisionPart, len(entries))
+	for i, entry := range entries {
+		parts[i] = decisionPart{
+			tokens:   entry.work.tokens,
+			sequence: llama.SeqId(i),
+			readouts: entry.work.readouts,
+		}
+	}
+
+	outputs, err := e.decode(parts...)
+	if err != nil {
+		return nil, errors.Join(err, e.clear())
+	}
+
+	for i := range entries {
+		if _, err := llama.MemorySeqRm(e.mem, llama.SeqId(i), -1, -1); err != nil {
+			return nil, errors.Join(fmt.Errorf("decision remove sequence %d: %w", i, err), e.clear())
+		}
+	}
+
+	return outputs, nil
 }

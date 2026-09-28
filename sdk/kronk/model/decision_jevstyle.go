@@ -60,7 +60,7 @@ func newJevStyleProtocol(m *Model) (*jevStyleProtocol, error) {
 			encode: func(text string) []llama.Token {
 				return llama.Tokenize(m.vocab, text, false, false)
 			},
-			maxLen:  min(jevStyleMaxLen, m.decision.nCtx),
+			maxLen:  min(jevStyleMaxLen, m.decision.contextWindow),
 			headMax: jevStyleHeadMax,
 		},
 	}, nil

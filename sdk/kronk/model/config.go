@@ -259,8 +259,9 @@ type AdapterConfig struct {
 // models (including vision/audio), it sets the maximum number of generation
 // slots. For supported embedding and reranking architectures, it sets the
 // maximum sequence width of the sequence-batch engine. Other embedding and
-// reranking architectures use it as the context-pool size. When set to 0, a
-// default of 1 is used.
+// reranking architectures use it as the context-pool size. For decision
+// models, it sets the maximum number of work items evaluated together on one
+// context. When set to 0, a default of 1 is used.
 //
 // NThreads is the number of threads to use for generation. When unset or set
 // to 0, it defaults to the greater of 4 and runtime.NumCPU().
@@ -305,11 +306,12 @@ type AdapterConfig struct {
 // projector device automatically. It cannot be combined with ProjOnCPU=true.
 // The LLM device selection is unaffected.
 //
-// QueueDepth sets the number of admitted request layers for generation models.
+// QueueDepth sets the number of admitted request layers for generation and
+// decision models.
 // The admission capacity is NSeqMax * QueueDepth. A depth of 1 admits only the
 // requests that can occupy execution slots; the default depth of 2 admits one
 // additional waiting layer. QueueDepth also determines the default IMC session
-// capacity. It only applies to text inference models.
+// capacity for text inference models.
 //
 // RopeFreqBase overrides the RoPE base frequency. When nil, uses model default.
 // Common values: 10000 (Llama), 1000000 (Qwen3).

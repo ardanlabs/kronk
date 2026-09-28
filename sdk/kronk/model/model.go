@@ -455,6 +455,8 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 			return nil, errors.Join(err, adapterErr)
 		}
 		if err := initDecisionProtocol(&m); err != nil {
+			m.decision.scheduler.stop()
+			m.decision = nil
 			llama.Free(m.lctx)
 			m.lctx = 0
 			m.mem = 0
@@ -1244,6 +1246,11 @@ func (m *Model) Unload(ctx context.Context) error {
 		batchSeqErr = m.batchSeq.stop()
 	}
 
+	hasDecision := m.decision != nil
+	if hasDecision {
+		m.decision.scheduler.stop()
+	}
+
 	m.log(ctx, "unload", "status", "waiting-for-streams", "active", m.activeStreams.Load())
 
 	for m.activeStreams.Load() > 0 {
@@ -1277,8 +1284,8 @@ func (m *Model) Unload(ctx context.Context) error {
 		m.pool.close()
 	}
 
-	// Free the primary generation or sequence-batch context if it exists. The
-	// sequence-batch owner and reusable batch are already gone at this point.
+	// Free the primary generation, decision, or sequence-batch context if it
+	// exists. Its owner goroutine and reusable batch are already gone.
 	var batchSeqContextErr error
 	if m.lctx != 0 {
 		if hasBatchSeq {
@@ -1290,6 +1297,11 @@ func (m *Model) Unload(ctx context.Context) error {
 	}
 	if hasBatchSeq {
 		m.batchSeq = nil
+		m.lctx = 0
+		m.mem = 0
+	}
+	if hasDecision {
+		m.decision = nil
 		m.lctx = 0
 		m.mem = 0
 	}

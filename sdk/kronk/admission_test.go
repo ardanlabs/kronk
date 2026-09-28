@@ -33,6 +33,28 @@ func TestEmbedOrRerankAdmissionCapacity(t *testing.T) {
 	}
 }
 
+func TestDecisionAdmissionCapacity(t *testing.T) {
+	tests := []struct {
+		name       string
+		nSeqMax    int
+		queueDepth int
+		want       int
+	}{
+		{"minimum", 0, 2, 2},
+		{"single sequence", 1, 4, 4},
+		{"multiple sequences", 4, 2, 8},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := model.NewConfig(model.WithNSeqMax(tt.nSeqMax), model.WithQueueDepth(tt.queueDepth))
+			if got := decisionAdmissionCapacity(cfg); got != tt.want {
+				t.Errorf("decisionAdmissionCapacity: got %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestGenerationAdmissionCapacity(t *testing.T) {
 	tests := []struct {
 		name       string

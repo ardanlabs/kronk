@@ -111,6 +111,9 @@ example-yzma-step7:
 example-yzma-step8:
 	cd examples && go run ./yzma/step8/main.go
 
+example-yzma-step9:
+	cd examples && go run ./yzma/step9/main.go
+
 example-yzma-parallel-curl1:
 	curl -X POST http://localhost:8090/v1/completions \
 	-H "Content-Type: application/json" \

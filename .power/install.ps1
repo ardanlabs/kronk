@@ -91,6 +91,7 @@ function Install-TestGhModels {
     Install-KronkModel "mradermacher/Qwopus3.5-4B-Coder.Q4_K_M"
     Install-KronkModel "nomic-ai/nomic-embed-text-v1.5.Q8_0"
     Install-KronkModel "gpustack/bge-reranker-v2-m3-Q8_0"
+    Install-KronkModel "https://huggingface.co/chaoliangUNSW/Jev-Style-0.8B-Decision-v3-GGUF/resolve/main/Jev-Style-0.8B-Decision-v3-Q8_0.gguf"
     Install-BuckyModel "ggml-tiny.bin"
 }
 
@@ -115,6 +116,7 @@ function Install-TestModels {
     Install-KronkModel "unsloth/Qwen3-1.7B-Q4_K_M"
     Install-KronkModel "nomic-ai/nomic-embed-text-v1.5.Q8_0"
     Install-KronkModel "gpustack/bge-reranker-v2-m3-Q8_0"
+    Install-KronkModel "https://huggingface.co/chaoliangUNSW/Jev-Style-0.8B-Decision-v3-GGUF/resolve/main/Jev-Style-0.8B-Decision-v3-Q8_0.gguf"
 
     Write-Section "INSTALL BUCKY MODELS"
     Install-BuckyModel "ggml-tiny.bin"
