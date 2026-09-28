@@ -13,6 +13,20 @@ models:
       endpoint: embeddings
       embedding: true
     resolved_at: 2026-07-30T01:18:25.141492Z
+  chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0:
+    provider: chaoliangUNSW
+    family: Jev-Style-0.8B-Decision-v3-GGUF
+    revision: main
+    files:
+      - Jev-Style-0.8B-Decision-v3-Q8_0.gguf
+    file_sizes:
+      - 811843040
+    mtp_checked: true
+    model_type: Hybrid
+    capabilities:
+      endpoint: decision
+      decision: true
+    resolved_at: 2026-09-28T18:11:16.921571Z
   ggml-org/Qwen2.5-Omni-3B-Q4_K_M:
     provider: ggml-org
     family: Qwen2.5-Omni-3B-GGUF
@@ -217,6 +231,20 @@ models:
       endpoint: embeddings
       embedding: true
     resolved_at: 2026-07-30T01:18:34.52641Z
+  openjev/OpenJev-Q4_K_M:
+    provider: openjev
+    family: openjev-GGUF
+    revision: main
+    files:
+      - OpenJev-Q4_K_M.gguf
+    file_sizes:
+      - 16547400000
+    mtp_checked: true
+    model_type: Hybrid
+    capabilities:
+      endpoint: decision
+      decision: true
+    resolved_at: 2026-09-28T17:35:47.75056Z
   ornith-ai/Ornith-1.5-9B-Q4_K_M:
     provider: ornith-ai
     family: Ornith-1.5-9B-GGUF

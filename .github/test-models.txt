@@ -12,7 +12,7 @@ kronk unsloth/Qwen3-0.6B-Q8_0
 kronk mradermacher/Qwopus3.5-4B-Coder.Q4_K_M
 kronk nomic-ai/nomic-embed-text-v1.5.Q8_0
 kronk gpustack/bge-reranker-v2-m3-Q8_0
-kronk https://huggingface.co/chaoliangUNSW/Jev-Style-0.8B-Decision-v3-GGUF/resolve/main/Jev-Style-0.8B-Decision-v3-Q8_0.gguf
+kronk chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0
 bucky ggml-tiny.bin
 
 # The two speculative-decoding MTP targets, the only GPU coverage of that path

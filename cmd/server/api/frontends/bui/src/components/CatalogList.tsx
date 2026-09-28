@@ -73,7 +73,7 @@ function toggleSet<T>(set: Set<T>, value: T): Set<T> {
 }
 
 const CAPABILITY_KEYS: (keyof CatalogCapabilities)[] = [
-  'images', 'audio', 'video', 'streaming', 'reasoning', 'tooling', 'embedding', 'rerank',
+  'images', 'audio', 'video', 'streaming', 'reasoning', 'tooling', 'embedding', 'rerank', 'decision',
 ];
 
 const CAPABILITY_LABELS: Record<string, string> = {
@@ -85,6 +85,7 @@ const CAPABILITY_LABELS: Record<string, string> = {
   tooling: 'Tooling',
   embedding: 'Embedding',
   rerank: 'Rerank',
+  decision: 'Decision',
 };
 
 // ---------------------------------------------------------------------------

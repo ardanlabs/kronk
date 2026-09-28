@@ -73,7 +73,7 @@ func runLocal(mdls *models.Models, args []string) error {
 			detail.ParameterCount = models.ParameterCount(metadata)
 			detail.Parameters = models.FormatParameterCount(detail.ParameterCount)
 			detail.Template = models.TemplateName(metadata)
-			detail.Capabilities = models.CapabilitiesFor(metadata, entry.MMProj != "")
+			detail.Capabilities = models.CapabilitiesForModel(metadata, entry.MMProj != "", id)
 		}
 	}
 
@@ -133,6 +133,7 @@ func print(d models.CatalogDetail) {
 		fmt.Printf("Tooling:    %t\n", d.Capabilities.Tooling)
 		fmt.Printf("Embedding:  %t\n", d.Capabilities.Embedding)
 		fmt.Printf("Rerank:     %t\n", d.Capabilities.Rerank)
+		fmt.Printf("Decision:   %t\n", d.Capabilities.Decision)
 		fmt.Printf("Images:     %t\n", d.Capabilities.Images)
 		fmt.Printf("Audio:      %t\n", d.Capabilities.Audio)
 		fmt.Printf("Video:      %t\n", d.Capabilities.Video)

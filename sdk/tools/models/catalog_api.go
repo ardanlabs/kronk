@@ -224,9 +224,11 @@ func (m *Models) ReconcileCatalog(ctx context.Context, log applog.Logger) error 
 			touched = true
 		}
 
-		// Enrichment (model_type, capabilities) only touches entries missing
-		// the fields.
-		if entry.ModelType == "" || entry.Capabilities.Endpoint == "" {
+		// Enrichment normally touches entries missing these fields. Decision
+		// model names are also revisited so catalogs created before Decision
+		// was a capability are corrected from chat_completion.
+		if entry.ModelType == "" || entry.Capabilities.Endpoint == "" ||
+			(isDecisionCatalogEntry(entry) && !entry.Capabilities.Decision) {
 			if updated, ok := m.enrichEntry(ctx, entry, log); ok {
 				entry = updated
 				touched = true
@@ -269,7 +271,7 @@ func (m *Models) enrichEntry(ctx context.Context, entry CatalogEntry, log applog
 	}
 
 	modelType := ArchitectureClass(metadata)
-	capabilities := CapabilitiesFor(metadata, entry.MMProj != "")
+	capabilities := CapabilitiesForModel(metadata, entry.MMProj != "", catalogEntryModelName(entry))
 
 	if entry.ModelType == modelType && entry.Capabilities == capabilities {
 		return entry, false
@@ -279,6 +281,14 @@ func (m *Models) enrichEntry(ctx context.Context, entry CatalogEntry, log applog
 	entry.Capabilities = capabilities
 
 	return entry, true
+}
+
+func isDecisionCatalogEntry(entry CatalogEntry) bool {
+	return isDecisionModelName(catalogEntryModelName(entry))
+}
+
+func catalogEntryModelName(entry CatalogEntry) string {
+	return entry.Provider + "/" + entry.Family + " " + strings.Join(entry.Files, " ")
 }
 
 // RemoveCatalogEntry deletes the catalog entry, its GGUF cache, and any

@@ -264,6 +264,7 @@ export interface CatalogCapabilities {
   tooling: boolean;
   embedding: boolean;
   rerank: boolean;
+  decision: boolean;
 }
 
 export interface CatalogFile {
