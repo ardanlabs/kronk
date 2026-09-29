@@ -173,11 +173,7 @@ func (m *Model) processEmbeddingsBatchSeq(ctx context.Context, inputs []string, 
 
 // processEmbeddings processes all inputs on a single context.
 func (m *Model) processEmbeddings(ctx context.Context, pc poolContext, inputs []string, truncate bool, direction string, nativeDim int32, requestedDim int) ([]EmbedData, int, error) {
-	maxTokens := int(llama.NUBatch(pc.lctx))
-	ctxTokens := int(llama.NCtx(pc.lctx))
-	if ctxTokens < maxTokens {
-		maxTokens = ctxTokens
-	}
+	maxTokens := min(int(llama.NBatch(pc.lctx)), int(llama.NUBatch(pc.lctx)), int(llama.NCtx(pc.lctx)))
 
 	embedData := make([]EmbedData, len(inputs))
 	totalTokens := 0
@@ -212,9 +208,14 @@ func (m *Model) processEmbeddings(ctx context.Context, pc poolContext, inputs []
 
 		totalTokens += len(tokens)
 
-		batch := llama.BatchGetOne(tokens)
+		pc.batch.clear()
+		for pos, token := range tokens {
+			if _, err := pc.batch.addToken(token, llama.Pos(pos), []llama.SeqId{0}, extendedBatchOutputEmbeddings); err != nil {
+				return nil, 0, fmt.Errorf("embeddings: add token %d for input[%d]: %w", pos, i, err)
+			}
+		}
 
-		ret, err := llama.Decode(pc.lctx, batch)
+		ret, err := pc.batch.process(llama.ProcessTypeDecode)
 		if err != nil {
 			return nil, 0, fmt.Errorf("embeddings: decode failed for input[%d]: %w", i, err)
 		}

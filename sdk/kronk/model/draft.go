@@ -118,8 +118,8 @@ type draftKVExternalizer interface {
 // =============================================================================
 
 // freeCommon releases the resources every drafter holds: the per-slot
-// draft sampler registration, the greedy sampler, and the two token
-// batches. It does NOT free the context or the model — unload sequences
+// draft sampler registration, the greedy sampler, and the token batch.
+// It does NOT free the context or the model — unload sequences
 // those per strategy.
 func (dc *draftCore) freeCommon() {
 	if dc.registeredSampler != 0 {
@@ -127,8 +127,7 @@ func (dc *draftCore) freeCommon() {
 		dc.registeredSampler = 0
 	}
 	llama.SamplerFree(dc.sampler)
-	llama.BatchFree(dc.batch)
-	llama.BatchFree(dc.prefillBatch)
+	dc.batch.free()
 }
 
 // =============================================================================

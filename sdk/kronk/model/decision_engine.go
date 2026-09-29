@@ -26,6 +26,7 @@ type decisionWork struct {
 type decisionEngine struct {
 	lctx          llama.Context
 	mem           llama.Memory
+	batch         *extendedBatch
 	nVocab        int
 	contextWindow int
 	maxTokens     int
@@ -66,9 +67,16 @@ func initDecisionRuntime(m *Model) error {
 		return fmt.Errorf("init-decision-runtime: clear memory: %w", err)
 	}
 
-	if err := m.applyAdapters(lctx); err != nil {
+	batch, err := newExtendedBatch(lctx)
+	if err != nil {
 		llama.Free(lctx)
-		return fmt.Errorf("init-decision-runtime: %w", err)
+		return fmt.Errorf("init-decision-runtime: create batch: %w", err)
+	}
+
+	if err := m.applyAdapters(lctx); err != nil {
+		batchErr := batch.free()
+		llama.Free(lctx)
+		return errors.Join(fmt.Errorf("init-decision-runtime: %w", err), batchErr)
 	}
 
 	m.ctxParams = params
@@ -78,6 +86,7 @@ func initDecisionRuntime(m *Model) error {
 	engine := decisionEngine{
 		lctx:          lctx,
 		mem:           mem,
+		batch:         batch,
 		nVocab:        int(llama.VocabNTokens(m.vocab)),
 		contextWindow: m.cfg.ContextWindow(),
 		maxTokens:     int(params.NBatch),
@@ -168,35 +177,18 @@ func (e *decisionEngine) decode(parts ...decisionPart) ([][][]float32, error) {
 		return make([][][]float32, len(parts)), nil
 	}
 
-	batch := llama.BatchInit(int32(total), 0, 1)
-	defer llama.BatchFree(batch)
-
-	indices := make([][]int32, len(parts))
-	for partIndex, part := range parts {
-		readoutAt := make(map[int]bool, len(part.readouts))
-
-		for _, readout := range part.readouts {
-			readoutAt[readout.position] = true
-		}
-
-		for i, token := range part.tokens {
-			position := part.position + i
-			if readoutAt[position] {
-				indices[partIndex] = append(indices[partIndex], batch.NTokens)
-			}
-			if err := batch.Add(token, llama.Pos(position), []llama.SeqId{part.sequence}, readoutAt[position]); err != nil {
-				return nil, fmt.Errorf("decision add token to batch: %w", err)
-			}
-		}
+	indices, err := stageDecisionParts(e.batch, parts)
+	if err != nil {
+		return nil, fmt.Errorf("decision stage batch: %w", err)
 	}
 
-	code, err := llama.Decode(e.lctx, batch)
+	code, err := e.batch.process(llama.ProcessTypeDecode)
 	if err != nil {
-		return nil, fmt.Errorf("decision decode: %w", err)
+		return nil, fmt.Errorf("decision process: %w", err)
 	}
 
 	if code != 0 {
-		return nil, fmt.Errorf("decision decode returned %d", code)
+		return nil, fmt.Errorf("decision process returned %d", code)
 	}
 
 	result := make([][][]float32, len(parts))
@@ -227,6 +219,37 @@ func (e *decisionEngine) decode(parts ...decisionPart) ([][][]float32, error) {
 	}
 
 	return result, nil
+}
+
+func stageDecisionParts(batch *extendedBatch, parts []decisionPart) ([][]int32, error) {
+	batch.clear()
+
+	indices := make([][]int32, len(parts))
+	for partIndex, part := range parts {
+		readoutAt := make(map[int]bool, len(part.readouts))
+		for _, readout := range part.readouts {
+			readoutAt[readout.position] = true
+		}
+
+		sequenceIDs := []llama.SeqId{part.sequence}
+		for i, token := range part.tokens {
+			position := part.position + i
+			output := extendedBatchOutputNone
+			if readoutAt[position] {
+				output = extendedBatchOutputLogits
+			}
+
+			idx, err := batch.addToken(token, llama.Pos(position), sequenceIDs, output)
+			if err != nil {
+				return nil, fmt.Errorf("add part[%d] token at position %d: %w", partIndex, position, err)
+			}
+			if output == extendedBatchOutputLogits {
+				indices[partIndex] = append(indices[partIndex], idx)
+			}
+		}
+	}
+
+	return indices, nil
 }
 
 func (e *decisionEngine) evaluate(entries []decisionScheduledEntry) ([][][]float32, error) {

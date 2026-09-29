@@ -1,8 +1,8 @@
 // This example qualifies concurrent decision requests against one loaded
 // Jev-Style model and one llama.cpp context. Request goroutines submit work to
-// a scheduler goroutine, which is the sole owner of context, memory, decode,
+// a scheduler goroutine, which is the sole owner of context, memory, process,
 // and logits operations. The scheduler combines requests under distinct
-// sequence IDs in one decode call.
+// sequence IDs in one process call.
 //
 // The example first evaluates each request serially, then submits all requests
 // concurrently and compares their answers and probabilities. Concurrency here
@@ -74,12 +74,13 @@ type scheduledResponse struct {
 }
 
 type decisionScheduler struct {
-	lctx        llama.Context
-	mem         llama.Memory
-	nVocab      int
-	queue       chan scheduledRequest
-	done        chan struct{}
-	decodeCalls atomic.Int64
+	lctx         llama.Context
+	mem          llama.Memory
+	batch        llama.BatchExt
+	nVocab       int
+	queue        chan scheduledRequest
+	done         chan struct{}
+	processCalls atomic.Int64
 }
 
 func main() {
@@ -159,7 +160,7 @@ func run() error {
 			return fmt.Errorf("serial request %d: %w", i, err)
 		}
 	}
-	serialCalls := scheduler.decodeCalls.Load()
+	serialCalls := scheduler.processCalls.Load()
 
 	concurrent := make([]decisionResult, len(work))
 	errs := make([]error, len(work))
@@ -182,16 +183,16 @@ func run() error {
 		}
 	}
 
-	concurrentCalls := scheduler.decodeCalls.Load() - serialCalls
+	concurrentCalls := scheduler.processCalls.Load() - serialCalls
 	if concurrentCalls != 1 {
-		return fmt.Errorf("concurrent requests used %d decode calls, want 1", concurrentCalls)
+		return fmt.Errorf("concurrent requests used %d process calls, want 1", concurrentCalls)
 	}
 
 	fmt.Println("ModelLoads           : 1")
 	fmt.Println("ContextLoads         : 1")
 	fmt.Println("ConcurrentRequests   :", len(work))
-	fmt.Println("SerialDecodeCalls    :", serialCalls)
-	fmt.Println("ConcurrentDecodeCalls:", concurrentCalls)
+	fmt.Println("SerialProcessCalls    :", serialCalls)
+	fmt.Println("ConcurrentProcessCalls:", concurrentCalls)
 
 	for i := range work {
 		delta, err := compare(serial[i], concurrent[i])
@@ -319,9 +320,16 @@ func newDecisionScheduler(mdl llama.Model) (*decisionScheduler, error) {
 		return nil, fmt.Errorf("clear context memory: %w", err)
 	}
 
+	batch, err := llama.BatchExtInit(lctx)
+	if err != nil {
+		llama.Free(lctx)
+		return nil, fmt.Errorf("initialize batch: %w", err)
+	}
+
 	scheduler := decisionScheduler{
 		lctx:   lctx,
 		mem:    mem,
+		batch:  batch,
 		nVocab: int(llama.VocabNTokens(llama.ModelGetVocab(mdl))),
 		queue:  make(chan scheduledRequest, maxConcurrent),
 		done:   make(chan struct{}),
@@ -421,8 +429,9 @@ func (s *decisionScheduler) decode(requests []scheduledRequest) ([]decisionResul
 		return nil, fmt.Errorf("batch has %d outputs, limit is %d", totalOutputs, maxOutputs)
 	}
 
-	batch := llama.BatchInit(int32(totalTokens), 0, 1)
-	defer llama.BatchFree(batch)
+	if err := llama.BatchExtClear(s.batch); err != nil {
+		return nil, fmt.Errorf("clear batch: %w", err)
+	}
 
 	indices := make([][]int32, len(requests))
 	for requestIndex, request := range requests {
@@ -433,23 +442,30 @@ func (s *decisionScheduler) decode(requests []scheduledRequest) ([]decisionResul
 		}
 
 		for position, token := range request.work.tokens {
-			if slotAt[position] {
-				indices[requestIndex] = append(indices[requestIndex], batch.NTokens)
+			idx, err := llama.BatchExtAddToken(s.batch, seqID, token)
+			if err != nil {
+				return nil, fmt.Errorf("add request %d token at position %d: %w", requestIndex, position, err)
 			}
-			if err := batch.Add(token, llama.Pos(position), []llama.SeqId{seqID}, slotAt[position]); err != nil {
-				return nil, fmt.Errorf("add request %d token: %w", requestIndex, err)
+			if err := llama.BatchExtSetPos(s.batch, idx, llama.Pos(position)); err != nil {
+				return nil, fmt.Errorf("set request %d token position %d: %w", requestIndex, position, err)
+			}
+			if slotAt[position] {
+				if err := llama.BatchExtSetOutputLogits(s.batch, idx, true); err != nil {
+					return nil, fmt.Errorf("request %d logits at position %d: %w", requestIndex, position, err)
+				}
+				indices[requestIndex] = append(indices[requestIndex], idx)
 			}
 		}
 	}
 
-	code, err := llama.Decode(s.lctx, batch)
+	code, err := llama.Process(s.lctx, llama.ProcessTypeDecode, s.batch)
 	if err != nil {
-		return nil, fmt.Errorf("decode: %w", err)
+		return nil, fmt.Errorf("process: %w", err)
 	}
 	if code != 0 {
-		return nil, fmt.Errorf("decode returned %d", code)
+		return nil, fmt.Errorf("process returned %d", code)
 	}
-	s.decodeCalls.Add(1)
+	s.processCalls.Add(1)
 
 	results := make([]decisionResult, len(requests))
 	for requestIndex, request := range requests {
@@ -495,6 +511,7 @@ func (s *decisionScheduler) close() {
 	close(s.queue)
 	<-s.done
 	llama.Synchronize(s.lctx)
+	llama.BatchExtFree(s.batch)
 	llama.Free(s.lctx)
 }
 

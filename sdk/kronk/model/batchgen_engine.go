@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -16,7 +17,7 @@ type batchEngine struct {
 	model       *Model
 	nSlots      int
 	slots       []*slot
-	batch       llama.Batch
+	batch       *extendedBatch
 	requestQ    chan *chatJob
 	wakeCh      chan struct{}
 	admissionCh chan struct{}
@@ -55,20 +56,23 @@ type batchEngine struct {
 	diagnosticGeneration      []BatchGenerationContribution
 	diagnosticLastPublished   time.Time
 
-	// Pre-allocated M-RoPE batch and position buffer for vision model text
-	// chunks. Avoids per-call BatchInit/BatchFree and posData allocation in
-	// decodeTextMRoPE.
-	mropeBatch    llama.Batch
-	mropeOrigPos  *llama.Pos
-	mropePosData  []llama.Pos
-	mropeHasBatch bool
+	// Pre-allocated extended batch for media embeddings and M-RoPE text.
+	// These paths decode separately from the shared generation tray.
+	mropeBatch *extendedBatch
 }
 
 // newBatchEngine creates a new batch engine for parallel inference.
-func newBatchEngine(m *Model, nSlots int) *batchEngine {
-	// Create batch buffer.
-	nBatch := m.cfg.EffectiveNBatch()
-	batch := llama.BatchInit(int32(nBatch), 0, int32(nSlots))
+func newBatchEngine(m *Model, nSlots int) (*batchEngine, error) {
+	batch, err := newExtendedBatch(m.lctx)
+	if err != nil {
+		return nil, fmt.Errorf("new batch engine: %w", err)
+	}
+
+	mropeBatch, err := newExtendedBatch(m.lctx)
+	if err != nil {
+		_ = batch.free()
+		return nil, fmt.Errorf("new batch engine M-RoPE batch: %w", err)
+	}
 
 	// Initialize slots. Each slot owns a state machine instance produced
 	// by the model's parser plugin. State machines are stateful
@@ -79,7 +83,7 @@ func newBatchEngine(m *Model, nSlots int) *batchEngine {
 		slots[i] = &slot{
 			id:           i,
 			seqID:        seqID,
-			seqIDs:       []llama.SeqId{seqID}, // Pre-allocate for batchAdd
+			seqIDs:       []llama.SeqId{seqID}, // Pre-allocate for batch entries.
 			stateMachine: m.parser.NewStateMachine(),
 		}
 		slots[i].classic.Reset()
@@ -90,6 +94,7 @@ func newBatchEngine(m *Model, nSlots int) *batchEngine {
 		nSlots:                    nSlots,
 		slots:                     slots,
 		batch:                     batch,
+		mropeBatch:                mropeBatch,
 		requestQ:                  make(chan *chatJob, nSlots*m.cfg.QueueDepth()),
 		wakeCh:                    make(chan struct{}, 1),
 		admissionCh:               make(chan struct{}),
@@ -102,16 +107,9 @@ func newBatchEngine(m *Model, nSlots int) *batchEngine {
 	e.speculation = newSpeculationController(&e)
 	e.publishDiagnostics(true)
 
-	// Pre-allocate M-RoPE batch for vision model text chunk decoding.
-	if nBatch > 0 {
-		e.mropeBatch = llama.BatchInit(int32(nBatch), 0, 1)
-		e.mropeOrigPos = e.mropeBatch.Pos
-		e.mropePosData = make([]llama.Pos, nBatch*4)
-		e.mropeHasBatch = true
-		m.log(context.Background(), "batch-engine", "status", "mrope-batch-alloc", "nbatch", nBatch)
-	}
+	m.log(context.Background(), "batch-engine", "status", "mrope-batch-alloc", "nbatch", m.cfg.EffectiveNBatch())
 
-	return &e
+	return &e, nil
 }
 
 // start begins the batch processing loop.
@@ -167,13 +165,8 @@ func (e *batchEngine) cleanupSamplers() {
 
 // freeBatch frees the batch buffer. Called from Model.Unload.
 func (e *batchEngine) freeBatch() {
-	llama.BatchFree(e.batch)
-
-	if e.mropeHasBatch {
-		e.mropeBatch.Pos = e.mropeOrigPos
-		llama.BatchFree(e.mropeBatch)
-		e.mropeHasBatch = false
-	}
+	_ = e.batch.free()
+	_ = e.mropeBatch.free()
 }
 
 // submit adds a job to the processing queue.
@@ -247,7 +240,7 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	}()
 
 	// Clear the batch.
-	e.batch.Clear()
+	e.batch.clear()
 	for i := range e.batchReleased {
 		e.batchReleased[i] = false
 	}
@@ -266,7 +259,7 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	// stage rows during admission, defer direct IMC decoding until the next
 	// iteration rather than mutating context behind an assembled batch.
 	e.fillSlots(buf)
-	if e.batch.NTokens == 0 && e.hasIMCPreparation() {
+	if e.batch.len() == 0 && e.hasIMCPreparation() {
 		e.advanceIMCPreparation(buf)
 	}
 
@@ -276,7 +269,7 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	// a speculative slot can contribute the sampled token plus its draft rows.
 	// Adding these before prefill keeps output responsive and lets prefill use
 	// only the tray capacity that remains.
-	batchRowsBeforeGeneration := e.batch.NTokens
+	batchRowsBeforeGeneration := e.batch.len()
 	trackPrefillSchedule := len(e.prefillSlotIDs()) > 0
 	var generationContributions []string
 	if trackPrefillSchedule {
@@ -301,7 +294,7 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 		// A newly admitted request may have filled the logical batch during
 		// startSlot. Defer existing generation rows to the next iteration rather
 		// than overflowing the batch; the new request's prefill is decoded first.
-		if int(e.batch.NTokens) >= e.model.cfg.EffectiveNBatch() {
+		if e.batch.len() >= e.model.cfg.EffectiveNBatch() {
 			s.iBatch = -1
 			e.diagnosticGeneration = append(e.diagnosticGeneration, BatchGenerationContribution{
 				SlotID: s.id,
@@ -315,7 +308,7 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 		}
 
 		// M-RoPE slots require 4D positions (dim0=linear, dims1-3=0 for text).
-		// The shared batch only writes 1D positions via batch.Add, so decode
+		// The shared batch only writes 1D positions, so decode
 		// the generation token through the dedicated M-RoPE path and sample
 		// from the last logits position (-1) of the M-RoPE batch.
 		if s.useMRoPE {
@@ -344,16 +337,16 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 			continue
 		}
 		if len(generation.Candidates) > 0 {
-			batchStart := e.batch.NTokens
-			if err := e.batch.Add(s.sampled, s.nPast, s.seqIDs, true); err != nil {
+			batchStart := e.batch.len()
+			if _, err := e.batch.addToken(s.sampled, s.nPast, s.seqIDs, extendedBatchOutputLogits); err != nil {
 				e.finishSlot(s, fmt.Errorf("add speculative base token: %w", err))
 				continue
 			}
 			addFailed := false
 			for i, tok := range generation.Candidates {
-				if err := e.batch.Add(tok, s.nPast+llama.Pos(1+i), s.seqIDs, true); err != nil {
-					e.batch.NTokens = batchStart
-					e.finishSlot(s, fmt.Errorf("add speculative draft token %d: %w", i, err))
+				if _, err := e.batch.addToken(tok, s.nPast+llama.Pos(1+i), s.seqIDs, extendedBatchOutputLogits); err != nil {
+					rollbackErr := e.batch.truncate(batchStart)
+					e.finishSlot(s, fmt.Errorf("add speculative draft token %d: %w", i, errors.Join(err, rollbackErr)))
 					addFailed = true
 					break
 				}
@@ -363,13 +356,13 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 			}
 
 			targetRange := speculation.TargetRange{
-				Start:   batchStart,
+				Start:   int32(batchStart),
 				Count:   int32(1 + len(generation.Candidates)),
 				BasePos: s.nPast,
 			}
 			if err := e.speculation.CommitGeneration(s.id, generation.Candidates, targetRange); err != nil {
-				e.batch.NTokens = batchStart
-				e.finishSlot(s, err)
+				rollbackErr := e.batch.truncate(batchStart)
+				e.finishSlot(s, errors.Join(err, rollbackErr))
 				continue
 			}
 			if trackPrefillSchedule {
@@ -385,11 +378,12 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 			continue
 		}
 
-		s.iBatch = e.batch.NTokens
-		if err := e.batch.Add(s.sampled, s.nPast, s.seqIDs, true); err != nil {
+		idx, err := e.batch.addToken(s.sampled, s.nPast, s.seqIDs, extendedBatchOutputLogits)
+		if err != nil {
 			e.finishSlot(s, fmt.Errorf("add generation token: %w", err))
 			continue
 		}
+		s.iBatch = idx
 		e.speculation.TargetRowsStaged(s.id, speculation.TargetRange{
 			Start:   s.iBatch,
 			Count:   1,
@@ -406,8 +400,8 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 		})
 		s.nPast++
 	}
-	generationRows := e.batch.NTokens
-	e.diagnosticGenerationRows = int(generationRows - batchRowsBeforeGeneration)
+	generationRows := e.batch.len()
+	e.diagnosticGenerationRows = generationRows - batchRowsBeforeGeneration
 
 	// Continue ordinary text prefill from one slot. The cursor remains on that
 	// owner across decode iterations until its prompt is complete, minimizing
@@ -419,7 +413,7 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	selectorStart := e.prefillNext
 	s, idx := e.nextPrefillSlot()
 	e.diagnosticPrefillStart = selectorStart
-	if s != nil && int(e.batch.NTokens) >= e.model.cfg.EffectiveNBatch() {
+	if s != nil && e.batch.len() >= e.model.cfg.EffectiveNBatch() {
 		e.model.log(s.job.ctx, "batch-engine", "status", "prefill-deferred",
 			"iteration", iteration,
 			"slot", s.id,
@@ -429,17 +423,17 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 			"selector_selected", idx,
 			"selector_next", e.prefillNext,
 			"generation_rows", generationRows,
-			"tray_tokens", e.batch.NTokens,
+			"tray_tokens", e.batch.len(),
 			"nbatch", e.model.cfg.EffectiveNBatch(),
 			"nubatch", e.model.cfg.EffectiveNUBatch())
 	}
-	if s != nil && int(e.batch.NTokens) < e.model.cfg.EffectiveNBatch() {
-		beforeSlot := e.batch.NTokens
+	if s != nil && e.batch.len() < e.model.cfg.EffectiveNBatch() {
+		beforeSlot := e.batch.len()
 		if !e.addPrefillChunk(s, e.model.cfg.PrefillBatchSize()) {
 			if s.job != nil {
 				e.finishSlot(s, e.slotCancelError(s))
 			}
-		} else if e.batch.NTokens > beforeSlot {
+		} else if e.batch.len() > beforeSlot {
 			e.diagnosticPrefillSelected = idx
 			prefillComplete := s.prefillTokens == nil
 			if prefillComplete {
@@ -452,7 +446,7 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 				"slot", s.id,
 				"prefill_slots", fmt.Sprintf("%v", prefillSlots),
 				"generation_contributions", fmt.Sprintf("%v", generationContributions),
-				"chunk_tokens", e.batch.NTokens-beforeSlot,
+				"chunk_tokens", e.batch.len()-beforeSlot,
 				"prefill_remaining", max(0, len(s.prefillTokens)-s.nPrefilled),
 				"prefill_complete", prefillComplete,
 				"selector_start", selectorStart,
@@ -460,7 +454,7 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 				"selector_next", e.prefillNext,
 				"next_slot", e.prefillNext,
 				"generation_rows", generationRows,
-				"tray_tokens", e.batch.NTokens,
+				"tray_tokens", e.batch.len(),
 				"nbatch", e.model.cfg.EffectiveNBatch(),
 				"nubatch", e.model.cfg.EffectiveNUBatch())
 		}
@@ -477,7 +471,7 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	}
 
 	// Nothing to process.
-	if e.batch.NTokens == 0 {
+	if e.batch.len() == 0 {
 		e.batchAssembling = false
 		if mediaSlot != nil {
 			e.processMediaSlot(mediaSlot, mediaIdx, buf)
@@ -491,9 +485,9 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 
 	// Defensive check: batch tokens must not exceed NBatch.
 	nBatch := e.model.cfg.EffectiveNBatch()
-	if int(e.batch.NTokens) > nBatch {
+	if e.batch.len() > nBatch {
 		e.model.log(ctx, "process-batch", "ERROR", "batch-overflow",
-			"batch_tokens", e.batch.NTokens,
+			"batch_tokens", e.batch.len(),
 			"nbatch_limit", nBatch,
 			"slots", e.nSlots)
 
@@ -510,7 +504,7 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 		}
 
 		// Fail all active slots with descriptive error.
-		overflowErr := fmt.Errorf("process-batch: %d tokens exceeds NBatch limit of %d", e.batch.NTokens, nBatch)
+		overflowErr := fmt.Errorf("process-batch: %d tokens exceeds NBatch limit of %d", e.batch.len(), nBatch)
 		for _, s := range e.slots {
 			if s.active {
 				e.finishSlot(s, overflowErr)
@@ -523,7 +517,7 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 
 	// Lock to prevent concurrent decode with cache population.
 	e.model.decodeMu.Lock()
-	ret, err := llama.Decode(e.model.lctx, e.batch)
+	ret, err := e.batch.process(llama.ProcessTypeDecode)
 	if err == nil && ret == 0 {
 		llama.Synchronize(e.model.lctx)
 	}

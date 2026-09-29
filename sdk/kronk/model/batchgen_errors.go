@@ -59,7 +59,7 @@ func (e *batchEngine) logDecodeError(ctx context.Context, ret int32, err error) 
 		"n_ctx", nCtx,
 		"kv_used_active", activeTokens,
 		"kv_used_total", totalKV,
-		"batch_tokens", e.batch.NTokens,
+		"batch_tokens", e.batch.len(),
 		"active_slots", len(slotInfo),
 		"slot_usage", strings.Join(slotInfo, ","),
 		"imc_usage", strings.Join(imcInfo, ","),

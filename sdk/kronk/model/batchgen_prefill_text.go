@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -61,7 +62,7 @@ func (e *batchEngine) addPrefillChunk(s *slot, chunkLimit int) bool {
 
 	// Limit chunk size to available space in batch (total across all slots
 	// must not exceed NBatch).
-	availableInBatch := nBatch - int(e.batch.NTokens)
+	availableInBatch := nBatch - e.batch.len()
 	if availableInBatch <= 0 {
 		s.iBatch = -1
 		return true
@@ -70,19 +71,23 @@ func (e *batchEngine) addPrefillChunk(s *slot, chunkLimit int) bool {
 	chunkSize := prefillContributionSize(remaining, availableInBatch, chunkLimit)
 
 	// Add chunk of tokens to batch.
-	batchStart := e.batch.NTokens
+	batchStart := e.batch.len()
 	basePos := s.nPast
 	for i := range chunkSize {
 		tok := s.prefillTokens[s.nPrefilled+i]
 		isLast := s.nPrefilled+i == len(s.prefillTokens)-1
-		if err := e.batch.Add(tok, s.nPast+llama.Pos(i), s.seqIDs, isLast); err != nil {
-			e.batch.NTokens = batchStart
-			e.finishSlot(s, fmt.Errorf("add prefill token %d: %w", s.nPrefilled+i, err))
+		output := extendedBatchOutputNone
+		if isLast {
+			output = extendedBatchOutputLogits
+		}
+		if _, err := e.batch.addToken(tok, s.nPast+llama.Pos(i), s.seqIDs, output); err != nil {
+			rollbackErr := e.batch.truncate(batchStart)
+			e.finishSlot(s, fmt.Errorf("add prefill token %d: %w", s.nPrefilled+i, errors.Join(err, rollbackErr)))
 			return false
 		}
 	}
 	e.speculation.TargetRowsStaged(s.id, speculation.TargetRange{
-		Start:   batchStart,
+		Start:   int32(batchStart),
 		Count:   int32(chunkSize),
 		BasePos: basePos,
 	})
@@ -94,7 +99,7 @@ func (e *batchEngine) addPrefillChunk(s *slot, chunkLimit int) bool {
 
 	// Check if prefill is complete.
 	if s.nPrefilled >= len(s.prefillTokens) {
-		s.iBatch = e.batch.NTokens - 1
+		s.iBatch = int32(e.batch.len() - 1)
 		s.prefillTokens = nil
 		if s.span.IsRecording() {
 			s.span.SetAttributes(attribute.String("prefill-nonmedia", prefillDuration.String()))

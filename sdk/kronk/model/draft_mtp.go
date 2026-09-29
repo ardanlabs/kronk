@@ -151,7 +151,7 @@ func mtpNextNLayers(model llama.Model) int {
 //     - draft  ctx:  (true, true)  — masked, only logits-flagged rows
 //     stored; indexed via the output_ids table.
 //  2. Extended batches carry both the token ID and pre-norm hidden row for
-//     each MTP input without mutating the legacy llama.Batch layout.
+//     each MTP input.
 //
 // On success the returned *mtpDrafter shares the target's llama_model, so
 // its unload skips the model free.

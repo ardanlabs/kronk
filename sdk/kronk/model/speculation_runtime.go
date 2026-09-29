@@ -137,15 +137,15 @@ func (e *batchEngine) MTPSyncInput(slotID int, effectiveCount int) (mtp.SyncInpu
 	if len(s.mtp.VerifyHidden) >= count*nEmbd {
 		hiddenRows = s.mtp.VerifyHidden[:count*nEmbd]
 	} else {
-		totalRows := int(e.batch.NTokens)
+		totalRows := e.batch.len()
 		hidden := yzmaspec.GetEmbeddingsNextN(e.model.lctx, totalRows, nEmbd)
 		if hidden == nil || start < 0 || start+count > totalRows {
 			return mtp.SyncInput{}, fmt.Errorf("target pre-norm rows unavailable for range [%d..%d)", start, start+count)
 		}
 		hiddenRows = hidden[start*nEmbd : (start+count)*nEmbd]
 	}
-	tokens := batchTokensAt(e.batch, start, count)
-	if tokens == nil {
+	tokens, ok := e.batch.tokens(start, count)
+	if !ok {
 		return mtp.SyncInput{}, fmt.Errorf("target tokens unavailable for range [%d..%d)", start, start+count)
 	}
 	shared := mtpUsesSharedKV(e.model.draft)

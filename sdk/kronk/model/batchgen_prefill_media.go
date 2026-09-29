@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -132,7 +133,7 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot, buf []byte) bool {
 		case false:
 			// Non-M-RoPE: add tokens to shared batch with capacity check.
 			remaining := len(tokens) - s.chunkTokIdx
-			availableInBatch := nBatch - int(e.batch.NTokens)
+			availableInBatch := nBatch - e.batch.len()
 
 			if availableInBatch <= 0 {
 				s.iBatch = -1
@@ -142,13 +143,17 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot, buf []byte) bool {
 			chunkSize := mediaTextContributionSize(remaining, availableInBatch, chunkLimit)
 			isLastChunk := s.chunkIdx == numChunks-1
 
-			batchStart := e.batch.NTokens
+			batchStart := e.batch.len()
 			for i := range chunkSize {
 				tokIdx := s.chunkTokIdx + i
 				isLast := tokIdx == len(tokens)-1 && isLastChunk
-				if err := e.batch.Add(tokens[tokIdx], s.nPast+llama.Pos(i), s.seqIDs, isLast); err != nil {
-					e.batch.NTokens = batchStart
-					e.finishSlot(s, fmt.Errorf("add media prefill token %d: %w", tokIdx, err))
+				output := extendedBatchOutputNone
+				if isLast {
+					output = extendedBatchOutputLogits
+				}
+				if _, err := e.batch.addToken(tokens[tokIdx], s.nPast+llama.Pos(i), s.seqIDs, output); err != nil {
+					rollbackErr := e.batch.truncate(batchStart)
+					e.finishSlot(s, fmt.Errorf("add media prefill token %d: %w", tokIdx, errors.Join(err, rollbackErr)))
 					return false
 				}
 			}
@@ -179,7 +184,7 @@ func (e *batchEngine) addPrefillMediaChunk(s *slot, buf []byte) bool {
 				}
 			case false:
 				// Non-M-RoPE text was added to shared batch, sample after decode.
-				s.iBatch = e.batch.NTokens - 1
+				s.iBatch = int32(e.batch.len() - 1)
 			}
 			s.mediaPrefillDone = true
 			if s.span.IsRecording() {

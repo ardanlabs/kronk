@@ -18,7 +18,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"unsafe"
 
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	yzmaspec "github.com/hybridgroup/yzma/exp/speculative"
@@ -91,6 +90,12 @@ func run() error {
 		return fmt.Errorf("unable to init context: %w", err)
 	}
 	defer llama.Free(lctx)
+
+	batch, err := llama.BatchExtInit(lctx)
+	if err != nil {
+		return fmt.Errorf("unable to initialize batch: %w", err)
+	}
+	defer llama.BatchExtFree(batch)
 
 	fmt.Printf("Context created: n_ctx=%d, n_batch=%d\n", ctxParams.NCtx, ctxParams.NBatch)
 
@@ -198,7 +203,7 @@ func run() error {
 
 	nEmbd := llama.ModelNEmbdInp(mdl)
 
-	nPast, err := processChunksManually(mtmdCtx, lctx, mdl, output, numChunks, nEmbd, ctxParams)
+	nPast, err := processChunksManually(mtmdCtx, lctx, batch, output, numChunks, nEmbd, ctxParams)
 	if err != nil {
 		return fmt.Errorf("manual chunk processing failed: %w", err)
 	}
@@ -239,9 +244,26 @@ func run() error {
 		generatedTokens++
 
 		// Feed the token back for next iteration.
-		batch := llama.BatchGetOne([]llama.Token{token})
-		batch.Pos = &nPast
-		llama.Decode(lctx, batch)
+		if err := llama.BatchExtClear(batch); err != nil {
+			return fmt.Errorf("clear generation batch: %w", err)
+		}
+		idx, err := llama.BatchExtAddToken(batch, 0, token)
+		if err != nil {
+			return fmt.Errorf("add generated token: %w", err)
+		}
+		positions := []llama.Pos{nPast}
+		if mtmd.DecodeUseMRope(mtmdCtx) {
+			positions = []llama.Pos{nPast, nPast, nPast, nPast}
+		}
+		if err := llama.BatchExtSetPos(batch, idx, positions...); err != nil {
+			return fmt.Errorf("set generated token position: %w", err)
+		}
+		if err := llama.BatchExtSetOutputLogits(batch, idx, true); err != nil {
+			return fmt.Errorf("request generated token logits: %w", err)
+		}
+		if err := processBatch(lctx, batch, false); err != nil {
+			return fmt.Errorf("process generated token: %w", err)
+		}
 		nPast++
 	}
 
@@ -265,14 +287,14 @@ func run() error {
 //
 // Key insight for M-RoPE models (like Qwen2.5-VL):
 //   - Positions are 4-dimensional: [time, y, x, unused]
-//   - Text tokens use: [linear_pos, 0, 0, 0]
+//   - Text tokens repeat the linear position in all four dimensions
 //   - Image tokens use 2D grid: [pos_0, pos_0+row, pos_0+col, 0]
 //   - Position advancement after image = max(nx, ny), not n_tokens
 // =============================================================================
 
 // processChunksManually processes vision chunks individually, demonstrating
 // the low-level APIs needed for parallel inference across multiple clients.
-func processChunksManually(mtmdCtx mtmd.Context, lctx llama.Context, mdl llama.Model,
+func processChunksManually(mtmdCtx mtmd.Context, lctx llama.Context, batch llama.BatchExt,
 	output mtmd.InputChunks, numChunks uint64, nEmbd int32,
 	ctxParams llama.ContextParams) (llama.Pos, error) {
 
@@ -298,22 +320,17 @@ func processChunksManually(mtmdCtx mtmd.Context, lctx llama.Context, mdl llama.M
 				end := min(start+batchSize, len(tokens))
 
 				batchTokens := tokens[start:end]
-				n := int32(len(batchTokens))
 
 				switch useMRoPE {
 				case true:
-					if err := decodeTextMRoPE(lctx, batchTokens, &nPast, 0); err != nil {
+					if err := decodeTextMRoPE(lctx, batch, batchTokens, &nPast, 0); err != nil {
 						return 0, fmt.Errorf("decode text chunk (M-RoPE) failed: %w", err)
 					}
 
 				case false:
-					batch := llama.BatchGetOne(batchTokens)
-					batch.Pos = &nPast
-
-					if _, err := llama.Decode(lctx, batch); err != nil {
+					if err := decodeTextNormal(lctx, batch, batchTokens, &nPast, 0); err != nil {
 						return 0, fmt.Errorf("decode text chunk failed: %w", err)
 					}
-					nPast += llama.Pos(n)
 				}
 			}
 
@@ -338,14 +355,15 @@ func processChunksManually(mtmdCtx mtmd.Context, lctx llama.Context, mdl llama.M
 			switch useMRoPE {
 			case true:
 				imageTokens := mtmd.InputChunkGetTokensImage(chunk)
+				nPos := llama.Pos(mtmd.InputChunkGetNPos(chunk))
 				fmt.Println("    M-RoPE decoder positions")
 
-				if err := decodeEmbeddingsMRoPE(lctx, embd, nEmbd, int32(nTokens), imageTokens, &nPast, 0, useNonCausal); err != nil {
+				if err := decodeEmbeddingsMRoPE(lctx, batch, embd, nEmbd, int32(nTokens), imageTokens, nPos, &nPast, 0, useNonCausal); err != nil {
 					return 0, fmt.Errorf("decode image embeddings (M-RoPE) failed: %w", err)
 				}
 
 			case false:
-				if err := decodeEmbeddingsNormal(lctx, embd, nEmbd, int32(nTokens), &nPast, 0, useNonCausal); err != nil {
+				if err := decodeEmbeddingsNormal(lctx, batch, embd, nEmbd, int32(nTokens), &nPast, 0, useNonCausal); err != nil {
 					return 0, fmt.Errorf("decode image embeddings failed: %w", err)
 				}
 			}
@@ -362,106 +380,96 @@ func processChunksManually(mtmdCtx mtmd.Context, lctx llama.Context, mdl llama.M
 // BATCH DECODE HELPERS
 // =============================================================================
 
-// decodeTextMRoPE decodes text tokens for M-RoPE models.
-// M-RoPE uses 4D positions laid out as: [dim0, dim1, dim2, dim3] where each
-// dimension has n_tokens entries. For text: dim0=linear position, dims1-3=0.
-//
-// Memory safety note: We allocate our own position array and must restore
-// the original batch.Pos pointer before calling BatchFree to avoid freeing
-// Go heap memory from C.
-func decodeTextMRoPE(lctx llama.Context, tokens []llama.Token, nPast *llama.Pos, seqID llama.SeqId) error {
-	n := int32(len(tokens))
-	if n == 0 {
+// decodeTextNormal decodes text tokens with standard linear positioning.
+func decodeTextNormal(lctx llama.Context, batch llama.BatchExt, tokens []llama.Token, nPast *llama.Pos, seqID llama.SeqId) error {
+	if len(tokens) == 0 {
 		return nil
 	}
-
-	batch := llama.BatchInit(n, 0, 1)
-
-	// Save original pos pointer
-	origPos := batch.Pos
-
-	// Access token array
-	tokenSlice := unsafe.Slice(batch.Token, int(n))
-	copy(tokenSlice, tokens)
-
-	// Allocate 4D position array for M-RoPE
-	posData := make([]llama.Pos, n*4)
-	pos0 := *nPast
-	for i := range n {
-		posData[i] = pos0 + llama.Pos(i) // dim 0: linear position
-		posData[i+n] = 0                 // dim 1: 0 for text
-		posData[i+n*2] = 0               // dim 2: 0 for text
-		posData[i+n*3] = 0               // dim 3: 0 for text
-	}
-	batch.Pos = &posData[0]
-
-	nSeqIDSlice := unsafe.Slice(batch.NSeqId, int(n))
-	seqIDPtrs := unsafe.Slice(batch.SeqId, int(n))
-	logitsSlice := unsafe.Slice(batch.Logits, int(n))
-
-	for i := range n {
-		nSeqIDSlice[i] = 1
-		*seqIDPtrs[i] = seqID
-		logitsSlice[i] = 0
-	}
-
-	if n > 0 {
-		logitsSlice[n-1] = 1
-	}
-
-	batch.NTokens = n
-
-	_, err := llama.Decode(lctx, batch)
-
-	// Restore and free
-	batch.Pos = origPos
-	llama.BatchFree(batch)
-
-	if err != nil {
+	if err := llama.BatchExtClear(batch); err != nil {
 		return err
 	}
 
-	*nPast += llama.Pos(n)
+	for i, token := range tokens {
+		idx, err := llama.BatchExtAddToken(batch, seqID, token)
+		if err != nil {
+			return fmt.Errorf("add token %d: %w", i, err)
+		}
+		if err := llama.BatchExtSetPos(batch, idx, *nPast+llama.Pos(i)); err != nil {
+			return fmt.Errorf("set token %d position: %w", i, err)
+		}
+		if i == len(tokens)-1 {
+			if err := llama.BatchExtSetOutputLogits(batch, idx, true); err != nil {
+				return fmt.Errorf("request token %d logits: %w", i, err)
+			}
+		}
+	}
+	if err := processBatch(lctx, batch, false); err != nil {
+		return err
+	}
+
+	*nPast += llama.Pos(len(tokens))
+	return nil
+}
+
+// decodeTextMRoPE decodes text tokens for M-RoPE models.
+// Each text token uses the same logical position in all four dimensions.
+func decodeTextMRoPE(lctx llama.Context, batch llama.BatchExt, tokens []llama.Token, nPast *llama.Pos, seqID llama.SeqId) error {
+	if len(tokens) == 0 {
+		return nil
+	}
+	if err := llama.BatchExtClear(batch); err != nil {
+		return err
+	}
+
+	for i, token := range tokens {
+		idx, err := llama.BatchExtAddToken(batch, seqID, token)
+		if err != nil {
+			return fmt.Errorf("add token %d: %w", i, err)
+		}
+		pos := *nPast + llama.Pos(i)
+		if err := llama.BatchExtSetPos(batch, idx, pos, pos, pos, pos); err != nil {
+			return fmt.Errorf("set token %d M-RoPE position: %w", i, err)
+		}
+		if i == len(tokens)-1 {
+			if err := llama.BatchExtSetOutputLogits(batch, idx, true); err != nil {
+				return fmt.Errorf("request token %d logits: %w", i, err)
+			}
+		}
+	}
+	if err := processBatch(lctx, batch, false); err != nil {
+		return err
+	}
+
+	*nPast += llama.Pos(len(tokens))
 	return nil
 }
 
 // decodeEmbeddingsNormal decodes image embeddings with standard linear positioning.
 // Used for non-M-RoPE models where positions are simply sequential integers.
-func decodeEmbeddingsNormal(lctx llama.Context, embd []float32, nEmbd, nTokens int32, nPast *llama.Pos, seqID llama.SeqId, useNonCausal bool) error {
-	batch := llama.BatchInit(nTokens, nEmbd, 1)
-	defer llama.BatchFree(batch)
-
-	embdSlice := unsafe.Slice(batch.Embd, int(nTokens*nEmbd))
-	copy(embdSlice, embd)
-
-	posSlice := unsafe.Slice(batch.Pos, int(nTokens))
-	nSeqIDSlice := unsafe.Slice(batch.NSeqId, int(nTokens))
-	seqIDPtrs := unsafe.Slice(batch.SeqId, int(nTokens))
-	logitsSlice := unsafe.Slice(batch.Logits, int(nTokens))
-
-	for i := range nTokens {
-		posSlice[i] = *nPast + llama.Pos(i)
-		nSeqIDSlice[i] = 1
-		*seqIDPtrs[i] = seqID
-		logitsSlice[i] = 0
-	}
-
-	if nTokens > 0 {
-		logitsSlice[nTokens-1] = 1
-	}
-
-	batch.NTokens = nTokens
-
-	if useNonCausal {
-		llama.SetCausalAttn(lctx, false)
-	}
-
-	if _, err := llama.Decode(lctx, batch); err != nil {
+func decodeEmbeddingsNormal(lctx llama.Context, batch llama.BatchExt, embd []float32, nEmbd, nTokens int32, nPast *llama.Pos, seqID llama.SeqId, useNonCausal bool) error {
+	if err := validateEmbeddings(embd, nEmbd, nTokens); err != nil {
 		return err
 	}
-
-	if useNonCausal {
-		llama.SetCausalAttn(lctx, true)
+	if err := llama.BatchExtClear(batch); err != nil {
+		return err
+	}
+	for i := range nTokens {
+		start := int(i * nEmbd)
+		idx, err := llama.BatchExtAddEmbd(batch, seqID, embd[start:start+int(nEmbd)], int(nEmbd))
+		if err != nil {
+			return fmt.Errorf("add embedding row %d: %w", i, err)
+		}
+		if err := llama.BatchExtSetPos(batch, idx, *nPast+llama.Pos(i)); err != nil {
+			return fmt.Errorf("set embedding row %d position: %w", i, err)
+		}
+		if i == nTokens-1 {
+			if err := llama.BatchExtSetOutputLogits(batch, idx, true); err != nil {
+				return fmt.Errorf("request embedding row %d logits: %w", i, err)
+			}
+		}
+	}
+	if err := processBatch(lctx, batch, useNonCausal); err != nil {
+		return err
 	}
 
 	*nPast += llama.Pos(nTokens)
@@ -470,70 +478,67 @@ func decodeEmbeddingsNormal(lctx llama.Context, embd []float32, nEmbd, nTokens i
 }
 
 // decodeEmbeddingsMRoPE decodes image embeddings with M-RoPE positioning.
-// For M-RoPE, positions are laid out as 4 contiguous arrays:
-//
-//	[dim0: n_tokens] [dim1: n_tokens] [dim2: n_tokens] [dim3: n_tokens]
-//
 // The projector supplies each token's decoder position. The C struct field
-// order is T, X, Y, Z, while llama batches require T, Y, X, Z planes.
-func decodeEmbeddingsMRoPE(lctx llama.Context, embd []float32, nEmbd, nTokens int32, imageTokens mtmd.ImageTokens, nPast *llama.Pos, seqID llama.SeqId, useNonCausal bool) error {
-	// For M-RoPE, we need 4x the position slots (4D positions)
-	nPosPerEmbd := int32(4)
-
-	batch := llama.BatchInit(nTokens, nEmbd, 1)
-
-	embdSlice := unsafe.Slice(batch.Embd, int(nTokens*nEmbd))
-	copy(embdSlice, embd)
-
-	// Save original pos pointer so BatchFree doesn't try to free Go memory
-	origPos := batch.Pos
-
-	// Allocate our own position array for M-RoPE (4D)
-	// and replace the batch's pos pointer
-	posData := make([]llama.Pos, nTokens*nPosPerEmbd)
-
+// order is T, X, Y, Z, while llama batches require T, Y, X, Z.
+func decodeEmbeddingsMRoPE(lctx llama.Context, batch llama.BatchExt, embd []float32, nEmbd, nTokens int32, imageTokens mtmd.ImageTokens, nPos llama.Pos, nPast *llama.Pos, seqID llama.SeqId, useNonCausal bool) error {
+	if err := validateEmbeddings(embd, nEmbd, nTokens); err != nil {
+		return err
+	}
+	if err := llama.BatchExtClear(batch); err != nil {
+		return err
+	}
 	for i := range nTokens {
+		start := int(i * nEmbd)
+		idx, err := llama.BatchExtAddEmbd(batch, seqID, embd[start:start+int(nEmbd)], int(nEmbd))
+		if err != nil {
+			return fmt.Errorf("add embedding row %d: %w", i, err)
+		}
 		pos := mtmd.ImageTokensGetDecoderPos(imageTokens, *nPast, uint64(i))
-		posData[i] = llama.Pos(pos.T)
-		posData[i+nTokens] = llama.Pos(pos.Y)
-		posData[i+nTokens*2] = llama.Pos(pos.X)
-		posData[i+nTokens*3] = llama.Pos(pos.Z)
+		if err := llama.BatchExtSetPos(batch, idx,
+			llama.Pos(pos.T), llama.Pos(pos.Y), llama.Pos(pos.X), llama.Pos(pos.Z)); err != nil {
+			return fmt.Errorf("set embedding row %d M-RoPE position: %w", i, err)
+		}
+		if i == nTokens-1 {
+			if err := llama.BatchExtSetOutputLogits(batch, idx, true); err != nil {
+				return fmt.Errorf("request embedding row %d logits: %w", i, err)
+			}
+		}
 	}
-	batch.Pos = &posData[0]
-
-	nSeqIDSlice := unsafe.Slice(batch.NSeqId, int(nTokens))
-	seqIDPtrs := unsafe.Slice(batch.SeqId, int(nTokens))
-	logitsSlice := unsafe.Slice(batch.Logits, int(nTokens))
-
-	for i := range nTokens {
-		nSeqIDSlice[i] = 1
-		*seqIDPtrs[i] = seqID
-		logitsSlice[i] = 0
-	}
-	if nTokens > 0 {
-		logitsSlice[nTokens-1] = 1
-	}
-	batch.NTokens = nTokens
-
-	if useNonCausal {
-		llama.SetCausalAttn(lctx, false)
-	}
-
-	_, err := llama.Decode(lctx, batch)
-
-	// Restore original pos pointer before freeing to avoid freeing Go memory
-	batch.Pos = origPos
-	llama.BatchFree(batch)
-
-	if err != nil {
+	if err := processBatch(lctx, batch, useNonCausal); err != nil {
 		return err
 	}
 
-	if useNonCausal {
-		llama.SetCausalAttn(lctx, true)
+	*nPast += nPos
+
+	return nil
+}
+
+func validateEmbeddings(embd []float32, nEmbd, nTokens int32) error {
+	if nEmbd <= 0 || nTokens <= 0 || len(embd) != int(nEmbd*nTokens) {
+		return fmt.Errorf("embedding values: got %d, want %d rows of %d", len(embd), nTokens, nEmbd)
 	}
 
-	*nPast += llama.Pos(nTokens)
+	return nil
+}
+
+func processBatch(lctx llama.Context, batch llama.BatchExt, useNonCausal bool) error {
+	wasCausal := false
+	if useNonCausal {
+		wasCausal = llama.GetCausalAttn(lctx)
+		llama.SetCausalAttn(lctx, false)
+	}
+
+	ret, err := llama.Process(lctx, llama.ProcessTypeDecode, batch)
+	if useNonCausal {
+		llama.SetCausalAttn(lctx, wasCausal)
+	}
+	if err != nil {
+		return err
+	}
+	if ret != 0 {
+		return fmt.Errorf("process batch: code=%d", ret)
+	}
+	llama.Synchronize(lctx)
 
 	return nil
 }

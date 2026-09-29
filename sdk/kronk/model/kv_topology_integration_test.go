@@ -128,22 +128,31 @@ func newKVTopologyContext(t *testing.T, mdl llama.Model) (llama.Context, llama.M
 }
 
 func decodeSequence(lctx llama.Context, token llama.Token, seqID llama.SeqId, start, count int) (retErr error) {
-	batch := llama.BatchInit(kvTopologyChunkSize, 0, 1)
+	batch, err := llama.BatchExtInit(lctx)
+	if err != nil {
+		return fmt.Errorf("initialize extended batch: %w", err)
+	}
 	defer func() {
-		retErr = errors.Join(retErr, llama.BatchFree(batch))
+		retErr = errors.Join(retErr, llama.BatchExtFree(batch))
 	}()
 
 	for offset := 0; offset < count; offset += kvTopologyChunkSize {
-		if err := batch.Clear(); err != nil {
+		if err := llama.BatchExtClear(batch); err != nil {
 			return fmt.Errorf("clear batch: %w", err)
 		}
 
 		chunkSize := min(kvTopologyChunkSize, count-offset)
 		for i := range chunkSize {
-			batch.Add(token, llama.Pos(start+offset+i), []llama.SeqId{seqID}, false)
+			idx, err := llama.BatchExtAddToken(batch, seqID, token)
+			if err != nil {
+				return fmt.Errorf("add token at position %d: %w", start+offset+i, err)
+			}
+			if err := llama.BatchExtSetPos(batch, idx, llama.Pos(start+offset+i)); err != nil {
+				return fmt.Errorf("set token position %d: %w", start+offset+i, err)
+			}
 		}
 
-		ret, err := llama.Decode(lctx, batch)
+		ret, err := llama.Process(lctx, llama.ProcessTypeDecode, batch)
 		if err != nil {
 			return fmt.Errorf("decode positions [%d,%d): %w", start+offset, start+offset+chunkSize, err)
 		}

@@ -25,7 +25,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-	"unsafe"
 
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -152,7 +151,8 @@ type BatchProcessor struct {
 	vocab        llama.Vocab
 	lctx         llama.Context
 	mem          llama.Memory
-	batch        llama.Batch
+	batch        llama.BatchExt
+	nBatch       int32
 	slots        []*slot
 	nParallel    int
 	nPredict     int
@@ -201,10 +201,13 @@ func NewBatchProcessor(modelPath string, nParallel, nPredict int) (*BatchProcess
 		return nil, fmt.Errorf("unable to get memory: %w", err)
 	}
 
-	nCtx := llama.NCtx(lctx)
-
-	// Allocate batch.
-	batch := llama.BatchInit(int32(nCtx), 0, int32(nParallel+1))
+	// Allocate one context-sized batch for prefill and generation.
+	batch, err := llama.BatchExtInit(lctx)
+	if err != nil {
+		llama.Free(lctx)
+		llama.ModelFree(mdl)
+		return nil, fmt.Errorf("unable to initialize batch: %w", err)
+	}
 
 	// Initialize slots.
 	slots := make([]*slot, nParallel)
@@ -249,10 +252,19 @@ func (bp *BatchProcessor) initSystemPrompt() error {
 	tokensSystem := llama.Tokenize(bp.vocab, systemPrompt, true, true)
 	bp.systemTokens = int32(len(tokensSystem))
 
-	batch := llama.BatchGetOne(tokensSystem)
-	if _, err := llama.Decode(bp.lctx, batch); err != nil {
-		return fmt.Errorf("failed to decode system prompt: %w", err)
+	for i, token := range tokensSystem {
+		if _, err := batchAdd(bp.batch, token, llama.Pos(i), []llama.SeqId{0}, false); err != nil {
+			return fmt.Errorf("failed to add system prompt token %d: %w", i, err)
+		}
 	}
+	ret, err := llama.Process(bp.lctx, llama.ProcessTypeDecode, bp.batch)
+	if err != nil {
+		return fmt.Errorf("failed to process system prompt: %w", err)
+	}
+	if ret != 0 {
+		return fmt.Errorf("failed to process system prompt: code=%d", ret)
+	}
+	llama.Synchronize(bp.lctx)
 
 	// Copy system prompt KV cache to all slots.
 	for i := 1; i <= bp.nParallel; i++ {
@@ -295,15 +307,20 @@ func (bp *BatchProcessor) processLoop() {
 			bp.drainSlots()
 			return
 		case <-ticker.C:
-			bp.processBatch()
+			if err := bp.processBatch(); err != nil {
+				log.Printf("Warning: process batch: %v", err)
+			}
 		}
 	}
 }
 
 // processBatch handles one iteration of the batch processing loop.
-func (bp *BatchProcessor) processBatch() {
+func (bp *BatchProcessor) processBatch() error {
 	// Clear the batch.
-	batchClear(&bp.batch)
+	if err := llama.BatchExtClear(bp.batch); err != nil {
+		return fmt.Errorf("clear batch: %w", err)
+	}
+	bp.nBatch = 0
 
 	// Add tokens from active slots that have completed prompt decode.
 	for _, s := range bp.slots {
@@ -317,26 +334,35 @@ func (bp *BatchProcessor) processBatch() {
 			continue
 		}
 
-		s.iBatch = bp.batch.NTokens
-		batchAdd(&bp.batch, s.sampled, s.nPast, []llama.SeqId{llama.SeqId(s.id + 1)}, true)
+		idx, err := batchAdd(bp.batch, s.sampled, s.nPast, []llama.SeqId{llama.SeqId(s.id + 1)}, true)
+		if err != nil {
+			return fmt.Errorf("add slot %d generation token: %w", s.id, err)
+		}
+		s.iBatch = idx
+		bp.nBatch = idx + 1
 		s.nPast++
 		s.nDecoded++
 	}
 
 	// Fill empty slots from queue.
-	bp.fillSlots()
+	if err := bp.fillSlots(); err != nil {
+		return err
+	}
 
 	// Nothing to process.
-	if bp.batch.NTokens == 0 {
-		return
+	if bp.nBatch == 0 {
+		return nil
 	}
 
 	// Decode the batch.
-	ret, err := llama.Decode(bp.lctx, bp.batch)
-	if err != nil || ret != 0 {
-		log.Printf("Warning: decode failed, ret=%d, err=%v", ret, err)
-		return
+	ret, err := llama.Process(bp.lctx, llama.ProcessTypeDecode, bp.batch)
+	if err != nil {
+		return fmt.Errorf("decode failed: %w", err)
 	}
+	if ret != 0 {
+		return fmt.Errorf("decode failed: code=%d", ret)
+	}
+	llama.Synchronize(bp.lctx)
 
 	// Sample tokens for each active slot.
 	for _, s := range bp.slots {
@@ -384,10 +410,12 @@ func (bp *BatchProcessor) processBatch() {
 
 		s.iBatch = -1
 	}
+
+	return nil
 }
 
 // fillSlots assigns pending requests to available slots.
-func (bp *BatchProcessor) fillSlots() {
+func (bp *BatchProcessor) fillSlots() error {
 	for _, s := range bp.slots {
 		if s.active {
 			continue
@@ -396,16 +424,20 @@ func (bp *BatchProcessor) fillSlots() {
 		// Try to get a request from the queue.
 		select {
 		case req := <-bp.requestQueue:
-			bp.startSlot(s, req)
+			if err := bp.startSlot(s, req); err != nil {
+				return err
+			}
 		default:
 			// No pending requests
-			return
+			return nil
 		}
 	}
+
+	return nil
 }
 
 // startSlot initializes a slot with a new request.
-func (bp *BatchProcessor) startSlot(s *slot, req *InferenceRequest) {
+func (bp *BatchProcessor) startSlot(s *slot, req *InferenceRequest) error {
 	s.active = true
 	s.request = req
 	s.tStart = time.Now()
@@ -430,19 +462,27 @@ func (bp *BatchProcessor) startSlot(s *slot, req *InferenceRequest) {
 
 	// Add prompt tokens to batch.
 	for _, tok := range tokens {
-		batchAdd(&bp.batch, tok, s.nPast, []llama.SeqId{llama.SeqId(s.id + 1)}, false)
+		idx, err := batchAdd(bp.batch, tok, s.nPast, []llama.SeqId{llama.SeqId(s.id + 1)}, false)
+		if err != nil {
+			return fmt.Errorf("add slot %d prompt token: %w", s.id, err)
+		}
+		bp.nBatch = idx + 1
 		s.nPast++
 	}
 
 	// Enable logits for last token.
-	if bp.batch.NTokens > 0 {
-		setLogit(&bp.batch, bp.batch.NTokens-1, true)
+	if bp.nBatch > 0 {
+		if err := llama.BatchExtSetOutputLogits(bp.batch, bp.nBatch-1, true); err != nil {
+			return fmt.Errorf("request slot %d prompt logits: %w", s.id, err)
+		}
 	}
 
-	s.iBatch = bp.batch.NTokens - 1
+	s.iBatch = bp.nBatch - 1
 	s.seqID = llama.SeqId(s.id)
 
 	log.Printf("[Slot %d] Started request %s (%d prompt tokens)", s.id, req.ID, s.nPrompt)
+
+	return nil
 }
 
 // finishSlot completes a slot and sends the final response.
@@ -506,7 +546,7 @@ func (bp *BatchProcessor) Close() {
 	for _, s := range bp.slots {
 		llama.SamplerFree(s.sampler)
 	}
-	llama.BatchFree(bp.batch)
+	llama.BatchExtFree(bp.batch)
 	llama.Free(bp.lctx)
 	llama.ModelFree(bp.model)
 
@@ -691,51 +731,32 @@ func (s *Server) Shutdown(ctx context.Context) error {
 }
 
 // =============================================================================
-// Batch manipulation helpers
+// Batch manipulation helpers.
 
-func batchClear(batch *llama.Batch) {
-	batch.NTokens = 0
-}
+func batchAdd(batch llama.BatchExt, token llama.Token, pos llama.Pos, seqIDs []llama.SeqId, logits bool) (int32, error) {
+	if len(seqIDs) == 0 {
+		return -1, fmt.Errorf("add token: no sequence IDs")
+	}
 
-func batchAdd(batch *llama.Batch, token llama.Token, pos llama.Pos, seqIDs []llama.SeqId, logits bool) {
-	i := batch.NTokens
-
-	tokenPtr := (*llama.Token)(unsafe.Add(unsafe.Pointer(batch.Token), uintptr(i)*unsafe.Sizeof(llama.Token(0))))
-	*tokenPtr = token
-
-	posPtr := (*llama.Pos)(unsafe.Add(unsafe.Pointer(batch.Pos), uintptr(i)*unsafe.Sizeof(llama.Pos(0))))
-	*posPtr = pos
-
-	nSeqPtr := (*int32)(unsafe.Add(unsafe.Pointer(batch.NSeqId), uintptr(i)*unsafe.Sizeof(int32(0))))
-	*nSeqPtr = int32(len(seqIDs))
-
-	seqIDPtrPtr := (**llama.SeqId)(unsafe.Add(unsafe.Pointer(batch.SeqId), uintptr(i)*unsafe.Sizeof(uintptr(0))))
-	if *seqIDPtrPtr != nil && len(seqIDs) > 0 {
-		for j, sid := range seqIDs {
-			seqPtr := (*llama.SeqId)(unsafe.Add(unsafe.Pointer(*seqIDPtrPtr), uintptr(j)*unsafe.Sizeof(llama.SeqId(0))))
-			*seqPtr = sid
+	idx, err := llama.BatchExtAddToken(batch, seqIDs[0], token)
+	if err != nil {
+		return idx, err
+	}
+	for _, seqID := range seqIDs[1:] {
+		if err := llama.BatchExtAddSeq(batch, idx, seqID); err != nil {
+			return idx, err
+		}
+	}
+	if err := llama.BatchExtSetPos(batch, idx, pos); err != nil {
+		return idx, err
+	}
+	if logits {
+		if err := llama.BatchExtSetOutputLogits(batch, idx, true); err != nil {
+			return idx, err
 		}
 	}
 
-	logitPtr := (*int8)(unsafe.Add(unsafe.Pointer(batch.Logits), uintptr(i)*unsafe.Sizeof(int8(0))))
-	switch logits {
-	case true:
-		*logitPtr = 1
-	case false:
-		*logitPtr = 0
-	}
-
-	batch.NTokens++
-}
-
-func setLogit(batch *llama.Batch, idx int32, logits bool) {
-	logitPtr := (*int8)(unsafe.Add(unsafe.Pointer(batch.Logits), uintptr(idx)*unsafe.Sizeof(int8(0))))
-	switch logits {
-	case true:
-		*logitPtr = 1
-	case false:
-		*logitPtr = 0
-	}
+	return idx, nil
 }
 
 func initYzma() error {

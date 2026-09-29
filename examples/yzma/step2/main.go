@@ -18,7 +18,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"unsafe"
 
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -149,6 +148,13 @@ func run() error {
 		}
 	}()
 
+	// Allocate one context-sized batch and reuse it for prefill and generation.
+	batch, err := llama.BatchExtInit(lctx)
+	if err != nil {
+		return fmt.Errorf("failed to initialize batch: %w", err)
+	}
+	defer llama.BatchExtFree(batch)
+
 	// -------------------------------------------------------------------------
 	// Tokenize and evaluate the system prompt.
 
@@ -158,10 +164,19 @@ func run() error {
 	if *sharedPrompt {
 		fmt.Println("Evaluating the system prompt...")
 
-		batch := llama.BatchGetOne(tokensSystem)
-		if _, err := llama.Decode(lctx, batch); err != nil {
-			return fmt.Errorf("failed to decode system prompt: %w", err)
+		for i, token := range tokensSystem {
+			if _, err := batchAdd(batch, token, llama.Pos(i), []llama.SeqId{0}, false); err != nil {
+				return fmt.Errorf("failed to add system prompt token %d: %w", i, err)
+			}
 		}
+		ret, err := llama.Process(lctx, llama.ProcessTypeDecode, batch)
+		if err != nil {
+			return fmt.Errorf("failed to process system prompt: %w", err)
+		}
+		if ret != 0 {
+			return fmt.Errorf("failed to process system prompt: code=%d", ret)
+		}
+		llama.Synchronize(lctx)
 
 		// Copy the system prompt KV cache to all client sequences.
 		for i := 1; i <= *nParallel; i++ {
@@ -185,13 +200,12 @@ func run() error {
 
 	tMainStart := time.Now()
 
-	// Allocate batch for parallel processing.
-	batch := llama.BatchInit(int32(nCtx), 0, int32(*nParallel+1))
-	defer llama.BatchFree(batch)
-
 	for {
 		// Clear the batch.
-		batchClear(&batch)
+		if err := llama.BatchExtClear(batch); err != nil {
+			return fmt.Errorf("failed to clear batch: %w", err)
+		}
+		var nBatch int32
 
 		// Add tokens from ongoing sequences to the batch.
 		for i := range clients {
@@ -200,14 +214,18 @@ func run() error {
 				continue
 			}
 
-			c.iBatch = batch.NTokens
-			batchAdd(&batch, c.sampled, c.nPast, []llama.SeqId{llama.SeqId(c.id + 1)}, true)
+			idx, err := batchAdd(batch, c.sampled, c.nPast, []llama.SeqId{llama.SeqId(c.id + 1)}, true)
+			if err != nil {
+				return fmt.Errorf("failed to add client %d generation token: %w", c.id, err)
+			}
+			c.iBatch = idx
+			nBatch = idx + 1
 			c.nPast++
 			c.nDecoded++
 		}
 
 		// If no active sequences, clear the KV cache and prepare for new ones.
-		if batch.NTokens == 0 {
+		if nBatch == 0 {
 			for i := 1; i <= *nParallel; i++ {
 				llama.MemorySeqRm(mem, llama.SeqId(i), -1, -1)
 				if *sharedPrompt {
@@ -217,7 +235,7 @@ func run() error {
 		}
 
 		// Insert new sequences for decoding.
-		if *contBatching || batch.NTokens == 0 {
+		if *contBatching || nBatch == 0 {
 			for i := range clients {
 				c := &clients[i]
 				if c.seqID == -1 && gSeqID < int32(*nSequences) {
@@ -244,20 +262,25 @@ func run() error {
 					tokensPrompt := llama.Tokenize(vocab, c.prompt, !*sharedPrompt, true)
 
 					// Add prompt tokens to batch.
-					for j, tok := range tokensPrompt {
-						batchAdd(&batch, tok, c.nPast, []llama.SeqId{llama.SeqId(c.id + 1)}, false)
+					for _, tok := range tokensPrompt {
+						idx, err := batchAdd(batch, tok, c.nPast, []llama.SeqId{llama.SeqId(c.id + 1)}, false)
+						if err != nil {
+							return fmt.Errorf("failed to add client %d prompt token: %w", c.id, err)
+						}
+						nBatch = idx + 1
 						c.nPast++
-						_ = j
 					}
 
 					// Enable logits for the last token.
-					if batch.NTokens > 0 {
-						setLogit(&batch, batch.NTokens-1, true)
+					if nBatch > 0 {
+						if err := llama.BatchExtSetOutputLogits(batch, nBatch-1, true); err != nil {
+							return fmt.Errorf("failed to request client %d prompt logits: %w", c.id, err)
+						}
 					}
 
 					c.nPrompt = int32(len(tokensPrompt))
 					c.nDecoded = 0
-					c.iBatch = batch.NTokens - 1
+					c.iBatch = nBatch - 1
 
 					fmt.Printf("\033[31mClient %3d, seq %4d, prompt = %4d tokens, started...\033[0m\n",
 						c.id, c.seqID, c.nPrompt)
@@ -268,18 +291,19 @@ func run() error {
 		}
 
 		// No more work to do.
-		if batch.NTokens == 0 {
+		if nBatch == 0 {
 			break
 		}
 
 		// Decode the batch.
-		ret, err := llama.Decode(lctx, batch)
+		ret, err := llama.Process(lctx, llama.ProcessTypeDecode, batch)
 		if err != nil || ret != 0 {
 			nCacheMiss++
 			fmt.Printf("Warning: decode failed (cache miss %d), ret=%d\n", nCacheMiss, ret)
 			// In production, you'd retry with smaller batch or handle the error.
 			continue
 		}
+		llama.Synchronize(lctx)
 
 		// Sample tokens for each active client.
 		for i := range clients {
@@ -371,61 +395,31 @@ func run() error {
 }
 
 // =============================================================================
-// Batch manipulation helpers using unsafe pointer arithmetic.
-// These mirror the common_batch_add / common_batch_clear from llama.cpp.
-
-// batchClear resets the batch to empty state.
-func batchClear(batch *llama.Batch) {
-	batch.NTokens = 0
-}
-
 // batchAdd adds a token to the batch at the current position.
-func batchAdd(batch *llama.Batch, token llama.Token, pos llama.Pos, seqIDs []llama.SeqId, logits bool) {
-	i := batch.NTokens
+func batchAdd(batch llama.BatchExt, token llama.Token, pos llama.Pos, seqIDs []llama.SeqId, logits bool) (int32, error) {
+	if len(seqIDs) == 0 {
+		return -1, fmt.Errorf("add token: no sequence IDs")
+	}
 
-	// Set token.
-	tokenPtr := (*llama.Token)(unsafe.Add(unsafe.Pointer(batch.Token), uintptr(i)*unsafe.Sizeof(llama.Token(0))))
-	*tokenPtr = token
-
-	// Set position.
-	posPtr := (*llama.Pos)(unsafe.Add(unsafe.Pointer(batch.Pos), uintptr(i)*unsafe.Sizeof(llama.Pos(0))))
-	*posPtr = pos
-
-	// Set number of sequence IDs.
-	nSeqPtr := (*int32)(unsafe.Add(unsafe.Pointer(batch.NSeqId), uintptr(i)*unsafe.Sizeof(int32(0))))
-	*nSeqPtr = int32(len(seqIDs))
-
-	// Set sequence IDs.
-	// SeqId is **SeqId, so we need to get the pointer to the array of SeqId pointers.
-	seqIDPtrPtr := (**llama.SeqId)(unsafe.Add(unsafe.Pointer(batch.SeqId), uintptr(i)*unsafe.Sizeof(uintptr(0))))
-	if *seqIDPtrPtr != nil && len(seqIDs) > 0 {
-		for j, sid := range seqIDs {
-			seqPtr := (*llama.SeqId)(unsafe.Add(unsafe.Pointer(*seqIDPtrPtr), uintptr(j)*unsafe.Sizeof(llama.SeqId(0))))
-			*seqPtr = sid
+	idx, err := llama.BatchExtAddToken(batch, seqIDs[0], token)
+	if err != nil {
+		return idx, err
+	}
+	for _, seqID := range seqIDs[1:] {
+		if err := llama.BatchExtAddSeq(batch, idx, seqID); err != nil {
+			return idx, err
+		}
+	}
+	if err := llama.BatchExtSetPos(batch, idx, pos); err != nil {
+		return idx, err
+	}
+	if logits {
+		if err := llama.BatchExtSetOutputLogits(batch, idx, true); err != nil {
+			return idx, err
 		}
 	}
 
-	// Set logits flag.
-	logitPtr := (*int8)(unsafe.Add(unsafe.Pointer(batch.Logits), uintptr(i)*unsafe.Sizeof(int8(0))))
-	switch logits {
-	case true:
-		*logitPtr = 1
-	case false:
-		*logitPtr = 0
-	}
-
-	batch.NTokens++
-}
-
-// setLogit sets the logit flag for a specific token index.
-func setLogit(batch *llama.Batch, idx int32, logits bool) {
-	logitPtr := (*int8)(unsafe.Add(unsafe.Pointer(batch.Logits), uintptr(idx)*unsafe.Sizeof(int8(0))))
-	switch logits {
-	case true:
-		*logitPtr = 1
-	case false:
-		*logitPtr = 0
-	}
+	return idx, nil
 }
 
 func initYzma() error {

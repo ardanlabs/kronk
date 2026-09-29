@@ -1,7 +1,7 @@
 // This example qualifies reranker model architectures for batched sequence
 // processing. It downloads each candidate, evaluates query-document pairs
 // independently, then evaluates them together using distinct sequence IDs in
-// one llama.cpp decode call and compares the classifier outputs.
+// one llama.cpp process call and compares the classifier outputs.
 //
 // Each candidate runs in a child process because an incompatible model may
 // cause llama.cpp to abort instead of returning an error. A failed candidate
@@ -206,8 +206,8 @@ func runCandidate(index int, modelFile string) error {
 	}
 
 	fmt.Printf("PoolingType            : %d\n", poolingType)
-	fmt.Println("IndependentDecodeCalls:", len(documents))
-	fmt.Println("BatchedDecodeCalls    : 1")
+	fmt.Println("IndependentProcessCalls:", len(documents))
+	fmt.Println("BatchedProcessCalls    : 1")
 
 	independentScores := make([]float32, len(documents))
 	batchedScores := make([]float32, len(documents))
@@ -283,22 +283,34 @@ func rerank(mdl llama.Model, tokenized [][]llama.Token, nClsOut uint32) ([][]flo
 		llama.Free(lctx)
 	}()
 
-	batch := llama.BatchInit(int32(totalTokens), 0, 1)
-	defer llama.BatchFree(batch)
+	batch, err := llama.BatchExtInit(lctx)
+	if err != nil {
+		return nil, 0, fmt.Errorf("initialize batch: %w", err)
+	}
+	defer llama.BatchExtFree(batch)
 
 	for i, tokens := range tokenized {
 		seqID := llama.SeqId(i)
 		for pos, token := range tokens {
-			batch.Add(token, llama.Pos(pos), []llama.SeqId{seqID}, true)
+			idx, err := llama.BatchExtAddToken(batch, seqID, token)
+			if err != nil {
+				return nil, 0, fmt.Errorf("add sequence %d token at position %d: %w", i, pos, err)
+			}
+			if err := llama.BatchExtSetPos(batch, idx, llama.Pos(pos)); err != nil {
+				return nil, 0, fmt.Errorf("set sequence %d token position %d: %w", i, pos, err)
+			}
+			if err := llama.BatchExtSetOutputEmbd(batch, idx, true); err != nil {
+				return nil, 0, fmt.Errorf("request sequence %d output at position %d: %w", i, pos, err)
+			}
 		}
 	}
 
-	ret, err := llama.Decode(lctx, batch)
+	ret, err := llama.Process(lctx, llama.ProcessTypeDecode, batch)
 	if err != nil {
-		return nil, 0, fmt.Errorf("decode: %w", err)
+		return nil, 0, fmt.Errorf("process: %w", err)
 	}
 	if ret != 0 {
-		return nil, 0, fmt.Errorf("decode returned non-zero: %d", ret)
+		return nil, 0, fmt.Errorf("process returned non-zero: %d", ret)
 	}
 
 	outputs := make([][]float32, len(tokenized))

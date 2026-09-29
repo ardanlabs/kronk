@@ -5,28 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"time"
-	"unsafe"
 
 	mtpengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/mtp"
 	yzmaspec "github.com/hybridgroup/yzma/exp/speculative"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
-
-// batchTokensAt aliases a generation batch's token-id range [start..start+count) of a
-// llama.Batch as a Go slice. The returned slice shares memory with the
-// underlying C-owned buffer — do not retain past the next batch
-// mutation. Returns nil when bounds are out of range or the batch has
-// no token buffer (embd-only batch).
-func batchTokensAt(b llama.Batch, start, count int) []llama.Token {
-	if b.Token == nil || count <= 0 {
-		return nil
-	}
-	all := unsafe.Slice(b.Token, int(b.NTokens))
-	if start < 0 || start+count > len(all) {
-		return nil
-	}
-	return all[start : start+count]
-}
 
 func addMTPBatchEntry(batch llama.BatchExt, token llama.Token, position llama.Pos, seqIDs []llama.SeqId, hidden []float32, nEmbd int, outputLogits bool) error {
 	if len(seqIDs) == 0 {
@@ -125,12 +108,11 @@ func (e *batchEngine) decodeTokensIntoCacheMTP(ctx context.Context, s *slot, tok
 	e.model.log(ctx, "cache", "status", "decoding tokens into cache (mtp-mirror)",
 		"seq", s.seqID, "tokens", nTokens, "start_pos", startPos, "nbatch", nBatch)
 
-	batchSize := int32(min(nBatch, nTokens))
-	if batchSize <= 0 {
-		batchSize = 1
+	batch, err := newExtendedBatchCapacity(e.model.lctx, min(nBatch, nTokens))
+	if err != nil {
+		return fmt.Errorf("imc-mtp: create target replay batch: %w", err)
 	}
-	batch := llama.BatchInit(batchSize, 0, 1)
-	defer llama.BatchFree(batch)
+	defer batch.free()
 
 	seqIDs := []llama.SeqId{s.seqID}
 
@@ -143,17 +125,17 @@ func (e *batchEngine) decodeTokensIntoCacheMTP(ctx context.Context, s *slot, tok
 	var mtpSyncElapsed time.Duration
 	var chunks int
 
-	err := decodeMTPMirrorChunks(nTokens, nBatch, func(i, end int) error {
-		batch.Clear()
+	err = decodeMTPMirrorChunks(nTokens, nBatch, func(i, end int) error {
+		batch.clear()
 		for j := i; j < end; j++ {
 			pos := llama.Pos(startPos + j)
-			if err := batch.Add(tokens[j], pos, seqIDs, false); err != nil {
+			if _, err := batch.addToken(tokens[j], pos, seqIDs, extendedBatchOutputNone); err != nil {
 				return fmt.Errorf("imc-mtp: add target token at pos %d: %w", pos, err)
 			}
 		}
 
 		targetDecodeStart := time.Now()
-		ret, err := llama.Decode(e.model.lctx, batch)
+		ret, err := batch.process(llama.ProcessTypeDecode)
 		if err != nil || ret != 0 {
 			return fmt.Errorf("imc-mtp: target decode at pos %d: %w", startPos+i, decodeError(ret, err))
 		}
@@ -223,7 +205,7 @@ func (e *batchEngine) captureVerifyPreNorm(s *slot, count int) error {
 
 	draft := e.model.draft.core()
 	nEmbd := draft.mtp.EmbeddingSize()
-	totalRows := int(e.batch.NTokens)
+	totalRows := e.batch.len()
 	start := int(s.mtp.TargetRange.Start)
 	if start < 0 || start+count > totalRows {
 		s.mtp.VerifyHidden = s.mtp.VerifyHidden[:0]

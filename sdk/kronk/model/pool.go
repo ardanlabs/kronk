@@ -2,6 +2,8 @@ package model
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
@@ -19,6 +21,7 @@ type contextPool struct {
 	mu       sync.Mutex
 	contexts []llama.Context
 	memories []llama.Memory
+	batches  []*extendedBatch
 	avail    chan int // indices of available contexts
 }
 
@@ -36,34 +39,30 @@ func newContextPool(ctx context.Context, model llama.Model, ctxParams llama.Cont
 		log:       log,
 		contexts:  make([]llama.Context, n),
 		memories:  make([]llama.Memory, n),
+		batches:   make([]*extendedBatch, n),
 		avail:     make(chan int, n),
 	}
 
 	for i := range n {
 		lctx, err := llama.InitFromModel(model, ctxParams)
 		if err != nil {
-			// Clean up any contexts we already created.
-			for j := range i {
-				llama.Synchronize(p.contexts[j])
-				llama.Free(p.contexts[j])
-			}
-			return nil, err
+			return nil, errors.Join(err, p.freeContexts(i))
 		}
 
 		mem, err := llama.GetMemory(lctx)
 		if err != nil {
-			llama.Free(lctx)
-			for j := range i {
-				llama.Synchronize(p.contexts[j])
-				llama.Free(p.contexts[j])
-			}
-			return nil, err
+			return nil, errors.Join(err, llama.Free(lctx), p.freeContexts(i))
 		}
 
 		llama.MemoryClear(mem, true)
+		batch, err := newExtendedBatch(lctx)
+		if err != nil {
+			return nil, errors.Join(err, llama.Free(lctx), p.freeContexts(i))
+		}
 
 		p.contexts[i] = lctx
 		p.memories[i] = mem
+		p.batches[i] = batch
 		p.avail <- i
 	}
 
@@ -92,9 +91,10 @@ func contextPoolFallbackParams(params llama.ContextParams) llama.ContextParams {
 
 // poolContext represents an acquired context from the pool.
 type poolContext struct {
-	idx  int
-	lctx llama.Context
-	mem  llama.Memory
+	idx   int
+	lctx  llama.Context
+	mem   llama.Memory
+	batch *extendedBatch
 }
 
 // acquire gets a context from the pool. Blocks until one is available or
@@ -103,9 +103,10 @@ func (p *contextPool) acquire(ctx context.Context) (poolContext, error) {
 	select {
 	case idx := <-p.avail:
 		return poolContext{
-			idx:  idx,
-			lctx: p.contexts[idx],
-			mem:  p.memories[idx],
+			idx:   idx,
+			lctx:  p.contexts[idx],
+			mem:   p.memories[idx],
+			batch: p.batches[idx],
 		}, nil
 
 	case <-ctx.Done():
@@ -121,7 +122,7 @@ func (p *contextPool) release(pc poolContext) {
 }
 
 // close frees all contexts in the pool.
-func (p *contextPool) close() {
+func (p *contextPool) close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -130,12 +131,31 @@ func (p *contextPool) close() {
 	for range p.avail {
 	}
 
-	// Free all contexts.
-	for i, lctx := range p.contexts {
-		if lctx != 0 {
-			llama.Synchronize(lctx)
-			llama.Free(lctx)
-			p.contexts[i] = 0
+	return p.freeContexts(len(p.contexts))
+}
+
+func (p *contextPool) freeContexts(count int) error {
+	errList := make([]error, 0, count*3)
+	for i := range count {
+		if p.batches[i] != nil {
+			if err := p.batches[i].free(); err != nil {
+				errList = append(errList, fmt.Errorf("free context pool batch %d: %w", i, err))
+			}
+			p.batches[i] = nil
 		}
+
+		lctx := p.contexts[i]
+		if lctx == 0 {
+			continue
+		}
+		if err := llama.Synchronize(lctx); err != nil {
+			errList = append(errList, fmt.Errorf("synchronize context pool context %d: %w", i, err))
+		}
+		if err := llama.Free(lctx); err != nil {
+			errList = append(errList, fmt.Errorf("free context pool context %d: %w", i, err))
+		}
+		p.contexts[i] = 0
 	}
+
+	return errors.Join(errList...)
 }

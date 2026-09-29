@@ -187,7 +187,7 @@ func (m *Model) processRerankBatchSeq(ctx context.Context, query string, documen
 
 // processRerank processes all documents on a single context.
 func (m *Model) processRerank(ctx context.Context, pc poolContext, query string, documents []string, returnDocuments bool) ([]RerankResult, int, error) {
-	maxTokens := rerankTokenLimit(int(llama.NUBatch(pc.lctx)), m.cfg.ContextWindow())
+	maxTokens := rerankTokenLimit(min(int(llama.NBatch(pc.lctx)), int(llama.NUBatch(pc.lctx))), m.cfg.ContextWindow())
 
 	nClsOut := llama.ModelNClsOut(m.model)
 	if nClsOut == 0 {
@@ -217,9 +217,14 @@ func (m *Model) processRerank(ctx context.Context, pc poolContext, query string,
 
 		totalTokens += len(tokens)
 
-		batch := llama.BatchGetOne(tokens)
+		pc.batch.clear()
+		for pos, token := range tokens {
+			if _, err := pc.batch.addToken(token, llama.Pos(pos), []llama.SeqId{0}, extendedBatchOutputEmbeddings); err != nil {
+				return nil, 0, fmt.Errorf("rerank: add token %d for document[%d]: %w", pos, i, err)
+			}
+		}
 
-		ret, err := llama.Decode(pc.lctx, batch)
+		ret, err := pc.batch.process(llama.ProcessTypeDecode)
 		if err != nil {
 			return nil, 0, fmt.Errorf("rerank: decode failed for document[%d]: %w", i, err)
 		}
