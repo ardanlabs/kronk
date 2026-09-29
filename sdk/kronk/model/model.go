@@ -133,7 +133,7 @@ func (s *imcSession) logicalPosition() int {
 //
 //   - Separate-GGUF draft (*classicDrafter): a distinct, smaller GGUF
 //     loaded into its own llama_model + context. Token-only decode loop
-//     (no hidden-state plumbing). Uses llama.DraftGenerate.
+//     (no hidden-state plumbing).
 //
 //   - MTP draft (*mtpDrafter): an MTP (multi-token-prediction) head living
 //     inside the TARGET GGUF (Qwen3.5 / Qwen3.6 architecture qwen35). The
@@ -156,8 +156,7 @@ type draftCore struct {
 	lctx           llama.Context
 	mem            llama.Memory
 	sampler        llama.Sampler
-	batch          llama.Batch
-	prefillBatch   llama.Batch // Reusable batch for prefill decoding (sized to nBatch)
+	batch          *extendedBatch
 	nDraft         int
 	promptBuf      []llama.Token // Reusable buffer for assembling draft prompt tokens
 	draftBuf       []llama.Token // Reusable buffer for generateDraftTokens output
@@ -485,11 +484,11 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		}
 		m.pool = pool
 		if err := m.applyAdaptersToPool(); err != nil {
-			m.pool.close()
+			poolErr := m.pool.close()
 			m.pool = nil
 			adapterErr := m.freeAdapters()
 			llama.ModelFree(mdl)
-			return nil, errors.Join(err, adapterErr)
+			return nil, errors.Join(err, poolErr, adapterErr)
 		}
 
 	default:
@@ -1057,17 +1056,19 @@ func loadDraftModel(ctx context.Context, log applog.Logger, cfg Config, targetMo
 
 	llama.MemoryClear(dMem, true)
 
+	// Create a context-bound batch shared by prefill and single-token drafting.
+	batch, err := newExtendedBatch(dLctx)
+	if err != nil {
+		llama.Free(dLctx)
+		llama.ModelFree(dModel)
+		return nil, fmt.Errorf("unable to create draft batch: %w", err)
+	}
+
 	// Create greedy sampler for draft model (temperature=0 for speed).
 	draftSuppressTokens := copySuppressTokens(dVocab)
 	sampler := llama.SamplerChainInit(llama.SamplerChainDefaultParams())
 	addSuppressTokenSampler(sampler, dVocab, draftSuppressTokens)
 	llama.SamplerChainAdd(sampler, llama.SamplerInitGreedy())
-
-	// Create reusable batch for drafting (1 token at a time).
-	batch := llama.BatchInit(1, 0, 1)
-
-	// Create reusable batch for prefill decoding (sized to nBatch).
-	prefillBatch := llama.BatchInit(int32(dCtxParams.NBatch), 0, 1)
 
 	// Pre-allocate reusable buffers for speculative sampling.
 	nVocab := int(llama.VocabNTokens(dVocab))
@@ -1080,7 +1081,6 @@ func loadDraftModel(ctx context.Context, log applog.Logger, cfg Config, targetMo
 		mem:            dMem,
 		sampler:        sampler,
 		batch:          batch,
-		prefillBatch:   prefillBatch,
 		nDraft:         dCfg.NDraft,
 		draftBuf:       make([]llama.Token, 0, dCfg.NDraft),
 		targetProbs:    make([]float32, nVocab),
@@ -1288,8 +1288,9 @@ func (m *Model) Unload(ctx context.Context) error {
 	}
 
 	// Close the context pool if running (embed/rerank models).
+	var poolErr error
 	if m.pool != nil {
-		m.pool.close()
+		poolErr = m.pool.close()
 	}
 
 	// Free the primary generation, decision, or sequence-batch context if it
@@ -1358,7 +1359,7 @@ func (m *Model) Unload(ctx context.Context) error {
 	adapterErr := m.freeAdapters()
 	llama.ModelFree(m.model)
 
-	if err := errors.Join(batchSeqErr, batchSeqContextErr, decisionBatchErr, adapterErr); err != nil {
+	if err := errors.Join(batchSeqErr, batchSeqContextErr, decisionBatchErr, poolErr, adapterErr); err != nil {
 		return fmt.Errorf("unload: %w", err)
 	}
 

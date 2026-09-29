@@ -86,26 +86,29 @@ func (e *batchEngine) prefillDraft(ctx context.Context, s *slot) error {
 			"slot", s.id, "reused", commonLen)
 	}
 
-	// Decode new suffix tokens into draft model in chunks using the
-	// pre-allocated prefill batch.
+	// Decode new suffix tokens into the draft model in chunks.
 	if len(newTokens) > 0 {
-		batch := draft.prefillBatch
+		batch := draft.batch
 		seqIDs := []llama.SeqId{s.seqID}
 
 		for i := 0; i < len(newTokens); i += nBatch {
-			batch.Clear()
+			batch.clear()
 			end := min(i+nBatch, len(newTokens))
 
 			for j := i; j < end; j++ {
 				pos := commonLen + j
 				isLast := pos == len(tokens)-1
-				if err := batch.Add(newTokens[j], llama.Pos(pos), seqIDs, isLast); err != nil {
+				output := extendedBatchOutputNone
+				if isLast {
+					output = extendedBatchOutputLogits
+				}
+				if _, err := batch.addToken(newTokens[j], llama.Pos(pos), seqIDs, output); err != nil {
 					s.draftCachedTokens = s.draftCachedTokens[:0]
 					return fmt.Errorf("add draft prefill token at pos %d: %w", pos, err)
 				}
 			}
 
-			ret, err := llama.Decode(draft.lctx, batch)
+			ret, err := batch.process(llama.ProcessTypeDecode)
 			if err != nil || ret != 0 {
 				// On failure, invalidate the slot's cache to avoid stale state.
 				s.draftCachedTokens = s.draftCachedTokens[:0]
@@ -135,10 +138,8 @@ func (e *batchEngine) prefillDraft(ctx context.Context, s *slot) error {
 	return nil
 }
 
-// generateClassicDraft invokes the low-level llama draft operation. This
-// delegates to llama.DraftGenerate which performs the entire
-// decode→sample→capture loop in a single tight function, eliminating per-token
-// Go overhead (condition checks, lazy init, buffer management) between FFI calls.
+// generateClassicDraft runs the classic decode, sample, and capture loop on the
+// draft model's context-bound extended batch.
 func (e *batchEngine) generateClassicDraft(s *slot, nDraft int) (classicengine.GenerationResult, error) {
 	draft := e.model.draft.core()
 	temperature := s.job.params.Temperature
@@ -200,11 +201,9 @@ func (e *batchEngine) generateClassicDraft(s *slot, nDraft int) (classicengine.G
 
 	s.classic.DraftStartPosition = s.draftNPast
 
-	// Perform the entire draft loop in a single call, minimizing per-token
-	// Go overhead between FFI calls.
-	drafted, finalPast, err := llama.DraftGenerate(
+	drafted, finalPast, err := generateExtendedDraft(
 		draft.lctx,
-		&draft.batch,
+		draft.batch,
 		e.model.vocab,
 		sampler,
 		s.sampled,
@@ -233,6 +232,79 @@ func (e *batchEngine) generateClassicDraft(s *slot, nDraft int) (classicengine.G
 		"draft_nPast_before", s.classic.DraftStartPosition, "draft_nPast_after", s.draftNPast)
 
 	return classicengine.GenerationResult{Candidates: s.draftTokensBuf, Distributions: distributions}, nil
+}
+
+func generateExtendedDraft(
+	lctx llama.Context,
+	batch *extendedBatch,
+	vocab llama.Vocab,
+	sampler llama.Sampler,
+	lastToken llama.Token,
+	nPast llama.Pos,
+	seqIDs []llama.SeqId,
+	nDraft int,
+	greedy bool,
+	outTokens []llama.Token,
+	outDists [][]llama.DraftCandidate,
+) (int, llama.Pos, error) {
+	if lctx == 0 || batch == nil || sampler == 0 || nDraft <= 0 {
+		return 0, nPast, nil
+	}
+
+	drafted := 0
+	for range nDraft {
+		batch.clear()
+		if _, err := batch.addToken(lastToken, nPast, seqIDs, extendedBatchOutputLogits); err != nil {
+			return drafted, nPast, fmt.Errorf("draft batch: %w", err)
+		}
+
+		ret, err := batch.process(llama.ProcessTypeDecode)
+		if err != nil {
+			return drafted, nPast, fmt.Errorf("draft decode: %w", err)
+		}
+		if ret != 0 {
+			break
+		}
+		nPast++
+
+		token := llama.SamplerSample(sampler, lctx, -1)
+		if !greedy && outDists != nil {
+			count, err := llama.GetSampledCandidatesCountIth(lctx, 0)
+			if err != nil {
+				return drafted, nPast, fmt.Errorf("draft candidate count: %w", err)
+			}
+
+			outDists[drafted] = outDists[drafted][:0]
+			if count > 0 {
+				candidates, err := llama.GetSampledCandidatesIth(lctx, 0, int(count))
+				if err != nil {
+					return drafted, nPast, fmt.Errorf("draft candidates: %w", err)
+				}
+				probabilities, err := llama.GetSampledProbsIth(lctx, 0, int(count))
+				if err != nil {
+					return drafted, nPast, fmt.Errorf("draft probabilities: %w", err)
+				}
+				for i := range min(len(candidates), len(probabilities)) {
+					outDists[drafted] = append(outDists[drafted], llama.DraftCandidate{
+						Tok:  candidates[i],
+						Prob: probabilities[i],
+					})
+				}
+			}
+
+			llama.SamplerAccept(sampler, token)
+		}
+
+		if llama.VocabIsEOG(vocab, token) {
+			break
+		}
+
+		outTokens[drafted] = token
+		drafted++
+		lastToken = token
+	}
+
+	return drafted, nPast, nil
 }
 
 func specAcceptedNPast(basePast llama.Pos, accepted int) llama.Pos {

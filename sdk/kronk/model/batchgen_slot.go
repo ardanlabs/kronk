@@ -245,7 +245,7 @@ type slot struct {
 
 	// Sparse candidate-based speculative decoding fields.
 	draftSampler     llama.Sampler            // Per-slot sampler for draft model (non-greedy)
-	draftCandDistBuf [][]llama.DraftCandidate // Pre-allocated backing for DraftGenerate output
+	draftCandDistBuf [][]llama.DraftCandidate // Pre-allocated backing for classic draft distributions
 
 	// -------------------------------------------------------------------------
 	// Metrics
