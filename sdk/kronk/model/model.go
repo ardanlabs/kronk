@@ -882,7 +882,10 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int, plan specu
 		}
 	}
 
-	m.batch = newBatchEngine(m, nSlots)
+	m.batch, err = newBatchEngine(m, nSlots)
+	if err != nil {
+		return m.cleanupGenerationRuntime(ctx, err)
+	}
 	m.batch.start(ctx)
 
 	return nil

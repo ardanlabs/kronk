@@ -79,7 +79,7 @@ func (e *batchEngine) publishDiagnostics(force bool) {
 		IMCSelectorNext:         e.imcPrepNext,
 		EligibleIMCSlots:        e.imcPreparationSlotIDs(),
 		GenerationRows:          e.diagnosticGenerationRows,
-		TotalRows:               int(e.batch.NTokens),
+		TotalRows:               e.batch.len(),
 		GenerationContributions: append([]BatchGenerationContribution(nil), e.diagnosticGeneration...),
 		Slots:                   make([]BatchSlotSnapshot, len(e.slots)),
 	}

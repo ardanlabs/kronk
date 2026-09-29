@@ -295,9 +295,7 @@ func (e *batchEngine) restoreTargetSpecSnapshot(s *slot, basePast llama.Pos, sam
 		return fmt.Errorf("state-seq-set-data short restore: got %d want %d for seq %d", n, len(s.specSnapshot), s.seqID)
 	}
 
-	// Re-decode the accepted prefix into the now-rewound seq. The
-	// re-batch is small (1 + accepted tokens, capped at nDraft+1)
-	// so BatchInit/BatchFree per round is negligible. logits=true
+	// Re-decode the accepted prefix into the now-rewound seq. Request logits
 	// only on the LAST position because classic verification
 	// already sampled and emitted its accepted tokens from the
 	// original spec batch's logits; we don't need them again here.
@@ -308,21 +306,18 @@ func (e *batchEngine) restoreTargetSpecSnapshot(s *slot, basePast llama.Pos, sam
 	// emitted. Using the current value would re-decode the wrong
 	// token at position basePast and corrupt every subsequent round.
 	count := 1 + accepted
-	rebatch := llama.BatchInit(int32(count), 0, 1)
-	defer llama.BatchFree(rebatch)
-
-	if err := rebatch.Add(sampledAtBase, basePast, s.seqIDs, accepted == 0); err != nil {
-		return fmt.Errorf("add speculative restore base token: %w", err)
+	rebatch, err := newExtendedBatchCapacity(e.model.lctx, count)
+	if err != nil {
+		return fmt.Errorf("create speculative restore batch: %w", err)
 	}
-	for i := range accepted {
-		isLast := i == accepted-1
-		if err := rebatch.Add(draftTokens[i], basePast+llama.Pos(1+i), s.seqIDs, isLast); err != nil {
-			return fmt.Errorf("add speculative restore draft token %d: %w", i, err)
-		}
+	defer rebatch.free()
+
+	if err := stageSpeculativeRestoreBatch(rebatch, sampledAtBase, basePast, draftTokens, accepted, s.seqIDs); err != nil {
+		return err
 	}
 
 	e.model.decodeMu.Lock()
-	ret, err := llama.Decode(e.model.lctx, rebatch)
+	ret, err := rebatch.process(llama.ProcessTypeDecode)
 	if err == nil && ret == 0 {
 		llama.Synchronize(e.model.lctx)
 	}
@@ -331,6 +326,28 @@ func (e *batchEngine) restoreTargetSpecSnapshot(s *slot, basePast llama.Pos, sam
 	if err != nil || ret != 0 {
 		return fmt.Errorf("re-decode of accepted prefix failed: %w", decodeError(ret, err))
 	}
+	return nil
+}
+
+func stageSpeculativeRestoreBatch(rebatch *extendedBatch, sampledAtBase llama.Token, basePast llama.Pos, draftTokens []llama.Token, accepted int, sequenceIDs []llama.SeqId) error {
+	baseOutput := extendedBatchOutputNone
+	if accepted == 0 {
+		baseOutput = extendedBatchOutputLogits
+	}
+	if _, err := rebatch.addToken(sampledAtBase, basePast, sequenceIDs, baseOutput); err != nil {
+		return fmt.Errorf("add speculative restore base token: %w", err)
+	}
+	for i := range accepted {
+		isLast := i == accepted-1
+		output := extendedBatchOutputNone
+		if isLast {
+			output = extendedBatchOutputLogits
+		}
+		if _, err := rebatch.addToken(draftTokens[i], basePast+llama.Pos(1+i), sequenceIDs, output); err != nil {
+			return fmt.Errorf("add speculative restore draft token %d: %w", i, err)
+		}
+	}
+
 	return nil
 }
 

@@ -12,6 +12,7 @@ func TestBatchEngineSnapshotPublishesSlotAndSelectorState(t *testing.T) {
 	m := Model{cfg: adjustConfig(NewConfig(WithNSeqMax(2), WithPrefillBatchSize(2048)), 0)}
 	e := batchEngine{
 		model:                     &m,
+		batch:                     &extendedBatch{capacity: 64},
 		prefillNext:               1,
 		imcPrepNext:               0,
 		diagnosticPrefillStart:    0,
@@ -57,7 +58,11 @@ func TestBatchEngineSnapshotPublishesSlotAndSelectorState(t *testing.T) {
 			},
 		},
 	}
-	e.batch.NTokens = 41
+	for i := range 41 {
+		if _, err := e.batch.addToken(llama.Token(i), llama.Pos(i), []llama.SeqId{0}, extendedBatchOutputNone); err != nil {
+			t.Fatalf("add diagnostic batch row %d: %v", i, err)
+		}
+	}
 	m.batch = &e
 
 	e.publishDiagnostics(true)

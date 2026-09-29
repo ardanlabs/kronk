@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -212,6 +213,43 @@ func TestSpecAcceptedNPast(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := specAcceptedNPast(tt.basePast, tt.accepted); got != tt.want {
 				t.Errorf("specAcceptedNPast(%d, %d) = %d, want %d", tt.basePast, tt.accepted, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStageSpeculativeRestoreBatchUsesOriginalBaseAndLastOutput(t *testing.T) {
+	tests := []struct {
+		name     string
+		accepted int
+		want     []llama.Token
+	}{
+		{name: "base only", accepted: 0, want: []llama.Token{10}},
+		{name: "accepted prefix", accepted: 2, want: []llama.Token{10, 21, 22}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			batch := extendedBatch{capacity: 4}
+			if err := stageSpeculativeRestoreBatch(&batch, 10, 100, []llama.Token{21, 22, 23}, tt.accepted, []llama.SeqId{3}); err != nil {
+				t.Fatalf("stageSpeculativeRestoreBatch: %v", err)
+			}
+
+			got, ok := batch.tokens(0, batch.len())
+			if !ok || !slices.Equal(got, tt.want) {
+				t.Fatalf("tokens = %v, %t, want %v, true", got, ok, tt.want)
+			}
+			for i, entry := range batch.entries {
+				if entry.positions[0] != llama.Pos(100+i) {
+					t.Errorf("entry %d position = %d, want %d", i, entry.positions[0], 100+i)
+				}
+				wantOutput := extendedBatchOutputNone
+				if i == batch.len()-1 {
+					wantOutput = extendedBatchOutputLogits
+				}
+				if entry.output != wantOutput {
+					t.Errorf("entry %d output = %d, want %d", i, entry.output, wantOutput)
+				}
 			}
 		})
 	}

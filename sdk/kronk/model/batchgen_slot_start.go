@@ -1064,7 +1064,7 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 		"cached_tokens", cacheIdx,
 		"total_prompt", totalPrompt,
 		"nbatch", e.model.cfg.EffectiveNBatch(),
-		"batch_current", e.batch.NTokens)
+		"batch_current", e.batch.len())
 
 	if !e.applyContextTokenBudget(s, "start-slot") {
 		return false

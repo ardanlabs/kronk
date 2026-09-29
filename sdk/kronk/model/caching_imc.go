@@ -168,31 +168,27 @@ func (m *Model) decodeTokensIntoCache(ctx context.Context, tokens []llama.Token,
 	m.decodeMu.Lock()
 	defer m.decodeMu.Unlock()
 
-	// Create batch with explicit sequence ID.
-	// Allocate batch sized to nBatch (not nCtx) to avoid huge allocations for
-	// large context windows that can cause C-side allocation failures.
-	batchSize := int32(min(nBatch, nTokens))
-	if batchSize <= 0 {
-		batchSize = 1
+	batch, err := newExtendedBatchCapacity(m.lctx, min(nBatch, nTokens))
+	if err != nil {
+		return fmt.Errorf("imc: create replay batch: %w", err)
 	}
-	batch := llama.BatchInit(batchSize, 0, 1)
-	defer llama.BatchFree(batch)
+	defer batch.free()
 
 	seqIDs := []llama.SeqId{seqID}
 
 	for i := 0; i < nTokens; i += nBatch {
-		batch.Clear()
+		batch.clear()
 
 		end := min(i+nBatch, nTokens)
 
 		for j := i; j < end; j++ {
 			pos := llama.Pos(startPos + j)
-			if err := batch.Add(tokens[j], pos, seqIDs, false); err != nil {
+			if _, err := batch.addToken(tokens[j], pos, seqIDs, extendedBatchOutputNone); err != nil {
 				return fmt.Errorf("imc: add extension token at pos %d: %w", pos, err)
 			}
 		}
 
-		ret, err := llama.Decode(m.lctx, batch)
+		ret, err := batch.process(llama.ProcessTypeDecode)
 		if err != nil || ret != 0 {
 			return fmt.Errorf("imc: failed to decode extension tokens at pos %d: %w", startPos+i, decodeError(ret, err))
 		}
