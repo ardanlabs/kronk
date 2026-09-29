@@ -90,6 +90,12 @@ func Test_API(t *testing.T) {
 	test.Run(t, rerank200(tokens), "rerank-200")
 
 	// -------------------------------------------------------------------------
+	// Model: Jev-Style-0.8B-Decision-v3-Q8_0
+
+	test.Run(t, decision200(tokens), "decision-200")
+	test.Run(t, decisionNegative(tokens), "decision-negative")
+
+	// -------------------------------------------------------------------------
 	// Model: ggml-tiny.bin (whisper / bucky)
 
 	test.Run(t, audioTranscriptions200(t, tokens), "audio-transcriptions-200")
@@ -103,6 +109,7 @@ func Test_API(t *testing.T) {
 	test.Run(t, msgsEndpoint403(tokens), "msgsEndpoint-403")
 	test.Run(t, embed403(tokens), "embedding-403")
 	test.Run(t, rerank403(tokens), "rerank-403")
+	test.Run(t, decision403(tokens), "decision-403")
 	test.Run(t, tokenize403(tokens), "tokenize-403")
 	test.Run(t, audioTranscriptions403(t, tokens), "audio-transcriptions-403")
 	test.Run(t, audioTranslations403(t, tokens), "audio-translations-403")
@@ -144,6 +151,22 @@ func createTokens(t *testing.T, sec *security.Security) map[string]string {
 	}
 
 	tokens["chat-completions"] = token
+
+	// -------------------------------------------------------------------------
+
+	endpoints = map[string]auth.RateLimit{
+		"decision": {
+			Limit:  0,
+			Window: auth.RateUnlimited,
+		},
+	}
+
+	token, err = sec.GenerateToken(false, endpoints, 60*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tokens["decision"] = token
 
 	// -------------------------------------------------------------------------
 

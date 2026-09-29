@@ -56,6 +56,12 @@ The sidebar groups related operations by subsystem.
 
 - **Chat** provides multi-turn conversations, model selection, system prompts,
   chat history, and sampling controls.
+- **Decision** runs a customer-support example against a decision model from
+  the catalog. The model selector shows download readiness and disables
+  evaluation until the selected model is downloaded and validated. Edit the
+  shared customer state, inspect the fixed choice, score, and Noul questions,
+  then review typed answers, probability distributions, token usage, and the
+  raw `/v1/decide` response.
 - **VRAM Calculator** estimates model memory requirements from a HuggingFace
   model without downloading the entire model. A calculator is also available
   in local model and catalog details. Set the intended context, sequence slots,

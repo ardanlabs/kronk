@@ -110,6 +110,7 @@ export default function DocsManual() {
             <li><strong>Vision</strong> — image understanding with compatible multimodal models.</li>
             <li><strong>Audio transcription</strong> — speech-to-text through Bucky and whisper.cpp. See <a href="https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription">Chapter 18: Bucky</a>.</li>
             <li><strong>Embeddings and reranking</strong> — vector generation and document relevance scoring for search and retrieval systems.</li>
+            <li><strong>Structured decisions</strong> — evaluate choice, score, and calibrated yes/no questions against shared application state with supported decision models.</li>
           </ul>
           <p><strong>Performance</strong></p>
           <ul>
@@ -2101,6 +2102,16 @@ docker rm kronk
                 <td>Alias for <code>/v1/rerank</code></td>
               </tr>
               <tr>
+                <td><code>/v1/systemone</code></td>
+                <td>POST</td>
+                <td>Evaluate typed decision questions</td>
+              </tr>
+              <tr>
+                <td><code>/v1/decide</code></td>
+                <td>POST</td>
+                <td>Alias for <code>/v1/systemone</code></td>
+              </tr>
+              <tr>
                 <td><code>/v1/tokenize</code></td>
                 <td>POST</td>
                 <td>Count tokens for text</td>
@@ -2142,7 +2153,7 @@ docker rm kronk
               </tr>
             </tbody>
           </table>
-          <p>Sections 9.10 through 9.13 inventory the administration, diagnostics, and evaluation endpoints used by the CLI and BUI. Administration endpoints are open when administration authentication is disabled. When it is enabled, they require an administrator token. <code>GET /v1/models</code> and <code>GET /v1/models/&#123;model&#125;</code> instead follow inference authentication and do not require a separate endpoint grant.</p>
+          <p>Sections 9.11 through 9.14 inventory the administration, diagnostics, and evaluation endpoints used by the CLI and BUI. Administration endpoints are open when administration authentication is disabled. When it is enabled, they require an administrator token. <code>GET /v1/models</code> and <code>GET /v1/models/&#123;model&#125;</code> instead follow inference authentication and do not require a separate endpoint grant.</p>
           <h2 id="93-chat-completions-and-tool-calls">9.3 Chat Completions and Tool Calls</h2>
           <p><code>POST /v1/chat/completions</code> accepts an OpenAI-style <code>model</code> and <code>messages</code> request:</p>
           <pre className="code-block"><code className="language-json">{`{
@@ -2243,7 +2254,139 @@ data: {"type":"response.completed",...}`}</code></pre>
   "usage": {"prompt_tokens": 24, "total_tokens": 24}
 }`}</code></pre>
           <p>Documents are omitted from results by default. Set <code>return_documents</code> to <code>true</code> when the response should include their text. <code>top_n</code> defaults to all documents.</p>
-          <h2 id="98-tokenization">9.8 Tokenization</h2>
+          <h2 id="98-decisions">9.8 Decisions</h2>
+          <p><code>POST /v1/systemone</code> and <code>POST /v1/decide</code> are equivalent. Both evaluate typed questions independently against one shared <code>state</code> value and require a model recognized as a decision model. Use <code>/v1/decide</code> for the descriptive Kronk route name or <code>/v1/systemone</code> for SystemOne compatibility.</p>
+          <p>The request contains a model ID, any JSON-compatible shared state, and a nonempty object of named questions:</p>
+          <pre className="code-block"><code className="language-json">{`{
+  "model": "chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0",
+  "state": {
+    "customer_message": "I was charged twice and need this fixed today.",
+    "account_tier": "business"
+  },
+  "questions": {
+    "route": {
+      "type": "choice",
+      "instructions": "Which team should handle this request?",
+      "criteria": {
+        "billing": "Payments, invoices, refunds, and duplicate charges",
+        "technical_support": "Product bugs and technical problems",
+        "sales": "Plans, pricing, and new purchases"
+      }
+    },
+    "urgency": {
+      "type": "score",
+      "instructions": "How urgent is this request?",
+      "criteria": ["not urgent", "normal", "urgent", "critical"]
+    },
+    "requires_human": {
+      "type": "noul",
+      "instructions": "Should a human review this request?"
+    }
+  }
+}`}</code></pre>
+          <p>Question types have different criteria and response fields:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Request criteria</th>
+                <th>Response</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>choice</code></td>
+                <td>Object whose keys are option names and values describe each option</td>
+                <td>Selected <code>choice</code>, option <code>probabilities</code>, and <code>confidence</code></td>
+              </tr>
+              <tr>
+                <td><code>score</code></td>
+                <td>Ordered array of 2 through 10 levels</td>
+                <td>Numeric <code>score</code>, level <code>legend</code>, level <code>probabilities</code>, and <code>confidence</code></td>
+              </tr>
+              <tr>
+                <td><code>noul</code></td>
+                <td>Optional object with <code>false</code> and <code>true</code> descriptions</td>
+                <td>Calibrated <code>noul</code> probability from 0 through 1</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>Object order is part of the decision-model input. Kronk preserves the incoming order of state fields, questions, choice options, instructions, and nested criteria rather than normalizing them through unordered maps.</p>
+          <p>A response is keyed by the caller's question IDs:</p>
+          <pre className="code-block"><code className="language-json">{`{
+  "model": "chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0",
+  "answers": {
+    "route": {
+      "type": "choice",
+      "choice": "billing",
+      "probabilities": {
+        "billing": 0.96,
+        "technical_support": 0.03,
+        "sales": 0.01
+      },
+      "confidence": 0.96
+    },
+    "urgency": {
+      "type": "score",
+      "score": 2.7,
+      "legend": {
+        "0": "not urgent",
+        "1": "normal",
+        "2": "urgent",
+        "3": "critical"
+      },
+      "probabilities": {
+        "0": 0.01,
+        "1": 0.04,
+        "2": 0.2,
+        "3": 0.75
+      },
+      "confidence": 0.75
+    },
+    "requires_human": {
+      "type": "noul",
+      "noul": 0.83
+    }
+  },
+  "usage": {
+    "input_tokens": 132,
+    "output_tokens": 0
+  }
+}`}</code></pre>
+          <p>Decision models read logits directly rather than generating text, so <code>output_tokens</code> is zero. Exact scores and probabilities depend on the model and request. When authentication is enabled, both aliases require the same <code>decision</code> endpoint grant.</p>
+          <p>Call either route with curl:</p>
+          <pre className="code-block"><code className="language-shell">{`make curl-kronk-decide
+make curl-kronk-systemone`}</code></pre>
+          <h3 id="go-sdk">Go SDK</h3>
+          <p>The SDK uses typed request constructors so state, question, option, and level order remains explicit. Given a loaded <code>*kronk.Kronk</code> decision model:</p>
+          <pre className="code-block"><code className="language-go">{`req := model.DecisionRequest{
+    State: model.DecisionState(
+        model.DecisionStateData("customer_message", "I was charged twice."),
+        model.DecisionStateData("account_tier", "business"),
+    ),
+    Questions: []model.DecisionQuestion{
+        model.DecisionQuestionChoice(
+            "route",
+            "Which team should handle this request?",
+            model.DecisionQuestionOpt("billing", "Payment and invoice issues"),
+            model.DecisionQuestionOpt("support", "Technical product issues"),
+        ),
+        model.DecisionQuestionScore(
+            "urgency",
+            "How urgent is this request?",
+            "not urgent", "normal", "urgent", "critical",
+        ),
+        model.DecisionQuestionNoul(
+            "requires_human",
+            "Should a human review this request?",
+            nil,
+        ),
+    },
+}
+
+resp, err := krn.Decision(ctx, req)`}</code></pre>
+          <p><code>Kronk.Decision</code> returns <code>model.DecisionResponse</code>. <code>Kronk.DecisionHTTP</code> performs the same evaluation and writes that response using the public HTTP JSON contract. Supported model names and metadata are detected automatically; use <code>model.WithDecisionProtocol(model.DecisionProtocolOpenJEV)</code> or <code>model.WithDecisionProtocol(model.DecisionProtocolJevStyle)</code> only when a renamed model cannot be detected. Complete runnable examples are under <code>examples/decision/openjev</code> and <code>examples/decision/jevstyle</code>. The bundled SDK reference documents every constructor, request type, response type, protocol, and error.</p>
+          <h2 id="99-tokenization">9.9 Tokenization</h2>
           <p><code>POST /v1/tokenize</code> returns a token <strong>count</strong>, not token IDs:</p>
           <pre className="code-block"><code className="language-json">{`{
   "model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL",
@@ -2258,7 +2401,7 @@ data: {"type":"response.completed",...}`}</code></pre>
   "model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL",
   "tokens": 11
 }`}</code></pre>
-          <h2 id="99-models-image-generation-and-audio-transcription">9.9 Models, Image Generation, and Audio Transcription</h2>
+          <h2 id="910-models-image-generation-and-audio-transcription">9.10 Models, Image Generation, and Audio Transcription</h2>
           <p><code>GET /v1/models</code> returns an OpenAI-style list of models and configured model extensions available locally. It is not limited to models currently loaded in memory. Each item includes <code>id</code>, <code>object</code>, <code>created</code>, and <code>owned_by</code>. The <code>id</code> uses the canonical <code>provider/modelID</code> form. <code>owned_by</code> comes from model metadata when available and otherwise defaults to <code>kronk</code>.</p>
           <p><code>GET /v1/models/&#123;model&#125;</code> returns the corresponding OpenAI-style model object for one model ID. It returns <code>404 Not Found</code> when the model is not available.</p>
           <p><code>POST /v1/images/generations</code> accepts an OpenAI-style text-to-image request and generates one PNG with a locally installed Malina model bundle:</p>
@@ -2283,7 +2426,7 @@ data: {"type":"response.completed",...}`}</code></pre>
           <p><code>GET /v1/images/events</code> is a persistent server-sent event stream for Malina model-loading and image-generation progress. Each event reports <code>scope: "global"</code>, <code>step</code>, <code>steps</code>, <code>percent</code>, and <code>seconds_per_step</code>. The native callback is process-global, so an event describes server-wide Malina activity and is not attributable to the client or request consuming the stream. This route also requires the <code>image-generations</code> inference permission.</p>
           <p>ControlNet, ADetailer, video generation, and upscaling remain available through the Malina SDK rather than the model-server API.</p>
           <p><code>POST /v1/audio/transcriptions</code> accepts multipart audio uploads and uses the Bucky speech-to-text runtime. <code>POST /v1/audio/translations</code> accepts the same file, model, prompt, temperature, and response-format fields and translates speech from a supported language into English. Their request fields, formats, and administrative operations are documented in <a href="https://www.kronkai.com/manual#1861-request-and-response">Chapter 18</a>.</p>
-          <h2 id="910-kronk-administration">9.10 Kronk Administration</h2>
+          <h2 id="911-kronk-administration">9.11 Kronk Administration</h2>
           <p>These routes manage the llama.cpp runtime, local GGUF models, and the personal model catalog. Mutating routes may stream progress or perform network and disk operations. Clients should use the exact <code>/v1/kronk/...</code> prefix; the shorter <code>/v1/libs</code>, <code>/v1/models/pull</code>, and <code>/v1/catalog</code> forms are not aliases.</p>
           <h3 id="libraries">Libraries</h3>
           <table className="flags-table">
@@ -2571,7 +2714,7 @@ data: {"type":"response.completed",...}`}</code></pre>
             </tbody>
           </table>
           <p><code>POST /v1/kronk/catalog/lookup</code> accepts <code>&#123;"input":"..."&#125;</code>. The resolve route accepts <code>&#123;"source":"..."&#125;</code> and may add successfully resolved metadata to the personal catalog even though it does not download model files.</p>
-          <h2 id="911-bucky-and-malina-administration">9.11 Bucky and Malina Administration</h2>
+          <h2 id="912-bucky-and-malina-administration">9.12 Bucky and Malina Administration</h2>
           <p>The Bucky management API mirrors the library and model lifecycle for the whisper.cpp backend:</p>
           <table className="flags-table">
             <thead>
@@ -2651,7 +2794,7 @@ data: {"type":"response.completed",...}`}</code></pre>
             </tbody>
           </table>
           <p>The integrity endpoint accepts an optional <code>version</code> query parameter, including <code>VERSION@sha256:&lt;64-hex-digest&gt;</code>. Its response uses the same canonical bundle identity and per-file evidence as the llama.cpp and whisper.cpp endpoints and reports <code>backend</code> as <code>stable-diffusion</code>.</p>
-          <h2 id="912-operations-and-evaluation">9.12 Operations and Evaluation</h2>
+          <h2 id="913-operations-and-evaluation">9.13 Operations and Evaluation</h2>
           <table className="flags-table">
             <thead>
               <tr>
@@ -2690,7 +2833,7 @@ data: {"type":"response.completed",...}`}</code></pre>
           <ol>
             <li>These evaluation routes can load models and may take several minutes.</li>
           </ol>
-          <h2 id="913-security-administration">9.13 Security Administration</h2>
+          <h2 id="914-security-administration">9.14 Security Administration</h2>
           <table className="flags-table">
             <thead>
               <tr>
@@ -3154,6 +3297,10 @@ kronk server start`}</code></pre>
                 <td><code>POST /v1/chat/completions</code></td>
               </tr>
               <tr>
+                <td><code>decision</code></td>
+                <td><code>POST /v1/systemone</code> and <code>/v1/decide</code></td>
+              </tr>
+              <tr>
                 <td><code>responses</code></td>
                 <td><code>POST /v1/responses</code></td>
               </tr>
@@ -3309,6 +3456,7 @@ kronk server start`}</code></pre>
           <h4 id="apps">Apps</h4>
           <ul>
             <li><strong>Chat</strong> provides multi-turn conversations, model selection, system prompts, chat history, and sampling controls.</li>
+            <li><strong>Decision</strong> runs a customer-support example against a decision model from the catalog. The model selector shows download readiness and disables evaluation until the selected model is downloaded and validated. Edit the shared customer state, inspect the fixed choice, score, and Noul questions, then review typed answers, probability distributions, token usage, and the raw <code>/v1/decide</code> response.</li>
             <li><strong>VRAM Calculator</strong> estimates model memory requirements from a HuggingFace model without downloading the entire model. A calculator is also available in local model and catalog details. Set the intended context, sequence slots, KV precision and placement, layer/expert offload, devices, and tensor split before comparing the result with available memory. The estimate reads per-layer GGUF metadata, including full/SWA topology, recurrent layers, and embedded MTP/NextN layers when present.</li>
             <li><strong>Translator</strong> records or uploads audio for transcription through Bucky. You can select a whisper model, language, and response format and inspect timestamped segments. See <a href="https://www.kronkai.com/manual#185-browser-ui">Chapter 18 §18.5</a>.</li>
             <li><strong>Image Generator</strong> creates an image from a text prompt or transforms an uploaded PNG or JPEG with an installed Malina model. Generation settings include negative prompt, output size, steps, CFG scale, seed, and image-to-image strength. The result includes a download action and image dimensions. A server-wide activity panel displays Malina model-loading and generation progress. See <a href="https://www.kronkai.com/manual#chapter-19-malina-image-generation">Chapter 19</a>.</li>
@@ -4120,7 +4268,7 @@ data: [DONE]`}</code></pre>
           <p>Create a replacement user token with only the required grants:</p>
           <pre className="code-block"><code className="language-shell">{`kronk security token create \\
   --duration 720h \\
-  --endpoints chat-completions,embeddings,rerank,responses,messages,tokenize,transcriptions,image-generations`}</code></pre>
+  --endpoints chat-completions,decision,embeddings,rerank,responses,messages,tokenize,transcriptions,image-generations`}</code></pre>
           <p>Rate limits use forms such as <code>chat-completions:10000/day</code>. Token creation, key rotation, and production hardening are covered in <a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication">Chapter 12</a>.</p>
           <h3 id="177-imc">17.7 IMC</h3>
           <p>IMC is enabled by default. It externalizes cached session state to the built-in RAM store or, for direct SDK use, a configured custom session store. See <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a> for its lifecycle and settings.</p>
@@ -5998,13 +6146,19 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
               <a href="#97-reranking" className={`doc-index-header ${activeSection === '97-reranking' ? 'active' : ''}`}>9.7 Reranking</a>
             </div>
             <div className="doc-index-section">
-              <a href="#98-tokenization" className={`doc-index-header ${activeSection === '98-tokenization' ? 'active' : ''}`}>9.8 Tokenization</a>
+              <a href="#98-decisions" className={`doc-index-header ${activeSection === '98-decisions' ? 'active' : ''}`}>9.8 Decisions</a>
+              <ul>
+                <li><a href="#go-sdk" className={activeSection === 'go-sdk' ? 'active' : ''}>Go SDK</a></li>
+              </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#99-models-image-generation-and-audio-transcription" className={`doc-index-header ${activeSection === '99-models-image-generation-and-audio-transcription' ? 'active' : ''}`}>9.9 Models, Image Generation, and Audio Transcription</a>
+              <a href="#99-tokenization" className={`doc-index-header ${activeSection === '99-tokenization' ? 'active' : ''}`}>9.9 Tokenization</a>
             </div>
             <div className="doc-index-section">
-              <a href="#910-kronk-administration" className={`doc-index-header ${activeSection === '910-kronk-administration' ? 'active' : ''}`}>9.10 Kronk Administration</a>
+              <a href="#910-models-image-generation-and-audio-transcription" className={`doc-index-header ${activeSection === '910-models-image-generation-and-audio-transcription' ? 'active' : ''}`}>9.10 Models, Image Generation, and Audio Transcription</a>
+            </div>
+            <div className="doc-index-section">
+              <a href="#911-kronk-administration" className={`doc-index-header ${activeSection === '911-kronk-administration' ? 'active' : ''}`}>9.11 Kronk Administration</a>
               <ul>
                 <li><a href="#libraries" className={activeSection === 'libraries' ? 'active' : ''}>Libraries</a></li>
                 <li><a href="#models" className={activeSection === 'models' ? 'active' : ''}>Models</a></li>
@@ -6012,16 +6166,16 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#911-bucky-and-malina-administration" className={`doc-index-header ${activeSection === '911-bucky-and-malina-administration' ? 'active' : ''}`}>9.11 Bucky and Malina Administration</a>
+              <a href="#912-bucky-and-malina-administration" className={`doc-index-header ${activeSection === '912-bucky-and-malina-administration' ? 'active' : ''}`}>9.12 Bucky and Malina Administration</a>
               <ul>
                 <li><a href="#malina-models-and-runtime-integrity" className={activeSection === 'malina-models-and-runtime-integrity' ? 'active' : ''}>Malina Models and Runtime Integrity</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#912-operations-and-evaluation" className={`doc-index-header ${activeSection === '912-operations-and-evaluation' ? 'active' : ''}`}>9.12 Operations and Evaluation</a>
+              <a href="#913-operations-and-evaluation" className={`doc-index-header ${activeSection === '913-operations-and-evaluation' ? 'active' : ''}`}>9.13 Operations and Evaluation</a>
             </div>
             <div className="doc-index-section">
-              <a href="#913-security-administration" className={`doc-index-header ${activeSection === '913-security-administration' ? 'active' : ''}`}>9.13 Security Administration</a>
+              <a href="#914-security-administration" className={`doc-index-header ${activeSection === '914-security-administration' ? 'active' : ''}`}>9.14 Security Administration</a>
             </div>
             <div className="doc-index-section">
               <a href="#chapter-10-request-parameters" className={`doc-index-header ${activeSection === 'chapter-10-request-parameters' ? 'active' : ''}`}>Chapter 10: Request Parameters</a>

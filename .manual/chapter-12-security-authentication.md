@@ -99,6 +99,7 @@ The grant names used by inference middleware are:
 | Grant | Endpoint |
 | ----- | -------- |
 | `chat-completions` | `POST /v1/chat/completions` |
+| `decision` | `POST /v1/systemone` and `/v1/decide` |
 | `responses` | `POST /v1/responses` |
 | `messages` | `POST /v1/messages` |
 | `embeddings` | `POST /v1/embeddings` |

@@ -4,6 +4,7 @@ import { RateLimit, RateWindow } from '../types';
 
 const AVAILABLE_ENDPOINTS = [
   { label: '/v1/chat/completions', value: 'chat-completions' },
+  { label: '/v1/systemone and /v1/decide', value: 'decision' },
   { label: '/v1/embeddings', value: 'embeddings' },
   { label: '/v1/rerank', value: 'rerank' },
   { label: '/v1/responses', value: 'responses' },

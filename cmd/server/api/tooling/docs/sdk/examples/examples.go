@@ -25,43 +25,60 @@ var skipDirs = map[string]bool{
 	"yzma":    true,
 }
 
+var displayNames = map[string]string{
+	"decision-jevstyle": "Decision (Jev-Style)",
+	"decision-openjev":  "Decision (OpenJEV)",
+}
+
 func Run() error {
 	examplesDir := "examples"
 	outputDir := "cmd/server/api/frontends/bui/src/components"
 
-	entries, err := os.ReadDir(examplesDir)
-	if err != nil {
-		return fmt.Errorf("reading examples directory: %w", err)
-	}
-
 	var exs []example
 
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
+	err := filepath.WalkDir(examplesDir, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
 		}
 
-		name := entry.Name()
-		if skipDirs[name] {
-			continue
+		if entry.IsDir() {
+			if path != examplesDir && filepath.Dir(path) == examplesDir && skipDirs[entry.Name()] {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 
-		mainFile := filepath.Join(examplesDir, name, "main.go")
-		content, err := os.ReadFile(mainFile)
+		if entry.Name() != "main.go" {
+			return nil
+		}
+
+		relDir, err := filepath.Rel(examplesDir, filepath.Dir(path))
 		if err != nil {
-			fmt.Printf("Warning: could not read %s: %v\n", mainFile, err)
-			continue
+			return fmt.Errorf("relative example path: %w", err)
 		}
 
-		description := extractDescription(string(content))
-		displayName := cases.Title(language.English).String(name)
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("reading example %s: %w", path, err)
+		}
+
+		name := strings.ReplaceAll(filepath.ToSlash(relDir), "/", "-")
+		displayName := displayNames[name]
+		if displayName == "" {
+			displayName = cases.Title(language.English).String(name)
+		}
 
 		exs = append(exs, example{
 			name:        name,
 			displayName: displayName,
-			description: description,
+			description: extractDescription(string(content)),
 			code:        string(content),
 		})
+
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("walking examples directory: %w", err)
 	}
 
 	slices.SortFunc(exs, func(a, b example) int {
