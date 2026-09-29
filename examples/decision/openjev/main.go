@@ -134,16 +134,12 @@ func decision(krn *kronk.Kronk) error {
 			model.DecisionStateData("account_tier", "business"),
 		),
 		Questions: []model.DecisionQuestion{
-			model.DecisionQuestionChoice(
-				"route",
-				"Which team should handle this request?",
+			model.DecisionQuestionChoice("route", "Which team should handle this request?",
 				model.DecisionQuestionOpt("billing", "Payments, invoices, refunds, and duplicate charges"),
 				model.DecisionQuestionOpt("technical_support", "Product bugs and technical problems"),
 				model.DecisionQuestionOpt("sales", "Plans, pricing, and new purchases"),
 			),
-			model.DecisionQuestionScore(
-				"urgency",
-				"How urgent is this request?",
+			model.DecisionQuestionScore("urgency", "How urgent is this request?",
 				"not urgent",
 				"normal",
 				"urgent",

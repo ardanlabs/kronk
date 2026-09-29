@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -64,44 +65,39 @@ func TestValidateDecisionRequest(t *testing.T) {
 	}
 }
 
-func TestDecisionAnswerMarshalJSONKeepsTypedZeros(t *testing.T) {
-	tests := []struct {
-		answer  DecisionAnswer
-		include []string
-		exclude []string
-	}{
-		{
-			answer:  DecisionAnswer{Type: DecisionQuestionTypeChoice, Probabilities: map[string]float64{"only": 0}},
-			include: []string{`"choice":""`, `"confidence":0`},
-			exclude: []string{`"score"`, `"noul"`, `"legend"`},
+func TestDecisionResponseMarshalJSON(t *testing.T) {
+	resp := DecisionResponse{
+		Model: "decision-model",
+		Answers: map[string]DecisionAnswer{
+			"approve": {Type: DecisionQuestionTypeNoul},
+			"route":   {Type: DecisionQuestionTypeChoice, Probabilities: map[string]float64{}},
+			"urgency": {Type: DecisionQuestionTypeScore, Legend: map[string]any{}, Probabilities: map[string]float64{}},
 		},
-		{
-			answer:  DecisionAnswer{Type: DecisionQuestionTypeScore, Legend: map[string]any{"0": "low"}, Probabilities: map[string]float64{"0": 1}},
-			include: []string{`"score":0`, `"confidence":0`},
-			exclude: []string{`"choice"`, `"noul"`},
-		},
-		{
-			answer:  DecisionAnswer{Type: DecisionQuestionTypeNoul},
-			include: []string{`"noul":0`},
-			exclude: []string{`"choice"`, `"score"`, `"confidence"`, `"probabilities"`},
-		},
+		Usage: DecisionUsage{InputTokens: 42},
 	}
 
-	for _, tt := range tests {
-		data, err := json.Marshal(tt.answer)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, fragment := range tt.include {
-			if !strings.Contains(string(data), fragment) {
-				t.Errorf("%s does not contain %s", data, fragment)
-			}
-		}
-		for _, fragment := range tt.exclude {
-			if strings.Contains(string(data), fragment) {
-				t.Errorf("%s unexpectedly contains %s", data, fragment)
-			}
-		}
+	data, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	answers := got["answers"].(map[string]any)
+	if want := map[string]any{"type": "choice", "choice": "", "probabilities": map[string]any{}, "confidence": float64(0)}; !reflect.DeepEqual(answers["route"], want) {
+		t.Errorf("route answer: got %#v, want %#v", answers["route"], want)
+	}
+	if want := map[string]any{"type": "score", "score": float64(0), "legend": map[string]any{}, "probabilities": map[string]any{}, "confidence": float64(0)}; !reflect.DeepEqual(answers["urgency"], want) {
+		t.Errorf("urgency answer: got %#v, want %#v", answers["urgency"], want)
+	}
+	if want := map[string]any{"type": "noul", "noul": float64(0)}; !reflect.DeepEqual(answers["approve"], want) {
+		t.Errorf("approve answer: got %#v, want %#v", answers["approve"], want)
+	}
+	if want := map[string]any{"input_tokens": float64(42), "output_tokens": float64(0)}; !reflect.DeepEqual(got["usage"], want) {
+		t.Errorf("usage: got %#v, want %#v", got["usage"], want)
 	}
 }
 

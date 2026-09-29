@@ -28,8 +28,8 @@ var ErrDecisionBudget = errors.New("decision input exceeds token budget")
 
 // DecisionStateField is one ordered field in a DecisionStateValue.
 type DecisionStateField struct {
-	Name  string `json:"name"`
-	Value any    `json:"value"`
+	Name  string
+	Value any
 }
 
 // DecisionStateValue represents a JSON object whose field order must be retained.
@@ -49,8 +49,8 @@ func DecisionState(fields ...DecisionStateField) DecisionStateValue {
 
 // DecisionOption is one ordered choice option.
 type DecisionOption struct {
-	Name        string `json:"name"`
-	Description any    `json:"description"`
+	Name        string
+	Description any
 }
 
 // DecisionQuestionOpt constructs one choice option.
@@ -61,20 +61,20 @@ func DecisionQuestionOpt(name string, description any) DecisionOption {
 // DecisionNoulCriteria optionally describes the false and true boundaries of
 // a Noul question.
 type DecisionNoulCriteria struct {
-	False any `json:"false"`
-	True  any `json:"true"`
+	False any
+	True  any
 }
 
 // DecisionQuestion is one named, typed question. Construct values with
 // DecisionQuestionChoice, DecisionQuestionScore, and DecisionQuestionNoul so
 // criteria remain ordered.
 type DecisionQuestion struct {
-	ID           string                `json:"id"`
-	Type         DecisionQuestionType  `json:"type"`
-	Instructions any                   `json:"instructions"`
-	Options      []DecisionOption      `json:"options,omitempty"`
-	Levels       []any                 `json:"levels,omitempty"`
-	NoulCriteria *DecisionNoulCriteria `json:"criteria,omitempty"`
+	ID           string
+	Type         DecisionQuestionType
+	Instructions any
+	Options      []DecisionOption
+	Levels       []any
+	NoulCriteria *DecisionNoulCriteria
 }
 
 // DecisionQuestionChoice constructs a question that selects one ordered option.
@@ -111,8 +111,8 @@ func DecisionQuestionNoul(id string, instructions any, criteria *DecisionNoulCri
 // DecisionRequest evaluates ordered questions independently against one
 // shared state.
 type DecisionRequest struct {
-	State     any                `json:"state"`
-	Questions []DecisionQuestion `json:"questions"`
+	State     any
+	Questions []DecisionQuestion
 }
 
 // DecisionAnswer contains the typed answer to one decision question.
@@ -128,8 +128,8 @@ type DecisionAnswer struct {
 	Confidence    float64              `json:"confidence,omitempty"`
 }
 
-// MarshalJSON emits the standard type-specific answer shape, including
-// meaningful zero values and excluding fields owned by other question types.
+// MarshalJSON emits the type-specific HTTP answer shape, including meaningful
+// zero values and excluding fields owned by other question types.
 func (a DecisionAnswer) MarshalJSON() ([]byte, error) {
 	switch a.Type {
 	case DecisionQuestionTypeChoice:
