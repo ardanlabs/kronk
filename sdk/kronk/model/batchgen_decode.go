@@ -2,8 +2,6 @@ package model
 
 import (
 	"fmt"
-	"runtime"
-	"unsafe"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
@@ -16,41 +14,17 @@ import (
 // M-RoPE uses 4D positions: [dim0, dim1, dim2, dim3] where each dimension has
 // n_tokens entries. Text uses the same logical position in all four planes.
 func (e *batchEngine) decodeTextMRoPE(s *slot, tokens []llama.Token) error {
-	n := int32(len(tokens))
-	if n == 0 {
+	if len(tokens) == 0 {
 		return nil
 	}
 
 	batch := e.mropeBatch
-
-	// Copy tokens to batch.
-	tokenSlice := unsafeSlice(batch.Token, int(n))
-	copy(tokenSlice, tokens)
-
-	// Fill 4D position array for M-RoPE using pre-allocated buffer.
-	posData := e.mropePosData[:n*4]
-	pos0 := s.nPast
-	fillMRoPETextPositions(posData, n, pos0)
-	batch.Pos = &posData[0]
-
-	nSeqIDSlice := unsafeSlice(batch.NSeqId, int(n))
-	seqIDPtrs := unsafeSlice(batch.SeqId, int(n))
-	logitsSlice := unsafeSlice(batch.Logits, int(n))
-
-	for i := range n {
-		nSeqIDSlice[i] = 1
-		*seqIDPtrs[i] = s.seqID
-		logitsSlice[i] = 0
+	if err := stageMRoPEText(batch, tokens, s.nPast, s.seqIDs, extendedBatchOutputLogits); err != nil {
+		return fmt.Errorf("stage M-RoPE text: %w", err)
 	}
-
-	if n > 0 {
-		logitsSlice[n-1] = 1
-	}
-
-	batch.NTokens = n
 
 	e.model.decodeMu.Lock()
-	ret, err := llama.Decode(e.model.lctx, batch)
+	ret, err := batch.process(llama.ProcessTypeDecode)
 	if err == nil && ret == 0 {
 		llama.Synchronize(e.model.lctx)
 	}
@@ -60,36 +34,22 @@ func (e *batchEngine) decodeTextMRoPE(s *slot, tokens []llama.Token) error {
 		return decodeError(ret, err)
 	}
 
-	s.nPast += llama.Pos(n)
+	s.nPast += llama.Pos(len(tokens))
 	return nil
 }
 
 // decodeEmbeddingsNormal decodes image embeddings with standard linear positioning.
 // Used for non-M-RoPE models where positions are simply sequential integers.
 func (e *batchEngine) decodeEmbeddingsNormal(s *slot, embd []float32, nEmbd, nTokens int32) error {
-	batch := llama.BatchInit(nTokens, nEmbd, 1)
-	defer llama.BatchFree(batch)
-
-	embdSlice := unsafeSlice(batch.Embd, int(nTokens*nEmbd))
-	copy(embdSlice, embd)
-
-	posSlice := unsafeSlice(batch.Pos, int(nTokens))
-	nSeqIDSlice := unsafeSlice(batch.NSeqId, int(nTokens))
-	seqIDPtrs := unsafeSlice(batch.SeqId, int(nTokens))
-	logitsSlice := unsafeSlice(batch.Logits, int(nTokens))
-
-	for i := range nTokens {
-		posSlice[i] = s.nPast + llama.Pos(i)
-		nSeqIDSlice[i] = 1
-		*seqIDPtrs[i] = s.seqID
-		logitsSlice[i] = 0
+	if nTokens == 0 {
+		return nil
 	}
 
-	if nTokens > 0 {
-		logitsSlice[nTokens-1] = 1
+	batch := e.mropeBatch
+	positions := linearPositions(nTokens, s.nPast)
+	if err := stageEmbeddingRows(batch, embd, nEmbd, nTokens, positions, s.seqIDs, extendedBatchOutputLogits); err != nil {
+		return fmt.Errorf("stage media embeddings: %w", err)
 	}
-
-	batch.NTokens = nTokens
 
 	e.model.decodeMu.Lock()
 	wasCausal := false
@@ -97,7 +57,7 @@ func (e *batchEngine) decodeEmbeddingsNormal(s *slot, embd []float32, nEmbd, nTo
 		wasCausal = llama.GetCausalAttn(e.model.lctx)
 		llama.SetCausalAttn(e.model.lctx, false)
 	}
-	ret, err := llama.Decode(e.model.lctx, batch)
+	ret, err := batch.process(llama.ProcessTypeDecode)
 	if s.useNonCausal {
 		llama.SetCausalAttn(e.model.lctx, wasCausal)
 	}
@@ -122,36 +82,14 @@ func (e *batchEngine) decodeEmbeddingsMRoPE(s *slot, embd []float32, nEmbd, nTok
 	if len(positions) != int(nTokens*4) {
 		return fmt.Errorf("mrope embedding positions: got %d, want %d", len(positions), nTokens*4)
 	}
-
-	batch := llama.BatchInit(nTokens, nEmbd, 1)
-
-	// Save original pos pointer so BatchFree doesn't try to free Go memory.
-	origPos := batch.Pos
-	defer func() {
-		batch.Pos = origPos
-		llama.BatchFree(batch)
-	}()
-
-	embdSlice := unsafeSlice(batch.Embd, int(nTokens*nEmbd))
-	copy(embdSlice, embd)
-
-	batch.Pos = &positions[0]
-
-	nSeqIDSlice := unsafeSlice(batch.NSeqId, int(nTokens))
-	seqIDPtrs := unsafeSlice(batch.SeqId, int(nTokens))
-	logitsSlice := unsafeSlice(batch.Logits, int(nTokens))
-
-	for i := range nTokens {
-		nSeqIDSlice[i] = 1
-		*seqIDPtrs[i] = s.seqID
-		logitsSlice[i] = 0
+	if nTokens == 0 {
+		return nil
 	}
 
-	if nTokens > 0 {
-		logitsSlice[nTokens-1] = 1
+	batch := e.mropeBatch
+	if err := stageEmbeddingRows(batch, embd, nEmbd, nTokens, positions, s.seqIDs, extendedBatchOutputLogits); err != nil {
+		return fmt.Errorf("stage M-RoPE media embeddings: %w", err)
 	}
-
-	batch.NTokens = nTokens
 
 	e.model.decodeMu.Lock()
 	wasCausal := false
@@ -160,15 +98,13 @@ func (e *batchEngine) decodeEmbeddingsMRoPE(s *slot, embd []float32, nEmbd, nTok
 		llama.SetCausalAttn(e.model.lctx, false)
 	}
 
-	ret, err := llama.Decode(e.model.lctx, batch)
+	ret, err := batch.process(llama.ProcessTypeDecode)
 	if s.useNonCausal {
 		llama.SetCausalAttn(e.model.lctx, wasCausal)
 	}
 	if err == nil && ret == 0 {
 		llama.Synchronize(e.model.lctx)
 	}
-	runtime.KeepAlive(positions)
-
 	e.model.decodeMu.Unlock()
 
 	if err != nil || ret != 0 {
@@ -176,6 +112,60 @@ func (e *batchEngine) decodeEmbeddingsMRoPE(s *slot, embd []float32, nEmbd, nTok
 	}
 
 	s.nPast += nPos
+
+	return nil
+}
+
+func stageMRoPEText(batch *extendedBatch, tokens []llama.Token, start llama.Pos, sequenceIDs []llama.SeqId, finalOutput extendedBatchOutput) error {
+	batch.clear()
+
+	for i, token := range tokens {
+		position := start + llama.Pos(i)
+		positions := []llama.Pos{position, position, position, position}
+		output := extendedBatchOutputNone
+		if i == len(tokens)-1 {
+			output = finalOutput
+		}
+
+		if _, err := batch.addTokenPositions(token, positions, sequenceIDs, output); err != nil {
+			return fmt.Errorf("add token at position %d: %w", position, err)
+		}
+	}
+
+	return nil
+}
+
+func stageEmbeddingRows(batch *extendedBatch, embd []float32, nEmbd, nTokens int32, positions []llama.Pos, sequenceIDs []llama.SeqId, finalOutput extendedBatchOutput) error {
+	if nEmbd <= 0 || nTokens <= 0 || len(embd) != int(nEmbd*nTokens) {
+		return fmt.Errorf("embedding values: got %d, want %d rows of %d", len(embd), nTokens, nEmbd)
+	}
+	if len(positions)%int(nTokens) != 0 {
+		return fmt.Errorf("embedding positions: got %d for %d rows", len(positions), nTokens)
+	}
+
+	positionCount := len(positions) / int(nTokens)
+	if positionCount < 1 || positionCount > 4 {
+		return fmt.Errorf("embedding positions: got %d planes, want 1 to 4", positionCount)
+	}
+
+	batch.clear()
+	for i := range nTokens {
+		start := int(i * nEmbd)
+		row := embd[start : start+int(nEmbd)]
+
+		var rowPositions [4]llama.Pos
+		for plane := range positionCount {
+			rowPositions[plane] = positions[int(i)+plane*int(nTokens)]
+		}
+
+		output := extendedBatchOutputNone
+		if i == nTokens-1 {
+			output = finalOutput
+		}
+		if _, err := batch.addEmbedding(row, int(nEmbd), rowPositions[:positionCount], sequenceIDs, output); err != nil {
+			return fmt.Errorf("add embedding row %d: %w", i, err)
+		}
+	}
 
 	return nil
 }
@@ -196,11 +186,10 @@ func linearMRoPEPositions(n int32, start llama.Pos) []llama.Pos {
 	return positions
 }
 
-// unsafeSlice creates a Go slice from a C pointer. This is used to access
-// batch arrays allocated by llama.cpp.
-func unsafeSlice[T any](ptr *T, length int) []T {
-	if ptr == nil || length <= 0 {
-		return nil
+func linearPositions(n int32, start llama.Pos) []llama.Pos {
+	positions := make([]llama.Pos, n)
+	for i := range n {
+		positions[i] = start + llama.Pos(i)
 	}
-	return unsafe.Slice(ptr, length)
+	return positions
 }

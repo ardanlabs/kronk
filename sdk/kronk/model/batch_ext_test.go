@@ -73,6 +73,21 @@ func TestExtendedBatchClonesEmbeddingAndMRoPEPositions(t *testing.T) {
 	}
 }
 
+func TestExtendedBatchClonesTokenPositions(t *testing.T) {
+	batch := extendedBatch{capacity: 1}
+	positions := []llama.Pos{10, 20, 30, 40}
+
+	if _, err := batch.addTokenPositions(7, positions, []llama.SeqId{3}, extendedBatchOutputLogits); err != nil {
+		t.Fatalf("add token positions: %v", err)
+	}
+	positions[0] = 99
+
+	entry := batch.entries[0]
+	if !slices.Equal(entry.positions[:entry.positionCount], []llama.Pos{10, 20, 30, 40}) {
+		t.Fatalf("stored positions = %v, want cloned input", entry.positions[:entry.positionCount])
+	}
+}
+
 func TestExtendedBatchRejectsInvalidEntries(t *testing.T) {
 	tests := []struct {
 		name string
@@ -89,6 +104,13 @@ func TestExtendedBatchRejectsInvalidEntries(t *testing.T) {
 			name: "too many positions",
 			add: func(batch *extendedBatch) error {
 				_, err := batch.addEmbedding([]float32{1}, 1, []llama.Pos{0, 0, 0, 0, 0}, []llama.SeqId{0}, extendedBatchOutputNone)
+				return err
+			},
+		},
+		{
+			name: "token missing positions",
+			add: func(batch *extendedBatch) error {
+				_, err := batch.addTokenPositions(1, nil, []llama.SeqId{0}, extendedBatchOutputNone)
 				return err
 			},
 		},

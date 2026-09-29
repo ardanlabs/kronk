@@ -105,13 +105,23 @@ func (b *extendedBatch) truncate(length int) error {
 }
 
 func (b *extendedBatch) addToken(token llama.Token, position llama.Pos, sequenceIDs []llama.SeqId, output extendedBatchOutput) (int32, error) {
-	return b.addEntry(extendedBatchEntry{
+	return b.addTokenPositions(token, []llama.Pos{position}, sequenceIDs, output)
+}
+
+func (b *extendedBatch) addTokenPositions(token llama.Token, positions []llama.Pos, sequenceIDs []llama.SeqId, output extendedBatchOutput) (int32, error) {
+	if len(positions) == 0 || len(positions) > 4 {
+		return -1, fmt.Errorf("add extended batch token: got %d positions, want 1 to 4", len(positions))
+	}
+
+	entry := extendedBatchEntry{
 		token:         token,
 		hasToken:      true,
-		positions:     [4]llama.Pos{position},
-		positionCount: 1,
+		positionCount: len(positions),
 		output:        output,
-	}, sequenceIDs)
+	}
+	copy(entry.positions[:], positions)
+
+	return b.addEntry(entry, sequenceIDs)
 }
 
 func (b *extendedBatch) addTokenEmbedding(token llama.Token, embedding []float32, embdWidth int, position llama.Pos, sequenceIDs []llama.SeqId, output extendedBatchOutput) (int32, error) {
@@ -133,6 +143,9 @@ func (b *extendedBatch) addTokenEmbedding(token llama.Token, embedding []float32
 func (b *extendedBatch) addEmbedding(embedding []float32, embdWidth int, positions []llama.Pos, sequenceIDs []llama.SeqId, output extendedBatchOutput) (int32, error) {
 	if len(positions) == 0 || len(positions) > 4 {
 		return -1, fmt.Errorf("add extended batch entry: got %d positions, want 1 to 4", len(positions))
+	}
+	if embdWidth <= 0 || len(embedding) != embdWidth {
+		return -1, fmt.Errorf("add embedding: got %d values, want one row of %d", len(embedding), embdWidth)
 	}
 
 	entry := extendedBatchEntry{

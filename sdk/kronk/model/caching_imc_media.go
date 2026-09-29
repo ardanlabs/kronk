@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"runtime"
 	"slices"
-	"unsafe"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -319,10 +317,19 @@ func (m *Model) decodeMediaIntoCacheFromPlan(ctx context.Context, cacheD D, pref
 // decodeEmbeddingsIntoCache decodes embeddings into a KV cache sequence with
 // standard linear positioning. Returns the number of KV positions consumed.
 func (m *Model) decodeEmbeddingsIntoCache(embd []float32, nEmbd, nTokens int32, seqID llama.SeqId, startPos int, useNonCausal bool) (int, error) {
-	nBatch := int32(m.cfg.EffectiveNBatch())
+	if nTokens == 0 {
+		return 0, nil
+	}
+
+	nBatch := m.cfg.EffectiveNBatch()
 	if nBatch <= 0 {
 		nBatch = 512
 	}
+	batch, err := newExtendedBatchCapacity(m.lctx, min(nBatch, int(nTokens)))
+	if err != nil {
+		return 0, fmt.Errorf("imc media cache: create embedding batch: %w", err)
+	}
+	defer batch.free()
 
 	m.decodeMu.Lock()
 	defer m.decodeMu.Unlock()
@@ -334,35 +341,21 @@ func (m *Model) decodeEmbeddingsIntoCache(embd []float32, nEmbd, nTokens int32, 
 	}
 
 	pos := startPos
+	sequenceIDs := []llama.SeqId{seqID}
 
-	for start := int32(0); start < nTokens; start += nBatch {
-		end := min(start+nBatch, nTokens)
+	for start := 0; start < int(nTokens); start += nBatch {
+		end := min(start+nBatch, int(nTokens))
 		batchN := end - start
 
-		batch := llama.BatchInit(batchN, nEmbd, 1)
-
-		embdSlice := unsafeSlice(batch.Embd, int(batchN*nEmbd))
-		copy(embdSlice, embd[start*nEmbd:end*nEmbd])
-
-		posSlice := unsafeSlice(batch.Pos, int(batchN))
-		nSeqIDSlice := unsafeSlice(batch.NSeqId, int(batchN))
-		seqIDPtrs := unsafeSlice(batch.SeqId, int(batchN))
-		logitsSlice := unsafeSlice(batch.Logits, int(batchN))
-
-		for i := range batchN {
-			posSlice[i] = llama.Pos(pos + int(i))
-			nSeqIDSlice[i] = 1
-			*seqIDPtrs[i] = seqID
-			logitsSlice[i] = 0
+		positions := linearPositions(int32(batchN), llama.Pos(pos))
+		if err := stageEmbeddingRows(batch, embd[start*int(nEmbd):end*int(nEmbd)], nEmbd, int32(batchN), positions, sequenceIDs, extendedBatchOutputNone); err != nil {
+			return 0, fmt.Errorf("imc media cache: stage embedding rows at position %d: %w", pos, err)
 		}
 
-		batch.NTokens = batchN
-
-		ret, err := llama.Decode(m.lctx, batch)
+		ret, err := batch.process(llama.ProcessTypeDecode)
 		if err == nil && ret == 0 {
 			llama.Synchronize(m.lctx)
 		}
-		llama.BatchFree(batch)
 
 		if err != nil || ret != 0 {
 			return 0, decodeError(ret, err)
@@ -380,11 +373,19 @@ func (m *Model) decodeEmbeddingsMRoPEIntoCache(embd []float32, nEmbd, nTokens in
 	if len(positions) != int(nTokens*4) {
 		return 0, fmt.Errorf("mrope embedding positions: got %d, want %d", len(positions), nTokens*4)
 	}
+	if nTokens == 0 {
+		return 0, nil
+	}
 
-	nBatch := int32(m.cfg.EffectiveNBatch())
+	nBatch := m.cfg.EffectiveNBatch()
 	if nBatch <= 0 {
 		nBatch = 512
 	}
+	batch, err := newExtendedBatchCapacity(m.lctx, min(nBatch, int(nTokens)))
+	if err != nil {
+		return 0, fmt.Errorf("imc media cache: create M-RoPE embedding batch: %w", err)
+	}
+	defer batch.free()
 
 	m.decodeMu.Lock()
 	defer m.decodeMu.Unlock()
@@ -395,49 +396,28 @@ func (m *Model) decodeEmbeddingsMRoPEIntoCache(embd []float32, nEmbd, nTokens in
 		defer llama.SetCausalAttn(m.lctx, wasCausal)
 	}
 
-	for start := int32(0); start < nTokens; start += nBatch {
-		end := min(start+nBatch, nTokens)
+	sequenceIDs := []llama.SeqId{seqID}
+	for start := 0; start < int(nTokens); start += nBatch {
+		end := min(start+nBatch, int(nTokens))
 		batchN := end - start
 
-		batch := llama.BatchInit(batchN, nEmbd, 1)
-
-		// Save original pos pointer so BatchFree doesn't free Go memory.
-		origPos := batch.Pos
-
-		embdSlice := unsafeSlice(batch.Embd, int(batchN*nEmbd))
-		copy(embdSlice, embd[start*nEmbd:end*nEmbd])
-
 		// Build sub-batch position array by gathering from the full array.
-		// llama.cpp expects 4 contiguous planes of batchN positions each.
+		// Extended-batch staging accepts the same four section-major planes.
 		subPosData := make([]llama.Pos, batchN*4)
 		for i := range batchN {
 			subPosData[i] = positions[start+i]
-			subPosData[i+batchN] = positions[start+i+nTokens]
-			subPosData[i+batchN*2] = positions[start+i+nTokens*2]
-			subPosData[i+batchN*3] = positions[start+i+nTokens*3]
+			subPosData[i+batchN] = positions[start+i+int(nTokens)]
+			subPosData[i+batchN*2] = positions[start+i+int(nTokens)*2]
+			subPosData[i+batchN*3] = positions[start+i+int(nTokens)*3]
 		}
-		batch.Pos = &subPosData[0]
-
-		nSeqIDSlice := unsafeSlice(batch.NSeqId, int(batchN))
-		seqIDPtrs := unsafeSlice(batch.SeqId, int(batchN))
-		logitsSlice := unsafeSlice(batch.Logits, int(batchN))
-
-		for i := range batchN {
-			nSeqIDSlice[i] = 1
-			*seqIDPtrs[i] = seqID
-			logitsSlice[i] = 0
+		if err := stageEmbeddingRows(batch, embd[start*int(nEmbd):end*int(nEmbd)], nEmbd, int32(batchN), subPosData, sequenceIDs, extendedBatchOutputNone); err != nil {
+			return 0, fmt.Errorf("imc media cache: stage M-RoPE embedding rows at row %d: %w", start, err)
 		}
 
-		batch.NTokens = batchN
-
-		ret, err := llama.Decode(m.lctx, batch)
+		ret, err := batch.process(llama.ProcessTypeDecode)
 		if err == nil && ret == 0 {
 			llama.Synchronize(m.lctx)
 		}
-		runtime.KeepAlive(subPosData)
-
-		batch.Pos = origPos
-		llama.BatchFree(batch)
 
 		if err != nil || ret != 0 {
 			return 0, decodeError(ret, err)
@@ -451,65 +431,44 @@ func (m *Model) decodeEmbeddingsMRoPEIntoCache(embd []float32, nEmbd, nTokens in
 // into a KV cache sequence. Returns the number of physical KV cells consumed;
 // the caller advances its logical position with mtmd.InputChunkGetNPos.
 func (m *Model) decodeTextMRoPEIntoCache(tokens []llama.Token, seqID llama.SeqId, startPos int) (int, error) {
-	n := int32(len(tokens))
+	n := len(tokens)
 	if n == 0 {
 		return 0, nil
 	}
 
-	nBatch := int32(m.cfg.EffectiveNBatch())
+	nBatch := m.cfg.EffectiveNBatch()
 	if nBatch <= 0 {
 		nBatch = 512
 	}
+	batch, err := newExtendedBatchCapacity(m.lctx, min(nBatch, n))
+	if err != nil {
+		return 0, fmt.Errorf("imc media cache: create M-RoPE text batch: %w", err)
+	}
+	defer batch.free()
 
 	m.decodeMu.Lock()
 	defer m.decodeMu.Unlock()
 
 	pos := startPos
+	sequenceIDs := []llama.SeqId{seqID}
 
-	for start := int32(0); start < n; start += nBatch {
+	for start := 0; start < n; start += nBatch {
 		end := min(start+nBatch, n)
-		batchN := end - start
-
-		batch := llama.BatchInit(batchN, 0, 1)
-
-		// Save original pos pointer.
-		origPos := batch.Pos
-
-		tokenSlice := unsafe.Slice(batch.Token, int(batchN))
-		copy(tokenSlice, tokens[start:end])
-
-		// Allocate 4D position array for M-RoPE.
-		posData := make([]llama.Pos, batchN*4)
-		fillMRoPETextPositions(posData, batchN, llama.Pos(pos))
-		batch.Pos = &posData[0]
-
-		nSeqIDSlice := unsafe.Slice(batch.NSeqId, int(batchN))
-		seqIDPtrs := unsafe.Slice(batch.SeqId, int(batchN))
-		logitsSlice := unsafe.Slice(batch.Logits, int(batchN))
-
-		for i := range batchN {
-			nSeqIDSlice[i] = 1
-			*seqIDPtrs[i] = seqID
-			logitsSlice[i] = 0
+		if err := stageMRoPEText(batch, tokens[start:end], llama.Pos(pos), sequenceIDs, extendedBatchOutputNone); err != nil {
+			return 0, fmt.Errorf("imc media cache: stage M-RoPE text at position %d: %w", pos, err)
 		}
 
-		batch.NTokens = batchN
-
-		ret, err := llama.Decode(m.lctx, batch)
+		ret, err := batch.process(llama.ProcessTypeDecode)
 		if err == nil && ret == 0 {
 			llama.Synchronize(m.lctx)
 		}
-		runtime.KeepAlive(posData)
-
-		batch.Pos = origPos
-		llama.BatchFree(batch)
 
 		if err != nil || ret != 0 {
 			return 0, decodeError(ret, err)
 		}
 
-		pos += int(batchN)
+		pos += end - start
 	}
 
-	return int(n), nil
+	return n, nil
 }

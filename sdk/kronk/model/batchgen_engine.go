@@ -56,13 +56,9 @@ type batchEngine struct {
 	diagnosticGeneration      []BatchGenerationContribution
 	diagnosticLastPublished   time.Time
 
-	// Pre-allocated M-RoPE batch and position buffer for vision model text
-	// chunks. Avoids per-call BatchInit/BatchFree and posData allocation in
-	// decodeTextMRoPE.
-	mropeBatch    llama.Batch
-	mropeOrigPos  *llama.Pos
-	mropePosData  []llama.Pos
-	mropeHasBatch bool
+	// Pre-allocated extended batch for media embeddings and M-RoPE text.
+	// These paths decode separately from the shared generation tray.
+	mropeBatch *extendedBatch
 }
 
 // newBatchEngine creates a new batch engine for parallel inference.
@@ -71,7 +67,12 @@ func newBatchEngine(m *Model, nSlots int) (*batchEngine, error) {
 	if err != nil {
 		return nil, fmt.Errorf("new batch engine: %w", err)
 	}
-	nBatch := m.cfg.EffectiveNBatch()
+
+	mropeBatch, err := newExtendedBatch(m.lctx)
+	if err != nil {
+		_ = batch.free()
+		return nil, fmt.Errorf("new batch engine M-RoPE batch: %w", err)
+	}
 
 	// Initialize slots. Each slot owns a state machine instance produced
 	// by the model's parser plugin. State machines are stateful
@@ -93,6 +94,7 @@ func newBatchEngine(m *Model, nSlots int) (*batchEngine, error) {
 		nSlots:                    nSlots,
 		slots:                     slots,
 		batch:                     batch,
+		mropeBatch:                mropeBatch,
 		requestQ:                  make(chan *chatJob, nSlots*m.cfg.QueueDepth()),
 		wakeCh:                    make(chan struct{}, 1),
 		admissionCh:               make(chan struct{}),
@@ -105,14 +107,7 @@ func newBatchEngine(m *Model, nSlots int) (*batchEngine, error) {
 	e.speculation = newSpeculationController(&e)
 	e.publishDiagnostics(true)
 
-	// Pre-allocate M-RoPE batch for vision model text chunk decoding.
-	if nBatch > 0 {
-		e.mropeBatch = llama.BatchInit(int32(nBatch), 0, 1)
-		e.mropeOrigPos = e.mropeBatch.Pos
-		e.mropePosData = make([]llama.Pos, nBatch*4)
-		e.mropeHasBatch = true
-		m.log(context.Background(), "batch-engine", "status", "mrope-batch-alloc", "nbatch", nBatch)
-	}
+	m.log(context.Background(), "batch-engine", "status", "mrope-batch-alloc", "nbatch", m.cfg.EffectiveNBatch())
 
 	return &e, nil
 }
@@ -171,12 +166,7 @@ func (e *batchEngine) cleanupSamplers() {
 // freeBatch frees the batch buffer. Called from Model.Unload.
 func (e *batchEngine) freeBatch() {
 	_ = e.batch.free()
-
-	if e.mropeHasBatch {
-		e.mropeBatch.Pos = e.mropeOrigPos
-		llama.BatchFree(e.mropeBatch)
-		e.mropeHasBatch = false
-	}
+	_ = e.mropeBatch.free()
 }
 
 // submit adds a job to the processing queue.
