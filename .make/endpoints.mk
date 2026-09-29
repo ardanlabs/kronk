@@ -155,6 +155,57 @@ curl-kronk-rerank:
 		"return_documents": true \
     }'
 
+curl-kronk-systemone:
+	curl -i -X POST http://localhost:11435/v1/systemone \
+	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
+	 -H "Content-Type: application/json" \
+	 -d '{ \
+		"model": "chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0", \
+		"state": { \
+			"customer_message": "I was charged twice and need this fixed today.", \
+			"account_tier": "business" \
+		}, \
+		"questions": { \
+			"route": { \
+				"type": "choice", \
+				"instructions": "Which team should handle this request?", \
+				"criteria": { \
+					"billing": "Payments, invoices, refunds, and duplicate charges", \
+					"technical_support": "Product bugs and technical problems", \
+					"sales": "Plans, pricing, and new purchases" \
+				} \
+			}, \
+			"urgency": { \
+				"type": "score", \
+				"instructions": "How urgent is this request?", \
+				"criteria": ["not urgent", "normal", "urgent", "critical"] \
+			}, \
+			"requires_human": { \
+				"type": "noul", \
+				"instructions": "Should a human review this request?" \
+			} \
+		} \
+	}'
+
+curl-kronk-decide:
+	curl -i -X POST http://localhost:11435/v1/decide \
+	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
+	 -H "Content-Type: application/json" \
+	 -d '{ \
+		"model": "chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0", \
+		"state": {"message": "The payment was charged twice."}, \
+		"questions": { \
+			"route": { \
+				"type": "choice", \
+				"instructions": "Choose the best team.", \
+				"criteria": { \
+					"billing": "Payment and invoice issues", \
+					"support": "Technical product issues" \
+				} \
+			} \
+		} \
+	}'
+
 curl-kronk-transcribe:
 	curl -i -X POST http://localhost:11435/v1/audio/transcriptions \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \

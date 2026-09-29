@@ -264,6 +264,7 @@ export interface CatalogCapabilities {
   tooling: boolean;
   embedding: boolean;
   rerank: boolean;
+  decision: boolean;
 }
 
 export interface CatalogFile {
@@ -1274,6 +1275,39 @@ export interface ImageProgressEvent {
   steps?: number;
   percent?: number;
   seconds_per_step?: number;
+}
+
+export type DecisionQuestionType = 'choice' | 'score' | 'noul';
+
+export interface DecisionQuestion {
+  type: DecisionQuestionType;
+  instructions: string;
+  criteria?: Record<string, unknown> | unknown[];
+}
+
+export interface DecisionRequest {
+  model: string;
+  state: Record<string, unknown>;
+  questions: Record<string, DecisionQuestion>;
+}
+
+export interface DecisionAnswer {
+  type: DecisionQuestionType;
+  choice?: string;
+  score?: number;
+  noul?: number;
+  probabilities?: Record<string, number>;
+  legend?: Record<string, unknown>;
+  confidence?: number;
+}
+
+export interface DecisionResponse {
+  model: string;
+  answers: Record<string, DecisionAnswer>;
+  usage: {
+    input_tokens: number;
+    output_tokens: number;
+  };
 }
 
 // =============================================================================

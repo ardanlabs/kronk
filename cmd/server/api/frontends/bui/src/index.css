@@ -6977,3 +6977,321 @@ button.autotest-detail-log-header:focus-visible {
   color: var(--color-gray-600);
   font-size: 12px;
 }
+
+/* ========================================================================== */
+/* Decision                                                                    */
+
+.decision-page {
+  padding: 24px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.decision-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.9fr) minmax(380px, 1.1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.decision-card,
+.decision-results {
+  background: var(--color-gray-50);
+  border: 1px solid var(--color-gray-300);
+  border-radius: 8px;
+  padding: 18px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.decision-card h3,
+.decision-results h3 {
+  color: var(--color-gray-800);
+  font-size: 17px;
+  margin: 3px 0 0;
+}
+
+.decision-eyebrow {
+  color: var(--color-gray-500);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.decision-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.decision-form label {
+  color: var(--color-gray-700);
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 3px;
+}
+
+.decision-form .form-input,
+.decision-form .form-select,
+.decision-message {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.decision-message {
+  background: var(--color-white);
+  border: 1px solid var(--color-gray-300);
+  border-radius: 6px;
+  color: var(--color-gray-900);
+  font: inherit;
+  line-height: 1.5;
+  padding: 10px;
+  resize: vertical;
+}
+
+.decision-message:focus {
+  border-color: var(--color-light-blue);
+  box-shadow: 0 0 0 3px rgba(134, 213, 228, 0.2);
+  outline: none;
+}
+
+.decision-model-status {
+  min-height: 18px;
+  color: var(--color-gray-600);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.decision-model-status-ready {
+  color: var(--color-success-text);
+  font-weight: 600;
+}
+
+.decision-model-status-required {
+  color: var(--color-warning-text-alt);
+}
+
+.decision-model-status-error {
+  color: var(--color-error);
+}
+
+.decision-submit {
+  margin-top: 6px;
+  width: 100%;
+}
+
+.decision-questions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.decision-question {
+  background: var(--color-white);
+  border: 1px solid var(--color-gray-200);
+  border-radius: 7px;
+  padding: 12px;
+}
+
+.decision-question-heading,
+.decision-results-header,
+.decision-answer-heading,
+.decision-probability-label {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.decision-question-heading strong {
+  color: var(--color-gray-800);
+  font-size: 14px;
+}
+
+.decision-question-heading span,
+.decision-answer-type {
+  background: rgba(134, 213, 228, 0.16);
+  border: 1px solid rgba(134, 213, 228, 0.45);
+  border-radius: 999px;
+  color: var(--color-gray-700);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 3px 7px;
+  text-transform: uppercase;
+}
+
+.decision-question p {
+  color: var(--color-gray-600);
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 7px 0 9px;
+}
+
+.decision-option-list,
+.decision-scale {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.decision-option-list span,
+.decision-scale span {
+  background: var(--color-gray-100);
+  border: 1px solid var(--color-gray-200);
+  border-radius: 5px;
+  color: var(--color-gray-700);
+  font-size: 11px;
+  padding: 5px 7px;
+}
+
+.decision-scale span {
+  align-items: center;
+  display: flex;
+  gap: 5px;
+}
+
+.decision-scale b {
+  color: var(--color-gray-500);
+  font-size: 10px;
+}
+
+.decision-alert {
+  margin-top: 16px;
+}
+
+.decision-results {
+  margin-top: 16px;
+}
+
+.decision-results-header > span {
+  color: var(--color-gray-500);
+  font-size: 12px;
+}
+
+.decision-empty {
+  align-items: center;
+  color: var(--color-gray-500);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  justify-content: center;
+  min-height: 180px;
+  text-align: center;
+}
+
+.decision-empty-icon {
+  color: var(--color-light-blue);
+  font-size: 36px;
+  line-height: 1;
+}
+
+.decision-empty strong {
+  color: var(--color-gray-700);
+}
+
+.decision-empty span {
+  font-size: 12px;
+}
+
+.decision-answer-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.decision-answer-card {
+  background: var(--color-white);
+  border: 1px solid var(--color-gray-200);
+  border-radius: 7px;
+  min-width: 0;
+  padding: 14px;
+}
+
+.decision-answer-heading {
+  justify-content: flex-start;
+}
+
+.decision-answer-heading h4 {
+  color: var(--color-gray-700);
+  font-size: 13px;
+  margin: 0;
+}
+
+.decision-answer-primary {
+  color: var(--color-page-title);
+  font-size: 25px;
+  font-weight: 700;
+  margin-top: 15px;
+  text-transform: capitalize;
+}
+
+.decision-answer-card > p {
+  color: var(--color-gray-500);
+  font-size: 11px;
+  margin: 3px 0 12px;
+  text-transform: capitalize;
+}
+
+.decision-probabilities {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.decision-probability-label {
+  color: var(--color-gray-600);
+  font-size: 10px;
+  text-transform: capitalize;
+}
+
+.decision-probability-label strong {
+  color: var(--color-gray-700);
+}
+
+.decision-probability-track {
+  background: var(--color-gray-200);
+  border-radius: 999px;
+  height: 4px;
+  overflow: hidden;
+}
+
+.decision-probability-track span {
+  background: var(--color-light-blue);
+  border-radius: inherit;
+  display: block;
+  height: 100%;
+}
+
+.decision-raw {
+  border-top: 1px solid var(--color-gray-200);
+  margin-top: 16px;
+  padding-top: 12px;
+}
+
+.decision-raw summary {
+  color: var(--color-gray-600);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.decision-raw pre {
+  background: var(--color-gray-900);
+  border-radius: 6px;
+  color: var(--color-gray-100);
+  font-size: 11px;
+  margin: 10px 0 0;
+  max-height: 360px;
+  overflow: auto;
+  padding: 12px;
+}
+
+@media (max-width: 1000px) {
+  .decision-grid,
+  .decision-answer-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -184,6 +184,10 @@ type AdapterConfig struct {
 //
 // DefaultParams contains the default sampling parameters for requests.
 //
+// DecisionProtocol optionally overrides automatic decision-protocol detection.
+// It is useful when a decision model has been renamed and its GGUF metadata
+// does not identify the protocol.
+//
 // ChatTemplateKwargs contains model-level defaults passed only to the Jinja
 // chat template. Request-level chat_template_kwargs override matching keys.
 // Resolved first-class request parameters remain top-level template values.
@@ -255,8 +259,9 @@ type AdapterConfig struct {
 // models (including vision/audio), it sets the maximum number of generation
 // slots. For supported embedding and reranking architectures, it sets the
 // maximum sequence width of the sequence-batch engine. Other embedding and
-// reranking architectures use it as the context-pool size. When set to 0, a
-// default of 1 is used.
+// reranking architectures use it as the context-pool size. For decision
+// models, it sets the maximum number of work items evaluated together on one
+// context. When set to 0, a default of 1 is used.
 //
 // NThreads is the number of threads to use for generation. When unset or set
 // to 0, it defaults to the greater of 4 and runtime.NumCPU().
@@ -301,11 +306,12 @@ type AdapterConfig struct {
 // projector device automatically. It cannot be combined with ProjOnCPU=true.
 // The LLM device selection is unaffected.
 //
-// QueueDepth sets the number of admitted request layers for generation models.
+// QueueDepth sets the number of admitted request layers for generation and
+// decision models.
 // The admission capacity is NSeqMax * QueueDepth. A depth of 1 admits only the
 // requests that can occupy execution slots; the default depth of 2 admits one
 // additional waiting layer. QueueDepth also determines the default IMC session
-// capacity. It only applies to text inference models.
+// capacity for text inference models.
 //
 // RopeFreqBase overrides the RoPE base frequency. When nil, uses model default.
 // Common values: 10000 (Llama), 1000000 (Qwen3).
@@ -390,6 +396,7 @@ type Config struct {
 	CacheTypeV                 GGMLType
 	PtrContextWindow           *int
 	DefaultParams              Params
+	DecisionProtocol           DecisionProtocol
 	ChatTemplateKwargs         D
 	PtrDraftModel              *DraftModelConfig
 	Devices                    []string // Device names for model execution (e.g., ["CUDA0", "CUDA1"])
@@ -539,9 +546,9 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("{mode:%s top_n:%s}", m.Mode, topN)
 	}
 
-	return fmt.Sprintf("\nAdapters[%v]\nAdmissionTimeout[%s]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nChatTemplateKwargs[%s]\nDevices[%v]\nFlashAttention[%s]\nIMCSessionCapacity[%d]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nPrefillBatchSize[%s]\nEffectiveNBatch[%d]\nEffectiveNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nProjDevice[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreFactory[%t]\nSpeculation[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
+	return fmt.Sprintf("\nAdapters[%v]\nAdmissionTimeout[%s]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nDecisionProtocol[%s]\nChatTemplateKwargs[%s]\nDevices[%v]\nFlashAttention[%s]\nIMCSessionCapacity[%d]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nPrefillBatchSize[%s]\nEffectiveNBatch[%d]\nEffectiveNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nProjDevice[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreFactory[%t]\nSpeculation[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
 		cfg.Adapters, formatDurationPtr(cfg.PtrAdmissionTimeout), cfg.AutoTune, formatIntPtr(cfg.PtrCacheMinTokens), cfg.CacheTypeK, cfg.CacheTypeV,
-		formatIntPtr(cfg.PtrContextWindow), cfg.DefaultParams.String(), chatTemplateKwargsSummary(cfg.ChatTemplateKwargs), cfg.Devices, cfg.FlashAttention(),
+		formatIntPtr(cfg.PtrContextWindow), cfg.DefaultParams.String(), cfg.DecisionProtocol, chatTemplateKwargsSummary(cfg.ChatTemplateKwargs), cfg.Devices, cfg.FlashAttention(),
 		cfg.IMCSessionCapacity(), formatBoolPtr(cfg.PtrIncrementalCache), formatBoolPtr(cfg.PtrInsecureLogging), cfg.JinjaFile,
 		cfg.LoadMode, formatIntPtr(cfg.PtrMainGPU), formatMoEPtr(cfg.PtrMoE), cfg.ModelFiles,
 		formatIntPtr(cfg.PtrNGpuLayers), formatIntPtr(cfg.PtrNSeqMax), formatIntPtr(cfg.PtrNThreads), formatIntPtr(cfg.PtrNThreadsBatch), formatIntPtr(cfg.PtrPrefillBatchSize), cfg.EffectiveNBatch(), cfg.EffectiveNUBatch(),
@@ -577,12 +584,21 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 	if len(cfg.ModelFiles) == 0 {
 		return fmt.Errorf("validate-config: model file is required")
 	}
+
+	switch cfg.DecisionProtocol {
+	case DecisionProtocol{}, DecisionProtocolOpenJEV, DecisionProtocolJevStyle:
+	default:
+		return fmt.Errorf("validate-config: unsupported decision protocol %q", cfg.DecisionProtocol)
+	}
+
 	if cfg.QueueDepth() < 0 {
 		return fmt.Errorf("validate-config: queue depth must be >= 0, got %d", cfg.QueueDepth())
 	}
+
 	if cfg.IMCSessionCapacity() < 0 {
 		return fmt.Errorf("validate-config: IMC session capacity must be >= 0, got %d", cfg.IMCSessionCapacity())
 	}
+
 	if cfg.IMCSessionCapacity() > 0 && !isEmbedOrRerankConfig(cfg) {
 		nSeqMax := max(cfg.NSeqMax(), defNSeqMax)
 		queueDepth := cfg.QueueDepth()
@@ -594,12 +610,15 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 			return fmt.Errorf("validate-config: IMC session capacity must be >= admission capacity %d, got %d", admissionCapacity, cfg.IMCSessionCapacity())
 		}
 	}
+
 	if cfg.AdmissionTimeout() < 0 {
 		return fmt.Errorf("validate-config: admission timeout must be >= 0, got %s", cfg.AdmissionTimeout())
 	}
+
 	if cfg.PtrPrefillBatchSize != nil && cfg.PrefillBatchSize() <= 0 {
 		return fmt.Errorf("validate-config: prefill batch size must be > 0, got %d", cfg.PrefillBatchSize())
 	}
+
 	if cfg.ProjDevice != "" && cfg.PtrProjOnCPU != nil && *cfg.PtrProjOnCPU {
 		return fmt.Errorf("validate-config: projector device cannot be combined with proj-on-cpu=true")
 	}
@@ -1708,26 +1727,110 @@ func ParseRopeScalingType(s string) (RopeScalingType, error) {
 
 // =============================================================================
 
+// Set of known decision protocols.
+var decisionProtocols = make(map[string]DecisionProtocol)
+
+var (
+	// DecisionProtocolOpenJEV identifies the OpenJEV letter-readout protocol.
+	DecisionProtocolOpenJEV = newDecisionProtocol("openjev")
+
+	// DecisionProtocolJevStyle identifies the macjev-render-v1 protocol.
+	DecisionProtocolJevStyle = newDecisionProtocol("jev-style")
+)
+
+// DecisionProtocol identifies the prompt and readout protocol used by a
+// decision model.
+type DecisionProtocol struct {
+	value string
+}
+
+func newDecisionProtocol(value string) DecisionProtocol {
+	protocol := DecisionProtocol{value: value}
+	decisionProtocols[value] = protocol
+	return protocol
+}
+
+// String returns the name of the decision protocol.
+func (dp DecisionProtocol) String() string {
+	return dp.value
+}
+
+// Equal provides support for the go-cmp package and testing.
+func (dp DecisionProtocol) Equal(dp2 DecisionProtocol) bool {
+	return dp.value == dp2.value
+}
+
+// IsZero reports whether the decision protocol is unset.
+func (dp DecisionProtocol) IsZero() bool {
+	return dp.value == ""
+}
+
+// MarshalText provides support for logging and serialization.
+func (dp DecisionProtocol) MarshalText() ([]byte, error) {
+	return []byte(dp.value), nil
+}
+
+// UnmarshalText parses serialized text into a known DecisionProtocol.
+func (dp *DecisionProtocol) UnmarshalText(data []byte) error {
+	protocol, err := ParseDecisionProtocol(string(data))
+	if err != nil {
+		return err
+	}
+
+	*dp = protocol
+	return nil
+}
+
+// ParseDecisionProtocol parses value and returns the corresponding
+// DecisionProtocol when it exists.
+func ParseDecisionProtocol(value string) (DecisionProtocol, error) {
+	if value == "" {
+		return DecisionProtocol{}, nil
+	}
+
+	protocol, exists := decisionProtocols[value]
+	if !exists {
+		return DecisionProtocol{}, fmt.Errorf("invalid decision protocol %q", value)
+	}
+
+	return protocol, nil
+}
+
+// MustParseDecisionProtocol parses value and returns the corresponding
+// DecisionProtocol. It panics when value does not identify a known protocol.
+func MustParseDecisionProtocol(value string) DecisionProtocol {
+	protocol, err := ParseDecisionProtocol(value)
+	if err != nil {
+		panic(err)
+	}
+
+	return protocol
+}
+
+// =============================================================================
+
 // Set of known MoE modes.
 var moeModes = make(map[string]MoEMode)
 
-// MoEModeAuto uses catalog defaults.
-var MoEModeAuto = newMoEMode("auto")
+var (
+	// MoEModeAuto uses catalog defaults.
+	MoEModeAuto = newMoEMode("auto")
 
-// MoEModeExpertsCPU places all routed expert tensors on CPU.
-// Recommended for VRAM-constrained setups.
-var MoEModeExpertsCPU = newMoEMode("experts_cpu")
+	// MoEModeExpertsCPU places all routed expert tensors on CPU.
+	// Recommended for VRAM-constrained setups.
+	MoEModeExpertsCPU = newMoEMode("experts_cpu")
 
-// MoEModeExpertsGPU keeps all expert tensors on GPU.
-// Requires sufficient VRAM for the full model.
-var MoEModeExpertsGPU = newMoEMode("experts_gpu")
+	// MoEModeExpertsGPU keeps all expert tensors on GPU.
+	// Requires sufficient VRAM for the full model.
+	MoEModeExpertsGPU = newMoEMode("experts_gpu")
 
-// MoEModeKeepTopN keeps routed experts on GPU for the top N layers.
-// All other expert layers go to CPU.
-var MoEModeKeepTopN = newMoEMode("keep_top_n")
+	// MoEModeKeepTopN keeps routed experts on GPU for the top N layers.
+	// All other expert layers go to CPU.
+	MoEModeKeepTopN = newMoEMode("keep_top_n")
 
-// MoEModeCustom defers to TensorBuftOverrides for expert placement.
-var MoEModeCustom = newMoEMode("custom")
+	// MoEModeCustom defers to TensorBuftOverrides for expert placement.
+	MoEModeCustom = newMoEMode("custom")
+)
 
 // MoEMode controls expert placement strategy for Mixture of Experts models.
 type MoEMode struct {
@@ -1872,6 +1975,11 @@ func WithCacheTypeK(v GGMLType) Option  { return func(c *Config) { c.CacheTypeK 
 func WithCacheTypeV(v GGMLType) Option  { return func(c *Config) { c.CacheTypeV = v } }
 func WithContextWindow(v int) Option    { return func(c *Config) { c.PtrContextWindow = new(v) } }
 func WithDefaultParams(v Params) Option { return func(c *Config) { c.DefaultParams = v } }
+
+// WithDecisionProtocol overrides automatic decision-protocol detection.
+func WithDecisionProtocol(v DecisionProtocol) Option {
+	return func(c *Config) { c.DecisionProtocol = v }
+}
 func WithChatTemplateKwargs(v D) Option {
 	return func(c *Config) { c.ChatTemplateKwargs = v.Clone() }
 }

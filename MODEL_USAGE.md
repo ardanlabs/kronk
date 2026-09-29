@@ -22,7 +22,7 @@ source of intent.
 
 `make install-test-models` installs the full local set. The approximate sizes
 below include cataloged model, projection, and MTP companion files, but exclude
-runtime KV cache. The Kronk models total about 52.0 GiB, down from about 98.0
+runtime KV cache. The Kronk models total about 52.8 GiB, down from about 98.0
 GiB for the previous set. Whisper and Stable Diffusion are additional.
 
 | Model | Approx. size | Required coverage |
@@ -37,6 +37,7 @@ GiB for the previous set. Whisper and Stable Diffusion are additional.
 | `unsloth/Qwen3-1.7B-Q4_K_M` | 1.03 GiB | General text APIs, tools, grammar, IMC, concurrency, and classic-draft target |
 | `nomic-ai/nomic-embed-text-v1.5.Q8_0` | 0.14 GiB | Embedding sequence batching and embeddings API |
 | `gpustack/bge-reranker-v2-m3-Q8_0` | 0.59 GiB | Cross-encoder reranking and rerank sequence batching |
+| `chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0` | 0.76 GiB | Typed Decision SDK behavior and `/v1/systemone` plus `/v1/decide` API coverage |
 | `ggml-tiny.bin` | 0.07 GiB | Whisper transcription and streaming |
 | `sd-1.5` | bundle | Stable Diffusion image generation and Malina concurrency |
 
@@ -83,6 +84,8 @@ additional direct Hugging Face URLs to demonstrate model loading.
 | `gpustack/bge-reranker-v2-m3-Q8_0` | rerank and Yzma rerank step |
 | `ggml-org/Qwen2.5-Omni-3B-Q8_0` | audio |
 | `ornith-ai/Ornith-1.5-9B-Q4_K_M` | agent |
+| `chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0` | Jev-Style Decision |
+| `openjev/OpenJev-Q4_K_M` | OpenJEV Decision |
 | `ggml-tiny.bin` / `tiny` | Bucky transcription, streaming, and diarization |
 | `sd-1.5` | Malina text-to-image and image-to-image |
 | `flux2-klein-9b` | Malina FLUX.2 |

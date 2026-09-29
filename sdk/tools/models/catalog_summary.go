@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/hf"
@@ -23,8 +24,8 @@ type CatalogFiles struct {
 	MTP   CatalogFile   `json:"mtp"`
 }
 
-// CatalogCapabilities describes what the model can do, derived from
-// GGUF metadata + presence of a projection file.
+// CatalogCapabilities describes what the model can do, derived from GGUF
+// metadata, its identifier, and the presence of a projection file.
 type CatalogCapabilities struct {
 	Endpoint  string `json:"endpoint"             yaml:"endpoint,omitempty"`
 	Images    bool   `json:"images"               yaml:"images,omitempty"`
@@ -35,6 +36,7 @@ type CatalogCapabilities struct {
 	Tooling   bool   `json:"tooling"              yaml:"tooling,omitempty"`
 	Embedding bool   `json:"embedding"            yaml:"embedding,omitempty"`
 	Rerank    bool   `json:"rerank"               yaml:"rerank,omitempty"`
+	Decision  bool   `json:"decision"             yaml:"decision,omitempty"`
 }
 
 // CatalogSummary is the cheap per-entry payload. It only consults
@@ -226,17 +228,28 @@ func TemplateName(metadata map[string]string) string {
 // projection presence. Architecture-specific interpretation is owned by the
 // normalized GGUF profile resolver.
 func CapabilitiesFor(metadata map[string]string, hasProjection bool) CatalogCapabilities {
+	return CapabilitiesForModel(metadata, hasProjection, "")
+}
+
+// CapabilitiesForModel derives capabilities using GGUF metadata and the model
+// identifier. Decision protocols do not have standardized GGUF metadata, so
+// their published model names remain part of detection.
+func CapabilitiesForModel(metadata map[string]string, hasProjection bool, modelID string) CatalogCapabilities {
 	profile := modelprofile.Resolve(metadata)
 	caps := CatalogCapabilities{
 		Streaming: true,
 	}
 
-	switch profile.Purpose {
-	case modelprofile.PurposeEmbedding:
+	switch {
+	case profile.Purpose == modelprofile.PurposeGeneration && isDecisionModelName(metadata["general.name"]+" "+modelID):
+		caps.Endpoint = "decision"
+		caps.Decision = true
+		caps.Streaming = false
+	case profile.Purpose == modelprofile.PurposeEmbedding:
 		caps.Endpoint = "embeddings"
 		caps.Embedding = true
 		caps.Streaming = false
-	case modelprofile.PurposeRerank:
+	case profile.Purpose == modelprofile.PurposeRerank:
 		caps.Endpoint = "rerank"
 		caps.Rerank = true
 		caps.Streaming = false
@@ -253,6 +266,11 @@ func CapabilitiesFor(metadata map[string]string, hasProjection bool) CatalogCapa
 	}
 
 	return caps
+}
+
+func isDecisionModelName(name string) bool {
+	name = strings.ToLower(name)
+	return strings.Contains(name, "openjev") || strings.Contains(name, "jev-style")
 }
 
 // ParameterCount extracts the model's parameter count from GGUF metadata.

@@ -9,12 +9,13 @@
 - [9.5 Anthropic Messages API](#95-anthropic-messages-api)
 - [9.6 Embeddings](#96-embeddings)
 - [9.7 Reranking](#97-reranking)
-- [9.8 Tokenization](#98-tokenization)
-- [9.9 Models, Image Generation, and Audio Transcription](#99-models-image-generation-and-audio-transcription)
-- [9.10 Kronk Administration](#910-kronk-administration)
-- [9.11 Bucky and Malina Administration](#911-bucky-and-malina-administration)
-- [9.12 Operations and Evaluation](#912-operations-and-evaluation)
-- [9.13 Security Administration](#913-security-administration)
+- [9.8 Decisions](#98-decisions)
+- [9.9 Tokenization](#99-tokenization)
+- [9.10 Models, Image Generation, and Audio Transcription](#910-models-image-generation-and-audio-transcription)
+- [9.11 Kronk Administration](#911-kronk-administration)
+- [9.12 Bucky and Malina Administration](#912-bucky-and-malina-administration)
+- [9.13 Operations and Evaluation](#913-operations-and-evaluation)
+- [9.14 Security Administration](#914-security-administration)
 
 ---
 
@@ -62,6 +63,8 @@ statuses such as 400, 401, 403, 404, 409, 429, 500, 501, or 503.
 | `/v1/embeddings`               | POST   | Text embeddings                        |
 | `/v1/rerank`                   | POST   | Document reranking                     |
 | `/v1/reranking`                | POST   | Alias for `/v1/rerank`                 |
+| `/v1/systemone`                | POST   | Evaluate typed decision questions      |
+| `/v1/decide`                   | POST   | Alias for `/v1/systemone`              |
 | `/v1/tokenize`                 | POST   | Count tokens for text                  |
 | `/v1/models`                   | GET    | List locally available models          |
 | `/v1/models/{model}`           | GET    | Retrieve one locally available model   |
@@ -71,7 +74,7 @@ statuses such as 400, 401, 403, 404, 409, 429, 500, 501, or 503.
 | `/v1/audio/transcriptions`     | POST   | Transcribe audio with Bucky            |
 | `/v1/audio/translations`       | POST   | Translate audio into English with Bucky |
 
-Sections 9.10 through 9.13 inventory the administration, diagnostics, and
+Sections 9.11 through 9.14 inventory the administration, diagnostics, and
 evaluation endpoints used by the CLI and BUI. Administration endpoints are
 open when administration authentication is disabled. When it is enabled, they
 require an administrator token. `GET /v1/models` and
@@ -309,7 +312,160 @@ Documents are omitted from results by default. Set `return_documents` to
 `true` when the response should include their text. `top_n` defaults to all
 documents.
 
-## 9.8 Tokenization
+## 9.8 Decisions
+
+`POST /v1/systemone` and `POST /v1/decide` are equivalent. Both evaluate
+typed questions independently against one shared `state` value and require a
+model recognized as a decision model. Use `/v1/decide` for the descriptive
+Kronk route name or `/v1/systemone` for SystemOne compatibility.
+
+The request contains a model ID, any JSON-compatible shared state, and a
+nonempty object of named questions:
+
+```json
+{
+  "model": "chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0",
+  "state": {
+    "customer_message": "I was charged twice and need this fixed today.",
+    "account_tier": "business"
+  },
+  "questions": {
+    "route": {
+      "type": "choice",
+      "instructions": "Which team should handle this request?",
+      "criteria": {
+        "billing": "Payments, invoices, refunds, and duplicate charges",
+        "technical_support": "Product bugs and technical problems",
+        "sales": "Plans, pricing, and new purchases"
+      }
+    },
+    "urgency": {
+      "type": "score",
+      "instructions": "How urgent is this request?",
+      "criteria": ["not urgent", "normal", "urgent", "critical"]
+    },
+    "requires_human": {
+      "type": "noul",
+      "instructions": "Should a human review this request?"
+    }
+  }
+}
+```
+
+Question types have different criteria and response fields:
+
+| Type | Request criteria | Response |
+| ---- | ---------------- | -------- |
+| `choice` | Object whose keys are option names and values describe each option | Selected `choice`, option `probabilities`, and `confidence` |
+| `score` | Ordered array of 2 through 10 levels | Numeric `score`, level `legend`, level `probabilities`, and `confidence` |
+| `noul` | Optional object with `false` and `true` descriptions | Calibrated `noul` probability from 0 through 1 |
+
+Object order is part of the decision-model input. Kronk preserves the incoming
+order of state fields, questions, choice options, instructions, and nested
+criteria rather than normalizing them through unordered maps.
+
+A response is keyed by the caller's question IDs:
+
+```json
+{
+  "model": "chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0",
+  "answers": {
+    "route": {
+      "type": "choice",
+      "choice": "billing",
+      "probabilities": {
+        "billing": 0.96,
+        "technical_support": 0.03,
+        "sales": 0.01
+      },
+      "confidence": 0.96
+    },
+    "urgency": {
+      "type": "score",
+      "score": 2.7,
+      "legend": {
+        "0": "not urgent",
+        "1": "normal",
+        "2": "urgent",
+        "3": "critical"
+      },
+      "probabilities": {
+        "0": 0.01,
+        "1": 0.04,
+        "2": 0.2,
+        "3": 0.75
+      },
+      "confidence": 0.75
+    },
+    "requires_human": {
+      "type": "noul",
+      "noul": 0.83
+    }
+  },
+  "usage": {
+    "input_tokens": 132,
+    "output_tokens": 0
+  }
+}
+```
+
+Decision models read logits directly rather than generating text, so
+`output_tokens` is zero. Exact scores and probabilities depend on the model
+and request. When authentication is enabled, both aliases require the same
+`decision` endpoint grant.
+
+Call either route with curl:
+
+```shell
+make curl-kronk-decide
+make curl-kronk-systemone
+```
+
+### Go SDK
+
+The SDK uses typed request constructors so state, question, option, and level
+order remains explicit. Given a loaded `*kronk.Kronk` decision model:
+
+```go
+req := model.DecisionRequest{
+    State: model.DecisionState(
+        model.DecisionStateData("customer_message", "I was charged twice."),
+        model.DecisionStateData("account_tier", "business"),
+    ),
+    Questions: []model.DecisionQuestion{
+        model.DecisionQuestionChoice(
+            "route",
+            "Which team should handle this request?",
+            model.DecisionQuestionOpt("billing", "Payment and invoice issues"),
+            model.DecisionQuestionOpt("support", "Technical product issues"),
+        ),
+        model.DecisionQuestionScore(
+            "urgency",
+            "How urgent is this request?",
+            "not urgent", "normal", "urgent", "critical",
+        ),
+        model.DecisionQuestionNoul(
+            "requires_human",
+            "Should a human review this request?",
+            nil,
+        ),
+    },
+}
+
+resp, err := krn.Decision(ctx, req)
+```
+
+`Kronk.Decision` returns `model.DecisionResponse`. `Kronk.DecisionHTTP`
+performs the same evaluation and writes that response using the public HTTP
+JSON contract. Supported model names and metadata are detected automatically;
+use `model.WithDecisionProtocol(model.DecisionProtocolOpenJEV)` or
+`model.WithDecisionProtocol(model.DecisionProtocolJevStyle)` only when a
+renamed model cannot be detected. Complete runnable examples are under
+`examples/decision/openjev` and `examples/decision/jevstyle`. The bundled SDK
+reference documents every constructor, request type, response type, protocol,
+and error.
+
+## 9.9 Tokenization
 
 `POST /v1/tokenize` returns a token **count**, not token IDs:
 
@@ -336,7 +492,7 @@ applied and defaults to `true`.
 }
 ```
 
-## 9.9 Models, Image Generation, and Audio Transcription
+## 9.10 Models, Image Generation, and Audio Transcription
 
 `GET /v1/models` returns an OpenAI-style list of models and configured model
 extensions available locally. It is not limited to models currently loaded in
@@ -403,7 +559,7 @@ speech from a supported language into English. Their request fields, formats,
 and administrative operations are documented in
 [Chapter 18](https://www.kronkai.com/manual#1861-request-and-response).
 
-## 9.10 Kronk Administration
+## 9.11 Kronk Administration
 
 These routes manage the llama.cpp runtime, local GGUF models, and the personal
 model catalog. Mutating routes may stream progress or perform network and disk
@@ -607,7 +763,7 @@ bytes through a new content read.
 accepts `{"source":"..."}` and may add successfully resolved metadata to the
 personal catalog even though it does not download model files.
 
-## 9.11 Bucky and Malina Administration
+## 9.12 Bucky and Malina Administration
 
 The Bucky management API mirrors the library and model lifecycle for the
 whisper.cpp backend:
@@ -657,7 +813,7 @@ The integrity endpoint accepts an optional `version` query parameter, including
 identity and per-file evidence as the llama.cpp and whisper.cpp endpoints and
 reports `backend` as `stable-diffusion`.
 
-## 9.12 Operations and Evaluation
+## 9.13 Operations and Evaluation
 
 | Method and path | Purpose |
 | ---------------- | ------- |
@@ -674,7 +830,7 @@ parameters for its benchmark. The accuracy request body is
 `model`, `prompt`, and an optional positive `max_tokens`, which defaults to
 512. These evaluation routes can load models and may take several minutes.
 
-## 9.13 Security Administration
+## 9.14 Security Administration
 
 | Method and path | Purpose |
 | ---------------- | ------- |

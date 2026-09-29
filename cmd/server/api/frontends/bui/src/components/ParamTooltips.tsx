@@ -249,6 +249,11 @@ export const PARAM_TOOLTIPS = {
   imageGeneratorCFGScale: 'How strongly generation follows the prompt. Higher values adhere more closely but can reduce natural variation. The model default is 7.',
   imageGeneratorSeed: 'Positive values reproduce a result. Values of 0 or below choose a random seed for each generation.',
   imageGeneratorStrength: 'How much the generated result may depart from the uploaded image. Lower values preserve more of the source; 1 allows the largest transformation.',
+
+  // Decision
+  decisionModel: 'Decision-capable model from the catalog. It must be downloaded and pass integrity validation before it can evaluate questions.',
+  decisionState: 'The customer message included in the shared state evaluated by every question.',
+  decisionAccountTier: 'Account tier included in the shared state. Change it to see whether customer context affects the answers.',
 } as const satisfies Record<string, string>;
 
 export type TooltipKey = keyof typeof PARAM_TOOLTIPS;

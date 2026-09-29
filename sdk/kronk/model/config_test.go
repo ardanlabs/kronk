@@ -43,6 +43,32 @@ func TestMoEMode(t *testing.T) {
 	}
 }
 
+func TestDecisionProtocol(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		want    DecisionProtocol
+		wantErr bool
+	}{
+		{"unset", "", DecisionProtocol{}, false},
+		{"OpenJEV", "openjev", DecisionProtocolOpenJEV, false},
+		{"Jev-Style", "jev-style", DecisionProtocolJevStyle, false},
+		{"unknown", "unknown", DecisionProtocol{}, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseDecisionProtocol(tt.value)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ParseDecisionProtocol() error = %v, wantErr %t", err, tt.wantErr)
+			}
+			if !got.Equal(tt.want) {
+				t.Errorf("ParseDecisionProtocol() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDefaultSplitMode(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -110,7 +136,8 @@ func TestMoEModeYAML(t *testing.T) {
 
 func TestConfigStringIncludesCompleteDiagnostics(t *testing.T) {
 	cfg := Config{
-		AutoTune: true,
+		AutoTune:         true,
+		DecisionProtocol: DecisionProtocolOpenJEV,
 		ChatTemplateKwargs: D{
 			"preserve_thinking": true,
 			"secret":            "do not log",
@@ -127,6 +154,7 @@ func TestConfigStringIncludesCompleteDiagnostics(t *testing.T) {
 		"AdmissionTimeout[5m0s]",
 		"ChatTemplateKwargs[preserve_thinking=true secret=configured]",
 		"DefaultParams[",
+		"DecisionProtocol[openjev]",
 		"grammar[true]",
 		"IMCSessionCapacity[9]",
 		"QueueDepth[7]",
@@ -142,6 +170,13 @@ func TestConfigStringIncludesCompleteDiagnostics(t *testing.T) {
 	}
 	if strings.Contains(got, cfg.ChatTemplateKwargs["secret"].(string)) {
 		t.Errorf("Config.String() exposed chat template kwarg contents in %q", got)
+	}
+}
+
+func TestDecisionProtocolConfigurationOverride(t *testing.T) {
+	configured := NewConfig(WithDecisionProtocol(DecisionProtocolOpenJEV))
+	if configured.DecisionProtocol != DecisionProtocolOpenJEV {
+		t.Fatalf("configured protocol: got %q, want %q", configured.DecisionProtocol, DecisionProtocolOpenJEV)
 	}
 }
 
@@ -759,6 +794,14 @@ func TestValidateConfig(t *testing.T) {
 			WithDevices([]string{"CUDA0", "CUDA1"}),
 			WithModelFiles([]string{"dummy.gguf"}),
 		), false},
+		{"decision protocol is valid", NewConfig(
+			WithModelFiles([]string{"dummy.gguf"}),
+			WithDecisionProtocol(DecisionProtocolOpenJEV),
+		), false},
+		{"unknown decision protocol is invalid", NewConfig(
+			WithModelFiles([]string{"dummy.gguf"}),
+			WithDecisionProtocol(DecisionProtocol{value: "unknown"}),
+		), true},
 		{"mmap mlock load mode is valid", NewConfig(
 			WithModelFiles([]string{"dummy.gguf"}),
 			WithLoadMode(LoadModeMMapMLock),

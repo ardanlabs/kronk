@@ -2,7 +2,7 @@
 # per line, backend `kronk` or `bucky`; blank lines and `#` comments ignored.
 #
 # tier is `base` when omitted: every runner pulls it, fork PRs included, so
-# the base set stays at ~6.6 GiB — what an ubuntu-latest runner can hold.
+# the base set stays at ~7.4 GiB — what an ubuntu-latest runner can hold.
 # `gpu` is pulled only by gpu.yml's self-hosted legs, which have the disk and
 # keep it between jobs. Anything a hosted runner could not hold goes there.
 
@@ -12,6 +12,7 @@ kronk unsloth/Qwen3-0.6B-Q8_0
 kronk mradermacher/Qwopus3.5-4B-Coder.Q4_K_M
 kronk nomic-ai/nomic-embed-text-v1.5.Q8_0
 kronk gpustack/bge-reranker-v2-m3-Q8_0
+kronk chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0
 bucky ggml-tiny.bin
 
 # The two speculative-decoding MTP targets, the only GPU coverage of that path

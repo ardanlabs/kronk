@@ -121,6 +121,10 @@ func FromSDK(err error) *Error {
 		code = InvalidArgument
 	case errors.Is(err, model.ErrInvalidRequest):
 		code = InvalidArgument
+	case errors.Is(err, model.ErrDecisionRequest):
+		code = InvalidArgument
+	case errors.Is(err, model.ErrDecisionBudget):
+		code = InvalidArgument
 	case errors.Is(err, malinamodel.ErrInvalidRequest):
 		code = InvalidArgument
 	case errors.Is(err, llamamodels.ErrInvalidModelID):

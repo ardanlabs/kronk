@@ -85,7 +85,7 @@ func (a *app) showCatalog(ctx context.Context, r *http.Request) web.Encoder {
 	detail.ParameterCount = models.ParameterCount(metadata)
 	detail.Parameters = models.ParametersLabel(metadata)
 	detail.Template = models.TemplateName(metadata)
-	detail.Capabilities = models.CapabilitiesFor(metadata, entry.MMProj != "")
+	detail.Capabilities = models.CapabilitiesForModel(metadata, entry.MMProj != "", id)
 
 	// Compute the initial VRAM estimate from the same head bytes so
 	// the detail screen renders the calculator without a second
@@ -232,8 +232,9 @@ func (a *app) resolveCatalog(ctx context.Context, r *http.Request) web.Encoder {
 }
 
 // reconcileCatalog runs ReconcileCatalog. Entries missing model type or
-// capability metadata are enriched. The BUI Catalog Refresh button hits this
-// without requiring users to also click Models → Rebuild Index.
+// capability metadata are enriched, and stale Decision capabilities are
+// corrected. The BUI Catalog Refresh button hits this without requiring users
+// to also click Models → Rebuild Index.
 func (a *app) reconcileCatalog(ctx context.Context, r *http.Request) web.Encoder {
 	if err := a.models.ReconcileCatalog(ctx, a.log.Info); err != nil {
 		return errs.Errorf(errs.Internal, "reconcile catalog: %s", err)

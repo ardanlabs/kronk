@@ -31,8 +31,26 @@ func TestCapabilitiesForSpecializedQwenModels(t *testing.T) {
 	tests := []struct {
 		name     string
 		metadata map[string]string
+		modelID  string
 		want     CatalogCapabilities
 	}{
+		{
+			name: "OpenJEV filename",
+			metadata: map[string]string{
+				"general.architecture": "qwen35",
+				"general.name":         "Snapshot_Cfg",
+			},
+			modelID: "openjev/OpenJev-Q4_K_M",
+			want:    CatalogCapabilities{Endpoint: "decision", Decision: true},
+		},
+		{
+			name: "Jev-Style metadata",
+			metadata: map[string]string{
+				"general.architecture": "qwen35",
+				"general.name":         "Jev-Style-0.8B-Decision-v3",
+			},
+			want: CatalogCapabilities{Endpoint: "decision", Decision: true},
+		},
 		{
 			name: "Qwen3 embedding basename",
 			metadata: map[string]string{
@@ -74,9 +92,9 @@ func TestCapabilitiesForSpecializedQwenModels(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := CapabilitiesFor(tt.metadata, false)
+			got := CapabilitiesForModel(tt.metadata, false, tt.modelID)
 			if got != tt.want {
-				t.Errorf("CapabilitiesFor: got %+v, want %+v", got, tt.want)
+				t.Errorf("CapabilitiesForModel: got %+v, want %+v", got, tt.want)
 			}
 		})
 	}
@@ -104,16 +122,20 @@ func TestEmbeddedCatalogCapabilities(t *testing.T) {
 
 		switch entry.Capabilities.Endpoint {
 		case "chat_completion":
-			if entry.Capabilities.Embedding || entry.Capabilities.Rerank || !entry.Capabilities.Streaming {
+			if entry.Capabilities.Embedding || entry.Capabilities.Rerank || entry.Capabilities.Decision || !entry.Capabilities.Streaming {
 				t.Errorf("model %q has inconsistent chat capabilities: %+v", id, entry.Capabilities)
 			}
 		case "embeddings":
-			if !entry.Capabilities.Embedding || entry.Capabilities.Rerank || entry.Capabilities.Streaming {
+			if !entry.Capabilities.Embedding || entry.Capabilities.Rerank || entry.Capabilities.Decision || entry.Capabilities.Streaming {
 				t.Errorf("model %q has inconsistent embedding capabilities: %+v", id, entry.Capabilities)
 			}
 		case "rerank":
-			if entry.Capabilities.Embedding || !entry.Capabilities.Rerank || entry.Capabilities.Streaming {
+			if entry.Capabilities.Embedding || !entry.Capabilities.Rerank || entry.Capabilities.Decision || entry.Capabilities.Streaming {
 				t.Errorf("model %q has inconsistent rerank capabilities: %+v", id, entry.Capabilities)
+			}
+		case "decision":
+			if entry.Capabilities.Embedding || entry.Capabilities.Rerank || !entry.Capabilities.Decision || entry.Capabilities.Streaming {
+				t.Errorf("model %q has inconsistent decision capabilities: %+v", id, entry.Capabilities)
 			}
 		default:
 			t.Errorf("model %q has unknown endpoint %q", id, entry.Capabilities.Endpoint)
@@ -124,8 +146,10 @@ func TestEmbeddedCatalogCapabilities(t *testing.T) {
 		t.Error("legacy EmbeddingGemma model remains in the embedded catalog")
 	}
 	wantEndpoints := map[string]string{
-		"nomic-ai/nomic-embed-text-v1.5.Q8_0": "embeddings",
-		"gpustack/bge-reranker-v2-m3-Q8_0":    "rerank",
+		"nomic-ai/nomic-embed-text-v1.5.Q8_0":           "embeddings",
+		"gpustack/bge-reranker-v2-m3-Q8_0":              "rerank",
+		"openjev/OpenJev-Q4_K_M":                        "decision",
+		"chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0": "decision",
 	}
 	for id, wantEndpoint := range wantEndpoints {
 		entry, exists := catalog.Models[id]

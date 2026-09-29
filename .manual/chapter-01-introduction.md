@@ -51,6 +51,8 @@ Standalone SDK examples are available in the
   [Chapter 18: Bucky](https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription).
 - **Embeddings and reranking** — vector generation and document relevance
   scoring for search and retrieval systems.
+- **Structured decisions** — evaluate choice, score, and calibrated yes/no
+  questions against shared application state with supported decision models.
 
 **Performance**
 

@@ -11,7 +11,7 @@ Kronk is a Go SDK and model server for hardware-accelerated local inference. It
 provides high-level Go APIs over native inference engines without requiring Python or
 a separate model-serving stack:
 
-- **Kronk** runs text, vision, embedding, and reranking models through
+- **Kronk** runs text, vision, embedding, reranking, and decision models through
   [llama.cpp](https://github.com/ggml-org/llama.cpp) and
   [yzma](https://github.com/hybridgroup/yzma).
 - **Bucky** provides speech-to-text through
@@ -22,10 +22,11 @@ a separate model-serving stack:
   [malina](https://github.com/ardanlabs/malina).
 
 The Kronk model server exposes OpenAI-compatible APIs for Chat Completions,
-Responses, embeddings, reranking, and audio transcription, plus an
-Anthropic-compatible Messages API. It also includes a browser interface, model
-management, security, observability, and integrations with OpenWebUI, OpenCode, and
-Claude Code. Malina is currently SDK-only and is not integrated into the model server.
+Responses, embeddings, reranking, and audio transcription, an Anthropic-compatible
+Messages API, and Decision endpoints at `/v1/systemone` and `/v1/decide`. It also
+includes a browser interface, model management, security, observability, and
+integrations with OpenWebUI, OpenCode, and Claude Code. Malina is currently SDK-only
+and is not integrated into the model server.
 
 Visit [kronkai.com](https://kronkai.com) or read the
 [manual](https://www.kronkai.com/manual) for complete documentation.
@@ -70,12 +71,12 @@ The model server is built on the same public SDKs available to Go applications.
 | Application-specific caching and concurrency   | Authentication, rate limiting, metrics, and tracing |
 
 The Kronk SDK supports text generation, streaming, reasoning, tool calls, vision,
-embeddings, reranking, concurrent processing, and incremental message caching. Bucky
-supports file transcription, translation, channel-separated diarization, and live
-streaming transcription. Experimental Malina supports text-to-image, image-to-image,
-Canny ControlNet conditioning, ADetailer face refinement, AnimateDiff video generation,
-Real-ESRGAN upscaling, single-checkpoint and multi-file diffusion pipelines, and
-Motion-JPEG encoding.
+embeddings, reranking, typed Decision questions, concurrent processing, and incremental
+message caching. Bucky supports file transcription, translation, channel-separated
+diarization, and live streaming transcription. Experimental Malina supports
+text-to-image, image-to-image, Canny ControlNet conditioning, ADetailer face refinement,
+AnimateDiff video generation, Real-ESRGAN upscaling, single-checkpoint and multi-file
+diffusion pipelines, and Motion-JPEG encoding.
 
 ## Platform Support
 
@@ -145,6 +146,8 @@ Representative examples:
 make example-question         # Ask a local language model a question.
 make example-agent            # Run a small coding agent.
 make example-vision           # Prompt a vision model with an image.
+make example-decision-jevstyle # Evaluate typed questions with Jev-Style.
+make example-decision-openjev  # Evaluate typed questions with OpenJEV.
 make example-bucky            # Transcribe an audio file with Bucky.
 make example-bucky-stream-vad # Stream transcription with Silero VAD boundaries.
 make example-malina           # Generate an image with experimental Malina.
@@ -157,7 +160,7 @@ make example-malina-upscale    # Enlarge an image with Real-ESRGAN.
 
 Examples download compatible libraries and catalog-backed models on their first run;
 Wan2.2 S2V takes explicit component paths. Browse the [complete examples module](examples/)
-for chat, Responses, embeddings, reranking, RAG, streaming transcription,
+for chat, Responses, embeddings, reranking, Decision, RAG, streaming transcription,
 image-to-image generation, ControlNet, ADetailer, AnimateDiff, Wan2.2 S2V, image
 upscaling, model pools, session stores, and lower-level yzma usage.
 

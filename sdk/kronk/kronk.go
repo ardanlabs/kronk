@@ -83,6 +83,9 @@ func NewWithContext(ctx context.Context, opts ...model.Option) (*Kronk, error) {
 	case mi.IsEmbedModel || mi.IsRerankModel:
 		semCapacity = embedOrRerankAdmissionCapacity(adjustedCfg)
 
+	case mi.IsDecisionModel:
+		semCapacity = decisionAdmissionCapacity(adjustedCfg)
+
 	default:
 		semCapacity = generationAdmissionCapacity(adjustedCfg)
 	}
@@ -101,6 +104,10 @@ func NewWithContext(ctx context.Context, opts ...model.Option) (*Kronk, error) {
 
 func embedOrRerankAdmissionCapacity(cfg model.Config) int {
 	return max(cfg.NSeqMax(), 1)
+}
+
+func decisionAdmissionCapacity(cfg model.Config) int {
+	return max(cfg.NSeqMax(), 1) * cfg.QueueDepth()
 }
 
 func generationAdmissionCapacity(cfg model.Config) int {

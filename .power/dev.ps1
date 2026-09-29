@@ -148,6 +148,9 @@ function Invoke-GhTestsOnly {
                 go test -v -count=1 -timeout 6m -run '^TestSuite$' ./sdk/kronk/tests/rerank
                 Assert-NativeCommandSucceeded -Command "go test rerank"
 
+                go test -v -count=1 -timeout 6m -run '^TestSuite$' ./sdk/kronk/tests/decision
+                Assert-NativeCommandSucceeded -Command "go test decision"
+
                 go test -v -count=1 -timeout 20m ./sdk/kronk/tests/hybrid
                 Assert-NativeCommandSucceeded -Command "go test hybrid"
 

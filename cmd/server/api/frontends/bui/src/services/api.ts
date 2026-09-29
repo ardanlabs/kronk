@@ -51,6 +51,8 @@ import type {
   AccuracyFunctionsResponse,
   AccuracyResponse,
   EfficiencyResponse,
+  DecisionRequest,
+  DecisionResponse,
 } from '../types';
 
 export const SESSION_EXPIRED_EVENT = 'kronk:session-expired';
@@ -1203,6 +1205,13 @@ class ApiService {
 
   async generateImage(request: ImageGenerationRequest): Promise<ImageGenerationResponse> {
     return this.request<ImageGenerationResponse>('/images/generations', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async decide(request: DecisionRequest): Promise<DecisionResponse> {
+    return this.request<DecisionResponse>('/decide', {
       method: 'POST',
       body: JSON.stringify(request),
     });

@@ -5,6 +5,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/audioapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/chatapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/checkapp"
+	"github.com/ardanlabs/kronk/cmd/server/app/domain/decisionapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/downapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/embedapp"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/imageapp"
@@ -50,6 +51,14 @@ func (all) Add(app *web.App, cfg mux.Config) {
 	})
 
 	chatapp.Routes(app, chatapp.Config{
+		Log:               cfg.Log,
+		AuthClient:        cfg.AuthClient,
+		Pool:              cfg.Pool,
+		AuthorizationMode: cfg.AuthorizationMode,
+		InferenceTimeout:  cfg.InferenceTimeout,
+	})
+
+	decisionapp.Routes(app, decisionapp.Config{
 		Log:               cfg.Log,
 		AuthClient:        cfg.AuthClient,
 		Pool:              cfg.Pool,

@@ -340,6 +340,22 @@ export default function DocsSDKKronk() {
               <p className="doc-description">ChatStreamingHTTP provides http handler support for a chat/completions call. For text models, NSeqMax controls parallel sequence processing within a single model instance. For vision/audio models, NSeqMax creates multiple model instances in a pool for concurrent request handling.</p>
             </div>
 
+            <div className="doc-section" id="method-kronk-decision">
+              <h4>Kronk.Decision</h4>
+              <pre className="code-block">
+                <code>func (krn *Kronk) Decision(ctx context.Context, req model.DecisionRequest) (model.DecisionResponse, error)</code>
+              </pre>
+              <p className="doc-description">Decision evaluates typed questions against shared state using a supported decision model.</p>
+            </div>
+
+            <div className="doc-section" id="method-kronk-decisionhttp">
+              <h4>Kronk.DecisionHTTP</h4>
+              <pre className="code-block">
+                <code>func (krn *Kronk) DecisionHTTP(ctx context.Context, log Logger, w http.ResponseWriter, req model.DecisionRequest) (model.DecisionResponse, error)</code>
+              </pre>
+              <p className="doc-description">DecisionHTTP provides HTTP handler support for a decision call.</p>
+            </div>
+
             <div className="doc-section" id="method-kronk-embeddings">
               <h4>Kronk.Embeddings</h4>
               <pre className="code-block">
@@ -577,6 +593,8 @@ export default function DocsSDKKronk() {
                 <li><a href="#method-kronk-chat">Kronk.Chat</a></li>
                 <li><a href="#method-kronk-chatstreaming">Kronk.ChatStreaming</a></li>
                 <li><a href="#method-kronk-chatstreaminghttp">Kronk.ChatStreamingHTTP</a></li>
+                <li><a href="#method-kronk-decision">Kronk.Decision</a></li>
+                <li><a href="#method-kronk-decisionhttp">Kronk.DecisionHTTP</a></li>
                 <li><a href="#method-kronk-embeddings">Kronk.Embeddings</a></li>
                 <li><a href="#method-kronk-embeddingshttp">Kronk.EmbeddingsHTTP</a></li>
                 <li><a href="#method-kronk-imcsessions">Kronk.IMCSessions</a></li>

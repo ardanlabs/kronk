@@ -25,6 +25,12 @@ example-chat:
 example-concurrency:
 	cd examples && go run ./concurrency/main.go
 
+example-decision-jevstyle:
+	cd examples && go run ./decision/jevstyle/main.go
+
+example-decision-openjev:
+	cd examples && go run ./decision/openjev/main.go
+
 example-embedding:
 	cd examples && go run ./embedding/main.go
 
@@ -104,6 +110,9 @@ example-yzma-step7:
 
 example-yzma-step8:
 	cd examples && go run ./yzma/step8/main.go
+
+example-yzma-step9:
+	cd examples && go run ./yzma/step9/main.go
 
 example-yzma-parallel-curl1:
 	curl -X POST http://localhost:8090/v1/completions \

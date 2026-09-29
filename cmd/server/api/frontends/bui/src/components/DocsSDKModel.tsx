@@ -121,6 +121,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">VerifyArtifact checks modelFile against parsed integrity values. It reads the artifact itself but performs no sidecar I/O. The returned bool reports whether a new verification was produced and should be persisted by the caller.</p>
             </div>
 
+            <div className="doc-section" id="func-parsedecisionprotocol">
+              <h4>ParseDecisionProtocol</h4>
+              <pre className="code-block">
+                <code>func ParseDecisionProtocol(value string) (DecisionProtocol, error)</code>
+              </pre>
+              <p className="doc-description">ParseDecisionProtocol parses value and returns the corresponding DecisionProtocol when it exists.</p>
+            </div>
+
             <div className="doc-section" id="func-parseggmltype">
               <h4>ParseGGMLType</h4>
               <pre className="code-block">
@@ -366,6 +374,7 @@ export default function DocsSDKModel() {
 	CacheTypeV                 GGMLType
 	PtrContextWindow           *int
 	DefaultParams              Params
+	DecisionProtocol           DecisionProtocol
 	ChatTemplateKwargs         D
 	PtrDraftModel              *DraftModelConfig
 	Devices                    []string // Device names for model execution (e.g., ["CUDA0", "CUDA1"])
@@ -424,6 +433,7 @@ export default function DocsSDKModel() {
               <p className="doc-description">CacheTypeV is the data type for the V (value) cache. This controls the precision of the value vectors in the KV cache. When left as the zero value (GGMLTypeAuto), the default llama.cpp value is used.</p>
               <p className="doc-description">ContextWindow (often referred to as context length) is the maximum number of tokens that a large language model can process and consider at one time when generating a response. It defines the model's effective "memory" for a single conversation or text generation task. When set to 0, the default value is 4096.</p>
               <p className="doc-description">DefaultParams contains the default sampling parameters for requests.</p>
+              <p className="doc-description">DecisionProtocol optionally overrides automatic decision-protocol detection. It is useful when a decision model has been renamed and its GGUF metadata does not identify the protocol.</p>
               <p className="doc-description">ChatTemplateKwargs contains model-level defaults passed only to the Jinja chat template. Request-level chat_template_kwargs override matching keys. Resolved first-class request parameters remain top-level template values.</p>
               <p className="doc-description">PtrDraftModel configures a separate speculative-decoding draft model or an nDraft override for an auto-detected MTP head.</p>
               <p className="doc-description">Devices is a list of device names to use for model execution. When multiple devices are specified, the model is distributed across them according to the SplitMode and TensorSplit configuration. Device names can be obtained from the output of llama-bench --list-devices (e.g., "CUDA0", "CUDA1", "Metal"). When empty, the default device selection is used.</p>
@@ -439,7 +449,7 @@ export default function DocsSDKModel() {
               <p className="doc-description">ModelFiles is the path to the model files. This is mandatory to provide.</p>
               <p className="doc-description">PrefillBatchSize is the maximum number of prompt tokens one prefill owner can contribute to a decode iteration. The default is 2048. Larger values can reduce the number of decode calls needed to reach generation, but each call takes longer before already-generating slots can run again and requires larger compute buffers. Kronk derives llama.cpp's logical and physical batch capacities from this value, the configured slot count, and the generation mode. Multimodal models may require a complete media-token chunk to fit in this capacity.</p>
               <p className="doc-description">NGpuLayers is the number of model layers to offload to the GPU. When set to 0, all layers are offloaded (default). Set to -1 to keep all layers on CPU. Any positive value specifies the exact number of layers to offload.</p>
-              <p className="doc-description">NSeqMax controls concurrency behavior based on model type. For text inference models (including vision/audio), it sets the maximum number of generation slots. For supported embedding and reranking architectures, it sets the maximum sequence width of the sequence-batch engine. Other embedding and reranking architectures use it as the context-pool size. When set to 0, a default of 1 is used.</p>
+              <p className="doc-description">NSeqMax controls concurrency behavior based on model type. For text inference models (including vision/audio), it sets the maximum number of generation slots. For supported embedding and reranking architectures, it sets the maximum sequence width of the sequence-batch engine. Other embedding and reranking architectures use it as the context-pool size. For decision models, it sets the maximum number of work items evaluated together on one context. When set to 0, a default of 1 is used.</p>
               <p className="doc-description">NThreads is the number of threads to use for generation. When unset or set to 0, it defaults to the greater of 4 and runtime.NumCPU().</p>
               <p className="doc-description">NThreadsBatch is the number of threads to use for batch processing. When unset or set to 0, it defaults to the greater of 4 and runtime.NumCPU().</p>
               <p className="doc-description">NUMA controls the NUMA (Non-Uniform Memory Access) strategy. This matters most when expert tensors are on CPU and the system has multiple NUMA nodes. Valid values: "" (disabled), "distribute", "isolate", "numactl", "mirror". "distribute" is recommended for multi-socket MoE setups; without it, cross-socket memory access can cause significant bandwidth collapse.</p>
@@ -450,7 +460,7 @@ export default function DocsSDKModel() {
               <p className="doc-description">MTPDrafterFile is the path to a separate-file MTP drafter GGUF that ships alongside the main model. Supported files are Gemma assistant heads that share target KV and Qwen35 heads that own their draft KV. It is not the main model or a vocab-matched classic draft model. The catalog wires this field when it downloads a compatible companion from the model repository.</p>
               <p className="doc-description">ProjOnCPU forces the multimodal projector (mmproj) to run on the CPU. When nil or false, the projector runs on whichever device llama.cpp picks by default (GPU when available). Set to true to keep the projector on the CPU — equivalent to llama-mtmd-cli's --no-mmproj-offload. The LLM itself is unaffected and still runs on whatever device WithNGpuLayers selects.</p>
               <p className="doc-description">ProjDevice names the backend device used by the multimodal projector (mmproj), such as "CUDA1" or "MTL0". When empty, llama.cpp selects the projector device automatically. It cannot be combined with ProjOnCPU=true. The LLM device selection is unaffected.</p>
-              <p className="doc-description">QueueDepth sets the number of admitted request layers for generation models. The admission capacity is NSeqMax * QueueDepth. A depth of 1 admits only the requests that can occupy execution slots; the default depth of 2 admits one additional waiting layer. QueueDepth also determines the default IMC session capacity. It only applies to text inference models.</p>
+              <p className="doc-description">QueueDepth sets the number of admitted request layers for generation and decision models. The admission capacity is NSeqMax * QueueDepth. A depth of 1 admits only the requests that can occupy execution slots; the default depth of 2 admits one additional waiting layer. QueueDepth also determines the default IMC session capacity for text inference models.</p>
               <p className="doc-description">RopeFreqBase overrides the RoPE base frequency. When nil, uses model default. Common values: 10000 (Llama), 1000000 (Qwen3).</p>
               <p className="doc-description">RopeFreqScale overrides the raw RoPE frequency multiplier. When nil, uses the value from model metadata. Kronk does not derive this value from ContextWindow; an N-times extension generally uses 1/N when the model's documentation requires explicit scaling.</p>
               <p className="doc-description">RecordArtifactVerification persists updated verification state after Kronk verifies a model artifact. When nil, verification state is not persisted.</p>
@@ -487,6 +497,130 @@ export default function DocsSDKModel() {
                 <code>{`type D map[string]any`}</code>
               </pre>
               <p className="doc-description">D represents a generic docment of fields and values.</p>
+            </div>
+
+            <div className="doc-section" id="type-decisionanswer">
+              <h4>DecisionAnswer</h4>
+              <pre className="code-block">
+                <code>{`type DecisionAnswer struct {
+	Type          DecisionQuestionType \`json:"type"\`
+	Choice        string               \`json:"choice,omitempty"\`
+	Score         float64              \`json:"score,omitempty"\`
+	Noul          float64              \`json:"noul,omitempty"\`
+	Probabilities map[string]float64   \`json:"probabilities,omitempty"\`
+	Legend        map[string]any       \`json:"legend,omitempty"\`
+	Confidence    float64              \`json:"confidence,omitempty"\`
+}`}</code>
+              </pre>
+              <p className="doc-description">DecisionAnswer contains the typed answer to one decision question. Choice is populated for Choice, Score and Legend for Score, Noul for Noul, and Probabilities and Confidence for Choice and Score.</p>
+            </div>
+
+            <div className="doc-section" id="type-decisionnoulcriteria">
+              <h4>DecisionNoulCriteria</h4>
+              <pre className="code-block">
+                <code>{`type DecisionNoulCriteria struct {
+	False any
+	True  any
+}`}</code>
+              </pre>
+              <p className="doc-description">DecisionNoulCriteria optionally describes the false and true boundaries of a Noul question.</p>
+            </div>
+
+            <div className="doc-section" id="type-decisionoption">
+              <h4>DecisionOption</h4>
+              <pre className="code-block">
+                <code>{`type DecisionOption struct {
+	Name        string
+	Description any
+}`}</code>
+              </pre>
+              <p className="doc-description">DecisionOption is one ordered choice option.</p>
+            </div>
+
+            <div className="doc-section" id="type-decisionprotocol">
+              <h4>DecisionProtocol</h4>
+              <pre className="code-block">
+                <code>{`type DecisionProtocol struct {
+	// Has unexported fields.
+}`}</code>
+              </pre>
+              <p className="doc-description">DecisionProtocol identifies the prompt and readout protocol used by a decision model.</p>
+            </div>
+
+            <div className="doc-section" id="type-decisionquestion">
+              <h4>DecisionQuestion</h4>
+              <pre className="code-block">
+                <code>{`type DecisionQuestion struct {
+	ID           string
+	Type         DecisionQuestionType
+	Instructions any
+	Options      []DecisionOption
+	Levels       []any
+	NoulCriteria *DecisionNoulCriteria
+}`}</code>
+              </pre>
+              <p className="doc-description">DecisionQuestion is one named, typed question. Construct values with DecisionQuestionChoice, DecisionQuestionScore, and DecisionQuestionNoul so criteria remain ordered.</p>
+            </div>
+
+            <div className="doc-section" id="type-decisionquestiontype">
+              <h4>DecisionQuestionType</h4>
+              <pre className="code-block">
+                <code>{`type DecisionQuestionType string`}</code>
+              </pre>
+              <p className="doc-description">DecisionQuestionType identifies the answer shape expected for a question.</p>
+            </div>
+
+            <div className="doc-section" id="type-decisionrequest">
+              <h4>DecisionRequest</h4>
+              <pre className="code-block">
+                <code>{`type DecisionRequest struct {
+	State     any
+	Questions []DecisionQuestion
+}`}</code>
+              </pre>
+              <p className="doc-description">DecisionRequest evaluates ordered questions independently against one shared state.</p>
+            </div>
+
+            <div className="doc-section" id="type-decisionresponse">
+              <h4>DecisionResponse</h4>
+              <pre className="code-block">
+                <code>{`type DecisionResponse struct {
+	Model   string                    \`json:"model"\`
+	Answers map[string]DecisionAnswer \`json:"answers"\`
+	Usage   DecisionUsage             \`json:"usage"\`
+}`}</code>
+              </pre>
+              <p className="doc-description">DecisionResponse contains answers keyed by the caller's question IDs.</p>
+            </div>
+
+            <div className="doc-section" id="type-decisionstatefield">
+              <h4>DecisionStateField</h4>
+              <pre className="code-block">
+                <code>{`type DecisionStateField struct {
+	Name  string
+	Value any
+}`}</code>
+              </pre>
+              <p className="doc-description">DecisionStateField is one ordered field in a DecisionStateValue.</p>
+            </div>
+
+            <div className="doc-section" id="type-decisionstatevalue">
+              <h4>DecisionStateValue</h4>
+              <pre className="code-block">
+                <code>{`type DecisionStateValue []DecisionStateField`}</code>
+              </pre>
+              <p className="doc-description">DecisionStateValue represents a JSON object whose field order must be retained. Use this for structured state, instructions, or criteria when prompt byte compatibility matters. Plain Go maps are accepted but have sorted keys.</p>
+            </div>
+
+            <div className="doc-section" id="type-decisionusage">
+              <h4>DecisionUsage</h4>
+              <pre className="code-block">
+                <code>{`type DecisionUsage struct {
+	InputTokens  int \`json:"input_tokens"\`
+	OutputTokens int \`json:"output_tokens"\`
+}`}</code>
+              </pre>
+              <p className="doc-description">DecisionUsage contains model token usage. Decision readouts do not generate output tokens, so OutputTokens is zero.</p>
             </div>
 
             <div className="doc-section" id="type-draftmodelconfig">
@@ -693,20 +827,22 @@ export default function DocsSDKModel() {
               <h4>ModelInfo</h4>
               <pre className="code-block">
                 <code>{`type ModelInfo struct {
-	ID            string
-	HasProjection bool
-	Desc          string
-	Size          uint64
-	FileType      int32
-	Quantization  string
-	VRAMTotal     int64
-	SlotMemory    int64
-	NSWA          int32 // Effective SWA window in tokens; zero means the model does not use SWA.
-	Type          ModelType
-	IsEmbedModel  bool
-	IsRerankModel bool
-	Metadata      map[string]string
-	Template      Template
+	ID              string
+	HasProjection   bool
+	Desc            string
+	Size            uint64
+	FileType        int32
+	Quantization    string
+	VRAMTotal       int64
+	SlotMemory      int64
+	NSWA            int32 // Effective SWA window in tokens; zero means the model does not use SWA.
+	Type            ModelType
+	IsEmbedModel    bool
+	IsRerankModel   bool
+	IsDecisionModel bool
+	Metadata        map[string]string
+	Template        Template
+
 	// Has unexported fields.
 }`}</code>
               </pre>
@@ -1455,6 +1591,62 @@ export default function DocsSDKModel() {
               <p className="doc-description">String returns a string representation of the document containing only fields that are safe to log. This excludes sensitive fields like messages and input which may contain private user data.</p>
             </div>
 
+            <div className="doc-section" id="method-decisionanswer-marshaljson">
+              <h4>DecisionAnswer.MarshalJSON</h4>
+              <pre className="code-block">
+                <code>func (a DecisionAnswer) MarshalJSON() ([]byte, error)</code>
+              </pre>
+              <p className="doc-description">MarshalJSON emits the type-specific HTTP answer shape, including meaningful zero values and excluding fields owned by other question types.</p>
+            </div>
+
+            <div className="doc-section" id="method-decisionprotocol-equal">
+              <h4>DecisionProtocol.Equal</h4>
+              <pre className="code-block">
+                <code>func (dp DecisionProtocol) Equal(dp2 DecisionProtocol) bool</code>
+              </pre>
+              <p className="doc-description">Equal provides support for the go-cmp package and testing.</p>
+            </div>
+
+            <div className="doc-section" id="method-decisionprotocol-iszero">
+              <h4>DecisionProtocol.IsZero</h4>
+              <pre className="code-block">
+                <code>func (dp DecisionProtocol) IsZero() bool</code>
+              </pre>
+              <p className="doc-description">IsZero reports whether the decision protocol is unset.</p>
+            </div>
+
+            <div className="doc-section" id="method-decisionprotocol-marshaltext">
+              <h4>DecisionProtocol.MarshalText</h4>
+              <pre className="code-block">
+                <code>func (dp DecisionProtocol) MarshalText() ([]byte, error)</code>
+              </pre>
+              <p className="doc-description">MarshalText provides support for logging and serialization.</p>
+            </div>
+
+            <div className="doc-section" id="method-decisionprotocol-string">
+              <h4>DecisionProtocol.String</h4>
+              <pre className="code-block">
+                <code>func (dp DecisionProtocol) String() string</code>
+              </pre>
+              <p className="doc-description">String returns the name of the decision protocol.</p>
+            </div>
+
+            <div className="doc-section" id="method-decisionprotocol-unmarshaltext">
+              <h4>DecisionProtocol.UnmarshalText</h4>
+              <pre className="code-block">
+                <code>func (dp *DecisionProtocol) UnmarshalText(data []byte) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalText parses serialized text into a known DecisionProtocol.</p>
+            </div>
+
+            <div className="doc-section" id="method-decisionstatevalue-marshaljson">
+              <h4>DecisionStateValue.MarshalJSON</h4>
+              <pre className="code-block">
+                <code>func (o DecisionStateValue) MarshalJSON() ([]byte, error)</code>
+              </pre>
+              <p className="doc-description">MarshalJSON preserves the field order of a DecisionStateValue.</p>
+            </div>
+
             <div className="doc-section" id="method-draftmodelconfig-isseparate">
               <h4>DraftModelConfig.IsSeparate</h4>
               <pre className="code-block">
@@ -1681,6 +1873,14 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func (m *Model) Config() Config</code>
               </pre>
+            </div>
+
+            <div className="doc-section" id="method-model-decision">
+              <h4>Model.Decision</h4>
+              <pre className="code-block">
+                <code>func (m *Model) Decision(ctx context.Context, req DecisionRequest) (DecisionResponse, error)</code>
+              </pre>
+              <p className="doc-description">Decision evaluates a set of decision questions against shared state.</p>
             </div>
 
             <div className="doc-section" id="method-model-embeddings">
@@ -2140,6 +2340,43 @@ export default function DocsSDKModel() {
           <div className="card" id="variables">
             <h3>Variables</h3>
 
+            <div className="doc-section" id="var-variable">
+              <h4>Variable</h4>
+              <pre className="code-block">
+                <code>{`var (`}</code>
+              </pre>
+              <p className="doc-description">// DecisionProtocolOpenJEV identifies the OpenJEV letter-readout protocol. DecisionProtocolOpenJEV = newDecisionProtocol("openjev")</p>
+              <p className="doc-description">// DecisionProtocolJevStyle identifies the macjev-render-v1 protocol. DecisionProtocolJevStyle = newDecisionProtocol("jev-style")</p>
+            </div>
+
+            <div className="doc-section" id="var-variable">
+              <h4>Variable</h4>
+              <pre className="code-block">
+                <code>{`var (`}</code>
+              </pre>
+              <p className="doc-description">// MoEModeAuto uses catalog defaults. MoEModeAuto = newMoEMode("auto")</p>
+              <p className="doc-description">// MoEModeExpertsCPU places all routed expert tensors on CPU. // Recommended for VRAM-constrained setups. MoEModeExpertsCPU = newMoEMode("experts_cpu")</p>
+              <p className="doc-description">// MoEModeExpertsGPU keeps all expert tensors on GPU. // Requires sufficient VRAM for the full model. MoEModeExpertsGPU = newMoEMode("experts_gpu")</p>
+              <p className="doc-description">// MoEModeKeepTopN keeps routed experts on GPU for the top N layers. // All other expert layers go to CPU. MoEModeKeepTopN = newMoEMode("keep_top_n")</p>
+              <p className="doc-description">// MoEModeCustom defers to TensorBuftOverrides for expert placement. MoEModeCustom = newMoEMode("custom")</p>
+            </div>
+
+            <div className="doc-section" id="var-errdecisionbudget">
+              <h4>ErrDecisionBudget</h4>
+              <pre className="code-block">
+                <code>{`var ErrDecisionBudget = errors.New("decision input exceeds token budget")`}</code>
+              </pre>
+              <p className="doc-description">ErrDecisionBudget indicates that a rendered decision input exceeds the protocol's token budget. Inputs are never truncated.</p>
+            </div>
+
+            <div className="doc-section" id="var-errdecisionrequest">
+              <h4>ErrDecisionRequest</h4>
+              <pre className="code-block">
+                <code>{`var ErrDecisionRequest = errors.New("invalid decision request")`}</code>
+              </pre>
+              <p className="doc-description">ErrDecisionRequest indicates that a decision request is invalid.</p>
+            </div>
+
             <div className="doc-section" id="var-errfileinputsunsupported">
               <h4>ErrFileInputsUnsupported</h4>
               <pre className="code-block">
@@ -2171,46 +2408,6 @@ export default function DocsSDKModel() {
               </pre>
               <p className="doc-description">ErrMessagesMissing indicates that a chat request has no messages field.</p>
             </div>
-
-            <div className="doc-section" id="var-moemodeauto">
-              <h4>MoEModeAuto</h4>
-              <pre className="code-block">
-                <code>{`var MoEModeAuto = newMoEMode("auto")`}</code>
-              </pre>
-              <p className="doc-description">MoEModeAuto uses catalog defaults.</p>
-            </div>
-
-            <div className="doc-section" id="var-moemodecustom">
-              <h4>MoEModeCustom</h4>
-              <pre className="code-block">
-                <code>{`var MoEModeCustom = newMoEMode("custom")`}</code>
-              </pre>
-              <p className="doc-description">MoEModeCustom defers to TensorBuftOverrides for expert placement.</p>
-            </div>
-
-            <div className="doc-section" id="var-moemodeexpertscpu">
-              <h4>MoEModeExpertsCPU</h4>
-              <pre className="code-block">
-                <code>{`var MoEModeExpertsCPU = newMoEMode("experts_cpu")`}</code>
-              </pre>
-              <p className="doc-description">MoEModeExpertsCPU places all routed expert tensors on CPU. Recommended for VRAM-constrained setups.</p>
-            </div>
-
-            <div className="doc-section" id="var-moemodeexpertsgpu">
-              <h4>MoEModeExpertsGPU</h4>
-              <pre className="code-block">
-                <code>{`var MoEModeExpertsGPU = newMoEMode("experts_gpu")`}</code>
-              </pre>
-              <p className="doc-description">MoEModeExpertsGPU keeps all expert tensors on GPU. Requires sufficient VRAM for the full model.</p>
-            </div>
-
-            <div className="doc-section" id="var-moemodekeeptopn">
-              <h4>MoEModeKeepTopN</h4>
-              <pre className="code-block">
-                <code>{`var MoEModeKeepTopN = newMoEMode("keep_top_n")`}</code>
-              </pre>
-              <p className="doc-description">MoEModeKeepTopN keeps routed experts on GPU for the top N layers. All other expert layers go to CPU.</p>
-            </div>
           </div>
         </div>
 
@@ -2229,6 +2426,7 @@ export default function DocsSDKModel() {
                 <li><a href="#func-validatemessages">ValidateMessages</a></li>
                 <li><a href="#func-newgrammarsampler">NewGrammarSampler</a></li>
                 <li><a href="#func-verifyartifact">VerifyArtifact</a></li>
+                <li><a href="#func-parsedecisionprotocol">ParseDecisionProtocol</a></li>
                 <li><a href="#func-parseggmltype">ParseGGMLType</a></li>
                 <li><a href="#func-parseloadmode">ParseLoadMode</a></li>
                 <li><a href="#func-parsemoemode">ParseMoEMode</a></li>
@@ -2256,6 +2454,17 @@ export default function DocsSDKModel() {
                 <li><a href="#type-config">Config</a></li>
                 <li><a href="#type-contentlogprob">ContentLogprob</a></li>
                 <li><a href="#type-d">D</a></li>
+                <li><a href="#type-decisionanswer">DecisionAnswer</a></li>
+                <li><a href="#type-decisionnoulcriteria">DecisionNoulCriteria</a></li>
+                <li><a href="#type-decisionoption">DecisionOption</a></li>
+                <li><a href="#type-decisionprotocol">DecisionProtocol</a></li>
+                <li><a href="#type-decisionquestion">DecisionQuestion</a></li>
+                <li><a href="#type-decisionquestiontype">DecisionQuestionType</a></li>
+                <li><a href="#type-decisionrequest">DecisionRequest</a></li>
+                <li><a href="#type-decisionresponse">DecisionResponse</a></li>
+                <li><a href="#type-decisionstatefield">DecisionStateField</a></li>
+                <li><a href="#type-decisionstatevalue">DecisionStateValue</a></li>
+                <li><a href="#type-decisionusage">DecisionUsage</a></li>
                 <li><a href="#type-draftmodelconfig">DraftModelConfig</a></li>
                 <li><a href="#type-embeddata">EmbedData</a></li>
                 <li><a href="#type-embedreponse">EmbedReponse</a></li>
@@ -2345,6 +2554,13 @@ export default function DocsSDKModel() {
                 <li><a href="#method-d-messages">D.Messages</a></li>
                 <li><a href="#method-d-shallowclone">D.ShallowClone</a></li>
                 <li><a href="#method-d-string">D.String</a></li>
+                <li><a href="#method-decisionanswer-marshaljson">DecisionAnswer.MarshalJSON</a></li>
+                <li><a href="#method-decisionprotocol-equal">DecisionProtocol.Equal</a></li>
+                <li><a href="#method-decisionprotocol-iszero">DecisionProtocol.IsZero</a></li>
+                <li><a href="#method-decisionprotocol-marshaltext">DecisionProtocol.MarshalText</a></li>
+                <li><a href="#method-decisionprotocol-string">DecisionProtocol.String</a></li>
+                <li><a href="#method-decisionprotocol-unmarshaltext">DecisionProtocol.UnmarshalText</a></li>
+                <li><a href="#method-decisionstatevalue-marshaljson">DecisionStateValue.MarshalJSON</a></li>
                 <li><a href="#method-draftmodelconfig-isseparate">DraftModelConfig.IsSeparate</a></li>
                 <li><a href="#method-draftmodelconfig-maingpu">DraftModelConfig.MainGPU</a></li>
                 <li><a href="#method-draftmodelconfig-ngpulayers">DraftModelConfig.NGpuLayers</a></li>
@@ -2375,6 +2591,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-model-chat">Model.Chat</a></li>
                 <li><a href="#method-model-chatstreaming">Model.ChatStreaming</a></li>
                 <li><a href="#method-model-config">Model.Config</a></li>
+                <li><a href="#method-model-decision">Model.Decision</a></li>
                 <li><a href="#method-model-embeddings">Model.Embeddings</a></li>
                 <li><a href="#method-model-imcsessions">Model.IMCSessions</a></li>
                 <li><a href="#method-model-imcsystemcaches">Model.IMCSystemCaches</a></li>
@@ -2423,15 +2640,14 @@ export default function DocsSDKModel() {
             <div className="doc-index-section">
               <a href="#variables" className="doc-index-header">Variables</a>
               <ul>
+                <li><a href="#var-variable">Variable</a></li>
+                <li><a href="#var-variable">Variable</a></li>
+                <li><a href="#var-errdecisionbudget">ErrDecisionBudget</a></li>
+                <li><a href="#var-errdecisionrequest">ErrDecisionRequest</a></li>
                 <li><a href="#var-errfileinputsunsupported">ErrFileInputsUnsupported</a></li>
                 <li><a href="#var-errinvalidrequest">ErrInvalidRequest</a></li>
                 <li><a href="#var-errmessagesinvalid">ErrMessagesInvalid</a></li>
                 <li><a href="#var-errmessagesmissing">ErrMessagesMissing</a></li>
-                <li><a href="#var-moemodeauto">MoEModeAuto</a></li>
-                <li><a href="#var-moemodecustom">MoEModeCustom</a></li>
-                <li><a href="#var-moemodeexpertscpu">MoEModeExpertsCPU</a></li>
-                <li><a href="#var-moemodeexpertsgpu">MoEModeExpertsGPU</a></li>
-                <li><a href="#var-moemodekeeptopn">MoEModeKeepTopN</a></li>
               </ul>
             </div>
           </div>

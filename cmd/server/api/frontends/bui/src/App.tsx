@@ -20,6 +20,7 @@ import SecurityKeyDelete from './components/SecurityKeyDelete';
 import SecurityTokenCreate from './components/SecurityTokenCreate';
 import Settings from './components/Settings';
 import Chat from './components/Chat';
+import Decision from './components/Decision';
 import Translator from './components/Translator';
 import ImageGenerator from './components/ImageGenerator';
 import DocsSDK from './components/DocsSDK';
@@ -46,6 +47,7 @@ import DocsAPIMessages from './components/DocsAPIMessages';
 import DocsAPIResponses from './components/DocsAPIResponses';
 import DocsAPIEmbeddings from './components/DocsAPIEmbeddings';
 import DocsAPIRerank from './components/DocsAPIRerank';
+import DocsAPIDecision from './components/DocsAPIDecision';
 import DocsAPITokenize from './components/DocsAPITokenize';
 import DocsAPITools from './components/DocsAPITools';
 import DocsManual from './components/DocsManual';
@@ -70,6 +72,7 @@ import { ThemeProvider } from './contexts/ThemeContext';
 export type Page =
   | 'home'
   | 'chat'
+  | 'decision'
   | 'vram-calculator'
   | 'accuracy'
   | 'efficiency'
@@ -120,6 +123,7 @@ export type Page =
   | 'docs-api-responses'
   | 'docs-api-embeddings'
   | 'docs-api-rerank'
+  | 'docs-api-decision'
   | 'docs-api-tokenize'
   | 'docs-api-tools'
   | 'docs-manual';
@@ -127,6 +131,7 @@ export type Page =
 export const routeMap: Record<Page, string> = {
   'home': '/',
   'chat': '/chat',
+  'decision': '/decision',
   'vram-calculator': '/vram-calculator',
   'accuracy': '/accuracy',
   'efficiency': '/efficiency',
@@ -177,6 +182,7 @@ export const routeMap: Record<Page, string> = {
   'docs-api-responses': '/docs/api/responses',
   'docs-api-embeddings': '/docs/api/embeddings',
   'docs-api-rerank': '/docs/api/rerank',
+  'docs-api-decision': '/docs/api/decision',
   'docs-api-tokenize': '/docs/api/tokenize',
   'docs-api-tools': '/docs/api/tools',
   'docs-manual': '/docs/manual',
@@ -280,6 +286,7 @@ function App() {
               <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/chat" element={<Chat />} />
+                <Route path="/decision" element={<Decision />} />
                 <Route path="/vram-calculator" element={<VRAMCalculator />} />
                 <Route path="/accuracy" element={<Accuracy />} />
                 <Route path="/efficiency" element={<Efficiency />} />
@@ -330,6 +337,7 @@ function App() {
                 <Route path="/docs/api/responses" element={<DocsAPIResponses />} />
                 <Route path="/docs/api/embeddings" element={<DocsAPIEmbeddings />} />
                 <Route path="/docs/api/rerank" element={<DocsAPIRerank />} />
+                <Route path="/docs/api/decision" element={<DocsAPIDecision />} />
                 <Route path="/docs/api/tokenize" element={<DocsAPITokenize />} />
                 <Route path="/docs/api/tools" element={<DocsAPITools />} />
                 <Route path="/docs/manual" element={<DocsManual />} />
