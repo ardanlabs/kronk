@@ -206,8 +206,8 @@ schema = 3
     version = "v1.9.0"
     hash = "sha256-sRr/50k8Wra0PJLCJgSkIxvR+ce3PItx4HpFvVijGYk="
   [mod."github.com/hybridgroup/yzma"]
-    version = "v1.28.1-0.20260927143541-49b68ed4da04"
-    hash = "sha256-/7l+4FR+PgJ0vNk0bMVlsQvZIcaZtSy15wJjfM4rnLY="
+    version = "v1.28.1-0.20260928145547-0af2b85d4102"
+    hash = "sha256-OQAmdTAXcBheKOKPI5/5iJTILu49aSJM5T69paBLysc="
   [mod."github.com/icza/bitio"]
     version = "v1.1.0"
     hash = "sha256-CtV/dr1L46cZ65EnK9DrBduZCaMnTGf4N2MnElCymtM="
@@ -401,13 +401,13 @@ schema = 3
     version = "v0.299.0"
     hash = "sha256-amO8rPevde6Mlqt5e5hT2GLpcMBhZd4WKlKxVvzJ9f8="
   [mod."google.golang.org/genproto"]
-    version = "v0.0.0-20260921155816-b14227669459"
-    hash = "sha256-fc4mAhnGoEqDrHkI3Crm3QpuyV0dnaxyLjO4ltQEvHs="
+    version = "v0.0.0-20260928230214-8a89bd6388cc"
+    hash = "sha256-+VATB3A+pcPy2A968jK3JWELQ9ofMQMmXR+LmcA/TgE="
   [mod."google.golang.org/genproto/googleapis/api"]
-    version = "v0.0.0-20260921155816-b14227669459"
-    hash = "sha256-vFPDopJXc/dMuPxwrcc2zGxP3UyF8E7PzAs1YmBnlGo="
+    version = "v0.0.0-20260928230214-8a89bd6388cc"
+    hash = "sha256-3DgHu8gZYFpwX6UXEh1vZdKUrdCsGAkTBtslaphAcFM="
   [mod."google.golang.org/genproto/googleapis/rpc"]
-    version = "v0.0.0-20260921155816-b14227669459"
+    version = "v0.0.0-20260928230214-8a89bd6388cc"
     hash = "sha256-qBJJ3Go2HqyEE+jp6FMafhXbMBbA/PIXvbdROnLPAYA="
   [mod."google.golang.org/grpc"]
     version = "v1.86.0-dev"

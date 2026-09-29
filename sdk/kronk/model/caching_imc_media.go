@@ -328,7 +328,7 @@ func (m *Model) decodeEmbeddingsIntoCache(embd []float32, nEmbd, nTokens int32, 
 	defer m.decodeMu.Unlock()
 
 	if useNonCausal {
-		wasCausal := GetCausalAttn(m.lctx)
+		wasCausal := llama.GetCausalAttn(m.lctx)
 		llama.SetCausalAttn(m.lctx, false)
 		defer llama.SetCausalAttn(m.lctx, wasCausal)
 	}
@@ -390,7 +390,7 @@ func (m *Model) decodeEmbeddingsMRoPEIntoCache(embd []float32, nEmbd, nTokens in
 	defer m.decodeMu.Unlock()
 
 	if useNonCausal {
-		wasCausal := GetCausalAttn(m.lctx)
+		wasCausal := llama.GetCausalAttn(m.lctx)
 		llama.SetCausalAttn(m.lctx, false)
 		defer llama.SetCausalAttn(m.lctx, wasCausal)
 	}
