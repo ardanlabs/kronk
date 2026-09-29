@@ -58,7 +58,7 @@ type batchSeqEvaluateFunc func(job *batchSeqJob) (outputs [][]float32, fatal boo
 type batchSeqEngine struct {
 	lctx        llama.Context
 	mem         llama.Memory // Zero for stateless reranking contexts.
-	batch       llama.Batch
+	batch       *extendedBatch
 	maxSeq      int
 	maxTokens   int
 	requestQ    chan *batchSeqJob
@@ -68,7 +68,6 @@ type batchSeqEngine struct {
 	wg          sync.WaitGroup
 	stopped     atomic.Bool
 	batchFreed  atomic.Bool
-	hasBatch    bool
 
 	submitMu  sync.Mutex
 	submitWG  sync.WaitGroup
@@ -165,17 +164,21 @@ func newBatchSeqEngine(lctx llama.Context, mem llama.Memory, queueDepth int) (*b
 		return nil, fmt.Errorf("new-batchseq-engine: context has no batch capacity")
 	}
 
+	batch, err := newExtendedBatchCapacity(lctx, maxTokens)
+	if err != nil {
+		return nil, fmt.Errorf("new-batchseq-engine: create batch: %w", err)
+	}
+
 	e := batchSeqEngine{
 		lctx:        lctx,
 		mem:         mem,
-		batch:       llama.BatchInit(int32(maxTokens), 0, 1),
+		batch:       batch,
 		maxSeq:      maxSeq,
 		maxTokens:   maxTokens,
 		requestQ:    make(chan *batchSeqJob, max(queueDepth, 1)),
 		admissionCh: make(chan struct{}),
 		shutdownCh:  make(chan struct{}),
 		doneCh:      make(chan struct{}),
-		hasBatch:    true,
 		accepting:   true,
 	}
 	e.evaluate = e.evaluateJob
@@ -199,11 +202,11 @@ func (e *batchSeqEngine) stop() error {
 }
 
 func (e *batchSeqEngine) freeBatch() error {
-	if !e.hasBatch || !e.batchFreed.CompareAndSwap(false, true) {
+	if !e.batchFreed.CompareAndSwap(false, true) {
 		return nil
 	}
 
-	return llama.BatchFree(e.batch)
+	return e.batch.free()
 }
 
 func (e *batchSeqEngine) run(ctx context.Context, items []batchSeqItem, outputWidth int) ([][]float32, error) {
@@ -453,25 +456,16 @@ func (e *batchSeqEngine) evaluateJob(job *batchSeqJob) ([][]float32, bool, error
 				return nil, true, fmt.Errorf("batchseq-evaluate: clear memory: %w", err)
 			}
 		}
-		if err := e.batch.Clear(); err != nil {
-			return nil, true, fmt.Errorf("batchseq-evaluate: clear batch: %w", err)
+		if err := stageBatchSeqPlan(e.batch, plan); err != nil {
+			return nil, true, fmt.Errorf("batchseq-evaluate: stage batch: %w", err)
 		}
 
-		for _, entry := range plan.entries {
-			seqIDs := []llama.SeqId{entry.seqID}
-			for pos, token := range entry.tokens {
-				if err := e.batch.Add(token, llama.Pos(pos), seqIDs, true); err != nil {
-					return nil, true, fmt.Errorf("batchseq-evaluate: add item[%d] token at pos %d: %w", entry.itemIndex, pos, err)
-				}
-			}
-		}
-
-		ret, err := llama.Decode(e.lctx, e.batch)
+		ret, err := e.batch.process(llama.ProcessTypeDecode)
 		if err != nil {
-			return nil, true, fmt.Errorf("batchseq-evaluate: decode: %w", err)
+			return nil, true, fmt.Errorf("batchseq-evaluate: process: %w", err)
 		}
 		if ret != 0 {
-			return nil, true, fmt.Errorf("batchseq-evaluate: decode returned %d", ret)
+			return nil, true, fmt.Errorf("batchseq-evaluate: process returned %d", ret)
 		}
 
 		for _, entry := range plan.entries {
@@ -492,6 +486,21 @@ func (e *batchSeqEngine) evaluateJob(job *batchSeqJob) ([][]float32, bool, error
 	}
 
 	return outputs, false, nil
+}
+
+func stageBatchSeqPlan(batch *extendedBatch, plan batchSeqPlan) error {
+	batch.clear()
+
+	for _, entry := range plan.entries {
+		sequenceIDs := []llama.SeqId{entry.seqID}
+		for pos, token := range entry.tokens {
+			if _, err := batch.addToken(token, llama.Pos(pos), sequenceIDs, extendedBatchOutputEmbeddings); err != nil {
+				return fmt.Errorf("add item[%d] token at position %d: %w", entry.itemIndex, pos, err)
+			}
+		}
+	}
+
+	return nil
 }
 
 func (e *batchSeqEngine) drain(err error) {

@@ -456,6 +456,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		}
 		if err := initDecisionProtocol(&m); err != nil {
 			m.decision.scheduler.stop()
+			batchErr := m.decision.batch.free()
 			m.decision = nil
 			llama.Free(m.lctx)
 			m.lctx = 0
@@ -465,7 +466,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 			}
 			adapterErr := m.freeAdapters()
 			llama.ModelFree(mdl)
-			return nil, errors.Join(err, adapterErr)
+			return nil, errors.Join(err, batchErr, adapterErr)
 		}
 
 	case useBatchSeq(modelInfo):
@@ -1281,6 +1282,10 @@ func (m *Model) Unload(ctx context.Context) error {
 	if hasBatch {
 		m.batch.freeBatch()
 	}
+	var decisionBatchErr error
+	if hasDecision {
+		decisionBatchErr = m.decision.batch.free()
+	}
 
 	// Close the context pool if running (embed/rerank models).
 	if m.pool != nil {
@@ -1353,7 +1358,7 @@ func (m *Model) Unload(ctx context.Context) error {
 	adapterErr := m.freeAdapters()
 	llama.ModelFree(m.model)
 
-	if err := errors.Join(batchSeqErr, batchSeqContextErr, adapterErr); err != nil {
+	if err := errors.Join(batchSeqErr, batchSeqContextErr, decisionBatchErr, adapterErr); err != nil {
 		return fmt.Errorf("unload: %w", err)
 	}
 

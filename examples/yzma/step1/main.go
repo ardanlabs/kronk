@@ -101,10 +101,37 @@ func run() error {
 	fmt.Println()
 
 	// -------------------------------------------------------------------------
-	// Perform the prefill step by processing all input tokens at once.
+	// Create a context-sized extended batch and perform the prefill step by
+	// adding all input tokens with their positions.
 
-	batch := llama.BatchGetOne(tokens)
-	llama.Decode(lctx, batch)
+	batch, err := llama.BatchExtInit(lctx)
+	if err != nil {
+		return fmt.Errorf("unable to initialize batch: %w", err)
+	}
+	defer llama.BatchExtFree(batch)
+
+	for i, token := range tokens {
+		idx, err := llama.BatchExtAddToken(batch, 0, token)
+		if err != nil {
+			return fmt.Errorf("unable to add prefill token %d: %w", i, err)
+		}
+		if err := llama.BatchExtSetPos(batch, idx, llama.Pos(i)); err != nil {
+			return fmt.Errorf("unable to set prefill position %d: %w", i, err)
+		}
+	}
+	if err := llama.BatchExtSetOutputLogits(batch, int32(len(tokens)-1), true); err != nil {
+		return fmt.Errorf("unable to request prefill logits: %w", err)
+	}
+	ret, err := llama.Process(lctx, llama.ProcessTypeDecode, batch)
+	if err != nil {
+		return fmt.Errorf("unable to process prefill batch: %w", err)
+	}
+	if ret != 0 {
+		return fmt.Errorf("unable to process prefill batch: code=%d", ret)
+	}
+	llama.Synchronize(lctx)
+
+	nPast := llama.Pos(len(tokens))
 
 	// -------------------------------------------------------------------------
 	// Generate output tokens one at a time until end-of-generation.
@@ -131,8 +158,28 @@ func run() error {
 		fmt.Print(content)
 
 		// Feed the sampled token back into the model for the next iteration.
-		batch := llama.BatchGetOne([]llama.Token{token})
-		llama.Decode(lctx, batch)
+		if err := llama.BatchExtClear(batch); err != nil {
+			return fmt.Errorf("unable to clear batch: %w", err)
+		}
+		idx, err := llama.BatchExtAddToken(batch, 0, token)
+		if err != nil {
+			return fmt.Errorf("unable to add generated token: %w", err)
+		}
+		if err := llama.BatchExtSetPos(batch, idx, nPast); err != nil {
+			return fmt.Errorf("unable to set generated token position: %w", err)
+		}
+		if err := llama.BatchExtSetOutputLogits(batch, idx, true); err != nil {
+			return fmt.Errorf("unable to request generated token logits: %w", err)
+		}
+		ret, err := llama.Process(lctx, llama.ProcessTypeDecode, batch)
+		if err != nil {
+			return fmt.Errorf("unable to process generated token: %w", err)
+		}
+		if ret != 0 {
+			return fmt.Errorf("unable to process generated token: code=%d", ret)
+		}
+		llama.Synchronize(lctx)
+		nPast++
 	}
 }
 

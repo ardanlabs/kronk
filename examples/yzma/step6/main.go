@@ -116,15 +116,34 @@ func run() error {
 	fmt.Println("Tokens:", len(tokens))
 
 	// -------------------------------------------------------------------------
-	// Decode with BatchGetOne (simplest approach, matches working Kronk v1.4).
+	// Process the input as one sequence and request embedding output for each
+	// token, matching the sequence engine's batch contract.
 
-	batch := llama.BatchGetOne(tokens)
-	ret, err := llama.Decode(lctx, batch)
+	batch, err := llama.BatchExtInit(lctx)
 	if err != nil {
-		return fmt.Errorf("decode failed: %w", err)
+		return fmt.Errorf("initialize batch: %w", err)
+	}
+	defer llama.BatchExtFree(batch)
+
+	for pos, token := range tokens {
+		idx, err := llama.BatchExtAddToken(batch, 0, token)
+		if err != nil {
+			return fmt.Errorf("add token at position %d: %w", pos, err)
+		}
+		if err := llama.BatchExtSetPos(batch, idx, llama.Pos(pos)); err != nil {
+			return fmt.Errorf("set token position %d: %w", pos, err)
+		}
+		if err := llama.BatchExtSetOutputEmbd(batch, idx, true); err != nil {
+			return fmt.Errorf("request token embedding at position %d: %w", pos, err)
+		}
+	}
+
+	ret, err := llama.Process(lctx, llama.ProcessTypeDecode, batch)
+	if err != nil {
+		return fmt.Errorf("process failed: %w", err)
 	}
 	if ret != 0 {
-		return fmt.Errorf("decode returned non-zero: %d", ret)
+		return fmt.Errorf("process returned non-zero: %d", ret)
 	}
 
 	// -------------------------------------------------------------------------

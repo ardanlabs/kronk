@@ -198,6 +198,12 @@ func run() error {
 	llama.SamplerChainAdd(sampler, llama.SamplerInitTempExt(0.7, 0.0, 1.0))
 	llama.SamplerChainAdd(sampler, llama.SamplerInitDist(1))
 
+	batch, err := llama.BatchExtInit(lctx)
+	if err != nil {
+		return fmt.Errorf("unable to initialize generation batch: %w", err)
+	}
+	defer llama.BatchExtFree(batch)
+
 	// -------------------------------------------------------------------------
 	// Generate response tokens.
 
@@ -221,9 +227,31 @@ func run() error {
 		generatedTokens++
 
 		// Feed the token back for next iteration.
-		batch := llama.BatchGetOne([]llama.Token{token})
-		batch.Pos = &nPast
-		llama.Decode(lctx, batch)
+		if err := llama.BatchExtClear(batch); err != nil {
+			return fmt.Errorf("unable to clear generation batch: %w", err)
+		}
+		idx, err := llama.BatchExtAddToken(batch, 0, token)
+		if err != nil {
+			return fmt.Errorf("unable to add generated token: %w", err)
+		}
+		positions := []llama.Pos{nPast}
+		if mtmd.DecodeUseMRope(mtmdCtx) {
+			positions = []llama.Pos{nPast, nPast, nPast, nPast}
+		}
+		if err := llama.BatchExtSetPos(batch, idx, positions...); err != nil {
+			return fmt.Errorf("unable to set generated token position: %w", err)
+		}
+		if err := llama.BatchExtSetOutputLogits(batch, idx, true); err != nil {
+			return fmt.Errorf("unable to request generated token logits: %w", err)
+		}
+		ret, err := llama.Process(lctx, llama.ProcessTypeDecode, batch)
+		if err != nil {
+			return fmt.Errorf("unable to process generated token: %w", err)
+		}
+		if ret != 0 {
+			return fmt.Errorf("unable to process generated token: code=%d", ret)
+		}
+		llama.Synchronize(lctx)
 		nPast++
 	}
 

@@ -18,6 +18,44 @@ func TestNewBatchSeqEngineRejectsInvalidContext(t *testing.T) {
 	}
 }
 
+func TestStageBatchSeqPlan(t *testing.T) {
+	batch := extendedBatch{capacity: 4}
+	if _, err := batch.addToken(99, 99, []llama.SeqId{99}, extendedBatchOutputNone); err != nil {
+		t.Fatalf("seed batch: %v", err)
+	}
+
+	plan := batchSeqPlan{
+		entries: []batchSeqEntry{
+			{itemIndex: 10, seqID: 2, tokens: []llama.Token{11, 12, 13}},
+			{itemIndex: 20, seqID: 5, tokens: []llama.Token{21}},
+		},
+	}
+	if err := stageBatchSeqPlan(&batch, plan); err != nil {
+		t.Fatalf("stage batch sequence plan: %v", err)
+	}
+
+	wantTokens := []llama.Token{11, 12, 13, 21}
+	wantPositions := []llama.Pos{0, 1, 2, 0}
+	wantSequences := []llama.SeqId{2, 2, 2, 5}
+	if len(batch.entries) != len(wantTokens) {
+		t.Fatalf("entry count: got %d, want %d", len(batch.entries), len(wantTokens))
+	}
+	for i, entry := range batch.entries {
+		if entry.token != wantTokens[i] {
+			t.Errorf("entry[%d] token: got %d, want %d", i, entry.token, wantTokens[i])
+		}
+		if entry.positionCount != 1 || entry.positions[0] != wantPositions[i] {
+			t.Errorf("entry[%d] position: got %v, want [%d]", i, entry.positions[:entry.positionCount], wantPositions[i])
+		}
+		if entry.sequenceID != wantSequences[i] {
+			t.Errorf("entry[%d] sequence: got %d, want %d", i, entry.sequenceID, wantSequences[i])
+		}
+		if entry.output != extendedBatchOutputEmbeddings {
+			t.Errorf("entry[%d] output: got %d, want embeddings", i, entry.output)
+		}
+	}
+}
+
 func TestBatchSeqEngineRun(t *testing.T) {
 	e := newTestBatchSeqEngine(1, func(job *batchSeqJob) ([][]float32, bool, error) {
 		return [][]float32{{1, 2}}, false, nil
