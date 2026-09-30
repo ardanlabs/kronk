@@ -236,6 +236,10 @@ export default function DocsCLIServer() {
                   <td>Download or update the llama library at startup (default: <code>true</code>)</td>
                 </tr>
                 <tr>
+                  <td><code>--media-backends-enabled</code></td>
+                  <td>Download and load the Bucky and Malina backends at startup (default: <code>true</code>)</td>
+                </tr>
+                <tr>
                   <td><code>--lib-verify-enabled</code></td>
                   <td>Verify the selected llama and whisper libraries before loading them (default: <code>true</code>)</td>
                 </tr>
@@ -355,6 +359,10 @@ export default function DocsCLIServer() {
                 <tr>
                   <td><code>KRONK_LIB_DOWNLOAD_ENABLED</code></td>
                   <td>Enable or disable automatic llama library downloads at startup</td>
+                </tr>
+                <tr>
+                  <td><code>KRONK_MEDIA_BACKENDS_ENABLED</code></td>
+                  <td>Enable or disable Bucky and Malina downloads and native initialization at startup</td>
                 </tr>
                 <tr>
                   <td><code>KRONK_ARCH</code> / <code>KRONK_OS</code> / <code>KRONK_PROCESSOR</code></td>

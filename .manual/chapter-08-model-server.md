@@ -123,6 +123,7 @@ Common settings can be supplied as flags or environment variables:
 | `--admin-auth-enabled` | `KRONK_AUTH_ADMIN_ENABLED` | `false` | Protect administration without requiring inference authentication |
 | `--download-enabled` | `KRONK_DOWNLOAD_ENABLED` | `false` | Allow server-side model downloads |
 | `--lib-download-enabled` | `KRONK_LIB_DOWNLOAD_ENABLED` | `true` | Download or update the llama.cpp library during server startup |
+| `--media-backends-enabled` | `KRONK_MEDIA_BACKENDS_ENABLED` | `true` | Download and load the Bucky and Malina native backends during server startup |
 | `--allow-upgrade` | `KRONK_ALLOW_UPGRADE` | `false` | Opt in to automatic native-library upgrades |
 | `--llama-log` | `KRONK_LLAMA_LOG` | `1` | Enable or disable llama.cpp logging |
 
@@ -169,6 +170,11 @@ library selection setting.
 Set `--lib-download-enabled=false` or `KRONK_LIB_DOWNLOAD_ENABLED=false` to
 skip the automatic llama.cpp download at startup. Kronk still loads the library
 selected by `--lib-path` or `KRONK_LIB_PATH`.
+
+Set `--media-backends-enabled=false` or
+`KRONK_MEDIA_BACKENDS_ENABLED=false` to skip automatic Bucky and Malina bundle
+downloads and native backend initialization. This does not affect llama.cpp
+download or initialization.
 
 Library verification is enabled by default. Set `--lib-verify-enabled=false` or
 `KRONK_LIB_VERIFY_ENABLED=false` to disable it. Kronk verifies the selected
@@ -306,6 +312,7 @@ kms:
   bucky-lib-path: ""
   lib-version: ""
   lib-download-enabled: true
+  media-backends-enabled: true
   arch: ""
   os: ""
   processor: ""

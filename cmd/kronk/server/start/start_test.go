@@ -101,17 +101,19 @@ func TestBuildEnvVarsServiceSettings(t *testing.T) {
 	cmd.Flags().String("authorization-mode", "", "")
 	cmd.Flags().Bool("download-enabled", false, "")
 	cmd.Flags().Bool("lib-download-enabled", true, "")
+	cmd.Flags().Bool("media-backends-enabled", true, "")
 	cmd.Flags().Bool("lib-verify-enabled", false, "")
 	cmd.Flags().String("bucky-lib-path", "", "")
 	cmd.Flags().String("malina-lib-path", "", "")
 
 	values := map[string]string{
-		"authorization-mode":   "management",
-		"download-enabled":     "true",
-		"lib-download-enabled": "false",
-		"lib-verify-enabled":   "true",
-		"bucky-lib-path":       "/opt/bucky",
-		"malina-lib-path":      "/opt/malina",
+		"authorization-mode":     "management",
+		"download-enabled":       "true",
+		"lib-download-enabled":   "false",
+		"media-backends-enabled": "false",
+		"lib-verify-enabled":     "true",
+		"bucky-lib-path":         "/opt/bucky",
+		"malina-lib-path":        "/opt/malina",
 	}
 	for name, value := range values {
 		if err := cmd.Flags().Set(name, value); err != nil {
@@ -124,6 +126,7 @@ func TestBuildEnvVarsServiceSettings(t *testing.T) {
 		"KRONK_AUTHORIZATION_MODE=management",
 		"KRONK_DOWNLOAD_ENABLED=true",
 		"KRONK_LIB_DOWNLOAD_ENABLED=false",
+		"KRONK_MEDIA_BACKENDS_ENABLED=false",
 		"KRONK_LIB_VERIFY_ENABLED=true",
 		"KRONK_BUCKY_LIB_PATH=/opt/bucky",
 		"KRONK_MALINA_LIB_PATH=/opt/malina",

@@ -22,6 +22,12 @@ func TestNewConfigLibraryDownloadEnabled(t *testing.T) {
 	}
 }
 
+func TestNewConfigMediaBackendsEnabled(t *testing.T) {
+	if !newConfig().MediaBackendsEnabled {
+		t.Error("MediaBackendsEnabled: got false, want true")
+	}
+}
+
 func TestNewConfigLibraryVerifyEnabled(t *testing.T) {
 	if !newConfig().LibVerifyEnabled {
 		t.Error("LibVerifyEnabled: got false, want true")
@@ -59,6 +65,7 @@ kms:
 	t.Setenv("KRONK_WEB_API_HOST", "env.example:9001")
 	t.Setenv("KRONK_POOL_BUDGET_PERCENT", "75")
 	t.Setenv("KRONK_LIB_DOWNLOAD_ENABLED", "false")
+	t.Setenv("KRONK_MEDIA_BACKENDS_ENABLED", "false")
 	t.Setenv("KRONK_LIB_VERIFY_ENABLED", "true")
 
 	cfg, err := loadConfig(false)
@@ -89,6 +96,9 @@ kms:
 	}
 	if cfg.LibDownloadEnabled {
 		t.Error("LibDownloadEnabled: got true, want false")
+	}
+	if cfg.MediaBackendsEnabled {
+		t.Error("MediaBackendsEnabled: got true, want false")
 	}
 	if !cfg.LibVerifyEnabled {
 		t.Error("LibVerifyEnabled: got false, want true")
