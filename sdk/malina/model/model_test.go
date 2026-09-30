@@ -78,6 +78,31 @@ func TestScaleOptions(t *testing.T) {
 	}
 }
 
+func TestAttentionOptions(t *testing.T) {
+	tests := []struct {
+		name          string
+		option        Option
+		wantFlash     bool
+		wantDiffusion bool
+	}{
+		{name: "all components", option: WithFlashAttention(true), wantFlash: true},
+		{name: "diffusion only", option: WithDiffusionFlashAttention(true), wantDiffusion: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := NewConfig(WithModelPath("model"), tt.option)
+			if err != nil {
+				t.Fatalf("NewConfig() error = %v", err)
+			}
+
+			if cfg.FlashAttention != tt.wantFlash || cfg.DiffusionFlashAttention != tt.wantDiffusion {
+				t.Errorf("attention: got %t/%t, want %t/%t", cfg.FlashAttention, cfg.DiffusionFlashAttention, tt.wantFlash, tt.wantDiffusion)
+			}
+		})
+	}
+}
+
 func TestGenerateParamsValidate(t *testing.T) {
 	valid := NewGenerateParams()
 	valid.Prompt = "cat"

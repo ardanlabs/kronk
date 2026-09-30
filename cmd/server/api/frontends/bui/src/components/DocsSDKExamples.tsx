@@ -3759,6 +3759,7 @@ func run() error {
 		model.WithVAEPath(manifest.Files[string(models.RoleVAE)]),
 		model.WithT5XXLPath(manifest.Files[string(models.RoleT5XXL)]),
 		model.WithAudioEncoderPath(manifest.Files[string(models.RoleAudioEncoder)]),
+		model.WithDiffusionFlashAttention(true),
 	)
 	if err != nil {
 		return fmt.Errorf("load Wan2.2 S2V: %w", err)

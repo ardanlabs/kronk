@@ -44,9 +44,10 @@ const (
 // ModelPath loads an all-in-one checkpoint. DiffusionModelPath and its
 // companion paths configure a component model. At least one of ModelPath or
 // DiffusionModelPath is required. TokenizerPath loads an external tokenizer
-// JSON file. SageAttention enables the native optimization for supported
-// models and backends. ConditioningCacheSize limits cached conditioning
-// entries per context; NewConfig defaults it to four, while zero disables it.
+// JSON file. FlashAttention, DiffusionFlashAttention, and SageAttention enable
+// native attention optimizations for supported models and backends.
+// ConditioningCacheSize limits cached conditioning entries per context;
+// NewConfig defaults it to four, while zero disables it.
 type Config struct {
 	ModelPath                   string
 	ClipLPath                   string
@@ -74,6 +75,8 @@ type Config struct {
 	CPUThreads                  int32
 	LinearScale                 float32
 	AttnScale                   float32
+	FlashAttention              bool
+	DiffusionFlashAttention     bool
 	SageAttention               bool
 	ConditioningCacheSize       int32
 }
@@ -208,6 +211,21 @@ func WithLinearScale(scale float32) Option {
 func WithAttnScale(scale float32) Option {
 	return func(cfg *Config) {
 		cfg.AttnScale = scale
+	}
+}
+
+// WithFlashAttention enables flash attention for all supported model components,
+// including the diffusion model.
+func WithFlashAttention(enabled bool) Option {
+	return func(cfg *Config) {
+		cfg.FlashAttention = enabled
+	}
+}
+
+// WithDiffusionFlashAttention enables flash attention in the diffusion model.
+func WithDiffusionFlashAttention(enabled bool) Option {
+	return func(cfg *Config) {
+		cfg.DiffusionFlashAttention = enabled
 	}
 }
 
@@ -610,6 +628,8 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		params.TensorTypeRules = cfg.TensorTypeRules
 		params.LinearScale = cfg.LinearScale
 		params.AttnScale = cfg.AttnScale
+		params.FlashAttn = cfg.FlashAttention
+		params.DiffusionFlashAttn = cfg.DiffusionFlashAttention
 		params.SageAttn = cfg.SageAttention
 		params.ConditioningCacheSize = cfg.ConditioningCacheSize
 		if cfg.CPUThreads > 0 {
