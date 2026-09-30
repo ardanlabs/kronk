@@ -120,6 +120,9 @@ type OutputTokensDetails struct {
 type ResponseStreamEvent struct {
 	Type           string               `json:"type"`
 	SequenceNumber int                  `json:"sequence_number"`
+	Code           *string              `json:"code,omitempty"`
+	Message        string               `json:"message,omitempty"`
+	Param          *string              `json:"param,omitempty"`
 	Response       *ResponseResponse    `json:"response,omitempty"`
 	OutputIndex    *int                 `json:"output_index,omitempty"`
 	ContentIndex   *int                 `json:"content_index,omitempty"`
@@ -193,13 +196,7 @@ func (krn *Kronk) ResponseStreaming(ctx context.Context, d model.D) (<-chan Resp
 		Complete: ss.complete,
 	}
 
-	ef := func(err error) ResponseStreamEvent {
-		return ResponseStreamEvent{
-			Type: "error",
-		}
-	}
-
-	return streamingWith(ctx, krn, f, p, ef)
+	return streamingWith(ctx, krn, f, p, ss.errorEvent)
 }
 
 // ResponseStreamingHTTP provides http handler support for a responses call.
@@ -298,6 +295,17 @@ type streamState struct {
 	toolCallsSeenID map[string]int
 	lastChatResp    model.ChatResponse
 	usage           *model.Usage
+}
+
+func (ss *streamState) errorEvent(err error) ResponseStreamEvent {
+	event := ResponseStreamEvent{
+		Type:           "error",
+		SequenceNumber: ss.seq,
+		Message:        err.Error(),
+	}
+	ss.seq++
+
+	return event
 }
 
 func (ss *streamState) start() []ResponseStreamEvent {

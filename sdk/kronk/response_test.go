@@ -1,12 +1,38 @@
 package kronk
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/google/go-cmp/cmp"
 )
+
+func TestStreamStateErrorEvent(t *testing.T) {
+	ss := streamState{}
+	ss.start()
+
+	event := ss.errorEvent(errors.New("inference failed"))
+
+	data, err := json.Marshal(event)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	want := map[string]any{
+		"type":            "error",
+		"sequence_number": float64(2),
+		"message":         "inference failed",
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("error event mismatch (-want +got):\n%s", diff)
+	}
+}
 
 func TestResponseValidatesMessagesBeforeAdmission(t *testing.T) {
 	tests := []struct {
