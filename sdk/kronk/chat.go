@@ -142,13 +142,8 @@ func (krn *Kronk) ChatStreamingHTTP(ctx context.Context, w http.ResponseWriter, 
 			}
 
 			if resp.Choices[0].FinishReason() == model.FinishReasonError {
-				d, err := marshalChatStreamError(resp)
-				if err != nil {
-					return resp, fmt.Errorf("chat-streaming-http: %w: marshal error: %w", ErrResponseCommitted, err)
-				}
-
-				if err := writeAndFlush(w, fmt.Appendf(nil, "data: %s\n\n", d)); err != nil {
-					return resp, fmt.Errorf("chat-streaming-http: %w: write error event: %w", ErrResponseCommitted, err)
+				if err := writeChatStreamError(w, resp); err != nil {
+					return resp, fmt.Errorf("chat-streaming-http: %w: %w", ErrResponseCommitted, err)
 				}
 				return resp, nil
 			}
@@ -217,6 +212,23 @@ func supportsResponseFlush(w http.ResponseWriter) bool {
 	return false
 }
 
+func writeChatStreamError(w http.ResponseWriter, resp model.ChatResponse) error {
+	d, err := marshalChatStreamError(resp)
+	if err != nil {
+		return fmt.Errorf("marshal error: %w", err)
+	}
+
+	if err := writeAndFlush(w, fmt.Appendf(nil, "data: %s\n\n", d)); err != nil {
+		return fmt.Errorf("write error event: %w", err)
+	}
+
+	if err := writeAndFlush(w, []byte("data: [DONE]\n\n")); err != nil {
+		return fmt.Errorf("write done event: %w", err)
+	}
+
+	return nil
+}
+
 func marshalChatStreamError(resp model.ChatResponse) ([]byte, error) {
 	choice := resp.Choices[0]
 
@@ -234,6 +246,7 @@ func marshalChatStreamError(resp model.ChatResponse) ([]byte, error) {
 			"type":    "server_error",
 			"code":    "server_error",
 		},
+		"usage": resp.Usage,
 	}
 
 	return json.Marshal(wireResp)

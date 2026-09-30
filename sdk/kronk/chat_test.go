@@ -1,9 +1,11 @@
 package kronk
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
@@ -36,13 +38,14 @@ func TestStreamIncludeUsage(t *testing.T) {
 }
 
 func TestMarshalChatStreamError(t *testing.T) {
+	u := model.Usage{PromptTokens: 11, CompletionTokens: 7, TotalTokens: 18}
 	resp := model.ChatResponseErr(
 		"id",
 		model.ObjectChatText,
 		"model",
 		0,
 		errors.New("inference failed"),
-		model.Usage{},
+		u,
 	)
 
 	data, err := marshalChatStreamError(resp)
@@ -54,7 +57,7 @@ func TestMarshalChatStreamError(t *testing.T) {
 	if err := json.Unmarshal(data, &wire); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
 	}
-	if got, want := len(wire), 1; got != want {
+	if got, want := len(wire), 2; got != want {
 		t.Fatalf("top-level fields: got %d, want %d", got, want)
 	}
 
@@ -74,6 +77,44 @@ func TestMarshalChatStreamError(t *testing.T) {
 	}
 	if got, want := apiErr.Code, "server_error"; got != want {
 		t.Errorf("Code: got %q, want %q", got, want)
+	}
+
+	var gotUsage model.Usage
+	if err := json.Unmarshal(wire["usage"], &gotUsage); err != nil {
+		t.Fatalf("Unmarshal usage: %v", err)
+	}
+	if gotUsage != u {
+		t.Errorf("Usage: got %+v, want %+v", gotUsage, u)
+	}
+}
+
+func TestWriteChatStreamErrorTerminatesStream(t *testing.T) {
+	resp := model.ChatResponseErr(
+		"id",
+		model.ObjectChatText,
+		"model",
+		0,
+		errors.New("inference failed"),
+		model.Usage{PromptTokens: 11, CompletionTokens: 7, TotalTokens: 18},
+	)
+	w := streamResponseWriter{header: make(http.Header)}
+
+	if err := writeChatStreamError(&w, resp); err != nil {
+		t.Fatalf("writeChatStreamError: %v", err)
+	}
+
+	frames := strings.Split(w.data.String(), "\n\n")
+	if got, want := len(frames), 3; got != want {
+		t.Fatalf("frame count including trailing separator: got %d, want %d", got, want)
+	}
+	if !strings.HasPrefix(frames[0], "data: {\"error\":") {
+		t.Errorf("error frame: got %q, want error event", frames[0])
+	}
+	if got, want := frames[1], "data: [DONE]"; got != want {
+		t.Errorf("terminal frame: got %q, want %q", got, want)
+	}
+	if got, want := w.flushes, 2; got != want {
+		t.Errorf("flushes: got %d, want %d", got, want)
 	}
 }
 
@@ -249,6 +290,7 @@ type streamResponseWriter struct {
 	writeErr error
 	flushErr error
 	flushes  int
+	data     bytes.Buffer
 }
 
 func (w *streamResponseWriter) Header() http.Header {
@@ -259,7 +301,7 @@ func (w *streamResponseWriter) Write(data []byte) (int, error) {
 	if w.writeErr != nil {
 		return 0, w.writeErr
 	}
-	return len(data), nil
+	return w.data.Write(data)
 }
 
 func (w *streamResponseWriter) WriteHeader(int) {}
