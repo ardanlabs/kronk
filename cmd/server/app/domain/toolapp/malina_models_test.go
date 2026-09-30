@@ -18,8 +18,9 @@ func TestListMalinaCatalog(t *testing.T) {
 		t.Fatalf("listMalinaCatalog() response = %T, want MalinaCatalogResponse", resp)
 	}
 
-	if len(catalog.Models) != 9 {
-		t.Fatalf("models: got %d, want 9", len(catalog.Models))
+	want := len(malinamodels.Catalog())
+	if len(catalog.Models) != want {
+		t.Fatalf("models: got %d, want %d", len(catalog.Models), want)
 	}
 
 	entries := make(map[string]MalinaCatalogEntry, len(catalog.Models))
