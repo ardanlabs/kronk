@@ -27,11 +27,11 @@ func TestCatalogValidity(t *testing.T) {
 	}
 }
 
-func TestCatalogIncludesMalinaCatalog(t *testing.T) {
+func TestCatalogMatchesMalinaCatalog(t *testing.T) {
 	malinaCatalog := malinadownload.Catalog()
 	kronkCatalog := Catalog()
-	if len(kronkCatalog) != len(malinaCatalog)+1 {
-		t.Fatalf("Catalog length: got %d, want %d", len(kronkCatalog), len(malinaCatalog)+1)
+	if len(kronkCatalog) != len(malinaCatalog) {
+		t.Fatalf("Catalog length: got %d, want %d", len(kronkCatalog), len(malinaCatalog))
 	}
 
 	for _, malinaBundle := range malinaCatalog {
@@ -56,12 +56,6 @@ func TestCatalogIncludesMalinaCatalog(t *testing.T) {
 			if string(kronkFile.Role) != string(malinaFile.Role) || kronkFile.Filename != malinaFile.Filename || kronkFile.URL != malinaFile.URL || kronkFile.Size != malinaFile.Size {
 				t.Errorf("Kronk bundle %q file %d: got %+v, want %+v", name, i, kronkFile, malinaFile)
 			}
-		}
-	}
-
-	for _, kronkBundle := range kronkCatalog {
-		if _, ok := malinadownload.BundleByName(kronkBundle.Name.String()); !ok && !kronkBundle.Name.Equal(BundleWan22S2V14B) {
-			t.Errorf("unexpected Kronk-only bundle %q", kronkBundle.Name)
 		}
 	}
 }

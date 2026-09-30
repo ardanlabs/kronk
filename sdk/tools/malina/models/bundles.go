@@ -293,7 +293,7 @@ func Catalog() []Bundle {
 				{
 					Role:     RoleVAE,
 					Filename: "wan_2.1_vae.safetensors",
-					URL:      "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_repackaged/resolve/123acf1cc74bccbb9bfff8ac1ee72edc08c2341d/split_files/vae/wan_2.1_vae.safetensors",
+					URL:      "https://huggingface.co/Comfy-Org/Wan_2.1_ComfyUI_Repackaged/resolve/123acf1cc74bccbb9bfff8ac1ee72edc08c2341d/split_files/vae/wan_2.1_vae.safetensors",
 					Size:     "254 MB",
 				},
 				{

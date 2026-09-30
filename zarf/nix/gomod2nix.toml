@@ -47,8 +47,8 @@ schema = 3
     version = "v1.6.0"
     hash = "sha256-xK0llBUpxqQXLdFCs/WRBSJSLjYQbqDj1cvOWCioxdc="
   [mod."github.com/ardanlabs/malina"]
-    version = "v1.1.4"
-    hash = "sha256-HFOSsmI/xtyMRLzr22HLAZh/EexFK+rXX2mR1k6rW94="
+    version = "v1.1.5"
+    hash = "sha256-P7A7e1iZFd85g+Q4h6uMxkNsfY4zy2ke7K/uU9huPT4="
   [mod."github.com/arl/statsviz"]
     version = "v0.8.2"
     hash = "sha256-8KmSQolXTl2aBo9bY8/dmby82ItHVHiYLRu/UNGRF8Q="
@@ -89,8 +89,8 @@ schema = 3
     version = "v1.20.4"
     hash = "sha256-mYOJSelYLof0NpRwUsKlfe51lCVmWdBURIsSnx8+iPA="
   [mod."github.com/aws/aws-sdk-go-v2/service/s3"]
-    version = "v1.113.4"
-    hash = "sha256-XTsT+NJ1+6biefc1ixXBkCOdGnCa10p1pAPqFN0gYBU="
+    version = "v1.114.0"
+    hash = "sha256-JWdnxlie6dabdihB1XLdb8o2NFEt31jjeFf5FJxRffk="
   [mod."github.com/aws/aws-sdk-go-v2/service/signin"]
     version = "v1.10.1"
     hash = "sha256-VmbLKrQRnMl+2SlbJy/i8Ngm31vZIJ5bFhtA5E01TqA="
@@ -365,8 +365,8 @@ schema = 3
     version = "v1.46.0"
     hash = "sha256-zfj85gCR5Z3v1N+8nlOO+6+FVShaL/7Vb/3lXjdXnnw="
   [mod."go.opentelemetry.io/proto/otlp"]
-    version = "v1.11.0"
-    hash = "sha256-jBcVUiab9mWgLmPsrCYK7sC2j15AJ47QJM4prnqGGkE="
+    version = "v1.11.1"
+    hash = "sha256-M8SCpLO073LypQdj2INMAixdbTRvw0b5Hzw0lIJMc0M="
   [mod."go.yaml.in/yaml/v2"]
     version = "v2.4.4"
     hash = "sha256-ecT2ZXw7iT+63J4210xA6sMz0fUFXmDzLwZe2FzaNFU="

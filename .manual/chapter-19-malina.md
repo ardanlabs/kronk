@@ -160,7 +160,7 @@ already installed. If the host is offline, a mismatched managed build is
 rejected rather than loaded. Library installation is staged and activated
 atomically so a failed download does not replace a working installation.
 
-Malina v1.1.4 requires stable-diffusion.cpp `master-929-3f8527a`, authenticated
+Malina v1.1.5 requires stable-diffusion.cpp `master-929-3f8527a`, authenticated
 by manifest digest
 `sha256:9c82e359dc51b80b8b598d803f6783364e64de0cd3887356e71b6f41bc7ffa2c`.
 The existing native layouts remain binary-shaped compatible with the
@@ -169,7 +169,7 @@ semantics and the upscaler metadata symbol is new. The pairings are therefore
 not behaviorally compatible. `Download` replaces any mismatched Kronk-managed
 installation with the exact pin. A user-managed library directory is read-only
 to Kronk and must be rebuilt or replaced by its owner. Do not combine Malina
-v1.1.4 with an older native bundle, or older Malina bindings with `master-929`.
+v1.1.5 with an older native bundle, or older Malina bindings with `master-929`.
 
 ### 19.3 Manage Model Bundles
 
@@ -394,7 +394,7 @@ for example `target=init,mode=none,canny=true`. An empty string preserves the
 model defaults. Preprocessing uses temporary native pixels and does not mutate
 the caller's Go images.
 
-The underlying v1.1.4 bindings define VAE tiling in image pixels for both
+The underlying v1.1.5 bindings define VAE tiling in image pixels for both
 encoding and decoding: zero selects 256 pixels, positive relative values up to
 1 select a fraction of the image dimension, and values above 1 select a target
 tile count. Kronk's high-level generation parameters do not currently expose
