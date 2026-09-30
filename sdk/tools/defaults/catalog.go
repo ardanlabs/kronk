@@ -2,7 +2,6 @@ package defaults
 
 import (
 	"embed"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,9 +25,7 @@ const (
 
 // CatalogFile returns the path to the catalog.yaml file. If no override is
 // provided, it ensures ~/.kronk/catalog/ exists and seeds the embedded
-// default to ~/.kronk/catalog/catalog.yaml when no file is present. If an
-// older ~/.kronk/catalog.yaml exists at the legacy location and no new file
-// exists, the legacy file is moved to the new location.
+// default to ~/.kronk/catalog/catalog.yaml when no file is present.
 func CatalogFile(override string, basePath string) (string, error) {
 	if override != "" {
 		return override, nil
@@ -45,17 +42,6 @@ func CatalogFile(override string, basePath string) (string, error) {
 
 	if err := os.MkdirAll(catalogDir, 0755); err != nil {
 		return "", fmt.Errorf("catalog-file: creating catalog directory: %w", err)
-	}
-
-	// Migrate the legacy ~/.kronk/catalog.yaml if it exists.
-	legacy := filepath.Join(basePath, catalogFileName)
-	if _, err := os.Stat(legacy); err == nil {
-		if err := os.Rename(legacy, target); err != nil {
-			return "", fmt.Errorf("catalog-file: migrating legacy file: %w", err)
-		}
-		return target, nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return "", fmt.Errorf("catalog-file: stat legacy: %w", err)
 	}
 
 	data, err := catalogFS.ReadFile(embeddedCatalogPath)

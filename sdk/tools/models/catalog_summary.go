@@ -25,7 +25,7 @@ type CatalogFiles struct {
 }
 
 // CatalogCapabilities describes what the model can do, derived from GGUF
-// metadata, its identifier, and the presence of a projection file.
+// metadata, its identifier, and companion files.
 type CatalogCapabilities struct {
 	Endpoint  string `json:"endpoint"             yaml:"endpoint,omitempty"`
 	Images    bool   `json:"images"               yaml:"images,omitempty"`
@@ -37,7 +37,18 @@ type CatalogCapabilities struct {
 	Embedding bool   `json:"embedding"            yaml:"embedding,omitempty"`
 	Rerank    bool   `json:"rerank"               yaml:"rerank,omitempty"`
 	Decision  bool   `json:"decision"             yaml:"decision,omitempty"`
+	MTP       bool   `json:"mtp"                  yaml:"mtp"`
 }
+
+// MTPSource identifies how a model supplies its MTP drafter.
+type MTPSource string
+
+const (
+	// MTPSourceEmbedded means the MTP head is embedded in the model GGUF.
+	MTPSourceEmbedded MTPSource = "embedded"
+	// MTPSourceCompanion means the MTP drafter is a separate GGUF file.
+	MTPSourceCompanion MTPSource = "companion"
+)
 
 // CatalogSummary is the cheap per-entry payload. It only consults
 // catalog.yaml and the local model index — no GGUF reads. ModelType and
@@ -54,6 +65,7 @@ type CatalogSummary struct {
 	TotalSizeBytes int64               `json:"total_size_bytes"`
 	HasProjection  bool                `json:"has_projection"`
 	HasMTP         bool                `json:"has_mtp"`
+	MTPSource      MTPSource           `json:"mtp_source,omitempty"`
 	Downloaded     bool                `json:"downloaded"`
 	Validated      bool                `json:"validated"`
 	ModelType      string              `json:"model_type,omitempty"`
@@ -114,6 +126,7 @@ func NewSummary(canonical string, entry CatalogEntry, downloaded, validated map[
 		TotalSizeBytes: totalBytes,
 		HasProjection:  entry.MMProj != "",
 		HasMTP:         entry.MTP != "",
+		MTPSource:      entry.MTPSource,
 		Downloaded:     downloaded[canonical],
 		Validated:      validated[canonical],
 		ModelType:      entry.ModelType,
@@ -265,7 +278,23 @@ func CapabilitiesForModel(metadata map[string]string, hasProjection bool, modelI
 		caps.Video = profile.Modalities.Video
 	}
 
+	caps.MTP = profile.Speculation.NextNPredictLayers > 0
+
 	return caps
+}
+
+// MTPSourceFor reports how a model supplies its MTP drafter. A companion
+// drafter takes precedence because runtime model selection prefers it when
+// both companion and embedded implementations are available.
+func MTPSourceFor(metadata map[string]string, hasCompanion bool) MTPSource {
+	if hasCompanion {
+		return MTPSourceCompanion
+	}
+	if modelprofile.Resolve(metadata).Speculation.NextNPredictLayers > 0 {
+		return MTPSourceEmbedded
+	}
+
+	return ""
 }
 
 func isDecisionModelName(name string) bool {

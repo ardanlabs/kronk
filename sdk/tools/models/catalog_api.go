@@ -181,12 +181,14 @@ func (m *Models) CatalogEntry(canonicalID string) (CatalogEntry, bool, error) {
 	return entry, ok, nil
 }
 
-// ReconcileCatalog populates missing ModelType and Capabilities by reading the
-// GGUF head bytes (via GGUFHead's cache → local-file → HF Range lookup) so
+// ReconcileCatalog populates ModelType, Capabilities, and MTPSource by reading
+// the GGUF head bytes (via GGUFHead's cache → local-file → HF Range lookup) so
 // the list page can filter by architecture class and capabilities without
-// paying GGUF I/O on every list call. On-disk models missing from the catalog
-// are intentionally ignored so removing a curated entry remains durable while
-// retaining its downloaded files.
+// paying GGUF I/O on every list call. Legacy unversioned catalogs force this
+// enrichment for every entry before being stamped with the current version.
+// On-disk models missing from the catalog are intentionally ignored so
+// removing a curated entry remains durable while retaining its downloaded
+// files.
 //
 // Enrichment is best-effort throughout — when GGUFHead can't source the
 // bytes (offline + nothing cached + nothing downloaded) the entry is
@@ -208,17 +210,18 @@ func (m *Models) ReconcileCatalog(ctx context.Context, log applog.Logger) error 
 		cat.Models = map[string]CatalogEntry{}
 	}
 
+	migrating := cat.Version < catalogVersion
+	migrationComplete := true
 	var changed int
 
 	for canonical, entry := range cat.Models {
 		var touched bool
 
-		// Companion discovery: entries from an older MTP discovery version
-		// get a one-time HuggingFace sibling scan so co-located and nested
+		// Companion discovery scans unchecked entries so co-located and nested
 		// mtp-*.gguf drafters are surfaced. Entries whose mmproj metadata was
-		// clobbered by a URL-based pull also recover their projection. The
-		// scan is a no-op when nothing needs looking up; network failures
-		// leave the work for a later retry.
+		// clobbered by a URL-based pull also recover their projection. The scan
+		// is a no-op when nothing needs looking up; network failures leave the
+		// work for a later retry.
 		if updated, ok := r.discoverCompanions(ctx, entry, log); ok {
 			entry = updated
 			touched = true
@@ -227,9 +230,13 @@ func (m *Models) ReconcileCatalog(ctx context.Context, log applog.Logger) error 
 		// Enrichment normally touches entries missing these fields. Decision
 		// model names are also revisited so catalogs created before Decision
 		// was a capability are corrected from chat_completion.
-		if entry.ModelType == "" || entry.Capabilities.Endpoint == "" ||
+		if migrating || touched || entry.ModelType == "" || entry.Capabilities.Endpoint == "" ||
 			(isDecisionCatalogEntry(entry) && !entry.Capabilities.Decision) {
-			if updated, ok := m.enrichEntry(ctx, entry, log); ok {
+			updated, ok, err := m.enrichEntry(ctx, entry)
+			if err != nil {
+				log(ctx, "reconcile-catalog: enrich-entry", "id", canonical, "ERROR", err)
+				migrationComplete = false
+			} else if ok {
 				entry = updated
 				touched = true
 			}
@@ -239,6 +246,11 @@ func (m *Models) ReconcileCatalog(ctx context.Context, log applog.Logger) error 
 			cat.Models[canonical] = entry
 			changed++
 		}
+	}
+
+	if migrating && migrationComplete {
+		cat.Version = catalogVersion
+		changed++
 	}
 
 	if changed == 0 {
@@ -254,33 +266,34 @@ func (m *Models) ReconcileCatalog(ctx context.Context, log applog.Logger) error 
 
 // enrichEntry populates a catalog entry's ModelType and Capabilities by
 // reading the GGUF head bytes through GGUFHead's cache → local-file → HF
-// Range lookup. Returns the possibly modified entry and whether it changed.
-// Failures are logged and treated as a no-op so an offline reconcile leaves
-// entries untouched.
-func (m *Models) enrichEntry(ctx context.Context, entry CatalogEntry, log applog.Logger) (CatalogEntry, bool) {
+// Range lookup. Returns the possibly modified entry, whether it changed, and
+// any inspection error so catalog migrations only complete after every entry
+// has been checked.
+func (m *Models) enrichEntry(ctx context.Context, entry CatalogEntry) (CatalogEntry, bool, error) {
 	data, err := m.GGUFHead(ctx, entry)
 	if err != nil {
-		log(ctx, "enrich-entry: gguf-head", "provider", entry.Provider, "family", entry.Family, "ERROR", err)
-		return entry, false
+		return entry, false, fmt.Errorf("enrich-entry: gguf-head: %w", err)
 	}
 
 	metadata, err := gguf.ParseMetadata(data)
 	if err != nil {
-		log(ctx, "enrich-entry: parse-gguf", "provider", entry.Provider, "family", entry.Family, "ERROR", err)
-		return entry, false
+		return entry, false, fmt.Errorf("enrich-entry: parse-gguf: %w", err)
 	}
 
 	modelType := ArchitectureClass(metadata)
 	capabilities := CapabilitiesForModel(metadata, entry.MMProj != "", catalogEntryModelName(entry))
+	mtpSource := MTPSourceFor(metadata, entry.MTP != "")
+	capabilities.MTP = mtpSource != ""
 
-	if entry.ModelType == modelType && entry.Capabilities == capabilities {
-		return entry, false
+	if entry.ModelType == modelType && entry.Capabilities == capabilities && entry.MTPSource == mtpSource {
+		return entry, false, nil
 	}
 
 	entry.ModelType = modelType
 	entry.Capabilities = capabilities
+	entry.MTPSource = mtpSource
 
-	return entry, true
+	return entry, true, nil
 }
 
 func isDecisionCatalogEntry(entry CatalogEntry) bool {

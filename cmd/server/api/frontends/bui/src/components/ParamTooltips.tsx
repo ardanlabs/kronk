@@ -148,6 +148,7 @@ export const PARAM_TOOLTIPS = {
   tensorBuftOverrides: 'Manual tensor buffer type overrides for specific layers. Advanced option for fine-grained control of where individual tensors are placed.',
   hasProjection: 'Whether the model includes a multi-modal projection file (mmproj). Required for vision or audio input — the projection maps image/audio embeddings into the model\'s token space.',
   validated: 'Whether the model has been validated against the Kronk catalog. Validated models have confirmed-working configurations, templates, and recommended settings.',
+  mtpSource: 'How the model supplies its multi-token prediction drafter: embedded in the model GGUF or provided as a separate companion GGUF file.',
 
   // ── Pool / resource budget tooltips ──────────────────────────────────────
   budgetPercent: 'Percentage of detected GPU VRAM and system RAM the pool is allowed to commit to loaded models. Reservations beyond this percentage trigger eviction of idle models. Default: 80%.',

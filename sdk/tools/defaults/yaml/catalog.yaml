@@ -1,3 +1,4 @@
+version: 1
 models:
   Qwen/Qwen3-Embedding-0.6B-Q8_0:
     provider: Qwen
@@ -10,6 +11,7 @@ models:
     mtp_checked: true
     model_type: Dense
     capabilities:
+      mtp: false
       endpoint: embeddings
       embedding: true
     resolved_at: 2026-07-30T01:18:25.141492Z
@@ -24,6 +26,7 @@ models:
     mtp_checked: true
     model_type: Hybrid
     capabilities:
+      mtp: false
       endpoint: decision
       decision: true
     resolved_at: 2026-09-28T18:11:16.921571Z
@@ -41,6 +44,7 @@ models:
     mtp_checked: true
     model_type: Dense
     capabilities:
+      mtp: false
       endpoint: chat_completion
       images: true
       audio: true
@@ -63,6 +67,7 @@ models:
     mtp_checked: true
     model_type: Dense
     capabilities:
+      mtp: false
       endpoint: chat_completion
       images: true
       audio: true
@@ -85,6 +90,7 @@ models:
     mtp_checked: true
     model_type: Dense
     capabilities:
+      mtp: false
       endpoint: chat_completion
       images: true
       streaming: true
@@ -105,6 +111,7 @@ models:
     mtp_checked: true
     model_type: MoE
     capabilities:
+      mtp: false
       endpoint: chat_completion
       images: true
       audio: true
@@ -124,6 +131,7 @@ models:
     mtp_checked: true
     model_type: Dense
     capabilities:
+      mtp: false
       endpoint: rerank
       rerank: true
     resolved_at: 2026-07-30T01:18:36.132801Z
@@ -138,6 +146,7 @@ models:
     mtp_checked: true
     model_type: Dense
     capabilities:
+      mtp: false
       endpoint: rerank
       rerank: true
     resolved_at: 2026-08-11T04:03:36.425943Z
@@ -155,6 +164,7 @@ models:
     mtp_checked: true
     model_type: Dense
     capabilities:
+      mtp: false
       endpoint: chat_completion
       images: true
       audio: true
@@ -175,6 +185,7 @@ models:
     mtp_checked: true
     model_type: Hybrid
     capabilities:
+      mtp: false
       endpoint: chat_completion
       images: true
       streaming: true
@@ -195,6 +206,7 @@ models:
     mtp_checked: true
     model_type: Hybrid
     capabilities:
+      mtp: false
       endpoint: chat_completion
       images: true
       streaming: true
@@ -212,6 +224,7 @@ models:
     mtp_checked: true
     model_type: Dense
     capabilities:
+      mtp: false
       endpoint: chat_completion
       streaming: true
       reasoning: true
@@ -228,6 +241,7 @@ models:
     mtp_checked: true
     model_type: Dense
     capabilities:
+      mtp: false
       endpoint: embeddings
       embedding: true
     resolved_at: 2026-07-30T01:18:34.52641Z
@@ -242,6 +256,7 @@ models:
     mtp_checked: true
     model_type: Hybrid
     capabilities:
+      mtp: false
       endpoint: decision
       decision: true
     resolved_at: 2026-09-28T17:35:47.75056Z
@@ -259,6 +274,7 @@ models:
     mtp_checked: true
     model_type: Hybrid
     capabilities:
+      mtp: false
       endpoint: chat_completion
       images: true
       streaming: true
@@ -279,6 +295,7 @@ models:
     mtp_checked: true
     model_type: Hybrid
     capabilities:
+      mtp: false
       endpoint: chat_completion
       images: true
       streaming: true
@@ -296,6 +313,7 @@ models:
     mtp_checked: true
     model_type: Dense
     capabilities:
+      mtp: false
       endpoint: rerank
       rerank: true
     resolved_at: 2026-07-30T01:18:32.85876Z
@@ -313,6 +331,7 @@ models:
     mtp_checked: true
     model_type: Hybrid
     capabilities:
+      mtp: false
       endpoint: chat_completion
       images: true
       streaming: true
@@ -333,6 +352,7 @@ models:
     mtp_checked: true
     model_type: Dense
     capabilities:
+      mtp: false
       endpoint: chat_completion
       images: true
       streaming: true
@@ -353,6 +373,7 @@ models:
     mtp_checked: true
     model_type: Hybrid
     capabilities:
+      mtp: false
       endpoint: chat_completion
       images: true
       streaming: true
@@ -370,6 +391,7 @@ models:
     mtp_checked: true
     model_type: Dense
     capabilities:
+      mtp: false
       endpoint: chat_completion
       streaming: true
       reasoning: true
@@ -386,6 +408,7 @@ models:
     mtp_checked: true
     model_type: Dense
     capabilities:
+      mtp: false
       endpoint: chat_completion
       streaming: true
       reasoning: true
@@ -402,6 +425,7 @@ models:
     mtp_checked: true
     model_type: Dense
     capabilities:
+      mtp: false
       endpoint: chat_completion
       streaming: true
       reasoning: true
@@ -421,6 +445,7 @@ models:
     mtp_checked: true
     model_type: Hybrid
     capabilities:
+      mtp: false
       endpoint: chat_completion
       images: true
       streaming: true
@@ -441,6 +466,7 @@ models:
     mtp_checked: true
     model_type: Hybrid
     capabilities:
+      mtp: false
       endpoint: chat_completion
       images: true
       streaming: true
@@ -461,6 +487,7 @@ models:
     mtp: mtp-Qwen3.8-27B-UD-Q4_K_XL.gguf
     mtp_orig: MTP/mtp-Qwen3.8-27B-Q4_0.gguf
     mtp_checked: true
+    mtp_source: companion
     model_type: Hybrid
     capabilities:
       endpoint: chat_completion
@@ -468,6 +495,7 @@ models:
       streaming: true
       reasoning: true
       tooling: true
+      mtp: true
     resolved_at: 2026-08-14T22:38:54.263499Z
   unsloth/Qwen3.8-27B-UD-Q8_K_XL:
     provider: unsloth
@@ -483,6 +511,7 @@ models:
     mtp: mtp-Qwen3.8-27B-UD-Q8_K_XL.gguf
     mtp_orig: MTP/mtp-Qwen3.8-27B-Q4_0.gguf
     mtp_checked: true
+    mtp_source: companion
     model_type: Hybrid
     capabilities:
       endpoint: chat_completion
@@ -490,6 +519,7 @@ models:
       streaming: true
       reasoning: true
       tooling: true
+      mtp: true
     resolved_at: 2026-08-14T20:55:18.890296Z
   unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M:
     provider: unsloth
@@ -506,6 +536,7 @@ models:
     mtp_orig: mtp-gemma-4-26B-A4B-it.gguf
     mtp_size: 461766816
     mtp_checked: true
+    mtp_source: companion
     model_type: MoE
     capabilities:
       endpoint: chat_completion
@@ -513,6 +544,7 @@ models:
       streaming: true
       reasoning: true
       tooling: true
+      mtp: true
     resolved_at: 2026-06-16T14:22:40.598626Z
   unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL:
     provider: unsloth
@@ -529,6 +561,7 @@ models:
     mtp_orig: mtp-gemma-4-26B-A4B-it.gguf
     mtp_size: 461766816
     mtp_checked: true
+    mtp_source: companion
     model_type: MoE
     capabilities:
       endpoint: chat_completion
@@ -536,6 +569,7 @@ models:
       streaming: true
       reasoning: true
       tooling: true
+      mtp: true
     resolved_at: 2026-07-19T12:40:25.472673Z
   unsloth/gemma-4-E4B-it-Q4_K_M:
     provider: unsloth
@@ -552,6 +586,7 @@ models:
     mtp_orig: mtp-gemma-4-E4B-it.gguf
     mtp_size: 98653248
     mtp_checked: true
+    mtp_source: companion
     model_type: Dense
     capabilities:
       endpoint: chat_completion
@@ -561,6 +596,7 @@ models:
       streaming: true
       reasoning: true
       tooling: true
+      mtp: true
     resolved_at: 2026-08-18T17:54:47.04641Z
   unsloth/gemma-4-E4B-it-qat-UD-Q4_K_XL:
     provider: unsloth
@@ -576,6 +612,7 @@ models:
     mtp_checked: true
     model_type: Dense
     capabilities:
+      mtp: false
       endpoint: chat_completion
       images: true
       streaming: true
@@ -593,6 +630,7 @@ models:
     mtp_checked: true
     model_type: MoE
     capabilities:
+      mtp: false
       endpoint: chat_completion
       streaming: true
       reasoning: true
@@ -610,6 +648,7 @@ models:
     mmproj_orig: mmproj-F16.gguf
     mmproj_size: 899283584
     mtp_checked: true
+    mtp_source: embedded
     model_type: Hybrid
     capabilities:
       endpoint: chat_completion
@@ -617,6 +656,7 @@ models:
       streaming: true
       reasoning: true
       tooling: true
+      mtp: true
     resolved_at: 2026-08-01T13:56:38.224419Z
   unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL:
     provider: unsloth
@@ -630,6 +670,7 @@ models:
     mmproj_orig: mmproj-F16.gguf
     mmproj_size: 899283584
     mtp_checked: true
+    mtp_source: embedded
     model_type: Hybrid
     capabilities:
       endpoint: chat_completion
@@ -637,6 +678,7 @@ models:
       streaming: true
       reasoning: true
       tooling: true
+      mtp: true
     resolved_at: 2026-05-19T10:51:03.18711Z
   unsloth/rnj-1-instruct-Q6_K:
     provider: unsloth
@@ -649,6 +691,7 @@ models:
     mtp_checked: true
     model_type: Dense
     capabilities:
+      mtp: false
       endpoint: chat_completion
       streaming: true
       reasoning: true

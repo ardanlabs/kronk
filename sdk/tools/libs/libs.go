@@ -165,9 +165,7 @@ type Libs struct {
 // It verifies that the automatically selected host runtime is compatible while
 // preserving explicit options. New resolves the install location, reads any
 // existing version.json to back-fill the (arch, os, processor) triple for
-// fields the caller did not explicitly set, and migrates a legacy root-level
-// install (libraries directly under <libsRoot>) into
-// <libsRoot>/<os>/<arch>/<processor>/ if one is found.
+// fields the caller did not explicitly set.
 func New(opts ...Option) (*Libs, error) {
 	var options Options
 	for _, opt := range opts {
@@ -183,24 +181,14 @@ func New(opts ...Option) (*Libs, error) {
 		return nil, err
 	}
 
-	// Migrate a legacy install (libs sitting directly under the root with a
-	// version.json next to them) into the new per-triple layout. Only attempt
-	// this when the user did not explicitly point at a custom install path.
-	if options.LibPath == "" {
-		if migrated, err := migrateLegacyRoot(root); err != nil {
-			return nil, fmt.Errorf("libs: migrate legacy install: %w", err)
-		} else if migrated != "" && path == root {
-			// Migration produced a triple folder; if the caller's resolved
-			// path was the root itself, switch to the migrated location.
-			path = migrated
-		}
-	}
-
 	// Apply the resolution precedence for each triple field:
 	//   1. explicit Option (WithArch/WithOS/WithProcessor)
-	//   2. existing version.json at the resolved install path
+	//   2. version.json at an explicitly configured install path
 	//   3. KRONK_* environment variable / runtime detection (defaults package)
-	tag, _ := readVersionFile(path)
+	var tag VersionTag
+	if options.LibPath != "" {
+		tag, _ = readVersionFile(path)
+	}
 
 	arch, err := resolveArch(options.Arch, tag.Arch)
 	if err != nil {
@@ -818,84 +806,6 @@ func resolvePaths(basePath string, libPath string) (root string, path string, re
 	}
 
 	return libPath, libPath, false, nil
-}
-
-// migrateLegacyRoot moves an install written in the legacy "libs at root"
-// layout into the per-triple subdirectory for its own (arch, os, processor)
-// triple. It is a no-op when no version.json exists at the root or when the
-// triple subfolder already contains a version.json.
-//
-// Returns the new install path on successful migration, the empty string
-// otherwise.
-func migrateLegacyRoot(root string) (string, error) {
-	rootVersionPath := filepath.Join(root, versionFile)
-	tag, err := readVersionFile(root)
-	if err != nil {
-		return "", nil // no legacy install to migrate.
-	}
-	if tag.OS == "" || tag.Arch == "" || tag.Processor == "" {
-		return "", nil // version.json is too incomplete to migrate safely.
-	}
-
-	arch, err := download.ParseArch(tag.Arch)
-	if err != nil {
-		return "", nil
-	}
-	opSys, err := download.ParseOS(tag.OS)
-	if err != nil {
-		return "", nil
-	}
-	processor, err := download.ParseProcessor(tag.Processor)
-	if err != nil {
-		return "", nil
-	}
-
-	dst := installPathFor(root, arch, opSys, processor)
-
-	// If the destination already has a version.json, the migration has
-	// effectively already happened; just clean up the stale root files.
-	if _, err := os.Stat(filepath.Join(dst, versionFile)); err == nil {
-		return cleanLegacyRoot(root, rootVersionPath, dst)
-	}
-
-	if err := os.MkdirAll(dst, 0o755); err != nil {
-		return "", fmt.Errorf("mkdir %s: %w", dst, err)
-	}
-
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		return "", fmt.Errorf("read root: %w", err)
-	}
-
-	for _, e := range entries {
-		// Skip the per-triple subtree we're migrating into and any peer OS
-		// directories that may already exist for cross-triple installs.
-		if e.IsDir() {
-			if _, parseErr := download.ParseOS(e.Name()); parseErr == nil {
-				continue
-			}
-		}
-		if e.Name() == "temp" {
-			continue
-		}
-
-		src := filepath.Join(root, e.Name())
-		if err := os.Rename(src, filepath.Join(dst, e.Name())); err != nil {
-			return "", fmt.Errorf("move %s: %w", e.Name(), err)
-		}
-	}
-
-	return dst, nil
-}
-
-func cleanLegacyRoot(root string, rootVersionPath string, _ string) (string, error) {
-	// The destination already exists; just remove the duplicate root-level
-	// version.json so subsequent calls don't re-detect a legacy install.
-	if err := os.Remove(rootVersionPath); err != nil && !os.IsNotExist(err) {
-		return "", fmt.Errorf("clean root version.json: %w", err)
-	}
-	_ = root
-	return "", nil
 }
 
 // resolveArch returns the architecture to use following the precedence:

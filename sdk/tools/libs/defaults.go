@@ -15,10 +15,6 @@ import (
 //     as-is.
 //  2. Otherwise the path is the per-triple install directory under the
 //     libraries root: <root>/<os>/<arch>/<processor>/.
-//
-// Path also performs the legacy-layout migration on first call so that
-// existing installs at <root>/*.so are moved into their triple folder
-// before the runtime tries to load from them.
 func Path(override string) string {
 	if override == "" {
 		override = os.Getenv("KRONK_LIB_PATH")
@@ -27,7 +23,7 @@ func Path(override string) string {
 	lib, err := New(WithLibPath(override))
 	if err != nil {
 		// Resolution failed (very rare — only for unparseable env values).
-		// Fall back to the legacy root so callers see a clear "library not
+		// Fall back to the configured root so callers see a clear "library not
 		// found" error rather than a confusing path-resolution failure.
 		if override != "" {
 			return override

@@ -1,7 +1,9 @@
 package models
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"os"
 	"path/filepath"
@@ -10,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/hf"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"go.yaml.in/yaml/v2"
@@ -100,15 +103,50 @@ func TestCapabilitiesForSpecializedQwenModels(t *testing.T) {
 	}
 }
 
+func TestMTPMetadata(t *testing.T) {
+	metadata := map[string]string{"qwen35moe.nextn_predict_layers": "1"}
+
+	capabilities := CapabilitiesForModel(metadata, false, "")
+	if !capabilities.MTP {
+		t.Error("CapabilitiesForModel: got MTP false, want true")
+	}
+	if got := MTPSourceFor(metadata, false); got != MTPSourceEmbedded {
+		t.Errorf("MTPSourceFor embedded: got %q, want %q", got, MTPSourceEmbedded)
+	}
+	if got := MTPSourceFor(metadata, true); got != MTPSourceCompanion {
+		t.Errorf("MTPSourceFor companion precedence: got %q, want %q", got, MTPSourceCompanion)
+	}
+}
+
 func TestEmbeddedCatalogCapabilities(t *testing.T) {
 	filePath, err := defaults.CatalogFile("", t.TempDir())
 	if err != nil {
 		t.Fatalf("CatalogFile: unexpected error: %v", err)
 	}
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("ReadFile: unexpected error: %v", err)
+	}
+	var schema struct {
+		Models map[string]struct {
+			Capabilities map[string]any `yaml:"capabilities"`
+		} `yaml:"models"`
+	}
+	if err := yaml.Unmarshal(data, &schema); err != nil {
+		t.Fatalf("Unmarshal: unexpected error: %v", err)
+	}
+	for id, entry := range schema.Models {
+		if _, exists := entry.Capabilities["mtp"]; !exists {
+			t.Errorf("model %q capabilities omit mtp", id)
+		}
+	}
 
 	catalog, err := NewResolver(nil, filePath).Load()
 	if err != nil {
 		t.Fatalf("Load: unexpected error: %v", err)
+	}
+	if catalog.Version != catalogVersion {
+		t.Errorf("catalog version: got %d, want %d", catalog.Version, catalogVersion)
 	}
 
 	for id, entry := range catalog.Models {
@@ -187,6 +225,146 @@ func TestEmbeddedCatalogCapabilities(t *testing.T) {
 		entry.MTPSize != 461766816 ||
 		!entry.MTPChecked {
 		t.Errorf("model %q has incomplete MTP companion metadata: %+v", gemma4Q4, entry)
+	}
+	if entry.MTPSource != MTPSourceCompanion || !entry.Capabilities.MTP {
+		t.Errorf("model %q MTP metadata: got source %q capability %t", gemma4Q4, entry.MTPSource, entry.Capabilities.MTP)
+	}
+
+	const embeddedMTP = "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL"
+	entry, exists = catalog.Models[embeddedMTP]
+	if !exists {
+		t.Fatalf("required model %q is missing", embeddedMTP)
+	}
+	if entry.MTPSource != MTPSourceEmbedded || !entry.Capabilities.MTP || entry.MTP != "" {
+		t.Errorf("model %q MTP metadata: got source %q capability %t companion %q", embeddedMTP, entry.MTPSource, entry.Capabilities.MTP, entry.MTP)
+	}
+}
+
+func TestCatalogRejectsUnsupportedVersion(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "catalog.yaml")
+	if err := os.WriteFile(filePath, []byte("version: 2\nmodels: {}\n"), 0600); err != nil {
+		t.Fatalf("WriteFile: unexpected error: %v", err)
+	}
+
+	if _, err := NewResolver(nil, filePath).Load(); err == nil || !strings.Contains(err.Error(), "unsupported catalog version 2") {
+		t.Fatalf("Load error: got %v, want unsupported catalog version", err)
+	}
+}
+
+func TestReconcileCatalogMigratesEmbeddedMTP(t *testing.T) {
+	basePath := t.TempDir()
+	m, err := NewWithPaths(basePath)
+	if err != nil {
+		t.Fatalf("NewWithPaths: unexpected error: %v", err)
+	}
+
+	filePath, err := defaults.CatalogFile("", basePath)
+	if err != nil {
+		t.Fatalf("CatalogFile: unexpected error: %v", err)
+	}
+	resolver := NewResolver(nil, filePath)
+	legacy := Catalog{Models: map[string]CatalogEntry{
+		"example/model-Q8_0": {
+			Provider:     "example",
+			Family:       "model-GGUF",
+			Revision:     "main",
+			Files:        []string{"model-Q8_0.gguf"},
+			MTPChecked:   true,
+			ModelType:    "Dense",
+			Capabilities: CatalogCapabilities{Endpoint: "chat_completion", Streaming: true},
+		},
+	}}
+	if err := resolver.Save(legacy); err != nil {
+		t.Fatalf("Save: unexpected error: %v", err)
+	}
+
+	modelFile := filepath.Join(m.Path(), "example", "model-GGUF", "model-Q8_0.gguf")
+	if err := os.MkdirAll(filepath.Dir(modelFile), 0755); err != nil {
+		t.Fatalf("MkdirAll: unexpected error: %v", err)
+	}
+	writeCatalogTestGGUF(t, modelFile, map[string]uint32{"qwen35moe.nextn_predict_layers": 1})
+
+	log := func(context.Context, string, ...any) {}
+	if err := m.ReconcileCatalog(context.Background(), log); err != nil {
+		t.Fatalf("ReconcileCatalog: unexpected error: %v", err)
+	}
+
+	catalog, err := resolver.Load()
+	if err != nil {
+		t.Fatalf("Load: unexpected error: %v", err)
+	}
+	entry := catalog.Models["example/model-Q8_0"]
+	if catalog.Version != catalogVersion {
+		t.Errorf("catalog version: got %d, want %d", catalog.Version, catalogVersion)
+	}
+	if entry.MTPSource != MTPSourceEmbedded || !entry.Capabilities.MTP {
+		t.Errorf("migrated MTP metadata: got source %q capability %t", entry.MTPSource, entry.Capabilities.MTP)
+	}
+}
+
+func TestReconcileCatalogRetriesIncompleteMigration(t *testing.T) {
+	basePath := t.TempDir()
+	m, err := NewWithPaths(basePath)
+	if err != nil {
+		t.Fatalf("NewWithPaths: unexpected error: %v", err)
+	}
+	filePath, err := defaults.CatalogFile("", basePath)
+	if err != nil {
+		t.Fatalf("CatalogFile: unexpected error: %v", err)
+	}
+	resolver := NewResolver(nil, filePath)
+	legacy := Catalog{Models: map[string]CatalogEntry{
+		"example/missing": {
+			Provider:     "example",
+			Family:       "missing-GGUF",
+			MTPChecked:   true,
+			ModelType:    "Dense",
+			Capabilities: CatalogCapabilities{Endpoint: "chat_completion", Streaming: true},
+		},
+	}}
+	if err := resolver.Save(legacy); err != nil {
+		t.Fatalf("Save: unexpected error: %v", err)
+	}
+
+	log := func(context.Context, string, ...any) {}
+	if err := m.ReconcileCatalog(context.Background(), log); err != nil {
+		t.Fatalf("ReconcileCatalog: unexpected error: %v", err)
+	}
+	catalog, err := resolver.Load()
+	if err != nil {
+		t.Fatalf("Load: unexpected error: %v", err)
+	}
+	if catalog.Version != 0 {
+		t.Errorf("catalog version: got %d, want 0 after failed enrichment", catalog.Version)
+	}
+}
+
+func writeCatalogTestGGUF(t *testing.T, file string, metadata map[string]uint32) {
+	t.Helper()
+
+	var data bytes.Buffer
+	values := []any{gguf.Magic, uint32(3), uint64(0), uint64(len(metadata))}
+	for _, value := range values {
+		if err := binary.Write(&data, binary.LittleEndian, value); err != nil {
+			t.Fatalf("binary.Write: unexpected error: %v", err)
+		}
+	}
+	for key, value := range metadata {
+		if err := binary.Write(&data, binary.LittleEndian, uint64(len(key))); err != nil {
+			t.Fatalf("binary.Write key length: unexpected error: %v", err)
+		}
+		if _, err := data.WriteString(key); err != nil {
+			t.Fatalf("WriteString: unexpected error: %v", err)
+		}
+		if err := binary.Write(&data, binary.LittleEndian, gguf.MetadataValueTypeUInt32); err != nil {
+			t.Fatalf("binary.Write value type: unexpected error: %v", err)
+		}
+		if err := binary.Write(&data, binary.LittleEndian, value); err != nil {
+			t.Fatalf("binary.Write value: unexpected error: %v", err)
+		}
+	}
+	if err := os.WriteFile(file, data.Bytes(), 0600); err != nil {
+		t.Fatalf("WriteFile: unexpected error: %v", err)
 	}
 }
 
@@ -620,13 +798,13 @@ func TestResolver_CacheHitNoHFCall(t *testing.T) {
 	cached := Catalog{
 		Models: map[string]CatalogEntry{
 			"unsloth/Qwen3-Q4_K_M": {
-				Provider:            "unsloth",
-				Family:              "Qwen3-GGUF",
-				Revision:            "main",
-				Files:               []string{"Qwen3-Q4_K_M.gguf"},
-				MMProj:              "mmproj-Qwen3-Q4_K_M.gguf",
-				MMProjOrig:          "mmproj-F16.gguf",
-				MTPDiscoveryVersion: currentMTPDiscoveryVersion,
+				Provider:   "unsloth",
+				Family:     "Qwen3-GGUF",
+				Revision:   "main",
+				Files:      []string{"Qwen3-Q4_K_M.gguf"},
+				MMProj:     "mmproj-Qwen3-Q4_K_M.gguf",
+				MMProjOrig: "mmproj-F16.gguf",
+				MTPChecked: true,
 			},
 		},
 	}
@@ -647,51 +825,6 @@ func TestResolver_CacheHitNoHFCall(t *testing.T) {
 	}
 	if !reflect.DeepEqual(res.Files, []string{"Qwen3-Q4_K_M.gguf"}) {
 		t.Errorf("Files = %v", res.Files)
-	}
-}
-
-func TestResolver_OldCacheDiscoversNestedMTP(t *testing.T) {
-	hfc := &fakeHF{
-		search: map[string][]string{
-			"unsloth|Qwen3.8-27B": {"unsloth/Qwen3.8-27B-GGUF"},
-		},
-		metas: map[string][]string{
-			"unsloth/Qwen3.8-27B-GGUF": {
-				"Qwen3.8-27B-UD-Q4_K_XL.gguf",
-				"MTP/mtp-Qwen3.8-27B-Q4_0.gguf",
-			},
-		},
-	}
-	rfile := filepath.Join(t.TempDir(), "catalog.yaml")
-	cached := Catalog{Models: map[string]CatalogEntry{
-		"unsloth/Qwen3.8-27B-UD-Q4_K_XL": {
-			Provider:   "unsloth",
-			Family:     "Qwen3.8-27B-GGUF",
-			Revision:   "main",
-			Files:      []string{"Qwen3.8-27B-UD-Q4_K_XL.gguf"},
-			MTPChecked: true,
-		},
-	}}
-	data, _ := yaml.Marshal(cached)
-	mustWriteFile(t, rfile, string(data))
-
-	r := NewResolverWithClient(nil, rfile, hfc)
-	res, err := r.Resolve(context.Background(), "unsloth/Qwen3.8-27B-UD-Q4_K_XL")
-	if err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
-	want := "https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/resolve/main/MTP/mtp-Qwen3.8-27B-Q4_0.gguf"
-	if res.DownloadMTP != want {
-		t.Errorf("DownloadMTP = %q, want %q", res.DownloadMTP, want)
-	}
-
-	got, err := r.Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	entry := got.Models[res.CanonicalID]
-	if entry.MTPDiscoveryVersion != currentMTPDiscoveryVersion {
-		t.Errorf("MTPDiscoveryVersion = %d, want %d", entry.MTPDiscoveryVersion, currentMTPDiscoveryVersion)
 	}
 }
 
@@ -797,12 +930,11 @@ func TestModelsResolveSource_AcceptedInputForms(t *testing.T) {
 	cached := Catalog{
 		Models: map[string]CatalogEntry{
 			"unsloth/Qwen3-0.6B-Q8_0": {
-				Provider:            "unsloth",
-				Family:              "Qwen3-0.6B-GGUF",
-				Revision:            "main",
-				Files:               []string{"Qwen3-0.6B-Q8_0.gguf"},
-				MTPChecked:          true,
-				MTPDiscoveryVersion: currentMTPDiscoveryVersion,
+				Provider:   "unsloth",
+				Family:     "Qwen3-0.6B-GGUF",
+				Revision:   "main",
+				Files:      []string{"Qwen3-0.6B-Q8_0.gguf"},
+				MTPChecked: true,
 			},
 		},
 	}
@@ -1378,13 +1510,13 @@ func TestResolver_TagForm_CacheHit(t *testing.T) {
 	cached := Catalog{
 		Models: map[string]CatalogEntry{
 			"unsloth/Qwen3.6-35B-A3B-UD-Q4_K_XL": {
-				Provider:            "unsloth",
-				Family:              "Qwen3.6-35B-A3B-GGUF",
-				Revision:            "main",
-				Files:               []string{"Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"},
-				MMProj:              "mmproj-Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
-				MMProjOrig:          "mmproj-F16.gguf",
-				MTPDiscoveryVersion: currentMTPDiscoveryVersion,
+				Provider:   "unsloth",
+				Family:     "Qwen3.6-35B-A3B-GGUF",
+				Revision:   "main",
+				Files:      []string{"Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"},
+				MMProj:     "mmproj-Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+				MMProjOrig: "mmproj-F16.gguf",
+				MTPChecked: true,
 			},
 		},
 	}
@@ -1463,11 +1595,11 @@ func TestResolver_AllInputForms_ProduceSameDownloadURL(t *testing.T) {
 	cached := Catalog{
 		Models: map[string]CatalogEntry{
 			"unsloth/Qwen3.6-35B-A3B-UD-Q4_K_XL": {
-				Provider:            "unsloth",
-				Family:              "Qwen3.6-35B-A3B-GGUF",
-				Revision:            "main",
-				Files:               []string{"Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"},
-				MTPDiscoveryVersion: currentMTPDiscoveryVersion,
+				Provider:   "unsloth",
+				Family:     "Qwen3.6-35B-A3B-GGUF",
+				Revision:   "main",
+				Files:      []string{"Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"},
+				MTPChecked: true,
 			},
 		},
 	}
@@ -1677,9 +1809,8 @@ func TestMatchMTPToModel(t *testing.T) {
 	}
 }
 
-// TestResolver_DiscoverMTP verifies the MTP discovery migration path: an
-// existing catalog entry whose discovery version predates nested MTP folders
-// gets a companion discovered and recorded by a single HF sibling scan.
+// TestResolver_DiscoverMTP verifies that an unchecked catalog entry gets a
+// companion discovered and recorded by a single HF sibling scan.
 func TestResolver_DiscoverMTP(t *testing.T) {
 	if !hasNetwork() {
 		t.Skip("discoverCompanions requires network for the hasNetwork() guard")
@@ -1700,11 +1831,10 @@ func TestResolver_DiscoverMTP(t *testing.T) {
 	r := NewResolverWithClient(nil, rfile, hfc)
 
 	entry := CatalogEntry{
-		Provider:   "unsloth",
-		Family:     "Qwen3.8-27B-GGUF",
-		Revision:   "main",
-		Files:      []string{"Qwen3.8-27B-UD-Q4_K_XL.gguf"},
-		MTPChecked: true,
+		Provider: "unsloth",
+		Family:   "Qwen3.8-27B-GGUF",
+		Revision: "main",
+		Files:    []string{"Qwen3.8-27B-UD-Q4_K_XL.gguf"},
 	}
 
 	got, ok := r.discoverCompanions(context.Background(), entry, testLog)
@@ -1713,9 +1843,6 @@ func TestResolver_DiscoverMTP(t *testing.T) {
 	}
 	if !got.MTPChecked {
 		t.Error("MTPChecked not set after a successful scan")
-	}
-	if got.MTPDiscoveryVersion != currentMTPDiscoveryVersion {
-		t.Errorf("MTPDiscoveryVersion = %d, want %d", got.MTPDiscoveryVersion, currentMTPDiscoveryVersion)
 	}
 	if got.MTPOrig != "MTP/mtp-Qwen3.8-27B-Q4_0.gguf" {
 		t.Errorf("MTPOrig = %q, want nested Qwen3.8 companion", got.MTPOrig)
@@ -1799,12 +1926,11 @@ func TestResolver_DiscoverCompanions_RecoverMMProj(t *testing.T) {
 	// look up: no HF call, ok=false.
 	hfc.calls = nil
 	done := CatalogEntry{
-		Provider:            "unsloth",
-		Family:              "gemma-4-26B-A4B-it-GGUF",
-		Revision:            "main",
-		Files:               []string{"some-other-model-Q8_0.gguf"},
-		MTPChecked:          true,
-		MTPDiscoveryVersion: currentMTPDiscoveryVersion,
+		Provider:   "unsloth",
+		Family:     "gemma-4-26B-A4B-it-GGUF",
+		Revision:   "main",
+		Files:      []string{"some-other-model-Q8_0.gguf"},
+		MTPChecked: true,
 	}
 	if _, ok := r.discoverCompanions(context.Background(), done, testLog); ok {
 		t.Error("discoverCompanions ok=true, want false (nothing to discover)")

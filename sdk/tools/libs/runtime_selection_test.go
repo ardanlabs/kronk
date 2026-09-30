@@ -94,7 +94,7 @@ func TestWithDetectOverrides(t *testing.T) {
 	}
 }
 
-func TestNewAutomaticallySelectsCompatibleHostRuntime(t *testing.T) {
+func TestSelectHostRuntimeChoosesCompatibleFallback(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test uses Unix shell scripts")
 	}
@@ -122,8 +122,6 @@ echo "deviceType = PHYSICAL_DEVICE_TYPE_DISCRETE_GPU"
 	}
 	t.Setenv("PATH", bin)
 
-	basePath := t.TempDir()
-	root := filepath.Join(basePath, localFolder)
 	arch, err := download.ParseArch("amd64")
 	if err != nil {
 		t.Fatalf("parse arch: %v", err)
@@ -132,18 +130,17 @@ echo "deviceType = PHYSICAL_DEVICE_TYPE_DISCRETE_GPU"
 	if err != nil {
 		t.Fatalf("parse os: %v", err)
 	}
-	if err := os.MkdirAll(root, 0o755); err != nil {
-		t.Fatalf("mkdir root: %v", err)
-	}
-	if err := writeVersionFile(root, "b100", arch, opSys, download.CUDA); err != nil {
-		t.Fatalf("write version: %v", err)
-	}
 
-	lib, err := New(WithBasePath(basePath))
-	if err != nil {
-		t.Fatalf("New: %v", err)
+	root := filepath.Join(t.TempDir(), localFolder)
+	lib := Libs{
+		root:      root,
+		path:      installPathFor(root, arch, opSys, download.CUDA),
+		arch:      arch,
+		os:        opSys,
+		processor: download.CUDA,
 	}
-	if got, want := lib.Processor(), "vulkan"; got != want {
+	selected, _ := lib.selectHostRuntime(t.Context(), nil, probeCUDA13Host, lib.detectHostFallback)
+	if got, want := selected.Processor(), "vulkan"; got != want {
 		t.Errorf("processor: got %q, want %q", got, want)
 	}
 }

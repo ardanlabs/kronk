@@ -399,10 +399,6 @@ The default data layout is:
 └── keys/
 ```
 
-Older installations that stored `catalog.yaml` or `model_config.yaml` directly
-under `~/.kronk/` are migrated automatically when the new location is first
-used.
-
 Set `KRONK_BASE_PATH` or the global `--base-path` flag to move the entire data
 root. Official containers set it to `/kronk`.
 

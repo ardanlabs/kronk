@@ -74,6 +74,8 @@ func runLocal(mdls *models.Models, args []string) error {
 			detail.Parameters = models.FormatParameterCount(detail.ParameterCount)
 			detail.Template = models.TemplateName(metadata)
 			detail.Capabilities = models.CapabilitiesForModel(metadata, entry.MMProj != "", id)
+			detail.MTPSource = models.MTPSourceFor(metadata, entry.MTP != "")
+			detail.Capabilities.MTP = detail.MTPSource != ""
 		}
 	}
 
@@ -85,6 +87,11 @@ func runLocal(mdls *models.Models, args []string) error {
 // =============================================================================
 
 func print(d models.CatalogDetail) {
+	mtpSource := string(d.MTPSource)
+	if mtpSource == "" {
+		mtpSource = "-"
+	}
+
 	fmt.Println()
 	fmt.Println("Catalog Entry")
 	fmt.Println("=============")
@@ -95,6 +102,8 @@ func print(d models.CatalogDetail) {
 	fmt.Printf("Web Page:       %s\n", d.WebPage)
 	fmt.Printf("Total Size:     %s\n", d.TotalSize)
 	fmt.Printf("Has Projection: %t\n", d.HasProjection)
+	fmt.Printf("Has MTP File:   %t\n", d.HasMTP)
+	fmt.Printf("MTP Source:     %s\n", mtpSource)
 	fmt.Printf("Downloaded:     %t\n", d.Downloaded)
 	fmt.Printf("Validated:      %t\n", d.Validated)
 
@@ -122,6 +131,9 @@ func print(d models.CatalogDetail) {
 	if d.Files.Proj.URL != "" {
 		fmt.Printf("proj:   %s (%s)\n", d.Files.Proj.URL, models.FormatBytes(d.Files.Proj.Size))
 	}
+	if d.Files.MTP.URL != "" {
+		fmt.Printf("mtp:    %s (%s)\n", d.Files.MTP.URL, models.FormatBytes(d.Files.MTP.Size))
+	}
 
 	if d.Capabilities.Endpoint != "" {
 		fmt.Println()
@@ -134,6 +146,7 @@ func print(d models.CatalogDetail) {
 		fmt.Printf("Embedding:  %t\n", d.Capabilities.Embedding)
 		fmt.Printf("Rerank:     %t\n", d.Capabilities.Rerank)
 		fmt.Printf("Decision:   %t\n", d.Capabilities.Decision)
+		fmt.Printf("MTP:        %t\n", d.Capabilities.MTP)
 		fmt.Printf("Images:     %t\n", d.Capabilities.Images)
 		fmt.Printf("Audio:      %t\n", d.Capabilities.Audio)
 		fmt.Printf("Video:      %t\n", d.Capabilities.Video)
