@@ -194,9 +194,10 @@ or `"required"`. Select a specific function with the Responses form
 
 Use `max_output_tokens` to set the Responses output limit. `max_tokens` remains
 available as a compatibility alias, but `max_output_tokens` wins when both are
-present. The Responses API does not support `stop`, so requests containing it
-are rejected. When the output-token limit is reached, the response has
-`status: "incomplete"`, `completed_at: null`, and:
+present. As a Kronk extension, `stop` accepts a string or an array of up to four
+strings and ends generation when one is encountered; the matched sequence is
+omitted from the output. When the output-token limit is reached, the response
+has `status: "incomplete"`, `completed_at: null`, and:
 
 ```json
 "incomplete_details": {"reason": "max_output_tokens"}
