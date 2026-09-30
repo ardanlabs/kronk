@@ -93,6 +93,19 @@ func TestResolveConfigMapsBundleComponents(t *testing.T) {
 	}
 }
 
+func TestResolveConfigMapsAudioEncoder(t *testing.T) {
+	models, files := testModels(t, malinamodels.BundleWan22S2V14B, 1)
+	sd := newStableDiffusion(discardLog, models, nil)
+
+	cfg, err := sd.resolveConfig(malinamodels.BundleWan22S2V14B.String())
+	if err != nil {
+		t.Fatalf("resolveConfig() error = %v", err)
+	}
+	if cfg.AudioEncoderPath != files[string(malinamodels.RoleAudioEncoder)] {
+		t.Errorf("AudioEncoderPath: got %q, want %q", cfg.AudioEncoderPath, files[string(malinamodels.RoleAudioEncoder)])
+	}
+}
+
 func TestResolveConfigRejectsUpscaler(t *testing.T) {
 	models, _ := testModels(t, malinamodels.BundleRealESRGANX4Anime, 1)
 	sd := newStableDiffusion(discardLog, models, nil)

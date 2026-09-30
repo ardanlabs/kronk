@@ -3446,7 +3446,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"image"
 	_ "image/jpeg"
@@ -3467,32 +3466,20 @@ var (
 	progressMu  sync.Mutex
 )
 
-type config struct {
-	input    string
-	output   string
-	prompt   string
-	strength float64
-	steps    int
-	seed     int64
-}
+const (
+	inputFile  = "samples/giraffe.jpg"
+	outputFile = "malina-img2img.png"
+	prompt     = "a watercolor painting at sunset"
+)
 
 func main() {
-	var cfg config
-	flag.StringVar(&cfg.input, "in", "samples/giraffe.jpg", "source PNG or JPEG path")
-	flag.StringVar(&cfg.output, "out", "malina-img2img.png", "output PNG path")
-	flag.StringVar(&cfg.prompt, "prompt", "a watercolor painting at sunset", "prompt that steers the image")
-	flag.Float64Var(&cfg.strength, "strength", 0.6, "noise strength in (0,1]")
-	flag.IntVar(&cfg.steps, "steps", 20, "denoising steps")
-	flag.Int64Var(&cfg.seed, "seed", 42, "RNG seed (-1 selects a random seed)")
-	flag.Parse()
-
-	if err := run(cfg); err != nil {
+	if err := run(); err != nil {
 		fmt.Printf("\\nERROR: %s\\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(cfg config) error {
+func run() error {
 	mp, err := installSystem()
 	if err != nil {
 		return fmt.Errorf("unable to install system: %w", err)
@@ -3509,7 +3496,7 @@ func run(cfg config) error {
 		}
 	}()
 
-	if err := transform(mln, cfg); err != nil {
+	if err := transform(mln); err != nil {
 		return fmt.Errorf("transform: %w", err)
 	}
 
@@ -3590,38 +3577,38 @@ func newMalina(mp models.Path) (*malina.Malina, error) {
 
 // =============================================================================
 
-func transform(mln *malina.Malina, cfg config) error {
+func transform(mln *malina.Malina) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
-	source, err := loadImage(cfg.input)
+	source, err := loadImage(inputFile)
 	if err != nil {
 		return err
 	}
 
 	params := model.NewGenerateParams()
-	params.Prompt = cfg.prompt
+	params.Prompt = prompt
 	params.InitImage = source
-	params.Strength = float32(cfg.strength)
-	params.Steps = cfg.steps
-	params.Seed = cfg.seed
+	params.Strength = 0.6
+	params.Steps = 20
+	params.Seed = 42
 	params.Width, params.Height, err = generationSize(source.Bounds())
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("\\nTransforming %s with strength %.2f...\\n", cfg.input, cfg.strength)
+	fmt.Printf("\\nTransforming %s with strength %.2f...\\n", inputFile, params.Strength)
 	start := time.Now()
 
 	generated, err := mln.Generate(ctx, params)
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(cfg.output, generated.PNG, 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", cfg.output, err)
+	if err := os.WriteFile(outputFile, generated.PNG, 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", outputFile, err)
 	}
 
-	fmt.Printf("Wrote %s (%dx%d) in %s\\n", cfg.output, generated.Width, generated.Height, time.Since(start).Round(time.Millisecond))
+	fmt.Printf("Wrote %s (%dx%d) in %s\\n", outputFile, generated.Width, generated.Height, time.Since(start).Round(time.Millisecond))
 
 	return nil
 }
@@ -3699,22 +3686,17 @@ const malinaS2vExample = `// This example generates a Wan2.2 S2V video from a so
 //
 // Experimental: The Malina SDK public API is subject to change.
 //
-// Download the Wan2.2 S2V diffusion model, Wan 2.1 VAE, UMT5-XXL encoder, and
-// wav2vec2 audio encoder described by stable-diffusion.cpp's docs/wan.md, then
-// run this example with their paths:
+// The first time you run this program the system will download and install the
+// stable-diffusion.cpp libraries and a Wan2.2 S2V 14B model bundle.
 //
-//	$ make example-malina-s2v ARGS='-diffusion /path/to/wan2.2-s2v.safetensors \\
-//	    -vae /path/to/wan_2.1_vae.safetensors \\
-//	    -t5xxl /path/to/umt5-xxl.safetensors \\
-//	    -audio-encoder /path/to/wav2vec2_large_english_fp16.safetensors \\
-//	    -image /path/to/portrait.png -audio /path/to/speech.wav'
+// Run the example like this from the root of the project:
+// $ make example-malina-s2v
 package main
 
 import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"flag"
 	"fmt"
 	"image"
 	_ "image/jpeg"
@@ -3729,79 +3711,54 @@ import (
 	"github.com/ardanlabs/kronk/sdk/malina"
 	"github.com/ardanlabs/kronk/sdk/malina/model"
 	"github.com/ardanlabs/kronk/sdk/tools/malina/libs"
+	"github.com/ardanlabs/kronk/sdk/tools/malina/models"
 	"golang.org/x/image/draw"
 )
 
-type config struct {
-	diffusion    string
-	vae          string
-	t5xxl        string
-	audioEncoder string
-	image        string
-	audio        string
-	output       string
-	prompt       string
-	width        int
-	height       int
-	steps        int
-	frames       int
-	fps          int
-	seed         int64
-}
+var modelSource = models.BundleWan22S2V14B
+
+const (
+	imageFile  = "samples/adetailer-face.png"
+	audioFile  = "samples/jfk.wav"
+	outputFile = "malina-s2v.avi"
+	prompt     = "a person speaking naturally to the camera"
+	width      = 832
+	height     = 480
+)
 
 func main() {
-	var cfg config
-	flag.StringVar(&cfg.diffusion, "diffusion", "", "Wan2.2 S2V diffusion model path")
-	flag.StringVar(&cfg.vae, "vae", "", "Wan 2.1 VAE model path")
-	flag.StringVar(&cfg.t5xxl, "t5xxl", "", "UMT5-XXL text encoder path")
-	flag.StringVar(&cfg.audioEncoder, "audio-encoder", "", "wav2vec2 audio encoder path")
-	flag.StringVar(&cfg.image, "image", "", "source portrait PNG or JPEG path")
-	flag.StringVar(&cfg.audio, "audio", "", "driving WAV audio path")
-	flag.StringVar(&cfg.output, "out", "malina-s2v.avi", "output Motion-JPEG AVI path")
-	flag.StringVar(&cfg.prompt, "prompt", "a person speaking naturally to the camera", "video prompt")
-	flag.IntVar(&cfg.width, "width", 832, "video width (multiple of 8)")
-	flag.IntVar(&cfg.height, "height", 480, "video height (multiple of 8)")
-	flag.IntVar(&cfg.steps, "steps", 20, "sampling steps")
-	flag.IntVar(&cfg.frames, "frames", 81, "number of video frames")
-	flag.IntVar(&cfg.fps, "fps", 16, "requested frames per second")
-	flag.Int64Var(&cfg.seed, "seed", -1, "RNG seed (-1 selects a random seed)")
-	flag.Parse()
-
-	if err := run(cfg); err != nil {
+	if err := run(); err != nil {
 		fmt.Println("ERROR:", err)
 		os.Exit(1)
 	}
 }
 
-func run(cfg config) error {
-	if err := cfg.validate(); err != nil {
-		return err
+func run() error {
+	manifest, err := installSystem()
+	if err != nil {
+		return fmt.Errorf("unable to install system: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
 	defer cancel()
 
-	if err := initMalina(ctx); err != nil {
-		return err
-	}
-
-	source, err := loadImage(cfg.image)
+	source, err := loadImage(imageFile)
 	if err != nil {
 		return err
 	}
-	source = resize(source, cfg.width, cfg.height)
+	source = resize(source, width, height)
 
-	drivingAudio, err := loadAudio(cfg.audio)
+	drivingAudio, err := loadAudio(audioFile)
 	if err != nil {
 		return err
 	}
 
 	mln, err := malina.NewWithContext(
 		ctx,
-		model.WithDiffusionModelPath(cfg.diffusion),
-		model.WithVAEPath(cfg.vae),
-		model.WithT5XXLPath(cfg.t5xxl),
-		model.WithAudioEncoderPath(cfg.audioEncoder),
+		model.WithDiffusionModelPath(manifest.Files[string(models.RoleDiffusion)]),
+		model.WithVAEPath(manifest.Files[string(models.RoleVAE)]),
+		model.WithT5XXLPath(manifest.Files[string(models.RoleT5XXL)]),
+		model.WithAudioEncoderPath(manifest.Files[string(models.RoleAudioEncoder)]),
 	)
 	if err != nil {
 		return fmt.Errorf("load Wan2.2 S2V: %w", err)
@@ -3814,13 +3771,13 @@ func run(cfg config) error {
 	}()
 
 	params := model.NewVideoParams()
-	params.Prompt = cfg.prompt
-	params.Width = cfg.width
-	params.Height = cfg.height
-	params.Steps = cfg.steps
-	params.Frames = cfg.frames
-	params.FPS = cfg.fps
-	params.Seed = cfg.seed
+	params.Prompt = prompt
+	params.Width = width
+	params.Height = height
+	params.Steps = 20
+	params.Frames = 81
+	params.FPS = 16
+	params.Seed = 42
 	params.InitImage = source
 	params.RefAudios = []model.Audio{drivingAudio}
 
@@ -3828,7 +3785,7 @@ func run(cfg config) error {
 	if err != nil {
 		return fmt.Errorf("generate video: %w", err)
 	}
-	if err := model.SaveAVI(cfg.output, video.Frames, video.FPS, 90); err != nil {
+	if err := model.SaveAVI(outputFile, video.Frames, video.FPS, 90); err != nil {
 		return err
 	}
 
@@ -3836,51 +3793,49 @@ func run(cfg config) error {
 	if video.Audio != nil {
 		outputAudio = *video.Audio
 	}
-	wavPath := strings.TrimSuffix(cfg.output, filepath.Ext(cfg.output)) + ".wav"
+	wavPath := strings.TrimSuffix(outputFile, filepath.Ext(outputFile)) + ".wav"
 	if err := saveWAV(wavPath, outputAudio); err != nil {
 		return err
 	}
 
-	fmt.Printf("Wrote %s and %s (%d frames at %d fps)\\n", cfg.output, wavPath, len(video.Frames), video.FPS)
-	fmt.Printf("Mux with: ffmpeg -i %q -i %q -c:v copy -c:a aac -shortest malina-s2v-with-audio.mp4\\n", cfg.output, wavPath)
+	fmt.Printf("Wrote %s and %s (%d frames at %d fps)\\n", outputFile, wavPath, len(video.Frames), video.FPS)
+	fmt.Printf("Mux with: ffmpeg -i %q -i %q -c:v copy -c:a aac -shortest malina-s2v-with-audio.mp4\\n", outputFile, wavPath)
 
 	return nil
 }
 
-func (cfg config) validate() error {
-	required := []struct {
-		name  string
-		value string
-	}{
-		{"diffusion", cfg.diffusion},
-		{"vae", cfg.vae},
-		{"t5xxl", cfg.t5xxl},
-		{"audio-encoder", cfg.audioEncoder},
-		{"image", cfg.image},
-		{"audio", cfg.audio},
-	}
-	for _, field := range required {
-		if strings.TrimSpace(field.value) == "" {
-			return fmt.Errorf("-%s is required", field.name)
-		}
-	}
+func installSystem() (models.Manifest, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
+	defer cancel()
 
-	return nil
-}
-
-func initMalina(ctx context.Context) error {
 	lib, err := libs.New(
 		libs.WithDetect(ctx, malina.FmtLogger),
 		libs.WithValidation(true),
 	)
 	if err != nil {
-		return err
+		return models.Manifest{}, err
 	}
 	if _, err := lib.Download(ctx, malina.FmtLogger); err != nil {
-		return err
+		return models.Manifest{}, fmt.Errorf("unable to install stable-diffusion.cpp: %w", err)
 	}
 
-	return malina.Init(malina.WithLibPath(lib.LibsPath()))
+	if err := malina.Init(malina.WithLibPath(lib.LibsPath())); err != nil {
+		return models.Manifest{}, fmt.Errorf("unable to init Malina: %w", err)
+	}
+
+	mdls, err := models.New()
+	if err != nil {
+		return models.Manifest{}, fmt.Errorf("unable to init models: %w", err)
+	}
+
+	fmt.Println("Downloading model bundle:", modelSource)
+
+	manifest, err := mdls.DownloadBundle(ctx, modelSource)
+	if err != nil {
+		return models.Manifest{}, fmt.Errorf("unable to install model bundle: %w", err)
+	}
+
+	return manifest, nil
 }
 
 func loadImage(filename string) (image.Image, error) {
@@ -3971,7 +3926,6 @@ package main
 
 import (
 	"bytes"
-	"flag"
 	"fmt"
 	"image"
 	_ "image/jpeg"
@@ -3985,34 +3939,27 @@ import (
 	"golang.org/x/image/draw"
 )
 
-type config struct {
-	inputDir string
-	output   string
-	fps      int
-	quality  int
-}
+const (
+	inputDir   = "samples/deer"
+	outputFile = "malina-output.avi"
+	fps        = 24
+	quality    = 90
+)
 
 func main() {
-	var cfg config
-	flag.StringVar(&cfg.inputDir, "i", "samples/deer", "directory containing PNG and JPEG frames")
-	flag.StringVar(&cfg.output, "o", "malina-output.avi", "output AVI path")
-	flag.IntVar(&cfg.fps, "fps", 24, "frames per second")
-	flag.IntVar(&cfg.quality, "quality", 90, "JPEG quality from 1 to 100")
-	flag.Parse()
-
-	if err := run(cfg); err != nil {
+	if err := run(); err != nil {
 		fmt.Printf("\\nERROR: %s\\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(cfg config) error {
-	paths, err := imagePaths(cfg.inputDir)
+func run() error {
+	paths, err := imagePaths(inputDir)
 	if err != nil {
 		return err
 	}
 	if len(paths) == 0 {
-		return fmt.Errorf("no PNG or JPEG files found in %s", cfg.inputDir)
+		return fmt.Errorf("no PNG or JPEG files found in %s", inputDir)
 	}
 
 	frames := make([]image.Image, 0, len(paths))
@@ -4028,11 +3975,11 @@ func run(cfg config) error {
 		frames = append(frames, resize(frame, target))
 	}
 
-	if err := model.SaveAVI(cfg.output, frames, cfg.fps, cfg.quality); err != nil {
+	if err := model.SaveAVI(outputFile, frames, fps, quality); err != nil {
 		return fmt.Errorf("save AVI: %w", err)
 	}
 
-	fmt.Printf("Wrote %s (%d frames, %dx%d at %d fps)\\n", cfg.output, len(frames), target.Dx(), target.Dy(), cfg.fps)
+	fmt.Printf("Wrote %s (%d frames, %dx%d at %d fps)\\n", outputFile, len(frames), target.Dx(), target.Dy(), fps)
 
 	return nil
 }
