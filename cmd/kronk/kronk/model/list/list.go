@@ -73,8 +73,13 @@ func printLocal(files []models.File) {
 	fmt.Fprintln(w, "VAL\tMODEL ID\tPROVIDER\tFAMILY\tMTMD\tSIZE\tMODIFIED")
 
 	for _, model := range files {
+		modelID := model.ID
+		if model.OwnedBy != "" {
+			modelID = model.OwnedBy + "/" + model.ID
+		}
+
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			validatedMark(model.Validated), model.ID,
+			validatedMark(model.Validated), modelID,
 			dash(model.OwnedBy), dash(model.ModelFamily),
 			projectionMark(model.HasProjection),
 			formatSize(model.Size), formatTime(model.Modified))
