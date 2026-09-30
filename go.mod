@@ -6,7 +6,7 @@ require (
 	github.com/ardanlabs/bucky v1.1.3
 	github.com/ardanlabs/conf/v3 v3.13.0
 	github.com/ardanlabs/jinja v1.6.0
-	github.com/ardanlabs/malina v1.1.3
+	github.com/ardanlabs/malina v1.1.4
 	github.com/arl/statsviz v0.8.2
 	github.com/dgraph-io/badger/v4 v4.9.6
 	github.com/golang-jwt/jwt/v5 v5.3.1
@@ -17,7 +17,7 @@ require (
 	github.com/icza/mjpeg v0.0.0-20230330134156-38318e5ab8f4
 	github.com/maypok86/otter/v2 v2.3.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
-	github.com/open-policy-agent/opa v1.21.0
+	github.com/open-policy-agent/opa v1.21.1
 	github.com/prometheus/client_golang v1.24.1
 	github.com/prometheus/client_model v0.6.3
 	github.com/spf13/cobra v1.10.2
@@ -83,7 +83,7 @@ require (
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gobwas/glob v1.0.0 // indirect
-	github.com/goccy/go-json v0.11.1 // indirect
+	github.com/goccy/go-json v0.11.2 // indirect
 	github.com/google/flatbuffers v25.12.19+incompatible // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/s2a-go v0.1.10 // indirect

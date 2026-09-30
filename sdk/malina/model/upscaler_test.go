@@ -64,7 +64,7 @@ func TestUpscalerWithoutNativeContext(t *testing.T) {
 }
 
 func TestUpscalerRequestValidation(t *testing.T) {
-	u := Upscaler{}
+	u := Upscaler{factor: 4}
 
 	if _, err := u.Upscale(t.Context(), nil); !errors.Is(err, ErrInvalidRequest) {
 		t.Errorf("Upscale() error = %v, want ErrInvalidRequest", err)
@@ -75,6 +75,9 @@ func TestUpscalerRequestValidation(t *testing.T) {
 
 	if _, err := u.Factor(ctx); !errors.Is(err, context.Canceled) {
 		t.Errorf("Factor() error = %v, want context.Canceled", err)
+	}
+	if got, err := u.Factor(t.Context()); err != nil || got != 4 {
+		t.Errorf("Factor(): got %d, %v, want 4, nil", got, err)
 	}
 
 	input := image.NewRGBA(image.Rect(0, 0, 8, 8))
