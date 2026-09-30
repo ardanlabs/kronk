@@ -1883,6 +1883,12 @@ kronk libs --local`}</code></pre>
                 <td>Download or update the llama.cpp library during server startup</td>
               </tr>
               <tr>
+                <td><code>--media-backends-enabled</code></td>
+                <td><code>KRONK_MEDIA_BACKENDS_ENABLED</code></td>
+                <td><code>true</code></td>
+                <td>Download and load the Bucky and Malina native backends during server startup</td>
+              </tr>
+              <tr>
                 <td><code>--allow-upgrade</code></td>
                 <td><code>KRONK_ALLOW_UPGRADE</code></td>
                 <td><code>false</code></td>
@@ -1905,6 +1911,7 @@ kronk libs --local`}</code></pre>
           <p>Kronk also probes the installed preferred accelerator bundle. It changes to a different installed bundle only when the preferred bundle positively reports no accelerator and a same-version alternative positively reports a device. This probe never installs another bundle. The startup log records the preferred and selected processors and the reason for the decision.</p>
           <p><code>--processor</code> and <code>--lib-path</code>, or their environment equivalents, are strict operator choices and disable automatic fallback. A custom non-empty library directory without <code>version.json</code> is treated as a read-only user-managed build; the server loads it but does not upgrade or replace it. <code>--base-path</code> moves the managed library root along with other Kronk data, while <code>--lib-path</code> selects the llama.cpp location specifically. Restart the server after changing any native library selection setting.</p>
           <p>Set <code>--lib-download-enabled=false</code> or <code>KRONK_LIB_DOWNLOAD_ENABLED=false</code> to skip the automatic llama.cpp download at startup. Kronk still loads the library selected by <code>--lib-path</code> or <code>KRONK_LIB_PATH</code>.</p>
+          <p>Set <code>--media-backends-enabled=false</code> or <code>KRONK_MEDIA_BACKENDS_ENABLED=false</code> to skip automatic Bucky and Malina bundle downloads and native backend initialization. This does not affect llama.cpp download or initialization.</p>
           <p>Library verification is enabled by default. Set <code>--lib-verify-enabled=false</code> or <code>KRONK_LIB_VERIFY_ENABLED=false</code> to disable it. Kronk verifies the selected llama.cpp bundle before its device probe and verifies the selected whisper.cpp bundle before either backend loads native code. A failure leaves only the affected backend in degraded mode.</p>
           <p>For an externally pinned llama.cpp check, set <code>--lib-version</code> or <code>KRONK_LIB_VERSION</code> to <code>VERSION@sha256:&lt;64-hex-digest&gt;</code>. The digest identifies Yzma's release manifest, which identifies the platform archives and their installed files. The default llama.cpp and whisper.cpp versions already include their published manifest digests. The builders publish each manifest as a release asset, GitHub records its SHA-256, and Kronk carries that digest as the trust anchor. Yzma and Bucky validate the manifest and selected archive during download; startup verification then hashes the extracted files against the authenticated manifest. Post-install verification requires an install record and per-file hashes in the release manifest.</p>
           <p>Bucky performs separate whisper.cpp runtime selection. Its managed bundles live below <code>&lt;base&gt;/bucky-libraries</code>, and <code>KRONK_BUCKY_LIB_PATH</code> authoritatively selects a different bundle or user-managed build. It does not use <code>--lib-path</code>/<code>KRONK_LIB_PATH</code>. See <a href="https://www.kronkai.com/manual#182-install-whisper-libraries">Chapter 18 §18.2</a> for Bucky's CUDA, Vulkan, and CPU fallback rules.</p>
@@ -1973,6 +1980,7 @@ kms:
   bucky-lib-path: ""
   lib-version: ""
   lib-download-enabled: true
+  media-backends-enabled: true
   arch: ""
   os: ""
   processor: ""

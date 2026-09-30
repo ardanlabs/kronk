@@ -341,19 +341,23 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	log.Info(ctx, "startup", "status", "bucky libs ready", "libPath", buckyLibs.LibsPath(), "arch", buckyLibs.Arch(), "os", buckyLibs.OS(), "processor", buckyLibs.Processor())
 
 	buckyLibVerified := !cfg.LibVerifyEnabled
-	downloadCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
-	buckyVersion, err := buckyLibs.Download(downloadCtx, log.Info)
-	cancel()
-	if err != nil {
-		if cfg.LibVerifyEnabled {
-			return fmt.Errorf("unable to install and verify whisper.cpp: %w", err)
+	if cfg.MediaBackendsEnabled {
+		downloadCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+		buckyVersion, err := buckyLibs.Download(downloadCtx, log.Info)
+		cancel()
+		if err != nil {
+			if cfg.LibVerifyEnabled {
+				return fmt.Errorf("unable to install and verify whisper.cpp: %w", err)
+			}
+			log.Info(ctx, "startup", "WARNING", "unable to install whisper.cpp, running in degraded mode", "ERROR", err)
+		} else {
+			buckyLibVerified = true
+			if cfg.LibVerifyEnabled {
+				log.Info(ctx, "startup", "status", "verified whisper.cpp runtime", "version", buckyVersion.Version)
+			}
 		}
-		log.Info(ctx, "startup", "WARNING", "unable to install whisper.cpp, running in degraded mode", "ERROR", err)
 	} else {
-		buckyLibVerified = true
-		if cfg.LibVerifyEnabled {
-			log.Info(ctx, "startup", "status", "verified whisper.cpp runtime", "version", buckyVersion.Version)
-		}
+		log.Info(ctx, "startup", "status", "bucky backend download disabled", "libPath", buckyLibs.LibsPath())
 	}
 
 	buckyModels, err := buckymodels.NewWithPaths(cfg.BasePath)
@@ -382,19 +386,23 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	log.Info(ctx, "startup", "status", "malina libs ready", "libPath", malinaLibs.LibsPath(), "arch", malinaLibs.Arch(), "os", malinaLibs.OS(), "processor", malinaLibs.Processor())
 
 	malinaLibVerified := !cfg.LibVerifyEnabled
-	downloadCtx, cancel = context.WithTimeout(ctx, 3*time.Minute)
-	malinaVersion, err := malinaLibs.Download(downloadCtx, log.Info)
-	cancel()
-	if err != nil {
-		if cfg.LibVerifyEnabled {
-			return fmt.Errorf("unable to install and verify stable-diffusion.cpp: %w", err)
+	if cfg.MediaBackendsEnabled {
+		downloadCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+		malinaVersion, err := malinaLibs.Download(downloadCtx, log.Info)
+		cancel()
+		if err != nil {
+			if cfg.LibVerifyEnabled {
+				return fmt.Errorf("unable to install and verify stable-diffusion.cpp: %w", err)
+			}
+			log.Info(ctx, "startup", "WARNING", "unable to install stable-diffusion.cpp, running in degraded mode", "ERROR", err)
+		} else {
+			malinaLibVerified = true
+			if cfg.LibVerifyEnabled {
+				log.Info(ctx, "startup", "status", "verified stable-diffusion.cpp runtime", "version", malinaVersion.Version)
+			}
 		}
-		log.Info(ctx, "startup", "WARNING", "unable to install stable-diffusion.cpp, running in degraded mode", "ERROR", err)
 	} else {
-		malinaLibVerified = true
-		if cfg.LibVerifyEnabled {
-			log.Info(ctx, "startup", "status", "verified stable-diffusion.cpp runtime", "version", malinaVersion.Version)
-		}
+		log.Info(ctx, "startup", "status", "malina backend download disabled", "libPath", malinaLibs.LibsPath())
 	}
 
 	malinaModels, err := malinamodels.NewWithPaths(cfg.BasePath)
@@ -444,14 +452,18 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		log.Info(ctx, "startup", "WARNING", "kronk init failed, running in degraded mode (use BUI to download libraries)", "ERROR", err)
 	}
 
-	if !buckyLibVerified {
+	if !cfg.MediaBackendsEnabled {
+		log.Info(ctx, "startup", "status", "bucky backend initialization disabled")
+	} else if !buckyLibVerified {
 		return errors.New("bucky init blocked because whisper.cpp runtime verification did not succeed")
 	} else if err := bucky.Init(bucky.WithLibPath(buckyLibs.LibsPath())); err != nil {
 		log.Info(ctx, "startup", "WARNING", "bucky init failed, running in degraded mode (use BUI to download whisper libraries)", "ERROR", err)
 	}
 
 	malinaProgress := malinaprogress.New()
-	if !malinaLibVerified {
+	if !cfg.MediaBackendsEnabled {
+		log.Info(ctx, "startup", "status", "malina backend initialization disabled")
+	} else if !malinaLibVerified {
 		return errors.New("malina init blocked because stable-diffusion.cpp runtime verification did not succeed")
 	} else if err := malina.Init(malina.WithLibPath(malinaLibs.LibsPath()), malina.WithProgress(malinaProgress.Publish)); err != nil {
 		log.Info(ctx, "startup", "WARNING", "malina init failed, running in degraded mode (install stable-diffusion libraries and restart)", "ERROR", err)

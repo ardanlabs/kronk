@@ -69,20 +69,21 @@ type config struct {
 		ModelsInPool    int           `yaml:"models-in-pool"`
 		TTL             time.Duration `yaml:"ttl"`
 	} `yaml:"pool"`
-	BasePath           string `yaml:"base-path"`
-	LibPath            string `yaml:"lib-path"`
-	BuckyLibPath       string `yaml:"bucky-lib-path"`
-	MalinaLibPath      string `yaml:"malina-lib-path"`
-	LibVersion         string `yaml:"lib-version"`
-	LibDownloadEnabled bool   `yaml:"lib-download-enabled"`
-	LibVerifyEnabled   bool   `yaml:"lib-verify-enabled"`
-	Arch               string `yaml:"arch"`
-	OS                 string `yaml:"os"`
-	Processor          string `yaml:"processor"`
-	AllowUpgrade       bool   `yaml:"allow-upgrade"`
-	InsecureLogging    bool   `yaml:"insecure-logging"`
-	HfToken            string `conf:"mask" yaml:"hf-token"`
-	LlamaLog           int    `yaml:"llama-log"`
+	BasePath             string `yaml:"base-path"`
+	LibPath              string `yaml:"lib-path"`
+	BuckyLibPath         string `yaml:"bucky-lib-path"`
+	MalinaLibPath        string `yaml:"malina-lib-path"`
+	LibVersion           string `yaml:"lib-version"`
+	LibDownloadEnabled   bool   `yaml:"lib-download-enabled"`
+	MediaBackendsEnabled bool   `yaml:"media-backends-enabled"`
+	LibVerifyEnabled     bool   `yaml:"lib-verify-enabled"`
+	Arch                 string `yaml:"arch"`
+	OS                   string `yaml:"os"`
+	Processor            string `yaml:"processor"`
+	AllowUpgrade         bool   `yaml:"allow-upgrade"`
+	InsecureLogging      bool   `yaml:"insecure-logging"`
+	HfToken              string `conf:"mask" yaml:"hf-token"`
+	LlamaLog             int    `yaml:"llama-log"`
 }
 
 func newConfig() config {
@@ -109,6 +110,7 @@ func newConfig() config {
 	cfg.Pool.BudgetPercent = 90
 	cfg.Pool.ModelsInPool = 10
 	cfg.LibDownloadEnabled = true
+	cfg.MediaBackendsEnabled = true
 	cfg.LibVerifyEnabled = true
 
 	return cfg
