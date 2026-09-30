@@ -134,11 +134,13 @@ export default function DocsSDKMalinaModel() {
 	CPUThreads                  int32
 	LinearScale                 float32
 	AttnScale                   float32
+	FlashAttention              bool
+	DiffusionFlashAttention     bool
 	SageAttention               bool
 	ConditioningCacheSize       int32
 }`}</code>
               </pre>
-              <p className="doc-description">Config controls model loading and request admission. Concurrency controls the number of independently loaded contexts and simultaneous generations. QueueDepth controls how many calls are admitted to wait after every context is busy. ModelPath loads an all-in-one checkpoint. DiffusionModelPath and its companion paths configure a component model. At least one of ModelPath or DiffusionModelPath is required. TokenizerPath loads an external tokenizer JSON file. SageAttention enables the native optimization for supported models and backends. ConditioningCacheSize limits cached conditioning entries per context; NewConfig defaults it to four, while zero disables it.</p>
+              <p className="doc-description">Config controls model loading and request admission. Concurrency controls the number of independently loaded contexts and simultaneous generations. QueueDepth controls how many calls are admitted to wait after every context is busy. ModelPath loads an all-in-one checkpoint. DiffusionModelPath and its companion paths configure a component model. At least one of ModelPath or DiffusionModelPath is required. TokenizerPath loads an external tokenizer JSON file. FlashAttention, DiffusionFlashAttention, and SageAttention enable native attention optimizations for supported models and backends. ConditioningCacheSize limits cached conditioning entries per context; NewConfig defaults it to four, while zero disables it.</p>
             </div>
 
             <div className="doc-section" id="type-detailparams">
