@@ -1896,7 +1896,7 @@ kronk libs --local`}</code></pre>
               <tr>
                 <td><code>--llama-log</code></td>
                 <td><code>KRONK_LLAMA_LOG</code></td>
-                <td><code>1</code></td>
+                <td><code>0</code></td>
                 <td>Enable or disable llama.cpp logging</td>
               </tr>
             </tbody>
@@ -1986,7 +1986,7 @@ kms:
   allow-upgrade: false
   insecure-logging: false
   hf-token: ""
-  llama-log: 1
+  llama-log: 0
 models:
   owner/model:
     context-window: 8192

@@ -66,6 +66,35 @@ func TestVerificationVersion(t *testing.T) {
 	}
 }
 
+func TestVerifyVersion(t *testing.T) {
+	scrubKronkEnv(t)
+
+	tests := []struct {
+		name      string
+		requested string
+		installed string
+		override  string
+		want      string
+	}{
+		{"explicit pin wins", "b12345@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", versionTag(defaultVersion), "b99999", "b12345@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		{"default install uses compiled pin", "", versionTag(defaultVersion), "", defaultVersion},
+		{"configured pin wins", "", "b12345", "b12345@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "b12345@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		{"other install remains unpinned", "", "b12345", "", "b12345"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeInstalled(t, root, tt.installed)
+			lib := newTestLibs(t, root, WithVersion(tt.override))
+
+			if got := lib.verifyVersion(tt.requested); got != tt.want {
+				t.Errorf("verifyVersion(%q) = %q, want %q", tt.requested, got, tt.want)
+			}
+		})
+	}
+}
+
 // =============================================================================
 // Pure-function tests for the Download policy matrix.
 //

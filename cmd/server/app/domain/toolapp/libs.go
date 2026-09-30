@@ -43,7 +43,7 @@ func (a *app) verifyLibs(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.Errorf(errs.Internal, "unable to identify llama.cpp libraries: %s", err)
 	}
 
-	return toAppLibIntegrity(report, a.libs, manifest, verifiedAt, strings.Contains(version, "@"))
+	return toAppLibIntegrity(report, a.libs, manifest, verifiedAt)
 }
 
 // pullLibs streams a library install. With no triple query parameters it
