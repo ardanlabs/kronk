@@ -127,14 +127,16 @@ func fixedSizingConfig(t *testing.T, modelA, modelB string) string {
 	t.Helper()
 
 	path := filepath.Join(t.TempDir(), "model_config.yaml")
-	data := fmt.Appendf(nil, `%q:
-  context-window: 4096
-  cache-type-k: f16
-  cache-type-v: f16
-%q:
-  context-window: 4096
-  cache-type-k: f16
-  cache-type-v: f16
+	data := fmt.Appendf(nil, `version: 1
+models:
+  %q:
+    context-window: 4096
+    cache-type-k: f16
+    cache-type-v: f16
+  %q:
+    context-window: 4096
+    cache-type-k: f16
+    cache-type-v: f16
 `, modelA, modelB)
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatalf("write model config: %v", err)
