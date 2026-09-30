@@ -5016,8 +5016,8 @@ if _, err := libs.Download(ctx, malina.FmtLogger); err != nil {
     libs.WithDetect(ctx, malina.FmtLogger),
     libs.WithAllowUpgrade(true),
 )`}</code></pre>
-          <p>An upgraded upstream library may not be ABI-compatible with the Malina and Kronk versions in use. Use this option for testing, not as a compatibility guarantee. Library installation is staged and activated atomically so a failed download does not replace a working installation.</p>
-          <p>Malina v1.1.3 requires stable-diffusion.cpp <code>master-908-88411ef</code>. Its native context, image-generation, and video-generation parameter layouts are not ABI-compatible with the <code>master-869</code> bundle used by Malina v1.1.2. <code>Download</code> replaces an older Kronk-managed installation with the pinned bundle. A user-managed library directory is read-only to Kronk and must be rebuilt or replaced by its owner. Do not combine Malina v1.1.3 with an older native bundle, or older Malina bindings with <code>master-908</code>.</p>
+          <p>An upgraded upstream library may not be ABI-compatible with the Malina and Kronk versions in use. Use this option for testing, not as a compatibility guarantee. Without an explicit version or upgrade opt-in, Kronk requires the exact Malina-compatible default even when a numerically newer managed build is already installed. If the host is offline, a mismatched managed build is rejected rather than loaded. Library installation is staged and activated atomically so a failed download does not replace a working installation.</p>
+          <p>Malina v1.1.4 requires stable-diffusion.cpp <code>master-929-3f8527a</code>, authenticated by manifest digest <code>sha256:9c82e359dc51b80b8b598d803f6783364e64de0cd3887356e71b6f41bc7ffa2c</code>. The existing native layouts remain binary-shaped compatible with the <code>master-908-88411ef</code> bundle used by Malina v1.1.3, but VAE tiling has different semantics and the upscaler metadata symbol is new. The pairings are therefore not behaviorally compatible. <code>Download</code> replaces any mismatched Kronk-managed installation with the exact pin. A user-managed library directory is read-only to Kronk and must be rebuilt or replaced by its owner. Do not combine Malina v1.1.4 with an older native bundle, or older Malina bindings with <code>master-929</code>.</p>
           <h3 id="193-manage-model-bundles">19.3 Manage Model Bundles</h3>
           <p>Kronk provides a small, curated catalog rather than accepting arbitrary model repository layouts. This keeps component roles and known-compatible files in the high-level SDK instead of requiring applications to use Malina's raw download API.</p>
           <p>The current bundles are:</p>
@@ -5156,7 +5156,7 @@ defer func() {
     model.WithAttnScale(0.25),
 )`}</code></pre>
           <p>Both values default to zero, which preserves the model defaults. Set only the override recommended for the affected model and backend. <code>AttnScale</code> applies to the flash-attention path. Non-zero values must be positive and finite.</p>
-          <p>Malina v1.1.3 also exposes SageAttention and a per-context conditioning cache:</p>
+          <p>Malina also exposes SageAttention and a per-context conditioning cache:</p>
           <pre className="code-block"><code className="language-go">{`mln, err := malina.New(
     model.WithModelPath(mp.ModelFiles[0]),
     model.WithSageAttention(true),
@@ -5215,6 +5215,7 @@ if err := os.WriteFile("malina.png", generated.PNG, 0o644); err != nil {
           </table>
           <p>Dimensions must be multiples of 8 from 64 through 1024, with no more than 1,048,576 total pixels. A request needs a non-empty prompt, positive finite CFG scale, and between 1 and 1,000 steps.</p>
           <p><code>GenerateParams.ImagePreprocessRules</code> and <code>VideoParams.ImagePreprocessRules</code> pass stable-diffusion.cpp's shared image preprocessing rules to native generation. Rules are semicolon-separated, and each rule starts with <code>target=...</code> followed by comma-separated key-value pairs, for example <code>target=init,mode=none,canny=true</code>. An empty string preserves the model defaults. Preprocessing uses temporary native pixels and does not mutate the caller's Go images.</p>
+          <p>The underlying v1.1.4 bindings define VAE tiling in image pixels for both encoding and decoding: zero selects 256 pixels, positive relative values up to 1 select a fraction of the image dimension, and values above 1 select a target tile count. Kronk's high-level generation parameters do not currently expose VAE tiling, so they preserve the native defaults.</p>
           <p>Waiting for admission is cancellable. Canceling a request after native generation starts asks stable-diffusion.cpp to stop, waits for native execution to return, and resets that model context before returning the cancellation error. The context is never reused or freed while native code is still active.</p>
           <h3 id="195-multi-file-model-bundles">19.5 Multi-File Model Bundles</h3>
           <p>Some pipelines require several files with distinct roles. The FLUX.2 example downloads a manifest and maps its diffusion, VAE, and LLM components into the model configuration:</p>
@@ -5319,6 +5320,7 @@ if err != nil {
 defer upscaler.Unload()
 
 images, err := upscaler.Upscale(ctx, source)`}</code></pre>
+          <p>Construction reads the model's native scale directly from ESRGAN metadata, then verifies that the loaded context reports the same factor. <code>Factor</code> returns that verified value without another native call. An unrecognized RGB ESRGAN model or a native library without the metadata API is rejected.</p>
           <p>An ESRGAN call already executing in native code cannot be interrupted. A canceled context prevents queued work from starting and causes completed work to be discarded.</p>
           <h3 id="197-logging-progress-and-diagnostics">19.7 Logging, Progress, and Diagnostics</h3>
           <p>Native stable-diffusion.cpp and GGML diagnostics are silent by default. Enable them when diagnosing native behavior:</p>
@@ -5409,6 +5411,8 @@ fmt.Println(info.Description)`}</code></pre>
             <li>The curated catalog is intentionally small. The high-level SDK guarantees its listed component roles; arbitrary user-created bundle layouts are not a supported catalog contract.</li>
             <li>Wan2.2 S2V is available through explicit SDK model paths, but it is not in Kronk's curated model catalog or model-server API.</li>
             <li>LLaDA-Image-Turbo is available for text-to-image generation. Its native reference-image instruction-editing workflow is not yet exposed by the high-level SDK.</li>
+            <li>The native release adds PixArt-α/Σ and Ming-Image Design support. Kronk does not yet curate their component files, validation, VRAM estimates, or server configurations, so these model families are not advertised as supported Kronk workflows. Ming-Image also requires an external tokenizer path.</li>
+            <li>VAE tiling is available in the raw Malina bindings but is not yet exposed by Kronk's high-level image or video request types.</li>
             <li>Native callbacks and backend initialization are process-wide. Model-context construction and destruction are serialized, while one handle may own multiple contexts and generate concurrently across them. Each concurrency slot loads another copy of the model and increases RAM or VRAM use.</li>
             <li>Context cancellation interrupts active native generation, waits for the native call to return, and resets the same context before reuse. It never frees a context while native code is active.</li>
           </ul>

@@ -154,16 +154,22 @@ libs, err := libs.New(
 
 An upgraded upstream library may not be ABI-compatible with the Malina and
 Kronk versions in use. Use this option for testing, not as a compatibility
-guarantee. Library installation is staged and activated atomically so a
-failed download does not replace a working installation.
+guarantee. Without an explicit version or upgrade opt-in, Kronk requires the
+exact Malina-compatible default even when a numerically newer managed build is
+already installed. If the host is offline, a mismatched managed build is
+rejected rather than loaded. Library installation is staged and activated
+atomically so a failed download does not replace a working installation.
 
-Malina v1.1.3 requires stable-diffusion.cpp `master-908-88411ef`. Its native
-context, image-generation, and video-generation parameter layouts are not
-ABI-compatible with the `master-869` bundle used by Malina v1.1.2. `Download`
-replaces an older Kronk-managed installation with the pinned bundle. A
-user-managed library directory is read-only to Kronk and must be rebuilt or
-replaced by its owner. Do not combine Malina v1.1.3 with an older native bundle,
-or older Malina bindings with `master-908`.
+Malina v1.1.4 requires stable-diffusion.cpp `master-929-3f8527a`, authenticated
+by manifest digest
+`sha256:9c82e359dc51b80b8b598d803f6783364e64de0cd3887356e71b6f41bc7ffa2c`.
+The existing native layouts remain binary-shaped compatible with the
+`master-908-88411ef` bundle used by Malina v1.1.3, but VAE tiling has different
+semantics and the upscaler metadata symbol is new. The pairings are therefore
+not behaviorally compatible. `Download` replaces any mismatched Kronk-managed
+installation with the exact pin. A user-managed library directory is read-only
+to Kronk and must be rebuilt or replaced by its owner. Do not combine Malina
+v1.1.4 with an older native bundle, or older Malina bindings with `master-929`.
 
 ### 19.3 Manage Model Bundles
 
@@ -327,7 +333,7 @@ Both values default to zero, which preserves the model defaults. Set only the
 override recommended for the affected model and backend. `AttnScale` applies
 to the flash-attention path. Non-zero values must be positive and finite.
 
-Malina v1.1.3 also exposes SageAttention and a per-context conditioning cache:
+Malina also exposes SageAttention and a per-context conditioning cache:
 
 ```go
 mln, err := malina.New(
@@ -386,6 +392,12 @@ each rule starts with `target=...` followed by comma-separated key-value pairs,
 for example `target=init,mode=none,canny=true`. An empty string preserves the
 model defaults. Preprocessing uses temporary native pixels and does not mutate
 the caller's Go images.
+
+The underlying v1.1.4 bindings define VAE tiling in image pixels for both
+encoding and decoding: zero selects 256 pixels, positive relative values up to
+1 select a fraction of the image dimension, and values above 1 select a target
+tile count. Kronk's high-level generation parameters do not currently expose
+VAE tiling, so they preserve the native defaults.
 
 Waiting for admission is cancellable. Canceling a request after native
 generation starts asks stable-diffusion.cpp to stop, waits for native execution
@@ -574,6 +586,11 @@ defer upscaler.Unload()
 images, err := upscaler.Upscale(ctx, source)
 ```
 
+Construction reads the model's native scale directly from ESRGAN metadata,
+then verifies that the loaded context reports the same factor. `Factor` returns
+that verified value without another native call. An unrecognized RGB ESRGAN
+model or a native library without the metadata API is rejected.
+
 An ESRGAN call already executing in native code cannot be interrupted. A
 canceled context prevents queued work from starting and causes completed work
 to be discarded.
@@ -678,6 +695,12 @@ Later runs reuse complete installations.
 - LLaDA-Image-Turbo is available for text-to-image generation. Its native
   reference-image instruction-editing workflow is not yet exposed by the
   high-level SDK.
+- The native release adds PixArt-α/Σ and Ming-Image Design support. Kronk does
+  not yet curate their component files, validation, VRAM estimates, or server
+  configurations, so these model families are not advertised as supported
+  Kronk workflows. Ming-Image also requires an external tokenizer path.
+- VAE tiling is available in the raw Malina bindings but is not yet exposed by
+  Kronk's high-level image or video request types.
 - Native callbacks and backend initialization are process-wide. Model-context
   construction and destruction are serialized, while one handle may own
   multiple contexts and generate concurrently across them. Each concurrency

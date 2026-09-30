@@ -26,6 +26,7 @@ type Upscaler struct {
 	mu       sync.Mutex
 	config   UpscalerConfig
 	ctx      sd.UpscalerContext
+	factor   int32
 	unloaded bool
 }
 
@@ -48,11 +49,32 @@ func NewUpscaler(ctx context.Context, cfg UpscalerConfig) (*Upscaler, error) {
 	}
 
 	var handle sd.UpscalerContext
+	var factor int32
 	err := withNative(ctx, func() error {
 		var err error
+		factor, err = sd.GetUpscalerModelScale(cfg.ModelPath)
+		if err != nil {
+			return fmt.Errorf("reading model scale: %w", err)
+		}
+		if factor < 1 {
+			return errors.New("model is not a recognized RGB ESRGAN upscaler")
+		}
+
 		handle, err = sd.NewUpscalerContext(cfg.ModelPath, cfg.Direct, cfg.CPUThreads, cfg.TileSize, cfg.Backend, cfg.ParamsBackend)
 		if err != nil {
 			return fmt.Errorf("creating context: %w", err)
+		}
+
+		loadedFactor, err := sd.GetUpscaleFactor(handle)
+		if err != nil {
+			sd.FreeUpscalerContext(handle)
+			handle = 0
+			return fmt.Errorf("reading loaded context scale: %w", err)
+		}
+		if loadedFactor != factor {
+			sd.FreeUpscalerContext(handle)
+			handle = 0
+			return fmt.Errorf("model metadata scale %d differs from loaded context scale %d", factor, loadedFactor)
 		}
 		return nil
 	})
@@ -60,7 +82,7 @@ func NewUpscaler(ctx context.Context, cfg UpscalerConfig) (*Upscaler, error) {
 		return nil, fmt.Errorf("new-upscaler: %w", err)
 	}
 
-	u := Upscaler{config: cfg, ctx: handle}
+	u := Upscaler{config: cfg, ctx: handle, factor: factor}
 	return &u, nil
 }
 
@@ -69,7 +91,8 @@ func (u *Upscaler) Config() UpscalerConfig {
 	return u.config
 }
 
-// Factor returns the model's native upscale factor.
+// Factor returns the native scale read from the model's metadata during
+// construction.
 func (u *Upscaler) Factor(ctx context.Context) (int, error) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
@@ -82,17 +105,7 @@ func (u *Upscaler) Factor(ctx context.Context) (int, error) {
 		return 0, err
 	}
 
-	var factor int32
-	err := withGeneration(ctx, context.Background(), func() error {
-		var err error
-		factor, err = sd.GetUpscaleFactor(u.ctx)
-		return err
-	})
-	if err != nil {
-		return 0, fmt.Errorf("upscale factor: %w", err)
-	}
-
-	return int(factor), nil
+	return int(u.factor), nil
 }
 
 // Upscale enlarges an image using the model's native scale factor.
@@ -120,11 +133,7 @@ func (u *Upscaler) Upscale(ctx context.Context, input image.Image) ([]image.Imag
 
 	var output []*sd.SDImage
 	err = withGeneration(ctx, context.Background(), func() error {
-		factor, err := sd.GetUpscaleFactor(u.ctx)
-		if err != nil {
-			return err
-		}
-		output, err = sd.Upscale(u.ctx, raw, uint32(factor))
+		output, err = sd.Upscale(u.ctx, raw, uint32(u.factor))
 		return err
 	})
 	if err != nil {
@@ -162,6 +171,7 @@ func (u *Upscaler) Unload() error {
 	}
 
 	u.ctx = 0
+	u.factor = 0
 	u.unloaded = true
 
 	return nil

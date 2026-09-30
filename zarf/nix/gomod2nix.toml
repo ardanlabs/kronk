@@ -47,8 +47,8 @@ schema = 3
     version = "v1.6.0"
     hash = "sha256-xK0llBUpxqQXLdFCs/WRBSJSLjYQbqDj1cvOWCioxdc="
   [mod."github.com/ardanlabs/malina"]
-    version = "v1.1.3"
-    hash = "sha256-JvtqLgBIdss2rCcQnLrXwC97z7IZ2sm3lsLTGy6Gl6A="
+    version = "v1.1.4"
+    hash = "sha256-HFOSsmI/xtyMRLzr22HLAZh/EexFK+rXX2mR1k6rW94="
   [mod."github.com/arl/statsviz"]
     version = "v0.8.2"
     hash = "sha256-8KmSQolXTl2aBo9bY8/dmby82ItHVHiYLRu/UNGRF8Q="
@@ -158,8 +158,8 @@ schema = 3
     version = "v1.0.0"
     hash = "sha256-kydtAp8CZeF63bT87R08ik72eBvJS5ysL+zEtMRmiu0="
   [mod."github.com/goccy/go-json"]
-    version = "v0.11.1"
-    hash = "sha256-btbKScie2R6Yb0jZfubK7gzdXadFpkEfGJHNA2U6kUI="
+    version = "v0.11.2"
+    hash = "sha256-MMFJd0ePB1LuLce8Mgpo0WxhJqSQT5Mt/oQfzMneWZM="
   [mod."github.com/golang-jwt/jwt/v5"]
     version = "v5.3.1"
     hash = "sha256-h7AszH+3YWL3IV0+miY9vbtU0gM/2RpuASSGAYAgWcA="
@@ -266,8 +266,8 @@ schema = 3
     version = "v0.0.0-20191010083416-a7dc8b61c822"
     hash = "sha256-79URDDFenmGc9JZu+5AXHToMrtTREHb3BC84b/gym9Q="
   [mod."github.com/open-policy-agent/opa"]
-    version = "v1.21.0"
-    hash = "sha256-iyNf+69h/4YL9yHbv6A2m3XpYLGTm5QC9ac5TqXLDy4="
+    version = "v1.21.1"
+    hash = "sha256-GV08eXEDhZ0d3dLFKkGkhjBOq9vMl8tX85OZQzI6mj0="
   [mod."github.com/planetscale/vtprotobuf"]
     version = "v0.6.1-0.20240319094008-0393e58bdf10"
     hash = "sha256-L8dyNm+PCRDNADiIGKZqsPkCgB4xpLrosZjssrN+sUY="

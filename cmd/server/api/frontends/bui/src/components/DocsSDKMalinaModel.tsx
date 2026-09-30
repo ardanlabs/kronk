@@ -372,7 +372,7 @@ export default function DocsSDKMalinaModel() {
               <pre className="code-block">
                 <code>func (u *Upscaler) Factor(ctx context.Context) (int, error)</code>
               </pre>
-              <p className="doc-description">Factor returns the model's native upscale factor.</p>
+              <p className="doc-description">Factor returns the native scale read from the model's metadata during construction.</p>
             </div>
 
             <div className="doc-section" id="method-upscaler-unload">

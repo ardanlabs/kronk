@@ -47,24 +47,95 @@ func TestDownloadValidationRequiresInstallRecord(t *testing.T) {
 	}
 }
 
-func TestVersionGreater(t *testing.T) {
+func TestChooseVersion(t *testing.T) {
 	tests := []struct {
-		name  string
-		left  string
-		right string
-		want  bool
+		name         string
+		override     string
+		allowUpgrade bool
+		latest       string
+		want         string
 	}{
-		{name: "older", left: "master-812-aaaaaaa", right: "master-813-bfbef5b"},
-		{name: "equal", left: "master-813-aaaaaaa", right: "master-813-bfbef5b"},
-		{name: "newer", left: "master-814-aaaaaaa", right: "master-813-bfbef5b", want: true},
+		{name: "default", want: defaultVersion},
+		{name: "explicit", override: "master-900-explicit", allowUpgrade: true, latest: "master-999-latest", want: "master-900-explicit"},
+		{name: "latest", allowUpgrade: true, latest: "master-999-latest", want: "master-999-latest"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := versionGreater(tt.left, tt.right); got != tt.want {
-				t.Errorf("versionGreater(%q, %q): got %v, want %v", tt.left, tt.right, got, tt.want)
+			if got := chooseVersion(tt.override, tt.allowUpgrade, tt.latest, defaultVersion); got != tt.want {
+				t.Errorf("chooseVersion(): got %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestDownloadReplacesIncompatibleManagedVersion(t *testing.T) {
+	originalNetwork := networkAvailable
+	originalDownload := downloadLibraries
+	t.Cleanup(func() {
+		networkAvailable = originalNetwork
+		downloadLibraries = originalDownload
+	})
+	networkAvailable = func(context.Context) bool { return true }
+	downloadLibraries = func(ctx context.Context, architecture, osName, processor, version, dest string, progress getter.ProgressTracker) error {
+		if version != defaultVersion {
+			t.Fatalf("download version: got %q, want %q", version, defaultVersion)
+		}
+		return os.WriteFile(filepath.Join(dest, "libstable-diffusion.dylib"), []byte(version), 0o644)
+	}
+
+	for _, installed := range []string{"master-908-88411ef", "master-999-fffffff"} {
+		t.Run(installed, func(t *testing.T) {
+			lib, err := New(
+				WithBasePath(t.TempDir()),
+				WithArch("arm64"),
+				WithOS("darwin"),
+				WithProcessor("metal"),
+			)
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+			if err := os.MkdirAll(lib.LibsPath(), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := writeVersionFile(lib.LibsPath(), installed, lib.Arch(), lib.OS(), lib.Processor()); err != nil {
+				t.Fatal(err)
+			}
+
+			tag, err := lib.Download(t.Context(), nil)
+			if err != nil {
+				t.Fatalf("Download() error = %v", err)
+			}
+			if tag.Version != defaultVersion {
+				t.Errorf("Version: got %q, want %q", tag.Version, defaultVersion)
+			}
+		})
+	}
+}
+
+func TestDownloadOfflineRequiresCompatibleManagedVersion(t *testing.T) {
+	originalNetwork := networkAvailable
+	t.Cleanup(func() { networkAvailable = originalNetwork })
+	networkAvailable = func(context.Context) bool { return false }
+
+	lib, err := New(
+		WithBasePath(t.TempDir()),
+		WithArch("arm64"),
+		WithOS("darwin"),
+		WithProcessor("metal"),
+	)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if err := os.MkdirAll(lib.LibsPath(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeVersionFile(lib.LibsPath(), "master-999-fffffff", lib.Arch(), lib.OS(), lib.Processor()); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := lib.Download(t.Context(), nil); err == nil {
+		t.Fatal("Download() error = nil, want incompatible offline installation error")
 	}
 }
 

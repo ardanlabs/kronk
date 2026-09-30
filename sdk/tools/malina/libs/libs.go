@@ -12,9 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
-	"strconv"
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/applog"
@@ -417,21 +415,19 @@ func (lib *Libs) List() ([]VersionTag, error) {
 // stable-diffusion.cpp. The version that gets installed is selected according to
 // the following matrix, evaluated in order. The first matching row wins:
 //
-//	# | Override (WithVersion) | AllowUpgrade | On-disk version          | Action
-//	--+------------------------+--------------+--------------------------+-----------------------------
-//	1 | set                    | any          | any                      | install the override version
-//	2 | unset                  | true         | any                      | install latest from stable-diffusion.cpp
-//	3 | unset                  | false        | none                     | install defaultVersion
-//	4 | unset                  | false        | <= defaultVersion        | install defaultVersion
-//	5 | unset                  | false        | >  defaultVersion        | keep on-disk version
+//	# | Override (WithVersion) | AllowUpgrade | Action
+//	--+------------------------+--------------+---------------------------------------------
+//	1 | set                    | any          | install the explicit override version
+//	2 | unset                  | true         | install latest from stable-diffusion.cpp
+//	3 | unset                  | false        | install the exact Malina-compatible default
 //
 // Additional rules independent of the matrix:
 //   - A read-only install path (user-supplied directory without a
 //     version.json) is always honored as-is; nothing is downloaded or
 //     mutated. See WithLibPath.
-//   - When the network is unreachable the currently installed version is
-//     returned. If nothing is installed and no network is available the
-//     call fails.
+//   - When the network is unreachable, an installed bundle is reused only
+//     when it matches the selected explicit or default version. AllowUpgrade
+//     is an explicit opt-in to reuse an arbitrary installed upstream version.
 //   - If the desired version is already installed for the active (arch,
 //     os, processor) triple, no download occurs.
 //   - WithValidation(true) verifies the selected installed bundle against
@@ -456,22 +452,30 @@ func (lib *Libs) Download(ctx context.Context, log Logger) (tag VersionTag, retE
 		return tag, nil
 	}
 
+	installed, _ := lib.InstalledVersion()
+
 	if !networkAvailable(ctx) {
 		if err := ctx.Err(); err != nil {
 			return VersionTag{}, fmt.Errorf("download-libraries: network check: %w", err)
 		}
-		vt, err := lib.InstalledVersion()
-		if err != nil {
-			return VersionTag{}, fmt.Errorf("download: no network available: %w", err)
+
+		required := lib.version
+		if required == "" && !lib.AllowUpgrade {
+			required = defaultVersion
 		}
-		log(ctx, "download-libraries: no network available, using current version", "current", vt.Version)
-		return vt, nil
+		if installed.Version == "" {
+			return VersionTag{}, errors.New("download: no network available and no libraries are installed")
+		}
+		if required != "" && (installed.Version != required || installed.Arch != lib.arch || installed.OS != lib.os || installed.Processor != lib.processor) {
+			return VersionTag{}, fmt.Errorf("download: no network available and installed bundle %q is incompatible with required version %q", installed.Version, required)
+		}
+
+		log(ctx, "download-libraries: no network available, using compatible installed version", "current", installed.Version)
+		return installed, nil
 	}
 	if err := ctx.Err(); err != nil {
 		return VersionTag{}, fmt.Errorf("download-libraries: network check: %w", err)
 	}
-
-	installed, _ := lib.InstalledVersion()
 
 	// For matrix row 2 we need the latest version published by
 	// leejet stable-diffusion.cpp releases. For all other rows the network lookup is
@@ -493,7 +497,7 @@ func (lib *Libs) Download(ctx context.Context, log Logger) (tag VersionTag, retE
 		latest = v
 	}
 
-	version := chooseVersion(lib.version, lib.AllowUpgrade, installed.Version, latest, defaultVersion)
+	version := chooseVersion(lib.version, lib.AllowUpgrade, latest, defaultVersion)
 
 	log(ctx, "download-libraries: check stable-diffusion.cpp installation", "arch", lib.arch, "os", lib.os, "processor", lib.processor, "requested", version, "current", installed.Version)
 
@@ -508,9 +512,9 @@ func (lib *Libs) Download(ctx context.Context, log Logger) (tag VersionTag, retE
 // DownloadFor downloads the supplied version into the canonical
 // install directory for the supplied (arch, os, processor) triple
 // under the libraries Root. If version is empty, the Kronk-pinned
-// defaultVersion is used unless a newer version is already installed,
-// in which case that newer version is kept. This mirrors the llama
-// backend's DownloadFor behavior.
+// defaultVersion is used. The exact default is required because a numerically
+// newer stable-diffusion.cpp build is not necessarily ABI-compatible with the
+// Malina bindings in this Kronk release.
 func (lib *Libs) DownloadFor(ctx context.Context, log Logger, arch string, opSys string, processor string, version string) (VersionTag, error) {
 	log = normalizeLogger(log)
 	if err := ctx.Err(); err != nil {
@@ -524,12 +528,7 @@ func (lib *Libs) DownloadFor(ctx context.Context, log Logger, arch string, opSys
 	}
 
 	if version == "" {
-		installed, _ := lib.InstalledFor(arch, opSys, processor)
-		if installed.Version != "" && versionGreater(installed.Version, defaultVersion) {
-			version = installed.Version
-		} else {
-			version = defaultVersion
-		}
+		version = defaultVersion
 	}
 
 	return lib.downloadInto(ctx, log, installPathFor(lib.root, arch, opSys, processor), arch, opSys, processor, version)
@@ -801,14 +800,12 @@ func resolveProcessor(opt string, fallback string) (string, error) {
 //
 //   - override: explicit version pin (lib.version), or "" if unset.
 //   - allowUpgrade: whether to track the latest published version.
-//   - installed: the version currently on disk, or "" if nothing is
-//     installed (or version.json is unreadable).
 //   - latest: the latest version reported by stable-diffusion.cpp; only
 //     consulted when override is unset and allowUpgrade is true.
 //   - def: the well-known default version baked into Kronk.
 //
 // Returns the version string that should end up installed.
-func chooseVersion(override string, allowUpgrade bool, installed string, latest string, def string) string {
+func chooseVersion(override string, allowUpgrade bool, latest string, def string) string {
 	switch {
 	case override != "":
 		// Matrix row 1: an explicit override always wins.
@@ -816,35 +813,10 @@ func chooseVersion(override string, allowUpgrade bool, installed string, latest 
 	case allowUpgrade:
 		// Matrix row 2: track the latest published version.
 		return latest
-	case installed != "" && versionGreater(installed, def):
-		// Matrix row 5: never downgrade past what is on disk.
-		return installed
 	default:
-		// Matrix rows 3-4: pin to the well-known default version.
+		// Matrix row 3: pin to the exact known-compatible default version.
 		return def
 	}
-}
-
-// versionGreater compares the numeric build component in stable-diffusion.cpp
-// tags such as master-813-bfbef5b.
-func versionGreater(v1, v2 string) bool {
-	b1, ok1 := releaseBuild(v1)
-	b2, ok2 := releaseBuild(v2)
-	if !ok1 || !ok2 {
-		return false
-	}
-	return b1 > b2
-}
-
-var releaseTagRE = regexp.MustCompile(`^[^-]+-([0-9]+)(?:-|$)`)
-
-func releaseBuild(version string) (int, bool) {
-	match := releaseTagRE.FindStringSubmatch(version)
-	if len(match) != 2 {
-		return 0, false
-	}
-	build, err := strconv.Atoi(match[1])
-	return build, err == nil
 }
 
 func normalizeLogger(log Logger) Logger {
