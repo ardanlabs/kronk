@@ -31,7 +31,11 @@ HARDWARE BACKENDS
   cuda  - NVIDIA GPU acceleration
   rocm  - AMD GPU acceleration
   vulkan - Cross-platform GPU acceleration
-  openvino - Downloadable Intel OpenVINO bundle (Linux/Windows amd64)
+  openvino - Preview acceleration for Intel CPUs, GPUs, and NPUs (Linux/Windows amd64)
+
+OpenVINO is supported only on Intel systems. Performance and model compatibility
+vary by target device, so benchmark it against the standard CPU backend and
+validate complete serving workloads before production use.
 
 MODES
 
@@ -69,7 +73,7 @@ ENVIRONMENT VARIABLES (Local Mode)
   KRONK_ARCH       - Architecture: amd64, arm64
   KRONK_LIB_PATH   - Library directory path
   KRONK_OS         - Operating system: linux, bookworm, trixie, darwin, windows
-  KRONK_PROCESSOR  - Hardware backend: cpu, cuda, metal, rocm, vulkan`,
+  KRONK_PROCESSOR  - Hardware backend: cpu, cuda, metal, openvino, rocm, vulkan`,
 	Args: cobra.NoArgs,
 	Run:  main,
 }
