@@ -251,16 +251,24 @@ running CPU inference on a GPU host.
 #### OpenVINO preview bundles
 
 Kronk can download llama.cpp OpenVINO bundles for Linux amd64 and Windows
-amd64. OpenVINO remains an explicit, preview backend: automatic detection does
-not select it, and CPU, GPU, and NPU execution must be validated on the target
-Intel system before production use.
+amd64. Kronk supports these bundles only on Intel systems. They can be tried to
+improve inference performance by targeting an Intel CPU, integrated or discrete
+Intel GPU, or Intel NPU. They do not provide acceleration for AMD or NVIDIA
+GPUs; use ROCm or Vulkan for AMD GPUs and CUDA for NVIDIA GPUs.
+
+OpenVINO remains an explicit, preview backend. It is not selected automatically,
+and performance and compatibility depend on the model, quantization, workload,
+and target device. Benchmark against Kronk's standard `cpu` backend when using
+an Intel CPU, and validate complete serving workloads on the target system before
+production use. Successfully loading a model or passing `test-openvino` is only
+a smoke test, not confirmation that every model or serving feature is supported.
 
 Two environment variables select the runtime:
 
 - `KRONK_PROCESSOR=openvino` selects the OpenVINO llama.cpp bundle.
 - `GGML_OPENVINO_DEVICE=CPU|GPU|GPU.<index>|NPU` selects the device used by
-  OpenVINO. OpenVINO defaults to `CPU` when this variable is unset, but setting
-  it explicitly makes the intended target clear.
+  OpenVINO within the Intel family. OpenVINO defaults to `CPU` when this variable
+  is unset, but setting it explicitly makes the intended target clear.
 
 For example:
 

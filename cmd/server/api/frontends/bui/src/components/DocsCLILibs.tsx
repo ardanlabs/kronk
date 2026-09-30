@@ -36,8 +36,14 @@ export default function DocsCLILibs() {
               <li><code>cuda</code> — NVIDIA GPU acceleration</li>
               <li><code>rocm</code> — AMD GPU acceleration</li>
               <li><code>vulkan</code> — Cross-platform GPU acceleration</li>
-              <li><code>openvino</code> — Downloadable Intel OpenVINO bundle (Linux/Windows amd64)</li>
+              <li><code>openvino</code> — Preview acceleration for Intel CPUs, GPUs, and NPUs (Linux/Windows amd64)</li>
             </ul>
+            <p>
+              OpenVINO is supported only on Intel systems. Performance and model
+              compatibility vary by target device, so benchmark it against the
+              standard CPU backend and validate complete serving workloads before
+              production use.
+            </p>
           </div>
 
           <div className="card" id="flags">
@@ -137,7 +143,7 @@ export default function DocsCLILibs() {
                 <tr>
                   <td><code>KRONK_PROCESSOR</code></td>
                   <td>auto-detected</td>
-                  <td>Hardware backend override (local mode): <code>cpu</code>, <code>cuda</code>, <code>metal</code>, <code>rocm</code>, <code>vulkan</code></td>
+                  <td>Hardware backend override (local mode): <code>cpu</code>, <code>cuda</code>, <code>metal</code>, <code>openvino</code>, <code>rocm</code>, <code>vulkan</code></td>
                 </tr>
                 <tr>
                   <td><code>KRONK_LIB_PATH</code></td>
