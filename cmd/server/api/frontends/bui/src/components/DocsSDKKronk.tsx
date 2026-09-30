@@ -257,6 +257,9 @@ export default function DocsSDKKronk() {
                 <code>{`type ResponseStreamEvent struct {
 	Type           string               \`json:"type"\`
 	SequenceNumber int                  \`json:"sequence_number"\`
+	Code           *string              \`json:"code,omitempty"\`
+	Message        string               \`json:"message,omitempty"\`
+	Param          *string              \`json:"param,omitempty"\`
 	Response       *ResponseResponse    \`json:"response,omitempty"\`
 	OutputIndex    *int                 \`json:"output_index,omitempty"\`
 	ContentIndex   *int                 \`json:"content_index,omitempty"\`
