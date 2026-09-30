@@ -357,7 +357,6 @@ kronk model pull unsloth/Qwen3-0.6B-Q8_0 --local`}</code></pre>
 ├── bucky-libraries/
 ├── bucky-models/
 └── keys/`}</code></pre>
-          <p>Older installations that stored <code>catalog.yaml</code> or <code>model_config.yaml</code> directly under <code>~/.kronk/</code> are migrated automatically when the new location is first used.</p>
           <p>Set <code>KRONK_BASE_PATH</code> or the global <code>--base-path</code> flag to move the entire data root. Official containers set it to <code>/kronk</code>.</p>
           <p>The <code>lora</code> directory holds optional, user-provided LoRA adapter GGUF files. Kronk does not download these files. See <a href="https://www.kronkai.com/manual#lora-adapters">Chapter 3 §3.7</a> for placement and configuration.</p>
           <p>The model configuration file contains per-model and per-variant overrides. Do not copy configuration values based only on model size; use <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3</a> for context, cache, GPU, and sampling settings.</p>

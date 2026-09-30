@@ -71,10 +71,6 @@ func (m *Models) Files() ([]File, error) {
 		}
 
 		_, modelID := splitProviderID(indexID)
-		if modelID == "" {
-			// TODO: Remove the legacy bare-key fallback after 2026-09-18.
-			modelID = indexID
-		}
 
 		mf := File{
 			ID:                   modelID,
@@ -259,9 +255,7 @@ func fullPathLookupKeys(modelID string) []string {
 		return nil
 	}
 
-	// TODO: Remove the bare model key after 2026-09-18. It keeps indexes
-	// created before provider-qualified keys readable during the transition.
-	return []string{id.Base(), id.Model}
+	return []string{id.Base()}
 }
 
 func lookupIndex(index map[string]Path, modelID string) (string, Path, bool) {

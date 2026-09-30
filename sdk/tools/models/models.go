@@ -165,11 +165,6 @@ func (m *Models) BuildIndex(log applog.Logger, checkSHA bool) error {
 			for modelID, files := range modelfiles {
 				indexKey := canonicalID(org, modelID)
 				prev := currentIndex[indexKey]
-				if len(prev.ModelFiles) == 0 {
-					// Compatibility with indexes built before provider-qualified
-					// keys were introduced. This entry is rewritten canonically.
-					prev = currentIndex[modelID]
-				}
 				isValidated := prev.Validated
 
 				slices.Sort(files)
@@ -363,9 +358,8 @@ func (m *Models) removeEmptyDirs() error {
 	return nil
 }
 
-// fileSizesMatch returns true if both slices have the same length and values.
-// An empty previous slice (legacy index) is treated as a mismatch to force
-// re-validation on first run after upgrade.
+// fileSizesMatch returns true if both slices have the same non-zero length and
+// values. Missing previous sizes cannot establish that files are unchanged.
 func fileSizesMatch(prev, cur []int64) bool {
 	if len(prev) == 0 {
 		return false

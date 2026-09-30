@@ -204,7 +204,7 @@ kronk model ps`}</code>
               <p>
                 By default the projection file (when applicable) is located
                 automatically. Bare and canonical ids consult{' '}
-                <code>~/.kronk/catalog.yaml</code> first, then walk the configured
+                <code>~/.kronk/catalog/catalog.yaml</code> first, then walk the configured
                 provider list (<code>unsloth</code>, <code>ggml-org</code>,{' '}
                 <code>bartowski</code>, ...) and persist the resolution. Multi-file
                 (split) models are downloaded in full when the resolver expands

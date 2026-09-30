@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
-	"go.yaml.in/yaml/v2"
 )
 
 func TestNewConfigMemoryBudget(t *testing.T) {
@@ -117,7 +116,7 @@ kms:
 	}
 }
 
-func TestLoadConfigVersionZero(t *testing.T) {
+func TestLoadConfigRejectsVersionZero(t *testing.T) {
 	unsetEnv(t, "KRONK_HF_TOKEN")
 	unsetEnv(t, "KRONK_LLAMA_LOG")
 
@@ -128,30 +127,16 @@ func TestLoadConfigVersionZero(t *testing.T) {
 	}
 	t.Setenv("KRONK_POOL_MODEL_CONFIG_FILE", path)
 
-	cfg, err := loadConfig(false)
-	if err != nil {
-		t.Fatalf("loadConfig: %v", err)
-	}
-	if cfg.Web.APIHost != "127.0.0.1:11435" {
-		t.Errorf("APIHost: got %q, want default", cfg.Web.APIHost)
+	if _, err := loadConfig(false); err == nil {
+		t.Fatal("loadConfig: got nil error, want unsupported version error")
 	}
 
-	upgraded, err := os.ReadFile(path)
+	got, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
-	var doc struct {
-		Version int            `yaml:"version"`
-		Models  map[string]any `yaml:"models"`
-	}
-	if err := yaml.Unmarshal(upgraded, &doc); err != nil {
-		t.Fatalf("Unmarshal: %v", err)
-	}
-	if doc.Version != configVersion {
-		t.Errorf("Version: got %d, want %d", doc.Version, configVersion)
-	}
-	if _, exists := doc.Models["owner/model"]; !exists {
-		t.Errorf("Models: got %v, want owner/model", doc.Models)
+	if string(got) != string(data) {
+		t.Errorf("model config: got %q, want unchanged %q", got, data)
 	}
 }
 

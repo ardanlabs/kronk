@@ -265,6 +265,7 @@ export interface CatalogCapabilities {
   embedding: boolean;
   rerank: boolean;
   decision: boolean;
+  mtp: boolean;
 }
 
 export interface CatalogFile {
@@ -375,6 +376,7 @@ export interface CatalogSummary {
   total_size_bytes: number;
   has_projection: boolean;
   has_mtp?: boolean;
+  mtp_source?: 'embedded' | 'companion';
   downloaded: boolean;
   validated: boolean;
   model_type?: string;

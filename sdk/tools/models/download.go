@@ -52,7 +52,7 @@ var hasNetworkFn = hasNetwork
 // from the URL.
 //
 // The resolver checks local disk first, then the resolver-file cache at
-// <basePath>/catalog.yaml (seeded from the embedded default on first use),
+// <basePath>/catalog/catalog.yaml (seeded from the embedded default on first use),
 // then the specified HuggingFace provider.
 //
 // Successful downloads — whether triggered by URL or by id — are persisted

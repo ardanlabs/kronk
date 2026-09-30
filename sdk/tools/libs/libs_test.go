@@ -401,3 +401,36 @@ func TestDownload_ReadOnly(t *testing.T) {
 		t.Errorf("Download error = %v, want wrapping ErrReadOnly", err)
 	}
 }
+
+func TestNewDoesNotMoveRootInstall(t *testing.T) {
+	scrubKronkEnv(t)
+	basePath := t.TempDir()
+	root := filepath.Join(basePath, localFolder)
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	a, o, p := mustParseTriple(t)
+	if err := writeVersionFile(root, "b100", a, o, p); err != nil {
+		t.Fatalf("writeVersionFile: %v", err)
+	}
+	rootLibrary := filepath.Join(root, "libllama.so")
+	if err := os.WriteFile(rootLibrary, []byte("old location"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	lib, err := New(WithBasePath(basePath), WithArch(a), WithOS(o), WithProcessor(p))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	wantPath := installPathFor(root, a, o, p)
+	if lib.LibsPath() != wantPath {
+		t.Errorf("LibsPath: got %q, want %q", lib.LibsPath(), wantPath)
+	}
+	if _, err := os.Stat(rootLibrary); err != nil {
+		t.Errorf("root library: got %v, want file left in place", err)
+	}
+	if _, err := os.Stat(filepath.Join(wantPath, filepath.Base(rootLibrary))); !os.IsNotExist(err) {
+		t.Errorf("canonical library: got %v, want file not moved", err)
+	}
+}

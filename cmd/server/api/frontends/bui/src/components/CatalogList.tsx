@@ -73,7 +73,7 @@ function toggleSet<T>(set: Set<T>, value: T): Set<T> {
 }
 
 const CAPABILITY_KEYS: (keyof CatalogCapabilities)[] = [
-  'images', 'audio', 'video', 'streaming', 'reasoning', 'tooling', 'embedding', 'rerank', 'decision',
+  'images', 'audio', 'video', 'streaming', 'reasoning', 'tooling', 'embedding', 'rerank', 'decision', 'mtp',
 ];
 
 const CAPABILITY_LABELS: Record<string, string> = {
@@ -86,6 +86,7 @@ const CAPABILITY_LABELS: Record<string, string> = {
   embedding: 'Embedding',
   rerank: 'Rerank',
   decision: 'Decision',
+  mtp: 'MTP',
 };
 
 // ---------------------------------------------------------------------------
@@ -128,7 +129,7 @@ export default function CatalogList() {
   const [activeSection, setActiveSection] = useState<DetailSection>('model-card');
 
   // Sort state for catalog table
-  type SortField = 'id' | 'owned_by' | 'model_family' | 'model_type' | 'has_projection' | 'total_size_bytes' | 'validated';
+  type SortField = 'id' | 'owned_by' | 'model_family' | 'model_type' | 'has_projection' | 'mtp_source' | 'total_size_bytes' | 'validated';
   const [sortField, setSortField] = useState<SortField>('id');
   const [sortAsc, setSortAsc] = useState(true);
 
@@ -256,6 +257,7 @@ export default function CatalogList() {
         case 'model_family': cmp = (a.model_family || '').localeCompare(b.model_family || ''); break;
         case 'model_type': cmp = (a.model_type || '').localeCompare(b.model_type || ''); break;
         case 'has_projection': cmp = (a.has_projection ? 1 : 0) - (b.has_projection ? 1 : 0); break;
+        case 'mtp_source': cmp = (a.mtp_source || '').localeCompare(b.mtp_source || ''); break;
         case 'total_size_bytes': cmp = (a.total_size_bytes || 0) - (b.total_size_bytes || 0); break;
         case 'validated': cmp = (a.validated ? 1 : 0) - (b.validated ? 1 : 0); break;
       }
@@ -797,6 +799,12 @@ export default function CatalogList() {
                           {sortField === 'has_projection' ? (sortAsc ? ' ▲' : ' ▼') : ''}
                         </span>
                       </th>
+                      <th onClick={() => handleSort('mtp_source')} className="catalog-table-sortable" title="MTP implementation supplied by the model GGUF or a companion drafter file">
+                        MTP
+                        <span className="catalog-table-sort-indicator">
+                          {sortField === 'mtp_source' ? (sortAsc ? ' ▲' : ' ▼') : ''}
+                        </span>
+                      </th>
                       <th onClick={() => handleSort('total_size_bytes')} className="catalog-table-sortable">
                         Size
                         <span className="catalog-table-sort-indicator">
@@ -818,6 +826,7 @@ export default function CatalogList() {
                         <td>{model.model_family || '-'}</td>
                         <td>{model.model_type || '-'}</td>
                         <td style={{ textAlign: 'center' }}>{model.has_projection ? '✓' : ''}</td>
+                        <td>{model.mtp_source || '-'}</td>
                         <td>{model.total_size || '-'}</td>
                       </tr>
                     ))}
@@ -899,6 +908,7 @@ export default function CatalogList() {
                       { key: 'downloaded', label: 'Downloaded', value: <span className={`badge ${modelInfo.downloaded ? 'badge-yes' : 'badge-no'}`}>{modelInfo.downloaded ? 'Yes' : 'No'}</span> },
                       { key: 'validated', label: labelWithTip('Validated', 'validated'), value: <span style={{ color: modelInfo.validated ? 'inherit' : 'var(--color-error)' }}>{modelInfo.validated ? '✓' : '✗'}</span> },
                       { key: 'endpoint', label: 'Endpoint', value: modelInfo.capabilities?.endpoint || '-' },
+                      { key: 'mtp-source', label: labelWithTip('MTP Source', 'mtpSource'), value: modelInfo.mtp_source || '-' },
                       { key: 'template', label: 'Template', value: modelInfo.template || '-' },
                     ]} />
 

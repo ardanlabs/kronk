@@ -67,12 +67,12 @@ func runLocal(mdls *models.Models) error {
 
 func print(summaries []models.CatalogSummary) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "VAL\tMODEL ID\tPROVIDER\tFAMILY\tARCH\tMTMD\tSIZE")
+	fmt.Fprintln(w, "VAL\tMODEL ID\tPROVIDER\tFAMILY\tARCH\tMTMD\tMTP\tSIZE")
 
 	for _, s := range summaries {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			validatedMark(s.Validated), s.ID, s.OwnedBy, s.ModelFamily,
-			dash(s.ModelType), projectionMark(s.HasProjection), dash(s.TotalSize))
+			dash(s.ModelType), projectionMark(s.HasProjection), dash(string(s.MTPSource)), dash(s.TotalSize))
 	}
 
 	w.Flush()

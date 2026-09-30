@@ -18,7 +18,7 @@ var Cmd = &cobra.Command{
 
 Resolution order:
   1. Local on-disk index for the specified provider
-  2. Resolver file (~/.kronk/catalog.yaml)
+  2. Resolver file (~/.kronk/catalog/catalog.yaml)
   3. HuggingFace API for the specified provider
 
 The id must include its provider (unsloth/Qwen3.6-35B-A3B-UD-Q4_K_M). On a

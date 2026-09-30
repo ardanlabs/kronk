@@ -24,7 +24,7 @@ The source may be:
   - With revision: owner/repo:Q4_K_M@revision
 
 By default the projection file (when applicable) is located automatically.
-Canonical ids consult ~/.kronk/catalog.yaml first, then query the specified
+Canonical ids consult ~/.kronk/catalog/catalog.yaml first, then query the specified
 provider and persist the resolution. Multi-file (split) models are downloaded
 in full when the resolver expands them. Successful pulls update the catalog so
 the next request becomes a cache hit.
