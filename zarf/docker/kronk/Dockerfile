@@ -643,9 +643,8 @@ RUN chmod +x /usr/local/bin/kronk && /usr/local/bin/kronk --help >/dev/null
 # install lands under /kronk/libraries directly.
 ENV KRONK_BASE_PATH=/kronk
 
-# Install one bundle per requested processor. Failures (e.g. rocm on arm64
-# which has no upstream build) are logged and skipped so a multi-arch
-# build of an arch-specific bundle list still produces a usable image.
+# Install one bundle per requested processor. Every requested bundle must
+# install successfully so a published image contains all advertised backends.
 RUN set -eux; \
     mkdir -p /kronk; \
     for processor in ${LLAMA_PROCESSORS}; do \
@@ -655,14 +654,12 @@ RUN set -eux; \
                 --arch="${TARGETARCH}" \
                 --os=linux \
                 --processor="${processor}" \
-                --version="${LLAMA_VERSION}" \
-                || echo "WARNING: skipping unsupported triple linux/${TARGETARCH}/${processor}"; \
+                --version="${LLAMA_VERSION}"; \
         else \
             kronk libs --local --install \
                 --arch="${TARGETARCH}" \
                 --os=linux \
-                --processor="${processor}" \
-                || echo "WARNING: skipping unsupported triple linux/${TARGETARCH}/${processor}"; \
+                --processor="${processor}"; \
         fi; \
     done; \
     echo ">>> Installed bundles:"; \
@@ -701,9 +698,8 @@ RUN chmod +x /usr/local/bin/kronk && /usr/local/bin/kronk --help >/dev/null
 # sdk/tools/bucky/libs/libs.go::localFolder).
 ENV KRONK_BASE_PATH=/kronk
 
-# Install one bundle per requested processor. Same warn-and-continue
-# pattern as the llama fetcher so multi-arch builds with a default
-# processor list still produce usable images on every arch.
+# Install one bundle per requested processor. As with llama.cpp, every
+# requested bundle must be present before the image can be published.
 RUN set -eux; \
     mkdir -p /kronk; \
     for processor in ${BUCKY_PROCESSORS}; do \
@@ -713,14 +709,12 @@ RUN set -eux; \
                 --arch="${TARGETARCH}" \
                 --os=linux \
                 --processor="${processor}" \
-                --version="${BUCKY_VERSION}" \
-                || echo "WARNING: skipping unsupported triple linux/${TARGETARCH}/${processor}"; \
+                --version="${BUCKY_VERSION}"; \
         else \
             kronk bucky libs --local --install \
                 --arch="${TARGETARCH}" \
                 --os=linux \
-                --processor="${processor}" \
-                || echo "WARNING: skipping unsupported triple linux/${TARGETARCH}/${processor}"; \
+                --processor="${processor}"; \
         fi; \
     done; \
     echo ">>> Installed whisper bundles:"; \

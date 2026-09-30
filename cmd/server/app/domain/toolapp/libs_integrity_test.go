@@ -38,10 +38,11 @@ func TestToAppLibIntegrity(t *testing.T) {
 	}
 
 	report := libs.VerifyReport{
-		Tag:        "b10786",
-		Files:      []download.FileReport{{Name: "libllama.dylib", State: download.FileVerified}},
-		Verified:   1,
-		Unexpected: 1,
+		Tag:                   "b10786",
+		ManifestAuthenticated: true,
+		Files:                 []download.FileReport{{Name: "libllama.dylib", State: download.FileVerified}},
+		Verified:              1,
+		Unexpected:            1,
 	}
 	verifiedAt := time.Unix(123, 0).UTC()
 	manifest := backend.BundleManifest{
@@ -52,7 +53,7 @@ func TestToAppLibIntegrity(t *testing.T) {
 		},
 	}
 
-	got := toAppLibIntegrity(&report, lib, manifest, &verifiedAt, true)
+	got := toAppLibIntegrity(&report, lib, manifest, &verifiedAt)
 	if got.Object != "lib_integrity" {
 		t.Errorf("Object: got %q, want %q", got.Object, "lib_integrity")
 	}

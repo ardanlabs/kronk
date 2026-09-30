@@ -125,7 +125,7 @@ Common settings can be supplied as flags or environment variables:
 | `--lib-download-enabled` | `KRONK_LIB_DOWNLOAD_ENABLED` | `true` | Download or update the llama.cpp library during server startup |
 | `--media-backends-enabled` | `KRONK_MEDIA_BACKENDS_ENABLED` | `true` | Download and load the Bucky and Malina native backends during server startup |
 | `--allow-upgrade` | `KRONK_ALLOW_UPGRADE` | `false` | Opt in to automatic native-library upgrades |
-| `--llama-log` | `KRONK_LLAMA_LOG` | `1` | Enable or disable llama.cpp logging |
+| `--llama-log` | `KRONK_LLAMA_LOG` | `0` | Enable or disable llama.cpp logging |
 
 Most server configuration flags map to environment variables, but names follow
 the server's configuration hierarchy rather than a universal text conversion.
@@ -319,7 +319,7 @@ kms:
   allow-upgrade: false
   insecure-logging: false
   hf-token: ""
-  llama-log: 1
+  llama-log: 0
 models:
   owner/model:
     context-window: 8192
