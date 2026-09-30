@@ -179,6 +179,7 @@ func (sd *StableDiffusion) resolveConfig(modelID string) (model.Config, error) {
 	cfg.MotionModulePath = files[string(malinamodels.RoleMotionModule)]
 	cfg.ADetailerPath = files[string(malinamodels.RoleADetailer)]
 	cfg.PhotoMakerPath = files[string(malinamodels.RolePhotoMaker)]
+	cfg.AudioEncoderPath = files[string(malinamodels.RoleAudioEncoder)]
 
 	return cfg, nil
 }

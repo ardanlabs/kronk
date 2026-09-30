@@ -27,11 +27,11 @@ func TestCatalogValidity(t *testing.T) {
 	}
 }
 
-func TestCatalogMatchesMalinaCatalog(t *testing.T) {
+func TestCatalogIncludesMalinaCatalog(t *testing.T) {
 	malinaCatalog := malinadownload.Catalog()
 	kronkCatalog := Catalog()
-	if len(kronkCatalog) != len(malinaCatalog) {
-		t.Fatalf("Catalog length: got %d, want %d", len(kronkCatalog), len(malinaCatalog))
+	if len(kronkCatalog) != len(malinaCatalog)+1 {
+		t.Fatalf("Catalog length: got %d, want %d", len(kronkCatalog), len(malinaCatalog)+1)
 	}
 
 	for _, malinaBundle := range malinaCatalog {
@@ -60,8 +60,8 @@ func TestCatalogMatchesMalinaCatalog(t *testing.T) {
 	}
 
 	for _, kronkBundle := range kronkCatalog {
-		if _, ok := malinadownload.BundleByName(kronkBundle.Name.String()); !ok {
-			t.Errorf("Kronk bundle %q is absent from the Malina catalog", kronkBundle.Name)
+		if _, ok := malinadownload.BundleByName(kronkBundle.Name.String()); !ok && !kronkBundle.Name.Equal(BundleWan22S2V14B) {
+			t.Errorf("unexpected Kronk-only bundle %q", kronkBundle.Name)
 		}
 	}
 }
@@ -77,6 +77,7 @@ func TestBundleNameConstants(t *testing.T) {
 		BundleRealESRGANX4Anime,
 		BundleSD15,
 		BundleSDXLBase10,
+		BundleWan22S2V14B,
 	}
 	if !slices.Equal(SupportedBundles(), want) {
 		t.Errorf("SupportedBundles(): got %v, want %v", SupportedBundles(), want)
@@ -148,6 +149,22 @@ func TestBundleLLaDAImageTurbo(t *testing.T) {
 	}
 }
 
+func TestBundleWan22S2V14B(t *testing.T) {
+	bundle, ok := BundleByName(BundleWan22S2V14B)
+	if !ok {
+		t.Fatal("BundleByName(BundleWan22S2V14B): not found")
+	}
+
+	wantRoles := []FileRole{RoleDiffusion, RoleVAE, RoleT5XXL, RoleAudioEncoder}
+	gotRoles := make([]FileRole, len(bundle.Files))
+	for i, file := range bundle.Files {
+		gotRoles[i] = file.Role
+	}
+	if !slices.Equal(gotRoles, wantRoles) {
+		t.Errorf("roles: got %v, want %v", gotRoles, wantRoles)
+	}
+}
+
 func TestBundleBasicTextToImage(t *testing.T) {
 	tests := []struct {
 		name string
@@ -160,6 +177,7 @@ func TestBundleBasicTextToImage(t *testing.T) {
 		{name: "control net workflow", id: BundleControlNetCannySD15, want: false},
 		{name: "adetailer workflow", id: BundleADetailerFaceYOLOv8N, want: false},
 		{name: "animation workflow", id: BundleAnimateDiffSD15, want: false},
+		{name: "speech to video workflow", id: BundleWan22S2V14B, want: false},
 		{name: "upscaler only", id: BundleRealESRGANX4Anime, want: false},
 	}
 

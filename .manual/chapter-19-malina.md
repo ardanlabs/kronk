@@ -187,6 +187,7 @@ The current bundles are:
 | `realesrgan-x4-anime` | Real-ESRGAN 4× anime upscaler | BSD-3-Clause | 18 MB |
 | `adetailer-face-yolov8n` | Quantized SD 1.5 and face detector | CreativeML Open RAIL-M / AGPL-3.0 | 1.6 GB |
 | `animatediff-sd1.5` | Quantized SD 1.5 and AnimateDiff v3 motion module | CreativeML Open RAIL-M / Apache-2.0 | 2.4 GB |
+| `wan2.2-s2v-14b` | Quantized Wan2.2 S2V diffusion and text encoder, VAE, and audio encoder | Apache-2.0 | 18.4 GB |
 | `sdxl-base-1.0` | SDXL Base 1.0 checkpoint | CreativeML Open RAIL++-M | 6.9 GB |
 | `llada-image-turbo` | Quantized diffusion and text encoder, connectors, VAE, and tokenizer | Apache-2.0 | 20.2 GB |
 | `flux2-klein-4b` | Diffusion model, VAE, and LLM text encoder | FLUX Non-Commercial | 5.3 GB |
@@ -542,21 +543,13 @@ encoding the frames because some video models require a fixed frame rate.
 
 #### 19.6.4 Wan2.2 S2V
 
-Wan2.2 S2V animates a source image from a driving WAV speech track. It requires
-four model components that are not in Kronk's curated catalog: the Wan2.2 S2V
-diffusion model, Wan 2.1 VAE, UMT5-XXL text encoder, and wav2vec2 audio encoder.
-Download the paths listed in stable-diffusion.cpp's
-[`docs/wan.md`](https://github.com/leejet/stable-diffusion.cpp/blob/master/docs/wan.md),
-then run:
+Wan2.2 S2V animates a source image from a driving WAV speech track. The curated
+`wan2.2-s2v-14b` bundle contains the Wan2.2 S2V diffusion model, Wan 2.1 VAE,
+UMT5-XXL text encoder, and wav2vec2 audio encoder. The example downloads that
+bundle and uses its included portrait and WAV samples automatically:
 
 ```shell
-make example-malina-s2v ARGS='\
-  -diffusion /path/to/wan2.2-s2v.safetensors \
-  -vae /path/to/wan_2.1_vae.safetensors \
-  -t5xxl /path/to/umt5-xxl.safetensors \
-  -audio-encoder /path/to/wav2vec2_large_english_fp16.safetensors \
-  -image /path/to/portrait.png \
-  -audio /path/to/speech.wav'
+make example-malina-s2v
 ```
 
 The example resizes the source image to the requested generation dimensions,
@@ -663,8 +656,7 @@ frame sequence; it is not a streaming video-generation API.
 
 The examples install their own compatible libraries. Examples backed by the
 curated catalog also install their model bundles using default Kronk paths.
-Wan2.2 S2V accepts explicit component paths because the workflow is not in the
-curated catalog.
+All inputs and model IDs are built in, so the make targets require no flags.
 
 | Command | Purpose |
 | ------- | ------- |
@@ -673,7 +665,7 @@ curated catalog.
 | `make example-malina-controlnet` | Generate an image using Canny edge conditioning. |
 | `make example-malina-adetailer` | Detect and refine faces in a portrait. |
 | `make example-malina-animatediff` | Generate AnimateDiff frames and write an AVI. |
-| `make example-malina-s2v ARGS='...'` | Animate a source image from WAV speech with Wan2.2 S2V. |
+| `make example-malina-s2v` | Animate a source image from WAV speech with Wan2.2 S2V. |
 | `make example-malina-upscale` | Enlarge a PNG or JPEG with Real-ESRGAN. |
 | `make example-malina-sd-encode` | Encode a directory of PNG/JPEG frames as Motion-JPEG AVI. |
 | `make example-malina-system` | Install libraries and print native system diagnostics. |
@@ -690,8 +682,8 @@ Later runs reuse complete installations.
 - The curated catalog is intentionally small. The high-level SDK guarantees
   its listed component roles; arbitrary user-created bundle layouts are not a
   supported catalog contract.
-- Wan2.2 S2V is available through explicit SDK model paths, but it is not in
-  Kronk's curated model catalog or model-server API.
+- Wan2.2 S2V is available in the curated model catalog and through the SDK,
+  but it is not exposed by the model-server API.
 - LLaDA-Image-Turbo is available for text-to-image generation. Its native
   reference-image instruction-editing workflow is not yet exposed by the
   high-level SDK.

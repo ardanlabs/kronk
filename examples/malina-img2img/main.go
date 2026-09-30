@@ -15,7 +15,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"image"
 	_ "image/jpeg"
@@ -36,32 +35,20 @@ var (
 	progressMu  sync.Mutex
 )
 
-type config struct {
-	input    string
-	output   string
-	prompt   string
-	strength float64
-	steps    int
-	seed     int64
-}
+const (
+	inputFile  = "samples/giraffe.jpg"
+	outputFile = "malina-img2img.png"
+	prompt     = "a watercolor painting at sunset"
+)
 
 func main() {
-	var cfg config
-	flag.StringVar(&cfg.input, "in", "samples/giraffe.jpg", "source PNG or JPEG path")
-	flag.StringVar(&cfg.output, "out", "malina-img2img.png", "output PNG path")
-	flag.StringVar(&cfg.prompt, "prompt", "a watercolor painting at sunset", "prompt that steers the image")
-	flag.Float64Var(&cfg.strength, "strength", 0.6, "noise strength in (0,1]")
-	flag.IntVar(&cfg.steps, "steps", 20, "denoising steps")
-	flag.Int64Var(&cfg.seed, "seed", 42, "RNG seed (-1 selects a random seed)")
-	flag.Parse()
-
-	if err := run(cfg); err != nil {
+	if err := run(); err != nil {
 		fmt.Printf("\nERROR: %s\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(cfg config) error {
+func run() error {
 	mp, err := installSystem()
 	if err != nil {
 		return fmt.Errorf("unable to install system: %w", err)
@@ -78,7 +65,7 @@ func run(cfg config) error {
 		}
 	}()
 
-	if err := transform(mln, cfg); err != nil {
+	if err := transform(mln); err != nil {
 		return fmt.Errorf("transform: %w", err)
 	}
 
@@ -159,38 +146,38 @@ func newMalina(mp models.Path) (*malina.Malina, error) {
 
 // =============================================================================
 
-func transform(mln *malina.Malina, cfg config) error {
+func transform(mln *malina.Malina) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
-	source, err := loadImage(cfg.input)
+	source, err := loadImage(inputFile)
 	if err != nil {
 		return err
 	}
 
 	params := model.NewGenerateParams()
-	params.Prompt = cfg.prompt
+	params.Prompt = prompt
 	params.InitImage = source
-	params.Strength = float32(cfg.strength)
-	params.Steps = cfg.steps
-	params.Seed = cfg.seed
+	params.Strength = 0.6
+	params.Steps = 20
+	params.Seed = 42
 	params.Width, params.Height, err = generationSize(source.Bounds())
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("\nTransforming %s with strength %.2f...\n", cfg.input, cfg.strength)
+	fmt.Printf("\nTransforming %s with strength %.2f...\n", inputFile, params.Strength)
 	start := time.Now()
 
 	generated, err := mln.Generate(ctx, params)
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(cfg.output, generated.PNG, 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", cfg.output, err)
+	if err := os.WriteFile(outputFile, generated.PNG, 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", outputFile, err)
 	}
 
-	fmt.Printf("Wrote %s (%dx%d) in %s\n", cfg.output, generated.Width, generated.Height, time.Since(start).Round(time.Millisecond))
+	fmt.Printf("Wrote %s (%dx%d) in %s\n", outputFile, generated.Width, generated.Height, time.Since(start).Round(time.Millisecond))
 
 	return nil
 }

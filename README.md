@@ -156,12 +156,12 @@ make example-malina           # Generate an image with experimental Malina.
 make example-malina-controlnet # Generate an image with Canny edge conditioning.
 make example-malina-adetailer  # Detect and refine faces in a portrait.
 make example-malina-animatediff # Generate AnimateDiff frames and write an AVI.
-make example-malina-s2v ARGS='...' # Animate a portrait from WAV speech with Wan2.2 S2V.
+make example-malina-s2v          # Animate a portrait from WAV speech with Wan2.2 S2V.
 make example-malina-upscale    # Enlarge an image with Real-ESRGAN.
 ```
 
-Examples download compatible libraries and catalog-backed models on their first run;
-Wan2.2 S2V takes explicit component paths. Browse the [complete examples module](examples/)
+Examples download compatible libraries and catalog-backed models on their first run.
+Browse the [complete examples module](examples/)
 for chat, Responses, embeddings, reranking, Decision, RAG, streaming transcription,
 image-to-image generation, ControlNet, ADetailer, AnimateDiff, Wan2.2 S2V, image
 upscaling, model pools, session stores, and lower-level yzma usage.

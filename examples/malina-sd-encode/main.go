@@ -12,7 +12,6 @@ package main
 
 import (
 	"bytes"
-	"flag"
 	"fmt"
 	"image"
 	_ "image/jpeg"
@@ -26,34 +25,27 @@ import (
 	"golang.org/x/image/draw"
 )
 
-type config struct {
-	inputDir string
-	output   string
-	fps      int
-	quality  int
-}
+const (
+	inputDir   = "samples/deer"
+	outputFile = "malina-output.avi"
+	fps        = 24
+	quality    = 90
+)
 
 func main() {
-	var cfg config
-	flag.StringVar(&cfg.inputDir, "i", "samples/deer", "directory containing PNG and JPEG frames")
-	flag.StringVar(&cfg.output, "o", "malina-output.avi", "output AVI path")
-	flag.IntVar(&cfg.fps, "fps", 24, "frames per second")
-	flag.IntVar(&cfg.quality, "quality", 90, "JPEG quality from 1 to 100")
-	flag.Parse()
-
-	if err := run(cfg); err != nil {
+	if err := run(); err != nil {
 		fmt.Printf("\nERROR: %s\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(cfg config) error {
-	paths, err := imagePaths(cfg.inputDir)
+func run() error {
+	paths, err := imagePaths(inputDir)
 	if err != nil {
 		return err
 	}
 	if len(paths) == 0 {
-		return fmt.Errorf("no PNG or JPEG files found in %s", cfg.inputDir)
+		return fmt.Errorf("no PNG or JPEG files found in %s", inputDir)
 	}
 
 	frames := make([]image.Image, 0, len(paths))
@@ -69,11 +61,11 @@ func run(cfg config) error {
 		frames = append(frames, resize(frame, target))
 	}
 
-	if err := model.SaveAVI(cfg.output, frames, cfg.fps, cfg.quality); err != nil {
+	if err := model.SaveAVI(outputFile, frames, fps, quality); err != nil {
 		return fmt.Errorf("save AVI: %w", err)
 	}
 
-	fmt.Printf("Wrote %s (%d frames, %dx%d at %d fps)\n", cfg.output, len(frames), target.Dx(), target.Dy(), cfg.fps)
+	fmt.Printf("Wrote %s (%d frames, %dx%d at %d fps)\n", outputFile, len(frames), target.Dx(), target.Dy(), fps)
 
 	return nil
 }
