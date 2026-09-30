@@ -62,16 +62,19 @@ func TestResponseValidatesMessagesBeforeAdmission(t *testing.T) {
 	}
 }
 
-func TestResponsesRejectStopWhenPresent(t *testing.T) {
-	for _, value := range []any{nil, "END", []any{"END"}} {
+func TestConvertInputToMessagesPreservesStop(t *testing.T) {
+	for _, value := range []any{"END", []any{"DONE", "STOP"}} {
 		d := model.D{"input": "hello", "stop": value}
-		var krn Kronk
 
-		if _, err := krn.Response(t.Context(), d); !errors.Is(err, model.ErrInvalidRequest) {
-			t.Errorf("Response stop %v: got %v, want ErrInvalidRequest", value, err)
+		got, err := convertInputToMessages(d)
+		if err != nil {
+			t.Fatalf("convertInputToMessages stop %v: %v", value, err)
 		}
-		if _, err := krn.ResponseStreaming(t.Context(), d); !errors.Is(err, model.ErrInvalidRequest) {
-			t.Errorf("ResponseStreaming stop %v: got %v, want ErrInvalidRequest", value, err)
+		if err := model.ValidateChatRequest(got); err != nil {
+			t.Fatalf("ValidateChatRequest stop %v: %v", value, err)
+		}
+		if diff := cmp.Diff(value, got["stop"]); diff != "" {
+			t.Errorf("stop mismatch (-want +got):\n%s", diff)
 		}
 	}
 }
