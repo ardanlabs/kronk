@@ -113,7 +113,7 @@ func (a *app) pullBuckyLibs(ctx context.Context, r *http.Request) web.Encoder {
 		status := fmt.Sprintf("%s:%s\n", msg, sb.String())
 		ver := toAppVersion(status, buckylibs.VersionTag{}, allowUpgrade)
 
-		a.log.Info(ctx, "pull-bucky-libs", "info", ver[:len(ver)-1])
+		a.log.Info(ctx, "pull-bucky-libs", "info", strings.TrimSpace(ver))
 		fmt.Fprint(w, ver)
 		f.Flush()
 	}
@@ -146,7 +146,7 @@ func (a *app) pullBuckyLibs(ctx context.Context, r *http.Request) web.Encoder {
 	}
 
 	ver := toAppVersion("downloaded", tag, allowUpgrade)
-	a.log.Info(ctx, "pull-bucky-libs", "info", ver[:len(ver)-1])
+	a.log.Info(ctx, "pull-bucky-libs", "info", strings.TrimSpace(ver))
 	fmt.Fprint(w, ver)
 	f.Flush()
 

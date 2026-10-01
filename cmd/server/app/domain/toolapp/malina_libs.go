@@ -100,7 +100,7 @@ func (a *app) pullMalinaLibs(ctx context.Context, r *http.Request) web.Encoder {
 		status := fmt.Sprintf("%s:%s\n", msg, sb.String())
 		ver := toAppVersion(status, malinalibs.VersionTag{}, allowUpgrade)
 
-		a.log.Info(ctx, "pull-malina-libs", "info", ver[:len(ver)-1])
+		a.log.Info(ctx, "pull-malina-libs", "info", strings.TrimSpace(ver))
 		fmt.Fprint(w, ver)
 		f.Flush()
 	}
@@ -130,7 +130,7 @@ func (a *app) pullMalinaLibs(ctx context.Context, r *http.Request) web.Encoder {
 	}
 
 	ver := toAppVersion("downloaded", tag, allowUpgrade)
-	a.log.Info(ctx, "pull-malina-libs", "info", ver[:len(ver)-1])
+	a.log.Info(ctx, "pull-malina-libs", "info", strings.TrimSpace(ver))
 	fmt.Fprint(w, ver)
 	f.Flush()
 

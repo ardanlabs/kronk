@@ -46,7 +46,7 @@ func main() {
 		}
 
 		// If a service filter was provided, check.
-		if service != "" && strings.ToLower(m["service"].(string)) != service {
+		if !matchesService(m, service) {
 			continue
 		}
 
@@ -91,4 +91,13 @@ func main() {
 	if err := scanner.Err(); err != nil {
 		log.Println(err)
 	}
+}
+
+func matchesService(fields map[string]any, service string) bool {
+	if service == "" {
+		return true
+	}
+
+	value, ok := fields["service"].(string)
+	return ok && strings.EqualFold(value, service)
 }

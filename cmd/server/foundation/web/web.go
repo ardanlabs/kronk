@@ -82,6 +82,9 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		for _, origin := range a.origins {
 			if origin == "*" || origin == reqOrigin {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
+				if origin != "*" {
+					w.Header().Add("Vary", "Origin")
+				}
 				break
 			}
 		}

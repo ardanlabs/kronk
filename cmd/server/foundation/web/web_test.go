@@ -78,3 +78,37 @@ func TestRawHandlerFuncWritesMiddlewareResponse(t *testing.T) {
 		t.Errorf("body: got %q, want recovered error", got)
 	}
 }
+
+func TestCORSReflectedOriginVariesByOrigin(t *testing.T) {
+	app := NewApp(func(context.Context, string, ...any) {})
+	app.EnableCORS([]string{"https://console.example"})
+
+	req := httptest.NewRequest(http.MethodOptions, "/v1/models", nil)
+	req.Header.Set("Origin", "https://console.example")
+	rr := httptest.NewRecorder()
+	app.ServeHTTP(rr, req)
+
+	if got := rr.Header().Get("Access-Control-Allow-Origin"); got != "https://console.example" {
+		t.Errorf("Access-Control-Allow-Origin: got %q, want %q", got, "https://console.example")
+	}
+	if got := rr.Header().Get("Vary"); got != "Origin" {
+		t.Errorf("Vary: got %q, want %q", got, "Origin")
+	}
+}
+
+func TestCORSWildcardDoesNotVaryByOrigin(t *testing.T) {
+	app := NewApp(func(context.Context, string, ...any) {})
+	app.EnableCORS([]string{"*"})
+
+	req := httptest.NewRequest(http.MethodOptions, "/v1/models", nil)
+	req.Header.Set("Origin", "https://console.example")
+	rr := httptest.NewRecorder()
+	app.ServeHTTP(rr, req)
+
+	if got := rr.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Errorf("Access-Control-Allow-Origin: got %q, want %q", got, "*")
+	}
+	if got := rr.Header().Get("Vary"); got != "" {
+		t.Errorf("Vary: got %q, want empty", got)
+	}
+}

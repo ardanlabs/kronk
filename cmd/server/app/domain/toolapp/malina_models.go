@@ -179,7 +179,7 @@ func (a *app) pullMalinaModel(ctx context.Context, r *http.Request) web.Encoder 
 			},
 		}
 		event := toAppPullResponse(response)
-		a.log.Info(ctx, "pull-malina-model", "info", event[:len(event)-1])
+		a.log.Info(ctx, "pull-malina-model", "info", strings.TrimSpace(event))
 		fmt.Fprint(w, event)
 		f.Flush()
 	}

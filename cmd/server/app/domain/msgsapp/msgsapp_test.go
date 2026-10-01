@@ -137,6 +137,15 @@ func TestToOpenAIMaxTokens(t *testing.T) {
 	}
 }
 
+func TestToOpenAIForwardsTopK(t *testing.T) {
+	topK := 17
+	d := toOpenAI(MessagesRequest{TopK: &topK})
+
+	if got := d["top_k"]; got != topK {
+		t.Errorf("top_k: got %v, want %d", got, topK)
+	}
+}
+
 func TestToMessagesResponseToolInputIsObject(t *testing.T) {
 	resp := model.ChatResponse{
 		Choices: []model.Choice{

@@ -215,7 +215,7 @@ func (a *app) pullBuckyModel(ctx context.Context, r *http.Request) web.Encoder {
 			ver = toAppPullResponse(PullResponse{Status: clean})
 		}
 
-		a.log.Info(ctx, "pull-bucky-model", "info", ver[:len(ver)-1])
+		a.log.Info(ctx, "pull-bucky-model", "info", strings.TrimSpace(ver))
 		fmt.Fprint(w, ver)
 		f.Flush()
 	}
@@ -223,7 +223,7 @@ func (a *app) pullBuckyModel(ctx context.Context, r *http.Request) web.Encoder {
 	mp, err := a.buckyModels.Download(ctx, logger, source)
 	if err != nil {
 		ver := toAppPullResponse(PullResponse{Status: err.Error()})
-		a.log.Info(ctx, "pull-bucky-model", "info", ver[:len(ver)-1])
+		a.log.Info(ctx, "pull-bucky-model", "info", strings.TrimSpace(ver))
 		fmt.Fprint(w, ver)
 		f.Flush()
 		return web.NewNoResponse()

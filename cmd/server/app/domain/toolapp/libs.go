@@ -104,7 +104,7 @@ func (a *app) pullLibs(ctx context.Context, r *http.Request) web.Encoder {
 		status := fmt.Sprintf("%s:%s\n", msg, sb.String())
 		ver := toAppVersion(status, libs.VersionTag{}, allowUpgrade)
 
-		a.log.Info(ctx, "pull-libs", "info", ver[:len(ver)-1])
+		a.log.Info(ctx, "pull-libs", "info", strings.TrimSpace(ver))
 		fmt.Fprint(w, ver)
 		f.Flush()
 	}
@@ -142,7 +142,7 @@ func (a *app) pullLibs(ctx context.Context, r *http.Request) web.Encoder {
 	if err != nil {
 		ver := toAppVersion(err.Error(), libs.VersionTag{}, allowUpgrade)
 
-		a.log.Info(ctx, "pull-libs", "status", "ERROR", "error", err.Error(), "info", ver[:len(ver)-1])
+		a.log.Info(ctx, "pull-libs", "status", "ERROR", "error", err.Error(), "info", strings.TrimSpace(ver))
 		fmt.Fprint(w, ver)
 		f.Flush()
 
@@ -177,7 +177,7 @@ func (a *app) pullLibs(ctx context.Context, r *http.Request) web.Encoder {
 		ver = toAppVersion("using installed version", vi, allowUpgrade)
 	}
 
-	a.log.Info(ctx, "pull-libs", "info", ver[:len(ver)-1])
+	a.log.Info(ctx, "pull-libs", "info", strings.TrimSpace(ver))
 	fmt.Fprint(w, ver)
 	f.Flush()
 

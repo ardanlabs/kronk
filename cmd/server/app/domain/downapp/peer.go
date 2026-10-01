@@ -98,9 +98,9 @@ type PeerPullEvent struct {
 func toPeerPullEvent(p PeerPullEvent) string {
 	d, err := json.Marshal(p)
 	if err != nil {
-		return fmt.Sprintf("data: {\"status\":%q}\n", err.Error())
+		return fmt.Sprintf("data: {\"status\":%q}\n\n", err.Error())
 	}
-	return fmt.Sprintf("data: %s\n", string(d))
+	return fmt.Sprintf("data: %s\n\n", string(d))
 }
 
 // =============================================================================
@@ -262,7 +262,7 @@ func (a *app) pullLibsFromPeer(ctx context.Context, r *http.Request) web.Encoder
 
 	emit := func(payload PeerPullEvent) {
 		line := toPeerPullEvent(payload)
-		a.log.Info(ctx, "pull-libs-from-peer", "info", strings.TrimSuffix(line, "\n"))
+		a.log.Info(ctx, "pull-libs-from-peer", "info", strings.TrimSpace(line))
 		fmt.Fprint(w, line)
 		f.Flush()
 	}

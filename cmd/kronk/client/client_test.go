@@ -22,6 +22,23 @@ func TestClientDoNilResponseTarget(t *testing.T) {
 	}
 }
 
+func TestClientDoMapsUnauthorizedResponses(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(status)
+			}))
+			defer srv.Close()
+
+			cln := New(NoopLogger, WithClient(srv.Client()))
+			err := cln.Do(t.Context(), http.MethodGet, srv.URL, nil, nil)
+			if !errors.Is(err, ErrUnauthorized) {
+				t.Errorf("Do: got %v, want %v", err, ErrUnauthorized)
+			}
+		})
+	}
+}
+
 func TestSSEClientDoWithErrors(t *testing.T) {
 	tests := []struct {
 		name    string

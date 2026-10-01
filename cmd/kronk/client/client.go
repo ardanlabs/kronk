@@ -259,7 +259,7 @@ func do(ctx context.Context, cln *Client, method string, endpoint string, body a
 		}
 
 		switch statusCode {
-		case http.StatusForbidden:
+		case http.StatusUnauthorized, http.StatusForbidden:
 			return nil, ErrUnauthorized
 
 		default:

@@ -59,10 +59,10 @@ func toAppVersion(status string, vt libs.VersionTag, allowUpgrade bool) string {
 
 	d, err := json.Marshal(vi)
 	if err != nil {
-		return fmt.Sprintf("data: {\"Status\":%q}\n", err.Error())
+		return fmt.Sprintf("data: {\"Status\":%q}\n\n", err.Error())
 	}
 
-	return fmt.Sprintf("data: %s\n", string(d))
+	return fmt.Sprintf("data: %s\n\n", string(d))
 }
 
 // =============================================================================
@@ -539,18 +539,18 @@ func toAppPull(status string, mp models.Path) string {
 
 	d, err := json.Marshal(pr)
 	if err != nil {
-		return fmt.Sprintf("data: {\"Status\":%q}\n", err.Error())
+		return fmt.Sprintf("data: {\"Status\":%q}\n\n", err.Error())
 	}
 
-	return fmt.Sprintf("data: %s\n", string(d))
+	return fmt.Sprintf("data: %s\n\n", string(d))
 }
 
 func toAppPullResponse(pr PullResponse) string {
 	d, err := json.Marshal(pr)
 	if err != nil {
-		return fmt.Sprintf("data: {\"status\":%q}\n", err.Error())
+		return fmt.Sprintf("data: {\"status\":%q}\n\n", err.Error())
 	}
-	return fmt.Sprintf("data: %s\n", string(d))
+	return fmt.Sprintf("data: %s\n\n", string(d))
 }
 
 // =============================================================================

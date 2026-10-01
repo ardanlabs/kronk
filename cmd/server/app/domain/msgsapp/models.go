@@ -203,6 +203,10 @@ func toOpenAI(req MessagesRequest) model.D {
 		d["top_p"] = *req.TopP
 	}
 	switch {
+	case req.TopK != nil:
+		d["top_k"] = *req.TopK
+	}
+	switch {
 	case len(req.Tools) > 0:
 		d["tools"] = convertTools(req.Tools)
 	}

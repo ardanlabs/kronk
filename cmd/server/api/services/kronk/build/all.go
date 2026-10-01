@@ -79,6 +79,7 @@ func (all) Add(app *web.App, cfg mux.Config) {
 		AuthClient:        cfg.AuthClient,
 		Pool:              cfg.Pool,
 		AuthorizationMode: cfg.AuthorizationMode,
+		InferenceTimeout:  cfg.InferenceTimeout,
 	})
 
 	imageapp.Routes(app, imageapp.Config{
