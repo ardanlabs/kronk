@@ -1,11 +1,42 @@
 package start
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
 	"github.com/spf13/cobra"
 )
+
+func TestCreateLogFile(t *testing.T) {
+	basePath := filepath.Join(t.TempDir(), "missing", "base")
+	t.Setenv("KRONK_BASE_PATH", basePath)
+
+	file, err := createLogFile()
+	if err != nil {
+		t.Fatalf("createLogFile: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close log file: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(basePath, "kronk.log")); err != nil {
+		t.Fatalf("stat log file: %v", err)
+	}
+}
+
+func TestCreateLogFileError(t *testing.T) {
+	basePath := t.TempDir()
+	if err := os.Mkdir(filepath.Join(basePath, "kronk.log"), 0o755); err != nil {
+		t.Fatalf("make log directory: %v", err)
+	}
+	t.Setenv("KRONK_BASE_PATH", basePath)
+
+	if _, err := createLogFile(); err == nil {
+		t.Fatal("createLogFile: got nil error, want failure when log path is a directory")
+	}
+}
 
 func TestBuildEnvVarsAdminPassword(t *testing.T) {
 	const value = "test-digest"

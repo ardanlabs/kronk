@@ -25,7 +25,11 @@ func runLocal(cmd *cobra.Command) error {
 			return fmt.Errorf("executable: %w", err)
 		}
 
-		logFile, _ := os.Create(logFilePath())
+		logFile, err := createLogFile()
+		if err != nil {
+			return fmt.Errorf("create log file: %w", err)
+		}
+		defer logFile.Close()
 
 		proc := exec.Command(exePath, "server", "start")
 		proc.Stdout = logFile
@@ -202,6 +206,15 @@ func splitEnvVar(env string) []string {
 
 func logFilePath() string {
 	return filepath.Join(defaults.BaseDir(""), "kronk.log")
+}
+
+func createLogFile() (*os.File, error) {
+	path := logFilePath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+
+	return os.Create(path)
 }
 
 func pidFilePath() string {

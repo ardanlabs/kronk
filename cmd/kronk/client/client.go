@@ -107,6 +107,10 @@ func (cln *Client) Do(ctx context.Context, method string, endpoint string, body 
 		return fmt.Errorf("client: copy error: %w", err)
 	}
 
+	if v == nil {
+		return nil
+	}
+
 	if err := json.Unmarshal(data, v); err != nil {
 		return fmt.Errorf("client: response: %s, decoding error: %w ", string(data), err)
 	}

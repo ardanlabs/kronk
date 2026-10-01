@@ -10,6 +10,18 @@ import (
 	"testing"
 )
 
+func TestClientDoNilResponseTarget(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "response does not need to be decoded")
+	}))
+	defer srv.Close()
+
+	cln := New(NoopLogger, WithClient(srv.Client()))
+	if err := cln.Do(t.Context(), http.MethodGet, srv.URL, nil, nil); err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+}
+
 func TestSSEClientDoWithErrors(t *testing.T) {
 	tests := []struct {
 		name    string
