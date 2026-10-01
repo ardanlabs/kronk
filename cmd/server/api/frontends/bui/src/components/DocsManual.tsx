@@ -3111,7 +3111,7 @@ resp, err := krn.Decision(ctx, req)`}</code></pre>
     }
   }
 }`}</code></pre>
-          <p>Supported <code>response_format.type</code> values are <code>text</code>, <code>json_object</code>, and <code>json_schema</code>. Kronk also accepts a schema directly in the top-level <code>json_schema</code> field and accepts a custom GBNF string in <code>grammar</code>. Use one structured-output mechanism per request.</p>
+          <p>Supported <code>response_format.type</code> values are <code>text</code>, <code>json_object</code>, and <code>json_schema</code>. Kronk also accepts a schema directly in the top-level <code>json_schema</code> field and accepts a custom GBNF string in <code>grammar</code>. Use one structured-output mechanism per request. JSON Schema <code>pattern</code> is not supported; Kronk rejects schemas containing it rather than interpreting its regular expression as GBNF.</p>
           <p>When a constraint is present and <code>enable_thinking</code> is omitted, Kronk disables thinking automatically so free-form reasoning does not precede the structured answer. Explicitly enabling thinking overrides that default, but is generally counterproductive for constrained output.</p>
           <p>A grammar restricts which tokens can be emitted; it does not guarantee a complete result. A response cut short by <code>max_tokens</code>, context limits, or cancellation can still contain an incomplete JSON value.</p>
           <h2 id="107-token-log-probabilities">10.7 Token Log Probabilities</h2>
@@ -3223,6 +3223,7 @@ EOF`}</code></pre>
             <li>The selected model and projector must support the detected modality.</li>
             <li>Image resolution, media count, and audio duration affect latency and memory.</li>
             <li>Model quality and practical media limits vary by model and projector.</li>
+            <li>Kronk does not impose fixed media payload, image-dimension, or media-count limits. Image decoding allocates memory in proportion to decoded dimensions, and a request can retain multiple decoded media items at once. Applications that accept media from untrusted sources must validate those resources before passing them to Kronk.</li>
           </ul>
           <hr />
           <p><em>Next: &lt;a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication"&gt;Chapter 12: Security & Authentication&lt;/a&gt;</em></p>
@@ -3443,6 +3444,7 @@ kronk security key delete --keyid "$KEY_ID"`}</code></pre>
             <li>restrict <code>KRONK_WEB_CORS_ALLOWED_ORIGINS</code> instead of retaining <code>*</code>;</li>
             <li>issue separate, short-lived, least-privilege tokens for each application;</li>
             <li>set quotas based on the workload and monitor authentication failures;</li>
+            <li>when an application forwards untrusted media, validate request size, media count, payload size, and decoded image dimensions before forwarding it;</li>
             <li>protect and back up <code>master.pem</code> and <code>master.jwt</code>; and</li>
             <li>rotate non-master signing keys deliberately, accounting for all tokens that a deletion will revoke.</li>
           </ul>

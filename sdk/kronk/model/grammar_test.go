@@ -49,11 +49,11 @@ func TestFromJSONSchema_SimpleObject(t *testing.T) {
 	if !strings.Contains(grammar, "root ::=") {
 		t.Error("grammar should contain root rule")
 	}
-	if !strings.Contains(grammar, `"name"`) {
-		t.Error("grammar should contain name property")
+	if !strings.Contains(grammar, `"\"name\""`) {
+		t.Errorf("grammar missing name property:\n%s", grammar)
 	}
-	if !strings.Contains(grammar, `"age"`) {
-		t.Error("grammar should contain age property")
+	if !strings.Contains(grammar, `"\"age\""`) {
+		t.Errorf("grammar missing age property:\n%s", grammar)
 	}
 }
 
@@ -77,8 +77,8 @@ func TestFromJSONSchema_WithEnum(t *testing.T) {
 				"required": []string{"verdict"},
 			},
 			wantRules: []string{
-				`root ::= "{" ws "\"" "verdict" "\"" ws ":" ws root-verdict ws "}"`,
-				`root-verdict ::= ( "\"" "yes" "\"" | "\"" "no" "\"" | "\"" "maybe" "\"" )`,
+				`root ::= "{" ws "\"verdict\"" ws ":" ws rule-1 ws "}"`,
+				`rule-1 ::= ( "\"yes\"" | "\"no\"" | "\"maybe\"" )`,
 			},
 		},
 		{
@@ -91,8 +91,8 @@ func TestFromJSONSchema_WithEnum(t *testing.T) {
 				},
 			},
 			wantRules: []string{
-				`root ::= "[" ws ( root-item ( ws "," ws root-item )* )? ws "]"`,
-				`root-item ::= ( "\"" "yes" "\"" | "\"" "no" "\"" )`,
+				`root ::= "[" ws ( rule-1 ( ws "," ws rule-1 )* )? ws "]"`,
+				`rule-1 ::= ( "\"yes\"" | "\"no\"" )`,
 			},
 		},
 		{
@@ -102,7 +102,7 @@ func TestFromJSONSchema_WithEnum(t *testing.T) {
 				"enum": []any{"yes", "no"},
 			},
 			wantRules: []string{
-				`root ::= ( "\"" "yes" "\"" | "\"" "no" "\"" )`,
+				`root ::= ( "\"yes\"" | "\"no\"" )`,
 			},
 			rootHasAlt: true,
 		},
@@ -129,16 +129,69 @@ func TestFromJSONSchema_WithEnum(t *testing.T) {
 	}
 }
 
+func TestJSONValueToRuleEscapesString(t *testing.T) {
+	got, err := jsonValueToRule("a\"b\\c\n雪")
+	if err != nil {
+		t.Fatalf("jsonValueToRule: %v", err)
+	}
+
+	want := `"\"a\\\"b\\\\c\\n雪\""`
+	if got != want {
+		t.Errorf("jsonValueToRule: got %q, want %q", got, want)
+	}
+}
+
+func TestFromJSONSchema_PropertyNamesAreNotRuleNames(t *testing.T) {
+	schema := D{
+		"type": "object",
+		"properties": D{
+			"bad name_\"": D{
+				"type": "string",
+				"enum": []any{"a\"b\\c\n雪", "no"},
+			},
+		},
+	}
+
+	grammar, err := fromJSONSchema(schema)
+	if err != nil {
+		t.Fatalf("fromJSONSchema: %v", err)
+	}
+
+	if !strings.Contains(grammar, `"\"bad name_\\\"\""`) {
+		t.Errorf("grammar missing escaped property name:\n%s", grammar)
+	}
+	if !strings.Contains(grammar, `"\"a\\\"b\\\\c\\n雪\""`) {
+		t.Errorf("grammar missing escaped enum value:\n%s", grammar)
+	}
+	if strings.Contains(grammar, "root-bad name") {
+		t.Errorf("grammar used property text as a rule name:\n%s", grammar)
+	}
+	if !strings.Contains(grammar, "rule-1 ::=") {
+		t.Errorf("grammar missing generated rule name:\n%s", grammar)
+	}
+}
+
+func TestFromJSONSchema_PatternUnsupported(t *testing.T) {
+	schema := D{
+		"type":    "string",
+		"pattern": `^[a-z]+$`,
+	}
+
+	if _, err := fromJSONSchema(schema); !errors.Is(err, ErrInvalidRequest) {
+		t.Errorf("fromJSONSchema: got %v, want ErrInvalidRequest", err)
+	}
+}
+
 func TestFromJSONSchema_EnumGrammarInitializes(t *testing.T) {
 	schema := D{
 		"type": "object",
 		"properties": D{
-			"verdict": D{
+			"verdict\"\\\n雪": D{
 				"type": "string",
-				"enum": []any{"yes", "no", "maybe"},
+				"enum": []any{"yes\"\\\n雪", "no", "maybe"},
 			},
 		},
-		"required": []string{"verdict"},
+		"required": []string{"verdict\"\\\n雪"},
 	}
 
 	grammar, err := fromJSONSchema(schema)
@@ -225,7 +278,7 @@ func TestFromJSONSchema_NestedObject(t *testing.T) {
 	if !strings.Contains(grammar, "root ::=") {
 		t.Error("grammar should contain root rule")
 	}
-	if !strings.Contains(grammar, `"user"`) {
+	if !strings.Contains(grammar, `"\"user\""`) {
 		t.Error("grammar should contain user property")
 	}
 }
@@ -330,10 +383,10 @@ func TestFromResponseFormat_JSONSchema_OpenAIWrapped(t *testing.T) {
 	if !strings.Contains(grammar, "root ::=") {
 		t.Error("grammar should contain root rule")
 	}
-	if !strings.Contains(grammar, `"name"`) {
+	if !strings.Contains(grammar, `"\"name\""`) {
 		t.Error("grammar should contain name property")
 	}
-	if !strings.Contains(grammar, `"age"`) {
+	if !strings.Contains(grammar, `"\"age\""`) {
 		t.Error("grammar should contain age property")
 	}
 }
@@ -356,7 +409,7 @@ func TestFromResponseFormat_JSONSchema_DirectSchema(t *testing.T) {
 	if !strings.Contains(grammar, "root ::=") {
 		t.Error("grammar should contain root rule")
 	}
-	if !strings.Contains(grammar, `"id"`) {
+	if !strings.Contains(grammar, `"\"id\""`) {
 		t.Error("grammar should contain id property")
 	}
 }
@@ -394,7 +447,7 @@ func TestFromResponseFormat_MapStringAny(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(grammar, `"flag"`) {
+	if !strings.Contains(grammar, `"\"flag\""`) {
 		t.Error("grammar should contain flag property")
 	}
 }

@@ -236,6 +236,8 @@ binding Kronk to another interface or allowing traffic outside a trusted host:
 - restrict `KRONK_WEB_CORS_ALLOWED_ORIGINS` instead of retaining `*`;
 - issue separate, short-lived, least-privilege tokens for each application;
 - set quotas based on the workload and monitor authentication failures;
+- when an application forwards untrusted media, validate request size, media
+  count, payload size, and decoded image dimensions before forwarding it;
 - protect and back up `master.pem` and `master.jwt`; and
 - rotate non-master signing keys deliberately, accounting for all tokens that
   a deletion will revoke.
