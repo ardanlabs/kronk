@@ -599,6 +599,26 @@ func TestPullBody_RemovesOversizedDestination(t *testing.T) {
 	}
 }
 
+func TestNewLocatorRejectsModelDirectoryTraversal(t *testing.T) {
+	tests := []string{
+		"https://huggingface.co/../../resolve/main/model.gguf",
+		"https://huggingface.co/%2e%2e/%2e%2e/resolve/main/model.gguf",
+	}
+
+	for _, rawURL := range tests {
+		t.Run(rawURL, func(t *testing.T) {
+			if _, err := newLocator(rawURL); err == nil {
+				t.Fatalf("newLocator(%q): expected invalid model directory error", rawURL)
+			}
+		})
+	}
+
+	const mirrorURL = "http://kronk-peer.local/download/owner/repo/resolve/main/model.gguf"
+	if _, err := newLocator(mirrorURL); err != nil {
+		t.Fatalf("newLocator(%q): %v", mirrorURL, err)
+	}
+}
+
 // TestRemoveOversizedBody_KeepsEverythingElse pins the states that survive: a
 // short file is what resume is for, and no readable pointer means no size.
 func TestRemoveOversizedBody_KeepsEverythingElse(t *testing.T) {

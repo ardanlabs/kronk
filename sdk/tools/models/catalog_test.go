@@ -5,11 +5,13 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
@@ -1631,6 +1633,43 @@ func TestResolver_AllInputForms_ProduceSameDownloadURL(t *testing.T) {
 				t.Errorf("DownloadURLs = %v\nwant [%s]", res.DownloadURLs, wantURL)
 			}
 		})
+	}
+}
+
+func TestResolverConcurrentUpdatesPreserveEntries(t *testing.T) {
+	const count = 16
+
+	filePath := filepath.Join(t.TempDir(), "catalog.yaml")
+	errCh := make(chan error, count)
+
+	var wg sync.WaitGroup
+	for i := range count {
+		wg.Go(func() {
+
+			resolver := NewResolver(nil, filePath)
+			id := fmt.Sprintf("owner/model-%02d", i)
+			errCh <- resolver.saveEntry(id, CatalogEntry{
+				Provider: "owner",
+				Family:   fmt.Sprintf("repo-%02d", i),
+				Files:    []string{fmt.Sprintf("model-%02d.gguf", i)},
+			})
+		})
+	}
+
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("saveEntry: %v", err)
+		}
+	}
+
+	catalog, err := NewResolver(nil, filePath).Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(catalog.Models) != count {
+		t.Fatalf("catalog entries: got %d, want %d", len(catalog.Models), count)
 	}
 }
 

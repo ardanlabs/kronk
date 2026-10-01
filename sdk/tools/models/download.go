@@ -984,6 +984,10 @@ func newLocator(rawURL string) (Locator, error) {
 	// empty segment, owner=parts[1], repo=parts[2], file=path.Base.
 	owner := parts[1]
 	repo := parts[2]
+	modelDir := filepath.Join(owner, repo)
+	if !filepath.IsLocal(modelDir) {
+		return Locator{}, fmt.Errorf("locator: invalid model directory: %q", modelDir)
+	}
 	upstream := path.Base(u.Path)
 	disk := applyRenamePrefix(repo, upstream)
 

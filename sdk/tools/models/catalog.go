@@ -118,9 +118,21 @@ func (r Resolution) VerifyLocal() error {
 // previously-seen IDs and falls back to the HuggingFace API for new ones.
 type Resolver struct {
 	filePath string
-	mu       sync.Mutex
+	mu       *sync.Mutex
 	hfClient hf.Client
 	models   *Models
+}
+
+var resolverLocks sync.Map
+
+func resolverLock(filePath string) *sync.Mutex {
+	key, err := filepath.Abs(filePath)
+	if err != nil {
+		key = filepath.Clean(filePath)
+	}
+
+	lock, _ := resolverLocks.LoadOrStore(key, &sync.Mutex{})
+	return lock.(*sync.Mutex)
 }
 
 // NewResolver constructs a Resolver using the default HuggingFace client.
@@ -134,6 +146,7 @@ func NewResolver(m *Models, filePath string) *Resolver {
 func NewResolverWithClient(m *Models, filePath string, client hf.Client) *Resolver {
 	return &Resolver{
 		filePath: filePath,
+		mu:       resolverLock(filePath),
 		hfClient: client,
 		models:   m,
 	}
@@ -184,6 +197,37 @@ func (r *Resolver) Save(rm Catalog) error {
 	return r.saveLocked(rm)
 }
 
+func (r *Resolver) update(updateFn func(*Catalog) error) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	rm, err := r.loadLocked()
+	if err != nil {
+		return err
+	}
+
+	if err := updateFn(&rm); err != nil {
+		return err
+	}
+
+	return r.saveLocked(rm)
+}
+
+func (r *Resolver) saveEntry(canonical string, entry CatalogEntry) error {
+	return r.update(func(rm *Catalog) error {
+		rm.Models[canonical] = entry
+		return nil
+	})
+}
+
+// Delete removes one catalog entry in a single read-modify-write transaction.
+func (r *Resolver) Delete(canonical string) error {
+	return r.update(func(rm *Catalog) error {
+		delete(rm.Models, canonical)
+		return nil
+	})
+}
+
 func (r *Resolver) saveLocked(rm Catalog) error {
 	if rm.Models == nil {
 		rm.Models = map[string]CatalogEntry{}
@@ -198,8 +242,30 @@ func (r *Resolver) saveLocked(rm Catalog) error {
 		return fmt.Errorf("resolver-save: mkdir: %w", err)
 	}
 
-	if err := os.WriteFile(r.filePath, data, 0644); err != nil {
-		return fmt.Errorf("resolver-save: write: %w", err)
+	tmp, err := os.CreateTemp(filepath.Dir(r.filePath), filepath.Base(r.filePath)+".*.tmp")
+	if err != nil {
+		return fmt.Errorf("resolver-save: create temp: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return fmt.Errorf("resolver-save: write temp: %w", err)
+	}
+	if err := tmp.Chmod(0644); err != nil {
+		tmp.Close()
+		return fmt.Errorf("resolver-save: chmod temp: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return fmt.Errorf("resolver-save: sync temp: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("resolver-save: close temp: %w", err)
+	}
+	if err := os.Rename(tmpPath, r.filePath); err != nil {
+		return fmt.Errorf("resolver-save: rename temp: %w", err)
 	}
 
 	return nil
@@ -284,8 +350,7 @@ func (r *Resolver) Resolve(ctx context.Context, id string) (Resolution, error) {
 			entry.MMProjOrig = res.MMProjOrig
 			entry.MTPOrig = res.MTPOrig
 			entry.MTPChecked = true
-			rm.Models[res.CanonicalID] = entry
-			if err := r.Save(rm); err != nil {
+			if err := r.saveEntry(res.CanonicalID, entry); err != nil {
 				return Resolution{}, fmt.Errorf("resolve: persist: %w", err)
 			}
 
@@ -307,8 +372,7 @@ func (r *Resolver) Resolve(ctx context.Context, id string) (Resolution, error) {
 		entry := r.buildEntry(local.Provider, local.Family, local.Revision, local.Files, local.MMProj, local.MTP)
 		entry.MMProjOrig = local.MMProjOrig
 		entry.MTPOrig = local.MTPOrig
-		rm.Models[local.CanonicalID] = entry
-		if err := r.Save(rm); err != nil {
+		if err := r.saveEntry(local.CanonicalID, entry); err != nil {
 			return Resolution{}, fmt.Errorf("resolve: persist local: %w", err)
 		}
 
@@ -390,11 +454,7 @@ func (r *Resolver) resolvePinned(ctx context.Context, provider, repo, modelID st
 	entry.MMProjOrig = mmproj
 	entry.MTPOrig = mtp
 	entry.MTPChecked = true
-	if rm.Models == nil {
-		rm.Models = map[string]CatalogEntry{}
-	}
-	rm.Models[canonical] = entry
-	if err := r.Save(rm); err != nil {
+	if err := r.saveEntry(canonical, entry); err != nil {
 		return Resolution{}, fmt.Errorf("resolve: persist: %w", err)
 	}
 
@@ -473,12 +533,7 @@ func (r *Resolver) resolveByTag(ctx context.Context, provider, repo, tag string)
 	entry.MTPOrig = mtp
 	entry.MTPChecked = true
 
-	if rm.Models == nil {
-		rm.Models = map[string]CatalogEntry{}
-	}
-	rm.Models[canonical] = entry
-
-	if err := r.Save(rm); err != nil {
+	if err := r.saveEntry(canonical, entry); err != nil {
 		return Resolution{}, fmt.Errorf("resolve: persist: %w", err)
 	}
 
@@ -623,28 +678,22 @@ func (r *Resolver) enrichCatalogEntry(ctx context.Context, canonical string, log
 		return nil
 	}
 
-	rm, err := r.Load()
-	if err != nil {
-		return fmt.Errorf("enrich-catalog-entry: load: %w", err)
-	}
+	if err := r.update(func(rm *Catalog) error {
+		entry, ok := rm.Models[canonical]
+		if !ok {
+			return nil
+		}
 
-	entry, ok := rm.Models[canonical]
-	if !ok {
+		updated, changed, err := r.models.enrichEntry(ctx, entry)
+		if err != nil {
+			log(ctx, "enrich-catalog-entry", "id", canonical, "ERROR", err)
+			return nil
+		}
+		if changed {
+			rm.Models[canonical] = updated
+		}
 		return nil
-	}
-
-	updated, changed, err := r.models.enrichEntry(ctx, entry)
-	if err != nil {
-		log(ctx, "enrich-catalog-entry", "id", canonical, "ERROR", err)
-		return nil
-	}
-	if !changed {
-		return nil
-	}
-
-	rm.Models[canonical] = updated
-
-	if err := r.Save(rm); err != nil {
+	}); err != nil {
 		return fmt.Errorf("enrich-catalog-entry: save: %w", err)
 	}
 
@@ -655,32 +704,28 @@ func (r *Resolver) enrichCatalogEntry(ctx context.Context, canonical string, log
 // the updated FileSizes/MMProjSize back to catalog.yaml. Used after a
 // fresh download so the persisted entry reflects actual byte counts.
 func (r *Resolver) refreshSizes(canonical string) error {
-	rm, err := r.Load()
-	if err != nil {
-		return fmt.Errorf("refresh-sizes: load: %w", err)
-	}
+	if err := r.update(func(rm *Catalog) error {
+		entry, ok := rm.Models[canonical]
+		if !ok {
+			return nil
+		}
 
-	entry, ok := rm.Models[canonical]
-	if !ok {
+		updated := r.buildEntry(entry.Provider, entry.Family, entry.Revision, entry.Files, entry.MMProj, entry.MTP)
+
+		// Preserve fields buildEntry does not repopulate so a size refresh
+		// never drops the HF source names, enrichment, or the resolution
+		// timestamp.
+		updated.MMProjOrig = entry.MMProjOrig
+		updated.MTPOrig = entry.MTPOrig
+		updated.MTPChecked = entry.MTPChecked
+		updated.MTPSource = entry.MTPSource
+		updated.ModelType = entry.ModelType
+		updated.Capabilities = entry.Capabilities
+		updated.ResolvedAt = entry.ResolvedAt
+
+		rm.Models[canonical] = updated
 		return nil
-	}
-
-	updated := r.buildEntry(entry.Provider, entry.Family, entry.Revision, entry.Files, entry.MMProj, entry.MTP)
-
-	// Preserve fields buildEntry does not repopulate so a size refresh
-	// never drops the HF source names, enrichment, or the resolution
-	// timestamp.
-	updated.MMProjOrig = entry.MMProjOrig
-	updated.MTPOrig = entry.MTPOrig
-	updated.MTPChecked = entry.MTPChecked
-	updated.MTPSource = entry.MTPSource
-	updated.ModelType = entry.ModelType
-	updated.Capabilities = entry.Capabilities
-	updated.ResolvedAt = entry.ResolvedAt
-
-	rm.Models[canonical] = updated
-
-	if err := r.Save(rm); err != nil {
+	}); err != nil {
 		return fmt.Errorf("refresh-sizes: save: %w", err)
 	}
 
@@ -1126,15 +1171,6 @@ func (m *Models) persistURLResolution(modelURLs []string, projURL, mtpURL string
 
 	r := NewResolver(m, rfile)
 
-	rm, err := r.Load()
-	if err != nil {
-		return fmt.Errorf("persist-url: load: %w", err)
-	}
-
-	if rm.Models == nil {
-		rm.Models = map[string]CatalogEntry{}
-	}
-
 	modelID := catalogModelID(repo, files[0])
 	canonical := canonicalID(provider, modelID)
 
@@ -1145,28 +1181,27 @@ func (m *Models) persistURLResolution(modelURLs []string, projURL, mtpURL string
 		entry.MTPChecked = true
 	}
 
-	// A URL-based download only carries the companions it was asked to
-	// fetch. Preserve any companion already recorded for this model when
-	// the current call did not supply it, so pulling just the MTP drafter
-	// (projURL == "") does not clobber a previously resolved mmproj, and a
-	// projection-only pull does not wipe a tracked MTP companion.
-	if prev, ok := rm.Models[canonical]; ok {
-		if projURL == "" {
-			entry.MMProj = prev.MMProj
-			entry.MMProjOrig = prev.MMProjOrig
-			entry.MMProjSize = prev.MMProjSize
+	if err := r.update(func(rm *Catalog) error {
+		// A URL-based download only carries the companions it was asked to
+		// fetch. Preserve any companion already recorded for this model when
+		// the current call did not supply it.
+		if prev, ok := rm.Models[canonical]; ok {
+			if projURL == "" {
+				entry.MMProj = prev.MMProj
+				entry.MMProjOrig = prev.MMProjOrig
+				entry.MMProjSize = prev.MMProjSize
+			}
+			if mtpURL == "" {
+				entry.MTP = prev.MTP
+				entry.MTPOrig = prev.MTPOrig
+				entry.MTPSize = prev.MTPSize
+				entry.MTPChecked = prev.MTPChecked
+			}
 		}
-		if mtpURL == "" {
-			entry.MTP = prev.MTP
-			entry.MTPOrig = prev.MTPOrig
-			entry.MTPSize = prev.MTPSize
-			entry.MTPChecked = prev.MTPChecked
-		}
-	}
 
-	rm.Models[canonical] = entry
-
-	if err := r.Save(rm); err != nil {
+		rm.Models[canonical] = entry
+		return nil
+	}); err != nil {
 		return fmt.Errorf("persist-url: save: %w", err)
 	}
 

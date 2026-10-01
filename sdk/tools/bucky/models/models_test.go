@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -69,5 +72,55 @@ func TestCatalogHeaderInstalledModelOutsideCatalog(t *testing.T) {
 	}
 	if header.IsMultilingual() {
 		t.Error("IsMultilingual: got true, want false")
+	}
+}
+
+func TestDownloadResumesPartialModel(t *testing.T) {
+	contents := []byte("complete whisper model contents")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Accept-Ranges", "bytes")
+		if r.Method == http.MethodHead {
+			w.Header().Set("Content-Length", fmt.Sprint(len(contents)))
+			return
+		}
+
+		start := 0
+		if value := r.Header.Get("Range"); value != "" {
+			if _, err := fmt.Sscanf(value, "bytes=%d-", &start); err != nil {
+				t.Errorf("Range header: %q", value)
+				http.Error(w, "bad range", http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Length", fmt.Sprint(len(contents)-start))
+			w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, len(contents)-1, len(contents)))
+			w.WriteHeader(http.StatusPartialContent)
+		} else {
+			w.Header().Set("Content-Length", fmt.Sprint(len(contents)))
+		}
+		_, _ = w.Write(contents[start:])
+	}))
+	defer server.Close()
+
+	m, err := NewWithPaths(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewWithPaths: %v", err)
+	}
+
+	dest := filepath.Join(m.Path(), "ggml-resume.bin")
+	if err := os.WriteFile(dest, contents[:7], 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if _, err := m.Download(t.Context(), func(context.Context, string, ...any) {}, server.URL+"/ggml-resume.bin"); err != nil {
+		t.Fatalf("Download: %v", err)
+	}
+
+	got, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(got) != string(contents) {
+		t.Fatalf("downloaded contents: got %q, want %q", got, contents)
 	}
 }

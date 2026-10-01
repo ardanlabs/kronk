@@ -201,7 +201,10 @@ func (m *Models) ReconcileCatalog(ctx context.Context, log applog.Logger) error 
 
 	r := NewResolver(m, rfile)
 
-	cat, err := r.Load()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	cat, err := r.loadLocked()
 	if err != nil {
 		return fmt.Errorf("reconcile-catalog: load: %w", err)
 	}
@@ -257,7 +260,7 @@ func (m *Models) ReconcileCatalog(ctx context.Context, log applog.Logger) error 
 		return nil
 	}
 
-	if err := r.Save(cat); err != nil {
+	if err := r.saveLocked(cat); err != nil {
 		return fmt.Errorf("reconcile-catalog: save: %w", err)
 	}
 
@@ -382,10 +385,9 @@ func (m *Models) RemoveCatalogEntry(ctx context.Context, canonicalID string, log
 		}
 	}
 
-	// 3. Remove the entry itself and persist.
-	delete(cat.Models, canonicalID)
-
-	if err := r.Save(cat); err != nil {
+	// 3. Remove the entry itself and persist without replacing concurrent
+	// additions made after this operation loaded the catalog.
+	if err := r.Delete(canonicalID); err != nil {
 		return fmt.Errorf("remove-catalog-entry: save: %w", err)
 	}
 

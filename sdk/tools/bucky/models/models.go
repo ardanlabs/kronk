@@ -153,8 +153,8 @@ func (m *Models) BuildIndex(log applog.Logger, checkSHA bool) error {
 //   - A full ggml filename ("ggml-tiny.bin").
 //   - A fully qualified download URL accepted by hashicorp/go-getter.
 //
-// Models already present on disk for the resolved short name are
-// returned without a network round-trip.
+// Existing files are passed through the downloader so it can compare their
+// size with the server and resume an interrupted transfer when necessary.
 func (m *Models) Download(ctx context.Context, log applog.Logger, source string) (Path, error) {
 	source = strings.TrimSpace(source)
 	if source == "" {
@@ -185,22 +185,6 @@ func (m *Models) Download(ctx context.Context, log applog.Logger, source string)
 	}
 
 	dest := filepath.Join(m.modelsPath, fileName)
-	if info, err := os.Stat(dest); err == nil && info.Size() > 0 {
-		log(ctx, "download-model: already installed", "file", fileName)
-		mp := Path{
-			ModelFiles: []string{dest},
-			Downloaded: true,
-			Validated:  true,
-			FileSizes:  []int64{info.Size()},
-		}
-		if err := m.refreshIndex(log); err != nil {
-			log(ctx, "download-model: refresh index", "ERROR", err)
-		}
-		if err := m.cacheHeaderFromFile(extractModelID(fileName), dest); err != nil {
-			log(ctx, "download-model: cache header", "ERROR", err)
-		}
-		return mp, nil
-	}
 
 	progress := func(src string, currentSize int64, totalSize int64, mbPerSec float64, complete bool) {
 		log(ctx, fmt.Sprintf("\r\x1b[Kdownload-model: Downloading %s... %d MB of %d MB (%.2f MB/s)", src, currentSize/(1000*1000), totalSize/(1000*1000), mbPerSec))
