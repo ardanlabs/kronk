@@ -2,9 +2,12 @@ package glm
 
 import (
 	"context"
+	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
 var noopLog applog.Logger = func(context.Context, string, ...any) {}
@@ -47,6 +50,49 @@ func TestParseGLM_MultipleArgs(t *testing.T) {
 	args := calls[0].Function.Arguments
 	if args["city"] != "NYC" || args["units"] != "C" {
 		t.Errorf("args = %v, want city=NYC, units=C", args)
+	}
+}
+
+func TestToolCallWithSchema(t *testing.T) {
+	tools := []model.D{{
+		"type": "function",
+		"function": model.D{
+			"name": "convert",
+			"parameters": model.D{
+				"properties": model.D{
+					"text":    model.D{"type": "string"},
+					"enabled": model.D{"type": "boolean"},
+					"count":   model.D{"type": "integer"},
+					"ratio":   model.D{"type": "number"},
+					"items":   model.D{"type": "array"},
+					"options": model.D{"type": "object"},
+				},
+			},
+		},
+	}}
+
+	content := "convert" +
+		"<arg_key>text</arg_key><arg_value>true</arg_value>" +
+		"<arg_key>enabled</arg_key><arg_value>true</arg_value>" +
+		"<arg_key>count</arg_key><arg_value>9007199254740993</arg_value>" +
+		"<arg_key>ratio</arg_key><arg_value>1.5</arg_value>" +
+		"<arg_key>items</arg_key><arg_value>[1,2]</arg_value>" +
+		"<arg_key>options</arg_key><arg_value>{\"unit\":\"c\"}</arg_value>"
+	calls := Parser{}.ToolCallWithSchema(context.Background(), noopLog, content, tools)
+	if len(calls) != 1 || calls[0].Status != 0 {
+		t.Fatalf("ToolCallWithSchema: got %+v, want one successful call", calls)
+	}
+
+	want := model.ToolCallArguments{
+		"text":    "true",
+		"enabled": true,
+		"count":   json.Number("9007199254740993"),
+		"ratio":   json.Number("1.5"),
+		"items":   []any{json.Number("1"), json.Number("2")},
+		"options": map[string]any{"unit": "c"},
+	}
+	if got := calls[0].Function.Arguments; !reflect.DeepEqual(got, want) {
+		t.Errorf("Arguments: got %#v, want %#v", got, want)
 	}
 }
 

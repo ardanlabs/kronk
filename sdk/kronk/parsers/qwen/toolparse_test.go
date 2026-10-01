@@ -315,3 +315,30 @@ func TestParseJSON_Multiple(t *testing.T) {
 		t.Errorf("names = %v, want [a, b]", names)
 	}
 }
+
+func TestParseJSON_RejectsMalformedOutputAtomically(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{name: "leading garbage", content: `junk{"name":"safe","arguments":{}}`},
+		{name: "trailing garbage", content: `{"name":"safe","arguments":{}}junk`},
+		{name: "empty name", content: `{"name":"","arguments":{}}`},
+		{name: "duplicate name", content: `{"name":"safe","name":"unsafe","arguments":{}}`},
+		{name: "duplicate argument", content: `{"name":"safe","arguments":{"command":"echo safe","command":"id"}}`},
+		{name: "escaped duplicate argument", content: `{"name":"safe","arguments":{"command":"echo safe","\u0063ommand":"id"}}`},
+		{name: "non-object arguments", content: `{"name":"safe","arguments":[]}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			calls := parseJSON(context.Background(), noopLog, tt.content)
+			if len(calls) != 1 || calls[0].Status == 0 || calls[0].Function.Name != "" {
+				t.Fatalf("parseJSON: got %+v, want one non-executable failed call", calls)
+			}
+			if calls[0].Raw != tt.content {
+				t.Errorf("Raw: got %q, want %q", calls[0].Raw, tt.content)
+			}
+		})
+	}
+}

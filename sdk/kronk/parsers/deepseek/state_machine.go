@@ -22,6 +22,7 @@ type stateMachine struct {
 	toolCallDeltas []model.ResponseToolCallDelta
 	startedCalls   []model.ResponseToolCallDelta
 	detectedCalls  int
+	output         []model.Result
 }
 
 // Reset returns the stateMachine to its initial state for reuse.
@@ -36,10 +37,18 @@ func (sm *stateMachine) Reset() {
 	sm.toolCallDeltas = nil
 	sm.startedCalls = nil
 	sm.detectedCalls = 0
+	sm.output = nil
 }
 
 // Classify classifies one decoded token's content.
 func (sm *stateMachine) Classify(content string) (model.Result, bool) {
+	result, eog := sm.classify(content)
+	sm.enqueue(result)
+
+	return sm.popOutput(), eog
+}
+
+func (sm *stateMachine) classify(content string) (model.Result, bool) {
 	if sm.malformedTool {
 		return model.Result{Channel: model.ChannelTool, Content: content}, false
 	}
@@ -92,6 +101,10 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 
 // Flush drains an unresolved DSML opener prefix or an incomplete tools block.
 func (sm *stateMachine) Flush() model.Result {
+	if result := sm.popOutput(); result != (model.Result{}) {
+		return result
+	}
+
 	if sm.inToolCall {
 		content := sm.toolCallBuf.String()
 		sm.toolCallBuf.Reset()
@@ -140,8 +153,14 @@ func (sm *stateMachine) classifyContent(content string) (model.Result, bool) {
 	if openerAt := strings.Index(content, toolCallsOpen); openerAt != -1 {
 		sm.startToolCall(content[openerAt:])
 		result := sm.completeBufferedTool()
-		if openerAt > 0 && result.Content == "" {
-			return model.Result{Channel: sm.status, Content: content[:openerAt]}, false
+		if openerAt > 0 {
+			prefix := model.Result{Channel: sm.status, Content: content[:openerAt]}
+			if result.Content == "" {
+				return prefix, false
+			}
+			sm.enqueue(prefix)
+			sm.enqueue(result)
+			return model.Result{}, false
 		}
 		return result, false
 	}
@@ -156,6 +175,22 @@ func (sm *stateMachine) classifyContent(content string) (model.Result, bool) {
 	}
 
 	return model.Result{Channel: sm.status, Content: content}, false
+}
+
+func (sm *stateMachine) enqueue(result model.Result) {
+	if result != (model.Result{}) {
+		sm.output = append(sm.output, result)
+	}
+}
+
+func (sm *stateMachine) popOutput() model.Result {
+	if len(sm.output) == 0 {
+		return model.Result{}
+	}
+
+	result := sm.output[0]
+	sm.output = sm.output[1:]
+	return result
 }
 
 func (sm *stateMachine) startToolCall(content string) {

@@ -58,6 +58,15 @@ func (Parser) ToolCall(_ context.Context, _ applog.Logger, buf string) []model.R
 	return parseGLM(buf)
 }
 
+// ToolCallWithSchema parses GLM tool calls and uses the declared tool schema
+// to recover argument types from the otherwise untyped argument tags.
+func (Parser) ToolCallWithSchema(_ context.Context, _ applog.Logger, buf string, tools []model.D) []model.ResponseToolCall {
+	toolCalls := parseGLM(buf)
+	normalizeGLMArguments(toolCalls, tools)
+
+	return toolCalls
+}
+
 // containsGLMMarkers reports whether a chat template carries distinctive
 // GLM tool-call tokens. The <arg_key>/<arg_value> pair is unique to GLM's
 // tool-call format and unlikely to appear in any other lineage's template.

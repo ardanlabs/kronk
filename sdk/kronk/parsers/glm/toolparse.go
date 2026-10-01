@@ -1,8 +1,10 @@
 package glm
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"strings"
 
 	"uuid"
@@ -109,6 +111,137 @@ func failedGLMToolCall(raw string, err error) model.ResponseToolCall {
 		Raw:    raw,
 		Error:  err.Error(),
 	}
+}
+
+func normalizeGLMArguments(toolCalls []model.ResponseToolCall, tools []model.D) {
+	for i := range toolCalls {
+		properties := glmToolProperties(tools, toolCalls[i].Function.Name)
+		if properties == nil {
+			continue
+		}
+
+		for name, value := range toolCalls[i].Function.Arguments {
+			raw, ok := value.(string)
+			if !ok {
+				continue
+			}
+
+			property, ok := properties[name].(model.D)
+			if !ok {
+				continue
+			}
+			schemaType, ok := glmSchemaType(property["type"])
+			if !ok || schemaType == "string" {
+				continue
+			}
+
+			if schemaType == "boolean" {
+				switch strings.ToLower(strings.TrimSpace(raw)) {
+				case "true":
+					toolCalls[i].Function.Arguments[name] = true
+				case "false":
+					toolCalls[i].Function.Arguments[name] = false
+				}
+				continue
+			}
+
+			parsed, ok := decodeGLMJSONValue(raw)
+			if !ok {
+				continue
+			}
+
+			switch schemaType {
+			case "object":
+				if _, ok := parsed.(map[string]any); ok {
+					toolCalls[i].Function.Arguments[name] = parsed
+				}
+
+			case "array":
+				if _, ok := parsed.([]any); ok {
+					toolCalls[i].Function.Arguments[name] = parsed
+				}
+
+			case "number":
+				if _, ok := parsed.(json.Number); ok {
+					toolCalls[i].Function.Arguments[name] = parsed
+				}
+
+			case "integer":
+				if number, ok := parsed.(json.Number); ok && glmJSONInteger(number) {
+					toolCalls[i].Function.Arguments[name] = parsed
+				}
+
+			case "null":
+				if parsed == nil {
+					toolCalls[i].Function.Arguments[name] = nil
+				}
+			}
+		}
+	}
+}
+
+func glmToolProperties(tools []model.D, name string) model.D {
+	var properties model.D
+	for _, tool := range tools {
+		if tool["type"] != "function" {
+			continue
+		}
+		function, ok := tool["function"].(model.D)
+		if !ok || function["name"] != name {
+			continue
+		}
+		if properties != nil {
+			return nil
+		}
+		parameters, ok := function["parameters"].(model.D)
+		if !ok {
+			return nil
+		}
+		properties, ok = parameters["properties"].(model.D)
+		if !ok {
+			return nil
+		}
+	}
+
+	return properties
+}
+
+func glmSchemaType(value any) (string, bool) {
+	switch value := value.(type) {
+	case string:
+		return value, true
+	case []any:
+		if len(value) == 1 {
+			schemaType, ok := value[0].(string)
+			return schemaType, ok
+		}
+	case []string:
+		if len(value) == 1 {
+			return value[0], true
+		}
+	}
+
+	return "", false
+}
+
+func decodeGLMJSONValue(raw string) (any, bool) {
+	if !json.Valid([]byte(raw)) {
+		return nil, false
+	}
+
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return nil, false
+	}
+
+	return value, true
+}
+
+func glmJSONInteger(number json.Number) bool {
+	value, ok := new(big.Rat).SetString(number.String())
+	return ok && value.IsInt()
 }
 
 func newToolCallID() string {

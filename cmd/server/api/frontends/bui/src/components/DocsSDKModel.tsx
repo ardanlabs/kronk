@@ -1199,6 +1199,7 @@ export default function DocsSDKModel() {
 }`}</code>
               </pre>
               <p className="doc-description">StateMachine is the per-request, per-slot streaming state machine. One instance is created per slot via Parser.NewStateMachine and reused across requests on that slot via Reset.</p>
+              <p className="doc-description">Implementations may consume protocol framing. Once content has been recognized as answer, reasoning, or tool payload, unexpected non-whitespace continuations must be returned on an appropriate channel so final parsing can reject malformed output atomically.</p>
               <p className="doc-description">Behavior is undefined if Classify is called after a previous call returned eog=true. Callers must invoke Reset before reusing the state machine.</p>
             </div>
 

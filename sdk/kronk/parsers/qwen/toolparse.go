@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"strings"
 
@@ -275,52 +276,185 @@ func isJSONInteger(number json.Number) bool {
 // parseJSON parses tool calls in the OpenAI JSON envelope format used inside
 // Qwen's <tool_call>…</tool_call> wrappers.
 func parseJSON(ctx context.Context, log applog.Logger, content string) []model.ResponseToolCall {
+	raw := content
+	remaining := strings.TrimLeft(content, " \t\n\r")
+	if remaining == "" {
+		return []model.ResponseToolCall{failedJSONToolCall(raw, errors.New("parse qwen JSON: tool call is empty"))}
+	}
+
 	var toolCalls []model.ResponseToolCall
-
-	remaining := content
-	for len(remaining) > 0 {
-		remaining = strings.TrimLeft(remaining, " \t\n\r")
-		if len(remaining) == 0 {
-			break
-		}
-
+	for remaining != "" {
 		if remaining[0] != '{' {
-			idx := strings.Index(remaining, "{")
-			if idx == -1 {
-				break
-			}
-			remaining = remaining[idx:]
+			return []model.ResponseToolCall{failedJSONToolCall(raw, errors.New("parse qwen JSON: unexpected content outside tool call object"))}
 		}
 
-		jsonEnd := findJSONObjectEnd(remaining)
-		if jsonEnd == -1 {
-			jsonEnd = len(remaining)
+		end := findJSONObjectEnd(remaining)
+		if end < 0 {
+			return []model.ResponseToolCall{failedJSONToolCall(raw, errors.New("parse qwen JSON: incomplete tool call object"))}
 		}
 
-		call := remaining[:jsonEnd]
-		remaining = remaining[jsonEnd:]
-
-		toolCall := model.ResponseToolCall{
-			ID:   newToolCallID(),
-			Type: "function",
+		call := remaining[:end]
+		function, err := decodeQwenFunction(call)
+		if err != nil {
+			function, err = repairQwenFunction(call, err)
 		}
-
-		if err := jsonrepair.Unmarshal(call, &toolCall.Function); err != nil {
+		if err != nil {
 			if log != nil {
 				log(ctx, "jsonrepair", "status", "unmarshal-failed",
 					"format", "json", "error", err, "json", call)
 			}
-			toolCall.Status = 2
-			toolCall.Error = err.Error()
-			toolCall.Raw = call
+			return []model.ResponseToolCall{failedJSONToolCall(raw, err)}
 		}
 
-		toolCall.Function.Name = strings.TrimPrefix(toolCall.Function.Name, ".")
+		function.Name = strings.TrimPrefix(function.Name, ".")
+		if function.Name == "" {
+			return []model.ResponseToolCall{failedJSONToolCall(raw, errors.New("parse qwen JSON: tool call name is empty"))}
+		}
 
-		toolCalls = append(toolCalls, toolCall)
+		toolCalls = append(toolCalls, model.ResponseToolCall{
+			ID:       newToolCallID(),
+			Type:     "function",
+			Function: function,
+		})
+		remaining = strings.TrimLeft(remaining[end:], " \t\n\r")
 	}
 
 	return toolCalls
+}
+
+func failedJSONToolCall(raw string, err error) model.ResponseToolCall {
+	return model.ResponseToolCall{ID: newToolCallID(), Type: "function", Status: 2, Raw: raw, Error: err.Error()}
+}
+
+func repairQwenFunction(raw string, original error) (model.ResponseToolCallFunction, error) {
+	repaired, err := jsonrepair.Repair(raw)
+	if err != nil || !qwenRepairOnlyAddsEscapes(raw, repaired) {
+		return model.ResponseToolCallFunction{}, original
+	}
+
+	return decodeQwenFunction(repaired)
+}
+
+func qwenRepairOnlyAddsEscapes(raw, repaired string) bool {
+	for rawPos, repairedPos := 0, 0; rawPos < len(raw) || repairedPos < len(repaired); {
+		if rawPos < len(raw) && repairedPos < len(repaired) && raw[rawPos] == repaired[repairedPos] {
+			rawPos++
+			repairedPos++
+			continue
+		}
+		if repairedPos < len(repaired) && repaired[repairedPos] == '\\' {
+			repairedPos++
+			continue
+		}
+		return false
+	}
+
+	return true
+}
+
+func decodeQwenFunction(raw string) (model.ResponseToolCallFunction, error) {
+	value, err := decodeUniqueQwenJSON(raw)
+	if err != nil {
+		return model.ResponseToolCallFunction{}, err
+	}
+
+	envelope, ok := value.(map[string]any)
+	if !ok {
+		return model.ResponseToolCallFunction{}, errors.New("parse qwen JSON: tool call must be an object")
+	}
+	name, ok := envelope["name"].(string)
+	if !ok || name == "" {
+		return model.ResponseToolCallFunction{}, errors.New("parse qwen JSON: tool call name is empty")
+	}
+
+	argumentValue, ok := envelope["arguments"]
+	if !ok {
+		return model.ResponseToolCallFunction{}, errors.New("parse qwen JSON: tool call arguments must be an object")
+	}
+	if encoded, ok := argumentValue.(string); ok {
+		argumentValue, err = decodeUniqueQwenJSON(encoded)
+		if err != nil {
+			return model.ResponseToolCallFunction{}, fmt.Errorf("parse qwen JSON: invalid tool arguments: %w", err)
+		}
+	}
+	arguments, ok := argumentValue.(map[string]any)
+	if !ok {
+		return model.ResponseToolCallFunction{}, errors.New("parse qwen JSON: tool call arguments must be an object")
+	}
+
+	return model.ResponseToolCallFunction{Name: name, Arguments: model.ToolCallArguments(arguments)}, nil
+}
+
+func decodeUniqueQwenJSON(raw string) (any, error) {
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.UseNumber()
+
+	value, err := decodeUniqueQwenJSONValue(decoder)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return nil, errors.New("parse qwen JSON: unexpected data after JSON value")
+		}
+		return nil, err
+	}
+
+	return value, nil
+}
+
+func decodeUniqueQwenJSONValue(decoder *json.Decoder) (any, error) {
+	token, err := decoder.Token()
+	if err != nil {
+		return nil, err
+	}
+	delim, ok := token.(json.Delim)
+	if !ok {
+		return token, nil
+	}
+
+	switch delim {
+	case '{':
+		object := make(map[string]any)
+		for decoder.More() {
+			keyToken, err := decoder.Token()
+			if err != nil {
+				return nil, err
+			}
+			key, ok := keyToken.(string)
+			if !ok {
+				return nil, errors.New("parse qwen JSON: object key is not a string")
+			}
+			if _, exists := object[key]; exists {
+				return nil, fmt.Errorf("parse qwen JSON: duplicate key %q", key)
+			}
+			value, err := decodeUniqueQwenJSONValue(decoder)
+			if err != nil {
+				return nil, err
+			}
+			object[key] = value
+		}
+		if token, err := decoder.Token(); err != nil || token != json.Delim('}') {
+			return nil, errors.New("parse qwen JSON: object is not closed")
+		}
+		return object, nil
+
+	case '[':
+		var array []any
+		for decoder.More() {
+			value, err := decodeUniqueQwenJSONValue(decoder)
+			if err != nil {
+				return nil, err
+			}
+			array = append(array, value)
+		}
+		if token, err := decoder.Token(); err != nil || token != json.Delim(']') {
+			return nil, errors.New("parse qwen JSON: array is not closed")
+		}
+		return array, nil
+	}
+
+	return nil, fmt.Errorf("parse qwen JSON: unexpected delimiter %q", delim)
 }
 
 func findJSONObjectEnd(s string) int {
