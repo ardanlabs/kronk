@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -162,10 +163,11 @@ func TestAuthenticateJWTPolicy(t *testing.T) {
 				ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
 			},
 			mutate: func(token string) string {
-				if token[len(token)-1] == 'a' {
-					return token[:len(token)-1] + "b"
+				signatureStart := strings.LastIndexByte(token, '.') + 1
+				if token[signatureStart] == 'A' {
+					return token[:signatureStart] + "B" + token[signatureStart+1:]
 				}
-				return token[:len(token)-1] + "a"
+				return token[:signatureStart] + "A" + token[signatureStart+1:]
 			},
 			wantErr: true,
 		},

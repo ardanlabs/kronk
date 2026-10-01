@@ -47,7 +47,9 @@ func (krn *Kronk) EmbeddingsHTTP(ctx context.Context, log Logger, w http.Respons
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write(data)
+	if _, err := w.Write(data); err != nil {
+		return resp, fmt.Errorf("embeddings-http: %w: write response: %w", ErrResponseCommitted, err)
+	}
 
 	return resp, nil
 }
