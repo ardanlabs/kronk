@@ -34,11 +34,20 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
-// ErrServerBusy is returned when the pool cannot make room for a new
-// entry because no idle pool entry is available to evict — either
-// every cached entry has active streams, or the cache is empty/in flux
-// and there is nothing to reclaim.
-var ErrServerBusy = errors.New("server busy: no idle pool entry available to evict")
+var (
+	// ErrServerBusy is returned when the pool cannot make room for a new
+	// entry because no idle pool entry is available to evict — either
+	// every cached entry has active streams, or the cache is empty/in flux
+	// and there is nothing to reclaim.
+	ErrServerBusy = errors.New("server busy: no idle pool entry available to evict")
+
+	// ErrModelInUse is returned when invalidation races with a request that
+	// begins using the selected model.
+	ErrModelInUse = errors.New("model has active streams")
+
+	// ErrPoolClosed is returned when an acquisition begins after pool shutdown.
+	ErrPoolClosed = errors.New("pool is shutting down")
+)
 
 // Config carries the non-generic settings used to construct a Pool.
 //
@@ -60,20 +69,30 @@ type Config struct {
 	// TTL is the duration an entry can live in the cache without being
 	// accessed before the cache evicts it. Zero disables idle expiration.
 	TTL time.Duration
+
+	// Backend identifies this pool in metrics. Empty defaults to "unknown".
+	Backend string
 }
 
 // Pool is the generic pool engine.
 type Pool[H loader.Handle] struct {
-	log         applog.Logger
-	loader      loader.Loader[H]
-	cache       *otter.Cache[string, H]
-	itemsInPool atomic.Int32
-	maxItems    int
-	ttl         time.Duration
-	loadGroup   singleflight.Group
-	resman      *resman.Manager
-	ticketsMu   sync.Mutex
-	tickets     map[string]resman.Ticket
+	log          applog.Logger
+	loader       loader.Loader[H]
+	cache        *otter.Cache[string, H]
+	itemsInPool  atomic.Int32
+	maxItems     int
+	ttl          time.Duration
+	backend      string
+	loadGroup    singleflight.Group
+	resman       *resman.Manager
+	lifecycleMu  sync.Mutex
+	loadsCtx     context.Context
+	cancelLoads  context.CancelFunc
+	loads        sync.WaitGroup
+	shuttingDown bool
+	ticketsMu    sync.Mutex
+	tickets      map[string]resman.Ticket
+	evictionErrs map[string]error
 }
 
 // New constructs a Pool wired to the supplied loader. The caller owns
@@ -96,13 +115,22 @@ func New[H loader.Handle](cfg Config, l loader.Loader[H]) (*Pool[H], error) {
 		return nil, errors.New("engine: new: ttl must be >= 0")
 	}
 
+	loadsCtx, cancelLoads := context.WithCancel(context.Background())
+	if cfg.Backend == "" {
+		cfg.Backend = "unknown"
+	}
+
 	c := Pool[H]{
-		log:      cfg.Log,
-		loader:   l,
-		maxItems: cfg.MaxItems,
-		ttl:      cfg.TTL,
-		resman:   cfg.Resman,
-		tickets:  make(map[string]resman.Ticket),
+		log:          cfg.Log,
+		loader:       l,
+		maxItems:     cfg.MaxItems,
+		ttl:          cfg.TTL,
+		backend:      cfg.Backend,
+		resman:       cfg.Resman,
+		loadsCtx:     loadsCtx,
+		cancelLoads:  cancelLoads,
+		tickets:      make(map[string]resman.Ticket),
+		evictionErrs: make(map[string]error),
 	}
 
 	opt := otter.Options[string, H]{
@@ -120,7 +148,7 @@ func New[H loader.Handle](cfg Config, l loader.Loader[H]) (*Pool[H], error) {
 
 	c.cache = cache
 
-	metrics.SetPoolMaxItemsInPool(cfg.MaxItems)
+	metrics.SetPoolMaxItemsInPool(cfg.Backend, cfg.MaxItems)
 	c.PublishMetrics()
 
 	return &c, nil
@@ -152,19 +180,26 @@ func (c *Pool[H]) GetExisting(key string) (H, bool) {
 // reservation may not be released by the time this returns; use
 // InvalidateSync when a consistent post-eviction view is required.
 func (c *Pool[H]) Invalidate(key string) {
+	c.clearEvictionError(key)
 	c.cache.Invalidate(key)
 }
 
-// InvalidateSync invalidates a cache entry and waits for the eviction
-// callback to release the underlying resource manager reservation.
+// InvalidateSync invalidates a cache entry and waits for the eviction callback
+// to release the underlying resource manager reservation. If the model becomes
+// active or unloading fails, the entry and reservation are restored and the
+// unload error is returned.
 func (c *Pool[H]) InvalidateSync(ctx context.Context, key string) error {
 	const pollInterval = 25 * time.Millisecond
 	const maxWait = 60 * time.Second
 
+	c.clearEvictionError(key)
 	c.cache.Invalidate(key)
 
 	deadline := time.Now().Add(maxWait)
 	for {
+		if err := c.evictionError(key); err != nil {
+			return fmt.Errorf("invalidate-sync: unload key[%s]: %w", key, err)
+		}
 		if !c.hasTicket(key) {
 			return nil
 		}
@@ -190,9 +225,35 @@ func (c *Pool[H]) Shutdown(ctx context.Context) error {
 		defer cancel()
 	}
 
+	c.lifecycleMu.Lock()
+	c.shuttingDown = true
+	c.cancelLoads()
+	c.lifecycleMu.Unlock()
+
+	c.clearEvictionErrors()
+	c.cache.InvalidateAll()
+
+	loadsDone := make(chan struct{})
+	go func() {
+		c.loads.Wait()
+		close(loadsDone)
+	}()
+
+	select {
+	case <-loadsDone:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	// Catch handles that completed loading as shutdown began. Such loads are
+	// never returned to callers, but are briefly cached so normal eviction owns
+	// their unload and reservation cleanup.
 	c.cache.InvalidateAll()
 
 	for c.itemsInPool.Load() > 0 {
+		if key, err := c.firstEvictionError(); err != nil {
+			return fmt.Errorf("shutdown: unload key[%s]: %w", key, err)
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -201,6 +262,44 @@ func (c *Pool[H]) Shutdown(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// beginLoad creates a context whose values come from the singleflight leader
+// but whose cancellation is owned by the pool lifecycle. Callers may stop
+// waiting without canceling a load shared by other callers.
+func (c *Pool[H]) beginLoad(parent context.Context) (context.Context, func(), error) {
+	c.lifecycleMu.Lock()
+	defer c.lifecycleMu.Unlock()
+
+	if c.shuttingDown {
+		return nil, nil, ErrPoolClosed
+	}
+
+	ctx, cancel := context.WithCancel(context.WithoutCancel(parent))
+	stop := context.AfterFunc(c.loadsCtx, cancel)
+	c.loads.Add(1)
+
+	done := func() {
+		stop()
+		cancel()
+		c.loads.Done()
+	}
+
+	return ctx, done, nil
+}
+
+// storeLoaded commits a newly loaded handle and reports whether the pool is
+// still accepting acquisitions. During shutdown the handle is stored only so
+// the regular eviction path can unload it and release its reservation.
+func (c *Pool[H]) storeLoaded(key string, ticket resman.Ticket, h H) bool {
+	c.lifecycleMu.Lock()
+	defer c.lifecycleMu.Unlock()
+
+	c.storeTicket(key, ticket)
+	c.cache.Set(key, h)
+	c.itemsInPool.Add(1)
+
+	return !c.shuttingDown
 }
 
 // Coldest returns an iterator that yields cached entries in LRU
@@ -259,6 +358,39 @@ func (c *Pool[H]) hasTicket(key string) bool {
 	defer c.ticketsMu.Unlock()
 	_, ok := c.tickets[key]
 	return ok
+}
+
+func (c *Pool[H]) setEvictionError(key string, err error) {
+	c.ticketsMu.Lock()
+	defer c.ticketsMu.Unlock()
+	c.evictionErrs[key] = err
+}
+
+func (c *Pool[H]) clearEvictionError(key string) {
+	c.ticketsMu.Lock()
+	defer c.ticketsMu.Unlock()
+	delete(c.evictionErrs, key)
+}
+
+func (c *Pool[H]) clearEvictionErrors() {
+	c.ticketsMu.Lock()
+	defer c.ticketsMu.Unlock()
+	clear(c.evictionErrs)
+}
+
+func (c *Pool[H]) evictionError(key string) error {
+	c.ticketsMu.Lock()
+	defer c.ticketsMu.Unlock()
+	return c.evictionErrs[key]
+}
+
+func (c *Pool[H]) firstEvictionError() (string, error) {
+	c.ticketsMu.Lock()
+	defer c.ticketsMu.Unlock()
+	for key, err := range c.evictionErrs {
+		return key, err
+	}
+	return "", nil
 }
 
 // HasTicket reports whether this engine currently owns a reservation

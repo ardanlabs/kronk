@@ -96,6 +96,7 @@ func New(cfg Config) (*Pool, error) {
 		Resman:   cfg.Resman,
 		MaxItems: cfg.ModelsInPool,
 		TTL:      cfg.TTL,
+		Backend:  "bucky",
 	}, wl)
 	if err != nil {
 		return nil, fmt.Errorf("new: constructing pool core: %w", err)
@@ -143,8 +144,9 @@ func (p *Pool) Invalidate(key string) {
 	p.engine.Invalidate(key)
 }
 
-// InvalidateSync invalidates a cache entry and waits for the eviction
-// callback to release the underlying resource manager reservation.
+// InvalidateSync invalidates a cache entry and waits for the eviction callback
+// to release the underlying resource manager reservation. If unloading fails,
+// the model and reservation remain in the pool and the error is returned.
 func (p *Pool) InvalidateSync(ctx context.Context, key string) error {
 	return p.engine.InvalidateSync(ctx, key)
 }

@@ -5,6 +5,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,12 +22,18 @@ func generatePrivateKey(keysPath string, keyName string) error {
 	fileName := fmt.Sprintf("%s.pem", keyName)
 	keyName = filepath.Join(keysPath, fileName)
 
-	// Create a file for the private key information in PEM form.
-	privateFile, err := os.OpenFile(keyName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	// Create a sibling temporary file so an interrupted write never publishes
+	// a truncated key that prevents the keystore from loading.
+	privateFile, err := os.CreateTemp(keysPath, "."+fileName+".*.tmp")
 	if err != nil {
-		return fmt.Errorf("creating private file: %w", err)
+		return fmt.Errorf("creating temporary private file: %w", err)
 	}
-	defer privateFile.Close()
+	tmpName := privateFile.Name()
+	defer os.Remove(tmpName)
+
+	if err := privateFile.Chmod(0600); err != nil {
+		return errors.Join(fmt.Errorf("setting private file permissions: %w", err), privateFile.Close())
+	}
 
 	// Construct a PEM block for the private key.
 	privateBlock := pem.Block{
@@ -36,7 +43,16 @@ func generatePrivateKey(keysPath string, keyName string) error {
 
 	// Write the private key to the private key file.
 	if err := pem.Encode(privateFile, &privateBlock); err != nil {
-		return fmt.Errorf("generate-private-key: unable to encode: %w", err)
+		return errors.Join(fmt.Errorf("generate-private-key: unable to encode: %w", err), privateFile.Close())
+	}
+	if err := privateFile.Sync(); err != nil {
+		return errors.Join(fmt.Errorf("generate-private-key: unable to sync: %w", err), privateFile.Close())
+	}
+	if err := privateFile.Close(); err != nil {
+		return fmt.Errorf("generate-private-key: unable to close: %w", err)
+	}
+	if err := os.Rename(tmpName, keyName); err != nil {
+		return fmt.Errorf("generate-private-key: unable to publish: %w", err)
 	}
 
 	return nil

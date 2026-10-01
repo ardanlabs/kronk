@@ -331,7 +331,6 @@ func loadDraftModelMTPSeparate(ctx context.Context, log applog.Logger, cfg Confi
 	}
 
 	params := embeddedMTPContextParams(llama.ContextDefaultParams(), targetCtxParams)
-	params.CtxOther = targetCtx
 	lctx, err := llama.InitFromModel(draftModel, params)
 	if err != nil {
 		llama.ModelFree(draftModel)

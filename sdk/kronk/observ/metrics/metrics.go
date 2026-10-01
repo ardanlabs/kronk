@@ -115,10 +115,10 @@ type promMetrics struct {
 	poolSingleflightWait     prometheus.Histogram
 	poolEvictWaitSeconds     prometheus.Histogram
 	poolUnloadDuration       *prometheus.HistogramVec // labels: model_id.
-	poolItemsInPool          prometheus.Gauge
-	poolMaxItemsInPool       prometheus.Gauge
-	poolActiveStreams        *prometheus.GaugeVec // labels: model_id.
-	poolInflightLoads        prometheus.Gauge
+	poolItemsInPool          *prometheus.GaugeVec     // labels: backend.
+	poolMaxItemsInPool       *prometheus.GaugeVec     // labels: backend.
+	poolActiveStreams        *prometheus.GaugeVec     // labels: model_id.
+	poolInflightLoads        *prometheus.GaugeVec     // labels: backend.
 
 	// -------------------------------------------------------------------------
 	// Resource manager metrics (sdk/pool/resman).
@@ -251,22 +251,22 @@ func init() {
 			Help:    "Model unload duration in seconds.",
 			Buckets: subSecondBuckets,
 		}, []string{"model_id"}),
-		poolItemsInPool: auto.NewGauge(prometheus.GaugeOpts{
+		poolItemsInPool: auto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "pool_items_in_pool",
-			Help: "Number of distinct model entries currently in the pool cache.",
-		}),
-		poolMaxItemsInPool: auto.NewGauge(prometheus.GaugeOpts{
+			Help: "Number of distinct model entries currently in the pool cache, by backend.",
+		}, []string{"backend"}),
+		poolMaxItemsInPool: auto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "pool_max_items_in_pool",
-			Help: "Maximum number of model entries the pool will keep before TTL/cap eviction.",
-		}),
+			Help: "Maximum number of model entries each backend pool will keep before TTL/cap eviction.",
+		}, []string{"backend"}),
 		poolActiveStreams: auto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "pool_active_streams",
 			Help: "Active streaming requests per model.",
 		}, []string{"model_id"}),
-		poolInflightLoads: auto.NewGauge(prometheus.GaugeOpts{
+		poolInflightLoads: auto.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "pool_inflight_loads",
-			Help: "Number of model loads currently in progress (reservation held but not yet in cache).",
-		}),
+			Help: "Number of model loads currently in progress by backend (reservation held but not yet in cache).",
+		}, []string{"backend"}),
 
 		// Resource manager.
 		resmanBudgetPercent: auto.NewGauge(prometheus.GaugeOpts{
@@ -575,14 +575,14 @@ func ObservePoolUnloadDuration(modelID string, d time.Duration) {
 	m.poolUnloadDuration.WithLabelValues(normalizeModelID(modelID)).Observe(d.Seconds())
 }
 
-// SetPoolItemsInPool updates the gauge of items currently in the pool.
-func SetPoolItemsInPool(n int) {
-	m.poolItemsInPool.Set(float64(n))
+// SetPoolItemsInPool updates the gauge of items currently in a backend pool.
+func SetPoolItemsInPool(backend string, n int) {
+	m.poolItemsInPool.WithLabelValues(backend).Set(float64(n))
 }
 
-// SetPoolMaxItemsInPool updates the gauge of the configured cache cap.
-func SetPoolMaxItemsInPool(n int) {
-	m.poolMaxItemsInPool.Set(float64(n))
+// SetPoolMaxItemsInPool updates the gauge of a backend's configured cache cap.
+func SetPoolMaxItemsInPool(backend string, n int) {
+	m.poolMaxItemsInPool.WithLabelValues(backend).Set(float64(n))
 }
 
 // SetPoolActiveStreams updates the active streams gauge for a model.
@@ -600,9 +600,9 @@ func ClearPoolActiveStreams(modelID string) {
 	m.poolActiveStreams.DeleteLabelValues(normalizeModelID(modelID))
 }
 
-// SetPoolInflightLoads updates the gauge of in-progress loads.
-func SetPoolInflightLoads(n int) {
-	m.poolInflightLoads.Set(float64(n))
+// SetPoolInflightLoads updates the gauge of in-progress loads for a backend.
+func SetPoolInflightLoads(backend string, n int) {
+	m.poolInflightLoads.WithLabelValues(backend).Set(float64(n))
 }
 
 // =============================================================================

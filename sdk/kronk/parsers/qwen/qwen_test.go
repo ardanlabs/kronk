@@ -89,15 +89,22 @@ func TestParser_ReasoningThenAnswer(t *testing.T) {
 
 func TestParser_JSONToolCall(t *testing.T) {
 	c := Parser{}.NewStateMachine()
+	var tooling strings.Builder
 	runSteps(t, "json-tool-call", c, []step{
 		{token: "<tool_call>", channel: model.ChannelTool},
 		{token: `{"name":"a","arguments":{}}`, channel: model.ChannelNone},
 		{token: "</tool_call>", channel: model.ChannelTool,
 			content: `{"name":"a","arguments":{}}` + "\n"},
 	})
-	_, eog := c.Classify("done")
-	if !eog {
-		t.Errorf("expected EOG after tool call closed")
+	tooling.WriteString(`{"name":"a","arguments":{}}` + "\n")
+	result, eog := c.Classify("done")
+	if eog || result.Channel != model.ChannelTool || result.Content != "done" {
+		t.Fatalf("unexpected continuation: got (%+v, %v), want preserved tool content", result, eog)
+	}
+	tooling.WriteString(result.Content)
+	calls := Parser{}.ToolCall(t.Context(), nil, tooling.String())
+	if len(calls) != 1 || calls[0].Status == 0 || calls[0].Function.Name != "" {
+		t.Fatalf("ToolCall: got %+v, want one non-executable failed call", calls)
 	}
 }
 

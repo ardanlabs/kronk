@@ -215,3 +215,44 @@ func TestIsFolderURL(t *testing.T) {
 		})
 	}
 }
+
+func TestParseFolderURL(t *testing.T) {
+	tests := []struct {
+		name         string
+		url          string
+		wantOwner    string
+		wantRepo     string
+		wantRevision string
+		wantPath     string
+	}{
+		{
+			name:         "hf short host and branch",
+			url:          "https://hf.co/owner/repo/tree/feature-branch/quantized/Q4_K_M",
+			wantOwner:    "owner",
+			wantRepo:     "repo",
+			wantRevision: "feature-branch",
+			wantPath:     "quantized/Q4_K_M",
+		},
+		{
+			name:         "shorthand defaults to main",
+			url:          "owner/repo/quantized/Q4_K_M",
+			wantOwner:    "owner",
+			wantRepo:     "repo",
+			wantRevision: "main",
+			wantPath:     "quantized/Q4_K_M",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			owner, repo, revision, path, err := parseFolderURL(tt.url)
+			if err != nil {
+				t.Fatalf("parseFolderURL: %v", err)
+			}
+			if owner != tt.wantOwner || repo != tt.wantRepo || revision != tt.wantRevision || path != tt.wantPath {
+				t.Errorf("parseFolderURL: got %q/%q/%q/%q, want %q/%q/%q/%q",
+					owner, repo, revision, path, tt.wantOwner, tt.wantRepo, tt.wantRevision, tt.wantPath)
+			}
+		})
+	}
+}

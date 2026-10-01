@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -92,6 +93,111 @@ func TestAuthenticateInvalidToken(t *testing.T) {
 	_, err = ath.Authenticate(context.Background(), "not a bearer token")
 	if !errors.Is(err, auth.ErrInvalidToken) {
 		t.Fatalf("Authenticate: got %v, want ErrInvalidToken", err)
+	}
+}
+
+func TestAuthenticateJWTPolicy(t *testing.T) {
+	ath, err := auth.New(auth.Config{
+		KeyLookup: &keyStore{},
+		Issuer:    "service project",
+	})
+	if err != nil {
+		t.Fatalf("construct auth api: %v", err)
+	}
+
+	now := time.Now().UTC()
+	tests := []struct {
+		name    string
+		claims  auth.Claims
+		mutate  func(string) string
+		wantErr bool
+	}{
+		{
+			name: "valid",
+			claims: auth.Claims{
+				Issuer:    "service project",
+				Subject:   "valid",
+				ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
+			},
+		},
+		{
+			name: "expired",
+			claims: auth.Claims{
+				Issuer:    "service project",
+				Subject:   "expired",
+				ExpiresAt: jwt.NewNumericDate(now.Add(-time.Hour)),
+			},
+			wantErr: true,
+		},
+		{
+			name: "wrong issuer",
+			claims: auth.Claims{
+				Issuer:    "other project",
+				Subject:   "wrong-issuer",
+				ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
+			},
+			wantErr: true,
+		},
+		{
+			name: "expired and wrong issuer",
+			claims: auth.Claims{
+				Issuer:    "other project",
+				Subject:   "expired-wrong-issuer",
+				ExpiresAt: jwt.NewNumericDate(now.Add(-time.Hour)),
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing expiration",
+			claims: auth.Claims{
+				Issuer:  "service project",
+				Subject: "missing-expiration",
+			},
+			wantErr: true,
+		},
+		{
+			name: "bad signature",
+			claims: auth.Claims{
+				Issuer:    "service project",
+				Subject:   "bad-signature",
+				ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
+			},
+			mutate: func(token string) string {
+				signatureStart := strings.LastIndexByte(token, '.') + 1
+				if token[signatureStart] == 'A' {
+					return token[:signatureStart] + "B" + token[signatureStart+1:]
+				}
+				return token[:signatureStart] + "A" + token[signatureStart+1:]
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			token, err := ath.GenerateToken(tt.claims)
+			if err != nil {
+				t.Fatalf("GenerateToken: %v", err)
+			}
+			if tt.mutate != nil {
+				token = tt.mutate(token)
+			}
+
+			_, err = ath.Authenticate(t.Context(), "Bearer "+token)
+			if tt.wantErr {
+				if !errors.Is(err, auth.ErrInvalidToken) {
+					t.Fatalf("Authenticate: got %v, want ErrInvalidToken", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Authenticate: %v", err)
+			}
+		})
+	}
+
+	if _, err := ath.Authenticate(t.Context(), "Bearer malformed.jwt"); !errors.Is(err, auth.ErrInvalidToken) {
+		t.Fatalf("Authenticate malformed token: got %v, want ErrInvalidToken", err)
 	}
 }
 

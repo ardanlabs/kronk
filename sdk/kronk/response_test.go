@@ -34,6 +34,52 @@ func TestStreamStateErrorEvent(t *testing.T) {
 	}
 }
 
+func TestStreamStateOutputIndexesRemainStable(t *testing.T) {
+	ss := streamState{}
+	messageEvents := ss.handleTextDelta("hello")
+
+	firstToolEvents := ss.handleToolCalls([]model.ResponseToolCall{{
+		ID:       "tool-1",
+		Function: model.ResponseToolCallFunction{Name: "first"},
+	}})
+	secondToolEvents := ss.handleToolCalls([]model.ResponseToolCall{{
+		ID:       "tool-2",
+		Function: model.ResponseToolCallFunction{Name: "second"},
+	}})
+	doneEvents := ss.finalizeToolCalls()
+
+	assertEventIndexes(t, messageEvents, 0)
+	assertEventIndexes(t, firstToolEvents, 1)
+	assertEventIndexes(t, secondToolEvents, 2)
+	assertEventIndexes(t, doneEvents[:2], 1)
+	assertEventIndexes(t, doneEvents[2:], 2)
+}
+
+func TestStreamStateIndexesMessageAfterTool(t *testing.T) {
+	ss := streamState{}
+	toolEvents := ss.handleToolCalls([]model.ResponseToolCall{{
+		ID:       "tool-1",
+		Function: model.ResponseToolCallFunction{Name: "first"},
+	}})
+	messageEvents := ss.handleTextDelta("hello")
+
+	assertEventIndexes(t, toolEvents, 0)
+	assertEventIndexes(t, messageEvents, 1)
+}
+
+func assertEventIndexes(t *testing.T, events []ResponseStreamEvent, want int) {
+	t.Helper()
+
+	for _, event := range events {
+		if event.OutputIndex == nil {
+			t.Fatalf("%s: OutputIndex is nil", event.Type)
+		}
+		if got := *event.OutputIndex; got != want {
+			t.Errorf("%s: OutputIndex got %d, want %d", event.Type, got, want)
+		}
+	}
+}
+
 func TestResponseValidatesMessagesBeforeAdmission(t *testing.T) {
 	tests := []struct {
 		name string

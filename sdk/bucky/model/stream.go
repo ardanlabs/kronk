@@ -34,6 +34,10 @@ const (
 	maxPromptTokens   = 64                     // tail tokens carried as cross-window prompt context
 )
 
+// ErrStreamStopped indicates that a stream's worker exited after a terminal
+// processing error or close.
+var ErrStreamStopped = errors.New("stream stopped")
+
 // =============================================================================
 // Events
 
@@ -619,8 +623,16 @@ func (s *Stream) Feed(ctx context.Context, samples []float32) error {
 	copy(cp, samples)
 
 	select {
+	case <-s.doneC:
+		return fmt.Errorf("feed: %w", ErrStreamStopped)
+	default:
+	}
+
+	select {
 	case s.inC <- cp:
 		return nil
+	case <-s.doneC:
+		return fmt.Errorf("feed: %w", ErrStreamStopped)
 	case <-s.closeC:
 		return fmt.Errorf("feed: stream closed")
 	case <-ctx.Done():
@@ -747,7 +759,15 @@ func (s *Stream) Reset(ctx context.Context, opts ...ResetOption) error {
 	done := make(chan struct{})
 
 	select {
+	case <-s.doneC:
+		return fmt.Errorf("reset: %w", ErrStreamStopped)
+	default:
+	}
+
+	select {
 	case s.resetC <- resetReq{cfg: rc, done: done}:
+	case <-s.doneC:
+		return fmt.Errorf("reset: %w", ErrStreamStopped)
 	case <-s.closeC:
 		return fmt.Errorf("reset: stream closed")
 	case <-ctx.Done():
@@ -757,14 +777,18 @@ func (s *Stream) Reset(ctx context.Context, opts ...ResetOption) error {
 	select {
 	case <-done:
 		return nil
+	case <-s.doneC:
+		return fmt.Errorf("reset: %w", ErrStreamStopped)
 	case <-ctx.Done():
 		return ctx.Err()
 	}
 }
 
-// Close performs one final flush over remaining audio, emits the
-// resulting Final event, closes Events, and returns the whisper.State to
-// the pool. It is idempotent and blocks until the worker has exited.
+// Close performs one final flush over remaining audio, emits the resulting
+// Final event when the Events buffer has room, closes Events, and returns the
+// whisper.State to the pool. If the consumer has abandoned a full Events
+// buffer, cleanup takes priority and the closing event is dropped. Close is
+// idempotent and blocks until the worker has exited.
 func (s *Stream) Close() error {
 	s.closeOnce.Do(func() {
 		close(s.closeC)
@@ -793,21 +817,21 @@ func (s *Stream) run() {
 		case rr := <-s.resetC:
 			if err := s.doReset(rr.cfg); err != nil {
 				close(rr.done)
-				s.events <- Event{Kind: EventError, Err: err}
+				s.emitEvent(Event{Kind: EventError, Err: err})
 				return
 			}
 			close(rr.done)
 
 		case <-heartbeat.C:
 			if err := s.process(); err != nil {
-				s.events <- Event{Kind: EventError, Err: err}
+				s.emitEvent(Event{Kind: EventError, Err: err})
 				return
 			}
 
 		case <-s.closeC:
 			s.drainInput()
 			if err := s.finalFlush(); err != nil {
-				s.events <- Event{Kind: EventError, Err: err}
+				s.emitEvent(Event{Kind: EventError, Err: err})
 			}
 			return
 		}
@@ -958,7 +982,7 @@ func (s *Stream) doReset(rc ResetConfig) error {
 	}
 
 	if s.cfg.EmitResetEvent {
-		s.events <- Event{Kind: EventReset, StartMs: s.baseMs, EndMs: s.baseMs}
+		s.emitEvent(Event{Kind: EventReset, StartMs: s.baseMs, EndMs: s.baseMs})
 	}
 
 	return nil
@@ -991,15 +1015,32 @@ func (s *Stream) emitPartial(tr Transcription) {
 	}
 }
 
-// emitFinal sends a committed event. Finals are never dropped; the send
-// blocks until the consumer reads it.
+// emitFinal sends a committed event. Finals apply backpressure while the
+// stream is open, but an undrained consumer cannot prevent Close from
+// releasing the worker and its whisper state.
 func (s *Stream) emitFinal(tr Transcription) {
-	s.events <- Event{
+	s.emitEvent(Event{
 		Kind:     EventFinal,
 		Text:     tr.Text,
 		Segments: tr.Segments,
 		StartMs:  s.baseMs,
 		EndMs:    s.baseMs + msForSamples(len(s.buf)),
+	})
+}
+
+// emitEvent delivers a non-revisable event with backpressure until shutdown.
+// The first non-blocking attempt preserves a closing Final whenever the buffer
+// still has room; if the buffer is full, Close takes priority over delivery.
+func (s *Stream) emitEvent(event Event) {
+	select {
+	case s.events <- event:
+		return
+	default:
+	}
+
+	select {
+	case s.events <- event:
+	case <-s.closeC:
 	}
 }
 

@@ -50,10 +50,10 @@ EXAMPLES
   kronk security key list
 
   # Create a new private key
-  kronk security key create --name=my-key
+  kronk security key create
 
-  # Create a JWT token for a user
-  kronk security token create --user=john --ttl=1h`,
+  # Create a JWT token with endpoint grants
+  kronk security token create --duration=1h --endpoints=chat-completions,responses`,
 	PersistentPreRunE: authenticate,
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()

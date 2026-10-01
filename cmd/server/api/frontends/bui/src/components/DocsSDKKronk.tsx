@@ -49,6 +49,14 @@ export default function DocsSDKKronk() {
               <p className="doc-description">AutoTuneConfig seeds unset settings from a hardware-aware analysis of the model and returns the resulting Config. It uses the same shared models.AutoTune logic as the model pool so the SDK and pool seed defaults identically; the only SDK-specific part is preserving all settings outside AutoTune's ownership. On any failure the original cfg is returned unchanged so auto-tune never blocks a load.</p>
             </div>
 
+            <div className="doc-section" id="func-autotuneconfigwithbudget">
+              <h4>AutoTuneConfigWithBudget</h4>
+              <pre className="code-block">
+                <code>func AutoTuneConfigWithBudget(ctx context.Context, cfg model.Config, budget models.AutoTuneBudget) model.Config</code>
+              </pre>
+              <p className="doc-description">AutoTuneConfigWithBudget seeds unset settings using a stable memory budget. Pool callers use this so custom loads honor the same resource-manager limits as catalog-driven loads.</p>
+            </div>
+
             <div className="doc-section" id="func-init">
               <h4>Init</h4>
               <pre className="code-block">
@@ -560,6 +568,7 @@ export default function DocsSDKKronk() {
               <a href="#functions" className="doc-index-header">Functions</a>
               <ul>
                 <li><a href="#func-autotuneconfig">AutoTuneConfig</a></li>
+                <li><a href="#func-autotuneconfigwithbudget">AutoTuneConfigWithBudget</a></li>
                 <li><a href="#func-init">Init</a></li>
                 <li><a href="#func-initialized">Initialized</a></li>
                 <li><a href="#func-setfmtloggertraceid">SetFmtLoggerTraceID</a></li>

@@ -1,6 +1,51 @@
 package gguf
 
-import "testing"
+import (
+	"bytes"
+	"encoding/binary"
+	"math"
+	"strings"
+	"testing"
+)
+
+func TestReadMetadataValueRejectsImpossibleArrayLength(t *testing.T) {
+	var data bytes.Buffer
+	if err := binary.Write(&data, binary.LittleEndian, uint32(MetadataValueTypeUInt8)); err != nil {
+		t.Fatalf("write array type: %v", err)
+	}
+	if err := binary.Write(&data, binary.LittleEndian, uint64(math.MaxUint64)); err != nil {
+		t.Fatalf("write array length: %v", err)
+	}
+
+	_, err := readMetadataValue(bytes.NewReader(data.Bytes()), MetadataValueTypeArray)
+	if err == nil || !strings.Contains(err.Error(), "array length") {
+		t.Fatalf("readMetadataValue: got %v, want array length error", err)
+	}
+}
+
+func TestParseTensorTableRejectsImpossibleCounts(t *testing.T) {
+	t.Run("tensor count", func(t *testing.T) {
+		_, err := parseTensorTable(bytes.NewReader(nil), math.MaxUint64)
+		if err == nil || !strings.Contains(err.Error(), "tensor count") {
+			t.Fatalf("parseTensorTable: got %v, want tensor count error", err)
+		}
+	})
+
+	t.Run("dimension count", func(t *testing.T) {
+		var data bytes.Buffer
+		for _, value := range []any{uint64(0), uint32(math.MaxUint32)} {
+			if err := binary.Write(&data, binary.LittleEndian, value); err != nil {
+				t.Fatalf("write descriptor: %v", err)
+			}
+		}
+		data.Write(make([]byte, 12))
+
+		_, err := parseTensorTable(bytes.NewReader(data.Bytes()), 1)
+		if err == nil || !strings.Contains(err.Error(), "dimension count") {
+			t.Fatalf("parseTensorTable: got %v, want dimension count error", err)
+		}
+	})
+}
 
 func TestGGMLTypeSizes(t *testing.T) {
 	tests := []struct {

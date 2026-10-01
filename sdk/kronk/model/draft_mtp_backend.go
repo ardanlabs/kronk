@@ -3,7 +3,6 @@ package model
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	yzmaspec "github.com/hybridgroup/yzma/exp/speculative"
@@ -57,7 +56,6 @@ func (b qwen35OwnKVBackend) load(req mtpLoadRequest) (drafter, error) {
 			const reason = "target GGUF declares MTP (nextn_predict_layers>0) but the loaded llama library does not export the NextN hidden-state APIs required by Yzma. MTP speculative decoding is DISABLED for this model. Install the llama.cpp version pinned for this Kronk release."
 			req.log(req.ctx, "draft-model-mtp", "status", "DISABLED",
 				"backend", b.name(), "nextn-layers", nLayers, "reason", reason)
-			fmt.Fprintf(os.Stderr, "WARN: MTP DISABLED for this model: %s\n", reason)
 			return nil, nil
 		}
 
@@ -80,7 +78,6 @@ func (b qwen35OwnKVBackend) load(req mtpLoadRequest) (drafter, error) {
 		if !yzmaspec.Available() {
 			const reason = "MTPDrafterFile is a Qwen own-KV MTP head but the loaded llama library does not export the NextN hidden-state APIs required by Yzma. MTP speculative decoding is DISABLED for this model."
 			req.log(req.ctx, "draft-model-mtp-separate", "status", "DISABLED", "backend", b.name(), "reason", reason)
-			fmt.Fprintf(os.Stderr, "WARN: MTP DISABLED for this model: %s\n", reason)
 			return nil, nil
 		}
 
@@ -107,7 +104,6 @@ func (b gemmaSharedKVBackend) load(req mtpLoadRequest) (drafter, error) {
 	if !yzmaspec.Available() {
 		const reason = "MTPDrafterFile is a gemma4-assistant MTP head but the loaded llama library does not export the NextN hidden-state APIs required by Yzma. MTP speculative decoding is DISABLED for this model."
 		req.log(req.ctx, "draft-model-mtp-shared", "status", "DISABLED", "backend", b.name(), "reason", reason)
-		fmt.Fprintf(os.Stderr, "WARN: MTP DISABLED for this model: %s\n", reason)
 		return nil, nil
 	}
 

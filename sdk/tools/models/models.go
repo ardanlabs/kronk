@@ -239,7 +239,7 @@ func (m *Models) BuildIndex(log applog.Logger, checkSHA bool) error {
 	}
 
 	indexPath := filepath.Join(m.modelsPath, indexFile)
-	if err := os.WriteFile(indexPath, indexData, 0644); err != nil {
+	if err := writeIndexFile(indexPath, indexData); err != nil {
 		return fmt.Errorf("write index file: %w", err)
 	}
 
@@ -313,8 +313,36 @@ func (m *Models) MarkValidated(modelID string) error {
 		return fmt.Errorf("mark-validated: marshal index: %w", err)
 	}
 
-	if err := os.WriteFile(indexPath, out, 0644); err != nil {
+	if err := writeIndexFile(indexPath, out); err != nil {
 		return fmt.Errorf("mark-validated: write index: %w", err)
+	}
+
+	return nil
+}
+
+// =============================================================================
+
+func writeIndexFile(indexPath string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(indexPath), filepath.Base(indexPath)+".*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temp: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return fmt.Errorf("write temp: %w", err)
+	}
+	if err := tmp.Chmod(0o644); err != nil {
+		tmp.Close()
+		return fmt.Errorf("chmod temp: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temp: %w", err)
+	}
+	if err := os.Rename(tmpPath, indexPath); err != nil {
+		return fmt.Errorf("rename temp: %w", err)
 	}
 
 	return nil

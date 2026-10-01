@@ -306,7 +306,6 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
     return 0;
   });
   const [rawMoeKeepExpertsTopN, setRawMoeKeepExpertsTopN] = useState(() => initConfigSweepDef.moeKeepExpertsTopN?.values.join(', ') ?? '0');
-  const [rawOpOffloadMinBatch, setRawOpOffloadMinBatch] = useState(() => initConfigSweepDef.opOffloadMinBatch?.values.join(', ') ?? '0');
 
   // Default available VRAM to 90% of GPU VRAM when it arrives asynchronously.
   const vramInitializedRef = useRef(availableVRAMGB > 0);
@@ -342,7 +341,6 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
       setRawContextWindow(run.configSweepDef.contextWindow.values.join(', '));
       setRawNSeqMax(run.configSweepDef.nSeqMax.values.join(', '));
       setRawMoeKeepExpertsTopN(run.configSweepDef.moeKeepExpertsTopN?.values.join(', ') ?? '0');
-      setRawOpOffloadMinBatch(run.configSweepDef.opOffloadMinBatch?.values.join(', ') ?? '0');
     }
   }, [run?.runId]);
 
@@ -358,10 +356,10 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
 
   const commitNumericSweep = useCallback((
     raw: string,
-    field: 'prefillBatchSize' | 'contextWindow' | 'nSeqMax' | 'moeKeepExpertsTopN' | 'opOffloadMinBatch',
+    field: 'prefillBatchSize' | 'contextWindow' | 'nSeqMax' | 'moeKeepExpertsTopN',
     setRaw: (v: string) => void,
   ) => {
-    const minVal = (field === 'moeKeepExpertsTopN' || field === 'opOffloadMinBatch') ? 0 : 1;
+    const minVal = field === 'moeKeepExpertsTopN' ? 0 : 1;
     const values = raw.split(',').map(s => Math.floor(Number(s.trim()))).filter(n => Number.isFinite(n) && n >= minVal);
     if (values.length === 0) {
       setConfigSweepDef(d => {
@@ -507,7 +505,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
       });
     } else {
       if (!sessionSeed?.model_id || session) return;
-      const defToUse = isMoE ? configSweepDef : { ...configSweepDef, moeMode: undefined, moeKeepExpertsTopN: undefined, opOffloadMinBatch: undefined };
+      const defToUse = isMoE ? configSweepDef : { ...configSweepDef, moeMode: undefined, moeKeepExpertsTopN: undefined };
       startConfigRun({
         sessionSeed,
         enabledScenarios,
@@ -619,8 +617,6 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
             setRawNSeqMax={setRawNSeqMax}
             rawMoeKeepExpertsTopN={rawMoeKeepExpertsTopN}
             setRawMoeKeepExpertsTopN={setRawMoeKeepExpertsTopN}
-            rawOpOffloadMinBatch={rawOpOffloadMinBatch}
-            setRawOpOffloadMinBatch={setRawOpOffloadMinBatch}
             commitNumericSweep={commitNumericSweep}
             isMoE={isMoE}
             isRunning={isRunning}
@@ -708,7 +704,6 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
               setRawContextWindow(moe.contextWindow.values.join(', '));
               setRawNSeqMax(moe.nSeqMax.values.join(', '));
               setRawMoeKeepExpertsTopN(moe.moeKeepExpertsTopN?.values.join(', ') ?? '0');
-              setRawOpOffloadMinBatch(moe.opOffloadMinBatch?.values.join(', ') ?? '0');
             }}
           >
             MoE Recommended

@@ -169,7 +169,7 @@ func (a *app) runAccuracy(ctx context.Context, r *http.Request) web.Encoder {
 	// Load the model with a large context window and incremental caching
 	// disabled. Resolve the model's normal config, override those two settings,
 	// and acquire a dedicated instance.
-	cfg, err := a.models.KronkResolvedConfig(req.Model, a.pool.Kronk.ModelConfig())
+	cfg, err := a.pool.Kronk.ResolvedKronkConfig(req.Model)
 	if err != nil {
 		return errs.FromSDK(fmt.Errorf("resolving model config: %w", err))
 	}
@@ -179,7 +179,7 @@ func (a *app) runAccuracy(ctx context.Context, r *http.Request) web.Encoder {
 	cfg.PtrContextWindow = &cw
 	cfg.PtrIncrementalCache = &imc
 
-	krn, err := a.pool.Kronk.AquireCustom(ctx, req.Model+"/accuracy", cfg)
+	krn, err := a.pool.Kronk.AquireCustom(ctx, req.Model+"/custom/accuracy", cfg)
 	if err != nil {
 		return errs.FromSDK(err)
 	}

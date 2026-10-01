@@ -203,6 +203,9 @@ func (p *openJEVProtocol) work(ctx context.Context, state string, instructions s
 	if len(tokens) == 0 {
 		return decisionWork{}, fmt.Errorf("tokenize prompt: no tokens")
 	}
+	if len(tokens) > p.model.decision.contextWindow {
+		return decisionWork{}, fmt.Errorf("%w: input needs %d tokens, limit is %d", ErrDecisionBudget, len(tokens), p.model.decision.contextWindow)
+	}
 	candidates := append([]llama.Token(nil), p.letterTokens[:len(options)]...)
 	return decisionWork{
 		tokens:    tokens,

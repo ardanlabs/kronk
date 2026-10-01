@@ -7,6 +7,7 @@ package applog
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -71,31 +72,34 @@ var DiscardLogger Logger = func(ctx context.Context, msg string, args ...any) {
 // shorter updates don't leave trailing garbage from longer prior writes.
 var FmtLogger Logger = func(ctx context.Context, msg string, args ...any) {
 	now := time.Now().Format(time.RFC3339Nano)
+	var line strings.Builder
 
-	cr := ""
+	progress := false
 	if len(msg) > 0 && msg[0] == '\r' {
-		cr = "\r"
+		progress = true
+		line.WriteByte('\r')
 		msg = msg[1:]
 	}
 
 	if traceID := GetTraceID(ctx); traceID != "" && traceID != NoTraceID {
-		fmt.Printf("%sKRONK: %s: INFO: %s: %s:", cr, now, traceID, msg)
+		line.WriteString(fmt.Sprintf("KRONK: %s: INFO: %s: %s:", now, traceID, msg))
 	} else {
-		fmt.Printf("%sKRONK: %s: %s:", cr, now, msg)
+		line.WriteString(fmt.Sprintf("KRONK: %s: %s:", now, msg))
 	}
 
 	for i := 0; i < len(args); i += 2 {
 		if i+1 < len(args) {
-			fmt.Printf(" %v[%v]", args[i], args[i+1])
+			line.WriteString(fmt.Sprintf(" %v[%v]", args[i], args[i+1]))
 		}
 	}
 
-	switch cr {
-	case "":
-		fmt.Println()
-	default:
+	if progress {
 		// Erase from cursor to end of line so a shorter progress update
 		// doesn't leave stale characters from the previous longer line.
-		fmt.Print("\x1b[K")
+		line.WriteString("\x1b[K")
+	} else {
+		line.WriteByte('\n')
 	}
+
+	fmt.Print(line.String())
 }

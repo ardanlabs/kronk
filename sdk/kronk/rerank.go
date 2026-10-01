@@ -47,7 +47,9 @@ func (krn *Kronk) RerankHTTP(ctx context.Context, log Logger, w http.ResponseWri
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write(data)
+	if _, err := w.Write(data); err != nil {
+		return resp, fmt.Errorf("rerank-http: %w: write response: %w", ErrResponseCommitted, err)
+	}
 
 	return resp, nil
 }

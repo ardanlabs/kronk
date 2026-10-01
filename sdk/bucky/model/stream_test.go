@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -165,6 +166,110 @@ func TestStream_CloseReleasesSlot(t *testing.T) {
 	mu.Unlock()
 	if got != 1 {
 		t.Fatalf("release calls: got %d, want 1", got)
+	}
+}
+
+func TestStream_FeedAndResetReturnAfterWorkerError(t *testing.T) {
+	fd := &fakeDecoder{err: errors.New("decode failed")}
+	s := newStream(StreamConfig{
+		PartialEveryMs: -1,
+		CommitEveryMs:  1,
+		MaxUtteranceMs: 100000,
+		DisableVAD:     true,
+	}.withDefaults(), fd.decode, func() {})
+
+	if err := s.Feed(context.Background(), tone(500, 0.5)); err != nil {
+		t.Fatalf("initial Feed: %v", err)
+	}
+	select {
+	case <-s.doneC:
+	case <-time.After(time.Second):
+		t.Fatal("stream worker did not stop after decode error")
+	}
+
+	if err := s.Feed(context.Background(), tone(10, 0.5)); !errors.Is(err, ErrStreamStopped) {
+		t.Errorf("Feed error: got %v, want %v", err, ErrStreamStopped)
+	}
+	if err := s.Reset(context.Background()); !errors.Is(err, ErrStreamStopped) {
+		t.Errorf("Reset error: got %v, want %v", err, ErrStreamStopped)
+	}
+}
+
+func TestStream_CloseReleasesSlotWithFullEventsBuffer(t *testing.T) {
+	fd := &fakeDecoder{text: "flush"}
+	released := make(chan struct{})
+	s := newStream(StreamConfig{
+		PartialEveryMs: -1,
+		CommitEveryMs:  100000,
+		MaxUtteranceMs: 100000,
+		DisableVAD:     true,
+	}.withDefaults(), fd.decode, func() { close(released) })
+
+	for range cap(s.events) {
+		s.events <- Event{Kind: EventFinal}
+	}
+	if err := s.Feed(context.Background(), tone(500, 0.5)); err != nil {
+		t.Fatalf("Feed: %v", err)
+	}
+
+	closed := make(chan struct{})
+	go func() {
+		_ = s.Close()
+		close(closed)
+	}()
+
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatal("Close blocked on a full Events buffer")
+	}
+	select {
+	case <-released:
+	case <-time.After(time.Second):
+		t.Fatal("Close did not release the stream slot")
+	}
+}
+
+func TestStream_CloseUnblocksErrorWithFullEventsBuffer(t *testing.T) {
+	fd := &fakeDecoder{err: errors.New("decode failed")}
+	released := make(chan struct{})
+	s := newStream(StreamConfig{
+		PartialEveryMs: -1,
+		CommitEveryMs:  1,
+		MaxUtteranceMs: 100000,
+		DisableVAD:     true,
+	}.withDefaults(), fd.decode, func() { close(released) })
+
+	for range cap(s.events) {
+		s.events <- Event{Kind: EventFinal}
+	}
+	if err := s.Feed(context.Background(), tone(500, 0.5)); err != nil {
+		t.Fatalf("Feed: %v", err)
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for len(fd.promptCalls()) == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(fd.promptCalls()) == 0 {
+		t.Fatal("decoder was not called")
+	}
+
+	closed := make(chan struct{})
+	go func() {
+		_ = s.Close()
+		close(closed)
+	}()
+
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatal("Close blocked on a full Events buffer after a decode error")
+	}
+	select {
+	case <-released:
+	case <-time.After(time.Second):
+		t.Fatal("decode error did not release the stream slot")
 	}
 }
 

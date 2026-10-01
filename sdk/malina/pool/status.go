@@ -1,6 +1,9 @@
 package pool
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
 // ModelStatus returns loaded and in-flight Malina models.
 func (p *Pool) ModelStatus() ([]ModelDetail, error) {
@@ -18,7 +21,11 @@ func (p *Pool) ModelStatus() ([]ModelDetail, error) {
 		display := p.loader.Display(handle, entry.Key)
 		size, err := p.modelSize(entry.Key)
 		if err != nil {
-			return nil, fmt.Errorf("model-status: %w", err)
+			p.loader.log(context.Background(), "malina-model-status",
+				"status", "model-size-unavailable",
+				"model-id", entry.Key,
+				"ERROR", err,
+			)
 		}
 
 		details = append(details, ModelDetail{
@@ -42,7 +49,11 @@ func (p *Pool) ModelStatus() ([]ModelDetail, error) {
 
 		size, err := p.modelSize(reservation.Key)
 		if err != nil {
-			return nil, fmt.Errorf("model-status: %w", err)
+			p.loader.log(context.Background(), "malina-model-status",
+				"status", "model-size-unavailable",
+				"model-id", reservation.Key,
+				"ERROR", err,
+			)
 		}
 
 		details = append(details, ModelDetail{

@@ -681,7 +681,7 @@ export default function DocsSDKBuckyModel() {
               <pre className="code-block">
                 <code>func (s *Stream) Close() error</code>
               </pre>
-              <p className="doc-description">Close performs one final flush over remaining audio, emits the resulting Final event, closes Events, and returns the whisper.State to the pool. It is idempotent and blocks until the worker has exited.</p>
+              <p className="doc-description">Close performs one final flush over remaining audio, emits the resulting Final event when the Events buffer has room, closes Events, and returns the whisper.State to the pool. If the consumer has abandoned a full Events buffer, cleanup takes priority and the closing event is dropped. Close is idempotent and blocks until the worker has exited.</p>
             </div>
 
             <div className="doc-section" id="method-stream-events">
@@ -719,6 +719,18 @@ export default function DocsSDKBuckyModel() {
               </pre>
               <p className="doc-description">Reset clears the audio buffer and rolling linguistic context so the same Stream can begin a fresh logical session WITHOUT releasing its pool slot or worker. The whisper.State, pool slot, Events channel, and ActiveStreams count all survive; voice-activity detection state is cleared.</p>
               <p className="doc-description">Behavior is tunable via ResetOption. Reset blocks until any in-flight decode finishes and the worker has applied the reset.</p>
+            </div>
+          </div>
+
+          <div className="card" id="variables">
+            <h3>Variables</h3>
+
+            <div className="doc-section" id="var-errstreamstopped">
+              <h4>ErrStreamStopped</h4>
+              <pre className="code-block">
+                <code>{`var ErrStreamStopped = errors.New("stream stopped")`}</code>
+              </pre>
+              <p className="doc-description">ErrStreamStopped indicates that a stream's worker exited after a terminal processing error or close.</p>
             </div>
           </div>
         </div>
@@ -781,6 +793,12 @@ export default function DocsSDKBuckyModel() {
                 <li><a href="#method-stream-feed">Stream.Feed</a></li>
                 <li><a href="#method-stream-feedpcm">Stream.FeedPCM</a></li>
                 <li><a href="#method-stream-reset">Stream.Reset</a></li>
+              </ul>
+            </div>
+            <div className="doc-index-section">
+              <a href="#variables" className="doc-index-header">Variables</a>
+              <ul>
+                <li><a href="#var-errstreamstopped">ErrStreamStopped</a></li>
               </ul>
             </div>
           </div>

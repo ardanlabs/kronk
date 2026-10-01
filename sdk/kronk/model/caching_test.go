@@ -69,6 +69,12 @@ func TestHashMessages(t *testing.T) {
 			msgs2:    []D{{"role": "user", "content": "Hello"}, {"role": "assistant", "content": "Hi"}},
 			wantSame: false,
 		},
+		{
+			name:     "delimiter content cannot impersonate another message",
+			msgs1:    []D{{"role": "user", "content": "x|1:assistant:y"}},
+			msgs2:    []D{{"role": "user", "content": "x"}, {"role": "assistant", "content": "y"}},
+			wantSame: false,
+		},
 	}
 
 	for _, tt := range tests {

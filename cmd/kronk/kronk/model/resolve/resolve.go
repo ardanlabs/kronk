@@ -9,14 +9,7 @@ import (
 // dropCacheEntry removes the resolver-file entry matching id so the next
 // Resolve call hits the HuggingFace API.
 func dropCacheEntry(r *models.Resolver, id string) error {
-	rm, err := r.Load()
-	if err != nil {
-		return err
-	}
-
-	delete(rm.Models, id)
-
-	return r.Save(rm)
+	return r.Delete(id)
 }
 
 // printResolution writes a human-readable summary of a Resolution.

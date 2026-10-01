@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -107,6 +108,10 @@ func (cln *Client) Do(ctx context.Context, method string, endpoint string, body 
 		return fmt.Errorf("client: copy error: %w", err)
 	}
 
+	if v == nil {
+		return nil
+	}
+
 	if err := json.Unmarshal(data, v); err != nil {
 		return fmt.Errorf("client: response: %s, decoding error: %w ", string(data), err)
 	}
@@ -164,15 +169,25 @@ func (cln *SSEClient[T]) DoWithErrors(ctx context.Context, method string, endpoi
 		}()
 
 		scanner := bufio.NewScanner(resp.Body)
+		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 		for scanner.Scan() {
 			line := scanner.Text()
 
-			if line == "" || line == "data: [DONE]" {
+			if line == "" || strings.HasPrefix(line, ":") {
+				continue
+			}
+
+			field, data, ok := strings.Cut(line, ":")
+			if !ok || field != "data" {
+				continue
+			}
+			data = strings.TrimPrefix(data, " ")
+			if data == "[DONE]" {
 				continue
 			}
 
 			var v T
-			if err := json.Unmarshal([]byte(line[6:]), &v); err != nil {
+			if err := json.Unmarshal([]byte(data), &v); err != nil {
 				errCh <- fmt.Errorf("decoding SSE response: %w", err)
 				return
 			}
@@ -244,7 +259,7 @@ func do(ctx context.Context, cln *Client, method string, endpoint string, body a
 		}
 
 		switch statusCode {
-		case http.StatusForbidden:
+		case http.StatusUnauthorized, http.StatusForbidden:
 			return nil, ErrUnauthorized
 
 		default:

@@ -225,6 +225,9 @@ type AdapterConfig struct {
 // JinjaFile is the path to the jinja file. This is not required and can be
 // used if you want to override the templated provided by the model metadata.
 //
+// JinjaScript is an in-memory jinja template override. It takes precedence
+// over JinjaFile and is intended for request-scoped model configurations.
+//
 // LoadMode controls how model weights are loaded. The default is LoadModeAuto,
 // which uses mmap when every selected device supports it and otherwise uses
 // ordinary loading. LoadModeNone disables mmap, which can improve tensor
@@ -282,9 +285,6 @@ type AdapterConfig struct {
 // OpOffload controls whether host tensor operations are offloaded to the device
 // (GPU). When nil or true, operations are offloaded (default behavior). Set to
 // false to keep operations on the CPU.
-//
-// OpOffloadMinBatch sets the minimum batch size at which host tensor operations
-// are offloaded to the device. When unset or 0, llama.cpp's default is used.
 //
 // ProjFile is the path to the projection files. This is mandatory for media
 // based models like vision and audio.
@@ -405,6 +405,7 @@ type Config struct {
 	PtrIncrementalCache        *bool
 	PtrInsecureLogging         *bool
 	JinjaFile                  string
+	JinjaScript                string
 	LoadMode                   LoadMode
 	Log                        applog.Logger
 	PtrMainGPU                 *int
@@ -418,7 +419,6 @@ type Config struct {
 	NUMA                       string
 	PtrOffloadKQV              *bool
 	PtrOpOffload               *bool
-	PtrOpOffloadMinBatch       *int
 	ProjFile                   string
 	MTPDrafterFile             string
 	PtrProjOnCPU               *bool
@@ -466,7 +466,6 @@ func (cfg Config) NSeqMax() int            { return intOr(cfg.PtrNSeqMax, 0) }
 func (cfg Config) NThreads() int           { return intOr(cfg.PtrNThreads, 0) }
 func (cfg Config) NThreadsBatch() int      { return intOr(cfg.PtrNThreadsBatch, 0) }
 func (cfg Config) CacheMinTokens() int     { return intOr(cfg.PtrCacheMinTokens, 0) }
-func (cfg Config) OpOffloadMinBatch() int  { return intOr(cfg.PtrOpOffloadMinBatch, 0) }
 func (cfg Config) MainGPU() int            { return intOr(cfg.PtrMainGPU, 0) }
 func (cfg Config) NGpuLayers() int         { return intOr(cfg.PtrNGpuLayers, 0) }
 func (cfg Config) RopeFreqBase() float32   { return float32Or(cfg.PtrRopeFreqBase, 0) }
@@ -546,14 +545,14 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("{mode:%s top_n:%s}", m.Mode, topN)
 	}
 
-	return fmt.Sprintf("\nAdapters[%v]\nAdmissionTimeout[%s]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nDecisionProtocol[%s]\nChatTemplateKwargs[%s]\nDevices[%v]\nFlashAttention[%s]\nIMCSessionCapacity[%d]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nPrefillBatchSize[%s]\nEffectiveNBatch[%d]\nEffectiveNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nOpOffloadMinBatch[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nProjDevice[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreFactory[%t]\nSpeculation[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
+	return fmt.Sprintf("\nAdapters[%v]\nAdmissionTimeout[%s]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nDecisionProtocol[%s]\nChatTemplateKwargs[%s]\nDevices[%v]\nFlashAttention[%s]\nIMCSessionCapacity[%d]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nPrefillBatchSize[%s]\nEffectiveNBatch[%d]\nEffectiveNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nProjDevice[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreFactory[%t]\nSpeculation[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
 		cfg.Adapters, formatDurationPtr(cfg.PtrAdmissionTimeout), cfg.AutoTune, formatIntPtr(cfg.PtrCacheMinTokens), cfg.CacheTypeK, cfg.CacheTypeV,
 		formatIntPtr(cfg.PtrContextWindow), cfg.DefaultParams.String(), cfg.DecisionProtocol, chatTemplateKwargsSummary(cfg.ChatTemplateKwargs), cfg.Devices, cfg.FlashAttention(),
 		cfg.IMCSessionCapacity(), formatBoolPtr(cfg.PtrIncrementalCache), formatBoolPtr(cfg.PtrInsecureLogging), cfg.JinjaFile,
 		cfg.LoadMode, formatIntPtr(cfg.PtrMainGPU), formatMoEPtr(cfg.PtrMoE), cfg.ModelFiles,
 		formatIntPtr(cfg.PtrNGpuLayers), formatIntPtr(cfg.PtrNSeqMax), formatIntPtr(cfg.PtrNThreads), formatIntPtr(cfg.PtrNThreadsBatch), formatIntPtr(cfg.PtrPrefillBatchSize), cfg.EffectiveNBatch(), cfg.EffectiveNUBatch(),
 		cfg.NUMA,
-		formatBoolPtr(cfg.PtrOffloadKQV), formatBoolPtr(cfg.PtrOpOffload), formatIntPtr(cfg.PtrOpOffloadMinBatch), cfg.ProjFile, cfg.MTPDrafterFile, formatBoolPtr(cfg.PtrProjOnCPU), cfg.ProjDevice, cfg.QueueDepth(),
+		formatBoolPtr(cfg.PtrOffloadKQV), formatBoolPtr(cfg.PtrOpOffload), cfg.ProjFile, cfg.MTPDrafterFile, formatBoolPtr(cfg.PtrProjOnCPU), cfg.ProjDevice, cfg.QueueDepth(),
 		formatFloat32Ptr(cfg.PtrRopeFreqBase), formatFloat32Ptr(cfg.PtrRopeFreqScale), cfg.RopeScaling,
 		cfg.SessionStoreFactory != nil, cfg.SpeculationMode(),
 		formatSplitModePtr(cfg.PtrSplitMode),
@@ -727,10 +726,6 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 		}
 	}
 
-	if cfg.OpOffloadMinBatch() < 0 {
-		return fmt.Errorf("validate-config: OpOffloadMinBatch must be >= 0, got %d", cfg.OpOffloadMinBatch())
-	}
-
 	for _, modelFile := range cfg.ModelFiles {
 		log(ctx, "validate-config", "model-file", modelFile)
 
@@ -862,6 +857,8 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 	}
 
 	if cfg.PtrDraftModel != nil && cfg.PtrDraftModel.NDraft <= 0 {
+		draft := *cfg.PtrDraftModel
+		cfg.PtrDraftModel = &draft
 		// Separate-GGUF drafts default to defNDraft; MTP nDraft overrides
 		// (no model files) default to defMTPNDraft.
 		if cfg.PtrDraftModel.IsSeparate() {
@@ -875,10 +872,6 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 	if cfg.PtrInsecureLogging == nil {
 		cfg.PtrInsecureLogging = new(false)
 	}
-	if cfg.PtrOpOffloadMinBatch == nil {
-		cfg.PtrOpOffloadMinBatch = new(0)
-	}
-
 	return cfg
 }
 
@@ -1994,6 +1987,7 @@ func WithIMCSessionCapacity(v int) Option {
 func WithIncrementalCache(v bool) Option       { return func(c *Config) { c.PtrIncrementalCache = new(v) } }
 func WithInsecureLogging(v bool) Option        { return func(c *Config) { c.PtrInsecureLogging = new(v) } }
 func WithJinjaFile(v string) Option            { return func(c *Config) { c.JinjaFile = v } }
+func WithJinjaScript(v string) Option          { return func(c *Config) { c.JinjaScript = v } }
 func WithLoadMode(v LoadMode) Option           { return func(c *Config) { c.LoadMode = v } }
 func WithLog(v applog.Logger) Option           { return func(c *Config) { c.Log = v } }
 func WithMainGPU(v int) Option                 { return func(c *Config) { c.PtrMainGPU = new(v) } }
@@ -2007,7 +2001,6 @@ func WithPrefillBatchSize(v int) Option        { return func(c *Config) { c.PtrP
 func WithNUMA(v string) Option                 { return func(c *Config) { c.NUMA = v } }
 func WithOffloadKQV(v bool) Option             { return func(c *Config) { c.PtrOffloadKQV = new(v) } }
 func WithOpOffload(v bool) Option              { return func(c *Config) { c.PtrOpOffload = new(v) } }
-func WithOpOffloadMinBatch(v int) Option       { return func(c *Config) { c.PtrOpOffloadMinBatch = new(v) } }
 func WithProjFile(v string) Option             { return func(c *Config) { c.ProjFile = v } }
 func WithMTPDrafterFile(v string) Option       { return func(c *Config) { c.MTPDrafterFile = v } }
 func WithProjOnCPU(v bool) Option              { return func(c *Config) { c.PtrProjOnCPU = new(v) } }

@@ -7,7 +7,7 @@ name: Docker
 #   cuda     — NVIDIA CUDA runtime baked in
 #   vulkan   — vendor-neutral GPU via Vulkan
 #   rocm     — AMD ROCm runtime (linux/amd64 only — upstream has no arm64 build)
-#   all      — bundles cpu+cuda+vulkan+rocm into a single image
+#   all      — bundles every backend available for the target architecture
 #
 # Every variant also bakes in matching whisper.cpp (bucky) shared libraries
 # for audio transcription via /v1/audio/transcriptions. The bucky processor
@@ -215,7 +215,8 @@ jobs:
             [all]=runtime
           )
           # Whitespace-separated processor lists fed to LLAMA_PROCESSORS in
-          # the Dockerfile.
+          # the Dockerfile. The all/arm64 entry drops rocm when the matrix is
+          # expanded below because upstream publishes no arm64 ROCm bundle.
           declare -A PROCESSORS=(
             [cpu]="cpu"
             [cuda]="cuda"
@@ -385,12 +386,16 @@ jobs:
             fi
             for a in $PLATS; do
               RUNNER=$([[ "$a" == "arm64" ]] && echo "ubuntu-24.04-arm" || echo "ubuntu-24.04")
+              PROCESSORS_FOR_ARCH="${PROCESSORS[$v]}"
+              if [[ "$v" == "all" && "$a" == "arm64" ]]; then
+                PROCESSORS_FOR_ARCH="cpu cuda vulkan"
+              fi
               ITEM=$(jq -nc \
                 --arg variant "$v" \
                 --arg arch "$a" \
                 --arg platform "linux/$a" \
                 --arg target "${TARGET[$v]}" \
-                --arg processors "${PROCESSORS[$v]}" \
+                --arg processors "$PROCESSORS_FOR_ARCH" \
                 --arg bucky_processors "${BUCKY_PROCESSORS[$v]}" \
                 --arg runner "$RUNNER" \
                 '{variant:$variant, arch:$arch, platform:$platform, target:$target, processors:$processors, bucky_processors:$bucky_processors, runner:$runner}')
@@ -428,7 +433,8 @@ jobs:
     needs: plan
     if: needs.plan.outputs.matrix != '{"include":[]}'
     runs-on: ${{ matrix.runner }}
-    # The `all` variant (cpu+cuda+vulkan+rocm) is the long pole; 90 min
+    # The `all` variant (all backends available for each arch) is the long
+    # pole; 90 min
     # leaves headroom over a cold-cache build while still killing a hung
     # runner well before the 6-hour GitHub default.
     timeout-minutes: 90

@@ -2,9 +2,7 @@ package libs
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	neturl "net/url"
 	"os"
@@ -128,15 +126,9 @@ func runInstallWeb(opts installOpts) error {
 }
 
 func webListCombinations() error {
-	body, err := webGet("/v1/bucky/libs/combinations")
-	if err != nil {
-		return err
-	}
-	defer body.Close()
-
 	var resp toolapp.CombinationsResponse
-	if err := json.NewDecoder(body).Decode(&resp); err != nil {
-		return fmt.Errorf("bucky libs: decode combinations: %w", err)
+	if err := webRequest(http.MethodGet, "/v1/bucky/libs/combinations", nil, &resp); err != nil {
+		return err
 	}
 
 	combos := make([]libs.Combination, len(resp.Combinations))
@@ -148,15 +140,9 @@ func webListCombinations() error {
 }
 
 func webListInstalls() error {
-	body, err := webGet("/v1/bucky/libs/installs")
-	if err != nil {
-		return err
-	}
-	defer body.Close()
-
 	var resp toolapp.BundleListResponse
-	if err := json.NewDecoder(body).Decode(&resp); err != nil {
-		return fmt.Errorf("bucky libs: decode installs: %w", err)
+	if err := webRequest(http.MethodGet, "/v1/bucky/libs/installs", nil, &resp); err != nil {
+		return err
 	}
 
 	tags := make([]libs.VersionTag, len(resp.Bundles))
@@ -178,31 +164,12 @@ func webMutateInstall(method string, path string, opts installOpts) error {
 	q.Set("os", opts.os)
 	q.Set("processor", opts.processor)
 
-	url, err := client.DefaultURL(path)
-	if err != nil {
-		return fmt.Errorf("bucky libs: default url: %w", err)
-	}
-	url += "?" + q.Encode()
-
-	req, err := http.NewRequest(method, url, nil)
-	if err != nil {
-		return fmt.Errorf("bucky libs: build request: %w", err)
-	}
-	if tok := os.Getenv("KRONK_TOKEN"); tok != "" {
-		req.Header.Set("Authorization", "Bearer "+tok)
+	var resp toolapp.BundleActionResponse
+	if err := webRequest(method, path, q, &resp); err != nil {
+		return err
 	}
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("bucky libs: request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("bucky libs: server returned %d: %s", resp.StatusCode, string(body))
-	}
-	fmt.Println(string(body))
+	fmt.Printf("%s install arch=%s os=%s processor=%s\n", resp.Status, resp.Arch, resp.OS, resp.Processor)
 	return nil
 }
 
@@ -241,30 +208,27 @@ func webPullInstall(opts installOpts) error {
 	return nil
 }
 
-func webGet(path string) (io.ReadCloser, error) {
+func webRequest(method string, path string, query neturl.Values, response any) error {
 	url, err := client.DefaultURL(path)
 	if err != nil {
-		return nil, fmt.Errorf("bucky libs: default url: %w", err)
+		return fmt.Errorf("bucky libs: default url: %w", err)
+	}
+	if len(query) > 0 {
+		url += "?" + query.Encode()
 	}
 
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("bucky libs: build request: %w", err)
-	}
-	if tok := os.Getenv("KRONK_TOKEN"); tok != "" {
-		req.Header.Set("Authorization", "Bearer "+tok)
+	cln := client.New(
+		client.NoopLogger,
+		client.WithBearer(os.Getenv("KRONK_TOKEN")),
+	)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	if err := cln.Do(ctx, method, url, nil, response); err != nil {
+		return fmt.Errorf("bucky libs: request: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("bucky libs: request: %w", err)
-	}
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		return nil, fmt.Errorf("bucky libs: server returned %d: %s", resp.StatusCode, string(body))
-	}
-	return resp.Body, nil
+	return nil
 }
 
 func printCombinations(combos []libs.Combination) {

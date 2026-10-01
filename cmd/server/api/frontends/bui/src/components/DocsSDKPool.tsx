@@ -168,10 +168,10 @@ export default function DocsSDKPool() {
             <div className="doc-section" id="method-llama-display">
               <h4>Llama.Display</h4>
               <pre className="code-block">
-                <code>func (l *Llama) Display(krn *kronk.Kronk, modelID string) loader.Display</code>
+                <code>func (l *Llama) Display(krn *kronk.Kronk, _ string) loader.Display</code>
               </pre>
               <p className="doc-description">Display implements loader.Loader.Display for the llama backend.</p>
-              <p className="doc-description">It returns the KV cache and total VRAM values to surface in BUI/observability output for a loaded model. Both this path and the SDK-internal calculateVRAMDiag route through vram.FromFiles, so the two computations are byte-identical for any well-formed local model. The dedicated lookup is retained so a hypothetical resman-side failure (e.g. an index miss) cleanly falls back to the values the SDK stored at load time rather than zeroing out the BUI display.</p>
+              <p className="doc-description">It returns the KV cache and total VRAM values to surface in BUI/observability output for a loaded model. The SDK calculated and stored these values while loading the model, so status queries do not need to read and parse the GGUF header again.</p>
             </div>
 
             <div className="doc-section" id="method-llama-load">
@@ -213,6 +213,14 @@ export default function DocsSDKPool() {
                 <code>func (l *Llama) Prepare(_ context.Context, req loader.LoadRequest) (any, error)</code>
               </pre>
               <p className="doc-description">Prepare resolves the model configuration once for both planning and loading.</p>
+            </div>
+
+            <div className="doc-section" id="method-llama-resolvedkronkconfig">
+              <h4>Llama.ResolvedKronkConfig</h4>
+              <pre className="code-block">
+                <code>func (l *Llama) ResolvedKronkConfig(modelID string) (model.Config, error)</code>
+              </pre>
+              <p className="doc-description">ResolvedKronkConfig returns the same budgeted runtime configuration used to prepare a model for planning and loading.</p>
             </div>
 
             <div className="doc-section" id="method-llama-resolvedmodelconfig">
@@ -293,7 +301,7 @@ export default function DocsSDKPool() {
               <pre className="code-block">
                 <code>func (p *Pool) InvalidateSync(ctx context.Context, key string) error</code>
               </pre>
-              <p className="doc-description">InvalidateSync invalidates a cache entry and waits for the eviction callback to release the underlying resource manager reservation.</p>
+              <p className="doc-description">InvalidateSync invalidates a cache entry and waits for the eviction callback to release the underlying resource manager reservation. If unloading fails, the model and reservation remain in the pool and the error is returned.</p>
             </div>
 
             <div className="doc-section" id="method-pool-modelconfig">
@@ -312,6 +320,14 @@ export default function DocsSDKPool() {
               <p className="doc-description">ModelStatus returns information about the current models in the pool.</p>
               <p className="doc-description">The result includes both fully loaded models (entries currently in the cache) and in-flight loads (memory reservations that have not yet completed their GGUF read). The latter are returned with Status=ModelStatusLoading so BUI/observability can show them as occupying budget while still being unavailable to serve requests.</p>
               <p className="doc-description">Cache keys use provider/modelID or provider/modelID/profile. The catalog resolver recovers the physical model metadata without discarding a profile.</p>
+            </div>
+
+            <div className="doc-section" id="method-pool-resolvedkronkconfig">
+              <h4>Pool.ResolvedKronkConfig</h4>
+              <pre className="code-block">
+                <code>func (p *Pool) ResolvedKronkConfig(modelID string) (model.Config, error)</code>
+              </pre>
+              <p className="doc-description">ResolvedKronkConfig returns the same budgeted runtime configuration used to prepare a model for planning and loading.</p>
             </div>
 
             <div className="doc-section" id="method-pool-resolvedmodelconfig">
@@ -411,6 +427,7 @@ export default function DocsSDKPool() {
                 <li><a href="#method-llama-models">Llama.Models</a></li>
                 <li><a href="#method-llama-plan">Llama.Plan</a></li>
                 <li><a href="#method-llama-prepare">Llama.Prepare</a></li>
+                <li><a href="#method-llama-resolvedkronkconfig">Llama.ResolvedKronkConfig</a></li>
                 <li><a href="#method-llama-resolvedmodelconfig">Llama.ResolvedModelConfig</a></li>
                 <li><a href="#method-llama-validate">Llama.Validate</a></li>
                 <li><a href="#method-pool-aquirecustom">Pool.AquireCustom</a></li>
@@ -423,6 +440,7 @@ export default function DocsSDKPool() {
                 <li><a href="#method-pool-invalidatesync">Pool.InvalidateSync</a></li>
                 <li><a href="#method-pool-modelconfig">Pool.ModelConfig</a></li>
                 <li><a href="#method-pool-modelstatus">Pool.ModelStatus</a></li>
+                <li><a href="#method-pool-resolvedkronkconfig">Pool.ResolvedKronkConfig</a></li>
                 <li><a href="#method-pool-resolvedmodelconfig">Pool.ResolvedModelConfig</a></li>
                 <li><a href="#method-pool-resourcemanager">Pool.ResourceManager</a></li>
                 <li><a href="#method-pool-shutdown">Pool.Shutdown</a></li>

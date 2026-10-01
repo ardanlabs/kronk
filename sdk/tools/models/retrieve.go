@@ -42,10 +42,15 @@ func (m *Models) Files() ([]File, error) {
 
 		var totalSize int64
 		var modified time.Time
+		missing := false
 
 		for _, f := range mp.ModelFiles {
 			info, err := os.Stat(f)
 			if err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					missing = true
+					break
+				}
 				return nil, fmt.Errorf("stat: %w", err)
 			}
 
@@ -53,6 +58,9 @@ func (m *Models) Files() ([]File, error) {
 			if info.ModTime().After(modified) {
 				modified = info.ModTime()
 			}
+		}
+		if missing {
+			continue
 		}
 
 		modelPath := strings.TrimPrefix(mp.ModelFiles[0], m.modelsPath)

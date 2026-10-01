@@ -33,10 +33,11 @@ const gemmaToken = "<|\"|>"
 //  1. Quick-check: try json.Unmarshal; if valid, return immediately.
 //  2. Normalize Gemma4 <|"|> tokens to standard quotes (escaping inner ").
 //  3. Normalize backtick delimiters in structural positions to standard quotes.
-//  4. Quote bare JSON keys.
+//  4. Apply structural fixups.
 //  5. Re-check: if valid after normalization, return.
 //  6. Key-aware repair: walk the JSON structure, find true closing quotes
-//     by scanning right-to-left for " followed by } / ] / ,"key": patterns.
+//     by scanning right-to-left for " followed by } / ] / ,"key": patterns,
+//     then quote bare keys after value boundaries are unambiguous.
 //  7. Verify the result with json.Unmarshal.
 //  8. If verification fails, try trimming a trailing extra } (Gemma double-brace).
 func Repair(s string) (string, error) {
@@ -59,6 +60,7 @@ func Repair(s string) (string, error) {
 
 	// Step 6: key-aware repair of unescaped quotes in values.
 	repaired := repairQuotes(normalized)
+	repaired = quoteBareKeys(repaired)
 
 	// Step 7: verify. If the result has a trailing extra } from Gemma's
 	// double-brace wrapping (call:write{{...}}), try trimming it.
@@ -89,15 +91,13 @@ func Unmarshal(s string, v any) error {
 // Normalization
 // =============================================================================
 
-// normalize applies all pre-repair transformations: Gemma <|"|> replacement,
-// backtick delimiter normalization, and bare key quoting. The second return
-// value reports whether any transformation changed the string.
+// normalize applies all pre-repair transformations. The second return value
+// reports whether any transformation changed the string.
 func normalize(s string) (string, bool) {
 	orig := s
 	s = normalizeGemmaQuotes(s)
 	s = flattenNestedObject(s)
 	s = normalizeBacktickDelimiters(s)
-	s = quoteBareKeys(s)
 	s = fixMissingKeyCloseQuote(s)
 	s = normalizeBackslashControlChars(s)
 	return s, s != orig
@@ -830,10 +830,20 @@ func quoteBareKeys(s string) string {
 			continue
 		}
 
-		// Outside a string: check if this is the start of a bare key.
-		// A bare key follows { , [ or is at the start, and is a word
-		// followed by a colon.
-		if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c == '_' {
+		// Outside a string: check if this is the start of a bare object key.
+		// Requiring an object-key boundary prevents identifier-like text in
+		// a malformed quoted value from being rewritten before repairQuotes
+		// has restored that value's escaped quotes.
+		keyPosition := true
+		for j := i - 1; j >= 0; j-- {
+			if isWhitespace(s[j]) {
+				continue
+			}
+			keyPosition = s[j] == '{' || s[j] == ','
+			break
+		}
+
+		if keyPosition && (c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c == '_') {
 			// Look ahead to find the colon.
 			j := i + 1
 			for j < len(s) && (s[j] >= 'a' && s[j] <= 'z' || s[j] >= 'A' && s[j] <= 'Z' || s[j] >= '0' && s[j] <= '9' || s[j] == '_') {

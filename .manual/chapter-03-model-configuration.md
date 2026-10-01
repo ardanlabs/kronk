@@ -353,6 +353,10 @@ some-provider/some-model:
 host tensor operations on the CPU. These options can reduce discrete-GPU VRAM
 pressure at a performance cost. They do not reduce total memory requirements.
 
+llama.cpp also supports the process-wide `GGML_OP_OFFLOAD_MIN_BATCH`
+environment variable. Set it before Kronk starts; GPU backends read it once
+during `kronk.Init`, so it cannot be configured independently per model.
+
 For multimodal models, `proj-on-cpu: true` keeps the media projector on the
 CPU without changing placement of the language model itself. To place the
 projector on a specific accelerator, set `proj-device` to a name reported by

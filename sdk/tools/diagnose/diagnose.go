@@ -35,6 +35,10 @@ const installTimeout = 15 * time.Minute
 // resolveTimeout bounds the inspect-only model lookup (no download).
 const resolveTimeout = 10 * time.Second
 
+// commandTimeout prevents a wedged driver utility or llama-bench process from
+// blocking a diagnostic report indefinitely.
+const commandTimeout = 2 * time.Minute
+
 // =============================================================================
 // Report model
 
@@ -255,7 +259,7 @@ func Collect(ctx context.Context, log applog.Logger, opts ...Option) (Report, er
 
 	r := Report{
 		Versions: collectVersions(o.kronkVersion),
-		System:   collectSystem(),
+		System:   collectSystem(ctx),
 	}
 
 	backends, root, err := resolveBackends(ctx, log, o.install)
@@ -333,7 +337,7 @@ func Collect(ctx context.Context, log applog.Logger, opts ...Option) (Report, er
 				benchProc = "cpu"
 			}
 
-			r.Bench = collectBench(benchProc, b.BinDir, modelPath, forceCPU)
+			r.Bench = collectBench(ctx, benchProc, b.BinDir, modelPath, forceCPU)
 		}
 	}
 
@@ -350,7 +354,7 @@ func collectVersions(kronkVersion string) Versions {
 	}
 }
 
-func collectSystem() System {
+func collectSystem(ctx context.Context) System {
 	s := System{
 		OS:     runtime.GOOS,
 		Arch:   runtime.GOARCH,
@@ -358,7 +362,7 @@ func collectSystem() System {
 	}
 
 	for _, spec := range systemCommandSpecs() {
-		s.Commands = append(s.Commands, capture(spec))
+		s.Commands = append(s.Commands, capture(ctx, spec))
 	}
 
 	s.CPUModel, s.RAMBytes = parseSystem(s.Commands)
@@ -366,14 +370,14 @@ func collectSystem() System {
 	return s
 }
 
-func llamaCommands(binDir string) []Command {
+func llamaCommands(ctx context.Context, binDir string) []Command {
 	return []Command{
-		capture(commandSpec{bin(binDir, "llama-cli"), []string{"--version"}}),
-		capture(commandSpec{bin(binDir, "llama-bench"), []string{"--list-devices"}}),
+		capture(ctx, commandSpec{bin(binDir, "llama-cli"), []string{"--version"}}),
+		capture(ctx, commandSpec{bin(binDir, "llama-bench"), []string{"--list-devices"}}),
 	}
 }
 
-func collectBench(processor, binDir, modelPath string, forceCPU bool) Bench {
+func collectBench(ctx context.Context, processor, binDir, modelPath string, forceCPU bool) Bench {
 	args := []string{"-m", modelPath}
 
 	// Force CPU-only execution only when reusing a GPU bundle's binary for a
@@ -390,7 +394,7 @@ func collectBench(processor, binDir, modelPath string, forceCPU bool) Bench {
 		Processor: processor,
 		Model:     modelPath,
 		Commands: []Command{
-			capture(commandSpec{bin(binDir, "llama-bench"), args}),
+			capture(ctx, commandSpec{bin(binDir, "llama-bench"), args}),
 		},
 	}
 }
@@ -543,7 +547,7 @@ func resolveBackends(ctx context.Context, log applog.Logger, install bool) ([]Ba
 		}
 
 		binDir := filepath.Join(root, tag.OS, tag.Arch, tag.Processor)
-		cmds := llamaCommands(binDir)
+		cmds := llamaCommands(ctx, binDir)
 
 		backends = append(backends, Backend{
 			Processor: tag.Processor,
@@ -612,10 +616,13 @@ type commandSpec struct {
 }
 
 // capture runs a command and returns its combined output as a Command.
-func capture(spec commandSpec) Command {
+func capture(ctx context.Context, spec commandSpec) Command {
 	cmd := Command{Cmd: strings.TrimSpace(spec.name + " " + strings.Join(spec.args, " "))}
 
-	out, err := exec.Command(spec.name, spec.args...).CombinedOutput()
+	commandCtx, cancel := context.WithTimeout(ctx, commandTimeout)
+	defer cancel()
+
+	out, err := exec.CommandContext(commandCtx, spec.name, spec.args...).CombinedOutput()
 	cmd.Output = expandTabs(string(out))
 	if err != nil {
 		cmd.Err = err.Error()

@@ -82,6 +82,9 @@ func (a *App) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		for _, origin := range a.origins {
 			if origin == "*" || origin == reqOrigin {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
+				if origin != "*" {
+					w.Header().Add("Vary", "Origin")
+				}
 				break
 			}
 		}
@@ -210,7 +213,14 @@ func (a *App) RawHandlerFunc(method string, group string, path string, rawHandle
 
 		otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(w.Header()))
 
-		handlerFunc(ctx, r)
+		resp := handlerFunc(ctx, r)
+		if resp == nil {
+			return
+		}
+
+		if err := Respond(ctx, w, resp); err != nil {
+			a.log(ctx, "web-respond", "ERROR", err)
+		}
 	}
 
 	finalPath := path

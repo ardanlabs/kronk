@@ -37,6 +37,7 @@ Environment Variables (web mode - default):
 func init() {
 	Cmd.Flags().Bool("local", false, "Run without the model server")
 	Cmd.Flags().String("duration", "", "Token duration (e.g., 1h, 24h, 720h)")
+	Cmd.MarkFlagRequired("duration")
 	Cmd.Flags().StringSlice("endpoints", []string{}, "Endpoints with optional rate limits (e.g., chat-completions:1000/day)")
 }
 

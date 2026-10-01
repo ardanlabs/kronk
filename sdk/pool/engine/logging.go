@@ -145,9 +145,9 @@ func (c *Pool[H]) PublishMetrics() {
 	metrics.PublishResmanUsage(pu)
 
 	items := int(c.itemsInPool.Load())
-	metrics.SetPoolItemsInPool(items)
+	metrics.SetPoolItemsInPool(c.backend, items)
 
 	// Inflight = tickets held but not yet visible in the cache.
 	inflight := max(c.activeTicketCount()-items, 0)
-	metrics.SetPoolInflightLoads(inflight)
+	metrics.SetPoolInflightLoads(c.backend, inflight)
 }

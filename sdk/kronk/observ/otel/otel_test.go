@@ -67,3 +67,33 @@ func testInitTracingPreservesGlobalDelegation(t *testing.T) {
 		t.Errorf("span name: got %q, want %q", got, "after-activation")
 	}
 }
+
+func TestAddSpanWithoutTracerDoesNotEndParent(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithSpanProcessor(recorder),
+	)
+	t.Cleanup(func() {
+		if err := provider.Shutdown(context.Background()); err != nil {
+			t.Errorf("shutdown tracer provider: %v", err)
+		}
+	})
+
+	ctx, parent := provider.Tracer("test").Start(context.Background(), "parent")
+	_, child := AddSpan(ctx, "child")
+	child.End()
+
+	if got := len(recorder.Ended()); got != 0 {
+		t.Fatalf("ended spans after child.End: got %d, want 0", got)
+	}
+
+	parent.End()
+	ended := recorder.Ended()
+	if got := len(ended); got != 1 {
+		t.Fatalf("ended spans after parent.End: got %d, want 1", got)
+	}
+	if got := ended[0].Name(); got != "parent" {
+		t.Errorf("ended span: got %q, want %q", got, "parent")
+	}
+}

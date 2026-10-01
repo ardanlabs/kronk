@@ -136,3 +136,21 @@ func TestAutoDiscoverTemplate(t *testing.T) {
 		}
 	})
 }
+
+func TestRetrieveTemplateInlineScriptWins(t *testing.T) {
+	const script = `{{ messages | length }}`
+
+	tmpl, err := retrieveTemplate(Config{
+		JinjaFile:   filepath.Join(t.TempDir(), "missing.jinja"),
+		JinjaScript: script,
+	}, "model", 0)
+	if err != nil {
+		t.Fatalf("retrieveTemplate: %v", err)
+	}
+	if tmpl.FileName != "playground-custom" {
+		t.Errorf("FileName: got %q, want playground-custom", tmpl.FileName)
+	}
+	if tmpl.Script != script {
+		t.Errorf("Script: got %q, want %q", tmpl.Script, script)
+	}
+}

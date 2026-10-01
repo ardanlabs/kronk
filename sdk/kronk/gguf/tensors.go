@@ -130,6 +130,13 @@ func ParseHeaderAndTensors(data []byte, fileSize int64) (metadata map[string]str
 // parseTensorTable reads tensor descriptors from a bytes.Reader positioned
 // at the start of the tensor table.
 func parseTensorTable(r *bytes.Reader, tensorCount uint64) ([]TensorInfo, error) {
+	// Even an empty-name, zero-dimension descriptor consumes 24 bytes: name
+	// length, dimension count, type, and offset. Validate before using the
+	// untrusted count as a slice capacity.
+	if tensorCount > uint64(r.Len()/24) {
+		return nil, fmt.Errorf("parse-tensor-table: tensor count %d exceeds remaining bytes %d", tensorCount, r.Len())
+	}
+
 	tensors := make([]TensorInfo, 0, tensorCount)
 
 	for i := range tensorCount {
@@ -150,6 +157,12 @@ func parseTensorTable(r *bytes.Reader, tensorCount uint64) ([]TensorInfo, error)
 		var nDims uint32
 		if err := binary.Read(r, binary.LittleEndian, &nDims); err != nil {
 			return nil, fmt.Errorf("parse-tensor-table: reading n_dims for tensor %d: %w", i, err)
+		}
+
+		// Each dimension consumes eight bytes. The later type and offset reads
+		// provide the final structural validation.
+		if uint64(nDims) > uint64(r.Len()/8) {
+			return nil, fmt.Errorf("parse-tensor-table: dimension count %d for tensor %d exceeds remaining bytes %d", nDims, i, r.Len())
 		}
 
 		dims := make([]int64, nDims)

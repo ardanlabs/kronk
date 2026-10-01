@@ -293,6 +293,19 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 			if outcome.err != nil {
 				outputTokens := s.reasonTokens + s.completionTokens
 				usage := Usage{PromptTokens: s.nPrompt, CompletionTokens: outputTokens, TotalTokens: s.nPrompt + outputTokens}
+				status := "error"
+				class := "stop-gate-flush"
+				if errors.Is(outcome.err, context.Canceled) || errors.Is(outcome.err, context.DeadlineExceeded) || ctx.Err() != nil {
+					status = "cancel"
+					class = "context-cancelled"
+				}
+				s.span.RecordError(outcome.err)
+				s.span.SetAttributes(attribute.String("request_status", status))
+				metrics.AddChatRequest(e.model.modelInfo.ID, status)
+				metrics.AddChatError(e.model.modelInfo.ID, class)
+				if !s.job.requestStart.IsZero() {
+					metrics.ObserveChatRequestDuration(e.model.modelInfo.ID, time.Since(s.job.requestStart))
+				}
 				e.model.sendErrorResponse(ctx, s.job.ch, s.job.id, s.job.object, 0, outcome.err, usage)
 				return
 			}

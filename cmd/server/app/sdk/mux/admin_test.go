@@ -36,6 +36,13 @@ func TestAdminRedirects(t *testing.T) {
 			}
 		})
 	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.test/missing", nil)
+	rr := httptest.NewRecorder()
+	app.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("unknown path status: got %d, want %d", rr.Code, http.StatusNotFound)
+	}
 }
 
 func TestAdminCookieMiddleware(t *testing.T) {

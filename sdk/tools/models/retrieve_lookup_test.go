@@ -110,3 +110,42 @@ func TestFilesPreservesPublicFileContract(t *testing.T) {
 		t.Errorf("FullPath bare model: got %v, want ErrInvalidModelID", err)
 	}
 }
+
+func TestFilesSkipsModelWithMissingShard(t *testing.T) {
+	m, err := NewWithPaths(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewWithPaths: %v", err)
+	}
+
+	healthy := filepath.Join(m.Path(), "provider", "healthy-family", "healthy.gguf")
+	if err := os.MkdirAll(filepath.Dir(healthy), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(healthy, []byte("healthy"), 0o644); err != nil {
+		t.Fatalf("WriteFile healthy model: %v", err)
+	}
+
+	index, err := yaml.Marshal(map[string]Path{
+		"provider/healthy": {ModelFiles: []string{healthy}},
+		"provider/stale": {
+			ModelFiles: []string{
+				filepath.Join(m.Path(), "provider", "stale-family", "part-1.gguf"),
+				filepath.Join(m.Path(), "provider", "stale-family", "part-2.gguf"),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal index: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(m.Path(), indexFile), index, 0o644); err != nil {
+		t.Fatalf("WriteFile index: %v", err)
+	}
+
+	files, err := m.Files()
+	if err != nil {
+		t.Fatalf("Files: %v", err)
+	}
+	if len(files) != 1 || files[0].ID != "healthy" {
+		t.Fatalf("Files: got %+v, want only healthy model", files)
+	}
+}

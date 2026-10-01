@@ -470,7 +470,6 @@ export default function ModelList() {
                         { key: 'numa', label: labelWithTip('numa', 'numa'), value: mc.numa || '—' },
                         { key: 'offload-kqv', label: labelWithTip('offload-kqv', 'offloadKQV'), value: fmtVal(mc['offload-kqv']) },
                         { key: 'op-offload', label: labelWithTip('op-offload', 'opOffload'), value: fmtVal(mc['op-offload']) },
-                        { key: 'op-offload-min-batch', label: labelWithTip('op-offload-min-batch', 'opOffloadMinBatch'), value: fmtVal(mc['op-offload-min-batch']) },
                         { key: 'proj-on-cpu', label: labelWithTip('proj-on-cpu', 'projOnCpu'), value: fmtVal(mc['proj-on-cpu']) },
                         { key: 'proj-device', label: labelWithTip('proj-device', 'projDevice'), value: mc['proj-device'] || 'automatic' },
                         { key: 'rope-freq-base', label: labelWithTip('rope-freq-base', 'ropeFreqBase'), value: fmtVal(mc['rope-freq-base']) },

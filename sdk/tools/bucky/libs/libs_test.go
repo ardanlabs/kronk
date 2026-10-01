@@ -1,6 +1,11 @@
 package libs
 
-import "testing"
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestWithValidation(t *testing.T) {
 	var options Options
@@ -8,6 +13,42 @@ func TestWithValidation(t *testing.T) {
 
 	if !options.Validation {
 		t.Error("Validation: got false, want true")
+	}
+}
+
+func TestDownloadAcceptsNilLogger(t *testing.T) {
+	root := t.TempDir()
+	if err := writeVersionFile(root, defaultVersion, "arm64", "darwin", "metal"); err != nil {
+		t.Fatalf("writeVersionFile: %v", err)
+	}
+
+	lib := Libs{path: root, readOnly: true}
+	if _, err := lib.Download(context.Background(), nil); err != nil {
+		t.Fatalf("Download: %v", err)
+	}
+}
+
+func TestSwapInstallRestoresExistingInstallWhenActivationFails(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "cpu")
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+	existing := filepath.Join(path, "libwhisper.dylib")
+	if err := os.WriteFile(existing, []byte("working"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if _, err := swapInstall(path, filepath.Join(root, "missing-stage")); err == nil {
+		t.Fatal("swapInstall: got nil error, want activation failure")
+	}
+
+	data, err := os.ReadFile(existing)
+	if err != nil {
+		t.Fatalf("ReadFile existing install: %v", err)
+	}
+	if string(data) != "working" {
+		t.Errorf("existing install: got %q, want working", data)
 	}
 }
 

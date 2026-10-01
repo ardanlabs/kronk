@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
@@ -124,9 +123,6 @@ func (a *app) transcribe(ctx context.Context, r *http.Request, forceTranslate bo
 	if !b.ModelInfo().IsMultilingual && language != "" && language != "en" {
 		return errs.Errorf(errs.InvalidArgument, "model[%s] is english-only but language[%s] was requested", modelID, language)
 	}
-
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
-	defer cancel()
 
 	tr, err := b.TranscribeFile(ctx, file, opts...)
 	if err != nil {

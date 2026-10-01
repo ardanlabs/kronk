@@ -113,19 +113,13 @@ func (a *app) pullBuckyLibs(ctx context.Context, r *http.Request) web.Encoder {
 		status := fmt.Sprintf("%s:%s\n", msg, sb.String())
 		ver := toAppVersion(status, buckylibs.VersionTag{}, allowUpgrade)
 
-		a.log.Info(ctx, "pull-bucky-libs", "info", ver[:len(ver)-1])
+		a.log.Info(ctx, "pull-bucky-libs", "info", strings.TrimSpace(ver))
 		fmt.Fprint(w, ver)
 		f.Flush()
 	}
 
-	// I know this is a hack and a race condition. I expect this situation
-	// to only exist for a few people and in a single tenant mode.
 	if allowUpgrade && !a.buckyLibs.AllowUpgrade {
 		a.log.Info(ctx, "pull-bucky-libs", "status", "allowing libs upgrade")
-		a.buckyLibs.AllowUpgrade = true
-		defer func() {
-			a.buckyLibs.AllowUpgrade = false
-		}()
 	}
 
 	var (
@@ -141,7 +135,7 @@ func (a *app) pullBuckyLibs(ctx context.Context, r *http.Request) web.Encoder {
 		// using the libs handle's own triple.
 		tag, err = a.buckyLibs.DownloadFor(ctx, logger, a.buckyLibs.Arch(), a.buckyLibs.OS(), a.buckyLibs.Processor(), version)
 	default:
-		tag, err = a.buckyLibs.Download(ctx, logger)
+		tag, err = a.buckyLibs.DownloadSelected(ctx, logger, "", allowUpgrade)
 	}
 	if err != nil {
 		ver := toAppVersion(err.Error(), buckylibs.VersionTag{}, allowUpgrade)
@@ -152,7 +146,7 @@ func (a *app) pullBuckyLibs(ctx context.Context, r *http.Request) web.Encoder {
 	}
 
 	ver := toAppVersion("downloaded", tag, allowUpgrade)
-	a.log.Info(ctx, "pull-bucky-libs", "info", ver[:len(ver)-1])
+	a.log.Info(ctx, "pull-bucky-libs", "info", strings.TrimSpace(ver))
 	fmt.Fprint(w, ver)
 	f.Flush()
 

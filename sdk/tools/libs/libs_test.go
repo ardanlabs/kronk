@@ -24,6 +24,43 @@ func TestWithValidation(t *testing.T) {
 	}
 }
 
+func TestDownloadAcceptsNilLogger(t *testing.T) {
+	root := t.TempDir()
+	a, o, p := mustParseTriple(t)
+	if err := writeVersionFile(root, "b100", a, o, p); err != nil {
+		t.Fatalf("writeVersionFile: %v", err)
+	}
+
+	lib := Libs{path: root, readOnly: true}
+	if _, err := lib.Download(t.Context(), nil); err != nil {
+		t.Fatalf("Download: %v", err)
+	}
+}
+
+func TestSwapInstallRestoresExistingInstallWhenActivationFails(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "cpu")
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+	existing := filepath.Join(path, "libllama.dylib")
+	if err := os.WriteFile(existing, []byte("working"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if _, err := swapInstall(path, filepath.Join(root, "missing-stage")); err == nil {
+		t.Fatal("swapInstall: got nil error, want activation failure")
+	}
+
+	data, err := os.ReadFile(existing)
+	if err != nil {
+		t.Fatalf("ReadFile existing install: %v", err)
+	}
+	if string(data) != "working" {
+		t.Errorf("existing install: got %q, want working", data)
+	}
+}
+
 func TestAllowUnavailableFileValidation(t *testing.T) {
 	var logged bool
 	log := func(_ context.Context, _ string, _ ...any) {

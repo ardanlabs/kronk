@@ -18,6 +18,7 @@ func TestResolve(t *testing.T) {
 		{"auto prefers companion MTP", Config{Mode: ModeAuto, CompanionMTP: true, EmbeddedMTP: true, MTPNDraft: 3, MTPAvailable: true}, SourceMTP, MTPArchitectureGemmaSharedKV, MTPArtifactCompanion, false, false},
 		{"auto selects own-KV companion MTP", Config{Mode: ModeAuto, OwnKVCompanionMTP: true, EmbeddedMTP: true, MTPNDraft: 3, MTPAvailable: true}, SourceMTP, MTPArchitectureQwen35OwnKV, MTPArtifactCompanion, false, false},
 		{"auto selects embedded MTP", Config{Mode: ModeAuto, EmbeddedMTP: true, MTPNDraft: 3, MTPAvailable: true}, SourceMTP, MTPArchitectureQwen35OwnKV, MTPArtifactEmbedded, true, false},
+		{"auto does not load unavailable embedded MTP", Config{Mode: ModeAuto, EmbeddedMTP: true}, SourceMTP, MTPArchitectureQwen35OwnKV, MTPArtifactEmbedded, false, false},
 		{"classic requires model", Config{Mode: ModeClassic}, SourceNone, MTPArchitectureNone, MTPArtifactNone, false, true},
 		{"MTP rejects classic model", Config{Mode: ModeMTP, ClassicConfigured: true}, SourceNone, MTPArchitectureNone, MTPArtifactNone, false, true},
 		{"MTP requires source", Config{Mode: ModeMTP, MTPAvailable: true}, SourceNone, MTPArchitectureNone, MTPArtifactNone, false, true},

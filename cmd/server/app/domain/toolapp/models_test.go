@@ -1,10 +1,26 @@
 package toolapp
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
+
+func TestSSEPayloadsEndWithBlankLine(t *testing.T) {
+	events := []string{
+		toAppVersion("downloading", libs.VersionTag{}, false),
+		toAppPull("downloading", models.Path{}),
+		toAppPullResponse(PullResponse{Status: "downloading"}),
+	}
+
+	for i, event := range events {
+		if !strings.HasSuffix(event, "\n\n") {
+			t.Errorf("event %d: got %q, want blank-line terminator", i, event)
+		}
+	}
+}
 
 func TestToPullProgress(t *testing.T) {
 	progress := models.DownloadProgress{

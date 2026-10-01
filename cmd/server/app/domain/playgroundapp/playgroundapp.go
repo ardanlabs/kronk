@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/pool"
+	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
@@ -60,7 +62,7 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.Errorf(errs.InvalidArgument, "missing model_id")
 	}
 
-	baseCfg, err := a.models.KronkResolvedConfig(req.ModelID, a.pool.Kronk.ModelConfig())
+	baseCfg, err := a.pool.Kronk.ResolvedKronkConfig(req.ModelID)
 	if err != nil {
 		return errs.FromSDK(fmt.Errorf("resolving model config: %w", err))
 	}
@@ -71,6 +73,14 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 	}
 
 	cfg := req.Config.ApplyTo(baseCfg)
+	switch req.TemplateMode {
+	case "custom":
+		cfg.JinjaScript = req.TemplateScript
+	case "builtin":
+		if req.TemplateName != "" {
+			cfg.JinjaFile = filepath.Join(defaults.JinjaDir(a.models.BasePath()), req.TemplateName)
+		}
+	}
 
 	// Resolve draft model file paths when the user specifies a draft model ID.
 	if req.Config.DraftModelID != nil && *req.Config.DraftModelID != "" {

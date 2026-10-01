@@ -366,7 +366,6 @@ type ModelConfig struct {
 	NUMA                  string                    `yaml:"numa,omitempty"`
 	PtrOffloadKQV         *bool                     `yaml:"offload-kqv,omitempty"`
 	PtrOpOffload          *bool                     `yaml:"op-offload,omitempty"`
-	PtrOpOffloadMinBatch  *int                      `yaml:"op-offload-min-batch,omitempty"`
 	PtrProjOnCPU          *bool                     `yaml:"proj-on-cpu,omitempty"`
 	ProjDevice            string                    `yaml:"proj-device,omitempty"`
 	PtrQueueDepth         *int                      `yaml:"queue-depth,omitempty"`
@@ -438,7 +437,6 @@ func (mc ModelConfig) ToKronkConfig() model.Config {
 		NUMA:                  mc.NUMA,
 		PtrOffloadKQV:         mc.PtrOffloadKQV,
 		PtrOpOffload:          mc.PtrOpOffload,
-		PtrOpOffloadMinBatch:  mc.PtrOpOffloadMinBatch,
 		PtrProjOnCPU:          mc.PtrProjOnCPU,
 		ProjDevice:            mc.ProjDevice,
 		PtrQueueDepth:         mc.PtrQueueDepth,

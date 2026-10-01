@@ -2,13 +2,19 @@
 package start
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/ardanlabs/kronk/cmd/kronk/client"
 	"github.com/ardanlabs/kronk/cmd/server/api/services/kronk"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/spf13/cobra"
@@ -16,16 +22,39 @@ import (
 
 func runLocal(cmd *cobra.Command) error {
 	detach, _ := cmd.Flags().GetBool("detach")
-
 	envVars := buildEnvVars(cmd)
 
 	if detach {
+		basePath := defaults.BaseDir(client.GetBasePath(cmd))
+		liveURL, err := livenessURL(cmd)
+		if err != nil {
+			return err
+		}
+
+		pidFile, pidPath, err := reservePIDFile(cmd.Context(), basePath, liveURL)
+		if err != nil {
+			return err
+		}
+		keepPIDFile := false
+		defer func() {
+			if pidFile != nil {
+				_ = pidFile.Close()
+			}
+			if !keepPIDFile {
+				_ = os.Remove(pidPath)
+			}
+		}()
+
 		exePath, err := os.Executable()
 		if err != nil {
 			return fmt.Errorf("executable: %w", err)
 		}
 
-		logFile, _ := os.Create(logFilePath())
+		logFile, err := createLogFile(basePath)
+		if err != nil {
+			return fmt.Errorf("create log file: %w", err)
+		}
+		defer logFile.Close()
 
 		proc := exec.Command(exePath, "server", "start")
 		proc.Stdout = logFile
@@ -38,13 +67,32 @@ func runLocal(cmd *cobra.Command) error {
 			return fmt.Errorf("start: %w", err)
 		}
 
-		pidFile := pidFilePath()
-		if err := os.WriteFile(pidFile, []byte(strconv.Itoa(proc.Process.Pid)), 0644); err != nil {
-			return fmt.Errorf("failed to write pid file: %w", err)
+		if _, err := fmt.Fprint(pidFile, proc.Process.Pid); err != nil {
+			killErr := proc.Process.Kill()
+			return errors.Join(fmt.Errorf("write pid file: %w", err), killErr)
+		}
+		if err := pidFile.Sync(); err != nil {
+			killErr := proc.Process.Kill()
+			return errors.Join(fmt.Errorf("sync pid file: %w", err), killErr)
+		}
+		if err := pidFile.Close(); err != nil {
+			killErr := proc.Process.Kill()
+			return errors.Join(fmt.Errorf("close pid file: %w", err), killErr)
+		}
+		pidFile = nil
+		keepPIDFile = true
+
+		if waitForLiveness(cmd.Context(), liveURL, 3*time.Second) {
+			fmt.Printf("Kronk server started in background (PID: %d)\n", proc.Process.Pid)
+			return nil
+		}
+		if !processAlive(proc.Process.Pid) {
+			keepPIDFile = false
+			return fmt.Errorf("kronk server exited during startup; inspect %s", logFilePath(basePath))
 		}
 
-		fmt.Printf("Kronk server started in background (PID: %d)\n", proc.Process.Pid)
-
+		fmt.Printf("Kronk server launched in background (PID: %d); startup is still in progress\n", proc.Process.Pid)
+		fmt.Printf("Follow startup with: kronk --base-path %q server logs\n", basePath)
 		return nil
 	}
 
@@ -200,10 +248,117 @@ func splitEnvVar(env string) []string {
 	return []string{env}
 }
 
-func logFilePath() string {
-	return filepath.Join(defaults.BaseDir(""), "kronk.log")
+func livenessURL(cmd *cobra.Command) (string, error) {
+	host, _ := cmd.Flags().GetString("api-host")
+	if host == "" {
+		host = os.Getenv("KRONK_WEB_API_HOST")
+	}
+	if host == "" {
+		host = "localhost:11435"
+	}
+	if strings.HasPrefix(host, ":") {
+		host = "localhost" + host
+	}
+	if !strings.Contains(host, "://") {
+		host = "http://" + host
+	}
+
+	liveURL, err := url.JoinPath(host, "/v1/liveness")
+	if err != nil {
+		return "", fmt.Errorf("liveness url: %w", err)
+	}
+	return liveURL, nil
 }
 
-func pidFilePath() string {
-	return filepath.Join(defaults.BaseDir(""), "kronk.pid")
+func serverLive(ctx context.Context, liveURL string) bool {
+	ctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, liveURL, nil)
+	if err != nil {
+		return false
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+
+	return resp.StatusCode == http.StatusOK
+}
+
+func waitForLiveness(ctx context.Context, liveURL string, timeout time.Duration) bool {
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		if serverLive(ctx, liveURL) {
+			return true
+		}
+
+		select {
+		case <-ctx.Done():
+			return false
+		case <-deadline.C:
+			return false
+		case <-ticker.C:
+		}
+	}
+}
+
+func reservePIDFile(ctx context.Context, basePath string, liveURL string) (*os.File, string, error) {
+	path := pidFilePath(basePath)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, "", fmt.Errorf("create pid directory: %w", err)
+	}
+
+	if serverLive(ctx, liveURL) {
+		return nil, "", fmt.Errorf("kronk server is already running at %s", liveURL)
+	}
+
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err == nil {
+		return file, path, nil
+	}
+	if !os.IsExist(err) {
+		return nil, "", fmt.Errorf("reserve pid file: %w", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, "", fmt.Errorf("read existing pid file: %w", err)
+	}
+	pidText := strings.TrimSpace(string(data))
+	if pidText == "" {
+		return nil, "", fmt.Errorf("another Kronk server start is already in progress")
+	}
+	pid, err := strconv.Atoi(pidText)
+	if err == nil && pid > 0 && processAlive(pid) {
+		return nil, "", fmt.Errorf("kronk server process %d is already running or starting; inspect %s", pid, logFilePath(basePath))
+	}
+
+	if err := os.Remove(path); err != nil {
+		return nil, "", fmt.Errorf("remove stale pid file: %w", err)
+	}
+	return nil, "", fmt.Errorf("removed stale pid file; run the start command again")
+}
+
+func logFilePath(basePath string) string {
+	return filepath.Join(basePath, "kronk.log")
+}
+
+func createLogFile(basePath string) (*os.File, error) {
+	path := logFilePath(basePath)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+
+	return os.Create(path)
+}
+
+func pidFilePath(basePath string) string {
+	return filepath.Join(basePath, "kronk.pid")
 }

@@ -180,6 +180,7 @@ func skipDSMLSpace(content string, offset int) int {
 
 func decodeUniqueDSMLJSON(raw string) (any, error) {
 	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.UseNumber()
 	value, err := decodeUniqueDSMLJSONValue(decoder)
 	if err != nil {
 		return nil, err

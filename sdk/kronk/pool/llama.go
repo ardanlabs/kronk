@@ -82,6 +82,17 @@ func (l *Llama) ResolvedModelConfig(modelID string) (models.ModelConfig, error) 
 	)
 }
 
+// ResolvedKronkConfig returns the same budgeted runtime configuration used to
+// prepare a model for planning and loading.
+func (l *Llama) ResolvedKronkConfig(modelID string) (model.Config, error) {
+	return l.models.KronkResolvedConfigWithBudget(
+		modelID,
+		l.modelConfig,
+		l.autoTuneBudget(modelID),
+		effectiveSWAFull(model.Config{}),
+	)
+}
+
 // Prepare resolves the model configuration once for both planning and loading.
 func (l *Llama) Prepare(_ context.Context, req loader.LoadRequest) (any, error) {
 	return l.resolveConfig(req)
@@ -608,60 +619,18 @@ func nGpuLayersName(p *int) string {
 // Display implements loader.Loader.Display for the llama backend.
 //
 // It returns the KV cache and total VRAM values to surface in
-// BUI/observability output for a loaded model. Both this path and the
-// SDK-internal calculateVRAMDiag route through vram.FromFiles, so the
-// two computations are byte-identical for any well-formed local model.
-// The dedicated lookup is retained so a hypothetical resman-side
-// failure (e.g. an index miss) cleanly falls back to the values the
-// SDK stored at load time rather than zeroing out the BUI display.
-func (l *Llama) Display(krn *kronk.Kronk, modelID string) loader.Display {
+// BUI/observability output for a loaded model. The SDK calculated and stored
+// these values while loading the model, so status queries do not need to read
+// and parse the GGUF header again.
+func (l *Llama) Display(krn *kronk.Kronk, _ string) loader.Display {
 	cfg := krn.ModelConfig()
 	mi := krn.ModelInfo()
 
-	ctxWin := int64(cfg.ContextWindow())
-	if ctxWin <= 0 {
-		ctxWin = int64(vram.ContextWindow8K)
+	return loader.Display{
+		KVCache:   mi.SlotMemory,
+		VRAMTotal: mi.VRAMTotal,
+		Slots:     max(int(cfg.NSeqMax()), 1),
 	}
-
-	nseq := int64(cfg.NSeqMax())
-	if nseq <= 0 {
-		nseq = 1
-	}
-
-	vramCfg := vram.Config{
-		ContextWindow:          ctxWin,
-		BytesPerElement:        bytesPerElement(cfg.CacheTypeK, cfg.CacheTypeV),
-		TypeK:                  int32(cfg.CacheTypeK),
-		TypeV:                  int32(cfg.CacheTypeV),
-		Slots:                  nseq,
-		NUBatch:                effectivePrefillBatchSize(cfg),
-		ExpertLayersOnGPU:      cfg.ExpertLayersOnGPU(),
-		GPULayers:              int64(cfg.NGpuLayers()),
-		KVCacheOnCPU:           cfg.PtrOffloadKQV != nil && !*cfg.PtrOffloadKQV,
-		SWAFull:                effectiveSWAFull(cfg),
-		VTransposed:            cfg.FlashAttention() == model.FlashAttentionDisabled,
-		RecurrentStateCopies:   model.RecurrentStateCopies(cfg, false),
-		EmbeddedMTPStateCopies: model.RecurrentStateCopies(cfg, true),
-		ComputeContexts:        model.SpeculativeContextCount(cfg),
-	}
-
-	out := loader.Display{
-		Slots: max(int(cfg.NSeqMax()), 1),
-	}
-
-	if v, err := l.models.CalculateVRAM(modelID, vramCfg); err == nil {
-		out.KVCache = v.SlotMemory
-		if l.resman.UnifiedMemory() {
-			out.VRAMTotal = v.UnifiedFootprint()
-		} else {
-			out.VRAMTotal = v.TotalVRAM
-		}
-		return out
-	}
-
-	out.KVCache = mi.SlotMemory
-	out.VRAMTotal = mi.VRAMTotal
-	return out
 }
 
 // effectiveSWAFull mirrors modelCtxParams without mutating the user config:

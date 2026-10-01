@@ -188,15 +188,14 @@ func TestBundleBasicTextToImage(t *testing.T) {
 	}
 }
 
-func TestDownloadFileAuthorization(t *testing.T) {
+func TestDownloadFileDoesNotAuthorizeOtherHosts(t *testing.T) {
 	tests := []struct {
 		name       string
 		kronkToken string
 		hfToken    string
-		want       string
 	}{
-		{name: "kronk token takes precedence", kronkToken: "kronk", hfToken: "hf", want: "Bearer kronk"},
-		{name: "HF token fallback", hfToken: "hf", want: "Bearer hf"},
+		{name: "Kronk token", kronkToken: "kronk"},
+		{name: "HF token fallback", hfToken: "hf"},
 	}
 
 	for _, tt := range tests {
@@ -214,8 +213,8 @@ func TestDownloadFileAuthorization(t *testing.T) {
 			if err := downloadFile(t.Context(), server.URL+"/model.gguf", target, nil); err != nil {
 				t.Fatalf("downloadFile() error = %v", err)
 			}
-			if authorization != tt.want {
-				t.Errorf("Authorization: got %q, want %q", authorization, tt.want)
+			if authorization != "" {
+				t.Errorf("Authorization: got %q, want empty for non-Hugging Face host", authorization)
 			}
 		})
 	}
@@ -275,6 +274,40 @@ func TestDownloadBundleWritesManifestAfterCompletion(t *testing.T) {
 	manifest := filepath.Join(m.Path(), bundle.Name.String(), ManifestFilename)
 	if _, err := os.Stat(manifest); !os.IsNotExist(err) {
 		t.Fatalf("manifest stat error = %v, want not exist", err)
+	}
+}
+
+func TestDownloadBundlePersistsRelativePaths(t *testing.T) {
+	originalDownload := downloadModelFile
+	t.Cleanup(func() { downloadModelFile = originalDownload })
+	downloadModelFile = func(ctx context.Context, source string, target string, progress getter.ProgressTracker) error {
+		return os.WriteFile(target, []byte("model"), 0o644)
+	}
+
+	m, err := NewWithPaths(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewWithPaths() error = %v", err)
+	}
+	bundle, _ := BundleByName(BundleSD15)
+	manifest, err := m.downloadBundle(t.Context(), applog.DiscardLogger, bundle, nil)
+	if err != nil {
+		t.Fatalf("downloadBundle() error = %v", err)
+	}
+	wantPath := filepath.Join(m.Path(), bundle.Name.String(), bundle.Files[0].Filename)
+	if got := manifest.Files[string(RoleModel)]; got != wantPath {
+		t.Errorf("returned model path = %q, want %q", got, wantPath)
+	}
+
+	data, err := os.ReadFile(filepath.Join(m.Path(), bundle.Name.String(), ManifestFilename))
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	var stored Manifest
+	if err := json.Unmarshal(data, &stored); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if got := stored.Files[string(RoleModel)]; got != bundle.Files[0].Filename {
+		t.Errorf("stored model path = %q, want relative filename %q", got, bundle.Files[0].Filename)
 	}
 }
 
@@ -347,6 +380,40 @@ func TestLoadManifestRoundTrip(t *testing.T) {
 	}
 	if got.Bundle != want.Bundle || got.Files[string(RoleModel)] != want.Files[string(RoleModel)] {
 		t.Errorf("LoadManifest() = %+v, want %+v", got, want)
+	}
+}
+
+func TestLoadManifestRelocatesLegacyAbsolutePath(t *testing.T) {
+	m, err := NewWithPaths(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewWithPaths() error = %v", err)
+	}
+	bundle, _ := BundleByName(BundleSD15)
+	dir := filepath.Join(m.Path(), bundle.Name.String())
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	current := filepath.Join(dir, bundle.Files[0].Filename)
+	if err := os.WriteFile(current, []byte("model"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	legacy := Manifest{Bundle: bundle.Name, Files: map[string]string{
+		string(RoleModel): filepath.Join(t.TempDir(), bundle.Files[0].Filename),
+	}}
+	data, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ManifestFilename), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	manifest, err := m.LoadManifest(BundleSD15)
+	if err != nil {
+		t.Fatalf("LoadManifest() error = %v", err)
+	}
+	if got := manifest.Files[string(RoleModel)]; got != current {
+		t.Errorf("model path = %q, want relocated path %q", got, current)
 	}
 }
 

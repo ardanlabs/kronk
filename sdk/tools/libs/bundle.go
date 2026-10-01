@@ -356,15 +356,21 @@ func (lib *Libs) PullBundleFromPeer(ctx context.Context, host string, arch strin
 	}
 
 	dest := installPathFor(lib.root, a, o, p)
-	if err := os.MkdirAll(dest, 0o755); err != nil {
-		return VersionTag{}, fmt.Errorf("libs: pull-bundle-from-peer: mkdir dest: %w", err)
+	parent := filepath.Dir(dest)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return VersionTag{}, fmt.Errorf("libs: pull-bundle-from-peer: mkdir parent: %w", err)
 	}
 
-	tempPath := filepath.Join(dest, "temp")
-	os.RemoveAll(tempPath)
-	if err := os.MkdirAll(tempPath, 0o755); err != nil {
-		return VersionTag{}, fmt.Errorf("libs: pull-bundle-from-peer: mkdir temp: %w", err)
+	tempPath, err := os.MkdirTemp(parent, "."+filepath.Base(dest)+".stage-")
+	if err != nil {
+		return VersionTag{}, fmt.Errorf("libs: pull-bundle-from-peer: mkdir stage: %w", err)
 	}
+	preserveStage := false
+	defer func() {
+		if !preserveStage {
+			_ = os.RemoveAll(tempPath)
+		}
+	}()
 
 	tmpZip := filepath.Join(tempPath, BundleZipFile)
 
@@ -465,24 +471,24 @@ func (lib *Libs) PullBundleFromPeer(ctx context.Context, host string, arch strin
 	// downstream peer.
 	os.Remove(tmpZip)
 
+	// Read the version.json that came across in the bundle. If absent,
+	// synthesize one from the requested triple before activation so the
+	// staged directory is a complete installation.
+	tag, err := readVersionFile(tempPath)
+	if err != nil {
+		if err := writeVersionFile(tempPath, "", a, o, p); err != nil {
+			return VersionTag{}, fmt.Errorf("libs: pull-bundle-from-peer: write version.json: %w", err)
+		}
+		tag, _ = readVersionFile(tempPath)
+	}
+
 	if progress != nil {
 		progress(PullBundleProgress{Phase: "swapping"})
 	}
 
-	if err := swapTempForLibAt(dest, tempPath); err != nil {
-		os.RemoveAll(tempPath)
-		return VersionTag{}, fmt.Errorf("libs: pull-bundle-from-peer: swap: %w", err)
-	}
-
-	// Read the version.json that came across in the bundle. If absent,
-	// synthesize one from the requested triple so that List/InstalledFor
-	// continue to work.
-	tag, err := readVersionFile(dest)
+	preserveStage, err = swapInstall(dest, tempPath)
 	if err != nil {
-		if err := writeVersionFile(dest, "", a, o, p); err != nil {
-			return VersionTag{}, fmt.Errorf("libs: pull-bundle-from-peer: write version.json: %w", err)
-		}
-		tag, _ = readVersionFile(dest)
+		return VersionTag{}, fmt.Errorf("libs: pull-bundle-from-peer: swap: %w", err)
 	}
 
 	if progress != nil {

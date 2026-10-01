@@ -18,9 +18,8 @@ import (
 )
 
 var (
-	libraryLocation string
-	initMu          sync.Mutex
-	initDone        bool
+	initMu   sync.Mutex
+	initDone bool
 )
 
 type initOptions struct {
@@ -144,8 +143,6 @@ func Init(opts ...InitOption) error {
 		llama.LogSet(llama.LogNormal)
 		mtmd.LogSet(llama.LogNormal)
 	}
-
-	libraryLocation = libPath
 
 	// Inline of llama.Init so we can gate GGMLBackendLoadAllFromPath on
 	// the registry being empty. If bucky/whisper was initialized first

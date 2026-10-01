@@ -156,6 +156,7 @@ func New(cfg Config) (*Pool, error) {
 		Resman:   cfg.Resman,
 		MaxItems: cfg.ModelsInPool,
 		TTL:      cfg.TTL,
+		Backend:  "kronk",
 	}, llama)
 	if err != nil {
 		return nil, fmt.Errorf("new: constructing pool core: %w", err)
@@ -214,20 +215,13 @@ func (p *Pool) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, e
 // This bypasses the normal catalog resolution path. The key includes the
 // canonical model ID followed by the custom workload name.
 func (p *Pool) AquireCustom(ctx context.Context, key string, cfg model.Config) (*kronk.Kronk, error) {
-	modelID := strings.TrimSuffix(key, "/accuracy")
-	modelID = strings.TrimSuffix(modelID, "/efficiency")
-	if before, _, found := strings.Cut(modelID, "/playground/"); found {
-		modelID = before
-	}
-	if modelID == key {
-		return nil, fmt.Errorf("acquire-custom: invalid key %q", key)
-	}
-	if _, err := models.ParseModelID(modelID); err != nil {
-		return nil, fmt.Errorf("acquire-custom: %w", err)
+	modelID, err := customModelID(key)
+	if err != nil {
+		return nil, err
 	}
 	cfg.ResponseModelID = modelID
 	if cfg.AutoTune && !cfg.AutoTuned {
-		cfg = kronk.AutoTuneConfig(ctx, cfg)
+		cfg = kronk.AutoTuneConfigWithBudget(ctx, cfg, p.llama.autoTuneBudget(modelID))
 	}
 	krn, err := p.engine.Acquire(ctx, loader.LoadRequest{
 		ModelID: modelID,
@@ -235,6 +229,26 @@ func (p *Pool) AquireCustom(ctx context.Context, key string, cfg model.Config) (
 		Custom:  cfg,
 	})
 	return krn, translateCapacityError(err)
+}
+
+func customModelID(key string) (string, error) {
+	if _, err := models.ParseModelID(key); err == nil {
+		return "", fmt.Errorf("acquire-custom: key %q collides with a catalog model id", key)
+	}
+
+	modelID := strings.TrimSuffix(key, "/custom/accuracy")
+	modelID = strings.TrimSuffix(modelID, "/custom/efficiency")
+	if before, _, found := strings.Cut(modelID, "/playground/"); found {
+		modelID = before
+	}
+	if modelID == key {
+		return "", fmt.Errorf("acquire-custom: invalid key %q", key)
+	}
+	if _, err := models.ParseModelID(modelID); err != nil {
+		return "", fmt.Errorf("acquire-custom: %w", err)
+	}
+
+	return modelID, nil
 }
 
 // translateCapacityError exposes resource-manager capacity failures through
@@ -257,6 +271,12 @@ func (p *Pool) ResolvedModelConfig(modelID string) (models.ModelConfig, error) {
 	return p.llama.ResolvedModelConfig(modelID)
 }
 
+// ResolvedKronkConfig returns the same budgeted runtime configuration used to
+// prepare a model for planning and loading.
+func (p *Pool) ResolvedKronkConfig(modelID string) (model.Config, error) {
+	return p.llama.ResolvedKronkConfig(modelID)
+}
+
 // GetExisting returns a pooled model if it exists, without creating
 // one.
 func (p *Pool) GetExisting(key string) (*kronk.Kronk, bool) {
@@ -273,8 +293,9 @@ func (p *Pool) Invalidate(key string) {
 	p.engine.Invalidate(key)
 }
 
-// InvalidateSync invalidates a cache entry and waits for the eviction
-// callback to release the underlying resource manager reservation.
+// InvalidateSync invalidates a cache entry and waits for the eviction callback
+// to release the underlying resource manager reservation. If unloading fails,
+// the model and reservation remain in the pool and the error is returned.
 func (p *Pool) InvalidateSync(ctx context.Context, key string) error {
 	return p.engine.InvalidateSync(ctx, key)
 }
@@ -295,15 +316,42 @@ func (p *Pool) InvalidateSync(ctx context.Context, key string) error {
 func (p *Pool) ModelStatus() ([]ModelDetail, error) {
 	ps := make([]ModelDetail, 0)
 	loadedKeys := make(map[string]struct{})
+	entries := slices.Collect(p.engine.Coldest())
+	usage := p.resman.Usage()
 
-	for entry := range p.engine.Coldest() {
-		mi, ok := p.models.LookupFile(entry.Key)
+	// Build the catalog view once per status request. Looking it up for every
+	// loaded key rereads and decodes the index and stats every installed model.
+	filesByID := make(map[string]models.File)
+	if files, err := p.models.Files(); err == nil {
+		for _, file := range files {
+			filesByID[file.OwnedBy+"/"+file.ID] = file
+		}
+	}
+
+	reservationBytes := make(map[string]int64, len(usage.Reservations))
+	for _, reservation := range usage.Reservations {
+		reservationBytes[reservation.Key] = reservation.VRAMBytes + reservation.RAMBytes
+	}
+
+	for _, entry := range entries {
+		modelID, err := models.ParseModelID(catalogModelID(entry.Key))
+		if err != nil {
+			continue
+		}
+
+		mi, ok := filesByID[modelID.Base()]
 		if !ok {
 			continue
 		}
 
 		krn := entry.Value
-		disp := p.llama.Display(krn, mi.ID)
+		disp := p.llama.Display(krn, modelID.Base())
+
+		if usage.UnifiedMemory {
+			if bytes, exists := reservationBytes[entry.Key]; exists {
+				disp.VRAMTotal = bytes
+			}
+		}
 
 		ps = append(ps, ModelDetail{
 			ID:            entry.Key,
@@ -331,7 +379,7 @@ func (p *Pool) ModelStatus() ([]ModelDetail, error) {
 	// p.engine.HasTicket to only surface kronk's own in-flight loads.
 	// Without this guard, bucky reservations leak in as fake "loading"
 	// kronk entries with no size/owner/family populated.
-	for _, r := range p.resman.Usage().Reservations {
+	for _, r := range usage.Reservations {
 		if _, ok := loadedKeys[r.Key]; ok {
 			continue
 		}
@@ -341,10 +389,12 @@ func (p *Pool) ModelStatus() ([]ModelDetail, error) {
 
 		var ownedBy, modelFamily string
 		var size int64
-		if mi, ok := p.models.LookupFile(r.Key); ok {
-			ownedBy = mi.OwnedBy
-			modelFamily = mi.ModelFamily
-			size = mi.Size
+		if modelID, err := models.ParseModelID(catalogModelID(r.Key)); err == nil {
+			if mi, ok := filesByID[modelID.Base()]; ok {
+				ownedBy = mi.OwnedBy
+				modelFamily = mi.ModelFamily
+				size = mi.Size
+			}
 		}
 
 		ps = append(ps, ModelDetail{
@@ -359,6 +409,13 @@ func (p *Pool) ModelStatus() ([]ModelDetail, error) {
 	}
 
 	return ps, nil
+}
+
+func catalogModelID(key string) string {
+	if modelID, _, found := strings.Cut(key, "/playground/"); found {
+		return modelID
+	}
+	return key
 }
 
 // IMCSessions returns the current IMC cache entries for loaded models. It does

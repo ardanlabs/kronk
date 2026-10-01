@@ -65,7 +65,7 @@ func fromJSONSchema(schema any) (string, error) {
 		rules: make(map[string]string),
 	}
 
-	rootRule, err := gb.schemaToRule("root", schemaMap)
+	rootRule, err := gb.schemaToRule(schemaMap)
 	if err != nil {
 		return "", fmt.Errorf("from-json-schema: %w", err)
 	}
@@ -134,10 +134,16 @@ func fromResponseFormat(rf any) (string, error) {
 // Grammar builder for JSON Schema conversion.
 
 type grammarBuilder struct {
-	rules map[string]string
+	rules      map[string]string
+	nextRuleID int
 }
 
-func (gb *grammarBuilder) schemaToRule(name string, schema map[string]any) (string, error) {
+func (gb *grammarBuilder) nextRuleName() string {
+	gb.nextRuleID++
+	return fmt.Sprintf("rule-%d", gb.nextRuleID)
+}
+
+func (gb *grammarBuilder) schemaToRule(schema map[string]any) (string, error) {
 	schemaType, _ := schema["type"].(string)
 
 	if enum, ok := schema["enum"].([]any); ok {
@@ -146,10 +152,10 @@ func (gb *grammarBuilder) schemaToRule(name string, schema map[string]any) (stri
 
 	switch schemaType {
 	case "object":
-		return gb.objectToRule(name, schema)
+		return gb.objectToRule(schema)
 
 	case "array":
-		return gb.arrayToRule(name, schema)
+		return gb.arrayToRule(schema)
 
 	case "string":
 		return gb.stringToRule(schema)
@@ -171,7 +177,7 @@ func (gb *grammarBuilder) schemaToRule(name string, schema map[string]any) (stri
 	}
 }
 
-func (gb *grammarBuilder) objectToRule(name string, schema map[string]any) (string, error) {
+func (gb *grammarBuilder) objectToRule(schema map[string]any) (string, error) {
 	props, _ := schema["properties"].(map[string]any)
 	if props == nil {
 		if propsD, ok := schema["properties"].(D); ok {
@@ -217,8 +223,8 @@ func (gb *grammarBuilder) objectToRule(name string, schema map[string]any) (stri
 			continue
 		}
 
-		propRuleName := fmt.Sprintf("%s-%s", name, key)
-		propRule, err := gb.schemaToRule(propRuleName, propSchema)
+		propRuleName := gb.nextRuleName()
+		propRule, err := gb.schemaToRule(propSchema)
 		if err != nil {
 			return "", err
 		}
@@ -228,7 +234,12 @@ func (gb *grammarBuilder) objectToRule(name string, schema map[string]any) (stri
 			propRule = propRuleName
 		}
 
-		pair := fmt.Sprintf(`"\"" "%s" "\"" ws ":" ws %s`, key, propRule)
+		keyRule, err := jsonValueToRule(key)
+		if err != nil {
+			return "", fmt.Errorf("property %q: %w", key, err)
+		}
+
+		pair := fmt.Sprintf(`%s ws ":" ws %s`, keyRule, propRule)
 		if !required[key] {
 			pair = fmt.Sprintf("( %s )?", pair)
 		}
@@ -242,7 +253,7 @@ func (gb *grammarBuilder) objectToRule(name string, schema map[string]any) (stri
 	return fmt.Sprintf(`"{" ws %s ws "}"`, strings.Join(pairs, ` ws "," ws `)), nil
 }
 
-func (gb *grammarBuilder) arrayToRule(name string, schema map[string]any) (string, error) {
+func (gb *grammarBuilder) arrayToRule(schema map[string]any) (string, error) {
 	items, _ := schema["items"].(map[string]any)
 	if items == nil {
 		if itemsD, ok := schema["items"].(D); ok {
@@ -254,8 +265,8 @@ func (gb *grammarBuilder) arrayToRule(name string, schema map[string]any) (strin
 		return "array", nil
 	}
 
-	itemRuleName := fmt.Sprintf("%s-item", name)
-	itemRule, err := gb.schemaToRule(itemRuleName, items)
+	itemRuleName := gb.nextRuleName()
+	itemRule, err := gb.schemaToRule(items)
 	if err != nil {
 		return "", err
 	}
@@ -273,8 +284,8 @@ func (gb *grammarBuilder) stringToRule(schema map[string]any) (string, error) {
 		return gb.enumToRule(enum)
 	}
 
-	if pattern, ok := schema["pattern"].(string); ok {
-		return fmt.Sprintf(`"\"" %s "\""`, pattern), nil
+	if _, ok := schema["pattern"].(string); ok {
+		return "", fmt.Errorf("%w: json schema pattern is not supported", ErrInvalidRequest)
 	}
 
 	return "string", nil
@@ -283,24 +294,11 @@ func (gb *grammarBuilder) stringToRule(schema map[string]any) (string, error) {
 func (gb *grammarBuilder) enumToRule(values []any) (string, error) {
 	var options []string
 	for _, v := range values {
-		switch val := v.(type) {
-		case string:
-			options = append(options, fmt.Sprintf(`"\"" "%s" "\""`, val))
-
-		case float64:
-			switch {
-			case val == float64(int(val)):
-				options = append(options, fmt.Sprintf(`"%d"`, int(val)))
-			default:
-				options = append(options, fmt.Sprintf(`"%v"`, val))
-			}
-
-		case bool:
-			options = append(options, fmt.Sprintf(`"%t"`, val))
-
-		default:
-			options = append(options, fmt.Sprintf(`"%v"`, val))
+		option, err := jsonValueToRule(v)
+		if err != nil {
+			return "", fmt.Errorf("enum value: %w", err)
 		}
+		options = append(options, option)
 	}
 
 	if len(options) == 0 {
@@ -312,6 +310,37 @@ func (gb *grammarBuilder) enumToRule(values []any) (string, error) {
 	}
 
 	return fmt.Sprintf("( %s )", strings.Join(options, " | ")), nil
+}
+
+func jsonValueToRule(value any) (string, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return "", fmt.Errorf("marshal JSON value: %w", err)
+	}
+	return gbnfLiteral(string(data)), nil
+}
+
+func gbnfLiteral(value string) string {
+	var b strings.Builder
+	b.Grow(len(value) + 2)
+	b.WriteByte('"')
+	for _, r := range value {
+		switch r {
+		case '"', '\\':
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
 }
 
 func (gb *grammarBuilder) addCommonRules() {

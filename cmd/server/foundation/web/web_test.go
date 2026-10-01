@@ -2,10 +2,22 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
+
+type rawErrorResponse struct{}
+
+func (rawErrorResponse) Encode() ([]byte, string, error) {
+	data, err := json.Marshal(map[string]string{"error": "recovered"})
+	return data, "application/json", err
+}
+
+func (rawErrorResponse) HTTPStatus() int {
+	return http.StatusInternalServerError
+}
 
 func TestNotFoundHandlerUsesApplicationMiddleware(t *testing.T) {
 	var middlewareCalls int
@@ -36,5 +48,67 @@ func TestNotFoundHandlerUsesApplicationMiddleware(t *testing.T) {
 	}
 	if traceID == defaultTraceID {
 		t.Errorf("trace ID: got %q, want non-default value", traceID)
+	}
+}
+
+func TestRawHandlerFuncWritesMiddlewareResponse(t *testing.T) {
+	recoverPanic := func(next HandlerFunc) HandlerFunc {
+		return func(ctx context.Context, r *http.Request) (resp Encoder) {
+			defer func() {
+				if recover() != nil {
+					resp = rawErrorResponse{}
+				}
+			}()
+			return next(ctx, r)
+		}
+	}
+
+	app := NewApp(func(context.Context, string, ...any) {}, recoverPanic)
+	app.RawHandlerFunc(http.MethodGet, "", "/raw", func(http.ResponseWriter, *http.Request) {
+		panic("boom")
+	})
+
+	rr := httptest.NewRecorder()
+	app.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/raw", nil))
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Errorf("status: got %d, want %d", rr.Code, http.StatusInternalServerError)
+	}
+	if got := rr.Body.String(); got != "{\"error\":\"recovered\"}" {
+		t.Errorf("body: got %q, want recovered error", got)
+	}
+}
+
+func TestCORSReflectedOriginVariesByOrigin(t *testing.T) {
+	app := NewApp(func(context.Context, string, ...any) {})
+	app.EnableCORS([]string{"https://console.example"})
+
+	req := httptest.NewRequest(http.MethodOptions, "/v1/models", nil)
+	req.Header.Set("Origin", "https://console.example")
+	rr := httptest.NewRecorder()
+	app.ServeHTTP(rr, req)
+
+	if got := rr.Header().Get("Access-Control-Allow-Origin"); got != "https://console.example" {
+		t.Errorf("Access-Control-Allow-Origin: got %q, want %q", got, "https://console.example")
+	}
+	if got := rr.Header().Get("Vary"); got != "Origin" {
+		t.Errorf("Vary: got %q, want %q", got, "Origin")
+	}
+}
+
+func TestCORSWildcardDoesNotVaryByOrigin(t *testing.T) {
+	app := NewApp(func(context.Context, string, ...any) {})
+	app.EnableCORS([]string{"*"})
+
+	req := httptest.NewRequest(http.MethodOptions, "/v1/models", nil)
+	req.Header.Set("Origin", "https://console.example")
+	rr := httptest.NewRecorder()
+	app.ServeHTTP(rr, req)
+
+	if got := rr.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Errorf("Access-Control-Allow-Origin: got %q, want %q", got, "*")
+	}
+	if got := rr.Header().Get("Vary"); got != "" {
+		t.Errorf("Vary: got %q, want empty", got)
 	}
 }

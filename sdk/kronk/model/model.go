@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path"
 	"path/filepath"
 	"runtime"
@@ -30,10 +29,6 @@ import (
 	"github.com/hybridgroup/yzma/pkg/mtmd"
 	"go.opentelemetry.io/otel/attribute"
 )
-
-// modelLoadMu serializes model loading to prevent concurrent mutation of
-// process-level environment variables (e.g., GGML_OP_OFFLOAD_MIN_BATCH).
-var modelLoadMu sync.Mutex
 
 // compiledTemplate holds a pre-compiled Jinja template. Compiled once per
 // Model via Model.templateOnce / Model.compiledTmpl in applyJinjaTemplate.
@@ -224,8 +219,7 @@ type Model struct {
 // NewModel loads a model from the GGUF files specified in cfg and returns
 // a *Model ready to serve requests. It validates the configuration, builds
 // llama.cpp model parameters, applies NUMA settings, performs the actual
-// GGUF load (serialized via a process-wide mutex to guard the
-// GGML_OP_OFFLOAD_MIN_BATCH env var), computes VRAM/KV diagnostics,
+// GGUF load, computes VRAM/KV diagnostics,
 // retrieves the chat template, and initializes the per-model runtime —
 // either the sequence-batch runtime or context-pool fallback for embed/rerank
 // models, or a batch engine plus parser plugin and optional draft model for
@@ -276,7 +270,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 
 	// -------------------------------------------------------------------------
 
-	mdl, loadDuration, err := loadModelWithEnvGuard(ctx, l, cfg, mParams, ka)
+	mdl, loadDuration, err := loadModel(ctx, l, cfg.ModelFiles, mParams, ka)
 	if err != nil {
 		return nil, err
 	}
@@ -515,7 +509,7 @@ func validateGenerationBatchCapacity(nBatch, generationReserve int) error {
 
 // modelParamsKeepalive holds backing buffers that the C side of llama.cpp
 // reads via pointer during ModelLoadFromFile. They must outlive the load
-// call; the caller passes this to loadModelWithEnvGuard which holds the
+// call; the caller passes this to loadModel which holds the
 // references via runtime.KeepAlive across the load.
 type modelParamsKeepalive struct {
 	devices     []llama.GGMLBackendDevice
@@ -658,32 +652,11 @@ func applyNUMA(ctx context.Context, cfg Config, l applog.Logger) {
 	l(ctx, "NUMA", "strategy", cfg.NUMA)
 }
 
-// loadModelWithEnvGuard performs the actual GGUF load while serializing the
-// process-level GGML_OP_OFFLOAD_MIN_BATCH env var so concurrent loads (e.g.
-// target + draft) do not race. The previous env value is saved and restored
-// so unrelated callers are unaffected. The keepalive struct keeps the
-// param-backing buffers alive across the C call.
-func loadModelWithEnvGuard(ctx context.Context, l applog.Logger, cfg Config, mParams llama.ModelParams, ka modelParamsKeepalive) (llama.Model, time.Duration, error) {
-	modelLoadMu.Lock()
-	defer modelLoadMu.Unlock()
-
-	prevOffloadMinBatch, hadOffloadMinBatch := os.LookupEnv("GGML_OP_OFFLOAD_MIN_BATCH")
-	if cfg.OpOffloadMinBatch() > 0 {
-		os.Setenv("GGML_OP_OFFLOAD_MIN_BATCH", strconv.Itoa(*cfg.PtrOpOffloadMinBatch))
-		l(ctx, "OP-OFFLOAD-MIN-BATCH", "value", *cfg.PtrOpOffloadMinBatch)
-	} else {
-		os.Unsetenv("GGML_OP_OFFLOAD_MIN_BATCH")
-	}
-	defer func() {
-		if hadOffloadMinBatch {
-			os.Setenv("GGML_OP_OFFLOAD_MIN_BATCH", prevOffloadMinBatch)
-		} else {
-			os.Unsetenv("GGML_OP_OFFLOAD_MIN_BATCH")
-		}
-	}()
-
+// loadModel performs the actual GGUF load. The keepalive struct keeps the
+// parameter-backing buffers alive across the C call.
+func loadModel(ctx context.Context, l applog.Logger, modelFiles []string, mParams llama.ModelParams, ka modelParamsKeepalive) (llama.Model, time.Duration, error) {
 	loadStart := time.Now()
-	mdl, err := loadModelFromFiles(ctx, l, cfg.ModelFiles, mParams)
+	mdl, err := loadModelFromFiles(ctx, l, modelFiles, mParams)
 	runtime.KeepAlive(ka.devices)
 	runtime.KeepAlive(ka.tensorSplit)
 	runtime.KeepAlive(ka.tensorBuft)
@@ -1147,19 +1120,27 @@ func loadModeName(loadMode llama.LoadMode) string {
 // retrieveTemplate resolves the Jinja chat template for a model. The
 // resolution order, from highest to lowest priority:
 //
-//  1. cfg.JinjaFile — explicit "template:" entry in model_config.yaml.
-//  2. <jinjaDir>/<modelID>.jinja — exact match on the model id (e.g.
+//  1. cfg.JinjaScript — request-scoped in-memory template override.
+//  2. cfg.JinjaFile — explicit "template:" entry in model_config.yaml.
+//  3. <jinjaDir>/<modelID>.jinja — exact match on the model id (e.g.
 //     "Qwopus3.5-4B-Coder.Q8_0.jinja"), letting operators target a
 //     specific quant.
-//  3. <jinjaDir>/<stripQuantSuffix(modelID)>.jinja — match against the
+//  4. <jinjaDir>/<stripQuantSuffix(modelID)>.jinja — match against the
 //     base model name with any trailing quant tag removed (e.g.
 //     "Qwopus3.5-4B-Coder.jinja"), so one file covers every quant of
 //     the same model.
-//  4. The GGUF-embedded "tokenizer.chat_template" — original fallback.
+//  5. The GGUF-embedded "tokenizer.chat_template" — original fallback.
 //
-// Auto-discovery (steps 2-3) lets users drop a .jinja file into
+// Auto-discovery (steps 3-4) lets users drop a .jinja file into
 // <basePath>/jinja/ and have it applied without editing model_config.yaml.
 func retrieveTemplate(cfg Config, modelID string, mdl llama.Model) (Template, error) {
+	if cfg.JinjaScript != "" {
+		return Template{
+			FileName: "playground-custom",
+			Script:   cfg.JinjaScript,
+		}, nil
+	}
+
 	if cfg.JinjaFile != "" {
 		data, err := readJinjaTemplate(cfg.JinjaFile)
 		if err != nil {
@@ -1222,6 +1203,26 @@ func autoDiscoverTemplate(modelID string) (Template, bool) {
 	}
 
 	return Template{}, false
+}
+
+func (m *Model) beginActiveOperation() error {
+	if m.unloaded.Load() {
+		return errors.New("model is unloading")
+	}
+
+	m.activeStreams.Add(1)
+	if m.unloaded.Load() {
+		m.activeStreams.Add(-1)
+		return errors.New("model is unloading")
+	}
+	metrics.AddPoolActiveStreams(m.modelInfo.ID, 1)
+
+	return nil
+}
+
+func (m *Model) endActiveOperation() {
+	m.activeStreams.Add(-1)
+	metrics.AddPoolActiveStreams(m.modelInfo.ID, -1)
 }
 
 func (m *Model) Unload(ctx context.Context) error {

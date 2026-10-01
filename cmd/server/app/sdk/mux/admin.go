@@ -81,7 +81,7 @@ func remoteHost(remoteAddr string) string {
 func registerAdminRoutes(app *web.App, cfg Config) {
 	limiter := newLoginLimiter()
 
-	app.RawHandlerFunc(http.MethodGet, "", "/", func(w http.ResponseWriter, r *http.Request) {
+	app.RawHandlerFunc(http.MethodGet, "", "/{$}", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/", http.StatusPermanentRedirect)
 	})
 

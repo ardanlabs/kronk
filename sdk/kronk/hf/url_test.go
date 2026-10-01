@@ -34,3 +34,28 @@ func TestNormalizeDownloadURL(t *testing.T) {
 		})
 	}
 }
+
+func TestIsHuggingFaceURL(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want bool
+	}{
+		{name: "hugging face", url: "https://huggingface.co/owner/repo/resolve/main/model.gguf", want: true},
+		{name: "short host", url: "https://hf.co/owner/repo", want: true},
+		{name: "case and port", url: "HTTPS://HUGGINGFACE.CO:443/owner/repo", want: true},
+		{name: "plaintext", url: "http://huggingface.co/owner/repo"},
+		{name: "host suffix", url: "https://huggingface.co.example.com/owner/repo"},
+		{name: "userinfo", url: "https://huggingface.co@example.com/owner/repo"},
+		{name: "unrelated", url: "https://example.com/model.gguf"},
+		{name: "relative", url: "owner/repo/model.gguf"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsHuggingFaceURL(tt.url); got != tt.want {
+				t.Errorf("IsHuggingFaceURL(%q): got %t, want %t", tt.url, got, tt.want)
+			}
+		})
+	}
+}

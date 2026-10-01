@@ -24,3 +24,15 @@ func TestEmbeddingVector(t *testing.T) {
 		t.Errorf("raw vector: got %v, want [3 4 12]", raw)
 	}
 }
+
+func TestEmbeddingsRejectsOperationDuringUnload(t *testing.T) {
+	m := Model{modelInfo: ModelInfo{IsEmbedModel: true}}
+	m.unloaded.Store(true)
+
+	if _, err := m.Embeddings(t.Context(), D{"input": "hello"}); err == nil {
+		t.Fatal("Embeddings() error = nil, want unloading error")
+	}
+	if got := m.activeStreams.Load(); got != 0 {
+		t.Errorf("active streams: got %d, want 0", got)
+	}
+}

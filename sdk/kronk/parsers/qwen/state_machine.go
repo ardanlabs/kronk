@@ -151,17 +151,12 @@ func (sm *stateMachine) Classify(content string) (model.Result, bool) {
 					return model.Result{}, false
 				}
 			}
-			if sm.directToolCallDone {
-				// Preserve every unexpected continuation after direct XML for the
-				// final parser. If it were discarded here, token boundaries could
-				// turn malformed nested delimiter text into valid-looking calls.
-				sm.toolCallDone = false
-				sm.directToolCallDone = false
-				return model.Result{Channel: model.ChannelTool, Content: content}, false
-			}
+			// Preserve every unexpected continuation for the final parser. If it
+			// were discarded here, malformed output could leave an executable
+			// valid-looking call prefix.
 			sm.toolCallDone = false
 			sm.directToolCallDone = false
-			return model.Result{}, true
+			return model.Result{Channel: model.ChannelTool, Content: content}, false
 		}
 	}
 

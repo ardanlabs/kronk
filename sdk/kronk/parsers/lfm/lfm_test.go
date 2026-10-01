@@ -61,6 +61,16 @@ func TestPythonToolCalls(t *testing.T) {
 	}
 }
 
+func TestUnbracketedCommaSeparatedPythonToolCalls(t *testing.T) {
+	calls := Parser{}.ToolCall(context.Background(), nil, `first(x=1), second(y=2)`)
+	if len(calls) != 2 || calls[0].Status != 0 || calls[1].Status != 0 {
+		t.Fatalf("calls: got %#v, want two successful calls", calls)
+	}
+	if calls[0].Function.Name != "first" || calls[1].Function.Name != "second" {
+		t.Errorf("names: got %q and %q, want first and second", calls[0].Function.Name, calls[1].Function.Name)
+	}
+}
+
 func TestJSONToolCallsAndSerialization(t *testing.T) {
 	input := `[{"name":"one","arguments":{"number":9007199254740993,"text":"42","object":{"x":true}}},{"name":"two","arguments":{"nil":null}}]`
 	calls := Parser{}.ToolCall(context.Background(), nil, input)

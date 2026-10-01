@@ -41,7 +41,7 @@ func New(opts ...model.Option) (*Kronk, error) {
 // NewWithContext provides the ability to use models in a concurrently safe way.
 // The context is used to support logging trace ids during model loading.
 func NewWithContext(ctx context.Context, opts ...model.Option) (*Kronk, error) {
-	if libraryLocation == "" {
+	if !Initialized() {
 		return nil, fmt.Errorf("new: the Init() function has not been called")
 	}
 

@@ -70,23 +70,16 @@ func run(cmd *cobra.Command, args []string) error {
 	ctx, cancel := signal.NotifyContext(cmd.Context(), os.Interrupt)
 	defer cancel()
 
+	if !local {
+		return runWeb(ctx, args[0], projURL, mtpURL)
+	}
+
 	basePath := client.GetBasePath(cmd)
 
-	models, err := models.NewWithPaths(basePath)
+	mdls, err := models.NewWithPaths(basePath)
 	if err != nil {
 		return fmt.Errorf("unable to create models system: %w", err)
 	}
 
-	switch local {
-	case true:
-		err = runLocal(ctx, models, basePath, args[0], projURL, mtpURL)
-	default:
-		err = runWeb(ctx, args[0], projURL, mtpURL)
-	}
-
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return runLocal(ctx, mdls, basePath, args[0], projURL, mtpURL)
 }

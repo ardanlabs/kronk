@@ -170,7 +170,9 @@ For OpenAI-compatible clients, prefer `response_format`:
 Supported `response_format.type` values are `text`, `json_object`, and
 `json_schema`. Kronk also accepts a schema directly in the top-level
 `json_schema` field and accepts a custom GBNF string in `grammar`. Use one
-structured-output mechanism per request.
+structured-output mechanism per request. JSON Schema `pattern` is not supported;
+Kronk rejects schemas containing it rather than interpreting its regular
+expression as GBNF.
 
 When a constraint is present and `enable_thinking` is omitted, Kronk disables
 thinking automatically so free-form reasoning does not precede the structured

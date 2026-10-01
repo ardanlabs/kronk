@@ -126,6 +126,7 @@ func (cln *Client) Close() error {
 }
 
 const traceIDHeader = "x-trace-id"
+const callTimeout = 5 * time.Second
 
 var errAuthenticationDisabled = errors.New("authentication is disabled by auth service")
 
@@ -133,6 +134,10 @@ var errAuthenticationDisabled = errors.New("authentication is disabled by auth s
 func injectTrace(ctx context.Context) context.Context {
 	traceID := web.GetTraceID(ctx)
 	return metadata.AppendToOutgoingContext(ctx, traceIDHeader, traceID)
+}
+
+func callContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, callTimeout)
 }
 
 // Authenticate calls the auth service to authenticate the user.
@@ -148,6 +153,8 @@ func (cln *Client) Authenticate(ctx context.Context, bearerToken string, admin b
 
 	ctx = injectTrace(ctx)
 	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", bearerToken)
+	ctx, cancel := callContext(ctx)
+	defer cancel()
 
 	req, err := cln.grpc.Authenticate(ctx, arb.Build())
 	if err != nil {
@@ -189,6 +196,8 @@ func (cln *Client) CreateToken(ctx context.Context, bearerToken string, admin bo
 
 	ctx = injectTrace(ctx)
 	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", bearerToken)
+	ctx, cancel := callContext(ctx)
+	defer cancel()
 
 	req, err := cln.grpc.CreateToken(ctx, arb.Build())
 	if err != nil {
@@ -202,6 +211,8 @@ func (cln *Client) CreateToken(ctx context.Context, bearerToken string, admin bo
 func (cln *Client) ListKeys(ctx context.Context, bearerToken string) (ListKeysResponse, error) {
 	ctx = injectTrace(ctx)
 	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", bearerToken)
+	ctx, cancel := callContext(ctx)
+	defer cancel()
 
 	req, err := cln.grpc.ListKeys(ctx, &authapp.ListKeysRequest{})
 	if err != nil {
@@ -215,6 +226,8 @@ func (cln *Client) ListKeys(ctx context.Context, bearerToken string) (ListKeysRe
 func (cln *Client) AddKey(ctx context.Context, bearerToken string) error {
 	ctx = injectTrace(ctx)
 	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", bearerToken)
+	ctx, cancel := callContext(ctx)
+	defer cancel()
 
 	_, err := cln.grpc.AddKey(ctx, &authapp.AddKeyRequest{})
 	return err
@@ -228,6 +241,8 @@ func (cln *Client) RemoveKey(ctx context.Context, bearerToken string, keyID stri
 
 	ctx = injectTrace(ctx)
 	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", bearerToken)
+	ctx, cancel := callContext(ctx)
+	defer cancel()
 
 	_, err := cln.grpc.RemoveKey(ctx, rkb.Build())
 	return err

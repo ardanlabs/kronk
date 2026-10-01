@@ -314,6 +314,13 @@ func (lib *Libs) SetVersion(version string) {
 //   - WithValidation(true) verifies the selected installed bundle before
 //     Download reports success.
 func (lib *Libs) Download(ctx context.Context, log Logger) (tag VersionTag, retErr error) {
+	return lib.DownloadSelected(ctx, log, lib.version, lib.AllowUpgrade)
+}
+
+// DownloadSelected performs the Download workflow with request-scoped version
+// and upgrade settings instead of mutating the Libs configuration.
+func (lib *Libs) DownloadSelected(ctx context.Context, log Logger, versionOverride string, allowUpgrade bool) (tag VersionTag, retErr error) {
+	log = normalizeLogger(log)
 	defer func() {
 		if retErr == nil && lib.validation {
 			retErr = lib.validateDownload(ctx, log, tag)
@@ -346,7 +353,7 @@ func (lib *Libs) Download(ctx context.Context, log Logger) (tag VersionTag, retE
 	// For matrix row 2 we need the latest version published by llama.cpp.
 	// For all other rows the network lookup is unnecessary, so skip it.
 	var latest string
-	if lib.version == "" && lib.AllowUpgrade {
+	if versionOverride == "" && allowUpgrade {
 		info, err := lib.VersionInformation()
 		if err != nil {
 			if installed.Version == "" {
@@ -359,7 +366,7 @@ func (lib *Libs) Download(ctx context.Context, log Logger) (tag VersionTag, retE
 		latest = info.Latest
 	}
 
-	version := chooseVersion(lib.version, lib.AllowUpgrade, installed.Version, latest, defaultVersion)
+	version := chooseVersion(versionOverride, allowUpgrade, installed.Version, latest, defaultVersion)
 
 	log(ctx, "download-libraries: check llama.cpp installation", "arch", lib.arch, "os", lib.os, "processor", lib.processor, "requested", version, "current", installed.Version)
 
@@ -450,11 +457,22 @@ func (lib *Libs) DownloadInto(ctx context.Context, log Logger, path string, arch
 // download.* values. Internal callers that have already parsed a triple use
 // this directly to avoid re-parsing.
 func (lib *Libs) downloadInto(ctx context.Context, log Logger, path string, arch download.Arch, opSys download.OS, processor download.Processor, version string) (VersionTag, error) {
-	if err := os.MkdirAll(path, 0o755); err != nil {
-		return VersionTag{}, fmt.Errorf("download-into: unable to create destination: %w", err)
+	log = normalizeLogger(log)
+	parent := filepath.Dir(path)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return VersionTag{}, fmt.Errorf("download-into: unable to create parent: %w", err)
 	}
 
-	tempPath := filepath.Join(path, "temp")
+	stagePath, err := os.MkdirTemp(parent, "."+filepath.Base(path)+".stage-")
+	if err != nil {
+		return VersionTag{}, fmt.Errorf("download-into: unable to create staging directory: %w", err)
+	}
+	preserveStage := false
+	defer func() {
+		if !preserveStage {
+			_ = os.RemoveAll(stagePath)
+		}
+	}()
 
 	progress := func(src string, currentSize int64, totalSize int64, mbPerSec float64, complete bool) {
 		log(ctx, fmt.Sprintf("\r\x1b[Kdownload-libraries: Downloading %s... %d MB of %d MB (%.2f MB/s)", src, currentSize/(1000*1000), totalSize/(1000*1000), mbPerSec))
@@ -469,25 +487,26 @@ func (lib *Libs) downloadInto(ctx context.Context, log Logger, path string, arch
 		Version:   version,
 	}
 
-	err := download.Install(ctx, target, tempPath, pr, nil)
+	err = download.Install(ctx, target, stagePath, pr, nil)
 	if err != nil {
-		os.RemoveAll(tempPath)
 		return VersionTag{}, fmt.Errorf("download-into: unable to install llama.cpp: %w", err)
 	}
 
-	record, err := download.ReadInstallRecord(tempPath)
+	record, err := download.ReadInstallRecord(stagePath)
 	if err != nil {
-		os.RemoveAll(tempPath)
 		return VersionTag{}, fmt.Errorf("download-into: unable to read install record: %w", err)
 	}
 
-	if err := swapTempForLibAt(path, tempPath); err != nil {
-		os.RemoveAll(tempPath)
-		return VersionTag{}, fmt.Errorf("download-into: unable to swap temp for lib: %w", err)
+	if err := writeVersionFile(stagePath, record.Tag, arch, opSys, processor); err != nil {
+		return VersionTag{}, fmt.Errorf("download-into: unable to create version file: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return VersionTag{}, fmt.Errorf("download-into: activate libraries: %w", err)
 	}
 
-	if err := writeVersionFile(path, record.Tag, arch, opSys, processor); err != nil {
-		return VersionTag{}, fmt.Errorf("download-into: unable to create version file: %w", err)
+	preserveStage, err = swapInstall(path, stagePath)
+	if err != nil {
+		return VersionTag{}, fmt.Errorf("download-into: unable to install staged libraries: %w", err)
 	}
 
 	return readVersionFile(path)
@@ -696,37 +715,40 @@ func parseTriple(arch string, opSys string, processor string) (download.Arch, do
 
 // =============================================================================
 
-func swapTempForLibAt(path string, tempPath string) error {
-	entries, err := os.ReadDir(path)
-	if err != nil {
-		return fmt.Errorf("swap-temp-for-lib: unable to read libPath: %w", err)
-	}
-
-	for _, entry := range entries {
-		if entry.Name() == "temp" {
-			continue
+func swapInstall(path string, stagePath string) (bool, error) {
+	backupPath := ""
+	if _, err := os.Stat(path); err == nil {
+		backup, err := os.MkdirTemp(filepath.Dir(path), "."+filepath.Base(path)+".backup-")
+		if err != nil {
+			return false, fmt.Errorf("swap-install: create backup path: %w", err)
 		}
-
-		os.RemoveAll(filepath.Join(path, entry.Name()))
-	}
-
-	tempEntries, err := os.ReadDir(tempPath)
-	if err != nil {
-		return fmt.Errorf("swap-temp-for-lib: unable to read temp: %w", err)
-	}
-
-	for _, entry := range tempEntries {
-		src := filepath.Join(tempPath, entry.Name())
-		dst := filepath.Join(path, entry.Name())
-		os.RemoveAll(dst)
-		if err := os.Rename(src, dst); err != nil {
-			return fmt.Errorf("swap-temp-for-lib: unable to move %s: %w", entry.Name(), err)
+		if err := os.Remove(backup); err != nil {
+			return false, fmt.Errorf("swap-install: prepare backup path: %w", err)
 		}
+		backupPath = backup
+		if err := os.Rename(path, backupPath); err != nil {
+			return false, fmt.Errorf("swap-install: preserve current install: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return false, fmt.Errorf("swap-install: inspect current install: %w", err)
 	}
 
-	os.RemoveAll(tempPath)
+	if err := os.Rename(stagePath, path); err != nil {
+		if backupPath != "" {
+			if rollbackErr := os.Rename(backupPath, path); rollbackErr != nil {
+				return true, errors.Join(
+					fmt.Errorf("swap-install: activate staged install %q: %w", stagePath, err),
+					fmt.Errorf("swap-install: restore backup %q: %w", backupPath, rollbackErr),
+				)
+			}
+		}
+		return false, fmt.Errorf("swap-install: activate staged install: %w", err)
+	}
 
-	return nil
+	if backupPath != "" {
+		_ = os.RemoveAll(backupPath)
+	}
+	return false, nil
 }
 
 func writeVersionFile(path string, version string, arch download.Arch, opSys download.OS, processor download.Processor) error {
@@ -917,6 +939,13 @@ func versionTag(value string) string {
 	}
 
 	return tag
+}
+
+func normalizeLogger(log Logger) Logger {
+	if log == nil {
+		return applog.DiscardLogger
+	}
+	return log
 }
 
 // hasNetwork reports whether Kronk can reach the internet. It issues a real

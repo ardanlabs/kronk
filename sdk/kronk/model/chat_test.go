@@ -382,6 +382,7 @@ func TestChatPreservesValidationError(t *testing.T) {
 		{name: "invalid float parameter", field: "temperature", value: D{"invalid": true}},
 		{name: "invalid integer parameter", field: "max_tokens", value: D{"invalid": true}},
 		{name: "invalid boolean parameter", field: "logprobs", value: "invalid"},
+		{name: "numeric boolean parameter", field: "stream", value: 0},
 		{name: "invalid reasoning parameter type", field: "reasoning_effort", value: 1},
 		{name: "unsupported choice count", field: "n", value: 4},
 	}
@@ -1322,6 +1323,33 @@ func TestSendFinalResponseReturnsCancellation(t *testing.T) {
 	err := m.sendFinalResponse(ctx, ch, "id", ObjectChatText, 0, &strings.Builder{}, &strings.Builder{}, nil, nil, nil, FinishReasonStop, "request-cancel", ChannelAnswer, 0, false, false, Usage{})
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("sendFinalResponse() error = %v, want %v", err, context.Canceled)
+	}
+}
+
+func TestLoggingWrapperDrainsAndPreservesTerminalResponseAfterCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	insecureLogging := true
+	m := Model{
+		cfg: Config{PtrInsecureLogging: &insecureLogging},
+		log: applog.DiscardLogger,
+	}
+	returnCh := make(chan ChatResponse, streamChBuffer)
+	producerCh := m.wrapChannelForLogging(ctx, returnCh)
+	producerCh <- chatResponseDelta("id", ObjectChatText, "model", 0, "ignored", false, nil)
+	terminal := chatResponseFinal("id", ObjectChatText, "model", 0, "done", "", nil, nil, FinishReasonStop, false, Usage{})
+	producerCh <- terminal
+	close(producerCh)
+
+	var gotTerminal bool
+	for resp := range returnCh {
+		if len(resp.Choices) > 0 && resp.Choices[0].FinishReason() == FinishReasonStop {
+			gotTerminal = true
+		}
+	}
+	if !gotTerminal {
+		t.Fatal("terminal response was dropped after cancellation")
 	}
 }
 

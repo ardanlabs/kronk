@@ -45,7 +45,20 @@ func (e *batchEngine) PrefillDraft(slotID int) error {
 
 func (e *batchEngine) CanSpeculate(slotID int) bool {
 	s := e.slots[slotID]
+	if e.model.cfg.speculationPlan.Source == speculationSourceClassic && !classicSpeculationSupports(s.job.params) {
+		return false
+	}
 	return e.model.draft != nil && !s.draftPrefillNeeded && s.draftNPast > 0 && (!e.model.cfg.speculationPlan.MTP() || !s.mtp.Disabled)
+}
+
+func classicSpeculationSupports(p Params) bool {
+	return p.Grammar == "" &&
+		p.AdaptivePTarget == 0 &&
+		p.DryMultiplier == 0 &&
+		p.FrequencyPenalty == 0 &&
+		p.PresencePenalty == 0 &&
+		p.RepeatPenalty == DefRepeatPenalty &&
+		p.XtcProbability == 0
 }
 
 func (e *batchEngine) ClassicGenerationInput(slotID int) (classicengine.GenerationInput, error) {
@@ -96,6 +109,7 @@ func (e *batchEngine) CommitSpeculative(slotID int, candidates []llama.Token, ta
 		if err := e.captureTargetSpecSnapshot(s); err != nil {
 			e.model.log(s.job.ctx, "speculative", "status", "snapshot-error", "slot", s.id, "err", err)
 			s.specSnapshot = s.specSnapshot[:0]
+			return fmt.Errorf("capture target state for speculative decoding: %w", err)
 		}
 	}
 

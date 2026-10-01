@@ -10,6 +10,35 @@ import (
 	"testing"
 )
 
+func TestClientDoNilResponseTarget(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "response does not need to be decoded")
+	}))
+	defer srv.Close()
+
+	cln := New(NoopLogger, WithClient(srv.Client()))
+	if err := cln.Do(t.Context(), http.MethodGet, srv.URL, nil, nil); err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+}
+
+func TestClientDoMapsUnauthorizedResponses(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(status)
+			}))
+			defer srv.Close()
+
+			cln := New(NoopLogger, WithClient(srv.Client()))
+			err := cln.Do(t.Context(), http.MethodGet, srv.URL, nil, nil)
+			if !errors.Is(err, ErrUnauthorized) {
+				t.Errorf("Do: got %v, want %v", err, ErrUnauthorized)
+			}
+		})
+	}
+}
+
 func TestSSEClientDoWithErrors(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -19,7 +48,12 @@ func TestSSEClientDoWithErrors(t *testing.T) {
 	}{
 		{
 			name:   "complete stream",
-			stream: "data: {\"status\":\"downloaded\"}\n",
+			stream: ": keep-alive\nevent: progress\nid: 1\ndata: {\"status\":\"downloaded\"}\ndata: [DONE]\n",
+			want:   "downloaded",
+		},
+		{
+			name:   "short and unknown fields are ignored",
+			stream: "x\nevent:\nretry: 1000\ndata:{\"status\":\"downloaded\"}\n",
 			want:   "downloaded",
 		},
 		{

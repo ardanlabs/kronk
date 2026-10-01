@@ -85,6 +85,17 @@ func TestStateMachineSingleChunkDSMLBlock(t *testing.T) {
 	assertResult(t, sm, block, model.ChannelTool, block, false)
 }
 
+func TestStateMachinePreservesAnswerBeforeCompleteToolBlock(t *testing.T) {
+	sm := Parser{}.NewStateMachine()
+	block := toolCallsOpen + invokeOpen + ` name="ping">` + invokeClose + toolCallsClose
+
+	assertResult(t, sm, "answer"+block, model.ChannelAnswer, "answer", false)
+	got := sm.(model.StateMachineFlusher).Flush()
+	if got.Channel != model.ChannelTool || got.Content != block {
+		t.Errorf("Flush: got {%v %q}, want {%v %q}", got.Channel, got.Content, model.ChannelTool, block)
+	}
+}
+
 func TestStateMachineMultipleToolBlocks(t *testing.T) {
 	first := toolCallsOpen + invokeOpen + ` name="first">` + invokeClose + toolCallsClose
 	second := toolCallsOpen + invokeOpen + ` name="second">` + invokeClose + toolCallsClose

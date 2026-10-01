@@ -178,6 +178,11 @@ behavior and limitations.
 - The selected model and projector must support the detected modality.
 - Image resolution, media count, and audio duration affect latency and memory.
 - Model quality and practical media limits vary by model and projector.
+- Kronk does not impose fixed media payload, image-dimension, or media-count
+  limits. Image decoding allocates memory in proportion to decoded dimensions,
+  and a request can retain multiple decoded media items at once. Applications
+  that accept media from untrusted sources must validate those resources before
+  passing them to Kronk.
 
 ---
 

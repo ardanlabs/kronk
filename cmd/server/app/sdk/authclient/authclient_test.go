@@ -232,3 +232,36 @@ func TestAuthenticateRequired(t *testing.T) {
 		})
 	}
 }
+
+func TestCallContextDeadline(t *testing.T) {
+	t.Run("applies call timeout", func(t *testing.T) {
+		start := time.Now()
+		ctx, cancel := callContext(context.Background())
+		defer cancel()
+
+		deadline, ok := ctx.Deadline()
+		if !ok {
+			t.Fatal("Deadline: got no deadline, want call timeout")
+		}
+		if got := deadline.Sub(start); got < callTimeout-time.Second || got > callTimeout+time.Second {
+			t.Errorf("deadline: got %s, want approximately %s", got, callTimeout)
+		}
+	})
+
+	t.Run("preserves earlier parent deadline", func(t *testing.T) {
+		parentDeadline := time.Now().Add(time.Second)
+		parent, parentCancel := context.WithDeadline(context.Background(), parentDeadline)
+		defer parentCancel()
+
+		ctx, cancel := callContext(parent)
+		defer cancel()
+
+		deadline, ok := ctx.Deadline()
+		if !ok {
+			t.Fatal("Deadline: got no deadline, want parent deadline")
+		}
+		if !deadline.Equal(parentDeadline) {
+			t.Errorf("deadline: got %s, want %s", deadline, parentDeadline)
+		}
+	})
+}

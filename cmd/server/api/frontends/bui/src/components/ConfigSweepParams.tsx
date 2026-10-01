@@ -14,9 +14,7 @@ export interface ConfigSweepParamsProps {
   setRawNSeqMax: (v: string) => void;
   rawMoeKeepExpertsTopN: string;
   setRawMoeKeepExpertsTopN: (v: string) => void;
-  rawOpOffloadMinBatch: string;
-  setRawOpOffloadMinBatch: (v: string) => void;
-  commitNumericSweep: (raw: string, field: 'prefillBatchSize' | 'contextWindow' | 'nSeqMax' | 'moeKeepExpertsTopN' | 'opOffloadMinBatch', setRaw: (v: string) => void) => void;
+  commitNumericSweep: (raw: string, field: 'prefillBatchSize' | 'contextWindow' | 'nSeqMax' | 'moeKeepExpertsTopN', setRaw: (v: string) => void) => void;
   isMoE?: boolean;
   isRunning: boolean;
   trialCount: number;
@@ -33,8 +31,6 @@ export default function ConfigSweepParams({
   setRawNSeqMax,
   rawMoeKeepExpertsTopN,
   setRawMoeKeepExpertsTopN,
-  rawOpOffloadMinBatch,
-  setRawOpOffloadMinBatch,
   commitNumericSweep,
   isMoE,
   isRunning,
@@ -200,19 +196,6 @@ export default function ConfigSweepParams({
               />
             </div>
 
-            <div className="playground-sweep-param">
-              <FieldLabel className="playground-sweep-param-toggle" tooltipKey="opOffloadMinBatch">Op Offload Min Batch</FieldLabel>
-              <input
-                type="text"
-                className="playground-sweep-param-values"
-                value={rawOpOffloadMinBatch}
-                onChange={(e) => setRawOpOffloadMinBatch(e.target.value)}
-                onBlur={() => commitNumericSweep(rawOpOffloadMinBatch, 'opOffloadMinBatch', setRawOpOffloadMinBatch)}
-                onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-                placeholder="0, 128, 256, 512"
-                disabled={isRunning}
-              />
-            </div>
           </div>
         </>
       )}

@@ -10,7 +10,7 @@ import (
 
 var errDecisionEngineStopped = errors.New("decision engine stopped")
 
-type decisionEvaluateFunc func(entries []decisionScheduledEntry) ([][][]float32, error)
+type decisionEvaluateFunc func(entries []decisionScheduledEntry) (outputs [][][]float32, fatal bool, err error)
 
 type decisionJobResult struct {
 	outputs [][][]float32
@@ -195,13 +195,17 @@ func (s *decisionScheduler) processLoop() {
 			return
 		}
 
-		outputs, err := s.evaluate(schedule.entries)
+		outputs, fatal, err := s.evaluate(schedule.entries)
 		if err != nil {
 			affected := decisionScheduleJobs(schedule)
 			completeDecisionJobs(affected, err)
-			completeDecisionJobs(active, err)
-			s.terminate(err)
-			return
+			active = removeDecisionJobs(active, affected)
+			if fatal {
+				completeDecisionJobs(active, err)
+				s.terminate(err)
+				return
+			}
+			continue
 		}
 		if len(outputs) != len(schedule.entries) {
 			err := fmt.Errorf("decision scheduler returned %d outputs for %d work items", len(outputs), len(schedule.entries))
@@ -267,6 +271,22 @@ func decisionScheduleJobs(schedule decisionSchedule) []*decisionJob {
 	}
 
 	return jobs
+}
+
+func removeDecisionJobs(jobs, removedJobs []*decisionJob) []*decisionJob {
+	removed := make(map[*decisionJob]struct{}, len(removedJobs))
+	for _, job := range removedJobs {
+		removed[job] = struct{}{}
+	}
+
+	remaining := jobs[:0]
+	for _, job := range jobs {
+		if _, exists := removed[job]; !exists {
+			remaining = append(remaining, job)
+		}
+	}
+
+	return remaining
 }
 
 func (s *decisionScheduler) drain(err error) {

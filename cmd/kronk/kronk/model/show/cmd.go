@@ -40,36 +40,28 @@ func main(cmd *cobra.Command, args []string) {
 
 func run(cmd *cobra.Command, args []string) error {
 	local, _ := cmd.Flags().GetBool("local")
+	if !local {
+		return runWeb(args)
+	}
 
 	mdls, err := models.NewWithPaths(client.GetBasePath(cmd))
 	if err != nil {
 		return fmt.Errorf("unable to create models system: %w", err)
 	}
 
-	switch local {
-	case true:
-		if ierr := kronk.Init(); ierr != nil {
-			return fmt.Errorf("unable to init kronk: %w", ierr)
-		}
-
-		modelConfigFile, ferr := defaults.ModelConfigFile("", client.GetBasePath(cmd))
-		if ferr != nil {
-			return fmt.Errorf("resolving model config file: %w", ferr)
-		}
-
-		mc, lerr := models.LoadModelConfig(modelConfigFile)
-		if lerr != nil {
-			return fmt.Errorf("loading model config: %w", lerr)
-		}
-
-		err = runLocal(mdls, mc, args)
-	default:
-		err = runWeb(args)
+	if err := kronk.Init(); err != nil {
+		return fmt.Errorf("unable to init kronk: %w", err)
 	}
 
+	modelConfigFile, err := defaults.ModelConfigFile("", client.GetBasePath(cmd))
 	if err != nil {
-		return err
+		return fmt.Errorf("resolving model config file: %w", err)
 	}
 
-	return nil
+	mc, err := models.LoadModelConfig(modelConfigFile)
+	if err != nil {
+		return fmt.Errorf("loading model config: %w", err)
+	}
+
+	return runLocal(mdls, mc, args)
 }

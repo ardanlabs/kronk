@@ -85,7 +85,7 @@ func TestToolCallWeatherTemplateRoundTrip(t *testing.T) {
 func TestToolCallTypedParametersAndParallelInvocations(t *testing.T) {
 	content := toolCallsOpen +
 		invokeOpen + ` name="first">` +
-		parameterOpen + ` name="count" string="false">42` + parameterClose +
+		parameterOpen + ` name="count" string="false">9007199254740993` + parameterClose +
 		parameterOpen + ` name="enabled" string="false">true` + parameterClose +
 		parameterOpen + ` name="items" string="false">["a","b"]` + parameterClose +
 		parameterOpen + ` name="options" string="false">{"unit":"c"}` + parameterClose +
@@ -103,7 +103,7 @@ func TestToolCallTypedParametersAndParallelInvocations(t *testing.T) {
 	}
 
 	want := map[string]any{
-		"count":   float64(42),
+		"count":   json.Number("9007199254740993"),
 		"enabled": true,
 		"items":   []any{"a", "b"},
 		"options": map[string]any{"unit": "c"},

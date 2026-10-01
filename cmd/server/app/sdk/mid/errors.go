@@ -44,7 +44,7 @@ func Errors(log *logger.Logger) web.MidFunc {
 				return resp
 			}
 
-			if appErr.Code == errs.InternalOnlyLog {
+			if appErr.Code == errs.Internal || appErr.Code == errs.InternalOnlyLog {
 				appErr = errs.Errorf(errs.Internal, "Internal Server Error")
 			}
 

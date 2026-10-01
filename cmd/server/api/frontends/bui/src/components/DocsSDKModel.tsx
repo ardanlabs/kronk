@@ -150,7 +150,7 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func NewModel(ctx context.Context, cfg Config) (*Model, error)</code>
               </pre>
-              <p className="doc-description">NewModel loads a model from the GGUF files specified in cfg and returns a *Model ready to serve requests. It validates the configuration, builds llama.cpp model parameters, applies NUMA settings, performs the actual GGUF load (serialized via a process-wide mutex to guard the GGML_OP_OFFLOAD_MIN_BATCH env var), computes VRAM/KV diagnostics, retrieves the chat template, and initializes the per-model runtime — either the sequence-batch runtime or context-pool fallback for embed/rerank models, or a batch engine plus parser plugin and optional draft model for generation models.</p>
+              <p className="doc-description">NewModel loads a model from the GGUF files specified in cfg and returns a *Model ready to serve requests. It validates the configuration, builds llama.cpp model parameters, applies NUMA settings, performs the actual GGUF load, computes VRAM/KV diagnostics, retrieves the chat template, and initializes the per-model runtime — either the sequence-batch runtime or context-pool fallback for embed/rerank models, or a batch engine plus parser plugin and optional draft model for generation models.</p>
               <p className="doc-description">The returned *Model owns the underlying llama.Model, llama.Context, KV memory, batch engine, and (when configured) draft model; release them via Model.Unload when finished.</p>
             </div>
 
@@ -375,6 +375,7 @@ export default function DocsSDKModel() {
 	PtrIncrementalCache        *bool
 	PtrInsecureLogging         *bool
 	JinjaFile                  string
+	JinjaScript                string
 	LoadMode                   LoadMode
 	Log                        applog.Logger
 	PtrMainGPU                 *int
@@ -388,7 +389,6 @@ export default function DocsSDKModel() {
 	NUMA                       string
 	PtrOffloadKQV              *bool
 	PtrOpOffload               *bool
-	PtrOpOffloadMinBatch       *int
 	ProjFile                   string
 	MTPDrafterFile             string
 	PtrProjOnCPU               *bool
@@ -434,6 +434,7 @@ export default function DocsSDKModel() {
               <p className="doc-description">IncrementalCache enables Incremental Message Caching (IMC) for agentic workflows. It caches all messages except the last one (which triggers generation) and extends the cache incrementally on each turn. This is ideal for agents like Cline or OpenCode where conversations grow monotonically. The cache is rebuilt from scratch when the message prefix changes (new thread).</p>
               <p className="doc-description">InsecureLogging enables logging of potentially sensitive data such as message content. This should only be enabled for debugging purposes in non-production environments.</p>
               <p className="doc-description">JinjaFile is the path to the jinja file. This is not required and can be used if you want to override the templated provided by the model metadata.</p>
+              <p className="doc-description">JinjaScript is an in-memory jinja template override. It takes precedence over JinjaFile and is intended for request-scoped model configurations.</p>
               <p className="doc-description">LoadMode controls how model weights are loaded. The default is LoadModeAuto, which uses mmap when every selected device supports it and otherwise uses ordinary loading. LoadModeNone disables mmap, which can improve tensor placement on multi-socket NUMA systems running MoE models with CPU experts. LoadModeMLock requests resident pages without forcing mmap, LoadModeMMapMLock combines mmap and mlock, and LoadModeDirectIO bypasses the page cache where the platform and filesystem support it.</p>
               <p className="doc-description">Log is the logger to use for model operations.</p>
               <p className="doc-description">MainGPU is the index of the GPU to use as the primary device when SplitMode is SplitModeNone. When nil, the default GPU (usually index 0) is used.</p>
@@ -447,7 +448,6 @@ export default function DocsSDKModel() {
               <p className="doc-description">NUMA controls the NUMA (Non-Uniform Memory Access) strategy. This matters most when expert tensors are on CPU and the system has multiple NUMA nodes. Valid values: "" (disabled), "distribute", "isolate", "numactl", "mirror". "distribute" is recommended for multi-socket MoE setups; without it, cross-socket memory access can cause significant bandwidth collapse.</p>
               <p className="doc-description">OffloadKQV controls whether the KV cache is offloaded to the GPU. When nil or true, the KV cache is stored on the GPU (default behavior). Set to false to keep the KV cache on the CPU, which reduces VRAM usage but may slow inference.</p>
               <p className="doc-description">OpOffload controls whether host tensor operations are offloaded to the device (GPU). When nil or true, operations are offloaded (default behavior). Set to false to keep operations on the CPU.</p>
-              <p className="doc-description">OpOffloadMinBatch sets the minimum batch size at which host tensor operations are offloaded to the device. When unset or 0, llama.cpp's default is used.</p>
               <p className="doc-description">ProjFile is the path to the projection files. This is mandatory for media based models like vision and audio.</p>
               <p className="doc-description">MTPDrafterFile is the path to a separate-file MTP drafter GGUF that ships alongside the main model. Supported files are Gemma assistant heads that share target KV and Qwen35 heads that own their draft KV. It is not the main model or a vocab-matched classic draft model. The catalog wires this field when it downloads a compatible companion from the model repository.</p>
               <p className="doc-description">ProjOnCPU forces the multimodal projector (mmproj) to run on the CPU. When nil or false, the projector runs on whichever device llama.cpp picks by default (GPU when available). Set to true to keep the projector on the CPU — equivalent to llama-mtmd-cli's --no-mmproj-offload. The LLM itself is unaffected and still runs on whatever device WithNGpuLayers selects.</p>
@@ -1201,6 +1201,7 @@ export default function DocsSDKModel() {
 }`}</code>
               </pre>
               <p className="doc-description">StateMachine is the per-request, per-slot streaming state machine. One instance is created per slot via Parser.NewStateMachine and reused across requests on that slot via Reset.</p>
+              <p className="doc-description">Implementations may consume protocol framing. Once content has been recognized as answer, reasoning, or tool payload, unexpected non-whitespace continuations must be returned on an appropriate channel so final parsing can reject malformed output atomically.</p>
               <p className="doc-description">Behavior is undefined if Classify is called after a previous call returned eog=true. Callers must invoke Reset before reusing the state machine.</p>
             </div>
 
@@ -1456,13 +1457,6 @@ export default function DocsSDKModel() {
               <h4>Config.NThreadsBatch</h4>
               <pre className="code-block">
                 <code>func (cfg Config) NThreadsBatch() int</code>
-              </pre>
-            </div>
-
-            <div className="doc-section" id="method-config-opoffloadminbatch">
-              <h4>Config.OpOffloadMinBatch</h4>
-              <pre className="code-block">
-                <code>func (cfg Config) OpOffloadMinBatch() int</code>
               </pre>
             </div>
 
@@ -2528,7 +2522,6 @@ export default function DocsSDKModel() {
                 <li><a href="#method-config-nseqmax">Config.NSeqMax</a></li>
                 <li><a href="#method-config-nthreads">Config.NThreads</a></li>
                 <li><a href="#method-config-nthreadsbatch">Config.NThreadsBatch</a></li>
-                <li><a href="#method-config-opoffloadminbatch">Config.OpOffloadMinBatch</a></li>
                 <li><a href="#method-config-prefillbatchsize">Config.PrefillBatchSize</a></li>
                 <li><a href="#method-config-queuedepth">Config.QueueDepth</a></li>
                 <li><a href="#method-config-ropefreqbase">Config.RopeFreqBase</a></li>

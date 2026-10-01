@@ -89,6 +89,8 @@ func (a *app) pullLibs(ctx context.Context, r *http.Request) web.Encoder {
 	allowUpgrade := a.libs.AllowUpgrade
 	if tripleAll {
 		allowUpgrade = true
+	} else if version == "" && q.Get("allow-upgrade") != "" {
+		allowUpgrade = true
 	}
 
 	logger := func(ctx context.Context, msg string, args ...any) {
@@ -102,7 +104,7 @@ func (a *app) pullLibs(ctx context.Context, r *http.Request) web.Encoder {
 		status := fmt.Sprintf("%s:%s\n", msg, sb.String())
 		ver := toAppVersion(status, libs.VersionTag{}, allowUpgrade)
 
-		a.log.Info(ctx, "pull-libs", "info", ver[:len(ver)-1])
+		a.log.Info(ctx, "pull-libs", "info", strings.TrimSpace(ver))
 		fmt.Fprint(w, ver)
 		f.Flush()
 	}
@@ -128,31 +130,19 @@ func (a *app) pullLibs(ctx context.Context, r *http.Request) web.Encoder {
 		a.log.Warn(ctx, "pull-libs", "status", "no installed version found", "warning", err)
 	}
 
-	// I know this is a hack and a race condition. I expect this situation
-	// to only exist for a few people and in a single tenant mode.
-	if !a.libs.AllowUpgrade {
-		if q.Get("allow-upgrade") != "" {
-			a.log.Info(ctx, "pull-libs", "status", "allowing libs upgrade")
-			a.libs.AllowUpgrade = true
-			defer func() {
-				a.libs.AllowUpgrade = false
-			}()
-		}
+	if allowUpgrade && !a.libs.AllowUpgrade {
+		a.log.Info(ctx, "pull-libs", "status", "allowing libs upgrade")
 	}
 
 	if version != "" {
 		a.log.Info(ctx, "pull-libs", "status", "using specified version", "version", version)
-		a.libs.SetVersion(version)
-		defer func() {
-			a.libs.SetVersion("")
-		}()
 	}
 
-	vi, err := a.libs.Download(ctx, logger)
+	vi, err := a.libs.DownloadSelected(ctx, logger, version, allowUpgrade)
 	if err != nil {
-		ver := toAppVersion(err.Error(), libs.VersionTag{}, a.libs.AllowUpgrade)
+		ver := toAppVersion(err.Error(), libs.VersionTag{}, allowUpgrade)
 
-		a.log.Info(ctx, "pull-libs", "status", "ERROR", "error", err.Error(), "info", ver[:len(ver)-1])
+		a.log.Info(ctx, "pull-libs", "status", "ERROR", "error", err.Error(), "info", strings.TrimSpace(ver))
 		fmt.Fprint(w, ver)
 		f.Flush()
 
@@ -182,12 +172,12 @@ func (a *app) pullLibs(ctx context.Context, r *http.Request) web.Encoder {
 	}
 
 	var ver string
-	ver = toAppVersion("downloaded", vi, a.libs.AllowUpgrade)
+	ver = toAppVersion("downloaded", vi, allowUpgrade)
 	if instVer.Version == vi.Version {
-		ver = toAppVersion("using installed version", vi, a.libs.AllowUpgrade)
+		ver = toAppVersion("using installed version", vi, allowUpgrade)
 	}
 
-	a.log.Info(ctx, "pull-libs", "info", ver[:len(ver)-1])
+	a.log.Info(ctx, "pull-libs", "info", strings.TrimSpace(ver))
 	fmt.Fprint(w, ver)
 	f.Flush()
 

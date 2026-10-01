@@ -193,7 +193,7 @@ func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 
 	emit := func(pr PullResponse) {
 		ver := toAppPullResponse(pr)
-		a.log.Info(ctx, "pull-model", "info", ver[:len(ver)-1])
+		a.log.Info(ctx, "pull-model", "info", strings.TrimSpace(ver))
 		fmt.Fprint(w, ver)
 		f.Flush()
 	}
@@ -283,7 +283,7 @@ func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 	if err != nil {
 		ver := toAppPull(err.Error(), models.Path{})
 
-		a.log.Info(ctx, "pull-model", "info", ver[:len(ver)-1])
+		a.log.Info(ctx, "pull-model", "info", strings.TrimSpace(ver))
 		fmt.Fprint(w, ver)
 		f.Flush()
 
@@ -292,7 +292,7 @@ func (a *app) pullModels(ctx context.Context, r *http.Request) web.Encoder {
 
 	ver := toAppPull("downloaded", mp)
 
-	a.log.Info(ctx, "pull-model", "info", ver[:len(ver)-1])
+	a.log.Info(ctx, "pull-model", "info", strings.TrimSpace(ver))
 	fmt.Fprint(w, ver)
 	f.Flush()
 
