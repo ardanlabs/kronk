@@ -100,7 +100,6 @@ winget:
     license: Apache-2.0
     license_url: "https://github.com/ardanlabs/kronk/blob/{{ .Tag }}/LICENSE"
     short_description: "Local LLM inference SDK and server CLI"
-    skip_upload: auto
     repository:
       owner: ardanlabs
       name: winget-pkgs

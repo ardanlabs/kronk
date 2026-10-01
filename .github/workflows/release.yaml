@@ -5,16 +5,16 @@ on:
     tags:
       - "v*"
 
-# Tag pushes only — branch protection on `v*` tags + the `production`
-# environment below mean the Homebrew and WinGet publication tokens can
-# only ever fire under maintainer-approved circumstances.
+# Tag pushes only — branch protection on `v*` tags + the `release`
+# environment below mean the Homebrew publication and WinGet submission
+# tokens can only ever fire under maintainer-approved circumstances.
 permissions:
   contents: read
 
 jobs:
   release:
     runs-on: ubuntu-latest
-    # Gated environment so the publication PATs only unlock for
+    # Gated environment so the publication and submission PATs only unlock for
     # maintainer-approved runs. Configure required reviewers + tag
     # pattern restrictions on this environment in the repo's
     # Settings > Environments page.
