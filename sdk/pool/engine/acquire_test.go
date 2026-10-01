@@ -32,6 +32,9 @@ type preparedLoader struct {
 	loadPrepared any
 	handles      map[string]*preparedHandle
 	validateErr  error
+	loadStarted  chan struct{}
+	releaseLoad  chan struct{}
+	ignoreCancel bool
 }
 
 func (pl *preparedLoader) Prepare(context.Context, loader.LoadRequest) (any, error) {
@@ -44,8 +47,22 @@ func (pl *preparedLoader) Plan(_ context.Context, req loader.LoadRequest) (resma
 	return resman.PlanRequest{Key: req.Key, RAMBytes: 1}, nil
 }
 
-func (pl *preparedLoader) Load(_ context.Context, req loader.LoadRequest) (*preparedHandle, error) {
+func (pl *preparedLoader) Load(ctx context.Context, req loader.LoadRequest) (*preparedHandle, error) {
 	pl.loadPrepared = req.Prepared
+	if pl.loadStarted != nil {
+		close(pl.loadStarted)
+	}
+	if pl.releaseLoad != nil {
+		if pl.ignoreCancel {
+			<-pl.releaseLoad
+		} else {
+			select {
+			case <-pl.releaseLoad:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+	}
 
 	h := &preparedHandle{}
 	if pl.handles != nil {
@@ -133,6 +150,104 @@ func TestAcquireValidationFailureUnloadsAndReleases(t *testing.T) {
 	}
 	if _, exists := p.cache.GetIfPresent("model"); exists {
 		t.Error("cache contains handle after validation failure")
+	}
+}
+
+func TestAcquireCallerCancellationDoesNotCancelSharedLoad(t *testing.T) {
+	pl := &preparedLoader{
+		loadStarted: make(chan struct{}),
+		releaseLoad: make(chan struct{}),
+	}
+	p, err := New(Config{
+		Log:      func(context.Context, string, ...any) {},
+		Resman:   newTestResourceManager(t),
+		MaxItems: 1,
+	}, pl)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	first := make(chan error, 1)
+	go func() {
+		_, err := p.Acquire(ctx, loader.LoadRequest{ModelID: "model", Key: "model"})
+		first <- err
+	}()
+	<-pl.loadStarted
+
+	cancel()
+	if err := <-first; !errors.Is(err, context.Canceled) {
+		t.Fatalf("first Acquire error: got %v, want %v", err, context.Canceled)
+	}
+
+	second := make(chan error, 1)
+	go func() {
+		_, err := p.Acquire(context.Background(), loader.LoadRequest{ModelID: "model", Key: "model"})
+		second <- err
+	}()
+	close(pl.releaseLoad)
+
+	if err := <-second; err != nil {
+		t.Fatalf("second Acquire: %v", err)
+	}
+}
+
+func TestShutdownRejectsLoadCompletingAfterShutdown(t *testing.T) {
+	pl := &preparedLoader{
+		handles:      make(map[string]*preparedHandle),
+		loadStarted:  make(chan struct{}),
+		releaseLoad:  make(chan struct{}),
+		ignoreCancel: true,
+	}
+	rm := newTestResourceManager(t)
+	p, err := New(Config{
+		Log:      func(context.Context, string, ...any) {},
+		Resman:   rm,
+		MaxItems: 1,
+	}, pl)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	acquired := make(chan error, 1)
+	go func() {
+		_, err := p.Acquire(context.Background(), loader.LoadRequest{ModelID: "model", Key: "model"})
+		acquired <- err
+	}()
+	<-pl.loadStarted
+
+	shutdown := make(chan error, 1)
+	go func() {
+		shutdown <- p.Shutdown(context.Background())
+	}()
+
+	for {
+		p.lifecycleMu.Lock()
+		stopping := p.shuttingDown
+		p.lifecycleMu.Unlock()
+		if stopping {
+			break
+		}
+	}
+	close(pl.releaseLoad)
+
+	if err := <-acquired; !errors.Is(err, ErrPoolClosed) {
+		t.Fatalf("Acquire error: got %v, want %v", err, ErrPoolClosed)
+	}
+	if err := <-shutdown; err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+	if got := p.ItemsInPool(); got != 0 {
+		t.Errorf("ItemsInPool: got %d, want 0", got)
+	}
+	if got := len(rm.Usage().Reservations); got != 0 {
+		t.Errorf("Reservations: got %d, want 0", got)
+	}
+	if got := pl.handles["model"].unloadCalls.Load(); got != 1 {
+		t.Errorf("Unload calls: got %d, want 1", got)
+	}
+	if _, err := p.Acquire(context.Background(), loader.LoadRequest{ModelID: "other", Key: "other"}); !errors.Is(err, ErrPoolClosed) {
+		t.Fatalf("Acquire after Shutdown error: got %v, want %v", err, ErrPoolClosed)
 	}
 }
 

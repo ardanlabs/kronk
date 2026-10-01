@@ -34,6 +34,10 @@ const (
 	maxPromptTokens   = 64                     // tail tokens carried as cross-window prompt context
 )
 
+// ErrStreamStopped indicates that a stream's worker exited after a terminal
+// processing error or close.
+var ErrStreamStopped = errors.New("stream stopped")
+
 // =============================================================================
 // Events
 
@@ -619,8 +623,16 @@ func (s *Stream) Feed(ctx context.Context, samples []float32) error {
 	copy(cp, samples)
 
 	select {
+	case <-s.doneC:
+		return fmt.Errorf("feed: %w", ErrStreamStopped)
+	default:
+	}
+
+	select {
 	case s.inC <- cp:
 		return nil
+	case <-s.doneC:
+		return fmt.Errorf("feed: %w", ErrStreamStopped)
 	case <-s.closeC:
 		return fmt.Errorf("feed: stream closed")
 	case <-ctx.Done():
@@ -747,7 +759,15 @@ func (s *Stream) Reset(ctx context.Context, opts ...ResetOption) error {
 	done := make(chan struct{})
 
 	select {
+	case <-s.doneC:
+		return fmt.Errorf("reset: %w", ErrStreamStopped)
+	default:
+	}
+
+	select {
 	case s.resetC <- resetReq{cfg: rc, done: done}:
+	case <-s.doneC:
+		return fmt.Errorf("reset: %w", ErrStreamStopped)
 	case <-s.closeC:
 		return fmt.Errorf("reset: stream closed")
 	case <-ctx.Done():
@@ -757,6 +777,8 @@ func (s *Stream) Reset(ctx context.Context, opts ...ResetOption) error {
 	select {
 	case <-done:
 		return nil
+	case <-s.doneC:
+		return fmt.Errorf("reset: %w", ErrStreamStopped)
 	case <-ctx.Done():
 		return ctx.Err()
 	}

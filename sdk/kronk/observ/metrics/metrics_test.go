@@ -83,6 +83,44 @@ func TestInferenceAndBatchSeqMetrics(t *testing.T) {
 	}
 }
 
+func TestPoolGaugesAreSeparatedByBackend(t *testing.T) {
+	SetPoolItemsInPool("kronk-test", 2)
+	SetPoolItemsInPool("bucky-test", 3)
+	SetPoolMaxItemsInPool("kronk-test", 4)
+	SetPoolMaxItemsInPool("bucky-test", 5)
+	SetPoolInflightLoads("kronk-test", 6)
+	SetPoolInflightLoads("bucky-test", 7)
+
+	tests := []struct {
+		name    string
+		backend string
+		want    float64
+	}{
+		{name: "pool_items_in_pool", backend: "kronk-test", want: 2},
+		{name: "pool_items_in_pool", backend: "bucky-test", want: 3},
+		{name: "pool_max_items_in_pool", backend: "kronk-test", want: 4},
+		{name: "pool_max_items_in_pool", backend: "bucky-test", want: 5},
+		{name: "pool_inflight_loads", backend: "kronk-test", want: 6},
+		{name: "pool_inflight_loads", backend: "bucky-test", want: 7},
+	}
+
+	families, err := Gatherer().Gather()
+	if err != nil {
+		t.Fatalf("Gather: unexpected error: %v", err)
+	}
+	for _, tt := range tests {
+		t.Run(tt.name+"/"+tt.backend, func(t *testing.T) {
+			metric := findMetric(families, tt.name, map[string]string{"backend": tt.backend})
+			if metric == nil {
+				t.Fatalf("metric %q with backend %q not found", tt.name, tt.backend)
+			}
+			if got := metric.GetGauge().GetValue(); got != tt.want {
+				t.Errorf("value: got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func findMetric(families []*dto.MetricFamily, name string, labels map[string]string) *dto.Metric {
 	for _, family := range families {
 		if family.GetName() != name {

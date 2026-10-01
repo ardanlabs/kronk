@@ -28,7 +28,15 @@ func (c *Pool[H]) Acquire(ctx context.Context, req loader.LoadRequest) (H, error
 	ctx, span := otel.AddSpan(ctx, "pool-acquire")
 	defer span.End()
 
-	if entry, exists := c.cache.GetEntry(req.Key); exists {
+	c.lifecycleMu.Lock()
+	if c.shuttingDown {
+		c.lifecycleMu.Unlock()
+		return zero, ErrPoolClosed
+	}
+	entry, exists := c.cache.GetEntry(req.Key)
+	c.lifecycleMu.Unlock()
+
+	if exists {
 		c.log(ctx, "acquire",
 			"status", "cache-hit",
 			"key", req.Key,
@@ -47,9 +55,16 @@ func (c *Pool[H]) Acquire(ctx context.Context, req loader.LoadRequest) (H, error
 		"key", req.Key,
 	)
 
-	// Use singleflight to prevent concurrent loads of the same key.
+	// Use singleflight to prevent concurrent loads of the same key. The shared
+	// load has a pool-owned lifetime; each caller independently stops waiting
+	// when its request context is canceled.
 	sfStart := time.Now()
-	result, err, shared := c.loadGroup.Do(req.Key, func() (any, error) {
+	resultC := c.loadGroup.DoChan(req.Key, func() (any, error) {
+		loadCtx, finishLoad, err := c.beginLoad(ctx)
+		if err != nil {
+			return zero, err
+		}
+		defer finishLoad()
 
 		// Double-check pool after acquiring the singleflight lock.
 		if h, exists := c.cache.GetIfPresent(req.Key); exists {
@@ -57,7 +72,7 @@ func (c *Pool[H]) Acquire(ctx context.Context, req loader.LoadRequest) (H, error
 		}
 
 		if preparer, ok := c.loader.(loader.Preparer); ok {
-			prepared, err := preparer.Prepare(ctx, req)
+			prepared, err := preparer.Prepare(loadCtx, req)
 			if err != nil {
 				metrics.AddPoolLoadFailure("plan")
 				return zero, fmt.Errorf("acquire: prepare: %w", err)
@@ -65,13 +80,13 @@ func (c *Pool[H]) Acquire(ctx context.Context, req loader.LoadRequest) (H, error
 			req.Prepared = prepared
 		}
 
-		planReq, err := c.loader.Plan(ctx, req)
+		planReq, err := c.loader.Plan(loadCtx, req)
 		if err != nil {
 			metrics.AddPoolLoadFailure("plan")
 			return zero, fmt.Errorf("acquire: plan: %w", err)
 		}
 
-		ticket, plan, err := c.reserveWithEviction(ctx, req.Key, planReq)
+		ticket, plan, err := c.reserveWithEviction(loadCtx, req.Key, planReq)
 		if err != nil {
 			return zero, fmt.Errorf("acquire: %w", err)
 		}
@@ -80,33 +95,33 @@ func (c *Pool[H]) Acquire(ctx context.Context, req loader.LoadRequest) (H, error
 			"status", "reserved",
 			"key", req.Key,
 		}, describePlan(plan)...)
-		c.log(ctx, "acquire", reservedArgs...)
-		c.LogResmanUsage(ctx, "post-reserve", "key", req.Key)
+		c.log(loadCtx, "acquire", reservedArgs...)
+		c.LogResmanUsage(loadCtx, "post-reserve", "key", req.Key)
 
-		h, err := c.loader.Load(ctx, req)
+		h, err := c.loader.Load(loadCtx, req)
 		if err != nil {
 			c.resman.Release(ticket)
-			c.log(ctx, "acquire",
+			c.log(loadCtx, "acquire",
 				"status", "load-failed-reservation-released",
 				"key", req.Key,
 				"ERROR", err,
 			)
-			c.LogResmanUsage(ctx, "post-failed-load", "key", req.Key)
+			c.LogResmanUsage(loadCtx, "post-failed-load", "key", req.Key)
 			metrics.AddPoolLoadFailure("load")
 			return zero, fmt.Errorf("acquire: %w", err)
 		}
 
 		if validator, ok := c.loader.(loader.Validator[H]); ok {
-			if err := validator.Validate(ctx, req, h); err != nil {
-				unloadErr := h.Unload(context.WithoutCancel(ctx))
+			if err := validator.Validate(loadCtx, req, h); err != nil {
+				unloadErr := h.Unload(context.WithoutCancel(loadCtx))
 				c.resman.Release(ticket)
-				c.log(ctx, "acquire",
+				c.log(loadCtx, "acquire",
 					"status", "validation-failed-reservation-released",
 					"key", req.Key,
 					"ERROR", err,
 					"unload-error", unloadErr,
 				)
-				c.LogResmanUsage(ctx, "post-failed-validation", "key", req.Key)
+				c.LogResmanUsage(loadCtx, "post-failed-validation", "key", req.Key)
 				metrics.AddPoolLoadFailure("validate")
 				if unloadErr != nil {
 					return zero, fmt.Errorf("acquire: validate loaded handle: %w", errors.Join(err, fmt.Errorf("unload: %w", unloadErr)))
@@ -115,12 +130,13 @@ func (c *Pool[H]) Acquire(ctx context.Context, req loader.LoadRequest) (H, error
 			}
 		}
 
-		c.storeTicket(req.Key, ticket)
-		c.cache.Set(req.Key, h)
-		c.itemsInPool.Add(1)
+		if accepted := c.storeLoaded(req.Key, ticket, h); !accepted {
+			c.cache.Invalidate(req.Key)
+			return zero, ErrPoolClosed
+		}
 
 		if entry, ok := c.cache.GetEntryQuietly(req.Key); ok {
-			c.log(ctx, "acquire",
+			c.log(loadCtx, "acquire",
 				"status", "cache-set",
 				"key", req.Key,
 				"expires-at", c.EntryExpiresAt(entry),
@@ -130,6 +146,18 @@ func (c *Pool[H]) Acquire(ctx context.Context, req loader.LoadRequest) (H, error
 
 		return h, nil
 	})
+
+	var result any
+	var err error
+	var shared bool
+	select {
+	case <-ctx.Done():
+		err = ctx.Err()
+	case sfResult := <-resultC:
+		result = sfResult.Val
+		err = sfResult.Err
+		shared = sfResult.Shared
+	}
 
 	if shared {
 		metrics.ObservePoolSingleflightWait(time.Since(sfStart))

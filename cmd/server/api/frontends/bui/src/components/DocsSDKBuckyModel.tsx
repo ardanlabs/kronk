@@ -721,6 +721,18 @@ export default function DocsSDKBuckyModel() {
               <p className="doc-description">Behavior is tunable via ResetOption. Reset blocks until any in-flight decode finishes and the worker has applied the reset.</p>
             </div>
           </div>
+
+          <div className="card" id="variables">
+            <h3>Variables</h3>
+
+            <div className="doc-section" id="var-errstreamstopped">
+              <h4>ErrStreamStopped</h4>
+              <pre className="code-block">
+                <code>{`var ErrStreamStopped = errors.New("stream stopped")`}</code>
+              </pre>
+              <p className="doc-description">ErrStreamStopped indicates that a stream's worker exited after a terminal processing error or close.</p>
+            </div>
+          </div>
         </div>
 
         <nav className="doc-sidebar">
@@ -781,6 +793,12 @@ export default function DocsSDKBuckyModel() {
                 <li><a href="#method-stream-feed">Stream.Feed</a></li>
                 <li><a href="#method-stream-feedpcm">Stream.FeedPCM</a></li>
                 <li><a href="#method-stream-reset">Stream.Reset</a></li>
+              </ul>
+            </div>
+            <div className="doc-index-section">
+              <a href="#variables" className="doc-index-header">Variables</a>
+              <ul>
+                <li><a href="#var-errstreamstopped">ErrStreamStopped</a></li>
               </ul>
             </div>
           </div>

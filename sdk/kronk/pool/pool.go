@@ -156,6 +156,7 @@ func New(cfg Config) (*Pool, error) {
 		Resman:   cfg.Resman,
 		MaxItems: cfg.ModelsInPool,
 		TTL:      cfg.TTL,
+		Backend:  "kronk",
 	}, llama)
 	if err != nil {
 		return nil, fmt.Errorf("new: constructing pool core: %w", err)

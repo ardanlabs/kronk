@@ -169,6 +169,32 @@ func TestStream_CloseReleasesSlot(t *testing.T) {
 	}
 }
 
+func TestStream_FeedAndResetReturnAfterWorkerError(t *testing.T) {
+	fd := &fakeDecoder{err: errors.New("decode failed")}
+	s := newStream(StreamConfig{
+		PartialEveryMs: -1,
+		CommitEveryMs:  1,
+		MaxUtteranceMs: 100000,
+		DisableVAD:     true,
+	}.withDefaults(), fd.decode, func() {})
+
+	if err := s.Feed(context.Background(), tone(500, 0.5)); err != nil {
+		t.Fatalf("initial Feed: %v", err)
+	}
+	select {
+	case <-s.doneC:
+	case <-time.After(time.Second):
+		t.Fatal("stream worker did not stop after decode error")
+	}
+
+	if err := s.Feed(context.Background(), tone(10, 0.5)); !errors.Is(err, ErrStreamStopped) {
+		t.Errorf("Feed error: got %v, want %v", err, ErrStreamStopped)
+	}
+	if err := s.Reset(context.Background()); !errors.Is(err, ErrStreamStopped) {
+		t.Errorf("Reset error: got %v, want %v", err, ErrStreamStopped)
+	}
+}
+
 func TestStream_CloseReleasesSlotWithFullEventsBuffer(t *testing.T) {
 	fd := &fakeDecoder{text: "flush"}
 	released := make(chan struct{})

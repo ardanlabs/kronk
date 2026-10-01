@@ -65,6 +65,7 @@ func New(cfg Config) (*Pool, error) {
 		Resman:   cfg.Resman,
 		MaxItems: cfg.ModelsInPool,
 		TTL:      cfg.TTL,
+		Backend:  "malina",
 	}, ml)
 	if err != nil {
 		return nil, fmt.Errorf("new: constructing pool engine: %w", err)

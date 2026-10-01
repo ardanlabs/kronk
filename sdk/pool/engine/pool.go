@@ -44,6 +44,9 @@ var (
 	// ErrModelInUse is returned when invalidation races with a request that
 	// begins using the selected model.
 	ErrModelInUse = errors.New("model has active streams")
+
+	// ErrPoolClosed is returned when an acquisition begins after pool shutdown.
+	ErrPoolClosed = errors.New("pool is shutting down")
 )
 
 // Config carries the non-generic settings used to construct a Pool.
@@ -66,6 +69,9 @@ type Config struct {
 	// TTL is the duration an entry can live in the cache without being
 	// accessed before the cache evicts it. Zero disables idle expiration.
 	TTL time.Duration
+
+	// Backend identifies this pool in metrics. Empty defaults to "unknown".
+	Backend string
 }
 
 // Pool is the generic pool engine.
@@ -76,8 +82,14 @@ type Pool[H loader.Handle] struct {
 	itemsInPool  atomic.Int32
 	maxItems     int
 	ttl          time.Duration
+	backend      string
 	loadGroup    singleflight.Group
 	resman       *resman.Manager
+	lifecycleMu  sync.Mutex
+	loadsCtx     context.Context
+	cancelLoads  context.CancelFunc
+	loads        sync.WaitGroup
+	shuttingDown bool
 	ticketsMu    sync.Mutex
 	tickets      map[string]resman.Ticket
 	evictionErrs map[string]error
@@ -103,12 +115,20 @@ func New[H loader.Handle](cfg Config, l loader.Loader[H]) (*Pool[H], error) {
 		return nil, errors.New("engine: new: ttl must be >= 0")
 	}
 
+	loadsCtx, cancelLoads := context.WithCancel(context.Background())
+	if cfg.Backend == "" {
+		cfg.Backend = "unknown"
+	}
+
 	c := Pool[H]{
 		log:          cfg.Log,
 		loader:       l,
 		maxItems:     cfg.MaxItems,
 		ttl:          cfg.TTL,
+		backend:      cfg.Backend,
 		resman:       cfg.Resman,
+		loadsCtx:     loadsCtx,
+		cancelLoads:  cancelLoads,
 		tickets:      make(map[string]resman.Ticket),
 		evictionErrs: make(map[string]error),
 	}
@@ -128,7 +148,7 @@ func New[H loader.Handle](cfg Config, l loader.Loader[H]) (*Pool[H], error) {
 
 	c.cache = cache
 
-	metrics.SetPoolMaxItemsInPool(cfg.MaxItems)
+	metrics.SetPoolMaxItemsInPool(cfg.Backend, cfg.MaxItems)
 	c.PublishMetrics()
 
 	return &c, nil
@@ -205,7 +225,29 @@ func (c *Pool[H]) Shutdown(ctx context.Context) error {
 		defer cancel()
 	}
 
+	c.lifecycleMu.Lock()
+	c.shuttingDown = true
+	c.cancelLoads()
+	c.lifecycleMu.Unlock()
+
 	c.clearEvictionErrors()
+	c.cache.InvalidateAll()
+
+	loadsDone := make(chan struct{})
+	go func() {
+		c.loads.Wait()
+		close(loadsDone)
+	}()
+
+	select {
+	case <-loadsDone:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	// Catch handles that completed loading as shutdown began. Such loads are
+	// never returned to callers, but are briefly cached so normal eviction owns
+	// their unload and reservation cleanup.
 	c.cache.InvalidateAll()
 
 	for c.itemsInPool.Load() > 0 {
@@ -220,6 +262,44 @@ func (c *Pool[H]) Shutdown(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// beginLoad creates a context whose values come from the singleflight leader
+// but whose cancellation is owned by the pool lifecycle. Callers may stop
+// waiting without canceling a load shared by other callers.
+func (c *Pool[H]) beginLoad(parent context.Context) (context.Context, func(), error) {
+	c.lifecycleMu.Lock()
+	defer c.lifecycleMu.Unlock()
+
+	if c.shuttingDown {
+		return nil, nil, ErrPoolClosed
+	}
+
+	ctx, cancel := context.WithCancel(context.WithoutCancel(parent))
+	stop := context.AfterFunc(c.loadsCtx, cancel)
+	c.loads.Add(1)
+
+	done := func() {
+		stop()
+		cancel()
+		c.loads.Done()
+	}
+
+	return ctx, done, nil
+}
+
+// storeLoaded commits a newly loaded handle and reports whether the pool is
+// still accepting acquisitions. During shutdown the handle is stored only so
+// the regular eviction path can unload it and release its reservation.
+func (c *Pool[H]) storeLoaded(key string, ticket resman.Ticket, h H) bool {
+	c.lifecycleMu.Lock()
+	defer c.lifecycleMu.Unlock()
+
+	c.storeTicket(key, ticket)
+	c.cache.Set(key, h)
+	c.itemsInPool.Add(1)
+
+	return !c.shuttingDown
 }
 
 // Coldest returns an iterator that yields cached entries in LRU
