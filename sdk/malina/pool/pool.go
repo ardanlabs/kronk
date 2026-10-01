@@ -114,6 +114,8 @@ func (p *Pool) Invalidate(key string) {
 }
 
 // InvalidateSync removes a model and waits for its reservation to be released.
+// If unloading fails, the model and reservation remain in the pool and the
+// error is returned.
 func (p *Pool) InvalidateSync(ctx context.Context, key string) error {
 	return p.engine.InvalidateSync(ctx, key)
 }

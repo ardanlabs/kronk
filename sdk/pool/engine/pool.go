@@ -34,11 +34,17 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
-// ErrServerBusy is returned when the pool cannot make room for a new
-// entry because no idle pool entry is available to evict — either
-// every cached entry has active streams, or the cache is empty/in flux
-// and there is nothing to reclaim.
-var ErrServerBusy = errors.New("server busy: no idle pool entry available to evict")
+var (
+	// ErrServerBusy is returned when the pool cannot make room for a new
+	// entry because no idle pool entry is available to evict — either
+	// every cached entry has active streams, or the cache is empty/in flux
+	// and there is nothing to reclaim.
+	ErrServerBusy = errors.New("server busy: no idle pool entry available to evict")
+
+	// ErrModelInUse is returned when invalidation races with a request that
+	// begins using the selected model.
+	ErrModelInUse = errors.New("model has active streams")
+)
 
 // Config carries the non-generic settings used to construct a Pool.
 //
@@ -64,16 +70,17 @@ type Config struct {
 
 // Pool is the generic pool engine.
 type Pool[H loader.Handle] struct {
-	log         applog.Logger
-	loader      loader.Loader[H]
-	cache       *otter.Cache[string, H]
-	itemsInPool atomic.Int32
-	maxItems    int
-	ttl         time.Duration
-	loadGroup   singleflight.Group
-	resman      *resman.Manager
-	ticketsMu   sync.Mutex
-	tickets     map[string]resman.Ticket
+	log          applog.Logger
+	loader       loader.Loader[H]
+	cache        *otter.Cache[string, H]
+	itemsInPool  atomic.Int32
+	maxItems     int
+	ttl          time.Duration
+	loadGroup    singleflight.Group
+	resman       *resman.Manager
+	ticketsMu    sync.Mutex
+	tickets      map[string]resman.Ticket
+	evictionErrs map[string]error
 }
 
 // New constructs a Pool wired to the supplied loader. The caller owns
@@ -97,12 +104,13 @@ func New[H loader.Handle](cfg Config, l loader.Loader[H]) (*Pool[H], error) {
 	}
 
 	c := Pool[H]{
-		log:      cfg.Log,
-		loader:   l,
-		maxItems: cfg.MaxItems,
-		ttl:      cfg.TTL,
-		resman:   cfg.Resman,
-		tickets:  make(map[string]resman.Ticket),
+		log:          cfg.Log,
+		loader:       l,
+		maxItems:     cfg.MaxItems,
+		ttl:          cfg.TTL,
+		resman:       cfg.Resman,
+		tickets:      make(map[string]resman.Ticket),
+		evictionErrs: make(map[string]error),
 	}
 
 	opt := otter.Options[string, H]{
@@ -152,19 +160,26 @@ func (c *Pool[H]) GetExisting(key string) (H, bool) {
 // reservation may not be released by the time this returns; use
 // InvalidateSync when a consistent post-eviction view is required.
 func (c *Pool[H]) Invalidate(key string) {
+	c.clearEvictionError(key)
 	c.cache.Invalidate(key)
 }
 
-// InvalidateSync invalidates a cache entry and waits for the eviction
-// callback to release the underlying resource manager reservation.
+// InvalidateSync invalidates a cache entry and waits for the eviction callback
+// to release the underlying resource manager reservation. If the model becomes
+// active or unloading fails, the entry and reservation are restored and the
+// unload error is returned.
 func (c *Pool[H]) InvalidateSync(ctx context.Context, key string) error {
 	const pollInterval = 25 * time.Millisecond
 	const maxWait = 60 * time.Second
 
+	c.clearEvictionError(key)
 	c.cache.Invalidate(key)
 
 	deadline := time.Now().Add(maxWait)
 	for {
+		if err := c.evictionError(key); err != nil {
+			return fmt.Errorf("invalidate-sync: unload key[%s]: %w", key, err)
+		}
 		if !c.hasTicket(key) {
 			return nil
 		}
@@ -190,9 +205,13 @@ func (c *Pool[H]) Shutdown(ctx context.Context) error {
 		defer cancel()
 	}
 
+	c.clearEvictionErrors()
 	c.cache.InvalidateAll()
 
 	for c.itemsInPool.Load() > 0 {
+		if key, err := c.firstEvictionError(); err != nil {
+			return fmt.Errorf("shutdown: unload key[%s]: %w", key, err)
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -259,6 +278,39 @@ func (c *Pool[H]) hasTicket(key string) bool {
 	defer c.ticketsMu.Unlock()
 	_, ok := c.tickets[key]
 	return ok
+}
+
+func (c *Pool[H]) setEvictionError(key string, err error) {
+	c.ticketsMu.Lock()
+	defer c.ticketsMu.Unlock()
+	c.evictionErrs[key] = err
+}
+
+func (c *Pool[H]) clearEvictionError(key string) {
+	c.ticketsMu.Lock()
+	defer c.ticketsMu.Unlock()
+	delete(c.evictionErrs, key)
+}
+
+func (c *Pool[H]) clearEvictionErrors() {
+	c.ticketsMu.Lock()
+	defer c.ticketsMu.Unlock()
+	clear(c.evictionErrs)
+}
+
+func (c *Pool[H]) evictionError(key string) error {
+	c.ticketsMu.Lock()
+	defer c.ticketsMu.Unlock()
+	return c.evictionErrs[key]
+}
+
+func (c *Pool[H]) firstEvictionError() (string, error) {
+	c.ticketsMu.Lock()
+	defer c.ticketsMu.Unlock()
+	for key, err := range c.evictionErrs {
+		return key, err
+	}
+	return "", nil
 }
 
 // HasTicket reports whether this engine currently owns a reservation

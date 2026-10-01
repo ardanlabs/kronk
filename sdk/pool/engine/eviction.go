@@ -123,10 +123,14 @@ func (c *Pool[H]) evictOneIdle(ctx context.Context, newKey, reason string, req r
 	metrics.AddPoolEviction(reason, victimSelectionMode)
 
 	evictStart := time.Now()
+	c.clearEvictionError(victim)
 	c.cache.Invalidate(victim)
 
 	deadline := time.Now().Add(maxWait)
 	for {
+		if err := c.evictionError(victim); err != nil {
+			return fmt.Errorf("evict-one-idle: unload victim[%s]: %w", victim, err)
+		}
 		if !c.hasTicket(victim) && int(c.itemsInPool.Load()) < c.maxItems+1 {
 			// The eviction callback has run (ticket released) and the
 			// counter has been decremented or is at its previous level.
@@ -166,37 +170,39 @@ func (c *Pool[H]) eviction(event otter.DeletionEvent[string, H]) {
 	ctx, cancel := context.WithTimeout(context.Background(), unloadTimeout)
 	defer cancel()
 
-	c.log(ctx, "pool eviction", "key", event.Key, "cause", event.Cause.String(), "cause-code", int(event.Cause), "was-evicted", event.WasEvicted(), "active-streams", event.Value.ActiveStreams())
+	activeStreams := event.Value.ActiveStreams()
+	c.log(ctx, "pool eviction", "key", event.Key, "cause", event.Cause.String(), "cause-code", int(event.Cause), "was-evicted", event.WasEvicted(), "active-streams", activeStreams)
 
-	// If there are active streams and this was an automatic eviction
-	// (not a replacement from our own Set call below), re-insert the
-	// model to prevent eviction. WasEvicted() returns false for
-	// CauseReplacement and CauseInvalidation.
-	if event.Value.ActiveStreams() > 0 && event.WasEvicted() {
-		c.log(ctx, "pool eviction prevented", "key", event.Key, "active-streams", event.Value.ActiveStreams())
-		c.cache.Set(event.Key, event.Value)
+	// A replacement event means this handle was already restored by an
+	// earlier deletion callback and remains represented in the cache.
+	if activeStreams > 0 && event.Cause == otter.CauseReplacement {
+		c.log(ctx, "pool eviction skipped (replacement with active streams)", "key", event.Key, "active-streams", activeStreams)
 		return
 	}
 
-	// If this is a replacement event (from our Set above) and there
-	// are still active streams, just return without unloading - the
-	// handle is still in the pool. For invalidation (shutdown), we
-	// still need to unload since the pool is being cleared.
-	if event.Value.ActiveStreams() > 0 && event.Cause != otter.CauseInvalidation {
-		c.log(ctx, "pool eviction skipped (replacement with active streams)", "key", event.Key, "active-streams", event.Value.ActiveStreams())
+	// ActiveStreams can change after a caller selects an idle victim. Recheck
+	// in the callback so explicit invalidation has the same protection as
+	// automatic eviction. Unload performs the authoritative final check for
+	// the smaller race between this read and its shutdown lock.
+	if activeStreams > 0 {
+		err := fmt.Errorf("%w: key[%s] active-streams[%d]", ErrModelInUse, event.Key, activeStreams)
+		c.restoreAfterFailedEviction(ctx, event, err)
 		return
 	}
 
-	c.log(ctx, "pool eviction", "key", event.Key, "status", "unload-started", "active-streams", event.Value.ActiveStreams())
+	c.log(ctx, "pool eviction", "key", event.Key, "status", "unload-started", "active-streams", activeStreams)
 
 	unloadStart := time.Now()
 
 	if err := event.Value.Unload(ctx); err != nil {
-		c.log(ctx, "pool eviction", "key", event.Key, "ERROR", err)
+		metrics.ObservePoolUnloadDuration(event.Key, time.Since(unloadStart))
+		c.restoreAfterFailedEviction(ctx, event, err)
+		return
 	}
 
 	unloadDur := time.Since(unloadStart)
 	metrics.ObservePoolUnloadDuration(event.Key, unloadDur)
+	c.clearEvictionError(event.Key)
 
 	// Track the eviction reason as observed by the otter cache. The
 	// "evict-before-load" path also fires this callback (via
@@ -227,6 +233,21 @@ func (c *Pool[H]) eviction(event otter.DeletionEvent[string, H]) {
 		c.LogResmanUsage(ctx, "post-release", "key", event.Key)
 	}
 
+	c.PublishMetrics()
+}
+
+// restoreAfterFailedEviction puts a handle back in the cache while retaining
+// its item count and resource reservation. Unload errors mean the engine must
+// conservatively continue treating the model as resident.
+func (c *Pool[H]) restoreAfterFailedEviction(ctx context.Context, event otter.DeletionEvent[string, H], err error) {
+	_, restored := c.cache.Set(event.Key, event.Value)
+	c.setEvictionError(event.Key, err)
+	c.log(ctx, "pool eviction",
+		"key", event.Key,
+		"status", "unload-failed-restored",
+		"restored", restored,
+		"ERROR", err,
+	)
 	c.PublishMetrics()
 }
 

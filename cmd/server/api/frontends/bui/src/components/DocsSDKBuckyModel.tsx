@@ -681,7 +681,7 @@ export default function DocsSDKBuckyModel() {
               <pre className="code-block">
                 <code>func (s *Stream) Close() error</code>
               </pre>
-              <p className="doc-description">Close performs one final flush over remaining audio, emits the resulting Final event, closes Events, and returns the whisper.State to the pool. It is idempotent and blocks until the worker has exited.</p>
+              <p className="doc-description">Close performs one final flush over remaining audio, emits the resulting Final event when the Events buffer has room, closes Events, and returns the whisper.State to the pool. If the consumer has abandoned a full Events buffer, cleanup takes priority and the closing event is dropped. Close is idempotent and blocks until the worker has exited.</p>
             </div>
 
             <div className="doc-section" id="method-stream-events">

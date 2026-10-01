@@ -293,7 +293,7 @@ export default function DocsSDKPool() {
               <pre className="code-block">
                 <code>func (p *Pool) InvalidateSync(ctx context.Context, key string) error</code>
               </pre>
-              <p className="doc-description">InvalidateSync invalidates a cache entry and waits for the eviction callback to release the underlying resource manager reservation.</p>
+              <p className="doc-description">InvalidateSync invalidates a cache entry and waits for the eviction callback to release the underlying resource manager reservation. If unloading fails, the model and reservation remain in the pool and the error is returned.</p>
             </div>
 
             <div className="doc-section" id="method-pool-modelconfig">

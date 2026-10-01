@@ -143,8 +143,9 @@ func (p *Pool) Invalidate(key string) {
 	p.engine.Invalidate(key)
 }
 
-// InvalidateSync invalidates a cache entry and waits for the eviction
-// callback to release the underlying resource manager reservation.
+// InvalidateSync invalidates a cache entry and waits for the eviction callback
+// to release the underlying resource manager reservation. If unloading fails,
+// the model and reservation remain in the pool and the error is returned.
 func (p *Pool) InvalidateSync(ctx context.Context, key string) error {
 	return p.engine.InvalidateSync(ctx, key)
 }
