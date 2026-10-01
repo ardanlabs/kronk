@@ -23,7 +23,9 @@ func ParseMetadata(data []byte) (map[string]string, error) {
 		return nil, fmt.Errorf("parse-metadata: %w", err)
 	}
 
-	metadata := make(map[string]string, header.MetadataKvCount)
+	// Do not size this map from the untrusted metadata count. Let it grow only
+	// for entries that are actually present in the supplied bytes.
+	metadata := make(map[string]string)
 	for i := uint64(0); i < header.MetadataKvCount; i++ {
 		key, value, err := readMetadataKV(reader)
 		if err != nil {
@@ -178,6 +180,13 @@ func readMetadataValue(r *bytes.Reader, valueType uint32) (any, error) {
 		var arrayLen uint64
 		if err := binary.Read(r, binary.LittleEndian, &arrayLen); err != nil {
 			return nil, err
+		}
+
+		// Every supported array element consumes at least one byte. Reject a
+		// count that cannot fit in the remaining input before using it as a
+		// slice length.
+		if arrayLen > uint64(r.Len()) {
+			return nil, fmt.Errorf("read-metadata-value: array length %d exceeds remaining bytes %d", arrayLen, r.Len())
 		}
 
 		result := make([]any, arrayLen)

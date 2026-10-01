@@ -295,15 +295,42 @@ func (p *Pool) InvalidateSync(ctx context.Context, key string) error {
 func (p *Pool) ModelStatus() ([]ModelDetail, error) {
 	ps := make([]ModelDetail, 0)
 	loadedKeys := make(map[string]struct{})
+	entries := slices.Collect(p.engine.Coldest())
+	usage := p.resman.Usage()
 
-	for entry := range p.engine.Coldest() {
-		mi, ok := p.models.LookupFile(entry.Key)
+	// Build the catalog view once per status request. Looking it up for every
+	// loaded key rereads and decodes the index and stats every installed model.
+	filesByID := make(map[string]models.File)
+	if files, err := p.models.Files(); err == nil {
+		for _, file := range files {
+			filesByID[file.OwnedBy+"/"+file.ID] = file
+		}
+	}
+
+	reservationBytes := make(map[string]int64, len(usage.Reservations))
+	for _, reservation := range usage.Reservations {
+		reservationBytes[reservation.Key] = reservation.VRAMBytes + reservation.RAMBytes
+	}
+
+	for _, entry := range entries {
+		modelID, err := models.ParseModelID(catalogModelID(entry.Key))
+		if err != nil {
+			continue
+		}
+
+		mi, ok := filesByID[modelID.Base()]
 		if !ok {
 			continue
 		}
 
 		krn := entry.Value
-		disp := p.llama.Display(krn, mi.ID)
+		disp := p.llama.Display(krn, modelID.Base())
+
+		if usage.UnifiedMemory {
+			if bytes, exists := reservationBytes[entry.Key]; exists {
+				disp.VRAMTotal = bytes
+			}
+		}
 
 		ps = append(ps, ModelDetail{
 			ID:            entry.Key,
@@ -331,7 +358,7 @@ func (p *Pool) ModelStatus() ([]ModelDetail, error) {
 	// p.engine.HasTicket to only surface kronk's own in-flight loads.
 	// Without this guard, bucky reservations leak in as fake "loading"
 	// kronk entries with no size/owner/family populated.
-	for _, r := range p.resman.Usage().Reservations {
+	for _, r := range usage.Reservations {
 		if _, ok := loadedKeys[r.Key]; ok {
 			continue
 		}
@@ -341,10 +368,12 @@ func (p *Pool) ModelStatus() ([]ModelDetail, error) {
 
 		var ownedBy, modelFamily string
 		var size int64
-		if mi, ok := p.models.LookupFile(r.Key); ok {
-			ownedBy = mi.OwnedBy
-			modelFamily = mi.ModelFamily
-			size = mi.Size
+		if modelID, err := models.ParseModelID(catalogModelID(r.Key)); err == nil {
+			if mi, ok := filesByID[modelID.Base()]; ok {
+				ownedBy = mi.OwnedBy
+				modelFamily = mi.ModelFamily
+				size = mi.Size
+			}
 		}
 
 		ps = append(ps, ModelDetail{
@@ -359,6 +388,13 @@ func (p *Pool) ModelStatus() ([]ModelDetail, error) {
 	}
 
 	return ps, nil
+}
+
+func catalogModelID(key string) string {
+	if modelID, _, found := strings.Cut(key, "/playground/"); found {
+		return modelID
+	}
+	return key
 }
 
 // IMCSessions returns the current IMC cache entries for loaded models. It does

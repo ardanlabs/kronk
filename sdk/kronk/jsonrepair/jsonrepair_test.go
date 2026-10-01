@@ -191,6 +191,11 @@ func TestRepair(t *testing.T) {
 			keys:  map[string]string{"filePath": "x.go"},
 		},
 		{
+			name:      "identifier colon inside malformed quoted value",
+			input:     `{"content":"say "identifier: value" now"}`,
+			wantExact: map[string]string{"content": `say "identifier: value" now`},
+		},
+		{
 			name:  "bare keys and unescaped quotes",
 			input: `{content:"say "hello" world",filePath:"test.go"}`,
 			keys:  map[string]string{"filePath": "test.go"},

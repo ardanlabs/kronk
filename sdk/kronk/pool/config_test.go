@@ -9,6 +9,26 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
+func TestCatalogModelID(t *testing.T) {
+	tests := []struct {
+		name string
+		key  string
+		want string
+	}{
+		{name: "catalog model", key: "provider/model", want: "provider/model"},
+		{name: "profile", key: "provider/model/agent", want: "provider/model/agent"},
+		{name: "playground", key: "provider/model/playground/session-1", want: "provider/model"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := catalogModelID(tt.key); got != tt.want {
+				t.Errorf("catalogModelID(%q): got %q, want %q", tt.key, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestValidateConfigTTL(t *testing.T) {
 	tests := []struct {
 		name    string

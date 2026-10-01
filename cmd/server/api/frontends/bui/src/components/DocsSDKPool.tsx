@@ -168,10 +168,10 @@ export default function DocsSDKPool() {
             <div className="doc-section" id="method-llama-display">
               <h4>Llama.Display</h4>
               <pre className="code-block">
-                <code>func (l *Llama) Display(krn *kronk.Kronk, modelID string) loader.Display</code>
+                <code>func (l *Llama) Display(krn *kronk.Kronk, _ string) loader.Display</code>
               </pre>
               <p className="doc-description">Display implements loader.Loader.Display for the llama backend.</p>
-              <p className="doc-description">It returns the KV cache and total VRAM values to surface in BUI/observability output for a loaded model. Both this path and the SDK-internal calculateVRAMDiag route through vram.FromFiles, so the two computations are byte-identical for any well-formed local model. The dedicated lookup is retained so a hypothetical resman-side failure (e.g. an index miss) cleanly falls back to the values the SDK stored at load time rather than zeroing out the BUI display.</p>
+              <p className="doc-description">It returns the KV cache and total VRAM values to surface in BUI/observability output for a loaded model. The SDK calculated and stored these values while loading the model, so status queries do not need to read and parse the GGUF header again.</p>
             </div>
 
             <div className="doc-section" id="method-llama-load">

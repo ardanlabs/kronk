@@ -283,14 +283,15 @@ type streamState struct {
 	params          inputParams
 	d               model.D
 	seq             int
-	outputIndex     int
-	contentIndex    int
+	nextOutputIndex int
+	msgOutputIndex  int
 	msgID           string
 	msgItemEmitted  bool
 	fullText        string
 	fullReasoning   string
 	fcItems         []ResponseOutputItem
 	fcIDs           []string
+	fcOutputIndexes []int
 	fcArgsAccum     []string
 	toolCallsSeenID map[string]int
 	lastChatResp    model.ChatResponse
@@ -454,12 +455,14 @@ func (ss *streamState) handleTextDelta(delta string) []ResponseStreamEvent {
 	}
 
 	ss.fullText += delta
+	outputIndex := ss.msgOutputIndex
+	contentIndex := 0
 	events = append(events, ResponseStreamEvent{
 		Type:           "response.output_text.delta",
 		SequenceNumber: ss.seq,
 		ItemID:         ss.msgID,
-		OutputIndex:    &ss.outputIndex,
-		ContentIndex:   &ss.contentIndex,
+		OutputIndex:    &outputIndex,
+		ContentIndex:   &contentIndex,
 		Delta:          delta,
 	})
 	ss.seq++
@@ -470,6 +473,8 @@ func (ss *streamState) handleTextDelta(delta string) []ResponseStreamEvent {
 func (ss *streamState) emitMessageItemAdded() []ResponseStreamEvent {
 	ss.msgID = "msg_" + uuid.New().String()
 	ss.msgItemEmitted = true
+	ss.msgOutputIndex = ss.nextOutputIndex
+	ss.nextOutputIndex++
 
 	outputItem := ResponseOutputItem{
 		Type:   "message",
@@ -480,12 +485,14 @@ func (ss *streamState) emitMessageItemAdded() []ResponseStreamEvent {
 			{Type: "output_text", Text: "", Annotations: []string{}},
 		},
 	}
+	outputIndex := ss.msgOutputIndex
+	contentIndex := 0
 
 	events := []ResponseStreamEvent{
 		{
 			Type:           "response.output_item.added",
 			SequenceNumber: ss.seq,
-			OutputIndex:    &ss.outputIndex,
+			OutputIndex:    &outputIndex,
 			Item:           &outputItem,
 		},
 	}
@@ -496,8 +503,8 @@ func (ss *streamState) emitMessageItemAdded() []ResponseStreamEvent {
 		Type:           "response.content_part.added",
 		SequenceNumber: ss.seq,
 		ItemID:         ss.msgID,
-		OutputIndex:    &ss.outputIndex,
-		ContentIndex:   &ss.contentIndex,
+		OutputIndex:    &outputIndex,
+		ContentIndex:   &contentIndex,
 		Part:           &contentPart,
 	})
 	ss.seq++
@@ -518,13 +525,11 @@ func (ss *streamState) handleToolCalls(toolCalls []model.ResponseToolCall) []Res
 			idx = len(ss.fcItems)
 			ss.toolCallsSeenID[tc.ID] = idx
 
-			if ss.msgItemEmitted {
-				ss.outputIndex++
-			}
-
 			fcID := fmt.Sprintf("call_%s", uuid.New().String())
 			ss.fcIDs = append(ss.fcIDs, fcID)
 			ss.fcArgsAccum = append(ss.fcArgsAccum, "")
+			ss.fcOutputIndexes = append(ss.fcOutputIndexes, ss.nextOutputIndex)
+			ss.nextOutputIndex++
 
 			emptyArgs := ""
 			fcItem := ResponseOutputItem{
@@ -537,7 +542,7 @@ func (ss *streamState) handleToolCalls(toolCalls []model.ResponseToolCall) []Res
 			}
 			ss.fcItems = append(ss.fcItems, fcItem)
 
-			outIdx := ss.outputIndex + idx
+			outIdx := ss.fcOutputIndexes[idx]
 			events = append(events, ResponseStreamEvent{
 				Type:           "response.output_item.added",
 				SequenceNumber: ss.seq,
@@ -552,7 +557,7 @@ func (ss *streamState) handleToolCalls(toolCalls []model.ResponseToolCall) []Res
 
 		ss.fcArgsAccum[idx] = argsDelta
 
-		outIdx := ss.outputIndex + idx
+		outIdx := ss.fcOutputIndexes[idx]
 		events = append(events, ResponseStreamEvent{
 			Type:           "response.function_call_arguments.delta",
 			SequenceNumber: ss.seq,
@@ -567,13 +572,15 @@ func (ss *streamState) handleToolCalls(toolCalls []model.ResponseToolCall) []Res
 }
 
 func (ss *streamState) finalizeMessageItem() []ResponseStreamEvent {
+	outputIndex := ss.msgOutputIndex
+	contentIndex := 0
 	events := []ResponseStreamEvent{
 		{
 			Type:           "response.output_text.done",
 			SequenceNumber: ss.seq,
 			ItemID:         ss.msgID,
-			OutputIndex:    &ss.outputIndex,
-			ContentIndex:   &ss.contentIndex,
+			OutputIndex:    &outputIndex,
+			ContentIndex:   &contentIndex,
 			Text:           ss.fullText,
 		},
 	}
@@ -584,8 +591,8 @@ func (ss *streamState) finalizeMessageItem() []ResponseStreamEvent {
 		Type:           "response.content_part.done",
 		SequenceNumber: ss.seq,
 		ItemID:         ss.msgID,
-		OutputIndex:    &ss.outputIndex,
-		ContentIndex:   &ss.contentIndex,
+		OutputIndex:    &outputIndex,
+		ContentIndex:   &contentIndex,
 		Part:           &contentPart,
 	})
 	ss.seq++
@@ -602,7 +609,7 @@ func (ss *streamState) finalizeMessageItem() []ResponseStreamEvent {
 	events = append(events, ResponseStreamEvent{
 		Type:           "response.output_item.done",
 		SequenceNumber: ss.seq,
-		OutputIndex:    &ss.outputIndex,
+		OutputIndex:    &outputIndex,
 		Item:           &outputItem,
 	})
 	ss.seq++
@@ -614,10 +621,7 @@ func (ss *streamState) finalizeToolCalls() []ResponseStreamEvent {
 	var events []ResponseStreamEvent
 
 	for i, fcItem := range ss.fcItems {
-		outIdx := ss.outputIndex + i
-		if ss.msgItemEmitted {
-			outIdx = ss.outputIndex + i + 1
-		}
+		outIdx := ss.fcOutputIndexes[i]
 
 		events = append(events, ResponseStreamEvent{
 			Type:           "response.function_call_arguments.done",
