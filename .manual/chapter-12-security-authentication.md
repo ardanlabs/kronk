@@ -41,10 +41,7 @@ export KRONK_AUTHORIZATION_MODE=full-protected
 kronk server start
 ```
 
-When `KRONK_AUTHORIZATION_MODE` is set, it overrides the legacy
-`KRONK_AUTH_LOCAL_ENABLED` and `KRONK_AUTH_ADMIN_ENABLED` settings. When the new
-mode is unset, those settings retain their existing behavior for compatibility.
-This allows deployments to migrate before the legacy settings are deprecated.
+The default authorization mode is `open`.
 
 `KRONK_AUTH_HOST` selects the authentication provider; it does not change the
 rights in this table. `KRONK_WEB_ADMIN_ENABLED` independently controls whether
@@ -197,9 +194,7 @@ listener. Relevant server settings are:
 
 | Flag | Environment variable | Purpose |
 | ---- | -------------------- | ------- |
-| — | `KRONK_AUTHORIZATION_MODE` | Select `open`, `management`, `authenticated`, or `full-protected`; overrides the legacy authorization settings. |
-| `--auth-enabled` | `KRONK_AUTH_LOCAL_ENABLED` | Legacy setting that protects inference and administration. |
-| `--admin-auth-enabled` | `KRONK_AUTH_ADMIN_ENABLED` | Legacy setting that protects administration only. |
+| `--authorization-mode` | `KRONK_AUTHORIZATION_MODE` | Select `open`, `management`, `authenticated`, or `full-protected`. Defaults to `open`. |
 | `--auth-issuer` | `KRONK_AUTH_LOCAL_ISSUER` | Set the expected JWT issuer. |
 | `--auth-host` | `KRONK_AUTH_HOST` | Connect to an external auth service instead. |
 | `--auth-tls-enabled` | `KRONK_AUTH_TLS_ENABLED` | Use TLS for an external auth connection. |

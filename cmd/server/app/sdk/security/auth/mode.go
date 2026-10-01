@@ -46,11 +46,6 @@ func (m Mode) Equal(m2 Mode) bool {
 	return m.value == m2.value
 }
 
-// IsZero reports whether the mode is unset.
-func (m Mode) IsZero() bool {
-	return m.value == ""
-}
-
 // MarshalText provides support for logging and serialization.
 func (m Mode) MarshalText() ([]byte, error) {
 	return []byte(m.value), nil

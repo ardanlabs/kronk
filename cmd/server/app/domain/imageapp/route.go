@@ -29,7 +29,7 @@ func Routes(app *web.App, cfg Config) {
 	const version = "v1"
 
 	api := newApp(cfg)
-	inferenceAccess := mid.NewAccess(cfg.AuthClient, cfg.AuthorizationMode, false).Inference("image-generations")
+	inferenceAccess := mid.NewAccess(cfg.AuthClient, cfg.AuthorizationMode).Inference("image-generations")
 
 	app.HandlerFunc(http.MethodGet, version, "/images/events", api.events, inferenceAccess)
 	app.HandlerFunc(http.MethodPost, version, "/images/generations", api.generations, mid.Timeout(cfg.InferenceTimeout), inferenceAccess)

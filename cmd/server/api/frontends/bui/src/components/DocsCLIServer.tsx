@@ -96,12 +96,8 @@ export default function DocsCLIServer() {
               </thead>
               <tbody>
                 <tr>
-                  <td><code>--auth-enabled</code></td>
-                  <td>Enable local inference and administrator authentication</td>
-                </tr>
-                <tr>
-                  <td><code>--admin-auth-enabled</code></td>
-                  <td>Require administrator authentication for management APIs</td>
+                  <td><code>--authorization-mode &lt;mode&gt;</code></td>
+                  <td>Select <code>open</code>, <code>management</code>, <code>authenticated</code>, or <code>full-protected</code> (default: <code>open</code>)</td>
                 </tr>
                 <tr>
                   <td><code>--web-admin-enabled</code></td>
@@ -310,15 +306,7 @@ export default function DocsCLIServer() {
                 </tr>
                 <tr>
                   <td><code>KRONK_AUTHORIZATION_MODE</code></td>
-                  <td>Select <code>open</code>, <code>management</code>, <code>authenticated</code>, or <code>full-protected</code></td>
-                </tr>
-                <tr>
-                  <td><code>KRONK_AUTH_LOCAL_ENABLED</code></td>
-                  <td>Legacy inference-authentication setting; ignored when an authorization mode is set</td>
-                </tr>
-                <tr>
-                  <td><code>KRONK_AUTH_ADMIN_ENABLED</code></td>
-                  <td>Legacy management-authentication setting; ignored when an authorization mode is set</td>
+                  <td>Select <code>open</code>, <code>management</code>, <code>authenticated</code>, or <code>full-protected</code> (default: <code>open</code>)</td>
                 </tr>
                 <tr>
                   <td><code>KRONK_AUTH_LOCAL_ISSUER</code></td>
@@ -395,8 +383,8 @@ kronk server start
 # Start the server in background
 kronk server start -d
 
-# Start with auth and a custom model_config.yaml
-kronk server start --auth-enabled --model-config-file=/etc/kronk/model_config.yaml
+# Fully protect the API and use a custom model_config.yaml
+kronk server start --authorization-mode=full-protected --model-config-file=/etc/kronk/model_config.yaml
 
 # Start with tracing enabled
 kronk server start --tempo-host=localhost:4317 --tempo-probability=1.0

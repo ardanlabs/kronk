@@ -30,21 +30,13 @@ func (as *authenticatorStub) Authenticate(_ context.Context, _ string, admin boo
 
 func TestAccess(t *testing.T) {
 	tests := []struct {
-		name             string
-		mode             auth.Mode
-		legacyManagement bool
-		middleware       func(Access) web.MidFunc
-		wantCall         bool
-		wantAdmin        bool
-		wantEndpoint     string
+		name         string
+		mode         auth.Mode
+		middleware   func(Access) web.MidFunc
+		wantCall     bool
+		wantAdmin    bool
+		wantEndpoint string
 	}{
-		{name: "legacy discovery", middleware: func(a Access) web.MidFunc { return a.ModelDiscovery() }, wantCall: true},
-		{name: "legacy inference", middleware: func(a Access) web.MidFunc { return a.Inference("responses") }, wantCall: true, wantEndpoint: "responses"},
-		{name: "legacy management authenticated", middleware: func(a Access) web.MidFunc { return a.Management() }, wantCall: true},
-		{name: "legacy management administrator", legacyManagement: true, middleware: func(a Access) web.MidFunc { return a.Management() }, wantCall: true, wantAdmin: true},
-		{name: "legacy administration", middleware: func(a Access) web.MidFunc { return a.Administration() }, wantCall: true, wantAdmin: true},
-		{name: "legacy playground grant", middleware: func(a Access) web.MidFunc { return a.Playground() }, wantCall: true, wantEndpoint: "playground"},
-		{name: "legacy playground administrator", legacyManagement: true, middleware: func(a Access) web.MidFunc { return a.Playground() }, wantCall: true, wantAdmin: true},
 		{name: "open discovery", mode: auth.Open, middleware: func(a Access) web.MidFunc { return a.ModelDiscovery() }},
 		{name: "open inference", mode: auth.Open, middleware: func(a Access) web.MidFunc { return a.Inference("responses") }},
 		{name: "open management", mode: auth.Open, middleware: func(a Access) web.MidFunc { return a.Management() }},
@@ -66,7 +58,7 @@ func TestAccess(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			stub := &authenticatorStub{}
-			access := Access{client: stub, mode: tt.mode, legacyManagementAccess: tt.legacyManagement}
+			access := Access{client: stub, mode: tt.mode}
 			middleware := tt.middleware(access)
 			handler := middleware(func(context.Context, *http.Request) web.Encoder { return nil })
 			handler(context.Background(), httptest.NewRequest("GET", "/", nil))

@@ -27,7 +27,7 @@ func Routes(app *web.App, cfg Config) {
 
 	api := newApp(cfg)
 
-	inferenceAccess := mid.NewAccess(cfg.AuthClient, cfg.AuthorizationMode, false).Inference("transcriptions")
+	inferenceAccess := mid.NewAccess(cfg.AuthClient, cfg.AuthorizationMode).Inference("transcriptions")
 	timeout := mid.Timeout(cfg.InferenceTimeout)
 
 	app.HandlerFunc(http.MethodPost, version, "/audio/transcriptions", api.transcriptions, timeout, inferenceAccess)

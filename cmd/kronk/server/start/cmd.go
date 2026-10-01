@@ -30,8 +30,6 @@ func init() {
 	Cmd.Flags().StringSlice("cors-allowed-origins", nil, "CORS allowed origins")
 
 	// Auth settings
-	Cmd.Flags().Bool("auth-enabled", false, "Enable local inference and admin authentication")
-	Cmd.Flags().Bool("admin-auth-enabled", false, "Require admin authentication for management APIs")
 	Cmd.Flags().Bool("web-admin-enabled", false, "Serve the browser admin UI at /admin/")
 	Cmd.Flags().String("auth-host", "", "External auth service host")
 	Cmd.Flags().Bool("auth-tls-enabled", false, "Use TLS for the external auth service")

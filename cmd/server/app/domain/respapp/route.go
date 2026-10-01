@@ -27,7 +27,7 @@ func Routes(app *web.App, cfg Config) {
 
 	api := newApp(cfg)
 
-	inferenceAccess := mid.NewAccess(cfg.AuthClient, cfg.AuthorizationMode, false).Inference("responses")
+	inferenceAccess := mid.NewAccess(cfg.AuthClient, cfg.AuthorizationMode).Inference("responses")
 
 	app.HandlerFunc(http.MethodPost, version, "/responses", api.responses, mid.Timeout(cfg.InferenceTimeout), inferenceAccess)
 }

@@ -12,12 +12,10 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// Access selects route middleware from an authorization mode. An unset mode
-// preserves the legacy authorization settings during migration.
+// Access selects route middleware from an authorization mode.
 type Access struct {
-	client                 authenticator
-	mode                   auth.Mode
-	legacyManagementAccess bool
+	client authenticator
+	mode   auth.Mode
 }
 
 type authenticator interface {
@@ -25,19 +23,15 @@ type authenticator interface {
 }
 
 // NewAccess constructs route access middleware for an authorization mode.
-func NewAccess(client *authclient.Client, mode auth.Mode, legacyManagementAccess bool) Access {
+func NewAccess(client *authclient.Client, mode auth.Mode) Access {
 	return Access{
-		client:                 client,
-		mode:                   mode,
-		legacyManagementAccess: legacyManagementAccess,
+		client: client,
+		mode:   mode,
 	}
 }
 
 // ModelDiscovery returns access middleware for model discovery routes.
 func (a *Access) ModelDiscovery() web.MidFunc {
-	if a.mode.IsZero() {
-		return authenticate(a.client, false, "")
-	}
 	if a.mode.Equal(auth.Open) || a.mode.Equal(auth.Management) {
 		return publicAccess()
 	}
@@ -47,9 +41,6 @@ func (a *Access) ModelDiscovery() web.MidFunc {
 
 // Inference returns access middleware for an inference endpoint grant.
 func (a Access) Inference(endpoint string) web.MidFunc {
-	if a.mode.IsZero() {
-		return authenticate(a.client, false, endpoint)
-	}
 	if a.mode.Equal(auth.Open) || a.mode.Equal(auth.Management) {
 		return publicAccess()
 	}
@@ -60,12 +51,8 @@ func (a Access) Inference(endpoint string) web.MidFunc {
 	return authenticate(a.client, false, endpoint)
 }
 
-// Management returns access middleware for management routes. In legacy mode,
-// this preserves the existing conditional administrator requirement.
+// Management returns access middleware for management routes.
 func (a Access) Management() web.MidFunc {
-	if a.mode.IsZero() {
-		return authenticate(a.client, a.legacyManagementAccess, "")
-	}
 	if a.mode.Equal(auth.Open) {
 		return publicAccess()
 	}
@@ -73,27 +60,13 @@ func (a Access) Management() web.MidFunc {
 	return authenticate(a.client, true, "")
 }
 
-// Administration returns access middleware for routes that always used the
-// legacy administrator check. Explicit authorization modes classify these as
-// management routes.
+// Administration returns access middleware for administration routes.
 func (a Access) Administration() web.MidFunc {
-	if a.mode.IsZero() {
-		return authenticate(a.client, true, "")
-	}
-
 	return a.Management()
 }
 
-// Playground returns access middleware for playground routes while preserving
-// their legacy endpoint grant when no authorization mode is configured.
+// Playground returns access middleware for playground routes.
 func (a Access) Playground() web.MidFunc {
-	if a.mode.IsZero() {
-		if a.legacyManagementAccess {
-			return authenticate(a.client, true, "")
-		}
-		return authenticate(a.client, false, "playground")
-	}
-
 	return a.Management()
 }
 

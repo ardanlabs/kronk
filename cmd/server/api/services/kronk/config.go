@@ -33,16 +33,14 @@ type config struct {
 		} `yaml:"admin"`
 	} `yaml:"web"`
 	Auth struct {
-		Host         string `yaml:"host"`
-		AdminEnabled bool   `yaml:"admin-enabled"`
-		TLS          struct {
+		Host string `yaml:"host"`
+		TLS  struct {
 			Enabled    bool   `yaml:"enabled"`
 			CAFile     string `yaml:"ca-file"`
 			ServerName string `yaml:"server-name"`
 		} `yaml:"tls"`
 		Local struct {
-			Issuer  string `yaml:"issuer"`
-			Enabled bool   `yaml:"enabled"`
+			Issuer string `yaml:"issuer"`
 		} `yaml:"local"`
 	} `yaml:"auth"`
 	Authorization struct {
@@ -102,6 +100,7 @@ func newConfig() config {
 	cfg.Web.Admin.Enabled = true
 	cfg.Web.Admin.PasswordSHA256 = "18511e63760230cd17291273b607e7e13da2a2bb9a1750e0becdac08185a3c11"
 	cfg.Auth.Local.Issuer = "kronk project"
+	cfg.Authorization.Mode = auth.Open
 	cfg.MCP.Enabled = true
 	cfg.Tempo.Host = "localhost:4317"
 	cfg.Tempo.ServiceName = "kronk"
@@ -183,13 +182,7 @@ func loadConfig(showHelp bool) (config, error) {
 	return cfg, nil
 }
 
-func resolveAuthorizationSettings(mode auth.Mode, legacyInference, legacyManagement, mcpAuthEnabled bool) (bool, bool, bool) {
-	if mode.IsZero() {
-		inferenceEnabled := legacyInference
-		managementEnabled := legacyManagement || inferenceEnabled || mcpAuthEnabled
-		return inferenceEnabled, managementEnabled, managementEnabled
-	}
-
+func resolveAuthorizationSettings(mode auth.Mode, mcpAuthEnabled bool) (bool, bool, bool) {
 	switch mode {
 	case auth.Open:
 		return false, false, mcpAuthEnabled
