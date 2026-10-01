@@ -1,6 +1,7 @@
 package libs
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,6 +13,18 @@ func TestWithValidation(t *testing.T) {
 
 	if !options.Validation {
 		t.Error("Validation: got false, want true")
+	}
+}
+
+func TestDownloadAcceptsNilLogger(t *testing.T) {
+	root := t.TempDir()
+	if err := writeVersionFile(root, defaultVersion, "arm64", "darwin", "metal"); err != nil {
+		t.Fatalf("writeVersionFile: %v", err)
+	}
+
+	lib := Libs{path: root, readOnly: true}
+	if _, err := lib.Download(context.Background(), nil); err != nil {
+		t.Fatalf("Download: %v", err)
 	}
 }
 

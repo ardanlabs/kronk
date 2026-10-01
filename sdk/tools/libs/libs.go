@@ -320,6 +320,7 @@ func (lib *Libs) Download(ctx context.Context, log Logger) (tag VersionTag, retE
 // DownloadSelected performs the Download workflow with request-scoped version
 // and upgrade settings instead of mutating the Libs configuration.
 func (lib *Libs) DownloadSelected(ctx context.Context, log Logger, versionOverride string, allowUpgrade bool) (tag VersionTag, retErr error) {
+	log = normalizeLogger(log)
 	defer func() {
 		if retErr == nil && lib.validation {
 			retErr = lib.validateDownload(ctx, log, tag)
@@ -456,6 +457,7 @@ func (lib *Libs) DownloadInto(ctx context.Context, log Logger, path string, arch
 // download.* values. Internal callers that have already parsed a triple use
 // this directly to avoid re-parsing.
 func (lib *Libs) downloadInto(ctx context.Context, log Logger, path string, arch download.Arch, opSys download.OS, processor download.Processor, version string) (VersionTag, error) {
+	log = normalizeLogger(log)
 	parent := filepath.Dir(path)
 	if err := os.MkdirAll(parent, 0o755); err != nil {
 		return VersionTag{}, fmt.Errorf("download-into: unable to create parent: %w", err)
@@ -937,6 +939,13 @@ func versionTag(value string) string {
 	}
 
 	return tag
+}
+
+func normalizeLogger(log Logger) Logger {
+	if log == nil {
+		return applog.DiscardLogger
+	}
+	return log
 }
 
 // hasNetwork reports whether Kronk can reach the internet. It issues a real

@@ -24,6 +24,19 @@ func TestWithValidation(t *testing.T) {
 	}
 }
 
+func TestDownloadAcceptsNilLogger(t *testing.T) {
+	root := t.TempDir()
+	a, o, p := mustParseTriple(t)
+	if err := writeVersionFile(root, "b100", a, o, p); err != nil {
+		t.Fatalf("writeVersionFile: %v", err)
+	}
+
+	lib := Libs{path: root, readOnly: true}
+	if _, err := lib.Download(t.Context(), nil); err != nil {
+		t.Fatalf("Download: %v", err)
+	}
+}
+
 func TestSwapInstallRestoresExistingInstallWhenActivationFails(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "cpu")

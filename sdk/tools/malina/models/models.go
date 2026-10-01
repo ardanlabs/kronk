@@ -116,12 +116,7 @@ func (m *Models) downloadBundle(ctx context.Context, log applog.Logger, bundle B
 	dir := filepath.Join(m.modelsPath, bundle.Name.String())
 	manifest := Manifest{Bundle: bundle.Name, License: bundle.License, Gated: bundle.Gated, Files: make(map[string]string, len(bundle.Files))}
 	for _, file := range bundle.Files {
-		finalTarget := filepath.Join(dir, file.Filename)
-		absoluteTarget, err := filepath.Abs(finalTarget)
-		if err != nil {
-			return Manifest{}, fmt.Errorf("download-bundle: resolve target: %w", err)
-		}
-		manifest.Files[string(file.Role)] = absoluteTarget
+		manifest.Files[string(file.Role)] = file.Filename
 		if err := downloadModelFile(ctx, file.URL, filepath.Join(stageDir, file.Filename), progress); err != nil {
 			return Manifest{}, bundleDownloadError(bundle, file, err)
 		}
@@ -235,6 +230,14 @@ func (m *Models) loadManifestLocked(bundle Bundle) (Manifest, error) {
 	if !m.validManifest(bundle, manifest) {
 		return Manifest{}, fmt.Errorf("load-manifest: invalid manifest for bundle %q", bundle.Name)
 	}
+	dir := filepath.Join(m.modelsPath, bundle.Name.String())
+	for _, file := range bundle.Files {
+		resolved, err := filepath.Abs(filepath.Join(dir, file.Filename))
+		if err != nil {
+			return Manifest{}, fmt.Errorf("load-manifest: resolve %q: %w", file.Filename, err)
+		}
+		manifest.Files[string(file.Role)] = resolved
+	}
 	return manifest, nil
 }
 
@@ -334,7 +337,14 @@ func (m *Models) validManifest(bundle Bundle, manifest Manifest) bool {
 		}
 		expected := filepath.Join(dir, file.Filename)
 		path := manifest.Files[string(file.Role)]
-		if path == "" || !samePath(path, expected) {
+		if path == "" {
+			return false
+		}
+		if filepath.IsAbs(path) {
+			if filepath.Base(path) != file.Filename {
+				return false
+			}
+		} else if path != file.Filename {
 			return false
 		}
 		info, err := os.Lstat(expected)
@@ -343,12 +353,6 @@ func (m *Models) validManifest(bundle Bundle, manifest Manifest) bool {
 		}
 	}
 	return true
-}
-
-func samePath(left string, right string) bool {
-	leftAbs, leftErr := filepath.Abs(left)
-	rightAbs, rightErr := filepath.Abs(right)
-	return leftErr == nil && rightErr == nil && filepath.Clean(leftAbs) == filepath.Clean(rightAbs)
 }
 
 // Download downloads source as a curated bundle name.
