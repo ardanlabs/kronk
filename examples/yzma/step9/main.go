@@ -238,7 +238,9 @@ func initYzma() error {
 		return fmt.Errorf("load library: %w", err)
 	}
 
-	llama.Init()
+	if err := llama.Init(); err != nil {
+		return fmt.Errorf("initialize llama: %w", err)
+	}
 	llama.LogSet(llama.LogSilent())
 
 	return nil

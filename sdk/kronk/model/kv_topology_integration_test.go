@@ -30,7 +30,9 @@ func TestNonUnifiedKVProvidesFullContextPerSequence(t *testing.T) {
 	if err := llama.Load(libs.Path("")); err != nil {
 		t.Fatalf("load llama library: %v", err)
 	}
-	llama.Init()
+	if err := llama.Init(); err != nil {
+		t.Fatalf("initialize llama: %v", err)
+	}
 	llama.LogSet(llama.LogSilent())
 
 	mdl, err := llama.ModelLoadFromFile(modelPath.ModelFiles[0], llama.ModelDefaultParams())

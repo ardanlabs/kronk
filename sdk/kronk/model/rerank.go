@@ -159,7 +159,7 @@ func (m *Model) processRerankBatchSeq(ctx context.Context, query string, documen
 		}
 
 		pairText := formatRerankPair(query, doc)
-		tokens := llama.Tokenize(m.vocab, pairText, m.addBOSToken, true)
+		tokens := tokenize(m.vocab, pairText, m.addBOSToken, true)
 		if len(tokens) > maxTokens {
 			m.log(ctx, "rerank", "status", "truncating input", "index", i, "original_tokens", len(tokens), "max_tokens", maxTokens)
 			tokens = tokens[:maxTokens]
@@ -212,7 +212,7 @@ func (m *Model) processRerank(ctx context.Context, pc poolContext, query string,
 		// Format the query-document pair for the reranker model.
 		pairText := formatRerankPair(query, doc)
 
-		tokens := llama.Tokenize(m.vocab, pairText, m.addBOSToken, true)
+		tokens := tokenize(m.vocab, pairText, m.addBOSToken, true)
 
 		if len(tokens) > maxTokens {
 			m.log(ctx, "rerank", "status", "truncating input", "index", i, "original_tokens", len(tokens), "max_tokens", maxTokens)
