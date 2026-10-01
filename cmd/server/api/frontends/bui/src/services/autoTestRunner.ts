@@ -2424,7 +2424,6 @@ export const defaultMoESweepDef: ConfigSweepDefinition = {
   cacheMode: { enabled: true, values: ['none', 'imc'] },
   moeMode: { enabled: true, values: ['experts_cpu', 'keep_top_n'] },
   moeKeepExpertsTopN: { enabled: true, values: [0, 4, 8] },
-  opOffloadMinBatch: { enabled: true, values: [0, 128, 256, 512] },
 }
 
 /** Generates config candidates as a full cross-product of all enabled parameter values. */
@@ -2468,8 +2467,6 @@ export function generateConfigCandidates(
   const moeModeEnabled = def.moeMode?.enabled && def.moeMode.values.length > 0
   const moeKeepTopNValues = (def.moeKeepExpertsTopN?.enabled && def.moeKeepExpertsTopN.values.length > 0)
     ? def.moeKeepExpertsTopN.values : []
-  const opOffloadValues = (def.opOffloadMinBatch?.enabled && def.opOffloadMinBatch.values.length > 0)
-    ? def.opOffloadMinBatch.values : []
 
   if (allAxes.length === 0 && !moeModeEnabled) {
     return [{ ...baseline }]
@@ -2501,13 +2498,6 @@ export function generateConfigCandidates(
         if (moeKeepTopNValues.length > 0) {
           modeAxes.push({ configKey: 'moe_keep_experts_top_n', values: moeKeepTopNValues })
         }
-        if (opOffloadValues.length > 0) {
-          modeAxes.push({ configKey: 'op_offload_min_batch', values: opOffloadValues })
-        }
-      } else if (mode === 'experts_cpu') {
-        if (opOffloadValues.length > 0) {
-          modeAxes.push({ configKey: 'op_offload_min_batch', values: opOffloadValues })
-        }
       }
       // experts_gpu: no additional MoE-specific axes
 
@@ -2531,7 +2521,7 @@ export function generateConfigCandidates(
   const candidates: ConfigCandidate[] = []
 
   const keyOf = (c: ConfigCandidate) =>
-    `cw=${c['context_window']}|pbs=${c['prefill_batch_size']}|ns=${c['nseq_max']}|fa=${c['flash_attention']}|ct=${c['cache_type']}|cm=${c['cache_mode']}|mm=${c['moe_mode']}|mk=${c['moe_keep_experts_top_n'] ?? ''}|oomb=${c['op_offload_min_batch']}`
+    `cw=${c['context_window']}|pbs=${c['prefill_batch_size']}|ns=${c['nseq_max']}|fa=${c['flash_attention']}|ct=${c['cache_type']}|cm=${c['cache_mode']}|mm=${c['moe_mode']}|mk=${c['moe_keep_experts_top_n'] ?? ''}`
 
   for (const c of combos) {
     const k = keyOf(c)

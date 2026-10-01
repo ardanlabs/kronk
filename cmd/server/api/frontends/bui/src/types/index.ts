@@ -192,7 +192,6 @@ export interface ModelConfig {
   'imc-session-capacity': number;
   'offload-kqv': boolean | null;
   'op-offload': boolean | null;
-  'op-offload-min-batch'?: number;
   'proj-on-cpu': boolean | null;
   'proj-device'?: string;
   'ngpu-layers': number | null;
@@ -797,7 +796,6 @@ export interface PlaygroundModelConfig {
   'moe_mode'?: string;
   'moe_keep_experts_top_n'?: number | null;
   'tensor_buft_overrides'?: string[];
-  'op_offload_min_batch'?: number | null;
   'draft_model_id'?: string;
   'draft_ndraft'?: number;
 }
@@ -979,7 +977,6 @@ export interface ConfigSweepDefinition {
   cacheMode: SweepStringValues;
   moeMode?: SweepStringValues;
   moeKeepExpertsTopN?: SweepParamValues;
-  opOffloadMinBatch?: SweepParamValues;
 }
 
 export interface SamplingSweepDefinition {
@@ -1028,7 +1025,6 @@ export interface ConfigCandidate {
   'cache_mode'?: string;
   'moe_mode'?: string;
   'moe_keep_experts_top_n'?: number;
-  'op_offload_min_batch'?: number;
 }
 
 export interface ModelCaps {

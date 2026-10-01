@@ -277,16 +277,31 @@ func (m *Model) wrapChannelForLogging(ctx context.Context, returnCh chan ChatRes
 
 	go func() {
 		var srl StreamingResponseLogger
+		canceled := false
 
 		for resp := range ch {
 			srl.Capture(resp)
 
+			if canceled {
+				if len(resp.Choices) > 0 && resp.Choices[0].FinishReason() != "" {
+					select {
+					case returnCh <- resp:
+					default:
+					}
+				}
+				continue
+			}
+
 			select {
 			case returnCh <- resp:
 			case <-ctx.Done():
-				m.log(ctx, "chat-streaming", "OUT-MESSAGES", srl.String())
-				close(returnCh)
-				return
+				canceled = true
+				if len(resp.Choices) > 0 && resp.Choices[0].FinishReason() != "" {
+					select {
+					case returnCh <- resp:
+					default:
+					}
+				}
 			}
 		}
 

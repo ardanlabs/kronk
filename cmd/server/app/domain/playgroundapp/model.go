@@ -77,7 +77,6 @@ type SessionConfig struct {
 	Devices             []string                  `json:"devices"`
 	MainGPU             *int                      `json:"main_gpu"`
 	TensorSplit         []float32                 `json:"tensor_split"`
-	OpOffloadMinBatch   *int                      `json:"op_offload_min_batch"`
 	TensorBuftOverrides []string                  `json:"tensor_buft_overrides"`
 	DraftModelID        *string                   `json:"draft_model_id"`
 	DraftNDraft         *int                      `json:"draft_ndraft"`
@@ -149,9 +148,6 @@ func (sc SessionConfig) ApplyTo(cfg model.Config) model.Config {
 	if len(sc.TensorSplit) > 0 {
 		cfg.TensorSplit = sc.TensorSplit
 	}
-	if sc.OpOffloadMinBatch != nil {
-		cfg.PtrOpOffloadMinBatch = sc.OpOffloadMinBatch
-	}
 	if len(sc.TensorBuftOverrides) > 0 {
 		cfg.TensorBuftOverrides = sc.TensorBuftOverrides
 	}
@@ -200,7 +196,6 @@ func (sc SessionConfig) HasOverrides() bool {
 		sc.Devices != nil ||
 		sc.MainGPU != nil ||
 		sc.TensorSplit != nil ||
-		sc.OpOffloadMinBatch != nil ||
 		sc.DraftModelID != nil ||
 		sc.DraftNDraft != nil ||
 		sc.TensorBuftOverrides != nil
@@ -227,10 +222,6 @@ func (sc SessionConfig) Validate() error {
 
 	if sc.NSeqMax != nil && (*sc.NSeqMax < 1 || *sc.NSeqMax > 64) {
 		return fmt.Errorf("nseq-max must be between 1 and 64, got %d", *sc.NSeqMax)
-	}
-
-	if sc.OpOffloadMinBatch != nil && *sc.OpOffloadMinBatch < 0 {
-		return fmt.Errorf("op-offload-min-batch must be >= 0, got %d", *sc.OpOffloadMinBatch)
 	}
 
 	// draft_ndraft is valid both with a separate draft model (draft_model_id)

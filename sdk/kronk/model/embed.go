@@ -26,6 +26,10 @@ func (m *Model) Embeddings(ctx context.Context, d D) (response EmbedReponse, err
 	if !m.modelInfo.IsEmbedModel {
 		return EmbedReponse{}, fmt.Errorf("embeddings: model doesn't support embedding")
 	}
+	if err := m.beginActiveOperation(); err != nil {
+		return EmbedReponse{}, fmt.Errorf("embeddings: %w", err)
+	}
+	defer m.endActiveOperation()
 
 	started := time.Now()
 	runtimeName := "context_pool"

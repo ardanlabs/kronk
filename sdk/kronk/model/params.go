@@ -1153,7 +1153,7 @@ func parseBool(fieldName string, val any) (bool, error) {
 		return b, nil
 	}
 
-	return true, nil
+	return false, fmt.Errorf("%w: parse-bool: field-name[%s] must be a boolean or boolean string", ErrInvalidRequest, fieldName)
 }
 
 func parseReasoningString(fieldName string, val any) (string, error) {

@@ -616,6 +616,7 @@ models:
   offload-kqv: false
   op-offload: false`}</code></pre>
           <p><code>offload-kqv: false</code> keeps the KV cache on the CPU. <code>op-offload: false</code> keeps host tensor operations on the CPU. These options can reduce discrete-GPU VRAM pressure at a performance cost. They do not reduce total memory requirements.</p>
+          <p>llama.cpp also supports the process-wide <code>GGML_OP_OFFLOAD_MIN_BATCH</code> environment variable. Set it before Kronk starts; GPU backends read it once during <code>kronk.Init</code>, so it cannot be configured independently per model.</p>
           <p>For multimodal models, <code>proj-on-cpu: true</code> keeps the media projector on the CPU without changing placement of the language model itself. To place the projector on a specific accelerator, set <code>proj-device</code> to a name reported by <code>kronk devices</code> (for example, <code>CUDA1</code> or <code>MTL0</code>). Omit both settings for automatic placement. <code>proj-device</code> cannot be combined with <code>proj-on-cpu: true</code>.</p>
           <h4 id="multiple-gpus">Multiple GPUs</h4>
           <p><code>split-mode</code> accepts:</p>

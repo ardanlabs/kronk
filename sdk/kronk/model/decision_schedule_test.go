@@ -73,13 +73,13 @@ func TestDecisionSchedulerCoalescesQueuedJobs(t *testing.T) {
 	scheduler := newDecisionScheduler(&engine, 1)
 
 	batchWidths := make(chan int, 1)
-	scheduler.evaluate = func(entries []decisionScheduledEntry) ([][][]float32, error) {
+	scheduler.evaluate = func(entries []decisionScheduledEntry) ([][][]float32, bool, error) {
 		batchWidths <- len(entries)
 		outputs := make([][][]float32, len(entries))
 		for i, entry := range entries {
 			outputs[i] = make([][]float32, len(entry.work.readouts))
 		}
-		return outputs, nil
+		return outputs, false, nil
 	}
 
 	jobs := []*decisionJob{
@@ -116,10 +116,10 @@ func TestDecisionSchedulerStopDrainsQueuedJobs(t *testing.T) {
 
 	evaluating := make(chan struct{})
 	release := make(chan struct{})
-	scheduler.evaluate = func(entries []decisionScheduledEntry) ([][][]float32, error) {
+	scheduler.evaluate = func(entries []decisionScheduledEntry) ([][][]float32, bool, error) {
 		close(evaluating)
 		<-release
-		return make([][][]float32, len(entries)), nil
+		return make([][][]float32, len(entries)), false, nil
 	}
 
 	first := newDecisionJob(context.Background(), []decisionWork{decisionTestWork(2, 1)})
@@ -146,6 +146,46 @@ func TestDecisionSchedulerStopDrainsQueuedJobs(t *testing.T) {
 	}
 	if _, err := scheduler.run(context.Background(), []decisionWork{decisionTestWork(2, 1)}); !errors.Is(err, errDecisionEngineStopped) {
 		t.Errorf("new job: got error %v, want %v", err, errDecisionEngineStopped)
+	}
+}
+
+func TestDecisionSchedulerContinuesAfterRecoverableEvaluationError(t *testing.T) {
+	engine := decisionEngine{
+		maxSequences: 1,
+		maxTokens:    100,
+		maxOutputs:   10,
+	}
+	scheduler := newDecisionScheduler(&engine, 2)
+
+	recoverableErr := errors.New("no KV slot")
+	evaluations := 0
+	scheduler.evaluate = func(entries []decisionScheduledEntry) ([][][]float32, bool, error) {
+		evaluations++
+		if evaluations == 1 {
+			return nil, false, recoverableErr
+		}
+		outputs := make([][][]float32, len(entries))
+		for i, entry := range entries {
+			outputs[i] = make([][]float32, len(entry.work.readouts))
+		}
+		return outputs, false, nil
+	}
+
+	first := newDecisionJob(context.Background(), []decisionWork{decisionTestWork(2, 1)})
+	second := newDecisionJob(context.Background(), []decisionWork{decisionTestWork(2, 1)})
+	scheduler.requestQ <- first
+	scheduler.requestQ <- second
+	scheduler.start()
+	t.Cleanup(scheduler.stop)
+
+	if result := <-first.resultCh; !errors.Is(result.err, recoverableErr) {
+		t.Fatalf("first job: got %v, want %v", result.err, recoverableErr)
+	}
+	if result := <-second.resultCh; result.err != nil {
+		t.Fatalf("second job: got %v, want success", result.err)
+	}
+	if scheduler.stopped.Load() {
+		t.Fatal("scheduler stopped after recoverable error")
 	}
 }
 

@@ -23,3 +23,15 @@ func TestRerankTokenLimit(t *testing.T) {
 		})
 	}
 }
+
+func TestRerankRejectsOperationDuringUnload(t *testing.T) {
+	m := Model{modelInfo: ModelInfo{IsRerankModel: true}}
+	m.unloaded.Store(true)
+
+	if _, err := m.Rerank(t.Context(), D{"query": "hello", "documents": []string{"world"}}); err == nil {
+		t.Fatal("Rerank() error = nil, want unloading error")
+	}
+	if got := m.activeStreams.Load(); got != 0 {
+		t.Errorf("active streams: got %d, want 0", got)
+	}
+}

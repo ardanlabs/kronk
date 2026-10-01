@@ -419,6 +419,21 @@ func TestAdjustConfigUsesConfiguredPrefillBatchSize(t *testing.T) {
 	}
 }
 
+func TestAdjustConfigDoesNotMutateDraftModelConfig(t *testing.T) {
+	draft := &DraftModelConfig{ModelFiles: []string{"draft.gguf"}}
+	cfg := adjustConfig(Config{PtrDraftModel: draft}, 0)
+
+	if draft.NDraft != 0 {
+		t.Errorf("caller draft NDraft: got %d, want 0", draft.NDraft)
+	}
+	if cfg.PtrDraftModel == draft {
+		t.Fatal("adjusted config retained caller-owned draft pointer")
+	}
+	if cfg.PtrDraftModel.NDraft != defNDraft {
+		t.Errorf("adjusted draft NDraft: got %d, want %d", cfg.PtrDraftModel.NDraft, defNDraft)
+	}
+}
+
 func TestAdjustConfigUsesKronkThreadDefault(t *testing.T) {
 	defaultThreads := max(defNThreads, runtime.NumCPU())
 	tests := []struct {

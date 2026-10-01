@@ -167,34 +167,34 @@ type decisionPart struct {
 	readouts []decisionReadout
 }
 
-func (e *decisionEngine) decode(parts ...decisionPart) ([][][]float32, error) {
+func (e *decisionEngine) decode(parts ...decisionPart) ([][][]float32, bool, error) {
 	var total int
 	for _, part := range parts {
 		total += len(part.tokens)
 	}
 
 	if total == 0 {
-		return make([][][]float32, len(parts)), nil
+		return make([][][]float32, len(parts)), false, nil
 	}
 
 	indices, err := stageDecisionParts(e.batch, parts)
 	if err != nil {
-		return nil, fmt.Errorf("decision stage batch: %w", err)
+		return nil, true, fmt.Errorf("decision stage batch: %w", err)
 	}
 
 	code, err := e.batch.process(llama.ProcessTypeDecode)
 	if err != nil {
-		return nil, fmt.Errorf("decision process: %w", err)
+		return nil, true, fmt.Errorf("decision process: %w", err)
 	}
 
 	if code != 0 {
-		return nil, fmt.Errorf("decision process returned %d", code)
+		return nil, code < 0, fmt.Errorf("decision process returned %d", code)
 	}
 
 	result := make([][][]float32, len(parts))
 	for partIndex, part := range parts {
 		if len(indices[partIndex]) != len(part.readouts) {
-			return nil, fmt.Errorf("decision produced %d readout rows, want %d", len(indices[partIndex]), len(part.readouts))
+			return nil, true, fmt.Errorf("decision produced %d readout rows, want %d", len(indices[partIndex]), len(part.readouts))
 		}
 
 		result[partIndex] = make([][]float32, len(part.readouts))
@@ -202,11 +202,11 @@ func (e *decisionEngine) decode(parts ...decisionPart) ([][][]float32, error) {
 		for readoutIndex, batchIndex := range indices[partIndex] {
 			allLogits, err := llama.GetLogitsIth(e.lctx, batchIndex, e.nVocab)
 			if err != nil {
-				return nil, fmt.Errorf("decision get logits at batch index %d: %w", batchIndex, err)
+				return nil, true, fmt.Errorf("decision get logits at batch index %d: %w", batchIndex, err)
 			}
 
 			if allLogits == nil {
-				return nil, fmt.Errorf("decision has no logits at batch index %d", batchIndex)
+				return nil, true, fmt.Errorf("decision has no logits at batch index %d", batchIndex)
 			}
 
 			candidates := part.readouts[readoutIndex].candidates
@@ -218,7 +218,7 @@ func (e *decisionEngine) decode(parts ...decisionPart) ([][][]float32, error) {
 		}
 	}
 
-	return result, nil
+	return result, false, nil
 }
 
 func stageDecisionParts(batch *extendedBatch, parts []decisionPart) ([][]int32, error) {
@@ -252,7 +252,7 @@ func stageDecisionParts(batch *extendedBatch, parts []decisionPart) ([][]int32, 
 	return indices, nil
 }
 
-func (e *decisionEngine) evaluate(entries []decisionScheduledEntry) ([][][]float32, error) {
+func (e *decisionEngine) evaluate(entries []decisionScheduledEntry) ([][][]float32, bool, error) {
 	parts := make([]decisionPart, len(entries))
 	for i, entry := range entries {
 		parts[i] = decisionPart{
@@ -262,16 +262,17 @@ func (e *decisionEngine) evaluate(entries []decisionScheduledEntry) ([][][]float
 		}
 	}
 
-	outputs, err := e.decode(parts...)
+	outputs, fatal, err := e.decode(parts...)
 	if err != nil {
-		return nil, errors.Join(err, e.clear())
+		clearErr := e.clear()
+		return nil, fatal || clearErr != nil, errors.Join(err, clearErr)
 	}
 
 	for i := range entries {
 		if _, err := llama.MemorySeqRm(e.mem, llama.SeqId(i), -1, -1); err != nil {
-			return nil, errors.Join(fmt.Errorf("decision remove sequence %d: %w", i, err), e.clear())
+			return nil, true, errors.Join(fmt.Errorf("decision remove sequence %d: %w", i, err), e.clear())
 		}
 	}
 
-	return outputs, nil
+	return outputs, false, nil
 }

@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/applog"
+	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
 	classicengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/classic"
 	mtpengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/mtp"
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -72,6 +74,53 @@ func TestNeedsTargetSpecSnapshot(t *testing.T) {
 				t.Errorf("needsTargetSpecSnapshot() = %t, want %t", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestClassicSpeculationSupportsOnlyRepresentedSamplingControls(t *testing.T) {
+	tests := []struct {
+		name   string
+		params Params
+		want   bool
+	}{
+		{name: "ordinary sampling", params: Params{RepeatPenalty: DefRepeatPenalty}, want: true},
+		{name: "grammar", params: Params{RepeatPenalty: DefRepeatPenalty, Grammar: `root ::= "ok"`}},
+		{name: "repeat penalty", params: Params{RepeatPenalty: 1.1}},
+		{name: "frequency penalty", params: Params{RepeatPenalty: DefRepeatPenalty, FrequencyPenalty: 0.2}},
+		{name: "presence penalty", params: Params{RepeatPenalty: DefRepeatPenalty, PresencePenalty: 0.2}},
+		{name: "DRY", params: Params{RepeatPenalty: DefRepeatPenalty, DryMultiplier: 1.0}},
+		{name: "XTC", params: Params{RepeatPenalty: DefRepeatPenalty, XtcProbability: 0.5}},
+		{name: "adaptive P", params: Params{RepeatPenalty: DefRepeatPenalty, AdaptivePTarget: 0.9}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := classicSpeculationSupports(tt.params); got != tt.want {
+				t.Errorf("classicSpeculationSupports() = %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCommitSpeculativeReturnsRequiredSnapshotFailure(t *testing.T) {
+	s := &slot{
+		seqID: 7,
+		job:   &chatJob{ctx: t.Context()},
+	}
+	e := batchEngine{
+		model: &Model{
+			log:       applog.DiscardLogger,
+			modelInfo: ModelInfo{Type: ModelTypeHybrid},
+		},
+		slots: []*slot{s},
+	}
+
+	err := e.CommitSpeculative(0, []llama.Token{1}, speculation.TargetRange{})
+	if err == nil {
+		t.Fatal("CommitSpeculative() error = nil, want snapshot failure")
+	}
+	if len(s.specSnapshot) != 0 {
+		t.Errorf("snapshot length: got %d, want 0", len(s.specSnapshot))
 	}
 }
 

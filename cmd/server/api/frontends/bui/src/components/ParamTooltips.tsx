@@ -47,10 +47,9 @@ export const PARAM_TOOLTIPS = {
   moeTipComputeBuffer: 'A larger Prefill Batch Size increases compute buffer VRAM usage. Monitor with the VRAM calculator when tuning it.',
   availableVRAM: 'Total GPU VRAM available (in GB). When set, config candidates estimated to exceed this are auto-skipped before the sweep runs. Set to 0 or leave empty to disable VRAM filtering.',
 
-  // NUMA / model loading / Op-offload (Phase F2/F3)
+  // NUMA / model loading (Phase F2/F3)
   loadMode: 'Controls how model weights are loaded. auto uses mmap when every selected device supports it and otherwise uses ordinary loading; mmap forces memory mapping; none disables it; mlock requests resident pages without forcing mmap; mmap+mlock combines both behaviors; direct-io bypasses the OS page cache where supported.',
   numa: 'NUMA (Non-Uniform Memory Access) strategy for multi-socket systems. "distribute" spreads memory across NUMA nodes (recommended for MoE CPU-expert setups). "isolate" pins to one node. "numactl" defers to system numactl. "mirror" mirrors across nodes. Leave empty to disable.',
-  opOffloadMinBatch: 'Minimum batch size before enabling GPU offload for certain host-side operations during prompt processing. 0 = use server default. For large MoE models with many CPU weights, values of 200–500+ may improve prompt ingestion speed.',
 
   // ── Shared VRAM / Config tooltips ──────────────────────────────────────────
   // These are used by both the VRAM Calculator and the Model Playground /

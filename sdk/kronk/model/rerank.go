@@ -28,6 +28,10 @@ func (m *Model) Rerank(ctx context.Context, d D) (response RerankResponse, err e
 	if !m.modelInfo.IsRerankModel {
 		return RerankResponse{}, fmt.Errorf("rerank: model doesn't support reranking")
 	}
+	if err := m.beginActiveOperation(); err != nil {
+		return RerankResponse{}, fmt.Errorf("rerank: %w", err)
+	}
+	defer m.endActiveOperation()
 
 	started := time.Now()
 	runtimeName := "context_pool"
