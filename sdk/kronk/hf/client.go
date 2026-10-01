@@ -144,14 +144,14 @@ func (c *DefaultClient) httpClient() *http.Client {
 	return c.HTTP
 }
 
-// do issues a GET request, attaching KRONK_HF_TOKEN when set, and maps
-// HTTP error codes to the resolver's typed errors.
+// do issues a GET request, attaching KRONK_HF_TOKEN to Hugging Face URLs
+// when set, and maps HTTP error codes to the resolver's typed errors.
 func (c *DefaultClient) do(ctx context.Context, u string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, fmt.Errorf("hf-request: build: %w", err)
 	}
-	if tok := os.Getenv("KRONK_HF_TOKEN"); tok != "" {
+	if tok := os.Getenv("KRONK_HF_TOKEN"); tok != "" && IsHuggingFaceURL(u) {
 		req.Header.Set("Authorization", "Bearer "+tok)
 	}
 

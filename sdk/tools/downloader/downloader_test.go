@@ -17,6 +17,9 @@ func TestDownloadResumesPartialFile(t *testing.T) {
 	rangeCh := make(chan string, 1)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Errorf("Authorization: got %q, want empty for non-Hugging Face host", got)
+		}
 		w.Header().Set("Accept-Ranges", "bytes")
 		w.Header().Set("Content-Length", fmt.Sprint(len(content)))
 		if r.Method == http.MethodHead {
@@ -40,6 +43,7 @@ func TestDownloadResumesPartialFile(t *testing.T) {
 	}))
 	defer srv.Close()
 
+	t.Setenv("KRONK_HF_TOKEN", "secret")
 	t.Setenv("KRONK_SKIP_NETWORK_CHECK", "yes")
 	dest := t.TempDir()
 	modelFile := filepath.Join(dest, "model.gguf")

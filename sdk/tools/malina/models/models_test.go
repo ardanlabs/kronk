@@ -188,15 +188,14 @@ func TestBundleBasicTextToImage(t *testing.T) {
 	}
 }
 
-func TestDownloadFileAuthorization(t *testing.T) {
+func TestDownloadFileDoesNotAuthorizeOtherHosts(t *testing.T) {
 	tests := []struct {
 		name       string
 		kronkToken string
 		hfToken    string
-		want       string
 	}{
-		{name: "kronk token takes precedence", kronkToken: "kronk", hfToken: "hf", want: "Bearer kronk"},
-		{name: "HF token fallback", hfToken: "hf", want: "Bearer hf"},
+		{name: "Kronk token", kronkToken: "kronk"},
+		{name: "HF token fallback", hfToken: "hf"},
 	}
 
 	for _, tt := range tests {
@@ -214,8 +213,8 @@ func TestDownloadFileAuthorization(t *testing.T) {
 			if err := downloadFile(t.Context(), server.URL+"/model.gguf", target, nil); err != nil {
 				t.Fatalf("downloadFile() error = %v", err)
 			}
-			if authorization != tt.want {
-				t.Errorf("Authorization: got %q, want %q", authorization, tt.want)
+			if authorization != "" {
+				t.Errorf("Authorization: got %q, want empty for non-Hugging Face host", authorization)
 			}
 		})
 	}

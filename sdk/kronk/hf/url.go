@@ -70,6 +70,19 @@ func StripHostPrefix(s string) string {
 	return s
 }
 
+// IsHuggingFaceURL reports whether rawURL is an HTTPS URL hosted by
+// Hugging Face. Callers use this check before attaching Hugging Face
+// credentials to an outbound request.
+func IsHuggingFaceURL(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil || !strings.EqualFold(u.Scheme, "https") {
+		return false
+	}
+
+	host := u.Hostname()
+	return strings.EqualFold(host, "huggingface.co") || strings.EqualFold(host, "hf.co")
+}
+
 // BuildURL composes a HuggingFace resolve URL.
 func BuildURL(owner, repo, revision, file string) string {
 	if revision == "" {

@@ -96,7 +96,7 @@ func RepoFiles(ctx context.Context, owner, repo, revision, path string, recursiv
 		return nil, fmt.Errorf("repo-files: creating request: %w", err)
 	}
 
-	if token := os.Getenv("KRONK_HF_TOKEN"); token != "" {
+	if token := os.Getenv("KRONK_HF_TOKEN"); token != "" && IsHuggingFaceURL(apiURL) {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 

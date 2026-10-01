@@ -3,10 +3,46 @@ package gguf
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return fn(r)
+}
+
+func TestFetchRangeAuthorizesHuggingFace(t *testing.T) {
+	t.Setenv("KRONK_HF_TOKEN", "secret")
+
+	client := http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if got := r.Header.Get("Authorization"); got != "Bearer secret" {
+				t.Errorf("Authorization: got %q, want %q", got, "Bearer secret")
+			}
+
+			return &http.Response{
+				StatusCode:    http.StatusPartialContent,
+				Header:        http.Header{"Content-Range": []string{"bytes 0-0/1"}},
+				Body:          io.NopCloser(strings.NewReader("x")),
+				ContentLength: 1,
+				Request:       r,
+			}, nil
+		}),
+	}
+
+	data, size, err := fetchRangeWithClient(t.Context(), &client, "https://huggingface.co/owner/repo/resolve/main/model.gguf", 0, 0)
+	if err != nil {
+		t.Fatalf("fetchRangeWithClient: %v", err)
+	}
+	if string(data) != "x" || size != 1 {
+		t.Errorf("range result: got data %q and size %d, want data %q and size 1", data, size, "x")
+	}
+}
 
 func TestFetchRangeEOFClamped(t *testing.T) {
 	const fileSize = 7872576
@@ -16,7 +52,11 @@ func TestFetchRangeEOFClamped(t *testing.T) {
 		body[i] = byte(i % 256)
 	}
 
+	t.Setenv("KRONK_HF_TOKEN", "secret")
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Errorf("Authorization: got %q, want empty for non-Hugging Face host", got)
+		}
 		w.Header().Set("Content-Range", fmt.Sprintf("bytes 0-%d/%d", fileSize-1, fileSize))
 		w.WriteHeader(http.StatusPartialContent)
 		w.Write(body)

@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/hf"
 	"github.com/hashicorp/go-getter"
 )
 
@@ -40,7 +41,7 @@ func Download(ctx context.Context, src string, dest string, progress ProgressFun
 
 	httpGetter := &getter.HttpGetter{}
 
-	if os.Getenv("KRONK_HF_TOKEN") != "" {
+	if os.Getenv("KRONK_HF_TOKEN") != "" && hf.IsHuggingFaceURL(src) {
 		httpGetter.Header = map[string][]string{
 			"Authorization": {"Bearer " + os.Getenv("KRONK_HF_TOKEN")},
 		}

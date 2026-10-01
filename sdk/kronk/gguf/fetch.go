@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+
+	"github.com/ardanlabs/kronk/sdk/kronk/hf"
 )
 
 // FetchHeaderBytes fetches the first HeaderFetchSize bytes of the GGUF
@@ -109,9 +111,9 @@ func IsValidHeaderBytes(data []byte) bool {
 // Returns the requested bytes and the total file size advertised by the
 // server (when known).
 //
-// When KRONK_HF_TOKEN is set the request carries it as a Bearer
-// Authorization header so gated HuggingFace repos resolve. When the
-// server returns 200 OK (full file) instead of 206 Partial Content —
+// When KRONK_HF_TOKEN is set, requests to Hugging Face carry it as a
+// Bearer Authorization header so gated repos resolve. Other destinations
+// never receive the token. When the server returns 200 OK (full file) —
 // which happens for some HuggingFace storage backends like Xet that do
 // not honor Range — the function reads only the requested range from
 // the response body to avoid downloading the whole file.
@@ -130,7 +132,7 @@ func fetchRangeWithClient(ctx context.Context, client *http.Client, url string, 
 
 	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, end))
 
-	if token := os.Getenv("KRONK_HF_TOKEN"); token != "" {
+	if token := os.Getenv("KRONK_HF_TOKEN"); token != "" && hf.IsHuggingFaceURL(url) {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 

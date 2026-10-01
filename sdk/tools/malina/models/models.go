@@ -15,6 +15,7 @@ import (
 	"sync"
 
 	"github.com/ardanlabs/kronk/sdk/applog"
+	"github.com/ardanlabs/kronk/sdk/kronk/hf"
 	"github.com/ardanlabs/kronk/sdk/tools/backend"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/ardanlabs/malina/pkg/download"
@@ -186,7 +187,7 @@ func downloadFile(ctx context.Context, source string, target string, progress ge
 	if token == "" {
 		token = os.Getenv("HF_TOKEN")
 	}
-	if token != "" {
+	if token != "" && hf.IsHuggingFaceURL(source) {
 		header.Set("Authorization", "Bearer "+token)
 	}
 	client := getter.Client{
