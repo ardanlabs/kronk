@@ -88,3 +88,31 @@ homebrew_casks:
           if OS.mac?
             system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/kronk"]
           end
+
+winget:
+  - name: kronk
+    publisher: Ardan Labs
+    publisher_url: "https://www.ardanlabs.com"
+    publisher_support_url: "https://github.com/ardanlabs/kronk/issues"
+    package_identifier: ardanlabs.kronk
+    package_name: Kronk
+    homepage: "https://www.kronkai.com"
+    license: Apache-2.0
+    license_url: "https://github.com/ardanlabs/kronk/blob/{{ .Tag }}/LICENSE"
+    short_description: "Local LLM inference SDK and server CLI"
+    skip_upload: auto
+    repository:
+      owner: ardanlabs
+      name: winget-pkgs
+      token: "{{ .Env.WINGET_GITHUB_TOKEN }}"
+      pull_request:
+        enabled: true
+        token: "{{ .Env.WINGET_GITHUB_TOKEN }}"
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    commit_msg_template: "Update: {{ .PackageIdentifier }} to {{ .Version }}"

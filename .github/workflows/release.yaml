@@ -6,15 +6,15 @@ on:
       - "v*"
 
 # Tag pushes only — branch protection on `v*` tags + the `production`
-# environment below mean the HOMEBREW_TAP_GITHUB_TOKEN can only ever
-# fire under maintainer-approved circumstances.
+# environment below mean the Homebrew and WinGet publication tokens can
+# only ever fire under maintainer-approved circumstances.
 permissions:
   contents: read
 
 jobs:
   release:
     runs-on: ubuntu-latest
-    # Gated environment so the Homebrew tap PAT only unlocks for
+    # Gated environment so the publication PATs only unlock for
     # maintainer-approved runs. Configure required reviewers + tag
     # pattern restrictions on this environment in the repo's
     # Settings > Environments page.
@@ -63,6 +63,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          WINGET_GITHUB_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
 
       # SLSA build provenance for every artifact GoReleaser produced.
       # `actions/attest-build-provenance` resolves to a glob over
