@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"time"
-
-	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
 // Tokenize returns the token count for a text input.
@@ -52,7 +50,7 @@ func (m *Model) Tokenize(ctx context.Context, d D) (TokenizeResponse, error) {
 		text = prompt
 	}
 
-	tokens := llama.Tokenize(m.vocab, text, m.addBOSToken, true)
+	tokens := tokenize(m.vocab, text, m.addBOSToken, true)
 
 	tr := TokenizeResponse{
 		Object:  "tokenize",

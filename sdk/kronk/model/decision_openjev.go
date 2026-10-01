@@ -61,7 +61,7 @@ func newOpenJEVProtocol(m *Model) (*openJEVProtocol, error) {
 		seen := make(map[llama.Token]bool, len(ids))
 		valid := true
 		for i, letter := range openJEVLetters {
-			tokens := llama.Tokenize(m.vocab, prefix+string(letter), false, false)
+			tokens := tokenize(m.vocab, prefix+string(letter), false, false)
 			if len(tokens) != 1 || seen[tokens[0]] {
 				valid = false
 				break
@@ -199,7 +199,7 @@ func (p *openJEVProtocol) work(ctx context.Context, state string, instructions s
 		return decisionWork{}, fmt.Errorf("render prompt: %w", err)
 	}
 
-	tokens := llama.Tokenize(p.model.vocab, rendered, p.model.addBOSToken, true)
+	tokens := tokenize(p.model.vocab, rendered, p.model.addBOSToken, true)
 	if len(tokens) == 0 {
 		return decisionWork{}, fmt.Errorf("tokenize prompt: no tokens")
 	}

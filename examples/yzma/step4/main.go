@@ -271,7 +271,9 @@ func initYzma() error {
 		return fmt.Errorf("unable to load mtmd library: %w", err)
 	}
 
-	llama.Init()
+	if err := llama.Init(); err != nil {
+		return fmt.Errorf("unable to initialize llama: %w", err)
+	}
 	llama.LogSet(llama.LogSilent())
 	mtmd.LogSet(llama.LogSilent())
 

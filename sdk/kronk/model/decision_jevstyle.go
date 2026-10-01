@@ -48,7 +48,7 @@ func newJevStyleProtocol(m *Model) (*jevStyleProtocol, error) {
 		{text: " ->", token: jevStyleSlotToken},
 	}
 	for _, item := range expected {
-		tokens := llama.Tokenize(m.vocab, item.text, false, false)
+		tokens := tokenize(m.vocab, item.text, false, false)
 		if len(tokens) != 1 || tokens[0] != item.token {
 			return nil, fmt.Errorf("init-jev-style: tokenizer mismatch for %q: got %v, want [%d]", item.text, tokens, item.token)
 		}
@@ -58,7 +58,7 @@ func newJevStyleProtocol(m *Model) (*jevStyleProtocol, error) {
 		model: m,
 		renderer: jevStyleRenderer{
 			encode: func(text string) []llama.Token {
-				return llama.Tokenize(m.vocab, text, false, false)
+				return tokenize(m.vocab, text, false, false)
 			},
 			maxLen:  min(jevStyleMaxLen, m.decision.contextWindow),
 			headMax: jevStyleHeadMax,

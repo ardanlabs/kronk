@@ -35,7 +35,7 @@ func buildPromptPlan(vocab llama.Vocab, prompt string, media [][]byte) (promptPl
 	return buildPromptPlanTokens(prompt, mtmd.DefaultMarker(), media, llama.VocabBOS(vocab), llama.VocabGetAddBOS(vocab), func(text string) []llama.Token {
 		// mtmd tokenizes each marker-delimited text chunk independently.
 		// Special tokens are added globally below, never once per chunk.
-		return llama.Tokenize(vocab, text, false, true)
+		return tokenize(vocab, text, false, true)
 	})
 }
 
