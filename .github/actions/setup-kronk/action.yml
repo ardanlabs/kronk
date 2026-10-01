@@ -62,7 +62,24 @@ runs:
       run: |
         set -euo pipefail
         mkdir -p "$HOME/.kronk/libraries"
-        go install ./cmd/kronk
+
+        # Self-hosted runners persist GOMODCACHE. An interrupted download can
+        # therefore poison later jobs until the invalid ZIP is removed.
+        set +e
+        go install ./cmd/kronk 2>&1 | tee "$RUNNER_TEMP/go-install.log"
+        install_status=${PIPESTATUS[0]}
+        set -e
+
+        if [[ "$install_status" -ne 0 ]]; then
+          if ! grep -Fq "zip: not a valid zip file" "$RUNNER_TEMP/go-install.log"; then
+            exit "$install_status"
+          fi
+
+          echo "::warning::Go module cache contains an invalid ZIP; clearing it and retrying once"
+          go clean -modcache
+          go install ./cmd/kronk
+        fi
+
         kronk libs --local
         kronk bucky libs --local
 
