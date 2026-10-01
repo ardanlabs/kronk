@@ -38,22 +38,14 @@ func main(cmd *cobra.Command, args []string) {
 
 func run(cmd *cobra.Command, args []string) error {
 	local, _ := cmd.Flags().GetBool("local")
+	if !local {
+		return runWeb(args)
+	}
 
-	models, err := models.NewWithPaths(client.GetBasePath(cmd))
+	mdls, err := models.NewWithPaths(client.GetBasePath(cmd))
 	if err != nil {
 		return fmt.Errorf("unable to create models system: %w", err)
 	}
 
-	switch local {
-	case true:
-		err = runLocal(models, args)
-	default:
-		err = runWeb(args)
-	}
-
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return runLocal(mdls, args)
 }

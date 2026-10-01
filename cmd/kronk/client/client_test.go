@@ -31,7 +31,12 @@ func TestSSEClientDoWithErrors(t *testing.T) {
 	}{
 		{
 			name:   "complete stream",
-			stream: "data: {\"status\":\"downloaded\"}\n",
+			stream: ": keep-alive\nevent: progress\nid: 1\ndata: {\"status\":\"downloaded\"}\ndata: [DONE]\n",
+			want:   "downloaded",
+		},
+		{
+			name:   "short and unknown fields are ignored",
+			stream: "x\nevent:\nretry: 1000\ndata:{\"status\":\"downloaded\"}\n",
 			want:   "downloaded",
 		},
 		{

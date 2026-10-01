@@ -1,9 +1,13 @@
 package start
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -11,9 +15,8 @@ import (
 
 func TestCreateLogFile(t *testing.T) {
 	basePath := filepath.Join(t.TempDir(), "missing", "base")
-	t.Setenv("KRONK_BASE_PATH", basePath)
 
-	file, err := createLogFile()
+	file, err := createLogFile(basePath)
 	if err != nil {
 		t.Fatalf("createLogFile: %v", err)
 	}
@@ -31,10 +34,63 @@ func TestCreateLogFileError(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(basePath, "kronk.log"), 0o755); err != nil {
 		t.Fatalf("make log directory: %v", err)
 	}
-	t.Setenv("KRONK_BASE_PATH", basePath)
-
-	if _, err := createLogFile(); err == nil {
+	if _, err := createLogFile(basePath); err == nil {
 		t.Fatal("createLogFile: got nil error, want failure when log path is a directory")
+	}
+}
+
+func TestLivenessURL(t *testing.T) {
+	cmd := &cobra.Command{}
+	cmd.Flags().String("api-host", "", "")
+	if err := cmd.Flags().Set("api-host", "127.0.0.1:9000"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+
+	got, err := livenessURL(cmd)
+	if err != nil {
+		t.Fatalf("livenessURL: %v", err)
+	}
+	if want := "http://127.0.0.1:9000/v1/liveness"; got != want {
+		t.Fatalf("livenessURL: got %q, want %q", got, want)
+	}
+}
+
+func TestReservePIDFile(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	basePath := t.TempDir()
+	file, path, err := reservePIDFile(context.Background(), basePath, server.URL)
+	if err != nil {
+		t.Fatalf("reservePIDFile: %v", err)
+	}
+	defer file.Close()
+	defer os.Remove(path)
+
+	if _, _, err := reservePIDFile(context.Background(), basePath, server.URL); err == nil || !strings.Contains(err.Error(), "already in progress") {
+		t.Fatalf("second reservePIDFile: got %v, want active-start error", err)
+	}
+}
+
+func TestReservePIDFileRemovesStaleFile(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	basePath := t.TempDir()
+	path := pidFilePath(basePath)
+	if err := os.WriteFile(path, []byte("not-a-pid"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if _, _, err := reservePIDFile(context.Background(), basePath, server.URL); err == nil || !strings.Contains(err.Error(), "removed stale pid file") {
+		t.Fatalf("reservePIDFile: got %v, want stale-file error", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("Stat: got %v, want missing stale pid file", err)
 	}
 }
 

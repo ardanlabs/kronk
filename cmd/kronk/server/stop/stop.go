@@ -8,11 +8,13 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ardanlabs/kronk/cmd/kronk/client"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
+	"github.com/spf13/cobra"
 )
 
-func runLocal() error {
-	pidFile := pidFilePath()
+func runLocal(cmd *cobra.Command) error {
+	pidFile := pidFilePath(defaults.BaseDir(client.GetBasePath(cmd)))
 
 	data, err := os.ReadFile(pidFile)
 	if err != nil {
@@ -33,12 +35,14 @@ func runLocal() error {
 		return fmt.Errorf("terminate: %w", err)
 	}
 
-	os.Remove(pidFile)
+	if err := os.Remove(pidFile); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove pid file: %w", err)
+	}
 	fmt.Printf("Stopped Kronk server (PID: %d)\n", pid)
 
 	return nil
 }
 
-func pidFilePath() string {
-	return filepath.Join(defaults.BaseDir(""), "kronk.pid")
+func pidFilePath(basePath string) string {
+	return filepath.Join(basePath, "kronk.pid")
 }

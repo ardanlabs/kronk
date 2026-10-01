@@ -338,10 +338,6 @@ func writeIndexFile(indexPath string, data []byte) error {
 		tmp.Close()
 		return fmt.Errorf("chmod temp: %w", err)
 	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return fmt.Errorf("sync temp: %w", err)
-	}
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close temp: %w", err)
 	}

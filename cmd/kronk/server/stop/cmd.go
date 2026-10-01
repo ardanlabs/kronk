@@ -16,12 +16,12 @@ var Cmd = &cobra.Command{
 }
 
 func main(cmd *cobra.Command, args []string) {
-	if err := run(); err != nil {
+	if err := run(cmd); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
 }
 
-func run() error {
-	return runLocal()
+func run(cmd *cobra.Command) error {
+	return runLocal(cmd)
 }

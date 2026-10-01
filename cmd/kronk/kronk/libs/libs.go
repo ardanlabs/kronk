@@ -40,7 +40,7 @@ func runWeb(upgrade bool, version string) error {
 		client.WithBearer(os.Getenv("KRONK_TOKEN")),
 	)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
 	ch := make(chan toolapp.VersionResponse)

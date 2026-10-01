@@ -257,10 +257,6 @@ func (r *Resolver) saveLocked(rm Catalog) error {
 		tmp.Close()
 		return fmt.Errorf("resolver-save: chmod temp: %w", err)
 	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return fmt.Errorf("resolver-save: sync temp: %w", err)
-	}
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("resolver-save: close temp: %w", err)
 	}
