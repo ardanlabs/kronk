@@ -375,6 +375,7 @@ export default function DocsSDKModel() {
 	PtrIncrementalCache        *bool
 	PtrInsecureLogging         *bool
 	JinjaFile                  string
+	JinjaScript                string
 	LoadMode                   LoadMode
 	Log                        applog.Logger
 	PtrMainGPU                 *int
@@ -433,6 +434,7 @@ export default function DocsSDKModel() {
               <p className="doc-description">IncrementalCache enables Incremental Message Caching (IMC) for agentic workflows. It caches all messages except the last one (which triggers generation) and extends the cache incrementally on each turn. This is ideal for agents like Cline or OpenCode where conversations grow monotonically. The cache is rebuilt from scratch when the message prefix changes (new thread).</p>
               <p className="doc-description">InsecureLogging enables logging of potentially sensitive data such as message content. This should only be enabled for debugging purposes in non-production environments.</p>
               <p className="doc-description">JinjaFile is the path to the jinja file. This is not required and can be used if you want to override the templated provided by the model metadata.</p>
+              <p className="doc-description">JinjaScript is an in-memory jinja template override. It takes precedence over JinjaFile and is intended for request-scoped model configurations.</p>
               <p className="doc-description">LoadMode controls how model weights are loaded. The default is LoadModeAuto, which uses mmap when every selected device supports it and otherwise uses ordinary loading. LoadModeNone disables mmap, which can improve tensor placement on multi-socket NUMA systems running MoE models with CPU experts. LoadModeMLock requests resident pages without forcing mmap, LoadModeMMapMLock combines mmap and mlock, and LoadModeDirectIO bypasses the page cache where the platform and filesystem support it.</p>
               <p className="doc-description">Log is the logger to use for model operations.</p>
               <p className="doc-description">MainGPU is the index of the GPU to use as the primary device when SplitMode is SplitModeNone. When nil, the default GPU (usually index 0) is used.</p>

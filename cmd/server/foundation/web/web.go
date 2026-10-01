@@ -210,7 +210,14 @@ func (a *App) RawHandlerFunc(method string, group string, path string, rawHandle
 
 		otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(w.Header()))
 
-		handlerFunc(ctx, r)
+		resp := handlerFunc(ctx, r)
+		if resp == nil {
+			return
+		}
+
+		if err := Respond(ctx, w, resp); err != nil {
+			a.log(ctx, "web-respond", "ERROR", err)
+		}
 	}
 
 	finalPath := path

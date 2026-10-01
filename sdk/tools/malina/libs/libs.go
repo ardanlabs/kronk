@@ -433,6 +433,12 @@ func (lib *Libs) List() ([]VersionTag, error) {
 //   - WithValidation(true) verifies the selected installed bundle against
 //     Malina's embedded manifest before Download reports success.
 func (lib *Libs) Download(ctx context.Context, log Logger) (tag VersionTag, retErr error) {
+	return lib.DownloadSelected(ctx, log, lib.version, lib.AllowUpgrade)
+}
+
+// DownloadSelected performs the Download workflow with request-scoped version
+// and upgrade settings instead of mutating the Libs configuration.
+func (lib *Libs) DownloadSelected(ctx context.Context, log Logger, versionOverride string, allowUpgrade bool) (tag VersionTag, retErr error) {
 	defer func() {
 		if retErr == nil && lib.validation {
 			retErr = lib.validateDownload(ctx, tag)
@@ -459,8 +465,8 @@ func (lib *Libs) Download(ctx context.Context, log Logger) (tag VersionTag, retE
 			return VersionTag{}, fmt.Errorf("download-libraries: network check: %w", err)
 		}
 
-		required := lib.version
-		if required == "" && !lib.AllowUpgrade {
+		required := versionOverride
+		if required == "" && !allowUpgrade {
 			required = defaultVersion
 		}
 		if installed.Version == "" {
@@ -481,7 +487,7 @@ func (lib *Libs) Download(ctx context.Context, log Logger) (tag VersionTag, retE
 	// leejet stable-diffusion.cpp releases. For all other rows the network lookup is
 	// unnecessary, so skip it.
 	var latest string
-	if lib.version == "" && lib.AllowUpgrade {
+	if versionOverride == "" && allowUpgrade {
 		v, err := latestVersion()
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return VersionTag{}, fmt.Errorf("download-libraries: retrieve latest version: %w", ctxErr)
@@ -497,7 +503,7 @@ func (lib *Libs) Download(ctx context.Context, log Logger) (tag VersionTag, retE
 		latest = v
 	}
 
-	version := chooseVersion(lib.version, lib.AllowUpgrade, latest, defaultVersion)
+	version := chooseVersion(versionOverride, allowUpgrade, latest, defaultVersion)
 
 	log(ctx, "download-libraries: check stable-diffusion.cpp installation", "arch", lib.arch, "os", lib.os, "processor", lib.processor, "requested", version, "current", installed.Version)
 

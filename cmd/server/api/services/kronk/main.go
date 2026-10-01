@@ -310,7 +310,9 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	log.Info(ctx, "startup", "status", "model integrity checks, may take a few seconds")
 
-	models.BuildIndex(log.Info, false)
+	if err := models.BuildIndex(log.Info, false); err != nil {
+		return fmt.Errorf("unable to build model index: %w", err)
+	}
 
 	if err := models.ReconcileCatalog(ctx, log.Info); err != nil {
 		log.Info(ctx, "startup", "WARNING", "reconcile catalog", "ERROR", err)
@@ -542,11 +544,28 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	// -------------------------------------------------------------------------
 	// Start Debug Service
 
-	go func() {
-		log.Info(ctx, "startup", "status", "debug v1 router started", "host", cfg.Web.DebugHost)
+	requestCtx, cancelRequests := context.WithCancel(ctx)
+	defer cancelRequests()
 
-		if err := http.ListenAndServe(cfg.Web.DebugHost, debug.Mux()); err != nil {
-			log.Error(ctx, "shutdown", "status", "debug v1 router closed", "host", cfg.Web.DebugHost, "msg", err)
+	debugServer := http.Server{
+		Addr:    cfg.Web.DebugHost,
+		Handler: debug.Mux(),
+		BaseContext: func(net.Listener) context.Context {
+			return requestCtx
+		},
+		ErrorLog: logger.NewStdLogger(log, logger.LevelError),
+	}
+	defer func() {
+		if err := debugServer.Close(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Error(context.Background(), "shutdown", "status", "could not close debug server", "ERROR", err)
+		}
+	}()
+
+	go func() {
+		log.Info(requestCtx, "startup", "status", "debug v1 router started", "host", cfg.Web.DebugHost)
+
+		if err := debugServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Error(requestCtx, "shutdown", "status", "debug v1 router closed", "host", cfg.Web.DebugHost, "msg", err)
 		}
 	}()
 
@@ -593,7 +612,10 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		ReadTimeout:  cfg.Web.ReadTimeout,
 		WriteTimeout: cfg.Web.WriteTimeout,
 		IdleTimeout:  cfg.Web.IdleTimeout,
-		ErrorLog:     logger.NewStdLogger(log, logger.LevelError),
+		BaseContext: func(net.Listener) context.Context {
+			return requestCtx
+		},
+		ErrorLog: logger.NewStdLogger(log, logger.LevelError),
 	}
 
 	serverErrors := make(chan error, 1)
@@ -613,12 +635,22 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	case sig := <-shutdown:
 		log.Info(ctx, "shutdown", "status", "shutdown started", "signal", sig)
+		cancelRequests()
 
-		ctx, cancel := context.WithTimeout(ctx, cfg.Web.ShutdownTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), cfg.Web.ShutdownTimeout)
 		defer cancel()
 
+		if err := debugServer.Shutdown(ctx); err != nil {
+			log.Error(ctx, "shutdown", "status", "could not stop debug server gracefully", "ERROR", err)
+			if closeErr := debugServer.Close(); closeErr != nil && !errors.Is(closeErr, http.ErrServerClosed) {
+				log.Error(ctx, "shutdown", "status", "could not close debug server", "ERROR", closeErr)
+			}
+		}
+
 		if err := api.Shutdown(ctx); err != nil {
-			api.Close()
+			if closeErr := api.Close(); closeErr != nil && !errors.Is(closeErr, http.ErrServerClosed) {
+				return errors.Join(fmt.Errorf("could not stop server gracefully: %w", err), fmt.Errorf("could not close server: %w", closeErr))
+			}
 			return fmt.Errorf("could not stop server gracefully: %w", err)
 		}
 

@@ -73,6 +73,39 @@ func TestStreamStateSendEventReportsTransportErrors(t *testing.T) {
 	}
 }
 
+func TestStreamStateConvertsSDKErrorChunkToAnthropicError(t *testing.T) {
+	rr := httptest.NewRecorder()
+	state := streamState{w: rr}
+	resp := model.ChatResponseErr("request-id", "chat.completion.chunk", "model", 0, errors.New("sensitive internal path"), model.Usage{})
+
+	if err := state.processChunk(resp); err != nil {
+		t.Fatalf("processChunk: %v", err)
+	}
+	if !state.failed {
+		t.Fatal("failed: got false, want true")
+	}
+	if state.started {
+		t.Fatal("started: got true, want false")
+	}
+	if got := rr.Body.String(); !strings.Contains(got, "event: error") || !strings.Contains(got, "Internal Server Error") {
+		t.Errorf("error event: got %q", got)
+	}
+	if strings.Contains(rr.Body.String(), "sensitive internal path") {
+		t.Errorf("error event exposed SDK error: %q", rr.Body.String())
+	}
+	if err := state.finish(); err != nil {
+		t.Fatalf("finish after error: %v", err)
+	}
+}
+
+func TestStreamStateRejectsEmptyStream(t *testing.T) {
+	state := streamState{w: httptest.NewRecorder()}
+
+	if err := state.finish(); err == nil {
+		t.Fatal("finish: got nil, want missing message_start error")
+	}
+}
+
 type eventResponseWriter struct {
 	header   http.Header
 	writeErr error

@@ -6,6 +6,7 @@ package downapp
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -251,46 +252,39 @@ func (a *app) handle(w http.ResponseWriter, r *http.Request) {
 
 	switch action {
 	case "resolve":
-		filePath = filepath.Join(a.modelsPath, org, repo, fileName)
+		filePath = filepath.Join(org, repo, fileName)
 
 	case "raw":
-		filePath = filepath.Join(a.modelsPath, org, repo, "sha", fileName)
+		filePath = filepath.Join(org, repo, "sha", fileName)
 
 	default:
 		http.Error(w, fmt.Sprintf("unsupported action: %s", action), http.StatusBadRequest)
 		return
 	}
-
-	// Prevent directory traversal.
-	absModels, err := filepath.Abs(a.modelsPath)
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	absFile, err := filepath.Abs(filePath)
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	if !strings.HasPrefix(absFile, absModels) {
+	if !filepath.IsLocal(filePath) {
 		http.Error(w, "invalid path", http.StatusBadRequest)
 		return
 	}
 
-	// If the exact file doesn't exist and the request is for a projection file,
-	// look for the Kronk-renamed mmproj file in the same directory.
-	if _, err := os.Stat(filePath); os.IsNotExist(err) && strings.Contains(fileName, "mmproj") {
-		if found := findMmproj(filepath.Dir(filePath)); found != "" {
+	root, err := os.OpenRoot(a.modelsPath)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	defer root.Close()
+
+	// Open and serve the file through an os.Root so path components and
+	// symlinks cannot escape the configured models directory.
+	f, err := root.Open(filePath)
+	if os.IsNotExist(err) && strings.Contains(fileName, "mmproj") {
+		if found := findMmproj(root, filepath.Dir(filePath)); found != "" {
 			filePath = found
+			f, err = root.Open(filePath)
 		}
 	}
 
 	a.log.Info(r.Context(), "download", "status", "resolved path", "org", org, "repo", repo, "action", action, "file", fileName, "filePath", filePath)
 
-	// Open and serve the file.
-	f, err := os.Open(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			a.log.Info(r.Context(), "download", "status", "file not found", "path", filePath)
@@ -324,8 +318,8 @@ func (a *app) handle(w http.ResponseWriter, r *http.Request) {
 // findMmproj searches a directory for a file whose name starts with "mmproj".
 // This handles the case where Kronk renamed the projection file from its
 // original HuggingFace name to the Kronk naming convention.
-func findMmproj(dir string) string {
-	entries, err := os.ReadDir(dir)
+func findMmproj(root *os.Root, dir string) string {
+	entries, err := fs.ReadDir(root.FS(), dir)
 	if err != nil {
 		return ""
 	}

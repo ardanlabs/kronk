@@ -4,6 +4,7 @@ package msgsapp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -125,7 +126,7 @@ func (a *app) handleStreaming(ctx context.Context, krn *kronk.Kronk, d model.D) 
 		}
 	}
 
-	return true, state.finish()
+	return committed, state.finish()
 }
 
 // =============================================================================
@@ -134,6 +135,7 @@ type streamState struct {
 	w            http.ResponseWriter
 	messageID    string
 	started      bool
+	failed       bool
 	blockStarted bool
 	blockIndex   int
 	inputTokens  int
@@ -142,6 +144,11 @@ type streamState struct {
 }
 
 func (s *streamState) processChunk(resp model.ChatResponse) error {
+	if len(resp.Choices) > 0 && resp.Choices[0].FinishReason() == model.FinishReasonError {
+		s.failed = true
+		return s.sendError()
+	}
+
 	if !s.started {
 		s.messageID = resp.ID
 
@@ -219,6 +226,13 @@ func (s *streamState) processChunk(resp model.ChatResponse) error {
 }
 
 func (s *streamState) finish() error {
+	if s.failed {
+		return nil
+	}
+	if !s.started {
+		return errors.New("messages stream ended before message_start")
+	}
+
 	if s.blockStarted {
 		if err := s.sendContentBlockStop(); err != nil {
 			return err
@@ -270,6 +284,16 @@ func (s *streamState) sendEvent(eventType string, data any) error {
 	}
 
 	return nil
+}
+
+func (s *streamState) sendError() error {
+	return s.sendEvent("error", ErrorResponse{
+		Type: "error",
+		Error: ErrorDetail{
+			Type:    "api_error",
+			Message: "Internal Server Error",
+		},
+	})
 }
 
 func supportsResponseFlush(w http.ResponseWriter) bool {

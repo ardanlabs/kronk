@@ -225,6 +225,9 @@ type AdapterConfig struct {
 // JinjaFile is the path to the jinja file. This is not required and can be
 // used if you want to override the templated provided by the model metadata.
 //
+// JinjaScript is an in-memory jinja template override. It takes precedence
+// over JinjaFile and is intended for request-scoped model configurations.
+//
 // LoadMode controls how model weights are loaded. The default is LoadModeAuto,
 // which uses mmap when every selected device supports it and otherwise uses
 // ordinary loading. LoadModeNone disables mmap, which can improve tensor
@@ -402,6 +405,7 @@ type Config struct {
 	PtrIncrementalCache        *bool
 	PtrInsecureLogging         *bool
 	JinjaFile                  string
+	JinjaScript                string
 	LoadMode                   LoadMode
 	Log                        applog.Logger
 	PtrMainGPU                 *int
@@ -1983,6 +1987,7 @@ func WithIMCSessionCapacity(v int) Option {
 func WithIncrementalCache(v bool) Option       { return func(c *Config) { c.PtrIncrementalCache = new(v) } }
 func WithInsecureLogging(v bool) Option        { return func(c *Config) { c.PtrInsecureLogging = new(v) } }
 func WithJinjaFile(v string) Option            { return func(c *Config) { c.JinjaFile = v } }
+func WithJinjaScript(v string) Option          { return func(c *Config) { c.JinjaScript = v } }
 func WithLoadMode(v LoadMode) Option           { return func(c *Config) { c.LoadMode = v } }
 func WithLog(v applog.Logger) Option           { return func(c *Config) { c.Log = v } }
 func WithMainGPU(v int) Option                 { return func(c *Config) { c.PtrMainGPU = new(v) } }

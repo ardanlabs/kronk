@@ -107,10 +107,6 @@ func (a *app) pullMalinaLibs(ctx context.Context, r *http.Request) web.Encoder {
 
 	if allowUpgrade && !a.malinaLibs.AllowUpgrade {
 		a.log.Info(ctx, "pull-malina-libs", "status", "allowing libs upgrade")
-		a.malinaLibs.AllowUpgrade = true
-		defer func() {
-			a.malinaLibs.AllowUpgrade = false
-		}()
 	}
 
 	var (
@@ -123,7 +119,7 @@ func (a *app) pullMalinaLibs(ctx context.Context, r *http.Request) web.Encoder {
 	case version != "":
 		tag, err = a.malinaLibs.DownloadFor(ctx, logger, a.malinaLibs.Arch(), a.malinaLibs.OS(), a.malinaLibs.Processor(), version)
 	default:
-		tag, err = a.malinaLibs.Download(ctx, logger)
+		tag, err = a.malinaLibs.DownloadSelected(ctx, logger, "", allowUpgrade)
 	}
 	if err != nil {
 		ver := toAppVersion(err.Error(), malinalibs.VersionTag{}, allowUpgrade)

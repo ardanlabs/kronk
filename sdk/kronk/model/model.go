@@ -1120,19 +1120,27 @@ func loadModeName(loadMode llama.LoadMode) string {
 // retrieveTemplate resolves the Jinja chat template for a model. The
 // resolution order, from highest to lowest priority:
 //
-//  1. cfg.JinjaFile — explicit "template:" entry in model_config.yaml.
-//  2. <jinjaDir>/<modelID>.jinja — exact match on the model id (e.g.
+//  1. cfg.JinjaScript — request-scoped in-memory template override.
+//  2. cfg.JinjaFile — explicit "template:" entry in model_config.yaml.
+//  3. <jinjaDir>/<modelID>.jinja — exact match on the model id (e.g.
 //     "Qwopus3.5-4B-Coder.Q8_0.jinja"), letting operators target a
 //     specific quant.
-//  3. <jinjaDir>/<stripQuantSuffix(modelID)>.jinja — match against the
+//  4. <jinjaDir>/<stripQuantSuffix(modelID)>.jinja — match against the
 //     base model name with any trailing quant tag removed (e.g.
 //     "Qwopus3.5-4B-Coder.jinja"), so one file covers every quant of
 //     the same model.
-//  4. The GGUF-embedded "tokenizer.chat_template" — original fallback.
+//  5. The GGUF-embedded "tokenizer.chat_template" — original fallback.
 //
-// Auto-discovery (steps 2-3) lets users drop a .jinja file into
+// Auto-discovery (steps 3-4) lets users drop a .jinja file into
 // <basePath>/jinja/ and have it applied without editing model_config.yaml.
 func retrieveTemplate(cfg Config, modelID string, mdl llama.Model) (Template, error) {
+	if cfg.JinjaScript != "" {
+		return Template{
+			FileName: "playground-custom",
+			Script:   cfg.JinjaScript,
+		}, nil
+	}
+
 	if cfg.JinjaFile != "" {
 		data, err := readJinjaTemplate(cfg.JinjaFile)
 		if err != nil {
