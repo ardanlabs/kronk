@@ -145,7 +145,7 @@ func Resolve(cfg Config) (Plan, error) {
 		plan.Source = SourceMTP
 		plan.MTPArchitecture = MTPArchitectureQwen35OwnKV
 		plan.MTPArtifact = MTPArtifactEmbedded
-		plan.LoadMTP = true
+		plan.LoadMTP = plan.Available
 	case cfg.Mode == ModeMTP:
 		return Plan{}, fmt.Errorf("speculation mode %q requested but the model has no companion or embedded MTP implementation", cfg.Mode)
 	}

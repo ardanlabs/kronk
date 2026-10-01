@@ -3,10 +3,10 @@ package model
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -114,24 +114,39 @@ func (m *Model) clearCaches(ctx context.Context) error {
 //     message produced by normalizeMediaMessages / toMediaMessage)
 func hashMessages(messages []D) string {
 	h := sha256.New()
+	var frame [8]byte
+	writeUint64 := func(value uint64) {
+		binary.LittleEndian.PutUint64(frame[:], value)
+		h.Write(frame[:])
+	}
+	writeBytes := func(data []byte) {
+		writeUint64(uint64(len(data)))
+		h.Write(data)
+	}
 
-	for i, msg := range messages {
+	writeUint64(uint64(len(messages)))
+
+	for _, msg := range messages {
 		role, _ := msg["role"].(string)
 		content := extractMessageContent(msg)
-		fmt.Fprintf(h, "%d:%s:%s|", i, role, content)
+		writeBytes([]byte(role))
+		writeBytes([]byte(content))
 
+		var media [][]byte
 		switch c := msg["content"].(type) {
 		case []byte:
-			fmt.Fprintf(h, "media:%d:", len(c))
-			h.Write(c)
+			media = append(media, c)
 
 		case []any:
 			for _, part := range c {
 				if b, ok := part.([]byte); ok {
-					fmt.Fprintf(h, "media:%d:", len(b))
-					h.Write(b)
+					media = append(media, b)
 				}
 			}
+		}
+		writeUint64(uint64(len(media)))
+		for _, data := range media {
+			writeBytes(data)
 		}
 	}
 

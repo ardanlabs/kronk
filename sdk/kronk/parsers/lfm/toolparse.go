@@ -129,6 +129,12 @@ func splitPayloads(content string) []string {
 				end := pos + 1
 				payloads = append(payloads, strings.TrimSpace(content[start:end]))
 				start = skipWhitespace(content, end)
+				if start < len(content) && content[start] == ',' {
+					start = skipWhitespace(content, start+1)
+					if start == len(content) {
+						return nil
+					}
+				}
 				pos = start - 1
 			}
 		}
