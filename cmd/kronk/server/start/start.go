@@ -155,20 +155,6 @@ func buildEnvVars(cmd *cobra.Command) []string {
 	addStringSlice("cors-allowed-origins", "KRONK_WEB_CORS_ALLOWED_ORIGINS")
 
 	// Auth settings
-	if cmd.Flags().Changed("auth-enabled") {
-		v, _ := cmd.Flags().GetBool("auth-enabled")
-		envVars = append(envVars, "KRONK_AUTH_LOCAL_ENABLED="+strconv.FormatBool(v))
-		if v {
-			envVars = append(envVars, "KRONK_AUTH_ADMIN_ENABLED=true")
-		}
-	}
-	if cmd.Flags().Changed("admin-auth-enabled") {
-		v, _ := cmd.Flags().GetBool("admin-auth-enabled")
-		general, _ := cmd.Flags().GetBool("auth-enabled")
-		if !general {
-			envVars = append(envVars, "KRONK_AUTH_ADMIN_ENABLED="+strconv.FormatBool(v))
-		}
-	}
 	addBool("web-admin-enabled", "KRONK_WEB_ADMIN_ENABLED")
 	addString("auth-host", "KRONK_AUTH_HOST")
 	addBool("auth-tls-enabled", "KRONK_AUTH_TLS_ENABLED")

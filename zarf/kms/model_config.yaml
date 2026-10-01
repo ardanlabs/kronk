@@ -23,14 +23,12 @@ version: 1
 #       password-sha-256: <64 hexadecimal characters>
 #   auth:
 #     host: ""
-#     admin-enabled: false
 #     tls:
 #       enabled: false
 #       ca-file: ""
 #       server-name: ""
 #     local:
 #       issuer: kronk project
-#       enabled: false
 #   authorization:
 #     mode: open  # open, management, authenticated, full-protected
 #   mcp:

@@ -26,7 +26,7 @@ func Routes(app *web.App, cfg Config) {
 	const version = "v1"
 
 	api := newApp(cfg)
-	inferenceAccess := mid.NewAccess(cfg.AuthClient, cfg.AuthorizationMode, false).Inference("decision")
+	inferenceAccess := mid.NewAccess(cfg.AuthClient, cfg.AuthorizationMode).Inference("decision")
 	timeout := mid.Timeout(cfg.InferenceTimeout)
 
 	app.HandlerFunc(http.MethodPost, version, "/systemone", api.decide, timeout, inferenceAccess)

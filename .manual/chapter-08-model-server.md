@@ -118,9 +118,7 @@ Common settings can be supplied as flags or environment variables:
 | `--models-in-pool` | `KRONK_POOL_MODELS_IN_POOL` | `10` | Maximum loaded entries in each model pool |
 | `--pool-ttl` | `KRONK_POOL_TTL` | `0m` | Idle model retention time; `0` disables idle expiration |
 | `--web-admin-enabled` | `KRONK_WEB_ADMIN_ENABLED` | `true` | Serve the BUI under `/admin/` |
-| `--authorization-mode` | `KRONK_AUTHORIZATION_MODE` | unset | Select the API access policy |
-| `--auth-enabled` | `KRONK_AUTH_LOCAL_ENABLED` | `false` | Protect inference and administration with local authentication |
-| `--admin-auth-enabled` | `KRONK_AUTH_ADMIN_ENABLED` | `false` | Protect administration without requiring inference authentication |
+| `--authorization-mode` | `KRONK_AUTHORIZATION_MODE` | `open` | Select the API access policy |
 | `--download-enabled` | `KRONK_DOWNLOAD_ENABLED` | `false` | Allow server-side model downloads |
 | `--lib-download-enabled` | `KRONK_LIB_DOWNLOAD_ENABLED` | `true` | Download or update the llama.cpp library during server startup |
 | `--media-backends-enabled` | `KRONK_MEDIA_BACKENDS_ENABLED` | `true` | Download and load the Bucky and Malina native backends during server startup |
@@ -282,16 +280,14 @@ kms:
       password-sha-256: 18511e63760230cd17291273b607e7e13da2a2bb9a1750e0becdac08185a3c11
   auth:
     host: ""
-    admin-enabled: false
     tls:
       enabled: false
       ca-file: ""
       server-name: ""
     local:
       issuer: kronk project
-      enabled: false
   authorization:
-    # mode: open, management, authenticated, or full-protected
+    mode: open # open, management, authenticated, or full-protected
   mcp:
     enabled: true
     host: ""
@@ -410,14 +406,14 @@ provides catalog and model views when enabled; see
 
 Chapter 2 covers image variants and initial container startup. For a persistent
 deployment, use a versioned image tag and retain `/kronk` in a volume. This
-headless example enables local authentication and exposes the API only through
-the host loopback interface:
+headless example fully protects the API and exposes it only through the host
+loopback interface:
 
 ```shell
 docker run -d \
   --name kronk \
   --restart unless-stopped \
-  -e KRONK_AUTH_LOCAL_ENABLED=true \
+  -e KRONK_AUTHORIZATION_MODE=full-protected \
   -e KRONK_WEB_ADMIN_ENABLED=false \
   -p 127.0.0.1:11435:11435 \
   -v kronk-data:/kronk \

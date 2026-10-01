@@ -33,6 +33,12 @@ func TestNewConfigLibraryVerifyEnabled(t *testing.T) {
 	}
 }
 
+func TestNewConfigAuthorizationMode(t *testing.T) {
+	if got := newConfig().Authorization.Mode; !got.Equal(auth.Open) {
+		t.Errorf("Authorization.Mode: got %q, want %q", got, auth.Open)
+	}
+}
+
 func TestLoadConfig(t *testing.T) {
 	unsetEnv(t, "KRONK_HF_TOKEN")
 	unsetEnv(t, "KRONK_LLAMA_LOG")
@@ -156,27 +162,21 @@ func TestResolveAuthorizationSettings(t *testing.T) {
 	tests := []struct {
 		name                 string
 		mode                 auth.Mode
-		legacyInference      bool
-		legacyManagement     bool
 		mcp                  bool
 		wantInference        bool
 		wantManagement       bool
 		wantServiceAdminAuth bool
 	}{
-		{name: "legacy open"},
-		{name: "legacy management", legacyManagement: true, wantManagement: true, wantServiceAdminAuth: true},
-		{name: "legacy inference implies management", legacyInference: true, wantInference: true, wantManagement: true, wantServiceAdminAuth: true},
-		{name: "legacy MCP implies management", mcp: true, wantManagement: true, wantServiceAdminAuth: true},
-		{name: "open overrides legacy", mode: auth.Open, legacyInference: true, legacyManagement: true},
+		{name: "open", mode: auth.Open},
 		{name: "open preserves MCP auth service", mode: auth.Open, mcp: true, wantServiceAdminAuth: true},
-		{name: "management overrides legacy", mode: auth.Management, legacyInference: true, wantManagement: true, wantServiceAdminAuth: true},
+		{name: "management", mode: auth.Management, wantManagement: true, wantServiceAdminAuth: true},
 		{name: "authenticated", mode: auth.Authenticated, wantInference: true, wantManagement: true, wantServiceAdminAuth: true},
 		{name: "full protected", mode: auth.FullProtected, wantInference: true, wantManagement: true, wantServiceAdminAuth: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotInference, gotManagement, gotServiceAdminAuth := resolveAuthorizationSettings(tt.mode, tt.legacyInference, tt.legacyManagement, tt.mcp)
+			gotInference, gotManagement, gotServiceAdminAuth := resolveAuthorizationSettings(tt.mode, tt.mcp)
 			if gotInference != tt.wantInference {
 				t.Errorf("inference enabled: got %t, want %t", gotInference, tt.wantInference)
 			}

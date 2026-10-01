@@ -14,12 +14,11 @@ import (
 
 // Config contains all the mandatory systems required by handlers.
 type Config struct {
-	Log                    *logger.Logger
-	AuthClient             *authclient.Client
-	Pool                   *pool.Pool
-	Models                 *models.Models
-	AuthorizationMode      auth.Mode
-	LegacyManagementAccess bool
+	Log               *logger.Logger
+	AuthClient        *authclient.Client
+	Pool              *pool.Pool
+	Models            *models.Models
+	AuthorizationMode auth.Mode
 }
 
 // Routes adds specific routes for this group.
@@ -28,7 +27,7 @@ func Routes(app *web.App, cfg Config) {
 
 	api := newApp(cfg)
 
-	playgroundAccess := mid.NewAccess(cfg.AuthClient, cfg.AuthorizationMode, cfg.LegacyManagementAccess).Playground()
+	playgroundAccess := mid.NewAccess(cfg.AuthClient, cfg.AuthorizationMode).Playground()
 
 	app.HandlerFunc(http.MethodPost, version, "/playground/sessions", api.createSession, playgroundAccess)
 	app.HandlerFunc(http.MethodDelete, version, "/playground/sessions/{id}", api.deleteSession, playgroundAccess)

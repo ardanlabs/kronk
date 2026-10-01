@@ -1855,20 +1855,8 @@ kronk libs --local`}</code></pre>
               <tr>
                 <td><code>--authorization-mode</code></td>
                 <td><code>KRONK_AUTHORIZATION_MODE</code></td>
-                <td>unset</td>
+                <td><code>open</code></td>
                 <td>Select the API access policy</td>
-              </tr>
-              <tr>
-                <td><code>--auth-enabled</code></td>
-                <td><code>KRONK_AUTH_LOCAL_ENABLED</code></td>
-                <td><code>false</code></td>
-                <td>Protect inference and administration with local authentication</td>
-              </tr>
-              <tr>
-                <td><code>--admin-auth-enabled</code></td>
-                <td><code>KRONK_AUTH_ADMIN_ENABLED</code></td>
-                <td><code>false</code></td>
-                <td>Protect administration without requiring inference authentication</td>
               </tr>
               <tr>
                 <td><code>--download-enabled</code></td>
@@ -1950,16 +1938,14 @@ kms:
       password-sha-256: 18511e63760230cd17291273b607e7e13da2a2bb9a1750e0becdac08185a3c11
   auth:
     host: ""
-    admin-enabled: false
     tls:
       enabled: false
       ca-file: ""
       server-name: ""
     local:
       issuer: kronk project
-      enabled: false
   authorization:
-    # mode: open, management, authenticated, or full-protected
+    mode: open # open, management, authenticated, or full-protected
   mcp:
     enabled: true
     host: ""
@@ -2024,11 +2010,11 @@ kronk catalog remove unsloth/Qwen3-0.6B-Q8_0`}</code></pre>
           <p>Exact file pins never fall back to a different repository or to another catalog entry with the same quantization suffix. This matters when target and MTP drafter files have similar names: companion discovery remains inside the pinned repository, preventing a cached target, drafter, or unrelated model from being substituted. The resulting canonical ID can still reflect Kronk's normal on-disk rename rules, such as the <code>mtp-</code> prefix for a dedicated MTP repository.</p>
           <p>Use <code>--local</code> for the same operations when the server is stopped. The BUI also provides catalog and model views when enabled; see <a href="https://www.kronkai.com/manual#chapter-13-browser-ui-bui">Chapter 13</a>.</p>
           <h2 id="87-container-operations">8.7 Container Operations</h2>
-          <p>Chapter 2 covers image variants and initial container startup. For a persistent deployment, use a versioned image tag and retain <code>/kronk</code> in a volume. This headless example enables local authentication and exposes the API only through the host loopback interface:</p>
+          <p>Chapter 2 covers image variants and initial container startup. For a persistent deployment, use a versioned image tag and retain <code>/kronk</code> in a volume. This headless example fully protects the API and exposes it only through the host loopback interface:</p>
           <pre className="code-block"><code className="language-shell">{`docker run -d \\
   --name kronk \\
   --restart unless-stopped \\
-  -e KRONK_AUTH_LOCAL_ENABLED=true \\
+  -e KRONK_AUTHORIZATION_MODE=full-protected \\
   -e KRONK_WEB_ADMIN_ENABLED=false \\
   -p 127.0.0.1:11435:11435 \\
   -v kronk-data:/kronk \\
@@ -3272,7 +3258,7 @@ EOF`}</code></pre>
           <p>For example:</p>
           <pre className="code-block"><code className="language-shell">{`export KRONK_AUTHORIZATION_MODE=full-protected
 kronk server start`}</code></pre>
-          <p>When <code>KRONK_AUTHORIZATION_MODE</code> is set, it overrides the legacy <code>KRONK_AUTH_LOCAL_ENABLED</code> and <code>KRONK_AUTH_ADMIN_ENABLED</code> settings. When the new mode is unset, those settings retain their existing behavior for compatibility. This allows deployments to migrate before the legacy settings are deprecated.</p>
+          <p>The default authorization mode is <code>open</code>.</p>
           <p><code>KRONK_AUTH_HOST</code> selects the authentication provider; it does not change the rights in this table. <code>KRONK_WEB_ADMIN_ENABLED</code> independently controls whether the BUI is served. When using an external auth host with a mode that protects management, disable the BUI because its password login uses the embedded security store.</p>
           <h2 id="122-initial-credentials">12.2 Initial Credentials</h2>
           <p>When the embedded security store initializes for the first time, Kronk creates:</p>
@@ -3391,19 +3377,9 @@ kronk security key delete --keyid "$KEY_ID"`}</code></pre>
             </thead>
             <tbody>
               <tr>
-                <td>—</td>
+                <td><code>--authorization-mode</code></td>
                 <td><code>KRONK_AUTHORIZATION_MODE</code></td>
-                <td>Select <code>open</code>, <code>management</code>, <code>authenticated</code>, or <code>full-protected</code>; overrides the legacy authorization settings.</td>
-              </tr>
-              <tr>
-                <td><code>--auth-enabled</code></td>
-                <td><code>KRONK_AUTH_LOCAL_ENABLED</code></td>
-                <td>Legacy setting that protects inference and administration.</td>
-              </tr>
-              <tr>
-                <td><code>--admin-auth-enabled</code></td>
-                <td><code>KRONK_AUTH_ADMIN_ENABLED</code></td>
-                <td>Legacy setting that protects administration only.</td>
+                <td>Select <code>open</code>, <code>management</code>, <code>authenticated</code>, or <code>full-protected</code>. Defaults to <code>open</code>.</td>
               </tr>
               <tr>
                 <td><code>--auth-issuer</code></td>

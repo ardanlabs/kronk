@@ -19,19 +19,18 @@ import (
 
 // Config contains all the mandatory systems required by handlers.
 type Config struct {
-	Log                    *logger.Logger
-	AuthClient             *authclient.Client
-	Pool                   *pool.Pool
-	Libs                   *libs.Libs
-	LibVersion             string
-	LibVerifyEnabled       bool
-	Models                 *models.Models
-	BuckyLibs              *buckylibs.Libs
-	BuckyModels            *buckymodels.Models
-	MalinaLibs             *malinalibs.Libs
-	MalinaModels           *malinamodels.Models
-	AuthorizationMode      auth.Mode
-	LegacyManagementAccess bool
+	Log               *logger.Logger
+	AuthClient        *authclient.Client
+	Pool              *pool.Pool
+	Libs              *libs.Libs
+	LibVersion        string
+	LibVerifyEnabled  bool
+	Models            *models.Models
+	BuckyLibs         *buckylibs.Libs
+	BuckyModels       *buckymodels.Models
+	MalinaLibs        *malinalibs.Libs
+	MalinaModels      *malinamodels.Models
+	AuthorizationMode auth.Mode
 }
 
 // Routes adds specific routes for this group.
@@ -40,7 +39,7 @@ func Routes(app *web.App, cfg Config) {
 
 	api := newApp(cfg)
 
-	access := mid.NewAccess(cfg.AuthClient, cfg.AuthorizationMode, cfg.LegacyManagementAccess)
+	access := mid.NewAccess(cfg.AuthClient, cfg.AuthorizationMode)
 	modelDiscoveryAccess := access.ModelDiscovery()
 	managementAccess := access.Management()
 	administrationAccess := access.Administration()

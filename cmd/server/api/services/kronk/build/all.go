@@ -35,19 +35,18 @@ func (all) Add(app *web.App, cfg mux.Config) {
 	})
 
 	toolapp.Routes(app, toolapp.Config{
-		Log:                    cfg.Log,
-		AuthClient:             cfg.AuthClient,
-		Pool:                   cfg.Pool,
-		Libs:                   cfg.Libs,
-		LibVersion:             cfg.LibVersion,
-		LibVerifyEnabled:       cfg.LibVerifyEnabled,
-		Models:                 cfg.Models,
-		BuckyLibs:              cfg.BuckyLibs,
-		BuckyModels:            cfg.BuckyModels,
-		MalinaLibs:             cfg.MalinaLibs,
-		MalinaModels:           cfg.MalinaModels,
-		AuthorizationMode:      cfg.AuthorizationMode,
-		LegacyManagementAccess: cfg.AdminAuthEnabled,
+		Log:               cfg.Log,
+		AuthClient:        cfg.AuthClient,
+		Pool:              cfg.Pool,
+		Libs:              cfg.Libs,
+		LibVersion:        cfg.LibVersion,
+		LibVerifyEnabled:  cfg.LibVerifyEnabled,
+		Models:            cfg.Models,
+		BuckyLibs:         cfg.BuckyLibs,
+		BuckyModels:       cfg.BuckyModels,
+		MalinaLibs:        cfg.MalinaLibs,
+		MalinaModels:      cfg.MalinaModels,
+		AuthorizationMode: cfg.AuthorizationMode,
 	})
 
 	chatapp.Routes(app, chatapp.Config{
@@ -124,12 +123,11 @@ func (all) Add(app *web.App, cfg mux.Config) {
 	})
 
 	playgroundapp.Routes(app, playgroundapp.Config{
-		Log:                    cfg.Log,
-		AuthClient:             cfg.AuthClient,
-		Pool:                   cfg.Pool,
-		Models:                 cfg.Models,
-		AuthorizationMode:      cfg.AuthorizationMode,
-		LegacyManagementAccess: cfg.AdminAuthEnabled,
+		Log:               cfg.Log,
+		AuthClient:        cfg.AuthClient,
+		Pool:              cfg.Pool,
+		Models:            cfg.Models,
+		AuthorizationMode: cfg.AuthorizationMode,
 	})
 
 	if cfg.DownloadEnabled {

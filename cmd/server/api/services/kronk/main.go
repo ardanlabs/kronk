@@ -80,10 +80,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	// - authenticated: discovery and inference require a valid JWT; management requires an administrator.
 	// - full-protected: inference requires endpoint grants, discovery requires a valid JWT, and management requires an administrator.
 	//
-	// When AUTHORIZATION_MODE is set, it overrides AUTH_LOCAL_ENABLED and
-	// AUTH_ADMIN_ENABLED. When it is unset, the legacy settings retain their
-	// existing behavior. WEB_ADMIN_ENABLED independently controls whether the
-	// BUI is served under /admin/.
+	// The default mode is open. WEB_ADMIN_ENABLED independently controls whether
+	// the BUI is served under /admin/.
 
 	cfg, err := loadConfig(showHelp)
 	if err != nil {
@@ -92,8 +90,6 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	mcpAuthEnabled := cfg.MCP.Enabled && cfg.MCP.Host == "" && cfg.MCP.AuthEnabled
 	inferenceAuthEnabled, managementAuthEnabled, authServiceAdminEnabled := resolveAuthorizationSettings(
 		cfg.Authorization.Mode,
-		cfg.Auth.Local.Enabled,
-		cfg.Auth.AdminEnabled,
 		mcpAuthEnabled,
 	)
 	if err := validateAdminConfig(managementAuthEnabled, cfg.Web.Admin.Enabled, cfg.Web.Admin.PasswordSHA256, cfg.Auth.Host); err != nil {
