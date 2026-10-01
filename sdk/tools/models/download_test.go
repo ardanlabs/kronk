@@ -968,3 +968,70 @@ func TestDownloadCompanion_ReuseBySHAStillShortCircuits(t *testing.T) {
 		})
 	}
 }
+
+func TestTryReuseCompanionFromURLNameAdoptsDestinationInPlace(t *testing.T) {
+	body := []byte("projection")
+	m := newTestModels(t)
+	dir := filepath.Join(m.modelsPath, "provider", "family")
+	if err := os.MkdirAll(filepath.Join(dir, "sha"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	const rawURL = "https://huggingface.co/provider/family/resolve/main/mmproj-model.gguf"
+	loc, err := newLocator(rawURL)
+	if err != nil {
+		t.Fatalf("newLocator: %v", err)
+	}
+	dest := filepath.Join(dir, "mmproj-model.gguf")
+	if err := os.WriteFile(dest, body, 0o644); err != nil {
+		t.Fatalf("WriteFile companion: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sha", filepath.Base(dest)), makeShaPointer(body), 0o644); err != nil {
+		t.Fatalf("WriteFile pointer: %v", err)
+	}
+
+	got, hit, err := m.tryReuseCompanionFromURLName(t.Context(), testLog, companionProj, loc, dest)
+	if err != nil {
+		t.Fatalf("tryReuseCompanionFromURLName: %v", err)
+	}
+	if !hit || got != dest {
+		t.Fatalf("reuse result: got path %q hit %t, want path %q hit true", got, hit, dest)
+	}
+	content, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("ReadFile companion: %v", err)
+	}
+	if !bytes.Equal(content, body) {
+		t.Errorf("companion: got %q, want %q", content, body)
+	}
+}
+
+func TestSHAPointerDownloadsUseRequestContext(t *testing.T) {
+	const rawURL = "https://huggingface.co/provider/family/resolve/main/model.gguf"
+	loc, err := newLocator(rawURL)
+	if err != nil {
+		t.Fatalf("newLocator: %v", err)
+	}
+
+	prevD, prevN := downloadFn, hasNetworkFn
+	hasNetworkFn = func() bool { return true }
+	downloadFn = func(ctx context.Context, _ string, _ string, _ downloader.ProgressFunc, _ int64) (bool, error) {
+		return false, ctx.Err()
+	}
+	t.Cleanup(func() {
+		downloadFn = prevD
+		hasNetworkFn = prevN
+	})
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	m := newTestModels(t)
+
+	if _, _, err := m.downloadModelFile(ctx, loc, nil); !errors.Is(err, context.Canceled) {
+		t.Errorf("downloadModelFile: got %v, want context.Canceled", err)
+	}
+	modelFile := filepath.Join(m.modelsPath, "provider", "family", "model.gguf")
+	if _, _, err := m.downloadCompanion(ctx, testLog, loc, modelFile, companionProj, nil); !errors.Is(err, context.Canceled) {
+		t.Errorf("downloadCompanion: got %v, want context.Canceled", err)
+	}
+}

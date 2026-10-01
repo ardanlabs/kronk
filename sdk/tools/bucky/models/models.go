@@ -31,6 +31,7 @@ var (
 
 	localFolder = "bucky-models"
 	indexFile   = ".index.yaml"
+	partialDir  = ".partial"
 )
 
 // Path returns file path information about a whisper model. It is an
@@ -185,6 +186,11 @@ func (m *Models) Download(ctx context.Context, log applog.Logger, source string)
 	}
 
 	dest := filepath.Join(m.modelsPath, fileName)
+	stagingDir := filepath.Join(m.modelsPath, partialDir)
+	if err := os.MkdirAll(stagingDir, 0o755); err != nil {
+		return Path{}, fmt.Errorf("download: create staging directory: %w", err)
+	}
+	staged := filepath.Join(stagingDir, fileName)
 
 	progress := func(src string, currentSize int64, totalSize int64, mbPerSec float64, complete bool) {
 		log(ctx, fmt.Sprintf("\r\x1b[Kdownload-model: Downloading %s... %d MB of %d MB (%.2f MB/s)", src, currentSize/(1000*1000), totalSize/(1000*1000), mbPerSec))
@@ -192,14 +198,22 @@ func (m *Models) Download(ctx context.Context, log applog.Logger, source string)
 
 	pr := downloader.NewProgressReader(progress, downloader.SizeIntervalMB10)
 
-	if err := download.GetModelWithContext(ctx, downloadURL, m.modelsPath, getter.ProgressTracker(pr)); err != nil {
+	if err := download.GetModelWithContext(ctx, downloadURL, stagingDir, getter.ProgressTracker(pr)); err != nil {
 		return Path{}, fmt.Errorf("download: %w", err)
 	}
 
-	info, err := os.Stat(dest)
+	info, err := os.Stat(staged)
 	if err != nil {
-		return Path{}, fmt.Errorf("download: stat installed model: %w", err)
+		return Path{}, fmt.Errorf("download: stat staged model: %w", err)
 	}
+	if info.Size() == 0 {
+		return Path{}, fmt.Errorf("download: staged model is empty")
+	}
+
+	if err := activateModelFile(staged, dest); err != nil {
+		return Path{}, fmt.Errorf("download: activate model: %w", err)
+	}
+	_ = os.Remove(stagingDir)
 
 	if err := m.refreshIndex(log); err != nil {
 		log(ctx, "download-model: refresh index", "ERROR", err)
@@ -330,6 +344,48 @@ func parseURLPath(raw string) string {
 		return ""
 	}
 	return u.Path
+}
+
+// =============================================================================
+
+func activateModelFile(staged string, dest string) error {
+	backup := ""
+	if _, err := os.Stat(dest); err == nil {
+		file, err := os.CreateTemp(filepath.Dir(dest), "."+filepath.Base(dest)+".backup-*")
+		if err != nil {
+			return fmt.Errorf("create backup path: %w", err)
+		}
+		backup = file.Name()
+		if err := file.Close(); err != nil {
+			os.Remove(backup)
+			return fmt.Errorf("close backup path: %w", err)
+		}
+		if err := os.Remove(backup); err != nil {
+			return fmt.Errorf("prepare backup path: %w", err)
+		}
+		if err := os.Rename(dest, backup); err != nil {
+			return fmt.Errorf("preserve installed model: %w", err)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect installed model: %w", err)
+	}
+
+	if err := os.Rename(staged, dest); err != nil {
+		if backup != "" {
+			if rollbackErr := os.Rename(backup, dest); rollbackErr != nil {
+				return errors.Join(
+					fmt.Errorf("activate staged model: %w", err),
+					fmt.Errorf("restore installed model: %w", rollbackErr),
+				)
+			}
+		}
+		return fmt.Errorf("activate staged model: %w", err)
+	}
+
+	if backup != "" {
+		_ = os.Remove(backup)
+	}
+	return nil
 }
 
 // =============================================================================

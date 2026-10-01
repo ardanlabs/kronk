@@ -553,14 +553,21 @@ func (lib *Libs) Remove(arch string, opSys string, processor string) error {
 // alongside so subsequent InstalledVersion calls can report the
 // installed metadata.
 func (lib *Libs) downloadInto(ctx context.Context, log Logger, path string, arch string, opSys string, processor string, version string) (VersionTag, error) {
-	if err := os.MkdirAll(path, 0o755); err != nil {
-		return VersionTag{}, fmt.Errorf("download-into: unable to create destination: %w", err)
+	parent := filepath.Dir(path)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return VersionTag{}, fmt.Errorf("download-into: unable to create parent: %w", err)
 	}
 
-	tempPath := filepath.Join(path, "temp")
-	if err := os.MkdirAll(tempPath, 0o755); err != nil {
-		return VersionTag{}, fmt.Errorf("download-into: unable to create temp: %w", err)
+	stagePath, err := os.MkdirTemp(parent, "."+filepath.Base(path)+".stage-")
+	if err != nil {
+		return VersionTag{}, fmt.Errorf("download-into: unable to create staging directory: %w", err)
 	}
+	preserveStage := false
+	defer func() {
+		if !preserveStage {
+			_ = os.RemoveAll(stagePath)
+		}
+	}()
 
 	progress := func(src string, currentSize int64, totalSize int64, mbPerSec float64, complete bool) {
 		log(ctx, fmt.Sprintf("\r\x1b[Kdownload-libraries: Downloading %s... %d MB of %d MB (%.2f MB/s)", src, currentSize/(1000*1000), totalSize/(1000*1000), mbPerSec))
@@ -568,53 +575,59 @@ func (lib *Libs) downloadInto(ctx context.Context, log Logger, path string, arch
 
 	pr := downloader.NewProgressReader(progress, downloader.SizeIntervalMB10)
 
-	if err := download.GetWithContext(ctx, arch, opSys, processor, version, tempPath, getter.ProgressTracker(pr)); err != nil {
-		os.RemoveAll(tempPath)
+	if err := download.GetWithContext(ctx, arch, opSys, processor, version, stagePath, getter.ProgressTracker(pr)); err != nil {
 		return VersionTag{}, fmt.Errorf("download-into: unable to install whisper.cpp: %w", err)
 	}
 
-	if err := swapTempForLibAt(path, tempPath); err != nil {
-		os.RemoveAll(tempPath)
-		return VersionTag{}, fmt.Errorf("download-into: unable to swap temp for lib: %w", err)
+	if err := writeVersionFile(stagePath, version, arch, opSys, processor); err != nil {
+		return VersionTag{}, fmt.Errorf("download-into: unable to create version file: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return VersionTag{}, fmt.Errorf("download-into: activate libraries: %w", err)
 	}
 
-	if err := writeVersionFile(path, version, arch, opSys, processor); err != nil {
-		return VersionTag{}, fmt.Errorf("download-into: unable to create version file: %w", err)
+	preserveStage, err = swapInstall(path, stagePath)
+	if err != nil {
+		return VersionTag{}, fmt.Errorf("download-into: unable to install staged libraries: %w", err)
 	}
 
 	return readVersionFile(path)
 }
 
-func swapTempForLibAt(path string, tempPath string) error {
-	entries, err := os.ReadDir(path)
-	if err != nil {
-		return fmt.Errorf("swap-temp-for-lib: unable to read libPath: %w", err)
-	}
-
-	for _, entry := range entries {
-		if entry.Name() == "temp" {
-			continue
+func swapInstall(path string, stagePath string) (bool, error) {
+	backupPath := ""
+	if _, err := os.Stat(path); err == nil {
+		backup, err := os.MkdirTemp(filepath.Dir(path), "."+filepath.Base(path)+".backup-")
+		if err != nil {
+			return false, fmt.Errorf("swap-install: create backup path: %w", err)
 		}
-		os.RemoveAll(filepath.Join(path, entry.Name()))
-	}
-
-	tempEntries, err := os.ReadDir(tempPath)
-	if err != nil {
-		return fmt.Errorf("swap-temp-for-lib: unable to read temp: %w", err)
-	}
-
-	for _, entry := range tempEntries {
-		src := filepath.Join(tempPath, entry.Name())
-		dst := filepath.Join(path, entry.Name())
-		os.RemoveAll(dst)
-		if err := os.Rename(src, dst); err != nil {
-			return fmt.Errorf("swap-temp-for-lib: unable to move %s: %w", entry.Name(), err)
+		if err := os.Remove(backup); err != nil {
+			return false, fmt.Errorf("swap-install: prepare backup path: %w", err)
 		}
+		backupPath = backup
+		if err := os.Rename(path, backupPath); err != nil {
+			return false, fmt.Errorf("swap-install: preserve current install: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return false, fmt.Errorf("swap-install: inspect current install: %w", err)
 	}
 
-	os.RemoveAll(tempPath)
+	if err := os.Rename(stagePath, path); err != nil {
+		if backupPath != "" {
+			if rollbackErr := os.Rename(backupPath, path); rollbackErr != nil {
+				return true, errors.Join(
+					fmt.Errorf("swap-install: activate staged install %q: %w", stagePath, err),
+					fmt.Errorf("swap-install: restore backup %q: %w", backupPath, rollbackErr),
+				)
+			}
+		}
+		return false, fmt.Errorf("swap-install: activate staged install: %w", err)
+	}
 
-	return nil
+	if backupPath != "" {
+		_ = os.RemoveAll(backupPath)
+	}
+	return false, nil
 }
 
 func writeVersionFile(path string, version string, arch string, opSys string, processor string) error {

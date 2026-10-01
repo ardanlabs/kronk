@@ -3,8 +3,10 @@
 package devices
 
 import (
+	"context"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/hybridgroup/yzma/pkg/download"
 )
@@ -30,7 +32,10 @@ func DetectGPU() download.Processor {
 // vulkaninfo utility on PATH or the Vulkan runtime DLL in System32.
 func hasVulkan() bool {
 	if _, err := exec.LookPath("vulkaninfo"); err == nil {
-		out, err := exec.Command("vulkaninfo", "--summary").CombinedOutput()
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+
+		out, err := exec.CommandContext(ctx, "vulkaninfo", "--summary").CombinedOutput()
 		if err == nil && strings.Contains(string(out), "Vulkan Instance") {
 			return true
 		}

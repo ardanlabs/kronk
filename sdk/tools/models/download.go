@@ -631,7 +631,7 @@ func (m *Models) downloadCompanion(ctx context.Context, log applog.Logger, loc L
 	// existing local file's sha and skip the body download on a match.
 	shaFileName := filepath.Join(filepath.Dir(dstFileName), "sha", filepath.Base(dstFileName))
 
-	orgShaFileName, _, err := m.pull(context.Background(), loc, pullSha, progress)
+	orgShaFileName, _, err := m.pull(ctx, loc, pullSha, progress)
 	if err != nil {
 		return "", false, fmt.Errorf("download-model: unable to download sha file: %w", err)
 	}
@@ -732,7 +732,7 @@ func (m *Models) checkValidatedIndex(ctx context.Context, log applog.Logger, mLo
 // when the getter no-op'd because the file already existed at the expected
 // size).
 func (m *Models) downloadModelFile(ctx context.Context, mLoc Locator, progress downloader.ProgressFunc) (string, bool, error) {
-	if _, _, err := m.pull(context.Background(), mLoc, pullSha, progress); err != nil {
+	if _, _, err := m.pull(ctx, mLoc, pullSha, progress); err != nil {
 		return "", false, fmt.Errorf("download-model: unable to download sha file: %w", err)
 	}
 
@@ -762,6 +762,13 @@ func (m *Models) tryReuseCompanionFromURLName(ctx context.Context, log applog.Lo
 
 	if _, err := os.Stat(urlFilePath); err != nil {
 		return "", false, nil
+	}
+	if filepath.Clean(urlFilePath) == filepath.Clean(dstFileName) {
+		if err := checkModelStrict(dstFileName); err != nil {
+			return "", false, nil
+		}
+		log(ctx, "download-model: companion already present under canonical URL name, reusing in place", "kind", kind.label, "file", filepath.Base(dstFileName))
+		return dstFileName, true, nil
 	}
 
 	log(ctx, "download-model: found existing companion file by URL name, copying", "kind", kind.label, "src", urlFileName, "dst", filepath.Base(dstFileName))

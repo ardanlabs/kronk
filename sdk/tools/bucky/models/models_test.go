@@ -107,8 +107,11 @@ func TestDownloadResumesPartialModel(t *testing.T) {
 		t.Fatalf("NewWithPaths: %v", err)
 	}
 
-	dest := filepath.Join(m.Path(), "ggml-resume.bin")
-	if err := os.WriteFile(dest, contents[:7], 0o644); err != nil {
+	stagingDir := filepath.Join(m.Path(), partialDir)
+	if err := os.MkdirAll(stagingDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll staging: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stagingDir, "ggml-resume.bin"), contents[:7], 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
@@ -116,11 +119,45 @@ func TestDownloadResumesPartialModel(t *testing.T) {
 		t.Fatalf("Download: %v", err)
 	}
 
-	got, err := os.ReadFile(dest)
+	got, err := os.ReadFile(filepath.Join(m.Path(), "ggml-resume.bin"))
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
 	if string(got) != string(contents) {
 		t.Fatalf("downloaded contents: got %q, want %q", got, contents)
+	}
+}
+
+func TestInterruptedDownloadIsNotInstalled(t *testing.T) {
+	contents := []byte("partial whisper model")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", fmt.Sprint(len(contents)*2))
+		if r.Method == http.MethodHead {
+			return
+		}
+		_, _ = w.Write(contents)
+	}))
+	defer server.Close()
+
+	m, err := NewWithPaths(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewWithPaths: %v", err)
+	}
+	log := func(context.Context, string, ...any) {}
+
+	if _, err := m.Download(t.Context(), log, server.URL+"/ggml-interrupted.bin"); err == nil {
+		t.Fatal("Download: got nil error, want interrupted download error")
+	}
+	if _, err := os.Stat(filepath.Join(m.Path(), "ggml-interrupted.bin")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("installed model: got %v, want os.ErrNotExist", err)
+	}
+	if _, err := os.Stat(filepath.Join(m.Path(), partialDir, "ggml-interrupted.bin")); err != nil {
+		t.Fatalf("partial model was not retained for resume: %v", err)
+	}
+	if err := m.BuildIndex(log, false); err != nil {
+		t.Fatalf("BuildIndex: %v", err)
+	}
+	if _, err := m.FullPath("interrupted"); !errors.Is(err, ErrModelNotFound) {
+		t.Fatalf("FullPath: got %v, want ErrModelNotFound", err)
 	}
 }
