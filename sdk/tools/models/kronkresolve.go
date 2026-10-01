@@ -281,6 +281,12 @@ func AutoTuneWithConfig(info ModelInfo, devs devices.Devices, constraints ModelC
 	return autoTuneWithConfigAndBudget(info, devs, constraints, nil)
 }
 
+// AutoTuneWithConfigAndBudget returns hardware-aware defaults constrained by
+// the supplied stable memory budget.
+func AutoTuneWithConfigAndBudget(info ModelInfo, devs devices.Devices, constraints ModelConfig, budget AutoTuneBudget) (ModelConfig, error) {
+	return autoTuneWithConfigAndBudget(info, devs, constraints, &budget)
+}
+
 func autoTuneWithConfigAndBudget(info ModelInfo, devs devices.Devices, constraints ModelConfig, budget *AutoTuneBudget) (ModelConfig, error) {
 	analysis, err := analyzeModelWithConfigAndBudget(info, devs, constraints, budget)
 	if err != nil {

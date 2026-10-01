@@ -246,12 +246,12 @@ func isFolderURL(modelURL string) bool {
 // fetchFolderFiles lists GGUF files in a HuggingFace folder and returns
 // their download URLs (sorted) and total size.
 func fetchFolderFiles(ctx context.Context, folderURL string) ([]string, int64, error) {
-	owner, repo, folderPath, err := parseFolderURL(folderURL)
+	owner, repo, revision, folderPath, err := parseFolderURL(folderURL)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	repoFiles, err := hf.RepoFiles(ctx, owner, repo, "main", folderPath, false)
+	repoFiles, err := hf.RepoFiles(ctx, owner, repo, revision, folderPath, false)
 	if err != nil {
 		return nil, 0, fmt.Errorf("fetch-folder-files: %w", err)
 	}
@@ -264,7 +264,7 @@ func fetchFolderFiles(ctx context.Context, folderURL string) ([]string, int64, e
 			continue
 		}
 
-		downloadURL := fmt.Sprintf("https://huggingface.co/%s/%s/resolve/main/%s", owner, repo, f.Filename)
+		downloadURL := hf.BuildURL(owner, repo, revision, f.Filename)
 		fileURLs = append(fileURLs, downloadURL)
 		totalSize += f.Size
 	}
@@ -278,37 +278,46 @@ func fetchFolderFiles(ctx context.Context, folderURL string) ([]string, int64, e
 	return fileURLs, totalSize, nil
 }
 
-// parseFolderURL extracts owner, repo, and folder path from a HuggingFace
-// folder URL.
+// parseFolderURL extracts owner, repo, revision, and folder path from a
+// HuggingFace folder URL.
 //
 // Supported formats:
 //
 //	https://huggingface.co/owner/repo/tree/main/subfolder
 //	owner/repo/tree/main/subfolder
 //	owner/repo/subfolder (no /tree/main/ prefix)
-func parseFolderURL(folderURL string) (owner, repo, folderPath string, err error) {
-	raw := folderURL
-	raw = strings.TrimPrefix(raw, "https://huggingface.co/")
-	raw = strings.TrimPrefix(raw, "http://huggingface.co/")
+func parseFolderURL(folderURL string) (owner, repo, revision, folderPath string, err error) {
+	raw := strings.TrimSpace(folderURL)
+	for _, prefix := range []string{
+		"https://huggingface.co/",
+		"http://huggingface.co/",
+		"https://hf.co/",
+		"http://hf.co/",
+	} {
+		if strings.HasPrefix(strings.ToLower(raw), prefix) {
+			raw = raw[len(prefix):]
+			break
+		}
+	}
+	raw = hf.StripHostPrefix(raw)
 
-	parts := strings.SplitN(raw, "/", 3)
+	parts := strings.Split(strings.Trim(raw, "/"), "/")
 	if len(parts) < 3 {
-		return "", "", "", fmt.Errorf("parse-folder-url: invalid folder URL: %s", folderURL)
+		return "", "", "", "", fmt.Errorf("parse-folder-url: invalid folder URL: %s", folderURL)
 	}
 
 	owner = parts[0]
 	repo = parts[1]
-	rest := parts[2]
-
-	// Strip tree/main/ prefix if present.
-	rest = strings.TrimPrefix(rest, "tree/main/")
-
-	// Strip blob/main/ prefix if present.
-	rest = strings.TrimPrefix(rest, "blob/main/")
-
-	if rest == "" {
-		return "", "", "", fmt.Errorf("parse-folder-url: missing folder path in URL: %s", folderURL)
+	revision = "main"
+	rest := parts[2:]
+	if rest[0] == "tree" || rest[0] == "blob" {
+		if len(rest) < 3 {
+			return "", "", "", "", fmt.Errorf("parse-folder-url: missing folder path in URL: %s", folderURL)
+		}
+		revision = rest[1]
+		rest = rest[2:]
 	}
+	folderPath = strings.Join(rest, "/")
 
-	return owner, repo, rest, nil
+	return owner, repo, revision, folderPath, nil
 }

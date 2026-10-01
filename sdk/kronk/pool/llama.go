@@ -82,6 +82,17 @@ func (l *Llama) ResolvedModelConfig(modelID string) (models.ModelConfig, error) 
 	)
 }
 
+// ResolvedKronkConfig returns the same budgeted runtime configuration used to
+// prepare a model for planning and loading.
+func (l *Llama) ResolvedKronkConfig(modelID string) (model.Config, error) {
+	return l.models.KronkResolvedConfigWithBudget(
+		modelID,
+		l.modelConfig,
+		l.autoTuneBudget(modelID),
+		effectiveSWAFull(model.Config{}),
+	)
+}
+
 // Prepare resolves the model configuration once for both planning and loading.
 func (l *Llama) Prepare(_ context.Context, req loader.LoadRequest) (any, error) {
 	return l.resolveConfig(req)

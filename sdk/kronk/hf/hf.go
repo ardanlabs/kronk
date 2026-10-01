@@ -74,22 +74,7 @@ type treeEntry struct {
 // repository. When recursive is true the full repo tree is fetched; otherwise
 // only the immediate contents of path are listed.
 func RepoFiles(ctx context.Context, owner, repo, revision, path string, recursive bool) ([]RepoFile, error) {
-	if revision == "" {
-		revision = "main"
-	}
-
-	var apiURL string
-	switch {
-	case recursive:
-		apiURL = fmt.Sprintf("https://huggingface.co/api/models/%s/%s/tree/%s?recursive=true",
-			url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(revision))
-	case path != "":
-		apiURL = fmt.Sprintf("https://huggingface.co/api/models/%s/%s/tree/main/%s",
-			url.PathEscape(owner), url.PathEscape(repo), path)
-	default:
-		apiURL = fmt.Sprintf("https://huggingface.co/api/models/%s/%s/tree/%s",
-			url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(revision))
-	}
+	apiURL := repoFilesURL(owner, repo, revision, path, recursive)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
@@ -134,6 +119,27 @@ func RepoFiles(ctx context.Context, owner, repo, revision, path string, recursiv
 	}
 
 	return files, nil
+}
+
+func repoFilesURL(owner, repo, revision, path string, recursive bool) string {
+	if revision == "" {
+		revision = "main"
+	}
+
+	apiURL := fmt.Sprintf("https://huggingface.co/api/models/%s/%s/tree/%s",
+		url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(revision))
+	if path != "" && !recursive {
+		parts := strings.Split(strings.Trim(path, "/"), "/")
+		for i := range parts {
+			parts[i] = url.PathEscape(parts[i])
+		}
+		apiURL += "/" + strings.Join(parts, "/")
+	}
+	if recursive {
+		apiURL += "?recursive=true"
+	}
+
+	return apiURL
 }
 
 // FormatFileSize formats a byte count into a human-readable string using

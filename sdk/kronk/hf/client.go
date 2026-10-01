@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -177,16 +178,9 @@ func (c *DefaultClient) do(ctx context.Context, u string) ([]byte, error) {
 		return nil, fmt.Errorf("hf-request: unexpected status %d for %s", resp.StatusCode, u)
 	}
 
-	body := make([]byte, 0, 4096)
-	buf := make([]byte, 4096)
-	for {
-		n, rerr := resp.Body.Read(buf)
-		if n > 0 {
-			body = append(body, buf[:n]...)
-		}
-		if rerr != nil {
-			break
-		}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("hf-request: read body: %w", err)
 	}
 
 	return body, nil

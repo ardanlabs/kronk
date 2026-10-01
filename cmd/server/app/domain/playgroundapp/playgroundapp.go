@@ -60,7 +60,7 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.Errorf(errs.InvalidArgument, "missing model_id")
 	}
 
-	baseCfg, err := a.models.KronkResolvedConfig(req.ModelID, a.pool.Kronk.ModelConfig())
+	baseCfg, err := a.pool.Kronk.ResolvedKronkConfig(req.ModelID)
 	if err != nil {
 		return errs.FromSDK(fmt.Errorf("resolving model config: %w", err))
 	}

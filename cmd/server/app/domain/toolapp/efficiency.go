@@ -96,7 +96,7 @@ func (a *app) runEfficiency(ctx context.Context, r *http.Request) web.Encoder {
 
 	// Resolve the model's normal config and disable incremental caching so each
 	// prompt is measured from a clean state (no KV reuse skewing the numbers).
-	cfg, err := a.models.KronkResolvedConfig(req.Model, a.pool.Kronk.ModelConfig())
+	cfg, err := a.pool.Kronk.ResolvedKronkConfig(req.Model)
 	if err != nil {
 		return errs.FromSDK(fmt.Errorf("resolving model config: %w", err))
 	}
@@ -106,7 +106,7 @@ func (a *app) runEfficiency(ctx context.Context, r *http.Request) web.Encoder {
 
 	// Acquire a dedicated instance with a stable per-model key so switching the
 	// prompt and re-running reuses the loaded model rather than reloading it.
-	krn, err := a.pool.Kronk.AquireCustom(ctx, req.Model+"/efficiency", cfg)
+	krn, err := a.pool.Kronk.AquireCustom(ctx, req.Model+"/custom/efficiency", cfg)
 	if err != nil {
 		return errs.FromSDK(err)
 	}

@@ -18,6 +18,17 @@ import (
 // On any failure the original cfg is returned unchanged so auto-tune never
 // blocks a load.
 func AutoTuneConfig(ctx context.Context, cfg model.Config) model.Config {
+	return autoTuneConfig(ctx, cfg, nil)
+}
+
+// AutoTuneConfigWithBudget seeds unset settings using a stable memory budget.
+// Pool callers use this so custom loads honor the same resource-manager limits
+// as catalog-driven loads.
+func AutoTuneConfigWithBudget(ctx context.Context, cfg model.Config, budget models.AutoTuneBudget) model.Config {
+	return autoTuneConfig(ctx, cfg, &budget)
+}
+
+func autoTuneConfig(ctx context.Context, cfg model.Config, budget *models.AutoTuneBudget) model.Config {
 	if len(cfg.ModelFiles) == 0 {
 		logAutoTune(ctx, cfg.Log, "status", "skipped", "reason", "no model files configured")
 		return cfg
@@ -45,7 +56,12 @@ func AutoTuneConfig(ctx context.Context, cfg model.Config) model.Config {
 	if constraints.PtrSWAFull == nil {
 		constraints.PtrSWAFull = new(llama.ContextDefaultParams().SwaFull != 0)
 	}
-	base, err := models.AutoTuneWithConfig(info, devices.List(), constraints)
+	var base models.ModelConfig
+	if budget == nil {
+		base, err = models.AutoTuneWithConfig(info, devices.List(), constraints)
+	} else {
+		base, err = models.AutoTuneWithConfigAndBudget(info, budget.Devices, constraints, *budget)
+	}
 	if err != nil {
 		logAutoTune(ctx, cfg.Log, "status", "skipped", "error", err.Error())
 		return cfg

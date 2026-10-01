@@ -38,10 +38,21 @@ func ParseInt64WithFallback(metadata map[string]string, key string, suffix strin
 		return strconv.ParseInt(val, 10, 64)
 	}
 
+	var (
+		fallback string
+		found    bool
+	)
 	for k, v := range metadata {
 		if strings.HasSuffix(k, suffix) {
-			return strconv.ParseInt(v, 10, 64)
+			if found {
+				return 0, fmt.Errorf("parse-metadata-int64: metadata suffix %q is ambiguous", suffix)
+			}
+			fallback = v
+			found = true
 		}
+	}
+	if found {
+		return strconv.ParseInt(fallback, 10, 64)
 	}
 
 	return 0, fmt.Errorf("parse-metadata-int64: metadata key %q not found", key)

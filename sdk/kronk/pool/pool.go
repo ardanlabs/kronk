@@ -214,20 +214,13 @@ func (p *Pool) AquireModel(ctx context.Context, modelID string) (*kronk.Kronk, e
 // This bypasses the normal catalog resolution path. The key includes the
 // canonical model ID followed by the custom workload name.
 func (p *Pool) AquireCustom(ctx context.Context, key string, cfg model.Config) (*kronk.Kronk, error) {
-	modelID := strings.TrimSuffix(key, "/accuracy")
-	modelID = strings.TrimSuffix(modelID, "/efficiency")
-	if before, _, found := strings.Cut(modelID, "/playground/"); found {
-		modelID = before
-	}
-	if modelID == key {
-		return nil, fmt.Errorf("acquire-custom: invalid key %q", key)
-	}
-	if _, err := models.ParseModelID(modelID); err != nil {
-		return nil, fmt.Errorf("acquire-custom: %w", err)
+	modelID, err := customModelID(key)
+	if err != nil {
+		return nil, err
 	}
 	cfg.ResponseModelID = modelID
 	if cfg.AutoTune && !cfg.AutoTuned {
-		cfg = kronk.AutoTuneConfig(ctx, cfg)
+		cfg = kronk.AutoTuneConfigWithBudget(ctx, cfg, p.llama.autoTuneBudget(modelID))
 	}
 	krn, err := p.engine.Acquire(ctx, loader.LoadRequest{
 		ModelID: modelID,
@@ -235,6 +228,26 @@ func (p *Pool) AquireCustom(ctx context.Context, key string, cfg model.Config) (
 		Custom:  cfg,
 	})
 	return krn, translateCapacityError(err)
+}
+
+func customModelID(key string) (string, error) {
+	if _, err := models.ParseModelID(key); err == nil {
+		return "", fmt.Errorf("acquire-custom: key %q collides with a catalog model id", key)
+	}
+
+	modelID := strings.TrimSuffix(key, "/custom/accuracy")
+	modelID = strings.TrimSuffix(modelID, "/custom/efficiency")
+	if before, _, found := strings.Cut(modelID, "/playground/"); found {
+		modelID = before
+	}
+	if modelID == key {
+		return "", fmt.Errorf("acquire-custom: invalid key %q", key)
+	}
+	if _, err := models.ParseModelID(modelID); err != nil {
+		return "", fmt.Errorf("acquire-custom: %w", err)
+	}
+
+	return modelID, nil
 }
 
 // translateCapacityError exposes resource-manager capacity failures through
@@ -255,6 +268,12 @@ func (p *Pool) ModelConfig() map[string]models.ModelConfig {
 // a model for planning and loading.
 func (p *Pool) ResolvedModelConfig(modelID string) (models.ModelConfig, error) {
 	return p.llama.ResolvedModelConfig(modelID)
+}
+
+// ResolvedKronkConfig returns the same budgeted runtime configuration used to
+// prepare a model for planning and loading.
+func (p *Pool) ResolvedKronkConfig(modelID string) (model.Config, error) {
+	return p.llama.ResolvedKronkConfig(modelID)
 }
 
 // GetExisting returns a pooled model if it exists, without creating

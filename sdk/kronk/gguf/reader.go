@@ -29,7 +29,7 @@ func ParseMetadata(data []byte) (map[string]string, error) {
 	for i := uint64(0); i < header.MetadataKvCount; i++ {
 		key, value, err := readMetadataKV(reader)
 		if err != nil {
-			break
+			return nil, fmt.Errorf("parse-metadata: read metadata entry %d: %w", i, err)
 		}
 		metadata[key] = fmt.Sprintf("%v", value)
 	}

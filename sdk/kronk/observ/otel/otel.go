@@ -21,6 +21,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
 const defaultTraceID = "00000000000000000000000000000000"
@@ -188,7 +189,7 @@ func InjectTracing(ctx context.Context, tracer trace.Tracer) context.Context {
 func AddSpan(ctx context.Context, spanName string, keyValues ...attribute.KeyValue) (context.Context, trace.Span) {
 	tracer, ok := ctx.Value(tracerKey).(trace.Tracer)
 	if !ok || tracer == nil {
-		return ctx, trace.SpanFromContext(ctx)
+		return noop.NewTracerProvider().Tracer("kronk").Start(ctx, spanName)
 	}
 
 	ctx, span := tracer.Start(ctx, spanName)
