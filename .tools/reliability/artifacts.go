@@ -48,12 +48,27 @@ type artifacts struct {
 }
 
 type serverEvidence struct {
-	Available     bool   `json:"available"`
-	LogPath       string `json:"log_path"`
-	StartOffset   int64  `json:"start_offset"`
-	BytesScanned  int64  `json:"bytes_scanned"`
-	MatchedEvents int    `json:"matched_events"`
-	Note          string `json:"note,omitempty"`
+	Available     bool              `json:"available"`
+	LogPath       string            `json:"log_path"`
+	StartOffset   int64             `json:"start_offset"`
+	BytesScanned  int64             `json:"bytes_scanned"`
+	MatchedEvents int               `json:"matched_events"`
+	MTP           mtpServerEvidence `json:"mtp"`
+	Note          string            `json:"note,omitempty"`
+}
+
+type mtpServerEvidence struct {
+	BackendSelections      []mtpBackendSelection `json:"backend_selections,omitempty"`
+	DraftKVCleared         int                   `json:"draft_kv_cleared"`
+	DraftKVClearedTraceIDs []string              `json:"draft_kv_cleared_trace_ids,omitempty"`
+}
+
+type mtpBackendSelection struct {
+	Scenario string `json:"scenario"`
+	TraceID  string `json:"trace_id"`
+	Message  string `json:"message"`
+	Backend  string `json:"backend"`
+	Source   string `json:"source"`
 }
 
 type evidenceEvent struct {
@@ -171,6 +186,7 @@ func (art *artifacts) collectServerEvidence() serverEvidence {
 		if !exists || !highValueEvent(event) {
 			continue
 		}
+		recordMTPServerEvidence(&evidence.MTP, scenario, traceID, event)
 		if err := encoder.Encode(evidenceEvent{Scenario: scenario, Source: "kronk-server", TraceID: traceID, Event: event}); err != nil {
 			evidence.Note = "write server evidence: " + err.Error()
 			return evidence
@@ -184,6 +200,26 @@ func (art *artifacts) collectServerEvidence() serverEvidence {
 		evidence.Note = "no high-value server events matched generated request trace IDs"
 	}
 	return evidence
+}
+
+func recordMTPServerEvidence(evidence *mtpServerEvidence, scenario, traceID string, event map[string]any) {
+	message, _ := event["msg"].(string)
+	status, _ := event["status"].(string)
+	if strings.HasPrefix(message, "draft-model-mtp") && status == "loaded" {
+		backend, _ := event["backend"].(string)
+		source, _ := event["source"].(string)
+		evidence.BackendSelections = append(evidence.BackendSelections, mtpBackendSelection{
+			Scenario: scenario,
+			TraceID:  traceID,
+			Message:  message,
+			Backend:  backend,
+			Source:   source,
+		})
+	}
+	if message == "speculative" && status == "draft-kv-cleared" {
+		evidence.DraftKVCleared++
+		evidence.DraftKVClearedTraceIDs = append(evidence.DraftKVClearedTraceIDs, traceID)
+	}
 }
 
 func serverLogStart(path string) (int64, bool, string) {
@@ -205,13 +241,15 @@ func highValueEvent(event map[string]any) bool {
 		return true
 	}
 	switch message {
-	case "request-lifecycle", "imc", "imc-media-cache", "prefill-media", "finish-slot":
+	case "request-lifecycle", "imc", "imc-media-cache", "prefill-media", "finish-slot", "draft-model-mtp", "draft-model-mtp-separate", "draft-model-mtp-shared":
 		return true
 	case "batch-engine":
 		return status == "slot-started" || status == "slot-finished" || strings.Contains(status, "error") || status == "job-failed"
 	case "start-slot":
 		return strings.HasPrefix(status, "imc-") && status != "imc-preparation-chunk"
-	case "speculative", "cache":
+	case "speculative":
+		return status == "draft-kv-cleared" || strings.Contains(status, "failed") || strings.Contains(status, "error") || strings.HasPrefix(status, "mtp-disabled") || status == "mtp-resume"
+	case "cache":
 		return strings.Contains(status, "failed") || strings.Contains(status, "error") || strings.HasPrefix(status, "mtp-disabled") || status == "mtp-resume"
 	default:
 		return false

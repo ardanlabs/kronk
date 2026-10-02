@@ -113,6 +113,7 @@ func run() error {
 	}
 
 	summary.ServerEvidence = art.collectServerEvidence()
+	validateMTPServerEvidence(&summary)
 	summary.FinishedAt = time.Now().UTC()
 	summary.DurationSeconds = seconds(summary.FinishedAt.Sub(started))
 	if err := art.writeSummary(summary); err != nil {
@@ -125,6 +126,53 @@ func run() error {
 		return errors.New("one or more reliability scenarios failed")
 	}
 	return nil
+}
+
+func validateMTPServerEvidence(summary *runSummary) {
+	if !summary.ServerEvidence.Available {
+		return
+	}
+
+	cleared := make(map[string]bool, len(summary.ServerEvidence.MTP.DraftKVClearedTraceIDs))
+	for _, traceID := range summary.ServerEvidence.MTP.DraftKVClearedTraceIDs {
+		cleared[traceID] = true
+	}
+
+	for index := range summary.Scenarios {
+		scenario := &summary.Scenarios[index]
+		if scenario.Name != "mtp" {
+			continue
+		}
+		for _, selection := range summary.ServerEvidence.MTP.BackendSelections {
+			if selection.Scenario != "mtp" {
+				continue
+			}
+			if selection.Backend != "qwen35-own-kv" {
+				appendFailure(&scenario.Failures, "%s selected backend %q, want qwen35-own-kv", selection.Message, selection.Backend)
+			}
+			if selection.Message == "draft-model-mtp-separate" && selection.Source != "mtp-drafter-file" {
+				appendFailure(&scenario.Failures, "%s selected source %q, want mtp-drafter-file", selection.Message, selection.Source)
+			}
+			if selection.Message == "draft-model-mtp" && selection.Source != "auto-detected" && selection.Source != "auto-detected-configured" {
+				appendFailure(&scenario.Failures, "%s selected unexpected source %q", selection.Message, selection.Source)
+			}
+		}
+		profiles, ok := scenario.Details["profiles"].([]mtpProfileResult)
+		if !ok {
+			continue
+		}
+		for _, profile := range profiles {
+			for _, request := range profile.Results {
+				if request.Error == "" && request.TraceID != "" && !cleared[request.TraceID] {
+					appendFailure(&scenario.Failures, "%s: request %d has no draft-kv-cleared server event", profile.Name, request.Request)
+				}
+			}
+		}
+		if len(scenario.Failures) > 0 {
+			scenario.Status = "FAIL"
+			summary.Status = "FAIL"
+		}
+	}
 }
 
 func runScenario(rc *runContext, name string) scenarioResult {

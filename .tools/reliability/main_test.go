@@ -35,7 +35,7 @@ func TestCollectServerEvidenceFiltersByTraceAndValue(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer art.close()
-	art.traces.add("known", "batch")
+	art.traces.add("known", "mtp")
 
 	file, err := os.OpenFile(serverLog, os.O_APPEND|os.O_WRONLY, 0)
 	if err != nil {
@@ -46,6 +46,8 @@ func TestCollectServerEvidenceFiltersByTraceAndValue(t *testing.T) {
 		`{"msg":"batch-engine","status":"slot-finished","trace_id":"foreign"}`,
 		`{"msg":"batch-engine","status":"slot-finished","trace_id":"known","slot":2}`,
 		`{"msg":"request-lifecycle","status":"complete","trace_id":"known","stage":4}`,
+		`{"msg":"draft-model-mtp","status":"loaded","trace_id":"known","backend":"qwen35-own-kv","source":"auto-detected"}`,
+		`{"msg":"speculative","status":"draft-kv-cleared","trace_id":"known","slot":2}`,
 	}
 	for _, line := range lines {
 		if _, err := file.WriteString(line + "\n"); err != nil {
@@ -57,11 +59,21 @@ func TestCollectServerEvidenceFiltersByTraceAndValue(t *testing.T) {
 	}
 
 	evidence := art.collectServerEvidence()
-	if evidence.MatchedEvents != 2 {
-		t.Fatalf("matched events = %d, want 2", evidence.MatchedEvents)
+	if evidence.MatchedEvents != 4 {
+		t.Fatalf("matched events = %d, want 4", evidence.MatchedEvents)
 	}
 	if evidence.BytesScanned <= 0 {
 		t.Fatalf("bytes scanned = %d, want positive", evidence.BytesScanned)
+	}
+	if len(evidence.MTP.BackendSelections) != 1 {
+		t.Fatalf("backend selections = %d, want 1", len(evidence.MTP.BackendSelections))
+	}
+	selection := evidence.MTP.BackendSelections[0]
+	if selection.Backend != "qwen35-own-kv" || selection.Source != "auto-detected" {
+		t.Fatalf("backend selection = %#v", selection)
+	}
+	if evidence.MTP.DraftKVCleared != 1 || !reflect.DeepEqual(evidence.MTP.DraftKVClearedTraceIDs, []string{"known"}) {
+		t.Fatalf("draft KV evidence = %#v", evidence.MTP)
 	}
 	if err := art.events.Sync(); err != nil {
 		t.Fatal(err)
@@ -77,7 +89,7 @@ func TestCollectServerEvidenceFiltersByTraceAndValue(t *testing.T) {
 		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
 			t.Fatal(err)
 		}
-		if event.Scenario != "batch" || event.TraceID != "known" {
+		if event.Scenario != "mtp" || event.TraceID != "known" {
 			t.Fatalf("event correlation = %#v", event)
 		}
 	}
@@ -92,6 +104,67 @@ func TestHighValueEventOmitsRepetitiveSchedulerLogs(t *testing.T) {
 	}
 	if !highValueEvent(map[string]any{"msg": "start-slot", "status": "imc-reuse"}) {
 		t.Fatal("imc-reuse event should be retained")
+	}
+	if !highValueEvent(map[string]any{"msg": "draft-model-mtp-separate", "status": "loaded"}) {
+		t.Fatal("MTP backend selection should be retained")
+	}
+	if !highValueEvent(map[string]any{"msg": "speculative", "status": "draft-kv-cleared"}) {
+		t.Fatal("draft KV cleanup should be retained")
+	}
+}
+
+func TestValidateMTPServerEvidenceRejectsMissingCleanup(t *testing.T) {
+	summary := runSummary{
+		Status: "PASS",
+		Scenarios: []scenarioResult{{
+			Name:   "mtp",
+			Status: "PASS",
+			Details: map[string]any{"profiles": []mtpProfileResult{{
+				Name: "embedded",
+				Results: []mtpRequestResult{
+					{Request: 1, TraceID: "cleared"},
+					{Request: 2, TraceID: "missing"},
+				},
+			}}},
+		}},
+		ServerEvidence: serverEvidence{
+			Available: true,
+			MTP:       mtpServerEvidence{DraftKVClearedTraceIDs: []string{"cleared"}},
+		},
+	}
+
+	validateMTPServerEvidence(&summary)
+	if summary.Status != "FAIL" || summary.Scenarios[0].Status != "FAIL" {
+		t.Fatalf("statuses = %s/%s, want FAIL/FAIL", summary.Status, summary.Scenarios[0].Status)
+	}
+	want := "embedded: request 2 has no draft-kv-cleared server event"
+	if !reflect.DeepEqual(summary.Scenarios[0].Failures, []string{want}) {
+		t.Fatalf("failures = %v, want %q", summary.Scenarios[0].Failures, want)
+	}
+}
+
+func TestValidateMTPServerEvidenceRejectsWrongCompanionBackend(t *testing.T) {
+	summary := runSummary{
+		Status: "PASS",
+		Scenarios: []scenarioResult{{
+			Name:    "mtp",
+			Status:  "PASS",
+			Details: map[string]any{"profiles": []mtpProfileResult{}},
+		}},
+		ServerEvidence: serverEvidence{
+			Available: true,
+			MTP: mtpServerEvidence{BackendSelections: []mtpBackendSelection{{
+				Scenario: "mtp",
+				Message:  "draft-model-mtp-separate",
+				Backend:  "unexpected",
+				Source:   "unexpected",
+			}}},
+		},
+	}
+
+	validateMTPServerEvidence(&summary)
+	if summary.Status != "FAIL" || len(summary.Scenarios[0].Failures) != 2 {
+		t.Fatalf("summary = %#v, want two backend failures", summary)
 	}
 }
 
