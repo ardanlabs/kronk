@@ -206,8 +206,8 @@ schema = 3
     version = "v1.9.0"
     hash = "sha256-sRr/50k8Wra0PJLCJgSkIxvR+ce3PItx4HpFvVijGYk="
   [mod."github.com/hybridgroup/yzma"]
-    version = "v1.28.1-0.20261001182953-daaa4da3a5f3"
-    hash = "sha256-+o+LmfFvhVCk6jY0ucdwE6sDCZxUtoBkrevckicdxLU="
+    version = "v1.28.1-0.20261001235646-c25d400d1108"
+    hash = "sha256-25Pxr4MnsrM9SeiFGFKeBVDyrzO2yQVBUJQm/VPp4uw="
   [mod."github.com/icza/bitio"]
     version = "v1.1.0"
     hash = "sha256-CtV/dr1L46cZ65EnK9DrBduZCaMnTGf4N2MnElCymtM="
@@ -317,8 +317,8 @@ schema = 3
     version = "v1.6.10"
     hash = "sha256-D2lL4FnkeL/eRLiRW6ihhqQkzEqHVvhbEvZoYTVNmbU="
   [mod."github.com/vektah/gqlparser/v2"]
-    version = "v2.5.58"
-    hash = "sha256-48MUGiyex9u4IuOniZptPSMJ+OwETLUGdpjWzvneRnQ="
+    version = "v2.5.59"
+    hash = "sha256-TperaGQwXwvv6/dS2BtvZU8hTFx7HZF4BynZwD5h1AY="
   [mod."github.com/xeipuuv/gojsonpointer"]
     version = "v0.0.0-20190905194746-02993c407bfb"
     hash = "sha256-/u+qznDY8cnECZYIgSMRpKVWs04yAkW6EoGhqt+t73g="

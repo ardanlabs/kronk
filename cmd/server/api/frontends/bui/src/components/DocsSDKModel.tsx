@@ -52,7 +52,7 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="func-inityzmaworkarounds">
               <h4>InitYzmaWorkarounds</h4>
               <pre className="code-block">
-                <code>func InitYzmaWorkarounds(libPath string) error</code>
+                <code>func InitYzmaWorkarounds(_ string) error</code>
               </pre>
               <p className="doc-description">InitYzmaWorkarounds initializes Kronk-specific Yzma compatibility code.</p>
             </div>

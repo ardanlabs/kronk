@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"image"
 	"image/draw"
-	"runtime"
 	"strings"
-	"unsafe"
 
 	"github.com/hybridgroup/yzma/pkg/mtmd"
 
@@ -113,8 +111,7 @@ func newImageBitmap(med []byte) (mtmd.Bitmap, error) {
 		}
 	}
 
-	bmp := mtmd.BitmapInit(uint32(nx), uint32(ny), uintptr(unsafe.Pointer(&rgb[0])))
-	runtime.KeepAlive(rgb)
+	bmp := mtmd.BitmapInit(uint32(nx), uint32(ny), rgb)
 	if bmp == 0 {
 		return 0, fmt.Errorf("mtmd_bitmap_init returned 0")
 	}

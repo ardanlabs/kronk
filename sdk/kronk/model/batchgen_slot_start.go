@@ -1041,7 +1041,7 @@ func (e *batchEngine) startSlotText(s *slot, job *chatJob, cacheIdx llama.Pos) b
 	} else if job.textTokens != nil {
 		tokens = job.textTokens
 	} else {
-		tokens = tokenize(e.model.vocab, job.prompt, addBOS, true)
+		tokens = llama.Tokenize(e.model.vocab, job.prompt, addBOS, true)
 	}
 
 	// suffixTokens is the number of new tokens to process (not cached).
@@ -1204,7 +1204,7 @@ func (e *batchEngine) startSlotTextMRoPE(s *slot, job *chatJob, cacheIdx llama.P
 	if job.imcTokenPlan {
 		tokens = job.tailTokens
 	} else {
-		tokens = tokenize(e.model.vocab, job.prompt, addBOS, true)
+		tokens = llama.Tokenize(e.model.vocab, job.prompt, addBOS, true)
 	}
 
 	suffixTokens := len(tokens)
