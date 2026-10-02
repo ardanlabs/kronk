@@ -176,8 +176,13 @@ test-adversarial:
 # The selected model must use nseq-max: 1, queue-depth: 2, and
 # admission-timeout: 100ms; see .tools/lifecycle-load/main.go for setup details.
 # Requires nseq-max: 1
+LIFECYCLE_LOAD_OUT ?= .tools/lifecycle-load/output
+LIFECYCLE_SERVER_LOG ?= $(HOME)/.kronk/kronk.log
+
 example-lifecycle-load:
-	go run .tools/lifecycle-load/main.go
+	KRONK_LIFECYCLE_OUT="$(LIFECYCLE_LOAD_OUT)" \
+	KRONK_SERVER_LOG="$(LIFECYCLE_SERVER_LOG)" \
+	go run ./.tools/lifecycle-load
 
 # ==============================================================================
 

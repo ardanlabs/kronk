@@ -14,6 +14,7 @@ zarf/docker/openwebui/
 .tools/adversarial/output/
 .tools/codegen-benchmark/output/
 .tools/reliability/output/
+.tools/lifecycle-load/output/
 
 # Binaries for programs and plugins
 *.exe
