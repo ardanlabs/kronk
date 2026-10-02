@@ -290,10 +290,15 @@ func (a *app) previewDataset(ctx context.Context, r *http.Request) web.Encoder {
 			RecordCount:         req.RecordCount,
 			DatasetInstructions: strings.TrimSpace(req.DatasetInstructions),
 			Progress: func(progress prepare.PreviewProgress) {
-				a.preparations.updateDocumentWork(operationID, index, documentProcessing, progress.Stage, 0, 0, 0, progress.CompletedStages, progress.TotalStages, nil)
+				a.preparations.updatePreviewProgress(operationID, index, progress)
 			},
 		})
 		if buildErr != nil {
+			if operationContext.Err() != nil {
+				stopErr := context.Cause(operationContext)
+				a.preparations.finish(operationID, stopErr)
+				return errs.New(errs.Canceled, stopErr)
+			}
 			a.preparations.updateDocumentWork(operationID, index, documentFailed, "Preview failed", 0, 0, 0, 0, 0, buildErr)
 			a.preparations.finish(operationID, buildErr)
 			return errs.FromSDK(fmt.Errorf("build preview for %q: %w", document.Name, buildErr))
@@ -343,11 +348,7 @@ func (a *app) buildDataset(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.New(errs.InvalidArgument, err)
 	}
 	goal, _ := goalToBusiness(req.Goal)
-	targetFacts := 0
-	if goal == prepare.GoalQuestionAnswer {
-		targetFacts = finetune.MinimumKnowledgeFacts
-	}
-	operationContext, operationID, err := a.preparations.start(ctx, "build", "Preparing document builds", len(jobs))
+	operationContext, operationID, err := a.preparations.start(ctx, "build", "Initializing analysis", len(jobs))
 	if err != nil {
 		return errs.New(errs.FailedPrecondition, err)
 	}
@@ -356,25 +357,25 @@ func (a *app) buildDataset(ctx context.Context, r *http.Request) web.Encoder {
 	built := make([]prepare.FullBuildDocument, 0, len(jobs))
 	documentResponses := make([]DocumentBuildResponse, 0, len(jobs))
 	for index, job := range jobs {
-		a.preparations.updateDocumentWork(operationID, index, documentProcessing, "Preparing document build", 0, 0, targetFacts, 0, 0, nil)
+		a.preparations.updateDocumentWork(operationID, index, documentProcessing, "Initializing analysis", 0, 0, 0, 0, 0, nil)
 		artifact, buildErr := a.builder.BuildFull(operationContext, prepare.FullBuildRequest{
-			DatasetDirectory:           job.document.Directory,
-			Goal:                       goal,
-			Model:                      req.ModelID,
-			DatasetInstructions:        strings.TrimSpace(req.DatasetInstructions),
-			ReviewedRecords:            recordsToBusiness(job.request.ReviewedRecords),
-			VerifiedPreviewRecords:     recordsToBusiness(job.request.VerifiedPreviewRecords),
-			MinimumQuestionAnswerFacts: targetFacts,
+			DatasetDirectory:       job.document.Directory,
+			Goal:                   goal,
+			Model:                  req.ModelID,
+			DatasetInstructions:    strings.TrimSpace(req.DatasetInstructions),
+			ReviewedRecords:        approvedRecordsToBusiness(job.request.ReviewedRecords),
+			VerifiedPreviewRecords: recordsToBusiness(job.request.VerifiedPreviewRecords),
 			Progress: func(progress prepare.FullBuildProgress) {
-				a.preparations.updateDocumentWork(
-					operationID, index, documentProcessing, progress.Stage,
-					progress.AcceptedRecords, progress.AcceptedFacts, targetFacts,
-					progress.CompletedBatches, progress.TotalBatches, nil,
-				)
+				a.preparations.updateBuildProgress(operationID, index, progress)
 			},
 		})
 		if buildErr != nil {
-			a.preparations.updateDocumentWork(operationID, index, documentFailed, "Build failed", 0, 0, targetFacts, 0, 0, buildErr)
+			if operationContext.Err() != nil {
+				stopErr := context.Cause(operationContext)
+				a.preparations.finish(operationID, stopErr)
+				return errs.New(errs.Canceled, stopErr)
+			}
+			a.preparations.updateDocumentWork(operationID, index, documentFailed, "Build failed", 0, 0, 0, 0, 0, buildErr)
 			a.preparations.finish(operationID, buildErr)
 			return errs.FromSDK(fmt.Errorf("build full dataset for %q: %w", job.document.Name, buildErr))
 		}
@@ -383,7 +384,7 @@ func (a *app) buildDataset(ctx context.Context, r *http.Request) web.Encoder {
 		if goal != prepare.GoalQuestionAnswer {
 			stage = fmt.Sprintf("Complete · %d records", len(artifact.Records))
 		}
-		a.preparations.updateDocumentWork(operationID, index, documentCompleted, stage, len(artifact.Records), facts, targetFacts, 0, 0, nil)
+		a.preparations.updateDocumentWork(operationID, index, documentCompleted, stage, len(artifact.Records), facts, 0, 0, 0, nil)
 		built = append(built, prepare.FullBuildDocument{ID: job.document.ID, Name: job.document.Name, Artifact: artifact})
 		documentResponses = append(documentResponses, DocumentBuildResponse{ID: job.document.ID, Name: job.document.Name, FactCount: facts, RecordCount: len(artifact.Records)})
 	}

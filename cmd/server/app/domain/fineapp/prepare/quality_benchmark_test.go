@@ -1,7 +1,6 @@
 package prepare
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -39,6 +38,7 @@ func qualityBenchmark() []qualityBenchmarkCase {
 		{name: "assignment instead of value", deterministicReject: true, record: Record{Prompt: "What value is assigned to timeout?", Target: "const timeout = 3 * time.Second", Evidence: "The timeout declaration is const timeout = 3 * time.Second."}},
 		{name: "document index", deterministicReject: true, record: Record{Prompt: "What constant is associated with L on page 189?", Target: "Ldate constant 189", Evidence: "Index: Ldate constant 189."}},
 		{name: "table of contents target", deterministicReject: true, record: Record{Prompt: "Which operations retrieve and remove map entries?", Target: "3.23 Lookups and Deleting Map Keys................................65", Evidence: "3.23 Lookups and Deleting Map Keys................................65"}},
+		{name: "malformed table of contents row", deterministicReject: true, record: Record{Prompt: "What developer tools are covered?", Target: "3 3.1: 3.5; Packaging and tooling 39 Packages 40: Going farther with Go developer tools 47 go vet 47 ■ Go format 48 ■ Go documentation 48 3.6 Collaborating with other Go developers 51", Evidence: "| 3.1 | Packaging and tooling 39 | Packages 40 |"}},
 		{name: "unnamed method target", deterministicReject: true, record: Record{Prompt: "Which method decrements a WaitGroup?", Target: "That call decrements the WaitGroup by 1.", Evidence: "Inside each goroutine is a call to Done. That call decrements the WaitGroup by 1."}},
 		{name: "isolated unlabeled value", deterministicReject: true, record: Record{Prompt: "How many pages does the Northwind handbook contain?", Target: "424 pages", Evidence: "424 pages"}},
 		{name: "wrong struct field", deterministicReject: true, record: Record{Prompt: "What is assigned to the name field?", Target: `"abc"`, Evidence: `var data = []struct { input []byte }{{input: []byte("abc")}}`}},
@@ -170,14 +170,12 @@ func TestLiveQuestionFormCanary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var response struct {
-		Pools []generatedQuestionPool `json:"pools"`
-	}
-	if err := json.Unmarshal([]byte(completion.Content), &response); err != nil {
+	pools, err := decodeQuestionPools(completion.Content, len(facts))
+	if err != nil {
 		t.Fatalf("decode question pool: %v\n%s", err, completion.Content)
 	}
 	t.Logf("raw generated pools: %s", completion.Content)
-	expanded := selectQuestionPools(facts, response.Pools, nil)
+	expanded := selectQuestionPools(facts, pools, nil)
 	if len(expanded) == 0 {
 		t.Fatal("no source fact produced usable alternate questions")
 	}
@@ -201,8 +199,8 @@ func TestLiveQuestionFormCanary(t *testing.T) {
 			}
 		}
 		t.Logf("target %q question forms:\n%s", fact.Target, strings.Join(questions, "\n"))
-		if len(questions) != questionAnswerRequiredVariants+1 {
-			t.Errorf("target %q produced %d question forms, want %d", fact.Target, len(questions), questionAnswerRequiredVariants+1)
+		if len(questions) != questionAnswerRecordsPerFact {
+			t.Errorf("target %q produced %d question forms, want %d", fact.Target, len(questions), questionAnswerRecordsPerFact)
 			continue
 		}
 		if passedByFact[fact.FactID] != len(questions) {
@@ -253,14 +251,12 @@ func TestLiveCustomDatasetInstructionsAffectQuestions(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		var response struct {
-			Pools []generatedQuestionPool `json:"pools"`
-		}
-		if err := json.Unmarshal([]byte(completion.Content), &response); err != nil {
+		pools, err := decodeQuestionPools(completion.Content, len(facts))
+		if err != nil {
 			t.Fatalf("decode question pool: %v\n%s", err, completion.Content)
 		}
-		selected := selectQuestionPools(facts, response.Pools, nil)
-		if want := len(facts) * (questionAnswerRequiredVariants + 1); len(selected) != want {
+		selected := selectQuestionPools(facts, pools, nil)
+		if want := len(facts) * questionAnswerRecordsPerFact; len(selected) != want {
 			t.Fatalf("selected %d usable questions, want %d: %s", len(selected), want, completion.Content)
 		}
 		return selected

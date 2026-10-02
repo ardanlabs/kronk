@@ -1,11 +1,30 @@
 package prepare
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
 	"testing"
 )
+
+type sourceReferenceRetryCompleter struct {
+	requests []CompletionRequest
+}
+
+func (c *sourceReferenceRetryCompleter) Complete(_ context.Context, request CompletionRequest) (Completion, error) {
+	c.requests = append(c.requests, request)
+	prompt := request.Messages[1].Content
+	switch {
+	case strings.Contains(prompt, "[RECORD 1]"):
+		return Completion{Content: `{"record_1":"pass"}`}, nil
+	case strings.Contains(prompt, "unavailable source context"):
+		return Completion{Content: `{"record_1":"What process leads to improvement through writing and thinking about code?"}`}, nil
+	default:
+		return Completion{Content: `{"record_1":"What is the source of improvement according to the evidence?"}`}, nil
+	}
+}
 
 func TestQuestionPoolRetainsReviewedQuestionAndLockedFact(t *testing.T) {
 	record := Record{
@@ -24,46 +43,112 @@ func TestQuestionPoolRetainsReviewedQuestionAndLockedFact(t *testing.T) {
 		},
 	}}
 	selected := selectQuestionPools([]Record{record}, pools, nil)
-	if len(selected) != questionAnswerRequiredVariants+1 {
-		t.Fatalf("selected records = %d, want %d training and one held-out", len(selected), questionAnswerRequiredVariants)
+	if len(selected) != questionAnswerRecordsPerFact {
+		t.Fatalf("selected records = %d, want %d", len(selected), questionAnswerRecordsPerFact)
 	}
 	if selected[0].Prompt != record.Prompt {
 		t.Fatalf("reviewed question changed from %q to %q", record.Prompt, selected[0].Prompt)
 	}
-	for index, variant := range selected {
+	for _, variant := range selected {
 		if variant.Target != record.Target || variant.Evidence != record.Evidence {
 			t.Fatalf("locked fact changed: %+v", variant)
 		}
-		if variant.IndependentPrompt != (index == questionAnswerRequiredVariants) {
-			t.Fatalf("record %d independent = %t", index, variant.IndependentPrompt)
+		if variant.ValidationPrompt || variant.IndependentPrompt {
+			t.Fatalf("training record has an evaluation role: %+v", variant)
 		}
 	}
 }
 
-func TestQuestionPoolPromptRequestsDistinctQuestionForms(t *testing.T) {
+func TestQuestionPoolPromptRequestsOneGroundedQuestion(t *testing.T) {
 	reviewed := Record{Prompt: "Which signal interrupts a program?", Target: "SIGPROF", Evidence: "The profiler uses SIGPROF to interrupt the program.", FactID: "fact-1"}
 	prompt := questionPoolMessages([]Record{reviewed}, "")[1].Content
 	for _, instruction := range []string{
-		fmt.Sprintf("exactly %d natural candidate questions", questionCandidatePoolSize),
-		"fill all 10 array positions; do not stop after the first four",
-		"Use these forms in order",
-		"concise and direct",
-		"contextual with the subject named",
-		"a realistic scenario",
-		"conversational",
-		"Every position is required",
-		"Each conversational form must directly ask a question and end with a question mark",
-		"differ in framing or information need, not only synonyms or what/which substitutions",
+		"exactly one natural question",
+		"LOCKED FACT 1 uses record_1",
+		"concise, direct question",
 		"describe what the code does without repeating words contained in that identifier",
 		"Match the question's scope to the complete target",
 		"Name the subject needed to understand the question",
 		"this program, this function, this type, this example, it, or they",
 		"answer type, direction, scope, code-symbol role, package, and capitalization",
 		"registering handlers, for example, does not start a server",
+		"FINAL QUESTION CHECK — REQUIRED",
+		"A user style request for a large, big, detailed, or contextual question never overrides this standalone requirement",
 	} {
 		if !strings.Contains(prompt, instruction) {
 			t.Fatalf("prompt does not contain %q", instruction)
 		}
+	}
+}
+
+func TestQuestionPoolFailureExplainsUnavailableSourceReference(t *testing.T) {
+	fact := Record{Target: "Improvement comes from writing code and thinking about the code I write."}
+	pools := []generatedQuestionPool{{RecordNumber: 1, Questions: []string{"What is the source of improvement according to the evidence?"}}}
+	reason := questionPoolFailureReason([]Record{fact}, pools, nil)
+	if !strings.Contains(reason, "according to the evidence") || !strings.Contains(reason, "unavailable source context") {
+		t.Fatalf("failure reason = %q, want the rejected question and actionable cause", reason)
+	}
+}
+
+func TestQuestionPoolRetryUsesDeterministicFailureFeedback(t *testing.T) {
+	model := &sourceReferenceRetryCompleter{}
+	previewer, err := NewPreviewer(model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fact := Record{
+		Target:   "Improvement comes from writing code and thinking about the code I write.",
+		Evidence: "Improvement comes from writing code and thinking about the code I write.",
+		FactID:   "fact-1",
+	}
+	accepted, rejected, metrics, err := previewer.preparePlannedQuestionAnswerBatch(t.Context(), FullBuildRequest{
+		Goal: GoalQuestionAnswer, Model: "model", DatasetInstructions: "Create big questions",
+	}, []Record{fact}, generationExclusions{}, func(string) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(accepted) != 1 || len(rejected) != 0 || metrics.generationAttempts != 2 || metrics.verificationAttempts != 1 {
+		t.Fatalf("accepted=%+v rejected=%+v metrics=%+v", accepted, rejected, metrics)
+	}
+	if len(model.requests) != 3 || !strings.Contains(model.requests[1].Messages[1].Content, "unavailable source context") {
+		t.Fatalf("retry did not receive the deterministic rejection: %+v", model.requests)
+	}
+}
+
+func TestQuestionPoolSchemaMapsEveryFactToARequiredField(t *testing.T) {
+	schema := questionPoolSchema(3)
+	properties, ok := schema["properties"].(map[string]any)
+	if !ok || len(properties) != 3 {
+		t.Fatalf("question properties = %#v, want three explicit fields", schema["properties"])
+	}
+	required, ok := schema["required"].([]string)
+	if !ok || !slices.Equal(required, []string{"record_1", "record_2", "record_3"}) {
+		t.Fatalf("required question fields = %#v", schema["required"])
+	}
+	if _, fragileArray := properties["pools"]; fragileArray {
+		t.Fatalf("question schema retained the flattened pool array: %#v", properties)
+	}
+
+	flattened, err := json.Marshal(map[string]any{
+		"pools": []map[string]any{{"record_number": 1, "questions": []string{"Question one?", "Question two?"}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := decodeQuestionPools(string(flattened), 2); err == nil {
+		t.Fatal("flattened question array decoded as a valid per-fact response")
+	}
+
+	partial, err := json.Marshal(map[string]string{"record_2": "Question two?"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pools, err := decodeQuestionPools(string(partial), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pools) != 1 || pools[0].RecordNumber != 2 || !slices.Equal(pools[0].Questions, []string{"Question two?"}) {
+		t.Fatalf("partially decoded question pools = %+v", pools)
 	}
 }
 
@@ -75,7 +160,7 @@ func TestQuestionPoolCustomInstructionsReplaceDefaultStyles(t *testing.T) {
 			t.Fatalf("custom question pool retained conflicting default style %q: %s", defaultStyle, messages[1].Content)
 		}
 	}
-	for _, requirement := range []string{"Create big questions with detailed technical context.", "Every question must differ in framing or information need"} {
+	for _, requirement := range []string{"Create big questions with detailed technical context.", "Write exactly one natural question"} {
 		if !strings.Contains(messages[1].Content, requirement) {
 			t.Fatalf("custom question pool omitted %q: %s", requirement, messages[1].Content)
 		}
@@ -85,6 +170,78 @@ func TestQuestionPoolCustomInstructionsReplaceDefaultStyles(t *testing.T) {
 	}
 	if !strings.Contains(messages[0].Content, "user's instruction controls how every question is written") {
 		t.Fatalf("question pool system prompt did not prioritize custom requirements: %s", messages[0].Content)
+	}
+}
+
+func TestQuestionAnswerFactBatchesIncludeCustomInstructionsInPromptBudget(t *testing.T) {
+	facts := make([]Record, 20)
+	for index := range facts {
+		facts[index] = Record{
+			Target:   fmt.Sprintf("Fact %d describes supported behavior.", index+1),
+			Evidence: strings.Repeat(fmt.Sprintf("Evidence %d supports the behavior. ", index+1), 18),
+			FactID:   fmt.Sprintf("fact-%d", index+1),
+		}
+	}
+	instructions := strings.Repeat("Use detailed technical context. ", 60)
+	batches := questionAnswerFactBatches(facts, instructions)
+	if len(batches) < 2 {
+		t.Fatalf("batches = %d, want prompt-budget splitting", len(batches))
+	}
+	count := 0
+	for _, batch := range batches {
+		count += len(batch)
+		if size := len(questionPoolMessages(batch, instructions)[1].Content); size > questionPoolBatchBytes {
+			t.Fatalf("batch prompt = %d bytes, exceeds %d-byte budget", size, questionPoolBatchBytes)
+		}
+	}
+	if count != len(facts) {
+		t.Fatalf("batched facts = %d, want %d", count, len(facts))
+	}
+}
+
+func TestQuestionAnswerFactBatchesShareEvidenceWithoutReducingFactCapacity(t *testing.T) {
+	facts := make([]Record, 32)
+	for index := range facts {
+		chunk := index / 8
+		facts[index] = Record{
+			Target:   fmt.Sprintf("Fact %d describes supported behavior.", index+1),
+			Evidence: strings.Repeat(fmt.Sprintf("Chunk %d supplies shared source context. ", chunk+1), 42),
+			FactID:   fmt.Sprintf("fact-%d", index+1),
+		}
+	}
+
+	batches := questionAnswerFactBatches(facts, "")
+	if len(batches) != 2 || len(batches[0]) != maximumFactsPerBatch || len(batches[1]) != maximumFactsPerBatch {
+		t.Fatalf("shared-evidence batch count = %d, want two full %d-fact batches", len(batches), maximumFactsPerBatch)
+	}
+	prompt := questionPoolMessages(batches[0], "")[1].Content
+	for _, source := range []string{facts[0].Evidence, facts[8].Evidence} {
+		if count := strings.Count(prompt, strings.TrimSpace(source)); count != 1 {
+			t.Fatalf("shared evidence appears %d times, want once", count)
+		}
+	}
+	if strings.Count(prompt, "[LOCKED FACT ") != maximumFactsPerBatch || strings.Count(prompt, "EVIDENCE BLOCK: ") != maximumFactsPerBatch {
+		t.Fatalf("prompt lost fact-to-evidence references: %s", prompt)
+	}
+}
+
+func TestQuestionPoolRetryNamesQuestionsToAvoid(t *testing.T) {
+	fact := Record{Target: "SIGPROF", Evidence: "The profiler uses SIGPROF to interrupt the program.", FactID: "fact-1"}
+	prompt := questionPoolMessagesExcluding(
+		[]Record{fact},
+		"",
+		[]string{"Which signal interrupts the program?"},
+		[]VerificationResult{{ExpectedTarget: "SIGPROF", Reason: "The question reveals its answer."}},
+	)[1].Content
+	for _, text := range []string{
+		"[QUESTIONS TO AVOID — WRITE DIFFERENT QUESTIONS]",
+		"- Which signal interrupts the program?",
+		"[VERIFICATION FEEDBACK — CORRECT THESE FAILURES]",
+		`Locked target "SIGPROF" was rejected: The question reveals its answer.`,
+	} {
+		if !strings.Contains(prompt, text) {
+			t.Fatalf("retry prompt does not contain %q: %s", text, prompt)
+		}
 	}
 }
 
@@ -106,7 +263,7 @@ func TestQuestionPoolSelectsDiverseQuestionsAcrossAllGeneratedForms(t *testing.T
 	}...)}}
 
 	selected := selectQuestionPools([]Record{fact}, pools, nil)
-	if len(selected) != questionAnswerRequiredVariants+1 {
+	if len(selected) != questionAnswerRecordsPerFact {
 		t.Fatalf("selected records = %d, want a complete question group", len(selected))
 	}
 	retainedRepetitive := 0
@@ -167,8 +324,8 @@ func TestQuestionPoolUsesBestAvailableSynonymCandidates(t *testing.T) {
 		"For a slice beyond 1024 elements, what is its growth rate?",
 	}}}
 
-	if selected := selectQuestionPools([]Record{fact}, pools, nil); len(selected) != questionAnswerRequiredVariants+1 {
-		t.Fatalf("selected records = %d, want the best %d training and held-out questions", len(selected), questionAnswerRequiredVariants+1)
+	if selected := selectQuestionPools([]Record{fact}, pools, nil); len(selected) != questionAnswerRecordsPerFact {
+		t.Fatalf("selected records = %d, want the best %d questions", len(selected), questionAnswerRecordsPerFact)
 	}
 }
 
@@ -204,7 +361,7 @@ func TestQuestionPoolUsesAnswerRevealingQuestionsAsFallback(t *testing.T) {
 		"What element constraint does vector apply?",
 	}
 	selected := selectQuestionPools([]Record{fact}, []generatedQuestionPool{{RecordNumber: 1, Questions: questions}}, nil)
-	if len(selected) != questionAnswerRequiredVariants+1 {
+	if len(selected) != questionAnswerRecordsPerFact {
 		t.Fatalf("selected records = %d, want fallback to preserve a complete question group", len(selected))
 	}
 }
@@ -221,7 +378,7 @@ func TestQuestionPoolPrefersCompleteGroupWithoutAtomicAnswerLeakage(t *testing.T
 		"Which signal pauses execution for processor sampling?",
 	}
 	selected := selectQuestionPools([]Record{fact}, []generatedQuestionPool{{RecordNumber: 1, Questions: questions}}, nil)
-	if len(selected) != questionAnswerRequiredVariants+1 {
+	if len(selected) != questionAnswerRecordsPerFact {
 		t.Fatalf("selected records = %d, want a complete question group", len(selected))
 	}
 	if slices.ContainsFunc(selected, func(record Record) bool { return strings.Contains(record.Prompt, fact.Target) }) {
@@ -265,15 +422,31 @@ func TestBuildFingerprintIncludesDatasetInstructions(t *testing.T) {
 func TestQuestionAnswerTargetPromptAlignsAnswerScope(t *testing.T) {
 	prompt := questionAnswerTargetPrompt([][]string{{"Routes", "The Routes function registers the sendJSON handler."}}, nil, nil, "")
 	for _, instruction := range []string{
-		"most useful central instructional fact",
+		"minimal, non-overlapping set",
+		"Do not select every sentence or every candidate",
+		"every passage with eligible targets must select at least one",
 		"complete answer users will be trained to return",
 		"prefer that atomic answer over a sentence containing it",
-		"incidental package name, declaration, heading, or example detail",
+		"incidental package name, declaration, heading, biography, forward reference, page number, or example detail",
 		"behavior, comparison, condition, relationship, or effect",
 	} {
 		if !strings.Contains(prompt, instruction) {
 			t.Fatalf("target prompt does not contain %q", instruction)
 		}
+	}
+}
+
+func TestQuestionAnswerTargetPromptBoundsPreviousTargets(t *testing.T) {
+	previous := make([]string, 40)
+	for index := range previous {
+		previous[index] = fmt.Sprintf("target-%02d", index)
+	}
+	prompt := questionAnswerTargetPrompt([][]string{{"A supported fact."}}, nil, previous, "")
+	if strings.Contains(prompt, "- target-07\n") || !strings.Contains(prompt, "- target-08\n") || !strings.Contains(prompt, "- target-39\n") {
+		t.Fatalf("previous-target window is not the most recent %d targets: %s", maxRenderedPreviousTargets, prompt)
+	}
+	if count := strings.Count(prompt, "\n- target-"); count != maxRenderedPreviousTargets {
+		t.Fatalf("rendered previous targets = %d, want %d", count, maxRenderedPreviousTargets)
 	}
 }
 
@@ -304,7 +477,7 @@ func TestQuestionAnswerTargetSelectionCanSkipUnusablePassage(t *testing.T) {
 		"The profiler uses SIGPROF to interrupt the program.",
 	}
 	candidates := questionAnswerTargetCandidates(passages)
-	records, err := validateQuestionAnswerTargets([]int{0, 1}, passages, candidates)
+	records, err := validateQuestionAnswerTargets([][]int{{}, {1}}, passages, candidates)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,8 +485,34 @@ func TestQuestionAnswerTargetSelectionCanSkipUnusablePassage(t *testing.T) {
 		t.Fatalf("selected records = %+v", records)
 	}
 	prompt := questionAnswerTargetPrompt(candidates, nil, nil, "")
-	if !strings.Contains(prompt, "Return target_id 0 for navigation, tables of contents, malformed tables") {
+	if !strings.Contains(prompt, "an empty array for navigation, tables of contents, malformed tables") {
 		t.Fatalf("target selection prompt cannot skip unusable passages: %s", prompt)
+	}
+}
+
+func TestQuestionAnswerTargetSelectionRequiresOneArrayPerPassage(t *testing.T) {
+	passages := []string{"Table of contents", "Copyright page"}
+	if _, err := validateQuestionAnswerTargets(nil, passages, [][]string{nil, nil}); err == nil {
+		t.Fatal("top-level empty response accepted without per-passage arrays")
+	}
+	records, err := validateQuestionAnswerTargets([][]int{{}, {}}, passages, [][]string{nil, nil})
+	if err != nil || len(records) != 0 {
+		t.Fatalf("per-passage empty selections = %+v, %v", records, err)
+	}
+	if _, err := validateQuestionAnswerTargets([][]int{{}, {1, 1}}, passages, [][]string{nil, {"A supported fact."}}); err == nil {
+		t.Fatal("duplicate target ID accepted")
+	}
+	prompt := formatQuestionAnswerTargetPassages([][]string{nil})
+	if !strings.Contains(prompt, "RETURN AN EMPTY ARRAY FOR THIS PASSAGE") || strings.Contains(prompt, "RETURN 0") {
+		t.Fatalf("empty-passage instruction = %q", prompt)
+	}
+}
+
+func TestPreviewProgressNeverExceedsRequestedRecords(t *testing.T) {
+	var got PreviewProgress
+	reportPreviewProgress(func(progress PreviewProgress) { got = progress }, 7, 5, "Generating preview records")
+	if got.CompletedRecords != 5 || got.TotalRecords != 5 {
+		t.Fatalf("preview progress = %+v", got)
 	}
 }
 
@@ -323,13 +522,13 @@ func TestQuestionAnswerTargetSelectionRejectsContextDependentTarget(t *testing.T
 		"It's using the io.Reader interface.",
 	} {
 		passages := []string{passage}
-		if _, err := validateQuestionAnswerTargets([]int{1}, passages, questionAnswerTargetCandidates(passages)); err == nil {
+		if _, err := validateQuestionAnswerTargets([][]int{{1}}, passages, questionAnswerTargetCandidates(passages)); err == nil {
 			t.Fatalf("context-dependent target %q passed validation", passage)
 		}
 	}
 
 	passages := []string{"The profiler uses SIGPROF to interrupt the program."}
-	if _, err := validateQuestionAnswerTargets([]int{1}, passages, questionAnswerTargetCandidates(passages)); err != nil {
+	if _, err := validateQuestionAnswerTargets([][]int{{1}}, passages, questionAnswerTargetCandidates(passages)); err != nil {
 		t.Fatalf("standalone target failed validation: %v", err)
 	}
 }
@@ -347,7 +546,7 @@ func TestQuestionAnswerTargetCandidatesRemoveNarrativeAnswers(t *testing.T) {
 		t.Fatalf("target candidates = %#v, want %#v", got, want)
 	}
 	prompt := formatQuestionAnswerTargetPassages(got)
-	if strings.Contains(prompt, passages[0]) || strings.Contains(prompt, passages[1]) || !strings.Contains(prompt, "[NO USABLE TARGETS: RETURN 0]") || !strings.Contains(prompt, "[TARGET 1] mutex") {
+	if strings.Contains(prompt, passages[0]) || strings.Contains(prompt, passages[1]) || !strings.Contains(prompt, "[NO USABLE TARGETS: RETURN AN EMPTY ARRAY FOR THIS PASSAGE]") || !strings.Contains(prompt, "[TARGET 1] mutex") {
 		t.Fatalf("target prompt exposes narrative answers or omits the usable atomic answer: %s", prompt)
 	}
 }

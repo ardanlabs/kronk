@@ -95,7 +95,7 @@ func TestBuildPreview(t *testing.T) {
 	if len(artifact.Records) != 2 || artifact.PromptTokens != 180 || artifact.CompletionTokens != 60 || artifact.VerificationAttempts != 1 {
 		t.Fatalf("artifact: got %+v", artifact)
 	}
-	if len(progress) != 2 || progress[0].CompletedStages != 1 || progress[1].CompletedStages != 2 {
+	if len(progress) != 4 || progress[0].CompletedRecords != 0 || progress[0].TotalRecords != 2 || progress[1].CompletedRecords != 2 || progress[2].Stage != "Verifying generated records" || progress[3].Stage != "Preview ready for review" {
 		t.Fatalf("progress: got %+v", progress)
 	}
 	requestContent := model.requests[0].Messages[1].Content
@@ -135,7 +135,8 @@ func TestBuildPreview(t *testing.T) {
 		t.Fatalf("verification request is missing task-aware quality rules: %s", verificationRules)
 	}
 	verificationContent := model.requests[1].Messages[1].Content
-	if !strings.Contains(verificationContent, "EVIDENCE: A goroutine is an independently executing function in Go. It is lightweight.") ||
+	if !strings.Contains(verificationContent, "[SOURCE EVIDENCE 1]\nA goroutine is an independently executing function in Go. It is lightweight.") ||
+		!strings.Contains(verificationContent, "EVIDENCE BLOCK: 1") ||
 		!strings.Contains(verificationContent, "[TARGET 1] A goroutine is an independently executing function in Go.") {
 		t.Fatalf("verification request must contain the selected target and its evidence: %s", verificationContent)
 	}

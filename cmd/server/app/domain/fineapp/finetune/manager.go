@@ -21,23 +21,24 @@ const (
 
 // RunInfo is the durable state shown by Current Run and History.
 type RunInfo struct {
-	Schema             int       `json:"schema"`
-	ID                 string    `json:"id"`
-	Dataset            string    `json:"dataset"`
-	Model              string    `json:"model"`
-	Output             string    `json:"output"`
-	Runtime            Runtime   `json:"runtime"`
-	Status             Status    `json:"status"`
-	Progress           Progress  `json:"progress"`
-	Error              string    `json:"error,omitempty"`
-	Resumable          bool      `json:"resumable,omitempty"`
-	Adapter            string    `json:"adapter,omitempty"`
-	Report             string    `json:"report,omitempty"`
-	SelectedEpoch      int       `json:"selected_epoch,omitempty"`
-	SelectedCheckpoint string    `json:"selected_checkpoint,omitempty"`
-	StartedAt          time.Time `json:"started_at"`
-	UpdatedAt          time.Time `json:"updated_at"`
-	FinishedAt         time.Time `json:"finished_at"`
+	Schema             int            `json:"schema"`
+	ID                 string         `json:"id"`
+	Dataset            string         `json:"dataset"`
+	Model              string         `json:"model"`
+	Output             string         `json:"output"`
+	Runtime            Runtime        `json:"runtime"`
+	Training           TrainingConfig `json:"training"`
+	Status             Status         `json:"status"`
+	Progress           Progress       `json:"progress"`
+	Error              string         `json:"error,omitempty"`
+	Resumable          bool           `json:"resumable,omitempty"`
+	Adapter            string         `json:"adapter,omitempty"`
+	Report             string         `json:"report,omitempty"`
+	SelectedEpoch      int            `json:"selected_epoch,omitempty"`
+	SelectedCheckpoint string         `json:"selected_checkpoint,omitempty"`
+	StartedAt          time.Time      `json:"started_at"`
+	UpdatedAt          time.Time      `json:"updated_at"`
+	FinishedAt         time.Time      `json:"finished_at"`
 }
 
 // UpdateFunc receives persisted snapshots as a managed run progresses.
@@ -112,8 +113,8 @@ func (manager *Manager) Start(ctx context.Context, request Request, update Updat
 	runContext, cancel := context.WithCancel(ctx)
 	initial := RunInfo{
 		Schema: runStateSchema, ID: id, Dataset: request.Dataset, Model: request.Model, Output: output,
-		Runtime: request.Runtime,
-		Status:  StatusPreparing, Progress: Progress{Stage: StageImporting, Message: "Preparing training run"},
+		Runtime: request.Runtime, Training: request.Training,
+		Status: StatusPreparing, Progress: Progress{Stage: StageImporting, Message: "Preparing training run"},
 		StartedAt: now, UpdatedAt: now,
 	}
 	if err := writeRunInfo(initial); err != nil {
@@ -157,7 +158,10 @@ func (manager *Manager) Resume(ctx context.Context, id string, update UpdateFunc
 		manager.mu.Unlock()
 		return RunInfo{}, errors.New("this run has no completed training checkpoint to resume")
 	}
-	request := Request{Dataset: info.Dataset, Model: info.Model, Output: info.Output, Runtime: info.Runtime}
+	request := Request{
+		Dataset: info.Dataset, Model: info.Model, Output: info.Output,
+		Runtime: info.Runtime, Training: info.Training,
+	}
 	if err := manager.backend.Preflight(ctx, request); err != nil {
 		manager.mu.Unlock()
 		return RunInfo{}, err

@@ -102,6 +102,7 @@ func TestRecipeReadsModelContextFromGGUF(t *testing.T) {
 	writer := gguf.Writer{}
 	writer.String("general.architecture", "gemma3")
 	writer.Uint32("gemma3.context_length", 32768)
+	writer.Uint32("gemma3.embedding_length", 1152)
 	if err := writer.WriteFile(modelPath); err != nil {
 		t.Fatal(err)
 	}
@@ -270,6 +271,12 @@ func TestTrainingStateOnlyResumesTheSameValidatedRun(t *testing.T) {
 	if err := validateTrainingState(request, contract, loaded); err != nil {
 		t.Fatalf("validateTrainingState() error = %v", err)
 	}
+	request.Training = CurrentTrainingConfig()
+	request.Training.BatchSize++
+	if err := validateTrainingState(request, contract, loaded); err == nil || !strings.Contains(err.Error(), "different training configuration") {
+		t.Fatalf("mismatched training configuration error = %v", err)
+	}
+	request.Training = finetune.TrainingConfig{}
 	trained := trainingOutputFromState(loaded)
 	if trained.SelectedEpoch != state.Training.BestEpoch || trained.SelectedCheckpoint != mainCheckpoint || trained.Candidate != candidate {
 		t.Fatalf("resumed training output = %+v", trained)
@@ -294,12 +301,13 @@ func TestTrainingStateOnlyResumesTheSameValidatedRun(t *testing.T) {
 
 func TestTrainingReportCanBeSafelyUpdatedAfterResume(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "training-report.json")
+	config := CurrentTrainingConfig()
 	first := trainingOutput{SelectedEpoch: 1, BestValidationLoss: 0.5}
-	if err := writeTrainingReport(path, "gemma.gguf", finetune.DatasetContractReport{}, first); err != nil {
+	if err := writeTrainingReport(path, "gemma.gguf", config, finetune.DatasetContractReport{}, first); err != nil {
 		t.Fatal(err)
 	}
 	second := trainingOutput{SelectedEpoch: 2, BestValidationLoss: 0.25}
-	if err := writeTrainingReport(path, "gemma.gguf", finetune.DatasetContractReport{}, second); err != nil {
+	if err := writeTrainingReport(path, "gemma.gguf", config, finetune.DatasetContractReport{}, second); err != nil {
 		t.Fatal(err)
 	}
 	var report trainingReport
@@ -335,11 +343,14 @@ func TestBackendPreflightChecksModelArchitectureAndInputs(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "model.gguf")
 		var writer gguf.Writer
 		writer.String("general.architecture", architecture)
+		writer.Uint32("gemma3.embedding_length", 1152)
 		if err := writer.WriteFile(path); err != nil {
 			t.Fatal(err)
 		}
 		return path
 	}
+	oversizedRank := CurrentTrainingConfig()
+	oversizedRank.LoRARank = 1153
 	tests := []struct {
 		name    string
 		request finetune.Request
@@ -349,6 +360,7 @@ func TestBackendPreflightChecksModelArchitectureAndInputs(t *testing.T) {
 		{"wrong architecture", finetune.Request{Dataset: dataset, Model: writeModel(t, "qwen3"), Runtime: finetune.Runtime{LlamaServer: executable}}, "want gemma3"},
 		{"missing executable", finetune.Request{Dataset: dataset, Model: writeModel(t, "gemma3"), Runtime: finetune.Runtime{LlamaServer: filepath.Join(t.TempDir(), "missing")}}, "find llama-server"},
 		{"invalid port", finetune.Request{Dataset: dataset, Model: writeModel(t, "gemma3"), Runtime: finetune.Runtime{LlamaServer: executable, Port: 65536}}, "port"},
+		{"oversized LoRA rank", finetune.Request{Dataset: dataset, Model: writeModel(t, "gemma3"), Runtime: finetune.Runtime{LlamaServer: executable}, Training: oversizedRank}, "exceeds Gemma embedding dimension"},
 	}
 	backend := New()
 	for _, test := range tests {

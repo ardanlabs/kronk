@@ -21,11 +21,12 @@ export const PARAM_TOOLTIPS = {
   fineTuningOptimizer: 'Algorithm used to update trainable LoRA weights from answer-token loss.',
   fineTuningWeightDecay: 'Regularization applied by Adaptive Moment Estimation to discourage unnecessarily large adapter weights.',
   fineTuningLoRAAlpha: 'LoRA scaling numerator. Together with rank and adapter scale, this controls the adapter contribution during training.',
+  fineTuningEarlyStoppingPatience: 'Number of consecutive epochs without enough validation improvement before training stops early. Zero disables early stopping.',
   fineTuningLoRAScale: 'Multiplier applied to every LoRA update before it is combined with the frozen base weight.',
   fineTuningTargetModules: 'Transformer projections that receive LoRA adapters in every model layer.',
   fineTuningBaseWeights: 'The original Gemma weights remain unchanged; only the LoRA adapter matrices are trained.',
   fineTuningLoss: 'Cross-entropy is calculated only for answer tokens. Prompt and padding tokens do not contribute to training loss.',
-  fineTuningShuffleSeed: 'Fixed seed used to reproducibly shuffle training examples for each epoch.',
+  fineTuningShuffleSeed: 'Fixed seed used to reproduce adapter initialization and training-example order.',
   fineTuningOversizedExamples: 'Examples beyond the model context limit are rejected instead of silently truncated.',
   fineTuningBatchPadding: 'Examples in a batch are padded to power-of-two sequence buckets. Padding tokens are excluded from loss.',
 
