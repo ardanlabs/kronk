@@ -459,12 +459,10 @@ resp, err := krn.Decision(ctx, req)
 `Kronk.Decision` returns `model.DecisionResponse`. `Kronk.DecisionHTTP`
 performs the same evaluation and writes that response using the public HTTP
 JSON contract. Supported model names and metadata are detected automatically;
-use `model.WithDecisionProtocol(model.DecisionProtocolOpenJEV)` or
-`model.WithDecisionProtocol(model.DecisionProtocolJevStyle)` only when a
-renamed model cannot be detected. Complete runnable examples are under
-`examples/decision/openjev` and `examples/decision/jevstyle`. The bundled SDK
-reference documents every constructor, request type, response type, protocol,
-and error.
+use `model.WithDecisionProtocol` with the matching protocol only when a renamed
+model cannot be detected. The complete runnable example is under
+`examples/decision`. The bundled SDK reference documents every constructor,
+request type, response type, protocol, and error.
 
 ## 9.9 Tokenization
 

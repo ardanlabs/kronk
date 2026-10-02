@@ -11,8 +11,9 @@ import (
 const decisionMaxReadouts = 255
 
 type decisionReadout struct {
-	position   int
-	candidates []llama.Token
+	position       int
+	candidates     []llama.Token
+	embeddingWidth int
 }
 
 type decisionWork struct {
@@ -46,6 +47,10 @@ func decisionContextParams(base llama.ContextParams, cfg Config) llama.ContextPa
 	params.NOutputsMaxPerSeq = decisionMaxReadouts
 	params.KVUnified = 1
 	params.NoPerf = 1
+	if decisionUsesEmbeddings(cfg.DecisionProtocol) {
+		params.Embeddings = 1
+		params.PoolingType = llama.PoolingTypeNone
+	}
 	return params
 }
 
@@ -138,8 +143,11 @@ func (e *decisionEngine) validate(work []decisionWork) error {
 				return fmt.Errorf("decision work[%d] readout[%d] position %d is outside [%d,%d)", i, j, readout.position, item.prefixLen, len(item.tokens))
 			}
 
-			if len(readout.candidates) == 0 {
-				return fmt.Errorf("decision work[%d] readout[%d] has no candidates", i, j)
+			if len(readout.candidates) == 0 && readout.embeddingWidth <= 0 {
+				return fmt.Errorf("decision work[%d] readout[%d] has no candidates or embedding width", i, j)
+			}
+			if len(readout.candidates) > 0 && readout.embeddingWidth > 0 {
+				return fmt.Errorf("decision work[%d] readout[%d] requests logits and embeddings", i, j)
 			}
 
 			for _, token := range readout.candidates {
@@ -200,19 +208,29 @@ func (e *decisionEngine) decode(parts ...decisionPart) ([][][]float32, bool, err
 		result[partIndex] = make([][]float32, len(part.readouts))
 
 		for readoutIndex, batchIndex := range indices[partIndex] {
+			readout := part.readouts[readoutIndex]
+			if readout.embeddingWidth > 0 {
+				embeddings, err := llama.GetEmbeddingsIth(e.lctx, batchIndex, int32(readout.embeddingWidth))
+				if err != nil {
+					return nil, true, fmt.Errorf("decision get embeddings at batch index %d: %w", batchIndex, err)
+				}
+				if embeddings == nil {
+					return nil, true, fmt.Errorf("decision has no embeddings at batch index %d", batchIndex)
+				}
+				result[partIndex][readoutIndex] = append([]float32(nil), embeddings...)
+				continue
+			}
+
 			allLogits, err := llama.GetLogitsIth(e.lctx, batchIndex, e.nVocab)
 			if err != nil {
 				return nil, true, fmt.Errorf("decision get logits at batch index %d: %w", batchIndex, err)
 			}
-
 			if allLogits == nil {
 				return nil, true, fmt.Errorf("decision has no logits at batch index %d", batchIndex)
 			}
 
-			candidates := part.readouts[readoutIndex].candidates
-			result[partIndex][readoutIndex] = make([]float32, len(candidates))
-
-			for i, token := range candidates {
+			result[partIndex][readoutIndex] = make([]float32, len(readout.candidates))
+			for i, token := range readout.candidates {
 				result[partIndex][readoutIndex][i] = allLogits[token]
 			}
 		}
@@ -237,13 +255,19 @@ func stageDecisionParts(batch *extendedBatch, parts []decisionPart) ([][]int32, 
 			output := extendedBatchOutputNone
 			if readoutAt[position] {
 				output = extendedBatchOutputLogits
+				for _, readout := range part.readouts {
+					if readout.position == position && readout.embeddingWidth > 0 {
+						output = extendedBatchOutputEmbeddings
+						break
+					}
+				}
 			}
 
 			idx, err := batch.addToken(token, llama.Pos(position), sequenceIDs, output)
 			if err != nil {
 				return nil, fmt.Errorf("add part[%d] token at position %d: %w", partIndex, position, err)
 			}
-			if output == extendedBatchOutputLogits {
+			if output != extendedBatchOutputNone {
 				indices[partIndex] = append(indices[partIndex], idx)
 			}
 		}

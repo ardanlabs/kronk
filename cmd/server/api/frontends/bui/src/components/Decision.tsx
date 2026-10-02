@@ -94,6 +94,7 @@ function AnswerCard({ id, answer }: { id: string; answer: DecisionAnswer }) {
 export default function Decision() {
   const [model, setModel] = useState(() => localStorage.getItem(STORAGE_KEY) || '');
   const [decisionModels, setDecisionModels] = useState<CatalogModelResponse[]>([]);
+  const [runningModels, setRunningModels] = useState<Map<string, string>>(new Map());
   const [modelsLoading, setModelsLoading] = useState(true);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [message, setMessage] = useState('I was charged twice and need this fixed today.');
@@ -104,20 +105,26 @@ export default function Decision() {
 
   const questionSummary = useMemo(() => Object.entries(questions), []);
   const selectedModel = decisionModels.find((entry) => entry.id === model);
+  const selectedRuntimeStatus = runningModels.get(model);
+  const modelLoaded = selectedRuntimeStatus === 'loaded';
   const modelReady = selectedModel?.downloaded === true && selectedModel.validated === true;
-  const canSubmit = modelReady && message.trim() !== '' && !submitting;
+  const canSubmit = (modelLoaded || modelReady) && message.trim() !== '' && !submitting;
 
   useEffect(() => {
     let cancelled = false;
 
-    api.listCatalog()
-      .then((catalog) => {
+    Promise.allSettled([api.listCatalog(), api.listRunningModels()])
+      .then(([catalogResult, runningResult]) => {
         if (cancelled) return;
+        if (catalogResult.status === 'rejected') throw catalogResult.reason;
 
-        const models = catalog.filter((entry) => (
+        const models = catalogResult.value.filter((entry) => (
           entry.capabilities?.decision === true || entry.capabilities?.endpoint === 'decision'
         ));
         setDecisionModels(models);
+        if (runningResult.status === 'fulfilled') {
+          setRunningModels(new Map(runningResult.value.map((entry) => [entry.id, entry.status])));
+        }
         setModel((current) => models.some((entry) => entry.id === current) ? current : (models[0]?.id ?? ''));
       })
       .catch((err) => {
@@ -148,14 +155,16 @@ export default function Decision() {
     setResult(null);
 
     try {
-      setResult(await api.decide({
+      const response = await api.decide({
         model: modelID,
         state: {
           customer_message: message.trim(),
           account_tier: accountTier,
         },
         questions,
-      }));
+      });
+      setResult(response);
+      setRunningModels((current) => new Map(current).set(modelID, 'loaded'));
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -189,7 +198,11 @@ export default function Decision() {
             {!modelsLoading && decisionModels.length === 0 && <option value="">No decision models in catalog</option>}
             {decisionModels.map((entry) => (
               <option key={entry.id} value={entry.id}>
-                {entry.id}{entry.downloaded ? (entry.validated ? ' — ready' : ' — validation failed') : ' — download required'}
+                {entry.id}{runningModels.get(entry.id) === 'loaded'
+                  ? ' — loaded'
+                  : entry.downloaded
+                    ? (entry.validated ? ' — ready' : ' — validation failed')
+                    : ' — download required'}
               </option>
             ))}
           </select>
@@ -201,6 +214,10 @@ export default function Decision() {
               <span className="decision-model-status-error">Unable to verify model availability: {modelsError}</span>
             ) : !selectedModel ? (
               <span className="decision-model-status-required">No decision models are available in the catalog.</span>
+            ) : modelLoaded ? (
+              <span className="decision-model-status-ready">● Loaded and ready</span>
+            ) : selectedRuntimeStatus === 'loading' ? (
+              <span className="decision-model-status-ready">● Loading into memory</span>
             ) : modelReady ? (
               <span className="decision-model-status-ready">● Downloaded and ready</span>
             ) : selectedModel.downloaded ? (

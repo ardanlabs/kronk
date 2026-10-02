@@ -53,6 +53,9 @@ func TestDecisionProtocol(t *testing.T) {
 		{"unset", "", DecisionProtocol{}, false},
 		{"OpenJEV", "openjev", DecisionProtocolOpenJEV, false},
 		{"Jev-Style", "jev-style", DecisionProtocolJevStyle, false},
+		{"Laya", "laya", DecisionProtocolLaya, false},
+		{"Lev", "lev", DecisionProtocolLev, false},
+		{"Kev", "kev", DecisionProtocolKev, false},
 		{"unknown", "unknown", DecisionProtocol{}, true},
 	}
 

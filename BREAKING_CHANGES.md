@@ -2,6 +2,14 @@
 
 ## Index
 
+- [v1.32.8](#v1328)
+  - [Authorization Configuration Changes](#v1328-authorization-configuration-changes)
+  - [Operation Offload Configuration Changes](#v1328-operation-offload-configuration-changes)
+  - [Split Mode Changes](#v1328-split-mode-changes)
+  - [Legacy Migration Changes](#v1328-legacy-migration-changes)
+  - [Media Backend Startup Changes](#v1328-media-backend-startup-changes)
+  - [Streaming Error Response Changes](#v1328-streaming-error-response-changes)
+  - [Go SDK Changes](#v1328-go-sdk-changes)
 - [v1.32.4](#v1324)
   - [IMC Session Capacity Changes](#v1324-imc-session-capacity-changes)
   - [IMC Session Store Interface Changes](#v1324-imc-session-store-interface-changes)
@@ -27,6 +35,162 @@
   - [HTTP Error Response Changes](#v1303-http-error-response-changes)
   - [Session Storage Changes](#v1303-session-storage-changes)
   - [Go SDK Changes](#v1303-go-sdk-changes)
+
+## v1.32.8
+
+### v1.32.8: Authorization Configuration Changes
+
+The legacy authorization settings and their CLI flags were removed. Configure
+the API access policy with `authorization.mode`, which defaults to `open`:
+
+| Removed YAML | Removed environment variable | Removed CLI flag | Replacement mode |
+| ------------ | ---------------------------- | ---------------- | ---------------- |
+| `auth.local.enabled: true` | `KRONK_AUTH_LOCAL_ENABLED=true` | `--auth-enabled` | `full-protected` |
+| `auth.admin-enabled: true` | `KRONK_AUTH_ADMIN_ENABLED=true` | `--admin-auth-enabled` | `management` |
+
+For example, replace a legacy fully protected configuration with:
+
+```yaml
+version: 1
+kms:
+  authorization:
+    mode: full-protected
+```
+
+Or set `KRONK_AUTHORIZATION_MODE=full-protected` or pass
+`--authorization-mode=full-protected`. The other supported modes are `open`,
+`management`, and `authenticated`. Remove the legacy YAML keys and environment
+variables from deployment configuration. They no longer protect any routes,
+and the removed CLI flags are rejected. Upgrading without selecting a
+replacement mode can therefore expose endpoints that were previously
+protected.
+
+### v1.32.8: Operation Offload Configuration Changes
+
+The per-model `op-offload-min-batch` setting was removed. llama.cpp's GPU
+backends read this setting once during initialization, so it cannot be changed
+independently for each model.
+
+Remove `op-offload-min-batch` from model entries in
+`~/.kronk/models/model_config.yaml`. To retain the setting, export the
+process-wide llama.cpp environment variable before Kronk starts:
+
+```shell
+export GGML_OP_OFFLOAD_MIN_BATCH=32
+kronk server start
+```
+
+Applications embedding the Go SDK must set `GGML_OP_OFFLOAD_MIN_BATCH` before
+calling `kronk.Init`. The following Go APIs were also removed:
+
+- `model.Config.PtrOpOffloadMinBatch`
+- `model.Config.OpOffloadMinBatch()`
+- `model.WithOpOffloadMinBatch(...)`
+- `models.ModelConfig.PtrOpOffloadMinBatch`
+
+The Playground request field `op_offload_min_batch` was also removed. A stale
+YAML or Playground field may be ignored rather than rejected, but it no longer
+changes runtime behavior.
+
+### v1.32.8: Split Mode Changes
+
+The `tensor`, `tensor-parallel`, and `expert-parallel` split-mode values now
+select the new tensor-parallel implementation. They previously selected legacy
+row-split mode. Existing configurations that need to preserve the old behavior
+must use:
+
+```yaml
+split-mode: row
+```
+
+The numeric value `2` continues to mean row mode. Tensor mode uses numeric
+value `3`, is experimental, requires Flash Attention, and is supported only by
+compatible model architectures and backends.
+
+### v1.32.8: Legacy Migration Changes
+
+Kronk no longer automatically moves these legacy files to their canonical
+locations:
+
+| Legacy location | Canonical location |
+| --------------- | ------------------ |
+| `~/.kronk/model_config.yaml` | `~/.kronk/models/model_config.yaml` |
+| `~/.kronk/catalog.yaml` | `~/.kronk/catalog/catalog.yaml` |
+
+Move either file before upgrading. Otherwise Kronk leaves the legacy file in
+place and creates an embedded default at the canonical location, so existing
+model overrides or catalog customizations are not loaded.
+
+Version 0 model configuration files are also no longer rewritten
+automatically. Convert a root-level model map such as:
+
+```yaml
+owner/model:
+  context-window: 4096
+```
+
+to the version 1 document format:
+
+```yaml
+version: 1
+models:
+  owner/model:
+    context-window: 4096
+```
+
+Finally, native llama.cpp libraries stored directly in the libraries root are
+no longer moved automatically into the platform layout
+`<libraries>/<os>/<arch>/<processor>/`. Move an old installation into its
+platform directory, install a current bundle, or point `KRONK_LIB_PATH` (or
+`--lib-path`) directly at the existing library directory.
+
+### v1.32.8: Media Backend Startup Changes
+
+Server startup now downloads, verifies, and initializes both Bucky and Malina
+native backends by default. This adds a stable-diffusion.cpp download and can
+prevent startup when the network, filesystem, or verification step fails.
+
+Deployments that do not use audio transcription or image generation can
+preserve a language-model-only startup with:
+
+```shell
+export KRONK_MEDIA_BACKENDS_ENABLED=false
+```
+
+The equivalent CLI setting is `--media-backends-enabled=false` and the YAML
+setting is `media-backends-enabled: false`.
+
+### v1.32.8: Streaming Error Response Changes
+
+Chat Completions streams now include top-level `usage` in an error event and
+send a final `data: [DONE]` frame after that event. Streaming clients must not
+assume that the error event is the last frame or reject the additional field.
+
+Responses API streaming error events now include `message`, use the current
+`sequence_number` instead of always using zero, and may include `code` and
+`param`. Clients with strict event schemas must accept these fields and must
+not assume a fixed error sequence number.
+
+### v1.32.8: Go SDK Changes
+
+The following exported pool metric functions now require a backend label as
+their first argument:
+
+```go
+metrics.SetPoolItemsInPool(backend, count)
+metrics.SetPoolMaxItemsInPool(backend, count)
+metrics.SetPoolInflightLoads(backend, count)
+```
+
+Use a stable label such as `kronk`, `bucky`, or `malina`.
+
+`models.UpgradeModelConfig` was removed. Convert version 0 files to the version
+1 format shown above before calling `models.LoadModelConfig`.
+
+`libs.VerifyReport` changed from an alias of `download.VerifyReport` to a
+distinct type. Code that assigned or passed these types interchangeably must
+copy the compatible fields explicitly. Code that only consumes the value
+returned by `(*libs.Libs).Verify` does not need to change.
 
 ## v1.32.4
 

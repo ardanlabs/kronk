@@ -185,6 +185,18 @@ func detectDecisionProtocol(configured DecisionProtocol, modelID string, metadat
 		return configured
 	}
 
+	architecture := metadata["general.architecture"]
+	switch metadata[architecture+".decision.type"] {
+	case "openjev":
+		return DecisionProtocolOpenJEV
+	case "laya":
+		return DecisionProtocolLaya
+	case "lev":
+		return DecisionProtocolLev
+	case "kev":
+		return DecisionProtocolKev
+	}
+
 	modelName := strings.ToLower(metadata["general.name"])
 	if strings.Contains(modelName, "jev-style") {
 		return DecisionProtocolJevStyle

@@ -1,10 +1,10 @@
-// This example shows you how to use an OpenJEV decision model.
+// This example shows you how to use a decision model.
 //
 // The first time you run this program the system will download and install
 // the model and libraries.
 //
 // Run the example like this from the root of the project:
-// $ cd examples && go run ./decision/openjev
+// $ cd examples && go run ./decision
 
 package main
 
@@ -23,7 +23,15 @@ import (
 
 // modelSource is the model to download. It may be a HuggingFace URL,
 // a canonical "provider/modelID", or a bare model id.
-var modelSource = "https://huggingface.co/openjev/openjev-GGUF/resolve/main/OpenJev-Q4_K_M.gguf"
+var modelSource = "chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0"
+
+// The ggml-org models require a llama.cpp build containing PR #29818.
+// var modelSource = "ggml-org/Julia-1-Q8_0"
+// var modelSource = "ggml-org/Laya-Q8_0"
+// var modelSource = "ggml-org/lev-Q4_K_M"
+// var modelSource = "ggml-org/Kev-4B-Q4_K_M"
+// var modelSource = "ggml-org/OpenJev-Q4_K_M"
+// var modelSource = "openjev/OpenJev-Q4_K_M"
 
 func main() {
 	if err := run(); err != nil {
@@ -97,8 +105,8 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 
 	krn, err := kronk.New(
 		model.WithModelFiles(mp.ModelFiles),
+		model.WithProjFile(mp.ProjFile),
 		model.WithAutoTune(true),
-		model.WithDecisionProtocol(model.DecisionProtocolOpenJEV),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create decision model: %w", err)

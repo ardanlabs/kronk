@@ -57,6 +57,27 @@ func TestCapabilitiesForSpecializedQwenModels(t *testing.T) {
 			want: CatalogCapabilities{Endpoint: "decision", Decision: true},
 		},
 		{
+			name: "standard decision metadata takes precedence over architecture purpose",
+			metadata: map[string]string{
+				"general.architecture":      "modern-bert",
+				"modern-bert.decision.type": "laya",
+			},
+			modelID: "renamed-model",
+			want:    CatalogCapabilities{Endpoint: "decision", Decision: true},
+		},
+		{
+			name: "decision fallback respects name boundaries",
+			metadata: map[string]string{
+				"general.architecture": "qwen35",
+				"general.name":         "Clever Chat",
+			},
+			modelID: "example/Clever-Q4_K_M",
+			want: CatalogCapabilities{
+				Endpoint:  "chat_completion",
+				Streaming: true,
+			},
+		},
+		{
 			name: "Qwen3 embedding basename",
 			metadata: map[string]string{
 				"general.architecture": "qwen3",
@@ -190,6 +211,11 @@ func TestEmbeddedCatalogCapabilities(t *testing.T) {
 		"gpustack/bge-reranker-v2-m3-Q8_0":              "rerank",
 		"openjev/OpenJev-Q4_K_M":                        "decision",
 		"chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0": "decision",
+		"ggml-org/OpenJev-Q4_K_M":                       "decision",
+		"ggml-org/lev-Q4_K_M":                           "decision",
+		"ggml-org/Laya-Q8_0":                            "decision",
+		"ggml-org/Julia-1-Q8_0":                         "decision",
+		"ggml-org/Kev-4B-Q4_K_M":                        "decision",
 	}
 	for id, wantEndpoint := range wantEndpoints {
 		entry, exists := catalog.Models[id]

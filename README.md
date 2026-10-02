@@ -148,8 +148,7 @@ Representative examples:
 make example-question         # Ask a local language model a question.
 make example-agent            # Run a small coding agent.
 make example-vision           # Prompt a vision model with an image.
-make example-decision-jevstyle # Evaluate typed questions with Jev-Style.
-make example-decision-openjev  # Evaluate typed questions with OpenJEV.
+make example-decision         # Evaluate typed questions with a decision model.
 make example-bucky            # Transcribe an audio file with Bucky.
 make example-bucky-stream-vad # Stream transcription with Silero VAD boundaries.
 make example-malina           # Generate an image with experimental Malina.

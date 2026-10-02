@@ -124,6 +124,42 @@ func TestDetectDecisionProtocol(t *testing.T) {
 			want: DecisionProtocolOpenJEV,
 		},
 		{
+			name:    "OpenJEV decision metadata",
+			modelID: "renamed-model",
+			metadata: map[string]string{
+				"general.architecture": "qwen35",
+				"qwen35.decision.type": "openjev",
+			},
+			want: DecisionProtocolOpenJEV,
+		},
+		{
+			name:    "Laya decision metadata",
+			modelID: "renamed-model",
+			metadata: map[string]string{
+				"general.architecture":      "modern-bert",
+				"modern-bert.decision.type": "laya",
+			},
+			want: DecisionProtocolLaya,
+		},
+		{
+			name:    "Lev decision metadata",
+			modelID: "renamed-model",
+			metadata: map[string]string{
+				"general.architecture": "qwen35",
+				"qwen35.decision.type": "lev",
+			},
+			want: DecisionProtocolLev,
+		},
+		{
+			name:    "Kev decision metadata",
+			modelID: "renamed-model",
+			metadata: map[string]string{
+				"general.architecture": "qwen35",
+				"qwen35.decision.type": "kev",
+			},
+			want: DecisionProtocolKev,
+		},
+		{
 			name:       "explicit override survives unknown identity",
 			configured: DecisionProtocolOpenJEV,
 			modelID:    "renamed-model",

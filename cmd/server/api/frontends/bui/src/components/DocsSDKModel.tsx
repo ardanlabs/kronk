@@ -2333,6 +2333,9 @@ export default function DocsSDKModel() {
               </pre>
               <p className="doc-description">// DecisionProtocolOpenJEV identifies the OpenJEV letter-readout protocol. DecisionProtocolOpenJEV = newDecisionProtocol("openjev")</p>
               <p className="doc-description">// DecisionProtocolJevStyle identifies the macjev-render-v1 protocol. DecisionProtocolJevStyle = newDecisionProtocol("jev-style")</p>
+              <p className="doc-description">// DecisionProtocolLaya identifies the Laya and Julia marker-embedding protocol. DecisionProtocolLaya = newDecisionProtocol("laya")</p>
+              <p className="doc-description">// DecisionProtocolLev identifies the Lev label-readout protocol. DecisionProtocolLev = newDecisionProtocol("lev")</p>
+              <p className="doc-description">// DecisionProtocolKev identifies the Kev pointer-head protocol. DecisionProtocolKev = newDecisionProtocol("kev")</p>
             </div>
 
             <div className="doc-section" id="var-variable">

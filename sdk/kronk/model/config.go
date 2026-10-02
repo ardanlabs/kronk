@@ -585,7 +585,7 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 	}
 
 	switch cfg.DecisionProtocol {
-	case DecisionProtocol{}, DecisionProtocolOpenJEV, DecisionProtocolJevStyle:
+	case DecisionProtocol{}, DecisionProtocolOpenJEV, DecisionProtocolJevStyle, DecisionProtocolLaya, DecisionProtocolLev, DecisionProtocolKev:
 	default:
 		return fmt.Errorf("validate-config: unsupported decision protocol %q", cfg.DecisionProtocol)
 	}
@@ -1729,6 +1729,15 @@ var (
 
 	// DecisionProtocolJevStyle identifies the macjev-render-v1 protocol.
 	DecisionProtocolJevStyle = newDecisionProtocol("jev-style")
+
+	// DecisionProtocolLaya identifies the Laya and Julia marker-embedding protocol.
+	DecisionProtocolLaya = newDecisionProtocol("laya")
+
+	// DecisionProtocolLev identifies the Lev label-readout protocol.
+	DecisionProtocolLev = newDecisionProtocol("lev")
+
+	// DecisionProtocolKev identifies the Kev pointer-head protocol.
+	DecisionProtocolKev = newDecisionProtocol("kev")
 )
 
 // DecisionProtocol identifies the prompt and readout protocol used by a

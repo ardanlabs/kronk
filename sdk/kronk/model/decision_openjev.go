@@ -23,36 +23,9 @@ type openJEVOption struct {
 	description string
 }
 
-type decisionProtocol interface {
-	decide(ctx context.Context, req DecisionRequest) (DecisionResponse, error)
-}
-
 type openJEVProtocol struct {
 	model        *Model
 	letterTokens []llama.Token
-}
-
-func initDecisionProtocol(m *Model) error {
-	switch m.modelInfo.decisionProtocol {
-	case DecisionProtocolOpenJEV:
-		protocol, err := newOpenJEVProtocol(m)
-		if err != nil {
-			return err
-		}
-		m.protocol = protocol
-		return nil
-
-	case DecisionProtocolJevStyle:
-		protocol, err := newJevStyleProtocol(m)
-		if err != nil {
-			return err
-		}
-		m.protocol = protocol
-		return nil
-
-	default:
-		return fmt.Errorf("init-decision-protocol: unknown decision protocol %q", m.modelInfo.decisionProtocol)
-	}
 }
 
 func newOpenJEVProtocol(m *Model) (*openJEVProtocol, error) {
@@ -74,17 +47,6 @@ func newOpenJEVProtocol(m *Model) (*openJEVProtocol, error) {
 		}
 	}
 	return nil, fmt.Errorf("init-openjev: neither bare nor space-prefixed A-Z/a-z are unique single tokens")
-}
-
-// Decision evaluates a set of decision questions against shared state.
-func (m *Model) Decision(ctx context.Context, req DecisionRequest) (DecisionResponse, error) {
-	if m.protocol == nil {
-		return DecisionResponse{}, fmt.Errorf("decision: protocol was not detected for model %q; configure model.WithDecisionProtocol(...) with the model's protocol", m.modelInfo.ID)
-	}
-	if err := validateDecisionRequest(req); err != nil {
-		return DecisionResponse{}, err
-	}
-	return m.protocol.decide(ctx, req)
 }
 
 type openJEVQuestionPlan struct {
