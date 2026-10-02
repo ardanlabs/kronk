@@ -243,7 +243,7 @@ func (m *Model) prepareTextBudget(ctx context.Context, prepared *preparedChat) e
 	if prepared.cache.imcTokenPlan {
 		prepared.textTokens = prepared.cache.imcSamplerPromptTokens
 	} else {
-		prepared.textTokens = tokenize(m.vocab, prepared.prompt, m.addBOSToken, true)
+		prepared.textTokens = llama.Tokenize(m.vocab, prepared.prompt, m.addBOSToken, true)
 	}
 
 	contextWindow := m.cfg.ContextWindow()
@@ -447,8 +447,8 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, r
 		if object == ObjectChatMedia {
 			cache = m.processIMCMediaTokenPlan(ctx, d, stableD, actualPrompt, stablePrompt, actualMedia, stableMedia, requestStart)
 		} else {
-			actualTokens := tokenize(m.vocab, actualPrompt, m.addBOSToken, true)
-			stableTokens := tokenize(m.vocab, stablePrompt, m.addBOSToken, true)
+			actualTokens := llama.Tokenize(m.vocab, actualPrompt, m.addBOSToken, true)
+			stableTokens := llama.Tokenize(m.vocab, stablePrompt, m.addBOSToken, true)
 
 			var systemTokens []llama.Token
 			messages := dMessages(stableD)
@@ -465,7 +465,7 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, r
 				systemD["messages"] = messages[:systemMessages]
 				systemPrompt, _, systemErr := m.createPrompt(ctx, systemD)
 				if systemErr == nil {
-					candidate := tokenize(m.vocab, systemPrompt, m.addBOSToken, true)
+					candidate := llama.Tokenize(m.vocab, systemPrompt, m.addBOSToken, true)
 					if len(candidate) > 0 && len(candidate) < len(stableTokens) && tokensHavePrefix(stableTokens, candidate) {
 						systemTokens = candidate
 					} else {

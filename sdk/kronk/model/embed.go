@@ -137,7 +137,7 @@ func (m *Model) processEmbeddingsBatchSeq(ctx context.Context, inputs []string, 
 			return nil, 0, err
 		}
 
-		tokens := tokenize(m.vocab, input, m.addBOSToken, true)
+		tokens := llama.Tokenize(m.vocab, input, m.addBOSToken, true)
 		if len(tokens) > maxTokens {
 			if !truncate {
 				return nil, 0, fmt.Errorf("embeddings: input[%d] has %d tokens but max is %d (set truncate=true to auto-truncate)", i, len(tokens), maxTokens)
@@ -190,7 +190,7 @@ func (m *Model) processEmbeddings(ctx context.Context, pc poolContext, inputs []
 		default:
 		}
 
-		tokens := tokenize(m.vocab, input, m.addBOSToken, true)
+		tokens := llama.Tokenize(m.vocab, input, m.addBOSToken, true)
 
 		if len(tokens) > maxTokens {
 			if !truncate {
