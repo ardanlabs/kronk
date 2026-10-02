@@ -178,9 +178,7 @@ func seconds(duration time.Duration) float64 {
 // Scenario implementations are kept in separate files. These declarations
 // make an incomplete checkout fail clearly while the runner is developed in
 // auditable phases.
-func runLongContext(*runContext) scenarioResult { return notImplemented("long-context") }
-func runBatch(*runContext) scenarioResult       { return notImplemented("batch") }
-func runMedia(*runContext) scenarioResult       { return notImplemented("media") }
+func runMedia(*runContext) scenarioResult { return notImplemented("media") }
 
 func notImplemented(name string) scenarioResult {
 	return scenarioResult{Failures: []string{name + " scenario is not implemented"}}

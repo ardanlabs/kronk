@@ -6,7 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseScenariosOrdersAndDeduplicates(t *testing.T) {
@@ -90,5 +92,31 @@ func TestHighValueEventOmitsRepetitiveSchedulerLogs(t *testing.T) {
 	}
 	if !highValueEvent(map[string]any{"msg": "start-slot", "status": "imc-reuse"}) {
 		t.Fatal("imc-reuse event should be retained")
+	}
+}
+
+func TestVerifyLongContextOutputRejectsForeignMarker(t *testing.T) {
+	expected := longContextMarkers(4096, 42)
+	foreign := longContextMarkers(8192, 42)[0]
+	known := map[string]bool{foreign: true}
+	for _, marker := range expected {
+		known[marker] = true
+	}
+	output := strings.Join(expected, " ") + " " + foreign
+	if err := verifyLongContextOutput(output, expected, known); err == nil {
+		t.Fatal("foreign long-context marker was accepted")
+	}
+}
+
+func TestMaximumBatchConcurrencyUsesGenerationIntervals(t *testing.T) {
+	origin := time.Unix(100, 0)
+	requests := []batchRequestResult{
+		{firstContentAt: origin, finishedAt: origin.Add(4 * time.Second)},
+		{firstContentAt: origin.Add(time.Second), finishedAt: origin.Add(3 * time.Second)},
+		{firstContentAt: origin.Add(2 * time.Second), finishedAt: origin.Add(5 * time.Second)},
+		{firstContentAt: origin.Add(4 * time.Second), finishedAt: origin.Add(6 * time.Second)},
+	}
+	if got := maximumBatchConcurrency(requests); got != 3 {
+		t.Fatalf("maximum concurrency = %d, want 3", got)
 	}
 }
