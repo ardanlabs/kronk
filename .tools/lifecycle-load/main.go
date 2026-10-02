@@ -14,8 +14,9 @@
 //  3. The blocked request finds both admission permits occupied. The server's
 //     100 ms admission timeout expires, so the server should record a Stage 1
 //     timeout with capacity=2 and admitted=2.
-//  4. The client cancels the holder, and the server should record Stage 4 cancel
-//     and release the slot, stream, and admission permit.
+//  4. The client cancels the holder, and the server should record Stage 4 cancel.
+//  5. A recovery request completes, proving the slot and admission permit were
+//     released after cancellation.
 //
 // Requirements:
 //
@@ -27,27 +28,30 @@
 //
 //   - Restart the server after changing model configuration.
 //
-//     Qwen3-0.6B-Q8_0:
+//     unsloth/Qwen3-0.6B-Q8_0:
 //     nseq-max: 1
 //     queue-depth: 2
 //     admission-timeout: 100ms
 //
 // Installed servers use ~/.kronk/models/model_config.yaml by default. The
-// repository's make kronk-server target uses zarf/kms/model_config.yaml.
+// source-based reliability workflow selects
+// .tools/reliability/model_config_tools.yaml explicitly; see .make/tools.mk.
 //
 // Optional environment variables:
 //
 //   - KRONK_WEB_API_HOST overrides http://localhost:11435.
 //   - KRONK_TOKEN supplies the bearer token when inference auth is enabled.
-//   - KRONK_LIFECYCLE_MODEL overrides Qwen3-0.6B-Q8_0; configure the matching
-//     model ID with the same lifecycle settings above.
+//   - KRONK_LIFECYCLE_MODEL overrides unsloth/Qwen3-0.6B-Q8_0; configure the
+//     matching model ID with the same lifecycle settings above.
+//   - KRONK_LIFECYCLE_OUT overrides .tools/lifecycle-load/output.
+//   - KRONK_SERVER_LOG overrides ~/.kronk/kronk.log.
 //
 // Run the example from the root of the project:
 //
 //	make example-lifecycle-load
 //
-// After the client reports success, correlate the printed holder, queued, and
-// blocked trace IDs with request-lifecycle events in the Kronk server logs.
+// Each invocation replaces its output directory with summary.json,
+// events.ndjson, and tool.log.
 package main
 
 import (
@@ -61,6 +65,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -68,28 +73,68 @@ import (
 
 const (
 	defaultHost              = "http://localhost:11435"
-	defaultModel             = "Qwen3-0.6B-Q8_0"
+	defaultModel             = "unsloth/Qwen3-0.6B-Q8_0"
+	defaultOutput            = ".tools/lifecycle-load/output"
 	expectedAdmissionTimeout = 100 * time.Millisecond
 	queuedTimeout            = 300 * time.Millisecond
 	requestWait              = 30 * time.Second
 	holderMaxTokens          = 8192
 	contenderMaxTokens       = 64
 
-	holderTrace  = "11111111111111111111111111111111"
-	queuedTrace  = "22222222222222222222222222222222"
-	blockedTrace = "33333333333333333333333333333333"
+	holderTrace   = "11111111111111111111111111111111"
+	queuedTrace   = "22222222222222222222222222222222"
+	blockedTrace  = "33333333333333333333333333333333"
+	recoveryTrace = "44444444444444444444444444444444"
 )
 
 type config struct {
-	endpoint string
-	model    string
-	token    string
+	endpoint  string
+	model     string
+	token     string
+	output    string
+	serverLog string
 }
 
 type requestResult struct {
 	status  int
 	elapsed time.Duration
 	err     error
+}
+
+type requestSummary struct {
+	TraceID        string  `json:"trace_id"`
+	Status         int     `json:"http_status"`
+	ElapsedSeconds float64 `json:"elapsed_seconds"`
+	Outcome        string  `json:"outcome"`
+}
+
+type lifecycleSummary struct {
+	Status         string                    `json:"status"`
+	StartedAt      time.Time                 `json:"started_at"`
+	FinishedAt     time.Time                 `json:"finished_at"`
+	Endpoint       string                    `json:"endpoint"`
+	Model          string                    `json:"model"`
+	Requests       map[string]requestSummary `json:"requests"`
+	ServerEvidence lifecycleServerEvidence   `json:"server_evidence"`
+	Error          string                    `json:"error,omitempty"`
+}
+
+type lifecycleServerEvidence struct {
+	Available     bool   `json:"available"`
+	LogPath       string `json:"log_path"`
+	StartOffset   int64  `json:"start_offset"`
+	BytesScanned  int64  `json:"bytes_scanned"`
+	MatchedEvents int    `json:"matched_events"`
+	Note          string `json:"note,omitempty"`
+}
+
+type lifecycleArtifacts struct {
+	dir       string
+	serverLog string
+	offset    int64
+	available bool
+	toolLog   *os.File
+	events    *os.File
 }
 
 type serverError struct {
@@ -132,8 +177,37 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	artifacts, err := newLifecycleArtifacts(cfg.output, cfg.serverLog)
+	if err != nil {
+		return err
+	}
+	defer artifacts.close()
 
-	printConfiguration(cfg)
+	summary := lifecycleSummary{
+		Status:    "FAIL",
+		StartedAt: time.Now().UTC(),
+		Endpoint:  cfg.endpoint,
+		Model:     cfg.model,
+		Requests:  make(map[string]requestSummary),
+	}
+	err = runLifecycle(cfg, artifacts, &summary)
+	if err == nil {
+		summary.Status = "PASS"
+	} else {
+		summary.Error = err.Error()
+		artifacts.logf("FAIL: %v", err)
+	}
+	summary.ServerEvidence = artifacts.collectServerEvidence()
+	summary.FinishedAt = time.Now().UTC()
+	if writeErr := artifacts.writeSummary(summary); writeErr != nil {
+		return errors.Join(err, writeErr)
+	}
+	artifacts.logf("artifacts: %s", cfg.output)
+	return err
+}
+
+func runLifecycle(cfg config, artifacts *lifecycleArtifacts, summary *lifecycleSummary) error {
+	printConfiguration(cfg, artifacts)
 
 	waitCtx, cancelWait := context.WithTimeout(context.Background(), requestWait)
 	defer cancelWait()
@@ -146,7 +220,7 @@ func run() error {
 	if err := waitForFirstEvent(waitCtx, holder); err != nil {
 		return fmt.Errorf("holder did not begin streaming: %w", err)
 	}
-	fmt.Println("\nPASS: holder is streaming from the Kronk server")
+	artifacts.logf("\nPASS: holder is streaming from the Kronk server")
 
 	queuedCtx, cancelQueued := context.WithTimeout(context.Background(), queuedTimeout)
 	defer cancelQueued()
@@ -154,7 +228,7 @@ func run() error {
 	if err := waitForHeaders(waitCtx, queued); err != nil {
 		return fmt.Errorf("queued request was not admitted by the server: %w", err)
 	}
-	fmt.Println("PASS: second request was admitted while the only slot remained occupied")
+	artifacts.logf("PASS: second request was admitted while the only slot remained occupied")
 
 	blockedCtx, cancelBlocked := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancelBlocked()
@@ -181,7 +255,8 @@ func run() error {
 		return fmt.Errorf("third request did not fail within the expected admission timeout window: %s: %v",
 			blockedResult.elapsed.Round(time.Millisecond), blockedResult.err)
 	}
-	fmt.Printf("PASS: third request received the server admission timeout after %s: %v\n",
+	summary.Requests["blocked"] = summarizeRequest(blockedTrace, blockedResult, "stage-1-timeout")
+	artifacts.logf("PASS: third request received the server admission timeout after %s: %v",
 		blockedResult.elapsed.Round(time.Millisecond), blockedResult.err)
 
 	queuedResult, err := waitForQueuedDeadline(waitCtx, queued, holder)
@@ -191,7 +266,8 @@ func run() error {
 	if !errors.Is(queuedResult.err, context.DeadlineExceeded) {
 		return fmt.Errorf("queued request: got %v, want client deadline exceeded", queuedResult.err)
 	}
-	fmt.Printf("PASS: second request's client deadline expired after %s before it received inference data\n",
+	summary.Requests["queued"] = summarizeRequest(queuedTrace, queuedResult, "stage-3-cancel")
+	artifacts.logf("PASS: second request's client deadline expired after %s before it received inference data",
 		queuedResult.elapsed.Round(time.Millisecond))
 
 	select {
@@ -208,14 +284,30 @@ func run() error {
 	if !errors.Is(holderResult.err, context.Canceled) {
 		return fmt.Errorf("holder cancellation: got %v, want %v", holderResult.err, context.Canceled)
 	}
-	fmt.Printf("PASS: holder was canceled during server inference after %s\n",
+	summary.Requests["holder"] = summarizeRequest(holderTrace, holderResult, "stage-4-cancel")
+	artifacts.logf("PASS: holder was canceled during server inference after %s",
 		holderResult.elapsed.Round(time.Millisecond))
 
-	fmt.Println("\nPASS: server lifecycle load scenario completed")
-	fmt.Println("Confirm these request-lifecycle events in the Kronk server logs:")
-	fmt.Println("- holder : Stage 4 started, then Stage 4 cancel")
-	fmt.Println("- queued : Stage 3 queued, then Stage 3 cancel, with no Stage 4 started")
-	fmt.Println("- blocked: Stage 1 timeout with capacity 2 and admitted 2")
+	recovery := startRequest(context.Background(), client, cfg, recoveryTrace, contenderMaxTokens)
+	if err := waitForFirstEvent(waitCtx, recovery); err != nil {
+		return fmt.Errorf("recovery request did not begin streaming: %w", err)
+	}
+	recoveryResult, err := awaitResult(waitCtx, recovery.done)
+	if err != nil {
+		return fmt.Errorf("wait for recovery request: %w", err)
+	}
+	if recoveryResult.status != http.StatusOK || recoveryResult.err != nil {
+		return fmt.Errorf("recovery request failed after cancellation: status=%d err=%v", recoveryResult.status, recoveryResult.err)
+	}
+	summary.Requests["recovery"] = summarizeRequest(recoveryTrace, recoveryResult, "completed-after-release")
+	artifacts.logf("PASS: recovery request completed after holder cancellation in %s", recoveryResult.elapsed.Round(time.Millisecond))
+
+	artifacts.logf("\nPASS: server lifecycle load scenario completed")
+	artifacts.logf("Correlated server evidence should show:")
+	artifacts.logf("- holder  : Stage 4 started, then Stage 4 cancel")
+	artifacts.logf("- queued  : Stage 3 queued, then Stage 3 cancel, with no Stage 4 started")
+	artifacts.logf("- blocked : Stage 1 timeout with capacity 2 and admitted 2")
+	artifacts.logf("- recovery: Stages 1-4 complete")
 	return nil
 }
 
@@ -240,27 +332,39 @@ func loadConfig() (config, error) {
 	if modelID == "" {
 		modelID = defaultModel
 	}
+	home, _ := os.UserHomeDir()
+	output := strings.TrimSpace(os.Getenv("KRONK_LIFECYCLE_OUT"))
+	if output == "" {
+		output = defaultOutput
+	}
+	serverLog := strings.TrimSpace(os.Getenv("KRONK_SERVER_LOG"))
+	if serverLog == "" {
+		serverLog = filepath.Join(home, ".kronk", "kronk.log")
+	}
 
 	return config{
-		endpoint: endpoint,
-		model:    modelID,
-		token:    strings.TrimSpace(os.Getenv("KRONK_TOKEN")),
+		endpoint:  endpoint,
+		model:     modelID,
+		token:     strings.TrimSpace(os.Getenv("KRONK_TOKEN")),
+		output:    output,
+		serverLog: serverLog,
 	}, nil
 }
 
-func printConfiguration(cfg config) {
-	fmt.Println("Kronk server lifecycle load configuration")
-	fmt.Println("- endpoint          :", cfg.endpoint)
-	fmt.Println("- model             :", cfg.model)
-	fmt.Println("- authentication    :", map[bool]string{true: "KRONK_TOKEN", false: "disabled"}[cfg.token != ""])
-	fmt.Println("- expected slots    : 1")
-	fmt.Println("- expected queue    : 2")
-	fmt.Println("- expected admission:", expectedAdmissionTimeout)
-	fmt.Println("- client queue limit:", queuedTimeout)
-	fmt.Println("- holder trace      :", holderTrace)
-	fmt.Println("- queued trace      :", queuedTrace)
-	fmt.Println("- blocked trace     :", blockedTrace)
-	fmt.Printf("\nRequired active server model configuration (restart after changing it):\n%s:\n  nseq-max: 1\n  queue-depth: 2\n  admission-timeout: %s\n",
+func printConfiguration(cfg config, artifacts *lifecycleArtifacts) {
+	artifacts.logf("Kronk server lifecycle load configuration")
+	artifacts.logf("- endpoint          : %s", cfg.endpoint)
+	artifacts.logf("- model             : %s", cfg.model)
+	artifacts.logf("- authentication    : %s", map[bool]string{true: "KRONK_TOKEN", false: "disabled"}[cfg.token != ""])
+	artifacts.logf("- expected slots    : 1")
+	artifacts.logf("- expected queue    : 2")
+	artifacts.logf("- expected admission: %s", expectedAdmissionTimeout)
+	artifacts.logf("- client queue limit: %s", queuedTimeout)
+	artifacts.logf("- holder trace      : %s", holderTrace)
+	artifacts.logf("- queued trace      : %s", queuedTrace)
+	artifacts.logf("- blocked trace     : %s", blockedTrace)
+	artifacts.logf("- recovery trace    : %s", recoveryTrace)
+	artifacts.logf("\nRequired active server model configuration (restart after changing it):\n%s:\n  nseq-max: 1\n  queue-depth: 2\n  admission-timeout: %s",
 		cfg.model, expectedAdmissionTimeout)
 }
 
@@ -430,4 +534,141 @@ func awaitResult(ctx context.Context, result <-chan requestResult) (requestResul
 	case rr := <-result:
 		return rr, nil
 	}
+}
+
+func summarizeRequest(traceID string, result requestResult, outcome string) requestSummary {
+	return requestSummary{
+		TraceID:        traceID,
+		Status:         result.status,
+		ElapsedSeconds: float64(result.elapsed.Round(time.Millisecond)) / float64(time.Second),
+		Outcome:        outcome,
+	}
+}
+
+func newLifecycleArtifacts(dir, serverLog string) (*lifecycleArtifacts, error) {
+	var offset int64
+	available := false
+	note := ""
+	info, err := os.Stat(serverLog)
+	switch {
+	case err == nil:
+		offset, available = info.Size(), true
+	case errors.Is(err, os.ErrNotExist):
+		note = "server log does not exist: " + serverLog
+	default:
+		note = "cannot inspect server log: " + err.Error()
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		return nil, fmt.Errorf("replace lifecycle output: %w", err)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, fmt.Errorf("create lifecycle output: %w", err)
+	}
+	toolLog, err := os.Create(filepath.Join(dir, "tool.log"))
+	if err != nil {
+		return nil, fmt.Errorf("create lifecycle tool log: %w", err)
+	}
+	events, err := os.Create(filepath.Join(dir, "events.ndjson"))
+	if err != nil {
+		toolLog.Close()
+		return nil, fmt.Errorf("create lifecycle event log: %w", err)
+	}
+	artifacts := &lifecycleArtifacts{
+		dir: dir, serverLog: serverLog, offset: offset, available: available,
+		toolLog: toolLog, events: events,
+	}
+	if note != "" {
+		artifacts.logf("server evidence note: %s", note)
+	}
+	return artifacts, nil
+}
+
+func (artifacts *lifecycleArtifacts) close() {
+	artifacts.toolLog.Close()
+	artifacts.events.Close()
+}
+
+func (artifacts *lifecycleArtifacts) logf(format string, args ...any) {
+	line := fmt.Sprintf(format, args...)
+	fmt.Println(line)
+	fmt.Fprintln(artifacts.toolLog, line)
+}
+
+func (artifacts *lifecycleArtifacts) writeSummary(summary lifecycleSummary) error {
+	data, err := json.MarshalIndent(summary, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode lifecycle summary: %w", err)
+	}
+	data = append(data, '\n')
+	if err := os.WriteFile(filepath.Join(artifacts.dir, "summary.json"), data, 0o644); err != nil {
+		return fmt.Errorf("write lifecycle summary: %w", err)
+	}
+	return nil
+}
+
+func (artifacts *lifecycleArtifacts) collectServerEvidence() lifecycleServerEvidence {
+	evidence := lifecycleServerEvidence{
+		Available: artifacts.available, LogPath: artifacts.serverLog, StartOffset: artifacts.offset,
+	}
+	if !artifacts.available {
+		evidence.Note = "server log was unavailable when the probe started; no internal behavior is claimed"
+		return evidence
+	}
+	file, err := os.Open(artifacts.serverLog)
+	if err != nil {
+		evidence.Available = false
+		evidence.Note = "open server log after run: " + err.Error()
+		return evidence
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		evidence.Available = false
+		evidence.Note = "stat server log after run: " + err.Error()
+		return evidence
+	}
+	if info.Size() < artifacts.offset {
+		evidence.Available = false
+		evidence.Note = "server log was truncated or replaced during the probe"
+		return evidence
+	}
+	if _, err := file.Seek(artifacts.offset, io.SeekStart); err != nil {
+		evidence.Available = false
+		evidence.Note = "seek server log: " + err.Error()
+		return evidence
+	}
+	evidence.BytesScanned = info.Size() - artifacts.offset
+	labels := map[string]string{
+		holderTrace: "holder", queuedTrace: "queued", blockedTrace: "blocked", recoveryTrace: "recovery",
+	}
+	encoder := json.NewEncoder(artifacts.events)
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
+	for scanner.Scan() {
+		var event map[string]any
+		if json.Unmarshal(scanner.Bytes(), &event) != nil {
+			continue
+		}
+		traceID, _ := event["trace_id"].(string)
+		label, exists := labels[traceID]
+		if !exists {
+			continue
+		}
+		wrapper := map[string]any{
+			"scenario": "lifecycle", "source": "kronk-server", "request": label,
+			"trace_id": traceID, "event": event,
+		}
+		if err := encoder.Encode(wrapper); err != nil {
+			evidence.Note = "write lifecycle evidence: " + err.Error()
+			return evidence
+		}
+		evidence.MatchedEvents++
+	}
+	if err := scanner.Err(); err != nil {
+		evidence.Note = "scan server log: " + err.Error()
+	}
+	if evidence.MatchedEvents == 0 && evidence.Note == "" {
+		evidence.Note = "no server events matched the four lifecycle trace IDs"
+	}
+	return evidence
 }

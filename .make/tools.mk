@@ -1,181 +1,183 @@
-# MTP concurrent load probe
+# Consolidated batch-engine, MTP, IMC, long-context, and media reliability
+# probes. Each invocation replaces RELIABILITY_OUT with summary.json,
+# events.ndjson, and tool.log. The runner reads only bytes appended to the
+# detached server log during the invocation and retains high-value events whose
+# trace IDs match its requests. Use a unique RELIABILITY_OUT to preserve a run.
+#
+# Run against the current source with the tools-specific model configuration:
+#
+#   make server-for-tools
+#   make test-load-all # Or another tool wanted
+#   make kronk-server-logs  # Optional: follow the detached server log.
+#   make kronk-server-stop
+#
+# The tools validate the active model configuration but never modify it or
+# manage the server. Restart the server after editing model_config_tools.yaml.
+#
+# Further analysis with some harness: provide summary.json,
+# events.ndjson, and tool.log from the same RELIABILITY_OUT, plus
+# model_config_tools.yaml for the expected runtime settings. Do not provide the
+# full ~/.kronk/kronk.log unless the curated evidence is unavailable or a
+# failure needs deeper investigation. Each invocation replaces RELIABILITY_OUT;
+# preserve separate runs with, for example:
+#
+#   make test-load-mtp RELIABILITY_OUT=/tmp/kronk-tools/mtp
+#   make test-load-batch RELIABILITY_OUT=/tmp/kronk-tools/batch
+#
+# Suggested analysis prompt:
+#   Analyze MTP drafting and acceptance, IMC exact and append reuse, and batch
+#   slot overlap, queue pressure, and isolation. Distinguish tool assertions
+#   from trace-correlated server evidence, and report failures or evidence gaps.
 
-MTP_LOAD_HOST ?= http://localhost:11435
-MTP_LOAD_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT
-MTP_LOAD_REQUESTS ?= 2
-MTP_LOAD_PROMPT_TOKENS ?= 2200
-MTP_LOAD_MAX_TOKENS ?= 256
-MTP_LOAD_EXPECTED_SLOTS ?= 4
-MTP_LOAD_SEED ?= 42
-MTP_LOAD_OUT ?= .tools/mtp-load/output
+server-for-tools:
+	KRONK_POOL_MODEL_CONFIG_FILE="$(CURDIR)/.tools/reliability/model_config_tools.yaml" \
+		$(MAKE) kronk-server-detach
 
-# Builds distinct prompts, calibrates each one with /v1/tokenize, releases all
-# requests through one barrier, and saves request/response JSON plus summary.json.
-# Replaces MTP_LOAD_OUT at startup so it contains only the current experiment.
-# Requires nseq-max: MTP_LOAD_EXPECTED_SLOTS.
-mtp-load-parallel:
-	python3 .tools/mtp-load/mtp-load.py \
-		--host "$(MTP_LOAD_HOST)" \
-		--model "$(MTP_LOAD_MODEL)" \
-		--requests "$(MTP_LOAD_REQUESTS)" \
-		--prompt-tokens "$(MTP_LOAD_PROMPT_TOKENS)" \
-		--max-tokens "$(MTP_LOAD_MAX_TOKENS)" \
-		--expected-slots "$(MTP_LOAD_EXPECTED_SLOTS)" \
-		--seed "$(MTP_LOAD_SEED)" \
-		--require-mtp \
-		--out "$(MTP_LOAD_OUT)"
+RELIABILITY_HOST ?= http://localhost:11435
+RELIABILITY_OUT ?= .tools/reliability/output
+RELIABILITY_SERVER_LOG ?= $(HOME)/.kronk/kronk.log
+RELIABILITY_TIMEOUT ?= 30m
+RELIABILITY_SEED ?= 42
+RELIABILITY_ARGS ?=
 
-# Qwen3.8-27B separate-file MTP probe. The catalog downloads the qwen35
-# companion from the repository's MTP/ folder and this check fails unless the
-# server actually activates it.
-QWEN38_MTP_LOAD_MODEL ?= unsloth/Qwen3.8-27B-UD-Q4_K_XL/AGENT
-QWEN38_MTP_LOAD_EXPECTED_SLOTS ?= 2
-QWEN38_MTP_LOAD_OUT ?= .tools/mtp-load/qwen38-output
+RELIABILITY_MTP_EMBEDDED_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT
+RELIABILITY_MTP_COMPANION_MODEL ?= unsloth/Qwen3.8-27B-UD-Q4_K_XL/AGENT
+RELIABILITY_MTP_REQUESTS ?= 0
+RELIABILITY_MTP_PROMPT_TOKENS ?= 2200
+RELIABILITY_MTP_MAX_TOKENS ?= 256
+RELIABILITY_MTP_EMBEDDED_SLOTS ?= 4
+RELIABILITY_MTP_COMPANION_SLOTS ?= 2
 
-test-qwen38-mtp:
-	python3 .tools/mtp-load/mtp-load.py \
-		--host "$(MTP_LOAD_HOST)" \
-		--model "$(QWEN38_MTP_LOAD_MODEL)" \
-		--requests "$(MTP_LOAD_REQUESTS)" \
-		--prompt-tokens "$(MTP_LOAD_PROMPT_TOKENS)" \
-		--max-tokens "$(MTP_LOAD_MAX_TOKENS)" \
-		--expected-slots "$(QWEN38_MTP_LOAD_EXPECTED_SLOTS)" \
-		--seed "$(MTP_LOAD_SEED)" \
-		--require-mtp \
-		--out "$(QWEN38_MTP_LOAD_OUT)"
+RELIABILITY_HYBRID_MODEL ?= unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT
 
-# Sends one known-good coding prompt through a barrier to verify a one-slot
-# model can complete five concurrent requests. Responses stay in memory.
+RELIABILITY_LONG_CONTEXT_MODEL ?= unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT
+RELIABILITY_LONG_CONTEXT_STAGES ?= 4096,8192,16384,32768,65536,131072
+RELIABILITY_LONG_CONTEXT_MAX_TOKENS ?= 96
+
+RELIABILITY_BATCH_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT
+RELIABILITY_BATCH_TURNS ?= 21
+RELIABILITY_BATCH_TARGET_TOKENS ?= 30000
+RELIABILITY_BATCH_TOKENS_PER_TURN ?= 1400
+RELIABILITY_BATCH_MAX_TOKENS ?= 128
+RELIABILITY_BATCH_SLOTS ?= 4
+RELIABILITY_BATCH_CONVERSATIONS ?= 5
+
+RELIABILITY_MEDIA_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT
+RELIABILITY_MEDIA_IMAGE ?= examples/samples/giraffe.jpg
+RELIABILITY_MEDIA_EXPECT ?= giraffe
+RELIABILITY_MEDIA_MAX_TOKENS ?= 128
+RELIABILITY_MEDIA_GENERATION_MAX_TOKENS ?= 512
+RELIABILITY_MEDIA_IMAGE_MAX_TOKENS ?= 64
+RELIABILITY_MEDIA_MAX_GENERATION_GAP ?= 1s
+
+define run_reliability
+	go run ./.tools/reliability \
+		-scenario "$(1)" \
+		-host "$(RELIABILITY_HOST)" \
+		-out "$(RELIABILITY_OUT)" \
+		-server-log "$(RELIABILITY_SERVER_LOG)" \
+		-timeout "$(RELIABILITY_TIMEOUT)" \
+		-seed "$(RELIABILITY_SEED)" \
+		-mtp-embedded-model "$(RELIABILITY_MTP_EMBEDDED_MODEL)" \
+		-mtp-companion-model "$(RELIABILITY_MTP_COMPANION_MODEL)" \
+		-mtp-requests "$(RELIABILITY_MTP_REQUESTS)" \
+		-mtp-prompt-tokens "$(RELIABILITY_MTP_PROMPT_TOKENS)" \
+		-mtp-max-tokens "$(RELIABILITY_MTP_MAX_TOKENS)" \
+		-mtp-embedded-slots "$(RELIABILITY_MTP_EMBEDDED_SLOTS)" \
+		-mtp-companion-slots "$(RELIABILITY_MTP_COMPANION_SLOTS)" \
+		-hybrid-model "$(RELIABILITY_HYBRID_MODEL)" \
+		-long-context-model "$(RELIABILITY_LONG_CONTEXT_MODEL)" \
+		-long-context-stages "$(RELIABILITY_LONG_CONTEXT_STAGES)" \
+		-long-context-max-tokens "$(RELIABILITY_LONG_CONTEXT_MAX_TOKENS)" \
+		-batch-model "$(RELIABILITY_BATCH_MODEL)" \
+		-batch-turns "$(RELIABILITY_BATCH_TURNS)" \
+		-batch-target-tokens "$(RELIABILITY_BATCH_TARGET_TOKENS)" \
+		-batch-tokens-per-turn "$(RELIABILITY_BATCH_TOKENS_PER_TURN)" \
+		-batch-max-tokens "$(RELIABILITY_BATCH_MAX_TOKENS)" \
+		-batch-slots "$(RELIABILITY_BATCH_SLOTS)" \
+		-batch-conversations "$(RELIABILITY_BATCH_CONVERSATIONS)" \
+		-media-model "$(RELIABILITY_MEDIA_MODEL)" \
+		-media-image "$(RELIABILITY_MEDIA_IMAGE)" \
+		-media-expect "$(RELIABILITY_MEDIA_EXPECT)" \
+		-media-max-tokens "$(RELIABILITY_MEDIA_MAX_TOKENS)" \
+		-media-generation-max-tokens "$(RELIABILITY_MEDIA_GENERATION_MAX_TOKENS)" \
+		-media-image-max-tokens "$(RELIABILITY_MEDIA_IMAGE_MAX_TOKENS)" \
+		-media-max-generation-gap "$(RELIABILITY_MEDIA_MAX_GENERATION_GAP)" \
+		$(2) $(RELIABILITY_ARGS)
+endef
+
+# -------------------------------
+
+# Both embedded-head and separate companion/own-KV MTP profiles.
+test-load-mtp:
+	$(call run_reliability,mtp,-mtp-profile all)
+
+# Embedded-head MTP probe. Calibrates one distinct prompt per slot, releases all
+# requests together, and verifies scheduler activation and per-request drafting.
+test-load-mtp-embedded:
+	$(call run_reliability,mtp,-mtp-profile embedded)
+
+# Separate companion/own-KV MTP probe. Verifies the catalog-provided companion
+# activates and produces draft coverage across every configured slot.
+test-load-mtp-companion:
+	$(call run_reliability,mtp,-mtp-profile companion)
+
+# -------------------------------
+
+# Single-slot hybrid state-integrity probe. Exercises deterministic cold/repeat
+# generation, exact and append IMC reuse, cancellation, and recovery.
+test-load-hybrid:
+	$(call run_reliability,hybrid-state,)
+
+# Staged begin/middle/end marker retrieval and warm-IMC probe. Targets beyond
+# the model's configured context window are reported as skipped.
+test-load-long-context:
+	$(call run_reliability,long-context,)
+
+# Long-running multi-slot batch-isolation probe. Exercises every slot plus queue
+# pressure, overlapping generation, marker isolation, IMC reuse, and 30K-token histories.
+test-load-batch:
+	$(call run_reliability,batch,)
+
+# -------------------------------
+
+# Media group and independently selectable subprofiles.
+test-load-media:
+	$(call run_reliability,media,-media-profile all)
+
+# Multimodal correctness probe. Verifies subject recognition, deterministic
+# replay, media IMC reuse, and isolation from a following text-only request.
+test-load-media-correctness:
+	$(call run_reliability,media,-media-profile correctness)
+
+# Media-prefill concurrency probe. Requires at least two slots and verifies
+# scheduler-observed media-prefill/generation overlap with bounded text gaps.
+test-load-media-prefill:
+	$(call run_reliability,media,-media-profile prefill)
+
+# -------------------------------
+
+# Runs only load/reliability scenarios, sequentially in one artifact set.
+# The separately configured lifecycle probe is intentionally excluded.
+test-load-all:
+	$(call run_reliability,all,)
+
+# ==============================================================================
+
+# Exercises the server's four-stage request lifecycle with one execution slot
+# and two admission permits. It holds Stage 4 open, verifies a queued request
+# cancels in Stage 3, verifies a third request times out in Stage 1, then
+# cancels the holder and confirms the slot and admission permit are released.
+# The selected model must use nseq-max: 1, queue-depth: 2, and
+# admission-timeout: 100ms; see .tools/lifecycle-load/main.go for setup details.
 # Requires nseq-max: 1
-LOAD_HOST ?= http://localhost:11435
-LOAD_MODEL ?= unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT
-LOAD_REQUESTS ?= 5
-LOAD_MAX_TOKENS ?= 4096
-LOAD_SEED ?= 42
+LIFECYCLE_LOAD_OUT ?= .tools/lifecycle-load/output
+LIFECYCLE_SERVER_LOG ?= $(HOME)/.kronk/kronk.log
 
-test-load:
-	python3 .tools/mtp-load/mtp-load.py \
-		--host "$(LOAD_HOST)" \
-		--model "$(LOAD_MODEL)" \
-		--requests "$(LOAD_REQUESTS)" \
-		--max-tokens "$(LOAD_MAX_TOKENS)" \
-		--seed "$(LOAD_SEED)" \
-		--scenario tic-tac-toe
-
-# ==============================================================================
-
-# Single-slot hybrid state-integrity probe. Exercises deterministic cold/warm
-# generation, IMC exact and append reuse, cancellation recovery, and MTP usage
-# when the selected model exposes an embedded head.
-HYBRID_LOAD_HOST ?= http://localhost:11435
-HYBRID_LOAD_MODEL ?= unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT
-HYBRID_LOAD_TIMEOUT ?= 1800
-HYBRID_LOAD_OUT ?= .tools/hybrid-load/output/summary.json
-
-test-hybrid-load:
-	python3 .tools/hybrid-load/hybrid-load.py \
-		--host "$(HYBRID_LOAD_HOST)" \
-		--model "$(HYBRID_LOAD_MODEL)" \
-		--timeout "$(HYBRID_LOAD_TIMEOUT)" \
-		--out "$(HYBRID_LOAD_OUT)"
-
-# ==============================================================================
-
-# Staged exact-needle retrieval and warm-IMC probe. Targets beyond the model's
-# configured context are reported as skipped.
-LONG_CONTEXT_LOAD_HOST ?= http://localhost:11435
-LONG_CONTEXT_LOAD_MODEL ?= unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT
-LONG_CONTEXT_LOAD_STAGES ?= 4096,8192,16384,32768,65536,131072
-LONG_CONTEXT_LOAD_MAX_TOKENS ?= 96
-LONG_CONTEXT_LOAD_TIMEOUT ?= 1800
-LONG_CONTEXT_LOAD_SEED ?= 42
-LONG_CONTEXT_LOAD_OUT ?= .tools/long-context-load/output/summary.json
-
-test-long-context-load:
-	python3 .tools/long-context-load/long-context-load.py \
-		--host "$(LONG_CONTEXT_LOAD_HOST)" \
-		--model "$(LONG_CONTEXT_LOAD_MODEL)" \
-		--stages "$(LONG_CONTEXT_LOAD_STAGES)" \
-		--max-tokens "$(LONG_CONTEXT_LOAD_MAX_TOKENS)" \
-		--timeout "$(LONG_CONTEXT_LOAD_TIMEOUT)" \
-		--seed "$(LONG_CONTEXT_LOAD_SEED)" \
-		--out "$(LONG_CONTEXT_LOAD_OUT)"
-
-# ==============================================================================
-
-# One-slot multimodal correctness, media IMC reuse, and modality-state isolation
-# probe. This is complementary to test-media-load, which requires concurrent slots.
-MEDIA_SMOKE_HOST ?= http://localhost:11435
-MEDIA_SMOKE_MODEL ?= unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT
-MEDIA_SMOKE_IMAGE ?= examples/samples/giraffe.jpg
-MEDIA_SMOKE_MAX_TOKENS ?= 128
-MEDIA_SMOKE_TIMEOUT ?= 1800
-MEDIA_SMOKE_OUT ?= .tools/media-smoke/output/summary.json
-
-test-media-smoke:
-	python3 .tools/media-smoke/media-smoke.py \
-		--host "$(MEDIA_SMOKE_HOST)" \
-		--model "$(MEDIA_SMOKE_MODEL)" \
-		--image "$(MEDIA_SMOKE_IMAGE)" \
-		--max-tokens "$(MEDIA_SMOKE_MAX_TOKENS)" \
-		--timeout "$(MEDIA_SMOKE_TIMEOUT)" \
-		--out "$(MEDIA_SMOKE_OUT)"
-
-# ==============================================================================
-
-# Long-running multi-slot batch-isolation probe. Every turn starts all
-# conversations together, proves their streamed generation overlaps, and
-# verifies that no response contains another conversation's marker. Use
-# BATCH_LOAD_SLOTS and BATCH_LOAD_CONVERSATIONS to exercise N slots.
-# Requires nseq-max: 4
-BATCH_LOAD_HOST ?= http://localhost:11435
-BATCH_LOAD_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT
-BATCH_LOAD_TURNS ?= 21
-BATCH_LOAD_TARGET_TOKENS ?= 30000
-BATCH_LOAD_TOKENS_PER_TURN ?= 1400
-BATCH_LOAD_MAX_TOKENS ?= 128
-BATCH_LOAD_SLOTS ?= 4
-BATCH_LOAD_CONVERSATIONS ?= 4
-BATCH_LOAD_OUT ?= .tools/batch-load/output/summary.json
-
-test-batch-load:
-	python3 .tools/batch-load/batch-load.py \
-		--host "$(BATCH_LOAD_HOST)" \
-		--model "$(BATCH_LOAD_MODEL)" \
-		--turns "$(BATCH_LOAD_TURNS)" \
-		--target-tokens "$(BATCH_LOAD_TARGET_TOKENS)" \
-		--tokens-per-turn "$(BATCH_LOAD_TOKENS_PER_TURN)" \
-		--max-tokens "$(BATCH_LOAD_MAX_TOKENS)" \
-		--slots "$(BATCH_LOAD_SLOTS)" \
-		--conversations "$(BATCH_LOAD_CONVERSATIONS)" \
-		--out "$(BATCH_LOAD_OUT)"
-
-# ==============================================================================
-
-# Media-prefill concurrency probe. Starts a deterministic streaming text
-# generation, then submits an image and verifies phase-2 media prefill never
-# creates an excessive gap between text content events. The loaded multimodal
-# model must have at least two slots. All timing and output knobs are tunable.
-# Requires nseq-max: 4
-MEDIA_LOAD_HOST ?= http://localhost:11435
-MEDIA_LOAD_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT
-MEDIA_LOAD_IMAGE ?= examples/samples/giraffe.jpg
-MEDIA_LOAD_GENERATION_MAX_TOKENS ?= 512
-MEDIA_LOAD_IMAGE_MAX_TOKENS ?= 64
-MEDIA_LOAD_MAX_GENERATION_CONTENT_EVENT_GAP ?= 1.0
-MEDIA_LOAD_TIMEOUT ?= 1800
-MEDIA_LOAD_OUT ?= .tools/media-load/output/summary.json
-
-test-media-load:
-	python3 .tools/media-load/media-load.py \
-		--host "$(MEDIA_LOAD_HOST)" \
-		--model "$(MEDIA_LOAD_MODEL)" \
-		--image "$(MEDIA_LOAD_IMAGE)" \
-		--generation-max-tokens "$(MEDIA_LOAD_GENERATION_MAX_TOKENS)" \
-		--image-max-tokens "$(MEDIA_LOAD_IMAGE_MAX_TOKENS)" \
-		--max-generation-content-event-gap "$(MEDIA_LOAD_MAX_GENERATION_CONTENT_EVENT_GAP)" \
-		--timeout "$(MEDIA_LOAD_TIMEOUT)" \
-		--out "$(MEDIA_LOAD_OUT)"
+example-lifecycle-load:
+	KRONK_LIFECYCLE_OUT="$(LIFECYCLE_LOAD_OUT)" \
+	KRONK_SERVER_LOG="$(LIFECYCLE_SERVER_LOG)" \
+	go run ./.tools/lifecycle-load
 
 # ==============================================================================
 
@@ -232,18 +234,6 @@ test-adversarial:
 	echo; \
 	cat .tools/adversarial/adversarial-triage.md; \
 	exit $$status
-
-# ==============================================================================
-
-# Exercises the server's four-stage request lifecycle with one execution slot
-# and two admission permits. It holds Stage 4 open, verifies a queued request
-# cancels in Stage 3, verifies a third request times out in Stage 1, then
-# cancels the holder and confirms the slot and admission permit are released.
-# The selected model must use nseq-max: 1, queue-depth: 2, and
-# admission-timeout: 100ms; see .tools/lifecycle-load/main.go for setup details.
-# Requires nseq-max: 1
-example-lifecycle-load:
-	go run .tools/lifecycle-load/main.go
 
 # ==============================================================================
 

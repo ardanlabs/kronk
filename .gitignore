@@ -11,15 +11,10 @@ zarf/docker/openwebui/
 # Scratch output from local tooling
 .tools/http-capture/output/
 .tools/http-replay/output/
-.tools/mtp-load/output/
-.tools/mtp-load/qwen38-output/
 .tools/adversarial/output/
-.tools/batch-load/output/
-.tools/media-load/output/
-.tools/hybrid-load/output/
-.tools/long-context-load/output/
-.tools/media-smoke/output/
 .tools/codegen-benchmark/output/
+.tools/reliability/output/
+.tools/lifecycle-load/output/
 
 # Binaries for programs and plugins
 *.exe

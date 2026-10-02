@@ -1,0 +1,43 @@
+# Dedicated configuration for the Go reliability and lifecycle tools.
+# Start the current source with:
+#
+#   KRONK_POOL_MODEL_CONFIG_FILE="$PWD/.tools/reliability/model_config_tools.yaml" make kronk-server-detach
+#
+# Keep these model IDs and slot counts aligned with .make/tools.mk. The tools
+# validate the active settings and fail rather than changing server state.
+version: 1
+
+kms:
+  download:
+    enabled: false
+  insecure-logging: false
+
+models:
+  # Embedded MTP, four-slot batch load, and multimodal probes.
+  unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
+    nseq-max: 4
+    context-window: 131072
+    queue-depth: 2
+    incremental-cache: true
+
+  # Companion own-KV MTP probe.
+  unsloth/Qwen3.8-27B-UD-Q4_K_XL/AGENT:
+    nseq-max: 2
+    context-window: 131072
+    queue-depth: 2
+    incremental-cache: true
+
+  # Single-slot hybrid-state and long-context probes.
+  unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT:
+    nseq-max: 1
+    context-window: 131072
+    queue-depth: 2
+    incremental-cache: true
+
+  # Separate lifecycle probe; intentionally excluded from test-load-all.
+  unsloth/Qwen3-0.6B-Q8_0:
+    nseq-max: 1
+    context-window: 8192
+    queue-depth: 2
+    admission-timeout: 100ms
+    incremental-cache: true

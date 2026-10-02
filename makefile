@@ -89,7 +89,7 @@ endif
 #   .make/install.mk    Setup, tooling, libraries, models, and Docker.
 #   .make/ops.mk        Open WebUI, Grafana, Statsviz, website, and debugging.
 #   .make/server.mk     Browser UI, documentation, builds, and server lifecycle.
-#   .make/tools.mk      MTP load and adversarial probes.
+#   .make/tools.mk      Reliability, HTTP, adversarial, lifecycle, and benchmark probes.
 
 # ==============================================================================
 # Includes
