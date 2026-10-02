@@ -2,6 +2,7 @@ package prepare
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -17,9 +18,57 @@ func (c *targetChoiceCompleter) Complete(_ context.Context, request CompletionRe
 	return Completion{Content: c.content}, nil
 }
 
+type schemaVerificationCompleter struct {
+	requests []CompletionRequest
+}
+
+func (c *schemaVerificationCompleter) Complete(_ context.Context, request CompletionRequest) (Completion, error) {
+	c.requests = append(c.requests, request)
+	required, _ := request.ResponseSchema["required"].([]string)
+	verdicts := make(map[string]string, len(required))
+	for _, name := range required {
+		verdicts[name] = verificationPass
+	}
+	content, err := json.Marshal(verdicts)
+	return Completion{Content: string(content)}, err
+}
+
 func TestVerificationTokenLimitFitsAFullGeneratedBatch(t *testing.T) {
 	if got, want := verificationTokenLimit(30), 1264; got != want {
 		t.Fatalf("verification token limit = %d, want %d", got, want)
+	}
+}
+
+func TestVerifyRecordsBoundsEachModelRequest(t *testing.T) {
+	model := &schemaVerificationCompleter{}
+	previewer, err := NewPreviewer(model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := make([]Record, 80)
+	for index := range records {
+		records[index] = Record{
+			Prompt:   "What programming language is used?",
+			Target:   "Go",
+			Evidence: "The programming language used is Go.",
+		}
+	}
+
+	results, metrics, err := previewer.verifyRecords(t.Context(), "model", GoalQuestionAnswer, "", records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != len(records) || results[len(results)-1].RecordNumber != len(records) {
+		t.Fatalf("verification results = %d with last record %d, want %d ordered results", len(results), results[len(results)-1].RecordNumber, len(records))
+	}
+	if len(model.requests) != 5 || metrics.verificationAttempts != 5 {
+		t.Fatalf("verification requests = %d, attempts = %d; want 5 bounded requests", len(model.requests), metrics.verificationAttempts)
+	}
+	for index, request := range model.requests {
+		required, _ := request.ResponseSchema["required"].([]string)
+		if len(required) > maxVerificationRecordsPerRequest {
+			t.Fatalf("verification request %d contains %d records; maximum %d", index+1, len(required), maxVerificationRecordsPerRequest)
+		}
 	}
 }
 
@@ -48,6 +97,7 @@ func TestVerificationPromptRequiresEvidenceToConnectPromptAndTarget(t *testing.T
 		"subject and setup",
 		"no additional fact or clause",
 		"this manner",
+		"function named main does not by itself prove that it is the program entry point",
 	} {
 		if !strings.Contains(system, requirement) {
 			t.Fatalf("verification system prompt is missing %q: %s", requirement, system)
@@ -59,13 +109,28 @@ func TestVerificationPromptRequiresEvidenceToConnectPromptAndTarget(t *testing.T
 		Target:   "424 pages",
 		Evidence: "424 pages",
 	}}, "Write longer questions for experienced developers.")
-	for _, value := range []string{"PROMPT: How many pages", "EVIDENCE: 424 pages", "[TARGET 1] 424 pages"} {
+	for _, value := range []string{"PROMPT: How many pages", "[SOURCE EVIDENCE 1]\n424 pages", "EVIDENCE BLOCK: 1", "[TARGET 1] 424 pages"} {
 		if !strings.Contains(user, value) {
 			t.Fatalf("verification user prompt is missing %q: %s", value, user)
 		}
 	}
 	if !strings.HasPrefix(user, "USER INSTRUCTION — FOLLOW WHEN WRITING EVERY RECORD:\nWrite longer questions for experienced developers.") || strings.Contains(user, `"Write longer questions for experienced developers."`) {
 		t.Fatalf("verification user prompt omitted dataset requirements: %s", user)
+	}
+}
+
+func TestVerificationPromptSharesEvidenceAcrossRecords(t *testing.T) {
+	evidence := "The profiler uses SIGPROF to interrupt the program and collect CPU samples."
+	records := []Record{
+		{Prompt: "Which signal interrupts the program?", Target: "SIGPROF", Evidence: evidence},
+		{Prompt: "Why does the profiler interrupt the program?", Target: "to collect CPU samples", Evidence: evidence},
+	}
+	prompt := verificationUserPrompt(records, "")
+	if strings.Count(prompt, evidence) != 1 || strings.Count(prompt, "[SOURCE EVIDENCE ") != 1 {
+		t.Fatalf("verification prompt repeated shared evidence: %s", prompt)
+	}
+	if strings.Count(prompt, "EVIDENCE BLOCK: 1") != 2 {
+		t.Fatalf("verification records lost shared evidence references: %s", prompt)
 	}
 }
 
@@ -217,5 +282,23 @@ func TestValidateVerificationRejectsIsolatedValueDespiteModelApproval(t *testing
 	}
 	if len(results) != 1 || results[0].Passed {
 		t.Fatalf("verification results = %+v, want one rejection", results)
+	}
+	if results[0].ExpectedTarget != records[0].Target {
+		t.Fatalf("rejected target = %q, want %q retained for regeneration feedback", results[0].ExpectedTarget, records[0].Target)
+	}
+}
+
+func TestValidateVerificationRetainsTargetRejectedByModel(t *testing.T) {
+	records := []Record{{
+		Prompt:   "Which signal interrupts a running program during CPU profiling?",
+		Target:   "SIGPROF",
+		Evidence: "The profiler uses SIGPROF to interrupt the running program.",
+	}}
+	results, err := validateVerification(GoalQuestionAnswer, []generatedVerification{{RecordNumber: 1, FailureCategory: verificationTaskQuality}}, records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Passed || results[0].ExpectedTarget != "SIGPROF" {
+		t.Fatalf("verification results = %+v, want rejected result with its target retained", results)
 	}
 }

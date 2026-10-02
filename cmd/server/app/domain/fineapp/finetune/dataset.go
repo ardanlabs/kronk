@@ -13,18 +13,19 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
 
 const (
-	DatasetContractSchema = "finetune-dataset.v4"
+	DatasetContractSchema = "finetune-dataset.v7"
 	DatasetSplitSeed      = int64(3407)
 
 	MinimumTrainRecords      = 20
 	MinimumValidationRecords = 10
 	MinimumTestRecords       = 20
-	MinimumKnowledgeFacts    = MinimumValidationRecords + MinimumTestRecords
+	MinimumKnowledgeFacts    = MinimumTestRecords
 )
 
 const (
@@ -32,6 +33,7 @@ const (
 	datasetTaskGeneration = "generation"
 
 	minimumKnowledgeQuestionVariants = 5
+	currentKnowledgeTrainingVariants = 1
 	maximumExactAnswerWords          = 8
 )
 
@@ -44,7 +46,10 @@ type DatasetRecord struct {
 	Evidence          string `json:"evidence"`
 	FactID            string `json:"fact_id,omitempty"`
 	SourceDocument    string `json:"source_document,omitempty"`
+	SourceChunkID     string `json:"source_chunk_id,omitempty"`
+	ValidationPrompt  bool   `json:"validation_prompt,omitempty"`
 	IndependentPrompt bool   `json:"independent_prompt,omitempty"`
+	UserApproved      bool   `json:"user_approved,omitempty"`
 }
 
 // DatasetContract contains deterministic training, validation, and protected
@@ -155,6 +160,11 @@ func BuildRecoveryDataset(datasetPath, sparePath, outputPath string, failedFactI
 	failed := make(map[string]bool, len(failedFactIDs))
 	for _, factID := range failedFactIDs {
 		failed[factID] = true
+	}
+	for _, record := range records {
+		if failed[record.FactID] && record.UserApproved {
+			return false, nil
+		}
 	}
 	found := make(map[string]bool, len(failed))
 	recovered := make([]DatasetRecord, 0, len(records))
@@ -348,8 +358,11 @@ func splitDatasetRecords(records []DatasetRecord, seed int64) (DatasetContract, 
 	testTarget := largerInt(MinimumTestRecords, int(math.Round(float64(len(records))*.1)))
 	validationTarget := largerInt(MinimumValidationRecords, int(math.Round(float64(len(records))*.1)))
 	labels, stratified := datasetClassificationLabels(records)
-	test, remaining := takeDatasetGroups(groups, testTarget, MinimumTrainRecords+MinimumValidationRecords, labels)
-	validation, training := takeDatasetGroups(remaining, validationTarget, MinimumTrainRecords, labels)
+	reservedTraining, eligible := reserveUserApprovedGroups(groups)
+	minimumEligibleTraining := max(0, MinimumTrainRecords-datasetGroupRecordCount(reservedTraining))
+	test, remaining := takeDatasetGroups(eligible, testTarget, minimumEligibleTraining+MinimumValidationRecords, labels)
+	validation, training := takeDatasetGroups(remaining, validationTarget, minimumEligibleTraining, labels)
+	training = append(reservedTraining, training...)
 
 	contract := DatasetContract{
 		Train:      unwrapDatasetGroups(training),
@@ -370,12 +383,16 @@ func splitDatasetRecords(records []DatasetRecord, seed int64) (DatasetContract, 
 
 func splitKnowledgeDatasetRecords(records []DatasetRecord, seed int64) (DatasetContract, error) {
 	groups := make(map[string][]DatasetRecord)
+	validationPrompts := 0
 	independentPrompts := 0
 	for index, record := range records {
 		if record.FactID == "" {
 			return DatasetContract{}, fmt.Errorf("source record %d has no fact_id; prepare this dataset again so Moxie can evaluate alternate questions instead of unseen facts", index+1)
 		}
 		groups[record.FactID] = append(groups[record.FactID], record)
+		if record.ValidationPrompt {
+			validationPrompts++
+		}
 		if record.IndependentPrompt {
 			independentPrompts++
 		}
@@ -383,6 +400,73 @@ func splitKnowledgeDatasetRecords(records []DatasetRecord, seed int64) (DatasetC
 	if independentPrompts == 0 {
 		return splitLegacyKnowledgeDatasetRecords(records, groups, seed)
 	}
+	if validationPrompts > 0 {
+		return splitCurrentKnowledgeDatasetRecords(records, groups, seed)
+	}
+	return splitIndependentKnowledgeDatasetRecords(records, groups, seed)
+}
+
+func splitCurrentKnowledgeDatasetRecords(records []DatasetRecord, groups map[string][]DatasetRecord, seed int64) (DatasetContract, error) {
+	if len(groups) < MinimumKnowledgeFacts {
+		return DatasetContract{}, &InsufficientFactsError{Facts: len(groups), Required: MinimumKnowledgeFacts}
+	}
+	ordered := make([]datasetRecordGroup, 0, len(groups))
+	for factID, grouped := range groups {
+		training := make([]DatasetRecord, 0, currentKnowledgeTrainingVariants)
+		validation := make([]DatasetRecord, 0, 1)
+		test := make([]DatasetRecord, 0, 1)
+		for _, record := range grouped {
+			switch {
+			case record.ValidationPrompt:
+				validation = append(validation, record)
+			case record.IndependentPrompt:
+				test = append(test, record)
+			default:
+				training = append(training, record)
+			}
+		}
+		if len(training) != currentKnowledgeTrainingVariants {
+			return DatasetContract{}, fmt.Errorf("training fact %q has %d training records; prepare the dataset again to provide exactly %d", factID, len(training), currentKnowledgeTrainingVariants)
+		}
+		if len(validation) > 1 {
+			return DatasetContract{}, fmt.Errorf("training fact %q has %d validation questions; prepare the dataset again to provide at most 1", factID, len(validation))
+		}
+		if len(test) > 1 {
+			return DatasetContract{}, fmt.Errorf("training fact %q has %d protected test questions; prepare the dataset again to provide at most 1", factID, len(test))
+		}
+		ordered = append(ordered, datasetRecordGroup{
+			records: append(append(training, validation...), test...),
+			hash:    datasetOrderHash(factID, seed),
+		})
+	}
+	sort.Slice(ordered, func(left, right int) bool { return bytes.Compare(ordered[left].hash[:], ordered[right].hash[:]) < 0 })
+
+	contract := DatasetContract{}
+	for _, group := range ordered {
+		for _, record := range group.records {
+			switch {
+			case record.ValidationPrompt:
+				contract.Validation = append(contract.Validation, record)
+			case record.IndependentPrompt:
+				contract.Test = append(contract.Test, record)
+			default:
+				contract.Train = append(contract.Train, record)
+			}
+		}
+	}
+	if err := validateDatasetSplits(contract, true); err != nil {
+		return DatasetContract{}, err
+	}
+	contract.Report = DatasetContractReport{
+		Schema: DatasetContractSchema, Task: datasetTaskGeneration, Stratified: true, Seed: seed, IndependentTest: true,
+		SourceRecords: len(records), TrainRecords: len(contract.Train), ValidationRecords: len(contract.Validation), TestRecords: len(contract.Test),
+		SourceSHA256: datasetRecordsHash(records), TrainSHA256: datasetRecordsHash(contract.Train),
+		ValidationSHA256: datasetRecordsHash(contract.Validation), TestSHA256: datasetRecordsHash(contract.Test), Ready: true,
+	}
+	return contract, nil
+}
+
+func splitIndependentKnowledgeDatasetRecords(records []DatasetRecord, groups map[string][]DatasetRecord, seed int64) (DatasetContract, error) {
 	ordered := make([]datasetRecordGroup, 0, len(groups))
 	for factID, grouped := range groups {
 		regular := make([]DatasetRecord, 0, len(grouped))
@@ -407,8 +491,9 @@ func splitKnowledgeDatasetRecords(records []DatasetRecord, seed int64) (DatasetC
 			records: regular, independentPrompt: &independent[0], hash: datasetOrderHash(factID, seed),
 		})
 	}
-	if len(ordered) < MinimumKnowledgeFacts {
-		return DatasetContract{}, &InsufficientFactsError{Facts: len(ordered), Required: MinimumKnowledgeFacts}
+	legacyMinimumFacts := MinimumValidationRecords + MinimumTestRecords
+	if len(ordered) < legacyMinimumFacts {
+		return DatasetContract{}, &InsufficientFactsError{Facts: len(ordered), Required: legacyMinimumFacts}
 	}
 	sort.Slice(ordered, func(left, right int) bool {
 		return bytes.Compare(ordered[left].hash[:], ordered[right].hash[:]) < 0
@@ -460,8 +545,9 @@ func splitLegacyKnowledgeDatasetRecords(records []DatasetRecord, groups map[stri
 		})
 		ordered = append(ordered, datasetRecordGroup{records: grouped, hash: datasetOrderHash(factID, seed)})
 	}
-	if len(ordered) < MinimumKnowledgeFacts {
-		return DatasetContract{}, &InsufficientFactsError{Facts: len(ordered), Required: MinimumKnowledgeFacts}
+	legacyMinimumFacts := MinimumValidationRecords + MinimumTestRecords
+	if len(ordered) < legacyMinimumFacts {
+		return DatasetContract{}, &InsufficientFactsError{Facts: len(ordered), Required: legacyMinimumFacts}
 	}
 	sort.Slice(ordered, func(left, right int) bool {
 		return bytes.Compare(ordered[left].hash[:], ordered[right].hash[:]) < 0
@@ -510,6 +596,12 @@ func validateDatasetRecords(name string, records []DatasetRecord) error {
 		if prompt == "" || target == "" || evidence == "" {
 			return fmt.Errorf("%s record %d contains an empty prompt, target, or evidence", name, index+1)
 		}
+		if record.ValidationPrompt && record.IndependentPrompt {
+			return fmt.Errorf("%s record %d cannot be both a validation and protected test prompt", name, index+1)
+		}
+		if record.UserApproved && (record.ValidationPrompt || record.IndependentPrompt) {
+			return fmt.Errorf("%s record %d cannot be both user-approved training data and an evaluation prompt", name, index+1)
+		}
 		pair := prompt + "\x00" + target
 		if first, exists := pairs[pair]; exists {
 			return fmt.Errorf("%s record %d duplicates record %d", name, index+1, first)
@@ -519,7 +611,7 @@ func validateDatasetRecords(name string, records []DatasetRecord) error {
 			return fmt.Errorf("%s record %d gives a conflicting target for an existing prompt", name, index+1)
 		}
 		promptTargets[prompt] = target
-		if repeatedDatasetTrigramRate(record.Target) > .8 {
+		if !record.UserApproved && repeatedDatasetTrigramRate(record.Target) > .8 {
 			return fmt.Errorf("%s record %d target for prompt %q is excessively repetitive", name, index+1, record.Prompt)
 		}
 		if (record.FactID != "") != factMode {
@@ -605,6 +697,19 @@ func groupDatasetRecords(records []DatasetRecord, seed int64) []datasetRecordGro
 		groups = append(groups, datasetRecordGroup{records: grouped, hash: datasetOrderHash(evidence, seed)})
 	}
 	return groups
+}
+
+func reserveUserApprovedGroups(groups []datasetRecordGroup) ([]datasetRecordGroup, []datasetRecordGroup) {
+	reserved := make([]datasetRecordGroup, 0, len(groups))
+	eligible := make([]datasetRecordGroup, 0, len(groups))
+	for _, group := range groups {
+		if slices.ContainsFunc(group.records, func(record DatasetRecord) bool { return record.UserApproved }) {
+			reserved = append(reserved, group)
+			continue
+		}
+		eligible = append(eligible, group)
+	}
+	return reserved, eligible
 }
 
 func takeDatasetGroups(groups []datasetRecordGroup, target, minimumRemaining int, labels map[string]float64) ([]datasetRecordGroup, []datasetRecordGroup) {
@@ -761,7 +866,11 @@ func datasetRecordKey(record DatasetRecord) string {
 		normalizeDatasetText(record.Target),
 		normalizeDatasetText(record.Evidence),
 		record.FactID,
+		record.SourceDocument,
+		record.SourceChunkID,
+		fmt.Sprint(record.ValidationPrompt),
 		fmt.Sprint(record.IndependentPrompt),
+		fmt.Sprint(record.UserApproved),
 	}, "\x00")
 }
 

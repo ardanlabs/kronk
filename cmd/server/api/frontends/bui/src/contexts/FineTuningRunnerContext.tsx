@@ -13,7 +13,9 @@ import type {
   FineTuningDocumentPreview,
   FineTuningGoal,
   FineTuningPreparationProgress,
+  FineTuningRecord,
   FineTuningRun,
+  FineTuningTrainingConfig,
 } from '../types';
 
 export type FineTuningPreparationOperation = 'prepared-upload' | 'preview' | 'build';
@@ -35,6 +37,19 @@ export function isTerminalFineTuningStatus(status: string): boolean {
 export function preparedFineTuningDatasetError(file: File): string {
   if (file.name.split('.').pop()?.toLowerCase() !== 'jsonl') return 'Choose a training-ready JSONL dataset.';
   if (file.size > MAX_FINE_TUNING_UPLOAD_BYTES) return 'The selected file exceeds the 100 MiB limit.';
+  return '';
+}
+
+export function fineTuningRecordReviewError(goal: FineTuningGoal, records: FineTuningRecord[], index: number): string {
+  const record = records[index];
+  const prompt = record.prompt.trim();
+  const field = goal === 'question_answer' ? 'Question' : 'Prompt';
+  if (prompt.length < 3) return `${field} is required.`;
+  if (!record.target.trim()) return `${goal === 'question_answer' ? 'Answer' : 'Target'} is required.`;
+  if (!record.evidence.trim()) return 'Source evidence is unavailable.';
+  if (records.some((candidate, candidateIndex) => candidateIndex !== index && candidate.prompt.trim().toLocaleLowerCase() === prompt.toLocaleLowerCase())) {
+    return `${field} duplicates another reviewed record.`;
+  }
   return '';
 }
 
@@ -84,7 +99,7 @@ interface FineTuningRunnerValue {
   returnToSourceSetup: () => void;
   resetPreparation: () => void;
   cancelPreparation: () => void;
-  startRun: () => Promise<boolean>;
+  startRun: (training: FineTuningTrainingConfig) => Promise<boolean>;
   stopRun: () => void;
   resumeRun: (id: string) => Promise<boolean>;
   selectRun: (run: FineTuningRun) => void;
@@ -311,6 +326,7 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
   };
 
   const updateRecord = (documentID: string, index: number, field: 'prompt' | 'target', value: string) => {
+    setError('');
     setDocumentPreviews((current) => current.map((preview) => preview.id === documentID ? {
       ...preview,
       records: preview.records.map((record, recordIndex) =>
@@ -328,22 +344,31 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
     setError('');
   };
 
-  const buildDataset = () => runPreparationAction('build', async (signal) => {
-    await api.buildFineTuningDataset({
-      dataset_id: datasetID,
-      goal,
-      model_id: preparationModelID,
-      dataset_instructions: customDatasetInstructions ? datasetInstructions.trim() : '',
-      documents: documentPreviews.map((preview) => ({
-        id: preview.id,
-        reviewed_records: preview.records,
-        verified_preview_records: preview.verified_records,
-      })),
-    }, signal);
-    const includedNames = documentPreviews.map((preview) => preview.name);
-    setSourceName(includedNames.length === 1 ? includedNames[0] : `${includedNames.length} documents`);
-    setDatasetBuilt(true);
-  });
+  const buildDataset = async (): Promise<boolean> => {
+    for (const preview of documentPreviews) {
+      const invalidIndex = preview.records.findIndex((_, index) => fineTuningRecordReviewError(goal, preview.records, index) !== '');
+      if (invalidIndex >= 0) {
+        setError(`${preview.name} · Record ${invalidIndex + 1}: ${fineTuningRecordReviewError(goal, preview.records, invalidIndex)}`);
+        return false;
+      }
+    }
+    return runPreparationAction('build', async (signal) => {
+      await api.buildFineTuningDataset({
+        dataset_id: datasetID,
+        goal,
+        model_id: preparationModelID,
+        dataset_instructions: customDatasetInstructions ? datasetInstructions.trim() : '',
+        documents: documentPreviews.map((preview) => ({
+          id: preview.id,
+          reviewed_records: preview.records,
+          verified_preview_records: preview.verified_records,
+        })),
+      }, signal);
+      const includedNames = documentPreviews.map((preview) => preview.name);
+      setSourceName(includedNames.length === 1 ? includedNames[0] : `${includedNames.length} documents`);
+      setDatasetBuilt(true);
+    });
+  };
 
   const cancelPreparation = () => {
     const operation = preparationOperation;
@@ -358,12 +383,11 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
       setPreparedFile(null);
       return;
     }
-    setDocumentPreviews([]);
     setDatasetBuilt(false);
   };
 
-  const startRun = () => runAction(async () => {
-    const run = await api.startFineTuningRun(datasetID, FINE_TUNING_MODEL_ID);
+  const startRun = (training: FineTuningTrainingConfig) => runAction(async () => {
+    const run = await api.startFineTuningRun(datasetID, FINE_TUNING_MODEL_ID, training);
     activeTrainingRunRef.current = run.id;
     setTrackedRun(run);
     setCurrentRun(run);

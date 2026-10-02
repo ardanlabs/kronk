@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -115,6 +116,26 @@ func TestBuildDatasetContractKeepsSharedEvidenceInOneSplit(t *testing.T) {
 	}
 }
 
+func TestBuildDatasetContractKeepsUserApprovedEvidenceGroupInTraining(t *testing.T) {
+	records := testDatasetRecords(60)
+	records[0].Prompt = "User-edited prompt?"
+	records[0].Target = "User-edited answer."
+	records[0].Evidence = "Shared evidence for the user-approved records."
+	records[0].UserApproved = true
+	records[1].Evidence = records[0].Evidence
+
+	contract, err := BuildDatasetContract(writeTestDataset(t, records), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range contract.Train {
+		if record.Prompt == records[0].Prompt && record.Target == records[0].Target && record.UserApproved {
+			return
+		}
+	}
+	t.Fatalf("user-approved record is not in training: %+v", contract)
+}
+
 func TestBuildDatasetContractHoldsOutAlternateQuestionsNotUnseenFacts(t *testing.T) {
 	records := make([]DatasetRecord, 0, 150)
 	for fact := range 30 {
@@ -171,6 +192,84 @@ func TestBuildDatasetContractHoldsOutAlternateQuestionsNotUnseenFacts(t *testing
 	}
 }
 
+func TestBuildDatasetContractUsesPerFactTrainValidationAndTestRoles(t *testing.T) {
+	records := make([]DatasetRecord, 0, MinimumKnowledgeFacts+MinimumValidationRecords+MinimumTestRecords)
+	for fact := range MinimumKnowledgeFacts {
+		record := DatasetRecord{
+			Prompt:         fmt.Sprintf("Training question for current fact %d?", fact),
+			Target:         fmt.Sprintf("Detailed current answer for fact %d with enough words to require generation.", fact),
+			Evidence:       fmt.Sprintf("Source chunk evidence for current fact %d supports its answer.", fact),
+			FactID:         fmt.Sprintf("current-fact-%d", fact),
+			SourceDocument: "guide.pdf",
+			SourceChunkID:  fmt.Sprintf("chunk-%d", fact),
+		}
+		records = append(records, record)
+		if fact < MinimumValidationRecords {
+			validation := record
+			validation.Prompt = fmt.Sprintf("Validation question for current fact %d?", fact)
+			validation.ValidationPrompt = true
+			records = append(records, validation)
+		}
+		test := record
+		test.Prompt = fmt.Sprintf("Protected test question for current fact %d?", fact)
+		test.IndependentPrompt = true
+		records = append(records, test)
+	}
+	contract, err := BuildDatasetContract(writeTestDataset(t, records), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(contract.Train) != MinimumKnowledgeFacts || len(contract.Validation) != MinimumValidationRecords || len(contract.Test) != MinimumTestRecords {
+		t.Fatalf("split sizes = %d/%d/%d", len(contract.Train), len(contract.Validation), len(contract.Test))
+	}
+	trainingPrompts := make(map[string]bool, len(contract.Train))
+	for _, record := range contract.Train {
+		trainingPrompts[record.Prompt] = true
+		if record.ValidationPrompt || record.IndependentPrompt || record.SourceChunkID == "" {
+			t.Fatalf("invalid training role or lineage: %+v", record)
+		}
+	}
+	for _, record := range contract.Validation {
+		if !record.ValidationPrompt || record.IndependentPrompt || trainingPrompts[record.Prompt] {
+			t.Fatalf("invalid validation role: %+v", record)
+		}
+	}
+	for _, record := range contract.Test {
+		if record.ValidationPrompt || !record.IndependentPrompt || trainingPrompts[record.Prompt] {
+			t.Fatalf("invalid protected-test role: %+v", record)
+		}
+	}
+}
+
+func TestBuildDatasetContractKeepsUserApprovedQuestionInTraining(t *testing.T) {
+	records := make([]DatasetRecord, 0, 180)
+	for fact := range 30 {
+		for variant := range minimumKnowledgeQuestionVariants + 1 {
+			records = append(records, DatasetRecord{
+				Prompt:            fmt.Sprintf("Question variant %d for fact %d?", variant, fact),
+				Target:            fmt.Sprintf("Detailed answer for fact %d with enough words to require generation.", fact),
+				Evidence:          fmt.Sprintf("Source evidence for fact %d supports the detailed answer.", fact),
+				FactID:            fmt.Sprintf("fact-%d", fact),
+				IndependentPrompt: variant == minimumKnowledgeQuestionVariants,
+				UserApproved:      fact == 0 && variant == 0,
+			})
+		}
+	}
+
+	contract, err := BuildDatasetContract(writeTestDataset(t, records), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(contract.Train, func(record DatasetRecord) bool { return record.UserApproved }) {
+		t.Fatal("user-approved question is not in training")
+	}
+	for _, record := range append(append([]DatasetRecord(nil), contract.Validation...), contract.Test...) {
+		if record.UserApproved {
+			t.Fatalf("user-approved question was placed in evaluation: %+v", record)
+		}
+	}
+}
+
 func TestBuildRecoveryDatasetReplacesFailedFactsAndPreservesThirtyFacts(t *testing.T) {
 	records := knowledgeRecords(0, 30)
 	spares := knowledgeRecords(30, 3)
@@ -212,6 +311,32 @@ func TestBuildRecoveryDatasetReplacesFailedFactsAndPreservesThirtyFacts(t *testi
 		if facts[factID] != 6 {
 			t.Fatalf("spare fact %q has %d records, want 6", factID, facts[factID])
 		}
+	}
+}
+
+func TestBuildRecoveryDatasetDoesNotReplaceUserApprovedFact(t *testing.T) {
+	records := knowledgeRecords(0, 30)
+	records[0].UserApproved = true
+	directory := t.TempDir()
+	dataset := filepath.Join(directory, "dataset.jsonl")
+	sparePath := filepath.Join(directory, "dataset-spares.jsonl")
+	output := filepath.Join(directory, "recovery.jsonl")
+	if err := os.WriteFile(dataset, []byte(encodeTestDataset(t, records)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sparePath, []byte(encodeTestDataset(t, knowledgeRecords(30, 1))), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	built, err := BuildRecoveryDataset(dataset, sparePath, output, []string{"fact-0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if built {
+		t.Fatal("recovery replaced a user-approved fact")
+	}
+	if _, err := os.Stat(output); !os.IsNotExist(err) {
+		t.Fatalf("recovery output exists: %v", err)
 	}
 }
 
@@ -343,7 +468,7 @@ func TestBuildDatasetContractIdentifiesKnowledgeDatasetThatNeedsMoreFacts(t *tes
 	if !errors.As(err, &insufficient) {
 		t.Fatalf("error = %v, want InsufficientFactsError", err)
 	}
-	if insufficient.Facts != 18 || insufficient.Required != MinimumKnowledgeFacts {
+	if insufficient.Facts != 18 || insufficient.Required != MinimumValidationRecords+MinimumTestRecords {
 		t.Fatalf("insufficient fact details = %+v", insufficient)
 	}
 }

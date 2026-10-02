@@ -1415,6 +1415,7 @@ export interface FineTuningRecipeResponse {
   batch_size: number;
   maximum_epochs: number;
   seed: number;
+  early_stopping_patience: number;
   lora: {
     rank: number;
     alpha: number;
@@ -1436,12 +1437,25 @@ export interface FineTuningRecipeResponse {
   };
 }
 
+export interface FineTuningTrainingConfig {
+  maximum_epochs: number;
+  learning_rate: number;
+  batch_size: number;
+  lora_rank: number;
+  lora_alpha: number;
+  weight_decay: number;
+  early_stopping_patience: number;
+  seed: number;
+}
+
 export interface FineTuningRecord {
   prompt: string;
   target: string;
   evidence: string;
   fact_id?: string;
   source_document?: string;
+  source_chunk_id?: string;
+  validation_prompt?: boolean;
   independent_prompt?: boolean;
 }
 
@@ -1524,9 +1538,14 @@ export interface FineTuningPreparationProgress {
   operation: 'extraction' | 'prepared-upload' | 'preview' | 'build';
   status: 'running' | 'stopping' | 'completed' | 'stopped' | 'failed';
   stage: string;
+  phase?: 'analysis' | 'generation' | 'finalization';
   completed: number;
   total: number;
   accepted_records: number;
+  completed_chunks?: number;
+  total_chunks?: number;
+  planned_records?: number;
+  estimated_remaining_seconds?: number;
   documents?: FineTuningPreparationDocumentProgress[];
   error?: string;
   started_at: string;
@@ -1538,11 +1557,16 @@ export interface FineTuningPreparationDocumentProgress {
   name: string;
   status: 'queued' | 'extracting' | 'processing' | 'completed' | 'failed' | 'stopped';
   stage: string;
+  phase?: 'analysis' | 'generation' | 'finalization';
   accepted_records?: number;
   accepted_facts?: number;
   target_facts?: number;
   completed_batches?: number;
   total_batches?: number;
+  completed_chunks?: number;
+  total_chunks?: number;
+  planned_records?: number;
+  estimated_remaining_seconds?: number;
   cached?: boolean;
   error?: string;
 }

@@ -1249,9 +1249,14 @@ tr.selected:hover td {
 
 .fine-recipe-columns {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(3, minmax(0, 260px));
+    gap: 16px 24px;
     align-items: start;
+}
+
+.fine-recipe-panel .form-input {
+    width: 180px;
+    max-width: 100%;
 }
 
 .fine-recipe-details > summary {
@@ -1748,6 +1753,11 @@ tr.selected:hover td {
     background: var(--color-gray-50);
 }
 
+.fine-record.invalid {
+    border-color: var(--color-error);
+    background: var(--color-error-bg);
+}
+
 .fine-record-number {
     padding-top: 2px;
     color: var(--color-gray-500);
@@ -1786,6 +1796,16 @@ tr.selected:hover td {
     outline: none;
     border-color: var(--color-light-blue);
     box-shadow: 0 0 0 3px rgba(134, 213, 228, 0.2);
+}
+
+.fine-record-fields textarea[aria-invalid="true"] {
+    border-color: var(--color-error);
+}
+
+.fine-record-error {
+    color: var(--color-error);
+    font-size: 12px;
+    font-weight: 600;
 }
 
 .fine-record-fields details {
@@ -1829,6 +1849,11 @@ tr.selected:hover td {
 .fine-status-stopped {
     background: var(--color-warning-bg);
     color: var(--color-warning-text-alt);
+}
+
+.fine-verification.invalid {
+    background: var(--color-error-bg);
+    color: var(--color-error);
 }
 
 .fine-status-preparing,
@@ -1893,6 +1918,35 @@ tr.selected:hover td {
 
 .fine-preparation-progress > .btn {
     justify-self: end;
+}
+
+.fine-preparation-status {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    min-height: 40px;
+    padding: 9px 12px;
+    border: 1px solid var(--color-gray-200);
+    border-radius: 6px;
+    background: var(--color-gray-50);
+    color: var(--color-gray-600);
+    font-size: 13px;
+}
+
+.fine-preparation-status > span {
+    width: 8px;
+    height: 8px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    background: var(--color-orange);
+}
+
+.fine-preparation-status strong {
+    color: var(--color-gray-900);
+}
+
+.fine-preparation-status small {
+    font-size: 12px;
 }
 
 .fine-document-progress {

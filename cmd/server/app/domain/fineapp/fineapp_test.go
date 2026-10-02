@@ -72,7 +72,9 @@ type datasetBuilderStub struct {
 }
 
 type blockingDatasetBuilder struct {
-	started chan struct{}
+	started          chan struct{}
+	maskCancellation bool
+	buildFull        bool
 }
 
 type preparationModelCatalogStub struct {
@@ -158,29 +160,47 @@ func writeDatasetCollection(t *testing.T, datasetsPath, id string, names ...stri
 }
 
 func knowledgeRecords(prefix string) []prepare.Record {
-	records := make([]prepare.Record, 0, finetune.MinimumKnowledgeFacts*5)
+	records := make([]prepare.Record, 0, finetune.MinimumKnowledgeFacts+finetune.MinimumValidationRecords+finetune.MinimumTestRecords)
 	for fact := range finetune.MinimumKnowledgeFacts {
-		for variant := range 5 {
-			records = append(records, prepare.Record{
-				Prompt:   fmt.Sprintf("%s question variant %d for fact %d?", prefix, variant, fact),
-				Target:   fmt.Sprintf("%s detailed answer for fact %d with enough words to require generation.", prefix, fact),
-				Evidence: fmt.Sprintf("%s source evidence for fact %d supports the detailed answer.", prefix, fact),
-				FactID:   fmt.Sprintf("%s-fact-%d", prefix, fact),
-			})
+		record := prepare.Record{
+			Prompt:   fmt.Sprintf("%s training question for fact %d?", prefix, fact),
+			Target:   fmt.Sprintf("%s detailed answer for fact %d with enough words to require generation.", prefix, fact),
+			Evidence: fmt.Sprintf("%s source evidence for fact %d supports the detailed answer.", prefix, fact),
+			FactID:   fmt.Sprintf("%s-fact-%d", prefix, fact),
 		}
+		records = append(records, record)
+		if fact < finetune.MinimumValidationRecords {
+			validation := record
+			validation.Prompt = fmt.Sprintf("%s validation question for fact %d?", prefix, fact)
+			validation.ValidationPrompt = true
+			records = append(records, validation)
+		}
+		test := record
+		test.Prompt = fmt.Sprintf("%s protected test question for fact %d?", prefix, fact)
+		test.IndependentPrompt = true
+		records = append(records, test)
 	}
 	return records
 }
 
 func (stub *blockingDatasetBuilder) Build(ctx context.Context, request prepare.PreviewRequest) (prepare.PreviewArtifact, error) {
-	request.Progress(prepare.PreviewProgress{CompletedStages: 1, TotalStages: 2, Stage: "Verifying generated records"})
+	request.Progress(prepare.PreviewProgress{Phase: "generation", CompletedRecords: 1, TotalRecords: 5, Stage: "Verifying generated records"})
 	close(stub.started)
 	<-ctx.Done()
 	return prepare.PreviewArtifact{}, fmt.Errorf("preview stopped: %w", ctx.Err())
 }
 
-func (*blockingDatasetBuilder) BuildFull(context.Context, prepare.FullBuildRequest) (prepare.FullBuildArtifact, error) {
-	return prepare.FullBuildArtifact{}, nil
+func (stub *blockingDatasetBuilder) BuildFull(ctx context.Context, request prepare.FullBuildRequest) (prepare.FullBuildArtifact, error) {
+	if !stub.buildFull {
+		return prepare.FullBuildArtifact{}, nil
+	}
+	request.Progress(prepare.FullBuildProgress{Phase: "generation", AcceptedRecords: 5, PlannedRecords: 100, Stage: "Creating questions for planned facts"})
+	close(stub.started)
+	<-ctx.Done()
+	if stub.maskCancellation {
+		return prepare.FullBuildArtifact{}, errors.New("model returned no choices")
+	}
+	return prepare.FullBuildArtifact{}, ctx.Err()
 }
 
 func (stub *datasetBuilderStub) Build(_ context.Context, request prepare.PreviewRequest) (prepare.PreviewArtifact, error) {
@@ -396,8 +416,11 @@ func TestBuildDatasetBuildsDocumentsSequentiallyAndMergesOneContract(t *testing.
 		t.Fatalf("build requests: %+v", builder.requests)
 	}
 	for _, buildRequest := range builder.requests {
-		if buildRequest.MinimumQuestionAnswerFacts != finetune.MinimumKnowledgeFacts {
-			t.Fatalf("minimum facts = %d, want %d", buildRequest.MinimumQuestionAnswerFacts, finetune.MinimumKnowledgeFacts)
+		if !buildRequest.ReviewedRecords[0].UserApproved {
+			t.Fatal("reviewed API record was not marked as user-approved")
+		}
+		if buildRequest.VerifiedPreviewRecords[0].UserApproved {
+			t.Fatal("original generated preview was incorrectly marked as user-approved")
 		}
 	}
 	data, _, err := response.Encode()
@@ -408,21 +431,21 @@ func TestBuildDatasetBuildsDocumentsSequentiallyAndMergesOneContract(t *testing.
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.RecordCount != 300 || len(got.Documents) != 2 || got.Documents[0].FactCount != 30 || got.Documents[1].FactCount != 30 {
+	if got.RecordCount != 100 || len(got.Documents) != 2 || got.Documents[0].FactCount != 20 || got.Documents[1].FactCount != 20 {
 		t.Fatalf("build response: %+v", got)
 	}
 	contract, err := finetune.ValidateDatasetContract(filepath.Join(datasetDirectory, "dataset.jsonl"))
 	if err != nil {
 		t.Fatalf("validate merged contract: %v", err)
 	}
-	if contract.Report.SourceRecords != 300 {
-		t.Fatalf("merged source records = %d, want 300", contract.Report.SourceRecords)
+	if contract.Report.SourceRecords != 100 {
+		t.Fatalf("merged source records = %d, want 100", contract.Report.SourceRecords)
 	}
 	if contract.Train[0].SourceDocument == "" {
 		t.Fatalf("merged contract lost source provenance: %+v", contract.Train[0])
 	}
 	progress, exists := api.preparations.currentStatus()
-	if !exists || progress.Status != preparationCompleted || progress.Completed != 2 || len(progress.Documents) != 2 || progress.Documents[0].AcceptedFacts != 30 || progress.Documents[1].AcceptedFacts != 30 {
+	if !exists || progress.Status != preparationCompleted || progress.Completed != 2 || len(progress.Documents) != 2 || progress.Documents[0].AcceptedFacts != 20 || progress.Documents[1].AcceptedFacts != 20 {
 		t.Fatalf("build progress: %+v", progress)
 	}
 }
@@ -639,14 +662,20 @@ func TestStartRunResolvesManagedResources(t *testing.T) {
 	}
 	modelPath := filepath.Join(t.TempDir(), "gemma.gguf")
 	finetuner := &fineTunerStub{}
+	recipe := finetune.Recipe{
+		MaximumEpochs: 3, LearningRate: 0.0002, BatchSize: 2,
+		WeightDecay: 0.01, EarlyStoppingPatience: 3, Seed: 3407,
+		LoRA: finetune.LoRARecipe{Rank: 8, Alpha: 8},
+	}
 	api := &app{
 		finetuner:    finetuner,
+		recipes:      &trainingRecipeProviderStub{recipe: recipe},
 		models:       modelResolverStub{path: backend.ModelPath{ModelFiles: []string{modelPath}}},
 		datasetsPath: datasetsPath,
 		runtime:      finetune.Runtime{Port: 8181},
 	}
 
-	request := httptest.NewRequest(http.MethodPost, "/v1/fine-tuning/runs", bytes.NewBufferString(`{"dataset_id":"dataset-1","model_id":"google/gemma"}`))
+	request := httptest.NewRequest(http.MethodPost, "/v1/fine-tuning/runs", bytes.NewBufferString(`{"dataset_id":"dataset-1","model_id":"google/gemma","maximum_epochs":5,"learning_rate":0.0001,"batch_size":4,"lora_rank":16,"lora_alpha":12,"weight_decay":0.02,"early_stopping_patience":2,"seed":42}`))
 	requestContext, cancel := context.WithCancel(context.Background())
 	request = request.WithContext(requestContext)
 	response := api.startRun(request.Context(), request)
@@ -654,6 +683,14 @@ func TestStartRunResolvesManagedResources(t *testing.T) {
 
 	if finetuner.request.Dataset != datasetPath || finetuner.request.Model != modelPath || finetuner.request.Runtime.Port != 8181 {
 		t.Fatalf("fine-tuning request: got %+v", finetuner.request)
+	}
+	wantTraining := finetune.TrainingConfig{
+		MaximumEpochs: 5, LearningRate: 0.0001, BatchSize: 4,
+		LoRARank: 16, LoRAAlpha: 12, WeightDecay: 0.02,
+		EarlyStoppingPatience: 2, Seed: 42,
+	}
+	if finetuner.request.Training != wantTraining {
+		t.Fatalf("training configuration: got %+v, want %+v", finetuner.request.Training, wantTraining)
 	}
 	if finetuner.contextCanEnd {
 		t.Fatal("training context is tied to the HTTP request")
@@ -667,11 +704,36 @@ func TestStartRunResolvesManagedResources(t *testing.T) {
 	}
 }
 
+func TestTrainingConfigUsesRecipeDefaultsAndRejectsInvalidOverrides(t *testing.T) {
+	defaults := finetune.Recipe{
+		MaximumEpochs: 3, LearningRate: 0.0002, BatchSize: 2,
+		WeightDecay: 0.01, EarlyStoppingPatience: 3, Seed: 3407,
+		LoRA: finetune.LoRARecipe{Rank: 8, Alpha: 8},
+	}
+	got, err := toBusTrainingConfig(StartRunRequest{}, defaults)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := finetune.TrainingConfig{
+		MaximumEpochs: 3, LearningRate: 0.0002, BatchSize: 2,
+		LoRARank: 8, LoRAAlpha: 8, WeightDecay: 0.01,
+		EarlyStoppingPatience: 3, Seed: 3407,
+	}
+	if got != want {
+		t.Fatalf("default training configuration: got %+v, want %+v", got, want)
+	}
+
+	if _, err := toBusTrainingConfig(StartRunRequest{BatchSize: new(0)}, defaults); err == nil || !strings.Contains(err.Error(), "batch size") {
+		t.Fatalf("invalid batch size error = %v", err)
+	}
+}
+
 func TestTrainingRecipeReportsBackendSettings(t *testing.T) {
 	modelPath := filepath.Join(t.TempDir(), "gemma.gguf")
 	provider := &trainingRecipeProviderStub{recipe: finetune.Recipe{
 		Method: "lora", BaseWeights: "frozen", Optimizer: "adam",
 		LearningRate: 0.0002, WeightDecay: 0.01, BatchSize: 2, MaximumEpochs: 3, Seed: 3407,
+		EarlyStoppingPatience: 3,
 		LoRA: finetune.LoRARecipe{
 			Rank: 8, Alpha: 8, Scale: 1,
 			TargetModules: []string{"query", "key", "value", "output", "gate", "up", "down"},
@@ -697,7 +759,7 @@ func TestTrainingRecipeReportsBackendSettings(t *testing.T) {
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatal(err)
 	}
-	if provider.modelPath != modelPath || got.ModelID != "ggml-org/gemma-3-1b-it-Q8_0" || got.Method != "lora" || got.BaseWeights != "frozen" || got.Optimizer != "adam" || got.LearningRate != 0.0002 || got.WeightDecay != 0.01 || got.BatchSize != 2 || got.MaximumEpochs != 3 || got.Seed != 3407 || got.LoRA.Rank != 8 || got.LoRA.Alpha != 8 || got.LoRA.Scale != 1 || got.Sequence.MaximumTokens != 32768 || got.Sequence.Source != "model_gguf" || got.Sequence.Overflow != "reject" || got.Sequence.Padding != "power_of_two" || got.Loss != "answer_only_cross_entropy" || got.CheckpointSelection != "lowest_validation_loss" || got.Output.Format != "gguf" || got.Output.Precision != "f32" || got.Output.Filename != "adapter-f32.gguf" {
+	if provider.modelPath != modelPath || got.ModelID != "ggml-org/gemma-3-1b-it-Q8_0" || got.Method != "lora" || got.BaseWeights != "frozen" || got.Optimizer != "adam" || got.LearningRate != 0.0002 || got.WeightDecay != 0.01 || got.BatchSize != 2 || got.MaximumEpochs != 3 || got.Seed != 3407 || got.EarlyStoppingPatience != 3 || got.LoRA.Rank != 8 || got.LoRA.Alpha != 8 || got.LoRA.Scale != 1 || got.Sequence.MaximumTokens != 32768 || got.Sequence.Source != "model_gguf" || got.Sequence.Overflow != "reject" || got.Sequence.Padding != "power_of_two" || got.Loss != "answer_only_cross_entropy" || got.CheckpointSelection != "lowest_validation_loss" || got.Output.Format != "gguf" || got.Output.Precision != "f32" || got.Output.Filename != "adapter-f32.gguf" {
 		t.Fatalf("recipe response = %+v", got)
 	}
 	wantModules := []string{"query", "key", "value", "output", "gate", "up", "down"}
@@ -816,16 +878,25 @@ func TestBuildDatasetEnforcesFactTargetAndValidatesTrainingContract(t *testing.T
 		t.Fatal(err)
 	}
 
-	records := make([]prepare.Record, 0, finetune.MinimumKnowledgeFacts*5)
+	records := make([]prepare.Record, 0, finetune.MinimumKnowledgeFacts+finetune.MinimumValidationRecords+finetune.MinimumTestRecords)
 	for fact := range finetune.MinimumKnowledgeFacts {
-		for variant := range 5 {
-			records = append(records, prepare.Record{
-				Prompt:   "Question variant " + strconv.Itoa(variant) + " for fact " + strconv.Itoa(fact) + "?",
-				Target:   "Detailed answer for fact " + strconv.Itoa(fact) + " with enough words to require generation.",
-				Evidence: "Source evidence for fact " + strconv.Itoa(fact) + " supports the detailed answer.",
-				FactID:   "fact-" + strconv.Itoa(fact),
-			})
+		record := prepare.Record{
+			Prompt:   "Training question for fact " + strconv.Itoa(fact) + "?",
+			Target:   "Detailed answer for fact " + strconv.Itoa(fact) + " with enough words to require generation.",
+			Evidence: "Source evidence for fact " + strconv.Itoa(fact) + " supports the detailed answer.",
+			FactID:   "fact-" + strconv.Itoa(fact),
 		}
+		records = append(records, record)
+		if fact < finetune.MinimumValidationRecords {
+			validation := record
+			validation.Prompt = "Validation question for fact " + strconv.Itoa(fact) + "?"
+			validation.ValidationPrompt = true
+			records = append(records, validation)
+		}
+		test := record
+		test.Prompt = "Protected test question for fact " + strconv.Itoa(fact) + "?"
+		test.IndependentPrompt = true
+		records = append(records, test)
 	}
 	builder := &datasetBuilderStub{records: records}
 	api := newApp(Config{
@@ -845,9 +916,6 @@ func TestBuildDatasetEnforcesFactTargetAndValidatesTrainingContract(t *testing.T
 	response := api.buildDataset(t.Context(), request)
 	if _, ok := response.(error); ok {
 		t.Fatalf("build response: %v", response)
-	}
-	if builder.request.MinimumQuestionAnswerFacts != finetune.MinimumKnowledgeFacts {
-		t.Fatalf("minimum facts: got %d, want %d", builder.request.MinimumQuestionAnswerFacts, finetune.MinimumKnowledgeFacts)
 	}
 	if builder.request.DatasetInstructions != "Focus on concurrency concepts." {
 		t.Fatalf("dataset instructions: got %q", builder.request.DatasetInstructions)
@@ -926,10 +994,10 @@ func TestStopPreparationCancelsActivePreview(t *testing.T) {
 		t.Fatal("preview did not start")
 	}
 	progress, exists := api.preparations.currentStatus()
-	if !exists || progress.Status != preparationRunning || progress.Completed != 0 || progress.Total != 1 || progress.Stage != "Verifying generated records" {
+	if !exists || progress.Status != preparationRunning || progress.Phase != "generation" || progress.Completed != 1 || progress.Total != 5 || progress.Stage != "Verifying generated records" {
 		t.Fatalf("active preview progress: got %+v, exists %t", progress, exists)
 	}
-	if len(progress.Documents) != 1 || progress.Documents[0].Status != documentProcessing || progress.Documents[0].CompletedBatches != 1 || progress.Documents[0].TotalBatches != 2 {
+	if len(progress.Documents) != 1 || progress.Documents[0].Status != documentProcessing || progress.Documents[0].AcceptedRecords != 1 || progress.Documents[0].PlannedRecords != 5 {
 		t.Fatalf("active document preview progress: %+v", progress.Documents)
 	}
 	stopResponse := api.stopPreparation(t.Context(), httptest.NewRequest(http.MethodPost, "/v1/fine-tuning/prepare/current/stop", nil))
@@ -949,5 +1017,54 @@ func TestStopPreparationCancelsActivePreview(t *testing.T) {
 	progress, _ = api.preparations.currentStatus()
 	if progress.Status != preparationStopped {
 		t.Fatalf("stopped preview progress: got %+v", progress)
+	}
+}
+
+func TestStopPreparationDoesNotReportMaskedBuildCancellationAsFailure(t *testing.T) {
+	datasetsPath := t.TempDir()
+	datasetDirectory := filepath.Join(datasetsPath, "dataset-1")
+	if err := os.Mkdir(datasetDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(datasetDirectory, "extracted.md"), []byte("source"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	builder := &blockingDatasetBuilder{started: make(chan struct{}), buildFull: true, maskCancellation: true}
+	api := newApp(Config{
+		Builder:           builder,
+		PreparationModels: preparationCatalog("org/model/AGENT"),
+		DatasetsPath:      datasetsPath,
+	})
+	request := httptest.NewRequest(http.MethodPost, "/v1/fine-tuning/prepare/build", bytes.NewBufferString(`{
+		"dataset_id":"dataset-1",
+		"goal":"question_answer",
+		"model_id":"org/model/AGENT",
+		"reviewed_records":[{"prompt":"What is supported?","target":"A supported fact.","evidence":"A supported fact."}]
+	}`))
+	response := make(chan web.Encoder, 1)
+	go func() {
+		response <- api.buildDataset(request.Context(), request)
+	}()
+
+	select {
+	case <-builder.started:
+	case <-time.After(time.Second):
+		t.Fatal("build did not start")
+	}
+	if response := api.stopPreparation(t.Context(), httptest.NewRequest(http.MethodPost, "/v1/fine-tuning/prepare/current/stop", nil)); response == nil {
+		t.Fatal("stop returned no response")
+	}
+	select {
+	case result := <-response:
+		appErr, ok := result.(*errs.Error)
+		if !ok || appErr.Code != errs.Canceled {
+			t.Fatalf("build response: got %T %v", result, result)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("build did not stop")
+	}
+	progress, _ := api.preparations.currentStatus()
+	if progress.Status != preparationStopped || progress.Stage != "Stopped" || progress.Error != "" {
+		t.Fatalf("stopped build progress: got %+v", progress)
 	}
 }

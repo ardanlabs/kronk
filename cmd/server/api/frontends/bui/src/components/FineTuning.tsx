@@ -8,6 +8,7 @@ import {
   MAX_FINE_TUNING_DOCUMENTS,
   MAX_FINE_TUNING_PREVIEW_RECORDS,
   MAX_FINE_TUNING_UPLOAD_BYTES,
+  fineTuningRecordReviewError,
   isTerminalFineTuningStatus,
   preparedFineTuningDatasetError,
   useFineTuningRunner,
@@ -19,9 +20,9 @@ import type {
   FineTuningPreparationProgress,
   FineTuningRecipeResponse,
   FineTuningRun,
+  FineTuningTrainingConfig,
 } from '../types';
-import KeyValueTable from './KeyValueTable';
-import { FieldLabel, labelWithTip } from './ParamTooltips';
+import { FieldLabel } from './ParamTooltips';
 
 type View = 'configure' | 'run' | 'history' | 'prepare';
 
@@ -32,6 +33,32 @@ function formatDate(value?: string): string {
 
 function statusLabel(status: string): string {
   return status.replaceAll('_', ' ');
+}
+
+function trainingConfigFromRecipe(recipe: FineTuningRecipeResponse): FineTuningTrainingConfig {
+  return {
+    maximum_epochs: recipe.maximum_epochs,
+    learning_rate: recipe.learning_rate,
+    batch_size: recipe.batch_size,
+    lora_rank: recipe.lora.rank,
+    lora_alpha: recipe.lora.alpha,
+    weight_decay: recipe.weight_decay,
+    early_stopping_patience: recipe.early_stopping_patience,
+    seed: recipe.seed,
+  };
+}
+
+function trainingConfigError(config: FineTuningTrainingConfig | null): string {
+  if (!config) return 'Training settings are unavailable.';
+  if (!Number.isInteger(config.maximum_epochs) || config.maximum_epochs < 1 || config.maximum_epochs > 100) return 'Maximum epochs must be between 1 and 100.';
+  if (!Number.isFinite(config.learning_rate) || config.learning_rate <= 0 || config.learning_rate > 1) return 'Learning rate must be greater than 0 and no more than 1.';
+  if (!Number.isInteger(config.batch_size) || config.batch_size < 1 || config.batch_size > 128) return 'Batch size must be between 1 and 128.';
+  if (!Number.isInteger(config.lora_rank) || config.lora_rank < 1) return 'LoRA rank must be a positive whole number.';
+  if (!Number.isFinite(config.lora_alpha) || config.lora_alpha <= 0) return 'LoRA alpha must be greater than 0.';
+  if (!Number.isFinite(config.weight_decay) || config.weight_decay < 0 || config.weight_decay > 1) return 'Weight decay must be between 0 and 1.';
+  if (!Number.isInteger(config.early_stopping_patience) || config.early_stopping_patience < 0 || config.early_stopping_patience > config.maximum_epochs) return 'Early-stopping patience must be between 0 and maximum epochs.';
+  if (!Number.isSafeInteger(config.seed) || config.seed < 0) return 'Random seed must be a non-negative whole number.';
+  return '';
 }
 
 function formatDuration(milliseconds: number): string {
@@ -51,7 +78,12 @@ function ProgressMetrics({
   startedAt,
   endedAt,
   active,
-  acceptedRecords,
+  countLabel = 'Completed / Total',
+  estimatedRemainingSeconds,
+  estimateUpdatedAt,
+  indeterminate = false,
+  showStage = true,
+  showTimeRemaining = false,
 }: {
   stage: string;
   completed: number;
@@ -59,7 +91,12 @@ function ProgressMetrics({
   startedAt: string;
   endedAt?: string;
   active: boolean;
-  acceptedRecords?: number;
+  countLabel?: string;
+  estimatedRemainingSeconds?: number;
+  estimateUpdatedAt?: string;
+  indeterminate?: boolean;
+  showStage?: boolean;
+  showTimeRemaining?: boolean;
 }) {
   const [now, setNow] = useState(Date.now());
 
@@ -73,18 +110,28 @@ function ProgressMetrics({
   const started = Date.parse(startedAt);
   const stopped = active ? now : endedAt ? Date.parse(endedAt) : now;
   const elapsed = Number.isFinite(started) && Number.isFinite(stopped) ? Math.max(0, stopped - started) : 0;
+  const estimateUpdated = estimateUpdatedAt ? Date.parse(estimateUpdatedAt) : now;
+  const estimateAgeSeconds = Number.isFinite(estimateUpdated) ? Math.max(0, Math.floor((now - estimateUpdated) / 1000)) : 0;
+  const remainingSeconds = estimatedRemainingSeconds === undefined ? undefined : Math.max(0, estimatedRemainingSeconds - estimateAgeSeconds);
 
   return (
     <>
-      <div className="fine-progress-track" role="progressbar" aria-label={`${percent}% complete`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>
-        <span style={{ width: `${percent}%` }} />
+      <div
+        className={`fine-progress-track${indeterminate ? ' fine-indeterminate-progress' : ''}`}
+        role="progressbar"
+        aria-label={indeterminate ? 'Analysis progress loading' : `${percent}% complete`}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={indeterminate ? undefined : percent}
+      >
+        <span style={indeterminate ? undefined : { width: `${percent}%` }} />
       </div>
       <div className="fine-run-facts">
-        <span><strong>Current Stage</strong>{statusLabel(stage)}</span>
-        <span><strong>Completed / Total</strong>{total > 0 ? `${completed} / ${total}` : `${completed} / —`}</span>
-        <span><strong>Percentage</strong>{total > 0 ? `${percent}%` : 'Estimating…'}</span>
+        {showStage && <span><strong>Current Stage</strong>{statusLabel(stage)}</span>}
+        <span><strong>{countLabel}</strong>{indeterminate ? 'Discovering chunks…' : total > 0 ? `${completed.toLocaleString()} / ${total.toLocaleString()}` : `${completed.toLocaleString()} / —`}</span>
+        <span><strong>Percentage</strong>{indeterminate ? 'Loading…' : total > 0 ? `${percent}%` : 'Calculating…'}</span>
         <span><strong>Elapsed Time</strong>{formatDuration(elapsed)}</span>
-        {!!acceptedRecords && <span><strong>Verified Records</strong>{acceptedRecords}</span>}
+        {showTimeRemaining && (remainingSeconds === undefined || completed < total) && <span><strong>Time Remaining</strong>{remainingSeconds === undefined ? 'Calculating…' : remainingSeconds > 0 ? formatDuration(remainingSeconds * 1000) : 'Less than 1s'}</span>}
       </div>
     </>
   );
@@ -97,6 +144,7 @@ function PreparationProgress({
   startedAt,
   cancelLabel,
   sourceNames = [],
+  build = false,
   onCancel,
 }: {
   title: string;
@@ -105,11 +153,27 @@ function PreparationProgress({
   startedAt: string;
   cancelLabel: string;
   sourceNames?: string[];
+  build?: boolean;
   onCancel: () => void;
 }) {
-  const stage = progress?.stage || message;
+  const initializing = build && !progress?.phase;
+  const stage = initializing ? 'Initializing analysis' : progress?.stage || message;
   const completed = progress?.completed ?? 0;
   const total = progress?.total ?? 0;
+  const countLabel = initializing
+    ? 'Analysis Progress'
+    : progress?.phase === 'analysis'
+    ? 'Chunks Analyzed'
+    : progress?.phase === 'generation'
+      ? 'Records Produced'
+      : progress?.phase === 'finalization'
+        ? 'Finalization'
+        : 'Completed / Total';
+  const buildStatus = initializing || progress?.phase === 'analysis'
+    ? { label: 'Analyzing source', detail: 'Record generation starts automatically when analysis completes.' }
+    : progress?.phase === 'generation'
+      ? { label: 'Generating records', detail: 'Each question-answer record is checked before it is added.' }
+      : { label: 'Finalizing dataset', detail: 'Saving and validating the completed dataset.' };
   return (
     <section className="fine-panel fine-preparation-progress" aria-live="polite">
       <div>
@@ -117,6 +181,13 @@ function PreparationProgress({
         <h3>{title}</h3>
         <p>{message}</p>
       </div>
+      {build && (
+        <div className="fine-preparation-status">
+          <span aria-hidden="true" />
+          <strong>{buildStatus.label}</strong>
+          <small>{buildStatus.detail}</small>
+        </div>
+      )}
       <ProgressMetrics
         key={progress?.operation ?? title}
         stage={stage}
@@ -124,7 +195,12 @@ function PreparationProgress({
         total={total}
         startedAt={progress?.started_at ?? startedAt}
         active
-        acceptedRecords={progress?.accepted_records}
+        countLabel={countLabel}
+        estimatedRemainingSeconds={progress?.estimated_remaining_seconds}
+        estimateUpdatedAt={progress?.updated_at}
+        indeterminate={initializing}
+        showStage={!build}
+        showTimeRemaining={build}
       />
       {!!progress?.documents?.length && (
         <div className="fine-document-progress" aria-label="Document extraction progress">
@@ -136,8 +212,6 @@ function PreparationProgress({
               <span className="fine-document-progress-name" title={document.name}>{document.name}</span>
               <span className="fine-document-progress-stage">
                 {document.cached ? 'Cached extraction' : document.error || document.stage}
-                {document.target_facts ? ` · ${document.accepted_facts ?? 0}/${document.target_facts} facts` : ''}
-                {document.total_batches ? ` · batch ${document.completed_batches ?? 0}/${document.total_batches}` : ''}
               </span>
             </div>
           ))}
@@ -146,8 +220,8 @@ function PreparationProgress({
       {!progress?.documents?.length && sourceNames.length > 0 && (
         <div className="fine-document-progress" aria-label="Source documents included in dataset build">
           {sourceNames.map((name, index) => (
-            <div className="fine-document-progress-row completed" key={`${name}-${index}`}>
-              <span className="fine-document-progress-mark" aria-hidden="true">✓</span>
+            <div className="fine-document-progress-row queued" key={`${name}-${index}`}>
+              <span className="fine-document-progress-mark" aria-hidden="true">{index + 1}</span>
               <span className="fine-document-progress-name" title={name}>{name}</span>
               <span className="fine-document-progress-stage">Waiting</span>
             </div>
@@ -198,6 +272,7 @@ export default function FineTuning() {
   const [preparationModelsLoading, setPreparationModelsLoading] = useState(true);
   const [preparationModelsError, setPreparationModelsError] = useState('');
   const [trainingRecipe, setTrainingRecipe] = useState<FineTuningRecipeResponse | null>(null);
+  const [trainingConfig, setTrainingConfig] = useState<FineTuningTrainingConfig | null>(null);
   const [trainingRecipeLoading, setTrainingRecipeLoading] = useState(false);
   const [trainingRecipeError, setTrainingRecipeError] = useState('');
   const {
@@ -288,6 +363,7 @@ export default function FineTuning() {
   useEffect(() => {
     if (!trainingModelInstalled) {
       setTrainingRecipe(null);
+      setTrainingConfig(null);
       setTrainingRecipeError('');
       setTrainingRecipeLoading(false);
       return;
@@ -297,11 +373,15 @@ export default function FineTuning() {
     setTrainingRecipeError('');
     api.fineTuningRecipe(FINE_TUNING_MODEL_ID)
       .then((recipe) => {
-        if (!cancelled) setTrainingRecipe(recipe);
+        if (!cancelled) {
+          setTrainingRecipe(recipe);
+          setTrainingConfig(trainingConfigFromRecipe(recipe));
+        }
       })
       .catch((err) => {
         if (!cancelled) {
           setTrainingRecipe(null);
+          setTrainingConfig(null);
           setTrainingRecipeError(err instanceof Error ? err.message : 'Could not load training recipe');
         }
       })
@@ -333,6 +413,11 @@ export default function FineTuning() {
     if (!preparedFile) return '';
     return preparedFineTuningDatasetError(preparedFile);
   }, [preparedFile]);
+  const currentTrainingConfigError = trainingConfigError(trainingConfig);
+
+  const updateTrainingConfig = (key: keyof FineTuningTrainingConfig, value: number) => {
+    setTrainingConfig((current) => current ? { ...current, [key]: value } : current);
+  };
 
   const cancel = () => {
     const operation = preparationOperation;
@@ -345,7 +430,8 @@ export default function FineTuning() {
   };
 
   const start = async () => {
-    if (await startRun()) setView('run');
+    if (!trainingConfig || currentTrainingConfigError) return;
+    if (await startRun(trainingConfig)) setView('run');
   };
 
   const resume = async (id: string) => {
@@ -443,49 +529,59 @@ export default function FineTuning() {
           </section>
 
           <section className="fine-panel fine-recipe-panel">
-            <div className="fine-panel-heading"><div><span>Validated preset</span><h3>Training Configuration</h3></div></div>
-            <p className="fine-panel-copy">This validated preset comes directly from the GoMLX backend. Training uses each example's actual tokenized length up to the model's context limit.</p>
+            <div className="fine-panel-heading"><div><span>Settings</span><h3>Training Configuration</h3></div></div>
+            <p className="fine-panel-copy">Adjust the common training controls or keep the validated GoMLX defaults.</p>
             {trainingRecipeLoading ? (
               <p className="fine-panel-copy">Loading training settings…</p>
             ) : trainingRecipeError ? (
               <div className="fine-inline-error">Could not load training settings: {trainingRecipeError}</div>
             ) : !trainingRecipe ? (
               <p className="fine-panel-copy">Install Gemma 3 1B IT to inspect its complete training recipe.</p>
-            ) : (
+            ) : trainingConfig && (
               <>
                 <div className="fine-recipe-columns">
-                  <KeyValueTable rows={[
-                    { key: 'method', label: labelWithTip('Training Method', 'fineTuningTrainingMethod'), value: trainingRecipe.method === 'lora' ? 'LoRA' : statusLabel(trainingRecipe.method) },
-                    { key: 'epochs', label: labelWithTip('Maximum Epochs', 'fineTuningMaximumEpochs'), value: trainingRecipe.maximum_epochs },
-                    { key: 'batch-size', label: labelWithTip('Batch Size', 'fineTuningBatchSize'), value: `${trainingRecipe.batch_size} examples` },
-                    { key: 'learning-rate', label: labelWithTip('Learning Rate', 'fineTuningLearningRate'), value: trainingRecipe.learning_rate },
-                  ]} />
-                  <KeyValueTable rows={[
-                    { key: 'rank', label: labelWithTip('LoRA Rank', 'fineTuningLoRARank'), value: trainingRecipe.lora.rank },
-                    { key: 'sequence-limit', label: labelWithTip('Sequence Limit', 'fineTuningSequenceLimit'), value: `${trainingRecipe.sequence.maximum_tokens.toLocaleString()} tokens · model GGUF` },
-                    { key: 'checkpoint', label: labelWithTip('Checkpoint Selection', 'fineTuningCheckpointSelection'), value: trainingRecipe.checkpoint_selection === 'lowest_validation_loss' ? 'Lowest validation loss' : statusLabel(trainingRecipe.checkpoint_selection) },
-                    { key: 'output', label: labelWithTip('Output Adapter', 'fineTuningOutputAdapter'), value: `${trainingRecipe.output.precision.toUpperCase()} ${trainingRecipe.output.format.toUpperCase()} adapter` },
-                  ]} />
+                  <div className="form-group">
+                    <FieldLabel htmlFor="fine-maximum-epochs" tooltipKey="fineTuningMaximumEpochs">Maximum Epochs</FieldLabel>
+                    <input id="fine-maximum-epochs" className="form-input" type="number" min={1} max={100} step={1} value={trainingConfig.maximum_epochs} disabled={busy || !!activeRun} onChange={(event) => updateTrainingConfig('maximum_epochs', Number(event.target.value))} />
+                  </div>
+                  <div className="form-group">
+                    <FieldLabel htmlFor="fine-learning-rate" tooltipKey="fineTuningLearningRate">Learning Rate</FieldLabel>
+                    <input id="fine-learning-rate" className="form-input" type="number" min={0} max={1} step={0.00001} value={trainingConfig.learning_rate} disabled={busy || !!activeRun} onChange={(event) => updateTrainingConfig('learning_rate', Number(event.target.value))} />
+                  </div>
+                  <div className="form-group">
+                    <FieldLabel htmlFor="fine-batch-size" tooltipKey="fineTuningBatchSize">Batch Size</FieldLabel>
+                    <input id="fine-batch-size" className="form-input" type="number" min={1} max={128} step={1} value={trainingConfig.batch_size} disabled={busy || !!activeRun} onChange={(event) => updateTrainingConfig('batch_size', Number(event.target.value))} />
+                  </div>
                 </div>
                 <details className="fine-recipe-details">
-                  <summary>Advanced Recipe Details</summary>
+                  <summary>Advanced Settings</summary>
                   <div className="fine-recipe-columns">
-                    <KeyValueTable rows={[
-                      { key: 'optimizer', label: labelWithTip('Optimizer', 'fineTuningOptimizer'), value: trainingRecipe.optimizer === 'adam' ? 'Adaptive Moment Estimation' : statusLabel(trainingRecipe.optimizer) },
-                      { key: 'weight-decay', label: labelWithTip('Weight Decay', 'fineTuningWeightDecay'), value: trainingRecipe.weight_decay },
-                      { key: 'alpha', label: labelWithTip('LoRA Alpha', 'fineTuningLoRAAlpha'), value: trainingRecipe.lora.alpha },
-                      { key: 'scale', label: labelWithTip('LoRA Scale', 'fineTuningLoRAScale'), value: trainingRecipe.lora.scale },
-                      { key: 'target-modules', label: labelWithTip('Target Modules', 'fineTuningTargetModules'), value: `${trainingRecipe.lora.target_modules.join(', ')} projections` },
-                    ]} />
-                    <KeyValueTable rows={[
-                      { key: 'base-weights', label: labelWithTip('Base Model Weights', 'fineTuningBaseWeights'), value: trainingRecipe.base_weights === 'frozen' ? 'Frozen' : statusLabel(trainingRecipe.base_weights) },
-                      { key: 'loss', label: labelWithTip('Loss', 'fineTuningLoss'), value: trainingRecipe.loss === 'answer_only_cross_entropy' ? 'Answer-only cross-entropy' : statusLabel(trainingRecipe.loss) },
-                      { key: 'seed', label: labelWithTip('Shuffle Seed', 'fineTuningShuffleSeed'), value: trainingRecipe.seed },
-                      { key: 'oversized', label: labelWithTip('Oversized Examples', 'fineTuningOversizedExamples'), value: trainingRecipe.sequence.overflow === 'reject' ? 'Rejected' : statusLabel(trainingRecipe.sequence.overflow) },
-                      { key: 'padding', label: labelWithTip('Batch Padding', 'fineTuningBatchPadding'), value: trainingRecipe.sequence.padding === 'power_of_two' ? 'Power-of-two sequence buckets' : statusLabel(trainingRecipe.sequence.padding) },
-                    ]} />
+                    <div className="form-group">
+                      <FieldLabel htmlFor="fine-lora-rank" tooltipKey="fineTuningLoRARank">LoRA Rank</FieldLabel>
+                      <input id="fine-lora-rank" className="form-input" type="number" min={1} step={1} value={trainingConfig.lora_rank} disabled={busy || !!activeRun} onChange={(event) => updateTrainingConfig('lora_rank', Number(event.target.value))} />
+                    </div>
+                    <div className="form-group">
+                      <FieldLabel htmlFor="fine-lora-alpha" tooltipKey="fineTuningLoRAAlpha">LoRA Alpha</FieldLabel>
+                      <input id="fine-lora-alpha" className="form-input" type="number" min={0} step={0.1} value={trainingConfig.lora_alpha} disabled={busy || !!activeRun} onChange={(event) => updateTrainingConfig('lora_alpha', Number(event.target.value))} />
+                    </div>
+                    <div className="form-group">
+                      <FieldLabel htmlFor="fine-weight-decay" tooltipKey="fineTuningWeightDecay">Weight Decay</FieldLabel>
+                      <input id="fine-weight-decay" className="form-input" type="number" min={0} max={1} step={0.001} value={trainingConfig.weight_decay} disabled={busy || !!activeRun} onChange={(event) => updateTrainingConfig('weight_decay', Number(event.target.value))} />
+                    </div>
+                    <div className="form-group">
+                      <FieldLabel htmlFor="fine-early-stopping" tooltipKey="fineTuningEarlyStoppingPatience">Early-Stopping Patience</FieldLabel>
+                      <input id="fine-early-stopping" className="form-input" type="number" min={0} max={trainingConfig.maximum_epochs} step={1} value={trainingConfig.early_stopping_patience} disabled={busy || !!activeRun} onChange={(event) => updateTrainingConfig('early_stopping_patience', Number(event.target.value))} />
+                    </div>
+                    <div className="form-group">
+                      <FieldLabel htmlFor="fine-random-seed" tooltipKey="fineTuningShuffleSeed">Random Seed</FieldLabel>
+                      <input id="fine-random-seed" className="form-input" type="number" min={0} step={1} value={trainingConfig.seed} disabled={busy || !!activeRun} onChange={(event) => updateTrainingConfig('seed', Number(event.target.value))} />
+                    </div>
+                  </div>
+                  <div className="fine-actions">
+                    <button className="btn btn-secondary" type="button" disabled={busy || !!activeRun} onClick={() => setTrainingConfig(trainingConfigFromRecipe(trainingRecipe))}>Reset to Defaults</button>
                   </div>
                 </details>
+                {currentTrainingConfigError && <div className="fine-inline-error">{currentTrainingConfigError}</div>}
               </>
             )}
           </section>
@@ -496,7 +592,7 @@ export default function FineTuning() {
               <h3>{datasetBuilt && trainingModelInstalled ? 'Ready to Fine-tune' : 'Complete the Training Configuration'}</h3>
               <p>{datasetBuilt && trainingModelInstalled ? `${sourceName || datasetID} will train against Gemma 3 1B IT.` : 'Choose a prepared dataset and install the supported Gemma 3 1B model.'}</p>
             </div>
-            <button className="btn btn-primary" disabled={!datasetBuilt || !datasetID || !trainingModelInstalled || busy || !!activeRun} onClick={start}>Start fine-tuning</button>
+            <button className="btn btn-primary" disabled={!datasetBuilt || !datasetID || !trainingModelInstalled || !trainingConfig || !!currentTrainingConfigError || busy || !!activeRun} onClick={start}>Start fine-tuning</button>
           </section>
         </div>
       )}
@@ -659,19 +755,25 @@ export default function FineTuning() {
                 <div><strong title={activeDocument.name}>{activeDocument.name}</strong><span>Review this document’s examples independently.</span></div>
                 <button className="btn btn-small btn-secondary" disabled={activeDocumentIndex === documentPreviews.length - 1 || busy} onClick={() => setActiveDocumentIndex((index) => index + 1)}>Next →</button>
               </div>
-              <p className="fine-panel-copy">Edit prompts or targets before building. Evidence stays read-only so each target remains traceable to the source.</p>
+              <p className="fine-panel-copy">Edit questions or answers before building. Your edits are included in training exactly as written; evidence remains available for reference.</p>
               <div className="fine-records">
                 {activeDocument.records.map((record, index) => {
                   const result = activeDocument.verification[index];
+                  const verifiedRecord = activeDocument.verified_records[index];
+                  const reviewError = fineTuningRecordReviewError(goal, activeDocument.records, index);
+                  const edited = !verifiedRecord || record.prompt !== verifiedRecord.prompt || record.target !== verifiedRecord.target || record.evidence !== verifiedRecord.evidence;
+                  const verificationClass = reviewError ? 'invalid' : edited || !result?.passed ? 'review' : 'passed';
+                  const verificationLabel = reviewError ? 'Fix Required' : edited ? 'Edited' : result?.passed ? 'Verified' : 'Review';
                   return (
-                    <article className="fine-record" key={`${record.fact_id ?? 'record'}-${index}`}>
+                    <article className={`fine-record${reviewError ? ' invalid' : ''}`} key={`${record.fact_id ?? 'record'}-${index}`}>
                       <div className="fine-record-number">{String(index + 1).padStart(2, '0')}</div>
                       <div className="fine-record-fields">
-                        <FieldLabel tooltipKey="fineTuningPrompt">{goal === 'question_answer' ? 'Question' : 'Prompt'}<textarea value={record.prompt} onChange={(event) => updateRecord(activeDocument.id, index, 'prompt', event.target.value)} /></FieldLabel>
-                        <FieldLabel tooltipKey="fineTuningTarget">{goal === 'question_answer' ? 'Answer' : 'Target'}<textarea value={record.target} onChange={(event) => updateRecord(activeDocument.id, index, 'target', event.target.value)} /></FieldLabel>
+                        <FieldLabel tooltipKey="fineTuningPrompt">{goal === 'question_answer' ? 'Question' : 'Prompt'}<textarea aria-invalid={!!reviewError} value={record.prompt} onChange={(event) => updateRecord(activeDocument.id, index, 'prompt', event.target.value)} /></FieldLabel>
+                        <FieldLabel tooltipKey="fineTuningTarget">{goal === 'question_answer' ? 'Answer' : 'Target'}<textarea aria-invalid={!!reviewError} value={record.target} onChange={(event) => updateRecord(activeDocument.id, index, 'target', event.target.value)} /></FieldLabel>
+                        {reviewError && <span className="fine-record-error" role="alert">{reviewError}</span>}
                         <details><summary>Source evidence</summary><p>{record.evidence}</p></details>
                       </div>
-                      <span className={`fine-verification ${result?.passed ? 'passed' : 'review'}`}>{result?.passed ? 'Verified' : 'Review'}</span>
+                      <span className={`fine-verification ${verificationClass}`}>{verificationLabel}</span>
                     </article>
                   );
                 })}
@@ -679,7 +781,7 @@ export default function FineTuning() {
               <div className="fine-review-actions">
                 <button className="btn btn-secondary" disabled={busy} onClick={() => regenerateDocumentPreview(activeDocument.id)}>Regenerate This Preview</button>
                 <button className="btn btn-danger" disabled={busy} onClick={() => removeDocumentPreview(activeDocument.id)}>Remove Document</button>
-                <button className="btn btn-primary" disabled={busy || documentPreviews.some((preview) => preview.records.some((record) => !record.prompt.trim() || !record.target.trim()))} onClick={build}>Build Training Dataset</button>
+                <button className="btn btn-primary" disabled={busy || documentPreviews.some((preview) => preview.records.some((_, index) => fineTuningRecordReviewError(goal, preview.records, index) !== ''))} onClick={build}>Build Training Dataset</button>
               </div>
             </section>
           )}
@@ -692,6 +794,7 @@ export default function FineTuning() {
               startedAt={preparationStartedAt}
               cancelLabel="Stop Build"
               sourceNames={documentPreviews.map((document) => document.name)}
+              build
               onCancel={cancel}
             />
           )}

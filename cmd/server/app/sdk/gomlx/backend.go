@@ -47,12 +47,13 @@ var checkpointProbeEpochs []int
 
 // CurrentRecipe returns the backend-owned settings for a new training run.
 func CurrentRecipe() finetune.Recipe {
+	training := CurrentTrainingConfig()
 	return finetune.Recipe{
 		Workflow: trainingStateSchema, Method: defaultMethod, BaseWeights: defaultBaseWeights,
-		Optimizer: defaultOptimizer, LearningRate: defaultLearningRate, WeightDecay: defaultWeightDecay,
-		BatchSize: defaultBatchSize, MaximumEpochs: defaultMaximumEpochs, Seed: defaultSeed,
+		Optimizer: defaultOptimizer, LearningRate: training.LearningRate, WeightDecay: training.WeightDecay,
+		BatchSize: training.BatchSize, MaximumEpochs: training.MaximumEpochs, Seed: uint64(training.Seed),
 		LoRA: finetune.LoRARecipe{
-			Rank: defaultLoRARank, Alpha: defaultLoRAAlpha, Scale: 1,
+			Rank: training.LoRARank, Alpha: training.LoRAAlpha, Scale: 1,
 			TargetModules: []string{"query", "key", "value", "output", "gate", "up", "down"},
 		},
 		Sequence: finetune.SequenceRecipe{
@@ -62,10 +63,27 @@ func CurrentRecipe() finetune.Recipe {
 		Output: finetune.OutputRecipe{
 			Format: defaultOutputFormat, Precision: defaultOutputPrecision, Filename: defaultOutputFilename,
 		},
-		EarlyStoppingPatience:        defaultEarlyStoppingPatience,
+		EarlyStoppingPatience:        training.EarlyStoppingPatience,
 		MinimumValidationImprovement: defaultMinimumValidationImprovement,
 		TrainingPhases:               1, CandidateCount: 1,
 	}
+}
+
+// CurrentTrainingConfig returns the user-adjustable defaults for a new run.
+func CurrentTrainingConfig() finetune.TrainingConfig {
+	return finetune.TrainingConfig{
+		MaximumEpochs: defaultMaximumEpochs, LearningRate: defaultLearningRate,
+		BatchSize: defaultBatchSize, LoRARank: defaultLoRARank, LoRAAlpha: defaultLoRAAlpha,
+		WeightDecay: defaultWeightDecay, EarlyStoppingPatience: defaultEarlyStoppingPatience,
+		Seed: defaultSeed,
+	}
+}
+
+func normalizeTrainingConfig(config finetune.TrainingConfig) finetune.TrainingConfig {
+	if config == (finetune.TrainingConfig{}) {
+		return CurrentTrainingConfig()
+	}
+	return config
 }
 
 type trainFunc func(context.Context, finetune.Request, finetune.DatasetContract, finetune.ProgressFunc) (trainingOutput, error)
@@ -95,6 +113,7 @@ type trainingState struct {
 	Schema     string                         `json:"schema"`
 	Model      string                         `json:"model"`
 	Dataset    finetune.DatasetContractReport `json:"dataset"`
+	Config     finetune.TrainingConfig        `json:"config"`
 	Training   gemma.TrainingResult           `json:"training"`
 	Selection  *checkpointSelection           `json:"selection,omitempty"`
 	Candidate  string                         `json:"candidate,omitempty"`
@@ -121,6 +140,12 @@ type trainingReport struct {
 	MaximumEpochs                int                            `json:"maximum_epochs"`
 	EarlyStopPatience            int                            `json:"early_stopping_patience"`
 	MinimumValidationImprovement float64                        `json:"minimum_validation_improvement"`
+	LearningRate                 float64                        `json:"learning_rate"`
+	WeightDecay                  float64                        `json:"weight_decay"`
+	BatchSize                    int                            `json:"batch_size"`
+	LoRARank                     int                            `json:"lora_rank"`
+	LoRAAlpha                    float64                        `json:"lora_alpha"`
+	Seed                         int64                          `json:"seed"`
 	StoppedEarly                 bool                           `json:"stopped_early"`
 	Epochs                       []epochReport                  `json:"epochs"`
 	Evaluation                   *finetune.EvaluationReport     `json:"evaluation,omitempty"`
@@ -146,12 +171,12 @@ func New() *Backend {
 // Recipe reports the fixed training preset and the selected model's native
 // sequence limit without loading its tensors.
 func (*Backend) Recipe(modelPath string) (finetune.Recipe, error) {
-	maximumTokens, err := inspectGemmaModel(modelPath, true)
+	model, err := inspectGemmaModel(modelPath, true)
 	if err != nil {
 		return finetune.Recipe{}, err
 	}
 	recipe := CurrentRecipe()
-	recipe.Sequence.MaximumTokens = maximumTokens
+	recipe.Sequence.MaximumTokens = model.MaximumTokens
 	return recipe, nil
 }
 
@@ -172,6 +197,10 @@ func (backend *Backend) Run(ctx context.Context, request finetune.Request, progr
 	}
 	if err := context.Cause(ctx); err != nil {
 		return finetune.Result{Status: finetune.StatusStopped}, err
+	}
+	request.Training = normalizeTrainingConfig(request.Training)
+	if err := request.Training.Validate(); err != nil {
+		return finetune.Result{}, fmt.Errorf("validate training configuration: %w", err)
 	}
 	if err := requireDirectory(request.Output); err != nil {
 		return finetune.Result{}, err
@@ -225,7 +254,7 @@ func (backend *Backend) Run(ctx context.Context, request finetune.Request, progr
 		}
 	}
 	reportPath := filepath.Join(request.Output, "training-report.json")
-	if err := writeTrainingReport(reportPath, request.Model, contract.Report, trained); err != nil {
+	if err := writeTrainingReport(reportPath, request.Model, request.Training, contract.Report, trained); err != nil {
 		return resumableResult(trained), err
 	}
 	failed := finetune.Result{
@@ -320,14 +349,22 @@ func (backend *Backend) preflightRequest(ctx context.Context, request finetune.R
 	if err := context.Cause(ctx); err != nil {
 		return err
 	}
+	request.Training = normalizeTrainingConfig(request.Training)
+	if err := request.Training.Validate(); err != nil {
+		return fmt.Errorf("validate training configuration: %w", err)
+	}
 	if err := requireRegularFile("prepared dataset", request.Dataset); err != nil {
 		return err
 	}
 	if err := requireRegularFile("Gemma GGUF", request.Model); err != nil {
 		return err
 	}
-	if _, err := inspectGemmaModel(request.Model, false); err != nil {
+	model, err := inspectGemmaModel(request.Model, false)
+	if err != nil {
 		return err
+	}
+	if request.Training.LoRARank > model.EmbeddingDimension {
+		return fmt.Errorf("LoRA rank %d exceeds Gemma embedding dimension %d", request.Training.LoRARank, model.EmbeddingDimension)
 	}
 	if request.Runtime.Port < 0 || request.Runtime.Port > 65535 {
 		return fmt.Errorf("llama-server port must be between 0 and 65535")
@@ -335,45 +372,62 @@ func (backend *Backend) preflightRequest(ctx context.Context, request finetune.R
 	if request.Runtime.ContextSize < 0 {
 		return fmt.Errorf("llama-server context size must not be negative")
 	}
-	_, err := resolveLlamaServer(request.Runtime.LlamaServer)
+	_, err = resolveLlamaServer(request.Runtime.LlamaServer)
 	return err
 }
 
-func inspectGemmaModel(modelPath string, includeContext bool) (int, error) {
+type gemmaModelInfo struct {
+	MaximumTokens      int
+	EmbeddingDimension int
+}
+
+func inspectGemmaModel(modelPath string, includeContext bool) (gemmaModelInfo, error) {
 	reader, err := gguf.OpenReader(modelPath)
 	if err != nil {
-		return 0, fmt.Errorf("inspect Gemma GGUF: %w", err)
+		return gemmaModelInfo{}, fmt.Errorf("inspect Gemma GGUF: %w", err)
 	}
 	architecture, architectureErr := reader.String("general.architecture")
 	if architectureErr != nil {
 		_ = reader.Close()
-		return 0, fmt.Errorf("inspect Gemma GGUF architecture: %w", architectureErr)
+		return gemmaModelInfo{}, fmt.Errorf("inspect Gemma GGUF architecture: %w", architectureErr)
 	}
 	if architecture != "gemma3" {
 		_ = reader.Close()
-		return 0, fmt.Errorf("model architecture is %q, want gemma3", architecture)
+		return gemmaModelInfo{}, fmt.Errorf("model architecture is %q, want gemma3", architecture)
 	}
+	embeddingDimension, embeddingErr := reader.Uint32("gemma3.embedding_length")
+	if embeddingErr != nil {
+		_ = reader.Close()
+		return gemmaModelInfo{}, fmt.Errorf("inspect Gemma GGUF embedding dimension: %w", embeddingErr)
+	}
+	if embeddingDimension == 0 {
+		_ = reader.Close()
+		return gemmaModelInfo{}, fmt.Errorf("gemma embedding dimension must be greater than zero")
+	}
+	model := gemmaModelInfo{EmbeddingDimension: int(embeddingDimension)}
 	if !includeContext {
 		if err := reader.Close(); err != nil {
-			return 0, fmt.Errorf("close Gemma GGUF: %w", err)
+			return gemmaModelInfo{}, fmt.Errorf("close Gemma GGUF: %w", err)
 		}
-		return 0, nil
+		return model, nil
 	}
 	maximumTokens, contextErr := reader.Uint32("gemma3.context_length")
 	closeErr := reader.Close()
 	if contextErr != nil {
-		return 0, fmt.Errorf("inspect Gemma GGUF context length: %w", contextErr)
+		return gemmaModelInfo{}, fmt.Errorf("inspect Gemma GGUF context length: %w", contextErr)
 	}
 	if closeErr != nil {
-		return 0, fmt.Errorf("close Gemma GGUF: %w", closeErr)
+		return gemmaModelInfo{}, fmt.Errorf("close Gemma GGUF: %w", closeErr)
 	}
 	if maximumTokens == 0 {
-		return 0, fmt.Errorf("gemma context length must be greater than zero")
+		return gemmaModelInfo{}, fmt.Errorf("gemma context length must be greater than zero")
 	}
-	return int(maximumTokens), nil
+	model.MaximumTokens = int(maximumTokens)
+	return model, nil
 }
 
 func (backend *Backend) trainGemma(ctx context.Context, request finetune.Request, contract finetune.DatasetContract, progress finetune.ProgressFunc) (trainingOutput, error) {
+	config := request.Training
 	state, resumed, err := readTrainingState(request.Output)
 	if err != nil {
 		return trainingOutput{}, err
@@ -387,7 +441,7 @@ func (backend *Backend) trainGemma(ctx context.Context, request finetune.Request
 		}
 	}
 	runtime, err := gemma.NewLoRARuntime(request.Model, gemma.AdapterConfig{
-		Rank: defaultLoRARank, Alpha: defaultLoRAAlpha, AdapterScale: 1, Seed: defaultSeed,
+		Rank: config.LoRARank, Alpha: config.LoRAAlpha, AdapterScale: 1, Seed: config.Seed,
 	})
 	if err != nil {
 		return trainingOutput{}, fmt.Errorf("load Gemma training model: %w", err)
@@ -402,6 +456,7 @@ func (backend *Backend) trainGemma(ctx context.Context, request finetune.Request
 	state.Schema = trainingStateSchema
 	state.Model = request.Model
 	state.Dataset = contract.Report
+	state.Config = config
 	if state.Training.BestCheckpoint == "" {
 		client, stopServer, err := startTokenizerServer(ctx, request, &http.Client{Timeout: 30 * time.Second})
 		if err != nil {
@@ -432,17 +487,17 @@ func (backend *Backend) trainGemma(ctx context.Context, request finetune.Request
 		if contract.Report.Task == "generation" && (conversationTraining == 0 || conversationValidation == 0) {
 			return trainingOutput{}, errors.New("verify conversation-aware training plan: prepared dataset has no conversation examples")
 		}
-		stepsPerEpoch := (len(prepared.Training) + defaultBatchSize - 1) / defaultBatchSize
-		totalSteps := stepsPerEpoch * defaultMaximumEpochs
+		stepsPerEpoch := (len(prepared.Training) + config.BatchSize - 1) / config.BatchSize
+		totalSteps := stepsPerEpoch * config.MaximumEpochs
 		reportProgress(progress, finetune.Progress{
 			Stage: finetune.StageTraining, Total: totalSteps,
 			Message: fmt.Sprintf("Preparing %d examples · %d conversations", len(prepared.Training), conversationTraining),
 		})
 		state.Training, err = runtime.TrainDataset(ctx, prepared, gemma.TrainingConfig{
-			Epochs: defaultMaximumEpochs, EarlyStoppingPatience: defaultEarlyStoppingPatience,
+			Epochs: config.MaximumEpochs, EarlyStoppingPatience: config.EarlyStoppingPatience,
 			MinimumValidationImprovement: defaultMinimumValidationImprovement,
-			LearningRate:                 defaultLearningRate, WeightDecay: defaultWeightDecay,
-			BatchSize: defaultBatchSize, Seed: defaultSeed,
+			LearningRate:                 config.LearningRate, WeightDecay: config.WeightDecay,
+			BatchSize: config.BatchSize, Seed: uint64(config.Seed),
 			AdapterCheckpointDirectory: filepath.Join(request.Output, "checkpoints"),
 			RetainedCheckpointEpochs:   checkpointProbeEpochs,
 		}, func(update gemma.TrainingProgress) {
@@ -450,7 +505,7 @@ func (backend *Backend) trainGemma(ctx context.Context, request finetune.Request
 				Stage: finetune.StageTraining, Completed: update.CompletedSteps,
 				Total: totalSteps,
 				Message: fmt.Sprintf("Epoch %d/%d · %d examples · %d conversations",
-					update.Epoch, defaultMaximumEpochs, len(prepared.Training), conversationTraining),
+					update.Epoch, config.MaximumEpochs, len(prepared.Training), conversationTraining),
 			})
 		})
 		if err != nil {
@@ -634,6 +689,7 @@ func readTrainingState(output string) (trainingState, bool, error) {
 }
 
 func validateTrainingState(request finetune.Request, contract finetune.DatasetContract, state trainingState) error {
+	request.Training = normalizeTrainingConfig(request.Training)
 	if state.Schema != trainingStateSchema {
 		return fmt.Errorf("training phase state uses unsupported schema %q", state.Schema)
 	}
@@ -642,6 +698,10 @@ func validateTrainingState(request finetune.Request, contract finetune.DatasetCo
 	}
 	if state.Dataset != contract.Report {
 		return errors.New("training phase state belongs to a different dataset contract")
+	}
+	stateConfig := normalizeTrainingConfig(state.Config)
+	if stateConfig != request.Training {
+		return errors.New("training phase state uses a different training configuration")
 	}
 	if err := validateTrainingResult(request.Output, "training", state.Training); err != nil {
 		return err
@@ -750,16 +810,18 @@ func writeTrainingState(output string, state trainingState) error {
 	return nil
 }
 
-func writeTrainingReport(path, modelPath string, dataset finetune.DatasetContractReport, trained trainingOutput) error {
+func writeTrainingReport(path, modelPath string, config finetune.TrainingConfig, dataset finetune.DatasetContractReport, trained trainingOutput) error {
 	report := trainingReport{
 		Schema: "finetune-run.v1", Workflow: trainingStateSchema, Model: modelPath, Dataset: dataset,
 		SelectedEpoch: trained.SelectedEpoch, SelectedCheckpoint: trained.SelectedCheckpoint,
 		SelectionMethod: trained.SelectionMethod, GeneratedValidationPassRate: trained.GeneratedScore,
-		BestValidationLoss: trained.BestValidationLoss, MaximumEpochs: defaultMaximumEpochs,
-		EarlyStopPatience:            defaultEarlyStoppingPatience,
+		BestValidationLoss: trained.BestValidationLoss, MaximumEpochs: config.MaximumEpochs,
+		EarlyStopPatience:            config.EarlyStoppingPatience,
 		MinimumValidationImprovement: defaultMinimumValidationImprovement,
-		StoppedEarly:                 trained.StoppedEarly,
-		Epochs:                       make([]epochReport, len(trained.Epochs)), Evaluation: trained.Evaluation,
+		LearningRate:                 config.LearningRate, WeightDecay: config.WeightDecay, BatchSize: config.BatchSize,
+		LoRARank: config.LoRARank, LoRAAlpha: config.LoRAAlpha, Seed: config.Seed,
+		StoppedEarly: trained.StoppedEarly,
+		Epochs:       make([]epochReport, len(trained.Epochs)), Evaluation: trained.Evaluation,
 	}
 	for index, epoch := range trained.Epochs {
 		report.Epochs[index] = epochReport{
