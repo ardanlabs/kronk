@@ -80,8 +80,8 @@ func runMedia(rc *runContext) scenarioResult {
 }
 
 func runMediaCorrectness(rc *runContext, model, imageURL string) mediaCorrectnessResult {
-	runID := fmt.Sprint(time.Now().UnixNano())
-	prefix := "MEDIA-OBSERVATION-" + runID + ":"
+	runID := fmt.Sprintf("%06X", time.Now().UnixNano()&0xFFFFFF)
+	const prefix = "MEDIA-OBSERVATION"
 	content := []map[string]any{
 		{"type": "text", "text": "Describe the main subject concisely. Start your response with exactly " + prefix},
 		{"type": "image_url", "image_url": map[string]any{"url": imageURL}},
