@@ -47,8 +47,22 @@ type MTPArchitecture uint8
 const (
 	MTPArchitectureNone MTPArchitecture = iota
 	MTPArchitectureQwen35OwnKV
+	MTPArchitectureQwen4ExpOwnKV
 	MTPArchitectureGemmaSharedKV
 )
+
+func (a MTPArchitecture) String() string {
+	switch a {
+	case MTPArchitectureQwen35OwnKV:
+		return "qwen35-own-kv"
+	case MTPArchitectureQwen4ExpOwnKV:
+		return "qwen4exp-own-kv"
+	case MTPArchitectureGemmaSharedKV:
+		return "gemma-shared-kv"
+	default:
+		return "none"
+	}
+}
 
 // MTPArtifact identifies where an MTP head's weights are stored.
 type MTPArtifact uint8
@@ -61,14 +75,14 @@ const (
 
 // Config contains the capabilities needed to resolve one speculation plan.
 type Config struct {
-	Mode              Mode
-	ClassicConfigured bool
-	ClassicNDraft     int
-	MTPNDraft         int
-	EmbeddedMTP       bool
-	CompanionMTP      bool
-	OwnKVCompanionMTP bool
-	MTPAvailable      bool
+	Mode                     Mode
+	ClassicConfigured        bool
+	ClassicNDraft            int
+	MTPNDraft                int
+	EmbeddedMTPArchitecture  MTPArchitecture
+	CompanionMTPArchitecture MTPArchitecture
+	MTPAvailable             bool
+	MTPArchitectureEnabled   bool
 }
 
 // Plan is the immutable decision shared by model loading, context sizing, and
@@ -133,22 +147,24 @@ func Resolve(cfg Config) (Plan, error) {
 		Available: cfg.MTPAvailable,
 	}
 	switch {
-	case cfg.CompanionMTP:
+	case cfg.CompanionMTPArchitecture != MTPArchitectureNone:
 		plan.Source = SourceMTP
-		plan.MTPArchitecture = MTPArchitectureGemmaSharedKV
+		plan.MTPArchitecture = cfg.CompanionMTPArchitecture
 		plan.MTPArtifact = MTPArtifactCompanion
-	case cfg.OwnKVCompanionMTP:
+	case cfg.EmbeddedMTPArchitecture != MTPArchitectureNone:
 		plan.Source = SourceMTP
-		plan.MTPArchitecture = MTPArchitectureQwen35OwnKV
-		plan.MTPArtifact = MTPArtifactCompanion
-	case cfg.EmbeddedMTP:
-		plan.Source = SourceMTP
-		plan.MTPArchitecture = MTPArchitectureQwen35OwnKV
+		plan.MTPArchitecture = cfg.EmbeddedMTPArchitecture
 		plan.MTPArtifact = MTPArtifactEmbedded
-		plan.LoadMTP = plan.Available
 	case cfg.Mode == ModeMTP:
 		return Plan{}, fmt.Errorf("speculation mode %q requested but the model has no companion or embedded MTP implementation", cfg.Mode)
 	}
+	if plan.Source == SourceMTP && !cfg.MTPArchitectureEnabled {
+		if cfg.Mode == ModeMTP {
+			return Plan{}, fmt.Errorf("speculation mode %q requested but MTP architecture %s is disabled in this Kronk release", cfg.Mode, plan.MTPArchitecture)
+		}
+		return Plan{Mode: cfg.Mode}, nil
+	}
+	plan.LoadMTP = plan.MTPArtifact == MTPArtifactEmbedded && plan.Available
 	if cfg.Mode == ModeMTP && !plan.Available {
 		return Plan{}, fmt.Errorf("speculation mode %q requested but MTP is unavailable in the loaded llama library", cfg.Mode)
 	}

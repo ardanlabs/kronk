@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 )
 
@@ -120,6 +121,86 @@ func TestDownloadResumesPartialModel(t *testing.T) {
 	}
 
 	got, err := os.ReadFile(filepath.Join(m.Path(), "ggml-resume.bin"))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(got) != string(contents) {
+		t.Fatalf("downloaded contents: got %q, want %q", got, contents)
+	}
+}
+
+func TestDownloadReusesCompleteInstalledModel(t *testing.T) {
+	contents := []byte("complete whisper model contents")
+	var requests atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Length", fmt.Sprint(len(contents)))
+		if r.Method == http.MethodHead {
+			return
+		}
+		_, _ = w.Write(contents)
+	}))
+
+	m, err := NewWithPaths(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewWithPaths: %v", err)
+	}
+	log := func(context.Context, string, ...any) {}
+	modelURL := server.URL + "/ggml-complete.bin"
+
+	if _, err := m.Download(t.Context(), log, modelURL); err != nil {
+		t.Fatalf("first Download: %v", err)
+	}
+	firstRequests := requests.Load()
+	if firstRequests == 0 {
+		t.Fatal("first Download: got no request")
+	}
+
+	server.Close()
+	path, err := m.Download(t.Context(), log, modelURL)
+	if err != nil {
+		t.Fatalf("offline second Download: %v", err)
+	}
+	if got := requests.Load(); got != firstRequests {
+		t.Fatalf("offline second Download requests: got %d, want %d", got, firstRequests)
+	}
+	if got, want := path.ModelFiles, filepath.Join(m.Path(), "ggml-complete.bin"); len(got) != 1 || got[0] != want {
+		t.Fatalf("ModelFiles: got %v, want [%s]", got, want)
+	}
+}
+
+func TestDownloadReplacesEmptyInstalledModel(t *testing.T) {
+	contents := []byte("complete whisper model contents")
+	var gets atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", fmt.Sprint(len(contents)))
+		if r.Method == http.MethodHead {
+			return
+		}
+		gets.Add(1)
+		_, _ = w.Write(contents)
+	}))
+	defer server.Close()
+
+	m, err := NewWithPaths(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewWithPaths: %v", err)
+	}
+	dest := filepath.Join(m.Path(), "ggml-incomplete.bin")
+	if err := os.WriteFile(dest, nil, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	if _, err := m.Download(t.Context(), func(context.Context, string, ...any) {}, server.URL+"/ggml-incomplete.bin"); err != nil {
+		t.Fatalf("Download: %v", err)
+	}
+	if gets.Load() == 0 {
+		t.Fatal("Download: got no body request for empty installed model")
+	}
+
+	got, err := os.ReadFile(dest)
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}

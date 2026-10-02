@@ -217,7 +217,7 @@ func applySamplerFilters(logits, probs []float32, suppressTokens []llama.Token, 
 	}
 
 	// Compute temperature-scaled probabilities for survivors only.
-	var invT float64 = 1.0
+	var invT = 1.0
 	if temperature > 0 && temperature != 1.0 {
 		invT = 1.0 / float64(temperature)
 	}

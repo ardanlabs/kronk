@@ -6,6 +6,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	internalspec "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	yzmaspec "github.com/hybridgroup/yzma/exp/speculative"
 )
 
@@ -24,6 +25,7 @@ const (
 	speculationSourceMTP     = internalspec.SourceMTP
 
 	mtpArchitectureQwen35OwnKV   = internalspec.MTPArchitectureQwen35OwnKV
+	mtpArchitectureQwen4ExpOwnKV = internalspec.MTPArchitectureQwen4ExpOwnKV
 	mtpArchitectureGemmaSharedKV = internalspec.MTPArchitectureGemmaSharedKV
 
 	mtpArtifactEmbedded  = internalspec.MTPArtifactEmbedded
@@ -43,33 +45,58 @@ func resolveSpeculationPlan(ctx context.Context, log applog.Logger, cfg Config) 
 		})
 	}
 
-	embedded, err := modelFilesLoadMTP(cfg.ModelFiles)
+	embedded, err := modelFilesMTPArchitecture(cfg.ModelFiles)
 	if err != nil {
 		return speculationPlan{}, fmt.Errorf("detect embedded MTP: %w", err)
 	}
-	var sharedCompanion, ownKVCompanion bool
+	companion := modelprofile.MTPArchitectureNone
 	if cfg.MTPDrafterFile != "" {
-		sharedCompanion, ownKVCompanion = probeMTPCompanion(ctx, log, cfg.MTPDrafterFile)
+		companion = probeMTPCompanion(ctx, log, cfg.MTPDrafterFile)
+	}
+	architecture := companion
+	if architecture == modelprofile.MTPArchitectureNone {
+		architecture = embedded
 	}
 
 	return internalspec.Resolve(internalspec.Config{
-		Mode:              mode,
-		ClassicConfigured: classic,
-		ClassicNDraft:     configuredClassicNDraft(cfg),
-		MTPNDraft:         mtpNDraft(cfg),
-		EmbeddedMTP:       embedded,
-		CompanionMTP:      sharedCompanion,
-		OwnKVCompanionMTP: ownKVCompanion,
-		MTPAvailable:      yzmaspec.Available(),
+		Mode:                     mode,
+		ClassicConfigured:        classic,
+		ClassicNDraft:            configuredClassicNDraft(cfg),
+		MTPNDraft:                mtpNDraft(cfg),
+		EmbeddedMTPArchitecture:  internalMTPArchitecture(embedded),
+		CompanionMTPArchitecture: internalMTPArchitecture(companion),
+		MTPAvailable:             yzmaspec.Available(),
+		MTPArchitectureEnabled:   modelprofile.MTPEnabled(architecture),
 	})
 }
 
-// resolveEmbeddedMTPCompatibility verifies that the embedded MTP head consumes
-// the target model's hidden-state width. Automatic speculation falls back to
-// target-only generation when the widths differ; an explicitly required MTP
-// implementation fails instead.
+func internalMTPArchitecture(architecture modelprofile.MTPArchitecture) internalspec.MTPArchitecture {
+	switch architecture {
+	case modelprofile.MTPArchitectureQwen35OwnKV:
+		return internalspec.MTPArchitectureQwen35OwnKV
+	case modelprofile.MTPArchitectureQwen4ExpOwnKV:
+		return internalspec.MTPArchitectureQwen4ExpOwnKV
+	case modelprofile.MTPArchitectureGemmaSharedKV:
+		return internalspec.MTPArchitectureGemmaSharedKV
+	default:
+		return internalspec.MTPArchitectureNone
+	}
+}
+
+// resolveEmbeddedMTPCompatibility verifies the hidden-state width consumed by
+// an embedded MTP head. Qwen35 requires the target embedding width; Qwen4Exp
+// can expose an integral multiple containing several hidden-state planes.
+// Automatic speculation falls back to target-only generation on mismatch; an
+// explicitly required MTP implementation fails instead.
 func resolveEmbeddedMTPCompatibility(plan speculationPlan, targetEmbeddingWidth, mtpOutputWidth int32) (speculationPlan, error) {
-	if plan.Source != speculationSourceMTP || plan.MTPArtifact != mtpArtifactEmbedded || targetEmbeddingWidth == mtpOutputWidth {
+	if plan.Source != speculationSourceMTP || plan.MTPArtifact != mtpArtifactEmbedded {
+		return plan, nil
+	}
+	compatible := targetEmbeddingWidth > 0 && targetEmbeddingWidth == mtpOutputWidth
+	if plan.MTPArchitecture == mtpArchitectureQwen4ExpOwnKV {
+		compatible = targetEmbeddingWidth > 0 && mtpOutputWidth >= targetEmbeddingWidth && mtpOutputWidth%targetEmbeddingWidth == 0
+	}
+	if compatible {
 		return plan, nil
 	}
 

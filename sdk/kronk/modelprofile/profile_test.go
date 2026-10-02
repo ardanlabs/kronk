@@ -11,6 +11,7 @@ func TestResolveArchitectureParity(t *testing.T) {
 		purpose    Purpose
 		memory     MemorySemantics
 		mtpLayers  int64
+		mtpArch    MTPArchitecture
 		companion  bool
 		ownKV      bool
 		audio      bool
@@ -63,6 +64,7 @@ func TestResolveArchitectureParity(t *testing.T) {
 			purpose:    PurposeGeneration,
 			memory:     MemoryRecurrent,
 			mtpLayers:  1,
+			mtpArch:    MTPArchitectureQwen35OwnKV,
 			ownKV:      true,
 			recurrent:  30,
 			fullLayers: 10,
@@ -166,6 +168,7 @@ func TestResolveArchitectureParity(t *testing.T) {
 			purpose:   PurposeGeneration,
 			memory:    MemoryAttention,
 			mtpLayers: 1,
+			mtpArch:   MTPArchitectureGemmaSharedKV,
 			companion: true,
 		},
 		{
@@ -179,6 +182,21 @@ func TestResolveArchitectureParity(t *testing.T) {
 			purpose:   PurposeGeneration,
 			memory:    MemoryRecurrent,
 			mtpLayers: 1,
+			mtpArch:   MTPArchitectureQwen35OwnKV,
+			ownKV:     true,
+		},
+		{
+			name: "qwen4exp own KV MTP companion",
+			metadata: map[string]string{
+				"general.architecture":          "qwen4exp",
+				"qwen4exp.nextn_predict_layers": "1",
+			},
+			class:     ClassHybrid,
+			role:      RoleLanguage,
+			purpose:   PurposeGeneration,
+			memory:    MemoryRecurrent,
+			mtpLayers: 1,
+			mtpArch:   MTPArchitectureQwen4ExpOwnKV,
 			ownKV:     true,
 		},
 	}
@@ -191,8 +209,8 @@ func TestResolveArchitectureParity(t *testing.T) {
 					got.Class, got.Role, got.Purpose, got.MemorySemantics,
 					tt.class, tt.role, tt.purpose, tt.memory)
 			}
-			if got.Speculation.NextNPredictLayers != tt.mtpLayers || got.Speculation.SharedKVCompanion != tt.companion || got.Speculation.OwnKVCompanion != tt.ownKV {
-				t.Errorf("speculation = %+v, want layers %d shared companion %t own-KV companion %t", got.Speculation, tt.mtpLayers, tt.companion, tt.ownKV)
+			if got.Speculation.NextNPredictLayers != tt.mtpLayers || got.Speculation.MTPArchitecture != tt.mtpArch || got.Speculation.SharedKVCompanion != tt.companion || got.Speculation.OwnKVCompanion != tt.ownKV {
+				t.Errorf("speculation = %+v, want layers %d architecture %q shared companion %t own-KV companion %t", got.Speculation, tt.mtpLayers, tt.mtpArch, tt.companion, tt.ownKV)
 			}
 			if got.Modalities.Audio != tt.audio || got.Modalities.Video != tt.video {
 				t.Errorf("modalities = %+v, want audio %t video %t", got.Modalities, tt.audio, tt.video)
@@ -202,6 +220,15 @@ func TestResolveArchitectureParity(t *testing.T) {
 					got.Attention.RecurrentLayers, got.Attention.FullAttentionLayers, tt.recurrent, tt.fullLayers)
 			}
 		})
+	}
+}
+
+func TestMTPEnabled(t *testing.T) {
+	if !MTPEnabled(MTPArchitectureQwen35OwnKV) || !MTPEnabled(MTPArchitectureGemmaSharedKV) {
+		t.Fatal("existing Qwen35 and Gemma MTP runtimes must remain enabled")
+	}
+	if MTPEnabled(MTPArchitectureQwen4ExpOwnKV) {
+		t.Fatal("Qwen4Exp MTP must remain disabled until the pinned llama.cpp bundle includes the follow-up fixes")
 	}
 }
 

@@ -20,6 +20,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	mtpengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/mtp"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
@@ -966,11 +967,11 @@ func loadDraftModel(ctx context.Context, log applog.Logger, cfg Config, targetMo
 		mParams.TensorSplit = &draftTensorSplitBuf[0]
 	}
 
-	loadMTP, err := modelFilesLoadMTP(dCfg.ModelFiles)
+	mtpArchitecture, err := modelFilesMTPArchitecture(dCfg.ModelFiles)
 	if err != nil {
 		return nil, fmt.Errorf("draft-detect-mtp-metadata: %w", err)
 	}
-	if loadMTP {
+	if modelprofile.MTPEnabled(mtpArchitecture) {
 		mParams.LoadMTP = 1
 	}
 	logModelParamsTrace(ctx, mParams, dCfg.Devices, dCfg.TensorSplit, nil, log)

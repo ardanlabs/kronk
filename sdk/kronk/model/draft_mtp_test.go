@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -85,6 +86,22 @@ func TestSpeculativeContextCount(t *testing.T) {
 	}
 }
 
+func TestQwen4ExpDisabledMTPEstimatesTargetOnly(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "qwen4exp-mtp.gguf")
+	writeTestGGUF(t, file, map[string]any{
+		"general.architecture":          "qwen4exp",
+		"qwen4exp.nextn_predict_layers": uint32(1),
+	})
+	cfg := Config{MTPDrafterFile: file}
+
+	if got := RecurrentStateCopies(cfg, false); got != 1 {
+		t.Errorf("RecurrentStateCopies = %d, want 1 while Qwen4Exp MTP is disabled", got)
+	}
+	if got := SpeculativeContextCount(cfg); got != 1 {
+		t.Errorf("SpeculativeContextCount = %d, want 1 while Qwen4Exp MTP is disabled", got)
+	}
+}
+
 func TestMetadataHasMTP(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -92,11 +109,12 @@ func TestMetadataHasMTP(t *testing.T) {
 		want     bool
 	}{
 		{"no MTP key", map[string]string{"general.architecture": "qwen35moe"}, false},
-		{"zero layers", map[string]string{"qwen35moe.nextn_predict_layers": "0"}, false},
-		{"positive layers", map[string]string{"qwen35moe.nextn_predict_layers": "1"}, true},
-		{"malformed layers", map[string]string{"qwen35moe.nextn_predict_layers": "invalid"}, false},
-		{"architecture-specific key", map[string]string{"cohere2moe.nextn_predict_layers": " 2 "}, true},
-		{"matching text within key", map[string]string{"vendor.optional_nextn_predict_layers.count": "3"}, true},
+		{"zero layers", map[string]string{"general.architecture": "qwen35moe", "qwen35moe.nextn_predict_layers": "0"}, false},
+		{"positive layers", map[string]string{"general.architecture": "qwen35moe", "qwen35moe.nextn_predict_layers": "1"}, true},
+		{"malformed layers", map[string]string{"general.architecture": "qwen35moe", "qwen35moe.nextn_predict_layers": "invalid"}, false},
+		{"unsupported architecture", map[string]string{"general.architecture": "cohere2moe", "cohere2moe.nextn_predict_layers": " 2 "}, false},
+		{"matching text within unrelated key", map[string]string{"general.architecture": "vendor", "vendor.optional_nextn_predict_layers.count": "3"}, false},
+		{"qwen4exp architecture", map[string]string{"general.architecture": "qwen4exp", "qwen4exp.nextn_predict_layers": "1"}, true},
 	}
 
 	for _, tt := range tests {
@@ -136,30 +154,30 @@ func TestModelFilesLoadMTPUsesFirstShard(t *testing.T) {
 	first := filepath.Join(dir, "model-00001-of-00002.gguf")
 	second := filepath.Join(dir, "model-00002-of-00002.gguf")
 
-	writeTestGGUF(t, first, map[string]uint32{"qwen35moe.nextn_predict_layers": 1})
+	writeTestGGUF(t, first, map[string]any{"general.architecture": "qwen35moe", "qwen35moe.nextn_predict_layers": uint32(1)})
 	writeTestGGUF(t, second, nil)
 
-	got, err := modelFilesLoadMTP([]string{first, second})
+	got, err := modelFilesMTPArchitecture([]string{first, second})
 	if err != nil {
-		t.Fatalf("modelFilesLoadMTP() error = %v", err)
+		t.Fatalf("modelFilesMTPArchitecture() error = %v", err)
 	}
-	if !got {
-		t.Errorf("modelFilesLoadMTP() = false, want true")
+	if got != modelprofile.MTPArchitectureQwen35OwnKV {
+		t.Errorf("modelFilesMTPArchitecture() = %q, want %q", got, modelprofile.MTPArchitectureQwen35OwnKV)
 	}
 
 	writeTestGGUF(t, first, nil)
-	writeTestGGUF(t, second, map[string]uint32{"qwen35moe.nextn_predict_layers": 1})
+	writeTestGGUF(t, second, map[string]any{"general.architecture": "qwen35moe", "qwen35moe.nextn_predict_layers": uint32(1)})
 
-	got, err = modelFilesLoadMTP([]string{first, second})
+	got, err = modelFilesMTPArchitecture([]string{first, second})
 	if err != nil {
-		t.Fatalf("modelFilesLoadMTP() error = %v", err)
+		t.Fatalf("modelFilesMTPArchitecture() error = %v", err)
 	}
-	if got {
-		t.Errorf("modelFilesLoadMTP() = true, want false")
+	if got != modelprofile.MTPArchitectureNone {
+		t.Errorf("modelFilesMTPArchitecture() = %q, want none", got)
 	}
 }
 
-func writeTestGGUF(t *testing.T, file string, metadata map[string]uint32) {
+func writeTestGGUF(t *testing.T, file string, metadata map[string]any) {
 	t.Helper()
 
 	var data bytes.Buffer
@@ -177,11 +195,26 @@ func writeTestGGUF(t *testing.T, file string, metadata map[string]uint32) {
 		if _, err := data.WriteString(key); err != nil {
 			t.Fatalf("WriteString() error = %v", err)
 		}
-		if err := binary.Write(&data, binary.LittleEndian, gguf.MetadataValueTypeUInt32); err != nil {
-			t.Fatalf("binary.Write() value type error = %v", err)
-		}
-		if err := binary.Write(&data, binary.LittleEndian, value); err != nil {
-			t.Fatalf("binary.Write() value error = %v", err)
+		switch value := value.(type) {
+		case uint32:
+			if err := binary.Write(&data, binary.LittleEndian, gguf.MetadataValueTypeUInt32); err != nil {
+				t.Fatalf("binary.Write() value type error = %v", err)
+			}
+			if err := binary.Write(&data, binary.LittleEndian, value); err != nil {
+				t.Fatalf("binary.Write() value error = %v", err)
+			}
+		case string:
+			if err := binary.Write(&data, binary.LittleEndian, gguf.MetadataValueTypeString); err != nil {
+				t.Fatalf("binary.Write() value type error = %v", err)
+			}
+			if err := binary.Write(&data, binary.LittleEndian, uint64(len(value))); err != nil {
+				t.Fatalf("binary.Write() string length error = %v", err)
+			}
+			if _, err := data.WriteString(value); err != nil {
+				t.Fatalf("WriteString() value error = %v", err)
+			}
+		default:
+			t.Fatalf("unsupported metadata value type %T", value)
 		}
 	}
 

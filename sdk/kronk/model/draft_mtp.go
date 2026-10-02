@@ -20,42 +20,44 @@ import (
 // This matches llama.cpp's MTP default.
 const defMTPNDraft = 3
 
-// modelFilesLoadMTP reports whether the first GGUF shard declares one or
-// more MTP prediction layers. GGUF metadata lives in the first shard, so no
-// other file is read. This check must run before llama loads the model:
-// llama.cpp skips gated MTP tensors unless ModelParams.LoadMTP is enabled.
-func modelFilesLoadMTP(modelFiles []string) (bool, error) {
+// modelFilesMTPArchitecture reports the supported MTP runtime contract declared
+// by the first GGUF shard. GGUF metadata lives in the first shard, so no other
+// file is read. This check must run before llama loads the model: llama.cpp
+// skips gated MTP tensors unless ModelParams.LoadMTP is enabled.
+func modelFilesMTPArchitecture(modelFiles []string) (modelprofile.MTPArchitecture, error) {
 	if len(modelFiles) == 0 {
-		return false, fmt.Errorf("no model files provided")
+		return modelprofile.MTPArchitectureNone, fmt.Errorf("no model files provided")
 	}
 
 	data, err := gguf.ReadHeaderBytes(modelFiles[0])
 	if err != nil {
-		return false, err
+		return modelprofile.MTPArchitectureNone, err
 	}
 
 	metadata, err := gguf.ParseMetadata(data)
 	if err != nil {
-		return false, err
+		return modelprofile.MTPArchitectureNone, err
 	}
 
-	return modelprofile.Resolve(metadata).Speculation.NextNPredictLayers > 0, nil
+	return metadataMTPArchitecture(metadata), nil
 }
 
-// metadataHasMTP reports whether metadata contains a positive numeric
-// nextn_predict_layers value. The architecture prefix is intentionally not
-// constrained because llama.cpp uses the same metadata suffix across model
-// families.
+// metadataHasMTP reports whether metadata declares a positive MTP layer count
+// for an architecture whose runtime contract Kronk recognizes.
 func metadataHasMTP(metadata map[string]string) bool {
-	return modelprofile.Resolve(metadata).Speculation.NextNPredictLayers > 0
+	return metadataMTPArchitecture(metadata) != modelprofile.MTPArchitectureNone
+}
+
+func metadataMTPArchitecture(metadata map[string]string) modelprofile.MTPArchitecture {
+	speculation := modelprofile.Resolve(metadata).Speculation
+	if speculation.NextNPredictLayers <= 0 {
+		return modelprofile.MTPArchitectureNone
+	}
+	return speculation.MTPArchitecture
 }
 
 func metadataHasAssistantMTP(metadata map[string]string) bool {
 	return modelprofile.Resolve(metadata).Speculation.SharedKVCompanion
-}
-
-func metadataHasOwnKVCompanionMTP(metadata map[string]string) bool {
-	return modelprofile.Resolve(metadata).Speculation.OwnKVCompanion
 }
 
 // mtpNDraft returns the starting (ceiling) number of draft tokens for the
@@ -80,7 +82,7 @@ func RecurrentStateCopies(cfg Config, embeddedMTP bool) int64 {
 	}
 
 	if embeddedMTP {
-		if mode != SpeculationClassic && yzmaspec.Available() {
+		if mode != SpeculationClassic && yzmaspec.Available() && mtpFilesEnabled(cfg.ModelFiles) {
 			return int64(1 + mtpNDraft(cfg))
 		}
 		return 1
@@ -93,7 +95,7 @@ func RecurrentStateCopies(cfg Config, embeddedMTP bool) int64 {
 		}
 		return int64(1 + nDraft)
 	}
-	if mode != SpeculationClassic && cfg.MTPDrafterFile != "" && yzmaspec.Available() {
+	if mode != SpeculationClassic && cfg.MTPDrafterFile != "" && yzmaspec.Available() && mtpFilesEnabled([]string{cfg.MTPDrafterFile}) {
 		return int64(1 + mtpNDraft(cfg))
 	}
 
@@ -108,10 +110,18 @@ func SpeculativeContextCount(cfg Config) int64 {
 	if cfg.SpeculationMode() == SpeculationDisabled {
 		return 1
 	}
-	if cfg.MTPDrafterFile != "" {
+	if cfg.MTPDrafterFile != "" && mtpFilesEnabled([]string{cfg.MTPDrafterFile}) {
 		return 2
 	}
 	return 1
+}
+
+// mtpFilesEnabled applies the architecture activation gate when metadata can
+// be read. An unreadable or unrecognized file retains the conservative legacy
+// estimate; model loading performs strict capability resolution later.
+func mtpFilesEnabled(files []string) bool {
+	architecture, err := modelFilesMTPArchitecture(files)
+	return err != nil || architecture == modelprofile.MTPArchitectureNone || modelprofile.MTPEnabled(architecture)
 }
 
 // mtpNextNLayers returns the number of NextN (MTP) prediction layers
@@ -155,12 +165,12 @@ func mtpNextNLayers(model llama.Model) int {
 //
 // On success the returned *mtpDrafter shares the target's llama_model, so
 // its unload skips the model free.
-func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.Context, targetModel llama.Model, targetCtxParams llama.ContextParams, nDraft int) (*mtpDrafter, error) {
+func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.Context, targetModel llama.Model, targetCtxParams llama.ContextParams, nDraft, embeddingWidth int) (*mtpDrafter, error) {
 	params := embeddedMTPContextParams(llama.ContextDefaultParams(), targetCtxParams)
 
-	nEmbd := int(llama.ModelNEmbd(targetModel))
+	nEmbd := embeddingWidth
 	if nEmbd <= 0 {
-		return nil, fmt.Errorf("invalid nEmbd %d from target model", nEmbd)
+		return nil, fmt.Errorf("invalid MTP embedding width %d from target model", nEmbd)
 	}
 
 	log(ctx, "draft-model-mtp", "status", "loading",
@@ -277,24 +287,22 @@ func embeddedMTPContextParams(params, target llama.ContextParams) llama.ContextP
 	return params
 }
 
-// probeMTPCompanion reports the supported runtime shape declared by a
-// separate-file MTP companion. The first result identifies shared-KV
-// assistants such as Gemma4; the second identifies Qwen35 heads that own
-// their draft KV. Unsupported architectures return false, false.
-func probeMTPCompanion(ctx context.Context, log applog.Logger, file string) (bool, bool) {
+// probeMTPCompanion reports the runtime shape declared by a separate-file MTP
+// companion. Unsupported architectures return MTPArchitectureNone.
+func probeMTPCompanion(ctx context.Context, log applog.Logger, file string) modelprofile.MTPArchitecture {
 	data, err := gguf.ReadHeaderBytes(file)
 	if err != nil {
 		log(ctx, "draft-model-mtp", "status", "probe-skip", "file", file, "err", err)
-		return false, false
+		return modelprofile.MTPArchitectureNone
 	}
 
 	md, err := gguf.ParseMetadata(data)
 	if err != nil {
 		log(ctx, "draft-model-mtp", "status", "probe-skip", "file", file, "err", err)
-		return false, false
+		return modelprofile.MTPArchitectureNone
 	}
 
-	return metadataHasAssistantMTP(md), metadataHasOwnKVCompanionMTP(md)
+	return metadataMTPArchitecture(md)
 }
 
 // loadDraftModelMTPSeparate loads a Qwen35 MTP-only GGUF into its own model

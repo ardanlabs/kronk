@@ -78,11 +78,10 @@ MTP enabled and disabled without changing downloaded model files.
 
 Embedded detection happens before llama.cpp loads the target. Kronk reads the
 first GGUF shard, where model metadata is stored, and enables MTP tensor loading
-when any positive `nextn_predict_layers` metadata value is present. The lookup
-uses the metadata suffix rather than a hard-coded architecture name, so a
-supported future architecture can advertise the same contract. This early
-step is required because llama.cpp otherwise omits gated MTP tensors during
-model load; adding an `ndraft` setting after load cannot recover them.
+when a recognized architecture advertises a positive `nextn_predict_layers`
+value and that architecture's runtime is enabled. This early step is required
+because llama.cpp otherwise omits gated MTP tensors during model load; adding
+an `ndraft` setting after load cannot recover them.
 
 MTP also requires support from the loaded llama.cpp library. When a model
 advertises MTP but the required API is unavailable, Kronk reports that MTP was
@@ -126,9 +125,19 @@ additional model-specific file, but Kronk's catalog and download flow can
 discover and associate files at the repository root or under `MTP/` with the
 target automatically. It is not configured as a classic `draft-model`.
 
-Qwen3.8 Flash Next's separate `qwen4exp` sidecars are not selected yet. Their
-runtime differs from the supported Qwen3.8-27B `qwen35` companion and requires
-additional llama.cpp and Kronk support.
+Qwen3.8 Flash Next's `qwen4exp` MTP runtime is scaffolded but deliberately
+disabled. Kronk recognizes embedded heads and self-contained companion GGUFs,
+routes them through the own-KV runtime, and keeps their tensors and sidecars
+unloaded while disabled. Existing shared-tensor sidecars are not compatible;
+the companion must contain its own token embeddings and output tensors.
+
+Activation is waiting for a downloadable llama.cpp builder release containing
+the recurrent-memory assertion fix from upstream PR #29799 and the Qwen4Exp
+QSA/indexer correctness fixes from PR #29819. The pinned b11331 bundle contains
+the initial Qwen4Exp MTP implementation but not both follow-up fixes. In `auto`
+mode Qwen4Exp therefore runs target-only; explicitly selecting `mtp` reports
+that the architecture is disabled. This does not disable ordinary target-only
+inference for Qwen3.8 Flash Next models.
 
 MTP availability is a property of the downloaded files and the loaded
 llama.cpp library. Naming a model “MTP” or adding an `ndraft` override cannot

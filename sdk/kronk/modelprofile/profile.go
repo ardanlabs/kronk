@@ -44,6 +44,32 @@ const (
 	MemoryRecurrent MemorySemantics = "recurrent"
 )
 
+// MTPArchitecture identifies the runtime contract used by an MTP head.
+type MTPArchitecture string
+
+const (
+	MTPArchitectureNone          MTPArchitecture = ""
+	MTPArchitectureQwen35OwnKV   MTPArchitecture = "qwen35-own-kv"
+	MTPArchitectureQwen4ExpOwnKV MTPArchitecture = "qwen4exp-own-kv"
+	MTPArchitectureGemmaSharedKV MTPArchitecture = "gemma-shared-kv"
+
+	// Qwen4ExpMTPEnabled remains false until the pinned llama.cpp bundle
+	// includes the upstream recurrent-memory and QSA correctness fixes.
+	Qwen4ExpMTPEnabled = false
+)
+
+// MTPEnabled reports whether Kronk enables an identified MTP runtime.
+func MTPEnabled(architecture MTPArchitecture) bool {
+	switch architecture {
+	case MTPArchitectureQwen35OwnKV, MTPArchitectureGemmaSharedKV:
+		return true
+	case MTPArchitectureQwen4ExpOwnKV:
+		return Qwen4ExpMTPEnabled
+	default:
+		return false
+	}
+}
+
 // Dimensions contains normalized model dimensions used by runtime and tooling
 // consumers.
 type Dimensions struct {
@@ -61,6 +87,7 @@ type Dimensions struct {
 // Speculation contains normalized MTP metadata.
 type Speculation struct {
 	NextNPredictLayers int64
+	MTPArchitecture    MTPArchitecture
 	SharedKVCompanion  bool
 	OwnKVCompanion     bool
 }

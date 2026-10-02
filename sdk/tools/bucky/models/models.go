@@ -154,8 +154,9 @@ func (m *Models) BuildIndex(log applog.Logger, checkSHA bool) error {
 //   - A full ggml filename ("ggml-tiny.bin").
 //   - A fully qualified download URL accepted by hashicorp/go-getter.
 //
-// Existing files are passed through the downloader so it can compare their
-// size with the server and resume an interrupted transfer when necessary.
+// Existing non-empty files are returned without a network request. Incomplete
+// transfers are staged separately so an installed model is not replaced until
+// the download succeeds.
 func (m *Models) Download(ctx context.Context, log applog.Logger, source string) (Path, error) {
 	source = strings.TrimSpace(source)
 	if source == "" {
@@ -186,6 +187,22 @@ func (m *Models) Download(ctx context.Context, log applog.Logger, source string)
 	}
 
 	dest := filepath.Join(m.modelsPath, fileName)
+	if info, err := os.Stat(dest); err == nil && info.Mode().IsRegular() && info.Size() > 0 {
+		if err := m.refreshIndex(log); err != nil {
+			log(ctx, "download-model: refresh index", "ERROR", err)
+		}
+		if err := m.cacheHeaderFromFile(extractModelID(fileName), dest); err != nil {
+			log(ctx, "download-model: cache header", "ERROR", err)
+		}
+
+		return Path{
+			ModelFiles: []string{dest},
+			Downloaded: true,
+			Validated:  true,
+			FileSizes:  []int64{info.Size()},
+		}, nil
+	}
+
 	stagingDir := filepath.Join(m.modelsPath, partialDir)
 	if err := os.MkdirAll(stagingDir, 0o755); err != nil {
 		return Path{}, fmt.Errorf("download: create staging directory: %w", err)

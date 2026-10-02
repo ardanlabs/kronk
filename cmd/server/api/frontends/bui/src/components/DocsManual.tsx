@@ -324,7 +324,7 @@ kronk libs --list-installs
 
 # Install the supported version using its exact release manifest pin.
 kronk libs --local \\
-  --version=b11321@sha256:e3866933604dd02ae45e0b20e802a75f6053fcd2abc12d01b48d4bcffaa33923
+  --version=b11331@sha256:7b42fa948765a281692cbae63efbd31e1228efec3fbca0cc4375e8106ee7cab1
 
 # Explicitly select CPU instead of an available GPU.
 KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
@@ -1454,7 +1454,7 @@ krn, err := kronk.New(
           <p>Kronk checks these sources in that order. A <code>draft-model</code> block containing a <code>model-id</code> explicitly selects the classic separate draft and takes precedence over the MTP forms. Without one, Kronk uses a compatible companion MTP file when present, then checks the target for an embedded MTP head. If no source is available, the model runs normally without speculation.</p>
           <p>A <code>draft-model</code> block containing only <code>ndraft</code> is different: it changes the MTP draft ceiling and does not select a classic draft or disable MTP.</p>
           <p>The model-level <code>speculation</code> setting selects the implementation. <code>auto</code> keeps the normal priority order, <code>disabled</code> runs target-only, <code>classic</code> requires a separate draft model, and <code>mtp</code> requires a compatible companion or embedded head. Explicit selection makes it possible to benchmark the same target with MTP enabled and disabled without changing downloaded model files.</p>
-          <p>Embedded detection happens before llama.cpp loads the target. Kronk reads the first GGUF shard, where model metadata is stored, and enables MTP tensor loading when any positive <code>nextn_predict_layers</code> metadata value is present. The lookup uses the metadata suffix rather than a hard-coded architecture name, so a supported future architecture can advertise the same contract. This early step is required because llama.cpp otherwise omits gated MTP tensors during model load; adding an <code>ndraft</code> setting after load cannot recover them.</p>
+          <p>Embedded detection happens before llama.cpp loads the target. Kronk reads the first GGUF shard, where model metadata is stored, and enables MTP tensor loading when a recognized architecture advertises a positive <code>nextn_predict_layers</code> value and that architecture's runtime is enabled. This early step is required because llama.cpp otherwise omits gated MTP tensors during model load; adding an <code>ndraft</code> setting after load cannot recover them.</p>
           <p>MTP also requires support from the loaded llama.cpp library. When a model advertises MTP but the required API is unavailable, Kronk reports that MTP was disabled at model load and serves the model without speculation.</p>
           <h3 id="63-choosing-a-drafter">6.3 Choosing a Drafter</h3>
           <h4 id="631-classic-separate-draft">6.3.1 Classic separate draft</h4>
@@ -1471,7 +1471,8 @@ krn, err := kronk.New(
           <h4 id="632-mtp">6.3.2 MTP</h4>
           <p>MTP is normally the simpler choice when the downloaded model provides a supported embedded or companion head. It is architecture-matched to its target, supports multiple execution slots, and does not require a <code>model-id</code> in the <code>draft-model</code> configuration.</p>
           <p>An embedded head requires no companion file. A companion MTP head is an additional model-specific file, but Kronk's catalog and download flow can discover and associate files at the repository root or under <code>MTP/</code> with the target automatically. It is not configured as a classic <code>draft-model</code>.</p>
-          <p>Qwen3.8 Flash Next's separate <code>qwen4exp</code> sidecars are not selected yet. Their runtime differs from the supported Qwen3.8-27B <code>qwen35</code> companion and requires additional llama.cpp and Kronk support.</p>
+          <p>Qwen3.8 Flash Next's <code>qwen4exp</code> MTP runtime is scaffolded but deliberately disabled. Kronk recognizes embedded heads and self-contained companion GGUFs, routes them through the own-KV runtime, and keeps their tensors and sidecars unloaded while disabled. Existing shared-tensor sidecars are not compatible; the companion must contain its own token embeddings and output tensors.</p>
+          <p>Activation is waiting for a downloadable llama.cpp builder release containing the recurrent-memory assertion fix from upstream PR #29799 and the Qwen4Exp QSA/indexer correctness fixes from PR #29819. The pinned b11331 bundle contains the initial Qwen4Exp MTP implementation but not both follow-up fixes. In <code>auto</code> mode Qwen4Exp therefore runs target-only; explicitly selecting <code>mtp</code> reports that the architecture is disabled. This does not disable ordinary target-only inference for Qwen3.8 Flash Next models.</p>
           <p>MTP availability is a property of the downloaded files and the loaded llama.cpp library. Naming a model “MTP” or adding an <code>ndraft</code> override cannot create an MTP head that is not present.</p>
           <h3 id="64-draft-size-and-classic-adaptive-throttling">6.4 Draft Size and Classic Adaptive Throttling</h3>
           <p><code>ndraft</code> is the maximum number of candidates the drafter attempts in one round. Larger values can save more target passes when acceptance remains high, but they also increase wasted draft and verification work when proposals are rejected.</p>

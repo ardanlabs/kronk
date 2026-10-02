@@ -10,13 +10,16 @@ func TestMTPBackendForPlan(t *testing.T) {
 		wantArtifact      mtpArtifact
 		wantSharedKV      bool
 		wantFixedPosition bool
+		wantWideEmbedding bool
 		wantErr           bool
 	}{
-		{"embedded Qwen35", speculationPlan{MTPArchitecture: mtpArchitectureQwen35OwnKV, MTPArtifact: mtpArtifactEmbedded}, "qwen35-own-kv", mtpArtifactEmbedded, false, false, false},
-		{"companion Qwen35", speculationPlan{MTPArchitecture: mtpArchitectureQwen35OwnKV, MTPArtifact: mtpArtifactCompanion}, "qwen35-own-kv", mtpArtifactCompanion, false, false, false},
-		{"companion Gemma", speculationPlan{MTPArchitecture: mtpArchitectureGemmaSharedKV, MTPArtifact: mtpArtifactCompanion}, "gemma-shared-kv", 0, true, true, false},
-		{"embedded Gemma rejected", speculationPlan{MTPArchitecture: mtpArchitectureGemmaSharedKV, MTPArtifact: mtpArtifactEmbedded}, "", 0, false, false, true},
-		{"missing architecture rejected", speculationPlan{MTPArtifact: mtpArtifactCompanion}, "", 0, false, false, true},
+		{"embedded Qwen35", speculationPlan{MTPArchitecture: mtpArchitectureQwen35OwnKV, MTPArtifact: mtpArtifactEmbedded}, "qwen35-own-kv", mtpArtifactEmbedded, false, false, false, false},
+		{"companion Qwen35", speculationPlan{MTPArchitecture: mtpArchitectureQwen35OwnKV, MTPArtifact: mtpArtifactCompanion}, "qwen35-own-kv", mtpArtifactCompanion, false, false, false, false},
+		{"embedded Qwen4Exp scaffold", speculationPlan{MTPArchitecture: mtpArchitectureQwen4ExpOwnKV, MTPArtifact: mtpArtifactEmbedded}, "qwen4exp-own-kv", mtpArtifactEmbedded, false, false, true, false},
+		{"companion Qwen4Exp scaffold", speculationPlan{MTPArchitecture: mtpArchitectureQwen4ExpOwnKV, MTPArtifact: mtpArtifactCompanion}, "qwen4exp-own-kv", mtpArtifactCompanion, false, false, true, false},
+		{"companion Gemma", speculationPlan{MTPArchitecture: mtpArchitectureGemmaSharedKV, MTPArtifact: mtpArtifactCompanion}, "gemma-shared-kv", 0, true, true, false, false},
+		{"embedded Gemma rejected", speculationPlan{MTPArchitecture: mtpArchitectureGemmaSharedKV, MTPArtifact: mtpArtifactEmbedded}, "", 0, false, false, false, true},
+		{"missing architecture rejected", speculationPlan{MTPArtifact: mtpArtifactCompanion}, "", 0, false, false, false, true},
 	}
 
 	for _, tt := range tests {
@@ -31,8 +34,13 @@ func TestMTPBackendForPlan(t *testing.T) {
 			if got := backend.name(); got != tt.wantName {
 				t.Errorf("name = %q, want %q", got, tt.wantName)
 			}
-			if qwen, ok := backend.(qwen35OwnKVBackend); ok && qwen.artifact != tt.wantArtifact {
-				t.Errorf("artifact = %d, want %d", qwen.artifact, tt.wantArtifact)
+			if qwen, ok := backend.(ownKVMTPBackend); ok {
+				if qwen.artifact != tt.wantArtifact {
+					t.Errorf("artifact = %d, want %d", qwen.artifact, tt.wantArtifact)
+				}
+				if qwen.wideEmbedding != tt.wantWideEmbedding {
+					t.Errorf("wideEmbedding = %t, want %t", qwen.wideEmbedding, tt.wantWideEmbedding)
+				}
 			}
 			if got := backend.sharedKV(); got != tt.wantSharedKV {
 				t.Errorf("sharedKV = %t, want %t", got, tt.wantSharedKV)
