@@ -32,6 +32,7 @@ func resolveGeneric(metadata metadata) Profile {
 			KeyLength:         keyLength,
 			ValueLength:       valueLength,
 		},
+		Decision:        resolveDecision(metadata, arch),
 		Attention:       gguf.ParseAttentionFacts(metadata.values, arch, blockCount),
 		MoE:             gguf.DetectMoE(metadata.values),
 		Rope:            gguf.ParseRopeFacts(metadata.values, arch),

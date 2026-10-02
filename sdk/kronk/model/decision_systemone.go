@@ -120,9 +120,6 @@ func decisionSystemOneOptions(question DecisionQuestion) ([]systemOneOption, err
 }
 
 func decisionTemperature(m *Model, question DecisionQuestion) (float64, error) {
-	architecture := m.modelInfo.Metadata["general.architecture"]
-	prefix := architecture + ".decision.temperature."
-
 	n := decisionOptionCount(question)
 	bucket := ""
 	if m.modelInfo.decisionProtocol == DecisionProtocolLev {
@@ -148,13 +145,12 @@ func decisionTemperature(m *Model, question DecisionQuestion) (float64, error) {
 	}
 
 	for _, suffix := range []string{string(question.Type) + "." + bucket, string(question.Type)} {
-		value, exists := m.modelInfo.Metadata[prefix+suffix]
+		temperature, exists, err := m.modelInfo.profile.Decision.Temperature(suffix)
 		if !exists {
 			continue
 		}
-		temperature, err := strconv.ParseFloat(value, 64)
-		if err != nil || temperature <= 0 {
-			return 0, fmt.Errorf("invalid decision temperature %s=%q", prefix+suffix, value)
+		if err != nil {
+			return 0, err
 		}
 		return temperature, nil
 	}

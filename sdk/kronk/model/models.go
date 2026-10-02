@@ -157,9 +157,8 @@ func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 	modelID := modelIDFromFiles(cfg.ModelFiles)
 
 	isEmbedModel, isRerankModel := detectEmbedRerank(modelID)
-	decisionProtocol := detectDecisionProtocol(cfg.DecisionProtocol, modelID, metadata)
-
 	profile := modelprofile.Resolve(metadata)
+	decisionProtocol := detectDecisionProtocol(cfg.DecisionProtocol, modelID, metadata, profile)
 	modelType := detectModelType(model, profile)
 
 	return ModelInfo{
@@ -180,13 +179,12 @@ func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 	}
 }
 
-func detectDecisionProtocol(configured DecisionProtocol, modelID string, metadata map[string]string) DecisionProtocol {
+func detectDecisionProtocol(configured DecisionProtocol, modelID string, metadata map[string]string, profile modelprofile.Profile) DecisionProtocol {
 	if !configured.IsZero() {
 		return configured
 	}
 
-	architecture := metadata["general.architecture"]
-	switch metadata[architecture+".decision.type"] {
+	switch profile.Decision.Type {
 	case "openjev":
 		return DecisionProtocolOpenJEV
 	case "laya":

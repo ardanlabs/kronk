@@ -107,6 +107,7 @@ type Profile struct {
 	Purpose                Purpose
 	MemorySemantics        MemorySemantics
 	Dimensions             Dimensions
+	Decision               Decision
 	Attention              gguf.AttentionFacts
 	MoE                    gguf.MoEInfo
 	Rope                   gguf.RopeFacts

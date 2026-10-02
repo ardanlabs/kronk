@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -152,7 +153,7 @@ func TestDecisionTemperatureBuckets(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := Model{modelInfo: ModelInfo{Metadata: tt.metadata, decisionProtocol: tt.protocol}}
+			m := Model{modelInfo: ModelInfo{Metadata: tt.metadata, decisionProtocol: tt.protocol, profile: modelprofile.Resolve(tt.metadata)}}
 			question := DecisionQuestion{Type: DecisionQuestionTypeChoice, Options: make([]DecisionOption, tt.options)}
 			got, err := decisionTemperature(&m, question)
 			if err != nil {

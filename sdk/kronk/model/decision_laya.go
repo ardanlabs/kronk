@@ -3,7 +3,6 @@ package model
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -35,11 +34,9 @@ func newLayaProtocol(m *Model) (*layaProtocol, error) {
 		return nil, fmt.Errorf("init-laya: invalid output embedding width %d", outputWidth)
 	}
 
-	architecture := m.modelInfo.Metadata["general.architecture"]
-	value := m.modelInfo.Metadata[architecture+".decision.max_head_tokens"]
-	maxHeadTokens, err := strconv.Atoi(value)
-	if err != nil || maxHeadTokens <= 0 {
-		return nil, fmt.Errorf("init-laya: invalid max_head_tokens %q", value)
+	maxHeadTokens, err := m.modelInfo.profile.Decision.MaxHeadTokens()
+	if err != nil {
+		return nil, fmt.Errorf("init-laya: %w", err)
 	}
 
 	return &layaProtocol{

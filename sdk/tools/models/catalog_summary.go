@@ -250,14 +250,12 @@ func CapabilitiesFor(metadata map[string]string, hasProjection bool) CatalogCapa
 // published model names remain as a fallback for older GGUFs.
 func CapabilitiesForModel(metadata map[string]string, hasProjection bool, modelID string) CatalogCapabilities {
 	profile := modelprofile.Resolve(metadata)
-	architecture := metadata["general.architecture"]
-	decisionType := metadata[architecture+".decision.type"]
 	caps := CatalogCapabilities{
 		Streaming: true,
 	}
 
 	switch {
-	case decisionType != "" || profile.Purpose == modelprofile.PurposeGeneration && isDecisionModelName(metadata["general.name"]+" "+modelID):
+	case profile.Decision.Type != "" || profile.Purpose == modelprofile.PurposeGeneration && isDecisionModelName(metadata["general.name"]+" "+modelID):
 		caps.Endpoint = "decision"
 		caps.Decision = true
 		caps.Streaming = false

@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 )
 
 func TestValidateDecisionRequest(t *testing.T) {
@@ -173,7 +175,7 @@ func TestDetectDecisionProtocol(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := detectDecisionProtocol(tt.configured, tt.modelID, tt.metadata)
+			got := detectDecisionProtocol(tt.configured, tt.modelID, tt.metadata, modelprofile.Resolve(tt.metadata))
 			if got != tt.want {
 				t.Fatalf("protocol: got %q, want %q", got, tt.want)
 			}
