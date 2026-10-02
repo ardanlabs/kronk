@@ -120,3 +120,19 @@ func TestMaximumBatchConcurrencyUsesGenerationIntervals(t *testing.T) {
 		t.Fatalf("maximum concurrency = %d, want 3", got)
 	}
 }
+
+func TestMaximumEventGapFiltersWindow(t *testing.T) {
+	origin := time.Unix(100, 0)
+	events := []time.Time{
+		origin,
+		origin.Add(100 * time.Millisecond),
+		origin.Add(600 * time.Millisecond),
+		origin.Add(700 * time.Millisecond),
+	}
+	got := maximumEventGap(events, func(start, end time.Time) bool {
+		return !start.Before(origin.Add(100*time.Millisecond)) && !end.After(origin.Add(600*time.Millisecond))
+	})
+	if got != 0.5 {
+		t.Fatalf("maximum event gap = %f, want 0.5", got)
+	}
+}

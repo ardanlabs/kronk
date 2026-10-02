@@ -175,15 +175,6 @@ func seconds(duration time.Duration) float64 {
 	return float64(duration.Round(time.Millisecond)) / float64(time.Second)
 }
 
-// Scenario implementations are kept in separate files. These declarations
-// make an incomplete checkout fail clearly while the runner is developed in
-// auditable phases.
-func runMedia(*runContext) scenarioResult { return notImplemented("media") }
-
-func notImplemented(name string) scenarioResult {
-	return scenarioResult{Failures: []string{name + " scenario is not implemented"}}
-}
-
 func newFlagSet() *flag.FlagSet {
 	fs := flag.NewFlagSet("reliability", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)

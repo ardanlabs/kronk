@@ -43,6 +43,7 @@ type config struct {
 	BatchConversations int
 
 	MediaModel               string
+	MediaProfile             string
 	MediaImage               string
 	MediaExpectedTerms       []string
 	MediaMaxTokens           int
@@ -92,6 +93,7 @@ func parseConfig(args []string) (config, bool, error) {
 	fs.IntVar(&cfg.BatchConversations, "batch-conversations", 5, "conversations; values above slots exercise queue pressure")
 
 	fs.StringVar(&cfg.MediaModel, "media-model", "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT", "multimodal model")
+	fs.StringVar(&cfg.MediaProfile, "media-profile", "all", "media profile: correctness, prefill, or all")
 	fs.StringVar(&cfg.MediaImage, "media-image", "examples/samples/giraffe.jpg", "probe image")
 	fs.StringVar(&expectedTerms, "media-expect", "giraffe", "comma-separated expected subject terms")
 	fs.IntVar(&cfg.MediaMaxTokens, "media-max-tokens", 128, "maximum media correctness completion tokens")
@@ -138,6 +140,9 @@ func (cfg config) validate() error {
 	if cfg.Timeout <= 0 || cfg.MTPPromptTokens <= 0 || cfg.MTPMaxTokens <= 0 || cfg.MTPRequests < 0 {
 		return errors.New("timeouts and MTP token counts must be positive; -mtp-requests must not be negative")
 	}
+	if cfg.Seed < 0 {
+		return errors.New("-seed must not be negative")
+	}
 	if cfg.MTPProfile != "all" && cfg.MTPProfile != "embedded" && cfg.MTPProfile != "companion" {
 		return errors.New("-mtp-profile must be embedded, companion, or all")
 	}
@@ -155,6 +160,9 @@ func (cfg config) validate() error {
 	}
 	if cfg.MediaMaxTokens <= 0 || cfg.MediaGenerationMaxTokens <= 0 || cfg.MediaImageMaxTokens <= 0 || cfg.MediaMaxGenerationGap <= 0 {
 		return errors.New("media token counts and generation gap must be positive")
+	}
+	if cfg.MediaProfile != "all" && cfg.MediaProfile != "correctness" && cfg.MediaProfile != "prefill" {
+		return errors.New("-media-profile must be correctness, prefill, or all")
 	}
 	if len(cfg.MediaExpectedTerms) == 0 {
 		return errors.New("-media-expect must contain at least one term")
