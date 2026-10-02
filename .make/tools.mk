@@ -7,12 +7,27 @@
 # Run against the current source with the tools-specific model configuration:
 #
 #   make server-for-tools
-#   make test-load-all
+#   make test-load-all # Or another tool wanted
 #   make kronk-server-logs  # Optional: follow the detached server log.
 #   make kronk-server-stop
 #
 # The tools validate the active model configuration but never modify it or
 # manage the server. Restart the server after editing model_config_tools.yaml.
+#
+# Further analysis with some harness: provide summary.json,
+# events.ndjson, and tool.log from the same RELIABILITY_OUT, plus
+# model_config_tools.yaml for the expected runtime settings. Do not provide the
+# full ~/.kronk/kronk.log unless the curated evidence is unavailable or a
+# failure needs deeper investigation. Each invocation replaces RELIABILITY_OUT;
+# preserve separate runs with, for example:
+#
+#   make test-load-mtp RELIABILITY_OUT=/tmp/kronk-tools/mtp
+#   make test-load-batch RELIABILITY_OUT=/tmp/kronk-tools/batch
+#
+# Suggested analysis prompt:
+#   Analyze MTP drafting and acceptance, IMC exact and append reuse, and batch
+#   slot overlap, queue pressure, and isolation. Distinguish tool assertions
+#   from trace-correlated server evidence, and report failures or evidence gaps.
 
 server-for-tools:
 	KRONK_POOL_MODEL_CONFIG_FILE="$(CURDIR)/.tools/reliability/model_config_tools.yaml" \
