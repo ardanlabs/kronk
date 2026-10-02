@@ -28,20 +28,21 @@
 //
 //   - Restart the server after changing model configuration.
 //
-//     Qwen3-0.6B-Q8_0:
+//     unsloth/Qwen3-0.6B-Q8_0:
 //     nseq-max: 1
 //     queue-depth: 2
 //     admission-timeout: 100ms
 //
 // Installed servers use ~/.kronk/models/model_config.yaml by default. The
-// repository's make kronk-server target uses zarf/kms/model_config.yaml.
+// source-based reliability workflow selects
+// .tools/reliability/model_config_tools.yaml explicitly; see .make/tools.mk.
 //
 // Optional environment variables:
 //
 //   - KRONK_WEB_API_HOST overrides http://localhost:11435.
 //   - KRONK_TOKEN supplies the bearer token when inference auth is enabled.
-//   - KRONK_LIFECYCLE_MODEL overrides Qwen3-0.6B-Q8_0; configure the matching
-//     model ID with the same lifecycle settings above.
+//   - KRONK_LIFECYCLE_MODEL overrides unsloth/Qwen3-0.6B-Q8_0; configure the
+//     matching model ID with the same lifecycle settings above.
 //   - KRONK_LIFECYCLE_OUT overrides .tools/lifecycle-load/output.
 //   - KRONK_SERVER_LOG overrides ~/.kronk/kronk.log.
 //
@@ -72,7 +73,7 @@ import (
 
 const (
 	defaultHost              = "http://localhost:11435"
-	defaultModel             = "Qwen3-0.6B-Q8_0"
+	defaultModel             = "unsloth/Qwen3-0.6B-Q8_0"
 	defaultOutput            = ".tools/lifecycle-load/output"
 	expectedAdmissionTimeout = 100 * time.Millisecond
 	queuedTimeout            = 300 * time.Millisecond

@@ -3,6 +3,16 @@
 # events.ndjson, and tool.log. The runner reads only bytes appended to the
 # detached server log during the invocation and retains high-value events whose
 # trace IDs match its requests. Use a unique RELIABILITY_OUT to preserve a run.
+#
+# Run against the current source with the tools-specific model configuration:
+#
+#   KRONK_POOL_MODEL_CONFIG_FILE="$PWD/.tools/reliability/model_config_tools.yaml" make kronk-server-detach
+#   make test-load-all
+#   make kronk-server-logs  # Optional: follow the detached server log.
+#   make kronk-server-stop
+#
+# The tools validate the active model configuration but never modify it or
+# manage the server. Restart the server after editing model_config_tools.yaml.
 
 RELIABILITY_HOST ?= http://localhost:11435
 RELIABILITY_OUT ?= .tools/reliability/output
