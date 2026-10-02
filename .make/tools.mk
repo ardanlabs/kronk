@@ -87,39 +87,78 @@ define run_reliability
 		$(2) $(RELIABILITY_ARGS)
 endef
 
+# -------------------------------
+
 # Both embedded-head and separate companion/own-KV MTP profiles.
 test-load-mtp:
 	$(call run_reliability,mtp,-mtp-profile all)
 
+# Embedded-head MTP probe. Calibrates one distinct prompt per slot, releases all
+# requests together, and verifies scheduler activation and per-request drafting.
 test-load-mtp-embedded:
 	$(call run_reliability,mtp,-mtp-profile embedded)
 
+# Separate companion/own-KV MTP probe. Verifies the catalog-provided companion
+# activates and produces draft coverage across every configured slot.
 test-load-mtp-companion:
 	$(call run_reliability,mtp,-mtp-profile companion)
 
+# -------------------------------
+
+# Single-slot hybrid state-integrity probe. Exercises deterministic cold/repeat
+# generation, exact and append IMC reuse, cancellation, and recovery.
 test-load-hybrid:
 	$(call run_reliability,hybrid-state,)
 
+# Staged begin/middle/end marker retrieval and warm-IMC probe. Targets beyond
+# the model's configured context window are reported as skipped.
 test-load-long-context:
 	$(call run_reliability,long-context,)
 
+# Long-running multi-slot batch-isolation probe. Exercises every slot plus queue
+# pressure, overlapping generation, marker isolation, IMC reuse, and 30K-token histories.
 test-load-batch:
 	$(call run_reliability,batch,)
+
+# -------------------------------
 
 # Media group and independently selectable subprofiles.
 test-load-media:
 	$(call run_reliability,media,-media-profile all)
 
+# Multimodal correctness probe. Verifies subject recognition, deterministic
+# replay, media IMC reuse, and isolation from a following text-only request.
 test-load-media-correctness:
 	$(call run_reliability,media,-media-profile correctness)
 
+# Media-prefill concurrency probe. Requires at least two slots and verifies
+# scheduler-observed media-prefill/generation overlap with bounded text gaps.
 test-load-media-prefill:
 	$(call run_reliability,media,-media-profile prefill)
+
+# -------------------------------
 
 # Runs only load/reliability scenarios, sequentially in one artifact set.
 # The separately configured lifecycle probe is intentionally excluded.
 test-load-all:
 	$(call run_reliability,all,)
+
+# ==============================================================================
+
+# Exercises the server's four-stage request lifecycle with one execution slot
+# and two admission permits. It holds Stage 4 open, verifies a queued request
+# cancels in Stage 3, verifies a third request times out in Stage 1, then
+# cancels the holder and confirms the slot and admission permit are released.
+# The selected model must use nseq-max: 1, queue-depth: 2, and
+# admission-timeout: 100ms; see .tools/lifecycle-load/main.go for setup details.
+# Requires nseq-max: 1
+LIFECYCLE_LOAD_OUT ?= .tools/lifecycle-load/output
+LIFECYCLE_SERVER_LOG ?= $(HOME)/.kronk/kronk.log
+
+example-lifecycle-load:
+	KRONK_LIFECYCLE_OUT="$(LIFECYCLE_LOAD_OUT)" \
+	KRONK_SERVER_LOG="$(LIFECYCLE_SERVER_LOG)" \
+	go run ./.tools/lifecycle-load
 
 # ==============================================================================
 
@@ -176,23 +215,6 @@ test-adversarial:
 	echo; \
 	cat .tools/adversarial/adversarial-triage.md; \
 	exit $$status
-
-# ==============================================================================
-
-# Exercises the server's four-stage request lifecycle with one execution slot
-# and two admission permits. It holds Stage 4 open, verifies a queued request
-# cancels in Stage 3, verifies a third request times out in Stage 1, then
-# cancels the holder and confirms the slot and admission permit are released.
-# The selected model must use nseq-max: 1, queue-depth: 2, and
-# admission-timeout: 100ms; see .tools/lifecycle-load/main.go for setup details.
-# Requires nseq-max: 1
-LIFECYCLE_LOAD_OUT ?= .tools/lifecycle-load/output
-LIFECYCLE_SERVER_LOG ?= $(HOME)/.kronk/kronk.log
-
-example-lifecycle-load:
-	KRONK_LIFECYCLE_OUT="$(LIFECYCLE_LOAD_OUT)" \
-	KRONK_SERVER_LOG="$(LIFECYCLE_SERVER_LOG)" \
-	go run ./.tools/lifecycle-load
 
 # ==============================================================================
 
