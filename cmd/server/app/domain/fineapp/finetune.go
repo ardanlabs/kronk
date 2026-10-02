@@ -34,7 +34,8 @@ func fromBusRecipeResponse(modelID string, recipe finetune.Recipe) RecipeRespons
 	return RecipeResponse{
 		ModelID: modelID, Method: recipe.Method, BaseWeights: recipe.BaseWeights,
 		Optimizer: recipe.Optimizer, LearningRate: recipe.LearningRate, WeightDecay: recipe.WeightDecay,
-		BatchSize: recipe.BatchSize, MaximumEpochs: recipe.MaximumEpochs, Seed: int(recipe.Seed),
+		BatchSize: recipe.BatchSize, MaximumEpochs: recipe.MaximumEpochs, Seed: int64(recipe.Seed),
+		EarlyStoppingPatience: recipe.EarlyStoppingPatience,
 		LoRA: LoRARecipeResponse{
 			Rank: recipe.LoRA.Rank, Alpha: recipe.LoRA.Alpha, Scale: recipe.LoRA.Scale,
 			TargetModules: slices.Clone(recipe.LoRA.TargetModules),
@@ -67,17 +68,63 @@ func (a *app) startRun(ctx context.Context, r *http.Request) web.Encoder {
 	if err != nil {
 		return errs.New(errs.InvalidArgument, err)
 	}
+	if a.recipes == nil {
+		return errs.Errorf(errs.FailedPrecondition, "fine-tuning recipe is not configured")
+	}
+	defaults, err := a.recipes.Recipe(model)
+	if err != nil {
+		return errs.New(errs.FailedPrecondition, fmt.Errorf("inspect fine-tuning recipe: %w", err))
+	}
+	training, err := toBusTrainingConfig(req, defaults)
+	if err != nil {
+		return errs.New(errs.InvalidArgument, err)
+	}
 
 	run, err := a.finetuner.Start(context.WithoutCancel(ctx), finetune.Request{
-		Dataset: dataset,
-		Model:   model,
-		Runtime: a.runtime,
+		Dataset: dataset, Model: model, Runtime: a.runtime, Training: training,
 	}, nil)
 	if err != nil {
 		return errs.New(errs.FailedPrecondition, fmt.Errorf("start fine-tuning run: %w", err))
 	}
 
 	return jsonResponse{value: runFromBusiness(run)}
+}
+
+func toBusTrainingConfig(req StartRunRequest, defaults finetune.Recipe) (finetune.TrainingConfig, error) {
+	config := finetune.TrainingConfig{
+		MaximumEpochs: defaults.MaximumEpochs, LearningRate: defaults.LearningRate,
+		BatchSize: defaults.BatchSize, LoRARank: defaults.LoRA.Rank, LoRAAlpha: defaults.LoRA.Alpha,
+		WeightDecay: defaults.WeightDecay, EarlyStoppingPatience: defaults.EarlyStoppingPatience,
+		Seed: int64(defaults.Seed),
+	}
+	if req.MaximumEpochs != nil {
+		config.MaximumEpochs = *req.MaximumEpochs
+	}
+	if req.LearningRate != nil {
+		config.LearningRate = *req.LearningRate
+	}
+	if req.BatchSize != nil {
+		config.BatchSize = *req.BatchSize
+	}
+	if req.LoRARank != nil {
+		config.LoRARank = *req.LoRARank
+	}
+	if req.LoRAAlpha != nil {
+		config.LoRAAlpha = *req.LoRAAlpha
+	}
+	if req.WeightDecay != nil {
+		config.WeightDecay = *req.WeightDecay
+	}
+	if req.EarlyStoppingPatience != nil {
+		config.EarlyStoppingPatience = *req.EarlyStoppingPatience
+	}
+	if req.Seed != nil {
+		config.Seed = *req.Seed
+	}
+	if err := config.Validate(); err != nil {
+		return finetune.TrainingConfig{}, fmt.Errorf("training configuration: %w", err)
+	}
+	return config, nil
 }
 
 func (a *app) currentRun(_ context.Context, _ *http.Request) web.Encoder {

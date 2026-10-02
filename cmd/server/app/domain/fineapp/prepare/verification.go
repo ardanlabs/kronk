@@ -9,13 +9,14 @@ import (
 )
 
 const (
-	maxVerificationAttempts      = 2
-	maxVerificationTokens        = 2048
-	maxVerificationEvidenceRunes = 1200
-	verificationPass             = "pass"
-	verificationGrounding        = "grounding"
-	verificationTaskQuality      = "task_quality"
-	verificationUserRequirements = "user_requirements"
+	maxVerificationAttempts          = 2
+	maxVerificationRecordsPerRequest = 16
+	maxVerificationTokens            = 2048
+	maxVerificationEvidenceRunes     = 1200
+	verificationPass                 = "pass"
+	verificationGrounding            = "grounding"
+	verificationTaskQuality          = "task_quality"
+	verificationUserRequirements     = "user_requirements"
 )
 
 // VerificationResult records the semantic grounding decision for one preview record.
@@ -72,7 +73,7 @@ func (p *Previewer) verifyAndRepair(ctx context.Context, request PreviewRequest,
 		}
 
 		candidateCount := min(len(availablePassages), needed*2)
-		replacements, generationMetrics, err := p.generateRecords(ctx, request, formatPassages(availablePassages), availablePassages, candidateCount, exclusions, false, maxPreviewGenerationAttempts)
+		replacements, generationMetrics, err := p.generateRecords(ctx, request, formatPassages(availablePassages), availablePassages, candidateCount, exclusions, false, maxPreviewGenerationAttempts, len(passedRecords), expectedCount)
 		metrics.add(generationMetrics)
 		if err != nil && (!isGeneratedRecordsValidationError(err) || len(replacements) < needed) {
 			return nil, verification, metrics, err
@@ -116,6 +117,25 @@ func filterPassages(passages []string, excluded map[int]struct{}) []string {
 }
 
 func (p *Previewer) verifyRecords(ctx context.Context, model string, goal Goal, datasetInstructions string, records []Record) ([]VerificationResult, previewMetrics, error) {
+	results := make([]VerificationResult, 0, len(records))
+	var metrics previewMetrics
+	totalBatches := (len(records) + maxVerificationRecordsPerRequest - 1) / maxVerificationRecordsPerRequest
+	for start := 0; start < len(records); start += maxVerificationRecordsPerRequest {
+		end := min(start+maxVerificationRecordsPerRequest, len(records))
+		batch, batchMetrics, err := p.verifyRecordBatch(ctx, model, goal, datasetInstructions, records[start:end])
+		metrics.add(batchMetrics)
+		if err != nil {
+			return nil, metrics, fmt.Errorf("verification batch %d of %d: %w", start/maxVerificationRecordsPerRequest+1, totalBatches, err)
+		}
+		for index := range batch {
+			batch[index].RecordNumber += start
+		}
+		results = append(results, batch...)
+	}
+	return results, metrics, nil
+}
+
+func (p *Previewer) verifyRecordBatch(ctx context.Context, model string, goal Goal, datasetInstructions string, records []Record) ([]VerificationResult, previewMetrics, error) {
 	userPrompt := verificationUserPrompt(records, datasetInstructions)
 	enforceDatasetInstructions := datasetInstructions != ""
 	messages := verificationMessages(goal, enforceDatasetInstructions, userPrompt, "")
@@ -181,7 +201,7 @@ func verificationSystemPrompt(goal Goal, enforceDatasetInstructions bool) string
 	rules := "The pair must be a useful standalone training example for its stated task. The prompt must contain the subject and setup needed to answer it without an unseen document, table, listing, example, or earlier conversation. Reject unresolved references such as 'this manner'. The target must contain every fact requested by the prompt and no additional fact or clause. The prompt and target must request the same answer type and action: reject a flag when an environment-variable name was requested, and reject a disabling target when the prompt asks how to enable the feature. Reject a prompt that states or substantially restates the answer before asking for it. Reject targets with clearly unrelated code, logs, terminal output, or surrounding prose. Do not reject a focused source sentence merely because a shorter answer could be written when no concise target candidate is available."
 	switch goal {
 	case GoalQuestionAnswer:
-		rules += " The prompt must be a natural question ending with a question mark. Reject document-navigation questions about section, page, or index locations. If the question asks for one value, percentage, Boolean zero value, identifier, declaration, command, function, or result, reject an entire function, transcript, trace, benchmark report, multi-sentence passage, or target containing surrounding fields, metrics, annotations, or explanations."
+		rules += " The prompt must be a natural question ending with a question mark unless the record is explicitly labeled USER-APPROVED EDIT; for an approved edit, accept any non-empty prompt style and judge its grounding and meaning without rewriting it. Reject document-navigation questions about section, page, or index locations. If the question asks for one value, percentage, Boolean zero value, identifier, declaration, command, function, or result, reject an entire function, transcript, trace, benchmark report, multi-sentence passage, or target containing surrounding fields, metrics, annotations, or explanations."
 	case GoalClassification:
 		rules += " The prompt must identify the input being classified and the target must be only the supported category."
 	case GoalNumericPrediction:
@@ -195,7 +215,7 @@ func verificationSystemPrompt(goal Goal, enforceDatasetInstructions bool) string
 		instructionRules = "The user's instruction controls how every record is written and is an acceptance requirement. Reject a record that does not follow it. Only source grounding, factual correctness, and the required output structure take priority over the user's instruction."
 		outcomeRules = "Return one outcome for each record_N property: pass when the record satisfies every requirement; grounding when a necessary fact is unsupported, contradictory, ambiguous, or requires outside knowledge; task_quality when the prompt and target do not form a useful standalone example for the requested task; or user_requirements when the record is otherwise valid but does not follow the user-provided dataset requirements."
 	}
-	return "You are a careful verifier for supervised fine-tuning data. Evaluate the prompt, source evidence, and selected target. " + instructionRules + " " + outcomeRules + " Accept faithful paraphrases, ordinary synonyms, concise answers, and focused source sentences when the relationship remains exact. Shared topic words are not enough: use grounding when the prompt names a different field, entity, operation, or measurement than the target, or when the target is only one fragment of the requested output. Preserve the exact role and capitalization of code symbols: reject a prompt that reinterprets a method as a type or interface, attributes an API to the wrong package, or combines alternate APIs. A why question must be answered with the causal reason, not merely a repetition of its conclusion. A yes-or-no question must receive an explicit yes or no. Reject a prompt whose premise conflicts with the evidence, supplies the answer, or depends on an unseen example or output. Do not require the target to repeat its subject when the evidence clearly connects that subject to the answer. Use grounding for a defect where a necessary entity, relationship, number, or qualifier is unsupported, the relationship is ambiguous, or the target does not answer what was asked. In particular, reject an isolated value when its label or subject from the prompt is absent from the evidence. " + rules + " Use grounding if answering requires outside knowledge or another source passage. Return every required record_N property."
+	return "You are a careful verifier for supervised fine-tuning data. Evaluate the prompt, source evidence, and selected target. " + instructionRules + " " + outcomeRules + " Accept faithful paraphrases, ordinary synonyms, concise answers, and focused source sentences when the relationship remains exact. Shared topic words are not enough: use grounding when the prompt names a different field, entity, operation, or measurement than the target, or when the target is only one fragment of the requested output. Preserve the exact role and capitalization of code symbols: reject a prompt that reinterprets a method as a type or interface, attributes an API to the wrong package, or combines alternate APIs. A code declaration proves only what is shown in that declaration; for example, the presence of a function named main does not by itself prove that it is the program entry point. A why question must be answered with the causal reason, not merely a repetition of its conclusion. A yes-or-no question must receive an explicit yes or no. Reject a prompt whose premise conflicts with the evidence, supplies the answer, or depends on an unseen example or output. Do not require the target to repeat its subject when the evidence clearly connects that subject to the answer. Use grounding for a defect where a necessary entity, relationship, number, or qualifier is unsupported, the relationship is ambiguous, or the target does not answer what was asked. In particular, reject an isolated value when its label or subject from the prompt is absent from the evidence. " + rules + " Use grounding if answering requires outside knowledge or another source passage. Return every required record_N property."
 }
 
 func verificationUserPrompt(records []Record, datasetInstructions string) string {
@@ -204,13 +224,37 @@ func verificationUserPrompt(records []Record, datasetInstructions string) string
 		prompt.WriteString(datasetInstructionsPrompt(datasetInstructions))
 		prompt.WriteString("\n\n")
 	}
-	prompt.WriteString("Verify whether each selected target is explicitly grounded by its evidence and independently satisfies its prompt, task quality requirements, and the user instruction when one is provided. TARGET 1 is the selected training target.\n\n")
+	prompt.WriteString("Verify whether each selected target is explicitly grounded by its evidence and independently satisfies its prompt, task quality requirements, and the user instruction when one is provided. TARGET 1 is the selected training target. Each record references exactly one numbered source-evidence block.\n")
+	evidence, evidenceIDs := sharedEvidenceReferences(records)
+	for index, source := range evidence {
+		fmt.Fprintf(&prompt, "\n[SOURCE EVIDENCE %d]\n%s\n", index+1, source)
+	}
 	for index, record := range records {
-		fmt.Fprintf(&prompt, "[RECORD %d]\nPROMPT: %s\nEVIDENCE: %s\n", index+1, record.Prompt, verificationEvidence(record))
+		fmt.Fprintf(&prompt, "\n[RECORD %d]\n", index+1)
+		if record.UserEdited {
+			prompt.WriteString("USER-APPROVED EDIT: preserve the prompt and target exactly as written; do not reject solely because the prompt is not phrased as a question.\n")
+		}
+		fmt.Fprintf(&prompt, "PROMPT: %s\nEVIDENCE BLOCK: %d\n", record.Prompt, evidenceIDs[index])
 		fmt.Fprintf(&prompt, "[TARGET 1] %s\n", record.Target)
-		prompt.WriteString("\n")
 	}
 	return strings.TrimSpace(prompt.String())
+}
+
+func sharedEvidenceReferences(records []Record) ([]string, []int) {
+	evidence := make([]string, 0, len(records))
+	evidenceIDs := make([]int, len(records))
+	ids := make(map[string]int, len(records))
+	for index, record := range records {
+		source := strings.TrimSpace(record.Evidence)
+		id, exists := ids[source]
+		if !exists {
+			evidence = append(evidence, source)
+			id = len(evidence)
+			ids[source] = id
+		}
+		evidenceIDs[index] = id
+	}
+	return evidence, evidenceIDs
 }
 
 func verificationEvidence(record Record) string {
@@ -299,12 +343,9 @@ func validateVerification(goal Goal, generated []generatedVerification, records 
 		}
 		passed := result.ExpectedTargetID == 1
 		reason := ""
-		expectedTarget := ""
+		expectedTarget := record.Target
 		if passed {
-			expectedTarget = record.Target
-		}
-		if passed {
-			if err := validateRecordShape(goal, record.Prompt, record.Target); err != nil {
+			if err := validateVerifiedRecordShape(goal, record); err != nil {
 				passed = false
 				reason = err.Error()
 			} else if err := validateRecordEvidence(goal, record.Prompt, record.Target, record.Evidence); err != nil {
@@ -319,9 +360,6 @@ func validateVerification(goal Goal, generated []generatedVerification, records 
 			}
 		}
 		if !passed {
-			if result.ExpectedTargetID == 1 {
-				expectedTarget = ""
-			}
 			if reason == "" {
 				reason = verificationFailureReason(result.FailureCategory)
 			}
@@ -338,6 +376,13 @@ func validateVerification(goal Goal, generated []generatedVerification, records 
 	}
 
 	return results, nil
+}
+
+func validateVerifiedRecordShape(goal Goal, record Record) error {
+	if record.UserEdited {
+		return nil
+	}
+	return validateRecordShape(goal, record.Prompt, record.Target)
 }
 
 func verificationFailureReason(category string) string {

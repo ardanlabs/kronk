@@ -3,6 +3,8 @@ package finetune
 
 import (
 	"context"
+	"errors"
+	"math"
 )
 
 // Runtime identifies the local inference process used to evaluate candidates.
@@ -16,10 +18,48 @@ type Runtime struct {
 // Request contains user and platform selections for one training run. Model
 // recipes intentionally remain behind Backend.
 type Request struct {
-	Dataset string  `json:"dataset"`
-	Output  string  `json:"output"`
-	Model   string  `json:"model"`
-	Runtime Runtime `json:"runtime"`
+	Dataset  string         `json:"dataset"`
+	Output   string         `json:"output"`
+	Model    string         `json:"model"`
+	Runtime  Runtime        `json:"runtime"`
+	Training TrainingConfig `json:"training"`
+}
+
+// TrainingConfig contains the user-adjustable settings for one run. The
+// backend continues to own architecture-specific choices such as target
+// modules, loss, padding, and checkpoint selection.
+type TrainingConfig struct {
+	MaximumEpochs         int     `json:"maximum_epochs"`
+	LearningRate          float64 `json:"learning_rate"`
+	BatchSize             int     `json:"batch_size"`
+	LoRARank              int     `json:"lora_rank"`
+	LoRAAlpha             float64 `json:"lora_alpha"`
+	WeightDecay           float64 `json:"weight_decay"`
+	EarlyStoppingPatience int     `json:"early_stopping_patience"`
+	Seed                  int64   `json:"seed"`
+}
+
+// Validate checks the model-neutral bounds accepted by the training API.
+func (config TrainingConfig) Validate() error {
+	switch {
+	case config.MaximumEpochs < 1 || config.MaximumEpochs > 100:
+		return errors.New("maximum epochs must be between 1 and 100")
+	case config.LearningRate <= 0 || config.LearningRate > 1 || math.IsNaN(config.LearningRate) || math.IsInf(config.LearningRate, 0):
+		return errors.New("learning rate must be finite and in (0,1]")
+	case config.BatchSize < 1 || config.BatchSize > 128:
+		return errors.New("batch size must be between 1 and 128")
+	case config.LoRARank < 1:
+		return errors.New("LoRA rank must be greater than zero")
+	case config.LoRAAlpha <= 0 || math.IsNaN(config.LoRAAlpha) || math.IsInf(config.LoRAAlpha, 0):
+		return errors.New("LoRA alpha must be finite and greater than zero")
+	case config.WeightDecay < 0 || config.WeightDecay > 1 || math.IsNaN(config.WeightDecay) || math.IsInf(config.WeightDecay, 0):
+		return errors.New("weight decay must be finite and between 0 and 1")
+	case config.EarlyStoppingPatience < 0 || config.EarlyStoppingPatience > config.MaximumEpochs:
+		return errors.New("early stopping patience must be between 0 and maximum epochs")
+	case config.Seed < 0:
+		return errors.New("seed must not be negative")
+	}
+	return nil
 }
 
 // LoRARecipe describes the low-rank adapters trained by a recipe.

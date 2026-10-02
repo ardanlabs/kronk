@@ -51,7 +51,14 @@ func TestManagerRunsOneBackgroundTrainingRunAndPersistsIt(t *testing.T) {
 	}}
 	manager := newTestManager(t, backend)
 	updates := make(chan RunInfo, 8)
-	initial, err := manager.Start(context.Background(), Request{Dataset: "dataset.jsonl", Model: "qwen3-4b"}, func(info RunInfo) {
+	trainingConfig := TrainingConfig{
+		MaximumEpochs: 5, LearningRate: 0.0001, BatchSize: 4,
+		LoRARank: 16, LoRAAlpha: 12, WeightDecay: 0.02,
+		EarlyStoppingPatience: 2, Seed: 42,
+	}
+	initial, err := manager.Start(context.Background(), Request{
+		Dataset: "dataset.jsonl", Model: "qwen3-4b", Training: trainingConfig,
+	}, func(info RunInfo) {
 		updates <- info
 	})
 	if err != nil {
@@ -76,7 +83,7 @@ func TestManagerRunsOneBackgroundTrainingRunAndPersistsIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(history) != 1 || history[0].ID != initial.ID || history[0].Status != StatusCompleted {
+	if len(history) != 1 || history[0].ID != initial.ID || history[0].Status != StatusCompleted || history[0].Training != trainingConfig {
 		t.Fatalf("history = %+v", history)
 	}
 }
@@ -146,8 +153,15 @@ func TestManagerResumesSameRunWithPersistedRuntime(t *testing.T) {
 	}}
 	manager := newTestManager(t, backend)
 	runtime := Runtime{LlamaServer: "llama-server", Port: 1234, ContextSize: 512, GPULayers: 4}
+	trainingConfig := TrainingConfig{
+		MaximumEpochs: 5, LearningRate: 0.0001, BatchSize: 4,
+		LoRARank: 16, LoRAAlpha: 12, WeightDecay: 0.02,
+		EarlyStoppingPatience: 2, Seed: 42,
+	}
 	updates := make(chan RunInfo, 8)
-	initial, err := manager.Start(t.Context(), Request{Dataset: "dataset.jsonl", Model: "gemma.gguf", Runtime: runtime}, func(info RunInfo) {
+	initial, err := manager.Start(t.Context(), Request{
+		Dataset: "dataset.jsonl", Model: "gemma.gguf", Runtime: runtime, Training: trainingConfig,
+	}, func(info RunInfo) {
 		updates <- info
 	})
 	if err != nil {
@@ -171,7 +185,7 @@ func TestManagerResumesSameRunWithPersistedRuntime(t *testing.T) {
 	}
 	first := <-requests
 	second := <-requests
-	if first.Runtime != runtime || second.Runtime != runtime || second.Output != first.Output {
+	if first.Runtime != runtime || second.Runtime != runtime || first.Training != trainingConfig || second.Training != trainingConfig || second.Output != first.Output {
 		t.Fatalf("run requests = first %+v, resumed %+v", first, second)
 	}
 	history, err := manager.History()

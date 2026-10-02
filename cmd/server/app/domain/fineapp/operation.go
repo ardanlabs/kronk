@@ -26,12 +26,14 @@ const (
 )
 
 type preparationOperations struct {
-	mu      sync.RWMutex
-	now     func() time.Time
-	nextID  int
-	active  bool
-	cancel  context.CancelFunc
-	current PreparationProgressResponse
+	mu             sync.RWMutex
+	now            func() time.Time
+	nextID         int
+	active         bool
+	cancel         context.CancelFunc
+	current        PreparationProgressResponse
+	phaseStartedAt []time.Time
+	phaseNames     []string
 }
 
 func newPreparationOperations() *preparationOperations {
@@ -58,6 +60,8 @@ func (operations *preparationOperations) start(parent context.Context, operation
 		StartedAt: now,
 		UpdatedAt: now,
 	}
+	operations.phaseStartedAt = nil
+	operations.phaseNames = nil
 	return ctx, operations.nextID, nil
 }
 
@@ -68,9 +72,14 @@ func (operations *preparationOperations) update(id int, stage string, completed,
 		return
 	}
 	operations.current.Stage = stage
+	operations.current.Phase = ""
 	operations.current.Completed = completed
 	operations.current.Total = total
 	operations.current.AcceptedRecords = accepted
+	operations.current.CompletedChunks = 0
+	operations.current.TotalChunks = 0
+	operations.current.PlannedRecords = 0
+	operations.current.EstimatedRemainingSeconds = 0
 	operations.current.UpdatedAt = operations.now().UTC()
 }
 
@@ -89,10 +98,110 @@ func (operations *preparationOperations) initializeDocumentDetails(id int, ids, 
 		return
 	}
 	operations.current.Documents = make([]PreparationDocumentProgressResponse, len(names))
+	operations.phaseStartedAt = make([]time.Time, len(names))
+	operations.phaseNames = make([]string, len(names))
 	for index, name := range names {
 		operations.current.Documents[index] = PreparationDocumentProgressResponse{ID: ids[index], Name: name, Status: documentQueued, Stage: "Waiting"}
 	}
 	operations.current.UpdatedAt = operations.now().UTC()
+}
+
+func (operations *preparationOperations) updateBuildProgress(id, index int, progress prepare.FullBuildProgress) {
+	operations.mu.Lock()
+	defer operations.mu.Unlock()
+	if id != operations.nextID || !operations.active || index < 0 || index >= len(operations.current.Documents) {
+		return
+	}
+
+	now := operations.now().UTC()
+	if operations.phaseNames[index] != progress.Phase {
+		operations.phaseNames[index] = progress.Phase
+		operations.phaseStartedAt[index] = now
+	}
+	completed, total := progress.AcceptedRecords, progress.PlannedRecords
+	estimateCompleted, estimateTotal := completed, total
+	switch progress.Phase {
+	case "analysis":
+		completed, total = progress.CompletedChunks, progress.TotalChunks
+		estimateCompleted, estimateTotal = completed, total
+	case "generation":
+		if progress.CompletedBatches > 0 && progress.TotalBatches > 0 {
+			estimateCompleted, estimateTotal = progress.CompletedBatches, progress.TotalBatches
+		}
+	case "finalization":
+		total = 1
+		completed = 0
+		if progress.Stage == "Dataset preparation complete" {
+			completed = 1
+		}
+		estimateCompleted, estimateTotal = completed, total
+	}
+	estimatedRemaining := estimateRemainingSeconds(operations.phaseStartedAt[index], now, estimateCompleted, estimateTotal)
+	document := &operations.current.Documents[index]
+	document.Status = documentProcessing
+	document.Stage = progress.Stage
+	document.Phase = progress.Phase
+	document.AcceptedRecords = progress.AcceptedRecords
+	document.AcceptedFacts = progress.AcceptedFacts
+	document.CompletedBatches = progress.CompletedBatches
+	document.TotalBatches = progress.TotalBatches
+	document.CompletedChunks = progress.CompletedChunks
+	document.TotalChunks = progress.TotalChunks
+	document.PlannedRecords = progress.PlannedRecords
+	document.EstimatedRemainingSeconds = estimatedRemaining
+	operations.current.Stage = progress.Stage
+	operations.current.Phase = progress.Phase
+	operations.current.Completed = completed
+	operations.current.Total = total
+	operations.current.AcceptedRecords = progress.AcceptedRecords
+	operations.current.CompletedChunks = progress.CompletedChunks
+	operations.current.TotalChunks = progress.TotalChunks
+	operations.current.PlannedRecords = progress.PlannedRecords
+	operations.current.EstimatedRemainingSeconds = estimatedRemaining
+	operations.current.UpdatedAt = now
+}
+
+func (operations *preparationOperations) updatePreviewProgress(id, index int, progress prepare.PreviewProgress) {
+	operations.mu.Lock()
+	defer operations.mu.Unlock()
+	if id != operations.nextID || !operations.active || index < 0 || index >= len(operations.current.Documents) {
+		return
+	}
+
+	now := operations.now().UTC()
+	if operations.phaseNames[index] != progress.Phase {
+		operations.phaseNames[index] = progress.Phase
+		operations.phaseStartedAt[index] = now
+	}
+	totalRecords := max(progress.TotalRecords, 0)
+	completedRecords := min(max(progress.CompletedRecords, 0), totalRecords)
+	estimatedRemaining := estimateRemainingSeconds(operations.phaseStartedAt[index], now, completedRecords, totalRecords)
+	document := &operations.current.Documents[index]
+	document.Status = documentProcessing
+	document.Stage = progress.Stage
+	document.Phase = progress.Phase
+	document.AcceptedRecords = completedRecords
+	document.PlannedRecords = totalRecords
+	document.EstimatedRemainingSeconds = estimatedRemaining
+	operations.current.Stage = progress.Stage
+	operations.current.Phase = progress.Phase
+	operations.current.Completed = completedRecords
+	operations.current.Total = totalRecords
+	operations.current.AcceptedRecords = completedRecords
+	operations.current.PlannedRecords = totalRecords
+	operations.current.EstimatedRemainingSeconds = estimatedRemaining
+	operations.current.UpdatedAt = now
+}
+
+func estimateRemainingSeconds(started, now time.Time, completed, total int) int {
+	if started.IsZero() || completed <= 0 || total <= completed {
+		return 0
+	}
+	elapsed := now.Sub(started)
+	if elapsed < time.Second {
+		return 0
+	}
+	return max(1, int((elapsed*time.Duration(total-completed)/time.Duration(completed)).Round(time.Second)/time.Second))
 }
 
 func (operations *preparationOperations) updateDocumentWork(id, index int, status, stage string, acceptedRecords, acceptedFacts, targetFacts, completedBatches, totalBatches int, workErr error) {
@@ -105,11 +214,16 @@ func (operations *preparationOperations) updateDocumentWork(id, index int, statu
 	document := &operations.current.Documents[index]
 	document.Status = status
 	document.Stage = stage
+	document.Phase = ""
 	document.AcceptedRecords = acceptedRecords
 	document.AcceptedFacts = acceptedFacts
 	document.TargetFacts = targetFacts
 	document.CompletedBatches = completedBatches
 	document.TotalBatches = totalBatches
+	document.CompletedChunks = 0
+	document.TotalChunks = 0
+	document.PlannedRecords = 0
+	document.EstimatedRemainingSeconds = 0
 	if workErr != nil {
 		document.Status = documentFailed
 		document.Error = workErr.Error()
@@ -126,6 +240,11 @@ func (operations *preparationOperations) updateDocumentWork(id, index int, statu
 	operations.current.Total = len(operations.current.Documents)
 	operations.current.AcceptedRecords = accepted
 	operations.current.Stage = stage
+	operations.current.Phase = ""
+	operations.current.CompletedChunks = 0
+	operations.current.TotalChunks = 0
+	operations.current.PlannedRecords = 0
+	operations.current.EstimatedRemainingSeconds = 0
 	operations.current.UpdatedAt = operations.now().UTC()
 }
 
@@ -171,6 +290,9 @@ func (operations *preparationOperations) finish(id int, err error) {
 	switch {
 	case errors.Is(err, context.Canceled):
 		status = preparationStopped
+		operations.current.Stage = "Stopped"
+		operations.current.Phase = ""
+		operations.current.EstimatedRemainingSeconds = 0
 		for index := range operations.current.Documents {
 			if operations.current.Documents[index].Status != documentCompleted {
 				operations.current.Documents[index].Status = documentStopped

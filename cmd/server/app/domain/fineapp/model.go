@@ -76,6 +76,8 @@ type Record struct {
 	Evidence          string `json:"evidence"`
 	FactID            string `json:"fact_id,omitempty"`
 	SourceDocument    string `json:"source_document,omitempty"`
+	SourceChunkID     string `json:"source_chunk_id,omitempty"`
+	ValidationPrompt  bool   `json:"validation_prompt,omitempty"`
 	IndependentPrompt bool   `json:"independent_prompt,omitempty"`
 }
 
@@ -191,31 +193,41 @@ type DocumentBuildResponse struct {
 
 // PreparationProgressResponse reports the current server-owned preparation operation.
 type PreparationProgressResponse struct {
-	Operation       string                                `json:"operation"`
-	Status          string                                `json:"status"`
-	Stage           string                                `json:"stage"`
-	Completed       int                                   `json:"completed"`
-	Total           int                                   `json:"total"`
-	AcceptedRecords int                                   `json:"accepted_records"`
-	Documents       []PreparationDocumentProgressResponse `json:"documents,omitempty"`
-	Error           string                                `json:"error,omitempty"`
-	StartedAt       time.Time                             `json:"started_at"`
-	UpdatedAt       time.Time                             `json:"updated_at"`
+	Operation                 string                                `json:"operation"`
+	Status                    string                                `json:"status"`
+	Stage                     string                                `json:"stage"`
+	Phase                     string                                `json:"phase,omitempty"`
+	Completed                 int                                   `json:"completed"`
+	Total                     int                                   `json:"total"`
+	AcceptedRecords           int                                   `json:"accepted_records"`
+	CompletedChunks           int                                   `json:"completed_chunks,omitempty"`
+	TotalChunks               int                                   `json:"total_chunks,omitempty"`
+	PlannedRecords            int                                   `json:"planned_records,omitempty"`
+	EstimatedRemainingSeconds int                                   `json:"estimated_remaining_seconds,omitempty"`
+	Documents                 []PreparationDocumentProgressResponse `json:"documents,omitempty"`
+	Error                     string                                `json:"error,omitempty"`
+	StartedAt                 time.Time                             `json:"started_at"`
+	UpdatedAt                 time.Time                             `json:"updated_at"`
 }
 
 // PreparationDocumentProgressResponse reports extraction state for one source.
 type PreparationDocumentProgressResponse struct {
-	ID               string `json:"id,omitempty"`
-	Name             string `json:"name"`
-	Status           string `json:"status"`
-	Stage            string `json:"stage"`
-	AcceptedRecords  int    `json:"accepted_records,omitempty"`
-	AcceptedFacts    int    `json:"accepted_facts,omitempty"`
-	TargetFacts      int    `json:"target_facts,omitempty"`
-	CompletedBatches int    `json:"completed_batches,omitempty"`
-	TotalBatches     int    `json:"total_batches,omitempty"`
-	Cached           bool   `json:"cached,omitempty"`
-	Error            string `json:"error,omitempty"`
+	ID                        string `json:"id,omitempty"`
+	Name                      string `json:"name"`
+	Status                    string `json:"status"`
+	Stage                     string `json:"stage"`
+	Phase                     string `json:"phase,omitempty"`
+	AcceptedRecords           int    `json:"accepted_records,omitempty"`
+	AcceptedFacts             int    `json:"accepted_facts,omitempty"`
+	TargetFacts               int    `json:"target_facts,omitempty"`
+	CompletedBatches          int    `json:"completed_batches,omitempty"`
+	TotalBatches              int    `json:"total_batches,omitempty"`
+	CompletedChunks           int    `json:"completed_chunks,omitempty"`
+	TotalChunks               int    `json:"total_chunks,omitempty"`
+	PlannedRecords            int    `json:"planned_records,omitempty"`
+	EstimatedRemainingSeconds int    `json:"estimated_remaining_seconds,omitempty"`
+	Cached                    bool   `json:"cached,omitempty"`
+	Error                     string `json:"error,omitempty"`
 }
 
 func validateDocumentIDs(ids []string) error {
@@ -234,8 +246,16 @@ func validateDocumentIDs(ids []string) error {
 
 // StartRunRequest identifies managed resources used for one training run.
 type StartRunRequest struct {
-	DatasetID string `json:"dataset_id"`
-	ModelID   string `json:"model_id"`
+	DatasetID             string   `json:"dataset_id"`
+	ModelID               string   `json:"model_id"`
+	MaximumEpochs         *int     `json:"maximum_epochs"`
+	LearningRate          *float64 `json:"learning_rate"`
+	BatchSize             *int     `json:"batch_size"`
+	LoRARank              *int     `json:"lora_rank"`
+	LoRAAlpha             *float64 `json:"lora_alpha"`
+	WeightDecay           *float64 `json:"weight_decay"`
+	EarlyStoppingPatience *int     `json:"early_stopping_patience"`
+	Seed                  *int64   `json:"seed"`
 }
 
 // LoRARecipeResponse describes the low-rank adapters trained by the backend.
@@ -263,20 +283,21 @@ type OutputRecipeResponse struct {
 
 // RecipeResponse exposes the backend-owned training settings for one model.
 type RecipeResponse struct {
-	ModelID             string                 `json:"model_id"`
-	Method              string                 `json:"method"`
-	BaseWeights         string                 `json:"base_weights"`
-	Optimizer           string                 `json:"optimizer"`
-	LearningRate        float64                `json:"learning_rate"`
-	WeightDecay         float64                `json:"weight_decay"`
-	BatchSize           int                    `json:"batch_size"`
-	MaximumEpochs       int                    `json:"maximum_epochs"`
-	Seed                int                    `json:"seed"`
-	LoRA                LoRARecipeResponse     `json:"lora"`
-	Sequence            SequenceRecipeResponse `json:"sequence"`
-	Loss                string                 `json:"loss"`
-	CheckpointSelection string                 `json:"checkpoint_selection"`
-	Output              OutputRecipeResponse   `json:"output"`
+	ModelID               string                 `json:"model_id"`
+	Method                string                 `json:"method"`
+	BaseWeights           string                 `json:"base_weights"`
+	Optimizer             string                 `json:"optimizer"`
+	LearningRate          float64                `json:"learning_rate"`
+	WeightDecay           float64                `json:"weight_decay"`
+	BatchSize             int                    `json:"batch_size"`
+	MaximumEpochs         int                    `json:"maximum_epochs"`
+	Seed                  int64                  `json:"seed"`
+	EarlyStoppingPatience int                    `json:"early_stopping_patience"`
+	LoRA                  LoRARecipeResponse     `json:"lora"`
+	Sequence              SequenceRecipeResponse `json:"sequence"`
+	Loss                  string                 `json:"loss"`
+	CheckpointSelection   string                 `json:"checkpoint_selection"`
+	Output                OutputRecipeResponse   `json:"output"`
 }
 
 // Decode implements the web decoder interface.
@@ -360,8 +381,18 @@ func recordsToBusiness(records []Record) []prepare.Record {
 			Evidence:          record.Evidence,
 			FactID:            record.FactID,
 			SourceDocument:    record.SourceDocument,
+			SourceChunkID:     record.SourceChunkID,
+			ValidationPrompt:  record.ValidationPrompt,
 			IndependentPrompt: record.IndependentPrompt,
 		}
+	}
+	return converted
+}
+
+func approvedRecordsToBusiness(records []Record) []prepare.Record {
+	converted := recordsToBusiness(records)
+	for i := range converted {
+		converted[i].UserApproved = true
 	}
 	return converted
 }
@@ -375,6 +406,8 @@ func recordsFromBusiness(records []prepare.Record) []Record {
 			Evidence:          record.Evidence,
 			FactID:            record.FactID,
 			SourceDocument:    record.SourceDocument,
+			SourceChunkID:     record.SourceChunkID,
+			ValidationPrompt:  record.ValidationPrompt,
 			IndependentPrompt: record.IndependentPrompt,
 		}
 	}

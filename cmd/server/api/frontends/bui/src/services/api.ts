@@ -64,6 +64,7 @@ import type {
   FineTuningPreviewResponse,
   FineTuningRecipeResponse,
   FineTuningRun,
+  FineTuningTrainingConfig,
 } from '../types';
 
 export const SESSION_EXPIRED_EVENT = 'kronk:session-expired';
@@ -1330,10 +1331,10 @@ class ApiService {
     });
   }
 
-  async startFineTuningRun(datasetID: string, modelID: string): Promise<FineTuningRun> {
+  async startFineTuningRun(datasetID: string, modelID: string, training: FineTuningTrainingConfig): Promise<FineTuningRun> {
     return this.request<FineTuningRun>('/fine-tuning/runs', {
       method: 'POST',
-      body: JSON.stringify({ dataset_id: datasetID, model_id: modelID }),
+      body: JSON.stringify({ dataset_id: datasetID, model_id: modelID, ...training }),
     });
   }
 
