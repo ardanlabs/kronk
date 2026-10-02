@@ -20,6 +20,7 @@ zarf/docker/openwebui/
 .tools/long-context-load/output/
 .tools/media-smoke/output/
 .tools/codegen-benchmark/output/
+.tools/reliability/output/
 
 # Binaries for programs and plugins
 *.exe
