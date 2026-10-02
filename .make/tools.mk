@@ -6,13 +6,17 @@
 #
 # Run against the current source with the tools-specific model configuration:
 #
-#   KRONK_POOL_MODEL_CONFIG_FILE="$PWD/.tools/reliability/model_config_tools.yaml" make kronk-server-detach
+#   make server-for-tools
 #   make test-load-all
 #   make kronk-server-logs  # Optional: follow the detached server log.
 #   make kronk-server-stop
 #
 # The tools validate the active model configuration but never modify it or
 # manage the server. Restart the server after editing model_config_tools.yaml.
+
+server-for-tools:
+	KRONK_POOL_MODEL_CONFIG_FILE="$(CURDIR)/.tools/reliability/model_config_tools.yaml" \
+		$(MAKE) kronk-server-detach
 
 RELIABILITY_HOST ?= http://localhost:11435
 RELIABILITY_OUT ?= .tools/reliability/output
