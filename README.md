@@ -114,14 +114,14 @@ Sometimes there are breaking changes to the family of ggml libraries that requir
 
 Here are some of the known compatible versions:
 
-| kronk     | yzma    | llama.cpp | bucky  | whisper.cpp | malina | stable-diffusion.cpp |
-| --------- | ------- | --------- | ------ | ----------- | ------ | -------------------- |
-| 1.32.8-rc1 | c25d400 | b11331    | v1.1.3 | v1.9.4      | v1.1.5 | master-929-3f8527a   |
-| 1.32.6    | ece4890 | b10896    | v1.1.2 | v1.9.3      | v1.1.0 | master-849-d04e895   |
-| 1.32.5    | v1.26.0 | v0.4.0    | v1.1.2 | v1.9.3      | v1.0.8 | master-841-6b3edaa   |
-| 1.32.4    | 6bd0208 | b10785    | v1.1.1 | v1.9.3      | v1.0.6 | master-841-6b3edaa   |
+| kronk  | yzma    | llama.cpp | bucky  | whisper.cpp | malina | stable-diffusion.cpp |
+| ------ | ------- | --------- | ------ | ----------- | ------ | -------------------- |
+| 1.32.8 | c25d400 | b11331    | v1.1.3 | v1.9.4      | v1.1.5 | master-929-3f8527a   |
+| 1.32.6 | ece4890 | b10896    | v1.1.2 | v1.9.3      | v1.1.0 | master-849-d04e895   |
+| 1.32.5 | v1.26.0 | v0.4.0    | v1.1.2 | v1.9.3      | v1.0.8 | master-841-6b3edaa   |
+| 1.32.4 | 6bd0208 | b10785    | v1.1.1 | v1.9.3      | v1.0.6 | master-841-6b3edaa   |
 
-Kronk 1.32.8-rc1 pins the llama.cpp manifest as
+Kronk 1.32.8 pins the llama.cpp manifest as
 `b11331@sha256:7b42fa948765a281692cbae63efbd31e1228efec3fbca0cc4375e8106ee7cab1`.
 The manifest authenticates the platform-specific archives selected by the downloader,
 so the default installation verifies both the manifest and the downloaded libraries.
