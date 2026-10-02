@@ -25,11 +25,8 @@ example-chat:
 example-concurrency:
 	cd examples && go run ./concurrency/main.go
 
-example-decision-jevstyle:
-	cd examples && go run ./decision/jevstyle/main.go
-
-example-decision-openjev:
-	cd examples && go run ./decision/openjev/main.go
+example-decision:
+	cd examples && go run ./decision/main.go
 
 example-embedding:
 	cd examples && go run ./embedding/main.go

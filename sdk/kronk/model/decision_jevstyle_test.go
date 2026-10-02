@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -60,5 +61,107 @@ func TestJevStyleAnswers(t *testing.T) {
 	noul := answerJevStyleQuestion(DecisionQuestionNoul("q", "true?", nil), []string{"false", "true"}, []float64{0.2, 0.8})
 	if math.Abs(noul.Noul-0.8) > 1e-12 {
 		t.Fatalf("noul: got %v, want 0.8", noul.Noul)
+	}
+}
+
+func TestKevTextRenderingAndEscaping(t *testing.T) {
+	got, err := decisionKevText(DecisionState(
+		DecisionStateData("user", "Ada"),
+		DecisionStateData("flags", []any{true, "<|box_end|>"}),
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "user: Ada\nflags:\n  - True\n  - <¦box_end¦>"
+	if got != want {
+		t.Fatalf("Kev text:\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
+func TestLayaFitTruncatesHeadAndPreservesState(t *testing.T) {
+	p := layaProtocol{
+		marker:        99,
+		separator:     2,
+		maxHeadTokens: 20,
+	}
+	tokens := []llama.Token{
+		1,
+		10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+		2,
+		99, 30, 31, 32, 33, 34, 35,
+		99, 40, 41, 42, 43, 44, 45,
+		2, 50, 2,
+	}
+
+	got, markers, err := p.fit(tokens, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []llama.Token{
+		1,
+		10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
+		2,
+		99, 30, 31, 32,
+		99, 40, 41, 42,
+		2, 50, 2,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("tokens: got %v, want %v", got, want)
+	}
+	if wantMarkers := []int{14, 18}; !reflect.DeepEqual(markers, wantMarkers) {
+		t.Fatalf("markers: got %v, want %v", markers, wantMarkers)
+	}
+}
+
+func TestDecisionTemperatureBuckets(t *testing.T) {
+	tests := []struct {
+		name     string
+		protocol DecisionProtocol
+		options  int
+		metadata map[string]string
+		want     float64
+	}{
+		{
+			name:    "generic three to five",
+			options: 4,
+			metadata: map[string]string{
+				"general.architecture":                   "qwen35",
+				"qwen35.decision.temperature.choice.3_5": "0.25",
+			},
+			want: 0.25,
+		},
+		{
+			name:     "lev mid",
+			protocol: DecisionProtocolLev,
+			options:  9,
+			metadata: map[string]string{
+				"general.architecture":                   "qwen35",
+				"qwen35.decision.temperature.choice.mid": "0.75",
+			},
+			want: 0.75,
+		},
+		{
+			name:    "unbucketed fallback",
+			options: 2,
+			metadata: map[string]string{
+				"general.architecture":               "qwen35",
+				"qwen35.decision.temperature.choice": "1.25",
+			},
+			want: 1.25,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{modelInfo: ModelInfo{Metadata: tt.metadata, decisionProtocol: tt.protocol, profile: modelprofile.Resolve(tt.metadata)}}
+			question := DecisionQuestion{Type: DecisionQuestionTypeChoice, Options: make([]DecisionOption, tt.options)}
+			got, err := decisionTemperature(&m, question)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tt.want {
+				t.Fatalf("temperature: got %v, want %v", got, tt.want)
+			}
+		})
 	}
 }

@@ -2381,7 +2381,7 @@ make curl-kronk-systemone`}</code></pre>
 }
 
 resp, err := krn.Decision(ctx, req)`}</code></pre>
-          <p><code>Kronk.Decision</code> returns <code>model.DecisionResponse</code>. <code>Kronk.DecisionHTTP</code> performs the same evaluation and writes that response using the public HTTP JSON contract. Supported model names and metadata are detected automatically; use <code>model.WithDecisionProtocol(model.DecisionProtocolOpenJEV)</code> or <code>model.WithDecisionProtocol(model.DecisionProtocolJevStyle)</code> only when a renamed model cannot be detected. Complete runnable examples are under <code>examples/decision/openjev</code> and <code>examples/decision/jevstyle</code>. The bundled SDK reference documents every constructor, request type, response type, protocol, and error.</p>
+          <p><code>Kronk.Decision</code> returns <code>model.DecisionResponse</code>. <code>Kronk.DecisionHTTP</code> performs the same evaluation and writes that response using the public HTTP JSON contract. Supported model names and metadata are detected automatically; use <code>model.WithDecisionProtocol</code> with the matching protocol only when a renamed model cannot be detected. The complete runnable example is under <code>examples/decision</code>. The bundled SDK reference documents every constructor, request type, response type, protocol, and error.</p>
           <h2 id="99-tokenization">9.9 Tokenization</h2>
           <p><code>POST /v1/tokenize</code> returns a token <strong>count</strong>, not token IDs:</p>
           <pre className="code-block"><code className="language-json">{`{

@@ -44,7 +44,7 @@ func TestStageDecisionParts(t *testing.T) {
 			tokens:   []llama.Token{21, 22},
 			position: 9,
 			sequence: 7,
-			readouts: []decisionReadout{{position: 10}},
+			readouts: []decisionReadout{{position: 10, embeddingWidth: 6}},
 		},
 	}
 
@@ -62,7 +62,7 @@ func TestStageDecisionParts(t *testing.T) {
 		extendedBatchOutputNone,
 		extendedBatchOutputLogits,
 		extendedBatchOutputNone,
-		extendedBatchOutputLogits,
+		extendedBatchOutputEmbeddings,
 	}
 
 	if !slices.Equal(indices[0], wantIndices[0]) || !slices.Equal(indices[1], wantIndices[1]) {
@@ -84,5 +84,20 @@ func TestStageDecisionParts(t *testing.T) {
 		if entry.output != wantOutputs[i] {
 			t.Errorf("entry[%d] output: got %d, want %d", i, entry.output, wantOutputs[i])
 		}
+	}
+}
+
+func TestDecisionContextParamsEmbeddingProtocol(t *testing.T) {
+	cfg := NewConfig(
+		WithContextWindow(4096),
+		WithDecisionProtocol(DecisionProtocolKev),
+	)
+
+	got := decisionContextParams(llama.ContextParams{}, cfg)
+	if got.Embeddings != 1 {
+		t.Errorf("Embeddings: got %d, want 1", got.Embeddings)
+	}
+	if got.PoolingType != llama.PoolingTypeNone {
+		t.Errorf("PoolingType: got %d, want %d", got.PoolingType, llama.PoolingTypeNone)
 	}
 }

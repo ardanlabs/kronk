@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 )
 
 func TestValidateDecisionRequest(t *testing.T) {
@@ -124,6 +126,42 @@ func TestDetectDecisionProtocol(t *testing.T) {
 			want: DecisionProtocolOpenJEV,
 		},
 		{
+			name:    "OpenJEV decision metadata",
+			modelID: "renamed-model",
+			metadata: map[string]string{
+				"general.architecture": "qwen35",
+				"qwen35.decision.type": "openjev",
+			},
+			want: DecisionProtocolOpenJEV,
+		},
+		{
+			name:    "Laya decision metadata",
+			modelID: "renamed-model",
+			metadata: map[string]string{
+				"general.architecture":      "modern-bert",
+				"modern-bert.decision.type": "laya",
+			},
+			want: DecisionProtocolLaya,
+		},
+		{
+			name:    "Lev decision metadata",
+			modelID: "renamed-model",
+			metadata: map[string]string{
+				"general.architecture": "qwen35",
+				"qwen35.decision.type": "lev",
+			},
+			want: DecisionProtocolLev,
+		},
+		{
+			name:    "Kev decision metadata",
+			modelID: "renamed-model",
+			metadata: map[string]string{
+				"general.architecture": "qwen35",
+				"qwen35.decision.type": "kev",
+			},
+			want: DecisionProtocolKev,
+		},
+		{
 			name:       "explicit override survives unknown identity",
 			configured: DecisionProtocolOpenJEV,
 			modelID:    "renamed-model",
@@ -137,7 +175,7 @@ func TestDetectDecisionProtocol(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := detectDecisionProtocol(tt.configured, tt.modelID, tt.metadata)
+			got := detectDecisionProtocol(tt.configured, tt.modelID, tt.metadata, modelprofile.Resolve(tt.metadata))
 			if got != tt.want {
 				t.Fatalf("protocol: got %q, want %q", got, tt.want)
 			}

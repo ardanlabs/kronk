@@ -76,6 +76,85 @@ models:
       reasoning: true
       tooling: true
     resolved_at: 2026-06-04T04:05:58.603368Z
+  ggml-org/Julia-1-Q8_0:
+    provider: ggml-org
+    family: Julia-1-GGUF
+    revision: main
+    files:
+      - Julia-1-Q8_0.gguf
+    file_sizes:
+      - 168166496
+    mtp_checked: true
+    model_type: Dense
+    capabilities:
+      mtp: false
+      endpoint: decision
+      decision: true
+    resolved_at: 2026-10-02T00:00:00Z
+  ggml-org/Kev-4B-Q4_K_M:
+    provider: ggml-org
+    family: Kev-4B-GGUF
+    revision: main
+    files:
+      - Kev-4B-Q4_K_M.gguf
+    file_sizes:
+      - 3033489824
+    mtp_checked: true
+    model_type: Hybrid
+    capabilities:
+      mtp: false
+      endpoint: decision
+      decision: true
+    resolved_at: 2026-10-02T00:00:00Z
+  ggml-org/Laya-Q8_0:
+    provider: ggml-org
+    family: Laya-GGUF
+    revision: main
+    files:
+      - Laya-Q8_0.gguf
+    file_sizes:
+      - 449397600
+    mtp_checked: true
+    model_type: Dense
+    capabilities:
+      mtp: false
+      endpoint: decision
+      decision: true
+    resolved_at: 2026-10-02T00:00:00Z
+  ggml-org/OpenJev-Q4_K_M:
+    provider: ggml-org
+    family: OpenJev-GGUF
+    revision: main
+    files:
+      - OpenJev-Q4_K_M.gguf
+    file_sizes:
+      - 18973872288
+    mmproj: mmproj-OpenJev-Q4_K_M.gguf
+    mmproj_orig: mmproj-OpenJev-BF16.gguf
+    mmproj_size: 931146112
+    mtp_checked: true
+    model_type: Hybrid
+    capabilities:
+      mtp: false
+      endpoint: decision
+      decision: true
+      images: true
+    resolved_at: 2026-10-02T00:00:00Z
+  ggml-org/lev-Q4_K_M:
+    provider: ggml-org
+    family: lev-GGUF
+    revision: main
+    files:
+      - lev-Q4_K_M.gguf
+    file_sizes:
+      - 3011777440
+    mtp_checked: true
+    model_type: Hybrid
+    capabilities:
+      mtp: false
+      endpoint: decision
+      decision: true
+    resolved_at: 2026-10-02T00:00:00Z
   ggml-org/Qwen2.5-VL-3B-Instruct-Q8_0:
     provider: ggml-org
     family: Qwen2.5-VL-3B-Instruct-GGUF

@@ -102,10 +102,6 @@ coordinated releases of Yzma, Bucky, Malina, and Kronk. Use each subsystem's dow
 instead of mixing native libraries from unrelated releases; every Kronk release is
 bound to known-compatible library versions.
 
-> [!WARNING]
-> Malina is experimental. Its public API is subject to change, and it is not yet a
-> Kronk model-server backend.
-
 See [Breaking Changes](BREAKING_CHANGES.md), the
 [release history](https://github.com/ardanlabs/kronk/releases), and the
 [open issues](https://github.com/ardanlabs/kronk/issues) for current status.
@@ -121,18 +117,6 @@ Here are some of the known compatible versions:
 | 1.32.5 | v1.26.0 | v0.4.0    | v1.1.2 | v1.9.3      | v1.0.8 | master-841-6b3edaa   |
 | 1.32.4 | 6bd0208 | b10785    | v1.1.1 | v1.9.3      | v1.0.6 | master-841-6b3edaa   |
 
-Kronk 1.32.8 pins the llama.cpp manifest as
-`b11331@sha256:7b42fa948765a281692cbae63efbd31e1228efec3fbca0cc4375e8106ee7cab1`.
-The manifest authenticates the platform-specific archives selected by the downloader,
-so the default installation verifies both the manifest and the downloaded libraries.
-Malina v1.1.5 pins stable-diffusion.cpp as
-`master-929-3f8527a@sha256:9c82e359dc51b80b8b598d803f6783364e64de0cd3887356e71b6f41bc7ffa2c`.
-Although its existing C layouts remain binary-shaped compatible with
-`master-908`, VAE tiling semantics changed and the upscaler metadata API is new.
-Upgrade the Malina dependency and native library bundle together. Kronk replaces
-any mismatched managed Malina bundle with this exact authenticated pin; rebuild
-or replace user-managed libraries yourself.
-
 ## Documentation and Examples
 
 - [Manual](https://www.kronkai.com/manual)
@@ -145,19 +129,13 @@ or replace user-managed libraries yourself.
 Representative examples:
 
 ```shell
-make example-question         # Ask a local language model a question.
-make example-agent            # Run a small coding agent.
-make example-vision           # Prompt a vision model with an image.
-make example-decision-jevstyle # Evaluate typed questions with Jev-Style.
-make example-decision-openjev  # Evaluate typed questions with OpenJEV.
-make example-bucky            # Transcribe an audio file with Bucky.
-make example-bucky-stream-vad # Stream transcription with Silero VAD boundaries.
-make example-malina           # Generate an image with experimental Malina.
-make example-malina-controlnet # Generate an image with Canny edge conditioning.
-make example-malina-adetailer  # Detect and refine faces in a portrait.
-make example-malina-animatediff # Generate AnimateDiff frames and write an AVI.
-make example-malina-s2v          # Animate a portrait from WAV speech with Wan2.2 S2V.
-make example-malina-upscale    # Enlarge an image with Real-ESRGAN.
+make example-question # Ask a local language model a question.
+make example-agent    # Run a small coding agent.
+make example-vision   # Prompt a vision model with an image.
+make example-audio    # Prompt a audio model with an audio file.
+make example-decision # Evaluate typed questions with a decision model.
+make example-bucky    # Transcribe an audio file with Bucky.
+make example-malina   # Generate an image with experimental Malina.
 ```
 
 Examples download compatible libraries and catalog-backed models on their first run.
