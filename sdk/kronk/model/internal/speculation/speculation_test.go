@@ -13,16 +13,18 @@ func TestResolve(t *testing.T) {
 		wantErr          bool
 	}{
 		{"auto disabled without capability", Config{Mode: ModeAuto}, SourceNone, MTPArchitectureNone, MTPArtifactNone, false, false},
-		{"disabled ignores all capabilities", Config{Mode: ModeDisabled, ClassicConfigured: true, EmbeddedMTP: true, MTPAvailable: true}, SourceNone, MTPArchitectureNone, MTPArtifactNone, false, false},
-		{"auto prefers classic", Config{Mode: ModeAuto, ClassicConfigured: true, ClassicNDraft: 5, CompanionMTP: true, EmbeddedMTP: true, MTPAvailable: true}, SourceClassic, MTPArchitectureNone, MTPArtifactNone, false, false},
-		{"auto prefers companion MTP", Config{Mode: ModeAuto, CompanionMTP: true, EmbeddedMTP: true, MTPNDraft: 3, MTPAvailable: true}, SourceMTP, MTPArchitectureGemmaSharedKV, MTPArtifactCompanion, false, false},
-		{"auto selects own-KV companion MTP", Config{Mode: ModeAuto, OwnKVCompanionMTP: true, EmbeddedMTP: true, MTPNDraft: 3, MTPAvailable: true}, SourceMTP, MTPArchitectureQwen35OwnKV, MTPArtifactCompanion, false, false},
-		{"auto selects embedded MTP", Config{Mode: ModeAuto, EmbeddedMTP: true, MTPNDraft: 3, MTPAvailable: true}, SourceMTP, MTPArchitectureQwen35OwnKV, MTPArtifactEmbedded, true, false},
-		{"auto does not load unavailable embedded MTP", Config{Mode: ModeAuto, EmbeddedMTP: true}, SourceMTP, MTPArchitectureQwen35OwnKV, MTPArtifactEmbedded, false, false},
+		{"disabled ignores all capabilities", Config{Mode: ModeDisabled, ClassicConfigured: true, EmbeddedMTPArchitecture: MTPArchitectureQwen35OwnKV, MTPAvailable: true, MTPArchitectureEnabled: true}, SourceNone, MTPArchitectureNone, MTPArtifactNone, false, false},
+		{"auto prefers classic", Config{Mode: ModeAuto, ClassicConfigured: true, ClassicNDraft: 5, CompanionMTPArchitecture: MTPArchitectureGemmaSharedKV, EmbeddedMTPArchitecture: MTPArchitectureQwen35OwnKV, MTPAvailable: true, MTPArchitectureEnabled: true}, SourceClassic, MTPArchitectureNone, MTPArtifactNone, false, false},
+		{"auto prefers companion MTP", Config{Mode: ModeAuto, CompanionMTPArchitecture: MTPArchitectureGemmaSharedKV, EmbeddedMTPArchitecture: MTPArchitectureQwen35OwnKV, MTPNDraft: 3, MTPAvailable: true, MTPArchitectureEnabled: true}, SourceMTP, MTPArchitectureGemmaSharedKV, MTPArtifactCompanion, false, false},
+		{"auto selects own-KV companion MTP", Config{Mode: ModeAuto, CompanionMTPArchitecture: MTPArchitectureQwen35OwnKV, EmbeddedMTPArchitecture: MTPArchitectureQwen35OwnKV, MTPNDraft: 3, MTPAvailable: true, MTPArchitectureEnabled: true}, SourceMTP, MTPArchitectureQwen35OwnKV, MTPArtifactCompanion, false, false},
+		{"auto selects embedded MTP", Config{Mode: ModeAuto, EmbeddedMTPArchitecture: MTPArchitectureQwen35OwnKV, MTPNDraft: 3, MTPAvailable: true, MTPArchitectureEnabled: true}, SourceMTP, MTPArchitectureQwen35OwnKV, MTPArtifactEmbedded, true, false},
+		{"auto does not load unavailable embedded MTP", Config{Mode: ModeAuto, EmbeddedMTPArchitecture: MTPArchitectureQwen35OwnKV, MTPArchitectureEnabled: true}, SourceMTP, MTPArchitectureQwen35OwnKV, MTPArtifactEmbedded, false, false},
+		{"auto disables qwen4exp MTP", Config{Mode: ModeAuto, EmbeddedMTPArchitecture: MTPArchitectureQwen4ExpOwnKV, MTPAvailable: true}, SourceNone, MTPArchitectureNone, MTPArtifactNone, false, false},
+		{"explicit qwen4exp MTP reports disabled", Config{Mode: ModeMTP, EmbeddedMTPArchitecture: MTPArchitectureQwen4ExpOwnKV, MTPAvailable: true}, SourceNone, MTPArchitectureNone, MTPArtifactNone, false, true},
 		{"classic requires model", Config{Mode: ModeClassic}, SourceNone, MTPArchitectureNone, MTPArtifactNone, false, true},
 		{"MTP rejects classic model", Config{Mode: ModeMTP, ClassicConfigured: true}, SourceNone, MTPArchitectureNone, MTPArtifactNone, false, true},
 		{"MTP requires source", Config{Mode: ModeMTP, MTPAvailable: true}, SourceNone, MTPArchitectureNone, MTPArtifactNone, false, true},
-		{"MTP requires library support", Config{Mode: ModeMTP, EmbeddedMTP: true}, SourceNone, MTPArchitectureNone, MTPArtifactNone, false, true},
+		{"MTP requires library support", Config{Mode: ModeMTP, EmbeddedMTPArchitecture: MTPArchitectureQwen35OwnKV, MTPArchitectureEnabled: true}, SourceNone, MTPArchitectureNone, MTPArtifactNone, false, true},
 		{"unknown mode rejected", Config{Mode: "future"}, SourceNone, MTPArchitectureNone, MTPArtifactNone, false, true},
 	}
 

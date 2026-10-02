@@ -19,6 +19,8 @@ func TestResolveEmbeddedMTPCompatibility(t *testing.T) {
 		{"matching widths preserve embedded MTP", speculationPlan{Mode: SpeculationAuto, Source: speculationSourceMTP, MTPArchitecture: mtpArchitectureQwen35OwnKV, MTPArtifact: mtpArtifactEmbedded, Available: true}, 4096, 4096, speculationSourceMTP, ""},
 		{"automatic mode falls back on mismatch", speculationPlan{Mode: SpeculationAuto, Source: speculationSourceMTP, MTPArchitecture: mtpArchitectureQwen35OwnKV, MTPArtifact: mtpArtifactEmbedded, Available: true}, 4096, 3584, speculationSourceNone, ""},
 		{"explicit MTP rejects mismatch", speculationPlan{Mode: SpeculationMTP, Source: speculationSourceMTP, MTPArchitecture: mtpArchitectureQwen35OwnKV, MTPArtifact: mtpArtifactEmbedded, Available: true}, 4096, 3584, speculationSourceNone, "output width 3584 does not match target embedding width 4096"},
+		{"Qwen4Exp accepts wide output", speculationPlan{Mode: SpeculationAuto, Source: speculationSourceMTP, MTPArchitecture: mtpArchitectureQwen4ExpOwnKV, MTPArtifact: mtpArtifactEmbedded, Available: true}, 4096, 16384, speculationSourceMTP, ""},
+		{"Qwen4Exp rejects non-integral output width", speculationPlan{Mode: SpeculationAuto, Source: speculationSourceMTP, MTPArchitecture: mtpArchitectureQwen4ExpOwnKV, MTPArtifact: mtpArtifactEmbedded, Available: true}, 4096, 15000, speculationSourceNone, ""},
 		{"non-embedded source is unchanged", speculationPlan{Mode: SpeculationAuto, Source: speculationSourceMTP, MTPArchitecture: mtpArchitectureGemmaSharedKV, MTPArtifact: mtpArtifactCompanion, Available: true}, 4096, 3584, speculationSourceMTP, ""},
 	}
 

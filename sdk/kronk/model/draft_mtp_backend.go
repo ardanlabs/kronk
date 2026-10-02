@@ -36,14 +36,22 @@ type mtpLoadRequest struct {
 	targetCtxParams llama.ContextParams
 }
 
-type qwen35OwnKVBackend struct {
-	artifact mtpArtifact
+type ownKVMTPBackend struct {
+	architecture  string
+	artifact      mtpArtifact
+	wideEmbedding bool
 }
 
-func (qwen35OwnKVBackend) name() string             { return "qwen35-own-kv" }
-func (qwen35OwnKVBackend) sharedKV() bool           { return false }
-func (qwen35OwnKVBackend) fixedDraftPosition() bool { return false }
-func (b qwen35OwnKVBackend) load(req mtpLoadRequest) (drafter, error) {
+func (b ownKVMTPBackend) name() string           { return b.architecture + "-own-kv" }
+func (ownKVMTPBackend) sharedKV() bool           { return false }
+func (ownKVMTPBackend) fixedDraftPosition() bool { return false }
+func (b ownKVMTPBackend) embeddingWidth(model llama.Model) int {
+	if b.wideEmbedding {
+		return int(llama.ModelNEmbdOut(model))
+	}
+	return int(llama.ModelNEmbd(model))
+}
+func (b ownKVMTPBackend) load(req mtpLoadRequest) (drafter, error) {
 	switch b.artifact {
 	case mtpArtifactEmbedded:
 		nLayers := mtpNextNLayers(req.targetModel)
@@ -59,7 +67,7 @@ func (b qwen35OwnKVBackend) load(req mtpLoadRequest) (drafter, error) {
 			return nil, nil
 		}
 
-		d, err := loadDraftModelMTP(req.ctx, req.log, req.targetCtx, req.targetModel, req.targetCtxParams, mtpNDraft(req.cfg))
+		d, err := loadDraftModelMTP(req.ctx, req.log, req.targetCtx, req.targetModel, req.targetCtxParams, mtpNDraft(req.cfg), b.embeddingWidth(req.targetModel))
 		if err != nil {
 			return nil, err
 		}
@@ -92,7 +100,7 @@ func (b qwen35OwnKVBackend) load(req mtpLoadRequest) (drafter, error) {
 		return d, nil
 	}
 
-	return nil, fmt.Errorf("qwen35 MTP: unsupported artifact %d", b.artifact)
+	return nil, fmt.Errorf("%s MTP: unsupported artifact %d", b.architecture, b.artifact)
 }
 
 type gemmaSharedKVBackend struct{}
@@ -123,7 +131,12 @@ func mtpBackendForPlan(plan speculationPlan) (mtpBackend, error) {
 	case mtpArchitectureQwen35OwnKV:
 		switch plan.MTPArtifact {
 		case mtpArtifactEmbedded, mtpArtifactCompanion:
-			return qwen35OwnKVBackend{artifact: plan.MTPArtifact}, nil
+			return ownKVMTPBackend{architecture: "qwen35", artifact: plan.MTPArtifact}, nil
+		}
+	case mtpArchitectureQwen4ExpOwnKV:
+		switch plan.MTPArtifact {
+		case mtpArtifactEmbedded, mtpArtifactCompanion:
+			return ownKVMTPBackend{architecture: "qwen4exp", artifact: plan.MTPArtifact, wideEmbedding: true}, nil
 		}
 	case mtpArchitectureGemmaSharedKV:
 		if plan.MTPArtifact == mtpArtifactCompanion {

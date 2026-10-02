@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 )
 
 // quantSuffixRe matches a trailing quant tag on a GGUF model id, e.g.:
@@ -239,7 +241,7 @@ func pickMTPCompanion(mtp []string, target string) string {
 	}
 
 	tFam := strings.ToLower(stripQuantSuffix(siblingModelID(target)))
-	if strings.Contains(tFam, "qwen3.8-flash-next") {
+	if strings.Contains(tFam, "qwen3.8-flash-next") && !modelprofile.Qwen4ExpMTPEnabled {
 		return ""
 	}
 
