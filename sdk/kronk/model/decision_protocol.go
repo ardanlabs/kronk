@@ -19,6 +19,8 @@ var decisionProtocolFactories = map[DecisionProtocol]decisionProtocolFactory{
 	DecisionProtocolLaya:     func(m *Model) (decisionProtocol, error) { return newLayaProtocol(m) },
 	DecisionProtocolLev:      func(m *Model) (decisionProtocol, error) { return newLevProtocol(m) },
 	DecisionProtocolKev:      func(m *Model) (decisionProtocol, error) { return newKevProtocol(m) },
+	DecisionProtocolNimble:   func(m *Model) (decisionProtocol, error) { return newNimbleProtocol(m) },
+	DecisionProtocolClef:     func(m *Model) (decisionProtocol, error) { return newClefProtocol(m) },
 }
 
 func initDecisionProtocol(m *Model) error {

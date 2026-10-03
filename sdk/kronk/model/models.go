@@ -193,6 +193,10 @@ func detectDecisionProtocol(configured DecisionProtocol, modelID string, metadat
 		return DecisionProtocolLev
 	case "kev":
 		return DecisionProtocolKev
+	case "nimble":
+		return DecisionProtocolNimble
+	case "clef":
+		return DecisionProtocolClef
 	}
 
 	modelName := strings.ToLower(metadata["general.name"])

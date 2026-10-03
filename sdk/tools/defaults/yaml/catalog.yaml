@@ -91,6 +91,51 @@ models:
       endpoint: decision
       decision: true
     resolved_at: 2026-10-02T00:00:00Z
+  ggml-org/Bespoke-Nimble-9B-v3-Q4_K_M:
+    provider: ggml-org
+    family: Bespoke-Nimble-9B-v3-GGUF
+    revision: main
+    files:
+      - Bespoke-Nimble-9B-v3-Q4_K_M.gguf
+    file_sizes:
+      - 6324185632
+    mtp_checked: true
+    model_type: Hybrid
+    capabilities:
+      mtp: false
+      endpoint: decision
+      decision: true
+    resolved_at: 2026-10-03T00:00:00Z
+  ggml-org/Clef-Flash-Q4_K_M:
+    provider: ggml-org
+    family: Clef-Flash-GGUF
+    revision: main
+    files:
+      - Clef-Flash-Q4_K_M.gguf
+    file_sizes:
+      - 6486448192
+    mtp_checked: true
+    model_type: Hybrid
+    capabilities:
+      mtp: false
+      endpoint: decision
+      decision: true
+    resolved_at: 2026-10-03T00:00:00Z
+  ggml-org/Clef-Q4_K_M:
+    provider: ggml-org
+    family: Clef-GGUF
+    revision: main
+    files:
+      - Clef-Q4_K_M.gguf
+    file_sizes:
+      - 19232219104
+    mtp_checked: true
+    model_type: Hybrid
+    capabilities:
+      mtp: false
+      endpoint: decision
+      decision: true
+    resolved_at: 2026-10-03T00:00:00Z
   ggml-org/Kev-4B-Q4_K_M:
     provider: ggml-org
     family: Kev-4B-GGUF

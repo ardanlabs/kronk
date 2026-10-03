@@ -25,9 +25,6 @@ schema = 3
   [mod."cloud.google.com/go/storage"]
     version = "v1.69.0"
     hash = "sha256-rRN2BkL0f5sK5gyfGuhVVwmuFZUK4jqR05KDXCXGXh0="
-  [mod."github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp"]
-    version = "v1.38.0"
-    hash = "sha256-Zng5YdYZvLZE45BHWMn+0i6hbq/pgUeCnzpndQnmWgI="
   [mod."github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric"]
     version = "v0.62.0"
     hash = "sha256-txGALfEVycp2851NRof9BTWtiuJ8C7CgG6YcG6NXg7o="
@@ -44,8 +41,8 @@ schema = 3
     version = "v3.13.0"
     hash = "sha256-WlPMHIHqJJVpe1tryI8si4jknRZr484+z0F/7ojYimw="
   [mod."github.com/ardanlabs/jinja"]
-    version = "v1.6.0"
-    hash = "sha256-xK0llBUpxqQXLdFCs/WRBSJSLjYQbqDj1cvOWCioxdc="
+    version = "v1.7.0"
+    hash = "sha256-7oCMT0hx3RtzgPsewwa6aYSl7Qrr9MToiG8nQ0qgTV4="
   [mod."github.com/ardanlabs/malina"]
     version = "v1.1.5"
     hash = "sha256-P7A7e1iZFd85g+Q4h6uMxkNsfY4zy2ke7K/uU9huPT4="
@@ -317,8 +314,8 @@ schema = 3
     version = "v1.6.10"
     hash = "sha256-D2lL4FnkeL/eRLiRW6ihhqQkzEqHVvhbEvZoYTVNmbU="
   [mod."github.com/vektah/gqlparser/v2"]
-    version = "v2.5.59"
-    hash = "sha256-TperaGQwXwvv6/dS2BtvZU8hTFx7HZF4BynZwD5h1AY="
+    version = "v2.5.60"
+    hash = "sha256-kki+oeLmChfbCy0nwK8PHiQMyUfNRaCvZISbxZMWP0U="
   [mod."github.com/xeipuuv/gojsonpointer"]
     version = "v0.0.0-20190905194746-02993c407bfb"
     hash = "sha256-/u+qznDY8cnECZYIgSMRpKVWs04yAkW6EoGhqt+t73g="
@@ -335,35 +332,38 @@ schema = 3
     version = "v1.2.1"
     hash = "sha256-73bFYhnxNf4SfeQ52ebnwOWywdQbqc9lWawCcSgofvE="
   [mod."go.opentelemetry.io/contrib/detectors/gcp"]
-    version = "v1.46.0"
-    hash = "sha256-oSUGEdiG9j2kN3gf0X1r+zFcAJfNuqMu2wS8LwtDvFI="
+    version = "v1.47.0"
+    hash = "sha256-LBlCpyx2jO6mnbe5xSmfNtIzzzvnguNKzmSm1tJbrss="
   [mod."go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"]
-    version = "v0.71.0"
-    hash = "sha256-2vwtDspRM7jZyvxclBmKTCDZ31qw/TiG+HHI6Z8ub2s="
+    version = "v0.72.0"
+    hash = "sha256-VrHgwDwPBZJi9QFcnAJAA90HpCvmN92YcIl3rkMm3jg="
   [mod."go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"]
-    version = "v0.71.0"
-    hash = "sha256-E5YtRLrs1/LqpvPt6LzC+sDpmxSROgpNmgca5s6iyCg="
+    version = "v0.72.0"
+    hash = "sha256-sNnIeJ9LYJV9Btp+Rg5xHw6aZ8DZW8ukJ8XoKPhqKqw="
   [mod."go.opentelemetry.io/otel"]
-    version = "v1.46.0"
-    hash = "sha256-2+xTacXn22hsJuMGGgXwazMbP/ZW5gkPRnf+rNUZgvQ="
+    version = "v1.47.0"
+    hash = "sha256-D4dSqVH4J9tKmnQWZFANTZ3+frHUjFIgcsvJWPSwuU4="
   [mod."go.opentelemetry.io/otel/exporters/otlp/otlptrace"]
-    version = "v1.46.0"
-    hash = "sha256-dhQCMAwny2CrgH3iJfTW0r0klpi7os0nht3zdLeWL6E="
+    version = "v1.47.0"
+    hash = "sha256-upPAkVlbXKHWBritk71OSRcSCbEI7ffueMkGewtcRq4="
   [mod."go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"]
-    version = "v1.46.0"
-    hash = "sha256-qIv7G8ADgdnitDv9+jQUYBARM6zUtt9kBX5NCNKbB40="
+    version = "v1.47.0"
+    hash = "sha256-z/LRxCuScyH5m2mthWcCVMuaanayEPJNIfz4qQBHreg="
+  [mod."go.opentelemetry.io/otel/log"]
+    version = "v1.47.0"
+    hash = "sha256-hYCHFuMmSSrMlyChIOEZMLuGYubF8IKkFLPC9yuVXdw="
   [mod."go.opentelemetry.io/otel/metric"]
-    version = "v1.46.0"
-    hash = "sha256-cY1DXXzRfcP0kKh7oBzowbu6kbFr3jANiEVyMlD5Bt8="
+    version = "v1.47.0"
+    hash = "sha256-ZKgYAoUSGUrI/u2qctou/GVlgJ0Kd9aMEVxudopPfFQ="
   [mod."go.opentelemetry.io/otel/sdk"]
-    version = "v1.46.0"
-    hash = "sha256-bDS4r1NfK2jZmTx5KUcrPJpPC2Men1lOuEKhy3vkMxc="
+    version = "v1.47.0"
+    hash = "sha256-f9JqSocWeQUExdeAcTvoGuJ9GeQ9KGyeDsLcsYRRu54="
   [mod."go.opentelemetry.io/otel/sdk/metric"]
-    version = "v1.46.0"
-    hash = "sha256-7HyWcBj0lBc9V29f14gPFS3mBPrHZmC3TFuRsfIo7mI="
+    version = "v1.47.0"
+    hash = "sha256-DOrHpQS/i8JmbK6NbfK9bjyYsq5AQ9cGfiQmSpBqV4A="
   [mod."go.opentelemetry.io/otel/trace"]
-    version = "v1.46.0"
-    hash = "sha256-zfj85gCR5Z3v1N+8nlOO+6+FVShaL/7Vb/3lXjdXnnw="
+    version = "v1.47.0"
+    hash = "sha256-W0eb1RPyxX7WUXrQIg9+da00P46fRUlL2S1kgFOvAM0="
   [mod."go.opentelemetry.io/proto/otlp"]
     version = "v1.11.1"
     hash = "sha256-M8SCpLO073LypQdj2INMAixdbTRvw0b5Hzw0lIJMc0M="

@@ -88,16 +88,76 @@ func TestStageDecisionParts(t *testing.T) {
 }
 
 func TestDecisionContextParamsEmbeddingProtocol(t *testing.T) {
+	tests := []struct {
+		name      string
+		protocol  DecisionProtocol
+		prefill   int
+		wantBatch uint32
+	}{
+		{"Laya default", DecisionProtocolLaya, 0, uint32(DefaultPrefillBatchSize)},
+		{"Kev configured", DecisionProtocolKev, 768, 768},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			options := []Option{
+				WithContextWindow(4096),
+				WithDecisionProtocol(tt.protocol),
+			}
+			if tt.prefill > 0 {
+				options = append(options, WithPrefillBatchSize(tt.prefill))
+			}
+			cfg := adjustConfig(NewConfig(options...), 0)
+
+			got := decisionContextParams(llama.ContextParams{}, cfg)
+			if got.Embeddings != 1 {
+				t.Errorf("Embeddings: got %d, want 1", got.Embeddings)
+			}
+			if got.PoolingType != llama.PoolingTypeNone {
+				t.Errorf("PoolingType: got %d, want %d", got.PoolingType, llama.PoolingTypeNone)
+			}
+			if got.NBatch != tt.wantBatch || got.NUbatch != tt.wantBatch {
+				t.Errorf("embedding batch dimensions: got batch=%d ubatch=%d, want %d", got.NBatch, got.NUbatch, tt.wantBatch)
+			}
+		})
+	}
+}
+
+func TestDecisionContextParamsClefOutputsEveryToken(t *testing.T) {
 	cfg := NewConfig(
 		WithContextWindow(4096),
-		WithDecisionProtocol(DecisionProtocolKev),
+		WithDecisionProtocol(DecisionProtocolClef),
 	)
+	cfg.nUBatch = 768
 
 	got := decisionContextParams(llama.ContextParams{}, cfg)
-	if got.Embeddings != 1 {
-		t.Errorf("Embeddings: got %d, want 1", got.Embeddings)
+	if got.NBatch != 768 || got.NOutputsMax != 768 || got.NOutputsMaxPerSeq != 768 {
+		t.Fatalf("Clef dimensions: got batch=%d outputs=%d per-sequence=%d, want 768", got.NBatch, got.NOutputsMax, got.NOutputsMaxPerSeq)
 	}
-	if got.PoolingType != llama.PoolingTypeNone {
-		t.Errorf("PoolingType: got %d, want %d", got.PoolingType, llama.PoolingTypeNone)
+}
+
+func TestStageDecisionJointPart(t *testing.T) {
+	batch := extendedBatch{capacity: 3}
+	part := decisionPart{
+		tokens:        []llama.Token{11, 12, 13},
+		sequence:      2,
+		decisionOrder: []int32{decisionOrderQuestionChoice, decisionOrderQuestionChoice, decisionOrderOption},
+		jointScores:   2,
+	}
+
+	indices, err := stageDecisionParts(&batch, []decisionPart{part})
+	if err != nil {
+		t.Fatalf("stage decision joint part: %v", err)
+	}
+	if !slices.Equal(indices[0], []int32{0, 1, 2}) {
+		t.Fatalf("output indices: got %v, want [0 1 2]", indices[0])
+	}
+	for i, entry := range batch.entries {
+		if entry.output != extendedBatchOutputEmbeddings {
+			t.Errorf("entry[%d] output: got %d, want embeddings", i, entry.output)
+		}
+		if entry.decisionOrder != part.decisionOrder[i] {
+			t.Errorf("entry[%d] decision order: got %d, want %d", i, entry.decisionOrder, part.decisionOrder[i])
+		}
 	}
 }

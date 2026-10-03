@@ -17,9 +17,11 @@ type decisionReadout struct {
 }
 
 type decisionWork struct {
-	tokens    []llama.Token
-	prefixLen int
-	readouts  []decisionReadout
+	tokens        []llama.Token
+	prefixLen     int
+	readouts      []decisionReadout
+	decisionOrder []int32
+	jointScores   int
 }
 
 // decisionEngine performs only model execution. Protocol implementations own
@@ -42,6 +44,9 @@ func decisionContextParams(base llama.ContextParams, cfg Config) llama.ContextPa
 	params.NCtx = uint32(cfg.ContextWindow() * nSeqMax)
 	params.NBatch = uint32(cfg.ContextWindow())
 	params.NUbatch = min(uint32(cfg.EffectiveNUBatch()), params.NBatch)
+	if decisionUsesEmbeddings(cfg.DecisionProtocol) {
+		params.NBatch = params.NUbatch
+	}
 	params.NSeqMax = uint32(nSeqMax)
 	params.NOutputsMax = decisionMaxReadouts
 	params.NOutputsMaxPerSeq = decisionMaxReadouts
@@ -50,6 +55,10 @@ func decisionContextParams(base llama.ContextParams, cfg Config) llama.ContextPa
 	if decisionUsesEmbeddings(cfg.DecisionProtocol) {
 		params.Embeddings = 1
 		params.PoolingType = llama.PoolingTypeNone
+	}
+	if cfg.DecisionProtocol == DecisionProtocolClef {
+		params.NOutputsMax = params.NBatch
+		params.NOutputsMaxPerSeq = params.NBatch
 	}
 	return params
 }
@@ -67,9 +76,11 @@ func initDecisionRuntime(m *Model) error {
 		return fmt.Errorf("init-decision-runtime: get memory: %w", err)
 	}
 
-	if err := llama.MemoryClear(mem, true); err != nil {
-		llama.Free(lctx)
-		return fmt.Errorf("init-decision-runtime: clear memory: %w", err)
+	if mem != 0 {
+		if err := llama.MemoryClear(mem, true); err != nil {
+			llama.Free(lctx)
+			return fmt.Errorf("init-decision-runtime: clear memory: %w", err)
+		}
 	}
 
 	batch, err := newExtendedBatch(lctx)
@@ -130,6 +141,25 @@ func (e *decisionEngine) validate(work []decisionWork) error {
 			return fmt.Errorf("decision work[%d] has invalid prefix length %d", i, item.prefixLen)
 		}
 
+		if item.jointScores > 0 {
+			if len(item.readouts) != 0 {
+				return fmt.Errorf("decision work[%d] requests joint scores and positional readouts", i)
+			}
+			if item.jointScores > decisionMaxReadouts {
+				return fmt.Errorf("decision work[%d] needs %d joint scores, limit is %d", i, item.jointScores, decisionMaxReadouts)
+			}
+			if item.jointScores > len(item.tokens) {
+				return fmt.Errorf("decision work[%d] needs %d joint scores from %d tokens", i, item.jointScores, len(item.tokens))
+			}
+			if len(item.decisionOrder) != len(item.tokens) {
+				return fmt.Errorf("decision work[%d] has %d decision orders for %d tokens", i, len(item.decisionOrder), len(item.tokens))
+			}
+			continue
+		}
+
+		if len(item.decisionOrder) != 0 {
+			return fmt.Errorf("decision work[%d] has decision orders without joint scores", i)
+		}
 		if len(item.readouts) == 0 || len(item.readouts) > decisionMaxReadouts {
 			return fmt.Errorf("decision work[%d] needs 1 to %d readouts, got %d", i, decisionMaxReadouts, len(item.readouts))
 		}
@@ -161,6 +191,9 @@ func (e *decisionEngine) validate(work []decisionWork) error {
 }
 
 func (e *decisionEngine) clear() error {
+	if e.mem == 0 {
+		return nil
+	}
 	if err := llama.MemoryClear(e.mem, true); err != nil {
 		return fmt.Errorf("decision clear memory: %w", err)
 	}
@@ -169,10 +202,12 @@ func (e *decisionEngine) clear() error {
 }
 
 type decisionPart struct {
-	tokens   []llama.Token
-	position int
-	sequence llama.SeqId
-	readouts []decisionReadout
+	tokens        []llama.Token
+	position      int
+	sequence      llama.SeqId
+	readouts      []decisionReadout
+	decisionOrder []int32
+	jointScores   int
 }
 
 func (e *decisionEngine) decode(parts ...decisionPart) ([][][]float32, bool, error) {
@@ -201,6 +236,25 @@ func (e *decisionEngine) decode(parts ...decisionPart) ([][][]float32, bool, err
 
 	result := make([][][]float32, len(parts))
 	for partIndex, part := range parts {
+		if part.jointScores > 0 {
+			if len(indices[partIndex]) < part.jointScores {
+				return nil, true, fmt.Errorf("decision produced %d joint rows, want at least %d", len(indices[partIndex]), part.jointScores)
+			}
+			scores := make([]float32, part.jointScores)
+			for scoreIndex, batchIndex := range indices[partIndex][:part.jointScores] {
+				embedding, err := llama.GetEmbeddingsIth(e.lctx, batchIndex, 1)
+				if err != nil {
+					return nil, true, fmt.Errorf("decision get joint score at batch index %d: %w", batchIndex, err)
+				}
+				if len(embedding) != 1 {
+					return nil, true, fmt.Errorf("decision joint score at batch index %d has width %d, want 1", batchIndex, len(embedding))
+				}
+				scores[scoreIndex] = embedding[0]
+			}
+			result[partIndex] = [][]float32{scores}
+			continue
+		}
+
 		if len(indices[partIndex]) != len(part.readouts) {
 			return nil, true, fmt.Errorf("decision produced %d readout rows, want %d", len(indices[partIndex]), len(part.readouts))
 		}
@@ -253,7 +307,9 @@ func stageDecisionParts(batch *extendedBatch, parts []decisionPart) ([][]int32, 
 		for i, token := range part.tokens {
 			position := part.position + i
 			output := extendedBatchOutputNone
-			if readoutAt[position] {
+			if part.jointScores > 0 {
+				output = extendedBatchOutputEmbeddings
+			} else if readoutAt[position] {
 				output = extendedBatchOutputLogits
 				for _, readout := range part.readouts {
 					if readout.position == position && readout.embeddingWidth > 0 {
@@ -270,6 +326,9 @@ func stageDecisionParts(batch *extendedBatch, parts []decisionPart) ([][]int32, 
 			if output != extendedBatchOutputNone {
 				indices[partIndex] = append(indices[partIndex], idx)
 			}
+			if len(part.decisionOrder) > 0 {
+				batch.entries[idx].decisionOrder = part.decisionOrder[i]
+			}
 		}
 	}
 
@@ -280,9 +339,11 @@ func (e *decisionEngine) evaluate(entries []decisionScheduledEntry) ([][][]float
 	parts := make([]decisionPart, len(entries))
 	for i, entry := range entries {
 		parts[i] = decisionPart{
-			tokens:   entry.work.tokens,
-			sequence: llama.SeqId(i),
-			readouts: entry.work.readouts,
+			tokens:        entry.work.tokens,
+			sequence:      llama.SeqId(i),
+			readouts:      entry.work.readouts,
+			decisionOrder: entry.work.decisionOrder,
+			jointScores:   entry.work.jointScores,
 		}
 	}
 
@@ -292,9 +353,11 @@ func (e *decisionEngine) evaluate(entries []decisionScheduledEntry) ([][][]float
 		return nil, fatal || clearErr != nil, errors.Join(err, clearErr)
 	}
 
-	for i := range entries {
-		if _, err := llama.MemorySeqRm(e.mem, llama.SeqId(i), -1, -1); err != nil {
-			return nil, true, errors.Join(fmt.Errorf("decision remove sequence %d: %w", i, err), e.clear())
+	if e.mem != 0 {
+		for i := range entries {
+			if _, err := llama.MemorySeqRm(e.mem, llama.SeqId(i), -1, -1); err != nil {
+				return nil, true, errors.Join(fmt.Errorf("decision remove sequence %d: %w", i, err), e.clear())
+			}
 		}
 	}
 

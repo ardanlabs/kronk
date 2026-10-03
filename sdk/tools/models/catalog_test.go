@@ -216,6 +216,9 @@ func TestEmbeddedCatalogCapabilities(t *testing.T) {
 		"ggml-org/Laya-Q8_0":                            "decision",
 		"ggml-org/Julia-1-Q8_0":                         "decision",
 		"ggml-org/Kev-4B-Q4_K_M":                        "decision",
+		"ggml-org/Bespoke-Nimble-9B-v3-Q4_K_M":          "decision",
+		"ggml-org/Clef-Flash-Q4_K_M":                    "decision",
+		"ggml-org/Clef-Q4_K_M":                          "decision",
 	}
 	for id, wantEndpoint := range wantEndpoints {
 		entry, exists := catalog.Models[id]
