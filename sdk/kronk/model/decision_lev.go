@@ -27,26 +27,7 @@ func newLevProtocol(m *Model) (*levProtocol, error) {
 		return nil, fmt.Errorf("init-lev: %w", err)
 	}
 
-	var labelTokens []llama.Token
-	var labelStrings []string
-	for first := 'A'; first <= 'Z' && len(labelTokens) < decisionMaxReadouts; first++ {
-		label := string(first)
-		tokens := llama.Tokenize(m.vocab, label, false, false)
-		if len(tokens) == 1 {
-			labelTokens = append(labelTokens, tokens[0])
-			labelStrings = append(labelStrings, label)
-		}
-	}
-	for first := 'A'; first <= 'Z' && len(labelTokens) < decisionMaxReadouts; first++ {
-		for second := 'A'; second <= 'Z' && len(labelTokens) < decisionMaxReadouts; second++ {
-			label := string([]rune{first, second})
-			tokens := llama.Tokenize(m.vocab, label, false, false)
-			if len(tokens) == 1 {
-				labelTokens = append(labelTokens, tokens[0])
-				labelStrings = append(labelStrings, label)
-			}
-		}
-	}
+	labelTokens, labelStrings := decisionLabelTokens(m.vocab)
 	if len(labelTokens) < decisionLevRatings {
 		return nil, fmt.Errorf("init-lev: tokenizer provides %d single-token labels, need at least %d", len(labelTokens), decisionLevRatings)
 	}

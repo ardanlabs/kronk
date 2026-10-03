@@ -24,6 +24,13 @@ type decisionSchedule struct {
 	nOutputs int
 }
 
+func decisionWorkOutputs(work decisionWork) int {
+	if work.jointScores > 0 {
+		return len(work.tokens)
+	}
+	return len(work.readouts)
+}
+
 // scheduleDecision selects complete work items from active requests in
 // round-robin order. Jobs that still have work return in the order they should
 // be considered for the next native batch.
@@ -58,6 +65,7 @@ func scheduleDecision(jobs []*decisionJob, maxSequences, maxTokens, maxOutputs i
 		}
 
 		item := job.work[job.next]
+		outputs := decisionWorkOutputs(item)
 		switch {
 		case len(item.tokens) == 0:
 			schedule.failed = append(schedule.failed, decisionJobFailure{
@@ -75,15 +83,15 @@ func scheduleDecision(jobs []*decisionJob, maxSequences, maxTokens, maxOutputs i
 			deferred = 0
 			continue
 
-		case len(item.readouts) > maxOutputs:
+		case outputs > maxOutputs:
 			schedule.failed = append(schedule.failed, decisionJobFailure{
 				job: job,
-				err: fmt.Errorf("schedule-decision: work[%d] has %d outputs but limit is %d", job.next, len(item.readouts), maxOutputs),
+				err: fmt.Errorf("schedule-decision: work[%d] has %d outputs but limit is %d", job.next, outputs, maxOutputs),
 			})
 			deferred = 0
 			continue
 
-		case schedule.nTokens+len(item.tokens) > maxTokens || schedule.nOutputs+len(item.readouts) > maxOutputs:
+		case schedule.nTokens+len(item.tokens) > maxTokens || schedule.nOutputs+outputs > maxOutputs || item.jointScores > 0 && len(schedule.entries) > 0:
 			pending = append(pending, job)
 			deferred++
 			if deferred >= len(pending) {
@@ -98,7 +106,7 @@ func scheduleDecision(jobs []*decisionJob, maxSequences, maxTokens, maxOutputs i
 			work:       item,
 		})
 		schedule.nTokens += len(item.tokens)
-		schedule.nOutputs += len(item.readouts)
+		schedule.nOutputs += outputs
 		job.next++
 		deferred = 0
 
@@ -106,6 +114,9 @@ func scheduleDecision(jobs []*decisionJob, maxSequences, maxTokens, maxOutputs i
 			schedule.done = append(schedule.done, job)
 		} else {
 			pending = append(pending, job)
+		}
+		if item.jointScores > 0 {
+			break
 		}
 	}
 

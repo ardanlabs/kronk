@@ -52,7 +52,7 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="func-inityzmaworkarounds">
               <h4>InitYzmaWorkarounds</h4>
               <pre className="code-block">
-                <code>func InitYzmaWorkarounds(_ string) error</code>
+                <code>func InitYzmaWorkarounds(libPath string) error</code>
               </pre>
               <p className="doc-description">InitYzmaWorkarounds initializes Kronk-specific Yzma compatibility code.</p>
             </div>
@@ -2336,6 +2336,8 @@ export default function DocsSDKModel() {
               <p className="doc-description">// DecisionProtocolLaya identifies the Laya and Julia marker-embedding protocol. DecisionProtocolLaya = newDecisionProtocol("laya")</p>
               <p className="doc-description">// DecisionProtocolLev identifies the Lev label-readout protocol. DecisionProtocolLev = newDecisionProtocol("lev")</p>
               <p className="doc-description">// DecisionProtocolKev identifies the Kev pointer-head protocol. DecisionProtocolKev = newDecisionProtocol("kev")</p>
+              <p className="doc-description">// DecisionProtocolNimble identifies the Nimble label-readout protocol. DecisionProtocolNimble = newDecisionProtocol("nimble")</p>
+              <p className="doc-description">// DecisionProtocolClef identifies the Clef joint-head protocol. DecisionProtocolClef = newDecisionProtocol("clef")</p>
             </div>
 
             <div className="doc-section" id="var-variable">

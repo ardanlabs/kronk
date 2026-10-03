@@ -324,7 +324,7 @@ kronk libs --list-installs
 
 # Install the supported version using its exact release manifest pin.
 kronk libs --local \\
-  --version=b11331@sha256:7b42fa948765a281692cbae63efbd31e1228efec3fbca0cc4375e8106ee7cab1
+  --version=b11379@sha256:58d8b9e431ac8f49629df55ad0e0415a15c5da36c3cbfc822ab176db3a37ca28
 
 # Explicitly select CPU instead of an available GPU.
 KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
@@ -1472,7 +1472,7 @@ krn, err := kronk.New(
           <p>MTP is normally the simpler choice when the downloaded model provides a supported embedded or companion head. It is architecture-matched to its target, supports multiple execution slots, and does not require a <code>model-id</code> in the <code>draft-model</code> configuration.</p>
           <p>An embedded head requires no companion file. A companion MTP head is an additional model-specific file, but Kronk's catalog and download flow can discover and associate files at the repository root or under <code>MTP/</code> with the target automatically. It is not configured as a classic <code>draft-model</code>.</p>
           <p>Qwen3.8 Flash Next's <code>qwen4exp</code> MTP runtime is scaffolded but deliberately disabled. Kronk recognizes embedded heads and self-contained companion GGUFs, routes them through the own-KV runtime, and keeps their tensors and sidecars unloaded while disabled. Existing shared-tensor sidecars are not compatible; the companion must contain its own token embeddings and output tensors.</p>
-          <p>Activation is waiting for a downloadable llama.cpp builder release containing the recurrent-memory assertion fix from upstream PR #29799 and the Qwen4Exp QSA/indexer correctness fixes from PR #29819. The pinned b11331 bundle contains the initial Qwen4Exp MTP implementation but not both follow-up fixes. In <code>auto</code> mode Qwen4Exp therefore runs target-only; explicitly selecting <code>mtp</code> reports that the architecture is disabled. This does not disable ordinary target-only inference for Qwen3.8 Flash Next models.</p>
+          <p>The pinned b11379 bundle contains the recurrent-memory assertion fix from upstream PR #29799 and the Qwen4Exp QSA/indexer correctness fixes from PR #29819. Activation remains deferred until the MTP runtime receives separate model-backed validation. In <code>auto</code> mode Qwen4Exp therefore runs target-only; explicitly selecting <code>mtp</code> reports that the architecture is disabled. This does not disable ordinary target-only inference for Qwen3.8 Flash Next models.</p>
           <p>MTP availability is a property of the downloaded files and the loaded llama.cpp library. Naming a model “MTP” or adding an <code>ndraft</code> override cannot create an MTP head that is not present.</p>
           <h3 id="64-draft-size-and-classic-adaptive-throttling">6.4 Draft Size and Classic Adaptive Throttling</h3>
           <p><code>ndraft</code> is the maximum number of candidates the drafter attempts in one round. Larger values can save more target passes when acceptance remains high, but they also increase wasted draft and verification work when proposals are rejected.</p>

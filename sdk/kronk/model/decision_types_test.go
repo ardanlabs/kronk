@@ -162,6 +162,24 @@ func TestDetectDecisionProtocol(t *testing.T) {
 			want: DecisionProtocolKev,
 		},
 		{
+			name:    "Nimble decision metadata",
+			modelID: "renamed-model",
+			metadata: map[string]string{
+				"general.architecture": "qwen35",
+				"qwen35.decision.type": "nimble",
+			},
+			want: DecisionProtocolNimble,
+		},
+		{
+			name:    "Clef decision metadata",
+			modelID: "renamed-model",
+			metadata: map[string]string{
+				"general.architecture": "clef",
+				"clef.decision.type":   "clef",
+			},
+			want: DecisionProtocolClef,
+		},
+		{
 			name:       "explicit override survives unknown identity",
 			configured: DecisionProtocolOpenJEV,
 			modelID:    "renamed-model",

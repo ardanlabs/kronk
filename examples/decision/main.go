@@ -25,12 +25,15 @@ import (
 // a canonical "provider/modelID", or a bare model id.
 var modelSource = "chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0"
 
-// The ggml-org models require a llama.cpp build containing PR #29818.
+// Additional models supported by the pinned llama.cpp build.
 // var modelSource = "ggml-org/Julia-1-Q8_0"
 // var modelSource = "ggml-org/Laya-Q8_0"
 // var modelSource = "ggml-org/lev-Q4_K_M"
 // var modelSource = "ggml-org/Kev-4B-Q4_K_M"
 // var modelSource = "ggml-org/OpenJev-Q4_K_M"
+// var modelSource = "ggml-org/Bespoke-Nimble-9B-v3-Q4_K_M"
+// var modelSource = "ggml-org/Clef-Flash-Q4_K_M"
+// var modelSource = "ggml-org/Clef-Q4_K_M"
 // var modelSource = "openjev/OpenJev-Q4_K_M"
 
 func main() {

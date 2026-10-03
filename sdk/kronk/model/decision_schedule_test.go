@@ -64,6 +64,35 @@ func TestScheduleDecisionRespectsTokenAndOutputCapacity(t *testing.T) {
 	}
 }
 
+func TestScheduleDecisionIsolatesJointWork(t *testing.T) {
+	regular := newDecisionJob(context.Background(), []decisionWork{decisionTestWork(2, 1)})
+	joint := newDecisionJob(context.Background(), []decisionWork{{
+		tokens:        make([]llama.Token, 4),
+		decisionOrder: make([]int32, 4),
+		jointScores:   2,
+	}})
+	after := newDecisionJob(context.Background(), []decisionWork{decisionTestWork(2, 1)})
+
+	first, remaining, err := scheduleDecision([]*decisionJob{joint, regular, after}, 3, 20, 20)
+	if err != nil {
+		t.Fatalf("schedule joint first: %v", err)
+	}
+	if len(first.entries) != 1 || first.entries[0].job != joint || first.nOutputs != 4 {
+		t.Fatalf("joint schedule: got entries=%v outputs=%d", first.entries, first.nOutputs)
+	}
+	if len(remaining) != 2 {
+		t.Fatalf("remaining jobs: got %d, want 2", len(remaining))
+	}
+
+	second, _, err := scheduleDecision([]*decisionJob{regular, joint, after}, 3, 20, 20)
+	if err != nil {
+		t.Fatalf("schedule regular first: %v", err)
+	}
+	if len(second.entries) != 2 || second.entries[0].job != regular || second.entries[1].job != after {
+		t.Fatalf("regular schedule should defer joint work: got %v", second.entries)
+	}
+}
+
 func TestDecisionSchedulerCoalescesQueuedJobs(t *testing.T) {
 	engine := decisionEngine{
 		maxSequences: 4,

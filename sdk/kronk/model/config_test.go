@@ -56,6 +56,8 @@ func TestDecisionProtocol(t *testing.T) {
 		{"Laya", "laya", DecisionProtocolLaya, false},
 		{"Lev", "lev", DecisionProtocolLev, false},
 		{"Kev", "kev", DecisionProtocolKev, false},
+		{"Nimble", "nimble", DecisionProtocolNimble, false},
+		{"Clef", "clef", DecisionProtocolClef, false},
 		{"unknown", "unknown", DecisionProtocol{}, true},
 	}
 

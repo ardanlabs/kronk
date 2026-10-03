@@ -585,7 +585,7 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 	}
 
 	switch cfg.DecisionProtocol {
-	case DecisionProtocol{}, DecisionProtocolOpenJEV, DecisionProtocolJevStyle, DecisionProtocolLaya, DecisionProtocolLev, DecisionProtocolKev:
+	case DecisionProtocol{}, DecisionProtocolOpenJEV, DecisionProtocolJevStyle, DecisionProtocolLaya, DecisionProtocolLev, DecisionProtocolKev, DecisionProtocolNimble, DecisionProtocolClef:
 	default:
 		return fmt.Errorf("validate-config: unsupported decision protocol %q", cfg.DecisionProtocol)
 	}
@@ -1738,6 +1738,12 @@ var (
 
 	// DecisionProtocolKev identifies the Kev pointer-head protocol.
 	DecisionProtocolKev = newDecisionProtocol("kev")
+
+	// DecisionProtocolNimble identifies the Nimble label-readout protocol.
+	DecisionProtocolNimble = newDecisionProtocol("nimble")
+
+	// DecisionProtocolClef identifies the Clef joint-head protocol.
+	DecisionProtocolClef = newDecisionProtocol("clef")
 )
 
 // DecisionProtocol identifies the prompt and readout protocol used by a

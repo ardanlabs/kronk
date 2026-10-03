@@ -60,8 +60,52 @@ func (t systemOneTemplate) render(question DecisionQuestion, state, instructions
 	return rendered, nil
 }
 
+func (t systemOneTemplate) renderValues(values D) (string, error) {
+	rendered, err := t.tmpl.Render(values)
+	if err != nil {
+		return "", fmt.Errorf("render systemone template: %w", err)
+	}
+	return rendered, nil
+}
+
 func decisionUsesEmbeddings(protocol DecisionProtocol) bool {
-	return protocol == DecisionProtocolLaya || protocol == DecisionProtocolKev
+	return protocol == DecisionProtocolLaya || protocol == DecisionProtocolKev || protocol == DecisionProtocolClef
+}
+
+func decisionLabelTokens(vocab llama.Vocab) ([]llama.Token, []string) {
+	var tokens []llama.Token
+	var labels []string
+	appendLabel := func(label string) {
+		encoded := llama.Tokenize(vocab, label, false, false)
+		if len(encoded) == 1 {
+			tokens = append(tokens, encoded[0])
+			labels = append(labels, label)
+		}
+	}
+
+	for first := 'A'; first <= 'Z' && len(tokens) < decisionMaxReadouts; first++ {
+		appendLabel(string(first))
+	}
+	for first := 'A'; first <= 'Z' && len(tokens) < decisionMaxReadouts; first++ {
+		for second := 'A'; second <= 'Z' && len(tokens) < decisionMaxReadouts; second++ {
+			appendLabel(string([]rune{first, second}))
+		}
+	}
+	return tokens, labels
+}
+
+func decisionTemplateValue(value any) (any, error) {
+	data, err := marshalDecisionJSON(value)
+	if err != nil {
+		return nil, err
+	}
+	var decoded any
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.UseNumber()
+	if err := decoder.Decode(&decoded); err != nil {
+		return nil, err
+	}
+	return decoded, nil
 }
 
 func decisionSystemOneText(value any) (string, error) {
