@@ -224,11 +224,14 @@ func TestResolveArchitectureParity(t *testing.T) {
 }
 
 func TestMTPEnabled(t *testing.T) {
-	if !MTPEnabled(MTPArchitectureQwen35OwnKV) || !MTPEnabled(MTPArchitectureGemmaSharedKV) {
-		t.Fatal("existing Qwen35 and Gemma MTP runtimes must remain enabled")
-	}
-	if MTPEnabled(MTPArchitectureQwen4ExpOwnKV) {
-		t.Fatal("Qwen4Exp MTP must remain disabled until the pinned llama.cpp bundle includes the follow-up fixes")
+	for _, architecture := range []MTPArchitecture{
+		MTPArchitectureQwen35OwnKV,
+		MTPArchitectureQwen4ExpOwnKV,
+		MTPArchitectureGemmaSharedKV,
+	} {
+		if !MTPEnabled(architecture) {
+			t.Errorf("MTPEnabled(%q) = false, want true", architecture)
+		}
 	}
 }
 

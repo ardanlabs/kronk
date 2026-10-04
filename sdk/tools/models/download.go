@@ -696,6 +696,10 @@ func (m *Models) checkValidatedIndex(ctx context.Context, log applog.Logger, mLo
 	// Re-verify every recorded file (model splits and any projection) is
 	// still present on disk AND matches the size from its sha pointer.
 	for _, mf := range mp.ModelFiles {
+		if _, err := os.Stat(mf); err != nil {
+			log(ctx, "download-model: index entry stale, re-downloading", "model-file", mf, "ERROR", err)
+			return Path{}, false
+		}
 		if err := checkModel(mf, false); err != nil {
 			log(ctx, "download-model: index entry stale, re-downloading", "model-file", mf, "ERROR", err)
 			return Path{}, false
@@ -706,6 +710,10 @@ func (m *Models) checkValidatedIndex(ctx context.Context, log applog.Logger, mLo
 		if mp.ProjFile == "" {
 			return Path{}, false
 		}
+		if _, err := os.Stat(mp.ProjFile); err != nil {
+			log(ctx, "download-model: index entry stale, re-downloading projection", "proj-file", mp.ProjFile, "ERROR", err)
+			return Path{}, false
+		}
 		if err := checkModel(mp.ProjFile, false); err != nil {
 			log(ctx, "download-model: index entry stale, re-downloading projection", "proj-file", mp.ProjFile, "ERROR", err)
 			return Path{}, false
@@ -714,6 +722,10 @@ func (m *Models) checkValidatedIndex(ctx context.Context, log applog.Logger, mLo
 
 	if mtpLoc != nil {
 		if mp.MTPFile == "" {
+			return Path{}, false
+		}
+		if _, err := os.Stat(mp.MTPFile); err != nil {
+			log(ctx, "download-model: index entry stale, re-downloading mtp", "mtp-file", mp.MTPFile, "ERROR", err)
 			return Path{}, false
 		}
 		if err := checkModel(mp.MTPFile, false); err != nil {

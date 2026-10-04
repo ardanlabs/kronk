@@ -86,7 +86,7 @@ func TestSpeculativeContextCount(t *testing.T) {
 	}
 }
 
-func TestQwen4ExpDisabledMTPEstimatesTargetOnly(t *testing.T) {
+func TestQwen4ExpCompanionMTPResourceEstimates(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "qwen4exp-mtp.gguf")
 	writeTestGGUF(t, file, map[string]any{
 		"general.architecture":          "qwen4exp",
@@ -94,11 +94,11 @@ func TestQwen4ExpDisabledMTPEstimatesTargetOnly(t *testing.T) {
 	})
 	cfg := Config{MTPDrafterFile: file}
 
-	if got := RecurrentStateCopies(cfg, false); got != 1 {
-		t.Errorf("RecurrentStateCopies = %d, want 1 while Qwen4Exp MTP is disabled", got)
+	if !mtpFilesEnabled([]string{file}) {
+		t.Fatal("mtpFilesEnabled = false, want Qwen4Exp MTP enabled")
 	}
-	if got := SpeculativeContextCount(cfg); got != 1 {
-		t.Errorf("SpeculativeContextCount = %d, want 1 while Qwen4Exp MTP is disabled", got)
+	if got := SpeculativeContextCount(cfg); got != 2 {
+		t.Errorf("SpeculativeContextCount = %d, want 2 for Qwen4Exp companion MTP", got)
 	}
 }
 

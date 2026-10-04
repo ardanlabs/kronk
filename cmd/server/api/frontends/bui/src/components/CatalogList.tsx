@@ -1034,7 +1034,7 @@ export default function CatalogList() {
                     </div>
 
                     {isCatalogDownload && download.meta && (
-                      <DownloadInfoTable meta={download.meta} />
+                      <DownloadInfoTable meta={download.meta} urls={catalogModelUrls} />
                     )}
 
                     {isCatalogDownload && download.progress && pulling && (

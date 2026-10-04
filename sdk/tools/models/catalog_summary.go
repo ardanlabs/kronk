@@ -168,11 +168,8 @@ func NewFiles(entry CatalogEntry) CatalogFiles {
 	}
 
 	if entry.MTP != "" {
-		// The MTP URL is built from the HuggingFace source name (MTPOrig).
-		// Pre-MTPOrig entries leave the URL empty until the resolver
-		// self-heals on the next online Resolve.
-		var mtpURL string
-		if entry.MTPOrig != "" {
+		mtpURL := entry.MTPURL
+		if mtpURL == "" && entry.MTPOrig != "" {
 			mtpURL = hf.BuildURL(entry.Provider, entry.Family, entry.Revision, entry.MTPOrig)
 		}
 		out.MTP = CatalogFile{

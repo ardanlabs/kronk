@@ -468,7 +468,7 @@ func TestDownload_MissingCompanion_ReDownloads(t *testing.T) {
 		contents: map[string][]byte{
 			"/unsloth/gemma-4-26B-A4B-it-GGUF/resolve/main/gemma-4-26B-A4B-it-UD-Q4_K_M.gguf": []byte("model-body-bytes\n"),
 			"/unsloth/gemma-4-26B-A4B-it-GGUF/resolve/main/mmproj-F16.gguf":                   []byte("proj-body-bytes\n"),
-			"/unsloth/gemma-4-26B-A4B-it-GGUF/resolve/main/mtp-gemma-4-26B-A4B-it.gguf":       []byte("mtp-drafter-bytes\n"),
+			"/ggml-org/gemma-4-26B-A4B-it-GGUF/resolve/main/mtp-gemma-4-26B-A4B-it.gguf":      []byte("mtp-drafter-bytes\n"),
 		},
 	}
 	withFakeGetter(t, g)
@@ -476,13 +476,14 @@ func TestDownload_MissingCompanion_ReDownloads(t *testing.T) {
 	m := newTestModels(t)
 
 	// Seed the resolver catalog so Download resolves from cache without an
-	// HF round-trip. The entry carries mmproj_orig/mtp_orig so the cache hit
-	// can rebuild DownloadProj/DownloadMTP and never needs a repair search.
+	// HF round-trip. The entry carries the source projection name and an
+	// explicit cross-repository MTP URL, so no repair search is needed.
 	catalogDir := filepath.Join(m.BasePath(), "catalog")
 	if err := os.MkdirAll(catalogDir, 0o755); err != nil {
 		t.Fatalf("mkdir catalog: %v", err)
 	}
-	mustWriteFile(t, filepath.Join(catalogDir, "catalog.yaml"), `models:
+	mustWriteFile(t, filepath.Join(catalogDir, "catalog.yaml"), `version: 2
+models:
   unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M:
     provider: unsloth
     family: gemma-4-26B-A4B-it-GGUF
@@ -493,6 +494,7 @@ func TestDownload_MissingCompanion_ReDownloads(t *testing.T) {
     mmproj_orig: mmproj-F16.gguf
     mtp: mtp-gemma-4-26B-A4B-it-UD-Q4_K_M.gguf
     mtp_orig: mtp-gemma-4-26B-A4B-it.gguf
+    mtp_url: https://huggingface.co/ggml-org/gemma-4-26B-A4B-it-GGUF/resolve/main/mtp-gemma-4-26B-A4B-it.gguf
     mtp_checked: true
 `)
 
@@ -521,6 +523,12 @@ func TestDownload_MissingCompanion_ReDownloads(t *testing.T) {
 	if err := os.Remove(mp.MTPFile); err != nil {
 		t.Fatalf("rm mtp: %v", err)
 	}
+	if err := os.Remove(artifactDigestPath(mp.ProjFile)); err != nil {
+		t.Fatalf("rm proj sha: %v", err)
+	}
+	if err := os.Remove(artifactDigestPath(mp.MTPFile)); err != nil {
+		t.Fatalf("rm mtp sha: %v", err)
+	}
 
 	callsBefore := len(g.calls)
 
@@ -538,6 +546,11 @@ func TestDownload_MissingCompanion_ReDownloads(t *testing.T) {
 	}
 	if _, err := os.Stat(mp2.MTPFile); err != nil {
 		t.Errorf("mtp drafter not restored after re-download: %v", err)
+	}
+
+	catalog := loadResolved(t, filepath.Join(catalogDir, "catalog.yaml"))
+	if got := catalog.Models[canonical].MTPURL; got != "https://huggingface.co/ggml-org/gemma-4-26B-A4B-it-GGUF/resolve/main/mtp-gemma-4-26B-A4B-it.gguf" {
+		t.Errorf("MTPURL = %q, want cross-repository companion URL preserved", got)
 	}
 }
 

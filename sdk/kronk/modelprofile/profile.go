@@ -52,19 +52,13 @@ const (
 	MTPArchitectureQwen35OwnKV   MTPArchitecture = "qwen35-own-kv"
 	MTPArchitectureQwen4ExpOwnKV MTPArchitecture = "qwen4exp-own-kv"
 	MTPArchitectureGemmaSharedKV MTPArchitecture = "gemma-shared-kv"
-
-	// Qwen4ExpMTPEnabled remains false until the pinned llama.cpp bundle
-	// includes the upstream recurrent-memory and QSA correctness fixes.
-	Qwen4ExpMTPEnabled = false
 )
 
 // MTPEnabled reports whether Kronk enables an identified MTP runtime.
 func MTPEnabled(architecture MTPArchitecture) bool {
 	switch architecture {
-	case MTPArchitectureQwen35OwnKV, MTPArchitectureGemmaSharedKV:
+	case MTPArchitectureQwen35OwnKV, MTPArchitectureQwen4ExpOwnKV, MTPArchitectureGemmaSharedKV:
 		return true
-	case MTPArchitectureQwen4ExpOwnKV:
-		return Qwen4ExpMTPEnabled
 	default:
 		return false
 	}

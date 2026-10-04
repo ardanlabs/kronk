@@ -25,7 +25,7 @@ type Catalog struct {
 	Models  map[string]CatalogEntry `yaml:"models"`
 }
 
-const catalogVersion = 1
+const catalogVersion = 2
 
 // CatalogEntry is the persisted resolution for a single canonical
 // model id ("provider/modelID"). Files and MMProj are family-relative paths.
@@ -50,6 +50,7 @@ type CatalogEntry struct {
 	MMProjSize   int64               `yaml:"mmproj_size,omitempty"`
 	MTP          string              `yaml:"mtp,omitempty"`
 	MTPOrig      string              `yaml:"mtp_orig,omitempty"`
+	MTPURL       string              `yaml:"mtp_url,omitempty"`
 	MTPSize      int64               `yaml:"mtp_size,omitempty"`
 	MTPChecked   bool                `yaml:"mtp_checked,omitempty"`
 	MTPSource    MTPSource           `yaml:"mtp_source,omitempty"`
@@ -231,6 +232,9 @@ func (r *Resolver) Delete(canonical string) error {
 func (r *Resolver) saveLocked(rm Catalog) error {
 	if rm.Models == nil {
 		rm.Models = map[string]CatalogEntry{}
+	}
+	if rm.Version >= 1 && rm.Version < catalogVersion {
+		rm.Version = catalogVersion
 	}
 
 	data, err := yaml.Marshal(rm)
@@ -713,6 +717,7 @@ func (r *Resolver) refreshSizes(canonical string) error {
 		// timestamp.
 		updated.MMProjOrig = entry.MMProjOrig
 		updated.MTPOrig = entry.MTPOrig
+		updated.MTPURL = entry.MTPURL
 		updated.MTPChecked = entry.MTPChecked
 		updated.MTPSource = entry.MTPSource
 		updated.ModelType = entry.ModelType
@@ -819,9 +824,11 @@ func entryToResolution(canonical string, entry CatalogEntry) Resolution {
 		res.DownloadProj = buildDownloadURL(entry.Provider, entry.Family, entry.Revision, entry.MMProjOrig)
 	}
 
-	// DownloadMTP mirrors DownloadProj: built from the HF source name
-	// (MTPOrig), left empty for pre-MTPOrig entries so they self-heal.
-	if entry.MTPOrig != "" {
+	// An explicit MTPURL lets a catalog entry source a compatible drafter
+	// from a repository other than the target model's repository.
+	if entry.MTPURL != "" {
+		res.DownloadMTP = entry.MTPURL
+	} else if entry.MTPOrig != "" {
 		res.DownloadMTP = buildDownloadURL(entry.Provider, entry.Family, entry.Revision, entry.MTPOrig)
 	}
 
@@ -1174,6 +1181,7 @@ func (m *Models) persistURLResolution(modelURLs []string, projURL, mtpURL string
 	entry.MMProjOrig = mmprojOrig
 	entry.MTPOrig = mtpOrig
 	if mtpURL != "" {
+		entry.MTPURL = hf.NormalizeDownloadURL(mtpURL)
 		entry.MTPChecked = true
 	}
 
@@ -1190,6 +1198,7 @@ func (m *Models) persistURLResolution(modelURLs []string, projURL, mtpURL string
 			if mtpURL == "" {
 				entry.MTP = prev.MTP
 				entry.MTPOrig = prev.MTPOrig
+				entry.MTPURL = prev.MTPURL
 				entry.MTPSize = prev.MTPSize
 				entry.MTPChecked = prev.MTPChecked
 			}
