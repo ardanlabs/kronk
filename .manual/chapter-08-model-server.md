@@ -380,6 +380,14 @@ Catalog entries identify the provider, source family, revision, files, sizes,
 and detected capabilities. Chat templates come from downloaded GGUF metadata
 and are not stored as catalog configuration.
 
+Catalog schema version 2 adds the optional `mtp_url` field. Set it to a fully
+qualified Hugging Face download URL when a compatible MTP companion lives in a
+different repository from its target model. When it is absent, Kronk retains
+the version 1 behavior and builds the companion URL from the entry's provider,
+family, revision, and `mtp_orig` fields. Version 1 catalogs remain readable and
+are stamped as version 2 the next time the current Kronk version rewrites them;
+their entries do not require a data migration.
+
 Source specificity controls catalog resolution:
 
 - A canonical `provider/modelID` selects one provider explicitly.

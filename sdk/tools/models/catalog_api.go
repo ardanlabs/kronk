@@ -185,7 +185,8 @@ func (m *Models) CatalogEntry(canonicalID string) (CatalogEntry, bool, error) {
 // the GGUF head bytes (via GGUFHead's cache → local-file → HF Range lookup) so
 // the list page can filter by architecture class and capabilities without
 // paying GGUF I/O on every list call. Legacy unversioned catalogs force this
-// enrichment for every entry before being stamped with the current version.
+// enrichment before being stamped with version 1. Later schema migrations
+// preserve entry data and can advance without repeating GGUF enrichment.
 // On-disk models missing from the catalog are intentionally ignored so
 // removing a curated entry remains durable while retaining its downloaded
 // files.
@@ -214,6 +215,7 @@ func (m *Models) ReconcileCatalog(ctx context.Context, log applog.Logger) error 
 	}
 
 	migrating := cat.Version < catalogVersion
+	needsEnrichmentMigration := cat.Version < 1
 	migrationComplete := true
 	var changed int
 
@@ -233,12 +235,14 @@ func (m *Models) ReconcileCatalog(ctx context.Context, log applog.Logger) error 
 		// Enrichment normally touches entries missing these fields. Decision
 		// model names are also revisited so catalogs created before Decision
 		// was a capability are corrected from chat_completion.
-		if migrating || touched || entry.ModelType == "" || entry.Capabilities.Endpoint == "" ||
+		if needsEnrichmentMigration || touched || entry.ModelType == "" || entry.Capabilities.Endpoint == "" ||
 			(isDecisionCatalogEntry(entry) && !entry.Capabilities.Decision) {
 			updated, ok, err := m.enrichEntry(ctx, entry)
 			if err != nil {
 				log(ctx, "reconcile-catalog: enrich-entry", "id", canonical, "ERROR", err)
-				migrationComplete = false
+				if needsEnrichmentMigration {
+					migrationComplete = false
+				}
 			} else if ok {
 				entry = updated
 				touched = true

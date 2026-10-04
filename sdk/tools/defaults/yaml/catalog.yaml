@@ -1,4 +1,4 @@
-version: 1
+version: 2
 models:
   Qwen/Qwen3-Embedding-0.6B-Q8_0:
     provider: Qwen
@@ -645,6 +645,36 @@ models:
       tooling: true
       mtp: true
     resolved_at: 2026-08-14T20:55:18.890296Z
+  unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL:
+    provider: unsloth
+    family: Qwen3.8-Flash-Next-GGUF
+    revision: main
+    files:
+      - UD-Q2_K_XL/Qwen3.8-Flash-Next-UD-Q2_K_XL-00001-of-00003.gguf
+      - UD-Q2_K_XL/Qwen3.8-Flash-Next-UD-Q2_K_XL-00002-of-00003.gguf
+      - UD-Q2_K_XL/Qwen3.8-Flash-Next-UD-Q2_K_XL-00003-of-00003.gguf
+    file_sizes:
+      - 10946624
+      - 49979779296
+      - 28878402944
+    mmproj: mmproj-Qwen3.8-Flash-Next-UD-Q2_K_XL.gguf
+    mmproj_orig: mmproj-F16.gguf
+    mmproj_size: 904004000
+    mtp: mtp-Qwen3.8-Flash-Next-UD-Q2_K_XL.gguf
+    mtp_orig: mtp-Qwen3.8-Flash-Next-Q8_0.gguf
+    mtp_url: https://huggingface.co/ggml-org/Qwen3.8-Flash-Next-GGUF/resolve/main/mtp-Qwen3.8-Flash-Next-Q8_0.gguf
+    mtp_size: 4137429280
+    mtp_checked: true
+    mtp_source: companion
+    model_type: Hybrid
+    capabilities:
+      endpoint: chat_completion
+      images: true
+      streaming: true
+      reasoning: true
+      tooling: true
+      mtp: true
+    resolved_at: 2026-10-03T23:55:00Z
   unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M:
     provider: unsloth
     family: gemma-4-26B-A4B-it-GGUF

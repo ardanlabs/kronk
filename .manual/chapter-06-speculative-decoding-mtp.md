@@ -123,20 +123,20 @@ supports multiple execution slots, and does not require a `model-id` in the
 An embedded head requires no companion file. A companion MTP head is an
 additional model-specific file, but Kronk's catalog and download flow can
 discover and associate files at the repository root or under `MTP/` with the
-target automatically. It is not configured as a classic `draft-model`.
+target automatically. A version 2 catalog entry can instead provide `mtp_url`
+when a compatible companion is hosted in another repository. It is not
+configured as a classic `draft-model`.
 
-Qwen3.8 Flash Next's `qwen4exp` MTP runtime is scaffolded but deliberately
-disabled. Kronk recognizes embedded heads and self-contained companion GGUFs,
-routes them through the own-KV runtime, and keeps their tensors and sidecars
-unloaded while disabled. Existing shared-tensor sidecars are not compatible;
-the companion must contain its own token embeddings and output tensors.
+Qwen3.8 Flash Next's `qwen4exp` MTP runtime supports embedded heads and
+self-contained companion GGUFs through the own-KV runtime. Existing
+shared-tensor sidecars are not compatible; the companion must contain its own
+token embeddings and output tensors.
 
 The pinned b11379 bundle contains the recurrent-memory assertion fix from
 upstream PR #29799 and the Qwen4Exp QSA/indexer correctness fixes from PR
-#29819. Activation remains deferred until the MTP runtime receives separate
-model-backed validation. In `auto` mode Qwen4Exp therefore runs target-only;
-explicitly selecting `mtp` reports that the architecture is disabled. This
-does not disable ordinary target-only inference for Qwen3.8 Flash Next models.
+#29819. In `auto` mode Kronk loads a compatible Qwen4Exp companion when one is
+available, otherwise it uses a compatible embedded head. The `disabled`
+speculation mode continues to run the target without MTP.
 
 MTP availability is a property of the downloaded files and the loaded
 llama.cpp library. Naming a model “MTP” or adding an `ndraft` override cannot

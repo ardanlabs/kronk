@@ -261,6 +261,22 @@ func TestEmbeddedCatalogCapabilities(t *testing.T) {
 		t.Errorf("model %q MTP metadata: got source %q capability %t", gemma4Q4, entry.MTPSource, entry.Capabilities.MTP)
 	}
 
+	const flashNextQ2 = "unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL"
+	entry, exists = catalog.Models[flashNextQ2]
+	if !exists {
+		t.Fatalf("required model %q is missing", flashNextQ2)
+	}
+	const wantMTPURL = "https://huggingface.co/ggml-org/Qwen3.8-Flash-Next-GGUF/resolve/main/mtp-Qwen3.8-Flash-Next-Q8_0.gguf"
+	if entry.MTPOrig != "mtp-Qwen3.8-Flash-Next-Q8_0.gguf" || entry.MTPURL != wantMTPURL || entry.MTPSize != 4137429280 {
+		t.Errorf("model %q has incomplete MTP companion metadata: %+v", flashNextQ2, entry)
+	}
+	if entry.MTPSource != MTPSourceCompanion || !entry.Capabilities.MTP {
+		t.Errorf("model %q MTP metadata: got source %q capability %t", flashNextQ2, entry.MTPSource, entry.Capabilities.MTP)
+	}
+	if got := NewFiles(entry).MTP.URL; got != wantMTPURL {
+		t.Errorf("model %q MTP download URL: got %q, want %q", flashNextQ2, got, wantMTPURL)
+	}
+
 	const embeddedMTP = "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL"
 	entry, exists = catalog.Models[embeddedMTP]
 	if !exists {
@@ -273,12 +289,62 @@ func TestEmbeddedCatalogCapabilities(t *testing.T) {
 
 func TestCatalogRejectsUnsupportedVersion(t *testing.T) {
 	filePath := filepath.Join(t.TempDir(), "catalog.yaml")
-	if err := os.WriteFile(filePath, []byte("version: 2\nmodels: {}\n"), 0600); err != nil {
+	if err := os.WriteFile(filePath, []byte("version: 3\nmodels: {}\n"), 0600); err != nil {
 		t.Fatalf("WriteFile: unexpected error: %v", err)
 	}
 
-	if _, err := NewResolver(nil, filePath).Load(); err == nil || !strings.Contains(err.Error(), "unsupported catalog version 2") {
+	if _, err := NewResolver(nil, filePath).Load(); err == nil || !strings.Contains(err.Error(), "unsupported catalog version 3") {
 		t.Fatalf("Load error: got %v, want unsupported catalog version", err)
+	}
+}
+
+func TestReconcileCatalogMigratesVersionOneWithoutEnrichment(t *testing.T) {
+	basePath := t.TempDir()
+	m, err := NewWithPaths(basePath)
+	if err != nil {
+		t.Fatalf("NewWithPaths: unexpected error: %v", err)
+	}
+
+	filePath, err := defaults.CatalogFile("", basePath)
+	if err != nil {
+		t.Fatalf("CatalogFile: unexpected error: %v", err)
+	}
+	resolver := NewResolver(nil, filePath)
+	old := Catalog{
+		Version: 1,
+		Models: map[string]CatalogEntry{
+			"example/model-Q8_0": {
+				Provider:     "example",
+				Family:       "model-GGUF",
+				Revision:     "main",
+				Files:        []string{"model-Q8_0.gguf"},
+				MTPChecked:   true,
+				ModelType:    "Dense",
+				Capabilities: CatalogCapabilities{Endpoint: "chat_completion", Streaming: true},
+			},
+		},
+	}
+	data, err := yaml.Marshal(old)
+	if err != nil {
+		t.Fatalf("Marshal: unexpected error: %v", err)
+	}
+	if err := os.WriteFile(filePath, data, 0600); err != nil {
+		t.Fatalf("WriteFile: unexpected error: %v", err)
+	}
+
+	if err := m.ReconcileCatalog(context.Background(), testLog); err != nil {
+		t.Fatalf("ReconcileCatalog: unexpected error: %v", err)
+	}
+
+	catalog, err := resolver.Load()
+	if err != nil {
+		t.Fatalf("Load: unexpected error: %v", err)
+	}
+	if catalog.Version != catalogVersion {
+		t.Errorf("catalog version: got %d, want %d", catalog.Version, catalogVersion)
+	}
+	if _, exists := catalog.Models["example/model-Q8_0"]; !exists {
+		t.Error("version 1 entry was removed during migration")
 	}
 }
 
@@ -1781,20 +1847,21 @@ func TestSelectFiles_MTPCompanionSubdirectory(t *testing.T) {
 	}
 }
 
-func TestSelectFiles_MTPCompanionSkipsUnsupportedFlashNext(t *testing.T) {
+func TestSelectFiles_MTPCompanionSelectsFlashNext(t *testing.T) {
 	siblings := []string{
-		"Qwen3.8-Flash-Next-UD-Q2_K_XL.gguf",
-		"MTP/mtp-Qwen3.8-Flash-Next-BF16.gguf",
-		"MTP/mtp-Qwen3.8-Flash-Next-Q4_K_M.gguf",
-		"MTP/mtp-Qwen3.8-Flash-Next-Q8_0.gguf",
+		"Qwen3.8-Flash-Next-IQ4_NL-00001-of-00002.gguf",
+		"Qwen3.8-Flash-Next-IQ4_NL-00002-of-00002.gguf",
+		"mtp-Qwen3.8-Flash-Next-BF16.gguf",
+		"mtp-Qwen3.8-Flash-Next-Q4_0.gguf",
+		"mtp-Qwen3.8-Flash-Next-Q8_0.gguf",
 	}
 
-	_, _, mtp, ok := selectFiles(siblings, "Qwen3.8-Flash-Next-GGUF", "Qwen3.8-Flash-Next-UD-Q2_K_XL")
+	_, _, mtp, ok := selectFiles(siblings, "Qwen3.8-Flash-Next-GGUF", "Qwen3.8-Flash-Next-IQ4_NL")
 	if !ok {
 		t.Fatal("expected match")
 	}
-	if mtp != "" {
-		t.Errorf("mtp = %q, want no unsupported qwen4exp companion", mtp)
+	if mtp != "mtp-Qwen3.8-Flash-Next-Q8_0.gguf" {
+		t.Errorf("mtp = %q, want self-contained Qwen4Exp Q8_0 companion", mtp)
 	}
 }
 

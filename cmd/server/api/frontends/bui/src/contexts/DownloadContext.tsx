@@ -16,6 +16,7 @@ export interface DownloadMeta {
   model_id?: string;
   model_urls: string[];
   proj_url?: string;
+  mtp_url?: string;
   fileIndex: number;
   fileTotal: number;
 }
@@ -138,6 +139,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
                 model_id: data.meta!.model_id,
                 model_urls: data.meta!.model_url ? [data.meta!.model_url] : [],
                 proj_url: data.meta!.proj_url || undefined,
+                mtp_url: data.meta!.mtp_url || undefined,
                 fileIndex: data.meta!.file_index ?? 1,
                 fileTotal: data.meta!.file_total ?? 1,
               },
@@ -273,6 +275,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
                 model_id: data.meta!.model_id,
                 model_urls: data.meta!.model_url ? [data.meta!.model_url] : [],
                 proj_url: data.meta!.proj_url || undefined,
+                mtp_url: data.meta!.mtp_url || undefined,
                 fileIndex: data.meta!.file_index ?? 1,
                 fileTotal: data.meta!.file_total ?? 1,
               },

@@ -427,6 +427,7 @@ export type KeysResponse = KeyResponse[];
 export interface PullMeta {
   model_url?: string;
   proj_url?: string;
+  mtp_url?: string;
   model_id?: string;
   file_index?: number;
   file_total?: number;

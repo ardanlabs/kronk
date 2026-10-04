@@ -57,6 +57,12 @@ export default function DownloadInfoTable({ meta, urls }: Props) {
             <td><a href={meta.proj_url} target="_blank" rel="noopener noreferrer"><code>{urlBaseName(meta.proj_url)}</code></a></td>
           </tr>
         )}
+        {meta.mtp_url && (
+          <tr>
+            <th>MTP Drafter URL</th>
+            <td><a href={meta.mtp_url} target="_blank" rel="noopener noreferrer"><code>{urlBaseName(meta.mtp_url)}</code></a></td>
+          </tr>
+        )}
       </tbody>
     </table>
   );

@@ -6,8 +6,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-
-	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 )
 
 // quantSuffixRe matches a trailing quant tag on a GGUF model id, e.g.:
@@ -17,6 +15,8 @@ import (
 //
 // The match is anchored to the end of the string.
 var quantSuffixRe = regexp.MustCompile(`(?i)([-.](UD[-.])?(IQ|Q)\d+(_[A-Z0-9]+)*|[-.](BF16|F16|F32))$`)
+
+const qwen4ExpMTPFamily = "qwen3.8-flash-next"
 
 // resolverSplitSuffixRe matches the "-NNNNN-of-NNNNN" GGUF split suffix.
 var resolverSplitSuffixRe = regexp.MustCompile(`-\d+-of-\d+$`)
@@ -233,18 +233,12 @@ func classifySiblings(siblings []string, mtpStandalone bool) (gguf, proj, mtp []
 // "gemma-4-26B-A4B-it-UD-Q8_K_XL" matches companion "mtp-gemma-4-26B-A4B-it".
 // Same-directory candidates are preferred so a repo that ships drafters in
 // an "MTP/" subfolder still resolves the top-level convenience copy first.
-// Qwen3.8 Flash Next companions are deliberately excluded until Kronk and its
-// llama.cpp dependency support their qwen4exp sidecar runtime.
 func pickMTPCompanion(mtp []string, target string) string {
 	if len(mtp) == 0 {
 		return ""
 	}
 
 	tFam := strings.ToLower(stripQuantSuffix(siblingModelID(target)))
-	if strings.Contains(tFam, "qwen3.8-flash-next") && !modelprofile.Qwen4ExpMTPEnabled {
-		return ""
-	}
-
 	var matches []string
 	for _, p := range mtp {
 		id := stripQuantSuffix(trimMTPPrefix(siblingModelID(p)))
@@ -254,6 +248,23 @@ func pickMTPCompanion(mtp []string, target string) string {
 	}
 	if len(matches) == 0 {
 		return ""
+	}
+
+	// Qwen4Exp publishes several self-contained companions. Prefer Q8_0:
+	// BF16 is substantially larger and slower for drafting, while Q4_K_M
+	// loses acceptance. Shared variants do not enter matches because their
+	// family includes the "shared" suffix and Kronk does not borrow tensors
+	// between independently loaded models.
+	if strings.EqualFold(tFam, qwen4ExpMTPFamily) {
+		var q8Matches []string
+		for _, p := range matches {
+			if strings.EqualFold(extractQuantTag(siblingModelID(p)), "Q8_0") {
+				q8Matches = append(q8Matches, p)
+			}
+		}
+		if len(q8Matches) > 0 {
+			matches = q8Matches
+		}
 	}
 
 	if pick := pickBestInDir(matches, dirSlash(target)); pick != "" {
