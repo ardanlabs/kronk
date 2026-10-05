@@ -3,6 +3,7 @@ package prepare
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"unicode"
@@ -36,6 +37,18 @@ type generatedVerification struct {
 type replacementHistory struct {
 	evidenceIDs map[int]struct{}
 	prompts     []string
+}
+
+type verificationStructureError struct {
+	err error
+}
+
+func (err verificationStructureError) Error() string {
+	return err.err.Error()
+}
+
+func (err verificationStructureError) Unwrap() error {
+	return err.err
 }
 
 func (p *Previewer) verifyAndRepair(ctx context.Context, request PreviewRequest, passages []string, records []Record, expectedCount int) ([]Record, []VerificationResult, previewMetrics, error) {
@@ -136,12 +149,46 @@ func (p *Previewer) verifyRecords(ctx context.Context, model string, goal Goal, 
 }
 
 func (p *Previewer) verifyRecordBatch(ctx context.Context, model string, goal Goal, datasetInstructions string, records []Record) ([]VerificationResult, previewMetrics, error) {
+	verification, metrics, err := p.verifyRecordBatchAttempts(ctx, model, goal, datasetInstructions, records)
+	if err == nil {
+		return verification, metrics, nil
+	}
+	if _, ok := errors.AsType[verificationStructureError](err); !ok {
+		return nil, metrics, err
+	}
+	if len(records) == 1 {
+		return []VerificationResult{{
+			RecordNumber:   1,
+			ExpectedTarget: records[0].Target,
+			Reason:         "The verifier could not return a complete structured result for this record.",
+		}}, metrics, nil
+	}
+
+	middle := len(records) / 2
+	left, leftMetrics, err := p.verifyRecordBatch(ctx, model, goal, datasetInstructions, records[:middle])
+	metrics.add(leftMetrics)
+	if err != nil {
+		return nil, metrics, err
+	}
+	right, rightMetrics, err := p.verifyRecordBatch(ctx, model, goal, datasetInstructions, records[middle:])
+	metrics.add(rightMetrics)
+	if err != nil {
+		return nil, metrics, err
+	}
+	for index := range right {
+		right[index].RecordNumber += middle
+	}
+	return append(left, right...), metrics, nil
+}
+
+func (p *Previewer) verifyRecordBatchAttempts(ctx context.Context, model string, goal Goal, datasetInstructions string, records []Record) ([]VerificationResult, previewMetrics, error) {
 	userPrompt := verificationUserPrompt(records, datasetInstructions)
 	enforceDatasetInstructions := datasetInstructions != ""
 	messages := verificationMessages(goal, enforceDatasetInstructions, userPrompt, "")
 
 	var metrics previewMetrics
 	var validationErr error
+	structureFailure := false
 
 	for attempt := range maxVerificationAttempts {
 		metrics.verificationAttempts++
@@ -153,14 +200,19 @@ func (p *Previewer) verifyRecordBatch(ctx context.Context, model string, goal Go
 			Seed:           preparationGenerationSeed,
 		})
 		if err != nil {
+			if errors.Is(err, ErrCompletionTruncated) {
+				return nil, metrics, verificationStructureError{err: fmt.Errorf("build preview: verify records: %w", err)}
+			}
 			return nil, metrics, fmt.Errorf("build preview: verify records: %w", err)
 		}
 		metrics.promptTokens += completion.PromptTokens
 		metrics.completionTokens += completion.CompletionTokens
 
+		structureFailure = false
 		var verdicts map[string]string
 		if err := json.Unmarshal([]byte(completion.Content), &verdicts); err != nil {
 			validationErr = fmt.Errorf("decode verification results: %w", err)
+			structureFailure = true
 		} else {
 			generated, err := generatedVerifications(verdicts, len(records), enforceDatasetInstructions)
 			validationErr = err
@@ -176,7 +228,11 @@ func (p *Previewer) verifyRecordBatch(ctx context.Context, model string, goal Go
 		messages = verificationMessages(goal, enforceDatasetInstructions, userPrompt, fmt.Sprintf("Retry %d: the previous response failed validation: %s. Return a fresh response containing every required record_N property with a permitted outcome.", attempt+2, validationErr))
 	}
 
-	return nil, metrics, recordQualityError{err: fmt.Errorf("build preview: verification response failed validation after %d attempts: %w", maxVerificationAttempts, validationErr)}
+	err := fmt.Errorf("build preview: verification response failed validation after %d attempts: %w", maxVerificationAttempts, validationErr)
+	if structureFailure {
+		return nil, metrics, verificationStructureError{err: err}
+	}
+	return nil, metrics, recordQualityError{err: err}
 }
 
 func verificationTokenLimit(recordCount int) int {

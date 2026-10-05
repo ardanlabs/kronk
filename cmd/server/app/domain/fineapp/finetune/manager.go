@@ -15,15 +15,27 @@ import (
 )
 
 const (
-	runStateFile   = "run.json"
-	runStateSchema = 1
+	runStateFile         = "run.json"
+	legacyRunStateSchema = 1
+	runStateSchema       = 2
+)
+
+var (
+	// ErrRunActive reports a conflicting start or resume request.
+	ErrRunActive = errors.New("another training run is already active")
+	// ErrRunNotResumable reports a run without a durable resumable checkpoint.
+	ErrRunNotResumable = errors.New("training run is not resumable")
+	// ErrNoActiveRun reports a stop request with no active worker.
+	ErrNoActiveRun = errors.New("no training run is active")
 )
 
 // RunInfo is the durable state shown by Current Run and History.
 type RunInfo struct {
 	Schema             int            `json:"schema"`
 	ID                 string         `json:"id"`
+	DatasetID          string         `json:"dataset_id"`
 	Dataset            string         `json:"dataset"`
+	ModelID            string         `json:"model_id"`
 	Model              string         `json:"model"`
 	Output             string         `json:"output"`
 	Runtime            Runtime        `json:"runtime"`
@@ -51,12 +63,14 @@ type Manager struct {
 	root    string
 	backend Backend
 	now     func() time.Time
+	write   func(RunInfo) error
 
-	current    RunInfo
-	hasCurrent bool
-	active     bool
-	stopping   bool
-	cancel     context.CancelFunc
+	current        RunInfo
+	hasCurrent     bool
+	active         bool
+	stopping       bool
+	cancel         context.CancelFunc
+	persistenceErr error
 }
 
 // NewManager creates the application-owned run directory.
@@ -77,7 +91,7 @@ func NewManager(root string, backend Backend) (*Manager, error) {
 	if err := os.Chmod(absolute, 0o700); err != nil {
 		return nil, fmt.Errorf("secure run directory %q: %w", absolute, err)
 	}
-	return &Manager{root: absolute, backend: backend, now: time.Now}, nil
+	return &Manager{root: absolute, backend: backend, now: time.Now, write: writeRunInfo}, nil
 }
 
 // Start validates and starts one background run. Manager owns Output so UI
@@ -91,9 +105,13 @@ func (manager *Manager) Start(ctx context.Context, request Request, update Updat
 	}
 
 	manager.mu.Lock()
+	if manager.persistenceErr != nil {
+		manager.mu.Unlock()
+		return RunInfo{}, fmt.Errorf("previous training result is not durable: %w", manager.persistenceErr)
+	}
 	if manager.active {
 		manager.mu.Unlock()
-		return RunInfo{}, errors.New("another training run is already active")
+		return RunInfo{}, ErrRunActive
 	}
 	now := manager.now()
 	id, output, err := manager.nextOutput(now)
@@ -112,12 +130,14 @@ func (manager *Manager) Start(ctx context.Context, request Request, update Updat
 	}
 	runContext, cancel := context.WithCancel(ctx)
 	initial := RunInfo{
-		Schema: runStateSchema, ID: id, Dataset: request.Dataset, Model: request.Model, Output: output,
+		Schema: runStateSchema, ID: id,
+		DatasetID: resourceDatasetID(request), Dataset: request.Dataset,
+		ModelID: resourceModelID(request), Model: request.Model, Output: output,
 		Runtime: request.Runtime, Training: request.Training,
 		Status: StatusPreparing, Progress: Progress{Stage: StageImporting, Message: "Preparing training run"},
 		StartedAt: now, UpdatedAt: now,
 	}
-	if err := writeRunInfo(initial); err != nil {
+	if err := manager.write(initial); err != nil {
 		cancel()
 		_ = os.Remove(output)
 		manager.mu.Unlock()
@@ -141,9 +161,13 @@ func (manager *Manager) Resume(ctx context.Context, id string, update UpdateFunc
 	}
 
 	manager.mu.Lock()
+	if manager.persistenceErr != nil {
+		manager.mu.Unlock()
+		return RunInfo{}, fmt.Errorf("previous training result is not durable: %w", manager.persistenceErr)
+	}
 	if manager.active {
 		manager.mu.Unlock()
-		return RunInfo{}, errors.New("another training run is already active")
+		return RunInfo{}, ErrRunActive
 	}
 	info, err := readRunInfo(filepath.Join(manager.root, id))
 	if err != nil {
@@ -152,14 +176,15 @@ func (manager *Manager) Resume(ctx context.Context, id string, update UpdateFunc
 	}
 	if info.Status != StatusFailed && info.Status != StatusStopped && info.Status != StatusNeedsImprovement {
 		manager.mu.Unlock()
-		return RunInfo{}, errors.New("only an incomplete training run can be resumed")
+		return RunInfo{}, fmt.Errorf("%w: only an incomplete training run can be resumed", ErrRunNotResumable)
 	}
 	if !info.Resumable || info.SelectedCheckpoint == "" {
 		manager.mu.Unlock()
-		return RunInfo{}, errors.New("this run has no completed training checkpoint to resume")
+		return RunInfo{}, fmt.Errorf("%w: this run has no completed training checkpoint", ErrRunNotResumable)
 	}
 	request := Request{
-		Dataset: info.Dataset, Model: info.Model, Output: info.Output,
+		DatasetID: info.DatasetID, Dataset: info.Dataset,
+		ModelID: info.ModelID, Model: info.Model, Output: info.Output,
 		Runtime: info.Runtime, Training: info.Training,
 	}
 	if err := manager.backend.Preflight(ctx, request); err != nil {
@@ -176,7 +201,7 @@ func (manager *Manager) Resume(ctx context.Context, id string, update UpdateFunc
 	info.Report = ""
 	info.FinishedAt = time.Time{}
 	info.UpdatedAt = now
-	if err := writeRunInfo(info); err != nil {
+	if err := manager.write(info); err != nil {
 		cancel()
 		manager.mu.Unlock()
 		return RunInfo{}, err
@@ -197,7 +222,7 @@ func (manager *Manager) Stop() error {
 	manager.mu.Lock()
 	if !manager.active || manager.cancel == nil || manager.stopping {
 		manager.mu.Unlock()
-		return errors.New("no training run is active")
+		return ErrNoActiveRun
 	}
 	manager.stopping = true
 	cancel := manager.cancel
@@ -256,12 +281,37 @@ func (manager *Manager) Recover() ([]RunInfo, error) {
 		if info.Status != StatusPreparing && info.Status != StatusTraining && info.Status != StatusEvaluating {
 			continue
 		}
+		if recovery, ok := manager.backend.(RecoveryBackend); ok {
+			request := Request{
+				DatasetID: info.DatasetID, Dataset: info.Dataset,
+				ModelID: info.ModelID, Model: info.Model, Output: info.Output,
+				Runtime: info.Runtime, Training: info.Training,
+			}
+			result, found, recoveryErr := recovery.Recover(context.Background(), request)
+			if recoveryErr == nil && found {
+				if err := validateResultPaths(info.Output, result); err != nil {
+					recoveryErr = err
+				} else {
+					info.Resumable = result.Resumable
+					info.SelectedEpoch = result.SelectedEpoch
+					info.SelectedCheckpoint = result.SelectedCheckpoint
+				}
+			}
+			if recoveryErr != nil {
+				info.Resumable = false
+				info.SelectedEpoch = 0
+				info.SelectedCheckpoint = ""
+				info.Error = fmt.Sprintf("recover durable training checkpoint: %v", recoveryErr)
+			}
+		}
 		now := manager.now()
 		info.Status = StatusFailed
-		info.Error = "training ended before Moxie could record a final result"
+		if info.Error == "" {
+			info.Error = "training ended before Moxie could record a final result"
+		}
 		info.UpdatedAt = now
 		info.FinishedAt = now
-		if err := writeRunInfo(info); err != nil {
+		if err := manager.write(info); err != nil {
 			return nil, err
 		}
 	}
@@ -306,7 +356,7 @@ func (manager *Manager) execute(ctx context.Context, request Request, update Upd
 		current.Progress = progress
 		current.Status = statusForStage(progress.Stage)
 		current.UpdatedAt = manager.now()
-		if err := writeRunInfo(current); err != nil {
+		if err := manager.write(current); err != nil {
 			progressErr = err
 			cancel := manager.cancel
 			manager.mu.Unlock()
@@ -338,11 +388,17 @@ func (manager *Manager) execute(ctx context.Context, request Request, update Upd
 
 	manager.mu.Lock()
 	finished := manager.finishInfo(manager.current, result, runErr)
-	if err := writeRunInfo(finished); err != nil {
+	manager.persistenceErr = nil
+	if err := manager.write(finished); err != nil {
 		finished.Status = StatusFailed
-		finished.Error = err.Error()
+		finished.Adapter = ""
+		finished.Error = fmt.Sprintf("persist terminal training state: %v", err)
 		finished.UpdatedAt = manager.now()
 		finished.FinishedAt = finished.UpdatedAt
+		if retryErr := manager.write(finished); retryErr != nil {
+			manager.persistenceErr = fmt.Errorf("%v; persist failure state: %w", err, retryErr)
+			finished.Error = manager.persistenceErr.Error()
+		}
 	}
 	manager.current = finished
 	manager.active = false
@@ -435,10 +491,76 @@ func readRunInfo(root string) (RunInfo, error) {
 	if err := json.Unmarshal(data, &info); err != nil {
 		return RunInfo{}, fmt.Errorf("decode run state in %q: %w", root, err)
 	}
-	if info.Schema != runStateSchema || info.ID == "" || info.Output != root {
-		return RunInfo{}, fmt.Errorf("run state in %q is invalid", root)
+	if err := validateRunInfo(root, &info); err != nil {
+		return RunInfo{}, fmt.Errorf("run state in %q is invalid: %w", root, err)
 	}
 	return info, nil
+}
+
+func validateRunInfo(root string, info *RunInfo) error {
+	if info.Schema != legacyRunStateSchema && info.Schema != runStateSchema {
+		return fmt.Errorf("unsupported schema %d", info.Schema)
+	}
+	if info.ID == "" || filepath.Base(root) != info.ID || info.Output != root {
+		return errors.New("run identity does not match its directory")
+	}
+	if info.Dataset == "" || info.Model == "" {
+		return errors.New("dataset and model paths are required")
+	}
+	if info.DatasetID == "" {
+		info.DatasetID = filepath.Base(filepath.Dir(info.Dataset))
+	}
+	if info.ModelID == "" {
+		info.ModelID = strings.TrimSuffix(filepath.Base(info.Model), filepath.Ext(info.Model))
+	}
+	if info.DatasetID == "" || info.ModelID == "" {
+		return errors.New("dataset and model identities are required")
+	}
+	if info.Training != (TrainingConfig{}) {
+		if err := info.Training.Validate(); err != nil {
+			return fmt.Errorf("training configuration: %w", err)
+		}
+	}
+	if err := validateProgress(info.Progress); err != nil {
+		return err
+	}
+	switch info.Status {
+	case StatusPreparing, StatusTraining, StatusEvaluating, StatusCompleted, StatusNeedsImprovement, StatusFailed, StatusStopped:
+	default:
+		return fmt.Errorf("unknown status %q", info.Status)
+	}
+	if info.StartedAt.IsZero() || info.UpdatedAt.Before(info.StartedAt) {
+		return errors.New("run timestamps are inconsistent")
+	}
+	terminal := info.Status == StatusCompleted || info.Status == StatusNeedsImprovement || info.Status == StatusFailed || info.Status == StatusStopped
+	if terminal == info.FinishedAt.IsZero() {
+		return errors.New("run completion timestamp does not match its status")
+	}
+	if !info.FinishedAt.IsZero() && info.FinishedAt.Before(info.StartedAt) {
+		return errors.New("run completion precedes its start")
+	}
+	if info.Resumable && (info.SelectedEpoch <= 0 || info.SelectedCheckpoint == "") {
+		return errors.New("resumable run has no selected checkpoint")
+	}
+	if err := validateResultPaths(root, Result{Adapter: info.Adapter, Report: info.Report, SelectedCheckpoint: info.SelectedCheckpoint}); err != nil {
+		return err
+	}
+	info.Schema = runStateSchema
+	return nil
+}
+
+func resourceDatasetID(request Request) string {
+	if request.DatasetID != "" {
+		return request.DatasetID
+	}
+	return filepath.Base(filepath.Dir(request.Dataset))
+}
+
+func resourceModelID(request Request) string {
+	if request.ModelID != "" {
+		return request.ModelID
+	}
+	return strings.TrimSuffix(filepath.Base(request.Model), filepath.Ext(request.Model))
 }
 
 func writeRunInfo(info RunInfo) error {

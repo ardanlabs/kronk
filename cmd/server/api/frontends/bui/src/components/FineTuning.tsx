@@ -419,10 +419,9 @@ export default function FineTuning() {
     setTrainingConfig((current) => current ? { ...current, [key]: value } : current);
   };
 
-  const cancel = () => {
+  const cancel = async () => {
     const operation = preparationOperation;
-    cancelPreparation();
-    if (operation !== 'prepared-upload') setView('prepare');
+    if (await cancelPreparation() && operation !== 'prepared-upload') setView('prepare');
   };
 
   const build = async () => {
@@ -486,7 +485,7 @@ export default function FineTuning() {
                 <div className="fine-dataset-choice">
                   <div className="form-group fine-file-field">
                     <FieldLabel htmlFor="fine-prepared-dataset" tooltipKey="fineTuningDataset">Training-Ready JSONL</FieldLabel>
-                    <input ref={preparedInputRef} className="fine-hidden-input" id="fine-prepared-dataset" type="file" accept=".jsonl,application/x-ndjson" onChange={(event) => {
+                    <input ref={preparedInputRef} className="fine-hidden-input" id="fine-prepared-dataset" type="file" accept=".jsonl,application/x-ndjson" disabled={busy || preparationOperation !== null} onChange={(event) => {
                       choosePreparedDataset(event.target.files?.[0] ?? null);
                       event.currentTarget.value = '';
                     }} />
@@ -622,7 +621,7 @@ export default function FineTuning() {
               <div className="fine-form-grid">
                 <div className="form-group fine-file-field">
                   <FieldLabel htmlFor="fine-source" tooltipKey="fineTuningSource">Source Documents</FieldLabel>
-                  <input ref={sourceInputRef} className="fine-hidden-input" id="fine-source" type="file" multiple accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(event) => {
+                  <input ref={sourceInputRef} className="fine-hidden-input" id="fine-source" type="file" multiple accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" disabled={busy || preparationOperation !== null} onChange={(event) => {
                     const selected = Array.from(event.target.files ?? []);
                     const known = new Set(sourceFiles.map((file) => `${file.name}:${file.size}:${file.lastModified}`));
                     setSourceFiles([...sourceFiles, ...selected.filter((file) => {
@@ -634,7 +633,7 @@ export default function FineTuning() {
                     event.currentTarget.value = '';
                   }} />
                   <div className="fine-file-picker">
-                    <button type="button" className="btn btn-secondary" onClick={() => sourceInputRef.current?.click()}>{sourceFiles.length ? 'Add Documents' : 'Choose Documents'}</button>
+                    <button type="button" className="btn btn-secondary" disabled={busy || preparationOperation !== null} onClick={() => sourceInputRef.current?.click()}>{sourceFiles.length ? 'Add Documents' : 'Choose Documents'}</button>
                     <span>{sourceFiles.length ? `${sourceFiles.length} document${sourceFiles.length === 1 ? '' : 's'} selected` : 'No documents chosen'}</span>
                   </div>
                   {!!sourceFiles.length && (
@@ -755,7 +754,7 @@ export default function FineTuning() {
                 <div><strong title={activeDocument.name}>{activeDocument.name}</strong><span>Review this document’s examples independently.</span></div>
                 <button className="btn btn-small btn-secondary" disabled={activeDocumentIndex === documentPreviews.length - 1 || busy} onClick={() => setActiveDocumentIndex((index) => index + 1)}>Next →</button>
               </div>
-              <p className="fine-panel-copy">Edit questions or answers before building. Your edits are included in training exactly as written; evidence remains available for reference.</p>
+              <p className="fine-panel-copy">Edit questions or answers before building. Accepted edits are trimmed, revalidated against their evidence, and preserved as reviewed examples in the completed dataset.</p>
               <div className="fine-records">
                 {activeDocument.records.map((record, index) => {
                   const result = activeDocument.verification[index];

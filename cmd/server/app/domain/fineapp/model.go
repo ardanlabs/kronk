@@ -3,7 +3,6 @@ package fineapp
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -428,12 +427,10 @@ func verificationFromBusiness(results []prepare.VerificationResult) []Verificati
 }
 
 func runFromBusiness(run finetune.RunInfo) RunResponse {
-	datasetID := filepath.Base(filepath.Dir(run.Dataset))
-	model := strings.TrimSuffix(filepath.Base(run.Model), filepath.Ext(run.Model))
 	return RunResponse{
 		ID:        run.ID,
-		DatasetID: datasetID,
-		Model:     model,
+		DatasetID: run.DatasetID,
+		Model:     run.ModelID,
 		Status:    string(run.Status),
 		Progress: ProgressResponse{
 			Stage:         string(run.Progress.Stage),
@@ -443,7 +440,7 @@ func runFromBusiness(run finetune.RunInfo) RunResponse {
 			Resumable:     run.Progress.Resumable,
 			SelectedEpoch: run.Progress.SelectedEpoch,
 		},
-		Error:         run.Error,
+		Error:         publicRunError(run),
 		Resumable:     run.Resumable,
 		HasAdapter:    run.Adapter != "",
 		HasReport:     run.Report != "",
@@ -452,6 +449,19 @@ func runFromBusiness(run finetune.RunInfo) RunResponse {
 		UpdatedAt:     run.UpdatedAt,
 		FinishedAt:    run.FinishedAt,
 	}
+}
+
+func publicRunError(run finetune.RunInfo) string {
+	if run.Error == "" {
+		return ""
+	}
+	if run.Status == finetune.StatusNeedsImprovement {
+		return run.Error
+	}
+	if run.Status == finetune.StatusStopped {
+		return "Fine-tuning was stopped"
+	}
+	return "Fine-tuning failed. Check the server logs for details."
 }
 
 func runsFromBusiness(runs []finetune.RunInfo) []RunResponse {

@@ -104,6 +104,9 @@ func (m *Manager) Extract(ctx context.Context, sourcePath string) (Artifact, err
 	if err != nil {
 		return Artifact{}, fmt.Errorf("extract source document: %w", err)
 	}
+	if !validDoclingStructuredJSON(document.StructuredJSON) {
+		return Artifact{}, fmt.Errorf("extract source document: invalid structured JSON")
+	}
 
 	if err := ctx.Err(); err != nil {
 		return Artifact{}, fmt.Errorf("extract source document: %w", err)
@@ -153,9 +156,6 @@ func (m *Manager) Extract(ctx context.Context, sourcePath string) (Artifact, err
 	}
 
 	structured := document.StructuredJSON
-	if len(structured) == 0 {
-		structured = json.RawMessage(`{}`)
-	}
 	structuredPath := filepath.Join(temporaryPath, "extracted.docling.json")
 	if err := os.WriteFile(structuredPath, append(structured, '\n'), 0o600); err != nil {
 		return Artifact{}, fmt.Errorf("write Docling JSON: %w", err)
@@ -542,11 +542,12 @@ func validCachedArtifact(artifact Artifact, previous manifest) bool {
 	}
 	sourceHash, sourceErr := hashFile(artifact.SourcePath)
 	markdownHash, markdownErr := hashFile(artifact.MarkdownPath)
-	structuredHash, structuredErr := hashFile(artifact.StructuredPath)
+	structured, structuredErr := os.ReadFile(artifact.StructuredPath)
 	return sourceErr == nil && markdownErr == nil && structuredErr == nil &&
 		sourceHash == previous.SourceSHA256 &&
 		markdownHash == previous.MarkdownSHA256 &&
-		structuredHash == previous.StructuredSHA256
+		hashBytes(structured) == previous.StructuredSHA256 &&
+		validDoclingStructuredJSON(structured)
 }
 
 func (m *Manager) newID() (string, error) {

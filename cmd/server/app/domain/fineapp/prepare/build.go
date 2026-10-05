@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -147,8 +148,8 @@ type FullBuildReport struct {
 	Documents            []FullBuildDocumentReport `json:"documents,omitempty"`
 }
 
-// BuildFull creates, independently verifies, and atomically persists a
-// canonical dataset from the complete extracted Markdown document.
+// BuildFull creates and independently verifies a canonical dataset, then
+// atomically replaces each published artifact.
 func (p *Previewer) BuildFull(ctx context.Context, request FullBuildRequest) (FullBuildArtifact, error) {
 	if request.DatasetDirectory == "" {
 		return FullBuildArtifact{}, fmt.Errorf("build dataset: dataset directory is required")
@@ -287,7 +288,7 @@ func (p *Previewer) BuildFull(ctx context.Context, request FullBuildRequest) (Fu
 	if err != nil {
 		return FullBuildArtifact{}, err
 	}
-	checkpoint, checkpointFound := loadBuildCheckpoint(request.DatasetDirectory, fingerprint, totalBatches)
+	checkpoint, checkpointFound := loadBuildCheckpoint(request.DatasetDirectory, fingerprint, totalBatches, plannedBatches)
 	if checkpointFound {
 		records = checkpoint.Records
 		rejectedFacts = checkpoint.RejectedFacts
@@ -339,9 +340,16 @@ func (p *Previewer) BuildFull(ctx context.Context, request FullBuildRequest) (Fu
 		}
 		if request.Goal == GoalQuestionAnswer {
 			completeFacts := completeQuestionAnswerFacts(records)
+			terminalFacts := make(map[string]struct{}, len(rejectedFacts))
+			for _, rejected := range rejectedFacts {
+				if !rejected.UserApproved {
+					terminalFacts[rejected.FactID] = struct{}{}
+				}
+			}
 			plannedBatches[index] = slices.DeleteFunc(slices.Clone(plannedBatches[index]), func(fact Record) bool {
 				_, complete := completeFacts[fact.FactID]
-				return complete
+				_, terminal := terminalFacts[fact.FactID]
+				return complete || terminal
 			})
 			batchFactIDs := make(map[string]struct{}, len(plannedBatches[index]))
 			for _, fact := range plannedBatches[index] {
@@ -367,16 +375,15 @@ func (p *Previewer) BuildFull(ctx context.Context, request FullBuildRequest) (Fu
 		}
 		records = append(records, generated...)
 		if len(batchRejected) > 0 {
-			exclusions.prompts = recordPrompts(records)
-			exclusions.targets = recordTargets(records)
-			if err := saveBuildCheckpoint(request.DatasetDirectory, buildCheckpointFrom(fingerprint, index, records, rejectedFacts, excludedEvidence, metrics)); err != nil {
-				return FullBuildArtifact{}, err
-			}
 			if rejected := slices.IndexFunc(batchRejected, func(fact RejectedFact) bool { return fact.UserApproved }); rejected >= 0 {
+				exclusions.prompts = recordPrompts(records)
+				exclusions.targets = recordTargets(records)
+				if err := saveBuildCheckpoint(request.DatasetDirectory, buildCheckpointFrom(fingerprint, index, records, rejectedFacts, excludedEvidence, metrics)); err != nil {
+					return FullBuildArtifact{}, err
+				}
 				record := slices.IndexFunc(seeds, func(seed Record) bool { return seed.FactID == batchRejected[rejected].FactID })
 				return FullBuildArtifact{}, fmt.Errorf("build dataset batch %d of %d: user-approved record %d remains unresolved after %d regeneration attempts; completed facts were checkpointed", index+1, totalBatches, record+1, plannedFactAttempts)
 			}
-			return FullBuildArtifact{}, fmt.Errorf("build dataset batch %d of %d: %d planned facts remain unresolved after %d regeneration attempts; completed facts were checkpointed", index+1, totalBatches, len(batchRejected), plannedFactAttempts)
 		}
 		completedUnits += 2
 		completedBatches = index + 1
@@ -387,9 +394,6 @@ func (p *Previewer) BuildFull(ctx context.Context, request FullBuildRequest) (Fu
 			return FullBuildArtifact{}, err
 		}
 		reportProgress(fmt.Sprintf("Completed batch %d of %d", index+1, totalBatches), completedUnits)
-	}
-	if request.Goal == GoalQuestionAnswer && len(rejectedFacts) > 0 {
-		return FullBuildArtifact{}, fmt.Errorf("build dataset: checkpoint contains %d unresolved planned facts", len(rejectedFacts))
 	}
 	if err := ctx.Err(); err != nil {
 		return FullBuildArtifact{}, fmt.Errorf("build dataset: %w", err)
@@ -702,34 +706,43 @@ func (p *Previewer) prepareQuestionAnswerEvaluation(ctx context.Context, request
 		return nil, previewMetrics{}, nil
 	}
 
-	prepare := func(selected []Record, validation bool, independent bool) ([]Record, previewMetrics, error) {
-		generated, rejected, metrics, err := p.preparePlannedQuestionAnswerBatch(ctx, request, selected, exclusions, func(string) {})
-		if err != nil {
-			return nil, metrics, err
-		}
-		if len(rejected) > 0 {
-			return nil, metrics, fmt.Errorf("build dataset: %d evaluation facts did not produce verified alternate questions", len(rejected))
-		}
-		for index := range generated {
-			generated[index].ValidationPrompt = validation
-			generated[index].IndependentPrompt = independent
-			generated[index].UserApproved = false
-			generated[index].UserEdited = false
-		}
-		return generated, metrics, nil
-	}
-
-	validation, metrics, err := prepare(facts[:questionAnswerValidationRecords], true, false)
+	validation, metrics, err := p.prepareQuestionAnswerEvaluationGroup(ctx, request, facts, questionAnswerValidationRecords, true, false, exclusions)
 	if err != nil {
 		return nil, metrics, fmt.Errorf("prepare validation prompts: %w", err)
 	}
 	exclusions.prompts = append(exclusions.prompts, recordPrompts(validation)...)
-	test, testMetrics, err := prepare(facts[:questionAnswerTestRecords], false, true)
+	test, testMetrics, err := p.prepareQuestionAnswerEvaluationGroup(ctx, request, facts, questionAnswerTestRecords, false, true, exclusions)
 	metrics.add(testMetrics)
 	if err != nil {
 		return nil, metrics, fmt.Errorf("prepare protected test prompts: %w", err)
 	}
 	return append(validation, test...), metrics, nil
+}
+
+func (p *Previewer) prepareQuestionAnswerEvaluationGroup(ctx context.Context, request FullBuildRequest, facts []Record, required int, validation, independent bool, exclusions generationExclusions) ([]Record, previewMetrics, error) {
+	generated := make([]Record, 0, required)
+	var metrics previewMetrics
+	for start := 0; start < len(facts) && len(generated) < required; {
+		end := min(start+min(maximumFactsPerBatch, required-len(generated)), len(facts))
+		batch, _, batchMetrics, err := p.preparePlannedQuestionAnswerBatch(ctx, request, facts[start:end], exclusions, func(string) {})
+		metrics.add(batchMetrics)
+		if err != nil {
+			return nil, metrics, err
+		}
+		for index := range batch {
+			batch[index].ValidationPrompt = validation
+			batch[index].IndependentPrompt = independent
+			batch[index].UserApproved = false
+			batch[index].UserEdited = false
+		}
+		generated = append(generated, batch...)
+		exclusions.prompts = append(exclusions.prompts, recordPrompts(batch)...)
+		start = end
+	}
+	if len(generated) < required {
+		return nil, metrics, fmt.Errorf("build dataset: only %d of %d evaluation facts produced verified alternate questions", len(generated), required)
+	}
+	return generated, metrics, nil
 }
 
 func evaluationQuestionAnswerFacts(records []Record) []Record {
@@ -830,6 +843,11 @@ func (p *Previewer) selectQuestionAnswerCandidatesWithContexts(ctx context.Conte
 			Seed:           preparationGenerationSeed,
 		})
 		if err != nil {
+			if errors.Is(err, ErrCompletionTruncated) {
+				validationErr = err
+				correction = fmt.Sprintf("Retry %d: the previous response failed validation: %s. Return target_ids with exactly %d arrays in passage order. Use only these target ID ranges: %s. Use an empty array for an unusable passage; do not omit its array.", attempt+1, validationErr, len(passages), questionAnswerTargetRanges(targetCandidates))
+				continue
+			}
 			return nil, metrics, fmt.Errorf("select grounded answers: %w", err)
 		}
 		metrics.promptTokens += completion.PromptTokens
@@ -1211,6 +1229,9 @@ func (p *Previewer) expandQuestionAnswerRecords(ctx context.Context, model, data
 		Seed:           preparationGenerationSeed + uint32(attempt),
 	})
 	if err != nil {
+		if errors.Is(err, ErrCompletionTruncated) {
+			return nil, metrics, recordQualityError{err: fmt.Errorf("build question pool: %w", err)}
+		}
 		return nil, metrics, fmt.Errorf("build question pool: %w", err)
 	}
 	metrics.promptTokens += completion.PromptTokens
@@ -1604,19 +1625,59 @@ func buildFingerprint(markdown []byte, request FullBuildRequest, seeds []Record)
 	return fmt.Sprintf("%x", digest.Sum(nil)), nil
 }
 
-func loadBuildCheckpoint(directory, fingerprint string, totalBatches int) (buildCheckpoint, bool) {
-	data, err := os.ReadFile(filepath.Join(directory, buildCheckpointFile))
+func loadBuildCheckpoint(directory, fingerprint string, totalBatches int, plannedBatches [][]Record) (buildCheckpoint, bool) {
+	path := filepath.Join(directory, buildCheckpointFile)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return buildCheckpoint{}, false
 	}
 	var checkpoint buildCheckpoint
 	if json.Unmarshal(data, &checkpoint) != nil || checkpoint.Version != datasetContract || checkpoint.PlanVersion != datasetPlanVersion || checkpoint.Fingerprint != fingerprint || checkpoint.CompletedBatches < 0 || checkpoint.CompletedBatches > totalBatches {
+		_ = os.Remove(path)
 		return buildCheckpoint{}, false
 	}
 	if _, err := ValidateReviewedRecords(checkpoint.Records); err != nil {
+		_ = os.Remove(path)
+		return buildCheckpoint{}, false
+	}
+	if !validBuildCheckpointState(checkpoint, plannedBatches) {
+		_ = os.Remove(path)
 		return buildCheckpoint{}, false
 	}
 	return checkpoint, true
+}
+
+func validBuildCheckpointState(checkpoint buildCheckpoint, plannedBatches [][]Record) bool {
+	if checkpoint.ExcludedEvidence < 0 || checkpoint.GenerationAttempts < 0 || checkpoint.VerificationAttempts < 0 || checkpoint.PromptTokens < 0 || checkpoint.CompletionTokens < 0 {
+		return false
+	}
+	if len(checkpoint.RejectedFacts) == 0 {
+		return true
+	}
+
+	planned := make(map[string]Record)
+	for _, batch := range plannedBatches {
+		for _, fact := range batch {
+			if fact.FactID != "" {
+				planned[fact.FactID] = fact
+			}
+		}
+	}
+	seen := make(map[string]struct{}, len(checkpoint.RejectedFacts))
+	for _, rejected := range checkpoint.RejectedFacts {
+		fact, exists := planned[rejected.FactID]
+		if !exists || rejected.FactID == "" || strings.TrimSpace(rejected.Target) == "" || strings.TrimSpace(rejected.Reason) == "" {
+			return false
+		}
+		if _, duplicate := seen[rejected.FactID]; duplicate {
+			return false
+		}
+		if rejected.Target != fact.Target || rejected.Evidence != fact.Evidence || rejected.UserApproved != fact.UserApproved {
+			return false
+		}
+		seen[rejected.FactID] = struct{}{}
+	}
+	return true
 }
 
 func buildCheckpointFrom(fingerprint string, completed int, records []Record, rejected []RejectedFact, excluded int, metrics previewMetrics) buildCheckpoint {

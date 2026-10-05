@@ -2,6 +2,7 @@ package fineapp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -10,6 +11,8 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 )
+
+const maxStartRunRequestBytes = 64 << 10
 
 func (a *app) trainingRecipe(_ context.Context, r *http.Request) web.Encoder {
 	if a.recipes == nil {
@@ -57,6 +60,7 @@ func (a *app) startRun(ctx context.Context, r *http.Request) web.Encoder {
 	}
 
 	var req StartRunRequest
+	r.Body = http.MaxBytesReader(nil, r.Body, maxStartRunRequestBytes)
 	if err := web.Decode(r, &req); err != nil {
 		return errs.New(errs.InvalidArgument, err)
 	}
@@ -81,10 +85,14 @@ func (a *app) startRun(ctx context.Context, r *http.Request) web.Encoder {
 	}
 
 	run, err := a.finetuner.Start(context.WithoutCancel(ctx), finetune.Request{
-		Dataset: dataset, Model: model, Runtime: a.runtime, Training: training,
+		DatasetID: req.DatasetID, Dataset: dataset,
+		ModelID: req.ModelID, Model: model, Runtime: a.runtime, Training: training,
 	}, nil)
 	if err != nil {
-		return errs.New(errs.FailedPrecondition, fmt.Errorf("start fine-tuning run: %w", err))
+		if errors.Is(err, finetune.ErrRunActive) {
+			return errs.New(errs.FailedPrecondition, fmt.Errorf("start fine-tuning run: %w", err))
+		}
+		return errs.FromSDK(fmt.Errorf("start fine-tuning run: %w", err))
 	}
 
 	return jsonResponse{value: runFromBusiness(run)}
@@ -183,7 +191,10 @@ func (a *app) resumeRun(ctx context.Context, r *http.Request) web.Encoder {
 	}
 	run, err := a.finetuner.Resume(context.WithoutCancel(ctx), id, nil)
 	if err != nil {
-		return errs.New(errs.FailedPrecondition, fmt.Errorf("resume fine-tuning run: %w", err))
+		if errors.Is(err, finetune.ErrRunActive) || errors.Is(err, finetune.ErrRunNotResumable) {
+			return errs.New(errs.FailedPrecondition, fmt.Errorf("resume fine-tuning run: %w", err))
+		}
+		return errs.FromSDK(fmt.Errorf("resume fine-tuning run: %w", err))
 	}
 	return jsonResponse{value: runFromBusiness(run)}
 }

@@ -300,6 +300,11 @@ func (p *Previewer) generateRecords(ctx context.Context, request PreviewRequest,
 			Seed:           preparationGenerationSeed,
 		})
 		if err != nil {
+			if errors.Is(err, ErrCompletionTruncated) {
+				validationErr = err
+				correction = fmt.Sprintf("Retry %d: the previous response failed validation: %s. Generate %d fresh replacement records using only the remaining evidence.", attempt+1, validationErr, remaining)
+				continue
+			}
 			return nil, metrics, fmt.Errorf("build preview: generate records: %w", err)
 		}
 		metrics.promptTokens += completion.PromptTokens

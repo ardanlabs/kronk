@@ -18,11 +18,13 @@ type Runtime struct {
 // Request contains user and platform selections for one training run. Model
 // recipes intentionally remain behind Backend.
 type Request struct {
-	Dataset  string         `json:"dataset"`
-	Output   string         `json:"output"`
-	Model    string         `json:"model"`
-	Runtime  Runtime        `json:"runtime"`
-	Training TrainingConfig `json:"training"`
+	DatasetID string         `json:"dataset_id"`
+	Dataset   string         `json:"dataset"`
+	Output    string         `json:"output"`
+	ModelID   string         `json:"model_id"`
+	Model     string         `json:"model"`
+	Runtime   Runtime        `json:"runtime"`
+	Training  TrainingConfig `json:"training"`
 }
 
 // TrainingConfig contains the user-adjustable settings for one run. The
@@ -159,9 +161,15 @@ type Result struct {
 	SelectedCheckpoint string `json:"selected_checkpoint,omitempty"`
 }
 
-// Backend is the model-neutral seam implemented by the real Gemma and Qwen
-// training workflow. It has no Fyne dependency.
+// Backend is the model-neutral seam implemented by the local Gemma training
+// workflow. It has no presentation-layer dependency.
 type Backend interface {
 	Preflight(context.Context, Request) error
 	Run(context.Context, Request, ProgressFunc) (Result, error)
+}
+
+// RecoveryBackend discovers backend state that became durable before run state
+// was updated during an interrupted process.
+type RecoveryBackend interface {
+	Recover(context.Context, Request) (Result, bool, error)
 }

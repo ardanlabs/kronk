@@ -284,6 +284,10 @@ func TestTrainingStateOnlyResumesTheSameValidatedRun(t *testing.T) {
 	if trained.Evaluation != nil {
 		t.Fatal("stale protected evaluation was reused")
 	}
+	recovered, found, err := New().Recover(t.Context(), request)
+	if err != nil || !found || !recovered.Resumable || recovered.SelectedCheckpoint != mainCheckpoint {
+		t.Fatalf("Recover() = (%+v, %t, %v), want durable checkpoint", recovered, found, err)
+	}
 	loaded.Evaluation.Schema = finetune.EvaluationReportSchema
 	if current := trainingOutputFromState(loaded); current.Evaluation == nil {
 		t.Fatal("current protected evaluation was not reused")
@@ -296,6 +300,56 @@ func TestTrainingStateOnlyResumesTheSameValidatedRun(t *testing.T) {
 	request.Model = "gemma.gguf"
 	if err := validateTrainingState(request, contract, loaded); err == nil || !strings.Contains(err.Error(), "does not match") {
 		t.Fatalf("mismatched validation selection error = %v", err)
+	}
+}
+
+func TestManagedTrainingPathRejectsSymlinkedParent(t *testing.T) {
+	output := t.TempDir()
+	outside := t.TempDir()
+	checkpoint := filepath.Join(outside, "epoch-01")
+	if err := os.Mkdir(checkpoint, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(output, "linked-checkpoints")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skipf("symlinks are unavailable: %v", err)
+	}
+	if err := validateManagedTrainingPath(output, "training checkpoint", filepath.Join(link, "epoch-01"), true); err == nil || !strings.Contains(err.Error(), "outside the managed run") {
+		t.Fatalf("validateManagedTrainingPath() error = %v, want resolved containment failure", err)
+	}
+}
+
+func TestCheckpointPruningDoesNotDeleteBeforeStateCanBePersisted(t *testing.T) {
+	output := t.TempDir()
+	selected := filepath.Join(output, "epoch-02")
+	unselected := filepath.Join(output, "epoch-01")
+	for _, checkpoint := range []string{selected, unselected} {
+		if err := os.Mkdir(checkpoint, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result := gemma.TrainingResult{
+		BestEpoch: 2, BestCheckpoint: selected,
+		Epochs: []gemma.EpochMetrics{
+			{Epoch: 1, Checkpoint: unselected},
+			{Epoch: 2, Checkpoint: selected},
+		},
+	}
+	paths := pruneUnselectedCheckpoints(&result, selected)
+	if len(paths) != 1 || paths[0] != unselected || result.Epochs[0].Checkpoint != "" {
+		t.Fatalf("pruned result = %+v, paths = %v", result, paths)
+	}
+	if _, err := os.Stat(unselected); err != nil {
+		t.Fatalf("checkpoint was deleted before state persistence: %v", err)
+	}
+	if err := writeTrainingState(output, trainingState{Schema: trainingStateSchema, Training: result}); err != nil {
+		t.Fatal(err)
+	}
+	if err := removeCheckpointPaths(paths); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(unselected); !os.IsNotExist(err) {
+		t.Fatalf("unselected checkpoint still exists after cleanup: %v", err)
 	}
 }
 

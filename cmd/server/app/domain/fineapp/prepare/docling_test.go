@@ -57,7 +57,7 @@ func TestDoclingExtractorConvert(t *testing.T) {
 			_, _ = fmt.Fprintf(w, `{"task_id":"test-task","task_status":%q}`, status)
 
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/result/test-task":
-			_, _ = w.Write([]byte(`{"document":{"md_content":"# Guide\n\nExtracted text.","json_content":{"name":"guide"}},"status":"success","processing_time":1.25}`))
+			_, _ = w.Write([]byte(`{"document":{"md_content":"# Guide\n\nExtracted text.","json_content":{"texts":[{"text":"Extracted text."}]}},"status":"success","processing_time":1.25}`))
 
 		default:
 			http.Error(w, "unexpected request", http.StatusNotFound)
@@ -78,7 +78,7 @@ func TestDoclingExtractorConvert(t *testing.T) {
 	if document.Markdown != "# Guide\n\nExtracted text." {
 		t.Fatalf("markdown: got %q", document.Markdown)
 	}
-	if string(document.StructuredJSON) != `{"name":"guide"}` {
+	if string(document.StructuredJSON) != `{"texts":[{"text":"Extracted text."}]}` {
 		t.Fatalf("structured JSON: got %q", document.StructuredJSON)
 	}
 	if document.ProcessingTime != 1.25 {
@@ -111,7 +111,7 @@ func TestDoclingExtractorConvertDOCXOmitsPDFBackend(t *testing.T) {
 			}
 			_, _ = w.Write([]byte(`{"task_id":"docx-task","task_status":"success"}`))
 		case "/v1/result/docx-task":
-			_, _ = w.Write([]byte(`{"document":{"md_content":"Document"},"status":"success"}`))
+			_, _ = w.Write([]byte(`{"document":{"md_content":"Document","json_content":{"texts":[{"text":"Document"}]}},"status":"success"}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -124,6 +124,96 @@ func TestDoclingExtractorConvertDOCXOmitsPDFBackend(t *testing.T) {
 	}
 	if _, err := extractor.Convert(t.Context(), sourcePath); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestDoclingExtractorRetriesTransientStatusAndResultReads(t *testing.T) {
+	sourcePath := filepath.Join(t.TempDir(), "guide.pdf")
+	if err := os.WriteFile(sourcePath, []byte("pdf-content"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var polls, results int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/convert/file/async":
+			_, _ = w.Write([]byte(`{"task_id":"task","task_status":"pending"}`))
+		case "/v1/status/poll/task":
+			polls++
+			if polls == 1 {
+				http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			_, _ = w.Write([]byte(`{"task_id":"task","task_status":"success"}`))
+		case "/v1/result/task":
+			results++
+			if results == 1 {
+				http.Error(w, "temporarily unavailable", http.StatusBadGateway)
+				return
+			}
+			_, _ = w.Write([]byte(`{"document":{"md_content":"Document","json_content":{"texts":[{"text":"Document"}]}},"status":"success"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	extractor, err := NewDoclingExtractor(server.URL, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	extractor.pollInterval = 0
+	extractor.retryDelay = 0
+	if _, err := extractor.Convert(t.Context(), sourcePath); err != nil {
+		t.Fatal(err)
+	}
+	if polls != 2 || results != 2 {
+		t.Fatalf("polls = %d, results = %d; want one retry for each transient read", polls, results)
+	}
+}
+
+func TestDoclingExtractorDoesNotRetryPermanentReadFailure(t *testing.T) {
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		http.Error(w, "missing", http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	extractor, err := NewDoclingExtractor(server.URL, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	extractor.retryDelay = 0
+	_, err = extractor.result(t.Context(), "missing")
+	if err == nil || calls != 1 || !strings.Contains(err.Error(), "404 Not Found") {
+		t.Fatalf("error = %v, calls = %d; want one non-retried permanent failure", err, calls)
+	}
+}
+
+func TestDoclingExtractorRejectsInvalidStructuredJSON(t *testing.T) {
+	responses := []string{
+		`{"document":{"md_content":"Document"},"status":"success"}`,
+		`{"document":{"md_content":"Document","json_content":null},"status":"success"}`,
+		`{"document":{"md_content":"Document","json_content":[]},"status":"success"}`,
+		`{"document":{"md_content":"Document","json_content":{}},"status":"success"}`,
+	}
+	for _, response := range responses {
+		t.Run(response, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(response))
+			}))
+			defer server.Close()
+
+			extractor, err := NewDoclingExtractor(server.URL, server.Client())
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = extractor.result(t.Context(), "task")
+			if err == nil || !strings.Contains(err.Error(), "invalid structured JSON") {
+				t.Fatalf("error = %v, want invalid structured JSON", err)
+			}
+		})
 	}
 }
 

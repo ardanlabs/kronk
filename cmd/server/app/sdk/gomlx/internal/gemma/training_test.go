@@ -2,6 +2,7 @@ package gemma
 
 import (
 	"context"
+	"errors"
 	"math"
 	"os"
 	"path/filepath"
@@ -224,6 +225,72 @@ func TestTrainDatasetRejectsCanceledContextBeforeUpdating(t *testing.T) {
 	}, nil)
 	if err == nil || !strings.Contains(err.Error(), "canceled") {
 		t.Fatalf("error = %v, want canceled", err)
+	}
+}
+
+func TestTrainDatasetReturnsCompletedEpochWhenCanceled(t *testing.T) {
+	t.Setenv("GOMLX_BACKEND", "go")
+	path := filepath.Join(t.TempDir(), "gemma.gguf")
+	writeTestModel(t, path, testConfig(), "gemma3")
+	runtime, err := NewLoRARuntime(path, AdapterConfig{Rank: 2, Alpha: 4, AdapterScale: 1, Seed: 3407})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Close()
+	record := TrainingRecord{Tokens: []int32{1, 4, 5}, Targets: []int32{4, 5, 6}, LossMask: []bool{false, true, true}}
+	ctx, cancel := context.WithCancel(t.Context())
+	persisted := TrainingResult{}
+	result, err := runtime.TrainDataset(ctx, PreparedDataset{
+		Training: []TrainingRecord{record}, Validation: []TrainingRecord{record},
+	}, TrainingConfig{
+		Epochs: 2, LearningRate: 1e-3, AdapterCheckpointDirectory: filepath.Join(t.TempDir(), "checkpoints"),
+		PersistCheckpoint: func(result TrainingResult) error {
+			persisted = result
+			cancel()
+			return nil
+		},
+	}, nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("TrainDataset() error = %v, want cancellation", err)
+	}
+	if len(result.Epochs) != 1 || result.BestEpoch != 1 || result.BestCheckpoint == "" {
+		t.Fatalf("partial result = %+v, want one resumable epoch", result)
+	}
+	if persisted.BestCheckpoint != result.BestCheckpoint {
+		t.Fatalf("persisted result = %+v, returned result = %+v", persisted, result)
+	}
+	if info, statErr := os.Stat(result.BestCheckpoint); statErr != nil || !info.IsDir() {
+		t.Fatalf("completed checkpoint is unavailable: %v", statErr)
+	}
+}
+
+func TestTrainDatasetDoesNotDeleteCheckpointBeforePersistingPrunedState(t *testing.T) {
+	t.Setenv("GOMLX_BACKEND", "go")
+	path := filepath.Join(t.TempDir(), "gemma.gguf")
+	writeTestModel(t, path, testConfig(), "gemma3")
+	runtime, err := NewLoRARuntime(path, AdapterConfig{Rank: 2, Alpha: 4, AdapterScale: 1, Seed: 3407})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Close()
+	record := TrainingRecord{Tokens: []int32{1, 4, 5}, Targets: []int32{4, 5, 6}, LossMask: []bool{false, true, true}}
+	var previous string
+	_, err = runtime.TrainDataset(t.Context(), PreparedDataset{
+		Training: []TrainingRecord{record}, Validation: []TrainingRecord{record},
+	}, TrainingConfig{
+		Epochs: 2, LearningRate: 1e-3, AdapterCheckpointDirectory: filepath.Join(t.TempDir(), "checkpoints"),
+		PersistCheckpoint: func(result TrainingResult) error {
+			if previous != "" {
+				if _, statErr := os.Stat(previous); statErr != nil {
+					t.Fatalf("checkpoint was deleted before replacement state was persisted: %v", statErr)
+				}
+			}
+			previous = result.BestCheckpoint
+			return nil
+		},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
