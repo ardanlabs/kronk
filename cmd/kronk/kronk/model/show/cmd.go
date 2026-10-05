@@ -7,6 +7,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
+	"github.com/ardanlabs/kronk/sdk/tools/modelconfig"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/spf13/cobra"
 )
@@ -58,10 +59,10 @@ func run(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("resolving model config file: %w", err)
 	}
 
-	mc, err := models.LoadModelConfig(modelConfigFile)
+	doc, err := modelconfig.Load(modelConfigFile)
 	if err != nil {
 		return fmt.Errorf("loading model config: %w", err)
 	}
 
-	return runLocal(mdls, mc, args)
+	return runLocal(mdls, doc.Models, args)
 }

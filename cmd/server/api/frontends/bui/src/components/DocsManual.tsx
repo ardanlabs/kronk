@@ -405,20 +405,30 @@ kronk server stop`}</code></pre>
           <h3 id="31-configuration-file">3.1 Configuration File</h3>
           <p>The model server reads per-model overrides from:</p>
           <pre className="code-block"><code className="language-text">{`~/.kronk/models/model_config.yaml`}</code></pre>
-          <p>Kronk creates this file on first use. Version 1 stores per-model overrides under <code>models</code>, keyed by the canonical model ID. Use the same ID shown by <code>kronk model list</code> or the <code>/v1/models</code> endpoint:</p>
-          <pre className="code-block"><code className="language-yaml">{`version: 1
+          <p>Kronk creates this file on first use. Version 2 stores language-model overrides under <code>models</code>, Bucky overrides under <code>bucky-models</code>, and Malina overrides under <code>malina-models</code>. Version 1 files containing only <code>kms</code> and <code>models</code> remain supported. Language-model entries use the canonical ID shown by <code>kronk model list</code> or the <code>/v1/models</code> endpoint:</p>
+          <pre className="code-block"><code className="language-yaml">{`version: 2
 models:
   unsloth/Qwen3-0.6B-Q8_0:
     context-window: 32768
     nseq-max: 2
     admission-timeout: 3m
     queue-depth: 2
-    imc-session-capacity: 8`}</code></pre>
+    imc-session-capacity: 8
+
+bucky-models:
+  tiny:
+    nseq-max: 2
+    queue-depth: 4
+
+malina-models:
+  sd-1.5:
+    concurrency: 2
+    queue-depth: 2`}</code></pre>
           <p>Files without <code>version</code> use the legacy version-0 shape, where model IDs are top-level keys. The remaining examples in this chapter show individual entries as they appear below <code>models:</code>. Model setting names use kebab-case, such as <code>context-window</code> and <code>nseq-max</code>. Keys nested under <code>sampling-parameters</code> use the API's snake_case names, such as <code>top_p</code>.</p>
           <p>The server reads this file during startup. Restart the server after changing it. To test a different file without replacing the default, run:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --model-config-file=./my-model-config.yaml`}</code></pre>
           <p>You can also set <code>KRONK_POOL_MODEL_CONFIG_FILE</code> to an alternative path. See <a href="https://www.kronkai.com/manual#85-model-configuration-files">Chapter 8 §8.5</a> for model config file management and <a href="https://www.kronkai.com/manual#25-models-and-data-paths">Chapter 2 §2.5</a> for all data paths.</p>
-          <p>Inference requests require the canonical <code>provider/modelID</code> shown by <code>/v1/models</code>. Bare model IDs are rejected rather than searched across a list of providers.</p>
+          <p>Inference requests require the canonical <code>provider/modelID</code> shown by <code>/v1/models</code>. Bare model IDs are rejected rather than searched across a list of providers. Bucky entries use the short ID shown by <code>kronk bucky model list</code>, and Malina entries use the bundle ID shown by <code>kronk malina model list</code>.</p>
           <h4 id="model-variants">Model variants</h4>
           <p>A suffix creates another configuration for the same downloaded model:</p>
           <pre className="code-block"><code className="language-yaml">{`models:
@@ -770,7 +780,7 @@ models:
           <p>This example shows the file structure and naming conventions. It is not a recommendation that every model needs these overrides:</p>
           <pre className="code-block"><code className="language-yaml">{`# ~/.kronk/models/model_config.yaml
 
-version: 1
+version: 2
 kms: {}
 models:
   unsloth/Qwen3-0.6B-Q8_0:
@@ -1922,8 +1932,8 @@ kronk libs --local`}</code></pre>
           <p>The server reads per-model overrides from:</p>
           <pre className="code-block"><code className="language-text">{`~/.kronk/models/model_config.yaml`}</code></pre>
           <p>Kronk seeds the file on first use and preserves edits across upgrades. Entries are merged over hardware-analysis recommendations rather than replacing the entire runtime configuration.</p>
-          <p>Version 1 makes this the single configuration file for both the server and its models. The top-level shape is:</p>
-          <pre className="code-block"><code className="language-yaml">{`version: 1
+          <p>Version 2 makes this the single configuration file for the server and all model backends. Version 1 files containing only <code>kms</code> and <code>models</code> remain readable. The top-level shape is:</p>
+          <pre className="code-block"><code className="language-yaml">{`version: 2
 kms:
   web:
     api-host: 127.0.0.1:11435
@@ -1978,8 +1988,14 @@ kms:
 models:
   owner/model:
     context-window: 8192
-    nseq-max: 2`}</code></pre>
-          <p>The built-in defaults apply when a <code>kms</code> key is omitted. Configuration precedence is built-in defaults, then <code>kms</code> YAML, then <code>KRONK_*</code> environment variables, then explicitly supplied <code>kronk server start</code> flags. The <code>--model-config-file</code> flag and <code>KRONK_POOL_MODEL_CONFIG_FILE</code> environment variable select the YAML file itself and therefore remain outside the file. Files without <code>version</code> are version 0 and retain the legacy model-only shape, where model IDs are top-level keys.</p>
+    nseq-max: 2
+bucky-models:
+  tiny:
+    nseq-max: 2
+malina-models:
+  sd-1.5:
+    concurrency: 2`}</code></pre>
+          <p>The built-in defaults apply when a <code>kms</code> key is omitted. Configuration precedence is built-in defaults, then <code>kms</code> YAML, then <code>KRONK_*</code> environment variables, then explicitly supplied <code>kronk server start</code> flags. The <code>--model-config-file</code> flag and <code>KRONK_POOL_MODEL_CONFIG_FILE</code> environment variable select the YAML file itself and therefore remain outside the file. The backend sections are top-level mappings alongside <code>models</code>. Bucky keys are the short IDs shown by <code>kronk bucky model list</code>; Malina keys are bundle IDs shown by <code>kronk malina model list</code>. Restart the server after changing them.</p>
           <p>Automatic tuning is enabled by default in the model server. An explicit <code>context-window</code> or <code>nseq-max</code> in this file is treated as a fixed sizing constraint, not a value the tuner may reduce. When KV cache types are omitted, the server tries <code>f16</code> and then <code>q8_0</code> for that exact context and concurrency; it never automatically quantizes below <code>q8_0</code>. See <a href="https://www.kronkai.com/manual#32-automatic-tuning">Chapter 3 §3.2</a> for the complete selection order and recommended configuration style.</p>
           <p>Use another file without replacing the default:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --model-config-file=./my-model_config.yaml`}</code></pre>
@@ -4499,7 +4515,15 @@ kronk bucky model remove tiny`}</code></pre>
           <h3 id="184-server-configuration">18.4 Server Configuration</h3>
           <p>Start the model server normally after installing the libraries and at least one model. Bucky uses the standard server address, whose default is:</p>
           <pre className="code-block"><code className="language-text">{`http://localhost:11435`}</code></pre>
-          <p>Whisper models do not use Kronk's per-model YAML configuration. The server discovers installed <code>.bin</code> files and loads a model when it is first requested.</p>
+          <p>The server discovers installed <code>.bin</code> files and loads a model when it is first requested. Configure each model under the top-level <code>bucky-models</code> mapping in <code>~/.kronk/models/model_config.yaml</code>, using the short ID shown by <code>kronk bucky model list</code>:</p>
+          <pre className="code-block"><code className="language-yaml">{`version: 2
+bucky-models:
+  tiny:
+    nseq-max: 2
+    queue-depth: 4
+    admission-timeout: 3m
+    nthreads: 0`}</code></pre>
+          <p><code>nseq-max</code> controls the number of independent Whisper states and therefore the number of concurrent operations. <code>queue-depth</code> adds waiting requests without adding states. <code>nthreads</code> controls native threads per operation; zero preserves the whisper.cpp default. The pool reserves the model file size plus a conservative 200 MiB allowance for each configured state; queued requests do not increase the reservation. Restart the server after changing these settings.</p>
           <p>Bucky uses the server's shared pool settings:</p>
           <table className="flags-table">
             <thead>
@@ -4829,7 +4853,7 @@ if err := stream.FeedPCM(ctx, rawPCM, format); err != nil {
           <p><code>WithVADSpeechThreshold</code> overrides whisper.cpp's Silero speech-probability threshold. Without <code>WithVADModel</code>, the existing <code>WithVADThreshold</code> option continues to tune the built-in energy-ratio detector.</p>
           <p>The <a href="../examples/bucky-stream/main.go"><code>examples/bucky-stream</code></a> program uses the built-in energy detector by default. Run <code>make example-bucky-stream-vad</code> to invoke the same program with <code>--silero-vad --vad-threshold=0.5</code>; it downloads the additional model and enables Silero. Silero changes utterance-boundary detection, not Whisper's transcription. Compared with the built-in energy ratio, learned speech probabilities are more robust to quiet speech, steady background noise, and changing microphone gain.</p>
           <p><code>Reset</code> starts a new logical session while keeping the stream open. By default it flushes pending audio and restarts timestamps at zero. After an <code>EventError</code>, close the failed stream and open a new one instead of resetting it.</p>
-          <p>Always close a stream. An open stream reserves SDK inference capacity and can prevent model unloading. SDK users that need concurrent streams can configure <code>model.WithNSeqMax</code> when creating the Bucky handle; this is an SDK setting, not a server configuration field.</p>
+          <p>Always close a stream. An open stream reserves SDK inference capacity and can prevent model unloading. SDK users can configure concurrent streams with <code>model.WithNSeqMax</code>; model-server users set <code>nseq-max</code> in the model's <code>bucky-models</code> entry.</p>
           <h3 id="188-languages">18.8 Languages</h3>
           <p>Whisper supports approximately 99 languages. Use its short language codes, such as <code>en</code>, <code>de</code>, <code>fr</code>, <code>es</code>, or <code>zh</code>. An empty language value asks Whisper to auto-detect the language.</p>
           <p>The SDK exposes <code>bucky.LangID</code>, <code>bucky.LangStr</code>, and <code>bucky.LangMaxID</code> for enumerating and converting the codes known to the loaded whisper.cpp library.</p>
@@ -4915,6 +4939,15 @@ if err := stream.FeedPCM(ctx, rawPCM, format); err != nil {
             <li>Unload the handle.</li>
           </ol>
           <p>Malina is available through the SDK, local tooling, and the Kronk model server. The CLI manages local libraries and model bundles. The server's shared resource manager performs RAM and VRAM admission and eviction for Malina models. The basic <code>POST /v1/images/generations</code> and <code>POST /v1/images/edits</code> endpoints create and transform images. <code>GET /v1/images/events</code> streams process-global model loading and generation progress for those operations. ControlNet, ADetailer, video, and upscaling operations remain SDK-only.</p>
+          <p>Configure server-loaded bundles under the top-level <code>malina-models</code> mapping in <code>~/.kronk/models/model_config.yaml</code>, using the bundle ID shown by <code>kronk malina model list</code>:</p>
+          <pre className="code-block"><code className="language-yaml">{`version: 2
+malina-models:
+  sd-1.5:
+    concurrency: 2
+    queue-depth: 2
+    admission-timeout: 3m
+    cpu-threads: 0`}</code></pre>
+          <p>Each concurrency slot loads another native model context, increasing RAM or VRAM use. Queue depth adds waiting requests without loading more contexts. Restart the server after changing these settings.</p>
           <h3 id="192-install-stable-diffusion-libraries">19.2 Install Stable Diffusion Libraries</h3>
           <p>Install and validate the pinned stable-diffusion.cpp build for the current host:</p>
           <pre className="code-block"><code className="language-shell">{`kronk malina libs --local`}</code></pre>
@@ -5867,6 +5900,7 @@ examples source             -> example BUI documentation
           <p><code>Init</code> registers/resolves/loads the backend. Technically, a failed <code>Init</code> can be called again and retry. The current server calls it only during startup, however. Installing missing libraries through CLI or BUI does <strong>not</strong> promise automatic server re-init; restart the server so startup calls <code>Init</code> again.</p>
           <p>A transcription acquires handle capacity and a model state, performs decode/inference, then releases both on every completion path. A streaming session is longer-lived: opening it reserves a state and capacity until its worker exits. <code>Close</code> requests the normal final flush and waits for that exit; a terminal worker error also exits and releases automatically. Callers should still defer the idempotent <code>Close</code>, including when feed/event handling fails. Unload must not destroy the Whisper context while transcriptions or streams remain active.</p>
           <p>The state pool is sized by <code>Config.NSeqMax</code>, which defaults to 1. The admission channel is sized by <code>NSeqMax + QueueDepth</code>; queue depth defaults to 0. Calls beyond that capacity wait until their context is canceled, the configured admission timeout expires, or an operation releases admission capacity. The admission timeout defaults to three minutes and stops applying once capacity is acquired. The states isolate concurrent inference while sharing the handle's model weights and Whisper context.</p>
+          <p>The Bucky planner reserves the shared model file size once and a conservative 200 MiB runtime allowance for every configured state. It does not charge <code>QueueDepth</code>, because waiting calls do not allocate a state. Planning and model loading use the same resolved configuration so the reservation scales with the actual <code>NSeqMax</code> used by the handle.</p>
           <p>The audio HTTP handler delegates file decoding and transcription to <code>Bucky.TranscribeFile</code>. It explicitly enforces the 25 MB upload limit before allowing unbounded work. Keep protocol field validation/format selection in the handler and audio/model mechanics in Bucky.</p>
           <p>Focused tests that exist include unit tests under <code>sdk/bucky/model/</code> and <code>sdk/bucky/ffmpeg/</code>, transcription/pool/stream suites under <code>sdk/bucky/tests/transcribe/</code>, and the server audio API tests under <code>cmd/server/api/services/kronk/tests/</code>. Choose the narrowest test whose native library and model prerequisites are available. Do not duplicate Chapter 18's usage matrix here.</p>
           <h3 id="209-verification-for-llm-agents">20.9 Verification for LLM Agents</h3>

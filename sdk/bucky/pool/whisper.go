@@ -11,6 +11,7 @@ package pool
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/ardanlabs/kronk/sdk/applog"
 	"github.com/ardanlabs/kronk/sdk/bucky"
@@ -18,29 +19,32 @@ import (
 	"github.com/ardanlabs/kronk/sdk/pool/engine/loader"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 	"github.com/ardanlabs/kronk/sdk/tools/bucky/models"
+	"github.com/ardanlabs/kronk/sdk/tools/modelconfig"
 )
 
-// whisperOverhead is the additional resident memory we reserve on top
-// of the raw model file size to account for the encoder + decoder
-// activations and the small whisper.cpp compute buffer. The figure
-// is conservative for every model up through large-v3.
-const whisperOverhead int64 = 200 * 1000 * 1000
+// whisperStateOverhead is the additional resident memory reserved for each
+// independent whisper state. Each state owns its mel spectrogram, KV cache,
+// activations, and compute buffer. The figure is conservative for every model
+// up through large-v3.
+const whisperStateOverhead int64 = 200 * 1024 * 1024
 
 // Whisper is the loader.Loader[*bucky.Bucky] implementation for the
 // whisper.cpp backend. It is constructed by sdk/pool and any future
 // programs that want to build a pool around whisper models manually.
 type Whisper struct {
-	log    applog.Logger
-	models *models.Models
-	resman *resman.Manager
+	log         applog.Logger
+	models      *models.Models
+	modelConfig map[string]modelconfig.BuckyModelConfig
+	resman      *resman.Manager
 }
 
 // newWhisper constructs a whisper loader.
-func newWhisper(log applog.Logger, mdls *models.Models, rm *resman.Manager) *Whisper {
+func newWhisper(log applog.Logger, mdls *models.Models, modelCfg map[string]modelconfig.BuckyModelConfig, rm *resman.Manager) *Whisper {
 	w := Whisper{
-		log:    log,
-		models: mdls,
-		resman: rm,
+		log:         log,
+		models:      mdls,
+		modelConfig: modelCfg,
+		resman:      rm,
 	}
 	return &w
 }
@@ -51,14 +55,23 @@ func (w *Whisper) Models() *models.Models {
 	return w.models
 }
 
+// Prepare resolves the model configuration once for planning and loading.
+func (w *Whisper) Prepare(_ context.Context, req loader.LoadRequest) (any, error) {
+	return w.resolveConfig(req)
+}
+
 // Plan implements loader.Loader.Plan for the whisper backend.
 //
-// Whisper has no slots or KV cache: the resident footprint is the
-// weight file plus a small encoder/decoder overhead. The estimate is
-// charged to VRAM when the resman has GPUs (Metal counts as GPU even
-// on unified-memory devices, so the entire footprint lands on the
-// GPU bucket on Apple Silicon) and to system RAM otherwise.
+// The resident footprint is the shared weight file plus a per-state allowance
+// for each configured sequence. Queue depth is excluded because waiting calls
+// do not allocate states. The estimate is charged to VRAM when the resman has
+// GPUs and to system RAM otherwise.
 func (w *Whisper) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRequest, error) {
+	cfg, err := w.configForRequest(req)
+	if err != nil {
+		return resman.PlanRequest{}, fmt.Errorf("plan: %w", err)
+	}
+
 	size, err := w.modelSize(req.ModelID)
 	if err != nil {
 		return resman.PlanRequest{}, fmt.Errorf("plan: %w", err)
@@ -68,7 +81,8 @@ func (w *Whisper) Plan(ctx context.Context, req loader.LoadRequest) (resman.Plan
 		Key: req.Key,
 	}
 
-	total := size + whisperOverhead
+	stateOverhead := whisperStateOverhead * int64(cfg.NSeqMax)
+	total := size + stateOverhead
 	if w.resman.HasGPUs() {
 		planReq.VRAMBytes = total
 	} else {
@@ -80,7 +94,9 @@ func (w *Whisper) Plan(ctx context.Context, req loader.LoadRequest) (resman.Plan
 		"model-id", req.ModelID,
 		"predicted-total", total,
 		"model-size", size,
-		"overhead", whisperOverhead,
+		"state-overhead", stateOverhead,
+		"per-state-overhead", whisperStateOverhead,
+		"n-seq-max", cfg.NSeqMax,
 		"vram", planReq.VRAMBytes,
 		"ram", planReq.RAMBytes,
 	)
@@ -90,7 +106,7 @@ func (w *Whisper) Plan(ctx context.Context, req loader.LoadRequest) (resman.Plan
 
 // Load implements loader.Loader.Load for the whisper backend.
 func (w *Whisper) Load(ctx context.Context, req loader.LoadRequest) (*bucky.Bucky, error) {
-	cfg, err := w.resolveConfig(req)
+	cfg, err := w.configForRequest(req)
 	if err != nil {
 		return nil, fmt.Errorf("load: %w", err)
 	}
@@ -117,19 +133,15 @@ func (w *Whisper) Load(ctx context.Context, req loader.LoadRequest) (*bucky.Buck
 
 // Display implements loader.Loader.Display for the whisper backend.
 //
-// Whisper does not maintain a KV cache and serves one transcribe at a
-// time per handle, so KVCache is zero and Slots is one. VRAMTotal is
-// the file size plus the same overhead Plan used so the observability
-// figure tracks the budget reservation.
+// Whisper does not expose a distinct KV-cache measurement. Slots reports the
+// configured state count, and VRAMTotal uses the same estimate as Plan.
 func (w *Whisper) Display(h *bucky.Bucky, modelID string) loader.Display {
-	_ = h
-
 	out := loader.Display{
-		Slots: 1,
+		Slots: h.ModelConfig().NSeqMax,
 	}
 
 	if size, err := w.modelSize(modelID); err == nil {
-		out.VRAMTotal = size + whisperOverhead
+		out.VRAMTotal = size + whisperStateOverhead*int64(h.ModelConfig().NSeqMax)
 	}
 
 	return out
@@ -147,7 +159,7 @@ func (w *Whisper) resolveConfig(req loader.LoadRequest) (model.Config, error) {
 		if !ok {
 			return model.Config{}, fmt.Errorf("resolve-config: custom config is %T, want model.Config", req.Custom)
 		}
-		return cfg, nil
+		return cfg.WithDefaults(), nil
 	}
 
 	path, err := w.models.FullPath(req.ModelID)
@@ -161,6 +173,33 @@ func (w *Whisper) resolveConfig(req loader.LoadRequest) (model.Config, error) {
 	cfg := model.Config{
 		ModelPath: path.ModelFiles[0],
 		UseGPU:    true,
+	}
+	if override, ok := w.modelConfig[req.ModelID]; ok {
+		if override.NSeqMax != nil {
+			cfg.NSeqMax = *override.NSeqMax
+		}
+		if override.QueueDepth != nil {
+			cfg.QueueDepth = *override.QueueDepth
+		}
+		if override.AdmissionTimeout != nil {
+			cfg.AdmissionTimeout = time.Duration(*override.AdmissionTimeout)
+		}
+		if override.NThreads != nil {
+			cfg.NThreads = *override.NThreads
+		}
+	}
+
+	return cfg.WithDefaults(), nil
+}
+
+func (w *Whisper) configForRequest(req loader.LoadRequest) (model.Config, error) {
+	if req.Prepared == nil {
+		return w.resolveConfig(req)
+	}
+
+	cfg, ok := req.Prepared.(model.Config)
+	if !ok {
+		return model.Config{}, fmt.Errorf("prepared config is %T, want model.Config", req.Prepared)
 	}
 
 	return cfg, nil

@@ -3,6 +3,7 @@ package pool
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/ardanlabs/kronk/sdk/applog"
 	malinasdk "github.com/ardanlabs/kronk/sdk/malina"
@@ -11,6 +12,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/pool/engine/loader"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 	malinamodels "github.com/ardanlabs/kronk/sdk/tools/malina/models"
+	"github.com/ardanlabs/kronk/sdk/tools/modelconfig"
 )
 
 type preparedModel struct {
@@ -20,16 +22,18 @@ type preparedModel struct {
 
 // StableDiffusion adapts Malina model bundles to the generic pool engine.
 type StableDiffusion struct {
-	log    applog.Logger
-	models *malinamodels.Models
-	resman *resman.Manager
+	log         applog.Logger
+	models      *malinamodels.Models
+	modelConfig map[string]modelconfig.MalinaModelConfig
+	resman      *resman.Manager
 }
 
-func newStableDiffusion(log applog.Logger, models *malinamodels.Models, rm *resman.Manager) *StableDiffusion {
+func newStableDiffusion(log applog.Logger, models *malinamodels.Models, modelCfg map[string]modelconfig.MalinaModelConfig, rm *resman.Manager) *StableDiffusion {
 	sd := StableDiffusion{
-		log:    log,
-		models: models,
-		resman: rm,
+		log:         log,
+		models:      models,
+		modelConfig: modelCfg,
+		resman:      rm,
 	}
 
 	return &sd
@@ -159,7 +163,23 @@ func (sd *StableDiffusion) resolveConfig(modelID string) (model.Config, error) {
 		return model.Config{}, fmt.Errorf("resolve-config: bundle %q has no model or diffusion component", modelID)
 	}
 
-	cfg, err := model.NewConfig(primary)
+	options := []model.Option{primary}
+	if override, ok := sd.modelConfig[modelID]; ok {
+		if override.Concurrency != nil {
+			options = append(options, model.WithConcurrency(*override.Concurrency))
+		}
+		if override.QueueDepth != nil {
+			options = append(options, model.WithQueueDepth(*override.QueueDepth))
+		}
+		if override.AdmissionTimeout != nil {
+			options = append(options, model.WithAdmissionTimeout(time.Duration(*override.AdmissionTimeout)))
+		}
+		if override.CPUThreads != nil {
+			options = append(options, model.WithCPUThreads(*override.CPUThreads))
+		}
+	}
+
+	cfg, err := model.NewConfig(options...)
 	if err != nil {
 		return model.Config{}, fmt.Errorf("resolve-config: model config: %w", err)
 	}

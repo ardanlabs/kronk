@@ -19,6 +19,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/pool/engine/loader"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
+	"github.com/ardanlabs/kronk/sdk/tools/modelconfig"
 )
 
 // ErrServerBusy is returned when the pool cannot make room for a new
@@ -35,12 +36,15 @@ var ErrServerBusy = engine.ErrServerBusy
 // lets every backend (kronk, bucky, …) charge the same byte budget.
 // Required.
 //
+// ModelConfig contains optional runtime overrides keyed by the short model ID.
+//
 // ModelsInPool falls back to its default when zero. A zero TTL disables
 // idle expiration; negative TTL values are invalid.
 type Config struct {
 	Log          applog.Logger
 	Models       *buckymodels.Models
 	Resman       *resman.Manager
+	ModelConfig  map[string]modelconfig.BuckyModelConfig
 	ModelsInPool int
 	TTL          time.Duration
 }
@@ -67,6 +71,11 @@ func validateConfig(cfg Config) (Config, error) {
 	if cfg.TTL < 0 {
 		return Config{}, errors.New("ttl must be >= 0")
 	}
+	for modelID, modelCfg := range cfg.ModelConfig {
+		if err := modelCfg.Validate(); err != nil {
+			return Config{}, fmt.Errorf("model config %q: %w", modelID, err)
+		}
+	}
 
 	return cfg, nil
 }
@@ -89,7 +98,7 @@ func New(cfg Config) (*Pool, error) {
 		return nil, fmt.Errorf("new: %w", err)
 	}
 
-	wl := newWhisper(cfg.Log, cfg.Models, cfg.Resman)
+	wl := newWhisper(cfg.Log, cfg.Models, cfg.ModelConfig, cfg.Resman)
 
 	c, err := engine.New(engine.Config{
 		Log:      cfg.Log,
@@ -185,12 +194,14 @@ func (p *Pool) ModelStatus() ([]ModelDetail, error) {
 	for entry := range p.engine.Coldest() {
 		b := entry.Value
 		mi := b.ModelInfo()
+		cfg := b.ModelConfig()
 
 		ps = append(ps, ModelDetail{
 			ID:            entry.Key,
 			Backend:       "bucky",
 			Size:          sizeByID[entry.Key],
 			VRAMTotal:     reservedByKey[entry.Key],
+			Slots:         cfg.NSeqMax,
 			ExpiresAt:     p.engine.EntryExpiresAt(entry),
 			ActiveStreams: b.ActiveStreams(),
 			Status:        ModelStatusLoaded,

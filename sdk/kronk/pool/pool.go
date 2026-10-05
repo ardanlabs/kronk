@@ -27,6 +27,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/pool/engine/loader"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
+	"github.com/ardanlabs/kronk/sdk/tools/modelconfig"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
@@ -60,6 +61,9 @@ func HumanBytes(n int64) string {
 // ModelConfigFile is the optional per-model override file. Empty means
 // no overrides.
 //
+// ModelConfig supplies already parsed per-model overrides. When non-nil it
+// takes precedence over ModelConfigFile.
+//
 // ModelsInPool is the safety-net cap on the number of distinct entries
 // the pool keeps, independent of the byte budget. Defaults to 10 when
 // zero.
@@ -77,6 +81,7 @@ type Config struct {
 	// pooled catalog models. When nil, New captures devices.List once.
 	StartupDevices  *devices.Devices
 	ModelConfigFile string
+	ModelConfig     map[string]models.ModelConfig
 	ModelsInPool    int
 	TTL             time.Duration
 	InsecureLogging bool
@@ -126,12 +131,13 @@ func New(cfg Config) (*Pool, error) {
 		return nil, fmt.Errorf("new: %w", err)
 	}
 
-	var mc map[string]models.ModelConfig
-	if cfg.ModelConfigFile != "" {
-		mc, err = models.LoadModelConfig(cfg.ModelConfigFile)
+	mc := cfg.ModelConfig
+	if mc == nil && cfg.ModelConfigFile != "" {
+		doc, err := modelconfig.Load(cfg.ModelConfigFile)
 		if err != nil {
 			return nil, fmt.Errorf("new: loading model config: %w", err)
 		}
+		mc = doc.Models
 	}
 	if mc == nil {
 		mc = map[string]models.ModelConfig{}

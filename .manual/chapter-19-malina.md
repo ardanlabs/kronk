@@ -68,6 +68,24 @@ and transform images. `GET /v1/images/events` streams process-global model
 loading and generation progress for those operations. ControlNet, ADetailer,
 video, and upscaling operations remain SDK-only.
 
+Configure server-loaded bundles under the top-level `malina-models` mapping in
+`~/.kronk/models/model_config.yaml`, using the bundle ID shown by
+`kronk malina model list`:
+
+```yaml
+version: 2
+malina-models:
+  sd-1.5:
+    concurrency: 2
+    queue-depth: 2
+    admission-timeout: 3m
+    cpu-threads: 0
+```
+
+Each concurrency slot loads another native model context, increasing RAM or
+VRAM use. Queue depth adds waiting requests without loading more contexts.
+Restart the server after changing these settings.
+
 ### 19.2 Install Stable Diffusion Libraries
 
 Install and validate the pinned stable-diffusion.cpp build for the current host:

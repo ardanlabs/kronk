@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"time"
 
@@ -14,7 +15,7 @@ import (
 	"go.yaml.in/yaml/v2"
 )
 
-const configVersion = 1
+var supportedConfigVersions = []int{1, 2}
 
 type config struct {
 	conf.Version `yaml:"-"`
@@ -156,12 +157,10 @@ func loadConfig(showHelp bool) (config, error) {
 		return config{}, fmt.Errorf("unmarshaling config file: %w", err)
 	}
 
-	switch doc.Version {
-	case configVersion:
-		cfg = doc.KMS
-	default:
+	if !slices.Contains(supportedConfigVersions, doc.Version) {
 		return config{}, fmt.Errorf("config file: unsupported version %d", doc.Version)
 	}
+	cfg = doc.KMS
 
 	cfg.Pool.ModelConfigFile = modelConfigFile
 

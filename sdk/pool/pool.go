@@ -34,6 +34,7 @@ import (
 	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	malinamodels "github.com/ardanlabs/kronk/sdk/tools/malina/models"
+	"github.com/ardanlabs/kronk/sdk/tools/modelconfig"
 	kronkmodels "github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
@@ -106,6 +107,15 @@ func New(cfg Config) (*Pool, error) {
 		return nil, errors.New("new: at least one model catalog is required")
 	}
 
+	var modelCfg modelconfig.Document
+	if cfg.ModelConfigFile != "" {
+		var err error
+		modelCfg, err = modelconfig.Load(cfg.ModelConfigFile)
+		if err != nil {
+			return nil, fmt.Errorf("new: loading model config: %w", err)
+		}
+	}
+
 	devs := devices.List()
 	rm, err := resman.New(resman.Config{
 		Snapshot:      resman.FromDevices(devs),
@@ -125,7 +135,7 @@ func New(cfg Config) (*Pool, error) {
 			Models:          cfg.KronkModels,
 			Resman:          rm,
 			StartupDevices:  &devs,
-			ModelConfigFile: cfg.ModelConfigFile,
+			ModelConfig:     modelCfg.Models,
 			ModelsInPool:    cfg.ModelsInPool,
 			TTL:             cfg.TTL,
 			InsecureLogging: cfg.InsecureLogging,
@@ -141,6 +151,7 @@ func New(cfg Config) (*Pool, error) {
 			Log:          cfg.Log,
 			Models:       cfg.BuckyModels,
 			Resman:       rm,
+			ModelConfig:  modelCfg.BuckyModels,
 			ModelsInPool: cfg.ModelsInPool,
 			TTL:          cfg.TTL,
 		})
@@ -155,6 +166,7 @@ func New(cfg Config) (*Pool, error) {
 			Log:          cfg.Log,
 			Models:       cfg.MalinaModels,
 			Resman:       rm,
+			ModelConfig:  modelCfg.MalinaModels,
 			ModelsInPool: cfg.ModelsInPool,
 			TTL:          cfg.TTL,
 		})
