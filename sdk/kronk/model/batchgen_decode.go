@@ -10,10 +10,9 @@ import (
 // MTMD GENERATION BATCH DECODE HELPERS
 // =============================================================================
 
-// decodeTextMRoPE decodes text tokens for M-RoPE models.
-// M-RoPE uses 4D positions: [dim0, dim1, dim2, dim3] where each dimension has
-// n_tokens entries. Text uses the same logical position in all four planes.
-func (e *batchEngine) decodeTextMRoPE(s *slot, tokens []llama.Token) error {
+// decodeTextIsolated decodes text outside the shared generation tray.
+// llama.cpp expands linear token positions for an M-RoPE context.
+func (e *batchEngine) decodeTextIsolated(s *slot, tokens []llama.Token) error {
 	if len(tokens) == 0 {
 		return nil
 	}
@@ -121,13 +120,12 @@ func stageMRoPEText(batch *extendedBatch, tokens []llama.Token, start llama.Pos,
 
 	for i, token := range tokens {
 		position := start + llama.Pos(i)
-		positions := []llama.Pos{position, position, position, position}
 		output := extendedBatchOutputNone
 		if i == len(tokens)-1 {
 			output = finalOutput
 		}
 
-		if _, err := batch.addTokenPositions(token, positions, sequenceIDs, output); err != nil {
+		if _, err := batch.addToken(token, position, sequenceIDs, output); err != nil {
 			return fmt.Errorf("add token at position %d: %w", position, err)
 		}
 	}
@@ -136,6 +134,11 @@ func stageMRoPEText(batch *extendedBatch, tokens []llama.Token, start llama.Pos,
 }
 
 func stageEmbeddingRows(batch *extendedBatch, embd []float32, nEmbd, nTokens int32, positions []llama.Pos, sequenceIDs []llama.SeqId, finalOutput extendedBatchOutput) error {
+	batch.clear()
+	return appendEmbeddingRows(batch, embd, nEmbd, nTokens, positions, sequenceIDs, finalOutput)
+}
+
+func appendEmbeddingRows(batch *extendedBatch, embd []float32, nEmbd, nTokens int32, positions []llama.Pos, sequenceIDs []llama.SeqId, finalOutput extendedBatchOutput) error {
 	if nEmbd <= 0 || nTokens <= 0 || len(embd) != int(nEmbd*nTokens) {
 		return fmt.Errorf("embedding values: got %d, want %d rows of %d", len(embd), nTokens, nEmbd)
 	}
@@ -148,7 +151,6 @@ func stageEmbeddingRows(batch *extendedBatch, embd []float32, nEmbd, nTokens int
 		return fmt.Errorf("embedding positions: got %d planes, want 1 to 4", positionCount)
 	}
 
-	batch.clear()
 	for i := range nTokens {
 		start := int(i * nEmbd)
 		row := embd[start : start+int(nEmbd)]
