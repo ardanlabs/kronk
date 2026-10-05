@@ -2,6 +2,9 @@
 # From the repository root, run `./pwr.ps1 <target>` or `./pwr.ps1` to list targets.
 # These commands require neither GNU Make nor a Unix shell.
 
+# Targets are distributed under .power/ mirroring .make/
+# Not all Make targets were translated to Powershell commands.
+
 # Windows PowerShell may block this script by default.
 # To allow local scripts for your user in current and future terminal sessions,
 # run the following command once:
@@ -94,7 +97,45 @@ param(
         "bucky-model-pull",
         "bucky-model-pull-local",
         "bucky-model-remove",
-        "bucky-model-remove-local"
+        "bucky-model-remove-local",
+        "example-agent",
+        "example-audio",
+        "example-bucky",
+        "example-bucky-stream",
+        "example-bucky-stream-vad",
+        "example-bucky-diar",
+        "example-chat",
+        "example-concurrency",
+        "example-embedding",
+        "example-grammar",
+        "example-malina",
+        "example-malina-img2img",
+        "example-malina-sd-encode",
+        "example-malina-system",
+        "example-malina-controlnet",
+        "example-malina-upscale",
+        "example-malina-adetailer",
+        "example-malina-animatediff",
+        "example-malina-s2v",
+        "example-pool",
+        "example-rag",
+        "example-rerank",
+        "example-question",
+        "example-response",
+        "example-session-store",
+        "example-vision",
+        "example-yzma-step1",
+        "example-yzma-step2",
+        "example-yzma-step3",
+        "example-yzma-step4",
+        "example-yzma-step5",
+        "example-yzma-step6",
+        "example-yzma-step7",
+        "example-yzma-step8",
+        "example-yzma-parallel-curl1",
+        "example-yzma-parallel-curl2",
+        "example-yzma-parallel-curl3",
+        "example-yzma-parallel-load"
     )]
     [string]$Target = "help",
 
@@ -112,7 +153,9 @@ param(
 
     [string]$Processor,
 
-    [string]$Name
+    [string]$Name,
+
+    [string[]]$Arguments = @()
 )
 
 # ==============================================================================
@@ -703,6 +746,46 @@ CLI (.power/cli.ps1):
   bucky-model-pull-local -Name <model>
   bucky-model-remove -Name <model>
   bucky-model-remove-local -Name <model>
+
+Examples (.power/examples.ps1):
+  example-agent
+  example-audio
+  example-bucky
+  example-bucky-stream -Arguments <args...>
+  example-bucky-stream-vad
+  example-bucky-diar
+  example-chat
+  example-concurrency
+  example-embedding
+  example-grammar
+  example-malina
+  example-malina-img2img
+  example-malina-sd-encode
+  example-malina-system
+  example-malina-controlnet
+  example-malina-upscale
+  example-malina-adetailer
+  example-malina-animatediff
+  example-malina-s2v -Arguments <args...>
+  example-pool
+  example-rag
+  example-rerank
+  example-question
+  example-response
+  example-session-store
+  example-vision
+  example-yzma-step1
+  example-yzma-step2
+  example-yzma-step3
+  example-yzma-step4
+  example-yzma-step5
+  example-yzma-step6
+  example-yzma-step7
+  example-yzma-step8
+  example-yzma-parallel-curl1
+  example-yzma-parallel-curl2
+  example-yzma-parallel-curl3
+  example-yzma-parallel-load
 "@
 }
 
@@ -713,6 +796,7 @@ CLI (.power/cli.ps1):
 . (Join-Path $PSScriptRoot ".power/dev.ps1")
 . (Join-Path $PSScriptRoot ".power/server.ps1")
 . (Join-Path $PSScriptRoot ".power/cli.ps1")
+. (Join-Path $PSScriptRoot ".power/examples.ps1")
 
 # ==============================================================================
 # Target Dispatch
@@ -951,5 +1035,119 @@ switch ($Target) {
     }
     "bucky-model-remove-local" {
         Remove-BuckyModelLocal
+    }
+    "example-agent" {
+        Invoke-AgentExample
+    }
+    "example-audio" {
+        Invoke-AudioExample
+    }
+    "example-bucky" {
+        Invoke-BuckyExample
+    }
+    "example-bucky-stream" {
+        Invoke-BuckyStreamExample -ExampleArguments $Arguments
+    }
+    "example-bucky-stream-vad" {
+        Invoke-BuckyStreamVadExample
+    }
+    "example-bucky-diar" {
+        Invoke-BuckyDiarizationExample
+    }
+    "example-chat" {
+        Invoke-ChatExample
+    }
+    "example-concurrency" {
+        Invoke-ConcurrencyExample
+    }
+    "example-embedding" {
+        Invoke-EmbeddingExample
+    }
+    "example-grammar" {
+        Invoke-GrammarExample
+    }
+    "example-malina" {
+        Invoke-MalinaExample
+    }
+    "example-malina-img2img" {
+        Invoke-MalinaImageToImageExample
+    }
+    "example-malina-sd-encode" {
+        Invoke-MalinaSdEncodeExample
+    }
+    "example-malina-system" {
+        Invoke-MalinaSystemExample
+    }
+    "example-malina-controlnet" {
+        Invoke-MalinaControlNetExample
+    }
+    "example-malina-upscale" {
+        Invoke-MalinaUpscaleExample
+    }
+    "example-malina-adetailer" {
+        Invoke-MalinaADetailerExample
+    }
+    "example-malina-animatediff" {
+        Invoke-MalinaAnimateDiffExample
+    }
+    "example-malina-s2v" {
+        Invoke-MalinaSpeechToVideoExample -ExampleArguments $Arguments
+    }
+    "example-pool" {
+        Invoke-PoolExample
+    }
+    "example-rag" {
+        Invoke-RagExample
+    }
+    "example-rerank" {
+        Invoke-RerankExample
+    }
+    "example-question" {
+        Invoke-QuestionExample
+    }
+    "example-response" {
+        Invoke-ResponseExample
+    }
+    "example-session-store" {
+        Invoke-SessionStoreExample
+    }
+    "example-vision" {
+        Invoke-VisionExample
+    }
+    "example-yzma-step1" {
+        Invoke-YzmaStep1Example
+    }
+    "example-yzma-step2" {
+        Invoke-YzmaStep2Example
+    }
+    "example-yzma-step3" {
+        Invoke-YzmaStep3Example
+    }
+    "example-yzma-step4" {
+        Invoke-YzmaStep4Example
+    }
+    "example-yzma-step5" {
+        Invoke-YzmaStep5Example
+    }
+    "example-yzma-step6" {
+        Invoke-YzmaStep6Example
+    }
+    "example-yzma-step7" {
+        Invoke-YzmaStep7Example
+    }
+    "example-yzma-step8" {
+        Invoke-YzmaStep8Example
+    }
+    "example-yzma-parallel-curl1" {
+        Invoke-YzmaParallelCurl1
+    }
+    "example-yzma-parallel-curl2" {
+        Invoke-YzmaParallelCurl2
+    }
+    "example-yzma-parallel-curl3" {
+        Invoke-YzmaParallelCurl3
+    }
+    "example-yzma-parallel-load" {
+        Invoke-YzmaParallelLoad
     }
 }
