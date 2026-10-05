@@ -106,6 +106,7 @@ param(
         "example-bucky-diar",
         "example-chat",
         "example-concurrency",
+        "example-decision",
         "example-embedding",
         "example-grammar",
         "example-malina",
@@ -132,6 +133,7 @@ param(
         "example-yzma-step6",
         "example-yzma-step7",
         "example-yzma-step8",
+        "example-yzma-step9",
         "example-yzma-parallel-curl1",
         "example-yzma-parallel-curl2",
         "example-yzma-parallel-curl3",
@@ -756,6 +758,7 @@ Examples (.power/examples.ps1):
   example-bucky-diar
   example-chat
   example-concurrency
+  example-decision
   example-embedding
   example-grammar
   example-malina
@@ -766,7 +769,7 @@ Examples (.power/examples.ps1):
   example-malina-upscale
   example-malina-adetailer
   example-malina-animatediff
-  example-malina-s2v -Arguments <args...>
+  example-malina-s2v
   example-pool
   example-rag
   example-rerank
@@ -782,6 +785,7 @@ Examples (.power/examples.ps1):
   example-yzma-step6
   example-yzma-step7
   example-yzma-step8
+  example-yzma-step9
   example-yzma-parallel-curl1
   example-yzma-parallel-curl2
   example-yzma-parallel-curl3
@@ -1060,6 +1064,9 @@ switch ($Target) {
     "example-concurrency" {
         Invoke-ConcurrencyExample
     }
+    "example-decision" {
+        Invoke-DecisionExample
+    }
     "example-embedding" {
         Invoke-EmbeddingExample
     }
@@ -1091,7 +1098,7 @@ switch ($Target) {
         Invoke-MalinaAnimateDiffExample
     }
     "example-malina-s2v" {
-        Invoke-MalinaSpeechToVideoExample -ExampleArguments $Arguments
+        Invoke-MalinaSpeechToVideoExample
     }
     "example-pool" {
         Invoke-PoolExample
@@ -1137,6 +1144,9 @@ switch ($Target) {
     }
     "example-yzma-step8" {
         Invoke-YzmaStep8Example
+    }
+    "example-yzma-step9" {
+        Invoke-YzmaStep9Example
     }
     "example-yzma-parallel-curl1" {
         Invoke-YzmaParallelCurl1

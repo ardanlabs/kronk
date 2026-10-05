@@ -59,6 +59,11 @@ function Invoke-ConcurrencyExample {
     Invoke-GoExample -ExamplePath "./concurrency/main.go"
 }
 
+# ./pwr.ps1 example-decision
+function Invoke-DecisionExample {
+    Invoke-GoExample -ExamplePath "./decision/main.go"
+}
+
 # ./pwr.ps1 example-embedding
 function Invoke-EmbeddingExample {
     Invoke-GoExample -ExamplePath "./embedding/main.go"
@@ -109,11 +114,9 @@ function Invoke-MalinaAnimateDiffExample {
     Invoke-GoExample -ExamplePath "./malina-animatediff/main.go"
 }
 
-# ./pwr.ps1 example-malina-s2v -Arguments "--image", "portrait.png", "--audio", "speech.wav"
+# ./pwr.ps1 example-malina-s2v
 function Invoke-MalinaSpeechToVideoExample {
-    param([string[]]$ExampleArguments = @())
-
-    Invoke-GoExample -ExamplePath "./malina-s2v/main.go" -AdditionalArguments $ExampleArguments
+    Invoke-GoExample -ExamplePath "./malina-s2v/main.go"
 }
 
 # ./pwr.ps1 example-pool
@@ -192,6 +195,11 @@ function Invoke-YzmaStep7Example {
 # ./pwr.ps1 example-yzma-step8
 function Invoke-YzmaStep8Example {
     Invoke-GoExample -ExamplePath "./yzma/step8/main.go"
+}
+
+# ./pwr.ps1 example-yzma-step9
+function Invoke-YzmaStep9Example {
+    Invoke-GoExample -ExamplePath "./yzma/step9/main.go"
 }
 
 function Invoke-YzmaCurlRequest {
