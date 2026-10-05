@@ -3,6 +3,7 @@ package prepare
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -31,6 +32,45 @@ func (c *schemaVerificationCompleter) Complete(_ context.Context, request Comple
 	}
 	content, err := json.Marshal(verdicts)
 	return Completion{Content: string(content)}, err
+}
+
+type boundedVerificationCompleter struct {
+	requests          []CompletionRequest
+	truncateAbove     int
+	malformedAbove    int
+	persistentFailure bool
+}
+
+func (c *boundedVerificationCompleter) Complete(_ context.Context, request CompletionRequest) (Completion, error) {
+	c.requests = append(c.requests, request)
+	required, _ := request.ResponseSchema["required"].([]string)
+	if c.persistentFailure || len(required) > c.truncateAbove && c.truncateAbove > 0 {
+		return Completion{}, ErrCompletionTruncated
+	}
+	if len(required) > c.malformedAbove && c.malformedAbove > 0 {
+		return Completion{Content: `{"record_1":"pass"`}, nil
+	}
+
+	verdicts := make(map[string]string, len(required))
+	for _, name := range required {
+		verdicts[name] = verificationPass
+	}
+	content, err := json.Marshal(verdicts)
+	return Completion{Content: string(content)}, err
+}
+
+type cancelingVerificationCompleter struct {
+	calls  int
+	cancel context.CancelFunc
+}
+
+func (c *cancelingVerificationCompleter) Complete(ctx context.Context, _ CompletionRequest) (Completion, error) {
+	c.calls++
+	if c.calls == 1 {
+		return Completion{}, ErrCompletionTruncated
+	}
+	c.cancel()
+	return Completion{}, ctx.Err()
 }
 
 func TestVerificationTokenLimitFitsAFullGeneratedBatch(t *testing.T) {
@@ -69,6 +109,93 @@ func TestVerifyRecordsBoundsEachModelRequest(t *testing.T) {
 		if len(required) > maxVerificationRecordsPerRequest {
 			t.Fatalf("verification request %d contains %d records; maximum %d", index+1, len(required), maxVerificationRecordsPerRequest)
 		}
+	}
+}
+
+func TestVerifyRecordsSplitsLengthTerminatedBatches(t *testing.T) {
+	model := &boundedVerificationCompleter{truncateAbove: 2}
+	previewer, err := NewPreviewer(model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := make([]Record, 10)
+	for index := range records {
+		records[index] = Record{Prompt: "What language is used?", Target: "Go", Evidence: "The example uses Go."}
+	}
+
+	results, metrics, err := previewer.verifyRecords(t.Context(), "model", GoalQuestionAnswer, "", records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != len(records) || !results[len(results)-1].Passed || results[len(results)-1].RecordNumber != len(records) {
+		t.Fatalf("verification results = %+v, want ten ordered passes", results)
+	}
+	if len(model.requests) != 11 || metrics.verificationAttempts != 11 {
+		t.Fatalf("requests = %d, attempts = %d; want 11 bounded subdivision requests", len(model.requests), metrics.verificationAttempts)
+	}
+}
+
+func TestVerifyRecordsSplitsRepeatedMalformedJSON(t *testing.T) {
+	model := &boundedVerificationCompleter{malformedAbove: 1}
+	previewer, err := NewPreviewer(model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := make([]Record, 4)
+	for index := range records {
+		records[index] = Record{Prompt: "What language is used?", Target: "Go", Evidence: "The example uses Go."}
+	}
+
+	results, metrics, err := previewer.verifyRecords(t.Context(), "model", GoalQuestionAnswer, "", records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != len(records) || !results[len(results)-1].Passed {
+		t.Fatalf("verification results = %+v, want four passes after subdivision", results)
+	}
+	if len(model.requests) != 10 || metrics.verificationAttempts != 10 {
+		t.Fatalf("requests = %d, attempts = %d; want two attempts for each malformed parent and one for each singleton", len(model.requests), metrics.verificationAttempts)
+	}
+}
+
+func TestVerifyRecordsRejectsOnlyPersistentlyTruncatedRecord(t *testing.T) {
+	model := &boundedVerificationCompleter{persistentFailure: true}
+	previewer, err := NewPreviewer(model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := Record{Prompt: "What language is used?", Target: "Go", Evidence: "The example uses Go."}
+
+	results, metrics, err := previewer.verifyRecords(t.Context(), "model", GoalQuestionAnswer, "", []Record{record})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Passed || results[0].ExpectedTarget != record.Target {
+		t.Fatalf("verification results = %+v, want one isolated rejection", results)
+	}
+	if metrics.verificationAttempts != 1 {
+		t.Fatalf("verification attempts = %d, want one bounded attempt", metrics.verificationAttempts)
+	}
+}
+
+func TestVerifyRecordsStopsSubdivisionWhenCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	model := &cancelingVerificationCompleter{cancel: cancel}
+	previewer, err := NewPreviewer(model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := make([]Record, 4)
+	for index := range records {
+		records[index] = Record{Prompt: "What language is used?", Target: "Go", Evidence: "The example uses Go."}
+	}
+
+	_, _, err = previewer.verifyRecords(ctx, "model", GoalQuestionAnswer, "", records)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context cancellation", err)
+	}
+	if model.calls != 2 {
+		t.Fatalf("calls = %d, want initial truncation followed by one canceled child request", model.calls)
 	}
 }
 

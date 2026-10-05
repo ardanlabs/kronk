@@ -24,6 +24,8 @@ const (
 	maxDocumentUploads       = 10
 	maxCollectionUploadBytes = 500 << 20
 	maxMultipartOverhead     = maxDocumentUploads << 20
+	maxPreviewRequestBytes   = 2 << 20
+	maxBuildRequestBytes     = 16 << 20
 )
 
 func (a *app) uploadDataset(ctx context.Context, r *http.Request) web.Encoder {
@@ -259,6 +261,7 @@ func (a *app) previewDataset(ctx context.Context, r *http.Request) web.Encoder {
 	}
 
 	var req PreviewRequest
+	r.Body = http.MaxBytesReader(nil, r.Body, maxPreviewRequestBytes)
 	if err := web.Decode(r, &req); err != nil {
 		return errs.New(errs.InvalidArgument, err)
 	}
@@ -328,6 +331,7 @@ func (a *app) buildDataset(ctx context.Context, r *http.Request) web.Encoder {
 	}
 
 	var req BuildRequest
+	r.Body = http.MaxBytesReader(nil, r.Body, maxBuildRequestBytes)
 	if err := web.Decode(r, &req); err != nil {
 		return errs.New(errs.InvalidArgument, err)
 	}

@@ -24,6 +24,7 @@ func (c *completer) Complete(_ context.Context, request prepare.CompletionReques
 
 type sequenceCompleter struct {
 	completions []prepare.Completion
+	errs        []error
 	requests    []prepare.CompletionRequest
 }
 
@@ -31,6 +32,9 @@ func (c *sequenceCompleter) Complete(_ context.Context, request prepare.Completi
 	c.requests = append(c.requests, request)
 	if len(c.requests) > len(c.completions) {
 		return prepare.Completion{}, fmt.Errorf("unexpected completion request %d", len(c.requests))
+	}
+	if index := len(c.requests) - 1; index < len(c.errs) && c.errs[index] != nil {
+		return prepare.Completion{}, c.errs[index]
 	}
 	return c.completions[len(c.requests)-1], nil
 }
@@ -269,6 +273,40 @@ func TestBuildPreviewRetriesInvalidGeneration(t *testing.T) {
 		!strings.Contains(model.requests[1].Messages[1].Content, "Create exactly 1 training records") ||
 		strings.Contains(model.requests[1].Messages[1].Content, "First source passage") {
 		t.Fatalf("retry did not include validation feedback: %+v", model.requests[1].Messages)
+	}
+}
+
+func TestBuildPreviewRetriesTruncatedGeneration(t *testing.T) {
+	datasetDirectory := t.TempDir()
+	markdown := "Go was created at Google."
+	if err := os.WriteFile(filepath.Join(datasetDirectory, "extracted.md"), []byte(markdown), 0o600); err != nil {
+		t.Fatalf("write Markdown: %v", err)
+	}
+
+	model := &sequenceCompleter{
+		completions: []prepare.Completion{
+			{},
+			{Content: `{"records":[{"prompt":"Where was Go created?","evidence_id":1,"target_id":1}]}`},
+			verificationCompletion(1, func(int) bool { return true }),
+		},
+		errs: []error{prepare.ErrCompletionTruncated},
+	}
+	previewer, err := prepare.NewPreviewer(model)
+	if err != nil {
+		t.Fatalf("new previewer: %v", err)
+	}
+
+	artifact, err := previewer.Build(t.Context(), prepare.PreviewRequest{
+		DatasetDirectory: datasetDirectory,
+		Goal:             prepare.GoalQuestionAnswer,
+		Model:            "Qwen/Qwen3-8B-Q8_0",
+		RecordCount:      1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(artifact.Records) != 1 || artifact.GenerationAttempts != 2 || artifact.VerificationAttempts != 1 {
+		t.Fatalf("artifact = %+v, want one record after one bounded generation retry", artifact)
 	}
 }
 

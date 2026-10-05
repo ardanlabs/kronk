@@ -98,7 +98,7 @@ interface FineTuningRunnerValue {
   buildDataset: () => Promise<boolean>;
   returnToSourceSetup: () => void;
   resetPreparation: () => void;
-  cancelPreparation: () => void;
+  cancelPreparation: () => Promise<boolean>;
   startRun: (training: FineTuningTrainingConfig) => Promise<boolean>;
   stopRun: () => void;
   resumeRun: (id: string) => Promise<boolean>;
@@ -133,6 +133,7 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
   const [preparationStartedAt, setPreparationStartedAt] = useState('');
   const [error, setError] = useState('');
   const preparationAbortRef = useRef<AbortController | null>(null);
+  const preparationStoppingRef = useRef(false);
   const activeTrainingRunRef = useRef('');
 
   const resetPreparation = useCallback(() => {
@@ -148,10 +149,13 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
 
   const refreshRuns = useCallback(async (showError = false) => {
     try {
-      const [latest, saved] = await Promise.all([
-        api.currentFineTuningRun().catch(() => null),
-        api.fineTuningHistory(),
-      ]);
+      const saved = await api.fineTuningHistory();
+      let latest: FineTuningRun | null;
+      try {
+        latest = await api.currentFineTuningRun();
+      } catch {
+        latest = saved.runs?.[0] ?? null;
+      }
       setTrackedRun(latest);
       setCurrentRun((selected) => {
         if (!latest) return selected && isTerminalFineTuningStatus(selected.status) ? selected : null;
@@ -229,6 +233,10 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
     operation: FineTuningPreparationOperation,
     action: (signal: AbortSignal) => Promise<void>,
   ): Promise<boolean> => {
+    if (preparationAbortRef.current) {
+      setError('Another dataset preparation operation is already running');
+      return false;
+    }
     const controller = new AbortController();
     preparationAbortRef.current = controller;
     setPreparationOperation(operation);
@@ -370,20 +378,28 @@ export function FineTuningRunnerProvider({ children }: { children: ReactNode }) 
     });
   };
 
-  const cancelPreparation = () => {
+  const cancelPreparation = async (): Promise<boolean> => {
+    if (preparationStoppingRef.current) return false;
     const operation = preparationOperation;
-    void api.stopFineTuningPreparation().catch(() => undefined);
-    preparationAbortRef.current?.abort();
-    preparationAbortRef.current = null;
-    setPreparationOperation(null);
-    setPreparationProgress(null);
-    setBusy(false);
+    const controller = preparationAbortRef.current;
+    if (!operation || !controller) return false;
+    preparationStoppingRef.current = true;
     setError('');
+    try {
+      await api.stopFineTuningPreparation();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not stop dataset preparation');
+      return false;
+    } finally {
+      preparationStoppingRef.current = false;
+    }
+    controller.abort();
     if (operation === 'prepared-upload') {
       setPreparedFile(null);
-      return;
+    } else {
+      setDatasetBuilt(false);
     }
-    setDatasetBuilt(false);
+    return true;
   };
 
   const startRun = (training: FineTuningTrainingConfig) => runAction(async () => {

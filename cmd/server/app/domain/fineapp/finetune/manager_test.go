@@ -16,6 +16,15 @@ type testBackend struct {
 	run       func(context.Context, Request, ProgressFunc) (Result, error)
 }
 
+type recoveringTestBackend struct {
+	testBackend
+	recover func(context.Context, Request) (Result, bool, error)
+}
+
+func (backend recoveringTestBackend) Recover(ctx context.Context, request Request) (Result, bool, error) {
+	return backend.recover(ctx, request)
+}
+
 func (backend testBackend) Preflight(ctx context.Context, request Request) error {
 	if backend.preflight != nil {
 		return backend.preflight(ctx, request)
@@ -57,7 +66,8 @@ func TestManagerRunsOneBackgroundTrainingRunAndPersistsIt(t *testing.T) {
 		EarlyStoppingPatience: 2, Seed: 42,
 	}
 	initial, err := manager.Start(context.Background(), Request{
-		Dataset: "dataset.jsonl", Model: "qwen3-4b", Training: trainingConfig,
+		DatasetID: "dataset-1", Dataset: "dataset.jsonl",
+		ModelID: "google/gemma", Model: "qwen3-4b", Training: trainingConfig,
 	}, func(info RunInfo) {
 		updates <- info
 	})
@@ -83,7 +93,7 @@ func TestManagerRunsOneBackgroundTrainingRunAndPersistsIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(history) != 1 || history[0].ID != initial.ID || history[0].Status != StatusCompleted || history[0].Training != trainingConfig {
+	if len(history) != 1 || history[0].ID != initial.ID || history[0].DatasetID != "dataset-1" || history[0].ModelID != "google/gemma" || history[0].Status != StatusCompleted || history[0].Training != trainingConfig {
 		t.Fatalf("history = %+v", history)
 	}
 }
@@ -113,7 +123,7 @@ func TestManagerStopsAndRecoversRuns(t *testing.T) {
 
 	interrupted := RunInfo{
 		Schema: runStateSchema, ID: "interrupted", Dataset: "data.jsonl", Model: "qwen3-4b",
-		Output: filepath.Join(manager.root, "interrupted"), Status: StatusTraining,
+		Output: filepath.Join(manager.root, "interrupted"), Status: StatusTraining, Progress: Progress{Stage: StageTraining},
 		StartedAt: time.Now().Add(-time.Hour), UpdatedAt: time.Now().Add(-time.Hour),
 	}
 	if err := mkdirAndWriteRun(interrupted); err != nil {
@@ -125,6 +135,39 @@ func TestManagerStopsAndRecoversRuns(t *testing.T) {
 	}
 	if len(history) != 2 || history[1].Status != StatusFailed || !strings.Contains(history[1].Error, "ended before") {
 		t.Fatalf("recovered history = %+v", history)
+	}
+}
+
+func TestManagerRecoveryReconcilesDurableBackendCheckpoint(t *testing.T) {
+	var checkpoint string
+	backend := recoveringTestBackend{
+		run: func(context.Context, Request, ProgressFunc) (Result, error) {
+			return Result{}, nil
+		},
+		recover: func(_ context.Context, request Request) (Result, bool, error) {
+			checkpoint = filepath.Join(request.Output, "checkpoints", "epoch-01")
+			if err := os.MkdirAll(checkpoint, 0o700); err != nil {
+				return Result{}, false, err
+			}
+			return Result{Status: StatusFailed, Resumable: true, SelectedEpoch: 1, SelectedCheckpoint: checkpoint}, true, nil
+		},
+	}
+	manager := newTestManager(t, backend)
+	now := time.Now()
+	interrupted := RunInfo{
+		Schema: runStateSchema, ID: "interrupted", DatasetID: "dataset-1", Dataset: "data.jsonl",
+		ModelID: "google/gemma", Model: "gemma.gguf", Output: filepath.Join(manager.root, "interrupted"),
+		Status: StatusTraining, Progress: Progress{Stage: StageTraining}, StartedAt: now, UpdatedAt: now,
+	}
+	if err := mkdirAndWriteRun(interrupted); err != nil {
+		t.Fatal(err)
+	}
+	history, err := manager.Recover()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 1 || !history[0].Resumable || history[0].SelectedEpoch != 1 || history[0].SelectedCheckpoint != checkpoint {
+		t.Fatalf("recovered history = %+v, want durable checkpoint", history)
 	}
 }
 
@@ -342,6 +385,96 @@ func TestManagerRejectsInvalidBackendResult(t *testing.T) {
 	failed := waitForStatus(t, updates, StatusFailed)
 	if !strings.Contains(failed.Error, "invalid terminal status") {
 		t.Fatalf("failed = %+v", failed)
+	}
+}
+
+func TestManagerRetriesTerminalStatePersistence(t *testing.T) {
+	manager := newTestManager(t, testBackend{run: func(context.Context, Request, ProgressFunc) (Result, error) {
+		return Result{Status: StatusFailed}, errors.New("training failed")
+	}})
+	writes := 0
+	manager.write = func(info RunInfo) error {
+		if info.Status == StatusFailed {
+			writes++
+			if writes == 1 {
+				return errors.New("temporary storage failure")
+			}
+		}
+		return writeRunInfo(info)
+	}
+	updates := make(chan RunInfo, 3)
+	if _, err := manager.Start(t.Context(), Request{Dataset: "dataset.jsonl", Model: "gemma.gguf"}, func(info RunInfo) {
+		updates <- info
+	}); err != nil {
+		t.Fatal(err)
+	}
+	failed := waitForStatus(t, updates, StatusFailed)
+	if !strings.Contains(failed.Error, "temporary storage failure") || writes != 2 {
+		t.Fatalf("failed run = %+v, terminal writes = %d", failed, writes)
+	}
+	history, err := manager.History()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 1 || history[0].Status != StatusFailed || history[0].Error != failed.Error {
+		t.Fatalf("durable history = %+v, want retried failure state", history)
+	}
+}
+
+func TestManagerBlocksNewRunWhenTerminalStateCannotBePersisted(t *testing.T) {
+	manager := newTestManager(t, testBackend{run: func(context.Context, Request, ProgressFunc) (Result, error) {
+		return Result{Status: StatusFailed}, errors.New("training failed")
+	}})
+	manager.write = func(info RunInfo) error {
+		if info.Status == StatusFailed {
+			return errors.New("storage unavailable")
+		}
+		return writeRunInfo(info)
+	}
+	updates := make(chan RunInfo, 3)
+	if _, err := manager.Start(t.Context(), Request{Dataset: "dataset.jsonl", Model: "gemma.gguf"}, func(info RunInfo) {
+		updates <- info
+	}); err != nil {
+		t.Fatal(err)
+	}
+	waitForStatus(t, updates, StatusFailed)
+	if _, err := manager.Start(t.Context(), Request{Dataset: "other.jsonl", Model: "gemma.gguf"}, nil); err == nil || !strings.Contains(err.Error(), "not durable") {
+		t.Fatalf("second Start() error = %v, want durable-state gate", err)
+	}
+}
+
+func TestReadRunInfoRejectsInvalidDurableState(t *testing.T) {
+	tests := map[string]func(*RunInfo){
+		"directory identity": func(info *RunInfo) { info.ID = "another-run" },
+		"status":             func(info *RunInfo) { info.Status = "unknown" },
+		"stage":              func(info *RunInfo) { info.Progress.Stage = "unknown" },
+		"timestamps":         func(info *RunInfo) { info.UpdatedAt = info.StartedAt.Add(-time.Second) },
+		"resumable state": func(info *RunInfo) {
+			info.Resumable = true
+			info.SelectedEpoch = 1
+		},
+	}
+	for name, corrupt := range tests {
+		t.Run(name, func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), "run-1")
+			if err := os.Mkdir(root, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			now := time.Now()
+			info := RunInfo{
+				Schema: runStateSchema, ID: "run-1", DatasetID: "dataset-1", Dataset: "dataset.jsonl",
+				ModelID: "google/gemma", Model: "gemma.gguf", Output: root,
+				Status: StatusFailed, Progress: Progress{Stage: StageTraining}, Error: "failed",
+				StartedAt: now, UpdatedAt: now, FinishedAt: now,
+			}
+			corrupt(&info)
+			if err := writeRunInfo(info); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := readRunInfo(root); err == nil {
+				t.Fatalf("readRunInfo() accepted invalid state: %+v", info)
+			}
+		})
 	}
 }
 

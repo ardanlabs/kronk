@@ -2,12 +2,15 @@ package fineapp
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/fineapp/prepare"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/kronk/pool"
+	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
 func TestModelCompleter(t *testing.T) {
@@ -79,6 +82,72 @@ func TestModelCompleterRejectsMissingContent(t *testing.T) {
 			_, err := completer.Complete(t.Context(), prepare.CompletionRequest{Model: "model"})
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("error: got %v, want containing %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestModelCompleterRejectsLengthTerminatedContentWithoutRetry(t *testing.T) {
+	finishReason := model.FinishReasonLength
+	var calls int
+	completer := modelCompleter{chat: func(context.Context, string, model.D) (model.ChatResponse, error) {
+		calls++
+		return model.ChatResponse{
+			Choices: []model.Choice{{
+				Message:         &model.ResponseMessage{Content: `{"record_1":"pass"`},
+				FinishReasonPtr: &finishReason,
+			}},
+		}, nil
+	}}
+
+	_, err := completer.Complete(t.Context(), prepare.CompletionRequest{Model: "model", MaxTokens: 464})
+	if !errors.Is(err, prepare.ErrCompletionTruncated) {
+		t.Fatalf("error = %v, want ErrCompletionTruncated", err)
+	}
+	if calls != 1 {
+		t.Fatalf("calls = %d, want one call because an unchanged retry cannot repair a token limit", calls)
+	}
+}
+
+func TestModelCompleterRetriesTransientFailures(t *testing.T) {
+	var calls int
+	completer := modelCompleter{chat: func(context.Context, string, model.D) (model.ChatResponse, error) {
+		calls++
+		if calls < 3 {
+			return model.ChatResponse{}, errors.New("temporary model transport failure")
+		}
+		return model.ChatResponse{Choices: []model.Choice{{Message: &model.ResponseMessage{Content: `{"records":[]}`}}}}, nil
+	}}
+
+	completion, err := completer.Complete(t.Context(), prepare.CompletionRequest{Model: "model"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 3 || completion.Content != `{"records":[]}` {
+		t.Fatalf("calls = %d, completion = %+v; want success on third attempt", calls, completion)
+	}
+}
+
+func TestModelCompleterDoesNotRetryPermanentOrCanceledFailures(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{name: "invalid request", err: model.ErrInvalidRequest},
+		{name: "insufficient capacity", err: pool.ErrNoCapacity},
+		{name: "model not found", err: models.ErrModelNotFound},
+		{name: "canceled", err: context.Canceled},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var calls int
+			completer := modelCompleter{chat: func(context.Context, string, model.D) (model.ChatResponse, error) {
+				calls++
+				return model.ChatResponse{}, test.err
+			}}
+			_, err := completer.Complete(t.Context(), prepare.CompletionRequest{Model: "model"})
+			if !errors.Is(err, test.err) || calls != 1 || !strings.Contains(err.Error(), "after 1 attempts") {
+				t.Fatalf("error = %v, calls = %d; want one non-retried failure", err, calls)
 			}
 		})
 	}

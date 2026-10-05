@@ -621,33 +621,50 @@ func (stub *trainingRecipeProviderStub) Recipe(modelPath string) (finetune.Recip
 type fineTunerStub struct {
 	request       finetune.Request
 	contextCanEnd bool
+	startRun      finetune.RunInfo
+	startErr      error
+	resumeRun     finetune.RunInfo
+	resumeErr     error
+	stopErr       error
+	currentRun    finetune.RunInfo
+	hasCurrent    bool
+	history       []finetune.RunInfo
+	historyErr    error
 }
 
 func (stub *fineTunerStub) Start(ctx context.Context, request finetune.Request, _ finetune.UpdateFunc) (finetune.RunInfo, error) {
 	stub.request = request
 	stub.contextCanEnd = ctx.Done() != nil
+	if stub.startErr != nil {
+		return finetune.RunInfo{}, stub.startErr
+	}
+	if stub.startRun.ID != "" {
+		return stub.startRun, nil
+	}
 	return finetune.RunInfo{
-		ID:      "run-1",
-		Dataset: request.Dataset,
-		Model:   request.Model,
-		Status:  finetune.StatusPreparing,
+		ID:        "run-1",
+		DatasetID: request.DatasetID,
+		Dataset:   request.Dataset,
+		ModelID:   request.ModelID,
+		Model:     request.Model,
+		Status:    finetune.StatusPreparing,
 	}, nil
 }
 
-func (*fineTunerStub) Resume(context.Context, string, finetune.UpdateFunc) (finetune.RunInfo, error) {
-	return finetune.RunInfo{}, nil
+func (stub *fineTunerStub) Resume(context.Context, string, finetune.UpdateFunc) (finetune.RunInfo, error) {
+	return stub.resumeRun, stub.resumeErr
 }
 
-func (*fineTunerStub) Stop() error {
-	return nil
+func (stub *fineTunerStub) Stop() error {
+	return stub.stopErr
 }
 
-func (*fineTunerStub) Current() (finetune.RunInfo, bool) {
-	return finetune.RunInfo{}, false
+func (stub *fineTunerStub) Current() (finetune.RunInfo, bool) {
+	return stub.currentRun, stub.hasCurrent
 }
 
-func (*fineTunerStub) History() ([]finetune.RunInfo, error) {
-	return nil, nil
+func (stub *fineTunerStub) History() ([]finetune.RunInfo, error) {
+	return stub.history, stub.historyErr
 }
 
 func TestStartRunResolvesManagedResources(t *testing.T) {
@@ -681,7 +698,7 @@ func TestStartRunResolvesManagedResources(t *testing.T) {
 	response := api.startRun(request.Context(), request)
 	cancel()
 
-	if finetuner.request.Dataset != datasetPath || finetuner.request.Model != modelPath || finetuner.request.Runtime.Port != 8181 {
+	if finetuner.request.DatasetID != "dataset-1" || finetuner.request.Dataset != datasetPath || finetuner.request.ModelID != "google/gemma" || finetuner.request.Model != modelPath || finetuner.request.Runtime.Port != 8181 {
 		t.Fatalf("fine-tuning request: got %+v", finetuner.request)
 	}
 	wantTraining := finetune.TrainingConfig{
@@ -701,6 +718,137 @@ func TestStartRunResolvesManagedResources(t *testing.T) {
 	}
 	if bytes.Contains(data, []byte(datasetsPath)) || bytes.Contains(data, []byte(filepath.Dir(modelPath))) {
 		t.Fatalf("response exposed a server path: %s", data)
+	}
+	var got RunResponse
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.DatasetID != "dataset-1" || got.Model != "google/gemma" {
+		t.Fatalf("run resource identities = %+v", got)
+	}
+}
+
+func TestFineTuningRunLifecycleHandlers(t *testing.T) {
+	now := time.Now()
+	run := finetune.RunInfo{
+		ID: "run-1", DatasetID: "dataset-1", ModelID: "google/gemma", Status: finetune.StatusTraining,
+		Progress:  finetune.Progress{Stage: finetune.StageTraining, Completed: 1, Total: 2},
+		StartedAt: now, UpdatedAt: now,
+	}
+	stub := &fineTunerStub{
+		currentRun: run, hasCurrent: true, history: []finetune.RunInfo{run},
+		resumeRun: run,
+	}
+	api := newApp(Config{FineTuner: stub})
+
+	current := api.currentRun(t.Context(), httptest.NewRequest(http.MethodGet, "/v1/fine-tuning/runs/current", nil))
+	var currentResponse RunResponse
+	decodeFineTuningResponse(t, current, &currentResponse)
+	if currentResponse.ID != run.ID || currentResponse.DatasetID != run.DatasetID || currentResponse.Model != run.ModelID {
+		t.Fatalf("current run response = %+v", currentResponse)
+	}
+
+	history := api.history(t.Context(), httptest.NewRequest(http.MethodGet, "/v1/fine-tuning/runs", nil))
+	var historyResponse HistoryResponse
+	decodeFineTuningResponse(t, history, &historyResponse)
+	if len(historyResponse.Runs) != 1 || historyResponse.Runs[0].ID != run.ID {
+		t.Fatalf("history response = %+v", historyResponse)
+	}
+
+	byIDRequest := httptest.NewRequest(http.MethodGet, "/v1/fine-tuning/runs/run-1", nil)
+	byIDRequest.SetPathValue("id", "run-1")
+	var byIDResponse RunResponse
+	decodeFineTuningResponse(t, api.runByID(t.Context(), byIDRequest), &byIDResponse)
+	if byIDResponse.ID != run.ID {
+		t.Fatalf("run by ID response = %+v", byIDResponse)
+	}
+
+	resumeRequest := httptest.NewRequest(http.MethodPost, "/v1/fine-tuning/runs/run-1/resume", nil)
+	resumeRequest.SetPathValue("id", "run-1")
+	var resumeResponse RunResponse
+	decodeFineTuningResponse(t, api.resumeRun(t.Context(), resumeRequest), &resumeResponse)
+	if resumeResponse.ID != run.ID {
+		t.Fatalf("resume response = %+v", resumeResponse)
+	}
+
+	var stopResponse ActionResponse
+	decodeFineTuningResponse(t, api.stopRun(t.Context(), httptest.NewRequest(http.MethodPost, "/v1/fine-tuning/runs/current/stop", nil)), &stopResponse)
+	if stopResponse.Status != "stopping" {
+		t.Fatalf("stop response = %+v", stopResponse)
+	}
+}
+
+func TestResumeRunDistinguishesPreconditionAndInternalErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		code errs.ErrCode
+	}{
+		{"not resumable", finetune.ErrRunNotResumable, errs.FailedPrecondition},
+		{"storage failure", os.ErrPermission, errs.Internal},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			api := newApp(Config{FineTuner: &fineTunerStub{resumeErr: test.err}})
+			request := httptest.NewRequest(http.MethodPost, "/v1/fine-tuning/runs/run-1/resume", nil)
+			request.SetPathValue("id", "run-1")
+			response, ok := api.resumeRun(t.Context(), request).(*errs.Error)
+			if !ok || response.Code != test.code {
+				t.Fatalf("resume error = %T %v, want code %s", response, response, test.code)
+			}
+		})
+	}
+}
+
+func TestFineTuningJSONRequestsAreBounded(t *testing.T) {
+	tests := []struct {
+		name string
+		size int
+		call func(*http.Request) web.Encoder
+	}{
+		{"start", maxStartRunRequestBytes + 1, func(request *http.Request) web.Encoder {
+			return newApp(Config{FineTuner: &fineTunerStub{}}).startRun(t.Context(), request)
+		}},
+		{"preview", maxPreviewRequestBytes + 1, func(request *http.Request) web.Encoder {
+			return newApp(Config{Builder: &datasetBuilderStub{}}).previewDataset(t.Context(), request)
+		}},
+		{"build", maxBuildRequestBytes + 1, func(request *http.Request) web.Encoder {
+			return newApp(Config{Builder: &datasetBuilderStub{}}).buildDataset(t.Context(), request)
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, "/v1/fine-tuning", strings.NewReader(strings.Repeat("x", test.size)))
+			response, ok := test.call(request).(*errs.Error)
+			if !ok || response.Code != errs.InvalidArgument || !strings.Contains(response.Message, "request body too large") {
+				t.Fatalf("bounded request error = %T %v", response, response)
+			}
+		})
+	}
+}
+
+func TestRunResponseSanitizesInternalFailure(t *testing.T) {
+	run := finetune.RunInfo{
+		ID: "run-1", DatasetID: "dataset-1", ModelID: "google/gemma", Status: finetune.StatusFailed,
+		Error: "open /Users/example/.kronk/runs/private: permission denied",
+	}
+	response := runFromBusiness(run)
+	if strings.Contains(response.Error, "/Users/example") || response.Error == run.Error {
+		t.Fatalf("public error exposed internal details: %q", response.Error)
+	}
+}
+
+func decodeFineTuningResponse(t *testing.T, response web.Encoder, target any) {
+	t.Helper()
+	if appErr, ok := response.(*errs.Error); ok {
+		t.Fatalf("unexpected application error: %v", appErr)
+	}
+	data, _, err := response.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, target); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -189,6 +189,30 @@ func (backend *Backend) Preflight(ctx context.Context, request finetune.Request)
 	return backend.preflight(ctx, request)
 }
 
+// Recover returns a validated durable checkpoint for an interrupted managed
+// run. It does not load model tensors or restart training.
+func (*Backend) Recover(ctx context.Context, request finetune.Request) (finetune.Result, bool, error) {
+	if err := context.Cause(ctx); err != nil {
+		return finetune.Result{}, false, err
+	}
+	state, found, err := readTrainingState(request.Output)
+	if err != nil || !found {
+		return finetune.Result{}, found, err
+	}
+	contract, err := finetune.ValidateDatasetContract(request.Dataset)
+	if err != nil {
+		return finetune.Result{}, false, fmt.Errorf("validate recovery dataset contract: %w", err)
+	}
+	if err := validateTrainingState(request, contract, state); err != nil {
+		return finetune.Result{}, false, err
+	}
+	trained := trainingOutputFromState(state)
+	if !trained.Resumable {
+		return finetune.Result{}, false, nil
+	}
+	return resumableResult(trained), true, nil
+}
+
 // Run builds the protected dataset contract, trains Gemma, selects the best
 // validation checkpoint, and exports its GGUF adapter into the managed run.
 func (backend *Backend) Run(ctx context.Context, request finetune.Request, progress finetune.ProgressFunc) (finetune.Result, error) {
@@ -500,6 +524,18 @@ func (backend *Backend) trainGemma(ctx context.Context, request finetune.Request
 			BatchSize: config.BatchSize, Seed: uint64(config.Seed),
 			AdapterCheckpointDirectory: filepath.Join(request.Output, "checkpoints"),
 			RetainedCheckpointEpochs:   checkpointProbeEpochs,
+			PersistCheckpoint: func(result gemma.TrainingResult) error {
+				state.Training = result
+				if err := writeTrainingState(request.Output, state); err != nil {
+					return err
+				}
+				reportProgress(progress, finetune.Progress{
+					Stage: finetune.StageTraining, Completed: min(len(result.Epochs)*stepsPerEpoch, totalSteps), Total: totalSteps,
+					Message:   fmt.Sprintf("Saved checkpoint after epoch %d", result.Epochs[len(result.Epochs)-1].Epoch),
+					Resumable: true, SelectedEpoch: result.BestEpoch, SelectedCheckpoint: result.BestCheckpoint,
+				})
+				return nil
+			},
 		}, func(update gemma.TrainingProgress) {
 			reportProgress(progress, finetune.Progress{
 				Stage: finetune.StageTraining, Completed: update.CompletedSteps,
@@ -509,10 +545,7 @@ func (backend *Backend) trainGemma(ctx context.Context, request finetune.Request
 			})
 		})
 		if err != nil {
-			return trainingOutput{}, err
-		}
-		if err := writeTrainingState(request.Output, state); err != nil {
-			return trainingOutput{}, err
+			return trainingOutputFromState(state), err
 		}
 		reportProgress(progress, finetune.Progress{
 			Stage: finetune.StageTraining, Completed: totalSteps, Total: totalSteps,
@@ -541,14 +574,15 @@ func (backend *Backend) trainGemma(ctx context.Context, request finetune.Request
 			return trainingOutputFromState(state), err
 		}
 		state.Selection = &selection
-		if err := removeUnselectedCheckpoints(&state.Training, selection.Checkpoint); err != nil {
+		unselected := pruneUnselectedCheckpoints(&state.Training, selection.Checkpoint)
+		if err := writeTrainingState(request.Output, state); err != nil {
+			return trainingOutputFromState(state), err
+		}
+		if err := removeCheckpointPaths(unselected); err != nil {
 			return trainingOutputFromState(state), err
 		}
 		if err := os.RemoveAll(filepath.Join(request.Output, "checkpoint-probes")); err != nil {
 			return trainingOutputFromState(state), fmt.Errorf("remove temporary checkpoint adapters: %w", err)
-		}
-		if err := writeTrainingState(request.Output, state); err != nil {
-			return trainingOutputFromState(state), err
 		}
 	}
 	return trainingOutputFromState(state), nil
@@ -588,16 +622,24 @@ func exportCheckpointProbes(runtime *gemma.Runtime, output string, result gemma.
 	return probes, nil
 }
 
-func removeUnselectedCheckpoints(result *gemma.TrainingResult, selected string) error {
+func pruneUnselectedCheckpoints(result *gemma.TrainingResult, selected string) []string {
+	var paths []string
 	for index := range result.Epochs {
 		checkpoint := result.Epochs[index].Checkpoint
 		if checkpoint == "" || checkpoint == selected || checkpoint == result.BestCheckpoint {
 			continue
 		}
-		if err := os.RemoveAll(checkpoint); err != nil {
-			return fmt.Errorf("remove unselected epoch %d checkpoint: %w", result.Epochs[index].Epoch, err)
-		}
+		paths = append(paths, checkpoint)
 		result.Epochs[index].Checkpoint = ""
+	}
+	return paths
+}
+
+func removeCheckpointPaths(paths []string) error {
+	for _, path := range paths {
+		if err := os.RemoveAll(path); err != nil {
+			return fmt.Errorf("remove unselected checkpoint %q: %w", path, err)
+		}
 	}
 	return nil
 }
@@ -756,7 +798,15 @@ func validateTrainingResult(output, phase string, result gemma.TrainingResult) e
 }
 
 func validateManagedTrainingPath(output, name, path string, directory bool) error {
-	relative, err := filepath.Rel(output, path)
+	absoluteOutput, err := filepath.Abs(output)
+	if err != nil {
+		return fmt.Errorf("resolve managed run path: %w", err)
+	}
+	absolutePath, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("resolve %s path: %w", name, err)
+	}
+	relative, err := filepath.Rel(absoluteOutput, absolutePath)
 	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
 		return fmt.Errorf("%s is outside the managed run", name)
 	}
@@ -770,6 +820,18 @@ func validateManagedTrainingPath(output, name, path string, directory bool) erro
 			kind = "directory"
 		}
 		return fmt.Errorf("%s is not a valid managed %s", name, kind)
+	}
+	realOutput, err := filepath.EvalSymlinks(absoluteOutput)
+	if err != nil {
+		return fmt.Errorf("resolve managed run: %w", err)
+	}
+	realPath, err := filepath.EvalSymlinks(absolutePath)
+	if err != nil {
+		return fmt.Errorf("resolve %s: %w", name, err)
+	}
+	relative, err = filepath.Rel(realOutput, realPath)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
+		return fmt.Errorf("%s is outside the managed run", name)
 	}
 	return nil
 }
