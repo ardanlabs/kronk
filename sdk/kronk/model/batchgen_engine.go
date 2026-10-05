@@ -56,8 +56,8 @@ type batchEngine struct {
 	diagnosticGeneration      []BatchGenerationContribution
 	diagnosticLastPublished   time.Time
 
-	// Pre-allocated extended batch for media embeddings and M-RoPE text.
-	// These paths decode separately from the shared generation tray.
+	// Pre-allocated extended batch for isolated media work. Unsupported,
+	// unknown, non-causal, or capacity-constrained contributions use it.
 	mropeBatch *extendedBatch
 }
 
@@ -307,27 +307,32 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 			continue
 		}
 
-		// M-RoPE slots require 4D positions (dim0=linear, dims1-3=0 for text).
-		// The shared batch only writes 1D positions, so decode
-		// the generation token through the dedicated M-RoPE path and sample
-		// from the last logits position (-1) of the M-RoPE batch.
+		// llama.cpp expands a token's linear position into its M-RoPE text
+		// position, so M-RoPE generation can use the shared target tray. Media
+		// M-RoPE requests do not speculate until draft position compatibility is
+		// proven, so stage exactly one ordinary target row for them.
 		if s.useMRoPE {
-			if err := e.decodeTextMRoPE(s, []llama.Token{s.sampled}); err != nil {
-				e.finishSlot(s, fmt.Errorf("mrope generation decode: %w", err))
+			idx, err := e.batch.addToken(s.sampled, s.nPast, s.seqIDs, extendedBatchOutputLogits)
+			if err != nil {
+				e.finishSlot(s, fmt.Errorf("add M-RoPE generation token: %w", err))
 				continue
 			}
-
-			token := e.sampleSlotToken(s, -1)
+			s.iBatch = idx
+			e.speculation.TargetRowsStaged(s.id, speculation.TargetRange{
+				Start:   s.iBatch,
+				Count:   1,
+				BasePos: s.nPast,
+			})
 			if trackPrefillSchedule {
 				generationContributions = append(generationContributions,
-					fmt.Sprintf("slot=%d,rows=1,mode=mrope-direct", s.id))
+					fmt.Sprintf("slot=%d,rows=1,mode=mrope-shared", s.id))
 			}
 			e.diagnosticGeneration = append(e.diagnosticGeneration, BatchGenerationContribution{
 				SlotID: s.id,
 				Rows:   1,
-				Mode:   "mrope-direct",
+				Mode:   "mrope-shared",
 			})
-			e.handleSampledToken(s, token, -1, buf)
+			s.nPast++
 			continue
 		}
 
@@ -460,21 +465,42 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 		}
 	}
 
-	// Process at most one media unit per iteration. Text that can share the
-	// tray consumes only capacity left by generation and ordinary prefill.
-	// Image/audio and M-RoPE work use separate decode calls, so defer them until
-	// after the shared tray has decoded and published generation output.
+	// Process at most one media contribution per iteration. The planner admits
+	// compatible causal text or embedding rows to the shared tray and leaves
+	// unsupported, unknown, non-causal, or capacity-constrained work on the
+	// existing isolated path.
 	mediaSlot, mediaIdx := e.nextMediaSlot()
-	if mediaSlot != nil && e.mediaChunkUsesSharedBatch(mediaSlot) {
-		e.processMediaSlot(mediaSlot, mediaIdx, buf)
-		mediaSlot = nil
+	var stagedMedia *stagedMediaContribution
+	if mediaSlot != nil {
+		plan := e.planMediaSlot(mediaSlot)
+		e.model.log(mediaSlot.job.ctx, "batch-engine", "status", "media-plan",
+			"iteration", iteration,
+			"slot", mediaSlot.id,
+			"mode", plan.mode.String(),
+			"rows", plan.rows,
+			"input-mixing", e.model.modelInfo.profile.Batch.InputMixing,
+			"mrope", mediaSlot.useMRoPE,
+			"non-causal", mediaSlot.useNonCausal)
+		switch plan.mode {
+		case batchExecutionShared:
+			var err error
+			stagedMedia, err = e.stageMediaSlot(mediaSlot, plan)
+			if err != nil {
+				e.finishSlot(mediaSlot, err)
+				e.mediaNext = (mediaIdx + 1) % len(e.slots)
+			}
+			mediaSlot = nil
+
+		case batchExecutionDeferred:
+			mediaSlot = nil
+		}
 	}
 
 	// Nothing to process.
 	if e.batch.len() == 0 {
 		e.batchAssembling = false
 		if mediaSlot != nil {
-			e.processMediaSlot(mediaSlot, mediaIdx, buf)
+			e.processIsolatedMediaSlot(mediaSlot, mediaIdx, buf)
 		}
 		return
 	}
@@ -541,11 +567,15 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 		}
 		return
 	}
+	if stagedMedia != nil && stagedMedia.slot.active {
+		stagedMedia.commit()
+		e.mediaNext = (mediaIdx + 1) % len(e.slots)
+	}
 
 	e.speculation.AfterTargetDecode(buf)
 
 	if mediaSlot != nil {
-		e.processMediaSlot(mediaSlot, mediaIdx, buf)
+		e.processIsolatedMediaSlot(mediaSlot, mediaIdx, buf)
 	}
 }
 

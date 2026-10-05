@@ -253,16 +253,28 @@ otherwise becomes ineligible. A long prompt can therefore make another new
 prompt wait, but it cannot block output-token generation between decode
 iterations.
 
+Multimodal generation uses the same logical tray through a contribution
+planner. Text rows, including M-RoPE text, can use available tray capacity.
+For validated architectures, causal image or audio embedding rows can share a
+decode with token rows when the complete media contribution fits. Non-causal
+media, explicitly unsupported architectures, unvalidated architectures, and
+media contributions that do not fit use the isolated media decoder instead.
+This fallback is the same processing path used before mixed batches were
+available.
+
 At debug level, each contribution emits `status[prefill-scheduled]` with
 `iteration`, `slot`, `prefill_slots`, `generation_contributions`,
 `chunk_tokens`, `prefill_remaining`, `prefill_complete`, `selector_start`,
 `selector_selected`, `selector_next`, `generation_rows`, `tray_tokens`,
 `nbatch`, and `nubatch`. `prefill_slots` lists every eligible prefill slot for
 that iteration. Each `generation_contributions` entry reports its slot, staged
-row count, and mode; M-RoPE direct decoding is identified separately because it
-does not occupy the shared tray. The three selector fields show the persistent
-cursor before selection, the selected slot-array index, and the cursor retained
-for the next iteration. While an owner is still prefilling,
+row count, and mode; `mrope-shared` identifies M-RoPE generation in the shared
+tray. Media contributions emit `status[media-plan]` with `mode` set to
+`shared`, `isolated`, or `deferred`, along with the model's input-mixing
+capability and the contribution's position and attention requirements. The
+three selector fields show the persistent cursor before selection, the selected
+slot-array index, and the cursor retained for the next iteration. While an owner
+is still prefilling,
 `selector_selected` and `selector_next` remain equal. Completion moves
 `selector_next` to the following slot-array index. If generation rows consume
 the complete logical tray, `status[prefill-deferred]` records the same slot and
@@ -279,6 +291,13 @@ full speculative verification round and the prefill contribution remain in one
 physical batch. For four slots, the internal effective values are
 `NUBatch: 2048`, `NBatch: 2052` for non-MTP and `NUBatch: 2064`,
 `NBatch: 2064` for MTP with the default `ndraft: 3`.
+
+A media embedding row and a token row each consume one logical tray row.
+Mixed batching therefore does not change these formulas or require a larger
+configured prefill batch. llama.cpp may split a causal mixed logical batch into
+physical ubatches under the same `NUBatch` limit. Media requiring non-causal
+attention stays isolated so its whole-chunk physical-batch requirement remains
+unchanged.
 
 Generation-row count comes from the generation mode, not from the configured
 prefill size:

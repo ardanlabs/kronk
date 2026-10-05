@@ -48,7 +48,7 @@ func TestStageMRoPEText(t *testing.T) {
 
 	for i, entry := range batch.entries {
 		position := llama.Pos(9 + i)
-		wantPositions := []llama.Pos{position, position, position, position}
+		wantPositions := []llama.Pos{position}
 		if entry.token != tokens[i] || !entry.hasToken {
 			t.Errorf("entry %d token = %d, %t; want %d, true", i, entry.token, entry.hasToken, tokens[i])
 		}
@@ -126,6 +126,29 @@ func TestStageEmbeddingRowsWithoutOutput(t *testing.T) {
 		if entry.output != extendedBatchOutputNone {
 			t.Errorf("entry %d output = %d, want none", i, entry.output)
 		}
+	}
+}
+
+func TestAppendEmbeddingRowsPreservesExistingTokens(t *testing.T) {
+	batch := extendedBatch{capacity: 3}
+	if _, err := batch.addToken(7, 3, []llama.SeqId{0}, extendedBatchOutputLogits); err != nil {
+		t.Fatalf("add token: %v", err)
+	}
+	if err := appendEmbeddingRows(&batch, []float32{1, 2, 3, 4}, 2, 2, []llama.Pos{4, 5}, []llama.SeqId{1}, extendedBatchOutputLogits); err != nil {
+		t.Fatalf("append embedding rows: %v", err)
+	}
+
+	if len(batch.entries) != 3 {
+		t.Fatalf("entries = %d, want 3", len(batch.entries))
+	}
+	if !batch.entries[0].hasToken || batch.entries[0].token != 7 {
+		t.Errorf("first entry = %+v, want original token 7", batch.entries[0])
+	}
+	if batch.entries[1].hasToken || batch.entries[2].hasToken {
+		t.Fatal("embedding entries unexpectedly contain token IDs")
+	}
+	if !slices.Equal(batch.entries[1].embedding, []float32{1, 2}) || !slices.Equal(batch.entries[2].embedding, []float32{3, 4}) {
+		t.Errorf("embedding rows = %v/%v, want [1 2]/[3 4]", batch.entries[1].embedding, batch.entries[2].embedding)
 	}
 }
 

@@ -162,6 +162,12 @@ media-token chunk to fit in one physical batch, so lowering
 `proj-on-cpu: true` can keep the projector on the CPU when accelerator memory
 is constrained, at a performance cost.
 
+For validated model architectures, causal media embeddings can share the
+generation tray with token rows. Each embedding consumes one logical tray row,
+so mixed batching does not increase `NBatch` or `NUBatch`. Kronk retains the
+isolated decoder for non-causal media, unsupported architectures, unvalidated
+architectures, and media contributions that do not fit the available tray.
+
 ## 11.7 Message Caching
 
 Incremental Message Caching can reuse unchanged media state for text-only

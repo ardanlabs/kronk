@@ -1,6 +1,13 @@
 package model
 
-import "testing"
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/hybridgroup/yzma/pkg/llama"
+	"go.opentelemetry.io/otel/trace"
+)
 
 func TestNextMediaSlotStartsAtCursorAndSkipsIneligibleSlots(t *testing.T) {
 	e := batchEngine{
@@ -52,5 +59,34 @@ func TestMediaTextContributionSizeUsesRemainingTrayCapacity(t *testing.T) {
 				t.Errorf("media text contribution: got %d, want %d", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestStagedMediaContributionCommitsOnlyAfterDecode(t *testing.T) {
+	s := slot{
+		chunkIdx:    2,
+		chunkTokIdx: 3,
+		nPast:       11,
+		iBatch:      -1,
+		span:        trace.SpanFromContext(context.Background()),
+	}
+	contribution := stagedMediaContribution{
+		slot:            &s,
+		nextChunkIdx:    3,
+		nextChunkTokIdx: 0,
+		nextPast:        llama.Pos(19),
+		outputIndex:     7,
+		complete:        true,
+		started:         time.Now(),
+	}
+
+	if s.chunkIdx != 2 || s.chunkTokIdx != 3 || s.nPast != 11 || s.iBatch != -1 || s.mediaPrefillDone {
+		t.Fatalf("slot changed before commit: %+v", s)
+	}
+
+	contribution.commit()
+	if s.chunkIdx != 3 || s.chunkTokIdx != 0 || s.nPast != 19 || s.iBatch != 7 || !s.mediaPrefillDone {
+		t.Errorf("slot after commit = chunk %d/%d past %d output %d complete %t, want 3/0 19 7 true",
+			s.chunkIdx, s.chunkTokIdx, s.nPast, s.iBatch, s.mediaPrefillDone)
 	}
 }

@@ -430,9 +430,9 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 		}
 
 		// IMC media builds and appends run synchronously during admission instead
-		// of through processMediaSlot. Publish their phase before the projector or
-		// embedding decode blocks this engine goroutine so diagnostics clients can
-		// observe the work and its overlap with slots already generating.
+		// of through the batch media planner. Publish their phase before the
+		// projector or embedding decode blocks this engine goroutine so diagnostics
+		// clients can observe the work and its overlap with slots already generating.
 		if job.imcMediaBuild || job.imcMediaAppend {
 			s.mediaPrefilling = true
 			e.publishDiagnostics(true)
@@ -1193,11 +1193,26 @@ func (e *batchEngine) slotNeedsMRoPE(s *slot, job *chatJob) bool {
 	return job.imcSessionUseMRoPE
 }
 
+func (e *batchEngine) disableMTPForMediaMRoPE(s *slot, job *chatJob) {
+	if !s.useMRoPE || e.model.draft == nil || !e.model.draft.mtp() {
+		return
+	}
+
+	// M-RoPE media rows are target-only embeddings with four-dimensional
+	// positions. An MTP own-KV context cannot mirror those rows because they
+	// have no vocabulary token to replay, so its draft prefix would diverge
+	// from the target prefix. Keep MTP available to other requests while
+	// explicitly disabling it for this media request.
+	s.mtp.Disable("media-mrope")
+	e.model.log(job.ctx, "speculative", "status", "mtp-disabled-media-mrope",
+		"slot", s.id, "id", job.id, "reason", s.mtp.DisableReason)
+}
+
 // startSlotTextMRoPE initializes a text-only slot that must use M-RoPE 4D
 // positioning. This is used when the IMC media cache was built with M-RoPE
 // positions (e.g., Qwen vision models) and the suffix text must use the same
-// positional encoding scheme. Decodes the suffix via decodeTextMRoPE instead
-// of the shared batch, then samples the first token. Returns true on success.
+// positional encoding scheme. Decodes the suffix outside the shared batch,
+// then samples the first token. Returns true on success.
 func (e *batchEngine) startSlotTextMRoPE(s *slot, job *chatJob, cacheIdx llama.Pos, buf []byte) bool {
 	addBOS := cacheIdx == 0 && e.model.addBOSToken
 	var tokens []llama.Token
@@ -1229,19 +1244,12 @@ func (e *batchEngine) startSlotTextMRoPE(s *slot, job *chatJob, cacheIdx llama.P
 	primeSampler(s.sampler, job.samplerPromptTokens, job.params)
 
 	s.useMRoPE = true
-	if e.model.draft != nil && e.model.draft.mtp() {
-		// M-RoPE media snapshots currently externalize target KV only. Until
-		// draft position compatibility is proven, keep target reuse enabled
-		// but disable speculative decoding for this request.
-		s.mtp.Disable("media-mrope")
-		e.model.log(job.ctx, "speculative", "status", "mtp-disabled-media-mrope",
-			"slot", s.id, "id", job.id, "reason", s.mtp.DisableReason)
-	}
+	e.disableMTPForMediaMRoPE(s, job)
 
 	nBatch := e.model.cfg.EffectiveNBatch()
 	for start := 0; start < len(tokens); start += nBatch {
 		end := min(start+nBatch, len(tokens))
-		if err := e.decodeTextMRoPE(s, tokens[start:end]); err != nil {
+		if err := e.decodeTextIsolated(s, tokens[start:end]); err != nil {
 			e.finishSlot(s, fmt.Errorf("decode cached-media suffix (M-RoPE) failed: %w", err))
 			return false
 		}
@@ -1285,6 +1293,7 @@ func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos, 
 	// Set model-specific flags for positioning and attention.
 	s.useMRoPE = mtmd.DecodeUseMRope(s.mtmdCtx)
 	s.useNonCausal = mtmd.DecodeUseNonCausal(s.mtmdCtx, 0)
+	e.disableMTPForMediaMRoPE(s, job)
 
 	// Count total tokens across all chunks.
 	numChunks := mtmd.InputChunksSize(s.inputChunks)

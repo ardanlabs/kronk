@@ -107,6 +107,7 @@ type Profile struct {
 	Rope                   gguf.RopeFacts
 	Speculation            Speculation
 	Modalities             Modalities
+	Batch                  BatchCapabilities
 	FileType               int64
 	HasChatTemplate        bool
 	SupportsTensorParallel bool
@@ -128,6 +129,9 @@ func Resolve(values map[string]string) Profile {
 		if err := adapter.Apply(metadata, &profile); err != nil {
 			profile.issues = append(profile.issues, fmt.Errorf("%s profile: %w", adapter.Name(), err))
 		}
+	}
+	if profile.Role == RoleLanguage {
+		profile.Batch = batchCapabilities(profile.Architecture)
 	}
 	profile.SupportsTensorParallel = profile.Role == RoleLanguage && supportsTensorParallel(profile.Architecture)
 
