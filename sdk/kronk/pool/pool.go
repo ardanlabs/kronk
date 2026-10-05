@@ -27,6 +27,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/pool/engine/loader"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
+	"github.com/ardanlabs/kronk/sdk/tools/modelconfig"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
@@ -132,10 +133,11 @@ func New(cfg Config) (*Pool, error) {
 
 	mc := cfg.ModelConfig
 	if mc == nil && cfg.ModelConfigFile != "" {
-		mc, err = models.LoadModelConfig(cfg.ModelConfigFile)
+		doc, err := modelconfig.Load(cfg.ModelConfigFile)
 		if err != nil {
 			return nil, fmt.Errorf("new: loading model config: %w", err)
 		}
+		mc = doc.Models
 	}
 	if mc == nil {
 		mc = map[string]models.ModelConfig{}

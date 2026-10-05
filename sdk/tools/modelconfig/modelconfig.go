@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -12,7 +13,7 @@ import (
 	"go.yaml.in/yaml/v2"
 )
 
-const currentVersion = 2
+var supportedVersions = []int{1, 2}
 
 // BuckyModelConfig contains per-model Whisper runtime overrides.
 type BuckyModelConfig struct {
@@ -86,13 +87,7 @@ func Load(path string) (Document, error) {
 		return Document{}, fmt.Errorf("load: unmarshaling model config: %w", err)
 	}
 
-	switch doc.Version {
-	case 1:
-		if len(doc.BuckyModels) > 0 || len(doc.MalinaModels) > 0 {
-			return Document{}, fmt.Errorf("load: bucky-models and malina-models require config version %d", currentVersion)
-		}
-	case currentVersion:
-	default:
+	if !slices.Contains(supportedVersions, doc.Version) {
 		return Document{}, fmt.Errorf("load: unsupported config version %d", doc.Version)
 	}
 

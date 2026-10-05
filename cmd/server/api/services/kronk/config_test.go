@@ -44,8 +44,12 @@ func TestLoadConfig(t *testing.T) {
 	unsetEnv(t, "KRONK_LLAMA_LOG")
 
 	path := filepath.Join(t.TempDir(), "model_config.yaml")
-	data := []byte(`version: 1
+	data := []byte(`version: 2
 models: {}
+bucky-models:
+  tiny:
+    nseq-max: 2
+malina-models: {}
 kms:
   web:
     api-host: yaml.example:9000
@@ -122,6 +126,26 @@ kms:
 	}
 }
 
+func TestLoadConfigVersionOneCompatibility(t *testing.T) {
+	unsetEnv(t, "KRONK_HF_TOKEN")
+	unsetEnv(t, "KRONK_LLAMA_LOG")
+
+	path := filepath.Join(t.TempDir(), "model_config.yaml")
+	data := []byte("version: 1\nmodels: {}\nkms:\n  pool:\n    budget-percent: 80\n")
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	t.Setenv("KRONK_POOL_MODEL_CONFIG_FILE", path)
+
+	cfg, err := loadConfig(false)
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	if cfg.Pool.BudgetPercent != 80 {
+		t.Errorf("BudgetPercent: got %d, want 80", cfg.Pool.BudgetPercent)
+	}
+}
+
 func TestLoadConfigRejectsVersionZero(t *testing.T) {
 	unsetEnv(t, "KRONK_HF_TOKEN")
 	unsetEnv(t, "KRONK_LLAMA_LOG")
@@ -148,7 +172,7 @@ func TestLoadConfigRejectsVersionZero(t *testing.T) {
 
 func TestLoadConfigUnsupportedVersion(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "model_config.yaml")
-	if err := os.WriteFile(path, []byte("version: 2\nmodels: {}\n"), 0644); err != nil {
+	if err := os.WriteFile(path, []byte("version: 3\nmodels: {}\n"), 0644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	t.Setenv("KRONK_POOL_MODEL_CONFIG_FILE", path)

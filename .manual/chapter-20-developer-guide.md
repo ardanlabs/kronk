@@ -808,6 +808,12 @@ operation releases admission capacity. The admission timeout defaults to three m
 and stops applying once capacity is acquired. The states isolate concurrent inference
 while sharing the handle's model weights and Whisper context.
 
+The Bucky planner reserves the shared model file size once and a conservative
+200 MiB runtime allowance for every configured state. It does not charge
+`QueueDepth`, because waiting calls do not allocate a state. Planning and model
+loading use the same resolved configuration so the reservation scales with the
+actual `NSeqMax` used by the handle.
+
 The audio HTTP handler delegates file decoding and transcription to
 `Bucky.TranscribeFile`. It explicitly enforces the 25 MB upload limit before allowing
 unbounded work. Keep protocol field validation/format selection in the handler and

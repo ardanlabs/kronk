@@ -11,13 +11,15 @@ func TestLoad(t *testing.T) {
 	tests := []struct {
 		name       string
 		yaml       string
+		wantModel  string
 		wantBucky  int
 		wantMalina int
 		wantErr    bool
 	}{
 		{
-			name: "version one remains compatible",
-			yaml: "version: 1\nmodels:\n  owner/model:\n    nseq-max: 2\n",
+			name:      "version one remains compatible",
+			yaml:      "version: 1\nmodels:\n  owner/model:\n    nseq-max: 2\n",
+			wantModel: "owner/model",
 		},
 		{
 			name:       "version two backend settings",
@@ -26,9 +28,9 @@ func TestLoad(t *testing.T) {
 			wantMalina: 3,
 		},
 		{
-			name:    "backend sections require version two",
-			yaml:    "version: 1\nbucky-models:\n  tiny:\n    nseq-max: 2\n",
-			wantErr: true,
+			name:      "version one accepts known backend settings",
+			yaml:      "version: 1\nbucky-models:\n  tiny:\n    nseq-max: 2\n    admission-timeout: 30s\n",
+			wantBucky: 2,
 		},
 		{
 			name:    "invalid bucky concurrency",
@@ -60,6 +62,11 @@ func TestLoad(t *testing.T) {
 				t.Fatalf("Load: %v", err)
 			}
 
+			if tt.wantModel != "" {
+				if _, exists := doc.Models[tt.wantModel]; !exists {
+					t.Errorf("Models: got keys %v, want %q", doc.Models, tt.wantModel)
+				}
+			}
 			if tt.wantBucky > 0 {
 				cfg := doc.BuckyModels["tiny"]
 				if cfg.NSeqMax == nil || *cfg.NSeqMax != tt.wantBucky {

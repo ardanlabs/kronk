@@ -22,11 +22,11 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/modelconfig"
 )
 
-// whisperOverhead is the additional resident memory we reserve on top
-// of the raw model file size to account for the encoder + decoder
-// activations and the small whisper.cpp compute buffer. The figure
-// is conservative for every model up through large-v3.
-const whisperOverhead int64 = 200 * 1000 * 1000
+// whisperStateOverhead is the additional resident memory reserved for each
+// independent whisper state. Each state owns its mel spectrogram, KV cache,
+// activations, and compute buffer. The figure is conservative for every model
+// up through large-v3.
+const whisperStateOverhead int64 = 200 * 1024 * 1024
 
 // Whisper is the loader.Loader[*bucky.Bucky] implementation for the
 // whisper.cpp backend. It is constructed by sdk/pool and any future
@@ -62,11 +62,10 @@ func (w *Whisper) Prepare(_ context.Context, req loader.LoadRequest) (any, error
 
 // Plan implements loader.Loader.Plan for the whisper backend.
 //
-// Whisper has no slots or KV cache: the resident footprint is the
-// weight file plus a small encoder/decoder overhead. The estimate is
-// charged to VRAM when the resman has GPUs (Metal counts as GPU even
-// on unified-memory devices, so the entire footprint lands on the
-// GPU bucket on Apple Silicon) and to system RAM otherwise.
+// The resident footprint is the shared weight file plus a per-state allowance
+// for each configured sequence. Queue depth is excluded because waiting calls
+// do not allocate states. The estimate is charged to VRAM when the resman has
+// GPUs and to system RAM otherwise.
 func (w *Whisper) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRequest, error) {
 	cfg, err := w.configForRequest(req)
 	if err != nil {
@@ -82,7 +81,8 @@ func (w *Whisper) Plan(ctx context.Context, req loader.LoadRequest) (resman.Plan
 		Key: req.Key,
 	}
 
-	total := size + whisperOverhead
+	stateOverhead := whisperStateOverhead * int64(cfg.NSeqMax)
+	total := size + stateOverhead
 	if w.resman.HasGPUs() {
 		planReq.VRAMBytes = total
 	} else {
@@ -94,7 +94,8 @@ func (w *Whisper) Plan(ctx context.Context, req loader.LoadRequest) (resman.Plan
 		"model-id", req.ModelID,
 		"predicted-total", total,
 		"model-size", size,
-		"overhead", whisperOverhead,
+		"state-overhead", stateOverhead,
+		"per-state-overhead", whisperStateOverhead,
 		"n-seq-max", cfg.NSeqMax,
 		"vram", planReq.VRAMBytes,
 		"ram", planReq.RAMBytes,
@@ -140,7 +141,7 @@ func (w *Whisper) Display(h *bucky.Bucky, modelID string) loader.Display {
 	}
 
 	if size, err := w.modelSize(modelID); err == nil {
-		out.VRAMTotal = size + whisperOverhead
+		out.VRAMTotal = size + whisperStateOverhead*int64(h.ModelConfig().NSeqMax)
 	}
 
 	return out

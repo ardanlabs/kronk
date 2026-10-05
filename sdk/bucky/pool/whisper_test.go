@@ -9,6 +9,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/bucky/model"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/loader"
+	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
 	"github.com/ardanlabs/kronk/sdk/tools/modelconfig"
 	toolmodels "github.com/ardanlabs/kronk/sdk/tools/models"
@@ -85,5 +86,52 @@ func TestPrepareDefaultsBuckyConcurrency(t *testing.T) {
 	cfg := prepared.(model.Config)
 	if cfg.NSeqMax != 1 {
 		t.Errorf("NSeqMax: got %d, want 1", cfg.NSeqMax)
+	}
+}
+
+func TestPlanScalesMemoryByBuckyConcurrency(t *testing.T) {
+	models, err := buckymodels.NewWithPaths(t.TempDir())
+	if err != nil {
+		t.Fatalf("buckymodels.NewWithPaths: %v", err)
+	}
+	modelData := []byte("model")
+	if err := os.WriteFile(filepath.Join(models.Path(), "ggml-tiny.bin"), modelData, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if err := models.BuildIndex(nil, false); err != nil {
+		t.Fatalf("BuildIndex: %v", err)
+	}
+
+	rm, err := resman.New(resman.Config{
+		Snapshot:      resman.Snapshot{RAMBytes: 8 << 30},
+		BudgetPercent: 100,
+	})
+	if err != nil {
+		t.Fatalf("resman.New: %v", err)
+	}
+	nSeqMax := 3
+	queueDepth := 7
+	w := newWhisper(func(context.Context, string, ...any) {}, models, map[string]modelconfig.BuckyModelConfig{
+		"tiny": {
+			NSeqMax:    &nSeqMax,
+			QueueDepth: &queueDepth,
+		},
+	}, rm)
+	req := loader.LoadRequest{ModelID: "tiny", Key: "tiny"}
+	req.Prepared, err = w.Prepare(t.Context(), req)
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+
+	plan, err := w.Plan(t.Context(), req)
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	want := int64(len(modelData)) + whisperStateOverhead*int64(nSeqMax)
+	if plan.RAMBytes != want {
+		t.Errorf("RAMBytes: got %d, want %d", plan.RAMBytes, want)
+	}
+	if plan.VRAMBytes != 0 {
+		t.Errorf("VRAMBytes: got %d, want 0", plan.VRAMBytes)
 	}
 }

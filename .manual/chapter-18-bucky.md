@@ -216,7 +216,9 @@ bucky-models:
 `nseq-max` controls the number of independent Whisper states and therefore the
 number of concurrent operations. `queue-depth` adds waiting requests without
 adding states. `nthreads` controls native threads per operation; zero preserves
-the whisper.cpp default. Restart the server after changing these settings.
+the whisper.cpp default. The pool reserves the model file size plus a
+conservative 200 MiB allowance for each configured state; queued requests do not
+increase the reservation. Restart the server after changing these settings.
 
 Bucky uses the server's shared pool settings:
 
