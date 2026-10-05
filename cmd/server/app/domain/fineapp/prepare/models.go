@@ -1,12 +1,28 @@
 package prepare
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"errors"
+)
+
+// ErrCompletionTruncated reports that the model reached its output-token limit
+// before completing the requested structured response.
+var ErrCompletionTruncated = errors.New("model completion reached its token limit")
 
 // Document is structured content extracted from a source file.
 type Document struct {
 	Markdown       string
 	StructuredJSON json.RawMessage
 	ProcessingTime float64
+}
+
+func validDoclingStructuredJSON(data []byte) bool {
+	var document struct {
+		Texts    []json.RawMessage `json:"texts"`
+		Tables   []json.RawMessage `json:"tables"`
+		Pictures []json.RawMessage `json:"pictures"`
+	}
+	return json.Unmarshal(data, &document) == nil && len(document.Texts)+len(document.Tables)+len(document.Pictures) > 0
 }
 
 // ExtractionProgress reports one document's position in a collection extraction.

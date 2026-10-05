@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/fineapp/prepare"
@@ -44,7 +45,7 @@ func TestExtractStoresMoxieDataset(t *testing.T) {
 	root := filepath.Join(t.TempDir(), ".moxie")
 	manager, err := prepare.NewAt(extractor{document: prepare.Document{
 		Markdown:       "# Source\n\nPrepared content.",
-		StructuredJSON: json.RawMessage(`{"name":"source"}`),
+		StructuredJSON: json.RawMessage(`{"texts":[{"text":"Prepared content."}]}`),
 		ProcessingTime: 2.5,
 	}}, root)
 	if err != nil {
@@ -66,7 +67,7 @@ func TestExtractStoresMoxieDataset(t *testing.T) {
 	}
 	assertFileContents(t, artifact.SourcePath, "original")
 	assertFileContents(t, artifact.MarkdownPath, "# Source\n\nPrepared content.")
-	assertFileContents(t, artifact.StructuredPath, "{\"name\":\"source\"}\n")
+	assertFileContents(t, artifact.StructuredPath, "{\"texts\":[{\"text\":\"Prepared content.\"}]}\n")
 
 	manifestData, err := os.ReadFile(artifact.ManifestPath)
 	if err != nil {
@@ -91,8 +92,8 @@ func TestExtractStoresMoxieDataset(t *testing.T) {
 func TestExtractDocumentsPublishesOneDatasetCollection(t *testing.T) {
 	root := filepath.Join(t.TempDir(), ".moxie")
 	extractor := &pathExtractor{documents: map[string]prepare.Document{
-		"guide.pdf":   {Markdown: "# Guide\n\nGuide content.", StructuredJSON: json.RawMessage(`{"title":"guide"}`)},
-		"manual.docx": {Markdown: "# Manual\n\nManual content.", StructuredJSON: json.RawMessage(`{"title":"manual"}`)},
+		"guide.pdf":   {Markdown: "# Guide\n\nGuide content.", StructuredJSON: json.RawMessage(`{"texts":[{"text":"Guide content."}]}`)},
+		"manual.docx": {Markdown: "# Manual\n\nManual content.", StructuredJSON: json.RawMessage(`{"texts":[{"text":"Manual content."}]}`)},
 	}}
 	manager, err := prepare.NewAt(extractor, root)
 	if err != nil {
@@ -178,7 +179,7 @@ func TestExtractDocumentsPublishesOneDatasetCollection(t *testing.T) {
 func TestDatasetDocumentsSupportsSingleDocumentArtifacts(t *testing.T) {
 	root := filepath.Join(t.TempDir(), ".moxie")
 	manager, err := prepare.NewAt(&pathExtractor{documents: map[string]prepare.Document{
-		"guide.pdf": {Markdown: "Guide content."},
+		"guide.pdf": {Markdown: "Guide content.", StructuredJSON: json.RawMessage(`{"texts":[{"text":"Guide content."}]}`)},
 	}}, root)
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
@@ -199,6 +200,26 @@ func TestDatasetDocumentsSupportsSingleDocumentArtifacts(t *testing.T) {
 	want := []prepare.DatasetDocument{{ID: "001", Name: "guide.pdf", Directory: artifact.Directory}}
 	if !reflect.DeepEqual(documents, want) {
 		t.Fatalf("dataset documents = %#v, want %#v", documents, want)
+	}
+}
+
+func TestExtractRejectsInvalidStructuredJSON(t *testing.T) {
+	for _, structured := range []json.RawMessage{nil, json.RawMessage(`not JSON`), json.RawMessage(`{}`)} {
+		manager, err := prepare.NewAt(extractor{document: prepare.Document{
+			Markdown:       "Prepared content.",
+			StructuredJSON: structured,
+		}}, filepath.Join(t.TempDir(), ".moxie"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		source := filepath.Join(t.TempDir(), "guide.pdf")
+		if err := os.WriteFile(source, []byte("guide"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := manager.Extract(t.Context(), source); err == nil || !strings.Contains(err.Error(), "invalid structured JSON") {
+			t.Fatalf("structured JSON %q: error = %v", structured, err)
+		}
 	}
 }
 
@@ -224,7 +245,7 @@ func TestExtractReusesExactContentsAcrossPaths(t *testing.T) {
 	root := filepath.Join(t.TempDir(), ".moxie")
 	extractor := &countingExtractor{document: prepare.Document{
 		Markdown:       "Prepared content.",
-		StructuredJSON: json.RawMessage(`{"content":"prepared"}`),
+		StructuredJSON: json.RawMessage(`{"texts":[{"text":"Prepared content."}]}`),
 		ProcessingTime: 12,
 	}}
 	manager, err := prepare.NewAt(extractor, root)
@@ -311,7 +332,7 @@ func TestExtractRejectsTamperedOrSymlinkedCache(t *testing.T) {
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			extractor := &countingExtractor{document: prepare.Document{Markdown: "Prepared content.", StructuredJSON: json.RawMessage(`{"content":"prepared"}`)}}
+			extractor := &countingExtractor{document: prepare.Document{Markdown: "Prepared content.", StructuredJSON: json.RawMessage(`{"texts":[{"text":"Prepared content."}]}`)}}
 			manager, err := prepare.NewAt(extractor, filepath.Join(t.TempDir(), ".moxie"))
 			if err != nil {
 				t.Fatal(err)
@@ -340,7 +361,7 @@ func TestExtractIgnoresIncompleteCachedArtifact(t *testing.T) {
 	root := filepath.Join(t.TempDir(), ".moxie")
 	extractor := &countingExtractor{document: prepare.Document{
 		Markdown:       "Prepared content.",
-		StructuredJSON: json.RawMessage(`{"content":"prepared"}`),
+		StructuredJSON: json.RawMessage(`{"texts":[{"text":"Prepared content."}]}`),
 	}}
 	manager, err := prepare.NewAt(extractor, root)
 	if err != nil {

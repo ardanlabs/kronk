@@ -3,10 +3,12 @@ package prepare
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/textproto"
 	"net/url"
@@ -19,6 +21,8 @@ import (
 const (
 	defaultDoclingEndpoint          = "http://127.0.0.1:5001"
 	maximumDoclingResponseBodyBytes = 256 * 1024 * 1024
+	doclingReadAttempts             = 3
+	doclingRetryDelay               = 250 * time.Millisecond
 )
 
 // DoclingExtractionProfile identifies the pinned service and settings that
@@ -31,6 +35,7 @@ type DoclingExtractor struct {
 	endpoint     string
 	httpClient   *http.Client
 	pollInterval time.Duration
+	retryDelay   time.Duration
 }
 
 // NewDoclingExtractor constructs an extractor. An empty endpoint uses the
@@ -56,6 +61,7 @@ func NewDoclingExtractor(endpoint string, httpClient *http.Client) (*DoclingExtr
 		endpoint:     strings.TrimRight(endpoint, "/"),
 		httpClient:   httpClient,
 		pollInterval: 500 * time.Millisecond,
+		retryDelay:   doclingRetryDelay,
 	}, nil
 }
 
@@ -123,7 +129,7 @@ func (e *DoclingExtractor) Convert(ctx context.Context, sourcePath string) (Docu
 		if err != nil {
 			return Document{}, fmt.Errorf("create Docling status request: %w", err)
 		}
-		if err := e.execute(pollRequest, &task); err != nil {
+		if err := e.executeRead(pollRequest, &task); err != nil {
 			return Document{}, err
 		}
 	}
@@ -150,7 +156,7 @@ func (e *DoclingExtractor) result(ctx context.Context, taskID string) (Document,
 	}
 
 	var result doclingConversionResponse
-	if err := e.execute(request, &result); err != nil {
+	if err := e.executeRead(request, &result); err != nil {
 		return Document{}, err
 	}
 	if result.Status != "success" {
@@ -159,12 +165,58 @@ func (e *DoclingExtractor) result(ctx context.Context, taskID string) (Document,
 	if strings.TrimSpace(result.Document.Markdown) == "" {
 		return Document{}, fmt.Errorf("convert document: Docling returned empty Markdown")
 	}
+	if !validDoclingStructuredJSON(result.Document.StructuredJSON) {
+		return Document{}, fmt.Errorf("convert document: Docling returned invalid structured JSON")
+	}
 
 	return Document{
 		Markdown:       result.Document.Markdown,
 		StructuredJSON: result.Document.StructuredJSON,
 		ProcessingTime: result.ProcessingTime,
 	}, nil
+}
+
+type doclingStatusError struct {
+	code    int
+	status  string
+	message string
+}
+
+func (err *doclingStatusError) Error() string {
+	return fmt.Sprintf("call Docling: server returned %s: %s", err.status, err.message)
+}
+
+func (e *DoclingExtractor) executeRead(request *http.Request, target any) error {
+	var lastErr error
+	for attempt := range doclingReadAttempts {
+		if err := e.execute(request, target); err == nil {
+			return nil
+		} else {
+			lastErr = err
+			if attempt == doclingReadAttempts-1 || !retryableDoclingRead(request.Context(), err) {
+				break
+			}
+		}
+		timer := time.NewTimer(time.Duration(attempt+1) * e.retryDelay)
+		select {
+		case <-request.Context().Done():
+			timer.Stop()
+			return fmt.Errorf("call Docling: %w", request.Context().Err())
+		case <-timer.C:
+		}
+	}
+	return lastErr
+}
+
+func retryableDoclingRead(ctx context.Context, err error) bool {
+	if ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	if statusErr, ok := errors.AsType[*doclingStatusError](err); ok {
+		return statusErr.code == http.StatusRequestTimeout || statusErr.code == http.StatusTooManyRequests || statusErr.code >= http.StatusInternalServerError
+	}
+	_, networkError := errors.AsType[net.Error](err)
+	return networkError
 }
 
 func (e *DoclingExtractor) execute(request *http.Request, target any) error {
@@ -176,7 +228,7 @@ func (e *DoclingExtractor) execute(request *http.Request, target any) error {
 
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		message, _ := io.ReadAll(io.LimitReader(response.Body, 64<<10))
-		return fmt.Errorf("call Docling: server returned %s: %s", response.Status, strings.TrimSpace(string(message)))
+		return &doclingStatusError{code: response.StatusCode, status: response.Status, message: strings.TrimSpace(string(message))}
 	}
 	if response.ContentLength > maximumDoclingResponseBodyBytes {
 		return fmt.Errorf("decode Docling response: response exceeds %d bytes", maximumDoclingResponseBodyBytes)

@@ -3,6 +3,7 @@ package prepare_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -51,6 +52,7 @@ type partialBatchCompleter struct {
 
 type malformedReviewedPoolCompleter struct {
 	irrecoverable    bool
+	truncated        bool
 	poolCalls        int
 	retryInstruction bool
 }
@@ -58,6 +60,116 @@ type malformedReviewedPoolCompleter struct {
 type accumulatingQuestionCompleter struct {
 	poolCalls         int
 	verificationCalls int
+}
+
+type approvedFactRejectingCompleter struct {
+	verificationCalls int
+}
+
+type resumablePoisonFactCompleter struct {
+	poolCalls    int
+	poisonCalls  int
+	poisonTarget string
+}
+
+type evaluationFallbackCompleter struct {
+	poolCalls         int
+	poisonTargetCalls int
+}
+
+type mixedApprovedAutomaticCompleter struct {
+	automaticTarget    string
+	automaticPoolCalls int
+	poolCalls          int
+	retryApproved      bool
+	verificationCalls  int
+}
+
+func (c *approvedFactRejectingCompleter) Complete(_ context.Context, request prepare.CompletionRequest) (prepare.Completion, error) {
+	content := request.Messages[1].Content
+	switch {
+	case strings.Contains(content, "[RECORD 1]"):
+		c.verificationCalls++
+		return verificationCompletion(strings.Count(content, "[RECORD "), func(int) bool { return c.verificationCalls == 1 }), nil
+	case strings.Contains(content, "[LOCKED FACT 1]"):
+		return variantCompletion(strings.Count(content, "[LOCKED FACT "), "Rejected approved fact"), nil
+	default:
+		return selectedTargetsCompletion(strings.Count(content, "[PASSAGE ")), nil
+	}
+}
+
+func (c *resumablePoisonFactCompleter) Complete(_ context.Context, request prepare.CompletionRequest) (prepare.Completion, error) {
+	content := request.Messages[1].Content
+	switch {
+	case strings.Contains(content, "[RECORD 1]"):
+		return verificationCompletion(strings.Count(content, "[RECORD "), func(index int) bool {
+			return !strings.Contains(content, "Reject automatic fact") || index > 0
+		}), nil
+	case strings.Contains(content, "[LOCKED FACT 1]"):
+		c.poolCalls++
+		count := strings.Count(content, "[LOCKED FACT ")
+		if c.poisonTarget == "" {
+			_, targetText, _ := strings.Cut(content, "LOCKED TARGET: ")
+			c.poisonTarget, _, _ = strings.Cut(targetText, "\n")
+		}
+		if strings.Contains(content, "LOCKED TARGET: "+c.poisonTarget) {
+			c.poisonCalls++
+		}
+		if c.poisonCalls <= plannedFactTestAttempts && strings.Contains(content, "LOCKED TARGET: "+c.poisonTarget) {
+			questions := make([]string, count)
+			questions[0] = "Reject automatic fact?"
+			for index := 1; index < count; index++ {
+				questions[index] = fmt.Sprintf("Accepted automatic fact %d?", index+1)
+			}
+			return questionCompletion(questions...), nil
+		}
+		return variantCompletion(count, fmt.Sprintf("Accepted resumed batch %d", c.poolCalls)), nil
+	default:
+		return selectedTargetsCompletion(strings.Count(content, "[PASSAGE ")), nil
+	}
+}
+
+const plannedFactTestAttempts = 3
+
+func (c *evaluationFallbackCompleter) Complete(_ context.Context, request prepare.CompletionRequest) (prepare.Completion, error) {
+	content := request.Messages[1].Content
+	switch {
+	case strings.Contains(content, "[RECORD 1]"):
+		return verificationCompletion(strings.Count(content, "[RECORD "), func(int) bool {
+			return !strings.Contains(content, "Reject evaluation batch")
+		}), nil
+	case strings.Contains(content, "[LOCKED FACT 1]"):
+		c.poolCalls++
+		count := strings.Count(content, "[LOCKED FACT ")
+		if strings.Contains(content, "Poison evaluation fact") {
+			c.poisonTargetCalls++
+			if c.poisonTargetCalls > 1 {
+				return variantCompletion(count, "Reject evaluation batch"), nil
+			}
+		}
+		return variantCompletion(count, fmt.Sprintf("Accepted evaluation batch %d", c.poolCalls)), nil
+	default:
+		return selectedTargetsCompletion(strings.Count(content, "[PASSAGE ")), nil
+	}
+}
+
+func (c *mixedApprovedAutomaticCompleter) Complete(_ context.Context, request prepare.CompletionRequest) (prepare.Completion, error) {
+	content := request.Messages[1].Content
+	switch {
+	case strings.Contains(content, "[RECORD 1]"):
+		c.verificationCalls++
+		return verificationCompletion(strings.Count(content, "[RECORD "), func(int) bool {
+			return c.verificationCalls == 1 || c.retryApproved
+		}), nil
+	case strings.Contains(content, "[LOCKED FACT 1]"):
+		c.poolCalls++
+		if strings.Contains(content, "LOCKED TARGET: "+c.automaticTarget) {
+			c.automaticPoolCalls++
+		}
+		return variantCompletion(strings.Count(content, "[LOCKED FACT "), fmt.Sprintf("Mixed batch %d", c.poolCalls)), nil
+	default:
+		return selectedTargetsCompletion(strings.Count(content, "[PASSAGE ")), nil
+	}
 }
 
 func (c *accumulatingQuestionCompleter) Complete(_ context.Context, request prepare.CompletionRequest) (prepare.Completion, error) {
@@ -86,6 +198,9 @@ func (c *malformedReviewedPoolCompleter) Complete(_ context.Context, request pre
 	case strings.Contains(content, "[LOCKED FACT 1]"):
 		c.poolCalls++
 		if c.poolCalls == 1 {
+			if c.truncated {
+				return prepare.Completion{}, prepare.ErrCompletionTruncated
+			}
 			if c.irrecoverable {
 				return prepare.Completion{Content: "not-json"}, nil
 			}
@@ -637,10 +752,12 @@ func TestBuildFullRetriesMalformedReviewedQuestionPoolJSON(t *testing.T) {
 	for _, test := range []struct {
 		name          string
 		irrecoverable bool
+		truncated     bool
 		wantCalls     int
 	}{
 		{name: "literal newline is retried", wantCalls: 2},
 		{name: "irrecoverable response is retried", irrecoverable: true, wantCalls: 2},
+		{name: "length-terminated response is retried", truncated: true, wantCalls: 2},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			directory := t.TempDir()
@@ -648,7 +765,7 @@ func TestBuildFullRetriesMalformedReviewedQuestionPoolJSON(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(directory, "extracted.md"), []byte(evidence), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			model := &malformedReviewedPoolCompleter{irrecoverable: test.irrecoverable}
+			model := &malformedReviewedPoolCompleter{irrecoverable: test.irrecoverable, truncated: test.truncated}
 			previewer, err := prepare.NewPreviewer(model)
 			if err != nil {
 				t.Fatal(err)
@@ -1159,8 +1276,22 @@ func TestBuildFullRejectsRecoveredFactWithoutUsableQuestions(t *testing.T) {
 		Goal:             prepare.GoalQuestionAnswer,
 		Model:            "model",
 	})
-	if err == nil || !strings.Contains(err.Error(), "planned facts remain unresolved after 3 regeneration attempts") {
-		t.Fatalf("error = %v, want question quality failure", err)
+	if err == nil || !strings.Contains(err.Error(), "no source passage produced a verified training record") {
+		t.Fatalf("error = %v, want failure after quarantining the unusable fact", err)
+	}
+	checkpointData, err := os.ReadFile(filepath.Join(directory, ".dataset-build.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var checkpoint struct {
+		CompletedBatches int                    `json:"completed_batches"`
+		RejectedFacts    []prepare.RejectedFact `json:"rejected_facts"`
+	}
+	if err := json.Unmarshal(checkpointData, &checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	if checkpoint.CompletedBatches != 1 || len(checkpoint.RejectedFacts) != 1 {
+		t.Fatalf("checkpoint = %+v, want one terminal rejection in a completed batch", checkpoint)
 	}
 }
 
@@ -1306,11 +1437,25 @@ func TestBuildFullBoundsRegenerationForPersistentSemanticFailures(t *testing.T) 
 		Goal:             prepare.GoalQuestionAnswer,
 		Model:            "model",
 	})
-	if err == nil || !strings.Contains(err.Error(), "planned facts remain unresolved after 3 regeneration attempts") {
-		t.Fatalf("error = %v, want incomplete planned fact", err)
+	if err == nil || !strings.Contains(err.Error(), "no source passage produced a verified training record") {
+		t.Fatalf("error = %v, want the final minimum-output failure", err)
 	}
 	if len(model.requests) != 5 {
 		t.Fatalf("requests: got %d, want selection, three bounded generation attempts, and one verification before duplicate retries are rejected locally", len(model.requests))
+	}
+	checkpointData, err := os.ReadFile(filepath.Join(directory, ".dataset-build.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var checkpoint struct {
+		CompletedBatches int                    `json:"completed_batches"`
+		RejectedFacts    []prepare.RejectedFact `json:"rejected_facts"`
+	}
+	if err := json.Unmarshal(checkpointData, &checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	if checkpoint.CompletedBatches != 1 || len(checkpoint.RejectedFacts) != 1 {
+		t.Fatalf("checkpoint = %+v, want one terminal rejection in a completed batch", checkpoint)
 	}
 }
 
@@ -1341,7 +1486,7 @@ func TestBuildFullRetainsVerifiedQuestionsAcrossRegenerationAttempts(t *testing.
 	}
 }
 
-func TestBuildFullCheckpointsCompleteFactsBeforeReportingFailedFact(t *testing.T) {
+func TestBuildFullPublishesCompleteFactsAndReportsRejectedAutomaticFact(t *testing.T) {
 	directory := t.TempDir()
 	source := "Channels communicate typed values between concurrent goroutines. " + strings.Repeat("Additional channel context explains this supported communication behavior in detail. ", 20) + "\n\n" +
 		"Mutexes protect shared state from concurrent access. " + strings.Repeat("Additional mutex context explains this supported synchronization behavior in detail. ", 20)
@@ -1354,44 +1499,119 @@ func TestBuildFullCheckpointsCompleteFactsBeforeReportingFailedFact(t *testing.T
 		t.Fatal(err)
 	}
 
-	_, err = previewer.BuildFull(t.Context(), prepare.FullBuildRequest{
-		DatasetDirectory: directory,
-		Goal:             prepare.GoalQuestionAnswer,
-		Model:            "model",
-	})
-	if err == nil || !strings.Contains(err.Error(), "completed facts were checkpointed") {
-		t.Fatalf("first build error = %v, want an explicit failed-fact error", err)
-	}
-	checkpointData, err := os.ReadFile(filepath.Join(directory, ".dataset-build.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var checkpoint struct {
-		Records       []prepare.Record       `json:"records"`
-		RejectedFacts []prepare.RejectedFact `json:"rejected_facts"`
-	}
-	if err := json.Unmarshal(checkpointData, &checkpoint); err != nil {
-		t.Fatal(err)
-	}
-	if len(checkpoint.Records) != 1 || len(checkpoint.RejectedFacts) != 1 {
-		t.Fatalf("checkpoint = %+v, want one complete fact and one explicit failed fact", checkpoint)
-	}
-
-	model.acceptFailedFact = true
 	artifact, err := previewer.BuildFull(t.Context(), prepare.FullBuildRequest{
 		DatasetDirectory: directory,
 		Goal:             prepare.GoalQuestionAnswer,
 		Model:            "model",
 	})
 	if err != nil {
-		t.Fatalf("resume build: %v", err)
+		t.Fatal(err)
 	}
-	if len(artifact.Records) != 2 || len(artifact.RejectedFacts) != 0 {
-		t.Fatalf("resumed artifact = %+v, want both complete facts and no rejection", artifact)
+	if len(artifact.Records) != 1 || len(artifact.RejectedFacts) != 1 {
+		t.Fatalf("artifact = %+v, want one verified record and one reported rejection", artifact)
+	}
+	if artifact.RejectedFacts[0].UserApproved {
+		t.Fatalf("automatic rejection was marked user-approved: %+v", artifact.RejectedFacts[0])
+	}
+	reportData, err := os.ReadFile(artifact.ReportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var report prepare.FullBuildReport
+	if err := json.Unmarshal(reportData, &report); err != nil {
+		t.Fatal(err)
+	}
+	if len(report.RejectedFacts) != 1 || report.RejectedFacts[0].FactID != artifact.RejectedFacts[0].FactID {
+		t.Fatalf("report rejections = %+v, want artifact rejection", report.RejectedFacts)
+	}
+	if _, err := os.Stat(filepath.Join(directory, ".dataset-build.json")); !os.IsNotExist(err) {
+		t.Fatalf("completed build retained checkpoint: %v", err)
 	}
 }
 
-func TestBuildFullStopsAtFirstUnresolvedBatch(t *testing.T) {
+func TestBuildFullStillFailsForRejectedUserApprovedFact(t *testing.T) {
+	directory := t.TempDir()
+	evidence := "Taylor leads the project and coordinates each release."
+	if err := os.WriteFile(filepath.Join(directory, "extracted.md"), []byte(evidence), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reviewed := prepare.Record{Prompt: "Who leads the project and coordinates each release?", Target: evidence, Evidence: evidence, UserApproved: true}
+	model := &approvedFactRejectingCompleter{}
+	previewer, err := prepare.NewPreviewer(model)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = previewer.BuildFull(t.Context(), prepare.FullBuildRequest{
+		DatasetDirectory:       directory,
+		Goal:                   prepare.GoalQuestionAnswer,
+		Model:                  "model",
+		ReviewedRecords:        []prepare.Record{reviewed},
+		VerifiedPreviewRecords: []prepare.Record{{Prompt: reviewed.Prompt, Target: reviewed.Target, Evidence: reviewed.Evidence}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "user-approved record 1 remains unresolved") {
+		t.Fatalf("error = %v, want rejected user-approved record to remain fatal", err)
+	}
+	checkpointData, err := os.ReadFile(filepath.Join(directory, ".dataset-build.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var checkpoint struct {
+		CompletedBatches int                    `json:"completed_batches"`
+		RejectedFacts    []prepare.RejectedFact `json:"rejected_facts"`
+	}
+	if err := json.Unmarshal(checkpointData, &checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	if checkpoint.CompletedBatches != 0 || len(checkpoint.RejectedFacts) != 1 || !checkpoint.RejectedFacts[0].UserApproved {
+		t.Fatalf("checkpoint = %+v, want retryable user-approved rejection in the current batch", checkpoint)
+	}
+}
+
+func TestBuildFullResumeRetriesApprovedButNotTerminalAutomaticFact(t *testing.T) {
+	directory := t.TempDir()
+	approvedTarget := "Taylor leads the project and coordinates each release."
+	automaticTarget := "Morgan publishes the release notes after deployment."
+	source := approvedTarget + "\n\n" + automaticTarget
+	if err := os.WriteFile(filepath.Join(directory, "extracted.md"), []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reviewed := prepare.Record{Prompt: "Who leads the project and coordinates each release?", Target: approvedTarget, Evidence: approvedTarget, UserApproved: true}
+	model := &mixedApprovedAutomaticCompleter{automaticTarget: automaticTarget}
+	previewer, err := prepare.NewPreviewer(model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := prepare.FullBuildRequest{
+		DatasetDirectory:       directory,
+		Goal:                   prepare.GoalQuestionAnswer,
+		Model:                  "model",
+		ReviewedRecords:        []prepare.Record{reviewed},
+		VerifiedPreviewRecords: []prepare.Record{{Prompt: reviewed.Prompt, Target: reviewed.Target, Evidence: reviewed.Evidence}},
+	}
+
+	_, err = previewer.BuildFull(t.Context(), request)
+	if err == nil || !strings.Contains(err.Error(), "user-approved record 1 remains unresolved") {
+		t.Fatalf("first build error = %v, want rejected user-approved record", err)
+	}
+	if model.automaticPoolCalls != plannedFactTestAttempts {
+		t.Fatalf("automatic fact attempts = %d, want %d before quarantine", model.automaticPoolCalls, plannedFactTestAttempts)
+	}
+
+	model.retryApproved = true
+	artifact, err := previewer.BuildFull(t.Context(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if model.automaticPoolCalls != plannedFactTestAttempts {
+		t.Fatalf("resume retried terminal automatic fact: calls = %d", model.automaticPoolCalls)
+	}
+	if len(artifact.Records) != 1 || len(artifact.RejectedFacts) != 1 || artifact.RejectedFacts[0].Target != automaticTarget {
+		t.Fatalf("artifact = %+v, want approved record plus durable automatic rejection", artifact)
+	}
+}
+
+func TestBuildFullContinuesPastUnresolvedAutomaticBatches(t *testing.T) {
 	directory := t.TempDir()
 	var source strings.Builder
 	for index := 1; index <= 20; index++ {
@@ -1405,13 +1625,17 @@ func TestBuildFullStopsAtFirstUnresolvedBatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	totalBatches := 0
 	_, err = previewer.BuildFull(t.Context(), prepare.FullBuildRequest{
 		DatasetDirectory: directory,
 		Goal:             prepare.GoalQuestionAnswer,
 		Model:            "model",
+		Progress: func(progress prepare.FullBuildProgress) {
+			totalBatches = progress.TotalBatches
+		},
 	})
-	if err == nil || !strings.Contains(err.Error(), "build dataset batch 1 of") {
-		t.Fatalf("build error = %v, want an immediate first-batch failure", err)
+	if err == nil || !strings.Contains(err.Error(), "no source passage produced a verified training record") {
+		t.Fatalf("build error = %v, want failure only after all automatic facts were exhausted", err)
 	}
 	planData, err := os.ReadFile(filepath.Join(directory, "dataset-plan.json"))
 	if err != nil {
@@ -1434,8 +1658,8 @@ func TestBuildFullStopsAtFirstUnresolvedBatch(t *testing.T) {
 	if err := json.Unmarshal(checkpointData, &checkpoint); err != nil {
 		t.Fatal(err)
 	}
-	if len(plan.Facts) <= 16 || checkpoint.CompletedBatches != 0 || len(checkpoint.RejectedFacts) == 0 || len(checkpoint.RejectedFacts) > 16 {
-		t.Fatalf("checkpoint = completed batches %d, rejected facts %d, planned facts %d; build should stop within its first batch", checkpoint.CompletedBatches, len(checkpoint.RejectedFacts), len(plan.Facts))
+	if len(plan.Facts) <= 16 || totalBatches <= 1 || checkpoint.CompletedBatches != totalBatches || len(checkpoint.RejectedFacts) != len(plan.Facts) {
+		t.Fatalf("checkpoint = completed batches %d, rejected facts %d, planned facts %d; want every automatic batch exhausted", checkpoint.CompletedBatches, len(checkpoint.RejectedFacts), len(plan.Facts))
 	}
 }
 
@@ -1601,6 +1825,95 @@ func TestBuildFullResumesFromOneAtomicCheckpoint(t *testing.T) {
 	}
 	if _, err := os.Stat(checkpointPath); !os.IsNotExist(err) {
 		t.Fatalf("completed checkpoint still exists: %v", err)
+	}
+}
+
+func TestBuildFullResumeDoesNotRetryTerminalAutomaticFact(t *testing.T) {
+	directory := t.TempDir()
+	var source strings.Builder
+	for index := 1; index <= 20; index++ {
+		fmt.Fprintf(&source, "Passage %d contains a distinct durable fact for resume testing. %s\n\n", index, strings.Repeat("grounded detail ", 180))
+	}
+	if err := os.WriteFile(filepath.Join(directory, "extracted.md"), []byte(source.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	model := &resumablePoisonFactCompleter{}
+	previewer, err := prepare.NewPreviewer(model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	_, err = previewer.BuildFull(ctx, prepare.FullBuildRequest{
+		DatasetDirectory: directory, Goal: prepare.GoalQuestionAnswer, Model: "model",
+		Progress: func(progress prepare.FullBuildProgress) {
+			if progress.Phase == "generation" && progress.CompletedBatches == 1 {
+				cancel()
+			}
+		},
+	})
+	if err == nil || !errors.Is(err, context.Canceled) {
+		t.Fatalf("first build error = %v, want cancellation after the first durable batch", err)
+	}
+	if model.poisonCalls != plannedFactTestAttempts {
+		t.Fatalf("poison fact calls before resume = %d, want %d bounded attempts", model.poisonCalls, plannedFactTestAttempts)
+	}
+
+	artifact, err := previewer.BuildFull(t.Context(), prepare.FullBuildRequest{
+		DatasetDirectory: directory, Goal: prepare.GoalQuestionAnswer, Model: "model",
+	})
+	if err != nil {
+		t.Fatalf("resume build: %v", err)
+	}
+	if model.poisonCalls != plannedFactTestAttempts {
+		t.Fatalf("resume retried terminal poison fact: calls = %d", model.poisonCalls)
+	}
+	if len(artifact.RejectedFacts) != 1 || artifact.RejectedFacts[0].Target != model.poisonTarget {
+		t.Fatalf("artifact rejections = %+v, want durable poison fact %q", artifact.RejectedFacts, model.poisonTarget)
+	}
+}
+
+func TestBuildFullEvaluationBackfillsRejectedFacts(t *testing.T) {
+	directory := t.TempDir()
+	targets := make([]string, 45)
+	for index := range targets {
+		targets[index] = fmt.Sprintf("Independent evaluation fact %d has enough grounded detail to support a standalone question.", index+1)
+	}
+	targets[17] = "Poison evaluation fact remains valid training content but cannot produce a usable alternate question."
+	if err := os.WriteFile(filepath.Join(directory, "extracted.md"), []byte(strings.Join(targets, "\n\n")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reviewed := make([]prepare.Record, len(targets))
+	for index, target := range targets {
+		reviewed[index] = prepare.Record{Prompt: fmt.Sprintf("What is independent evaluation fact %d?", index+1), Target: target, Evidence: target}
+	}
+	model := &evaluationFallbackCompleter{}
+	previewer, err := prepare.NewPreviewer(model)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	artifact, err := previewer.BuildFull(t.Context(), prepare.FullBuildRequest{
+		DatasetDirectory:       directory,
+		Goal:                   prepare.GoalQuestionAnswer,
+		Model:                  "model",
+		ReviewedRecords:        reviewed,
+		VerifiedPreviewRecords: reviewed,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	validation, independent := 0, 0
+	for _, record := range artifact.Records {
+		if record.ValidationPrompt {
+			validation++
+		}
+		if record.IndependentPrompt {
+			independent++
+		}
+	}
+	if model.poisonTargetCalls <= 1 || validation != finetune.MinimumValidationRecords || independent != finetune.MinimumTestRecords {
+		t.Fatalf("poison calls = %d, validation = %d, protected test = %d; want fallback to complete 10/20 evaluation records", model.poisonTargetCalls, validation, independent)
 	}
 }
 

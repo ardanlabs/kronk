@@ -22,6 +22,7 @@ type TrainingConfig struct {
 	Seed                         uint64
 	AdapterCheckpointDirectory   string
 	RetainedCheckpointEpochs     []int
+	PersistCheckpoint            func(TrainingResult) error
 }
 
 // EpochMetrics reports the measured losses after one complete epoch.
@@ -152,7 +153,7 @@ func (runtime *Runtime) TrainDataset(ctx context.Context, dataset PreparedDatase
 		var answerTokens int
 		for start := 0; start < len(order); start += config.BatchSize {
 			if err := context.Cause(ctx); err != nil {
-				return TrainingResult{}, err
+				return result, err
 			}
 			end := min(start+config.BatchSize, len(order))
 			batch := make([]TrainingRecord, end-start)
@@ -163,7 +164,7 @@ func (runtime *Runtime) TrainDataset(ctx context.Context, dataset PreparedDatase
 			}
 			trainingLoss, err := runtime.trainBatch(batch, config.LearningRate, config.WeightDecay)
 			if err != nil {
-				return TrainingResult{}, fmt.Errorf("train epoch %d batch %d: %w", epoch, start/config.BatchSize+1, err)
+				return result, fmt.Errorf("train epoch %d batch %d: %w", epoch, start/config.BatchSize+1, err)
 			}
 			weightedLoss += trainingLoss * float64(activeTokens)
 			answerTokens += activeTokens
@@ -173,16 +174,18 @@ func (runtime *Runtime) TrainDataset(ctx context.Context, dataset PreparedDatase
 			}
 		}
 		if err := context.Cause(ctx); err != nil {
-			return TrainingResult{}, err
+			return result, err
 		}
 		validationLoss, err := runtime.evaluate(dataset.Validation)
 		if err != nil {
-			return TrainingResult{}, fmt.Errorf("validate epoch %d: %w", epoch, err)
+			return result, fmt.Errorf("validate epoch %d: %w", epoch, err)
 		}
 		if err := context.Cause(ctx); err != nil {
-			return TrainingResult{}, err
+			return result, err
 		}
 		improved := result.BestEpoch == 0 || validationLoss < result.BestValidationLoss
+		previousBestEpoch := result.BestEpoch
+		previousBestCheckpoint := result.BestCheckpoint
 		metrics := EpochMetrics{
 			Epoch:          epoch,
 			TrainingLoss:   weightedLoss / float64(answerTokens),
@@ -196,24 +199,42 @@ func (runtime *Runtime) TrainDataset(ctx context.Context, dataset PreparedDatase
 			metrics.Checkpoint = checkpointPath
 		}
 		if improved {
-			if result.BestCheckpoint != "" && !retainedEpochs[result.BestEpoch] {
-				if err := os.RemoveAll(result.BestCheckpoint); err != nil {
-					return TrainingResult{}, fmt.Errorf("remove superseded epoch %d adapter checkpoint: %w", result.BestEpoch, err)
-				}
-				for index := range result.Epochs {
-					if result.Epochs[index].Epoch == result.BestEpoch {
-						result.Epochs[index].Checkpoint = ""
-						break
-					}
-				}
-			}
 			result.BestEpoch = epoch
 			result.BestValidationLoss = validationLoss
 			result.BestCheckpoint = metrics.Checkpoint
 		}
 		result.Epochs = append(result.Epochs, metrics)
+		if config.PersistCheckpoint != nil {
+			if err := config.PersistCheckpoint(result); err != nil {
+				return result, fmt.Errorf("persist epoch %d adapter checkpoint: %w", epoch, err)
+			}
+		}
+		if err := context.Cause(ctx); err != nil {
+			return result, err
+		}
+		if improved && previousBestCheckpoint != "" && !retainedEpochs[previousBestEpoch] {
+			for index := range result.Epochs {
+				if result.Epochs[index].Epoch == previousBestEpoch {
+					result.Epochs[index].Checkpoint = ""
+					break
+				}
+			}
+			if config.PersistCheckpoint != nil {
+				if err := config.PersistCheckpoint(result); err != nil {
+					return result, fmt.Errorf("persist removal of superseded epoch %d adapter checkpoint: %w", previousBestEpoch, err)
+				}
+			}
+			if err := os.RemoveAll(previousBestCheckpoint); err != nil {
+				return result, fmt.Errorf("remove superseded epoch %d adapter checkpoint: %w", previousBestEpoch, err)
+			}
+		}
 		if stopper.observe(validationLoss) {
 			result.StoppedEarly = true
+			if config.PersistCheckpoint != nil {
+				if err := config.PersistCheckpoint(result); err != nil {
+					return result, fmt.Errorf("persist early stop after epoch %d: %w", epoch, err)
+				}
+			}
 			break
 		}
 	}
