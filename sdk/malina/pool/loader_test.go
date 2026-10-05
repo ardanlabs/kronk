@@ -7,10 +7,13 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/ardanlabs/kronk/sdk/pool/engine/loader"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 	malinamodels "github.com/ardanlabs/kronk/sdk/tools/malina/models"
+	"github.com/ardanlabs/kronk/sdk/tools/modelconfig"
+	toolmodels "github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
 func TestPlanMemoryTopology(t *testing.T) {
@@ -45,7 +48,7 @@ func TestPlanMemoryTopology(t *testing.T) {
 			if err != nil {
 				t.Fatalf("resman.New() error = %v", err)
 			}
-			sd := newStableDiffusion(discardLog, models, rm)
+			sd := newStableDiffusion(discardLog, models, nil, rm)
 			req := loader.LoadRequest{ModelID: malinamodels.BundleSD15.String(), Key: "model"}
 			req.Prepared, err = sd.Prepare(context.Background(), req)
 			if err != nil {
@@ -70,7 +73,7 @@ func TestPlanMemoryTopology(t *testing.T) {
 
 func TestResolveConfigMapsBundleComponents(t *testing.T) {
 	models, files := testModels(t, malinamodels.BundleLLaDAImageTurbo, 1)
-	sd := newStableDiffusion(discardLog, models, nil)
+	sd := newStableDiffusion(discardLog, models, nil, nil)
 
 	cfg, err := sd.resolveConfig(malinamodels.BundleLLaDAImageTurbo.String())
 	if err != nil {
@@ -93,9 +96,47 @@ func TestResolveConfigMapsBundleComponents(t *testing.T) {
 	}
 }
 
+func TestPrepareAppliesMalinaModelConfig(t *testing.T) {
+	models, _ := testModels(t, malinamodels.BundleSD15, 10)
+	concurrency := 3
+	queueDepth := 4
+	cpuThreads := int32(6)
+	timeout := toolmodels.Duration(45 * time.Second)
+	sd := newStableDiffusion(discardLog, models, map[string]modelconfig.MalinaModelConfig{
+		malinamodels.BundleSD15.String(): {
+			Concurrency:      &concurrency,
+			QueueDepth:       &queueDepth,
+			AdmissionTimeout: &timeout,
+			CPUThreads:       &cpuThreads,
+		},
+	}, nil)
+
+	req := loader.LoadRequest{ModelID: malinamodels.BundleSD15.String(), Key: "model"}
+	prepared, err := sd.Prepare(t.Context(), req)
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	got := prepared.(preparedModel)
+	if got.config.Concurrency != concurrency {
+		t.Errorf("Concurrency: got %d, want %d", got.config.Concurrency, concurrency)
+	}
+	if got.config.QueueDepth != queueDepth {
+		t.Errorf("QueueDepth: got %d, want %d", got.config.QueueDepth, queueDepth)
+	}
+	if got.config.AdmissionTimeout != time.Duration(timeout) {
+		t.Errorf("AdmissionTimeout: got %s, want %s", got.config.AdmissionTimeout, time.Duration(timeout))
+	}
+	if got.config.CPUThreads != cpuThreads {
+		t.Errorf("CPUThreads: got %d, want %d", got.config.CPUThreads, cpuThreads)
+	}
+	if got.memory.Input.Contexts != int64(concurrency) {
+		t.Errorf("memory Contexts: got %d, want %d", got.memory.Input.Contexts, concurrency)
+	}
+}
+
 func TestResolveConfigMapsAudioEncoder(t *testing.T) {
 	models, files := testModels(t, malinamodels.BundleWan22S2V14B, 1)
-	sd := newStableDiffusion(discardLog, models, nil)
+	sd := newStableDiffusion(discardLog, models, nil, nil)
 
 	cfg, err := sd.resolveConfig(malinamodels.BundleWan22S2V14B.String())
 	if err != nil {
@@ -108,7 +149,7 @@ func TestResolveConfigMapsAudioEncoder(t *testing.T) {
 
 func TestResolveConfigRejectsUpscaler(t *testing.T) {
 	models, _ := testModels(t, malinamodels.BundleRealESRGANX4Anime, 1)
-	sd := newStableDiffusion(discardLog, models, nil)
+	sd := newStableDiffusion(discardLog, models, nil, nil)
 
 	if _, err := sd.resolveConfig(malinamodels.BundleRealESRGANX4Anime.String()); err == nil {
 		t.Fatal("resolveConfig() error = nil, want unsupported upscaler error")

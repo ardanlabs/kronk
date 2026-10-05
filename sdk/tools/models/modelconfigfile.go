@@ -7,7 +7,7 @@ import (
 	"go.yaml.in/yaml/v2"
 )
 
-const modelConfigVersion = 1
+const modelConfigVersion = 2
 
 // LoadModelConfig parses the model_config.yaml file at path and returns
 // the per-model overrides keyed by model id. The caller supplies the
@@ -28,7 +28,7 @@ func LoadModelConfig(path string) (map[string]ModelConfig, error) {
 
 	var configs map[string]ModelConfig
 	switch header.Version {
-	case modelConfigVersion:
+	case 1, modelConfigVersion:
 		configs = header.Models
 	default:
 		return nil, fmt.Errorf("load-model-config: unsupported config version %d", header.Version)

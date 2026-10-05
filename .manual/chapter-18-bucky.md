@@ -198,8 +198,25 @@ one model. Bucky uses the standard server address, whose default is:
 http://localhost:11435
 ```
 
-Whisper models do not use Kronk's per-model YAML configuration. The server
-discovers installed `.bin` files and loads a model when it is first requested.
+The server discovers installed `.bin` files and loads a model when it is first
+requested. Configure each model under the top-level `bucky-models` mapping in
+`~/.kronk/models/model_config.yaml`, using the short ID shown by
+`kronk bucky model list`:
+
+```yaml
+version: 2
+bucky-models:
+  tiny:
+    nseq-max: 2
+    queue-depth: 4
+    admission-timeout: 3m
+    nthreads: 0
+```
+
+`nseq-max` controls the number of independent Whisper states and therefore the
+number of concurrent operations. `queue-depth` adds waiting requests without
+adding states. `nthreads` controls native threads per operation; zero preserves
+the whisper.cpp default. Restart the server after changing these settings.
 
 Bucky uses the server's shared pool settings:
 
@@ -526,9 +543,9 @@ it flushes pending audio and restarts timestamps at zero. After an
 it.
 
 Always close a stream. An open stream reserves SDK inference capacity and can
-prevent model unloading. SDK users that need concurrent streams can configure
-`model.WithNSeqMax` when creating the Bucky handle; this is an SDK setting, not
-a server configuration field.
+prevent model unloading. SDK users can configure concurrent streams with
+`model.WithNSeqMax`; model-server users set `nseq-max` in the model's
+`bucky-models` entry.
 
 ### 18.8 Languages
 

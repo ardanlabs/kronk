@@ -15,15 +15,14 @@ const (
 // sdk/kronk/pool.ModelDetail so the BUI's "Loaded Models" table can
 // render both backends through a single response shape.
 //
-// Bucky has no separate KV cache slot the way llama.cpp does, and its
-// concurrency is a single in-process state pool rather than configurable
-// "slots", so KVCache stays zero and Slots is reported as 1 for
-// display parity.
+// Bucky has no separate KV cache slot the way llama.cpp does. Slots reports
+// the configured number of independent whisper states.
 type ModelDetail struct {
 	ID            string
 	Backend       string
 	Size          int64
 	VRAMTotal     int64
+	Slots         int
 	ExpiresAt     time.Time
 	ActiveStreams int
 	Status        string

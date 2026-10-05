@@ -24,8 +24,13 @@ func TestLoadModelConfig(t *testing.T) {
 			wantID: "owner/model",
 		},
 		{
+			name:   "version two",
+			yaml:   "version: 2\nmodels:\n  owner/model:\n    context-window: 16384\n",
+			wantID: "owner/model",
+		},
+		{
 			name:    "unsupported version",
-			yaml:    "version: 2\nmodels: {}\n",
+			yaml:    "version: 3\nmodels: {}\n",
 			wantErr: true,
 		},
 	}

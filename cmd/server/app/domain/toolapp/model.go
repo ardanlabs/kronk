@@ -969,10 +969,9 @@ func toBatchEngineSnapshots(snapshots []pool.BatchEngineDetail) BatchEngineSlots
 }
 
 // fromBuckyDetails converts bucky pool ModelDetail entries into the
-// shared API response shape. Whisper has no separate KV/Slots concept,
-// so KVCache stays zero and Slots is reported as 1 for parity with
-// kronk's display. OwnedBy is set to "ggml" because every bundled
-// whisper file is the GGML/ggerganov-hosted conversion. ModelFamily
+// shared API response shape. Whisper has no separate KV-cache measurement;
+// Slots reports the configured state count. OwnedBy is set to "ggml" because
+// every bundled whisper file is the GGML/ggerganov-hosted conversion. ModelFamily
 // surfaces the whisper architecture ("tiny", "base", "small", …) plus
 // an .en suffix when the model is english-only.
 func fromBuckyDetails(models []buckypool.ModelDetail) ModelDetailsResponse {
@@ -984,11 +983,6 @@ func fromBuckyDetails(models []buckypool.ModelDetail) ModelDetailsResponse {
 			family += ".en"
 		}
 
-		slots := 0
-		if m.Status == buckypool.ModelStatusLoaded {
-			slots = 1
-		}
-
 		details[i] = ModelDetail{
 			ID:            m.ID,
 			Backend:       m.Backend,
@@ -996,7 +990,7 @@ func fromBuckyDetails(models []buckypool.ModelDetail) ModelDetailsResponse {
 			ModelFamily:   family,
 			Size:          m.Size,
 			VRAMTotal:     m.VRAMTotal,
-			Slots:         slots,
+			Slots:         m.Slots,
 			ExpiresAt:     m.ExpiresAt,
 			ActiveStreams: m.ActiveStreams,
 			Status:        m.Status,

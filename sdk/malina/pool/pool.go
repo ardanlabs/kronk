@@ -13,6 +13,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/pool/engine/loader"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 	malinamodels "github.com/ardanlabs/kronk/sdk/tools/malina/models"
+	"github.com/ardanlabs/kronk/sdk/tools/modelconfig"
 )
 
 // ErrServerBusy reports that no idle model can be evicted for a new load.
@@ -23,11 +24,13 @@ var ErrNoCapacity = errors.New("malina pool: insufficient memory budget")
 
 const defaultModelsInPool = 10
 
-// Config configures the Malina model pool.
+// Config configures the Malina model pool. ModelConfig contains optional
+// runtime overrides keyed by curated bundle ID.
 type Config struct {
 	Log          applog.Logger
 	Models       *malinamodels.Models
 	Resman       *resman.Manager
+	ModelConfig  map[string]modelconfig.MalinaModelConfig
 	ModelsInPool int
 	TTL          time.Duration
 }
@@ -58,8 +61,16 @@ func New(cfg Config) (*Pool, error) {
 	if cfg.TTL < 0 {
 		return nil, errors.New("new: ttl must be >= 0")
 	}
+	for modelID, modelCfg := range cfg.ModelConfig {
+		if _, err := malinamodels.ParseBundleName(modelID); err != nil {
+			return nil, fmt.Errorf("new: model config key %q: %w", modelID, err)
+		}
+		if err := modelCfg.Validate(); err != nil {
+			return nil, fmt.Errorf("new: model config %q: %w", modelID, err)
+		}
+	}
 
-	ml := newStableDiffusion(cfg.Log, cfg.Models, cfg.Resman)
+	ml := newStableDiffusion(cfg.Log, cfg.Models, cfg.ModelConfig, cfg.Resman)
 	core, err := engine.New(engine.Config{
 		Log:      cfg.Log,
 		Resman:   cfg.Resman,

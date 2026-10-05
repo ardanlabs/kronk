@@ -1,4 +1,4 @@
-version: 1
+version: 2
 
 # ==============================================================================
 # SERVER OPTIONS
@@ -164,6 +164,38 @@ version: 1
 #     grammar: ""                        # GBNF grammar constraint
 
 # ==============================================================================
+# BUCKY MODEL OPTIONS
+#
+# Keys are the short IDs shown by `kronk bucky model list`. Each independent
+# Whisper state serves one transcription, language-detection call, or stream.
+# Queue depth admits additional requests to wait but does not add states.
+# Set these values by adding an entry to the top-level `bucky-models` mapping
+# below (alongside `models`, not inside it), then restart the model server.
+#
+# bucky-models:
+#   tiny:
+#     nseq-max: 2                         # Concurrent Whisper states (default: 1)
+#     queue-depth: 4                      # Requests allowed to wait (default: 0)
+#     admission-timeout: 3m              # Maximum wait for capacity (default: 3m)
+#     nthreads: 0                         # Native threads per operation (0 = whisper.cpp default)
+#
+# ==============================================================================
+# MALINA MODEL OPTIONS
+#
+# Keys are bundle IDs shown by `kronk malina model list`. Each concurrency slot
+# loads another complete native model context, increasing RAM or VRAM use.
+# Queue depth adds waiting requests without loading more contexts.
+# Set these values by adding an entry to the top-level `malina-models` mapping
+# below (alongside `models`, not inside it), then restart the model server.
+#
+# malina-models:
+#   sd-1.5:
+#     concurrency: 2                     # Concurrent native contexts (default: 1)
+#     queue-depth: 2                      # Requests allowed to wait (default: 0)
+#     admission-timeout: 3m              # Maximum wait for capacity (default: 3m)
+#     cpu-threads: 0                      # Native CPU threads (0 = runtime default)
+
+# ==============================================================================
 
 kms: {}
 
@@ -236,3 +268,7 @@ models:
       temperature: 1
       top_k: 20
       top_p: 0.95
+
+bucky-models: {}
+
+malina-models: {}

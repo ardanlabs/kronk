@@ -31,12 +31,14 @@ The model server reads per-model overrides from:
 ~/.kronk/models/model_config.yaml
 ```
 
-Kronk creates this file on first use. Version 1 stores per-model overrides
-under `models`, keyed by the canonical model ID. Use the same ID shown by
+Kronk creates this file on first use. Version 2 stores language-model overrides
+under `models`, Bucky overrides under `bucky-models`, and Malina overrides under
+`malina-models`. Version 1 files containing only `kms` and `models` remain
+supported. Language-model entries use the canonical ID shown by
 `kronk model list` or the `/v1/models` endpoint:
 
 ```yaml
-version: 1
+version: 2
 models:
   unsloth/Qwen3-0.6B-Q8_0:
     context-window: 32768
@@ -44,6 +46,16 @@ models:
     admission-timeout: 3m
     queue-depth: 2
     imc-session-capacity: 8
+
+bucky-models:
+  tiny:
+    nseq-max: 2
+    queue-depth: 4
+
+malina-models:
+  sd-1.5:
+    concurrency: 2
+    queue-depth: 2
 ```
 
 Files without `version` use the legacy version-0 shape, where model IDs are
@@ -67,7 +79,8 @@ data paths.
 
 Inference requests require the canonical `provider/modelID` shown by
 `/v1/models`. Bare model IDs are rejected rather than searched across a list of
-providers.
+providers. Bucky entries use the short ID shown by `kronk bucky model list`,
+and Malina entries use the bundle ID shown by `kronk malina model list`.
 
 #### Model variants
 
@@ -700,7 +713,7 @@ recommendation that every model needs these overrides:
 ```yaml
 # ~/.kronk/models/model_config.yaml
 
-version: 1
+version: 2
 kms: {}
 models:
   unsloth/Qwen3-0.6B-Q8_0:

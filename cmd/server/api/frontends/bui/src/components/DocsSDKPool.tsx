@@ -84,6 +84,7 @@ export default function DocsSDKPool() {
 	// pooled catalog models. When nil, New captures devices.List once.
 	StartupDevices  *devices.Devices
 	ModelConfigFile string
+	ModelConfig     map[string]models.ModelConfig
 	ModelsInPool    int
 	TTL             time.Duration
 	InsecureLogging bool
@@ -93,6 +94,7 @@ export default function DocsSDKPool() {
               <p className="doc-description">Models is the pre-built catalog the pool consults for path / size resolution. Required.</p>
               <p className="doc-description">Resman is the shared resource manager. Building it outside the pool lets every backend (kronk, bucky, …) charge the same byte budget. Required.</p>
               <p className="doc-description">ModelConfigFile is the optional per-model override file. Empty means no overrides.</p>
+              <p className="doc-description">ModelConfig supplies already parsed per-model overrides. When non-nil it takes precedence over ModelConfigFile.</p>
               <p className="doc-description">ModelsInPool is the safety-net cap on the number of distinct entries the pool keeps, independent of the byte budget. Defaults to 10 when zero.</p>
               <p className="doc-description">TTL is the time an existing model can live in the pool without being used. Zero disables idle expiration. Negative values are invalid.</p>
               <p className="doc-description">InsecureLogging, when true, logs potentially sensitive data such as message content and detailed model configuration.</p>

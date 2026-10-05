@@ -260,11 +260,12 @@ Kronk seeds the file on first use and preserves edits across upgrades. Entries
 are merged over hardware-analysis recommendations rather than replacing the
 entire runtime configuration.
 
-Version 1 makes this the single configuration file for both the server and its
-models. The top-level shape is:
+Version 2 makes this the single configuration file for the server and all model
+backends. Version 1 files containing only `kms` and `models` remain readable.
+The top-level shape is:
 
 ```yaml
-version: 1
+version: 2
 kms:
   web:
     api-host: 127.0.0.1:11435
@@ -320,6 +321,12 @@ models:
   owner/model:
     context-window: 8192
     nseq-max: 2
+bucky-models:
+  tiny:
+    nseq-max: 2
+malina-models:
+  sd-1.5:
+    concurrency: 2
 ```
 
 The built-in defaults apply when a `kms` key is omitted. Configuration
@@ -327,8 +334,9 @@ precedence is built-in defaults, then `kms` YAML, then `KRONK_*` environment
 variables, then explicitly supplied `kronk server start` flags. The
 `--model-config-file` flag and `KRONK_POOL_MODEL_CONFIG_FILE` environment
 variable select the YAML file itself and therefore remain outside the file.
-Files without `version` are version 0 and retain the legacy model-only shape,
-where model IDs are top-level keys.
+The backend sections are top-level mappings alongside `models`. Bucky keys are
+the short IDs shown by `kronk bucky model list`; Malina keys are bundle IDs
+shown by `kronk malina model list`. Restart the server after changing them.
 
 Automatic tuning is enabled by default in the model server. An explicit
 `context-window` or `nseq-max` in this file is treated as a fixed sizing
