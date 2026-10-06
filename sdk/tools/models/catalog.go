@@ -140,14 +140,13 @@ func resolverLock(filePath string) *sync.Mutex {
 // NewResolver constructs a Resolver using the default HuggingFace client.
 // filePath is the location of catalog.yaml on disk.
 func NewResolver(m *Models, filePath string) *Resolver {
-	return newResolver(m, filePath, hf.NewDefaultClient(), hasNetwork)
+	return NewResolverWithClient(m, filePath, hf.NewDefaultClient())
 }
 
 // NewResolverWithClient constructs a Resolver with a caller-supplied HF
-// client. The supplied client is treated as available without probing the
-// public HuggingFace endpoint, which keeps fake-client tests hermetic.
+// client.
 func NewResolverWithClient(m *Models, filePath string, client hf.Client) *Resolver {
-	return newResolver(m, filePath, client, func() bool { return true })
+	return newResolver(m, filePath, client, nil)
 }
 
 func newResolver(m *Models, filePath string, client hf.Client, networkAvailable func() bool) *Resolver {
@@ -158,6 +157,14 @@ func newResolver(m *Models, filePath string, client hf.Client, networkAvailable 
 		models:           m,
 		networkAvailable: networkAvailable,
 	}
+}
+
+func (r *Resolver) hasNetwork() bool {
+	if r.networkAvailable != nil {
+		return r.networkAvailable()
+	}
+
+	return hasNetwork()
 }
 
 // FilePath returns the path of the catalog.yaml file.
@@ -312,7 +319,7 @@ func (r *Resolver) Resolve(ctx context.Context, id string) (Resolution, error) {
 		return Resolution{}, fmt.Errorf("resolve: %w", err)
 	}
 
-	online := r.networkAvailable()
+	online := r.hasNetwork()
 
 	var preferredFamily string
 	if cached, ok := r.lookupCache(rm, provider, modelID); ok {
@@ -403,7 +410,7 @@ func (r *Resolver) resolvePinned(ctx context.Context, provider, repo, modelID st
 		return Resolution{}, fmt.Errorf("resolve: %w", err)
 	}
 
-	online := r.networkAvailable()
+	online := r.hasNetwork()
 	canonical := canonicalID(provider, catalogModelID(repo, modelID+".gguf"))
 	if entry, ok := rm.Models[canonical]; ok &&
 		strings.EqualFold(entry.Provider, provider) &&
@@ -482,7 +489,7 @@ func (r *Resolver) resolveByTag(ctx context.Context, provider, repo, tag string)
 		return Resolution{}, fmt.Errorf("resolve: %w", err)
 	}
 
-	online := r.networkAvailable()
+	online := r.hasNetwork()
 
 	if cached, ok := r.lookupCacheByTag(rm, provider, repo, tag); ok {
 		needsRepair := (cached.MMProj != "" && cached.DownloadProj == "") ||
@@ -966,7 +973,7 @@ func (r *Resolver) discoverCompanions(ctx context.Context, entry CatalogEntry, l
 		return entry, false
 	}
 
-	if !r.networkAvailable() {
+	if !r.hasNetwork() {
 		return entry, false
 	}
 

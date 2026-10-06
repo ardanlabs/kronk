@@ -32,6 +32,10 @@ type fakeHF struct {
 	calls []string
 }
 
+func newTestResolver(m *Models, filePath string, client hf.Client) *Resolver {
+	return newResolver(m, filePath, client, func() bool { return true })
+}
+
 func TestCapabilitiesForSpecializedQwenModels(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -804,7 +808,7 @@ func TestResolver_HFHit_PersistsAndReturnsURLs(t *testing.T) {
 	rfile := filepath.Join(dir, "catalog.yaml")
 	mustWriteFile(t, rfile, "models: {}\n")
 
-	r := NewResolverWithClient(nil, rfile, hf)
+	r := newTestResolver(nil, rfile, hf)
 
 	res, err := r.Resolve(context.Background(), "unsloth/Qwen3.6-35B-A3B-UD-Q4_K_M")
 	if err != nil {
@@ -868,7 +872,7 @@ func TestResolver_RejectsBareModelID(t *testing.T) {
 	rfile := filepath.Join(dir, "catalog.yaml")
 	mustWriteFile(t, rfile, "models: {}\n")
 
-	r := NewResolverWithClient(nil, rfile, &fakeHF{})
+	r := newTestResolver(nil, rfile, &fakeHF{})
 
 	if _, err := r.Resolve(context.Background(), "Qwen3"); !errors.Is(err, ErrInvalidModelID) {
 		t.Errorf("Resolve() error = %v, want ErrInvalidModelID", err)
@@ -888,7 +892,7 @@ func TestResolver_ExplicitProvider(t *testing.T) {
 	rfile := filepath.Join(dir, "catalog.yaml")
 	mustWriteFile(t, rfile, "models: {}\n")
 
-	r := NewResolverWithClient(nil, rfile, hf)
+	r := newTestResolver(nil, rfile, hf)
 
 	res, err := r.Resolve(context.Background(), "bartowski/Foo")
 	if err != nil {
@@ -927,7 +931,7 @@ func TestResolver_CacheHitNoHFCall(t *testing.T) {
 	data, _ := yaml.Marshal(cached)
 	mustWriteFile(t, rfile, string(data))
 
-	r := NewResolverWithClient(nil, rfile, hf)
+	r := newTestResolver(nil, rfile, hf)
 
 	res, err := r.Resolve(context.Background(), "unsloth/Qwen3-Q4_K_M")
 	if err != nil {
@@ -950,7 +954,7 @@ func TestResolver_NotFoundAtProvider(t *testing.T) {
 	rfile := filepath.Join(dir, "catalog.yaml")
 	mustWriteFile(t, rfile, "models: {}\n")
 
-	r := NewResolverWithClient(nil, rfile, hf)
+	r := newTestResolver(nil, rfile, hf)
 
 	_, err := r.Resolve(context.Background(), "unsloth/DoesNotExist")
 	if err == nil {
@@ -976,7 +980,7 @@ func TestResolver_HFNotFoundIsNotFatal(t *testing.T) {
 	rfile := filepath.Join(dir, "catalog.yaml")
 	mustWriteFile(t, rfile, "models: {}\n")
 
-	r := NewResolverWithClient(nil, rfile, hf)
+	r := newTestResolver(nil, rfile, hf)
 
 	res, err := r.Resolve(context.Background(), "ggml-org/Qwen3")
 	if err != nil {
@@ -1404,7 +1408,7 @@ func TestResolver_TagForm_HFLookup(t *testing.T) {
 	rfile := filepath.Join(dir, "catalog.yaml")
 	mustWriteFile(t, rfile, "models: {}\n")
 
-	r := NewResolverWithClient(nil, rfile, hfc)
+	r := newTestResolver(nil, rfile, hfc)
 
 	res, err := r.Resolve(context.Background(), "unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_XL")
 	if err != nil {
@@ -1484,7 +1488,7 @@ func TestResolver_PinnedFileIgnoresSameTagCacheEntries(t *testing.T) {
 	data, _ := yaml.Marshal(cached)
 	mustWriteFile(t, rfile, string(data))
 
-	r := NewResolverWithClient(nil, rfile, hfc)
+	r := newTestResolver(nil, rfile, hfc)
 	res, err := r.resolvePinned(context.Background(), "unsloth", "gemma-4-26B-A4B-it-GGUF", "gemma-4-26B-A4B-it-UD-Q8_K_XL", true)
 	if err != nil {
 		t.Fatalf("resolvePinned: %v", err)
@@ -1523,7 +1527,7 @@ func TestResolver_PinnedFileDedicatedMTPRepo(t *testing.T) {
 	rfile := filepath.Join(dir, "catalog.yaml")
 	mustWriteFile(t, rfile, "models: {}\n")
 
-	r := NewResolverWithClient(nil, rfile, hfc)
+	r := newTestResolver(nil, rfile, hfc)
 	res, err := r.resolvePinned(context.Background(), "unsloth", "Qwen3.6-35B-A3B-MTP-GGUF", "Qwen3.6-35B-A3B-UD-Q8_K_XL", true)
 	if err != nil {
 		t.Fatalf("resolvePinned: %v", err)
@@ -1588,7 +1592,7 @@ func TestResolver_TagForm_PinsExplicitRepo(t *testing.T) {
 	rfile := filepath.Join(dir, "catalog.yaml")
 	mustWriteFile(t, rfile, "models: {}\n")
 
-	r := NewResolverWithClient(nil, rfile, hfc)
+	r := newTestResolver(nil, rfile, hfc)
 
 	res, err := r.Resolve(context.Background(), "unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q8_K_XL")
 	if err != nil {
@@ -1639,7 +1643,7 @@ func TestResolver_TagForm_CacheHit(t *testing.T) {
 	data, _ := yaml.Marshal(cached)
 	mustWriteFile(t, rfile, string(data))
 
-	r := NewResolverWithClient(nil, rfile, hfc)
+	r := newTestResolver(nil, rfile, hfc)
 
 	res, err := r.Resolve(context.Background(), "unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_XL")
 	if err != nil {
@@ -1671,7 +1675,7 @@ func TestResolver_TagForm_TagNotFound(t *testing.T) {
 	rfile := filepath.Join(dir, "catalog.yaml")
 	mustWriteFile(t, rfile, "models: {}\n")
 
-	r := NewResolverWithClient(nil, rfile, hfc)
+	r := newTestResolver(nil, rfile, hfc)
 
 	_, err := r.Resolve(context.Background(), "unsloth/Qwen3-GGUF:UD-Q4_K_XL")
 	if err == nil {
@@ -1692,7 +1696,7 @@ func TestResolver_TagForm_RepoNotFound(t *testing.T) {
 	rfile := filepath.Join(dir, "catalog.yaml")
 	mustWriteFile(t, rfile, "models: {}\n")
 
-	r := NewResolverWithClient(nil, rfile, hfc)
+	r := newTestResolver(nil, rfile, hfc)
 
 	_, err := r.Resolve(context.Background(), "unsloth/Bogus-GGUF:Q8_0")
 	if err == nil {
@@ -1737,7 +1741,7 @@ func TestResolver_AllInputForms_ProduceSameDownloadURL(t *testing.T) {
 			rfile := filepath.Join(dir, "catalog.yaml")
 			mustWriteFile(t, rfile, string(data))
 
-			r := NewResolverWithClient(nil, rfile, &fakeHF{})
+			r := newTestResolver(nil, rfile, &fakeHF{})
 
 			res, err := r.Resolve(context.Background(), tc.input)
 			if err != nil {
@@ -1978,7 +1982,7 @@ func TestResolver_DiscoverMTP(t *testing.T) {
 	rfile := filepath.Join(dir, "catalog.yaml")
 	mustWriteFile(t, rfile, "models: {}\n")
 
-	r := NewResolverWithClient(nil, rfile, hfc)
+	r := newTestResolver(nil, rfile, hfc)
 
 	entry := CatalogEntry{
 		Provider: "unsloth",
@@ -2039,7 +2043,7 @@ func TestResolver_DiscoverCompanions_RecoverMMProj(t *testing.T) {
 		},
 	}
 	rfile := filepath.Join(t.TempDir(), "catalog.yaml")
-	r := NewResolverWithClient(m, rfile, hfc)
+	r := newTestResolver(m, rfile, hfc)
 
 	// The renamed projection is on disk; the catalog entry forgot it.
 	dir := filepath.Join(m.modelsPath, "unsloth", "gemma-4-26B-A4B-it-GGUF")
