@@ -3081,7 +3081,7 @@ const (
 	modelSource    = "unsloth/Qwen3.5-0.8B-Q8_0"
 	imageLocation  = "samples/deer"
 	numWorkers     = 2
-	numRequests    = 1500
+	numRequests    = 10
 	requestTimeout = 60 * time.Second
 )
 
@@ -5711,6 +5711,10 @@ func question(krn *kronk.Kronk) error {
 `,Cy=`// This example shows you a complete RAG application using DuckDB as an embedding
 // DB and an embedding model to generate embeddings, and a chat model for
 // answering a question using the Kronk SDK.
+//
+// The Kronk SDK itself is pure Go (no CGO). This example adds CGO only for
+// embedded DuckDB via github.com/duckdb/duckdb-go/v2, which lives entirely in
+// the examples module and requires a C compiler.
 //
 // # Running the example:
 //
