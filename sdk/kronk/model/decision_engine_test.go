@@ -141,7 +141,7 @@ func TestStageDecisionJointPart(t *testing.T) {
 	part := decisionPart{
 		tokens:        []llama.Token{11, 12, 13},
 		sequence:      2,
-		decisionOrder: []int32{decisionOrderQuestionChoice, decisionOrderQuestionChoice, decisionOrderOption},
+		decisionOrder: []llama.DecisionOrder{llama.DecisionOrderQuestionChoice, llama.DecisionOrderQuestionChoice, llama.DecisionOrderOption},
 		jointScores:   2,
 	}
 

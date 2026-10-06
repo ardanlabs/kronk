@@ -162,7 +162,7 @@ func Init(opts ...InitOption) error {
 		return fmt.Errorf("init: unable to load yzma speculative bindings: %w", err)
 	}
 
-	// We will always keep this funciton call even if there is nothing to init.
+	// We will always keep this function call even if there is nothing to init.
 	if err := model.InitYzmaWorkarounds(libPath); err != nil {
 		return fmt.Errorf("init: unable to initialize yzma workarounds: %w", err)
 	}

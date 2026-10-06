@@ -20,7 +20,7 @@ type decisionWork struct {
 	tokens        []llama.Token
 	prefixLen     int
 	readouts      []decisionReadout
-	decisionOrder []int32
+	decisionOrder []llama.DecisionOrder
 	jointScores   int
 }
 
@@ -206,7 +206,7 @@ type decisionPart struct {
 	position      int
 	sequence      llama.SeqId
 	readouts      []decisionReadout
-	decisionOrder []int32
+	decisionOrder []llama.DecisionOrder
 	jointScores   int
 }
 

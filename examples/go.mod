@@ -9,8 +9,9 @@ require (
 	github.com/ardanlabs/kronk v1.32.8
 	github.com/duckdb/duckdb-go/v2 v2.10506.0
 	github.com/gen2brain/malgo v0.11.26
-	github.com/hybridgroup/yzma v1.28.1-0.20261001235646-c25d400d1108
+	github.com/hybridgroup/yzma v1.28.1-0.20261006125350-87450fc2f90b
 	golang.org/x/image v0.46.0
+	golang.org/x/sys v0.48.0
 )
 
 require (
@@ -117,7 +118,6 @@ require (
 	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/oauth2 v0.37.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
 	google.golang.org/api v0.300.0 // indirect
