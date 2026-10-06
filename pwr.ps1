@@ -2,9 +2,20 @@
 # From the repository root, run `./pwr.ps1 <target>` or `./pwr.ps1` to list targets.
 # These commands require neither GNU Make nor a Unix shell.
 
-# Targets are distributed under .power/ mirroring .make/
-# Not all Make targets were translated to Powershell commands.
-
+# For shorter commands, add this function to your PowerShell profile (`$PROFILE`):
+#
+#   function pwr {
+#       $script = Join-Path $PWD "pwr.ps1"
+#       if (-not (Test-Path -LiteralPath $script -PathType Leaf)) {
+#           throw "pwr.ps1 was not found in $PWD"
+#       }
+#       & $script @args
+#   }
+#
+# Reload the profile with `. $PROFILE`, then run `pwr <target>` from the
+# repository root. The function executes pwr.ps1 from the current directory,
+# so use it only in directories you trust.
+#
 # Windows PowerShell may block this script by default.
 # To allow local scripts for your user in current and future terminal sessions,
 # run the following command once:
