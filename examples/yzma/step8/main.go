@@ -24,7 +24,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/ardanlabs/kronk/examples/internal/yzmainit"
+	"github.com/ardanlabs/kronk/examples/yzma/internal/yzmainit"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/hybridgroup/yzma/pkg/llama"

@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ardanlabs/kronk/examples/internal/yzmainit"
+	"github.com/ardanlabs/kronk/examples/yzma/internal/yzmainit"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
