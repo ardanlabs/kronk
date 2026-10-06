@@ -7,6 +7,6 @@ package kronk
 // already let the bundled library directory take precedence over system
 // locations, so no DLL-search-order fixup is required. See the Windows build
 // of this function for the full rationale.
-func preloadLibraries(libPath string) error {
+func preloadLibraries(_ string) error {
 	return nil
 }

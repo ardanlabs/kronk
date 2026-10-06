@@ -109,7 +109,7 @@ func Init(opts ...InitOption) error {
 		// libraries from libPath so they (and their dependency tree) win.
 		// Best-effort: on failure the PATH entry above remains the fallback, so
 		// the error is intentionally non-fatal.
-		_ = preloadLibraries(libPath)
+		preloadLibraries(libPath)
 
 	default:
 		if v := os.Getenv("LD_LIBRARY_PATH"); !strings.Contains(v, libPath) {
