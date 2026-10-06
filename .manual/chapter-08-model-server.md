@@ -471,6 +471,107 @@ Models, configuration, catalog state, and authentication keys remain in the
 named volume. Removing `kronk-data` permanently deletes that state and is not
 part of a normal image update.
 
+**Docker Compose**
+
+The Compose files in
+[`zarf/docker/kronk`](https://github.com/ardanlabs/kronk/tree/main/zarf/docker/kronk)
+use the same container name (`kronk`) and volume (`kronk-data`) as the
+examples above, so the `docker exec` and `docker logs` commands work
+unchanged. Start with
+[2.3 Container Quick Start](https://www.kronkai.com/manual#23-container-quick-start).
+All `docker compose` commands run from the directory holding the files.
+
+Without a repository checkout, download only the Compose files. Replace `main`
+with the release tag of the image you pin:
+
+```shell
+mkdir kronk && cd kronk
+for f in compose.yaml compose.cuda.yaml compose.rocm.yaml compose.vulkan.yaml; do
+  curl -fsSLO "https://raw.githubusercontent.com/ardanlabs/kronk/main/zarf/docker/kronk/$f"
+done
+```
+
+These variables configure the Compose files. Set them in the shell or in a
+`.env` file in the Compose directory:
+
+| Variable | Default | Purpose |
+| -------- | ------- | ------- |
+| `KRONK_IMAGE_VARIANT` | `cpu` (or the override's backend) | `cpu`, `cuda`, `vulkan`, `rocm`, or `all` |
+| `KRONK_IMAGE_VERSION` | `latest` | `latest` or a release such as `vX.Y.Z`; pin a release outside local testing |
+| `KRONK_BIND_ADDR` | `127.0.0.1` | Host address for ports `11435` and `11445` |
+| `KRONK_DOWNLOAD_ENABLED` | `true` | Allow model downloads from the BUI |
+| `KRONK_RENDER_GID` / `KRONK_VIDEO_GID` | `render` / `video` | Host group IDs for GPU devices (ROCm, Vulkan) |
+| `KRONK_TEMPO_HOST` | unset | OTLP endpoint, e.g. `tempo:4317` |
+
+Only set `KRONK_BIND_ADDR=0.0.0.0` on a trusted network: port `11445` serves
+pprof and metrics without authentication, and Docker's published ports are
+not blocked by host firewalls such as ufw.
+
+Do not put server settings in `.env`. Compose uses `.env` only for the
+variables that `compose.yaml` refers to, such as those in the table above. Any
+other variable in `.env` never reaches the container, and Compose gives no
+warning. For example, `KRONK_AUTHORIZATION_MODE=full-protected` in `.env`
+leaves the server unprotected. Pass server settings, such as the
+authentication settings above, through a `compose.override.yaml` next to
+`compose.yaml`:
+
+```yaml
+services:
+  kronk:
+    environment:
+      - KRONK_AUTHORIZATION_MODE=full-protected
+      - KRONK_WEB_ADMIN_ENABLED=false
+```
+
+A plain `docker compose up -d` loads `compose.override.yaml` automatically.
+With `-f` or `COMPOSE_FILE`, list it last. To avoid repeating `-f`, create a
+`.env` such as this one, which selects Vulkan, loads the override, and pins
+the image (the separator line makes it work on Windows too):
+
+```text
+COMPOSE_PATH_SEPARATOR=:
+COMPOSE_FILE=compose.yaml:compose.vulkan.yaml:compose.override.yaml
+KRONK_IMAGE_VERSION=vX.Y.Z
+```
+
+In a repository checkout, `make kronk-up KRONK_GPU=vulkan` (or `cuda`, `rocm`)
+starts the same from the repository root and adds the override when it exists.
+
+GPU overrides need these host components:
+
+| Override | Host requirements |
+| -------- | ----------------- |
+| `compose.cuda.yaml` | NVIDIA driver and [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) |
+| `compose.rocm.yaml` | `linux/amd64`, ROCm-capable kernel driver, `/dev/kfd` and `/dev/dri` |
+| `compose.vulkan.yaml` | Mesa Vulkan drivers, `/dev/dri` |
+
+- Check the selected backend with
+  `docker compose logs kronk | grep "selected llama.cpp runtime"`.
+- NVIDIA: to use specific cards, replace `count: all` in `compose.cuda.yaml`
+  with `device_ids: ["0"]` (indices or UUIDs from `nvidia-smi -L`).
+- ROCm: `HIP_VISIBLE_DEVICES` and `HSA_OVERRIDE_GFX_VERSION` are passed
+  through. For an unlisted GPU that is not detected, try
+  `HSA_OVERRIDE_GFX_VERSION=10.3.0` (RDNA2) or `11.0.0` (RDNA3). The ROCm
+  image is about 30 GB unpacked; on integrated GPUs, Vulkan is usually smaller
+  and faster.
+- Vulkan: `VK_LOADER_DRIVERS_SELECT` and `MESA_VK_DEVICE_SELECT` are passed
+  through to pick one GPU.
+- macOS is CPU only; Windows uses the CUDA override with Docker Desktop and
+  WSL2. Startup errors are covered in
+  [17.2 Libraries and Devices](https://www.kronkai.com/manual#172-libraries-and-devices).
+
+To upgrade, run from the Compose directory with the same `-f` files or `.env`:
+
+- Pinned version: change `KRONK_IMAGE_VERSION` to the new release, then run
+  `docker compose up -d`. If you downloaded the Compose files for a release
+  tag, download them again for the new tag first.
+- `latest`: run `docker compose pull`, then `docker compose up -d`.
+
+The `kronk-net` network is shared with the
+[observability stack](https://www.kronkai.com/manual#153-bundled-observability-stack)
+and can remain after both stacks stop; remove it with
+`docker network rm kronk-net`.
+
 ## 8.8 Related Administration Guides
 
 Detailed administration is divided by responsibility:

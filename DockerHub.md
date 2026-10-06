@@ -228,7 +228,9 @@ curl -X POST http://localhost:11435/v1/audio/transcriptions \
 | `11435` | Main API (chat completions, embeddings, models, `/v1/liveness`, etc.) |
 | `11445` | Debug server (Prometheus `/metrics`, pprof, statsviz)                 |
 
-To keep the debug server local-only, override `KRONK_WEB_DEBUG_HOST=127.0.0.1:11445`.
+The debug server binds to `127.0.0.1:11445` inside the container by default, so a
+published `11445` port is unreachable. Set `KRONK_WEB_DEBUG_HOST=0.0.0.0:11445` to
+expose it (the Compose file in `zarf/docker/kronk/` does this).
 
 ---
 
@@ -250,7 +252,7 @@ Models, libraries, catalog data, and API keys are all stored under `/kronk`. Nam
 | ------------------------------ | --------------------------------- | ------------------------------------------------------------------------------------ |
 | `KRONK_DOWNLOAD_ENABLED`       | `false`                           | Allow model/library downloads from the browser UI (disabled by default for security) |
 | `KRONK_WEB_API_HOST`           | `0.0.0.0:11435`                   | API bind address                                                                     |
-| `KRONK_WEB_DEBUG_HOST`         | `:11445`                          | Debug server bind address                                                            |
+| `KRONK_WEB_DEBUG_HOST`         | `127.0.0.1:11445`                 | Debug server bind address                                                            |
 | `KRONK_POOL_MODEL_CONFIG_FILE` | `/kronk/models/model_config.yaml` | Path to model configuration file                                                     |
 | `KRONK_BASE_PATH`              | `/kronk`                          | Base path for all Kronk data                                                         |
 
@@ -286,7 +288,9 @@ Substitute `latest` with any published tag (`<version>-<variant>`, `latest-<vari
 ## Links
 
 - **Source:** https://github.com/ardanlabs/kronk
-- **Headless remote deployment guide:** https://github.com/ardanlabs/kronk/blob/main/.manual/chapter-02-installation.md#24-docker--oci-container
+- **Container quick start (docker run and Docker Compose):** https://github.com/ardanlabs/kronk/blob/main/.manual/chapter-02-installation.md#23-container-quick-start
+- **Docker Compose files (CPU, CUDA, ROCm, Vulkan):** https://github.com/ardanlabs/kronk/tree/main/zarf/docker/kronk
+- **Headless remote deployment guide:** https://github.com/ardanlabs/kronk/blob/main/.manual/chapter-08-model-server.md#87-container-operations
 - **Documentation:** https://github.com/ardanlabs/kronk#readme
 - **Website:** https://kronkai.com
 - **Signatures (Docker Hub):** https://hub.docker.com/r/ardanlabs/kronk-signatures

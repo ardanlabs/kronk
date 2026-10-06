@@ -1,0 +1,26 @@
+# AMD / Intel GPU override using Vulkan (Mesa RADV / ANV).
+#
+#   docker compose -f compose.yaml -f compose.vulkan.yaml up -d
+#
+# Equivalent to the Vulkan `docker run` in the Dockerfile header. The image
+# resolves `render` to GID 110; if the host's render group differs, set
+# KRONK_RENDER_GID="$(getent group render | cut -d: -f3)" (same for video).
+#
+# Optional pass-through variables for hosts with several GPUs (only set in
+# the container when set on the host):
+#   VK_LOADER_DRIVERS_SELECT  e.g. '*radeon*' or '*intel*'
+#   MESA_VK_DEVICE_SELECT     e.g. '1002:744c'
+#
+# NVIDIA through Vulkan is not covered here; see the Dockerfile header.
+
+services:
+  kronk:
+    image: ghcr.io/ardanlabs/kronk:${KRONK_IMAGE_VERSION:-latest}-${KRONK_IMAGE_VARIANT:-vulkan}
+    devices:
+      - /dev/dri
+    group_add:
+      - ${KRONK_VIDEO_GID:-video}
+      - ${KRONK_RENDER_GID:-render}
+    environment:
+      - VK_LOADER_DRIVERS_SELECT
+      - MESA_VK_DEVICE_SELECT

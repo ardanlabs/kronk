@@ -1,0 +1,63 @@
+# Kronk model server — Docker Compose.
+#
+# CPU on any host (run from this directory):
+#
+#   docker compose up -d
+#   curl http://127.0.0.1:11435/v1/liveness
+#
+# GPU: layer one of the override files on top of this one.
+#
+#   docker compose -f compose.yaml -f compose.cuda.yaml   up -d   # NVIDIA
+#   docker compose -f compose.yaml -f compose.rocm.yaml   up -d   # AMD (ROCm)
+#   docker compose -f compose.yaml -f compose.vulkan.yaml up -d   # AMD / Intel (Vulkan)
+#
+# Variables (shell or a .env file next to this file):
+#
+#   KRONK_IMAGE_VARIANT     cpu | cuda | vulkan | rocm | all   (default: cpu,
+#                           or the override file's own backend)
+#   KRONK_IMAGE_VERSION     latest | vX.Y.Z                    (default: latest)
+#   KRONK_BIND_ADDR         host address the ports bind to      (default: 127.0.0.1)
+#   KRONK_DOWNLOAD_ENABLED  allow BUI model downloads           (default: true)
+#
+# All state (models, config, catalog, keys, libraries) lives in the single
+# `kronk-data` volume on /kronk. Do not split it into several volumes — see
+# the VOLUME note in the Dockerfile. The volume name matches the
+# `docker run -v kronk-data:/kronk` examples, so both share the same models.
+#
+# The healthcheck (curl /v1/liveness) is inherited from the image.
+
+name: kronk
+
+services:
+  kronk:
+    image: ghcr.io/ardanlabs/kronk:${KRONK_IMAGE_VERSION:-latest}-${KRONK_IMAGE_VARIANT:-cpu}
+    container_name: kronk
+    restart: unless-stopped
+    environment:
+      - KRONK_DOWNLOAD_ENABLED=${KRONK_DOWNLOAD_ENABLED:-true}
+      # The debug server (metrics, pprof, statsviz) defaults to 127.0.0.1
+      # inside the container, which makes the published port unreachable.
+      - KRONK_WEB_DEBUG_HOST=0.0.0.0:11445
+      # Optional pass-through, only set in the container when set on the host.
+      - KRONK_TEMPO_HOST
+    ports:
+      - "${KRONK_BIND_ADDR:-127.0.0.1}:11435:11435"
+      - "${KRONK_BIND_ADDR:-127.0.0.1}:11445:11445"
+    volumes:
+      - kronk-data:/kronk
+    networks:
+      - kronk-net
+
+# Shared with zarf/docker/compose.yaml so Prometheus can scrape kronk:11445
+# when both stacks run. Either stack can be started first. Keep this block
+# identical to the one in zarf/docker/compose.yaml: some Compose versions
+# recreate a network whose definition differs, which fails while the other
+# stack is still attached.
+networks:
+  kronk-net:
+    name: kronk-net
+    driver: bridge
+
+volumes:
+  kronk-data:
+    name: kronk-data
