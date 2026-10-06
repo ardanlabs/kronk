@@ -5712,6 +5712,10 @@ func question(krn *kronk.Kronk) error {
 // DB and an embedding model to generate embeddings, and a chat model for
 // answering a question using the Kronk SDK.
 //
+// The Kronk SDK itself is pure Go (no CGO). This example adds CGO only for
+// embedded DuckDB via github.com/duckdb/duckdb-go/v2, which lives entirely in
+// the examples module and requires a C compiler.
+//
 // # Running the example:
 //
 //	$ make example-rag
