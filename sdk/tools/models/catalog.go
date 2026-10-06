@@ -118,10 +118,11 @@ func (r Resolution) VerifyLocal() error {
 // on-disk paths. It uses a YAML cache file ("catalog.yaml") for
 // previously-seen IDs and falls back to the HuggingFace API for new ones.
 type Resolver struct {
-	filePath string
-	mu       *sync.Mutex
-	hfClient hf.Client
-	models   *Models
+	filePath         string
+	mu               *sync.Mutex
+	hfClient         hf.Client
+	models           *Models
+	networkAvailable func() bool
 }
 
 var resolverLocks sync.Map
@@ -139,17 +140,23 @@ func resolverLock(filePath string) *sync.Mutex {
 // NewResolver constructs a Resolver using the default HuggingFace client.
 // filePath is the location of catalog.yaml on disk.
 func NewResolver(m *Models, filePath string) *Resolver {
-	return NewResolverWithClient(m, filePath, hf.NewDefaultClient())
+	return newResolver(m, filePath, hf.NewDefaultClient(), hasNetwork)
 }
 
 // NewResolverWithClient constructs a Resolver with a caller-supplied HF
-// client. Used by tests.
+// client. The supplied client is treated as available without probing the
+// public HuggingFace endpoint, which keeps fake-client tests hermetic.
 func NewResolverWithClient(m *Models, filePath string, client hf.Client) *Resolver {
+	return newResolver(m, filePath, client, func() bool { return true })
+}
+
+func newResolver(m *Models, filePath string, client hf.Client, networkAvailable func() bool) *Resolver {
 	return &Resolver{
-		filePath: filePath,
-		mu:       resolverLock(filePath),
-		hfClient: client,
-		models:   m,
+		filePath:         filePath,
+		mu:               resolverLock(filePath),
+		hfClient:         client,
+		models:           m,
+		networkAvailable: networkAvailable,
 	}
 }
 
@@ -305,7 +312,7 @@ func (r *Resolver) Resolve(ctx context.Context, id string) (Resolution, error) {
 		return Resolution{}, fmt.Errorf("resolve: %w", err)
 	}
 
-	online := hasNetwork()
+	online := r.networkAvailable()
 
 	var preferredFamily string
 	if cached, ok := r.lookupCache(rm, provider, modelID); ok {
@@ -396,7 +403,7 @@ func (r *Resolver) resolvePinned(ctx context.Context, provider, repo, modelID st
 		return Resolution{}, fmt.Errorf("resolve: %w", err)
 	}
 
-	online := hasNetwork()
+	online := r.networkAvailable()
 	canonical := canonicalID(provider, catalogModelID(repo, modelID+".gguf"))
 	if entry, ok := rm.Models[canonical]; ok &&
 		strings.EqualFold(entry.Provider, provider) &&
@@ -475,7 +482,7 @@ func (r *Resolver) resolveByTag(ctx context.Context, provider, repo, tag string)
 		return Resolution{}, fmt.Errorf("resolve: %w", err)
 	}
 
-	online := hasNetwork()
+	online := r.networkAvailable()
 
 	if cached, ok := r.lookupCacheByTag(rm, provider, repo, tag); ok {
 		needsRepair := (cached.MMProj != "" && cached.DownloadProj == "") ||
@@ -959,7 +966,7 @@ func (r *Resolver) discoverCompanions(ctx context.Context, entry CatalogEntry, l
 		return entry, false
 	}
 
-	if !hasNetwork() {
+	if !r.networkAvailable() {
 		return entry, false
 	}
 

@@ -844,6 +844,25 @@ func TestResolver_HFHit_PersistsAndReturnsURLs(t *testing.T) {
 	}
 }
 
+func TestResolver_OfflineDoesNotCallHFClient(t *testing.T) {
+	hf := &fakeHF{
+		search: map[string][]string{
+			"unsloth|Qwen3.6-35B-A3B": {"unsloth/Qwen3.6-35B-A3B-GGUF"},
+		},
+	}
+	rfile := filepath.Join(t.TempDir(), "catalog.yaml")
+	mustWriteFile(t, rfile, "models: {}\n")
+	r := newResolver(nil, rfile, hf, func() bool { return false })
+
+	_, err := r.Resolve(context.Background(), "unsloth/Qwen3.6-35B-A3B-UD-Q4_K_M")
+	if err == nil || !strings.Contains(err.Error(), "no network available") {
+		t.Fatalf("Resolve() error = %v, want no network available", err)
+	}
+	if len(hf.calls) != 0 {
+		t.Errorf("HF calls = %v, want none", hf.calls)
+	}
+}
+
 func TestResolver_RejectsBareModelID(t *testing.T) {
 	dir := t.TempDir()
 	rfile := filepath.Join(dir, "catalog.yaml")
@@ -1947,10 +1966,6 @@ func TestMatchMTPToModel(t *testing.T) {
 // TestResolver_DiscoverMTP verifies that an unchecked catalog entry gets a
 // companion discovered and recorded by a single HF sibling scan.
 func TestResolver_DiscoverMTP(t *testing.T) {
-	if !hasNetwork() {
-		t.Skip("discoverCompanions requires network for the hasNetwork() guard")
-	}
-
 	hfc := &fakeHF{
 		metas: map[string][]string{
 			"unsloth/Qwen3.8-27B-GGUF": {
@@ -2013,10 +2028,6 @@ func TestResolver_DiscoverMTP(t *testing.T) {
 // still on disk gets its mmproj source name recovered from an HF re-scan.
 // An entry with nothing to look up performs no HF call.
 func TestResolver_DiscoverCompanions_RecoverMMProj(t *testing.T) {
-	if !hasNetwork() {
-		t.Skip("discoverCompanions requires network for the hasNetwork() guard")
-	}
-
 	m := newTestModels(t)
 	hfc := &fakeHF{
 		metas: map[string][]string{
