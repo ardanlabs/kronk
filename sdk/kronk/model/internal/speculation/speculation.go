@@ -49,6 +49,7 @@ const (
 	MTPArchitectureQwen35OwnKV
 	MTPArchitectureQwen4ExpOwnKV
 	MTPArchitectureGemmaSharedKV
+	MTPArchitectureGLM5Next
 )
 
 func (a MTPArchitecture) String() string {
@@ -59,6 +60,8 @@ func (a MTPArchitecture) String() string {
 		return "qwen4exp-own-kv"
 	case MTPArchitectureGemmaSharedKV:
 		return "gemma-shared-kv"
+	case MTPArchitectureGLM5Next:
+		return "glm5-next"
 	default:
 		return "none"
 	}
@@ -160,7 +163,7 @@ func Resolve(cfg Config) (Plan, error) {
 	}
 	if plan.Source == SourceMTP && !cfg.MTPArchitectureEnabled {
 		if cfg.Mode == ModeMTP {
-			return Plan{}, fmt.Errorf("speculation mode %q requested but MTP architecture %s is disabled in this Kronk release", cfg.Mode, plan.MTPArchitecture)
+			return Plan{}, fmt.Errorf("speculation mode %q requested but MTP architecture %s is unsupported by this Kronk release", cfg.Mode, plan.MTPArchitecture)
 		}
 		return Plan{Mode: cfg.Mode}, nil
 	}

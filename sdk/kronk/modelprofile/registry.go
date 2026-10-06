@@ -14,6 +14,7 @@ var architectureAdapters = []architectureAdapter{
 	architectureModalityAdapter{},
 	visionAdapter{},
 	knownRecurrentAdapter{},
+	glm5NextAdapter{},
 	qwenHybridAdapter{},
 	sharedKVCompanionAdapter{},
 	ownKVCompanionAdapter{},
