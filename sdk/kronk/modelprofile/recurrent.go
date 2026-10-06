@@ -32,4 +32,5 @@ var recurrentArchitecturePrefixes = []string{
 	"granitemoehybrid",
 	"nemotron-h",
 	"nemotronh",
+	"nemotron_h",
 }

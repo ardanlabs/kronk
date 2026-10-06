@@ -13,6 +13,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/lfm"
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/llama"
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/mistral"
+	"github.com/ardanlabs/kronk/sdk/kronk/parsers/nemotron"
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/qwen"
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/toolcall"
 )
@@ -52,6 +53,7 @@ func registerDefaultParsers() {
 		model.RegisterParser(kimi.New)
 		model.RegisterParser(deepseek.New)
 		model.RegisterParser(llama.New)
+		model.RegisterParser(nemotron.New)
 		model.RegisterParser(qwen.New)
 		model.RegisterParser(toolcall.New)
 		model.RegisterParser(gemma.New)

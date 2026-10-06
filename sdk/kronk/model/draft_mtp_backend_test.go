@@ -17,6 +17,8 @@ func TestMTPBackendForPlan(t *testing.T) {
 		{"companion Qwen35", speculationPlan{MTPArchitecture: mtpArchitectureQwen35OwnKV, MTPArtifact: mtpArtifactCompanion}, "qwen35-own-kv", mtpArtifactCompanion, false, false, false, false},
 		{"embedded Qwen4Exp", speculationPlan{MTPArchitecture: mtpArchitectureQwen4ExpOwnKV, MTPArtifact: mtpArtifactEmbedded}, "qwen4exp-own-kv", mtpArtifactEmbedded, false, false, true, false},
 		{"companion Qwen4Exp", speculationPlan{MTPArchitecture: mtpArchitectureQwen4ExpOwnKV, MTPArtifact: mtpArtifactCompanion}, "qwen4exp-own-kv", mtpArtifactCompanion, false, false, true, false},
+		{"embedded Nemotron", speculationPlan{MTPArchitecture: mtpArchitectureNemotronOwnKV, MTPArtifact: mtpArtifactEmbedded}, "nemotron-own-kv", mtpArtifactEmbedded, false, false, false, false},
+		{"companion Nemotron rejected", speculationPlan{MTPArchitecture: mtpArchitectureNemotronOwnKV, MTPArtifact: mtpArtifactCompanion}, "", 0, false, false, false, true},
 		{"companion Gemma", speculationPlan{MTPArchitecture: mtpArchitectureGemmaSharedKV, MTPArtifact: mtpArtifactCompanion}, "gemma-shared-kv", 0, true, true, false, false},
 		{"embedded Gemma rejected", speculationPlan{MTPArchitecture: mtpArchitectureGemmaSharedKV, MTPArtifact: mtpArtifactEmbedded}, "", 0, false, false, false, true},
 		{"missing architecture rejected", speculationPlan{MTPArtifact: mtpArtifactCompanion}, "", 0, false, false, false, true},

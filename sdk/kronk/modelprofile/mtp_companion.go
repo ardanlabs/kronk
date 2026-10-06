@@ -24,7 +24,7 @@ func (ownKVCompanionAdapter) Name() string { return "own-kv-mtp-companion" }
 
 func (ownKVCompanionAdapter) Claims(architecture string) bool {
 	switch strings.ToLower(architecture) {
-	case "qwen35", "qwen35moe", "qwen4exp":
+	case "qwen35", "qwen35moe", "qwen4exp", "nemotron_h_moe":
 		return true
 	default:
 		return false
@@ -42,6 +42,8 @@ func (ownKVCompanionAdapter) Apply(_ metadata, profile *Profile) error {
 		profile.Speculation.MTPArchitecture = MTPArchitectureQwen35OwnKV
 	case "qwen4exp":
 		profile.Speculation.MTPArchitecture = MTPArchitectureQwen4ExpOwnKV
+	case "nemotron_h_moe":
+		profile.Speculation.MTPArchitecture = MTPArchitectureNemotronOwnKV
 	}
 	return nil
 }
