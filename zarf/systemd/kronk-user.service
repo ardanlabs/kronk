@@ -1,0 +1,74 @@
+# Kronk model server systemd user unit.
+#
+# Runs Kronk as your own user on your existing ~/.kronk, so models, libraries,
+# and keys installed with the CLI are shared with the service. The sandbox
+# exposes only ~/.kronk from your home directory.
+#
+# Install, upgrade, or remove with (see Chapter 8 of the manual):
+#
+#   make install-user-service
+#   make uninstall-user-service
+#
+# The service runs while you are logged in and stops when you log out. To run
+# Kronk at boot, use the system service (kronk.service) instead.
+#
+# Override systemd settings with `systemctl --user edit kronk`. Override Kronk
+# settings in ~/.config/kronk/kronk.env.
+
+[Unit]
+Description=Kronk model server (user)
+Documentation=https://www.kronkai.com/manual
+
+# Stop restarting after 5 failed starts in 5 minutes, so a permanent failure
+# (port in use, library download failing) ends in a failed state.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=exec
+
+# install.sh copies the binary here, because the sandbox hides the rest of
+# the home directory, including ~/go/bin. The location is off PATH so the
+# copy never shadows the kronk you upgrade with go install or brew.
+ExecStart=%h/.local/share/kronk/bin/kronk server start
+
+# Hide the home directory except ~/.kronk (read-write) and the binary
+# (read-only).
+Environment=KRONK_BASE_PATH=%h/.kronk
+EnvironmentFile=-%h/.config/kronk/kronk.env
+ProtectHome=tmpfs
+BindPaths=%h/.kronk
+BindReadOnlyPaths=%h/.local/share/kronk/bin/kronk
+
+# On SIGTERM Kronk drains HTTP requests and then unloads models, each bounded
+# by KRONK_WEB_SHUTDOWN_TIMEOUT (default 1m). Keep TimeoutStopSec at least
+# 2 x KRONK_WEB_SHUTDOWN_TIMEOUT + 30s.
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=150s
+UMask=0077
+
+# Hardening, matching kronk.service. A user service cannot change groups or
+# load kernel modules, so GPU access relies on your own device permissions.
+# GPU access requires /dev/nvidia*, /dev/kfd and /dev/dri, so PrivateDevices
+# is not used. CUDA, ROCm and Vulkan JIT compile kernels, so
+# MemoryDenyWriteExecute is not used.
+NoNewPrivileges=yes
+ProtectSystem=strict
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=default.target

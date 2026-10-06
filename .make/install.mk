@@ -141,3 +141,44 @@ install-docker:
 	docker pull $(LOKI) & \
 	docker pull $(ALLOY) & \
 	wait;
+
+# ==============================================================================
+# Linux systemd services
+
+# The kronk binary to copy into place for the service. Defaults to the one on
+# your PATH. Override with `make install-service KRONK_BIN=/path/to/kronk`.
+KRONK_BIN ?= $(shell command -v kronk)
+
+# Shell prelude that checks the targets run as you and KRONK_BIN is set, and
+# reports the binary being installed. Under sudo, PATH is reset, so kronk
+# would not be found.
+define kronk_service_bin
+if [ "$$(id -u)" = 0 ]; then \
+	echo "Run make without sudo; it asks for sudo when it needs it."; exit 1; \
+fi; \
+bin="$(KRONK_BIN)"; \
+if [ -z "$$bin" ]; then \
+	echo "kronk not found on PATH. Pass the binary to install, which will be copied:"; \
+	echo "  make $@ KRONK_BIN=/path/to/kronk"; exit 1; \
+fi; \
+echo "Using $$bin ($$("$$bin" --version 2>/dev/null))"
+endef
+
+# Install or upgrade the Linux systemd service (see Chapter 8).
+install-service:
+	@$(kronk_service_bin); \
+	sudo zarf/systemd/install.sh install "$$bin"
+
+# Remove the Linux systemd service, keeping models and configuration.
+uninstall-service:
+	sudo zarf/systemd/install.sh uninstall
+
+# Install or upgrade the Linux systemd user service, which runs as you on
+# ~/.kronk (see Chapter 8). No sudo required.
+install-user-service:
+	@$(kronk_service_bin); \
+	zarf/systemd/install.sh install-user "$$bin"
+
+# Remove the Linux systemd user service, keeping ~/.kronk.
+uninstall-user-service:
+	zarf/systemd/install.sh uninstall-user

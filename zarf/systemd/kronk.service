@@ -1,0 +1,92 @@
+# Kronk model server systemd unit.
+#
+# Install, upgrade, or remove with (see Chapter 8 of the manual):
+#
+#   make install-service
+#   make uninstall-service
+#
+# Override systemd settings with `systemctl edit kronk` rather than editing
+# this file. Override Kronk settings in /etc/kronk/kronk.env; a commented
+# reference lives next to this file in kronk.env.
+
+[Unit]
+Description=Kronk model server
+Documentation=https://www.kronkai.com/manual
+Wants=network-online.target
+After=network-online.target
+
+# Stop restarting after 5 failed starts in 5 minutes, so a permanent failure
+# (port in use, library download failing) ends in a failed state.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=exec
+
+# A fixed kronk user, rather than DynamicUser=yes, keeps a stable owner for
+# /var/lib/kronk, so admins can run `sudo -u kronk kronk ... --local` and copy
+# in large model files without systemd re-owning the tree.
+User=kronk
+Group=kronk
+
+# GPU access: /dev/dri/renderD* and /dev/kfd are group owned by video and
+# render. kronk.sysusers.conf creates both groups and adds kronk to them, so
+# they exist before the unit starts.
+SupplementaryGroups=video render
+
+# CUDA creates /dev/nvidia-uvm through the setuid nvidia-modprobe, which
+# NoNewPrivileges blocks. Create the device nodes up front with full
+# privileges (+), ignoring failure on hosts without NVIDIA (-).
+ExecStartPre=-+/usr/bin/nvidia-modprobe -u -c=0
+
+# The binary must live outside /home because of ProtectHome=yes.
+ExecStart=/usr/local/bin/kronk server start
+
+# State lives in /var/lib/kronk, created and owned by systemd. StateDirectory
+# alone makes it writable under ProtectSystem=strict; ReadWritePaths states
+# that it is the only writable location. /etc/kronk is created root-owned and
+# readable for optional configuration.
+StateDirectory=kronk
+StateDirectoryMode=0750
+ReadWritePaths=/var/lib/kronk
+ConfigurationDirectory=kronk
+Environment=KRONK_BASE_PATH=/var/lib/kronk
+EnvironmentFile=-/etc/kronk/kronk.env
+
+# On SIGTERM Kronk drains HTTP requests and then unloads models, each bounded
+# by KRONK_WEB_SHUTDOWN_TIMEOUT (default 1m). Keep TimeoutStopSec at least
+# 2 x KRONK_WEB_SHUTDOWN_TIMEOUT + 30s.
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=150s
+LimitNOFILE=65536
+UMask=0027
+
+# Hardening. GPU access requires /dev/nvidia*, /dev/kfd and /dev/dri, so
+# PrivateDevices and DevicePolicy are not used. CUDA, ROCm and Vulkan JIT
+# compile kernels, so MemoryDenyWriteExecute is not used. llama.cpp reads
+# /proc/meminfo and /proc/driver/nvidia, so ProcSubset is not used.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+
+# A system call outside this set fails with EPERM instead of killing the
+# server with SIGSYS, so an unexpected driver call is logged, not crash-looped.
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

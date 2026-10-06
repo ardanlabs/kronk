@@ -447,6 +447,10 @@ Server-side downloading is separately controlled by
 `KRONK_DOWNLOAD_ENABLED` and defaults to `false`. Local CLI commands using
 `--local` are not affected by this setting.
 
+To start the server at boot and restart it after a crash on Linux, install it
+as a systemd service; see
+[Chapter 8](https://www.kronkai.com/manual#88-running-as-a-system-service).
+
 See [Chapter 8](https://www.kronkai.com/manual#chapter-8-model-server) for server flags, model pooling,
 runtime paths, and deployment operations.
 

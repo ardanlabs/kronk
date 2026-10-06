@@ -1,0 +1,21 @@
+# Creates the NVIDIA device nodes at boot for kronk-user.service.
+#
+# CUDA normally creates /dev/nvidia-uvm on first use through the setuid
+# nvidia-modprobe helper, which the user service sandbox blocks, so the user
+# service would fall back to the CPU until another program created it.
+# install.sh installs this unit on NVIDIA hosts when installing the user
+# service. The system service (kronk.service) does not need it.
+
+[Unit]
+Description=Create NVIDIA device nodes for the Kronk user service
+Documentation=https://www.kronkai.com/manual
+# User services start after systemd-user-sessions.service.
+Before=systemd-user-sessions.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/nvidia-modprobe -u -c=0
+
+[Install]
+WantedBy=multi-user.target

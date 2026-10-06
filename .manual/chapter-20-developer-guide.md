@@ -11,7 +11,7 @@
 - [20.7 Server, BUI, and Generated Documentation](#207-server-bui-and-generated-documentation)
 - [20.8 Bucky Implementation Map](#208-bucky-implementation-map)
 - [20.9 Verification for LLM Agents](#209-verification-for-llm-agents)
-- [20.10 CI, Release, Containers, and Nix](#2010-ci-release-containers-and-nix)
+- [20.10 CI, Release, Containers, Nix, and systemd](#2010-ci-release-containers-nix-and-systemd)
 - [20.11 Change and Release Checklists](#2011-change-and-release-checklists)
 
 ---
@@ -88,6 +88,7 @@ change. Go commands require the environment described in [§20.9](#209-verificat
 | Release | `.github/workflows/release.yaml`, `.goreleaser.yaml`, `.release/`, version scripts | `sdk/kronk` version constant and tag convention | version scripts and GoReleaser snapshot/check when appropriate |
 | Container image | `.github/workflows/docker.yml`, `zarf/docker/` | entrypoint, native-library combinations, release tags | build the affected target/variant; workflow is authority for matrix and signing |
 | Nix development/package data | `zarf/nix/flake.nix` | Go module files and setup hook | evaluate/build the relevant Nix entry point; regenerate gomod2nix data when dependencies change |
+| Linux systemd services | `zarf/systemd/`, `install-service`/`install-user-service` and their uninstall targets in `.make/install.mk` | `kronk server start` flags and env vars, shutdown timeout, Chapter 8 §8.8 | `systemd-analyze verify` and `systemd-analyze security`; `make install-user-service` and `make install-service`, then start/stop on a GPU host |
 
 Tests close to an owner are usually more diagnostic than a repository-wide command.
 If a change crosses rows, verify each changed contract rather than choosing only the
@@ -906,7 +907,7 @@ alone does not prove the Go binary contains current assets.
 Always report what actually ran, including skipped integration prerequisites. Never
 claim CI parity from a narrower local test.
 
-### 20.10 CI, Release, Containers, and Nix
+### 20.10 CI, Release, Containers, Nix, and systemd
 
 #### 20.10.1 Linux CI
 
@@ -966,6 +967,51 @@ runs `gomod2nix import` from its shell hook and may dirty that generated materia
 Go module dependencies change, update the Nix dependency material with the repository's
 configured command and evaluate/build the relevant entry point. Keep Nix fixes in Nix
 owners rather than adding environment special cases to Go code.
+
+#### 20.10.5 Linux systemd Services
+
+`zarf/systemd/` owns the Linux service definitions described for users in
+[Chapter 8 §8.8](https://www.kronkai.com/manual#88-running-as-a-system-service):
+
+| File                       | Purpose                                                       |
+| -------------------------- | ------------------------------------------------------------- |
+| `kronk-user.service`       | User service: runs as the user on `~/.kronk`                  |
+| `kronk.service`            | System service: runs as the `kronk` user on `/var/lib/kronk`  |
+| `kronk.sysusers.conf`      | Creates the `kronk` user and adds it to `video`/`render`      |
+| `kronk-nvidia-uvm.service` | Creates NVIDIA device nodes at boot for the user service      |
+| `kronk.env`                | Reference of server settings; not installed by default        |
+| `install.sh`               | Installs, upgrades, or removes either service                 |
+
+Both units run `kronk server start` in the foreground. Do not add `--detach`:
+systemd tracks the process itself, and a forked server looks like a crash.
+
+`install.sh`, driven by the `install-service`/`install-user-service` targets in
+`.make/install.mk`, behaves as follows:
+
+- It copies the binary because the sandboxes hide `/home`, so neither service can
+  run a `go install` or Linuxbrew binary in place. The system copy goes to
+  `/usr/local/bin/kronk`. The user copy goes to `~/.local/share/kronk/bin/kronk`,
+  deliberately off `PATH`: in `~/.local/bin` it would shadow the user's upgraded
+  CLI and be picked up again as the install source, so upgrades would silently
+  reinstall the old binary.
+- Install is idempotent and is the upgrade path: it replaces the binary and unit and
+  restarts a running service. The make targets print the binary path and version
+  they install. They never build: with no `kronk` on `PATH` they stop and ask for
+  `KRONK_BIN`, and they refuse to run under `sudo`, which resets `PATH`.
+- It refuses to install one service while the other is enabled or running, since an
+  enabled but stopped service still starts at the next boot and both use the same
+  ports.
+- The user service runs only while the user is logged in; Kronk at boot is the
+  system service's job. A login without a desktop session, such as SSH, lacks the
+  temporary device ACL a desktop session grants, so the service would fall back to
+  the CPU on Debian and Ubuntu. When needed, `install-user` offers, behind a `[y/N]`
+  prompt that defaults to no, to use `sudo` once to add the user to the groups owning
+  `/dev/kfd` and `/dev/dri/renderD*`, and on NVIDIA hosts to install
+  `kronk-nvidia-uvm.service`. Supplementary groups stay effective inside the user
+  unit's unprivileged user namespace, where they display as `nogroup`.
+- System uninstall keeps `/usr/local/bin/kronk`, the `kronk` user, `/var/lib/kronk`,
+  and `/etc/kronk`. User uninstall keeps `~/.kronk`, the binary copy, the group
+  membership, and the NVIDIA helper unit.
 
 ### 20.11 Change and Release Checklists
 
