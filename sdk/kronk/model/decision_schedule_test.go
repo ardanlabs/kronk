@@ -68,7 +68,7 @@ func TestScheduleDecisionIsolatesJointWork(t *testing.T) {
 	regular := newDecisionJob(context.Background(), []decisionWork{decisionTestWork(2, 1)})
 	joint := newDecisionJob(context.Background(), []decisionWork{{
 		tokens:        make([]llama.Token, 4),
-		decisionOrder: make([]int32, 4),
+		decisionOrder: make([]llama.DecisionOrder, 4),
 		jointScores:   2,
 	}})
 	after := newDecisionJob(context.Background(), []decisionWork{decisionTestWork(2, 1)})

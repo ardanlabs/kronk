@@ -16,23 +16,12 @@ const (
 	clefOptionMark   = "<<clef:option>>"
 )
 
-const (
-	decisionOrderNone int32 = iota
-	decisionOrderQuestionNoul
-	decisionOrderQuestionChoice
-	decisionOrderQuestionScore
-	decisionOrderOption
-)
-
 type clefProtocol struct {
 	model    *Model
 	template systemOneTemplate
 }
 
 func newClefProtocol(m *Model) (*clefProtocol, error) {
-	if !batchExtDecisionOrderAvailable() {
-		return nil, fmt.Errorf("init-clef: loaded llama.cpp library does not expose decision-order batching")
-	}
 	tmpl, err := newSystemOneTemplate(m)
 	if err != nil {
 		return nil, fmt.Errorf("init-clef: %w", err)
@@ -93,11 +82,11 @@ func (p *clefProtocol) decide(ctx context.Context, req DecisionRequest) (Decisio
 	}
 
 	var tokens []llama.Token
-	var orders []int32
+	var orders []llama.DecisionOrder
 	questionIndex := 0
 	optionCount := 0
 	for piece := range strings.SplitSeq(prompt, clefSeparator) {
-		order := decisionOrderNone
+		order := llama.DecisionOrderNone
 		switch {
 		case strings.HasPrefix(piece, clefQuestionMark):
 			piece = strings.TrimPrefix(piece, clefQuestionMark)
@@ -108,12 +97,12 @@ func (p *clefProtocol) decide(ctx context.Context, req DecisionRequest) (Decisio
 			questionIndex++
 		case strings.HasPrefix(piece, clefOptionMark):
 			piece = strings.TrimPrefix(piece, clefOptionMark)
-			order = decisionOrderOption
+			order = llama.DecisionOrderOption
 			optionCount++
 		}
 
 		pieceTokens := llama.Tokenize(p.model.vocab, piece, false, true)
-		if order != decisionOrderNone && len(pieceTokens) == 0 {
+		if order != llama.DecisionOrderNone && len(pieceTokens) == 0 {
 			return DecisionResponse{}, fmt.Errorf("decision: instructions and options must not be empty")
 		}
 		tokens = append(tokens, pieceTokens...)
@@ -163,14 +152,14 @@ func (p *clefProtocol) decide(ctx context.Context, req DecisionRequest) (Decisio
 	}, nil
 }
 
-func clefQuestionOrder(questionType DecisionQuestionType) int32 {
+func clefQuestionOrder(questionType DecisionQuestionType) llama.DecisionOrder {
 	switch questionType {
 	case DecisionQuestionTypeNoul:
-		return decisionOrderQuestionNoul
+		return llama.DecisionOrderQuestionNoul
 	case DecisionQuestionTypeChoice:
-		return decisionOrderQuestionChoice
+		return llama.DecisionOrderQuestionChoice
 	case DecisionQuestionTypeScore:
-		return decisionOrderQuestionScore
+		return llama.DecisionOrderQuestionScore
 	default:
 		panic("validated decision question has unknown type")
 	}
