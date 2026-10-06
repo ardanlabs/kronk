@@ -1,6 +1,9 @@
 package modelprofile
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestResolveArchitectureParity(t *testing.T) {
 	tests := []struct {
@@ -232,6 +235,50 @@ func TestMTPEnabled(t *testing.T) {
 		if !MTPEnabled(architecture) {
 			t.Errorf("MTPEnabled(%q) = false, want true", architecture)
 		}
+	}
+	if MTPEnabled(MTPArchitectureGLM5Next) {
+		t.Fatal("MTPEnabled(GLM5Next) = true, want false")
+	}
+}
+
+func TestResolveGLM5Next(t *testing.T) {
+	headCountKV := "[" + strings.TrimSpace(strings.Repeat("0 ", 34)+strings.Repeat("1 ", 12)) + "]"
+	profile := Resolve(map[string]string{
+		"general.architecture":              "glm5-next",
+		"glm5-next.block_count":             "46",
+		"glm5-next.embedding_length":        "6144",
+		"glm5-next.expert_count":            "256",
+		"glm5-next.nextn_predict_layers":    "1",
+		"glm5-next.attention.head_count":    "64",
+		"glm5-next.attention.head_count_kv": headCountKV,
+		"glm5-next.attention.key_length":    "512",
+		"glm5-next.attention.value_length":  "512",
+		"glm5-next.ssm.conv_kernel":         "4",
+		"glm5-next.kda.head_dim":            "128",
+	})
+
+	if profile.Class != ClassHybrid || profile.MemorySemantics != MemoryRecurrent || !profile.MoE.IsMoE {
+		t.Fatalf("identity = class %q memory %q moe %t, want hybrid/recurrent/true",
+			profile.Class, profile.MemorySemantics, profile.MoE.IsMoE)
+	}
+	if profile.Attention.RecurrentLayers != 34 || profile.Attention.FullAttentionLayers != 11 {
+		t.Fatalf("layers = recurrent %d full %d, want 34/11",
+			profile.Attention.RecurrentLayers, profile.Attention.FullAttentionLayers)
+	}
+	if len(profile.Attention.RecurrentPattern) != 46 || profile.Attention.RecurrentPattern[45] {
+		t.Fatalf("recurrent pattern does not exclude the appended NextN layer: %v", profile.Attention.RecurrentPattern)
+	}
+	if profile.Attention.FullHeadCountKV != 1 {
+		t.Errorf("FullHeadCountKV = %d, want 1", profile.Attention.FullHeadCountKV)
+	}
+	if profile.Attention.RecurrentStateBytes != 4_489_216 {
+		t.Errorf("RecurrentStateBytes = %d, want 4489216", profile.Attention.RecurrentStateBytes)
+	}
+	if profile.Speculation.MTPArchitecture != MTPArchitectureGLM5Next {
+		t.Errorf("MTPArchitecture = %q, want %q", profile.Speculation.MTPArchitecture, MTPArchitectureGLM5Next)
+	}
+	if err := profile.ValidateForVRAM(); err != nil {
+		t.Fatalf("ValidateForVRAM() error = %v", err)
 	}
 }
 

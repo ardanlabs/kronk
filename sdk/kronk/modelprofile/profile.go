@@ -52,6 +52,7 @@ const (
 	MTPArchitectureQwen35OwnKV   MTPArchitecture = "qwen35-own-kv"
 	MTPArchitectureQwen4ExpOwnKV MTPArchitecture = "qwen4exp-own-kv"
 	MTPArchitectureGemmaSharedKV MTPArchitecture = "gemma-shared-kv"
+	MTPArchitectureGLM5Next      MTPArchitecture = "glm5-next"
 )
 
 // MTPEnabled reports whether Kronk enables an identified MTP runtime.

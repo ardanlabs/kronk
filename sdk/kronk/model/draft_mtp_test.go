@@ -2,9 +2,11 @@ package model
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
@@ -102,6 +104,33 @@ func TestQwen4ExpCompanionMTPResourceEstimates(t *testing.T) {
 	}
 }
 
+func TestResolveSpeculationPlanGLM5Next(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "glm5-next.gguf")
+	writeTestGGUF(t, file, map[string]any{
+		"general.architecture":           "glm5-next",
+		"glm5-next.nextn_predict_layers": uint32(1),
+	})
+
+	plan, err := resolveSpeculationPlan(context.Background(), nil, Config{ModelFiles: []string{file}})
+	if err != nil {
+		t.Fatalf("resolveSpeculationPlan(auto) error = %v", err)
+	}
+	if plan.Source != speculationSourceNone || plan.LoadMTP {
+		t.Fatalf("resolveSpeculationPlan(auto) = %+v, want target-only plan", plan)
+	}
+	if mtpFilesEnabled([]string{file}) {
+		t.Fatal("mtpFilesEnabled = true, want false for GLM5-Next")
+	}
+
+	_, err = resolveSpeculationPlan(context.Background(), nil, Config{
+		ModelFiles:  []string{file},
+		Speculation: SpeculationMTP,
+	})
+	if err == nil || !strings.Contains(err.Error(), "MTP architecture glm5-next is unsupported") {
+		t.Fatalf("resolveSpeculationPlan(mtp) error = %v, want unsupported glm5-next error", err)
+	}
+}
+
 func TestMetadataHasMTP(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -115,6 +144,7 @@ func TestMetadataHasMTP(t *testing.T) {
 		{"unsupported architecture", map[string]string{"general.architecture": "cohere2moe", "cohere2moe.nextn_predict_layers": " 2 "}, false},
 		{"matching text within unrelated key", map[string]string{"general.architecture": "vendor", "vendor.optional_nextn_predict_layers.count": "3"}, false},
 		{"qwen4exp architecture", map[string]string{"general.architecture": "qwen4exp", "qwen4exp.nextn_predict_layers": "1"}, true},
+		{"glm5-next unsupported runtime", map[string]string{"general.architecture": "glm5-next", "glm5-next.nextn_predict_layers": "1"}, true},
 	}
 
 	for _, tt := range tests {

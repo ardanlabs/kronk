@@ -20,10 +20,11 @@ import (
 // This matches llama.cpp's MTP default.
 const defMTPNDraft = 3
 
-// modelFilesMTPArchitecture reports the supported MTP runtime contract declared
-// by the first GGUF shard. GGUF metadata lives in the first shard, so no other
-// file is read. This check must run before llama loads the model: llama.cpp
-// skips gated MTP tensors unless ModelParams.LoadMTP is enabled.
+// modelFilesMTPArchitecture reports the MTP runtime contract declared by the
+// first GGUF shard, including recognized contracts that Kronk does not enable.
+// GGUF metadata lives in the first shard, so no other file is read. This check
+// must run before llama loads the model: llama.cpp skips gated MTP tensors
+// unless ModelParams.LoadMTP is enabled.
 func modelFilesMTPArchitecture(modelFiles []string) (modelprofile.MTPArchitecture, error) {
 	if len(modelFiles) == 0 {
 		return modelprofile.MTPArchitectureNone, fmt.Errorf("no model files provided")

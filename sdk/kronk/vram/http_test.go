@@ -1,6 +1,9 @@
 package vram
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestCalculateSWAFull(t *testing.T) {
 	input := Input{
@@ -150,6 +153,45 @@ func TestBuildFromMetadataQwen35Hybrid(t *testing.T) {
 	}
 	if got.Input.ComputeContexts != 2 {
 		t.Fatalf("ComputeContexts: got %d, want 2", got.Input.ComputeContexts)
+	}
+}
+
+func TestBuildFromMetadataGLM5Next(t *testing.T) {
+	headCountKV := "[" + strings.TrimSpace(strings.Repeat("0 ", 34)+strings.Repeat("1 ", 12)) + "]"
+	metadata := map[string]string{
+		"general.architecture":              "glm5-next",
+		"glm5-next.block_count":             "46",
+		"glm5-next.embedding_length":        "6144",
+		"glm5-next.expert_count":            "256",
+		"glm5-next.nextn_predict_layers":    "1",
+		"glm5-next.attention.head_count":    "64",
+		"glm5-next.attention.head_count_kv": headCountKV,
+		"glm5-next.attention.key_length":    "512",
+		"glm5-next.attention.value_length":  "512",
+		"glm5-next.ssm.conv_kernel":         "4",
+		"glm5-next.kda.head_dim":            "128",
+	}
+
+	got, err := buildFromMetadata(metadata, nil, 1000, Config{
+		ContextWindow:        256,
+		BytesPerElement:      2,
+		Slots:                2,
+		RecurrentStateCopies: 3,
+	})
+	if err != nil {
+		t.Fatalf("buildFromMetadata: %v", err)
+	}
+
+	const recurrentStateBytes int64 = 4 * (3*(4-1)*(64*128) + 128*128*64)
+	wantRecurrent := int64(34) * recurrentStateBytes * 2 * 3
+	wantAttention := int64(11) * 512 * (512 + 512) * 2
+	want := wantRecurrent + wantAttention
+	if got.SlotMemory != want {
+		t.Fatalf("SlotMemory = %d, want %d", got.SlotMemory, want)
+	}
+	if got.Input.RecurrentStateBytes != recurrentStateBytes || got.Input.RecurrentStateCopies != 3 {
+		t.Fatalf("recurrent state = bytes %d copies %d, want %d/3",
+			got.Input.RecurrentStateBytes, got.Input.RecurrentStateCopies, recurrentStateBytes)
 	}
 }
 

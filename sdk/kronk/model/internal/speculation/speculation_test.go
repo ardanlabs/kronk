@@ -1,6 +1,9 @@
 package speculation
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestResolve(t *testing.T) {
 	tests := []struct {
@@ -50,5 +53,27 @@ func TestPlanRowsPerSequence(t *testing.T) {
 	}
 	if got := (Plan{Source: SourceClassic, NDraft: 5, Available: true}).RowsPerSequence(); got != 6 {
 		t.Errorf("classic rows = %d, want 6", got)
+	}
+}
+
+func TestResolveGLM5Next(t *testing.T) {
+	cfg := Config{
+		Mode:                    ModeAuto,
+		EmbeddedMTPArchitecture: MTPArchitectureGLM5Next,
+		MTPAvailable:            true,
+	}
+
+	plan, err := Resolve(cfg)
+	if err != nil {
+		t.Fatalf("Resolve(auto) error = %v", err)
+	}
+	if plan.Source != SourceNone || plan.LoadMTP {
+		t.Fatalf("Resolve(auto) = %+v, want target-only plan", plan)
+	}
+
+	cfg.Mode = ModeMTP
+	_, err = Resolve(cfg)
+	if err == nil || !strings.Contains(err.Error(), "MTP architecture glm5-next is unsupported") {
+		t.Fatalf("Resolve(mtp) error = %v, want unsupported glm5-next error", err)
 	}
 }

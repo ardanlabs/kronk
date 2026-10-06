@@ -13,6 +13,7 @@ func TestSupportsTensorParallel(t *testing.T) {
 		{"supported MoE architecture", "qwen3moe", true},
 		{"unsupported recurrent architecture", "mamba", false},
 		{"unsupported MoE architecture", "deepseek2", false},
+		{"unsupported GLM5 Next architecture", "glm5-next", false},
 		{"unsupported experimental architecture", "qwen4exp", false},
 	}
 
