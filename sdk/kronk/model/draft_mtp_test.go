@@ -144,6 +144,7 @@ func TestMetadataHasMTP(t *testing.T) {
 		{"unsupported architecture", map[string]string{"general.architecture": "cohere2moe", "cohere2moe.nextn_predict_layers": " 2 "}, false},
 		{"matching text within unrelated key", map[string]string{"general.architecture": "vendor", "vendor.optional_nextn_predict_layers.count": "3"}, false},
 		{"qwen4exp architecture", map[string]string{"general.architecture": "qwen4exp", "qwen4exp.nextn_predict_layers": "1"}, true},
+		{"Nemotron architecture", map[string]string{"general.architecture": "nemotron_h_moe", "nemotron_h_moe.nextn_predict_layers": "1"}, true},
 		{"glm5-next unsupported runtime", map[string]string{"general.architecture": "glm5-next", "glm5-next.nextn_predict_layers": "1"}, true},
 	}
 

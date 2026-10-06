@@ -24,6 +24,7 @@ func TestResolve(t *testing.T) {
 		{"auto does not load unavailable embedded MTP", Config{Mode: ModeAuto, EmbeddedMTPArchitecture: MTPArchitectureQwen35OwnKV, MTPArchitectureEnabled: true}, SourceMTP, MTPArchitectureQwen35OwnKV, MTPArtifactEmbedded, false, false},
 		{"auto selects embedded qwen4exp MTP", Config{Mode: ModeAuto, EmbeddedMTPArchitecture: MTPArchitectureQwen4ExpOwnKV, MTPNDraft: 3, MTPAvailable: true, MTPArchitectureEnabled: true}, SourceMTP, MTPArchitectureQwen4ExpOwnKV, MTPArtifactEmbedded, true, false},
 		{"explicit qwen4exp selects companion MTP", Config{Mode: ModeMTP, CompanionMTPArchitecture: MTPArchitectureQwen4ExpOwnKV, MTPNDraft: 3, MTPAvailable: true, MTPArchitectureEnabled: true}, SourceMTP, MTPArchitectureQwen4ExpOwnKV, MTPArtifactCompanion, false, false},
+		{"auto selects embedded Nemotron MTP", Config{Mode: ModeAuto, EmbeddedMTPArchitecture: MTPArchitectureNemotronOwnKV, MTPNDraft: 3, MTPAvailable: true, MTPArchitectureEnabled: true}, SourceMTP, MTPArchitectureNemotronOwnKV, MTPArtifactEmbedded, true, false},
 		{"classic requires model", Config{Mode: ModeClassic}, SourceNone, MTPArchitectureNone, MTPArtifactNone, false, true},
 		{"MTP rejects classic model", Config{Mode: ModeMTP, ClassicConfigured: true}, SourceNone, MTPArchitectureNone, MTPArtifactNone, false, true},
 		{"MTP requires source", Config{Mode: ModeMTP, MTPAvailable: true}, SourceNone, MTPArchitectureNone, MTPArtifactNone, false, true},

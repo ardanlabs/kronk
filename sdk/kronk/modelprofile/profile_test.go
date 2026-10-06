@@ -93,6 +93,32 @@ func TestResolveArchitectureParity(t *testing.T) {
 			fullLayers: 12,
 		},
 		{
+			name: "Nemotron 3 Super hybrid with embedded MTP",
+			metadata: map[string]string{
+				"general.architecture":                   "nemotron_h_moe",
+				"nemotron_h_moe.block_count":             "88",
+				"nemotron_h_moe.nextn_predict_layers":    "1",
+				"nemotron_h_moe.expert_count":            "128",
+				"nemotron_h_moe.expert_used_count":       "4",
+				"nemotron_h_moe.attention.head_count":    "32",
+				"nemotron_h_moe.attention.head_count_kv": "8",
+				"nemotron_h_moe.attention.key_length":    "128",
+				"nemotron_h_moe.attention.value_length":  "128",
+				"nemotron_h_moe.ssm.state_size":          "128",
+				"nemotron_h_moe.ssm.conv_kernel":         "4",
+				"nemotron_h_moe.ssm.inner_size":          "8192",
+				"nemotron_h_moe.ssm.group_count":         "8",
+			},
+			class:      ClassHybrid,
+			role:       RoleLanguage,
+			purpose:    PurposeGeneration,
+			memory:     MemoryRecurrent,
+			mtpLayers:  1,
+			mtpArch:    MTPArchitectureNemotronOwnKV,
+			ownKV:      true,
+			fullLayers: 88,
+		},
+		{
 			name: "known recurrent family",
 			metadata: map[string]string{
 				"general.architecture":  "qwen3next",
@@ -230,6 +256,7 @@ func TestMTPEnabled(t *testing.T) {
 	for _, architecture := range []MTPArchitecture{
 		MTPArchitectureQwen35OwnKV,
 		MTPArchitectureQwen4ExpOwnKV,
+		MTPArchitectureNemotronOwnKV,
 		MTPArchitectureGemmaSharedKV,
 	} {
 		if !MTPEnabled(architecture) {

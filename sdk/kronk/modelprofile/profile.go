@@ -51,6 +51,7 @@ const (
 	MTPArchitectureNone          MTPArchitecture = ""
 	MTPArchitectureQwen35OwnKV   MTPArchitecture = "qwen35-own-kv"
 	MTPArchitectureQwen4ExpOwnKV MTPArchitecture = "qwen4exp-own-kv"
+	MTPArchitectureNemotronOwnKV MTPArchitecture = "nemotron-own-kv"
 	MTPArchitectureGemmaSharedKV MTPArchitecture = "gemma-shared-kv"
 	MTPArchitectureGLM5Next      MTPArchitecture = "glm5-next"
 )
@@ -58,7 +59,7 @@ const (
 // MTPEnabled reports whether Kronk enables an identified MTP runtime.
 func MTPEnabled(architecture MTPArchitecture) bool {
 	switch architecture {
-	case MTPArchitectureQwen35OwnKV, MTPArchitectureQwen4ExpOwnKV, MTPArchitectureGemmaSharedKV:
+	case MTPArchitectureQwen35OwnKV, MTPArchitectureQwen4ExpOwnKV, MTPArchitectureNemotronOwnKV, MTPArchitectureGemmaSharedKV:
 		return true
 	default:
 		return false

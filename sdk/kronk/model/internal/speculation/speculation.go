@@ -48,6 +48,7 @@ const (
 	MTPArchitectureNone MTPArchitecture = iota
 	MTPArchitectureQwen35OwnKV
 	MTPArchitectureQwen4ExpOwnKV
+	MTPArchitectureNemotronOwnKV
 	MTPArchitectureGemmaSharedKV
 	MTPArchitectureGLM5Next
 )
@@ -58,6 +59,8 @@ func (a MTPArchitecture) String() string {
 		return "qwen35-own-kv"
 	case MTPArchitectureQwen4ExpOwnKV:
 		return "qwen4exp-own-kv"
+	case MTPArchitectureNemotronOwnKV:
+		return "nemotron-own-kv"
 	case MTPArchitectureGemmaSharedKV:
 		return "gemma-shared-kv"
 	case MTPArchitectureGLM5Next:

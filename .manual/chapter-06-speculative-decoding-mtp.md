@@ -59,7 +59,7 @@ Kronk can load a drafter from four sources:
 | **Classic separate draft** | A `draft-model` configuration names another compatible GGUF. | Requires `nseq-max: 1` |
 | **Shared-KV companion MTP assistant** | A model-specific assistant GGUF, currently used by Gemma4 models, is discovered with the downloaded target. | Supports multiple slots |
 | **Own-KV companion MTP head** | A supported MTP GGUF under the repository's `MTP/` folder, currently used by Qwen3.8-27B, is downloaded with the target. | Supports multiple slots |
-| **Embedded MTP head** | The target GGUF contains supported `nextn_predict_layers` metadata, currently used by Qwen3.5 and Qwen3.6 models. | Supports multiple slots |
+| **Embedded MTP head** | The target GGUF contains supported `nextn_predict_layers` metadata, currently used by Qwen3.5, Qwen3.6, and NVIDIA Nemotron 3 Super models. | Supports multiple slots |
 
 Kronk checks these sources in that order. A `draft-model` block containing a
 `model-id` explicitly selects the classic separate draft and takes precedence
@@ -137,6 +137,13 @@ upstream PR #29799 and the Qwen4Exp QSA/indexer correctness fixes from PR
 #29819. In `auto` mode Kronk loads a compatible Qwen4Exp companion when one is
 available, otherwise it uses a compatible embedded head. The `disabled`
 speculation mode continues to run the target without MTP.
+
+NVIDIA Nemotron 3 Super uses the embedded own-KV MTP runtime. Kronk recognizes
+the `nemotron_h_moe` architecture, preserves recurrent-state rollback for its
+hybrid Mamba-attention target, and uses the model's Qwen3-Coder-compatible tool
+protocol. Separate Nemotron MTPv2 companion files and Nemotron Puzzle MTP are
+not supported; configure `speculation: disabled` to benchmark target-only
+generation with the same embedded model.
 
 MTP availability is a property of the downloaded files and the loaded
 llama.cpp library. Naming a model “MTP” or adding an `ndraft` override cannot

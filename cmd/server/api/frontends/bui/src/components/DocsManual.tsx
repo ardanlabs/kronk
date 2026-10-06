@@ -1458,7 +1458,7 @@ krn, err := kronk.New(
               </tr>
               <tr>
                 <td><strong>Embedded MTP head</strong></td>
-                <td>The target GGUF contains supported <code>nextn_predict_layers</code> metadata, currently used by Qwen3.5 and Qwen3.6 models.</td>
+                <td>The target GGUF contains supported <code>nextn_predict_layers</code> metadata, currently used by Qwen3.5, Qwen3.6, and NVIDIA Nemotron 3 Super models.</td>
                 <td>Supports multiple slots</td>
               </tr>
             </tbody>
@@ -1485,6 +1485,7 @@ krn, err := kronk.New(
           <p>An embedded head requires no companion file. A companion MTP head is an additional model-specific file, but Kronk's catalog and download flow can discover and associate files at the repository root or under <code>MTP/</code> with the target automatically. A version 2 catalog entry can instead provide <code>mtp_url</code> when a compatible companion is hosted in another repository. It is not configured as a classic <code>draft-model</code>.</p>
           <p>Qwen3.8 Flash Next's <code>qwen4exp</code> MTP runtime supports embedded heads and self-contained companion GGUFs through the own-KV runtime. Existing shared-tensor sidecars are not compatible; the companion must contain its own token embeddings and output tensors.</p>
           <p>The pinned v0.6.0 bundle contains the recurrent-memory assertion fix from upstream PR #29799 and the Qwen4Exp QSA/indexer correctness fixes from PR #29819. In <code>auto</code> mode Kronk loads a compatible Qwen4Exp companion when one is available, otherwise it uses a compatible embedded head. The <code>disabled</code> speculation mode continues to run the target without MTP.</p>
+          <p>NVIDIA Nemotron 3 Super uses the embedded own-KV MTP runtime. Kronk recognizes the <code>nemotron_h_moe</code> architecture, preserves recurrent-state rollback for its hybrid Mamba-attention target, and uses the model's Qwen3-Coder-compatible tool protocol. Separate Nemotron MTPv2 companion files and Nemotron Puzzle MTP are not supported; configure <code>speculation: disabled</code> to benchmark target-only generation with the same embedded model.</p>
           <p>MTP availability is a property of the downloaded files and the loaded llama.cpp library. Naming a model “MTP” or adding an <code>ndraft</code> override cannot create an MTP head that is not present.</p>
           <h3 id="64-draft-size-and-classic-adaptive-throttling">6.4 Draft Size and Classic Adaptive Throttling</h3>
           <p><code>ndraft</code> is the maximum number of candidates the drafter attempts in one round. Larger values can save more target passes when acceptance remains high, but they also increase wasted draft and verification work when proposals are rejected.</p>

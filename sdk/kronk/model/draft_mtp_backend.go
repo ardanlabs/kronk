@@ -138,6 +138,10 @@ func mtpBackendForPlan(plan speculationPlan) (mtpBackend, error) {
 		case mtpArtifactEmbedded, mtpArtifactCompanion:
 			return ownKVMTPBackend{architecture: "qwen4exp", artifact: plan.MTPArtifact, wideEmbedding: true}, nil
 		}
+	case mtpArchitectureNemotronOwnKV:
+		if plan.MTPArtifact == mtpArtifactEmbedded {
+			return ownKVMTPBackend{architecture: "nemotron", artifact: plan.MTPArtifact}, nil
+		}
 	case mtpArchitectureGemmaSharedKV:
 		if plan.MTPArtifact == mtpArtifactCompanion {
 			return gemmaSharedKVBackend{}, nil

@@ -26,8 +26,8 @@ const (
 
 	mtpArchitectureQwen35OwnKV   = internalspec.MTPArchitectureQwen35OwnKV
 	mtpArchitectureQwen4ExpOwnKV = internalspec.MTPArchitectureQwen4ExpOwnKV
+	mtpArchitectureNemotronOwnKV = internalspec.MTPArchitectureNemotronOwnKV
 	mtpArchitectureGemmaSharedKV = internalspec.MTPArchitectureGemmaSharedKV
-	mtpArchitectureGLM5Next      = internalspec.MTPArchitectureGLM5Next
 
 	mtpArtifactEmbedded  = internalspec.MTPArtifactEmbedded
 	mtpArtifactCompanion = internalspec.MTPArtifactCompanion
@@ -77,6 +77,8 @@ func internalMTPArchitecture(architecture modelprofile.MTPArchitecture) internal
 		return internalspec.MTPArchitectureQwen35OwnKV
 	case modelprofile.MTPArchitectureQwen4ExpOwnKV:
 		return internalspec.MTPArchitectureQwen4ExpOwnKV
+	case modelprofile.MTPArchitectureNemotronOwnKV:
+		return internalspec.MTPArchitectureNemotronOwnKV
 	case modelprofile.MTPArchitectureGemmaSharedKV:
 		return internalspec.MTPArchitectureGemmaSharedKV
 	case modelprofile.MTPArchitectureGLM5Next:
