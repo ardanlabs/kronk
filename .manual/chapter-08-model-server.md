@@ -507,12 +507,12 @@ pprof and metrics without authentication, and Docker's published ports are
 not blocked by host firewalls such as ufw.
 
 Do not put server settings in `.env`. Compose uses `.env` only for the
-variables that `compose.yaml` refers to, such as those in the table above. Any
+variables that the Compose files refer to, such as those in the table above. Any
 other variable in `.env` never reaches the container, and Compose gives no
 warning. For example, `KRONK_AUTHORIZATION_MODE=full-protected` in `.env`
 leaves the server unprotected. Pass server settings, such as the
 authentication settings above, through a `compose.override.yaml` next to
-`compose.yaml`:
+the Compose files:
 
 ```yaml
 services:
@@ -529,24 +529,27 @@ the image (the separator line makes it work on Windows too):
 
 ```text
 COMPOSE_PATH_SEPARATOR=:
-COMPOSE_FILE=compose.yaml:compose.vulkan.yaml:compose.override.yaml
+COMPOSE_FILE=compose.vulkan.yaml:compose.override.yaml
 KRONK_IMAGE_VERSION=vX.Y.Z
 ```
 
-In a repository checkout, `make kronk-up KRONK_GPU=vulkan` (or `cuda`, `rocm`)
-starts the same from the repository root and adds the override when it exists.
-Add `KRONK_ALL=1` for the `all` image.
+In a repository checkout, `make kronk-up KRONK_GPU=vulkan` (or `cuda`, `rocm`,
+`all`) starts the same from the repository root and adds the override when it
+exists.
 
-GPU overrides need these host components:
+The GPU files need these host components:
 
-| Override | Host requirements |
+| File | Host requirements |
 | -------- | ----------------- |
 | `compose.cuda.yaml` | NVIDIA driver and [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) |
 | `compose.rocm.yaml` | `linux/amd64`, ROCm-capable kernel driver, `/dev/kfd` and `/dev/dri` |
 | `compose.vulkan.yaml` | Mesa Vulkan drivers, `/dev/dri` |
 
-- Check the selected backend with
-  `docker compose logs kronk | grep "selected llama.cpp runtime"`.
+- Check the backend in use with
+  `docker compose logs kronk | grep "installing/updating libraries"`; the
+  `processor` field shows it. `compose.yaml` sets `KRONK_PROCESSOR=cpu`,
+  because the image's software Vulkan driver would otherwise make detection
+  pick `vulkan` without a GPU.
 - NVIDIA: to use specific cards, replace `count: all` in `compose.cuda.yaml`
   with `device_ids: ["0"]` (indices or UUIDs from `nvidia-smi -L`).
 - ROCm: `HIP_VISIBLE_DEVICES` and `HSA_OVERRIDE_GFX_VERSION` are passed
@@ -556,10 +559,11 @@ GPU overrides need these host components:
   and faster.
 - Vulkan: `VK_LOADER_DRIVERS_SELECT` and `MESA_VK_DEVICE_SELECT` are passed
   through to pick one GPU.
-- Each file pulls the image for its own backend (`-cpu`, `-cuda`, `-rocm`,
-  `-vulkan`). For the `all` image, list `compose.all.yaml` after the GPU
-  override, which still attaches the devices.
-- macOS is CPU only; Windows uses the CUDA override with Docker Desktop and
+- Each file is self-contained and pulls the image for its own backend
+  (`-cpu`, `-cuda`, `-rocm`, `-vulkan`, `-all`). `compose.all.yaml` attaches
+  no GPU; to run the `all` image on a GPU, change the image tag in the
+  matching GPU file to `-all`.
+- macOS is CPU only; Windows uses `compose.cuda.yaml` with Docker Desktop and
   WSL2. Startup errors are covered in
   [17.2 Libraries and Devices](https://www.kronkai.com/manual#172-libraries-and-devices).
 

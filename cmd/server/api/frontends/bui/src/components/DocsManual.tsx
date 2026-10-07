@@ -277,19 +277,18 @@ kronk --help`}</code></pre>
   -p 127.0.0.1:11435:11435 \\
   -v kronk-data:/kronk \\
   ghcr.io/ardanlabs/kronk:latest-cuda`}</code></pre>
-          <p>AMD ROCm and Vulkan require host-specific device access. Use the Compose overrides below, or see the tested <code>docker run</code> command lines and the compatibility matrix in the header of the <a href="https://github.com/ardanlabs/kronk/blob/main/zarf/docker/kronk/Dockerfile"><code>Dockerfile</code></a>.</p>
+          <p>AMD ROCm and Vulkan require host-specific device access. Use the Compose files below, or see the tested <code>docker run</code> command lines and the compatibility matrix in the header of the <a href="https://github.com/ardanlabs/kronk/blob/main/zarf/docker/kronk/Dockerfile"><code>Dockerfile</code></a>.</p>
           <p><strong>Docker Compose</strong></p>
           <p>The repository includes Compose files in <a href="https://github.com/ardanlabs/kronk/tree/main/zarf/docker/kronk"><code>zarf/docker/kronk</code></a> that run the same local CPU container as above, in the same <code>kronk-data</code> volume. Remove a <code>kronk</code> container started with <code>docker run</code> first; its models are kept:</p>
           <pre className="code-block"><code className="language-shell">{`docker rm -f kronk
 git clone --depth 1 https://github.com/ardanlabs/kronk.git
 cd kronk/zarf/docker/kronk
 docker compose up -d`}</code></pre>
-          <p>For a GPU, add the matching override file:</p>
-          <pre className="code-block"><code className="language-shell">{`docker compose -f compose.yaml -f compose.cuda.yaml up -d     # NVIDIA, needs the NVIDIA Container Toolkit
-docker compose -f compose.yaml -f compose.rocm.yaml up -d     # AMD with ROCm, needs /dev/kfd and /dev/dri
-docker compose -f compose.yaml -f compose.vulkan.yaml up -d   # AMD or Intel with Vulkan, needs /dev/dri`}</code></pre>
-          <p>For the <code>latest-all</code> image, add <code>compose.all.yaml</code> last. It only swaps the image, so keep the GPU override:</p>
-          <pre className="code-block"><code className="language-shell">{`docker compose -f compose.yaml -f compose.cuda.yaml -f compose.all.yaml up -d`}</code></pre>
+          <p>Each backend has its own self-contained file. For a GPU, use the matching one instead of <code>compose.yaml</code>:</p>
+          <pre className="code-block"><code className="language-shell">{`docker compose -f compose.cuda.yaml up -d     # NVIDIA, needs the NVIDIA Container Toolkit
+docker compose -f compose.rocm.yaml up -d     # AMD with ROCm, needs /dev/kfd and /dev/dri
+docker compose -f compose.vulkan.yaml up -d   # AMD or Intel with Vulkan, needs /dev/dri
+docker compose -f compose.all.yaml up -d      # latest-all image, no GPU attached`}</code></pre>
           <p>Settings, server options such as authentication, GPU details, and upgrades are covered in <a href="https://www.kronkai.com/manual#87-container-operations">8.7 Container Operations</a>.</p>
           <p>The container runs as UID/GID <code>10001</code>. A named volume needs no preparation. If you use a host directory such as <code>/srv/kronk</code>, make it writable by that user before starting the container:</p>
           <pre className="code-block"><code className="language-shell">{`sudo mkdir -p /srv/kronk
@@ -2112,7 +2111,7 @@ done`}</code></pre>
             </tbody>
           </table>
           <p>Only set <code>KRONK_BIND_ADDR=0.0.0.0</code> on a trusted network: port <code>11445</code> serves pprof and metrics without authentication, and Docker's published ports are not blocked by host firewalls such as ufw.</p>
-          <p>Do not put server settings in <code>.env</code>. Compose uses <code>.env</code> only for the variables that <code>compose.yaml</code> refers to, such as those in the table above. Any other variable in <code>.env</code> never reaches the container, and Compose gives no warning. For example, <code>KRONK_AUTHORIZATION_MODE=full-protected</code> in <code>.env</code> leaves the server unprotected. Pass server settings, such as the authentication settings above, through a <code>compose.override.yaml</code> next to <code>compose.yaml</code>:</p>
+          <p>Do not put server settings in <code>.env</code>. Compose uses <code>.env</code> only for the variables that the Compose files refer to, such as those in the table above. Any other variable in <code>.env</code> never reaches the container, and Compose gives no warning. For example, <code>KRONK_AUTHORIZATION_MODE=full-protected</code> in <code>.env</code> leaves the server unprotected. Pass server settings, such as the authentication settings above, through a <code>compose.override.yaml</code> next to the Compose files:</p>
           <pre className="code-block"><code className="language-yaml">{`services:
   kronk:
     environment:
@@ -2120,14 +2119,14 @@ done`}</code></pre>
       - KRONK_WEB_ADMIN_ENABLED=false`}</code></pre>
           <p>A plain <code>docker compose up -d</code> loads <code>compose.override.yaml</code> automatically. With <code>-f</code> or <code>COMPOSE_FILE</code>, list it last. To avoid repeating <code>-f</code>, create a <code>.env</code> such as this one, which selects Vulkan, loads the override, and pins the image (the separator line makes it work on Windows too):</p>
           <pre className="code-block"><code className="language-text">{`COMPOSE_PATH_SEPARATOR=:
-COMPOSE_FILE=compose.yaml:compose.vulkan.yaml:compose.override.yaml
+COMPOSE_FILE=compose.vulkan.yaml:compose.override.yaml
 KRONK_IMAGE_VERSION=vX.Y.Z`}</code></pre>
-          <p>In a repository checkout, <code>make kronk-up KRONK_GPU=vulkan</code> (or <code>cuda</code>, <code>rocm</code>) starts the same from the repository root and adds the override when it exists. Add <code>KRONK_ALL=1</code> for the <code>all</code> image.</p>
-          <p>GPU overrides need these host components:</p>
+          <p>In a repository checkout, <code>make kronk-up KRONK_GPU=vulkan</code> (or <code>cuda</code>, <code>rocm</code>, <code>all</code>) starts the same from the repository root and adds the override when it exists.</p>
+          <p>The GPU files need these host components:</p>
           <table className="flags-table">
             <thead>
               <tr>
-                <th>Override</th>
+                <th>File</th>
                 <th>Host requirements</th>
               </tr>
             </thead>
@@ -2147,12 +2146,12 @@ KRONK_IMAGE_VERSION=vX.Y.Z`}</code></pre>
             </tbody>
           </table>
           <ul>
-            <li>Check the selected backend with <code>docker compose logs kronk | grep "selected llama.cpp runtime"</code>.</li>
+            <li>Check the backend in use with <code>docker compose logs kronk | grep "installing/updating libraries"</code>; the <code>processor</code> field shows it. <code>compose.yaml</code> sets <code>KRONK_PROCESSOR=cpu</code>, because the image's software Vulkan driver would otherwise make detection pick <code>vulkan</code> without a GPU.</li>
             <li>NVIDIA: to use specific cards, replace <code>count: all</code> in <code>compose.cuda.yaml</code> with <code>device_ids: ["0"]</code> (indices or UUIDs from <code>nvidia-smi -L</code>).</li>
             <li>ROCm: <code>HIP_VISIBLE_DEVICES</code> and <code>HSA_OVERRIDE_GFX_VERSION</code> are passed through. For an unlisted GPU that is not detected, try <code>HSA_OVERRIDE_GFX_VERSION=10.3.0</code> (RDNA2) or <code>11.0.0</code> (RDNA3). The ROCm image is about 30 GB unpacked; on integrated GPUs, Vulkan is usually smaller and faster.</li>
             <li>Vulkan: <code>VK_LOADER_DRIVERS_SELECT</code> and <code>MESA_VK_DEVICE_SELECT</code> are passed through to pick one GPU.</li>
-            <li>Each file pulls the image for its own backend (<code>-cpu</code>, <code>-cuda</code>, <code>-rocm</code>, <code>-vulkan</code>). For the <code>all</code> image, list <code>compose.all.yaml</code> after the GPU override, which still attaches the devices.</li>
-            <li>macOS is CPU only; Windows uses the CUDA override with Docker Desktop and WSL2. Startup errors are covered in <a href="https://www.kronkai.com/manual#172-libraries-and-devices">17.2 Libraries and Devices</a>.</li>
+            <li>Each file is self-contained and pulls the image for its own backend (<code>-cpu</code>, <code>-cuda</code>, <code>-rocm</code>, <code>-vulkan</code>, <code>-all</code>). <code>compose.all.yaml</code> attaches no GPU; to run the <code>all</code> image on a GPU, change the image tag in the matching GPU file to <code>-all</code>.</li>
+            <li>macOS is CPU only; Windows uses <code>compose.cuda.yaml</code> with Docker Desktop and WSL2. Startup errors are covered in <a href="https://www.kronkai.com/manual#172-libraries-and-devices">17.2 Libraries and Devices</a>.</li>
           </ul>
           <p>To upgrade, run from the Compose directory with the same <code>-f</code> files or <code>.env</code>:</p>
           <ul>
@@ -4311,7 +4310,7 @@ KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
           <h4 id="nvidia-is-visible-but-llamacpp-uses-the-cpu">NVIDIA is visible but llama.cpp uses the CPU</h4>
           <p><code>nvidia-smi</code> proves that the driver is available, but a native CUDA bundle also needs the CUDA runtime libraries against which it was linked. On Linux, find the active library path in <code>kronk diagnose</code>, then inspect the backend for unresolved dependencies:</p>
           <pre className="code-block"><code className="language-shell">{`ldd <lib-path>/libggml-cuda.so | grep -iE 'not found|cudart|cublas'`}</code></pre>
-          <p>Install the matching CUDA runtime packages for the bundle and operating system. For containers, use the current <code>latest-cuda</code> image and grant GPU access with <code>--runtime=nvidia --gpus all</code>, or with Compose use the <code>compose.cuda.yaml</code> override from <a href="https://www.kronkai.com/manual#87-container-operations">8.7 Container Operations</a>; the required runtime libraries are included in that image.</p>
+          <p>Install the matching CUDA runtime packages for the bundle and operating system. For containers, use the current <code>latest-cuda</code> image and grant GPU access with <code>--runtime=nvidia --gpus all</code>, or with Compose use <code>compose.cuda.yaml</code> from <a href="https://www.kronkai.com/manual#87-container-operations">8.7 Container Operations</a>; the required runtime libraries are included in that image.</p>
           <h4 id="container-fails-with-`unknown-or-invalid-runtime-name-nvidia`">Container fails with `unknown or invalid runtime name: nvidia`</h4>
           <p>Docker does not know the <code>nvidia</code> runtime that <code>--runtime=nvidia</code> and <code>compose.cuda.yaml</code> request. Install the <a href="https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html">NVIDIA Container Toolkit</a>, register the runtime, and restart Docker:</p>
           <pre className="code-block"><code className="language-shell">{`sudo nvidia-ctk runtime configure --runtime=docker
@@ -4319,7 +4318,7 @@ sudo systemctl restart docker`}</code></pre>
           <h4 id="permission-denied-on-`devdri`-or-`devkfd`-in-a-container">Permission denied on `/dev/dri` or `/dev/kfd` in a container</h4>
           <p>The container user reaches GPU devices through the <code>render</code> and <code>video</code> groups, which the image maps to GIDs 110 and 44. If the host uses other GIDs, look them up and pass them to Compose:</p>
           <pre className="code-block"><code className="language-shell">{`getent group render video
-KRONK_RENDER_GID=<render GID> KRONK_VIDEO_GID=<video GID> docker compose -f compose.yaml -f compose.vulkan.yaml up -d`}</code></pre>
+KRONK_RENDER_GID=<render GID> KRONK_VIDEO_GID=<video GID> docker compose -f compose.vulkan.yaml up -d`}</code></pre>
           <p>With <code>docker run</code>, pass the numbers to <code>--group-add</code> instead. On hosts with SELinux in enforcing mode, also check the audit log for denied device access.</p>
           <h4 id="a-library-update-introduced-crashes-or-bad-output">A library update introduced crashes or bad output</h4>
           <p>The normal CLI installs Kronk's pinned default. <code>--upgrade</code> and the server's <code>--allow-upgrade=true</code> opt into newer llama.cpp releases. List installed bundles and pin a known-good version when investigating a regression:</p>

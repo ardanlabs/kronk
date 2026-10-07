@@ -111,8 +111,8 @@ ldd <lib-path>/libggml-cuda.so | grep -iE 'not found|cudart|cublas'
 
 Install the matching CUDA runtime packages for the bundle and operating system.
 For containers, use the current `latest-cuda` image and grant GPU access with
-`--runtime=nvidia --gpus all`, or with Compose use the `compose.cuda.yaml`
-override from [8.7 Container Operations](https://www.kronkai.com/manual#87-container-operations);
+`--runtime=nvidia --gpus all`, or with Compose use
+`compose.cuda.yaml` from [8.7 Container Operations](https://www.kronkai.com/manual#87-container-operations);
 the required runtime libraries are included in that image.
 
 #### Container fails with `unknown or invalid runtime name: nvidia`
@@ -135,7 +135,7 @@ look them up and pass them to Compose:
 
 ```shell
 getent group render video
-KRONK_RENDER_GID=<render GID> KRONK_VIDEO_GID=<video GID> docker compose -f compose.yaml -f compose.vulkan.yaml up -d
+KRONK_RENDER_GID=<render GID> KRONK_VIDEO_GID=<video GID> docker compose -f compose.vulkan.yaml up -d
 ```
 
 With `docker run`, pass the numbers to `--group-add` instead. On hosts with

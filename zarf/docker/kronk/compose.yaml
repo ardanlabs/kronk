@@ -1,21 +1,17 @@
-# Kronk model server — Docker Compose.
+# Kronk model server — Docker Compose, CPU.
 #
-# CPU on any host (run from this directory):
+# Run from this directory:
 #
 #   docker compose up -d
 #   curl http://127.0.0.1:11435/v1/liveness
 #
-# GPU: layer one of the override files on top of this one.
+# Each backend has its own self-contained file. Use one of them instead of
+# this one:
 #
-#   docker compose -f compose.yaml -f compose.cuda.yaml   up -d   # NVIDIA
-#   docker compose -f compose.yaml -f compose.rocm.yaml   up -d   # AMD (ROCm)
-#   docker compose -f compose.yaml -f compose.vulkan.yaml up -d   # AMD / Intel (Vulkan)
-#
-# Each file pulls the image for its own backend: -cpu here, -cuda, -rocm or
-# -vulkan in the overrides. For the `all` image (every backend built in), add
-# compose.all.yaml after the GPU override, if any:
-#
-#   docker compose -f compose.yaml -f compose.cuda.yaml -f compose.all.yaml up -d
+#   docker compose -f compose.cuda.yaml   up -d   # NVIDIA
+#   docker compose -f compose.rocm.yaml   up -d   # AMD (ROCm)
+#   docker compose -f compose.vulkan.yaml up -d   # AMD / Intel (Vulkan)
+#   docker compose -f compose.all.yaml    up -d   # every backend built in
 #
 # Variables (shell or a .env file next to this file):
 #
@@ -29,6 +25,8 @@
 # `docker run -v kronk-data:/kronk` examples, so both share the same models.
 #
 # The healthcheck (curl /v1/liveness) is inherited from the image.
+#
+# The other compose.*.yaml files repeat the settings below. Keep them in sync.
 
 name: kronk
 
@@ -39,6 +37,10 @@ services:
     restart: unless-stopped
     environment:
       - KRONK_DOWNLOAD_ENABLED=${KRONK_DOWNLOAD_ENABLED:-true}
+      # The image ships Mesa's software Vulkan driver, so GPU detection picks
+      # vulkan even without a GPU and downloads that bundle at startup. Pin
+      # the CPU libraries built into the image.
+      - KRONK_PROCESSOR=cpu
       # The debug server (metrics, pprof, statsviz) defaults to 127.0.0.1
       # inside the container, which makes the published port unreachable.
       - KRONK_WEB_DEBUG_HOST=0.0.0.0:11445

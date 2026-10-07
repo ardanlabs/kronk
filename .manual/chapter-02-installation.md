@@ -195,7 +195,7 @@ docker run -d \
 ```
 
 AMD ROCm and Vulkan require host-specific device access. Use the Compose
-overrides below, or see the tested `docker run` command lines and the
+files below, or see the tested `docker run` command lines and the
 compatibility matrix in the header of the
 [`Dockerfile`](https://github.com/ardanlabs/kronk/blob/main/zarf/docker/kronk/Dockerfile).
 
@@ -214,19 +214,14 @@ cd kronk/zarf/docker/kronk
 docker compose up -d
 ```
 
-For a GPU, add the matching override file:
+Each backend has its own self-contained file. For a GPU, use the matching
+one instead of `compose.yaml`:
 
 ```shell
-docker compose -f compose.yaml -f compose.cuda.yaml up -d     # NVIDIA, needs the NVIDIA Container Toolkit
-docker compose -f compose.yaml -f compose.rocm.yaml up -d     # AMD with ROCm, needs /dev/kfd and /dev/dri
-docker compose -f compose.yaml -f compose.vulkan.yaml up -d   # AMD or Intel with Vulkan, needs /dev/dri
-```
-
-For the `latest-all` image, add `compose.all.yaml` last. It only swaps the
-image, so keep the GPU override:
-
-```shell
-docker compose -f compose.yaml -f compose.cuda.yaml -f compose.all.yaml up -d
+docker compose -f compose.cuda.yaml up -d     # NVIDIA, needs the NVIDIA Container Toolkit
+docker compose -f compose.rocm.yaml up -d     # AMD with ROCm, needs /dev/kfd and /dev/dri
+docker compose -f compose.vulkan.yaml up -d   # AMD or Intel with Vulkan, needs /dev/dri
+docker compose -f compose.all.yaml up -d      # latest-all image, no GPU attached
 ```
 
 Settings, server options such as authentication, GPU details, and upgrades are
