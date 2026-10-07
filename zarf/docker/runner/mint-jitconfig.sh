@@ -66,6 +66,18 @@ if [[ -z "$group_id" ]]; then
     exit 1
 fi
 
+# A runner killed without deregistering (docker rm -f, --recreate, a reboot)
+# leaves its registration behind, and minting under that name then fails with
+# 409 until someone removes it by hand. The name belongs to this loop, whose
+# container is gone by now, so an idle registration under it is stale.
+stale_id="$(api -H "Authorization: Bearer $token" \
+    "https://api.github.com/orgs/$ORG/actions/runners?name=$NAME" |
+    jq -r '.runners[] | select(.busy == false) | .id')"
+for id in $stale_id; do
+    api -X DELETE -H "Authorization: Bearer $token" \
+        "https://api.github.com/orgs/$ORG/actions/runners/$id" >&2
+done
+
 api -X POST -H "Authorization: Bearer $token" \
     "https://api.github.com/orgs/$ORG/actions/runners/generate-jitconfig" \
     -d "$(jq -n --arg n "$NAME" --arg l "$LABELS" --argjson g "$group_id" --arg w "$WORK" \
