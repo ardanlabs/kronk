@@ -75,7 +75,7 @@ func TestAdminCookieMiddleware(t *testing.T) {
 	})
 }
 
-func TestSecurityHeadersAllowLocalImagePreview(t *testing.T) {
+func TestSecurityHeadersAllowLocalMediaPreviews(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	securityHeaders(rr)
@@ -83,6 +83,9 @@ func TestSecurityHeadersAllowLocalImagePreview(t *testing.T) {
 	policy := rr.Header().Get("Content-Security-Policy")
 	if !strings.Contains(policy, "img-src 'self' https: data: blob:") {
 		t.Errorf("Content-Security-Policy: got %q, want blob image sources", policy)
+	}
+	if !strings.Contains(policy, "media-src 'self' blob:") {
+		t.Errorf("Content-Security-Policy: got %q, want blob media sources", policy)
 	}
 }
 

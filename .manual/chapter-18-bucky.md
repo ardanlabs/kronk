@@ -66,8 +66,8 @@ The supported bundles are:
 | Operating system | Architecture   | Processors              |
 | ---------------- | -------------- | ----------------------- |
 | macOS            | `amd64`, `arm64` | `cpu`, `metal`        |
-| Linux            | `amd64`, `arm64` | `cpu`, `cuda`, `vulkan` |
-| Windows          | `amd64`          | `cpu`, `cuda`         |
+| Linux            | `amd64`, `arm64` | `cpu`, `cuda`, `cuda12`, `cuda13`, `vulkan` |
+| Windows          | `amd64`          | `cpu`, `cuda`, `cuda12` |
 
 Use the CLI as the current source of truth for available combinations:
 
@@ -83,6 +83,9 @@ kronk bucky libs --version=v1.7.0
 
 # Install another bundle alongside the active one.
 kronk bucky libs --install --arch=amd64 --os=linux --processor=cuda
+
+# Install the Linux CUDA 13 bundle alongside CUDA 12.
+kronk bucky libs --install --arch=amd64 --os=linux --processor=cuda13
 
 # List or remove installed bundles.
 kronk bucky libs --list-installs
@@ -110,6 +113,22 @@ reports a compatible driver and every GPU visible through
 | Linux `arm64` | 12.9 | 8.7 |
 | Windows `amd64` | 12.4 | 5.0 |
 
+`cuda` and `cuda12` download the same CUDA 12 bundle into separate processor
+directories. On Linux, automatic detection with a `cuda` preference first
+tries `cuda13`: it requires a reported CUDA version of at least 13.0, the same
+GPU capability thresholds above, and installed `libcudart.so.13` and
+`libcublas.so.13`. If those checks fail, it tries CUDA 12. Linux CUDA 12 also
+requires installed `libcudart.so.12` and `libcublas.so.12`. Library discovery
+uses `ldconfig -p` and `LD_LIBRARY_PATH`; stale cache entries do not count.
+The Linux bundles do not include these NVIDIA user-space libraries. A newer
+driver alone does not supply them. Both CUDA runtime majors can coexist.
+Keep Jetson Orin on CUDA 12 unless its JetPack/runtime supports CUDA 13.
+
+An explicit `--install --processor=cuda13` downloads the requested bundle
+without probing the current host, allowing installation for another machine.
+CUDA 13 archives use `cuda-13` in their filenames; the Bucky processor option
+is `cuda13`, without a hyphen. Windows remains CUDA 12 only.
+
 If the preferred CUDA or Vulkan runtime is unavailable or incompatible, Linux
 uses Vulkan when `vulkaninfo --summary` reports a usable GPU and otherwise
 uses CPU. Other supported platforms fall back to CPU. Bucky has no separate
@@ -124,11 +143,25 @@ set its directory before starting the server:
 export KRONK_BUCKY_LIB_PATH=~/.kronk/bucky-libraries/linux/amd64/cuda
 ```
 
+For CUDA 13, use the corresponding `linux/amd64/cuda13` or
+`linux/arm64/cuda13` directory. Prefer this Bucky-specific override rather
+than setting `KRONK_PROCESSOR=cuda13` for the whole server: llama.cpp uses
+different CUDA-major option names.
+
 A non-empty `KRONK_BUCKY_LIB_PATH` bypasses automatic compatibility selection.
 If the directory contains `version.json`, Kronk adopts its recorded platform
 metadata unless explicitly overridden. A non-empty existing directory without
 that file is treated as a read-only user-managed build: Kronk loads from it but
 does not install, upgrade, or replace its contents.
+
+The default downloader installs the authenticated whisper.cpp version bound
+to this Bucky dependency, replacing older or arbitrary newer managed bundles
+rather than assuming numerical version order implies ABI compatibility. An
+offline installation must match the requested pin and platform. `--version`
+and `--upgrade` explicitly opt out of the default pin. Restart after replacing
+libraries. If a future upgrade changes the ABI, rebuild or replace user-managed
+libraries yourself; Kronk never mutates a read-only build. Do not mix ggml
+files from independently built Whisper and llama.cpp bundles.
 
 The library tools also recognize these platform overrides:
 
@@ -136,13 +169,17 @@ The library tools also recognize these platform overrides:
 | ----------------- | --------------------------------------- |
 | `KRONK_ARCH`      | `amd64`, `arm64`                        |
 | `KRONK_OS`        | `linux`, `darwin`, `windows`            |
-| `KRONK_PROCESSOR` | `cpu`, `metal`, `cuda`, `vulkan`; `rocm` maps to Vulkan or CPU |
+| `KRONK_PROCESSOR` | `cpu`, `metal`, `cuda`, `cuda-12`, `cuda-13`, `vulkan`; `rocm` maps to Vulkan or CPU |
 
 Only combinations listed by `--list-combinations` can be installed. Platform
 variables remain preferences during automatic Bucky selection; use
 `KRONK_BUCKY_LIB_PATH` when the selected directory must be exact. Library
 selection is process-wide, so restart the CLI process or server after changing
 it.
+
+The shared environment spellings `cuda-12` and `cuda-13` map to Bucky's
+`cuda12` and `cuda13` processors. For Bucky install commands, use the
+unhyphenated spelling shown by `--list-combinations`.
 
 ### 18.3 Manage Models
 

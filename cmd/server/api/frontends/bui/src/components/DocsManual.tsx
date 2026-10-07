@@ -4366,12 +4366,12 @@ lsof -nP -iTCP:9000 -sTCP:LISTEN`}</code></pre>
               <tr>
                 <td>Linux</td>
                 <td><code>amd64</code>, <code>arm64</code></td>
-                <td><code>cpu</code>, <code>cuda</code>, <code>vulkan</code></td>
+                <td><code>cpu</code>, <code>cuda</code>, <code>cuda12</code>, <code>cuda13</code>, <code>vulkan</code></td>
               </tr>
               <tr>
                 <td>Windows</td>
                 <td><code>amd64</code></td>
-                <td><code>cpu</code>, <code>cuda</code></td>
+                <td><code>cpu</code>, <code>cuda</code>, <code>cuda12</code></td>
               </tr>
             </tbody>
           </table>
@@ -4383,6 +4383,9 @@ kronk bucky libs --version=v1.7.0
 
 # Install another bundle alongside the active one.
 kronk bucky libs --install --arch=amd64 --os=linux --processor=cuda
+
+# Install the Linux CUDA 13 bundle alongside CUDA 12.
+kronk bucky libs --install --arch=amd64 --os=linux --processor=cuda13
 
 # List or remove installed bundles.
 kronk bucky libs --list-installs
@@ -4416,10 +4419,14 @@ kronk bucky libs --remove-install --arch=amd64 --os=linux --processor=cuda`}</co
               </tr>
             </tbody>
           </table>
+          <p><code>cuda</code> and <code>cuda12</code> download the same CUDA 12 bundle into separate processor directories. On Linux, automatic detection with a <code>cuda</code> preference first tries <code>cuda13</code>: it requires a reported CUDA version of at least 13.0, the same GPU capability thresholds above, and installed <code>libcudart.so.13</code> and <code>libcublas.so.13</code>. If those checks fail, it tries CUDA 12. Linux CUDA 12 also requires installed <code>libcudart.so.12</code> and <code>libcublas.so.12</code>. Library discovery uses <code>ldconfig -p</code> and <code>LD_LIBRARY_PATH</code>; stale cache entries do not count. The Linux bundles do not include these NVIDIA user-space libraries. A newer driver alone does not supply them. Both CUDA runtime majors can coexist. Keep Jetson Orin on CUDA 12 unless its JetPack/runtime supports CUDA 13.</p>
+          <p>An explicit <code>--install --processor=cuda13</code> downloads the requested bundle without probing the current host, allowing installation for another machine. CUDA 13 archives use <code>cuda-13</code> in their filenames; the Bucky processor option is <code>cuda13</code>, without a hyphen. Windows remains CUDA 12 only.</p>
           <p>If the preferred CUDA or Vulkan runtime is unavailable or incompatible, Linux uses Vulkan when <code>vulkaninfo --summary</code> reports a usable GPU and otherwise uses CPU. Other supported platforms fall back to CPU. Bucky has no separate ROCm artifact, so a shared <code>KRONK_PROCESSOR=rocm</code> preference resolves to Vulkan on a usable Linux Vulkan host and otherwise to CPU. Startup logs report the preferred runtime, selected runtime, and reason.</p>
           <p>To select a specific installed bundle or user-managed build authoritatively, set its directory before starting the server:</p>
           <pre className="code-block"><code className="language-sh">{`export KRONK_BUCKY_LIB_PATH=~/.kronk/bucky-libraries/linux/amd64/cuda`}</code></pre>
+          <p>For CUDA 13, use the corresponding <code>linux/amd64/cuda13</code> or <code>linux/arm64/cuda13</code> directory. Prefer this Bucky-specific override rather than setting <code>KRONK_PROCESSOR=cuda13</code> for the whole server: llama.cpp uses different CUDA-major option names.</p>
           <p>A non-empty <code>KRONK_BUCKY_LIB_PATH</code> bypasses automatic compatibility selection. If the directory contains <code>version.json</code>, Kronk adopts its recorded platform metadata unless explicitly overridden. A non-empty existing directory without that file is treated as a read-only user-managed build: Kronk loads from it but does not install, upgrade, or replace its contents.</p>
+          <p>The default downloader installs the authenticated whisper.cpp version bound to this Bucky dependency, replacing older or arbitrary newer managed bundles rather than assuming numerical version order implies ABI compatibility. An offline installation must match the requested pin and platform. <code>--version</code> and <code>--upgrade</code> explicitly opt out of the default pin. Restart after replacing libraries. If a future upgrade changes the ABI, rebuild or replace user-managed libraries yourself; Kronk never mutates a read-only build. Do not mix ggml files from independently built Whisper and llama.cpp bundles.</p>
           <p>The library tools also recognize these platform overrides:</p>
           <table className="flags-table">
             <thead>
@@ -4439,11 +4446,12 @@ kronk bucky libs --remove-install --arch=amd64 --os=linux --processor=cuda`}</co
               </tr>
               <tr>
                 <td><code>KRONK_PROCESSOR</code></td>
-                <td><code>cpu</code>, <code>metal</code>, <code>cuda</code>, <code>vulkan</code>; <code>rocm</code> maps to Vulkan or CPU</td>
+                <td><code>cpu</code>, <code>metal</code>, <code>cuda</code>, <code>cuda-12</code>, <code>cuda-13</code>, <code>vulkan</code>; <code>rocm</code> maps to Vulkan or CPU</td>
               </tr>
             </tbody>
           </table>
           <p>Only combinations listed by <code>--list-combinations</code> can be installed. Platform variables remain preferences during automatic Bucky selection; use <code>KRONK_BUCKY_LIB_PATH</code> when the selected directory must be exact. Library selection is process-wide, so restart the CLI process or server after changing it.</p>
+          <p>The shared environment spellings <code>cuda-12</code> and <code>cuda-13</code> map to Bucky's <code>cuda12</code> and <code>cuda13</code> processors. For Bucky install commands, use the unhyphenated spelling shown by <code>--list-combinations</code>.</p>
           <h3 id="183-manage-models">18.3 Manage Models</h3>
           <p>List the bundled model catalog:</p>
           <pre className="code-block"><code className="language-sh">{`kronk bucky model catalog`}</code></pre>
