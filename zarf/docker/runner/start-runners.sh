@@ -12,10 +12,15 @@
 # Each runner is a supervise-runner.sh loop, not a long-lived container: it
 # mints a single-use JIT config per job and runs it in a --rm container, so the
 # App private key never enters a container and no job inherits the previous
-# job's writable layer. Nothing restarts the loops after a reboot, so add a
-# crontab line for that (crontab -e, no root needed):
+# job's writable layer. Nothing restarts the loops after a reboot, so add one
+# crontab line PER FLEET (crontab -e, no root needed); a fleet without its line
+# stays down after a reboot and its jobs queue with no error:
 #
 #   @reboot COUNT=2 APP_ID=... APP_KEY=$HOME/key.pem $HOME/start-runners.sh
+#   @reboot PREFIX=kronk-linux-rocm COUNT=2 IMAGE=kronk-runner:rocm APP_ID=... APP_KEY=$HOME/key.pem $HOME/start-runners.sh
+#
+# Each entry must stay on ONE line: cron reads a wrapped paste as two broken
+# entries. `crontab -l` should print exactly one @reboot line per fleet.
 #
 # Configuration comes from the environment:
 #
@@ -26,8 +31,8 @@
 #   APP_KEY     path to the App private key .pem            (required)
 #   ORG         GitHub org                                  (default ardanlabs)
 #   GROUP       runner group                                (default kronk)
-#   LABELS      runner labels  (default: gpu,<backend>, where <backend>
-#               comes from the image's com.ardanlabs.kronk.backend label)
+#   LABELS      runner labels  (default: self-hosted,Linux,X64,gpu,<backend>,
+#               <backend> from the image's com.ardanlabs.kronk.backend label)
 #   MEMORY      per-container memory cap, docker size    (default 20g)
 #               0 or empty leaves the container uncapped
 #   LOG_DIR     where the supervisor loops log         (default ~/.kronk-runners)
@@ -105,7 +110,9 @@ if [[ -z "${LABELS:-}" ]]; then
         exit 1
     fi
 
-    LABELS="gpu,${backend}"
+    # A JIT runner gets exactly these labels: GitHub adds no self-hosted/OS/arch
+    # defaults, and linux.yml and gpu.yml both ask for self-hosted,Linux,X64.
+    LABELS="self-hosted,Linux,X64,gpu,${backend}"
 fi
 
 RECREATE=false
