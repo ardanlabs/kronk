@@ -56,11 +56,11 @@ schema = 3
     version = "v1.7.20"
     hash = "sha256-ICB2yD83Gl628LRkg3HhYlDtsL4xgGhOmphZ5D0bJXI="
   [mod."github.com/aws/aws-sdk-go-v2/config"]
-    version = "v1.33.6"
-    hash = "sha256-bQ30SzNYrU5KWynlN6v+PcrHhtSx5p7kEnyqPDZGPPk="
+    version = "v1.33.7"
+    hash = "sha256-ngFONjY26PObjPENavMM7iPITestuB74cBYISrgtPQY="
   [mod."github.com/aws/aws-sdk-go-v2/credentials"]
-    version = "v1.20.6"
-    hash = "sha256-EL0ar1ZP+ApWJxBVd2aZRKQbx8ae7YzJoD/J9gYnPS0="
+    version = "v1.20.7"
+    hash = "sha256-ZvtWgfWQMkUtkxe+6RXLCOfXqnFtc6H+R4zTS8QygYA="
   [mod."github.com/aws/aws-sdk-go-v2/feature/ec2/imds"]
     version = "v1.20.1"
     hash = "sha256-vtzYW/VyJB79OjVrIb/CBtjoCBW/eiafTjL99Vr8P0Q="
@@ -86,23 +86,23 @@ schema = 3
     version = "v1.20.4"
     hash = "sha256-mYOJSelYLof0NpRwUsKlfe51lCVmWdBURIsSnx8+iPA="
   [mod."github.com/aws/aws-sdk-go-v2/service/s3"]
-    version = "v1.114.0"
-    hash = "sha256-JWdnxlie6dabdihB1XLdb8o2NFEt31jjeFf5FJxRffk="
+    version = "v1.114.1"
+    hash = "sha256-Ao/BhAJiurWVlN2tFZLPf98DeE2O1nZXqvx+VE1MghU="
   [mod."github.com/aws/aws-sdk-go-v2/service/signin"]
-    version = "v1.10.1"
-    hash = "sha256-VmbLKrQRnMl+2SlbJy/i8Ngm31vZIJ5bFhtA5E01TqA="
+    version = "v1.10.2"
+    hash = "sha256-rpGDwgXPwaQcmzssmy1WCKIIM9Uvmum/W3XbPrw3bQ0="
   [mod."github.com/aws/aws-sdk-go-v2/service/sso"]
-    version = "v1.38.1"
-    hash = "sha256-BgwGLeeeUIA/beyk4DnLJ3HA70bUaO5fgTLhJ6xfJOw="
+    version = "v1.38.2"
+    hash = "sha256-PTh0u1NTEzK+NVi2cPG771eJc8apZ4t+QWe78StsZ1E="
   [mod."github.com/aws/aws-sdk-go-v2/service/ssooidc"]
-    version = "v1.43.1"
-    hash = "sha256-mj/7Tt1+L+FpvRLl/CC7kSiZPSE18lhi+iDGn2+wRvQ="
+    version = "v1.43.2"
+    hash = "sha256-S9jd3c2lqt5HQXCa8ZjPcw0XRUW3wAW2W9xAulIX45s="
   [mod."github.com/aws/aws-sdk-go-v2/service/sts"]
-    version = "v1.51.1"
-    hash = "sha256-Z3heejHlZSijeaj/3AHDVcEmC8387BDczbXDr34Gi7c="
+    version = "v1.51.2"
+    hash = "sha256-2DlQ5DLhjI4rubqy6e1mwTSVOBhHAyv6GpsWHmqEBbw="
   [mod."github.com/aws/smithy-go"]
-    version = "v1.28.2"
-    hash = "sha256-ZLpb1GteVVDTF8zIyK8p0esbbepH1S865UIw11D66rg="
+    version = "v1.28.4"
+    hash = "sha256-9faJActQPrK8Pofa/2nl4pTHUEOK1WqId+KMCEMdvbU="
   [mod."github.com/beorn7/perks"]
     version = "v1.0.1"
     hash = "sha256-h75GUqfwJKngCJQVE5Ao5wnO3cfKD9lSIteoLp/3xJ4="
@@ -176,8 +176,8 @@ schema = 3
     version = "v1.6.0"
     hash = "sha256-VWl9sqUzdOuhW0KzQlv0gwwUQClYkmZwSydHG2sALYw="
   [mod."github.com/googleapis/enterprise-certificate-proxy"]
-    version = "v0.3.22"
-    hash = "sha256-dwB4hqVky3TKmEyh9jj/lcwGVu4ZQwFIQA+IbpvsP3g="
+    version = "v0.3.23"
+    hash = "sha256-xK//FqCyKVq7SOhzRequjXG7OC0MlwIV0lHmWMwLTZY="
   [mod."github.com/googleapis/gax-go/v2"]
     version = "v2.26.2"
     hash = "sha256-LP5j4BMt132nmi2fhRh0JBR7pTmsyo4Y+ZaCZGPswkc="
@@ -197,14 +197,14 @@ schema = 3
     version = "v0.5.2"
     hash = "sha256-N9GOKYo7tK6XQUFhvhImtL7PZW/mr4C4Manx/yPVvcQ="
   [mod."github.com/hashicorp/go-getter"]
-    version = "v1.8.9"
-    hash = "sha256-Non3LDJ8LXWAxeQQN2PmMGaRQjnQ56KVzudx2X0jH08="
+    version = "v1.8.10"
+    hash = "sha256-Vzf+5LaN3EjtUroaNdW9SQLhA/ouW03afpbf9LdBLMY="
   [mod."github.com/hashicorp/go-version"]
     version = "v1.9.0"
     hash = "sha256-sRr/50k8Wra0PJLCJgSkIxvR+ce3PItx4HpFvVijGYk="
   [mod."github.com/hybridgroup/yzma"]
-    version = "v1.28.1-0.20261006125350-87450fc2f90b"
-    hash = "sha256-BwuBe11NXdmVBdWqdfhMfUzIVmg1SeCsX8ArMhinSc0="
+    version = "v1.29.1"
+    hash = "sha256-J/LLT6VNHtyhAEYwChStk0vQzvzBFtJqdkNjLNCbAbU="
   [mod."github.com/icza/bitio"]
     version = "v1.1.0"
     hash = "sha256-CtV/dr1L46cZ65EnK9DrBduZCaMnTGf4N2MnElCymtM="
@@ -314,8 +314,8 @@ schema = 3
     version = "v1.6.10"
     hash = "sha256-D2lL4FnkeL/eRLiRW6ihhqQkzEqHVvhbEvZoYTVNmbU="
   [mod."github.com/vektah/gqlparser/v2"]
-    version = "v2.5.60"
-    hash = "sha256-kki+oeLmChfbCy0nwK8PHiQMyUfNRaCvZISbxZMWP0U="
+    version = "v2.5.61"
+    hash = "sha256-TRwxW+hkQ6XnRKhX544Lztbd9RvnWlnTIVMk9rbPIsc="
   [mod."github.com/xeipuuv/gojsonpointer"]
     version = "v0.0.0-20190905194746-02993c407bfb"
     hash = "sha256-/u+qznDY8cnECZYIgSMRpKVWs04yAkW6EoGhqt+t73g="

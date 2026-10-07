@@ -95,23 +95,9 @@ func Init(opts ...InitOption) error {
 	// needs the support in this case as well.
 	libPath := libs.Path(o.libPath)
 
-	// Windows uses PATH for DLL discovery, Unix uses LD_LIBRARY_PATH.
-	switch runtime.GOOS {
-	case "windows":
-		if v := os.Getenv("PATH"); !strings.Contains(v, libPath) {
-			os.Setenv("PATH", fmt.Sprintf("%s;%s", libPath, v))
-		}
-
-		// PATH alone is not enough on Windows: the system directory (System32)
-		// is searched before PATH, so a stale same-named copy of a bundled
-		// dependency (e.g. libomp140.x86_64.dll) shadows ours and fails the
-		// load with "the specified procedure could not be found". Preload our
-		// libraries from libPath so they (and their dependency tree) win.
-		// Best-effort: on failure the PATH entry above remains the fallback, so
-		// the error is intentionally non-fatal.
-		preloadLibraries(libPath)
-
-	default:
+	// Yzma handles bundled DLL discovery on Windows without modifying PATH.
+	// Preserve the existing library search path setup on other platforms.
+	if runtime.GOOS != "windows" {
 		if v := os.Getenv("LD_LIBRARY_PATH"); !strings.Contains(v, libPath) {
 			os.Setenv("LD_LIBRARY_PATH", fmt.Sprintf("%s:%s", libPath, v))
 		}
@@ -135,14 +121,17 @@ func Init(opts ...InitOption) error {
 		o.logLevel = LogSilent
 	}
 
-	switch o.logLevel {
-	case LogSilent:
-		llama.LogSet(llama.LogSilent())
-		mtmd.LogSet(llama.LogSilent())
-	default:
-		llama.LogSet(llama.LogNormal)
-		mtmd.LogSet(llama.LogNormal)
-	}
+	// switch o.logLevel {
+	// case LogSilent:
+	// 	llama.LogSet(llama.LogSilent())
+	// 	mtmd.LogSet(llama.LogSilent())
+	// default:
+	// 	llama.LogSet(llama.LogNormal)
+	// 	mtmd.LogSet(llama.LogNormal)
+	// }
+
+	llama.LogSet(llama.LogNormal)
+	mtmd.LogSet(llama.LogNormal)
 
 	// Inline of llama.Init so we can gate GGMLBackendLoadAllFromPath on
 	// the registry being empty. If bucky/whisper was initialized first
