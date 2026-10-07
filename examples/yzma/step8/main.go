@@ -24,8 +24,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/ardanlabs/kronk/examples/yzma/internal/yzmainit"
 	"github.com/ardanlabs/kronk/sdk/kronk"
+	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
@@ -380,10 +380,7 @@ func modelMetadata(mdl llama.Model, wanted string) string {
 }
 
 func initYzma() error {
-	libPath, err := yzmainit.LibraryPath()
-	if err != nil {
-		return fmt.Errorf("prepare library path: %w", err)
-	}
+	libPath := libs.Path("")
 
 	if err := llama.Load(libPath); err != nil {
 		return fmt.Errorf("load library: %w", err)
