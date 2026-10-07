@@ -83,7 +83,7 @@ func TestCompatibleCUDAOutput(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := compatibleCUDAOutput(tt.devices, tt.version, tt.visible, tt.filtered, tt.arch, tt.opSys)
+			got := compatibleCUDAOutput(tt.devices, tt.version, tt.visible, tt.filtered, tt.arch, tt.opSys, "cuda")
 			if got != tt.compatible {
 				t.Errorf("compatible: got %v, want %v", got, tt.compatible)
 			}
@@ -247,7 +247,7 @@ func TestHasVulkanGPU(t *testing.T) {
 
 func fakeRuntimeProbes(cuda bool, vulkan bool) runtimeProbes {
 	return runtimeProbes{
-		cuda:   func(context.Context, string, string) bool { return cuda },
+		cuda:   func(_ context.Context, _, _, processor string) bool { return cuda && processor != "cuda13" },
 		vulkan: func(context.Context) bool { return vulkan },
 	}
 }
@@ -279,5 +279,98 @@ func scrubRuntimeEnv(t *testing.T) {
 		"CUDA_VISIBLE_DEVICES",
 	} {
 		t.Setenv(key, "")
+	}
+}
+
+func TestCUDA13Selection(t *testing.T) {
+	for _, arch := range []string{"amd64", "arm64"} {
+		for _, tt := range []struct {
+			name      string
+			preferred string
+			cuda12    bool
+			cuda13    bool
+			want      string
+		}{
+			{"both runtimes", "cuda", true, true, "cuda13"},
+			{"only CUDA 12", "cuda", true, false, "cuda"},
+			{"only CUDA 13", "cuda", false, true, "cuda13"},
+			{"neither runtime", "cuda", false, false, "cpu"},
+			{"CUDA 12 preference", "cuda12", true, true, "cuda12"},
+			{"CUDA 13 preference", "cuda13", true, true, "cuda13"},
+			{"shared CUDA 12 spelling", "cuda-12", true, true, "cuda12"},
+			{"shared CUDA 13 spelling", "cuda-13", true, true, "cuda13"},
+		} {
+			t.Run(arch+"/"+tt.name, func(t *testing.T) {
+				scrubRuntimeEnv(t)
+				t.Setenv("KRONK_PROCESSOR", tt.preferred)
+				probes := fakeRuntimeProbes(false, false)
+				probes.cuda = func(_ context.Context, _, _, processor string) bool {
+					if processor == "cuda13" {
+						return tt.cuda13
+					}
+					return tt.cuda12
+				}
+				lib := newTestLib(t, arch, "linux", probes)
+				if got := lib.Processor(); got != tt.want {
+					t.Fatalf("processor: got %q, want %q", got, tt.want)
+				}
+				wantPath := filepath.Join(lib.Root(), "linux", arch, tt.want)
+				if lib.LibsPath() != wantPath {
+					t.Fatalf("path: got %q, want %q", lib.LibsPath(), wantPath)
+				}
+			})
+		}
+	}
+	if IsSupported("amd64", "windows", "cuda13") || IsSupported("arm64", "darwin", "cuda13") {
+		t.Fatal("CUDA 13 must only be advertised on Linux")
+	}
+}
+
+func TestCUDA13DriverCompatibility(t *testing.T) {
+	for _, tt := range []struct {
+		name, arch, devices, version, visible string
+		filtered, want                        bool
+	}{
+		{"amd64 boundary", "amd64", "0, GPU-a, 8.6", "CUDA Version: 13.0", "", false, true},
+		{"old driver", "amd64", "0, GPU-a, 8.9", "CUDA Version: 12.9", "", false, false},
+		{"arm64 boundary", "arm64", "0, GPU-a, 8.7", "CUDA Version: 13.0", "", false, true},
+		{"arm64 below capability", "arm64", "0, GPU-a, 8.6", "CUDA Version: 13.0", "", false, false},
+		{"visible incompatible GPU", "amd64", "0, GPU-a, 8.6\n1, GPU-b, 6.1", "CUDA Version: 13.0", "1", true, false},
+		{"visible compatible GPU", "amd64", "0, GPU-a, 8.6\n1, GPU-b, 6.1", "CUDA Version: 13.0", "GPU-a", true, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := compatibleCUDAOutput(tt.devices, tt.version, tt.visible, tt.filtered, tt.arch, "linux", "cuda13"); got != tt.want {
+				t.Fatalf("compatible: got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCUDALibraries(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"libcudart.so.12", "libcublas.so.12", "libcudart.so.13"} {
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !hasCUDALibraries("", dir, "12") {
+		t.Fatal("CUDA 12 pair in LD_LIBRARY_PATH was not found")
+	}
+	if hasCUDALibraries("", dir, "13") {
+		t.Fatal("CUDA 13 must require matching cuBLAS, not CUDA 12 cuBLAS")
+	}
+	cublas := filepath.Join(dir, "libcublas.so.13")
+	if err := os.WriteFile(cublas, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cache := "libcublas.so.13 (libc6,aarch64) => " + cublas
+	if !hasCUDALibraries(cache, dir, "13") {
+		t.Fatal("CUDA 13 pair split across loader cache and search path was not found")
+	}
+	if err := os.Remove(cublas); err != nil {
+		t.Fatal(err)
+	}
+	if hasCUDALibraries(cache, dir, "13") {
+		t.Fatal("stale loader cache must not count as an installed library")
 	}
 }

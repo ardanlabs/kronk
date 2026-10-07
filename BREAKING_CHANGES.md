@@ -8,6 +8,7 @@
   - [Split Mode Changes](#v1328-split-mode-changes)
   - [Legacy Migration Changes](#v1328-legacy-migration-changes)
   - [Media Backend Startup Changes](#v1328-media-backend-startup-changes)
+  - [Bucky Library Selection Changes](#v1328-bucky-library-selection-changes)
   - [Streaming Error Response Changes](#v1328-streaming-error-response-changes)
   - [Go SDK Changes](#v1328-go-sdk-changes)
 - [v1.32.4](#v1324)
@@ -159,6 +160,23 @@ export KRONK_MEDIA_BACKENDS_ENABLED=false
 
 The equivalent CLI setting is `--media-backends-enabled=false` and the YAML
 setting is `media-backends-enabled: false`.
+
+### v1.32.8: Bucky Library Selection Changes
+
+Bucky now uses v1.1.4 with the authenticated whisper.cpp v1.9.5 bundle. The
+default downloader replaces managed bundles that do not match this pin,
+including numerically newer bundles. Offline startup requires an installation
+matching the requested pin and platform. Use `--version` or `--upgrade` only
+when deliberately selecting a different native release.
+
+Linux automatic CUDA selection prefers the new CUDA 13 bundle when driver,
+visible-GPU, and runtime-library checks pass. Linux CUDA 12 and CUDA 13 both
+require the matching runtime and cuBLAS libraries in the loader cache or
+`LD_LIBRARY_PATH`; the Whisper bundles do not include them. A host previously
+selected as CUDA based only on its driver may now fall back to Vulkan or CPU
+until those libraries are installed. `cuda` remains the CUDA 12 download alias;
+`cuda13` is Linux-only. Use `KRONK_BUCKY_LIB_PATH` to pin Bucky independently
+of llama.cpp and restart after changing native libraries.
 
 ### v1.32.8: Streaming Error Response Changes
 

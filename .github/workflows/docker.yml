@@ -233,10 +233,10 @@ jobs:
           # stays GPU-accelerated via RADV.
           declare -A BUCKY_PROCESSORS=(
             [cpu]="cpu"
-            [cuda]="cuda"
+            [cuda]="cuda cuda13"
             [vulkan]="vulkan"
             [rocm]="vulkan"
-            [all]="cpu cuda vulkan"
+            [all]="cpu cuda cuda13 vulkan"
           )
 
           # -------------------------------------------------------------------

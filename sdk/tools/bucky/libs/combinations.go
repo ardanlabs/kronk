@@ -16,14 +16,19 @@ var supportedCombinations = []Combination{
 	// Linux (assets produced by ardanlabs/bucky-builder).
 	{Arch: "amd64", OS: "linux", Processor: "cpu"},
 	{Arch: "amd64", OS: "linux", Processor: "cuda"},
+	{Arch: "amd64", OS: "linux", Processor: "cuda12"},
+	{Arch: "amd64", OS: "linux", Processor: "cuda13"},
 	{Arch: "amd64", OS: "linux", Processor: "vulkan"},
 	{Arch: "arm64", OS: "linux", Processor: "cpu"},
 	{Arch: "arm64", OS: "linux", Processor: "cuda"},
+	{Arch: "arm64", OS: "linux", Processor: "cuda12"},
+	{Arch: "arm64", OS: "linux", Processor: "cuda13"},
 	{Arch: "arm64", OS: "linux", Processor: "vulkan"},
 
 	// Windows (whisper.cpp upstream releases, AMD64 only in v1).
 	{Arch: "amd64", OS: "windows", Processor: "cpu"},
 	{Arch: "amd64", OS: "windows", Processor: "cuda"},
+	{Arch: "amd64", OS: "windows", Processor: "cuda12"},
 }
 
 // SupportedCombinations returns every (architecture, operating

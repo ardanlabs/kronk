@@ -47,7 +47,11 @@ export default function DocsCLIBucky() {
               hardware platform under the bucky libraries root (default:{' '}
               <code>~/.kronk/bucky-libraries/</code>). Auto-detects
               architecture (amd64/arm64), OS (linux/darwin/windows), and
-              processor (cpu/cuda/metal/vulkan).
+              processor (cpu/cuda/cuda12/cuda13/metal/vulkan). Linux automatic
+              CUDA selection prefers CUDA 13 only when the driver, visible GPUs,
+              and installed runtime/cuBLAS libraries are compatible; otherwise
+              it tries CUDA 12, Vulkan, or CPU. Explicit installs do not probe
+              the host. Windows supports CUDA 12 only.
             </p>
             <table className="flags-table">
               <thead>
@@ -83,7 +87,7 @@ export default function DocsCLIBucky() {
                 </tr>
                 <tr>
                   <td><code>--processor &lt;string&gt;</code></td>
-                  <td>Processor for triple-aware install operations: <code>cpu</code>, <code>cuda</code>, <code>metal</code>, <code>vulkan</code></td>
+                  <td>Processor for triple-aware install operations: <code>cpu</code>, <code>cuda</code> (CUDA 12 alias), <code>cuda12</code>, <code>cuda13</code> (Linux only), <code>metal</code>, <code>vulkan</code></td>
                 </tr>
                 <tr>
                   <td><code>--list-combinations</code></td>
@@ -110,6 +114,9 @@ kronk bucky libs
 
 # Install a Linux/CUDA bundle alongside the active install
 kronk bucky libs --install --arch=amd64 --os=linux --processor=cuda
+
+# Install the Linux CUDA 13 bundle (requires CUDA 13 runtime and cuBLAS)
+kronk bucky libs --install --arch=amd64 --os=linux --processor=cuda13
 
 # List installed library bundles
 kronk bucky libs --list-installs`}</code>
