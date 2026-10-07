@@ -287,8 +287,8 @@ docker compose up -d`}</code></pre>
           <p>Each backend has its own self-contained file. For a GPU, use the matching one instead of <code>compose.yaml</code>:</p>
           <pre className="code-block"><code className="language-shell">{`docker compose -f compose.cuda.yaml up -d     # NVIDIA, needs the NVIDIA Container Toolkit
 docker compose -f compose.rocm.yaml up -d     # AMD with ROCm, needs /dev/kfd and /dev/dri
-docker compose -f compose.vulkan.yaml up -d   # AMD or Intel with Vulkan, needs /dev/dri
-docker compose -f compose.all.yaml up -d      # latest-all image, no GPU attached`}</code></pre>
+docker compose -f compose.vulkan.yaml up -d   # AMD or Intel with Vulkan, needs /dev/dri`}</code></pre>
+          <p>For the <code>latest-all</code> image, change the image tag in the GPU file to <code>-all</code>.</p>
           <p>Settings, server options such as authentication, GPU details, and upgrades are covered in <a href="https://www.kronkai.com/manual#87-container-operations">8.7 Container Operations</a>.</p>
           <p>The container runs as UID/GID <code>10001</code>. A named volume needs no preparation. If you use a host directory such as <code>/srv/kronk</code>, make it writable by that user before starting the container:</p>
           <pre className="code-block"><code className="language-shell">{`sudo mkdir -p /srv/kronk
@@ -2070,7 +2070,7 @@ docker rm kronk
           <p>The Compose files in <a href="https://github.com/ardanlabs/kronk/tree/main/zarf/docker/kronk"><code>zarf/docker/kronk</code></a> use the same container name (<code>kronk</code>) and volume (<code>kronk-data</code>) as the examples above, so the <code>docker exec</code> and <code>docker logs</code> commands work unchanged. Start with <a href="https://www.kronkai.com/manual#23-container-quick-start">2.3 Container Quick Start</a>. All <code>docker compose</code> commands run from the directory holding the files.</p>
           <p>Without a repository checkout, download only the Compose files. Replace <code>main</code> with the release tag of the image you pin:</p>
           <pre className="code-block"><code className="language-shell">{`mkdir kronk && cd kronk
-for f in compose.yaml compose.cuda.yaml compose.rocm.yaml compose.vulkan.yaml compose.all.yaml; do
+for f in compose.yaml compose.cuda.yaml compose.rocm.yaml compose.vulkan.yaml; do
   curl -fsSLO "https://raw.githubusercontent.com/ardanlabs/kronk/main/zarf/docker/kronk/$f"
 done`}</code></pre>
           <p>These variables configure the Compose files. Set them in the shell or in a <code>.env</code> file in the Compose directory:</p>
@@ -2121,7 +2121,7 @@ done`}</code></pre>
           <pre className="code-block"><code className="language-text">{`COMPOSE_PATH_SEPARATOR=:
 COMPOSE_FILE=compose.vulkan.yaml:compose.override.yaml
 KRONK_IMAGE_VERSION=vX.Y.Z`}</code></pre>
-          <p>In a repository checkout, <code>make kronk-up KRONK_GPU=vulkan</code> (or <code>cuda</code>, <code>rocm</code>, <code>all</code>) starts the same from the repository root and adds the override when it exists.</p>
+          <p>In a repository checkout, <code>make kronk-up KRONK_GPU=vulkan</code> (or <code>cuda</code>, <code>rocm</code>) starts the same from the repository root and adds the override when it exists.</p>
           <p>The GPU files need these host components:</p>
           <table className="flags-table">
             <thead>
@@ -2150,7 +2150,7 @@ KRONK_IMAGE_VERSION=vX.Y.Z`}</code></pre>
             <li>NVIDIA: to use specific cards, replace <code>count: all</code> in <code>compose.cuda.yaml</code> with <code>device_ids: ["0"]</code> (indices or UUIDs from <code>nvidia-smi -L</code>).</li>
             <li>ROCm: <code>HIP_VISIBLE_DEVICES</code> and <code>HSA_OVERRIDE_GFX_VERSION</code> are passed through. For an unlisted GPU that is not detected, try <code>HSA_OVERRIDE_GFX_VERSION=10.3.0</code> (RDNA2) or <code>11.0.0</code> (RDNA3). The ROCm image is about 30 GB unpacked; on integrated GPUs, Vulkan is usually smaller and faster.</li>
             <li>Vulkan: <code>VK_LOADER_DRIVERS_SELECT</code> and <code>MESA_VK_DEVICE_SELECT</code> are passed through to pick one GPU.</li>
-            <li>Each file is self-contained and pulls the image for its own backend (<code>-cpu</code>, <code>-cuda</code>, <code>-rocm</code>, <code>-vulkan</code>, <code>-all</code>). <code>compose.all.yaml</code> attaches no GPU; to run the <code>all</code> image on a GPU, change the image tag in the matching GPU file to <code>-all</code>.</li>
+            <li>Each file is self-contained and pulls the image for its own backend (<code>-cpu</code>, <code>-cuda</code>, <code>-rocm</code>, <code>-vulkan</code>). To run the <code>all</code> image, change the image tag in the matching GPU file to <code>-all</code>.</li>
             <li>macOS is CPU only; Windows uses <code>compose.cuda.yaml</code> with Docker Desktop and WSL2. Startup errors are covered in <a href="https://www.kronkai.com/manual#172-libraries-and-devices">17.2 Libraries and Devices</a>.</li>
           </ul>
           <p>To upgrade, run from the Compose directory with the same <code>-f</code> files or <code>.env</code>:</p>

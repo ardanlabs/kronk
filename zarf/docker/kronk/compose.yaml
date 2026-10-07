@@ -11,7 +11,6 @@
 #   docker compose -f compose.cuda.yaml   up -d   # NVIDIA
 #   docker compose -f compose.rocm.yaml   up -d   # AMD (ROCm)
 #   docker compose -f compose.vulkan.yaml up -d   # AMD / Intel (Vulkan)
-#   docker compose -f compose.all.yaml    up -d   # every backend built in
 #
 # Variables (shell or a .env file next to this file):
 #

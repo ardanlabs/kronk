@@ -221,8 +221,9 @@ one instead of `compose.yaml`:
 docker compose -f compose.cuda.yaml up -d     # NVIDIA, needs the NVIDIA Container Toolkit
 docker compose -f compose.rocm.yaml up -d     # AMD with ROCm, needs /dev/kfd and /dev/dri
 docker compose -f compose.vulkan.yaml up -d   # AMD or Intel with Vulkan, needs /dev/dri
-docker compose -f compose.all.yaml up -d      # latest-all image, no GPU attached
 ```
+
+For the `latest-all` image, change the image tag in the GPU file to `-all`.
 
 Settings, server options such as authentication, GPU details, and upgrades are
 covered in [8.7 Container Operations](https://www.kronkai.com/manual#87-container-operations).

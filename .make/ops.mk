@@ -13,7 +13,7 @@ owu-browse:
 # ==============================================================================
 # Running Kronk in a container
 #
-# GPU: make kronk-up KRONK_GPU=cuda   (cuda | rocm | vulkan | all)
+# GPU: make kronk-up KRONK_GPU=cuda   (cuda | rocm | vulkan)
 # Server settings in zarf/docker/kronk/compose.override.yaml are added when
 # the file exists.
 

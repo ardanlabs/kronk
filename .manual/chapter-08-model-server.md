@@ -486,7 +486,7 @@ with the release tag of the image you pin:
 
 ```shell
 mkdir kronk && cd kronk
-for f in compose.yaml compose.cuda.yaml compose.rocm.yaml compose.vulkan.yaml compose.all.yaml; do
+for f in compose.yaml compose.cuda.yaml compose.rocm.yaml compose.vulkan.yaml; do
   curl -fsSLO "https://raw.githubusercontent.com/ardanlabs/kronk/main/zarf/docker/kronk/$f"
 done
 ```
@@ -533,9 +533,8 @@ COMPOSE_FILE=compose.vulkan.yaml:compose.override.yaml
 KRONK_IMAGE_VERSION=vX.Y.Z
 ```
 
-In a repository checkout, `make kronk-up KRONK_GPU=vulkan` (or `cuda`, `rocm`,
-`all`) starts the same from the repository root and adds the override when it
-exists.
+In a repository checkout, `make kronk-up KRONK_GPU=vulkan` (or `cuda`, `rocm`)
+starts the same from the repository root and adds the override when it exists.
 
 The GPU files need these host components:
 
@@ -560,9 +559,8 @@ The GPU files need these host components:
 - Vulkan: `VK_LOADER_DRIVERS_SELECT` and `MESA_VK_DEVICE_SELECT` are passed
   through to pick one GPU.
 - Each file is self-contained and pulls the image for its own backend
-  (`-cpu`, `-cuda`, `-rocm`, `-vulkan`, `-all`). `compose.all.yaml` attaches
-  no GPU; to run the `all` image on a GPU, change the image tag in the
-  matching GPU file to `-all`.
+  (`-cpu`, `-cuda`, `-rocm`, `-vulkan`). To run the `all` image, change the
+  image tag in the matching GPU file to `-all`.
 - macOS is CPU only; Windows uses `compose.cuda.yaml` with Docker Desktop and
   WSL2. Startup errors are covered in
   [17.2 Libraries and Devices](https://www.kronkai.com/manual#172-libraries-and-devices).

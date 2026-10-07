@@ -289,7 +289,7 @@ Substitute `latest` with any published tag (`<version>-<variant>`, `latest-<vari
 
 - **Source:** https://github.com/ardanlabs/kronk
 - **Container quick start (docker run and Docker Compose):** https://github.com/ardanlabs/kronk/blob/main/.manual/chapter-02-installation.md#23-container-quick-start
-- **Docker Compose files (CPU, CUDA, ROCm, Vulkan, All):** https://github.com/ardanlabs/kronk/tree/main/zarf/docker/kronk
+- **Docker Compose files (CPU, CUDA, ROCm, Vulkan):** https://github.com/ardanlabs/kronk/tree/main/zarf/docker/kronk
 - **Headless remote deployment guide:** https://github.com/ardanlabs/kronk/blob/main/.manual/chapter-08-model-server.md#87-container-operations
 - **Documentation:** https://github.com/ardanlabs/kronk#readme
 - **Website:** https://kronkai.com
