@@ -1,85 +1,100 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
-  <title id="title">Select IMC Session</title>
-  <desc id="desc">A cache-worthy request stores its complete stable conversation in a Working session and its independently rendered System-only prefix in the model System pool. New requests search all Working sessions first. Only when none matches does Kronk search the System pool, copy an exact System hit into a separate empty or least-recently-used Working session, and build the remaining prompt there.</desc>
+  <title id="title">One OpenCode Session, Three Requests</title>
+  <desc id="desc">Three sequential requests resend a growing conversation. Request one creates an IMC entry for System and User 1. Request two matches all saved token IDs, restores the corresponding model state, computes Assistant 1 and User 2, and saves a larger snapshot. Request three repeats this with Assistant 2 and User 3. Token IDs identify a complete reusable prefix; the saved snapshot contains KV state and, for hybrid models, recurrent state. Assistant replies enter the cache only when sent back as input on the next request. The generation-only tail is omitted. If no working entry matches, Kronk tries a system-only snapshot; if that also misses, it computes the full prompt.</desc>
   <defs>
-    <filter id="shadow" x="-10%" y="-10%" width="120%" height="135%"><feDropShadow dx="0" dy="5" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.10"/></filter>
-    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth"><path d="M0 0L12 6L0 12z" fill="#334155"/></marker>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth"><path d="M0 0L10 5L0 10z" fill="#334155"/></marker>
     <style>
-      .title{font:700 42px Inter,ui-sans-serif,system-ui,sans-serif;fill:#0f172a;letter-spacing:.4px}.subtitle{font:400 21px Inter,ui-sans-serif,system-ui,sans-serif;fill:#475569}
-      .section{font:700 24px Inter,ui-sans-serif,system-ui,sans-serif;fill:#0f172a}.heading{font:700 20px Inter,ui-sans-serif,system-ui,sans-serif;fill:#0f172a}
-      .body{font:500 18px Inter,ui-sans-serif,system-ui,sans-serif;fill:#334155}.small{font:500 16px Inter,ui-sans-serif,system-ui,sans-serif;fill:#475569}
-      .eyebrow{font:700 17px Inter,ui-sans-serif,system-ui,sans-serif;letter-spacing:1.1px}.token{font:700 16px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;text-anchor:middle;dominant-baseline:middle}
-      .white{fill:#fff}.blue{fill:#1d4ed8}.green{fill:#15803d}.red{fill:#b91c1c}.orange{fill:#c2410c}.muted{fill:#64748b}
+      .title{font:700 42px Inter,ui-sans-serif,system-ui,sans-serif;fill:#0f172a;letter-spacing:.4px}
+      .subtitle{font:400 24px Inter,ui-sans-serif,system-ui,sans-serif;fill:#475569}
+      .heading{font:700 25px Inter,ui-sans-serif,system-ui,sans-serif;fill:#0f172a}
+      .body{font:500 23px Inter,ui-sans-serif,system-ui,sans-serif;fill:#334155}
+      .small{font:500 20px Inter,ui-sans-serif,system-ui,sans-serif;fill:#475569}
+      .eyebrow{font:700 20px Inter,ui-sans-serif,system-ui,sans-serif;letter-spacing:1px;fill:#475569}
+      .message{font:600 21px Inter,ui-sans-serif,system-ui,sans-serif;fill:#fff;text-anchor:middle}
+      .token{font:600 22px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:#fff;text-anchor:middle}
+      .green{fill:#15803d}.blue{fill:#1d4ed8}.white{fill:#fff}
     </style>
   </defs>
-  <rect width="1920" height="1080" fill="#f8fafc"/><rect width="1920" height="12" fill="#0f766e"/>
-  <text class="title" x="70" y="67">IMC CACHE POPULATION AND SESSION SELECTION</text>
-  <text class="subtitle" x="70" y="105">Working sessions are the normal path. The separate System pool is consulted only after every Working session misses.</text>
+  <rect width="1920" height="1080" fill="#f8fafc"/>
+  <rect width="1920" height="12" fill="#0f766e"/>
+  <text class="title" x="70" y="68">ONE OPENCODE SESSION, THREE REQUESTS</text>
+  <text class="subtitle" x="70" y="111">Each request resends the conversation. IMC reuses the work already done.</text>
 
-  <!-- Population -->
-  <text class="section" x="70" y="157">1 · POPULATE BOTH MODEL-OWNED POOLS</text>
-  <g filter="url(#shadow)"><rect x="70" y="180" width="1780" height="225" rx="24" fill="#fff" stroke="#cbd5e1" stroke-width="2"/></g>
-  <rect x="105" y="220" width="335" height="135" rx="16" fill="#f1f5f9" stroke="#94a3b8" stroke-width="2"/>
-  <text class="eyebrow muted" x="135" y="255">CACHE-WORTHY REQUEST</text>
-  <rect x="135" y="278" width="100" height="48" rx="9" fill="#16a34a"/><rect x="245" y="278" width="90" height="48" rx="9" fill="#3b82f6"/><rect x="345" y="278" width="65" height="48" rx="9" fill="#3b82f6"/>
-  <text class="token white" x="185" y="302">SYSTEM A</text><text class="token white" x="290" y="302">USER 1</text><text class="token white" x="377" y="302">…</text>
+  <text class="eyebrow" x="300" y="171">COMPARE TOKEN IDs</text>
+  <rect x="635" y="150" width="22" height="22" rx="4" fill="#15803d"/>
+  <text class="small" x="668" y="170">Saved prefix</text>
+  <rect x="830" y="150" width="22" height="22" rx="4" fill="#2563eb"/>
+  <text class="small" x="863" y="170">New input</text>
+  <text class="eyebrow" x="1300" y="171">SAVE MODEL STATE</text>
+  <text class="small" x="1300" y="201">KV + recurrent state for hybrid models</text>
 
-  <path d="M440 287H535" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
-  <text class="small blue" x="487" y="265" text-anchor="middle">stable</text>
-  <rect x="555" y="205" width="560" height="175" rx="18" fill="#eff6ff" stroke="#60a5fa" stroke-width="2"/>
-  <text class="eyebrow blue" x="590" y="245">WORKING SESSION POOL · N ENTRIES</text>
-  <text class="body" x="590" y="278">Save the complete stable conversation.</text>
-  <rect x="590" y="305" width="100" height="46" rx="8" fill="#16a34a"/><rect x="700" y="305" width="90" height="46" rx="8" fill="#3b82f6"/><rect x="800" y="305" width="65" height="46" rx="8" fill="#3b82f6"/>
-  <text class="token white" x="640" y="328">SYSTEM A</text><text class="token white" x="745" y="328">USER 1</text><text class="token white" x="832" y="328">…</text><text class="small blue" x="895" y="334">Working 2</text>
+  <!-- Request 1: no existing conversation snapshot. -->
+  <rect x="70" y="225" width="1780" height="200" rx="20" fill="#fff" stroke="#cbd5e1" stroke-width="2"/>
+  <text class="heading" x="105" y="269">REQUEST 1</text>
+  <text class="body" x="105" y="310">Start the</text>
+  <text class="body" x="105" y="340">conversation</text>
+  <rect x="300" y="255" width="132" height="83" rx="10" fill="#2563eb"/>
+  <text class="message" x="366" y="285">System</text><text class="token" x="366" y="319">10 11 …</text>
+  <rect x="442" y="255" width="132" height="83" rx="10" fill="#2563eb"/>
+  <text class="message" x="508" y="285">User 1</text><text class="token" x="508" y="319">20 21 …</text>
+  <text class="body blue" x="300" y="385">Compute the input → create a cache entry</text>
+  <path d="M1180 300H1260" fill="none" stroke="#334155" stroke-width="3" marker-end="url(#arrow)"/>
+  <rect x="1290" y="247" width="530" height="156" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+  <text class="heading" x="1315" y="283">Snapshot 1</text>
+  <rect x="1315" y="302" width="72" height="30" rx="5" fill="#0f766e"/><rect x="1395" y="302" width="72" height="30" rx="5" fill="#0f766e"/>
+  <text class="body" x="1315" y="375">State after System + User 1</text>
 
-  <path d="M440 330C500 395 1060 395 1130 330" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
-  <text class="small green" x="820" y="395" text-anchor="middle">independent System-only render</text>
-  <rect x="1150" y="205" width="665" height="175" rx="18" fill="#ecfdf5" stroke="#4ade80" stroke-width="2"/>
-  <text class="eyebrow green" x="1185" y="245">SYSTEM CACHE POOL · N ENTRIES · RAM ONLY</text>
-  <text class="body" x="1185" y="278">Save only the exact rendered System boundary.</text>
-  <rect x="1185" y="305" width="100" height="46" rx="8" fill="#16a34a"/>
-  <text class="token white" x="1235" y="328">SYSTEM A</text><text class="small green" x="1315" y="334">System 0 · immutable · shared</text>
-  <rect x="1580" y="294" width="200" height="64" rx="12" fill="#fff" stroke="#86efac" stroke-width="2"/>
-  <text class="small" x="1680" y="320" text-anchor="middle">Not [SYSTEM][USER]</text><text class="small green" x="1680" y="345" text-anchor="middle">[SYSTEM] only</text>
+  <!-- Request 2: all of snapshot 1 matches; append new input. -->
+  <rect x="70" y="450" width="1780" height="200" rx="20" fill="#fff" stroke="#cbd5e1" stroke-width="2"/>
+  <text class="heading" x="105" y="494">REQUEST 2</text>
+  <text class="body" x="105" y="535">Continue the</text>
+  <text class="body" x="105" y="565">conversation</text>
+  <rect x="300" y="480" width="132" height="83" rx="10" fill="#15803d"/>
+  <text class="message" x="366" y="510">System</text><text class="token" x="366" y="544">10 11 …</text>
+  <rect x="442" y="480" width="132" height="83" rx="10" fill="#15803d"/>
+  <text class="message" x="508" y="510">User 1</text><text class="token" x="508" y="544">20 21 …</text>
+  <rect x="584" y="480" width="132" height="83" rx="10" fill="#2563eb"/>
+  <text class="message" x="650" y="510">Assistant 1</text><text class="token" x="650" y="544">30 31 …</text>
+  <rect x="726" y="480" width="132" height="83" rx="10" fill="#2563eb"/>
+  <text class="message" x="792" y="510">User 2</text><text class="token" x="792" y="544">40 41 …</text>
+  <path d="M300 572V580H574V572" fill="none" stroke="#15803d" stroke-width="2"/>
+  <text class="body" x="300" y="610"><tspan class="green">Prefix matches → restore Snapshot 1</tspan><tspan> → compute blue input</tspan></text>
+  <path d="M1180 525H1260" fill="none" stroke="#334155" stroke-width="3" marker-end="url(#arrow)"/>
+  <rect x="1290" y="472" width="530" height="156" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+  <text class="heading" x="1315" y="508">Snapshot 2 · same entry, larger state</text>
+  <rect x="1315" y="527" width="72" height="30" rx="5" fill="#0f766e"/><rect x="1395" y="527" width="72" height="30" rx="5" fill="#0f766e"/>
+  <rect x="1475" y="527" width="72" height="30" rx="5" fill="#0f766e"/><rect x="1555" y="527" width="72" height="30" rx="5" fill="#0f766e"/>
+  <text class="body" x="1315" y="600">State through User 2</text>
 
-  <!-- Working selection -->
-  <text class="section" x="70" y="460">2 · START A REQUEST — SEARCH EVERY AVAILABLE WORKING SESSION FIRST</text>
-  <g filter="url(#shadow)"><rect x="70" y="485" width="1780" height="260" rx="24" fill="#fff" stroke="#cbd5e1" stroke-width="2"/></g>
-  <rect x="105" y="525" width="320" height="175" rx="18" fill="#f1f5f9" stroke="#94a3b8" stroke-width="2"/>
-  <text class="eyebrow muted" x="135" y="562">NEW STABLE PLAN</text>
-  <rect x="135" y="588" width="92" height="44" rx="8" fill="#0f766e"/><rect x="237" y="588" width="80" height="44" rx="8" fill="#0f766e"/><rect x="327" y="588" width="68" height="44" rx="8" fill="#0f766e"/>
-  <text class="token white" x="181" y="610">SYSTEM A</text><text class="token white" x="277" y="610">USER X</text><text class="token white" x="361" y="610">…</text>
-  <text class="small muted" x="135" y="670">Reserved sessions are skipped.</text>
-  <path d="M425 612H505" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
+  <!-- Request 3: the complete larger prefix matches again. -->
+  <rect x="70" y="675" width="1780" height="200" rx="20" fill="#fff" stroke="#cbd5e1" stroke-width="2"/>
+  <text class="heading" x="105" y="719">REQUEST 3</text>
+  <text class="body" x="105" y="760">Continue the</text>
+  <text class="body" x="105" y="790">conversation</text>
+  <rect x="300" y="705" width="132" height="83" rx="10" fill="#15803d"/>
+  <text class="message" x="366" y="735">System</text><text class="token" x="366" y="769">10 11 …</text>
+  <rect x="442" y="705" width="132" height="83" rx="10" fill="#15803d"/>
+  <text class="message" x="508" y="735">User 1</text><text class="token" x="508" y="769">20 21 …</text>
+  <rect x="584" y="705" width="132" height="83" rx="10" fill="#15803d"/>
+  <text class="message" x="650" y="735">Assistant 1</text><text class="token" x="650" y="769">30 31 …</text>
+  <rect x="726" y="705" width="132" height="83" rx="10" fill="#15803d"/>
+  <text class="message" x="792" y="735">User 2</text><text class="token" x="792" y="769">40 41 …</text>
+  <rect x="868" y="705" width="132" height="83" rx="10" fill="#2563eb"/>
+  <text class="message" x="934" y="735">Assistant 2</text><text class="token" x="934" y="769">50 51 …</text>
+  <rect x="1010" y="705" width="132" height="83" rx="10" fill="#2563eb"/>
+  <text class="message" x="1076" y="735">User 3</text><text class="token" x="1076" y="769">60 61 …</text>
+  <path d="M300 797V805H858V797" fill="none" stroke="#15803d" stroke-width="2"/>
+  <text class="body" x="300" y="835"><tspan class="green">Prefix matches → restore Snapshot 2</tspan><tspan> → compute blue input</tspan></text>
+  <path d="M1180 750H1260" fill="none" stroke="#334155" stroke-width="3" marker-end="url(#arrow)"/>
+  <rect x="1290" y="697" width="530" height="156" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+  <text class="heading" x="1315" y="733">Snapshot 3 · same entry, larger state</text>
+  <rect x="1315" y="752" width="72" height="30" rx="5" fill="#0f766e"/><rect x="1395" y="752" width="72" height="30" rx="5" fill="#0f766e"/>
+  <rect x="1475" y="752" width="72" height="30" rx="5" fill="#0f766e"/><rect x="1555" y="752" width="72" height="30" rx="5" fill="#0f766e"/>
+  <rect x="1635" y="752" width="72" height="30" rx="5" fill="#0f766e"/><rect x="1715" y="752" width="72" height="30" rx="5" fill="#0f766e"/>
+  <text class="body" x="1315" y="825">State through User 3</text>
 
-  <rect x="525" y="525" width="330" height="175" rx="18" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
-  <text class="eyebrow blue" x="555" y="562">WORKING 0</text><text class="body" x="555" y="594">[SYSTEM A][USER 1]…</text>
-  <text class="small red" x="555" y="628">Diverges · reject</text><text class="small muted" x="555" y="666">No partial-prefix trimming</text>
-  <rect x="885" y="525" width="330" height="175" rx="18" fill="#eff6ff" stroke="#22c55e" stroke-width="4"/>
-  <text class="eyebrow green" x="915" y="562">WORKING 1 · SELECTED</text><text class="body" x="915" y="594">[SYSTEM A][USER X]</text>
-  <text class="small green" x="915" y="628">Complete prefix · longest hit</text><text class="small" x="915" y="666">Restore and append normally</text>
-  <rect x="1245" y="525" width="270" height="175" rx="18" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
-  <text class="eyebrow blue" x="1275" y="562">WORKING 2</text><text class="body" x="1275" y="594">[SYSTEM A]</text>
-  <text class="small green" x="1275" y="628">Complete prefix · shorter</text><text class="small muted" x="1275" y="666">Usable, not selected</text>
-  <rect x="1545" y="525" width="270" height="175" rx="18" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
-  <text class="eyebrow muted" x="1575" y="562">WORKING 3</text><text class="body muted" x="1575" y="594">Reserved</text>
-  <text class="small muted" x="1575" y="628">Another request owns it</text><text class="small muted" x="1575" y="666">Do not inspect or reset</text>
-
-  <!-- System selection -->
-  <text class="section" x="70" y="800">3 · ONLY WHEN ALL WORKING SESSIONS MISS — SEARCH SYSTEM, THEN CHOOSE A WORKING DESTINATION</text>
-  <g filter="url(#shadow)"><rect x="70" y="825" width="1780" height="180" rx="24" fill="#fff" stroke="#fbbf24" stroke-width="2"/></g>
-  <rect x="105" y="855" width="300" height="120" rx="16" fill="#fff7ed" stroke="#fb923c" stroke-width="2"/>
-  <text class="eyebrow orange" x="135" y="892">ALL WORKING MISS</text><text class="body" x="135" y="927">Now inspect System pool</text><text class="small muted" x="135" y="956">Never search System earlier</text>
-  <path d="M405 915H480" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
-  <rect x="500" y="855" width="355" height="120" rx="16" fill="#ecfdf5" stroke="#22c55e" stroke-width="4"/>
-  <text class="eyebrow green" x="530" y="892">SYSTEM 0 · EXACT HIT</text><text class="body" x="530" y="927">[SYSTEM A] token sequence</text><text class="small green" x="530" y="956">Reserve immutable source during copy</text>
-  <path d="M855 915H930" stroke="#334155" stroke-width="4" fill="none" marker-end="url(#arrow)"/>
-  <rect x="950" y="855" width="380" height="120" rx="16" fill="#eff6ff" stroke="#60a5fa" stroke-width="2"/>
-  <text class="eyebrow blue" x="980" y="892">SELECT EMPTY OR AVAILABLE LRU</text><text class="body" x="980" y="927">Copy System 0 → Working destination</text><text class="small blue" x="980" y="956">Prefill suffix; publish complete Current</text>
-  <text class="eyebrow orange" x="1378" y="921" text-anchor="middle">OR</text>
-  <rect x="1425" y="855" width="390" height="120" rx="16" fill="#fff7ed" stroke="#fb923c" stroke-width="2"/>
-  <text class="eyebrow orange" x="1455" y="892">NO EXACT SYSTEM HIT</text><text class="body" x="1455" y="927">Build Working from the beginning</text><text class="small" x="1455" y="956">Publish System; rotate oldest available if full</text>
-
-  <rect x="70" y="1025" width="1780" height="40" rx="12" fill="#0f172a"/>
-  <text class="body white" x="960" y="1051" text-anchor="middle">Current-first invariant: a Working hit always wins. System is a shared preload source, never the Working destination and never a user-turn cache.</text>
+  <text class="small" x="70" y="918">Illustrative token IDs; message blocks include template tokens. Input is saved before generation; the generation-only tail is not shown.</text>
+  <rect x="70" y="947" width="1780" height="98" rx="18" fill="#0f172a"/>
+  <text class="heading white" x="105" y="985">Tokens decide what matches. Saved state is what Phase I prefill restores.</text>
+  <text class="body white" x="105" y="1020">No working prefix matches? → Try system-only state → If that misses too, compute the full prompt.</text>
 </svg>
