@@ -26,8 +26,8 @@
 #   APP_KEY     path to the App private key .pem            (required)
 #   ORG         GitHub org                                  (default ardanlabs)
 #   GROUP       runner group                                (default kronk)
-#   LABELS      runner labels  (default: gpu,<backend>, where <backend>
-#               comes from the image's com.ardanlabs.kronk.backend label)
+#   LABELS      runner labels  (default: self-hosted,Linux,X64,gpu,<backend>,
+#               <backend> from the image's com.ardanlabs.kronk.backend label)
 #   MEMORY      per-container memory cap, docker size    (default 20g)
 #               0 or empty leaves the container uncapped
 #   LOG_DIR     where the supervisor loops log         (default ~/.kronk-runners)
@@ -105,7 +105,9 @@ if [[ -z "${LABELS:-}" ]]; then
         exit 1
     fi
 
-    LABELS="gpu,${backend}"
+    # A JIT runner gets exactly these labels: GitHub adds no self-hosted/OS/arch
+    # defaults, and linux.yml and gpu.yml both ask for self-hosted,Linux,X64.
+    LABELS="self-hosted,Linux,X64,gpu,${backend}"
 fi
 
 RECREATE=false
