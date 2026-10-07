@@ -100,18 +100,15 @@ func Init(opts ...InitOption) error {
 	if o.logLevel < LogSilent || o.logLevel > LogNormal {
 		o.logLevel = LogSilent
 	}
-	// switch o.logLevel {
-	// case LogSilent:
-	// 	sd.SetLogCallback(func(sd.LogLevel, string) {})
-	// default:
-	// 	sd.SetLogCallback(func(_ sd.LogLevel, text string) {
-	// 		fmt.Fprintln(os.Stderr, text)
-	// 	})
-	// }
 
-	sd.SetLogCallback(func(_ sd.LogLevel, text string) {
-		fmt.Fprintln(os.Stderr, text)
-	})
+	switch o.logLevel {
+	case LogSilent:
+		sd.SetLogCallback(func(sd.LogLevel, string) {})
+	default:
+		sd.SetLogCallback(func(_ sd.LogLevel, text string) {
+			fmt.Fprintln(os.Stderr, text)
+		})
+	}
 
 	if o.progress == nil {
 		sd.SetProgressCallback(nil)

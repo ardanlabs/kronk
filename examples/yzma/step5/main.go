@@ -8,7 +8,7 @@
 //   4. Batched decoding of text tokens and image embeddings
 //
 // Run the example like this from the root of the project:
-// $ go run ./examples/yzma/step5 -image examples/samples/giraffe.jpg
+// $ make example-yzma-step5
 
 package main
 
@@ -19,7 +19,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/ardanlabs/kronk/examples/yzma/internal/yzmainit"
+	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	yzmaspec "github.com/hybridgroup/yzma/exp/speculative"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"github.com/hybridgroup/yzma/pkg/mtmd"
@@ -544,10 +544,7 @@ func processBatch(lctx llama.Context, batch llama.BatchExt, useNonCausal bool) e
 }
 
 func initYzma() error {
-	libPath, err := yzmainit.LibraryPath()
-	if err != nil {
-		return fmt.Errorf("prepare library path: %w", err)
-	}
+	libPath := libs.Path("")
 
 	if err := llama.Load(libPath); err != nil {
 		return fmt.Errorf("unable to load library: %w", err)

@@ -146,14 +146,12 @@ func Init(opts ...InitOption) error {
 		o.logLevel = LogSilent
 	}
 
-	// switch o.logLevel {
-	// case LogSilent:
-	// 	whisper.LogSet(whisper.LogSilent())
-	// default:
-	// 	whisper.LogSet(whisper.LogNormal)
-	// }
-
-	whisper.LogSet(whisper.LogNormal)
+	switch o.logLevel {
+	case LogSilent:
+		whisper.LogSet(whisper.LogSilent())
+	default:
+		whisper.LogSet(whisper.LogNormal)
+	}
 
 	libraryLocation = libPath
 	initDone = true

@@ -121,17 +121,14 @@ func Init(opts ...InitOption) error {
 		o.logLevel = LogSilent
 	}
 
-	// switch o.logLevel {
-	// case LogSilent:
-	// 	llama.LogSet(llama.LogSilent())
-	// 	mtmd.LogSet(llama.LogSilent())
-	// default:
-	// 	llama.LogSet(llama.LogNormal)
-	// 	mtmd.LogSet(llama.LogNormal)
-	// }
-
-	llama.LogSet(llama.LogNormal)
-	mtmd.LogSet(llama.LogNormal)
+	switch o.logLevel {
+	case LogSilent:
+		llama.LogSet(llama.LogSilent())
+		mtmd.LogSet(llama.LogSilent())
+	default:
+		llama.LogSet(llama.LogNormal)
+		mtmd.LogSet(llama.LogNormal)
+	}
 
 	// Inline of llama.Init so we can gate GGMLBackendLoadAllFromPath on
 	// the registry being empty. If bucky/whisper was initialized first
