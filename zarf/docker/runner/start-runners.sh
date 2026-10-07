@@ -12,10 +12,15 @@
 # Each runner is a supervise-runner.sh loop, not a long-lived container: it
 # mints a single-use JIT config per job and runs it in a --rm container, so the
 # App private key never enters a container and no job inherits the previous
-# job's writable layer. Nothing restarts the loops after a reboot, so add a
-# crontab line for that (crontab -e, no root needed):
+# job's writable layer. Nothing restarts the loops after a reboot, so add one
+# crontab line PER FLEET (crontab -e, no root needed); a fleet without its line
+# stays down after a reboot and its jobs queue with no error:
 #
 #   @reboot COUNT=2 APP_ID=... APP_KEY=$HOME/key.pem $HOME/start-runners.sh
+#   @reboot PREFIX=kronk-linux-rocm COUNT=2 IMAGE=kronk-runner:rocm APP_ID=... APP_KEY=$HOME/key.pem $HOME/start-runners.sh
+#
+# Each entry must stay on ONE line: cron reads a wrapped paste as two broken
+# entries. `crontab -l` should print exactly one @reboot line per fleet.
 #
 # Configuration comes from the environment:
 #
