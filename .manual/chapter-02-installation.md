@@ -222,6 +222,13 @@ docker compose -f compose.yaml -f compose.rocm.yaml up -d     # AMD with ROCm, n
 docker compose -f compose.yaml -f compose.vulkan.yaml up -d   # AMD or Intel with Vulkan, needs /dev/dri
 ```
 
+For the `latest-all` image, add `compose.all.yaml` last. It only swaps the
+image, so keep the GPU override:
+
+```shell
+docker compose -f compose.yaml -f compose.cuda.yaml -f compose.all.yaml up -d
+```
+
 Settings, server options such as authentication, GPU details, and upgrades are
 covered in [8.7 Container Operations](https://www.kronkai.com/manual#87-container-operations).
 

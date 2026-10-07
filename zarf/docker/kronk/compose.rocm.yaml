@@ -14,7 +14,7 @@
 
 services:
   kronk:
-    image: ghcr.io/ardanlabs/kronk:${KRONK_IMAGE_VERSION:-latest}-${KRONK_IMAGE_VARIANT:-rocm}
+    image: ghcr.io/ardanlabs/kronk:${KRONK_IMAGE_VERSION:-latest}-rocm
     devices:
       - /dev/kfd
       - /dev/dri

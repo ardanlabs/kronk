@@ -486,7 +486,7 @@ with the release tag of the image you pin:
 
 ```shell
 mkdir kronk && cd kronk
-for f in compose.yaml compose.cuda.yaml compose.rocm.yaml compose.vulkan.yaml; do
+for f in compose.yaml compose.cuda.yaml compose.rocm.yaml compose.vulkan.yaml compose.all.yaml; do
   curl -fsSLO "https://raw.githubusercontent.com/ardanlabs/kronk/main/zarf/docker/kronk/$f"
 done
 ```
@@ -496,7 +496,6 @@ These variables configure the Compose files. Set them in the shell or in a
 
 | Variable | Default | Purpose |
 | -------- | ------- | ------- |
-| `KRONK_IMAGE_VARIANT` | `cpu` (or the override's backend) | `cpu`, `cuda`, `vulkan`, `rocm`, or `all` |
 | `KRONK_IMAGE_VERSION` | `latest` | `latest` or a release such as `vX.Y.Z`; pin a release outside local testing |
 | `KRONK_BIND_ADDR` | `127.0.0.1` | Host address for ports `11435` and `11445` |
 | `KRONK_DOWNLOAD_ENABLED` | `true` | Allow model downloads from the BUI |
@@ -536,6 +535,7 @@ KRONK_IMAGE_VERSION=vX.Y.Z
 
 In a repository checkout, `make kronk-up KRONK_GPU=vulkan` (or `cuda`, `rocm`)
 starts the same from the repository root and adds the override when it exists.
+Add `KRONK_ALL=1` for the `all` image.
 
 GPU overrides need these host components:
 
@@ -556,6 +556,9 @@ GPU overrides need these host components:
   and faster.
 - Vulkan: `VK_LOADER_DRIVERS_SELECT` and `MESA_VK_DEVICE_SELECT` are passed
   through to pick one GPU.
+- Each file pulls the image for its own backend (`-cpu`, `-cuda`, `-rocm`,
+  `-vulkan`). For the `all` image, list `compose.all.yaml` after the GPU
+  override, which still attaches the devices.
 - macOS is CPU only; Windows uses the CUDA override with Docker Desktop and
   WSL2. Startup errors are covered in
   [17.2 Libraries and Devices](https://www.kronkai.com/manual#172-libraries-and-devices).

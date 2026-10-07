@@ -1,0 +1,15 @@
+# All-backends image override: CPU, CUDA, Vulkan and ROCm built in. Kronk
+# picks the backend at startup from the devices it can see.
+#
+# This file only swaps the image. It does not attach a GPU, so list it after
+# the GPU override for your hardware:
+#
+#   docker compose -f compose.yaml -f compose.all.yaml up -d                      # CPU
+#   docker compose -f compose.yaml -f compose.cuda.yaml -f compose.all.yaml up -d # NVIDIA
+#
+# The image is much larger than the single-backend ones. Its use is one image
+# for hosts with different GPUs.
+
+services:
+  kronk:
+    image: ghcr.io/ardanlabs/kronk:${KRONK_IMAGE_VERSION:-latest}-all

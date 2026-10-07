@@ -11,10 +11,14 @@
 #   docker compose -f compose.yaml -f compose.rocm.yaml   up -d   # AMD (ROCm)
 #   docker compose -f compose.yaml -f compose.vulkan.yaml up -d   # AMD / Intel (Vulkan)
 #
+# Each file pulls the image for its own backend: -cpu here, -cuda, -rocm or
+# -vulkan in the overrides. For the `all` image (every backend built in), add
+# compose.all.yaml after the GPU override, if any:
+#
+#   docker compose -f compose.yaml -f compose.cuda.yaml -f compose.all.yaml up -d
+#
 # Variables (shell or a .env file next to this file):
 #
-#   KRONK_IMAGE_VARIANT     cpu | cuda | vulkan | rocm | all   (default: cpu,
-#                           or the override file's own backend)
 #   KRONK_IMAGE_VERSION     latest | vX.Y.Z                    (default: latest)
 #   KRONK_BIND_ADDR         host address the ports bind to      (default: 127.0.0.1)
 #   KRONK_DOWNLOAD_ENABLED  allow BUI model downloads           (default: true)
@@ -30,7 +34,7 @@ name: kronk
 
 services:
   kronk:
-    image: ghcr.io/ardanlabs/kronk:${KRONK_IMAGE_VERSION:-latest}-${KRONK_IMAGE_VARIANT:-cpu}
+    image: ghcr.io/ardanlabs/kronk:${KRONK_IMAGE_VERSION:-latest}-cpu
     container_name: kronk
     restart: unless-stopped
     environment:

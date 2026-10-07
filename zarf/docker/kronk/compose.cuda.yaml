@@ -8,7 +8,7 @@
 
 services:
   kronk:
-    image: ghcr.io/ardanlabs/kronk:${KRONK_IMAGE_VERSION:-latest}-${KRONK_IMAGE_VARIANT:-cuda}
+    image: ghcr.io/ardanlabs/kronk:${KRONK_IMAGE_VERSION:-latest}-cuda
     runtime: nvidia
     deploy:
       resources:
