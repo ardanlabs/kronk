@@ -8,8 +8,8 @@ schema = 3
     version = "v0.123.0"
     hash = "sha256-OjuvlqYrGvoUiXO/5ALbMxHvXRlrhDjLby1BN/nuhAw="
   [mod."cloud.google.com/go/auth"]
-    version = "v0.24.0"
-    hash = "sha256-exhs1yUNCvF2wfi1Q9FUvtm2Dg8C5LXNXWdEh2tZ2ys="
+    version = "v0.24.1-0.20261001053825-dbc26066f70a"
+    hash = "sha256-pRhLkVobgMUr7ZLoL9e7dyE7QdAbJuyOpIgGsi0Kab0="
   [mod."cloud.google.com/go/auth/oauth2adapt"]
     version = "v0.3.0"
     hash = "sha256-wCGutEF5sCKrrGALupeQL8QYyjgSPu+KtVmZ6+/I8PQ="
@@ -203,8 +203,8 @@ schema = 3
     version = "v1.9.0"
     hash = "sha256-sRr/50k8Wra0PJLCJgSkIxvR+ce3PItx4HpFvVijGYk="
   [mod."github.com/hybridgroup/yzma"]
-    version = "v1.29.1"
-    hash = "sha256-J/LLT6VNHtyhAEYwChStk0vQzvzBFtJqdkNjLNCbAbU="
+    version = "v1.29.2-0.20261008090110-1a800a2f3861"
+    hash = "sha256-Os6m4l0pEVaou2EwntbDRl9JkQ/I4RVfLyV7AXGPZ6g="
   [mod."github.com/icza/bitio"]
     version = "v1.1.0"
     hash = "sha256-CtV/dr1L46cZ65EnK9DrBduZCaMnTGf4N2MnElCymtM="
@@ -269,8 +269,8 @@ schema = 3
     version = "v0.6.1-0.20240319094008-0393e58bdf10"
     hash = "sha256-L8dyNm+PCRDNADiIGKZqsPkCgB4xpLrosZjssrN+sUY="
   [mod."github.com/prometheus/client_golang"]
-    version = "v1.24.1"
-    hash = "sha256-HAOFVYyPiU7hVS1XXMMjkbGgTT7/UN0zVHXYOnjr7is="
+    version = "v1.25.0"
+    hash = "sha256-PYAzSxsdlfkHDeLWtwTQriE43R1rZrHIl5nWJ9zeD9M="
   [mod."github.com/prometheus/client_model"]
     version = "v0.6.3"
     hash = "sha256-uYXpFkXMT4AXWJShrCRnu51vhGQAuAU3LFQhhGVJ+74="
@@ -398,8 +398,8 @@ schema = 3
     version = "v0.16.0"
     hash = "sha256-OvekWcaTHMs5n3Img4EmYaORRgSmybBS+tObSnPqftY="
   [mod."google.golang.org/api"]
-    version = "v0.300.0"
-    hash = "sha256-iXWChYBLfLNe6v2U/b86ZQSo4Wfq/zNcoHBbbTL7T/Y="
+    version = "v0.301.0"
+    hash = "sha256-nH10e5hRoUm/AkSb3ZS0A0qjDgml/V1SWGV4iu99cec="
   [mod."google.golang.org/genproto"]
     version = "v0.0.0-20261005182115-fad411399dd8"
     hash = "sha256-zXatTOXviVLNFbZuughLkW55wzGO3yZ68ZLdKvBnshM="

@@ -314,7 +314,7 @@ kronk libs --list-installs
 
 # Install the supported version using its exact release manifest pin.
 kronk libs --local \
-  --version=b11439@sha256:0a41f7be878711b90933a41589f402789e418c530b149ab31d392a9f70a8e448
+  --version=b11501@sha256:01bc5a5972bda387dfb6eab953c38981cfe6de332981f8d4df42b4d5cc3f47f7
 
 # Explicitly select CPU instead of an available GPU.
 KRONK_PROCESSOR=cpu kronk libs --local
@@ -339,6 +339,12 @@ Do not infer compatibility from version ordering or upgrade only one member of
 the set. The current and historical matrix is kept in the repository
 [README](../README.md#project-status), while the normal non-`--upgrade` command
 installs the build pinned for the Kronk release.
+
+The current development binding includes the `moe_cache_size` context-layout
+change and requires the matching b11501 libraries, not the old b11439 bundle.
+MoE expert caching remains disabled. Explicit version overrides and user-managed
+library paths bypass normal version selection; their ABI must match the binding.
+Do not rely on an offline fallback to an old installed bundle after upgrading.
 
 Use `kronk libs --help` for cross-platform bundle installation and removal.
 Changing the active library path requires a server restart; libraries are not
