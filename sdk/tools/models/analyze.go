@@ -302,6 +302,8 @@ func analyzeModelWithConfigAndBudget(info ModelInfo, devs devices.Devices, cfg M
 		nUBatch:        effectivePrefillBatchSize(cfg.PtrPrefillBatchSize),
 		kvCacheOnCPU:   cfg.PtrOffloadKQV != nil && !*cfg.PtrOffloadKQV,
 		swaFull:        cfg.PtrSWAFull == nil || *cfg.PtrSWAFull,
+		moeCacheSize:   cfg.ToKronkConfig().MoECacheSize(),
+		moe:            profile.MoE,
 	}
 	balanced := buildProfile("balanced", profileInput, 0, 0)
 	maxCtx := buildProfile("max_context", profileInput, 1, 0)
@@ -385,6 +387,8 @@ type profileInput struct {
 	nUBatch        int64
 	kvCacheOnCPU   bool
 	swaFull        bool
+	moeCacheSize   int64
+	moe            gguf.MoEInfo
 }
 
 type cacheRecommendation struct {
@@ -658,6 +662,8 @@ func calculateProfile(p profileInput, contextWindow, slots int64, cache cacheRec
 		KVCacheOnCPU:         p.kvCacheOnCPU,
 		SWAFull:              p.swaFull,
 		VTransposed:          profileVTransposed(p),
+		MoECacheSize:         p.moeCacheSize,
+		MoE:                  &p.moe,
 	})
 }
 

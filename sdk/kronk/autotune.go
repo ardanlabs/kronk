@@ -52,6 +52,7 @@ func autoTuneConfig(ctx context.Context, cfg model.Config, budget *models.AutoTu
 		PtrNGpuLayers:       cfg.PtrNGpuLayers,
 		PtrOffloadKQV:       cfg.PtrOffloadKQV,
 		PtrSWAFull:          cfg.PtrSWAFull,
+		MoE:                 cfg.PtrMoE,
 	}
 	if constraints.PtrSWAFull == nil {
 		constraints.PtrSWAFull = new(llama.ContextDefaultParams().SwaFull != 0)

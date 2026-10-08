@@ -15,6 +15,53 @@ import (
 	"go.yaml.in/yaml/v2"
 )
 
+func TestMoECacheConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "model.gguf")
+	if err := os.WriteFile(path, []byte("config validation fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name    string
+		bytes   int64
+		mode    MoEMode
+		split   *SplitMode
+		ngl     int
+		devices []string
+		wantErr string
+	}{
+		{name: "disabled defaults", mode: MoEModeAuto},
+		{name: "negative bytes", bytes: -1, wantErr: "cache-size must be >= 0"},
+		{name: "CPU experts", bytes: 123456789, mode: MoEModeExpertsCPU, split: new(SplitModeNone)},
+		{name: "partial GPU experts", bytes: 987654321, mode: MoEModeKeepTopN, split: new(SplitModeNone)},
+		{name: "all GPU experts", bytes: 1, mode: MoEModeExpertsGPU, split: new(SplitModeNone), wantErr: "requires mode"},
+		{name: "CPU execution", bytes: 1, mode: MoEModeExpertsCPU, split: new(SplitModeNone), ngl: -1, wantErr: "GPU layer offloading"},
+		{name: "unspecified split", bytes: 1, mode: MoEModeExpertsCPU, wantErr: "single GPU"},
+		{name: "tensor split", bytes: 1, mode: MoEModeExpertsCPU, split: new(SplitModeTensor), wantErr: "single GPU"},
+		{name: "multiple devices", bytes: 1, mode: MoEModeExpertsCPU, split: new(SplitModeNone), devices: []string{"CUDA0", "CUDA1"}, wantErr: "single GPU"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := NewConfig(WithModelFiles([]string{path}), WithMoE(&MoEConfig{
+				Mode: tt.mode, PtrCacheSize: new(tt.bytes), PtrKeepExpertsOnGPUForTopNLayers: new(2),
+			}))
+			cfg.PtrSplitMode, cfg.PtrNGpuLayers, cfg.Devices = tt.split, new(tt.ngl), tt.devices
+			if got := cfg.MoECacheSize(); got != tt.bytes {
+				t.Fatalf("cache bytes=%d, want %d", got, tt.bytes)
+			}
+			err := validateConfig(t.Context(), cfg, func(context.Context, string, ...any) {})
+			if tt.wantErr == "" && err != nil {
+				t.Fatal(err)
+			}
+			if tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)) {
+				t.Fatalf("error=%v, want containing %q", err, tt.wantErr)
+			}
+		})
+	}
+	if NewConfig().MoECacheSize() != 0 {
+		t.Fatal("expert cache must be disabled by default")
+	}
+}
+
 func TestMoEMode(t *testing.T) {
 	tests := []struct {
 		name    string

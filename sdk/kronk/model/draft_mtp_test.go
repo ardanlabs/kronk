@@ -38,9 +38,13 @@ func TestEmbeddedMTPContextParamsCapsOutputs(t *testing.T) {
 		YarnBetaFast:       32,
 		YarnBetaSlow:       1,
 		YarnOrigCtx:        32_768,
+		MoeCacheSize:       123456789,
 	}
 
-	got := embeddedMTPContextParams(llama.ContextParams{}, target)
+	got := embeddedMTPContextParams(llama.ContextParams{MoeCacheSize: 987654321}, target)
+	if got.MoeCacheSize != 0 {
+		t.Fatalf("draft cache bytes=%d, want zero", got.MoeCacheSize)
+	}
 	if got.CtxType != llama.ContextTypeMTP {
 		t.Errorf("CtxType = %d, want %d", got.CtxType, llama.ContextTypeMTP)
 	}

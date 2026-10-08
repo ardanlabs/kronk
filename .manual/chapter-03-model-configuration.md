@@ -310,6 +310,54 @@ Partial offload can make a model fit in limited VRAM, but CPU-resident layers
 usually reduce inference speed. On unified-memory systems, CPU and GPU do not
 have separate memory pools, although placement can still affect performance.
 
+#### Experimental MoE expert cache
+
+`moe.cache-size` sets a target-context GPU cache budget **in bytes** for routed
+expert weights that remain in host memory. It is disabled when omitted or zero.
+This is separate from KV caching and IMC: the original host expert weights stay
+resident, and cached copies consume additional device memory. On unified-memory
+systems, both copies consume the same physical memory pool.
+
+```yaml
+some-provider/moe-model:
+  split-mode: none
+  moe:
+    mode: experts_cpu
+    cache-size: 536870912 # 512 MiB; an example budget, not a universal minimum
+```
+
+The SDK equivalent is `model.WithMoE(&model.MoEConfig{Mode:
+model.MoEModeExpertsCPU, PtrCacheSize: new(int64(536870912))})`, together with
+`model.WithSplitMode(model.SplitModeNone)`.
+
+Kronk initially requires `split-mode: none`, GPU layer offloading, and MoE mode
+`experts_cpu` or `keep_top_n` for a nonzero budget. On a multi-GPU machine, pin
+one device using `devices`; llama.cpp rejects multiple selected model devices.
+These are conservative Kronk configuration restrictions, not a claim that every
+other single-device split mode is forbidden upstream. Draft contexts, including
+embedded and shared-KV MTP, always keep expert caching disabled. The budget is
+per target context, not per sequence slot, and automatic tuning never enables it.
+
+During context creation, llama.cpp checks the actual model and tensor placement.
+It requires a MoE model, a GPU backend, and eligible GPU-assigned layers whose
+routed expert tensors are all host-resident. If no layer is eligible, the cache
+can be disabled with a native warning. A budget too small to cache the experts
+needed by one token can fail model loading; the minimum depends on tensor shapes,
+quantization, alignment, and layout groups, so there is no universal minimum.
+
+Direct cached execution applies to actual microbatches of at most 32 tokens and
+requires sufficient capacity and backend support. Larger batches use the regular
+path and may reuse already-cached slices. You do not need to reduce the configured
+prefill batch size to 32. Caching is experimental and can be slower; benchmark your
+model and workload with zero and nonzero budgets before adopting it.
+
+Memory estimates and pool admission include the requested device budget once,
+retain host expert weights, and estimate host slot maps separately. These are
+estimates, not exact native allocations: backend padding and bookkeeping can add
+overhead, while a budget larger than useful capacity may not be fully allocated.
+Leave memory headroom. Native information-level logs report allocated cache sizes
+and shutdown hit/miss statistics when the cache is active.
+
 #### Model weight loading
 
 `load-mode` controls how Kronk reads model weights. Its default and Go zero

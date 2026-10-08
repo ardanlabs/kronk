@@ -1,10 +1,78 @@
 package vram
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 )
+
+func TestCalculateMoECache(t *testing.T) {
+	input := Input{
+		ModelSizeBytes: 1003, BlockCount: 3, ContextWindow: 512,
+		HeadCountKV: 2, KeyLength: 8, ValueLength: 4, BytesPerElement: 2,
+		Slots: 5, ComputeContexts: 2, EmbeddingLength: 128,
+		MoE: &gguf.MoEInfo{IsMoE: true, ExpertCount: 7, ExpertUsedCount: 2},
+		Weights: &gguf.WeightBreakdown{
+			AlwaysActiveBytes: 103, ExpertBytesTotal: 900,
+			ExpertBytesByLayer: []int64{200, 300, 400},
+		},
+	}
+	base := Calculate(input)
+	input.MoECacheSize = 0
+	if got := Calculate(input); !reflect.DeepEqual(got, base) {
+		t.Fatal("zero cache changed estimate")
+	}
+	const cache int64 = 12345
+	const maps int64 = 4 * 7 * 3
+	input.MoECacheSize = cache
+	got := Calculate(input)
+	if got.TotalVRAM-base.TotalVRAM != cache || got.ComputeBufferEst != base.ComputeBufferEst || got.SlotMemory != base.SlotMemory {
+		t.Fatal("cache must be charged once independently of slots and compute contexts")
+	}
+	if got.ExpertCPUBytes != 900 || got.ModelWeightsCPU != base.ModelWeightsCPU || got.ExpertGPUBytes != 0 {
+		t.Fatal("cache changed expert residency")
+	}
+	if got.MoECacheHostBytes != maps || got.TotalSystemRAMEst-base.TotalSystemRAMEst != maps {
+		t.Fatalf("host maps: got %d, want %d", got.MoECacheHostBytes, maps)
+	}
+	if got.UnifiedFootprint()-base.UnifiedFootprint() != cache+maps {
+		t.Fatal("unified footprint must count cache and host maps exactly once")
+	}
+	for _, count := range []int64{1, 2} {
+		main := int(count - 1)
+		devices := CalculatePerDevice(got.ModelWeightsGPU, got.KVVRAMBytes, got.ComputeBufferEst, count, []float64{1, 3}, nil, main, cache)
+		var total int64
+		for i, device := range devices {
+			total += device.TotalBytes
+			wantCache := int64(0)
+			if i == main {
+				wantCache = cache
+			}
+			if device.MoECacheBytes != wantCache || device.TotalBytes != device.WeightsBytes+device.KVBytes+device.ComputeBytes+device.MoECacheBytes {
+				t.Fatal("incorrect main-device cache allocation")
+			}
+		}
+		if total != got.TotalVRAM {
+			t.Fatalf("device total: got %d, want %d", total, got.TotalVRAM)
+		}
+	}
+}
+
+func TestBuildFromMetadataMoECache(t *testing.T) {
+	metadata := map[string]string{
+		"general.architecture": "llama", "llama.block_count": "3",
+		"llama.embedding_length": "128", "llama.attention.head_count": "4",
+		"llama.attention.head_count_kv": "2", "llama.expert_count": "7",
+	}
+	got, err := buildFromMetadata(metadata, nil, 1003, Config{MoECacheSize: 12345, Slots: 5, ComputeContexts: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Input.MoECacheSize != 12345 || got.MoECacheHostBytes != 4*7*3 {
+		t.Fatalf("cache configuration or metadata not propagated: %+v", got)
+	}
+}
 
 func TestEstimateComputeBufferUsesNUBatch(t *testing.T) {
 	base := EstimateComputeBuffer(Input{

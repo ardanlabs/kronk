@@ -330,10 +330,18 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 	slots := max(req.Slots, 1)
 	var configuredSWAFull *bool
 	var nUBatch int64
+	var moeCacheSize int64
 	if req.ModelID != "" {
 		modelConfig := a.pool.Kronk.ModelConfig()[req.ModelID]
 		configuredSWAFull = modelConfig.PtrSWAFull
 		nUBatch = int64(modelConfig.ToKronkConfig().PrefillBatchSize())
+		moeCacheSize = modelConfig.ToKronkConfig().MoECacheSize()
+	}
+	if req.MoECacheSize != nil {
+		moeCacheSize = *req.MoECacheSize
+	}
+	if moeCacheSize < 0 {
+		return errs.Errorf(errs.InvalidArgument, "moe_cache_size must be >= 0")
 	}
 	swaFull := resolveSWAFull(req.SWAFull, configuredSWAFull)
 
@@ -344,6 +352,7 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 		NUBatch:           nUBatch,
 		GPULayers:         req.GPULayers,
 		ExpertLayersOnGPU: req.ExpertLayersOnGPU,
+		MoECacheSize:      moeCacheSize,
 		KVCacheOnCPU:      req.KVCacheOnCPU,
 		SWAFull:           swaFull,
 	}
@@ -377,7 +386,7 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 	if req.DeviceCount > 0 {
 		v.PerDevice = vram.CalculatePerDevice(
 			v.ModelWeightsGPU, v.KVVRAMBytes, v.ComputeBufferEst,
-			req.DeviceCount, req.TensorSplit, nil, 0,
+			req.DeviceCount, req.TensorSplit, nil, 0, v.Input.MoECacheSize,
 		)
 	}
 

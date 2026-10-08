@@ -10,11 +10,29 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	buckymodels "github.com/ardanlabs/kronk/sdk/tools/bucky/models"
 	malinamodels "github.com/ardanlabs/kronk/sdk/tools/malina/models"
 	llamamodels "github.com/ardanlabs/kronk/sdk/tools/models"
 )
+
+func TestMoECacheConfigAndMemoryResponse(t *testing.T) {
+	moe := &model.MoEConfig{Mode: model.MoEModeExpertsCPU, PtrCacheSize: new(int64(123456789))}
+	if got := toAppMoEConfig(moe); got.PtrCacheSize == nil || *got.PtrCacheSize != 123456789 {
+		t.Fatalf("cache missing from config response: %+v", got)
+	}
+	if got := vramConfigFromRMC(llamamodels.ModelConfig{MoE: moe}); got.MoECacheSize != 123456789 {
+		t.Fatalf("cache missing from memory configuration: %+v", got)
+	}
+	resp := toVRAMResponse(vram.Result{
+		Input: vram.Input{MoECacheSize: 123456789}, MoECacheHostBytes: 84,
+		PerDevice: []vram.PerDeviceVRAM{{MoECacheBytes: 123456789}},
+	}, nil)
+	if resp.Input.MoECacheSize != 123456789 || resp.MoECacheHostBytes != 84 || resp.PerDevice[0].MoECacheBytes != 123456789 {
+		t.Fatalf("cache missing from memory response: %+v", resp)
+	}
+}
 
 func TestVRAMResponsePreservesZeroExpertLayers(t *testing.T) {
 	resp := toVRAMResponse(vram.Result{

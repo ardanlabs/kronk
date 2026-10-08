@@ -690,6 +690,7 @@ func logMoEConfig(ctx context.Context, cfg Config, l applog.Logger) {
 	l(ctx, "MOE-CONFIG",
 		"mode", cfg.PtrMoE.Mode.String(),
 		"experts_on_gpu_layers", topN,
+		"cache_size_bytes", cfg.MoECacheSize(),
 		"overrides_applied", fmt.Sprintf("%v", overrides),
 	)
 }
@@ -1014,6 +1015,7 @@ func loadDraftModel(ctx context.Context, log applog.Logger, cfg Config, targetMo
 	dCtxParams.FlashAttentionType = targetCtxParams.FlashAttentionType
 	dCtxParams.NThreads = targetCtxParams.NThreads
 	dCtxParams.NThreadsBatch = targetCtxParams.NThreadsBatch
+	dCtxParams.MoeCacheSize = 0 // Expert caching is target-only.
 
 	dLctx, err := llama.InitFromModel(dModel, dCtxParams)
 	if err != nil {
@@ -1588,6 +1590,7 @@ func calculateVRAMDiag(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory in
 		Slots:                  int64(max(cfg.NSeqMax(), 1)),
 		NUBatch:                int64(cfg.EffectiveNUBatch()),
 		ExpertLayersOnGPU:      cfg.ExpertLayersOnGPU(),
+		MoECacheSize:           cfg.MoECacheSize(),
 		SWAFull:                effectiveSWAFull(cfg.PtrSWAFull, llama.ContextDefaultParams().SwaFull != 0),
 		RecurrentStateCopies:   RecurrentStateCopies(cfg, false),
 		EmbeddedMTPStateCopies: RecurrentStateCopies(cfg, true),

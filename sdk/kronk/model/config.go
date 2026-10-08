@@ -614,6 +614,21 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 		return fmt.Errorf("validate-config: admission timeout must be >= 0, got %s", cfg.AdmissionTimeout())
 	}
 
+	if cfg.MoECacheSize() < 0 {
+		return fmt.Errorf("validate-config: moe cache-size must be >= 0")
+	}
+	if cfg.MoECacheSize() > 0 {
+		if cfg.PtrMoE.Mode != MoEModeExpertsCPU && cfg.PtrMoE.Mode != MoEModeKeepTopN {
+			return fmt.Errorf("validate-config: moe cache-size requires mode experts_cpu or keep_top_n")
+		}
+		if cfg.NGpuLayers() < 0 {
+			return fmt.Errorf("validate-config: moe cache-size requires GPU layer offloading")
+		}
+		if cfg.PtrSplitMode == nil || *cfg.PtrSplitMode != SplitModeNone || len(cfg.Devices) > 1 || len(cfg.TensorSplit) > 1 {
+			return fmt.Errorf("validate-config: moe cache-size requires split-mode none and a single GPU device")
+		}
+	}
+
 	if cfg.PtrPrefillBatchSize != nil && cfg.PrefillBatchSize() <= 0 {
 		return fmt.Errorf("validate-config: prefill batch size must be > 0, got %d", cfg.PrefillBatchSize())
 	}
@@ -985,6 +1000,7 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 	}
 
 	ctxParams.FlashAttentionType = cfg.FlashAttention().toYZMAType()
+	ctxParams.MoeCacheSize = uint64(cfg.MoECacheSize())
 
 	// NOutputsMax caps how many logits-flagged rows llama.cpp reserves
 	// per ubatch. NOutputsMaxPerSeq gives graph reservation the matching
@@ -1915,10 +1931,23 @@ type MoEConfig struct {
 	// Only used when Mode is MoEModeKeepTopN. 0 means all experts on CPU.
 	// llama.cpp convention: "top" means highest-numbered layers.
 	PtrKeepExpertsOnGPUForTopNLayers *int `yaml:"keep-experts-top-n,omitempty"`
+
+	// PtrCacheSize is the experimental target-context device budget in bytes
+	// for caching host-resident routed experts. Omitted or zero disables it. Host weights
+	// remain resident; this is not KV/IMC memory and is never inherited by drafts.
+	PtrCacheSize *int64 `yaml:"cache-size,omitempty"`
 }
 
 func (m MoEConfig) KeepExpertsOnGPUForTopNLayers() int {
 	return intOr(m.PtrKeepExpertsOnGPUForTopNLayers, 0)
+}
+
+// MoECacheSize returns the target expert-cache budget in bytes, disabled by default.
+func (cfg Config) MoECacheSize() int64 {
+	if cfg.PtrMoE == nil || cfg.PtrMoE.PtrCacheSize == nil {
+		return 0
+	}
+	return *cfg.PtrMoE.PtrCacheSize
 }
 
 // ExpertsAllOnGPU is the sentinel value used for vram.Config.ExpertLayersOnGPU

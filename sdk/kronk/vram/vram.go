@@ -61,6 +61,7 @@ type Config struct {
 	NUBatch                int64 // Effective physical batch size.
 	GPULayers              int64 // Number of layers on GPU (0 = all, -1 = none).
 	ExpertLayersOnGPU      int64 // 0 = all experts on CPU.
+	MoECacheSize           int64 // Requested target-context expert cache bytes on the main device.
 	KVCacheOnCPU           bool  // Move KV cache off the GPU (offload-kqv: false).
 	SWAFull                bool  // Size SWA layers against the full context window.
 	VTransposed            bool  // Size V using the model-wide transposed layout.
@@ -101,6 +102,7 @@ type Input struct {
 	Weights              *gguf.WeightBreakdown //
 	GPULayers            int64                 // Number of layers on GPU (0 = all, -1 = none)
 	ExpertLayersOnGPU    int64                 // 0 = all experts on CPU
+	MoECacheSize         int64                 // Requested target-context expert cache bytes on the main device.
 	KVCacheOnCPU         bool                  // Move KV cache off the GPU (offload-kqv: false)
 	SWAFull              bool                  // Size SWA layers against the full context window.
 	VTransposed          bool                  // Size V using the model-wide transposed layout.
@@ -110,11 +112,12 @@ type Input struct {
 // compute buffer when tensor_split is in effect. The first element is the
 // main GPU; compute buffer is reported as fully on the main GPU.
 type PerDeviceVRAM struct {
-	Label        string
-	WeightsBytes int64
-	KVBytes      int64
-	ComputeBytes int64
-	TotalBytes   int64
+	Label         string
+	WeightsBytes  int64
+	KVBytes       int64
+	ComputeBytes  int64
+	MoECacheBytes int64
+	TotalBytes    int64
 }
 
 // Result contains the calculated VRAM requirements.
@@ -135,6 +138,7 @@ type Result struct {
 	AlwaysActiveCPUBytes int64
 	ExpertGPUBytes       int64
 	ExpertCPUBytes       int64
+	MoECacheHostBytes    int64 // Estimated host slot maps; not expert weights.
 
 	// KV cache placement and total system RAM estimate. When
 	// Input.KVCacheOnCPU is true, KVCPUBytes == SlotMemory and
@@ -254,8 +258,16 @@ func Calculate(input Input) Result {
 		}
 	}
 
-	totalVRAM := modelWeightsGPU + kvVRAMBytes + computeBufferEst
-	totalSystemRAMEst := modelWeightsCPU + kvCPUBytes
+	// The target cache is additional storage, not a replacement for resident
+	// CPU expert weights. Draft contexts have no cache, so neither Slots nor
+	// ComputeContexts multiplies it. Host slot maps use I32 per expert per
+	// layer; native alignment and backend allocation overhead may differ.
+	var moeCacheHostBytes int64
+	if input.MoECacheSize > 0 && input.MoE != nil && input.MoE.IsMoE {
+		moeCacheHostBytes = 4 * input.MoE.ExpertCount * input.BlockCount
+	}
+	totalVRAM := modelWeightsGPU + kvVRAMBytes + computeBufferEst + input.MoECacheSize
+	totalSystemRAMEst := modelWeightsCPU + kvCPUBytes + moeCacheHostBytes
 
 	return Result{
 		Input:                input,
@@ -272,6 +284,7 @@ func Calculate(input Input) Result {
 		AlwaysActiveCPUBytes: alwaysActiveCPU,
 		ExpertGPUBytes:       expertsGPU,
 		ExpertCPUBytes:       expertsCPU,
+		MoECacheHostBytes:    moeCacheHostBytes,
 		KVVRAMBytes:          kvVRAMBytes,
 		KVCPUBytes:           kvCPUBytes,
 		TotalSystemRAMEst:    totalSystemRAMEst,
@@ -283,7 +296,12 @@ func Calculate(input Input) Result {
 // compute buffer is reported as fully allocated on mainGPUIndex (default
 // 0). When deviceCount <= 1 a single entry is returned. deviceLabels
 // override the default "GPU N" labels when provided.
-func CalculatePerDevice(modelWeightsGPU, slotMemory, computeBufferEst, deviceCount int64, tensorSplit []float64, deviceLabels []string, mainGPUIndex int) []PerDeviceVRAM {
+// The optional target expert cache bytes are allocated once on the main GPU.
+func CalculatePerDevice(modelWeightsGPU, slotMemory, computeBufferEst, deviceCount int64, tensorSplit []float64, deviceLabels []string, mainGPUIndex int, moeCacheSize ...int64) []PerDeviceVRAM {
+	var cacheBytes int64
+	if len(moeCacheSize) > 0 {
+		cacheBytes = moeCacheSize[0]
+	}
 	label := func(i int, isMain bool) string {
 		if i < len(deviceLabels) && deviceLabels[i] != "" {
 			return deviceLabels[i]
@@ -296,11 +314,12 @@ func CalculatePerDevice(modelWeightsGPU, slotMemory, computeBufferEst, deviceCou
 
 	if deviceCount <= 1 {
 		return []PerDeviceVRAM{{
-			Label:        label(0, true),
-			WeightsBytes: modelWeightsGPU,
-			KVBytes:      slotMemory,
-			ComputeBytes: computeBufferEst,
-			TotalBytes:   modelWeightsGPU + slotMemory + computeBufferEst,
+			Label:         label(0, true),
+			WeightsBytes:  modelWeightsGPU,
+			KVBytes:       slotMemory,
+			ComputeBytes:  computeBufferEst,
+			MoECacheBytes: cacheBytes,
+			TotalBytes:    modelWeightsGPU + slotMemory + computeBufferEst + cacheBytes,
 		}}
 	}
 
@@ -346,18 +365,20 @@ func CalculatePerDevice(modelWeightsGPU, slotMemory, computeBufferEst, deviceCou
 		wRemaining -= w
 		kvRemaining -= kv
 
-		var comp int64
+		var comp, cache int64
 		isMain := int(i) == mainGPUIndex
 		if isMain {
 			comp = computeBufferEst
+			cache = cacheBytes
 		}
 
 		out = append(out, PerDeviceVRAM{
-			Label:        label(int(i), isMain),
-			WeightsBytes: w,
-			KVBytes:      kv,
-			ComputeBytes: comp,
-			TotalBytes:   w + kv + comp,
+			Label:         label(int(i), isMain),
+			WeightsBytes:  w,
+			KVBytes:       kv,
+			ComputeBytes:  comp,
+			MoECacheBytes: cache,
+			TotalBytes:    w + kv + comp + cache,
 		})
 	}
 
@@ -439,7 +460,7 @@ func AssessFit(result Result, constraints FitConstraints) FitAssessment {
 
 	var gpu CapacityAssessment
 	if hasPerGPU && deviceCount > 1 {
-		perDevice := CalculatePerDevice(result.ModelWeightsGPU, result.KVVRAMBytes, result.ComputeBufferEst, deviceCount, constraints.TensorSplit, nil, 0)
+		perDevice := CalculatePerDevice(result.ModelWeightsGPU, result.KVVRAMBytes, result.ComputeBufferEst, deviceCount, constraints.TensorSplit, nil, 0, result.Input.MoECacheSize)
 		gpu.RequiredBytes = result.TotalVRAM
 		for _, capacity := range constraints.GPUFreeBytes {
 			gpu.CapacityBytes += capacity
@@ -621,9 +642,10 @@ func AutoFit(input Input, constraints FitConstraints) (gpuLayers int64, expertLa
 // The formula intentionally uses the raw model bytes (Input.ModelSizeBytes)
 // rather than ModelWeightsGPU+ModelWeightsCPU so a model whose GGUF
 // analyzer is missing the MoE expert breakdown still reserves the full
-// file. SlotMemory and ComputeBufferEst round out the live footprint.
+// file. SlotMemory, ComputeBufferEst, and the additional target expert cache
+// and host slot maps round out the estimated live footprint.
 func (r Result) UnifiedFootprint() int64 {
-	return r.Input.ModelSizeBytes + r.SlotMemory + r.ComputeBufferEst
+	return r.Input.ModelSizeBytes + r.SlotMemory + r.ComputeBufferEst + r.Input.MoECacheSize + r.MoECacheHostBytes
 }
 
 func assessCapacity(required, capacity int64, threshold float64) CapacityAssessment {

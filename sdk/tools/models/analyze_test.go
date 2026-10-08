@@ -3,11 +3,32 @@ package models
 import (
 	"testing"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
 )
+
+func TestProfileFitReservesMoECache(t *testing.T) {
+	p := profileInput{modelSize: 1000, blockCount: 3, embLen: 128, hasGPU: true,
+		moe: gguf.MoEInfo{IsMoE: true, ExpertCount: 7}}
+	base := calculateProfile(p, 512, 5, cacheRecommendation{bytesPerElement: 2})
+	p.moeCacheSize = 12345
+	cached := calculateProfile(p, 512, 5, cacheRecommendation{bytesPerElement: 2})
+	if cached.TotalVRAM-base.TotalVRAM != 12345 || cached.TotalSystemRAMEst-base.TotalSystemRAMEst != 84 {
+		t.Fatalf("profile lost cache or slot maps: base=%+v cached=%+v", base, cached)
+	}
+	p.gpuBudget = cached.TotalVRAM - 1
+	if !profileFits(p, base) || profileFits(p, cached) {
+		t.Fatal("discrete fit must include the cache")
+	}
+	p.unifiedMemory = true
+	p.gpuBudget = cached.UnifiedFootprint() - 1
+	if !profileFits(p, base) || profileFits(p, cached) {
+		t.Fatal("unified fit must include the cache and retained host weights")
+	}
+}
 
 func TestAnalyzeModelDense(t *testing.T) {
 

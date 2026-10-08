@@ -342,7 +342,9 @@ installs the build pinned for the Kronk release.
 
 The current development binding includes the `moe_cache_size` context-layout
 change and requires the matching b11501 libraries, not the old b11439 bundle.
-MoE expert caching remains disabled. Explicit version overrides and user-managed
+MoE expert caching is disabled by default; opt-in configuration is described in
+[Chapter 3](https://www.kronkai.com/manual#chapter-3-model-configuration).
+Explicit version overrides and user-managed
 library paths bypass normal version selection; their ABI must match the binding.
 Do not rely on an offline fallback to an old installed bundle after upgrading.
 

@@ -261,6 +261,7 @@ func loadDraftModelMTP(ctx context.Context, log applog.Logger, targetCtx llama.C
 // outputs unnecessarily.
 func embeddedMTPContextParams(params, target llama.ContextParams) llama.ContextParams {
 	params.CtxType = llama.ContextTypeMTP
+	params.MoeCacheSize = 0 // Each context would otherwise allocate its own cache.
 	params.NCtx = target.NCtx
 	params.NBatch = target.NBatch
 	params.NUbatch = target.NUbatch
@@ -444,6 +445,7 @@ func loadDraftModelMTPShared(ctx context.Context, log applog.Logger, cfg Config,
 	// batch dimensions from the target.
 	params := llama.ContextDefaultParams()
 	params.CtxType = llama.ContextTypeMTP
+	params.MoeCacheSize = 0 // Expert caching is target-only, even with shared KV.
 	params.CtxOther = targetCtx
 	params.NCtx = targetCtxParams.NCtx
 	params.NBatch = targetCtxParams.NBatch

@@ -15,6 +15,31 @@ import (
 	"go.yaml.in/yaml/v2"
 )
 
+func TestMoECacheYAMLRoundTripAndOverride(t *testing.T) {
+	var cfg ModelConfig
+	if err := yaml.Unmarshal([]byte("moe:\n  mode: experts_cpu\n  cache-size: 123456789\n"), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.ToKronkConfig().MoECacheSize(); got != 123456789 {
+		t.Fatalf("cache-size=%d", got)
+	}
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "cache-size: 123456789") {
+		t.Fatalf("cache-size lost in YAML: %s", data)
+	}
+	var override ModelConfig
+	if err := yaml.Unmarshal([]byte("moe:\n  mode: experts_cpu\n  cache-size: 0\n"), &override); err != nil {
+		t.Fatal(err)
+	}
+	MergeModelConfig(&cfg, override)
+	if got := cfg.ToKronkConfig().MoECacheSize(); got != 0 || cfg.MoE.PtrCacheSize == nil {
+		t.Fatalf("explicit disable lost: %+v", cfg.MoE)
+	}
+}
+
 func TestResolveSessionStoreFactory(t *testing.T) {
 	tests := []struct {
 		name    string

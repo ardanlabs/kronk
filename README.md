@@ -120,7 +120,9 @@ Here are some of the known compatible versions:
 
 The `main` row describes the development compatibility set, not a new release.
 Its Yzma context layout includes llama.cpp's `moe_cache_size` ABI change and
-cannot be used with the old b11439 libraries. MoE expert caching remains disabled.
+cannot be used with the old b11439 libraries. Experimental MoE expert caching is
+disabled by default; see [model configuration](.manual/chapter-03-model-configuration.md#experimental-moe-expert-cache)
+for the opt-in `moe.cache-size` budget.
 Use the pinned downloader; explicit version overrides and user-managed library
 paths must supply a matching ABI.
 
