@@ -14,5 +14,14 @@ scrape_configs:
     metrics_path: '/metrics'
     scrape_interval: 5s
     scrape_timeout: 2s
+    # Native kronk on the host, and the containerised kronk from
+    # zarf/docker/kronk/compose.yaml. Whichever is not running shows as DOWN.
+    # If the container publishes 11445 on 0.0.0.0 (KRONK_BIND_ADDR), both
+    # targets reach the same process; filter dashboards on `deployment`.
     static_configs:
       - targets: [ "host.docker.internal:11445" ]
+        labels:
+          deployment: "host"
+      - targets: [ "kronk:11445" ]
+        labels:
+          deployment: "container"

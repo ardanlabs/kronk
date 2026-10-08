@@ -1020,9 +1020,9 @@ ENV LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/usr/local/cud
 
 # 11435: public V1 API (chat, embeddings, models, /v1/liveness, ...).
 # 11445: debug server (Prometheus /metrics, pprof, statsviz) — exposed so
-#        operators can wire up dashboards and profilers out of the box.
-#        Bind to 127.0.0.1 inside the container by overriding
-#        KRONK_WEB_DEBUG_HOST if you want to keep it local-only.
+#        operators can wire up dashboards and profilers. It binds to
+#        127.0.0.1 inside the container by default, so the published port
+#        is unreachable until KRONK_WEB_DEBUG_HOST=0.0.0.0:11445 is set.
 EXPOSE 11435 11445
 
 # kronk traps SIGINT and SIGTERM for graceful shutdown

@@ -194,9 +194,39 @@ docker run -d \
   ghcr.io/ardanlabs/kronk:latest-cuda
 ```
 
-AMD ROCm and Vulkan require host-specific device access. The tested command
-lines and compatibility notes are maintained in the header of the
-[`Dockerfile`](../zarf/docker/kronk/Dockerfile).
+AMD ROCm and Vulkan require host-specific device access. Use the Compose
+files below, or see the tested `docker run` command lines and the
+compatibility matrix in the header of the
+[`Dockerfile`](https://github.com/ardanlabs/kronk/blob/main/zarf/docker/kronk/Dockerfile).
+
+**Docker Compose**
+
+The repository includes Compose files in
+[`zarf/docker/kronk`](https://github.com/ardanlabs/kronk/tree/main/zarf/docker/kronk)
+that run the same local CPU container as above, in the same `kronk-data`
+volume. Remove a `kronk` container started with `docker run` first; its models
+are kept:
+
+```shell
+docker rm -f kronk
+git clone --depth 1 https://github.com/ardanlabs/kronk.git
+cd kronk/zarf/docker/kronk
+docker compose up -d
+```
+
+Each backend has its own self-contained file. For a GPU, use the matching
+one instead of `compose.yaml`:
+
+```shell
+docker compose -f compose.cuda.yaml up -d     # NVIDIA, needs the NVIDIA Container Toolkit
+docker compose -f compose.rocm.yaml up -d     # AMD with ROCm, needs /dev/kfd and /dev/dri
+docker compose -f compose.vulkan.yaml up -d   # AMD or Intel with Vulkan, needs /dev/dri
+```
+
+For the `latest-all` image, change the image tag in the GPU file to `-all`.
+
+Settings, server options such as authentication, GPU details, and upgrades are
+covered in [8.7 Container Operations](https://www.kronkai.com/manual#87-container-operations).
 
 The container runs as UID/GID `10001`. A named volume needs no preparation. If
 you use a host directory such as `/srv/kronk`, make it writable by that user

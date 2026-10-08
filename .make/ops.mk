@@ -11,6 +11,25 @@ owu-browse:
 	$(OPEN_CMD) http://localhost:8081/
 
 # ==============================================================================
+# Running Kronk in a container
+#
+# GPU: make kronk-up KRONK_GPU=cuda   (cuda | rocm | vulkan)
+# Server settings in zarf/docker/kronk/compose.override.yaml are added when
+# the file exists.
+
+KRONK_COMPOSE := -f zarf/docker/kronk/compose$(if $(KRONK_GPU),.$(KRONK_GPU)).yaml \
+	$(if $(wildcard zarf/docker/kronk/compose.override.yaml),-f zarf/docker/kronk/compose.override.yaml)
+
+kronk-up:
+	docker compose $(KRONK_COMPOSE) up -d
+
+kronk-down:
+	docker compose $(KRONK_COMPOSE) down
+
+kronk-logs:
+	docker compose $(KRONK_COMPOSE) logs -f kronk
+
+# ==============================================================================
 # Metrics and Tracing
 
 UNAME_S := $(shell uname -s)

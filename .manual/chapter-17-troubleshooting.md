@@ -111,8 +111,35 @@ ldd <lib-path>/libggml-cuda.so | grep -iE 'not found|cudart|cublas'
 
 Install the matching CUDA runtime packages for the bundle and operating system.
 For containers, use the current `latest-cuda` image and grant GPU access with
-`--runtime=nvidia --gpus all`; the required runtime libraries are included in
-that image.
+`--runtime=nvidia --gpus all`, or with Compose use
+`compose.cuda.yaml` from [8.7 Container Operations](https://www.kronkai.com/manual#87-container-operations);
+the required runtime libraries are included in that image.
+
+#### Container fails with `unknown or invalid runtime name: nvidia`
+
+Docker does not know the `nvidia` runtime that `--runtime=nvidia` and
+`compose.cuda.yaml` request. Install the
+[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html),
+register the runtime, and restart Docker:
+
+```shell
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+```
+
+#### Permission denied on `/dev/dri` or `/dev/kfd` in a container
+
+The container user reaches GPU devices through the `render` and `video`
+groups, which the image maps to GIDs 110 and 44. If the host uses other GIDs,
+look them up and pass them to Compose:
+
+```shell
+getent group render video
+KRONK_RENDER_GID=<render GID> KRONK_VIDEO_GID=<video GID> docker compose -f compose.vulkan.yaml up -d
+```
+
+With `docker run`, pass the numbers to `--group-add` instead. On hosts with
+SELinux in enforcing mode, also check the audit log for denied device access.
 
 #### A library update introduced crashes or bad output
 
