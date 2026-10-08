@@ -16,7 +16,7 @@ func TestApplySamplerFiltersMatchesNative(t *testing.T) {
 	if testing.Short() {
 		t.Skip("native llama.cpp comparison skipped in short mode")
 	}
-	loadNativeSamplerLibrary(t)
+	loadNativeLibrary(t)
 
 	tests := []struct {
 		name        string
@@ -57,7 +57,7 @@ func TestApplySamplerFiltersMatchesNativeAdaptiveTopP(t *testing.T) {
 	if testing.Short() {
 		t.Skip("native llama.cpp comparison skipped in short mode")
 	}
-	loadNativeSamplerLibrary(t)
+	loadNativeLibrary(t)
 
 	const size = 1025
 	logits := make([]float32, size)
@@ -78,7 +78,7 @@ func TestApplySamplerFiltersMatchesNativeAdaptiveTopP(t *testing.T) {
 	}
 }
 
-func loadNativeSamplerLibrary(t testing.TB) {
+func loadNativeLibrary(t testing.TB) {
 	t.Helper()
 
 	libPath := libs.Path("")
@@ -149,7 +149,7 @@ func nativeFilterChain(temperature, topP, minP float32, topK int32) llama.Sample
 }
 
 func BenchmarkNativeSamplerFilters(b *testing.B) {
-	loadNativeSamplerLibrary(b)
+	loadNativeLibrary(b)
 
 	const qwenVocab = 151936
 	logits := make([]float32, qwenVocab)

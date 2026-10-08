@@ -9,13 +9,10 @@ import (
 )
 
 func TestYzmaMoECacheContextParams(t *testing.T) {
-	path := os.Getenv("KRONK_TEST_LIB_PATH")
-	if path == "" {
-		t.Skip("KRONK_TEST_LIB_PATH is required")
+	if testing.Short() {
+		t.Skip("native llama.cpp parameter check skipped in short mode")
 	}
-	if err := llama.Load(path); err != nil {
-		t.Fatal(err)
-	}
+	loadNativeLibrary(t)
 	if err := llama.Init(); err != nil {
 		t.Fatal(err)
 	}
