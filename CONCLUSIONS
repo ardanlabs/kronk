@@ -1,0 +1,39 @@
+# Kronk Benchmark Positioning
+
+## 1. Yzma’s focus: inference performance
+
+Yzma’s benchmarks primarily measure how efficiently inference runs: processing time, token throughput, and the effects of different execution configurations. They are not primarily evaluating whether generated answers or programs are correct.
+
+## 2. Our original focus: agent-assisted coding performance
+
+Our original benchmark evaluates whether a model, through Kronk and OpenCode, can implement a specified tic-tac-toe game. It combines automated acceptance checks with time, tokens, and tool-use measurements.
+
+Its independent attempts emphasize successful code generation and its cost. Version2 extends this to grader-assisted repair, with up to three submissions in the same session.
+
+## 3. Our positioning compared with LiveCodeBench
+
+Our focus is practical coding effectiveness through Kronk and OpenCode: following requirements, producing working code, repairing failures, and measuring the time and resources needed.
+
+Like LiveCodeBench, we evaluate code generation and feedback-driven repair. Unlike it, we do not separately evaluate code comprehension, expected-output prediction, broad algorithmic ability, or provide contamination-controlled tasks.
+
+We should first strengthen grading, reporting, repeatability, and task diversity. Those additional capabilities can come later if we want a broader evaluation—not as prerequisites for our current goal.
+
+## 4. What is missing
+
+- **Complete grading:** cover every mandatory requirement and distinguish structural/build checks from functional behavior.
+- **Clear outcome metrics:** first-submission success, success within three submissions, repair progress, and cumulative cost; distinguish completion, token exhaustion, and timeout.
+- **Repeatable comparisons:** fixed prompts, tools, skills, budgets, hardware, and recorded model/configuration versions; repeat runs and prevent machine sleep.
+- **Broader task coverage:** retain tic-tac-toe, then add a few complementary tasks before making broad coding-capability claims.
+- **Evaluation integrity:** reserve held-out acceptance cases where practical, version tasks and graders, and acknowledge possible training exposure rather than claim contamination-free results.
+
+The immediate priority is strengthening the grader and reporting—not replacing tic-tac-toe or importing a large external dataset.
+
+## 5. Recommended tasks
+
+**Tic-tac-toe:** Good for evaluating stateful logic, detailed requirements, and repair from feedback. However, terminal formatting can disproportionately influence results, and one game offers limited coding coverage.
+
+**CSV processing:** Good for practical parsing, validation, exact arithmetic, and deterministic output. However, CSV and error-handling rules must be explicit to avoid ambiguous grading.
+
+**Sudoku:** Good for algorithm implementation and objectively checking constraints. However, it emphasizes a familiar solver algorithm more than everyday application development; multiple valid solutions require careful grading.
+
+**Fibonacci:** Good as a quick, inexpensive baseline with exact expected results. However, it is too narrow and familiar to distinguish broader coding capability reliably.

@@ -264,6 +264,7 @@ models:
       max_tokens: 16384
 
   # nseq-max: 1  ~9GB VRAM
+
   ornith-ai/Ornith-1.5-9B-Q4_K_M/AGENT:
     context-window: 65536
     sampling-parameters:
@@ -273,13 +274,14 @@ models:
       top_p: 0.95
 
   # nseq-max: 1  ~7GB VRAM
-  mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT:
-    context-window: 65536
-    sampling-parameters:
-      max_tokens: 8192
-      temperature: 1
-      top_k: 20
-      top_p: 0.95
+  
+  # mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT:
+  #   context-window: 65536
+  #   sampling-parameters:
+  #     max_tokens: 8192
+  #     temperature: 1
+  #     top_k: 20
+  #     top_p: 0.95
 
 bucky-models:
   # Two independent states let the server process two audio requests at once.
