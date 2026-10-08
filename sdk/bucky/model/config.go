@@ -17,9 +17,8 @@ const defaultAdmissionTimeout = 3 * time.Minute
 // resolved through the functional Option pattern (NewConfig +
 // WithX) at construction time and treated as read-only thereafter.
 //
-// ModelPath is required. The remaining fields all have sensible zero
-// defaults that match whisper_context_default_params and the
-// per-handle backpressure conventions used by sdk/kronk.
+// ModelPath is required. See the field comments below for defaults
+// and native parameter override behavior.
 type Config struct {
 	// ModelPath is the absolute path to the GGML whisper model file
 	// the handle will load via whisper.InitFromFileWithParamsNoState.
@@ -31,8 +30,9 @@ type Config struct {
 	UseGPU bool
 
 	// FlashAttn enables the flash-attention kernel when supported by
-	// the active backend. Defaults to false.
-	FlashAttn bool
+	// the active backend. nil preserves whisper.cpp's native default;
+	// a non-nil value explicitly enables or disables flash attention.
+	FlashAttn *bool
 
 	// GPUDevice selects which GPU the model is offloaded to when
 	// multiple devices are present. Defaults to 0.
@@ -104,8 +104,9 @@ func WithModelPath(v string) Option { return func(c *Config) { c.ModelPath = v }
 // WithUseGPU toggles GPU offload at model-load time.
 func WithUseGPU(v bool) Option { return func(c *Config) { c.UseGPU = v } }
 
-// WithFlashAttn toggles the flash-attention kernel.
-func WithFlashAttn(v bool) Option { return func(c *Config) { c.FlashAttn = v } }
+// WithFlashAttn overrides whisper.cpp's native flash-attention default.
+// If unset, the native default is preserved.
+func WithFlashAttn(v bool) Option { return func(c *Config) { c.FlashAttn = new(v) } }
 
 // WithGPUDevice selects a specific GPU device index.
 func WithGPUDevice(v int32) Option { return func(c *Config) { c.GPUDevice = v } }
