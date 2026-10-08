@@ -31,12 +31,19 @@ export const EXPERTS_ALL_ON_GPU = 2147483647;
 
 export const VRAM_FORMULA_CONTENT = `VRAM CALCULATION FORMULA
 
-Total VRAM ≈ Model Weights (GPU) + KV Cache (if on GPU) + Compute Buffer
+Total VRAM ≈ Model Weights (GPU) + KV Cache (if on GPU) + Compute Buffer + MoE Expert Cache
 
 Model weights are determined by the GGUF file size (e.g., ~8GB for a
 7B Q8_0 model). The KV cache is the variable cost you control through
 configuration. The compute buffer is a heuristic estimate of scratch
 memory needed during inference.
+
+MoE Expert Cache is an optional additional byte budget per native context.
+It defaults to 0 (off) and is ignored for non-MoE models. The global budget
+is shared across eligible GPUs; original host expert weights remain.
+On unified-memory systems, add it to the shared memory footprint too.
+Tensor parallelism is unsupported; actual per-GPU placement may differ
+from the proportional estimate. Leave room for backend and host metadata.
 
 ==============================================================================
 SLOTS AND SEQUENCES

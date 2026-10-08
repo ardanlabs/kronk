@@ -138,6 +138,7 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 		Slots:                  nseq,
 		NUBatch:                effectivePrefillBatchSize(cfg),
 		ExpertLayersOnGPU:      cfg.ExpertLayersOnGPU(),
+		MoECacheSize:           cfg.MoECacheSize(),
 		GPULayers:              int64(cfg.NGpuLayers()),
 		KVCacheOnCPU:           cfg.PtrOffloadKQV != nil && !*cfg.PtrOffloadKQV,
 		SWAFull:                effectiveSWAFull(cfg),
@@ -289,6 +290,7 @@ func (l *Llama) additionalMemory(cfg model.Config, targetCfg vram.Config) (vramB
 	}
 
 	draftCfg := targetCfg
+	draftCfg.MoECacheSize = 0
 	draftCfg.Slots = 1
 	draftCfg.GPULayers = int64(cfg.PtrDraftModel.NGpuLayers())
 	draftCfg.RecurrentStateCopies = 1
@@ -298,6 +300,7 @@ func (l *Llama) additionalMemory(cfg model.Config, targetCfg vram.Config) (vramB
 	if err != nil {
 		return 0, 0, fmt.Errorf("draft: %w", err)
 	}
+
 	switch {
 	case l.resman.UnifiedMemory():
 		ramBytes += draft.UnifiedFootprint()

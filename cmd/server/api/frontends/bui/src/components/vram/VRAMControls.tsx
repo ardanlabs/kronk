@@ -225,6 +225,8 @@ interface VRAMControlsProps {
   onGpuLayersChange?: (v: number) => void;
   expertLayersOnGPU?: number;
   onExpertLayersOnGPUChange?: (v: number) => void;
+  moeCacheSize?: number;
+  onMoECacheSizeChange?: (v: number) => void;
   kvCacheOnCPU?: boolean;
   onKvCacheOnCPUChange?: (v: boolean) => void;
   hasSWA?: boolean;
@@ -268,6 +270,7 @@ export default function VRAMControls({
   isMoE, blockCount,
   gpuLayers, onGpuLayersChange,
   expertLayersOnGPU, onExpertLayersOnGPUChange,
+  moeCacheSize, onMoECacheSizeChange,
   kvCacheOnCPU, onKvCacheOnCPUChange,
   hasSWA, swaFull, onSwaFullChange,
   deviceCount, onDeviceCountChange,
@@ -318,6 +321,24 @@ export default function VRAMControls({
     onGpuLayersChange?.(v);
     onExpertLayersOnGPUChange?.(v);
   };
+
+  const moeCacheControl = isMoE && (
+    <div className={variant === 'compact' ? 'control-field' : 'playground-sweep-param'}>
+      <FieldLabel htmlFor={`vram-${variant}-moe-cache`} tooltipKey="moeCacheSize">MoE Expert Cache (GiB)</FieldLabel>
+      <input
+        id={`vram-${variant}-moe-cache`}
+        type="number"
+        min="0"
+        step="0.25"
+        value={(moeCacheSize ?? 0) / (1024 ** 3)}
+        onChange={(e) => onMoECacheSizeChange?.(Math.round(Math.max(0, Number(e.target.value)) * (1024 ** 3)))}
+        className={variant === 'compact' ? 'form-input' : 'playground-sweep-param-values'}
+      />
+      <div style={{ fontSize: '11px', color: 'var(--color-gray-500)', marginTop: 2 }}>
+        0 = off. Additional memory; host expert weights remain.
+      </div>
+    </div>
+  );
 
   if (variant === 'compact') {
     return (
@@ -374,6 +395,7 @@ export default function VRAMControls({
               ))}
             </select>
           </div>
+          {moeCacheControl}
           <CompactAdvancedToggle
             open={compactAdvancedOpen}
             onToggle={() => setCompactAdvancedOpen(!compactAdvancedOpen)}
@@ -487,6 +509,8 @@ export default function VRAMControls({
           ))}
         </select>
       </div>
+
+      {moeCacheControl}
 
       {showHardwareOverrides && (
         <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--color-gray-200)', paddingTop: '16px', marginTop: '8px' }}>
