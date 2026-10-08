@@ -1173,6 +1173,7 @@ type VRAMInput struct {
 	Weights             *WeightBreakdown `json:"weights,omitempty"`
 	GPULayers           int64            `json:"gpu_layers"`
 	ExpertLayersOnGPU   int64            `json:"expert_layers_on_gpu"`
+	MoECacheSize        int64            `json:"moe_cache_size"`
 	KVCacheOnCPU        bool             `json:"kv_cache_on_cpu,omitempty"`
 	SWAFull             bool             `json:"swa_full"`
 }
@@ -1180,11 +1181,12 @@ type VRAMInput struct {
 // PerDeviceVRAM is the per-GPU VRAM split used when tensor_split /
 // device_count are specified.
 type PerDeviceVRAM struct {
-	Label        string `json:"label"`
-	WeightsBytes int64  `json:"weights_bytes"`
-	KVBytes      int64  `json:"kv_bytes"`
-	ComputeBytes int64  `json:"compute_bytes"`
-	TotalBytes   int64  `json:"total_bytes"`
+	Label         string `json:"label"`
+	WeightsBytes  int64  `json:"weights_bytes"`
+	KVBytes       int64  `json:"kv_bytes"`
+	ComputeBytes  int64  `json:"compute_bytes"`
+	MoECacheBytes int64  `json:"moe_cache_bytes"`
+	TotalBytes    int64  `json:"total_bytes"`
 }
 
 // SamplingConfig represents sampling parameters for model inference.
@@ -1214,6 +1216,7 @@ type SamplingConfig struct {
 type MoEConfig struct {
 	Mode                             model.MoEMode `json:"mode,omitzero"`
 	PtrKeepExpertsOnGPUForTopNLayers *int          `json:"keep_experts_top_n,omitempty"`
+	PtrCacheSize                     *int64        `json:"cache-size,omitempty"`
 }
 
 func toAppMoEConfig(m *model.MoEConfig) *MoEConfig {
@@ -1224,6 +1227,7 @@ func toAppMoEConfig(m *model.MoEConfig) *MoEConfig {
 	return &MoEConfig{
 		Mode:                             m.Mode,
 		PtrKeepExpertsOnGPUForTopNLayers: m.PtrKeepExpertsOnGPUForTopNLayers,
+		PtrCacheSize:                     m.PtrCacheSize,
 	}
 }
 
@@ -1348,6 +1352,7 @@ type VRAMRequest struct {
 	Slots             int64     `json:"slots"`
 	GPULayers         int64     `json:"gpu_layers,omitempty"`
 	ExpertLayersOnGPU int64     `json:"expert_layers_on_gpu,omitempty"`
+	MoECacheSize      int64     `json:"moe_cache_size,omitempty"`
 	KVCacheOnCPU      bool      `json:"kv_cache_on_cpu,omitempty"`
 	SWAFull           *bool     `json:"swa_full,omitempty"`
 	DeviceCount       int64     `json:"device_count,omitempty"`
@@ -1401,6 +1406,7 @@ type VRAMResponse struct {
 	ModelWeightsGPU    int64            `json:"model_weights_gpu"`
 	ModelWeightsCPU    int64            `json:"model_weights_cpu"`
 	ComputeBufferEst   int64            `json:"compute_buffer_est"`
+	MoECacheBytes      int64            `json:"moe_cache_bytes"`
 
 	// MoE / dense breakdown for UI display.
 	AlwaysActiveGPUBytes int64 `json:"always_active_gpu_bytes,omitempty"`
@@ -1482,6 +1488,7 @@ func toVRAMResponse(v vram.Result, repoFiles []HFRepoFile) VRAMResponse {
 			Weights:             toAppWeightBreakdown(v.Input.Weights),
 			GPULayers:           v.Input.GPULayers,
 			ExpertLayersOnGPU:   v.Input.ExpertLayersOnGPU,
+			MoECacheSize:        v.Input.MoECacheSize,
 			KVCacheOnCPU:        v.Input.KVCacheOnCPU,
 			SWAFull:             v.Input.SWAFull,
 		},
@@ -1494,6 +1501,7 @@ func toVRAMResponse(v vram.Result, repoFiles []HFRepoFile) VRAMResponse {
 		ModelWeightsGPU:      v.ModelWeightsGPU,
 		ModelWeightsCPU:      v.ModelWeightsCPU,
 		ComputeBufferEst:     v.ComputeBufferEst,
+		MoECacheBytes:        v.MoECacheBytes,
 		AlwaysActiveGPUBytes: v.AlwaysActiveGPUBytes,
 		AlwaysActiveCPUBytes: v.AlwaysActiveCPUBytes,
 		ExpertGPUBytes:       v.ExpertGPUBytes,
@@ -1509,11 +1517,12 @@ func toVRAMResponse(v vram.Result, repoFiles []HFRepoFile) VRAMResponse {
 		resp.PerDevice = make([]PerDeviceVRAM, len(v.PerDevice))
 		for i, d := range v.PerDevice {
 			resp.PerDevice[i] = PerDeviceVRAM{
-				Label:        d.Label,
-				WeightsBytes: d.WeightsBytes,
-				KVBytes:      d.KVBytes,
-				ComputeBytes: d.ComputeBytes,
-				TotalBytes:   d.TotalBytes,
+				Label:         d.Label,
+				WeightsBytes:  d.WeightsBytes,
+				KVBytes:       d.KVBytes,
+				ComputeBytes:  d.ComputeBytes,
+				MoECacheBytes: d.MoECacheBytes,
+				TotalBytes:    d.TotalBytes,
 			}
 		}
 	}
@@ -1552,6 +1561,7 @@ func vramConfigFromRMC(rmc models.ModelConfig) vram.Config {
 		NUBatch:           int64(kronkConfig.PrefillBatchSize()),
 		GPULayers:         int64(kronkConfig.NGpuLayers()),
 		ExpertLayersOnGPU: kronkConfig.ExpertLayersOnGPU(),
+		MoECacheSize:      kronkConfig.MoECacheSize(),
 		SWAFull:           resolveSWAFull(nil, kronkConfig.PtrSWAFull),
 	}
 }

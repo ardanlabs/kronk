@@ -516,6 +516,36 @@ every token. An MoE layer stores many expert feed-forward networks and uses a
 learned router to select a small subset independently for each token and layer.
 All experts remain in memory even though only the selected experts compute.
 
+**Experimental GPU expert cache:** `moe.cache-size` reserves additional GPU
+storage for frequently used experts whose original weights remain in host
+memory. The value is bytes per native context; it is one global budget shared
+across eligible GPUs, not a budget per GPU or per sequence slot. Unset or zero
+leaves the llama.cpp default unchanged (currently disabled). Non-MoE models
+ignore this setting.
+
+```yaml
+my-moe-model:
+  moe:
+    mode: experts_cpu
+    cache-size: 1073741824 # 1 GiB of additional GPU expert-cache capacity
+```
+
+The cache primarily targets small-batch generation (up to 32 tokens per
+microbatch when capacity permits). Multiple GPUs are supported; tensor
+parallelism (`split-mode: tensor`) is not. Native pipeline parallelism is
+disabled when caching is requested. A cache too small for the selected experts
+can fail context initialization. Models without eligible host-resident experts
+may run without an active cache. Benchmark before assuming a speedup.
+
+All three BUI calculators (standalone, model details, and catalog details)
+expose **MoE Expert Cache (GiB)** for MoE models and export `cache-size` in
+bytes. The calculator and pool reserve this budget in addition to model
+weights, KV, and compute memory. On unified-memory systems it increases the
+shared physical-memory footprint; original host weights are not deducted.
+Per-GPU allocation is an estimate: actual cache placement follows eligible
+layers and may use free-memory proportions. Retain backend/host-metadata
+headroom beyond the cache budget.
+
 Hybrid describes a separate design choice: which sequence-processing mechanism
 each layer uses. A hybrid stack can pair those mechanisms with dense
 feed-forward networks or MoE blocks. Qwen 3.6 combines Gated DeltaNet and

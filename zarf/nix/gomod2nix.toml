@@ -203,8 +203,8 @@ schema = 3
     version = "v1.9.0"
     hash = "sha256-sRr/50k8Wra0PJLCJgSkIxvR+ce3PItx4HpFvVijGYk="
   [mod."github.com/hybridgroup/yzma"]
-    version = "v1.29.1"
-    hash = "sha256-J/LLT6VNHtyhAEYwChStk0vQzvzBFtJqdkNjLNCbAbU="
+    version = "v1.29.2-0.20261008090110-1a800a2f3861"
+    hash = "sha256-Os6m4l0pEVaou2EwntbDRl9JkQ/I4RVfLyV7AXGPZ6g="
   [mod."github.com/icza/bitio"]
     version = "v1.1.0"
     hash = "sha256-CtV/dr1L46cZ65EnK9DrBduZCaMnTGf4N2MnElCymtM="
@@ -410,8 +410,8 @@ schema = 3
     version = "v0.0.0-20261005182115-fad411399dd8"
     hash = "sha256-qBJJ3Go2HqyEE+jp6FMafhXbMBbA/PIXvbdROnLPAYA="
   [mod."google.golang.org/grpc"]
-    version = "v1.86.0-dev"
-    hash = "sha256-1bSF+/TQb0PGKia3wpiwpsLVQIQmZe9BPToCn3siU6A="
+    version = "v1.84.0"
+    hash = "sha256-gUDleBLGxwuzhA0emDRNAr1GnPlMfjgpkOX9u/0WsOk="
   [mod."google.golang.org/protobuf"]
     version = "v1.36.12"
     hash = "sha256-MKd0AdkWEe2A79mGPzOY5I76nMqTsGJKQNPJOKyOwkQ="

@@ -181,6 +181,7 @@ func buildFromMetadata(metadata map[string]string, tensors []gguf.TensorInfo, mo
 		Weights:              weights,
 		GPULayers:            cfg.GPULayers,
 		ExpertLayersOnGPU:    cfg.ExpertLayersOnGPU,
+		MoECacheSize:         cfg.MoECacheSize,
 		KVCacheOnCPU:         cfg.KVCacheOnCPU,
 		SWAFull:              cfg.SWAFull,
 		VTransposed:          cfg.VTransposed,

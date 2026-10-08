@@ -301,6 +301,18 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	modelInfo := toModelInfo(cfg, mdl)
 	cfg.DecisionProtocol = modelInfo.decisionProtocol
 
+	if cfg.MoECacheSize() > 0 {
+		switch {
+		case !modelInfo.profile.MoE.IsMoE:
+			moe := *cfg.PtrMoE
+			moe.PtrCacheSize = nil
+			cfg.PtrMoE = &moe
+		case cfg.PtrSplitMode != nil && *cfg.PtrSplitMode == SplitModeTensor:
+			llama.ModelFree(mdl)
+			return nil, fmt.Errorf("validate-config: moe cache-size does not support tensor parallelism")
+		}
+	}
+
 	pooled := isEmbedOrRerankConfig(cfg)
 	generationRowsPerSlot := 0
 	if !pooled && cfg.DecisionProtocol.IsZero() {
@@ -1588,6 +1600,7 @@ func calculateVRAMDiag(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory in
 		Slots:                  int64(max(cfg.NSeqMax(), 1)),
 		NUBatch:                int64(cfg.EffectiveNUBatch()),
 		ExpertLayersOnGPU:      cfg.ExpertLayersOnGPU(),
+		MoECacheSize:           cfg.MoECacheSize(),
 		SWAFull:                effectiveSWAFull(cfg.PtrSWAFull, llama.ContextDefaultParams().SwaFull != 0),
 		RecurrentStateCopies:   RecurrentStateCopies(cfg, false),
 		EmbeddedMTPStateCopies: RecurrentStateCopies(cfg, true),

@@ -42,6 +42,7 @@ export const PARAM_TOOLTIPS = {
   // MoE configuration
   moeMode: 'How to distribute expert weights between GPU and CPU. "Recommended" auto-detects the best option for your hardware. "Save GPU Memory" moves experts to CPU (most common for consumer GPUs). "Maximum Speed" keeps everything on GPU (requires very large VRAM; exact need depends on model, quantization, context, and slots). "Balanced" lets you choose how many layers stay on GPU.',
   moeKeepExpertsTopN: 'Slide right for more speed (keeps more expert layers on GPU), slide left to save VRAM (offloads to CPU). The highest-numbered layers stay on GPU first. 0 = all experts on CPU.',
+  moeCacheSize: 'Experimental GPU cache for MoE expert weights kept in host memory. 0 leaves it disabled. The byte budget is per context and shared across GPUs; original host weights remain. Intended for small-batch generation. Ignored for non-MoE models; tensor parallelism is unsupported.',
   moeTipBatch: 'For MoE models with CPU experts, a Prefill Batch Size of at least 4096 is recommended for optimal prompt processing speed.',
   moeTipFlashAttention: 'Flash Attention is strongly recommended for MoE models — it significantly reduces VRAM usage and improves performance.',
   moeTipComputeBuffer: 'A larger Prefill Batch Size increases compute buffer VRAM usage. Monitor with the VRAM calculator when tuning it.',

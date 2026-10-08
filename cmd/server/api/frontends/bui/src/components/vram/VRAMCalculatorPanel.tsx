@@ -61,6 +61,7 @@ export default function VRAMCalculatorPanel({
           modelWeightsGPU={resultsProps.vramResult.modelWeightsGPU}
           modelWeightsCPU={resultsProps.vramResult.modelWeightsCPU}
           computeBufferEst={resultsProps.vramResult.computeBufferEst}
+          moeCacheBytes={resultsProps.vramResult.moeCacheBytes}
           alwaysActiveGPUBytes={resultsProps.vramResult.alwaysActiveGPUBytes}
           alwaysActiveCPUBytes={resultsProps.vramResult.alwaysActiveCPUBytes}
           expertGPUBytes={resultsProps.vramResult.expertGPUBytes}

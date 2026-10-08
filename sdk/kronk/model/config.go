@@ -622,6 +622,10 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 		return fmt.Errorf("validate-config: projector device cannot be combined with proj-on-cpu=true")
 	}
 
+	if cfg.MoECacheSize() < 0 {
+		return fmt.Errorf("validate-config: moe cache-size must be >= 0")
+	}
+
 	switch cfg.CacheTypeV {
 	case GGMLTypeQ4_0, GGMLTypeQ4_1, GGMLTypeQ5_0, GGMLTypeQ5_1, GGMLTypeQ8_0:
 		if cfg.FlashAttention() == FlashAttentionDisabled {
@@ -951,6 +955,10 @@ func adjustContextWindow(cfg Config, model llama.Model) Config {
 
 func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 	ctxParams := llama.ContextDefaultParams()
+
+	if mi.profile.MoE.IsMoE && cfg.MoECacheSize() > 0 {
+		ctxParams.MoeCacheSize = uint64(cfg.MoECacheSize())
+	}
 
 	if mi.IsEmbedModel || mi.IsRerankModel {
 		ctxParams.Embeddings = 1
@@ -1915,10 +1923,23 @@ type MoEConfig struct {
 	// Only used when Mode is MoEModeKeepTopN. 0 means all experts on CPU.
 	// llama.cpp convention: "top" means highest-numbered layers.
 	PtrKeepExpertsOnGPUForTopNLayers *int `yaml:"keep-experts-top-n,omitempty"`
+
+	// PtrCacheSize sets the experimental GPU expert-cache budget in bytes per
+	// context, shared across GPUs. Zero uses llama.cpp's default (disabled).
+	// Original host weights remain resident. Ignored for non-MoE models.
+	PtrCacheSize *int64 `yaml:"cache-size,omitempty"`
 }
 
 func (m MoEConfig) KeepExpertsOnGPUForTopNLayers() int {
 	return intOr(m.PtrKeepExpertsOnGPUForTopNLayers, 0)
+}
+
+// MoECacheSize returns the requested GPU expert-cache budget in bytes.
+func (cfg Config) MoECacheSize() int64 {
+	if cfg.PtrMoE == nil || cfg.PtrMoE.PtrCacheSize == nil {
+		return 0
+	}
+	return *cfg.PtrMoE.PtrCacheSize
 }
 
 // ExpertsAllOnGPU is the sentinel value used for vram.Config.ExpertLayersOnGPU

@@ -790,6 +790,11 @@ export default function DocsSDKModel() {
 	// Only used when Mode is MoEModeKeepTopN. 0 means all experts on CPU.
 	// llama.cpp convention: "top" means highest-numbered layers.
 	PtrKeepExpertsOnGPUForTopNLayers *int \`yaml:"keep-experts-top-n,omitempty"\`
+
+	// PtrCacheSize sets the experimental GPU expert-cache budget in bytes per
+	// context, shared across GPUs. Zero uses llama.cpp's default (disabled).
+	// Original host weights remain resident. Ignored for non-MoE models.
+	PtrCacheSize *int64 \`yaml:"cache-size,omitempty"\`
 }`}</code>
               </pre>
               <p className="doc-description">MoEConfig configures Mixture of Experts tensor placement. When nil, no MoE-specific behavior is applied.</p>
@@ -1430,6 +1435,14 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func (cfg Config) MainGPU() int</code>
               </pre>
+            </div>
+
+            <div className="doc-section" id="method-config-moecachesize">
+              <h4>Config.MoECacheSize</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) MoECacheSize() int64</code>
+              </pre>
+              <p className="doc-description">MoECacheSize returns the requested GPU expert-cache budget in bytes.</p>
             </div>
 
             <div className="doc-section" id="method-config-ngpulayers">
@@ -2523,6 +2536,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-config-incrementalcache">Config.IncrementalCache</a></li>
                 <li><a href="#method-config-insecurelogging">Config.InsecureLogging</a></li>
                 <li><a href="#method-config-maingpu">Config.MainGPU</a></li>
+                <li><a href="#method-config-moecachesize">Config.MoECacheSize</a></li>
                 <li><a href="#method-config-ngpulayers">Config.NGpuLayers</a></li>
                 <li><a href="#method-config-nseqmax">Config.NSeqMax</a></li>
                 <li><a href="#method-config-nthreads">Config.NThreads</a></li>

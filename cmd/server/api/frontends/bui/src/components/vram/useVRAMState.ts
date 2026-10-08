@@ -59,6 +59,8 @@ export interface VRAMControlsState {
   onGpuLayersChange: (v: number) => void;
   expertLayersOnGPU: number;
   onExpertLayersOnGPUChange: (v: number) => void;
+  moeCacheSize: number;
+  onMoECacheSizeChange: (v: number) => void;
   kvCacheOnCPU: boolean;
   onKvCacheOnCPUChange: (v: boolean) => void;
   hasSWA: boolean;
@@ -99,6 +101,7 @@ export interface VRAMResultView {
   modelWeightsGPU: number;
   modelWeightsCPU: number;
   computeBufferEst: number;
+  moeCacheBytes: number;
   alwaysActiveGPUBytes: number;
   alwaysActiveCPUBytes: number;
   expertGPUBytes: number;
@@ -140,6 +143,7 @@ function viewFromResponse(resp: VRAMCalculatorResponse): VRAMResultView {
     modelWeightsGPU: resp.model_weights_gpu ?? 0,
     modelWeightsCPU: resp.model_weights_cpu ?? 0,
     computeBufferEst: resp.compute_buffer_est ?? 0,
+    moeCacheBytes: resp.moe_cache_bytes ?? 0,
     alwaysActiveGPUBytes: resp.always_active_gpu_bytes ?? 0,
     alwaysActiveCPUBytes: resp.always_active_cpu_bytes ?? 0,
     expertGPUBytes: resp.expert_gpu_bytes ?? 0,
@@ -173,6 +177,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
   // effect below replaces this with the actual block_count, and the
   // slider then drives real 0..blockCount values.
   const [expertLayersOnGPU, setExpertLayersOnGPU] = useState<number>(EXPERTS_ALL_ON_GPU);
+  const [moeCacheSize, setMoECacheSize] = useState(0);
   const [kvCacheOnCPU, setKvCacheOnCPU] = useState(false);
   const [swaFull, setSwaFull] = useState(true);
   const [deviceCount, setDeviceCount] = useState(1);
@@ -244,6 +249,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
       setSlots(input.slots);
       setGpuLayers(gpuLayersForControl(input.gpu_layers, input.block_count));
       setExpertLayersOnGPU(input.expert_layers_on_gpu);
+      setMoECacheSize(input.moe_cache_size ?? 0);
       setSwaFull(input.swa_full ?? true);
     }
   }, [serverResponse]);
@@ -307,6 +313,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
         slots,
         gpu_layers: gpuLayers === 0 ? -1 : gpuLayers,
         expert_layers_on_gpu: expertLayersOnGPU,
+        moe_cache_size: moeCacheSize,
         kv_cache_on_cpu: kvCacheOnCPU,
         swa_full: swaFull,
         device_count: effectiveDeviceCount,
@@ -337,7 +344,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
   }, [
     modelUrl, modelUrls, modelId,
     contextWindow, bytesPerElement, slots,
-    gpuLayers, expertLayersOnGPU, kvCacheOnCPU, swaFull,
+    gpuLayers, expertLayersOnGPU, moeCacheSize, kvCacheOnCPU, swaFull,
     effectiveDeviceCount, parsedTensorSplit, effectiveGpuDevices,
     effectiveGpuTotalBytes, effectiveSystemRAMBytes, isUnifiedMemory,
   ]);
@@ -366,6 +373,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
       bytes_per_element: bytesPerElement,
       slots,
       kv_cache_on_cpu: kvCacheOnCPU,
+      moe_cache_size: moeCacheSize,
       swa_full: swaFull,
       device_count: fitDeviceCount,
       tensor_split: parsedTensorSplit.length > 0 ? parsedTensorSplit : undefined,
@@ -401,7 +409,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
     liveResponse, serverResponse, modelUrl, modelUrls, modelId,
     recomputing, isUnifiedMemory, effectiveSystemRAMBytes, effectiveDeviceCount,
     effectiveGpuDevices, effectiveGpuTotalBytes, contextWindow,
-    bytesPerElement, slots, kvCacheOnCPU, swaFull, parsedTensorSplit,
+    bytesPerElement, slots, moeCacheSize, kvCacheOnCPU, swaFull, parsedTensorSplit,
   ]);
 
   // ── Derived view ────────────────────────────────────────────────────────
@@ -430,6 +438,8 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
     onGpuLayersChange: setGpuLayers,
     expertLayersOnGPU,
     onExpertLayersOnGPUChange: setExpertLayersOnGPU,
+    moeCacheSize,
+    onMoECacheSizeChange: setMoECacheSize,
     kvCacheOnCPU,
     onKvCacheOnCPUChange: setKvCacheOnCPU,
     hasSWA,
