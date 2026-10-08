@@ -784,9 +784,9 @@ func autoTuneGPUCapacity(cfg models.ModelConfig, devs []resman.DeviceUsage, budg
 //
 // "file-size" is the fallback used when the model's metadata is
 // missing the keys that the calculator needs (e.g. BERT-based
-// rerankers and embedders). The raw on-disk size is returned in
-// TotalVRAM so the caller's bucket-mapping logic still gates
-// concurrent loads, even though the breakdown is unavailable.
+// rerankers and embedders). The raw on-disk size and requested target
+// expert cache budget are retained for both discrete and unified-memory
+// accounting, even though the detailed breakdown is unavailable.
 func predictResult(m *models.Models, modelID string, cfg vram.Config) (vram.Result, string, error) {
 	if v, err := m.CalculateVRAM(modelID, cfg); err == nil {
 		return v, "calculate-vram", nil
@@ -796,7 +796,13 @@ func predictResult(m *models.Models, modelID string, cfg vram.Config) (vram.Resu
 	if err != nil {
 		return vram.Result{}, "", fmt.Errorf("predict-result: model-information: %w", err)
 	}
-	return vram.Result{TotalVRAM: int64(info.Size)}, "file-size", nil
+	return vram.Result{
+		Input: vram.Input{
+			ModelSizeBytes: int64(info.Size),
+			MoECacheSize:   cfg.MoECacheSize,
+		},
+		TotalVRAM: int64(info.Size) + cfg.MoECacheSize,
+	}, "file-size", nil
 }
 
 // bytesPerElement returns the per-element width to use for KV-cache

@@ -28,6 +28,12 @@ type contextPool struct {
 // newContextPool creates a pool of n llama contexts from the given model.
 // Each context has its own KV cache but shares the model weights.
 func newContextPool(ctx context.Context, model llama.Model, ctxParams llama.ContextParams, log applog.Logger, n int) (*contextPool, error) {
+	// Independent contexts would each allocate a cache, but admission only
+	// reserves the target cache budget once.
+	if ctxParams.MoeCacheSize != 0 {
+		return nil, fmt.Errorf("context-pool: moe.cache-size is unsupported in the alternate embedding/reranking context pool; set moe.cache-size to 0 or use the default batch runtime")
+	}
+
 	if n < 1 {
 		n = 1
 	}

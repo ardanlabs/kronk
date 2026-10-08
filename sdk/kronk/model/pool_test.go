@@ -1,10 +1,25 @@
 package model
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
+
+func TestContextPoolRejectsMoECache(t *testing.T) {
+	// No native model or libraries are needed: rejection must precede
+	// context creation, even when the pool only has one context.
+	for _, n := range []int{1, 4} {
+		pool, err := newContextPool(t.Context(), 0, llama.ContextParams{MoeCacheSize: 536870912}, nil, n)
+		if pool != nil || err == nil {
+			t.Fatalf("contexts=%d: pool=%v error=%v, want nil pool and rejection", n, pool, err)
+		}
+		if !strings.Contains(err.Error(), "set moe.cache-size to 0 or use the default batch runtime") {
+			t.Errorf("contexts=%d: error lacks actionable guidance: %v", n, err)
+		}
+	}
+}
 
 func TestContextPoolFallbackParams(t *testing.T) {
 	params := llama.ContextParams{

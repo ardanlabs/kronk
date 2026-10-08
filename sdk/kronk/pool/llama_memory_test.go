@@ -2,15 +2,65 @@ package pool
 
 import (
 	"context"
+	"encoding/binary"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
+	"github.com/ardanlabs/kronk/sdk/tools/models"
+	"go.yaml.in/yaml/v2"
 )
+
+func TestPredictResultFileSizeIncludesMoECache(t *testing.T) {
+	m, err := models.NewWithPaths(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A valid GGUF header without architecture metadata permits file-size
+	// inspection but forces the normal VRAM calculator to fail.
+	const modelBytes = 125
+	data := make([]byte, modelBytes)
+	binary.LittleEndian.PutUint32(data, gguf.Magic)
+	binary.LittleEndian.PutUint32(data[4:], 3)
+	path := filepath.Join(m.Path(), "model.gguf")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	index, err := yaml.Marshal(map[string]models.Path{
+		"test/model": {ModelFiles: []string{path}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(m.Path(), ".index.yaml"), index, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, cacheBytes := range []int64{0, 987} {
+		cfg := vram.Config{MoECacheSize: cacheBytes, Slots: 5, ComputeContexts: 2}
+		if _, err := m.CalculateVRAM("test/model", cfg); err == nil {
+			t.Fatal("fixture must require the file-size fallback")
+		}
+		got, source, err := predictResult(m, "test/model", cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if source != "file-size" {
+			t.Fatalf("source=%q, want file-size", source)
+		}
+		want := int64(modelBytes) + cacheBytes
+		if got.TotalVRAM != want || got.UnifiedFootprint() != want {
+			t.Errorf("cache=%d: discrete=%d unified=%d, want %d", cacheBytes, got.TotalVRAM, got.UnifiedFootprint(), want)
+		}
+		if got.Input.MoECacheSize != cacheBytes {
+			t.Errorf("cache budget=%d, want %d", got.Input.MoECacheSize, cacheBytes)
+		}
+	}
+}
 
 func TestBackendMemoryChecks(t *testing.T) {
 	const gib = uint64(1 << 30)
