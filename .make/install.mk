@@ -56,7 +56,7 @@ install-test-gh-models: install-kronk
 	@echo
 	kronk model pull --local "gpustack/bge-reranker-v2-m3-Q8_0"
 	@echo
-	kronk model pull --local "https://huggingface.co/chaoliangUNSW/Jev-Style-0.8B-Decision-v3-GGUF/resolve/main/Jev-Style-0.8B-Decision-v3-Q8_0.gguf"
+	kronk model pull --local "chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0.gguf"
 	@echo
 	kronk bucky model pull --local "ggml-tiny.bin"
 	@echo
@@ -86,7 +86,7 @@ install-test-models: install-kronk
 	@echo
 	kronk model pull --local "gpustack/bge-reranker-v2-m3-Q8_0"
 	@echo
-	kronk model pull --local "https://huggingface.co/chaoliangUNSW/Jev-Style-0.8B-Decision-v3-GGUF/resolve/main/Jev-Style-0.8B-Decision-v3-Q8_0.gguf"
+	kronk model pull --local "chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0.gguf"
 	@echo
 	@echo ========== INSTALL BUCKY MODELS ==========
 	kronk bucky model pull --local "ggml-tiny.bin"
