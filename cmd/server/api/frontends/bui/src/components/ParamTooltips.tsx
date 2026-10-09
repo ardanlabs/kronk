@@ -46,7 +46,7 @@ export const PARAM_TOOLTIPS = {
   moeTipBatch: 'For MoE models with CPU experts, a Prefill Batch Size of at least 4096 is recommended for optimal prompt processing speed.',
   moeTipFlashAttention: 'Flash Attention is strongly recommended for MoE models — it significantly reduces VRAM usage and improves performance.',
   moeTipComputeBuffer: 'A larger Prefill Batch Size increases compute buffer VRAM usage. Monitor with the VRAM calculator when tuning it.',
-  availableVRAM: 'Total GPU VRAM available (in GB). When set, config candidates estimated to exceed this are auto-skipped before the sweep runs. Set to 0 or leave empty to disable VRAM filtering.',
+  availableVRAM: 'Total GPU VRAM available (in GiB). When set, config candidates estimated to exceed this are auto-skipped before the sweep runs. Set to 0 or leave empty to disable VRAM filtering.',
 
   // NUMA / model loading (Phase F2/F3)
   loadMode: 'Controls how model weights are loaded. auto uses mmap when every selected device supports it and otherwise uses ordinary loading; mmap forces memory mapping; none disables it; mlock requests resident pages without forcing mmap; mmap+mlock combines both behaviors; direct-io bypasses the OS page cache where supported.',
@@ -152,7 +152,7 @@ export const PARAM_TOOLTIPS = {
 
   // ── Pool / resource budget tooltips ──────────────────────────────────────
   budgetPercent: 'Percentage of detected GPU VRAM and system RAM the pool is allowed to commit to loaded models. Reservations beyond this percentage trigger eviction of idle models. Default: 80%.',
-  budgetHeadroom: 'Per-GPU safety margin subtracted from each device\'s budget after the percentage is applied. Reserves a small cushion so the resman never hands out memory that would just-barely OOM under driver/compute-buffer overhead. Default: 256 MB.',
+  budgetHeadroom: 'Per-GPU safety margin subtracted from each device\'s budget after the percentage is applied. Reserves a small cushion so the resman never hands out memory that would just-barely OOM under driver/compute-buffer overhead. Default: 256 MiB.',
   budgetDeviceTotal: 'Total physical memory the device reports. For GPUs this is dedicated VRAM; for the System RAM row this is the host\'s total RAM. On Apple Silicon (unified memory), the GPU shares this same pool.',
   budgetDeviceBudget: 'How many bytes the resource manager will allow loaded models to consume on this device. Equals (Total × BudgetPercent / 100) − Headroom.',
   budgetDeviceUsed: 'Currently reserved bytes on this device, summed across all live model reservations.',

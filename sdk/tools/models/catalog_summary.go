@@ -188,8 +188,8 @@ func webPage(provider, family string) string {
 	return fmt.Sprintf("https://huggingface.co/%s/%s", provider, family)
 }
 
-// FormatBytes renders a byte count as a human-readable string ("1.23 GB",
-// "456 MB", etc.). Returns "" for non-positive input.
+// FormatBytes renders a byte count using binary units ("1.23 GiB",
+// "456 MiB", etc.). Returns "" for non-positive input.
 func FormatBytes(n int64) string {
 	const (
 		kib = 1024
@@ -201,11 +201,11 @@ func FormatBytes(n int64) string {
 	case n <= 0:
 		return ""
 	case n >= gib:
-		return fmt.Sprintf("%.2f GB", float64(n)/float64(gib))
+		return fmt.Sprintf("%.2f GiB", float64(n)/float64(gib))
 	case n >= mib:
-		return fmt.Sprintf("%.0f MB", float64(n)/float64(mib))
+		return fmt.Sprintf("%.0f MiB", float64(n)/float64(mib))
 	case n >= kib:
-		return fmt.Sprintf("%.0f KB", float64(n)/float64(kib))
+		return fmt.Sprintf("%.0f KiB", float64(n)/float64(kib))
 	default:
 		return fmt.Sprintf("%d B", n)
 	}

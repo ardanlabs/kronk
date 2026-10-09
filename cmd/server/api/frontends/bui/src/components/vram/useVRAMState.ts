@@ -23,8 +23,8 @@ export interface UseVRAMStateOptions {
 /** Debounce window for slider/input changes that trigger a server recompute. */
 const RECOMPUTE_DEBOUNCE_MS = 150;
 
-/** Parse a GB string input into bytes, returning undefined for empty/invalid. */
-function parseGBToBytes(value: string): number | undefined {
+/** Parse a GiB string input into bytes, returning undefined for empty/invalid. */
+function parseGiBToBytes(value: string): number | undefined {
   const trimmed = value.trim();
   if (!trimmed) return undefined;
   const n = parseFloat(trimmed);
@@ -32,7 +32,7 @@ function parseGBToBytes(value: string): number | undefined {
   return Math.round(n * 1024 * 1024 * 1024);
 }
 
-function isInvalidGBInput(value: string): boolean {
+function isInvalidGiBInput(value: string): boolean {
   const trimmed = value.trim();
   if (!trimmed) return false;
   const n = parseFloat(trimmed);
@@ -196,8 +196,8 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
   const detectedGpuDevices = devInfo?.gpuDevices ?? [];
 
   // ── Effective hardware (overrides take precedence) ─────────────────────
-  const gpuMemoryOverrideBytes = enableHardwareOverrides ? parseGBToBytes(gpuMemoryOverrideGB) : undefined;
-  const systemMemoryOverrideBytes = enableHardwareOverrides ? parseGBToBytes(systemMemoryOverrideGB) : undefined;
+  const gpuMemoryOverrideBytes = enableHardwareOverrides ? parseGiBToBytes(gpuMemoryOverrideGB) : undefined;
+  const systemMemoryOverrideBytes = enableHardwareOverrides ? parseGiBToBytes(systemMemoryOverrideGB) : undefined;
   const effectiveDeviceCount = (enableHardwareOverrides && deviceCountOverride != null)
     ? deviceCountOverride
     : deviceCount;
@@ -461,10 +461,10 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
     showHardwareOverrides: enableHardwareOverrides,
     gpuMemoryOverrideGB,
     onGpuMemoryOverrideGBChange: setGpuMemoryOverrideGB,
-    gpuMemoryOverrideInvalid: isInvalidGBInput(gpuMemoryOverrideGB),
+    gpuMemoryOverrideInvalid: isInvalidGiBInput(gpuMemoryOverrideGB),
     systemMemoryOverrideGB,
     onSystemMemoryOverrideGBChange: setSystemMemoryOverrideGB,
-    systemMemoryOverrideInvalid: isInvalidGBInput(systemMemoryOverrideGB),
+    systemMemoryOverrideInvalid: isInvalidGiBInput(systemMemoryOverrideGB),
     deviceCountOverride,
     onDeviceCountOverrideChange: setDeviceCountOverride,
     detectedGpuTotalBytes,

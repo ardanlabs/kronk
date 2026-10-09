@@ -485,7 +485,7 @@ export default function VRAMCalculator() {
       {(loading || isResolving) && (
         <div className="vram-loading-banner">
           <span className="vram-loading-spinner" />
-          <span>{isResolving ? 'Looking up repository…' : 'Fetching model header (up to 16 MB)…'}</span>
+          <span>{isResolving ? 'Looking up repository…' : 'Fetching model header (up to 16 MiB)…'}</span>
         </div>
       )}
 

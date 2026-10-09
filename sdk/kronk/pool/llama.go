@@ -834,16 +834,16 @@ func humanBytes(n int64) string {
 }
 
 func formatBytes(n int64) string {
-	const unit = 1000
+	const unit = 1024
 	if n < unit {
 		return fmt.Sprintf("%dB", n)
 	}
 	div, exp := int64(unit), 0
-	for x := n / unit; x >= unit; x /= unit {
+	for x := n / unit; x >= unit && exp < 4; x /= unit {
 		div *= unit
 		exp++
 	}
-	suffixes := []string{"KB", "MB", "GB", "TB", "PB"}
+	suffixes := []string{"KiB", "MiB", "GiB", "TiB", "PiB"}
 	if exp >= len(suffixes) {
 		exp = len(suffixes) - 1
 	}

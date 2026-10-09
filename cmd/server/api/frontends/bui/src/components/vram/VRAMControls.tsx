@@ -535,7 +535,7 @@ export default function VRAMControls({
 
             <div className="playground-sweep-param">
               <label className="playground-sweep-param-toggle" htmlFor="vram-gpuMemOverride">
-                Total GPU Memory (GB)<ParamTooltip text="Total GPU memory across all selected GPUs. Leave empty to auto-detect from this server." />
+                Total GPU Memory (GiB)<ParamTooltip text="Total GPU memory across all selected GPUs. Leave empty to auto-detect from this server." />
               </label>
               <input
                 id="vram-gpuMemOverride"
@@ -543,11 +543,11 @@ export default function VRAMControls({
                 value={gpuMemoryOverrideGB ?? ''}
                 onChange={(e) => onGpuMemoryOverrideGBChange?.(e.target.value)}
                 className="playground-sweep-param-values"
-                placeholder={detectedGpuTotalBytes ? `Auto-detect (${(detectedGpuTotalBytes / (1024 * 1024 * 1024)).toFixed(1)} GB)` : 'e.g. 24'}
+                placeholder={detectedGpuTotalBytes ? `Auto-detect (${(detectedGpuTotalBytes / (1024 * 1024 * 1024)).toFixed(1)} GiB)` : 'e.g. 24'}
                 style={gpuMemoryOverrideInvalid ? { borderColor: 'var(--color-error, #ef5350)' } : undefined}
               />
               {gpuMemoryOverrideInvalid && (
-                <div style={{ fontSize: '11px', color: 'var(--color-error, #ef5350)', marginTop: 2 }}>Enter a positive number in GB</div>
+                <div style={{ fontSize: '11px', color: 'var(--color-error, #ef5350)', marginTop: 2 }}>Enter a positive number in GiB</div>
               )}
               <div style={{ fontSize: '11px', color: 'var(--color-gray-500)', marginTop: 2 }}>
                 Total across all GPUs — assumes even per-GPU capacity
@@ -556,7 +556,7 @@ export default function VRAMControls({
 
             <div className="playground-sweep-param">
               <label className="playground-sweep-param-toggle" htmlFor="vram-sysMemOverride">
-                System Memory (GB)<ParamTooltip text="Total system RAM. Used to check CPU offload feasibility. Leave empty to auto-detect from this server." />
+                System Memory (GiB)<ParamTooltip text="Total system RAM. Used to check CPU offload feasibility. Leave empty to auto-detect from this server." />
               </label>
               <input
                 id="vram-sysMemOverride"
@@ -564,11 +564,11 @@ export default function VRAMControls({
                 value={systemMemoryOverrideGB ?? ''}
                 onChange={(e) => onSystemMemoryOverrideGBChange?.(e.target.value)}
                 className="playground-sweep-param-values"
-                placeholder={detectedSystemRAMBytes ? `Auto-detect (${(detectedSystemRAMBytes / (1024 * 1024 * 1024)).toFixed(1)} GB)` : 'e.g. 64'}
+                placeholder={detectedSystemRAMBytes ? `Auto-detect (${(detectedSystemRAMBytes / (1024 * 1024 * 1024)).toFixed(1)} GiB)` : 'e.g. 64'}
                 style={systemMemoryOverrideInvalid ? { borderColor: 'var(--color-error, #ef5350)' } : undefined}
               />
               {systemMemoryOverrideInvalid && (
-                <div style={{ fontSize: '11px', color: 'var(--color-error, #ef5350)', marginTop: 2 }}>Enter a positive number in GB</div>
+                <div style={{ fontSize: '11px', color: 'var(--color-error, #ef5350)', marginTop: 2 }}>Enter a positive number in GiB</div>
               )}
             </div>
           </div>

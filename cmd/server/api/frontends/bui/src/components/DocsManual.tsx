@@ -2439,7 +2439,7 @@ resp, err := krn.Decision(ctx, req)`}</code></pre>
   "seed": -1
 }`}</code></pre>
           <p><code>size</code> defaults to <code>512x512</code>. The response contains <code>created</code> and a <code>data</code> array whose single item contains <code>b64_json</code>, <code>seed</code>, <code>width</code>, and <code>height</code>. Only <code>n: 1</code>, <code>response_format: "b64_json"</code>, and PNG output are supported.</p>
-          <p><code>POST /v1/images/edits</code> accepts the same controls as multipart form fields and requires an <code>image</code> PNG or JPEG file. The optional <code>strength</code> field controls how far the result may depart from the source and defaults to <code>0.75</code>; its range is greater than zero through <code>1</code>. When <code>size</code> is omitted, Kronk preserves the source aspect ratio, scales dimensions down to at most 1024 pixels per side, and aligns them to multiples of eight. Uploads are limited to 25 MB. Both image routes support <code>negative_prompt</code>, <code>steps</code>, <code>cfg_scale</code>, and <code>seed</code> and require the <code>image-generations</code> inference permission when authentication is enabled.</p>
+          <p><code>POST /v1/images/edits</code> accepts the same controls as multipart form fields and requires an <code>image</code> PNG or JPEG file. The optional <code>strength</code> field controls how far the result may depart from the source and defaults to <code>0.75</code>; its range is greater than zero through <code>1</code>. When <code>size</code> is omitted, Kronk preserves the source aspect ratio, scales dimensions down to at most 1024 pixels per side, and aligns them to multiples of eight. Uploads are limited to 25 MiB. Both image routes support <code>negative_prompt</code>, <code>steps</code>, <code>cfg_scale</code>, and <code>seed</code> and require the <code>image-generations</code> inference permission when authentication is enabled.</p>
           <pre className="code-block"><code className="language-sh">{`curl http://localhost:11435/v1/images/edits \\
   -F model=sd-1.5 \\
   -F prompt='A watercolor illustration at sunset' \\
@@ -4594,7 +4594,7 @@ bucky-models:
           <pre className="code-block"><code className="language-text">{`POST /v1/audio/transcriptions`}</code></pre>
           <p>To translate supported source speech into English, use the OpenAI-compatible translation route instead:</p>
           <pre className="code-block"><code className="language-text">{`POST /v1/audio/translations`}</code></pre>
-          <p>The uploaded file is limited to <strong>25 MB</strong>. Each transcription has a 30-minute server deadline.</p>
+          <p>The uploaded file is limited to <strong>25 MiB</strong>. Each transcription has a 30-minute server deadline.</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -4900,7 +4900,7 @@ if err := stream.FeedPCM(ctx, rawPCM, format); err != nil {
               </tr>
               <tr>
                 <td>The upload is rejected for its size</td>
-                <td>Keep the audio file at or below 25 MB. Split long recordings or re-encode them at a lower bitrate.</td>
+                <td>Keep the audio file at or below 25 MiB. Split long recordings or re-encode them at a lower bitrate.</td>
               </tr>
               <tr>
                 <td>Audio decodes to no samples</td>
@@ -5920,7 +5920,7 @@ examples source             -> example BUI documentation
           <p>A transcription acquires handle capacity and a model state, performs decode/inference, then releases both on every completion path. A streaming session is longer-lived: opening it reserves a state and capacity until its worker exits. <code>Close</code> requests the normal final flush and waits for that exit; a terminal worker error also exits and releases automatically. Callers should still defer the idempotent <code>Close</code>, including when feed/event handling fails. Unload must not destroy the Whisper context while transcriptions or streams remain active.</p>
           <p>The state pool is sized by <code>Config.NSeqMax</code>, which defaults to 1. The admission channel is sized by <code>NSeqMax + QueueDepth</code>; queue depth defaults to 0. Calls beyond that capacity wait until their context is canceled, the configured admission timeout expires, or an operation releases admission capacity. The admission timeout defaults to three minutes and stops applying once capacity is acquired. The states isolate concurrent inference while sharing the handle's model weights and Whisper context.</p>
           <p>The Bucky planner reserves the shared model file size once and a conservative 200 MiB runtime allowance for every configured state. It does not charge <code>QueueDepth</code>, because waiting calls do not allocate a state. Planning and model loading use the same resolved configuration so the reservation scales with the actual <code>NSeqMax</code> used by the handle.</p>
-          <p>The audio HTTP handler delegates file decoding and transcription to <code>Bucky.TranscribeFile</code>. It explicitly enforces the 25 MB upload limit before allowing unbounded work. Keep protocol field validation/format selection in the handler and audio/model mechanics in Bucky.</p>
+          <p>The audio HTTP handler delegates file decoding and transcription to <code>Bucky.TranscribeFile</code>. It explicitly enforces the 25 MiB upload limit before allowing unbounded work. Keep protocol field validation/format selection in the handler and audio/model mechanics in Bucky.</p>
           <p>Focused tests that exist include unit tests under <code>sdk/bucky/model/</code> and <code>sdk/bucky/ffmpeg/</code>, transcription/pool/stream suites under <code>sdk/bucky/tests/transcribe/</code>, and the server audio API tests under <code>cmd/server/api/services/kronk/tests/</code>. Choose the narrowest test whose native library and model prerequisites are available. Do not duplicate Chapter 18's usage matrix here.</p>
           <h3 id="209-verification-for-llm-agents">20.9 Verification for LLM Agents</h3>
           <h4 id="2091-required-go-post-edit-sequence">20.9.1 Required Go post-edit sequence</h4>

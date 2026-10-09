@@ -43,7 +43,7 @@ var ErrServerBusy = engine.ErrServerBusy
 // on a pool-level sentinel without importing resman.
 var ErrNoCapacity = errors.New("pool: insufficient memory budget")
 
-// HumanBytes formats a byte count using decimal (SI) units. It aliases
+// HumanBytes formats a byte count using binary (IEC) units. It aliases
 // the core helper so existing callers of pool.HumanBytes keep working.
 func HumanBytes(n int64) string {
 	return engine.HumanBytes(n)

@@ -428,8 +428,8 @@ interface PeerPullState {
 function formatBytes(n: number): string {
   if (!n || n <= 0) return '';
   const mb = n / (1000 * 1000);
-  if (mb < 1024) return `${mb.toFixed(1)} MB`;
-  return `${(mb / 1024).toFixed(2)} GB`;
+  if (mb < 1000) return `${mb.toFixed(1)} MB`;
+  return `${(mb / 1000).toFixed(2)} GB`;
 }
 
 function PeerBundleSection({ installed, onChanged }: { installed: LibsBundleTag[]; onChanged: () => void }) {

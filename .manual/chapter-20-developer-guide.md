@@ -815,7 +815,7 @@ loading use the same resolved configuration so the reservation scales with the
 actual `NSeqMax` used by the handle.
 
 The audio HTTP handler delegates file decoding and transcription to
-`Bucky.TranscribeFile`. It explicitly enforces the 25 MB upload limit before allowing
+`Bucky.TranscribeFile`. It explicitly enforces the 25 MiB upload limit before allowing
 unbounded work. Keep protocol field validation/format selection in the handler and
 audio/model mechanics in Bucky.
 

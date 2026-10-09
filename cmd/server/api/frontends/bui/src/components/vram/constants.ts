@@ -134,7 +134,7 @@ EXAMPLE: REAL MODEL CALCULATION
 ==============================================================================
 
 Model                   : Qwen3-Coder-30B-A3B-Instruct-UD-Q8_K_XL
-Model Weights           : 36.0 GB
+Model Weights           : ~33.5 GiB (36.0 GB GGUF file)
 Context Window (n_ctx)  : 131,072 (128K)
 Bytes Per Element       : 1 (q8_0)
 block_count (n_layers)  : 48
@@ -148,15 +148,15 @@ Step 1 — Per-token-per-layer cost:
 
 Step 2 — Per-sequence cost:
 
-  KV_Per_Sequence = 131,072 × 48 × 1,024 = ~6.4 GB
+  KV_Per_Sequence = 131,072 × 48 × 1,024 = 6 GiB
 
 Step 3 — Total KV cache (NSeqMax = 2):
 
-  Slot_Memory = 2 × 6.4 GB = ~12.8 GB
+  Slot_Memory = 2 × 6 GiB = 12 GiB
 
 Step 4 — Total VRAM:
 
-  Total_VRAM = 36.0 GB + 12.8 GB = ~48.8 GB
+  Total_VRAM = ~33.5 GiB + 12 GiB = ~45.5 GiB
 
 ==============================================================================
 MULTI-GPU VRAM DISTRIBUTION

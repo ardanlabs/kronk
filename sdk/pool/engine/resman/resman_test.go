@@ -17,8 +17,8 @@ const (
 	MiB int64 = 1 << 20
 )
 
-// snapshot24_12 returns a snapshot with two GPUs of asymmetric VRAM (24 GB
-// and 12 GB) and 64 GB of system RAM.
+// snapshot24_12 returns a snapshot with two GPUs of asymmetric VRAM (24 GiB
+// and 12 GiB) and 64 GiB of system RAM.
 func snapshot24_12() resman.Snapshot {
 	return resman.Snapshot{
 		Devices: []resman.Device{
@@ -29,7 +29,7 @@ func snapshot24_12() resman.Snapshot {
 	}
 }
 
-// snapshotSingle returns a snapshot with one 16 GB GPU and 32 GB of RAM.
+// snapshotSingle returns a snapshot with one 16 GiB GPU and 32 GiB of RAM.
 func snapshotSingle() resman.Snapshot {
 	return resman.Snapshot{
 		Devices: []resman.Device{
@@ -737,7 +737,7 @@ func Test_Reserve_FailedDoesNotMutate(t *testing.T) {
 }
 
 // snapshot24_16_8 returns a snapshot with three GPUs of asymmetric VRAM
-// (24 GB, 16 GB and 8 GB) and 64 GB of system RAM. Used to exercise
+// (24 GiB, 16 GiB and 8 GiB) and 64 GiB of system RAM. Used to exercise
 // free-choice placement when more than two cards have unequal headroom.
 func snapshot24_16_8() resman.Snapshot {
 	return resman.Snapshot{
