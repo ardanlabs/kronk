@@ -274,7 +274,13 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
   const [autoFitError, setAutoFitError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (serverResponse) setLiveResponse(serverResponse);
+    setLiveResponse(serverResponse ?? null);
+    ++latestRequestIdRef.current;
+    setRecomputing(false);
+    setAutoFitting(false);
+    setAutoFitError(null);
+    initialSeededRef.current = false;
+    if (!serverResponse) prevResponseRef.current = null;
   }, [serverResponse]);
 
   // Track the most recent request payload so we can ignore stale responses
@@ -337,7 +343,10 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
       }
     }, RECOMPUTE_DEBOUNCE_MS);
 
-    return () => clearTimeout(handle);
+    return () => {
+      clearTimeout(handle);
+      ++latestRequestIdRef.current;
+    };
     // We intentionally do not depend on serverResponse here; that is handled
     // by the seed effect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -413,7 +422,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
   ]);
 
   // ── Derived view ────────────────────────────────────────────────────────
-  const activeResponse = liveResponse ?? serverResponse ?? null;
+  const activeResponse = serverResponse === null ? null : liveResponse ?? serverResponse ?? null;
   const vramInput = activeResponse?.input;
   const hasSWA = (vramInput?.sliding_window ?? 0) > 0 && (vramInput?.sliding_window_layers ?? 0) > 0;
   const isMoE = activeResponse?.moe?.is_moe === true && activeResponse?.weights != null;

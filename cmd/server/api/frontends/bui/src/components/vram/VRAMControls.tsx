@@ -329,14 +329,11 @@ export default function VRAMControls({
         id={`vram-${variant}-moe-cache`}
         type="number"
         min="0"
-        step="0.25"
+        step="0.5"
         value={(moeCacheSize ?? 0) / (1024 ** 3)}
         onChange={(e) => onMoECacheSizeChange?.(Math.round(Math.max(0, Number(e.target.value)) * (1024 ** 3)))}
         className={variant === 'compact' ? 'form-input' : 'playground-sweep-param-values'}
       />
-      <div style={{ fontSize: '11px', color: 'var(--color-gray-500)', marginTop: 2 }}>
-        0 = off. Additional memory; host expert weights remain.
-      </div>
     </div>
   );
 

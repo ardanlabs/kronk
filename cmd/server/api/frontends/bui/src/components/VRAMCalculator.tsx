@@ -58,6 +58,16 @@ export default function VRAMCalculator() {
 
   const canResolve = provider.trim().length > 0 && family.trim().length > 0;
 
+  const handleClear = useCallback(() => {
+    setRepoFiles(null);
+    setError(null);
+    setResult(null);
+    setCalculatedModelLabel('');
+    setCalculatedModelId('');
+    setCalculatedModelUrl('');
+    cachedKeyRef.current = '';
+  }, []);
+
   // runCalculate handles all of:
   //
   //   - Model blank             → browse files (show picker)
@@ -79,10 +89,7 @@ export default function VRAMCalculator() {
       return;
     }
 
-    setError(null);
-    setResult(null);
-    setRepoFiles(null);
-    cachedKeyRef.current = '';
+    handleClear();
 
     // Model blank → browse the repo so the user can pick a file.
     if (!m) {
@@ -165,7 +172,7 @@ export default function VRAMCalculator() {
     }
 
     await calculateOne(`${m}.gguf`);
-  }, [isResolving, loading, provider, family, model, controlsProps]);
+  }, [isResolving, loading, provider, family, model, controlsProps, handleClear]);
 
   // calculateOne resolves a specific filename to the HF URL the
   // calculateVRAM endpoint understands and stores the result. Split
@@ -197,8 +204,8 @@ export default function VRAMCalculator() {
       return;
     }
 
+    handleClear();
     setLoading(true);
-    setError(null);
 
     try {
       const response = await api.calculateVRAM(
@@ -221,7 +228,7 @@ export default function VRAMCalculator() {
     } finally {
       setLoading(false);
     }
-  }, [provider, family, controlsProps, result]);
+  }, [provider, family, controlsProps, result, handleClear]);
 
   const handlePickFile = (filename: string) => {
     setModel(modelIDFromFilename(filename));
@@ -245,16 +252,6 @@ export default function VRAMCalculator() {
       e.preventDefault();
       void runCalculate();
     }
-  };
-
-  const handleClear = () => {
-    setRepoFiles(null);
-    setError(null);
-    setResult(null);
-    setCalculatedModelLabel('');
-    setCalculatedModelId('');
-    setCalculatedModelUrl('');
-    cachedKeyRef.current = '';
   };
 
   const handleCalculateClick = () => {
