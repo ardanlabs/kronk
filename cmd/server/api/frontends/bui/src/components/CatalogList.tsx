@@ -29,16 +29,16 @@ const SECTION_LABELS: Record<DetailSection, string> = {
 // Size slider helpers (logarithmic scale)
 // ---------------------------------------------------------------------------
 
-const MB = 1024 * 1024;
-const GB = 1024 * 1024 * 1024;
-const TB = 1024 * 1024 * 1024 * 1024;
-const SIZE_MAX_BYTES = 4 * TB; // 4 TiB
+const MiB = 1024 * 1024;
+const GiB = 1024 * 1024 * 1024;
+const TiB = 1024 * 1024 * 1024 * 1024;
+const SIZE_MAX_BYTES = 4 * TiB; // 4 TiB
 const SLIDER_STEPS = 1000;
 
 function sliderToBytes(pos: number): number {
   if (pos <= 0) return 0;
   if (pos >= SLIDER_STEPS) return SIZE_MAX_BYTES;
-  const logMin = Math.log(MB);
+  const logMin = Math.log(MiB);
   const logMax = Math.log(SIZE_MAX_BYTES);
   return Math.exp(logMin + (pos / SLIDER_STEPS) * (logMax - logMin));
 }
@@ -46,19 +46,19 @@ function sliderToBytes(pos: number): number {
 function bytesToSlider(bytes: number): number {
   if (bytes <= 0) return 0;
   if (bytes >= SIZE_MAX_BYTES) return SLIDER_STEPS;
-  const logMin = Math.log(MB);
+  const logMin = Math.log(MiB);
   const logMax = Math.log(SIZE_MAX_BYTES);
-  return Math.round(((Math.log(Math.max(bytes, MB)) - logMin) / (logMax - logMin)) * SLIDER_STEPS);
+  return Math.round(((Math.log(Math.max(bytes, MiB)) - logMin) / (logMax - logMin)) * SLIDER_STEPS);
 }
 
-type SizeUnit = 'MB' | 'GB' | 'TB';
+type SizeUnit = 'MiB' | 'GiB' | 'TiB';
 
-const UNIT_MULT: Record<SizeUnit, number> = { MB, GB, TB };
+const UNIT_MULT: Record<SizeUnit, number> = { MiB, GiB, TiB };
 
 function bytesToBestUnit(bytes: number): { value: string; unit: SizeUnit } {
-  if (bytes >= TB) return { value: (bytes / TB).toFixed(1), unit: 'TB' };
-  if (bytes >= GB) return { value: (bytes / GB).toFixed(1), unit: 'GB' };
-  return { value: Math.round(bytes / MB).toString(), unit: 'MB' };
+  if (bytes >= TiB) return { value: (bytes / TiB).toFixed(1), unit: 'TiB' };
+  if (bytes >= GiB) return { value: (bytes / GiB).toFixed(1), unit: 'GiB' };
+  return { value: Math.round(bytes / MiB).toString(), unit: 'MiB' };
 }
 
 // ---------------------------------------------------------------------------
@@ -173,9 +173,9 @@ export default function CatalogList() {
   const [selectedCapabilities, setSelectedCapabilities] = useState<Set<string>>(new Set());
 
   const [sizeMinVal, setSizeMinVal] = useState('0');
-  const [sizeMinUnit, setSizeMinUnit] = useState<SizeUnit>('MB');
+  const [sizeMinUnit, setSizeMinUnit] = useState<SizeUnit>('MiB');
   const [sizeMaxVal, setSizeMaxVal] = useState('4');
-  const [sizeMaxUnit, setSizeMaxUnit] = useState<SizeUnit>('TB');
+  const [sizeMaxUnit, setSizeMaxUnit] = useState<SizeUnit>('TiB');
 
   const [downloadedFilter, setDownloadedFilter] = useState<'all' | 'yes' | 'no'>('all');
   const [validatedFilter, setValidatedFilter] = useState<'all' | 'yes' | 'no'>('all');
@@ -289,9 +289,9 @@ export default function CatalogList() {
     setSelectedModelTypes(new Set());
     setSelectedCapabilities(new Set());
     setSizeMinVal('0');
-    setSizeMinUnit('MB');
+    setSizeMinUnit('MiB');
     setSizeMaxVal('4');
-    setSizeMaxUnit('TB');
+    setSizeMaxUnit('TiB');
     setDownloadedFilter('all');
     setValidatedFilter('all');
   };
@@ -667,9 +667,9 @@ export default function CatalogList() {
                 onChange={(e) => setSizeMinVal(e.target.value)}
               />
               <select value={sizeMinUnit} onChange={(e) => setSizeMinUnit(e.target.value as SizeUnit)}>
-                <option value="MB">MB</option>
-                <option value="GB">GB</option>
-                <option value="TB">TB</option>
+                <option value="MiB">MiB</option>
+                <option value="GiB">GiB</option>
+                <option value="TiB">TiB</option>
               </select>
             </div>
             <div className="catalog-range-row">
@@ -682,9 +682,9 @@ export default function CatalogList() {
                 onChange={(e) => setSizeMaxVal(e.target.value)}
               />
               <select value={sizeMaxUnit} onChange={(e) => setSizeMaxUnit(e.target.value as SizeUnit)}>
-                <option value="MB">MB</option>
-                <option value="GB">GB</option>
-                <option value="TB">TB</option>
+                <option value="MiB">MiB</option>
+                <option value="GiB">GiB</option>
+                <option value="TiB">TiB</option>
               </select>
             </div>
             <div className="catalog-dual-range">
@@ -971,7 +971,7 @@ export default function CatalogList() {
                     {remoteVramLoading === modelInfo.id ? (
                       <div className="vram-loading-banner">
                         <span className="vram-loading-spinner" />
-                        <span>Fetching model header (up to 16 MB)…</span>
+                        <span>Fetching model header (up to 16 MiB)…</span>
                       </div>
                     ) : remoteVramError && !vramResults ? (
                       <div className="empty-state">

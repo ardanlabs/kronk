@@ -14,9 +14,9 @@ interface SourceImage {
 }
 
 function formatBytes(bytes: number): string {
-  if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KiB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(0)} MiB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GiB`;
 }
 
 export default function ImageGenerator() {
@@ -104,7 +104,7 @@ export default function ImageGenerator() {
       return;
     }
     if (file.size > MAX_IMAGE_BYTES) {
-      setError('Source image exceeds the 25 MB limit.');
+      setError('Source image exceeds the 25 MiB limit.');
       return;
     }
     setSource({ file, objectURL: URL.createObjectURL(file) });

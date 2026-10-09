@@ -667,7 +667,7 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
 
             const skipped = configCandidates.length - filteredCandidates.length;
             if (skipped > 0) {
-              setRun(prev => prev && !isStale() ? { ...prev, calibrationStatus: `Skipped ${skipped} of ${configCandidates.length} candidates exceeding ${availableVRAMGB} GB VRAM` } : prev);
+              setRun(prev => prev && !isStale() ? { ...prev, calibrationStatus: `Skipped ${skipped} of ${configCandidates.length} candidates exceeding ${availableVRAMGB} GiB VRAM` } : prev);
             } else {
               setRun(prev => prev && !isStale() ? { ...prev, calibrationStatus: undefined } : prev);
             }
@@ -678,7 +678,7 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
           if (isStale()) return;
 
           if (filteredCandidates.length === 0) {
-            if (!isStale()) setRun(prev => prev ? { ...prev, errorMessage: `All ${configCandidates.length} candidates exceed ${availableVRAMGB} GB VRAM — lower context window, slots, or increase VRAM limit`, status: 'error' } : prev);
+            if (!isStale()) setRun(prev => prev ? { ...prev, errorMessage: `All ${configCandidates.length} candidates exceed ${availableVRAMGB} GiB VRAM — lower context window, slots, or increase VRAM limit`, status: 'error' } : prev);
             return;
           }
         } else {

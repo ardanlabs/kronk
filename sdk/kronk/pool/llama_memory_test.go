@@ -63,8 +63,8 @@ func TestBackendMemoryBytes(t *testing.T) {
 		want  string
 	}{
 		{value: 0, want: "0B"},
-		{value: 115448725504, want: "115.4GB"},
-		{value: 11813308006, want: "11.8GB"},
+		{value: 115448725504, want: "107.5GiB"},
+		{value: 11813308006, want: "11.0GiB"},
 	}
 
 	for _, tt := range tests {

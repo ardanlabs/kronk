@@ -315,7 +315,7 @@ translation route instead:
 POST /v1/audio/translations
 ```
 
-The uploaded file is limited to **25 MB**. Each transcription has a 30-minute
+The uploaded file is limited to **25 MiB**. Each transcription has a 30-minute
 server deadline.
 
 | Field                       | Required | Purpose |
@@ -607,7 +607,7 @@ not translate into arbitrary target languages.
 | Server logs `bucky init failed, running in degraded mode` | Install a library bundle compatible with the host, then restart the server. |
 | Transcription reports an unknown model | Run `kronk bucky model list`; pull the required model if it is absent. |
 | An English-only model rejects the language | Use `en`, omit the hint, or switch to a multilingual model. |
-| The upload is rejected for its size | Keep the audio file at or below 25 MB. Split long recordings or re-encode them at a lower bitrate. |
+| The upload is rejected for its size | Keep the audio file at or below 25 MiB. Split long recordings or re-encode them at a lower bitrate. |
 | Audio decodes to no samples | The file may be corrupt or unsupported. Re-encode it as a 16 kHz mono WAV and retry. |
 | GPU inference is unexpectedly slow | Check `KRONK_BUCKY_LIB_PATH` and the active bundle. A CPU bundle runs without GPU acceleration. |
 | A new SDK stream blocks or times out | Another stream is holding all configured SDK stream capacity. Close idle streams or create the handle with a larger `NSeqMax`. |

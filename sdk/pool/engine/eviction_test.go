@@ -23,7 +23,7 @@ func TestSelectEvictionVictim_SmallestFitForBudget(t *testing.T) {
 
 	usage := resman.Usage{
 		RAMBudget: 110 * GiB,
-		RAMUsed:   100 * GiB, // 10 GB free
+		RAMUsed:   100 * GiB, // 10 GiB free
 		Reservations: []resman.LoadPlan{
 			{Key: "AGENT-LARGE", RAMBytes: 44 * GiB},
 			{Key: "OMNI-MEDIUM", RAMBytes: 33 * GiB},
@@ -53,7 +53,7 @@ func TestSelectEvictionVictim_FallbackToColdestWhenNoSingleFit(t *testing.T) {
 
 	usage := resman.Usage{
 		RAMBudget: 100 * GiB,
-		RAMUsed:   95 * GiB, // 5 GB free
+		RAMUsed:   95 * GiB, // 5 GiB free
 		Reservations: []resman.LoadPlan{
 			{Key: "COLD", RAMBytes: 3 * GiB},
 			{Key: "WARM", RAMBytes: 3 * GiB},
@@ -61,7 +61,7 @@ func TestSelectEvictionVictim_FallbackToColdestWhenNoSingleFit(t *testing.T) {
 		},
 	}
 
-	req := resman.PlanRequest{RAMBytes: 20 * GiB} // deficit = 15 GB > any single victim
+	req := resman.PlanRequest{RAMBytes: 20 * GiB} // deficit = 15 GiB > any single victim
 
 	victim, mode := selectEvictionVictim("budget", req, idle, usage)
 
@@ -116,7 +116,7 @@ func TestSelectEvictionVictim_SkipsUntrackedKeys(t *testing.T) {
 
 	usage := resman.Usage{
 		RAMBudget: 100 * GiB,
-		RAMUsed:   95 * GiB, // 5 GB free; deficit = 5 GB
+		RAMUsed:   95 * GiB, // 5 GiB free; deficit = 5 GiB
 		Reservations: []resman.LoadPlan{
 			{Key: "TRACKED", RAMBytes: 8 * GiB},
 		},
