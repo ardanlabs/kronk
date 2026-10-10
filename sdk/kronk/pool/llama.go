@@ -95,7 +95,11 @@ func (l *Llama) ResolvedKronkConfig(modelID string) (model.Config, error) {
 
 // Prepare resolves the model configuration once for both planning and loading.
 func (l *Llama) Prepare(_ context.Context, req loader.LoadRequest) (any, error) {
-	return l.resolveConfig(req)
+	cfg, err := l.resolveConfig(req)
+	if err != nil {
+		return nil, err
+	}
+	return l.preparePlacement(cfg)
 }
 
 // Plan implements loader.Loader.Plan for the llama backend.
@@ -153,55 +157,11 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 		return resman.PlanRequest{}, fmt.Errorf("plan: modelID[%s]: %w", req.ModelID, err)
 	}
 
-	planReq := resman.PlanRequest{
-		Key:         req.Key,
-		Devices:     gpuDevices(cfg.Devices),
-		TensorSplit: cfg.TensorSplit,
-		// Allow the resman to account an unpinned load across all GPUs
-		// unless the user explicitly pinned a single GPU via
-		// SplitModeNone. When the split mode is unset (nil), the runtime
-		// defaults to layer splitting, so the model is auto-distributed
-		// across every card — matching how llama.cpp actually places it.
-		AllowSplit: cfg.PtrSplitMode == nil || *cfg.PtrSplitMode != model.SplitModeNone,
-	}
-
-	// Map the calculator's GPU/CPU split onto resman buckets.
-	//
-	// Unified memory is special-cased first.
-	// The GPU and CPU share one physical pool, and llama.cpp mmaps
-	// the GGUF — so even an MoE model with "experts on CPU" will
-	// eventually have every page resident in the same shared pool
-	// once exercised. Charging only the planner's TotalVRAM (which
-	// drops the always-inactive expert weights) would let the
-	// resman admit far more concurrent models than the box can
-	// actually hold, then OOM when the experts page in. We instead
-	// charge the full loaded footprint:
-	//
-	//   model_bytes + KV cache + compute buffer
-	//
-	// to the system RAM bucket.
-	//
-	// Discrete-GPU systems keep the existing MoE-aware split so
-	// expert-offload-to-CPU and per-GPU tensor splits are still
-	// accounted for accurately.
-	switch {
-	case l.resman.UnifiedMemory():
-		planReq.VRAMBytes = 0
-		planReq.RAMBytes = result.UnifiedFootprint()
-	case l.resman.HasGPUs() && cfg.NGpuLayers() != -1:
-		planReq.VRAMBytes = result.TotalVRAM
-		planReq.RAMBytes = result.TotalSystemRAMEst
-	default:
-		planReq.VRAMBytes = 0
-		planReq.RAMBytes = result.TotalVRAM + result.TotalSystemRAMEst
-	}
-
-	extraVRAM, extraRAM, err := l.additionalMemory(cfg, vramCfg)
-	if err != nil {
+	planReq := resman.PlanRequest{Key: req.Key}
+	l.addResult(&planReq, result, cfg.NGpuLayers() != -1, cfg.Devices, cfg.TensorSplit, cfg.MainGPU())
+	if err := l.additionalMemory(&planReq, cfg, vramCfg); err != nil {
 		return resman.PlanRequest{}, fmt.Errorf("plan: additional memory: %w", err)
 	}
-	planReq.VRAMBytes += extraVRAM
-	planReq.RAMBytes += extraRAM
 
 	memoryTopology := "cpu-only"
 	switch {
@@ -250,15 +210,15 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 		"reserved-vram", humanBytes(planReq.VRAMBytes),
 		"reserved-ram", humanBytes(planReq.RAMBytes),
 		"devices", planReq.Devices,
-		"tensor-split", planReq.TensorSplit,
-		"allow-split", planReq.AllowSplit,
+		"device-bytes", planReq.DeviceBytes,
+		"tensor-split", cfg.TensorSplit,
 	)
 
 	return planReq, nil
 }
 
-func (l *Llama) additionalMemory(cfg model.Config, targetCfg vram.Config) (vramBytes, ramBytes int64, err error) {
-	addFile := func(path string, onCPU bool) error {
+func (l *Llama) additionalMemory(plan *resman.PlanRequest, cfg model.Config, targetCfg vram.Config) error {
+	addFile := func(path string, onCPU bool, names []string, split []float32, main int) error {
 		if path == "" {
 			return nil
 		}
@@ -266,27 +226,26 @@ func (l *Llama) additionalMemory(cfg model.Config, targetCfg vram.Config) (vramB
 		if err != nil {
 			return fmt.Errorf("stat %s: %w", path, err)
 		}
-		if l.resman.UnifiedMemory() || onCPU {
-			ramBytes += info.Size()
-		} else {
-			vramBytes += info.Size()
-		}
+		l.addResult(plan, vram.Result{
+			Input:     vram.Input{ModelSizeBytes: info.Size()},
+			TotalVRAM: info.Size(), ModelWeightsGPU: info.Size(),
+		}, !onCPU, names, split, main)
 		return nil
 	}
 
 	projOnCPU := !l.resman.HasGPUs() || (cfg.PtrProjOnCPU != nil && *cfg.PtrProjOnCPU)
-	if err := addFile(cfg.ProjFile, projOnCPU); err != nil {
-		return 0, 0, err
+	if err := addFile(cfg.ProjFile, projOnCPU, []string{cfg.ProjDevice}, nil, 0); err != nil {
+		return err
 	}
 	if cfg.SpeculationMode() != model.SpeculationDisabled {
 		mtpOnCPU := !l.resman.HasGPUs() || cfg.NGpuLayers() == -1
-		if err := addFile(cfg.MTPDrafterFile, mtpOnCPU); err != nil {
-			return 0, 0, err
+		if err := addFile(cfg.MTPDrafterFile, mtpOnCPU, cfg.Devices, cfg.TensorSplit, cfg.MainGPU()); err != nil {
+			return err
 		}
 	}
 
 	if cfg.PtrDraftModel == nil || !cfg.PtrDraftModel.IsSeparate() || cfg.SpeculationMode() == model.SpeculationDisabled {
-		return vramBytes, ramBytes, nil
+		return nil
 	}
 
 	draftCfg := targetCfg
@@ -298,20 +257,13 @@ func (l *Llama) additionalMemory(cfg model.Config, targetCfg vram.Config) (vramB
 	draftCfg.ComputeContexts = 1
 	draft, err := vram.FromFiles(cfg.PtrDraftModel.ModelFiles, draftCfg)
 	if err != nil {
-		return 0, 0, fmt.Errorf("draft: %w", err)
+		return fmt.Errorf("draft: %w", err)
 	}
 
-	switch {
-	case l.resman.UnifiedMemory():
-		ramBytes += draft.UnifiedFootprint()
-	case l.resman.HasGPUs() && cfg.PtrDraftModel.NGpuLayers() != -1:
-		vramBytes += draft.TotalVRAM
-		ramBytes += draft.TotalSystemRAMEst
-	default:
-		ramBytes += draft.TotalVRAM + draft.TotalSystemRAMEst
-	}
+	draftPlacement := cfg.PtrDraftModel
+	l.addResult(plan, draft, draftPlacement.NGpuLayers() != -1, draftPlacement.Devices, draftPlacement.TensorSplit, draftPlacement.MainGPU())
 
-	return vramBytes, ramBytes, nil
+	return nil
 }
 
 // Load implements loader.Loader.Load for the llama backend.
@@ -680,7 +632,11 @@ func (l *Llama) resolveConfig(req loader.LoadRequest) (model.Config, error) {
 
 func (l *Llama) configForRequest(req loader.LoadRequest) (model.Config, error) {
 	if req.Prepared == nil {
-		return l.resolveConfig(req)
+		cfg, err := l.resolveConfig(req)
+		if err != nil {
+			return cfg, err
+		}
+		return l.preparePlacement(cfg)
 	}
 
 	cfg, ok := req.Prepared.(model.Config)
@@ -798,8 +754,9 @@ func predictResult(m *models.Models, modelID string, cfg vram.Config) (vram.Resu
 		return vram.Result{}, "", fmt.Errorf("predict-result: model-information: %w", err)
 	}
 	return vram.Result{
-		Input:     vram.Input{ModelSizeBytes: int64(info.Size)},
-		TotalVRAM: int64(info.Size),
+		Input:           vram.Input{ModelSizeBytes: int64(info.Size)},
+		TotalVRAM:       int64(info.Size),
+		ModelWeightsGPU: int64(info.Size),
 	}, "file-size", nil
 }
 

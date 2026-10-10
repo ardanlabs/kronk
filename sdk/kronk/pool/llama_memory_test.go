@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
@@ -206,6 +208,16 @@ func TestAdditionalMemoryAccountsForProjectionAndCompanionMTPFiles(t *testing.T)
 		t.Fatalf("write MTP: %v", err)
 	}
 
+	additional := func(l *Llama, cfg model.Config) (int64, int64, error) {
+		cfg, err := l.preparePlacement(cfg)
+		if err != nil {
+			return 0, 0, err
+		}
+		var plan resman.PlanRequest
+		err = l.additionalMemory(&plan, cfg, vram.Config{})
+		return plan.VRAMBytes, plan.RAMBytes, err
+	}
+
 	discreteRM, err := resman.New(resman.Config{
 		Snapshot: resman.Snapshot{
 			Devices:  []resman.Device{{Name: "CUDA0", Type: "gpu_cuda", TotalBytes: 1 << 30}},
@@ -216,10 +228,10 @@ func TestAdditionalMemoryAccountsForProjectionAndCompanionMTPFiles(t *testing.T)
 		t.Fatalf("new discrete resource manager: %v", err)
 	}
 	discrete := newLlama(func(context.Context, string, ...any) {}, nil, nil, discreteRM, devices.Devices{}, false)
-	vramBytes, ramBytes, err := discrete.additionalMemory(model.Config{
+	vramBytes, ramBytes, err := additional(discrete, model.Config{
 		ProjFile:       projection,
 		MTPDrafterFile: mtp,
-	}, vram.Config{})
+	})
 	if err != nil {
 		t.Fatalf("additionalMemory discrete: %v", err)
 	}
@@ -227,11 +239,11 @@ func TestAdditionalMemoryAccountsForProjectionAndCompanionMTPFiles(t *testing.T)
 		t.Errorf("discrete bytes: got VRAM=%d RAM=%d, want VRAM=300 RAM=0", vramBytes, ramBytes)
 	}
 
-	vramBytes, ramBytes, err = discrete.additionalMemory(model.Config{
+	vramBytes, ramBytes, err = additional(discrete, model.Config{
 		ProjFile:       projection,
 		MTPDrafterFile: mtp,
 		Speculation:    model.SpeculationDisabled,
-	}, vram.Config{})
+	})
 	if err != nil {
 		t.Fatalf("additionalMemory disabled speculation: %v", err)
 	}
@@ -246,10 +258,10 @@ func TestAdditionalMemoryAccountsForProjectionAndCompanionMTPFiles(t *testing.T)
 		t.Fatalf("new unified resource manager: %v", err)
 	}
 	unified := newLlama(func(context.Context, string, ...any) {}, nil, nil, unifiedRM, devices.Devices{}, false)
-	vramBytes, ramBytes, err = unified.additionalMemory(model.Config{
+	vramBytes, ramBytes, err = additional(unified, model.Config{
 		ProjFile:       projection,
 		MTPDrafterFile: mtp,
-	}, vram.Config{})
+	})
 	if err != nil {
 		t.Fatalf("additionalMemory unified: %v", err)
 	}
@@ -264,14 +276,129 @@ func TestAdditionalMemoryAccountsForProjectionAndCompanionMTPFiles(t *testing.T)
 		t.Fatalf("new CPU resource manager: %v", err)
 	}
 	cpu := newLlama(func(context.Context, string, ...any) {}, nil, nil, cpuRM, devices.Devices{}, false)
-	vramBytes, ramBytes, err = cpu.additionalMemory(model.Config{
+	vramBytes, ramBytes, err = additional(cpu, model.Config{
 		ProjFile:       projection,
 		MTPDrafterFile: mtp,
-	}, vram.Config{})
+	})
 	if err != nil {
 		t.Fatalf("additionalMemory CPU: %v", err)
 	}
 	if vramBytes != 0 || ramBytes != 300 {
 		t.Errorf("CPU bytes: got VRAM=%d RAM=%d, want VRAM=0 RAM=300", vramBytes, ramBytes)
+	}
+}
+
+func TestPlanReservesCalculatorDeviceResults(t *testing.T) {
+	mdls, err := models.NewWithPaths(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(mdls.Path(), "test", "family")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	var header bytes.Buffer
+	write := func(value any) {
+		t.Helper()
+		if err := binary.Write(&header, binary.LittleEndian, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeString := func(value string) {
+		write(uint64(len(value)))
+		if _, err := header.WriteString(value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(gguf.Magic)
+	write(uint32(3))
+	write(uint64(0))
+	write(uint64(5))
+	writeString("general.architecture")
+	write(gguf.MetadataValueTypeString)
+	writeString("qwen3")
+	for key, value := range map[string]uint32{"block_count": 4, "attention.head_count": 1, "attention.key_length": 8, "attention.value_length": 4} {
+		writeString("qwen3." + key)
+		write(gguf.MetadataValueTypeUInt32)
+		write(value)
+	}
+	path := filepath.Join(dir, "placement.gguf")
+	if err := os.WriteFile(path, header.Bytes(), 0600); err != nil {
+		t.Fatal(err)
+	}
+	log := func(context.Context, string, ...any) {}
+	if err := mdls.BuildIndex(log, false); err != nil {
+		t.Fatal(err)
+	}
+	base := model.Config{ModelFiles: []string{path}, PtrContextWindow: new(4097), PtrNSeqMax: new(1), PtrSWAFull: new(true)}
+	calcCfg := vram.Config{ContextWindow: 4097, BytesPerElement: 2, Slots: 1, SWAFull: true}
+	result, err := vram.FromFiles([]string{path}, calcCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name     string
+		cfg      model.Config
+		unified  bool
+		capacity int64
+		want     map[string]int64
+		wantRAM  int64
+		wantErr  error
+	}{
+		{"explicit reordered/main GPU", model.Config{Devices: []string{"CUDA1", "CUDA0"}, TensorSplit: []float32{1, 3}, PtrMainGPU: new(1)}, false, 1 << 30,
+			map[string]int64{"CUDA1": result.ModelWeightsGPU/4 + result.KVVRAMBytes/4, "CUDA0": result.TotalVRAM - result.ModelWeightsGPU/4 - result.KVVRAMBytes/4}, result.TotalSystemRAMEst, nil},
+		{"implicit free-memory split", model.Config{}, false, 1 << 30,
+			map[string]int64{"CUDA0": result.ModelWeightsGPU*3/4 + result.KVVRAMBytes*3/4 + result.ComputeBufferEst, "CUDA1": result.TotalVRAM - result.ModelWeightsGPU*3/4 - result.KVVRAMBytes*3/4 - result.ComputeBufferEst}, result.TotalSystemRAMEst, nil},
+		{"single GPU honors main within reordered list", model.Config{Devices: []string{"CUDA1", "CUDA0"}, PtrMainGPU: new(1), PtrSplitMode: new(model.SplitModeNone)}, false, 1 << 30,
+			map[string]int64{"CUDA0": result.TotalVRAM}, result.TotalSystemRAMEst, nil},
+		{"independent draft and projector devices", model.Config{Devices: []string{"CUDA0"}, ProjFile: path, ProjDevice: "CUDA1", PtrDraftModel: &model.DraftModelConfig{ModelFiles: []string{path}, Devices: []string{"CUDA1"}}}, false, 1 << 30,
+			map[string]int64{"CUDA0": result.TotalVRAM, "CUDA1": result.TotalVRAM + int64(header.Len())}, 2 * result.TotalSystemRAMEst, nil},
+		{"default projector independent of target", model.Config{Devices: []string{"CUDA1"}, ProjFile: path}, false, 1 << 30,
+			map[string]int64{"CUDA1": result.TotalVRAM, "CUDA0": int64(header.Len())}, result.TotalSystemRAMEst, nil},
+		{"CPU model on discrete system", model.Config{PtrNGpuLayers: new(-1)}, false, 1 << 30,
+			map[string]int64{}, result.TotalVRAM + result.TotalSystemRAMEst, nil},
+		{"compute alone exceeds main GPU", model.Config{Devices: []string{"CUDA1", "CUDA0"}, TensorSplit: []float32{1, 3}, PtrMainGPU: new(1)}, false, result.ComputeBufferEst - 1,
+			map[string]int64{"CUDA1": result.ModelWeightsGPU/4 + result.KVVRAMBytes/4, "CUDA0": result.TotalVRAM - result.ModelWeightsGPU/4 - result.KVVRAMBytes/4}, result.TotalSystemRAMEst, resman.ErrNoCapacity},
+		{"unified footprint", model.Config{}, true, 1 << 30, map[string]int64{}, result.UnifiedFootprint(), nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			rm, err := resman.New(resman.Config{Snapshot: resman.Snapshot{Devices: []resman.Device{{Name: "IGPU", Type: "gpu_vulkan", TotalBytes: 1 << 30}, {Name: "CUDA0", Type: "gpu_cuda", TotalBytes: tt.capacity}, {Name: "CUDA1", Type: "gpu_cuda", TotalBytes: 2 << 30}}, RAMBytes: 8 << 30, UnifiedMemory: tt.unified}, BudgetPercent: 100, HeadroomBytes: -1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			l := newLlama(log, mdls, nil, rm, devices.Devices{Devices: []devices.DeviceInfo{{Name: "IGPU", Type: "gpu_vulkan", HardwareType: "IGPU", FreeBytes: 1 << 30, TotalBytes: 1 << 30}, {Name: "CUDA0", Type: "gpu_cuda", FreeBytes: 9 << 28, TotalBytes: uint64(tt.capacity)}, {Name: "CUDA1", Type: "gpu_cuda", FreeBytes: 3 << 28, TotalBytes: 2 << 30}}}, false)
+			cfg := tt.cfg
+			cfg.ModelFiles, cfg.PtrContextWindow, cfg.PtrNSeqMax, cfg.PtrSWAFull = base.ModelFiles, base.PtrContextWindow, base.PtrNSeqMax, base.PtrSWAFull
+			prepared, err := l.Prepare(context.Background(), loader.LoadRequest{Custom: cfg})
+			if err != nil {
+				t.Fatal(err)
+			}
+			planReq, err := l.Plan(context.Background(), loader.LoadRequest{Key: "model", ModelID: "test/placement", Prepared: prepared})
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := make(map[string]int64)
+			for i, name := range planReq.Devices {
+				got[name] = planReq.DeviceBytes[i]
+			}
+			if !reflect.DeepEqual(got, tt.want) || planReq.RAMBytes != tt.wantRAM {
+				t.Fatalf("reservation: got %v RAM=%d, want %v RAM=%d", got, planReq.RAMBytes, tt.want, tt.wantRAM)
+			}
+			if err := rm.VRAMFeasible(planReq); !errors.Is(err, tt.wantErr) {
+				t.Fatalf("feasible: got %v, want %v", err, tt.wantErr)
+			}
+			ticket, plan, err := rm.Reserve(planReq)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("reserve: got %v, want %v", err, tt.wantErr)
+			}
+			if err == nil {
+				for _, allocation := range plan.Per {
+					if allocation.Bytes != tt.want[allocation.Name] {
+						t.Errorf("reserved[%s]: got %d, want %d", allocation.Name, allocation.Bytes, tt.want[allocation.Name])
+					}
+				}
+				rm.Release(ticket)
+			}
+		})
 	}
 }

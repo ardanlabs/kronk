@@ -1045,3 +1045,57 @@ func Test_Headroom(t *testing.T) {
 		t.Fatalf("expected ErrNoCapacity past headroom, got: %v", err)
 	}
 }
+
+func TestCalculatorDeviceAllocations(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		devices []string
+		bytes   []int64
+		total   int64
+		wantErr error
+	}{
+		{"fits reordered devices", []string{"CUDA1", "CUDA0"}, []int64{9 * GiB, 15 * GiB}, 24 * GiB, nil},
+		{"aggregate fits but device exceeds", []string{"CUDA1", "CUDA0"}, []int64{13 * GiB, 11 * GiB}, 24 * GiB, resman.ErrNoCapacity},
+		{"length mismatch", []string{"CUDA0"}, []int64{GiB, GiB}, 2 * GiB, resman.ErrInvalidPlan},
+		{"sum mismatch", []string{"CUDA0"}, []int64{GiB}, 2 * GiB, resman.ErrInvalidPlan},
+		{"negative bytes", []string{"CUDA0", "CUDA1"}, []int64{-1, GiB + 1}, GiB, resman.ErrInvalidPlan},
+		{"duplicate device", []string{"CUDA0", "CUDA0"}, []int64{GiB, GiB}, 2 * GiB, resman.ErrInvalidPlan},
+		{"unknown device", []string{"missing"}, []int64{GiB}, GiB, resman.ErrUnknownDevice},
+		{"zero aggregate with nonzero allocation", []string{"CUDA0"}, []int64{1}, 0, resman.ErrInvalidPlan},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			m, err := resman.New(noHeadroom(snapshot24_12(), 100))
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := resman.PlanRequest{Key: "model", Devices: tt.devices, DeviceBytes: tt.bytes, VRAMBytes: tt.total, RAMBytes: GiB, TensorSplit: []float32{1, 0}, AllowSplit: true}
+			if err := m.VRAMFeasible(req); !errors.Is(err, tt.wantErr) {
+				t.Fatalf("feasible: got %v, want %v", err, tt.wantErr)
+			}
+			ticket, plan, err := m.Reserve(req)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("reserve: got %v, want %v", err, tt.wantErr)
+			}
+			if err == nil {
+				for i, allocation := range plan.Per {
+					if allocation.Name != tt.devices[i] || allocation.Bytes != tt.bytes[i] {
+						t.Errorf("allocation[%d]: got %s/%d, want %s/%d", i, allocation.Name, allocation.Bytes, tt.devices[i], tt.bytes[i])
+					}
+				}
+				if got := m.Usage().RAMUsed; got != GiB {
+					t.Errorf("RAM usage: got %d, want %d", got, GiB)
+				}
+				m.Release(ticket)
+			}
+			usage := m.Usage()
+			if usage.RAMUsed != 0 || len(usage.Reservations) != 0 {
+				t.Errorf("reservation leaked: %+v", usage)
+			}
+			for _, device := range usage.Devices {
+				if device.UsedBytes != 0 {
+					t.Errorf("device[%s] usage after release/rejection: got %d, want 0", device.Name, device.UsedBytes)
+				}
+			}
+		})
+	}
+}
