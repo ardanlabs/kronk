@@ -85,8 +85,8 @@ jobs:
 
       - name: Install static analysis tools
         run: |
-          go install honnef.co/go/tools/cmd/staticcheck@2026.2rc1
-          go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+          go install honnef.co/go/tools/cmd/staticcheck@master
+          go install golang.org/x/vuln/cmd/govulncheck@latest
 
       - name: gofmt
         run: |

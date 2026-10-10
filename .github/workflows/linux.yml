@@ -76,7 +76,7 @@ jobs:
     runs-on: ${{ (github.event.pull_request.head.repo.full_name || github.repository) == github.repository && fromJSON('["self-hosted","Linux","X64"]') || 'ubuntu-latest' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: ${{ inputs.sha || github.sha }}
 
@@ -86,7 +86,7 @@ jobs:
         run: ./.github/scripts/check-go-version.sh
 
       - name: Install Go
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version-file: .go-version
           # Hosted only: on self-hosted the module and build caches already
@@ -97,8 +97,8 @@ jobs:
       # version would otherwise fail the install under GOTOOLCHAIN=local.
       - name: Install static analysis tools
         run: |
-          go install honnef.co/go/tools/cmd/staticcheck@2026.2rc1
-          go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+          go install honnef.co/go/tools/cmd/staticcheck@master
+          go install golang.org/x/vuln/cmd/govulncheck@latest
 
       - name: gofmt
         # `git ls-files` skips gitignored files: vendored and generated code
@@ -141,7 +141,7 @@ jobs:
       # Lints .goreleaser.yaml on every run instead of at tag time. No
       # artifacts are produced.
       - name: goreleaser check
-        uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89  # v7
+        uses: goreleaser/goreleaser-action@5daf1e915a5f0af01ddbcd89a43b8061ff4f1a89 # v7
         with:
           version: "~> v2"
           args: check
@@ -152,7 +152,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: ${{ inputs.sha || github.sha }}
 
@@ -183,7 +183,7 @@ jobs:
           cat /proc/cpuinfo | grep "model name" | head -1
 
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: ${{ inputs.sha || github.sha }}
 
@@ -202,7 +202,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: ${{ inputs.sha || github.sha }}
 
