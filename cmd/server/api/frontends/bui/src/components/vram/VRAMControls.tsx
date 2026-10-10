@@ -20,17 +20,19 @@ function GpuLayersSlider({
   onGpuLayersChange?: (v: number) => void;
   variant?: 'form' | 'compact';
 }) {
-  const layers = gpuLayers ?? blockCount;
+  const totalLayers = blockCount + 1;
+  const layers = gpuLayers ?? totalLayers;
+  const cpuBlocks = totalLayers - layers;
 
   const label = variant === 'compact'
-    ? `Layers on GPU (${layers}/${blockCount})`
-    : `Layers on GPU (${layers} of ${blockCount})`;
+    ? `Layers on GPU (${layers}/${totalLayers})`
+    : `Layers on GPU (${layers} of ${totalLayers})`;
 
   const hint = layers === 0
     ? 'All layers on CPU (slowest, saves most VRAM)'
-    : layers >= blockCount
+    : layers >= totalLayers
       ? 'All layers on GPU (fastest)'
-      : `${layers} layers on GPU, ${blockCount - layers} on CPU — every token pays a penalty for CPU layers`;
+      : `Output and ${layers - 1} transformer blocks on GPU, ${cpuBlocks} block${cpuBlocks === 1 ? '' : 's'} on CPU`;
 
   if (variant === 'compact') {
     return (
@@ -42,7 +44,7 @@ function GpuLayersSlider({
           id="vram-compact-gpuLayers"
           type="range"
           min={0}
-          max={blockCount}
+          max={totalLayers}
           value={layers}
           onChange={(e) => onGpuLayersChange?.(Number(e.target.value))}
           className="form-range"
@@ -61,7 +63,7 @@ function GpuLayersSlider({
         id="vram-gpuLayers"
         type="range"
         min={0}
-        max={blockCount}
+        max={totalLayers}
         value={layers}
         onChange={(e) => onGpuLayersChange?.(Number(e.target.value))}
         style={{ width: '100%', marginTop: 6 }}
@@ -296,9 +298,9 @@ export default function VRAMControls({
       return;
     }
     if (blockCount == null || blockCount <= 0 || !isMoE) return;
-    if ((gpuLayers ?? blockCount) >= blockCount && (expertLayersOnGPU ?? blockCount) < blockCount) {
+    if ((gpuLayers ?? blockCount + 1) >= blockCount + 1 && (expertLayersOnGPU ?? blockCount) < blockCount) {
       setOffloadStrategy('expert');
-    } else if ((gpuLayers ?? blockCount) < blockCount && expertLayersOnGPU === gpuLayers) {
+    } else if ((gpuLayers ?? blockCount + 1) < blockCount + 1 && expertLayersOnGPU === Math.max(0, (gpuLayers ?? blockCount + 1) - 1)) {
       setOffloadStrategy('layer');
     }
   }, [blockCount, isMoE, gpuLayers, expertLayersOnGPU]);
@@ -309,17 +311,17 @@ export default function VRAMControls({
     if (blockCount == null || blockCount <= 0) return;
     if (s === 'layer') {
       // Layer offloading: expert layers follow GPU layers.
-      onExpertLayersOnGPUChange?.(gpuLayers ?? blockCount);
+      onExpertLayersOnGPUChange?.(Math.max(0, (gpuLayers ?? blockCount + 1) - 1));
     } else {
       // Expert offloading: all layers stay on GPU, keep current expert layers.
-      onGpuLayersChange?.(blockCount);
+      onGpuLayersChange?.(blockCount + 1);
     }
   };
 
   // For layer offloading, keep expert layers synced with GPU layers.
   const handleLayerOffloadGpuChange = (v: number) => {
     onGpuLayersChange?.(v);
-    onExpertLayersOnGPUChange?.(v);
+    onExpertLayersOnGPUChange?.(Math.max(0, v - 1));
   };
 
   const moeCacheControl = isMoE && (

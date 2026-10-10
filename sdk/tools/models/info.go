@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 )
 
 // ModelInfo represents the model's card information.
@@ -21,6 +22,7 @@ type ModelInfo struct {
 	IsEmbedModel  bool
 	IsRerankModel bool
 	Metadata      map[string]string
+	Weights       *gguf.WeightBreakdown `json:"-"` // Optional tensor accounting for local analysis.
 }
 
 // =============================================================================
@@ -72,7 +74,32 @@ func ModelInfoFromPath(id string, modelFiles []string, projFile string, mtpFile 
 		return ModelInfo{}, fmt.Errorf("model-information: %w", err)
 	}
 
-	return ModelInfoFromMetadata(id, metadata, totalSize, projFile != "", mtpFile != ""), nil
+	result := ModelInfoFromMetadata(id, metadata, totalSize, projFile != "", mtpFile != "")
+	var tensors []gguf.TensorInfo
+
+	for _, mf := range modelFiles {
+		data, err := gguf.ReadHeaderBytes(mf)
+		if err != nil {
+			return ModelInfo{}, fmt.Errorf("model-information: %w", err)
+		}
+
+		_, shardTensors, err := gguf.ParseHeaderAndTensors(data, int64(totalSize))
+		if err != nil {
+			// Metadata-only analysis remains available when the fetched
+			// header does not contain the complete tensor table.
+			return result, nil
+		}
+
+		tensors = append(tensors, shardTensors...)
+	}
+
+	blockCount := modelprofile.Resolve(metadata).Dimensions.BlockCount
+	if len(tensors) > 0 && blockCount > 0 {
+		wb := gguf.CategorizeWeights(tensors, blockCount)
+		result.Weights = &wb
+	}
+
+	return result, nil
 }
 
 // ModelInfoFromMetadata builds ModelInfo from an already-parsed GGUF header.

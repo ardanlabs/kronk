@@ -797,7 +797,10 @@ func predictResult(m *models.Models, modelID string, cfg vram.Config) (vram.Resu
 	if err != nil {
 		return vram.Result{}, "", fmt.Errorf("predict-result: model-information: %w", err)
 	}
-	return vram.Result{TotalVRAM: int64(info.Size)}, "file-size", nil
+	return vram.Result{
+		Input:     vram.Input{ModelSizeBytes: int64(info.Size)},
+		TotalVRAM: int64(info.Size),
+	}, "file-size", nil
 }
 
 // bytesPerElement returns the per-element width to use for KV-cache

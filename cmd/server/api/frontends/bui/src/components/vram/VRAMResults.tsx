@@ -81,7 +81,8 @@ export default function VRAMResults({
   const isMoE = moe?.is_moe === true && weights != null;
   const kvOnCPU = kvCacheOnCPU ?? false;
   const kvCacheLocation = kvOnCPU ? 'System RAM' : 'GPU';
-  const isPartialGPU = gpuLayers != null && gpuLayers < input.block_count;
+  const isPartialGPU = gpuLayers != null && gpuLayers < input.block_count + 1;
+  const cpuBlocks = input.block_count - Math.max(0, (gpuLayers ?? input.block_count + 1) - 1);
 
   const primaryTotal = isUnifiedMemory ? (unifiedFootprint ?? 0) : totalVram;
   const primaryCapacity = isUnifiedMemory
@@ -103,8 +104,8 @@ export default function VRAMResults({
     ];
   } else if (isPartialGPU) {
     breakdownRows = [
-      { label: labelWithTip(`Weights on GPU (${gpuLayers} of ${input.block_count} layers)`, 'gpuLayers'), value: formatBytes(modelWeightsGPU ?? 0) },
-      { label: labelWithTip(`Weights on CPU (${input.block_count - gpuLayers!} layers)`, 'gpuLayers'), value: formatBytes(modelWeightsCPU ?? 0) },
+      { label: labelWithTip(`Weights on GPU (${gpuLayers} of ${input.block_count + 1} layers)`, 'gpuLayers'), value: formatBytes(modelWeightsGPU ?? 0) },
+      { label: labelWithTip(`Weights on CPU (${cpuBlocks} block${cpuBlocks === 1 ? '' : 's'})`, 'gpuLayers'), value: formatBytes(modelWeightsCPU ?? 0) },
       { label: labelWithTip(`KV Cache (${kvCacheLocation})`, 'kvCache'), value: formatBytes(slotMemory) },
       { label: labelWithTip('KV Per Slot', 'kvPerSlot'), value: formatBytes(kvPerSlot) },
       { label: labelWithTip('KV Per Token Per Layer', 'kvPerTokenPerLayer'), value: formatBytes(kvPerTokenPerLayer) },
@@ -112,7 +113,8 @@ export default function VRAMResults({
     ];
   } else {
     breakdownRows = [
-      { label: labelWithTip('Model Weights', 'modelWeights'), value: formatBytes(input.model_size_bytes) },
+      { label: labelWithTip('Model Weights (GPU)', 'modelWeights'), value: formatBytes(modelWeightsGPU ?? input.model_size_bytes) },
+      ...((modelWeightsCPU ?? 0) > 0 ? [{ label: labelWithTip('Model Weights (CPU)', 'gpuLayers'), value: formatBytes(modelWeightsCPU!) }] : []),
       { label: labelWithTip(`KV Cache (${kvCacheLocation})`, 'kvCache'), value: formatBytes(slotMemory) },
       { label: labelWithTip('KV Per Slot', 'kvPerSlot'), value: formatBytes(kvPerSlot) },
       { label: labelWithTip('KV Per Token Per Layer', 'kvPerTokenPerLayer'), value: formatBytes(kvPerTokenPerLayer) },
@@ -375,10 +377,10 @@ function buildComputedCatalogConfig(
 ): VramComputedConfig {
   const cacheType = cacheTypeName(input.bytes_per_element);
   const gpuCount = deviceCount ?? 1;
-  const allLayersOnGPU = gpuLayers == null || gpuLayers >= input.block_count;
+  const allLayersOnGPU = gpuLayers == null || gpuLayers >= input.block_count + 1;
 
   let ngpuLayers: number | null = null;
-  if (gpuLayers != null && gpuLayers < input.block_count) {
+  if (gpuLayers != null && gpuLayers < input.block_count + 1) {
     ngpuLayers = gpuLayers === 0 ? -1 : gpuLayers;
   }
 

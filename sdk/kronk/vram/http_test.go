@@ -1,9 +1,85 @@
 package vram
 
 import (
+	"bytes"
+	"encoding/binary"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 )
+
+func TestFromFilesOutputPlacement(t *testing.T) {
+	for _, tt := range []struct {
+		name, arch, output string
+		wantGPU            int64
+	}{
+		{"output in later shard", "qwen3", "output.weight", 68},
+		{"tied language output", "qwen3", "", 100},
+		{"embedding without output", "bert", "", 0},
+		{"classifier output", "bert", "cls.weight", 68},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var paths []string
+			for shard, tensorName := range []string{"token_embd.weight", tt.output} {
+				if tensorName == "" {
+					continue
+				}
+				var data bytes.Buffer
+				write := func(value any) {
+					t.Helper()
+					if err := binary.Write(&data, binary.LittleEndian, value); err != nil {
+						t.Fatal(err)
+					}
+				}
+				writeString := func(value string) {
+					write(uint64(len(value)))
+					if _, err := data.WriteString(value); err != nil {
+						t.Fatal(err)
+					}
+				}
+				write(gguf.Magic)
+				write(uint32(3))
+				write(uint64(1))
+				write(uint64(5))
+				writeString("general.architecture")
+				write(gguf.MetadataValueTypeString)
+				writeString(tt.arch)
+				for key, value := range map[string]uint32{"block_count": 2, "attention.head_count": 1, "attention.key_length": 8, "attention.value_length": 8} {
+					writeString(tt.arch + "." + key)
+					write(gguf.MetadataValueTypeUInt32)
+					write(value)
+				}
+				writeString(tensorName)
+				write(uint32(1))
+				if shard == 0 {
+					write(uint64(25)) // F32 input table: 100 bytes.
+				} else {
+					write(uint64(17)) // F32 output table: 68 bytes.
+				}
+				write(uint32(0))
+				write(uint64(0))
+				path := filepath.Join(t.TempDir(), "shard.gguf")
+				if err := os.WriteFile(path, data.Bytes(), 0600); err != nil {
+					t.Fatal(err)
+				}
+				paths = append(paths, path)
+			}
+			result, err := FromFiles(paths, Config{GPULayers: 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.ModelWeightsGPU != tt.wantGPU {
+				t.Errorf("output-only GPU weights: got %d, want %d", result.ModelWeightsGPU, tt.wantGPU)
+			}
+			if result.ModelWeightsCPU != result.Input.ModelSizeBytes-68 && tt.output != "" {
+				t.Errorf("CPU weights: got %d, want %d", result.ModelWeightsCPU, result.Input.ModelSizeBytes-68)
+			}
+		})
+	}
+}
 
 func TestCalculateSWAFull(t *testing.T) {
 	input := Input{
@@ -107,13 +183,13 @@ func TestCalculatePartialOffloadPlacesKVByLayer(t *testing.T) {
 
 	got := Calculate(input)
 	// Full layers use 1024*(1+1)=2048 bytes. SWA layers use
-	// PAD256(256)*(1+1)=512 bytes. The trailing GPU half contains
-	// full/SWA/full; the CPU half contains SWA/full/SWA.
-	if got.KVVRAMBytes != 2048+512+2048 {
-		t.Fatalf("KVVRAMBytes: got %d, want %d", got.KVVRAMBytes, 2048+512+2048)
+	// PAD256(256)*(1+1)=512 bytes. Output uses the first offload
+	// unit, leaving just the trailing SWA/full blocks on GPU.
+	if got.KVVRAMBytes != 512+2048 {
+		t.Fatalf("KVVRAMBytes: got %d, want %d", got.KVVRAMBytes, 512+2048)
 	}
-	if got.KVCPUBytes != 512+2048+512 {
-		t.Fatalf("KVCPUBytes: got %d, want %d", got.KVCPUBytes, 512+2048+512)
+	if got.KVCPUBytes != 512+2048+512+2048 {
+		t.Fatalf("KVCPUBytes: got %d, want %d", got.KVCPUBytes, 512+2048+512+2048)
 	}
 }
 
@@ -144,7 +220,9 @@ func TestBuildFromMetadataQwen35Hybrid(t *testing.T) {
 	}
 
 	const recurrentStateBytes int64 = 4 * ((8 + 2*1*4) + 4*8)
-	want := int64(256*(8+8)*2) + 3*recurrentStateBytes*3
+	// Target attention plus appended draft attention, and three target
+	// recurrent layers with current state and two rollback planes.
+	want := int64(2*256*(8+8)*2) + 3*recurrentStateBytes*3
 	if got.SlotMemory != want {
 		t.Fatalf("SlotMemory: got %d, want %d", got.SlotMemory, want)
 	}

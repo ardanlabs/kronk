@@ -145,8 +145,8 @@ func TestAutoFitUnifiedMemory(t *testing.T) {
 				UnifiedMemory:  true,
 			})
 
-			if gpuLayers != input.BlockCount {
-				t.Errorf("gpuLayers: got %d, want %d", gpuLayers, input.BlockCount)
+			if gpuLayers != input.BlockCount+1 {
+				t.Errorf("gpuLayers: got %d, want %d", gpuLayers, input.BlockCount+1)
 			}
 			if expertLayers != input.BlockCount {
 				t.Errorf("expertLayers: got %d, want %d", expertLayers, input.BlockCount)
@@ -210,5 +210,61 @@ func TestAssessFitRequiresCapacityForRequiredSystemRAM(t *testing.T) {
 	}
 	if assessment.Fits {
 		t.Error("Fits: got true, want false")
+	}
+}
+
+func TestCalculateWeightPlacement(t *testing.T) {
+	for _, tt := range []struct {
+		name             string
+		layers           int64
+		tied             bool
+		wantGPU, wantCPU int64
+	}{
+		{name: "untied CPU", layers: -1, wantCPU: 1000},
+		{name: "untied output only", layers: 1, wantGPU: 300, wantCPU: 700},
+		{name: "untied partial", layers: 3, wantGPU: 550, wantCPU: 450},
+		{name: "untied all but first block", layers: 4, wantGPU: 675, wantCPU: 325},
+		{name: "untied full", layers: 5, wantGPU: 800, wantCPU: 200},
+		{name: "untied default", wantGPU: 800, wantCPU: 200},
+		{name: "tied CPU aliases", layers: -1, tied: true, wantCPU: 700},
+		{name: "tied output only duplicates", layers: 1, tied: true, wantGPU: 200, wantCPU: 700},
+		{name: "tied partial duplicates", layers: 3, tied: true, wantGPU: 450, wantCPU: 450},
+		{name: "tied full duplicates", layers: 5, tied: true, wantGPU: 700, wantCPU: 200},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			tensors := []gguf.TensorInfo{{Name: "token_embd.weight", Bytes: 200}, {Name: "blk.0.attn_q.weight", Bytes: 500}}
+			if !tt.tied {
+				tensors = append(tensors, gguf.TensorInfo{Name: "output.weight", Bytes: 300})
+			}
+			weights := gguf.CategorizeWeights(tensors, 4)
+			result := Calculate(Input{ModelSizeBytes: weights.TotalBytes, BlockCount: 4, GPULayers: tt.layers, Weights: &weights, TiedOutputFallback: true})
+			if result.ModelWeightsGPU != tt.wantGPU || result.ModelWeightsCPU != tt.wantCPU {
+				t.Fatalf("weights: got GPU/CPU %d/%d, want %d/%d", result.ModelWeightsGPU, result.ModelWeightsCPU, tt.wantGPU, tt.wantCPU)
+			}
+			if got := result.UnifiedFootprint() - result.ComputeBufferEst; got != weights.TotalBytes {
+				t.Errorf("unified weights: got %d, want %d", got, weights.TotalBytes)
+			}
+		})
+	}
+}
+
+func TestCalculateExpertsFollowOffloadedLayers(t *testing.T) {
+	weights := gguf.WeightBreakdown{AlwaysActiveBytes: 400, ExpertBytesTotal: 1000, ExpertBytesByLayer: []int64{100, 200, 300, 400}}
+	for _, tt := range []struct {
+		layers, experts, wantGPU int64
+	}{
+		{-1, 4, 0}, {1, 4, 0}, {3, 4, 700}, {3, 1, 400}, {5, 0, 0}, {5, 4, 1000},
+	} {
+		result := Calculate(Input{ModelSizeBytes: 1400, BlockCount: 4, Weights: &weights, MoE: &gguf.MoEInfo{IsMoE: true}, GPULayers: tt.layers, ExpertLayersOnGPU: tt.experts})
+		if result.ExpertGPUBytes != tt.wantGPU || result.ExpertCPUBytes != 1000-tt.wantGPU {
+			t.Errorf("layers=%d experts=%d: got GPU/CPU %d/%d, want %d/%d", tt.layers, tt.experts, result.ExpertGPUBytes, result.ExpertCPUBytes, tt.wantGPU, 1000-tt.wantGPU)
+		}
+	}
+}
+
+func TestAutoFitIncludesOutputLayer(t *testing.T) {
+	layers, _, result, fit := AutoFit(Input{ModelSizeBytes: 100, BlockCount: 4}, FitConstraints{CombinedFreeBytes: 1 << 30, SystemRAMBytes: 1 << 30})
+	if !fit || layers != 5 || result.ModelWeightsCPU != 0 {
+		t.Fatalf("full offload: got fit=%t layers=%d CPU=%d, want true/5/0", fit, layers, result.ModelWeightsCPU)
 	}
 }

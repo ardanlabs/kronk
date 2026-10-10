@@ -1,16 +1,58 @@
 package pool
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
+	"github.com/ardanlabs/kronk/sdk/pool/engine/loader"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
+	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
+
+func TestPlanFallbackReservesUnifiedModelWeights(t *testing.T) {
+	mdls, err := models.NewWithPaths(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(mdls.Path(), "test", "family")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// A readable GGUF without sizing metadata must take the file-size fallback.
+	var data bytes.Buffer
+	for _, value := range []any{gguf.Magic, uint32(3), uint64(0), uint64(0)} {
+		if err := binary.Write(&data, binary.LittleEndian, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "fallback.gguf"), data.Bytes(), 0600); err != nil {
+		t.Fatal(err)
+	}
+	log := func(context.Context, string, ...any) {}
+	if err := mdls.BuildIndex(log, false); err != nil {
+		t.Fatal(err)
+	}
+	rm, err := resman.New(resman.Config{Snapshot: resman.Snapshot{RAMBytes: 1 << 30, UnifiedMemory: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := newLlama(log, mdls, nil, rm, devices.Devices{}, false)
+	plan, err := l.Plan(context.Background(), loader.LoadRequest{Key: "fallback", ModelID: "test/fallback", Prepared: model.Config{PtrSWAFull: new(true)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.RAMBytes != int64(data.Len()) || plan.VRAMBytes != 0 {
+		t.Fatalf("fallback reservation: got RAM/VRAM %d/%d, want %d/0", plan.RAMBytes, plan.VRAMBytes, data.Len())
+	}
+}
 
 func TestBackendMemoryChecks(t *testing.T) {
 	const gib = uint64(1 << 30)

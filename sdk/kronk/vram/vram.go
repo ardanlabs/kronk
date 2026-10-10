@@ -59,7 +59,7 @@ type Config struct {
 	TypeV                  int32 // Kronk GGML cache type ID (0 = use BytesPerElement).
 	Slots                  int64 // n_seq_max - number of concurrent sequences
 	NUBatch                int64 // Effective physical batch size.
-	GPULayers              int64 // Number of layers on GPU (0 = all, -1 = none).
+	GPULayers              int64 // Native offload count: output first, then blocks (0 = all, -1 = none).
 	ExpertLayersOnGPU      int64 // 0 = all experts on CPU.
 	MoECacheSize           int64 // GPU expert-cache budget in bytes per context; ignored for dense models.
 	KVCacheOnCPU           bool  // Move KV cache off the GPU (offload-kqv: false).
@@ -100,7 +100,8 @@ type Input struct {
 	ComputeContexts      int64                 // Native contexts that reserve independent compute buffers.
 	MoE                  *gguf.MoEInfo         //
 	Weights              *gguf.WeightBreakdown //
-	GPULayers            int64                 // Number of layers on GPU (0 = all, -1 = none)
+	TiedOutputFallback   bool                  // Architecture duplicates token embeddings for missing output weights.
+	GPULayers            int64                 // Native offload count: output first, then blocks (0 = all, -1 = none).
 	ExpertLayersOnGPU    int64                 // 0 = all experts on CPU
 	MoECacheSize         int64                 // GPU expert-cache budget in bytes per context.
 	KVCacheOnCPU         bool                  // Move KV cache off the GPU (offload-kqv: false)
@@ -134,7 +135,7 @@ type Result struct {
 	ComputeBufferEst   int64
 	MoECacheBytes      int64 // Additional GPU expert-cache reservation; original host weights remain.
 
-	// MoE-specific weight breakdown (zero for dense models).
+	// Always-active weights include all dense weights; expert fields are MoE-only.
 	AlwaysActiveGPUBytes int64
 	AlwaysActiveCPUBytes int64
 	ExpertGPUBytes       int64
@@ -157,7 +158,7 @@ type Result struct {
 // delegated to sdk/kronk/gguf.CalculateKVCache so the SDK and tools sides
 // share a single implementation.
 func Calculate(input Input) Result {
-	kv := gguf.CalculateKVCache(gguf.KVCacheInput{
+	kvInput := gguf.KVCacheInput{
 		ContextWindow:        input.ContextWindow,
 		BlockCount:           input.BlockCount,
 		HeadCountKV:          input.HeadCountKV,
@@ -183,15 +184,36 @@ func Calculate(input Input) Result {
 		KVUnified:            input.KVUnified,
 		SWAFull:              input.SWAFull,
 		VTransposed:          input.VTransposed,
-	})
+	}
+
+	kv := gguf.CalculateKVCache(kvInput)
+
+	if input.ComputeContexts > 1 && input.NextNPredictLayers > 0 {
+		// Embedded own-KV MTP allocates attention state for the appended
+		// layers in its draft context, separately from the target trunk.
+		draftInput := kvInput
+		draftInput.NextNPredictLayers = 0
+		draft := gguf.CalculateKVCache(draftInput)
+		for layer := max(input.BlockCount-input.NextNPredictLayers, 0); layer < int64(len(kv.LayerMemory)); layer++ {
+			kv.LayerMemory[layer] = draft.LayerMemory[layer]
+			kv.SlotMemory += draft.LayerMemory[layer]
+		}
+		kv.KVPerSlot = kv.SlotMemory / max(input.Slots, 1)
+	}
+
 	kvPerTokenPerLayer := kv.KVPerTokenPerLayer
 	kvPerSlot := kv.KVPerSlot
 	slotMemory := kv.SlotMemory
 
-	gpuLayers := clampGPULayers(input.GPULayers, input.BlockCount)
+	offloadLayers := clampGPULayers(input.GPULayers, input.BlockCount)
+
+	// b11513 offloads output first; it has no attention/recurrent state.
+	gpuLayers := max(offloadLayers-1, 0)
 
 	var modelWeightsGPU, modelWeightsCPU int64
 	var alwaysActiveGPU, alwaysActiveCPU, expertsGPU, expertsCPU int64
+
+	activeTotal := input.ModelSizeBytes
 
 	switch {
 	case input.Weights != nil && input.MoE != nil && input.MoE.IsMoE:
@@ -214,36 +236,51 @@ func Calculate(input Input) Result {
 			perLayerExpert = scaledPerLayer(perLayerExpert, input.Weights.ExpertBytesTotal, expertsTotal)
 		}
 
-		// Always-active weights are split proportionally by GPU layers.
-		// When all layers are on GPU, all always-active weights stay on GPU.
-		if gpuLayers >= input.BlockCount {
-			alwaysActiveGPU = input.Weights.AlwaysActiveBytes
-		} else {
-			alwaysActiveGPU, alwaysActiveCPU = splitByGPULayers(input.Weights.AlwaysActiveBytes, gpuLayers, input.BlockCount)
-		}
+		activeTotal = input.Weights.AlwaysActiveBytes
 
-		// Expert weights are split by ExpertLayersOnGPU (expert offloading).
+		// CPU expert overrides cannot put experts from CPU layers on GPU.
 		if input.ExpertLayersOnGPU > 0 && len(perLayerExpert) > 0 {
 			blockCount := int64(len(perLayerExpert))
-			startLayer := max(blockCount-input.ExpertLayersOnGPU, 0)
+			startLayer := max(blockCount-min(input.ExpertLayersOnGPU, gpuLayers), 0)
 			for i := startLayer; i < blockCount; i++ {
 				expertsGPU += perLayerExpert[i]
 			}
 		}
 		expertsCPU = max(0, expertsTotal-expertsGPU)
 
-		modelWeightsGPU = alwaysActiveGPU + expertsGPU
-		modelWeightsCPU = alwaysActiveCPU + expertsCPU
+	}
 
-	default:
+	// Only block weights use the proportional approximation. Input tensors
+	// stay on CPU; output tensors move as a unit at any positive offload.
+	var inputBytes, outputBytes, tiedBytes int64
 
-		// Dense models: split total model weights proportionally by GPU layers.
-		if gpuLayers >= input.BlockCount {
-			modelWeightsGPU = input.ModelSizeBytes
-		} else {
-			modelWeightsGPU, modelWeightsCPU = splitByGPULayers(input.ModelSizeBytes, gpuLayers, input.BlockCount)
+	if input.Weights != nil {
+		inputBytes = input.Weights.InputBytes
+		outputBytes = input.Weights.OutputBytes
+		if input.TiedOutputFallback && !input.Weights.HasOutputWeight {
+			tiedBytes = input.Weights.TokenEmbeddingBytes
 		}
 	}
+
+	if inputBytes == 0 && outputBytes == 0 {
+		// Metadata-only callers have no tensor placement facts. Treat
+		// output as one of the N+1 weight groups, rather than free offload.
+		outputBytes = activeTotal / max(input.BlockCount+1, 1)
+	}
+
+	blockBytes := max(activeTotal-inputBytes-outputBytes, 0)
+	alwaysActiveGPU, alwaysActiveCPU = splitByGPULayers(blockBytes, gpuLayers, input.BlockCount)
+	alwaysActiveCPU += inputBytes
+
+	if offloadLayers > 0 {
+		alwaysActiveGPU += outputBytes + tiedBytes
+	} else {
+		// Tied output on the same CPU buffer aliases the input table.
+		alwaysActiveCPU += outputBytes
+	}
+
+	modelWeightsGPU = alwaysActiveGPU + expertsGPU
+	modelWeightsCPU = alwaysActiveCPU + expertsCPU
 
 	computeContexts := max(input.ComputeContexts, 1)
 	computeBufferEst := EstimateComputeBuffer(input) * computeContexts
@@ -528,12 +565,12 @@ func AutoFit(input Input, constraints FitConstraints) (gpuLayers int64, expertLa
 
 	if constraints.UnifiedMemory {
 		full := input
-		full.GPULayers = blockCount
+		full.GPULayers = blockCount + 1
 		if input.MoE != nil && input.MoE.IsMoE {
 			full.ExpertLayersOnGPU = blockCount
 		}
 		result := Calculate(full)
-		return blockCount, full.ExpertLayersOnGPU, result, AssessFit(result, constraints).Fits
+		return full.GPULayers, full.ExpertLayersOnGPU, result, AssessFit(result, constraints).Fits
 	}
 
 	deviceCount := max(constraints.DeviceCount, 1)
@@ -553,11 +590,11 @@ func AutoFit(input Input, constraints FitConstraints) (gpuLayers int64, expertLa
 	// "everything on GPU" defaults.
 	if combined <= 0 {
 		full := input
-		full.GPULayers = blockCount
+		full.GPULayers = blockCount + 1
 		if input.MoE != nil && input.MoE.IsMoE {
 			full.ExpertLayersOnGPU = blockCount
 		}
-		return blockCount, full.ExpertLayersOnGPU, Calculate(full), false
+		return full.GPULayers, full.ExpertLayersOnGPU, Calculate(full), false
 	}
 
 	fits := func(v Result) bool { return AssessFit(v, constraints).Fits }
@@ -569,7 +606,7 @@ func AutoFit(input Input, constraints FitConstraints) (gpuLayers int64, expertLa
 		bestExperts := int64(-1)
 		for experts := blockCount; experts >= 0; experts-- {
 			candidate := input
-			candidate.GPULayers = blockCount
+			candidate.GPULayers = blockCount + 1
 			candidate.ExpertLayersOnGPU = experts
 			candidate.KVCacheOnCPU = constraints.KVCacheOnCPU
 			v := Calculate(candidate)
@@ -580,21 +617,21 @@ func AutoFit(input Input, constraints FitConstraints) (gpuLayers int64, expertLa
 			}
 		}
 		if bestExperts >= 0 {
-			return blockCount, bestExperts, result, true
+			return blockCount + 1, bestExperts, result, true
 		}
 
 		// Fall back to layer offloading.
-		for ngl := blockCount; ngl >= 0; ngl-- {
+		for ngl := blockCount + 1; ngl >= 0; ngl-- {
 			candidate := input
 			candidate.GPULayers = ngl
 			if ngl == 0 {
 				candidate.GPULayers = -1
 			}
-			candidate.ExpertLayersOnGPU = ngl
+			candidate.ExpertLayersOnGPU = max(ngl-1, 0)
 			candidate.KVCacheOnCPU = constraints.KVCacheOnCPU
 			v := Calculate(candidate)
 			if fits(v) {
-				return candidate.GPULayers, ngl, v, true
+				return candidate.GPULayers, candidate.ExpertLayersOnGPU, v, true
 			}
 		}
 
@@ -610,7 +647,7 @@ func AutoFit(input Input, constraints FitConstraints) (gpuLayers int64, expertLa
 	bestGPULayers := int64(0)
 	var bestResult Result
 	var found bool
-	for ngl := int64(0); ngl <= blockCount; ngl++ {
+	for ngl := int64(0); ngl <= blockCount+1; ngl++ {
 		candidate := input
 		candidate.GPULayers = ngl
 		if ngl == 0 {
@@ -697,14 +734,14 @@ func worseFitStatus(a, b FitStatus) FitStatus {
 	return a
 }
 
-// clampGPULayers returns the effective number of GPU layers. A zero value
-// preserves the default of all layers on GPU; -1 explicitly selects CPU-only.
+// clampGPULayers counts output plus repeating layers, matching native n_gpu_layers.
+// A zero value selects full offload; -1 explicitly selects CPU-only.
 func clampGPULayers(gpuLayers, blockCount int64) int64 {
 	if gpuLayers == -1 {
 		return 0
 	}
-	if gpuLayers <= 0 || gpuLayers > blockCount {
-		return blockCount
+	if gpuLayers <= 0 || gpuLayers > blockCount+1 {
+		return blockCount + 1
 	}
 
 	return gpuLayers

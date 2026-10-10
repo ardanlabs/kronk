@@ -37,17 +37,12 @@ func FromHuggingFace(ctx context.Context, modelURL string, cfg Config) (Result, 
 // HuggingFace folder. It lists all GGUF files in the folder, sums their
 // sizes, and reads metadata from the first split file.
 func fromFolder(ctx context.Context, folderURL string, cfg Config) (Result, error) {
-	fileURLs, totalSize, err := fetchFolderFiles(ctx, folderURL)
+	fileURLs, _, err := fetchFolderFiles(ctx, folderURL)
 	if err != nil {
 		return Result{}, fmt.Errorf("from-folder: %w", err)
 	}
 
-	metadata, tensors, _, err := fetchHeaderAndTensors(ctx, fileURLs[0])
-	if err != nil {
-		return Result{}, fmt.Errorf("from-folder: failed to fetch GGUF metadata from split: %w", err)
-	}
-
-	return buildFromMetadata(metadata, tensors, totalSize, cfg)
+	return FromHuggingFaceFiles(ctx, fileURLs, cfg)
 }
 
 // FromBytes computes the VRAM requirements directly from already-fetched
@@ -65,8 +60,8 @@ func FromBytes(data []byte, totalSize int64, cfg Config) (Result, error) {
 
 // FromHuggingFaceFiles computes VRAM requirements from a set of
 // pre-resolved HuggingFace file URLs (e.g. from shorthand resolution).
-// It reads metadata from the first file and sums sizes across all files
-// for split models.
+// It reads metadata from the first file and tensor descriptors and sizes
+// from every shard so output weights in later shards are included.
 func FromHuggingFaceFiles(ctx context.Context, modelURLs []string, cfg Config) (Result, error) {
 	if len(modelURLs) == 0 {
 		return Result{}, fmt.Errorf("from-huggingface-files: no model URLs provided")
@@ -85,11 +80,12 @@ func FromHuggingFaceFiles(ctx context.Context, modelURLs []string, cfg Config) (
 	totalSize := firstSize
 	if len(normalized) > 1 {
 		for i := 1; i < len(normalized); i++ {
-			_, splitSize, err := gguf.FetchRange(ctx, normalized[i], 0, 0)
+			_, shardTensors, splitSize, err := fetchHeaderAndTensors(ctx, normalized[i])
 			if err != nil {
 				return Result{}, fmt.Errorf("from-huggingface-files: failed to determine size for %s: %w", normalized[i], err)
 			}
 			totalSize += splitSize
+			tensors = append(tensors, shardTensors...)
 		}
 	}
 
@@ -179,6 +175,7 @@ func buildFromMetadata(metadata map[string]string, tensors []gguf.TensorInfo, mo
 		ComputeContexts:      computeContexts,
 		MoE:                  moePtr,
 		Weights:              weights,
+		TiedOutputFallback:   profile.TiedOutputFallback,
 		GPULayers:            cfg.GPULayers,
 		ExpertLayersOnGPU:    cfg.ExpertLayersOnGPU,
 		MoECacheSize:         cfg.MoECacheSize,

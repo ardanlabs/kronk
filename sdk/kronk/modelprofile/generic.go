@@ -41,6 +41,14 @@ func resolveGeneric(metadata metadata) Profile {
 		HasChatTemplate: gguf.HasChatTemplate(metadata.values),
 	}
 
+	// These b11513 loaders duplicate token_embd for a missing output.
+	// Missing output.weight alone is not sufficient (for example, BERT).
+	switch strings.ToLower(arch) {
+	case "llama", "qwen2", "qwen3", "qwen3moe", "qwen35", "qwen35moe",
+		"gemma", "gemma2", "gemma3", "gemma4", "gemma-embedding", "phi3":
+		profile.TiedOutputFallback = true
+	}
+
 	applyGenericPurposeAndModalities(metadata, &profile)
 	if metadata.hasKeyFragment(".ssm.", ".mamba.", ".recurrent.") {
 		profile.MemorySemantics = MemoryRecurrent

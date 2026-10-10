@@ -41,7 +41,7 @@ function isInvalidGiBInput(value: string): boolean {
 
 function gpuLayersForControl(gpuLayers: number, blockCount: number): number {
   if (gpuLayers === -1) return 0;
-  if (gpuLayers === 0) return blockCount;
+  if (gpuLayers === 0) return blockCount + 1;
   return gpuLayers;
 }
 

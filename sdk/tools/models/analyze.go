@@ -275,9 +275,15 @@ func analyzeModelWithConfigAndBudget(info ModelInfo, devs devices.Devices, cfg M
 	// -------------------------------------------------------------------------
 	// Build profiles.
 	cfg = normalizeAnalysisConfig(cfg, trainingCtx)
+	runtimeCfg := cfg.ToKronkConfig()
 
 	profileInput := profileInput{
 		modelSize:      modelSize,
+		weights:        info.Weights,
+		moe:            &profile.MoE,
+		tiedOutput:     profile.TiedOutputFallback,
+		expertLayers:   runtimeCfg.ExpertLayersOnGPU(),
+		moeCacheBytes:  runtimeCfg.MoECacheSize(),
 		blockCount:     blockCount,
 		headCountKV:    headCountKV,
 		keyLength:      keyLength,
@@ -361,6 +367,11 @@ func normalizeAnalysisConfig(cfg ModelConfig, trainingCtx int64) ModelConfig {
 
 type profileInput struct {
 	modelSize      int64
+	weights        *gguf.WeightBreakdown
+	moe            *gguf.MoEInfo
+	tiedOutput     bool
+	expertLayers   int64
+	moeCacheBytes  int64
 	blockCount     int64
 	headCountKV    int64
 	keyLength      int64
@@ -630,6 +641,11 @@ func calculateProfile(p profileInput, contextWindow, slots int64, cache cacheRec
 
 	return vram.Calculate(vram.Input{
 		ModelSizeBytes:       p.modelSize,
+		Weights:              p.weights,
+		MoE:                  p.moe,
+		TiedOutputFallback:   p.tiedOutput,
+		ExpertLayersOnGPU:    p.expertLayers,
+		MoECacheSize:         p.moeCacheBytes,
 		ContextWindow:        contextWindow,
 		BlockCount:           p.blockCount,
 		HeadCountKV:          headCountKV,

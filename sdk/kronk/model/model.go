@@ -604,20 +604,21 @@ func buildModelParams(ctx context.Context, cfg *Config, loadMTP bool, l applog.L
 		case MoEModeKeepTopN:
 			if cfg.PtrMoE.PtrKeepExpertsOnGPUForTopNLayers != nil {
 				topN := *cfg.PtrMoE.PtrKeepExpertsOnGPUForTopNLayers
-				// To keep top N on GPU, we offload all layers EXCEPT the top N.
-				// We need block_count from model metadata, which isn't available yet.
-				// Use the "moe-experts" shortcut for now; per-layer targeting requires
-				// model metadata which is available after loading.
-				// For initial implementation: offload all experts, then in Phase E
-				// we can add per-layer granularity.
 				if topN == 0 {
 					cfg.TensorBuftOverrides = []string{"moe-experts"}
-				}
-				// topN > 0: we can't generate per-block overrides without knowing
-				// block_count from the model. Leave overrides empty and let
-				// llama.cpp handle it. Log the intention.
-				if topN > 0 {
-					l(ctx, "MOE-CONFIG", "mode", "keep_top_n", "top_n", topN, "note", "per-layer expert placement requires model metadata; using auto-fit")
+				} else {
+					data, err := gguf.ReadHeaderBytes(cfg.ModelFiles[0])
+					if err != nil {
+						return mParams, ka, fmt.Errorf("moe-placement: %w", err)
+					}
+					metadata, err := gguf.ParseMetadata(data)
+					if err != nil {
+						return mParams, ka, fmt.Errorf("moe-placement: %w", err)
+					}
+					blockCount := modelprofile.Resolve(metadata).Dimensions.BlockCount
+					for block := int64(0); block < blockCount-int64(topN); block++ {
+						cfg.TensorBuftOverrides = append(cfg.TensorBuftOverrides, fmt.Sprintf("moe-experts:block:%d", block))
+					}
 				}
 			}
 		case MoEModeExpertsGPU, MoEModeAuto, MoEModeCustom, MoEMode{}:
@@ -1597,10 +1598,15 @@ func calculateVRAMDiag(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory in
 	vramCfg := vram.Config{
 		ContextWindow:          int64(cfg.ContextWindow()),
 		BytesPerElement:        int64(gguf.MaxBytesPerElement(int32(cfg.CacheTypeK), int32(cfg.CacheTypeV))),
+		TypeK:                  int32(cfg.CacheTypeK),
+		TypeV:                  int32(cfg.CacheTypeV),
 		Slots:                  int64(max(cfg.NSeqMax(), 1)),
 		NUBatch:                int64(cfg.EffectiveNUBatch()),
 		ExpertLayersOnGPU:      cfg.ExpertLayersOnGPU(),
 		MoECacheSize:           cfg.MoECacheSize(),
+		GPULayers:              int64(cfg.NGpuLayers()),
+		KVCacheOnCPU:           cfg.PtrOffloadKQV != nil && !*cfg.PtrOffloadKQV,
+		VTransposed:            cfg.FlashAttention() == FlashAttentionDisabled,
 		SWAFull:                effectiveSWAFull(cfg.PtrSWAFull, llama.ContextDefaultParams().SwaFull != 0),
 		RecurrentStateCopies:   RecurrentStateCopies(cfg, false),
 		EmbeddedMTPStateCopies: RecurrentStateCopies(cfg, true),
