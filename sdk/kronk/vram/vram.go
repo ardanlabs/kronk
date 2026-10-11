@@ -4,7 +4,10 @@
 // and the local/HuggingFace input helpers.
 package vram
 
-import "github.com/ardanlabs/kronk/sdk/kronk/gguf"
+import (
+	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
+)
 
 // Context window size constants (in tokens).
 const (
@@ -48,60 +51,71 @@ const (
 // Config contains the user-provided parameters for VRAM calculation
 // that cannot be extracted from the model file.
 type Config struct {
-	ContextWindow          int64 // n_ctx - context window size (e.g., 8192, 131072)
-	BytesPerElement        int64 // Depends on cache type: q8_0=1, f16=2
-	TypeK                  int32 // Kronk GGML cache type ID (0 = use BytesPerElement).
-	TypeV                  int32 // Kronk GGML cache type ID (0 = use BytesPerElement).
-	Slots                  int64 // n_seq_max - number of concurrent sequences
-	NUBatch                int64 // Effective physical batch size.
-	GPULayers              int64 // Native offload count: output first, then blocks (0 = all, -1 = none).
-	ExpertLayersOnGPU      int64 // 0 = all experts on CPU.
-	MoECacheSize           int64 // GPU expert-cache budget in bytes per context; ignored for dense models.
-	KVCacheOnCPU           bool  // Move KV cache off the GPU (offload-kqv: false).
-	SWAFull                bool  // Size SWA layers against the full context window.
-	VTransposed            bool  // Size V using the model-wide transposed layout.
-	RecurrentStateCopies   int64 // State copies for separate-model or companion-MTP speculation.
-	EmbeddedMTPStateCopies int64 // State copies when the GGUF contains an embedded MTP layer.
-	ComputeContexts        int64 // Native contexts that reserve independent compute buffers.
+	ComputeBackend         string // Selected backend (e.g. "metal"); empty uses generic workspace rules.
+	ContextWindow          int64  // n_ctx - context window size (e.g., 8192, 131072)
+	BytesPerElement        int64  // Depends on cache type: q8_0=1, f16=2
+	TypeK                  int32  // Kronk GGML cache type ID (0 = use BytesPerElement).
+	TypeV                  int32  // Kronk GGML cache type ID (0 = use BytesPerElement).
+	Slots                  int64  // n_seq_max - number of concurrent sequences
+	NUBatch                int64  // Effective physical batch size.
+	GPULayers              int64  // Native offload count: output first, then blocks (0 = all, -1 = none).
+	ExpertLayersOnGPU      int64  // 0 = all experts on CPU.
+	MoECacheSize           int64  // GPU expert-cache budget in bytes per context; ignored for dense models.
+	KVCacheOnCPU           bool   // Move KV cache off the GPU (offload-kqv: false).
+	SWAFull                bool   // Size SWA layers against the full context window.
+	VTransposed            bool   // Size V using the model-wide transposed layout.
+	RecurrentStateCopies   int64  // State copies for separate-model or companion-MTP speculation.
+	EmbeddedMTPStateCopies int64  // State copies when the GGUF contains an embedded MTP layer.
+	ComputeContexts        int64  // Native contexts that reserve independent compute buffers.
+	MTPContext             bool   // Size only the appended layers of an own-KV MTP context.
 }
 
 // Input contains all parameters needed to calculate VRAM requirements.
 type Input struct {
-	ModelSizeBytes       int64                 // Size of model weights in bytes
-	ContextWindow        int64                 // n_ctx - context window size (e.g., 8192, 131072)
-	BlockCount           int64                 // n_layers - number of transformer layers
-	HeadCountKV          int64                 // Number of KV attention heads
-	KeyLength            int64                 // K dimension per head (typically 128)
-	ValueLength          int64                 // V dimension per head (typically 128)
-	SWAHeadCountKV       int64                 // Number of KV heads in SWA layers (0 = HeadCountKV)
-	SWAKeyLength         int64                 // K dimension in SWA layers (0 = KeyLength)
-	SWAValueLength       int64                 // V dimension in SWA layers (0 = ValueLength)
-	HeadCountKVByLayer   []int64               // Exact per-layer KV head counts when available.
-	BytesPerElement      int64                 // Depends on cache type: q8_0=1, f16=2
-	TypeK                int32                 // Kronk GGML cache type ID (0 = use BytesPerElement).
-	TypeV                int32                 // Kronk GGML cache type ID (0 = use BytesPerElement).
-	Slots                int64                 // n_seq_max - number of concurrent sequences
-	SlidingWindow        int64                 // Sliding-window size in tokens (0 = no SWA layers).
-	SlidingWindowLayers  int64                 // Layer count using SWA (0 = treat all BlockCount as full attention).
-	SharedKVLayers       int64                 // Trailing layers that reuse another layer's KV tensors.
-	SWAPattern           []bool                // Per-layer SWA classification when available.
-	RecurrentPattern     []bool                // Per-layer recurrent classification when available.
-	NextNPredictLayers   int64                 // Appended MTP layers excluded from target context memory.
-	RecurrentStateBytes  int64                 // State bytes per recurrent layer, sequence, and copy.
-	RecurrentStateCopies int64                 // Current state plus speculative rollback copies.
-	NUBatch              int64                 // Effective physical batch size.
-	KVUnified            bool                  // Whether all sequence slots share one KV pool.
-	EmbeddingLength      int64                 // needed for compute buffer estimate
-	ComputeContexts      int64                 // Native contexts that reserve independent compute buffers.
-	MoE                  *gguf.MoEInfo         //
-	Weights              *gguf.WeightBreakdown //
-	TiedOutputFallback   bool                  // Architecture duplicates token embeddings for missing output weights.
-	GPULayers            int64                 // Native offload count: output first, then blocks (0 = all, -1 = none).
-	ExpertLayersOnGPU    int64                 // 0 = all experts on CPU
-	MoECacheSize         int64                 // GPU expert-cache budget in bytes per context.
-	KVCacheOnCPU         bool                  // Move KV cache off the GPU (offload-kqv: false)
-	SWAFull              bool                  // Size SWA layers against the full context window.
-	VTransposed          bool                  // Size V using the model-wide transposed layout.
+	ComputeBackend        string                   // Selected backend; empty uses generic workspace rules.
+	ComputeKind           modelprofile.ComputeKind // Normalized workspace allocation family.
+	VocabularySize        int64                    // Vocabulary rows in the output projection.
+	ModelSizeBytes        int64                    // Size of model weights in bytes
+	ContextWindow         int64                    // n_ctx - context window size (e.g., 8192, 131072)
+	BlockCount            int64                    // n_layers - number of transformer layers
+	HeadCount             int64                    // Query heads for non-flash attention workspaces.
+	HeadCountKV           int64                    // Number of KV attention heads
+	KeyLength             int64                    // K dimension per head (typically 128)
+	ValueLength           int64                    // V dimension per head (typically 128)
+	SWAHeadCountKV        int64                    // Number of KV heads in SWA layers (0 = HeadCountKV)
+	SWAKeyLength          int64                    // K dimension in SWA layers (0 = KeyLength)
+	SWAValueLength        int64                    // V dimension in SWA layers (0 = ValueLength)
+	HeadCountKVByLayer    []int64                  // Exact per-layer KV head counts when available.
+	BytesPerElement       int64                    // Depends on cache type: q8_0=1, f16=2
+	TypeK                 int32                    // Kronk GGML cache type ID (0 = use BytesPerElement).
+	TypeV                 int32                    // Kronk GGML cache type ID (0 = use BytesPerElement).
+	Slots                 int64                    // n_seq_max - number of concurrent sequences
+	SlidingWindow         int64                    // Sliding-window size in tokens (0 = no SWA layers).
+	SlidingWindowLayers   int64                    // Layer count using SWA (0 = treat all BlockCount as full attention).
+	SharedKVLayers        int64                    // Trailing layers that reuse another layer's KV tensors.
+	SWAPattern            []bool                   // Per-layer SWA classification when available.
+	RecurrentPattern      []bool                   // Per-layer recurrent classification when available.
+	NextNPredictLayers    int64                    // Appended MTP layers excluded from target context memory.
+	MTPContext            bool                     // Allocate only appended MTP layers.
+	IndexerKeyLength      int64                    // Stored raw + pooled indexer key width.
+	IndexerCompression    int64                    // Tokens per scored pool.
+	IndexerTopK           int64                    // Selected token budget.
+	RecurrentStateBytes   int64                    // State bytes per recurrent layer, sequence, and copy.
+	RecurrentStateCopies  int64                    // Current state plus speculative rollback copies.
+	NUBatch               int64                    // Effective physical batch size.
+	KVUnified             bool                     // Whether all sequence slots share one KV pool.
+	EmbeddingLength       int64                    // needed for compute buffer estimate
+	OutputEmbeddingLength int64                    // Hidden-state width, including hyper connections.
+	ComputeContexts       int64                    // Native contexts that reserve independent compute buffers.
+	MoE                   *gguf.MoEInfo            //
+	Weights               *gguf.WeightBreakdown    //
+	TiedOutputFallback    bool                     // Architecture duplicates token embeddings for missing output weights.
+	GPULayers             int64                    // Native offload count: output first, then blocks (0 = all, -1 = none).
+	ExpertLayersOnGPU     int64                    // 0 = all experts on CPU
+	MoECacheSize          int64                    // GPU expert-cache budget in bytes per context.
+	KVCacheOnCPU          bool                     // Move KV cache off the GPU (offload-kqv: false)
+	SWAFull               bool                     // Size SWA layers against the full context window.
+	VTransposed           bool                     // Size V using the model-wide transposed layout.
 }
 
 // Result contains the calculated VRAM requirements.
@@ -116,7 +130,9 @@ type Result struct {
 	ModelWeightsGPU    int64
 	ModelWeightsCPU    int64
 	ComputeBufferEst   int64
-	MoECacheBytes      int64 // Additional GPU expert-cache reservation; original host weights remain.
+	ComputeBufferCPU   int64         // Host workspaces that coexist with GPU compute buffers.
+	ComputeMemory      ComputeMemory // Workspace, runtime allowance, and margin across all compute contexts.
+	MoECacheBytes      int64         // Additional GPU expert-cache reservation; original host weights remain.
 
 	// Always-active weights include all dense weights; expert fields are MoE-only.
 	AlwaysActiveGPUBytes int64
@@ -141,25 +157,24 @@ type Result struct {
 // delegated to sdk/kronk/gguf.CalculateKVCache so the SDK and tools sides
 // share a single implementation.
 func Calculate(input Input) Result {
-	kv := calculateCache(input)
+	kv := calculateSlotState(input)
 	offloadLayers := clampGPULayers(input.GPULayers, input.BlockCount)
 
 	// b11513 offloads output first; it has no attention/recurrent state.
 	gpuLayers := max(offloadLayers-1, 0)
 
-	var expertsGPU, expertsCPU int64
-	activeTotal := input.ModelSizeBytes
-	if input.Weights != nil && input.MoE != nil && input.MoE.IsMoE {
-		expertsGPU, expertsCPU = calculateExpertWeights(input, gpuLayers)
-		activeTotal = input.Weights.AlwaysActiveBytes
-	}
-
-	alwaysActiveGPU, alwaysActiveCPU := calculateActiveWeights(input, activeTotal, offloadLayers)
+	alwaysActiveGPU, alwaysActiveCPU, expertsGPU, expertsCPU := calculateModelResidency(input, offloadLayers)
 	modelWeightsGPU := alwaysActiveGPU + expertsGPU
 	modelWeightsCPU := alwaysActiveCPU + expertsCPU
 
 	computeContexts := max(input.ComputeContexts, 1)
-	computeBufferEst := EstimateComputeBuffer(input) * computeContexts
+	compute := estimateComputeMemory(input)
+	compute.WorkspaceGPU *= computeContexts
+	compute.WorkspaceCPU *= computeContexts
+	compute.RuntimeAllowanceGPU *= computeContexts
+	compute.MarginGPU *= computeContexts
+	compute.MarginCPU *= computeContexts
+	computeBufferEst, computeBufferCPU := compute.GPUBytes(), compute.CPUBytes()
 
 	var moeCacheBytes int64
 	if input.MoE != nil && input.MoE.IsMoE {
@@ -171,7 +186,7 @@ func Calculate(input Input) Result {
 	kvVRAMBytes, kvCPUBytes := placeCache(input, kv, gpuLayers)
 
 	totalVRAM := modelWeightsGPU + kvVRAMBytes + computeBufferEst + moeCacheBytes
-	totalSystemRAMEst := modelWeightsCPU + kvCPUBytes
+	totalSystemRAMEst := modelWeightsCPU + kvCPUBytes + computeBufferCPU
 
 	return Result{
 		Input:                input,
@@ -184,6 +199,8 @@ func Calculate(input Input) Result {
 		ModelWeightsGPU:      modelWeightsGPU,
 		ModelWeightsCPU:      modelWeightsCPU,
 		ComputeBufferEst:     computeBufferEst,
+		ComputeBufferCPU:     computeBufferCPU,
+		ComputeMemory:        compute,
 		MoECacheBytes:        moeCacheBytes,
 		AlwaysActiveGPUBytes: alwaysActiveGPU,
 		AlwaysActiveCPUBytes: alwaysActiveCPU,
@@ -204,7 +221,8 @@ func Calculate(input Input) Result {
 // The formula intentionally uses the raw model bytes (Input.ModelSizeBytes)
 // rather than ModelWeightsGPU+ModelWeightsCPU so a model whose GGUF
 // analyzer is missing the MoE expert breakdown still reserves the full
-// file. SlotMemory, ComputeBufferEst, and MoECacheBytes round out the footprint.
+// file. Cache/state memory, GPU and CPU compute workspaces, and the expert
+// cache round out the footprint.
 func (r Result) UnifiedFootprint() int64 {
-	return r.Input.ModelSizeBytes + r.SlotMemory + r.ComputeBufferEst + r.MoECacheBytes
+	return r.Input.ModelSizeBytes + r.SlotMemory + r.ComputeBufferEst + r.ComputeBufferCPU + r.MoECacheBytes
 }

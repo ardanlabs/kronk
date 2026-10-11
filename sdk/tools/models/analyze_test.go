@@ -303,6 +303,20 @@ func TestAnalyzeModelSlidingWindow(t *testing.T) {
 	if a.Model.Attention.LogitSoftcapping != 30 {
 		t.Errorf("LogitSoftcapping = %v, want 30", a.Model.Attention.LogitSoftcapping)
 	}
+
+	// With the same budget both backends select the same context/slots, but
+	// Metal must also reserve F16 K/V scratch for this Gemma attention graph.
+	devs.Devices[0].Type = "gpu_cuda"
+	cuda, err := Analyze(info, devs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Recommended.ContextWindow != cuda.Recommended.ContextWindow || a.Recommended.NSeqMax != cuda.Recommended.NSeqMax {
+		t.Fatal("backend control selected different context/slots")
+	}
+	if a.Recommended.EstimatedVRAMBytes-cuda.Recommended.EstimatedVRAMBytes < 512<<20 {
+		t.Errorf("Metal/CUDA estimates: got %d/%d, want Metal at least 512 MiB higher", a.Recommended.EstimatedVRAMBytes, cuda.Recommended.EstimatedVRAMBytes)
+	}
 }
 
 func TestAnalyzeModelNoGPU(t *testing.T) {

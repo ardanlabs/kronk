@@ -273,6 +273,182 @@ func TestBuildFromMetadataGLM5Next(t *testing.T) {
 	}
 }
 
+func TestFromBytesIndexedHybridMemory(t *testing.T) {
+	// 36 recurrent layers × four state planes. Each F32 plane holds
+	// (4−1)×(6144+2×16×128) convolution values and 128×6144 state values.
+	const recurrentBytes int64 = 36 * 4 * 4 * (3*(6144+2*16*128) + 128*6144)
+	for _, tt := range []struct {
+		name           string
+		context, slots int64
+		mtp, embedded  bool
+		indexed        bool
+		typeK          int32
+		wantCache      int64
+	}{
+		{"target f16", 131072, 1, false, false, true, 1, 3840*1024*1024 + recurrentBytes},
+		{"companion f16", 131072, 1, true, false, true, 1, 320 * 1024 * 1024},
+		{"embedded f16", 131072, 1, false, true, true, 1, 4160*1024*1024 + recurrentBytes},
+		{"quantized K", 131072, 1, false, false, true, 8, 2760*1024*1024 + recurrentBytes},
+		{"padded two slots", 32769, 2, false, false, true, 1, 12*33024*2*2560 + 2*recurrentBytes},
+		{"non indexed control", 131072, 1, false, false, false, 1, 3072*1024*1024 + recurrentBytes},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			metadata := map[string]string{
+				"general.architecture":             "qwen4exp",
+				"qwen4exp.block_count":             "49",
+				"qwen4exp.embedding_length":        "2560",
+				"qwen4exp.attention.head_count":    "24",
+				"qwen4exp.attention.head_count_kv": "2",
+				"qwen4exp.attention.key_length":    "256",
+				"qwen4exp.attention.value_length":  "256",
+				"qwen4exp.nextn_predict_layers":    "1",
+				"qwen4exp.ssm.conv_kernel":         "4",
+				"qwen4exp.ssm.inner_size":          "6144",
+				"qwen4exp.ssm.state_size":          "128",
+				"qwen4exp.ssm.group_count":         "16",
+				"qwen4exp.hyper_connection.count":  "4",
+			}
+			if tt.indexed {
+				metadata["qwen4exp.attention.indexer.key_length"] = "128"
+				metadata["qwen4exp.attention.indexer.head_count"] = "4"
+				metadata["qwen4exp.attention.indexer.top_k"] = "2048"
+				metadata["qwen4exp.attention.compress_ratios"] = "[0, 0, 0, 4]"
+			}
+			var data bytes.Buffer
+			write := func(value any) {
+				t.Helper()
+				if err := binary.Write(&data, binary.LittleEndian, value); err != nil {
+					t.Fatal(err)
+				}
+			}
+			writeString := func(value string) {
+				write(uint64(len(value)))
+				if _, err := data.WriteString(value); err != nil {
+					t.Fatal(err)
+				}
+			}
+			write(gguf.Magic)
+			write(uint32(3))
+			write(uint64(0))
+			write(uint64(len(metadata)))
+			for key, value := range metadata {
+				writeString(key)
+				write(gguf.MetadataValueTypeString)
+				writeString(value)
+			}
+			cfg := Config{ContextWindow: tt.context, Slots: tt.slots, TypeK: tt.typeK, TypeV: 1, BytesPerElement: 2, NUBatch: 2052, RecurrentStateCopies: 4, MTPContext: tt.mtp}
+			if tt.embedded {
+				cfg.ComputeContexts = 2
+			}
+			result, err := FromBytes(data.Bytes(), 80<<30, cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.SlotMemory != tt.wantCache {
+				t.Errorf("cache: got %d, want %d", result.SlotMemory, tt.wantCache)
+			}
+			if tt.indexed {
+				if result.ComputeBufferEst < 4*tt.context*2052 || result.ComputeBufferCPU < 2*tt.context*2052 {
+					t.Errorf("indexed workspaces not reserved: GPU=%d CPU=%d", result.ComputeBufferEst, result.ComputeBufferCPU)
+				}
+				if tt.name == "target f16" && (result.ComputeBufferEst != 2264583296 || result.ComputeBufferCPU != 832960972) {
+					t.Errorf("Flash Next workspace regression: got GPU/CPU %d/%d, want 2264583296/832960972", result.ComputeBufferEst, result.ComputeBufferCPU)
+				}
+			} else if result.ComputeBufferCPU != 0 {
+				t.Errorf("non-indexed host workspace: got %d, want 0", result.ComputeBufferCPU)
+			}
+			wantUnified := int64(80<<30) + tt.wantCache + result.ComputeBufferEst + result.ComputeBufferCPU
+			if result.UnifiedFootprint() != wantUnified {
+				t.Errorf("unified memory: got %d, want %d", result.UnifiedFootprint(), wantUnified)
+			}
+			if result.TotalSystemRAMEst != result.ComputeBufferCPU {
+				t.Errorf("host workspace missing from system memory: got %d, want %d", result.TotalSystemRAMEst, result.ComputeBufferCPU)
+			}
+		})
+	}
+}
+
+func TestFromBytesGemmaWorkspacesAndSharedKV(t *testing.T) {
+	for _, tt := range []struct {
+		arch, embedding    string
+		shared, nextn      string
+		wantCache, wantGPU int64
+	}{
+		// The target has four ordinary KV layers in this synthetic fixture.
+		{"gemma4", "2816", "0", "0", 2 << 30, 2865525555},
+		// The assistant borrows all four layers, but retains its own arena.
+		{"gemma4-assistant", "1024", "4", "4", 0, 2736088678},
+	} {
+		t.Run(tt.arch, func(t *testing.T) {
+			metadata := map[string]string{
+				"general.architecture":                  tt.arch,
+				tt.arch + ".block_count":                "4",
+				tt.arch + ".embedding_length":           tt.embedding,
+				tt.arch + ".embedding_length_out":       "2816",
+				tt.arch + ".attention.head_count":       "16",
+				tt.arch + ".attention.head_count_kv":    "2",
+				tt.arch + ".attention.key_length":       "512",
+				tt.arch + ".attention.value_length":     "512",
+				tt.arch + ".attention.shared_kv_layers": tt.shared,
+				tt.arch + ".nextn_predict_layers":       tt.nextn,
+			}
+			var data bytes.Buffer
+			write := func(value any) {
+				t.Helper()
+				if err := binary.Write(&data, binary.LittleEndian, value); err != nil {
+					t.Fatal(err)
+				}
+			}
+			writeString := func(value string) {
+				write(uint64(len(value)))
+				if _, err := data.WriteString(value); err != nil {
+					t.Fatal(err)
+				}
+			}
+			write(gguf.Magic)
+			write(uint32(3))
+			write(uint64(1))
+			write(uint64(len(metadata)))
+			for key, value := range metadata {
+				writeString(key)
+				write(gguf.MetadataValueTypeString)
+				writeString(value)
+			}
+			// No vocab_size metadata: recover the 262144 output rows from
+			// the embedding descriptor, as the real Gemma files require.
+			writeString("token_embd.weight")
+			write(uint32(2))
+			if tt.arch == "gemma4" {
+				write(uint64(2816))
+			} else {
+				write(uint64(1024))
+			}
+			write(uint64(262144))
+			write(uint32(1))
+			write(uint64(0))
+			result, err := FromBytes(data.Bytes(), 4<<30, Config{ComputeBackend: "metal", ContextWindow: 131072, Slots: 1, TypeK: 1, TypeV: 1, BytesPerElement: 2, NUBatch: 2052, ComputeContexts: 1, SWAFull: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Input.ComputeBackend != "metal" {
+				t.Fatalf("compute backend: got %q, want metal", result.Input.ComputeBackend)
+			}
+			// 1026 MiB for the two F16 masks plus 22.04296875 MiB
+			// hidden rows; the existing ten-percent margin applies once.
+			const wantCPU int64 = 1208847974
+			if result.SlotMemory != tt.wantCache || result.ComputeBufferEst != tt.wantGPU || result.ComputeBufferCPU != wantCPU {
+				t.Fatalf("cache/GPU compute/CPU compute: got %d/%d/%d, want %d/%d/%d", result.SlotMemory, result.ComputeBufferEst, result.ComputeBufferCPU, tt.wantCache, tt.wantGPU, wantCPU)
+			}
+			if result.UnifiedFootprint() != 4<<30+tt.wantCache+tt.wantGPU+wantCPU {
+				t.Fatal("unified footprint omitted a workspace or counted shared KV twice")
+			}
+			if result.TotalSystemRAMEst != result.ModelWeightsCPU+wantCPU {
+				t.Fatal("system memory omitted host workspace")
+			}
+		})
+	}
+}
+
 func TestIsFolderURL(t *testing.T) {
 	tests := []struct {
 		name string

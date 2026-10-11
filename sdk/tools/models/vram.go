@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
+	"github.com/ardanlabs/kronk/sdk/tools/devices"
 )
 
 // CalculateVRAM retrieves model metadata and computes the VRAM
@@ -19,5 +20,8 @@ func (m *Models) CalculateVRAM(modelID string, cfg vram.Config) (vram.Result, er
 		return vram.Result{}, fmt.Errorf("calculate-vram: failed to retrieve path modelID[%s]: %w", modelID, err)
 	}
 
+	if cfg.ComputeBackend == "" {
+		cfg.ComputeBackend = devices.Backend()
+	}
 	return vram.FromFiles(path.ModelFiles, cfg)
 }

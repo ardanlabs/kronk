@@ -4,7 +4,122 @@ import (
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 )
+
+func TestCalculateGemmaWorkspaceScaling(t *testing.T) {
+	const mib int64 = 1 << 20
+	for _, tt := range []struct {
+		name                         string
+		context, batch, vocab, slots int64
+		compact, nonFlash            bool
+		wantGPU, wantCPU             int64
+	}{
+		// Small vocabulary makes attention-mask storage the GPU peak.
+		{"base", 4096, 128, 1024, 1, false, false, 259 * mib, 17 * mib / 8},
+		{"double batch", 4096, 256, 1024, 1, false, false, 262 * mib, 17 * mib / 4},
+		{"double context", 8192, 128, 1024, 1, false, false, 261 * mib, 33 * mib / 8},
+		{"compact SWA", 4096, 128, 1024, 1, true, false, 258*mib + 5*mib/16, 23 * mib / 16},
+		{"two streams, same batch", 4096, 128, 1024, 2, false, false, 259*mib + mib/4, 17 * mib / 8},
+		{"without flash attention", 4096, 128, 1024, 1, false, true, 325 * mib, 33 * mib / 8},
+		// A larger vocabulary makes logits, not masks, the GPU peak.
+		{"logits peak", 4096, 128, 8192, 1, false, false, 261 * mib, 17 * mib / 8},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			r := Calculate(Input{ComputeKind: modelprofile.ComputeGemma4, ContextWindow: tt.context, Slots: tt.slots, NUBatch: tt.batch, VocabularySize: tt.vocab, EmbeddingLength: 256, HeadCount: 16, SlidingWindow: 1024, SWAFull: !tt.compact, VTransposed: tt.nonFlash})
+			wantGPU, wantCPU := tt.wantGPU+tt.wantGPU/10, tt.wantCPU+tt.wantCPU/10
+			if r.ComputeBufferEst != wantGPU || r.ComputeBufferCPU != wantCPU {
+				t.Fatalf("GPU/CPU compute: got %d/%d, want %d/%d", r.ComputeBufferEst, r.ComputeBufferCPU, wantGPU, wantCPU)
+			}
+			wantMemory := ComputeMemory{
+				WorkspaceGPU:        tt.wantGPU - 256*mib,
+				WorkspaceCPU:        tt.wantCPU,
+				RuntimeAllowanceGPU: 256 * mib,
+				MarginGPU:           tt.wantGPU / 10,
+				MarginCPU:           tt.wantCPU / 10,
+			}
+			if r.ComputeMemory != wantMemory {
+				t.Errorf("compute breakdown: got %+v, want %+v", r.ComputeMemory, wantMemory)
+			}
+		})
+	}
+}
+
+func TestCalculateGemmaMetalWorkspace(t *testing.T) {
+	const mib int64 = 1 << 20
+	for _, tt := range []struct {
+		name, backend                    string
+		slots, batch, swaValue, phaseMiB int64
+		unified, cpuWeights, cpuCache    bool
+	}{
+		{"one slot logits peak", "metal", 1, 2052, 256, 2052, false, false, false},
+		{"two slots attention peak", "metal", 2, 2056, 256, 3076, false, false, false},
+		{"three slots attention peak", "metal", 3, 2060, 256, 4102, false, false, false},
+		{"unequal K and V", "metal", 2, 2056, 128, 2564, false, false, false},
+		{"unified KV pool", "metal", 2, 2056, 256, 2056, true, false, false},
+		{"CUDA control", "cuda", 2, 2056, 256, 2056, false, false, false},
+		{"CPU control", "metal", 2, 2056, 256, 2056, false, true, false},
+		{"CPU KV control", "metal", 2, 2056, 256, 2056, false, false, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			input := Input{
+				ComputeBackend: tt.backend, ComputeKind: modelprofile.ComputeGemma4,
+				ContextWindow: 131072, Slots: tt.slots, NUBatch: tt.batch,
+				VocabularySize: 262144, EmbeddingLength: 2816,
+				BlockCount: 3, HeadCount: 16, HeadCountKV: 2,
+				KeyLength: 512, ValueLength: 512,
+				SWAHeadCountKV: 8, SWAKeyLength: 256, SWAValueLength: tt.swaValue,
+				HeadCountKVByLayer: []int64{8, 8, 2},
+				SWAPattern:         []bool{true, true, false}, SlidingWindowLayers: 2,
+				SlidingWindow: 1024, SWAFull: true,
+				KVUnified: tt.unified, KVCacheOnCPU: tt.cpuCache,
+				BytesPerElement: 2,
+			}
+			if tt.cpuWeights {
+				input.GPULayers = -1
+			}
+			result := Calculate(input)
+			// Each 262144-row F32 logits token is 1 MiB. Attention keeps
+			// two F16 masks plus scratch for the largest layer, not all
+			// layers. SWA has 8 heads; full attention has only 2.
+			activation := tt.batch * 2816 * (32 + 8*(tt.slots-1))
+			wantWorkspace := activation + tt.phaseMiB*mib
+			wantGPU := wantWorkspace + 256*mib
+			wantGPU += wantGPU / 10
+			if result.ComputeMemory.WorkspaceGPU != wantWorkspace || result.ComputeBufferEst != wantGPU {
+				t.Fatalf("workspace/reservation: got %d/%d, want %d/%d", result.ComputeMemory.WorkspaceGPU, result.ComputeBufferEst, wantWorkspace, wantGPU)
+			}
+			// The assistant borrows KV but still reserves the same scratch.
+			input.SharedKVLayers = input.BlockCount
+			assistant := Calculate(input)
+			if assistant.SlotMemory != 0 || assistant.ComputeBufferEst != wantGPU {
+				t.Fatalf("shared KV cache/compute: got %d/%d, want 0/%d", assistant.SlotMemory, assistant.ComputeBufferEst, wantGPU)
+			}
+			if tt.name == "two slots attention peak" {
+				for _, control := range []string{"compact SWA", "partial offload", "without flash attention"} {
+					t.Run(control, func(t *testing.T) {
+						controlInput := input
+						controlInput.SharedKVLayers = 0
+						switch control {
+						case "compact SWA":
+							controlInput.SWAFull = false
+						case "partial offload":
+							controlInput.GPULayers = 2 // Output and the last full-attention layer.
+						case "without flash attention":
+							controlInput.VTransposed = true
+						}
+						metal := Calculate(controlInput)
+						controlInput.ComputeBackend = "cuda"
+						cuda := Calculate(controlInput)
+						if metal.ComputeBufferEst != cuda.ComputeBufferEst {
+							t.Errorf("Metal/CUDA control: got %d/%d, want equal", metal.ComputeBufferEst, cuda.ComputeBufferEst)
+						}
+					})
+				}
+			}
+		})
+	}
+}
 
 func TestEstimateComputeBufferUsesNUBatch(t *testing.T) {
 	base := EstimateComputeBuffer(Input{
@@ -39,6 +154,14 @@ func TestCalculateChargesEveryComputeContext(t *testing.T) {
 	want := 2 * EstimateComputeBuffer(input)
 	if result.ComputeBufferEst != want {
 		t.Errorf("ComputeBufferEst: got %d, want %d", result.ComputeBufferEst, want)
+	}
+	wantMemory := ComputeMemory{
+		WorkspaceGPU:        512 << 20,
+		RuntimeAllowanceGPU: 512 << 20,
+		MarginGPU:           2 * ((512 << 20) / 10),
+	}
+	if result.ComputeMemory != wantMemory {
+		t.Errorf("combined compute breakdown: got %+v, want %+v", result.ComputeMemory, wantMemory)
 	}
 }
 

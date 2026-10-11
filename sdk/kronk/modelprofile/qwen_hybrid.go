@@ -29,6 +29,24 @@ func (qwenHybridAdapter) Apply(metadata metadata, profile *Profile) error {
 		return nil
 	}
 	a := &profile.Attention
+	if arch == "qwen4exp" {
+		// b11513 stores one raw and one pooled key per cell; query head
+		// count does not multiply the persistent indexer cache.
+		keyLength := parseInt64(metadata, arch+".attention.indexer.key_length")
+		a.IndexerKeyLength = 2 * max(keyLength, 0)
+		if a.IndexerKeyLength > 0 {
+			profile.ComputeKind = ComputeIndexed
+		}
+		a.IndexerTopK = parseInt64(metadata, arch+".attention.indexer.top_k")
+		ratios, _ := gguf.ParseInt64OrArray(metadata.values, arch+".attention.compress_ratios")
+		for _, ratio := range ratios {
+			if ratio > 0 && (a.IndexerCompression == 0 || ratio < a.IndexerCompression) {
+				a.IndexerCompression = ratio
+			}
+		}
+		connections := max(parseInt64(metadata, arch+".hyper_connection.count"), 1)
+		profile.Dimensions.OutputEmbeddingLength = profile.Dimensions.EmbeddingLength * connections
+	}
 	trunkLayers := max(blockCount-max(profile.Speculation.NextNPredictLayers, 0), 0)
 
 	pattern, ok := parseBoolPattern(metadata.value(arch+".attention.recurrent_layers"), blockCount)

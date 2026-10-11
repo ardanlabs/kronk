@@ -1,5 +1,18 @@
 package vram
 
+// calculateModelResidency places weights independently of execution-slot state
+// and workspaces. Architecture-specific weight facts come from normalized Input;
+// dense and MoE models reuse the same placement rules.
+func calculateModelResidency(input Input, offloadLayers int64) (activeGPU, activeCPU, expertsGPU, expertsCPU int64) {
+	activeTotal := input.ModelSizeBytes
+	if input.Weights != nil && input.MoE != nil && input.MoE.IsMoE {
+		expertsGPU, expertsCPU = calculateExpertWeights(input, max(offloadLayers-1, 0))
+		activeTotal = input.Weights.AlwaysActiveBytes
+	}
+	activeGPU, activeCPU = calculateActiveWeights(input, activeTotal, offloadLayers)
+	return activeGPU, activeCPU, expertsGPU, expertsCPU
+}
+
 // calculateActiveWeights sizes all dense weights, or the always-active portion
 // of MoE weights. Both layouts share input/output and block placement rules.
 func calculateActiveWeights(input Input, activeTotal, offloadLayers int64) (gpu, cpu int64) {

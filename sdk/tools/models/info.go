@@ -12,17 +12,18 @@ import (
 
 // ModelInfo represents the model's card information.
 type ModelInfo struct {
-	ID            string
-	HasProjection bool
-	HasMTP        bool
-	Desc          string
-	Size          uint64
-	FileType      int64
-	Quantization  string
-	IsEmbedModel  bool
-	IsRerankModel bool
-	Metadata      map[string]string
-	Weights       *gguf.WeightBreakdown `json:"-"` // Optional tensor accounting for local analysis.
+	ID             string
+	HasProjection  bool
+	HasMTP         bool
+	Desc           string
+	Size           uint64
+	FileType       int64
+	Quantization   string
+	IsEmbedModel   bool
+	IsRerankModel  bool
+	Metadata       map[string]string
+	Weights        *gguf.WeightBreakdown `json:"-"` // Optional tensor accounting for local analysis.
+	vocabularySize int64                 // Output rows recovered from tensors when GGUF omits vocab_size.
 }
 
 // =============================================================================
@@ -97,6 +98,11 @@ func ModelInfoFromPath(id string, modelFiles []string, projFile string, mtpFile 
 	if len(tensors) > 0 && blockCount > 0 {
 		wb := gguf.CategorizeWeights(tensors, blockCount)
 		result.Weights = &wb
+	}
+	for _, tensor := range tensors {
+		if (tensor.Name == "token_embd.weight" || tensor.Name == "output.weight") && len(tensor.Dims) == 2 {
+			result.vocabularySize = max(result.vocabularySize, tensor.Dims[1])
+		}
 	}
 
 	return result, nil

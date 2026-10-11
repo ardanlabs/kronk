@@ -29,10 +29,14 @@ func buildFromMetadata(metadata map[string]string, tensors []gguf.TensorInfo, mo
 	}
 
 	if profile.Role == modelprofile.RoleVisionEncoder {
+		// A projector also reserves a compute arena. Retain the common
+		// small-model floor; image-dependent peaks remain approximate.
+		compute := EstimateComputeBuffer(Input{ModelSizeBytes: modelSizeBytes})
 		return Result{
-			Input:           Input{ModelSizeBytes: modelSizeBytes},
-			TotalVRAM:       modelSizeBytes,
-			ModelWeightsGPU: modelSizeBytes,
+			Input:            Input{ModelSizeBytes: modelSizeBytes},
+			TotalVRAM:        modelSizeBytes + compute,
+			ModelWeightsGPU:  modelSizeBytes,
+			ComputeBufferEst: compute,
 		}, nil
 	}
 
@@ -71,43 +75,62 @@ func buildFromMetadata(metadata map[string]string, tensors []gguf.TensorInfo, mo
 	if computeContexts == 1 && att.NextNPredictLayers > 0 && cfg.EmbeddedMTPStateCopies > 1 {
 		computeContexts = 2
 	}
+	vocabularySize := profile.Dimensions.VocabularySize
+	if vocabularySize <= 0 {
+		// GGUF commonly omits vocab_size. Tensor dimensions retain the
+		// exact count even when token strings contain spaces or delimiters.
+		for _, tensor := range tensors {
+			if (tensor.Name == "token_embd.weight" || tensor.Name == "output.weight") && len(tensor.Dims) == 2 {
+				vocabularySize = max(vocabularySize, tensor.Dims[1])
+			}
+		}
+	}
 
 	input := Input{
-		ModelSizeBytes:       modelSizeBytes,
-		ContextWindow:        cfg.ContextWindow,
-		BlockCount:           blockCount,
-		HeadCountKV:          headCountKV,
-		KeyLength:            keyLength,
-		ValueLength:          valueLength,
-		SWAHeadCountKV:       att.SWAHeadCountKV,
-		SWAKeyLength:         att.SWAKeyLength,
-		SWAValueLength:       att.SWAValueLength,
-		HeadCountKVByLayer:   att.HeadCountKV,
-		BytesPerElement:      cfg.BytesPerElement,
-		TypeK:                cfg.TypeK,
-		TypeV:                cfg.TypeV,
-		Slots:                cfg.Slots,
-		SlidingWindow:        att.SlidingWindow,
-		SlidingWindowLayers:  att.SlidingWindowLayers,
-		SharedKVLayers:       att.SharedKVLayers,
-		SWAPattern:           att.SWAPattern,
-		RecurrentPattern:     att.RecurrentPattern,
-		NextNPredictLayers:   att.NextNPredictLayers,
-		RecurrentStateBytes:  att.RecurrentStateBytes,
-		RecurrentStateCopies: recurrentStateCopies,
-		NUBatch:              cfg.NUBatch,
-		KVUnified:            false,
-		EmbeddingLength:      embeddingLength,
-		ComputeContexts:      computeContexts,
-		MoE:                  moePtr,
-		Weights:              weights,
-		TiedOutputFallback:   profile.TiedOutputFallback,
-		GPULayers:            cfg.GPULayers,
-		ExpertLayersOnGPU:    cfg.ExpertLayersOnGPU,
-		MoECacheSize:         cfg.MoECacheSize,
-		KVCacheOnCPU:         cfg.KVCacheOnCPU,
-		SWAFull:              cfg.SWAFull,
-		VTransposed:          cfg.VTransposed,
+		ComputeBackend:        cfg.ComputeBackend,
+		ComputeKind:           profile.ComputeKind,
+		VocabularySize:        vocabularySize,
+		ModelSizeBytes:        modelSizeBytes,
+		ContextWindow:         cfg.ContextWindow,
+		BlockCount:            blockCount,
+		HeadCount:             profile.Dimensions.HeadCount,
+		HeadCountKV:           headCountKV,
+		KeyLength:             keyLength,
+		ValueLength:           valueLength,
+		SWAHeadCountKV:        att.SWAHeadCountKV,
+		SWAKeyLength:          att.SWAKeyLength,
+		SWAValueLength:        att.SWAValueLength,
+		HeadCountKVByLayer:    att.HeadCountKV,
+		BytesPerElement:       cfg.BytesPerElement,
+		TypeK:                 cfg.TypeK,
+		TypeV:                 cfg.TypeV,
+		Slots:                 cfg.Slots,
+		SlidingWindow:         att.SlidingWindow,
+		SlidingWindowLayers:   att.SlidingWindowLayers,
+		SharedKVLayers:        att.SharedKVLayers,
+		SWAPattern:            att.SWAPattern,
+		RecurrentPattern:      att.RecurrentPattern,
+		NextNPredictLayers:    att.NextNPredictLayers,
+		MTPContext:            cfg.MTPContext,
+		IndexerKeyLength:      att.IndexerKeyLength,
+		IndexerCompression:    att.IndexerCompression,
+		IndexerTopK:           att.IndexerTopK,
+		RecurrentStateBytes:   att.RecurrentStateBytes,
+		RecurrentStateCopies:  recurrentStateCopies,
+		NUBatch:               cfg.NUBatch,
+		KVUnified:             false,
+		EmbeddingLength:       embeddingLength,
+		OutputEmbeddingLength: profile.Dimensions.OutputEmbeddingLength,
+		ComputeContexts:       computeContexts,
+		MoE:                   moePtr,
+		Weights:               weights,
+		TiedOutputFallback:    profile.TiedOutputFallback,
+		GPULayers:             cfg.GPULayers,
+		ExpertLayersOnGPU:     cfg.ExpertLayersOnGPU,
+		MoECacheSize:          cfg.MoECacheSize,
+		KVCacheOnCPU:          cfg.KVCacheOnCPU,
+		SWAFull:               cfg.SWAFull,
+		VTransposed:           cfg.VTransposed,
 	}
 
 	return Calculate(input), nil

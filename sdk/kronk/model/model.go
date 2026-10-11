@@ -1596,6 +1596,7 @@ func calculateVRAMDiag(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory in
 	}
 
 	vramCfg := vram.Config{
+		ComputeBackend:         devices.Backend(),
 		ContextWindow:          int64(cfg.ContextWindow()),
 		BytesPerElement:        int64(gguf.MaxBytesPerElement(int32(cfg.CacheTypeK), int32(cfg.CacheTypeV))),
 		TypeK:                  int32(cfg.CacheTypeK),

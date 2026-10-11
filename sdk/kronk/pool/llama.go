@@ -20,6 +20,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/loader"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
@@ -135,6 +136,7 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 	}
 
 	vramCfg := vram.Config{
+		ComputeBackend:         devices.Backend(),
 		ContextWindow:          ctxWin,
 		BytesPerElement:        bpe,
 		TypeK:                  int32(cfg.CacheTypeK),
@@ -157,9 +159,16 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 		return resman.PlanRequest{}, fmt.Errorf("plan: modelID[%s]: %w", req.ModelID, err)
 	}
 
+	if result.Input.ComputeKind != modelprofile.ComputeGeneric && cfg.MTPDrafterFile != "" && model.SpeculativeContextCount(cfg) > 1 {
+		// A supported companion is sized independently, not as another
+		// target-shaped compute arena.
+		input := result.Input
+		input.ComputeContexts = 1
+		result = vram.Calculate(input)
+	}
 	planReq := resman.PlanRequest{Key: req.Key}
 	l.addResult(&planReq, result, cfg.NGpuLayers() != -1, cfg.Devices, cfg.TensorSplit, cfg.MainGPU())
-	if err := l.additionalMemory(&planReq, cfg, vramCfg); err != nil {
+	if err := l.additionalMemory(&planReq, cfg, vramCfg, result); err != nil {
 		return resman.PlanRequest{}, fmt.Errorf("plan: additional memory: %w", err)
 	}
 
@@ -217,7 +226,7 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 	return planReq, nil
 }
 
-func (l *Llama) additionalMemory(plan *resman.PlanRequest, cfg model.Config, targetCfg vram.Config) error {
+func (l *Llama) additionalMemory(plan *resman.PlanRequest, cfg model.Config, targetCfg vram.Config, target vram.Result) error {
 	addFile := func(path string, onCPU bool, names []string, split []float32, main int) error {
 		if path == "" {
 			return nil
@@ -226,10 +235,23 @@ func (l *Llama) additionalMemory(plan *resman.PlanRequest, cfg model.Config, tar
 		if err != nil {
 			return fmt.Errorf("stat %s: %w", path, err)
 		}
-		l.addResult(plan, vram.Result{
+		result := vram.Result{
 			Input:     vram.Input{ModelSizeBytes: info.Size()},
 			TotalVRAM: info.Size(), ModelWeightsGPU: info.Size(),
-		}, !onCPU, names, split, main)
+		}
+		if target.Input.ComputeKind != modelprofile.ComputeGeneric {
+			fileCfg := targetCfg
+			fileCfg.ComputeContexts = 1
+			fileCfg.RecurrentStateCopies = 1
+			fileCfg.EmbeddedMTPStateCopies = 1
+			fileCfg.MoECacheSize = 0
+			fileCfg.MTPContext = path == cfg.MTPDrafterFile && target.Input.ComputeKind == modelprofile.ComputeIndexed
+			result, err = vram.FromFiles([]string{path}, fileCfg)
+			if err != nil {
+				return fmt.Errorf("companion %s: %w", path, err)
+			}
+		}
+		l.addResult(plan, result, !onCPU, names, split, main)
 		return nil
 	}
 
@@ -599,9 +621,15 @@ func effectiveSWAFull(cfg model.Config) bool {
 }
 
 func effectivePrefillBatchSize(cfg model.Config) int64 {
+	if cfg.EffectiveNUBatch() > 0 {
+		return int64(cfg.EffectiveNUBatch())
+	}
 	prefillBatchSize := cfg.PrefillBatchSize()
 	if prefillBatchSize <= 0 {
-		return int64(model.DefaultPrefillBatchSize)
+		prefillBatchSize = model.DefaultPrefillBatchSize
+	}
+	if model.SpeculativeContextCount(cfg) > 1 {
+		_, prefillBatchSize = model.GenerationBatchSizes(prefillBatchSize, max(int(cfg.NSeqMax()), 1), int(model.RecurrentStateCopies(cfg, false)), true)
 	}
 	return int64(prefillBatchSize)
 }

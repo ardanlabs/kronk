@@ -27,6 +27,16 @@ const (
 	RoleVisionEncoder Role = "vision_encoder"
 )
 
+// ComputeKind identifies the workspace allocation family, independently of
+// dense/MoE weight layout and recurrent/attention cache layout.
+type ComputeKind uint8
+
+const (
+	ComputeGeneric ComputeKind = iota // Unvalidated architectures use the generic allowance.
+	ComputeIndexed                    // Qwen4Exp indexed-attention workspaces.
+	ComputeGemma4                     // Gemma4 target and shared-KV assistant workspaces.
+)
+
 // Purpose describes the endpoint a model serves.
 type Purpose string
 
@@ -69,15 +79,16 @@ func MTPEnabled(architecture MTPArchitecture) bool {
 // Dimensions contains normalized model dimensions used by runtime and tooling
 // consumers.
 type Dimensions struct {
-	BlockCount        int64
-	ContextLength     int64
-	EmbeddingLength   int64
-	FeedForwardLength int64
-	VocabularySize    int64
-	HeadCount         int64
-	HeadCountKV       int64
-	KeyLength         int64
-	ValueLength       int64
+	BlockCount            int64
+	ContextLength         int64
+	EmbeddingLength       int64
+	OutputEmbeddingLength int64 // Hidden-state width exposed to an MTP context.
+	FeedForwardLength     int64
+	VocabularySize        int64
+	HeadCount             int64
+	HeadCountKV           int64
+	KeyLength             int64
+	ValueLength           int64
 }
 
 // Speculation contains normalized MTP metadata.
@@ -102,6 +113,7 @@ type Profile struct {
 	Role                   Role
 	Purpose                Purpose
 	MemorySemantics        MemorySemantics
+	ComputeKind            ComputeKind
 	Dimensions             Dimensions
 	Decision               Decision
 	Attention              gguf.AttentionFacts

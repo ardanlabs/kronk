@@ -882,15 +882,19 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 // adjustGenerationBatch derives llama.cpp's logical and physical generation
 // batch capacities from the user-facing prefill size and generation reserve.
 func adjustGenerationBatch(cfg Config, generationRowsPerSlot int, singlePhysicalBatch bool) Config {
-	base := cfg.PrefillBatchSize()
-	nBatch := base + cfg.NSeqMax()*max(generationRowsPerSlot, 1)
-	cfg.nBatch = nBatch
-	cfg.nUBatch = base
-	if singlePhysicalBatch {
-		cfg.nUBatch = nBatch
-	}
-
+	cfg.nBatch, cfg.nUBatch = GenerationBatchSizes(cfg.PrefillBatchSize(), cfg.NSeqMax(), generationRowsPerSlot, singlePhysicalBatch)
 	return cfg
+}
+
+// GenerationBatchSizes derives native batch capacities for both memory planning
+// and runtime configuration. MTP uses one physical batch including rollback rows.
+func GenerationBatchSizes(prefillSize, slots, generationRowsPerSlot int, singlePhysicalBatch bool) (int, int) {
+	nBatch := prefillSize + slots*max(generationRowsPerSlot, 1)
+	nUBatch := prefillSize
+	if singlePhysicalBatch {
+		nUBatch = nBatch
+	}
+	return nBatch, nUBatch
 }
 
 func isEmbedOrRerankConfig(cfg Config) bool {

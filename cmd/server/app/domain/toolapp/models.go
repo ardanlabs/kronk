@@ -342,6 +342,7 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 	swaFull := resolveSWAFull(req.SWAFull, configuredSWAFull)
 
 	cfg := vram.Config{
+		ComputeBackend:    devices.Backend(),
 		ContextWindow:     req.ContextWindow,
 		BytesPerElement:   req.BytesPerElement,
 		Slots:             slots,

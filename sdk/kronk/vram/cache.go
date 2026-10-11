@@ -2,9 +2,11 @@ package vram
 
 import "github.com/ardanlabs/kronk/sdk/kronk/gguf"
 
-// calculateCache sizes attention and recurrent state using the shared GGUF
-// allocator formulas. Weight layout (dense or MoE) does not affect this path.
-func calculateCache(input Input) gguf.KVCache {
+// calculateSlotState sizes persistent attention, indexer, and recurrent state
+// using the shared GGUF allocator formulas and normalized architecture facts.
+// This reports both per-slot and total state; it excludes model residency and
+// shared execution workspace. Weight layout (dense or MoE) does not affect it.
+func calculateSlotState(input Input) gguf.KVCache {
 	kvInput := gguf.KVCacheInput{
 		ContextWindow:        input.ContextWindow,
 		BlockCount:           input.BlockCount,
@@ -25,6 +27,8 @@ func calculateCache(input Input) gguf.KVCache {
 		SWAPattern:           input.SWAPattern,
 		RecurrentPattern:     input.RecurrentPattern,
 		NextNPredictLayers:   input.NextNPredictLayers,
+		MTPContext:           input.MTPContext,
+		IndexerKeyLength:     input.IndexerKeyLength,
 		RecurrentStateBytes:  input.RecurrentStateBytes,
 		RecurrentStateCopies: input.RecurrentStateCopies,
 		NUBatch:              input.NUBatch,
@@ -35,11 +39,11 @@ func calculateCache(input Input) gguf.KVCache {
 
 	kv := gguf.CalculateKVCache(kvInput)
 
-	if input.ComputeContexts > 1 && input.NextNPredictLayers > 0 {
+	if !input.MTPContext && input.ComputeContexts > 1 && input.NextNPredictLayers > 0 {
 		// Embedded own-KV MTP allocates attention state for the appended
 		// layers in its draft context, separately from the target trunk.
 		draftInput := kvInput
-		draftInput.NextNPredictLayers = 0
+		draftInput.MTPContext = true
 		draft := gguf.CalculateKVCache(draftInput)
 		for layer := max(input.BlockCount-input.NextNPredictLayers, 0); layer < int64(len(kv.LayerMemory)); layer++ {
 			kv.LayerMemory[layer] = draft.LayerMemory[layer]

@@ -22,15 +22,16 @@ func resolveGeneric(metadata metadata) Profile {
 		Purpose:         PurposeGeneration,
 		MemorySemantics: MemoryAttention,
 		Dimensions: Dimensions{
-			BlockCount:        blockCount,
-			ContextLength:     parseInt64WithFallback(metadata, arch+".context_length", ".context_length"),
-			EmbeddingLength:   parseInt64WithFallback(metadata, arch+".embedding_length", ".embedding_length"),
-			FeedForwardLength: parseInt64WithFallback(metadata, arch+".feed_forward_length", ".feed_forward_length"),
-			VocabularySize:    parseInt64WithFallback(metadata, arch+".vocab_size", "tokenizer.ggml.tokens"),
-			HeadCount:         headCount,
-			HeadCountKV:       headCountKV,
-			KeyLength:         keyLength,
-			ValueLength:       valueLength,
+			BlockCount:            blockCount,
+			ContextLength:         parseInt64WithFallback(metadata, arch+".context_length", ".context_length"),
+			EmbeddingLength:       parseInt64WithFallback(metadata, arch+".embedding_length", ".embedding_length"),
+			OutputEmbeddingLength: parseInt64(metadata, arch+".embedding_length_out"),
+			FeedForwardLength:     parseInt64WithFallback(metadata, arch+".feed_forward_length", ".feed_forward_length"),
+			VocabularySize:        parseInt64WithFallback(metadata, arch+".vocab_size", "tokenizer.ggml.tokens"),
+			HeadCount:             headCount,
+			HeadCountKV:           headCountKV,
+			KeyLength:             keyLength,
+			ValueLength:           valueLength,
 		},
 		Decision:        resolveDecision(metadata, arch),
 		Attention:       gguf.ParseAttentionFacts(metadata.values, arch, blockCount),
@@ -39,6 +40,9 @@ func resolveGeneric(metadata metadata) Profile {
 		Speculation:     Speculation{NextNPredictLayers: metadata.positiveNextNPredictLayers()},
 		FileType:        parseInt64(metadata, "general.file_type"),
 		HasChatTemplate: gguf.HasChatTemplate(metadata.values),
+	}
+	if arch == "gemma4" || arch == "gemma4-assistant" {
+		profile.ComputeKind = ComputeGemma4
 	}
 
 	// These b11513 loaders duplicate token_embd for a missing output.

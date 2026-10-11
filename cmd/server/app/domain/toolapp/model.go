@@ -1555,6 +1555,7 @@ func vramConfigFromRMC(rmc models.ModelConfig) vram.Config {
 	kronkConfig := rmc.ToKronkConfig()
 
 	return vram.Config{
+		ComputeBackend:    devices.Backend(),
 		ContextWindow:     contextWindow,
 		BytesPerElement:   bpe,
 		Slots:             slots,

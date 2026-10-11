@@ -214,7 +214,7 @@ func TestAdditionalMemoryAccountsForProjectionAndCompanionMTPFiles(t *testing.T)
 			return 0, 0, err
 		}
 		var plan resman.PlanRequest
-		err = l.additionalMemory(&plan, cfg, vram.Config{})
+		err = l.additionalMemory(&plan, cfg, vram.Config{}, vram.Result{})
 		return plan.VRAMBytes, plan.RAMBytes, err
 	}
 
