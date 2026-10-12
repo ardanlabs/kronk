@@ -10,13 +10,38 @@ import (
 
 func TestSessionConfigPrefillBatchSizeJSON(t *testing.T) {
 	var cfg SessionConfig
-	if err := json.Unmarshal([]byte(`{"prefill_batch_size":4096}`), &cfg); err != nil {
+	if err := json.Unmarshal([]byte(`{"prefill_batch_size":4096,"image_batch_token_capacity":768,"image_token_budget":1120}`), &cfg); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
 	got := cfg.ApplyTo(model.Config{})
 	if got.PrefillBatchSize() != 4096 {
 		t.Errorf("PrefillBatchSize() = %d, want 4096", got.PrefillBatchSize())
+	}
+	if got.ImageBatchTokenCapacity() != 768 {
+		t.Errorf("ImageBatchTokenCapacity() = %d, want 768", got.ImageBatchTokenCapacity())
+	}
+	if got.ImageTokenBudget() != 1120 {
+		t.Errorf("ImageTokenBudget() = %d, want 1120", got.ImageTokenBudget())
+	}
+	for _, budget := range []int{-1, 0, 768, 2147483648} {
+		cfg := SessionConfig{ImageTokenBudget: new(budget)}
+		if !cfg.HasOverrides() {
+			t.Fatal("image budget alone must select a custom config")
+		}
+		wantErr := budget <= 0 || budget > 2147483647
+		if err := cfg.Validate(); (err != nil) != wantErr {
+			t.Errorf("Validate budget %d: got %v, want error=%t", budget, err, wantErr)
+		}
+	}
+	for _, capacity := range []int{0, 768, -1} {
+		cfg := SessionConfig{ImageBatchTokenCapacity: new(capacity)}
+		if !cfg.HasOverrides() {
+			t.Fatal("image capacity alone must select a custom config")
+		}
+		if err := cfg.Validate(); (err != nil) != (capacity < 0) {
+			t.Errorf("Validate capacity %d: got %v, want error=%t", capacity, err, capacity < 0)
+		}
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -301,6 +302,18 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	modelInfo := toModelInfo(cfg, mdl)
 	cfg.DecisionProtocol = modelInfo.decisionProtocol
 
+	if cfg.MoECacheSize() > 0 {
+		switch {
+		case !modelInfo.profile.MoE.IsMoE:
+			moe := *cfg.PtrMoE
+			moe.PtrCacheSize = nil
+			cfg.PtrMoE = &moe
+		case cfg.PtrSplitMode != nil && *cfg.PtrSplitMode == SplitModeTensor:
+			llama.ModelFree(mdl)
+			return nil, fmt.Errorf("validate-config: moe cache-size does not support tensor parallelism")
+		}
+	}
+
 	pooled := isEmbedOrRerankConfig(cfg)
 	generationRowsPerSlot := 0
 	if !pooled && cfg.DecisionProtocol.IsZero() {
@@ -319,6 +332,8 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	l(ctx, "batch-sizing", "status", "resolved",
 		"configured-prefill-batch-size", configuredPrefillBatchSize,
 		"prefill-batch-size", prefillChunk,
+		"image-batch-token-capacity", cfg.ImageBatchTokenCapacity(),
+		"image-token-budget", cfg.ImageTokenBudget(),
 		"nseq-max", cfg.NSeqMax(),
 		"generation-rows-per-slot", generationRowsPerSlot,
 		"generation-reserve", generationReserve,
@@ -592,20 +607,21 @@ func buildModelParams(ctx context.Context, cfg *Config, loadMTP bool, l applog.L
 		case MoEModeKeepTopN:
 			if cfg.PtrMoE.PtrKeepExpertsOnGPUForTopNLayers != nil {
 				topN := *cfg.PtrMoE.PtrKeepExpertsOnGPUForTopNLayers
-				// To keep top N on GPU, we offload all layers EXCEPT the top N.
-				// We need block_count from model metadata, which isn't available yet.
-				// Use the "moe-experts" shortcut for now; per-layer targeting requires
-				// model metadata which is available after loading.
-				// For initial implementation: offload all experts, then in Phase E
-				// we can add per-layer granularity.
 				if topN == 0 {
 					cfg.TensorBuftOverrides = []string{"moe-experts"}
-				}
-				// topN > 0: we can't generate per-block overrides without knowing
-				// block_count from the model. Leave overrides empty and let
-				// llama.cpp handle it. Log the intention.
-				if topN > 0 {
-					l(ctx, "MOE-CONFIG", "mode", "keep_top_n", "top_n", topN, "note", "per-layer expert placement requires model metadata; using auto-fit")
+				} else {
+					data, err := gguf.ReadHeaderBytes(cfg.ModelFiles[0])
+					if err != nil {
+						return mParams, ka, fmt.Errorf("moe-placement: %w", err)
+					}
+					metadata, err := gguf.ParseMetadata(data)
+					if err != nil {
+						return mParams, ka, fmt.Errorf("moe-placement: %w", err)
+					}
+					blockCount := modelprofile.Resolve(metadata).Dimensions.BlockCount
+					for block := int64(0); block < blockCount-int64(topN); block++ {
+						cfg.TensorBuftOverrides = append(cfg.TensorBuftOverrides, fmt.Sprintf("moe-experts:block:%d", block))
+					}
 				}
 			}
 		case MoEModeExpertsGPU, MoEModeAuto, MoEModeCustom, MoEMode{}:
@@ -625,6 +641,7 @@ func buildModelParams(ctx context.Context, cfg *Config, loadMTP bool, l applog.L
 		ka.tensorBuft = overrides
 	}
 
+	mParams.LazyMode = cfg.LazyMode.ToYZMAType()
 	mParams.LoadMode = cfg.LoadMode.ToYZMAType()
 	logModelParamsTrace(ctx, mParams, cfg.Devices, cfg.TensorSplit, cfg.TensorBuftOverrides, l)
 
@@ -725,8 +742,8 @@ func logContextParamsTrace(ctx context.Context, ctxParams llama.ContextParams, c
 // Pointer-backed arrays use their configured values so diagnostics remain
 // readable without exposing process addresses.
 func logModelParamsTrace(ctx context.Context, params llama.ModelParams, deviceNames []string, tensorSplit []float32, tensorBuftOverrides []string, l applog.Logger) {
-	l(ctx, "LLAMA-MODEL-PARAMS", "values", fmt.Sprintf("\nCheckTensors[%d]\nDevices[%v]\nKvOverridesSet[%t]\nLoadMode[%s]\nLoadMTP[%d]\nMainGPU[%d]\nNGpuLayers[%d]\nNoAlloc[%d]\nNoHost[%d]\nProgressCallbackSet[%t]\nProgressCallbackUserDataSet[%t]\nSplitMode[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseExtraBufts[%d]\nVocabOnly[%d]\n",
-		params.CheckTensors, deviceNames, params.KvOverrides != 0, loadModeName(params.LoadMode), params.LoadMTP,
+	l(ctx, "LLAMA-MODEL-PARAMS", "values", fmt.Sprintf("\nCheckTensors[%d]\nDevices[%v]\nKvOverridesSet[%t]\nLazyMode[%d]\nLoadMode[%s]\nLoadMTP[%d]\nMainGPU[%d]\nNGpuLayers[%d]\nNoAlloc[%d]\nNoHost[%d]\nProgressCallbackSet[%t]\nProgressCallbackUserDataSet[%t]\nSplitMode[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseExtraBufts[%d]\nVocabOnly[%d]\n",
+		params.CheckTensors, deviceNames, params.KvOverrides != 0, params.LazyMode, loadModeName(params.LoadMode), params.LoadMTP,
 		params.MainGpu, params.NGpuLayers, params.NoAlloc, params.NoHost, params.ProgressCallback != 0, params.ProgressCallbackUserData != 0, SplitMode(params.SplitMode).String(),
 		tensorBuftOverrides, tensorSplit, params.UseExtraBufts, params.VocabOnly))
 }
@@ -932,6 +949,7 @@ func loadDraftModel(ctx context.Context, log applog.Logger, cfg Config, targetMo
 
 	// Load draft model.
 	mParams := llama.ModelDefaultParams()
+	mParams.LazyMode = cfg.LazyMode.ToYZMAType()
 	mParams.LoadMode = cfg.LoadMode.ToYZMAType()
 	switch {
 	case dCfg.PtrNGpuLayers == nil:
@@ -1583,11 +1601,19 @@ func calculateVRAMDiag(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory in
 	}
 
 	vramCfg := vram.Config{
+		WeightLoading:          cfg.VRAMWeightLoading(devices.List(devices.WithIncludeMemory(false))),
+		ComputeBackend:         devices.Backend(),
 		ContextWindow:          int64(cfg.ContextWindow()),
 		BytesPerElement:        int64(gguf.MaxBytesPerElement(int32(cfg.CacheTypeK), int32(cfg.CacheTypeV))),
+		TypeK:                  int32(cfg.CacheTypeK),
+		TypeV:                  int32(cfg.CacheTypeV),
 		Slots:                  int64(max(cfg.NSeqMax(), 1)),
 		NUBatch:                int64(cfg.EffectiveNUBatch()),
 		ExpertLayersOnGPU:      cfg.ExpertLayersOnGPU(),
+		MoECacheSize:           cfg.MoECacheSize(),
+		GPULayers:              int64(cfg.NGpuLayers()),
+		KVCacheOnCPU:           cfg.PtrOffloadKQV != nil && !*cfg.PtrOffloadKQV,
+		VTransposed:            cfg.FlashAttention() == FlashAttentionDisabled,
 		SWAFull:                effectiveSWAFull(cfg.PtrSWAFull, llama.ContextDefaultParams().SwaFull != 0),
 		RecurrentStateCopies:   RecurrentStateCopies(cfg, false),
 		EmbeddedMTPStateCopies: RecurrentStateCopies(cfg, true),
@@ -1611,6 +1637,42 @@ func calculateVRAMDiag(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory in
 	)
 
 	return result.TotalVRAM, result.SlotMemory, diag
+}
+
+// VRAMWeightLoading returns the native loading facts shared by planning,
+// diagnostics, and auto-tuning. yzma does not expose device mmap capabilities;
+// only CPU and Metal are verified here. Other backends conservatively retain
+// the full table in auto mode, but explicit on only needs platform support.
+func (cfg Config) VRAMWeightLoading(devs devices.Devices) vram.WeightLoading {
+	loading := vram.WeightLoading{LazyMode: cfg.LazyMode.String(), LoadMode: cfg.LoadMode.String()}
+	loading.MMapSupported = devs.MMapSupported
+	loading.AutoMMapSupported = true
+	var selected int
+	for _, device := range devs.Devices {
+		if len(cfg.Devices) == 0 && (device.Type == "cpu" || device.HardwareType == "ACCEL") {
+			// Native automatic model selection excludes CPU/ACCEL entries;
+			// BLAS must not disable lazy-auto on an otherwise Metal host.
+			continue
+		}
+		if len(cfg.Devices) > 0 && !slices.Contains(cfg.Devices, device.Name) {
+			continue
+		}
+		selected++
+		loading.Metal = loading.Metal || device.Type == "gpu_metal"
+		if !device.MMapSupported {
+			loading.AutoMMapSupported = false
+		}
+	}
+	if len(cfg.Devices) > 0 && selected != len(cfg.Devices) {
+		// Unresolved names (including backend aliases) cannot prove that
+		// Metal mapping overlap is absent.
+		loading.Metal = true
+		loading.AutoMMapSupported = false
+	}
+	if cfg.PtrSplitMode != nil && *cfg.PtrSplitMode == SplitModeTensor {
+		loading.AutoMMapSupported = false
+	}
+	return loading
 }
 
 func countTrue(values []bool) int {
@@ -1707,21 +1769,21 @@ func parseTensorBuftOverrides(patterns []string) ([]llama.TensorBuftOverride, er
 	return overrides, nil
 }
 
-// humanBytes formats a byte count using decimal (SI) units. Mirrors the
+// humanBytes formats a byte count using binary (IEC) units. Mirrors the
 // helper in sdk/pool to keep log output consistent.
 func humanBytes(n int64) string {
-	const unit = 1000
+	const unit = 1024
 	if n < unit {
 		return fmt.Sprintf("%dB", n)
 	}
 
 	div, exp := int64(unit), 0
-	for x := n / unit; x >= unit; x /= unit {
+	for x := n / unit; x >= unit && exp < 4; x /= unit {
 		div *= unit
 		exp++
 	}
 
-	suffixes := []string{"KB", "MB", "GB", "TB", "PB"}
+	suffixes := []string{"KiB", "MiB", "GiB", "TiB", "PiB"}
 	if exp >= len(suffixes) {
 		exp = len(suffixes) - 1
 	}
@@ -1733,6 +1795,9 @@ func humanBytes(n int64) string {
 // model configuration.
 func mtmdContextParams(cfg Config, device llama.GGMLBackendDevice) mtmd.ContextParamsType {
 	params := mtmd.ContextParamsDefault()
+	if cfg.PtrImageTokenBudget != nil {
+		params.ImageMaxTokens = int32(cfg.ImageTokenBudget())
+	}
 	if cfg.NThreads() > 0 {
 		params.Threads = int32(cfg.NThreads())
 	}

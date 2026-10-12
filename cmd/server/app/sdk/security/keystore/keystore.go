@@ -22,7 +22,7 @@ import (
 // ErrKeyNotFound is returned when a key identified by a kid is not found.
 var ErrKeyNotFound = auth.ErrKIDUnknown
 
-const maxPEMFileSize = 1024 * 1024 // 1 MB
+const maxPEMFileSize = 1024 * 1024 // 1 MiB
 
 // Key represents Key information.
 type Key struct {

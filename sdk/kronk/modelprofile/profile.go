@@ -27,6 +27,25 @@ const (
 	RoleVisionEncoder Role = "vision_encoder"
 )
 
+// ComputeKind identifies the workspace allocation family, independently of
+// dense/MoE weight layout and recurrent/attention cache layout.
+type ComputeKind uint8
+
+const (
+	ComputeGeneric    ComputeKind = iota // Unvalidated architectures use the generic allowance.
+	ComputeIndexed                       // Qwen4Exp indexed-attention workspaces.
+	ComputeGemma4                        // Gemma4 target and shared-KV assistant workspaces.
+	ComputeQwen35                        // Qwen3.5 target and own-KV MTP workspaces.
+	ComputeGPTOSS                        // GPT-OSS alternating full/SWA attention workspaces.
+	ComputeMistral3                      // Mistral3 dense full-attention workspaces.
+	ComputeLFM2                          // LFM2 attention and short-convolution workspaces.
+	ComputeGLM4MoE                       // GLM4 MoE full-attention and routed FFN workspaces.
+	ComputeGemma3                        // Gemma3 non-SWA attention workspaces (RNJ).
+	ComputeLlama                         // Llama full-attention GQA workspaces.
+	ComputeClef                          // Clef batch-local decision graph without persistent cache.
+	ComputeModernBERT                    // ModernBERT batch-local encoder and decision workspaces.
+)
+
 // Purpose describes the endpoint a model serves.
 type Purpose string
 
@@ -69,15 +88,16 @@ func MTPEnabled(architecture MTPArchitecture) bool {
 // Dimensions contains normalized model dimensions used by runtime and tooling
 // consumers.
 type Dimensions struct {
-	BlockCount        int64
-	ContextLength     int64
-	EmbeddingLength   int64
-	FeedForwardLength int64
-	VocabularySize    int64
-	HeadCount         int64
-	HeadCountKV       int64
-	KeyLength         int64
-	ValueLength       int64
+	BlockCount            int64
+	ContextLength         int64
+	EmbeddingLength       int64
+	OutputEmbeddingLength int64 // Hidden-state width exposed to an MTP context.
+	FeedForwardLength     int64
+	VocabularySize        int64
+	HeadCount             int64
+	HeadCountKV           int64
+	KeyLength             int64
+	ValueLength           int64
 }
 
 // Speculation contains normalized MTP metadata.
@@ -102,6 +122,7 @@ type Profile struct {
 	Role                   Role
 	Purpose                Purpose
 	MemorySemantics        MemorySemantics
+	ComputeKind            ComputeKind
 	Dimensions             Dimensions
 	Decision               Decision
 	Attention              gguf.AttentionFacts
@@ -113,6 +134,8 @@ type Profile struct {
 	FileType               int64
 	HasChatTemplate        bool
 	SupportsTensorParallel bool
+	TiedOutputFallback     bool  // Loader reuses token embeddings when output.weight is absent.
+	LazyRowsPerToken       int64 // Row gathers from the eligible per-layer embedding table; 0 = unsupported.
 
 	issues []error
 }

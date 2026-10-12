@@ -41,17 +41,19 @@ func autoTuneConfig(ctx context.Context, cfg model.Config, budget *models.AutoTu
 	}
 
 	constraints := models.ModelConfig{
-		Devices:             cfg.Devices,
-		PtrContextWindow:    cfg.PtrContextWindow,
-		PtrPrefillBatchSize: cfg.PtrPrefillBatchSize,
-		PtrNSeqMax:          cfg.PtrNSeqMax,
-		CacheTypeK:          cfg.CacheTypeK,
-		CacheTypeV:          cfg.CacheTypeV,
-		FlashAttention:      cfg.PtrFlashAttention,
-		PtrSplitMode:        cfg.PtrSplitMode,
-		PtrNGpuLayers:       cfg.PtrNGpuLayers,
-		PtrOffloadKQV:       cfg.PtrOffloadKQV,
-		PtrSWAFull:          cfg.PtrSWAFull,
+		Devices:                    cfg.Devices,
+		PtrContextWindow:           cfg.PtrContextWindow,
+		PtrPrefillBatchSize:        cfg.PtrPrefillBatchSize,
+		PtrImageBatchTokenCapacity: cfg.PtrImageBatchTokenCapacity,
+		PtrImageTokenBudget:        cfg.PtrImageTokenBudget,
+		PtrNSeqMax:                 cfg.PtrNSeqMax,
+		CacheTypeK:                 cfg.CacheTypeK,
+		CacheTypeV:                 cfg.CacheTypeV,
+		FlashAttention:             cfg.PtrFlashAttention,
+		PtrSplitMode:               cfg.PtrSplitMode,
+		PtrNGpuLayers:              cfg.PtrNGpuLayers,
+		PtrOffloadKQV:              cfg.PtrOffloadKQV,
+		PtrSWAFull:                 cfg.PtrSWAFull,
 	}
 	if constraints.PtrSWAFull == nil {
 		constraints.PtrSWAFull = new(llama.ContextDefaultParams().SwaFull != 0)

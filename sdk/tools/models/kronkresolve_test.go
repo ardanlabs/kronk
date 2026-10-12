@@ -371,11 +371,60 @@ func TestModelConfigLoadMode(t *testing.T) {
 	}
 }
 
+func TestModelConfigLazyMode(t *testing.T) {
+	for _, tt := range []struct {
+		input string
+		want  model.LazyMode
+	}{
+		{"auto", model.LazyModeAuto},
+		{"off", model.LazyModeOff},
+		{"on", model.LazyModeOn},
+	} {
+		t.Run(tt.input, func(t *testing.T) {
+			var configs map[string]ModelConfig
+			if err := yaml.Unmarshal([]byte("test-model:\n  lazy-mode: "+tt.input+"\n"), &configs); err != nil {
+				t.Fatal(err)
+			}
+			cfg := configs["test-model"]
+			if cfg.PtrLazyMode == nil || cfg.ToKronkConfig().LazyMode != tt.want {
+				t.Fatalf("YAML lazy mode: got %v, want %v", cfg.PtrLazyMode, tt.want)
+			}
+			// Explicit auto (the Go zero value) must override a non-default.
+			dst := ModelConfig{PtrLazyMode: new(model.LazyModeOn)}
+			MergeModelConfig(&dst, cfg)
+			MergeModelConfig(&dst, ModelConfig{})
+			if dst.ToKronkConfig().LazyMode != tt.want {
+				t.Fatalf("merged lazy mode: got %v, want %v", dst.ToKronkConfig().LazyMode, tt.want)
+			}
+			encoded, err := yaml.Marshal(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var decoded ModelConfig
+			if err := yaml.Unmarshal(encoded, &decoded); err != nil {
+				t.Fatal(err)
+			}
+			if decoded.PtrLazyMode == nil || decoded.ToKronkConfig().LazyMode != tt.want {
+				t.Fatalf("round-trip lazy mode: got %v, want %v", decoded.PtrLazyMode, tt.want)
+			}
+		})
+	}
+	if got := (ModelConfig{}).ToKronkConfig().LazyMode; got != model.LazyModeAuto {
+		t.Fatalf("default lazy mode: got %v, want auto", got)
+	}
+	var cfg ModelConfig
+	if err := yaml.Unmarshal([]byte("lazy-mode: mmap\n"), &cfg); err == nil {
+		t.Fatal("invalid YAML lazy mode accepted")
+	}
+}
+
 func TestModelConfigAdmissionAndQueue(t *testing.T) {
 	data := []byte(`test-model:
   admission-timeout: 3m
   imc-session-capacity: 8
   prefill-batch-size: 4096
+  image-batch-token-capacity: 1120
+  image-token-budget: 768
   queue-depth: 2
 `)
 
@@ -398,16 +447,24 @@ func TestModelConfigAdmissionAndQueue(t *testing.T) {
 	if got := kronkCfg.PrefillBatchSize(); got != 4096 {
 		t.Errorf("PrefillBatchSize() = %d, want 4096", got)
 	}
+	if got := kronkCfg.ImageBatchTokenCapacity(); got != 1120 {
+		t.Errorf("ImageBatchTokenCapacity() = %d, want 1120", got)
+	}
+	if got := kronkCfg.ImageTokenBudget(); got != 768 {
+		t.Errorf("ImageTokenBudget() = %d, want 768", got)
+	}
 
 	overrideTimeout := Duration(45 * time.Second)
 	overrideDepth := 4
 	overridePrefillBatchSize := 1024
 	overrideSessions := 10
 	MergeModelConfig(&cfg, ModelConfig{
-		PtrAdmissionTimeout:   &overrideTimeout,
-		PtrIMCSessionCapacity: &overrideSessions,
-		PtrPrefillBatchSize:   &overridePrefillBatchSize,
-		PtrQueueDepth:         &overrideDepth,
+		PtrAdmissionTimeout:        &overrideTimeout,
+		PtrIMCSessionCapacity:      &overrideSessions,
+		PtrPrefillBatchSize:        &overridePrefillBatchSize,
+		PtrImageBatchTokenCapacity: new(0),
+		PtrImageTokenBudget:        new(1536),
+		PtrQueueDepth:              &overrideDepth,
 	})
 	kronkCfg = cfg.ToKronkConfig()
 	if got := kronkCfg.AdmissionTimeout(); got != 45*time.Second {
@@ -421,6 +478,12 @@ func TestModelConfigAdmissionAndQueue(t *testing.T) {
 	}
 	if got := kronkCfg.PrefillBatchSize(); got != 1024 {
 		t.Errorf("merged PrefillBatchSize() = %d, want 1024", got)
+	}
+	if got := kronkCfg.ImageBatchTokenCapacity(); got != 0 || kronkCfg.PtrImageBatchTokenCapacity == nil {
+		t.Errorf("merged ImageBatchTokenCapacity() = %d, want explicit zero", got)
+	}
+	if got := kronkCfg.ImageTokenBudget(); got != 1536 {
+		t.Errorf("merged ImageTokenBudget() = %d, want 1536", got)
 	}
 }
 

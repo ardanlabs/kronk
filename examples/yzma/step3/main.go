@@ -7,7 +7,7 @@
 //                        (chan)         (single goroutine)
 //
 // Run the example like this from the root of the project:
-// $ go run examples/yzma-parallel/step2/main.go -model /path/to/model.gguf
+// $ make example-yzma-step3
 
 package main
 
@@ -26,7 +26,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ardanlabs/kronk/examples/yzma/internal/yzmainit"
+	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -760,10 +760,7 @@ func batchAdd(batch llama.BatchExt, token llama.Token, pos llama.Pos, seqIDs []l
 }
 
 func initYzma() error {
-	libPath, err := yzmainit.LibraryPath()
-	if err != nil {
-		return fmt.Errorf("prepare library path: %w", err)
-	}
+	libPath := libs.Path("")
 
 	if err := llama.Load(libPath); err != nil {
 		return fmt.Errorf("unable to load library: %w", err)

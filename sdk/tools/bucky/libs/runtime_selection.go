@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -20,7 +21,7 @@ type detectOptions struct {
 }
 
 type runtimeProbes struct {
-	cuda   func(context.Context, string, string) bool
+	cuda   func(context.Context, string, string, string) bool
 	vulkan func(context.Context) bool
 }
 
@@ -61,8 +62,11 @@ func selectRuntime(ctx context.Context, arch string, opSys string, preferred str
 			return preferred, "preferred Metal runtime retained", true
 		}
 
-	case "cuda":
-		if IsSupported(arch, opSys, preferred) && probes.cuda(ctx, arch, opSys) {
+	case "cuda", "cuda12", "cuda13":
+		if preferred == "cuda" && IsSupported(arch, opSys, "cuda13") && probes.cuda(ctx, arch, opSys, "cuda13") {
+			return "cuda13", "CUDA 13 driver, devices, and runtime libraries are compatible", true
+		}
+		if IsSupported(arch, opSys, preferred) && probes.cuda(ctx, arch, opSys, preferred) {
 			return preferred, "CUDA host and driver are compatible", true
 		}
 
@@ -100,7 +104,7 @@ type cudaDevice struct {
 
 var cudaVersionRE = regexp.MustCompile(`CUDA Version:\s*([^[:space:]|]+)`)
 
-func hasCompatibleCUDA(ctx context.Context, arch string, opSys string) bool {
+func hasCompatibleCUDA(ctx context.Context, arch string, opSys string, processor string) bool {
 	pctx, cancel := context.WithTimeout(ctx, hostProbeTimeout)
 	defer cancel()
 
@@ -114,10 +118,49 @@ func hasCompatibleCUDA(ctx context.Context, arch string, opSys string) bool {
 	}
 
 	visible, filtered := os.LookupEnv("CUDA_VISIBLE_DEVICES")
-	return compatibleCUDAOutput(string(devicesOut), string(versionOut), visible, filtered, arch, opSys)
+	if !compatibleCUDAOutput(string(devicesOut), string(versionOut), visible, filtered, arch, opSys, processor) {
+		return false
+	}
+	if opSys != "linux" {
+		return true
+	}
+	major := "12"
+	if processor == "cuda13" {
+		major = "13"
+	}
+	cache, _ := exec.CommandContext(pctx, "ldconfig", "-p").Output()
+	return hasCUDALibraries(string(cache), os.Getenv("LD_LIBRARY_PATH"), major)
 }
 
-func compatibleCUDAOutput(devicesOutput string, versionOutput string, visible string, filtered bool, arch string, opSys string) bool {
+// Linux bundles do not ship CUDA runtime or cuBLAS. Check the loader cache and
+// explicit search paths without loading ggml or registering another backend.
+func hasCUDALibraries(cache string, searchPath string, major string) bool {
+	for _, name := range []string{"libcudart.so." + major, "libcublas.so." + major} {
+		found := false
+		for line := range strings.SplitSeq(cache, "\n") {
+			fields := strings.Fields(line)
+			if len(fields) >= 4 && fields[0] == name {
+				if info, err := os.Stat(fields[len(fields)-1]); err == nil && !info.IsDir() {
+					found = true
+				}
+			}
+		}
+		for _, dir := range filepath.SplitList(searchPath) {
+			if dir == "" {
+				continue
+			}
+			if info, err := os.Stat(filepath.Join(dir, name)); err == nil && !info.IsDir() {
+				found = true
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+func compatibleCUDAOutput(devicesOutput string, versionOutput string, visible string, filtered bool, arch string, opSys string, processor string) bool {
 	match := cudaVersionRE.FindStringSubmatch(versionOutput)
 	if len(match) != 2 {
 		return false
@@ -133,6 +176,12 @@ func compatibleCUDAOutput(devicesOutput string, versionOutput string, visible st
 		minimumCapability = majorMinor{major: 5, minor: 0}
 	} else if arch == "arm64" {
 		minimumCapability = majorMinor{major: 8, minor: 7}
+	}
+	if processor == "cuda13" {
+		if opSys != "linux" {
+			return false
+		}
+		minimumVersion = majorMinor{major: 13, minor: 0}
 	}
 	if !version.atLeast(minimumVersion) {
 		return false

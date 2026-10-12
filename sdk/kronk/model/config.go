@@ -23,12 +23,12 @@ import (
 Batch sizing defaults (applied in adjustConfig when left unset):
 
 	Prefill = 2048
-	NBatch  = Prefill + generation reserve
-	NUBatch = Prefill (non-MTP) or NBatch (MTP)
+	Base    = max(Prefill, ImageBatchTokenCapacity, ImageTokenBudget)
+	NBatch  = Base + generation reserve
+	NUBatch = Base (non-MTP) or NBatch (MTP)
 
-The 2048-token prefill capacity supports mtmd (vision) models whose image
-encoder uses non-causal attention and needs every patch token of an image
-chunk in one physical ubatch. Dropping below that can break image input.
+Non-causal image chunks need every row in one physical ubatch. Image capacity
+and preprocessing budgets are explicit opt-ins; projector defaults are unchanged.
 
 One slot owns ordinary prefill until it finishes. Generation rows from all
 ready slots are staged first. Non-MTP reserves one row; MTP reserves 1 + nDraft
@@ -228,6 +228,12 @@ type AdapterConfig struct {
 // JinjaScript is an in-memory jinja template override. It takes precedence
 // over JinjaFile and is intended for request-scoped model configurations.
 //
+// LazyMode controls on-demand reading of tensors marked eligible by llama.cpp.
+// The default is LazyModeAuto. It applies to target and draft models. Effective
+// lazy tables use a working-set allowance in the calculator's reservation.
+// On Metal, mmap may bring an eligible table into RAM despite lazy reading;
+// LoadModeNone can avoid that overlap.
+//
 // LoadMode controls how model weights are loaded. The default is LoadModeAuto,
 // which uses mmap when every selected device supports it and otherwise uses
 // ordinary loading. LoadModeNone disables mmap, which can improve tensor
@@ -251,8 +257,18 @@ type AdapterConfig struct {
 // takes longer before already-generating slots can run again and requires
 // larger compute buffers. Kronk derives llama.cpp's logical and physical batch
 // capacities from this value, the configured slot count, and the generation
-// mode. Multimodal models may require a complete media-token chunk to fit in
-// this capacity.
+// mode, with ImageBatchTokenCapacity providing an independent media floor.
+//
+// ImageBatchTokenCapacity provides an independent image-capacity floor for
+// native batches without increasing the text prefill contribution or changing
+// image preprocessing. The default is zero (no extra floor).
+// Oversized non-causal image chunks return an error instead of being split.
+//
+// ImageTokenBudget explicitly sets the preprocessing token budget for supported
+// projectors. Lower values can reduce image resolution and detail. When unset,
+// the projector's default is preserved. Explicit values must be positive and
+// also contribute to native batch capacity. Not all projectors honor the budget,
+// and final chunk sizes are still checked before decoding.
 //
 // NGpuLayers is the number of model layers to offload to the GPU. When set to 0,
 // all layers are offloaded (default). Set to -1 to keep all layers on CPU. Any
@@ -402,10 +418,13 @@ type Config struct {
 	Devices                    []string // Device names for model execution (e.g., ["CUDA0", "CUDA1"])
 	PtrFlashAttention          *FlashAttentionType
 	PtrIMCSessionCapacity      *int
+	PtrImageBatchTokenCapacity *int
+	PtrImageTokenBudget        *int
 	PtrIncrementalCache        *bool
 	PtrInsecureLogging         *bool
 	JinjaFile                  string
 	JinjaScript                string
+	LazyMode                   LazyMode
 	LoadMode                   LoadMode
 	Log                        applog.Logger
 	PtrMainGPU                 *int
@@ -455,6 +474,22 @@ func (cfg Config) QueueDepth() int         { return intOr(cfg.PtrQueueDepth, 0) 
 func (cfg Config) IMCSessionCapacity() int { return intOr(cfg.PtrIMCSessionCapacity, 0) }
 func (cfg Config) ContextWindow() int      { return intOr(cfg.PtrContextWindow, 0) }
 func (cfg Config) PrefillBatchSize() int   { return intOr(cfg.PtrPrefillBatchSize, 0) }
+
+// ImageBatchTokenCapacity returns the explicit image-capacity floor, or zero.
+func (cfg Config) ImageBatchTokenCapacity() int { return intOr(cfg.PtrImageBatchTokenCapacity, 0) }
+
+// ImageTokenBudget returns the explicit preprocessing budget, or zero when unset.
+func (cfg Config) ImageTokenBudget() int { return intOr(cfg.PtrImageTokenBudget, 0) }
+
+// BatchBaseSize returns the native capacity base without the generation reserve.
+// The text scheduler continues to use PrefillBatchSize independently.
+func (cfg Config) BatchBaseSize() int {
+	prefill := cfg.PrefillBatchSize()
+	if prefill <= 0 {
+		prefill = DefaultPrefillBatchSize
+	}
+	return max(prefill, cfg.ImageBatchTokenCapacity(), cfg.ImageTokenBudget())
+}
 
 // EffectiveNBatch returns the derived llama.cpp logical batch capacity.
 func (cfg Config) EffectiveNBatch() int { return cfg.nBatch }
@@ -545,11 +580,11 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("{mode:%s top_n:%s}", m.Mode, topN)
 	}
 
-	return fmt.Sprintf("\nAdapters[%v]\nAdmissionTimeout[%s]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nDecisionProtocol[%s]\nChatTemplateKwargs[%s]\nDevices[%v]\nFlashAttention[%s]\nIMCSessionCapacity[%d]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nPrefillBatchSize[%s]\nEffectiveNBatch[%d]\nEffectiveNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nProjDevice[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreFactory[%t]\nSpeculation[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
+	return fmt.Sprintf("\nAdapters[%v]\nAdmissionTimeout[%s]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nDecisionProtocol[%s]\nChatTemplateKwargs[%s]\nDevices[%v]\nFlashAttention[%s]\nIMCSessionCapacity[%d]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLazyMode[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nPrefillBatchSize[%s]\nEffectiveNBatch[%d]\nEffectiveNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nProjDevice[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreFactory[%t]\nSpeculation[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
 		cfg.Adapters, formatDurationPtr(cfg.PtrAdmissionTimeout), cfg.AutoTune, formatIntPtr(cfg.PtrCacheMinTokens), cfg.CacheTypeK, cfg.CacheTypeV,
 		formatIntPtr(cfg.PtrContextWindow), cfg.DefaultParams.String(), cfg.DecisionProtocol, chatTemplateKwargsSummary(cfg.ChatTemplateKwargs), cfg.Devices, cfg.FlashAttention(),
 		cfg.IMCSessionCapacity(), formatBoolPtr(cfg.PtrIncrementalCache), formatBoolPtr(cfg.PtrInsecureLogging), cfg.JinjaFile,
-		cfg.LoadMode, formatIntPtr(cfg.PtrMainGPU), formatMoEPtr(cfg.PtrMoE), cfg.ModelFiles,
+		cfg.LazyMode, cfg.LoadMode, formatIntPtr(cfg.PtrMainGPU), formatMoEPtr(cfg.PtrMoE), cfg.ModelFiles,
 		formatIntPtr(cfg.PtrNGpuLayers), formatIntPtr(cfg.PtrNSeqMax), formatIntPtr(cfg.PtrNThreads), formatIntPtr(cfg.PtrNThreadsBatch), formatIntPtr(cfg.PtrPrefillBatchSize), cfg.EffectiveNBatch(), cfg.EffectiveNUBatch(),
 		cfg.NUMA,
 		formatBoolPtr(cfg.PtrOffloadKQV), formatBoolPtr(cfg.PtrOpOffload), cfg.ProjFile, cfg.MTPDrafterFile, formatBoolPtr(cfg.PtrProjOnCPU), cfg.ProjDevice, cfg.QueueDepth(),
@@ -618,8 +653,20 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 		return fmt.Errorf("validate-config: prefill batch size must be > 0, got %d", cfg.PrefillBatchSize())
 	}
 
+	if cfg.ImageBatchTokenCapacity() < 0 {
+		return fmt.Errorf("validate-config: image batch token capacity must be >= 0, got %d", cfg.ImageBatchTokenCapacity())
+	}
+
+	if cfg.PtrImageTokenBudget != nil && (cfg.ImageTokenBudget() <= 0 || cfg.ImageTokenBudget() > math.MaxInt32) {
+		return fmt.Errorf("validate-config: image token budget must be between 1 and %d, got %d", math.MaxInt32, cfg.ImageTokenBudget())
+	}
+
 	if cfg.ProjDevice != "" && cfg.PtrProjOnCPU != nil && *cfg.PtrProjOnCPU {
 		return fmt.Errorf("validate-config: projector device cannot be combined with proj-on-cpu=true")
+	}
+
+	if cfg.MoECacheSize() < 0 {
+		return fmt.Errorf("validate-config: moe cache-size must be >= 0")
 	}
 
 	switch cfg.CacheTypeV {
@@ -665,6 +712,13 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 		// valid
 	default:
 		return fmt.Errorf("validate-config: unknown NUMA strategy: %s (valid: distribute, isolate, numactl, mirror)", cfg.NUMA)
+	}
+
+	switch cfg.LazyMode {
+	case LazyModeAuto, LazyModeOff, LazyModeOn:
+		// valid
+	default:
+		return fmt.Errorf("validate-config: unknown lazy mode: %d (valid: auto, off, on)", cfg.LazyMode)
 	}
 
 	switch cfg.LoadMode {
@@ -810,11 +864,8 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 	}
 	cfg = adjustIMCSessionCapacity(cfg)
 
-	// Start batch sizing from a 2048-token prefill capacity. Most models
-	// we serve are mtmd (vision) models whose image encoder uses non-causal
-	// attention and requires every patch token of an image chunk to land in one
-	// physical ubatch, so this base must not drop below the largest image chunk.
-	// Generation-reserve rows are added below for generation models.
+	// Default the scheduler's text contribution independently of native media
+	// capacity. Generation sizing adds the image floor and per-slot reserve.
 	if cfg.PrefillBatchSize() <= 0 {
 		cfg.PtrPrefillBatchSize = new(DefaultPrefillBatchSize)
 	}
@@ -878,15 +929,19 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 // adjustGenerationBatch derives llama.cpp's logical and physical generation
 // batch capacities from the user-facing prefill size and generation reserve.
 func adjustGenerationBatch(cfg Config, generationRowsPerSlot int, singlePhysicalBatch bool) Config {
-	base := cfg.PrefillBatchSize()
-	nBatch := base + cfg.NSeqMax()*max(generationRowsPerSlot, 1)
-	cfg.nBatch = nBatch
-	cfg.nUBatch = base
-	if singlePhysicalBatch {
-		cfg.nUBatch = nBatch
-	}
-
+	cfg.nBatch, cfg.nUBatch = GenerationBatchSizes(cfg.BatchBaseSize(), cfg.NSeqMax(), generationRowsPerSlot, singlePhysicalBatch)
 	return cfg
+}
+
+// GenerationBatchSizes derives native batch capacities for both memory planning
+// and runtime configuration. MTP uses one physical batch including rollback rows.
+func GenerationBatchSizes(prefillSize, slots, generationRowsPerSlot int, singlePhysicalBatch bool) (int, int) {
+	nBatch := prefillSize + slots*max(generationRowsPerSlot, 1)
+	nUBatch := prefillSize
+	if singlePhysicalBatch {
+		nUBatch = nBatch
+	}
+	return nBatch, nUBatch
 }
 
 func isEmbedOrRerankConfig(cfg Config) bool {
@@ -951,6 +1006,10 @@ func adjustContextWindow(cfg Config, model llama.Model) Config {
 
 func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 	ctxParams := llama.ContextDefaultParams()
+
+	if mi.profile.MoE.IsMoE && cfg.MoECacheSize() > 0 {
+		ctxParams.MoeCacheSize = uint64(cfg.MoECacheSize())
+	}
 
 	if mi.IsEmbedModel || mi.IsRerankModel {
 		ctxParams.Embeddings = 1
@@ -1359,6 +1418,110 @@ func DerefFlashAttention(p *FlashAttentionType) FlashAttentionType {
 		return FlashAttentionAuto
 	}
 	return *p
+}
+
+// =============================================================================
+
+// LazyMode controls on-demand reading of tensors marked eligible by llama.cpp.
+type LazyMode int32
+
+const (
+	// LazyModeAuto enables lazy reading for eligible tensors larger than 4 GiB
+	// when all selected devices support mmap. This is the default.
+	LazyModeAuto LazyMode = iota
+
+	// LazyModeOff reads eligible tensors up front like ordinary weights.
+	LazyModeOff
+
+	// LazyModeOn requests lazy reading for eligible tensors regardless of size.
+	// The platform must support mmap; unmarked tensors are unaffected.
+	LazyModeOn
+)
+
+// String returns the string representation of a LazyMode.
+func (lm LazyMode) String() string {
+	switch lm {
+	case LazyModeAuto:
+		return "auto"
+	case LazyModeOff:
+		return "off"
+	case LazyModeOn:
+		return "on"
+	default:
+		return fmt.Sprintf("unknown(%d)", lm)
+	}
+}
+
+// ToYZMAType converts to the yzma/llama.cpp LazyMode type.
+func (lm LazyMode) ToYZMAType() llama.LazyMode {
+	switch lm {
+	case LazyModeOff:
+		return llama.LazyModeOff
+	case LazyModeOn:
+		return llama.LazyModeOn
+	default:
+		return llama.LazyModeAuto
+	}
+}
+
+// MarshalYAML implements yaml.Marshaler.
+func (lm LazyMode) MarshalYAML() (any, error) {
+	return lm.String(), nil
+}
+
+// MarshalJSON implements json.Marshaler.
+func (lm LazyMode) MarshalJSON() ([]byte, error) {
+	return json.Marshal(lm.String())
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (lm *LazyMode) UnmarshalJSON(data []byte) error {
+	var str string
+	if err := json.Unmarshal(data, &str); err != nil {
+		return err
+	}
+	parsed, err := ParseLazyMode(str)
+	if err != nil {
+		return err
+	}
+	*lm = parsed
+	return nil
+}
+
+// UnmarshalYAML implements yaml.Unmarshaler.
+func (lm *LazyMode) UnmarshalYAML(unmarshal func(any) error) error {
+	var str string
+	if err := unmarshal(&str); err != nil {
+		return err
+	}
+	parsed, err := ParseLazyMode(str)
+	if err != nil {
+		return err
+	}
+	*lm = parsed
+	return nil
+}
+
+// ParseLazyMode parses a string into a LazyMode.
+func ParseLazyMode(s string) (LazyMode, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "auto", "":
+		return LazyModeAuto, nil
+	case "off":
+		return LazyModeOff, nil
+	case "on":
+		return LazyModeOn, nil
+	default:
+		return LazyModeAuto, fmt.Errorf("parse-lazy-mode: unknown lazy mode: %s (valid: auto, off, on)", s)
+	}
+}
+
+// DerefLazyMode returns the value of a LazyMode pointer, defaulting to auto.
+func DerefLazyMode(lm *LazyMode) LazyMode {
+	if lm == nil {
+		return LazyModeAuto
+	}
+	return *lm
 }
 
 // =============================================================================
@@ -1915,10 +2078,23 @@ type MoEConfig struct {
 	// Only used when Mode is MoEModeKeepTopN. 0 means all experts on CPU.
 	// llama.cpp convention: "top" means highest-numbered layers.
 	PtrKeepExpertsOnGPUForTopNLayers *int `yaml:"keep-experts-top-n,omitempty"`
+
+	// PtrCacheSize sets the experimental GPU expert-cache budget in bytes per
+	// context, shared across GPUs. Zero uses llama.cpp's default (disabled).
+	// Original host weights remain resident. Ignored for non-MoE models.
+	PtrCacheSize *int64 `yaml:"cache-size,omitempty"`
 }
 
 func (m MoEConfig) KeepExpertsOnGPUForTopNLayers() int {
 	return intOr(m.PtrKeepExpertsOnGPUForTopNLayers, 0)
+}
+
+// MoECacheSize returns the requested GPU expert-cache budget in bytes.
+func (cfg Config) MoECacheSize() int64 {
+	if cfg.PtrMoE == nil || cfg.PtrMoE.PtrCacheSize == nil {
+		return 0
+	}
+	return *cfg.PtrMoE.PtrCacheSize
 }
 
 // ExpertsAllOnGPU is the sentinel value used for vram.Config.ExpertLayersOnGPU
@@ -1999,10 +2175,21 @@ func WithFlashAttention(v FlashAttentionType) Option {
 func WithIMCSessionCapacity(v int) Option {
 	return func(c *Config) { c.PtrIMCSessionCapacity = new(v) }
 }
+
+// WithImageBatchTokenCapacity sets native image capacity without changing image detail.
+func WithImageBatchTokenCapacity(v int) Option {
+	return func(c *Config) { c.PtrImageBatchTokenCapacity = new(v) }
+}
+
+// WithImageTokenBudget explicitly sets the projector's image preprocessing budget.
+func WithImageTokenBudget(v int) Option {
+	return func(c *Config) { c.PtrImageTokenBudget = new(v) }
+}
 func WithIncrementalCache(v bool) Option       { return func(c *Config) { c.PtrIncrementalCache = new(v) } }
 func WithInsecureLogging(v bool) Option        { return func(c *Config) { c.PtrInsecureLogging = new(v) } }
 func WithJinjaFile(v string) Option            { return func(c *Config) { c.JinjaFile = v } }
 func WithJinjaScript(v string) Option          { return func(c *Config) { c.JinjaScript = v } }
+func WithLazyMode(v LazyMode) Option           { return func(c *Config) { c.LazyMode = v } }
 func WithLoadMode(v LoadMode) Option           { return func(c *Config) { c.LoadMode = v } }
 func WithLog(v applog.Logger) Option           { return func(c *Config) { c.Log = v } }
 func WithMainGPU(v int) Option                 { return func(c *Config) { c.PtrMainGPU = new(v) } }

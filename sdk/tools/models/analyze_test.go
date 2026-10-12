@@ -3,6 +3,7 @@ package models
 import (
 	"testing"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
@@ -149,6 +150,23 @@ func TestAnalyzeModelDense(t *testing.T) {
 	if maxConc.NSeqMax < 2 {
 		t.Errorf("max_concurrency.NSeqMax = %d, want >= 2", maxConc.NSeqMax)
 	}
+
+	// At the same recommendation, a known CPU input table must be removed
+	// from GPU weights rather than discarded by the analysis input builder.
+	info.Weights = &gguf.WeightBreakdown{
+		AlwaysActiveBytes: int64(info.Size), InputBytes: 400_000_000,
+		TokenEmbeddingBytes: 400_000_000, OutputBytes: 600_000_000, HasOutputWeight: true,
+	}
+	withWeights, err := Analyze(info, devs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withWeights.Recommended.ContextWindow != a.Recommended.ContextWindow || withWeights.Recommended.NSeqMax != a.Recommended.NSeqMax {
+		t.Fatal("ample-memory weight correction unexpectedly changed context/concurrency")
+	}
+	if delta := a.Recommended.EstimatedVRAMBytes - withWeights.Recommended.EstimatedVRAMBytes; delta != 400_000_000 {
+		t.Errorf("CPU input-table VRAM reduction: got %d, want 400000000", delta)
+	}
 }
 
 func TestBuildProfileUsesLayerSplitDefault(t *testing.T) {
@@ -284,6 +302,20 @@ func TestAnalyzeModelSlidingWindow(t *testing.T) {
 
 	if a.Model.Attention.LogitSoftcapping != 30 {
 		t.Errorf("LogitSoftcapping = %v, want 30", a.Model.Attention.LogitSoftcapping)
+	}
+
+	// With the same budget both backends select the same context/slots, but
+	// Metal must also reserve F16 K/V scratch for this Gemma attention graph.
+	devs.Devices[0].Type = "gpu_cuda"
+	cuda, err := Analyze(info, devs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Recommended.ContextWindow != cuda.Recommended.ContextWindow || a.Recommended.NSeqMax != cuda.Recommended.NSeqMax {
+		t.Fatal("backend control selected different context/slots")
+	}
+	if a.Recommended.EstimatedVRAMBytes-cuda.Recommended.EstimatedVRAMBytes < 512<<20 {
+		t.Errorf("Metal/CUDA estimates: got %d/%d, want Metal at least 512 MiB higher", a.Recommended.EstimatedVRAMBytes, cuda.Recommended.EstimatedVRAMBytes)
 	}
 }
 

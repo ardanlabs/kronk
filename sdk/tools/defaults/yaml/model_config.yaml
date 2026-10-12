@@ -74,30 +74,59 @@ version: 2
 # and the recommendation is reported as not fitting.
 #
 # example-model:
-#   cache-min-tokens: 100                # Min tokens before IMC caches a message (default: 100)
+#   # Fixed load-time LoRA adapters. Set exactly one of id or path per entry.
+#   # An id omits .gguf and resolves under <base-path>/lora; path is absolute.
+#   # Kronk does not download adapter files. Scale defaults to 1.0.
+#   adapters:
+#     - id: org/support                  # Resolves to <base-path>/lora/org/support.gguf
+#       scale: 1.0                       # Finite non-negative scale, fixed until model reload
+#     - path: /opt/adapters/concise.gguf # Existing llama.cpp-compatible adapter GGUF
+#       scale: 0.5
+#
 #   admission-timeout: 3m                # Maximum wait for an SDK admission permit (default: 3m)
-#   queue-depth: 2                       # Admission layers: 1 = slots only; 2 = one waiting layer (default: 2)
+#   cache-min-tokens: 100                # Min tokens before IMC caches a message (default: 100)
 #   cache-type-k: q8_0                   # Explicit KV key type; omit for AutoTune (f16, then q8_0)
 #   cache-type-v: q8_0                   # Explicit KV value type; omit for AutoTune (f16, then q8_0)
 #   chat-template-kwargs:                # Model-level Jinja defaults; wire requests use chat_template_kwargs
-#     preserve_thinking: true            # Template-only; configure here rather than under sampling-parameters
 #   context-window: 8192                 # Per-sequence token capacity; explicit value is fixed
 #   devices: [CUDA0, CUDA1]              # Devices to use (run `kronk devices` to list)
+#
+#   # Speculative decoding (nested). Set model-id for a separate draft GGUF
+#   # (requires nseq-max: 1); omit model-id and set only ndraft to override the
+#   # draft-token count for an auto-detected MTP head on the target.
+#   draft-model:
+#     devices: [CUDA0]                   # Devices for the draft model
+#     main-gpu: 0                        # Primary GPU index for the draft model
+#     model-id: org/Draft-Model.Q8_0     # Draft model id (separate-GGUF drafter; requires nseq-max: 1)
+#     ndraft: 5                          # Tokens to draft per step (separate-GGUF default 5, MTP default 3)
+#     ngpu-layers: 0                     # GPU layers for the draft model (0 = all)
+#     tensor-split: [1.0]                # Per-device tensor split for the draft model
+#
 #   flash-attention: auto                # Flash Attention: enabled, disabled, auto (default: auto)
 #   imc-session-capacity: 8              # Reusable IMC identities (default: nseq-max * queue-depth)
 #   incremental-cache: true              # Incremental message caching (IMC) for agentic workflows (default: true)
 #   insecure-logging: false              # Log potentially sensitive data like message content (debug only)
+#   lazy-mode: auto                      # On-demand reading of eligible tensors: auto (default), off, on
+#   load-mode: auto                      # Model loading: auto (default), mmap, none, mlock, mmap+mlock, direct-io
 #   main-gpu: 0                          # Primary GPU index for single-GPU mode
+#
+#   # Mixture of Experts (MoE) tensor placement (nested):
+#   moe:
+#     keep-experts-top-n: 4              # Keep experts on GPU for top N layers (only when mode: keep_top_n)
+#     mode: experts_cpu                  # auto, experts_cpu, experts_gpu, keep_top_n, custom
+#
 #   ngpu-layers: 0                       # GPU layers to offload (0 = all, -1 = none, N = specific count)
 #   nseq-max: 2                          # Parallel sequences; explicit value is fixed
 #   nthreads: 0                          # Threads for generation (0 = hardware-aware Yzma default)
 #   nthreads-batch: 0                    # Threads for batch processing (0 = hardware-aware Yzma default)
-#   prefill-batch-size: 2048             # Prompt tokens processed per prefill decode contribution (default: 2048)
 #   numa: distribute                     # NUMA strategy: "" (off), distribute, isolate, numactl, mirror
 #   offload-kqv: true                    # Offload KV cache to GPU (false = keep on CPU)
 #   op-offload: true                     # Offload tensor operations to GPU (false = keep on CPU)
-#   proj-on-cpu: true                    # Force multimodal projector (mmproj) onto CPU
+#   prefill-batch-size: 2048             # Prompt tokens processed per prefill decode contribution (default: 2048)
+#   preserve_thinking: true              # Template-only; configure here rather than under sampling-parameters
 #   proj-device: CUDA1                    # Explicit mmproj device; omit for automatic (conflicts with proj-on-cpu: true)
+#   proj-on-cpu: true                    # Force multimodal projector (mmproj) onto CPU
+#   queue-depth: 2                       # Admission layers: 1 = slots only; 2 = one waiting layer (default: 2)
 #   rope-freq-base: 1000000              # RoPE base frequency (nil = from model, e.g., 10000 Llama, 1000000 Qwen)
 #   rope-freq-scale: 0.25                # RoPE frequency scale (nil = auto-calculated)
 #   rope-scaling-type: yarn              # RoPE scaling: none, linear, yarn
@@ -108,60 +137,34 @@ version: 2
 #   template: qwen3.jinja                # Jinja template file override (from templates dir)
 #   tensor-buft-overrides: [all-ffn]     # Force tensors to CPU: all-ffn, block:N, or regex
 #   tensor-split: [0.6, 0.4]             # Per-device tensor distribution (must match device count)
-#   load-mode: auto                      # Model loading: auto (default), mmap, none, mlock, mmap+mlock, direct-io
 #   yarn-attn-factor: 1.0                # YaRN attention magnitude scaling (nil = default 1.0)
 #   yarn-beta-fast: 32.0                 # YaRN low correction dimension (nil = default 32.0)
 #   yarn-beta-slow: 1.0                  # YaRN high correction dimension (nil = default 1.0)
 #   yarn-ext-factor: 1.0                 # YaRN extrapolation mix factor (nil = auto, 0 = disable)
 #   yarn-orig-ctx: 32768                 # Original training context size (nil = from model)
 #
-#   # Mixture of Experts (MoE) tensor placement (nested):
-#   moe:
-#     mode: experts_cpu                  # auto, experts_cpu, experts_gpu, keep_top_n, custom
-#     keep-experts-top-n: 4              # Keep experts on GPU for top N layers (only when mode: keep_top_n)
-#
-#   # Fixed load-time LoRA adapters. Set exactly one of id or path per entry.
-#   # An id omits .gguf and resolves under <base-path>/lora; path is absolute.
-#   # Kronk does not download adapter files. Scale defaults to 1.0.
-#   adapters:
-#     - id: org/support                  # Resolves to <base-path>/lora/org/support.gguf
-#       scale: 1.0                       # Finite non-negative scale, fixed until model reload
-#     - path: /opt/adapters/concise.gguf # Existing llama.cpp-compatible adapter GGUF
-#       scale: 0.5
-#
-#   # Speculative decoding (nested). Set model-id for a separate draft GGUF
-#   # (requires nseq-max: 1); omit model-id and set only ndraft to override the
-#   # draft-token count for an auto-detected MTP head on the target.
-#   draft-model:
-#     model-id: org/Draft-Model.Q8_0     # Draft model id (separate-GGUF drafter; requires nseq-max: 1)
-#     ndraft: 5                          # Tokens to draft per step (separate-GGUF default 5, MTP default 3)
-#     devices: [CUDA0]                   # Devices for the draft model
-#     main-gpu: 0                        # Primary GPU index for the draft model
-#     ngpu-layers: 0                     # GPU layers for the draft model (0 = all)
-#     tensor-split: [1.0]                # Per-device tensor split for the draft model
-#
 #   # Per-request default sampling parameters (nested):
 #   sampling-parameters:
+#     dry_allowed_length: 2              # DRY allowed sequence length
+#     dry_base: 1.75                     # DRY repetition penalty base
+#     dry_multiplier: 0.0                # DRY repetition penalty multiplier
+#     dry_penalty_last_n: -1             # DRY tokens to scan (-1 = context size)
+#     enable_thinking: false             # Thinking mode for supported models (default: true)
+#     frequency_penalty: 0.0             # Frequency penalty
+#     grammar: ""                        # GBNF grammar constraint
+#     max_tokens: 0                      # Max tokens to generate (0 = until stop/EOS)
+#     min_p: 0.0                         # Min-P sampling
+#     presence_penalty: 0.0              # Presence penalty
+#     reasoning_effort: low              # Top-level request parameter: none, minimal, low, medium, or high
+#     repeat_last_n: 64                  # Tokens to consider for repetition penalty
+#     repeat_penalty: 1.0                # Repetition penalty
+#     seed: 42                           # Sampling seed (unset = random)
 #     temperature: 0.6                   # Sampling temperature
 #     top_k: 20                          # Top-K sampling
 #     top_p: 0.95                        # Top-P (nucleus) sampling
-#     min_p: 0.0                         # Min-P sampling
-#     seed: 42                           # Sampling seed (unset = random)
-#     max_tokens: 0                      # Max tokens to generate (0 = until stop/EOS)
-#     repeat_penalty: 1.0                # Repetition penalty
-#     repeat_last_n: 64                  # Tokens to consider for repetition penalty
-#     dry_multiplier: 0.0                # DRY repetition penalty multiplier
-#     dry_base: 1.75                     # DRY repetition penalty base
-#     dry_allowed_length: 2              # DRY allowed sequence length
-#     dry_penalty_last_n: -1             # DRY tokens to scan (-1 = context size)
+#     xtc_min_keep: 1                    # XTC minimum tokens to keep
 #     xtc_probability: 0.0               # XTC sampling probability
 #     xtc_threshold: 0.1                 # XTC sampling threshold
-#     xtc_min_keep: 1                    # XTC minimum tokens to keep
-#     frequency_penalty: 0.0             # Frequency penalty
-#     presence_penalty: 0.0              # Presence penalty
-#     enable_thinking: false             # Thinking mode for supported models (default: true)
-#     reasoning_effort: low              # Top-level request parameter: none, minimal, low, medium, or high
-#     grammar: ""                        # GBNF grammar constraint
 
 # ==============================================================================
 # BUCKY MODEL OPTIONS
@@ -178,7 +181,7 @@ version: 2
 #     queue-depth: 4                      # Requests allowed to wait (default: 0)
 #     admission-timeout: 3m              # Maximum wait for capacity (default: 3m)
 #     nthreads: 0                         # Native threads per operation (0 = whisper.cpp default)
-#
+
 # ==============================================================================
 # MALINA MODEL OPTIONS
 #
@@ -200,7 +203,7 @@ version: 2
 kms: {}
 
 models:
-  # nseq-max: 1  ~87GB VRAM
+  # nseq-max: 1  ~89GB VRAM
   unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT:
     nseq-max: 1
     context-window: 131072
@@ -210,17 +213,18 @@ models:
       max_tokens: 16384
       reasoning_effort: low
 
-  # nseq-max: 1  ~54GB VRAM
-  # nseq-max: 2  ~82GB VRAM
+  # nseq-max: 1  ~63GB VRAM
+  # nseq-max: 2  ~93GB VRAM
   unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
+    nseq-max: 2
     context-window: 131072
     chat-template-kwargs:
       preserve_thinking: true
     sampling-parameters:
       max_tokens: 16384
 
-  # nseq-max: 1  ~44GB VRAM
-  # nseq-max: 2  ~47GB VRAM
+  # nseq-max: 1  ~49GB VRAM
+  # nseq-max: 2  ~56GB VRAM
   ornith-ai/Ornith-1.5-35B-Q8_0/AGENT:
     nseq-max: 2
     context-window: 262144
@@ -229,8 +233,18 @@ models:
     sampling-parameters:
       max_tokens: 16384
 
-  # nseq-max: 1  ~40GB VRAM
-  # nseq-max: 2  ~43GB VRAM
+  # nseq-max: 1  ~43GB VRAM
+  # nseq-max: 2  ~53GB VRAM
+  ukisai/Swift-Qwen3.8-27B-Q8_0/AGENT:
+    nseq-max: 2
+    context-window: 131072
+    chat-template-kwargs:
+      preserve_thinking: true
+    sampling-parameters:
+      max_tokens: 16384
+
+  # nseq-max: 1  ~45GB VRAM
+  # nseq-max: 2  ~48GB VRAM
   unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
     nseq-max: 2
     context-window: 131072
@@ -239,17 +253,13 @@ models:
     sampling-parameters:
       max_tokens: 16384
 
-  # nseq-max: 1  ~26GB VRAM
-  # nseq-max: 2  ~35GB VRAM
+  # nseq-max: 1  ~33GB VRAM
+  # nseq-max: 2  ~43GB VRAM
   unsloth/Qwen3.8-27B-UD-Q4_K_XL/AGENT:
     nseq-max: 2
     context-window: 131072
     sampling-parameters:
       max_tokens: 16384
-      temperature: 0.7
-      top_p: 0.80
-      top_k: 20
-      enable_thinking: false
 
   # nseq-max: 1  ~9GB VRAM
   ornith-ai/Ornith-1.5-9B-Q4_K_M/AGENT:

@@ -90,7 +90,7 @@ const (
 	ModelStatusLoading = kronkpool.ModelStatusLoading
 )
 
-// HumanBytes formats a byte count using decimal (SI) units.
+// HumanBytes formats a byte count using binary (IEC) units.
 func HumanBytes(n int64) string {
 	return kronkpool.HumanBytes(n)
 }

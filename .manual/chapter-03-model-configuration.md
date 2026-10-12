@@ -352,6 +352,51 @@ existing configuration as follows:
 | `use-mmap: false` | `load-mode: none` |
 | `use-direct-io: true` | `load-mode: direct-io` |
 
+#### Lazy tensor reading
+
+`lazy-mode` controls on-demand reading of tensors that llama.cpp marks eligible,
+such as the per-layer token embedding tables in Qwen4Exp and Gemma4. It is not
+whole-model lazy loading; models without eligible tensors are unaffected.
+
+| Value | Behavior |
+| ----- | -------- |
+| `auto` | Lazy-read eligible tensors larger than 4 GiB when all selected devices support mmap; this is the default |
+| `off` | Read eligible tensors up front like ordinary weights |
+| `on` | Request lazy reading for eligible tensors regardless of size; requires platform mmap support |
+
+```yaml
+some-provider/some-model:
+  lazy-mode: on
+  load-mode: none
+```
+
+On Metal, mmap can bring the entire table into RAM through an overlapping GPU
+mapping even when the log says `lazy read enabled`. Use `load-mode: none` to
+avoid that overlap unless the table is isolated in its own shard. Eligible lazy
+tensors remain file-mapped even with `load-mode: none`; the other weights use
+ordinary loading. Accessed pages may remain cached, and disk reads can reduce
+inference speed. Verify residency and performance with the actual model.
+
+The setting applies to the target and any separate or companion draft model.
+The Go SDK equivalent is `model.WithLazyMode(model.LazyModeOn)`, with
+`LazyModeAuto` and `LazyModeOff` as the other choices.
+
+Kronk's calculator replaces an effective lazy table's full encoded size with a
+page-rounded working-set estimate: two physical batches per native context,
+with at least 256 MiB reserved for accessed pages, capped at the table size.
+Gemma4 gathers one all-layer row per token; Qwen4Exp gathers multiple n-gram
+head rows. The table remains host memory, not additional GPU workspace.
+The same result feeds fitting, admission reservations, and the resource screen.
+
+Full-table accounting remains when lazy reading is off or uncertain, when
+`auto` does not meet its size/device requirements, with mlock, or when Metal
+mmap may overlap a table that is not alone in its shard. The current device
+capability check verifies CPU and Metal; other backends conservatively retain
+the full table in `auto` mode. Explicit `on` only needs platform mmap support.
+This is not a hard residency cap: clean mapped pages may accumulate or be
+reclaimed by the operating system. Validate actual memory and latency under
+representative prompts before relying on the additional admission headroom.
+
 #### KV cache and operations
 
 The KV cache and host tensor operations are offloaded to the GPU by default:
@@ -439,11 +484,13 @@ See
 [Chapter 4](https://www.kronkai.com/manual#chapter-4-batch-processing) for request scheduling and the
 differences between model types.
 
-One setting controls prompt batching and sequence-batch token capacity:
+Text scheduling, image capacity, and image preprocessing are configured separately:
 
 | Key | Load-time default | Purpose |
 | --- | ----------------- | ------- |
 | `prefill-batch-size` | `2048` | Generation prefill contribution per decode iteration, or aggregate embedding/reranking tokens per native sequence batch |
+| `image-batch-token-capacity` | `0` (no additional floor) | Independent native capacity floor for image chunks; does not change text scheduling or image detail |
+| `image-token-budget` | Unset (projector default) | Explicit preprocessing budget for supported projectors; lowering it may reduce image resolution and detail |
 
 For generation models, a larger value can move a long prompt to generation in
 fewer decode calls, but requires larger compute buffers and each call runs
@@ -476,12 +523,41 @@ the current owner in the same logical decode. Non-MTP may split that tray into
 physical ubatches; MTP keeps it in one physical batch so dense NextN rows retain
 their expected mapping.
 
+For generation models with a projector, the native base capacity is
+`max(prefill-batch-size, image-batch-token-capacity, image-token-budget)`
+(an unset image budget contributes zero). Kronk then applies the
+generation reserve and MTP rules above. The text scheduler still contributes
+at most `prefill-batch-size` tokens per iteration.
+
+There are no model-family image-capacity defaults. Supply a non-negative
+`image-batch-token-capacity` when complete non-causal image chunks need more
+room than text prefill provides. For example, `prefill-batch-size: 512`,
+`image-batch-token-capacity: 1120`, and `nseq-max: 2` produce `NUBatch: 1120`
+and `NBatch: 1122` without MTP. Text prefill remains `512`, and the projector's
+image processing is unchanged. In the SDK, use
+`model.WithImageBatchTokenCapacity(value)`.
+
+Only an explicit positive `image-token-budget` is passed to MTMD as
+`ImageMaxTokens`; neither text prefill nor image capacity silently sets it.
+Lowering this budget can reduce image resolution and detail. When omitted,
+Kronk preserves the projector's default. Not all projectors support the option
+(for example, Gemma 3's fixed-resolution path does not), and resizing alignment
+can make the final chunk count differ from the budget. Very small budgets may
+also conflict with a projector's minimum and fail initialization. In the SDK,
+use `model.WithImageTokenBudget(value)`. An explicit budget also contributes
+to native capacity, so a separate capacity setting is unnecessary unless more
+room is needed. Increasing capacity does not undo a smaller preprocessing budget.
+
+Non-causal media chunks must fit completely in one physical decode. Kronk
+checks actual chunk sizes before native decoding in both cached and uncached
+paths. An oversized chunk returns an error with the required capacity instead
+of being split or aborting the process. Increase `image-batch-token-capacity`
+and reload the model to process that chunk.
+
 The `status[resolved]` `batch-sizing` debug log reports the configured prefill
-size, generation reserve, effective internal sizes, and MTP state. The Slots
-diagnostic screen also displays effective `NBatch / NUBatch` as read-only
-runtime values. Multimodal encoders may require an entire media-token chunk to
-fit in one physical batch, so do not lower `prefill-batch-size` for a multimodal
-model without testing media input.
+size, image capacity, explicit image budget (`0` when unset), generation reserve, effective internal sizes, and MTP
+state. The Slots diagnostic screen also displays effective `NBatch / NUBatch`
+as read-only runtime values.
 
 ![How two requests move from prefill to generation and how non-MTP and MTP batch sizing supports them](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/08-wait-for-execution-slot.svg)
 
@@ -515,6 +591,36 @@ weights are activated. A dense layer uses its complete feed-forward network for
 every token. An MoE layer stores many expert feed-forward networks and uses a
 learned router to select a small subset independently for each token and layer.
 All experts remain in memory even though only the selected experts compute.
+
+**Experimental GPU expert cache:** `moe.cache-size` reserves additional GPU
+storage for frequently used experts whose original weights remain in host
+memory. The value is bytes per native context; it is one global budget shared
+across eligible GPUs, not a budget per GPU or per sequence slot. Unset or zero
+leaves the llama.cpp default unchanged (currently disabled). Non-MoE models
+ignore this setting.
+
+```yaml
+my-moe-model:
+  moe:
+    mode: experts_cpu
+    cache-size: 1073741824 # 1 GiB of additional GPU expert-cache capacity
+```
+
+The cache primarily targets small-batch generation (up to 32 tokens per
+microbatch when capacity permits). Multiple GPUs are supported; tensor
+parallelism (`split-mode: tensor`) is not. Native pipeline parallelism is
+disabled when caching is requested. A cache too small for the selected experts
+can fail context initialization. Models without eligible host-resident experts
+may run without an active cache. Benchmark before assuming a speedup.
+
+All three BUI calculators (standalone, model details, and catalog details)
+expose **MoE Expert Cache (GiB)** for MoE models and export `cache-size` in
+bytes. The calculator and pool reserve this budget in addition to model
+weights, KV, and compute memory. On unified-memory systems it increases the
+shared physical-memory footprint; original host weights are not deducted.
+Per-GPU allocation is an estimate: actual cache placement follows eligible
+layers and may use free-memory proportions. Retain backend/host-metadata
+headroom beyond the cache budget.
 
 Hybrid describes a separate design choice: which sequence-processing mechanism
 each layer uses. A hybrid stack can pair those mechanisms with dense
@@ -750,7 +856,10 @@ is normally supplied by analysis or by the load-time defaults.
 | `queue-depth` | Non-negative integer, default `2` | Admitted request layers: `1` allows slot occupants only; `2` adds one waiting layer |
 | `imc-session-capacity` | Positive integer; derived when omitted | Reusable IMC conversation identities retained in RAM or on disk |
 | `prefill-batch-size` | Positive token count, default `2048` | Generation prefill contribution per decode iteration, or aggregate embedding/reranking tokens per native sequence batch |
+| `image-batch-token-capacity` | Non-negative token count, default `0` | Image-capacity floor for native generation batches; does not change image detail |
+| `image-token-budget` | Positive token count up to `2147483647`; unset by default | Explicit projector preprocessing budget; may reduce image detail; also contributes to native capacity |
 | `ngpu-layers` | `-1`, `0`, or a positive count | CPU/GPU layer placement |
+| `lazy-mode` | `auto`, `off`, `on` | On-demand reading of eligible tensors; default `auto` |
 | `load-mode` | `auto`, `mmap`, `none`, `mlock`, `mmap+mlock`, `direct-io` | Model weight loading strategy |
 | `offload-kqv` | Boolean | Place KV cache on GPU when true |
 | `op-offload` | Boolean | Place host tensor operations on GPU when true |

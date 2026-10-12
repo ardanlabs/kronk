@@ -13,6 +13,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/hf"
 	kronkmodel "github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
+	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
@@ -99,6 +100,8 @@ func (a *app) showCatalog(ctx context.Context, r *http.Request) web.Encoder {
 	}
 
 	cfg := vram.Config{
+		WeightLoading:     (kronkmodel.Config{}).VRAMWeightLoading(devices.List(devices.WithIncludeMemory(false))),
+		ComputeBackend:    devices.Backend(),
 		ContextWindow:     vram.ContextWindow128K,
 		BytesPerElement:   vram.BytesPerElementF16,
 		Slots:             vram.Slots1,

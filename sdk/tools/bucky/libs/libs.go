@@ -13,7 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -410,16 +409,15 @@ func (lib *Libs) List() ([]VersionTag, error) {
 //	1 | set                    | any          | any                      | install the override version
 //	2 | unset                  | true         | any                      | install latest from bucky-builder
 //	3 | unset                  | false        | none                     | install defaultVersion
-//	4 | unset                  | false        | <= defaultVersion        | install defaultVersion
-//	5 | unset                  | false        | >  defaultVersion        | keep on-disk version
+//	4 | unset                  | false        | any                      | install defaultVersion
 //
 // Additional rules independent of the matrix:
 //   - A read-only install path (user-supplied directory without a
 //     version.json) is always honored as-is; nothing is downloaded or
 //     mutated. See WithLibPath.
-//   - When the network is unreachable the currently installed version is
-//     returned. If nothing is installed and no network is available the
-//     call fails.
+//   - When the network is unreachable, only an installation matching the
+//     requested version and platform is returned. An incompatible or unknown
+//     installation is not accepted merely because its files exist.
 //   - If the desired version is already installed for the active (arch,
 //     os, processor) triple, no download occurs.
 //   - WithValidation(true) verifies the selected installed bundle before
@@ -452,6 +450,13 @@ func (lib *Libs) DownloadSelected(ctx context.Context, log Logger, versionOverri
 		if err != nil {
 			return VersionTag{}, fmt.Errorf("download: no network available: %w", err)
 		}
+		requested := defaultVersion
+		if versionOverride != "" {
+			requested = versionOverride
+		}
+		if vt.Version != requested || vt.Arch != lib.arch || vt.OS != lib.os || vt.Processor != lib.processor {
+			return VersionTag{}, fmt.Errorf("download: no network available and installed bundle does not match %s for %s/%s/%s", requested, lib.os, lib.arch, lib.processor)
+		}
 		log(ctx, "download-libraries: no network available, using current version", "current", vt.Version)
 		return vt, nil
 	}
@@ -465,7 +470,7 @@ func (lib *Libs) DownloadSelected(ctx context.Context, log Logger, versionOverri
 	if versionOverride == "" && allowUpgrade {
 		v, err := download.WhisperLatestVersion()
 		if err != nil {
-			if installed.Version == "" {
+			if installed.Version != defaultVersion || installed.Arch != lib.arch || installed.OS != lib.os || installed.Processor != lib.processor {
 				return VersionTag{}, fmt.Errorf("download-libraries: error retrieving latest version: %w", err)
 			}
 
@@ -475,7 +480,7 @@ func (lib *Libs) DownloadSelected(ctx context.Context, log Logger, versionOverri
 		latest = v
 	}
 
-	version := chooseVersion(versionOverride, allowUpgrade, installed.Version, latest, defaultVersion)
+	version := chooseVersion(versionOverride, allowUpgrade, latest, defaultVersion)
 
 	log(ctx, "download-libraries: check whisper.cpp installation", "arch", lib.arch, "os", lib.os, "processor", lib.processor, "requested", version, "current", installed.Version)
 
@@ -490,9 +495,8 @@ func (lib *Libs) DownloadSelected(ctx context.Context, log Logger, versionOverri
 // DownloadFor downloads the supplied version into the canonical
 // install directory for the supplied (arch, os, processor) triple
 // under the libraries Root. If version is empty, the Kronk-pinned
-// defaultVersion is used unless a newer version is already installed,
-// in which case that newer version is kept. This mirrors the llama
-// backend's DownloadFor behavior.
+// defaultVersion is used. A numerically newer version is not evidence of
+// compatibility with the bindings in this release.
 func (lib *Libs) DownloadFor(ctx context.Context, log Logger, arch string, opSys string, processor string, version string) (VersionTag, error) {
 	if lib.readOnly {
 		return VersionTag{}, fmt.Errorf("libs: download-for: %w", ErrReadOnly)
@@ -502,12 +506,7 @@ func (lib *Libs) DownloadFor(ctx context.Context, log Logger, arch string, opSys
 	}
 
 	if version == "" {
-		installed, _ := lib.InstalledVersion()
-		if installed.Version != "" && versionGreater(installed.Version, defaultVersion) {
-			version = installed.Version
-		} else {
-			version = defaultVersion
-		}
+		version = defaultVersion
 	}
 
 	return lib.downloadInto(ctx, log, installPathFor(lib.root, arch, opSys, processor), arch, opSys, processor, version)
@@ -750,6 +749,19 @@ func resolveProcessor(opt string, fallback string) (string, error) {
 			return fallback, nil
 		}
 	}
+	// The shared llama enum spells CUDA majors with a hyphen; Bucky does not.
+	if value := os.Getenv("KRONK_PROCESSOR"); value != "" && value != "rocm" {
+		switch value {
+		case "cuda-12":
+			value = "cuda12"
+		case "cuda-13":
+			value = "cuda13"
+		}
+		if _, err := download.ParseProcessor(value); err != nil {
+			return "", fmt.Errorf("libs: resolve-processor: %w", err)
+		}
+		return value, nil
+	}
 	p, err := defaults.Processor("")
 	if err != nil {
 		return "", err
@@ -764,14 +776,12 @@ func resolveProcessor(opt string, fallback string) (string, error) {
 //
 //   - override: explicit version pin (lib.version), or "" if unset.
 //   - allowUpgrade: whether to track the latest published version.
-//   - installed: the version currently on disk, or "" if nothing is
-//     installed (or version.json is unreadable).
 //   - latest: the latest version reported by bucky-builder; only
 //     consulted when override is unset and allowUpgrade is true.
 //   - def: the well-known default version baked into Kronk.
 //
 // Returns the version string that should end up installed.
-func chooseVersion(override string, allowUpgrade bool, installed string, latest string, def string) string {
+func chooseVersion(override string, allowUpgrade bool, latest string, def string) string {
 	switch {
 	case override != "":
 		// Matrix row 1: an explicit override always wins.
@@ -783,67 +793,10 @@ func chooseVersion(override string, allowUpgrade bool, installed string, latest 
 	case allowUpgrade:
 		// Matrix row 2: track the latest published version.
 		return latest
-	case installed != "" && versionGreater(installed, def):
-		// Matrix row 5: never downgrade past what is on disk.
-		return installed
 	default:
-		// Matrix rows 3-4: pin to the well-known default version.
+		// Matrix rows 3-4: pin to the known-compatible authenticated version.
 		return def
 	}
-}
-
-// versionGreater reports whether v1 is greater than v2. Versions are
-// expected to be whisper.cpp release tags like "v1.8.4". A single
-// leading non-digit character (covering "v<num>" tags) is stripped and
-// the remaining dot-separated segments are compared one at a time:
-// numeric segments compare numerically, non-numeric segments fall back
-// to a lexicographic comparison of the raw segment, and a missing
-// segment is treated as 0 (so "v1.8" is less than "v1.8.1"). This ranks
-// different-shape tags such as "v1.10.0" above "v1.8.6" correctly.
-func versionGreater(v1, v2 string) bool {
-	if v1 == "" || v2 == "" {
-		return false
-	}
-
-	stripPrefix := func(s string) string {
-		s = bareVersion(s)
-		if len(s) > 0 && (s[0] < '0' || s[0] > '9') {
-			return s[1:]
-		}
-		return s
-	}
-
-	s1 := strings.Split(stripPrefix(v1), ".")
-	s2 := strings.Split(stripPrefix(v2), ".")
-
-	for i := range max(len(s1), len(s2)) {
-		a, b := "0", "0"
-		if i < len(s1) {
-			a = s1[i]
-		}
-		if i < len(s2) {
-			b = s2[i]
-		}
-
-		if a == b {
-			continue
-		}
-
-		// Numeric segments compare numerically; otherwise fall back to a
-		// lexicographic comparison of the raw segments.
-		if i1, e1 := strconv.Atoi(a); e1 == nil {
-			if i2, e2 := strconv.Atoi(b); e2 == nil {
-				if i1 != i2 {
-					return i1 > i2
-				}
-				continue
-			}
-		}
-
-		return a > b
-	}
-
-	return false
 }
 
 func bareVersion(version string) string {

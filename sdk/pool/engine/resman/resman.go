@@ -273,7 +273,7 @@ func (m *Manager) Usage() Usage {
 //
 // RAM is the caller's concern; VRAMFeasible only reasons about GPU memory.
 func (m *Manager) VRAMFeasible(req PlanRequest) error {
-	if req.VRAMBytes <= 0 {
+	if req.VRAMBytes <= 0 && len(req.DeviceBytes) == 0 {
 		return nil
 	}
 
@@ -300,6 +300,10 @@ func (m *Manager) planLocked(req PlanRequest, avail []int64) (LoadPlan, error) {
 		Key:       req.Key,
 		VRAMBytes: req.VRAMBytes,
 		RAMBytes:  req.RAMBytes,
+	}
+
+	if len(req.DeviceBytes) > 0 {
+		return m.planDevicesLocked(req, plan, avail)
 	}
 
 	if req.VRAMBytes == 0 {
@@ -331,13 +335,8 @@ func (m *Manager) planLocked(req PlanRequest, avail []int64) (LoadPlan, error) {
 		return plan, nil
 	}
 
-	// Unpinned but splittable: account the request across ALL GPUs. This
-	// mirrors llama.cpp's default multi-GPU behavior — when the user does
-	// not pin devices and the split mode is not "none", the model is
-	// auto-distributed across every card (layer/row split). Because the
-	// load path re-resolves config without our LoadPlan, llama.cpp will
-	// split even a model that would fit on one card, so accounting it as
-	// split keeps the resman's view aligned with the real placement.
+	// Unpinned but splittable: account the aggregate request across all GPUs.
+	// Callers with placement-aware estimates use DeviceBytes instead.
 	if req.AllowSplit && len(m.devices) > 1 {
 		splitReq := req
 		splitReq.Devices = make([]string, len(m.devices))
@@ -441,6 +440,40 @@ func (m *Manager) planSplitLocked(req PlanRequest, plan LoadPlan, avail []int64)
 		}
 
 		plan.Per = append(plan.Per, DeviceAllocation{Index: idx, Name: m.devices[idx].Name, Bytes: bytes})
+	}
+
+	return plan, nil
+}
+
+// planDevicesLocked validates calculator-provided allocations rather than
+// deriving a second placement from the aggregate VRAM estimate.
+func (m *Manager) planDevicesLocked(req PlanRequest, plan LoadPlan, avail []int64) (LoadPlan, error) {
+	if len(req.DeviceBytes) != len(req.Devices) {
+		return LoadPlan{}, fmt.Errorf("plan: devices[%d] != device-bytes[%d]: %w", len(req.Devices), len(req.DeviceBytes), ErrInvalidPlan)
+	}
+
+	seen := make(map[int]bool, len(req.Devices))
+	var assigned int64
+	for i, name := range req.Devices {
+		idx, ok := m.deviceByName[name]
+		if !ok {
+			return LoadPlan{}, fmt.Errorf("plan: device[%s]: %w", name, ErrUnknownDevice)
+		}
+		bytes := req.DeviceBytes[i]
+		if seen[idx] || bytes < 0 || bytes > req.VRAMBytes-assigned {
+			return LoadPlan{}, fmt.Errorf("plan: invalid allocation for device[%s]: %w", name, ErrInvalidPlan)
+		}
+		seen[idx] = true
+		assigned += bytes
+		plan.Per = append(plan.Per, DeviceAllocation{Index: idx, Name: name, Bytes: bytes})
+	}
+	if assigned != req.VRAMBytes {
+		return LoadPlan{}, fmt.Errorf("plan: device bytes[%d] != vram[%d]: %w", assigned, req.VRAMBytes, ErrInvalidPlan)
+	}
+	for _, allocation := range plan.Per {
+		if !fits(avail, allocation.Index, allocation.Bytes) {
+			return LoadPlan{}, m.noCapacityErr(allocation.Name, allocation.Index, allocation.Bytes, avail)
+		}
 	}
 
 	return plan, nil

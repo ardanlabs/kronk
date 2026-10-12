@@ -20,17 +20,19 @@ function GpuLayersSlider({
   onGpuLayersChange?: (v: number) => void;
   variant?: 'form' | 'compact';
 }) {
-  const layers = gpuLayers ?? blockCount;
+  const totalLayers = blockCount + 1;
+  const layers = gpuLayers ?? totalLayers;
+  const cpuBlocks = totalLayers - layers;
 
   const label = variant === 'compact'
-    ? `Layers on GPU (${layers}/${blockCount})`
-    : `Layers on GPU (${layers} of ${blockCount})`;
+    ? `Layers on GPU (${layers}/${totalLayers})`
+    : `Layers on GPU (${layers} of ${totalLayers})`;
 
   const hint = layers === 0
     ? 'All layers on CPU (slowest, saves most VRAM)'
-    : layers >= blockCount
+    : layers >= totalLayers
       ? 'All layers on GPU (fastest)'
-      : `${layers} layers on GPU, ${blockCount - layers} on CPU — every token pays a penalty for CPU layers`;
+      : `Output and ${layers - 1} transformer blocks on GPU, ${cpuBlocks} block${cpuBlocks === 1 ? '' : 's'} on CPU`;
 
   if (variant === 'compact') {
     return (
@@ -42,7 +44,7 @@ function GpuLayersSlider({
           id="vram-compact-gpuLayers"
           type="range"
           min={0}
-          max={blockCount}
+          max={totalLayers}
           value={layers}
           onChange={(e) => onGpuLayersChange?.(Number(e.target.value))}
           className="form-range"
@@ -61,7 +63,7 @@ function GpuLayersSlider({
         id="vram-gpuLayers"
         type="range"
         min={0}
-        max={blockCount}
+        max={totalLayers}
         value={layers}
         onChange={(e) => onGpuLayersChange?.(Number(e.target.value))}
         style={{ width: '100%', marginTop: 6 }}
@@ -225,6 +227,8 @@ interface VRAMControlsProps {
   onGpuLayersChange?: (v: number) => void;
   expertLayersOnGPU?: number;
   onExpertLayersOnGPUChange?: (v: number) => void;
+  moeCacheSize?: number;
+  onMoECacheSizeChange?: (v: number) => void;
   kvCacheOnCPU?: boolean;
   onKvCacheOnCPUChange?: (v: boolean) => void;
   hasSWA?: boolean;
@@ -268,6 +272,7 @@ export default function VRAMControls({
   isMoE, blockCount,
   gpuLayers, onGpuLayersChange,
   expertLayersOnGPU, onExpertLayersOnGPUChange,
+  moeCacheSize, onMoECacheSizeChange,
   kvCacheOnCPU, onKvCacheOnCPUChange,
   hasSWA, swaFull, onSwaFullChange,
   deviceCount, onDeviceCountChange,
@@ -293,9 +298,9 @@ export default function VRAMControls({
       return;
     }
     if (blockCount == null || blockCount <= 0 || !isMoE) return;
-    if ((gpuLayers ?? blockCount) >= blockCount && (expertLayersOnGPU ?? blockCount) < blockCount) {
+    if ((gpuLayers ?? blockCount + 1) >= blockCount + 1 && (expertLayersOnGPU ?? blockCount) < blockCount) {
       setOffloadStrategy('expert');
-    } else if ((gpuLayers ?? blockCount) < blockCount && expertLayersOnGPU === gpuLayers) {
+    } else if ((gpuLayers ?? blockCount + 1) < blockCount + 1 && expertLayersOnGPU === Math.max(0, (gpuLayers ?? blockCount + 1) - 1)) {
       setOffloadStrategy('layer');
     }
   }, [blockCount, isMoE, gpuLayers, expertLayersOnGPU]);
@@ -306,18 +311,33 @@ export default function VRAMControls({
     if (blockCount == null || blockCount <= 0) return;
     if (s === 'layer') {
       // Layer offloading: expert layers follow GPU layers.
-      onExpertLayersOnGPUChange?.(gpuLayers ?? blockCount);
+      onExpertLayersOnGPUChange?.(Math.max(0, (gpuLayers ?? blockCount + 1) - 1));
     } else {
       // Expert offloading: all layers stay on GPU, keep current expert layers.
-      onGpuLayersChange?.(blockCount);
+      onGpuLayersChange?.(blockCount + 1);
     }
   };
 
   // For layer offloading, keep expert layers synced with GPU layers.
   const handleLayerOffloadGpuChange = (v: number) => {
     onGpuLayersChange?.(v);
-    onExpertLayersOnGPUChange?.(v);
+    onExpertLayersOnGPUChange?.(Math.max(0, v - 1));
   };
+
+  const moeCacheControl = isMoE && (
+    <div className={variant === 'compact' ? 'control-field' : 'playground-sweep-param'}>
+      <FieldLabel htmlFor={`vram-${variant}-moe-cache`} tooltipKey="moeCacheSize">MoE Expert Cache (GiB)</FieldLabel>
+      <input
+        id={`vram-${variant}-moe-cache`}
+        type="number"
+        min="0"
+        step="0.5"
+        value={(moeCacheSize ?? 0) / (1024 ** 3)}
+        onChange={(e) => onMoECacheSizeChange?.(Math.round(Math.max(0, Number(e.target.value)) * (1024 ** 3)))}
+        className={variant === 'compact' ? 'form-input' : 'playground-sweep-param-values'}
+      />
+    </div>
+  );
 
   if (variant === 'compact') {
     return (
@@ -374,6 +394,7 @@ export default function VRAMControls({
               ))}
             </select>
           </div>
+          {moeCacheControl}
           <CompactAdvancedToggle
             open={compactAdvancedOpen}
             onToggle={() => setCompactAdvancedOpen(!compactAdvancedOpen)}
@@ -488,6 +509,8 @@ export default function VRAMControls({
         </select>
       </div>
 
+      {moeCacheControl}
+
       {showHardwareOverrides && (
         <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--color-gray-200)', paddingTop: '16px', marginTop: '8px' }}>
           <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 600 }}>Hardware Configuration</h4>
@@ -514,7 +537,7 @@ export default function VRAMControls({
 
             <div className="playground-sweep-param">
               <label className="playground-sweep-param-toggle" htmlFor="vram-gpuMemOverride">
-                Total GPU Memory (GB)<ParamTooltip text="Total GPU memory across all selected GPUs. Leave empty to auto-detect from this server." />
+                Total GPU Memory (GiB)<ParamTooltip text="Total GPU memory across all selected GPUs. Leave empty to auto-detect from this server." />
               </label>
               <input
                 id="vram-gpuMemOverride"
@@ -522,11 +545,11 @@ export default function VRAMControls({
                 value={gpuMemoryOverrideGB ?? ''}
                 onChange={(e) => onGpuMemoryOverrideGBChange?.(e.target.value)}
                 className="playground-sweep-param-values"
-                placeholder={detectedGpuTotalBytes ? `Auto-detect (${(detectedGpuTotalBytes / (1024 * 1024 * 1024)).toFixed(1)} GB)` : 'e.g. 24'}
+                placeholder={detectedGpuTotalBytes ? `Auto-detect (${(detectedGpuTotalBytes / (1024 * 1024 * 1024)).toFixed(1)} GiB)` : 'e.g. 24'}
                 style={gpuMemoryOverrideInvalid ? { borderColor: 'var(--color-error, #ef5350)' } : undefined}
               />
               {gpuMemoryOverrideInvalid && (
-                <div style={{ fontSize: '11px', color: 'var(--color-error, #ef5350)', marginTop: 2 }}>Enter a positive number in GB</div>
+                <div style={{ fontSize: '11px', color: 'var(--color-error, #ef5350)', marginTop: 2 }}>Enter a positive number in GiB</div>
               )}
               <div style={{ fontSize: '11px', color: 'var(--color-gray-500)', marginTop: 2 }}>
                 Total across all GPUs — assumes even per-GPU capacity
@@ -535,7 +558,7 @@ export default function VRAMControls({
 
             <div className="playground-sweep-param">
               <label className="playground-sweep-param-toggle" htmlFor="vram-sysMemOverride">
-                System Memory (GB)<ParamTooltip text="Total system RAM. Used to check CPU offload feasibility. Leave empty to auto-detect from this server." />
+                System Memory (GiB)<ParamTooltip text="Total system RAM. Used to check CPU offload feasibility. Leave empty to auto-detect from this server." />
               </label>
               <input
                 id="vram-sysMemOverride"
@@ -543,11 +566,11 @@ export default function VRAMControls({
                 value={systemMemoryOverrideGB ?? ''}
                 onChange={(e) => onSystemMemoryOverrideGBChange?.(e.target.value)}
                 className="playground-sweep-param-values"
-                placeholder={detectedSystemRAMBytes ? `Auto-detect (${(detectedSystemRAMBytes / (1024 * 1024 * 1024)).toFixed(1)} GB)` : 'e.g. 64'}
+                placeholder={detectedSystemRAMBytes ? `Auto-detect (${(detectedSystemRAMBytes / (1024 * 1024 * 1024)).toFixed(1)} GiB)` : 'e.g. 64'}
                 style={systemMemoryOverrideInvalid ? { borderColor: 'var(--color-error, #ef5350)' } : undefined}
               />
               {systemMemoryOverrideInvalid && (
-                <div style={{ fontSize: '11px', color: 'var(--color-error, #ef5350)', marginTop: 2 }}>Enter a positive number in GB</div>
+                <div style={{ fontSize: '11px', color: 'var(--color-error, #ef5350)', marginTop: 2 }}>Enter a positive number in GiB</div>
               )}
             </div>
           </div>

@@ -80,21 +80,21 @@ func describePlan(plan resman.LoadPlan) []any {
 	return args
 }
 
-// HumanBytes formats a byte count using decimal (SI) units. The output
-// is short and stable for log scraping (e.g. "12.9GB", "256MB", "0B").
+// HumanBytes formats a byte count using binary (IEC) units. The output
+// is short and stable for log scraping (e.g. "12.9GiB", "256.0MiB", "0B").
 func HumanBytes(n int64) string {
-	const unit = 1000
+	const unit = 1024
 	if n < unit {
 		return fmt.Sprintf("%dB", n)
 	}
 
 	div, exp := int64(unit), 0
-	for x := n / unit; x >= unit; x /= unit {
+	for x := n / unit; x >= unit && exp < 4; x /= unit {
 		div *= unit
 		exp++
 	}
 
-	suffixes := []string{"KB", "MB", "GB", "TB", "PB"}
+	suffixes := []string{"KiB", "MiB", "GiB", "TiB", "PiB"}
 	if exp >= len(suffixes) {
 		exp = len(suffixes) - 1
 	}

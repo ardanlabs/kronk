@@ -21,6 +21,9 @@ type AttentionFacts struct {
 	SWAKeyLength        int64
 	SWAValueLength      int64
 	RecurrentStateBytes int64
+	IndexerKeyLength    int64 // Stored indexer key width, including raw and pooled keys.
+	IndexerCompression  int64 // Tokens per scored pool.
+	IndexerTopK         int64 // Selected token budget.
 	LogitSoftcapping    float64
 }
 

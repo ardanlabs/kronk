@@ -49,6 +49,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">AddParams adds the values from the Params struct into the provided D map. Only non-zero values are added.</p>
             </div>
 
+            <div className="doc-section" id="func-generationbatchsizes">
+              <h4>GenerationBatchSizes</h4>
+              <pre className="code-block">
+                <code>func GenerationBatchSizes(prefillSize, slots, generationRowsPerSlot int, singlePhysicalBatch bool) (int, int)</code>
+              </pre>
+              <p className="doc-description">GenerationBatchSizes derives native batch capacities for both memory planning and runtime configuration. MTP uses one physical batch including rollback rows.</p>
+            </div>
+
             <div className="doc-section" id="func-inityzmaworkarounds">
               <h4>InitYzmaWorkarounds</h4>
               <pre className="code-block">
@@ -127,6 +135,14 @@ export default function DocsSDKModel() {
                 <code>func ParseGGMLType(s string) (GGMLType, error)</code>
               </pre>
               <p className="doc-description">ParseGGMLType parses a string into a GGMLType. Supported values: "f32", "f16", "q4_0", "q4_1", "q5_0", "q5_1", "q8_0", "bf16", "auto".</p>
+            </div>
+
+            <div className="doc-section" id="func-parselazymode">
+              <h4>ParseLazyMode</h4>
+              <pre className="code-block">
+                <code>func ParseLazyMode(s string) (LazyMode, error)</code>
+              </pre>
+              <p className="doc-description">ParseLazyMode parses a string into a LazyMode.</p>
             </div>
 
             <div className="doc-section" id="func-parseloadmode">
@@ -372,10 +388,13 @@ export default function DocsSDKModel() {
 	Devices                    []string // Device names for model execution (e.g., ["CUDA0", "CUDA1"])
 	PtrFlashAttention          *FlashAttentionType
 	PtrIMCSessionCapacity      *int
+	PtrImageBatchTokenCapacity *int
+	PtrImageTokenBudget        *int
 	PtrIncrementalCache        *bool
 	PtrInsecureLogging         *bool
 	JinjaFile                  string
 	JinjaScript                string
+	LazyMode                   LazyMode
 	LoadMode                   LoadMode
 	Log                        applog.Logger
 	PtrMainGPU                 *int
@@ -435,12 +454,15 @@ export default function DocsSDKModel() {
               <p className="doc-description">InsecureLogging enables logging of potentially sensitive data such as message content. This should only be enabled for debugging purposes in non-production environments.</p>
               <p className="doc-description">JinjaFile is the path to the jinja file. This is not required and can be used if you want to override the templated provided by the model metadata.</p>
               <p className="doc-description">JinjaScript is an in-memory jinja template override. It takes precedence over JinjaFile and is intended for request-scoped model configurations.</p>
+              <p className="doc-description">LazyMode controls on-demand reading of tensors marked eligible by llama.cpp. The default is LazyModeAuto. It applies to target and draft models. Effective lazy tables use a working-set allowance in the calculator's reservation. On Metal, mmap may bring an eligible table into RAM despite lazy reading; LoadModeNone can avoid that overlap.</p>
               <p className="doc-description">LoadMode controls how model weights are loaded. The default is LoadModeAuto, which uses mmap when every selected device supports it and otherwise uses ordinary loading. LoadModeNone disables mmap, which can improve tensor placement on multi-socket NUMA systems running MoE models with CPU experts. LoadModeMLock requests resident pages without forcing mmap, LoadModeMMapMLock combines mmap and mlock, and LoadModeDirectIO bypasses the page cache where the platform and filesystem support it.</p>
               <p className="doc-description">Log is the logger to use for model operations.</p>
               <p className="doc-description">MainGPU is the index of the GPU to use as the primary device when SplitMode is SplitModeNone. When nil, the default GPU (usually index 0) is used.</p>
               <p className="doc-description">PtrMoE controls expert-tensor placement for Mixture of Experts models.</p>
               <p className="doc-description">ModelFiles is the path to the model files. This is mandatory to provide.</p>
-              <p className="doc-description">PrefillBatchSize is the maximum number of prompt tokens one prefill owner can contribute to a decode iteration. The default is 2048. Larger values can reduce the number of decode calls needed to reach generation, but each call takes longer before already-generating slots can run again and requires larger compute buffers. Kronk derives llama.cpp's logical and physical batch capacities from this value, the configured slot count, and the generation mode. Multimodal models may require a complete media-token chunk to fit in this capacity.</p>
+              <p className="doc-description">PrefillBatchSize is the maximum number of prompt tokens one prefill owner can contribute to a decode iteration. The default is 2048. Larger values can reduce the number of decode calls needed to reach generation, but each call takes longer before already-generating slots can run again and requires larger compute buffers. Kronk derives llama.cpp's logical and physical batch capacities from this value, the configured slot count, and the generation mode, with ImageBatchTokenCapacity providing an independent media floor.</p>
+              <p className="doc-description">ImageBatchTokenCapacity provides an independent image-capacity floor for native batches without increasing the text prefill contribution or changing image preprocessing. The default is zero (no extra floor). Oversized non-causal image chunks return an error instead of being split.</p>
+              <p className="doc-description">ImageTokenBudget explicitly sets the preprocessing token budget for supported projectors. Lower values can reduce image resolution and detail. When unset, the projector's default is preserved. Explicit values must be positive and also contribute to native batch capacity. Not all projectors honor the budget, and final chunk sizes are still checked before decoding.</p>
               <p className="doc-description">NGpuLayers is the number of model layers to offload to the GPU. When set to 0, all layers are offloaded (default). Set to -1 to keep all layers on CPU. Any positive value specifies the exact number of layers to offload.</p>
               <p className="doc-description">NSeqMax controls concurrency behavior based on model type. For text inference models (including vision/audio), it sets the maximum number of generation slots. For supported embedding and reranking architectures, it sets the maximum sequence width of the sequence-batch engine. Other embedding and reranking architectures use it as the context-pool size. For decision models, it sets the maximum number of work items evaluated together on one context. When set to 0, a default of 1 is used.</p>
               <p className="doc-description">NThreads is the number of threads to use for generation. When unset or set to 0, it defaults to the greater of 4 and runtime.NumCPU().</p>
@@ -745,6 +767,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">IMCSystemCacheDetail is a scalar snapshot of one System cache pool entry.</p>
             </div>
 
+            <div className="doc-section" id="type-lazymode">
+              <h4>LazyMode</h4>
+              <pre className="code-block">
+                <code>{`type LazyMode int32`}</code>
+              </pre>
+              <p className="doc-description">LazyMode controls on-demand reading of tensors marked eligible by llama.cpp.</p>
+            </div>
+
             <div className="doc-section" id="type-loadmode">
               <h4>LoadMode</h4>
               <pre className="code-block">
@@ -790,6 +820,11 @@ export default function DocsSDKModel() {
 	// Only used when Mode is MoEModeKeepTopN. 0 means all experts on CPU.
 	// llama.cpp convention: "top" means highest-numbered layers.
 	PtrKeepExpertsOnGPUForTopNLayers *int \`yaml:"keep-experts-top-n,omitempty"\`
+
+	// PtrCacheSize sets the experimental GPU expert-cache budget in bytes per
+	// context, shared across GPUs. Zero uses llama.cpp's default (disabled).
+	// Original host weights remain resident. Ignored for non-MoE models.
+	PtrCacheSize *int64 \`yaml:"cache-size,omitempty"\`
 }`}</code>
               </pre>
               <p className="doc-description">MoEConfig configures Mixture of Experts tensor placement. When nil, no MoE-specific behavior is applied.</p>
@@ -1358,6 +1393,14 @@ export default function DocsSDKModel() {
               </pre>
             </div>
 
+            <div className="doc-section" id="method-config-batchbasesize">
+              <h4>Config.BatchBaseSize</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) BatchBaseSize() int</code>
+              </pre>
+              <p className="doc-description">BatchBaseSize returns the native capacity base without the generation reserve. The text scheduler continues to use PrefillBatchSize independently.</p>
+            </div>
+
             <div className="doc-section" id="method-config-cachemintokens">
               <h4>Config.CacheMinTokens</h4>
               <pre className="code-block">
@@ -1411,6 +1454,22 @@ export default function DocsSDKModel() {
               </pre>
             </div>
 
+            <div className="doc-section" id="method-config-imagebatchtokencapacity">
+              <h4>Config.ImageBatchTokenCapacity</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) ImageBatchTokenCapacity() int</code>
+              </pre>
+              <p className="doc-description">ImageBatchTokenCapacity returns the explicit image-capacity floor, or zero.</p>
+            </div>
+
+            <div className="doc-section" id="method-config-imagetokenbudget">
+              <h4>Config.ImageTokenBudget</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) ImageTokenBudget() int</code>
+              </pre>
+              <p className="doc-description">ImageTokenBudget returns the explicit preprocessing budget, or zero when unset.</p>
+            </div>
+
             <div className="doc-section" id="method-config-incrementalcache">
               <h4>Config.IncrementalCache</h4>
               <pre className="code-block">
@@ -1430,6 +1489,14 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func (cfg Config) MainGPU() int</code>
               </pre>
+            </div>
+
+            <div className="doc-section" id="method-config-moecachesize">
+              <h4>Config.MoECacheSize</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) MoECacheSize() int64</code>
+              </pre>
+              <p className="doc-description">MoECacheSize returns the requested GPU expert-cache budget in bytes.</p>
             </div>
 
             <div className="doc-section" id="method-config-ngpulayers">
@@ -1509,6 +1576,14 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func (cfg Config) String() string</code>
               </pre>
+            </div>
+
+            <div className="doc-section" id="method-config-vramweightloading">
+              <h4>Config.VRAMWeightLoading</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) VRAMWeightLoading(devs devices.Devices) vram.WeightLoading</code>
+              </pre>
+              <p className="doc-description">VRAMWeightLoading returns the native loading facts shared by planning, diagnostics, and auto-tuning. yzma does not expose device mmap capabilities; only CPU and Metal are verified here. Other backends conservatively retain the full table in auto mode, but explicit on only needs platform support.</p>
             </div>
 
             <div className="doc-section" id="method-config-yarnattnfactor">
@@ -1733,6 +1808,54 @@ export default function DocsSDKModel() {
                 <code>func (t *GGMLType) UnmarshalYAML(unmarshal func(any) error) error</code>
               </pre>
               <p className="doc-description">UnmarshalYAML implements yaml.Unmarshaler to parse string values like "f16".</p>
+            </div>
+
+            <div className="doc-section" id="method-lazymode-marshaljson">
+              <h4>LazyMode.MarshalJSON</h4>
+              <pre className="code-block">
+                <code>func (lm LazyMode) MarshalJSON() ([]byte, error)</code>
+              </pre>
+              <p className="doc-description">MarshalJSON implements json.Marshaler.</p>
+            </div>
+
+            <div className="doc-section" id="method-lazymode-marshalyaml">
+              <h4>LazyMode.MarshalYAML</h4>
+              <pre className="code-block">
+                <code>func (lm LazyMode) MarshalYAML() (any, error)</code>
+              </pre>
+              <p className="doc-description">MarshalYAML implements yaml.Marshaler.</p>
+            </div>
+
+            <div className="doc-section" id="method-lazymode-string">
+              <h4>LazyMode.String</h4>
+              <pre className="code-block">
+                <code>func (lm LazyMode) String() string</code>
+              </pre>
+              <p className="doc-description">String returns the string representation of a LazyMode.</p>
+            </div>
+
+            <div className="doc-section" id="method-lazymode-toyzmatype">
+              <h4>LazyMode.ToYZMAType</h4>
+              <pre className="code-block">
+                <code>func (lm LazyMode) ToYZMAType() llama.LazyMode</code>
+              </pre>
+              <p className="doc-description">ToYZMAType converts to the yzma/llama.cpp LazyMode type.</p>
+            </div>
+
+            <div className="doc-section" id="method-lazymode-unmarshaljson">
+              <h4>LazyMode.UnmarshalJSON</h4>
+              <pre className="code-block">
+                <code>func (lm *LazyMode) UnmarshalJSON(data []byte) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalJSON implements json.Unmarshaler.</p>
+            </div>
+
+            <div className="doc-section" id="method-lazymode-unmarshalyaml">
+              <h4>LazyMode.UnmarshalYAML</h4>
+              <pre className="code-block">
+                <code>func (lm *LazyMode) UnmarshalYAML(unmarshal func(any) error) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalYAML implements yaml.Unmarshaler.</p>
             </div>
 
             <div className="doc-section" id="method-loadmode-marshaljson">
@@ -2408,6 +2531,7 @@ export default function DocsSDKModel() {
               <a href="#functions" className="doc-index-header">Functions</a>
               <ul>
                 <li><a href="#func-addparams">AddParams</a></li>
+                <li><a href="#func-generationbatchsizes">GenerationBatchSizes</a></li>
                 <li><a href="#func-inityzmaworkarounds">InitYzmaWorkarounds</a></li>
                 <li><a href="#func-recurrentstatecopies">RecurrentStateCopies</a></li>
                 <li><a href="#func-registerparser">RegisterParser</a></li>
@@ -2418,6 +2542,7 @@ export default function DocsSDKModel() {
                 <li><a href="#func-verifyartifact">VerifyArtifact</a></li>
                 <li><a href="#func-parsedecisionprotocol">ParseDecisionProtocol</a></li>
                 <li><a href="#func-parseggmltype">ParseGGMLType</a></li>
+                <li><a href="#func-parselazymode">ParseLazyMode</a></li>
                 <li><a href="#func-parseloadmode">ParseLoadMode</a></li>
                 <li><a href="#func-parsemoemode">ParseMoEMode</a></li>
                 <li><a href="#func-newmodel">NewModel</a></li>
@@ -2465,6 +2590,7 @@ export default function DocsSDKModel() {
                 <li><a href="#type-imcsessiondetail">IMCSessionDetail</a></li>
                 <li><a href="#type-imcsessionstate">IMCSessionState</a></li>
                 <li><a href="#type-imcsystemcachedetail">IMCSystemCacheDetail</a></li>
+                <li><a href="#type-lazymode">LazyMode</a></li>
                 <li><a href="#type-loadmode">LoadMode</a></li>
                 <li><a href="#type-logger">Logger</a></li>
                 <li><a href="#type-logprobs">Logprobs</a></li>
@@ -2513,6 +2639,7 @@ export default function DocsSDKModel() {
               <ul>
                 <li><a href="#method-choice-finishreason">Choice.FinishReason</a></li>
                 <li><a href="#method-config-admissiontimeout">Config.AdmissionTimeout</a></li>
+                <li><a href="#method-config-batchbasesize">Config.BatchBaseSize</a></li>
                 <li><a href="#method-config-cachemintokens">Config.CacheMinTokens</a></li>
                 <li><a href="#method-config-contextwindow">Config.ContextWindow</a></li>
                 <li><a href="#method-config-effectivenbatch">Config.EffectiveNBatch</a></li>
@@ -2520,9 +2647,12 @@ export default function DocsSDKModel() {
                 <li><a href="#method-config-expertlayersongpu">Config.ExpertLayersOnGPU</a></li>
                 <li><a href="#method-config-flashattention">Config.FlashAttention</a></li>
                 <li><a href="#method-config-imcsessioncapacity">Config.IMCSessionCapacity</a></li>
+                <li><a href="#method-config-imagebatchtokencapacity">Config.ImageBatchTokenCapacity</a></li>
+                <li><a href="#method-config-imagetokenbudget">Config.ImageTokenBudget</a></li>
                 <li><a href="#method-config-incrementalcache">Config.IncrementalCache</a></li>
                 <li><a href="#method-config-insecurelogging">Config.InsecureLogging</a></li>
                 <li><a href="#method-config-maingpu">Config.MainGPU</a></li>
+                <li><a href="#method-config-moecachesize">Config.MoECacheSize</a></li>
                 <li><a href="#method-config-ngpulayers">Config.NGpuLayers</a></li>
                 <li><a href="#method-config-nseqmax">Config.NSeqMax</a></li>
                 <li><a href="#method-config-nthreads">Config.NThreads</a></li>
@@ -2534,6 +2664,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-config-swafull">Config.SWAFull</a></li>
                 <li><a href="#method-config-speculationmode">Config.SpeculationMode</a></li>
                 <li><a href="#method-config-string">Config.String</a></li>
+                <li><a href="#method-config-vramweightloading">Config.VRAMWeightLoading</a></li>
                 <li><a href="#method-config-yarnattnfactor">Config.YarnAttnFactor</a></li>
                 <li><a href="#method-config-yarnbetafast">Config.YarnBetaFast</a></li>
                 <li><a href="#method-config-yarnbetaslow">Config.YarnBetaSlow</a></li>
@@ -2564,6 +2695,12 @@ export default function DocsSDKModel() {
                 <li><a href="#method-ggmltype-toyzmatype">GGMLType.ToYZMAType</a></li>
                 <li><a href="#method-ggmltype-unmarshaljson">GGMLType.UnmarshalJSON</a></li>
                 <li><a href="#method-ggmltype-unmarshalyaml">GGMLType.UnmarshalYAML</a></li>
+                <li><a href="#method-lazymode-marshaljson">LazyMode.MarshalJSON</a></li>
+                <li><a href="#method-lazymode-marshalyaml">LazyMode.MarshalYAML</a></li>
+                <li><a href="#method-lazymode-string">LazyMode.String</a></li>
+                <li><a href="#method-lazymode-toyzmatype">LazyMode.ToYZMAType</a></li>
+                <li><a href="#method-lazymode-unmarshaljson">LazyMode.UnmarshalJSON</a></li>
+                <li><a href="#method-lazymode-unmarshalyaml">LazyMode.UnmarshalYAML</a></li>
                 <li><a href="#method-loadmode-marshaljson">LoadMode.MarshalJSON</a></li>
                 <li><a href="#method-loadmode-marshalyaml">LoadMode.MarshalYAML</a></li>
                 <li><a href="#method-loadmode-string">LoadMode.String</a></li>

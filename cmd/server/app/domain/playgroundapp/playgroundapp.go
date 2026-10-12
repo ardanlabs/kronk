@@ -122,6 +122,8 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 		"krn-ptr", fmt.Sprintf("%p", krn),
 		"context-window", krn.ModelConfig().ContextWindow(),
 		"prefill-batch-size", krn.ModelConfig().PrefillBatchSize(),
+		"image-batch-token-capacity", krn.ModelConfig().ImageBatchTokenCapacity(),
+		"image-token-budget", krn.ModelConfig().ImageTokenBudget(),
 		"effective-nbatch", krn.ModelConfig().EffectiveNBatch(),
 		"effective-nubatch", krn.ModelConfig().EffectiveNUBatch(),
 		"flash-attention", krn.ModelConfig().FlashAttention().String(),
@@ -139,18 +141,20 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 	a.mu.Unlock()
 
 	effectiveConfig := map[string]any{
-		"context_window":     krn.ModelConfig().ContextWindow(),
-		"prefill_batch_size": krn.ModelConfig().PrefillBatchSize(),
-		"effective_nbatch":   krn.ModelConfig().EffectiveNBatch(),
-		"effective_nubatch":  krn.ModelConfig().EffectiveNUBatch(),
-		"nseq_max":           krn.ModelConfig().NSeqMax(),
-		"flash_attention":    krn.ModelConfig().FlashAttention().String(),
-		"cache_type_k":       krn.ModelConfig().CacheTypeK.String(),
-		"cache_type_v":       krn.ModelConfig().CacheTypeV.String(),
-		"load_mode":          krn.ModelConfig().LoadMode.String(),
-		"incremental_cache":  krn.ModelConfig().IncrementalCache(),
-		"split_mode":         formatSplitMode(krn.ModelConfig().PtrSplitMode),
-		"model_type":         krn.ModelInfo().Type.String(),
+		"context_window":             krn.ModelConfig().ContextWindow(),
+		"prefill_batch_size":         krn.ModelConfig().PrefillBatchSize(),
+		"image_batch_token_capacity": krn.ModelConfig().ImageBatchTokenCapacity(),
+		"image_token_budget":         krn.ModelConfig().PtrImageTokenBudget,
+		"effective_nbatch":           krn.ModelConfig().EffectiveNBatch(),
+		"effective_nubatch":          krn.ModelConfig().EffectiveNUBatch(),
+		"nseq_max":                   krn.ModelConfig().NSeqMax(),
+		"flash_attention":            krn.ModelConfig().FlashAttention().String(),
+		"cache_type_k":               krn.ModelConfig().CacheTypeK.String(),
+		"cache_type_v":               krn.ModelConfig().CacheTypeV.String(),
+		"load_mode":                  krn.ModelConfig().LoadMode.String(),
+		"incremental_cache":          krn.ModelConfig().IncrementalCache(),
+		"split_mode":                 formatSplitMode(krn.ModelConfig().PtrSplitMode),
+		"model_type":                 krn.ModelInfo().Type.String(),
 	}
 
 	// Report the active drafter. A separate-GGUF draft carries model files;

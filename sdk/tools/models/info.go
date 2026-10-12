@@ -7,20 +7,25 @@ import (
 	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
+	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 )
 
 // ModelInfo represents the model's card information.
 type ModelInfo struct {
-	ID            string
-	HasProjection bool
-	HasMTP        bool
-	Desc          string
-	Size          uint64
-	FileType      int64
-	Quantization  string
-	IsEmbedModel  bool
-	IsRerankModel bool
-	Metadata      map[string]string
+	ID             string
+	HasProjection  bool
+	HasMTP         bool
+	Desc           string
+	Size           uint64
+	FileType       int64
+	Quantization   string
+	IsEmbedModel   bool
+	IsRerankModel  bool
+	Metadata       map[string]string
+	Weights        *gguf.WeightBreakdown `json:"-"` // Optional tensor accounting for local analysis.
+	vocabularySize int64                 // Output rows recovered from tensors when GGUF omits vocab_size.
+	lazyTable      vram.LazyTable        // Eligible table and shard isolation recovered from local descriptors.
 }
 
 // =============================================================================
@@ -72,7 +77,41 @@ func ModelInfoFromPath(id string, modelFiles []string, projFile string, mtpFile 
 		return ModelInfo{}, fmt.Errorf("model-information: %w", err)
 	}
 
-	return ModelInfoFromMetadata(id, metadata, totalSize, projFile != "", mtpFile != ""), nil
+	result := ModelInfoFromMetadata(id, metadata, totalSize, projFile != "", mtpFile != "")
+	var tensors []gguf.TensorInfo
+	var shards [][]gguf.TensorInfo
+
+	for _, mf := range modelFiles {
+		data, err := gguf.ReadHeaderBytes(mf)
+		if err != nil {
+			return ModelInfo{}, fmt.Errorf("model-information: %w", err)
+		}
+
+		_, shardTensors, err := gguf.ParseHeaderAndTensors(data, int64(totalSize))
+		if err != nil {
+			// Metadata-only analysis remains available when the fetched
+			// header does not contain the complete tensor table.
+			return result, nil
+		}
+
+		tensors = append(tensors, shardTensors...)
+		shards = append(shards, shardTensors)
+	}
+
+	profile := modelprofile.Resolve(metadata)
+	result.lazyTable = vram.LazyTableForShards(profile, shards)
+	blockCount := profile.Dimensions.BlockCount
+	if len(tensors) > 0 && blockCount > 0 {
+		wb := gguf.CategorizeWeights(tensors, blockCount)
+		result.Weights = &wb
+	}
+	for _, tensor := range tensors {
+		if (tensor.Name == "token_embd.weight" || tensor.Name == "output.weight") && len(tensor.Dims) == 2 {
+			result.vocabularySize = max(result.vocabularySize, tensor.Dims[1])
+		}
+	}
+
+	return result, nil
 }
 
 // ModelInfoFromMetadata builds ModelInfo from an already-parsed GGUF header.

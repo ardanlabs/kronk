@@ -42,10 +42,11 @@ export const PARAM_TOOLTIPS = {
   // MoE configuration
   moeMode: 'How to distribute expert weights between GPU and CPU. "Recommended" auto-detects the best option for your hardware. "Save GPU Memory" moves experts to CPU (most common for consumer GPUs). "Maximum Speed" keeps everything on GPU (requires very large VRAM; exact need depends on model, quantization, context, and slots). "Balanced" lets you choose how many layers stay on GPU.',
   moeKeepExpertsTopN: 'Slide right for more speed (keeps more expert layers on GPU), slide left to save VRAM (offloads to CPU). The highest-numbered layers stay on GPU first. 0 = all experts on CPU.',
+  moeCacheSize: 'Experimental GPU cache for MoE expert weights kept in host memory. 0 leaves it disabled. The byte budget is per context and shared across GPUs; original host weights remain. Intended for small-batch generation. Ignored for non-MoE models; tensor parallelism is unsupported.',
   moeTipBatch: 'For MoE models with CPU experts, a Prefill Batch Size of at least 4096 is recommended for optimal prompt processing speed.',
   moeTipFlashAttention: 'Flash Attention is strongly recommended for MoE models — it significantly reduces VRAM usage and improves performance.',
   moeTipComputeBuffer: 'A larger Prefill Batch Size increases compute buffer VRAM usage. Monitor with the VRAM calculator when tuning it.',
-  availableVRAM: 'Total GPU VRAM available (in GB). When set, config candidates estimated to exceed this are auto-skipped before the sweep runs. Set to 0 or leave empty to disable VRAM filtering.',
+  availableVRAM: 'Total GPU VRAM available (in GiB). When set, config candidates estimated to exceed this are auto-skipped before the sweep runs. Set to 0 or leave empty to disable VRAM filtering.',
 
   // NUMA / model loading (Phase F2/F3)
   loadMode: 'Controls how model weights are loaded. auto uses mmap when every selected device supports it and otherwise uses ordinary loading; mmap forces memory mapping; none disables it; mlock requests resident pages without forcing mmap; mmap+mlock combines both behaviors; direct-io bypasses the OS page cache where supported.',
@@ -62,7 +63,7 @@ export const PARAM_TOOLTIPS = {
   tensorSplit: 'Proportional distribution of model weights across GPUs (e.g. "0.6,0.4" puts 60% on GPU 0 and 40% on GPU 1). Leave empty for equal distribution. Useful when GPUs have different VRAM capacities.',
   expertLayersOnGPU: 'For MoE models: how many transformer block expert layers to keep on GPU. More layers on GPU = faster inference but more VRAM. Layers are kept top-down (highest-numbered first). 0 = all experts on CPU.',
   autoFit: 'Finds the fastest layer and expert placement that fits the selected hardware. The calculator changes placement only when you choose this action. On unified-memory systems, CPU offload does not reduce the total physical memory required.',
-  gpuLayers: 'Number of transformer layers offloaded to GPU (-ngl). All layers on GPU gives maximum speed. Reducing layers saves VRAM by moving weights to system RAM at the cost of inference speed — significant on discrete GPUs (PCIe bottleneck), minimal on Apple Silicon (unified memory).',
+  gpuLayers: 'Number of layers offloaded to GPU (-ngl), including the output layer. The output moves first, followed by the highest-numbered transformer blocks. Full offload requires block count + 1. Reducing layers saves VRAM on discrete GPUs; CPU offload does not reduce the physical weight footprint on unified-memory systems.',
 
   // Model header / metadata
   modelSize: 'Total size of the quantized GGUF model file. For dense models this approximates the GPU VRAM needed for weights alone; for MoE models the actual GPU portion depends on how many expert layers are offloaded to CPU.',
@@ -130,7 +131,7 @@ export const PARAM_TOOLTIPS = {
   draftGpuLayers: 'Number of draft-model layers offloaded to GPU. More GPU layers speed up speculative decoding but use more VRAM.',
   draftDevice: 'Device for running the draft model. Useful in multi-device setups when you want the draft model placed separately from the main model.',
   grammar: 'Grammar constraint to force output into a specific syntax (e.g. JSON or a custom GBNF grammar). Improves structured output reliability but can over-constrain generation if the grammar is too strict.',
-  ngpuLayers: 'Number of model layers offloaded to GPU. 0 = all layers on GPU (default). -1 = all layers on CPU. Positive N = first N layers on GPU. Lower values save VRAM but reduce speed.',
+  ngpuLayers: 'Number of model layers offloaded to GPU. 0 = all layers on GPU (default). -1 = all layers on CPU. Positive N = output layer plus the highest-numbered N−1 transformer blocks. Full offload requires block count + 1. Lower values save VRAM on discrete GPUs but reduce speed.',
   splitMode: 'How model weights are distributed across multiple GPUs. "layer" assigns whole layers per GPU, "row" splits individual tensor rows. "none" uses a single GPU.',
   swaFull: 'Use full-context KV storage for sliding-window attention (SWA) layers instead of retaining only the model-defined sliding window. This can greatly increase memory at long contexts. It has no effect on models without SWA layers. Default: on.',
   incrementalCache: 'Keeps the full conversation KV state in a dedicated slot between requests. Enables fast multi-turn follow-ups by only processing new tokens instead of the entire history.',
@@ -151,7 +152,7 @@ export const PARAM_TOOLTIPS = {
 
   // ── Pool / resource budget tooltips ──────────────────────────────────────
   budgetPercent: 'Percentage of detected GPU VRAM and system RAM the pool is allowed to commit to loaded models. Reservations beyond this percentage trigger eviction of idle models. Default: 80%.',
-  budgetHeadroom: 'Per-GPU safety margin subtracted from each device\'s budget after the percentage is applied. Reserves a small cushion so the resman never hands out memory that would just-barely OOM under driver/compute-buffer overhead. Default: 256 MB.',
+  budgetHeadroom: 'Per-GPU safety margin subtracted from each device\'s budget after the percentage is applied. Reserves a small cushion so the resman never hands out memory that would just-barely OOM under driver/compute-buffer overhead. Default: 256 MiB.',
   budgetDeviceTotal: 'Total physical memory the device reports. For GPUs this is dedicated VRAM; for the System RAM row this is the host\'s total RAM. On Apple Silicon (unified memory), the GPU shares this same pool.',
   budgetDeviceBudget: 'How many bytes the resource manager will allow loaded models to consume on this device. Equals (Total × BudgetPercent / 100) − Headroom.',
   budgetDeviceUsed: 'Currently reserved bytes on this device, summed across all live model reservations.',

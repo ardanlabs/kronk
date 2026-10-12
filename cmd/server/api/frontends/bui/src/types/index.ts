@@ -220,6 +220,7 @@ export interface ModelConfig {
   moe?: {
     mode: string;
     'keep-experts-top-n'?: number | null;
+    'cache-size'?: number | null;
   };
 
   // NUMA configuration for multi-socket systems.
@@ -294,6 +295,7 @@ export interface VRAMInput {
   weights?: WeightBreakdown;
   gpu_layers: number;
   expert_layers_on_gpu: number;
+  moe_cache_size?: number;
   kv_cache_on_cpu?: boolean;
   swa_full: boolean;
 }
@@ -323,6 +325,7 @@ export interface VRAM {
   model_weights_gpu?: number;
   model_weights_cpu?: number;
   compute_buffer_est?: number;
+  moe_cache_bytes?: number;
   always_active_gpu_bytes?: number;
   always_active_cpu_bytes?: number;
   expert_gpu_bytes?: number;
@@ -357,6 +360,7 @@ export interface PerDeviceVRAM {
   weights_bytes: number;
   kv_bytes: number;
   compute_bytes: number;
+  moe_cache_bytes?: number;
   total_bytes: number;
 }
 
@@ -736,6 +740,7 @@ export interface VRAMRequest {
   slots: number;
   gpu_layers?: number;
   expert_layers_on_gpu?: number;
+  moe_cache_size?: number;
   kv_cache_on_cpu?: boolean;
   swa_full?: boolean;
   device_count?: number;

@@ -613,42 +613,44 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc models.ModelConfig
 		Template:      rmc.Template,
 		Metadata:      metadata,
 		ModelConfig: &ModelConfig{
-			PtrContextWindow:      rmc.PtrContextWindow,
-			PtrPrefillBatchSize:   rmc.PtrPrefillBatchSize,
-			PtrNThreads:           rmc.PtrNThreads,
-			PtrNThreadsBatch:      rmc.PtrNThreadsBatch,
-			CacheTypeK:            rmc.CacheTypeK,
-			CacheTypeV:            rmc.CacheTypeV,
-			LoadMode:              model.DerefLoadMode(rmc.PtrLoadMode),
-			NUMA:                  rmc.NUMA,
-			FlashAttention:        model.DerefFlashAttention(rmc.FlashAttention),
-			PtrNSeqMax:            rmc.PtrNSeqMax,
-			QueueDepth:            queueDepth,
-			AdmissionCapacity:     admissionCapacity,
-			PtrIMCSessionCapacity: rmc.PtrIMCSessionCapacity,
-			PtrOffloadKQV:         rmc.PtrOffloadKQV,
-			PtrOpOffload:          rmc.PtrOpOffload,
-			PtrProjOnCPU:          rmc.PtrProjOnCPU,
-			ProjDevice:            rmc.ProjDevice,
-			PtrNGpuLayers:         rmc.PtrNGpuLayers,
-			PtrSplitMode:          rmc.PtrSplitMode,
-			TensorSplit:           rmc.TensorSplit,
-			TensorBuftOverrides:   rmc.TensorBuftOverrides,
-			PtrMainGPU:            rmc.PtrMainGPU,
-			Devices:               rmc.Devices,
-			MoE:                   toAppMoEConfig(rmc.MoE),
-			PtrSWAFull:            rmc.PtrSWAFull,
-			PtrIncrementalCache:   rmc.PtrIncrementalCache,
-			PtrCacheMinTokens:     rmc.PtrCacheMinTokens,
-			SessionStoreKind:      rmc.SessionStoreKind,
-			RopeScaling:           rmc.RopeScaling,
-			PtrRopeFreqBase:       rmc.PtrRopeFreqBase,
-			PtrRopeFreqScale:      rmc.PtrRopeFreqScale,
-			PtrYarnExtFactor:      rmc.PtrYarnExtFactor,
-			PtrYarnAttnFactor:     rmc.PtrYarnAttnFactor,
-			PtrYarnBetaFast:       rmc.PtrYarnBetaFast,
-			PtrYarnBetaSlow:       rmc.PtrYarnBetaSlow,
-			PtrYarnOrigCtx:        rmc.PtrYarnOrigCtx,
+			PtrContextWindow:           rmc.PtrContextWindow,
+			PtrPrefillBatchSize:        rmc.PtrPrefillBatchSize,
+			PtrImageBatchTokenCapacity: rmc.PtrImageBatchTokenCapacity,
+			PtrImageTokenBudget:        rmc.PtrImageTokenBudget,
+			PtrNThreads:                rmc.PtrNThreads,
+			PtrNThreadsBatch:           rmc.PtrNThreadsBatch,
+			CacheTypeK:                 rmc.CacheTypeK,
+			CacheTypeV:                 rmc.CacheTypeV,
+			LoadMode:                   model.DerefLoadMode(rmc.PtrLoadMode),
+			NUMA:                       rmc.NUMA,
+			FlashAttention:             model.DerefFlashAttention(rmc.FlashAttention),
+			PtrNSeqMax:                 rmc.PtrNSeqMax,
+			QueueDepth:                 queueDepth,
+			AdmissionCapacity:          admissionCapacity,
+			PtrIMCSessionCapacity:      rmc.PtrIMCSessionCapacity,
+			PtrOffloadKQV:              rmc.PtrOffloadKQV,
+			PtrOpOffload:               rmc.PtrOpOffload,
+			PtrProjOnCPU:               rmc.PtrProjOnCPU,
+			ProjDevice:                 rmc.ProjDevice,
+			PtrNGpuLayers:              rmc.PtrNGpuLayers,
+			PtrSplitMode:               rmc.PtrSplitMode,
+			TensorSplit:                rmc.TensorSplit,
+			TensorBuftOverrides:        rmc.TensorBuftOverrides,
+			PtrMainGPU:                 rmc.PtrMainGPU,
+			Devices:                    rmc.Devices,
+			MoE:                        toAppMoEConfig(rmc.MoE),
+			PtrSWAFull:                 rmc.PtrSWAFull,
+			PtrIncrementalCache:        rmc.PtrIncrementalCache,
+			PtrCacheMinTokens:          rmc.PtrCacheMinTokens,
+			SessionStoreKind:           rmc.SessionStoreKind,
+			RopeScaling:                rmc.RopeScaling,
+			PtrRopeFreqBase:            rmc.PtrRopeFreqBase,
+			PtrRopeFreqScale:           rmc.PtrRopeFreqScale,
+			PtrYarnExtFactor:           rmc.PtrYarnExtFactor,
+			PtrYarnAttnFactor:          rmc.PtrYarnAttnFactor,
+			PtrYarnBetaFast:            rmc.PtrYarnBetaFast,
+			PtrYarnBetaSlow:            rmc.PtrYarnBetaSlow,
+			PtrYarnOrigCtx:             rmc.PtrYarnOrigCtx,
 			Sampling: SamplingConfig{
 				Temperature:      rmc.Sampling.Temperature,
 				TopK:             rmc.Sampling.TopK,
@@ -1173,6 +1175,7 @@ type VRAMInput struct {
 	Weights             *WeightBreakdown `json:"weights,omitempty"`
 	GPULayers           int64            `json:"gpu_layers"`
 	ExpertLayersOnGPU   int64            `json:"expert_layers_on_gpu"`
+	MoECacheSize        int64            `json:"moe_cache_size"`
 	KVCacheOnCPU        bool             `json:"kv_cache_on_cpu,omitempty"`
 	SWAFull             bool             `json:"swa_full"`
 }
@@ -1180,11 +1183,12 @@ type VRAMInput struct {
 // PerDeviceVRAM is the per-GPU VRAM split used when tensor_split /
 // device_count are specified.
 type PerDeviceVRAM struct {
-	Label        string `json:"label"`
-	WeightsBytes int64  `json:"weights_bytes"`
-	KVBytes      int64  `json:"kv_bytes"`
-	ComputeBytes int64  `json:"compute_bytes"`
-	TotalBytes   int64  `json:"total_bytes"`
+	Label         string `json:"label"`
+	WeightsBytes  int64  `json:"weights_bytes"`
+	KVBytes       int64  `json:"kv_bytes"`
+	ComputeBytes  int64  `json:"compute_bytes"`
+	MoECacheBytes int64  `json:"moe_cache_bytes"`
+	TotalBytes    int64  `json:"total_bytes"`
 }
 
 // SamplingConfig represents sampling parameters for model inference.
@@ -1214,6 +1218,7 @@ type SamplingConfig struct {
 type MoEConfig struct {
 	Mode                             model.MoEMode `json:"mode,omitzero"`
 	PtrKeepExpertsOnGPUForTopNLayers *int          `json:"keep_experts_top_n,omitempty"`
+	PtrCacheSize                     *int64        `json:"cache-size,omitempty"`
 }
 
 func toAppMoEConfig(m *model.MoEConfig) *MoEConfig {
@@ -1224,48 +1229,51 @@ func toAppMoEConfig(m *model.MoEConfig) *MoEConfig {
 	return &MoEConfig{
 		Mode:                             m.Mode,
 		PtrKeepExpertsOnGPUForTopNLayers: m.PtrKeepExpertsOnGPUForTopNLayers,
+		PtrCacheSize:                     m.PtrCacheSize,
 	}
 }
 
 // ModelConfig represents the model configuration the model will use by default.
 type ModelConfig struct {
-	PtrContextWindow      *int                     `json:"context-window"`
-	PtrPrefillBatchSize   *int                     `json:"prefill-batch-size"`
-	PtrNThreads           *int                     `json:"nthreads"`
-	PtrNThreadsBatch      *int                     `json:"nthreads-batch"`
-	CacheTypeK            model.GGMLType           `json:"cache-type-k"`
-	CacheTypeV            model.GGMLType           `json:"cache-type-v"`
-	LoadMode              model.LoadMode           `json:"load-mode"`
-	NUMA                  string                   `json:"numa,omitempty"`
-	FlashAttention        model.FlashAttentionType `json:"flash-attention"`
-	PtrNSeqMax            *int                     `json:"nseq-max"`
-	QueueDepth            int                      `json:"queue-depth"`
-	AdmissionCapacity     int                      `json:"admission-capacity"`
-	PtrIMCSessionCapacity *int                     `json:"imc-session-capacity"`
-	PtrOffloadKQV         *bool                    `json:"offload-kqv"`
-	PtrOpOffload          *bool                    `json:"op-offload"`
-	PtrProjOnCPU          *bool                    `json:"proj-on-cpu"`
-	ProjDevice            string                   `json:"proj-device,omitempty"`
-	PtrNGpuLayers         *int                     `json:"ngpu-layers"`
-	PtrSplitMode          *model.SplitMode         `json:"split-mode"`
-	TensorSplit           []float32                `json:"tensor-split"`
-	TensorBuftOverrides   []string                 `json:"tensor-buft-overrides"`
-	PtrMainGPU            *int                     `json:"main-gpu"`
-	Devices               []string                 `json:"devices"`
-	MoE                   *MoEConfig               `json:"moe,omitempty"`
-	PtrSWAFull            *bool                    `json:"swa-full"`
-	PtrIncrementalCache   *bool                    `json:"incremental-cache"`
-	PtrCacheMinTokens     *int                     `json:"cache-min-tokens"`
-	SessionStoreKind      kvstorage.Kind           `json:"session-store-kind,omitzero"`
-	Sampling              SamplingConfig           `json:"sampling-parameters"`
-	RopeScaling           model.RopeScalingType    `json:"rope-scaling-type"`
-	PtrRopeFreqBase       *float32                 `json:"rope-freq-base"`
-	PtrRopeFreqScale      *float32                 `json:"rope-freq-scale"`
-	PtrYarnExtFactor      *float32                 `json:"yarn-ext-factor"`
-	PtrYarnAttnFactor     *float32                 `json:"yarn-attn-factor"`
-	PtrYarnBetaFast       *float32                 `json:"yarn-beta-fast"`
-	PtrYarnBetaSlow       *float32                 `json:"yarn-beta-slow"`
-	PtrYarnOrigCtx        *int                     `json:"yarn-orig-ctx"`
+	PtrContextWindow           *int                     `json:"context-window"`
+	PtrPrefillBatchSize        *int                     `json:"prefill-batch-size"`
+	PtrImageBatchTokenCapacity *int                     `json:"image-batch-token-capacity"`
+	PtrImageTokenBudget        *int                     `json:"image-token-budget"`
+	PtrNThreads                *int                     `json:"nthreads"`
+	PtrNThreadsBatch           *int                     `json:"nthreads-batch"`
+	CacheTypeK                 model.GGMLType           `json:"cache-type-k"`
+	CacheTypeV                 model.GGMLType           `json:"cache-type-v"`
+	LoadMode                   model.LoadMode           `json:"load-mode"`
+	NUMA                       string                   `json:"numa,omitempty"`
+	FlashAttention             model.FlashAttentionType `json:"flash-attention"`
+	PtrNSeqMax                 *int                     `json:"nseq-max"`
+	QueueDepth                 int                      `json:"queue-depth"`
+	AdmissionCapacity          int                      `json:"admission-capacity"`
+	PtrIMCSessionCapacity      *int                     `json:"imc-session-capacity"`
+	PtrOffloadKQV              *bool                    `json:"offload-kqv"`
+	PtrOpOffload               *bool                    `json:"op-offload"`
+	PtrProjOnCPU               *bool                    `json:"proj-on-cpu"`
+	ProjDevice                 string                   `json:"proj-device,omitempty"`
+	PtrNGpuLayers              *int                     `json:"ngpu-layers"`
+	PtrSplitMode               *model.SplitMode         `json:"split-mode"`
+	TensorSplit                []float32                `json:"tensor-split"`
+	TensorBuftOverrides        []string                 `json:"tensor-buft-overrides"`
+	PtrMainGPU                 *int                     `json:"main-gpu"`
+	Devices                    []string                 `json:"devices"`
+	MoE                        *MoEConfig               `json:"moe,omitempty"`
+	PtrSWAFull                 *bool                    `json:"swa-full"`
+	PtrIncrementalCache        *bool                    `json:"incremental-cache"`
+	PtrCacheMinTokens          *int                     `json:"cache-min-tokens"`
+	SessionStoreKind           kvstorage.Kind           `json:"session-store-kind,omitzero"`
+	Sampling                   SamplingConfig           `json:"sampling-parameters"`
+	RopeScaling                model.RopeScalingType    `json:"rope-scaling-type"`
+	PtrRopeFreqBase            *float32                 `json:"rope-freq-base"`
+	PtrRopeFreqScale           *float32                 `json:"rope-freq-scale"`
+	PtrYarnExtFactor           *float32                 `json:"yarn-ext-factor"`
+	PtrYarnAttnFactor          *float32                 `json:"yarn-attn-factor"`
+	PtrYarnBetaFast            *float32                 `json:"yarn-beta-fast"`
+	PtrYarnBetaSlow            *float32                 `json:"yarn-beta-slow"`
+	PtrYarnOrigCtx             *int                     `json:"yarn-orig-ctx"`
 }
 
 // =============================================================================
@@ -1348,6 +1356,7 @@ type VRAMRequest struct {
 	Slots             int64     `json:"slots"`
 	GPULayers         int64     `json:"gpu_layers,omitempty"`
 	ExpertLayersOnGPU int64     `json:"expert_layers_on_gpu,omitempty"`
+	MoECacheSize      int64     `json:"moe_cache_size,omitempty"`
 	KVCacheOnCPU      bool      `json:"kv_cache_on_cpu,omitempty"`
 	SWAFull           *bool     `json:"swa_full,omitempty"`
 	DeviceCount       int64     `json:"device_count,omitempty"`
@@ -1401,6 +1410,7 @@ type VRAMResponse struct {
 	ModelWeightsGPU    int64            `json:"model_weights_gpu"`
 	ModelWeightsCPU    int64            `json:"model_weights_cpu"`
 	ComputeBufferEst   int64            `json:"compute_buffer_est"`
+	MoECacheBytes      int64            `json:"moe_cache_bytes"`
 
 	// MoE / dense breakdown for UI display.
 	AlwaysActiveGPUBytes int64 `json:"always_active_gpu_bytes,omitempty"`
@@ -1482,6 +1492,7 @@ func toVRAMResponse(v vram.Result, repoFiles []HFRepoFile) VRAMResponse {
 			Weights:             toAppWeightBreakdown(v.Input.Weights),
 			GPULayers:           v.Input.GPULayers,
 			ExpertLayersOnGPU:   v.Input.ExpertLayersOnGPU,
+			MoECacheSize:        v.Input.MoECacheSize,
 			KVCacheOnCPU:        v.Input.KVCacheOnCPU,
 			SWAFull:             v.Input.SWAFull,
 		},
@@ -1494,6 +1505,7 @@ func toVRAMResponse(v vram.Result, repoFiles []HFRepoFile) VRAMResponse {
 		ModelWeightsGPU:      v.ModelWeightsGPU,
 		ModelWeightsCPU:      v.ModelWeightsCPU,
 		ComputeBufferEst:     v.ComputeBufferEst,
+		MoECacheBytes:        v.MoECacheBytes,
 		AlwaysActiveGPUBytes: v.AlwaysActiveGPUBytes,
 		AlwaysActiveCPUBytes: v.AlwaysActiveCPUBytes,
 		ExpertGPUBytes:       v.ExpertGPUBytes,
@@ -1509,11 +1521,12 @@ func toVRAMResponse(v vram.Result, repoFiles []HFRepoFile) VRAMResponse {
 		resp.PerDevice = make([]PerDeviceVRAM, len(v.PerDevice))
 		for i, d := range v.PerDevice {
 			resp.PerDevice[i] = PerDeviceVRAM{
-				Label:        d.Label,
-				WeightsBytes: d.WeightsBytes,
-				KVBytes:      d.KVBytes,
-				ComputeBytes: d.ComputeBytes,
-				TotalBytes:   d.TotalBytes,
+				Label:         d.Label,
+				WeightsBytes:  d.WeightsBytes,
+				KVBytes:       d.KVBytes,
+				ComputeBytes:  d.ComputeBytes,
+				MoECacheBytes: d.MoECacheBytes,
+				TotalBytes:    d.TotalBytes,
 			}
 		}
 	}
@@ -1546,12 +1559,15 @@ func vramConfigFromRMC(rmc models.ModelConfig) vram.Config {
 	kronkConfig := rmc.ToKronkConfig()
 
 	return vram.Config{
+		WeightLoading:     kronkConfig.VRAMWeightLoading(devices.List(devices.WithIncludeMemory(false))),
+		ComputeBackend:    devices.Backend(),
 		ContextWindow:     contextWindow,
 		BytesPerElement:   bpe,
 		Slots:             slots,
-		NUBatch:           int64(kronkConfig.PrefillBatchSize()),
+		NUBatch:           int64(kronkConfig.BatchBaseSize()),
 		GPULayers:         int64(kronkConfig.NGpuLayers()),
 		ExpertLayersOnGPU: kronkConfig.ExpertLayersOnGPU(),
+		MoECacheSize:      kronkConfig.MoECacheSize(),
 		SWAFull:           resolveSWAFull(nil, kronkConfig.PtrSWAFull),
 	}
 }

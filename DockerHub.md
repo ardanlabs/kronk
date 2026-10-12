@@ -204,6 +204,15 @@ docker run --rm --runtime nvidia \
 
 Every image includes whisper.cpp shared libraries and `ffmpeg` for decoding non-PCM audio uploads (WebM/Opus, MP4/AAC, OGG, M4A).
 
+CUDA and all-backend image builds include both Bucky CUDA 12 (`cuda`) and
+CUDA 13 (`cuda13`) bundles. Automatic Linux selection requires the matching
+driver, visible-GPU capabilities, and runtime/cuBLAS libraries; a driver that
+advertises CUDA 13 alone is not sufficient. The amd64 CUDA runtime stage
+installs CUDA 13 user-space libraries. Jetson's separate L4T build remains on
+CUDA 12; do not select CUDA 13 unless its JetPack/runtime supports it. See
+[Bucky library installation](.manual/chapter-18-bucky.md#182-install-whisper-libraries)
+for explicit bundle selection and runtime requirements.
+
 Pull a Whisper model (models are ~50-500MB, not baked into images):
 
 ```bash

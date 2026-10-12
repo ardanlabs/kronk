@@ -56,30 +56,32 @@ func (s *SessionRequest) Validate() error {
 // distinguishing "not set by user" (nil) from an explicit value, so that only
 // user-provided overrides are merged on top of the catalog-resolved base config.
 type SessionConfig struct {
-	ContextWindow       *int                      `json:"context_window"`
-	PrefillBatchSize    *int                      `json:"prefill_batch_size"`
-	NSeqMax             *int                      `json:"nseq_max"`
-	FlashAttention      *model.FlashAttentionType `json:"flash_attention"`
-	CacheTypeK          *model.GGMLType           `json:"cache_type_k"`
-	CacheTypeV          *model.GGMLType           `json:"cache_type_v"`
-	LoadMode            *model.LoadMode           `json:"load_mode"`
-	NGpuLayers          *int                      `json:"ngpu_layers"`
-	IncrementalCache    *bool                     `json:"incremental_cache"`
-	RopeScaling         *model.RopeScalingType    `json:"rope_scaling_type"`
-	RopeFreqBase        *float32                  `json:"rope_freq_base"`
-	RopeFreqScale       *float32                  `json:"rope_freq_scale"`
-	YarnExtFactor       *float32                  `json:"yarn_ext_factor"`
-	YarnAttnFactor      *float32                  `json:"yarn_attn_factor"`
-	YarnBetaFast        *float32                  `json:"yarn_beta_fast"`
-	YarnBetaSlow        *float32                  `json:"yarn_beta_slow"`
-	YarnOrigCtx         *int                      `json:"yarn_orig_ctx"`
-	SplitMode           *model.SplitMode          `json:"split_mode"`
-	Devices             []string                  `json:"devices"`
-	MainGPU             *int                      `json:"main_gpu"`
-	TensorSplit         []float32                 `json:"tensor_split"`
-	TensorBuftOverrides []string                  `json:"tensor_buft_overrides"`
-	DraftModelID        *string                   `json:"draft_model_id"`
-	DraftNDraft         *int                      `json:"draft_ndraft"`
+	ContextWindow           *int                      `json:"context_window"`
+	PrefillBatchSize        *int                      `json:"prefill_batch_size"`
+	ImageBatchTokenCapacity *int                      `json:"image_batch_token_capacity"`
+	ImageTokenBudget        *int                      `json:"image_token_budget"`
+	NSeqMax                 *int                      `json:"nseq_max"`
+	FlashAttention          *model.FlashAttentionType `json:"flash_attention"`
+	CacheTypeK              *model.GGMLType           `json:"cache_type_k"`
+	CacheTypeV              *model.GGMLType           `json:"cache_type_v"`
+	LoadMode                *model.LoadMode           `json:"load_mode"`
+	NGpuLayers              *int                      `json:"ngpu_layers"`
+	IncrementalCache        *bool                     `json:"incremental_cache"`
+	RopeScaling             *model.RopeScalingType    `json:"rope_scaling_type"`
+	RopeFreqBase            *float32                  `json:"rope_freq_base"`
+	RopeFreqScale           *float32                  `json:"rope_freq_scale"`
+	YarnExtFactor           *float32                  `json:"yarn_ext_factor"`
+	YarnAttnFactor          *float32                  `json:"yarn_attn_factor"`
+	YarnBetaFast            *float32                  `json:"yarn_beta_fast"`
+	YarnBetaSlow            *float32                  `json:"yarn_beta_slow"`
+	YarnOrigCtx             *int                      `json:"yarn_orig_ctx"`
+	SplitMode               *model.SplitMode          `json:"split_mode"`
+	Devices                 []string                  `json:"devices"`
+	MainGPU                 *int                      `json:"main_gpu"`
+	TensorSplit             []float32                 `json:"tensor_split"`
+	TensorBuftOverrides     []string                  `json:"tensor_buft_overrides"`
+	DraftModelID            *string                   `json:"draft_model_id"`
+	DraftNDraft             *int                      `json:"draft_ndraft"`
 }
 
 // ApplyTo merges user overrides onto a base model config. Only fields
@@ -90,6 +92,12 @@ func (sc SessionConfig) ApplyTo(cfg model.Config) model.Config {
 	}
 	if sc.PrefillBatchSize != nil {
 		cfg.PtrPrefillBatchSize = sc.PrefillBatchSize
+	}
+	if sc.ImageBatchTokenCapacity != nil {
+		cfg.PtrImageBatchTokenCapacity = sc.ImageBatchTokenCapacity
+	}
+	if sc.ImageTokenBudget != nil {
+		cfg.PtrImageTokenBudget = sc.ImageTokenBudget
 	}
 	if sc.NSeqMax != nil {
 		cfg.PtrNSeqMax = sc.NSeqMax
@@ -177,6 +185,8 @@ func (sc SessionConfig) ApplyTo(cfg model.Config) model.Config {
 func (sc SessionConfig) HasOverrides() bool {
 	return sc.ContextWindow != nil ||
 		sc.PrefillBatchSize != nil ||
+		sc.ImageBatchTokenCapacity != nil ||
+		sc.ImageTokenBudget != nil ||
 		sc.NSeqMax != nil ||
 		sc.FlashAttention != nil ||
 		sc.CacheTypeK != nil ||
@@ -218,6 +228,14 @@ func (sc SessionConfig) Validate() error {
 
 	if sc.PrefillBatchSize != nil && (*sc.PrefillBatchSize < 1 || *sc.PrefillBatchSize > 16384) {
 		return fmt.Errorf("prefill-batch-size must be between 1 and 16384, got %d", *sc.PrefillBatchSize)
+	}
+
+	if sc.ImageBatchTokenCapacity != nil && *sc.ImageBatchTokenCapacity < 0 {
+		return fmt.Errorf("image-batch-token-capacity must be >= 0, got %d", *sc.ImageBatchTokenCapacity)
+	}
+
+	if sc.ImageTokenBudget != nil && (*sc.ImageTokenBudget < 1 || *sc.ImageTokenBudget > 2147483647) {
+		return fmt.Errorf("image-token-budget must be between 1 and 2147483647, got %d", *sc.ImageTokenBudget)
 	}
 
 	if sc.NSeqMax != nil && (*sc.NSeqMax < 1 || *sc.NSeqMax > 64) {

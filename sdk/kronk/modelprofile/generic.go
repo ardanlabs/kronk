@@ -22,15 +22,16 @@ func resolveGeneric(metadata metadata) Profile {
 		Purpose:         PurposeGeneration,
 		MemorySemantics: MemoryAttention,
 		Dimensions: Dimensions{
-			BlockCount:        blockCount,
-			ContextLength:     parseInt64WithFallback(metadata, arch+".context_length", ".context_length"),
-			EmbeddingLength:   parseInt64WithFallback(metadata, arch+".embedding_length", ".embedding_length"),
-			FeedForwardLength: parseInt64WithFallback(metadata, arch+".feed_forward_length", ".feed_forward_length"),
-			VocabularySize:    parseInt64WithFallback(metadata, arch+".vocab_size", "tokenizer.ggml.tokens"),
-			HeadCount:         headCount,
-			HeadCountKV:       headCountKV,
-			KeyLength:         keyLength,
-			ValueLength:       valueLength,
+			BlockCount:            blockCount,
+			ContextLength:         parseInt64WithFallback(metadata, arch+".context_length", ".context_length"),
+			EmbeddingLength:       parseInt64WithFallback(metadata, arch+".embedding_length", ".embedding_length"),
+			OutputEmbeddingLength: parseInt64(metadata, arch+".embedding_length_out"),
+			FeedForwardLength:     parseInt64WithFallback(metadata, arch+".feed_forward_length", ".feed_forward_length"),
+			VocabularySize:        parseInt64WithFallback(metadata, arch+".vocab_size", "tokenizer.ggml.tokens"),
+			HeadCount:             headCount,
+			HeadCountKV:           headCountKV,
+			KeyLength:             keyLength,
+			ValueLength:           valueLength,
 		},
 		Decision:        resolveDecision(metadata, arch),
 		Attention:       gguf.ParseAttentionFacts(metadata.values, arch, blockCount),
@@ -39,6 +40,53 @@ func resolveGeneric(metadata metadata) Profile {
 		Speculation:     Speculation{NextNPredictLayers: metadata.positiveNextNPredictLayers()},
 		FileType:        parseInt64(metadata, "general.file_type"),
 		HasChatTemplate: gguf.HasChatTemplate(metadata.values),
+	}
+	if arch == "gemma4" || arch == "gemma4-assistant" {
+		profile.ComputeKind = ComputeGemma4
+	}
+	if arch == "gemma4" && parseInt64(metadata, arch+".embedding_length_per_layer_input") > 0 {
+		// The assistant does not create a lazy table. The target gathers
+		// one row containing the embeddings for all layers per token.
+		profile.LazyRowsPerToken = 1
+	}
+	if arch == "llama" {
+		profile.ComputeKind = ComputeLlama
+	}
+	if arch == "clef" {
+		profile.ComputeKind = ComputeClef
+	}
+	if arch == "modern-bert" {
+		profile.ComputeKind = ComputeModernBERT
+	}
+	if arch == "gemma3" && profile.Attention.SlidingWindow <= 0 {
+		// RNJ uses Gemma3's ordinary KV graph. SWA Gemma3 graphs remain
+		// on the fallback until their separate mask policy is validated.
+		profile.ComputeKind = ComputeGemma3
+	}
+	if arch == "mistral3" {
+		profile.ComputeKind = ComputeMistral3
+	}
+	if arch == "glm4moe" {
+		profile.ComputeKind = ComputeGLM4MoE
+	}
+	if arch == "gpt-oss" {
+		profile.ComputeKind = ComputeGPTOSS
+		// b11513 alternates SWA on even blocks and full attention on odd
+		// blocks; sliding_window alone does not make every block SWA.
+		profile.Attention.SWAPattern = make([]bool, max(blockCount, 0))
+		profile.Attention.SlidingWindowLayers = (max(blockCount, 0) + 1) / 2
+		profile.Attention.FullAttentionLayers = blockCount - profile.Attention.SlidingWindowLayers
+		for layer := range profile.Attention.SWAPattern {
+			profile.Attention.SWAPattern[layer] = layer%2 == 0
+		}
+	}
+
+	// These b11513 loaders duplicate token_embd for a missing output.
+	// Missing output.weight alone is not sufficient (for example, BERT).
+	switch strings.ToLower(arch) {
+	case "llama", "qwen2", "qwen3", "qwen3moe", "qwen35", "qwen35moe",
+		"gemma", "gemma2", "gemma3", "gemma4", "gemma-embedding", "phi3":
+		profile.TiedOutputFallback = true
 	}
 
 	applyGenericPurposeAndModalities(metadata, &profile)

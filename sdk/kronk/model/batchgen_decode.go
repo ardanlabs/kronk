@@ -10,6 +10,22 @@ import (
 // MTMD GENERATION BATCH DECODE HELPERS
 // =============================================================================
 
+// validateMediaBatchCapacity keeps non-causal chunks indivisible and prevents
+// llama.cpp's native assertion when a chunk exceeds physical batch capacity.
+func (m *Model) validateMediaBatchCapacity(nTokens int32, useNonCausal bool) error {
+	if !useNonCausal || nTokens <= 0 {
+		return nil
+	}
+	nBatch, nUBatch := m.cfg.EffectiveNBatch(), m.cfg.EffectiveNUBatch()
+	if m.lctx != 0 {
+		nBatch, nUBatch = int(llama.NBatch(m.lctx)), int(llama.NUBatch(m.lctx))
+	}
+	if int(nTokens) > min(nBatch, nUBatch) {
+		return fmt.Errorf("non-causal media chunk requires %d tokens in one batch, but NBatch=%d and NUBatch=%d; increase ImageBatchTokenCapacity (image-batch-token-capacity) to at least %d", nTokens, nBatch, nUBatch, nTokens)
+	}
+	return nil
+}
+
 // decodeTextIsolated decodes text outside the shared generation tray.
 // llama.cpp expands linear token positions for an M-RoPE context.
 func (e *batchEngine) decodeTextIsolated(s *slot, tokens []llama.Token) error {
@@ -42,6 +58,9 @@ func (e *batchEngine) decodeTextIsolated(s *slot, tokens []llama.Token) error {
 func (e *batchEngine) decodeEmbeddingsNormal(s *slot, embd []float32, nEmbd, nTokens int32) error {
 	if nTokens == 0 {
 		return nil
+	}
+	if err := e.model.validateMediaBatchCapacity(nTokens, s.useNonCausal); err != nil {
+		return err
 	}
 
 	batch := e.mropeBatch
@@ -83,6 +102,9 @@ func (e *batchEngine) decodeEmbeddingsMRoPE(s *slot, embd []float32, nEmbd, nTok
 	}
 	if nTokens == 0 {
 		return nil
+	}
+	if err := e.model.validateMediaBatchCapacity(nTokens, s.useNonCausal); err != nil {
+		return err
 	}
 
 	batch := e.mropeBatch
