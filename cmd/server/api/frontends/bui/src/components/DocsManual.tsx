@@ -4759,8 +4759,8 @@ lsof -nP -iTCP:9000 -sTCP:LISTEN`}</code></pre>
               </tr>
               <tr>
                 <td><code>Address already in use</code> on <code>11435</code></td>
-                <td>Both levels are installed, a manual <code>kronk server start</code> is running, or a Kronk container publishes the port</td>
-                <td>Keep one level (<code>make uninstall-system-service</code> or <code>make uninstall-user-service</code>), stop manual servers with <code>kronk server stop</code>, and stop containers with <code>docker stop kronk</code> or <code>docker compose down</code></td>
+                <td>Both levels are installed, or a manual <code>kronk server start</code> is running</td>
+                <td>Keep one level (<code>make uninstall-system-service</code> or <code>make uninstall-user-service</code>) and stop manual servers with <code>kronk server stop</code></td>
               </tr>
             </tbody>
           </table>

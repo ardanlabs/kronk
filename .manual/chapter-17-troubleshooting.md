@@ -431,7 +431,7 @@ to `systemctl` and `journalctl`:
 | Service still runs the old version after an upgrade | The service runs its own copy of `kronk` | Run the install target again |
 | `kronk server stop` fails with `read-file: open …/kronk.pid: no such file or directory` | The service has no PID file | Use `sudo systemctl stop kronk` |
 | Stop takes long, then the process is killed | `KRONK_WEB_SHUTDOWN_TIMEOUT` exceeds the unit's `TimeoutStopSec` | Raise `TimeoutStopSec` with `systemctl edit kronk` |
-| `Address already in use` on `11435` | Both levels are installed, a manual `kronk server start` is running, or a Kronk container publishes the port | Keep one level (`make uninstall-system-service` or `make uninstall-user-service`), stop manual servers with `kronk server stop`, and stop containers with `docker stop kronk` or `docker compose down` |
+| `Address already in use` on `11435` | Both levels are installed, or a manual `kronk server start` is running | Keep one level (`make uninstall-system-service` or `make uninstall-user-service`) and stop manual servers with `kronk server stop` |
 
 Whisper-specific failures are listed in
 [Chapter 18 §18.9](https://www.kronkai.com/manual#189-troubleshooting).
