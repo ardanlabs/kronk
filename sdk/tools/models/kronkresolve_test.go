@@ -371,6 +371,53 @@ func TestModelConfigLoadMode(t *testing.T) {
 	}
 }
 
+func TestModelConfigLazyMode(t *testing.T) {
+	for _, tt := range []struct {
+		input string
+		want  model.LazyMode
+	}{
+		{"auto", model.LazyModeAuto},
+		{"off", model.LazyModeOff},
+		{"on", model.LazyModeOn},
+	} {
+		t.Run(tt.input, func(t *testing.T) {
+			var configs map[string]ModelConfig
+			if err := yaml.Unmarshal([]byte("test-model:\n  lazy-mode: "+tt.input+"\n"), &configs); err != nil {
+				t.Fatal(err)
+			}
+			cfg := configs["test-model"]
+			if cfg.PtrLazyMode == nil || cfg.ToKronkConfig().LazyMode != tt.want {
+				t.Fatalf("YAML lazy mode: got %v, want %v", cfg.PtrLazyMode, tt.want)
+			}
+			// Explicit auto (the Go zero value) must override a non-default.
+			dst := ModelConfig{PtrLazyMode: new(model.LazyModeOn)}
+			MergeModelConfig(&dst, cfg)
+			MergeModelConfig(&dst, ModelConfig{})
+			if dst.ToKronkConfig().LazyMode != tt.want {
+				t.Fatalf("merged lazy mode: got %v, want %v", dst.ToKronkConfig().LazyMode, tt.want)
+			}
+			encoded, err := yaml.Marshal(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var decoded ModelConfig
+			if err := yaml.Unmarshal(encoded, &decoded); err != nil {
+				t.Fatal(err)
+			}
+			if decoded.PtrLazyMode == nil || decoded.ToKronkConfig().LazyMode != tt.want {
+				t.Fatalf("round-trip lazy mode: got %v, want %v", decoded.PtrLazyMode, tt.want)
+			}
+		})
+	}
+	if got := (ModelConfig{}).ToKronkConfig().LazyMode; got != model.LazyModeAuto {
+		t.Fatalf("default lazy mode: got %v, want auto", got)
+	}
+	var cfg ModelConfig
+	if err := yaml.Unmarshal([]byte("lazy-mode: mmap\n"), &cfg); err == nil {
+		t.Fatal("invalid YAML lazy mode accepted")
+	}
+}
+
 func TestModelConfigAdmissionAndQueue(t *testing.T) {
 	data := []byte(`test-model:
   admission-timeout: 3m

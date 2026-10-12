@@ -620,6 +620,35 @@ malina-models:
               </tr>
             </tbody>
           </table>
+          <h4 id="lazy-tensor-reading">Lazy tensor reading</h4>
+          <p><code>lazy-mode</code> controls on-demand reading of tensors that llama.cpp marks eligible, such as the per-layer token embedding tables in Qwen4Exp and Gemma4. It is not whole-model lazy loading; models without eligible tensors are unaffected.</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Value</th>
+                <th>Behavior</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>auto</code></td>
+                <td>Lazy-read eligible tensors larger than 4 GiB when all selected devices support mmap; this is the default</td>
+              </tr>
+              <tr>
+                <td><code>off</code></td>
+                <td>Read eligible tensors up front like ordinary weights</td>
+              </tr>
+              <tr>
+                <td><code>on</code></td>
+                <td>Request lazy reading for eligible tensors regardless of size; requires mmap-capable devices</td>
+              </tr>
+            </tbody>
+          </table>
+          <pre className="code-block"><code className="language-yaml">{`some-provider/some-model:
+  lazy-mode: on
+  load-mode: none`}</code></pre>
+          <p>On Metal, mmap can bring the entire table into RAM through an overlapping GPU mapping even when the log says <code>lazy read enabled</code>. Use <code>load-mode: none</code> to avoid that overlap unless the table is isolated in its own shard. Eligible lazy tensors remain file-mapped even with <code>load-mode: none</code>; the other weights use ordinary loading. Accessed pages may remain cached, and disk reads can reduce inference speed. Verify residency and performance with the actual model.</p>
+          <p>The setting applies to the target and any separate or companion draft model. The Go SDK equivalent is <code>model.WithLazyMode(model.LazyModeOn)</code>, with <code>LazyModeAuto</code> and <code>LazyModeOff</code> as the other choices. Kronk's calculator and resource manager still reserve the full model-file size; this setting alone does not lower admission reservations or the resource-screen estimate.</p>
           <h4 id="kv-cache-and-operations">KV cache and operations</h4>
           <p>The KV cache and host tensor operations are offloaded to the GPU by default:</p>
           <pre className="code-block"><code className="language-yaml">{`some-provider/some-model:
@@ -863,6 +892,11 @@ models:
                 <td><code>ngpu-layers</code></td>
                 <td><code>-1</code>, <code>0</code>, or a positive count</td>
                 <td>CPU/GPU layer placement</td>
+              </tr>
+              <tr>
+                <td><code>lazy-mode</code></td>
+                <td><code>auto</code>, <code>off</code>, <code>on</code></td>
+                <td>On-demand reading of eligible tensors; default <code>auto</code></td>
               </tr>
               <tr>
                 <td><code>load-mode</code></td>

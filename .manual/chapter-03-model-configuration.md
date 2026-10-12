@@ -352,6 +352,37 @@ existing configuration as follows:
 | `use-mmap: false` | `load-mode: none` |
 | `use-direct-io: true` | `load-mode: direct-io` |
 
+#### Lazy tensor reading
+
+`lazy-mode` controls on-demand reading of tensors that llama.cpp marks eligible,
+such as the per-layer token embedding tables in Qwen4Exp and Gemma4. It is not
+whole-model lazy loading; models without eligible tensors are unaffected.
+
+| Value | Behavior |
+| ----- | -------- |
+| `auto` | Lazy-read eligible tensors larger than 4 GiB when all selected devices support mmap; this is the default |
+| `off` | Read eligible tensors up front like ordinary weights |
+| `on` | Request lazy reading for eligible tensors regardless of size; requires mmap-capable devices |
+
+```yaml
+some-provider/some-model:
+  lazy-mode: on
+  load-mode: none
+```
+
+On Metal, mmap can bring the entire table into RAM through an overlapping GPU
+mapping even when the log says `lazy read enabled`. Use `load-mode: none` to
+avoid that overlap unless the table is isolated in its own shard. Eligible lazy
+tensors remain file-mapped even with `load-mode: none`; the other weights use
+ordinary loading. Accessed pages may remain cached, and disk reads can reduce
+inference speed. Verify residency and performance with the actual model.
+
+The setting applies to the target and any separate or companion draft model.
+The Go SDK equivalent is `model.WithLazyMode(model.LazyModeOn)`, with
+`LazyModeAuto` and `LazyModeOff` as the other choices. Kronk's calculator and
+resource manager still reserve the full model-file size; this setting alone
+does not lower admission reservations or the resource-screen estimate.
+
 #### KV cache and operations
 
 The KV cache and host tensor operations are offloaded to the GPU by default:
@@ -781,6 +812,7 @@ is normally supplied by analysis or by the load-time defaults.
 | `imc-session-capacity` | Positive integer; derived when omitted | Reusable IMC conversation identities retained in RAM or on disk |
 | `prefill-batch-size` | Positive token count, default `2048` | Generation prefill contribution per decode iteration, or aggregate embedding/reranking tokens per native sequence batch |
 | `ngpu-layers` | `-1`, `0`, or a positive count | CPU/GPU layer placement |
+| `lazy-mode` | `auto`, `off`, `on` | On-demand reading of eligible tensors; default `auto` |
 | `load-mode` | `auto`, `mmap`, `none`, `mlock`, `mmap+mlock`, `direct-io` | Model weight loading strategy |
 | `offload-kqv` | Boolean | Place KV cache on GPU when true |
 | `op-offload` | Boolean | Place host tensor operations on GPU when true |

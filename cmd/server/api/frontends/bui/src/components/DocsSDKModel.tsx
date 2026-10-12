@@ -137,6 +137,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">ParseGGMLType parses a string into a GGMLType. Supported values: "f32", "f16", "q4_0", "q4_1", "q5_0", "q5_1", "q8_0", "bf16", "auto".</p>
             </div>
 
+            <div className="doc-section" id="func-parselazymode">
+              <h4>ParseLazyMode</h4>
+              <pre className="code-block">
+                <code>func ParseLazyMode(s string) (LazyMode, error)</code>
+              </pre>
+              <p className="doc-description">ParseLazyMode parses a string into a LazyMode.</p>
+            </div>
+
             <div className="doc-section" id="func-parseloadmode">
               <h4>ParseLoadMode</h4>
               <pre className="code-block">
@@ -384,6 +392,7 @@ export default function DocsSDKModel() {
 	PtrInsecureLogging         *bool
 	JinjaFile                  string
 	JinjaScript                string
+	LazyMode                   LazyMode
 	LoadMode                   LoadMode
 	Log                        applog.Logger
 	PtrMainGPU                 *int
@@ -443,6 +452,7 @@ export default function DocsSDKModel() {
               <p className="doc-description">InsecureLogging enables logging of potentially sensitive data such as message content. This should only be enabled for debugging purposes in non-production environments.</p>
               <p className="doc-description">JinjaFile is the path to the jinja file. This is not required and can be used if you want to override the templated provided by the model metadata.</p>
               <p className="doc-description">JinjaScript is an in-memory jinja template override. It takes precedence over JinjaFile and is intended for request-scoped model configurations.</p>
+              <p className="doc-description">LazyMode controls on-demand reading of tensors marked eligible by llama.cpp. The default is LazyModeAuto. It applies to target and draft models and does not change the calculator's conservative full-file memory reservation. On Metal, mmap may bring an eligible table into RAM despite lazy reading; LoadModeNone can avoid that overlap.</p>
               <p className="doc-description">LoadMode controls how model weights are loaded. The default is LoadModeAuto, which uses mmap when every selected device supports it and otherwise uses ordinary loading. LoadModeNone disables mmap, which can improve tensor placement on multi-socket NUMA systems running MoE models with CPU experts. LoadModeMLock requests resident pages without forcing mmap, LoadModeMMapMLock combines mmap and mlock, and LoadModeDirectIO bypasses the page cache where the platform and filesystem support it.</p>
               <p className="doc-description">Log is the logger to use for model operations.</p>
               <p className="doc-description">MainGPU is the index of the GPU to use as the primary device when SplitMode is SplitModeNone. When nil, the default GPU (usually index 0) is used.</p>
@@ -751,6 +761,14 @@ export default function DocsSDKModel() {
 }`}</code>
               </pre>
               <p className="doc-description">IMCSystemCacheDetail is a scalar snapshot of one System cache pool entry.</p>
+            </div>
+
+            <div className="doc-section" id="type-lazymode">
+              <h4>LazyMode</h4>
+              <pre className="code-block">
+                <code>{`type LazyMode int32`}</code>
+              </pre>
+              <p className="doc-description">LazyMode controls on-demand reading of tensors marked eligible by llama.cpp.</p>
             </div>
 
             <div className="doc-section" id="type-loadmode">
@@ -1756,6 +1774,54 @@ export default function DocsSDKModel() {
               <p className="doc-description">UnmarshalYAML implements yaml.Unmarshaler to parse string values like "f16".</p>
             </div>
 
+            <div className="doc-section" id="method-lazymode-marshaljson">
+              <h4>LazyMode.MarshalJSON</h4>
+              <pre className="code-block">
+                <code>func (lm LazyMode) MarshalJSON() ([]byte, error)</code>
+              </pre>
+              <p className="doc-description">MarshalJSON implements json.Marshaler.</p>
+            </div>
+
+            <div className="doc-section" id="method-lazymode-marshalyaml">
+              <h4>LazyMode.MarshalYAML</h4>
+              <pre className="code-block">
+                <code>func (lm LazyMode) MarshalYAML() (any, error)</code>
+              </pre>
+              <p className="doc-description">MarshalYAML implements yaml.Marshaler.</p>
+            </div>
+
+            <div className="doc-section" id="method-lazymode-string">
+              <h4>LazyMode.String</h4>
+              <pre className="code-block">
+                <code>func (lm LazyMode) String() string</code>
+              </pre>
+              <p className="doc-description">String returns the string representation of a LazyMode.</p>
+            </div>
+
+            <div className="doc-section" id="method-lazymode-toyzmatype">
+              <h4>LazyMode.ToYZMAType</h4>
+              <pre className="code-block">
+                <code>func (lm LazyMode) ToYZMAType() llama.LazyMode</code>
+              </pre>
+              <p className="doc-description">ToYZMAType converts to the yzma/llama.cpp LazyMode type.</p>
+            </div>
+
+            <div className="doc-section" id="method-lazymode-unmarshaljson">
+              <h4>LazyMode.UnmarshalJSON</h4>
+              <pre className="code-block">
+                <code>func (lm *LazyMode) UnmarshalJSON(data []byte) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalJSON implements json.Unmarshaler.</p>
+            </div>
+
+            <div className="doc-section" id="method-lazymode-unmarshalyaml">
+              <h4>LazyMode.UnmarshalYAML</h4>
+              <pre className="code-block">
+                <code>func (lm *LazyMode) UnmarshalYAML(unmarshal func(any) error) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalYAML implements yaml.Unmarshaler.</p>
+            </div>
+
             <div className="doc-section" id="method-loadmode-marshaljson">
               <h4>LoadMode.MarshalJSON</h4>
               <pre className="code-block">
@@ -2440,6 +2506,7 @@ export default function DocsSDKModel() {
                 <li><a href="#func-verifyartifact">VerifyArtifact</a></li>
                 <li><a href="#func-parsedecisionprotocol">ParseDecisionProtocol</a></li>
                 <li><a href="#func-parseggmltype">ParseGGMLType</a></li>
+                <li><a href="#func-parselazymode">ParseLazyMode</a></li>
                 <li><a href="#func-parseloadmode">ParseLoadMode</a></li>
                 <li><a href="#func-parsemoemode">ParseMoEMode</a></li>
                 <li><a href="#func-newmodel">NewModel</a></li>
@@ -2487,6 +2554,7 @@ export default function DocsSDKModel() {
                 <li><a href="#type-imcsessiondetail">IMCSessionDetail</a></li>
                 <li><a href="#type-imcsessionstate">IMCSessionState</a></li>
                 <li><a href="#type-imcsystemcachedetail">IMCSystemCacheDetail</a></li>
+                <li><a href="#type-lazymode">LazyMode</a></li>
                 <li><a href="#type-loadmode">LoadMode</a></li>
                 <li><a href="#type-logger">Logger</a></li>
                 <li><a href="#type-logprobs">Logprobs</a></li>
@@ -2587,6 +2655,12 @@ export default function DocsSDKModel() {
                 <li><a href="#method-ggmltype-toyzmatype">GGMLType.ToYZMAType</a></li>
                 <li><a href="#method-ggmltype-unmarshaljson">GGMLType.UnmarshalJSON</a></li>
                 <li><a href="#method-ggmltype-unmarshalyaml">GGMLType.UnmarshalYAML</a></li>
+                <li><a href="#method-lazymode-marshaljson">LazyMode.MarshalJSON</a></li>
+                <li><a href="#method-lazymode-marshalyaml">LazyMode.MarshalYAML</a></li>
+                <li><a href="#method-lazymode-string">LazyMode.String</a></li>
+                <li><a href="#method-lazymode-toyzmatype">LazyMode.ToYZMAType</a></li>
+                <li><a href="#method-lazymode-unmarshaljson">LazyMode.UnmarshalJSON</a></li>
+                <li><a href="#method-lazymode-unmarshalyaml">LazyMode.UnmarshalYAML</a></li>
                 <li><a href="#method-loadmode-marshaljson">LoadMode.MarshalJSON</a></li>
                 <li><a href="#method-loadmode-marshalyaml">LoadMode.MarshalYAML</a></li>
                 <li><a href="#method-loadmode-string">LoadMode.String</a></li>

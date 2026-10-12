@@ -638,6 +638,7 @@ func buildModelParams(ctx context.Context, cfg *Config, loadMTP bool, l applog.L
 		ka.tensorBuft = overrides
 	}
 
+	mParams.LazyMode = cfg.LazyMode.ToYZMAType()
 	mParams.LoadMode = cfg.LoadMode.ToYZMAType()
 	logModelParamsTrace(ctx, mParams, cfg.Devices, cfg.TensorSplit, cfg.TensorBuftOverrides, l)
 
@@ -738,8 +739,8 @@ func logContextParamsTrace(ctx context.Context, ctxParams llama.ContextParams, c
 // Pointer-backed arrays use their configured values so diagnostics remain
 // readable without exposing process addresses.
 func logModelParamsTrace(ctx context.Context, params llama.ModelParams, deviceNames []string, tensorSplit []float32, tensorBuftOverrides []string, l applog.Logger) {
-	l(ctx, "LLAMA-MODEL-PARAMS", "values", fmt.Sprintf("\nCheckTensors[%d]\nDevices[%v]\nKvOverridesSet[%t]\nLoadMode[%s]\nLoadMTP[%d]\nMainGPU[%d]\nNGpuLayers[%d]\nNoAlloc[%d]\nNoHost[%d]\nProgressCallbackSet[%t]\nProgressCallbackUserDataSet[%t]\nSplitMode[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseExtraBufts[%d]\nVocabOnly[%d]\n",
-		params.CheckTensors, deviceNames, params.KvOverrides != 0, loadModeName(params.LoadMode), params.LoadMTP,
+	l(ctx, "LLAMA-MODEL-PARAMS", "values", fmt.Sprintf("\nCheckTensors[%d]\nDevices[%v]\nKvOverridesSet[%t]\nLazyMode[%d]\nLoadMode[%s]\nLoadMTP[%d]\nMainGPU[%d]\nNGpuLayers[%d]\nNoAlloc[%d]\nNoHost[%d]\nProgressCallbackSet[%t]\nProgressCallbackUserDataSet[%t]\nSplitMode[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseExtraBufts[%d]\nVocabOnly[%d]\n",
+		params.CheckTensors, deviceNames, params.KvOverrides != 0, params.LazyMode, loadModeName(params.LoadMode), params.LoadMTP,
 		params.MainGpu, params.NGpuLayers, params.NoAlloc, params.NoHost, params.ProgressCallback != 0, params.ProgressCallbackUserData != 0, SplitMode(params.SplitMode).String(),
 		tensorBuftOverrides, tensorSplit, params.UseExtraBufts, params.VocabOnly))
 }
@@ -945,6 +946,7 @@ func loadDraftModel(ctx context.Context, log applog.Logger, cfg Config, targetMo
 
 	// Load draft model.
 	mParams := llama.ModelDefaultParams()
+	mParams.LazyMode = cfg.LazyMode.ToYZMAType()
 	mParams.LoadMode = cfg.LoadMode.ToYZMAType()
 	switch {
 	case dCfg.PtrNGpuLayers == nil:

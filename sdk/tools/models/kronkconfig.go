@@ -355,6 +355,7 @@ type ModelConfig struct {
 	PtrIMCSessionCapacity *int                      `yaml:"imc-session-capacity,omitempty"`
 	PtrIncrementalCache   *bool                     `yaml:"incremental-cache,omitempty"`
 	PtrInsecureLogging    *bool                     `yaml:"insecure-logging,omitempty"`
+	PtrLazyMode           *model.LazyMode           `yaml:"lazy-mode,omitempty"`
 	PtrLoadMode           *model.LoadMode           `yaml:"load-mode,omitempty"`
 	PtrMainGPU            *int                      `yaml:"main-gpu,omitempty"`
 	MoE                   *model.MoEConfig          `yaml:"moe,omitempty"`
@@ -426,6 +427,7 @@ func (mc ModelConfig) ToKronkConfig() model.Config {
 		PtrIncrementalCache:   mc.PtrIncrementalCache,
 		PtrInsecureLogging:    mc.PtrInsecureLogging,
 		JinjaFile:             mc.Template,
+		LazyMode:              model.DerefLazyMode(mc.PtrLazyMode),
 		LoadMode:              model.DerefLoadMode(mc.PtrLoadMode),
 		PtrMainGPU:            mc.PtrMainGPU,
 		PtrMoE:                mc.MoE,
