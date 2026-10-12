@@ -25,8 +25,8 @@ func addMTPBatchEntry(batch llama.BatchExt, token llama.Token, position llama.Po
 			return fmt.Errorf("adding sequence %d: %w", seqID, err)
 		}
 	}
-	if err := llama.BatchExtSetEmbdToken(batch, idx, hidden, nEmbd); err != nil {
-		return fmt.Errorf("setting token embedding: %w", err)
+	if err := llama.BatchExtSetEmbdState(batch, idx, hidden, nEmbd); err != nil {
+		return fmt.Errorf("setting MTP state embedding: %w", err)
 	}
 	if err := llama.BatchExtSetPos(batch, idx, position); err != nil {
 		return fmt.Errorf("setting position %d: %w", position, err)

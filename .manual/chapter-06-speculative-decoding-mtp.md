@@ -132,9 +132,11 @@ self-contained companion GGUFs through the own-KV runtime. Existing
 shared-tensor sidecars are not compatible; the companion must contain its own
 token embeddings and output tensors.
 
-The pinned b11513 bundle contains the recurrent-memory assertion fix from
+The pinned b11574 bundle contains the recurrent-memory assertion fix from
 upstream PR #29799 and the Qwen4Exp QSA/indexer correctness fixes from PR
-#29819. In `auto` mode Kronk loads a compatible Qwen4Exp companion when one is
+#29819. MTP hidden rows use the separate state-embedding input introduced in
+PR #30257; token and media embeddings remain separate. In `auto` mode Kronk
+loads a compatible Qwen4Exp companion when one is
 available, otherwise it uses a compatible embedded head. The `disabled`
 speculation mode continues to run the target without MTP.
 
