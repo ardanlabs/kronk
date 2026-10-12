@@ -6,8 +6,7 @@
 #   make uninstall-service
 #
 # Override systemd settings with `systemctl edit kronk` rather than editing
-# this file. Override Kronk settings in /etc/kronk/kronk.env; a commented
-# reference lives next to this file in kronk.env.
+# this file. Set Kronk settings as KRONK_* variables in /etc/kronk/kronk.env.
 
 [Unit]
 Description=Kronk model server

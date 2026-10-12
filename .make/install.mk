@@ -143,13 +143,13 @@ install-docker:
 	wait;
 
 # ==============================================================================
-# Linux systemd services
+# Linux systemd service
 
 # The kronk binary to copy into place for the service. Defaults to the one on
 # your PATH. Override with `make install-service KRONK_BIN=/path/to/kronk`.
 KRONK_BIN ?= $(shell command -v kronk)
 
-# Shell prelude that checks the targets run as you and KRONK_BIN is set, and
+# Shell prelude that checks the target runs as you and KRONK_BIN is set, and
 # reports the binary being installed. Under sudo, PATH is reset, so kronk
 # would not be found.
 define kronk_service_bin
@@ -172,13 +172,3 @@ install-service:
 # Remove the Linux systemd service, keeping models and configuration.
 uninstall-service:
 	sudo zarf/systemd/install.sh uninstall
-
-# Install or upgrade the Linux systemd user service, which runs as you on
-# ~/.kronk (see Chapter 8). No sudo required.
-install-user-service:
-	@$(kronk_service_bin); \
-	zarf/systemd/install.sh install-user "$$bin"
-
-# Remove the Linux systemd user service, keeping ~/.kronk.
-uninstall-user-service:
-	zarf/systemd/install.sh uninstall-user

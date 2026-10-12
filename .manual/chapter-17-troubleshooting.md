@@ -387,8 +387,7 @@ key files. Avoid recursively making credentials readable by other users.
 
 When Kronk runs as the systemd service described in
 [Chapter 8 §8.8](https://www.kronkai.com/manual#88-running-as-a-system-service),
-read its logs with `journalctl -u kronk` (`journalctl --user -u kronk` for the
-user service) and check these common failures:
+read its logs with `journalctl -u kronk` and check these common failures:
 
 | Symptom | Cause | Fix |
 | ------- | ----- | --- |
@@ -397,12 +396,11 @@ user service) and check these common failures:
 | `permission denied` under `/var/lib/kronk` | Files were copied in by another user | `sudo chown -R kronk:kronk /var/lib/kronk` |
 | GPU works in a shell but not in the service | `kronk` is not in the `video`/`render` group, or the NVIDIA device nodes are missing | Compare `sudo -u kronk KRONK_BASE_PATH=/var/lib/kronk /usr/local/bin/kronk devices`; check the `nvidia-modprobe` step in `journalctl -u kronk` |
 | `Operation not permitted` from a GPU or native library | A system call outside the unit's allowed set was rejected | Add the call with `SystemCallFilter=` in `systemctl edit kronk`, and report it |
-| User service uses the CPU over SSH, but the GPU from a desktop login | The one-time GPU setup was skipped or failed, so the service has no GPU access without a desktop session | Run `make install-user-service` again and answer `y` to the GPU setup prompt |
+| Models from `~/.kronk` are missing in the service | The service uses `/var/lib/kronk`, never `~/.kronk` | Copy them in as described in "Using Data from an Existing Installation" in [§8.8](https://www.kronkai.com/manual#88-running-as-a-system-service) |
 | Service still runs the old version after an upgrade | The service runs its own copy of `kronk` | Run the install target again |
 | `kronk server stop` reports no server | The service has no PID file | Use `sudo systemctl stop kronk` |
 | Stop takes long, then the process is killed | `KRONK_WEB_SHUTDOWN_TIMEOUT` exceeds the unit's `TimeoutStopSec` | Raise `TimeoutStopSec` with `systemctl edit kronk` |
-| User service stops when you log out | Expected: the user service runs only while you are logged in | Use the system service to run Kronk at boot |
-| `Address already in use` on `11435` | Both services are installed, or a manual `kronk server start` is running | Keep one: `make uninstall-service` or `make uninstall-user-service` |
+| `Address already in use` on `11435` | A manual `kronk server start` is running | Stop it with `kronk server stop`, then `sudo systemctl restart kronk` |
 
 Whisper-specific failures are listed in
 [Chapter 18 §18.9](https://www.kronkai.com/manual#189-troubleshooting).

@@ -88,7 +88,7 @@ change. Go commands require the environment described in [§20.9](#209-verificat
 | Release | `.github/workflows/release.yaml`, `.goreleaser.yaml`, `.release/`, version scripts | `sdk/kronk` version constant and tag convention | version scripts and GoReleaser snapshot/check when appropriate |
 | Container image | `.github/workflows/docker.yml`, `zarf/docker/` | entrypoint, native-library combinations, release tags | build the affected target/variant; workflow is authority for matrix and signing |
 | Nix development/package data | `zarf/nix/flake.nix` | Go module files and setup hook | evaluate/build the relevant Nix entry point; regenerate gomod2nix data when dependencies change |
-| Linux systemd services | `zarf/systemd/`, `install-service`/`install-user-service` and their uninstall targets in `.make/install.mk` | `kronk server start` flags and env vars, shutdown timeout, Chapter 8 §8.8 | `systemd-analyze verify` and `systemd-analyze security`; `make install-user-service` and `make install-service`, then start/stop on a GPU host |
+| Linux systemd service | `zarf/systemd/`, `install-service`/`uninstall-service` in `.make/install.mk` | `kronk server start` flags and env vars, shutdown timeout, Chapter 8 §8.8 | `systemd-analyze verify` and `systemd-analyze security`; `make install-service`, then start/stop on a GPU host |
 
 Tests close to an owner are usually more diagnostic than a repository-wide command.
 If a change crosses rows, verify each changed contract rather than choosing only the
@@ -970,48 +970,40 @@ owners rather than adding environment special cases to Go code.
 
 #### 20.10.5 Linux systemd Services
 
-`zarf/systemd/` owns the Linux service definitions described for users in
+`zarf/systemd/` owns the Linux service definition described for users in
 [Chapter 8 §8.8](https://www.kronkai.com/manual#88-running-as-a-system-service):
 
-| File                       | Purpose                                                       |
-| -------------------------- | ------------------------------------------------------------- |
-| `kronk-user.service`       | User service: runs as the user on `~/.kronk`                  |
-| `kronk.service`            | System service: runs as the `kronk` user on `/var/lib/kronk`  |
-| `kronk.sysusers.conf`      | Creates the `kronk` user and adds it to `video`/`render`      |
-| `kronk-nvidia-uvm.service` | Creates NVIDIA device nodes at boot for the user service      |
-| `kronk.env`                | Reference of server settings; not installed by default        |
-| `install.sh`               | Installs, upgrades, or removes either service                 |
+| File                  | Purpose                                                  |
+| --------------------- | -------------------------------------------------------- |
+| `kronk.service`       | Runs `kronk server start` as `kronk` on `/var/lib/kronk` |
+| `kronk.sysusers.conf` | Creates the `kronk` user and adds it to `video`/`render` |
+| `install.sh`          | Installs, upgrades, or removes the service               |
 
-Both units run `kronk server start` in the foreground. Do not add `--detach`:
+The unit runs `kronk server start` in the foreground. Do not add `--detach`:
 systemd tracks the process itself, and a forked server looks like a crash.
 
-`install.sh`, driven by the `install-service`/`install-user-service` targets in
+The service uses a fixed `kronk` user rather than `DynamicUser=yes` so the owner
+of `/var/lib/kronk` exists while the service is stopped: admins can run
+`sudo -u kronk kronk ... --local` against the service's data and copy in models
+from `~/.kronk` with a plain `chown`.
+
+`install.sh`, driven by the `install-service` and `uninstall-service` targets in
 `.make/install.mk`, behaves as follows:
 
-- It copies the binary because the sandboxes hide `/home`, so neither service can
-  run a `go install` or Linuxbrew binary in place. The system copy goes to
-  `/usr/local/bin/kronk`. The user copy goes to `~/.local/share/kronk/bin/kronk`,
-  deliberately off `PATH`: in `~/.local/bin` it would shadow the user's upgraded
-  CLI and be picked up again as the install source, so upgrades would silently
-  reinstall the old binary.
+- It copies the binary to `/usr/local/bin/kronk` because the sandbox hides
+  `/home`, so the service cannot run a `go install` or Linuxbrew binary in place.
 - Install is idempotent and is the upgrade path: it replaces the binary and unit and
-  restarts a running service. The make targets print the binary path and version
-  they install. They never build: with no `kronk` on `PATH` they stop and ask for
-  `KRONK_BIN`, and they refuse to run under `sudo`, which resets `PATH`.
-- It refuses to install one service while the other is enabled or running, since an
-  enabled but stopped service still starts at the next boot and both use the same
-  ports.
-- The user service runs only while the user is logged in; Kronk at boot is the
-  system service's job. A login without a desktop session, such as SSH, lacks the
-  temporary device ACL a desktop session grants, so the service would fall back to
-  the CPU on Debian and Ubuntu. When needed, `install-user` offers, behind a `[y/N]`
-  prompt that defaults to no, to use `sudo` once to add the user to the groups owning
-  `/dev/kfd` and `/dev/dri/renderD*`, and on NVIDIA hosts to install
-  `kronk-nvidia-uvm.service`. Supplementary groups stay effective inside the user
-  unit's unprivileged user namespace, where they display as `nogroup`.
-- System uninstall keeps `/usr/local/bin/kronk`, the `kronk` user, `/var/lib/kronk`,
-  and `/etc/kronk`. User uninstall keeps `~/.kronk`, the binary copy, the group
-  membership, and the NVIDIA helper unit.
+  restarts a running service. The make target prints the binary path and version
+  it installs. It never builds: with no `kronk` on `PATH` it stops and asks for
+  `KRONK_BIN`, and it refuses to run under `sudo`, which resets `PATH`.
+- It offers, behind a `[y/N]` prompt that defaults to no, to copy the invoking
+  user's `~/.kronk` (found through `SUDO_USER`) into `/var/lib/kronk`. It asks only
+  on a terminal, only when `~/.kronk/models` exists, and only while
+  `/var/lib/kronk/models` holds no `.gguf` file, so upgrades never overwrite the
+  service's data. It skips the copy while a detached server from `~/.kronk` is
+  running, and copies without owners or SELinux labels, then `chown`s to `kronk`.
+- Uninstall keeps `/usr/local/bin/kronk`, the `kronk` user, `/var/lib/kronk`, and
+  `/etc/kronk`.
 
 ### 20.11 Change and Release Checklists
 

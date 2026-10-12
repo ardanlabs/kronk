@@ -447,12 +447,25 @@ Server-side downloading is separately controlled by
 `KRONK_DOWNLOAD_ENABLED` and defaults to `false`. Local CLI commands using
 `--local` are not affected by this setting.
 
-To start the server at boot and restart it after a crash on Linux, install it
-as a systemd service; see
-[Chapter 8](https://www.kronkai.com/manual#88-running-as-a-system-service).
-
 See [Chapter 8](https://www.kronkai.com/manual#chapter-8-model-server) for server flags, model pooling,
 runtime paths, and deployment operations.
+
+#### Run as a Linux Service (systemd)
+
+On Linux, instead of starting the server by hand, you can install it as a
+systemd service that starts at boot, restarts after a crash, and runs in a
+restricted sandbox as a dedicated `kronk` user. From a checkout of the
+repository, with `kronk` on your `PATH`, run:
+
+```shell
+make install-service
+```
+
+The service keeps its data in `/var/lib/kronk`, not `~/.kronk`; if you
+already downloaded models, the target offers to copy them over. Run the same
+target again after upgrading the CLI. See
+[Chapter 8](https://www.kronkai.com/manual#88-running-as-a-system-service)
+for configuration, GPU access, and uninstalling.
 
 ### 2.7 Verify the Installation
 
