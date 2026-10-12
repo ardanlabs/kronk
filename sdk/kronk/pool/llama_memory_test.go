@@ -288,6 +288,77 @@ func TestAdditionalMemoryAccountsForProjectionAndCompanionMTPFiles(t *testing.T)
 	}
 }
 
+func TestPlanLlamaProjectorWorkspace(t *testing.T) {
+	mdls, err := models.NewWithPaths(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(mdls.Path(), "test", "family")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	var projectorSize int64
+	for name, metadata := range map[string]map[string]string{
+		"target":    {"general.architecture": "llama", "llama.block_count": "2", "llama.embedding_length": "64", "llama.attention.head_count": "1", "llama.attention.head_count_kv": "1"},
+		"projector": {"general.architecture": "clip", "clip.projector_type": "ultravox"},
+	} {
+		var header bytes.Buffer
+		write := func(value any) {
+			t.Helper()
+			if err := binary.Write(&header, binary.LittleEndian, value); err != nil {
+				t.Fatal(err)
+			}
+		}
+		writeString := func(value string) {
+			write(uint64(len(value)))
+			if _, err := header.WriteString(value); err != nil {
+				t.Fatal(err)
+			}
+		}
+		write(gguf.Magic)
+		write(uint32(3))
+		write(uint64(0))
+		write(uint64(len(metadata)))
+		for key, value := range metadata {
+			writeString(key)
+			write(gguf.MetadataValueTypeString)
+			writeString(value)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name+".gguf"), header.Bytes(), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if name == "projector" {
+			projectorSize = int64(header.Len())
+		}
+	}
+	log := func(context.Context, string, ...any) {}
+	if err := mdls.BuildIndex(log, false); err != nil {
+		t.Fatal(err)
+	}
+	rm, err := resman.New(resman.Config{Snapshot: resman.Snapshot{RAMBytes: 64 << 30, UnifiedMemory: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := newLlama(log, mdls, nil, rm, devices.Devices{}, false)
+	cfg := model.Config{PtrContextWindow: new(256), PtrNSeqMax: new(1), PtrSWAFull: new(true)}
+	base, err := l.Plan(context.Background(), loader.LoadRequest{Key: "model", ModelID: "test/target", Prepared: cfg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ProjFile = filepath.Join(dir, "projector.gguf")
+	withProjector, err := l.Plan(context.Background(), loader.LoadRequest{Key: "model", ModelID: "test/target", Prepared: cfg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Projector residency plus the existing 256 MiB runtime floor and
+	// its 10% margin, independent of the decoder's workspace policy.
+	const runtime int64 = 256 << 20
+	want := projectorSize + runtime + runtime/10
+	if got := withProjector.RAMBytes - base.RAMBytes; got != want {
+		t.Fatalf("projector unified reservation: got %d, want %d", got, want)
+	}
+}
+
 func TestPlanQwen35CompanionReservations(t *testing.T) {
 	mdls, err := models.NewWithPaths(t.TempDir())
 	if err != nil {

@@ -79,13 +79,18 @@ func buildFromMetadata(metadata map[string]string, tensors []gguf.TensorInfo, mo
 		computeContexts = 2
 	}
 	outputRows := cfg.OutputRows
-	if outputRows <= 0 && (profile.ComputeKind == modelprofile.ComputeQwen35 || profile.ComputeKind == modelprofile.ComputeGPTOSS || profile.ComputeKind == modelprofile.ComputeMistral3 || profile.ComputeKind == modelprofile.ComputeLFM2 || profile.ComputeKind == modelprofile.ComputeGLM4MoE || profile.ComputeKind == modelprofile.ComputeGemma3) && profile.Purpose == modelprofile.PurposeGeneration {
-		// Generation caps logits at one current row plus NDraft rows per
-		// slot, matching the current/rollback count supplied by callers.
-		// Own-KV MTP emits only one row per slot.
-		outputRows = max(cfg.Slots, 1) * recurrentStateCopies
-		if cfg.MTPContext {
-			outputRows = max(cfg.Slots, 1)
+	if outputRows <= 0 && profile.Purpose == modelprofile.PurposeGeneration {
+		switch profile.ComputeKind {
+		case modelprofile.ComputeQwen35, modelprofile.ComputeGPTOSS,
+			modelprofile.ComputeMistral3, modelprofile.ComputeLFM2,
+			modelprofile.ComputeGLM4MoE, modelprofile.ComputeGemma3, modelprofile.ComputeLlama:
+			// Generation caps logits at one current row plus NDraft rows
+			// per slot, matching current/rollback copies from callers.
+			// Own-KV MTP emits only one row per slot.
+			outputRows = max(cfg.Slots, 1) * recurrentStateCopies
+			if cfg.MTPContext {
+				outputRows = max(cfg.Slots, 1)
+			}
 		}
 	}
 	vocabularySize := profile.Dimensions.VocabularySize

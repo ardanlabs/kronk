@@ -372,6 +372,62 @@ func TestFromBytesIndexedHybridMemory(t *testing.T) {
 	}
 }
 
+func TestFromBytesLlamaWorkspace(t *testing.T) {
+	const mib int64 = 1 << 20
+	for _, tt := range []struct {
+		name, backend, blocks, hidden, width string
+		slots, cacheMiB, gpuMiB, cpuMiB      int64
+	}{
+		{"8B", "metal", "32", "4096", "128", 1, 16384, 1536, 640},
+		{"1B", "metal", "16", "2048", "64", 1, 4096, 1152, 576},
+		{"8B two slots", "metal", "32", "4096", "128", 2, 32768, 2112, 640},
+		{"1B CUDA control", "cuda", "16", "2048", "64", 1, 4096, 896, 576},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			metadata := map[string]string{
+				"general.architecture": "llama", "llama.block_count": tt.blocks,
+				"llama.embedding_length": tt.hidden, "llama.vocab_size": "128256",
+				"llama.attention.head_count": "32", "llama.attention.head_count_kv": "8",
+				"llama.attention.key_length": tt.width, "llama.attention.value_length": tt.width,
+			}
+			var data bytes.Buffer
+			write := func(value any) {
+				t.Helper()
+				if err := binary.Write(&data, binary.LittleEndian, value); err != nil {
+					t.Fatal(err)
+				}
+			}
+			writeString := func(value string) {
+				write(uint64(len(value)))
+				if _, err := data.WriteString(value); err != nil {
+					t.Fatal(err)
+				}
+			}
+			write(gguf.Magic)
+			write(uint32(3))
+			write(uint64(0))
+			write(uint64(len(metadata)))
+			for key, value := range metadata {
+				writeString(key)
+				write(gguf.MetadataValueTypeString)
+				writeString(value)
+			}
+			result, err := FromBytes(data.Bytes(), 4<<30, Config{ComputeBackend: tt.backend, ContextWindow: 131072, Slots: tt.slots, TypeK: 1, TypeV: 1, BytesPerElement: 2, NUBatch: 2048})
+			if err != nil {
+				t.Fatal(err)
+			}
+			gpu, cpu := tt.gpuMiB*mib, tt.cpuMiB*mib
+			gpu, cpu = gpu+gpu/10, cpu+cpu/10
+			if result.SlotMemory != tt.cacheMiB*mib || result.ComputeBufferEst != gpu || result.ComputeBufferCPU != cpu {
+				t.Fatalf("cache/GPU compute/CPU compute: got %d/%d/%d, want %d/%d/%d", result.SlotMemory, result.ComputeBufferEst, result.ComputeBufferCPU, tt.cacheMiB*mib, gpu, cpu)
+			}
+			if result.UnifiedFootprint() != 4<<30+tt.cacheMiB*mib+gpu+cpu {
+				t.Fatal("unified footprint omitted cache or workspace")
+			}
+		})
+	}
+}
+
 func TestFromBytesGemma3RNJWorkspace(t *testing.T) {
 	const mib int64 = 1 << 20
 	metadata := map[string]string{

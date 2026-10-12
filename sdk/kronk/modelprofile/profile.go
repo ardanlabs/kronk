@@ -41,6 +41,7 @@ const (
 	ComputeLFM2                        // LFM2 attention and short-convolution workspaces.
 	ComputeGLM4MoE                     // GLM4 MoE full-attention and routed FFN workspaces.
 	ComputeGemma3                      // Gemma3 non-SWA attention workspaces (RNJ).
+	ComputeLlama                       // Llama full-attention GQA workspaces.
 )
 
 // Purpose describes the endpoint a model serves.

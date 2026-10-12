@@ -46,6 +46,8 @@ func estimateComputeMemory(input Input) ComputeMemory {
 		return glm4moeComputeMemory(input)
 	case input.ComputeKind == modelprofile.ComputeGemma3:
 		return gemma3ComputeMemory(input)
+	case input.ComputeKind == modelprofile.ComputeLlama:
+		return llamaComputeMemory(input)
 	case input.ComputeKind == modelprofile.ComputeIndexed || input.IndexerKeyLength > 0:
 		return qwen4expComputeMemory(input)
 	default:

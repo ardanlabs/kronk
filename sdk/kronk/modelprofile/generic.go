@@ -44,6 +44,9 @@ func resolveGeneric(metadata metadata) Profile {
 	if arch == "gemma4" || arch == "gemma4-assistant" {
 		profile.ComputeKind = ComputeGemma4
 	}
+	if arch == "llama" {
+		profile.ComputeKind = ComputeLlama
+	}
 	if arch == "gemma3" && profile.Attention.SlidingWindow <= 0 {
 		// RNJ uses Gemma3's ordinary KV graph. SWA Gemma3 graphs remain
 		// on the fallback until their separate mask policy is validated.
