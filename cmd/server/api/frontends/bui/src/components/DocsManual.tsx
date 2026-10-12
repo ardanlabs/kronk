@@ -386,6 +386,40 @@ kronk server stop`}</code></pre>
   --web-admin-enabled=false`}</code></pre>
           <p>Server-side downloading is separately controlled by <code>KRONK_DOWNLOAD_ENABLED</code> and defaults to <code>false</code>. Local CLI commands using <code>--local</code> are not affected by this setting.</p>
           <p>See <a href="https://www.kronkai.com/manual#chapter-8-model-server">Chapter 8</a> for server flags, model pooling, runtime paths, and deployment operations.</p>
+          <h4 id="run-as-a-linux-service-systemd">Run as a Linux Service (systemd)</h4>
+          <p>On Linux, instead of starting the server by hand, you can install it as a systemd service that restarts after a crash and runs in a restricted sandbox. The service files are not in the release packages, so clone the repository first:</p>
+          <pre className="code-block"><code className="language-shell">{`git clone --depth 1 https://github.com/ardanlabs/kronk.git
+cd kronk`}</code></pre>
+          <p>Then install one of two levels:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Level</th>
+                <th>Command</th>
+                <th>Runs as</th>
+                <th>Starts</th>
+                <th>Data</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>User level</td>
+                <td><code>make install-user-service</code></td>
+                <td>You</td>
+                <td>When you log in; stops when you log out</td>
+                <td>Your existing <code>~/.kronk</code></td>
+              </tr>
+              <tr>
+                <td>System level</td>
+                <td><code>make install-system-service</code></td>
+                <td>A dedicated <code>kronk</code> user</td>
+                <td>At boot</td>
+                <td><code>/var/lib/kronk</code></td>
+              </tr>
+            </tbody>
+          </table>
+          <p>Install only one. The system level cannot see your <code>~/.kronk</code>; to keep using it, choose the user level, or copy it over as Chapter 8 describes.</p>
+          <p>The target copies the <code>kronk</code> on your <code>PATH</code>; to use a different binary, add <code>KRONK_BIN=/path/to/kronk</code>. Run the same target again after upgrading the CLI. See <a href="https://www.kronkai.com/manual#88-running-as-a-system-service">Chapter 8</a> for choosing a level, configuration, GPU access, and uninstalling.</p>
           <h3 id="27-verify-the-installation">2.7 Verify the Installation</h3>
           <p>Check server liveness:</p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/liveness`}</code></pre>
@@ -2226,7 +2260,103 @@ KRONK_IMAGE_VERSION=vX.Y.Z`}</code></pre>
             <li><code>latest</code>: run <code>docker compose pull</code>, then <code>docker compose up -d</code>.</li>
           </ul>
           <p>The <code>kronk-net</code> network is shared with the <a href="https://www.kronkai.com/manual#153-bundled-observability-stack">observability stack</a> and can remain after both stacks stop; remove it with <code>docker network rm kronk-net</code>.</p>
-          <h2 id="88-related-administration-guides">8.8 Related Administration Guides</h2>
+          <h2 id="88-running-as-a-system-service">8.8 Running as a System Service</h2>
+          <p>On Linux, Kronk can run as a systemd service that starts automatically, restarts after a crash, and runs in a restricted sandbox. The service files are not in the release packages, so install from a clone of the repository, at one of two levels:</p>
+          <pre className="code-block"><code className="language-shell">{`git clone --depth 1 https://github.com/ardanlabs/kronk.git
+cd kronk
+make install-user-service   # user level: runs as you, at login, on ~/.kronk
+make install-system-service # system level: runs as a kronk user, at boot, on /var/lib/kronk`}</code></pre>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th></th>
+                <th>User level</th>
+                <th>System level</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Best for</td>
+                <td>A personal workstation</td>
+                <td>A headless or shared server</td>
+              </tr>
+              <tr>
+                <td>Runs as</td>
+                <td>You</td>
+                <td>The dedicated <code>kronk</code> user</td>
+              </tr>
+              <tr>
+                <td>Data</td>
+                <td>Your existing <code>~/.kronk</code>, shared with the CLI</td>
+                <td><code>/var/lib/kronk</code>, separate from any user</td>
+              </tr>
+              <tr>
+                <td>Starts</td>
+                <td>At login; stops when you log out</td>
+                <td>At boot</td>
+              </tr>
+              <tr>
+                <td><code>sudo</code></td>
+                <td>Only for a one-time GPU setup</td>
+                <td>Required</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>Install only one: both listen on the same ports. The installer refuses while the other level is enabled or running, or while a server started with <code>kronk server start --detach</code> is running.</p>
+          <p>Run the targets as yourself, not with <code>sudo</code>; they ask for <code>sudo</code> when they need it. Each copies the <code>kronk</code> on your <code>PATH</code> into place, because the sandbox cannot see your home directory. To use a different binary, add <code>KRONK_BIN=/path/to/kronk</code>. Run the same target again after upgrading the CLI; it replaces the binary and restarts the service.</p>
+          <p>Remove a service with <code>make uninstall-user-service</code> or <code>make uninstall-system-service</code>. Both keep the binary, your models, keys, and configuration.</p>
+          <p>Without <code>make</code>, run the script directly:</p>
+          <pre className="code-block"><code className="language-shell">{`zarf/systemd/install.sh install --user-level /path/to/kronk
+sudo zarf/systemd/install.sh install --system-level /path/to/kronk`}</code></pre>
+          <h3 id="user-level-service">User-Level Service</h3>
+          <p>The user-level service uses your <code>~/.kronk</code> in place, so models, libraries, and keys installed with the CLI work as they are, and CLI commands, including <code>--local</code> ones, need no <code>sudo</code>. Manage it with:</p>
+          <pre className="code-block"><code className="language-shell">{`systemctl --user status kronk
+journalctl --user -u kronk -f`}</code></pre>
+          <p>Server settings go in <code>~/.config/kronk/kronk.env</code>, using the variables described in <a href="#configuration">Configuration</a>. Do not set <code>KRONK_BASE_PATH</code> there: the service can write only to <code>~/.kronk</code>.</p>
+          <p>A desktop login gives the service GPU access. For logins without a desktop session, such as SSH, on distributions such as Debian and Ubuntu, the installer offers to grant permanent GPU access with <code>sudo</code> once:</p>
+          <ul>
+            <li>On NVIDIA hosts, it installs <code>kronk-nvidia-uvm.service</code>, which creates the CUDA device nodes at boot that the sandbox stops CUDA from creating.</li>
+            <li>For AMD, Intel, and Vulkan, it adds you to the groups that own the GPU devices. Log out of all your sessions, desktop and SSH, and log back in for the change to apply.</li>
+          </ul>
+          <h3 id="system-level-service">System-Level Service</h3>
+          <p>The system-level service follows the layout of a distribution-packaged daemon: a dedicated <code>kronk</code> user, state in <code>/var/lib/kronk</code>, and configuration in <code>/etc/kronk</code>. It needs no GPU setup. On first start it downloads the native libraries, so the host needs outbound HTTPS. Check it with:</p>
+          <pre className="code-block"><code className="language-shell">{`systemctl status kronk
+journalctl -u kronk -f
+curl http://localhost:11435/v1/liveness`}</code></pre>
+          <h4 id="data-and-models">Data and Models</h4>
+          <p>The service never reads <code>~/.kronk</code>: it runs as a different user, and the sandbox hides <code>/home</code>.</p>
+          <p>Server-backed commands, such as <code>kronk model list</code> without <code>--local</code>, talk to the service over HTTP and need no <code>sudo</code>. Downloads through the server are disabled by default; set <code>KRONK_DOWNLOAD_ENABLED=true</code> in <code>/etc/kronk/kronk.env</code> to let <code>kronk model pull</code> and the BUI download into the service's data. In the default <code>open</code> authorization mode any local process can then trigger downloads, so also consider <code>KRONK_AUTHORIZATION_MODE=management</code> (see <a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication">Chapter 12</a>).</p>
+          <p>Run <code>--local</code> commands as the <code>kronk</code> user so files keep the right owner:</p>
+          <pre className="code-block"><code className="language-shell">{`sudo -u kronk KRONK_BASE_PATH=/var/lib/kronk /usr/local/bin/kronk model pull unsloth/Qwen3-0.6B-Q8_0 --local`}</code></pre>
+          <h4 id="using-data-from-an-existing-installation">Using Data from an Existing Installation</h4>
+          <p>Models, catalog, and keys from the CLI live in <code>~/.kronk</code>, which the service cannot read, even through a symlink. The installer reminds you when it finds one. Copy it in instead of downloading again, or use the <a href="#user-level-service">user level</a> to keep using <code>~/.kronk</code> in place:</p>
+          <pre className="code-block"><code className="language-shell">{`sudo systemctl stop kronk
+kronk server stop    # only if you started one with --detach
+sudo cp -dR --preserve=mode,timestamps,links ~/.kronk/. /var/lib/kronk/
+sudo rm -f /var/lib/kronk/kronk.log /var/lib/kronk/kronk.pid
+sudo chown -R kronk:kronk /var/lib/kronk
+sudo systemctl start kronk`}</code></pre>
+          <p>To copy only the models, copy <code>~/.kronk/models/.</code> to <code>/var/lib/kronk/models/</code> and <code>chown</code> that directory instead. Copying <code>keys</code> replaces the service's keys, so tokens it issued earlier stop working.</p>
+          <h4 id="configuration">Configuration</h4>
+          <p>Every <code>kronk server start</code> flag has a <code>KRONK_*</code> environment variable (see §8.3). The service loads <code>/etc/kronk/kronk.env</code> when it exists, one <code>NAME=value</code> per line. Keep it private to root, since it can hold secrets:</p>
+          <pre className="code-block"><code className="language-shell">{`sudo install -m 0600 /dev/null /etc/kronk/kronk.env
+sudoedit /etc/kronk/kronk.env
+sudo systemctl restart kronk`}</code></pre>
+          <p>For example:</p>
+          <pre className="code-block"><code className="language-shell">{`# /etc/kronk/kronk.env
+KRONK_DOWNLOAD_ENABLED=true
+KRONK_AUTHORIZATION_MODE=management
+KRONK_POOL_MODEL_CONFIG_FILE=/etc/kronk/model_config.yaml`}</code></pre>
+          <p>Do not set <code>KRONK_BASE_PATH</code> here: it overrides <code>/var/lib/kronk</code>, and the sandbox makes every other path read-only, so the server fails to start.</p>
+          <p>The service listens on <code>127.0.0.1:11435</code>. Configure authorization before setting <code>KRONK_WEB_API_HOST</code> to a public interface. The unit cannot bind ports below 1024, so use a reverse proxy to serve on 80 or 443.</p>
+          <h3 id="shutdown-restarts-and-hardening">Shutdown, Restarts, and Hardening</h3>
+          <p>Commands below are for the system level. At user level, drop <code>sudo</code> and add <code>--user</code>.</p>
+          <p>On stop, Kronk drains in-flight requests and then unloads models, each phase bounded by <code>KRONK_WEB_SHUTDOWN_TIMEOUT</code> (default <code>1m</code>). The unit allows <code>TimeoutStopSec=150s</code>. If you raise the shutdown timeout, raise <code>TimeoutStopSec</code> to at least twice that value plus 30 seconds with <code>sudo systemctl edit kronk</code>:</p>
+          <pre className="code-block"><code className="language-ini">{`[Service]
+TimeoutStopSec=330s`}</code></pre>
+          <p><code>Restart=on-failure</code> restarts the server five seconds after a crash. After five failed starts in five minutes, the unit stays failed: fix the cause in <code>journalctl -u kronk</code>, then run <code>sudo systemctl reset-failed kronk</code> and start it again. <code>kronk server stop</code> and <code>kronk server logs</code> work only with <code>--detach</code> servers; use <code>systemctl</code> and <code>journalctl</code> for the service.</p>
+          <p>Both units drop privileges, make the filesystem read-only except the data directory, hide the home directory, and restrict kernel access, namespaces, and system calls. They do not use <code>PrivateDevices</code> or <code>MemoryDenyWriteExecute</code>, which would block GPU devices and the CUDA, ROCm, and Vulkan JIT compilers. Check the exposure with <code>systemd-analyze security kronk</code>. If a setting conflicts with your environment, relax only that setting in a drop-in with <code>sudo systemctl edit kronk</code>; reinstalling keeps drop-ins.</p>
+          <h2 id="89-related-administration-guides">8.9 Related Administration Guides</h2>
           <p>Detailed administration is divided by responsibility:</p>
           <ul>
             <li><a href="https://www.kronkai.com/manual#chapter-2-installation-quick-start">Chapter 2</a> — installation, libraries, image variants, and data paths</li>
@@ -4491,6 +4621,83 @@ lsof -nP -iTCP:9000 -sTCP:LISTEN`}</code></pre>
           <p>Detached mode stores <code>kronk.pid</code> and <code>kronk.log</code> under <code>KRONK_BASE_PATH</code>. If <code>kronk server stop</code> encounters a stale PID, verify that no Kronk process owns the API or debug port before removing only the stale PID file.</p>
           <p>BadgerDB also permits only one model-server process to use the rate-limit database. A lock error means another process owns <code>&lt;base&gt;/badger</code>; stop that process. Do not delete Badger's <code>LOCK</code> file while a server may be running.</p>
           <p>For permission errors, make the selected base path writable by the service user. The server enforces mode <code>0700</code> on <code>&lt;base&gt;/keys</code> and <code>0600</code> on private key files. Avoid recursively making credentials readable by other users.</p>
+          <p>When Kronk runs as the systemd service described in <a href="https://www.kronkai.com/manual#88-running-as-a-system-service">Chapter 8 §8.8</a>, read its logs with <code>journalctl -u kronk</code> and check these common failures. The fixes show system-level commands; at user level, drop <code>sudo</code> and add <code>--user</code> to <code>systemctl</code> and <code>journalctl</code>:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Symptom</th>
+                <th>Cause</th>
+                <th>Fix</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>status=203/EXEC</code></td>
+                <td>The service's copy of <code>kronk</code> is missing or not executable</td>
+                <td>Run the install target again</td>
+              </tr>
+              <tr>
+                <td><code>Start request repeated too quickly</code></td>
+                <td>Five failed starts within five minutes, such as a port in use or a failed library download</td>
+                <td>Fix the error in <code>journalctl -u kronk</code>, then <code>sudo systemctl reset-failed kronk</code> and start again</td>
+              </tr>
+              <tr>
+                <td><code>permission denied</code> under <code>/var/lib/kronk</code></td>
+                <td>Files were copied in by another user</td>
+                <td><code>sudo chown -R kronk:kronk /var/lib/kronk</code></td>
+              </tr>
+              <tr>
+                <td>GPU works in a shell but not in the service</td>
+                <td><code>kronk</code> is not in the <code>video</code>/<code>render</code> group, or the NVIDIA device nodes are missing</td>
+                <td>Compare <code>sudo -u kronk KRONK_BASE_PATH=/var/lib/kronk /usr/local/bin/kronk devices</code>; check the <code>nvidia-modprobe</code> step in <code>journalctl -u kronk</code></td>
+              </tr>
+              <tr>
+                <td><code>Operation not permitted</code> from a GPU or native library</td>
+                <td>A system call outside the unit's allowed set was rejected</td>
+                <td>Add the call with <code>SystemCallFilter=</code> in <code>systemctl edit kronk</code>, and report it</td>
+              </tr>
+              <tr>
+                <td>Models from <code>~/.kronk</code> are missing in the system-level service</td>
+                <td>It uses <code>/var/lib/kronk</code>, never <code>~/.kronk</code></td>
+                <td>Copy them in as described in "Using Data from an Existing Installation" in <a href="https://www.kronkai.com/manual#88-running-as-a-system-service">§8.8</a>, or use the user-level service</td>
+              </tr>
+              <tr>
+                <td>User-level service uses the CPU over SSH, but the GPU from a desktop login</td>
+                <td>The one-time GPU setup was skipped or failed, so the service has no GPU access without a desktop session</td>
+                <td>Run <code>make install-user-service</code> again and answer <code>y</code> to the GPU setup prompt. If it added you to a group, log out of all your sessions and back in</td>
+              </tr>
+              <tr>
+                <td>Service uses the CPU: the log shows <code>"processor":"cpu"</code></td>
+                <td>GPU detection runs <code>nvidia-smi</code>, <code>rocminfo</code>, or <code>vulkaninfo</code>, and the tool for your GPU is missing</td>
+                <td>Install it (for Vulkan, <code>vulkan-tools</code>) or set <code>KRONK_PROCESSOR</code> in the service's <code>kronk.env</code>, then restart the service</td>
+              </tr>
+              <tr>
+                <td>User-level service stops when you log out</td>
+                <td>Expected: it runs only while you are logged in</td>
+                <td>Use the system-level service to run Kronk at boot</td>
+              </tr>
+              <tr>
+                <td>Service still runs the old version after an upgrade</td>
+                <td>The service runs its own copy of <code>kronk</code></td>
+                <td>Run the install target again</td>
+              </tr>
+              <tr>
+                <td><code>kronk server stop</code> fails with <code>read-file: open …/kronk.pid: no such file or directory</code></td>
+                <td>The service has no PID file</td>
+                <td>Use <code>sudo systemctl stop kronk</code></td>
+              </tr>
+              <tr>
+                <td>Stop takes long, then the process is killed</td>
+                <td><code>KRONK_WEB_SHUTDOWN_TIMEOUT</code> exceeds the unit's <code>TimeoutStopSec</code></td>
+                <td>Raise <code>TimeoutStopSec</code> with <code>systemctl edit kronk</code></td>
+              </tr>
+              <tr>
+                <td><code>Address already in use</code> on <code>11435</code></td>
+                <td>Both levels are installed, or a manual <code>kronk server start</code> is running</td>
+                <td>Keep one level (<code>make uninstall-system-service</code> or <code>make uninstall-user-service</code>) and stop manual servers with <code>kronk server stop</code></td>
+              </tr>
+            </tbody>
+          </table>
           <p>Whisper-specific failures are listed in <a href="https://www.kronkai.com/manual#189-troubleshooting">Chapter 18 §18.9</a>.</p>
           <h3 id="1710-reporting-a-problem">17.10 Reporting a Problem</h3>
           <p>Include:</p>
@@ -5847,6 +6054,12 @@ fmt.Println(info.Description)`}</code></pre>
                 <td>Go module files and setup hook</td>
                 <td>evaluate/build the relevant Nix entry point; regenerate gomod2nix data when dependencies change</td>
               </tr>
+              <tr>
+                <td>Linux systemd services</td>
+                <td><code>zarf/systemd/</code>, <code>install-system-service</code>/<code>install-user-service</code> and their uninstall targets in <code>.make/install.mk</code></td>
+                <td><code>kronk server start</code> flags and env vars, shutdown timeout, Chapter 8 §8.8</td>
+                <td><code>systemd-analyze verify</code> and <code>systemd-analyze security</code>; <code>make install-user-service</code> and <code>make install-system-service</code>, then start/stop on a GPU host</td>
+              </tr>
             </tbody>
           </table>
           <p>Tests close to an owner are usually more diagnostic than a repository-wide command. If a change crosses rows, verify each changed contract rather than choosing only the largest command.</p>
@@ -6131,7 +6344,7 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
           <pre className="code-block"><code className="language-shell">{`npm run build`}</code></pre>
           <p>Run it from <code>cmd/server/api/frontends/bui/</code>. For docs or BUI work that affects the production bundle, also build the server to verify the bundle embedded by <code>cmd/server/api/services/kronk/main.go</code> exists and compiles. A successful Vite build alone does not prove the Go binary contains current assets.</p>
           <p>Always report what actually ran, including skipped integration prerequisites. Never claim CI parity from a narrower local test.</p>
-          <h3 id="2010-ci-release-containers-and-nix">20.10 CI, Release, Containers, and Nix</h3>
+          <h3 id="2010-ci-release-containers-nix-and-systemd">20.10 CI, Release, Containers, Nix, and systemd</h3>
           <h4 id="20101-linux-ci">20.10.1 Linux CI</h4>
           <p><code>.github/workflows/linux.yml</code> is the authoritative Linux pipeline. It currently has four parallel jobs:</p>
           <ul>
@@ -6157,6 +6370,50 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
           <p>For a container change, build the affected target and architecture where practical, exercise entrypoint startup/configuration, and verify expected native libraries. Do not infer publication or signature behavior from a local build; review the workflow.</p>
           <h4 id="20104-nix">20.10.4 Nix</h4>
           <p>The flake at <code>zarf/nix/flake.nix</code> defines how developers/users enter or build the project; generated Go dependency data lives beside it. Entering a development shell runs <code>gomod2nix import</code> from its shell hook and may dirty that generated material. When Go module dependencies change, update the Nix dependency material with the repository's configured command and evaluate/build the relevant entry point. Keep Nix fixes in Nix owners rather than adding environment special cases to Go code.</p>
+          <h4 id="20105-linux-systemd-services">20.10.5 Linux systemd Services</h4>
+          <p><code>zarf/systemd/</code> owns the Linux service definitions described for users in <a href="https://www.kronkai.com/manual#88-running-as-a-system-service">Chapter 8 §8.8</a>:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>File</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>kronk.service</code></td>
+                <td>System level: runs as the <code>kronk</code> user on <code>/var/lib/kronk</code></td>
+              </tr>
+              <tr>
+                <td><code>kronk.sysusers.conf</code></td>
+                <td>Creates the <code>kronk</code> user and adds it to <code>video</code>/<code>render</code></td>
+              </tr>
+              <tr>
+                <td><code>kronk-user.service</code></td>
+                <td>User level: runs as the user on <code>~/.kronk</code> while logged in</td>
+              </tr>
+              <tr>
+                <td><code>kronk-nvidia-uvm.service</code></td>
+                <td>Creates NVIDIA device nodes at boot for the user level</td>
+              </tr>
+              <tr>
+                <td><code>install.sh</code></td>
+                <td>Installs, upgrades, or removes either level</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>Both units run <code>kronk server start</code> in the foreground. Do not add <code>--detach</code>: systemd tracks the process itself, and a forked server looks like a crash.</p>
+          <p>The system level uses a fixed <code>kronk</code> user rather than <code>DynamicUser=yes</code> so the owner of <code>/var/lib/kronk</code> exists while the service is stopped: admins can run <code>sudo -u kronk kronk ... --local</code> against the service's data and copy in models from <code>~/.kronk</code> with a plain <code>chown</code>.</p>
+          <p><code>install.sh install|uninstall --system-level|--user-level</code>, driven by the <code>install-system-service</code>, <code>install-user-service</code>, and matching uninstall targets in <code>.make/install.mk</code>, behaves as follows:</p>
+          <ul>
+            <li>It copies the binary because the sandboxes hide <code>/home</code>, so neither level can run a <code>go install</code> or Linuxbrew binary in place. The system copy goes to <code>/usr/local/bin/kronk</code>. The user copy goes to <code>~/.local/share/kronk/bin/kronk</code>, deliberately off <code>PATH</code>: in <code>~/.local/bin</code> it would shadow the user's upgraded CLI and be picked up again as the install source, so upgrades would silently reinstall the old binary.</li>
+            <li>Install is idempotent and is the upgrade path: it replaces the binary when it differs from the installed one, replaces the unit, and restarts a running service. The make targets print the binary path and version they install. They never build: with no <code>kronk</code> on <code>PATH</code> they stop and ask for <code>KRONK_BIN</code>, and they refuse to run under <code>sudo</code>, which resets <code>PATH</code>.</li>
+            <li>Only one level can be installed, since both use the same ports: install refuses while the other level is enabled or running (an enabled but stopped service still starts at the next boot or login), and while a server started with <code>--detach</code> is running from the user's <code>~/.kronk</code>.</li>
+            <li>System level: it never copies user data. When the invoking user's <code>~/.kronk</code> (found through <code>SUDO_USER</code>) has a <code>models</code> directory and <code>/var/lib/kronk/models</code> holds no <code>.gguf</code> file, it prints a note pointing to the manual copy steps and to the user level, which uses <code>~/.kronk</code> in place. The check keeps the note from repeating on every upgrade.</li>
+            <li>User level: a login without a desktop session, such as SSH, lacks the temporary device ACL a desktop session grants, so the service would fall back to the CPU on Debian and Ubuntu. When needed, it offers, behind a <code>[y/N]</code> prompt that defaults to no, to use <code>sudo</code> once to add the user to the groups owning <code>/dev/kfd</code> and <code>/dev/dri/renderD*</code>, and on NVIDIA hosts to install <code>kronk-nvidia-uvm.service</code>, because <code>NoNewPrivileges</code> in the sandbox stops CUDA from creating <code>/dev/nvidia-uvm</code> through the setuid <code>nvidia-modprobe</code>. Supplementary groups stay effective inside the user unit's unprivileged user namespace, where they display as <code>nogroup</code>.</li>
+            <li>User level: the user unit unsets <code>DISPLAY</code>, <code>WAYLAND_DISPLAY</code>, and <code>XAUTHORITY</code>. A desktop session passes them to user services, but <code>PrivateTmp</code> and <code>ProtectHome</code> hide the display sockets, and <code>vulkaninfo</code>, which Vulkan detection runs, fails when it cannot connect to the display, so Kronk would select the CPU.</li>
+            <li>System uninstall keeps <code>/usr/local/bin/kronk</code>, the <code>kronk</code> user, <code>/var/lib/kronk</code>, and <code>/etc/kronk</code>. User uninstall keeps <code>~/.kronk</code>, the binary copy, the group membership, and the NVIDIA helper unit.</li>
+          </ul>
           <h3 id="2011-change-and-release-checklists">20.11 Change and Release Checklists</h3>
           <h4 id="20111-focused-change-checklist">20.11.1 Focused change checklist</h4>
           <ul>
@@ -6339,7 +6596,15 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
               <a href="#87-container-operations" className={`doc-index-header ${activeSection === '87-container-operations' ? 'active' : ''}`}>8.7 Container Operations</a>
             </div>
             <div className="doc-index-section">
-              <a href="#88-related-administration-guides" className={`doc-index-header ${activeSection === '88-related-administration-guides' ? 'active' : ''}`}>8.8 Related Administration Guides</a>
+              <a href="#88-running-as-a-system-service" className={`doc-index-header ${activeSection === '88-running-as-a-system-service' ? 'active' : ''}`}>8.8 Running as a System Service</a>
+              <ul>
+                <li><a href="#user-level-service" className={activeSection === 'user-level-service' ? 'active' : ''}>User-Level Service</a></li>
+                <li><a href="#system-level-service" className={activeSection === 'system-level-service' ? 'active' : ''}>System-Level Service</a></li>
+                <li><a href="#shutdown-restarts-and-hardening" className={activeSection === 'shutdown-restarts-and-hardening' ? 'active' : ''}>Shutdown, Restarts, and Hardening</a></li>
+              </ul>
+            </div>
+            <div className="doc-index-section">
+              <a href="#89-related-administration-guides" className={`doc-index-header ${activeSection === '89-related-administration-guides' ? 'active' : ''}`}>8.9 Related Administration Guides</a>
             </div>
             <div className="doc-index-section">
               <a href="#chapter-9-api-endpoints" className={`doc-index-header ${activeSection === 'chapter-9-api-endpoints' ? 'active' : ''}`}>Chapter 9: API Endpoints</a>
@@ -6577,7 +6842,7 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
                 <li><a href="#207-server-bui-and-generated-documentation" className={activeSection === '207-server-bui-and-generated-documentation' ? 'active' : ''}>20.7 Server, BUI, and Generated Documentation</a></li>
                 <li><a href="#208-bucky-implementation-map" className={activeSection === '208-bucky-implementation-map' ? 'active' : ''}>20.8 Bucky Implementation Map</a></li>
                 <li><a href="#209-verification-for-llm-agents" className={activeSection === '209-verification-for-llm-agents' ? 'active' : ''}>20.9 Verification for LLM Agents</a></li>
-                <li><a href="#2010-ci-release-containers-and-nix" className={activeSection === '2010-ci-release-containers-and-nix' ? 'active' : ''}>20.10 CI, Release, Containers, and Nix</a></li>
+                <li><a href="#2010-ci-release-containers-nix-and-systemd" className={activeSection === '2010-ci-release-containers-nix-and-systemd' ? 'active' : ''}>20.10 CI, Release, Containers, Nix, and systemd</a></li>
                 <li><a href="#2011-change-and-release-checklists" className={activeSection === '2011-change-and-release-checklists' ? 'active' : ''}>20.11 Change and Release Checklists</a></li>
               </ul>
             </div>

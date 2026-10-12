@@ -11,7 +11,7 @@
 - [20.7 Server, BUI, and Generated Documentation](#207-server-bui-and-generated-documentation)
 - [20.8 Bucky Implementation Map](#208-bucky-implementation-map)
 - [20.9 Verification for LLM Agents](#209-verification-for-llm-agents)
-- [20.10 CI, Release, Containers, and Nix](#2010-ci-release-containers-and-nix)
+- [20.10 CI, Release, Containers, Nix, and systemd](#2010-ci-release-containers-nix-and-systemd)
 - [20.11 Change and Release Checklists](#2011-change-and-release-checklists)
 
 ---
@@ -88,6 +88,7 @@ change. Go commands require the environment described in [§20.9](#209-verificat
 | Release | `.github/workflows/release.yaml`, `.goreleaser.yaml`, `.release/`, version scripts | `sdk/kronk` version constant and tag convention | version scripts and GoReleaser snapshot/check when appropriate |
 | Container image | `.github/workflows/docker.yml`, `zarf/docker/` | entrypoint, native-library combinations, release tags | build the affected target/variant; workflow is authority for matrix and signing |
 | Nix development/package data | `zarf/nix/flake.nix` | Go module files and setup hook | evaluate/build the relevant Nix entry point; regenerate gomod2nix data when dependencies change |
+| Linux systemd services | `zarf/systemd/`, `install-system-service`/`install-user-service` and their uninstall targets in `.make/install.mk` | `kronk server start` flags and env vars, shutdown timeout, Chapter 8 §8.8 | `systemd-analyze verify` and `systemd-analyze security`; `make install-user-service` and `make install-system-service`, then start/stop on a GPU host |
 
 Tests close to an owner are usually more diagnostic than a repository-wide command.
 If a change crosses rows, verify each changed contract rather than choosing only the
@@ -906,7 +907,7 @@ alone does not prove the Go binary contains current assets.
 Always report what actually ran, including skipped integration prerequisites. Never
 claim CI parity from a narrower local test.
 
-### 20.10 CI, Release, Containers, and Nix
+### 20.10 CI, Release, Containers, Nix, and systemd
 
 #### 20.10.1 Linux CI
 
@@ -966,6 +967,68 @@ runs `gomod2nix import` from its shell hook and may dirty that generated materia
 Go module dependencies change, update the Nix dependency material with the repository's
 configured command and evaluate/build the relevant entry point. Keep Nix fixes in Nix
 owners rather than adding environment special cases to Go code.
+
+#### 20.10.5 Linux systemd Services
+
+`zarf/systemd/` owns the Linux service definitions described for users in
+[Chapter 8 §8.8](https://www.kronkai.com/manual#88-running-as-a-system-service):
+
+| File                       | Purpose                                                       |
+| -------------------------- | ------------------------------------------------------------- |
+| `kronk.service`            | System level: runs as the `kronk` user on `/var/lib/kronk`    |
+| `kronk.sysusers.conf`      | Creates the `kronk` user and adds it to `video`/`render`      |
+| `kronk-user.service`       | User level: runs as the user on `~/.kronk` while logged in    |
+| `kronk-nvidia-uvm.service` | Creates NVIDIA device nodes at boot for the user level        |
+| `install.sh`               | Installs, upgrades, or removes either level                   |
+
+Both units run `kronk server start` in the foreground. Do not add `--detach`:
+systemd tracks the process itself, and a forked server looks like a crash.
+
+The system level uses a fixed `kronk` user rather than `DynamicUser=yes` so the
+owner of `/var/lib/kronk` exists while the service is stopped: admins can run
+`sudo -u kronk kronk ... --local` against the service's data and copy in models
+from `~/.kronk` with a plain `chown`.
+
+`install.sh install|uninstall --system-level|--user-level`, driven by the
+`install-system-service`, `install-user-service`, and matching uninstall targets in
+`.make/install.mk`, behaves as follows:
+
+- It copies the binary because the sandboxes hide `/home`, so neither level can
+  run a `go install` or Linuxbrew binary in place. The system copy goes to
+  `/usr/local/bin/kronk`. The user copy goes to `~/.local/share/kronk/bin/kronk`,
+  deliberately off `PATH`: in `~/.local/bin` it would shadow the user's upgraded
+  CLI and be picked up again as the install source, so upgrades would silently
+  reinstall the old binary.
+- Install is idempotent and is the upgrade path: it replaces the binary when it
+  differs from the installed one, replaces the unit, and restarts a running
+  service. The make targets print the binary path and version they install. They
+  never build: with no `kronk` on `PATH` they stop and ask for `KRONK_BIN`, and
+  they refuse to run under `sudo`, which resets `PATH`.
+- Only one level can be installed, since both use the same ports: install refuses
+  while the other level is enabled or running (an enabled but stopped service still
+  starts at the next boot or login), and while a server started with `--detach` is
+  running from the user's `~/.kronk`.
+- System level: it never copies user data. When the invoking user's `~/.kronk`
+  (found through `SUDO_USER`) has a `models` directory and `/var/lib/kronk/models`
+  holds no `.gguf` file, it prints a note pointing to the manual copy steps and to
+  the user level, which uses `~/.kronk` in place. The check keeps the note from
+  repeating on every upgrade.
+- User level: a login without a desktop session, such as SSH, lacks the temporary
+  device ACL a desktop session grants, so the service would fall back to the CPU on
+  Debian and Ubuntu. When needed, it offers, behind a `[y/N]` prompt that defaults
+  to no, to use `sudo` once to add the user to the groups owning `/dev/kfd` and
+  `/dev/dri/renderD*`, and on NVIDIA hosts to install `kronk-nvidia-uvm.service`,
+  because `NoNewPrivileges` in the sandbox stops CUDA from creating
+  `/dev/nvidia-uvm` through the setuid `nvidia-modprobe`. Supplementary groups stay
+  effective inside the user unit's unprivileged user namespace, where they display
+  as `nogroup`.
+- User level: the user unit unsets `DISPLAY`, `WAYLAND_DISPLAY`, and `XAUTHORITY`.
+  A desktop session passes them to user services, but `PrivateTmp` and
+  `ProtectHome` hide the display sockets, and `vulkaninfo`, which Vulkan detection
+  runs, fails when it cannot connect to the display, so Kronk would select the CPU.
+- System uninstall keeps `/usr/local/bin/kronk`, the `kronk` user, `/var/lib/kronk`,
+  and `/etc/kronk`. User uninstall keeps `~/.kronk`, the binary copy, the group
+  membership, and the NVIDIA helper unit.
 
 ### 20.11 Change and Release Checklists
 

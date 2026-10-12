@@ -480,6 +480,34 @@ Server-side downloading is separately controlled by
 See [Chapter 8](https://www.kronkai.com/manual#chapter-8-model-server) for server flags, model pooling,
 runtime paths, and deployment operations.
 
+#### Run as a Linux Service (systemd)
+
+On Linux, instead of starting the server by hand, you can install it as a
+systemd service that restarts after a crash and runs in a restricted sandbox.
+The service files are not in the release packages, so clone the repository
+first:
+
+```shell
+git clone --depth 1 https://github.com/ardanlabs/kronk.git
+cd kronk
+```
+
+Then install one of two levels:
+
+| Level | Command | Runs as | Starts | Data |
+| --- | --- | --- | --- | --- |
+| User level | `make install-user-service` | You | When you log in; stops when you log out | Your existing `~/.kronk` |
+| System level | `make install-system-service` | A dedicated `kronk` user | At boot | `/var/lib/kronk` |
+
+Install only one. The system level cannot see your `~/.kronk`; to keep using
+it, choose the user level, or copy it over as Chapter 8 describes.
+
+The target copies the `kronk` on your `PATH`; to use a different binary, add
+`KRONK_BIN=/path/to/kronk`. Run the same target again after upgrading the
+CLI. See
+[Chapter 8](https://www.kronkai.com/manual#88-running-as-a-system-service)
+for choosing a level, configuration, GPU access, and uninstalling.
+
 ### 2.7 Verify the Installation
 
 Check server liveness:
