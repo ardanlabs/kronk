@@ -2,8 +2,8 @@
 #
 # Install, upgrade, or remove with (see Chapter 8 of the manual):
 #
-#   make install-service
-#   make uninstall-service
+#   make install-system-service
+#   make uninstall-system-service
 #
 # Override systemd settings with `systemctl edit kronk` rather than editing
 # this file. Set Kronk settings as KRONK_* variables in /etc/kronk/kronk.env.

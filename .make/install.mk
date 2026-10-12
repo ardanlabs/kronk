@@ -143,10 +143,11 @@ install-docker:
 	wait;
 
 # ==============================================================================
-# Linux systemd service
+# Linux systemd service, at system level (kronk user, at boot, /var/lib/kronk)
+# or user level (your user, at login, ~/.kronk). Install only one.
 
 # The kronk binary to copy into place for the service. Defaults to the one on
-# your PATH. Override with `make install-service KRONK_BIN=/path/to/kronk`.
+# your PATH. Override with `make install-system-service KRONK_BIN=/path/to/kronk`.
 KRONK_BIN ?= $(shell command -v kronk)
 
 # Shell prelude that checks the target runs as you and KRONK_BIN is set, and
@@ -164,11 +165,21 @@ fi; \
 echo "Using $$bin ($$("$$bin" --version 2>/dev/null))"
 endef
 
-# Install or upgrade the Linux systemd service (see Chapter 8).
-install-service:
+# Install or upgrade the system-level service (see Chapter 8).
+install-system-service:
 	@$(kronk_service_bin); \
-	sudo zarf/systemd/install.sh install "$$bin"
+	sudo zarf/systemd/install.sh install --system-level "$$bin"
 
-# Remove the Linux systemd service, keeping models and configuration.
-uninstall-service:
-	sudo zarf/systemd/install.sh uninstall
+# Remove the system-level service, keeping models and configuration.
+uninstall-system-service:
+	sudo zarf/systemd/install.sh uninstall --system-level
+
+# Install or upgrade the user-level service, which runs as you on ~/.kronk
+# while you are logged in (see Chapter 8). No sudo required.
+install-user-service:
+	@$(kronk_service_bin); \
+	zarf/systemd/install.sh install --user-level "$$bin"
+
+# Remove the user-level service, keeping ~/.kronk.
+uninstall-user-service:
+	zarf/systemd/install.sh uninstall --user-level
