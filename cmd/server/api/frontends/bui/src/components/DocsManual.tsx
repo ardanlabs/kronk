@@ -701,7 +701,7 @@ malina-models:
   nseq-max: 4`}</code></pre>
           <p>For text generation, this creates up to four batch-engine slots. Their sequence state and KV capacity are isolated. Kronk allocates an aggregate context of <code>context-window × nseq-max</code>, which llama.cpp divides into one fixed <code>context-window</code> stream per slot. Increasing <code>nseq-max</code> therefore increases the capacity Kronk must budget and can substantially increase memory use.</p>
           <p>For supported embedding and reranking architectures, <code>nseq-max</code> is the maximum number of complete inputs or query-document pairs in one sequence batch on a shared context. Architectures that have not been proven safe for that runtime use <code>nseq-max</code> to size a pool of independent single-sequence contexts instead. See <a href="https://www.kronkai.com/manual#chapter-4-batch-processing">Chapter 4</a> for request scheduling and the differences between model types.</p>
-          <p>One setting controls prompt batching and sequence-batch token capacity:</p>
+          <p>Text batching and an independent image-capacity floor are configured separately:</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -716,13 +716,22 @@ malina-models:
                 <td><code>2048</code></td>
                 <td>Generation prefill contribution per decode iteration, or aggregate embedding/reranking tokens per native sequence batch</td>
               </tr>
+              <tr>
+                <td><code>image-batch-token-capacity</code></td>
+                <td>Model-family default</td>
+                <td>Independent native capacity floor for image chunks; does not increase the text prefill contribution</td>
+              </tr>
             </tbody>
           </table>
           <p>For generation models, a larger value can move a long prompt to generation in fewer decode calls, but requires larger compute buffers and each call runs longer before already-generating slots can run again. A smaller value gives generating slots more frequent scheduling opportunities at the cost of more prefill decode calls.</p>
           <p>For embedding and reranking models, Kronk sets both internal <code>NBatch</code> and <code>NUBatch</code> to <code>prefill-batch-size</code>. This is the aggregate token capacity of one native sequence batch, not a capacity granted separately to every sequence. The batch is constrained independently by <code>nseq-max</code> complete sequences and by <code>prefill-batch-size</code> combined tokens. For example, <code>nseq-max: 8</code> with <code>prefill-batch-size: 2048</code> can evaluate eight 256-token sequences, four 512-token sequences, two 1024-token sequences, or one 2048-token sequence in a single native batch. Kronk does not multiply the token capacity by <code>nseq-max</code>; doing so would allocate a much larger physical compute batch. Increase <code>prefill-batch-size</code> explicitly when the expected embedding or reranking workload needs a larger aggregate batch.</p>
           <p>Most deployments should use the default.</p>
           <p>Kronk derives llama.cpp's internal physical and logical batch capacities from this value. It reserves one output row per slot for non-MTP generation. MTP reserves <code>1 + ndraft</code> rows per slot because speculative verification includes the sampled token and its draft candidates. With four slots and the default <code>ndraft: 3</code>, the internal effective sizes are <code>NUBatch: 2048</code>, <code>NBatch: 2052</code> for non-MTP and <code>NUBatch: 2064</code>, <code>NBatch: 2064</code> for MTP. Both can stage generation rows and then add a complete 2048-token prefill contribution from the current owner in the same logical decode. Non-MTP may split that tray into physical ubatches; MTP keeps it in one physical batch so dense NextN rows retain their expected mapping.</p>
-          <p>The <code>status[resolved]</code> <code>batch-sizing</code> debug log reports the configured prefill size, generation reserve, effective internal sizes, and MTP state. The Slots diagnostic screen also displays effective <code>NBatch / NUBatch</code> as read-only runtime values. Multimodal encoders may require an entire media-token chunk to fit in one physical batch, so do not lower <code>prefill-batch-size</code> for a multimodal model without testing media input.</p>
+          <p>For generation models with a projector, the native base capacity is <code>max(prefill-batch-size, image-batch-token-capacity)</code>. Kronk then applies the generation reserve and MTP rules above. The text scheduler still contributes at most <code>prefill-batch-size</code> tokens per iteration.</p>
+          <p>Known image-capacity defaults live in the VRAM package: Gemma 4 uses <code>1120</code>, Gemma 3 conservatively uses <code>2048</code>, and Deepseek 4 uses <code>384</code>. Other model families, including Qwen, use <code>0</code> (no additional floor), preserving their existing sizing. These are model-family policies, not guarantees for every custom projector. An explicit non-negative <code>image-batch-token-capacity</code> replaces the default, including an explicit <code>0</code>.</p>
+          <p>For example, Gemma 4 with <code>prefill-batch-size: 1024</code> and <code>nseq-max: 2</code> uses <code>NUBatch: 1120</code> and <code>NBatch: 1122</code> without MTP. Its text prefill contribution remains <code>1024</code>. For an unknown projector, supply <code>image-batch-token-capacity</code> when its complete non-causal image chunks need more capacity. In the SDK, use <code>model.WithImageBatchTokenCapacity(value)</code>.</p>
+          <p>Non-causal media chunks must fit completely in one physical decode. Kronk checks actual chunk sizes before native decoding in both cached and uncached paths. An oversized chunk returns an error with the required capacity instead of being split or aborting the process. Increase <code>image-batch-token-capacity</code> and reload the model to process that chunk.</p>
+          <p>The <code>status[resolved]</code> <code>batch-sizing</code> debug log reports the configured prefill size, image capacity, generation reserve, effective internal sizes, and MTP state. The Slots diagnostic screen also displays effective <code>NBatch / NUBatch</code> as read-only runtime values.</p>
           <p><img src="https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/08-wait-for-execution-slot.svg" alt="How two requests move from prefill to generation and how non-MTP and MTP batch sizing supports them" /></p>
           <p>Incremental Message Caching is configured separately with <code>incremental-cache</code> and related cache settings. See <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a> rather than treating cached conversations as dedicated physical slots.</p>
           <h3 id="36-memory-planning-and-quantization">3.6 Memory Planning and Quantization</h3>
@@ -889,6 +898,11 @@ models:
                 <td><code>prefill-batch-size</code></td>
                 <td>Positive token count, default <code>2048</code></td>
                 <td>Generation prefill contribution per decode iteration, or aggregate embedding/reranking tokens per native sequence batch</td>
+              </tr>
+              <tr>
+                <td><code>image-batch-token-capacity</code></td>
+                <td>Non-negative token count; model-family default when omitted</td>
+                <td>Image-capacity floor for native generation batches; explicit values replace the default</td>
               </tr>
               <tr>
                 <td><code>ngpu-layers</code></td>

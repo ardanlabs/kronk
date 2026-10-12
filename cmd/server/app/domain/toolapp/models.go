@@ -337,10 +337,13 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 	var nUBatch int64
 	kronkConfig := model.Config{}
 	if req.ModelID != "" {
-		modelConfig := a.pool.Kronk.ModelConfig()[req.ModelID]
+		modelConfig, err := a.pool.Kronk.ResolvedModelConfig(req.ModelID)
+		if err != nil {
+			return errs.FromSDK(fmt.Errorf("resolve model config: %w", err))
+		}
 		configuredSWAFull = modelConfig.PtrSWAFull
 		kronkConfig = modelConfig.ToKronkConfig()
-		nUBatch = int64(kronkConfig.PrefillBatchSize())
+		nUBatch = int64(kronkConfig.BatchBaseSize())
 	}
 	swaFull := resolveSWAFull(req.SWAFull, configuredSWAFull)
 

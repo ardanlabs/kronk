@@ -388,6 +388,7 @@ export default function DocsSDKModel() {
 	Devices                    []string // Device names for model execution (e.g., ["CUDA0", "CUDA1"])
 	PtrFlashAttention          *FlashAttentionType
 	PtrIMCSessionCapacity      *int
+	PtrImageBatchTokenCapacity *int
 	PtrIncrementalCache        *bool
 	PtrInsecureLogging         *bool
 	JinjaFile                  string
@@ -458,7 +459,8 @@ export default function DocsSDKModel() {
               <p className="doc-description">MainGPU is the index of the GPU to use as the primary device when SplitMode is SplitModeNone. When nil, the default GPU (usually index 0) is used.</p>
               <p className="doc-description">PtrMoE controls expert-tensor placement for Mixture of Experts models.</p>
               <p className="doc-description">ModelFiles is the path to the model files. This is mandatory to provide.</p>
-              <p className="doc-description">PrefillBatchSize is the maximum number of prompt tokens one prefill owner can contribute to a decode iteration. The default is 2048. Larger values can reduce the number of decode calls needed to reach generation, but each call takes longer before already-generating slots can run again and requires larger compute buffers. Kronk derives llama.cpp's logical and physical batch capacities from this value, the configured slot count, and the generation mode. Multimodal models may require a complete media-token chunk to fit in this capacity.</p>
+              <p className="doc-description">PrefillBatchSize is the maximum number of prompt tokens one prefill owner can contribute to a decode iteration. The default is 2048. Larger values can reduce the number of decode calls needed to reach generation, but each call takes longer before already-generating slots can run again and requires larger compute buffers. Kronk derives llama.cpp's logical and physical batch capacities from this value, the configured slot count, and the generation mode, with ImageBatchTokenCapacity providing an independent media floor.</p>
+              <p className="doc-description">ImageBatchTokenCapacity provides an independent image-capacity floor for native batches without increasing the text prefill contribution. When unset, known vision model families use vram defaults; other models use zero (no extra floor). An explicit non-negative value replaces the default, including zero. Oversized non-causal image chunks return an error instead of being split.</p>
               <p className="doc-description">NGpuLayers is the number of model layers to offload to the GPU. When set to 0, all layers are offloaded (default). Set to -1 to keep all layers on CPU. Any positive value specifies the exact number of layers to offload.</p>
               <p className="doc-description">NSeqMax controls concurrency behavior based on model type. For text inference models (including vision/audio), it sets the maximum number of generation slots. For supported embedding and reranking architectures, it sets the maximum sequence width of the sequence-batch engine. Other embedding and reranking architectures use it as the context-pool size. For decision models, it sets the maximum number of work items evaluated together on one context. When set to 0, a default of 1 is used.</p>
               <p className="doc-description">NThreads is the number of threads to use for generation. When unset or set to 0, it defaults to the greater of 4 and runtime.NumCPU().</p>
@@ -1389,6 +1391,14 @@ export default function DocsSDKModel() {
               </pre>
             </div>
 
+            <div className="doc-section" id="method-config-batchbasesize">
+              <h4>Config.BatchBaseSize</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) BatchBaseSize() int</code>
+              </pre>
+              <p className="doc-description">BatchBaseSize returns the native capacity base without the generation reserve. The text scheduler continues to use PrefillBatchSize independently.</p>
+            </div>
+
             <div className="doc-section" id="method-config-cachemintokens">
               <h4>Config.CacheMinTokens</h4>
               <pre className="code-block">
@@ -1440,6 +1450,14 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func (cfg Config) IMCSessionCapacity() int</code>
               </pre>
+            </div>
+
+            <div className="doc-section" id="method-config-imagebatchtokencapacity">
+              <h4>Config.ImageBatchTokenCapacity</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) ImageBatchTokenCapacity() int</code>
+              </pre>
+              <p className="doc-description">ImageBatchTokenCapacity returns the resolved image-capacity floor.</p>
             </div>
 
             <div className="doc-section" id="method-config-incrementalcache">
@@ -1511,6 +1529,14 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func (cfg Config) QueueDepth() int</code>
               </pre>
+            </div>
+
+            <div className="doc-section" id="method-config-resolveimagebatchtokencapacity">
+              <h4>Config.ResolveImageBatchTokenCapacity</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) ResolveImageBatchTokenCapacity(architecture string) Config</code>
+              </pre>
+              <p className="doc-description">ResolveImageBatchTokenCapacity seeds an unset image capacity for models with a projector. Explicit values are preserved, even when below the known default.</p>
             </div>
 
             <div className="doc-section" id="method-config-ropefreqbase">
@@ -2611,6 +2637,7 @@ export default function DocsSDKModel() {
               <ul>
                 <li><a href="#method-choice-finishreason">Choice.FinishReason</a></li>
                 <li><a href="#method-config-admissiontimeout">Config.AdmissionTimeout</a></li>
+                <li><a href="#method-config-batchbasesize">Config.BatchBaseSize</a></li>
                 <li><a href="#method-config-cachemintokens">Config.CacheMinTokens</a></li>
                 <li><a href="#method-config-contextwindow">Config.ContextWindow</a></li>
                 <li><a href="#method-config-effectivenbatch">Config.EffectiveNBatch</a></li>
@@ -2618,6 +2645,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-config-expertlayersongpu">Config.ExpertLayersOnGPU</a></li>
                 <li><a href="#method-config-flashattention">Config.FlashAttention</a></li>
                 <li><a href="#method-config-imcsessioncapacity">Config.IMCSessionCapacity</a></li>
+                <li><a href="#method-config-imagebatchtokencapacity">Config.ImageBatchTokenCapacity</a></li>
                 <li><a href="#method-config-incrementalcache">Config.IncrementalCache</a></li>
                 <li><a href="#method-config-insecurelogging">Config.InsecureLogging</a></li>
                 <li><a href="#method-config-maingpu">Config.MainGPU</a></li>
@@ -2628,6 +2656,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-config-nthreadsbatch">Config.NThreadsBatch</a></li>
                 <li><a href="#method-config-prefillbatchsize">Config.PrefillBatchSize</a></li>
                 <li><a href="#method-config-queuedepth">Config.QueueDepth</a></li>
+                <li><a href="#method-config-resolveimagebatchtokencapacity">Config.ResolveImageBatchTokenCapacity</a></li>
                 <li><a href="#method-config-ropefreqbase">Config.RopeFreqBase</a></li>
                 <li><a href="#method-config-ropefreqscale">Config.RopeFreqScale</a></li>
                 <li><a href="#method-config-swafull">Config.SWAFull</a></li>

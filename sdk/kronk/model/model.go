@@ -300,6 +300,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	cfg = adjustConfig(cfg, mdl)
 	prefillChunk := cfg.PrefillBatchSize()
 	modelInfo := toModelInfo(cfg, mdl)
+	cfg = cfg.ResolveImageBatchTokenCapacity(modelInfo.profile.Architecture)
 	cfg.DecisionProtocol = modelInfo.decisionProtocol
 
 	if cfg.MoECacheSize() > 0 {
@@ -332,6 +333,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	l(ctx, "batch-sizing", "status", "resolved",
 		"configured-prefill-batch-size", configuredPrefillBatchSize,
 		"prefill-batch-size", prefillChunk,
+		"image-batch-token-capacity", cfg.ImageBatchTokenCapacity(),
 		"nseq-max", cfg.NSeqMax(),
 		"generation-rows-per-slot", generationRowsPerSlot,
 		"generation-reserve", generationReserve,

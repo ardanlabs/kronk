@@ -320,6 +320,9 @@ func (m *Model) decodeEmbeddingsIntoCache(embd []float32, nEmbd, nTokens int32, 
 	if nTokens == 0 {
 		return 0, nil
 	}
+	if err := m.validateMediaBatchCapacity(nTokens, useNonCausal); err != nil {
+		return 0, err
+	}
 
 	nBatch := m.cfg.EffectiveNBatch()
 	if nBatch <= 0 {
@@ -375,6 +378,9 @@ func (m *Model) decodeEmbeddingsMRoPEIntoCache(embd []float32, nEmbd, nTokens in
 	}
 	if nTokens == 0 {
 		return 0, nil
+	}
+	if err := m.validateMediaBatchCapacity(nTokens, useNonCausal); err != nil {
+		return 0, err
 	}
 
 	nBatch := m.cfg.EffectiveNBatch()

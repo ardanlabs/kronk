@@ -2,6 +2,7 @@ package model
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -191,6 +192,36 @@ func TestIMCSessionLogicalPosition(t *testing.T) {
 				t.Errorf("logicalPosition() = %d, want %d", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestNonCausalMediaRejectsOversizedChunk(t *testing.T) {
+	m := Model{cfg: adjustGenerationBatch(NewConfig(WithPrefillBatchSize(1024), WithNSeqMax(2)), 1, false)}
+	e := batchEngine{model: &m}
+	s := slot{useNonCausal: true}
+	for _, nTokens := range []int32{1025, 1080} {
+		positions := make([]llama.Pos, nTokens*4)
+		for _, tt := range []struct {
+			name string
+			run  func() error
+		}{
+			{"uncached linear", func() error { return e.decodeEmbeddingsNormal(&s, nil, 1, nTokens) }},
+			{"uncached M-RoPE", func() error { return e.decodeEmbeddingsMRoPE(&s, nil, 1, nTokens, positions, 0) }},
+			{"cached linear", func() error {
+				_, err := m.decodeEmbeddingsIntoCache(nil, 1, nTokens, 0, 0, true)
+				return err
+			}},
+			{"cached M-RoPE", func() error {
+				_, err := m.decodeEmbeddingsMRoPEIntoCache(nil, 1, nTokens, positions, 0, true)
+				return err
+			}},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				if err := tt.run(); err == nil || !strings.Contains(err.Error(), "ImageBatchTokenCapacity") {
+					t.Fatalf("decode error: got %v, want actionable capacity error", err)
+				}
+			})
+		}
 	}
 }
 

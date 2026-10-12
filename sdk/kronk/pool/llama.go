@@ -637,10 +637,7 @@ func effectivePrefillBatchSize(cfg model.Config) int64 {
 	if cfg.EffectiveNUBatch() > 0 {
 		return int64(cfg.EffectiveNUBatch())
 	}
-	prefillBatchSize := cfg.PrefillBatchSize()
-	if prefillBatchSize <= 0 {
-		prefillBatchSize = model.DefaultPrefillBatchSize
-	}
+	prefillBatchSize := cfg.BatchBaseSize()
 	if model.SpeculativeContextCount(cfg) > 1 {
 		_, prefillBatchSize = model.GenerationBatchSizes(prefillBatchSize, max(int(cfg.NSeqMax()), 1), int(model.RecurrentStateCopies(cfg, false)), true)
 	}

@@ -10,13 +10,25 @@ import (
 
 func TestSessionConfigPrefillBatchSizeJSON(t *testing.T) {
 	var cfg SessionConfig
-	if err := json.Unmarshal([]byte(`{"prefill_batch_size":4096}`), &cfg); err != nil {
+	if err := json.Unmarshal([]byte(`{"prefill_batch_size":4096,"image_batch_token_capacity":768}`), &cfg); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
 	got := cfg.ApplyTo(model.Config{})
 	if got.PrefillBatchSize() != 4096 {
 		t.Errorf("PrefillBatchSize() = %d, want 4096", got.PrefillBatchSize())
+	}
+	if got.ImageBatchTokenCapacity() != 768 {
+		t.Errorf("ImageBatchTokenCapacity() = %d, want 768", got.ImageBatchTokenCapacity())
+	}
+	for _, capacity := range []int{0, 768, -1} {
+		cfg := SessionConfig{ImageBatchTokenCapacity: new(capacity)}
+		if !cfg.HasOverrides() {
+			t.Fatal("image capacity alone must select a custom config")
+		}
+		if err := cfg.Validate(); (err != nil) != (capacity < 0) {
+			t.Errorf("Validate capacity %d: got %v, want error=%t", capacity, err, capacity < 0)
+		}
 	}
 }
 

@@ -484,11 +484,12 @@ See
 [Chapter 4](https://www.kronkai.com/manual#chapter-4-batch-processing) for request scheduling and the
 differences between model types.
 
-One setting controls prompt batching and sequence-batch token capacity:
+Text batching and an independent image-capacity floor are configured separately:
 
 | Key | Load-time default | Purpose |
 | --- | ----------------- | ------- |
 | `prefill-batch-size` | `2048` | Generation prefill contribution per decode iteration, or aggregate embedding/reranking tokens per native sequence batch |
+| `image-batch-token-capacity` | Model-family default | Independent native capacity floor for image chunks; does not increase the text prefill contribution |
 
 For generation models, a larger value can move a long prompt to generation in
 fewer decode calls, but requires larger compute buffers and each call runs
@@ -521,12 +522,34 @@ the current owner in the same logical decode. Non-MTP may split that tray into
 physical ubatches; MTP keeps it in one physical batch so dense NextN rows retain
 their expected mapping.
 
+For generation models with a projector, the native base capacity is
+`max(prefill-batch-size, image-batch-token-capacity)`. Kronk then applies the
+generation reserve and MTP rules above. The text scheduler still contributes
+at most `prefill-batch-size` tokens per iteration.
+
+Known image-capacity defaults live in the VRAM package: Gemma 4 uses `1120`,
+Gemma 3 conservatively uses `2048`, and Deepseek 4 uses `384`. Other model
+families, including Qwen, use `0` (no additional floor), preserving their
+existing sizing. These are model-family policies, not guarantees for every
+custom projector. An explicit non-negative `image-batch-token-capacity`
+replaces the default, including an explicit `0`.
+
+For example, Gemma 4 with `prefill-batch-size: 1024` and `nseq-max: 2` uses
+`NUBatch: 1120` and `NBatch: 1122` without MTP. Its text prefill contribution
+remains `1024`. For an unknown projector, supply `image-batch-token-capacity`
+when its complete non-causal image chunks need more capacity. In the SDK, use
+`model.WithImageBatchTokenCapacity(value)`.
+
+Non-causal media chunks must fit completely in one physical decode. Kronk
+checks actual chunk sizes before native decoding in both cached and uncached
+paths. An oversized chunk returns an error with the required capacity instead
+of being split or aborting the process. Increase `image-batch-token-capacity`
+and reload the model to process that chunk.
+
 The `status[resolved]` `batch-sizing` debug log reports the configured prefill
-size, generation reserve, effective internal sizes, and MTP state. The Slots
-diagnostic screen also displays effective `NBatch / NUBatch` as read-only
-runtime values. Multimodal encoders may require an entire media-token chunk to
-fit in one physical batch, so do not lower `prefill-batch-size` for a multimodal
-model without testing media input.
+size, image capacity, generation reserve, effective internal sizes, and MTP
+state. The Slots diagnostic screen also displays effective `NBatch / NUBatch`
+as read-only runtime values.
 
 ![How two requests move from prefill to generation and how non-MTP and MTP batch sizing supports them](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/08-wait-for-execution-slot.svg)
 
@@ -825,6 +848,7 @@ is normally supplied by analysis or by the load-time defaults.
 | `queue-depth` | Non-negative integer, default `2` | Admitted request layers: `1` allows slot occupants only; `2` adds one waiting layer |
 | `imc-session-capacity` | Positive integer; derived when omitted | Reusable IMC conversation identities retained in RAM or on disk |
 | `prefill-batch-size` | Positive token count, default `2048` | Generation prefill contribution per decode iteration, or aggregate embedding/reranking tokens per native sequence batch |
+| `image-batch-token-capacity` | Non-negative token count; model-family default when omitted | Image-capacity floor for native generation batches; explicit values replace the default |
 | `ngpu-layers` | `-1`, `0`, or a positive count | CPU/GPU layer placement |
 | `lazy-mode` | `auto`, `off`, `on` | On-demand reading of eligible tensors; default `auto` |
 | `load-mode` | `auto`, `mmap`, `none`, `mlock`, `mmap+mlock`, `direct-io` | Model weight loading strategy |
