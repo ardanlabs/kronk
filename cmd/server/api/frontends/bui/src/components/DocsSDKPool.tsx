@@ -47,7 +47,7 @@ export default function DocsSDKPool() {
               <pre className="code-block">
                 <code>func HumanBytes(n int64) string</code>
               </pre>
-              <p className="doc-description">HumanBytes formats a byte count using decimal (SI) units. It aliases the core helper so existing callers of pool.HumanBytes keep working.</p>
+              <p className="doc-description">HumanBytes formats a byte count using binary (IEC) units. It aliases the core helper so existing callers of pool.HumanBytes keep working.</p>
             </div>
 
             <div className="doc-section" id="func-new">

@@ -7,7 +7,7 @@
 //                        (chan)         (single goroutine)
 //
 // Run the example like this from the root of the project:
-// $ go run examples/yzma-parallel/step2/main.go -model /path/to/model.gguf
+// $ make example-yzma-step3
 
 package main
 

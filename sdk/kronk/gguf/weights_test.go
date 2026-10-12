@@ -12,6 +12,8 @@ func TestCategorizeWeights(t *testing.T) {
 		{Name: "blk.0.ffn_gate_exps.weight", GGMLType: 8, Dims: []int64{4096, 1024, 8}, Bytes: GGMLTensorSize(8, []int64{4096, 1024, 8})},
 		{Name: "blk.1.attn_q.weight", GGMLType: 1, Dims: []int64{4096, 4096}, Bytes: GGMLTensorSize(1, []int64{4096, 4096})},
 		{Name: "blk.1.ffn_up_exps.weight", GGMLType: 8, Dims: []int64{4096, 1024, 8}, Bytes: GGMLTensorSize(8, []int64{4096, 1024, 8})},
+		{Name: "output.weight", Bytes: 300},
+		{Name: "output_norm.weight", Bytes: 128},
 	}
 
 	wb := CategorizeWeights(tensors, 2)
@@ -20,7 +22,7 @@ func TestCategorizeWeights(t *testing.T) {
 	expertBlk1 := GGMLTensorSize(8, []int64{4096, 1024, 8})
 	wantExpertTotal := expertBlk0 + expertBlk1
 
-	wantAlwaysActive := GGMLTensorSize(1, []int64{4096, 32000}) + GGMLTensorSize(1, []int64{4096, 4096})*2
+	wantAlwaysActive := GGMLTensorSize(1, []int64{4096, 32000}) + GGMLTensorSize(1, []int64{4096, 4096})*2 + 428
 
 	if wb.ExpertBytesTotal != wantExpertTotal {
 		t.Errorf("ExpertBytesTotal = %d, want %d", wb.ExpertBytesTotal, wantExpertTotal)
@@ -28,6 +30,12 @@ func TestCategorizeWeights(t *testing.T) {
 
 	if wb.AlwaysActiveBytes != wantAlwaysActive {
 		t.Errorf("AlwaysActiveBytes = %d, want %d", wb.AlwaysActiveBytes, wantAlwaysActive)
+	}
+	if wb.InputBytes != 262144000 || wb.TokenEmbeddingBytes != 262144000 {
+		t.Errorf("input/table bytes: got %d/%d, want 262144000/262144000", wb.InputBytes, wb.TokenEmbeddingBytes)
+	}
+	if wb.OutputBytes != 428 || !wb.HasOutputWeight {
+		t.Errorf("output bytes/presence: got %d/%t, want 428/true", wb.OutputBytes, wb.HasOutputWeight)
 	}
 
 	if wb.TotalBytes != wb.AlwaysActiveBytes+wb.ExpertBytesTotal {

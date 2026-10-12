@@ -9,11 +9,56 @@ import (
 
 	"uuid"
 
+	"github.com/ardanlabs/bucky/pkg/whisper"
 	"github.com/ardanlabs/kronk/sdk/bucky"
 	"github.com/ardanlabs/kronk/sdk/bucky/model"
 	"github.com/ardanlabs/kronk/sdk/bucky/tests/testlib"
 	"golang.org/x/sync/errgroup"
 )
+
+func TestFlashAttn(t *testing.T) {
+	tests := []struct {
+		name string
+		opts []model.Option
+		want bool
+	}{
+		{
+			name: "native-default",
+			want: whisper.ContextDefaultParams().FlashAttn != 0,
+		},
+		{
+			name: "disabled",
+			opts: []model.Option{model.WithFlashAttn(false)},
+			want: false,
+		},
+		{
+			name: "enabled",
+			opts: []model.Option{model.WithFlashAttn(true)},
+			want: true,
+		},
+	}
+
+	for _, gpu := range []bool{false, true} {
+		for _, tt := range tests {
+			t.Run(fmt.Sprintf("gpu=%t/%s", gpu, tt.name), func(t *testing.T) {
+				opts := []model.Option{
+					model.WithModelPath(testlib.MPTinyEn.ModelFiles[0]),
+					model.WithUseGPU(gpu),
+				}
+				opts = append(opts, tt.opts...)
+				testlib.WithWhisper(t, model.NewConfig(opts...), func(t *testing.T, w *bucky.Bucky) {
+					got := w.ModelConfig().FlashAttn
+					if got == nil {
+						t.Fatal("FlashAttn: got nil, want resolved value")
+					}
+					if *got != tt.want {
+						t.Errorf("FlashAttn: got %t, want %t", *got, tt.want)
+					}
+				})
+			})
+		}
+	}
+}
 
 func TestSuite(t *testing.T) {
 	testlib.WithWhisper(t, testlib.CfgTinyEn(), func(t *testing.T, w *bucky.Bucky) {

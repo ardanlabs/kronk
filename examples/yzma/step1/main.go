@@ -4,7 +4,7 @@
 // chat example first.
 //
 // Run the example like this from the root of the project:
-// $ make example-yzma
+// $ make example-yzma-step1
 
 package main
 

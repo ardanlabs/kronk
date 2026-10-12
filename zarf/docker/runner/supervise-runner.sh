@@ -22,9 +22,7 @@
 #     job. Only the named volumes persist, and _diag is one of them.
 #
 # The cost is that nothing restarts these after a reboot; --restart=always used
-# to cover that. Add a crontab line (crontab -e, no root needed):
-#
-#   @reboot COUNT=2 APP_ID=... APP_KEY=$HOME/key.pem $HOME/start-runners.sh
+# to cover that. start-runners.sh documents the crontab lines that do.
 #
 # HOW A JOB ENDS
 #

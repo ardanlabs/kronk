@@ -8,7 +8,7 @@
 //   4. Batched decoding of text tokens and image embeddings
 //
 // Run the example like this from the root of the project:
-// $ go run ./examples/yzma/step5 -image examples/samples/giraffe.jpg
+// $ make example-yzma-step5
 
 package main
 

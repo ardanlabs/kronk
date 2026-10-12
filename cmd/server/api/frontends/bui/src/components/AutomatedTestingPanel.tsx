@@ -625,7 +625,7 @@ export default function AutomatedTestingPanel({ session, sessionSeed, catalogSam
           <div className="playground-autotest-section">
             <div className="playground-sweep-params">
               <div className="playground-sweep-param">
-                <FieldLabel className="playground-sweep-param-toggle" tooltipKey="availableVRAM">Available GPU VRAM (GB)</FieldLabel>
+                <FieldLabel className="playground-sweep-param-toggle" tooltipKey="availableVRAM">Available GPU VRAM (GiB)</FieldLabel>
                 <input
                   type="number"
                   className="playground-sweep-param-values"

@@ -118,11 +118,12 @@ func SpeculativeContextCount(cfg Config) int64 {
 }
 
 // mtpFilesEnabled applies the architecture activation gate when metadata can
-// be read. An unreadable or unrecognized file retains the conservative legacy
-// estimate; model loading performs strict capability resolution later.
+// be read. Only enabled runtime contracts reserve MTP resources; NextN tensors
+// alone do not activate MTP. Unreadable files retain the conservative estimate
+// until model loading performs strict capability resolution.
 func mtpFilesEnabled(files []string) bool {
 	architecture, err := modelFilesMTPArchitecture(files)
-	return err != nil || architecture == modelprofile.MTPArchitectureNone || modelprofile.MTPEnabled(architecture)
+	return err != nil || modelprofile.MTPEnabled(architecture)
 }
 
 // mtpNextNLayers returns the number of NextN (MTP) prediction layers

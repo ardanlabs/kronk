@@ -2,12 +2,15 @@
 
 ## Index
 
+- [v1.33.0](#unreleased)
+  - [Bucky Flash Attention Configuration](#unreleased-bucky-flash-attention-configuration)
 - [v1.32.8](#v1328)
   - [Authorization Configuration Changes](#v1328-authorization-configuration-changes)
   - [Operation Offload Configuration Changes](#v1328-operation-offload-configuration-changes)
   - [Split Mode Changes](#v1328-split-mode-changes)
   - [Legacy Migration Changes](#v1328-legacy-migration-changes)
   - [Media Backend Startup Changes](#v1328-media-backend-startup-changes)
+  - [Bucky Library Selection Changes](#v1328-bucky-library-selection-changes)
   - [Streaming Error Response Changes](#v1328-streaming-error-response-changes)
   - [Go SDK Changes](#v1328-go-sdk-changes)
 - [v1.32.4](#v1324)
@@ -36,6 +39,21 @@
   - [Session Storage Changes](#v1303-session-storage-changes)
   - [Go SDK Changes](#v1303-go-sdk-changes)
 
+## v1.33.0
+
+### v1.33.0: Bucky Flash Attention Configuration
+
+`sdk/bucky/model.Config.FlashAttn` changes from `bool` to `*bool` so an
+unset value can preserve whisper.cpp's native default. `nil` leaves that
+default unchanged; a pointer to `false` disables flash attention, and a
+pointer to `true` enables it.
+
+The `model.WithFlashAttn(bool)` option is unchanged. For direct configuration
+struct literals, replace `FlashAttn: false` with `FlashAttn: new(false)` and
+`FlashAttn: true` with `FlashAttn: new(true)`. Omit the field to use the native
+default. Loaded model configurations report the resolved, non-nil value;
+dereference it when reading the effective setting.
+
 ## v1.32.8
 
 ### v1.32.8: Authorization Configuration Changes
@@ -43,10 +61,10 @@
 The legacy authorization settings and their CLI flags were removed. Configure
 the API access policy with `authorization.mode`, which defaults to `open`:
 
-| Removed YAML | Removed environment variable | Removed CLI flag | Replacement mode |
-| ------------ | ---------------------------- | ---------------- | ---------------- |
-| `auth.local.enabled: true` | `KRONK_AUTH_LOCAL_ENABLED=true` | `--auth-enabled` | `full-protected` |
-| `auth.admin-enabled: true` | `KRONK_AUTH_ADMIN_ENABLED=true` | `--admin-auth-enabled` | `management` |
+| Removed YAML               | Removed environment variable    | Removed CLI flag       | Replacement mode |
+| -------------------------- | ------------------------------- | ---------------------- | ---------------- |
+| `auth.local.enabled: true` | `KRONK_AUTH_LOCAL_ENABLED=true` | `--auth-enabled`       | `full-protected` |
+| `auth.admin-enabled: true` | `KRONK_AUTH_ADMIN_ENABLED=true` | `--admin-auth-enabled` | `management`     |
 
 For example, replace a legacy fully protected configuration with:
 
@@ -112,10 +130,10 @@ compatible model architectures and backends.
 Kronk no longer automatically moves these legacy files to their canonical
 locations:
 
-| Legacy location | Canonical location |
-| --------------- | ------------------ |
+| Legacy location              | Canonical location                  |
+| ---------------------------- | ----------------------------------- |
 | `~/.kronk/model_config.yaml` | `~/.kronk/models/model_config.yaml` |
-| `~/.kronk/catalog.yaml` | `~/.kronk/catalog/catalog.yaml` |
+| `~/.kronk/catalog.yaml`      | `~/.kronk/catalog/catalog.yaml`     |
 
 Move either file before upgrading. Otherwise Kronk leaves the legacy file in
 place and creates an embedded default at the canonical location, so existing
@@ -159,6 +177,23 @@ export KRONK_MEDIA_BACKENDS_ENABLED=false
 
 The equivalent CLI setting is `--media-backends-enabled=false` and the YAML
 setting is `media-backends-enabled: false`.
+
+### v1.32.8: Bucky Library Selection Changes
+
+Bucky now uses v1.1.4 with the authenticated whisper.cpp v1.9.5 bundle. The
+default downloader replaces managed bundles that do not match this pin,
+including numerically newer bundles. Offline startup requires an installation
+matching the requested pin and platform. Use `--version` or `--upgrade` only
+when deliberately selecting a different native release.
+
+Linux automatic CUDA selection prefers the new CUDA 13 bundle when driver,
+visible-GPU, and runtime-library checks pass. Linux CUDA 12 and CUDA 13 both
+require the matching runtime and cuBLAS libraries in the loader cache or
+`LD_LIBRARY_PATH`; the Whisper bundles do not include them. A host previously
+selected as CUDA based only on its driver may now fall back to Vulkan or CPU
+until those libraries are installed. `cuda` remains the CUDA 12 download alias;
+`cuda13` is Linux-only. Use `KRONK_BUCKY_LIB_PATH` to pin Bucky independently
+of llama.cpp and restart after changing native libraries.
 
 ### v1.32.8: Streaming Error Response Changes
 
@@ -380,14 +415,14 @@ physical batch for the complete prefill-plus-generation tray.
 
 Direct Go SDK consumers must replace these removed APIs:
 
-| Removed | Replacement |
-| ------- | ----------- |
-| `model.Config.PtrNBatch` | `model.Config.PtrPrefillBatchSize` |
-| `model.Config.PtrNUBatch` | `model.Config.PtrPrefillBatchSize` |
-| `model.Config.NBatch()` | `model.Config.PrefillBatchSize()` for configuration; `EffectiveNBatch()` for diagnostics |
-| `model.Config.NUBatch()` | `model.Config.PrefillBatchSize()` for configuration; `EffectiveNUBatch()` for diagnostics |
-| `model.WithNBatch(...)` | `model.WithPrefillBatchSize(...)` |
-| `model.WithNUBatch(...)` | `model.WithPrefillBatchSize(...)` |
+| Removed                   | Replacement                                                                               |
+| ------------------------- | ----------------------------------------------------------------------------------------- |
+| `model.Config.PtrNBatch`  | `model.Config.PtrPrefillBatchSize`                                                        |
+| `model.Config.PtrNUBatch` | `model.Config.PtrPrefillBatchSize`                                                        |
+| `model.Config.NBatch()`   | `model.Config.PrefillBatchSize()` for configuration; `EffectiveNBatch()` for diagnostics  |
+| `model.Config.NUBatch()`  | `model.Config.PrefillBatchSize()` for configuration; `EffectiveNUBatch()` for diagnostics |
+| `model.WithNBatch(...)`   | `model.WithPrefillBatchSize(...)`                                                         |
+| `model.WithNUBatch(...)`  | `model.WithPrefillBatchSize(...)`                                                         |
 
 The Playground request field changed from `nbatch` and `nubatch` to
 `prefill_batch_size`. The BUI playground and configuration sweeps now expose

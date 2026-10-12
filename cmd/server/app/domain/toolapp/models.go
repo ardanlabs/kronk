@@ -14,6 +14,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/hf"
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/pool"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
@@ -327,23 +328,32 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 		return errs.Errorf(errs.InvalidArgument, "model_url, model_urls, or model_id is required")
 	}
 
+	if req.MoECacheSize < 0 {
+		return errs.Errorf(errs.InvalidArgument, "moe_cache_size must be >= 0")
+	}
+
 	slots := max(req.Slots, 1)
 	var configuredSWAFull *bool
 	var nUBatch int64
+	kronkConfig := model.Config{}
 	if req.ModelID != "" {
 		modelConfig := a.pool.Kronk.ModelConfig()[req.ModelID]
 		configuredSWAFull = modelConfig.PtrSWAFull
-		nUBatch = int64(modelConfig.ToKronkConfig().PrefillBatchSize())
+		kronkConfig = modelConfig.ToKronkConfig()
+		nUBatch = int64(kronkConfig.PrefillBatchSize())
 	}
 	swaFull := resolveSWAFull(req.SWAFull, configuredSWAFull)
 
 	cfg := vram.Config{
+		WeightLoading:     kronkConfig.VRAMWeightLoading(devices.List(devices.WithIncludeMemory(false))),
+		ComputeBackend:    devices.Backend(),
 		ContextWindow:     req.ContextWindow,
 		BytesPerElement:   req.BytesPerElement,
 		Slots:             slots,
 		NUBatch:           nUBatch,
 		GPULayers:         req.GPULayers,
 		ExpertLayersOnGPU: req.ExpertLayersOnGPU,
+		MoECacheSize:      req.MoECacheSize,
 		KVCacheOnCPU:      req.KVCacheOnCPU,
 		SWAFull:           swaFull,
 	}
@@ -375,10 +385,7 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 
 	// Per-device split when the caller asked for one.
 	if req.DeviceCount > 0 {
-		v.PerDevice = vram.CalculatePerDevice(
-			v.ModelWeightsGPU, v.KVVRAMBytes, v.ComputeBufferEst,
-			req.DeviceCount, req.TensorSplit, nil, 0,
-		)
+		v.PerDevice = v.CalculatePerDevice(req.DeviceCount, req.TensorSplit, nil, 0)
 	}
 
 	// Only fetch repo file list on the initial (non-auto-fit / non-incremental)

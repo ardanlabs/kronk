@@ -36,8 +36,8 @@ func selectEvictionVictim(reason string, req resman.PlanRequest, idleColdestFirs
 
 		// Smallest single-fit: among idle entries that the manager
 		// actually tracks, pick the smallest whose RAM release covers
-		// the deficit. This avoids freeing 44 GB to satisfy a 4 GB
-		// shortfall when a 25 GB idle candidate would have done.
+		// the deficit. This avoids freeing 44 GiB to satisfy a 4 GiB
+		// shortfall when a 23 GiB idle candidate would have done.
 		var bestKey string
 		var bestScore int64 = -1
 		for _, key := range idleColdestFirst {
@@ -75,8 +75,8 @@ func selectEvictionVictim(reason string, req resman.PlanRequest, idleColdestFirs
 //   - When reason is "budget" and req has a non-zero footprint, prefer
 //     the SMALLEST idle reservation whose RAMBytes (and VRAMBytes if
 //     relevant) individually frees enough memory to admit the request.
-//     This avoids the pathological "evict a 44 GB AGENT model to make
-//     room for a 4 GB deficit" case — keeping expensive-to-reload
+//     This avoids the pathological "evict a 44 GiB AGENT model to make
+//     room for a 4 GiB deficit" case — keeping expensive-to-reload
 //     models warm whenever a smaller idle candidate would have
 //     sufficed.
 //   - When no single victim fits the deficit (or for cap-driven

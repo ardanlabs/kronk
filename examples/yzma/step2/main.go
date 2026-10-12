@@ -5,7 +5,7 @@
 // https://github.com/ggml-org/llama.cpp/blob/master/examples/parallel/parallel.cpp
 //
 // Run the example like this from the root of the project:
-// $ make example-yzma-parallel
+// $ make example-yzma-step2
 
 package main
 

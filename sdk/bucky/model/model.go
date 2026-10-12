@@ -52,19 +52,28 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	if cfg.QueueDepth < 0 {
 		return nil, fmt.Errorf("new-model: queue depth cannot be negative")
 	}
+
 	if cfg.ModelPath == "" {
 		return nil, fmt.Errorf("new-model: model path is required")
 	}
 
 	cp := whisper.ContextDefaultParams()
+
 	if cfg.UseGPU {
 		cp.UseGPU = 1
 	} else {
 		cp.UseGPU = 0
 	}
-	if cfg.FlashAttn {
-		cp.FlashAttn = 1
+
+	if cfg.FlashAttn != nil {
+		if *cfg.FlashAttn {
+			cp.FlashAttn = 1
+		} else {
+			cp.FlashAttn = 0
+		}
 	}
+	cfg.FlashAttn = new(cp.FlashAttn != 0)
+
 	cp.GPUDevice = cfg.GPUDevice
 
 	handle, err := whisper.InitFromFileWithParamsNoState(cfg.ModelPath, cp)
@@ -98,7 +107,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		"model-type", m.modelInfo.Type,
 		"multilingual", m.modelInfo.IsMultilingual,
 		"use-gpu", cfg.UseGPU,
-		"flash-attn", cfg.FlashAttn,
+		"flash-attn", *cfg.FlashAttn,
 		"n-seq-max", cfg.NSeqMax,
 		"queue-depth", cfg.QueueDepth,
 		"admission-timeout", cfg.AdmissionTimeout,

@@ -416,6 +416,9 @@ func MergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	if src.FlashAttention != nil {
 		dst.FlashAttention = src.FlashAttention
 	}
+	if src.PtrLazyMode != nil {
+		dst.PtrLazyMode = src.PtrLazyMode
+	}
 	if src.PtrLoadMode != nil {
 		dst.PtrLoadMode = src.PtrLoadMode
 	}

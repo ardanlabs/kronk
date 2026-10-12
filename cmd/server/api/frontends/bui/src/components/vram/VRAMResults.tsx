@@ -23,6 +23,7 @@ interface VRAMResultsProps {
   modelWeightsGPU?: number;
   modelWeightsCPU?: number;
   computeBufferEst?: number;
+  moeCacheBytes?: number;
   alwaysActiveGPUBytes?: number;
   alwaysActiveCPUBytes?: number;
   expertGPUBytes?: number;
@@ -56,6 +57,7 @@ export default function VRAMResults({
   modelWeightsGPU,
   modelWeightsCPU,
   computeBufferEst,
+  moeCacheBytes,
   alwaysActiveGPUBytes,
   alwaysActiveCPUBytes,
   expertGPUBytes,
@@ -79,7 +81,8 @@ export default function VRAMResults({
   const isMoE = moe?.is_moe === true && weights != null;
   const kvOnCPU = kvCacheOnCPU ?? false;
   const kvCacheLocation = kvOnCPU ? 'System RAM' : 'GPU';
-  const isPartialGPU = gpuLayers != null && gpuLayers < input.block_count;
+  const isPartialGPU = gpuLayers != null && gpuLayers < input.block_count + 1;
+  const cpuBlocks = input.block_count - Math.max(0, (gpuLayers ?? input.block_count + 1) - 1);
 
   const primaryTotal = isUnifiedMemory ? (unifiedFootprint ?? 0) : totalVram;
   const primaryCapacity = isUnifiedMemory
@@ -101,8 +104,8 @@ export default function VRAMResults({
     ];
   } else if (isPartialGPU) {
     breakdownRows = [
-      { label: labelWithTip(`Weights on GPU (${gpuLayers} of ${input.block_count} layers)`, 'gpuLayers'), value: formatBytes(modelWeightsGPU ?? 0) },
-      { label: labelWithTip(`Weights on CPU (${input.block_count - gpuLayers!} layers)`, 'gpuLayers'), value: formatBytes(modelWeightsCPU ?? 0) },
+      { label: labelWithTip(`Weights on GPU (${gpuLayers} of ${input.block_count + 1} layers)`, 'gpuLayers'), value: formatBytes(modelWeightsGPU ?? 0) },
+      { label: labelWithTip(`Weights on CPU (${cpuBlocks} block${cpuBlocks === 1 ? '' : 's'})`, 'gpuLayers'), value: formatBytes(modelWeightsCPU ?? 0) },
       { label: labelWithTip(`KV Cache (${kvCacheLocation})`, 'kvCache'), value: formatBytes(slotMemory) },
       { label: labelWithTip('KV Per Slot', 'kvPerSlot'), value: formatBytes(kvPerSlot) },
       { label: labelWithTip('KV Per Token Per Layer', 'kvPerTokenPerLayer'), value: formatBytes(kvPerTokenPerLayer) },
@@ -110,12 +113,17 @@ export default function VRAMResults({
     ];
   } else {
     breakdownRows = [
-      { label: labelWithTip('Model Weights', 'modelWeights'), value: formatBytes(input.model_size_bytes) },
+      { label: labelWithTip('Model Weights (GPU)', 'modelWeights'), value: formatBytes(modelWeightsGPU ?? input.model_size_bytes) },
+      ...((modelWeightsCPU ?? 0) > 0 ? [{ label: labelWithTip('Model Weights (CPU)', 'gpuLayers'), value: formatBytes(modelWeightsCPU!) }] : []),
       { label: labelWithTip(`KV Cache (${kvCacheLocation})`, 'kvCache'), value: formatBytes(slotMemory) },
       { label: labelWithTip('KV Per Slot', 'kvPerSlot'), value: formatBytes(kvPerSlot) },
       { label: labelWithTip('KV Per Token Per Layer', 'kvPerTokenPerLayer'), value: formatBytes(kvPerTokenPerLayer) },
       { label: labelWithTip('Compute Buffer (estimate)', 'computeBuffer'), value: `~${formatBytes(computeBufferEst ?? 0)}` },
     ];
+  }
+
+  if (isMoE) {
+    breakdownRows.push({ label: labelWithTip('MoE Expert Cache (budget)', 'moeCacheSize'), value: formatBytes(moeCacheBytes ?? 0) });
   }
 
   const headerRows: { label: ReactNode; value: string }[] = [
@@ -268,6 +276,9 @@ export default function VRAMResults({
                   {dev.compute_bytes > 0 && (
                     <div style={{ width: `${(dev.compute_bytes / barMax) * 100}%`, background: '#8b5cf6', height: '100%' }} title={`Compute Buffer: ${formatBytes(dev.compute_bytes)}`} />
                   )}
+                  {(dev.moe_cache_bytes ?? 0) > 0 && (
+                    <div style={{ width: `${((dev.moe_cache_bytes ?? 0) / barMax) * 100}%`, background: '#14b8a6', height: '100%' }} title={`MoE Expert Cache: ${formatBytes(dev.moe_cache_bytes ?? 0)}`} />
+                  )}
                 </div>
               </div>
             );
@@ -276,6 +287,7 @@ export default function VRAMResults({
             <span style={{ color: 'var(--color-primary)' }}>■ Weights</span>
             <span style={{ color: 'var(--color-orange)' }}>■ KV Cache</span>
             <span style={{ color: '#8b5cf6' }}>■ Compute</span>
+            {(moeCacheBytes ?? 0) > 0 && <span style={{ color: '#14b8a6' }}>■ MoE Cache</span>}
           </div>
           <div className="alert alert-info" style={{ marginTop: '8px', fontSize: '0.85em' }}>
             <strong>Note:</strong> Per-GPU allocation is estimated based on tensor split proportions. Actual distribution may vary depending on llama.cpp split mode behavior.
@@ -350,6 +362,7 @@ export interface VramComputedConfig {
   tensorSplit: string;
   moeMode: string;
   moeKeepTopN: number | null;
+  moeCacheSize: number;
 }
 
 function buildComputedCatalogConfig(
@@ -364,10 +377,10 @@ function buildComputedCatalogConfig(
 ): VramComputedConfig {
   const cacheType = cacheTypeName(input.bytes_per_element);
   const gpuCount = deviceCount ?? 1;
-  const allLayersOnGPU = gpuLayers == null || gpuLayers >= input.block_count;
+  const allLayersOnGPU = gpuLayers == null || gpuLayers >= input.block_count + 1;
 
   let ngpuLayers: number | null = null;
-  if (gpuLayers != null && gpuLayers < input.block_count) {
+  if (gpuLayers != null && gpuLayers < input.block_count + 1) {
     ngpuLayers = gpuLayers === 0 ? -1 : gpuLayers;
   }
 
@@ -410,6 +423,7 @@ function buildComputedCatalogConfig(
     tensorSplit: effectiveTensorSplit,
     moeMode,
     moeKeepTopN,
+    moeCacheSize: isMoE ? (input.moe_cache_size ?? 0) : 0,
   };
 }
 
@@ -438,12 +452,13 @@ function configToYAML(config: VramComputedConfig, configName?: string, defaults?
     lines.push('  swa-full: false');
   }
 
-  if (config.moeMode) {
+  if (config.moeMode || config.moeCacheSize > 0) {
     lines.push('  moe:');
-    lines.push(`    mode: ${config.moeMode}`);
+    if (config.moeMode) lines.push(`    mode: ${config.moeMode}`);
     if (config.moeMode === 'keep_top_n' && config.moeKeepTopN != null) {
       lines.push(`    keep-experts-top-n: ${config.moeKeepTopN}`);
     }
+    if (config.moeCacheSize > 0) lines.push(`    cache-size: ${config.moeCacheSize}`);
   }
 
   if (config.tensorSplit) {

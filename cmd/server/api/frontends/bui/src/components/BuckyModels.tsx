@@ -18,9 +18,9 @@ function parseSizeMB(s: string): number {
   const n = parseFloat(m[1]);
   const unit = (m[2] || 'MB').toUpperCase();
   switch (unit) {
-    case 'GB': return n * 1024;
-    case 'KB': return n / 1024;
-    case 'B':  return n / (1024 * 1024);
+    case 'GB': return n * 1000;
+    case 'KB': return n / 1000;
+    case 'B':  return n / (1000 * 1000);
     default:   return n;
   }
 }
@@ -247,8 +247,8 @@ export default function BuckyModels() {
 function formatBytes(n: number): string {
   if (!n || n <= 0) return '';
   const mb = n / (1000 * 1000);
-  if (mb < 1024) return `${mb.toFixed(1)} MB`;
-  return `${(mb / 1024).toFixed(2)} GB`;
+  if (mb < 1000) return `${mb.toFixed(1)} MB`;
+  return `${(mb / 1000).toFixed(2)} GB`;
 }
 
 interface DetailsPanelProps {

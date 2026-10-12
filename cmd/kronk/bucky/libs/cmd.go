@@ -29,13 +29,17 @@ MODES
 
 The command auto-detects your system architecture (amd64/arm64),
 operating system (linux/darwin/windows), and processor type
-(cpu/metal/cuda/vulkan).
+(cpu/metal/cuda/cuda12/cuda13/vulkan). Automatic Linux CUDA selection
+prefers CUDA 13 when the driver, visible GPUs, and runtime libraries support
+it; otherwise it uses compatible CUDA 12, Vulkan, or CPU.
 
 HARDWARE BACKENDS
 
   cpu    - CPU-only inference (works on all systems)
   metal  - Apple Silicon GPU acceleration (macOS, universal slice)
-  cuda   - NVIDIA GPU acceleration (Linux, Windows)
+  cuda   - NVIDIA CUDA 12 GPU acceleration (Linux, Windows; legacy alias)
+  cuda12 - NVIDIA CUDA 12 GPU acceleration (Linux, Windows)
+  cuda13 - NVIDIA CUDA 13 GPU acceleration (Linux only)
   vulkan - Cross-platform GPU acceleration (Linux)
 
 EXAMPLES
@@ -54,6 +58,9 @@ EXAMPLES
 
   # Install a Linux/CUDA bundle alongside the active install.
   kronk bucky libs --install --arch=amd64 --os=linux --processor=cuda
+
+  # Install the Linux CUDA 13 bundle (requires CUDA 13 runtime and cuBLAS).
+  kronk bucky libs --install --arch=amd64 --os=linux --processor=cuda13
 
   # List installed library bundles.
   kronk bucky libs --list-installs
@@ -82,7 +89,7 @@ func init() {
 	Cmd.Flags().Bool("install", false, "Install for the supplied --arch/--os/--processor triple (lands in its own folder under the libraries root)")
 	Cmd.Flags().String("arch", "", "Architecture for triple-aware install operations (amd64, arm64)")
 	Cmd.Flags().String("os", "", "Operating system for triple-aware install operations (linux, darwin, windows)")
-	Cmd.Flags().String("processor", "", "Processor for triple-aware install operations (cpu, cuda, metal, vulkan)")
+	Cmd.Flags().String("processor", "", "Processor for triple-aware install operations (cpu, cuda, cuda12, cuda13, metal, vulkan)")
 	Cmd.Flags().Bool("list-combinations", false, "List supported (arch, os, processor) combinations and exit")
 	Cmd.Flags().Bool("list-installs", false, "List installed library bundles under the libraries root and exit")
 	Cmd.Flags().Bool("remove-install", false, "Remove the install matching --arch/--os/--processor")

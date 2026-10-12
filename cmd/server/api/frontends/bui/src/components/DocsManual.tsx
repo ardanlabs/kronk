@@ -336,7 +336,7 @@ kronk libs --list-installs
 
 # Install the supported version using its exact release manifest pin.
 kronk libs --local \\
-  --version=v0.6.0@sha256:eae6acae7a2044bb27981d2bd72481780b5675d92b6adaefe5035364160d8153
+  --version=b11513@sha256:7f8b62c6533a72ca1a7e2ade88378cfab51f6ebe10d624d3cd506872124b69b5
 
 # Explicitly select CPU instead of an available GPU.
 KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
@@ -632,6 +632,37 @@ malina-models:
               </tr>
             </tbody>
           </table>
+          <h4 id="lazy-tensor-reading">Lazy tensor reading</h4>
+          <p><code>lazy-mode</code> controls on-demand reading of tensors that llama.cpp marks eligible, such as the per-layer token embedding tables in Qwen4Exp and Gemma4. It is not whole-model lazy loading; models without eligible tensors are unaffected.</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Value</th>
+                <th>Behavior</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>auto</code></td>
+                <td>Lazy-read eligible tensors larger than 4 GiB when all selected devices support mmap; this is the default</td>
+              </tr>
+              <tr>
+                <td><code>off</code></td>
+                <td>Read eligible tensors up front like ordinary weights</td>
+              </tr>
+              <tr>
+                <td><code>on</code></td>
+                <td>Request lazy reading for eligible tensors regardless of size; requires platform mmap support</td>
+              </tr>
+            </tbody>
+          </table>
+          <pre className="code-block"><code className="language-yaml">{`some-provider/some-model:
+  lazy-mode: on
+  load-mode: none`}</code></pre>
+          <p>On Metal, mmap can bring the entire table into RAM through an overlapping GPU mapping even when the log says <code>lazy read enabled</code>. Use <code>load-mode: none</code> to avoid that overlap unless the table is isolated in its own shard. Eligible lazy tensors remain file-mapped even with <code>load-mode: none</code>; the other weights use ordinary loading. Accessed pages may remain cached, and disk reads can reduce inference speed. Verify residency and performance with the actual model.</p>
+          <p>The setting applies to the target and any separate or companion draft model. The Go SDK equivalent is <code>model.WithLazyMode(model.LazyModeOn)</code>, with <code>LazyModeAuto</code> and <code>LazyModeOff</code> as the other choices.</p>
+          <p>Kronk's calculator replaces an effective lazy table's full encoded size with a page-rounded working-set estimate: two physical batches per native context, with at least 256 MiB reserved for accessed pages, capped at the table size. Gemma4 gathers one all-layer row per token; Qwen4Exp gathers multiple n-gram head rows. The table remains host memory, not additional GPU workspace. The same result feeds fitting, admission reservations, and the resource screen.</p>
+          <p>Full-table accounting remains when lazy reading is off or uncertain, when <code>auto</code> does not meet its size/device requirements, with mlock, or when Metal mmap may overlap a table that is not alone in its shard. The current device capability check verifies CPU and Metal; other backends conservatively retain the full table in <code>auto</code> mode. Explicit <code>on</code> only needs platform mmap support. This is not a hard residency cap: clean mapped pages may accumulate or be reclaimed by the operating system. Validate actual memory and latency under representative prompts before relying on the additional admission headroom.</p>
           <h4 id="kv-cache-and-operations">KV cache and operations</h4>
           <p>The KV cache and host tensor operations are offloaded to the GPU by default:</p>
           <pre className="code-block"><code className="language-yaml">{`some-provider/some-model:
@@ -719,6 +750,13 @@ malina-models:
           <p>Context length, <code>nseq-max</code>, cache precision, layer placement, SWA, and model architecture all affect the result. Use <strong>Apps → VRAM Calculator</strong> in the BUI to inspect the GGUF metadata and estimate a specific configuration. Treat the result as planning guidance and retain headroom for the backend and other processes.</p>
           <h4 id="dense-moe-and-hybrid-inference">Dense, MoE, and hybrid inference</h4>
           <p>Dense and Mixture-of-Experts (MoE) describe how each layer's feed-forward weights are activated. A dense layer uses its complete feed-forward network for every token. An MoE layer stores many expert feed-forward networks and uses a learned router to select a small subset independently for each token and layer. All experts remain in memory even though only the selected experts compute.</p>
+          <p><strong>Experimental GPU expert cache:</strong> <code>moe.cache-size</code> reserves additional GPU storage for frequently used experts whose original weights remain in host memory. The value is bytes per native context; it is one global budget shared across eligible GPUs, not a budget per GPU or per sequence slot. Unset or zero leaves the llama.cpp default unchanged (currently disabled). Non-MoE models ignore this setting.</p>
+          <pre className="code-block"><code className="language-yaml">{`my-moe-model:
+  moe:
+    mode: experts_cpu
+    cache-size: 1073741824 # 1 GiB of additional GPU expert-cache capacity`}</code></pre>
+          <p>The cache primarily targets small-batch generation (up to 32 tokens per microbatch when capacity permits). Multiple GPUs are supported; tensor parallelism (<code>split-mode: tensor</code>) is not. Native pipeline parallelism is disabled when caching is requested. A cache too small for the selected experts can fail context initialization. Models without eligible host-resident experts may run without an active cache. Benchmark before assuming a speedup.</p>
+          <p>All three BUI calculators (standalone, model details, and catalog details) expose <strong>MoE Expert Cache (GiB)</strong> for MoE models and export <code>cache-size</code> in bytes. The calculator and pool reserve this budget in addition to model weights, KV, and compute memory. On unified-memory systems it increases the shared physical-memory footprint; original host weights are not deducted. Per-GPU allocation is an estimate: actual cache placement follows eligible layers and may use free-memory proportions. Retain backend/host-metadata headroom beyond the cache budget.</p>
           <p>Hybrid describes a separate design choice: which sequence-processing mechanism each layer uses. A hybrid stack can pair those mechanisms with dense feed-forward networks or MoE blocks. Qwen 3.6 combines Gated DeltaNet and full-attention layers with MoE; qwen4exp combines Gated DeltaNet and sparse attention with MoE. Every token still traverses every layer. The hybrid stack changes how context is processed, while an MoE router independently changes which feed-forward experts activate.</p>
           <p><img src="https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/03c-dense-moe-and-hybrid-inference.svg" alt="Dense, Mixture-of-Experts, and hybrid inference compared" /></p>
           <p>The estimator follows the model's per-layer attention topology when the GGUF provides it. Full-attention and sliding-window layers can have different KV head counts and dimensions; compact SWA includes its physical-batch headroom, while <code>swa-full: true</code> allocates SWA against the full context. Shared KV layers are not charged twice.</p>
@@ -868,6 +906,11 @@ models:
                 <td><code>ngpu-layers</code></td>
                 <td><code>-1</code>, <code>0</code>, or a positive count</td>
                 <td>CPU/GPU layer placement</td>
+              </tr>
+              <tr>
+                <td><code>lazy-mode</code></td>
+                <td><code>auto</code>, <code>off</code>, <code>on</code></td>
+                <td>On-demand reading of eligible tensors; default <code>auto</code></td>
               </tr>
               <tr>
                 <td><code>load-mode</code></td>
@@ -1496,7 +1539,7 @@ krn, err := kronk.New(
           <p>MTP is normally the simpler choice when the downloaded model provides a supported embedded or companion head. It is architecture-matched to its target, supports multiple execution slots, and does not require a <code>model-id</code> in the <code>draft-model</code> configuration.</p>
           <p>An embedded head requires no companion file. A companion MTP head is an additional model-specific file, but Kronk's catalog and download flow can discover and associate files at the repository root or under <code>MTP/</code> with the target automatically. A version 2 catalog entry can instead provide <code>mtp_url</code> when a compatible companion is hosted in another repository. It is not configured as a classic <code>draft-model</code>.</p>
           <p>Qwen3.8 Flash Next's <code>qwen4exp</code> MTP runtime supports embedded heads and self-contained companion GGUFs through the own-KV runtime. Existing shared-tensor sidecars are not compatible; the companion must contain its own token embeddings and output tensors.</p>
-          <p>The pinned v0.6.0 bundle contains the recurrent-memory assertion fix from upstream PR #29799 and the Qwen4Exp QSA/indexer correctness fixes from PR #29819. In <code>auto</code> mode Kronk loads a compatible Qwen4Exp companion when one is available, otherwise it uses a compatible embedded head. The <code>disabled</code> speculation mode continues to run the target without MTP.</p>
+          <p>The pinned b11513 bundle contains the recurrent-memory assertion fix from upstream PR #29799 and the Qwen4Exp QSA/indexer correctness fixes from PR #29819. In <code>auto</code> mode Kronk loads a compatible Qwen4Exp companion when one is available, otherwise it uses a compatible embedded head. The <code>disabled</code> speculation mode continues to run the target without MTP.</p>
           <p>NVIDIA Nemotron 3 Super uses the embedded own-KV MTP runtime. Kronk recognizes the <code>nemotron_h_moe</code> architecture, preserves recurrent-state rollback for its hybrid Mamba-attention target, and uses the model's Qwen3-Coder-compatible tool protocol. Separate Nemotron MTPv2 companion files and Nemotron Puzzle MTP are not supported; configure <code>speculation: disabled</code> to benchmark target-only generation with the same embedded model.</p>
           <p>MTP availability is a property of the downloaded files and the loaded llama.cpp library. Naming a model “MTP” or adding an <code>ndraft</code> override cannot create an MTP head that is not present.</p>
           <h3 id="64-draft-size-and-classic-adaptive-throttling">6.4 Draft Size and Classic Adaptive Throttling</h3>
@@ -2537,7 +2580,7 @@ resp, err := krn.Decision(ctx, req)`}</code></pre>
   "seed": -1
 }`}</code></pre>
           <p><code>size</code> defaults to <code>512x512</code>. The response contains <code>created</code> and a <code>data</code> array whose single item contains <code>b64_json</code>, <code>seed</code>, <code>width</code>, and <code>height</code>. Only <code>n: 1</code>, <code>response_format: "b64_json"</code>, and PNG output are supported.</p>
-          <p><code>POST /v1/images/edits</code> accepts the same controls as multipart form fields and requires an <code>image</code> PNG or JPEG file. The optional <code>strength</code> field controls how far the result may depart from the source and defaults to <code>0.75</code>; its range is greater than zero through <code>1</code>. When <code>size</code> is omitted, Kronk preserves the source aspect ratio, scales dimensions down to at most 1024 pixels per side, and aligns them to multiples of eight. Uploads are limited to 25 MB. Both image routes support <code>negative_prompt</code>, <code>steps</code>, <code>cfg_scale</code>, and <code>seed</code> and require the <code>image-generations</code> inference permission when authentication is enabled.</p>
+          <p><code>POST /v1/images/edits</code> accepts the same controls as multipart form fields and requires an <code>image</code> PNG or JPEG file. The optional <code>strength</code> field controls how far the result may depart from the source and defaults to <code>0.75</code>; its range is greater than zero through <code>1</code>. When <code>size</code> is omitted, Kronk preserves the source aspect ratio, scales dimensions down to at most 1024 pixels per side, and aligns them to multiples of eight. Uploads are limited to 25 MiB. Both image routes support <code>negative_prompt</code>, <code>steps</code>, <code>cfg_scale</code>, and <code>seed</code> and require the <code>image-generations</code> inference permission when authentication is enabled.</p>
           <pre className="code-block"><code className="language-sh">{`curl http://localhost:11435/v1/images/edits \\
   -F model=sd-1.5 \\
   -F prompt='A watercolor illustration at sunset' \\
@@ -4483,12 +4526,12 @@ lsof -nP -iTCP:9000 -sTCP:LISTEN`}</code></pre>
               <tr>
                 <td>Linux</td>
                 <td><code>amd64</code>, <code>arm64</code></td>
-                <td><code>cpu</code>, <code>cuda</code>, <code>vulkan</code></td>
+                <td><code>cpu</code>, <code>cuda</code>, <code>cuda12</code>, <code>cuda13</code>, <code>vulkan</code></td>
               </tr>
               <tr>
                 <td>Windows</td>
                 <td><code>amd64</code></td>
-                <td><code>cpu</code>, <code>cuda</code></td>
+                <td><code>cpu</code>, <code>cuda</code>, <code>cuda12</code></td>
               </tr>
             </tbody>
           </table>
@@ -4500,6 +4543,9 @@ kronk bucky libs --version=v1.7.0
 
 # Install another bundle alongside the active one.
 kronk bucky libs --install --arch=amd64 --os=linux --processor=cuda
+
+# Install the Linux CUDA 13 bundle alongside CUDA 12.
+kronk bucky libs --install --arch=amd64 --os=linux --processor=cuda13
 
 # List or remove installed bundles.
 kronk bucky libs --list-installs
@@ -4533,10 +4579,14 @@ kronk bucky libs --remove-install --arch=amd64 --os=linux --processor=cuda`}</co
               </tr>
             </tbody>
           </table>
+          <p><code>cuda</code> and <code>cuda12</code> download the same CUDA 12 bundle into separate processor directories. On Linux, automatic detection with a <code>cuda</code> preference first tries <code>cuda13</code>: it requires a reported CUDA version of at least 13.0, the same GPU capability thresholds above, and installed <code>libcudart.so.13</code> and <code>libcublas.so.13</code>. If those checks fail, it tries CUDA 12. Linux CUDA 12 also requires installed <code>libcudart.so.12</code> and <code>libcublas.so.12</code>. Library discovery uses <code>ldconfig -p</code> and <code>LD_LIBRARY_PATH</code>; stale cache entries do not count. The Linux bundles do not include these NVIDIA user-space libraries. A newer driver alone does not supply them. Both CUDA runtime majors can coexist. Keep Jetson Orin on CUDA 12 unless its JetPack/runtime supports CUDA 13.</p>
+          <p>An explicit <code>--install --processor=cuda13</code> downloads the requested bundle without probing the current host, allowing installation for another machine. CUDA 13 archives use <code>cuda-13</code> in their filenames; the Bucky processor option is <code>cuda13</code>, without a hyphen. Windows remains CUDA 12 only.</p>
           <p>If the preferred CUDA or Vulkan runtime is unavailable or incompatible, Linux uses Vulkan when <code>vulkaninfo --summary</code> reports a usable GPU and otherwise uses CPU. Other supported platforms fall back to CPU. Bucky has no separate ROCm artifact, so a shared <code>KRONK_PROCESSOR=rocm</code> preference resolves to Vulkan on a usable Linux Vulkan host and otherwise to CPU. Startup logs report the preferred runtime, selected runtime, and reason.</p>
           <p>To select a specific installed bundle or user-managed build authoritatively, set its directory before starting the server:</p>
           <pre className="code-block"><code className="language-sh">{`export KRONK_BUCKY_LIB_PATH=~/.kronk/bucky-libraries/linux/amd64/cuda`}</code></pre>
+          <p>For CUDA 13, use the corresponding <code>linux/amd64/cuda13</code> or <code>linux/arm64/cuda13</code> directory. Prefer this Bucky-specific override rather than setting <code>KRONK_PROCESSOR=cuda13</code> for the whole server: llama.cpp uses different CUDA-major option names.</p>
           <p>A non-empty <code>KRONK_BUCKY_LIB_PATH</code> bypasses automatic compatibility selection. If the directory contains <code>version.json</code>, Kronk adopts its recorded platform metadata unless explicitly overridden. A non-empty existing directory without that file is treated as a read-only user-managed build: Kronk loads from it but does not install, upgrade, or replace its contents.</p>
+          <p>The default downloader installs the authenticated whisper.cpp version bound to this Bucky dependency, replacing older or arbitrary newer managed bundles rather than assuming numerical version order implies ABI compatibility. An offline installation must match the requested pin and platform. <code>--version</code> and <code>--upgrade</code> explicitly opt out of the default pin. Restart after replacing libraries. If a future upgrade changes the ABI, rebuild or replace user-managed libraries yourself; Kronk never mutates a read-only build. Do not mix ggml files from independently built Whisper and llama.cpp bundles.</p>
           <p>The library tools also recognize these platform overrides:</p>
           <table className="flags-table">
             <thead>
@@ -4556,11 +4606,12 @@ kronk bucky libs --remove-install --arch=amd64 --os=linux --processor=cuda`}</co
               </tr>
               <tr>
                 <td><code>KRONK_PROCESSOR</code></td>
-                <td><code>cpu</code>, <code>metal</code>, <code>cuda</code>, <code>vulkan</code>; <code>rocm</code> maps to Vulkan or CPU</td>
+                <td><code>cpu</code>, <code>metal</code>, <code>cuda</code>, <code>cuda-12</code>, <code>cuda-13</code>, <code>vulkan</code>; <code>rocm</code> maps to Vulkan or CPU</td>
               </tr>
             </tbody>
           </table>
           <p>Only combinations listed by <code>--list-combinations</code> can be installed. Platform variables remain preferences during automatic Bucky selection; use <code>KRONK_BUCKY_LIB_PATH</code> when the selected directory must be exact. Library selection is process-wide, so restart the CLI process or server after changing it.</p>
+          <p>The shared environment spellings <code>cuda-12</code> and <code>cuda-13</code> map to Bucky's <code>cuda12</code> and <code>cuda13</code> processors. For Bucky install commands, use the unhyphenated spelling shown by <code>--list-combinations</code>.</p>
           <h3 id="183-manage-models">18.3 Manage Models</h3>
           <p>List the bundled model catalog:</p>
           <pre className="code-block"><code className="language-sh">{`kronk bucky model catalog`}</code></pre>
@@ -4696,7 +4747,7 @@ bucky-models:
           <pre className="code-block"><code className="language-text">{`POST /v1/audio/transcriptions`}</code></pre>
           <p>To translate supported source speech into English, use the OpenAI-compatible translation route instead:</p>
           <pre className="code-block"><code className="language-text">{`POST /v1/audio/translations`}</code></pre>
-          <p>The uploaded file is limited to <strong>25 MB</strong>. Each transcription has a 30-minute server deadline.</p>
+          <p>The uploaded file is limited to <strong>25 MiB</strong>. Each transcription has a 30-minute server deadline.</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -5002,7 +5053,7 @@ if err := stream.FeedPCM(ctx, rawPCM, format); err != nil {
               </tr>
               <tr>
                 <td>The upload is rejected for its size</td>
-                <td>Keep the audio file at or below 25 MB. Split long recordings or re-encode them at a lower bitrate.</td>
+                <td>Keep the audio file at or below 25 MiB. Split long recordings or re-encode them at a lower bitrate.</td>
               </tr>
               <tr>
                 <td>Audio decodes to no samples</td>
@@ -6022,7 +6073,7 @@ examples source             -> example BUI documentation
           <p>A transcription acquires handle capacity and a model state, performs decode/inference, then releases both on every completion path. A streaming session is longer-lived: opening it reserves a state and capacity until its worker exits. <code>Close</code> requests the normal final flush and waits for that exit; a terminal worker error also exits and releases automatically. Callers should still defer the idempotent <code>Close</code>, including when feed/event handling fails. Unload must not destroy the Whisper context while transcriptions or streams remain active.</p>
           <p>The state pool is sized by <code>Config.NSeqMax</code>, which defaults to 1. The admission channel is sized by <code>NSeqMax + QueueDepth</code>; queue depth defaults to 0. Calls beyond that capacity wait until their context is canceled, the configured admission timeout expires, or an operation releases admission capacity. The admission timeout defaults to three minutes and stops applying once capacity is acquired. The states isolate concurrent inference while sharing the handle's model weights and Whisper context.</p>
           <p>The Bucky planner reserves the shared model file size once and a conservative 200 MiB runtime allowance for every configured state. It does not charge <code>QueueDepth</code>, because waiting calls do not allocate a state. Planning and model loading use the same resolved configuration so the reservation scales with the actual <code>NSeqMax</code> used by the handle.</p>
-          <p>The audio HTTP handler delegates file decoding and transcription to <code>Bucky.TranscribeFile</code>. It explicitly enforces the 25 MB upload limit before allowing unbounded work. Keep protocol field validation/format selection in the handler and audio/model mechanics in Bucky.</p>
+          <p>The audio HTTP handler delegates file decoding and transcription to <code>Bucky.TranscribeFile</code>. It explicitly enforces the 25 MiB upload limit before allowing unbounded work. Keep protocol field validation/format selection in the handler and audio/model mechanics in Bucky.</p>
           <p>Focused tests that exist include unit tests under <code>sdk/bucky/model/</code> and <code>sdk/bucky/ffmpeg/</code>, transcription/pool/stream suites under <code>sdk/bucky/tests/transcribe/</code>, and the server audio API tests under <code>cmd/server/api/services/kronk/tests/</code>. Choose the narrowest test whose native library and model prerequisites are available. Do not duplicate Chapter 18's usage matrix here.</p>
           <h3 id="209-verification-for-llm-agents">20.9 Verification for LLM Agents</h3>
           <h4 id="2091-required-go-post-edit-sequence">20.9.1 Required Go post-edit sequence</h4>

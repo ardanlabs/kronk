@@ -234,7 +234,9 @@ func installModel() (string, error) {
 }
 
 func initYzma() error {
-	if err := llama.Load(libs.Path("")); err != nil {
+	libPath := libs.Path("")
+
+	if err := llama.Load(libPath); err != nil {
 		return fmt.Errorf("load library: %w", err)
 	}
 

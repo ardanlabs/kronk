@@ -3,7 +3,7 @@
 // parallel media inference.
 //
 // Run the example like this from the root of the project:
-// $ go run ./examples/yzma-parallel/step1-media -model <model-path> -proj <proj-path> -image <image-path>
+// $ make example-yzma-step4
 
 package main
 

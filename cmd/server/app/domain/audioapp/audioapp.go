@@ -17,8 +17,8 @@ import (
 	"github.com/ardanlabs/kronk/sdk/pool"
 )
 
-// maxUploadBytes matches OpenAI's documented 25 MB file cap for the audio
-// transcriptions endpoint. The request limit allows a small amount of space
+// maxUploadBytes sets a 25 MiB file cap for the audio transcriptions
+// endpoint. The request limit allows a small amount of space
 // for multipart headers and form fields.
 const (
 	maxUploadBytes       = 25 << 20
@@ -63,7 +63,7 @@ func (a *app) transcribe(ctx context.Context, r *http.Request, forceTranslate bo
 	}
 	defer file.Close()
 	if hdr.Size > maxUploadBytes {
-		return errs.Errorf(errs.InvalidArgument, "file exceeds 25 MB limit")
+		return errs.Errorf(errs.InvalidArgument, "file exceeds 25 MiB limit")
 	}
 
 	language := r.FormValue("language")

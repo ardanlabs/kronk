@@ -63,7 +63,7 @@ func (l *StreamingResponseLogger) String() string {
 	return b.String()
 }
 
-// fmtBytes formats a byte count as a human-readable string (e.g. "6.79 GB").
+// fmtBytes formats a byte count using binary units (e.g. "6.79 GiB").
 func fmtBytes(n uint64) string {
 	const (
 		kb = 1024
@@ -73,11 +73,11 @@ func fmtBytes(n uint64) string {
 
 	switch {
 	case n >= gb:
-		return fmt.Sprintf("%.2f GB", float64(n)/float64(gb))
+		return fmt.Sprintf("%.2f GiB", float64(n)/float64(gb))
 	case n >= mb:
-		return fmt.Sprintf("%.2f MB", float64(n)/float64(mb))
+		return fmt.Sprintf("%.2f MiB", float64(n)/float64(mb))
 	case n >= kb:
-		return fmt.Sprintf("%.2f KB", float64(n)/float64(kb))
+		return fmt.Sprintf("%.2f KiB", float64(n)/float64(kb))
 	default:
 		return fmt.Sprintf("%d B", n)
 	}

@@ -200,6 +200,9 @@ func analyzeModelWithConfigAndBudget(info ModelInfo, devs devices.Devices, cfg M
 	feedForward := dimensions.FeedForwardLength
 	trainingCtx := dimensions.ContextLength
 	vocabSize := dimensions.VocabularySize
+	if vocabSize <= 0 {
+		vocabSize = info.vocabularySize
+	}
 	fileType := profile.FileType
 	quantName := gguf.FileTypeName(fileType)
 
@@ -275,9 +278,21 @@ func analyzeModelWithConfigAndBudget(info ModelInfo, devs devices.Devices, cfg M
 	// -------------------------------------------------------------------------
 	// Build profiles.
 	cfg = normalizeAnalysisConfig(cfg, trainingCtx)
+	runtimeCfg := cfg.ToKronkConfig()
 
 	profileInput := profileInput{
+		weightLoading:  runtimeCfg.VRAMWeightLoading(devs),
+		lazyTable:      info.lazyTable,
+		computeKind:    profile.ComputeKind,
+		vocabSize:      vocabSize,
+		headCount:      headCount,
+		outputEmbLen:   dimensions.OutputEmbeddingLength,
 		modelSize:      modelSize,
+		weights:        info.Weights,
+		moe:            &profile.MoE,
+		tiedOutput:     profile.TiedOutputFallback,
+		expertLayers:   runtimeCfg.ExpertLayersOnGPU(),
+		moeCacheBytes:  runtimeCfg.MoECacheSize(),
 		blockCount:     blockCount,
 		headCountKV:    headCountKV,
 		keyLength:      keyLength,
@@ -302,6 +317,12 @@ func analyzeModelWithConfigAndBudget(info ModelInfo, devs devices.Devices, cfg M
 		nUBatch:        effectivePrefillBatchSize(cfg.PtrPrefillBatchSize),
 		kvCacheOnCPU:   cfg.PtrOffloadKQV != nil && !*cfg.PtrOffloadKQV,
 		swaFull:        cfg.PtrSWAFull == nil || *cfg.PtrSWAFull,
+	}
+	for _, device := range devs.Devices {
+		if backend, ok := strings.CutPrefix(device.Type, "gpu_"); ok {
+			profileInput.computeBackend = backend
+			break
+		}
 	}
 	balanced := buildProfile("balanced", profileInput, 0, 0)
 	maxCtx := buildProfile("max_context", profileInput, 1, 0)
@@ -360,7 +381,19 @@ func normalizeAnalysisConfig(cfg ModelConfig, trainingCtx int64) ModelConfig {
 // Profile building
 
 type profileInput struct {
+	weightLoading  vram.WeightLoading
+	lazyTable      vram.LazyTable
+	computeKind    modelprofile.ComputeKind
+	computeBackend string
+	vocabSize      int64
+	headCount      int64
+	outputEmbLen   int64
 	modelSize      int64
+	weights        *gguf.WeightBreakdown
+	moe            *gguf.MoEInfo
+	tiedOutput     bool
+	expertLayers   int64
+	moeCacheBytes  int64
 	blockCount     int64
 	headCountKV    int64
 	keyLength      int64
@@ -571,6 +604,7 @@ func analysisDevices(devs devices.Devices, selected []string) devices.Devices {
 		SystemRAMBytes: devs.SystemRAMBytes,
 		MaxDevices:     devs.MaxDevices,
 		UnifiedMemory:  devs.UnifiedMemory,
+		MMapSupported:  devs.MMapSupported,
 	}
 	for _, device := range devs.Devices {
 		if _, ok := wanted[device.Name]; !ok {
@@ -629,35 +663,47 @@ func calculateProfile(p profileInput, contextWindow, slots int64, cache cacheRec
 	}
 
 	return vram.Calculate(vram.Input{
-		ModelSizeBytes:       p.modelSize,
-		ContextWindow:        contextWindow,
-		BlockCount:           p.blockCount,
-		HeadCountKV:          headCountKV,
-		KeyLength:            keyLength,
-		ValueLength:          valueLength,
-		SWAHeadCountKV:       p.attn.SWAHeadCountKV,
-		SWAKeyLength:         p.attn.SWAKeyLength,
-		SWAValueLength:       p.attn.SWAValueLength,
-		HeadCountKVByLayer:   p.attn.HeadCountKVByLayer,
-		BytesPerElement:      cache.bytesPerElement,
-		TypeK:                cache.ggmlTypeK,
-		TypeV:                cache.ggmlTypeV,
-		Slots:                slots,
-		SlidingWindow:        p.attn.SlidingWindow,
-		SlidingWindowLayers:  p.attn.SlidingWindowLayers,
-		SharedKVLayers:       p.attn.SharedKVLayers,
-		SWAPattern:           p.attn.SWAPattern,
-		RecurrentPattern:     p.attn.RecurrentPattern,
-		NextNPredictLayers:   p.attn.NextNPredictLayers,
-		RecurrentStateBytes:  p.attn.RecurrentStateBytes,
-		RecurrentStateCopies: 1,
-		NUBatch:              p.nUBatch,
-		KVUnified:            false,
-		EmbeddingLength:      p.embLen,
-		GPULayers:            gpuLayers,
-		KVCacheOnCPU:         p.kvCacheOnCPU,
-		SWAFull:              p.swaFull,
-		VTransposed:          profileVTransposed(p),
+		WeightLoading:         p.weightLoading,
+		LazyTable:             p.lazyTable,
+		ComputeKind:           p.computeKind,
+		ComputeBackend:        p.computeBackend,
+		VocabularySize:        p.vocabSize,
+		HeadCount:             p.headCount,
+		OutputEmbeddingLength: p.outputEmbLen,
+		ModelSizeBytes:        p.modelSize,
+		Weights:               p.weights,
+		MoE:                   p.moe,
+		TiedOutputFallback:    p.tiedOutput,
+		ExpertLayersOnGPU:     p.expertLayers,
+		MoECacheSize:          p.moeCacheBytes,
+		ContextWindow:         contextWindow,
+		BlockCount:            p.blockCount,
+		HeadCountKV:           headCountKV,
+		KeyLength:             keyLength,
+		ValueLength:           valueLength,
+		SWAHeadCountKV:        p.attn.SWAHeadCountKV,
+		SWAKeyLength:          p.attn.SWAKeyLength,
+		SWAValueLength:        p.attn.SWAValueLength,
+		HeadCountKVByLayer:    p.attn.HeadCountKVByLayer,
+		BytesPerElement:       cache.bytesPerElement,
+		TypeK:                 cache.ggmlTypeK,
+		TypeV:                 cache.ggmlTypeV,
+		Slots:                 slots,
+		SlidingWindow:         p.attn.SlidingWindow,
+		SlidingWindowLayers:   p.attn.SlidingWindowLayers,
+		SharedKVLayers:        p.attn.SharedKVLayers,
+		SWAPattern:            p.attn.SWAPattern,
+		RecurrentPattern:      p.attn.RecurrentPattern,
+		NextNPredictLayers:    p.attn.NextNPredictLayers,
+		RecurrentStateBytes:   p.attn.RecurrentStateBytes,
+		RecurrentStateCopies:  1,
+		NUBatch:               p.nUBatch,
+		KVUnified:             false,
+		EmbeddingLength:       p.embLen,
+		GPULayers:             gpuLayers,
+		KVCacheOnCPU:          p.kvCacheOnCPU,
+		SWAFull:               p.swaFull,
+		VTransposed:           profileVTransposed(p),
 	})
 }
 

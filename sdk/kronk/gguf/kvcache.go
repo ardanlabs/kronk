@@ -32,6 +32,8 @@ type KVCacheInput struct {
 	SWAPattern           []bool
 	RecurrentPattern     []bool // Per-layer recurrent classification; recurrent layers do not allocate K/V.
 	NextNPredictLayers   int64  // Appended MTP layers excluded from the target context memory.
+	MTPContext           bool   // Allocate only appended MTP layers, rather than the target trunk.
+	IndexerKeyLength     int64  // Additional K-only cache width per attention layer.
 	RecurrentStateBytes  int64  // F32 recurrent state bytes per recurrent layer, sequence, and state copy.
 	RecurrentStateCopies int64  // Current state plus rollback snapshots retained per sequence.
 	NUBatch              int64  // Effective physical batch size used by the SWA allocator.
@@ -99,7 +101,7 @@ func CalculateKVCache(input KVCacheInput) KVCache {
 	layerMemory := make([]int64, allocatedLayers)
 	var slotMemory int64
 	for layer := range allocatedLayers {
-		if layer >= trunkLayers {
+		if (!input.MTPContext && layer >= trunkLayers) || (input.MTPContext && layer < trunkLayers) {
 			continue
 		}
 		if input.RecurrentStateBytes > 0 && isRecurrentLayer(input.RecurrentPattern, layer, blockCount) {
@@ -126,6 +128,9 @@ func CalculateKVCache(input KVCacheInput) KVCache {
 			valueWidth = maxValueWidth
 		}
 		layerMemory[layer] += cacheBytes(input.TypeV, input.BytesPerElement, valueWidth, cells, input.VTransposed)
+		if input.IndexerKeyLength > 0 {
+			layerMemory[layer] += cacheBytes(input.TypeK, input.BytesPerElement, input.IndexerKeyLength, fullCells, false)
+		}
 		slotMemory += layerMemory[layer]
 	}
 
@@ -145,7 +150,8 @@ func CalculateKVCache(input KVCacheInput) KVCache {
 func maxKVValueWidth(input KVCacheInput, pattern []bool, blockCount, swaHeadCountKV, swaValueLength int64) int64 {
 	var maxWidth int64
 	for layer := range blockCount {
-		if layer >= max(input.BlockCount-max(input.NextNPredictLayers, 0), 0) ||
+		trunkLayers := max(input.BlockCount-max(input.NextNPredictLayers, 0), 0)
+		if (!input.MTPContext && layer >= trunkLayers) || (input.MTPContext && layer < trunkLayers) ||
 			input.RecurrentStateBytes > 0 && isRecurrentLayer(input.RecurrentPattern, layer, input.BlockCount) {
 			continue
 		}

@@ -330,4 +330,7 @@ func TestResolveQwen35ExplicitRecurrentPattern(t *testing.T) {
 	if profile.Attention.RecurrentPattern[4] {
 		t.Fatal("MTP layer marked recurrent")
 	}
+	if profile.ComputeKind != ComputeQwen35 {
+		t.Errorf("ComputeKind: got %d, want %d", profile.ComputeKind, ComputeQwen35)
+	}
 }

@@ -352,6 +352,51 @@ existing configuration as follows:
 | `use-mmap: false` | `load-mode: none` |
 | `use-direct-io: true` | `load-mode: direct-io` |
 
+#### Lazy tensor reading
+
+`lazy-mode` controls on-demand reading of tensors that llama.cpp marks eligible,
+such as the per-layer token embedding tables in Qwen4Exp and Gemma4. It is not
+whole-model lazy loading; models without eligible tensors are unaffected.
+
+| Value | Behavior |
+| ----- | -------- |
+| `auto` | Lazy-read eligible tensors larger than 4 GiB when all selected devices support mmap; this is the default |
+| `off` | Read eligible tensors up front like ordinary weights |
+| `on` | Request lazy reading for eligible tensors regardless of size; requires platform mmap support |
+
+```yaml
+some-provider/some-model:
+  lazy-mode: on
+  load-mode: none
+```
+
+On Metal, mmap can bring the entire table into RAM through an overlapping GPU
+mapping even when the log says `lazy read enabled`. Use `load-mode: none` to
+avoid that overlap unless the table is isolated in its own shard. Eligible lazy
+tensors remain file-mapped even with `load-mode: none`; the other weights use
+ordinary loading. Accessed pages may remain cached, and disk reads can reduce
+inference speed. Verify residency and performance with the actual model.
+
+The setting applies to the target and any separate or companion draft model.
+The Go SDK equivalent is `model.WithLazyMode(model.LazyModeOn)`, with
+`LazyModeAuto` and `LazyModeOff` as the other choices.
+
+Kronk's calculator replaces an effective lazy table's full encoded size with a
+page-rounded working-set estimate: two physical batches per native context,
+with at least 256 MiB reserved for accessed pages, capped at the table size.
+Gemma4 gathers one all-layer row per token; Qwen4Exp gathers multiple n-gram
+head rows. The table remains host memory, not additional GPU workspace.
+The same result feeds fitting, admission reservations, and the resource screen.
+
+Full-table accounting remains when lazy reading is off or uncertain, when
+`auto` does not meet its size/device requirements, with mlock, or when Metal
+mmap may overlap a table that is not alone in its shard. The current device
+capability check verifies CPU and Metal; other backends conservatively retain
+the full table in `auto` mode. Explicit `on` only needs platform mmap support.
+This is not a hard residency cap: clean mapped pages may accumulate or be
+reclaimed by the operating system. Validate actual memory and latency under
+representative prompts before relying on the additional admission headroom.
+
 #### KV cache and operations
 
 The KV cache and host tensor operations are offloaded to the GPU by default:
@@ -515,6 +560,36 @@ weights are activated. A dense layer uses its complete feed-forward network for
 every token. An MoE layer stores many expert feed-forward networks and uses a
 learned router to select a small subset independently for each token and layer.
 All experts remain in memory even though only the selected experts compute.
+
+**Experimental GPU expert cache:** `moe.cache-size` reserves additional GPU
+storage for frequently used experts whose original weights remain in host
+memory. The value is bytes per native context; it is one global budget shared
+across eligible GPUs, not a budget per GPU or per sequence slot. Unset or zero
+leaves the llama.cpp default unchanged (currently disabled). Non-MoE models
+ignore this setting.
+
+```yaml
+my-moe-model:
+  moe:
+    mode: experts_cpu
+    cache-size: 1073741824 # 1 GiB of additional GPU expert-cache capacity
+```
+
+The cache primarily targets small-batch generation (up to 32 tokens per
+microbatch when capacity permits). Multiple GPUs are supported; tensor
+parallelism (`split-mode: tensor`) is not. Native pipeline parallelism is
+disabled when caching is requested. A cache too small for the selected experts
+can fail context initialization. Models without eligible host-resident experts
+may run without an active cache. Benchmark before assuming a speedup.
+
+All three BUI calculators (standalone, model details, and catalog details)
+expose **MoE Expert Cache (GiB)** for MoE models and export `cache-size` in
+bytes. The calculator and pool reserve this budget in addition to model
+weights, KV, and compute memory. On unified-memory systems it increases the
+shared physical-memory footprint; original host weights are not deducted.
+Per-GPU allocation is an estimate: actual cache placement follows eligible
+layers and may use free-memory proportions. Retain backend/host-metadata
+headroom beyond the cache budget.
 
 Hybrid describes a separate design choice: which sequence-processing mechanism
 each layer uses. A hybrid stack can pair those mechanisms with dense
@@ -751,6 +826,7 @@ is normally supplied by analysis or by the load-time defaults.
 | `imc-session-capacity` | Positive integer; derived when omitted | Reusable IMC conversation identities retained in RAM or on disk |
 | `prefill-batch-size` | Positive token count, default `2048` | Generation prefill contribution per decode iteration, or aggregate embedding/reranking tokens per native sequence batch |
 | `ngpu-layers` | `-1`, `0`, or a positive count | CPU/GPU layer placement |
+| `lazy-mode` | `auto`, `off`, `on` | On-demand reading of eligible tensors; default `auto` |
 | `load-mode` | `auto`, `mmap`, `none`, `mlock`, `mmap+mlock`, `direct-io` | Model weight loading strategy |
 | `offload-kqv` | Boolean | Place KV cache on GPU when true |
 | `op-offload` | Boolean | Place host tensor operations on GPU when true |

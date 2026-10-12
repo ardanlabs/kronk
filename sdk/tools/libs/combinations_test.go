@@ -53,9 +53,9 @@ func TestOpenVINOResolver(t *testing.T) {
 			}
 
 			if !slices.ContainsFunc(urls, func(url string) bool {
-				return strings.Contains(url, "-openvino-2026.4-x64")
+				return strings.Contains(url, "-openvino-2026.4.1-x64")
 			}) {
-				t.Errorf("Resolve() URLs = %q, want OpenVINO 2026.4 x64 asset", urls)
+				t.Errorf("Resolve() URLs = %q, want OpenVINO 2026.4.1 x64 asset", urls)
 			}
 		})
 	}

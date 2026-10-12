@@ -528,7 +528,7 @@ requires an `image` PNG or JPEG file. The optional `strength` field controls
 how far the result may depart from the source and defaults to `0.75`; its range
 is greater than zero through `1`. When `size` is omitted, Kronk preserves the
 source aspect ratio, scales dimensions down to at most 1024 pixels per side,
-and aligns them to multiples of eight. Uploads are limited to 25 MB. Both image
+and aligns them to multiples of eight. Uploads are limited to 25 MiB. Both image
 routes support `negative_prompt`, `steps`, `cfg_scale`, and `seed` and require
 the `image-generations` inference permission when authentication is enabled.
 

@@ -84,18 +84,18 @@
 # docker.yml) are:
 #
 #   :cpu     → LLAMA=cpu                  BUCKY=cpu
-#   :cuda    → LLAMA=cuda                 BUCKY=cuda
+#   :cuda    → LLAMA=cuda                 BUCKY=cuda cuda13
 #   :vulkan  → LLAMA=vulkan               BUCKY=vulkan
 #   :rocm    → LLAMA=rocm                 BUCKY=vulkan   (no whisper-rocm bundle exists; entrypoint redirects to vulkan)
 #   :jetson  → LLAMA=cuda                 BUCKY=cuda
-#   :all     → LLAMA=cpu cuda vulkan rocm BUCKY=cpu cuda vulkan
+#   :all     → LLAMA=cpu cuda vulkan rocm BUCKY=cpu cuda cuda13 vulkan
 #
 # Default (all backends bundled, both arches):
 #
 #   docker buildx build \
 #       --platform linux/amd64,linux/arm64 \
 #       --build-arg LLAMA_PROCESSORS="cpu cuda vulkan rocm" \
-#       --build-arg BUCKY_PROCESSORS="cpu cuda vulkan" \
+#       --build-arg BUCKY_PROCESSORS="cpu cuda cuda13 vulkan" \
 #       -f zarf/docker/kronk/Dockerfile \
 #       -t ghcr.io/ardanlabs/kronk:latest \
 #       -t ghcr.io/ardanlabs/kronk:all \
@@ -115,7 +115,7 @@
 #   docker buildx build \
 #       --platform linux/amd64,linux/arm64 \
 #       --build-arg LLAMA_PROCESSORS="cuda" \
-#       --build-arg BUCKY_PROCESSORS="cuda" \
+#       --build-arg BUCKY_PROCESSORS="cuda cuda13" \
 #       -t ghcr.io/ardanlabs/kronk:cuda \
 #       -f zarf/docker/kronk/Dockerfile .
 #
@@ -428,12 +428,12 @@ ARG LLAMA_VERSION=""
 
 # Space-separated list of whisper.cpp (bucky) processor backends to bundle.
 # Any value from `kronk bucky libs --list-combinations` for the target arch
-# is valid. The upstream build matrix only publishes cpu / cuda / vulkan
-# for linux (no rocm — see sdk/tools/bucky/libs/combinations.go); metal is
+# is valid. Linux publishes cpu / cuda (CUDA 12) / cuda13 / vulkan
+# (no rocm — see sdk/tools/bucky/libs/combinations.go); metal is
 # darwin-only. On ROCm hosts the bucky SDK transparently substitutes the
 # vulkan bundle (see sdk/tools/bucky/libs/libs.go::New), so transcription
 # keeps working on the `:rocm` and `:all` images too.
-ARG BUCKY_PROCESSORS="cpu cuda vulkan"
+ARG BUCKY_PROCESSORS="cpu cuda cuda13 vulkan"
 
 # Optional pin for a specific whisper.cpp release. Empty string lets kronk
 # choose its baked-in `defaultVersion` (see sdk/tools/bucky/libs/libs.go).

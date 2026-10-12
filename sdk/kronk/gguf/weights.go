@@ -8,10 +8,14 @@ import (
 
 // WeightBreakdown provides per-category weight size information.
 type WeightBreakdown struct {
-	TotalBytes         int64
-	AlwaysActiveBytes  int64
-	ExpertBytesTotal   int64
-	ExpertBytesByLayer []int64
+	TotalBytes          int64
+	AlwaysActiveBytes   int64
+	InputBytes          int64 // Input embeddings remain in host memory.
+	TokenEmbeddingBytes int64 // The table reused by tied output projections.
+	OutputBytes         int64 // Output projection, normalization, and classifier tensors.
+	HasOutputWeight     bool
+	ExpertBytesTotal    int64
+	ExpertBytesByLayer  []int64
 }
 
 // Broad pattern for VRAM accounting: catches all routed expert tensors.
@@ -46,6 +50,19 @@ func CategorizeWeights(tensors []TensorInfo, blockCount int64) WeightBreakdown {
 		}
 
 		wb.AlwaysActiveBytes += t.Bytes
+		switch {
+		case strings.HasPrefix(t.Name, "token_embd."), strings.HasPrefix(t.Name, "per_layer_token_embd."),
+			strings.HasPrefix(t.Name, "position_embd."), strings.HasPrefix(t.Name, "token_types."):
+			wb.InputBytes += t.Bytes
+			if t.Name == "token_embd.weight" {
+				wb.TokenEmbeddingBytes += t.Bytes
+			}
+		case strings.HasPrefix(t.Name, "output."), strings.HasPrefix(t.Name, "output_norm."), strings.HasPrefix(t.Name, "cls."):
+			wb.OutputBytes += t.Bytes
+			if t.Name == "output.weight" {
+				wb.HasOutputWeight = true
+			}
+		}
 	}
 
 	wb.TotalBytes = wb.AlwaysActiveBytes + wb.ExpertBytesTotal

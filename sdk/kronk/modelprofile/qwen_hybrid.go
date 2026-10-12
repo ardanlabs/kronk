@@ -24,11 +24,38 @@ func (qwenHybridAdapter) Apply(metadata metadata, profile *Profile) error {
 	profile.MemorySemantics = MemoryRecurrent
 
 	arch := profile.Architecture
+	if arch == "qwen35" || arch == "qwen35moe" {
+		profile.ComputeKind = ComputeQwen35
+	}
 	blockCount := profile.Dimensions.BlockCount
 	if blockCount <= 0 {
 		return nil
 	}
 	a := &profile.Attention
+	if arch == "qwen4exp" {
+		pleLayers, _ := gguf.ParseInt64OrArray(metadata.values, arch+".ple.layers")
+		ngramSize := parseInt64(metadata, arch+".ple.ngram_size")
+		heads := parseInt64(metadata, arch+".ple.heads_per_ngram")
+		if len(pleLayers) == 1 && ngramSize > 1 && heads > 0 && parseInt64(metadata, arch+".embedding_length_per_layer_input") > 0 {
+			profile.LazyRowsPerToken = (ngramSize - 1) * heads
+		}
+		// b11513 stores one raw and one pooled key per cell; query head
+		// count does not multiply the persistent indexer cache.
+		keyLength := parseInt64(metadata, arch+".attention.indexer.key_length")
+		a.IndexerKeyLength = 2 * max(keyLength, 0)
+		if a.IndexerKeyLength > 0 {
+			profile.ComputeKind = ComputeIndexed
+		}
+		a.IndexerTopK = parseInt64(metadata, arch+".attention.indexer.top_k")
+		ratios, _ := gguf.ParseInt64OrArray(metadata.values, arch+".attention.compress_ratios")
+		for _, ratio := range ratios {
+			if ratio > 0 && (a.IndexerCompression == 0 || ratio < a.IndexerCompression) {
+				a.IndexerCompression = ratio
+			}
+		}
+		connections := max(parseInt64(metadata, arch+".hyper_connection.count"), 1)
+		profile.Dimensions.OutputEmbeddingLength = profile.Dimensions.EmbeddingLength * connections
+	}
 	trunkLayers := max(blockCount-max(profile.Speculation.NextNPredictLayers, 0), 0)
 
 	pattern, ok := parseBoolPattern(metadata.value(arch+".attention.recurrent_layers"), blockCount)

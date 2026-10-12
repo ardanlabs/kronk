@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -11,9 +12,42 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
+	"github.com/ardanlabs/kronk/sdk/kronk/vram"
+	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"go.yaml.in/yaml/v2"
 )
+
+func TestLazyReservationDeviceSelection(t *testing.T) {
+	devs := devices.Devices{MMapSupported: true, Devices: []devices.DeviceInfo{
+		{Name: "MTL0", Type: "gpu_metal", HardwareType: "GPU", MMapSupported: true},
+		{Name: "BLAS", Type: "unknown", HardwareType: "ACCEL"},
+		{Name: "CPU", Type: "cpu", HardwareType: "CPU", MMapSupported: true},
+	}}
+	for _, tt := range []struct {
+		name         string
+		selected     []string
+		wantResident int64
+	}{
+		{"automatic excludes BLAS", nil, 256 << 20},
+		{"selected Metal", []string{"MTL0"}, 256 << 20},
+		{"unknown selection is conservative", []string{"unknown"}, 5 << 30},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Config{LoadMode: LoadModeNone, Devices: tt.selected}
+			result := vram.Calculate(vram.Input{
+				WeightLoading:  cfg.VRAMWeightLoading(devs),
+				ModelSizeBytes: 6 << 30, BlockCount: 2, NUBatch: 8,
+				Weights:   &gguf.WeightBreakdown{InputBytes: 5 << 30},
+				LazyTable: vram.LazyTable{Bytes: 5 << 30, RowBytes: 512, RowsPerToken: 1},
+			})
+			if result.LazyResidentBytes != tt.wantResident {
+				t.Errorf("reserved table: got %d, want %d", result.LazyResidentBytes, tt.wantResident)
+			}
+		})
+	}
+}
 
 func TestMoEMode(t *testing.T) {
 	tests := []struct {
@@ -690,6 +724,59 @@ func TestParseGGMLType(t *testing.T) {
 	}
 }
 
+func TestLazyMode(t *testing.T) {
+	if got := NewConfig().LazyMode; got != LazyModeAuto {
+		t.Fatalf("default lazy mode: got %v, want auto", got)
+	}
+	if got := DerefLazyMode(nil); got != LazyModeAuto {
+		t.Fatalf("nil lazy mode: got %v, want auto", got)
+	}
+	for _, tt := range []struct {
+		input  string
+		want   LazyMode
+		native llama.LazyMode
+		json   string
+	}{
+		{"", LazyModeAuto, llama.LazyModeAuto, `"auto"`},
+		{"auto", LazyModeAuto, llama.LazyModeAuto, `"auto"`},
+		{"off", LazyModeOff, llama.LazyModeOff, `"off"`},
+		{"on", LazyModeOn, llama.LazyModeOn, `"on"`},
+		{" ON ", LazyModeOn, llama.LazyModeOn, `"on"`},
+	} {
+		t.Run(tt.input, func(t *testing.T) {
+			got, err := ParseLazyMode(tt.input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg := NewConfig(WithLazyMode(got))
+			if cfg.LazyMode != tt.want || cfg.LazyMode.ToYZMAType() != tt.native {
+				t.Fatalf("lazy mode/native: got %v/%v, want %v/%v", cfg.LazyMode, cfg.LazyMode.ToYZMAType(), tt.want, tt.native)
+			}
+			encoded, err := json.Marshal(got)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(encoded) != tt.json {
+				t.Fatalf("JSON lazy mode: got %s, want %s", encoded, tt.json)
+			}
+			var decoded LazyMode
+			if err := json.Unmarshal(encoded, &decoded); err != nil {
+				t.Fatal(err)
+			}
+			if decoded != tt.want {
+				t.Fatalf("JSON lazy mode: got %v, want %v", decoded, tt.want)
+			}
+		})
+	}
+	if _, err := ParseLazyMode("mmap"); err == nil {
+		t.Fatal("invalid lazy mode accepted")
+	}
+	var decoded LazyMode
+	if err := json.Unmarshal([]byte(`"mmap"`), &decoded); err == nil {
+		t.Fatal("invalid JSON lazy mode accepted")
+	}
+}
+
 func TestLoadMode(t *testing.T) {
 	if got := LoadMode(0); got != LoadModeAuto {
 		t.Errorf("LoadMode zero value = %v, want %v", got, LoadModeAuto)
@@ -826,6 +913,14 @@ func TestValidateConfig(t *testing.T) {
 			WithModelFiles([]string{"dummy.gguf"}),
 			WithLoadMode(LoadModeMMapMLock),
 		), false},
+		{"lazy mode on is valid", NewConfig(
+			WithModelFiles([]string{"dummy.gguf"}),
+			WithLazyMode(LazyModeOn),
+		), false},
+		{"unknown lazy mode is invalid", NewConfig(
+			WithModelFiles([]string{"dummy.gguf"}),
+			WithLazyMode(LazyMode(99)),
+		), true},
 		{"MTP nDraft override (no draft files) is valid even with NSeqMax>1", NewConfig(
 			WithModelFiles([]string{"dummy.gguf"}),
 			WithNSeqMax(4),

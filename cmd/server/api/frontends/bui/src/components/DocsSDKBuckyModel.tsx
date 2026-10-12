@@ -149,8 +149,9 @@ export default function DocsSDKBuckyModel() {
 	UseGPU bool
 
 	// FlashAttn enables the flash-attention kernel when supported by
-	// the active backend. Defaults to false.
-	FlashAttn bool
+	// the active backend. nil preserves whisper.cpp's native default;
+	// a non-nil value explicitly enables or disables flash attention.
+	FlashAttn *bool
 
 	// GPUDevice selects which GPU the model is offloaded to when
 	// multiple devices are present. Defaults to 0.
@@ -183,7 +184,7 @@ export default function DocsSDKBuckyModel() {
 }`}</code>
               </pre>
               <p className="doc-description">Config carries the per-model whisper.cpp configuration. Fields are resolved through the functional Option pattern (NewConfig + WithX) at construction time and treated as read-only thereafter.</p>
-              <p className="doc-description">ModelPath is required. The remaining fields all have sensible zero defaults that match whisper_context_default_params and the per-handle backpressure conventions used by sdk/kronk.</p>
+              <p className="doc-description">ModelPath is required. See the field comments below for defaults and native parameter override behavior.</p>
             </div>
 
             <div className="doc-section" id="type-diarization">
