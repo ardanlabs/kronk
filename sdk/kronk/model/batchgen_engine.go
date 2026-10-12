@@ -308,10 +308,9 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 		}
 
 		// llama.cpp expands a token's linear position into its M-RoPE text
-		// position, so M-RoPE generation can use the shared target tray. Media
-		// M-RoPE requests do not speculate until draft position compatibility is
-		// proven, so stage exactly one ordinary target row for them.
-		if s.useMRoPE {
+		// position, including MTP proposal and verification rows. Classic
+		// drafts still cannot reconstruct a media prefix.
+		if s.useMRoPE && (e.model.draft == nil || !e.model.draft.mtp()) {
 			idx, err := e.batch.addToken(s.sampled, s.nPast, s.seqIDs, extendedBatchOutputLogits)
 			if err != nil {
 				e.finishSlot(s, fmt.Errorf("add M-RoPE generation token: %w", err))
@@ -546,6 +545,11 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	ret, err := e.batch.process(llama.ProcessTypeDecode)
 	if err == nil && ret == 0 {
 		llama.Synchronize(e.model.lctx)
+		if stagedMedia != nil && stagedMedia.slot.active {
+			// Media is the final contribution in the tray. Consume its dense
+			// target states while the projector output and batch rows are valid.
+			err = e.syncMTPDecodedRows(stagedMedia.slot, e.batch, stagedMedia.rowStart, stagedMedia.nextPast)
+		}
 	}
 	for i, released := range e.batchReleased {
 		if released {

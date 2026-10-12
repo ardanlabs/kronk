@@ -146,54 +146,22 @@ func (e *batchEngine) MTPSyncInput(slotID int, effectiveCount int) (mtp.SyncInpu
 		count = effectiveCount
 	}
 	start := int(s.mtp.TargetRange.Start)
+	totalRows := e.batch.len()
+	if start < 0 || count <= 0 || start+count > totalRows {
+		return mtp.SyncInput{}, fmt.Errorf("target rows unavailable for range [%d..%d)", start, start+count)
+	}
 	var hiddenRows []float32
 	nEmbd := draft.mtp.EmbeddingSize()
 	if len(s.mtp.VerifyHidden) >= count*nEmbd {
 		hiddenRows = s.mtp.VerifyHidden[:count*nEmbd]
 	} else {
-		totalRows := e.batch.len()
 		hidden := yzmaspec.GetEmbeddingsNextN(e.model.lctx, totalRows, nEmbd)
-		if hidden == nil || start < 0 || start+count > totalRows {
+		if hidden == nil {
 			return mtp.SyncInput{}, fmt.Errorf("target pre-norm rows unavailable for range [%d..%d)", start, start+count)
 		}
 		hiddenRows = hidden[start*nEmbd : (start+count)*nEmbd]
 	}
-	tokens, ok := e.batch.tokens(start, count)
-	if !ok {
-		return mtp.SyncInput{}, fmt.Errorf("target tokens unavailable for range [%d..%d)", start, start+count)
-	}
-	shared := mtpUsesSharedKV(e.model.draft)
-
-	return mtp.SyncInput{
-		Tokens:        tokens,
-		HiddenRows:    hiddenRows,
-		PendingHidden: s.mtp.PendingHidden,
-		HiddenScratch: draft.mtp.MirrorHidden,
-		BasePosition:  s.mtp.TargetRange.BasePos,
-		EmbeddingSize: nEmbd,
-		ChunkSize:     draft.mtp.MirrorCapacity(),
-		SharedKV:      shared,
-		DecodeOwnChunk: func(tokens []llama.Token, basePosition llama.Pos, hiddenRows []float32) error {
-			mirror := draft.mtp.MirrorBatch
-			if err := llama.BatchExtClear(mirror); err != nil {
-				return fmt.Errorf("clearing MTP mirror batch: %w", err)
-			}
-			for i, token := range tokens {
-				hidden := hiddenRows[i*nEmbd : (i+1)*nEmbd]
-				if err := addMTPBatchEntry(mirror, token, basePosition+llama.Pos(i), s.seqIDs, hidden, nEmbd, false); err != nil {
-					return fmt.Errorf("adding MTP mirror token: %w", err)
-				}
-			}
-			ret, err := llama.Process(draft.lctx, llama.ProcessTypeDecode, mirror)
-			if err != nil || ret != 0 {
-				e.model.log(s.job.ctx, "speculative", "status", "mtp-mirror-decode-error",
-					"slot", s.id, "seq", s.seqID, "ret", ret, "err", err)
-				return decodeError(ret, err)
-			}
-			llama.Synchronize(draft.lctx)
-			return nil
-		},
-	}, nil
+	return e.mtpSyncInput(s, e.batch.entries[start:start+count], hiddenRows, s.mtp.TargetRange.BasePos+llama.Pos(count))
 }
 
 func (e *batchEngine) CommitMTPSync(slotID int, result mtp.SyncResult) {
@@ -205,49 +173,6 @@ func (e *batchEngine) CommitMTPSync(slotID int, result mtp.SyncResult) {
 	s.draftNPast = result.Position
 	s.mtp.VerifyHidden = s.mtp.VerifyHidden[:0]
 	s.mtp.ClearTargetRange()
-}
-
-func (e *batchEngine) syncMTPCacheRows(s *slot, tokens []llama.Token, hiddenRows []float32, basePosition llama.Pos) error {
-	draft := e.model.draft.core()
-	nEmbd := draft.mtp.EmbeddingSize()
-	shared := mtpUsesSharedKV(e.model.draft)
-	input := mtp.SyncInput{
-		Tokens:        tokens,
-		HiddenRows:    hiddenRows,
-		PendingHidden: s.mtp.PendingHidden,
-		HiddenScratch: draft.mtp.MirrorHidden,
-		BasePosition:  basePosition,
-		EmbeddingSize: nEmbd,
-		ChunkSize:     draft.mtp.MirrorCapacity(),
-		SharedKV:      shared,
-		DecodeOwnChunk: func(tokens []llama.Token, basePosition llama.Pos, hiddenRows []float32) error {
-			mirror := draft.mtp.MirrorBatch
-			if err := llama.BatchExtClear(mirror); err != nil {
-				return fmt.Errorf("clearing MTP cache mirror batch: %w", err)
-			}
-			for i, token := range tokens {
-				hidden := hiddenRows[i*nEmbd : (i+1)*nEmbd]
-				if err := addMTPBatchEntry(mirror, token, basePosition+llama.Pos(i), s.seqIDs, hidden, nEmbd, false); err != nil {
-					return fmt.Errorf("adding MTP cache mirror token: %w", err)
-				}
-			}
-			ret, err := llama.Process(draft.lctx, llama.ProcessTypeDecode, mirror)
-			if err != nil || ret != 0 {
-				e.model.log(s.job.ctx, "cache", "status", "mtp-mirror-decode-error",
-					"slot", s.id, "seq", s.seqID, "ret", ret, "err", err)
-				return decodeError(ret, err)
-			}
-			llama.Synchronize(draft.lctx)
-			return nil
-		},
-	}
-	result, err := mtp.Synchronize(input)
-	if err != nil {
-		return err
-	}
-	s.mtp.PendingHidden = result.PendingHidden
-	s.draftNPast = result.Position
-	return nil
 }
 
 func (e *batchEngine) ProcessOrdinary(slotID int, buf []byte) {

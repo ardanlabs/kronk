@@ -583,8 +583,13 @@ modify bytes returned for reading.
 
 Restored KV and sampler history are separate correctness concerns. Prime sampler
 penalties and DRY with the complete logical prompt after restore. An own-KV MTP session
-may publish draft KV only with the matching target snapshot and final hidden row; a
-media commit clears that draft state. Shared-target-KV MTP derives its resume point from
+may publish draft KV only with the matching target snapshot and final hidden row,
+including media prefixes. Media cache decoding hands off every target batch before
+another decode or projector encode can replace its borrowed buffers. Own-KV replay
+preserves projected embeddings and explicit positions and shifts only hidden states;
+logical continuation comes from mtmd rather than embedding-row count. A media advance
+retains draft state only after a complete paired snapshot for that prefix.
+Shared-target-KV MTP derives its resume point from
 the restored target and must not allocate or restore an independent draft store. A
 draft-only restore failure permits target-only fallback. Target-side rejection has two
 distinct outcomes: a stale expected-version mismatch is a retryable busy error and

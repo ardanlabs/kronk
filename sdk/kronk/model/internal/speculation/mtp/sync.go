@@ -6,17 +6,22 @@ import (
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
-// SyncInput describes target rows that must be synchronized into the MTP view.
+// SyncInput describes a completed target contribution. The host retains its
+// token/embedding rows and explicit positions; MTP owns the hidden-state shift.
+// NextPosition is the logical continuation position, not an embedding-row count.
+// The host's rows and HiddenRows must remain valid until Synchronize returns.
 type SyncInput struct {
-	Tokens         []llama.Token
-	HiddenRows     []float32
-	PendingHidden  []float32
-	HiddenScratch  []float32
-	BasePosition   llama.Pos
-	EmbeddingSize  int
-	ChunkSize      int
-	SharedKV       bool
-	DecodeOwnChunk func(tokens []llama.Token, basePosition llama.Pos, hiddenRows []float32) error
+	RowCount      int
+	HiddenRows    []float32
+	PendingHidden []float32
+	HiddenScratch []float32
+	NextPosition  llama.Pos
+	EmbeddingSize int
+	ChunkSize     int
+	SharedKV      bool
+	// DecodeOwnChunk replays the host's rows in [start,end) with shifted
+	// hidden states. Shared-KV handoff never invokes this callback.
+	DecodeOwnChunk func(start, end int, hiddenRows []float32) error
 }
 
 // SyncResult contains MTP state after target synchronization.
@@ -28,12 +33,12 @@ type SyncResult struct {
 
 // Synchronize advances the MTP view after target decoding.
 func Synchronize(input SyncInput) (SyncResult, error) {
-	nTokens := len(input.Tokens)
-	if nTokens == 0 {
+	nRows := input.RowCount
+	if nRows == 0 {
 		return SyncResult{}, nil
 	}
-	if input.EmbeddingSize <= 0 || len(input.HiddenRows) != nTokens*input.EmbeddingSize {
-		return SyncResult{}, fmt.Errorf("synchronizing MTP: got %d hidden values for %d tokens with embedding size %d", len(input.HiddenRows), nTokens, input.EmbeddingSize)
+	if nRows < 0 || input.EmbeddingSize <= 0 || len(input.HiddenRows) != nRows*input.EmbeddingSize {
+		return SyncResult{}, fmt.Errorf("synchronizing MTP: got %d hidden values for %d rows with embedding size %d", len(input.HiddenRows), nRows, input.EmbeddingSize)
 	}
 
 	if !input.SharedKV {
@@ -41,13 +46,13 @@ func Synchronize(input SyncInput) (SyncResult, error) {
 			return SyncResult{}, fmt.Errorf("synchronizing MTP: invalid chunk size %d", input.ChunkSize)
 		}
 		scratch := input.HiddenScratch
-		need := min(input.ChunkSize, nTokens) * input.EmbeddingSize
+		need := min(input.ChunkSize, nRows) * input.EmbeddingSize
 		if cap(scratch) < need {
 			scratch = make([]float32, need)
 		}
 
-		for start := 0; start < nTokens; start += input.ChunkSize {
-			end := min(start+input.ChunkSize, nTokens)
+		for start := 0; start < nRows; start += input.ChunkSize {
+			end := min(start+input.ChunkSize, nRows)
 			hidden := scratch[:(end-start)*input.EmbeddingSize]
 			for i := start; i < end; i++ {
 				dst := hidden[(i-start)*input.EmbeddingSize : (i-start+1)*input.EmbeddingSize]
@@ -60,7 +65,7 @@ func Synchronize(input SyncInput) (SyncResult, error) {
 					copy(dst, input.HiddenRows[(i-1)*input.EmbeddingSize:i*input.EmbeddingSize])
 				}
 			}
-			if err := input.DecodeOwnChunk(input.Tokens[start:end], input.BasePosition+llama.Pos(start), hidden); err != nil {
+			if err := input.DecodeOwnChunk(start, end, hidden); err != nil {
 				return SyncResult{}, err
 			}
 		}
@@ -72,7 +77,7 @@ func Synchronize(input SyncInput) (SyncResult, error) {
 	} else {
 		pending = pending[:input.EmbeddingSize]
 	}
-	copy(pending, input.HiddenRows[(nTokens-1)*input.EmbeddingSize:])
+	copy(pending, input.HiddenRows[(nRows-1)*input.EmbeddingSize:])
 
-	return SyncResult{PendingHidden: pending, Position: input.BasePosition + llama.Pos(nTokens), Active: true}, nil
+	return SyncResult{PendingHidden: pending, Position: input.NextPosition, Active: true}, nil
 }

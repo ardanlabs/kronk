@@ -42,6 +42,7 @@ func (e *batchEngine) decodeTextIsolated(s *slot, tokens []llama.Token) error {
 	ret, err := batch.process(llama.ProcessTypeDecode)
 	if err == nil && ret == 0 {
 		llama.Synchronize(e.model.lctx)
+		err = e.syncMTPDecodedRows(s, batch, 0, s.nPast+llama.Pos(len(tokens)))
 	}
 	e.model.decodeMu.Unlock()
 
@@ -81,6 +82,7 @@ func (e *batchEngine) decodeEmbeddingsNormal(s *slot, embd []float32, nEmbd, nTo
 	}
 	if err == nil && ret == 0 {
 		llama.Synchronize(e.model.lctx)
+		err = e.syncMTPDecodedRows(s, batch, 0, s.nPast+llama.Pos(nTokens))
 	}
 	e.model.decodeMu.Unlock()
 
@@ -125,6 +127,7 @@ func (e *batchEngine) decodeEmbeddingsMRoPE(s *slot, embd []float32, nEmbd, nTok
 	}
 	if err == nil && ret == 0 {
 		llama.Synchronize(e.model.lctx)
+		err = e.syncMTPDecodedRows(s, batch, 0, s.nPast+nPos)
 	}
 	e.model.decodeMu.Unlock()
 

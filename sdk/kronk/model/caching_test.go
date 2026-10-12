@@ -690,7 +690,7 @@ func TestIMCSessionMediaTransitions(t *testing.T) {
 	stagedBuf[0] = 0x03
 	commitTestStore(t, staged, 1)
 	plan := mediaPlan(promptUnit{isMedia: true}, promptUnit{isMedia: true})
-	gotOld := (&Model{}).imcCommitMediaAdvance(context.Background(), s, staged, "media2", 800, 6, 700, plan, []llama.Token{1, 2}, []int{200, 150}, nil, true, false, "render")
+	gotOld := (&Model{}).imcCommitMediaAdvance(context.Background(), s, staged, "media2", 800, 6, 700, plan, []llama.Token{1, 2}, []int{200, 150}, nil, true, false, "render", false)
 	if gotOld != oldStore || s.kvState != staged || !s.hasMedia || len(s.mediaKVCounts) != 2 {
 		t.Fatal("turn 5: second media append did not atomically replace the session snapshot")
 	}

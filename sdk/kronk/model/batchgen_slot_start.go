@@ -164,6 +164,10 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 		s.mtmdCtx = mtmdCtx
 	}
 
+	mediaHandoff := func(batch *extendedBatch, nextPosition llama.Pos) error {
+		return e.syncMTPDecodedRows(s, batch, 0, nextPosition)
+	}
+
 	// IMC: restore externalized KV state from session.kvState, then decode
 	// any extension tokens. The slot's sequence was cleared in the previous
 	// finishSlot, so we always restore from the configured session store.
@@ -445,11 +449,16 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 
 			e.model.decodeMu.Lock()
 			llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+			resetErr := e.resetMTPMediaPrefix(s)
 			e.model.decodeMu.Unlock()
+			if resetErr != nil {
+				e.finishSlot(s, resetErr)
+				return
+			}
 
 			imcDecodeStart := time.Now()
 
-			nextLogicalPos, physicalKVCells, mediaKVCounts, samplerCacheTokens, nativeChunks, err := e.model.decodeMediaIntoCache(job.ctx, job.imcMediaCacheD, s.seqID, s.mtmdCtx)
+			nextLogicalPos, physicalKVCells, mediaKVCounts, samplerCacheTokens, nativeChunks, err := e.model.decodeMediaIntoCache(job.ctx, job.imcMediaCacheD, s.seqID, s.mtmdCtx, mediaHandoff)
 			if err != nil {
 				e.model.decodeMu.Lock()
 				llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
@@ -506,21 +515,31 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 					e.model.log(job.ctx, "start-slot", "status", "imc-text-prefix-noncausal-rebuild", "slot", s.id, "seq", s.seqID)
 					e.model.decodeMu.Lock()
 					llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+					resetErr := e.resetMTPMediaPrefix(s)
 					e.model.decodeMu.Unlock()
+					if resetErr != nil {
+						e.finishSlot(s, resetErr)
+						return
+					}
 					job.imcNewLogicalPosition, addedPhysical, addedMediaKV, samplerCacheTokens, job.imcMediaNativeChunks, decodeErr = e.model.decodeMediaIntoCache(
-						job.ctx, job.imcMediaCacheD, s.seqID, s.mtmdCtx)
+						job.ctx, job.imcMediaCacheD, s.seqID, s.mtmdCtx, mediaHandoff)
 					oldLogicalPosition = 0
 				default:
 					job.imcNewLogicalPosition, addedPhysical, addedMediaKV, samplerCacheTokens, job.imcMediaNativeChunks, decodeErr = e.model.decodeMediaIntoCacheFromPlan(
-						job.ctx, job.imcMediaCacheD, prefix, s.seqID, s.mtmdCtx, oldLogicalPosition)
+						job.ctx, job.imcMediaCacheD, prefix, s.seqID, s.mtmdCtx, oldLogicalPosition, mediaHandoff)
 				}
 				if errors.Is(decodeErr, errIMCMediaNativePrefix) {
 					e.model.log(job.ctx, "start-slot", "status", "imc-media-native-prefix-rebuild", "slot", s.id, "seq", s.seqID, "err", decodeErr)
 					e.model.decodeMu.Lock()
 					llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+					resetErr := e.resetMTPMediaPrefix(s)
 					e.model.decodeMu.Unlock()
+					if resetErr != nil {
+						e.finishSlot(s, resetErr)
+						return
+					}
 					job.imcNewLogicalPosition, addedPhysical, addedMediaKV, samplerCacheTokens, job.imcMediaNativeChunks, decodeErr = e.model.decodeMediaIntoCache(
-						job.ctx, job.imcMediaCacheD, s.seqID, s.mtmdCtx)
+						job.ctx, job.imcMediaCacheD, s.seqID, s.mtmdCtx, mediaHandoff)
 					oldLogicalPosition = 0
 				}
 				if decodeErr == nil {
@@ -534,22 +553,15 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 					}
 					job.imcMediaSamplerTokens = samplerCacheTokens
 					job.samplerPromptTokens = append(slices.Clone(job.imcMediaSamplerTokens), job.tailTokens...)
-					if e.model.draft != nil && e.model.draft.mtp() {
-						s.mtp.Disable("media-append")
-					}
 				}
 			case false:
 				job.imcMediaNativeChunks = job.imcSession.mediaNativeChunks
 				advanceTokens := job.imcNewCacheTokens
 				switch {
 				case job.imcSessionUseMRoPE:
-					_, decodeErr = e.model.decodeTextMRoPEIntoCache(advanceTokens, s.seqID, oldLogicalPosition)
-				case e.model.draft != nil:
-					if mtpUsesSharedKV(e.model.draft) {
-						decodeErr = e.decodeTokensIntoCacheMTP(job.ctx, s, advanceTokens, oldLogicalPosition)
-					} else {
-						decodeErr = e.model.decodeTokensIntoCache(job.ctx, advanceTokens, s.seqID, oldLogicalPosition)
-					}
+					_, decodeErr = e.model.decodeTextMRoPEIntoCache(advanceTokens, s.seqID, oldLogicalPosition, mediaHandoff)
+				case e.model.draft != nil && e.model.draft.mtp() && !s.mtp.Disabled:
+					decodeErr = e.decodeTokensIntoCacheMTP(job.ctx, s, advanceTokens, oldLogicalPosition)
 				default:
 					decodeErr = e.model.decodeTokensIntoCache(job.ctx, advanceTokens, s.seqID, oldLogicalPosition)
 				}
@@ -846,6 +858,7 @@ func (e *batchEngine) finishStartSlot(s *slot, job *chatJob, cacheIdx llama.Pos,
 			// position hidden state. Gated on a successful target snapshot
 			// (nExtracted > 0) — without that the cache hit is going to
 			// fail anyway.
+			draftSnapshotOK := false
 			if s.mtp.Disabled && job.imcSession.draftKVState != nil {
 				if err := job.imcSession.draftKVState.Reset(job.ctx); err != nil {
 					e.model.log(job.ctx, "start-slot", "status", "imc-draft-reset-failed", "err", err)
@@ -854,7 +867,7 @@ func (e *batchEngine) finishStartSlot(s *slot, job *chatJob, cacheIdx llama.Pos,
 				job.imcSession.pendingH = job.imcSession.pendingH[:0]
 				e.model.cacheMu.Unlock()
 			}
-			if ext, ok := e.model.draft.(draftKVExternalizer); ok && !s.mtp.Disabled && snapshotOK && !job.imcSession.hasMedia && job.imcSession.draftKVState != nil {
+			if ext, ok := e.model.draft.(draftKVExternalizer); ok && !s.mtp.Disabled && snapshotOK && s.draftNPast == cacheIdx && job.imcSession.draftKVState != nil {
 				draft := ext.core()
 				dctx := ext.draftKVCtx()
 
@@ -876,13 +889,14 @@ func (e *batchEngine) finishStartSlot(s *slot, job *chatJob, cacheIdx llama.Pos,
 				draftCapAfter := job.imcSession.draftKVState.Cap()
 
 				nEmbd := draft.mtp.EmbeddingSize()
-				draftSnapshotOK := draftSnapshotErr == nil && validMTPDraftState(nDraftExtracted, draftKVSize, s.mtp.PendingHidden, nEmbd)
+				draftSnapshotOK = draftSnapshotErr == nil && validMTPDraftState(nDraftExtracted, draftKVSize, s.mtp.PendingHidden, nEmbd)
 				if draftSnapshotOK {
 					if err := job.imcSession.draftKVState.Commit(job.ctx, int(nDraftExtracted)); err != nil {
 						draftSnapshotErr = fmt.Errorf("commit draft snapshot: %w", err)
 						draftSnapshotOK = false
 					}
-				} else {
+				}
+				if !draftSnapshotOK {
 					if err := job.imcSession.draftKVState.Reset(job.ctx); err != nil {
 						draftSnapshotErr = errors.Join(draftSnapshotErr, fmt.Errorf("reset failed draft snapshot: %w", err))
 					}
@@ -947,7 +961,7 @@ func (e *batchEngine) finishStartSlot(s *slot, job *chatJob, cacheIdx llama.Pos,
 				oldStore := e.model.imcCommitMediaAdvance(job.ctx, job.imcSession, snapshotStore,
 					job.imcNewMsgsHash, job.imcNewTotalCached, job.imcNewCachedMsgCount,
 					job.imcNewLogicalPosition, job.imcPromptPlan, job.imcMediaSamplerTokens, job.imcMediaKVCounts, job.imcMediaNativeChunks,
-					job.imcSessionUseMRoPE, useNonCausal, job.imcExpectedRenderHash)
+					job.imcSessionUseMRoPE, useNonCausal, job.imcExpectedRenderHash, draftSnapshotOK)
 				if oldStore != nil {
 					if err := oldStore.Close(); err != nil {
 						e.model.log(job.ctx, "start-slot", "status", "imc-media-anchor-old-store-close-failed", "err", err)
@@ -1193,21 +1207,6 @@ func (e *batchEngine) slotNeedsMRoPE(s *slot, job *chatJob) bool {
 	return job.imcSessionUseMRoPE
 }
 
-func (e *batchEngine) disableMTPForMediaMRoPE(s *slot, job *chatJob) {
-	if !s.useMRoPE || e.model.draft == nil || !e.model.draft.mtp() {
-		return
-	}
-
-	// M-RoPE media rows are target-only embeddings with four-dimensional
-	// positions. An MTP own-KV context cannot mirror those rows because they
-	// have no vocabulary token to replay, so its draft prefix would diverge
-	// from the target prefix. Keep MTP available to other requests while
-	// explicitly disabling it for this media request.
-	s.mtp.Disable("media-mrope")
-	e.model.log(job.ctx, "speculative", "status", "mtp-disabled-media-mrope",
-		"slot", s.id, "id", job.id, "reason", s.mtp.DisableReason)
-}
-
 // startSlotTextMRoPE initializes a text-only slot that must use M-RoPE 4D
 // positioning. This is used when the IMC media cache was built with M-RoPE
 // positions (e.g., Qwen vision models) and the suffix text must use the same
@@ -1244,7 +1243,6 @@ func (e *batchEngine) startSlotTextMRoPE(s *slot, job *chatJob, cacheIdx llama.P
 	primeSampler(s.sampler, job.samplerPromptTokens, job.params)
 
 	s.useMRoPE = true
-	e.disableMTPForMediaMRoPE(s, job)
 
 	nBatch := e.model.cfg.EffectiveNBatch()
 	for start := 0; start < len(tokens); start += nBatch {
@@ -1293,7 +1291,6 @@ func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos, 
 	// Set model-specific flags for positioning and attention.
 	s.useMRoPE = mtmd.DecodeUseMRope(s.mtmdCtx)
 	s.useNonCausal = mtmd.DecodeUseNonCausal(s.mtmdCtx, 0)
-	e.disableMTPForMediaMRoPE(s, job)
 
 	// Count total tokens across all chunks.
 	numChunks := mtmd.InputChunksSize(s.inputChunks)

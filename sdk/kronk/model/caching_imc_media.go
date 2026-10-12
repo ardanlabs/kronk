@@ -14,6 +14,11 @@ import (
 
 var errIMCMediaNativePrefix = errors.New("mtmd native prefix diverged")
 
+// targetDecodeHandoff consumes a decoded batch while decodeMu is held and its
+// borrowed embeddings/hidden states are valid. Media continuation positions
+// come from mtmd, not from the number of physical rows.
+type targetDecodeHandoff func(batch *extendedBatch, nextPosition llama.Pos) error
+
 const (
 	imcMediaChunkText uint8 = iota + 1
 	imcMediaChunkImage
@@ -98,14 +103,14 @@ func (c *imcMediaPrefixCursor) skipEmptyText() {
 // projection file twice. Returns the next logical position, total physical KV
 // cells, physical KV cells consumed per media chunk, and the authoritative
 // mtmd text tokens decoded around the media embedding chunks.
-func (m *Model) decodeMediaIntoCache(ctx context.Context, cacheD D, seqID llama.SeqId, mtmdCtx mtmd.Context) (int, int, []int, []llama.Token, []imcMediaChunk, error) {
-	return m.decodeMediaIntoCacheFromPlan(ctx, cacheD, nil, seqID, mtmdCtx, 0)
+func (m *Model) decodeMediaIntoCache(ctx context.Context, cacheD D, seqID llama.SeqId, mtmdCtx mtmd.Context, handoff targetDecodeHandoff) (int, int, []int, []llama.Token, []imcMediaChunk, error) {
+	return m.decodeMediaIntoCacheFromPlan(ctx, cacheD, nil, seqID, mtmdCtx, 0, handoff)
 }
 
 // decodeMediaIntoCacheFromPlan verifies the current mtmd-native stream against
 // a cached native prefix and decodes only the appended chunks. An empty prefix
 // performs a full media cache build.
-func (m *Model) decodeMediaIntoCacheFromPlan(ctx context.Context, cacheD D, prefix []imcMediaChunk, seqID llama.SeqId, mtmdCtx mtmd.Context, startPos int) (int, int, []int, []llama.Token, []imcMediaChunk, error) {
+func (m *Model) decodeMediaIntoCacheFromPlan(ctx context.Context, cacheD D, prefix []imcMediaChunk, seqID llama.SeqId, mtmdCtx mtmd.Context, startPos int, handoff targetDecodeHandoff) (int, int, []int, []llama.Token, []imcMediaChunk, error) {
 	ctx, span := otel.AddSpan(ctx, "imc-media-cache-build",
 		attribute.Int("seq", int(seqID)),
 	)
@@ -193,19 +198,12 @@ func (m *Model) decodeMediaIntoCacheFromPlan(ctx context.Context, cacheD D, pref
 			m.log(ctx, "imc-media-cache", "status", "decoding-text-chunk", "seq", seqID,
 				"chunk", i, "tokens", len(tokens), "skipped_tokens", skip, "pos", pos, "mrope", useMRoPE)
 
-			switch {
-			case useMRoPE:
-				nDecoded, err := m.decodeTextMRoPEIntoCache(tokens, seqID, pos)
-				if err != nil {
-					return 0, 0, nil, nil, nil, fmt.Errorf("imc-media-cache: text chunk %d (M-RoPE): %w", i, err)
-				}
-				pos += nDecoded
-			default:
-				if err := m.decodeTokensIntoCache(ctx, tokens, seqID, pos); err != nil {
-					return 0, 0, nil, nil, nil, fmt.Errorf("imc-media-cache: text chunk %d: %w", i, err)
-				}
-				pos += len(tokens)
+			// Linear text entries work for both ordinary and M-RoPE contexts.
+			nDecoded, err := m.decodeTextMRoPEIntoCache(tokens, seqID, pos, handoff)
+			if err != nil {
+				return 0, 0, nil, nil, nil, fmt.Errorf("imc-media-cache: text chunk %d: %w", i, err)
 			}
+			pos += nDecoded
 
 		case mtmd.InputChunkTypeImage:
 			nativeChunk := imcMediaChunk{kind: imcMediaChunkImage, nTokens: int(nTokens), nPos: nPos}
@@ -243,14 +241,14 @@ func (m *Model) decodeMediaIntoCacheFromPlan(ctx context.Context, cacheD D, pref
 				m.log(ctx, "imc-media-cache", "status", "decoding-image-mrope", "seq", seqID,
 					"chunk", i, "tokens", nTokens, "positions", nPos, "pos", pos)
 
-				nDecoded, err := m.decodeEmbeddingsMRoPEIntoCache(embd, nEmbd, int32(nTokens), positions, seqID, useNonCausal)
+				nDecoded, err := m.decodeEmbeddingsMRoPEIntoCache(embd, nEmbd, int32(nTokens), positions, seqID, useNonCausal, llama.Pos(pos+nPos), handoff)
 				if err != nil {
 					return 0, 0, nil, nil, nil, fmt.Errorf("imc-media-cache: decode image embeddings chunk %d (M-RoPE): %w", i, err)
 				}
 				pos += nPos
 				mediaKVCounts = append(mediaKVCounts, nDecoded)
 			default:
-				nDecoded, err := m.decodeEmbeddingsIntoCache(embd, nEmbd, int32(nTokens), seqID, pos, useNonCausal)
+				nDecoded, err := m.decodeEmbeddingsIntoCache(embd, nEmbd, int32(nTokens), seqID, pos, useNonCausal, handoff)
 				if err != nil {
 					return 0, 0, nil, nil, nil, fmt.Errorf("imc-media-cache: decode image embeddings chunk %d: %w", i, err)
 				}
@@ -286,7 +284,7 @@ func (m *Model) decodeMediaIntoCacheFromPlan(ctx context.Context, cacheD D, pref
 			switch {
 			case useMRoPE:
 				positions := linearMRoPEPositions(int32(nTokens), llama.Pos(pos))
-				nDecoded, err := m.decodeEmbeddingsMRoPEIntoCache(embd, nEmbd, int32(nTokens), positions, seqID, useNonCausal)
+				nDecoded, err := m.decodeEmbeddingsMRoPEIntoCache(embd, nEmbd, int32(nTokens), positions, seqID, useNonCausal, llama.Pos(pos+nPos), handoff)
 				if err != nil {
 					return 0, 0, nil, nil, nil, fmt.Errorf("imc-media-cache: decode audio embeddings chunk %d (M-RoPE): %w", i, err)
 				}
@@ -294,7 +292,7 @@ func (m *Model) decodeMediaIntoCacheFromPlan(ctx context.Context, cacheD D, pref
 				mediaKVCounts = append(mediaKVCounts, nDecoded)
 
 			default:
-				nDecoded, err := m.decodeEmbeddingsIntoCache(embd, nEmbd, int32(nTokens), seqID, pos, useNonCausal)
+				nDecoded, err := m.decodeEmbeddingsIntoCache(embd, nEmbd, int32(nTokens), seqID, pos, useNonCausal, handoff)
 				if err != nil {
 					return 0, 0, nil, nil, nil, fmt.Errorf("imc-media-cache: decode audio embeddings chunk %d: %w", i, err)
 				}
@@ -316,7 +314,7 @@ func (m *Model) decodeMediaIntoCacheFromPlan(ctx context.Context, cacheD D, pref
 
 // decodeEmbeddingsIntoCache decodes embeddings into a KV cache sequence with
 // standard linear positioning. Returns the number of KV positions consumed.
-func (m *Model) decodeEmbeddingsIntoCache(embd []float32, nEmbd, nTokens int32, seqID llama.SeqId, startPos int, useNonCausal bool) (int, error) {
+func (m *Model) decodeEmbeddingsIntoCache(embd []float32, nEmbd, nTokens int32, seqID llama.SeqId, startPos int, useNonCausal bool, handoff targetDecodeHandoff) (int, error) {
 	if nTokens == 0 {
 		return 0, nil
 	}
@@ -365,6 +363,11 @@ func (m *Model) decodeEmbeddingsIntoCache(embd []float32, nEmbd, nTokens int32, 
 		}
 
 		pos += int(batchN)
+		if handoff != nil {
+			if err := handoff(batch, llama.Pos(pos)); err != nil {
+				return 0, err
+			}
+		}
 	}
 
 	return int(nTokens), nil
@@ -372,7 +375,7 @@ func (m *Model) decodeEmbeddingsIntoCache(embd []float32, nEmbd, nTokens int32, 
 
 // decodeEmbeddingsMRoPEIntoCache decodes embeddings with M-RoPE positioning
 // into a KV cache sequence. Returns the number of physical KV cells consumed.
-func (m *Model) decodeEmbeddingsMRoPEIntoCache(embd []float32, nEmbd, nTokens int32, positions []llama.Pos, seqID llama.SeqId, useNonCausal bool) (int, error) {
+func (m *Model) decodeEmbeddingsMRoPEIntoCache(embd []float32, nEmbd, nTokens int32, positions []llama.Pos, seqID llama.SeqId, useNonCausal bool, nextPosition llama.Pos, handoff targetDecodeHandoff) (int, error) {
 	if len(positions) != int(nTokens*4) {
 		return 0, fmt.Errorf("mrope embedding positions: got %d, want %d", len(positions), nTokens*4)
 	}
@@ -428,6 +431,13 @@ func (m *Model) decodeEmbeddingsMRoPEIntoCache(embd []float32, nEmbd, nTokens in
 		if err != nil || ret != 0 {
 			return 0, decodeError(ret, err)
 		}
+		if handoff != nil {
+			// The image's logical end is authoritative. No generation can
+			// run between slices; carry hidden state across every slice.
+			if err := handoff(batch, nextPosition); err != nil {
+				return 0, err
+			}
+		}
 	}
 
 	return int(nTokens), nil
@@ -436,7 +446,7 @@ func (m *Model) decodeEmbeddingsMRoPEIntoCache(embd []float32, nEmbd, nTokens in
 // decodeTextMRoPEIntoCache decodes text tokens with M-RoPE 4D positioning
 // into a KV cache sequence. Returns the number of physical KV cells consumed;
 // the caller advances its logical position with mtmd.InputChunkGetNPos.
-func (m *Model) decodeTextMRoPEIntoCache(tokens []llama.Token, seqID llama.SeqId, startPos int) (int, error) {
+func (m *Model) decodeTextMRoPEIntoCache(tokens []llama.Token, seqID llama.SeqId, startPos int, handoff targetDecodeHandoff) (int, error) {
 	n := len(tokens)
 	if n == 0 {
 		return 0, nil
@@ -474,6 +484,11 @@ func (m *Model) decodeTextMRoPEIntoCache(tokens []llama.Token, seqID llama.SeqId
 		}
 
 		pos += end - start
+		if handoff != nil {
+			if err := handoff(batch, llama.Pos(pos)); err != nil {
+				return 0, err
+			}
+		}
 	}
 
 	return n, nil

@@ -208,11 +208,11 @@ func TestNonCausalMediaRejectsOversizedChunk(t *testing.T) {
 			{"uncached linear", func() error { return e.decodeEmbeddingsNormal(&s, nil, 1, nTokens) }},
 			{"uncached M-RoPE", func() error { return e.decodeEmbeddingsMRoPE(&s, nil, 1, nTokens, positions, 0) }},
 			{"cached linear", func() error {
-				_, err := m.decodeEmbeddingsIntoCache(nil, 1, nTokens, 0, 0, true)
+				_, err := m.decodeEmbeddingsIntoCache(nil, 1, nTokens, 0, 0, true, nil)
 				return err
 			}},
 			{"cached M-RoPE", func() error {
-				_, err := m.decodeEmbeddingsMRoPEIntoCache(nil, 1, nTokens, positions, 0, true)
+				_, err := m.decodeEmbeddingsMRoPEIntoCache(nil, 1, nTokens, positions, 0, true, 0, nil)
 				return err
 			}},
 		} {
@@ -232,7 +232,7 @@ func TestMRoPERejectsWrongPositionCount(t *testing.T) {
 	}
 
 	m := Model{}
-	if _, err := m.decodeEmbeddingsMRoPEIntoCache(nil, 0, 5, make([]llama.Pos, 19), 0, false); err == nil {
+	if _, err := m.decodeEmbeddingsMRoPEIntoCache(nil, 0, 5, make([]llama.Pos, 19), 0, false, 0, nil); err == nil {
 		t.Fatal("decodeEmbeddingsMRoPEIntoCache() error = nil, want position count error")
 	}
 }
