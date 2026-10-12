@@ -599,7 +599,6 @@ make install-system-service # system level: runs as a kronk user, at boot, on /v
 | Data | Your existing `~/.kronk`, shared with the CLI | `/var/lib/kronk`, separate from any user |
 | Starts | At login; stops when you log out | At boot |
 | `sudo` | Only for a one-time GPU setup | Required |
-| Isolation | The sandbox exposes only `~/.kronk` from your home | Separate user with no capabilities |
 
 Install only one: both listen on the same ports. The installer refuses while
 the other level is enabled or running, or while a server started with
@@ -607,75 +606,53 @@ the other level is enabled or running, or while a server started with
 
 Run the targets as yourself, not with `sudo`; they ask for `sudo` when they
 need it. Each copies the `kronk` on your `PATH` into place, because the
-sandbox cannot see your home directory, where `go install` puts it. To copy a
-different binary, or when `kronk` is not on your `PATH`, set `KRONK_BIN`:
+sandbox cannot see your home directory. To use a different binary, add
+`KRONK_BIN=/path/to/kronk`. Run the same target again after upgrading the
+CLI; it replaces the binary and restarts the service.
+
+Remove a service with `make uninstall-user-service` or
+`make uninstall-system-service`. Both keep the binary, your models, keys, and
+configuration.
+
+Without `make`, run the script directly:
 
 ```shell
-make install-system-service KRONK_BIN=/path/to/kronk
+zarf/systemd/install.sh install --user-level /path/to/kronk
+sudo zarf/systemd/install.sh install --system-level /path/to/kronk
 ```
-
-The service runs its own copy of the binary, so run the same target again
-after upgrading the CLI; it replaces the binary and restarts the service.
-Remove a service with `make uninstall-user-service` or
-`make uninstall-system-service`; both keep your models, keys, and configuration.
 
 ### User-Level Service
 
 The user-level service uses your `~/.kronk` in place, so models, libraries,
-and keys you installed with the CLI are used as they are, with no copy, and
-CLI commands, including `--local` ones, keep working without `sudo`. Its
-binary is copied to `~/.local/share/kronk/bin/kronk`, deliberately off your
-`PATH` so it never shadows the CLI you upgrade. Manage it with
-`systemctl --user` and `journalctl --user`:
+and keys installed with the CLI work as they are, and CLI commands, including
+`--local` ones, need no `sudo`. Manage it with:
 
 ```shell
 systemctl --user status kronk
 journalctl --user -u kronk -f
 ```
 
-The service starts when you log in and stops when you log out. To run Kronk
-at boot, independent of any login, use the
-[System-Level Service](#system-level-service).
-
 Server settings go in `~/.config/kronk/kronk.env`, using the variables
 described in [Configuration](#configuration). Do not set `KRONK_BASE_PATH`
-there: the service can write only to `~/.kronk`. Change systemd settings with
-`systemctl --user edit kronk`.
+there: the service can write only to `~/.kronk`.
 
 A desktop login gives the service GPU access. For logins without a desktop
 session, such as SSH, on distributions such as Debian and Ubuntu, the
-installer offers, before it starts the service, to grant permanent GPU access
-with `sudo`:
+installer offers to grant permanent GPU access with `sudo` once:
 
 - On NVIDIA hosts, it installs `kronk-nvidia-uvm.service`, which creates the
-  CUDA device nodes that the sandbox stops CUDA from creating. It runs right
-  away and at every boot, so CUDA works from the first start.
+  CUDA device nodes at boot that the sandbox stops CUDA from creating.
 - For AMD, Intel, and Vulkan, it adds you to the groups that own the GPU
-  devices. A group change applies only to new sessions: log out of all your
-  sessions, desktop and SSH, and log back in. The service then starts with
-  GPU access; no restart is needed.
-
-To check which backend the last start selected, run
-`journalctl --user -u kronk | grep -o '"processor":"[a-z]*"' | tail -1`.
-A `cpu` processor means Kronk detected no GPU. Detection runs `nvidia-smi`,
-`rocminfo`, or `vulkaninfo`, so install the tool for your GPU, such as
-`vulkan-tools` for Vulkan, or set `KRONK_PROCESSOR` in
-`~/.config/kronk/kronk.env`, then restart with `systemctl --user restart kronk`.
-
-To check that a model runs on the GPU, send it a request and run
-`journalctl --user -u kronk | grep -o '"device":"[^"]*"' | tail -1`. It names
-the GPU the model loaded on, such as `CUDA0` or `Vulkan0`. No output with a GPU
-processor means the service cannot reach the GPU. The `gpu-count` in the
-startup log is not a reliable check: integrated GPUs and Apple Silicon share
-system memory, so they always report `0`.
+  devices. Log out of all your sessions, desktop and SSH, and log back in for
+  the change to apply.
 
 ### System-Level Service
 
 The system-level service follows the layout of a distribution-packaged
 daemon: a dedicated `kronk` user, state in `/var/lib/kronk`, and
-configuration in `/etc/kronk`. It needs no GPU setup. On first start the
-server downloads the native libraries into `/var/lib/kronk`, so the host
-needs outbound HTTPS. Check the result with:
+configuration in `/etc/kronk`. It needs no GPU setup. On first start it
+downloads the native libraries, so the host needs outbound HTTPS. Check it
+with:
 
 ```shell
 systemctl status kronk
@@ -683,52 +660,32 @@ journalctl -u kronk -f
 curl http://localhost:11435/v1/liveness
 ```
 
-If you already used Kronk from the CLI, the target warns that the service
-cannot see your `~/.kronk`; see
-[Using Data from an Existing Installation](#using-data-from-an-existing-installation).
-
-Uninstalling keeps the binary, the `kronk` user, `/var/lib/kronk` (models,
-keys, catalog), and `/etc/kronk`.
-
 #### Data and Models
 
-All state lives under `/var/lib/kronk`, owned by the `kronk` user. The service
-never reads `~/.kronk`: it runs as a different user, and the sandbox hides
-`/home` (`ProtectHome=yes`).
+The service never reads `~/.kronk`: it runs as a different user, and the
+sandbox hides `/home`.
 
-Server-backed commands, such as `kronk model list` without `--local`, talk
-to the running service over HTTP and need no `sudo`. Downloads through the
-server are disabled by default. Set `KRONK_DOWNLOAD_ENABLED=true` in
-`/etc/kronk/kronk.env` (see [Configuration](#configuration)) to let a plain
-`kronk model pull` and the BUI download into the service's data. In the
-default `open` authorization mode, any local process or browser page can then
-trigger downloads; set `KRONK_AUTHORIZATION_MODE=management` to require an
-admin token (see
+Server-backed commands, such as `kronk model list` without `--local`, talk to
+the service over HTTP and need no `sudo`. Downloads through the server are
+disabled by default; set `KRONK_DOWNLOAD_ENABLED=true` in
+`/etc/kronk/kronk.env` to let `kronk model pull` and the BUI download into the
+service's data. In the default `open` authorization mode any local process can
+then trigger downloads, so also consider `KRONK_AUTHORIZATION_MODE=management`
+(see
 [Chapter 12](https://www.kronkai.com/manual#chapter-12-security-and-authentication)).
 
-Otherwise, run local CLI commands as the `kronk` user so the files keep the
-right owner. Use the full binary path, since `sudo` may not search
-`/usr/local/bin`:
+Run `--local` commands as the `kronk` user so files keep the right owner:
 
 ```shell
 sudo -u kronk KRONK_BASE_PATH=/var/lib/kronk /usr/local/bin/kronk model pull unsloth/Qwen3-0.6B-Q8_0 --local
-sudo -u kronk KRONK_BASE_PATH=/var/lib/kronk /usr/local/bin/kronk devices
 ```
 
 #### Using Data from an Existing Installation
 
-If you already ran Kronk from the CLI, its models, catalog, and keys are in
-`~/.kronk`. The service cannot use them in place, and a symlink does not
-work: the sandbox hides `/home`, and the `kronk` user cannot read your home
-directory. Copy them into the service's data instead of downloading them
-again, or install at [user level](#user-level-service) to use `~/.kronk` in
-place.
-
-`make install-system-service` prints a reminder when it finds a `~/.kronk` with
-models and the service has no models yet. It never copies anything itself.
-
-To copy, stop the service and any server using `~/.kronk`, so no process
-writes to either directory during the copy, then copy and fix ownership:
+Models, catalog, and keys from the CLI live in `~/.kronk`, which the service
+cannot read, even through a symlink. The installer reminds you when it finds
+one. Copy it in instead of downloading again, or use the
+[user level](#user-level-service) to keep using `~/.kronk` in place:
 
 ```shell
 sudo systemctl stop kronk
@@ -739,29 +696,15 @@ sudo chown -R kronk:kronk /var/lib/kronk
 sudo systemctl start kronk
 ```
 
-The copy does not preserve owners or SELinux labels, so the files take the
-labels of `/var/lib/kronk`. It includes `keys`, so tokens you created before
-keep working, and tokens the service issued before the copy stop working. To
-copy only the models, copy that directory instead:
-
-```shell
-sudo systemctl stop kronk
-sudo cp -dR --preserve=mode,timestamps,links ~/.kronk/models/. /var/lib/kronk/models/
-sudo chown -R kronk:kronk /var/lib/kronk/models
-sudo systemctl start kronk
-```
-
-Models are large, and a copy doubles their disk use. Once the service works,
-you can delete the models you no longer need in `~/.kronk`. CLI commands
-with `--local` keep using `~/.kronk`; use the `sudo -u kronk` form in
-[Data and Models](#data-and-models) to work on the service's copy.
+To copy only the models, copy `~/.kronk/models/.` to `/var/lib/kronk/models/`
+and `chown` that directory instead. Copying `keys` replaces the service's
+keys, so tokens it issued earlier stop working.
 
 #### Configuration
 
 Every `kronk server start` flag has a `KRONK_*` environment variable (see
 §8.3). The service loads `/etc/kronk/kronk.env` when it exists, one
-`NAME=value` per line. systemd reads it as root, so keep it private to root,
-since it can hold secrets such as API keys:
+`NAME=value` per line. Keep it private to root, since it can hold secrets:
 
 ```shell
 sudo install -m 0600 /dev/null /etc/kronk/kronk.env
@@ -778,140 +721,43 @@ KRONK_AUTHORIZATION_MODE=management
 KRONK_POOL_MODEL_CONFIG_FILE=/etc/kronk/model_config.yaml
 ```
 
-Other files the server reads, such as
-`KRONK_POOL_MODEL_CONFIG_FILE=/etc/kronk/model_config.yaml`, can also live in
-`/etc/kronk`, which the service can read.
+Do not set `KRONK_BASE_PATH` here: it overrides `/var/lib/kronk`, and the
+sandbox makes every other path read-only, so the server fails to start.
 
-Do not set `KRONK_BASE_PATH` in `kronk.env`. It overrides the unit's
-`/var/lib/kronk`, and the sandbox makes every other path read-only, so the
-server fails to start.
+The service listens on `127.0.0.1:11435`. Configure authorization before
+setting `KRONK_WEB_API_HOST` to a public interface. The unit cannot bind ports
+below 1024, so use a reverse proxy to serve on 80 or 443.
 
-The service listens on `127.0.0.1:11435` by default. Configure authorization
-as described in
-[Chapter 12](https://www.kronkai.com/manual#chapter-12-security-and-authentication)
-before setting `KRONK_WEB_API_HOST` to a public interface.
+### Shutdown, Restarts, and Hardening
 
-Change systemd settings with a drop-in, `sudo systemctl edit kronk`, rather
-than editing the installed unit, so reinstalling keeps your changes. The unit
-cannot bind ports below 1024; put a reverse proxy in front of the default
-port to serve on 80 or 443.
+Commands below are for the system level. At user level, drop `sudo` and add
+`--user`.
 
-### Shutdown and Restarts
-
-This applies to both levels. For the user level, drop `sudo` and add
-`--user` to the `systemctl` and `journalctl` commands.
-
-On `systemctl stop`, Kronk drains in-flight requests and then unloads models.
-Each phase is bounded by `KRONK_WEB_SHUTDOWN_TIMEOUT` (default `1m`), and the
-unit allows `TimeoutStopSec=150s` before systemd kills the process. If you raise
-the shutdown timeout, raise `TimeoutStopSec` to at least twice that value plus
-30 seconds:
+On stop, Kronk drains in-flight requests and then unloads models, each phase
+bounded by `KRONK_WEB_SHUTDOWN_TIMEOUT` (default `1m`). The unit allows
+`TimeoutStopSec=150s`. If you raise the shutdown timeout, raise
+`TimeoutStopSec` to at least twice that value plus 30 seconds with
+`sudo systemctl edit kronk`:
 
 ```ini
-# sudo systemctl edit kronk
 [Service]
 TimeoutStopSec=330s
 ```
 
-`Restart=on-failure` restarts the server five seconds after a crash or non-zero
-exit, but not after a clean stop. After five failed starts within five minutes,
-systemd stops trying and leaves the unit failed; fix the cause shown in
-`journalctl -u kronk`, then run `sudo systemctl reset-failed kronk` and start it
-again.
+`Restart=on-failure` restarts the server five seconds after a crash. After
+five failed starts in five minutes, the unit stays failed: fix the cause in
+`journalctl -u kronk`, then run `sudo systemctl reset-failed kronk` and start
+it again. `kronk server stop` and `kronk server logs` work only with
+`--detach` servers; use `systemctl` and `journalctl` for the service.
 
-Use `systemctl` and `journalctl` to manage the service. `kronk server stop` and
-`kronk server logs` work only with servers started using `--detach`.
-
-### Hardening
-
-The system-level unit drops all capabilities, makes the filesystem read-only
-except `/var/lib/kronk`, hides `/home`, uses a private `/tmp`, and restricts
-kernel access, namespaces, address families, and system calls. A system call
-outside the allowed set fails with `EPERM` rather than killing the server.
-The user-level unit applies the same restrictions, but hides your home
-directory except `~/.kronk`. Review the system-level exposure score with:
-
-```shell
-systemd-analyze security kronk
-```
-
-Neither unit uses `PrivateDevices`, `DevicePolicy`, or
-`MemoryDenyWriteExecute`, because they block GPU devices or the JIT compilers
-used by CUDA, ROCm, and Vulkan. The sandbox blocks CUDA from creating
-`/dev/nvidia-uvm` itself. The system-level service runs with the `video` and
-`render` groups, which own `/dev/dri/renderD*` and `/dev/kfd`, and runs
-`nvidia-modprobe` with full privileges before starting. The user-level
-service cannot do either, which is why its installer offers the one-time GPU
-setup described in [User-Level Service](#user-level-service).
-
-If a hardening setting conflicts with your environment, relax only that
-setting in a drop-in with `sudo systemctl edit kronk`.
-
-### Manual Installation
-
-Without `make`, pass the level and the binary to the script directly:
-
-```shell
-zarf/systemd/install.sh install --user-level /path/to/kronk
-sudo zarf/systemd/install.sh install --system-level /path/to/kronk
-```
-
-Without the script, install the user-level service with these steps, run
-from the repository root:
-
-```shell
-# Copy the binary out of ~/go/bin, which the sandbox hides, to a path off PATH.
-install -D -m 0755 "$(command -v kronk)" ~/.local/share/kronk/bin/kronk
-
-# The unit exposes ~/.kronk to the sandbox, so it must exist.
-mkdir -p ~/.kronk
-
-# Install the unit and make your service manager read it.
-install -D -m 0644 zarf/systemd/kronk-user.service ~/.config/systemd/user/kronk.service
-systemctl --user daemon-reload
-
-# Start the service now and at every login.
-systemctl --user enable --now kronk
-```
-
-Or install the system-level service with these steps:
-
-```shell
-# Copy the binary out of /home, because the service's sandbox hides /home.
-sudo install -m 0755 "$(command -v kronk)" /usr/local/bin/kronk
-
-# Create the kronk user and add it to the video and render groups, which own
-# the GPU devices.
-sudo install -D -m 0644 zarf/systemd/kronk.sysusers.conf /etc/sysusers.d/kronk.conf
-sudo systemd-sysusers /etc/sysusers.d/kronk.conf
-
-# Install the unit and make systemd read it.
-sudo install -m 0644 zarf/systemd/kronk.service /etc/systemd/system/kronk.service
-sudo systemctl daemon-reload
-
-# Optional: reuse the data in an existing ~/.kronk before the first start
-# (see Using Data from an Existing Installation).
-# sudo install -d -m 0750 -o kronk -g kronk /var/lib/kronk
-# sudo cp -dR --preserve=mode,timestamps,links ~/.kronk/. /var/lib/kronk/
-# sudo rm -f /var/lib/kronk/kronk.log /var/lib/kronk/kronk.pid
-# sudo chown -R kronk:kronk /var/lib/kronk
-
-# Start the service now and at every boot.
-sudo systemctl enable --now kronk
-```
-
-On systems without `systemd-sysusers`, create the user and groups instead of
-the two sysusers commands:
-
-```shell
-# Create the GPU groups if they do not exist yet.
-sudo groupadd --system --force video
-sudo groupadd --system --force render
-
-# Create a system user with no login shell, whose home is the service's data.
-sudo useradd --system --home-dir /var/lib/kronk --shell /usr/sbin/nologin \
-  --groups video,render kronk
-```
+Both units drop privileges, make the filesystem read-only except the data
+directory, hide the home directory, and restrict kernel access, namespaces,
+and system calls. They do not use `PrivateDevices` or
+`MemoryDenyWriteExecute`, which would block GPU devices and the CUDA, ROCm,
+and Vulkan JIT compilers. Check the exposure with
+`systemd-analyze security kronk`. If a setting conflicts with your
+environment, relax only that setting in a drop-in with
+`sudo systemctl edit kronk`; reinstalling keeps drop-ins.
 
 ## 8.9 Related Administration Guides
 
