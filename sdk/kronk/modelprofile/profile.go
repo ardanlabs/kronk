@@ -32,16 +32,18 @@ const (
 type ComputeKind uint8
 
 const (
-	ComputeGeneric  ComputeKind = iota // Unvalidated architectures use the generic allowance.
-	ComputeIndexed                     // Qwen4Exp indexed-attention workspaces.
-	ComputeGemma4                      // Gemma4 target and shared-KV assistant workspaces.
-	ComputeQwen35                      // Qwen3.5 target and own-KV MTP workspaces.
-	ComputeGPTOSS                      // GPT-OSS alternating full/SWA attention workspaces.
-	ComputeMistral3                    // Mistral3 dense full-attention workspaces.
-	ComputeLFM2                        // LFM2 attention and short-convolution workspaces.
-	ComputeGLM4MoE                     // GLM4 MoE full-attention and routed FFN workspaces.
-	ComputeGemma3                      // Gemma3 non-SWA attention workspaces (RNJ).
-	ComputeLlama                       // Llama full-attention GQA workspaces.
+	ComputeGeneric    ComputeKind = iota // Unvalidated architectures use the generic allowance.
+	ComputeIndexed                       // Qwen4Exp indexed-attention workspaces.
+	ComputeGemma4                        // Gemma4 target and shared-KV assistant workspaces.
+	ComputeQwen35                        // Qwen3.5 target and own-KV MTP workspaces.
+	ComputeGPTOSS                        // GPT-OSS alternating full/SWA attention workspaces.
+	ComputeMistral3                      // Mistral3 dense full-attention workspaces.
+	ComputeLFM2                          // LFM2 attention and short-convolution workspaces.
+	ComputeGLM4MoE                       // GLM4 MoE full-attention and routed FFN workspaces.
+	ComputeGemma3                        // Gemma3 non-SWA attention workspaces (RNJ).
+	ComputeLlama                         // Llama full-attention GQA workspaces.
+	ComputeClef                          // Clef batch-local decision graph without persistent cache.
+	ComputeModernBERT                    // ModernBERT batch-local encoder and decision workspaces.
 )
 
 // Purpose describes the endpoint a model serves.

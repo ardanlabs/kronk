@@ -815,6 +815,142 @@ func TestFromBytesGemmaWorkspacesAndSharedKV(t *testing.T) {
 	}
 }
 
+func TestFromBytesClefMemory(t *testing.T) {
+	var data bytes.Buffer
+	write := func(value any) {
+		t.Helper()
+		if err := binary.Write(&data, binary.LittleEndian, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeString := func(value string) {
+		write(uint64(len(value)))
+		if _, err := data.WriteString(value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(gguf.Magic)
+	write(uint32(3))
+	write(uint64(0))
+	write(uint64(8))
+	writeString("general.architecture")
+	write(gguf.MetadataValueTypeString)
+	writeString("clef")
+	for key, value := range map[string]uint32{
+		"block_count": 32, "embedding_length": 4096,
+		"attention.head_count": 16, "attention.head_count_kv": 4,
+		"attention.key_length": 256, "attention.value_length": 256,
+		"ssm.state_size": 128,
+	} {
+		writeString("clef." + key)
+		write(gguf.MetadataValueTypeUInt32)
+		write(value)
+	}
+	var first Result
+	for _, context := range []int64{65536, 131072} {
+		result, err := FromBytes(data.Bytes(), 6486448192, Config{
+			ComputeBackend: "metal", ContextWindow: context, Slots: 1,
+			NUBatch: 2048, BytesPerElement: 2, SWAFull: true,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.SlotMemory != 0 || result.KVPerSlot != 0 || result.KVVRAMBytes != 0 || result.KVCPUBytes != 0 {
+			t.Fatalf("Clef persistent cache: got %+v, want zero", result)
+		}
+		// The observed graph reserves 474.32 MiB GPU and 136.09 MiB CPU.
+		// Cover those buffers without reserving a context-sized cache/mask.
+		if result.ComputeBufferEst < 475<<20 || result.ComputeBufferCPU < 137<<20 || result.UnifiedFootprint() > 7<<30 {
+			t.Fatalf("Clef reservation does not cover its graph within 7 GiB: %+v", result)
+		}
+		if first.Input.ContextWindow != 0 && result.UnifiedFootprint() != first.UnifiedFootprint() {
+			t.Fatal("Clef reservation grew with context despite batch-local attention")
+		}
+		first = result
+	}
+	for _, cfg := range []Config{
+		{ComputeBackend: "metal", ContextWindow: 131072, Slots: 2, NUBatch: 2048, BytesPerElement: 2},
+		{ComputeBackend: "metal", ContextWindow: 131072, Slots: 1, NUBatch: 4096, BytesPerElement: 2},
+		{ComputeBackend: "metal", ContextWindow: 131072, Slots: 1, NUBatch: 2048, BytesPerElement: 2, VTransposed: true},
+	} {
+		result, err := FromBytes(data.Bytes(), 6486448192, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.SlotMemory != 0 || result.ComputeBufferEst <= first.ComputeBufferEst {
+			t.Fatalf("Clef larger batch/slot/non-flash workspace: got %+v, want larger compute without cache", result)
+		}
+	}
+}
+
+func TestFromBytesModernBERTMemory(t *testing.T) {
+	var data bytes.Buffer
+	write := func(value any) {
+		t.Helper()
+		if err := binary.Write(&data, binary.LittleEndian, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeString := func(value string) {
+		write(uint64(len(value)))
+		if _, err := data.WriteString(value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(gguf.Magic)
+	write(uint32(3))
+	write(uint64(0))
+	write(uint64(9))
+	writeString("general.architecture")
+	write(gguf.MetadataValueTypeString)
+	writeString("modern-bert")
+	for key, value := range map[string]uint32{
+		"block_count": 24, "embedding_length": 384,
+		"attention.head_count": 6, "attention.key_length": 64,
+		"attention.value_length": 64, "attention.sliding_window": 128,
+		"attention.sliding_window_pattern": 3, "vocab_size": 256000,
+	} {
+		writeString("modern-bert." + key)
+		write(gguf.MetadataValueTypeUInt32)
+		write(value)
+	}
+	var first Result
+	for _, context := range []int64{8192, 16384} {
+		result, err := FromBytes(data.Bytes(), 168166496, Config{
+			ComputeBackend: "metal", ContextWindow: context, Slots: 1,
+			NUBatch: 2048, BytesPerElement: 2, SWAFull: true,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.SlotMemory != 0 || result.KVPerSlot != 0 || result.KVVRAMBytes != 0 || result.KVCPUBytes != 0 {
+			t.Fatalf("ModernBERT persistent cache: got %+v, want zero", result)
+		}
+		// Julia's native graph reserves 64.83 MiB GPU and 28.04 MiB CPU,
+		// plus 0.98 MiB output. Leave room without charging generation logits.
+		if result.ComputeBufferEst < 65<<20 || result.ComputeBufferCPU < 29<<20 || result.UnifiedFootprint() > 300<<20 {
+			t.Fatalf("ModernBERT reservation does not cover Julia within 300 MiB: %+v", result)
+		}
+		if first.Input.ContextWindow != 0 && result.UnifiedFootprint() != first.UnifiedFootprint() {
+			t.Fatal("ModernBERT reservation grew with context despite batch-local attention")
+		}
+		first = result
+	}
+	for _, cfg := range []Config{
+		{ComputeBackend: "metal", ContextWindow: 8192, Slots: 2, NUBatch: 2048, BytesPerElement: 2},
+		{ComputeBackend: "metal", ContextWindow: 8192, Slots: 1, NUBatch: 4096, BytesPerElement: 2},
+		{ComputeBackend: "metal", ContextWindow: 8192, Slots: 1, NUBatch: 2048, BytesPerElement: 2, VTransposed: true},
+	} {
+		result, err := FromBytes(data.Bytes(), 168166496, cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.SlotMemory != 0 || result.ComputeBufferEst <= first.ComputeBufferEst {
+			t.Fatalf("ModernBERT larger batch/slot/non-flash workspace: got %+v, want larger compute without cache", result)
+		}
+	}
+}
+
 func TestIsFolderURL(t *testing.T) {
 	tests := []struct {
 		name string
