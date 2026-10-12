@@ -241,6 +241,15 @@ make owu-up
 make owu-browse
 ```
 
+That default suits Kronk running natively on the host. For Kronk started from
+the Compose files in
+[2.3 Container Quick Start](https://www.kronkai.com/manual#23-container-quick-start),
+point OpenWebUI at the container instead:
+
+```shell
+KRONK_OWU_API_URL=http://kronk:11435/v1 make owu-up
+```
+
 OpenWebUI discovers available models through `GET /v1/models` and supports
 streaming chat, system prompts, model selection, and conversation history.
 

@@ -179,7 +179,7 @@ water mark and can describe an earlier request.
 ### 15.3 Bundled Observability Stack
 
 The repository includes a Docker Compose stack containing Grafana, Prometheus,
-Tempo, Loki, and Promtail. It provisions the data sources and a Kronk dashboard
+Tempo, Loki, and Alloy. It provisions the data sources and a Kronk dashboard
 without manual Grafana setup.
 
 Download the pinned images once, start the stack, and open Grafana:
@@ -192,6 +192,16 @@ make grafana-browse
 
 Grafana is served at `http://localhost:3100/`. Prometheus scrapes the host's
 Kronk debug server, and Tempo accepts OTLP gRPC traces on port `4317`.
+
+When Kronk runs from the Compose file in `zarf/docker/kronk/` (see
+[2.3 Container Quick Start](https://www.kronkai.com/manual#23-container-quick-start)),
+both stacks share the `kronk-net` network. Prometheus also scrapes `kronk:11445`;
+the target that is not running shows as `DOWN`. If you publish the
+container's ports on `0.0.0.0` (`KRONK_BIND_ADDR`), both targets reach the same
+Kronk; filter on the `deployment` label (`host` or `container`) to avoid
+counting its metrics twice. To send traces to Tempo, start
+Kronk with `KRONK_TEMPO_HOST=tempo:4317`, and point OpenWebUI at the container
+with `KRONK_OWU_API_URL=http://kronk:11435/v1`.
 
 Stop the stack with:
 

@@ -8,7 +8,9 @@ services:
       - WEBUI_AUTH=false
       - GLOBAL_LOG_LEVEL="DEBUG"
       - ENABLE_PERSISTENT_CONFIG=false
-      - OPENAI_API_BASE_URL=http://host.docker.internal:11435/v1
+      # Native kronk on the host by default. For the containerised kronk
+      # (zarf/docker/kronk/compose.yaml) set KRONK_OWU_API_URL=http://kronk:11435/v1.
+      - OPENAI_API_BASE_URL=${KRONK_OWU_API_URL:-http://host.docker.internal:11435/v1}
       - OFFLINE_MODE=true
       - HF_HUB_OFFLINE=1
       - RAG_EMBEDDING_MODEL_AUTO_UPDATE=false
@@ -20,6 +22,8 @@ services:
       - "8081:11435"
     volumes:
       - ./openwebui:/app/backend/data
+    networks:
+      - kronk-net
 
   grafana:
     image: grafana/grafana:13.2.1
@@ -120,8 +124,12 @@ services:
     networks:
       - kronk-net
 
+# Fixed name so zarf/docker/kronk/compose.yaml joins the same network and
+# Prometheus can reach the containerised kronk as kronk:11445. Keep this
+# block identical to the one in zarf/docker/kronk/compose.yaml.
 networks:
   kronk-net:
+    name: kronk-net
     driver: bridge
 
 volumes:
