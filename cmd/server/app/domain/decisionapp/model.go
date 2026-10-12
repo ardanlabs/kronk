@@ -113,10 +113,9 @@ func decodeQuestion(id string, value any) (decisionQuestion, error) {
 		return decisionQuestion{}, fmt.Errorf("type must be a string")
 	}
 
-	instructions, exists := objectField(object, "instructions")
-	if !exists {
-		return decisionQuestion{}, fmt.Errorf("missing instructions field")
-	}
+	// Instruction requirements are protocol-specific (D3 supplies a default).
+	// The SDK validates this after the model's protocol has been resolved.
+	instructions, _ := objectField(object, "instructions")
 
 	criteria, hasCriteria := objectField(object, "criteria")
 

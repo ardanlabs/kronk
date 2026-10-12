@@ -69,7 +69,7 @@ func (t systemOneTemplate) renderValues(values D) (string, error) {
 }
 
 func decisionUsesEmbeddings(protocol DecisionProtocol) bool {
-	return protocol == DecisionProtocolLaya || protocol == DecisionProtocolKev || protocol == DecisionProtocolClef
+	return protocol == DecisionProtocolLaya || protocol == DecisionProtocolKev || protocol == DecisionProtocolClef || protocol == DecisionProtocolVllmDecision2
 }
 
 func decisionLabelTokens(vocab llama.Vocab) ([]llama.Token, []string) {
@@ -213,6 +213,14 @@ func decisionOptionCount(question DecisionQuestion) int {
 }
 
 func decisionSoftmax(scores []float32, temperature float64) ([]float64, error) {
+	values := make([]float64, len(scores))
+	for i, score := range scores {
+		values[i] = float64(score)
+	}
+	return decisionSoftmaxValues(values, temperature)
+}
+
+func decisionSoftmaxValues(scores []float64, temperature float64) ([]float64, error) {
 	if len(scores) == 0 {
 		return nil, fmt.Errorf("decision readout has no scores")
 	}

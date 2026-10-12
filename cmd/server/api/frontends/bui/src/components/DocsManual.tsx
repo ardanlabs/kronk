@@ -2499,7 +2499,38 @@ data: {"type":"response.completed",...}`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <p>Object order is part of the decision-model input. Kronk preserves the incoming order of state fields, questions, choice options, instructions, and nested criteria rather than normalizing them through unordered maps.</p>
+          <p>Object order is part of the decision-model input. Kronk preserves the incoming order of state fields, questions, choice options, instructions, and nested criteria rather than normalizing them through unordered maps. Protocols may apply their model's normalization rules: decision2 sorts structured state keys, while Clef sorts choice options.</p>
+          <h4 id="decision-protocols">Decision protocols</h4>
+          <p>Kronk detects these protocols from the GGUF's architecture-specific <code>decision.type</code> metadata and uses its named <code>systemone</code> template. The existing OpenJEV, Jev-Style, Laya/Julia, Lev, Kev, Nimble, and Clef protocols remain available. The following additional protocols are implemented:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Protocol</th>
+                <th>Readout and execution</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>pplx-decider</code></td>
+                <td>One final-token label readout per question; unlike Lev, no reverse-order averaging</td>
+              </tr>
+              <tr>
+                <td><code>lfm2-d1</code></td>
+                <td>Final-token label groups, taking the maximum logit per option before calibration</td>
+              </tr>
+              <tr>
+                <td><code>vllm-decision2</code></td>
+                <td>One question per prompt, with marked option/question spans and scalar decision-head outputs</td>
+              </tr>
+              <tr>
+                <td><code>vllm-d3</code></td>
+                <td>Non-causal whole-prompt label readout; questions execute separately without prefix reuse</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>These four protocols apply model-provided temperatures and score-level biases. Decision2 and D3 return normalized entropy concentration as <code>confidence</code> for choice and score questions; <code>noul</code> still returns the true-option probability. Decision2 requires at least two choice options and a state that is text, an object, or an array. D3 permits omitted or empty instructions, using the template's default question; the other protocols require instructions.</p>
+          <p>Decision2 and D3 evaluate each complete prompt in a single physical batch, regardless of the configured prefill batch size. D3 uses one execution sequence even when <code>NSeqMax</code> is larger. Large context windows can therefore increase working memory requirements for these models.</p>
+          <p>The four new protocols have model-free contract coverage, but have not yet been validated against downloaded GGUF models. Treat model-backed compatibility and decision quality as unverified until those models are exercised.</p>
           <p>A response is keyed by the caller's question IDs:</p>
           <pre className="code-block"><code className="language-json">{`{
   "model": "chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0",

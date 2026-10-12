@@ -620,7 +620,7 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 	}
 
 	switch cfg.DecisionProtocol {
-	case DecisionProtocol{}, DecisionProtocolOpenJEV, DecisionProtocolJevStyle, DecisionProtocolLaya, DecisionProtocolLev, DecisionProtocolKev, DecisionProtocolNimble, DecisionProtocolClef:
+	case DecisionProtocol{}, DecisionProtocolOpenJEV, DecisionProtocolJevStyle, DecisionProtocolLaya, DecisionProtocolLev, DecisionProtocolKev, DecisionProtocolNimble, DecisionProtocolClef, DecisionProtocolPplxDecider, DecisionProtocolLfm2D1, DecisionProtocolVllmDecision2, DecisionProtocolVllmD3:
 	default:
 		return fmt.Errorf("validate-config: unsupported decision protocol %q", cfg.DecisionProtocol)
 	}
@@ -1907,6 +1907,18 @@ var (
 
 	// DecisionProtocolClef identifies the Clef joint-head protocol.
 	DecisionProtocolClef = newDecisionProtocol("clef")
+
+	// DecisionProtocolPplxDecider identifies the Perplexity label-readout protocol.
+	DecisionProtocolPplxDecider = newDecisionProtocol("pplx-decider")
+
+	// DecisionProtocolLfm2D1 identifies the LFM2 grouped-label protocol.
+	DecisionProtocolLfm2D1 = newDecisionProtocol("lfm2-d1")
+
+	// DecisionProtocolVllmDecision2 identifies the single-question decision-head protocol.
+	DecisionProtocolVllmDecision2 = newDecisionProtocol("vllm-decision2")
+
+	// DecisionProtocolVllmD3 identifies the non-causal whole-prompt label protocol.
+	DecisionProtocolVllmD3 = newDecisionProtocol("vllm-d3")
 )
 
 // DecisionProtocol identifies the prompt and readout protocol used by a

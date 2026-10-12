@@ -2461,6 +2461,10 @@ export default function DocsSDKModel() {
               <p className="doc-description">// DecisionProtocolKev identifies the Kev pointer-head protocol. DecisionProtocolKev = newDecisionProtocol("kev")</p>
               <p className="doc-description">// DecisionProtocolNimble identifies the Nimble label-readout protocol. DecisionProtocolNimble = newDecisionProtocol("nimble")</p>
               <p className="doc-description">// DecisionProtocolClef identifies the Clef joint-head protocol. DecisionProtocolClef = newDecisionProtocol("clef")</p>
+              <p className="doc-description">// DecisionProtocolPplxDecider identifies the Perplexity label-readout protocol. DecisionProtocolPplxDecider = newDecisionProtocol("pplx-decider")</p>
+              <p className="doc-description">// DecisionProtocolLfm2D1 identifies the LFM2 grouped-label protocol. DecisionProtocolLfm2D1 = newDecisionProtocol("lfm2-d1")</p>
+              <p className="doc-description">// DecisionProtocolVllmDecision2 identifies the single-question decision-head protocol. DecisionProtocolVllmDecision2 = newDecisionProtocol("vllm-decision2")</p>
+              <p className="doc-description">// DecisionProtocolVllmD3 identifies the non-causal whole-prompt label protocol. DecisionProtocolVllmD3 = newDecisionProtocol("vllm-d3")</p>
             </div>
 
             <div className="doc-section" id="var-variable">

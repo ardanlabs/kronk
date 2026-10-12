@@ -93,6 +93,17 @@ func TestDecodeDecisionRequestPreservesOrder(t *testing.T) {
 	}
 }
 
+func TestDecodeDecisionRequestAllowsProtocolDefaultInstructions(t *testing.T) {
+	got, err := decodeDecisionRequest(strings.NewReader(`{"model":"d3","state":null,"questions":{"q":{"type":"noul"}}}`))
+	if err != nil {
+		t.Fatalf("decode default instructions: %v", err)
+	}
+	req := got.toSDK()
+	if len(req.Questions) != 1 || req.Questions[0].Instructions != nil {
+		t.Errorf("default instructions: got %+v", req)
+	}
+}
+
 func TestDecodeDecisionRequestRejectsInvalidWireShapes(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -108,7 +119,6 @@ func TestDecodeDecisionRequestRejectsInvalidWireShapes(t *testing.T) {
 		{name: "empty questions", input: `{"model":"m","state":{},"questions":{}}`},
 		{name: "question scalar", input: `{"model":"m","state":{},"questions":{"q":true}}`},
 		{name: "missing type", input: `{"model":"m","state":{},"questions":{"q":{"instructions":"Q?"}}}`},
-		{name: "missing instructions", input: `{"model":"m","state":{},"questions":{"q":{"type":"noul"}}}`},
 		{name: "choice criteria array", input: `{"model":"m","state":{},"questions":{"q":{"type":"choice","instructions":"Q?","criteria":[]}}}`},
 		{name: "score criteria object", input: `{"model":"m","state":{},"questions":{"q":{"type":"score","instructions":"Q?","criteria":{}}}}`},
 		{name: "noul criteria array", input: `{"model":"m","state":{},"questions":{"q":{"type":"noul","instructions":"Q?","criteria":[]}}}`},

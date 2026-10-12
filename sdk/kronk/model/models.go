@@ -197,6 +197,14 @@ func detectDecisionProtocol(configured DecisionProtocol, modelID string, metadat
 		return DecisionProtocolNimble
 	case "clef":
 		return DecisionProtocolClef
+	case "pplx-decider":
+		return DecisionProtocolPplxDecider
+	case "lfm2-d1":
+		return DecisionProtocolLfm2D1
+	case "vllm-decision2":
+		return DecisionProtocolVllmDecision2
+	case "vllm-d3":
+		return DecisionProtocolVllmD3
 	}
 
 	modelName := strings.ToLower(metadata["general.name"])

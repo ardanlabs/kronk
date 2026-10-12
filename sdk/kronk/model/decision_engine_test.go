@@ -27,6 +27,25 @@ func TestDecisionContextParams(t *testing.T) {
 	}
 }
 
+func TestDecisionContextParamsWholePrompt(t *testing.T) {
+	for _, protocol := range []DecisionProtocol{DecisionProtocolVllmD3, DecisionProtocolVllmDecision2} {
+		t.Run(protocol.String(), func(t *testing.T) {
+			cfg := NewConfig(WithContextWindow(4096), WithNSeqMax(4), WithPrefillBatchSize(768), WithDecisionProtocol(protocol))
+			got := decisionContextParams(llama.ContextParams{}, cfg)
+			if got.NBatch != 4096 || got.NUbatch != 4096 {
+				t.Errorf("whole prompt: got batch=%d ubatch=%d, want 4096/4096", got.NBatch, got.NUbatch)
+			}
+			if protocol == DecisionProtocolVllmD3 {
+				if got.NSeqMax != 1 || got.NCtx != 4096 || got.AttentionType != llama.AttentionTypeNonCausal || got.Embeddings != 0 {
+					t.Errorf("D3 isolation: got %+v", got)
+				}
+			} else if got.Embeddings != 1 || got.NOutputsMax != 4096 || got.NOutputsMaxPerSeq != 4096 {
+				t.Errorf("decision2 all-token outputs: got %+v", got)
+			}
+		})
+	}
+}
+
 func TestStageDecisionParts(t *testing.T) {
 	batch := extendedBatch{capacity: 5}
 	if _, err := batch.addToken(99, 99, []llama.SeqId{99}, extendedBatchOutputLogits); err != nil {

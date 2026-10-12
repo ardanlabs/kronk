@@ -363,7 +363,39 @@ Question types have different criteria and response fields:
 
 Object order is part of the decision-model input. Kronk preserves the incoming
 order of state fields, questions, choice options, instructions, and nested
-criteria rather than normalizing them through unordered maps.
+criteria rather than normalizing them through unordered maps. Protocols may
+apply their model's normalization rules: decision2 sorts structured state keys,
+while Clef sorts choice options.
+
+#### Decision protocols
+
+Kronk detects these protocols from the GGUF's architecture-specific
+`decision.type` metadata and uses its named `systemone` template. The existing
+OpenJEV, Jev-Style, Laya/Julia, Lev, Kev, Nimble, and Clef protocols remain
+available. The following additional protocols are implemented:
+
+| Protocol | Readout and execution |
+| --- | --- |
+| `pplx-decider` | One final-token label readout per question; unlike Lev, no reverse-order averaging |
+| `lfm2-d1` | Final-token label groups, taking the maximum logit per option before calibration |
+| `vllm-decision2` | One question per prompt, with marked option/question spans and scalar decision-head outputs |
+| `vllm-d3` | Non-causal whole-prompt label readout; questions execute separately without prefix reuse |
+
+These four protocols apply model-provided temperatures and score-level biases.
+Decision2 and D3 return normalized entropy concentration as `confidence` for
+choice and score questions; `noul` still returns the true-option probability.
+Decision2 requires at least two choice options and a state that is text, an
+object, or an array. D3 permits omitted or empty instructions, using the
+template's default question; the other protocols require instructions.
+
+Decision2 and D3 evaluate each complete prompt in a single physical batch,
+regardless of the configured prefill batch size. D3 uses one execution sequence
+even when `NSeqMax` is larger. Large context windows can therefore increase
+working memory requirements for these models.
+
+The four new protocols have model-free contract coverage, but have not yet been
+validated against downloaded GGUF models. Treat model-backed compatibility and
+decision quality as unverified until those models are exercised.
 
 A response is keyed by the caller's question IDs:
 

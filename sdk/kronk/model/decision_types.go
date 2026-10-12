@@ -174,7 +174,7 @@ type DecisionResponse struct {
 	Usage   DecisionUsage             `json:"usage"`
 }
 
-func validateDecisionRequest(req DecisionRequest) error {
+func validateDecisionRequest(req DecisionRequest, protocol DecisionProtocol) error {
 	if len(req.Questions) == 0 {
 		return fmt.Errorf("%w: questions must not be empty", ErrDecisionRequest)
 	}
@@ -189,10 +189,10 @@ func validateDecisionRequest(req DecisionRequest) error {
 		}
 		seen[question.ID] = true
 
-		if question.Instructions == nil {
+		if question.Instructions == nil && protocol != DecisionProtocolVllmD3 {
 			return fmt.Errorf("%w: question %q has no instructions", ErrDecisionRequest, question.ID)
 		}
-		if text, ok := question.Instructions.(string); ok && strings.TrimSpace(text) == "" {
+		if text, ok := question.Instructions.(string); ok && strings.TrimSpace(text) == "" && protocol != DecisionProtocolVllmD3 {
 			return fmt.Errorf("%w: question %q has empty instructions", ErrDecisionRequest, question.ID)
 		}
 

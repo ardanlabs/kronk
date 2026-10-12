@@ -1,6 +1,7 @@
 package modelprofile
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -47,5 +48,25 @@ func TestDecisionFactsRejectInvalidValues(t *testing.T) {
 	}
 	if _, exists, err := profile.Decision.Temperature("score"); exists || err != nil {
 		t.Fatalf("missing Temperature: got exists=%t err=%v, want false/nil", exists, err)
+	}
+}
+
+func TestDecisionScoreBias(t *testing.T) {
+	profile := Resolve(map[string]string{
+		"general.architecture":           "qwen35",
+		"qwen35.decision.score_bias.3.1": "-2.5",
+		"qwen35.decision.score_bias.2.0": "9",
+	})
+	bias, err := profile.Decision.ScoreBias(3)
+	if err != nil || !slices.Equal(bias, []float64{0, -2.5, 0}) {
+		t.Fatalf("ScoreBias: got %v/%v, want [0 -2.5 0]", bias, err)
+	}
+	for _, tt := range []struct{ suffix, value string }{
+		{"3.3", "1"}, {"1.0", "1"}, {"256.0", "1"}, {"3.-1", "1"}, {"3.1.extra", "1"}, {"3.1", "NaN"}, {"3.1", "+Inf"},
+	} {
+		profile := Resolve(map[string]string{"general.architecture": "qwen35", "qwen35.decision.score_bias." + tt.suffix: tt.value})
+		if _, err := profile.Decision.ScoreBias(2); err == nil {
+			t.Errorf("ScoreBias %s=%s: got nil, want error", tt.suffix, tt.value)
+		}
 	}
 }

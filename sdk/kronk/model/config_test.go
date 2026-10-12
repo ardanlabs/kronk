@@ -92,6 +92,10 @@ func TestDecisionProtocol(t *testing.T) {
 		{"Kev", "kev", DecisionProtocolKev, false},
 		{"Nimble", "nimble", DecisionProtocolNimble, false},
 		{"Clef", "clef", DecisionProtocolClef, false},
+		{"PplxDecider", "pplx-decider", DecisionProtocolPplxDecider, false},
+		{"Lfm2D1", "lfm2-d1", DecisionProtocolLfm2D1, false},
+		{"VllmDecision2", "vllm-decision2", DecisionProtocolVllmDecision2, false},
+		{"VllmD3", "vllm-d3", DecisionProtocolVllmD3, false},
 		{"unknown", "unknown", DecisionProtocol{}, true},
 	}
 
