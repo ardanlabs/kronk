@@ -77,7 +77,7 @@ func (m *Models) resolvedModelConfig(modelID string, mc map[string]ModelConfig, 
 		}
 		runtimeCfg := cfg.ToKronkConfig()
 		runtimeCfg.ProjFile = fp.ProjFile
-		cfg.PtrImageBatchTokenCapacity = runtimeCfg.ResolveImageBatchTokenCapacity(info.Metadata["general.architecture"]).PtrImageBatchTokenCapacity
+		cfg.PtrImageBatchTokenCapacity = runtimeCfg.ResolveImageBatchTokenCapacity(modelprofile.Resolve(info.Metadata).Architecture).PtrImageBatchTokenCapacity
 	}
 
 	// Resolve grammar (.grm filename -> contents) before converting.

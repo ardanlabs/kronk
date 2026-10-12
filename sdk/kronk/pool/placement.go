@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
@@ -21,7 +22,7 @@ func (l *Llama) preparePlacement(cfg model.Config) (model.Config, error) {
 		if err != nil {
 			return cfg, fmt.Errorf("resolve image capacity: %w", err)
 		}
-		cfg = cfg.ResolveImageBatchTokenCapacity(info.Metadata["general.architecture"])
+		cfg = cfg.ResolveImageBatchTokenCapacity(modelprofile.Resolve(info.Metadata).Architecture)
 	}
 	if !l.resman.HasGPUs() || l.resman.UnifiedMemory() {
 		return cfg, nil
