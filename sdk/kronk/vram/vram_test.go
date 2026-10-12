@@ -121,6 +121,117 @@ func TestCalculateGemmaMetalWorkspace(t *testing.T) {
 	}
 }
 
+func TestCalculateMistral3Workspace(t *testing.T) {
+	const mib int64 = 1 << 20
+	for _, tt := range []struct {
+		name, backend        string
+		slots, value, gpuMiB int64
+	}{
+		{"one stream", "metal", 1, 128, 1600},
+		{"two streams", "metal", 2, 128, 2192},
+		{"unequal K/V widths", "metal", 1, 64, 1472},
+		{"CUDA control", "cuda", 1, 128, 1088},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			result := Calculate(Input{
+				ComputeKind: modelprofile.ComputeMistral3, ComputeBackend: tt.backend,
+				ContextWindow: 131072, Slots: tt.slots, NUBatch: 2048, OutputRows: tt.slots,
+				EmbeddingLength: 5120, VocabularySize: 196608,
+				BlockCount: 40, HeadCount: 32, HeadCountKV: 8, KeyLength: 128, ValueLength: tt.value,
+			})
+			// One 512 MiB mask, one layer's K/V scratch, and activation
+			// storage coexist. Host allowance is the mask + 160 MiB.
+			gpu, cpu := tt.gpuMiB*mib, 672*mib
+			gpu, cpu = gpu+gpu/10, cpu+cpu/10
+			if result.ComputeBufferEst != gpu || result.ComputeBufferCPU != cpu {
+				t.Fatalf("GPU/CPU compute: got %d/%d, want %d/%d", result.ComputeBufferEst, result.ComputeBufferCPU, gpu, cpu)
+			}
+		})
+	}
+}
+
+func TestCalculateGPTOSSWorkspace(t *testing.T) {
+	const mib int64 = 1 << 20
+	for _, tt := range []struct {
+		name, backend          string
+		slots, layers, context int64
+		compact, unified       bool
+		wantGPU, wantCPU       int64
+	}{
+		{"full SWA", "metal", 1, 0, 131072, false, false, 1716 * mib, 1114 * mib},
+		{"compact SWA", "metal", 1, 0, 131072, true, false, 1213 * mib, 611 * mib},
+		{"two streams", "metal", 2, 0, 131072, false, false, 2017 * mib, 1114 * mib},
+		{"padded per-stream context", "metal", 2, 0, 131073, false, false, 2020 * mib, 1116 * mib},
+		{"unified pool", "metal", 2, 0, 131072, false, true, 3041 * mib, 2138 * mib},
+		{"CUDA control", "cuda", 1, 0, 131072, false, false, 1460 * mib, 1114 * mib},
+		// Only the trailing SWA layer is offloaded: scratch uses its
+		// compact extent, not the host full-attention layer's extent.
+		{"only SWA offloaded", "metal", 1, 2, 131072, true, false, 961*mib + mib/2, 611 * mib},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			result := Calculate(Input{
+				ComputeKind: modelprofile.ComputeGPTOSS, ComputeBackend: tt.backend,
+				ContextWindow: tt.context, Slots: tt.slots, NUBatch: 2048, OutputRows: tt.slots,
+				EmbeddingLength: 2880, VocabularySize: 201088,
+				BlockCount: 3, HeadCount: 64, HeadCountKV: 8, KeyLength: 64, ValueLength: 64,
+				SlidingWindow: 128, SlidingWindowLayers: 2, SWAPattern: []bool{true, false, true},
+				SWAFull: !tt.compact, GPULayers: tt.layers, KVUnified: tt.unified,
+			})
+			wantGPU, wantCPU := tt.wantGPU+tt.wantGPU/10, tt.wantCPU+tt.wantCPU/10
+			if result.ComputeBufferEst != wantGPU || result.ComputeBufferCPU != wantCPU {
+				t.Fatalf("GPU/CPU compute: got %d/%d, want %d/%d", result.ComputeBufferEst, result.ComputeBufferCPU, wantGPU, wantCPU)
+			}
+		})
+	}
+}
+
+func TestCalculateQwen35Workspace(t *testing.T) {
+	const mib int64 = 1 << 20
+	for _, tt := range []struct {
+		name                  string
+		contexts, rows, slots int64
+		backend               string
+		wantGPU, wantCPU      int64
+	}{
+		// Ornith's 256K attention mask is 1026 MiB; Metal K/V scratch
+		// adds 512 MiB once per arena, not once per attention layer.
+		{"target", 1, 4, 1, "metal", 1922*mib + mib/4, 1090*mib + mib/8},
+		{"target and embedded MTP", 2, 4, 1, "metal", 4356*mib + mib/2, 2148*mib + 3*mib/16},
+		{"uncapped logits", 1, 0, 1, "metal", 2328*mib + 40*mib/1024, 1090*mib + mib/8},
+		{"two streams", 1, 8, 2, "metal", 2466*mib + 5*mib/16, 1090*mib + mib/8},
+		{"CUDA control", 1, 4, 1, "cuda", 1410*mib + mib/4, 1090*mib + mib/8},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			pattern := make([]bool, 41)
+			heads := make([]int64, 41)
+			for layer := range 40 {
+				pattern[layer] = (layer+1)%4 != 0
+				heads[layer] = 2
+			}
+			// A wider appended layer must affect only the MTP arena,
+			// not the target's peak or the other attention layers.
+			heads[40] = 4
+			result := Calculate(Input{
+				ComputeKind: modelprofile.ComputeQwen35, ComputeBackend: tt.backend,
+				ContextWindow: 262144, Slots: tt.slots, NUBatch: 2052,
+				OutputRows: tt.rows, VocabularySize: 248320, EmbeddingLength: 2048,
+				BlockCount: 41, HeadCount: 16, HeadCountKV: 2, KeyLength: 256, ValueLength: 256,
+				HeadCountKVByLayer: heads,
+				RecurrentPattern:   pattern, NextNPredictLayers: 1, ComputeContexts: tt.contexts,
+			})
+			wantGPU := tt.wantGPU + tt.wantGPU/10
+			// Margins are rounded per context, not after combining contexts.
+			wantCPU := tt.wantCPU + tt.wantCPU/10
+			if tt.contexts == 2 {
+				wantGPU--
+			}
+			if result.ComputeBufferEst != wantGPU || result.ComputeBufferCPU != wantCPU {
+				t.Fatalf("GPU/CPU compute: got %d/%d, want %d/%d", result.ComputeBufferEst, result.ComputeBufferCPU, wantGPU, wantCPU)
+			}
+		})
+	}
+}
+
 func TestEstimateComputeBufferUsesNUBatch(t *testing.T) {
 	base := EstimateComputeBuffer(Input{
 		NUBatch:         DefaultNUBatch,

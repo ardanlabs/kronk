@@ -104,6 +104,24 @@ func TestQwen4ExpCompanionMTPResourceEstimates(t *testing.T) {
 	}
 }
 
+func TestUnsupportedMTPResourceEstimates(t *testing.T) {
+	for _, arch := range []string{"glm4moe", "glm5-next"} {
+		t.Run(arch, func(t *testing.T) {
+			file := filepath.Join(t.TempDir(), "model.gguf")
+			writeTestGGUF(t, file, map[string]any{
+				"general.architecture":         arch,
+				arch + ".nextn_predict_layers": uint32(1),
+			})
+			if got := SpeculativeContextCount(Config{MTPDrafterFile: file}); got != 1 {
+				t.Errorf("SpeculativeContextCount: got %d, want 1", got)
+			}
+			if got := RecurrentStateCopies(Config{ModelFiles: []string{file}}, true); got != 1 {
+				t.Errorf("RecurrentStateCopies: got %d, want 1", got)
+			}
+		})
+	}
+}
+
 func TestResolveSpeculationPlanGLM5Next(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "glm5-next.gguf")
 	writeTestGGUF(t, file, map[string]any{

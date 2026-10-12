@@ -34,6 +34,18 @@ func estimateComputeMemory(input Input) ComputeMemory {
 	switch {
 	case input.ComputeKind == modelprofile.ComputeGemma4:
 		return gemma4ComputeMemory(input)
+	case input.ComputeKind == modelprofile.ComputeQwen35:
+		return qwen35ComputeMemory(input)
+	case input.ComputeKind == modelprofile.ComputeGPTOSS:
+		return gptossComputeMemory(input)
+	case input.ComputeKind == modelprofile.ComputeMistral3:
+		return mistral3ComputeMemory(input)
+	case input.ComputeKind == modelprofile.ComputeLFM2:
+		return lfm2ComputeMemory(input)
+	case input.ComputeKind == modelprofile.ComputeGLM4MoE:
+		return glm4moeComputeMemory(input)
+	case input.ComputeKind == modelprofile.ComputeGemma3:
+		return gemma3ComputeMemory(input)
 	case input.ComputeKind == modelprofile.ComputeIndexed || input.IndexerKeyLength > 0:
 		return qwen4expComputeMemory(input)
 	default:

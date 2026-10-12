@@ -288,6 +288,86 @@ func TestAdditionalMemoryAccountsForProjectionAndCompanionMTPFiles(t *testing.T)
 	}
 }
 
+func TestPlanQwen35CompanionReservations(t *testing.T) {
+	mdls, err := models.NewWithPaths(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(mdls.Path(), "test", "family")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	var files []string
+	for _, name := range []string{"target", "mtp", "projector"} {
+		metadata := map[string]string{"general.architecture": "clip"}
+		if name != "projector" {
+			metadata = map[string]string{
+				"general.architecture": "qwen35moe", "qwen35moe.block_count": "41",
+				"qwen35moe.embedding_length": "2048", "qwen35moe.attention.head_count": "16",
+				"qwen35moe.attention.head_count_kv": "2", "qwen35moe.attention.key_length": "256",
+				"qwen35moe.attention.value_length": "256", "qwen35moe.nextn_predict_layers": "1",
+			}
+		}
+		var header bytes.Buffer
+		write := func(value any) {
+			t.Helper()
+			if err := binary.Write(&header, binary.LittleEndian, value); err != nil {
+				t.Fatal(err)
+			}
+		}
+		writeString := func(value string) {
+			write(uint64(len(value)))
+			if _, err := header.WriteString(value); err != nil {
+				t.Fatal(err)
+			}
+		}
+		write(gguf.Magic)
+		write(uint32(3))
+		write(uint64(0))
+		write(uint64(len(metadata)))
+		for key, value := range metadata {
+			writeString(key)
+			write(gguf.MetadataValueTypeString)
+			writeString(value)
+		}
+		path := filepath.Join(dir, name+".gguf")
+		if err := os.WriteFile(path, header.Bytes(), 0600); err != nil {
+			t.Fatal(err)
+		}
+		files = append(files, path)
+	}
+	log := func(context.Context, string, ...any) {}
+	if err := mdls.BuildIndex(log, false); err != nil {
+		t.Fatal(err)
+	}
+	rm, err := resman.New(resman.Config{Snapshot: resman.Snapshot{RAMBytes: 64 << 30, UnifiedMemory: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := newLlama(log, mdls, nil, rm, devices.Devices{}, false)
+	cfg := model.Config{ModelFiles: files[:1], MTPDrafterFile: files[1], ProjFile: files[2], PtrContextWindow: new(262144), PtrNSeqMax: new(1), PtrSWAFull: new(true)}
+	plan, err := l.Plan(context.Background(), loader.LoadRequest{Key: "model", ModelID: "test/target", Prepared: cfg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	calcCfg := vram.Config{ComputeBackend: devices.Backend(), ContextWindow: 262144, Slots: 1, BytesPerElement: 2, NUBatch: effectivePrefillBatchSize(cfg), SWAFull: true, RecurrentStateCopies: model.RecurrentStateCopies(cfg, false)}
+	var want int64
+	for i, path := range files {
+		calcCfg.MTPContext = i == 1
+		result, err := vram.FromFiles([]string{path}, calcCfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i == 1 && result.SlotMemory != 512<<20 {
+			t.Fatalf("companion cache: got %d, want %d", result.SlotMemory, 512<<20)
+		}
+		want += result.UnifiedFootprint()
+	}
+	if plan.RAMBytes != want || plan.VRAMBytes != 0 {
+		t.Fatalf("unified reservation: got RAM/VRAM %d/%d, want %d/0", plan.RAMBytes, plan.VRAMBytes, want)
+	}
+}
+
 func TestPlanReservesCalculatorDeviceResults(t *testing.T) {
 	mdls, err := models.NewWithPaths(t.TempDir())
 	if err != nil {

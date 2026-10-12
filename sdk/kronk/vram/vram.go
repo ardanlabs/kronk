@@ -67,6 +67,7 @@ type Config struct {
 	RecurrentStateCopies   int64  // State copies for separate-model or companion-MTP speculation.
 	EmbeddedMTPStateCopies int64  // State copies when the GGUF contains an embedded MTP layer.
 	ComputeContexts        int64  // Native contexts that reserve independent compute buffers.
+	OutputRows             int64  // Supported architectures' logits cap; 0 infers slots × current/rollback copies.
 	MTPContext             bool   // Size only the appended layers of an own-KV MTP context.
 }
 
@@ -103,6 +104,7 @@ type Input struct {
 	RecurrentStateBytes   int64                    // State bytes per recurrent layer, sequence, and copy.
 	RecurrentStateCopies  int64                    // Current state plus speculative rollback copies.
 	NUBatch               int64                    // Effective physical batch size.
+	OutputRows            int64                    // Maximum logits rows; 0 conservatively uses the full physical batch.
 	KVUnified             bool                     // Whether all sequence slots share one KV pool.
 	EmbeddingLength       int64                    // needed for compute buffer estimate
 	OutputEmbeddingLength int64                    // Hidden-state width, including hyper connections.
@@ -168,12 +170,21 @@ func Calculate(input Input) Result {
 	modelWeightsCPU := alwaysActiveCPU + expertsCPU
 
 	computeContexts := max(input.ComputeContexts, 1)
-	compute := estimateComputeMemory(input)
-	compute.WorkspaceGPU *= computeContexts
-	compute.WorkspaceCPU *= computeContexts
-	compute.RuntimeAllowanceGPU *= computeContexts
-	compute.MarginGPU *= computeContexts
-	compute.MarginCPU *= computeContexts
+	var compute ComputeMemory
+	for context := range computeContexts {
+		contextInput := input
+		if context > 0 && input.ComputeKind == modelprofile.ComputeQwen35 && !input.MTPContext && input.NextNPredictLayers > 0 {
+			// Own-KV MTP shares weights, not the target's compute graph.
+			contextInput.MTPContext = true
+			contextInput.OutputRows = max(input.Slots, 1)
+		}
+		memory := estimateComputeMemory(contextInput)
+		compute.WorkspaceGPU += memory.WorkspaceGPU
+		compute.WorkspaceCPU += memory.WorkspaceCPU
+		compute.RuntimeAllowanceGPU += memory.RuntimeAllowanceGPU
+		compute.MarginGPU += memory.MarginGPU
+		compute.MarginCPU += memory.MarginCPU
+	}
 	computeBufferEst, computeBufferCPU := compute.GPUBytes(), compute.CPUBytes()
 
 	var moeCacheBytes int64

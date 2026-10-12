@@ -24,6 +24,9 @@ func (qwenHybridAdapter) Apply(metadata metadata, profile *Profile) error {
 	profile.MemorySemantics = MemoryRecurrent
 
 	arch := profile.Architecture
+	if arch == "qwen35" || arch == "qwen35moe" {
+		profile.ComputeKind = ComputeQwen35
+	}
 	blockCount := profile.Dimensions.BlockCount
 	if blockCount <= 0 {
 		return nil

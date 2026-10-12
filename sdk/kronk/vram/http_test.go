@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 )
 
 func TestFromFilesOutputPlacement(t *testing.T) {
@@ -232,6 +233,9 @@ func TestBuildFromMetadataQwen35Hybrid(t *testing.T) {
 	if got.Input.ComputeContexts != 2 {
 		t.Fatalf("ComputeContexts: got %d, want 2", got.Input.ComputeContexts)
 	}
+	if got.Input.ComputeKind != modelprofile.ComputeQwen35 || got.Input.OutputRows != 3 {
+		t.Fatalf("compute kind/output rows: got %d/%d, want %d/3", got.Input.ComputeKind, got.Input.OutputRows, modelprofile.ComputeQwen35)
+	}
 }
 
 func TestBuildFromMetadataGLM5Next(t *testing.T) {
@@ -363,6 +367,312 @@ func TestFromBytesIndexedHybridMemory(t *testing.T) {
 			}
 			if result.TotalSystemRAMEst != result.ComputeBufferCPU {
 				t.Errorf("host workspace missing from system memory: got %d, want %d", result.TotalSystemRAMEst, result.ComputeBufferCPU)
+			}
+		})
+	}
+}
+
+func TestFromBytesGemma3RNJWorkspace(t *testing.T) {
+	const mib int64 = 1 << 20
+	metadata := map[string]string{
+		"general.architecture": "gemma3", "gemma3.block_count": "32",
+		"gemma3.embedding_length": "4096", "gemma3.vocab_size": "128256",
+		"gemma3.attention.head_count": "32", "gemma3.attention.head_count_kv": "8",
+		"gemma3.attention.key_length": "128", "gemma3.attention.value_length": "128",
+	}
+	var data bytes.Buffer
+	write := func(value any) {
+		t.Helper()
+		if err := binary.Write(&data, binary.LittleEndian, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeString := func(value string) {
+		write(uint64(len(value)))
+		if _, err := data.WriteString(value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(gguf.Magic)
+	write(uint32(3))
+	write(uint64(0))
+	write(uint64(len(metadata)))
+	for key, value := range metadata {
+		writeString(key)
+		write(gguf.MetadataValueTypeString)
+		writeString(value)
+	}
+	for _, tt := range []struct {
+		name, backend            string
+		context, slots           int64
+		cacheType                int32
+		cacheMiB, gpuMiB, cpuMiB int64
+	}{
+		{"RNJ one slot", "metal", 32768, 1, 1, 4096, 768, 256},
+		{"two slots", "metal", 32768, 2, 1, 8192, 960, 256},
+		{"larger context", "metal", 65536, 1, 1, 8192, 1024, 384},
+		{"quantized cache", "metal", 32768, 1, 8, 2176, 768, 256},
+		{"CUDA control", "cuda", 32768, 1, 1, 4096, 640, 256},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := FromBytes(data.Bytes(), 8<<30, Config{ComputeBackend: tt.backend, ContextWindow: tt.context, Slots: tt.slots, TypeK: tt.cacheType, TypeV: tt.cacheType, BytesPerElement: 2, NUBatch: 2048})
+			if err != nil {
+				t.Fatal(err)
+			}
+			gpu, cpu := tt.gpuMiB*mib, tt.cpuMiB*mib
+			gpu, cpu = gpu+gpu/10, cpu+cpu/10
+			if result.Input.OutputRows != tt.slots {
+				t.Fatalf("output rows: got %d, want %d", result.Input.OutputRows, tt.slots)
+			}
+			if result.SlotMemory != tt.cacheMiB*mib || result.ComputeBufferEst != gpu || result.ComputeBufferCPU != cpu {
+				t.Fatalf("cache/GPU compute/CPU compute: got %d/%d/%d, want %d/%d/%d", result.SlotMemory, result.ComputeBufferEst, result.ComputeBufferCPU, tt.cacheMiB*mib, gpu, cpu)
+			}
+			if result.UnifiedFootprint() != 8<<30+tt.cacheMiB*mib+gpu+cpu {
+				t.Fatal("unified footprint omitted cache or workspace")
+			}
+		})
+	}
+}
+
+func TestFromBytesGLM4MoEWorkspace(t *testing.T) {
+	const mib int64 = 1 << 20
+	metadata := map[string]string{
+		"general.architecture": "glm4moe", "glm4moe.block_count": "47",
+		"glm4moe.embedding_length": "4096", "glm4moe.vocab_size": "151552",
+		"glm4moe.attention.head_count": "96", "glm4moe.attention.head_count_kv": "8",
+		"glm4moe.attention.key_length": "128", "glm4moe.attention.value_length": "128",
+		"glm4moe.expert_count": "128", "glm4moe.expert_used_count": "8",
+		"glm4moe.nextn_predict_layers": "1",
+	}
+	var data bytes.Buffer
+	write := func(value any) {
+		t.Helper()
+		if err := binary.Write(&data, binary.LittleEndian, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeString := func(value string) {
+		write(uint64(len(value)))
+		if _, err := data.WriteString(value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(gguf.Magic)
+	write(uint32(3))
+	write(uint64(0))
+	write(uint64(len(metadata)))
+	for key, value := range metadata {
+		writeString(key)
+		write(gguf.MetadataValueTypeString)
+		writeString(value)
+	}
+	for _, tt := range []struct {
+		name                  string
+		backend               string
+		slots, gpuMiB, cpuMiB int64
+	}{
+		{"one slot", "metal", 1, 1792, 640},
+		{"two slots", "metal", 2, 2368, 640},
+		{"CUDA control", "cuda", 1, 1280, 640},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := FromBytes(data.Bytes(), 68<<30, Config{ComputeBackend: tt.backend, ContextWindow: 131072, Slots: tt.slots, TypeK: 1, TypeV: 1, BytesPerElement: 2, NUBatch: 2048, EmbeddedMTPStateCopies: 4})
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Only 46 trunk layers allocate KV. The appended NextN head
+			// is not an enabled Kronk MTP architecture and adds no context.
+			cache := tt.slots * 23 << 30
+			gpu, cpu := tt.gpuMiB*mib, tt.cpuMiB*mib
+			gpu, cpu = gpu+gpu/10, cpu+cpu/10
+			if result.Input.ComputeContexts != 1 || result.Input.RecurrentStateCopies != 1 || result.Input.OutputRows != tt.slots {
+				t.Fatalf("contexts/state copies/output rows: got %d/%d/%d, want 1/1/%d", result.Input.ComputeContexts, result.Input.RecurrentStateCopies, result.Input.OutputRows, tt.slots)
+			}
+			if result.SlotMemory != cache || result.ComputeBufferEst != gpu || result.ComputeBufferCPU != cpu {
+				t.Fatalf("cache/GPU compute/CPU compute: got %d/%d/%d, want %d/%d/%d", result.SlotMemory, result.ComputeBufferEst, result.ComputeBufferCPU, cache, gpu, cpu)
+			}
+			if result.UnifiedFootprint() != 68<<30+cache+gpu+cpu {
+				t.Fatal("unified footprint omitted host or GPU workspace")
+			}
+		})
+	}
+}
+
+func TestFromBytesLFM2Workspace(t *testing.T) {
+	const mib int64 = 1 << 20
+	metadata := map[string]string{
+		"general.architecture": "lfm2", "lfm2.block_count": "16",
+		"lfm2.embedding_length": "1536", "lfm2.vocab_size": "65536",
+		"lfm2.attention.head_count":    "24",
+		"lfm2.attention.head_count_kv": "[0,0,8,0,0,8,0,0,8,0,8,0,8,0,8,0]",
+		"lfm2.shortconv.l_cache":       "3",
+	}
+	var data bytes.Buffer
+	write := func(value any) {
+		t.Helper()
+		if err := binary.Write(&data, binary.LittleEndian, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeString := func(value string) {
+		write(uint64(len(value)))
+		if _, err := data.WriteString(value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(gguf.Magic)
+	write(uint32(3))
+	write(uint64(0))
+	write(uint64(len(metadata)))
+	for key, value := range metadata {
+		writeString(key)
+		write(gguf.MetadataValueTypeString)
+		writeString(value)
+	}
+	for _, tt := range []struct {
+		name                     string
+		context, slots, copies   int64
+		cacheType                int32
+		cacheMiB, gpuMiB, cpuMiB int64
+	}{
+		{"one slot", 32768, 1, 1, 1, 384, 352, 176},
+		{"two slots", 32768, 2, 1, 1, 768, 440, 176},
+		{"larger context", 65536, 1, 1, 1, 768, 544, 304},
+		{"quantized cache with rollback", 32768, 1, 3, 8, 204, 352, 176},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := FromBytes(data.Bytes(), 4<<30, Config{ComputeBackend: "metal", ContextWindow: tt.context, Slots: tt.slots, RecurrentStateCopies: tt.copies, TypeK: tt.cacheType, TypeV: tt.cacheType, BytesPerElement: 2, NUBatch: 2048})
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Six attention layers; ten F32 two-tap history buffers of
+			// 1536 values each. State is independent of context/cache type.
+			cache := tt.cacheMiB*mib + 122880*tt.slots*tt.copies
+			gpu, cpu := tt.gpuMiB*mib, tt.cpuMiB*mib
+			gpu, cpu = gpu+gpu/10, cpu+cpu/10
+			if result.SlotMemory != cache || result.ComputeBufferEst != gpu || result.ComputeBufferCPU != cpu {
+				t.Fatalf("cache/GPU compute/CPU compute: got %d/%d/%d, want %d/%d/%d", result.SlotMemory, result.ComputeBufferEst, result.ComputeBufferCPU, cache, gpu, cpu)
+			}
+			if result.UnifiedFootprint() != 4<<30+cache+gpu+cpu {
+				t.Fatal("unified footprint omitted cache or workspace")
+			}
+		})
+	}
+}
+
+func TestFromBytesMistral3Workspace(t *testing.T) {
+	const mib int64 = 1 << 20
+	metadata := map[string]string{
+		"general.architecture": "mistral3", "mistral3.block_count": "40",
+		"mistral3.embedding_length": "5120", "mistral3.vocab_size": "196608",
+		"mistral3.attention.head_count": "32", "mistral3.attention.head_count_kv": "8",
+		"mistral3.attention.key_length": "128", "mistral3.attention.value_length": "128",
+	}
+	var data bytes.Buffer
+	write := func(value any) {
+		t.Helper()
+		if err := binary.Write(&data, binary.LittleEndian, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeString := func(value string) {
+		write(uint64(len(value)))
+		if _, err := data.WriteString(value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(gguf.Magic)
+	write(uint32(3))
+	write(uint64(0))
+	write(uint64(len(metadata)))
+	for key, value := range metadata {
+		writeString(key)
+		write(gguf.MetadataValueTypeString)
+		writeString(value)
+	}
+	for _, tt := range []struct {
+		slots, gpuMiB int64
+	}{
+		{1, 1600},
+		{2, 2192},
+	} {
+		result, err := FromBytes(data.Bytes(), 4<<30, Config{ComputeBackend: "metal", ContextWindow: 131072, Slots: tt.slots, TypeK: 1, TypeV: 1, BytesPerElement: 2, NUBatch: 2048})
+		if err != nil {
+			t.Fatal(err)
+		}
+		gpu, cpu := tt.gpuMiB*mib, 672*mib
+		gpu, cpu = gpu+gpu/10, cpu+cpu/10
+		cache := tt.slots * 20 << 30
+		if result.Input.ComputeKind != modelprofile.ComputeMistral3 || result.Input.OutputRows != tt.slots {
+			t.Fatalf("compute kind/output rows: got %d/%d, want %d/%d", result.Input.ComputeKind, result.Input.OutputRows, modelprofile.ComputeMistral3, tt.slots)
+		}
+		if result.SlotMemory != cache || result.ComputeBufferEst != gpu || result.ComputeBufferCPU != cpu {
+			t.Fatalf("cache/GPU compute/CPU compute: got %d/%d/%d, want %d/%d/%d", result.SlotMemory, result.ComputeBufferEst, result.ComputeBufferCPU, cache, gpu, cpu)
+		}
+		if result.UnifiedFootprint() != 4<<30+cache+gpu+cpu {
+			t.Fatal("unified footprint omitted host or GPU workspace")
+		}
+	}
+}
+
+func TestFromBytesGPTOSSWorkspaces(t *testing.T) {
+	const mib int64 = 1 << 20
+	metadata := map[string]string{
+		"general.architecture": "gpt-oss", "gpt-oss.block_count": "24",
+		"gpt-oss.embedding_length": "2880", "gpt-oss.vocab_size": "201088",
+		"gpt-oss.attention.head_count": "64", "gpt-oss.attention.head_count_kv": "8",
+		"gpt-oss.attention.key_length": "64", "gpt-oss.attention.value_length": "64",
+		"gpt-oss.attention.sliding_window": "128", "gpt-oss.expert_count": "32",
+		"gpt-oss.expert_used_count": "4",
+	}
+	var data bytes.Buffer
+	write := func(value any) {
+		t.Helper()
+		if err := binary.Write(&data, binary.LittleEndian, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeString := func(value string) {
+		write(uint64(len(value)))
+		if _, err := data.WriteString(value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(gguf.Magic)
+	write(uint32(3))
+	write(uint64(0))
+	write(uint64(len(metadata)))
+	for key, value := range metadata {
+		writeString(key)
+		write(gguf.MetadataValueTypeString)
+		writeString(value)
+	}
+	for _, tt := range []struct {
+		name            string
+		slots           int64
+		full            bool
+		cache, gpu, cpu int64
+	}{
+		{"full SWA", 1, true, 6 << 30, 1716 * mib, 1114 * mib},
+		// Twelve full layers retain 3 GiB; twelve compact SWA layers
+		// have PAD256(128+2048)=2304 cells, adding 54 MiB.
+		{"compact SWA", 1, false, 3<<30 + 54*mib, 1213 * mib, 611 * mib},
+		{"two slots", 2, true, 12 << 30, 2017 * mib, 1114 * mib},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := FromBytes(data.Bytes(), 4<<30, Config{ComputeBackend: "metal", ContextWindow: 131072, Slots: tt.slots, TypeK: 1, TypeV: 1, BytesPerElement: 2, NUBatch: 2048, SWAFull: tt.full})
+			if err != nil {
+				t.Fatal(err)
+			}
+			gpu, cpu := tt.gpu+tt.gpu/10, tt.cpu+tt.cpu/10
+			if result.Input.ComputeKind != modelprofile.ComputeGPTOSS || result.Input.OutputRows != tt.slots {
+				t.Fatalf("compute kind/output rows: got %d/%d, want %d/%d", result.Input.ComputeKind, result.Input.OutputRows, modelprofile.ComputeGPTOSS, tt.slots)
+			}
+			if result.SlotMemory != tt.cache || result.ComputeBufferEst != gpu || result.ComputeBufferCPU != cpu {
+				t.Fatalf("cache/GPU compute/CPU compute: got %d/%d/%d, want %d/%d/%d", result.SlotMemory, result.ComputeBufferEst, result.ComputeBufferCPU, tt.cache, gpu, cpu)
+			}
+			if result.UnifiedFootprint() != 4<<30+tt.cache+gpu+cpu {
+				t.Fatal("unified footprint omitted host or GPU workspace")
 			}
 		})
 	}

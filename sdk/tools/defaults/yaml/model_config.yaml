@@ -200,7 +200,7 @@ version: 2
 kms: {}
 
 models:
-  # nseq-max: 1  ~87GB VRAM
+  # nseq-max: 1  ~89GB VRAM
   unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT:
     nseq-max: 1
     context-window: 131072
@@ -210,17 +210,18 @@ models:
       max_tokens: 16384
       reasoning_effort: low
 
-  # nseq-max: 1  ~54GB VRAM
-  # nseq-max: 2  ~82GB VRAM
+  # nseq-max: 1  ~63GB VRAM
+  # nseq-max: 2  ~93GB VRAM
   unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT:
+    nseq-max: 2
     context-window: 131072
     chat-template-kwargs:
       preserve_thinking: true
     sampling-parameters:
       max_tokens: 16384
 
-  # nseq-max: 1  ~44GB VRAM
-  # nseq-max: 2  ~47GB VRAM
+  # nseq-max: 1  ~49GB VRAM
+  # nseq-max: 2  ~56GB VRAM
   ornith-ai/Ornith-1.5-35B-Q8_0/AGENT:
     nseq-max: 2
     context-window: 262144
@@ -229,8 +230,18 @@ models:
     sampling-parameters:
       max_tokens: 16384
 
-  # nseq-max: 1  ~40GB VRAM
-  # nseq-max: 2  ~43GB VRAM
+  # nseq-max: 1  ~43GB VRAM
+  # nseq-max: 2  ~53GB VRAM
+  ukisai/Swift-Qwen3.8-27B-Q8_0/AGENT:
+    nseq-max: 2
+    context-window: 131072
+    chat-template-kwargs:
+      preserve_thinking: true
+    sampling-parameters:
+      max_tokens: 16384
+
+  # nseq-max: 1  ~45GB VRAM
+  # nseq-max: 2  ~48GB VRAM
   unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
     nseq-max: 2
     context-window: 131072
@@ -239,17 +250,13 @@ models:
     sampling-parameters:
       max_tokens: 16384
 
-  # nseq-max: 1  ~26GB VRAM
-  # nseq-max: 2  ~35GB VRAM
+  # nseq-max: 1  ~33GB VRAM
+  # nseq-max: 2  ~43GB VRAM
   unsloth/Qwen3.8-27B-UD-Q4_K_XL/AGENT:
     nseq-max: 2
     context-window: 131072
     sampling-parameters:
       max_tokens: 16384
-      temperature: 0.7
-      top_p: 0.80
-      top_k: 20
-      enable_thinking: false
 
   # nseq-max: 1  ~9GB VRAM
   ornith-ai/Ornith-1.5-9B-Q4_K_M/AGENT:

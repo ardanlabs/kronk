@@ -245,7 +245,7 @@ func (l *Llama) additionalMemory(plan *resman.PlanRequest, cfg model.Config, tar
 			fileCfg.RecurrentStateCopies = 1
 			fileCfg.EmbeddedMTPStateCopies = 1
 			fileCfg.MoECacheSize = 0
-			fileCfg.MTPContext = path == cfg.MTPDrafterFile && target.Input.ComputeKind == modelprofile.ComputeIndexed
+			fileCfg.MTPContext = path == cfg.MTPDrafterFile && (target.Input.ComputeKind == modelprofile.ComputeIndexed || target.Input.ComputeKind == modelprofile.ComputeQwen35)
 			result, err = vram.FromFiles([]string{path}, fileCfg)
 			if err != nil {
 				return fmt.Errorf("companion %s: %w", path, err)
