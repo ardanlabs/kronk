@@ -44,6 +44,11 @@ func resolveGeneric(metadata metadata) Profile {
 	if arch == "gemma4" || arch == "gemma4-assistant" {
 		profile.ComputeKind = ComputeGemma4
 	}
+	if arch == "gemma4" && parseInt64(metadata, arch+".embedding_length_per_layer_input") > 0 {
+		// The assistant does not create a lazy table. The target gathers
+		// one row containing the embeddings for all layers per token.
+		profile.LazyRowsPerToken = 1
+	}
 	if arch == "llama" {
 		profile.ComputeKind = ComputeLlama
 	}

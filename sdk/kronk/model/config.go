@@ -229,8 +229,8 @@ type AdapterConfig struct {
 // over JinjaFile and is intended for request-scoped model configurations.
 //
 // LazyMode controls on-demand reading of tensors marked eligible by llama.cpp.
-// The default is LazyModeAuto. It applies to target and draft models and does
-// not change the calculator's conservative full-file memory reservation.
+// The default is LazyModeAuto. It applies to target and draft models. Effective
+// lazy tables use a working-set allowance in the calculator's reservation.
 // On Metal, mmap may bring an eligible table into RAM despite lazy reading;
 // LoadModeNone can avoid that overlap.
 //
@@ -1401,7 +1401,7 @@ const (
 	LazyModeOff
 
 	// LazyModeOn requests lazy reading for eligible tensors regardless of size.
-	// All selected devices must support mmap; unmarked tensors are unaffected.
+	// The platform must support mmap; unmarked tensors are unaffected.
 	LazyModeOn
 )
 

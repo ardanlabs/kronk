@@ -17,12 +17,12 @@ func FromBytes(data []byte, totalSize int64, cfg Config) (Result, error) {
 		return Result{}, fmt.Errorf("from-bytes: %w", err)
 	}
 
-	return buildFromMetadata(metadata, tensors, totalSize, cfg)
+	return buildFromMetadata(metadata, [][]gguf.TensorInfo{tensors}, totalSize, cfg)
 }
 
 // buildFromMetadata resolves architecture-specific facts once for both local
 // and remote inputs. Model profiles own architecture rules; Calculate owns math.
-func buildFromMetadata(metadata map[string]string, tensors []gguf.TensorInfo, modelSizeBytes int64, cfg Config) (Result, error) {
+func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, modelSizeBytes int64, cfg Config) (Result, error) {
 	profile := modelprofile.Resolve(metadata)
 	if err := profile.ValidateForVRAM(); err != nil {
 		return Result{}, fmt.Errorf("build-from-metadata: %w", err)
@@ -51,6 +51,10 @@ func buildFromMetadata(metadata map[string]string, tensors []gguf.TensorInfo, mo
 		moePtr = &moeInfo
 	}
 
+	var tensors []gguf.TensorInfo
+	for _, shard := range shards {
+		tensors = append(tensors, shard...)
+	}
 	var weights *gguf.WeightBreakdown
 	if len(tensors) > 0 {
 		wb := gguf.CategorizeWeights(tensors, blockCount)
@@ -105,6 +109,8 @@ func buildFromMetadata(metadata map[string]string, tensors []gguf.TensorInfo, mo
 	}
 
 	input := Input{
+		WeightLoading:         cfg.WeightLoading,
+		LazyTable:             LazyTableForShards(profile, shards),
 		ComputeBackend:        cfg.ComputeBackend,
 		ComputeKind:           profile.ComputeKind,
 		VocabularySize:        vocabularySize,

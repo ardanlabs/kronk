@@ -14,6 +14,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/hf"
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/pool"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
@@ -334,14 +335,17 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 	slots := max(req.Slots, 1)
 	var configuredSWAFull *bool
 	var nUBatch int64
+	kronkConfig := model.Config{}
 	if req.ModelID != "" {
 		modelConfig := a.pool.Kronk.ModelConfig()[req.ModelID]
 		configuredSWAFull = modelConfig.PtrSWAFull
-		nUBatch = int64(modelConfig.ToKronkConfig().PrefillBatchSize())
+		kronkConfig = modelConfig.ToKronkConfig()
+		nUBatch = int64(kronkConfig.PrefillBatchSize())
 	}
 	swaFull := resolveSWAFull(req.SWAFull, configuredSWAFull)
 
 	cfg := vram.Config{
+		WeightLoading:     kronkConfig.VRAMWeightLoading(devices.List(devices.WithIncludeMemory(false))),
 		ComputeBackend:    devices.Backend(),
 		ContextWindow:     req.ContextWindow,
 		BytesPerElement:   req.BytesPerElement,

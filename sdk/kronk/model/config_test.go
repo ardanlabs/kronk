@@ -12,9 +12,42 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
+	"github.com/ardanlabs/kronk/sdk/kronk/vram"
+	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"go.yaml.in/yaml/v2"
 )
+
+func TestLazyReservationDeviceSelection(t *testing.T) {
+	devs := devices.Devices{MMapSupported: true, Devices: []devices.DeviceInfo{
+		{Name: "MTL0", Type: "gpu_metal", HardwareType: "GPU", MMapSupported: true},
+		{Name: "BLAS", Type: "unknown", HardwareType: "ACCEL"},
+		{Name: "CPU", Type: "cpu", HardwareType: "CPU", MMapSupported: true},
+	}}
+	for _, tt := range []struct {
+		name         string
+		selected     []string
+		wantResident int64
+	}{
+		{"automatic excludes BLAS", nil, 256 << 20},
+		{"selected Metal", []string{"MTL0"}, 256 << 20},
+		{"unknown selection is conservative", []string{"unknown"}, 5 << 30},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Config{LoadMode: LoadModeNone, Devices: tt.selected}
+			result := vram.Calculate(vram.Input{
+				WeightLoading:  cfg.VRAMWeightLoading(devs),
+				ModelSizeBytes: 6 << 30, BlockCount: 2, NUBatch: 8,
+				Weights:   &gguf.WeightBreakdown{InputBytes: 5 << 30},
+				LazyTable: vram.LazyTable{Bytes: 5 << 30, RowBytes: 512, RowsPerToken: 1},
+			})
+			if result.LazyResidentBytes != tt.wantResident {
+				t.Errorf("reserved table: got %d, want %d", result.LazyResidentBytes, tt.wantResident)
+			}
+		})
+	}
+}
 
 func TestMoEMode(t *testing.T) {
 	tests := []struct {

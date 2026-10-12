@@ -100,6 +100,7 @@ func (a *app) showCatalog(ctx context.Context, r *http.Request) web.Encoder {
 	}
 
 	cfg := vram.Config{
+		WeightLoading:     (kronkmodel.Config{}).VRAMWeightLoading(devices.List(devices.WithIncludeMemory(false))),
 		ComputeBackend:    devices.Backend(),
 		ContextWindow:     vram.ContextWindow128K,
 		BytesPerElement:   vram.BytesPerElementF16,

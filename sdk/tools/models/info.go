@@ -8,6 +8,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
+	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 )
 
 // ModelInfo represents the model's card information.
@@ -24,6 +25,7 @@ type ModelInfo struct {
 	Metadata       map[string]string
 	Weights        *gguf.WeightBreakdown `json:"-"` // Optional tensor accounting for local analysis.
 	vocabularySize int64                 // Output rows recovered from tensors when GGUF omits vocab_size.
+	lazyTable      vram.LazyTable        // Eligible table and shard isolation recovered from local descriptors.
 }
 
 // =============================================================================
@@ -77,6 +79,7 @@ func ModelInfoFromPath(id string, modelFiles []string, projFile string, mtpFile 
 
 	result := ModelInfoFromMetadata(id, metadata, totalSize, projFile != "", mtpFile != "")
 	var tensors []gguf.TensorInfo
+	var shards [][]gguf.TensorInfo
 
 	for _, mf := range modelFiles {
 		data, err := gguf.ReadHeaderBytes(mf)
@@ -92,9 +95,12 @@ func ModelInfoFromPath(id string, modelFiles []string, projFile string, mtpFile 
 		}
 
 		tensors = append(tensors, shardTensors...)
+		shards = append(shards, shardTensors)
 	}
 
-	blockCount := modelprofile.Resolve(metadata).Dimensions.BlockCount
+	profile := modelprofile.Resolve(metadata)
+	result.lazyTable = vram.LazyTableForShards(profile, shards)
+	blockCount := profile.Dimensions.BlockCount
 	if len(tensors) > 0 && blockCount > 0 {
 		wb := gguf.CategorizeWeights(tensors, blockCount)
 		result.Weights = &wb

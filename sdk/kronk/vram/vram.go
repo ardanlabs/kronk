@@ -51,28 +51,31 @@ const (
 // Config contains the user-provided parameters for VRAM calculation
 // that cannot be extracted from the model file.
 type Config struct {
-	ComputeBackend         string // Selected backend (e.g. "metal"); empty uses generic workspace rules.
-	ContextWindow          int64  // n_ctx - context window size (e.g., 8192, 131072)
-	BytesPerElement        int64  // Depends on cache type: q8_0=1, f16=2
-	TypeK                  int32  // Kronk GGML cache type ID (0 = use BytesPerElement).
-	TypeV                  int32  // Kronk GGML cache type ID (0 = use BytesPerElement).
-	Slots                  int64  // n_seq_max - number of concurrent sequences
-	NUBatch                int64  // Effective physical batch size.
-	GPULayers              int64  // Native offload count: output first, then blocks (0 = all, -1 = none).
-	ExpertLayersOnGPU      int64  // 0 = all experts on CPU.
-	MoECacheSize           int64  // GPU expert-cache budget in bytes per context; ignored for dense models.
-	KVCacheOnCPU           bool   // Move KV cache off the GPU (offload-kqv: false).
-	SWAFull                bool   // Size SWA layers against the full context window.
-	VTransposed            bool   // Size V using the model-wide transposed layout.
-	RecurrentStateCopies   int64  // State copies for separate-model or companion-MTP speculation.
-	EmbeddedMTPStateCopies int64  // State copies when the GGUF contains an embedded MTP layer.
-	ComputeContexts        int64  // Native contexts that reserve independent compute buffers.
-	OutputRows             int64  // Supported architectures' logits cap; 0 infers slots × current/rollback copies.
-	MTPContext             bool   // Size only the appended layers of an own-KV MTP context.
+	WeightLoading          WeightLoading // Native loading policy and verified mmap support.
+	ComputeBackend         string        // Selected backend (e.g. "metal"); empty uses generic workspace rules.
+	ContextWindow          int64         // n_ctx - context window size (e.g., 8192, 131072)
+	BytesPerElement        int64         // Depends on cache type: q8_0=1, f16=2
+	TypeK                  int32         // Kronk GGML cache type ID (0 = use BytesPerElement).
+	TypeV                  int32         // Kronk GGML cache type ID (0 = use BytesPerElement).
+	Slots                  int64         // n_seq_max - number of concurrent sequences
+	NUBatch                int64         // Effective physical batch size.
+	GPULayers              int64         // Native offload count: output first, then blocks (0 = all, -1 = none).
+	ExpertLayersOnGPU      int64         // 0 = all experts on CPU.
+	MoECacheSize           int64         // GPU expert-cache budget in bytes per context; ignored for dense models.
+	KVCacheOnCPU           bool          // Move KV cache off the GPU (offload-kqv: false).
+	SWAFull                bool          // Size SWA layers against the full context window.
+	VTransposed            bool          // Size V using the model-wide transposed layout.
+	RecurrentStateCopies   int64         // State copies for separate-model or companion-MTP speculation.
+	EmbeddedMTPStateCopies int64         // State copies when the GGUF contains an embedded MTP layer.
+	ComputeContexts        int64         // Native contexts that reserve independent compute buffers.
+	OutputRows             int64         // Supported architectures' logits cap; 0 infers slots × current/rollback copies.
+	MTPContext             bool          // Size only the appended layers of an own-KV MTP context.
 }
 
 // Input contains all parameters needed to calculate VRAM requirements.
 type Input struct {
+	WeightLoading         WeightLoading            // Native loading policy and verified mmap support.
+	LazyTable             LazyTable                // Optional eligible encoded embedding table.
 	ComputeBackend        string                   // Selected backend; empty uses generic workspace rules.
 	ComputeKind           modelprofile.ComputeKind // Normalized workspace allocation family.
 	VocabularySize        int64                    // Vocabulary rows in the output projection.
@@ -131,6 +134,8 @@ type Result struct {
 	Weights            *gguf.WeightBreakdown
 	ModelWeightsGPU    int64
 	ModelWeightsCPU    int64
+	LazyTableBytes     int64 // Encoded table size; included in the original model-file size.
+	LazyResidentBytes  int64 // Reserved table working set, or full size when laziness is ineffective/unknown.
 	ComputeBufferEst   int64
 	ComputeBufferCPU   int64         // Host workspaces that coexist with GPU compute buffers.
 	ComputeMemory      ComputeMemory // Workspace, runtime allowance, and margin across all compute contexts.
@@ -166,6 +171,8 @@ func Calculate(input Input) Result {
 	gpuLayers := max(offloadLayers-1, 0)
 
 	alwaysActiveGPU, alwaysActiveCPU, expertsGPU, expertsCPU := calculateModelResidency(input, offloadLayers)
+	lazyResident := lazyResidentBytes(input)
+	alwaysActiveCPU -= input.LazyTable.Bytes - lazyResident
 	modelWeightsGPU := alwaysActiveGPU + expertsGPU
 	modelWeightsCPU := alwaysActiveCPU + expertsCPU
 
@@ -209,6 +216,8 @@ func Calculate(input Input) Result {
 		Weights:              input.Weights,
 		ModelWeightsGPU:      modelWeightsGPU,
 		ModelWeightsCPU:      modelWeightsCPU,
+		LazyTableBytes:       input.LazyTable.Bytes,
+		LazyResidentBytes:    lazyResident,
 		ComputeBufferEst:     computeBufferEst,
 		ComputeBufferCPU:     computeBufferCPU,
 		ComputeMemory:        compute,
@@ -223,8 +232,8 @@ func Calculate(input Input) Result {
 	}
 }
 
-// UnifiedFootprint returns the bytes a model occupies once every page of
-// the GGUF is resident in unified memory. This is the value the resman
+// UnifiedFootprint returns the model's estimated resident unified-memory
+// requirement. This is the value the resman
 // reserves and the BUI displays on Apple Silicon (and any future
 // unified-memory platform), where the MoE-aware GPU/CPU split that
 // Calculate produces does not correspond to a real physical separation.
@@ -232,8 +241,9 @@ func Calculate(input Input) Result {
 // The formula intentionally uses the raw model bytes (Input.ModelSizeBytes)
 // rather than ModelWeightsGPU+ModelWeightsCPU so a model whose GGUF
 // analyzer is missing the MoE expert breakdown still reserves the full
-// file. Cache/state memory, GPU and CPU compute workspaces, and the expert
-// cache round out the footprint.
+// file. Only a verified effective lazy table replaces its full encoded size
+// with a row working-set allowance. Cache/state memory, GPU and CPU compute
+// workspaces, and the expert cache round out the footprint.
 func (r Result) UnifiedFootprint() int64 {
-	return r.Input.ModelSizeBytes + r.SlotMemory + r.ComputeBufferEst + r.ComputeBufferCPU + r.MoECacheBytes
+	return r.Input.ModelSizeBytes - (r.LazyTableBytes - r.LazyResidentBytes) + r.SlotMemory + r.ComputeBufferEst + r.ComputeBufferCPU + r.MoECacheBytes
 }

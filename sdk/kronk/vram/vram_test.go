@@ -1,6 +1,7 @@
 package vram
 
 import (
+	"os"
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
@@ -500,5 +501,98 @@ func TestAutoFitIncludesOutputLayer(t *testing.T) {
 	layers, _, result, fit := AutoFit(Input{ModelSizeBytes: 100, BlockCount: 4}, FitConstraints{CombinedFreeBytes: 1 << 30, SystemRAMBytes: 1 << 30})
 	if !fit || layers != 5 || result.ModelWeightsCPU != 0 {
 		t.Fatalf("full offload: got fit=%t layers=%d CPU=%d, want true/5/0", fit, layers, result.ModelWeightsCPU)
+	}
+}
+
+func TestCalculateLazyWeightResidency(t *testing.T) {
+	const gib int64 = 1 << 30
+	for _, tt := range []struct {
+		name, mode, load              string
+		tableBytes                    int64
+		platform, auto, isolated, cpu bool
+		wantResident                  int64
+	}{
+		{"off", "off", "none", 5 * gib, true, true, false, false, 5 * gib},
+		{"auto exactly threshold", "auto", "none", 4 * gib, true, true, false, false, 4 * gib},
+		{"auto above threshold", "auto", "none", 4*gib + 1, true, true, false, false, gib / 4},
+		{"auto unknown devices", "auto", "none", 5 * gib, true, false, false, false, 5 * gib},
+		{"on bypasses device gate", "on", "none", gib, true, false, false, false, gib / 4},
+		{"on unsupported platform", "on", "none", gib, false, true, false, false, gib},
+		{"Metal overlapping mmap", "on", "mmap", gib, true, true, false, false, gib},
+		{"Metal overlapping auto", "on", "auto", gib, true, true, false, false, gib},
+		{"Metal isolated mmap", "on", "mmap", gib, true, true, true, false, gib / 4},
+		{"CPU only mmap", "on", "mmap", gib, true, true, false, true, gib / 4},
+		{"mlock", "on", "mlock", gib, true, true, true, false, gib},
+		{"mmap mlock", "on", "mmap+mlock", gib, true, true, true, false, gib},
+		{"small table capped", "on", "none", gib / 8, true, true, false, false, gib / 8},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			input := Input{
+				ModelSizeBytes: tt.tableBytes + 2*gib, BlockCount: 2,
+				ComputeBackend: "metal", Slots: 2, NUBatch: 8,
+				Weights:       &gguf.WeightBreakdown{InputBytes: tt.tableBytes, OutputBytes: gib},
+				LazyTable:     LazyTable{Bytes: tt.tableBytes, RowBytes: 1024, RowsPerToken: 1, Isolated: tt.isolated},
+				WeightLoading: WeightLoading{LazyMode: tt.mode, LoadMode: tt.load, MMapSupported: tt.platform, AutoMMapSupported: tt.auto},
+			}
+			if tt.cpu {
+				input.GPULayers = -1
+			}
+			baselineInput := input
+			baselineInput.WeightLoading.LazyMode = "off"
+			baseline := Calculate(baselineInput)
+			result := Calculate(input)
+			wantSaving := tt.tableBytes - tt.wantResident
+			if result.LazyTableBytes != tt.tableBytes || result.LazyResidentBytes != tt.wantResident || baseline.UnifiedFootprint()-result.UnifiedFootprint() != wantSaving || baseline.TotalSystemRAMEst-result.TotalSystemRAMEst != wantSaving {
+				t.Fatalf("lazy table/resident/unified saving/host saving: got %d/%d/%d/%d, want %d/%d/%d/%d", result.LazyTableBytes, result.LazyResidentBytes, baseline.UnifiedFootprint()-result.UnifiedFootprint(), baseline.TotalSystemRAMEst-result.TotalSystemRAMEst, tt.tableBytes, tt.wantResident, wantSaving, wantSaving)
+			}
+			if result.TotalVRAM != baseline.TotalVRAM || result.SlotMemory != baseline.SlotMemory || result.ComputeMemory != baseline.ComputeMemory {
+				t.Fatal("lazy weight residency changed GPU, slot, or compute memory")
+			}
+			if wantSaving > 0 {
+				constraints := FitConstraints{UnifiedMemory: true, SystemRAMBytes: result.UnifiedFootprint() + wantSaving/2, Threshold: 1}
+				if !AssessFit(result, constraints).Fits || AssessFit(baseline, constraints).Fits {
+					t.Fatal("unified fitting did not use the lazy working set")
+				}
+				_, _, fitted, fits := AutoFit(input, constraints)
+				wantFit, wantFittedResident := true, tt.wantResident
+				if tt.cpu {
+					// Unified auto-fit chooses GPU offload, reintroducing the
+					// overlapping Metal mapping. Re-evaluate, do not reuse savings.
+					wantFit, wantFittedResident = false, tt.tableBytes
+				}
+				if fits != wantFit || fitted.LazyResidentBytes != wantFittedResident {
+					t.Fatalf("auto-fit lazy resident: got fit=%t bytes=%d, want %t/%d", fits, fitted.LazyResidentBytes, wantFit, wantFittedResident)
+				}
+			}
+		})
+	}
+}
+
+func TestCalculateLazyRowWorkingSet(t *testing.T) {
+	page := int64(os.Getpagesize())
+	input := Input{
+		ModelSizeBytes: 10 << 30, BlockCount: 2, NUBatch: 8193, Slots: 1,
+		Weights:       &gguf.WeightBreakdown{InputBytes: 8 << 30},
+		LazyTable:     LazyTable{Bytes: 8 << 30, RowBytes: 3*page + 1, RowsPerToken: 3},
+		WeightLoading: WeightLoading{LazyMode: "on", LoadMode: "none", MMapSupported: true},
+	}
+	// A row spanning three pages plus one byte can touch five pages at
+	// an arbitrary offset. Three gathers/token, two batches of 8193 tokens.
+	want := int64(245790) * page
+	result := Calculate(input)
+	if result.LazyResidentBytes != want {
+		t.Fatalf("page-rounded row working set: got %d, want %d", result.LazyResidentBytes, want)
+	}
+	input.Slots = 2
+	if got := Calculate(input).LazyResidentBytes; got != want {
+		t.Errorf("slots sharing one physical batch: got %d, want %d", got, want)
+	}
+	input.ComputeContexts = 2
+	if got := Calculate(input).LazyResidentBytes; got != min(8<<30, 2*want) {
+		t.Errorf("two native contexts: got %d, want %d", got, min(8<<30, 2*want))
+	}
+	input.NUBatch = 1 << 20
+	if got := Calculate(input).LazyResidentBytes; got != 8<<30 {
+		t.Errorf("table cap: got %d, want %d", got, int64(8<<30))
 	}
 }

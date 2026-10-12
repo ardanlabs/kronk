@@ -24,14 +24,15 @@ func Ready() bool {
 
 // DeviceInfo provides information about a single compute device.
 type DeviceInfo struct {
-	Index        int    `json:"index"`
-	Name         string `json:"name"`
-	Description  string `json:"description"`
-	Type         string `json:"type"`
-	HardwareType string `json:"hardware_type"`
-	Backend      string `json:"backend"`
-	FreeBytes    uint64 `json:"free_bytes"`
-	TotalBytes   uint64 `json:"total_bytes"`
+	Index         int    `json:"index"`
+	Name          string `json:"name"`
+	Description   string `json:"description"`
+	Type          string `json:"type"`
+	HardwareType  string `json:"hardware_type"`
+	Backend       string `json:"backend"`
+	FreeBytes     uint64 `json:"free_bytes"`
+	TotalBytes    uint64 `json:"total_bytes"`
+	MMapSupported bool   `json:"mmap_supported"` // Verified CPU/Metal capability; unknown backends remain false.
 }
 
 // Devices returns information about available compute devices.
@@ -43,6 +44,7 @@ type Devices struct {
 	MaxDevices         uint64       `json:"max_devices"`
 	SystemRAMBytes     uint64       `json:"system_ram_bytes"`
 	UnifiedMemory      bool         `json:"unified_memory"`
+	MMapSupported      bool         `json:"mmap_supported"` // Native platform support, independent of device capability.
 }
 
 // Option controls device enumeration behavior.
@@ -105,7 +107,7 @@ func List(opts ...Option) Devices {
 
 	count := llama.GGMLBackendDeviceCount()
 
-	out := Devices{Devices: make([]DeviceInfo, 0, count)}
+	out := Devices{Devices: make([]DeviceInfo, 0, count), MMapSupported: llama.SupportsMmap()}
 	var unifiedGPUs, discreteGPUs int
 
 	for i := range count {
@@ -127,12 +129,13 @@ func List(opts ...Option) Devices {
 		}
 
 		di := DeviceInfo{
-			Index:        int(i),
-			Name:         name,
-			Description:  llama.GGMLBackendDeviceDescription(dev),
-			Type:         devType,
-			HardwareType: hardwareType.String(),
-			Backend:      backend,
+			Index:         int(i),
+			Name:          name,
+			Description:   llama.GGMLBackendDeviceDescription(dev),
+			Type:          devType,
+			HardwareType:  hardwareType.String(),
+			Backend:       backend,
+			MMapSupported: devType == "cpu" || devType == "gpu_metal",
 		}
 
 		if cfg.includeMemory {

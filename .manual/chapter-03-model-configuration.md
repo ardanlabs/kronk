@@ -362,7 +362,7 @@ whole-model lazy loading; models without eligible tensors are unaffected.
 | ----- | -------- |
 | `auto` | Lazy-read eligible tensors larger than 4 GiB when all selected devices support mmap; this is the default |
 | `off` | Read eligible tensors up front like ordinary weights |
-| `on` | Request lazy reading for eligible tensors regardless of size; requires mmap-capable devices |
+| `on` | Request lazy reading for eligible tensors regardless of size; requires platform mmap support |
 
 ```yaml
 some-provider/some-model:
@@ -379,9 +379,23 @@ inference speed. Verify residency and performance with the actual model.
 
 The setting applies to the target and any separate or companion draft model.
 The Go SDK equivalent is `model.WithLazyMode(model.LazyModeOn)`, with
-`LazyModeAuto` and `LazyModeOff` as the other choices. Kronk's calculator and
-resource manager still reserve the full model-file size; this setting alone
-does not lower admission reservations or the resource-screen estimate.
+`LazyModeAuto` and `LazyModeOff` as the other choices.
+
+Kronk's calculator replaces an effective lazy table's full encoded size with a
+page-rounded working-set estimate: two physical batches per native context,
+with at least 256 MiB reserved for accessed pages, capped at the table size.
+Gemma4 gathers one all-layer row per token; Qwen4Exp gathers multiple n-gram
+head rows. The table remains host memory, not additional GPU workspace.
+The same result feeds fitting, admission reservations, and the resource screen.
+
+Full-table accounting remains when lazy reading is off or uncertain, when
+`auto` does not meet its size/device requirements, with mlock, or when Metal
+mmap may overlap a table that is not alone in its shard. The current device
+capability check verifies CPU and Metal; other backends conservatively retain
+the full table in `auto` mode. Explicit `on` only needs platform mmap support.
+This is not a hard residency cap: clean mapped pages may accumulate or be
+reclaimed by the operating system. Validate actual memory and latency under
+representative prompts before relying on the additional admission headroom.
 
 #### KV cache and operations
 

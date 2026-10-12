@@ -134,7 +134,8 @@ type Profile struct {
 	FileType               int64
 	HasChatTemplate        bool
 	SupportsTensorParallel bool
-	TiedOutputFallback     bool // Loader reuses token embeddings when output.weight is absent.
+	TiedOutputFallback     bool  // Loader reuses token embeddings when output.weight is absent.
+	LazyRowsPerToken       int64 // Row gathers from the eligible per-layer embedding table; 0 = unsupported.
 
 	issues []error
 }

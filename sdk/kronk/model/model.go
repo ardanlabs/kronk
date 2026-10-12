@@ -10,6 +10,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -1598,6 +1599,7 @@ func calculateVRAMDiag(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory in
 	}
 
 	vramCfg := vram.Config{
+		WeightLoading:          cfg.VRAMWeightLoading(devices.List(devices.WithIncludeMemory(false))),
 		ComputeBackend:         devices.Backend(),
 		ContextWindow:          int64(cfg.ContextWindow()),
 		BytesPerElement:        int64(gguf.MaxBytesPerElement(int32(cfg.CacheTypeK), int32(cfg.CacheTypeV))),
@@ -1633,6 +1635,42 @@ func calculateVRAMDiag(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory in
 	)
 
 	return result.TotalVRAM, result.SlotMemory, diag
+}
+
+// VRAMWeightLoading returns the native loading facts shared by planning,
+// diagnostics, and auto-tuning. yzma does not expose device mmap capabilities;
+// only CPU and Metal are verified here. Other backends conservatively retain
+// the full table in auto mode, but explicit on only needs platform support.
+func (cfg Config) VRAMWeightLoading(devs devices.Devices) vram.WeightLoading {
+	loading := vram.WeightLoading{LazyMode: cfg.LazyMode.String(), LoadMode: cfg.LoadMode.String()}
+	loading.MMapSupported = devs.MMapSupported
+	loading.AutoMMapSupported = true
+	var selected int
+	for _, device := range devs.Devices {
+		if len(cfg.Devices) == 0 && (device.Type == "cpu" || device.HardwareType == "ACCEL") {
+			// Native automatic model selection excludes CPU/ACCEL entries;
+			// BLAS must not disable lazy-auto on an otherwise Metal host.
+			continue
+		}
+		if len(cfg.Devices) > 0 && !slices.Contains(cfg.Devices, device.Name) {
+			continue
+		}
+		selected++
+		loading.Metal = loading.Metal || device.Type == "gpu_metal"
+		if !device.MMapSupported {
+			loading.AutoMMapSupported = false
+		}
+	}
+	if len(cfg.Devices) > 0 && selected != len(cfg.Devices) {
+		// Unresolved names (including backend aliases) cannot prove that
+		// Metal mapping overlap is absent.
+		loading.Metal = true
+		loading.AutoMMapSupported = false
+	}
+	if cfg.PtrSplitMode != nil && *cfg.PtrSplitMode == SplitModeTensor {
+		loading.AutoMMapSupported = false
+	}
+	return loading
 }
 
 func countTrue(values []bool) int {

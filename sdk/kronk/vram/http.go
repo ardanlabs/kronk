@@ -29,7 +29,7 @@ func FromHuggingFace(ctx context.Context, modelURL string, cfg Config) (Result, 
 		return Result{}, fmt.Errorf("from-huggingface: failed to fetch GGUF metadata: %w", err)
 	}
 
-	return buildFromMetadata(metadata, tensors, fileSize, cfg)
+	return buildFromMetadata(metadata, [][]gguf.TensorInfo{tensors}, fileSize, cfg)
 }
 
 // fromFolder handles VRAM calculation for split models hosted in a
@@ -64,6 +64,7 @@ func FromHuggingFaceFiles(ctx context.Context, modelURLs []string, cfg Config) (
 	}
 
 	totalSize := firstSize
+	shards := [][]gguf.TensorInfo{tensors}
 	if len(normalized) > 1 {
 		for i := 1; i < len(normalized); i++ {
 			_, shardTensors, splitSize, err := fetchHeaderAndTensors(ctx, normalized[i])
@@ -71,11 +72,11 @@ func FromHuggingFaceFiles(ctx context.Context, modelURLs []string, cfg Config) (
 				return Result{}, fmt.Errorf("from-huggingface-files: failed to determine size for %s: %w", normalized[i], err)
 			}
 			totalSize += splitSize
-			tensors = append(tensors, shardTensors...)
+			shards = append(shards, shardTensors)
 		}
 	}
 
-	return buildFromMetadata(metadata, tensors, totalSize, cfg)
+	return buildFromMetadata(metadata, shards, totalSize, cfg)
 }
 
 // =============================================================================

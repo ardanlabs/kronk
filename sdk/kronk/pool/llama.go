@@ -136,6 +136,7 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 	}
 
 	vramCfg := vram.Config{
+		WeightLoading:          cfg.VRAMWeightLoading(devices.List(devices.WithIncludeMemory(false))),
 		ComputeBackend:         devices.Backend(),
 		ContextWindow:          ctxWin,
 		BytesPerElement:        bpe,
@@ -207,6 +208,8 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 		"predicted-total", humanBytes(planReq.VRAMBytes+planReq.RAMBytes),
 		"predicted-vram", humanBytes(result.TotalVRAM),
 		"predicted-system", humanBytes(result.TotalSystemRAMEst),
+		"lazy-table", humanBytes(result.LazyTableBytes),
+		"lazy-resident", humanBytes(result.LazyResidentBytes),
 		"context-window", ctxWin,
 		"slots", nseq,
 		"bytes-per-element", bpe,
@@ -241,6 +244,12 @@ func (l *Llama) additionalMemory(plan *resman.PlanRequest, cfg model.Config, tar
 		}
 		if target.Input.ComputeKind != modelprofile.ComputeGeneric {
 			fileCfg := targetCfg
+			placementCfg := cfg
+			placementCfg.Devices = names
+			fileCfg.WeightLoading = placementCfg.VRAMWeightLoading(devices.List(devices.WithIncludeMemory(false)))
+			if onCPU {
+				fileCfg.GPULayers = -1
+			}
 			fileCfg.ComputeContexts = 1
 			fileCfg.RecurrentStateCopies = 1
 			fileCfg.EmbeddedMTPStateCopies = 1
@@ -271,6 +280,10 @@ func (l *Llama) additionalMemory(plan *resman.PlanRequest, cfg model.Config, tar
 	}
 
 	draftCfg := targetCfg
+	draftPlacementCfg := cfg
+	draftPlacementCfg.Devices = cfg.PtrDraftModel.Devices
+	draftPlacementCfg.PtrSplitMode = nil // Separate drafts use native layer splitting.
+	draftCfg.WeightLoading = draftPlacementCfg.VRAMWeightLoading(devices.List(devices.WithIncludeMemory(false)))
 	draftCfg.MoECacheSize = 0
 	draftCfg.Slots = 1
 	draftCfg.GPULayers = int64(cfg.PtrDraftModel.NGpuLayers())

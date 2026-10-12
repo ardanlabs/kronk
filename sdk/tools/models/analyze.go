@@ -281,6 +281,8 @@ func analyzeModelWithConfigAndBudget(info ModelInfo, devs devices.Devices, cfg M
 	runtimeCfg := cfg.ToKronkConfig()
 
 	profileInput := profileInput{
+		weightLoading:  runtimeCfg.VRAMWeightLoading(devs),
+		lazyTable:      info.lazyTable,
 		computeKind:    profile.ComputeKind,
 		vocabSize:      vocabSize,
 		headCount:      headCount,
@@ -379,6 +381,8 @@ func normalizeAnalysisConfig(cfg ModelConfig, trainingCtx int64) ModelConfig {
 // Profile building
 
 type profileInput struct {
+	weightLoading  vram.WeightLoading
+	lazyTable      vram.LazyTable
 	computeKind    modelprofile.ComputeKind
 	computeBackend string
 	vocabSize      int64
@@ -600,6 +604,7 @@ func analysisDevices(devs devices.Devices, selected []string) devices.Devices {
 		SystemRAMBytes: devs.SystemRAMBytes,
 		MaxDevices:     devs.MaxDevices,
 		UnifiedMemory:  devs.UnifiedMemory,
+		MMapSupported:  devs.MMapSupported,
 	}
 	for _, device := range devs.Devices {
 		if _, ok := wanted[device.Name]; !ok {
@@ -658,6 +663,8 @@ func calculateProfile(p profileInput, contextWindow, slots int64, cache cacheRec
 	}
 
 	return vram.Calculate(vram.Input{
+		WeightLoading:         p.weightLoading,
+		LazyTable:             p.lazyTable,
 		ComputeKind:           p.computeKind,
 		ComputeBackend:        p.computeBackend,
 		VocabularySize:        p.vocabSize,

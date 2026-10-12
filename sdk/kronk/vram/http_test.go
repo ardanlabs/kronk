@@ -82,6 +82,102 @@ func TestFromFilesOutputPlacement(t *testing.T) {
 	}
 }
 
+func TestFromFilesLazyTables(t *testing.T) {
+	for _, arch := range []string{"gemma4", "qwen4exp", "gemma4-assistant", "llama"} {
+		for _, isolated := range []bool{false, true} {
+			t.Run(arch+" isolated="+map[bool]string{false: "false", true: "true"}[isolated], func(t *testing.T) {
+				var paths []string
+				groups := [][]string{{"per_layer_token_embd.weight", "token_embd.weight"}}
+				if isolated {
+					groups = [][]string{{"token_embd.weight"}, {"per_layer_token_embd.weight"}}
+				}
+				for _, names := range groups {
+					var data bytes.Buffer
+					write := func(value any) {
+						t.Helper()
+						if err := binary.Write(&data, binary.LittleEndian, value); err != nil {
+							t.Fatal(err)
+						}
+					}
+					writeString := func(value string) {
+						write(uint64(len(value)))
+						if _, err := data.WriteString(value); err != nil {
+							t.Fatal(err)
+						}
+					}
+					write(gguf.Magic)
+					write(uint32(3))
+					write(uint64(len(names)))
+					write(uint64(9))
+					writeString("general.architecture")
+					write(gguf.MetadataValueTypeString)
+					writeString(arch)
+					for key, value := range map[string]uint32{"block_count": 2, "attention.head_count": 1, "attention.key_length": 8, "attention.value_length": 8, "embedding_length_per_layer_input": 512, "ple.ngram_size": 4, "ple.heads_per_ngram": 2} {
+						writeString(arch + "." + key)
+						write(gguf.MetadataValueTypeUInt32)
+						write(value)
+					}
+					writeString(arch + ".ple.layers")
+					write(gguf.MetadataValueTypeArray)
+					write(gguf.MetadataValueTypeUInt32)
+					write(uint64(1))
+					write(uint32(0))
+					var offset uint64
+					for _, name := range names {
+						writeString(name)
+						write(uint32(2))
+						write(uint64(512))
+						rows := uint64(8)
+						if name == "per_layer_token_embd.weight" {
+							rows = 1 << 22
+						}
+						write(rows)
+						write(uint32(8)) // Q8_0: each 512-element row is 544 bytes.
+						write(offset)
+						offset += 544 * rows
+					}
+					path := filepath.Join(t.TempDir(), "model.gguf")
+					if err := os.WriteFile(path, data.Bytes(), 0600); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Truncate(path, int64(offset)+(1<<20)); err != nil {
+						t.Fatal(err)
+					}
+					paths = append(paths, path)
+				}
+				cfg := Config{ComputeBackend: "metal", NUBatch: 8193, WeightLoading: WeightLoading{LazyMode: "on", LoadMode: "none", MMapSupported: true}}
+				result, err := FromFiles(paths, cfg)
+				if err != nil {
+					t.Fatal(err)
+				}
+				const tableBytes int64 = 544 * (1 << 22)
+				wantTable, wantResident := tableBytes, max(256<<20, 32772*int64(os.Getpagesize()))
+				switch arch {
+				case "qwen4exp":
+					// Six hashed gathers/token, each up to two pages, two batches.
+					wantResident = min(tableBytes, max(256<<20, 196632*int64(os.Getpagesize())))
+				case "gemma4-assistant", "llama":
+					wantTable, wantResident = 0, 0
+				}
+				if result.LazyTableBytes != wantTable || result.LazyResidentBytes != wantResident {
+					t.Fatalf("encoded/resident table: got %d/%d, want %d/%d", result.LazyTableBytes, result.LazyResidentBytes, wantTable, wantResident)
+				}
+				cfg.WeightLoading.LoadMode = "mmap"
+				mapped, err := FromFiles(paths, cfg)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !isolated {
+					wantResident = wantTable
+				}
+				if mapped.LazyResidentBytes != wantResident {
+					t.Errorf("Metal mmap resident table: got %d, want %d", mapped.LazyResidentBytes, wantResident)
+				}
+			})
+		}
+	}
+}
+
 func TestCalculateSWAFull(t *testing.T) {
 	input := Input{
 		ContextWindow:       1024,

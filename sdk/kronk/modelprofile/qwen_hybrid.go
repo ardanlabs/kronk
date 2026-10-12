@@ -33,6 +33,12 @@ func (qwenHybridAdapter) Apply(metadata metadata, profile *Profile) error {
 	}
 	a := &profile.Attention
 	if arch == "qwen4exp" {
+		pleLayers, _ := gguf.ParseInt64OrArray(metadata.values, arch+".ple.layers")
+		ngramSize := parseInt64(metadata, arch+".ple.ngram_size")
+		heads := parseInt64(metadata, arch+".ple.heads_per_ngram")
+		if len(pleLayers) == 1 && ngramSize > 1 && heads > 0 && parseInt64(metadata, arch+".embedding_length_per_layer_input") > 0 {
+			profile.LazyRowsPerToken = (ngramSize - 1) * heads
+		}
 		// b11513 stores one raw and one pooled key per cell; query head
 		// count does not multiply the persistent indexer cache.
 		keyLength := parseInt64(metadata, arch+".attention.indexer.key_length")

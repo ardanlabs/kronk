@@ -640,7 +640,7 @@ malina-models:
               </tr>
               <tr>
                 <td><code>on</code></td>
-                <td>Request lazy reading for eligible tensors regardless of size; requires mmap-capable devices</td>
+                <td>Request lazy reading for eligible tensors regardless of size; requires platform mmap support</td>
               </tr>
             </tbody>
           </table>
@@ -648,7 +648,9 @@ malina-models:
   lazy-mode: on
   load-mode: none`}</code></pre>
           <p>On Metal, mmap can bring the entire table into RAM through an overlapping GPU mapping even when the log says <code>lazy read enabled</code>. Use <code>load-mode: none</code> to avoid that overlap unless the table is isolated in its own shard. Eligible lazy tensors remain file-mapped even with <code>load-mode: none</code>; the other weights use ordinary loading. Accessed pages may remain cached, and disk reads can reduce inference speed. Verify residency and performance with the actual model.</p>
-          <p>The setting applies to the target and any separate or companion draft model. The Go SDK equivalent is <code>model.WithLazyMode(model.LazyModeOn)</code>, with <code>LazyModeAuto</code> and <code>LazyModeOff</code> as the other choices. Kronk's calculator and resource manager still reserve the full model-file size; this setting alone does not lower admission reservations or the resource-screen estimate.</p>
+          <p>The setting applies to the target and any separate or companion draft model. The Go SDK equivalent is <code>model.WithLazyMode(model.LazyModeOn)</code>, with <code>LazyModeAuto</code> and <code>LazyModeOff</code> as the other choices.</p>
+          <p>Kronk's calculator replaces an effective lazy table's full encoded size with a page-rounded working-set estimate: two physical batches per native context, with at least 256 MiB reserved for accessed pages, capped at the table size. Gemma4 gathers one all-layer row per token; Qwen4Exp gathers multiple n-gram head rows. The table remains host memory, not additional GPU workspace. The same result feeds fitting, admission reservations, and the resource screen.</p>
+          <p>Full-table accounting remains when lazy reading is off or uncertain, when <code>auto</code> does not meet its size/device requirements, with mlock, or when Metal mmap may overlap a table that is not alone in its shard. The current device capability check verifies CPU and Metal; other backends conservatively retain the full table in <code>auto</code> mode. Explicit <code>on</code> only needs platform mmap support. This is not a hard residency cap: clean mapped pages may accumulate or be reclaimed by the operating system. Validate actual memory and latency under representative prompts before relying on the additional admission headroom.</p>
           <h4 id="kv-cache-and-operations">KV cache and operations</h4>
           <p>The KV cache and host tensor operations are offloaded to the GPU by default:</p>
           <pre className="code-block"><code className="language-yaml">{`some-provider/some-model:

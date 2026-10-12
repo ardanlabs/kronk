@@ -23,7 +23,7 @@ func FromFiles(paths []string, cfg Config) (Result, error) {
 
 	var totalSize int64
 	var metadata map[string]string
-	var tensors []gguf.TensorInfo
+	var shards [][]gguf.TensorInfo
 	for _, p := range paths {
 		info, err := os.Stat(p)
 		if err != nil {
@@ -41,8 +41,8 @@ func FromFiles(paths []string, cfg Config) (Result, error) {
 		if metadata == nil {
 			metadata = md
 		}
-		tensors = append(tensors, shardTensors...)
+		shards = append(shards, shardTensors)
 	}
 
-	return buildFromMetadata(metadata, tensors, totalSize, cfg)
+	return buildFromMetadata(metadata, shards, totalSize, cfg)
 }

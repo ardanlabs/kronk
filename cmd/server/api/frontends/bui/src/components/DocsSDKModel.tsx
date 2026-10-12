@@ -452,7 +452,7 @@ export default function DocsSDKModel() {
               <p className="doc-description">InsecureLogging enables logging of potentially sensitive data such as message content. This should only be enabled for debugging purposes in non-production environments.</p>
               <p className="doc-description">JinjaFile is the path to the jinja file. This is not required and can be used if you want to override the templated provided by the model metadata.</p>
               <p className="doc-description">JinjaScript is an in-memory jinja template override. It takes precedence over JinjaFile and is intended for request-scoped model configurations.</p>
-              <p className="doc-description">LazyMode controls on-demand reading of tensors marked eligible by llama.cpp. The default is LazyModeAuto. It applies to target and draft models and does not change the calculator's conservative full-file memory reservation. On Metal, mmap may bring an eligible table into RAM despite lazy reading; LoadModeNone can avoid that overlap.</p>
+              <p className="doc-description">LazyMode controls on-demand reading of tensors marked eligible by llama.cpp. The default is LazyModeAuto. It applies to target and draft models. Effective lazy tables use a working-set allowance in the calculator's reservation. On Metal, mmap may bring an eligible table into RAM despite lazy reading; LoadModeNone can avoid that overlap.</p>
               <p className="doc-description">LoadMode controls how model weights are loaded. The default is LoadModeAuto, which uses mmap when every selected device supports it and otherwise uses ordinary loading. LoadModeNone disables mmap, which can improve tensor placement on multi-socket NUMA systems running MoE models with CPU experts. LoadModeMLock requests resident pages without forcing mmap, LoadModeMMapMLock combines mmap and mlock, and LoadModeDirectIO bypasses the page cache where the platform and filesystem support it.</p>
               <p className="doc-description">Log is the logger to use for model operations.</p>
               <p className="doc-description">MainGPU is the index of the GPU to use as the primary device when SplitMode is SplitModeNone. When nil, the default GPU (usually index 0) is used.</p>
@@ -1550,6 +1550,14 @@ export default function DocsSDKModel() {
               </pre>
             </div>
 
+            <div className="doc-section" id="method-config-vramweightloading">
+              <h4>Config.VRAMWeightLoading</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) VRAMWeightLoading(devs devices.Devices) vram.WeightLoading</code>
+              </pre>
+              <p className="doc-description">VRAMWeightLoading returns the native loading facts shared by planning, diagnostics, and auto-tuning. yzma does not expose device mmap capabilities; only CPU and Metal are verified here. Other backends conservatively retain the full table in auto mode, but explicit on only needs platform support.</p>
+            </div>
+
             <div className="doc-section" id="method-config-yarnattnfactor">
               <h4>Config.YarnAttnFactor</h4>
               <pre className="code-block">
@@ -2625,6 +2633,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-config-swafull">Config.SWAFull</a></li>
                 <li><a href="#method-config-speculationmode">Config.SpeculationMode</a></li>
                 <li><a href="#method-config-string">Config.String</a></li>
+                <li><a href="#method-config-vramweightloading">Config.VRAMWeightLoading</a></li>
                 <li><a href="#method-config-yarnattnfactor">Config.YarnAttnFactor</a></li>
                 <li><a href="#method-config-yarnbetafast">Config.YarnBetaFast</a></li>
                 <li><a href="#method-config-yarnbetaslow">Config.YarnBetaSlow</a></li>

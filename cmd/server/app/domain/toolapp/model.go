@@ -1555,6 +1555,7 @@ func vramConfigFromRMC(rmc models.ModelConfig) vram.Config {
 	kronkConfig := rmc.ToKronkConfig()
 
 	return vram.Config{
+		WeightLoading:     kronkConfig.VRAMWeightLoading(devices.List(devices.WithIncludeMemory(false))),
 		ComputeBackend:    devices.Backend(),
 		ContextWindow:     contextWindow,
 		BytesPerElement:   bpe,
