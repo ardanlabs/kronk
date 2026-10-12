@@ -300,7 +300,6 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	cfg = adjustConfig(cfg, mdl)
 	prefillChunk := cfg.PrefillBatchSize()
 	modelInfo := toModelInfo(cfg, mdl)
-	cfg = cfg.ResolveImageBatchTokenCapacity(modelInfo.profile.Architecture)
 	cfg.DecisionProtocol = modelInfo.decisionProtocol
 
 	if cfg.MoECacheSize() > 0 {
@@ -334,6 +333,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		"configured-prefill-batch-size", configuredPrefillBatchSize,
 		"prefill-batch-size", prefillChunk,
 		"image-batch-token-capacity", cfg.ImageBatchTokenCapacity(),
+		"image-token-budget", cfg.ImageTokenBudget(),
 		"nseq-max", cfg.NSeqMax(),
 		"generation-rows-per-slot", generationRowsPerSlot,
 		"generation-reserve", generationReserve,
@@ -1795,6 +1795,9 @@ func humanBytes(n int64) string {
 // model configuration.
 func mtmdContextParams(cfg Config, device llama.GGMLBackendDevice) mtmd.ContextParamsType {
 	params := mtmd.ContextParamsDefault()
+	if cfg.PtrImageTokenBudget != nil {
+		params.ImageMaxTokens = int32(cfg.ImageTokenBudget())
+	}
 	if cfg.NThreads() > 0 {
 		params.Threads = int32(cfg.NThreads())
 	}

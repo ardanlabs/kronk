@@ -354,6 +354,7 @@ type ModelConfig struct {
 	FlashAttention             *model.FlashAttentionType `yaml:"flash-attention,omitempty"`
 	PtrIMCSessionCapacity      *int                      `yaml:"imc-session-capacity,omitempty"`
 	PtrImageBatchTokenCapacity *int                      `yaml:"image-batch-token-capacity,omitempty"`
+	PtrImageTokenBudget        *int                      `yaml:"image-token-budget,omitempty"`
 	PtrIncrementalCache        *bool                     `yaml:"incremental-cache,omitempty"`
 	PtrInsecureLogging         *bool                     `yaml:"insecure-logging,omitempty"`
 	PtrLazyMode                *model.LazyMode           `yaml:"lazy-mode,omitempty"`
@@ -426,6 +427,7 @@ func (mc ModelConfig) ToKronkConfig() model.Config {
 		PtrFlashAttention:          mc.FlashAttention,
 		PtrIMCSessionCapacity:      mc.PtrIMCSessionCapacity,
 		PtrImageBatchTokenCapacity: mc.PtrImageBatchTokenCapacity,
+		PtrImageTokenBudget:        mc.PtrImageTokenBudget,
 		PtrIncrementalCache:        mc.PtrIncrementalCache,
 		PtrInsecureLogging:         mc.PtrInsecureLogging,
 		JinjaFile:                  mc.Template,

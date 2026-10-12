@@ -616,6 +616,7 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc models.ModelConfig
 			PtrContextWindow:           rmc.PtrContextWindow,
 			PtrPrefillBatchSize:        rmc.PtrPrefillBatchSize,
 			PtrImageBatchTokenCapacity: rmc.PtrImageBatchTokenCapacity,
+			PtrImageTokenBudget:        rmc.PtrImageTokenBudget,
 			PtrNThreads:                rmc.PtrNThreads,
 			PtrNThreadsBatch:           rmc.PtrNThreadsBatch,
 			CacheTypeK:                 rmc.CacheTypeK,
@@ -1237,6 +1238,7 @@ type ModelConfig struct {
 	PtrContextWindow           *int                     `json:"context-window"`
 	PtrPrefillBatchSize        *int                     `json:"prefill-batch-size"`
 	PtrImageBatchTokenCapacity *int                     `json:"image-batch-token-capacity"`
+	PtrImageTokenBudget        *int                     `json:"image-token-budget"`
 	PtrNThreads                *int                     `json:"nthreads"`
 	PtrNThreadsBatch           *int                     `json:"nthreads-batch"`
 	CacheTypeK                 model.GGMLType           `json:"cache-type-k"`

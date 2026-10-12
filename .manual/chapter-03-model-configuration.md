@@ -484,12 +484,13 @@ See
 [Chapter 4](https://www.kronkai.com/manual#chapter-4-batch-processing) for request scheduling and the
 differences between model types.
 
-Text batching and an independent image-capacity floor are configured separately:
+Text scheduling, image capacity, and image preprocessing are configured separately:
 
 | Key | Load-time default | Purpose |
 | --- | ----------------- | ------- |
 | `prefill-batch-size` | `2048` | Generation prefill contribution per decode iteration, or aggregate embedding/reranking tokens per native sequence batch |
-| `image-batch-token-capacity` | Model-family default | Independent native capacity floor for image chunks; does not increase the text prefill contribution |
+| `image-batch-token-capacity` | `0` (no additional floor) | Independent native capacity floor for image chunks; does not change text scheduling or image detail |
+| `image-token-budget` | Unset (projector default) | Explicit preprocessing budget for supported projectors; lowering it may reduce image resolution and detail |
 
 For generation models, a larger value can move a long prompt to generation in
 fewer decode calls, but requires larger compute buffers and each call runs
@@ -523,22 +524,29 @@ physical ubatches; MTP keeps it in one physical batch so dense NextN rows retain
 their expected mapping.
 
 For generation models with a projector, the native base capacity is
-`max(prefill-batch-size, image-batch-token-capacity)`. Kronk then applies the
+`max(prefill-batch-size, image-batch-token-capacity, image-token-budget)`
+(an unset image budget contributes zero). Kronk then applies the
 generation reserve and MTP rules above. The text scheduler still contributes
 at most `prefill-batch-size` tokens per iteration.
 
-Known image-capacity defaults live in the VRAM package: Gemma 4 uses `1120`,
-Gemma 3 conservatively uses `2048`, and Deepseek 4 uses `384`. Other model
-families, including Qwen, use `0` (no additional floor), preserving their
-existing sizing. These are model-family policies, not guarantees for every
-custom projector. An explicit non-negative `image-batch-token-capacity`
-replaces the default, including an explicit `0`.
-
-For example, Gemma 4 with `prefill-batch-size: 1024` and `nseq-max: 2` uses
-`NUBatch: 1120` and `NBatch: 1122` without MTP. Its text prefill contribution
-remains `1024`. For an unknown projector, supply `image-batch-token-capacity`
-when its complete non-causal image chunks need more capacity. In the SDK, use
+There are no model-family image-capacity defaults. Supply a non-negative
+`image-batch-token-capacity` when complete non-causal image chunks need more
+room than text prefill provides. For example, `prefill-batch-size: 512`,
+`image-batch-token-capacity: 1120`, and `nseq-max: 2` produce `NUBatch: 1120`
+and `NBatch: 1122` without MTP. Text prefill remains `512`, and the projector's
+image processing is unchanged. In the SDK, use
 `model.WithImageBatchTokenCapacity(value)`.
+
+Only an explicit positive `image-token-budget` is passed to MTMD as
+`ImageMaxTokens`; neither text prefill nor image capacity silently sets it.
+Lowering this budget can reduce image resolution and detail. When omitted,
+Kronk preserves the projector's default. Not all projectors support the option
+(for example, Gemma 3's fixed-resolution path does not), and resizing alignment
+can make the final chunk count differ from the budget. Very small budgets may
+also conflict with a projector's minimum and fail initialization. In the SDK,
+use `model.WithImageTokenBudget(value)`. An explicit budget also contributes
+to native capacity, so a separate capacity setting is unnecessary unless more
+room is needed. Increasing capacity does not undo a smaller preprocessing budget.
 
 Non-causal media chunks must fit completely in one physical decode. Kronk
 checks actual chunk sizes before native decoding in both cached and uncached
@@ -547,7 +555,7 @@ of being split or aborting the process. Increase `image-batch-token-capacity`
 and reload the model to process that chunk.
 
 The `status[resolved]` `batch-sizing` debug log reports the configured prefill
-size, image capacity, generation reserve, effective internal sizes, and MTP
+size, image capacity, explicit image budget (`0` when unset), generation reserve, effective internal sizes, and MTP
 state. The Slots diagnostic screen also displays effective `NBatch / NUBatch`
 as read-only runtime values.
 
@@ -848,7 +856,8 @@ is normally supplied by analysis or by the load-time defaults.
 | `queue-depth` | Non-negative integer, default `2` | Admitted request layers: `1` allows slot occupants only; `2` adds one waiting layer |
 | `imc-session-capacity` | Positive integer; derived when omitted | Reusable IMC conversation identities retained in RAM or on disk |
 | `prefill-batch-size` | Positive token count, default `2048` | Generation prefill contribution per decode iteration, or aggregate embedding/reranking tokens per native sequence batch |
-| `image-batch-token-capacity` | Non-negative token count; model-family default when omitted | Image-capacity floor for native generation batches; explicit values replace the default |
+| `image-batch-token-capacity` | Non-negative token count, default `0` | Image-capacity floor for native generation batches; does not change image detail |
+| `image-token-budget` | Positive token count up to `2147483647`; unset by default | Explicit projector preprocessing budget; may reduce image detail; also contributes to native capacity |
 | `ngpu-layers` | `-1`, `0`, or a positive count | CPU/GPU layer placement |
 | `lazy-mode` | `auto`, `off`, `on` | On-demand reading of eligible tensors; default `auto` |
 | `load-mode` | `auto`, `mmap`, `none`, `mlock`, `mmap+mlock`, `direct-io` | Model weight loading strategy |

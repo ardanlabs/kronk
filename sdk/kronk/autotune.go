@@ -45,6 +45,7 @@ func autoTuneConfig(ctx context.Context, cfg model.Config, budget *models.AutoTu
 		PtrContextWindow:           cfg.PtrContextWindow,
 		PtrPrefillBatchSize:        cfg.PtrPrefillBatchSize,
 		PtrImageBatchTokenCapacity: cfg.PtrImageBatchTokenCapacity,
+		PtrImageTokenBudget:        cfg.PtrImageTokenBudget,
 		PtrNSeqMax:                 cfg.PtrNSeqMax,
 		CacheTypeK:                 cfg.CacheTypeK,
 		CacheTypeV:                 cfg.CacheTypeV,

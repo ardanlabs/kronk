@@ -502,46 +502,38 @@ func TestAdjustConfigUsesKronkThreadDefault(t *testing.T) {
 
 func TestImageBatchTokenCapacity(t *testing.T) {
 	for _, tt := range []struct {
-		name, architecture string
-		projector          bool
-		capacity           *int
-		prefill            int
-		mtp                bool
-		wantImage          int
-		wantBatch          int
-		wantUBatch         int
+		name       string
+		capacity   int
+		budget     int
+		prefill    int
+		mtp        bool
+		wantBatch  int
+		wantUBatch int
 	}{
-		{"Gemma4 image floor", "gemma4", true, nil, 1024, false, 1120, 1122, 1120},
-		{"Gemma3 conservative default", "gemma3", true, nil, 128, false, 2048, 2050, 2048},
-		{"Deepseek4 image floor", "deepseek4", true, nil, 256, false, 384, 386, 384},
-		{"Qwen unchanged", "qwen35", true, nil, 1024, false, 0, 1026, 1024},
-		{"text-only unchanged", "gemma4", false, nil, 1024, false, 0, 1026, 1024},
-		{"explicit lower replaces default", "gemma4", true, new(768), 512, false, 768, 770, 768},
-		{"explicit zero replaces default", "gemma4", true, new(0), 512, false, 0, 514, 512},
-		{"unknown model override", "unknown", true, new(1536), 1024, false, 1536, 1538, 1536},
-		{"larger text prefill", "gemma4", true, nil, 4096, false, 1120, 4098, 4096},
-		{"MTP generation reserve", "gemma4", true, nil, 1024, true, 1120, 1128, 1128},
+		{"no image defaults", 0, 0, 1024, false, 1026, 1024},
+		{"default text prefill", 0, 0, 0, false, 2050, 2048},
+		{"capacity only", 1120, 0, 512, false, 1122, 1120},
+		{"budget only", 0, 768, 512, false, 770, 768},
+		{"capacity exceeds budget", 1120, 768, 512, false, 1122, 1120},
+		{"budget exceeds capacity", 768, 1120, 512, false, 1122, 1120},
+		{"larger text prefill", 1120, 768, 4096, false, 4098, 4096},
+		{"MTP generation reserve", 0, 1120, 512, true, 1128, 1128},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := NewConfig(WithNSeqMax(2), WithPrefillBatchSize(tt.prefill))
-			if tt.projector {
-				cfg.ProjFile = "mmproj.gguf"
+			cfg := NewConfig(WithNSeqMax(2), WithPrefillBatchSize(tt.prefill), WithImageBatchTokenCapacity(tt.capacity))
+			if tt.budget > 0 {
+				WithImageTokenBudget(tt.budget)(&cfg)
 			}
-			cfg.PtrImageBatchTokenCapacity = tt.capacity
-			resolved := cfg.ResolveImageBatchTokenCapacity(tt.architecture)
 			rows := 1
 			if tt.mtp {
 				rows = 4
 			}
-			got := adjustGenerationBatch(resolved, rows, tt.mtp)
-			if got.ImageBatchTokenCapacity() != tt.wantImage || got.PrefillBatchSize() != tt.prefill {
-				t.Errorf("image/text capacity: got %d/%d, want %d/%d", got.ImageBatchTokenCapacity(), got.PrefillBatchSize(), tt.wantImage, tt.prefill)
+			got := adjustGenerationBatch(cfg, rows, tt.mtp)
+			if got.PrefillBatchSize() != tt.prefill {
+				t.Errorf("text contribution: got %d, want %d", got.PrefillBatchSize(), tt.prefill)
 			}
 			if got.EffectiveNBatch() != tt.wantBatch || got.EffectiveNUBatch() != tt.wantUBatch {
 				t.Errorf("batch capacities: got %d/%d, want %d/%d", got.EffectiveNBatch(), got.EffectiveNUBatch(), tt.wantBatch, tt.wantUBatch)
-			}
-			if tt.capacity == nil && cfg.PtrImageBatchTokenCapacity != nil {
-				t.Fatal("resolution mutated caller config")
 			}
 		})
 	}
@@ -1051,6 +1043,10 @@ func TestValidateConfig(t *testing.T) {
 			WithModelFiles([]string{"dummy.gguf"}),
 			WithImageBatchTokenCapacity(0),
 		), false},
+		{"zero image token budget is invalid", NewConfig(WithModelFiles([]string{"dummy.gguf"}), WithImageTokenBudget(0)), true},
+		{"negative image token budget is invalid", NewConfig(WithModelFiles([]string{"dummy.gguf"}), WithImageTokenBudget(-1)), true},
+		{"oversized image token budget is invalid", NewConfig(WithModelFiles([]string{"dummy.gguf"}), WithImageTokenBudget(math.MaxInt32+1)), true},
+		{"positive image token budget is valid", NewConfig(WithModelFiles([]string{"dummy.gguf"}), WithImageTokenBudget(768)), false},
 		{"quantized V cache with Flash Attention disabled is invalid", NewConfig(
 			WithModelFiles([]string{"dummy.gguf"}),
 			WithCacheTypeV(GGMLTypeQ8_0),

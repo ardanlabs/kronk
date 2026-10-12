@@ -7,23 +7,14 @@ import (
 	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
-	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
 // preparePlacement freezes device order and implicit split weights so planning
 // and native loading use the same placement inputs. User configs are not mutated.
 func (l *Llama) preparePlacement(cfg model.Config) (model.Config, error) {
-	if cfg.PtrImageBatchTokenCapacity == nil && cfg.ProjFile != "" && len(cfg.ModelFiles) > 0 {
-		info, err := models.ModelInfoFromPath("", cfg.ModelFiles, cfg.ProjFile, "")
-		if err != nil {
-			return cfg, fmt.Errorf("resolve image capacity: %w", err)
-		}
-		cfg = cfg.ResolveImageBatchTokenCapacity(modelprofile.Resolve(info.Metadata).Architecture)
-	}
 	if !l.resman.HasGPUs() || l.resman.UnifiedMemory() {
 		return cfg, nil
 	}

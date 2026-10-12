@@ -59,6 +59,7 @@ type SessionConfig struct {
 	ContextWindow           *int                      `json:"context_window"`
 	PrefillBatchSize        *int                      `json:"prefill_batch_size"`
 	ImageBatchTokenCapacity *int                      `json:"image_batch_token_capacity"`
+	ImageTokenBudget        *int                      `json:"image_token_budget"`
 	NSeqMax                 *int                      `json:"nseq_max"`
 	FlashAttention          *model.FlashAttentionType `json:"flash_attention"`
 	CacheTypeK              *model.GGMLType           `json:"cache_type_k"`
@@ -94,6 +95,9 @@ func (sc SessionConfig) ApplyTo(cfg model.Config) model.Config {
 	}
 	if sc.ImageBatchTokenCapacity != nil {
 		cfg.PtrImageBatchTokenCapacity = sc.ImageBatchTokenCapacity
+	}
+	if sc.ImageTokenBudget != nil {
+		cfg.PtrImageTokenBudget = sc.ImageTokenBudget
 	}
 	if sc.NSeqMax != nil {
 		cfg.PtrNSeqMax = sc.NSeqMax
@@ -182,6 +186,7 @@ func (sc SessionConfig) HasOverrides() bool {
 	return sc.ContextWindow != nil ||
 		sc.PrefillBatchSize != nil ||
 		sc.ImageBatchTokenCapacity != nil ||
+		sc.ImageTokenBudget != nil ||
 		sc.NSeqMax != nil ||
 		sc.FlashAttention != nil ||
 		sc.CacheTypeK != nil ||
@@ -227,6 +232,10 @@ func (sc SessionConfig) Validate() error {
 
 	if sc.ImageBatchTokenCapacity != nil && *sc.ImageBatchTokenCapacity < 0 {
 		return fmt.Errorf("image-batch-token-capacity must be >= 0, got %d", *sc.ImageBatchTokenCapacity)
+	}
+
+	if sc.ImageTokenBudget != nil && (*sc.ImageTokenBudget < 1 || *sc.ImageTokenBudget > 2147483647) {
+		return fmt.Errorf("image-token-budget must be between 1 and 2147483647, got %d", *sc.ImageTokenBudget)
 	}
 
 	if sc.NSeqMax != nil && (*sc.NSeqMax < 1 || *sc.NSeqMax > 64) {

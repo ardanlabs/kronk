@@ -2,23 +2,6 @@ package vram
 
 import "github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 
-// DefaultImageBatchTokenCapacity returns the image capacity policy for a model
-// with a projector. Zero leaves existing batch sizing unchanged for other models.
-// Gemma4 and Deepseek4 mirror b11513's clip.cpp image budgets; Gemma3 retains
-// Kronk's conservative 2048-row capacity rather than assuming fixed dimensions.
-func DefaultImageBatchTokenCapacity(architecture string) int {
-	switch architecture {
-	case "gemma4":
-		return 1120
-	case "gemma3":
-		return 2048
-	case "deepseek4":
-		return 384
-	default:
-		return 0
-	}
-}
-
 // ComputeMemory separates shared execution workspace from the runtime allowance
 // and safety margin. These are per native context, not fixed per-slot costs;
 // Calculate reports the combined breakdown for all configured compute contexts.

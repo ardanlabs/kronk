@@ -186,9 +186,6 @@ func analyzeModelWithConfigAndBudget(info ModelInfo, devs devices.Devices, cfg M
 	if err := profile.ValidateForAnalysis(); err != nil {
 		return Analysis{}, fmt.Errorf("model-analysis: %w", err)
 	}
-	if cfg.PtrImageBatchTokenCapacity == nil && info.HasProjection {
-		cfg.PtrImageBatchTokenCapacity = new(vram.DefaultImageBatchTokenCapacity(arch))
-	}
 
 	// -------------------------------------------------------------------------
 	// Parse model facts.

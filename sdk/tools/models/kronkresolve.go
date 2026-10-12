@@ -70,16 +70,6 @@ func (m *Models) resolvedModelConfig(modelID string, mc map[string]ModelConfig, 
 		restoreAutoTunedSizing(&cfg, sizing)
 	}
 
-	if cfg.PtrImageBatchTokenCapacity == nil && fp.ProjFile != "" {
-		info, err := m.ModelInformation(modelID)
-		if err != nil {
-			return ModelConfig{}, false, Path{}, fmt.Errorf("resolve image capacity: %w", err)
-		}
-		runtimeCfg := cfg.ToKronkConfig()
-		runtimeCfg.ProjFile = fp.ProjFile
-		cfg.PtrImageBatchTokenCapacity = runtimeCfg.ResolveImageBatchTokenCapacity(modelprofile.Resolve(info.Metadata).Architecture).PtrImageBatchTokenCapacity
-	}
-
 	// Resolve grammar (.grm filename -> contents) before converting.
 	if err := m.ResolveGrammar(&cfg.Sampling); err != nil {
 		return ModelConfig{}, false, Path{}, fmt.Errorf("kronk-resolved-config: %w", err)
@@ -413,6 +403,9 @@ func MergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	}
 	if src.PtrImageBatchTokenCapacity != nil {
 		dst.PtrImageBatchTokenCapacity = src.PtrImageBatchTokenCapacity
+	}
+	if src.PtrImageTokenBudget != nil {
+		dst.PtrImageTokenBudget = src.PtrImageTokenBudget
 	}
 	if src.PtrNThreads != nil {
 		dst.PtrNThreads = src.PtrNThreads
