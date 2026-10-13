@@ -176,6 +176,7 @@ export interface PoolBudgetResponse {
 }
 
 export type ModelLoadMode = 'auto' | 'mmap' | 'none' | 'mlock' | 'mmap+mlock' | 'direct-io';
+export type KVCacheMode = 'partitioned' | 'shared';
 
 export interface ModelConfig {
   'context-window': number;
@@ -184,6 +185,7 @@ export interface ModelConfig {
   'nthreads-batch': number;
   'cache-type-k': string;
   'cache-type-v': string;
+  'kv-cache-mode': KVCacheMode;
   'load-mode': ModelLoadMode;
   'flash-attention': string;
   'nseq-max': number;
@@ -281,6 +283,7 @@ export interface CatalogFiles {
 
 export interface VRAMInput {
   model_size_bytes: number;
+  kv_cache_mode: KVCacheMode;
   context_window: number;
   block_count: number;
   head_count_kv: number;
@@ -733,6 +736,7 @@ export interface AutoTuneResponse {
 
 export interface VRAMRequest {
   model_url?: string;
+  kv_cache_mode?: KVCacheMode;
   model_urls?: string[];
   model_id?: string;
   context_window: number;
@@ -779,6 +783,7 @@ export interface PlaygroundSessionRequest {
 
 export interface PlaygroundModelConfig {
   'context_window'?: number;
+  'kv_cache_mode'?: KVCacheMode;
   'prefill_batch_size'?: number;
   'nseq_max'?: number;
   'flash_attention'?: string;

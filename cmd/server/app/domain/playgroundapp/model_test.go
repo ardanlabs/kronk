@@ -71,6 +71,27 @@ func TestSessionConfigApplyTo_LoadMode(t *testing.T) {
 	}
 }
 
+func TestSessionConfigKVCacheMode(t *testing.T) {
+	for _, tt := range []struct {
+		input    string
+		want     model.KVCacheMode
+		override bool
+	}{
+		{`{}`, model.KVCacheShared, false},
+		{`{"kv_cache_mode":"partitioned"}`, model.KVCachePartitioned, true},
+		{`{"kv_cache_mode":"shared"}`, model.KVCacheShared, true},
+	} {
+		var cfg SessionConfig
+		if err := json.Unmarshal([]byte(tt.input), &cfg); err != nil {
+			t.Fatal(err)
+		}
+		got := cfg.ApplyTo(model.Config{PtrKVCacheMode: new(model.KVCacheShared)})
+		if got.KVCacheMode() != tt.want || cfg.HasOverrides() != tt.override {
+			t.Errorf("%s: got mode %q, override %t, want %q, %t", tt.input, got.KVCacheMode(), cfg.HasOverrides(), tt.want, tt.override)
+		}
+	}
+}
+
 func TestSessionConfigApplyTo_DraftModel(t *testing.T) {
 	tests := []struct {
 		name      string

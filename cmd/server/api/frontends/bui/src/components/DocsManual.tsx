@@ -530,6 +530,14 @@ malina-models:
             </tbody>
           </table>
           <p>The actual memory reduction includes block and alignment overhead, so it is not an exact ratio for every model and backend. Start with automatic tuning. If an explicit quantized cache changes output quality, compare the same workload with <code>f16</code> before changing unrelated settings.</p>
+          <h4 id="kv-cache-layout">KV Cache Layout</h4>
+          <p><code>kv-cache-mode</code> selects how concurrent generation slots allocate KV storage:</p>
+          <pre className="code-block"><code className="language-yaml">{`unsloth/Qwen3-0.6B-Q8_0:
+  context-window: 8192
+  nseq-max: 4
+  kv-cache-mode: shared`}</code></pre>
+          <p>The default, <code>partitioned</code>, gives each slot a dedicated context-window-sized partition. <code>shared</code> uses one aggregate pool. Both request total context capacity of <code>context-window × nseq-max</code>, isolate attention between requests, and keep Kronk's per-request context limit unchanged. Shared mode does not reserve a physical partition for each slot.</p>
+          <p>Shared mode can improve ordinary generation batching when active sequence IDs have gaps. It can also increase attention workspace and long-history processing costs. Benchmark your workload rather than assuming it is always faster. This is a model-load setting, not a chat-request parameter; restart/reload with the new configuration. SDK callers use <code>model.WithKVCacheMode(model.KVCacheShared)</code>.</p>
           <h4 id="flash-attention">Flash Attention</h4>
           <p>Flash Attention can reduce attention memory traffic and improve performance, especially at longer contexts:</p>
           <pre className="code-block"><code className="language-yaml">{`unsloth/Qwen3-0.6B-Q8_0:
@@ -887,6 +895,11 @@ models:
                 <td>KV-cache precision</td>
               </tr>
               <tr>
+                <td><code>kv-cache-mode</code></td>
+                <td><code>partitioned</code> (default), <code>shared</code></td>
+                <td>Dedicated slot partitions or shared aggregate KV capacity</td>
+              </tr>
+              <tr>
                 <td><code>flash-attention</code></td>
                 <td><code>enabled</code>, <code>disabled</code>, <code>auto</code></td>
                 <td>Attention implementation mode</td>
@@ -1082,9 +1095,10 @@ models:
                         ┌──────────────────────────────────┐
                         │ Shared model context and weights │
                         └──────────────────────────────────┘`}</code></pre>
-          <p>Sequence IDs isolate attention state, so one request cannot attend to another request's tokens. Kronk also gives each sequence a fixed physical KV-cache partition. The aggregate context allocation is:</p>
+          <p>Sequence IDs isolate attention state, so one request cannot attend to another request's tokens in either KV layout. With the default <code>kv-cache-mode: partitioned</code>, Kronk gives each sequence a fixed physical KV-cache partition. Both layouts request aggregate context capacity of:</p>
           <pre className="code-block"><code className="language-text">{`context-window × nseq-max`}</code></pre>
-          <p>llama.cpp divides that allocation into <code>nseq-max</code> streams, so every slot gets the full configured <code>context-window</code>; it is never divided by the slot count. An idle slot's partition is not borrowed by another slot. Increasing <code>nseq-max</code> therefore increases the total capacity Kronk must allocate and budget.</p>
+          <p>In partitioned mode, llama.cpp divides that allocation into <code>nseq-max</code> streams, so every slot gets the full configured <code>context-window</code>; it is never divided by the slot count. An idle slot's partition is not borrowed by another slot. With <code>kv-cache-mode: shared</code>, sequences use one aggregate pool instead, while Kronk enforces the configured context-window limit per request. There is no reserved per-slot partition in shared mode. Increasing <code>nseq-max</code> increases the total capacity Kronk must allocate and budget in both modes.</p>
+          <p>Partitioned ordinary generation may require separate native computations when active sequence IDs have gaps. Shared mode avoids that restriction for ordinary KV batching, but can cost more with long concurrent histories. See Chapter 3's KV Cache Layout setting for the tradeoff.</p>
           <p>When a request finishes, its slot becomes available for another waiting job. Scheduling uses the first available slot; jobs do not reserve a particular slot between requests.</p>
           <h3 id="42-the-four-stage-request-lifecycle">4.2 The Four-Stage Request Lifecycle</h3>
           <p>Every generation request passes through the same four lifecycle stages:</p>

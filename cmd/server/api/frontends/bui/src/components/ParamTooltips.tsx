@@ -34,9 +34,10 @@ export const PARAM_TOOLTIPS = {
   // Config sweep
   prefillBatchSize: 'Maximum prompt tokens contributed by the current prefill owner in one decode iteration. Larger values can reach generation in fewer calls but increase compute-buffer memory and make each call longer for other active slots.',
   contextWindow: 'Maximum number of tokens (input + output combined) the model can handle at once. Larger windows support longer conversations but increase VRAM usage proportionally via the KV cache. Models with RoPE can extend beyond native context using YaRN (up to ~4× recommended).',
-  nSeqMax: 'Maximum number of concurrent request slots. Each slot handles one user request simultaneously. More slots = better concurrency, but each slot reserves memory for its KV cache.',
+  nSeqMax: 'Maximum number of concurrent request slots. Each slot handles one user request simultaneously. More slots allow greater concurrency and increase aggregate KV cache capacity; KV Cache Layout determines whether that capacity is partitioned or shared.',
   flashAttention: 'Optimized attention algorithm that reduces VRAM usage and can improve speed. "Enabled" forces it on, "Disabled" forces it off, "Auto" lets the server decide based on model compatibility.',
   cacheType: 'KV cache precision. f16 = full precision (best quality), q8_0 = 8-bit quantized (less VRAM, minimal quality loss), q4_0 = 4-bit quantized (most VRAM savings, slight quality trade-off especially at long context).',
+  kvCacheMode: 'KV cache layout. Partitioned (default) gives each request slot a dedicated partition; Shared uses a common pool across slots. Requests remain isolated in both layouts, and per-request context limits are unchanged. Performance depends on the model and workload; neither layout is universally faster.',
   cacheMode: 'Caching strategy. None = clears KV state after each request. IMC (Incremental Message Cache) = keeps the conversation\'s KV state in a dedicated slot for fast multi-turn follow-ups.',
 
   // MoE configuration

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import type { VRAMCalculatorResponse, DeviceInfo, PerDeviceVRAM, VRAMRequest, FitAssessment } from '../../types';
+import type { KVCacheMode, VRAMCalculatorResponse, DeviceInfo, PerDeviceVRAM, VRAMRequest, FitAssessment } from '../../types';
 import { api } from '../../services/api';
 import { useDevicesInfo } from './devices';
 import { EXPERTS_ALL_ON_GPU } from './constants';
@@ -46,6 +46,8 @@ function gpuLayersForControl(gpuLayers: number, blockCount: number): number {
 }
 
 export interface VRAMControlsState {
+  kvCacheMode: KVCacheMode;
+  onKVCacheModeChange: (v: KVCacheMode) => void;
   contextWindow: number;
   onContextWindowChange: (v: number) => void;
   bytesPerElement: number;
@@ -171,6 +173,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
   const [contextWindow, setContextWindow] = useState(initialContextWindow);
   const [bytesPerElement, setBytesPerElement] = useState(initialBytesPerElement);
   const [slots, setSlots] = useState(initialSlots);
+  const [kvCacheMode, setKVCacheMode] = useState<KVCacheMode>('partitioned');
   const [gpuLayers, setGpuLayers] = useState(0);
   // Default to the "all experts on GPU" sentinel so the first request
   // mirrors the runtime baseline. After the first response the seed
@@ -247,6 +250,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
       setContextWindow(input.context_window);
       setBytesPerElement(input.bytes_per_element);
       setSlots(input.slots);
+      setKVCacheMode(input.kv_cache_mode || 'partitioned');
       setGpuLayers(gpuLayersForControl(input.gpu_layers, input.block_count));
       setExpertLayersOnGPU(input.expert_layers_on_gpu);
       setMoECacheSize(input.moe_cache_size ?? 0);
@@ -317,6 +321,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
         context_window: contextWindow,
         bytes_per_element: bytesPerElement,
         slots,
+        kv_cache_mode: kvCacheMode,
         gpu_layers: gpuLayers === 0 ? -1 : gpuLayers,
         expert_layers_on_gpu: expertLayersOnGPU,
         moe_cache_size: moeCacheSize,
@@ -352,7 +357,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     modelUrl, modelUrls, modelId,
-    contextWindow, bytesPerElement, slots,
+    contextWindow, bytesPerElement, slots, kvCacheMode,
     gpuLayers, expertLayersOnGPU, moeCacheSize, kvCacheOnCPU, swaFull,
     effectiveDeviceCount, parsedTensorSplit, effectiveGpuDevices,
     effectiveGpuTotalBytes, effectiveSystemRAMBytes, isUnifiedMemory,
@@ -381,6 +386,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
       context_window: contextWindow,
       bytes_per_element: bytesPerElement,
       slots,
+      kv_cache_mode: kvCacheMode,
       kv_cache_on_cpu: kvCacheOnCPU,
       moe_cache_size: moeCacheSize,
       swa_full: swaFull,
@@ -418,7 +424,7 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
     liveResponse, serverResponse, modelUrl, modelUrls, modelId,
     recomputing, isUnifiedMemory, effectiveSystemRAMBytes, effectiveDeviceCount,
     effectiveGpuDevices, effectiveGpuTotalBytes, contextWindow,
-    bytesPerElement, slots, moeCacheSize, kvCacheOnCPU, swaFull, parsedTensorSplit,
+    bytesPerElement, slots, kvCacheMode, moeCacheSize, kvCacheOnCPU, swaFull, parsedTensorSplit,
   ]);
 
   // ── Derived view ────────────────────────────────────────────────────────
@@ -434,6 +440,8 @@ export default function useVRAMState(opts: UseVRAMStateOptions = {}) {
 
   // ── Public interface ─────────────────────────────────────────────────────
   const controlsProps: VRAMControlsState = {
+    kvCacheMode,
+    onKVCacheModeChange: setKVCacheMode,
     contextWindow,
     onContextWindowChange: setContextWindow,
     bytesPerElement,

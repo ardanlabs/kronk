@@ -761,6 +761,11 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int, plan specu
 	}
 
 	wantCtxSeq := uint32(m.cfg.ContextWindow())
+	if m.ctxParams.KVUnified != 0 {
+		// Unified NCtxSeq describes the shared, possibly padded allocation.
+		// Request budgeting still uses cfg.ContextWindow, not this value.
+		wantCtxSeq = llama.NCtx(lctx)
+	}
 	if gotCtxSeq := llama.NCtxSeq(lctx); gotCtxSeq != wantCtxSeq {
 		llama.Free(lctx)
 		return fmt.Errorf("init-from-model: context per sequence got %d, want %d", gotCtxSeq, wantCtxSeq)
@@ -1615,6 +1620,7 @@ func calculateVRAMDiag(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory in
 		MoECacheSize:           cfg.MoECacheSize(),
 		GPULayers:              int64(cfg.NGpuLayers()),
 		KVCacheOnCPU:           cfg.PtrOffloadKQV != nil && !*cfg.PtrOffloadKQV,
+		KVUnified:              cfg.KVCacheMode() == KVCacheShared,
 		VTransposed:            cfg.FlashAttention() == FlashAttentionDisabled,
 		SWAFull:                effectiveSWAFull(cfg.PtrSWAFull, llama.ContextDefaultParams().SwaFull != 0),
 		RecurrentStateCopies:   RecurrentStateCopies(cfg, false),

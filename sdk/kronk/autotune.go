@@ -49,6 +49,7 @@ func autoTuneConfig(ctx context.Context, cfg model.Config, budget *models.AutoTu
 		PtrNSeqMax:                 cfg.PtrNSeqMax,
 		CacheTypeK:                 cfg.CacheTypeK,
 		CacheTypeV:                 cfg.CacheTypeV,
+		PtrKVCacheMode:             cfg.PtrKVCacheMode,
 		FlashAttention:             cfg.PtrFlashAttention,
 		PtrSplitMode:               cfg.PtrSplitMode,
 		PtrNGpuLayers:              cfg.PtrNGpuLayers,

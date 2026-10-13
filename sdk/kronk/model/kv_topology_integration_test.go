@@ -1,10 +1,15 @@
 package model_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/ardanlabs/kronk/sdk/kronk"
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -89,6 +94,72 @@ func TestNonUnifiedKVProvidesFullContextPerSequence(t *testing.T) {
 			t.Fatal("sequence 0 decoded beyond its context partition")
 		}
 	})
+}
+
+func TestKVCacheModesRespectRequestContext(t *testing.T) {
+	mdls, err := models.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := mdls.FullPath(kvTopologyModel)
+	if err != nil || len(path.ModelFiles) == 0 {
+		t.Skipf("model %s not downloaded", kvTopologyModel)
+	}
+	if err := kronk.Init(); err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []model.KVCacheMode{model.KVCachePartitioned, model.KVCacheShared} {
+		t.Run(string(mode), func(t *testing.T) {
+			krn, err := kronk.New(model.WithModelFiles(path.ModelFiles), model.WithContextWindow(256),
+				model.WithNSeqMax(3), model.WithKVCacheMode(mode), model.WithIncrementalCache(true), model.WithCacheMinTokens(1))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				if err := krn.Unload(context.Background()); err != nil {
+					t.Errorf("unload: %v", err)
+				}
+			})
+			ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+			defer cancel()
+			results := make(chan error, 3)
+			for i := range 3 {
+				go func() {
+					for turn := range 2 {
+						resp, err := krn.Chat(ctx, model.D{
+							"messages": model.Messages(model.TextMessage(model.RoleSystem, "Follow the user's counting instruction without commentary."), model.TextMessage(model.RoleUser,
+								fmt.Sprintf("Count from %d to 5000, writing every number in words, one per line. Do not stop early.", i+1))),
+							"enable_thinking": false, "max_tokens": 1000, "temperature": 0.0,
+						})
+						if err != nil {
+							results <- err
+							return
+						}
+						if resp.Usage == nil || resp.Usage.CompletionTokens == 0 || resp.Usage.TotalTokens > 256 {
+							results <- fmt.Errorf("request %d: invalid context usage %+v", i, resp.Usage)
+							return
+						}
+						if turn == 1 && resp.Usage.PromptTokensDetails.CachedTokens == 0 {
+							results <- fmt.Errorf("request %d: repeated prompt did not restore cached tokens", i)
+							return
+						}
+						t.Logf("request %d: prompt=%d completion=%d total=%d cached=%d", i,
+							resp.Usage.PromptTokens, resp.Usage.CompletionTokens, resp.Usage.TotalTokens, resp.Usage.PromptTokensDetails.CachedTokens)
+					}
+					results <- nil
+				}()
+			}
+			for range 3 {
+				if err := <-results; err != nil {
+					t.Errorf("chat: %v", err)
+				}
+			}
+			_, err = krn.Chat(ctx, model.D{"messages": model.Messages(model.TextMessage(model.RoleUser, strings.Repeat("hello ", 300)))})
+			if !errors.Is(err, model.ErrInvalidRequest) {
+				t.Errorf("oversized prompt: got %v, want ErrInvalidRequest", err)
+			}
+		})
+	}
 }
 
 func newKVTopologyContext(t *testing.T, mdl llama.Model) (llama.Context, llama.Memory) {

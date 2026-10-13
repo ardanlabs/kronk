@@ -428,6 +428,9 @@ func MergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	if src.PtrLoadMode != nil {
 		dst.PtrLoadMode = src.PtrLoadMode
 	}
+	if src.PtrKVCacheMode != nil {
+		dst.PtrKVCacheMode = src.PtrKVCacheMode
+	}
 	if src.NUMA != "" {
 		dst.NUMA = src.NUMA
 	}

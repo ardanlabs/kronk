@@ -95,6 +95,7 @@ func printWeb(mi toolapp.ModelInfoResponse) {
 		fmt.Printf("IMC Sessions:      %s\n", formatIntPtr(mi.ModelConfig.PtrIMCSessionCapacity))
 		fmt.Printf("Cache Type K:      %s\n", mi.ModelConfig.CacheTypeK)
 		fmt.Printf("Cache Type V:      %s\n", mi.ModelConfig.CacheTypeV)
+		fmt.Printf("KV Cache Layout:   %s\n", mi.ModelConfig.KVCacheMode)
 		fmt.Printf("Incremental Cache:   %s\n", formatBoolPtr(mi.ModelConfig.PtrIncrementalCache))
 		if mi.ModelConfig.RopeScaling.String() != "none" {
 			fmt.Printf("RoPE Scaling:      %s\n", mi.ModelConfig.RopeScaling)
@@ -145,6 +146,7 @@ func printLocal(fi models.FileInfo, mi models.ModelInfo, rmc models.ModelConfig)
 	fmt.Printf("IMC Sessions:      %s\n", formatIntPtr(rmc.PtrIMCSessionCapacity))
 	fmt.Printf("Cache Type K:      %s\n", rmc.CacheTypeK)
 	fmt.Printf("Cache Type V:      %s\n", rmc.CacheTypeV)
+	fmt.Printf("KV Cache Layout:   %s\n", rmc.ToKronkConfig().KVCacheMode())
 	fmt.Printf("Incremental Cache:   %s\n", formatBoolPtr(rmc.PtrIncrementalCache))
 	if rmc.RopeScaling.String() != "none" {
 		fmt.Printf("RoPE Scaling:      %s\n", rmc.RopeScaling)

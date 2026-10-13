@@ -424,6 +424,7 @@ type Config struct {
 	PtrInsecureLogging         *bool
 	JinjaFile                  string
 	JinjaScript                string
+	PtrKVCacheMode             *KVCacheMode
 	LazyMode                   LazyMode
 	LoadMode                   LoadMode
 	Log                        applog.Logger
@@ -474,6 +475,14 @@ func (cfg Config) QueueDepth() int         { return intOr(cfg.PtrQueueDepth, 0) 
 func (cfg Config) IMCSessionCapacity() int { return intOr(cfg.PtrIMCSessionCapacity, 0) }
 func (cfg Config) ContextWindow() int      { return intOr(cfg.PtrContextWindow, 0) }
 func (cfg Config) PrefillBatchSize() int   { return intOr(cfg.PtrPrefillBatchSize, 0) }
+
+// KVCacheMode returns the cache layout, defaulting to partitioned.
+func (cfg Config) KVCacheMode() KVCacheMode {
+	if cfg.PtrKVCacheMode == nil {
+		return KVCachePartitioned
+	}
+	return *cfg.PtrKVCacheMode
+}
 
 // ImageBatchTokenCapacity returns the explicit image-capacity floor, or zero.
 func (cfg Config) ImageBatchTokenCapacity() int { return intOr(cfg.PtrImageBatchTokenCapacity, 0) }
@@ -617,6 +626,10 @@ func chatTemplateKwargsSummary(kwargs D) string {
 func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 	if len(cfg.ModelFiles) == 0 {
 		return fmt.Errorf("validate-config: model file is required")
+	}
+
+	if _, err := ParseKVCacheMode(string(cfg.KVCacheMode())); err != nil {
+		return fmt.Errorf("validate-config: %w", err)
 	}
 
 	switch cfg.DecisionProtocol {
@@ -1022,7 +1035,7 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 	// IMC externalizes KV state after cache build, so it does not
 	// need extra sequences beyond the configured NSeqMax.
 	nSeqMax := max(cfg.NSeqMax(), 1)
-	ctxParams = contextTopologyParams(ctxParams, cfg.ContextWindow(), nSeqMax)
+	ctxParams = contextTopologyParams(ctxParams, cfg.ContextWindow(), nSeqMax, cfg.KVCacheMode())
 
 	if cfg.ContextWindow() > 0 {
 		ctxParams.NBatch = uint32(cfg.EffectiveNBatch())
@@ -1134,13 +1147,16 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 	return ctxParams
 }
 
-func contextTopologyParams(params llama.ContextParams, contextWindow, nSeqMax int) llama.ContextParams {
+func contextTopologyParams(params llama.ContextParams, contextWindow, nSeqMax int, mode KVCacheMode) llama.ContextParams {
 	if contextWindow > 0 {
 		params.NCtx = uint32(contextWindow * nSeqMax)
 	}
 
 	params.NSeqMax = uint32(nSeqMax)
 	params.KVUnified = 0
+	if mode == KVCacheShared {
+		params.KVUnified = 1
+	}
 
 	return params
 }
@@ -1522,6 +1538,57 @@ func DerefLazyMode(lm *LazyMode) LazyMode {
 		return LazyModeAuto
 	}
 	return *lm
+}
+
+// =============================================================================
+
+// KVCacheMode controls whether execution slots have dedicated KV partitions or
+// share the aggregate cache. Both layouts isolate attention between requests.
+type KVCacheMode string
+
+const (
+	// KVCachePartitioned reserves a context-window-sized partition per slot.
+	KVCachePartitioned KVCacheMode = "partitioned"
+	// KVCacheShared shares aggregate capacity while Kronk limits each request.
+	KVCacheShared KVCacheMode = "shared"
+)
+
+// ParseKVCacheMode validates a KV cache layout name.
+func ParseKVCacheMode(s string) (KVCacheMode, error) {
+	switch KVCacheMode(s) {
+	case KVCachePartitioned, KVCacheShared:
+		return KVCacheMode(s), nil
+	default:
+		return "", fmt.Errorf("parse-kv-cache-mode: unknown mode %q (valid: partitioned, shared)", s)
+	}
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (mode *KVCacheMode) UnmarshalJSON(data []byte) error {
+	var value string
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	parsed, err := ParseKVCacheMode(value)
+	if err != nil {
+		return err
+	}
+	*mode = parsed
+	return nil
+}
+
+// UnmarshalYAML implements yaml.Unmarshaler.
+func (mode *KVCacheMode) UnmarshalYAML(unmarshal func(any) error) error {
+	var value string
+	if err := unmarshal(&value); err != nil {
+		return err
+	}
+	parsed, err := ParseKVCacheMode(value)
+	if err != nil {
+		return err
+	}
+	*mode = parsed
+	return nil
 }
 
 // =============================================================================
@@ -2197,10 +2264,14 @@ func WithImageBatchTokenCapacity(v int) Option {
 func WithImageTokenBudget(v int) Option {
 	return func(c *Config) { c.PtrImageTokenBudget = new(v) }
 }
-func WithIncrementalCache(v bool) Option       { return func(c *Config) { c.PtrIncrementalCache = new(v) } }
-func WithInsecureLogging(v bool) Option        { return func(c *Config) { c.PtrInsecureLogging = new(v) } }
-func WithJinjaFile(v string) Option            { return func(c *Config) { c.JinjaFile = v } }
-func WithJinjaScript(v string) Option          { return func(c *Config) { c.JinjaScript = v } }
+func WithIncrementalCache(v bool) Option { return func(c *Config) { c.PtrIncrementalCache = new(v) } }
+func WithInsecureLogging(v bool) Option  { return func(c *Config) { c.PtrInsecureLogging = new(v) } }
+func WithJinjaFile(v string) Option      { return func(c *Config) { c.JinjaFile = v } }
+func WithJinjaScript(v string) Option    { return func(c *Config) { c.JinjaScript = v } }
+
+// WithKVCacheMode selects the KV layout without changing request context limits.
+func WithKVCacheMode(v KVCacheMode) Option { return func(c *Config) { c.PtrKVCacheMode = new(v) } }
+
 func WithLazyMode(v LazyMode) Option           { return func(c *Config) { c.LazyMode = v } }
 func WithLoadMode(v LoadMode) Option           { return func(c *Config) { c.LoadMode = v } }
 func WithLog(v applog.Logger) Option           { return func(c *Config) { c.Log = v } }

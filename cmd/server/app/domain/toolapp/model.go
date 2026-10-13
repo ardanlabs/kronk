@@ -621,6 +621,7 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc models.ModelConfig
 			PtrNThreadsBatch:           rmc.PtrNThreadsBatch,
 			CacheTypeK:                 rmc.CacheTypeK,
 			CacheTypeV:                 rmc.CacheTypeV,
+			KVCacheMode:                rmc.ToKronkConfig().KVCacheMode(),
 			LoadMode:                   model.DerefLoadMode(rmc.PtrLoadMode),
 			NUMA:                       rmc.NUMA,
 			FlashAttention:             model.DerefFlashAttention(rmc.FlashAttention),
@@ -1160,24 +1161,25 @@ func toAppWeightBreakdown(w *gguf.WeightBreakdown) *WeightBreakdown {
 
 // VRAMInput contains the input parameters used for VRAM calculation.
 type VRAMInput struct {
-	ModelSizeBytes      int64            `json:"model_size_bytes"`
-	ContextWindow       int64            `json:"context_window"`
-	BlockCount          int64            `json:"block_count"`
-	HeadCountKV         int64            `json:"head_count_kv"`
-	KeyLength           int64            `json:"key_length"`
-	ValueLength         int64            `json:"value_length"`
-	BytesPerElement     int64            `json:"bytes_per_element"`
-	Slots               int64            `json:"slots"`
-	SlidingWindow       int64            `json:"sliding_window,omitempty"`
-	SlidingWindowLayers int64            `json:"sliding_window_layers,omitempty"`
-	EmbeddingLength     int64            `json:"embedding_length,omitempty"`
-	MoE                 *MoEInfo         `json:"moe,omitempty"`
-	Weights             *WeightBreakdown `json:"weights,omitempty"`
-	GPULayers           int64            `json:"gpu_layers"`
-	ExpertLayersOnGPU   int64            `json:"expert_layers_on_gpu"`
-	MoECacheSize        int64            `json:"moe_cache_size"`
-	KVCacheOnCPU        bool             `json:"kv_cache_on_cpu,omitempty"`
-	SWAFull             bool             `json:"swa_full"`
+	ModelSizeBytes      int64             `json:"model_size_bytes"`
+	ContextWindow       int64             `json:"context_window"`
+	BlockCount          int64             `json:"block_count"`
+	HeadCountKV         int64             `json:"head_count_kv"`
+	KeyLength           int64             `json:"key_length"`
+	ValueLength         int64             `json:"value_length"`
+	BytesPerElement     int64             `json:"bytes_per_element"`
+	Slots               int64             `json:"slots"`
+	SlidingWindow       int64             `json:"sliding_window,omitempty"`
+	SlidingWindowLayers int64             `json:"sliding_window_layers,omitempty"`
+	EmbeddingLength     int64             `json:"embedding_length,omitempty"`
+	MoE                 *MoEInfo          `json:"moe,omitempty"`
+	Weights             *WeightBreakdown  `json:"weights,omitempty"`
+	GPULayers           int64             `json:"gpu_layers"`
+	ExpertLayersOnGPU   int64             `json:"expert_layers_on_gpu"`
+	MoECacheSize        int64             `json:"moe_cache_size"`
+	KVCacheOnCPU        bool              `json:"kv_cache_on_cpu,omitempty"`
+	SWAFull             bool              `json:"swa_full"`
+	KVCacheMode         model.KVCacheMode `json:"kv_cache_mode"`
 }
 
 // PerDeviceVRAM is the per-GPU VRAM split used when tensor_split /
@@ -1243,6 +1245,7 @@ type ModelConfig struct {
 	PtrNThreadsBatch           *int                     `json:"nthreads-batch"`
 	CacheTypeK                 model.GGMLType           `json:"cache-type-k"`
 	CacheTypeV                 model.GGMLType           `json:"cache-type-v"`
+	KVCacheMode                model.KVCacheMode        `json:"kv-cache-mode"`
 	LoadMode                   model.LoadMode           `json:"load-mode"`
 	NUMA                       string                   `json:"numa,omitempty"`
 	FlashAttention             model.FlashAttentionType `json:"flash-attention"`
@@ -1348,19 +1351,20 @@ func (app TokenResponse) Encode() ([]byte, string, error) {
 // SystemRAMBytes, DeviceCount, TensorSplit) and returns the best-fitting
 // configuration.
 type VRAMRequest struct {
-	ModelURL          string    `json:"model_url"`
-	ModelURLs         []string  `json:"model_urls,omitempty"`
-	ModelID           string    `json:"model_id,omitempty"`
-	ContextWindow     int64     `json:"context_window"`
-	BytesPerElement   int64     `json:"bytes_per_element"`
-	Slots             int64     `json:"slots"`
-	GPULayers         int64     `json:"gpu_layers,omitempty"`
-	ExpertLayersOnGPU int64     `json:"expert_layers_on_gpu,omitempty"`
-	MoECacheSize      int64     `json:"moe_cache_size,omitempty"`
-	KVCacheOnCPU      bool      `json:"kv_cache_on_cpu,omitempty"`
-	SWAFull           *bool     `json:"swa_full,omitempty"`
-	DeviceCount       int64     `json:"device_count,omitempty"`
-	TensorSplit       []float64 `json:"tensor_split,omitempty"`
+	ModelURL          string             `json:"model_url"`
+	ModelURLs         []string           `json:"model_urls,omitempty"`
+	ModelID           string             `json:"model_id,omitempty"`
+	ContextWindow     int64              `json:"context_window"`
+	BytesPerElement   int64              `json:"bytes_per_element"`
+	Slots             int64              `json:"slots"`
+	GPULayers         int64              `json:"gpu_layers,omitempty"`
+	ExpertLayersOnGPU int64              `json:"expert_layers_on_gpu,omitempty"`
+	MoECacheSize      int64              `json:"moe_cache_size,omitempty"`
+	KVCacheOnCPU      bool               `json:"kv_cache_on_cpu,omitempty"`
+	SWAFull           *bool              `json:"swa_full,omitempty"`
+	KVCacheMode       *model.KVCacheMode `json:"kv_cache_mode,omitempty"`
+	DeviceCount       int64              `json:"device_count,omitempty"`
+	TensorSplit       []float64          `json:"tensor_split,omitempty"`
 
 	AutoFit        bool    `json:"auto_fit,omitempty"`
 	GPUFreeBytes   []int64 `json:"gpu_free_bytes,omitempty"`
@@ -1475,8 +1479,13 @@ func (app VRAMResponse) Encode() ([]byte, string, error) {
 }
 
 func toVRAMResponse(v vram.Result, repoFiles []HFRepoFile) VRAMResponse {
+	mode := model.KVCachePartitioned
+	if v.Input.KVUnified {
+		mode = model.KVCacheShared
+	}
 	resp := VRAMResponse{
 		Input: VRAMInput{
+			KVCacheMode:         mode,
 			ModelSizeBytes:      v.Input.ModelSizeBytes,
 			ContextWindow:       v.Input.ContextWindow,
 			BlockCount:          v.Input.BlockCount,
@@ -1568,6 +1577,7 @@ func vramConfigFromRMC(rmc models.ModelConfig) vram.Config {
 		GPULayers:         int64(kronkConfig.NGpuLayers()),
 		ExpertLayersOnGPU: kronkConfig.ExpertLayersOnGPU(),
 		MoECacheSize:      kronkConfig.MoECacheSize(),
+		KVUnified:         kronkConfig.KVCacheMode() == model.KVCacheShared,
 		SWAFull:           resolveSWAFull(nil, kronkConfig.PtrSWAFull),
 	}
 }

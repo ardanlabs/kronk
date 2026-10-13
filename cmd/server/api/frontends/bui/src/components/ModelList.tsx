@@ -446,6 +446,7 @@ export default function ModelList() {
                         { key: 'cache-min-tokens', label: labelWithTip('cache-min-tokens', 'cacheMinTokens'), value: fmtVal(mc['cache-min-tokens']) },
                         { key: 'cache-type-k', label: labelWithTip('cache-type-k', 'cacheTypeK'), value: mc['cache-type-k'] || 'default' },
                         { key: 'cache-type-v', label: labelWithTip('cache-type-v', 'cacheTypeV'), value: mc['cache-type-v'] || 'default' },
+                        { key: 'kv-cache-mode', label: labelWithTip('kv-cache-mode', 'kvCacheMode'), value: mc['kv-cache-mode'] || 'partitioned' },
                         { key: 'context-window', label: labelWithTip('context-window', 'contextWindow'), value: fmtVal(mc['context-window']) },
                         { key: 'devices', label: labelWithTip('devices', 'devices'), value: mc.devices?.join(', ') || '—' },
                         { key: 'draft-model.devices', label: labelWithTip('draft-model.devices', 'draftDevice'), value: mc['draft-model']?.devices?.join(', ') || '—' },

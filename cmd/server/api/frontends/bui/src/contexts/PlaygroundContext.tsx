@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useMemo, type ReactNode } from 'react';
 import type { DisplayMessage } from './ChatContext';
-import type { ModelLoadMode, PlaygroundSessionResponse } from '../types';
+import type { KVCacheMode, ModelLoadMode, PlaygroundSessionResponse } from '../types';
 import { DEFAULT_PREFILL_BATCH_SIZE } from '../lib/modelDefaults';
 
 interface PlaygroundState {
@@ -54,6 +54,8 @@ interface PlaygroundState {
   setFlashAttention: React.Dispatch<React.SetStateAction<string>>;
   cacheType: string;
   setCacheType: React.Dispatch<React.SetStateAction<string>>;
+  kvCacheMode: KVCacheMode;
+  setKVCacheMode: React.Dispatch<React.SetStateAction<KVCacheMode>>;
   loadMode: ModelLoadMode;
   setLoadMode: React.Dispatch<React.SetStateAction<ModelLoadMode>>;
   cacheMode: string;
@@ -90,6 +92,7 @@ export function PlaygroundProvider({ children }: { children: ReactNode }) {
   const [nSeqMax, setNSeqMax] = useState(1);
   const [flashAttention, setFlashAttention] = useState('auto');
   const [cacheType, setCacheType] = useState('');
+  const [kvCacheMode, setKVCacheMode] = useState<KVCacheMode>('partitioned');
   const [loadMode, setLoadMode] = useState<ModelLoadMode>('auto');
   const [cacheMode, setCacheMode] = useState('none');
   const [moeMode, setMoeMode] = useState('');
@@ -114,6 +117,7 @@ export function PlaygroundProvider({ children }: { children: ReactNode }) {
     nSeqMax, setNSeqMax,
     flashAttention, setFlashAttention,
     cacheType, setCacheType,
+    kvCacheMode, setKVCacheMode,
     loadMode, setLoadMode,
     cacheMode, setCacheMode,
     moeMode, setMoeMode,
@@ -123,7 +127,7 @@ export function PlaygroundProvider({ children }: { children: ReactNode }) {
   }), [
     session, chatMessages, selectedModel, playgroundMode, sweepMode, activeTab, systemPrompt, lastTPS,
     templateMode, selectedTemplate, customScript, contextWindow, prefillBatchSize,
-    nSeqMax, flashAttention, cacheType, loadMode, cacheMode, moeMode, moeKeepTopN, tensorBuftOverrides, hydratedModelId,
+    nSeqMax, flashAttention, cacheType, kvCacheMode, loadMode, cacheMode, moeMode, moeKeepTopN, tensorBuftOverrides, hydratedModelId,
   ]);
 
   return (

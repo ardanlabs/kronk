@@ -137,6 +137,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">ParseGGMLType parses a string into a GGMLType. Supported values: "f32", "f16", "q4_0", "q4_1", "q5_0", "q5_1", "q8_0", "bf16", "auto".</p>
             </div>
 
+            <div className="doc-section" id="func-parsekvcachemode">
+              <h4>ParseKVCacheMode</h4>
+              <pre className="code-block">
+                <code>func ParseKVCacheMode(s string) (KVCacheMode, error)</code>
+              </pre>
+              <p className="doc-description">ParseKVCacheMode validates a KV cache layout name.</p>
+            </div>
+
             <div className="doc-section" id="func-parselazymode">
               <h4>ParseLazyMode</h4>
               <pre className="code-block">
@@ -394,6 +402,7 @@ export default function DocsSDKModel() {
 	PtrInsecureLogging         *bool
 	JinjaFile                  string
 	JinjaScript                string
+	PtrKVCacheMode             *KVCacheMode
 	LazyMode                   LazyMode
 	LoadMode                   LoadMode
 	Log                        applog.Logger
@@ -765,6 +774,14 @@ export default function DocsSDKModel() {
 }`}</code>
               </pre>
               <p className="doc-description">IMCSystemCacheDetail is a scalar snapshot of one System cache pool entry.</p>
+            </div>
+
+            <div className="doc-section" id="type-kvcachemode">
+              <h4>KVCacheMode</h4>
+              <pre className="code-block">
+                <code>{`type KVCacheMode string`}</code>
+              </pre>
+              <p className="doc-description">KVCacheMode controls whether execution slots have dedicated KV partitions or share the aggregate cache. Both layouts isolate attention between requests.</p>
             </div>
 
             <div className="doc-section" id="type-lazymode">
@@ -1484,6 +1501,14 @@ export default function DocsSDKModel() {
               </pre>
             </div>
 
+            <div className="doc-section" id="method-config-kvcachemode">
+              <h4>Config.KVCacheMode</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) KVCacheMode() KVCacheMode</code>
+              </pre>
+              <p className="doc-description">KVCacheMode returns the cache layout, defaulting to partitioned.</p>
+            </div>
+
             <div className="doc-section" id="method-config-maingpu">
               <h4>Config.MainGPU</h4>
               <pre className="code-block">
@@ -1808,6 +1833,22 @@ export default function DocsSDKModel() {
                 <code>func (t *GGMLType) UnmarshalYAML(unmarshal func(any) error) error</code>
               </pre>
               <p className="doc-description">UnmarshalYAML implements yaml.Unmarshaler to parse string values like "f16".</p>
+            </div>
+
+            <div className="doc-section" id="method-kvcachemode-unmarshaljson">
+              <h4>KVCacheMode.UnmarshalJSON</h4>
+              <pre className="code-block">
+                <code>func (mode *KVCacheMode) UnmarshalJSON(data []byte) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalJSON implements json.Unmarshaler.</p>
+            </div>
+
+            <div className="doc-section" id="method-kvcachemode-unmarshalyaml">
+              <h4>KVCacheMode.UnmarshalYAML</h4>
+              <pre className="code-block">
+                <code>func (mode *KVCacheMode) UnmarshalYAML(unmarshal func(any) error) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalYAML implements yaml.Unmarshaler.</p>
             </div>
 
             <div className="doc-section" id="method-lazymode-marshaljson">
@@ -2546,6 +2587,7 @@ export default function DocsSDKModel() {
                 <li><a href="#func-verifyartifact">VerifyArtifact</a></li>
                 <li><a href="#func-parsedecisionprotocol">ParseDecisionProtocol</a></li>
                 <li><a href="#func-parseggmltype">ParseGGMLType</a></li>
+                <li><a href="#func-parsekvcachemode">ParseKVCacheMode</a></li>
                 <li><a href="#func-parselazymode">ParseLazyMode</a></li>
                 <li><a href="#func-parseloadmode">ParseLoadMode</a></li>
                 <li><a href="#func-parsemoemode">ParseMoEMode</a></li>
@@ -2594,6 +2636,7 @@ export default function DocsSDKModel() {
                 <li><a href="#type-imcsessiondetail">IMCSessionDetail</a></li>
                 <li><a href="#type-imcsessionstate">IMCSessionState</a></li>
                 <li><a href="#type-imcsystemcachedetail">IMCSystemCacheDetail</a></li>
+                <li><a href="#type-kvcachemode">KVCacheMode</a></li>
                 <li><a href="#type-lazymode">LazyMode</a></li>
                 <li><a href="#type-loadmode">LoadMode</a></li>
                 <li><a href="#type-logger">Logger</a></li>
@@ -2655,6 +2698,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-config-imagetokenbudget">Config.ImageTokenBudget</a></li>
                 <li><a href="#method-config-incrementalcache">Config.IncrementalCache</a></li>
                 <li><a href="#method-config-insecurelogging">Config.InsecureLogging</a></li>
+                <li><a href="#method-config-kvcachemode">Config.KVCacheMode</a></li>
                 <li><a href="#method-config-maingpu">Config.MainGPU</a></li>
                 <li><a href="#method-config-moecachesize">Config.MoECacheSize</a></li>
                 <li><a href="#method-config-ngpulayers">Config.NGpuLayers</a></li>
@@ -2699,6 +2743,8 @@ export default function DocsSDKModel() {
                 <li><a href="#method-ggmltype-toyzmatype">GGMLType.ToYZMAType</a></li>
                 <li><a href="#method-ggmltype-unmarshaljson">GGMLType.UnmarshalJSON</a></li>
                 <li><a href="#method-ggmltype-unmarshalyaml">GGMLType.UnmarshalYAML</a></li>
+                <li><a href="#method-kvcachemode-unmarshaljson">KVCacheMode.UnmarshalJSON</a></li>
+                <li><a href="#method-kvcachemode-unmarshalyaml">KVCacheMode.UnmarshalYAML</a></li>
                 <li><a href="#method-lazymode-marshaljson">LazyMode.MarshalJSON</a></li>
                 <li><a href="#method-lazymode-marshalyaml">LazyMode.MarshalYAML</a></li>
                 <li><a href="#method-lazymode-string">LazyMode.String</a></li>

@@ -256,6 +256,29 @@ an exact ratio for every model and backend. Start with automatic tuning. If an
 explicit quantized cache changes output quality, compare the same workload with
 `f16` before changing unrelated settings.
 
+#### KV Cache Layout
+
+`kv-cache-mode` selects how concurrent generation slots allocate KV storage:
+
+```yaml
+unsloth/Qwen3-0.6B-Q8_0:
+  context-window: 8192
+  nseq-max: 4
+  kv-cache-mode: shared
+```
+
+The default, `partitioned`, gives each slot a dedicated context-window-sized
+partition. `shared` uses one aggregate pool. Both request total context capacity
+of `context-window × nseq-max`, isolate attention between requests, and keep
+Kronk's per-request context limit unchanged. Shared mode does not reserve a
+physical partition for each slot.
+
+Shared mode can improve ordinary generation batching when active sequence IDs
+have gaps. It can also increase attention workspace and long-history processing
+costs. Benchmark your workload rather than assuming it is always faster. This is
+a model-load setting, not a chat-request parameter; restart/reload with the new
+configuration. SDK callers use `model.WithKVCacheMode(model.KVCacheShared)`.
+
 #### Flash Attention
 
 Flash Attention can reduce attention memory traffic and improve performance,
@@ -850,6 +873,7 @@ is normally supplied by analysis or by the load-time defaults.
 | --- | ------ | ------- |
 | `context-window` | Positive token count | Per-sequence context capacity |
 | `cache-type-k`, `cache-type-v` | `f16`, `q8_0`, `q4_0`, and supported GGML types | KV-cache precision |
+| `kv-cache-mode` | `partitioned` (default), `shared` | Dedicated slot partitions or shared aggregate KV capacity |
 | `flash-attention` | `enabled`, `disabled`, `auto` | Attention implementation mode |
 | `nseq-max` | Positive integer | Generation slots, sequence-batch width, or fallback context-pool size |
 | `admission-timeout` | Go duration, default `3m` | Maximum SDK admission-permit wait; separate from the server's `KRONK_WEB_INFERENCE_TIMEOUT` (default `60m`) |

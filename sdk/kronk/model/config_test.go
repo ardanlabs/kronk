@@ -619,21 +619,28 @@ func TestValidateGenerationBatchCapacity(t *testing.T) {
 }
 
 func TestContextTopologyParamsProvidesFullContextPerSequence(t *testing.T) {
-	got := contextTopologyParams(llama.ContextParams{}, 32_768, 4)
-
-	if got.NCtx != 131_072 {
-		t.Errorf("NCtx: got %d, want %d", got.NCtx, 131_072)
-	}
-	if got.NSeqMax != 4 {
-		t.Errorf("NSeqMax: got %d, want %d", got.NSeqMax, 4)
-	}
-	if got.KVUnified != 0 {
-		t.Errorf("KVUnified: got %d, want %d", got.KVUnified, 0)
+	for _, tt := range []struct {
+		mode    KVCacheMode
+		unified uint8
+	}{
+		{KVCachePartitioned, 0},
+		{KVCacheShared, 1},
+	} {
+		got := contextTopologyParams(llama.ContextParams{}, 32_768, 4, tt.mode)
+		if got.NCtx != 131_072 {
+			t.Errorf("%s NCtx: got %d, want %d", tt.mode, got.NCtx, 131_072)
+		}
+		if got.NSeqMax != 4 {
+			t.Errorf("%s NSeqMax: got %d, want %d", tt.mode, got.NSeqMax, 4)
+		}
+		if got.KVUnified != tt.unified {
+			t.Errorf("%s KVUnified: got %d, want %d", tt.mode, got.KVUnified, tt.unified)
+		}
 	}
 }
 
 func TestContextParamsTraceDistinguishesTotalAndPerSequenceContext(t *testing.T) {
-	params := contextTopologyParams(llama.ContextParams{}, 131_072, 2)
+	params := contextTopologyParams(llama.ContextParams{}, 131_072, 2, KVCachePartitioned)
 
 	var got string
 	log := func(_ context.Context, _ string, args ...any) {
@@ -645,6 +652,30 @@ func TestContextParamsTraceDistinguishesTotalAndPerSequenceContext(t *testing.T)
 		if !strings.Contains(got, want) {
 			t.Errorf("context params trace: got %q, want it to contain %q", got, want)
 		}
+	}
+}
+
+func TestKVCacheMode(t *testing.T) {
+	if got := NewConfig().KVCacheMode(); got != KVCachePartitioned {
+		t.Fatalf("default mode: got %q, want partitioned", got)
+	}
+	for _, mode := range []KVCacheMode{KVCachePartitioned, KVCacheShared} {
+		cfg := NewConfig(WithKVCacheMode(mode))
+		if got := cfg.KVCacheMode(); got != mode {
+			t.Errorf("configured mode: got %q, want %q", got, mode)
+		}
+		data, err := json.Marshal(mode)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var decoded KVCacheMode
+		if err := json.Unmarshal(data, &decoded); err != nil || decoded != mode {
+			t.Fatalf("JSON round trip: got %q, error %v, want %q", decoded, err, mode)
+		}
+	}
+	var mode KVCacheMode
+	if err := json.Unmarshal([]byte(`"unified"`), &mode); err == nil {
+		t.Fatal("invalid mode accepted")
 	}
 }
 

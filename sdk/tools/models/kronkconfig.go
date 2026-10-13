@@ -357,6 +357,7 @@ type ModelConfig struct {
 	PtrImageTokenBudget        *int                      `yaml:"image-token-budget,omitempty"`
 	PtrIncrementalCache        *bool                     `yaml:"incremental-cache,omitempty"`
 	PtrInsecureLogging         *bool                     `yaml:"insecure-logging,omitempty"`
+	PtrKVCacheMode             *model.KVCacheMode        `yaml:"kv-cache-mode,omitempty"`
 	PtrLazyMode                *model.LazyMode           `yaml:"lazy-mode,omitempty"`
 	PtrLoadMode                *model.LoadMode           `yaml:"load-mode,omitempty"`
 	PtrMainGPU                 *int                      `yaml:"main-gpu,omitempty"`
@@ -431,6 +432,7 @@ func (mc ModelConfig) ToKronkConfig() model.Config {
 		PtrIncrementalCache:        mc.PtrIncrementalCache,
 		PtrInsecureLogging:         mc.PtrInsecureLogging,
 		JinjaFile:                  mc.Template,
+		PtrKVCacheMode:             mc.PtrKVCacheMode,
 		LazyMode:                   model.DerefLazyMode(mc.PtrLazyMode),
 		LoadMode:                   model.DerefLoadMode(mc.PtrLoadMode),
 		PtrMainGPU:                 mc.PtrMainGPU,

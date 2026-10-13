@@ -371,6 +371,43 @@ func TestModelConfigLoadMode(t *testing.T) {
 	}
 }
 
+func TestModelConfigKVCacheMode(t *testing.T) {
+	base := ModelConfig{PtrKVCacheMode: new(model.KVCacheShared)}
+	for _, tt := range []struct {
+		input string
+		want  model.KVCacheMode
+	}{
+		{"{}", model.KVCacheShared},
+		{"kv-cache-mode: partitioned", model.KVCachePartitioned},
+		{"kv-cache-mode: shared", model.KVCacheShared},
+	} {
+		var override ModelConfig
+		if err := yaml.Unmarshal([]byte(tt.input), &override); err != nil {
+			t.Fatal(err)
+		}
+		cfg := base
+		MergeModelConfig(&cfg, override)
+		if got := cfg.ToKronkConfig().KVCacheMode(); got != tt.want {
+			t.Errorf("%s: got %q, want %q", tt.input, got, tt.want)
+		}
+		data, err := yaml.Marshal(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var restored ModelConfig
+		if err := yaml.Unmarshal(data, &restored); err != nil || restored.ToKronkConfig().KVCacheMode() != tt.want {
+			t.Fatalf("YAML round trip: got %q, error %v, want %q", restored.ToKronkConfig().KVCacheMode(), err, tt.want)
+		}
+	}
+	var cfg ModelConfig
+	if err := yaml.Unmarshal([]byte("kv-cache-mode: invalid"), &cfg); err == nil {
+		t.Fatal("invalid mode accepted")
+	}
+	if got := (ModelConfig{}).ToKronkConfig().KVCacheMode(); got != model.KVCachePartitioned {
+		t.Errorf("default mode: got %q, want partitioned", got)
+	}
+}
+
 func TestModelConfigLazyMode(t *testing.T) {
 	for _, tt := range []struct {
 		input string

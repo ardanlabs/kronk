@@ -74,18 +74,26 @@ streaming response, and sequence ID.
 ```
 
 Sequence IDs isolate attention state, so one request cannot attend to another
-request's tokens. Kronk also gives each sequence a fixed physical KV-cache
-partition. The aggregate context allocation is:
+request's tokens in either KV layout. With the default
+`kv-cache-mode: partitioned`, Kronk gives each sequence a fixed physical KV-cache partition.
+Both layouts request aggregate context capacity of:
 
 ```text
 context-window × nseq-max
 ```
 
-llama.cpp divides that allocation into `nseq-max` streams, so every slot gets
-the full configured `context-window`; it is never divided by the slot count.
-An idle slot's partition is not borrowed by another slot. Increasing
-`nseq-max` therefore increases the total capacity Kronk must allocate and
-budget.
+In partitioned mode, llama.cpp divides that allocation into `nseq-max` streams,
+so every slot gets the full configured `context-window`; it is never divided
+by the slot count. An idle slot's partition is not borrowed by another slot.
+With `kv-cache-mode: shared`, sequences use one aggregate pool instead, while
+Kronk enforces the configured context-window limit per request. There is no
+reserved per-slot partition in shared mode. Increasing `nseq-max` increases
+the total capacity Kronk must allocate and budget in both modes.
+
+Partitioned ordinary generation may require separate native computations when
+active sequence IDs have gaps. Shared mode avoids that restriction for ordinary
+KV batching, but can cost more with long concurrent histories. See Chapter 3's
+KV Cache Layout setting for the tradeoff.
 
 When a request finishes, its slot becomes available for another waiting job.
 Scheduling uses the first available slot; jobs do not reserve a particular

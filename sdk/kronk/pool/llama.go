@@ -148,6 +148,7 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 		MoECacheSize:           cfg.MoECacheSize(),
 		GPULayers:              int64(cfg.NGpuLayers()),
 		KVCacheOnCPU:           cfg.PtrOffloadKQV != nil && !*cfg.PtrOffloadKQV,
+		KVUnified:              cfg.KVCacheMode() == model.KVCacheShared,
 		SWAFull:                effectiveSWAFull(cfg),
 		VTransposed:            cfg.FlashAttention() == model.FlashAttentionDisabled,
 		RecurrentStateCopies:   model.RecurrentStateCopies(cfg, false),

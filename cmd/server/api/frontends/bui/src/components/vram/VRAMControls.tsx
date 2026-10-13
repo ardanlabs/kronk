@@ -3,6 +3,7 @@ import { CONTEXT_WINDOW_OPTIONS, BYTES_PER_ELEMENT_OPTIONS, SLOT_OPTIONS } from 
 import { FieldLabel, ParamTooltip } from '../ParamTooltips';
 import { formatBytes } from '../../lib/format';
 import type { ContextInfo } from '../../lib/context';
+import type { KVCacheMode } from '../../types';
 import { formatContextHint } from '../../lib/context';
 
 type OffloadStrategy = 'layer' | 'expert';
@@ -213,6 +214,8 @@ function gpuCountOptions(maxDeviceCount?: number): number[] {
 }
 
 interface VRAMControlsProps {
+  kvCacheMode: KVCacheMode;
+  onKVCacheModeChange: (v: KVCacheMode) => void;
   contextWindow: number;
   onContextWindowChange: (v: number) => void;
   bytesPerElement: number;
@@ -264,6 +267,7 @@ interface VRAMControlsProps {
 }
 
 export default function VRAMControls({
+  kvCacheMode, onKVCacheModeChange,
   contextWindow, onContextWindowChange,
   bytesPerElement, onBytesPerElementChange,
   slots, onSlotsChange,
@@ -286,6 +290,21 @@ export default function VRAMControls({
   detectedGpuTotalBytes, detectedSystemRAMBytes, detectedDeviceCount,
   canAutoFit, autoFitDisabled, autoFitting, autoFitError, onAutoFit,
 }: VRAMControlsProps) {
+  const layoutControl = (
+    <div className={variant === 'compact' ? 'control-field' : 'playground-sweep-param'}>
+      <FieldLabel htmlFor={`vram-${variant}-kv-cache-mode`} tooltipKey="kvCacheMode"
+        className={variant === 'compact' ? undefined : 'playground-sweep-param-toggle'}>KV Cache Layout</FieldLabel>
+      <select
+        id={`vram-${variant}-kv-cache-mode`}
+        value={kvCacheMode}
+        onChange={(e) => onKVCacheModeChange(e.target.value as KVCacheMode)}
+        className={variant === 'compact' ? 'form-select' : 'playground-sweep-param-values'}
+      >
+        <option value="partitioned">Partitioned (default)</option>
+        <option value="shared">Shared</option>
+      </select>
+    </div>
+  );
   const [compactAdvancedOpen, setCompactAdvancedOpen] = useState(false);
   const [offloadStrategy, setOffloadStrategy] = useState<OffloadStrategy>('layer');
 
@@ -395,6 +414,7 @@ export default function VRAMControls({
             </select>
           </div>
           {moeCacheControl}
+          {layoutControl}
           <CompactAdvancedToggle
             open={compactAdvancedOpen}
             onToggle={() => setCompactAdvancedOpen(!compactAdvancedOpen)}
@@ -458,6 +478,7 @@ export default function VRAMControls({
 
   return (
     <div className="playground-sweep-params">
+      {layoutControl}
       <div className="playground-sweep-param">
         <FieldLabel className="playground-sweep-param-toggle" htmlFor="vram-contextWindow" tooltipKey="contextWindow">Context Window</FieldLabel>
         <select
