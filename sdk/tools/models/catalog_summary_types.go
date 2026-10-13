@@ -21,24 +21,24 @@ func newMTPSource(value string) MTPSource {
 }
 
 // String returns the canonical name.
-func (t MTPSource) String() string { return t.value }
+func (ms MTPSource) String() string { return ms.value }
 
 // Equal provides support for comparison and testing.
-func (t MTPSource) Equal(other MTPSource) bool { return t.value == other.value }
+func (ms MTPSource) Equal(other MTPSource) bool { return ms.value == other.value }
 
 // IsZero reports whether the value is unset.
-func (t MTPSource) IsZero() bool { return t.value == "" }
+func (ms MTPSource) IsZero() bool { return ms.value == "" }
 
 // MarshalText provides support for logging and serialization.
-func (t MTPSource) MarshalText() ([]byte, error) { return []byte(t.value), nil }
+func (ms MTPSource) MarshalText() ([]byte, error) { return []byte(ms.value), nil }
 
 // UnmarshalText parses a registered value.
-func (t *MTPSource) UnmarshalText(data []byte) error {
+func (ms *MTPSource) UnmarshalText(data []byte) error {
 	parsed, err := ParseMTPSource(string(data))
 	if err != nil {
 		return err
 	}
-	*t = parsed
+	*ms = parsed
 	return nil
 }
 

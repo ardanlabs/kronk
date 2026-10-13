@@ -33,11 +33,11 @@ func newSampleEncoding(name string, value int) SampleEncoding {
 }
 
 // Int returns the integer value.
-func (s SampleEncoding) Int() int { return s.value }
+func (se SampleEncoding) Int() int { return se.value }
 
 // String returns the sample encoding name.
-func (s SampleEncoding) String() string {
-	switch s.value {
+func (se SampleEncoding) String() string {
+	switch se.value {
 	case 0:
 		return "int16le"
 	case 1:
@@ -48,46 +48,46 @@ func (s SampleEncoding) String() string {
 }
 
 // Equal provides support for comparison and testing.
-func (s SampleEncoding) Equal(other SampleEncoding) bool { return s.value == other.value }
+func (se SampleEncoding) Equal(other SampleEncoding) bool { return se.value == other.value }
 
 // IsZero reports whether the encoding is the zero-value Int16LE encoding.
-func (s SampleEncoding) IsZero() bool { return s.value == 0 }
+func (se SampleEncoding) IsZero() bool { return se.value == 0 }
 
 // MarshalText provides support for logging and serialization.
-func (s SampleEncoding) MarshalText() ([]byte, error) { return []byte(s.String()), nil }
+func (se SampleEncoding) MarshalText() ([]byte, error) { return []byte(se.String()), nil }
 
 // UnmarshalText parses a known sample encoding.
-func (s *SampleEncoding) UnmarshalText(data []byte) error {
+func (se *SampleEncoding) UnmarshalText(data []byte) error {
 	parsed, err := ParseSampleEncoding(string(data))
 	if err != nil {
 		return err
 	}
-	*s = parsed
+	*se = parsed
 	return nil
 }
 
 // MarshalJSON preserves the numeric wire representation.
-func (s SampleEncoding) MarshalJSON() ([]byte, error) { return json.Marshal(s.value) }
+func (se SampleEncoding) MarshalJSON() ([]byte, error) { return json.Marshal(se.value) }
 
 // UnmarshalJSON parses a known numeric sample encoding.
-func (s *SampleEncoding) UnmarshalJSON(data []byte) error {
-	value := s.value
+func (se *SampleEncoding) UnmarshalJSON(data []byte) error {
+	value := se.value
 	if err := json.Unmarshal(data, &value); err != nil {
 		return err
 	}
-	return s.UnmarshalText([]byte(strconv.Itoa(value)))
+	return se.UnmarshalText([]byte(strconv.Itoa(value)))
 }
 
 // MarshalYAML preserves the numeric wire representation.
-func (s SampleEncoding) MarshalYAML() (any, error) { return s.value, nil }
+func (se SampleEncoding) MarshalYAML() (any, error) { return se.value, nil }
 
 // UnmarshalYAML parses a known numeric sample encoding.
-func (s *SampleEncoding) UnmarshalYAML(unmarshal func(any) error) error {
+func (se *SampleEncoding) UnmarshalYAML(unmarshal func(any) error) error {
 	var value int
 	if err := unmarshal(&value); err != nil {
 		return err
 	}
-	return s.UnmarshalText([]byte(strconv.Itoa(value)))
+	return se.UnmarshalText([]byte(strconv.Itoa(value)))
 }
 
 // ParseSampleEncoding parses a known name or numeric value, defaulting empty to Int16LE.

@@ -25,8 +25,8 @@ func newMediaType(name string, value int) MediaType {
 }
 
 // String returns the media name.
-func (t MediaType) String() string {
-	switch t {
+func (mt MediaType) String() string {
+	switch mt {
 	case MediaTypeNone:
 		return "none"
 	case MediaTypeVision:
@@ -39,10 +39,10 @@ func (t MediaType) String() string {
 }
 
 // Equal reports whether the values match.
-func (t MediaType) Equal(other MediaType) bool { return t == other }
+func (mt MediaType) Equal(other MediaType) bool { return mt == other }
 
 // IsZero reports whether there is no media.
-func (t MediaType) IsZero() bool { return t.value == 0 }
+func (mt MediaType) IsZero() bool { return mt.value == 0 }
 
 // ParseMediaType parses a registered media name.
 func ParseMediaType(value string) (MediaType, error) {
@@ -63,33 +63,33 @@ func MustParseMediaType(value string) MediaType {
 }
 
 // MarshalText serializes the media name.
-func (t MediaType) MarshalText() ([]byte, error) { return []byte(t.String()), nil }
+func (mt MediaType) MarshalText() ([]byte, error) { return []byte(mt.String()), nil }
 
 // UnmarshalText parses a registered media name.
-func (t *MediaType) UnmarshalText(data []byte) error {
+func (mt *MediaType) UnmarshalText(data []byte) error {
 	v, err := ParseMediaType(string(data))
 	if err != nil {
 		return err
 	}
-	*t = v
+	*mt = v
 	return nil
 }
 
 // MarshalJSON preserves the numeric wire representation.
-func (t MediaType) MarshalJSON() ([]byte, error) { return json.Marshal(t.value) }
+func (mt MediaType) MarshalJSON() ([]byte, error) { return json.Marshal(mt.value) }
 
 // UnmarshalJSON validates a numeric wire value.
-func (t *MediaType) UnmarshalJSON(data []byte) error {
-	value := t.value
+func (mt *MediaType) UnmarshalJSON(data []byte) error {
+	value := mt.value
 	if err := json.Unmarshal(data, &value); err != nil {
 		return err
 	}
-	return t.fromValue(value)
+	return mt.fromValue(value)
 }
-func (t *MediaType) fromValue(value int) error {
+func (mt *MediaType) fromValue(value int) error {
 	for _, v := range mediaTypes {
 		if v.value == value {
-			*t = v
+			*mt = v
 			return nil
 		}
 	}
@@ -97,13 +97,13 @@ func (t *MediaType) fromValue(value int) error {
 }
 
 // MarshalYAML preserves the numeric wire representation.
-func (t MediaType) MarshalYAML() (any, error) { return t.value, nil }
+func (mt MediaType) MarshalYAML() (any, error) { return mt.value, nil }
 
 // UnmarshalYAML validates a numeric wire value.
-func (t *MediaType) UnmarshalYAML(unmarshal func(any) error) error {
+func (mt *MediaType) UnmarshalYAML(unmarshal func(any) error) error {
 	var value int
 	if err := unmarshal(&value); err != nil {
 		return err
 	}
-	return t.fromValue(value)
+	return mt.fromValue(value)
 }

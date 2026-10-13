@@ -26,8 +26,8 @@ func newModelType(name string, value uint8) ModelType {
 }
 
 // String returns the model architecture name.
-func (t ModelType) String() string {
-	switch t {
+func (mt ModelType) String() string {
+	switch mt {
 	case ModelTypeDense:
 		return "dense"
 	case ModelTypeMoE:
@@ -40,10 +40,10 @@ func (t ModelType) String() string {
 }
 
 // Equal reports whether the values match.
-func (t ModelType) Equal(other ModelType) bool { return t == other }
+func (mt ModelType) Equal(other ModelType) bool { return mt == other }
 
 // IsZero reports whether the architecture is dense.
-func (t ModelType) IsZero() bool { return t.value == 0 }
+func (mt ModelType) IsZero() bool { return mt.value == 0 }
 
 // ParseModelType parses a registered architecture name.
 func ParseModelType(value string) (ModelType, error) {
@@ -64,33 +64,33 @@ func MustParseModelType(value string) ModelType {
 }
 
 // MarshalText serializes the architecture name.
-func (t ModelType) MarshalText() ([]byte, error) { return []byte(t.String()), nil }
+func (mt ModelType) MarshalText() ([]byte, error) { return []byte(mt.String()), nil }
 
 // UnmarshalText parses a registered architecture name.
-func (t *ModelType) UnmarshalText(data []byte) error {
+func (mt *ModelType) UnmarshalText(data []byte) error {
 	v, err := ParseModelType(string(data))
 	if err != nil {
 		return err
 	}
-	*t = v
+	*mt = v
 	return nil
 }
 
 // MarshalJSON preserves the numeric wire representation.
-func (t ModelType) MarshalJSON() ([]byte, error) { return json.Marshal(t.value) }
+func (mt ModelType) MarshalJSON() ([]byte, error) { return json.Marshal(mt.value) }
 
 // UnmarshalJSON validates a numeric wire value.
-func (t *ModelType) UnmarshalJSON(data []byte) error {
-	value := t.value
+func (mt *ModelType) UnmarshalJSON(data []byte) error {
+	value := mt.value
 	if err := json.Unmarshal(data, &value); err != nil {
 		return err
 	}
-	return t.fromValue(value)
+	return mt.fromValue(value)
 }
-func (t *ModelType) fromValue(value uint8) error {
+func (mt *ModelType) fromValue(value uint8) error {
 	for _, v := range modelTypes {
 		if v.value == value {
-			*t = v
+			*mt = v
 			return nil
 		}
 	}
@@ -98,13 +98,13 @@ func (t *ModelType) fromValue(value uint8) error {
 }
 
 // MarshalYAML preserves the numeric wire representation.
-func (t ModelType) MarshalYAML() (any, error) { return t.value, nil }
+func (mt ModelType) MarshalYAML() (any, error) { return mt.value, nil }
 
 // UnmarshalYAML validates a numeric wire value.
-func (t *ModelType) UnmarshalYAML(unmarshal func(any) error) error {
+func (mt *ModelType) UnmarshalYAML(unmarshal func(any) error) error {
 	var value uint8
 	if err := unmarshal(&value); err != nil {
 		return err
 	}
-	return t.fromValue(value)
+	return mt.fromValue(value)
 }

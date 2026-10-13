@@ -24,24 +24,24 @@ func newBatchInputMixing(value string) BatchInputMixing {
 }
 
 // String returns the wire value.
-func (t BatchInputMixing) String() string { return t.value }
+func (bim BatchInputMixing) String() string { return bim.value }
 
 // Equal reports whether the values match.
-func (t BatchInputMixing) Equal(other BatchInputMixing) bool { return t == other }
+func (bim BatchInputMixing) Equal(other BatchInputMixing) bool { return bim == other }
 
 // IsZero reports whether support is unknown.
-func (t BatchInputMixing) IsZero() bool { return t.value == "" }
+func (bim BatchInputMixing) IsZero() bool { return bim.value == "" }
 
 // MarshalText implements encoding.TextMarshaler.
-func (t BatchInputMixing) MarshalText() ([]byte, error) { return []byte(t.value), nil }
+func (bim BatchInputMixing) MarshalText() ([]byte, error) { return []byte(bim.value), nil }
 
 // UnmarshalText implements encoding.TextUnmarshaler.
-func (t *BatchInputMixing) UnmarshalText(data []byte) error {
+func (bim *BatchInputMixing) UnmarshalText(data []byte) error {
 	v, err := ParseBatchInputMixing(string(data))
 	if err != nil {
 		return err
 	}
-	*t = v
+	*bim = v
 	return nil
 }
 

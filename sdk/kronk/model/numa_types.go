@@ -26,13 +26,13 @@ func newNUMAStrategy(value string) NUMAStrategy {
 }
 
 // String returns the strategy name, empty when disabled.
-func (t NUMAStrategy) String() string { return t.value }
+func (ns NUMAStrategy) String() string { return ns.value }
 
 // Equal reports whether the values match.
-func (t NUMAStrategy) Equal(other NUMAStrategy) bool { return t == other }
+func (ns NUMAStrategy) Equal(other NUMAStrategy) bool { return ns == other }
 
 // IsZero reports whether NUMA is disabled.
-func (t NUMAStrategy) IsZero() bool { return t.value == "" }
+func (ns NUMAStrategy) IsZero() bool { return ns.value == "" }
 
 // ParseNUMAStrategy parses a registered strategy, including disabled empty.
 func ParseNUMAStrategy(value string) (NUMAStrategy, error) {
@@ -53,14 +53,14 @@ func MustParseNUMAStrategy(value string) NUMAStrategy {
 }
 
 // MarshalText serializes the strategy name.
-func (t NUMAStrategy) MarshalText() ([]byte, error) { return []byte(t.value), nil }
+func (ns NUMAStrategy) MarshalText() ([]byte, error) { return []byte(ns.value), nil }
 
 // UnmarshalText parses a registered strategy.
-func (t *NUMAStrategy) UnmarshalText(data []byte) error {
+func (ns *NUMAStrategy) UnmarshalText(data []byte) error {
 	v, err := ParseNUMAStrategy(string(data))
 	if err != nil {
 		return err
 	}
-	*t = v
+	*ns = v
 	return nil
 }

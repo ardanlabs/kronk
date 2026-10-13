@@ -22,13 +22,13 @@ func newIMCSessionState(value string) IMCSessionState {
 }
 
 // String returns the state name.
-func (t IMCSessionState) String() string { return t.value }
+func (iss IMCSessionState) String() string { return iss.value }
 
 // Equal reports whether the values match.
-func (t IMCSessionState) Equal(other IMCSessionState) bool { return t == other }
+func (iss IMCSessionState) Equal(other IMCSessionState) bool { return iss == other }
 
 // IsZero reports whether the state is unset.
-func (t IMCSessionState) IsZero() bool { return t.value == "" }
+func (iss IMCSessionState) IsZero() bool { return iss.value == "" }
 
 // ParseIMCSessionState parses a known state or an unset value.
 func ParseIMCSessionState(value string) (IMCSessionState, error) {
@@ -52,14 +52,14 @@ func MustParseIMCSessionState(value string) IMCSessionState {
 }
 
 // MarshalText serializes the state name.
-func (t IMCSessionState) MarshalText() ([]byte, error) { return []byte(t.value), nil }
+func (iss IMCSessionState) MarshalText() ([]byte, error) { return []byte(iss.value), nil }
 
 // UnmarshalText parses a known state or an unset value.
-func (t *IMCSessionState) UnmarshalText(data []byte) error {
+func (iss *IMCSessionState) UnmarshalText(data []byte) error {
 	v, err := ParseIMCSessionState(string(data))
 	if err != nil {
 		return err
 	}
-	*t = v
+	*iss = v
 	return nil
 }

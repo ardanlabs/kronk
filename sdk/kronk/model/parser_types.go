@@ -27,8 +27,8 @@ func newChannel(name string, value uint8) Channel {
 }
 
 // String returns the channel name.
-func (t Channel) String() string {
-	switch t {
+func (c Channel) String() string {
+	switch c {
 	case ChannelReasoning:
 		return "reasoning"
 	case ChannelAnswer:
@@ -41,10 +41,10 @@ func (t Channel) String() string {
 }
 
 // Equal reports whether the values match.
-func (t Channel) Equal(other Channel) bool { return t == other }
+func (c Channel) Equal(other Channel) bool { return c == other }
 
 // IsZero reports whether the channel is none.
-func (t Channel) IsZero() bool { return t.value == 0 }
+func (c Channel) IsZero() bool { return c.value == 0 }
 
 // ParseChannel parses a registered channel name.
 func ParseChannel(value string) (Channel, error) {
@@ -65,33 +65,33 @@ func MustParseChannel(value string) Channel {
 }
 
 // MarshalText serializes the channel name.
-func (t Channel) MarshalText() ([]byte, error) { return []byte(t.String()), nil }
+func (c Channel) MarshalText() ([]byte, error) { return []byte(c.String()), nil }
 
 // UnmarshalText parses a registered channel name.
-func (t *Channel) UnmarshalText(data []byte) error {
+func (c *Channel) UnmarshalText(data []byte) error {
 	v, err := ParseChannel(string(data))
 	if err != nil {
 		return err
 	}
-	*t = v
+	*c = v
 	return nil
 }
 
 // MarshalJSON preserves the numeric wire representation.
-func (t Channel) MarshalJSON() ([]byte, error) { return json.Marshal(t.value) }
+func (c Channel) MarshalJSON() ([]byte, error) { return json.Marshal(c.value) }
 
 // UnmarshalJSON validates a numeric wire value.
-func (t *Channel) UnmarshalJSON(data []byte) error {
-	value := t.value
+func (c *Channel) UnmarshalJSON(data []byte) error {
+	value := c.value
 	if err := json.Unmarshal(data, &value); err != nil {
 		return err
 	}
-	return t.fromValue(value)
+	return c.fromValue(value)
 }
-func (t *Channel) fromValue(value uint8) error {
+func (c *Channel) fromValue(value uint8) error {
 	for _, v := range channels {
 		if v.value == value {
-			*t = v
+			*c = v
 			return nil
 		}
 	}
@@ -99,13 +99,13 @@ func (t *Channel) fromValue(value uint8) error {
 }
 
 // MarshalYAML preserves the numeric wire representation.
-func (t Channel) MarshalYAML() (any, error) { return t.value, nil }
+func (c Channel) MarshalYAML() (any, error) { return c.value, nil }
 
 // UnmarshalYAML validates a numeric wire value.
-func (t *Channel) UnmarshalYAML(unmarshal func(any) error) error {
+func (c *Channel) UnmarshalYAML(unmarshal func(any) error) error {
 	var value uint8
 	if err := unmarshal(&value); err != nil {
 		return err
 	}
-	return t.fromValue(value)
+	return c.fromValue(value)
 }

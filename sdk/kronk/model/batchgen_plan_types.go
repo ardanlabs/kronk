@@ -32,8 +32,8 @@ var (
 	batchExecutionIsolated = batchExecutionMode{value: 2}
 )
 
-func (m batchExecutionMode) String() string {
-	switch m {
+func (bem batchExecutionMode) String() string {
+	switch bem {
 	case batchExecutionShared:
 		return "shared"
 	case batchExecutionIsolated:

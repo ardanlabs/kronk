@@ -26,24 +26,24 @@ func newFitStatus(value string) FitStatus {
 }
 
 // String returns the wire value.
-func (t FitStatus) String() string { return t.value }
+func (fs FitStatus) String() string { return fs.value }
 
 // Equal reports whether the values match.
-func (t FitStatus) Equal(other FitStatus) bool { return t == other }
+func (fs FitStatus) Equal(other FitStatus) bool { return fs == other }
 
 // IsZero reports whether the value is unset.
-func (t FitStatus) IsZero() bool { return t.value == "" }
+func (fs FitStatus) IsZero() bool { return fs.value == "" }
 
 // MarshalText implements encoding.TextMarshaler.
-func (t FitStatus) MarshalText() ([]byte, error) { return []byte(t.value), nil }
+func (fs FitStatus) MarshalText() ([]byte, error) { return []byte(fs.value), nil }
 
 // UnmarshalText implements encoding.TextUnmarshaler.
-func (t *FitStatus) UnmarshalText(data []byte) error {
+func (fs *FitStatus) UnmarshalText(data []byte) error {
 	v, err := ParseFitStatus(string(data))
 	if err != nil {
 		return err
 	}
-	*t = v
+	*fs = v
 	return nil
 }
 

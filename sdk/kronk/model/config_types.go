@@ -47,54 +47,54 @@ func newGGMLType(value string) GGMLType {
 }
 
 // String returns the canonical cache type name.
-func (t GGMLType) String() string {
-	if t.IsZero() {
+func (gt GGMLType) String() string {
+	if gt.IsZero() {
 		return "auto"
 	}
-	return t.value
+	return gt.value
 }
 
 // Equal provides support for comparison and testing.
-func (t GGMLType) Equal(other GGMLType) bool { return t.value == other.value }
+func (gt GGMLType) Equal(other GGMLType) bool { return gt.value == other.value }
 
 // IsZero reports whether the cache type is unset.
-func (t GGMLType) IsZero() bool { return t.value == "" }
+func (gt GGMLType) IsZero() bool { return gt.value == "" }
 
 // MarshalText provides support for logging and serialization.
-func (t GGMLType) MarshalText() ([]byte, error) { return []byte(t.String()), nil }
+func (gt GGMLType) MarshalText() ([]byte, error) { return []byte(gt.String()), nil }
 
 // UnmarshalText parses a known cache type.
-func (t *GGMLType) UnmarshalText(data []byte) error {
+func (gt *GGMLType) UnmarshalText(data []byte) error {
 	parsed, err := ParseGGMLType(string(data))
 	if err != nil {
 		return err
 	}
-	*t = parsed
+	*gt = parsed
 	return nil
 }
 
 // MarshalJSON implements json.Marshaler.
-func (t GGMLType) MarshalJSON() ([]byte, error) { return json.Marshal(t.String()) }
+func (gt GGMLType) MarshalJSON() ([]byte, error) { return json.Marshal(gt.String()) }
 
 // UnmarshalJSON implements json.Unmarshaler.
-func (t *GGMLType) UnmarshalJSON(data []byte) error {
+func (gt *GGMLType) UnmarshalJSON(data []byte) error {
 	var value string
 	if err := json.Unmarshal(data, &value); err != nil {
 		return err
 	}
-	return t.UnmarshalText([]byte(value))
+	return gt.UnmarshalText([]byte(value))
 }
 
 // MarshalYAML implements yaml.Marshaler.
-func (t GGMLType) MarshalYAML() (any, error) { return t.String(), nil }
+func (gt GGMLType) MarshalYAML() (any, error) { return gt.String(), nil }
 
 // UnmarshalYAML implements yaml.Unmarshaler.
-func (t *GGMLType) UnmarshalYAML(unmarshal func(any) error) error {
+func (gt *GGMLType) UnmarshalYAML(unmarshal func(any) error) error {
 	var value string
 	if err := unmarshal(&value); err != nil {
 		return err
 	}
-	return t.UnmarshalText([]byte(value))
+	return gt.UnmarshalText([]byte(value))
 }
 
 // ParseGGMLType parses a cache type name or a supported alias.
@@ -133,8 +133,8 @@ func MustParseGGMLType(value string) GGMLType {
 }
 
 // ToYZMAType converts to the native cache type; auto is the native -1 sentinel.
-func (t GGMLType) ToYZMAType() llama.GGMLType {
-	switch t {
+func (gt GGMLType) ToYZMAType() llama.GGMLType {
+	switch gt {
 	case GGMLTypeF32:
 		return llama.GGMLTypeF32
 	case GGMLTypeF16:
@@ -158,14 +158,14 @@ func (t GGMLType) ToYZMAType() llama.GGMLType {
 
 // ToVRAMType returns the cache type ID used by Kronk's memory estimators.
 // Unlike native GGML IDs, 0 means auto and 50 means F32.
-func (t GGMLType) ToVRAMType() int32 {
-	switch t {
+func (gt GGMLType) ToVRAMType() int32 {
+	switch gt {
 	case GGMLTypeAuto:
 		return 0
 	case GGMLTypeF32:
 		return 50
 	default:
-		return int32(t.ToYZMAType())
+		return int32(gt.ToYZMAType())
 	}
 }
 
@@ -218,54 +218,56 @@ func newFlashAttentionType(value string) FlashAttentionType {
 }
 
 // String returns the canonical Flash Attention name.
-func (t FlashAttentionType) String() string {
-	if t.IsZero() {
+func (fat FlashAttentionType) String() string {
+	if fat.IsZero() {
 		return "enabled"
 	}
-	return t.value
+	return fat.value
 }
 
 // Equal provides support for comparison and testing.
-func (t FlashAttentionType) Equal(other FlashAttentionType) bool { return t.String() == other.String() }
+func (fat FlashAttentionType) Equal(other FlashAttentionType) bool {
+	return fat.String() == other.String()
+}
 
 // IsZero reports whether the mode is unset.
-func (t FlashAttentionType) IsZero() bool { return t.value == "" }
+func (fat FlashAttentionType) IsZero() bool { return fat.value == "" }
 
 // MarshalText provides support for logging and serialization.
-func (t FlashAttentionType) MarshalText() ([]byte, error) { return []byte(t.String()), nil }
+func (fat FlashAttentionType) MarshalText() ([]byte, error) { return []byte(fat.String()), nil }
 
 // UnmarshalText parses a known Flash Attention mode.
-func (t *FlashAttentionType) UnmarshalText(data []byte) error {
+func (fat *FlashAttentionType) UnmarshalText(data []byte) error {
 	parsed, err := ParseFlashAttentionType(string(data))
 	if err != nil {
 		return err
 	}
-	*t = parsed
+	*fat = parsed
 	return nil
 }
 
 // MarshalJSON implements json.Marshaler.
-func (t FlashAttentionType) MarshalJSON() ([]byte, error) { return json.Marshal(t.String()) }
+func (fat FlashAttentionType) MarshalJSON() ([]byte, error) { return json.Marshal(fat.String()) }
 
 // UnmarshalJSON implements json.Unmarshaler.
-func (t *FlashAttentionType) UnmarshalJSON(data []byte) error {
+func (fat *FlashAttentionType) UnmarshalJSON(data []byte) error {
 	var value string
 	if err := json.Unmarshal(data, &value); err != nil {
 		return err
 	}
-	return t.UnmarshalText([]byte(value))
+	return fat.UnmarshalText([]byte(value))
 }
 
 // MarshalYAML implements yaml.Marshaler.
-func (t FlashAttentionType) MarshalYAML() (any, error) { return t.String(), nil }
+func (fat FlashAttentionType) MarshalYAML() (any, error) { return fat.String(), nil }
 
 // UnmarshalYAML implements yaml.Unmarshaler.
-func (t *FlashAttentionType) UnmarshalYAML(unmarshal func(any) error) error {
+func (fat *FlashAttentionType) UnmarshalYAML(unmarshal func(any) error) error {
 	var value string
 	if err := unmarshal(&value); err != nil {
 		return err
 	}
-	return t.UnmarshalText([]byte(value))
+	return fat.UnmarshalText([]byte(value))
 }
 
 // ParseFlashAttentionType parses a mode name or a supported boolean alias.
@@ -295,8 +297,8 @@ func MustParseFlashAttentionType(value string) FlashAttentionType {
 	return t
 }
 
-func (t FlashAttentionType) toYZMAType() llama.FlashAttentionType {
-	switch t {
+func (fat FlashAttentionType) toYZMAType() llama.FlashAttentionType {
+	switch fat {
 	case FlashAttentionDisabled:
 		return llama.FlashAttentionTypeDisabled
 	case FlashAttentionAuto:
@@ -340,54 +342,54 @@ func newLazyMode(value string) LazyMode {
 }
 
 // String returns the canonical lazy mode name.
-func (m LazyMode) String() string {
-	if m.IsZero() {
+func (lm LazyMode) String() string {
+	if lm.IsZero() {
 		return "auto"
 	}
-	return m.value
+	return lm.value
 }
 
 // Equal provides support for comparison and testing.
-func (m LazyMode) Equal(other LazyMode) bool { return m.String() == other.String() }
+func (lm LazyMode) Equal(other LazyMode) bool { return lm.String() == other.String() }
 
 // IsZero reports whether the mode is unset.
-func (m LazyMode) IsZero() bool { return m.value == "" }
+func (lm LazyMode) IsZero() bool { return lm.value == "" }
 
 // MarshalText provides support for logging and serialization.
-func (m LazyMode) MarshalText() ([]byte, error) { return []byte(m.String()), nil }
+func (lm LazyMode) MarshalText() ([]byte, error) { return []byte(lm.String()), nil }
 
 // UnmarshalText parses a known lazy mode.
-func (m *LazyMode) UnmarshalText(data []byte) error {
+func (lm *LazyMode) UnmarshalText(data []byte) error {
 	parsed, err := ParseLazyMode(string(data))
 	if err != nil {
 		return err
 	}
-	*m = parsed
+	*lm = parsed
 	return nil
 }
 
 // MarshalJSON implements json.Marshaler.
-func (m LazyMode) MarshalJSON() ([]byte, error) { return json.Marshal(m.String()) }
+func (lm LazyMode) MarshalJSON() ([]byte, error) { return json.Marshal(lm.String()) }
 
 // UnmarshalJSON implements json.Unmarshaler.
-func (m *LazyMode) UnmarshalJSON(data []byte) error {
+func (lm *LazyMode) UnmarshalJSON(data []byte) error {
 	var value string
 	if err := json.Unmarshal(data, &value); err != nil {
 		return err
 	}
-	return m.UnmarshalText([]byte(value))
+	return lm.UnmarshalText([]byte(value))
 }
 
 // MarshalYAML implements yaml.Marshaler.
-func (m LazyMode) MarshalYAML() (any, error) { return m.String(), nil }
+func (lm LazyMode) MarshalYAML() (any, error) { return lm.String(), nil }
 
 // UnmarshalYAML implements yaml.Unmarshaler.
-func (m *LazyMode) UnmarshalYAML(unmarshal func(any) error) error {
+func (lm *LazyMode) UnmarshalYAML(unmarshal func(any) error) error {
 	var value string
 	if err := unmarshal(&value); err != nil {
 		return err
 	}
-	return m.UnmarshalText([]byte(value))
+	return lm.UnmarshalText([]byte(value))
 }
 
 // ParseLazyMode parses a lazy mode name.
@@ -413,8 +415,8 @@ func MustParseLazyMode(value string) LazyMode {
 }
 
 // ToYZMAType converts to the native lazy mode.
-func (m LazyMode) ToYZMAType() llama.LazyMode {
-	switch m {
+func (lm LazyMode) ToYZMAType() llama.LazyMode {
+	switch lm {
 	case LazyModeOff:
 		return llama.LazyModeOff
 	case LazyModeOn:
@@ -456,49 +458,49 @@ func newKVCacheMode(value string) KVCacheMode {
 }
 
 // String returns the cache layout name.
-func (m KVCacheMode) String() string { return m.value }
+func (kcm KVCacheMode) String() string { return kcm.value }
 
 // Equal provides support for comparison and testing.
-func (m KVCacheMode) Equal(other KVCacheMode) bool { return m.value == other.value }
+func (kcm KVCacheMode) Equal(other KVCacheMode) bool { return kcm.value == other.value }
 
 // IsZero reports whether the layout is unset.
-func (m KVCacheMode) IsZero() bool { return m.value == "" }
+func (kcm KVCacheMode) IsZero() bool { return kcm.value == "" }
 
 // MarshalText provides support for logging and serialization.
-func (m KVCacheMode) MarshalText() ([]byte, error) { return []byte(m.value), nil }
+func (kcm KVCacheMode) MarshalText() ([]byte, error) { return []byte(kcm.value), nil }
 
 // UnmarshalText parses a known cache layout.
-func (m *KVCacheMode) UnmarshalText(data []byte) error {
+func (kcm *KVCacheMode) UnmarshalText(data []byte) error {
 	parsed, err := ParseKVCacheMode(string(data))
 	if err != nil {
 		return err
 	}
-	*m = parsed
+	*kcm = parsed
 	return nil
 }
 
 // MarshalJSON implements json.Marshaler.
-func (m KVCacheMode) MarshalJSON() ([]byte, error) { return json.Marshal(m.value) }
+func (kcm KVCacheMode) MarshalJSON() ([]byte, error) { return json.Marshal(kcm.value) }
 
 // UnmarshalJSON implements json.Unmarshaler.
-func (m *KVCacheMode) UnmarshalJSON(data []byte) error {
+func (kcm *KVCacheMode) UnmarshalJSON(data []byte) error {
 	var value string
 	if err := json.Unmarshal(data, &value); err != nil {
 		return err
 	}
-	return m.UnmarshalText([]byte(value))
+	return kcm.UnmarshalText([]byte(value))
 }
 
 // MarshalYAML implements yaml.Marshaler.
-func (m KVCacheMode) MarshalYAML() (any, error) { return m.value, nil }
+func (kcm KVCacheMode) MarshalYAML() (any, error) { return kcm.value, nil }
 
 // UnmarshalYAML implements yaml.Unmarshaler.
-func (m *KVCacheMode) UnmarshalYAML(unmarshal func(any) error) error {
+func (kcm *KVCacheMode) UnmarshalYAML(unmarshal func(any) error) error {
 	var value string
 	if err := unmarshal(&value); err != nil {
 		return err
 	}
-	return m.UnmarshalText([]byte(value))
+	return kcm.UnmarshalText([]byte(value))
 }
 
 // ParseKVCacheMode validates a cache layout name. Names are case sensitive.
@@ -550,54 +552,54 @@ func newLoadMode(value string) LoadMode {
 }
 
 // String returns the canonical load mode name.
-func (m LoadMode) String() string {
-	if m.IsZero() {
+func (lm LoadMode) String() string {
+	if lm.IsZero() {
 		return "auto"
 	}
-	return m.value
+	return lm.value
 }
 
 // Equal provides support for comparison and testing.
-func (m LoadMode) Equal(other LoadMode) bool { return m.String() == other.String() }
+func (lm LoadMode) Equal(other LoadMode) bool { return lm.String() == other.String() }
 
 // IsZero reports whether the mode is unset.
-func (m LoadMode) IsZero() bool { return m.value == "" }
+func (lm LoadMode) IsZero() bool { return lm.value == "" }
 
 // MarshalText provides support for logging and serialization.
-func (m LoadMode) MarshalText() ([]byte, error) { return []byte(m.String()), nil }
+func (lm LoadMode) MarshalText() ([]byte, error) { return []byte(lm.String()), nil }
 
 // UnmarshalText parses a known load mode.
-func (m *LoadMode) UnmarshalText(data []byte) error {
+func (lm *LoadMode) UnmarshalText(data []byte) error {
 	parsed, err := ParseLoadMode(string(data))
 	if err != nil {
 		return err
 	}
-	*m = parsed
+	*lm = parsed
 	return nil
 }
 
 // MarshalJSON implements json.Marshaler.
-func (m LoadMode) MarshalJSON() ([]byte, error) { return json.Marshal(m.String()) }
+func (lm LoadMode) MarshalJSON() ([]byte, error) { return json.Marshal(lm.String()) }
 
 // UnmarshalJSON implements json.Unmarshaler.
-func (m *LoadMode) UnmarshalJSON(data []byte) error {
+func (lm *LoadMode) UnmarshalJSON(data []byte) error {
 	var value string
 	if err := json.Unmarshal(data, &value); err != nil {
 		return err
 	}
-	return m.UnmarshalText([]byte(value))
+	return lm.UnmarshalText([]byte(value))
 }
 
 // MarshalYAML implements yaml.Marshaler.
-func (m LoadMode) MarshalYAML() (any, error) { return m.String(), nil }
+func (lm LoadMode) MarshalYAML() (any, error) { return lm.String(), nil }
 
 // UnmarshalYAML implements yaml.Unmarshaler.
-func (m *LoadMode) UnmarshalYAML(unmarshal func(any) error) error {
+func (lm *LoadMode) UnmarshalYAML(unmarshal func(any) error) error {
 	var value string
 	if err := unmarshal(&value); err != nil {
 		return err
 	}
-	return m.UnmarshalText([]byte(value))
+	return lm.UnmarshalText([]byte(value))
 }
 
 // ParseLoadMode parses a load mode name or direct-I/O alias.
@@ -626,8 +628,8 @@ func MustParseLoadMode(value string) LoadMode {
 }
 
 // ToYZMAType converts to the native load mode.
-func (m LoadMode) ToYZMAType() llama.LoadMode {
-	switch m {
+func (lm LoadMode) ToYZMAType() llama.LoadMode {
+	switch lm {
 	case LoadModeMMap:
 		return llama.LoadModeMmap
 	case LoadModeNone:
@@ -678,54 +680,54 @@ func newSplitMode(value string) SplitMode {
 }
 
 // String returns the canonical split mode name.
-func (m SplitMode) String() string {
-	if m.IsZero() {
+func (sm SplitMode) String() string {
+	if sm.IsZero() {
 		return "none"
 	}
-	return m.value
+	return sm.value
 }
 
 // Equal provides support for comparison and testing.
-func (m SplitMode) Equal(other SplitMode) bool { return m.String() == other.String() }
+func (sm SplitMode) Equal(other SplitMode) bool { return sm.String() == other.String() }
 
 // IsZero reports whether the mode is unset.
-func (m SplitMode) IsZero() bool { return m.value == "" }
+func (sm SplitMode) IsZero() bool { return sm.value == "" }
 
 // MarshalText provides support for logging and serialization.
-func (m SplitMode) MarshalText() ([]byte, error) { return []byte(m.String()), nil }
+func (sm SplitMode) MarshalText() ([]byte, error) { return []byte(sm.String()), nil }
 
 // UnmarshalText parses a known split mode.
-func (m *SplitMode) UnmarshalText(data []byte) error {
+func (sm *SplitMode) UnmarshalText(data []byte) error {
 	parsed, err := ParseSplitMode(string(data))
 	if err != nil {
 		return err
 	}
-	*m = parsed
+	*sm = parsed
 	return nil
 }
 
 // MarshalJSON implements json.Marshaler.
-func (m SplitMode) MarshalJSON() ([]byte, error) { return json.Marshal(m.String()) }
+func (sm SplitMode) MarshalJSON() ([]byte, error) { return json.Marshal(sm.String()) }
 
 // UnmarshalJSON implements json.Unmarshaler.
-func (m *SplitMode) UnmarshalJSON(data []byte) error {
+func (sm *SplitMode) UnmarshalJSON(data []byte) error {
 	var value string
 	if err := json.Unmarshal(data, &value); err != nil {
 		return err
 	}
-	return m.UnmarshalText([]byte(value))
+	return sm.UnmarshalText([]byte(value))
 }
 
 // MarshalYAML implements yaml.Marshaler.
-func (m SplitMode) MarshalYAML() (any, error) { return m.String(), nil }
+func (sm SplitMode) MarshalYAML() (any, error) { return sm.String(), nil }
 
 // UnmarshalYAML implements yaml.Unmarshaler.
-func (m *SplitMode) UnmarshalYAML(unmarshal func(any) error) error {
+func (sm *SplitMode) UnmarshalYAML(unmarshal func(any) error) error {
 	var value string
 	if err := unmarshal(&value); err != nil {
 		return err
 	}
-	return m.UnmarshalText([]byte(value))
+	return sm.UnmarshalText([]byte(value))
 }
 
 // ParseSplitMode parses a split mode name or a supported alias.
@@ -758,8 +760,8 @@ func MustParseSplitMode(value string) SplitMode {
 }
 
 // ToYZMAType converts to the native split mode.
-func (m SplitMode) ToYZMAType() llama.SplitMode {
-	switch m {
+func (sm SplitMode) ToYZMAType() llama.SplitMode {
+	switch sm {
 	case SplitModeLayer:
 		return llama.SplitModeLayer
 	case SplitModeRow:
@@ -817,54 +819,54 @@ func newRopeScalingType(value string) RopeScalingType {
 }
 
 // String returns the canonical scaling name.
-func (t RopeScalingType) String() string {
-	if t.IsZero() {
+func (rst RopeScalingType) String() string {
+	if rst.IsZero() {
 		return "none"
 	}
-	return t.value
+	return rst.value
 }
 
 // Equal provides support for comparison and testing.
-func (t RopeScalingType) Equal(other RopeScalingType) bool { return t.value == other.value }
+func (rst RopeScalingType) Equal(other RopeScalingType) bool { return rst.value == other.value }
 
 // IsZero reports whether the scaling mode is unset.
-func (t RopeScalingType) IsZero() bool { return t.value == "" }
+func (rst RopeScalingType) IsZero() bool { return rst.value == "" }
 
 // MarshalText provides support for logging and serialization.
-func (t RopeScalingType) MarshalText() ([]byte, error) { return []byte(t.String()), nil }
+func (rst RopeScalingType) MarshalText() ([]byte, error) { return []byte(rst.String()), nil }
 
 // UnmarshalText parses a known scaling mode.
-func (t *RopeScalingType) UnmarshalText(data []byte) error {
+func (rst *RopeScalingType) UnmarshalText(data []byte) error {
 	parsed, err := ParseRopeScalingType(string(data))
 	if err != nil {
 		return err
 	}
-	*t = parsed
+	*rst = parsed
 	return nil
 }
 
 // MarshalJSON implements json.Marshaler.
-func (t RopeScalingType) MarshalJSON() ([]byte, error) { return json.Marshal(t.String()) }
+func (rst RopeScalingType) MarshalJSON() ([]byte, error) { return json.Marshal(rst.String()) }
 
 // UnmarshalJSON implements json.Unmarshaler.
-func (t *RopeScalingType) UnmarshalJSON(data []byte) error {
+func (rst *RopeScalingType) UnmarshalJSON(data []byte) error {
 	var value string
 	if err := json.Unmarshal(data, &value); err != nil {
 		return err
 	}
-	return t.UnmarshalText([]byte(value))
+	return rst.UnmarshalText([]byte(value))
 }
 
 // MarshalYAML implements yaml.Marshaler.
-func (t RopeScalingType) MarshalYAML() (any, error) { return t.String(), nil }
+func (rst RopeScalingType) MarshalYAML() (any, error) { return rst.String(), nil }
 
 // UnmarshalYAML implements yaml.Unmarshaler.
-func (t *RopeScalingType) UnmarshalYAML(unmarshal func(any) error) error {
+func (rst *RopeScalingType) UnmarshalYAML(unmarshal func(any) error) error {
 	var value string
 	if err := unmarshal(&value); err != nil {
 		return err
 	}
-	return t.UnmarshalText([]byte(value))
+	return rst.UnmarshalText([]byte(value))
 }
 
 // ParseRopeScalingType parses a scaling name or numeric alias.
@@ -895,8 +897,8 @@ func MustParseRopeScalingType(value string) RopeScalingType {
 }
 
 // ToYZMAType converts to the native scaling mode.
-func (t RopeScalingType) ToYZMAType() llama.RopeScalingType {
-	switch t {
+func (rst RopeScalingType) ToYZMAType() llama.RopeScalingType {
+	switch rst {
 	case RopeScalingLinear:
 		return llama.RopeScalingTypeLinear
 	case RopeScalingYaRN:

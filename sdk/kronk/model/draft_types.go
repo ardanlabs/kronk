@@ -11,8 +11,8 @@ var (
 	draftMTPGemma4       = draftKind{value: 3} // Separate-file shared-KV assistant.
 )
 
-func (k draftKind) String() string {
-	switch k {
+func (dk draftKind) String() string {
+	switch dk {
 	case draftClassic:
 		return "classic-separate"
 	case draftMTPQwen:

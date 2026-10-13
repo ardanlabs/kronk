@@ -22,13 +22,13 @@ func newDecisionQuestionType(value string) DecisionQuestionType {
 }
 
 // String returns the answer shape name.
-func (t DecisionQuestionType) String() string { return t.value }
+func (dqt DecisionQuestionType) String() string { return dqt.value }
 
 // Equal reports whether the values match.
-func (t DecisionQuestionType) Equal(other DecisionQuestionType) bool { return t == other }
+func (dqt DecisionQuestionType) Equal(other DecisionQuestionType) bool { return dqt == other }
 
 // IsZero reports whether the answer shape is unset.
-func (t DecisionQuestionType) IsZero() bool { return t.value == "" }
+func (dqt DecisionQuestionType) IsZero() bool { return dqt.value == "" }
 
 // ParseDecisionQuestionType parses a known answer shape or an unset value.
 func ParseDecisionQuestionType(value string) (DecisionQuestionType, error) {
@@ -52,14 +52,14 @@ func MustParseDecisionQuestionType(value string) DecisionQuestionType {
 }
 
 // MarshalText serializes the answer shape name.
-func (t DecisionQuestionType) MarshalText() ([]byte, error) { return []byte(t.value), nil }
+func (dqt DecisionQuestionType) MarshalText() ([]byte, error) { return []byte(dqt.value), nil }
 
 // UnmarshalText parses a known answer shape or an unset value.
-func (t *DecisionQuestionType) UnmarshalText(data []byte) error {
+func (dqt *DecisionQuestionType) UnmarshalText(data []byte) error {
 	v, err := ParseDecisionQuestionType(string(data))
 	if err != nil {
 		return err
 	}
-	*t = v
+	*dqt = v
 	return nil
 }

@@ -624,7 +624,7 @@ export default function DocsSDKBuckyModel() {
             <div className="doc-section" id="method-eventkind-equal">
               <h4>EventKind.Equal</h4>
               <pre className="code-block">
-                <code>func (k EventKind) Equal(other EventKind) bool</code>
+                <code>func (ek EventKind) Equal(other EventKind) bool</code>
               </pre>
               <p className="doc-description">Equal provides support for comparison and testing.</p>
             </div>
@@ -632,7 +632,7 @@ export default function DocsSDKBuckyModel() {
             <div className="doc-section" id="method-eventkind-int">
               <h4>EventKind.Int</h4>
               <pre className="code-block">
-                <code>func (k EventKind) Int() int</code>
+                <code>func (ek EventKind) Int() int</code>
               </pre>
               <p className="doc-description">Int returns the integer value.</p>
             </div>
@@ -640,7 +640,7 @@ export default function DocsSDKBuckyModel() {
             <div className="doc-section" id="method-eventkind-iszero">
               <h4>EventKind.IsZero</h4>
               <pre className="code-block">
-                <code>func (k EventKind) IsZero() bool</code>
+                <code>func (ek EventKind) IsZero() bool</code>
               </pre>
               <p className="doc-description">IsZero reports whether the kind is the zero-value partial kind.</p>
             </div>
@@ -648,7 +648,7 @@ export default function DocsSDKBuckyModel() {
             <div className="doc-section" id="method-eventkind-marshaljson">
               <h4>EventKind.MarshalJSON</h4>
               <pre className="code-block">
-                <code>func (k EventKind) MarshalJSON() ([]byte, error)</code>
+                <code>func (ek EventKind) MarshalJSON() ([]byte, error)</code>
               </pre>
               <p className="doc-description">MarshalJSON preserves the numeric wire representation.</p>
             </div>
@@ -656,7 +656,7 @@ export default function DocsSDKBuckyModel() {
             <div className="doc-section" id="method-eventkind-marshaltext">
               <h4>EventKind.MarshalText</h4>
               <pre className="code-block">
-                <code>func (k EventKind) MarshalText() ([]byte, error)</code>
+                <code>func (ek EventKind) MarshalText() ([]byte, error)</code>
               </pre>
               <p className="doc-description">MarshalText provides support for logging and serialization.</p>
             </div>
@@ -664,7 +664,7 @@ export default function DocsSDKBuckyModel() {
             <div className="doc-section" id="method-eventkind-marshalyaml">
               <h4>EventKind.MarshalYAML</h4>
               <pre className="code-block">
-                <code>func (k EventKind) MarshalYAML() (any, error)</code>
+                <code>func (ek EventKind) MarshalYAML() (any, error)</code>
               </pre>
               <p className="doc-description">MarshalYAML preserves the numeric wire representation.</p>
             </div>
@@ -672,7 +672,7 @@ export default function DocsSDKBuckyModel() {
             <div className="doc-section" id="method-eventkind-string">
               <h4>EventKind.String</h4>
               <pre className="code-block">
-                <code>func (k EventKind) String() string</code>
+                <code>func (ek EventKind) String() string</code>
               </pre>
               <p className="doc-description">String returns the event kind name.</p>
             </div>
@@ -680,7 +680,7 @@ export default function DocsSDKBuckyModel() {
             <div className="doc-section" id="method-eventkind-unmarshaljson">
               <h4>EventKind.UnmarshalJSON</h4>
               <pre className="code-block">
-                <code>func (k *EventKind) UnmarshalJSON(data []byte) error</code>
+                <code>func (ek *EventKind) UnmarshalJSON(data []byte) error</code>
               </pre>
               <p className="doc-description">UnmarshalJSON parses a known numeric event kind.</p>
             </div>
@@ -688,7 +688,7 @@ export default function DocsSDKBuckyModel() {
             <div className="doc-section" id="method-eventkind-unmarshaltext">
               <h4>EventKind.UnmarshalText</h4>
               <pre className="code-block">
-                <code>func (k *EventKind) UnmarshalText(data []byte) error</code>
+                <code>func (ek *EventKind) UnmarshalText(data []byte) error</code>
               </pre>
               <p className="doc-description">UnmarshalText parses a known event kind.</p>
             </div>
@@ -696,7 +696,7 @@ export default function DocsSDKBuckyModel() {
             <div className="doc-section" id="method-eventkind-unmarshalyaml">
               <h4>EventKind.UnmarshalYAML</h4>
               <pre className="code-block">
-                <code>func (k *EventKind) UnmarshalYAML(unmarshal func(any) error) error</code>
+                <code>func (ek *EventKind) UnmarshalYAML(unmarshal func(any) error) error</code>
               </pre>
               <p className="doc-description">UnmarshalYAML parses a known numeric event kind.</p>
             </div>
@@ -780,7 +780,7 @@ export default function DocsSDKBuckyModel() {
             <div className="doc-section" id="method-sampleencoding-equal">
               <h4>SampleEncoding.Equal</h4>
               <pre className="code-block">
-                <code>func (s SampleEncoding) Equal(other SampleEncoding) bool</code>
+                <code>func (se SampleEncoding) Equal(other SampleEncoding) bool</code>
               </pre>
               <p className="doc-description">Equal provides support for comparison and testing.</p>
             </div>
@@ -788,7 +788,7 @@ export default function DocsSDKBuckyModel() {
             <div className="doc-section" id="method-sampleencoding-int">
               <h4>SampleEncoding.Int</h4>
               <pre className="code-block">
-                <code>func (s SampleEncoding) Int() int</code>
+                <code>func (se SampleEncoding) Int() int</code>
               </pre>
               <p className="doc-description">Int returns the integer value.</p>
             </div>
@@ -796,7 +796,7 @@ export default function DocsSDKBuckyModel() {
             <div className="doc-section" id="method-sampleencoding-iszero">
               <h4>SampleEncoding.IsZero</h4>
               <pre className="code-block">
-                <code>func (s SampleEncoding) IsZero() bool</code>
+                <code>func (se SampleEncoding) IsZero() bool</code>
               </pre>
               <p className="doc-description">IsZero reports whether the encoding is the zero-value Int16LE encoding.</p>
             </div>
@@ -804,7 +804,7 @@ export default function DocsSDKBuckyModel() {
             <div className="doc-section" id="method-sampleencoding-marshaljson">
               <h4>SampleEncoding.MarshalJSON</h4>
               <pre className="code-block">
-                <code>func (s SampleEncoding) MarshalJSON() ([]byte, error)</code>
+                <code>func (se SampleEncoding) MarshalJSON() ([]byte, error)</code>
               </pre>
               <p className="doc-description">MarshalJSON preserves the numeric wire representation.</p>
             </div>
@@ -812,7 +812,7 @@ export default function DocsSDKBuckyModel() {
             <div className="doc-section" id="method-sampleencoding-marshaltext">
               <h4>SampleEncoding.MarshalText</h4>
               <pre className="code-block">
-                <code>func (s SampleEncoding) MarshalText() ([]byte, error)</code>
+                <code>func (se SampleEncoding) MarshalText() ([]byte, error)</code>
               </pre>
               <p className="doc-description">MarshalText provides support for logging and serialization.</p>
             </div>
@@ -820,7 +820,7 @@ export default function DocsSDKBuckyModel() {
             <div className="doc-section" id="method-sampleencoding-marshalyaml">
               <h4>SampleEncoding.MarshalYAML</h4>
               <pre className="code-block">
-                <code>func (s SampleEncoding) MarshalYAML() (any, error)</code>
+                <code>func (se SampleEncoding) MarshalYAML() (any, error)</code>
               </pre>
               <p className="doc-description">MarshalYAML preserves the numeric wire representation.</p>
             </div>
@@ -828,7 +828,7 @@ export default function DocsSDKBuckyModel() {
             <div className="doc-section" id="method-sampleencoding-string">
               <h4>SampleEncoding.String</h4>
               <pre className="code-block">
-                <code>func (s SampleEncoding) String() string</code>
+                <code>func (se SampleEncoding) String() string</code>
               </pre>
               <p className="doc-description">String returns the sample encoding name.</p>
             </div>
@@ -836,7 +836,7 @@ export default function DocsSDKBuckyModel() {
             <div className="doc-section" id="method-sampleencoding-unmarshaljson">
               <h4>SampleEncoding.UnmarshalJSON</h4>
               <pre className="code-block">
-                <code>func (s *SampleEncoding) UnmarshalJSON(data []byte) error</code>
+                <code>func (se *SampleEncoding) UnmarshalJSON(data []byte) error</code>
               </pre>
               <p className="doc-description">UnmarshalJSON parses a known numeric sample encoding.</p>
             </div>
@@ -844,7 +844,7 @@ export default function DocsSDKBuckyModel() {
             <div className="doc-section" id="method-sampleencoding-unmarshaltext">
               <h4>SampleEncoding.UnmarshalText</h4>
               <pre className="code-block">
-                <code>func (s *SampleEncoding) UnmarshalText(data []byte) error</code>
+                <code>func (se *SampleEncoding) UnmarshalText(data []byte) error</code>
               </pre>
               <p className="doc-description">UnmarshalText parses a known sample encoding.</p>
             </div>
@@ -852,7 +852,7 @@ export default function DocsSDKBuckyModel() {
             <div className="doc-section" id="method-sampleencoding-unmarshalyaml">
               <h4>SampleEncoding.UnmarshalYAML</h4>
               <pre className="code-block">
-                <code>func (s *SampleEncoding) UnmarshalYAML(unmarshal func(any) error) error</code>
+                <code>func (se *SampleEncoding) UnmarshalYAML(unmarshal func(any) error) error</code>
               </pre>
               <p className="doc-description">UnmarshalYAML parses a known numeric sample encoding.</p>
             </div>

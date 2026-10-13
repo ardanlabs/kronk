@@ -44,11 +44,11 @@ func newEventKind(name string, value int) EventKind {
 }
 
 // Int returns the integer value.
-func (k EventKind) Int() int { return k.value }
+func (ek EventKind) Int() int { return ek.value }
 
 // String returns the event kind name.
-func (k EventKind) String() string {
-	switch k.value {
+func (ek EventKind) String() string {
+	switch ek.value {
 	case 0:
 		return "partial"
 	case 1:
@@ -63,46 +63,46 @@ func (k EventKind) String() string {
 }
 
 // Equal provides support for comparison and testing.
-func (k EventKind) Equal(other EventKind) bool { return k.value == other.value }
+func (ek EventKind) Equal(other EventKind) bool { return ek.value == other.value }
 
 // IsZero reports whether the kind is the zero-value partial kind.
-func (k EventKind) IsZero() bool { return k.value == 0 }
+func (ek EventKind) IsZero() bool { return ek.value == 0 }
 
 // MarshalText provides support for logging and serialization.
-func (k EventKind) MarshalText() ([]byte, error) { return []byte(k.String()), nil }
+func (ek EventKind) MarshalText() ([]byte, error) { return []byte(ek.String()), nil }
 
 // UnmarshalText parses a known event kind.
-func (k *EventKind) UnmarshalText(data []byte) error {
+func (ek *EventKind) UnmarshalText(data []byte) error {
 	parsed, err := ParseEventKind(string(data))
 	if err != nil {
 		return err
 	}
-	*k = parsed
+	*ek = parsed
 	return nil
 }
 
 // MarshalJSON preserves the numeric wire representation.
-func (k EventKind) MarshalJSON() ([]byte, error) { return json.Marshal(k.value) }
+func (ek EventKind) MarshalJSON() ([]byte, error) { return json.Marshal(ek.value) }
 
 // UnmarshalJSON parses a known numeric event kind.
-func (k *EventKind) UnmarshalJSON(data []byte) error {
-	value := k.value
+func (ek *EventKind) UnmarshalJSON(data []byte) error {
+	value := ek.value
 	if err := json.Unmarshal(data, &value); err != nil {
 		return err
 	}
-	return k.UnmarshalText([]byte(strconv.Itoa(value)))
+	return ek.UnmarshalText([]byte(strconv.Itoa(value)))
 }
 
 // MarshalYAML preserves the numeric wire representation.
-func (k EventKind) MarshalYAML() (any, error) { return k.value, nil }
+func (ek EventKind) MarshalYAML() (any, error) { return ek.value, nil }
 
 // UnmarshalYAML parses a known numeric event kind.
-func (k *EventKind) UnmarshalYAML(unmarshal func(any) error) error {
+func (ek *EventKind) UnmarshalYAML(unmarshal func(any) error) error {
 	var value int
 	if err := unmarshal(&value); err != nil {
 		return err
 	}
-	return k.UnmarshalText([]byte(strconv.Itoa(value)))
+	return ek.UnmarshalText([]byte(strconv.Itoa(value)))
 }
 
 // ParseEventKind parses a known name or numeric value, defaulting empty to partial.

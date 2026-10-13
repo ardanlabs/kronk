@@ -25,24 +25,24 @@ func newIntegrityStatus(value string) IntegrityStatus {
 }
 
 // String returns the canonical name.
-func (t IntegrityStatus) String() string { return t.value }
+func (is IntegrityStatus) String() string { return is.value }
 
 // Equal provides support for comparison and testing.
-func (t IntegrityStatus) Equal(other IntegrityStatus) bool { return t.value == other.value }
+func (is IntegrityStatus) Equal(other IntegrityStatus) bool { return is.value == other.value }
 
 // IsZero reports whether the value is unset.
-func (t IntegrityStatus) IsZero() bool { return t.value == "" }
+func (is IntegrityStatus) IsZero() bool { return is.value == "" }
 
 // MarshalText provides support for logging and serialization.
-func (t IntegrityStatus) MarshalText() ([]byte, error) { return []byte(t.value), nil }
+func (is IntegrityStatus) MarshalText() ([]byte, error) { return []byte(is.value), nil }
 
 // UnmarshalText parses a registered value.
-func (t *IntegrityStatus) UnmarshalText(data []byte) error {
+func (is *IntegrityStatus) UnmarshalText(data []byte) error {
 	parsed, err := ParseIntegrityStatus(string(data))
 	if err != nil {
 		return err
 	}
-	*t = parsed
+	*is = parsed
 	return nil
 }
 
@@ -88,24 +88,24 @@ func newIntegrityRole(value string) IntegrityRole {
 }
 
 // String returns the canonical name.
-func (t IntegrityRole) String() string { return t.value }
+func (ir IntegrityRole) String() string { return ir.value }
 
 // Equal provides support for comparison and testing.
-func (t IntegrityRole) Equal(other IntegrityRole) bool { return t.value == other.value }
+func (ir IntegrityRole) Equal(other IntegrityRole) bool { return ir.value == other.value }
 
 // IsZero reports whether the value is unset.
-func (t IntegrityRole) IsZero() bool { return t.value == "" }
+func (ir IntegrityRole) IsZero() bool { return ir.value == "" }
 
 // MarshalText provides support for logging and serialization.
-func (t IntegrityRole) MarshalText() ([]byte, error) { return []byte(t.value), nil }
+func (ir IntegrityRole) MarshalText() ([]byte, error) { return []byte(ir.value), nil }
 
 // UnmarshalText parses a registered value.
-func (t *IntegrityRole) UnmarshalText(data []byte) error {
+func (ir *IntegrityRole) UnmarshalText(data []byte) error {
 	parsed, err := ParseIntegrityRole(string(data))
 	if err != nil {
 		return err
 	}
-	*t = parsed
+	*ir = parsed
 	return nil
 }
 
@@ -149,24 +149,24 @@ func newIntegrityReason(value string) IntegrityReason {
 }
 
 // String returns the canonical name.
-func (t IntegrityReason) String() string { return t.value }
+func (ir IntegrityReason) String() string { return ir.value }
 
 // Equal provides support for comparison and testing.
-func (t IntegrityReason) Equal(other IntegrityReason) bool { return t.value == other.value }
+func (ir IntegrityReason) Equal(other IntegrityReason) bool { return ir.value == other.value }
 
 // IsZero reports whether the value is unset.
-func (t IntegrityReason) IsZero() bool { return t.value == "" }
+func (ir IntegrityReason) IsZero() bool { return ir.value == "" }
 
 // MarshalText provides support for logging and serialization.
-func (t IntegrityReason) MarshalText() ([]byte, error) { return []byte(t.value), nil }
+func (ir IntegrityReason) MarshalText() ([]byte, error) { return []byte(ir.value), nil }
 
 // UnmarshalText parses a registered value.
-func (t *IntegrityReason) UnmarshalText(data []byte) error {
+func (ir *IntegrityReason) UnmarshalText(data []byte) error {
 	parsed, err := ParseIntegrityReason(string(data))
 	if err != nil {
 		return err
 	}
-	*t = parsed
+	*ir = parsed
 	return nil
 }
 

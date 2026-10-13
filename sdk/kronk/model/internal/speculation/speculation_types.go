@@ -108,8 +108,8 @@ var (
 )
 
 // String returns the architecture name.
-func (t MTPArchitecture) String() string {
-	switch t {
+func (ma MTPArchitecture) String() string {
+	switch ma {
 	case MTPArchitectureQwen35OwnKV:
 		return "qwen35-own-kv"
 	case MTPArchitectureQwen4ExpOwnKV:
@@ -158,8 +158,8 @@ func newMTPArtifact(name string, value uint8) MTPArtifact {
 }
 
 // String returns the source name.
-func (t Source) String() string {
-	switch t {
+func (s Source) String() string {
+	switch s {
 	case SourceClassic:
 		return "classic"
 	case SourceMTP:
@@ -170,21 +170,21 @@ func (t Source) String() string {
 }
 
 // Equal reports whether the values match.
-func (t Source) Equal(other Source) bool { return t == other }
+func (s Source) Equal(other Source) bool { return s == other }
 
 // IsZero reports whether the source is none.
-func (t Source) IsZero() bool { return t.value == 0 }
+func (s Source) IsZero() bool { return s.value == 0 }
 
 // MarshalText serializes the source name.
-func (t Source) MarshalText() ([]byte, error) { return []byte(t.String()), nil }
+func (s Source) MarshalText() ([]byte, error) { return []byte(s.String()), nil }
 
 // UnmarshalText parses a registered source.
-func (t *Source) UnmarshalText(data []byte) error {
+func (s *Source) UnmarshalText(data []byte) error {
 	v, err := ParseSource(string(data))
 	if err != nil {
 		return err
 	}
-	*t = v
+	*s = v
 	return nil
 }
 
@@ -207,21 +207,21 @@ func MustParseSource(value string) Source {
 }
 
 // Equal reports whether the values match.
-func (t MTPArchitecture) Equal(other MTPArchitecture) bool { return t == other }
+func (ma MTPArchitecture) Equal(other MTPArchitecture) bool { return ma == other }
 
 // IsZero reports whether the architecture is none.
-func (t MTPArchitecture) IsZero() bool { return t.value == 0 }
+func (ma MTPArchitecture) IsZero() bool { return ma.value == 0 }
 
 // MarshalText serializes the architecture name.
-func (t MTPArchitecture) MarshalText() ([]byte, error) { return []byte(t.String()), nil }
+func (ma MTPArchitecture) MarshalText() ([]byte, error) { return []byte(ma.String()), nil }
 
 // UnmarshalText parses a registered architecture.
-func (t *MTPArchitecture) UnmarshalText(data []byte) error {
+func (ma *MTPArchitecture) UnmarshalText(data []byte) error {
 	v, err := ParseMTPArchitecture(string(data))
 	if err != nil {
 		return err
 	}
-	*t = v
+	*ma = v
 	return nil
 }
 
@@ -244,8 +244,8 @@ func MustParseMTPArchitecture(value string) MTPArchitecture {
 }
 
 // String returns the artifact name.
-func (t MTPArtifact) String() string {
-	switch t {
+func (ma MTPArtifact) String() string {
+	switch ma {
 	case MTPArtifactEmbedded:
 		return "embedded"
 	case MTPArtifactCompanion:
@@ -256,21 +256,21 @@ func (t MTPArtifact) String() string {
 }
 
 // Equal reports whether the values match.
-func (t MTPArtifact) Equal(other MTPArtifact) bool { return t == other }
+func (ma MTPArtifact) Equal(other MTPArtifact) bool { return ma == other }
 
 // IsZero reports whether the artifact is none.
-func (t MTPArtifact) IsZero() bool { return t.value == 0 }
+func (ma MTPArtifact) IsZero() bool { return ma.value == 0 }
 
 // MarshalText serializes the artifact name.
-func (t MTPArtifact) MarshalText() ([]byte, error) { return []byte(t.String()), nil }
+func (ma MTPArtifact) MarshalText() ([]byte, error) { return []byte(ma.String()), nil }
 
 // UnmarshalText parses a registered artifact.
-func (t *MTPArtifact) UnmarshalText(data []byte) error {
+func (ma *MTPArtifact) UnmarshalText(data []byte) error {
 	v, err := ParseMTPArtifact(string(data))
 	if err != nil {
 		return err
 	}
-	*t = v
+	*ma = v
 	return nil
 }
 

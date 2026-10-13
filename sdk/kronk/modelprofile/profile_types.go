@@ -27,24 +27,24 @@ func newClass(value string) Class {
 }
 
 // String returns the wire value.
-func (t Class) String() string { return t.value }
+func (c Class) String() string { return c.value }
 
 // Equal reports whether the values match.
-func (t Class) Equal(other Class) bool { return t == other }
+func (c Class) Equal(other Class) bool { return c == other }
 
 // IsZero reports whether the value is unset.
-func (t Class) IsZero() bool { return t.value == "" }
+func (c Class) IsZero() bool { return c.value == "" }
 
 // MarshalText implements encoding.TextMarshaler.
-func (t Class) MarshalText() ([]byte, error) { return []byte(t.value), nil }
+func (c Class) MarshalText() ([]byte, error) { return []byte(c.value), nil }
 
 // UnmarshalText implements encoding.TextUnmarshaler.
-func (t *Class) UnmarshalText(data []byte) error {
+func (c *Class) UnmarshalText(data []byte) error {
 	v, err := ParseClass(string(data))
 	if err != nil {
 		return err
 	}
-	*t = v
+	*c = v
 	return nil
 }
 
@@ -90,24 +90,24 @@ func newRole(value string) Role {
 }
 
 // String returns the wire value.
-func (t Role) String() string { return t.value }
+func (r Role) String() string { return r.value }
 
 // Equal reports whether the values match.
-func (t Role) Equal(other Role) bool { return t == other }
+func (r Role) Equal(other Role) bool { return r == other }
 
 // IsZero reports whether the value is unset.
-func (t Role) IsZero() bool { return t.value == "" }
+func (r Role) IsZero() bool { return r.value == "" }
 
 // MarshalText implements encoding.TextMarshaler.
-func (t Role) MarshalText() ([]byte, error) { return []byte(t.value), nil }
+func (r Role) MarshalText() ([]byte, error) { return []byte(r.value), nil }
 
 // UnmarshalText implements encoding.TextUnmarshaler.
-func (t *Role) UnmarshalText(data []byte) error {
+func (r *Role) UnmarshalText(data []byte) error {
 	v, err := ParseRole(string(data))
 	if err != nil {
 		return err
 	}
-	*t = v
+	*r = v
 	return nil
 }
 
@@ -155,24 +155,24 @@ func newPurpose(value string) Purpose {
 }
 
 // String returns the wire value.
-func (t Purpose) String() string { return t.value }
+func (p Purpose) String() string { return p.value }
 
 // Equal reports whether the values match.
-func (t Purpose) Equal(other Purpose) bool { return t == other }
+func (p Purpose) Equal(other Purpose) bool { return p == other }
 
 // IsZero reports whether the value is unset.
-func (t Purpose) IsZero() bool { return t.value == "" }
+func (p Purpose) IsZero() bool { return p.value == "" }
 
 // MarshalText implements encoding.TextMarshaler.
-func (t Purpose) MarshalText() ([]byte, error) { return []byte(t.value), nil }
+func (p Purpose) MarshalText() ([]byte, error) { return []byte(p.value), nil }
 
 // UnmarshalText implements encoding.TextUnmarshaler.
-func (t *Purpose) UnmarshalText(data []byte) error {
+func (p *Purpose) UnmarshalText(data []byte) error {
 	v, err := ParsePurpose(string(data))
 	if err != nil {
 		return err
 	}
-	*t = v
+	*p = v
 	return nil
 }
 
@@ -218,24 +218,24 @@ func newMemorySemantics(value string) MemorySemantics {
 }
 
 // String returns the wire value.
-func (t MemorySemantics) String() string { return t.value }
+func (ms MemorySemantics) String() string { return ms.value }
 
 // Equal reports whether the values match.
-func (t MemorySemantics) Equal(other MemorySemantics) bool { return t == other }
+func (ms MemorySemantics) Equal(other MemorySemantics) bool { return ms == other }
 
 // IsZero reports whether the value is unset.
-func (t MemorySemantics) IsZero() bool { return t.value == "" }
+func (ms MemorySemantics) IsZero() bool { return ms.value == "" }
 
 // MarshalText implements encoding.TextMarshaler.
-func (t MemorySemantics) MarshalText() ([]byte, error) { return []byte(t.value), nil }
+func (ms MemorySemantics) MarshalText() ([]byte, error) { return []byte(ms.value), nil }
 
 // UnmarshalText implements encoding.TextUnmarshaler.
-func (t *MemorySemantics) UnmarshalText(data []byte) error {
+func (ms *MemorySemantics) UnmarshalText(data []byte) error {
 	v, err := ParseMemorySemantics(string(data))
 	if err != nil {
 		return err
 	}
-	*t = v
+	*ms = v
 	return nil
 }
 
@@ -289,24 +289,24 @@ func newMTPArchitecture(value string) MTPArchitecture {
 }
 
 // String returns the wire value.
-func (t MTPArchitecture) String() string { return t.value }
+func (ma MTPArchitecture) String() string { return ma.value }
 
 // Equal reports whether the values match.
-func (t MTPArchitecture) Equal(other MTPArchitecture) bool { return t == other }
+func (ma MTPArchitecture) Equal(other MTPArchitecture) bool { return ma == other }
 
 // IsZero reports whether no MTP architecture is set.
-func (t MTPArchitecture) IsZero() bool { return t.value == "" }
+func (ma MTPArchitecture) IsZero() bool { return ma.value == "" }
 
 // MarshalText implements encoding.TextMarshaler.
-func (t MTPArchitecture) MarshalText() ([]byte, error) { return []byte(t.value), nil }
+func (ma MTPArchitecture) MarshalText() ([]byte, error) { return []byte(ma.value), nil }
 
 // UnmarshalText implements encoding.TextUnmarshaler.
-func (t *MTPArchitecture) UnmarshalText(data []byte) error {
+func (ma *MTPArchitecture) UnmarshalText(data []byte) error {
 	v, err := ParseMTPArchitecture(string(data))
 	if err != nil {
 		return err
 	}
-	*t = v
+	*ma = v
 	return nil
 }
 
@@ -379,16 +379,16 @@ func newComputeKind(value uint8) ComputeKind {
 }
 
 // Value returns the numeric wire and runtime allocation-family ID.
-func (t ComputeKind) Value() uint8 { return t.value }
+func (ck ComputeKind) Value() uint8 { return ck.value }
 
 // String returns the decimal allocation-family ID.
-func (t ComputeKind) String() string { return strconv.FormatUint(uint64(t.value), 10) }
+func (ck ComputeKind) String() string { return strconv.FormatUint(uint64(ck.value), 10) }
 
 // Equal reports whether the values match.
-func (t ComputeKind) Equal(other ComputeKind) bool { return t == other }
+func (ck ComputeKind) Equal(other ComputeKind) bool { return ck == other }
 
 // IsZero reports whether the generic allowance is selected.
-func (t ComputeKind) IsZero() bool { return t.value == 0 }
+func (ck ComputeKind) IsZero() bool { return ck.value == 0 }
 
 // ParseComputeKind parses a registered numeric allocation-family ID.
 func ParseComputeKind(value uint8) (ComputeKind, error) {
@@ -409,11 +409,11 @@ func MustParseComputeKind(value uint8) ComputeKind {
 }
 
 // MarshalJSON preserves the numeric JSON representation.
-func (t ComputeKind) MarshalJSON() ([]byte, error) { return json.Marshal(t.value) }
+func (ck ComputeKind) MarshalJSON() ([]byte, error) { return json.Marshal(ck.value) }
 
 // UnmarshalJSON parses a registered numeric JSON value.
-func (t *ComputeKind) UnmarshalJSON(data []byte) error {
-	value := t.value
+func (ck *ComputeKind) UnmarshalJSON(data []byte) error {
+	value := ck.value
 	if err := json.Unmarshal(data, &value); err != nil {
 		return err
 	}
@@ -421,16 +421,16 @@ func (t *ComputeKind) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
-	*t = v
+	*ck = v
 	return nil
 }
 
 // MarshalYAML preserves the numeric YAML representation.
-func (t ComputeKind) MarshalYAML() (any, error) { return t.value, nil }
+func (ck ComputeKind) MarshalYAML() (any, error) { return ck.value, nil }
 
 // UnmarshalYAML parses a registered numeric YAML value.
-func (t *ComputeKind) UnmarshalYAML(unmarshal func(any) error) error {
-	value := t.value
+func (ck *ComputeKind) UnmarshalYAML(unmarshal func(any) error) error {
+	value := ck.value
 	if err := unmarshal(&value); err != nil {
 		return err
 	}
@@ -438,6 +438,6 @@ func (t *ComputeKind) UnmarshalYAML(unmarshal func(any) error) error {
 	if err != nil {
 		return err
 	}
-	*t = v
+	*ck = v
 	return nil
 }

@@ -55,24 +55,24 @@ func newFileRole(value string) FileRole {
 }
 
 // String returns the canonical name.
-func (t FileRole) String() string { return t.value }
+func (fr FileRole) String() string { return fr.value }
 
 // Equal provides support for comparison and testing.
-func (t FileRole) Equal(other FileRole) bool { return t.value == other.value }
+func (fr FileRole) Equal(other FileRole) bool { return fr.value == other.value }
 
 // IsZero reports whether the value is unset.
-func (t FileRole) IsZero() bool { return t.value == "" }
+func (fr FileRole) IsZero() bool { return fr.value == "" }
 
 // MarshalText provides support for logging and serialization.
-func (t FileRole) MarshalText() ([]byte, error) { return []byte(t.value), nil }
+func (fr FileRole) MarshalText() ([]byte, error) { return []byte(fr.value), nil }
 
 // UnmarshalText parses a registered value.
-func (t *FileRole) UnmarshalText(data []byte) error {
+func (fr *FileRole) UnmarshalText(data []byte) error {
 	parsed, err := ParseFileRole(string(data))
 	if err != nil {
 		return err
 	}
-	*t = parsed
+	*fr = parsed
 	return nil
 }
 
