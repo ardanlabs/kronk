@@ -8,8 +8,8 @@ grades `tictactoe/main.go`. The original benchmark is preserved in the parent
 directory. Historical reports copied into `reports/` are version 1 results.
 
 Version 2 allows at most **three total submissions** per model: the initial
-implementation and up to two repairs. Passing still requires all **20 original
-checks**; the grader and task requirements are unchanged. On failure, the harness
+implementation and up to two repairs. Passing requires all **37 acceptance
+checks**, with expanded execution coverage of the unchanged task. On failure, the harness
 passes the failed check names and diagnostic details back to OpenCode and resumes
 the same session with `--continue`. It stops immediately on a passing grade or
 after the submission budget. Finishing the OpenCode response constitutes submission.
@@ -29,12 +29,33 @@ The structural tests and scripted game inputs live outside the agent workspace.
 This is workspace/configuration isolation, not an OS security sandbox; shell
 execution is allowed.
 
+## Deterministic acceptance
+
+The grader checks the submitted formatting, structure, build, vet, and helper
+behavior, then runs **22 interactive scenarios in a real pseudo-terminal**.
+Input is delivered one line at a time only after the expected screen and prompt
+appear. Exact output bytes are compared, including ANSI colors, resets, screen
+clearing, spacing, and newlines; ANSI is not stripped for grading.
+
+Scenarios cover all eight winning lines for both players, a draw, a ninth-move
+win taking precedence over a draw, invalid and occupied inputs, whitespace,
+replays preserving all three scores, and exit answers. Each scenario is bounded
+to three seconds and 64 KiB of output. A complete pass means these acceptance
+cases passed, not a proof against every possible program defect or terminal.
+Check percentages are diagnostic, not a percentage of playability. No Amp grader
+or screenshot review is involved. Only the initial task before the separator in
+`tic-tac-toe.md` is evaluated; the later undo task is not included.
+
 Before a model's attempts begin, the harness warms it with a one-token response
 to `hello model`. After all attempts for that model, it unloads the model before
 moving to the next one. Warm-up work is not included in the reported OpenCode
 token or timing measurements.
 
 ## Requirements
+
+Use Go 1.27 or newer and a Unix terminal environment (macOS, Linux, or WSL)
+with `sh`, `stty`, and Git available. Generated code is executed on this machine
+without an OS sandbox. Do not run untrusted submissions on a sensitive host.
 
 Install OpenCode and start the repository's Kronk server from another terminal:
 
@@ -88,18 +109,49 @@ The primary knobs are:
 | `CODEGEN_STEPS` | `40` | Maximum OpenCode agent steps per submission |
 | `CODEGEN_TIMEOUT` | `30m` | Timeout per submission; also separately applied to warm-up and unload |
 
-Outputs are written beneath `.tools/codegen-benchmark/version2/output/`. After
-preflight checks, each benchmark run deletes that version's previous output, so it
-contains only the selected models and summary report from the current run. To compare models, select them
-together with `CODEGEN_MODEL=all` or a comma-separated list.
+Outputs are retained beneath the gitignored
+`.tools/codegen-benchmark/version2/runs/`, grouped by local date and unique run:
 
-Each model has a persistent `workspace/tictactoe/main.go` and isolated OpenCode
-configuration/state under `workspace/opencode/`. Each `attempt-XX` directory is a
-submission record outside that workspace, preserving its prompt (including repair
-feedback), JSON event stream, stderr, grader result, and `main.go.txt` source snapshot.
-Every failed submission also saves the grader's response in `feedback.md`, including
-the final failure when no repair budget remains.
+```text
+runs/YYYY-MM-DD/run-HHMMSS.<unique>/
+  prompt.md                # frozen task sent to the agent
+  report.md                # run metadata, model/attempt results and play commands
+  <model>/attempt-01/
+    result.json            # grade, metrics, evidence, repair_message for attempts 2–3
+    program/main.go        # submitted source, unchanged and runnable
+    program/go.mod
+    events.jsonl, opencode.stderr
+```
+
+New runs never delete previous runs or the old `output/` directory. Git ignores
+these files; it does not back them up. They survive ordinary branch updates and
+switches in the same checkout, but removing the worktree, deleting the folder, or
+using `git clean -fdx` can remove them. Back up important runs yourself.
+
+Each model uses one temporary `workspace/` shared across its submissions so repairs
+retain the code and agent session. It is removed after that model finishes, including
+on error return. Each `attempt-XX` directory preserves its prompt (including repair
+feedback) only as `repair_message` in `result.json` for repair submissions; the initial
+task is saved once in the run-level `prompt.md`. Attempts also preserve the JSON event
+stream, stderr, grader result, and one runnable source snapshot.
+Scenario inputs and expected/actual ANSI transcripts are stored only in
+`result.json`, under `grade.evidence`; failure diagnostics are also included there.
+No duplicate source/transcript files or `.tar.gz` archives are generated.
+No grader source copy or separate `run.json` is generated. Timestamps, workflow
+status, and errors are stored in the report's `Run metadata` JSON section, preserved
+when the report is regenerated. Old runs with `run.json` can still be read.
 The original benchmark's output is never cleared or used by this version.
+
+The report is refreshed after each completed submission and on normal or error
+return. Logs and prompts may contain
+sensitive content; inspect before sharing. Abrupt termination can leave an
+incomplete attempt and a temporary workspace; its events/stderr are streamed to disk, and folders without
+`result.json` are not counted as completed grades.
+
+To inspect an attempt locally or after an interactive SSH login, enter its saved
+`program/` directory and run `GOTOOLCHAIN=local go run .`. For SSH, use `ssh -t`
+to allocate a terminal. Each report includes the exact relative command. A failed
+submission can be unbuildable; it is preserved as submitted, not silently fixed.
 
 The report shows final checks passed, the first passing submission (or `Not passed`),
 and cumulative agent wall time, turns, tool calls, and tokens across all submissions,
@@ -111,8 +163,12 @@ Agent token statistics sum the final usage event from every OpenCode turn. Kronk
 reports reused prompt tokens as `Cache read`; the report omits provider cache-write
 usage because Kronk's OpenAI-compatible API does not expose that metric.
 
-Regenerate a report with:
+Regenerate the latest run's report without invoking a model:
 
 ```shell
 make benchmark-codegen-v2-report
+
+# Select a particular run (also supports the legacy output directory):
+make benchmark-codegen-v2-report \
+    CODEGEN_V2_RUN=.tools/codegen-benchmark/version2/runs/YYYY-MM-DD/run-HHMMSS.unique
 ```

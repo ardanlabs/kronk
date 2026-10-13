@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,12 +16,58 @@ type modelResults struct {
 	Attempts []result
 }
 
-func generateReport(runDir string) error {
+type runRecord struct {
+	Started  time.Time `json:"started"`
+	Finished time.Time `json:"finished,omitzero"`
+	Status   string    `json:"status"`
+	Error    string    `json:"error,omitempty"`
+}
+
+const runMetadataHeader = "## Run metadata\n\n```json\n"
+
+// Read the report's metadata when regenerating it. Older runs used run.json;
+// read that format as a fallback, but never create it for new runs.
+func loadRunRecord(runDir string) (runRecord, error) {
+	data, err := os.ReadFile(filepath.Join(runDir, "report.md"))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return runRecord{}, err
+	}
+	_, rest, found := strings.Cut(string(data), runMetadataHeader)
+	if found {
+		body, _, closed := strings.Cut(rest, "\n```")
+		if !closed {
+			return runRecord{}, errors.New("codegen benchmark: incomplete run metadata in report")
+		}
+		data = []byte(body)
+	} else {
+		data, err = os.ReadFile(filepath.Join(runDir, "run.json"))
+		if errors.Is(err, os.ErrNotExist) {
+			return runRecord{}, nil
+		}
+		if err != nil {
+			return runRecord{}, err
+		}
+	}
+	var record runRecord
+	if err := json.Unmarshal(data, &record); err != nil {
+		return runRecord{}, fmt.Errorf("codegen benchmark: decoding run metadata: %w", err)
+	}
+	return record, nil
+}
+
+func generateReport(runDir string, record *runRecord) error {
+	if record == nil {
+		saved, err := loadRunRecord(runDir)
+		if err != nil {
+			return err
+		}
+		record = &saved
+	}
 	models, err := loadResults(runDir)
 	if err != nil {
 		return err
 	}
-	report := renderReport(runDir, models)
+	report := renderReport(runDir, models, *record)
 	path := filepath.Join(runDir, "report.md")
 	if err := os.WriteFile(path, []byte(report), 0o644); err != nil {
 		return fmt.Errorf("codegen benchmark: writing report: %w", err)
@@ -33,9 +80,6 @@ func loadResults(runDir string) ([]modelResults, error) {
 	paths, err := filepath.Glob(filepath.Join(runDir, "*", "attempt-*", "result.json"))
 	if err != nil {
 		return nil, fmt.Errorf("codegen benchmark: finding results: %w", err)
-	}
-	if len(paths) == 0 {
-		return nil, fmt.Errorf("codegen benchmark: no results found in %s", runDir)
 	}
 
 	byModel := make(map[string][]result)
@@ -60,15 +104,24 @@ func loadResults(runDir string) ([]modelResults, error) {
 	return models, nil
 }
 
-func renderReport(runDir string, models []modelResults) string {
+func renderReport(runDir string, models []modelResults, record runRecord) string {
 	var report strings.Builder
 	fmt.Fprintf(&report, "# OpenCode code-generation benchmark v2\n\n")
 	fmt.Fprintf(&report, "Run: `%s`  \n", filepath.Base(filepath.Clean(runDir)))
 	fmt.Fprintf(&report, "Generated: %s  \n", time.Now().Format(time.RFC3339))
 	fmt.Fprintf(&report, "Models: %d\n\n", len(models))
+	if record.Status != "" {
+		data, _ := json.MarshalIndent(record, "", "  ")
+		fmt.Fprintf(&report, "%s%s\n```\n\n", runMetadataHeader, data)
+		fmt.Fprintf(&report, "Run status: **%s**. This describes workflow completion, not acceptance.\n\n", record.Status)
+		if record.Error != "" {
+			fmt.Fprintf(&report, "Run error: %s\n\n", record.Error)
+		}
+	}
+	report.WriteString("Only completed grades are included below. An attempt folder without result.json is incomplete, not a pass.\n\n")
 
 	report.WriteString("## Summary\n\n")
-	report.WriteString("Submissions are successive repairs in one workspace and agent session, not independent samples. Passing requires all 20 original grader checks. `First pass` is the submission number, or `Not passed`; agent exit status alone does not establish correctness.\n\n")
+	report.WriteString("Submissions are successive repairs in one workspace and agent session, not independent samples. Passing requires every acceptance check. Check percentages are diagnostic, not a percentage of gameplay correctness. `First pass` is the submission number, or `Not passed`; agent exit status alone does not establish correctness.\n\n")
 	report.WriteString("| Model | Submissions | First pass | Final checks passed | Final buildable | Final agent exit |\n")
 	report.WriteString("| --- | ---: | --- | --- | --- | ---: |\n")
 	for _, model := range models {
@@ -130,6 +183,14 @@ func renderReport(runDir string, models []modelResults) string {
 				attempt.OpenCode.ExitCode, attempt.OpenCode.Turns, attempt.OpenCode.ToolCalls, attempt.OpenCode.WallTime.Round(time.Second))
 			if attempt.OpenCode.Error != "" {
 				fmt.Fprintf(&report, "- OpenCode error: `%s`\n", strings.ReplaceAll(attempt.OpenCode.Error, "`", "'"))
+			}
+			dir := filepath.ToSlash(filepath.Join(modelDirName(model.Model.ID), fmt.Sprintf("attempt-%02d", attempt.Attempt)))
+			fmt.Fprintf(&report, "- [Grader result and raw execution evidence](%s/result.json)\n", dir)
+			if attempt.SourceSHA != "" {
+				fmt.Fprintf(&report, "- [Submitted program](%s/program/main.go), SHA-256: `%s`\n", dir, attempt.SourceSHA)
+				fmt.Fprintf(&report, "- Play from this run directory (locally or after SSH login):\n\n```sh\n(cd '%s/program' && GOTOOLCHAIN=local go run .)\n```\n", dir)
+			} else {
+				report.WriteString("- No submitted source recorded.\n")
 			}
 			writeFailures(&report, attempt.Grade)
 		}
