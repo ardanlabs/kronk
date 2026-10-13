@@ -147,17 +147,18 @@ func (s *imcSession) logicalPosition() int {
 //   - Shared MTP draft (*sharedMTPDrafter): a companion assistant model whose
 //     context shares the target's KV memory.
 type draftCore struct {
-	model          llama.Model
-	vocab          llama.Vocab
-	suppressTokens []llama.Token
-	lctx           llama.Context
-	mem            llama.Memory
-	sampler        llama.Sampler
-	batch          *extendedBatch
-	nDraft         int
-	promptBuf      []llama.Token // Reusable buffer for assembling draft prompt tokens
-	draftBuf       []llama.Token // Reusable buffer for generateDraftTokens output
-	mtp            *mtpengine.Resources
+	model            llama.Model
+	vocab            llama.Vocab
+	suppressTokens   []llama.Token
+	lctx             llama.Context
+	mem              llama.Memory
+	sampler          llama.Sampler
+	batch            *extendedBatch
+	graphAllocations graphAllocationLog
+	nDraft           int
+	promptBuf        []llama.Token // Reusable buffer for assembling draft prompt tokens
+	draftBuf         []llama.Token // Reusable buffer for generateDraftTokens output
+	mtp              *mtpengine.Resources
 
 	// Pre-allocated buffers for speculative sampling to avoid per-round
 	// allocations of vocab-sized slices (~600KB each for 152k vocab).
@@ -202,20 +203,21 @@ type Model struct {
 	// to a single request and cannot bleed across requests.
 	// Zero when projFile == "" (text-only models) or for embed/rerank
 	// models.
-	mtmdMetaCtx     mtmd.Context
-	modelInfo       ModelInfo
-	paramsResolved  bool
-	activeStreams   atomic.Int32
-	unloaded        atomic.Bool
-	decodeMu        sync.Mutex
-	cacheMu         sync.RWMutex
-	imcSessions     []*imcSession     // IMC session pool, sized by IMCSessionCapacity; sessions migrate freely between slots via SessionStore. Idle sessions cost only the struct itself — the SessionStore buffer is allocated lazily on first use.
-	imcSystemCaches []*imcSystemCache // Immutable system-prompt preload pool with the same capacity as imcSessions.
-	addBOSToken     bool              // Whether to add BOS token (from model metadata)
-	pool            *contextPool      // Context pool for parallel embed/rerank
-	batchSeq        *batchSeqEngine   // Sequence-batch engine for supported embed/rerank models.
-	parser          Parser            // Selected via selectParser at load time; nil for embed/rerank.
-	draft           drafter           // Speculative-decoding strategy (nil, classic, or MTP); see draft.go
+	mtmdMetaCtx      mtmd.Context
+	modelInfo        ModelInfo
+	paramsResolved   bool
+	activeStreams    atomic.Int32
+	unloaded         atomic.Bool
+	decodeMu         sync.Mutex
+	graphAllocations graphAllocationLog
+	cacheMu          sync.RWMutex
+	imcSessions      []*imcSession     // IMC session pool, sized by IMCSessionCapacity; sessions migrate freely between slots via SessionStore. Idle sessions cost only the struct itself — the SessionStore buffer is allocated lazily on first use.
+	imcSystemCaches  []*imcSystemCache // Immutable system-prompt preload pool with the same capacity as imcSessions.
+	addBOSToken      bool              // Whether to add BOS token (from model metadata)
+	pool             *contextPool      // Context pool for parallel embed/rerank
+	batchSeq         *batchSeqEngine   // Sequence-batch engine for supported embed/rerank models.
+	parser           Parser            // Selected via selectParser at load time; nil for embed/rerank.
+	draft            drafter           // Speculative-decoding strategy (nil, classic, or MTP); see draft.go
 }
 
 // NewModel loads a model from the GGUF files specified in cfg and returns

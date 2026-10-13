@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -27,15 +28,18 @@ type decisionWork struct {
 // decisionEngine performs only model execution. Protocol implementations own
 // prompting, candidate selection, calibration, and multi-pass decisions.
 type decisionEngine struct {
-	lctx          llama.Context
-	mem           llama.Memory
-	batch         *extendedBatch
-	nVocab        int
-	contextWindow int
-	maxTokens     int
-	maxSequences  int
-	maxOutputs    int
-	scheduler     *decisionScheduler
+	lctx             llama.Context
+	mem              llama.Memory
+	batch            *extendedBatch
+	nVocab           int
+	contextWindow    int
+	maxTokens        int
+	maxSequences     int
+	maxOutputs       int
+	scheduler        *decisionScheduler
+	modelID          string
+	log              applog.Logger
+	graphAllocations graphAllocationLog
 }
 
 func decisionContextParams(base llama.ContextParams, cfg Config) llama.ContextParams {
@@ -119,6 +123,8 @@ func initDecisionRuntime(m *Model) error {
 		maxTokens:     int(params.NBatch),
 		maxSequences:  int(params.NSeqMax),
 		maxOutputs:    int(params.NOutputsMax),
+		modelID:       m.modelInfo.ID,
+		log:           m.log,
 	}
 	engine.scheduler = newDecisionScheduler(&engine, m.cfg.QueueDepth())
 	engine.scheduler.start()
@@ -347,6 +353,8 @@ func stageDecisionParts(batch *extendedBatch, parts []decisionPart) ([][]int32, 
 }
 
 func (e *decisionEngine) evaluate(entries []decisionScheduledEntry) ([][][]float32, bool, error) {
+	defer e.graphAllocations.record(context.Background(), e.log, e.modelID, "target", e.lctx)
+
 	parts := make([]decisionPart, len(entries))
 	for i, entry := range entries {
 		parts[i] = decisionPart{

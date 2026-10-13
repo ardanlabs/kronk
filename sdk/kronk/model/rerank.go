@@ -106,6 +106,7 @@ func (m *Model) Rerank(ctx context.Context, d D) (response RerankResponse, err e
 			return RerankResponse{}, acquireErr
 		}
 		defer m.pool.release(pc)
+		defer m.pool.graphAllocations[pc.idx].record(ctx, m.log, m.modelInfo.ID, "target", pc.lctx)
 
 		results, totalPromptTokens, err = m.processRerank(ctx, pc, query, documents, returnDocuments)
 	}

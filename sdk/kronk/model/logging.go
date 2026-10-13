@@ -1,11 +1,45 @@
 package model
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/ardanlabs/kronk/sdk/kronk/applog"
+	"github.com/hybridgroup/yzma/pkg/llama"
 )
+
+// graphAllocationLog tracks one native context's lifetime reallocation totals.
+// Its owner samples at serialized inference boundaries, never per token or via
+// a scrape callback. PerfContext does not lock or synchronize; these host-side
+// counters require no additional GPU synchronization.
+type graphAllocationLog struct {
+	same    int32
+	changed int32
+}
+
+func (g *graphAllocationLog) record(ctx context.Context, log applog.Logger, modelID, contextRole string, lctx llama.Context) {
+	if lctx == 0 {
+		return
+	}
+
+	perf := llama.PerfContext(lctx)
+	same := int64(perf.NReallocsSame) - int64(g.same)
+	changed := int64(perf.NReallocsDiff) - int64(g.changed)
+	g.same = perf.NReallocsSame
+	g.changed = perf.NReallocsDiff
+	if same == 0 && changed == 0 {
+		return
+	}
+
+	log(ctx, "graph-allocation", "model_id", modelID, "context", contextRole,
+		"reallocations_same", same, "reallocations_changed", changed,
+		"reallocations_same_total", perf.NReallocsSame, "reallocations_changed_total", perf.NReallocsDiff)
+}
+
+// =============================================================================
 
 // StreamingResponseLogger captures the final streaming response for logging.
 // It must capture data before forwarding since the caller may mutate the response.

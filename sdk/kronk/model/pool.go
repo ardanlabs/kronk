@@ -18,11 +18,12 @@ type contextPool struct {
 	ctxParams llama.ContextParams
 	log       applog.Logger
 
-	mu       sync.Mutex
-	contexts []llama.Context
-	memories []llama.Memory
-	batches  []*extendedBatch
-	avail    chan int // indices of available contexts
+	mu               sync.Mutex
+	contexts         []llama.Context
+	memories         []llama.Memory
+	batches          []*extendedBatch
+	graphAllocations []graphAllocationLog
+	avail            chan int // indices of available contexts
 }
 
 // newContextPool creates a pool of n llama contexts from the given model.
@@ -34,13 +35,14 @@ func newContextPool(ctx context.Context, model llama.Model, ctxParams llama.Cont
 	ctxParams = contextPoolFallbackParams(ctxParams)
 
 	p := &contextPool{
-		model:     model,
-		ctxParams: ctxParams,
-		log:       log,
-		contexts:  make([]llama.Context, n),
-		memories:  make([]llama.Memory, n),
-		batches:   make([]*extendedBatch, n),
-		avail:     make(chan int, n),
+		model:            model,
+		ctxParams:        ctxParams,
+		log:              log,
+		contexts:         make([]llama.Context, n),
+		memories:         make([]llama.Memory, n),
+		batches:          make([]*extendedBatch, n),
+		graphAllocations: make([]graphAllocationLog, n),
+		avail:            make(chan int, n),
 	}
 
 	for i := range n {

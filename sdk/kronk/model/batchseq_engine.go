@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
@@ -73,9 +74,11 @@ type batchSeqEngine struct {
 	submitWG  sync.WaitGroup
 	accepting bool
 
-	evaluate  batchSeqEvaluateFunc
-	modelID   string
-	operation string
+	evaluate         batchSeqEvaluateFunc
+	modelID          string
+	operation        string
+	log              applog.Logger
+	graphAllocations graphAllocationLog
 
 	errMu sync.RWMutex
 	err   error
@@ -123,6 +126,7 @@ func initBatchSeqRuntime(ctx context.Context, m *Model) error {
 	m.lctx = lctx
 	m.mem = mem
 	engine.modelID = m.modelInfo.ID
+	engine.log = m.log
 	if m.modelInfo.IsEmbedModel {
 		engine.operation = "embedding"
 	} else {
@@ -436,6 +440,8 @@ func removeBatchSeqJobs(jobs, remove []*batchSeqJob) []*batchSeqJob {
 }
 
 func (e *batchSeqEngine) evaluateJob(job *batchSeqJob) ([][]float32, bool, error) {
+	defer e.graphAllocations.record(job.ctx, e.log, e.modelID, "target", e.lctx)
+
 	outputs := make([][]float32, len(job.items))
 
 	for next := 0; next < len(job.items); {

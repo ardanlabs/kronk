@@ -102,6 +102,7 @@ func (m *Model) Embeddings(ctx context.Context, d D) (response EmbedReponse, err
 			return EmbedReponse{}, acquireErr
 		}
 		defer m.pool.release(pc)
+		defer m.pool.graphAllocations[pc.idx].record(ctx, m.log, m.modelInfo.ID, "target", pc.lctx)
 
 		embedData, totalPromptTokens, err = m.processEmbeddings(ctx, pc, inputs, truncate, direction, nativeDim, int(requestedDim))
 	}

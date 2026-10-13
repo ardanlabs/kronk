@@ -197,6 +197,11 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	// Non-IMC: always clear.
 	e.model.decodeMu.Lock()
 	llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+	e.model.graphAllocations.record(ctx, e.model.log, e.model.modelInfo.ID, "target", e.model.lctx)
+	if e.model.draft != nil {
+		draft := e.model.draft.core()
+		draft.graphAllocations.record(ctx, e.model.log, e.model.modelInfo.ID, "draft", draft.lctx)
+	}
 	e.model.decodeMu.Unlock()
 	e.model.log(ctx, "finish-slot", "status", "seq-cleared", "slot", slotID, "seq", seqID)
 
