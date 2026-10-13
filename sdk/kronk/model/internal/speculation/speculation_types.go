@@ -108,8 +108,8 @@ var (
 )
 
 // String returns the architecture name.
-func (a MTPArchitecture) String() string {
-	switch a {
+func (t MTPArchitecture) String() string {
+	switch t {
 	case MTPArchitectureQwen35OwnKV:
 		return "qwen35-own-kv"
 	case MTPArchitectureQwen4ExpOwnKV:
