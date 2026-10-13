@@ -46,6 +46,9 @@ type config struct {
 	BatchMaxTokens     int
 	BatchSlots         int
 	BatchConversations int
+	BatchWorkload      string
+	BatchImages        []string
+	BatchImageSubjects []string
 
 	MediaModel               string
 	MediaProfile             string
@@ -65,6 +68,8 @@ func parseConfig(args []string) (config, bool, error) {
 	var stages string
 	var expectedTerms string
 	var matrix string
+	var batchImages string
+	var batchSubjects string
 	var list bool
 
 	fs.StringVar(&scenarios, "scenario", "all", "comma-separated scenarios: mtp, hybrid-state, long-context, batch, media, or all")
@@ -100,6 +105,9 @@ func parseConfig(args []string) (config, bool, error) {
 	fs.IntVar(&cfg.BatchMaxTokens, "batch-max-tokens", 128, "maximum batch completion tokens")
 	fs.IntVar(&cfg.BatchSlots, "batch-slots", 4, "expected generation slots")
 	fs.IntVar(&cfg.BatchConversations, "batch-conversations", 5, "conversations; values above slots exercise queue pressure")
+	fs.StringVar(&cfg.BatchWorkload, "batch-workload", "text", "batch workload: text or images")
+	fs.StringVar(&batchImages, "batch-images", "examples/samples/giraffe.jpg,examples/samples/adetailer-face.png", "comma-separated distinct batch image fixtures")
+	fs.StringVar(&batchSubjects, "batch-image-subjects", "giraffe,astronaut", "comma-separated expected subject per batch image, in matching order")
 
 	fs.StringVar(&cfg.MediaModel, "media-model", "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL", "multimodal base model or TOOLS-MTP-* alias; custom alias allowed for one cell")
 	fs.StringVar(&cfg.MediaProfile, "media-profile", "all", "media profile: correctness, prefill, or all")
@@ -132,6 +140,8 @@ func parseConfig(args []string) (config, bool, error) {
 		return config{}, false, fmt.Errorf("-long-context-stages: %w", err)
 	}
 	cfg.MediaExpectedTerms = splitNonempty(expectedTerms)
+	cfg.BatchImages = splitNonempty(batchImages)
+	cfg.BatchImageSubjects = splitNonempty(batchSubjects)
 	conflictingMode := false
 	fs.Visit(func(f *flag.Flag) {
 		conflictingMode = conflictingMode || f.Name == "mtp" || f.Name == "imc"
@@ -255,6 +265,22 @@ func (cfg config) validate() error {
 	}
 	if cfg.BatchSlots < 2 || cfg.BatchConversations <= cfg.BatchSlots {
 		return errors.New("batch requires at least 2 slots and conversations greater than slots to exercise queue pressure")
+	}
+	if cfg.BatchWorkload != "text" && cfg.BatchWorkload != "images" {
+		return errors.New("-batch-workload must be text or images")
+	}
+	if cfg.BatchWorkload == "images" {
+		if len(cfg.BatchImages) < 2 || len(cfg.BatchImages) != len(cfg.BatchImageSubjects) {
+			return errors.New("image batch requires at least two images and one matching subject per image")
+		}
+		for index, subject := range cfg.BatchImageSubjects {
+			for previous := range index {
+				other := cfg.BatchImageSubjects[previous]
+				if cfg.BatchImages[index] == cfg.BatchImages[previous] || strings.Contains(strings.ToLower(subject), strings.ToLower(other)) || strings.Contains(strings.ToLower(other), strings.ToLower(subject)) {
+					return errors.New("batch images and their subject terms must be distinct and non-overlapping")
+				}
+			}
+		}
 	}
 	if cfg.MediaMaxTokens <= 0 || cfg.MediaGenerationMaxTokens <= 0 || cfg.MediaImageMaxTokens <= 0 || cfg.MediaMaxGenerationGap <= 0 {
 		return errors.New("media token counts and generation gap must be positive")

@@ -26,7 +26,10 @@
 # Cleanup failure stops the matrix and preserves the results collected so far.
 # Model overrides should use provider/model; matching TOOLS-MTP-* suffixes are
 # selected automatically. Images are a workload choice, not another mode alias.
-# Lifecycle is unchanged; image-batch coverage is not part of this step.
+# Batch defaults to text; test-load-batch-images selects the image workload.
+# For a combined invocation with image batch, use RELIABILITY_BATCH_WORKLOAD=images.
+# Both workloads use the same batch model aliases and unchanged concurrency criterion.
+# Lifecycle is unchanged and excluded from the matrix.
 #
 # Further analysis with some harness: provide summary.json,
 # events.ndjson, and tool.log from the same RELIABILITY_OUT, plus
@@ -77,6 +80,9 @@ RELIABILITY_BATCH_TOKENS_PER_TURN ?= 1400
 RELIABILITY_BATCH_MAX_TOKENS ?= 128
 RELIABILITY_BATCH_SLOTS ?= 4
 RELIABILITY_BATCH_CONVERSATIONS ?= 5
+RELIABILITY_BATCH_WORKLOAD ?= text
+RELIABILITY_BATCH_IMAGES ?= examples/samples/giraffe.jpg,examples/samples/adetailer-face.png
+RELIABILITY_BATCH_IMAGE_SUBJECTS ?= giraffe,astronaut
 
 RELIABILITY_MEDIA_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL
 RELIABILITY_MEDIA_IMAGE ?= examples/samples/giraffe.jpg
@@ -113,6 +119,9 @@ define run_reliability
 		-batch-max-tokens "$(RELIABILITY_BATCH_MAX_TOKENS)" \
 		-batch-slots "$(RELIABILITY_BATCH_SLOTS)" \
 		-batch-conversations "$(RELIABILITY_BATCH_CONVERSATIONS)" \
+		-batch-workload "$(RELIABILITY_BATCH_WORKLOAD)" \
+		-batch-images "$(RELIABILITY_BATCH_IMAGES)" \
+		-batch-image-subjects "$(RELIABILITY_BATCH_IMAGE_SUBJECTS)" \
 		-media-model "$(RELIABILITY_MEDIA_MODEL)" \
 		-media-image "$(RELIABILITY_MEDIA_IMAGE)" \
 		-media-expect "$(RELIABILITY_MEDIA_EXPECT)" \
@@ -157,6 +166,16 @@ test-load-long-context:
 # Long-running multi-slot batch-isolation probe. Exercises every slot plus queue
 # pressure, overlapping generation, marker isolation, IMC reuse, and 30K-token histories.
 test-load-batch:
+	$(call run_reliability,batch,)
+
+# Same batch engine and matrix, with distinct image subjects per conversation.
+# Adds images at turn 1 and the midpoint (turn 11 by default), changing subjects.
+# Replays both image-bearing requests, then appends text turns retaining the images.
+# Verifies current-subject recognition, stale/foreign-subject rejection, deterministic
+# replay, mode-aware usage/cache reuse, and the unchanged generation-overlap criterion.
+# Fixture paths and expected subjects must be comma-separated lists in matching order.
+test-load-batch-images: RELIABILITY_BATCH_WORKLOAD = images
+test-load-batch-images:
 	$(call run_reliability,batch,)
 
 # -------------------------------
