@@ -26,6 +26,18 @@ func TestSuite(t *testing.T) {
 	})
 }
 
+// TestUncachedMediaSmallBatch exercises an image larger than the native batch
+// through the public API, without IMC or a larger image-capacity floor.
+func TestUncachedMediaSmallBatch(t *testing.T) {
+	cfg := testlib.CfgSimpleVision()
+	cfg.PtrIncrementalCache = new(false)
+	cfg.PtrPrefillBatchSize = new(32)
+	cfg.Speculation = model.SpeculationDisabled
+	testlib.WithModel(t, cfg, func(t *testing.T, krn *kronk.Kronk) {
+		testMedia(t, krn)
+	})
+}
+
 func testMedia(t *testing.T, krn *kronk.Kronk) {
 	testMediaWithInput(t, krn, testlib.DMedia)
 }

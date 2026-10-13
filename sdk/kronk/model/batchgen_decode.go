@@ -60,38 +60,8 @@ func (e *batchEngine) decodeEmbeddingsNormal(s *slot, embd []float32, nEmbd, nTo
 	if nTokens == 0 {
 		return nil
 	}
-	if err := e.model.validateMediaBatchCapacity(nTokens, s.useNonCausal); err != nil {
-		return err
-	}
-
-	batch := e.mropeBatch
 	positions := linearPositions(nTokens, s.nPast)
-	if err := stageEmbeddingRows(batch, embd, nEmbd, nTokens, positions, s.seqIDs, extendedBatchOutputLogits); err != nil {
-		return fmt.Errorf("stage media embeddings: %w", err)
-	}
-
-	e.model.decodeMu.Lock()
-	wasCausal := false
-	if s.useNonCausal {
-		wasCausal = llama.GetCausalAttn(e.model.lctx)
-		llama.SetCausalAttn(e.model.lctx, false)
-	}
-	ret, err := batch.process(llama.ProcessTypeDecode)
-	if s.useNonCausal {
-		llama.SetCausalAttn(e.model.lctx, wasCausal)
-	}
-	if err == nil && ret == 0 {
-		llama.Synchronize(e.model.lctx)
-		err = e.syncMTPDecodedRows(s, batch, 0, s.nPast+llama.Pos(nTokens))
-	}
-	e.model.decodeMu.Unlock()
-
-	if err != nil || ret != 0 {
-		return decodeError(ret, err)
-	}
-
-	s.nPast += llama.Pos(nTokens)
-	return nil
+	return e.decodeMediaEmbeddings(s, embd, nEmbd, nTokens, positions, llama.Pos(nTokens))
 }
 
 // decodeEmbeddingsMRoPE decodes embeddings with M-RoPE positioning. Positions
@@ -102,41 +72,71 @@ func (e *batchEngine) decodeEmbeddingsMRoPE(s *slot, embd []float32, nEmbd, nTok
 	if len(positions) != int(nTokens*4) {
 		return fmt.Errorf("mrope embedding positions: got %d, want %d", len(positions), nTokens*4)
 	}
+	return e.decodeMediaEmbeddings(s, embd, nEmbd, nTokens, positions, nPos)
+}
+
+// decodeMediaEmbeddings splits causal chunks to fit the native batch while
+// keeping non-causal chunks intact and advancing the slot only after success.
+func (e *batchEngine) decodeMediaEmbeddings(s *slot, embd []float32, nEmbd, nTokens int32, positions []llama.Pos, nPos llama.Pos) error {
 	if nTokens == 0 {
 		return nil
 	}
 	if err := e.model.validateMediaBatchCapacity(nTokens, s.useNonCausal); err != nil {
 		return err
 	}
+	if nEmbd <= 0 || nTokens < 0 || len(embd) != int(nEmbd*nTokens) {
+		return fmt.Errorf("embedding values: got %d, want %d rows of %d", len(embd), nTokens, nEmbd)
+	}
 
 	batch := e.mropeBatch
-	if err := stageEmbeddingRows(batch, embd, nEmbd, nTokens, positions, s.seqIDs, extendedBatchOutputLogits); err != nil {
-		return fmt.Errorf("stage M-RoPE media embeddings: %w", err)
-	}
+	nBatch := batch.capacity
+	n := int(nTokens)
+	positionCount := len(positions) / n
 
 	e.model.decodeMu.Lock()
-	wasCausal := false
-	if s.useNonCausal {
-		wasCausal = llama.GetCausalAttn(e.model.lctx)
-		llama.SetCausalAttn(e.model.lctx, false)
-	}
+	defer e.model.decodeMu.Unlock()
 
-	ret, err := batch.process(llama.ProcessTypeDecode)
-	if s.useNonCausal {
-		llama.SetCausalAttn(e.model.lctx, wasCausal)
-	}
-	if err == nil && ret == 0 {
+	for start := 0; start < n; start += nBatch {
+		end := min(start+nBatch, n)
+		batchN := end - start
+		// Positions are section-major: gather each plane, not a contiguous
+		// slice spanning rows from different planes.
+		subPositions := make([]llama.Pos, batchN*positionCount)
+		for plane := range positionCount {
+			copy(subPositions[plane*batchN:(plane+1)*batchN], positions[plane*n+start:plane*n+end])
+		}
+		output := extendedBatchOutputNone
+		if end == n {
+			output = extendedBatchOutputLogits
+		}
+		if err := stageEmbeddingRows(batch, embd[start*int(nEmbd):end*int(nEmbd)], nEmbd, int32(batchN), subPositions, s.seqIDs, output); err != nil {
+			return fmt.Errorf("stage media embeddings at row %d: %w", start, err)
+		}
+
+		wasCausal := false
+		if s.useNonCausal {
+			wasCausal = llama.GetCausalAttn(e.model.lctx)
+			llama.SetCausalAttn(e.model.lctx, false)
+		}
+		ret, err := batch.process(llama.ProcessTypeDecode)
+		if s.useNonCausal {
+			llama.SetCausalAttn(e.model.lctx, wasCausal)
+		}
+		if err != nil || ret != 0 {
+			return decodeError(ret, err)
+		}
 		llama.Synchronize(e.model.lctx)
-		err = e.syncMTPDecodedRows(s, batch, 0, s.nPast+nPos)
-	}
-	e.model.decodeMu.Unlock()
-
-	if err != nil || ret != 0 {
-		return decodeError(ret, err)
+		nextPosition := s.nPast + nPos
+		if positionCount == 1 {
+			nextPosition = s.nPast + llama.Pos(end)
+		}
+		// M-RoPE's logical end is authoritative, as in the IMC decoder.
+		if err := e.syncMTPDecodedRows(s, batch, 0, nextPosition); err != nil {
+			return err
+		}
 	}
 
 	s.nPast += nPos
-
 	return nil
 }
 
