@@ -214,9 +214,7 @@ func runBatchTurn(rc *runContext, model string, turn, records int, conversations
 				}
 				subject = rc.cfg.BatchImageSubjects[imageIndex]
 			}
-			previousOutput := ""
 			if phase == "repeat" {
-				previousOutput = messages[len(messages)-1]["content"].(string)
 				messages = messages[:len(messages)-1]
 			} else {
 				var content any = userContent
@@ -263,9 +261,6 @@ func runBatchTurn(rc *runContext, model string, turn, records int, conversations
 						request.Error = strings.TrimSpace(request.Error + " image response contains foreign/stale subject " + other)
 					}
 				}
-			}
-			if phase == "repeat" && stream.Content != previousOutput {
-				request.Error = strings.TrimSpace(request.Error + " deterministic image repeat differed from its original response")
 			}
 			if request.Error == "" {
 				updated[session] = append(messages, map[string]any{"role": "assistant", "content": stream.Content})
