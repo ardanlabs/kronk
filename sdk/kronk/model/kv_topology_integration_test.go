@@ -109,7 +109,7 @@ func TestKVCacheModesRespectRequestContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, mode := range []model.KVCacheMode{model.KVCachePartitioned, model.KVCacheShared} {
-		t.Run(string(mode), func(t *testing.T) {
+		t.Run(mode.String(), func(t *testing.T) {
 			krn, err := kronk.New(model.WithModelFiles(path.ModelFiles), model.WithContextWindow(256),
 				model.WithNSeqMax(3), model.WithKVCacheMode(mode), model.WithIncrementalCache(true), model.WithCacheMinTokens(1))
 			if err != nil {

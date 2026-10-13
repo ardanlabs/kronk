@@ -29,7 +29,7 @@ func TestResolve(t *testing.T) {
 		{"MTP rejects classic model", Config{Mode: ModeMTP, ClassicConfigured: true}, SourceNone, MTPArchitectureNone, MTPArtifactNone, false, true},
 		{"MTP requires source", Config{Mode: ModeMTP, MTPAvailable: true}, SourceNone, MTPArchitectureNone, MTPArtifactNone, false, true},
 		{"MTP requires library support", Config{Mode: ModeMTP, EmbeddedMTPArchitecture: MTPArchitectureQwen35OwnKV, MTPArchitectureEnabled: true}, SourceNone, MTPArchitectureNone, MTPArtifactNone, false, true},
-		{"unknown mode rejected", Config{Mode: "future"}, SourceNone, MTPArchitectureNone, MTPArtifactNone, false, true},
+		{"unknown mode rejected", Config{Mode: Mode{value: "future"}}, SourceNone, MTPArchitectureNone, MTPArtifactNone, false, true},
 	}
 
 	for _, tt := range tests {

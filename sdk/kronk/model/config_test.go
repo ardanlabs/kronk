@@ -740,7 +740,7 @@ func TestGGMLTypeString(t *testing.T) {
 		{GGMLTypeQ8_0, "q8_0"},
 		{GGMLTypeBF16, "bf16"},
 		{GGMLTypeAuto, "auto"},
-		{GGMLType(999), "unknown(999)"},
+		{GGMLType{}, "auto"},
 	}
 
 	for _, tt := range tests {
@@ -799,7 +799,7 @@ func TestParseGGMLType(t *testing.T) {
 }
 
 func TestLazyMode(t *testing.T) {
-	if got := NewConfig().LazyMode; got != LazyModeAuto {
+	if got := NewConfig().LazyMode; !got.Equal(LazyModeAuto) {
 		t.Fatalf("default lazy mode: got %v, want auto", got)
 	}
 	if got := DerefLazyMode(nil); got != LazyModeAuto {
@@ -852,7 +852,7 @@ func TestLazyMode(t *testing.T) {
 }
 
 func TestLoadMode(t *testing.T) {
-	if got := LoadMode(0); got != LoadModeAuto {
+	if got := (LoadMode{}); !got.Equal(LoadModeAuto) {
 		t.Errorf("LoadMode zero value = %v, want %v", got, LoadModeAuto)
 	}
 	if got := DerefLoadMode(nil); got != LoadModeAuto {
@@ -993,7 +993,7 @@ func TestValidateConfig(t *testing.T) {
 		), false},
 		{"unknown lazy mode is invalid", NewConfig(
 			WithModelFiles([]string{"dummy.gguf"}),
-			WithLazyMode(LazyMode(99)),
+			WithLazyMode(LazyMode{value: "unknown"}),
 		), true},
 		{"MTP nDraft override (no draft files) is valid even with NSeqMax>1", NewConfig(
 			WithModelFiles([]string{"dummy.gguf"}),

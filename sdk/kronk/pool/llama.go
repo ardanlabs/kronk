@@ -140,8 +140,8 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 		ComputeBackend:         devices.Backend(),
 		ContextWindow:          ctxWin,
 		BytesPerElement:        bpe,
-		TypeK:                  int32(cfg.CacheTypeK),
-		TypeV:                  int32(cfg.CacheTypeV),
+		TypeK:                  cfg.CacheTypeK.ToVRAMType(),
+		TypeV:                  cfg.CacheTypeV.ToVRAMType(),
 		Slots:                  nseq,
 		NUBatch:                effectivePrefillBatchSize(cfg),
 		ExpertLayersOnGPU:      cfg.ExpertLayersOnGPU(),
@@ -805,7 +805,7 @@ func predictResult(m *models.Models, modelID string, cfg vram.Config) (vram.Resu
 // max of K and V is used so a budget never undercounts the heavier
 // half.
 func bytesPerElement(k, v model.GGMLType) int64 {
-	return int64(gguf.MaxBytesPerElement(int32(k), int32(v)))
+	return int64(gguf.MaxBytesPerElement(k.ToVRAMType(), v.ToVRAMType()))
 }
 
 // gpuDevices filters out a "CPU" entry that some configs leave

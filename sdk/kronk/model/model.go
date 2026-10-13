@@ -746,7 +746,7 @@ func logContextParamsTrace(ctx context.Context, ctxParams llama.ContextParams, c
 func logModelParamsTrace(ctx context.Context, params llama.ModelParams, deviceNames []string, tensorSplit []float32, tensorBuftOverrides []string, l applog.Logger) {
 	l(ctx, "LLAMA-MODEL-PARAMS", "values", fmt.Sprintf("\nCheckTensors[%d]\nDevices[%v]\nKvOverridesSet[%t]\nLazyMode[%d]\nLoadMode[%s]\nLoadMTP[%d]\nMainGPU[%d]\nNGpuLayers[%d]\nNoAlloc[%d]\nNoHost[%d]\nProgressCallbackSet[%t]\nProgressCallbackUserDataSet[%t]\nSplitMode[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseExtraBufts[%d]\nVocabOnly[%d]\n",
 		params.CheckTensors, deviceNames, params.KvOverrides != 0, params.LazyMode, loadModeName(params.LoadMode), params.LoadMTP,
-		params.MainGpu, params.NGpuLayers, params.NoAlloc, params.NoHost, params.ProgressCallback != 0, params.ProgressCallbackUserData != 0, SplitMode(params.SplitMode).String(),
+		params.MainGpu, params.NGpuLayers, params.NoAlloc, params.NoHost, params.ProgressCallback != 0, params.ProgressCallbackUserData != 0, SplitModeFromYZMA(params.SplitMode).String(),
 		tensorBuftOverrides, tensorSplit, params.UseExtraBufts, params.VocabOnly))
 }
 
@@ -1611,9 +1611,9 @@ func calculateVRAMDiag(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory in
 		WeightLoading:          cfg.VRAMWeightLoading(devices.List(devices.WithIncludeMemory(false))),
 		ComputeBackend:         devices.Backend(),
 		ContextWindow:          int64(cfg.ContextWindow()),
-		BytesPerElement:        int64(gguf.MaxBytesPerElement(int32(cfg.CacheTypeK), int32(cfg.CacheTypeV))),
-		TypeK:                  int32(cfg.CacheTypeK),
-		TypeV:                  int32(cfg.CacheTypeV),
+		BytesPerElement:        int64(gguf.MaxBytesPerElement(cfg.CacheTypeK.ToVRAMType(), cfg.CacheTypeV.ToVRAMType())),
+		TypeK:                  cfg.CacheTypeK.ToVRAMType(),
+		TypeV:                  cfg.CacheTypeV.ToVRAMType(),
 		Slots:                  int64(max(cfg.NSeqMax(), 1)),
 		NUBatch:                int64(cfg.EffectiveNUBatch()),
 		ExpertLayersOnGPU:      cfg.ExpertLayersOnGPU(),

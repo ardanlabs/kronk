@@ -8,22 +8,75 @@ import (
 )
 
 // Mode selects the speculative-decoding implementation for a model.
-type Mode string
+type Mode struct {
+	value string
+}
 
-const (
+var modes = make(map[string]Mode)
+
+var (
 	// ModeAuto selects a classic drafter when explicitly configured, otherwise
 	// a companion or embedded MTP implementation when available.
-	ModeAuto Mode = "auto"
+	ModeAuto = newMode("auto")
 
 	// ModeDisabled runs target-only generation.
-	ModeDisabled Mode = "disabled"
+	ModeDisabled = newMode("disabled")
 
 	// ModeClassic requires an explicitly configured separate draft model.
-	ModeClassic Mode = "classic"
+	ModeClassic = newMode("classic")
 
 	// ModeMTP requires a companion or embedded MTP implementation.
-	ModeMTP Mode = "mtp"
+	ModeMTP = newMode("mtp")
 )
+
+func newMode(value string) Mode {
+	mode := Mode{value: value}
+	modes[value] = mode
+	return mode
+}
+
+// String returns the name of the speculation mode.
+func (m Mode) String() string { return m.value }
+
+// Equal provides support for comparison and testing.
+func (m Mode) Equal(other Mode) bool { return m.value == other.value }
+
+// IsZero reports whether the mode is unset.
+func (m Mode) IsZero() bool { return m.value == "" }
+
+// MarshalText provides support for logging and serialization.
+func (m Mode) MarshalText() ([]byte, error) { return []byte(m.value), nil }
+
+// UnmarshalText parses a known speculation mode.
+func (m *Mode) UnmarshalText(data []byte) error {
+	mode, err := ParseMode(string(data))
+	if err != nil {
+		return err
+	}
+	*m = mode
+	return nil
+}
+
+// ParseMode parses a known speculation mode or an unset value.
+func ParseMode(value string) (Mode, error) {
+	if value == "" {
+		return Mode{}, nil
+	}
+	mode, exists := modes[value]
+	if !exists {
+		return Mode{}, fmt.Errorf("invalid speculation mode %q", value)
+	}
+	return mode, nil
+}
+
+// MustParseMode parses a mode and panics for an unknown name.
+func MustParseMode(value string) Mode {
+	mode, err := ParseMode(value)
+	if err != nil {
+		panic(err)
+	}
+	return mode
+}
 
 // Source identifies the broad speculation engine selected for a model.
 type Source uint8

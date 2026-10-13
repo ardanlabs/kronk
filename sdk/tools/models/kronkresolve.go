@@ -413,10 +413,10 @@ func MergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	if src.PtrNThreadsBatch != nil {
 		dst.PtrNThreadsBatch = src.PtrNThreadsBatch
 	}
-	if src.CacheTypeK != 0 {
+	if !src.CacheTypeK.IsZero() {
 		dst.CacheTypeK = src.CacheTypeK
 	}
-	if src.CacheTypeV != 0 {
+	if !src.CacheTypeV.IsZero() {
 		dst.CacheTypeV = src.CacheTypeV
 	}
 	if src.FlashAttention != nil {
@@ -488,13 +488,13 @@ func MergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	if src.SessionStoreKind != (kvstorage.Kind{}) {
 		dst.SessionStoreKind = src.SessionStoreKind
 	}
-	if src.Speculation != "" {
+	if !src.Speculation.IsZero() {
 		dst.Speculation = src.Speculation
 	}
 	if src.PtrInsecureLogging != nil {
 		dst.PtrInsecureLogging = src.PtrInsecureLogging
 	}
-	if src.RopeScaling != 0 {
+	if !src.RopeScaling.IsZero() {
 		dst.RopeScaling = src.RopeScaling
 	}
 	if src.PtrRopeFreqBase != nil {

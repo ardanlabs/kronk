@@ -737,9 +737,9 @@ func cacheRecommendations(typeK, typeV model.GGMLType) []cacheRecommendation {
 		return cacheRecommendation{
 			typeK:           k.String(),
 			typeV:           v.String(),
-			ggmlTypeK:       int32(k),
-			ggmlTypeV:       int32(v),
-			bytesPerElement: gguf.MaxBytesPerElement(int32(k), int32(v)),
+			ggmlTypeK:       k.ToVRAMType(),
+			ggmlTypeV:       v.ToVRAMType(),
+			bytesPerElement: gguf.MaxBytesPerElement(k.ToVRAMType(), v.ToVRAMType()),
 		}
 	}
 
