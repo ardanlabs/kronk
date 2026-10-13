@@ -283,6 +283,12 @@ models:
   #     top_k: 20
   #     top_p: 0.95
 
+  unsloth/Qwen3-0.6B-Q8_0/AGENT:
+    context-window: 32768
+    sampling-parameters:
+      max_tokens: 16384
+
+
 bucky-models:
   # Two independent states let the server process two audio requests at once.
   tiny.en:

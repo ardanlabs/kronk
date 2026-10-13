@@ -118,6 +118,9 @@ schema = 3
   [mod."github.com/cncf/xds/go"]
     version = "v0.0.0-20260202195803-dba9d589def2"
     hash = "sha256-nCcna5Dwr8a+FgdSZt43VmoMds5U0FZta2vpJfdMOhs="
+  [mod."github.com/creack/pty"]
+    version = "v1.1.24"
+    hash = "sha256-6oSurN/ZYr/KHxKKU6Qbw9w8CDKmPa8yL00pZ24H0AM="
   [mod."github.com/decred/dcrd/dcrec/secp256k1/v4"]
     version = "v4.4.1"
     hash = "sha256-FfHNUmNdqtxHP5OFxqlJJ5jiZ9unpjeLGJS2yHoaNfU="

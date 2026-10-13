@@ -302,6 +302,7 @@ benchmark-codegen-report: ## Show the coding benchmark report
 # Version 2 keeps the original benchmark intact and resumes failed submissions.
 CODEGEN_V2_SUBMISSIONS ?= 3
 CODEGEN_V2_FEEDBACK ?= true
+CODEGEN_V2_RUN ?=
 
 benchmark-codegen-v2:
 	go run ./.tools/codegen-benchmark/version2 \
@@ -316,4 +317,4 @@ benchmark-codegen-v2-list:
 	go run ./.tools/codegen-benchmark/version2 -list
 
 benchmark-codegen-v2-report:
-	go run ./.tools/codegen-benchmark/version2 -report
+	go run ./.tools/codegen-benchmark/version2 -report -run "$(CODEGEN_V2_RUN)"

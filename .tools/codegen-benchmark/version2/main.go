@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -40,6 +41,7 @@ type options struct {
 	configFile string
 	promptFile string
 	outputDir  string
+	reportDir  string
 	attempts   int
 	steps      int
 	timeout    time.Duration
@@ -75,7 +77,8 @@ type result struct {
 	Attempt   int            `json:"attempt"`
 	OpenCode  agentResult    `json:"opencode"`
 	Grade     gradeResult    `json:"grade"`
-	Workspace string         `json:"workspace"`
+	SourceSHA string         `json:"source_sha256,omitempty"`
+	Repair    string         `json:"repair_message,omitempty"`
 }
 
 func main() {
@@ -103,17 +106,26 @@ func parseFlags() (options, error) {
 	flag.IntVar(&opts.steps, "steps", defaultSteps, "maximum OpenCode agent steps per attempt")
 	flag.DurationVar(&opts.timeout, "timeout", defaultTimeout, "timeout per OpenCode attempt")
 	flag.BoolVar(&opts.list, "list", false, "list eligible models and exit")
-	flag.BoolVar(&opts.report, "report", false, "regenerate the report from the current output directory")
+	flag.BoolVar(&opts.report, "report", false, "regenerate the report for the latest saved run")
+	flag.StringVar(&opts.reportDir, "run", "", "saved run directory to use with -report (defaults to latest)")
 	flag.Parse()
 	opts.configFile = filepath.Join(root, "zarf", "kms", "model_config.yaml")
 	opts.promptFile = filepath.Join(root, ".tools", "codegen-benchmark", "version2", "tic-tac-toe.md")
-	opts.outputDir = filepath.Join(root, ".tools", "codegen-benchmark", "version2", "output")
+	opts.outputDir = filepath.Join(root, ".tools", "codegen-benchmark", "version2", "runs")
 	return opts, nil
 }
 
-func run(opts options) error {
+func run(opts options) (runErr error) {
 	if opts.report {
-		return generateReport(opts.outputDir)
+		dir := opts.reportDir
+		if dir == "" {
+			var err error
+			dir, err = latestRun(opts.outputDir)
+			if err != nil {
+				return err
+			}
+		}
+		return generateReport(dir, nil)
 	}
 	if opts.attempts < 1 || opts.attempts > defaultAttempts {
 		return errors.New("codegen benchmark: submissions must be between 1 and 3")
@@ -163,10 +175,22 @@ func run(opts options) error {
 	if err != nil {
 		return err
 	}
+	record := runRecord{Started: time.Now(), Status: "running"}
+	if err := generateReport(runDir, &record); err != nil {
+		return err
+	}
+	defer func() {
+		record.Finished = time.Now()
+		record.Status = "completed"
+		if runErr != nil {
+			record.Status = "failed"
+			record.Error = runErr.Error()
+		}
+		runErr = errors.Join(runErr, generateReport(runDir, &record))
+	}()
 	if err := os.WriteFile(filepath.Join(runDir, "prompt.md"), []byte(prompt+"\n"), 0o644); err != nil {
 		return fmt.Errorf("codegen benchmark: writing prompt: %w", err)
 	}
-
 	fmt.Printf("Code-generation benchmark v2\n- server: %s\n- models: %d\n- maximum submissions/model: %d\n- grader feedback: %t\n- output: %s\n", host, len(selected), opts.attempts, opts.feedback, runDir)
 	for _, model := range selected {
 		if err := runModel(root, runDir, host, prompt, model, opts); err != nil {
@@ -174,14 +198,15 @@ func run(opts options) error {
 		}
 	}
 
-	if err := generateReport(runDir); err != nil {
-		return err
-	}
 	fmt.Printf("\nResults written to %s\n", runDir)
 	return nil
 }
 
-func runModel(root, runDir, host, prompt string, model benchmarkModel, opts options) error {
+func runModel(root, runDir, host, prompt string, model benchmarkModel, opts options) (runErr error) {
+	// Retain state only while the same agent is repairing its submissions.
+	defer func() {
+		runErr = errors.Join(runErr, os.RemoveAll(filepath.Join(runDir, modelDirName(model.ID), "workspace")))
+	}()
 	fmt.Printf("\n[%s] warming model\n", model.ID)
 	warmCtx, cancelWarm := context.WithTimeout(context.Background(), opts.timeout)
 	modelErr := warmModel(warmCtx, host, model.ID)
@@ -190,7 +215,11 @@ func runModel(root, runDir, host, prompt string, model benchmarkModel, opts opti
 	if modelErr == nil {
 		modelErr = runSubmissions(prompt, opts.attempts, opts.feedback, func(attempt int, message string) (result, error) {
 			fmt.Printf("[%s] submission %d/%d\n", model.ID, attempt, opts.attempts)
-			return runAttempt(root, runDir, host, message, model, attempt, opts)
+			item, err := runAttempt(root, runDir, host, message, model, attempt, opts)
+			if err != nil {
+				return item, err
+			}
+			return item, generateReport(runDir, nil)
 		})
 	}
 
@@ -383,10 +412,6 @@ func runAttempt(root, runDir, host, prompt string, model benchmarkModel, attempt
 	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
 		return result{}, err
 	}
-	if err := os.WriteFile(filepath.Join(artifactDir, "prompt.md"), []byte(prompt), 0o644); err != nil {
-		return result{}, err
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), opts.timeout)
 	defer cancel()
 	started := time.Now()
@@ -408,56 +433,68 @@ func runAttempt(root, runDir, host, prompt string, model benchmarkModel, attempt
 	cmd.Env = env
 
 	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	events, err := os.Create(filepath.Join(artifactDir, "events.jsonl"))
+	if err != nil {
+		return result{}, err
+	}
+	defer events.Close()
+	stderr, err := os.Create(filepath.Join(artifactDir, "opencode.stderr"))
+	if err != nil {
+		return result{}, err
+	}
+	defer stderr.Close()
+	cmd.Stdout = io.MultiWriter(events, &stdout)
+	cmd.Stderr = stderr
 	err = cmd.Run()
 	wallTime := time.Since(started)
 	fmt.Printf("[%s] agent finished; grading submission %d\n", model.ID, attempt)
-	if err := os.WriteFile(filepath.Join(artifactDir, "events.jsonl"), stdout.Bytes(), 0o644); err != nil {
-		return result{}, fmt.Errorf("codegen benchmark: writing OpenCode events: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(artifactDir, "opencode.stderr"), stderr.Bytes(), 0o644); err != nil {
-		return result{}, fmt.Errorf("codegen benchmark: writing OpenCode stderr: %w", err)
-	}
-
-	agent, parseErr := parseAgentResult(stdout.Bytes())
-	if parseErr != nil {
-		return result{}, fmt.Errorf("codegen benchmark: parsing OpenCode events: %w", parseErr)
-	}
-	agent.WallTime = wallTime
-	if err != nil {
-		agent.ExitCode = 1
-		agent.Error = err.Error()
-		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
-			agent.ExitCode = exitErr.ExitCode()
-		}
-		if ctx.Err() != nil {
-			agent.Error = ctx.Err().Error()
-		}
-	}
+	agentErr := err
 
 	source, readErr := os.ReadFile(filepath.Join(programDir, "main.go"))
 	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
 		return result{}, fmt.Errorf("codegen benchmark: reading generated main.go: %w", readErr)
 	}
 	if readErr == nil {
-		if err := os.WriteFile(filepath.Join(artifactDir, "main.go.txt"), source, 0o644); err != nil {
+		snapshot := filepath.Join(artifactDir, "program")
+		if err := os.MkdirAll(snapshot, 0o755); err != nil {
+			return result{}, err
+		}
+		if err := os.WriteFile(filepath.Join(snapshot, "main.go"), source, 0o644); err != nil {
+			return result{}, err
+		}
+		// Match the isolated module actually used by the grader, not agent edits.
+		if err := os.WriteFile(filepath.Join(snapshot, "go.mod"), []byte("module tictactoe\n\ngo 1.27.0\n"), 0o644); err != nil {
 			return result{}, err
 		}
 	}
-	grade := gradeProgram(context.Background(), string(source))
-	if grade.Passed != grade.Total {
-		if err := os.WriteFile(filepath.Join(artifactDir, "feedback.md"), []byte(graderFeedback(grade)), 0o644); err != nil {
-			return result{}, fmt.Errorf("codegen benchmark: writing grader feedback: %w", err)
+	// Preserve the submission even if the CLI's event stream cannot be decoded.
+	agent, parseErr := parseAgentResult(stdout.Bytes())
+	if parseErr != nil {
+		return result{}, fmt.Errorf("codegen benchmark: parsing OpenCode events: %w", parseErr)
+	}
+	agent.WallTime = wallTime
+	if agentErr != nil {
+		agent.ExitCode = 1
+		agent.Error = agentErr.Error()
+		if exitErr, ok := errors.AsType[*exec.ExitError](agentErr); ok {
+			agent.ExitCode = exitErr.ExitCode()
+		}
+		if ctx.Err() != nil {
+			agent.Error = ctx.Err().Error()
 		}
 	}
+	grade := gradeProgram(context.Background(), string(source))
 	item := result{
-		Model:     model,
-		Attempt:   attempt,
-		OpenCode:  agent,
-		Grade:     grade,
-		Workspace: "../workspace",
+		Model:    model,
+		Attempt:  attempt,
+		OpenCode: agent,
+		Grade:    grade,
+	}
+	if attempt > 1 {
+		item.Repair = prompt
+	}
+	if readErr == nil {
+		item.SourceSHA = fmt.Sprintf("%x", sha256.Sum256(source))
 	}
 	data, err := json.MarshalIndent(item, "", "  ")
 	if err != nil {
@@ -729,13 +766,12 @@ func normalizeHost(host string) (string, error) {
 }
 
 func prepareRunDir(dir string) (string, error) {
-	if err := os.RemoveAll(dir); err != nil {
-		return "", fmt.Errorf("codegen benchmark: clearing output directory: %w", err)
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	now := time.Now()
+	dateDir := filepath.Join(dir, now.Format("2006-01-02"))
+	if err := os.MkdirAll(dateDir, 0o755); err != nil {
 		return "", fmt.Errorf("codegen benchmark: creating output directory: %w", err)
 	}
-	return dir, nil
+	return os.MkdirTemp(dateDir, "run-"+now.Format("150405.000000000")+"-")
 }
 
 func repositoryRoot() (string, error) {

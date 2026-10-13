@@ -135,7 +135,7 @@ func TestPrepareAttemptDirectoryCreatesRepositoryBoundary(t *testing.T) {
 	}
 }
 
-func TestPrepareRunDirClearsPreviousOutput(t *testing.T) {
+func TestPrepareRunDirPreservesPreviousRuns(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "output")
 	oldAttempt := filepath.Join(dir, "old-model", "attempt-01")
 	if err := os.MkdirAll(oldAttempt, 0o755); err != nil {
@@ -149,15 +149,19 @@ func TestPrepareRunDirClearsPreviousOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepareRunDir: %v", err)
 	}
-	if got != dir {
-		t.Errorf("run directory: got %q, want %q", got, dir)
-	}
-	entries, err := os.ReadDir(dir)
+	second, err := prepareRunDir(dir)
 	if err != nil {
-		t.Fatalf("read run directory: %v", err)
+		t.Fatal(err)
 	}
-	if len(entries) != 0 {
-		t.Errorf("run directory entries: got %d, want 0", len(entries))
+	if got == second || filepath.Dir(filepath.Dir(got)) != dir {
+		t.Fatalf("run directories not unique and date-grouped: %s %s", got, second)
+	}
+	data, err := os.ReadFile(filepath.Join(oldAttempt, "result.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "old result" {
+		t.Fatal("previous output was changed")
 	}
 }
 
@@ -260,46 +264,8 @@ func TestGradeProgramMissingSource(t *testing.T) {
 	if got, want := grade.Passed, 0; got != want {
 		t.Errorf("passed checks: got %d, want %d", got, want)
 	}
-	if got, want := grade.Total, 20; got != want {
+	if got, want := grade.Total, 37; got != want {
 		t.Errorf("total checks: got %d, want %d", got, want)
-	}
-}
-
-func TestAssessScenarioReportsOutOfOrderOutput(t *testing.T) {
-	scenario := scenario{ordered: []string{"final board", "Player X wins!", "Play again?"}}
-	output := "Player X wins!\nfinal board\nPlay again?"
-
-	passed, detail := assessScenario(output, nil, scenario)
-	if passed {
-		t.Fatal("assessScenario: got passed, want failed")
-	}
-	if !strings.Contains(detail, `"Player X wins!" appeared before "final board"`) {
-		t.Errorf("detail: got %q, want out-of-order explanation", detail)
-	}
-}
-
-func TestTerminalOutcomesRequireFinalBoardThenResult(t *testing.T) {
-	want := map[string]string{
-		"x-win": "Player X wins!",
-		"o-win": "Player O wins!",
-		"draw":  "It's a draw.",
-	}
-	for _, scenario := range scenarios() {
-		result, exists := want[scenario.name]
-		if !exists {
-			continue
-		}
-		if got, want := len(scenario.ordered), 3; got != want {
-			t.Errorf("%s ordered values: got %d, want %d", scenario.name, got, want)
-			continue
-		}
-		if got := scenario.ordered[1]; got != result {
-			t.Errorf("%s result: got %q, want %q", scenario.name, got, result)
-		}
-		delete(want, scenario.name)
-	}
-	if len(want) != 0 {
-		t.Errorf("missing terminal scenarios: %v", want)
 	}
 }
 
@@ -313,7 +279,7 @@ func TestRenderReportShowsFinalOutcomeAndCumulativeWork(t *testing.T) {
 	}, {
 		Model:    benchmarkModel{ID: "org/failed/AGENT"},
 		Attempts: []result{{Attempt: 1, Grade: gradeResult{Passed: 19, Total: 20}}},
-	}})
+	}}, runRecord{})
 
 	for _, want := range []string{
 		"| `org/model/AGENT` | 2 | 2 | 20/20 (100.00%) | true | 0 |",
@@ -432,21 +398,24 @@ printf '%s\n' '{"type":"step_finish","part":{"tokens":{"input":17,"output":9}}}'
 		}
 	}
 	modelDir := filepath.Join(runDir, modelDirName(model.ID))
-	first, err := os.ReadFile(filepath.Join(modelDir, "attempt-01", "main.go.txt"))
+	first, err := os.ReadFile(filepath.Join(modelDir, "attempt-01", "program", "main.go"))
 	if err != nil || !strings.Contains(string(first), "first-version") {
 		t.Fatalf("first snapshot: %s %v", first, err)
 	}
-	second, err := os.ReadFile(filepath.Join(modelDir, "attempt-02", "main.go.txt"))
+	second, err := os.ReadFile(filepath.Join(modelDir, "attempt-02", "program", "main.go"))
 	if err != nil || !strings.Contains(string(second), "second-version") {
 		t.Fatalf("second snapshot: %s %v", second, err)
-	}
-	feedback, err := os.ReadFile(filepath.Join(modelDir, "attempt-02", "feedback.md"))
-	if err != nil || !strings.Contains(string(feedback), "go-parse") || !strings.Contains(string(feedback), "1/20") {
-		t.Fatalf("saved grader feedback: %s %v", feedback, err)
 	}
 	loaded, err := loadResults(runDir)
 	if err != nil || len(loaded) != 1 || len(loaded[0].Attempts) != 2 {
 		t.Fatalf("saved submissions: %+v %v", loaded, err)
+	}
+	if loaded[0].Attempts[0].Repair != "" || loaded[0].Attempts[1].Repair != "feedback" {
+		t.Fatalf("saved repair messages: %+v", loaded[0].Attempts)
+	}
+	feedback := graderFeedback(loaded[0].Attempts[1].Grade)
+	if !strings.Contains(feedback, "go-parse") || !strings.Contains(feedback, "1/37") {
+		t.Fatalf("saved grader diagnostics: %s", feedback)
 	}
 }
 

@@ -8,6 +8,7 @@ require (
 	github.com/ardanlabs/jinja v1.12.0
 	github.com/ardanlabs/malina v1.2.2
 	github.com/arl/statsviz v0.8.2
+	github.com/creack/pty v1.1.24
 	github.com/dgraph-io/badger/v4 v4.9.6
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/go-cmp v0.7.0
