@@ -126,7 +126,7 @@ func runBatch(rc *runContext) scenarioResult {
 		if turnSummary.QueuedRequests < rc.cfg.BatchConversations-rc.cfg.BatchSlots {
 			appendFailure(&result.Failures, "turn %d observed %d queued requests, want at least %d", turn, turnSummary.QueuedRequests, rc.cfg.BatchConversations-rc.cfg.BatchSlots)
 		}
-		if turn > 1 && turnSummary.MinimumCached <= 0 {
+		if rc.cfg.IMC == "on" && turn > 1 && turnSummary.MinimumCached <= 0 {
 			appendFailure(&result.Failures, "turn %d reported no cached tokens for at least one conversation", turn)
 		}
 		if len(result.Failures) > 0 {
@@ -170,7 +170,7 @@ func runBatchTurn(rc *runContext, model string, turn, records int, conversations
 			}
 			ready.Done()
 			<-start
-			stream, err := rc.client.stream(rc, rc.scenario, body, nil)
+			stream, err := rc.stream(rc, body, nil)
 			request := batchRequestResult{
 				Session: session + 1, Turn: turn, TraceID: stream.TraceID, ResponseID: stream.ResponseID,
 				ElapsedSeconds: seconds(stream.FinishedAt.Sub(stream.StartedAt)), PromptTokens: stream.Usage.PromptTokens,

@@ -18,11 +18,14 @@ import (
 var errStopStream = errors.New("stop event stream")
 
 type apiClient struct {
-	host    string
-	token   string
-	client  *http.Client
-	traces  *traceRegistry
-	timeout time.Duration
+	host          string
+	token         string
+	client        *http.Client
+	traces        *traceRegistry
+	timeout       time.Duration
+	managedModel  string
+	unloads       []modelUnloadResult
+	cleanupFailed bool
 }
 
 type httpError struct {

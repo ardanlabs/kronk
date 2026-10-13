@@ -13,6 +13,20 @@
 #
 # The tools validate the active model configuration but never modify it or
 # manage the server. Restart the server after editing model_config_tools.yaml.
+# Each target runs only its selected scenarios/profiles across all four modes.
+# Select cells as labeled MTP/IMC pairs, separated by commas. For example,
+# media with IMC off and both MTP modes:
+#   make test-load-media RELIABILITY_MATRIX="MTPon/IMCoff,MTPoff/IMCoff"
+# Combine selected scenarios in ONE invocation and ONE set of three files:
+#   make test-load-all RELIABILITY_SCENARIOS="mtp,media" RELIABILITY_MATRIX=all
+# summary.json is ordered by cell/scenario; events.ndjson tags every event with
+# cell/scenario/trace; tool.log begins with a final TL;DR followed by the timeline.
+# The runner unloads selected tools aliases left by previous runs, between model
+# switches, and after scenarios (including failures). Unrelated models are untouched.
+# Cleanup failure stops the matrix and preserves the results collected so far.
+# Model overrides should use provider/model; matching TOOLS-MTP-* suffixes are
+# selected automatically. Images are a workload choice, not another mode alias.
+# Lifecycle is unchanged; image-batch coverage is not part of this step.
 #
 # Further analysis with some harness: provide summary.json,
 # events.ndjson, and tool.log from the same RELIABILITY_OUT, plus
@@ -39,22 +53,24 @@ RELIABILITY_SERVER_LOG ?= $(HOME)/.kronk/kronk.log
 RELIABILITY_TIMEOUT ?= 30m
 RELIABILITY_SEED ?= 42
 RELIABILITY_ARGS ?=
+RELIABILITY_MATRIX ?= all
+RELIABILITY_SCENARIOS ?= all
 
-RELIABILITY_MTP_EMBEDDED_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT
-RELIABILITY_MTP_COMPANION_MODEL ?= unsloth/Qwen3.8-27B-UD-Q4_K_XL/AGENT
+RELIABILITY_MTP_EMBEDDED_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL
+RELIABILITY_MTP_COMPANION_MODEL ?= unsloth/Qwen3.8-27B-UD-Q4_K_XL
 RELIABILITY_MTP_REQUESTS ?= 0
 RELIABILITY_MTP_PROMPT_TOKENS ?= 2200
 RELIABILITY_MTP_MAX_TOKENS ?= 256
 RELIABILITY_MTP_EMBEDDED_SLOTS ?= 4
 RELIABILITY_MTP_COMPANION_SLOTS ?= 2
 
-RELIABILITY_HYBRID_MODEL ?= unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT
+RELIABILITY_HYBRID_MODEL ?= unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL
 
-RELIABILITY_LONG_CONTEXT_MODEL ?= unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT
+RELIABILITY_LONG_CONTEXT_MODEL ?= unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL
 RELIABILITY_LONG_CONTEXT_STAGES ?= 4096,8192,16384,32768,65536,131072
 RELIABILITY_LONG_CONTEXT_MAX_TOKENS ?= 96
 
-RELIABILITY_BATCH_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT
+RELIABILITY_BATCH_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL
 RELIABILITY_BATCH_TURNS ?= 21
 RELIABILITY_BATCH_TARGET_TOKENS ?= 30000
 RELIABILITY_BATCH_TOKENS_PER_TURN ?= 1400
@@ -62,7 +78,7 @@ RELIABILITY_BATCH_MAX_TOKENS ?= 128
 RELIABILITY_BATCH_SLOTS ?= 4
 RELIABILITY_BATCH_CONVERSATIONS ?= 5
 
-RELIABILITY_MEDIA_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT
+RELIABILITY_MEDIA_MODEL ?= unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL
 RELIABILITY_MEDIA_IMAGE ?= examples/samples/giraffe.jpg
 RELIABILITY_MEDIA_EXPECT ?= giraffe
 RELIABILITY_MEDIA_MAX_TOKENS ?= 128
@@ -78,6 +94,7 @@ define run_reliability
 		-server-log "$(RELIABILITY_SERVER_LOG)" \
 		-timeout "$(RELIABILITY_TIMEOUT)" \
 		-seed "$(RELIABILITY_SEED)" \
+		-matrix "$(RELIABILITY_MATRIX)" \
 		-mtp-embedded-model "$(RELIABILITY_MTP_EMBEDDED_MODEL)" \
 		-mtp-companion-model "$(RELIABILITY_MTP_COMPANION_MODEL)" \
 		-mtp-requests "$(RELIABILITY_MTP_REQUESTS)" \
@@ -109,6 +126,7 @@ endef
 # -------------------------------
 
 # Both embedded-head and separate companion/own-KV MTP profiles.
+# With MTP off these are concurrent target-only controls, not drafter tests.
 test-load-mtp:
 	$(call run_reliability,mtp,-mtp-profile all)
 
@@ -126,11 +144,13 @@ test-load-mtp-companion:
 
 # Single-slot hybrid state-integrity probe. Exercises deterministic cold/repeat
 # generation, exact and append IMC reuse, cancellation, and recovery.
+# With IMC off, reuse is forbidden; state correctness checks remain active.
 test-load-hybrid:
 	$(call run_reliability,hybrid-state,)
 
 # Staged begin/middle/end marker retrieval and warm-IMC probe. Targets beyond
 # the model's configured context window are reported as skipped.
+# With IMC off, the repeat tests full-prefill correctness instead of reuse.
 test-load-long-context:
 	$(call run_reliability,long-context,)
 
@@ -146,12 +166,15 @@ test-load-media:
 	$(call run_reliability,media,-media-profile all)
 
 # Multimodal correctness probe. Verifies subject recognition, deterministic
-# replay, media IMC reuse, and isolation from a following text-only request.
+# replay, mode-aware repeat/append reuse, image cancellation/slot release,
+# image/text recovery, and isolation from a following text-only request.
 test-load-media-correctness:
 	$(call run_reliability,media,-media-profile correctness)
 
 # Media-prefill concurrency probe. Requires at least two slots and verifies
 # scheduler-observed media-prefill/generation overlap with bounded text gaps.
+# All completed requests check mode-aware usage. Short text controls (<=8
+# output tokens) need not draft; media correctness requires image drafting.
 test-load-media-prefill:
 	$(call run_reliability,media,-media-profile prefill)
 
@@ -160,7 +183,7 @@ test-load-media-prefill:
 # Runs only load/reliability scenarios, sequentially in one artifact set.
 # The separately configured lifecycle probe is intentionally excluded.
 test-load-all:
-	$(call run_reliability,all,)
+	$(call run_reliability,$(RELIABILITY_SCENARIOS),)
 
 # ==============================================================================
 

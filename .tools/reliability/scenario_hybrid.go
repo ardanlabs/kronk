@@ -56,7 +56,7 @@ func runHybridState(rc *runContext) scenarioResult {
 		if repeat.Content != cold.Content {
 			result.Failures = append(result.Failures, "exact deterministic repeat differed from cold response")
 		}
-		if repeat.Usage.PromptTokensDetails.CachedTokens <= 0 {
+		if rc.cfg.IMC == "on" && repeat.Usage.PromptTokensDetails.CachedTokens <= 0 {
 			result.Failures = append(result.Failures, "exact repeat reported no cached tokens")
 		}
 	}
@@ -74,7 +74,7 @@ func runHybridState(rc *runContext) scenarioResult {
 		if strings.TrimSpace(appended.Content) != appendMarker {
 			appendFailure(&result.Failures, "appended response did not exactly match %s", appendMarker)
 		}
-		if appended.Usage.PromptTokensDetails.CachedTokens <= 0 {
+		if rc.cfg.IMC == "on" && appended.Usage.PromptTokensDetails.CachedTokens <= 0 {
 			result.Failures = append(result.Failures, "appended turn reported no cached tokens")
 		}
 	}
@@ -93,7 +93,7 @@ func runHybridState(rc *runContext) scenarioResult {
 			"content": fmt.Sprintf("Output %s on every line and continue until the output limit. Do not output anything else.", staleMarker),
 		}},
 	}
-	cancelled, cancelErr := rc.client.stream(rc, rc.scenario, cancelBody, func(chunk chatChunk, _ time.Time) error {
+	cancelled, cancelErr := rc.stream(rc, cancelBody, func(chunk chatChunk, _ time.Time) error {
 		if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
 			return errStopStream
 		}

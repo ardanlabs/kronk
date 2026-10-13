@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"mime"
 	"net/http"
@@ -19,10 +20,15 @@ const (
 )
 
 type mediaCorrectnessResult struct {
-	FirstImage  completionResult `json:"first_image"`
-	TextOnly    completionResult `json:"text_only"`
-	RepeatImage completionResult `json:"repeat_image"`
-	Failures    []string         `json:"failures,omitempty"`
+	FirstImage                completionResult `json:"first_image"`
+	TextOnly                  completionResult `json:"text_only"`
+	RepeatImage               completionResult `json:"repeat_image"`
+	AppendedImage             completionResult `json:"appended_image"`
+	CancelledImage            streamResult     `json:"cancelled_image"`
+	CancellationSlotsReleased bool             `json:"cancellation_slots_released"`
+	RecoveryImage             completionResult `json:"recovery_image"`
+	RecoveryText              completionResult `json:"recovery_text"`
+	Failures                  []string         `json:"failures,omitempty"`
 }
 
 type mediaStreamResult struct {
@@ -126,16 +132,110 @@ func runMediaCorrectness(rc *runContext, model, imageURL string) mediaCorrectnes
 		if !containsFold(result.RepeatImage.Content, rc.cfg.MediaExpectedTerms) {
 			appendFailure(&result.Failures, "repeat image response lacks expected terms %v", rc.cfg.MediaExpectedTerms)
 		}
-		if result.RepeatImage.Usage.PromptTokensDetails.CachedTokens <= 0 {
+		if rc.cfg.IMC == "on" && result.RepeatImage.Usage.PromptTokensDetails.CachedTokens <= 0 {
 			result.Failures = append(result.Failures, "repeat image response reported no cached tokens")
+		}
+	}
+
+	appendPrefix := "MEDIA-APPEND-" + runID
+	history := []map[string]any{
+		{"role": "user", "content": content},
+		{"role": "assistant", "content": result.FirstImage.Content},
+		{"role": "user", "content": "Describe the subject in the original image again. Start with exactly " + appendPrefix},
+	}
+	result.AppendedImage, err = rc.completion(model, history, rc.cfg.MediaMaxTokens)
+	if err != nil {
+		appendFailure(&result.Failures, "appended image conversation: %v", err)
+	} else {
+		if !strings.HasPrefix(strings.TrimSpace(result.AppendedImage.Content), appendPrefix) || !containsFold(result.AppendedImage.Content, rc.cfg.MediaExpectedTerms) {
+			result.Failures = append(result.Failures, "appended image response lacks its new prefix or original image subject")
+		}
+		if rc.cfg.IMC == "on" && result.AppendedImage.Usage.PromptTokensDetails.CachedTokens <= 0 {
+			result.Failures = append(result.Failures, "appended image conversation reported no cached tokens")
+		}
+	}
+
+	staleMarker := "MEDIA-CANCELLED-" + runID
+	cancelHistory := []map[string]any{
+		{"role": "user", "content": content},
+		{"role": "assistant", "content": result.FirstImage.Content},
+		{"role": "user", "content": "Output " + staleMarker + " on every line until the output limit. Do not output anything else."},
+	}
+	result.CancelledImage, err = rc.stream(rc, map[string]any{
+		"model": model, "stream": true, "stream_options": map[string]any{"include_usage": true},
+		"temperature": 0, "seed": rc.cfg.Seed, "max_tokens": 1024,
+		"enable_thinking": false, "messages": cancelHistory,
+	}, func(chunk chatChunk, _ time.Time) error {
+		if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
+			return errStopStream
+		}
+		return nil
+	})
+	if !errors.Is(err, errStopStream) || result.CancelledImage.ContentCharacters == 0 {
+		appendFailure(&result.Failures, "image cancellation: expected disconnect after content, got %v", err)
+	}
+	// Wait for release rather than letting another slot mask a stuck cancellation.
+	deadline := time.Now().Add(min(rc.cfg.Timeout, 15*time.Second))
+	for {
+		engine, pollErr := rc.engine(model)
+		if pollErr != nil || engine == nil {
+			appendFailure(&result.Failures, "post-cancellation scheduler unavailable: %v", pollErr)
+			break
+		}
+		idle := len(engine.Slots) > 0
+		for _, slot := range engine.Slots {
+			idle = idle && slot.Phase == "idle"
+		}
+		if idle {
+			result.CancellationSlotsReleased = true
+			break
+		}
+		if time.Now().After(deadline) {
+			result.Failures = append(result.Failures, "image cancellation did not release all slots within timeout")
+			break
+		}
+		time.Sleep(mediaPollInterval)
+	}
+
+	recoveryPrefix := "MEDIA-RECOVERY-" + runID
+	result.RecoveryImage, err = rc.completion(model, []map[string]any{{"role": "user", "content": []map[string]any{
+		{"type": "text", "text": "Describe the main subject concisely. Start with exactly " + recoveryPrefix},
+		{"type": "image_url", "image_url": map[string]any{"url": imageURL}},
+	}}}, rc.cfg.MediaMaxTokens)
+	if err != nil {
+		appendFailure(&result.Failures, "post-cancellation image recovery: %v", err)
+	} else if !strings.HasPrefix(strings.TrimSpace(result.RecoveryImage.Content), recoveryPrefix) || !containsFold(result.RecoveryImage.Content, rc.cfg.MediaExpectedTerms) || strings.Contains(result.RecoveryImage.Content, staleMarker) {
+		result.Failures = append(result.Failures, "image recovery lacks its new prefix/subject or leaks cancelled content")
+	}
+	recoveryMarker := "TEXT-RECOVERY-" + runID
+	result.RecoveryText, err = rc.completion(model, []map[string]any{{"role": "user", "content": "Reply with exactly " + recoveryMarker + " and nothing else."}}, rc.cfg.MediaMaxTokens)
+	if err != nil {
+		appendFailure(&result.Failures, "post-cancellation text recovery: %v", err)
+	} else if strings.TrimSpace(result.RecoveryText.Content) != recoveryMarker {
+		result.Failures = append(result.Failures, "text recovery did not exactly match its marker")
+	}
+	if rc.cfg.MTP == "on" {
+		for label, completion := range map[string]completionResult{
+			"first": result.FirstImage, "repeat": result.RepeatImage,
+			"appended": result.AppendedImage, "recovery": result.RecoveryImage,
+		} {
+			if completion.Usage.DraftTokens <= 0 || completion.Usage.DraftCoverage <= 0 {
+				appendFailure(&result.Failures, "%s image request did not demonstrate MTP drafting and coverage", label)
+			}
 		}
 	}
 	stripCompletionContent(&result.FirstImage)
 	stripCompletionContent(&result.TextOnly)
 	stripCompletionContent(&result.RepeatImage)
+	stripCompletionContent(&result.AppendedImage)
+	stripCompletionContent(&result.RecoveryImage)
+	stripCompletionContent(&result.RecoveryText)
 	rc.artifacts.logf("media correctness: first_chars=%d text_chars=%d repeat_chars=%d repeat_cached=%d",
 		result.FirstImage.Characters, result.TextOnly.Characters, result.RepeatImage.Characters,
 		result.RepeatImage.Usage.PromptTokensDetails.CachedTokens)
+	rc.artifacts.logf("media state: appended_cached=%d cancelled_chars=%d image_recovery_chars=%d text_recovery_chars=%d",
+		result.AppendedImage.Usage.PromptTokensDetails.CachedTokens, result.CancelledImage.ContentCharacters,
+		result.RecoveryImage.Characters, result.RecoveryText.Characters)
 	return result
 }
 
@@ -184,7 +284,7 @@ func runMediaPrefill(rc *runContext, model, imageURL string, loaded loadedModel)
 	generationDone := make(chan mediaStreamResult, 1)
 	go func() {
 		var eventTimes []time.Time
-		stream, err := rc.client.stream(probeCtx, rc.scenario, generationBody, func(chunk chatChunk, at time.Time) error {
+		stream, err := rc.stream(probeCtx, generationBody, func(chunk chatChunk, at time.Time) error {
 			if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
 				eventTimes = append(eventTimes, at)
 				if len(eventTimes) >= mediaReadyEvents {
@@ -216,7 +316,7 @@ func runMediaPrefill(rc *runContext, model, imageURL string, loaded loadedModel)
 	imageDone := make(chan mediaStreamResult, 1)
 	go func() {
 		var eventTimes []time.Time
-		stream, err := rc.client.stream(probeCtx, rc.scenario, imageBody, func(chunk chatChunk, at time.Time) error {
+		stream, err := rc.stream(probeCtx, imageBody, func(chunk chatChunk, at time.Time) error {
 			if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
 				eventTimes = append(eventTimes, at)
 			}

@@ -2,9 +2,11 @@ package main
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -18,6 +20,9 @@ type config struct {
 	Scenarios []string
 	Timeout   time.Duration
 	Seed      int64
+	MTP       string
+	IMC       string
+	Matrix    []modeCell
 
 	MTPEmbeddedModel  string
 	MTPCompanionModel string
@@ -59,6 +64,7 @@ func parseConfig(args []string) (config, bool, error) {
 	var scenarios string
 	var stages string
 	var expectedTerms string
+	var matrix string
 	var list bool
 
 	fs.StringVar(&scenarios, "scenario", "all", "comma-separated scenarios: mtp, hybrid-state, long-context, batch, media, or all")
@@ -68,9 +74,12 @@ func parseConfig(args []string) (config, bool, error) {
 	fs.StringVar(&cfg.ServerLog, "server-log", filepath.Join(home, ".kronk", "kronk.log"), "detached Kronk JSON log")
 	fs.DurationVar(&cfg.Timeout, "timeout", 30*time.Minute, "per-request timeout")
 	fs.Int64Var(&cfg.Seed, "seed", 42, "deterministic sampling seed")
+	fs.StringVar(&cfg.MTP, "mtp", "on", "expected MTP mode: on or off (does not change the server)")
+	fs.StringVar(&cfg.IMC, "imc", "on", "expected IMC mode: on or off (does not change the server)")
+	fs.StringVar(&matrix, "matrix", "", "matrix cells: all or comma-separated labeled pairs (MTPon/IMCon,MTPon/IMCoff,MTPoff/IMCon,MTPoff/IMCoff); empty uses -mtp/-imc")
 
-	fs.StringVar(&cfg.MTPEmbeddedModel, "mtp-embedded-model", "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT", "embedded-MTP model")
-	fs.StringVar(&cfg.MTPCompanionModel, "mtp-companion-model", "unsloth/Qwen3.8-27B-UD-Q4_K_XL/AGENT", "companion own-KV MTP model")
+	fs.StringVar(&cfg.MTPEmbeddedModel, "mtp-embedded-model", "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL", "embedded-MTP base model or TOOLS-MTP-* alias; custom alias allowed for one cell")
+	fs.StringVar(&cfg.MTPCompanionModel, "mtp-companion-model", "unsloth/Qwen3.8-27B-UD-Q4_K_XL", "companion own-KV MTP base model or TOOLS-MTP-* alias; custom alias allowed for one cell")
 	fs.StringVar(&cfg.MTPProfile, "mtp-profile", "all", "MTP profile: embedded, companion, or all")
 	fs.IntVar(&cfg.MTPRequests, "mtp-requests", 0, "concurrent MTP requests (0 uses every configured slot)")
 	fs.IntVar(&cfg.MTPPromptTokens, "mtp-prompt-tokens", 2200, "calibrated MTP prompt tokens")
@@ -78,13 +87,13 @@ func parseConfig(args []string) (config, bool, error) {
 	fs.IntVar(&cfg.MTPEmbeddedSlots, "mtp-embedded-slots", 4, "expected embedded-MTP slots")
 	fs.IntVar(&cfg.MTPCompanionSlots, "mtp-companion-slots", 2, "expected companion-MTP slots")
 
-	fs.StringVar(&cfg.HybridModel, "hybrid-model", "unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT", "single-slot hybrid model")
+	fs.StringVar(&cfg.HybridModel, "hybrid-model", "unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL", "single-slot hybrid base model or TOOLS-MTP-* alias; custom alias allowed for one cell")
 
-	fs.StringVar(&cfg.LongContextModel, "long-context-model", "unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT", "long-context model")
+	fs.StringVar(&cfg.LongContextModel, "long-context-model", "unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL", "long-context base model or TOOLS-MTP-* alias; custom alias allowed for one cell")
 	fs.StringVar(&stages, "long-context-stages", "4096,8192,16384,32768,65536,131072", "comma-separated long-context token targets")
 	fs.IntVar(&cfg.LongContextMaxTokens, "long-context-max-tokens", 96, "maximum long-context completion tokens")
 
-	fs.StringVar(&cfg.BatchModel, "batch-model", "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT", "multi-slot batch model")
+	fs.StringVar(&cfg.BatchModel, "batch-model", "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL", "multi-slot batch base model or TOOLS-MTP-* alias; custom alias allowed for one cell")
 	fs.IntVar(&cfg.BatchTurns, "batch-turns", 21, "synchronized turns per conversation")
 	fs.IntVar(&cfg.BatchTargetTokens, "batch-target-tokens", 30000, "minimum final prompt tokens")
 	fs.IntVar(&cfg.BatchTokensPerTurn, "batch-tokens-per-turn", 1400, "target tokens added per turn")
@@ -92,7 +101,7 @@ func parseConfig(args []string) (config, bool, error) {
 	fs.IntVar(&cfg.BatchSlots, "batch-slots", 4, "expected generation slots")
 	fs.IntVar(&cfg.BatchConversations, "batch-conversations", 5, "conversations; values above slots exercise queue pressure")
 
-	fs.StringVar(&cfg.MediaModel, "media-model", "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT", "multimodal model")
+	fs.StringVar(&cfg.MediaModel, "media-model", "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL", "multimodal base model or TOOLS-MTP-* alias; custom alias allowed for one cell")
 	fs.StringVar(&cfg.MediaProfile, "media-profile", "all", "media profile: correctness, prefill, or all")
 	fs.StringVar(&cfg.MediaImage, "media-image", "examples/samples/giraffe.jpg", "probe image")
 	fs.StringVar(&expectedTerms, "media-expect", "giraffe", "comma-separated expected subject terms")
@@ -123,6 +132,24 @@ func parseConfig(args []string) (config, bool, error) {
 		return config{}, false, fmt.Errorf("-long-context-stages: %w", err)
 	}
 	cfg.MediaExpectedTerms = splitNonempty(expectedTerms)
+	conflictingMode := false
+	fs.Visit(func(f *flag.Flag) {
+		conflictingMode = conflictingMode || f.Name == "mtp" || f.Name == "imc"
+	})
+	if matrix != "" && conflictingMode {
+		return config{}, false, errors.New("use -matrix or -mtp/-imc, not both")
+	}
+	if matrix == "" {
+		matrix = "MTP" + cfg.MTP + "/IMC" + cfg.IMC
+	}
+	cfg.Matrix, err = parseMatrix(matrix)
+	if err != nil {
+		return config{}, false, err
+	}
+	cfg, err = cfg.forCell(cfg.Matrix[0])
+	if err != nil {
+		return config{}, false, err
+	}
 
 	if list {
 		return cfg, true, nil
@@ -133,7 +160,78 @@ func parseConfig(args []string) (config, bool, error) {
 	return cfg, false, nil
 }
 
+type modeCell struct {
+	MTP string `json:"mtp"`
+	IMC string `json:"imc"`
+}
+
+func (cell modeCell) id() string { return "mtp-" + cell.MTP + "-imc-" + cell.IMC }
+
+func parseMatrix(value string) ([]modeCell, error) {
+	if value == "all" {
+		value = "MTPon/IMCon,MTPon/IMCoff,MTPoff/IMCon,MTPoff/IMCoff"
+	}
+	var cells []modeCell
+	seen := make(map[string]bool)
+	for item := range strings.SplitSeq(value, ",") {
+		parts := strings.Split(strings.TrimSpace(item), "/")
+		if len(parts) != 2 || (parts[0] != "MTPon" && parts[0] != "MTPoff") || (parts[1] != "IMCon" && parts[1] != "IMCoff") {
+			return nil, fmt.Errorf("invalid matrix cell %q: use MTPon/IMCon, MTPon/IMCoff, MTPoff/IMCon, or MTPoff/IMCoff", item)
+		}
+		cell := modeCell{MTP: strings.TrimPrefix(parts[0], "MTP"), IMC: strings.TrimPrefix(parts[1], "IMC")}
+		if !seen[cell.id()] {
+			cells = append(cells, cell)
+			seen[cell.id()] = true
+		}
+	}
+	return cells, nil
+}
+
+func (cfg config) forCell(cell modeCell) (config, error) {
+	cfg.MTP, cfg.IMC = cell.MTP, cell.IMC
+	selected := cfg.selectedModels()
+	for _, id := range []*string{&cfg.MTPEmbeddedModel, &cfg.MTPCompanionModel, &cfg.HybridModel, &cfg.LongContextModel, &cfg.BatchModel, &cfg.MediaModel} {
+		if !slices.Contains(selected, *id) {
+			continue
+		}
+		parts := strings.Split(*id, "/")
+		if len(parts) == 2 || len(parts) == 3 && strings.HasPrefix(parts[2], "TOOLS-MTP-") {
+			*id = strings.Join(parts[:2], "/") + "/TOOLS-MTP-" + strings.ToUpper(cell.MTP) + "-IMC-" + strings.ToUpper(cell.IMC)
+		} else if len(cfg.Matrix) > 1 {
+			return config{}, fmt.Errorf("matrix model %q must use provider/model or a TOOLS-MTP-* profile", *id)
+		}
+	}
+	return cfg, nil
+}
+
+func (cfg config) selectedModels() []string {
+	var ids []string
+	for _, scenario := range cfg.Scenarios {
+		switch scenario {
+		case "mtp":
+			if cfg.MTPProfile != "companion" {
+				ids = append(ids, cfg.MTPEmbeddedModel)
+			}
+			if cfg.MTPProfile != "embedded" {
+				ids = append(ids, cfg.MTPCompanionModel)
+			}
+		case "hybrid-state":
+			ids = append(ids, cfg.HybridModel)
+		case "long-context":
+			ids = append(ids, cfg.LongContextModel)
+		case "batch":
+			ids = append(ids, cfg.BatchModel)
+		case "media":
+			ids = append(ids, cfg.MediaModel)
+		}
+	}
+	return ids
+}
+
 func (cfg config) validate() error {
+	if (cfg.MTP != "on" && cfg.MTP != "off") || (cfg.IMC != "on" && cfg.IMC != "off") {
+		return errors.New("-mtp and -imc must be on or off")
+	}
 	if cfg.Host == "" || cfg.Out == "" || cfg.ServerLog == "" {
 		return errors.New("-host, -out, and -server-log must not be empty")
 	}
