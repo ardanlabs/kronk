@@ -34,7 +34,7 @@ func autoTuneConfig(ctx context.Context, cfg model.Config, budget *models.AutoTu
 		return cfg
 	}
 
-	info, err := models.ModelInfoFromPath("", cfg.ModelFiles, cfg.ProjFile, "")
+	info, err := models.ModelInfoFromPath("", cfg.ModelFiles, cfg.ProjFile, cfg.MTPDrafterFile)
 	if err != nil {
 		logAutoTune(ctx, cfg.Log, "status", "skipped", "error", fmt.Sprintf("model-info: %v", err))
 		return cfg
@@ -44,6 +44,7 @@ func autoTuneConfig(ctx context.Context, cfg model.Config, budget *models.AutoTu
 		Devices:                    cfg.Devices,
 		PtrContextWindow:           cfg.PtrContextWindow,
 		PtrPrefillBatchSize:        cfg.PtrPrefillBatchSize,
+		PtrPhysicalBatchSize:       cfg.PtrPhysicalBatchSize,
 		PtrImageBatchTokenCapacity: cfg.PtrImageBatchTokenCapacity,
 		PtrImageTokenBudget:        cfg.PtrImageTokenBudget,
 		PtrNSeqMax:                 cfg.PtrNSeqMax,
@@ -55,6 +56,14 @@ func autoTuneConfig(ctx context.Context, cfg model.Config, budget *models.AutoTu
 		PtrNGpuLayers:              cfg.PtrNGpuLayers,
 		PtrOffloadKQV:              cfg.PtrOffloadKQV,
 		PtrSWAFull:                 cfg.PtrSWAFull,
+		Speculation:                cfg.Speculation,
+		TensorBuftOverrides:        cfg.TensorBuftOverrides,
+	}
+	if cfg.PtrDraftModel != nil {
+		constraints.DraftModel = &models.DraftModelConfig{NDraft: cfg.PtrDraftModel.NDraft}
+		if cfg.PtrDraftModel.IsSeparate() {
+			constraints.DraftModel.ModelID = cfg.PtrDraftModel.ModelFiles[0]
+		}
 	}
 	if constraints.PtrSWAFull == nil {
 		constraints.PtrSWAFull = new(llama.ContextDefaultParams().SwaFull != 0)
@@ -105,6 +114,7 @@ func restoreAutoTunedFields(tuned *model.Config, recommended model.Config) {
 	tuned.PtrFlashAttention = recommended.PtrFlashAttention
 	tuned.PtrSplitMode = recommended.PtrSplitMode
 	tuned.PtrNGpuLayers = recommended.PtrNGpuLayers
+	tuned.PtrPhysicalBatchSize = recommended.PtrPhysicalBatchSize
 }
 
 func autoTuneLogValues(cfg model.Config, constraints models.ModelConfig) ([]string, []string) {
@@ -120,6 +130,9 @@ func autoTuneLogValues(cfg model.Config, constraints models.ModelConfig) ([]stri
 
 	add(constraints.PtrContextWindow != nil, fmt.Sprintf("context_window=%d", cfg.ContextWindow()))
 	add(constraints.PtrNSeqMax != nil, fmt.Sprintf("nseq_max=%d", cfg.NSeqMax()))
+	if cfg.PtrPhysicalBatchSize != nil {
+		add(constraints.PtrPhysicalBatchSize != nil, fmt.Sprintf("physical_batch_size=%d", cfg.PhysicalBatchSize()))
+	}
 	add(constraints.CacheTypeK != model.GGMLTypeAuto, fmt.Sprintf("cache_type_k=%s", cfg.CacheTypeK))
 	add(constraints.CacheTypeV != model.GGMLTypeAuto, fmt.Sprintf("cache_type_v=%s", cfg.CacheTypeV))
 	add(constraints.FlashAttention != nil, fmt.Sprintf("flash_attention=%s", cfg.FlashAttention()))

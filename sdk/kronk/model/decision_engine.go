@@ -47,7 +47,12 @@ func decisionContextParams(base llama.ContextParams, cfg Config) llama.ContextPa
 	nSeqMax := max(cfg.NSeqMax(), 1)
 	params.NCtx = uint32(cfg.ContextWindow() * nSeqMax)
 	params.NBatch = uint32(cfg.ContextWindow())
-	params.NUbatch = min(uint32(cfg.EffectiveNUBatch()), params.NBatch)
+	// PhysicalBatchSize is a generation request, not a decision-protocol override.
+	physical := cfg.EffectiveNUBatch()
+	if cfg.PtrPhysicalBatchSize != nil {
+		physical = cfg.BatchBaseSize()
+	}
+	params.NUbatch = min(uint32(physical), params.NBatch)
 	if decisionUsesEmbeddings(cfg.DecisionProtocol) {
 		params.NBatch = params.NUbatch
 	}
@@ -113,6 +118,8 @@ func initDecisionRuntime(m *Model) error {
 	m.ctxParams = params
 	m.lctx = lctx
 	m.mem = mem
+	m.cfg.nBatch = int(llama.NBatch(lctx))
+	m.cfg.nUBatch = int(llama.NUBatch(lctx))
 
 	engine := decisionEngine{
 		lctx:          lctx,

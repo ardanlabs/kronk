@@ -10,13 +10,25 @@ import (
 
 func TestSessionConfigPrefillBatchSizeJSON(t *testing.T) {
 	var cfg SessionConfig
-	if err := json.Unmarshal([]byte(`{"prefill_batch_size":4096,"image_batch_token_capacity":768,"image_token_budget":1120}`), &cfg); err != nil {
+	if err := json.Unmarshal([]byte(`{"prefill_batch_size":4096,"physical_batch_size":512,"image_batch_token_capacity":768,"image_token_budget":1120}`), &cfg); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
 
 	got := cfg.ApplyTo(model.Config{})
 	if got.PrefillBatchSize() != 4096 {
 		t.Errorf("PrefillBatchSize() = %d, want 4096", got.PrefillBatchSize())
+	}
+	if got.PhysicalBatchSize() != 512 {
+		t.Errorf("PhysicalBatchSize: got %d, want 512", got.PhysicalBatchSize())
+	}
+	for _, size := range []int{-1, 0, 512, 2147483648} {
+		cfg := SessionConfig{PhysicalBatchSize: new(size)}
+		if !cfg.HasOverrides() {
+			t.Fatal("physical size alone must select a custom config")
+		}
+		if wantErr := size <= 0 || size > 2147483647; (cfg.Validate() != nil) != wantErr {
+			t.Errorf("physical size %d: want error=%t", size, wantErr)
+		}
 	}
 	if got.ImageBatchTokenCapacity() != 768 {
 		t.Errorf("ImageBatchTokenCapacity() = %d, want 768", got.ImageBatchTokenCapacity())

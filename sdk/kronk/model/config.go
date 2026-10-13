@@ -32,8 +32,8 @@ and preprocessing budgets are explicit opt-ins; projector defaults are unchanged
 One slot owns ordinary prefill until it finishes. Generation rows from all
 ready slots are staged first. Non-MTP reserves one row; MTP reserves 1 + nDraft
 rows per configured slot. Non-MTP can split the logical tray into physical
-ubatches. MTP keeps the complete tray in one physical batch because its dense
-NextN output is indexed in physical-ubatch order.
+ubatches. MTP preserves the existing single-physical-batch policy pending
+validation of multi-ubatch hidden-state consumption.
 
 Key principles:
 - NUBatch ≤ NBatch always (enforced in adjustConfig)
@@ -250,6 +250,12 @@ type AdapterConfig struct {
 // capacities from this value, the configured slot count, and the generation
 // mode, with ImageBatchTokenCapacity providing an independent media floor.
 //
+// PhysicalBatchSize requests the physical compute capacity independently of
+// the prompt contribution. When unset, it follows the legacy prefill capacity
+// unless AutoTune selects a value. Image floors can raise it, logical capacity
+// caps it, and active MTP and specialized evaluation retain their sizing policies.
+// EffectiveNUBatch reports the resolved capacity; the request is preserved.
+//
 // ImageBatchTokenCapacity provides an independent image-capacity floor for
 // native batches without increasing the text prefill contribution or changing
 // image preprocessing. The default is zero (no extra floor).
@@ -427,6 +433,7 @@ type Config struct {
 	PtrNThreads                *int
 	PtrNThreadsBatch           *int
 	PtrPrefillBatchSize        *int
+	PtrPhysicalBatchSize       *int
 	NUMA                       NUMAStrategy
 	PtrOffloadKQV              *bool
 	PtrOpOffload               *bool
@@ -466,6 +473,9 @@ func (cfg Config) QueueDepth() int         { return intOr(cfg.PtrQueueDepth, 0) 
 func (cfg Config) IMCSessionCapacity() int { return intOr(cfg.PtrIMCSessionCapacity, 0) }
 func (cfg Config) ContextWindow() int      { return intOr(cfg.PtrContextWindow, 0) }
 func (cfg Config) PrefillBatchSize() int   { return intOr(cfg.PtrPrefillBatchSize, 0) }
+
+// PhysicalBatchSize returns the requested physical capacity, or zero when unset.
+func (cfg Config) PhysicalBatchSize() int { return intOr(cfg.PtrPhysicalBatchSize, 0) }
 
 // KVCacheMode returns the cache layout, defaulting to partitioned.
 func (cfg Config) KVCacheMode() KVCacheMode {
@@ -580,7 +590,7 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("{mode:%s top_n:%s}", m.Mode, topN)
 	}
 
-	return fmt.Sprintf("\nAdapters[%v]\nAdmissionTimeout[%s]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nDecisionProtocol[%s]\nChatTemplateKwargs[%s]\nDevices[%v]\nFlashAttention[%s]\nIMCSessionCapacity[%d]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLazyMode[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nPrefillBatchSize[%s]\nEffectiveNBatch[%d]\nEffectiveNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nProjDevice[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreFactory[%t]\nSpeculation[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
+	return fmt.Sprintf("\nPhysicalBatchSize[%s]", formatIntPtr(cfg.PtrPhysicalBatchSize)) + fmt.Sprintf("\nAdapters[%v]\nAdmissionTimeout[%s]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nDecisionProtocol[%s]\nChatTemplateKwargs[%s]\nDevices[%v]\nFlashAttention[%s]\nIMCSessionCapacity[%d]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLazyMode[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nPrefillBatchSize[%s]\nEffectiveNBatch[%d]\nEffectiveNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nProjDevice[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreFactory[%t]\nSpeculation[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
 		cfg.Adapters, formatDurationPtr(cfg.PtrAdmissionTimeout), cfg.AutoTune, formatIntPtr(cfg.PtrCacheMinTokens), cfg.CacheTypeK, cfg.CacheTypeV,
 		formatIntPtr(cfg.PtrContextWindow), cfg.DefaultParams.String(), cfg.DecisionProtocol, chatTemplateKwargsSummary(cfg.ChatTemplateKwargs), cfg.Devices, cfg.FlashAttention(),
 		cfg.IMCSessionCapacity(), formatBoolPtr(cfg.PtrIncrementalCache), formatBoolPtr(cfg.PtrInsecureLogging), cfg.JinjaFile,
@@ -655,6 +665,10 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 
 	if cfg.PtrPrefillBatchSize != nil && cfg.PrefillBatchSize() <= 0 {
 		return fmt.Errorf("validate-config: prefill batch size must be > 0, got %d", cfg.PrefillBatchSize())
+	}
+
+	if cfg.PtrPhysicalBatchSize != nil && (cfg.PhysicalBatchSize() <= 0 || cfg.PhysicalBatchSize() > math.MaxInt32) {
+		return fmt.Errorf("validate-config: physical batch size must be between 1 and %d, got %d", math.MaxInt32, cfg.PhysicalBatchSize())
 	}
 
 	if cfg.ImageBatchTokenCapacity() < 0 {
@@ -933,15 +947,28 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 // adjustGenerationBatch derives llama.cpp's logical and physical generation
 // batch capacities from the user-facing prefill size and generation reserve.
 func adjustGenerationBatch(cfg Config, generationRowsPerSlot int, singlePhysicalBatch bool) Config {
-	cfg.nBatch, cfg.nUBatch = GenerationBatchSizes(cfg.BatchBaseSize(), cfg.NSeqMax(), generationRowsPerSlot, singlePhysicalBatch)
+	cfg.nBatch, cfg.nUBatch = cfg.GenerationBatchSizes(generationRowsPerSlot, singlePhysicalBatch)
 	return cfg
 }
 
 // GenerationBatchSizes derives native batch capacities for both memory planning
-// and runtime configuration. MTP uses one physical batch including rollback rows.
-func GenerationBatchSizes(prefillSize, slots, generationRowsPerSlot int, singlePhysicalBatch bool) (int, int) {
-	nBatch := prefillSize + slots*max(generationRowsPerSlot, 1)
-	nUBatch := prefillSize
+// and runtime configuration. Requests do not change the logical generation reserve.
+// MTP preserves one physical batch including rollback rows. A zero row count
+// selects the configured/default MTP reserve when singlePhysicalBatch is true.
+func (cfg Config) GenerationBatchSizes(generationRowsPerSlot int, singlePhysicalBatch bool) (int, int) {
+	if isEmbedOrRerankConfig(cfg) || !cfg.DecisionProtocol.IsZero() {
+		base := cfg.BatchBaseSize()
+		return base, base
+	}
+	if singlePhysicalBatch && generationRowsPerSlot <= 0 {
+		generationRowsPerSlot = 1 + mtpNDraft(cfg)
+	}
+	base := cfg.BatchBaseSize()
+	nBatch := base + max(cfg.NSeqMax(), 1)*max(generationRowsPerSlot, 1)
+	nUBatch := base
+	if cfg.PtrPhysicalBatchSize != nil {
+		nUBatch = min(nBatch, max(cfg.PhysicalBatchSize(), cfg.ImageBatchTokenCapacity(), cfg.ImageTokenBudget()))
+	}
 	if singlePhysicalBatch {
 		nUBatch = nBatch
 	}
@@ -1302,17 +1329,21 @@ func WithJinjaScript(v string) Option    { return func(c *Config) { c.JinjaScrip
 // WithKVCacheMode selects the KV layout without changing request context limits.
 func WithKVCacheMode(v KVCacheMode) Option { return func(c *Config) { c.PtrKVCacheMode = new(v) } }
 
-func WithLazyMode(v LazyMode) Option           { return func(c *Config) { c.LazyMode = v } }
-func WithLoadMode(v LoadMode) Option           { return func(c *Config) { c.LoadMode = v } }
-func WithLog(v applog.Logger) Option           { return func(c *Config) { c.Log = v } }
-func WithMainGPU(v int) Option                 { return func(c *Config) { c.PtrMainGPU = new(v) } }
-func WithMoE(v *MoEConfig) Option              { return func(c *Config) { c.PtrMoE = v } }
-func WithModelFiles(v []string) Option         { return func(c *Config) { c.ModelFiles = v } }
-func WithNGpuLayers(v int) Option              { return func(c *Config) { c.PtrNGpuLayers = new(v) } }
-func WithNSeqMax(v int) Option                 { return func(c *Config) { c.PtrNSeqMax = new(v) } }
-func WithNThreads(v int) Option                { return func(c *Config) { c.PtrNThreads = new(v) } }
-func WithNThreadsBatch(v int) Option           { return func(c *Config) { c.PtrNThreadsBatch = new(v) } }
-func WithPrefillBatchSize(v int) Option        { return func(c *Config) { c.PtrPrefillBatchSize = new(v) } }
+func WithLazyMode(v LazyMode) Option    { return func(c *Config) { c.LazyMode = v } }
+func WithLoadMode(v LoadMode) Option    { return func(c *Config) { c.LoadMode = v } }
+func WithLog(v applog.Logger) Option    { return func(c *Config) { c.Log = v } }
+func WithMainGPU(v int) Option          { return func(c *Config) { c.PtrMainGPU = new(v) } }
+func WithMoE(v *MoEConfig) Option       { return func(c *Config) { c.PtrMoE = v } }
+func WithModelFiles(v []string) Option  { return func(c *Config) { c.ModelFiles = v } }
+func WithNGpuLayers(v int) Option       { return func(c *Config) { c.PtrNGpuLayers = new(v) } }
+func WithNSeqMax(v int) Option          { return func(c *Config) { c.PtrNSeqMax = new(v) } }
+func WithNThreads(v int) Option         { return func(c *Config) { c.PtrNThreads = new(v) } }
+func WithNThreadsBatch(v int) Option    { return func(c *Config) { c.PtrNThreadsBatch = new(v) } }
+func WithPrefillBatchSize(v int) Option { return func(c *Config) { c.PtrPrefillBatchSize = new(v) } }
+
+// WithPhysicalBatchSize requests physical compute capacity without changing prefill scheduling.
+func WithPhysicalBatchSize(v int) Option { return func(c *Config) { c.PtrPhysicalBatchSize = new(v) } }
+
 func WithNUMA(v NUMAStrategy) Option           { return func(c *Config) { c.NUMA = v } }
 func WithOffloadKQV(v bool) Option             { return func(c *Config) { c.PtrOffloadKQV = new(v) } }
 func WithOpOffload(v bool) Option              { return func(c *Config) { c.PtrOpOffload = new(v) } }

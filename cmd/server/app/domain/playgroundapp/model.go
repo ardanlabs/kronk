@@ -58,6 +58,7 @@ func (s *SessionRequest) Validate() error {
 type SessionConfig struct {
 	ContextWindow           *int                      `json:"context_window"`
 	PrefillBatchSize        *int                      `json:"prefill_batch_size"`
+	PhysicalBatchSize       *int                      `json:"physical_batch_size"`
 	ImageBatchTokenCapacity *int                      `json:"image_batch_token_capacity"`
 	ImageTokenBudget        *int                      `json:"image_token_budget"`
 	NSeqMax                 *int                      `json:"nseq_max"`
@@ -93,6 +94,9 @@ func (sc SessionConfig) ApplyTo(cfg model.Config) model.Config {
 	}
 	if sc.PrefillBatchSize != nil {
 		cfg.PtrPrefillBatchSize = sc.PrefillBatchSize
+	}
+	if sc.PhysicalBatchSize != nil {
+		cfg.PtrPhysicalBatchSize = sc.PhysicalBatchSize
 	}
 	if sc.ImageBatchTokenCapacity != nil {
 		cfg.PtrImageBatchTokenCapacity = sc.ImageBatchTokenCapacity
@@ -189,6 +193,7 @@ func (sc SessionConfig) ApplyTo(cfg model.Config) model.Config {
 func (sc SessionConfig) HasOverrides() bool {
 	return sc.ContextWindow != nil ||
 		sc.PrefillBatchSize != nil ||
+		sc.PhysicalBatchSize != nil ||
 		sc.ImageBatchTokenCapacity != nil ||
 		sc.ImageTokenBudget != nil ||
 		sc.NSeqMax != nil ||
@@ -233,6 +238,10 @@ func (sc SessionConfig) Validate() error {
 
 	if sc.PrefillBatchSize != nil && (*sc.PrefillBatchSize < 1 || *sc.PrefillBatchSize > 16384) {
 		return fmt.Errorf("prefill-batch-size must be between 1 and 16384, got %d", *sc.PrefillBatchSize)
+	}
+
+	if sc.PhysicalBatchSize != nil && (*sc.PhysicalBatchSize < 1 || *sc.PhysicalBatchSize > 2147483647) {
+		return fmt.Errorf("physical-batch-size must be between 1 and 2147483647, got %d", *sc.PhysicalBatchSize)
 	}
 
 	if sc.ImageBatchTokenCapacity != nil && *sc.ImageBatchTokenCapacity < 0 {

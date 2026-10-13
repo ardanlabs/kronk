@@ -460,6 +460,7 @@ func TestModelConfigAdmissionAndQueue(t *testing.T) {
   admission-timeout: 3m
   imc-session-capacity: 8
   prefill-batch-size: 4096
+  physical-batch-size: 512
   image-batch-token-capacity: 1120
   image-token-budget: 768
   queue-depth: 2
@@ -484,6 +485,9 @@ func TestModelConfigAdmissionAndQueue(t *testing.T) {
 	if got := kronkCfg.PrefillBatchSize(); got != 4096 {
 		t.Errorf("PrefillBatchSize() = %d, want 4096", got)
 	}
+	if got := kronkCfg.PhysicalBatchSize(); got != 512 {
+		t.Errorf("PhysicalBatchSize: got %d, want 512", got)
+	}
 	if got := kronkCfg.ImageBatchTokenCapacity(); got != 1120 {
 		t.Errorf("ImageBatchTokenCapacity() = %d, want 1120", got)
 	}
@@ -499,6 +503,7 @@ func TestModelConfigAdmissionAndQueue(t *testing.T) {
 		PtrAdmissionTimeout:        &overrideTimeout,
 		PtrIMCSessionCapacity:      &overrideSessions,
 		PtrPrefillBatchSize:        &overridePrefillBatchSize,
+		PtrPhysicalBatchSize:       new(256),
 		PtrImageBatchTokenCapacity: new(0),
 		PtrImageTokenBudget:        new(1536),
 		PtrQueueDepth:              &overrideDepth,
@@ -515,6 +520,9 @@ func TestModelConfigAdmissionAndQueue(t *testing.T) {
 	}
 	if got := kronkCfg.PrefillBatchSize(); got != 1024 {
 		t.Errorf("merged PrefillBatchSize() = %d, want 1024", got)
+	}
+	if got := kronkCfg.PhysicalBatchSize(); got != 256 {
+		t.Errorf("merged PhysicalBatchSize: got %d, want 256", got)
 	}
 	if got := kronkCfg.ImageBatchTokenCapacity(); got != 0 || kronkCfg.PtrImageBatchTokenCapacity == nil {
 		t.Errorf("merged ImageBatchTokenCapacity() = %d, want explicit zero", got)

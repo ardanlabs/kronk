@@ -367,6 +367,7 @@ type ModelConfig struct {
 	PtrNThreads                *int                      `yaml:"nthreads,omitempty"`
 	PtrNThreadsBatch           *int                      `yaml:"nthreads-batch,omitempty"`
 	PtrPrefillBatchSize        *int                      `yaml:"prefill-batch-size,omitempty"`
+	PtrPhysicalBatchSize       *int                      `yaml:"physical-batch-size,omitempty"`
 	NUMA                       model.NUMAStrategy        `yaml:"numa,omitempty"`
 	PtrOffloadKQV              *bool                     `yaml:"offload-kqv,omitempty"`
 	PtrOpOffload               *bool                     `yaml:"op-offload,omitempty"`
@@ -442,6 +443,7 @@ func (mc ModelConfig) ToKronkConfig() model.Config {
 		PtrNThreads:                mc.PtrNThreads,
 		PtrNThreadsBatch:           mc.PtrNThreadsBatch,
 		PtrPrefillBatchSize:        mc.PtrPrefillBatchSize,
+		PtrPhysicalBatchSize:       mc.PtrPhysicalBatchSize,
 		NUMA:                       mc.NUMA,
 		PtrOffloadKQV:              mc.PtrOffloadKQV,
 		PtrOpOffload:               mc.PtrOpOffload,

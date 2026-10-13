@@ -462,6 +462,48 @@ func TestAdjustConfigUsesConfiguredPrefillBatchSize(t *testing.T) {
 	}
 }
 
+func TestPhysicalBatchSize(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		physical   *int
+		floor      int
+		rows       int
+		mtp        bool
+		wantBatch  int
+		wantUBatch int
+	}{
+		{"legacy", nil, 0, 1, false, 2051, 2048},
+		{"split prefill", new(512), 0, 1, false, 2051, 512},
+		{"classic reserve", new(512), 0, 9, false, 2075, 512},
+		{"image floor", new(512), 1120, 1, false, 2051, 1120},
+		{"logical cap", new(8192), 0, 1, false, 2051, 2051},
+		{"MTP default reserve", new(512), 0, 0, true, 2060, 2060},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := NewConfig(WithPrefillBatchSize(2048), WithNSeqMax(3), WithImageBatchTokenCapacity(tt.floor))
+			cfg.PtrPhysicalBatchSize = tt.physical
+			batch, ubatch := cfg.GenerationBatchSizes(tt.rows, tt.mtp)
+			if batch != tt.wantBatch || ubatch != tt.wantUBatch {
+				t.Errorf("capacities: got %d/%d, want %d/%d", batch, ubatch, tt.wantBatch, tt.wantUBatch)
+			}
+			if cfg.PrefillBatchSize() != 2048 || cfg.PtrPhysicalBatchSize != tt.physical {
+				t.Fatal("sizing changed the requested prompt or physical capacity")
+			}
+		})
+	}
+	resolved := adjustConfig(NewConfig(WithPrefillBatchSize(2048), WithPhysicalBatchSize(512), WithNSeqMax(1)), 0)
+	if resolved.EffectiveNBatch() != 2049 || resolved.EffectiveNUBatch() != 512 || resolved.PrefillBatchSize() != 2048 {
+		t.Fatalf("Florin configuration: got prompt=%d batch=%d/%d, want 2048 and 2049/512", resolved.PrefillBatchSize(), resolved.EffectiveNBatch(), resolved.EffectiveNUBatch())
+	}
+	for _, size := range []int{-1, 0, 512, math.MaxInt32 + 1} {
+		cfg := NewConfig(WithModelFiles([]string{"test.gguf"}), WithPhysicalBatchSize(size))
+		err := validateConfig(context.Background(), cfg, func(context.Context, string, ...any) {})
+		if wantErr := size <= 0 || size > math.MaxInt32; (err != nil) != wantErr {
+			t.Errorf("physical %d: got %v, want error=%t", size, err, wantErr)
+		}
+	}
+}
+
 func TestAdjustConfigDoesNotMutateDraftModelConfig(t *testing.T) {
 	draft := &DraftModelConfig{ModelFiles: []string{"draft.gguf"}}
 	cfg := adjustConfig(Config{PtrDraftModel: draft}, 0)

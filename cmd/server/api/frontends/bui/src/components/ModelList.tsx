@@ -465,6 +465,7 @@ export default function ModelList() {
                         { key: 'moe.mode', label: labelWithTip('moe.mode', 'moeMode'), value: mc.moe?.mode || '—' },
                         { key: 'moe.cache-size', label: labelWithTip('moe.cache-size', 'moeCacheSize'), value: fmtVal(mc.moe?.['cache-size']) },
                         { key: 'prefill-batch-size', label: labelWithTip('Prefill Batch Size', 'prefillBatchSize'), value: fmtVal(mc['prefill-batch-size']) },
+                        { key: 'physical-batch-size', label: labelWithTip('Physical Batch Size', 'physicalBatchSize'), value: fmtVal(mc['physical-batch-size']) },
                         { key: 'ngpu-layers', label: labelWithTip('ngpu-layers', 'ngpuLayers'), value: fmtVal(mc['ngpu-layers'] ?? 'auto') },
                         { key: 'nseq-max', label: labelWithTip('nseq-max', 'nSeqMax'), value: fmtVal(mc['nseq-max']) },
                         { key: 'nthreads', label: labelWithTip('nthreads', 'nthreads'), value: fmtVal(mc.nthreads) },

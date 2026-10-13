@@ -2435,6 +2435,7 @@ export function generateConfigCandidates(
   const baseline: ConfigCandidate = {
     'context_window': baseConfig['context_window'],
     'prefill_batch_size': baseConfig['prefill_batch_size'] ?? DEFAULT_PREFILL_BATCH_SIZE,
+    'physical_batch_size': baseConfig['physical_batch_size'],
     'nseq_max': baseConfig['nseq_max'],
   }
 

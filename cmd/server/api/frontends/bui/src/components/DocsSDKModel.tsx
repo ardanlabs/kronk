@@ -49,14 +49,6 @@ export default function DocsSDKModel() {
               <p className="doc-description">AddParams adds the values from the Params struct into the provided D map. Only non-zero values are added.</p>
             </div>
 
-            <div className="doc-section" id="func-generationbatchsizes">
-              <h4>GenerationBatchSizes</h4>
-              <pre className="code-block">
-                <code>func GenerationBatchSizes(prefillSize, slots, generationRowsPerSlot int, singlePhysicalBatch bool) (int, int)</code>
-              </pre>
-              <p className="doc-description">GenerationBatchSizes derives native batch capacities for both memory planning and runtime configuration. MTP uses one physical batch including rollback rows.</p>
-            </div>
-
             <div className="doc-section" id="func-inityzmaworkarounds">
               <h4>InitYzmaWorkarounds</h4>
               <pre className="code-block">
@@ -480,6 +472,7 @@ export default function DocsSDKModel() {
 	PtrNThreads                *int
 	PtrNThreadsBatch           *int
 	PtrPrefillBatchSize        *int
+	PtrPhysicalBatchSize       *int
 	NUMA                       NUMAStrategy
 	PtrOffloadKQV              *bool
 	PtrOpOffload               *bool
@@ -536,6 +529,7 @@ export default function DocsSDKModel() {
               <p className="doc-description">PtrMoE controls expert-tensor placement for Mixture of Experts models.</p>
               <p className="doc-description">ModelFiles is the path to the model files. This is mandatory to provide.</p>
               <p className="doc-description">PrefillBatchSize is the maximum number of prompt tokens one prefill owner can contribute to a decode iteration. The default is 2048. Larger values can reduce the number of decode calls needed to reach generation, but each call takes longer before already-generating slots can run again and requires larger compute buffers. Kronk derives llama.cpp's logical and physical batch capacities from this value, the configured slot count, and the generation mode, with ImageBatchTokenCapacity providing an independent media floor.</p>
+              <p className="doc-description">PhysicalBatchSize requests the physical compute capacity independently of the prompt contribution. When unset, it follows the legacy prefill capacity unless AutoTune selects a value. Image floors can raise it, logical capacity caps it, and active MTP and specialized evaluation retain their sizing policies. EffectiveNUBatch reports the resolved capacity; the request is preserved.</p>
               <p className="doc-description">ImageBatchTokenCapacity provides an independent image-capacity floor for native batches without increasing the text prefill contribution or changing image preprocessing. The default is zero (no extra floor). Oversized non-causal image chunks return an error instead of being split.</p>
               <p className="doc-description">ImageTokenBudget explicitly sets the preprocessing token budget for supported projectors. Lower values can reduce image resolution and detail. When unset, the projector's default is preserved. Explicit values must be positive and also contribute to native batch capacity. Not all projectors honor the budget, and final chunk sizes are still checked before decoding.</p>
               <p className="doc-description">NGpuLayers is the number of model layers to offload to the GPU. When set to 0, all layers are offloaded (default). Set to -1 to keep all layers on CPU. Any positive value specifies the exact number of layers to offload.</p>
@@ -1635,6 +1629,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">FlashAttention returns the configured flash attention mode. An unset value defaults to auto so llama.cpp can select the supported mode.</p>
             </div>
 
+            <div className="doc-section" id="method-config-generationbatchsizes">
+              <h4>Config.GenerationBatchSizes</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) GenerationBatchSizes(generationRowsPerSlot int, singlePhysicalBatch bool) (int, int)</code>
+              </pre>
+              <p className="doc-description">GenerationBatchSizes derives native batch capacities for both memory planning and runtime configuration. Requests do not change the logical generation reserve. MTP preserves one physical batch including rollback rows. A zero row count selects the configured/default MTP reserve when singlePhysicalBatch is true.</p>
+            </div>
+
             <div className="doc-section" id="method-config-imcsessioncapacity">
               <h4>Config.IMCSessionCapacity</h4>
               <pre className="code-block">
@@ -1721,6 +1723,14 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func (cfg Config) NThreadsBatch() int</code>
               </pre>
+            </div>
+
+            <div className="doc-section" id="method-config-physicalbatchsize">
+              <h4>Config.PhysicalBatchSize</h4>
+              <pre className="code-block">
+                <code>func (cfg Config) PhysicalBatchSize() int</code>
+              </pre>
+              <p className="doc-description">PhysicalBatchSize returns the requested physical capacity, or zero when unset.</p>
             </div>
 
             <div className="doc-section" id="method-config-prefillbatchsize">
@@ -3360,7 +3370,6 @@ export default function DocsSDKModel() {
               <a href="#functions" className="doc-index-header">Functions</a>
               <ul>
                 <li><a href="#func-addparams">AddParams</a></li>
-                <li><a href="#func-generationbatchsizes">GenerationBatchSizes</a></li>
                 <li><a href="#func-inityzmaworkarounds">InitYzmaWorkarounds</a></li>
                 <li><a href="#func-recurrentstatecopies">RecurrentStateCopies</a></li>
                 <li><a href="#func-registerparser">RegisterParser</a></li>
@@ -3495,6 +3504,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-config-effectivenubatch">Config.EffectiveNUBatch</a></li>
                 <li><a href="#method-config-expertlayersongpu">Config.ExpertLayersOnGPU</a></li>
                 <li><a href="#method-config-flashattention">Config.FlashAttention</a></li>
+                <li><a href="#method-config-generationbatchsizes">Config.GenerationBatchSizes</a></li>
                 <li><a href="#method-config-imcsessioncapacity">Config.IMCSessionCapacity</a></li>
                 <li><a href="#method-config-imagebatchtokencapacity">Config.ImageBatchTokenCapacity</a></li>
                 <li><a href="#method-config-imagetokenbudget">Config.ImageTokenBudget</a></li>
@@ -3507,6 +3517,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-config-nseqmax">Config.NSeqMax</a></li>
                 <li><a href="#method-config-nthreads">Config.NThreads</a></li>
                 <li><a href="#method-config-nthreadsbatch">Config.NThreadsBatch</a></li>
+                <li><a href="#method-config-physicalbatchsize">Config.PhysicalBatchSize</a></li>
                 <li><a href="#method-config-prefillbatchsize">Config.PrefillBatchSize</a></li>
                 <li><a href="#method-config-queuedepth">Config.QueueDepth</a></li>
                 <li><a href="#method-config-ropefreqbase">Config.RopeFreqBase</a></li>

@@ -55,6 +55,7 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
     customScript, setCustomScript,
     contextWindow, setContextWindow,
     prefillBatchSize, setPrefillBatchSize,
+    physicalBatchSize, setPhysicalBatchSize,
     nSeqMax, setNSeqMax,
     flashAttention, setFlashAttention,
     cacheType, setCacheType,
@@ -185,6 +186,7 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
       .then((info) => {
         if (cancelled) return;
         const mc = info.model_config;
+        setPhysicalBatchSize(mc?.['physical-batch-size'] ?? undefined);
         if (mc) {
           const nSeqMax = mc['nseq-max'] || 1;
           setCatalogConfig(mc);
@@ -287,6 +289,10 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
       }
       if (!catalogConfig || prefillBatchSize !== (catalogConfig['prefill-batch-size'] || DEFAULT_PREFILL_BATCH_SIZE)) {
         config['prefill_batch_size'] = prefillBatchSize;
+      }
+      if (physicalBatchSize !== undefined && physicalBatchSize > 0 &&
+          (!catalogConfig || physicalBatchSize !== catalogConfig['physical-batch-size'])) {
+        config['physical_batch_size'] = physicalBatchSize;
       }
       if (!catalogConfig || nSeqMax !== (catalogConfig['nseq-max'] || 1)) {
         config['nseq_max'] = nSeqMax;
@@ -750,6 +756,7 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
                   base_config: {
                     context_window: contextWindow,
                     prefill_batch_size: prefillBatchSize,
+                    physical_batch_size: physicalBatchSize,
                     nseq_max: nSeqMax,
                     flash_attention: flashAttention,
                     cache_type_k: cacheType || undefined,
@@ -823,6 +830,22 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
                 value={prefillBatchSize}
                 onChange={(e) => setPrefillBatchSize(Number(e.target.value))}
                 min={1}
+                disabled={!!session}
+              />
+            </div>
+            <div className="form-group">
+              <FieldLabel htmlFor="pg-physical-batch-size" tooltipKey="physicalBatchSize">Physical Batch Size</FieldLabel>
+              <input
+                id="pg-physical-batch-size"
+                type="number"
+                value={physicalBatchSize ?? ''}
+                placeholder="Auto"
+                onChange={(e) => {
+                  const value = e.target.valueAsNumber;
+                  setPhysicalBatchSize(Number.isInteger(value) && value > 0 ? value : undefined);
+                }}
+                min={1}
+                step={1}
                 disabled={!!session}
               />
             </div>

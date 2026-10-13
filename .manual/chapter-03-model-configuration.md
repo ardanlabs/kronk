@@ -512,6 +512,7 @@ Text scheduling, image capacity, and image preprocessing are configured separate
 | Key | Load-time default | Purpose |
 | --- | ----------------- | ------- |
 | `prefill-batch-size` | `2048` | Generation prefill contribution per decode iteration, or aggregate embedding/reranking tokens per native sequence batch |
+| `physical-batch-size` | Unset | Requested physical compute capacity for generation, independent of the prompt contribution; constrained by image floors, logical capacity, and MTP policy |
 | `image-batch-token-capacity` | `0` (no additional floor) | Independent native capacity floor for image chunks; does not change text scheduling or image detail |
 | `image-token-budget` | Unset (projector default) | Explicit preprocessing budget for supported projectors; lowering it may reduce image resolution and detail |
 
@@ -533,7 +534,24 @@ doing so would allocate a much larger physical compute batch. Increase
 `prefill-batch-size` explicitly when the expected embedding or reranking
 workload needs a larger aggregate batch.
 
-Most deployments should use the default.
+Most deployments should leave the prompt contribution at its default.
+
+For ordinary causal generation, `physical-batch-size` lets llama.cpp divide one
+logical submission into smaller compute batches without changing how many prompt
+tokens Kronk schedules. For example, `prefill-batch-size: 2048`,
+`physical-batch-size: 512`, and `nseq-max: 1` resolve to logical capacity 2049
+and physical capacity 512. This can enable layer-split multi-GPU pipeline overlap
+within a submission. Completion synchronization is unchanged.
+
+Explicit positive physical sizes override AutoTune's recommendation. AutoTune
+initially recommends 512 for ordinary text models using multiple selected GPUs
+with layer splitting and full GPU offload. Single-GPU and other execution modes
+retain the legacy default when the setting is omitted. Image capacity and budget
+floors can raise a request, and logical/native context capacity can cap it.
+Active MTP preserves its existing equal-capacity policy; embedding, reranking,
+and specialized decision evaluation retain their own sizing policies. Requested
+and effective capacities are reported separately. Non-causal media chunks still
+must fit in one physical batch; oversized chunks return an error.
 
 Kronk derives llama.cpp's internal physical and logical batch capacities from
 this value. It reserves one output row per slot for non-MTP generation. MTP
@@ -543,8 +561,8 @@ the sampled token and its draft candidates. With four slots and the default
 for non-MTP and `NUBatch: 2064`, `NBatch: 2064` for MTP. Both can stage
 generation rows and then add a complete 2048-token prefill contribution from
 the current owner in the same logical decode. Non-MTP may split that tray into
-physical ubatches; MTP keeps it in one physical batch so dense NextN rows retain
-their expected mapping.
+physical ubatches; MTP currently keeps it in one physical batch pending validation
+of multi-ubatch execution in Kronk's hidden-state consumption path.
 
 For generation models with a projector, the native base capacity is
 `max(prefill-batch-size, image-batch-token-capacity, image-token-budget)`
@@ -880,6 +898,7 @@ is normally supplied by analysis or by the load-time defaults.
 | `queue-depth` | Non-negative integer, default `2` | Admitted request layers: `1` allows slot occupants only; `2` adds one waiting layer |
 | `imc-session-capacity` | Positive integer; derived when omitted | Reusable IMC conversation identities retained in RAM or on disk |
 | `prefill-batch-size` | Positive token count, default `2048` | Generation prefill contribution per decode iteration, or aggregate embedding/reranking tokens per native sequence batch |
+| `physical-batch-size` | Positive token count up to `2147483647`; unset by default | Requested generation compute batch size; AutoTune can choose it, and correctness constraints determine the effective capacity |
 | `image-batch-token-capacity` | Non-negative token count, default `0` | Image-capacity floor for native generation batches; does not change image detail |
 | `image-token-budget` | Positive token count up to `2147483647`; unset by default | Explicit projector preprocessing budget; may reduce image detail; also contributes to native capacity |
 | `ngpu-layers` | `-1`, `0`, or a positive count | CPU/GPU layer placement |

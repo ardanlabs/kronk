@@ -181,6 +181,7 @@ export type KVCacheMode = 'partitioned' | 'shared';
 export interface ModelConfig {
   'context-window': number;
   'prefill-batch-size': number;
+  'physical-batch-size'?: number | null;
   nthreads: number;
   'nthreads-batch': number;
   'cache-type-k': string;
@@ -785,6 +786,7 @@ export interface PlaygroundModelConfig {
   'context_window'?: number;
   'kv_cache_mode'?: KVCacheMode;
   'prefill_batch_size'?: number;
+  'physical_batch_size'?: number;
   'nseq_max'?: number;
   'flash_attention'?: string;
   'cache_type_k'?: string;
@@ -1030,6 +1032,7 @@ export interface BestConfigWeights {
 export interface ConfigCandidate {
   'context_window'?: number;
   'prefill_batch_size'?: number;
+  'physical_batch_size'?: number;
   'nseq_max'?: number;
   'flash_attention'?: string;
   'cache_type'?: string;

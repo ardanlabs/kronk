@@ -301,6 +301,10 @@ func autoTuneWithConfigAndBudget(info ModelInfo, devs devices.Devices, constrain
 	// 2048-token default and derives llama.cpp's internal batch capacities.
 	cfg.PtrContextWindow = new(int(rec.ContextWindow))
 	cfg.PtrNSeqMax = new(int(rec.NSeqMax))
+	cfg.PtrPhysicalBatchSize = constraints.PtrPhysicalBatchSize
+	if cfg.PtrPhysicalBatchSize == nil && rec.PhysicalBatchSize > 0 {
+		cfg.PtrPhysicalBatchSize = new(int(rec.PhysicalBatchSize))
+	}
 
 	if k, err := model.ParseGGMLType(rec.CacheTypeK); err == nil {
 		cfg.CacheTypeK = k
@@ -400,6 +404,9 @@ func MergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	}
 	if src.PtrPrefillBatchSize != nil {
 		dst.PtrPrefillBatchSize = src.PtrPrefillBatchSize
+	}
+	if src.PtrPhysicalBatchSize != nil {
+		dst.PtrPhysicalBatchSize = src.PtrPhysicalBatchSize
 	}
 	if src.PtrImageBatchTokenCapacity != nil {
 		dst.PtrImageBatchTokenCapacity = src.PtrImageBatchTokenCapacity

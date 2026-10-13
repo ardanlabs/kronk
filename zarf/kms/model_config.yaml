@@ -121,6 +121,7 @@ version: 2
 #   offload-kqv: true                    # Offload KV cache to GPU (false = keep on CPU)
 #   op-offload: true                     # Offload tensor operations to GPU (false = keep on CPU)
 #   prefill-batch-size: 2048             # Prompt tokens processed per prefill decode contribution (default: 2048)
+#   physical-batch-size: 512             # Requested compute batch size; AutoTune fills unset, constraints may raise/cap
 #   preserve_thinking: true              # Template-only; configure here rather than under sampling-parameters
 #   proj-device: CUDA1                    # Explicit mmproj device; omit for automatic (conflicts with proj-on-cpu: true)
 #   proj-on-cpu: true                    # Force multimodal projector (mmproj) onto CPU

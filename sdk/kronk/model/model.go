@@ -334,6 +334,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	l(ctx, "batch-sizing", "status", "resolved",
 		"configured-prefill-batch-size", configuredPrefillBatchSize,
 		"prefill-batch-size", prefillChunk,
+		"physical-batch-size", cfg.PhysicalBatchSize(),
 		"image-batch-token-capacity", cfg.ImageBatchTokenCapacity(),
 		"image-token-budget", cfg.ImageTokenBudget(),
 		"nseq-max", cfg.NSeqMax(),
@@ -770,6 +771,25 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int, plan specu
 		llama.Free(lctx)
 		return fmt.Errorf("init-from-model: context per sequence got %d, want %d", gotCtxSeq, wantCtxSeq)
 	}
+
+	// llama.cpp can clamp the requested capacities to the native context size.
+	// Keep the scheduler, draft contexts, and user-facing diagnostics in agreement.
+	m.cfg.nBatch = int(llama.NBatch(lctx))
+	m.cfg.nUBatch = int(llama.NUBatch(lctx))
+	m.ctxParams.NBatch = uint32(m.cfg.nBatch)
+	m.ctxParams.NUbatch = uint32(m.cfg.nUBatch)
+	reason := "requested-or-default"
+	switch {
+	case plan.MTP() && plan.Active():
+		reason = "active-mtp-policy"
+	case m.cfg.nUBatch < m.cfg.PhysicalBatchSize():
+		reason = "native-logical-capacity-limit"
+	case m.cfg.PtrPhysicalBatchSize != nil && m.cfg.nUBatch > m.cfg.PhysicalBatchSize():
+		reason = "image-capacity-floor"
+	}
+	m.log(ctx, "batch-sizing", "status", "native-resolved",
+		"physical-batch-size", m.cfg.PhysicalBatchSize(),
+		"effective-nbatch", m.cfg.nBatch, "effective-nubatch", m.cfg.nUBatch, "reason", reason)
 
 	mem, err := llama.GetMemory(lctx)
 	if err != nil {

@@ -161,6 +161,16 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 		return resman.PlanRequest{}, fmt.Errorf("plan: modelID[%s]: %w", req.ModelID, err)
 	}
 
+	if result.Input.NextNPredictLayers > 0 && result.Input.ComputeContexts > 1 {
+		// Embedded MTP is identified from the artifact, not the requested batch
+		// size. Reserve the complete tray even when the user requests a smaller ubatch.
+		_, physical := cfg.GenerationBatchSizes(0, true)
+		vramCfg.NUBatch = int64(physical)
+		input := result.Input
+		input.NUBatch = vramCfg.NUBatch
+		result = vram.Calculate(input)
+	}
+
 	if result.Input.ComputeKind != modelprofile.ComputeGeneric && cfg.MTPDrafterFile != "" && model.SpeculativeContextCount(cfg) > 1 {
 		// A supported companion is sized independently, not as another
 		// target-shaped compute arena.
@@ -638,9 +648,9 @@ func effectivePrefillBatchSize(cfg model.Config) int64 {
 	if cfg.EffectiveNUBatch() > 0 {
 		return int64(cfg.EffectiveNUBatch())
 	}
-	prefillBatchSize := cfg.BatchBaseSize()
+	_, prefillBatchSize := cfg.GenerationBatchSizes(1, false)
 	if model.SpeculativeContextCount(cfg) > 1 {
-		_, prefillBatchSize = model.GenerationBatchSizes(prefillBatchSize, max(int(cfg.NSeqMax()), 1), int(model.RecurrentStateCopies(cfg, false)), true)
+		_, prefillBatchSize = cfg.GenerationBatchSizes(int(model.RecurrentStateCopies(cfg, false)), true)
 	}
 	return int64(prefillBatchSize)
 }

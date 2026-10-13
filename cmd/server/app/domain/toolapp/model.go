@@ -615,6 +615,7 @@ func toModelInfo(fi models.FileInfo, mi models.ModelInfo, rmc models.ModelConfig
 		ModelConfig: &ModelConfig{
 			PtrContextWindow:           rmc.PtrContextWindow,
 			PtrPrefillBatchSize:        rmc.PtrPrefillBatchSize,
+			PtrPhysicalBatchSize:       rmc.PtrPhysicalBatchSize,
 			PtrImageBatchTokenCapacity: rmc.PtrImageBatchTokenCapacity,
 			PtrImageTokenBudget:        rmc.PtrImageTokenBudget,
 			PtrNThreads:                rmc.PtrNThreads,
@@ -1239,6 +1240,7 @@ func toAppMoEConfig(m *model.MoEConfig) *MoEConfig {
 type ModelConfig struct {
 	PtrContextWindow           *int                     `json:"context-window"`
 	PtrPrefillBatchSize        *int                     `json:"prefill-batch-size"`
+	PtrPhysicalBatchSize       *int                     `json:"physical-batch-size"`
 	PtrImageBatchTokenCapacity *int                     `json:"image-batch-token-capacity"`
 	PtrImageTokenBudget        *int                     `json:"image-token-budget"`
 	PtrNThreads                *int                     `json:"nthreads"`
@@ -1566,6 +1568,7 @@ func vramConfigFromRMC(rmc models.ModelConfig) vram.Config {
 	}
 
 	kronkConfig := rmc.ToKronkConfig()
+	_, physicalBatchSize := kronkConfig.GenerationBatchSizes(1, false)
 
 	return vram.Config{
 		WeightLoading:     kronkConfig.VRAMWeightLoading(devices.List(devices.WithIncludeMemory(false))),
@@ -1573,7 +1576,7 @@ func vramConfigFromRMC(rmc models.ModelConfig) vram.Config {
 		ContextWindow:     contextWindow,
 		BytesPerElement:   bpe,
 		Slots:             slots,
-		NUBatch:           int64(kronkConfig.BatchBaseSize()),
+		NUBatch:           int64(physicalBatchSize),
 		GPULayers:         int64(kronkConfig.NGpuLayers()),
 		ExpertLayersOnGPU: kronkConfig.ExpertLayersOnGPU(),
 		MoECacheSize:      kronkConfig.MoECacheSize(),

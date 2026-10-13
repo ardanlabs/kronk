@@ -287,6 +287,11 @@ func TestVRAMConfigFromRMCPrefillBatchSize(t *testing.T) {
 	if got.NUBatch != int64(prefillBatchSize) {
 		t.Errorf("NUBatch: got %d, want %d", got.NUBatch, prefillBatchSize)
 	}
+	rmc.PtrPhysicalBatchSize = new(512)
+	got = vramConfigFromRMC(rmc)
+	if got.NUBatch != 512 {
+		t.Errorf("explicit physical NUBatch: got %d, want 512", got.NUBatch)
+	}
 }
 
 func TestResolveSWAFull(t *testing.T) {

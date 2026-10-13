@@ -127,6 +127,7 @@ type RuntimeRecommendation struct {
 	FlashAttention     string `json:"flash_attention"`
 	SplitMode          string `json:"split_mode"`
 	NGPULayers         int64  `json:"ngpu_layers"`
+	PhysicalBatchSize  int64  `json:"physical_batch_size,omitempty"`
 	EstimatedVRAMBytes int64  `json:"estimated_vram_bytes"`
 	Fits               bool   `json:"fits"`
 	Reason             string `json:"reason,omitempty"`
@@ -208,9 +209,37 @@ func analyzeModelWithConfigAndBudget(info ModelInfo, devs devices.Devices, cfg M
 
 	moeInfo := moeInfoFromGGUF(profile.MoE)
 	class := classifyModel(info, moeInfo, profile)
+	// Evaluation contexts retain their existing sizing. A physical request must
+	// not make their memory estimate smaller than the context we actually load.
+	if info.IsEmbedModel || info.IsRerankModel || profile.Decision.Type != "" {
+		cfg.PtrPhysicalBatchSize = nil
+	}
+
+	// Only ordinary text layer splitting receives the initial pipeline-oriented
+	// recommendation. Explicit requests remain constraints, even on one GPU.
+	if cfg.PtrPhysicalBatchSize == nil && devs.SupportsGPUOffload && devs.GPUCount > 1 &&
+		!info.HasProjection && !info.HasMTP && !info.IsEmbedModel && !info.IsRerankModel &&
+		profile.Decision.Type == "" && cfg.DraftModel == nil && profile.Attention.NextNPredictLayers == 0 &&
+		(cfg.PtrNGpuLayers == nil || *cfg.PtrNGpuLayers == 0) &&
+		(cfg.PtrOffloadKQV == nil || *cfg.PtrOffloadKQV) && len(cfg.TensorBuftOverrides) == 0 &&
+		(cfg.PtrSplitMode == nil || *cfg.PtrSplitMode == model.SplitModeLayer) &&
+		!autoTensorParallel(profile, devs, cfg) {
+		cfg.PtrPhysicalBatchSize = new(512)
+	}
 
 	rope := ropeFactsFromGGUF(profile.Rope)
 	attn := attentionFactsFromGGUF(profile.Attention)
+	cfg = normalizeAnalysisConfig(cfg, trainingCtx)
+	runtimeCfg := cfg.ToKronkConfig()
+	singlePhysicalBatch := (info.HasMTP || (profile.Attention.NextNPredictLayers > 0 &&
+		modelprofile.MTPEnabled(profile.Speculation.MTPArchitecture))) &&
+		runtimeCfg.SpeculationMode() != model.SpeculationDisabled && runtimeCfg.SpeculationMode() != model.SpeculationClassic &&
+		(cfg.DraftModel == nil || cfg.DraftModel.ModelID == "")
+	rowsPerSlot := 1
+	if singlePhysicalBatch {
+		rowsPerSlot = 0 // Resolve the MTP reserve through the runtime sizing policy.
+	}
+	_, physical := runtimeCfg.GenerationBatchSizes(rowsPerSlot, singlePhysicalBatch)
 
 	mf := ModelFacts{
 		ID:              info.ID,
@@ -263,7 +292,7 @@ func analyzeModelWithConfigAndBudget(info ModelInfo, devs devices.Devices, cfg M
 	modelSize := int64(info.Size)
 	computeBuf := vram.EstimateComputeBuffer(vram.Input{
 		ModelSizeBytes:  modelSize,
-		NUBatch:         effectivePrefillBatchSize(cfg),
+		NUBatch:         int64(physical),
 		EmbeddingLength: embeddingLength,
 	})
 
@@ -277,47 +306,47 @@ func analyzeModelWithConfigAndBudget(info ModelInfo, devs devices.Devices, cfg M
 
 	// -------------------------------------------------------------------------
 	// Build profiles.
-	cfg = normalizeAnalysisConfig(cfg, trainingCtx)
-	runtimeCfg := cfg.ToKronkConfig()
-
 	profileInput := profileInput{
-		weightLoading:  runtimeCfg.VRAMWeightLoading(devs),
-		lazyTable:      info.lazyTable,
-		computeKind:    profile.ComputeKind,
-		vocabSize:      vocabSize,
-		headCount:      headCount,
-		outputEmbLen:   dimensions.OutputEmbeddingLength,
-		modelSize:      modelSize,
-		weights:        info.Weights,
-		moe:            &profile.MoE,
-		tiedOutput:     profile.TiedOutputFallback,
-		expertLayers:   runtimeCfg.ExpertLayersOnGPU(),
-		moeCacheBytes:  runtimeCfg.MoECacheSize(),
-		blockCount:     blockCount,
-		headCountKV:    headCountKV,
-		keyLength:      keyLength,
-		valueLength:    valueLength,
-		embLen:         embeddingLength,
-		trainingCtx:    trainingCtx,
-		class:          class,
-		gpuBudget:      gpuBudget,
-		ramBudget:      ramBudget,
-		hasGPU:         sf.SupportsGPUOffload,
-		unifiedMemory:  devs.UnifiedMemory,
-		gpuCount:       devs.GPUCount,
-		tensorParallel: autoTensorParallel(profile, devs, cfg),
-		attn:           attn,
-		contextWindow:  cfg.PtrContextWindow,
-		nSeqMax:        cfg.PtrNSeqMax,
-		cacheTypeK:     cfg.CacheTypeK,
-		cacheTypeV:     cfg.CacheTypeV,
-		flashAttention: cfg.FlashAttention,
-		splitMode:      cfg.PtrSplitMode,
-		nGpuLayers:     cfg.PtrNGpuLayers,
-		nUBatch:        effectivePrefillBatchSize(cfg),
-		kvCacheOnCPU:   cfg.PtrOffloadKQV != nil && !*cfg.PtrOffloadKQV,
-		kvUnified:      runtimeCfg.KVCacheMode() == model.KVCacheShared,
-		swaFull:        cfg.PtrSWAFull == nil || *cfg.PtrSWAFull,
+		weightLoading:       runtimeCfg.VRAMWeightLoading(devs),
+		lazyTable:           info.lazyTable,
+		computeKind:         profile.ComputeKind,
+		vocabSize:           vocabSize,
+		headCount:           headCount,
+		outputEmbLen:        dimensions.OutputEmbeddingLength,
+		modelSize:           modelSize,
+		weights:             info.Weights,
+		moe:                 &profile.MoE,
+		tiedOutput:          profile.TiedOutputFallback,
+		expertLayers:        runtimeCfg.ExpertLayersOnGPU(),
+		moeCacheBytes:       runtimeCfg.MoECacheSize(),
+		blockCount:          blockCount,
+		headCountKV:         headCountKV,
+		keyLength:           keyLength,
+		valueLength:         valueLength,
+		embLen:              embeddingLength,
+		trainingCtx:         trainingCtx,
+		class:               class,
+		gpuBudget:           gpuBudget,
+		ramBudget:           ramBudget,
+		hasGPU:              sf.SupportsGPUOffload,
+		unifiedMemory:       devs.UnifiedMemory,
+		gpuCount:            devs.GPUCount,
+		tensorParallel:      autoTensorParallel(profile, devs, cfg),
+		attn:                attn,
+		contextWindow:       cfg.PtrContextWindow,
+		nSeqMax:             cfg.PtrNSeqMax,
+		cacheTypeK:          cfg.CacheTypeK,
+		cacheTypeV:          cfg.CacheTypeV,
+		flashAttention:      cfg.FlashAttention,
+		splitMode:           cfg.PtrSplitMode,
+		nGpuLayers:          cfg.PtrNGpuLayers,
+		physicalBatchSize:   int64(runtimeCfg.PhysicalBatchSize()),
+		batchConfig:         runtimeCfg,
+		generationRows:      rowsPerSlot,
+		singlePhysicalBatch: singlePhysicalBatch,
+		kvCacheOnCPU:        cfg.PtrOffloadKQV != nil && !*cfg.PtrOffloadKQV,
+		kvUnified:           runtimeCfg.KVCacheMode() == model.KVCacheShared,
+		swaFull:             cfg.PtrSWAFull == nil || *cfg.PtrSWAFull,
 	}
 	for _, device := range devs.Devices {
 		if backend, ok := strings.CutPrefix(device.Type, "gpu_"); ok {
@@ -382,44 +411,47 @@ func normalizeAnalysisConfig(cfg ModelConfig, trainingCtx int64) ModelConfig {
 // Profile building
 
 type profileInput struct {
-	weightLoading  vram.WeightLoading
-	lazyTable      vram.LazyTable
-	computeKind    modelprofile.ComputeKind
-	computeBackend string
-	vocabSize      int64
-	headCount      int64
-	outputEmbLen   int64
-	modelSize      int64
-	weights        *gguf.WeightBreakdown
-	moe            *gguf.MoEInfo
-	tiedOutput     bool
-	expertLayers   int64
-	moeCacheBytes  int64
-	blockCount     int64
-	headCountKV    int64
-	keyLength      int64
-	valueLength    int64
-	embLen         int64
-	trainingCtx    int64
-	class          string
-	gpuBudget      int64
-	ramBudget      int64
-	hasGPU         bool
-	unifiedMemory  bool
-	gpuCount       int
-	tensorParallel bool
-	attn           AttentionFacts
-	contextWindow  *int
-	nSeqMax        *int
-	cacheTypeK     model.GGMLType
-	cacheTypeV     model.GGMLType
-	flashAttention *model.FlashAttentionType
-	splitMode      *model.SplitMode
-	nGpuLayers     *int
-	nUBatch        int64
-	kvCacheOnCPU   bool
-	kvUnified      bool
-	swaFull        bool
+	weightLoading       vram.WeightLoading
+	lazyTable           vram.LazyTable
+	computeKind         modelprofile.ComputeKind
+	computeBackend      string
+	vocabSize           int64
+	headCount           int64
+	outputEmbLen        int64
+	modelSize           int64
+	weights             *gguf.WeightBreakdown
+	moe                 *gguf.MoEInfo
+	tiedOutput          bool
+	expertLayers        int64
+	moeCacheBytes       int64
+	blockCount          int64
+	headCountKV         int64
+	keyLength           int64
+	valueLength         int64
+	embLen              int64
+	trainingCtx         int64
+	class               string
+	gpuBudget           int64
+	ramBudget           int64
+	hasGPU              bool
+	unifiedMemory       bool
+	gpuCount            int
+	tensorParallel      bool
+	attn                AttentionFacts
+	contextWindow       *int
+	nSeqMax             *int
+	cacheTypeK          model.GGMLType
+	cacheTypeV          model.GGMLType
+	flashAttention      *model.FlashAttentionType
+	splitMode           *model.SplitMode
+	nGpuLayers          *int
+	physicalBatchSize   int64
+	batchConfig         model.Config
+	generationRows      int
+	singlePhysicalBatch bool
+	kvCacheOnCPU        bool
+	kvUnified           bool
+	swaFull             bool
 }
 
 type cacheRecommendation struct {
@@ -436,7 +468,8 @@ type cacheRecommendation struct {
 // overrideConcurrency > 0 signals max-concurrency mode which maximizes slots.
 func buildProfile(name string, p profileInput, overrideSlots int64, overrideConcurrency int64) RuntimeRecommendation {
 	rec := RuntimeRecommendation{
-		Name: name,
+		Name:              name,
+		PhysicalBatchSize: p.physicalBatchSize,
 	}
 
 	// Determine flash attention.
@@ -644,6 +677,9 @@ func autoTensorParallel(profile modelprofile.Profile, devs devices.Devices, cfg 
 }
 
 func calculateProfile(p profileInput, contextWindow, slots int64, cache cacheRecommendation) vram.Result {
+	batchCfg := p.batchConfig
+	batchCfg.PtrNSeqMax = new(int(slots))
+	_, physical := batchCfg.GenerationBatchSizes(p.generationRows, p.singlePhysicalBatch)
 	headCountKV := p.attn.FullHeadCountKV
 	if headCountKV <= 0 {
 		headCountKV = p.headCountKV
@@ -699,7 +735,7 @@ func calculateProfile(p profileInput, contextWindow, slots int64, cache cacheRec
 		NextNPredictLayers:    p.attn.NextNPredictLayers,
 		RecurrentStateBytes:   p.attn.RecurrentStateBytes,
 		RecurrentStateCopies:  1,
-		NUBatch:               p.nUBatch,
+		NUBatch:               int64(physical),
 		KVUnified:             p.kvUnified,
 		EmbeddingLength:       p.embLen,
 		GPULayers:             gpuLayers,
@@ -714,10 +750,6 @@ func profileVTransposed(p profileInput) bool {
 		return *p.flashAttention == model.FlashAttentionDisabled
 	}
 	return !p.hasGPU
-}
-
-func effectivePrefillBatchSize(cfg ModelConfig) int64 {
-	return int64(cfg.ToKronkConfig().BatchBaseSize())
 }
 
 // cacheRecommendations returns cache candidates in quality order while

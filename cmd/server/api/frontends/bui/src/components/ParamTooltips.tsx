@@ -32,6 +32,7 @@ export const PARAM_TOOLTIPS = {
   reasoning_effort: 'Requested reasoning level (model/provider dependent): none, minimal, low, medium, high. When omitted, the model template chooses its default. Higher effort may produce more thorough reasoning but uses more tokens and time. Unsupported models ignore this.',
 
   // Config sweep
+  physicalBatchSize: 'Requested physical micro-batch size for decoding, separate from the prefill token budget. Leave unset for automatic sizing. Correctness constraints may raise or cap this request; effective_nbatch and effective_nubatch are derived runtime sizes, not overrides.',
   prefillBatchSize: 'Maximum prompt tokens contributed by the current prefill owner in one decode iteration. Larger values can reach generation in fewer calls but increase compute-buffer memory and make each call longer for other active slots.',
   contextWindow: 'Maximum number of tokens (input + output combined) the model can handle at once. Larger windows support longer conversations but increase VRAM usage proportionally via the KV cache. Models with RoPE can extend beyond native context using YaRN (up to ~4× recommended).',
   nSeqMax: 'Maximum number of concurrent request slots. Each slot handles one user request simultaneously. More slots allow greater concurrency and increase aggregate KV cache capacity; KV Cache Layout determines whether that capacity is partitioned or shared.',
