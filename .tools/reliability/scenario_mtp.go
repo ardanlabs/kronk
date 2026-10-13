@@ -97,10 +97,10 @@ func runMTPProfile(rc *runContext, profile mtpProfile) mtpProfileResult {
 		result.Failures = append(result.Failures, "scheduler diagnostics do not contain the selected model")
 		return result
 	}
-	if !engine.MTP {
+	if rc.cfg.MTP == "on" && !engine.MTP {
 		result.Failures = append(result.Failures, "scheduler reports MTP inactive")
 	}
-	if engine.NDraft <= 0 {
+	if rc.cfg.MTP == "on" && engine.NDraft <= 0 {
 		appendFailure(&result.Failures, "scheduler reports invalid ndraft=%d", engine.NDraft)
 	}
 	if len(engine.Slots) != profile.Slots {
@@ -168,11 +168,11 @@ func runMTPProfile(rc *runContext, profile mtpProfile) mtpProfileResult {
 			appendFailure(&result.Failures, "request %d: %s", requestResult.Request, requestResult.Error)
 		case requestResult.FinishReason != "stop":
 			appendFailure(&result.Failures, "request %d finish reason=%q, want stop", requestResult.Request, requestResult.FinishReason)
-		case requestResult.Usage.DraftTokens <= 0:
+		case rc.cfg.MTP == "on" && requestResult.Usage.DraftTokens <= 0:
 			appendFailure(&result.Failures, "request %d produced no draft tokens", requestResult.Request)
-		case requestResult.Usage.DraftCoverage <= 0:
+		case rc.cfg.MTP == "on" && requestResult.Usage.DraftCoverage <= 0:
 			appendFailure(&result.Failures, "request %d produced no draft coverage", requestResult.Request)
-		case requestResult.Usage.DraftDisableReason != "":
+		case rc.cfg.MTP == "on" && requestResult.Usage.DraftDisableReason != "":
 			appendFailure(&result.Failures, "request %d disabled MTP: %s", requestResult.Request, requestResult.Usage.DraftDisableReason)
 		}
 		rc.artifacts.logf("%s request %d: elapsed=%.3fs prompt=%d completion=%d drafted=%d accepted=%d coverage=%.3f finish=%s",

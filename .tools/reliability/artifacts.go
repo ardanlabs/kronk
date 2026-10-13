@@ -19,21 +19,30 @@ const (
 )
 
 type traceRegistry struct {
-	mu       sync.RWMutex
-	scenario map[string]string
+	mu          sync.RWMutex
+	scenario    map[string]string
+	cells       map[string]string
+	currentCell string
 }
 
 func (registry *traceRegistry) add(traceID, scenario string) {
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
 	registry.scenario[traceID] = scenario
+	registry.cells[traceID] = registry.currentCell
 }
 
-func (registry *traceRegistry) lookup(traceID string) (string, bool) {
+func (registry *traceRegistry) setCell(cell string) {
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	registry.currentCell = cell
+}
+
+func (registry *traceRegistry) lookup(traceID string) (string, string, bool) {
 	registry.mu.RLock()
 	defer registry.mu.RUnlock()
 	scenario, exists := registry.scenario[traceID]
-	return scenario, exists
+	return scenario, registry.cells[traceID], exists
 }
 
 type artifacts struct {
@@ -65,6 +74,7 @@ type mtpServerEvidence struct {
 
 type mtpBackendSelection struct {
 	Scenario string `json:"scenario"`
+	Cell     string `json:"cell"`
 	TraceID  string `json:"trace_id"`
 	Message  string `json:"message"`
 	Backend  string `json:"backend"`
@@ -73,6 +83,7 @@ type mtpBackendSelection struct {
 
 type evidenceEvent struct {
 	Scenario string         `json:"scenario"`
+	Cell     string         `json:"cell"`
 	Source   string         `json:"source"`
 	TraceID  string         `json:"trace_id"`
 	Event    map[string]any `json:"event"`
@@ -104,7 +115,7 @@ func newArtifacts(dir, serverLog string) (*artifacts, error) {
 		serverLogReady:  ready,
 		toolLog:         toolLog,
 		events:          events,
-		traces:          &traceRegistry{scenario: make(map[string]string)},
+		traces:          &traceRegistry{scenario: make(map[string]string), cells: make(map[string]string)},
 	}
 	if note != "" {
 		art.logf("server evidence note: %s", note)
@@ -135,6 +146,88 @@ func (art *artifacts) writeSummary(summary runSummary) error {
 		return fmt.Errorf("write summary: %w", err)
 	}
 	return nil
+}
+
+// Prepend the final outcome without keeping the execution log in memory.
+func (art *artifacts) writeLogSummary(summary runSummary) error {
+	if err := art.toolLog.Close(); err != nil {
+		return fmt.Errorf("close tool log: %w", err)
+	}
+	source, err := os.Open(filepath.Join(art.dir, toolLogFile))
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+	target, err := os.CreateTemp(art.dir, ".tool-log-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(target.Name())
+	defer target.Close()
+	passed, failed := 0, 0
+	for _, result := range summary.Scenarios {
+		if result.Status == "PASS" {
+			passed++
+		} else {
+			failed++
+		}
+	}
+	var header strings.Builder
+	fmt.Fprintf(&header, "TL;DR: %s — %d passed, %d failed scenario/cell results.\n", summary.Status, passed, failed)
+	for _, result := range summary.Scenarios {
+		fmt.Fprintf(&header, "  %-4s %s / %s\n", result.Status, result.Cell, result.Name)
+		if profiles, ok := result.Details["profiles"].([]mtpProfileResult); ok {
+			for _, profile := range profiles {
+				status := "PASS"
+				if len(profile.Failures) > 0 {
+					status = "FAIL"
+				}
+				fmt.Fprintf(&header, "       %-4s %s\n", status, profile.Name)
+			}
+		}
+		for _, key := range []string{"correctness", "concurrent_prefill"} {
+			status := "PASS"
+			present := false
+			switch detail := result.Details[key].(type) {
+			case mediaCorrectnessResult:
+				present = true
+				if len(detail.Failures) > 0 {
+					status = "FAIL"
+				}
+			case mediaPrefillResult:
+				present = true
+				if len(detail.Failures) > 0 {
+					status = "FAIL"
+				}
+			}
+			if present {
+				fmt.Fprintf(&header, "       %-4s %s\n", status, key)
+			}
+		}
+		if len(result.Failures) > 0 {
+			fmt.Fprintf(&header, "       %s\n", result.Failures[0])
+		}
+	}
+	for _, failure := range summary.Failures {
+		fmt.Fprintf(&header, "  FAIL setup: %s\n", failure)
+	}
+	if summary.Note != "" {
+		fmt.Fprintf(&header, "%s\n", summary.Note)
+	}
+	if !summary.ServerEvidence.Available || summary.ServerEvidence.Note != "" {
+		fmt.Fprintf(&header, "Evidence note: %s\n", summary.ServerEvidence.Note)
+	}
+	header.WriteString("\n========== EXECUTION TIMELINE (final results above include server-evidence checks) ==========\n")
+	if _, err := io.WriteString(target, header.String()); err != nil {
+		return err
+	}
+	if _, err := io.Copy(target, source); err != nil {
+		return err
+	}
+	if err := target.Close(); err != nil {
+		return err
+	}
+	return os.Rename(target.Name(), filepath.Join(art.dir, toolLogFile))
 }
 
 func (art *artifacts) collectServerEvidence() serverEvidence {
@@ -182,12 +275,12 @@ func (art *artifacts) collectServerEvidence() serverEvidence {
 			continue
 		}
 		traceID, _ := event["trace_id"].(string)
-		scenario, exists := art.traces.lookup(traceID)
+		scenario, cell, exists := art.traces.lookup(traceID)
 		if !exists || !highValueEvent(event) {
 			continue
 		}
-		recordMTPServerEvidence(&evidence.MTP, scenario, traceID, event)
-		if err := encoder.Encode(evidenceEvent{Scenario: scenario, Source: "kronk-server", TraceID: traceID, Event: event}); err != nil {
+		recordMTPServerEvidence(&evidence.MTP, scenario, cell, traceID, event)
+		if err := encoder.Encode(evidenceEvent{Scenario: scenario, Cell: cell, Source: "kronk-server", TraceID: traceID, Event: event}); err != nil {
 			evidence.Note = "write server evidence: " + err.Error()
 			return evidence
 		}
@@ -202,7 +295,7 @@ func (art *artifacts) collectServerEvidence() serverEvidence {
 	return evidence
 }
 
-func recordMTPServerEvidence(evidence *mtpServerEvidence, scenario, traceID string, event map[string]any) {
+func recordMTPServerEvidence(evidence *mtpServerEvidence, scenario, cell, traceID string, event map[string]any) {
 	message, _ := event["msg"].(string)
 	status, _ := event["status"].(string)
 	if strings.HasPrefix(message, "draft-model-mtp") && status == "loaded" {
@@ -210,6 +303,7 @@ func recordMTPServerEvidence(evidence *mtpServerEvidence, scenario, traceID stri
 		source, _ := event["source"].(string)
 		evidence.BackendSelections = append(evidence.BackendSelections, mtpBackendSelection{
 			Scenario: scenario,
+			Cell:     cell,
 			TraceID:  traceID,
 			Message:  message,
 			Backend:  backend,

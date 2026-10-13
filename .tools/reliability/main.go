@@ -13,37 +13,45 @@ import (
 	"time"
 )
 
-const summarySchemaVersion = 1
+const summarySchemaVersion = 2
 
 var scenarioOrder = []string{"mtp", "hybrid-state", "long-context", "batch", "media"}
 
 type scenarioResult struct {
-	Name            string         `json:"name"`
-	Status          string         `json:"status"`
-	StartedAt       time.Time      `json:"started_at"`
-	DurationSeconds float64        `json:"duration_seconds"`
-	Models          []string       `json:"models,omitempty"`
-	Failures        []string       `json:"failures,omitempty"`
-	Details         map[string]any `json:"details,omitempty"`
+	Name            string            `json:"name"`
+	Cell            string            `json:"cell"`
+	ExpectedModes   map[string]string `json:"expected_modes"`
+	Status          string            `json:"status"`
+	StartedAt       time.Time         `json:"started_at"`
+	DurationSeconds float64           `json:"duration_seconds"`
+	Models          []string          `json:"models,omitempty"`
+	Failures        []string          `json:"failures,omitempty"`
+	Details         map[string]any    `json:"details,omitempty"`
 }
 
 type runSummary struct {
-	SchemaVersion   int              `json:"schema_version"`
-	Status          string           `json:"status"`
-	StartedAt       time.Time        `json:"started_at"`
-	FinishedAt      time.Time        `json:"finished_at"`
-	DurationSeconds float64          `json:"duration_seconds"`
-	Host            string           `json:"host"`
-	Scenarios       []scenarioResult `json:"scenarios"`
-	ServerEvidence  serverEvidence   `json:"server_evidence"`
+	SchemaVersion   int                 `json:"schema_version"`
+	Status          string              `json:"status"`
+	StartedAt       time.Time           `json:"started_at"`
+	FinishedAt      time.Time           `json:"finished_at"`
+	DurationSeconds float64             `json:"duration_seconds"`
+	Host            string              `json:"host"`
+	ExpectedModes   map[string]string   `json:"expected_modes,omitempty"`
+	Matrix          []modeCell          `json:"matrix"`
+	ModelUnloads    []modelUnloadResult `json:"model_unloads,omitempty"`
+	Failures        []string            `json:"failures,omitempty"`
+	Note            string              `json:"note,omitempty"`
+	Scenarios       []scenarioResult    `json:"scenarios"`
+	ServerEvidence  serverEvidence      `json:"server_evidence"`
 }
 
 type runContext struct {
 	context.Context
-	cfg       config
-	client    *apiClient
-	artifacts *artifacts
-	scenario  string
+	cfg           config
+	client        *apiClient
+	artifacts     *artifacts
+	scenario      string
+	observedModes map[string]map[string]bool
 }
 
 func main() {
@@ -75,6 +83,10 @@ func run() error {
 		Status:        "PASS",
 		StartedAt:     started,
 		Host:          cfg.Host,
+		Matrix:        cfg.Matrix,
+	}
+	if len(cfg.Matrix) == 1 {
+		summary.ExpectedModes = map[string]string{"mtp": cfg.MTP, "imc": cfg.IMC}
 	}
 
 	client := newAPIClient(cfg.Host, cfg.Token, cfg.Timeout, art.traces)
@@ -88,29 +100,79 @@ func run() error {
 	art.logf("Kronk reliability suite")
 	art.logf("host=%s scenarios=%s output=%s", cfg.Host, strings.Join(cfg.Scenarios, ","), cfg.Out)
 	art.logf("server_log=%s", cfg.ServerLog)
+	art.logf("matrix=%v", cfg.Matrix)
 
-	for _, name := range cfg.Scenarios {
-		art.logf("\n========== SCENARIO %s START ==========", name)
-		scenarioStarted := time.Now().UTC()
-		rc := base
-		rc.scenario = name
-
-		result := runScenario(&rc, name)
-		result.Name = name
-		result.StartedAt = scenarioStarted
-		result.DurationSeconds = seconds(time.Since(scenarioStarted))
-		if len(result.Failures) > 0 {
-			result.Status = "FAIL"
-			summary.Status = "FAIL"
-		} else if result.Status == "" {
-			result.Status = "PASS"
+	// Clear stale suite aliases from prior invocations, but only for selected
+	// workloads. Other profiles, base IDs, and unrelated models are untouched.
+	art.traces.setCell("setup")
+	base.scenario = "setup"
+	seen := make(map[string]bool)
+	for _, mode := range []modeCell{{"on", "on"}, {"on", "off"}, {"off", "on"}, {"off", "off"}} {
+		candidate, _ := cfg.forCell(mode) // parseConfig already validated these IDs.
+		for _, id := range candidate.selectedModels() {
+			if seen[id] {
+				continue
+			}
+			seen[id] = true
+			if err := base.unloadModel(id, "before-run"); err != nil {
+				appendFailure(&summary.Failures, "%v", err)
+				break
+			}
 		}
-		summary.Scenarios = append(summary.Scenarios, result)
-		art.logf("========== SCENARIO %s %s (%.3fs) ==========", name, result.Status, result.DurationSeconds)
-		for _, failure := range result.Failures {
-			art.logf("FAIL: %s", failure)
+		if client.cleanupFailed {
+			break
 		}
 	}
+
+	for _, cell := range cfg.Matrix {
+		if client.cleanupFailed {
+			break
+		}
+		cellConfig, _ := cfg.forCell(cell)
+		art.traces.setCell(cell.id())
+		art.logf("\n========== CELL %s START ==========", cell.id())
+		for _, name := range cfg.Scenarios {
+			art.logf("\n========== SCENARIO %s/%s START ==========", cell.id(), name)
+			scenarioStarted := time.Now().UTC()
+			rc := base
+			rc.cfg, rc.scenario = cellConfig, name
+			rc.observedModes = make(map[string]map[string]bool)
+			result := runScenario(&rc, name)
+			if client.managedModel != "" && !client.cleanupFailed {
+				if err := rc.unloadModel(client.managedModel, "after-scenario"); err != nil {
+					appendFailure(&result.Failures, "%v", err)
+				}
+			}
+			if result.Details == nil {
+				result.Details = make(map[string]any)
+			}
+			result.Details["observed_modes"] = rc.observedModes
+			result.Name, result.Cell = name, cell.id()
+			result.ExpectedModes = map[string]string{"mtp": cell.MTP, "imc": cell.IMC}
+			result.StartedAt = scenarioStarted
+			result.DurationSeconds = seconds(time.Since(scenarioStarted))
+			if len(result.Failures) > 0 {
+				result.Status, summary.Status = "FAIL", "FAIL"
+			} else if result.Status == "" {
+				result.Status = "PASS"
+			}
+			summary.Scenarios = append(summary.Scenarios, result)
+			art.logf("========== SCENARIO %s/%s %s (%.3fs) ==========", cell.id(), name, result.Status, result.DurationSeconds)
+			for _, failure := range result.Failures {
+				art.logf("FAIL: %s", failure)
+			}
+			if client.cleanupFailed {
+				break
+			}
+		}
+		art.logf("========== CELL %s END ==========", cell.id())
+	}
+	if client.cleanupFailed {
+		summary.Status = "FAIL"
+		summary.Note = "Stopped after model cleanup failed; remaining selected workloads were not run."
+		art.logf("%s", summary.Note)
+	}
+	summary.ModelUnloads = client.unloads
 
 	summary.ServerEvidence = art.collectServerEvidence()
 	validateMTPServerEvidence(&summary)
@@ -122,6 +184,9 @@ func run() error {
 
 	art.logf("\n%s: %d scenario(s); server_events=%d", summary.Status, len(summary.Scenarios), summary.ServerEvidence.MatchedEvents)
 	art.logf("artifacts: %s", cfg.Out)
+	if err := art.writeLogSummary(summary); err != nil {
+		return err
+	}
 	if summary.Status != "PASS" {
 		return errors.New("one or more reliability scenarios failed")
 	}
@@ -140,11 +205,15 @@ func validateMTPServerEvidence(summary *runSummary) {
 
 	for index := range summary.Scenarios {
 		scenario := &summary.Scenarios[index]
-		if scenario.Name != "mtp" {
+		modes := scenario.ExpectedModes
+		if modes == nil {
+			modes = summary.ExpectedModes
+		}
+		if scenario.Name != "mtp" || modes["mtp"] == "off" {
 			continue
 		}
 		for _, selection := range summary.ServerEvidence.MTP.BackendSelections {
-			if selection.Scenario != "mtp" {
+			if selection.Scenario != "mtp" || selection.Cell != scenario.Cell {
 				continue
 			}
 			if selection.Backend != "qwen35-own-kv" {

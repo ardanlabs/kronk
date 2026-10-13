@@ -1,9 +1,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
-	"strings"
+	"net/url"
 	"time"
 )
 
@@ -67,7 +68,40 @@ func (rc *runContext) completion(model string, messages []map[string]any, maxTok
 	if response.Choices[0].FinishReason != nil {
 		result.FinishReason = *response.Choices[0].FinishReason
 	}
-	return result, nil
+	return result, rc.checkUsage(result.Usage)
+}
+
+// Completed requests carry final usage; cancelled streams do not. Short exact
+// marker replies may finish before a draft proposal, so require drafting only
+// above eight completion tokens, but reject disablement at any length.
+func (rc *runContext) checkUsage(u usage) error {
+	if u.PromptTokens <= 0 || u.CompletionTokens <= 0 {
+		return fmt.Errorf("completed request lacks positive prompt/completion usage")
+	}
+	if rc.cfg.IMC == "off" && u.PromptTokensDetails.CachedTokens != 0 {
+		return fmt.Errorf("IMC off: reported %d cached tokens", u.PromptTokensDetails.CachedTokens)
+	}
+	if rc.cfg.MTP == "off" {
+		if u.DraftTokens != 0 || u.DraftAcceptedTokens != 0 || u.DraftCoverage != 0 {
+			return fmt.Errorf("MTP off: reported drafting: tokens=%d accepted=%d coverage=%g", u.DraftTokens, u.DraftAcceptedTokens, u.DraftCoverage)
+		}
+		return nil
+	}
+	if u.DraftDisableReason != "" {
+		return fmt.Errorf("MTP on: request disabled drafting: %s", u.DraftDisableReason)
+	}
+	if u.CompletionTokens > 8 && (u.DraftTokens <= 0 || u.DraftCoverage <= 0) {
+		return fmt.Errorf("MTP on: %d completion tokens without positive drafting and coverage", u.CompletionTokens)
+	}
+	return nil
+}
+
+func (rc *runContext) stream(ctx context.Context, body any, visit func(chatChunk, time.Time) error) (streamResult, error) {
+	result, err := rc.client.stream(ctx, rc.scenario, body, visit)
+	if err == nil {
+		err = rc.checkUsage(result.Usage)
+	}
+	return result, err
 }
 
 func (rc *runContext) tokenCount(model, text string, applyTemplate bool) (int, error) {
@@ -86,12 +120,18 @@ func (rc *runContext) tokenCount(model, text string, applyTemplate bool) (int, e
 }
 
 func (rc *runContext) ensureModel(model string) (loadedModel, error) {
+	if previous := rc.client.managedModel; previous != "" && previous != model {
+		if err := rc.unloadModel(previous, "model-switch"); err != nil {
+			return loadedModel{}, err
+		}
+	}
+	rc.client.managedModel = model
 	loaded, err := rc.loadedModel(model)
 	if err != nil {
 		return loadedModel{}, err
 	}
 	if loaded != nil {
-		return *loaded, nil
+		return *loaded, rc.checkModelModes(model)
 	}
 	rc.artifacts.logf("model=%s is not loaded; loading it now", model)
 	if _, err := rc.completion(model, []map[string]any{{"role": "user", "content": "Reply OK."}}, 8); err != nil {
@@ -104,7 +144,30 @@ func (rc *runContext) ensureModel(model string) (loadedModel, error) {
 	if loaded == nil {
 		return loadedModel{}, fmt.Errorf("model did not appear after loading: %s", model)
 	}
-	return *loaded, nil
+	return *loaded, rc.checkModelModes(model)
+}
+
+func (rc *runContext) checkModelModes(model string) error {
+	var detail struct {
+		ModelConfig struct {
+			IMC *bool `json:"incremental-cache"`
+		} `json:"model_config"`
+	}
+	if _, err := rc.client.json(rc, rc.scenario, http.MethodGet, "/v1/kronk/models/"+url.PathEscape(model), nil, &detail); err != nil {
+		return fmt.Errorf("verify IMC configuration: %w", err)
+	}
+	engine, err := rc.engine(model)
+	if err != nil {
+		return err
+	}
+	if engine == nil || detail.ModelConfig.IMC == nil {
+		return fmt.Errorf("cannot verify MTP/IMC modes for %s", model)
+	}
+	rc.observedModes[model] = map[string]bool{"mtp": engine.MTP, "imc": *detail.ModelConfig.IMC}
+	if engine.MTP != (rc.cfg.MTP == "on") || *detail.ModelConfig.IMC != (rc.cfg.IMC == "on") {
+		return fmt.Errorf("%s: observed MTP=%t IMC=%t, expected MTP=%s IMC=%s", model, engine.MTP, *detail.ModelConfig.IMC, rc.cfg.MTP, rc.cfg.IMC)
+	}
+	return nil
 }
 
 func (rc *runContext) loadedModel(model string) (*loadedModel, error) {
@@ -134,9 +197,91 @@ func (rc *runContext) engine(model string) (*engineDiagnostic, error) {
 }
 
 func modelMatches(left, right string) bool {
-	return left == right || strings.HasSuffix(left, right) || strings.HasSuffix(right, left)
+	return left == right
 }
 
 func appendFailure(failures *[]string, format string, args ...any) {
 	*failures = append(*failures, fmt.Sprintf(format, args...))
+}
+
+type modelUnloadResult struct {
+	Cell     string `json:"cell"`
+	Scenario string `json:"scenario"`
+	Phase    string `json:"phase"`
+	Model    string `json:"model"`
+	Status   string `json:"status"`
+	Error    string `json:"error,omitempty"`
+}
+
+// Only explicitly selected suite IDs reach this function. Never unload all
+// models or cancel another client's work to make an unload succeed.
+func (rc *runContext) unloadModel(id, phase string) (err error) {
+	loaded, err := rc.loadedModel(id)
+	if err == nil && loaded == nil {
+		if rc.client.managedModel == id {
+			rc.client.managedModel = ""
+		}
+		return nil
+	}
+	result := modelUnloadResult{Cell: (modeCell{MTP: rc.cfg.MTP, IMC: rc.cfg.IMC}).id(), Scenario: rc.scenario, Phase: phase, Model: id, Status: "PASS"}
+	if rc.scenario == "setup" {
+		result.Cell = "setup"
+	}
+	defer func() {
+		if err != nil {
+			result.Status, result.Error = "FAIL", err.Error()
+			rc.client.cleanupFailed = true
+		}
+		rc.client.unloads = append(rc.client.unloads, result)
+		rc.artifacts.logf("model unload: cell=%s phase=%s model=%s status=%s error=%s", result.Cell, phase, id, result.Status, result.Error)
+	}()
+	if err != nil {
+		return fmt.Errorf("inspect model before unload %s: %w", id, err)
+	}
+	waitCtx, cancel := context.WithTimeout(rc, min(rc.cfg.Timeout, 15*time.Second))
+	defer cancel()
+	waitRC := *rc
+	waitRC.Context = waitCtx
+	for {
+		engine, pollErr := waitRC.engine(id)
+		if pollErr != nil {
+			return fmt.Errorf("wait for idle model %s: %w", id, pollErr)
+		}
+		if engine == nil || len(engine.Slots) == 0 {
+			return fmt.Errorf("cannot verify idle model %s before unload", id)
+		}
+		idle := true
+		for _, slot := range engine.Slots {
+			idle = idle && slot.Phase == "idle"
+		}
+		if idle {
+			break
+		}
+		select {
+		case <-waitCtx.Done():
+			return fmt.Errorf("model %s still active before unload: %w", id, waitCtx.Err())
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	var response struct {
+		ID     string `json:"id"`
+		Status string `json:"status"`
+	}
+	if _, err = rc.client.json(rc, rc.scenario, http.MethodPost, "/v1/kronk/models/unload", map[string]string{"id": id}, &response); err != nil {
+		return fmt.Errorf("unload %s: %w", id, err)
+	}
+	if response.ID != id || response.Status != "unloaded" {
+		return fmt.Errorf("unexpected unload response for %s: %+v", id, response)
+	}
+	loaded, err = rc.loadedModel(id)
+	if err != nil {
+		return fmt.Errorf("verify unload %s: %w", id, err)
+	}
+	if loaded != nil {
+		return fmt.Errorf("model %s remains loaded after unload", id)
+	}
+	if rc.client.managedModel == id {
+		rc.client.managedModel = ""
+	}
+	return nil
 }

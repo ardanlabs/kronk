@@ -21,6 +21,7 @@ type longContextCompletion struct {
 	TokensPerSecond float64 `json:"tokens_per_second"`
 	ElapsedSeconds  float64 `json:"elapsed_seconds"`
 	FinishReason    string  `json:"finish_reason,omitempty"`
+	Usage           usage   `json:"usage"`
 	output          string
 }
 
@@ -88,7 +89,7 @@ func runLongContext(rc *runContext) scenarioResult {
 		if err == nil {
 			err = verifyLongContextOutput(warm.output, markers, known)
 		}
-		if err == nil && warm.CachedTokens <= 0 {
+		if err == nil && rc.cfg.IMC == "on" && warm.CachedTokens <= 0 {
 			err = fmt.Errorf("warm repeat reported cached_tokens=0")
 		}
 		if err == nil && warm.output != cold.output {
@@ -186,11 +187,12 @@ func streamLongContext(rc *runContext, model, prompt string) (longContextComplet
 		"temperature": 0, "seed": rc.cfg.Seed, "max_tokens": rc.cfg.LongContextMaxTokens,
 		"enable_thinking": false, "messages": []map[string]any{{"role": "user", "content": prompt}},
 	}
-	stream, err := rc.client.stream(rc, rc.scenario, body, nil)
+	stream, err := rc.stream(rc, body, nil)
 	result := longContextCompletion{
 		TraceID: stream.TraceID, ResponseID: stream.ResponseID, PromptTokens: stream.Usage.PromptTokens,
 		CachedTokens: stream.Usage.PromptTokensDetails.CachedTokens, OutputTokens: stream.Usage.CompletionTokens,
 		ElapsedSeconds: seconds(stream.FinishedAt.Sub(stream.StartedAt)), FinishReason: stream.FinishReason, output: stream.Content,
+		Usage: stream.Usage,
 	}
 	if err != nil {
 		return result, err

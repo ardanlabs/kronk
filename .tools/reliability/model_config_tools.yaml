@@ -4,7 +4,10 @@
 #   KRONK_POOL_MODEL_CONFIG_FILE="$PWD/.tools/reliability/model_config_tools.yaml" make kronk-server-detach
 #
 # Keep these model IDs and slot counts aligned with .make/tools.mk. The tools
-# validate the active settings and fail rather than changing server state.
+# validate the active settings; they never rewrite the config or manage the server.
+# Named modes share model files, not loaded instances. The reliability runner
+# unloads selected tools aliases before runs, between models, and after scenarios.
+# Matrix cells run sequentially; cleanup failures stop the remaining workloads.
 version: 1
 
 kms:
@@ -14,25 +17,67 @@ kms:
 
 models:
   # Embedded MTP, four-slot batch load, and multimodal probes.
-  unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
+  unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/TOOLS-MTP-ON-IMC-ON: &embedded
     nseq-max: 4
     context-window: 131072
     queue-depth: 2
     incremental-cache: true
+    speculation: mtp
+
+  unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/TOOLS-MTP-ON-IMC-OFF:
+    <<: *embedded
+    incremental-cache: false
+
+  unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/TOOLS-MTP-OFF-IMC-ON:
+    <<: *embedded
+    speculation: disabled
+
+  unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/TOOLS-MTP-OFF-IMC-OFF:
+    <<: *embedded
+    speculation: disabled
+    incremental-cache: false
 
   # Companion own-KV MTP probe.
-  unsloth/Qwen3.8-27B-UD-Q4_K_XL/AGENT:
+  unsloth/Qwen3.8-27B-UD-Q4_K_XL/TOOLS-MTP-ON-IMC-ON: &companion
     nseq-max: 2
     context-window: 131072
     queue-depth: 2
     incremental-cache: true
+    speculation: mtp
+
+  unsloth/Qwen3.8-27B-UD-Q4_K_XL/TOOLS-MTP-ON-IMC-OFF:
+    <<: *companion
+    incremental-cache: false
+
+  unsloth/Qwen3.8-27B-UD-Q4_K_XL/TOOLS-MTP-OFF-IMC-ON:
+    <<: *companion
+    speculation: disabled
+
+  unsloth/Qwen3.8-27B-UD-Q4_K_XL/TOOLS-MTP-OFF-IMC-OFF:
+    <<: *companion
+    speculation: disabled
+    incremental-cache: false
 
   # Single-slot hybrid-state and long-context probes.
-  unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT:
+  unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/TOOLS-MTP-ON-IMC-ON: &hybrid
     nseq-max: 1
     context-window: 131072
     queue-depth: 2
     incremental-cache: true
+    speculation: mtp
+
+  unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/TOOLS-MTP-ON-IMC-OFF:
+    <<: *hybrid
+    incremental-cache: false
+
+  unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/TOOLS-MTP-OFF-IMC-ON:
+    <<: *hybrid
+    speculation: disabled
+
+  unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/TOOLS-MTP-OFF-IMC-OFF:
+    <<: *hybrid
+    speculation: disabled
+    incremental-cache: false
 
   # Separate lifecycle probe; intentionally excluded from test-load-all.
   unsloth/Qwen3-0.6B-Q8_0:
