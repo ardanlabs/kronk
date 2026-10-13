@@ -171,8 +171,9 @@ test-load-batch:
 # Same batch engine and matrix, with distinct image subjects per conversation.
 # Adds images at turn 1 and the midpoint (turn 11 by default), changing subjects.
 # Replays both image-bearing requests, then appends text turns retaining the images.
-# Verifies current-subject recognition, stale/foreign-subject rejection, deterministic
-# replay, mode-aware usage/cache reuse, and the unchanged generation-overlap criterion.
+# Verifies current-subject recognition, stale/foreign-subject rejection, conversation
+# markers, mode-aware usage/cache reuse, and the unchanged generation-overlap criterion.
+# Like text batch, does not require byte-identical output across requests.
 # Fixture paths and expected subjects must be comma-separated lists in matching order.
 test-load-batch-images: RELIABILITY_BATCH_WORKLOAD = images
 test-load-batch-images:

@@ -717,7 +717,7 @@ func TestBatchImageCommandModesAndHistory(t *testing.T) {
 		{"images", "off", "on", "draft", "MTP off: reported drafting"},
 		{"images", "off", "off", "stale", "foreign/stale subject"},
 		{"images", "off", "off", "foreign-marker", "foreign marker"},
-		{"images", "off", "off", "repeat", "deterministic image repeat differed"},
+		{"images", "on", "off", "repeat", ""},
 		{"images", "off", "off", "projection", "requires a projection"},
 	} {
 		t.Run(tc.workload+"-"+tc.mtp+"-"+tc.imc+"-"+tc.defect, func(t *testing.T) {
@@ -829,12 +829,12 @@ func TestBatchImageCommandModesAndHistory(t *testing.T) {
 						subject = firstSubject
 					}
 					marker := match[0]
-					if tc.defect == "foreign-marker" {
+					if tc.defect == "foreign-marker" && attempt > 0 {
 						marker = "BATCH-SESSION-99-TURN-1"
 					}
 					output := strings.TrimSpace(subject + " " + strings.Repeat(marker+" ", 8))
 					if tc.defect == "repeat" && attempt > 0 {
-						output += " extra"
+						output = strings.ToUpper(subject) + output[len(subject):] + " extra"
 					}
 					u := usage{PromptTokens: textTokens + imageCount*384, CompletionTokens: 96}
 					if (tc.imc == "on" && (turn > 1 || attempt > 0) && tc.defect != "no-cache") || tc.defect == "cache" {
