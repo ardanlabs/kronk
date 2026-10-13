@@ -121,12 +121,28 @@ export default function DocsSDKModel() {
               <p className="doc-description">VerifyArtifact checks modelFile against parsed integrity values. It reads the artifact itself but performs no sidecar I/O. The returned bool reports whether a new verification was produced and should be persisted by the caller.</p>
             </div>
 
+            <div className="doc-section" id="func-parsechannel">
+              <h4>ParseChannel</h4>
+              <pre className="code-block">
+                <code>func ParseChannel(value string) (Channel, error)</code>
+              </pre>
+              <p className="doc-description">ParseChannel parses a registered channel name.</p>
+            </div>
+
             <div className="doc-section" id="func-parsedecisionprotocol">
               <h4>ParseDecisionProtocol</h4>
               <pre className="code-block">
                 <code>func ParseDecisionProtocol(value string) (DecisionProtocol, error)</code>
               </pre>
               <p className="doc-description">ParseDecisionProtocol parses value and returns the corresponding DecisionProtocol when it exists.</p>
+            </div>
+
+            <div className="doc-section" id="func-parsedecisionquestiontype">
+              <h4>ParseDecisionQuestionType</h4>
+              <pre className="code-block">
+                <code>func ParseDecisionQuestionType(value string) (DecisionQuestionType, error)</code>
+              </pre>
+              <p className="doc-description">ParseDecisionQuestionType parses a known answer shape or an unset value.</p>
             </div>
 
             <div className="doc-section" id="func-parseflashattentiontype">
@@ -143,6 +159,14 @@ export default function DocsSDKModel() {
                 <code>func ParseGGMLType(value string) (GGMLType, error)</code>
               </pre>
               <p className="doc-description">ParseGGMLType parses a cache type name or a supported alias.</p>
+            </div>
+
+            <div className="doc-section" id="func-parseimcsessionstate">
+              <h4>ParseIMCSessionState</h4>
+              <pre className="code-block">
+                <code>func ParseIMCSessionState(value string) (IMCSessionState, error)</code>
+              </pre>
+              <p className="doc-description">ParseIMCSessionState parses a known state or an unset value.</p>
             </div>
 
             <div className="doc-section" id="func-parsekvcachemode">
@@ -169,6 +193,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">ParseLoadMode parses a load mode name or direct-I/O alias.</p>
             </div>
 
+            <div className="doc-section" id="func-parsemediatype">
+              <h4>ParseMediaType</h4>
+              <pre className="code-block">
+                <code>func ParseMediaType(value string) (MediaType, error)</code>
+              </pre>
+              <p className="doc-description">ParseMediaType parses a registered media name.</p>
+            </div>
+
             <div className="doc-section" id="func-parsemoemode">
               <h4>ParseMoEMode</h4>
               <pre className="code-block">
@@ -192,6 +224,22 @@ export default function DocsSDKModel() {
                 <code>func DetectModelTypeFromFiles(modelFiles []string) (ModelType, string, error)</code>
               </pre>
               <p className="doc-description">DetectModelTypeFromFiles loads a model from the given GGUF files, determines the architecture type, and immediately frees the model. It returns the ModelType, the raw general.architecture string from the GGUF metadata, and any error encountered during loading.</p>
+            </div>
+
+            <div className="doc-section" id="func-parsemodeltype">
+              <h4>ParseModelType</h4>
+              <pre className="code-block">
+                <code>func ParseModelType(value string) (ModelType, error)</code>
+              </pre>
+              <p className="doc-description">ParseModelType parses a registered architecture name.</p>
+            </div>
+
+            <div className="doc-section" id="func-parsenumastrategy">
+              <h4>ParseNUMAStrategy</h4>
+              <pre className="code-block">
+                <code>func ParseNUMAStrategy(value string) (NUMAStrategy, error)</code>
+              </pre>
+              <p className="doc-description">ParseNUMAStrategy parses a registered strategy, including disabled empty.</p>
             </div>
 
             <div className="doc-section" id="func-parseropescalingtype">
@@ -346,9 +394,11 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="type-channel">
               <h4>Channel</h4>
               <pre className="code-block">
-                <code>{`type Channel uint8`}</code>
+                <code>{`type Channel struct {
+	// Has unexported fields.
+}`}</code>
               </pre>
-              <p className="doc-description">Channel labels the semantic class of an emitted token, mapping 1:1 to the OpenAI chat/completions delta fields produced by the SSE writer.</p>
+              <p className="doc-description">Channel labels emitted tokens. Its zero value is none.</p>
             </div>
 
             <div className="doc-section" id="type-chatresponse">
@@ -430,7 +480,7 @@ export default function DocsSDKModel() {
 	PtrNThreads                *int
 	PtrNThreadsBatch           *int
 	PtrPrefillBatchSize        *int
-	NUMA                       string
+	NUMA                       NUMAStrategy
 	PtrOffloadKQV              *bool
 	PtrOpOffload               *bool
 	ProjFile                   string
@@ -604,9 +654,11 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="type-decisionquestiontype">
               <h4>DecisionQuestionType</h4>
               <pre className="code-block">
-                <code>{`type DecisionQuestionType string`}</code>
+                <code>{`type DecisionQuestionType struct {
+	// Has unexported fields.
+}`}</code>
               </pre>
-              <p className="doc-description">DecisionQuestionType identifies the answer shape expected for a question.</p>
+              <p className="doc-description">DecisionQuestionType identifies the answer shape. Its zero value is unset.</p>
             </div>
 
             <div className="doc-section" id="type-decisionrequest">
@@ -775,9 +827,11 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="type-imcsessionstate">
               <h4>IMCSessionState</h4>
               <pre className="code-block">
-                <code>{`type IMCSessionState string`}</code>
+                <code>{`type IMCSessionState struct {
+	// Has unexported fields.
+}`}</code>
               </pre>
-              <p className="doc-description">IMCSessionState describes the current state of an allocated IMC cache entry.</p>
+              <p className="doc-description">IMCSessionState describes an allocated IMC entry. Its zero value is unset.</p>
             </div>
 
             <div className="doc-section" id="type-imcsystemcachedetail">
@@ -847,8 +901,11 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="type-mediatype">
               <h4>MediaType</h4>
               <pre className="code-block">
-                <code>{`type MediaType int`}</code>
+                <code>{`type MediaType struct {
+	// Has unexported fields.
+}`}</code>
               </pre>
+              <p className="doc-description">MediaType identifies input media. Its zero value is none.</p>
             </div>
 
             <div className="doc-section" id="type-moeconfig">
@@ -922,9 +979,21 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="type-modeltype">
               <h4>ModelType</h4>
               <pre className="code-block">
-                <code>{`type ModelType uint8`}</code>
+                <code>{`type ModelType struct {
+	// Has unexported fields.
+}`}</code>
               </pre>
-              <p className="doc-description">ModelType represents the model architecture for batch engine state management.</p>
+              <p className="doc-description">ModelType represents the model architecture. Its zero value is dense.</p>
+            </div>
+
+            <div className="doc-section" id="type-numastrategy">
+              <h4>NUMAStrategy</h4>
+              <pre className="code-block">
+                <code>{`type NUMAStrategy struct {
+	// Has unexported fields.
+}`}</code>
+              </pre>
+              <p className="doc-description">NUMAStrategy controls NUMA placement. Its zero value disables NUMA.</p>
             </div>
 
             <div className="doc-section" id="type-option">
@@ -1425,6 +1494,78 @@ export default function DocsSDKModel() {
           <div className="card" id="methods">
             <h3>Methods</h3>
 
+            <div className="doc-section" id="method-channel-equal">
+              <h4>Channel.Equal</h4>
+              <pre className="code-block">
+                <code>func (t Channel) Equal(other Channel) bool</code>
+              </pre>
+              <p className="doc-description">Equal reports whether the values match.</p>
+            </div>
+
+            <div className="doc-section" id="method-channel-iszero">
+              <h4>Channel.IsZero</h4>
+              <pre className="code-block">
+                <code>func (t Channel) IsZero() bool</code>
+              </pre>
+              <p className="doc-description">IsZero reports whether the channel is none.</p>
+            </div>
+
+            <div className="doc-section" id="method-channel-marshaljson">
+              <h4>Channel.MarshalJSON</h4>
+              <pre className="code-block">
+                <code>func (t Channel) MarshalJSON() ([]byte, error)</code>
+              </pre>
+              <p className="doc-description">MarshalJSON preserves the numeric wire representation.</p>
+            </div>
+
+            <div className="doc-section" id="method-channel-marshaltext">
+              <h4>Channel.MarshalText</h4>
+              <pre className="code-block">
+                <code>func (t Channel) MarshalText() ([]byte, error)</code>
+              </pre>
+              <p className="doc-description">MarshalText serializes the channel name.</p>
+            </div>
+
+            <div className="doc-section" id="method-channel-marshalyaml">
+              <h4>Channel.MarshalYAML</h4>
+              <pre className="code-block">
+                <code>func (t Channel) MarshalYAML() (any, error)</code>
+              </pre>
+              <p className="doc-description">MarshalYAML preserves the numeric wire representation.</p>
+            </div>
+
+            <div className="doc-section" id="method-channel-string">
+              <h4>Channel.String</h4>
+              <pre className="code-block">
+                <code>func (t Channel) String() string</code>
+              </pre>
+              <p className="doc-description">String returns the channel name.</p>
+            </div>
+
+            <div className="doc-section" id="method-channel-unmarshaljson">
+              <h4>Channel.UnmarshalJSON</h4>
+              <pre className="code-block">
+                <code>func (t *Channel) UnmarshalJSON(data []byte) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalJSON validates a numeric wire value.</p>
+            </div>
+
+            <div className="doc-section" id="method-channel-unmarshaltext">
+              <h4>Channel.UnmarshalText</h4>
+              <pre className="code-block">
+                <code>func (t *Channel) UnmarshalText(data []byte) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalText parses a registered channel name.</p>
+            </div>
+
+            <div className="doc-section" id="method-channel-unmarshalyaml">
+              <h4>Channel.UnmarshalYAML</h4>
+              <pre className="code-block">
+                <code>func (t *Channel) UnmarshalYAML(unmarshal func(any) error) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalYAML validates a numeric wire value.</p>
+            </div>
+
             <div className="doc-section" id="method-choice-finishreason">
               <h4>Choice.FinishReason</h4>
               <pre className="code-block">
@@ -1755,6 +1896,46 @@ export default function DocsSDKModel() {
               <p className="doc-description">UnmarshalText parses serialized text into a known DecisionProtocol.</p>
             </div>
 
+            <div className="doc-section" id="method-decisionquestiontype-equal">
+              <h4>DecisionQuestionType.Equal</h4>
+              <pre className="code-block">
+                <code>func (t DecisionQuestionType) Equal(other DecisionQuestionType) bool</code>
+              </pre>
+              <p className="doc-description">Equal reports whether the values match.</p>
+            </div>
+
+            <div className="doc-section" id="method-decisionquestiontype-iszero">
+              <h4>DecisionQuestionType.IsZero</h4>
+              <pre className="code-block">
+                <code>func (t DecisionQuestionType) IsZero() bool</code>
+              </pre>
+              <p className="doc-description">IsZero reports whether the answer shape is unset.</p>
+            </div>
+
+            <div className="doc-section" id="method-decisionquestiontype-marshaltext">
+              <h4>DecisionQuestionType.MarshalText</h4>
+              <pre className="code-block">
+                <code>func (t DecisionQuestionType) MarshalText() ([]byte, error)</code>
+              </pre>
+              <p className="doc-description">MarshalText serializes the answer shape name.</p>
+            </div>
+
+            <div className="doc-section" id="method-decisionquestiontype-string">
+              <h4>DecisionQuestionType.String</h4>
+              <pre className="code-block">
+                <code>func (t DecisionQuestionType) String() string</code>
+              </pre>
+              <p className="doc-description">String returns the answer shape name.</p>
+            </div>
+
+            <div className="doc-section" id="method-decisionquestiontype-unmarshaltext">
+              <h4>DecisionQuestionType.UnmarshalText</h4>
+              <pre className="code-block">
+                <code>func (t *DecisionQuestionType) UnmarshalText(data []byte) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalText parses a known answer shape or an unset value.</p>
+            </div>
+
             <div className="doc-section" id="method-decisionstatevalue-marshaljson">
               <h4>DecisionStateValue.MarshalJSON</h4>
               <pre className="code-block">
@@ -1943,6 +2124,46 @@ export default function DocsSDKModel() {
                 <code>func (t *GGMLType) UnmarshalYAML(unmarshal func(any) error) error</code>
               </pre>
               <p className="doc-description">UnmarshalYAML implements yaml.Unmarshaler.</p>
+            </div>
+
+            <div className="doc-section" id="method-imcsessionstate-equal">
+              <h4>IMCSessionState.Equal</h4>
+              <pre className="code-block">
+                <code>func (t IMCSessionState) Equal(other IMCSessionState) bool</code>
+              </pre>
+              <p className="doc-description">Equal reports whether the values match.</p>
+            </div>
+
+            <div className="doc-section" id="method-imcsessionstate-iszero">
+              <h4>IMCSessionState.IsZero</h4>
+              <pre className="code-block">
+                <code>func (t IMCSessionState) IsZero() bool</code>
+              </pre>
+              <p className="doc-description">IsZero reports whether the state is unset.</p>
+            </div>
+
+            <div className="doc-section" id="method-imcsessionstate-marshaltext">
+              <h4>IMCSessionState.MarshalText</h4>
+              <pre className="code-block">
+                <code>func (t IMCSessionState) MarshalText() ([]byte, error)</code>
+              </pre>
+              <p className="doc-description">MarshalText serializes the state name.</p>
+            </div>
+
+            <div className="doc-section" id="method-imcsessionstate-string">
+              <h4>IMCSessionState.String</h4>
+              <pre className="code-block">
+                <code>func (t IMCSessionState) String() string</code>
+              </pre>
+              <p className="doc-description">String returns the state name.</p>
+            </div>
+
+            <div className="doc-section" id="method-imcsessionstate-unmarshaltext">
+              <h4>IMCSessionState.UnmarshalText</h4>
+              <pre className="code-block">
+                <code>func (t *IMCSessionState) UnmarshalText(data []byte) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalText parses a known state or an unset value.</p>
             </div>
 
             <div className="doc-section" id="method-kvcachemode-equal">
@@ -2177,6 +2398,78 @@ export default function DocsSDKModel() {
               <p className="doc-description">UnmarshalYAML implements yaml.Unmarshaler.</p>
             </div>
 
+            <div className="doc-section" id="method-mediatype-equal">
+              <h4>MediaType.Equal</h4>
+              <pre className="code-block">
+                <code>func (t MediaType) Equal(other MediaType) bool</code>
+              </pre>
+              <p className="doc-description">Equal reports whether the values match.</p>
+            </div>
+
+            <div className="doc-section" id="method-mediatype-iszero">
+              <h4>MediaType.IsZero</h4>
+              <pre className="code-block">
+                <code>func (t MediaType) IsZero() bool</code>
+              </pre>
+              <p className="doc-description">IsZero reports whether there is no media.</p>
+            </div>
+
+            <div className="doc-section" id="method-mediatype-marshaljson">
+              <h4>MediaType.MarshalJSON</h4>
+              <pre className="code-block">
+                <code>func (t MediaType) MarshalJSON() ([]byte, error)</code>
+              </pre>
+              <p className="doc-description">MarshalJSON preserves the numeric wire representation.</p>
+            </div>
+
+            <div className="doc-section" id="method-mediatype-marshaltext">
+              <h4>MediaType.MarshalText</h4>
+              <pre className="code-block">
+                <code>func (t MediaType) MarshalText() ([]byte, error)</code>
+              </pre>
+              <p className="doc-description">MarshalText serializes the media name.</p>
+            </div>
+
+            <div className="doc-section" id="method-mediatype-marshalyaml">
+              <h4>MediaType.MarshalYAML</h4>
+              <pre className="code-block">
+                <code>func (t MediaType) MarshalYAML() (any, error)</code>
+              </pre>
+              <p className="doc-description">MarshalYAML preserves the numeric wire representation.</p>
+            </div>
+
+            <div className="doc-section" id="method-mediatype-string">
+              <h4>MediaType.String</h4>
+              <pre className="code-block">
+                <code>func (t MediaType) String() string</code>
+              </pre>
+              <p className="doc-description">String returns the media name.</p>
+            </div>
+
+            <div className="doc-section" id="method-mediatype-unmarshaljson">
+              <h4>MediaType.UnmarshalJSON</h4>
+              <pre className="code-block">
+                <code>func (t *MediaType) UnmarshalJSON(data []byte) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalJSON validates a numeric wire value.</p>
+            </div>
+
+            <div className="doc-section" id="method-mediatype-unmarshaltext">
+              <h4>MediaType.UnmarshalText</h4>
+              <pre className="code-block">
+                <code>func (t *MediaType) UnmarshalText(data []byte) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalText parses a registered media name.</p>
+            </div>
+
+            <div className="doc-section" id="method-mediatype-unmarshalyaml">
+              <h4>MediaType.UnmarshalYAML</h4>
+              <pre className="code-block">
+                <code>func (t *MediaType) UnmarshalYAML(unmarshal func(any) error) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalYAML validates a numeric wire value.</p>
+            </div>
+
             <div className="doc-section" id="method-moeconfig-keepexpertsongpufortopnlayers">
               <h4>MoEConfig.KeepExpertsOnGPUForTopNLayers</h4>
               <pre className="code-block">
@@ -2330,12 +2623,116 @@ export default function DocsSDKModel() {
               </pre>
             </div>
 
+            <div className="doc-section" id="method-modeltype-equal">
+              <h4>ModelType.Equal</h4>
+              <pre className="code-block">
+                <code>func (t ModelType) Equal(other ModelType) bool</code>
+              </pre>
+              <p className="doc-description">Equal reports whether the values match.</p>
+            </div>
+
+            <div className="doc-section" id="method-modeltype-iszero">
+              <h4>ModelType.IsZero</h4>
+              <pre className="code-block">
+                <code>func (t ModelType) IsZero() bool</code>
+              </pre>
+              <p className="doc-description">IsZero reports whether the architecture is dense.</p>
+            </div>
+
+            <div className="doc-section" id="method-modeltype-marshaljson">
+              <h4>ModelType.MarshalJSON</h4>
+              <pre className="code-block">
+                <code>func (t ModelType) MarshalJSON() ([]byte, error)</code>
+              </pre>
+              <p className="doc-description">MarshalJSON preserves the numeric wire representation.</p>
+            </div>
+
+            <div className="doc-section" id="method-modeltype-marshaltext">
+              <h4>ModelType.MarshalText</h4>
+              <pre className="code-block">
+                <code>func (t ModelType) MarshalText() ([]byte, error)</code>
+              </pre>
+              <p className="doc-description">MarshalText serializes the architecture name.</p>
+            </div>
+
+            <div className="doc-section" id="method-modeltype-marshalyaml">
+              <h4>ModelType.MarshalYAML</h4>
+              <pre className="code-block">
+                <code>func (t ModelType) MarshalYAML() (any, error)</code>
+              </pre>
+              <p className="doc-description">MarshalYAML preserves the numeric wire representation.</p>
+            </div>
+
             <div className="doc-section" id="method-modeltype-string">
               <h4>ModelType.String</h4>
               <pre className="code-block">
-                <code>func (mt ModelType) String() string</code>
+                <code>func (t ModelType) String() string</code>
               </pre>
-              <p className="doc-description">String returns a human-readable name for the model type.</p>
+              <p className="doc-description">String returns the model architecture name.</p>
+            </div>
+
+            <div className="doc-section" id="method-modeltype-unmarshaljson">
+              <h4>ModelType.UnmarshalJSON</h4>
+              <pre className="code-block">
+                <code>func (t *ModelType) UnmarshalJSON(data []byte) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalJSON validates a numeric wire value.</p>
+            </div>
+
+            <div className="doc-section" id="method-modeltype-unmarshaltext">
+              <h4>ModelType.UnmarshalText</h4>
+              <pre className="code-block">
+                <code>func (t *ModelType) UnmarshalText(data []byte) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalText parses a registered architecture name.</p>
+            </div>
+
+            <div className="doc-section" id="method-modeltype-unmarshalyaml">
+              <h4>ModelType.UnmarshalYAML</h4>
+              <pre className="code-block">
+                <code>func (t *ModelType) UnmarshalYAML(unmarshal func(any) error) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalYAML validates a numeric wire value.</p>
+            </div>
+
+            <div className="doc-section" id="method-numastrategy-equal">
+              <h4>NUMAStrategy.Equal</h4>
+              <pre className="code-block">
+                <code>func (t NUMAStrategy) Equal(other NUMAStrategy) bool</code>
+              </pre>
+              <p className="doc-description">Equal reports whether the values match.</p>
+            </div>
+
+            <div className="doc-section" id="method-numastrategy-iszero">
+              <h4>NUMAStrategy.IsZero</h4>
+              <pre className="code-block">
+                <code>func (t NUMAStrategy) IsZero() bool</code>
+              </pre>
+              <p className="doc-description">IsZero reports whether NUMA is disabled.</p>
+            </div>
+
+            <div className="doc-section" id="method-numastrategy-marshaltext">
+              <h4>NUMAStrategy.MarshalText</h4>
+              <pre className="code-block">
+                <code>func (t NUMAStrategy) MarshalText() ([]byte, error)</code>
+              </pre>
+              <p className="doc-description">MarshalText serializes the strategy name.</p>
+            </div>
+
+            <div className="doc-section" id="method-numastrategy-string">
+              <h4>NUMAStrategy.String</h4>
+              <pre className="code-block">
+                <code>func (t NUMAStrategy) String() string</code>
+              </pre>
+              <p className="doc-description">String returns the strategy name, empty when disabled.</p>
+            </div>
+
+            <div className="doc-section" id="method-numastrategy-unmarshaltext">
+              <h4>NUMAStrategy.UnmarshalText</h4>
+              <pre className="code-block">
+                <code>func (t *NUMAStrategy) UnmarshalText(data []byte) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalText parses a registered strategy.</p>
             </div>
 
             <div className="doc-section" id="method-params-string">
@@ -2547,19 +2944,6 @@ export default function DocsSDKModel() {
 
           <div className="card" id="constants">
             <h3>Constants</h3>
-
-            <div className="doc-section" id="const-numadisabled">
-              <h4>NUMADisabled</h4>
-              <pre className="code-block">
-                <code>{`const (
-	NUMADisabled   = ""
-	NUMADistribute = "distribute"
-	NUMAIsolate    = "isolate"
-	NUMANumactl    = "numactl"
-	NUMAMirror     = "mirror"
-)`}</code>
-              </pre>
-            </div>
 
             <div className="doc-section" id="const-objectchatunknown">
               <h4>ObjectChatUnknown</h4>
@@ -2783,6 +3167,14 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>{`var (`}</code>
               </pre>
+              <p className="doc-description">// IMCSessionStateActive means a request holds the entry's reservation. IMCSessionStateActive = newIMCSessionState("active") // IMCSessionStateIdle means the entry contains a reusable snapshot. IMCSessionStateIdle = newIMCSessionState("idle") // IMCSessionStateEmpty means the entry has no snapshot. IMCSessionStateEmpty = newIMCSessionState("empty")</p>
+            </div>
+
+            <div className="doc-section" id="var-variable">
+              <h4>Variable</h4>
+              <pre className="code-block">
+                <code>{`var (`}</code>
+              </pre>
               <p className="doc-description">// GGMLTypeAuto uses the native default. GGMLTypeAuto = newGGMLType("auto") // GGMLTypeF32 uses 32-bit floating point. GGMLTypeF32 = newGGMLType("f32") // GGMLTypeF16 uses 16-bit floating point. GGMLTypeF16 = newGGMLType("f16") // GGMLTypeQ4_0 uses 4-bit quantization (type 0). GGMLTypeQ4_0 = newGGMLType("q4_0") // GGMLTypeQ4_1 uses 4-bit quantization (type 1). GGMLTypeQ4_1 = newGGMLType("q4_1") // GGMLTypeQ5_0 uses 5-bit quantization (type 0). GGMLTypeQ5_0 = newGGMLType("q5_0") // GGMLTypeQ5_1 uses 5-bit quantization (type 1). GGMLTypeQ5_1 = newGGMLType("q5_1") // GGMLTypeQ8_0 uses 8-bit quantization. GGMLTypeQ8_0 = newGGMLType("q8_0") // GGMLTypeBF16 uses brain floating point 16-bit. GGMLTypeBF16 = newGGMLType("bf16")</p>
             </div>
 
@@ -2872,6 +3264,46 @@ export default function DocsSDKModel() {
               <p className="doc-description">// SpeculationAuto selects a configured classic drafter or available MTP. SpeculationAuto = internalspec.ModeAuto // SpeculationDisabled runs target-only generation. SpeculationDisabled = internalspec.ModeDisabled // SpeculationClassic requires a separate draft model. SpeculationClassic = internalspec.ModeClassic // SpeculationMTP requires a companion or embedded MTP implementation. SpeculationMTP = internalspec.ModeMTP</p>
             </div>
 
+            <div className="doc-section" id="var-variable">
+              <h4>Variable</h4>
+              <pre className="code-block">
+                <code>{`var (`}</code>
+              </pre>
+              <p className="doc-description">// DecisionQuestionTypeChoice selects one named option. DecisionQuestionTypeChoice = newDecisionQuestionType("choice") // DecisionQuestionTypeScore rates state against ordered levels. DecisionQuestionTypeScore = newDecisionQuestionType("score") // DecisionQuestionTypeNoul returns a calibrated yes probability. DecisionQuestionTypeNoul = newDecisionQuestionType("noul")</p>
+            </div>
+
+            <div className="doc-section" id="var-variable">
+              <h4>Variable</h4>
+              <pre className="code-block">
+                <code>{`var (`}</code>
+              </pre>
+              <p className="doc-description">// MediaTypeNone identifies text-only input. MediaTypeNone = newMediaType("none", 0) // MediaTypeVision identifies visual input. MediaTypeVision = newMediaType("vision", 1) // MediaTypeAudio identifies audio input. MediaTypeAudio = newMediaType("audio", 2)</p>
+            </div>
+
+            <div className="doc-section" id="var-variable">
+              <h4>Variable</h4>
+              <pre className="code-block">
+                <code>{`var (`}</code>
+              </pre>
+              <p className="doc-description">// ModelTypeDense uses partial-range state cleanup. ModelTypeDense = newModelType("dense", 0) // ModelTypeMoE uses expert routing and partial-range state cleanup. ModelTypeMoE = newModelType("moe", 1) // ModelTypeHybrid requires snapshot/restore for recurrent state. ModelTypeHybrid = newModelType("hybrid", 2)</p>
+            </div>
+
+            <div className="doc-section" id="var-variable">
+              <h4>Variable</h4>
+              <pre className="code-block">
+                <code>{`var (`}</code>
+              </pre>
+              <p className="doc-description">// NUMADisabled disables NUMA placement. NUMADisabled = newNUMAStrategy("") // NUMADistribute distributes work across nodes. NUMADistribute = newNUMAStrategy("distribute") // NUMAIsolate restricts work to one node. NUMAIsolate = newNUMAStrategy("isolate") // NUMANumactl uses the numactl configuration. NUMANumactl = newNUMAStrategy("numactl") // NUMAMirror mirrors work across nodes. NUMAMirror = newNUMAStrategy("mirror")</p>
+            </div>
+
+            <div className="doc-section" id="var-variable">
+              <h4>Variable</h4>
+              <pre className="code-block">
+                <code>{`var (`}</code>
+              </pre>
+              <p className="doc-description">// ChannelNone identifies a structural marker, counted but not surfaced. ChannelNone = newChannel("none", 0) // ChannelReasoning identifies reasoning_content deltas. ChannelReasoning = newChannel("reasoning", 1) // ChannelAnswer identifies content deltas. ChannelAnswer = newChannel("answer", 2) // ChannelTool identifies content accumulated for ToolCall parsing. ChannelTool = newChannel("tool", 3)</p>
+            </div>
+
             <div className="doc-section" id="var-errdecisionbudget">
               <h4>ErrDecisionBudget</h4>
               <pre className="code-block">
@@ -2937,15 +3369,21 @@ export default function DocsSDKModel() {
                 <li><a href="#func-validatemessages">ValidateMessages</a></li>
                 <li><a href="#func-newgrammarsampler">NewGrammarSampler</a></li>
                 <li><a href="#func-verifyartifact">VerifyArtifact</a></li>
+                <li><a href="#func-parsechannel">ParseChannel</a></li>
                 <li><a href="#func-parsedecisionprotocol">ParseDecisionProtocol</a></li>
+                <li><a href="#func-parsedecisionquestiontype">ParseDecisionQuestionType</a></li>
                 <li><a href="#func-parseflashattentiontype">ParseFlashAttentionType</a></li>
                 <li><a href="#func-parseggmltype">ParseGGMLType</a></li>
+                <li><a href="#func-parseimcsessionstate">ParseIMCSessionState</a></li>
                 <li><a href="#func-parsekvcachemode">ParseKVCacheMode</a></li>
                 <li><a href="#func-parselazymode">ParseLazyMode</a></li>
                 <li><a href="#func-parseloadmode">ParseLoadMode</a></li>
+                <li><a href="#func-parsemediatype">ParseMediaType</a></li>
                 <li><a href="#func-parsemoemode">ParseMoEMode</a></li>
                 <li><a href="#func-newmodel">NewModel</a></li>
                 <li><a href="#func-detectmodeltypefromfiles">DetectModelTypeFromFiles</a></li>
+                <li><a href="#func-parsemodeltype">ParseModelType</a></li>
+                <li><a href="#func-parsenumastrategy">ParseNUMAStrategy</a></li>
                 <li><a href="#func-parseropescalingtype">ParseRopeScalingType</a></li>
                 <li><a href="#func-parsespeculationmode">ParseSpeculationMode</a></li>
                 <li><a href="#func-parsesplitmode">ParseSplitMode</a></li>
@@ -3001,6 +3439,7 @@ export default function DocsSDKModel() {
                 <li><a href="#type-model">Model</a></li>
                 <li><a href="#type-modelinfo">ModelInfo</a></li>
                 <li><a href="#type-modeltype">ModelType</a></li>
+                <li><a href="#type-numastrategy">NUMAStrategy</a></li>
                 <li><a href="#type-option">Option</a></li>
                 <li><a href="#type-params">Params</a></li>
                 <li><a href="#type-paramsadjuster">ParamsAdjuster</a></li>
@@ -3038,6 +3477,15 @@ export default function DocsSDKModel() {
             <div className="doc-index-section">
               <a href="#methods" className="doc-index-header">Methods</a>
               <ul>
+                <li><a href="#method-channel-equal">Channel.Equal</a></li>
+                <li><a href="#method-channel-iszero">Channel.IsZero</a></li>
+                <li><a href="#method-channel-marshaljson">Channel.MarshalJSON</a></li>
+                <li><a href="#method-channel-marshaltext">Channel.MarshalText</a></li>
+                <li><a href="#method-channel-marshalyaml">Channel.MarshalYAML</a></li>
+                <li><a href="#method-channel-string">Channel.String</a></li>
+                <li><a href="#method-channel-unmarshaljson">Channel.UnmarshalJSON</a></li>
+                <li><a href="#method-channel-unmarshaltext">Channel.UnmarshalText</a></li>
+                <li><a href="#method-channel-unmarshalyaml">Channel.UnmarshalYAML</a></li>
                 <li><a href="#method-choice-finishreason">Choice.FinishReason</a></li>
                 <li><a href="#method-config-admissiontimeout">Config.AdmissionTimeout</a></li>
                 <li><a href="#method-config-batchbasesize">Config.BatchBaseSize</a></li>
@@ -3082,6 +3530,11 @@ export default function DocsSDKModel() {
                 <li><a href="#method-decisionprotocol-marshaltext">DecisionProtocol.MarshalText</a></li>
                 <li><a href="#method-decisionprotocol-string">DecisionProtocol.String</a></li>
                 <li><a href="#method-decisionprotocol-unmarshaltext">DecisionProtocol.UnmarshalText</a></li>
+                <li><a href="#method-decisionquestiontype-equal">DecisionQuestionType.Equal</a></li>
+                <li><a href="#method-decisionquestiontype-iszero">DecisionQuestionType.IsZero</a></li>
+                <li><a href="#method-decisionquestiontype-marshaltext">DecisionQuestionType.MarshalText</a></li>
+                <li><a href="#method-decisionquestiontype-string">DecisionQuestionType.String</a></li>
+                <li><a href="#method-decisionquestiontype-unmarshaltext">DecisionQuestionType.UnmarshalText</a></li>
                 <li><a href="#method-decisionstatevalue-marshaljson">DecisionStateValue.MarshalJSON</a></li>
                 <li><a href="#method-draftmodelconfig-isseparate">DraftModelConfig.IsSeparate</a></li>
                 <li><a href="#method-draftmodelconfig-maingpu">DraftModelConfig.MainGPU</a></li>
@@ -3106,6 +3559,11 @@ export default function DocsSDKModel() {
                 <li><a href="#method-ggmltype-unmarshaljson">GGMLType.UnmarshalJSON</a></li>
                 <li><a href="#method-ggmltype-unmarshaltext">GGMLType.UnmarshalText</a></li>
                 <li><a href="#method-ggmltype-unmarshalyaml">GGMLType.UnmarshalYAML</a></li>
+                <li><a href="#method-imcsessionstate-equal">IMCSessionState.Equal</a></li>
+                <li><a href="#method-imcsessionstate-iszero">IMCSessionState.IsZero</a></li>
+                <li><a href="#method-imcsessionstate-marshaltext">IMCSessionState.MarshalText</a></li>
+                <li><a href="#method-imcsessionstate-string">IMCSessionState.String</a></li>
+                <li><a href="#method-imcsessionstate-unmarshaltext">IMCSessionState.UnmarshalText</a></li>
                 <li><a href="#method-kvcachemode-equal">KVCacheMode.Equal</a></li>
                 <li><a href="#method-kvcachemode-iszero">KVCacheMode.IsZero</a></li>
                 <li><a href="#method-kvcachemode-marshaljson">KVCacheMode.MarshalJSON</a></li>
@@ -3135,6 +3593,15 @@ export default function DocsSDKModel() {
                 <li><a href="#method-loadmode-unmarshaljson">LoadMode.UnmarshalJSON</a></li>
                 <li><a href="#method-loadmode-unmarshaltext">LoadMode.UnmarshalText</a></li>
                 <li><a href="#method-loadmode-unmarshalyaml">LoadMode.UnmarshalYAML</a></li>
+                <li><a href="#method-mediatype-equal">MediaType.Equal</a></li>
+                <li><a href="#method-mediatype-iszero">MediaType.IsZero</a></li>
+                <li><a href="#method-mediatype-marshaljson">MediaType.MarshalJSON</a></li>
+                <li><a href="#method-mediatype-marshaltext">MediaType.MarshalText</a></li>
+                <li><a href="#method-mediatype-marshalyaml">MediaType.MarshalYAML</a></li>
+                <li><a href="#method-mediatype-string">MediaType.String</a></li>
+                <li><a href="#method-mediatype-unmarshaljson">MediaType.UnmarshalJSON</a></li>
+                <li><a href="#method-mediatype-unmarshaltext">MediaType.UnmarshalText</a></li>
+                <li><a href="#method-mediatype-unmarshalyaml">MediaType.UnmarshalYAML</a></li>
                 <li><a href="#method-moeconfig-keepexpertsongpufortopnlayers">MoEConfig.KeepExpertsOnGPUForTopNLayers</a></li>
                 <li><a href="#method-moemode-equal">MoEMode.Equal</a></li>
                 <li><a href="#method-moemode-iszero">MoEMode.IsZero</a></li>
@@ -3154,7 +3621,20 @@ export default function DocsSDKModel() {
                 <li><a href="#method-model-tokenize">Model.Tokenize</a></li>
                 <li><a href="#method-model-unload">Model.Unload</a></li>
                 <li><a href="#method-modelinfo-string">ModelInfo.String</a></li>
+                <li><a href="#method-modeltype-equal">ModelType.Equal</a></li>
+                <li><a href="#method-modeltype-iszero">ModelType.IsZero</a></li>
+                <li><a href="#method-modeltype-marshaljson">ModelType.MarshalJSON</a></li>
+                <li><a href="#method-modeltype-marshaltext">ModelType.MarshalText</a></li>
+                <li><a href="#method-modeltype-marshalyaml">ModelType.MarshalYAML</a></li>
                 <li><a href="#method-modeltype-string">ModelType.String</a></li>
+                <li><a href="#method-modeltype-unmarshaljson">ModelType.UnmarshalJSON</a></li>
+                <li><a href="#method-modeltype-unmarshaltext">ModelType.UnmarshalText</a></li>
+                <li><a href="#method-modeltype-unmarshalyaml">ModelType.UnmarshalYAML</a></li>
+                <li><a href="#method-numastrategy-equal">NUMAStrategy.Equal</a></li>
+                <li><a href="#method-numastrategy-iszero">NUMAStrategy.IsZero</a></li>
+                <li><a href="#method-numastrategy-marshaltext">NUMAStrategy.MarshalText</a></li>
+                <li><a href="#method-numastrategy-string">NUMAStrategy.String</a></li>
+                <li><a href="#method-numastrategy-unmarshaltext">NUMAStrategy.UnmarshalText</a></li>
                 <li><a href="#method-params-string">Params.String</a></li>
                 <li><a href="#method-responsemessage-marshaljson">ResponseMessage.MarshalJSON</a></li>
                 <li><a href="#method-ropescalingtype-equal">RopeScalingType.Equal</a></li>
@@ -3186,7 +3666,6 @@ export default function DocsSDKModel() {
             <div className="doc-index-section">
               <a href="#constants" className="doc-index-header">Constants</a>
               <ul>
-                <li><a href="#const-numadisabled">NUMADisabled</a></li>
                 <li><a href="#const-objectchatunknown">ObjectChatUnknown</a></li>
                 <li><a href="#const-roleuser">RoleUser</a></li>
                 <li><a href="#const-finishreasonstop">FinishReasonStop</a></li>
@@ -3201,6 +3680,12 @@ export default function DocsSDKModel() {
             <div className="doc-index-section">
               <a href="#variables" className="doc-index-header">Variables</a>
               <ul>
+                <li><a href="#var-variable">Variable</a></li>
+                <li><a href="#var-variable">Variable</a></li>
+                <li><a href="#var-variable">Variable</a></li>
+                <li><a href="#var-variable">Variable</a></li>
+                <li><a href="#var-variable">Variable</a></li>
+                <li><a href="#var-variable">Variable</a></li>
                 <li><a href="#var-variable">Variable</a></li>
                 <li><a href="#var-variable">Variable</a></li>
                 <li><a href="#var-variable">Variable</a></li>

@@ -11,21 +11,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
-// IMCSessionState describes the current state of an allocated IMC cache entry.
-type IMCSessionState string
-
-const (
-	// IMCSessionStateActive means a request currently holds the entry's
-	// reservation.
-	IMCSessionStateActive IMCSessionState = "active"
-
-	// IMCSessionStateIdle means the entry contains a reusable cache snapshot.
-	IMCSessionStateIdle IMCSessionState = "idle"
-
-	// IMCSessionStateEmpty means the entry does not contain a cache snapshot.
-	IMCSessionStateEmpty IMCSessionState = "empty"
-)
-
 // IMCSessionDetail is a scalar snapshot of one allocated IMC cache entry.
 type IMCSessionDetail struct {
 	ID             int

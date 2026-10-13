@@ -653,7 +653,7 @@ func buildModelParams(ctx context.Context, cfg *Config, loadMTP bool, l applog.L
 // applyNUMA initializes the llama.cpp NUMA strategy. NUMA init must happen
 // once before any model load.
 func applyNUMA(ctx context.Context, cfg Config, l applog.Logger) {
-	if cfg.NUMA == "" {
+	if cfg.NUMA.IsZero() {
 		return
 	}
 

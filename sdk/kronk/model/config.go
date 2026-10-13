@@ -41,14 +41,6 @@ Key principles:
 */
 
 const (
-	NUMADisabled   = ""
-	NUMADistribute = "distribute"
-	NUMAIsolate    = "isolate"
-	NUMANumactl    = "numactl"
-	NUMAMirror     = "mirror"
-)
-
-const (
 	defContextWindow        = 8 * 1024
 	defMinCacheTokens       = 100
 	defNThreads             = 4
@@ -435,7 +427,7 @@ type Config struct {
 	PtrNThreads                *int
 	PtrNThreadsBatch           *int
 	PtrPrefillBatchSize        *int
-	NUMA                       string
+	NUMA                       NUMAStrategy
 	PtrOffloadKQV              *bool
 	PtrOpOffload               *bool
 	ProjFile                   string
@@ -1321,7 +1313,7 @@ func WithNSeqMax(v int) Option                 { return func(c *Config) { c.PtrN
 func WithNThreads(v int) Option                { return func(c *Config) { c.PtrNThreads = new(v) } }
 func WithNThreadsBatch(v int) Option           { return func(c *Config) { c.PtrNThreadsBatch = new(v) } }
 func WithPrefillBatchSize(v int) Option        { return func(c *Config) { c.PtrPrefillBatchSize = new(v) } }
-func WithNUMA(v string) Option                 { return func(c *Config) { c.NUMA = v } }
+func WithNUMA(v NUMAStrategy) Option           { return func(c *Config) { c.NUMA = v } }
 func WithOffloadKQV(v bool) Option             { return func(c *Config) { c.PtrOffloadKQV = new(v) } }
 func WithOpOffload(v bool) Option              { return func(c *Config) { c.PtrOpOffload = new(v) } }
 func WithProjFile(v string) Option             { return func(c *Config) { c.ProjFile = v } }

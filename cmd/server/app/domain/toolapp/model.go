@@ -324,14 +324,14 @@ func toListModelsInfo(modelFiles []models.File, modelConfigs map[string]models.M
 // ModelIntegrityArtifact provides integrity evidence for one physical model
 // artifact.
 type ModelIntegrityArtifact struct {
-	Role       string                 `json:"role"`
+	Role       models.IntegrityRole   `json:"role"`
 	Filename   string                 `json:"filename"`
 	Digest     string                 `json:"digest,omitempty"`
 	Size       int64                  `json:"size"`
 	Status     models.IntegrityStatus `json:"status"`
 	Verified   bool                   `json:"verified"`
 	VerifiedAt *time.Time             `json:"verified_at,omitempty"`
-	Reason     string                 `json:"reason,omitempty"`
+	Reason     models.IntegrityReason `json:"reason,omitzero"`
 }
 
 // ModelIntegrityDetail provides integrity information for one indexed model.
@@ -788,7 +788,7 @@ func toIMCSessions(sessions []pool.IMCSessionDetail) IMCSessionsResponse {
 		details[i] = IMCSessionDetail{
 			ModelID:        session.ModelID,
 			ID:             session.ID,
-			State:          string(session.State),
+			State:          session.State.String(),
 			Context:        session.Context,
 			Allocated:      session.Allocated,
 			TotalAllocated: session.TotalAllocated,
@@ -1247,7 +1247,7 @@ type ModelConfig struct {
 	CacheTypeV                 model.GGMLType           `json:"cache-type-v"`
 	KVCacheMode                model.KVCacheMode        `json:"kv-cache-mode"`
 	LoadMode                   model.LoadMode           `json:"load-mode"`
-	NUMA                       string                   `json:"numa,omitempty"`
+	NUMA                       model.NUMAStrategy       `json:"numa,omitzero"`
 	FlashAttention             model.FlashAttentionType `json:"flash-attention"`
 	PtrNSeqMax                 *int                     `json:"nseq-max"`
 	QueueDepth                 int                      `json:"queue-depth"`

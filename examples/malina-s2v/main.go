@@ -73,10 +73,10 @@ func run() error {
 
 	mln, err := malina.NewWithContext(
 		ctx,
-		model.WithDiffusionModelPath(manifest.Files[string(models.RoleDiffusion)]),
-		model.WithVAEPath(manifest.Files[string(models.RoleVAE)]),
-		model.WithT5XXLPath(manifest.Files[string(models.RoleT5XXL)]),
-		model.WithAudioEncoderPath(manifest.Files[string(models.RoleAudioEncoder)]),
+		model.WithDiffusionModelPath(manifest.Files[models.RoleDiffusion.String()]),
+		model.WithVAEPath(manifest.Files[models.RoleVAE.String()]),
+		model.WithT5XXLPath(manifest.Files[models.RoleT5XXL.String()]),
+		model.WithAudioEncoderPath(manifest.Files[models.RoleAudioEncoder.String()]),
 		model.WithDiffusionFlashAttention(true),
 	)
 	if err != nil {

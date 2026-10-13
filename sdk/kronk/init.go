@@ -117,7 +117,7 @@ func Init(opts ...InitOption) error {
 	// builds eagerly initialize backend devices (e.g. Metal) inside
 	// llama.Init(), and any log messages emitted during that init would
 	// otherwise bypass the silencer and print to stderr.
-	if o.logLevel < 1 || o.logLevel > 2 {
+	if o.logLevel != LogSilent && o.logLevel != LogNormal {
 		o.logLevel = LogSilent
 	}
 

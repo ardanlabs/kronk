@@ -18,10 +18,10 @@ type decisionRequest struct {
 type decisionQuestions []decisionQuestion
 
 type decisionQuestion struct {
-	ID           string `json:"-"`
-	Type         string `json:"type"`
-	Instructions any    `json:"instructions"`
-	Criteria     any    `json:"criteria,omitempty"`
+	ID           string                     `json:"-"`
+	Type         model.DecisionQuestionType `json:"type"`
+	Instructions any                        `json:"instructions"`
+	Criteria     any                        `json:"criteria,omitempty"`
 }
 
 type orderedField struct {
@@ -108,9 +108,13 @@ func decodeQuestion(id string, value any) (decisionQuestion, error) {
 		return decisionQuestion{}, fmt.Errorf("missing type field")
 	}
 
-	questionType, ok := typeValue.(string)
+	typeName, ok := typeValue.(string)
 	if !ok {
 		return decisionQuestion{}, fmt.Errorf("type must be a string")
+	}
+	questionType, err := model.ParseDecisionQuestionType(typeName)
+	if err != nil {
+		return decisionQuestion{}, fmt.Errorf("unknown type %q", typeName)
 	}
 
 	// Instruction requirements are protocol-specific (D3 supplies a default).
@@ -119,7 +123,7 @@ func decodeQuestion(id string, value any) (decisionQuestion, error) {
 
 	criteria, hasCriteria := objectField(object, "criteria")
 
-	switch model.DecisionQuestionType(questionType) {
+	switch questionType {
 	case model.DecisionQuestionTypeChoice:
 		criteriaObject, ok := criteria.(orderedObject)
 		if !hasCriteria || !ok {
@@ -221,7 +225,7 @@ func (r decisionRequest) toSDK() model.DecisionRequest {
 	for i, question := range r.Questions {
 		instructions := toDecisionValue(question.Instructions)
 
-		switch model.DecisionQuestionType(question.Type) {
+		switch question.Type {
 		case model.DecisionQuestionTypeChoice:
 			criteria := question.Criteria.(orderedObject)
 			options := make([]model.DecisionOption, len(criteria))

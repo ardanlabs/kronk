@@ -431,7 +431,7 @@ func MergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	if src.PtrKVCacheMode != nil {
 		dst.PtrKVCacheMode = src.PtrKVCacheMode
 	}
-	if src.NUMA != "" {
+	if !src.NUMA.IsZero() {
 		dst.NUMA = src.NUMA
 	}
 	if src.PtrNSeqMax != nil {

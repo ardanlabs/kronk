@@ -7,18 +7,6 @@ import (
 	"strings"
 )
 
-// DecisionQuestionType identifies the answer shape expected for a question.
-type DecisionQuestionType string
-
-const (
-	// DecisionQuestionTypeChoice selects one named option.
-	DecisionQuestionTypeChoice DecisionQuestionType = "choice"
-	// DecisionQuestionTypeScore rates state against ordered levels.
-	DecisionQuestionTypeScore DecisionQuestionType = "score"
-	// DecisionQuestionTypeNoul returns a calibrated yes probability.
-	DecisionQuestionTypeNoul DecisionQuestionType = "noul"
-)
-
 // ErrDecisionRequest indicates that a decision request is invalid.
 var ErrDecisionRequest = errors.New("invalid decision request")
 

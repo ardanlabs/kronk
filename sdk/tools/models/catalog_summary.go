@@ -41,16 +41,6 @@ type CatalogCapabilities struct {
 	MTP       bool   `json:"mtp"                  yaml:"mtp"`
 }
 
-// MTPSource identifies how a model supplies its MTP drafter.
-type MTPSource string
-
-const (
-	// MTPSourceEmbedded means the MTP head is embedded in the model GGUF.
-	MTPSourceEmbedded MTPSource = "embedded"
-	// MTPSourceCompanion means the MTP drafter is a separate GGUF file.
-	MTPSourceCompanion MTPSource = "companion"
-)
-
 // CatalogSummary is the cheap per-entry payload. It only consults
 // catalog.yaml and the local model index — no GGUF reads. ModelType and
 // Capabilities are read from the persisted catalog entry (populated when
@@ -66,7 +56,7 @@ type CatalogSummary struct {
 	TotalSizeBytes int64               `json:"total_size_bytes"`
 	HasProjection  bool                `json:"has_projection"`
 	HasMTP         bool                `json:"has_mtp"`
-	MTPSource      MTPSource           `json:"mtp_source,omitempty"`
+	MTPSource      MTPSource           `json:"mtp_source,omitzero"`
 	Downloaded     bool                `json:"downloaded"`
 	Validated      bool                `json:"validated"`
 	ModelType      string              `json:"model_type,omitempty"`
@@ -292,7 +282,7 @@ func MTPSourceFor(metadata map[string]string, hasCompanion bool) MTPSource {
 		return MTPSourceEmbedded
 	}
 
-	return ""
+	return MTPSource{}
 }
 
 func isDecisionModelName(name string) bool {

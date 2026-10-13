@@ -118,32 +118,6 @@ func SupportedBundles() []BundleName {
 	return names
 }
 
-// FileRole identifies a model component's configuration role.
-type FileRole string
-
-// Stable-diffusion model component roles.
-const (
-	RoleModel          FileRole = "model"
-	RoleDiffusion      FileRole = "diffusion"
-	RoleVAE            FileRole = "vae"
-	RoleClipL          FileRole = "clip_l"
-	RoleClipG          FileRole = "clip_g"
-	RoleT5XXL          FileRole = "t5xxl"
-	RoleLLM            FileRole = "llm"
-	RoleLLMVision      FileRole = "llm_vision"
-	RoleTokenizer      FileRole = "tokenizer"
-	RoleControlNet     FileRole = "control_net"
-	RoleTAESD          FileRole = "taesd"
-	RolePhotoMaker     FileRole = "photo_maker"
-	RoleClipVision     FileRole = "clip_vision"
-	RoleHighNoise      FileRole = "high_noise"
-	RoleEmbeddingsConn FileRole = "embeddings_conn"
-	RoleMotionModule   FileRole = "motion_module"
-	RoleUpscaler       FileRole = "upscaler"
-	RoleADetailer      FileRole = "adetailer"
-	RoleAudioEncoder   FileRole = "audio_encoder"
-)
-
 // BundleFile describes one bundle file.
 type BundleFile struct {
 	Role     FileRole
@@ -170,7 +144,7 @@ func (b Bundle) Validate() error {
 	}
 	seen := make(map[FileRole]struct{}, len(b.Files))
 	for _, file := range b.Files {
-		if file.Role == "" || file.Filename == "" || file.URL == "" {
+		if file.Role.IsZero() || file.Filename == "" || file.URL == "" {
 			return fmt.Errorf("bundle %q: incomplete file metadata", b.Name)
 		}
 		if _, ok := seen[file.Role]; ok {

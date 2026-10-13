@@ -111,7 +111,7 @@ func TestAddPrefillChunkStagesOnlyFinalPromptLogits(t *testing.T) {
 	}
 	for i, entry := range e.batch.entries {
 		if entry.output != extendedBatchOutputNone {
-			t.Fatalf("partial prefill entry %d output = %d, want none", i, entry.output)
+			t.Fatalf("partial prefill entry %d output = %d, want none", i, entry.output.value)
 		}
 	}
 
@@ -124,6 +124,6 @@ func TestAddPrefillChunkStagesOnlyFinalPromptLogits(t *testing.T) {
 			e.batch.len(), s.nPrefilled, s.nPast, s.iBatch, s.prefillTokens)
 	}
 	if got := e.batch.entries[0].output; got != extendedBatchOutputLogits {
-		t.Fatalf("final prefill output = %d, want logits", got)
+		t.Fatalf("final prefill output = %d, want logits", got.value)
 	}
 }

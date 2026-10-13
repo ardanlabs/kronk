@@ -113,7 +113,7 @@ func (a *app) listMalinaCatalog(ctx context.Context, r *http.Request) web.Encode
 		files := make([]MalinaCatalogFile, len(bundle.Files))
 		for j, file := range bundle.Files {
 			files[j] = MalinaCatalogFile{
-				Role:     string(file.Role),
+				Role:     file.Role.String(),
 				Filename: file.Filename,
 				URL:      file.URL,
 				Size:     file.Size,

@@ -665,7 +665,7 @@ func registerIMCSessionMetrics(p *pool.Pool) (func(), error) {
 			details[i] = metrics.IMCSession{
 				ModelID:       session.ModelID,
 				Entry:         session.ID,
-				State:         string(session.State),
+				State:         session.State.String(),
 				Messages:      session.Messages,
 				Context:       session.Context,
 				Allocated:     session.Allocated,

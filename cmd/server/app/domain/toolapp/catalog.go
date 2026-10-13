@@ -88,7 +88,7 @@ func (a *app) showCatalog(ctx context.Context, r *http.Request) web.Encoder {
 	detail.Template = models.TemplateName(metadata)
 	detail.Capabilities = models.CapabilitiesForModel(metadata, entry.MMProj != "", id)
 	detail.MTPSource = models.MTPSourceFor(metadata, entry.MTP != "")
-	detail.Capabilities.MTP = detail.MTPSource != ""
+	detail.Capabilities.MTP = !detail.MTPSource.IsZero()
 
 	// Compute the initial VRAM estimate from the same head bytes so
 	// the detail screen renders the calculator without a second

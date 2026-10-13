@@ -65,7 +65,7 @@ func TestStageMRoPEText(t *testing.T) {
 			wantOutput = extendedBatchOutputLogits
 		}
 		if entry.output != wantOutput {
-			t.Errorf("entry %d output = %d, want %d", i, entry.output, wantOutput)
+			t.Errorf("entry %d output = %d, want %d", i, entry.output.value, wantOutput.value)
 		}
 	}
 }
@@ -106,7 +106,7 @@ func TestStageEmbeddingRows(t *testing.T) {
 			wantOutput = extendedBatchOutputLogits
 		}
 		if entry.output != wantOutput {
-			t.Errorf("entry %d output = %d, want %d", i, entry.output, wantOutput)
+			t.Errorf("entry %d output = %d, want %d", i, entry.output.value, wantOutput.value)
 		}
 	}
 
@@ -125,7 +125,7 @@ func TestStageEmbeddingRowsWithoutOutput(t *testing.T) {
 
 	for i, entry := range batch.entries {
 		if entry.output != extendedBatchOutputNone {
-			t.Errorf("entry %d output = %d, want none", i, entry.output)
+			t.Errorf("entry %d output = %d, want none", i, entry.output.value)
 		}
 	}
 }

@@ -75,7 +75,7 @@ func runLocal(mdls *models.Models, args []string) error {
 			detail.Template = models.TemplateName(metadata)
 			detail.Capabilities = models.CapabilitiesForModel(metadata, entry.MMProj != "", id)
 			detail.MTPSource = models.MTPSourceFor(metadata, entry.MTP != "")
-			detail.Capabilities.MTP = detail.MTPSource != ""
+			detail.Capabilities.MTP = !detail.MTPSource.IsZero()
 		}
 	}
 
@@ -87,7 +87,7 @@ func runLocal(mdls *models.Models, args []string) error {
 // =============================================================================
 
 func print(d models.CatalogDetail) {
-	mtpSource := string(d.MTPSource)
+	mtpSource := d.MTPSource.String()
 	if mtpSource == "" {
 		mtpSource = "-"
 	}

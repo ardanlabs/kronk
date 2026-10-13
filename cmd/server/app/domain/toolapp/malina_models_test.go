@@ -70,7 +70,7 @@ func TestListMalinaModelsIncludesSupportBundles(t *testing.T) {
 		Bundle:  bundle.Name,
 		License: bundle.License,
 		Gated:   bundle.Gated,
-		Files:   map[string]string{string(bundle.Files[0].Role): modelPath},
+		Files:   map[string]string{bundle.Files[0].Role.String(): modelPath},
 	}
 	data, err := json.Marshal(manifest)
 	if err != nil {

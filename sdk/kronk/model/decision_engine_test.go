@@ -101,7 +101,7 @@ func TestStageDecisionParts(t *testing.T) {
 			t.Errorf("entry[%d] sequence: got %d, want %d", i, entry.sequenceID, wantSequences[i])
 		}
 		if entry.output != wantOutputs[i] {
-			t.Errorf("entry[%d] output: got %d, want %d", i, entry.output, wantOutputs[i])
+			t.Errorf("entry[%d] output: got %d, want %d", i, entry.output.value, wantOutputs[i].value)
 		}
 	}
 }
@@ -173,7 +173,7 @@ func TestStageDecisionJointPart(t *testing.T) {
 	}
 	for i, entry := range batch.entries {
 		if entry.output != extendedBatchOutputEmbeddings {
-			t.Errorf("entry[%d] output: got %d, want embeddings", i, entry.output)
+			t.Errorf("entry[%d] output: got %d, want embeddings", i, entry.output.value)
 		}
 		if entry.decisionOrder != part.decisionOrder[i] {
 			t.Errorf("entry[%d] decision order: got %d, want %d", i, entry.decisionOrder, part.decisionOrder[i])

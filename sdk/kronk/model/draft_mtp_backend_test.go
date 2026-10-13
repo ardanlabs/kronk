@@ -18,10 +18,10 @@ func TestMTPBackendForPlan(t *testing.T) {
 		{"embedded Qwen4Exp", speculationPlan{MTPArchitecture: mtpArchitectureQwen4ExpOwnKV, MTPArtifact: mtpArtifactEmbedded}, "qwen4exp-own-kv", mtpArtifactEmbedded, false, false, true, false},
 		{"companion Qwen4Exp", speculationPlan{MTPArchitecture: mtpArchitectureQwen4ExpOwnKV, MTPArtifact: mtpArtifactCompanion}, "qwen4exp-own-kv", mtpArtifactCompanion, false, false, true, false},
 		{"embedded Nemotron", speculationPlan{MTPArchitecture: mtpArchitectureNemotronOwnKV, MTPArtifact: mtpArtifactEmbedded}, "nemotron-own-kv", mtpArtifactEmbedded, false, false, false, false},
-		{"companion Nemotron rejected", speculationPlan{MTPArchitecture: mtpArchitectureNemotronOwnKV, MTPArtifact: mtpArtifactCompanion}, "", 0, false, false, false, true},
-		{"companion Gemma", speculationPlan{MTPArchitecture: mtpArchitectureGemmaSharedKV, MTPArtifact: mtpArtifactCompanion}, "gemma-shared-kv", 0, true, true, false, false},
-		{"embedded Gemma rejected", speculationPlan{MTPArchitecture: mtpArchitectureGemmaSharedKV, MTPArtifact: mtpArtifactEmbedded}, "", 0, false, false, false, true},
-		{"missing architecture rejected", speculationPlan{MTPArtifact: mtpArtifactCompanion}, "", 0, false, false, false, true},
+		{"companion Nemotron rejected", speculationPlan{MTPArchitecture: mtpArchitectureNemotronOwnKV, MTPArtifact: mtpArtifactCompanion}, "", mtpArtifact{}, false, false, false, true},
+		{"companion Gemma", speculationPlan{MTPArchitecture: mtpArchitectureGemmaSharedKV, MTPArtifact: mtpArtifactCompanion}, "gemma-shared-kv", mtpArtifact{}, true, true, false, false},
+		{"embedded Gemma rejected", speculationPlan{MTPArchitecture: mtpArchitectureGemmaSharedKV, MTPArtifact: mtpArtifactEmbedded}, "", mtpArtifact{}, false, false, false, true},
+		{"missing architecture rejected", speculationPlan{MTPArtifact: mtpArtifactCompanion}, "", mtpArtifact{}, false, false, false, true},
 	}
 
 	for _, tt := range tests {
@@ -38,7 +38,7 @@ func TestMTPBackendForPlan(t *testing.T) {
 			}
 			if qwen, ok := backend.(ownKVMTPBackend); ok {
 				if qwen.artifact != tt.wantArtifact {
-					t.Errorf("artifact = %d, want %d", qwen.artifact, tt.wantArtifact)
+					t.Errorf("artifact = %s, want %s", qwen.artifact, tt.wantArtifact)
 				}
 				if qwen.wideEmbedding != tt.wantWideEmbedding {
 					t.Errorf("wideEmbedding = %t, want %t", qwen.wideEmbedding, tt.wantWideEmbedding)

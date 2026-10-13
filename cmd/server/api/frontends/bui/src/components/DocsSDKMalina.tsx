@@ -261,17 +261,6 @@ export default function DocsSDKMalina() {
           <div className="card" id="constants">
             <h3>Constants</h3>
 
-            <div className="doc-section" id="const-logsilent">
-              <h4>LogSilent</h4>
-              <pre className="code-block">
-                <code>{`const (
-	LogSilent = applog.LogSilent
-	LogNormal = applog.LogNormal
-)`}</code>
-              </pre>
-              <p className="doc-description">Set of logging levels supported by stable-diffusion.cpp and GGML.</p>
-            </div>
-
             <div className="doc-section" id="const-version">
               <h4>Version</h4>
               <pre className="code-block">
@@ -283,6 +272,14 @@ export default function DocsSDKMalina() {
 
           <div className="card" id="variables">
             <h3>Variables</h3>
+
+            <div className="doc-section" id="var-variable">
+              <h4>Variable</h4>
+              <pre className="code-block">
+                <code>{`var (`}</code>
+              </pre>
+              <p className="doc-description">LogSilent = applog.LogSilent LogNormal = applog.LogNormal</p>
+            </div>
 
             <div className="doc-section" id="var-variable">
               <h4>Variable</h4>
@@ -358,13 +355,13 @@ export default function DocsSDKMalina() {
             <div className="doc-index-section">
               <a href="#constants" className="doc-index-header">Constants</a>
               <ul>
-                <li><a href="#const-logsilent">LogSilent</a></li>
                 <li><a href="#const-version">Version</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
               <a href="#variables" className="doc-index-header">Variables</a>
               <ul>
+                <li><a href="#var-variable">Variable</a></li>
                 <li><a href="#var-variable">Variable</a></li>
                 <li><a href="#var-discardlogger">DiscardLogger</a></li>
                 <li><a href="#var-fmtlogger">FmtLogger</a></li>

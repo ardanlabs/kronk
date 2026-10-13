@@ -116,7 +116,7 @@ func (m *Models) downloadBundle(ctx context.Context, log applog.Logger, bundle B
 	dir := filepath.Join(m.modelsPath, bundle.Name.String())
 	manifest := Manifest{Bundle: bundle.Name, License: bundle.License, Gated: bundle.Gated, Files: make(map[string]string, len(bundle.Files))}
 	for _, file := range bundle.Files {
-		manifest.Files[string(file.Role)] = file.Filename
+		manifest.Files[file.Role.String()] = file.Filename
 		if err := downloadModelFile(ctx, file.URL, filepath.Join(stageDir, file.Filename), progress); err != nil {
 			return Manifest{}, bundleDownloadError(bundle, file, err)
 		}
@@ -236,7 +236,7 @@ func (m *Models) loadManifestLocked(bundle Bundle) (Manifest, error) {
 		if err != nil {
 			return Manifest{}, fmt.Errorf("load-manifest: resolve %q: %w", file.Filename, err)
 		}
-		manifest.Files[string(file.Role)] = resolved
+		manifest.Files[file.Role.String()] = resolved
 	}
 	return manifest, nil
 }
@@ -336,7 +336,7 @@ func (m *Models) validManifest(bundle Bundle, manifest Manifest) bool {
 			return false
 		}
 		expected := filepath.Join(dir, file.Filename)
-		path := manifest.Files[string(file.Role)]
+		path := manifest.Files[file.Role.String()]
 		if path == "" {
 			return false
 		}

@@ -10,59 +10,17 @@ import (
 	"time"
 )
 
-// IntegrityStatus describes the available verification evidence for a model
-// or artifact.
-type IntegrityStatus string
-
-const (
-	// IntegrityVerified means the artifact's published digest and persisted
-	// verification match its current filesystem metadata.
-	IntegrityVerified IntegrityStatus = "verified"
-
-	// IntegrityUnverified means a published digest exists but no persisted
-	// verification exists.
-	IntegrityUnverified IntegrityStatus = "unverified"
-
-	// IntegrityStale means persisted verification evidence or current file
-	// metadata no longer matches the published artifact metadata.
-	IntegrityStale IntegrityStatus = "stale"
-
-	// IntegrityUnavailable means no trustworthy published digest is available.
-	IntegrityUnavailable IntegrityStatus = "unavailable"
-)
-
-const (
-	// IntegrityRoleWeights identifies a model weight file or shard.
-	IntegrityRoleWeights = "weights"
-
-	// IntegrityRoleProjection identifies a multimodal projection artifact.
-	IntegrityRoleProjection = "projection"
-
-	// IntegrityRoleMTP identifies an MTP drafter artifact.
-	IntegrityRoleMTP = "mtp"
-)
-
-const (
-	// IntegrityReasonDigestUnavailable means the artifact's Git LFS pointer is
-	// absent or malformed.
-	IntegrityReasonDigestUnavailable = "digest_unavailable"
-
-	// IntegrityReasonFileMetadataChanged means verification evidence does not
-	// match the published digest or current filesystem metadata.
-	IntegrityReasonFileMetadataChanged = "file_metadata_changed"
-)
-
 // IntegrityArtifact provides the identity and persisted verification evidence
 // for one physical model artifact.
 type IntegrityArtifact struct {
-	Role       string
+	Role       IntegrityRole
 	Filename   string
 	Digest     string
 	Size       int64
 	Status     IntegrityStatus
 	Verified   bool
 	VerifiedAt time.Time
-	Reason     string
+	Reason     IntegrityReason
 }
 
 // IntegrityModel provides integrity information for one indexed model and all
@@ -180,7 +138,7 @@ func (m *Models) artifactOwnership(artifactPath string) (string, string) {
 	return parts[0], parts[1]
 }
 
-func integrityArtifact(artifactPath string, role string) (IntegrityArtifact, error) {
+func integrityArtifact(artifactPath string, role IntegrityRole) (IntegrityArtifact, error) {
 	artifact := IntegrityArtifact{
 		Role:     role,
 		Filename: filepath.Base(artifactPath),

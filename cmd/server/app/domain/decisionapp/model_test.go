@@ -48,7 +48,7 @@ func TestDecodeDecisionRequestPreservesOrder(t *testing.T) {
 		t.Fatalf("State: got %T, want orderedObject", got.State)
 	}
 	choiceCriteria := got.Questions[0].Criteria.(orderedObject)
-	if got.Questions[0].Type != "choice" || choiceCriteria[0].Name != "billing" {
+	if got.Questions[0].Type.String() != "choice" || choiceCriteria[0].Name != "billing" {
 		t.Errorf("Questions[0]: got %+v, want app-owned choice question", got.Questions[0])
 	}
 

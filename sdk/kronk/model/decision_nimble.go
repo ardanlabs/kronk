@@ -60,7 +60,7 @@ func (p *nimbleProtocol) decide(ctx context.Context, req DecisionRequest) (Decis
 	for i, question := range req.Questions {
 		prompt, err := p.template.renderValues(D{
 			"id":           question.ID,
-			"type":         string(question.Type),
+			"type":         question.Type.String(),
 			"instructions": questions[i]["instructions"],
 			"state":        state,
 			"options":      questions[i]["options"],
@@ -125,7 +125,7 @@ func decisionTemplateQuestion(question DecisionQuestion, instructions any, optio
 	}
 	return D{
 		"id":           question.ID,
-		"type":         string(question.Type),
+		"type":         question.Type.String(),
 		"instructions": instructions,
 		"options":      values,
 	}

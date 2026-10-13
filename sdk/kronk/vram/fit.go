@@ -17,21 +17,6 @@ type FitConstraints struct {
 	Threshold float64
 }
 
-// FitStatus describes how an estimated memory requirement compares with the
-// configured capacity.
-type FitStatus string
-
-const (
-	// FitStatusUnknown indicates that no capacity was supplied.
-	FitStatusUnknown FitStatus = "unknown"
-	// FitStatusFits indicates that the estimate fits with comfortable headroom.
-	FitStatusFits FitStatus = "fits"
-	// FitStatusTight indicates that the estimate fits but uses more than 80% of capacity.
-	FitStatusTight FitStatus = "tight"
-	// FitStatusDoesNotFit indicates that the estimate exceeds the fit threshold.
-	FitStatusDoesNotFit FitStatus = "does_not_fit"
-)
-
 // CapacityAssessment describes one memory pool's required bytes, available
 // capacity, remaining headroom, and fit status.
 type CapacityAssessment struct {

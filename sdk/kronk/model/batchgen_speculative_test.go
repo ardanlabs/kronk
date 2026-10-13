@@ -297,7 +297,7 @@ func TestStageSpeculativeRestoreBatchUsesOriginalBaseAndLastOutput(t *testing.T)
 					wantOutput = extendedBatchOutputLogits
 				}
 				if entry.output != wantOutput {
-					t.Errorf("entry %d output = %d, want %d", i, entry.output, wantOutput)
+					t.Errorf("entry %d output = %d, want %d", i, entry.output.value, wantOutput.value)
 				}
 			}
 		})

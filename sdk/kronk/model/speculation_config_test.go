@@ -34,7 +34,7 @@ func TestResolveEmbeddedMTPCompatibility(t *testing.T) {
 				t.Fatalf("resolveEmbeddedMTPCompatibility() error = %v, want containing %q", err, tt.wantErrContains)
 			}
 			if got.Source != tt.wantSource {
-				t.Errorf("source = %d, want %d", got.Source, tt.wantSource)
+				t.Errorf("source = %s, want %s", got.Source, tt.wantSource)
 			}
 		})
 	}

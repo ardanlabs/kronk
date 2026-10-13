@@ -53,7 +53,7 @@ func TestCatalogMatchesMalinaCatalog(t *testing.T) {
 		}
 		for i, malinaFile := range malinaBundle.Files {
 			kronkFile := kronkBundle.Files[i]
-			if string(kronkFile.Role) != string(malinaFile.Role) || kronkFile.Filename != malinaFile.Filename || kronkFile.URL != malinaFile.URL || kronkFile.Size != malinaFile.Size {
+			if kronkFile.Role.String() != string(malinaFile.Role) || kronkFile.Filename != malinaFile.Filename || kronkFile.URL != malinaFile.URL || kronkFile.Size != malinaFile.Size {
 				t.Errorf("Kronk bundle %q file %d: got %+v, want %+v", name, i, kronkFile, malinaFile)
 			}
 		}
@@ -294,7 +294,7 @@ func TestDownloadBundlePersistsRelativePaths(t *testing.T) {
 		t.Fatalf("downloadBundle() error = %v", err)
 	}
 	wantPath := filepath.Join(m.Path(), bundle.Name.String(), bundle.Files[0].Filename)
-	if got := manifest.Files[string(RoleModel)]; got != wantPath {
+	if got := manifest.Files[RoleModel.String()]; got != wantPath {
 		t.Errorf("returned model path = %q, want %q", got, wantPath)
 	}
 
@@ -306,7 +306,7 @@ func TestDownloadBundlePersistsRelativePaths(t *testing.T) {
 	if err := json.Unmarshal(data, &stored); err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
 	}
-	if got := stored.Files[string(RoleModel)]; got != bundle.Files[0].Filename {
+	if got := stored.Files[RoleModel.String()]; got != bundle.Files[0].Filename {
 		t.Errorf("stored model path = %q, want relative filename %q", got, bundle.Files[0].Filename)
 	}
 }
@@ -363,8 +363,8 @@ func TestLoadManifestRoundTrip(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	want := Manifest{Bundle: bundle.Name, License: bundle.License, Files: map[string]string{string(RoleModel): filepath.Join(dir, bundle.Files[0].Filename)}}
-	if err := os.WriteFile(want.Files[string(RoleModel)], []byte("model"), 0o644); err != nil {
+	want := Manifest{Bundle: bundle.Name, License: bundle.License, Files: map[string]string{RoleModel.String(): filepath.Join(dir, bundle.Files[0].Filename)}}
+	if err := os.WriteFile(want.Files[RoleModel.String()], []byte("model"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	data, err := json.Marshal(want)
@@ -378,7 +378,7 @@ func TestLoadManifestRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadManifest() error = %v", err)
 	}
-	if got.Bundle != want.Bundle || got.Files[string(RoleModel)] != want.Files[string(RoleModel)] {
+	if got.Bundle != want.Bundle || got.Files[RoleModel.String()] != want.Files[RoleModel.String()] {
 		t.Errorf("LoadManifest() = %+v, want %+v", got, want)
 	}
 }
@@ -398,7 +398,7 @@ func TestLoadManifestRelocatesLegacyAbsolutePath(t *testing.T) {
 		t.Fatal(err)
 	}
 	legacy := Manifest{Bundle: bundle.Name, Files: map[string]string{
-		string(RoleModel): filepath.Join(t.TempDir(), bundle.Files[0].Filename),
+		RoleModel.String(): filepath.Join(t.TempDir(), bundle.Files[0].Filename),
 	}}
 	data, err := json.Marshal(legacy)
 	if err != nil {
@@ -412,7 +412,7 @@ func TestLoadManifestRelocatesLegacyAbsolutePath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadManifest() error = %v", err)
 	}
-	if got := manifest.Files[string(RoleModel)]; got != current {
+	if got := manifest.Files[RoleModel.String()]; got != current {
 		t.Errorf("model path = %q, want relocated path %q", got, current)
 	}
 }
@@ -433,7 +433,7 @@ func TestIndexFullPathRemoveLifecycle(t *testing.T) {
 		if err := os.WriteFile(path, []byte("model"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		manifest.Files[string(file.Role)] = path
+		manifest.Files[file.Role.String()] = path
 	}
 	data, err := json.Marshal(manifest)
 	if err != nil {
@@ -551,7 +551,7 @@ func TestBuildIndexRejectsInvalidManifest(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			manifest := Manifest{Bundle: tt.manifestID, Files: map[string]string{string(RoleModel): path}}
+			manifest := Manifest{Bundle: tt.manifestID, Files: map[string]string{RoleModel.String(): path}}
 			data, err := json.Marshal(manifest)
 			if err != nil {
 				t.Fatal(err)

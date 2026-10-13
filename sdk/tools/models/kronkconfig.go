@@ -367,7 +367,7 @@ type ModelConfig struct {
 	PtrNThreads                *int                      `yaml:"nthreads,omitempty"`
 	PtrNThreadsBatch           *int                      `yaml:"nthreads-batch,omitempty"`
 	PtrPrefillBatchSize        *int                      `yaml:"prefill-batch-size,omitempty"`
-	NUMA                       string                    `yaml:"numa,omitempty"`
+	NUMA                       model.NUMAStrategy        `yaml:"numa,omitempty"`
 	PtrOffloadKQV              *bool                     `yaml:"offload-kqv,omitempty"`
 	PtrOpOffload               *bool                     `yaml:"op-offload,omitempty"`
 	PtrProjOnCPU               *bool                     `yaml:"proj-on-cpu,omitempty"`

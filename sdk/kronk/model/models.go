@@ -44,41 +44,6 @@ const (
 
 // =============================================================================
 
-// ModelType represents the model architecture for batch engine state management.
-type ModelType uint8
-
-const (
-	// ModelTypeDense is a standard transformer model. State cleanup uses
-	// partial range delete (MemorySeqRm).
-	ModelTypeDense ModelType = iota
-
-	// ModelTypeMoE is a Mixture of Experts model. Same state cleanup as Dense
-	// (partial range delete), different performance profile due to scattered
-	// memory access from expert routing.
-	ModelTypeMoE
-
-	// ModelTypeHybrid is a model with Attention + Recurrent layers
-	// (DeltaNet/SSM). State cleanup requires snapshot/restore because partial
-	// range delete corrupts recurrent state.
-	ModelTypeHybrid
-)
-
-// String returns a human-readable name for the model type.
-func (mt ModelType) String() string {
-	switch mt {
-	case ModelTypeDense:
-		return "dense"
-	case ModelTypeMoE:
-		return "moe"
-	case ModelTypeHybrid:
-		return "hybrid"
-	default:
-		return "unknown"
-	}
-}
-
-// =============================================================================
-
 // ModelInfo represents the model's card information.
 type ModelInfo struct {
 	ID               string

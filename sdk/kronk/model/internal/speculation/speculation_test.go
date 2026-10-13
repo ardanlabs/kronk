@@ -39,7 +39,7 @@ func TestResolve(t *testing.T) {
 				t.Fatalf("Resolve() error = %v, wantErr %t", err, tt.wantErr)
 			}
 			if got.Source != tt.wantSource || got.MTPArchitecture != tt.wantArchitecture || got.MTPArtifact != tt.wantArtifact {
-				t.Errorf("plan = %+v, want source %d architecture %d artifact %d", got, tt.wantSource, tt.wantArchitecture, tt.wantArtifact)
+				t.Errorf("plan = %+v, want source %s architecture %s artifact %s", got, tt.wantSource, tt.wantArchitecture, tt.wantArtifact)
 			}
 			if got.LoadMTP != tt.wantLoadMTP {
 				t.Errorf("LoadMTP = %t, want %t", got.LoadMTP, tt.wantLoadMTP)

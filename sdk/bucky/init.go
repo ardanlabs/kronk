@@ -142,7 +142,7 @@ func Init(opts ...InitOption) error {
 	// stream of whisper_init_* / ggml_metal_* lines emitted by the
 	// first model load follows the requested policy. Mirrors the
 	// silencer kronk wires up around llama.Init.
-	if o.logLevel < 1 || o.logLevel > 2 {
+	if o.logLevel != LogSilent && o.logLevel != LogNormal {
 		o.logLevel = LogSilent
 	}
 

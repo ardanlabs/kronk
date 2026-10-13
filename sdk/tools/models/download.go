@@ -868,17 +868,6 @@ func (m *Models) tryReuseCompanionFromSHA(ctx context.Context, log applog.Logger
 // =============================================================================
 // Pull (collapsed pullFile + pullShaFile)
 
-// pullKind selects which artifact of a HuggingFace file pull operates on.
-// pullBody fetches the model bytes at the resolve URL. pullSha fetches the
-// LFS sha pointer at the matching raw URL into a "sha" sibling directory
-// and returns its on-disk path.
-type pullKind int
-
-const (
-	pullBody pullKind = iota
-	pullSha
-)
-
 // pull is the single artifact fetcher behind both model-body and sha
 // downloads. The artifact kind controls (a) which URL transform to apply,
 // (b) which destination directory to write to, and (c) the progress

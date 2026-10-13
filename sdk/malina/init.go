@@ -97,7 +97,7 @@ func Init(opts ...InitOption) error {
 		}
 		return nil
 	}
-	if o.logLevel < LogSilent || o.logLevel > LogNormal {
+	if o.logLevel != LogSilent && o.logLevel != LogNormal {
 		o.logLevel = LogSilent
 	}
 

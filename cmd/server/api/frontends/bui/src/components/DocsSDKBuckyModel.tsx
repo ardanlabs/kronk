@@ -93,12 +93,28 @@ export default function DocsSDKBuckyModel() {
               <p className="doc-description">SystemInfo returns the whisper.cpp system info string parsed into a key/value map for observability output. The format mirrors sdk/kronk's SystemInfo.</p>
             </div>
 
+            <div className="doc-section" id="func-parseeventkind">
+              <h4>ParseEventKind</h4>
+              <pre className="code-block">
+                <code>func ParseEventKind(value string) (EventKind, error)</code>
+              </pre>
+              <p className="doc-description">ParseEventKind parses a known name or numeric value, defaulting empty to partial.</p>
+            </div>
+
             <div className="doc-section" id="func-newmodel">
               <h4>NewModel</h4>
               <pre className="code-block">
                 <code>func NewModel(ctx context.Context, cfg Config) (*Model, error)</code>
               </pre>
               <p className="doc-description">NewModel constructs a Model from cfg. ModelPath must be set; all other fields fall back to the defaults defined by Config.WithDefaults.</p>
+            </div>
+
+            <div className="doc-section" id="func-parsesampleencoding">
+              <h4>ParseSampleEncoding</h4>
+              <pre className="code-block">
+                <code>func ParseSampleEncoding(value string) (SampleEncoding, error)</code>
+              </pre>
+              <p className="doc-description">ParseSampleEncoding parses a known name or numeric value, defaulting empty to Int16LE.</p>
             </div>
           </div>
 
@@ -228,9 +244,11 @@ export default function DocsSDKBuckyModel() {
             <div className="doc-section" id="type-eventkind">
               <h4>EventKind</h4>
               <pre className="code-block">
-                <code>{`type EventKind int`}</code>
+                <code>{`type EventKind struct {
+	// Has unexported fields.
+}`}</code>
               </pre>
-              <p className="doc-description">EventKind classifies a transcript Event delivered on a Stream's channel.</p>
+              <p className="doc-description">EventKind classifies a transcript Event delivered on a Stream's channel. Its zero value is EventPartial.</p>
             </div>
 
             <div className="doc-section" id="type-model">
@@ -306,9 +324,11 @@ export default function DocsSDKBuckyModel() {
             <div className="doc-section" id="type-sampleencoding">
               <h4>SampleEncoding</h4>
               <pre className="code-block">
-                <code>{`type SampleEncoding int`}</code>
+                <code>{`type SampleEncoding struct {
+	// Has unexported fields.
+}`}</code>
               </pre>
-              <p className="doc-description">SampleEncoding identifies how raw PCM samples are laid out in bytes. Only little-endian encodings are listed because every mainstream capture stack (CoreAudio, WASAPI, ALSA/PulseAudio/PipeWire, Web Audio) emits little-endian on x86 and ARM.</p>
+              <p className="doc-description">SampleEncoding identifies how raw PCM samples are laid out in bytes. Only little-endian encodings are listed because every mainstream capture stack (CoreAudio, WASAPI, ALSA/PulseAudio/PipeWire, Web Audio) emits little-endian on x86 and ARM. Its zero value is Int16LE.</p>
             </div>
 
             <div className="doc-section" id="type-segment">
@@ -601,6 +621,86 @@ export default function DocsSDKBuckyModel() {
               <p className="doc-description">WithDefaults returns cfg with the zero-valued fields filled in.</p>
             </div>
 
+            <div className="doc-section" id="method-eventkind-equal">
+              <h4>EventKind.Equal</h4>
+              <pre className="code-block">
+                <code>func (k EventKind) Equal(other EventKind) bool</code>
+              </pre>
+              <p className="doc-description">Equal provides support for comparison and testing.</p>
+            </div>
+
+            <div className="doc-section" id="method-eventkind-int">
+              <h4>EventKind.Int</h4>
+              <pre className="code-block">
+                <code>func (k EventKind) Int() int</code>
+              </pre>
+              <p className="doc-description">Int returns the integer value.</p>
+            </div>
+
+            <div className="doc-section" id="method-eventkind-iszero">
+              <h4>EventKind.IsZero</h4>
+              <pre className="code-block">
+                <code>func (k EventKind) IsZero() bool</code>
+              </pre>
+              <p className="doc-description">IsZero reports whether the kind is the zero-value partial kind.</p>
+            </div>
+
+            <div className="doc-section" id="method-eventkind-marshaljson">
+              <h4>EventKind.MarshalJSON</h4>
+              <pre className="code-block">
+                <code>func (k EventKind) MarshalJSON() ([]byte, error)</code>
+              </pre>
+              <p className="doc-description">MarshalJSON preserves the numeric wire representation.</p>
+            </div>
+
+            <div className="doc-section" id="method-eventkind-marshaltext">
+              <h4>EventKind.MarshalText</h4>
+              <pre className="code-block">
+                <code>func (k EventKind) MarshalText() ([]byte, error)</code>
+              </pre>
+              <p className="doc-description">MarshalText provides support for logging and serialization.</p>
+            </div>
+
+            <div className="doc-section" id="method-eventkind-marshalyaml">
+              <h4>EventKind.MarshalYAML</h4>
+              <pre className="code-block">
+                <code>func (k EventKind) MarshalYAML() (any, error)</code>
+              </pre>
+              <p className="doc-description">MarshalYAML preserves the numeric wire representation.</p>
+            </div>
+
+            <div className="doc-section" id="method-eventkind-string">
+              <h4>EventKind.String</h4>
+              <pre className="code-block">
+                <code>func (k EventKind) String() string</code>
+              </pre>
+              <p className="doc-description">String returns the event kind name.</p>
+            </div>
+
+            <div className="doc-section" id="method-eventkind-unmarshaljson">
+              <h4>EventKind.UnmarshalJSON</h4>
+              <pre className="code-block">
+                <code>func (k *EventKind) UnmarshalJSON(data []byte) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalJSON parses a known numeric event kind.</p>
+            </div>
+
+            <div className="doc-section" id="method-eventkind-unmarshaltext">
+              <h4>EventKind.UnmarshalText</h4>
+              <pre className="code-block">
+                <code>func (k *EventKind) UnmarshalText(data []byte) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalText parses a known event kind.</p>
+            </div>
+
+            <div className="doc-section" id="method-eventkind-unmarshalyaml">
+              <h4>EventKind.UnmarshalYAML</h4>
+              <pre className="code-block">
+                <code>func (k *EventKind) UnmarshalYAML(unmarshal func(any) error) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalYAML parses a known numeric event kind.</p>
+            </div>
+
             <div className="doc-section" id="method-model-config">
               <h4>Model.Config</h4>
               <pre className="code-block">
@@ -677,6 +777,86 @@ export default function DocsSDKBuckyModel() {
               <p className="doc-description">The supplied ctx is accepted for parity with sdk/kronk.Model.Unload — whisper has no in-flight requests to drain at this layer because concurrency is owned by the sdk/bucky wrapper.</p>
             </div>
 
+            <div className="doc-section" id="method-sampleencoding-equal">
+              <h4>SampleEncoding.Equal</h4>
+              <pre className="code-block">
+                <code>func (s SampleEncoding) Equal(other SampleEncoding) bool</code>
+              </pre>
+              <p className="doc-description">Equal provides support for comparison and testing.</p>
+            </div>
+
+            <div className="doc-section" id="method-sampleencoding-int">
+              <h4>SampleEncoding.Int</h4>
+              <pre className="code-block">
+                <code>func (s SampleEncoding) Int() int</code>
+              </pre>
+              <p className="doc-description">Int returns the integer value.</p>
+            </div>
+
+            <div className="doc-section" id="method-sampleencoding-iszero">
+              <h4>SampleEncoding.IsZero</h4>
+              <pre className="code-block">
+                <code>func (s SampleEncoding) IsZero() bool</code>
+              </pre>
+              <p className="doc-description">IsZero reports whether the encoding is the zero-value Int16LE encoding.</p>
+            </div>
+
+            <div className="doc-section" id="method-sampleencoding-marshaljson">
+              <h4>SampleEncoding.MarshalJSON</h4>
+              <pre className="code-block">
+                <code>func (s SampleEncoding) MarshalJSON() ([]byte, error)</code>
+              </pre>
+              <p className="doc-description">MarshalJSON preserves the numeric wire representation.</p>
+            </div>
+
+            <div className="doc-section" id="method-sampleencoding-marshaltext">
+              <h4>SampleEncoding.MarshalText</h4>
+              <pre className="code-block">
+                <code>func (s SampleEncoding) MarshalText() ([]byte, error)</code>
+              </pre>
+              <p className="doc-description">MarshalText provides support for logging and serialization.</p>
+            </div>
+
+            <div className="doc-section" id="method-sampleencoding-marshalyaml">
+              <h4>SampleEncoding.MarshalYAML</h4>
+              <pre className="code-block">
+                <code>func (s SampleEncoding) MarshalYAML() (any, error)</code>
+              </pre>
+              <p className="doc-description">MarshalYAML preserves the numeric wire representation.</p>
+            </div>
+
+            <div className="doc-section" id="method-sampleencoding-string">
+              <h4>SampleEncoding.String</h4>
+              <pre className="code-block">
+                <code>func (s SampleEncoding) String() string</code>
+              </pre>
+              <p className="doc-description">String returns the sample encoding name.</p>
+            </div>
+
+            <div className="doc-section" id="method-sampleencoding-unmarshaljson">
+              <h4>SampleEncoding.UnmarshalJSON</h4>
+              <pre className="code-block">
+                <code>func (s *SampleEncoding) UnmarshalJSON(data []byte) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalJSON parses a known numeric sample encoding.</p>
+            </div>
+
+            <div className="doc-section" id="method-sampleencoding-unmarshaltext">
+              <h4>SampleEncoding.UnmarshalText</h4>
+              <pre className="code-block">
+                <code>func (s *SampleEncoding) UnmarshalText(data []byte) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalText parses a known sample encoding.</p>
+            </div>
+
+            <div className="doc-section" id="method-sampleencoding-unmarshalyaml">
+              <h4>SampleEncoding.UnmarshalYAML</h4>
+              <pre className="code-block">
+                <code>func (s *SampleEncoding) UnmarshalYAML(unmarshal func(any) error) error</code>
+              </pre>
+              <p className="doc-description">UnmarshalYAML parses a known numeric sample encoding.</p>
+            </div>
+
             <div className="doc-section" id="method-stream-close">
               <h4>Stream.Close</h4>
               <pre className="code-block">
@@ -726,6 +906,26 @@ export default function DocsSDKBuckyModel() {
           <div className="card" id="variables">
             <h3>Variables</h3>
 
+            <div className="doc-section" id="var-variable">
+              <h4>Variable</h4>
+              <pre className="code-block">
+                <code>{`var (`}</code>
+              </pre>
+              <p className="doc-description">// EventPartial is a tentative, revisable re-decode of the current // un-committed audio window. Its Text is the COMPLETE hypothesis for // that window (not a delta): each Partial SUPERSEDES the previous one, // so a consumer should REPLACE its pending-text buffer with Text. This // is what produces the "words change as you keep talking" rewrite // effect seen in whisper.cpp's stream example. Partials may be dropped // under load. EventPartial = newEventKind("partial", 0)</p>
+              <p className="doc-description">// EventFinal commits the current un-committed region: it will not be // revised. Its Text is the authoritative text for that region. A // consumer should APPEND Text to its permanent transcript and clear // its pending-partial buffer. Finals are never dropped. EventFinal = newEventKind("final", 1)</p>
+              <p className="doc-description">// EventReset is emitted after Reset completes, only when the stream // was opened WithEmitResetEvent. Text and Segments are empty. EventReset = newEventKind("reset", 2)</p>
+              <p className="doc-description">// EventError is terminal. Err is set; the Events channel closes next. EventError = newEventKind("error", 3)</p>
+            </div>
+
+            <div className="doc-section" id="var-variable">
+              <h4>Variable</h4>
+              <pre className="code-block">
+                <code>{`var (`}</code>
+              </pre>
+              <p className="doc-description">// Int16LE is signed 16-bit little-endian PCM (2 bytes/sample). The // most universal microphone format. Normalized as v / 32768. Int16LE = newSampleEncoding("int16le", 0)</p>
+              <p className="doc-description">// Float32LE is 32-bit IEEE-754 little-endian PCM (4 bytes/sample), // already in the [-1, 1] range. The native CoreAudio / Web Audio // format. Float32LE = newSampleEncoding("float32le", 1)</p>
+            </div>
+
             <div className="doc-section" id="var-errstreamstopped">
               <h4>ErrStreamStopped</h4>
               <pre className="code-block">
@@ -747,7 +947,9 @@ export default function DocsSDKBuckyModel() {
                 <li><a href="#func-langmaxid">LangMaxID</a></li>
                 <li><a href="#func-langstr">LangStr</a></li>
                 <li><a href="#func-systeminfo">SystemInfo</a></li>
+                <li><a href="#func-parseeventkind">ParseEventKind</a></li>
                 <li><a href="#func-newmodel">NewModel</a></li>
+                <li><a href="#func-parsesampleencoding">ParseSampleEncoding</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
@@ -780,6 +982,16 @@ export default function DocsSDKBuckyModel() {
               <a href="#methods" className="doc-index-header">Methods</a>
               <ul>
                 <li><a href="#method-config-withdefaults">Config.WithDefaults</a></li>
+                <li><a href="#method-eventkind-equal">EventKind.Equal</a></li>
+                <li><a href="#method-eventkind-int">EventKind.Int</a></li>
+                <li><a href="#method-eventkind-iszero">EventKind.IsZero</a></li>
+                <li><a href="#method-eventkind-marshaljson">EventKind.MarshalJSON</a></li>
+                <li><a href="#method-eventkind-marshaltext">EventKind.MarshalText</a></li>
+                <li><a href="#method-eventkind-marshalyaml">EventKind.MarshalYAML</a></li>
+                <li><a href="#method-eventkind-string">EventKind.String</a></li>
+                <li><a href="#method-eventkind-unmarshaljson">EventKind.UnmarshalJSON</a></li>
+                <li><a href="#method-eventkind-unmarshaltext">EventKind.UnmarshalText</a></li>
+                <li><a href="#method-eventkind-unmarshalyaml">EventKind.UnmarshalYAML</a></li>
                 <li><a href="#method-model-config">Model.Config</a></li>
                 <li><a href="#method-model-detectlanguage">Model.DetectLanguage</a></li>
                 <li><a href="#method-model-modelinfo">Model.ModelInfo</a></li>
@@ -789,6 +1001,16 @@ export default function DocsSDKBuckyModel() {
                 <li><a href="#method-model-transcribechannelsfile">Model.TranscribeChannelsFile</a></li>
                 <li><a href="#method-model-transcribefile">Model.TranscribeFile</a></li>
                 <li><a href="#method-model-unload">Model.Unload</a></li>
+                <li><a href="#method-sampleencoding-equal">SampleEncoding.Equal</a></li>
+                <li><a href="#method-sampleencoding-int">SampleEncoding.Int</a></li>
+                <li><a href="#method-sampleencoding-iszero">SampleEncoding.IsZero</a></li>
+                <li><a href="#method-sampleencoding-marshaljson">SampleEncoding.MarshalJSON</a></li>
+                <li><a href="#method-sampleencoding-marshaltext">SampleEncoding.MarshalText</a></li>
+                <li><a href="#method-sampleencoding-marshalyaml">SampleEncoding.MarshalYAML</a></li>
+                <li><a href="#method-sampleencoding-string">SampleEncoding.String</a></li>
+                <li><a href="#method-sampleencoding-unmarshaljson">SampleEncoding.UnmarshalJSON</a></li>
+                <li><a href="#method-sampleencoding-unmarshaltext">SampleEncoding.UnmarshalText</a></li>
+                <li><a href="#method-sampleencoding-unmarshalyaml">SampleEncoding.UnmarshalYAML</a></li>
                 <li><a href="#method-stream-close">Stream.Close</a></li>
                 <li><a href="#method-stream-events">Stream.Events</a></li>
                 <li><a href="#method-stream-feed">Stream.Feed</a></li>
@@ -799,6 +1021,8 @@ export default function DocsSDKBuckyModel() {
             <div className="doc-index-section">
               <a href="#variables" className="doc-index-header">Variables</a>
               <ul>
+                <li><a href="#var-variable">Variable</a></li>
+                <li><a href="#var-variable">Variable</a></li>
                 <li><a href="#var-errstreamstopped">ErrStreamStopped</a></li>
               </ul>
             </div>

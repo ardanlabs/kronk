@@ -14,20 +14,6 @@ import (
 // Logger provides a function for logging messages from different APIs.
 type Logger func(ctx context.Context, msg string, args ...any)
 
-// LogLevel represents the logging level.
-type LogLevel int
-
-// Int returns the integer value.
-func (ll LogLevel) Int() int {
-	return int(ll)
-}
-
-// Set of logging levels supported by llama.cpp.
-const (
-	LogSilent LogLevel = iota + 1
-	LogNormal
-)
-
 // =============================================================================
 
 // NoTraceID is the sentinel value returned by GetTraceID when no trace id

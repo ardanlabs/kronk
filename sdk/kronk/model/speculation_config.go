@@ -12,7 +12,7 @@ import (
 
 type mtpArtifact = internalspec.MTPArtifact
 
-const (
+var (
 	speculationSourceNone    = internalspec.SourceNone
 	speculationSourceClassic = internalspec.SourceClassic
 	speculationSourceMTP     = internalspec.SourceMTP

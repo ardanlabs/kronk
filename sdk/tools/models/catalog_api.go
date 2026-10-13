@@ -290,7 +290,7 @@ func (m *Models) enrichEntry(ctx context.Context, entry CatalogEntry) (CatalogEn
 	modelType := ArchitectureClass(metadata)
 	capabilities := CapabilitiesForModel(metadata, entry.MMProj != "", catalogEntryModelName(entry))
 	mtpSource := MTPSourceFor(metadata, entry.MTP != "")
-	capabilities.MTP = mtpSource != ""
+	capabilities.MTP = !mtpSource.IsZero()
 
 	if entry.ModelType == modelType && entry.Capabilities == capabilities && entry.MTPSource == mtpSource {
 		return entry, false, nil
