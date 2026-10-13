@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -246,6 +248,10 @@ func TestMatrixSelection(t *testing.T) {
 		{"-matrix", "MTPon/MTPoff,IMCoff/IMCoff"},
 		{"-matrix", "on/off"},
 		{"-scenario", "media", "-matrix", "all", "-media-model", "fixture/vision/AGENT"},
+		{"-batch-workload", "invalid"},
+		{"-batch-workload", "images", "-batch-images", "a.jpg"},
+		{"-batch-workload", "images", "-batch-images", "a.jpg,a.jpg"},
+		{"-batch-workload", "images", "-batch-image-subjects", "deer,deer"},
 	} {
 		if _, _, err := parseConfig(args); err == nil {
 			t.Errorf("accepted invalid options %v", args)
@@ -693,6 +699,220 @@ func TestLongContextModesValidateStreamingUsage(t *testing.T) {
 			result := runLongContext(&rc)
 			if tc.failure == "" && len(result.Failures) != 0 || tc.failure != "" && !strings.Contains(strings.Join(result.Failures, "\n"), tc.failure) {
 				t.Fatalf("expected failure %q, got %v", tc.failure, result.Failures)
+			}
+		})
+	}
+}
+
+func TestBatchImageCommandModesAndHistory(t *testing.T) {
+	for _, tc := range []struct{ workload, mtp, imc, defect, failure string }{
+		{"text", "off", "on", "", ""},
+		{"images", "on", "on", "", ""},
+		{"images", "on", "off", "", ""},
+		{"images", "off", "on", "", ""},
+		{"images", "off", "off", "", ""},
+		{"images", "off", "on", "no-cache", "repeat reported no cached tokens"},
+		{"images", "off", "off", "cache", "IMC off: reported"},
+		{"images", "on", "off", "no-draft", "without positive drafting"},
+		{"images", "off", "on", "draft", "MTP off: reported drafting"},
+		{"images", "off", "off", "stale", "foreign/stale subject"},
+		{"images", "off", "off", "foreign-marker", "foreign marker"},
+		{"images", "off", "off", "repeat", "deterministic image repeat differed"},
+		{"images", "off", "off", "projection", "requires a projection"},
+	} {
+		t.Run(tc.workload+"-"+tc.mtp+"-"+tc.imc+"-"+tc.defect, func(t *testing.T) {
+			const model = "fixture/batch/TOOLS"
+			dir := t.TempDir()
+			paths := []string{filepath.Join(dir, "giraffe.jpg"), filepath.Join(dir, "astronaut.jpg")}
+			for index, subject := range []string{"giraffe", "astronaut"} {
+				if err := os.WriteFile(paths[index], []byte(subject), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var loaded atomic.Bool
+			var mu sync.Mutex
+			seen := make(map[string]int)
+			sem := make(chan struct{}, 2)
+			markerPattern := regexp.MustCompile(`BATCH-SESSION-(\d+)-TURN-(\d+)`)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/v1/kronk/models/ps":
+					if loaded.Load() {
+						fmt.Fprintf(w, `[{"id":%q,"slots":2,"has_projection":%t}]`, model, tc.defect != "projection")
+					} else {
+						fmt.Fprint(w, `[]`)
+					}
+				case "/v1/kronk/models/" + model:
+					fmt.Fprintf(w, `{"model_config":{"incremental-cache":%t}}`, tc.imc == "on")
+				case "/v1/kronk/models/slots":
+					fmt.Fprintf(w, `[{"model_id":%q,"mtp":%t,"slots":[{"id":0,"phase":"idle"},{"id":1,"phase":"idle"}]}]`, model, tc.mtp == "on")
+				case "/v1/kronk/models/unload":
+					loaded.Store(false)
+					fmt.Fprintf(w, `{"id":%q,"status":"unloaded"}`, model)
+				case "/v1/tokenize":
+					var body struct{ Input string }
+					json.NewDecoder(r.Body).Decode(&body)
+					if strings.Contains(body.Input, "data:image") {
+						t.Error("image payload must not be counted as text during history calibration")
+					}
+					fmt.Fprintf(w, `{"tokens":%d}`, 2*len(strings.Fields(body.Input)))
+				case "/v1/chat/completions":
+					var body struct {
+						Stream   bool
+						Messages []struct {
+							Role    string
+							Content any
+						}
+					}
+					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+						http.Error(w, err.Error(), http.StatusBadRequest)
+						return
+					}
+					if !body.Stream {
+						loaded.Store(true)
+						fmt.Fprint(w, `{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":1}}`)
+						return
+					}
+					prompt, subject, firstSubject, imageCount, textTokens := "", "", "", 0, 0
+					for _, msg := range body.Messages {
+						text, ok := msg.Content.(string)
+						if !ok {
+							for _, value := range msg.Content.([]any) {
+								part := value.(map[string]any)
+								if part["type"] == "text" {
+									text = part["text"].(string)
+								} else if part["type"] == "image_url" {
+									url := part["image_url"].(map[string]any)["url"].(string)
+									data, err := base64.StdEncoding.DecodeString(strings.SplitN(url, ",", 2)[1])
+									if err != nil {
+										t.Error(err)
+									}
+									subject = string(data)
+									if imageCount == 0 {
+										firstSubject = subject
+									}
+									imageCount++
+								}
+							}
+						}
+						// Include four chat framing tokens per message; the
+						// raw-text tokenizer above intentionally excludes them.
+						textTokens += 4 + 2*len(strings.Fields(text))
+						if msg.Role == "user" {
+							prompt = text
+						}
+					}
+					match := markerPattern.FindStringSubmatch(prompt)
+					if len(match) != 3 {
+						http.Error(w, "missing marker", 400)
+						return
+					}
+					session, _ := strconv.Atoi(match[1])
+					turn, _ := strconv.Atoi(match[2])
+					if tc.workload == "images" {
+						wantCount, index := 1, (session-1)%2
+						if turn >= 11 {
+							wantCount, index = 2, (index+1)%2
+						}
+						wantSubject := []string{"giraffe", "astronaut"}[index]
+						if imageCount != wantCount || subject != wantSubject {
+							t.Errorf("session=%d turn=%d: images=%d subject=%q, want %d/%s", session, turn, imageCount, subject, wantCount, wantSubject)
+						}
+					} else if imageCount != 0 {
+						t.Error("text workload included images")
+					}
+					mu.Lock()
+					attempt := seen[match[0]]
+					seen[match[0]]++
+					mu.Unlock()
+					if tc.defect == "stale" && turn >= 11 {
+						subject = firstSubject
+					}
+					marker := match[0]
+					if tc.defect == "foreign-marker" {
+						marker = "BATCH-SESSION-99-TURN-1"
+					}
+					output := strings.TrimSpace(subject + " " + strings.Repeat(marker+" ", 8))
+					if tc.defect == "repeat" && attempt > 0 {
+						output += " extra"
+					}
+					u := usage{PromptTokens: textTokens + imageCount*384, CompletionTokens: 96}
+					if (tc.imc == "on" && (turn > 1 || attempt > 0) && tc.defect != "no-cache") || tc.defect == "cache" {
+						u.PromptTokensDetails.CachedTokens = 500
+					}
+					if (tc.mtp == "on" && tc.defect != "no-draft") || tc.defect == "draft" {
+						u.DraftTokens, u.DraftAcceptedTokens, u.DraftCoverage = 64, 48, 0.75
+					}
+					select {
+					case sem <- struct{}{}:
+					case <-r.Context().Done():
+						return
+					}
+					defer func() { <-sem }()
+					// Model two occupied generation slots; the third request waits.
+					time.Sleep(10 * time.Millisecond)
+					w.Header().Set("Content-Type", "text/event-stream")
+					data, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"delta": map[string]string{"content": output}}}})
+					fmt.Fprintf(w, "data: %s\n\n", data)
+					w.(http.Flusher).Flush()
+					time.Sleep(30 * time.Millisecond)
+					data, _ = json.Marshal(map[string]any{"choices": []any{map[string]any{"delta": map[string]string{}, "finish_reason": "stop"}}, "usage": u})
+					fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", data)
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+			out := filepath.Join(dir, "out")
+			previous := os.Args
+			os.Args = []string{"reliability", "-scenario", "batch", "-batch-model", model, "-batch-workload", tc.workload,
+				"-batch-images", strings.Join(paths, ","), "-batch-slots", "2", "-batch-conversations", "3",
+				"-mtp", tc.mtp, "-imc", tc.imc, "-host", server.URL, "-out", out, "-server-log", filepath.Join(dir, "absent.log")}
+			defer func() { os.Args = previous }()
+			err := run()
+			if (err != nil) != (tc.failure != "") {
+				t.Fatalf("error=%v, want failure=%q", err, tc.failure)
+			}
+			data, err := os.ReadFile(filepath.Join(out, summaryFile))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var summary runSummary
+			if err := json.Unmarshal(data, &summary); err != nil {
+				t.Fatal(err)
+			}
+			result := summary.Scenarios[0]
+			if tc.failure != "" && !strings.Contains(strings.Join(result.Failures, "\n"), tc.failure) {
+				t.Fatalf("want %q, got %v", tc.failure, result.Failures)
+			}
+			if result.Details["workload"] != tc.workload {
+				t.Fatalf("wrong workload: %v", result.Details)
+			}
+			if tc.failure == "" {
+				wantRequests := 63
+				if tc.workload == "images" {
+					wantRequests = 69
+				}
+				requests := result.Details["requests"].([]any)
+				if len(requests) != wantRequests {
+					t.Fatalf("requests=%d, want %d", len(requests), wantRequests)
+				}
+				if len(summary.ModelUnloads) != 1 || summary.ModelUnloads[0].Status != "PASS" {
+					t.Fatalf("cleanup=%v", summary.ModelUnloads)
+				}
+				log, err := os.ReadFile(filepath.Join(out, toolLogFile))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !strings.Contains(string(log), "workload="+tc.workload) {
+					t.Fatal("tool log omitted workload")
+				}
+				for _, raw := range requests {
+					request := raw.(map[string]any)
+					if tc.workload == "images" && (request["output"] == nil || request["expected_subject"] == nil || request["image_count"] == nil) {
+						t.Fatalf("missing image evidence: %v", request)
+					}
+				}
 			}
 		})
 	}
