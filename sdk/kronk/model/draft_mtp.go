@@ -46,12 +46,9 @@ func modelFilesMTPArchitecture(modelFiles []string) (modelprofile.MTPArchitectur
 		return architecture, nil
 	}
 
-	arch := strings.ToLower(strings.TrimSpace(metadata["general.architecture"]))
-	blocks, err := gguf.ParseInt64(metadata, arch+".block_count")
-	if err != nil {
-		return modelprofile.MTPArchitectureNone, err
-	}
-	nextN := modelprofile.Resolve(metadata).Speculation.NextNPredictLayers
+	profile := modelprofile.Resolve(metadata)
+	blocks := profile.Dimensions.BlockCount
+	nextN := profile.Speculation.NextNPredictLayers
 	if blocks < nextN {
 		return modelprofile.MTPArchitectureNone, fmt.Errorf("MTP layer count %d exceeds block count %d", nextN, blocks)
 	}
