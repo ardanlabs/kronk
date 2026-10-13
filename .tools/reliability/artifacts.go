@@ -176,6 +176,9 @@ func (art *artifacts) writeLogSummary(summary runSummary) error {
 	fmt.Fprintf(&header, "TL;DR: %s — %d passed, %d failed scenario/cell results.\n", summary.Status, passed, failed)
 	for _, result := range summary.Scenarios {
 		fmt.Fprintf(&header, "  %-4s %s / %s\n", result.Status, result.Cell, result.Name)
+		if workload, ok := result.Details["workload"].(string); ok {
+			fmt.Fprintf(&header, "       workload=%s\n", workload)
+		}
 		if profiles, ok := result.Details["profiles"].([]mtpProfileResult); ok {
 			for _, profile := range profiles {
 				status := "PASS"
