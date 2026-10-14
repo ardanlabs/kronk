@@ -252,14 +252,15 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	// one llama.Decode.
 	e.batchAssembling = true
 
-	// Bind queued jobs to every available slot before advancing text IMC
-	// preparation. Text builds and extensions return from startSlot without
+	// Bind queued jobs to every available slot before advancing IMC
+	// preparation. Text/media builds and extensions return from startSlot without
 	// staging shared rows, so requests arriving while another prompt is being
 	// prepared can still claim free slots immediately. If another start path did
 	// stage rows during admission, defer direct IMC decoding until the next
 	// iteration rather than mutating context behind an assembled batch.
 	e.fillSlots(buf)
-	if e.batch.len() == 0 && e.hasIMCPreparation() {
+	trackIMCSchedule := e.hasIMCPreparation()
+	if e.batch.len() == 0 && trackIMCSchedule {
 		e.advanceIMCPreparation(buf)
 	}
 
@@ -270,7 +271,7 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	// Adding these before prefill keeps output responsive and lets prefill use
 	// only the tray capacity that remains.
 	batchRowsBeforeGeneration := e.batch.len()
-	trackPrefillSchedule := len(e.prefillSlotIDs()) > 0
+	trackPrefillSchedule := len(e.prefillSlotIDs()) > 0 || trackIMCSchedule
 	var generationContributions []string
 	if trackPrefillSchedule {
 		generationContributions = make([]string, 0, len(e.slots))
@@ -541,6 +542,7 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	}
 
 	// Lock to prevent concurrent decode with cache population.
+	decodeStarted := time.Now()
 	e.model.decodeMu.Lock()
 	ret, err := e.batch.process(llama.ProcessTypeDecode)
 	if err == nil && ret == 0 {
@@ -570,6 +572,13 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 			}
 		}
 		return
+	}
+	if trackIMCSchedule && e.diagnosticGenerationRows > 0 {
+		e.model.log(ctx, "batch-engine", "status", "imc-generation-decoded",
+			"iteration", iteration,
+			"generation_contributions", fmt.Sprintf("%v", generationContributions),
+			"generation_rows", e.diagnosticGenerationRows, "tray_tokens", e.batch.len(),
+			"elapsed", fmtDur(time.Since(decodeStarted)))
 	}
 	if stagedMedia != nil && stagedMedia.slot.active {
 		stagedMedia.commit()

@@ -134,6 +134,14 @@ func (e *batchEngine) slotSnapshot(now time.Time, s *slot) BatchSlotSnapshot {
 		snapshot.Phase = "prefill-imc"
 		snapshot.IMCPreparedTokens = s.imcPrep.nextToken
 		snapshot.IMCTotalTokens = len(s.job.imcNewCacheTokens)
+		if media := s.imcPrep.media; media != nil {
+			snapshot.Phase = "media-prefill"
+			snapshot.IMCPreparedTokens = media.physicalKVCells
+			if s.imcPrep.cacheIdx > 0 {
+				snapshot.IMCPreparedTokens += s.job.imcExpectedTokens
+			}
+			snapshot.IMCTotalTokens = media.totalPhysicalTokens
+		}
 		snapshot.IMCPreparationRemaining = max(snapshot.IMCTotalTokens-snapshot.IMCPreparedTokens, 0)
 
 	case s.prefillTokens != nil:

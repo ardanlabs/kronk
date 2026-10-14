@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
@@ -162,10 +161,6 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			return
 		}
 		s.mtmdCtx = mtmdCtx
-	}
-
-	mediaHandoff := func(batch *extendedBatch, nextPosition llama.Pos) error {
-		return e.syncMTPDecodedRows(s, batch, 0, nextPosition)
 	}
 
 	// IMC: restore externalized KV state from session.kvState, then decode
@@ -433,152 +428,13 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			s.imcRestoring = false
 		}
 
-		// IMC media builds and appends run synchronously during admission instead
-		// of through the batch media planner. Publish their phase before the
-		// projector or embedding decode blocks this engine goroutine so diagnostics
-		// clients can observe the work and its overlap with slots already generating.
-		if job.imcMediaBuild || job.imcMediaAppend {
-			s.mediaPrefilling = true
-			e.publishDiagnostics(true)
-		}
-
 		// Decode new cache extension tokens into the slot's sequence if any.
 		switch {
-		case job.imcMediaBuild:
-			e.model.log(job.ctx, "start-slot", "status", "imc-media-build", "slot", s.id, "seq", s.seqID)
-
-			e.model.decodeMu.Lock()
-			llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
-			resetErr := e.resetMTPMediaPrefix(s)
-			e.model.decodeMu.Unlock()
-			if resetErr != nil {
-				e.finishSlot(s, resetErr)
-				return
+		case job.imcMediaBuild || job.imcMediaAnchorAdvance:
+			if err := e.queueIMCMediaPreparation(s, cacheIdx, sessionUpdateDisabled); err != nil {
+				e.finishSlot(s, fmt.Errorf("start-slot: prepare IMC media: %w", err))
 			}
-
-			imcDecodeStart := time.Now()
-
-			nextLogicalPos, physicalKVCells, mediaKVCounts, samplerCacheTokens, nativeChunks, err := e.model.decodeMediaIntoCache(job.ctx, job.imcMediaCacheD, s.seqID, s.mtmdCtx, mediaHandoff)
-			if err != nil {
-				e.model.decodeMu.Lock()
-				llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
-				e.model.decodeMu.Unlock()
-
-				e.finishSlot(s, fmt.Errorf("start-slot: imc media build: %w", err))
-				return
-			}
-
-			metrics.AddPrefillTime(e.model.modelInfo.ID, "imc-decode", time.Since(imcDecodeStart))
-			cacheIdx = llama.Pos(nextLogicalPos)
-			job.imcPhysicalCached = physicalKVCells
-
-			e.model.imcCommitSession(job.ctx, job.imcSession, job.imcNewMsgsHash, physicalKVCells, job.imcNewCachedMsgCount, nil, true, mediaKVCounts, job.imcExpectedRenderHash)
-			e.model.cacheMu.Lock()
-			job.imcSession.promptPlan = job.imcPromptPlan
-			job.imcSession.samplerPromptTokens = slices.Clone(samplerCacheTokens)
-			job.imcSession.mediaNativeChunks = nativeChunks
-			job.imcSession.nextLogicalPos = nextLogicalPos
-			e.model.cacheMu.Unlock()
-			job.imcMediaSamplerTokens = samplerCacheTokens
-			job.samplerPromptTokens = slices.Clone(samplerCacheTokens)
-			job.samplerPromptTokens = append(job.samplerPromptTokens, job.tailTokens...)
-			sessionWasCommitted = true
-
-			if s.mtmdCtx != 0 && job.imcSession != nil {
-				job.imcSessionUseMRoPE = mtmd.DecodeUseMRope(s.mtmdCtx)
-				e.model.cacheMu.Lock()
-				job.imcSession.useMRoPE = job.imcSessionUseMRoPE
-				job.imcSession.useNonCausal = mtmd.DecodeUseNonCausal(s.mtmdCtx, 0)
-				e.model.cacheMu.Unlock()
-			}
-
-			e.model.log(job.ctx, "start-slot", "status", "imc-media-built", "slot", s.id, "seq", s.seqID,
-				"physical_kv_cells", physicalKVCells, "next_logical_position", nextLogicalPos)
-
-		case job.imcMediaAnchorAdvance:
-			imcDecodeStart := time.Now()
-			oldLogicalPosition := int(cacheIdx)
-			var decodeErr error
-			switch job.imcMediaAppend {
-			case true:
-				var addedPhysical int
-				var addedMediaKV []int
-				var samplerCacheTokens []llama.Token
-				prefix := job.imcSession.mediaNativeChunks
-				textToMedia := !job.imcSession.hasMedia
-				if textToMedia {
-					prefix = []imcMediaChunk{{kind: imcMediaChunkText, tokens: slices.Clone(job.imcSession.cachedTokens)}}
-				}
-				useNonCausal := mtmd.DecodeUseNonCausal(s.mtmdCtx, 0)
-				switch {
-				case textToMedia && useNonCausal:
-					e.model.log(job.ctx, "start-slot", "status", "imc-text-prefix-noncausal-rebuild", "slot", s.id, "seq", s.seqID)
-					e.model.decodeMu.Lock()
-					llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
-					resetErr := e.resetMTPMediaPrefix(s)
-					e.model.decodeMu.Unlock()
-					if resetErr != nil {
-						e.finishSlot(s, resetErr)
-						return
-					}
-					job.imcNewLogicalPosition, addedPhysical, addedMediaKV, samplerCacheTokens, job.imcMediaNativeChunks, decodeErr = e.model.decodeMediaIntoCache(
-						job.ctx, job.imcMediaCacheD, s.seqID, s.mtmdCtx, mediaHandoff)
-					oldLogicalPosition = 0
-				default:
-					job.imcNewLogicalPosition, addedPhysical, addedMediaKV, samplerCacheTokens, job.imcMediaNativeChunks, decodeErr = e.model.decodeMediaIntoCacheFromPlan(
-						job.ctx, job.imcMediaCacheD, prefix, s.seqID, s.mtmdCtx, oldLogicalPosition, mediaHandoff)
-				}
-				if errors.Is(decodeErr, errIMCMediaNativePrefix) {
-					e.model.log(job.ctx, "start-slot", "status", "imc-media-native-prefix-rebuild", "slot", s.id, "seq", s.seqID, "err", decodeErr)
-					e.model.decodeMu.Lock()
-					llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
-					resetErr := e.resetMTPMediaPrefix(s)
-					e.model.decodeMu.Unlock()
-					if resetErr != nil {
-						e.finishSlot(s, resetErr)
-						return
-					}
-					job.imcNewLogicalPosition, addedPhysical, addedMediaKV, samplerCacheTokens, job.imcMediaNativeChunks, decodeErr = e.model.decodeMediaIntoCache(
-						job.ctx, job.imcMediaCacheD, s.seqID, s.mtmdCtx, mediaHandoff)
-					oldLogicalPosition = 0
-				}
-				if decodeErr == nil {
-					job.imcSessionUseMRoPE = mtmd.DecodeUseMRope(s.mtmdCtx)
-					job.imcNewTotalCached = addedPhysical
-					if oldLogicalPosition > 0 {
-						job.imcNewTotalCached += job.imcExpectedTokens
-						job.imcMediaKVCounts = append(job.imcMediaKVCounts, addedMediaKV...)
-					} else {
-						job.imcMediaKVCounts = addedMediaKV
-					}
-					job.imcMediaSamplerTokens = samplerCacheTokens
-					job.samplerPromptTokens = append(slices.Clone(job.imcMediaSamplerTokens), job.tailTokens...)
-				}
-			case false:
-				job.imcMediaNativeChunks = job.imcSession.mediaNativeChunks
-				advanceTokens := job.imcNewCacheTokens
-				switch {
-				case job.imcSessionUseMRoPE:
-					_, decodeErr = e.model.decodeTextMRoPEIntoCache(advanceTokens, s.seqID, oldLogicalPosition, mediaHandoff)
-				case e.model.draft != nil && e.model.draft.mtp() && !s.mtp.Disabled:
-					decodeErr = e.decodeTokensIntoCacheMTP(job.ctx, s, advanceTokens, oldLogicalPosition)
-				default:
-					decodeErr = e.model.decodeTokensIntoCache(job.ctx, advanceTokens, s.seqID, oldLogicalPosition)
-				}
-			}
-			if decodeErr != nil {
-				e.finishSlot(s, fmt.Errorf("start-slot: imc media anchor advance: %w", decodeErr))
-				return
-			}
-
-			metrics.AddPrefillTime(e.model.modelInfo.ID, "imc-decode", time.Since(imcDecodeStart))
-			cacheIdx = llama.Pos(job.imcNewLogicalPosition)
-			job.imcPhysicalCached = job.imcNewTotalCached
-
-			e.model.log(job.ctx, "start-slot", "status", "imc-media-anchor-advanced-in-slot",
-				"slot", s.id, "seq", s.seqID, "replay_text_tokens", len(job.imcNewCacheTokens),
-				"media_append", job.imcMediaAppend,
-				"physical_kv_cells", job.imcNewTotalCached, "next_logical_position", job.imcNewLogicalPosition)
+			return
 
 		case len(job.imcNewCacheTokens) > 0:
 			// Detect stale extension: if another request extended this slot
@@ -688,7 +544,7 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 }
 
 // finishStartSlot snapshots and publishes any prepared IMC prefix, then stages
-// the request's ordinary suffix prefill. Text IMC preparation calls this only
+// the request's ordinary suffix prefill. IMC preparation calls this only
 // after its final resumable chunk has completed.
 func (e *batchEngine) finishStartSlot(s *slot, job *chatJob, cacheIdx llama.Pos, sessionUpdateDisabled, sessionWasCommitted bool, buf []byte) {
 

@@ -703,6 +703,10 @@ func (e *batchEngine) freeSlotResources(s *slot) {
 	}
 
 	// Free MTMD resources.
+	if s.imcPrep != nil && s.imcPrep.media != nil {
+		s.imcPrep.media.free()
+		s.imcPrep.media = nil
+	}
 	if s.inputChunks != 0 {
 		mtmd.InputChunksFree(s.inputChunks)
 		s.inputChunks = 0
