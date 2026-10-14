@@ -98,6 +98,13 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 	)
 	s.prefillStart = time.Now()
 
+	// Admission can restore or clear target sequences. Drain outstanding
+	// prefill before changing context state, even when admitting another slot.
+	if err := e.model.waitForPendingDecode(); err != nil {
+		e.finishSlot(s, err)
+		return
+	}
+
 	// Token-v2 planning already computed the complete prompt size. Reject an
 	// oversized prompt before restoring or extending its cached KV state.
 	if job.imcTokenPlan {
@@ -548,6 +555,12 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 // after its final resumable chunk has completed.
 func (e *batchEngine) finishStartSlot(s *slot, job *chatJob, cacheIdx llama.Pos, sessionUpdateDisabled, sessionWasCommitted bool, buf []byte) {
 
+	// IMC text preparation may have submitted its final chunk asynchronously.
+	// Complete it before snapshot publication or suffix initialization.
+	if err := e.model.waitForPendingDecode(); err != nil {
+		e.finishSlot(s, err)
+		return
+	}
 	s.nPast = cacheIdx
 
 	// Snapshot the cached prefix KV state into session.kvState. This
@@ -1213,6 +1226,10 @@ func (e *batchEngine) applyContextTokenBudget(s *slot, operation string) bool {
 // immutable System preload pool. A missing draft snapshot degrades safely to
 // target-only reuse.
 func (e *batchEngine) snapshotSystemCache(ctx context.Context, s *slot, job *chatJob, boundary int) bool {
+	if err := e.model.waitForPendingDecode(); err != nil {
+		e.model.log(ctx, "start-slot", "status", "imc-system-target-sync-failed", "err", err)
+		return false
+	}
 	cache := e.model.imcReserveSystemCache(job.imcNewCachedTokens[:boundary])
 	if cache == nil {
 		return false

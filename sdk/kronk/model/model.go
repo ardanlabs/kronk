@@ -209,6 +209,7 @@ type Model struct {
 	activeStreams    atomic.Int32
 	unloaded         atomic.Bool
 	decodeMu         sync.Mutex
+	pendingDecode    bool // Protected by decodeMu; submitted target work may still be executing.
 	graphAllocations graphAllocationLog
 	cacheMu          sync.RWMutex
 	imcSessions      []*imcSession     // IMC session pool, sized by IMCSessionCapacity; sessions migrate freely between slots via SessionStore. Idle sessions cost only the struct itself — the SessionStore buffer is allocated lazily on first use.

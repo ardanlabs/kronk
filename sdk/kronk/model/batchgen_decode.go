@@ -6,6 +6,26 @@ import (
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
+// synchronizeDecode completes submitted target work. The caller holds decodeMu.
+func (m *Model) synchronizeDecode() error {
+	if err := llama.Synchronize(m.lctx); err != nil {
+		return fmt.Errorf("synchronize target decode: %w", err)
+	}
+	m.pendingDecode = false
+	return nil
+}
+
+// waitForPendingDecode is a boundary before target state is read, changed, or
+// released. A mutex alone does not complete asynchronous GPU work.
+func (m *Model) waitForPendingDecode() error {
+	m.decodeMu.Lock()
+	defer m.decodeMu.Unlock()
+	if !m.pendingDecode {
+		return nil
+	}
+	return m.synchronizeDecode()
+}
+
 // =============================================================================
 // MTMD GENERATION BATCH DECODE HELPERS
 // =============================================================================

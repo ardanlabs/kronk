@@ -544,9 +544,29 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	// Lock to prevent concurrent decode with cache population.
 	decodeStarted := time.Now()
 	e.model.decodeMu.Lock()
+	// Only ordinary, output-free text can remain in flight. Media and draft
+	// contexts consume additional state even when no logits were requested.
+	deferCompletion := e.model.draft == nil && e.model.projFile == ""
+	for _, entry := range e.batch.entries {
+		if !entry.hasToken || len(entry.embedding) != 0 || entry.positionCount != 1 || entry.output != extendedBatchOutputNone {
+			deferCompletion = false
+			break
+		}
+	}
+	for _, released := range e.batchReleased {
+		if released {
+			deferCompletion = false
+			break
+		}
+	}
+	e.model.pendingDecode = true
 	ret, err := e.batch.process(llama.ProcessTypeDecode)
+	// A failed decode may also leave earlier submissions or partial work in
+	// flight. Complete it before diagnostics and sequence cleanup.
+	if err != nil || ret != 0 || !deferCompletion {
+		err = errors.Join(err, e.model.synchronizeDecode())
+	}
 	if err == nil && ret == 0 {
-		llama.Synchronize(e.model.lctx)
 		if stagedMedia != nil && stagedMedia.slot.active {
 			// Media is the final contribution in the tray. Consume its dense
 			// target states while the projector output and batch rows are valid.

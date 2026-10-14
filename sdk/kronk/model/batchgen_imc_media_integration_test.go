@@ -43,7 +43,8 @@ func TestIMCMediaPreparationAllowsGenerationProgress(t *testing.T) {
 			t.Errorf("unload: %v", err)
 		}
 	})
-	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	// Cover both requests and cache reuse on slower CI inference backends.
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
 	defer cancel()
 	actx, cancelA := context.WithCancel(ctx)
 	defer cancelA()

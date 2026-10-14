@@ -173,11 +173,16 @@ func (m *Model) decodeTokensIntoCache(ctx context.Context, tokens []llama.Token,
 			}
 		}
 
+		m.pendingDecode = true
 		ret, err := batch.process(llama.ProcessTypeDecode)
+		if err != nil || ret != 0 || m.draft != nil || m.projFile != "" {
+			err = errors.Join(err, m.synchronizeDecode())
+		}
 		if err != nil || ret != 0 {
 			return fmt.Errorf("imc: failed to decode extension tokens at pos %d: %w", startPos+i, decodeError(ret, err))
 		}
-		llama.Synchronize(m.lctx)
+		// The engine may call this with just one chunk per iteration. Leave
+		// output-free text in flight across calls, not only within this loop.
 	}
 
 	m.log(ctx, "cache", "status", "finished (decoding tokens into cache)", "seq", seqID, "tokens", nTokens, "nbatch", nBatch)

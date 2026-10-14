@@ -261,6 +261,16 @@ otherwise becomes ineligible. A long prompt can therefore make another new
 prompt wait, but it cannot block output-token generation between decode
 iterations.
 
+For ordinary text models without a media projector or draft context, intermediate
+prefill submissions that request no outputs can remain in flight across scheduler
+iterations. This also applies while IMC builds or extends a text prefix. On eligible
+layer-split multi-GPU backends, later chunks can execute early layers while earlier
+chunks execute later layers, without adding another prefill owner. Kronk waits at
+output, cache-snapshot, admission, sequence-cleanup, and shutdown boundaries rather
+than after every output-free submission. Mixed batches containing generation
+outputs, media, and speculative decoding retain completion waits. Actual overlap
+depends on llama.cpp's backend capabilities and internal synchronization.
+
 Multimodal generation uses the same logical tray through a contribution
 planner. Text rows, including M-RoPE text, can use available tray capacity.
 For validated architectures, causal image or audio embedding rows can share a

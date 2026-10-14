@@ -19,6 +19,9 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	if !s.active {
 		return
 	}
+	// Cancellation can arrive between output-free prefill submissions. Finish
+	// their GPU work before clearing the sequence or freeing slot resources.
+	err = errors.Join(err, e.model.waitForPendingDecode())
 	if e.batchAssembling {
 		e.batchReleased[s.id] = true
 	}

@@ -120,7 +120,8 @@ func TestKVCacheModesRespectRequestContext(t *testing.T) {
 					t.Errorf("unload: %v", err)
 				}
 			})
-			ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+			// Cover both concurrent request rounds on slower CI inference backends.
+			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
 			defer cancel()
 			results := make(chan error, 3)
 			for i := range 3 {

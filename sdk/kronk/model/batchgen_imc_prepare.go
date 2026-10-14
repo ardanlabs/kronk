@@ -159,7 +159,7 @@ func (e *batchEngine) advanceIMCPreparationSlot(s *slot, selectorStart, selected
 	}
 	if err != nil {
 		e.imcPrepNext = imcPreparationNext(selectedIndex, len(e.slots), true)
-		e.clearFailedIMCPreparation(s)
+		err = errors.Join(err, e.clearFailedIMCPreparation(s))
 		e.finishSlot(s, fmt.Errorf("start-slot: imc decode: %w", err))
 		return
 	}
@@ -267,7 +267,7 @@ func (e *batchEngine) advanceIMCMediaPreparation(s *slot, selectorStart, selecte
 			"iteration", e.batchIteration, "slot", s.id, "seq", s.seqID,
 			"chunk", chunkIdx, "chunk_type", chunkType, "elapsed", fmtDur(elapsed), "err", err)
 		e.imcPrepNext = imcPreparationNext(selectedIndex, len(e.slots), true)
-		e.clearFailedIMCPreparation(s)
+		err = errors.Join(err, e.clearFailedIMCPreparation(s))
 		e.finishSlot(s, fmt.Errorf("prepare IMC media: %w", err))
 		return
 	}
@@ -332,7 +332,10 @@ func imcPreparationNext(selected, slots int, complete bool) int {
 	return selected
 }
 
-func (e *batchEngine) clearFailedIMCPreparation(s *slot) {
+func (e *batchEngine) clearFailedIMCPreparation(s *slot) error {
+	if err := e.model.waitForPendingDecode(); err != nil {
+		return err
+	}
 	e.model.decodeMu.Lock()
 	llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
 	if e.model.draft != nil && e.model.draft.mtp() {
@@ -343,6 +346,7 @@ func (e *batchEngine) clearFailedIMCPreparation(s *slot) {
 		s.mtp.PendingHidden = s.mtp.PendingHidden[:0]
 	}
 	e.model.decodeMu.Unlock()
+	return nil
 }
 
 func (e *batchEngine) imcPreparationChunkSize() int {
