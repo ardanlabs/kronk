@@ -33,8 +33,9 @@ type mediaCorrectnessResult struct {
 
 type mediaStreamResult struct {
 	streamResult
-	EventTimes []time.Time `json:"-"`
-	Error      string      `json:"error,omitempty"`
+	Performance streamPerformance `json:"performance"`
+	EventTimes  []time.Time       `json:"-"`
+	Error       string            `json:"error,omitempty"`
 }
 
 type mediaPrefillResult struct {
@@ -48,6 +49,7 @@ type mediaPrefillResult struct {
 	PrefillMaximumGapSeconds  float64           `json:"prefill_maximum_gap_seconds"`
 	AllowedMaximumGapSeconds  float64           `json:"allowed_maximum_gap_seconds"`
 	Failures                  []string          `json:"failures,omitempty"`
+	WorkloadComplete          bool              `json:"workload_complete"`
 }
 
 func runMedia(rc *runContext) scenarioResult {
@@ -294,7 +296,7 @@ func runMediaPrefill(rc *runContext, model, imageURL string, loaded loadedModel)
 			return nil
 		})
 		readyOnce.Do(func() { ready <- false })
-		out := mediaStreamResult{streamResult: stream, EventTimes: eventTimes}
+		out := mediaStreamResult{streamResult: stream, Performance: stream.performance(), EventTimes: eventTimes}
 		if err != nil {
 			out.Error = err.Error()
 		}
@@ -322,7 +324,7 @@ func runMediaPrefill(rc *runContext, model, imageURL string, loaded loadedModel)
 			}
 			return nil
 		})
-		out := mediaStreamResult{streamResult: stream, EventTimes: eventTimes}
+		out := mediaStreamResult{streamResult: stream, Performance: stream.performance(), EventTimes: eventTimes}
 		if err != nil {
 			out.Error = err.Error()
 		}
@@ -416,6 +418,10 @@ func runMediaPrefill(rc *runContext, model, imageURL string, loaded loadedModel)
 	rc.artifacts.logf("media prefill: polls=%d media_observations=%d overlap=%d baseline_gap=%.3fs prefill_gap=%.3fs allowed=%.3fs",
 		result.SchedulerPolls, result.MediaPrefillObservations, result.GenerationOverlap,
 		result.BaselineMaximumGapSeconds, result.PrefillMaximumGapSeconds, result.AllowedMaximumGapSeconds)
+	result.WorkloadComplete = result.Generation.Error == "" && result.Image.Error == "" && result.Generation.FinishReason != "" && result.Image.FinishReason != ""
+	rc.artifacts.logf("media timing: text_first=%.3fs text_elapsed=%.3fs text_tokens=%d image_first=%.3fs image_elapsed=%.3fs image_tokens=%d complete=%t",
+		result.Generation.Performance.FirstContentSeconds, result.Generation.Performance.ElapsedSeconds, result.Generation.Usage.CompletionTokens,
+		result.Image.Performance.FirstContentSeconds, result.Image.Performance.ElapsedSeconds, result.Image.Usage.CompletionTokens, result.WorkloadComplete)
 	return result
 }
 

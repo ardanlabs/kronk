@@ -13,43 +13,50 @@ const batchCanaryRepetitions = 8
 var batchMarkerPattern = regexp.MustCompile(`BATCH-SESSION-\d+-TURN-\d+`)
 
 type batchRequestResult struct {
-	Session             int     `json:"session"`
-	Turn                int     `json:"turn"`
-	Phase               string  `json:"phase"`
-	ExpectedSubject     string  `json:"expected_subject,omitempty"`
-	ImageCount          int     `json:"image_count,omitempty"`
-	Output              string  `json:"output,omitempty"`
-	TraceID             string  `json:"trace_id,omitempty"`
-	ResponseID          string  `json:"response_id,omitempty"`
-	ElapsedSeconds      float64 `json:"elapsed_seconds"`
-	FirstContentSeconds float64 `json:"first_content_seconds"`
-	PromptTokens        int     `json:"prompt_tokens"`
-	CachedTokens        int     `json:"cached_tokens"`
-	CompletionTokens    int     `json:"completion_tokens"`
-	DraftTokens         int     `json:"draft_tokens,omitempty"`
-	DraftCoverage       float64 `json:"draft_coverage,omitempty"`
-	DraftDisableReason  string  `json:"draft_disable_reason,omitempty"`
-	FinishReason        string  `json:"finish_reason,omitempty"`
-	Error               string  `json:"error,omitempty"`
-	firstContentAt      time.Time
-	finishedAt          time.Time
+	streamPerformance
+	Session               int      `json:"session"`
+	Turn                  int      `json:"turn"`
+	Phase                 string   `json:"phase"`
+	ExpectedSubject       string   `json:"expected_subject,omitempty"`
+	ImageCount            int      `json:"image_count,omitempty"`
+	Output                string   `json:"output,omitempty"`
+	TraceID               string   `json:"trace_id,omitempty"`
+	ResponseID            string   `json:"response_id,omitempty"`
+	PromptTokens          int      `json:"prompt_tokens"`
+	CachedTokens          int      `json:"cached_tokens"`
+	CompletionTokens      int      `json:"completion_tokens"`
+	DraftTokens           int      `json:"draft_tokens,omitempty"`
+	DraftCoverage         float64  `json:"draft_coverage,omitempty"`
+	DraftDisableReason    string   `json:"draft_disable_reason,omitempty"`
+	FinishReason          string   `json:"finish_reason,omitempty"`
+	Error                 string   `json:"error,omitempty"`
+	ServerTokensPerSecond *float64 `json:"server_tokens_per_second,omitempty"`
+	ServerTTFTMS          *float64 `json:"server_ttft_ms,omitempty"`
+	firstContentAt        time.Time
+	finishedAt            time.Time
 }
 
 type batchTurnSummary struct {
-	Turn               int     `json:"turn"`
-	Phase              string  `json:"phase"`
-	Completed          int     `json:"completed"`
-	MaximumConcurrency int     `json:"maximum_concurrency"`
-	QueuedRequests     int     `json:"queued_requests"`
-	MinimumPrompt      int     `json:"minimum_prompt_tokens"`
-	MinimumCached      int     `json:"minimum_cached_tokens"`
-	SlowestSeconds     float64 `json:"slowest_seconds"`
+	Turn                  int     `json:"turn"`
+	Phase                 string  `json:"phase"`
+	Completed             int     `json:"completed"`
+	MaximumConcurrency    int     `json:"maximum_concurrency"`
+	QueuedRequests        int     `json:"queued_requests"`
+	MinimumPrompt         int     `json:"minimum_prompt_tokens"`
+	MinimumCached         int     `json:"minimum_cached_tokens"`
+	SlowestSeconds        float64 `json:"slowest_seconds"`
+	ElapsedSeconds        float64 `json:"elapsed_seconds"`
+	OutputTokens          int     `json:"output_tokens"`
+	OutputTokensPerSecond float64 `json:"output_tokens_per_second,omitempty"`
+	Complete              bool    `json:"complete"`
 }
 
 func runBatch(rc *runContext) scenarioResult {
 	model := rc.cfg.BatchModel
 	result := scenarioResult{Models: []string{model}, Details: map[string]any{}}
 	result.Details["workload"] = rc.cfg.BatchProfile
+	result.Details["workload_complete"] = false
+	result.Details["completed_history_turns"] = 0
 	var imageURLs []string
 	if rc.cfg.BatchProfile == "images" {
 		result.Details["image_fixtures"] = rc.cfg.BatchImages
@@ -177,6 +184,7 @@ func runBatch(rc *runContext) scenarioResult {
 		if len(result.Failures) > 0 {
 			break
 		}
+		result.Details["completed_history_turns"] = turn
 	}
 
 	if len(turns) > 0 && turns[len(turns)-1].Turn == rc.cfg.BatchTurns && turns[len(turns)-1].MinimumPrompt < rc.cfg.BatchTargetTokens {
@@ -189,6 +197,7 @@ func runBatch(rc *runContext) scenarioResult {
 	}
 	result.Details["turns"] = turns
 	result.Details["requests"] = allRequests
+	result.Details["workload_complete"] = len(result.Failures) == 0 && len(turns) > 0 && turns[len(turns)-1].Turn == rc.cfg.BatchTurns
 	return result
 }
 
@@ -235,16 +244,15 @@ func runBatchTurn(rc *runContext, model string, turn, records int, conversations
 			<-start
 			stream, err := rc.stream(rc, body, nil)
 			request := batchRequestResult{
-				Session: session + 1, Turn: turn, Phase: phase, ExpectedSubject: subject, ImageCount: imageCount,
+				streamPerformance: stream.performance(),
+				Session:           session + 1, Turn: turn, Phase: phase, ExpectedSubject: subject, ImageCount: imageCount,
 				TraceID: stream.TraceID, ResponseID: stream.ResponseID,
-				ElapsedSeconds: seconds(stream.FinishedAt.Sub(stream.StartedAt)), PromptTokens: stream.Usage.PromptTokens,
+				PromptTokens:          stream.Usage.PromptTokens,
+				ServerTokensPerSecond: stream.Usage.TokensPerSecond, ServerTTFTMS: stream.Usage.TimeToFirstTokenMS,
 				CachedTokens: stream.Usage.PromptTokensDetails.CachedTokens, CompletionTokens: stream.Usage.CompletionTokens,
 				DraftTokens: stream.Usage.DraftTokens, DraftCoverage: stream.Usage.DraftCoverage,
 				DraftDisableReason: stream.Usage.DraftDisableReason, FinishReason: stream.FinishReason,
 				firstContentAt: stream.FirstContentAt, finishedAt: stream.FinishedAt,
-			}
-			if !stream.FirstContentAt.IsZero() {
-				request.FirstContentSeconds = seconds(stream.FirstContentAt.Sub(stream.StartedAt))
 			}
 			if err != nil {
 				request.Error = err.Error()
@@ -281,7 +289,15 @@ func runBatchTurn(rc *runContext, model string, turn, records int, conversations
 func summarizeBatchTurn(turn int, requests []batchRequestResult) batchTurnSummary {
 	summary := batchTurnSummary{Turn: turn, MinimumPrompt: -1, MinimumCached: -1}
 	var earliestFinish time.Time
+	var started, finished time.Time
 	for _, request := range requests {
+		if !request.StartedAt.IsZero() && (started.IsZero() || request.StartedAt.Before(started)) {
+			started = request.StartedAt
+		}
+		if !request.finishedAt.IsZero() && (finished.IsZero() || request.finishedAt.After(finished)) {
+			finished = request.finishedAt
+		}
+		summary.OutputTokens += request.CompletionTokens
 		if request.Error == "" {
 			summary.Completed++
 		}
@@ -304,6 +320,13 @@ func summarizeBatchTurn(turn int, requests []batchRequestResult) batchTurnSummar
 		}
 	}
 	summary.MaximumConcurrency = maximumBatchConcurrency(requests)
+	summary.Complete = summary.Completed == len(requests) && len(requests) > 0
+	if !started.IsZero() && !finished.IsZero() {
+		summary.ElapsedSeconds = finished.Sub(started).Seconds()
+		if summary.Complete && summary.ElapsedSeconds > 0 {
+			summary.OutputTokensPerSecond = float64(summary.OutputTokens) / summary.ElapsedSeconds
+		}
+	}
 	return summary
 }
 
