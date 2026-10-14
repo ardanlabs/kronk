@@ -46,7 +46,7 @@ type config struct {
 	BatchMaxTokens     int
 	BatchSlots         int
 	BatchConversations int
-	BatchWorkload      string
+	BatchProfile       string
 	BatchImages        []string
 	BatchImageSubjects []string
 
@@ -105,7 +105,7 @@ func parseConfig(args []string) (config, bool, error) {
 	fs.IntVar(&cfg.BatchMaxTokens, "batch-max-tokens", 128, "maximum batch completion tokens")
 	fs.IntVar(&cfg.BatchSlots, "batch-slots", 4, "expected generation slots")
 	fs.IntVar(&cfg.BatchConversations, "batch-conversations", 5, "conversations; values above slots exercise queue pressure")
-	fs.StringVar(&cfg.BatchWorkload, "batch-workload", "text", "batch workload: text or images")
+	fs.StringVar(&cfg.BatchProfile, "batch-profile", "all", "batch profile: text, images, or all")
 	fs.StringVar(&batchImages, "batch-images", "examples/samples/giraffe.jpg,examples/samples/adetailer-face.png", "comma-separated distinct batch image fixtures")
 	fs.StringVar(&batchSubjects, "batch-image-subjects", "giraffe,astronaut", "comma-separated expected subject per batch image, in matching order")
 
@@ -266,10 +266,10 @@ func (cfg config) validate() error {
 	if cfg.BatchSlots < 2 || cfg.BatchConversations <= cfg.BatchSlots {
 		return errors.New("batch requires at least 2 slots and conversations greater than slots to exercise queue pressure")
 	}
-	if cfg.BatchWorkload != "text" && cfg.BatchWorkload != "images" {
-		return errors.New("-batch-workload must be text or images")
+	if cfg.BatchProfile != "text" && cfg.BatchProfile != "images" && cfg.BatchProfile != "all" {
+		return errors.New("-batch-profile must be text, images, or all")
 	}
-	if cfg.BatchWorkload == "images" {
+	if cfg.BatchProfile != "text" {
 		if len(cfg.BatchImages) < 2 || len(cfg.BatchImages) != len(cfg.BatchImageSubjects) {
 			return errors.New("image batch requires at least two images and one matching subject per image")
 		}

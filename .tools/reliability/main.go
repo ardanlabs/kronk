@@ -131,11 +131,25 @@ func run() error {
 		cellConfig, _ := cfg.forCell(cell)
 		art.traces.setCell(cell.id())
 		art.logf("\n========== CELL %s START ==========", cell.id())
-		for _, name := range cfg.Scenarios {
+		names := cfg.Scenarios
+		if cfg.BatchProfile == "all" {
+			names = nil
+			for _, name := range cfg.Scenarios {
+				if name == "batch" {
+					names = append(names, "batch/text", "batch/images")
+				} else {
+					names = append(names, name)
+				}
+			}
+		}
+		for _, name := range names {
 			art.logf("\n========== SCENARIO %s/%s START ==========", cell.id(), name)
 			scenarioStarted := time.Now().UTC()
 			rc := base
 			rc.cfg, rc.scenario = cellConfig, name
+			if after, ok := strings.CutPrefix(name, "batch/"); ok {
+				rc.cfg.BatchProfile = after
+			}
 			rc.observedModes = make(map[string]map[string]bool)
 			result := runScenario(&rc, name)
 			if client.managedModel != "" && !client.cleanupFailed {
@@ -252,7 +266,7 @@ func runScenario(rc *runContext, name string) scenarioResult {
 		return runHybridState(rc)
 	case "long-context":
 		return runLongContext(rc)
-	case "batch":
+	case "batch", "batch/text", "batch/images":
 		return runBatch(rc)
 	case "media":
 		return runMedia(rc)
