@@ -13,23 +13,15 @@
 #
 # The tools validate the active model configuration but never modify it or
 # manage the server. Restart the server after editing model_config_tools.yaml.
-# Each target runs only its selected scenarios/profiles across all four modes.
-# Select cells as labeled MTP/IMC pairs, separated by commas. For example,
-# media with IMC off and both MTP modes:
+# Reliability targets default to all four MTP/IMC cells. Select a subset with:
 #   make test-load-media RELIABILITY_MATRIX="MTPon/IMCoff,MTPoff/IMCoff"
-# Combine selected scenarios in ONE invocation and ONE set of three files:
+# Combine scenarios in one artifact set:
 #   make test-load-all RELIABILITY_SCENARIOS="mtp,media" RELIABILITY_MATRIX=all
-# summary.json is ordered by cell/scenario; events.ndjson tags every event with
-# cell/scenario/trace; tool.log begins with a final TL;DR followed by the timeline.
-# The runner unloads selected tools aliases left by previous runs, between model
-# switches, and after scenarios (including failures). Unrelated models are untouched.
-# Cleanup failure stops the matrix and preserves the results collected so far.
-# Model overrides should use provider/model; matching TOOLS-MTP-* suffixes are
-# selected automatically. Images are a workload choice, not another mode alias.
-# Batch defaults to text; test-load-batch-images selects the image workload.
-# For a combined invocation with image batch, use RELIABILITY_BATCH_WORKLOAD=images.
-# Both workloads use the same batch model aliases and unchanged concurrency criterion.
-# Lifecycle is unchanged and excluded from the matrix.
+# Results are tagged by cell/scenario; tool.log starts with a final TL;DR.
+# Selected model aliases unload automatically; cleanup failure stops the matrix.
+# Model overrides use provider/model; the runner selects the matching tools alias.
+# Batch defaults to text; use RELIABILITY_BATCH_WORKLOAD=images in combined runs.
+# Lifecycle remains outside the matrix.
 #
 # Further analysis with some harness: provide summary.json,
 # events.ndjson, and tool.log from the same RELIABILITY_OUT, plus
@@ -168,13 +160,8 @@ test-load-long-context:
 test-load-batch:
 	$(call run_reliability,batch,)
 
-# Same batch engine and matrix, with distinct image subjects per conversation.
-# Adds images at turn 1 and the midpoint (turn 11 by default), changing subjects.
-# Replays both image-bearing requests, then appends text turns retaining the images.
-# Verifies current-subject recognition, stale/foreign-subject rejection, conversation
-# markers, mode-aware usage/cache reuse, and the unchanged generation-overlap criterion.
-# Like text batch, does not require byte-identical output across requests.
-# Fixture paths and expected subjects must be comma-separated lists in matching order.
+# Batch with image history, subject changes, and replays; no output-equality check.
+# Custom image paths and subjects use matching comma-separated lists.
 test-load-batch-images: RELIABILITY_BATCH_WORKLOAD = images
 test-load-batch-images:
 	$(call run_reliability,batch,)
@@ -185,16 +172,12 @@ test-load-batch-images:
 test-load-media:
 	$(call run_reliability,media,-media-profile all)
 
-# Multimodal correctness probe. Verifies subject recognition, deterministic
-# replay, mode-aware repeat/append reuse, image cancellation/slot release,
-# image/text recovery, and isolation from a following text-only request.
+# Image correctness, replay/append, cancellation, slot release, and image/text recovery.
 test-load-media-correctness:
 	$(call run_reliability,media,-media-profile correctness)
 
 # Media-prefill concurrency probe. Requires at least two slots and verifies
 # scheduler-observed media-prefill/generation overlap with bounded text gaps.
-# All completed requests check mode-aware usage. Short text controls (<=8
-# output tokens) need not draft; media correctness requires image drafting.
 test-load-media-prefill:
 	$(call run_reliability,media,-media-profile prefill)
 
