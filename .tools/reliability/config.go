@@ -13,16 +13,18 @@ import (
 )
 
 type config struct {
-	Host      string
-	Token     string
-	Out       string
-	ServerLog string
-	Scenarios []string
-	Timeout   time.Duration
-	Seed      int64
-	MTP       string
-	IMC       string
-	Matrix    []modeCell
+	Host        string
+	Token       string `json:"-"`
+	Out         string
+	ServerLog   string
+	Scenarios   []string
+	Repetitions int
+	RunLabel    string
+	Timeout     time.Duration
+	Seed        int64
+	MTP         string
+	IMC         string
+	Matrix      []modeCell
 
 	MTPEmbeddedModel  string
 	MTPCompanionModel string
@@ -74,6 +76,8 @@ func parseConfig(args []string) (config, bool, error) {
 
 	fs.StringVar(&scenarios, "scenario", "all", "comma-separated scenarios: mtp, hybrid-state, long-context, batch, media, or all")
 	fs.BoolVar(&list, "list", false, "list scenario names and exit")
+	fs.IntVar(&cfg.Repetitions, "repetitions", 1, "repeat the selected matrix; each repetition reloads models")
+	fs.StringVar(&cfg.RunLabel, "run-label", "", "operator-supplied version/environment label (not verified)")
 	fs.StringVar(&cfg.Host, "host", envOr("KRONK_WEB_API_HOST", "http://localhost:11435"), "Kronk server base URL")
 	fs.StringVar(&cfg.Out, "out", ".tools/reliability/output", "replaceable artifact directory")
 	fs.StringVar(&cfg.ServerLog, "server-log", filepath.Join(home, ".kronk", "kronk.log"), "detached Kronk JSON log")
@@ -239,6 +243,9 @@ func (cfg config) selectedModels() []string {
 }
 
 func (cfg config) validate() error {
+	if cfg.Repetitions < 1 {
+		return errors.New("-repetitions must be positive")
+	}
 	if (cfg.MTP != "on" && cfg.MTP != "off") || (cfg.IMC != "on" && cfg.IMC != "off") {
 		return errors.New("-mtp and -imc must be on or off")
 	}

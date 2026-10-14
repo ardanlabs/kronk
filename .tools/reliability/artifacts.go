@@ -19,10 +19,12 @@ const (
 )
 
 type traceRegistry struct {
-	mu          sync.RWMutex
-	scenario    map[string]string
-	cells       map[string]string
-	currentCell string
+	mu                sync.RWMutex
+	scenario          map[string]string
+	cells             map[string]string
+	currentCell       string
+	repetitions       map[string]int
+	currentRepetition int
 }
 
 func (registry *traceRegistry) add(traceID, scenario string) {
@@ -30,6 +32,13 @@ func (registry *traceRegistry) add(traceID, scenario string) {
 	defer registry.mu.Unlock()
 	registry.scenario[traceID] = scenario
 	registry.cells[traceID] = registry.currentCell
+	registry.repetitions[traceID] = registry.currentRepetition
+}
+
+func (registry *traceRegistry) setRepetition(repetition int) {
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	registry.currentRepetition = repetition
 }
 
 func (registry *traceRegistry) setCell(cell string) {
@@ -38,11 +47,11 @@ func (registry *traceRegistry) setCell(cell string) {
 	registry.currentCell = cell
 }
 
-func (registry *traceRegistry) lookup(traceID string) (string, string, bool) {
+func (registry *traceRegistry) lookup(traceID string) (string, string, int, bool) {
 	registry.mu.RLock()
 	defer registry.mu.RUnlock()
 	scenario, exists := registry.scenario[traceID]
-	return scenario, registry.cells[traceID], exists
+	return scenario, registry.cells[traceID], registry.repetitions[traceID], exists
 }
 
 type artifacts struct {
@@ -73,20 +82,22 @@ type mtpServerEvidence struct {
 }
 
 type mtpBackendSelection struct {
-	Scenario string `json:"scenario"`
-	Cell     string `json:"cell"`
-	TraceID  string `json:"trace_id"`
-	Message  string `json:"message"`
-	Backend  string `json:"backend"`
-	Source   string `json:"source"`
+	Repetition int    `json:"repetition"`
+	Scenario   string `json:"scenario"`
+	Cell       string `json:"cell"`
+	TraceID    string `json:"trace_id"`
+	Message    string `json:"message"`
+	Backend    string `json:"backend"`
+	Source     string `json:"source"`
 }
 
 type evidenceEvent struct {
-	Scenario string         `json:"scenario"`
-	Cell     string         `json:"cell"`
-	Source   string         `json:"source"`
-	TraceID  string         `json:"trace_id"`
-	Event    map[string]any `json:"event"`
+	Repetition int            `json:"repetition"`
+	Scenario   string         `json:"scenario"`
+	Cell       string         `json:"cell"`
+	Source     string         `json:"source"`
+	TraceID    string         `json:"trace_id"`
+	Event      map[string]any `json:"event"`
 }
 
 func newArtifacts(dir, serverLog string) (*artifacts, error) {
@@ -115,7 +126,7 @@ func newArtifacts(dir, serverLog string) (*artifacts, error) {
 		serverLogReady:  ready,
 		toolLog:         toolLog,
 		events:          events,
-		traces:          &traceRegistry{scenario: make(map[string]string), cells: make(map[string]string)},
+		traces:          &traceRegistry{scenario: make(map[string]string), cells: make(map[string]string), repetitions: make(map[string]int)},
 	}
 	if note != "" {
 		art.logf("server evidence note: %s", note)
@@ -175,7 +186,7 @@ func (art *artifacts) writeLogSummary(summary runSummary) error {
 	var header strings.Builder
 	fmt.Fprintf(&header, "TL;DR: %s — %d passed, %d failed scenario/cell results.\n", summary.Status, passed, failed)
 	for _, result := range summary.Scenarios {
-		fmt.Fprintf(&header, "  %-4s %s / %s\n", result.Status, result.Cell, result.Name)
+		fmt.Fprintf(&header, "  %-4s repetition=%d %s / %s\n", result.Status, result.Repetition, result.Cell, result.Name)
 		if workload, ok := result.Details["workload"].(string); ok {
 			fmt.Fprintf(&header, "       workload=%s\n", workload)
 		}
@@ -219,6 +230,9 @@ func (art *artifacts) writeLogSummary(summary runSummary) error {
 	}
 	if !summary.ServerEvidence.Available || summary.ServerEvidence.Note != "" {
 		fmt.Fprintf(&header, "Evidence note: %s\n", summary.ServerEvidence.Note)
+	}
+	if len(summary.PerformanceAggregates) > 0 {
+		fmt.Fprintf(&header, "Performance: %d matched groups in summary.json; mean and sample standard deviation across repetitions (n-1).\n", len(summary.PerformanceAggregates))
 	}
 	header.WriteString("\n========== EXECUTION TIMELINE (final results above include server-evidence checks) ==========\n")
 	if _, err := io.WriteString(target, header.String()); err != nil {
@@ -278,12 +292,12 @@ func (art *artifacts) collectServerEvidence() serverEvidence {
 			continue
 		}
 		traceID, _ := event["trace_id"].(string)
-		scenario, cell, exists := art.traces.lookup(traceID)
+		scenario, cell, repetition, exists := art.traces.lookup(traceID)
 		if !exists || !highValueEvent(event) {
 			continue
 		}
-		recordMTPServerEvidence(&evidence.MTP, scenario, cell, traceID, event)
-		if err := encoder.Encode(evidenceEvent{Scenario: scenario, Cell: cell, Source: "kronk-server", TraceID: traceID, Event: event}); err != nil {
+		recordMTPServerEvidence(&evidence.MTP, scenario, cell, traceID, repetition, event)
+		if err := encoder.Encode(evidenceEvent{Repetition: repetition, Scenario: scenario, Cell: cell, Source: "kronk-server", TraceID: traceID, Event: event}); err != nil {
 			evidence.Note = "write server evidence: " + err.Error()
 			return evidence
 		}
@@ -298,19 +312,20 @@ func (art *artifacts) collectServerEvidence() serverEvidence {
 	return evidence
 }
 
-func recordMTPServerEvidence(evidence *mtpServerEvidence, scenario, cell, traceID string, event map[string]any) {
+func recordMTPServerEvidence(evidence *mtpServerEvidence, scenario, cell, traceID string, repetition int, event map[string]any) {
 	message, _ := event["msg"].(string)
 	status, _ := event["status"].(string)
 	if strings.HasPrefix(message, "draft-model-mtp") && status == "loaded" {
 		backend, _ := event["backend"].(string)
 		source, _ := event["source"].(string)
 		evidence.BackendSelections = append(evidence.BackendSelections, mtpBackendSelection{
-			Scenario: scenario,
-			Cell:     cell,
-			TraceID:  traceID,
-			Message:  message,
-			Backend:  backend,
-			Source:   source,
+			Repetition: repetition,
+			Scenario:   scenario,
+			Cell:       cell,
+			TraceID:    traceID,
+			Message:    message,
+			Backend:    backend,
+			Source:     source,
 		})
 	}
 	if message == "speculative" && status == "draft-kv-cleared" {
@@ -338,7 +353,7 @@ func highValueEvent(event map[string]any) bool {
 		return true
 	}
 	switch message {
-	case "request-lifecycle", "imc", "imc-media-cache", "prefill-media", "finish-slot", "draft-model-mtp", "draft-model-mtp-separate", "draft-model-mtp-shared":
+	case "request-lifecycle", "imc", "imc-media-cache", "prefill-media", "finish-slot", "draft-model-mtp", "draft-model-mtp-separate", "draft-model-mtp-shared", "batch-sizing":
 		return true
 	case "batch-engine":
 		return status == "slot-started" || status == "slot-finished" || strings.Contains(status, "error") || status == "job-failed"
