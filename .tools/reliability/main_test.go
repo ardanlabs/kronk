@@ -240,6 +240,9 @@ func TestMatrixSelection(t *testing.T) {
 	if !reflect.DeepEqual(cfg.Matrix, []modeCell{{"off", "on"}, {"on", "off"}}) || cfg.MediaModel != "fixture/vision/TOOLS-MTP-OFF-IMC-ON" {
 		t.Fatalf("incorrect cell selection: %+v", cfg)
 	}
+	if cfg.BatchProfile != "all" {
+		t.Fatalf("default batch profile=%q, want all", cfg.BatchProfile)
+	}
 	for _, args := range [][]string{
 		{"-matrix", "all", "-mtp", "on"},
 		{"-matrix", "MTPon/invalid"},
@@ -248,10 +251,10 @@ func TestMatrixSelection(t *testing.T) {
 		{"-matrix", "MTPon/MTPoff,IMCoff/IMCoff"},
 		{"-matrix", "on/off"},
 		{"-scenario", "media", "-matrix", "all", "-media-model", "fixture/vision/AGENT"},
-		{"-batch-workload", "invalid"},
-		{"-batch-workload", "images", "-batch-images", "a.jpg"},
-		{"-batch-workload", "images", "-batch-images", "a.jpg,a.jpg"},
-		{"-batch-workload", "images", "-batch-image-subjects", "deer,deer"},
+		{"-batch-profile", "invalid"},
+		{"-batch-profile", "images", "-batch-images", "a.jpg"},
+		{"-batch-profile", "images", "-batch-images", "a.jpg,a.jpg"},
+		{"-batch-profile", "images", "-batch-image-subjects", "deer,deer"},
 	} {
 		if _, _, err := parseConfig(args); err == nil {
 			t.Errorf("accepted invalid options %v", args)
@@ -719,6 +722,9 @@ func TestBatchImageCommandModesAndHistory(t *testing.T) {
 		{"images", "off", "off", "foreign-marker", "foreign marker"},
 		{"images", "on", "off", "repeat", ""},
 		{"images", "off", "off", "projection", "requires a projection"},
+		{"all", "off", "on", "", ""},
+		{"all", "on", "off", "text-marker", "foreign marker"},
+		{"", "off", "on", "", ""},
 	} {
 		t.Run(tc.workload+"-"+tc.mtp+"-"+tc.imc+"-"+tc.defect, func(t *testing.T) {
 			const model = "fixture/batch/TOOLS"
@@ -729,6 +735,11 @@ func TestBatchImageCommandModesAndHistory(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			serverLog, err := os.Create(filepath.Join(dir, "server.log"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer serverLog.Close()
 			var loaded atomic.Bool
 			var mu sync.Mutex
 			seen := make(map[string]int)
@@ -809,7 +820,7 @@ func TestBatchImageCommandModesAndHistory(t *testing.T) {
 					}
 					session, _ := strconv.Atoi(match[1])
 					turn, _ := strconv.Atoi(match[2])
-					if tc.workload == "images" {
+					if tc.workload == "images" || (tc.workload == "all" || tc.workload == "") && imageCount > 0 {
 						wantCount, index := 1, (session-1)%2
 						if turn >= 11 {
 							wantCount, index = 2, (index+1)%2
@@ -821,15 +832,18 @@ func TestBatchImageCommandModesAndHistory(t *testing.T) {
 					} else if imageCount != 0 {
 						t.Error("text workload included images")
 					}
+					key := fmt.Sprintf("%t/%s", imageCount > 0, match[0])
 					mu.Lock()
-					attempt := seen[match[0]]
-					seen[match[0]]++
+					attempt := seen[key]
+					seen[key]++
+					traceID := strings.Split(r.Header.Get("Traceparent"), "-")[1]
+					fmt.Fprintf(serverLog, "{\"msg\":\"request-lifecycle\",\"level\":\"INFO\",\"trace_id\":%q}\n", traceID)
 					mu.Unlock()
 					if tc.defect == "stale" && turn >= 11 {
 						subject = firstSubject
 					}
 					marker := match[0]
-					if tc.defect == "foreign-marker" && attempt > 0 {
+					if tc.defect == "foreign-marker" && attempt > 0 || tc.defect == "text-marker" && imageCount == 0 {
 						marker = "BATCH-SESSION-99-TURN-1"
 					}
 					output := strings.TrimSpace(subject + " " + strings.Repeat(marker+" ", 8))
@@ -865,11 +879,14 @@ func TestBatchImageCommandModesAndHistory(t *testing.T) {
 			defer server.Close()
 			out := filepath.Join(dir, "out")
 			previous := os.Args
-			os.Args = []string{"reliability", "-scenario", "batch", "-batch-model", model, "-batch-workload", tc.workload,
+			os.Args = []string{"reliability", "-scenario", "batch", "-batch-model", model,
 				"-batch-images", strings.Join(paths, ","), "-batch-slots", "2", "-batch-conversations", "3",
-				"-mtp", tc.mtp, "-imc", tc.imc, "-host", server.URL, "-out", out, "-server-log", filepath.Join(dir, "absent.log")}
+				"-mtp", tc.mtp, "-imc", tc.imc, "-host", server.URL, "-out", out, "-server-log", serverLog.Name()}
+			if tc.workload != "" {
+				os.Args = append(os.Args, "-batch-profile", tc.workload)
+			}
 			defer func() { os.Args = previous }()
-			err := run()
+			err = run()
 			if (err != nil) != (tc.failure != "") {
 				t.Fatalf("error=%v, want failure=%q", err, tc.failure)
 			}
@@ -881,36 +898,74 @@ func TestBatchImageCommandModesAndHistory(t *testing.T) {
 			if err := json.Unmarshal(data, &summary); err != nil {
 				t.Fatal(err)
 			}
-			result := summary.Scenarios[0]
-			if tc.failure != "" && !strings.Contains(strings.Join(result.Failures, "\n"), tc.failure) {
-				t.Fatalf("want %q, got %v", tc.failure, result.Failures)
+			workloads := []string{tc.workload}
+			if tc.workload == "all" || tc.workload == "" {
+				workloads = []string{"text", "images"}
 			}
-			if result.Details["workload"] != tc.workload {
-				t.Fatalf("wrong workload: %v", result.Details)
+			if len(summary.Scenarios) != len(workloads) || len(summary.ModelUnloads) != len(workloads) {
+				t.Fatalf("results/unloads=%d/%d, want %d", len(summary.Scenarios), len(summary.ModelUnloads), len(workloads))
 			}
-			if tc.failure == "" {
-				wantRequests := 63
-				if tc.workload == "images" {
-					wantRequests = 69
+			for index, result := range summary.Scenarios {
+				workload := workloads[index]
+				failure := tc.failure
+				if tc.defect == "text-marker" && workload == "images" {
+					failure = ""
 				}
-				requests := result.Details["requests"].([]any)
-				if len(requests) != wantRequests {
-					t.Fatalf("requests=%d, want %d", len(requests), wantRequests)
+				if failure != "" && !strings.Contains(strings.Join(result.Failures, "\n"), failure) {
+					t.Fatalf("want %q, got %v", failure, result.Failures)
 				}
-				if len(summary.ModelUnloads) != 1 || summary.ModelUnloads[0].Status != "PASS" {
-					t.Fatalf("cleanup=%v", summary.ModelUnloads)
+				if result.Details["workload"] != workload {
+					t.Fatalf("wrong workload: %v", result.Details)
 				}
-				log, err := os.ReadFile(filepath.Join(out, toolLogFile))
+				if len(workloads) == 2 && result.Name != "batch/"+workload {
+					t.Fatalf("wrong result label: %s", result.Name)
+				}
+				if failure == "" {
+					if result.Status != "PASS" {
+						t.Fatalf("%s failed: %v", workload, result.Failures)
+					}
+					wantRequests := 63
+					if workload == "images" {
+						wantRequests = 69
+					}
+					requests := result.Details["requests"].([]any)
+					if len(requests) != wantRequests {
+						t.Fatalf("requests=%d, want %d", len(requests), wantRequests)
+					}
+					if summary.ModelUnloads[index].Status != "PASS" {
+						t.Fatalf("cleanup=%v", summary.ModelUnloads)
+					}
+					log, err := os.ReadFile(filepath.Join(out, toolLogFile))
+					if err != nil {
+						t.Fatal(err)
+					}
+					if !strings.Contains(string(log), "workload="+workload) {
+						t.Fatal("tool log omitted workload")
+					}
+					for _, raw := range requests {
+						request := raw.(map[string]any)
+						if workload == "images" && (request["output"] == nil || request["expected_subject"] == nil || request["image_count"] == nil) {
+							t.Fatalf("missing image evidence: %v", request)
+						}
+					}
+				}
+			}
+			if len(workloads) == 2 {
+				data, err := os.ReadFile(filepath.Join(out, eventsFile))
 				if err != nil {
 					t.Fatal(err)
 				}
-				if !strings.Contains(string(log), "workload="+tc.workload) {
-					t.Fatal("tool log omitted workload")
+				counts := make(map[string]int)
+				for line := range strings.SplitSeq(strings.TrimSpace(string(data)), "\n") {
+					var event evidenceEvent
+					if err := json.Unmarshal([]byte(line), &event); err != nil {
+						t.Fatal(err)
+					}
+					counts[event.Scenario]++
 				}
-				for _, raw := range requests {
-					request := raw.(map[string]any)
-					if tc.workload == "images" && (request["output"] == nil || request["expected_subject"] == nil || request["image_count"] == nil) {
-						t.Fatalf("missing image evidence: %v", request)
+				for _, result := range summary.Scenarios {
+					if counts[result.Name] != len(result.Details["requests"].([]any)) {
+						t.Fatalf("%s event count=%d, want one per workload request", result.Name, counts[result.Name])
 					}
 				}
 			}

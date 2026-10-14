@@ -1,27 +1,21 @@
 # Consolidated batch-engine, MTP, IMC, long-context, and media reliability
-# probes. Each invocation replaces RELIABILITY_OUT with summary.json,
-# events.ndjson, and tool.log. The runner reads only bytes appended to the
-# detached server log during the invocation and retains high-value events whose
-# trace IDs match its requests. Use a unique RELIABILITY_OUT to preserve a run.
+# probes. 
 #
 # Run against the current source with the tools-specific model configuration:
 #
 #   make server-for-tools
-#   make test-load-all # Or another tool wanted
+#   make test-load-all # Or just the tool wanted.
 #   make kronk-server-logs  # Optional: follow the detached server log.
 #   make kronk-server-stop
 #
 # The tools validate the active model configuration but never modify it or
 # manage the server. Restart the server after editing model_config_tools.yaml.
+#
 # Reliability targets default to all four MTP/IMC cells. Select a subset with:
 #   make test-load-media RELIABILITY_MATRIX="MTPon/IMCoff,MTPoff/IMCoff"
 # Combine scenarios in one artifact set:
 #   make test-load-all RELIABILITY_SCENARIOS="mtp,media" RELIABILITY_MATRIX=all
-# Results are tagged by cell/scenario; tool.log starts with a final TL;DR.
-# Selected model aliases unload automatically; cleanup failure stops the matrix.
-# Model overrides use provider/model; the runner selects the matching tools alias.
-# Batch defaults to text; use RELIABILITY_BATCH_WORKLOAD=images in combined runs.
-# Lifecycle remains outside the matrix.
+
 #
 # Further analysis with some harness: provide summary.json,
 # events.ndjson, and tool.log from the same RELIABILITY_OUT, plus
@@ -72,7 +66,6 @@ RELIABILITY_BATCH_TOKENS_PER_TURN ?= 1400
 RELIABILITY_BATCH_MAX_TOKENS ?= 128
 RELIABILITY_BATCH_SLOTS ?= 4
 RELIABILITY_BATCH_CONVERSATIONS ?= 5
-RELIABILITY_BATCH_WORKLOAD ?= text
 RELIABILITY_BATCH_IMAGES ?= examples/samples/giraffe.jpg,examples/samples/adetailer-face.png
 RELIABILITY_BATCH_IMAGE_SUBJECTS ?= giraffe,astronaut
 
@@ -111,7 +104,6 @@ define run_reliability
 		-batch-max-tokens "$(RELIABILITY_BATCH_MAX_TOKENS)" \
 		-batch-slots "$(RELIABILITY_BATCH_SLOTS)" \
 		-batch-conversations "$(RELIABILITY_BATCH_CONVERSATIONS)" \
-		-batch-workload "$(RELIABILITY_BATCH_WORKLOAD)" \
 		-batch-images "$(RELIABILITY_BATCH_IMAGES)" \
 		-batch-image-subjects "$(RELIABILITY_BATCH_IMAGE_SUBJECTS)" \
 		-media-model "$(RELIABILITY_MEDIA_MODEL)" \
@@ -155,16 +147,18 @@ test-load-hybrid:
 test-load-long-context:
 	$(call run_reliability,long-context,)
 
-# Long-running multi-slot batch-isolation probe. Exercises every slot plus queue
+# Text and image batch profiles. Exercises every slot plus queue
 # pressure, overlapping generation, marker isolation, IMC reuse, and 30K-token histories.
 test-load-batch:
-	$(call run_reliability,batch,)
+	$(call run_reliability,batch,-batch-profile all)
+
+# Text-only batch histories and isolation.
+test-load-batch-text:
+	$(call run_reliability,batch,-batch-profile text)
 
 # Batch with image history, subject changes, and replays; no output-equality check.
-# Custom image paths and subjects use matching comma-separated lists.
-test-load-batch-images: RELIABILITY_BATCH_WORKLOAD = images
 test-load-batch-images:
-	$(call run_reliability,batch,)
+	$(call run_reliability,batch,-batch-profile images)
 
 # -------------------------------
 
@@ -184,7 +178,6 @@ test-load-media-prefill:
 # -------------------------------
 
 # Runs only load/reliability scenarios, sequentially in one artifact set.
-# The separately configured lifecycle probe is intentionally excluded.
 test-load-all:
 	$(call run_reliability,$(RELIABILITY_SCENARIOS),)
 
