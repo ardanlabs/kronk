@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-
-	"github.com/ardanlabs/kronk/cmd/server/app/domain/fineapp/finetune"
 )
 
 const (
@@ -15,6 +13,21 @@ const (
 	endOfTurn         = "<end_of_turn>"
 	conversationTurns = 4
 )
+
+// Record is a model-neutral prompt and target pair.
+type Record struct {
+	Prompt string
+	Target string
+}
+
+// Dataset contains source splits and optional caller-selected conversations.
+// Only the final turn of a conversation contributes to the loss.
+type Dataset struct {
+	Train                   []Record
+	Validation              []Record
+	TrainingConversations   [][]Record
+	ValidationConversations [][]Record
+}
 
 // Tokenizer converts Gemma-formatted text into exact model token IDs.
 type Tokenizer interface {
@@ -50,7 +63,7 @@ type TokenizationProgress struct {
 
 // PrepareDataset verifies the tokenizer's model identity before creating the
 // model-specific training and validation records.
-func (runtime *Runtime) PrepareDataset(ctx context.Context, contract finetune.DatasetContract, tokenizer VerifiedTokenizer, progress func(TokenizationProgress)) (PreparedDataset, error) {
+func (runtime *Runtime) PrepareDataset(ctx context.Context, contract Dataset, tokenizer VerifiedTokenizer, progress func(TokenizationProgress)) (PreparedDataset, error) {
 	if runtime == nil || runtime.base == nil {
 		return PreparedDataset{}, fmt.Errorf("gemma runtime is closed")
 	}
@@ -63,17 +76,17 @@ func (runtime *Runtime) PrepareDataset(ctx context.Context, contract finetune.Da
 	return prepareDataset(ctx, contract, tokenizer, runtime.base.config, progress)
 }
 
-func prepareDataset(ctx context.Context, contract finetune.DatasetContract, tokenizer Tokenizer, config Config, progress func(TokenizationProgress)) (PreparedDataset, error) {
+func prepareDataset(ctx context.Context, contract Dataset, tokenizer Tokenizer, config Config, progress func(TokenizationProgress)) (PreparedDataset, error) {
 	if len(contract.Train) == 0 {
 		return PreparedDataset{}, fmt.Errorf("prepare Gemma dataset: training split is empty")
 	}
 	if len(contract.Validation) == 0 {
 		return PreparedDataset{}, fmt.Errorf("prepare Gemma dataset: validation split is empty")
 	}
-	trainingConversations, validationConversations := conversationSources(contract.Train, contract.Validation)
+	trainingConversations, validationConversations := contract.TrainingConversations, contract.ValidationConversations
 	total := len(contract.Train) + len(contract.Validation) + len(trainingConversations) + len(validationConversations)
 	completed := 0
-	prepare := func(split string, sources []finetune.DatasetRecord) ([]TrainingRecord, error) {
+	prepare := func(split string, sources []Record) ([]TrainingRecord, error) {
 		records := make([]TrainingRecord, len(sources))
 		for index, source := range sources {
 			if err := ctx.Err(); err != nil {
@@ -100,7 +113,7 @@ func prepareDataset(ctx context.Context, contract finetune.DatasetContract, toke
 	if err != nil {
 		return PreparedDataset{}, err
 	}
-	prepareConversations := func(split string, sources [][]finetune.DatasetRecord) ([]TrainingRecord, error) {
+	prepareConversations := func(split string, sources [][]Record) ([]TrainingRecord, error) {
 		records := make([]TrainingRecord, len(sources))
 		for index, source := range sources {
 			record, err := prepareConversationRecord(ctx, source, tokenizer, config)
@@ -128,60 +141,13 @@ func prepareDataset(ctx context.Context, contract finetune.DatasetContract, toke
 	return PreparedDataset{Training: training, Validation: validation}, nil
 }
 
-// conversationSources adds one four-turn example for every training fact and
-// one per validation record. This teaches each fact to tolerate unrelated
-// conversation history without a second training phase.
-func conversationSources(training, validation []finetune.DatasetRecord) ([][]finetune.DatasetRecord, [][]finetune.DatasetRecord) {
-	groups := make(map[string][]finetune.DatasetRecord)
-	factOrder := make([]string, 0)
-	for _, record := range training {
-		if record.IndependentPrompt || record.FactID == "" {
-			continue
-		}
-		if len(groups[record.FactID]) == 0 {
-			factOrder = append(factOrder, record.FactID)
-		}
-		groups[record.FactID] = append(groups[record.FactID], record)
-	}
-	if len(factOrder) < conversationTurns {
-		return nil, nil
-	}
-	representatives := make([]finetune.DatasetRecord, 0, len(factOrder))
-	trainingSources := make([]finetune.DatasetRecord, 0, len(factOrder))
-	for _, factID := range factOrder {
-		records := groups[factID]
-		representatives = append(representatives, records[0])
-		trainingSources = append(trainingSources, records[len(records)-1])
-	}
-	trainingConversations := make([][]finetune.DatasetRecord, len(trainingSources))
-	for index, source := range trainingSources {
-		trainingConversations[index] = conversation(representatives, source, index+conversationTurns)
-	}
-	validationConversations := make([][]finetune.DatasetRecord, len(validation))
-	for index, source := range validation {
-		validationConversations[index] = conversation(representatives, source, index+conversationTurns)
-	}
-	return trainingConversations, validationConversations
-}
-
-func conversation(representatives []finetune.DatasetRecord, current finetune.DatasetRecord, offset int) []finetune.DatasetRecord {
-	turns := make([]finetune.DatasetRecord, 0, conversationTurns)
-	for step := 1; len(turns) < conversationTurns-1; step++ {
-		candidate := representatives[(offset+step)%len(representatives)]
-		if candidate.FactID != current.FactID {
-			turns = append(turns, candidate)
-		}
-	}
-	return append(turns, current)
-}
-
 // PrepareRecord formats and tokenizes one model-neutral Moxie dataset record
 // using Gemma's official user/model turn markers.
-func PrepareRecord(ctx context.Context, source finetune.DatasetRecord, tokenizer Tokenizer, config Config) (TrainingRecord, error) {
-	return prepareConversationRecord(ctx, []finetune.DatasetRecord{source}, tokenizer, config)
+func PrepareRecord(ctx context.Context, source Record, tokenizer Tokenizer, config Config) (TrainingRecord, error) {
+	return prepareConversationRecord(ctx, []Record{source}, tokenizer, config)
 }
 
-func prepareConversationRecord(ctx context.Context, sources []finetune.DatasetRecord, tokenizer Tokenizer, config Config) (TrainingRecord, error) {
+func prepareConversationRecord(ctx context.Context, sources []Record, tokenizer Tokenizer, config Config) (TrainingRecord, error) {
 	if tokenizer == nil {
 		return TrainingRecord{}, fmt.Errorf("gemma tokenizer is required")
 	}

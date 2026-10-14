@@ -493,7 +493,7 @@ func (backend *Backend) trainGemma(ctx context.Context, request finetune.Request
 			}
 		}()
 
-		prepared, err := runtime.PrepareDataset(ctx, contract, client, func(update gemma.TokenizationProgress) {
+		prepared, err := runtime.PrepareDataset(ctx, runtimeDataset(contract), client, func(update gemma.TokenizationProgress) {
 			reportProgress(progress, finetune.Progress{
 				Stage: finetune.StageTokenizing, Completed: update.Completed, Total: update.Total,
 				Message: fmt.Sprintf("Tokenizing %s split", update.Split),
@@ -1001,6 +1001,58 @@ func reportProgress(progress finetune.ProgressFunc, update finetune.Progress) {
 	if progress != nil {
 		progress(update)
 	}
+}
+
+// runtimeDataset keeps legacy fact selection and protected-test policy out of
+// the computation runtime. The order and four-turn augmentation are unchanged.
+func runtimeDataset(contract finetune.DatasetContract) gemma.Dataset {
+	convert := func(records []finetune.DatasetRecord) []gemma.Record {
+		result := make([]gemma.Record, len(records))
+		for i, record := range records {
+			result[i] = gemma.Record{Prompt: record.Prompt, Target: record.Target}
+		}
+		return result
+	}
+	dataset := gemma.Dataset{Train: convert(contract.Train), Validation: convert(contract.Validation)}
+	groups := make(map[string][]finetune.DatasetRecord)
+	var factOrder []string
+	for _, record := range contract.Train {
+		if record.IndependentPrompt || record.FactID == "" {
+			continue
+		}
+		if len(groups[record.FactID]) == 0 {
+			factOrder = append(factOrder, record.FactID)
+		}
+		groups[record.FactID] = append(groups[record.FactID], record)
+	}
+	const turns = 4
+	if len(factOrder) < turns {
+		return dataset
+	}
+	representatives := make([]finetune.DatasetRecord, 0, len(factOrder))
+	trainingSources := make([]finetune.DatasetRecord, 0, len(factOrder))
+	for _, factID := range factOrder {
+		records := groups[factID]
+		representatives = append(representatives, records[0])
+		trainingSources = append(trainingSources, records[len(records)-1])
+	}
+	conversations := func(sources []finetune.DatasetRecord) [][]gemma.Record {
+		result := make([][]gemma.Record, len(sources))
+		for index, current := range sources {
+			var records []finetune.DatasetRecord
+			for step := 1; len(records) < turns-1; step++ {
+				candidate := representatives[(index+turns+step)%len(representatives)]
+				if candidate.FactID != current.FactID {
+					records = append(records, candidate)
+				}
+			}
+			result[index] = convert(append(records, current))
+		}
+		return result
+	}
+	dataset.TrainingConversations = conversations(trainingSources)
+	dataset.ValidationConversations = conversations(contract.Validation)
+	return dataset
 }
 
 var _ finetune.Backend = (*Backend)(nil)
