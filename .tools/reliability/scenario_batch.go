@@ -49,9 +49,9 @@ type batchTurnSummary struct {
 func runBatch(rc *runContext) scenarioResult {
 	model := rc.cfg.BatchModel
 	result := scenarioResult{Models: []string{model}, Details: map[string]any{}}
-	result.Details["workload"] = rc.cfg.BatchWorkload
+	result.Details["workload"] = rc.cfg.BatchProfile
 	var imageURLs []string
-	if rc.cfg.BatchWorkload == "images" {
+	if rc.cfg.BatchProfile == "images" {
 		result.Details["image_fixtures"] = rc.cfg.BatchImages
 		result.Details["image_subjects"] = rc.cfg.BatchImageSubjects
 		result.Details["image_change_turn"] = (rc.cfg.BatchTurns + 1) / 2
@@ -104,7 +104,7 @@ func runBatch(rc *runContext) scenarioResult {
 		return result
 	}
 	rc.artifacts.logf("batch workload=%s model=%s slots=%d conversations=%d calibrated_turn=%d canary_tokens=%d/%d",
-		rc.cfg.BatchWorkload, model, rc.cfg.BatchSlots, rc.cfg.BatchConversations, calibrated, canaryTokens, rc.cfg.BatchMaxTokens)
+		rc.cfg.BatchProfile, model, rc.cfg.BatchSlots, rc.cfg.BatchConversations, calibrated, canaryTokens, rc.cfg.BatchMaxTokens)
 
 	conversations := make([][]map[string]any, rc.cfg.BatchConversations)
 	for session := range rc.cfg.BatchConversations {
