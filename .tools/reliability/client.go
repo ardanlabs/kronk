@@ -38,13 +38,15 @@ func (err *httpError) Error() string {
 }
 
 type usage struct {
-	PromptTokens        int     `json:"prompt_tokens"`
-	CompletionTokens    int     `json:"completion_tokens"`
-	DraftTokens         int     `json:"draft_tokens,omitempty"`
-	DraftAcceptedTokens int     `json:"draft_accepted_tokens,omitempty"`
-	DraftAcceptanceRate float64 `json:"draft_acceptance_rate,omitempty"`
-	DraftCoverage       float64 `json:"draft_coverage,omitempty"`
-	DraftDisableReason  string  `json:"draft_disable_reason,omitempty"`
+	TokensPerSecond     *float64 `json:"tokens_per_second,omitempty"`
+	TimeToFirstTokenMS  *float64 `json:"time_to_first_token_ms,omitempty"`
+	PromptTokens        int      `json:"prompt_tokens"`
+	CompletionTokens    int      `json:"completion_tokens"`
+	DraftTokens         int      `json:"draft_tokens,omitempty"`
+	DraftAcceptedTokens int      `json:"draft_accepted_tokens,omitempty"`
+	DraftAcceptanceRate float64  `json:"draft_acceptance_rate,omitempty"`
+	DraftCoverage       float64  `json:"draft_coverage,omitempty"`
+	DraftDisableReason  string   `json:"draft_disable_reason,omitempty"`
 	PromptTokensDetails struct {
 		CachedTokens int `json:"cached_tokens"`
 	} `json:"prompt_tokens_details"`
@@ -84,6 +86,34 @@ type streamResult struct {
 	FinishedAt        time.Time `json:"-"`
 	FinishReason      string    `json:"finish_reason,omitempty"`
 	Usage             usage     `json:"usage"`
+}
+
+type streamPerformance struct {
+	StartedAt             time.Time `json:"started_at"`
+	FirstContentAt        time.Time `json:"first_content_at"`
+	FinishedAt            time.Time `json:"finished_at"`
+	ElapsedSeconds        float64   `json:"elapsed_seconds"`
+	FirstContentSeconds   float64   `json:"first_content_seconds,omitempty"`
+	GenerationSeconds     float64   `json:"generation_seconds,omitempty"`
+	OutputTokensPerSecond float64   `json:"client_output_tokens_per_second,omitempty"`
+}
+
+// Client content timing includes transport; content chunks need not be single tokens.
+func (result streamResult) performance() streamPerformance {
+	p := streamPerformance{StartedAt: result.StartedAt, FirstContentAt: result.FirstContentAt, FinishedAt: result.FinishedAt}
+	if !result.StartedAt.IsZero() && !result.FinishedAt.IsZero() {
+		p.ElapsedSeconds = result.FinishedAt.Sub(result.StartedAt).Seconds()
+	}
+	if !result.FirstContentAt.IsZero() {
+		p.FirstContentSeconds = result.FirstContentAt.Sub(result.StartedAt).Seconds()
+		if !result.FinishedAt.IsZero() {
+			p.GenerationSeconds = result.FinishedAt.Sub(result.FirstContentAt).Seconds()
+			if p.GenerationSeconds > 0 {
+				p.OutputTokensPerSecond = float64(result.Usage.CompletionTokens) / p.GenerationSeconds
+			}
+		}
+	}
+	return p
 }
 
 func newAPIClient(host, token string, timeout time.Duration, traces *traceRegistry) *apiClient {
@@ -133,7 +163,12 @@ func (client *apiClient) json(ctx context.Context, scenario, method, path string
 	return traceID, nil
 }
 
-func (client *apiClient) stream(ctx context.Context, scenario string, body any, visit func(chatChunk, time.Time) error) (streamResult, error) {
+func (client *apiClient) stream(ctx context.Context, scenario string, body any, visit func(chatChunk, time.Time) error) (result streamResult, returnErr error) {
+	defer func() {
+		if !result.StartedAt.IsZero() && result.FinishedAt.IsZero() {
+			result.FinishedAt = time.Now()
+		}
+	}()
 	traceID, err := newTraceID()
 	if err != nil {
 		return streamResult{}, err
@@ -152,7 +187,7 @@ func (client *apiClient) stream(ctx context.Context, scenario string, body any, 
 	}
 	client.setHeaders(req, traceID, true)
 
-	result := streamResult{TraceID: traceID, StartedAt: time.Now()}
+	result = streamResult{TraceID: traceID, StartedAt: time.Now()}
 	resp, err := client.client.Do(req)
 	if err != nil {
 		return result, fmt.Errorf("stream chat completion: %w", requestContextError(requestCtx, err))

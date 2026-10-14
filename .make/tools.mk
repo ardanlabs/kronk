@@ -41,6 +41,8 @@ RELIABILITY_OUT ?= .tools/reliability/output
 RELIABILITY_SERVER_LOG ?= $(HOME)/.kronk/kronk.log
 RELIABILITY_TIMEOUT ?= 30m
 RELIABILITY_SEED ?= 42
+RELIABILITY_REPETITIONS ?= 1
+RELIABILITY_RUN_LABEL ?=
 RELIABILITY_ARGS ?=
 RELIABILITY_MATRIX ?= all
 RELIABILITY_SCENARIOS ?= all
@@ -85,6 +87,8 @@ define run_reliability
 		-server-log "$(RELIABILITY_SERVER_LOG)" \
 		-timeout "$(RELIABILITY_TIMEOUT)" \
 		-seed "$(RELIABILITY_SEED)" \
+		-repetitions "$(RELIABILITY_REPETITIONS)" \
+		-run-label "$(RELIABILITY_RUN_LABEL)" \
 		-matrix "$(RELIABILITY_MATRIX)" \
 		-mtp-embedded-model "$(RELIABILITY_MTP_EMBEDDED_MODEL)" \
 		-mtp-companion-model "$(RELIABILITY_MTP_COMPANION_MODEL)" \

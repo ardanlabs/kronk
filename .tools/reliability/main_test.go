@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -43,6 +44,10 @@ func TestMatrixCommandArtifactsAndCleanup(t *testing.T) {
 				mu.Lock()
 				defer mu.Unlock()
 				switch r.URL.Path {
+				case "/v1/liveness":
+					fmt.Fprint(w, `{"build":"fixture-server","host":"gpu-host"}`)
+				case "/v1/kronk/libs":
+					fmt.Fprint(w, `{"current":"fixture-libs"}`)
 				case "/v1/kronk/models/ps":
 					models := []loadedModel{}
 					for id := range loaded {
@@ -133,7 +138,7 @@ func TestMatrixCommandArtifactsAndCleanup(t *testing.T) {
 			out := filepath.Join(dir, "out")
 			previous := os.Args
 			os.Args = []string{"reliability", "-matrix", "all", "-scenario", "hybrid-state,long-context", "-hybrid-model", base, "-long-context-model", base,
-				"-long-context-stages", "512", "-host", server.URL, "-out", out, "-server-log", logPath, "-timeout", "1s"}
+				"-long-context-stages", "512", "-host", server.URL, "-out", out, "-server-log", logPath, "-timeout", "1s", "-repetitions", "2", "-run-label", "operator-label"}
 			defer func() { os.Args = previous }()
 			err = run()
 			if (err != nil) != (defect != "") {
@@ -147,9 +152,9 @@ func TestMatrixCommandArtifactsAndCleanup(t *testing.T) {
 			if err := json.Unmarshal(data, &summary); err != nil {
 				t.Fatal(err)
 			}
-			wantResults, wantFailed := 8, 0
+			wantResults, wantFailed := 16, 0
 			if defect == "response" {
-				wantFailed = 1
+				wantFailed = 2
 			}
 			if defect == "unload" {
 				wantResults, wantFailed = 1, 1
@@ -160,7 +165,7 @@ func TestMatrixCommandArtifactsAndCleanup(t *testing.T) {
 			failed := 0
 			cells := []string{"mtp-on-imc-on", "mtp-on-imc-off", "mtp-off-imc-on", "mtp-off-imc-off"}
 			for i, result := range summary.Scenarios {
-				if result.Cell != cells[i/2] || result.Name != []string{"hybrid-state", "long-context"}[i%2] {
+				if result.Cell != cells[(i%8)/2] || result.Name != []string{"hybrid-state", "long-context"}[i%2] || result.Repetition != i/8+1 {
 					t.Fatalf("misordered result %+v", result)
 				}
 				if result.Status == "FAIL" {
@@ -169,6 +174,24 @@ func TestMatrixCommandArtifactsAndCleanup(t *testing.T) {
 			}
 			if failed != wantFailed {
 				t.Fatalf("failed=%d, want %d: %+v", failed, wantFailed, summary.Scenarios)
+			}
+			wantAggregates := (wantResults - wantFailed) / 2
+			if len(summary.PerformanceAggregates) != wantAggregates {
+				t.Fatalf("aggregate groups=%d, want %d", len(summary.PerformanceAggregates), wantAggregates)
+			}
+			for _, aggregate := range summary.PerformanceAggregates {
+				stats := aggregate.Metrics["duration_seconds"]
+				if stats.Count != 2 || stats.MissingRepetitions != 0 || stats.SampleStandardDeviation == nil || !reflect.DeepEqual(stats.Repetitions, []int{1, 2}) {
+					t.Fatalf("incorrect repetition statistics: %+v", stats)
+				}
+			}
+			if summary.Configuration.Repetitions != 2 || summary.Configuration.RunLabel != "operator-label" || summary.ServerMetadata["/v1/liveness"].(map[string]any)["build"] != "fixture-server" || summary.ToolBuild["go_version"] == "" {
+				t.Fatalf("missing run provenance: %+v", summary)
+			}
+			for _, unload := range summary.ModelUnloads[1:] {
+				if unload.Repetition < 1 || unload.Repetition > 2 {
+					t.Fatalf("untagged cleanup: %+v", unload)
+				}
 			}
 			if (summary.Note != "") != (defect == "unload") {
 				t.Fatalf("unexpected stop note %q", summary.Note)
@@ -206,18 +229,122 @@ func TestMatrixCommandArtifactsAndCleanup(t *testing.T) {
 				if err := json.Unmarshal([]byte(line), &event); err != nil {
 					t.Fatal(err)
 				}
-				seen[event.Cell+"/"+event.Scenario] = true
+				seen[fmt.Sprintf("%d/%s/%s", event.Repetition, event.Cell, event.Scenario)] = true
 				model, _ := event.Event["model"].(string)
 				if !strings.HasSuffix(model, strings.ToUpper("TOOLS-"+event.Cell)) {
 					t.Fatalf("event tagged with wrong cell: %+v", event)
 				}
 			}
 			for _, result := range summary.Scenarios {
-				if !seen[result.Cell+"/"+result.Name] {
+				if !seen[fmt.Sprintf("%d/%s/%s", result.Repetition, result.Cell, result.Name)] {
 					t.Errorf("missing events for %s/%s", result.Cell, result.Name)
 				}
 			}
 		})
+	}
+}
+
+func TestPerformanceSummaryStatistics(t *testing.T) {
+	summary := runSummary{Configuration: config{Repetitions: 4}}
+	for i, value := range []float64{1, 2, 9} {
+		var serverTPS *float64
+		if i != 1 {
+			v := float64(i * 6)
+			serverTPS = &v
+		}
+		for _, workload := range []string{"text", "images"} {
+			factor := 1.0
+			if workload == "images" {
+				factor = 100
+			}
+			result := scenarioResult{Name: "batch/" + workload, Cell: "mtp-off-imc-on", Status: "PASS", Repetition: i + 1, DurationSeconds: value * factor}
+			result.Details = map[string]any{
+				"workload": workload,
+				"turns": []batchTurnSummary{
+					{Turn: 1, Phase: "history", Complete: true, ElapsedSeconds: value * factor},
+					{Turn: 2, Phase: "history", Complete: true, ElapsedSeconds: value * factor * 10},
+					{Turn: 1, Phase: "repeat", Complete: true, ElapsedSeconds: value * factor * 20},
+					{Turn: 3, Phase: "history", Complete: false, ElapsedSeconds: 1000},
+				},
+				"requests": []batchRequestResult{
+					{Session: 1, Turn: 1, Phase: "history", FinishReason: "stop", ElapsedSeconds: value * factor, ServerTokensPerSecond: serverTPS},
+					{Session: 2, Turn: 1, Phase: "history", FinishReason: "stop", ElapsedSeconds: value * factor * 10},
+					{Session: 3, Turn: 1, Phase: "history", Error: "failed", ElapsedSeconds: 1000},
+				},
+			}
+			summary.Scenarios = append(summary.Scenarios, result)
+		}
+	}
+	summary.Scenarios = append(summary.Scenarios,
+		scenarioResult{Name: "batch/text", Cell: "mtp-off-imc-on", Repetition: 4, Status: "FAIL", DurationSeconds: 999, Details: map[string]any{"workload": "text", "turns": []batchTurnSummary{{Turn: 1, Phase: "history", Complete: true, ElapsedSeconds: 50}}}},
+		scenarioResult{Name: "batch/text", Cell: "mtp-off-imc-off", Repetition: 1, Status: "PASS", DurationSeconds: 100},
+	)
+	art, err := newArtifacts(filepath.Join(t.TempDir(), "out"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer art.close()
+	aggregatePerformance(&summary)
+	if err := art.writeSummary(summary); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(art.dir, summaryFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved runSummary
+	if err := json.Unmarshal(data, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if len(saved.PerformanceAggregates) != 14 {
+		t.Fatalf("aggregate groups=%d, want 14", len(saved.PerformanceAggregates))
+	}
+	for _, aggregate := range saved.PerformanceAggregates {
+		metric := "elapsed_seconds"
+		if aggregate.Scope == "scenario" {
+			metric = "duration_seconds"
+		}
+		stats := aggregate.Metrics[metric]
+		if aggregate.Status == "FAIL" || aggregate.Cell == "mtp-off-imc-off" {
+			want := 50.0
+			if aggregate.Cell == "mtp-off-imc-off" {
+				want = 100
+			}
+			if stats.Count != 1 || stats.Mean != want || stats.SampleStandardDeviation != nil || stats.MissingRepetitions != 3 {
+				t.Fatalf("single sample or failed-run separation incorrect: %+v", aggregate)
+			}
+			continue
+		}
+		factor := 1.0
+		if aggregate.Workload == "images" {
+			factor = 100
+		}
+		if aggregate.Turn == 2 || aggregate.Session == 2 {
+			factor *= 10
+		}
+		if aggregate.Phase == "repeat" {
+			factor *= 20
+		}
+		if stats.Count != 3 || stats.Mean != 4*factor || stats.SampleStandardDeviation == nil || math.Abs(*stats.SampleStandardDeviation-math.Sqrt(19)*factor) > 1e-9 || stats.MissingRepetitions != 1 || !reflect.DeepEqual(stats.Repetitions, []int{1, 2, 3}) {
+			t.Fatalf("wrong matching or sample statistics: %+v / %+v", aggregate, stats)
+		}
+		if aggregate.Scope == "batch-request" && aggregate.Session == 1 {
+			server := aggregate.Metrics["server_tokens_per_second"]
+			if server == nil || server.Count != 2 || server.Mean != 6 || server.MissingRepetitions != 2 || math.Abs(*server.SampleStandardDeviation-math.Sqrt(72)) > 1e-9 || !reflect.DeepEqual(server.Repetitions, []int{1, 3}) {
+				t.Fatalf("absent metrics must not become zeros; supplied zero must count: %+v", server)
+			}
+		}
+	}
+	aggregatePerformance(&summary)
+	repeated, err := json.MarshalIndent(summary, "", "  ")
+	if err != nil || string(data) != string(repeated)+"\n" {
+		t.Fatal("summary statistics must serialize deterministically")
+	}
+	single := runSummary{Configuration: config{Repetitions: 1}, Scenarios: summary.Scenarios[:1]}
+	aggregatePerformance(&single)
+	encoded, err := json.Marshal(single)
+	if err != nil || strings.Contains(string(encoded), "performance_aggregates") {
+		t.Fatal("single-run summaries must omit repetition aggregates")
 	}
 }
 
@@ -243,7 +370,17 @@ func TestMatrixSelection(t *testing.T) {
 	if cfg.BatchProfile != "all" {
 		t.Fatalf("default batch profile=%q, want all", cfg.BatchProfile)
 	}
+	if cfg.Repetitions != 1 {
+		t.Fatalf("default repetitions=%d, want 1", cfg.Repetitions)
+	}
+	cfg.Token = "do-not-record-this-token"
+	encoded, err := json.Marshal(cfg)
+	if err != nil || strings.Contains(string(encoded), cfg.Token) {
+		t.Fatal("configuration must not persist authentication tokens")
+	}
 	for _, args := range [][]string{
+		{"-repetitions", "0"},
+		{"-repetitions", "-1"},
 		{"-matrix", "all", "-mtp", "on"},
 		{"-matrix", "MTPon/invalid"},
 		{"-matrix", "MTPon/IMCon,"},
@@ -638,6 +775,139 @@ func TestMediaCommandModesAndStateFailures(t *testing.T) {
 	}
 }
 
+func TestMediaPrefillCommandTiming(t *testing.T) {
+	for _, failImage := range []bool{false, true} {
+		t.Run(fmt.Sprint(failImage), func(t *testing.T) {
+			const model = "fixture/media/TOOLS"
+			var loaded, generating, imaging atomic.Bool
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/v1/kronk/models/ps":
+					if loaded.Load() {
+						fmt.Fprintf(w, `[{"id":%q,"slots":2,"has_projection":true}]`, model)
+					} else {
+						fmt.Fprint(w, `[]`)
+					}
+				case "/v1/kronk/models/unload":
+					loaded.Store(false)
+					fmt.Fprintf(w, `{"id":%q,"status":"unloaded"}`, model)
+				case "/v1/kronk/models/" + model:
+					fmt.Fprint(w, `{"model_config":{"incremental-cache":false,"devices":["fixture-GPU"]}}`)
+				case "/v1/kronk/models/slots":
+					a, b := "idle", "idle"
+					if generating.Load() {
+						a = "generation"
+					}
+					if imaging.Load() {
+						b = "media-prefill"
+					}
+					fmt.Fprintf(w, `[{"model_id":%q,"mtp":false,"prefill_batch_size":512,"nbatch":514,"nubatch":512,"slots":[{"id":0,"phase":%q},{"id":1,"phase":%q}]}]`, model, a, b)
+				case "/v1/chat/completions":
+					var body struct {
+						Stream   bool
+						Messages []struct{ Content any }
+					}
+					json.NewDecoder(r.Body).Decode(&body)
+					if !body.Stream {
+						loaded.Store(true)
+						fmt.Fprint(w, `{"choices":[{"message":{"content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":1}}`)
+						return
+					}
+					_, text := body.Messages[0].Content.(string)
+					if !text && failImage {
+						http.Error(w, "image failed", http.StatusInternalServerError)
+						return
+					}
+					w.Header().Set("Content-Type", "text/event-stream")
+					count := 30
+					if text {
+						generating.Store(true)
+						defer generating.Store(false)
+						time.Sleep(25 * time.Millisecond)
+					} else {
+						imaging.Store(true)
+						defer imaging.Store(false)
+						time.Sleep(90 * time.Millisecond)
+						count = 3
+					}
+					for range count {
+						fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"1 "}}]}`)
+						fmt.Fprintln(w)
+						w.(http.Flusher).Flush()
+						time.Sleep(10 * time.Millisecond)
+					}
+					fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}],\"usage\":{\"prompt_tokens\":123,\"completion_tokens\":%d,\"tokens_per_second\":432.1,\"time_to_first_token_ms\":17.5}}\n\ndata: [DONE]\n\n", count)
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+			dir := t.TempDir()
+			image := filepath.Join(dir, "image.jpg")
+			if err := os.WriteFile(image, []byte("image"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			previous := os.Args
+			os.Args = []string{"reliability", "-scenario", "media", "-media-profile", "prefill", "-media-model", model, "-media-image", image, "-mtp", "off", "-imc", "off", "-host", server.URL, "-out", filepath.Join(dir, "out"), "-server-log", filepath.Join(dir, "missing.log"), "-repetitions", "2"}
+			defer func() { os.Args = previous }()
+			if err := run(); (err != nil) != failImage {
+				t.Fatalf("error=%v, failImage=%t", err, failImage)
+			}
+			data, err := os.ReadFile(filepath.Join(dir, "out", summaryFile))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var summary runSummary
+			if err := json.Unmarshal(data, &summary); err != nil {
+				t.Fatal(err)
+			}
+			foundGeneration := false
+			for _, aggregate := range summary.PerformanceAggregates {
+				if aggregate.Scope == "media-image" && failImage {
+					t.Fatal("failed image stream must not contribute performance samples")
+				}
+				if aggregate.Scope == "media-generation" {
+					foundGeneration = true
+					stats := aggregate.Metrics["server_tokens_per_second"]
+					if stats.Count != 2 || stats.Mean != 432.1 || stats.SampleStandardDeviation == nil || *stats.SampleStandardDeviation != 0 {
+						t.Fatalf("incorrect constant-rate statistics: %+v", stats)
+					}
+				}
+			}
+			if !foundGeneration {
+				t.Fatal("missing completed text-stream aggregates")
+			}
+			detail := summary.Scenarios[0].Details["concurrent_prefill"]
+			data, _ = json.Marshal(detail)
+			var result mediaPrefillResult
+			if err := json.Unmarshal(data, &result); err != nil {
+				t.Fatal(err)
+			}
+			if result.WorkloadComplete == failImage {
+				t.Fatalf("wrong coverage: %+v", result)
+			}
+			if failImage && (result.Image.Error == "" || result.Image.Performance.ElapsedSeconds <= 0 || result.Image.Performance.FinishedAt.IsZero()) {
+				t.Fatalf("failed image must retain elapsed timing: %+v", result.Image)
+			}
+			if !failImage {
+				if result.Generation.Usage.CompletionTokens != 30 || result.Image.Usage.CompletionTokens != 3 || result.Image.Performance.FirstContentSeconds < 0.085 || result.Generation.Performance.FirstContentSeconds < 0.020 || result.Generation.Performance.GenerationSeconds < 0.29 || result.Image.Performance.GenerationSeconds < 0.025 {
+					t.Fatalf("incorrect content timings: %+v", result)
+				}
+				if result.Image.Performance.ElapsedSeconds <= result.Image.Performance.GenerationSeconds || *result.Image.Usage.TimeToFirstTokenMS != 17.5 || *result.Image.Usage.TokensPerSecond != 432.1 {
+					t.Fatalf("missing server/client distinction: %+v", result.Image)
+				}
+				if result.Image.Performance.OutputTokensPerSecond != 3/result.Image.Performance.GenerationSeconds {
+					t.Fatal("incorrect image rate")
+				}
+			}
+			configurations := summary.Scenarios[0].Details["model_configurations"].(map[string]any)
+			if configurations[model].(map[string]any)["scheduler"].(map[string]any)["nbatch"] != float64(514) {
+				t.Fatal("missing effective batch configuration")
+			}
+		})
+	}
+}
+
 func TestLongContextModesValidateStreamingUsage(t *testing.T) {
 	for _, tc := range []struct{ mtp, imc, defect, failure string }{
 		{"on", "on", "", ""}, {"on", "off", "", ""},
@@ -710,6 +980,7 @@ func TestLongContextModesValidateStreamingUsage(t *testing.T) {
 func TestBatchImageCommandModesAndHistory(t *testing.T) {
 	for _, tc := range []struct{ workload, mtp, imc, defect, failure string }{
 		{"text", "off", "on", "", ""},
+		{"text", "off", "off", "overlap", "reached concurrency 1"},
 		{"images", "on", "on", "", ""},
 		{"images", "on", "off", "", ""},
 		{"images", "off", "on", "", ""},
@@ -744,6 +1015,9 @@ func TestBatchImageCommandModesAndHistory(t *testing.T) {
 			var mu sync.Mutex
 			seen := make(map[string]int)
 			sem := make(chan struct{}, 2)
+			if tc.defect == "overlap" {
+				sem = make(chan struct{}, 1)
+			}
 			markerPattern := regexp.MustCompile(`BATCH-SESSION-(\d+)-TURN-(\d+)`)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
@@ -920,6 +1194,15 @@ func TestBatchImageCommandModesAndHistory(t *testing.T) {
 				if len(workloads) == 2 && result.Name != "batch/"+workload {
 					t.Fatalf("wrong result label: %s", result.Name)
 				}
+				if result.Details["workload_complete"] != (failure == "") {
+					t.Fatalf("incorrect workload coverage: %v", result.Details)
+				}
+				if tc.defect == "overlap" {
+					phases := result.Details["turns"].([]any)
+					if result.Details["completed_history_turns"] != float64(0) || len(phases) != 1 || phases[0].(map[string]any)["complete"] != true || len(result.Details["requests"].([]any)) != 3 {
+						t.Fatalf("failed overlap must retain completed requests without claiming complete workload: %v", result.Details)
+					}
+				}
 				if failure == "" {
 					if result.Status != "PASS" {
 						t.Fatalf("%s failed: %v", workload, result.Failures)
@@ -944,8 +1227,21 @@ func TestBatchImageCommandModesAndHistory(t *testing.T) {
 					}
 					for _, raw := range requests {
 						request := raw.(map[string]any)
+						if request["generation_seconds"].(float64) < 0.025 || request["elapsed_seconds"].(float64) <= request["generation_seconds"].(float64) || request["client_output_tokens_per_second"].(float64) <= 0 {
+							t.Fatalf("missing/incorrect request timing: %v", request)
+						}
 						if workload == "images" && (request["output"] == nil || request["expected_subject"] == nil || request["image_count"] == nil) {
 							t.Fatalf("missing image evidence: %v", request)
+						}
+					}
+					for _, raw := range result.Details["turns"].([]any) {
+						phase := raw.(map[string]any)
+						if phase["complete"] != true || phase["output_tokens"] != float64(288) || phase["elapsed_seconds"].(float64) < 0.075 {
+							t.Fatalf("incorrect phase measurements: %v", phase)
+						}
+						want := 288 / phase["elapsed_seconds"].(float64)
+						if phase["output_tokens_per_second"] != want {
+							t.Fatalf("phase throughput=%v, want %v", phase["output_tokens_per_second"], want)
 						}
 					}
 				}

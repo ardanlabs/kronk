@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -22,10 +23,13 @@ type slotDiagnostic struct {
 }
 
 type engineDiagnostic struct {
-	ModelID string           `json:"model_id"`
-	MTP     bool             `json:"mtp"`
-	NDraft  int              `json:"ndraft"`
-	Slots   []slotDiagnostic `json:"slots"`
+	ModelID          string           `json:"model_id"`
+	PrefillBatchSize int              `json:"prefill_batch_size"`
+	NBatch           int              `json:"nbatch"`
+	NUBatch          int              `json:"nubatch"`
+	MTP              bool             `json:"mtp"`
+	NDraft           int              `json:"ndraft"`
+	Slots            []slotDiagnostic `json:"slots"`
 }
 
 type completionResult struct {
@@ -148,14 +152,22 @@ func (rc *runContext) ensureModel(model string) (loadedModel, error) {
 }
 
 func (rc *runContext) checkModelModes(model string) error {
+	var raw json.RawMessage
 	var detail struct {
 		ModelConfig struct {
 			IMC *bool `json:"incremental-cache"`
 		} `json:"model_config"`
 	}
-	if _, err := rc.client.json(rc, rc.scenario, http.MethodGet, "/v1/kronk/models/"+url.PathEscape(model), nil, &detail); err != nil {
+	if _, err := rc.client.json(rc, rc.scenario, http.MethodGet, "/v1/kronk/models/"+url.PathEscape(model), nil, &raw); err != nil {
 		return fmt.Errorf("verify IMC configuration: %w", err)
 	}
+	if err := json.Unmarshal(raw, &detail); err != nil {
+		return fmt.Errorf("decode model configuration: %w", err)
+	}
+	if rc.modelConfigurations == nil {
+		rc.modelConfigurations = make(map[string]any)
+	}
+	rc.modelConfigurations[model] = raw
 	engine, err := rc.engine(model)
 	if err != nil {
 		return err
@@ -163,6 +175,7 @@ func (rc *runContext) checkModelModes(model string) error {
 	if engine == nil || detail.ModelConfig.IMC == nil {
 		return fmt.Errorf("cannot verify MTP/IMC modes for %s", model)
 	}
+	rc.modelConfigurations[model] = map[string]any{"detail": raw, "scheduler": engine}
 	rc.observedModes[model] = map[string]bool{"mtp": engine.MTP, "imc": *detail.ModelConfig.IMC}
 	if engine.MTP != (rc.cfg.MTP == "on") || *detail.ModelConfig.IMC != (rc.cfg.IMC == "on") {
 		return fmt.Errorf("%s: observed MTP=%t IMC=%t, expected MTP=%s IMC=%s", model, engine.MTP, *detail.ModelConfig.IMC, rc.cfg.MTP, rc.cfg.IMC)
@@ -205,12 +218,13 @@ func appendFailure(failures *[]string, format string, args ...any) {
 }
 
 type modelUnloadResult struct {
-	Cell     string `json:"cell"`
-	Scenario string `json:"scenario"`
-	Phase    string `json:"phase"`
-	Model    string `json:"model"`
-	Status   string `json:"status"`
-	Error    string `json:"error,omitempty"`
+	Repetition int    `json:"repetition"`
+	Cell       string `json:"cell"`
+	Scenario   string `json:"scenario"`
+	Phase      string `json:"phase"`
+	Model      string `json:"model"`
+	Status     string `json:"status"`
+	Error      string `json:"error,omitempty"`
 }
 
 // Only explicitly selected suite IDs reach this function. Never unload all
@@ -224,6 +238,7 @@ func (rc *runContext) unloadModel(id, phase string) (err error) {
 		return nil
 	}
 	result := modelUnloadResult{Cell: (modeCell{MTP: rc.cfg.MTP, IMC: rc.cfg.IMC}).id(), Scenario: rc.scenario, Phase: phase, Model: id, Status: "PASS"}
+	result.Repetition = rc.repetition
 	if rc.scenario == "setup" {
 		result.Cell = "setup"
 	}
