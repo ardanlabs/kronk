@@ -370,6 +370,15 @@ the set. The current and historical matrix is kept in the repository
 [README](../README.md#project-status), while the normal non-`--upgrade` command
 installs the build pinned for the Kronk release.
 
+When upgrading to llama.cpp b11696, check any deployment settings for
+`GGML_CUDA_ENABLE_UNIFIED_MEMORY`, `GGML_CUDA_NO_PINNED`, and
+`GGML_CUDA_REGISTER_HOST`. These native CUDA-family environment variables
+now require numeric nonzero values instead of merely being present. Use `1`
+to activate them, not `true`, `yes`, or an empty value. See
+[Native backend environment settings](https://www.kronkai.com/manual#native-backend-environment-settings)
+for their meanings and restart requirements. No change is needed if they
+are unset.
+
 Use `kronk libs --help` for cross-platform bundle installation and removal.
 Changing the active library path requires a server restart; libraries are not
 hot-reloaded.

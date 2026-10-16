@@ -445,6 +445,32 @@ projector on a specific accelerator, set `proj-device` to a name reported by
 automatic placement. `proj-device` cannot be combined with
 `proj-on-cpu: true`.
 
+#### Native backend environment settings
+
+These optional llama.cpp settings are process-wide environment variables, not
+per-model YAML fields. They affect the CUDA backend and applicable ROCm/HIP
+paths. Leave them unset unless you need to override backend memory behavior.
+
+| Variable | Effect when set to `1` |
+| -------- | ---------------------- |
+| `GGML_CUDA_ENABLE_UNIFIED_MEMORY` | Enable managed/unified memory allocation |
+| `GGML_CUDA_NO_PINNED` | Disable pinned host-memory allocation |
+| `GGML_CUDA_REGISTER_HOST` | Enable host-memory registration |
+
+Starting with llama.cpp b11696, these three settings require a value that
+parses as a nonzero integer. Previously, their presence alone activated them,
+even with an empty value or `0`. Use `1` to activate a setting; `true`, `yes`,
+an empty value, and `0` no longer activate it. For example:
+
+```shell
+GGML_CUDA_ENABLE_UNIFIED_MEMORY=1 kronk server start
+```
+
+Set these variables before backend initialization. Their values are cached
+on first use, so restart the server after changing them. Do not apply this
+numeric rule to every native setting: `GGML_CUDA_P2P` remains presence-based,
+so even `GGML_CUDA_P2P=0` enables it; unset it to disable it.
+
 #### Multiple GPUs
 
 `split-mode` accepts:

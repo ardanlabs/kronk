@@ -5,7 +5,7 @@ go 1.27.0
 replace github.com/ardanlabs/kronk => ../
 
 require (
-	github.com/ardanlabs/bucky v1.1.4
+	github.com/ardanlabs/bucky v1.1.5
 	github.com/ardanlabs/kronk v1.32.9
 	github.com/duckdb/duckdb-go/v2 v2.10506.0
 	github.com/gen2brain/malgo v0.11.26

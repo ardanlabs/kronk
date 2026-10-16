@@ -343,6 +343,7 @@ KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
           <p>The normal command installs the llama.cpp version selected for the installed Kronk release. That default includes the SHA-256 of the release manifest. The manifest contains the digests of every platform archive, allowing Kronk to authenticate the manifest before verifying the selected download. Yzma caches the authenticated manifest and its digest beside the installed libraries so subsequent verification can run without network access. An installation made before Yzma 1.26.1 needs one online verification to populate that cache. <code>--upgrade</code> opts into the latest published llama.cpp build, which may introduce upstream compatibility changes:</p>
           <pre className="code-block"><code className="language-shell">{`kronk libs --local --upgrade`}</code></pre>
           <p>Kronk, its Yzma Go binding, and llama.cpp form a tested compatibility set. Do not infer compatibility from version ordering or upgrade only one member of the set. The current and historical matrix is kept in the repository <a href="../README.md#project-status">README</a>, while the normal non-<code>--upgrade</code> command installs the build pinned for the Kronk release.</p>
+          <p>When upgrading to llama.cpp b11696, check any deployment settings for <code>GGML_CUDA_ENABLE_UNIFIED_MEMORY</code>, <code>GGML_CUDA_NO_PINNED</code>, and <code>GGML_CUDA_REGISTER_HOST</code>. These native CUDA-family environment variables now require numeric nonzero values instead of merely being present. Use <code>1</code> to activate them, not <code>true</code>, <code>yes</code>, or an empty value. See <a href="https://www.kronkai.com/manual#native-backend-environment-settings">Native backend environment settings</a> for their meanings and restart requirements. No change is needed if they are unset.</p>
           <p>Use <code>kronk libs --help</code> for cross-platform bundle installation and removal. Changing the active library path requires a server restart; libraries are not hot-reloaded.</p>
           <p><code>KRONK_LIB_PATH</code> can name an existing versioned Kronk bundle or a user-managed library directory. A non-empty user-managed directory without <code>version.json</code> is treated as read-only: Kronk loads from it but does not install, upgrade, or replace its contents. Changing the selected processor or library path requires a process restart; native libraries are not hot-reloaded.</p>
           <p>Linux CUDA bundles depend on CUDA runtime libraries supplied by the host. A working <code>nvidia-smi</code> confirms the driver but not necessarily the CUDA runtime. If the CUDA backend does not load, inspect <code>libggml-cuda.so</code> with <code>ldd</code> and install the runtime packages appropriate for the CUDA version used by the current bundle. The CUDA container image already includes its matching runtime.</p>
@@ -679,6 +680,33 @@ malina-models:
           <p><code>offload-kqv: false</code> keeps the KV cache on the CPU. <code>op-offload: false</code> keeps host tensor operations on the CPU. These options can reduce discrete-GPU VRAM pressure at a performance cost. They do not reduce total memory requirements.</p>
           <p>llama.cpp also supports the process-wide <code>GGML_OP_OFFLOAD_MIN_BATCH</code> environment variable. Set it before Kronk starts; GPU backends read it once during <code>kronk.Init</code>, so it cannot be configured independently per model.</p>
           <p>For multimodal models, <code>proj-on-cpu: true</code> keeps the media projector on the CPU without changing placement of the language model itself. To place the projector on a specific accelerator, set <code>proj-device</code> to a name reported by <code>kronk devices</code> (for example, <code>CUDA1</code> or <code>MTL0</code>). Omit both settings for automatic placement. <code>proj-device</code> cannot be combined with <code>proj-on-cpu: true</code>.</p>
+          <h4 id="native-backend-environment-settings">Native backend environment settings</h4>
+          <p>These optional llama.cpp settings are process-wide environment variables, not per-model YAML fields. They affect the CUDA backend and applicable ROCm/HIP paths. Leave them unset unless you need to override backend memory behavior.</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Variable</th>
+                <th>Effect when set to <code>1</code></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>GGML_CUDA_ENABLE_UNIFIED_MEMORY</code></td>
+                <td>Enable managed/unified memory allocation</td>
+              </tr>
+              <tr>
+                <td><code>GGML_CUDA_NO_PINNED</code></td>
+                <td>Disable pinned host-memory allocation</td>
+              </tr>
+              <tr>
+                <td><code>GGML_CUDA_REGISTER_HOST</code></td>
+                <td>Enable host-memory registration</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>Starting with llama.cpp b11696, these three settings require a value that parses as a nonzero integer. Previously, their presence alone activated them, even with an empty value or <code>0</code>. Use <code>1</code> to activate a setting; <code>true</code>, <code>yes</code>, an empty value, and <code>0</code> no longer activate it. For example:</p>
+          <pre className="code-block"><code className="language-shell">{`GGML_CUDA_ENABLE_UNIFIED_MEMORY=1 kronk server start`}</code></pre>
+          <p>Set these variables before backend initialization. Their values are cached on first use, so restart the server after changing them. Do not apply this numeric rule to every native setting: <code>GGML_CUDA_P2P</code> remains presence-based, so even <code>GGML_CUDA_P2P=0</code> enables it; unset it to disable it.</p>
           <h4 id="multiple-gpus">Multiple GPUs</h4>
           <p><code>split-mode</code> accepts:</p>
           <table className="flags-table">
@@ -4450,6 +4478,8 @@ KRONK_RENDER_GID=<render GID> KRONK_VIDEO_GID=<video GID> docker compose -f comp
 kronk libs --local --version=b5490
 kronk server start --lib-version=b5490`}</code></pre>
           <p>Unset <code>KRONK_LIB_VERSION</code> after the pinned default contains the required fix. Libraries are not hot-reloaded; restart the server after switching <code>KRONK_LIB_PATH</code>.</p>
+          <p>Also check native backend environment values. Starting with b11696, <code>GGML_CUDA_ENABLE_UNIFIED_MEMORY</code>, <code>GGML_CUDA_NO_PINNED</code>, and <code>GGML_CUDA_REGISTER_HOST</code> require numeric nonzero values such as <code>1</code>; <code>true</code>, <code>yes</code>, empty values, and <code>0</code> no longer activate them. Restart after changing these settings. See <a href="https://www.kronkai.com/manual#native-backend-environment-settings">Native backend environment settings</a> for details.</p>
+          <p>Native kernel changes can alter floating-point rounding without changing Kronk's embedding or sampling algorithms. For example, b11696 changes CUDA/HIP RMSNorm reductions and adds an eligible Metal BF16 Flash Attention path. Exact embeddings, logits, and generated text can differ across native versions, even with a fixed seed. Compare representative output quality and numerical tolerances rather than requiring byte-for-byte equality. Crashes, NaNs, or materially degraded results are not ordinary rounding differences; investigate and report them with the model, backend, library versions, and reproduction steps.</p>
           <h3 id="173-models-catalog-and-storage">17.3 Models, Catalog, and Storage</h3>
           <h4 id="a-downloaded-model-is-not-listed">A downloaded model is not listed</h4>
           <p>Kronk stores data beneath <code>KRONK_BASE_PATH</code>, which defaults to <code>~/.kronk</code>. Inspect the model index rather than relying on a hard-coded directory:</p>

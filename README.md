@@ -199,6 +199,7 @@ and talks about Kronk.
 | Oct 22nd - 23rd | Meetup Austin              | Austin, TX            | Talk           |
 | Oct 31th - 4th  | GoLab (GopherCon Italy)    | Bologna, Italy        | Training, Talk |
 | Nov 6th - 8th   | UM v ND                    | Southbend, IN         | Game Day       |
+| Dec 1st - 2nd   | Meetup Boston              | Boston, MA            | Talk           |
 | DECEMBER        | Winter Vacation            | Miami, FL             | Rest           |
 
 Copyright 2025-2026 Ardan Labs
