@@ -9,7 +9,7 @@ require (
 	github.com/ardanlabs/kronk v1.32.9
 	github.com/duckdb/duckdb-go/v2 v2.10506.0
 	github.com/gen2brain/malgo v0.11.26
-	github.com/hybridgroup/yzma v1.29.2-0.20261012203138-716ea9b8c36d
+	github.com/hybridgroup/yzma v1.30.0
 	golang.org/x/image v0.47.0
 )
 
@@ -57,10 +57,10 @@ require (
 	github.com/duckdb/duckdb-go-bindings/lib/linux-arm64 v0.10506.0 // indirect
 	github.com/duckdb/duckdb-go-bindings/lib/windows-amd64 v0.10506.0 // indirect
 	github.com/ebitengine/purego v0.11.1 // indirect
-	github.com/envoyproxy/go-control-plane/envoy v1.39.1-0.20260819172001-e6e3fd93e4be // indirect
+	github.com/envoyproxy/go-control-plane/envoy v1.40.0 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.3.3 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
-	github.com/go-jose/go-jose/v4 v4.1.5 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.6 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
@@ -70,9 +70,9 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.23 // indirect
 	github.com/googleapis/gax-go/v2 v2.26.2 // indirect
-	github.com/grpc-ecosystem/grpc-gateway/v2 v2.31.0 // indirect
+	github.com/grpc-ecosystem/grpc-gateway/v2 v2.32.0 // indirect
 	github.com/hajimehoshi/go-mp3 v0.3.4 // indirect
-	github.com/hashicorp/aws-sdk-go-base/v2 v2.0.0-beta.75 // indirect
+	github.com/hashicorp/aws-sdk-go-base/v2 v2.0.0-beta.76 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-getter v1.8.10 // indirect
 	github.com/hashicorp/go-version v1.9.0 // indirect
@@ -80,7 +80,7 @@ require (
 	github.com/icza/mjpeg v0.0.0-20230330134156-38318e5ab8f4 // indirect
 	github.com/jupiterrider/ffi v0.8.0 // indirect
 	github.com/klauspost/compress v1.20.3 // indirect
-	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
+	github.com/klauspost/cpuid/v2 v2.4.1 // indirect
 	github.com/maypok86/otter/v2 v2.3.0 // indirect
 	github.com/mewkiz/flac v1.0.14 // indirect
 	github.com/mewkiz/pkg v0.0.0-20260703220044-4fb89b18cc87 // indirect
@@ -113,14 +113,14 @@ require (
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
-	golang.org/x/exp v0.0.0-20261011100332-faecfb24eb49 // indirect
+	golang.org/x/exp v0.0.0-20261014143641-f0251eb4aa3e // indirect
 	golang.org/x/net v0.61.0 // indirect
 	golang.org/x/oauth2 v0.37.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
-	google.golang.org/api v0.302.0 // indirect
+	google.golang.org/api v0.304.0 // indirect
 	google.golang.org/genproto v0.0.0-20261012220534-4341edf3f941 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20261012220534-4341edf3f941 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261012220534-4341edf3f941 // indirect
