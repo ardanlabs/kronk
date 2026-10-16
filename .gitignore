@@ -29,6 +29,8 @@ zarf/docker/openwebui/
 # Code coverage profiles and other test artifacts
 *.out
 coverage.*
+!/.tools/reliability/coverage.csv
+!/.tools/reliability/coverage.md
 *.coverprofile
 profile.cov
 
