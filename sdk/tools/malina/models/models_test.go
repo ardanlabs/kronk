@@ -72,6 +72,7 @@ func TestBundleNameConstants(t *testing.T) {
 		BundleSD15,
 		BundleSDXLBase10,
 		BundleWan22S2V14B,
+		BundleZImageTurbo,
 	}
 	if !slices.Equal(SupportedBundles(), want) {
 		t.Errorf("SupportedBundles(): got %v, want %v", SupportedBundles(), want)
@@ -168,6 +169,7 @@ func TestBundleBasicTextToImage(t *testing.T) {
 		{name: "stable diffusion", id: BundleSD15, want: true},
 		{name: "diffusion components", id: BundleFlux2Klein4B, want: true},
 		{name: "LLaDA image", id: BundleLLaDAImageTurbo, want: true},
+		{name: "Z-Image turbo", id: BundleZImageTurbo, want: true},
 		{name: "control net workflow", id: BundleControlNetCannySD15, want: false},
 		{name: "adetailer workflow", id: BundleADetailerFaceYOLOv8N, want: false},
 		{name: "animation workflow", id: BundleAnimateDiffSD15, want: false},

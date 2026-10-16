@@ -5279,6 +5279,7 @@ if _, err := libs.Download(ctx, malina.FmtLogger); err != nil {
             </tbody>
           </table>
           <p>Use <code>libs.SupportedCombinations()</code> as the source of truth for combinations available to the installed Kronk version.</p>
+          <p>The macOS <code>cpu</code> and <code>metal</code> choices download the same Metal-capable Darwin archive; choosing the <code>cpu</code> directory alone does not force CPU execution. There are no published Linux CUDA or arm64 Linux/Windows bundles for this pin.</p>
           <p>Automatic selection treats detected hardware and environment-derived runtime values as preferences and falls back to a compatible runtime when possible. The <code>libs.WithArch</code>, <code>libs.WithOS</code>, and <code>libs.WithProcessor</code> options are authoritative when they form a published combination. An explicit library path is also authoritative.</p>
           <p>The library manager recognizes these path and platform overrides:</p>
           <table className="flags-table">
@@ -5322,7 +5323,8 @@ if _, err := libs.Download(ctx, malina.FmtLogger); err != nil {
     libs.WithAllowUpgrade(true),
 )`}</code></pre>
           <p>An upgraded upstream library may not be ABI-compatible with the Malina and Kronk versions in use. Use this option for testing, not as a compatibility guarantee. Without an explicit version or upgrade opt-in, Kronk requires the exact Malina-compatible default even when a numerically newer managed build is already installed. If the host is offline, a mismatched managed build is rejected rather than loaded. Library installation is staged and activated atomically so a failed download does not replace a working installation.</p>
-          <p>Malina v1.1.5 requires stable-diffusion.cpp <code>master-929-3f8527a</code>, authenticated by manifest digest <code>sha256:9c82e359dc51b80b8b598d803f6783364e64de0cd3887356e71b6f41bc7ffa2c</code>. The existing native layouts remain binary-shaped compatible with the <code>master-908-88411ef</code> bundle used by Malina v1.1.3, but VAE tiling has different semantics and the upscaler metadata symbol is new. The pairings are therefore not behaviorally compatible. <code>Download</code> replaces any mismatched Kronk-managed installation with the exact pin. A user-managed library directory is read-only to Kronk and must be rebuilt or replaced by its owner. Do not combine Malina v1.1.5 with an older native bundle, or older Malina bindings with <code>master-929</code>.</p>
+          <p>Malina v1.1.7 requires stable-diffusion.cpp <code>master-969-8c442fb</code>, authenticated by manifest digest <code>sha256:b7b38cedefb63b398a7fccb5ee22b4d347613ba1f8ad1b3fe0e55da9e42afebf</code>. Compared with Malina v1.1.5's <code>master-929-3f8527a</code>, the native context struct grows from 320 to 336 bytes and component conversion adds LoRA arguments. These are ABI-breaking changes: upgrade bindings and native libraries together. Successful symbol loading is not proof of ABI compatibility. <code>Download</code> replaces any mismatched Kronk-managed installation with the exact pin. A user-managed library directory is read-only to Kronk and must be rebuilt or replaced by its owner. Do not combine Malina v1.1.7 with an older native bundle, or v1.1.5 bindings with <code>master-969</code>.</p>
+          <p>The exact upstream changes are available in the <a href="https://github.com/ardanlabs/malina/compare/2791dbbb70eb570de253a116d81d1b1dbafbdfae...def0e4a7977797ddf78f7b56e67184379e13ed60">Malina source comparison</a> and the <a href="https://github.com/leejet/stable-diffusion.cpp/compare/3f8527a46c54ecf4cb4ed6003da8e8982283c73c...8c442fb0ad43cf901663d9fb6783e2cd4929a278">native source comparison</a>.</p>
           <h3 id="193-manage-model-bundles">19.3 Manage Model Bundles</h3>
           <p>Kronk provides a small, curated catalog rather than accepting arbitrary model repository layouts. This keeps component roles and known-compatible files in the high-level SDK instead of requiring applications to use Malina's raw download API.</p>
           <p>The current bundles are:</p>
@@ -5383,6 +5385,12 @@ if _, err := libs.Download(ctx, malina.FmtLogger); err != nil {
                 <td>Quantized diffusion and text encoder, connectors, VAE, and tokenizer</td>
                 <td>Apache-2.0</td>
                 <td>20.2 GB</td>
+              </tr>
+              <tr>
+                <td><code>z-image-turbo</code></td>
+                <td>Q4_K diffusion, Q4_K_M Qwen3-4B text encoder, and VAE</td>
+                <td>Apache-2.0</td>
+                <td>6.7 GB</td>
               </tr>
               <tr>
                 <td><code>flux2-klein-4b</code></td>
@@ -5474,6 +5482,14 @@ defer func() {
     model.WithConditioningCacheSize(8),
 )`}</code></pre>
           <p>The conditioning cache defaults to four entries per model context. Set it to zero to disable caching. SageAttention is useful only for native backends and models that support it.</p>
+          <p>Malina v1.1.7 adds automatic, per-module flash-attention and direct-convolution selection. Empty mode strings use automatic selection and honor legacy true attention flags; false legacy flags do not force those operations off. For an explicit policy, use the SDK options:</p>
+          <pre className="code-block"><code className="language-go">{`mln, err := malina.New(
+    model.WithModelPath(mp.ModelFiles[0]),
+    model.WithFlashAttentionMode("off"),
+    model.WithConvDirectMode("auto,vae=off"),
+    model.WithBatchedCFG(false),
+)`}</code></pre>
+          <p><code>NewConfig</code> requests batched conditional/unconditional UNet execution by default. Unsupported workflows fall back to separate passes. The bindings always disable batching for Metal, including automatic macOS selection, to avoid incorrect group-normalization output. <code>Config.BatchedCFG</code> records the request, not confirmation that the backend used batching. Automatic operator selection can benchmark the device during context construction. The new backend policies and tile blending can change output pixels and memory use; do not expect byte-identical images across native versions.</p>
           <h4 id="1943-generate-an-image">19.4.3 Generate an Image</h4>
           <p>Start with the stable-diffusion.cpp generation defaults and set a prompt:</p>
           <pre className="code-block"><code className="language-go">{`params := model.NewGenerateParams()
@@ -5526,7 +5542,7 @@ if err := os.WriteFile("malina.png", generated.PNG, 0o644); err != nil {
           </table>
           <p>Dimensions must be multiples of 8 from 64 through 1024, with no more than 1,048,576 total pixels. A request needs a non-empty prompt, positive finite CFG scale, and between 1 and 1,000 steps.</p>
           <p><code>GenerateParams.ImagePreprocessRules</code> and <code>VideoParams.ImagePreprocessRules</code> pass stable-diffusion.cpp's shared image preprocessing rules to native generation. Rules are semicolon-separated, and each rule starts with <code>target=...</code> followed by comma-separated key-value pairs, for example <code>target=init,mode=none,canny=true</code>. An empty string preserves the model defaults. Preprocessing uses temporary native pixels and does not mutate the caller's Go images.</p>
-          <p>The underlying v1.1.5 bindings define VAE tiling in image pixels for both encoding and decoding: zero selects 256 pixels, positive relative values up to 1 select a fraction of the image dimension, and values above 1 select a target tile count. Kronk's high-level generation parameters do not currently expose VAE tiling, so they preserve the native defaults.</p>
+          <p>The underlying bindings define VAE tiling in image pixels for both encoding and decoding: zero selects 256 pixels, positive relative values up to 1 select a fraction of the image dimension, and values above 1 select a target tile count. Kronk's high-level generation parameters do not currently expose VAE tiling, so they preserve the native defaults.</p>
           <p>Waiting for admission is cancellable. Canceling a request after native generation starts asks stable-diffusion.cpp to stop, waits for native execution to return, and resets that model context before returning the cancellation error. The context is never reused or freed while native code is still active.</p>
           <h3 id="195-multi-file-model-bundles">19.5 Multi-File Model Bundles</h3>
           <p>Some pipelines require several files with distinct roles. The FLUX.2 example downloads a manifest and maps its diffusion, VAE, and LLM components into the model configuration:</p>
@@ -5560,6 +5576,8 @@ mln, err := malina.New(
     ),
 )`}</code></pre>
           <p>LLaDA-Image-Turbo is tuned for four steps and CFG scale 1.0; set those values on <code>GenerateParams</code>. Stable-diffusion.cpp selects its LLaDA-Image scheduler from the model. The native model also supports reference-image instruction editing, but Kronk's high-level SDK does not yet expose that distinct reference-image input path.</p>
+          <p>Z-Image-Turbo uses the existing diffusion, LLM, and VAE roles, with no external tokenizer. The pool and server map them automatically. Direct SDK users can use the FLUX.2 component-loading pattern above with <code>models.BundleZImageTurbo</code>. Set <code>GenerateParams.Steps = 8</code> and <code>GenerateParams.CFGScale = 1</code>. Catalog selection does not change generation defaults. For the server, explicitly send <code>"steps": 8</code> and <code>"cfg_scale": 1</code>; in the image generator UI, set Steps to 8 and CFG scale to 1 before submitting. Download it with:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk malina model pull --local z-image-turbo`}</code></pre>
           <h3 id="196-image-to-image-generation">19.6 Image-to-Image Generation</h3>
           <p>Set <code>GenerateParams.InitImage</code> to transform an existing Go image. The request still needs a prompt, and <code>Strength</code> must be greater than zero and no more than one:</p>
           <pre className="code-block"><code className="language-go">{`params := model.NewGenerateParams()
@@ -5718,6 +5736,8 @@ fmt.Println(info.Description)`}</code></pre>
             <li>LLaDA-Image-Turbo is available for text-to-image generation. Its native reference-image instruction-editing workflow is not yet exposed by the high-level SDK.</li>
             <li>The native release adds PixArt-α/Σ and Ming-Image Design support. Kronk does not yet curate their component files, validation, VRAM estimates, or server configurations, so these model families are not advertised as supported Kronk workflows. Ming-Image also requires an external tokenizer path.</li>
             <li>VAE tiling is available in the raw Malina bindings but is not yet exposed by Kronk's high-level image or video request types.</li>
+            <li>The new native Iris-3B, Z-Image L2P, FLUX.3, and MoSR workflows have no curated Kronk bundles. The existing catalog still supplies Real-ESRGAN for upscaling; native support alone is not a supported high-level workflow.</li>
+            <li>Raw preview metadata (<code>sd.GetPreviewInfo</code>) and LoRA-aware component conversion remain binding-level APIs. Kronk does not expose preview callbacks or conversion, so adding wrappers would not make those workflows usable. Preview metadata is process-global and requires serialized preview-enabled work.</li>
             <li>Native callbacks and backend initialization are process-wide. Model-context construction and destruction are serialized, while one handle may own multiple contexts and generate concurrently across them. Each concurrency slot loads another copy of the model and increases RAM or VRAM use.</li>
             <li>Context cancellation interrupts active native generation, waits for the native call to return, and resets the same context before reuse. It never frees a context while native code is active.</li>
           </ul>

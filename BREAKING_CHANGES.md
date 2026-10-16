@@ -4,6 +4,7 @@
 
 - [v1.33.0](#unreleased)
   - [Bucky Flash Attention Configuration](#unreleased-bucky-flash-attention-configuration)
+  - [Malina Native ABI Upgrade](#v1330-malina-native-abi-upgrade)
 - [v1.32.8](#v1328)
   - [Authorization Configuration Changes](#v1328-authorization-configuration-changes)
   - [Operation Offload Configuration Changes](#v1328-operation-offload-configuration-changes)
@@ -53,6 +54,21 @@ struct literals, replace `FlashAttn: false` with `FlashAttn: new(false)` and
 `FlashAttn: true` with `FlashAttn: new(true)`. Omit the field to use the native
 default. Loaded model configurations report the resolved, non-nil value;
 dereference it when reading the effective setting.
+
+### v1.33.0: Malina Native ABI Upgrade
+
+Malina v1.1.7 requires stable-diffusion.cpp `master-969-8c442fb`, replacing
+v1.1.5's `master-929-3f8527a`. The native context layout and component-conversion
+signature changed. Neither pairing may be mixed with the other release's
+bindings. Default library downloads replace mismatched managed installations;
+custom user-managed library paths must be rebuilt or replaced before use.
+
+Flash attention and direct convolution now use automatic per-module policies.
+Legacy false attention flags no longer guarantee disabled execution; use
+`model.WithFlashAttentionMode("off")` to force flash attention off. The SDK
+also exposes `WithConvDirectMode` and `WithBatchedCFG`. Batched CFG defaults to
+enabled when using `NewConfig`, but Malina disables it on Metal for correctness.
+Native policy and tiling changes can change output pixels for the same seed.
 
 ## v1.32.8
 

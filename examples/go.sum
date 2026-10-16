@@ -36,8 +36,8 @@ github.com/ardanlabs/bucky v1.1.5 h1:ztRxgeUeva07jMIYV9LgUBGAxMBH+vWQfTrz8kdI804
 github.com/ardanlabs/bucky v1.1.5/go.mod h1:ZlikC6Yw4BdMJSpVr7nFKi0yebapzdkPdpn/bsRc8fw=
 github.com/ardanlabs/jinja v1.8.0 h1:NuRapYr/hv8J+4v1KymVAbbu6vuqMu+poXkJHfXqLs4=
 github.com/ardanlabs/jinja v1.8.0/go.mod h1:VE5Fa3Zglc+e4tFaapOnA6BRMBRDI7A2qCd3Jse6oyw=
-github.com/ardanlabs/malina v1.1.5 h1:+qMhoxSjMVFBLcSxzswh9frPWGfuAUvuGiN4US7RX/s=
-github.com/ardanlabs/malina v1.1.5/go.mod h1:UI88dVC0P1Uf99c/MCPCckpkIjYKO4WUjnM+QBeo1WE=
+github.com/ardanlabs/malina v1.1.7 h1:0/Ahi0xTrjl1L9/0ooY7fR66W3YnNuu0hizVhobVdO0=
+github.com/ardanlabs/malina v1.1.7/go.mod h1:nW++hLBciaEMwM94s7ER6zygvi1kGDHSGPRl1rIUvtI=
 github.com/aws/aws-sdk-go-v2 v1.47.3 h1:HRoT/MkNi3bjO5xF4dCzLzvVmkvRGHj3/cLINDnJejk=
 github.com/aws/aws-sdk-go-v2 v1.47.3/go.mod h1:xSl+OSI5ZUw6bSMupWc218zE5Pl+65MCCu3ySWFY99A=
 github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.22 h1:oiEmPz/YMMeh/JvAE8xSxNCIsvWE6lpFe4ZPlyFykQI=

@@ -61,6 +61,9 @@ func TestNewConfigDefaults(t *testing.T) {
 	if cfg.LinearScale != 0 || cfg.AttnScale != 0 {
 		t.Errorf("scale defaults: got %g/%g, want 0/0", cfg.LinearScale, cfg.AttnScale)
 	}
+	if !cfg.BatchedCFG || cfg.FlashAttentionMode != "" || cfg.ConvDirectMode != "" {
+		t.Errorf("operator defaults: got %t/%q/%q, want true/empty/empty", cfg.BatchedCFG, cfg.FlashAttentionMode, cfg.ConvDirectMode)
+	}
 }
 
 func TestScaleOptions(t *testing.T) {
@@ -145,6 +148,9 @@ func TestWorkflowConfigOptions(t *testing.T) {
 		WithADetailerPath("adetailer"),
 		WithSageAttention(true),
 		WithConditioningCacheSize(8),
+		WithBatchedCFG(false),
+		WithFlashAttentionMode("off"),
+		WithConvDirectMode("auto,vae=off"),
 	)
 	if err != nil {
 		t.Fatalf("NewConfig() error = %v", err)
@@ -152,6 +158,9 @@ func TestWorkflowConfigOptions(t *testing.T) {
 
 	if cfg.T5XXLPath != "t5xxl" || cfg.TokenizerPath != "tokenizer" || cfg.EmbeddingsConnectorsPath != "embeddings-connectors" || cfg.AudioEncoderPath != "audio-encoder" || cfg.ControlNetPath != "controlnet" || cfg.MotionModulePath != "motion" || cfg.ADetailerPath != "adetailer" || !cfg.SageAttention || cfg.ConditioningCacheSize != 8 {
 		t.Errorf("workflow paths: got %+v, want configured component paths", cfg)
+	}
+	if cfg.BatchedCFG || cfg.FlashAttentionMode != "off" || cfg.ConvDirectMode != "auto,vae=off" {
+		t.Errorf("operator options: got %t/%q/%q, want false/off/auto,vae=off", cfg.BatchedCFG, cfg.FlashAttentionMode, cfg.ConvDirectMode)
 	}
 
 	mdl := Model{config: cfg, version: "Stable Diffusion 1.x"}

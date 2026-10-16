@@ -84,7 +84,7 @@ func TestDownloadReplacesIncompatibleManagedVersion(t *testing.T) {
 		return os.WriteFile(filepath.Join(dest, "libstable-diffusion.dylib"), []byte(version), 0o644)
 	}
 
-	for _, installed := range []string{"master-908-88411ef", "master-999-fffffff"} {
+	for _, installed := range []string{"master-908-88411ef", "master-929-3f8527a@sha256:9c82e359dc51b80b8b598d803f6783364e64de0cd3887356e71b6f41bc7ffa2c", "master-999-fffffff"} {
 		t.Run(installed, func(t *testing.T) {
 			lib, err := New(
 				WithBasePath(t.TempDir()),

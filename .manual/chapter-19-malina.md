@@ -136,6 +136,10 @@ The published combinations are:
 Use `libs.SupportedCombinations()` as the source of truth for combinations
 available to the installed Kronk version.
 
+The macOS `cpu` and `metal` choices download the same Metal-capable Darwin
+archive; choosing the `cpu` directory alone does not force CPU execution.
+There are no published Linux CUDA or arm64 Linux/Windows bundles for this pin.
+
 Automatic selection treats detected hardware and environment-derived runtime
 values as preferences and falls back to a compatible runtime when possible.
 The `libs.WithArch`, `libs.WithOS`, and `libs.WithProcessor` options are
@@ -178,16 +182,22 @@ already installed. If the host is offline, a mismatched managed build is
 rejected rather than loaded. Library installation is staged and activated
 atomically so a failed download does not replace a working installation.
 
-Malina v1.1.5 requires stable-diffusion.cpp `master-929-3f8527a`, authenticated
+Malina v1.1.7 requires stable-diffusion.cpp `master-969-8c442fb`, authenticated
 by manifest digest
-`sha256:9c82e359dc51b80b8b598d803f6783364e64de0cd3887356e71b6f41bc7ffa2c`.
-The existing native layouts remain binary-shaped compatible with the
-`master-908-88411ef` bundle used by Malina v1.1.3, but VAE tiling has different
-semantics and the upscaler metadata symbol is new. The pairings are therefore
-not behaviorally compatible. `Download` replaces any mismatched Kronk-managed
+`sha256:b7b38cedefb63b398a7fccb5ee22b4d347613ba1f8ad1b3fe0e55da9e42afebf`.
+Compared with Malina v1.1.5's `master-929-3f8527a`, the native context struct
+grows from 320 to 336 bytes and component conversion adds LoRA arguments.
+These are ABI-breaking changes: upgrade bindings and native libraries together.
+Successful symbol loading is not proof of ABI compatibility.
+`Download` replaces any mismatched Kronk-managed
 installation with the exact pin. A user-managed library directory is read-only
 to Kronk and must be rebuilt or replaced by its owner. Do not combine Malina
-v1.1.5 with an older native bundle, or older Malina bindings with `master-929`.
+v1.1.7 with an older native bundle, or v1.1.5 bindings with `master-969`.
+
+The exact upstream changes are available in the
+[Malina source comparison](https://github.com/ardanlabs/malina/compare/2791dbbb70eb570de253a116d81d1b1dbafbdfae...def0e4a7977797ddf78f7b56e67184379e13ed60)
+and the
+[native source comparison](https://github.com/leejet/stable-diffusion.cpp/compare/3f8527a46c54ecf4cb4ed6003da8e8982283c73c...8c442fb0ad43cf901663d9fb6783e2cd4929a278).
 
 ### 19.3 Manage Model Bundles
 
@@ -208,6 +218,7 @@ The current bundles are:
 | `wan2.2-s2v-14b` | Quantized Wan2.2 S2V diffusion and text encoder, VAE, and audio encoder | Apache-2.0 | 18.4 GB |
 | `sdxl-base-1.0` | SDXL Base 1.0 checkpoint | CreativeML Open RAIL++-M | 6.9 GB |
 | `llada-image-turbo` | Quantized diffusion and text encoder, connectors, VAE, and tokenizer | Apache-2.0 | 20.2 GB |
+| `z-image-turbo` | Q4_K diffusion, Q4_K_M Qwen3-4B text encoder, and VAE | Apache-2.0 | 6.7 GB |
 | `flux2-klein-4b` | Diffusion model, VAE, and LLM text encoder | FLUX Non-Commercial | 5.3 GB |
 | `flux2-klein-9b` | Diffusion model, VAE, and LLM text encoder | FLUX Non-Commercial | 11 GB of unique downloads, 16 GB installed |
 
@@ -366,6 +377,29 @@ The conditioning cache defaults to four entries per model context. Set it to
 zero to disable caching. SageAttention is useful only for native backends and
 models that support it.
 
+Malina v1.1.7 adds automatic, per-module flash-attention and direct-convolution
+selection. Empty mode strings use automatic selection and honor legacy true
+attention flags; false legacy flags do not force those operations off. For an
+explicit policy, use the SDK options:
+
+```go
+mln, err := malina.New(
+    model.WithModelPath(mp.ModelFiles[0]),
+    model.WithFlashAttentionMode("off"),
+    model.WithConvDirectMode("auto,vae=off"),
+    model.WithBatchedCFG(false),
+)
+```
+
+`NewConfig` requests batched conditional/unconditional UNet execution by
+default. Unsupported workflows fall back to separate passes. The bindings
+always disable batching for Metal, including automatic macOS selection, to
+avoid incorrect group-normalization output. `Config.BatchedCFG` records the
+request, not confirmation that the backend used batching. Automatic operator
+selection can benchmark the device during context construction. The new
+backend policies and tile blending can change output pixels and memory use;
+do not expect byte-identical images across native versions.
+
 #### 19.4.3 Generate an Image
 
 Start with the stable-diffusion.cpp generation defaults and set a prompt:
@@ -412,7 +446,7 @@ for example `target=init,mode=none,canny=true`. An empty string preserves the
 model defaults. Preprocessing uses temporary native pixels and does not mutate
 the caller's Go images.
 
-The underlying v1.1.5 bindings define VAE tiling in image pixels for both
+The underlying bindings define VAE tiling in image pixels for both
 encoding and decoding: zero selects 256 pixels, positive relative values up to
 1 select a fraction of the image dimension, and values above 1 select a target
 tile count. Kronk's high-level generation parameters do not currently expose
@@ -475,6 +509,18 @@ on `GenerateParams`. Stable-diffusion.cpp selects its LLaDA-Image scheduler
 from the model. The native model also supports reference-image instruction
 editing, but Kronk's high-level SDK does not yet expose that distinct
 reference-image input path.
+
+Z-Image-Turbo uses the existing diffusion, LLM, and VAE roles, with no external
+tokenizer. The pool and server map them automatically. Direct SDK users can
+use the FLUX.2 component-loading pattern above with `models.BundleZImageTurbo`.
+Set `GenerateParams.Steps = 8` and `GenerateParams.CFGScale = 1`. Catalog
+selection does not change generation defaults. For the server, explicitly send
+`"steps": 8` and `"cfg_scale": 1`; in the image generator UI, set Steps to 8 and
+CFG scale to 1 before submitting. Download it with:
+
+```shell
+kronk malina model pull --local z-image-turbo
+```
 
 ### 19.6 Image-to-Image Generation
 
@@ -711,6 +757,13 @@ Later runs reuse complete installations.
   Kronk workflows. Ming-Image also requires an external tokenizer path.
 - VAE tiling is available in the raw Malina bindings but is not yet exposed by
   Kronk's high-level image or video request types.
+- The new native Iris-3B, Z-Image L2P, FLUX.3, and MoSR workflows have no
+  curated Kronk bundles. The existing catalog still supplies Real-ESRGAN for
+  upscaling; native support alone is not a supported high-level workflow.
+- Raw preview metadata (`sd.GetPreviewInfo`) and LoRA-aware component
+  conversion remain binding-level APIs. Kronk does not expose preview callbacks
+  or conversion, so adding wrappers would not make those workflows usable.
+  Preview metadata is process-global and requires serialized preview-enabled work.
 - Native callbacks and backend initialization are process-wide. Model-context
   construction and destruction are serialized, while one handle may own
   multiple contexts and generate concurrently across them. Each concurrency
