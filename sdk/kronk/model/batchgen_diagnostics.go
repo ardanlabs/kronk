@@ -127,6 +127,9 @@ func (e *batchEngine) slotSnapshot(now time.Time, s *slot) BatchSlotSnapshot {
 	}
 
 	switch {
+	case s.mediaSetup != nil && !s.mediaSetup.ready:
+		snapshot.Phase = "media-prepare"
+
 	case s.imcRestoring:
 		snapshot.Phase = "imc-restore"
 

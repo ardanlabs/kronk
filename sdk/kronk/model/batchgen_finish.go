@@ -48,6 +48,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	var elapsed time.Duration
 
 	defer func() {
+		s.job.releaseIMCSystemCache(e.model)
 		if s.prefillSpan != nil {
 			s.prefillSpan.End()
 			s.prefillSpan = nil
@@ -685,6 +686,13 @@ func (e *batchEngine) failJob(job *chatJob, err error) {
 }
 
 func (e *batchEngine) freeSlotResources(s *slot) {
+	// Join CPU preparation before freeing its projector, including shutdown
+	// and errors before the worker's resources were handed to prefill.
+	if s.mediaSetup != nil {
+		s.mediaSetup.free()
+		s.mediaSetup = nil
+	}
+
 	// Unregister the per-slot draft sampler from the draft context before
 	// freeing it, to prevent a dangling pointer in the context's sampler map.
 	if s.draftSampler != 0 && e.model.draft != nil {

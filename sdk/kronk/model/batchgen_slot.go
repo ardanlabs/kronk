@@ -146,6 +146,7 @@ type slot struct {
 	// -------------------------------------------------------------------------
 	// MTMD Prefill (vision/audio requests)
 
+	mediaSetup       *mediaSetup      // CPU preparation owned by a worker until done, then consumed by the batch loop.
 	mtmdCtx          mtmd.Context     // Per-request multimodal projector context (created in startSlot for media-bearing requests; freed in freeSlotResources). Zero for text-only requests and text-only models.
 	inputChunks      mtmd.InputChunks // Tokenized chunks (text + media interleaved)
 	chunkIdx         int              // Index of chunk currently being processed
@@ -329,6 +330,7 @@ func (s *slot) reset() {
 	s.ttft = 0
 
 	// MTMD fields.
+	s.mediaSetup = nil
 	s.inputChunks = 0
 	s.chunkIdx = 0
 	s.chunkTokIdx = 0

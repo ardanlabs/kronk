@@ -16,10 +16,6 @@ import (
 
 // startSlot initializes a generation slot with a new request.
 func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
-	if job.imcSystemCache != nil {
-		defer job.releaseIMCSystemCache(e.model)
-	}
-
 	s.reset()
 	s.active = true
 	s.job = job
@@ -168,6 +164,20 @@ func (e *batchEngine) startSlot(s *slot, job *chatJob, buf []byte) {
 			return
 		}
 		s.mtmdCtx = mtmdCtx
+		e.queueMediaSetup(s)
+		return
+	}
+
+	e.continueStartSlot(s, job, buf)
+}
+
+// continueStartSlot consumes CPU-prepared media before restoring or mutating
+// shared model state. Text-only requests reach this directly.
+func (e *batchEngine) continueStartSlot(s *slot, job *chatJob, buf []byte) {
+	defer job.releaseIMCSystemCache(e.model)
+	if err := e.model.waitForPendingDecode(); err != nil {
+		e.finishSlot(s, err)
+		return
 	}
 
 	// IMC: restore externalized KV state from session.kvState, then decode
@@ -1127,55 +1137,23 @@ func (e *batchEngine) startSlotTextMRoPE(s *slot, job *chatJob, cacheIdx llama.P
 
 // startSlotMedia initializes a media (vision/audio) slot. Returns true on success.
 func (e *batchEngine) startSlotMedia(s *slot, job *chatJob, cacheIdx llama.Pos, buf []byte) bool {
-	// Convert raw media bytes into bitmap structures for the vision/audio
-	// encoder. Images are decoded in Go (newMediaBitmap) and built via the
-	// stable mtmd_bitmap_init core API; audio still goes through the
-	// mtmd-helper. Reject empty payloads or any bytes that fail to decode so
-	// we surface a precise error instead of a generic tokenization failure.
-	if len(job.media) > 0 {
-		s.bitmaps = make([]mtmd.Bitmap, len(job.media))
-		for i, med := range job.media {
-			if len(med) == 0 {
-				e.finishSlot(s, fmt.Errorf("start-slot-media: media[%d] is empty", i))
-				return false
-			}
-			bmp, err := newMediaBitmap(s.mtmdCtx, med)
-			if err != nil {
-				e.finishSlot(s, fmt.Errorf("start-slot-media: media[%d]: %w", i, err))
-				return false
-			}
-			s.bitmaps[i] = bmp
-		}
-	}
-
-	// Create input chunks that interleave text tokens with image embeddings.
-	s.inputChunks = mtmd.InputChunksInit()
-
-	// Tokenize the rendered prompt as explicit ordered text and bitmap parts.
-	if err := tokenizeMedia(s.mtmdCtx, s.inputChunks, job.prompt, s.bitmaps); err != nil {
-		e.finishSlot(s, fmt.Errorf("start-slot-media: %w", err))
-		return false
-	}
+	// Transfer the worker's prepared native resources to ordinary prefill.
+	setup := s.mediaSetup
+	s.bitmaps, setup.bitmaps = setup.bitmaps, nil
+	s.inputChunks, setup.inputChunks = setup.inputChunks, 0
 
 	// Set model-specific flags for positioning and attention.
 	s.useMRoPE = mtmd.DecodeUseMRope(s.mtmdCtx)
 	s.useNonCausal = mtmd.DecodeUseNonCausal(s.mtmdCtx, 0)
 
-	// Count total tokens across all chunks.
 	numChunks := mtmd.InputChunksSize(s.inputChunks)
-	var totalTokens uint64
-	for i := range numChunks {
-		chunk := mtmd.InputChunksGet(s.inputChunks, i)
-		totalTokens += mtmd.InputChunkGetNTokens(chunk)
-	}
-
-	s.nPrompt = int(totalTokens) + int(cacheIdx)
+	s.nPrompt = setup.totalTokens + int(cacheIdx)
 	s.chunkIdx = 0
 
 	e.model.log(job.ctx, "start-slot-media", "status", "tokenized",
 		"slot", s.id,
 		"num_chunks", numChunks,
-		"total_tokens", totalTokens,
+		"total_tokens", setup.totalTokens,
 		"cached_tokens", cacheIdx,
 		"use_mrope", s.useMRoPE,
 		"use_noncausal", s.useNonCausal)

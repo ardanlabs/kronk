@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -28,11 +29,27 @@ func TestIMCMediaPreparationAllowsGenerationProgress(t *testing.T) {
 	if err := kronk.Init(); err != nil {
 		t.Fatal(err)
 	}
+	setupEntered := make(chan struct{})
+	setupRelease := make(chan struct{})
+	releaseSetup := sync.OnceFunc(func() { close(setupRelease) })
+	defer releaseSetup()
+	var setupOnce sync.Once
 	krn, err := kronk.New(model.WithModelFiles(path.ModelFiles), model.WithProjFile(path.ProjFile),
 		model.WithContextWindow(16384), model.WithNSeqMax(2), model.WithPrefillBatchSize(256),
 		model.WithIncrementalCache(true), model.WithCacheMinTokens(1),
 		model.WithLog(func(ctx context.Context, msg string, args ...any) {
 			t.Logf("%s %v", msg, args)
+			if msg == "imc-media-cache" && len(args) >= 2 && args[0] == "status" && args[1] == "prompt-created" {
+				// Hold CPU preparation at an existing logging boundary. Assert
+				// actual generation progress, not timing or buffered delivery.
+				setupOnce.Do(func() {
+					close(setupEntered)
+					select {
+					case <-setupRelease:
+					case <-ctx.Done():
+					}
+				})
+			}
 		}),
 		model.WithSpeculationMode(model.MustParseSpeculationMode("disabled")))
 	if err != nil {
@@ -79,6 +96,7 @@ func TestIMCMediaPreparationAllowsGenerationProgress(t *testing.T) {
 		}
 	}()
 	defer func() {
+		releaseSetup()
 		cancelA()
 		<-drained
 	}()
@@ -101,6 +119,12 @@ func TestIMCMediaPreparationAllowsGenerationProgress(t *testing.T) {
 	}()
 	ticker := time.NewTicker(time.Millisecond)
 	defer ticker.Stop()
+	setupTimeout := time.NewTimer(15 * time.Second)
+	setupTimeout.Stop()
+	defer setupTimeout.Stop()
+	setupSignal := setupEntered
+	setupFirstGenerated := -1
+	setupProgress := false
 	firstGenerated := -1
 	progress := false
 	var response model.ChatResponse
@@ -111,6 +135,11 @@ waiting:
 			t.Fatal(err)
 		case <-ctx.Done():
 			t.Fatal(ctx.Err())
+		case <-setupTimeout.C:
+			t.Fatal("generating request made no progress while CPU media preparation was held")
+		case <-setupSignal:
+			setupSignal = nil
+			setupTimeout.Reset(15 * time.Second)
 		case response = <-results:
 			break waiting
 		case <-ticker.C:
@@ -128,6 +157,16 @@ waiting:
 					generated = slot.GeneratedTokens
 				}
 			}
+			if setupSignal == nil && !setupProgress && generated >= 0 {
+				if setupFirstGenerated < 0 {
+					setupFirstGenerated = generated
+				}
+				if generated > setupFirstGenerated {
+					setupProgress = true
+					setupTimeout.Stop()
+					releaseSetup()
+				}
+			}
 			if preparing && generated >= 0 {
 				if firstGenerated < 0 {
 					firstGenerated = generated
@@ -138,6 +177,9 @@ waiting:
 	}
 	cancelA()
 	<-drained
+	if !setupProgress {
+		t.Error("generating request made no progress during CPU media preparation")
+	}
 	if !progress {
 		t.Error("generating request made no progress while media prefix preparation was incomplete")
 	}

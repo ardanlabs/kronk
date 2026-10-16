@@ -48,18 +48,17 @@ func (e *batchEngine) queueIMCMediaPreparation(s *slot, cacheIdx llama.Pos, sess
 		prep.cacheIdx = 0
 		prep.position = 0
 	}
-	started := time.Now()
-	media, err := e.model.newIMCMediaPreparation(job.ctx, job.imcMediaCacheD, prefix, s.seqID, s.mtmdCtx, prep.position)
-	if err != nil {
-		return err
-	}
+	media := s.mediaSetup.media
+	s.mediaSetup.media = nil
+	media.prefixCursor = imcMediaPrefixCursor{chunks: prefix}
+	media.position = prep.position
 	prep.media = media
 	s.mediaPrefilling = true
 	e.model.log(job.ctx, "start-slot", "status", "imc-media-preparation-queued",
 		"iteration", e.batchIteration, "slot", s.id, "seq", s.seqID,
 		"build", job.imcMediaBuild, "append", job.imcMediaAppend,
 		"total_chunks", mtmd.InputChunksSize(media.inputChunks), "total_tokens", media.totalPhysicalTokens,
-		"start_logical_position", prep.position, "setup_elapsed", fmtDur(time.Since(started)),
+		"start_logical_position", prep.position,
 		"prefill_batch_size", e.imcPreparationChunkSize(),
 		"nbatch", e.model.cfg.EffectiveNBatch(), "nubatch", e.model.cfg.EffectiveNUBatch())
 	return nil

@@ -210,7 +210,7 @@ func (e *batchEngine) processLoop(ctx context.Context) {
 		default:
 		}
 
-		if e.hasActiveSlots() || len(e.requestQ) > 0 || len(e.pendingJobs) > 0 {
+		if e.hasRunnableSlots() || len(e.requestQ) > 0 {
 			e.processBatch(ctx, buf)
 			continue
 		}
@@ -219,6 +219,9 @@ func (e *batchEngine) processLoop(ctx context.Context) {
 		case <-e.shutdownCh:
 			e.drainSlots()
 			return
+
+		case job := <-e.requestQ:
+			e.pendingJobs = append(e.pendingJobs, job)
 
 		case <-e.wakeCh:
 		}
@@ -258,6 +261,7 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	// prepared can still claim free slots immediately. If another start path did
 	// stage rows during admission, defer direct IMC decoding until the next
 	// iteration rather than mutating context behind an assembled batch.
+	e.resumeMediaSetup(buf)
 	e.fillSlots(buf)
 	trackIMCSchedule := e.hasIMCPreparation()
 	if e.batch.len() == 0 && trackIMCSchedule {

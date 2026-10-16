@@ -134,12 +134,11 @@ func (p *imcMediaPreparation) free() {
 // newIMCMediaPreparation tokenizes the cache document but does not encode or
 // prefill it. The caller owns the returned native resources until completion
 // or slot teardown.
-func (m *Model) newIMCMediaPreparation(ctx context.Context, cacheD D, prefix []imcMediaChunk, seqID llama.SeqId, mtmdCtx mtmd.Context, startPos int) (*imcMediaPreparation, error) {
+func (m *Model) newIMCMediaPreparation(ctx context.Context, cacheD D, seqID llama.SeqId, mtmdCtx mtmd.Context) (*imcMediaPreparation, error) {
 	ctx, span := otel.AddSpan(ctx, "imc-media-cache-build",
 		attribute.Int("seq", int(seqID)),
 	)
-	p := imcMediaPreparation{ctx: ctx, span: span, position: startPos,
-		prefixCursor: imcMediaPrefixCursor{chunks: prefix}}
+	p := imcMediaPreparation{ctx: ctx, span: span}
 	ready := false
 	defer func() {
 		if !ready {
@@ -163,6 +162,9 @@ func (m *Model) newIMCMediaPreparation(ctx context.Context, cacheD D, prefix []i
 	// failure.
 	p.bitmaps = make([]mtmd.Bitmap, len(media))
 	for i, med := range media {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if len(med) == 0 {
 			return nil, fmt.Errorf("imc-media-cache: media[%d] is empty", i)
 		}
@@ -175,10 +177,16 @@ func (m *Model) newIMCMediaPreparation(ctx context.Context, cacheD D, prefix []i
 
 	// Step 3: Tokenize the rendered prompt as explicit ordered text and bitmap
 	// parts, producing the same interleaved chunk stream used for generation.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	p.inputChunks = mtmd.InputChunksInit()
 
 	if err := tokenizeMedia(mtmdCtx, p.inputChunks, prompt, p.bitmaps); err != nil {
 		return nil, fmt.Errorf("imc-media-cache: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	useMRoPE := mtmd.DecodeUseMRope(mtmdCtx)
