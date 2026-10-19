@@ -378,13 +378,16 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 		malinalibs.WithDetect(ctx, log.Info),
 	)
 	if err != nil {
-		return fmt.Errorf("unable to create malina libs api: %w", err)
+		if !errors.Is(err, malinalibs.ErrNoSupportedRuntime) {
+			return fmt.Errorf("unable to create malina libs api: %w", err)
+		}
+		log.Info(ctx, "startup", "WARNING", "malina backend unavailable, continuing without image generation", "ERROR", err)
+	} else {
+		log.Info(ctx, "startup", "status", "malina libs ready", "libPath", malinaLibs.LibsPath(), "arch", malinaLibs.Arch(), "os", malinaLibs.OS(), "processor", malinaLibs.Processor())
 	}
 
-	log.Info(ctx, "startup", "status", "malina libs ready", "libPath", malinaLibs.LibsPath(), "arch", malinaLibs.Arch(), "os", malinaLibs.OS(), "processor", malinaLibs.Processor())
-
 	malinaLibVerified := !cfg.LibVerifyEnabled
-	if cfg.MediaBackendsEnabled {
+	if cfg.MediaBackendsEnabled && malinaLibs != nil {
 		downloadCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 		malinaVersion, err := malinaLibs.Download(downloadCtx, log.Info)
 		cancel()
@@ -399,7 +402,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 				log.Info(ctx, "startup", "status", "verified stable-diffusion.cpp runtime", "version", malinaVersion.Version)
 			}
 		}
-	} else {
+	} else if malinaLibs != nil {
 		log.Info(ctx, "startup", "status", "malina backend download disabled", "libPath", malinaLibs.LibsPath())
 	}
 
@@ -459,7 +462,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	}
 
 	malinaProgress := malinaprogress.New()
-	if !cfg.MediaBackendsEnabled {
+	if !cfg.MediaBackendsEnabled || malinaLibs == nil {
 		log.Info(ctx, "startup", "status", "malina backend initialization disabled")
 	} else if !malinaLibVerified {
 		return errors.New("malina init blocked because stable-diffusion.cpp runtime verification did not succeed")

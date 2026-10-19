@@ -152,6 +152,37 @@ func TestExplicitRuntimeSelection(t *testing.T) {
 	}
 }
 
+func TestAutomaticRuntimeUnavailable(t *testing.T) {
+	t.Setenv("KRONK_ARCH", "arm64")
+	t.Setenv("KRONK_OS", "linux")
+	t.Setenv("KRONK_PROCESSOR", "cpu")
+	basePath := t.TempDir()
+
+	if lib, err := New(WithBasePath(basePath)); !errors.Is(err, ErrNoSupportedRuntime) || lib != nil {
+		t.Fatalf("New(): got (%v, %v), want (nil, ErrNoSupportedRuntime)", lib, err)
+	}
+
+	// A caller-managed library path remains authoritative on the same host.
+	if _, err := New(WithBasePath(basePath), WithLibPath(t.TempDir())); err != nil {
+		t.Errorf("New(custom path): got %v, want nil", err)
+	}
+
+	if _, err := New(WithBasePath(basePath), WithProcessor("cpu")); err == nil || errors.Is(err, ErrNoSupportedRuntime) {
+		t.Errorf("New(explicit unsupported tuple): got %v, want a configuration error", err)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := New(WithBasePath(basePath), WithDetect(ctx, nil)); !errors.Is(err, context.Canceled) || errors.Is(err, ErrNoSupportedRuntime) {
+		t.Errorf("New(canceled): got %v, want context.Canceled", err)
+	}
+
+	t.Setenv("KRONK_OS", "darwin")
+	if _, err := New(WithBasePath(basePath)); err != nil {
+		t.Errorf("New(supported host): got %v, want nil", err)
+	}
+}
+
 func TestSupportedCombinationsCopy(t *testing.T) {
 	first := SupportedCombinations()
 	first[0].Arch = "changed"
