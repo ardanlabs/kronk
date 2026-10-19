@@ -26,7 +26,7 @@ Type=exec
 # The user service manager's PATH has only /usr/local/bin and /usr/bin, so
 # search the usual kronk install locations: go install, ~/.local/bin, and
 # Linuxbrew. This also becomes the server's PATH. For a kronk elsewhere,
-# override ExecSearchPath= with `systemctl --user edit kronk`.
+# set its full path in ExecStart= with `systemctl --user edit kronk`.
 ExecSearchPath=%h/go/bin:%h/.local/bin:/home/linuxbrew/.linuxbrew/bin:%h/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=kronk server start
 EnvironmentFile=-%h/.config/kronk/kronk.env

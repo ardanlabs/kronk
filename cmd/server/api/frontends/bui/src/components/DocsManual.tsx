@@ -397,7 +397,7 @@ systemctl --user daemon-reload
 
 # Start Kronk now and at every login.
 systemctl --user enable --now kronk`}</code></pre>
-          <p>See <a href="https://www.kronkai.com/manual#88-running-as-a-system-service">Chapter 8</a> for managing, configuring, and removing the service.</p>
+          <p>See <a href="https://www.kronkai.com/manual#88-running-as-a-systemd-service">Chapter 8</a> for managing, configuring, and removing the service.</p>
           <h3 id="27-verify-the-installation">2.7 Verify the Installation</h3>
           <p>Check server liveness:</p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/liveness`}</code></pre>
@@ -2238,7 +2238,7 @@ KRONK_IMAGE_VERSION=vX.Y.Z`}</code></pre>
             <li><code>latest</code>: run <code>docker compose pull</code>, then <code>docker compose up -d</code>.</li>
           </ul>
           <p>The <code>kronk-net</code> network is shared with the <a href="https://www.kronkai.com/manual#153-bundled-observability-stack">observability stack</a> and can remain after both stacks stop; remove it with <code>docker network rm kronk-net</code>.</p>
-          <h2 id="88-running-as-a-system-service">8.8 Running as a System Service</h2>
+          <h2 id="88-running-as-a-systemd-service">8.8 Running as a systemd Service</h2>
           <p>On Linux, Kronk can run as a systemd user service that starts when you log in and restarts after a crash. It runs as you, on your existing <code>~/.kronk</code>, so models, libraries, and keys installed with the CLI work as they are. Install it with:</p>
           <pre className="code-block"><code className="language-shell">{`curl -fsSL --create-dirs -o ~/.config/systemd/user/kronk.service \\
   https://raw.githubusercontent.com/ardanlabs/kronk/main/zarf/systemd/kronk.service
@@ -2267,16 +2267,6 @@ KRONK_DOWNLOAD_ENABLED=true
 KRONK_AUTHORIZATION_MODE=management`}</code></pre>
           <p>Then run <code>systemctl --user restart kronk</code>.</p>
           <p>The service listens on <code>127.0.0.1:11435</code>. Configure authorization before setting <code>KRONK_WEB_API_HOST</code> to a public interface.</p>
-          <p>On stop, Kronk drains in-flight requests and then unloads models, each phase bounded by <code>KRONK_WEB_SHUTDOWN_TIMEOUT</code> (default <code>1m</code>). The unit allows <code>TimeoutStopSec=150s</code>. If you raise the shutdown timeout, raise <code>TimeoutStopSec</code> to at least twice that value plus 30 seconds with <code>systemctl --user edit kronk</code>:</p>
-          <pre className="code-block"><code className="language-ini">{`[Service]
-TimeoutStopSec=330s`}</code></pre>
-          <p><code>Restart=on-failure</code> restarts the server five seconds after a crash. After five failed starts in five minutes, the unit stays failed: fix the cause in <code>journalctl --user -u kronk</code>, then run <code>systemctl --user reset-failed kronk</code> and start it again.</p>
-          <h3 id="limitations">Limitations</h3>
-          <ul>
-            <li><strong>GPU over SSH.</strong> A desktop login grants GPU access only while it is active. Over SSH, on Debian and Ubuntu with an AMD or Intel GPU, the service falls back to the CPU unless your user is in the groups that own <code>/dev/kfd</code> and <code>/dev/dri/renderD*</code>. Run once, then log out of all your sessions and back in: ``<code>shell sudo usermod -aG render,video $USER </code>`<code> Fedora and Arch need no setup. NVIDIA works without setup when </code>nvidia-modprobe` is installed.</li>
-            <li><strong>No isolation.</strong> The service has no sandbox and runs with your own permissions, with access to your whole home directory. For a dedicated user, isolation, or a shared server, use the <a href="#87-container-operations">container setup</a> or write your own systemd unit.</li>
-            <li><strong>Linux only.</strong> There is no macOS service yet; use <code>kronk server start --detach</code>.</li>
-          </ul>
           <h2 id="89-related-administration-guides">8.9 Related Administration Guides</h2>
           <p>Detailed administration is divided by responsibility:</p>
           <ul>
@@ -4542,7 +4532,7 @@ lsof -nP -iTCP:9000 -sTCP:LISTEN`}</code></pre>
           <p>Detached mode stores <code>kronk.pid</code> and <code>kronk.log</code> under <code>KRONK_BASE_PATH</code>. If <code>kronk server stop</code> encounters a stale PID, verify that no Kronk process owns the API or debug port before removing only the stale PID file.</p>
           <p>BadgerDB also permits only one model-server process to use the rate-limit database. A lock error means another process owns <code>&lt;base&gt;/badger</code>; stop that process. Do not delete Badger's <code>LOCK</code> file while a server may be running.</p>
           <p>For permission errors, make the selected base path writable by the service user. The server enforces mode <code>0700</code> on <code>&lt;base&gt;/keys</code> and <code>0600</code> on private key files. Avoid recursively making credentials readable by other users.</p>
-          <p>When Kronk runs as the systemd service described in <a href="https://www.kronkai.com/manual#88-running-as-a-system-service">Chapter 8 §8.8</a>, read its logs with <code>journalctl --user -u kronk</code> and check these common failures:</p>
+          <p>When Kronk runs as the systemd service described in <a href="https://www.kronkai.com/manual#88-running-as-a-systemd-service">Chapter 8 §8.8</a>, read its logs with <code>journalctl --user -u kronk</code> and check these common failures:</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -4555,7 +4545,7 @@ lsof -nP -iTCP:9000 -sTCP:LISTEN`}</code></pre>
               <tr>
                 <td><code>status=203/EXEC</code></td>
                 <td>The service cannot find <code>kronk</code>; it does not use your shell's <code>PATH</code></td>
-                <td>Set the full path as described in "Finding the kronk Binary" in <a href="https://www.kronkai.com/manual#88-running-as-a-system-service">§8.8</a></td>
+                <td>Set the full path as described in "Finding the kronk Binary" in <a href="https://www.kronkai.com/manual#88-running-as-a-systemd-service">§8.8</a></td>
               </tr>
               <tr>
                 <td><code>Unknown key name 'ExecSearchPath'</code></td>
@@ -4594,8 +4584,8 @@ lsof -nP -iTCP:9000 -sTCP:LISTEN`}</code></pre>
               </tr>
               <tr>
                 <td>Stop takes long, then the process is killed</td>
-                <td><code>KRONK_WEB_SHUTDOWN_TIMEOUT</code> exceeds the unit's <code>TimeoutStopSec</code></td>
-                <td>Raise <code>TimeoutStopSec</code> with <code>systemctl --user edit kronk</code></td>
+                <td><code>KRONK_WEB_SHUTDOWN_TIMEOUT</code> exceeds the unit's <code>TimeoutStopSec</code> (<code>150s</code>)</td>
+                <td>With <code>systemctl --user edit kronk</code>, set <code>TimeoutStopSec</code> to at least twice the shutdown timeout plus 30 seconds</td>
               </tr>
             </tbody>
           </table>
@@ -6272,7 +6262,7 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
           <h4 id="20104-nix">20.10.4 Nix</h4>
           <p>The flake at <code>zarf/nix/flake.nix</code> defines how developers/users enter or build the project; generated Go dependency data lives beside it. Entering a development shell runs <code>gomod2nix import</code> from its shell hook and may dirty that generated material. When Go module dependencies change, update the Nix dependency material with the repository's configured command and evaluate/build the relevant entry point. Keep Nix fixes in Nix owners rather than adding environment special cases to Go code.</p>
           <h4 id="20105-linux-systemd-service">20.10.5 Linux systemd Service</h4>
-          <p><code>zarf/systemd/kronk.service</code> is a systemd user unit that runs Kronk as the user, on <code>~/.kronk</code>. Users install it as described in <a href="https://www.kronkai.com/manual#88-running-as-a-system-service">Chapter 8 §8.8</a>.</p>
+          <p><code>zarf/systemd/kronk.service</code> is a systemd user unit that runs Kronk as the user, on <code>~/.kronk</code>. Users install it as described in <a href="https://www.kronkai.com/manual#88-running-as-a-systemd-service">Chapter 8 §8.8</a>.</p>
           <ul>
             <li>It runs <code>kronk server start</code> in the foreground, without <code>--detach</code>.</li>
             <li>It has no sandboxing options. In a user unit they block the setuid <code>nvidia-modprobe</code> that CUDA needs.</li>
@@ -6460,11 +6450,10 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
               <a href="#87-container-operations" className={`doc-index-header ${activeSection === '87-container-operations' ? 'active' : ''}`}>8.7 Container Operations</a>
             </div>
             <div className="doc-index-section">
-              <a href="#88-running-as-a-system-service" className={`doc-index-header ${activeSection === '88-running-as-a-system-service' ? 'active' : ''}`}>8.8 Running as a System Service</a>
+              <a href="#88-running-as-a-systemd-service" className={`doc-index-header ${activeSection === '88-running-as-a-systemd-service' ? 'active' : ''}`}>8.8 Running as a systemd Service</a>
               <ul>
                 <li><a href="#finding-the-kronk-binary" className={activeSection === 'finding-the-kronk-binary' ? 'active' : ''}>Finding the kronk Binary</a></li>
                 <li><a href="#configuration" className={activeSection === 'configuration' ? 'active' : ''}>Configuration</a></li>
-                <li><a href="#limitations" className={activeSection === 'limitations' ? 'active' : ''}>Limitations</a></li>
               </ul>
             </div>
             <div className="doc-index-section">

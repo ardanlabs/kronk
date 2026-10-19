@@ -972,7 +972,7 @@ owners rather than adding environment special cases to Go code.
 
 `zarf/systemd/kronk.service` is a systemd user unit that runs Kronk as the
 user, on `~/.kronk`. Users install it as described in
-[Chapter 8 §8.8](https://www.kronkai.com/manual#88-running-as-a-system-service).
+[Chapter 8 §8.8](https://www.kronkai.com/manual#88-running-as-a-systemd-service).
 
 - It runs `kronk server start` in the foreground, without `--detach`.
 - It has no sandboxing options. In a user unit they block the setuid

@@ -498,7 +498,7 @@ systemctl --user daemon-reload
 systemctl --user enable --now kronk
 ```
 
-See [Chapter 8](https://www.kronkai.com/manual#88-running-as-a-system-service)
+See [Chapter 8](https://www.kronkai.com/manual#88-running-as-a-systemd-service)
 for managing, configuring, and removing the service.
 
 ### 2.7 Verify the Installation

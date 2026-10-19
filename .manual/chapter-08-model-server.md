@@ -9,7 +9,7 @@
 - [8.5 Model Configuration Files](#85-model-configuration-files)
 - [8.6 Catalog Operations](#86-catalog-operations)
 - [8.7 Container Operations](#87-container-operations)
-- [8.8 Running as a System Service](#88-running-as-a-system-service)
+- [8.8 Running as a systemd Service](#88-running-as-a-systemd-service)
 - [8.9 Related Administration Guides](#89-related-administration-guides)
 
 ---
@@ -578,12 +578,12 @@ The `kronk-net` network is shared with the
 and can remain after both stacks stop; remove it with
 `docker network rm kronk-net`.
 
-## 8.8 Running as a System Service
+## 8.8 Running as a systemd Service
 
 On Linux, Kronk can run as a systemd user service that starts when you log in
-and restarts after a crash. It runs as you, on your
-existing `~/.kronk`, so models, libraries, and keys installed with the CLI
-work as they are. Install it with:
+and restarts after a crash. It runs as you, on your existing `~/.kronk`, so
+models, libraries, and keys installed with the CLI work as they are. Install
+it with:
 
 ```shell
 curl -fsSL --create-dirs -o ~/.config/systemd/user/kronk.service \
@@ -647,43 +647,6 @@ Then run `systemctl --user restart kronk`.
 
 The service listens on `127.0.0.1:11435`. Configure authorization before
 setting `KRONK_WEB_API_HOST` to a public interface.
-
-On stop, Kronk drains in-flight requests and then unloads models, each phase
-bounded by `KRONK_WEB_SHUTDOWN_TIMEOUT` (default `1m`). The unit allows
-`TimeoutStopSec=150s`. If you raise the shutdown timeout, raise
-`TimeoutStopSec` to at least twice that value plus 30 seconds with
-`systemctl --user edit kronk`:
-
-```ini
-[Service]
-TimeoutStopSec=330s
-```
-
-`Restart=on-failure` restarts the server five seconds after a crash. After
-five failed starts in five minutes, the unit stays failed: fix the cause in
-`journalctl --user -u kronk`, then run `systemctl --user reset-failed kronk`
-and start it again.
-
-### Limitations
-
-- **GPU over SSH.** A desktop login grants GPU access only while it is active.
-  Over SSH, on Debian and Ubuntu with an AMD or Intel GPU, the service falls
-  back to the CPU unless your user is in the groups that own `/dev/kfd` and
-  `/dev/dri/renderD*`. Run once, then log out of all your sessions and back
-  in:
-
-  ```shell
-  sudo usermod -aG render,video $USER
-  ```
-
-  Fedora and Arch need no setup. NVIDIA works without setup when
-  `nvidia-modprobe` is installed.
-- **No isolation.** The service has no sandbox and runs with your own
-  permissions, with access to your whole home directory. For a dedicated user,
-  isolation, or a shared server, use the
-  [container setup](#87-container-operations) or write your own systemd unit.
-- **Linux only.** There is no macOS service yet; use
-  `kronk server start --detach`.
 
 ## 8.9 Related Administration Guides
 
