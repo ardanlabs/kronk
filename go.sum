@@ -34,8 +34,8 @@ github.com/ardanlabs/bucky v1.1.5 h1:ztRxgeUeva07jMIYV9LgUBGAxMBH+vWQfTrz8kdI804
 github.com/ardanlabs/bucky v1.1.5/go.mod h1:ZlikC6Yw4BdMJSpVr7nFKi0yebapzdkPdpn/bsRc8fw=
 github.com/ardanlabs/conf/v3 v3.13.0 h1:XKQXX35fFq/jencPu19xh0a6NPMT4NrpcRP/F9x7ejY=
 github.com/ardanlabs/conf/v3 v3.13.0/go.mod h1:XlL9P0quWP4m1weOVFmlezabinbZLI05niDof/+Ochk=
-github.com/ardanlabs/jinja v1.8.0 h1:NuRapYr/hv8J+4v1KymVAbbu6vuqMu+poXkJHfXqLs4=
-github.com/ardanlabs/jinja v1.8.0/go.mod h1:VE5Fa3Zglc+e4tFaapOnA6BRMBRDI7A2qCd3Jse6oyw=
+github.com/ardanlabs/jinja v1.9.0 h1:69fjYzJ7OmsjQvXoiiQXuPgZcMmAPHk5vTYmcOMEu7I=
+github.com/ardanlabs/jinja v1.9.0/go.mod h1:VMzH0tsq4PgTbN64PqBqqqBKZvKlhkrxHVagcB5Tj8g=
 github.com/ardanlabs/malina v1.1.7 h1:0/Ahi0xTrjl1L9/0ooY7fR66W3YnNuu0hizVhobVdO0=
 github.com/ardanlabs/malina v1.1.7/go.mod h1:nW++hLBciaEMwM94s7ER6zygvi1kGDHSGPRl1rIUvtI=
 github.com/arl/statsviz v0.8.2 h1:sceiee7nGyPCEFq3y25krycRqwefBJbC5xnNZjSfLiE=
@@ -212,8 +212,8 @@ github.com/modelcontextprotocol/go-sdk v1.8.0 h1:KIvahhYqwtbeniWVPs3TcXEA7b8jEtw
 github.com/modelcontextprotocol/go-sdk v1.8.0/go.mod h1:dL7u98E/zjJTGzEq+j30jQ8K2k1mb6LeAH4inEcSGts=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq1c1nUAm88MOHcQC9l5mIlSMApZMrHA=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8mK8HuQTcFwEeznm/DIxMOiR9yIdICNftLE1DvQ=
-github.com/open-policy-agent/opa v1.21.2 h1:9hXcLNZ5Z4/K2icDsoQwjCuCg6XelMxKOLjR404XDus=
-github.com/open-policy-agent/opa v1.21.2/go.mod h1:mHDS61rXyiZ+9bLINSK634BcbPZcsZChPvSwFVMj88g=
+github.com/open-policy-agent/opa v1.21.3 h1:dLKnsisFIuICZAWDvG3Us2k/TjGkxOCJ7fWINcnwKHM=
+github.com/open-policy-agent/opa v1.21.3/go.mod h1:mHDS61rXyiZ+9bLINSK634BcbPZcsZChPvSwFVMj88g=
 github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 h1:GFCKgmp0tecUJ0sJuv4pzYCqS9+RGSn52M3FUwPs+uo=
 github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10/go.mod h1:t/avpk3KcrXxUnYOhZhMXJlSEyie6gQbtLq5NM3loB8=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=

@@ -41,8 +41,8 @@ schema = 3
     version = "v3.13.0"
     hash = "sha256-WlPMHIHqJJVpe1tryI8si4jknRZr484+z0F/7ojYimw="
   [mod."github.com/ardanlabs/jinja"]
-    version = "v1.8.0"
-    hash = "sha256-eBnstuH64bz4mFpxLsmHs61jh2luPWA64Qml6HGdtmo="
+    version = "v1.9.0"
+    hash = "sha256-GXWMK7P6CkKZxoCqpigD9mh7jekBG+FcpEKdHAbah8c="
   [mod."github.com/ardanlabs/malina"]
     version = "v1.1.7"
     hash = "sha256-n/noZcoxPKSdXuY6vNYMgmcwi3NSCT77gIDfM2p/c/w="
@@ -263,8 +263,8 @@ schema = 3
     version = "v0.0.0-20191010083416-a7dc8b61c822"
     hash = "sha256-79URDDFenmGc9JZu+5AXHToMrtTREHb3BC84b/gym9Q="
   [mod."github.com/open-policy-agent/opa"]
-    version = "v1.21.2"
-    hash = "sha256-whZb534wfBLdTWf+lvu+4nIB9K51E6TQyCsqtej4N7A="
+    version = "v1.21.3"
+    hash = "sha256-ucMRGKjcclpp+cyvNwjoJVP3WEdt+KJreI+QaUNzIzU="
   [mod."github.com/planetscale/vtprotobuf"]
     version = "v0.6.1-0.20240319094008-0393e58bdf10"
     hash = "sha256-L8dyNm+PCRDNADiIGKZqsPkCgB4xpLrosZjssrN+sUY="
