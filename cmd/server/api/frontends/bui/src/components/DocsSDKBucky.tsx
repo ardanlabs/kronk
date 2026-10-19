@@ -47,7 +47,7 @@ export default function DocsSDKBucky() {
               <pre className="code-block">
                 <code>func Init(opts ...InitOption) error</code>
               </pre>
-              <p className="doc-description">Init initializes the bucky / whisper backend. It registers the whisper backend with the cross-backend registry under backend.KindWhisper, then resolves the install path for the whisper.cpp shared library and loads it. If initialization fails, subsequent calls will retry — allowing libraries to be downloaded and loaded without restarting the server.</p>
+              <p className="doc-description">Init initializes the bucky / whisper backend. It registers the whisper backend with the cross-backend registry under backend.KindWhisper, then resolves the install path for the whisper.cpp shared library and loads it. If initialization fails, subsequent calls will retry — allowing libraries to be downloaded and loaded without restarting the server. Bucky can be used on its own; when also using Kronk, call kronk.Init before bucky.Init.</p>
             </div>
 
             <div className="doc-section" id="func-initialized">

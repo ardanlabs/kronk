@@ -47,7 +47,7 @@ export default function DocsSDKMalina() {
               <pre className="code-block">
                 <code>func Init(opts ...InitOption) error</code>
               </pre>
-              <p className="doc-description">Init registers Malina tooling, then loads stable-diffusion.cpp and its dynamic backends. KRONK_MALINA_LIB_PATH (or legacy MALINA_LIB) is used when no library path is supplied.</p>
+              <p className="doc-description">Init registers Malina tooling, then loads stable-diffusion.cpp and its dynamic backends. KRONK_MALINA_LIB_PATH (or legacy MALINA_LIB) is used when no library path is supplied. Malina can be used on its own; when also using Kronk, call kronk.Init before malina.Init.</p>
             </div>
 
             <div className="doc-section" id="func-initialized">

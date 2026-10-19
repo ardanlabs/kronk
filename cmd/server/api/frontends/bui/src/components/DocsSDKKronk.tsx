@@ -62,7 +62,7 @@ export default function DocsSDKKronk() {
               <pre className="code-block">
                 <code>func Init(opts ...InitOption) error</code>
               </pre>
-              <p className="doc-description">Init initializes the Kronk backend support. If initialization fails, subsequent calls will retry, allowing libraries to be downloaded and loaded without restarting the server.</p>
+              <p className="doc-description">Init initializes the Kronk backend support. If initialization fails, subsequent calls will retry, allowing libraries to be downloaded and loaded without restarting the server. When also using Bucky or Malina, call Kronk's Init first. If either has already loaded its native library before llama.cpp, Init returns an error and the process must be restarted.</p>
             </div>
 
             <div className="doc-section" id="func-initialized">

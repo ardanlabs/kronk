@@ -1,6 +1,7 @@
 package kronk
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"runtime"
@@ -56,13 +57,26 @@ func Initialized() bool {
 
 // Init initializes the Kronk backend support. If initialization fails,
 // subsequent calls will retry, allowing libraries to be downloaded and
-// loaded without restarting the server.
+// loaded without restarting the server. When also using Bucky or Malina,
+// call Kronk's Init first. If either has already loaded its native library
+// before llama.cpp, Init returns an error and the process must be restarted.
 func Init(opts ...InitOption) error {
 	initMu.Lock()
 	defer initMu.Unlock()
 
 	if initDone {
 		return nil
+	}
+
+	backend.NativeInit.Lock()
+	defer backend.NativeInit.Unlock()
+
+	if backend.NativeInit.WhisperLoaded && !backend.NativeInit.LlamaLoaded {
+		return errors.New("init: cannot load llama.cpp after Bucky has loaded whisper.cpp: restart the process and call kronk.Init() before bucky.Init() to avoid incompatible GGML libraries")
+	}
+
+	if backend.NativeInit.SDLoaded && !backend.NativeInit.LlamaLoaded {
+		return errors.New("init: cannot load llama.cpp after Malina has loaded stable-diffusion.cpp: restart the process and call kronk.Init() before malina.Init() to avoid incompatible GGML libraries")
 	}
 
 	var o initOptions
@@ -107,6 +121,8 @@ func Init(opts ...InitOption) error {
 	if err := llama.Load(libPath); err != nil {
 		return fmt.Errorf("init: unable to load library: %w", err)
 	}
+
+	backend.NativeInit.LlamaLoaded = true
 	devices.SetReady(true)
 
 	if err := mtmd.Load(libPath); err != nil {

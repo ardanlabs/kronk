@@ -70,7 +70,8 @@ func Initialized() bool {
 
 // Init registers Malina tooling, then loads stable-diffusion.cpp and its
 // dynamic backends. KRONK_MALINA_LIB_PATH (or legacy MALINA_LIB) is used when
-// no library path is supplied.
+// no library path is supplied. Malina can be used on its own; when also using
+// Kronk, call kronk.Init before malina.Init.
 func Init(opts ...InitOption) error {
 	initState.Lock()
 	defer initState.Unlock()
@@ -97,6 +98,10 @@ func Init(opts ...InitOption) error {
 		}
 		return nil
 	}
+
+	backendtools.NativeInit.Lock()
+	defer backendtools.NativeInit.Unlock()
+
 	if o.logLevel != LogSilent && o.logLevel != LogNormal {
 		o.logLevel = LogSilent
 	}
@@ -120,6 +125,9 @@ func Init(opts ...InitOption) error {
 	if err := sd.Load(o.libPath); err != nil {
 		return fmt.Errorf("init: unable to load stable-diffusion library: %w", err)
 	}
+
+	backendtools.NativeInit.SDLoaded = true
+
 	if sd.GGMLBackendDeviceCount() <= 0 {
 		if err := sd.Init(o.libPath); err != nil {
 			return fmt.Errorf("init: unable to initialize stable-diffusion backends: %w", err)

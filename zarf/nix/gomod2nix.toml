@@ -32,8 +32,8 @@ schema = 3
     version = "v0.62.0"
     hash = "sha256-nWBR/1zx3mWveInxTUpV81MCAN81P4O700jzQ2/Z4mk="
   [mod."github.com/agnivade/levenshtein"]
-    version = "v1.2.1"
-    hash = "sha256-3XnCzf7tFgEE0MmjxvjfWaw6qK6mKLabFZ3c23JIH9Y="
+    version = "v1.2.2"
+    hash = "sha256-Q/6abljNb1LER7789i1MO7C0X0ep9VVJAzQlpv3tDak="
   [mod."github.com/ardanlabs/bucky"]
     version = "v1.1.5"
     hash = "sha256-Edl2UJH9p8U4x91LGQq0lVWnv1rlvQYHI7E8A+fKusE="
@@ -131,8 +131,8 @@ schema = 3
     version = "v1.1.0"
     hash = "sha256-Qa7BSAXtgH7CB5STBiXTTOCgivWUiA65u3KxDOSZCkQ="
   [mod."github.com/ebitengine/purego"]
-    version = "v0.11.1"
-    hash = "sha256-SMr46MKG4T/Md3vggfz5FCpZsNXQlgI7zQIZcTIbIuM="
+    version = "v0.11.2"
+    hash = "sha256-nCQsZ7kEev0JikRfJ9KkL2rzNeNiYx3EkNJCQCttQr8="
   [mod."github.com/envoyproxy/go-control-plane/envoy"]
     version = "v1.40.0"
     hash = "sha256-TcdMgT/6++jI4/eD93UzRvFSIFb90DkwGhNC2qRmYok="
@@ -398,16 +398,16 @@ schema = 3
     version = "v0.16.0"
     hash = "sha256-OvekWcaTHMs5n3Img4EmYaORRgSmybBS+tObSnPqftY="
   [mod."google.golang.org/api"]
-    version = "v0.304.0"
-    hash = "sha256-r3AR0pY47Kg51A3W743JKQX0npwFxlkQA4oVxB2hLxM="
+    version = "v0.305.0"
+    hash = "sha256-+7wI8rQh3+Gp3Qphef/oL6PKMbMelj2CqtP7yUS+Xx4="
   [mod."google.golang.org/genproto"]
-    version = "v0.0.0-20261012220534-4341edf3f941"
-    hash = "sha256-wQ9vIu89aXy9/x6M15m9gY4euMKo99GIX64M6vmRjhM="
+    version = "v0.0.0-20261019180522-ce908d29299b"
+    hash = "sha256-bmwmNngXZ9gHFZ7pJG+/6vq8KqZTQ+milQlC+o255yU="
   [mod."google.golang.org/genproto/googleapis/api"]
-    version = "v0.0.0-20261012220534-4341edf3f941"
-    hash = "sha256-MlST4MvkHobgSWbCS3GCUaffvSnPXIQC+UMMsDuOGZs="
+    version = "v0.0.0-20261019180522-ce908d29299b"
+    hash = "sha256-qUTuVBTbGwE/GeuuO+2s0/PCEWi9vLt+HJQ9x0AQjRg="
   [mod."google.golang.org/genproto/googleapis/rpc"]
-    version = "v0.0.0-20261012220534-4341edf3f941"
+    version = "v0.0.0-20261019180522-ce908d29299b"
     hash = "sha256-qBJJ3Go2HqyEE+jp6FMafhXbMBbA/PIXvbdROnLPAYA="
   [mod."google.golang.org/grpc"]
     version = "v1.84.0"

@@ -71,7 +71,8 @@ func Initialized() bool {
 // backend.KindWhisper, then resolves the install path for the
 // whisper.cpp shared library and loads it. If initialization fails,
 // subsequent calls will retry — allowing libraries to be downloaded
-// and loaded without restarting the server.
+// and loaded without restarting the server. Bucky can be used on its own;
+// when also using Kronk, call kronk.Init before bucky.Init.
 func Init(opts ...InitOption) error {
 	initMu.Lock()
 	defer initMu.Unlock()
@@ -79,6 +80,9 @@ func Init(opts ...InitOption) error {
 	if initDone {
 		return nil
 	}
+
+	backend.NativeInit.Lock()
+	defer backend.NativeInit.Unlock()
 
 	var o initOptions
 	for _, opt := range opts {
@@ -120,6 +124,8 @@ func Init(opts ...InitOption) error {
 	if err := whisper.Load(libPath); err != nil {
 		return fmt.Errorf("init: unable to load whisper library: %w", err)
 	}
+
+	backend.NativeInit.WhisperLoaded = true
 
 	// Skip ggml backend registration when the llama side already populated
 	// the shared registry from its own lib directory. Without this guard,
