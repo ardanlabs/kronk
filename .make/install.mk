@@ -132,6 +132,10 @@ TEMPO      := grafana/tempo:3.0.3
 LOKI       := grafana/loki:3.7.7
 ALLOY      := grafana/alloy:v1.19.2
 
+# Keep these values in sync with cmd/server/app/sdk/tmprl/tmprltest/docker.go.
+TMPRL_TEST_IMAGE := temporalio/temporal:1.9.1
+TMPRL_TEST_CONTAINER := moxie-tmprl-test
+
 # Install the docker images.
 install-docker:
 	docker pull $(OPENWEBUI) & \
@@ -140,4 +144,5 @@ install-docker:
 	docker pull $(TEMPO) & \
 	docker pull $(LOKI) & \
 	docker pull $(ALLOY) & \
+	docker pull $(TMPRL_TEST_IMAGE) & \
 	wait;

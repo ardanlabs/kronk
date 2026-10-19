@@ -33,6 +33,28 @@ authapp-proto-gen:
 # ==============================================================================
 # Tests
 
+.PHONY: test-tmprl test-tmprl-down
+
+# Stage unit tests, workflows, and the controlled-model end-to-end pipeline.
+# Server-backed tests start/reuse Docker automatically, like Service's dbtest.
+# TEMPORAL_ADDRESS/TEMPORAL_NAMESPACE optionally select an existing server.
+# Individual stage: go test -v ./cmd/server/app/sdk/tmprl/stages/prepare/extract
+test-tmprl:
+	RUN_IN_PARALLEL=yes GITHUB_WORKSPACE="$(CURDIR)" \
+		go test -race -v -count=1 -timeout 10m ./cmd/server/app/sdk/tmprl/...
+
+# Disposable test history is removed. Other Temporal containers are untouched.
+test-tmprl-down:
+	@docker info > /dev/null && \
+	id="$$(docker ps -aq --filter 'name=^/$(TMPRL_TEST_CONTAINER)$$')" && \
+	if [ -n "$$id" ]; then \
+		owner="$$(docker inspect --format '{{ index .Config.Labels "com.ardanlabs.moxie.tmprl-test" }}' "$$id")" && \
+		[ "$$owner" = true ] || { echo "Refusing to remove an unowned test container" >&2; exit 1; }; \
+		docker stop "$$id" && docker rm "$$id"; \
+	else \
+		echo "No tmprl test container to remove"; \
+	fi
+
 lint:
 	go vet ./...
 	staticcheck -checks=all ./...
