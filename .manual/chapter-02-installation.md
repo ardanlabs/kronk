@@ -482,31 +482,24 @@ runtime paths, and deployment operations.
 
 #### Run as a Linux Service (systemd)
 
-On Linux, instead of starting the server by hand, you can install it as a
-systemd service that restarts after a crash and runs in a restricted sandbox.
-The service files are not in the release packages, so clone the repository
-first:
+On Linux, instead of starting the server by hand, you can run it as a systemd
+user service that restarts after a crash. It runs as you, on your existing
+`~/.kronk`:
 
 ```shell
-git clone --depth 1 https://github.com/ardanlabs/kronk.git
-cd kronk
+# Download the Kronk service file into your user services directory.
+curl -fsSL --create-dirs -o ~/.config/systemd/user/kronk.service \
+  https://raw.githubusercontent.com/ardanlabs/kronk/main/zarf/systemd/kronk.service
+
+# Make systemd read the new file.
+systemctl --user daemon-reload
+
+# Start Kronk now and at every login.
+systemctl --user enable --now kronk
 ```
 
-Then install one of two levels:
-
-| Level | Command | Runs as | Starts | Data |
-| --- | --- | --- | --- | --- |
-| User level | `make install-user-service` | You | When you log in; stops when you log out | Your existing `~/.kronk` |
-| System level | `make install-system-service` | A dedicated `kronk` user | At boot | `/var/lib/kronk` |
-
-Install only one. The system level cannot see your `~/.kronk`; to keep using
-it, choose the user level, or copy it over as Chapter 8 describes.
-
-The target copies the `kronk` on your `PATH`; to use a different binary, add
-`KRONK_BIN=/path/to/kronk`. Run the same target again after upgrading the
-CLI. See
-[Chapter 8](https://www.kronkai.com/manual#88-running-as-a-system-service)
-for choosing a level, configuration, GPU access, and uninstalling.
+See [Chapter 8](https://www.kronkai.com/manual#88-running-as-a-system-service)
+for managing, configuring, and removing the service.
 
 ### 2.7 Verify the Installation
 
