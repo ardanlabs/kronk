@@ -323,23 +323,30 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	// endpoints. bucky.Init wires up the whisper.cpp shared library so
 	// the bucky pool can load models on demand; failure is non-fatal so
 	// the admin endpoints still work when the runtime library has not
-	// been downloaded yet.
+	// been downloaded yet. The manager is constructed even when no
+	// bundle exists for this platform so the server can start in
+	// degraded mode instead of failing during startup.
 
 	buckyLibs, err := buckylibs.New(
 		buckylibs.WithBasePath(cfg.BasePath),
 		buckylibs.WithLibPath(cfg.BuckyLibPath),
 		buckylibs.WithAllowUpgrade(cfg.AllowUpgrade),
 		buckylibs.WithValidation(cfg.LibVerifyEnabled),
+		buckylibs.WithAllowUnsupportedRuntime(true),
 		buckylibs.WithDetect(ctx, log.Info),
 	)
 	if err != nil {
 		return fmt.Errorf("unable to create bucky libs api: %w", err)
 	}
 
-	log.Info(ctx, "startup", "status", "bucky libs ready", "libPath", buckyLibs.LibsPath(), "arch", buckyLibs.Arch(), "os", buckyLibs.OS(), "processor", buckyLibs.Processor())
+	log.Info(ctx, "startup", "status", "bucky libs ready", "libPath", buckyLibs.LibsPath(), "arch", buckyLibs.Arch(), "os", buckyLibs.OS(), "processor", buckyLibs.Processor(), "supported", buckyLibs.RuntimeSupported())
 
 	buckyLibVerified := !cfg.LibVerifyEnabled
-	if cfg.MediaBackendsEnabled {
+	if !cfg.MediaBackendsEnabled {
+		log.Info(ctx, "startup", "status", "bucky backend download disabled", "libPath", buckyLibs.LibsPath())
+	} else if !buckyLibs.RuntimeSupported() {
+		log.Info(ctx, "startup", "WARNING", "whisper.cpp backend is unavailable for this platform, running in degraded mode", "arch", buckyLibs.Arch(), "os", buckyLibs.OS())
+	} else {
 		downloadCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 		buckyVersion, err := buckyLibs.Download(downloadCtx, log.Info)
 		cancel()
@@ -354,8 +361,6 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 				log.Info(ctx, "startup", "status", "verified whisper.cpp runtime", "version", buckyVersion.Version)
 			}
 		}
-	} else {
-		log.Info(ctx, "startup", "status", "bucky backend download disabled", "libPath", buckyLibs.LibsPath())
 	}
 
 	buckyModels, err := buckymodels.NewWithPaths(cfg.BasePath)
@@ -370,21 +375,30 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	// -------------------------------------------------------------------------
 	// Malina (stable-diffusion.cpp) Library System
 
+	// Malina is optional too. Platforms without a published bundle still
+	// get a manager so library and model management remain available; the
+	// download and native initialization paths below stay disabled.
+
 	malinaLibs, err := malinalibs.New(
 		malinalibs.WithBasePath(cfg.BasePath),
 		malinalibs.WithLibPath(cfg.MalinaLibPath),
 		malinalibs.WithAllowUpgrade(cfg.AllowUpgrade),
 		malinalibs.WithValidation(cfg.LibVerifyEnabled),
+		malinalibs.WithAllowUnsupportedRuntime(true),
 		malinalibs.WithDetect(ctx, log.Info),
 	)
 	if err != nil {
 		return fmt.Errorf("unable to create malina libs api: %w", err)
 	}
 
-	log.Info(ctx, "startup", "status", "malina libs ready", "libPath", malinaLibs.LibsPath(), "arch", malinaLibs.Arch(), "os", malinaLibs.OS(), "processor", malinaLibs.Processor())
+	log.Info(ctx, "startup", "status", "malina libs ready", "libPath", malinaLibs.LibsPath(), "arch", malinaLibs.Arch(), "os", malinaLibs.OS(), "processor", malinaLibs.Processor(), "supported", malinaLibs.RuntimeSupported())
 
 	malinaLibVerified := !cfg.LibVerifyEnabled
-	if cfg.MediaBackendsEnabled {
+	if !cfg.MediaBackendsEnabled {
+		log.Info(ctx, "startup", "status", "malina backend download disabled", "libPath", malinaLibs.LibsPath())
+	} else if !malinaLibs.RuntimeSupported() {
+		log.Info(ctx, "startup", "WARNING", "stable-diffusion.cpp backend is unavailable for this platform, running in degraded mode", "arch", malinaLibs.Arch(), "os", malinaLibs.OS())
+	} else {
 		downloadCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 		malinaVersion, err := malinaLibs.Download(downloadCtx, log.Info)
 		cancel()
@@ -399,8 +413,6 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 				log.Info(ctx, "startup", "status", "verified stable-diffusion.cpp runtime", "version", malinaVersion.Version)
 			}
 		}
-	} else {
-		log.Info(ctx, "startup", "status", "malina backend download disabled", "libPath", malinaLibs.LibsPath())
 	}
 
 	malinaModels, err := malinamodels.NewWithPaths(cfg.BasePath)
@@ -452,6 +464,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	if !cfg.MediaBackendsEnabled {
 		log.Info(ctx, "startup", "status", "bucky backend initialization disabled")
+	} else if !buckyLibs.RuntimeSupported() {
+		log.Info(ctx, "startup", "status", "bucky backend initialization skipped", "reason", "no supported runtime for this platform")
 	} else if !buckyLibVerified {
 		return errors.New("bucky init blocked because whisper.cpp runtime verification did not succeed")
 	} else if err := bucky.Init(bucky.WithLibPath(buckyLibs.LibsPath())); err != nil {
@@ -461,6 +475,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	malinaProgress := malinaprogress.New()
 	if !cfg.MediaBackendsEnabled {
 		log.Info(ctx, "startup", "status", "malina backend initialization disabled")
+	} else if !malinaLibs.RuntimeSupported() {
+		log.Info(ctx, "startup", "status", "malina backend initialization skipped", "reason", "no supported runtime for this platform")
 	} else if !malinaLibVerified {
 		return errors.New("malina init blocked because stable-diffusion.cpp runtime verification did not succeed")
 	} else if err := malina.Init(malina.WithLibPath(malinaLibs.LibsPath()), malina.WithProgress(malinaProgress.Publish)); err != nil {

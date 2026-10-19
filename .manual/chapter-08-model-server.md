@@ -172,7 +172,10 @@ selected by `--lib-path` or `KRONK_LIB_PATH`.
 Set `--media-backends-enabled=false` or
 `KRONK_MEDIA_BACKENDS_ENABLED=false` to skip automatic Bucky and Malina bundle
 downloads and native backend initialization. This does not affect llama.cpp
-download or initialization.
+download or initialization. When a platform has no published bundle for one of
+the media backends, the server logs that the backend is unavailable and starts
+in degraded mode instead of failing; library and model management remain
+available.
 
 Library verification is enabled by default. Set `--lib-verify-enabled=false` or
 `KRONK_LIB_VERIFY_ENABLED=false` to disable it. Kronk verifies the selected

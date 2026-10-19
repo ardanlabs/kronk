@@ -60,15 +60,16 @@ type Combination = backend.Combination
 
 // Options represents the configuration options for Libs.
 type Options struct {
-	LibPath      string
-	BasePath     string
-	Arch         string
-	OS           string
-	Processor    string
-	Version      string
-	AllowUpgrade bool
-	Validation   bool
-	detect       *detectOptions
+	LibPath                 string
+	BasePath                string
+	Arch                    string
+	OS                      string
+	Processor               string
+	Version                 string
+	AllowUpgrade            bool
+	Validation              bool
+	AllowUnsupportedRuntime bool
+	detect                  *detectOptions
 }
 
 // Option is a function that configures Options.
@@ -153,6 +154,17 @@ func WithValidation(enabled bool) Option {
 	}
 }
 
+// WithAllowUnsupportedRuntime allows New to succeed when automatic host
+// detection finds no published whisper.cpp bundle for the current platform.
+// The returned Libs reports RuntimeSupported() == false; download and
+// inference operations still fail until a compatible runtime is available.
+// Explicit library paths are always treated as supported.
+func WithAllowUnsupportedRuntime(allow bool) Option {
+	return func(o *Options) {
+		o.AllowUnsupportedRuntime = allow
+	}
+}
+
 // =============================================================================
 
 // Libs manages the whisper.cpp library system. Each Libs instance
@@ -168,15 +180,16 @@ func WithValidation(enabled bool) Option {
 // same libraries root are discoverable through List, Remove, and
 // InstalledFor.
 type Libs struct {
-	root         string
-	path         string
-	arch         string
-	os           string
-	processor    string
-	version      string
-	readOnly     bool
-	AllowUpgrade bool
-	validation   bool
+	root             string
+	path             string
+	arch             string
+	os               string
+	processor        string
+	version          string
+	readOnly         bool
+	AllowUpgrade     bool
+	validation       bool
+	runtimeSupported bool
 }
 
 // New constructs a Libs with system defaults and applies any provided
@@ -220,6 +233,7 @@ func New(opts ...Option) (*Libs, error) {
 
 	// A caller-supplied path and a supported explicit processor are strict.
 	// Everything else is a preference that must be safe for this host.
+	runtimeSupported := true
 	if options.LibPath == "" && !(options.Processor != "" && options.Processor != "rocm" && IsSupported(arch, opSys, processor)) {
 		ctx := context.Background()
 		var log Logger
@@ -239,10 +253,22 @@ func New(opts ...Option) (*Libs, error) {
 		var supported bool
 		processor, reason, supported = selectRuntime(ctx, arch, opSys, preferred, probes)
 		if !supported {
-			return nil, fmt.Errorf("libs: no supported automatic runtime for arch=%s os=%s", arch, opSys)
+			if !options.AllowUnsupportedRuntime {
+				return nil, fmt.Errorf("libs: no supported automatic runtime for arch=%s os=%s", arch, opSys)
+			}
+
+			// Keep the preferred processor so the manager still resolves a
+			// stable install path for listing and management operations. The
+			// runtime cannot be downloaded or loaded until a published bundle
+			// exists for this platform.
+			processor = preferred
+			if processor == "" {
+				processor = "cpu"
+			}
+			runtimeSupported = false
 		}
 		if log != nil {
-			log(ctx, "select bucky runtime", "preferred", preferred, "selected", processor, "reason", reason)
+			log(ctx, "select bucky runtime", "preferred", preferred, "selected", processor, "reason", reason, "supported", runtimeSupported)
 		}
 	}
 
@@ -254,15 +280,16 @@ func New(opts ...Option) (*Libs, error) {
 	}
 
 	lib := Libs{
-		root:         root,
-		path:         path,
-		arch:         arch,
-		os:           opSys,
-		processor:    processor,
-		version:      options.Version,
-		readOnly:     readOnly,
-		AllowUpgrade: options.AllowUpgrade,
-		validation:   options.Validation,
+		root:             root,
+		path:             path,
+		arch:             arch,
+		os:               opSys,
+		processor:        processor,
+		version:          options.Version,
+		readOnly:         readOnly,
+		AllowUpgrade:     options.AllowUpgrade,
+		validation:       options.Validation,
+		runtimeSupported: runtimeSupported,
 	}
 
 	return &lib, nil
@@ -301,6 +328,15 @@ func (lib *Libs) Processor() string {
 // will return ErrReadOnly when this is true.
 func (lib *Libs) ReadOnly() bool {
 	return lib.readOnly
+}
+
+// RuntimeSupported reports whether the selected runtime can run on this host.
+// It is false only when automatic host detection found no published bundle and
+// WithAllowUnsupportedRuntime(true) allowed New to succeed. Download and
+// inference remain unavailable in that state. Explicit library paths are
+// always reported as supported.
+func (lib *Libs) RuntimeSupported() bool {
+	return lib.runtimeSupported
 }
 
 // SupportedCombinations returns every (architecture, operating

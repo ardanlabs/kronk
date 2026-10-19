@@ -152,6 +152,53 @@ func TestExplicitRuntimeSelection(t *testing.T) {
 	}
 }
 
+func TestNewAllowUnsupportedRuntime(t *testing.T) {
+	t.Setenv("KRONK_ARCH", "arm64")
+	t.Setenv("KRONK_OS", "linux")
+	t.Setenv("KRONK_PROCESSOR", "cpu")
+
+	if _, err := New(WithBasePath(t.TempDir()), WithDetect(t.Context(), nil)); err == nil {
+		t.Fatal("New() error = nil, want unsupported runtime error")
+	}
+
+	basePath := t.TempDir()
+	lib, err := New(
+		WithBasePath(basePath),
+		WithAllowUnsupportedRuntime(true),
+		WithDetect(t.Context(), nil),
+	)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if lib.RuntimeSupported() {
+		t.Error("RuntimeSupported(): got true, want false")
+	}
+	if got, want := lib.Processor(), "cpu"; got != want {
+		t.Errorf("Processor(): got %q, want %q", got, want)
+	}
+	if got, want := lib.LibsPath(), filepath.Join(basePath, localFolder, "linux", "arm64", "cpu"); got != want {
+		t.Errorf("LibsPath(): got %q, want %q", got, want)
+	}
+}
+
+func TestCustomLibPathIsRuntimeSupported(t *testing.T) {
+	t.Setenv("KRONK_ARCH", "arm64")
+	t.Setenv("KRONK_OS", "linux")
+	t.Setenv("KRONK_PROCESSOR", "cpu")
+
+	dir := filepath.Join(t.TempDir(), "custom")
+	lib, err := New(WithLibPath(dir))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if !lib.RuntimeSupported() {
+		t.Error("RuntimeSupported(): got false, want true for an explicit library path")
+	}
+	if got := lib.LibsPath(); got != dir {
+		t.Errorf("LibsPath(): got %q, want %q", got, dir)
+	}
+}
+
 func TestSupportedCombinationsCopy(t *testing.T) {
 	first := SupportedCombinations()
 	first[0].Arch = "changed"

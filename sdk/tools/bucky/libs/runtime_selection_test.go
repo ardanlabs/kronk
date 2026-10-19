@@ -223,6 +223,33 @@ func TestNewRuntimeSelection(t *testing.T) {
 	})
 }
 
+func TestNewAllowUnsupportedRuntime(t *testing.T) {
+	scrubRuntimeEnv(t)
+
+	opts := []Option{
+		WithBasePath(t.TempDir()),
+		WithArch("arm64"),
+		WithOS("windows"),
+		WithProcessor("vulkan"),
+		withRuntimeProbes(fakeRuntimeProbes(false, false)),
+	}
+
+	if _, err := New(opts...); err == nil {
+		t.Fatal("New: got nil error, want unsupported automatic runtime error")
+	}
+
+	lib, err := New(append(opts, WithAllowUnsupportedRuntime(true))...)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if lib.RuntimeSupported() {
+		t.Error("RuntimeSupported: got true, want false")
+	}
+	if got, want := lib.Processor(), "vulkan"; got != want {
+		t.Errorf("Processor: got %q, want %q", got, want)
+	}
+}
+
 func TestHasVulkanGPU(t *testing.T) {
 	tests := []struct {
 		name   string
