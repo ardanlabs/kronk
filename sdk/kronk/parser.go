@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/kronk/parsers/beam"
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/deepseek"
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/fallback"
 	"github.com/ardanlabs/kronk/sdk/kronk/parsers/gemma"
@@ -25,7 +26,8 @@ var defaultParsersOnce sync.Once
 // registerDefaultParsers registers the parser plugins that ship with
 // Kronk. Order matters and follows two rules:
 //
-//  1. gpt is registered first because it claims solely on chat-template
+//  1. Beam's XML-Harmony protocol precedes GPT-OSS's JSON-Harmony protocol.
+//     Both precede lineage parsers because gpt claims solely on chat-template
 //     Harmony markers (<|channel|>, <|message|>, etc.). A GPT-OSS model
 //     whose GGUF architecture happens to share a prefix with another
 //     lineage (e.g. a Qwen-derived gpt-oss build) must still be picked
@@ -48,7 +50,8 @@ var defaultParsersOnce sync.Once
 // selectParser walks registrations in order.
 func registerDefaultParsers() {
 	defaultParsersOnce.Do(func() {
-		model.RegisterParser(gpt.New) // template-only — must be first
+		model.RegisterParser(beam.New)
+		model.RegisterParser(gpt.New)
 		model.RegisterParser(lfm.New)
 		model.RegisterParser(kimi.New)
 		model.RegisterParser(deepseek.New)
