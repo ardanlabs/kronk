@@ -15,6 +15,35 @@ import (
 	"go.yaml.in/yaml/v2"
 )
 
+func TestKronkResolvedConfigBasePath(t *testing.T) {
+	basePath := t.TempDir()
+	t.Setenv("KRONK_BASE_PATH", t.TempDir())
+	m, err := NewWithPaths(basePath)
+	if err != nil {
+		t.Fatalf("NewWithPaths: %v", err)
+	}
+
+	modelFile := filepath.Join(m.Path(), "model-Q8_0.gguf")
+	writeCatalogTestGGUF(t, modelFile, nil)
+	data, err := yaml.Marshal(map[string]Path{
+		"example/model-Q8_0": {ModelFiles: []string{modelFile}},
+	})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(m.Path(), indexFile), data, 0600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg, err := m.KronkResolvedConfig("example/model-Q8_0", nil)
+	if err != nil {
+		t.Fatalf("KronkResolvedConfig: %v", err)
+	}
+	if cfg.BasePath != basePath {
+		t.Errorf("BasePath: got %q, want %q", cfg.BasePath, basePath)
+	}
+}
+
 func TestResolveSessionStoreFactory(t *testing.T) {
 	tests := []struct {
 		name    string

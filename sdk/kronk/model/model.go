@@ -1204,7 +1204,7 @@ func retrieveTemplate(cfg Config, modelID string, mdl llama.Model) (Template, er
 		}, nil
 	}
 
-	if tmpl, ok := autoDiscoverTemplate(modelID); ok {
+	if tmpl, ok := autoDiscoverTemplate(modelID, cfg.BasePath); ok {
 		return tmpl, nil
 	}
 
@@ -1219,16 +1219,16 @@ func retrieveTemplate(cfg Config, modelID string, mdl llama.Model) (Template, er
 	}, nil
 }
 
-// autoDiscoverTemplate searches the per-user jinja directory for a template
+// autoDiscoverTemplate searches the base path's jinja directory for a template
 // matching the model id. It tries the full id first, then the id with any
 // trailing quant suffix stripped. Returns (Template{}, false) when nothing
-// matches or the model id is empty.
-func autoDiscoverTemplate(modelID string) (Template, bool) {
+// matches or the model id is empty. An empty base path uses environment/home defaults.
+func autoDiscoverTemplate(modelID string, basePath string) (Template, bool) {
 	if modelID == "" {
 		return Template{}, false
 	}
 
-	jinjaDir := defaults.JinjaDir("")
+	jinjaDir := defaults.JinjaDir(basePath)
 
 	candidates := []string{modelID}
 	if stripped := stripQuantSuffix(modelID); stripped != "" && stripped != modelID {

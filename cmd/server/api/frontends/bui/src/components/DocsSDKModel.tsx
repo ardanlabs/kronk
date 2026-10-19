@@ -443,6 +443,7 @@ export default function DocsSDKModel() {
 	PtrAdmissionTimeout        *time.Duration
 	AutoTune                   bool
 	AutoTuned                  bool
+	BasePath                   string
 	PtrCacheMinTokens          *int
 	CacheTypeK                 GGMLType
 	CacheTypeV                 GGMLType
@@ -507,6 +508,7 @@ export default function DocsSDKModel() {
               <p className="doc-description">AdmissionTimeout limits how long a request waits for an admission permit. The timeout applies only to admission, not request processing after a permit is acquired. When unset or set to 0, the default is 3 minutes.</p>
               <p className="doc-description">AutoTune, when true, asks kronk.New to run a hardware-aware analysis of the model (architecture, size, and available devices) and seed unset settings (context window, KV cache type, slots, flash attention, split mode, etc.) before loading. It is off by default for backwards compatibility, and any option the caller sets explicitly always wins over the analysis. It has no effect when using the low-level model package directly (only kronk.New applies it).</p>
               <p className="doc-description">AutoTuned records that an upstream owner such as the Kronk Model Server has already applied AutoTune. When AutoTune and AutoTuned are both true, kronk.New preserves the enabled state for diagnostics without repeating the hardware analysis.</p>
+              <p className="doc-description">BasePath sets the root for automatic chat-template discovery in &lt;BasePath&gt;/jinja. When empty, KRONK_BASE_PATH is used, falling back to ~/.kronk. An explicit path takes precedence over the environment and does not search other roots. It does not change model-file paths or separately configured library managers.</p>
               <p className="doc-description">CacheMinTokens sets the minimum token count required before caching. Messages shorter than this threshold are not cached, as the overhead of cache management may outweigh the prefill savings. When set to 0, defaults to 100 tokens.</p>
               <p className="doc-description">CacheTypeK is the data type for the K (key) cache. This controls the precision of the key vectors in the KV cache. Lower precision types (like Q8_0 or Q4_0) reduce memory usage but may slightly affect quality. When left as the zero value (GGMLTypeAuto), the default llama.cpp value is used.</p>
               <p className="doc-description">CacheTypeV is the data type for the V (value) cache. This controls the precision of the value vectors in the KV cache. When left as the zero value (GGMLTypeAuto), the default llama.cpp value is used.</p>

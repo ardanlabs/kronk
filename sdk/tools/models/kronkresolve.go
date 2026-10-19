@@ -86,6 +86,7 @@ func (m *Models) kronkResolvedConfig(modelID string, mc map[string]ModelConfig, 
 
 	// Convert to model.Config and attach on-disk paths.
 	out := cfg.ToKronkConfig()
+	out.BasePath = m.basePath
 	out.AutoTune = true
 	out.AutoTuned = autoTuned
 	out.ModelFiles = fp.ModelFiles

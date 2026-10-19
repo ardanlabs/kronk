@@ -154,6 +154,11 @@ type AdapterConfig struct {
 // kronk.New preserves the enabled state for diagnostics without repeating the
 // hardware analysis.
 //
+// BasePath sets the root for automatic chat-template discovery in <BasePath>/jinja.
+// When empty, KRONK_BASE_PATH is used, falling back to ~/.kronk. An explicit
+// path takes precedence over the environment and does not search other roots.
+// It does not change model-file paths or separately configured library managers.
+//
 // CacheMinTokens sets the minimum token count required before caching. Messages
 // shorter than this threshold are not cached, as the overhead of cache management
 // may outweigh the prefill savings. When set to 0, defaults to 100 tokens.
@@ -404,6 +409,7 @@ type Config struct {
 	PtrAdmissionTimeout        *time.Duration
 	AutoTune                   bool
 	AutoTuned                  bool
+	BasePath                   string
 	PtrCacheMinTokens          *int
 	CacheTypeK                 GGMLType
 	CacheTypeV                 GGMLType
@@ -1285,11 +1291,15 @@ func WithConfig(src Config) Option {
 		*c = src
 	}
 }
+
 func WithAdapters(v []AdapterConfig) Option { return func(c *Config) { c.Adapters = v } }
+
 func WithAdmissionTimeout(v time.Duration) Option {
 	return func(c *Config) { c.PtrAdmissionTimeout = new(v) }
 }
+
 func WithAutoTune(v bool) Option        { return func(c *Config) { c.AutoTune = v } }
+func WithBasePath(v string) Option      { return func(c *Config) { c.BasePath = v } }
 func WithCacheMinTokens(v int) Option   { return func(c *Config) { c.PtrCacheMinTokens = new(v) } }
 func WithCacheTypeK(v GGMLType) Option  { return func(c *Config) { c.CacheTypeK = v } }
 func WithCacheTypeV(v GGMLType) Option  { return func(c *Config) { c.CacheTypeV = v } }
@@ -1300,11 +1310,14 @@ func WithDefaultParams(v Params) Option { return func(c *Config) { c.DefaultPara
 func WithDecisionProtocol(v DecisionProtocol) Option {
 	return func(c *Config) { c.DecisionProtocol = v }
 }
+
 func WithChatTemplateKwargs(v D) Option {
 	return func(c *Config) { c.ChatTemplateKwargs = v.Clone() }
 }
+
 func WithDevices(v []string) Option             { return func(c *Config) { c.Devices = v } }
 func WithDraftModel(v *DraftModelConfig) Option { return func(c *Config) { c.PtrDraftModel = v } }
+
 func WithFlashAttention(v FlashAttentionType) Option {
 	return func(c *Config) { c.PtrFlashAttention = new(v) }
 }
@@ -1321,29 +1334,23 @@ func WithImageBatchTokenCapacity(v int) Option {
 func WithImageTokenBudget(v int) Option {
 	return func(c *Config) { c.PtrImageTokenBudget = new(v) }
 }
-func WithIncrementalCache(v bool) Option { return func(c *Config) { c.PtrIncrementalCache = new(v) } }
-func WithInsecureLogging(v bool) Option  { return func(c *Config) { c.PtrInsecureLogging = new(v) } }
-func WithJinjaFile(v string) Option      { return func(c *Config) { c.JinjaFile = v } }
-func WithJinjaScript(v string) Option    { return func(c *Config) { c.JinjaScript = v } }
-
-// WithKVCacheMode selects the KV layout without changing request context limits.
-func WithKVCacheMode(v KVCacheMode) Option { return func(c *Config) { c.PtrKVCacheMode = new(v) } }
-
-func WithLazyMode(v LazyMode) Option    { return func(c *Config) { c.LazyMode = v } }
-func WithLoadMode(v LoadMode) Option    { return func(c *Config) { c.LoadMode = v } }
-func WithLog(v applog.Logger) Option    { return func(c *Config) { c.Log = v } }
-func WithMainGPU(v int) Option          { return func(c *Config) { c.PtrMainGPU = new(v) } }
-func WithMoE(v *MoEConfig) Option       { return func(c *Config) { c.PtrMoE = v } }
-func WithModelFiles(v []string) Option  { return func(c *Config) { c.ModelFiles = v } }
-func WithNGpuLayers(v int) Option       { return func(c *Config) { c.PtrNGpuLayers = new(v) } }
-func WithNSeqMax(v int) Option          { return func(c *Config) { c.PtrNSeqMax = new(v) } }
-func WithNThreads(v int) Option         { return func(c *Config) { c.PtrNThreads = new(v) } }
-func WithNThreadsBatch(v int) Option    { return func(c *Config) { c.PtrNThreadsBatch = new(v) } }
-func WithPrefillBatchSize(v int) Option { return func(c *Config) { c.PtrPrefillBatchSize = new(v) } }
-
-// WithPhysicalBatchSize requests physical compute capacity without changing prefill scheduling.
-func WithPhysicalBatchSize(v int) Option { return func(c *Config) { c.PtrPhysicalBatchSize = new(v) } }
-
+func WithIncrementalCache(v bool) Option       { return func(c *Config) { c.PtrIncrementalCache = new(v) } }
+func WithInsecureLogging(v bool) Option        { return func(c *Config) { c.PtrInsecureLogging = new(v) } }
+func WithJinjaFile(v string) Option            { return func(c *Config) { c.JinjaFile = v } }
+func WithJinjaScript(v string) Option          { return func(c *Config) { c.JinjaScript = v } }
+func WithKVCacheMode(v KVCacheMode) Option     { return func(c *Config) { c.PtrKVCacheMode = new(v) } }
+func WithLazyMode(v LazyMode) Option           { return func(c *Config) { c.LazyMode = v } }
+func WithLoadMode(v LoadMode) Option           { return func(c *Config) { c.LoadMode = v } }
+func WithLog(v applog.Logger) Option           { return func(c *Config) { c.Log = v } }
+func WithMainGPU(v int) Option                 { return func(c *Config) { c.PtrMainGPU = new(v) } }
+func WithMoE(v *MoEConfig) Option              { return func(c *Config) { c.PtrMoE = v } }
+func WithModelFiles(v []string) Option         { return func(c *Config) { c.ModelFiles = v } }
+func WithNGpuLayers(v int) Option              { return func(c *Config) { c.PtrNGpuLayers = new(v) } }
+func WithNSeqMax(v int) Option                 { return func(c *Config) { c.PtrNSeqMax = new(v) } }
+func WithNThreads(v int) Option                { return func(c *Config) { c.PtrNThreads = new(v) } }
+func WithNThreadsBatch(v int) Option           { return func(c *Config) { c.PtrNThreadsBatch = new(v) } }
+func WithPrefillBatchSize(v int) Option        { return func(c *Config) { c.PtrPrefillBatchSize = new(v) } }
+func WithPhysicalBatchSize(v int) Option       { return func(c *Config) { c.PtrPhysicalBatchSize = new(v) } }
 func WithNUMA(v NUMAStrategy) Option           { return func(c *Config) { c.NUMA = v } }
 func WithOffloadKQV(v bool) Option             { return func(c *Config) { c.PtrOffloadKQV = new(v) } }
 func WithOpOffload(v bool) Option              { return func(c *Config) { c.PtrOpOffload = new(v) } }
@@ -1354,9 +1361,11 @@ func WithProjDevice(v string) Option           { return func(c *Config) { c.Proj
 func WithRopeFreqBase(v float32) Option        { return func(c *Config) { c.PtrRopeFreqBase = new(v) } }
 func WithRopeFreqScale(v float32) Option       { return func(c *Config) { c.PtrRopeFreqScale = new(v) } }
 func WithRopeScaling(v RopeScalingType) Option { return func(c *Config) { c.RopeScaling = v } }
+
 func WithSpeculationMode(v SpeculationMode) Option {
 	return func(c *Config) { c.Speculation = v }
 }
+
 func WithSplitMode(v SplitMode) Option          { return func(c *Config) { c.PtrSplitMode = new(v) } }
 func WithSWAFull(v bool) Option                 { return func(c *Config) { c.PtrSWAFull = new(v) } }
 func WithTensorBuftOverrides(v []string) Option { return func(c *Config) { c.TensorBuftOverrides = v } }
@@ -1366,6 +1375,7 @@ func WithYarnBetaFast(v float32) Option         { return func(c *Config) { c.Ptr
 func WithYarnBetaSlow(v float32) Option         { return func(c *Config) { c.PtrYarnBetaSlow = new(v) } }
 func WithYarnExtFactor(v float32) Option        { return func(c *Config) { c.PtrYarnExtFactor = new(v) } }
 func WithYarnOrigCtx(v int) Option              { return func(c *Config) { c.PtrYarnOrigCtx = new(v) } }
+
 func WithQueueDepth(v int) Option {
 	return func(c *Config) {
 		c.PtrQueueDepth = new(v)
