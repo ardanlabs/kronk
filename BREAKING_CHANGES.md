@@ -5,6 +5,7 @@
 - [v1.33.0](#unreleased)
   - [Bucky Flash Attention Configuration](#unreleased-bucky-flash-attention-configuration)
   - [Malina Native ABI Upgrade](#v1330-malina-native-abi-upgrade)
+  - [Projected Embedding Output Correction](#v1330-projected-embedding-output-correction)
 - [v1.32.8](#v1328)
   - [Authorization Configuration Changes](#v1328-authorization-configuration-changes)
   - [Operation Offload Configuration Changes](#v1328-operation-offload-configuration-changes)
@@ -69,6 +70,32 @@ Legacy false attention flags no longer guarantee disabled execution; use
 also exposes `WithConvDirectMode` and `WithBatchedCFG`. Batched CFG defaults to
 enabled when using `NewConfig`, but Malina disables it on Metal for correctness.
 Native policy and tiling changes can change output pixels for the same seed.
+
+### v1.33.0: Projected Embedding Output Correction
+
+The embeddings API and Go SDK now read vectors using the model's native output
+embedding width instead of its hidden width. Some embedding models, including
+Qwen3-based models with an output projection, legitimately have different
+widths; this is a model property, not a user configuration error. The correction
+applies to both multi-sequence batching and the context-pool fallback. It does
+not change MTMD image/audio input processing.
+
+For affected models, the default vector length and normalized values can change
+for the same input and model. The `dimensions` parameter is now bounded by the
+actual output width; requests exceeding it are rejected. Reading beyond a
+smaller native output previously accessed memory outside the vector, so there
+is no legacy mode to preserve that unsafe behavior.
+
+Before mixing new query vectors with stored embeddings from an affected model,
+regenerate the stored embeddings and rebuild the vector index, updating its
+dimension if necessary. Keep old and corrected vectors in separate indexes
+during migration. Previously returned reduced vectors whose requested dimension
+fits within both widths use the same prefix and normalization; this correction
+alone does not change those values.
+
+Models whose hidden and output widths are equal are unaffected by this
+correction. This is not a guarantee of numerically identical embeddings across
+llama.cpp versions or inference backends.
 
 ## v1.32.8
 

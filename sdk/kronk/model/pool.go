@@ -81,7 +81,10 @@ func contextPoolFallbackParams(params llama.ContextParams) llama.ContextParams {
 	if params.NSeqMax > 1 && params.NCtx > 0 {
 		params.NCtx /= params.NSeqMax
 	}
-	if params.NOutputsMaxPerSeq > 0 {
+
+	// Preserve 0's native batch-capacity policy. The per-sequence default
+	// of 1 must not turn an uncapped embedding/rerank context into a cap of 1.
+	if params.NOutputsMax > 0 && params.NOutputsMaxPerSeq > 0 {
 		params.NOutputsMax = params.NOutputsMaxPerSeq
 	}
 

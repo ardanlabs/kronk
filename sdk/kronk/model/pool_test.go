@@ -55,7 +55,7 @@ func TestContextPoolFallbackParams(t *testing.T) {
 }
 
 func TestContextPoolFallbackParamsDefaults(t *testing.T) {
-	params := llama.ContextParams{}
+	params := llama.ContextParams{NOutputsMaxPerSeq: 1}
 
 	got := contextPoolFallbackParams(params)
 
@@ -67,5 +67,11 @@ func TestContextPoolFallbackParamsDefaults(t *testing.T) {
 	}
 	if got.KVUnified != 0 {
 		t.Errorf("KVUnified: got %d, want %d", got.KVUnified, 0)
+	}
+	if got.NOutputsMax != 0 {
+		t.Errorf("NOutputsMax: got %d, want 0 (native batch capacity)", got.NOutputsMax)
+	}
+	if got.NOutputsMaxPerSeq != 1 {
+		t.Errorf("NOutputsMaxPerSeq: got %d, want 1", got.NOutputsMaxPerSeq)
 	}
 }

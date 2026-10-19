@@ -132,7 +132,7 @@ self-contained companion GGUFs through the own-KV runtime. Existing
 shared-tensor sidecars are not compatible; the companion must contain its own
 token embeddings and output tensors.
 
-The pinned b11696 bundle contains the recurrent-memory assertion fix from
+The pinned b11738 bundle contains the recurrent-memory assertion fix from
 upstream PR #29799 and the Qwen4Exp QSA/indexer correctness fixes from PR
 #29819. MTP hidden rows use the separate state-embedding input introduced in
 PR #30257; token and media embeddings remain separate. In `auto` mode Kronk

@@ -81,7 +81,7 @@ func (m *Model) Embeddings(ctx context.Context, d D) (response EmbedReponse, err
 
 	truncate, _ := d["truncate"].(bool)
 	direction, _ := d["truncate_direction"].(string)
-	nativeDim := llama.ModelNEmbd(m.model)
+	nativeDim := llama.ModelNEmbdOut(m.model)
 	requestedDim, _ := d["dimensions"].(float64)
 
 	if requestedDim > 0 && int(requestedDim) > int(nativeDim) {
