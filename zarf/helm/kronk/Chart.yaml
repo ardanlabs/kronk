@@ -1,0 +1,18 @@
+apiVersion: v2
+name: kronk
+description: Kronk model server (local LLM inference with llama.cpp) on Kubernetes.
+type: application
+# Chart version. Bump on every chart change.
+version: 0.1.0
+# Kronk release the chart defaults to. The image tag is
+# v<appVersion>-<image.variant> unless image.tag is set.
+appVersion: "1.32.9"
+kubeVersion: ">=1.27.0-0"
+home: https://www.kronkai.com
+sources:
+  - https://github.com/ardanlabs/kronk
+keywords:
+  - llm
+  - llama.cpp
+  - inference
+  - openai

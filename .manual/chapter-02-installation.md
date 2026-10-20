@@ -94,6 +94,7 @@ The prerequisites depend on how you install Kronk:
 | Release archive | Supported release platforms | None beyond the host OS |
 | `go install` | Platforms supported by the Go toolchain and Kronk libraries | Go 1.27 or later |
 | Container | Any host supported by the selected Linux image | Docker or another OCI runtime |
+| Kubernetes | Clusters running Kubernetes 1.27 or later | Helm; see [8.8 Kubernetes (Helm)](https://www.kronkai.com/manual#88-kubernetes-helm) |
 
 Regardless of installation method, model downloads require enough disk space,
 and inference requires enough RAM or VRAM for the selected model and

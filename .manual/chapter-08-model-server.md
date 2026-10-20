@@ -9,7 +9,8 @@
 - [8.5 Model Configuration Files](#85-model-configuration-files)
 - [8.6 Catalog Operations](#86-catalog-operations)
 - [8.7 Container Operations](#87-container-operations)
-- [8.8 Related Administration Guides](#88-related-administration-guides)
+- [8.8 Kubernetes (Helm)](#88-kubernetes-helm)
+- [8.9 Related Administration Guides](#89-related-administration-guides)
 
 ---
 
@@ -577,7 +578,180 @@ The `kronk-net` network is shared with the
 and can remain after both stacks stop; remove it with
 `docker network rm kronk-net`.
 
-## 8.8 Related Administration Guides
+## 8.8 Kubernetes (Helm)
+
+The Helm chart in
+[`zarf/helm/kronk`](https://github.com/ardanlabs/kronk/tree/main/zarf/helm/kronk)
+runs the same release images on Kubernetes 1.27 or later. It is not published to a
+chart repository; install it from a repository checkout.
+[`values.yaml`](https://github.com/ardanlabs/kronk/blob/main/zarf/helm/kronk/values.yaml)
+documents every value.
+
+**Install**
+
+```shell
+git clone --depth 1 https://github.com/ardanlabs/kronk.git
+cd kronk
+helm install kronk zarf/helm/kronk \
+  --namespace kronk --create-namespace \
+  --set 'models.pull[0]=unsloth/Qwen3-0.6B-Q8_0' \
+  --wait --timeout 20m
+```
+
+Each id in `models.pull` is downloaded into the volume once, before the server
+starts, so the first start takes a few minutes. For repeated installs, keep the
+settings in a values file and pass it with `-f values.yaml` instead of `--set`.
+
+To add a model later without a reinstall:
+
+```shell
+kubectl -n kronk exec kronk-0 -- kronk model pull <id> --local
+```
+
+**Verify**
+
+Run the chart's smoke test, which checks `/v1/liveness` through the Service:
+
+```shell
+helm test kronk -n kronk
+```
+
+To send a chat request, forward the API port in a separate terminal:
+
+```shell
+kubectl -n kronk port-forward svc/kronk 11435:11435
+```
+
+```shell
+curl http://localhost:11435/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "unsloth/Qwen3-0.6B-Q8_0",
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "max_tokens": 100
+  }'
+```
+
+Inspect the pod with:
+
+```shell
+kubectl -n kronk get pods
+kubectl -n kronk logs kronk-0 -c kronk
+```
+
+**What the chart deploys**
+
+- A StatefulSet. Each replica gets its own PersistentVolumeClaim on `/kronk` for models,
+  libraries, catalog, keys, and state. Replicas never share a volume, so each one
+  downloads its own models.
+- An init container that copies the image's native libraries into the volume once per
+  image, and the default `model_config.yaml` when the volume has none.
+- A `ClusterIP` Service on port `11435`, plus an optional Ingress and ServiceMonitor.
+- Pods that run as UID/GID `10001` with `fsGroup` set, and meet the `restricted` Pod
+  Security Standard.
+
+**Common settings**
+
+| Value | Default | Purpose |
+| ----- | ------- | ------- |
+| `image.variant` | `cpu` | `cpu`, `cuda`, `vulkan`, `rocm`, or `all`; sets the tag `v<appVersion>-<variant>` and `KRONK_PROCESSOR` |
+| `models.pull` | `[]` | Model ids pulled into the volume before startup |
+| `modelConfig.enabled` / `content` | `false` | Mount a `model_config.yaml` from a ConfigMap (read only) |
+| `auth.existingSecret` | empty | Secret holding `master.pem` / `master.jwt` |
+| `env` | empty | `KRONK_*` server settings, such as `KRONK_AUTHORIZATION_MODE` |
+| `extraEnv` | empty | Settings that need `valueFrom`, such as `KRONK_HF_TOKEN` from a Secret |
+| `resources` | empty | Container requests and limits, including GPUs |
+| `persistence.size` | `50Gi` | Volume size per replica |
+| `persistence.existingClaim` | empty | Use an existing PVC; only with `replicaCount: 1` |
+| `metrics.enabled` | `false` | Expose the debug server on port `11445` |
+
+**GPUs**
+
+Select the matching image and request the GPU through the cluster's device plugin:
+
+```yaml
+image:
+  variant: cuda            # rocm or vulkan with amd.com/gpu
+resources:
+  limits:
+    nvidia.com/gpu: 1
+```
+
+Add `runtimeClassName: nvidia` when the cluster runs the NVIDIA runtime through a
+RuntimeClass. Size memory to the model's footprint, the weights plus the KV cache: a
+memory limit below it can end the pod with an out-of-memory kill while the model loads.
+The chart sets no requests or limits by default.
+
+On an integrated GPU, the GPU shares system RAM but its allocations are not counted in
+the pod's memory, so requests and limits do not cover them. Leave headroom on the node.
+The pod joins the Debian/Ubuntu GPU device groups (video `44`, render `110`). On nodes
+where these IDs differ, such as Fedora (video `39`, render `105`), set
+`podSecurityContext.supplementalGroups` to the node's IDs.
+
+**Authentication**
+
+Set `KRONK_AUTHORIZATION_MODE` in `env` as described in
+[Chapter 12](https://www.kronkai.com/manual#chapter-12-security-and-authentication). Without
+keys, the server generates them in the volume on first start; read the admin token with:
+
+```shell
+kubectl -n kronk exec kronk-0 -- cat /kronk/keys/master.jwt
+```
+
+With more than one replica, give every replica the same keys: store `master.pem` and
+`master.jwt` in a Secret and set `auth.existingSecret`. Otherwise each replica
+signs and accepts only its own tokens. Keys added later through the security API exist
+only on the replica that created them, so add them to the Secret as well.
+
+**Ingress**
+
+Inference responses can stream for minutes. Raise the ingress controller's proxy
+timeouts, for example with ingress-nginx:
+
+```yaml
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+```
+
+**Metrics**
+
+`metrics.enabled=true` exposes `/metrics` on port `11445` and
+`metrics.serviceMonitor.enabled=true` creates a Prometheus Operator ServiceMonitor. The
+same port serves pprof without authentication, so keep it on a trusted network.
+
+**Upgrade**
+
+Pull the new chart, then upgrade with the same values. A new chart's `appVersion`
+selects the new image. To pin a different release, set `image.tag` to a tag of the same
+variant, such as `vX.Y.Z-cuda` with `image.variant: cuda`:
+
+```shell
+git pull
+helm upgrade kronk zarf/helm/kronk -n kronk -f values.yaml
+```
+
+Models and keys stay in the volumes. If a pod is crash-looping, the StatefulSet does not
+replace it during the upgrade; fix the values, then delete it with
+`kubectl -n kronk delete pod kronk-0`. Roll back with `helm rollback kronk -n kronk`.
+
+**Uninstall**
+
+```shell
+helm uninstall kronk -n kronk
+```
+
+The volumes are kept so a reinstall reuses the downloaded models. To delete them, and
+all models and keys with them:
+
+```shell
+kubectl -n kronk delete pvc -l app.kubernetes.io/instance=kronk
+```
+
+## 8.9 Related Administration Guides
 
 Detailed administration is divided by responsibility:
 

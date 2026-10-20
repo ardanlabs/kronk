@@ -201,6 +201,11 @@ export default function DocsManual() {
                 <td>Any host supported by the selected Linux image</td>
                 <td>Docker or another OCI runtime</td>
               </tr>
+              <tr>
+                <td>Kubernetes</td>
+                <td>Clusters running Kubernetes 1.27 or later</td>
+                <td>Helm; see <a href="https://www.kronkai.com/manual#88-kubernetes-helm">8.8 Kubernetes (Helm)</a></td>
+              </tr>
             </tbody>
           </table>
           <p>Regardless of installation method, model downloads require enough disk space, and inference requires enough RAM or VRAM for the selected model and configuration. Quantization, context size, KV cache type, and concurrency all affect memory use; parameter count alone is not a reliable requirement. See <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3: Model Configuration</a>.</p>
@@ -2310,7 +2315,135 @@ KRONK_IMAGE_VERSION=vX.Y.Z`}</code></pre>
             <li><code>latest</code>: run <code>docker compose pull</code>, then <code>docker compose up -d</code>.</li>
           </ul>
           <p>The <code>kronk-net</code> network is shared with the <a href="https://www.kronkai.com/manual#153-bundled-observability-stack">observability stack</a> and can remain after both stacks stop; remove it with <code>docker network rm kronk-net</code>.</p>
-          <h2 id="88-related-administration-guides">8.8 Related Administration Guides</h2>
+          <h2 id="88-kubernetes-helm">8.8 Kubernetes (Helm)</h2>
+          <p>The Helm chart in <a href="https://github.com/ardanlabs/kronk/tree/main/zarf/helm/kronk"><code>zarf/helm/kronk</code></a> runs the same release images on Kubernetes 1.27 or later. It is not published to a chart repository; install it from a repository checkout. <a href="https://github.com/ardanlabs/kronk/blob/main/zarf/helm/kronk/values.yaml"><code>values.yaml</code></a> documents every value.</p>
+          <p><strong>Install</strong></p>
+          <pre className="code-block"><code className="language-shell">{`git clone --depth 1 https://github.com/ardanlabs/kronk.git
+cd kronk
+helm install kronk zarf/helm/kronk \\
+  --namespace kronk --create-namespace \\
+  --set 'models.pull[0]=unsloth/Qwen3-0.6B-Q8_0' \\
+  --wait --timeout 20m`}</code></pre>
+          <p>Each id in <code>models.pull</code> is downloaded into the volume once, before the server starts, so the first start takes a few minutes. For repeated installs, keep the settings in a values file and pass it with <code>-f values.yaml</code> instead of <code>--set</code>.</p>
+          <p>To add a model later without a reinstall:</p>
+          <pre className="code-block"><code className="language-shell">{`kubectl -n kronk exec kronk-0 -- kronk model pull <id> --local`}</code></pre>
+          <p><strong>Verify</strong></p>
+          <p>Run the chart's smoke test, which checks <code>/v1/liveness</code> through the Service:</p>
+          <pre className="code-block"><code className="language-shell">{`helm test kronk -n kronk`}</code></pre>
+          <p>To send a chat request, forward the API port in a separate terminal:</p>
+          <pre className="code-block"><code className="language-shell">{`kubectl -n kronk port-forward svc/kronk 11435:11435`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/chat/completions \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "unsloth/Qwen3-0.6B-Q8_0",
+    "messages": [{"role": "user", "content": "Hello!"}],
+    "max_tokens": 100
+  }'`}</code></pre>
+          <p>Inspect the pod with:</p>
+          <pre className="code-block"><code className="language-shell">{`kubectl -n kronk get pods
+kubectl -n kronk logs kronk-0 -c kronk`}</code></pre>
+          <p><strong>What the chart deploys</strong></p>
+          <ul>
+            <li>A StatefulSet. Each replica gets its own PersistentVolumeClaim on <code>/kronk</code> for models, libraries, catalog, keys, and state. Replicas never share a volume, so each one downloads its own models.</li>
+            <li>An init container that copies the image's native libraries into the volume once per image, and the default <code>model_config.yaml</code> when the volume has none.</li>
+            <li>A <code>ClusterIP</code> Service on port <code>11435</code>, plus an optional Ingress and ServiceMonitor.</li>
+            <li>Pods that run as UID/GID <code>10001</code> with <code>fsGroup</code> set, and meet the <code>restricted</code> Pod Security Standard.</li>
+          </ul>
+          <p><strong>Common settings</strong></p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Value</th>
+                <th>Default</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>image.variant</code></td>
+                <td><code>cpu</code></td>
+                <td><code>cpu</code>, <code>cuda</code>, <code>vulkan</code>, <code>rocm</code>, or <code>all</code>; sets the tag <code>v&lt;appVersion&gt;-&lt;variant&gt;</code> and <code>KRONK_PROCESSOR</code></td>
+              </tr>
+              <tr>
+                <td><code>models.pull</code></td>
+                <td><code>[]</code></td>
+                <td>Model ids pulled into the volume before startup</td>
+              </tr>
+              <tr>
+                <td><code>modelConfig.enabled</code> / <code>content</code></td>
+                <td><code>false</code></td>
+                <td>Mount a <code>model_config.yaml</code> from a ConfigMap (read only)</td>
+              </tr>
+              <tr>
+                <td><code>auth.existingSecret</code></td>
+                <td>empty</td>
+                <td>Secret holding <code>master.pem</code> / <code>master.jwt</code></td>
+              </tr>
+              <tr>
+                <td><code>env</code></td>
+                <td>empty</td>
+                <td><code>KRONK_*</code> server settings, such as <code>KRONK_AUTHORIZATION_MODE</code></td>
+              </tr>
+              <tr>
+                <td><code>extraEnv</code></td>
+                <td>empty</td>
+                <td>Settings that need <code>valueFrom</code>, such as <code>KRONK_HF_TOKEN</code> from a Secret</td>
+              </tr>
+              <tr>
+                <td><code>resources</code></td>
+                <td>empty</td>
+                <td>Container requests and limits, including GPUs</td>
+              </tr>
+              <tr>
+                <td><code>persistence.size</code></td>
+                <td><code>50Gi</code></td>
+                <td>Volume size per replica</td>
+              </tr>
+              <tr>
+                <td><code>persistence.existingClaim</code></td>
+                <td>empty</td>
+                <td>Use an existing PVC; only with <code>replicaCount: 1</code></td>
+              </tr>
+              <tr>
+                <td><code>metrics.enabled</code></td>
+                <td><code>false</code></td>
+                <td>Expose the debug server on port <code>11445</code></td>
+              </tr>
+            </tbody>
+          </table>
+          <p><strong>GPUs</strong></p>
+          <p>Select the matching image and request the GPU through the cluster's device plugin:</p>
+          <pre className="code-block"><code className="language-yaml">{`image:
+  variant: cuda            # rocm or vulkan with amd.com/gpu
+resources:
+  limits:
+    nvidia.com/gpu: 1`}</code></pre>
+          <p>Add <code>runtimeClassName: nvidia</code> when the cluster runs the NVIDIA runtime through a RuntimeClass. Size memory to the model's footprint, the weights plus the KV cache: a memory limit below it can end the pod with an out-of-memory kill while the model loads. The chart sets no requests or limits by default.</p>
+          <p>On an integrated GPU, the GPU shares system RAM but its allocations are not counted in the pod's memory, so requests and limits do not cover them. Leave headroom on the node. The pod joins the Debian/Ubuntu GPU device groups (video <code>44</code>, render <code>110</code>). On nodes where these IDs differ, such as Fedora (video <code>39</code>, render <code>105</code>), set <code>podSecurityContext.supplementalGroups</code> to the node's IDs.</p>
+          <p><strong>Authentication</strong></p>
+          <p>Set <code>KRONK_AUTHORIZATION_MODE</code> in <code>env</code> as described in <a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication">Chapter 12</a>. Without keys, the server generates them in the volume on first start; read the admin token with:</p>
+          <pre className="code-block"><code className="language-shell">{`kubectl -n kronk exec kronk-0 -- cat /kronk/keys/master.jwt`}</code></pre>
+          <p>With more than one replica, give every replica the same keys: store <code>master.pem</code> and <code>master.jwt</code> in a Secret and set <code>auth.existingSecret</code>. Otherwise each replica signs and accepts only its own tokens. Keys added later through the security API exist only on the replica that created them, so add them to the Secret as well.</p>
+          <p><strong>Ingress</strong></p>
+          <p>Inference responses can stream for minutes. Raise the ingress controller's proxy timeouts, for example with ingress-nginx:</p>
+          <pre className="code-block"><code className="language-yaml">{`ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"`}</code></pre>
+          <p><strong>Metrics</strong></p>
+          <p><code>metrics.enabled=true</code> exposes <code>/metrics</code> on port <code>11445</code> and <code>metrics.serviceMonitor.enabled=true</code> creates a Prometheus Operator ServiceMonitor. The same port serves pprof without authentication, so keep it on a trusted network.</p>
+          <p><strong>Upgrade</strong></p>
+          <p>Pull the new chart, then upgrade with the same values. A new chart's <code>appVersion</code> selects the new image. To pin a different release, set <code>image.tag</code> to a tag of the same variant, such as <code>vX.Y.Z-cuda</code> with <code>image.variant: cuda</code>:</p>
+          <pre className="code-block"><code className="language-shell">{`git pull
+helm upgrade kronk zarf/helm/kronk -n kronk -f values.yaml`}</code></pre>
+          <p>Models and keys stay in the volumes. If a pod is crash-looping, the StatefulSet does not replace it during the upgrade; fix the values, then delete it with <code>kubectl -n kronk delete pod kronk-0</code>. Roll back with <code>helm rollback kronk -n kronk</code>.</p>
+          <p><strong>Uninstall</strong></p>
+          <pre className="code-block"><code className="language-shell">{`helm uninstall kronk -n kronk`}</code></pre>
+          <p>The volumes are kept so a reinstall reuses the downloaded models. To delete them, and all models and keys with them:</p>
+          <pre className="code-block"><code className="language-shell">{`kubectl -n kronk delete pvc -l app.kubernetes.io/instance=kronk`}</code></pre>
+          <h2 id="89-related-administration-guides">8.9 Related Administration Guides</h2>
           <p>Detailed administration is divided by responsibility:</p>
           <ul>
             <li><a href="https://www.kronkai.com/manual#chapter-2-installation-quick-start">Chapter 2</a> — installation, libraries, image variants, and data paths</li>
@@ -5979,6 +6112,12 @@ fmt.Println(info.Description)`}</code></pre>
                 <td>build the affected target/variant; workflow is authority for matrix and signing</td>
               </tr>
               <tr>
+                <td>Helm chart</td>
+                <td><code>zarf/helm/kronk/</code></td>
+                <td>image tags and runtime layout from <code>zarf/docker/</code>, Chapter 8.8</td>
+                <td><code>helm lint --strict</code> and <code>helm template</code>; install on kind for workload changes</td>
+              </tr>
+              <tr>
                 <td>Nix development/package data</td>
                 <td><code>zarf/nix/flake.nix</code></td>
                 <td>Go module files and setup hook</td>
@@ -6292,6 +6431,7 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
           <h4 id="20103-containers">20.10.3 Containers</h4>
           <p><code>.github/workflows/docker.yml</code> is authoritative for image variants, target/platform matrix, registry publication, attestations, and signing. <code>zarf/docker/</code> owns Dockerfile, runtime configuration, and entrypoint behavior. Native llama and Bucky processor availability can differ by image variant, so inspect the workflow matrix and tooling combination tables before changing an image. Avoid copying a variant table into docs; it becomes stale faster than the workflow.</p>
           <p>For a container change, build the affected target and architecture where practical, exercise entrypoint startup/configuration, and verify expected native libraries. Do not infer publication or signature behavior from a local build; review the workflow.</p>
+          <p>The Helm chart in <code>zarf/helm/kronk/</code> depends on the image's layout: UID/GID <code>10001</code>, libraries baked under <code>/kronk</code>, and <code>KRONK_POOL_MODEL_CONFIG_FILE</code>. Its <code>seed</code> init container copies the baked libraries into the volume, because a PVC hides them. Re-check the chart when any of these change. Bump the chart <code>version</code> on every chart change.</p>
           <h4 id="20104-nix">20.10.4 Nix</h4>
           <p>The flake at <code>zarf/nix/flake.nix</code> defines how developers/users enter or build the project; generated Go dependency data lives beside it. Entering a development shell runs <code>gomod2nix import</code> from its shell hook and may dirty that generated material. When Go module dependencies change, update the Nix dependency material with the repository's configured command and evaluate/build the relevant entry point. Keep Nix fixes in Nix owners rather than adding environment special cases to Go code.</p>
           <h3 id="2011-change-and-release-checklists">20.11 Change and Release Checklists</h3>
@@ -6320,6 +6460,7 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
             <li>[ ] Confirm focused package checks and the four Linux CI jobs are green.</li>
             <li>[ ] Run <code>make test-adversarial</code> against a generation-capable model on a machine that has one, and review <code>.tools/adversarial/output/findings.txt</code>.</li>
             <li>[ ] Review <code>.github/workflows/docker.yml</code> for the intended image variants and publication/signing behavior.</li>
+            <li>[ ] After the images are published, set <code>appVersion</code> in <code>zarf/helm/kronk/Chart.yaml</code> to the release version and bump the chart <code>version</code>.</li>
             <li>[ ] Review Nix dependency outputs if Go dependencies changed.</li>
             <li>[ ] Verify GoReleaser configuration with an appropriate non-publishing check or snapshot.</li>
             <li>[ ] Confirm the release commit is clean, then create/push the guarded tag through the maintainer release process.</li>
@@ -6476,7 +6617,10 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
               <a href="#87-container-operations" className={`doc-index-header ${activeSection === '87-container-operations' ? 'active' : ''}`}>8.7 Container Operations</a>
             </div>
             <div className="doc-index-section">
-              <a href="#88-related-administration-guides" className={`doc-index-header ${activeSection === '88-related-administration-guides' ? 'active' : ''}`}>8.8 Related Administration Guides</a>
+              <a href="#88-kubernetes-helm" className={`doc-index-header ${activeSection === '88-kubernetes-helm' ? 'active' : ''}`}>8.8 Kubernetes (Helm)</a>
+            </div>
+            <div className="doc-index-section">
+              <a href="#89-related-administration-guides" className={`doc-index-header ${activeSection === '89-related-administration-guides' ? 'active' : ''}`}>8.9 Related Administration Guides</a>
             </div>
             <div className="doc-index-section">
               <a href="#chapter-9-api-endpoints" className={`doc-index-header ${activeSection === 'chapter-9-api-endpoints' ? 'active' : ''}`}>Chapter 9: API Endpoints</a>

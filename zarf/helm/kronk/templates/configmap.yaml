@@ -1,0 +1,11 @@
+{{- if and .Values.modelConfig.enabled (not .Values.modelConfig.existingConfigMap) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kronk.fullname" . }}-config
+  labels:
+    {{- include "kronk.labels" . | nindent 4 }}
+data:
+  model_config.yaml: |
+    {{- .Values.modelConfig.content | nindent 4 }}
+{{- end }}

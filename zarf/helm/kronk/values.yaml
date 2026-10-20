@@ -1,0 +1,126 @@
+# Default values for the kronk chart.
+
+# -- Number of Kronk pods. Each replica gets its own PVC: /kronk holds a
+# BadgerDB database that only one process may open.
+replicaCount: 1
+
+image:
+  repository: ghcr.io/ardanlabs/kronk
+  # -- Processor variant: cpu, cuda, vulkan, rocm, or all. Also sets
+  # KRONK_PROCESSOR, so keep it matching a custom tag.
+  variant: cpu
+  # -- Image tag. Defaults to v<Chart.appVersion>-<image.variant>.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# -- KRONK_* environment variables for the server, e.g.
+# KRONK_AUTHORIZATION_MODE. See Chapter 8 of the manual for the list.
+env: {}
+
+# -- Environment entries that need valueFrom, e.g. KRONK_HF_TOKEN from a
+# Secret.
+extraEnv: []
+
+# -- Model ids pulled into the volume before the server starts, with
+# `kronk model pull <id> --local`. Each id is pulled once per volume.
+models:
+  pull: []
+
+# -- Model config file mounted read only at /kronk/models/model_config.yaml.
+# See zarf/kms/model_config.yaml for the schema.
+modelConfig:
+  enabled: false
+  # -- Use an existing ConfigMap with a model_config.yaml key.
+  existingConfigMap: ""
+  content: |
+    version: 2
+    kms: {}
+    models: {}
+
+# -- Auth keys copied into /kronk/keys before the server starts. Without
+# them, the server generates master.pem and master.jwt on first start.
+auth:
+  # -- Existing Secret with master.pem and master.jwt.
+  existingSecret: ""
+  # -- Used to create the Secret when existingSecret is empty.
+  masterPem: ""
+  masterJwt: ""
+
+# -- UID/GID 10001 match the image. fsGroup makes the volume writable.
+# 44 (video) and 110 (render) are the Debian/Ubuntu GPU device groups.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  fsGroupChangePolicy: OnRootMismatch
+  supplementalGroups: [44, 110]
+  seccompProfile:
+    type: RuntimeDefault
+
+# -- RuntimeClass, e.g. `nvidia` when the NVIDIA runtime is installed as one.
+runtimeClassName: ""
+
+service:
+  type: ClusterIP
+  port: 11435
+
+# -- Debug server (/metrics, pprof) on 11445. Off by default: pprof has no
+# authentication.
+metrics:
+  enabled: false
+  port: 11445
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    labels: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: kronk.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# -- Container resources, including GPUs, e.g. nvidia.com/gpu: 1 or
+# amd.com/gpu: 1 under limits.
+resources: {}
+
+# -- Volume mounted at /kronk: models, libraries, catalog, keys, and state.
+persistence:
+  # -- Use an existing PVC. Only valid with replicaCount 1.
+  existingClaim: ""
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 50Gi
+
+# -- Allows up to 10 minutes for library verification and the model index.
+startupProbe:
+  httpGet:
+    path: /v1/liveness
+    port: http
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 60
+
+livenessProbe:
+  httpGet:
+    path: /v1/liveness
+    port: http
+  periodSeconds: 30
+  timeoutSeconds: 5
+
+readinessProbe:
+  httpGet:
+    path: /v1/readiness
+    port: http
+  periodSeconds: 10
+  timeoutSeconds: 5
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -87,6 +87,7 @@ change. Go commands require the environment described in [§20.9](#209-verificat
 | Linux CI | `.github/workflows/linux.yml`, `.github/actions/setup-kronk/`, `.github/test-models.txt` | make targets and version-check scripts | syntax/action review; run changed scripts locally; package checks represented by changed job |
 | Release | `.github/workflows/release.yaml`, `.goreleaser.yaml`, `.release/`, version scripts | `sdk/kronk` version constant and tag convention | version scripts and GoReleaser snapshot/check when appropriate |
 | Container image | `.github/workflows/docker.yml`, `zarf/docker/` | entrypoint, native-library combinations, release tags | build the affected target/variant; workflow is authority for matrix and signing |
+| Helm chart | `zarf/helm/kronk/` | image tags and runtime layout from `zarf/docker/`, Chapter 8.8 | `helm lint --strict` and `helm template`; install on kind for workload changes |
 | Nix development/package data | `zarf/nix/flake.nix` | Go module files and setup hook | evaluate/build the relevant Nix entry point; regenerate gomod2nix data when dependencies change |
 
 Tests close to an owner are usually more diagnostic than a repository-wide command.
@@ -963,6 +964,11 @@ For a container change, build the affected target and architecture where practic
 exercise entrypoint startup/configuration, and verify expected native libraries. Do not
 infer publication or signature behavior from a local build; review the workflow.
 
+The Helm chart in `zarf/helm/kronk/` depends on the image's layout: UID/GID `10001`,
+libraries baked under `/kronk`, and `KRONK_POOL_MODEL_CONFIG_FILE`. Its `seed` init
+container copies the baked libraries into the volume, because a PVC hides them. Re-check
+the chart when any of these change. Bump the chart `version` on every chart change.
+
 #### 20.10.4 Nix
 
 The flake at `zarf/nix/flake.nix` defines how developers/users enter or build the
@@ -1005,6 +1011,8 @@ owners rather than adding environment special cases to Go code.
       one, and review `.tools/adversarial/output/findings.txt`.
 - [ ] Review `.github/workflows/docker.yml` for the intended image variants and
       publication/signing behavior.
+- [ ] After the images are published, set `appVersion` in `zarf/helm/kronk/Chart.yaml`
+      to the release version and bump the chart `version`.
 - [ ] Review Nix dependency outputs if Go dependencies changed.
 - [ ] Verify GoReleaser configuration with an appropriate non-publishing check or
       snapshot.
