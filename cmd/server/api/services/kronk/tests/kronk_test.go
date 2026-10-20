@@ -109,11 +109,17 @@ func Test_API(t *testing.T) {
 	// Model: nomic-embed-text-v1.5.Q8_0
 
 	test.Run(t, chatEmbed200(tokens), "embedding-200")
+	t.Run("embedding-integrity", func(t *testing.T) {
+		operationIntegrity(t, test, tokens["embeddings"], embeddingModelID, "/v1/embeddings")
+	})
 
 	// -------------------------------------------------------------------------
 	// Model: bge-reranker-v2-m3-Q8_0
 
 	test.Run(t, rerank200(tokens), "rerank-200")
+	t.Run("rerank-integrity", func(t *testing.T) {
+		operationIntegrity(t, test, tokens["rerank"], "gpustack/bge-reranker-v2-m3-Q8_0", "/v1/rerank")
+	})
 
 	// -------------------------------------------------------------------------
 	// Model: Jev-Style-0.8B-Decision-v3-Q8_0

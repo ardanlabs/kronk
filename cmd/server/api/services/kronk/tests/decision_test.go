@@ -2,12 +2,14 @@ package chatapi_test
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/apitest"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/kronk/tests/testlib"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
@@ -72,6 +74,9 @@ func decision200(tokens map[string]string) []apitest.Table {
 					return fmt.Sprintf("response wrong type: %T", got)
 				}
 
+				if len(gotResp.Answers) != 3 {
+					return fmt.Sprintf("answer count: got %d, want 3", len(gotResp.Answers))
+				}
 				for id, questionType := range map[string]model.DecisionQuestionType{
 					"route":          model.DecisionQuestionTypeChoice,
 					"urgency":        model.DecisionQuestionTypeScore,
@@ -86,8 +91,25 @@ func decision200(tokens map[string]string) []apitest.Table {
 					}
 				}
 
-				if gotResp.Usage.InputTokens == 0 {
-					return "expected input tokens to be non-zero"
+				route := gotResp.Answers["route"]
+				if err := testlib.CheckDecisionProbabilities(route, []string{"billing", "technical_support", "sales"}); err != nil {
+					return fmt.Sprintf("route: %v", err)
+				}
+				if route.Choice != "billing" {
+					return fmt.Sprintf("route: got %q, want billing", route.Choice)
+				}
+				urgency := gotResp.Answers["urgency"]
+				if err := testlib.CheckDecisionProbabilities(urgency, []string{"0", "1", "2", "3"}); err != nil {
+					return fmt.Sprintf("urgency: %v", err)
+				}
+				if value := urgency.Score; math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > 3 {
+					return fmt.Sprintf("urgency: got %g, want finite [0,3]", value)
+				}
+				if value := gotResp.Answers["requires_human"].Noul; math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > 1 {
+					return fmt.Sprintf("requires_human: got %g, want finite [0,1]", value)
+				}
+				if gotResp.Usage.InputTokens <= 0 || gotResp.Usage.OutputTokens != 0 {
+					return fmt.Sprintf("invalid decision usage: %+v", gotResp.Usage)
 				}
 
 				return ""
