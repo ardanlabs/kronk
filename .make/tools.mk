@@ -33,8 +33,13 @@
 #   from trace-correlated server evidence, and report failures or evidence gaps.
 
 server-for-tools:
-	KRONK_POOL_MODEL_CONFIG_FILE="$(CURDIR)/.tools/reliability/model_config_tools.yaml" \
+	KRONK_POOL_MODEL_CONFIG_FILE="$(CURDIR)/.tools/model_config_tools.yaml" \
 		$(MAKE) kronk-server-detach
+
+QUICK_CHECK_ARGS ?=
+
+test-quick-check:
+	go run ./.tools/quick-check $(QUICK_CHECK_ARGS)
 
 RELIABILITY_HOST ?= http://localhost:11435
 RELIABILITY_OUT ?= .tools/reliability/output

@@ -609,7 +609,7 @@ func TestMaximumEventGapFiltersWindow(t *testing.T) {
 }
 
 func TestModeDefaultsMatchToolsConfiguration(t *testing.T) {
-	doc, err := modelconfig.Load("model_config_tools.yaml")
+	doc, err := modelconfig.Load("../model_config_tools.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
