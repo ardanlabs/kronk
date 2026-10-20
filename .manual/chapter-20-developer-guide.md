@@ -852,7 +852,6 @@ file in the subsequent `gofmt` and review.
 Before focused Go tests, set:
 
 ```shell
-export RUN_IN_PARALLEL=yes
 export GITHUB_WORKSPACE="$(pwd -P)"
 ```
 
@@ -983,7 +982,7 @@ owners rather than adding environment special cases to Go code.
 - [ ] Preserve cancellation and release behavior on every return path.
 - [ ] For Go: run `gofmt -s`, `go fix`, `go vet`, and `staticcheck` scoped to changed
       files/packages.
-- [ ] Set `RUN_IN_PARALLEL=yes` and absolute `GITHUB_WORKSPACE` for focused tests.
+- [ ] Set absolute `GITHUB_WORKSPACE` for focused tests.
 - [ ] Do not run a full repository suite or launch tests from `sdk/kronk/tests` as an
       agent.
 - [ ] Regenerate docs/BUI/Nix artifacts only when their sources changed and task scope

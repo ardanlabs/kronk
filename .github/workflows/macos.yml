@@ -181,7 +181,6 @@ jobs:
           # 65536, which no shipping Mac has.
           LUME_METAL_MAX_THREADGROUP_MEMORY: "32768"
         run: |
-          export RUN_IN_PARALLEL=no
           go test -v -p=1 -count=1 -timeout 20m ./cmd/kronk/...
           go test -v -p=1 -count=1 -timeout 20m ./cmd/server/...
 
@@ -209,7 +208,6 @@ jobs:
           # 65536, which no shipping Mac has.
           LUME_METAL_MAX_THREADGROUP_MEMORY: "32768"
         run: |
-          export RUN_IN_PARALLEL=no
           go -C examples test -v -count=1 -timeout 2m ./session-store
           go test -v -p=1 -count=1 -timeout 20m $(go list ./sdk/... | grep -v '/sdk/kronk/tests')
           go test -v -count=1 -timeout 20m ./sdk/kronk/tests/qwen3

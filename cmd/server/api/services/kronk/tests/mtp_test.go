@@ -169,6 +169,9 @@ func Test_API_MTP(t *testing.T) {
 					long["max_tokens"] = 384
 					long["temperature"] = 0.7
 					run("long-stream", long, "", false)
+					if profile.slots == 1 {
+						t.Run("media-state", func(t *testing.T) { chatMediaState(t, test, token, id) })
+					}
 					if profile.enabled {
 						if accepted == 0 {
 							t.Fatal("MTP workload accepted no draft tokens")

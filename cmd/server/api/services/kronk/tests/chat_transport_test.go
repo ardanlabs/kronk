@@ -241,10 +241,11 @@ type liveChat struct {
 }
 
 type liveChatResult struct {
-	events  []json.RawMessage
-	done    bool
-	readErr bool
-	err     error
+	events       []json.RawMessage
+	contentTimes []time.Time
+	done         bool
+	readErr      bool
+	err          error
 }
 
 func startLiveChat(ctx context.Context, t *testing.T, client *http.Client, url, token string, request model.D) *liveChat {
@@ -307,6 +308,9 @@ func startLiveChat(ctx context.Context, t *testing.T, client *http.Client, url, 
 				result.events = append(result.events, json.RawMessage(pending))
 				pending = ""
 				for _, choice := range chunk.Choices {
+					if choice.Delta != nil && choice.Delta.Content != "" {
+						result.contentTimes = append(result.contentTimes, time.Now())
+					}
 					if !sentFirst && choice.Delta != nil && choice.Delta.Content != "" {
 						stream.first <- chunk
 						sentFirst = true

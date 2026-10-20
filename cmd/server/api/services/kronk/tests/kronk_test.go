@@ -88,6 +88,9 @@ func Test_API(t *testing.T) {
 	test.Run(t, chatImageQwen35(t, tokens), "chat-image-qwen35")
 	test.Run(t, respImageQwen35(t, tokens), "resp-image-qwen35")
 	test.Run(t, msgsImageQwen35(t, tokens), "msgs-image-qwen35")
+	t.Run("chat-media-state-qwen35", func(t *testing.T) {
+		chatMediaState(t, test, tokens["chat-completions"], visionModelID)
+	})
 	t.Run("chat-transport-qwen35", func(t *testing.T) {
 		chatTransport(t, test, tokens["chat-completions"], visionModelID, 1)
 	})

@@ -16,6 +16,10 @@ import (
 
 func TestSuite(t *testing.T) {
 	testlib.WithModel(t, testlib.CfgAudio(), func(t *testing.T, krn *kronk.Kronk) {
+		t.Run("Images", func(t *testing.T) {
+			testlib.TestModelProfile(t, krn, "Dense", "Attention-only", "qwen2vl")
+			testlib.TestMediaState(t, krn)
+		})
 		t.Run("AudioChat", func(t *testing.T) { testAudio(t, krn) })
 		t.Run("AudioStreamingChat", func(t *testing.T) { testAudioStreaming(t, krn) })
 	})

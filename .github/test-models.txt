@@ -18,6 +18,9 @@ bucky ggml-tiny.bin
 # Dense Hybrid convolution/recurrent-state coverage; kept off hosted runners.
 kronk unsloth/LFM2-700M-Q8_0 gpu
 
+# Image/IMC qualification only; Omni audio remains excluded from GPU selectors.
+kronk ggml-org/Qwen2.5-Omni-3B-Q4_K_M gpu
+
 # MTP SDK suites and the opt-in Test_API_MTP HTTP contracts use these targets
 # (the classic separate-GGUF drafter is sdk/kronk/tests/draft). Qwen3.6 has an
 # embedded own-KV head; Gemma shares target KV via its mtp-*.gguf companion.

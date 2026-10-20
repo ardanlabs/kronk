@@ -48,11 +48,17 @@ func NewWithModelConfig(t *testing.T, testName, modelConfigFile string) *Test {
 	log := logger.NewWithEvents(&buf, logger.LevelInfo, "TEST", web.GetTraceID, logger.Events{
 		Info: func(_ context.Context, record logger.Record) {
 			switch record.Message {
-			case "request-lifecycle", "speculative", "draft-model", "draft-model-mtp", "draft-model-mtp-separate", "draft-model-mtp-shared":
-				at.eventsMu.Lock()
-				at.events = append(at.events, record)
-				at.eventsMu.Unlock()
+			case "batch-engine":
+				if record.Attributes["status"] != "media-plan" {
+					return
+				}
+			case "prefill-media", "request-lifecycle", "speculative", "draft-model", "draft-model-mtp", "draft-model-mtp-separate", "draft-model-mtp-shared":
+			default:
+				return
 			}
+			at.eventsMu.Lock()
+			at.events = append(at.events, record)
+			at.eventsMu.Unlock()
 		},
 	})
 

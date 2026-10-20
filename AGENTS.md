@@ -10,8 +10,7 @@ You will want to look at `Chapter 20: Developer Guide` for detailed information 
 
 - After modifying any `.go` file, always run `go vet` and `gofmt -s -w` on the changed files.
 - After modifying any `.go` file, always run `staticcheck` and `go fix` on the changed package.
-- You need these env vars to run test
-  - export RUN_IN_PARALLEL=yes
+- You need this env var to run tests
   - export GITHUB_WORKSPACE=<Root Location Of Kronk Project>
 - Never perform a full repo test run and never run tests from this location `sdk/kronk/tests`.
 

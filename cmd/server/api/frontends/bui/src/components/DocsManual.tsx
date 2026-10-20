@@ -6245,8 +6245,7 @@ go vet ./path/to/changed/package
 staticcheck ./path/to/changed/package`}</code></pre>
           <p>Use exact package paths rather than <code>./...</code>. If several packages changed, list those packages explicitly or run commands separately so failures remain attributable. Review <code>go fix</code> output/diff because it may modify additional files; include every resulting Go file in the subsequent <code>gofmt</code> and review.</p>
           <p>Before focused Go tests, set:</p>
-          <pre className="code-block"><code className="language-shell">{`export RUN_IN_PARALLEL=yes
-export GITHUB_WORKSPACE="$(pwd -P)"`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`export GITHUB_WORKSPACE="$(pwd -P)"`}</code></pre>
           <p><code>GITHUB_WORKSPACE</code> must be the absolute repository root. Then run a package test or a specific test, for example:</p>
           <pre className="code-block"><code className="language-shell">{`go test -count=1 ./sdk/kronk/model
 go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></pre>
@@ -6303,7 +6302,7 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
             <li>[ ] Change the owner rather than duplicating logic in a facade or transport.</li>
             <li>[ ] Preserve cancellation and release behavior on every return path.</li>
             <li>[ ] For Go: run <code>gofmt -s</code>, <code>go fix</code>, <code>go vet</code>, and <code>staticcheck</code> scoped to changed files/packages.</li>
-            <li>[ ] Set <code>RUN_IN_PARALLEL=yes</code> and absolute <code>GITHUB_WORKSPACE</code> for focused tests.</li>
+            <li>[ ] Set absolute <code>GITHUB_WORKSPACE</code> for focused tests.</li>
             <li>[ ] Do not run a full repository suite or launch tests from <code>sdk/kronk/tests</code> as an agent.</li>
             <li>[ ] Regenerate docs/BUI/Nix artifacts only when their sources changed and task scope permits it.</li>
             <li>[ ] Run <code>git diff --check</code> and inspect the complete diff for unrelated changes.</li>

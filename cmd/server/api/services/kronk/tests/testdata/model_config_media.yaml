@@ -1,0 +1,40 @@
+version: 2
+
+models:
+  ggml-org/Qwen2.5-Omni-3B-Q4_K_M:
+    context-window: 8192
+    nseq-max: 1
+    prefill-batch-size: 512
+    physical-batch-size: 512
+    cache-type-k: f16
+    cache-type-v: f16
+    incremental-cache: true
+    cache-min-tokens: 1
+    speculation: disabled
+  unsloth/Qwen3.5-0.8B-Q8_0/MediaShared:
+    context-window: 8192
+    nseq-max: 2
+    prefill-batch-size: 2048
+    physical-batch-size: 2048
+    cache-type-k: f16
+    cache-type-v: f16
+    incremental-cache: false
+    speculation: disabled
+  unsloth/Qwen3.5-0.8B-Q8_0/MediaIsolated:
+    context-window: 8192
+    nseq-max: 2
+    prefill-batch-size: 32
+    physical-batch-size: 32
+    cache-type-k: f16
+    cache-type-v: f16
+    incremental-cache: false
+    speculation: disabled
+  unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M/MediaIsolated:
+    context-window: 8192
+    nseq-max: 2
+    prefill-batch-size: 2048
+    physical-batch-size: 2048
+    cache-type-k: f16
+    cache-type-v: f16
+    incremental-cache: false
+    speculation: disabled

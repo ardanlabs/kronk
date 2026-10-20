@@ -71,7 +71,6 @@ function Invoke-TestsOnly {
     Invoke-WithEnvironment `
         -Remove $LocalTestEnvironmentOverrides `
         -Variables @{
-            RUN_IN_PARALLEL = "yes"
             GITHUB_WORKSPACE = $RepoRoot
         } `
         -Action {
@@ -110,7 +109,6 @@ function Invoke-GhTestsOnly {
     Invoke-WithEnvironment `
         -Remove $GhTestEnvironmentOverrides `
         -Variables @{
-            RUN_IN_PARALLEL = "no"
             GITHUB_WORKSPACE = $RepoRoot
         } `
         -Action {
@@ -180,7 +178,6 @@ function Invoke-MalinaTests {
     Invoke-WithEnvironment `
         -Remove $LocalTestEnvironmentOverrides `
         -Variables @{
-            RUN_IN_PARALLEL = "no"
             GITHUB_WORKSPACE = $RepoRoot
         } `
         -Action {
@@ -226,7 +223,6 @@ function Invoke-OpenVinoTest {
         -Variables @{
             KRONK_PROCESSOR = "openvino"
             GGML_OPENVINO_DEVICE = $device
-            RUN_IN_PARALLEL = "no"
             GITHUB_WORKSPACE = $RepoRoot
         } `
         -Action {
