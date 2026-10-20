@@ -151,14 +151,18 @@ func TestChatResponse(resp model.ChatResponse, modelName string, object string, 
 
 	msg := GetMsg(resp.Choices[0], streaming)
 
+	if funct != "" {
+		if resp.Choices[0].FinishReason() != model.FinishReasonTool {
+			return TestResult{Err: fmt.Errorf("tooling: expected finish reason %q, got %q", model.FinishReasonTool, resp.Choices[0].FinishReason())}
+		}
+		if err := validateToolCalls(msg.ToolCalls, find, funct, arg); err != nil {
+			return TestResult{Err: err}
+		}
+	}
+
 	find = strings.ToLower(find)
-	funct = strings.ToLower(funct)
 	msg.Reasoning = strings.ToLower(msg.Reasoning)
 	msg.Content = strings.ToLower(msg.Content)
-
-	if len(msg.ToolCalls) > 0 {
-		msg.ToolCalls[0].Function.Name = strings.ToLower(msg.ToolCalls[0].Function.Name)
-	}
 
 	if reasoning {
 		if len(msg.Reasoning) == 0 {
@@ -189,29 +193,6 @@ func TestChatResponse(resp model.ChatResponse, modelName string, object string, 
 		}
 	}
 
-	if resp.Choices[0].FinishReason() == "tool" {
-		if !strings.Contains(msg.ToolCalls[0].Function.Name, funct) {
-			result.Warnings = append(result.Warnings, fmt.Sprintf("tooling: expected %q, got %q", funct, msg.ToolCalls[0].Function.Name))
-			return result
-		}
-
-		if len(msg.ToolCalls[0].Function.Arguments) == 0 {
-			result.Err = fmt.Errorf("tooling: expected arguments to be non-empty, got %v", msg.ToolCalls[0].Function.Arguments)
-			return result
-		}
-
-		location, exists := msg.ToolCalls[0].Function.Arguments[arg]
-		if !exists {
-			result.Err = fmt.Errorf("tooling: expected an argument named %s", arg)
-			return result
-		}
-
-		if !strings.Contains(strings.ToLower(location.(string)), find) {
-			result.Err = fmt.Errorf("tooling: expected %q, got %q", find, location.(string))
-			return result
-		}
-	}
-
 	return result
 }
 
@@ -237,10 +218,9 @@ func TestStreamingContent(acc *StreamAccumulator, lastResp model.ChatResponse, f
 
 // TestStreamingToolCall validates accumulated streaming tool call content.
 func TestStreamingToolCall(acc *StreamAccumulator, lastResp model.ChatResponse, find string, funct string, arg string) TestResult {
-	var result TestResult
-
-	find = strings.ToLower(find)
-	funct = strings.ToLower(funct)
+	if len(lastResp.Choices) == 0 || lastResp.Choices[0].FinishReason() != model.FinishReasonTool {
+		return TestResult{Err: fmt.Errorf("streaming: expected terminal tool_calls choice")}
+	}
 
 	var toolCalls []model.ResponseToolCall
 	if len(acc.ToolCalls) > 0 {
@@ -249,34 +229,29 @@ func TestStreamingToolCall(acc *StreamAccumulator, lastResp model.ChatResponse, 
 		toolCalls = lastResp.Choices[0].Message.ToolCalls
 	}
 
-	if len(toolCalls) == 0 {
-		result.Err = fmt.Errorf("streaming: expected tool calls, got none")
-		return result
+	return TestResult{Err: validateToolCalls(toolCalls, find, funct, arg)}
+}
+
+func validateToolCalls(toolCalls []model.ResponseToolCall, find string, funct string, arg string) error {
+	if len(toolCalls) != 1 {
+		return fmt.Errorf("tooling: expected one tool call, got %d", len(toolCalls))
 	}
 
-	funcName := strings.ToLower(toolCalls[0].Function.Name)
-	if !strings.Contains(funcName, funct) {
-		result.Warnings = append(result.Warnings, fmt.Sprintf("streaming: expected function %q, got %q", funct, funcName))
-		return result
+	function := toolCalls[0].Function
+	if function.Name != funct {
+		return fmt.Errorf("tooling: expected function %q, got %q", funct, function.Name)
 	}
 
-	if len(toolCalls[0].Function.Arguments) == 0 {
-		result.Err = fmt.Errorf("streaming: expected arguments to be non-empty")
-		return result
+	value, ok := function.Arguments[arg].(string)
+	if !ok {
+		return fmt.Errorf("tooling: expected string argument %q, got %v", arg, function.Arguments)
 	}
 
-	location, exists := toolCalls[0].Function.Arguments[arg]
-	if !exists {
-		result.Err = fmt.Errorf("streaming: expected an argument named %s", arg)
-		return result
+	if !strings.Contains(strings.ToLower(value), strings.ToLower(find)) {
+		return fmt.Errorf("tooling: expected %q in %s, got %q", find, arg, value)
 	}
 
-	if !strings.Contains(strings.ToLower(location.(string)), find) {
-		result.Err = fmt.Errorf("streaming: expected %q in %s, got %q", find, arg, location.(string))
-		return result
-	}
-
-	return result
+	return nil
 }
 
 // =========================================================================
@@ -318,29 +293,25 @@ func TestResponseResponse(resp kronk.ResponseResponse, modelName string, find st
 	}
 
 	find = strings.ToLower(find)
-	funct = strings.ToLower(funct)
 
 	if funct != "" {
+		var toolCalls []model.ResponseToolCall
 		for _, output := range resp.Output {
 			if output.Type == "function_call" {
-				name := strings.ToLower(output.Name)
-				if !strings.Contains(name, funct) {
-					return fmt.Errorf("tooling: expected function name %q, got %q", funct, name)
+				if output.Arguments == nil {
+					return fmt.Errorf("tooling: expected arguments")
 				}
 
-				var argsVal string
-				if output.Arguments != nil {
-					argsVal = *output.Arguments
+				var args map[string]any
+				if err := json.Unmarshal([]byte(*output.Arguments), &args); err != nil {
+					return fmt.Errorf("tooling: decoding arguments: %w", err)
 				}
-				args := strings.ToLower(argsVal)
-				if !strings.Contains(args, find) {
-					return fmt.Errorf("tooling: expected arguments to contain %q, got %q", find, args)
-				}
-
-				return nil
+				toolCalls = append(toolCalls, model.ResponseToolCall{
+					Function: model.ResponseToolCallFunction{Name: output.Name, Arguments: model.ToolCallArguments(args)},
+				})
 			}
 		}
-		return fmt.Errorf("tooling: expected function_call output item")
+		return validateToolCalls(toolCalls, find, funct, arg)
 	}
 
 	for _, output := range resp.Output {
@@ -445,13 +416,7 @@ func TestGrammarJSONResponse(resp model.ChatResponse, modelName string) TestResu
 		return result
 	}
 
-	var js any
-	if err := json.Unmarshal([]byte(content), &js); err != nil {
-		result.Err = fmt.Errorf("grammar: expected valid JSON, got parse error: %w\ncontent: %s", err, content)
-		return result
-	}
-
-	return result
+	return TestGrammarStreamingContent(content, modelName)
 }
 
 // TestGrammarStreamingContent validates grammar-constrained streaming content.
@@ -464,10 +429,24 @@ func TestGrammarStreamingContent(content string, modelName string) TestResult {
 		return result
 	}
 
-	var js any
+	var js struct {
+		Languages []struct {
+			Name string `json:"name"`
+			Year int    `json:"year"`
+		} `json:"languages"`
+	}
 	if err := json.Unmarshal([]byte(content), &js); err != nil {
 		result.Err = fmt.Errorf("grammar streaming: expected valid JSON, got parse error: %w\ncontent: %s", err, content)
 		return result
+	}
+
+	if len(js.Languages) != 3 {
+		return TestResult{Err: fmt.Errorf("grammar: expected three languages, got %d", len(js.Languages))}
+	}
+	for i, language := range js.Languages {
+		if strings.TrimSpace(language.Name) == "" || language.Year <= 0 {
+			return TestResult{Err: fmt.Errorf("grammar: language %d: expected non-empty name and positive integer year, got %+v", i, language)}
+		}
 	}
 
 	return result

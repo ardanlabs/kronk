@@ -16,6 +16,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/kronk/tests/testlib"
 )
 
 var grammarJSONObject = `root ::= object
@@ -486,7 +487,7 @@ func (v responseValidator) hasLogprobs(topLogprobs int) responseValidator {
 	return v
 }
 
-func (v responseValidator) hasValidJSON() responseValidator {
+func (v responseValidator) hasGrammarJSON() responseValidator {
 	if len(v.resp.Choices) == 0 {
 		v.errors = append(v.errors, "expected at least one choice")
 		return v
@@ -498,44 +499,17 @@ func (v responseValidator) hasValidJSON() responseValidator {
 		return v
 	}
 
-	var js any
-	if err := json.Unmarshal([]byte(content), &js); err != nil {
-		v.errors = append(v.errors, fmt.Sprintf("expected valid JSON, got parse error: %v, content: %s", err, content))
+	if result := testlib.TestGrammarStreamingContent(content, v.resp.Model); result.Err != nil {
+		v.errors = append(v.errors, result.Err.Error())
 	}
 
 	return v
 }
 
-func (v responseValidator) hasToolCalls(funcName string) responseValidator {
-	if len(v.resp.Choices) == 0 {
-		v.errors = append(v.errors, "expected at least one choice")
-		return v
-	}
-
-	choice := v.resp.Choices[0]
-
-	// Check finish reason is "tool_calls".
-	if choice.FinishReason() != "tool_calls" {
-		v.errors = append(v.errors, fmt.Sprintf("expected finish_reason to be 'tool_calls', got '%s'", choice.FinishReason()))
-		return v
-	}
-
-	// For non-streaming: check tool calls in Message.
-	// For streaming: check tool calls in Delta.
-	switch v.streaming {
-	case true:
-		if choice.Delta == nil || len(choice.Delta.ToolCalls) == 0 {
-			v.errors = append(v.errors, "expected tool calls in Delta for streaming")
-		} else if !strings.Contains(strings.ToLower(choice.Delta.ToolCalls[0].Function.Name), strings.ToLower(funcName)) {
-			v.errors = append(v.errors, fmt.Sprintf("expected Delta tool call function name to contain '%s', got '%s'", funcName, choice.Delta.ToolCalls[0].Function.Name))
-		}
-
-	default:
-		if choice.Message == nil || len(choice.Message.ToolCalls) == 0 {
-			v.errors = append(v.errors, "expected tool calls in Message")
-		} else if !strings.Contains(strings.ToLower(choice.Message.ToolCalls[0].Function.Name), strings.ToLower(funcName)) {
-			v.errors = append(v.errors, fmt.Sprintf("expected tool call function name to contain '%s', got '%s'", funcName, choice.Message.ToolCalls[0].Function.Name))
-		}
+func (v responseValidator) hasToolCalls(funcName string, argName string, find string) responseValidator {
+	result := testlib.TestChatResponse(*v.resp, v.resp.Model, v.resp.Object, find, funcName, argName, v.streaming, false)
+	if result.Err != nil {
+		v.errors = append(v.errors, result.Err.Error())
 	}
 
 	return v
@@ -614,7 +588,7 @@ func validateChatUsageStreamReasoning(events []json.RawMessage, reasoning bool) 
 	return ""
 }
 
-func validateToolCallStream(events []json.RawMessage, funcName string, argName string) string {
+func validateToolCallStream(events []json.RawMessage, funcName string, argName string, find string) string {
 	type functionDelta struct {
 		Name      string `json:"name"`
 		Arguments string `json:"arguments"`
@@ -683,7 +657,7 @@ func validateToolCallStream(events []json.RawMessage, funcName string, argName s
 				return fmt.Sprintf("stream event %d: tool call type: got %q, want %q", i, toolCall.Type, "function")
 			}
 			if toolCall.Function.Name != "" {
-				if !strings.EqualFold(toolCall.Function.Name, funcName) {
+				if toolCall.Function.Name != funcName {
 					return fmt.Sprintf("stream event %d: function name: got %q, want %q", i, toolCall.Function.Name, funcName)
 				}
 				seenFunctionName = true
@@ -709,8 +683,9 @@ func validateToolCallStream(events []json.RawMessage, funcName string, argName s
 	if err := json.Unmarshal([]byte(arguments.String()), &args); err != nil {
 		return fmt.Sprintf("streamed tool call arguments: expected valid JSON, got %q: %v", arguments.String(), err)
 	}
-	if _, exists := args[argName]; !exists {
-		return fmt.Sprintf("streamed tool call arguments: expected argument %q, got %v", argName, args)
+	value, ok := args[argName].(string)
+	if !ok || !strings.Contains(strings.ToLower(value), strings.ToLower(find)) {
+		return fmt.Sprintf("streamed tool call arguments: expected string argument %q containing %q, got %v", argName, find, args)
 	}
 
 	return ""
