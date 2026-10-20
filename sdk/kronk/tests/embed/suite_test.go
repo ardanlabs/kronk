@@ -19,7 +19,10 @@ func TestSuite(t *testing.T) {
 		t.Skip("model not downloaded")
 	}
 
-	testlib.WithModel(t, testlib.CfgEmbedBatchSeq(), testEmbedding)
+	testlib.WithModel(t, testlib.CfgEmbedBatchSeq(), func(t *testing.T, krn *kronk.Kronk) {
+		t.Run("Embedding", func(t *testing.T) { testEmbedding(t, krn) })
+		t.Run("ConcurrentEmbeddings", func(t *testing.T) { testConcurrentEmbeddings(t, krn, 2) })
+	})
 }
 
 func testEmbedding(t *testing.T, krn *kronk.Kronk) {

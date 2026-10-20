@@ -12,18 +12,6 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/tests/testlib"
 )
 
-func TestConcurrentEmbeddings(t *testing.T) {
-	const numInstances = 2
-
-	if len(testlib.MPEmbedBatchSeq.ModelFiles) == 0 {
-		t.Skip("model not downloaded")
-	}
-
-	testlib.WithModel(t, testlib.CfgEmbedBatchSeq(), func(t *testing.T, krn *kronk.Kronk) {
-		testConcurrentEmbeddings(t, krn, numInstances)
-	})
-}
-
 func testConcurrentEmbeddings(t *testing.T, krn *kronk.Kronk, numInstances int) {
 	ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 	defer cancel()

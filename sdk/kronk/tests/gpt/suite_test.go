@@ -30,10 +30,6 @@ func TestSuite(t *testing.T) {
 }
 
 func testChat(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
@@ -83,10 +79,6 @@ func testChat(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
 }
 
 func testChatStreaming(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()

@@ -11,17 +11,15 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/tests/testlib"
 )
 
-func TestUsageCounting(t *testing.T) {
-	testlib.WithModel(t, testlib.CfgThinkToolChat(), func(t *testing.T, krn *kronk.Kronk) {
-		t.Run("StreamingUsage", func(t *testing.T) {
-			testStreamingUsage(t, krn)
-		})
-		t.Run("NonStreamingUsage", func(t *testing.T) {
-			testNonStreamingUsage(t, krn)
-		})
-		t.Run("UsageOnlyInFinal", func(t *testing.T) {
-			testUsageOnlyInFinal(t, krn)
-		})
+func testUsageCounting(t *testing.T, krn *kronk.Kronk) {
+	t.Run("StreamingUsage", func(t *testing.T) {
+		testStreamingUsage(t, krn)
+	})
+	t.Run("NonStreamingUsage", func(t *testing.T) {
+		testNonStreamingUsage(t, krn)
+	})
+	t.Run("UsageOnlyInFinal", func(t *testing.T) {
+		testUsageOnlyInFinal(t, krn)
 	})
 }
 
@@ -204,237 +202,229 @@ func testUsageOnlyInFinal(t *testing.T, krn *kronk.Kronk) {
 		finalResp.Usage.PromptTokens, finalResp.Usage.CompletionTokens, finalResp.Usage.TotalTokens)
 }
 
-func TestUsageAccumulation(t *testing.T) {
-	testlib.WithModel(t, testlib.CfgThinkToolChat(), func(t *testing.T, krn *kronk.Kronk) {
-		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
-		defer cancel()
+func testUsageAccumulation(t *testing.T, krn *kronk.Kronk) {
+	ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
+	defer cancel()
 
-		d := model.D{
-			"messages": []model.D{
-				{
-					"role":    "user",
-					"content": "List three colors: red, blue, green.",
-				},
+	d := model.D{
+		"messages": []model.D{
+			{
+				"role":    "user",
+				"content": "List three colors: red, blue, green.",
 			},
-			"max_tokens":     1024,
-			"stream_options": model.D{"include_usage": true},
+		},
+		"max_tokens":     1024,
+		"stream_options": model.D{"include_usage": true},
+	}
+
+	ch, err := krn.ChatStreaming(ctx, d)
+	if err != nil {
+		t.Fatalf("chat streaming: %v", err)
+	}
+
+	var (
+		contentTokens   int
+		reasoningTokens int
+		finalResp       model.ChatResponse
+	)
+
+	for resp := range ch {
+		finalResp = resp
+
+		if len(resp.Choices) == 0 {
+			continue
 		}
 
-		ch, err := krn.ChatStreaming(ctx, d)
-		if err != nil {
-			t.Fatalf("chat streaming: %v", err)
+		choice := resp.Choices[0]
+		if choice.FinishReason() != "" {
+			continue
 		}
 
-		var (
-			contentTokens   int
-			reasoningTokens int
-			finalResp       model.ChatResponse
-		)
-
-		for resp := range ch {
-			finalResp = resp
-
-			if len(resp.Choices) == 0 {
-				continue
+		if choice.Delta != nil {
+			if choice.Delta.Content != "" {
+				contentTokens++
 			}
-
-			choice := resp.Choices[0]
-			if choice.FinishReason() != "" {
-				continue
-			}
-
-			if choice.Delta != nil {
-				if choice.Delta.Content != "" {
-					contentTokens++
-				}
-				if choice.Delta.Reasoning != "" {
-					reasoningTokens++
-				}
+			if choice.Delta.Reasoning != "" {
+				reasoningTokens++
 			}
 		}
+	}
 
-		if finalResp.Usage == nil {
-			t.Fatalf("final response has nil Usage")
-		}
+	if finalResp.Usage == nil {
+		t.Fatalf("final response has nil Usage")
+	}
 
-		t.Logf("Counted: reasoning=%d, content=%d", reasoningTokens, contentTokens)
-		reasoningReported := finalResp.Usage.CompletionTokensDetails.ReasoningTokens
-		visibleReported := finalResp.Usage.CompletionTokens - reasoningReported
-		t.Logf("Reported: reasoning=%d, completion=%d, visible=%d",
-			reasoningReported, finalResp.Usage.CompletionTokens, visibleReported)
+	t.Logf("Counted: reasoning=%d, content=%d", reasoningTokens, contentTokens)
+	reasoningReported := finalResp.Usage.CompletionTokensDetails.ReasoningTokens
+	visibleReported := finalResp.Usage.CompletionTokens - reasoningReported
+	t.Logf("Reported: reasoning=%d, completion=%d, visible=%d",
+		reasoningReported, finalResp.Usage.CompletionTokens, visibleReported)
 
-		if reasoningReported > 0 && reasoningTokens == 0 {
-			t.Errorf("Model reported %d reasoning tokens but we counted 0 reasoning deltas",
-				reasoningReported)
-		}
+	if reasoningReported > 0 && reasoningTokens == 0 {
+		t.Errorf("Model reported %d reasoning tokens but we counted 0 reasoning deltas",
+			reasoningReported)
+	}
 
-		if visibleReported > 0 && contentTokens == 0 {
-			t.Errorf("Model reported %d visible tokens but we counted 0 content deltas",
-				visibleReported)
-		}
-	})
+	if visibleReported > 0 && contentTokens == 0 {
+		t.Errorf("Model reported %d visible tokens but we counted 0 content deltas",
+			visibleReported)
+	}
 }
 
-func TestUsageWithToolCalls(t *testing.T) {
-	testlib.WithModel(t, testlib.CfgThinkToolChat(), func(t *testing.T, krn *kronk.Kronk) {
-		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
-		defer cancel()
+func testUsageWithToolCalls(t *testing.T, krn *kronk.Kronk) {
+	ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
+	defer cancel()
 
-		d := maps.Clone(testlib.DChatTool)
-		d["stream_options"] = model.D{"include_usage": true}
+	d := maps.Clone(testlib.DChatTool)
+	d["stream_options"] = model.D{"include_usage": true}
 
-		ch, err := krn.ChatStreaming(ctx, d)
-		if err != nil {
-			t.Fatalf("chat streaming: %v", err)
+	ch, err := krn.ChatStreaming(ctx, d)
+	if err != nil {
+		t.Fatalf("chat streaming: %v", err)
+	}
+
+	var (
+		terminalResp model.ChatResponse
+		finalResp    model.ChatResponse
+	)
+	for resp := range ch {
+		finalResp = resp
+		if len(resp.Choices) > 0 && resp.Choices[0].FinishReason() != "" {
+			terminalResp = resp
 		}
+	}
 
-		var (
-			terminalResp model.ChatResponse
-			finalResp    model.ChatResponse
-		)
-		for resp := range ch {
-			finalResp = resp
-			if len(resp.Choices) > 0 && resp.Choices[0].FinishReason() != "" {
-				terminalResp = resp
-			}
-		}
+	if len(terminalResp.Choices) == 0 {
+		t.Fatalf("expected at least one choice")
+	}
 
-		if len(terminalResp.Choices) == 0 {
-			t.Fatalf("expected at least one choice")
-		}
+	if terminalResp.Choices[0].FinishReason() != "tool_calls" {
+		t.Logf("Warning: expected finish_reason=tool_calls, got %s", terminalResp.Choices[0].FinishReason())
+	}
 
-		if terminalResp.Choices[0].FinishReason() != "tool_calls" {
-			t.Logf("Warning: expected finish_reason=tool_calls, got %s", terminalResp.Choices[0].FinishReason())
-		}
+	if finalResp.Usage == nil {
+		t.Fatalf("final response has nil Usage")
+	}
 
-		if finalResp.Usage == nil {
-			t.Fatalf("final response has nil Usage")
-		}
+	if finalResp.Usage.PromptTokens == 0 {
+		t.Errorf("PromptTokens should be > 0 for tool call request")
+	}
 
-		if finalResp.Usage.PromptTokens == 0 {
-			t.Errorf("PromptTokens should be > 0 for tool call request")
-		}
+	if finalResp.Usage.CompletionTokens == 0 {
+		t.Errorf("CompletionTokens should be > 0 for tool call response")
+	}
 
-		if finalResp.Usage.CompletionTokens == 0 {
-			t.Errorf("CompletionTokens should be > 0 for tool call response")
-		}
+	expectedTotal := finalResp.Usage.PromptTokens + finalResp.Usage.CompletionTokens
+	if finalResp.Usage.TotalTokens != expectedTotal {
+		t.Errorf("TotalTokens mismatch in tool call: got %d, expected %d",
+			finalResp.Usage.TotalTokens, expectedTotal)
+	}
 
-		expectedTotal := finalResp.Usage.PromptTokens + finalResp.Usage.CompletionTokens
-		if finalResp.Usage.TotalTokens != expectedTotal {
-			t.Errorf("TotalTokens mismatch in tool call: got %d, expected %d",
-				finalResp.Usage.TotalTokens, expectedTotal)
-		}
-
-		t.Logf("Tool call usage: prompt=%d, reasoning=%d, completion=%d, total=%d",
-			finalResp.Usage.PromptTokens, finalResp.Usage.CompletionTokensDetails.ReasoningTokens,
-			finalResp.Usage.CompletionTokens, finalResp.Usage.TotalTokens)
-	})
+	t.Logf("Tool call usage: prompt=%d, reasoning=%d, completion=%d, total=%d",
+		finalResp.Usage.PromptTokens, finalResp.Usage.CompletionTokensDetails.ReasoningTokens,
+		finalResp.Usage.CompletionTokens, finalResp.Usage.TotalTokens)
 }
 
-func TestUsageDeltaNil(t *testing.T) {
-	testlib.WithModel(t, testlib.CfgThinkToolChat(), func(t *testing.T, krn *kronk.Kronk) {
-		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
-		defer cancel()
+func testUsageDeltaNil(t *testing.T, krn *kronk.Kronk) {
+	ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
+	defer cancel()
 
-		d := model.D{
-			"messages": []model.D{
-				{
-					"role":    "user",
-					"content": "Count: 1 2 3 4 5",
-				},
+	d := model.D{
+		"messages": []model.D{
+			{
+				"role":    "user",
+				"content": "Count: 1 2 3 4 5",
 			},
-			"max_tokens":     128,
-			"stream_options": model.D{"include_usage": true},
+		},
+		"max_tokens":     128,
+		"stream_options": model.D{"include_usage": true},
+	}
+
+	ch, err := krn.ChatStreaming(ctx, d)
+	if err != nil {
+		t.Fatalf("chat streaming: %v", err)
+	}
+
+	var (
+		deltaCount      int
+		deltasWithUsage int
+		finalResp       model.ChatResponse
+	)
+
+	for resp := range ch {
+		finalResp = resp
+
+		if len(resp.Choices) == 0 {
+			continue
 		}
 
-		ch, err := krn.ChatStreaming(ctx, d)
-		if err != nil {
-			t.Fatalf("chat streaming: %v", err)
-		}
-
-		var (
-			deltaCount      int
-			deltasWithUsage int
-			finalResp       model.ChatResponse
-		)
-
-		for resp := range ch {
-			finalResp = resp
-
-			if len(resp.Choices) == 0 {
-				continue
+		choice := resp.Choices[0]
+		if choice.FinishReason() == "" {
+			deltaCount++
+			if resp.Usage != nil {
+				deltasWithUsage++
 			}
-
-			choice := resp.Choices[0]
-			if choice.FinishReason() == "" {
-				deltaCount++
-				if resp.Usage != nil {
-					deltasWithUsage++
-				}
-			}
 		}
+	}
 
-		t.Logf("Total deltas: %d", deltaCount)
-		t.Logf("Deltas with non-nil usage: %d", deltasWithUsage)
+	t.Logf("Total deltas: %d", deltaCount)
+	t.Logf("Deltas with non-nil usage: %d", deltasWithUsage)
 
-		if finalResp.Usage != nil {
-			t.Logf("Final usage: completion=%d (reasoning=%d)",
-				finalResp.Usage.CompletionTokens, finalResp.Usage.CompletionTokensDetails.ReasoningTokens)
-		}
+	if finalResp.Usage != nil {
+		t.Logf("Final usage: completion=%d (reasoning=%d)",
+			finalResp.Usage.CompletionTokens, finalResp.Usage.CompletionTokensDetails.ReasoningTokens)
+	}
 
-		if deltasWithUsage > 0 {
-			t.Errorf("Expected all deltas to have nil usage, but %d had non-nil values", deltasWithUsage)
-		}
+	if deltasWithUsage > 0 {
+		t.Errorf("Expected all deltas to have nil usage, but %d had non-nil values", deltasWithUsage)
+	}
 
-		switch {
-		case finalResp.Usage == nil:
-			t.Errorf("Expected final response to have Usage")
+	switch {
+	case finalResp.Usage == nil:
+		t.Errorf("Expected final response to have Usage")
 
-		case finalResp.Usage.CompletionTokens == 0:
-			t.Errorf("Expected final response to have CompletionTokens > 0")
-		}
-	})
+	case finalResp.Usage.CompletionTokens == 0:
+		t.Errorf("Expected final response to have CompletionTokens > 0")
+	}
 }
 
-func TestUsageConsistencyAcrossRequests(t *testing.T) {
-	testlib.WithModel(t, testlib.CfgThinkToolChat(), func(t *testing.T, krn *kronk.Kronk) {
-		prompt := model.D{
-			"messages": []model.D{
-				{
-					"role":    "user",
-					"content": "What is 2+2?",
-				},
+func testUsageConsistencyAcrossRequests(t *testing.T, krn *kronk.Kronk) {
+	prompt := model.D{
+		"messages": []model.D{
+			{
+				"role":    "user",
+				"content": "What is 2+2?",
 			},
-			"max_tokens": 64,
+		},
+		"max_tokens": 64,
+	}
+
+	var promptTokens []int
+	for i := range 3 {
+		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
+
+		resp, err := krn.Chat(ctx, prompt)
+		cancel()
+
+		if err != nil {
+			t.Fatalf("request %d: chat failed: %v", i, err)
 		}
 
-		var promptTokens []int
-		for i := range 3 {
-			ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
-
-			resp, err := krn.Chat(ctx, prompt)
-			cancel()
-
-			if err != nil {
-				t.Fatalf("request %d: chat failed: %v", i, err)
-			}
-
-			if resp.Usage == nil {
-				t.Fatalf("request %d: response has nil Usage", i)
-			}
-
-			promptTokens = append(promptTokens, resp.Usage.PromptTokens)
-
-			time.Sleep(100 * time.Millisecond)
+		if resp.Usage == nil {
+			t.Fatalf("request %d: response has nil Usage", i)
 		}
 
-		for i := 1; i < len(promptTokens); i++ {
-			if promptTokens[i] != promptTokens[0] {
-				t.Errorf("PromptTokens inconsistent: request 0=%d, request %d=%d",
-					promptTokens[0], i, promptTokens[i])
-			}
-		}
+		promptTokens = append(promptTokens, resp.Usage.PromptTokens)
 
-		t.Logf("Prompt tokens across %d requests: consistent at %d", len(promptTokens), promptTokens[0])
-	})
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	for i := 1; i < len(promptTokens); i++ {
+		if promptTokens[i] != promptTokens[0] {
+			t.Errorf("PromptTokens inconsistent: request 0=%d, request %d=%d",
+				promptTokens[0], i, promptTokens[i])
+		}
+	}
+
+	t.Logf("Prompt tokens across %d requests: consistent at %d", len(promptTokens), promptTokens[0])
 }

@@ -1,4 +1,7 @@
 // Package testlib provides shared test infrastructure for Kronk model test packages.
+// Model cases run serially within each package; concurrency tests explicitly
+// fan out requests against their shared model. Run packages with -p=1 to avoid
+// loading unrelated models concurrently.
 package testlib
 
 import (
@@ -20,12 +23,11 @@ import (
 
 // Settings controls test behavior.
 var (
-	TestDuration  = 60 * 5 * time.Second
-	Goroutines    = 2
-	MaxRetries    = 3
-	RunInParallel = false
-	ImageFile     string
-	AudioFile     string
+	TestDuration = 60 * 5 * time.Second
+	Goroutines   = 2
+	MaxRetries   = 3
+	ImageFile    string
+	AudioFile    string
 )
 
 // Model paths resolved during Setup.
@@ -54,10 +56,6 @@ func Setup() {
 	// self-hosted fleets have the cores and the GPUs to run concurrently.
 	if os.Getenv("KRONK_TEST_HOSTED") != "" {
 		Goroutines = 1
-	}
-
-	if os.Getenv("RUN_IN_PARALLEL") == "yes" {
-		RunInParallel = true
 	}
 
 	fmt.Println("Initializing models system...")
@@ -138,7 +136,6 @@ func printInfo(mdls *models.Models) {
 	fmt.Println("goroutines       :", Goroutines)
 	fmt.Println("maxRetries       :", MaxRetries)
 	fmt.Println("testDuration     :", TestDuration)
-	fmt.Println("RUN_IN_PARALLEL  :", RunInParallel)
 
 	l, err := libs.New(libs.WithVersion(defaults.LibVersion("")))
 	if err != nil {

@@ -40,9 +40,7 @@ var sawAcceptedDraft atomic.Bool
 
 func TestSuite(t *testing.T) {
 	testlib.WithModel(t, testlib.CfgClassicDraftChat(), func(t *testing.T, krn *kronk.Kronk) {
-		// Parallel subtests only finish when their parent returns, so this
-		// grouping is what lets the acceptance check below be a real subtest
-		// rather than a t.Cleanup that fails TestSuite with every leaf green.
+		// Complete the chat cases before checking suite-wide draft acceptance.
 		t.Run("Chats", func(t *testing.T) {
 			t.Run("DraftChat", func(t *testing.T) { testChat(t, krn, testlib.DChatNoTool) })
 			t.Run("DraftStreamingChat", func(t *testing.T) { testChatStreaming(t, krn, testlib.DChatNoTool) })
@@ -114,10 +112,6 @@ func checkDraftUsage(t *testing.T, id string, usage *model.Usage) {
 }
 
 func testChat(t *testing.T, krn *kronk.Kronk, d model.D) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
@@ -163,10 +157,6 @@ func testChat(t *testing.T, krn *kronk.Kronk, d model.D) {
 }
 
 func testChatStreaming(t *testing.T, krn *kronk.Kronk, d model.D) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	d = maps.Clone(d)
 	d["stream_options"] = model.D{"include_usage": true}
 

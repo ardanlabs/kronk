@@ -20,7 +20,10 @@ func TestSuite(t *testing.T) {
 		t.Skip("model not downloaded")
 	}
 
-	testlib.WithModel(t, testlib.CfgRerankBatchSeq(), testRerank)
+	testlib.WithModel(t, testlib.CfgRerankBatchSeq(), func(t *testing.T, krn *kronk.Kronk) {
+		t.Run("Rerank", func(t *testing.T) { testRerank(t, krn) })
+		t.Run("ConcurrentRerank", func(t *testing.T) { testConcurrentRerank(t, krn, 2) })
+	})
 }
 
 func testRerank(t *testing.T, krn *kronk.Kronk) {

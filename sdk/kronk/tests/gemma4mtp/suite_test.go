@@ -86,10 +86,6 @@ func checkMTPUsage(t *testing.T, id string, usage *model.Usage) {
 }
 
 func testChat(t *testing.T, krn *kronk.Kronk, d model.D) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
@@ -135,10 +131,6 @@ func testChat(t *testing.T, krn *kronk.Kronk, d model.D) {
 }
 
 func testChatStreaming(t *testing.T, krn *kronk.Kronk, d model.D) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	d = maps.Clone(d)
 	d["stream_options"] = model.D{"include_usage": true}
 

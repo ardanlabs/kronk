@@ -57,7 +57,7 @@ test-gh-only: install-libraries install-test-gh-models
 	go test -v -count=1 -timeout 6m -run '^TestSuite$$' ./sdk/kronk/tests/draft && \
 	go test -v -count=1 -timeout 6m -run '^TestSuite/SimpleMedia$$' ./sdk/kronk/tests/vision && \
 	go test -v -count=1 -timeout 6m -run '^TestSuite$$' ./sdk/kronk/tests/vision_imc && \
-	go test -v -count=1 -timeout 6m -run '^(TestSuite|TestConcurrentEmbeddings)$$' ./sdk/kronk/tests/embed && \
+	go test -v -count=1 -timeout 6m -run '^TestSuite$$' ./sdk/kronk/tests/embed && \
 	go test -v -count=1 -timeout 6m -run '^TestSuite$$' ./sdk/kronk/tests/rerank && \
 	go test -v -count=1 -timeout 6m -run '^TestSuite$$' ./sdk/kronk/tests/decision && \
 	go test -v -count=1 -timeout 20m ./sdk/kronk/tests/hybrid && \

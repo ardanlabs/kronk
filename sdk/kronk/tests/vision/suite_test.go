@@ -37,10 +37,6 @@ func TestUncachedMediaSmallBatch(t *testing.T) {
 }
 
 func testMedia(t *testing.T, krn *kronk.Kronk) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
@@ -82,10 +78,6 @@ func testMedia(t *testing.T, krn *kronk.Kronk) {
 }
 
 func testMediaStreaming(t *testing.T, krn *kronk.Kronk) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
@@ -140,10 +132,6 @@ func testMediaStreaming(t *testing.T, krn *kronk.Kronk) {
 }
 
 func testMediaResponse(t *testing.T, krn *kronk.Kronk) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
@@ -179,10 +167,6 @@ func testMediaResponse(t *testing.T, krn *kronk.Kronk) {
 }
 
 func testMediaResponseStreaming(t *testing.T, krn *kronk.Kronk) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
