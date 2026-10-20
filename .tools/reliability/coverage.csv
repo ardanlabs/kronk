@@ -1,129 +1,129 @@
-GPUs,Slots,IMC,MTP,Media,Model,State,Model ID,Observations,1) classic-drafter,2) mtp-embedded,3) mtp-companion,4) hybrid,5) long-context,6) batch-text,7) batch-images,8) media-correctness,9) media-prefill,10) example-lifecycle-load
-1,1,Off,Off,No,Dense,Attention-only,,,GAP: classic trim rollback; need other model,,,GAP: attention-only recovery; need other model,GAP: attention-only context baseline; need other model,not apply,not apply,not apply,not apply,
-1,1,Off,Off,No,Dense,Hybrid,,,GAP: classic snapshot rollback; need other model,,GAP: one-slot target-only control; need other model,GAP: dense hybrid recovery; need other model,,not apply,not apply,not apply,not apply,
-1,1,Off,Off,No,MoE,Attention-only,,,,,,,,not apply,not apply,not apply,not apply,
-1,1,Off,Off,No,MoE,Hybrid,unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL,,,GAP: one-slot target-only control,,covered,covered,not apply,not apply,not apply,not apply,
-1,1,Off,Off,Yes,Dense,Attention-only,,,,,,GAP: same-slot image recovery; need other model,,not apply,not apply,,not apply,
-1,1,Off,Off,Yes,Dense,Hybrid,,,,,,,,not apply,not apply,,not apply,
-1,1,Off,Off,Yes,MoE,Attention-only,,,,,,,,not apply,not apply,,not apply,
-1,1,Off,Off,Yes,MoE,Hybrid,,,,,,GAP: same-slot image recovery; need other model,,not apply,not apply,,not apply,
-1,1,Off,On,No,Dense,Attention-only,,,not apply,,,,,not apply,not apply,not apply,not apply,
-1,1,Off,On,No,Dense,Hybrid,,,not apply,,GAP: one-slot drafting; need other model,GAP: dense hybrid recovery; need other model,,not apply,not apply,not apply,not apply,
-1,1,Off,On,No,MoE,Attention-only,,,not apply,,,,,not apply,not apply,not apply,not apply,
-1,1,Off,On,No,MoE,Hybrid,unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL,,not apply,GAP: one-slot drafting,,covered,covered,not apply,not apply,not apply,not apply,
-1,1,Off,On,Yes,Dense,Attention-only,,,not apply,,,,,not apply,not apply,,not apply,
-1,1,Off,On,Yes,Dense,Hybrid,,,not apply,,,,,not apply,not apply,,not apply,
-1,1,Off,On,Yes,MoE,Attention-only,,,not apply,,,,,not apply,not apply,,not apply,
-1,1,Off,On,Yes,MoE,Hybrid,,,not apply,,,GAP: same-slot image recovery; need other model,,not apply,not apply,,not apply,
-1,1,On,Off,No,Dense,Attention-only,unsloth/Qwen3-0.6B-Q8_0,8K context.,GAP: classic trim rollback; need other model,,,GAP: attention-only recovery,GAP: attention-only context baseline,not apply,not apply,not apply,not apply,covered
-1,1,On,Off,No,Dense,Hybrid,,,GAP: classic snapshot rollback; need other model,,GAP: one-slot target-only control; need other model,GAP: dense hybrid recovery; need other model,,not apply,not apply,not apply,not apply,
-1,1,On,Off,No,MoE,Attention-only,,,,,,,,not apply,not apply,not apply,not apply,
-1,1,On,Off,No,MoE,Hybrid,unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL,,,GAP: one-slot target-only control,,covered,covered,not apply,not apply,not apply,not apply,
-1,1,On,Off,Yes,Dense,Attention-only,,,,,,GAP: same-slot image recovery; need other model,,not apply,not apply,,not apply,
-1,1,On,Off,Yes,Dense,Hybrid,,,,,,,,not apply,not apply,,not apply,
-1,1,On,Off,Yes,MoE,Attention-only,,,,,,,,not apply,not apply,,not apply,
-1,1,On,Off,Yes,MoE,Hybrid,,,,,,GAP: same-slot image recovery; need other model,,not apply,not apply,,not apply,
-1,1,On,On,No,Dense,Attention-only,,,not apply,,,,,not apply,not apply,not apply,not apply,
-1,1,On,On,No,Dense,Hybrid,,,not apply,,GAP: one-slot drafting; need other model,GAP: dense hybrid recovery; need other model,,not apply,not apply,not apply,not apply,
-1,1,On,On,No,MoE,Attention-only,,,not apply,,,,,not apply,not apply,not apply,not apply,
-1,1,On,On,No,MoE,Hybrid,unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL,,not apply,GAP: one-slot drafting,,covered,covered,not apply,not apply,not apply,not apply,
-1,1,On,On,Yes,Dense,Attention-only,,,not apply,,,,,not apply,not apply,,not apply,
-1,1,On,On,Yes,Dense,Hybrid,,,not apply,,,,,not apply,not apply,,not apply,
-1,1,On,On,Yes,MoE,Attention-only,,,not apply,,,,,not apply,not apply,,not apply,
-1,1,On,On,Yes,MoE,Hybrid,,,not apply,,,GAP: same-slot image recovery; need other model,,not apply,not apply,,not apply,
-1,n,Off,Off,No,Dense,Attention-only,,,not apply,,,not apply,,GAP: attention-only isolation/load; need other model,not apply,not apply,not apply,not apply
-1,n,Off,Off,No,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q4_K_XL,,not apply,overlaped by 3:35,covered,not apply,,GAP: dense hybrid isolation/load,not apply,not apply,not apply,not apply
-1,n,Off,Off,No,MoE,Attention-only,,,not apply,,,not apply,,,not apply,not apply,not apply,not apply
-1,n,Off,Off,No,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,,not apply,covered,overlaped by 2:37,not apply,,covered,not apply,not apply,not apply,not apply
-1,n,Off,Off,Yes,Dense,Attention-only,,,not apply,,,not apply,,not apply,,GAP: attention-only image state; need other model,,not apply
-1,n,Off,Off,Yes,Dense,Hybrid,,,not apply,,,not apply,,not apply,,GAP: companion image-state integrity; need other model,,not apply
-1,n,Off,Off,Yes,MoE,Attention-only,,,not apply,,,not apply,,not apply,,,GAP: isolated media prefill; need other model,not apply
-1,n,Off,Off,Yes,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,,not apply,,,not apply,,not apply,covered,covered,covered,not apply
-1,n,Off,On,No,Dense,Attention-only,,,not apply,,,not apply,,,not apply,not apply,not apply,not apply
-1,n,Off,On,No,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q4_K_XL,,not apply,,covered,not apply,,GAP: dense hybrid isolation/load,not apply,not apply,not apply,not apply
-1,n,Off,On,No,MoE,Attention-only,,,not apply,,,not apply,,,not apply,not apply,not apply,not apply
-1,n,Off,On,No,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,,not apply,covered,,not apply,,covered,not apply,not apply,not apply,not apply
-1,n,Off,On,Yes,Dense,Attention-only,,,not apply,,,not apply,,not apply,,,,not apply
-1,n,Off,On,Yes,Dense,Hybrid,,,not apply,,,not apply,,not apply,,GAP: companion image-state integrity; need other model,,not apply
-1,n,Off,On,Yes,MoE,Attention-only,,,not apply,,,not apply,,not apply,,,,not apply
-1,n,Off,On,Yes,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,,not apply,,,not apply,,not apply,covered,covered,covered,not apply
-1,n,On,Off,No,Dense,Attention-only,,,not apply,,,not apply,,GAP: attention-only isolation/load; need other model,not apply,not apply,not apply,not apply
-1,n,On,Off,No,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q4_K_XL,,not apply,overlaped by 3:51,covered,not apply,,GAP: dense hybrid isolation/load,not apply,not apply,not apply,not apply
-1,n,On,Off,No,MoE,Attention-only,,,not apply,,,not apply,,,not apply,not apply,not apply,not apply
-1,n,On,Off,No,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,,not apply,covered,overlaped by 2:53,not apply,,covered,not apply,not apply,not apply,not apply
-1,n,On,Off,Yes,Dense,Attention-only,,,not apply,,,not apply,,not apply,,GAP: attention-only image state; need other model,,not apply
-1,n,On,Off,Yes,Dense,Hybrid,,,not apply,,,not apply,,not apply,,GAP: companion image-state integrity; need other model,,not apply
-1,n,On,Off,Yes,MoE,Attention-only,,,not apply,,,not apply,,not apply,,,GAP: isolated media prefill; need other model,not apply
-1,n,On,Off,Yes,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,,not apply,,,not apply,,not apply,covered,covered,covered,not apply
-1,n,On,On,No,Dense,Attention-only,,,not apply,,,not apply,,,not apply,not apply,not apply,not apply
-1,n,On,On,No,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q4_K_XL,,not apply,,covered,not apply,,GAP: dense hybrid isolation/load,not apply,not apply,not apply,not apply
-1,n,On,On,No,MoE,Attention-only,,,not apply,,,not apply,,,not apply,not apply,not apply,not apply
-1,n,On,On,No,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,,not apply,covered,,not apply,,covered,not apply,not apply,not apply,not apply
-1,n,On,On,Yes,Dense,Attention-only,,,not apply,,,not apply,,not apply,,,,not apply
-1,n,On,On,Yes,Dense,Hybrid,,,not apply,,,not apply,,not apply,,GAP: companion image-state integrity; need other model,,not apply
-1,n,On,On,Yes,MoE,Attention-only,,,not apply,,,not apply,,not apply,,,,not apply
-1,n,On,On,Yes,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,,not apply,,,not apply,,not apply,covered,covered,covered,not apply
-n,1,Off,Off,No,Dense,Attention-only,,Phase 2; no model selected.,,,,,,not apply,not apply,not apply,not apply,
-n,1,Off,Off,No,Dense,Hybrid,,Phase 2; no model selected.,,,,,,not apply,not apply,not apply,not apply,
-n,1,Off,Off,No,MoE,Attention-only,,Phase 2; no model selected.,,,,,,not apply,not apply,not apply,not apply,
-n,1,Off,Off,No,MoE,Hybrid,,Phase 2; no model selected.,,,,,,not apply,not apply,not apply,not apply,
-n,1,Off,Off,Yes,Dense,Attention-only,,Phase 2; no model selected.,,,,,,not apply,not apply,,not apply,
-n,1,Off,Off,Yes,Dense,Hybrid,,Phase 2; no model selected.,,,,,,not apply,not apply,,not apply,
-n,1,Off,Off,Yes,MoE,Attention-only,,Phase 2; no model selected.,,,,,,not apply,not apply,,not apply,
-n,1,Off,Off,Yes,MoE,Hybrid,,Phase 2; no model selected.,,,,,,not apply,not apply,,not apply,
-n,1,Off,On,No,Dense,Attention-only,,Phase 2; no model selected.,not apply,,,,,not apply,not apply,not apply,not apply,
-n,1,Off,On,No,Dense,Hybrid,,Phase 2; no model selected.,not apply,,,,,not apply,not apply,not apply,not apply,
-n,1,Off,On,No,MoE,Attention-only,,Phase 2; no model selected.,not apply,,,,,not apply,not apply,not apply,not apply,
-n,1,Off,On,No,MoE,Hybrid,,Phase 2; no model selected.,not apply,,,,,not apply,not apply,not apply,not apply,
-n,1,Off,On,Yes,Dense,Attention-only,,Phase 2; no model selected.,not apply,,,,,not apply,not apply,,not apply,
-n,1,Off,On,Yes,Dense,Hybrid,,Phase 2; no model selected.,not apply,,,,,not apply,not apply,,not apply,
-n,1,Off,On,Yes,MoE,Attention-only,,Phase 2; no model selected.,not apply,,,,,not apply,not apply,,not apply,
-n,1,Off,On,Yes,MoE,Hybrid,,Phase 2; no model selected.,not apply,,,,,not apply,not apply,,not apply,
-n,1,On,Off,No,Dense,Attention-only,,Phase 2; no model selected.,,,,,,not apply,not apply,not apply,not apply,
-n,1,On,Off,No,Dense,Hybrid,,Phase 2; no model selected.,,,,,,not apply,not apply,not apply,not apply,
-n,1,On,Off,No,MoE,Attention-only,,Phase 2; no model selected.,,,,,,not apply,not apply,not apply,not apply,
-n,1,On,Off,No,MoE,Hybrid,,Phase 2; no model selected.,,,,,,not apply,not apply,not apply,not apply,
-n,1,On,Off,Yes,Dense,Attention-only,,Phase 2; no model selected.,,,,,,not apply,not apply,,not apply,
-n,1,On,Off,Yes,Dense,Hybrid,,Phase 2; no model selected.,,,,,,not apply,not apply,,not apply,
-n,1,On,Off,Yes,MoE,Attention-only,,Phase 2; no model selected.,,,,,,not apply,not apply,,not apply,
-n,1,On,Off,Yes,MoE,Hybrid,,Phase 2; no model selected.,,,,,,not apply,not apply,,not apply,
-n,1,On,On,No,Dense,Attention-only,,Phase 2; no model selected.,not apply,,,,,not apply,not apply,not apply,not apply,
-n,1,On,On,No,Dense,Hybrid,,Phase 2; no model selected.,not apply,,,,,not apply,not apply,not apply,not apply,
-n,1,On,On,No,MoE,Attention-only,,Phase 2; no model selected.,not apply,,,,,not apply,not apply,not apply,not apply,
-n,1,On,On,No,MoE,Hybrid,,Phase 2; no model selected.,not apply,,,,,not apply,not apply,not apply,not apply,
-n,1,On,On,Yes,Dense,Attention-only,,Phase 2; no model selected.,not apply,,,,,not apply,not apply,,not apply,
-n,1,On,On,Yes,Dense,Hybrid,,Phase 2; no model selected.,not apply,,,,,not apply,not apply,,not apply,
-n,1,On,On,Yes,MoE,Attention-only,,Phase 2; no model selected.,not apply,,,,,not apply,not apply,,not apply,
-n,1,On,On,Yes,MoE,Hybrid,,Phase 2; no model selected.,not apply,,,,,not apply,not apply,,not apply,
-n,n,Off,Off,No,Dense,Attention-only,,Phase 2; no model selected.,not apply,,,not apply,,,not apply,not apply,not apply,not apply
-n,n,Off,Off,No,Dense,Hybrid,,Phase 2; no model selected.,not apply,,,not apply,,,not apply,not apply,not apply,not apply
-n,n,Off,Off,No,MoE,Attention-only,,Phase 2; no model selected.,not apply,,,not apply,,,not apply,not apply,not apply,not apply
-n,n,Off,Off,No,MoE,Hybrid,,Phase 2; no model selected.,not apply,,,not apply,,,not apply,not apply,not apply,not apply
-n,n,Off,Off,Yes,Dense,Attention-only,,Phase 2; no model selected.,not apply,,,not apply,,not apply,,,,not apply
-n,n,Off,Off,Yes,Dense,Hybrid,,Phase 2; no model selected.,not apply,,,not apply,,not apply,,,,not apply
-n,n,Off,Off,Yes,MoE,Attention-only,,Phase 2; no model selected.,not apply,,,not apply,,not apply,,,,not apply
-n,n,Off,Off,Yes,MoE,Hybrid,,Phase 2; no model selected.,not apply,,,not apply,,not apply,,,,not apply
-n,n,Off,On,No,Dense,Attention-only,,Phase 2; no model selected.,not apply,,,not apply,,,not apply,not apply,not apply,not apply
-n,n,Off,On,No,Dense,Hybrid,,Phase 2; no model selected.,not apply,,,not apply,,,not apply,not apply,not apply,not apply
-n,n,Off,On,No,MoE,Attention-only,,Phase 2; no model selected.,not apply,,,not apply,,,not apply,not apply,not apply,not apply
-n,n,Off,On,No,MoE,Hybrid,,Phase 2; no model selected.,not apply,,,not apply,,,not apply,not apply,not apply,not apply
-n,n,Off,On,Yes,Dense,Attention-only,,Phase 2; no model selected.,not apply,,,not apply,,not apply,,,,not apply
-n,n,Off,On,Yes,Dense,Hybrid,,Phase 2; no model selected.,not apply,,,not apply,,not apply,,,,not apply
-n,n,Off,On,Yes,MoE,Attention-only,,Phase 2; no model selected.,not apply,,,not apply,,not apply,,,,not apply
-n,n,Off,On,Yes,MoE,Hybrid,,Phase 2; no model selected.,not apply,,,not apply,,not apply,,,,not apply
-n,n,On,Off,No,Dense,Attention-only,,Phase 2; no model selected.,not apply,,,not apply,,,not apply,not apply,not apply,not apply
-n,n,On,Off,No,Dense,Hybrid,,Phase 2; no model selected.,not apply,,,not apply,,,not apply,not apply,not apply,not apply
-n,n,On,Off,No,MoE,Attention-only,,Phase 2; no model selected.,not apply,,,not apply,,,not apply,not apply,not apply,not apply
-n,n,On,Off,No,MoE,Hybrid,,Phase 2; no model selected.,not apply,,,not apply,,,not apply,not apply,not apply,not apply
-n,n,On,Off,Yes,Dense,Attention-only,,Phase 2; no model selected.,not apply,,,not apply,,not apply,,,,not apply
-n,n,On,Off,Yes,Dense,Hybrid,,Phase 2; no model selected.,not apply,,,not apply,,not apply,,,,not apply
-n,n,On,Off,Yes,MoE,Attention-only,,Phase 2; no model selected.,not apply,,,not apply,,not apply,,,,not apply
-n,n,On,Off,Yes,MoE,Hybrid,,Phase 2; no model selected.,not apply,,,not apply,,not apply,,,,not apply
-n,n,On,On,No,Dense,Attention-only,,Phase 2; no model selected.,not apply,,,not apply,,,not apply,not apply,not apply,not apply
-n,n,On,On,No,Dense,Hybrid,,Phase 2; no model selected.,not apply,,,not apply,,,not apply,not apply,not apply,not apply
-n,n,On,On,No,MoE,Attention-only,,Phase 2; no model selected.,not apply,,,not apply,,,not apply,not apply,not apply,not apply
-n,n,On,On,No,MoE,Hybrid,,Phase 2; no model selected.,not apply,,,not apply,,,not apply,not apply,not apply,not apply
-n,n,On,On,Yes,Dense,Attention-only,,Phase 2; no model selected.,not apply,,,not apply,,not apply,,,,not apply
-n,n,On,On,Yes,Dense,Hybrid,,Phase 2; no model selected.,not apply,,,not apply,,not apply,,,,not apply
-n,n,On,On,Yes,MoE,Attention-only,,Phase 2; no model selected.,not apply,,,not apply,,not apply,,,,not apply
-n,n,On,On,Yes,MoE,Hybrid,,Phase 2; no model selected.,not apply,,,not apply,,not apply,,,,not apply
+GPUs,Slots,IMC,MTP,Media,Model,State,Model ID,Observations,1) mtp-embedded,2) mtp-companion,3) hybrid,4) long-context,5) batch-text,6) batch-images,7) media-correctness,8) media-prefill,9) example-lifecycle-load
+1,1,Off,Off,No,Dense,Pure,,,,,GAP: attention-only recovery; need other model,GAP: attention-only context baseline; need other model,not apply,not apply,not apply,not apply,
+1,1,Off,Off,No,Dense,Hybrid,,,,GAP: one-slot target-only control; need other model,overlaped by 3:5,,not apply,not apply,not apply,not apply,
+1,1,Off,Off,No,MoE,Pure,,,,,,,not apply,not apply,not apply,not apply,
+1,1,Off,Off,No,MoE,Hybrid,unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL,,GAP: one-slot target-only control,,covered,covered,not apply,not apply,not apply,not apply,
+1,1,Off,Off,Yes,Dense,Pure,,,,,GAP: same-slot image recovery; need other model,,not apply,not apply,,not apply,
+1,1,Off,Off,Yes,Dense,Hybrid,,,,,,,not apply,not apply,,not apply,
+1,1,Off,Off,Yes,MoE,Pure,,,,,,,not apply,not apply,,not apply,
+1,1,Off,Off,Yes,MoE,Hybrid,,,,,GAP: same-slot image recovery; need other model,,not apply,not apply,,not apply,
+1,1,Off,On,No,Dense,Pure,,,,,,,not apply,not apply,not apply,not apply,
+1,1,Off,On,No,Dense,Hybrid,,,,GAP: one-slot drafting; need other model,overlaped by 3:13,,not apply,not apply,not apply,not apply,
+1,1,Off,On,No,MoE,Pure,,,,,,,not apply,not apply,not apply,not apply,
+1,1,Off,On,No,MoE,Hybrid,unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL,,GAP: one-slot drafting,,covered,covered,not apply,not apply,not apply,not apply,
+1,1,Off,On,Yes,Dense,Pure,,,,,,,not apply,not apply,,not apply,
+1,1,Off,On,Yes,Dense,Hybrid,,,,,,,not apply,not apply,,not apply,
+1,1,Off,On,Yes,MoE,Pure,,,,,,,not apply,not apply,,not apply,
+1,1,Off,On,Yes,MoE,Hybrid,,,,,GAP: same-slot image recovery; need other model,,not apply,not apply,,not apply,
+1,1,On,Off,No,Dense,Pure,unsloth/Qwen3-0.6B-Q8_0,Lifecycle 8K; native 32K.,,,GAP: attention-only recovery,GAP: attention-only context baseline,not apply,not apply,not apply,not apply,covered
+1,1,On,Off,No,Dense,Hybrid,,,,GAP: one-slot target-only control; need other model,overlaped by 3:21,,not apply,not apply,not apply,not apply,
+1,1,On,Off,No,MoE,Pure,,,,,,,not apply,not apply,not apply,not apply,
+1,1,On,Off,No,MoE,Hybrid,unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL,,GAP: one-slot target-only control,,covered,covered,not apply,not apply,not apply,not apply,
+1,1,On,Off,Yes,Dense,Pure,,,,,GAP: same-slot image recovery; need other model,,not apply,not apply,,not apply,
+1,1,On,Off,Yes,Dense,Hybrid,,,,,,,not apply,not apply,,not apply,
+1,1,On,Off,Yes,MoE,Pure,,,,,,,not apply,not apply,,not apply,
+1,1,On,Off,Yes,MoE,Hybrid,,,,,GAP: same-slot image recovery; need other model,,not apply,not apply,,not apply,
+1,1,On,On,No,Dense,Pure,,,,,,,not apply,not apply,not apply,not apply,
+1,1,On,On,No,Dense,Hybrid,,,,GAP: one-slot drafting; need other model,overlaped by 3:29,,not apply,not apply,not apply,not apply,
+1,1,On,On,No,MoE,Pure,,,,,,,not apply,not apply,not apply,not apply,
+1,1,On,On,No,MoE,Hybrid,unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL,,GAP: one-slot drafting,,covered,covered,not apply,not apply,not apply,not apply,
+1,1,On,On,Yes,Dense,Pure,,,,,,,not apply,not apply,,not apply,
+1,1,On,On,Yes,Dense,Hybrid,,,,,,,not apply,not apply,,not apply,
+1,1,On,On,Yes,MoE,Pure,,,,,,,not apply,not apply,,not apply,
+1,1,On,On,Yes,MoE,Hybrid,,,,,GAP: same-slot image recovery; need other model,,not apply,not apply,,not apply,
+1,n,Off,Off,No,Dense,Pure,,,,,not apply,,GAP: attention-only isolation/load; qualify 32K,not apply,not apply,not apply,not apply
+1,n,Off,Off,No,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q4_K_XL,,overlaped by 2:35,covered,not apply,,overlaped by 5:37,not apply,not apply,not apply,not apply
+1,n,Off,Off,No,MoE,Pure,,,,,not apply,,,not apply,not apply,not apply,not apply
+1,n,Off,Off,No,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,,covered,overlaped by 1:37,not apply,,covered,not apply,not apply,not apply,not apply
+1,n,Off,Off,Yes,Dense,Pure,,,,,not apply,,not apply,,GAP: attention-only image state; need other model,,not apply
+1,n,Off,Off,Yes,Dense,Hybrid,,,,,not apply,,not apply,,GAP: companion image-state integrity; need other model,,not apply
+1,n,Off,Off,Yes,MoE,Pure,,,,,not apply,,not apply,,,,not apply
+1,n,Off,Off,Yes,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,,,,not apply,,not apply,covered,covered,covered; GAP: isolated media prefill,not apply
+1,n,Off,On,No,Dense,Pure,,,,,not apply,,,not apply,not apply,not apply,not apply
+1,n,Off,On,No,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q4_K_XL,,,covered,not apply,,overlaped by 5:45,not apply,not apply,not apply,not apply
+1,n,Off,On,No,MoE,Pure,,,,,not apply,,,not apply,not apply,not apply,not apply
+1,n,Off,On,No,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,,covered,,not apply,,covered,not apply,not apply,not apply,not apply
+1,n,Off,On,Yes,Dense,Pure,,,,,not apply,,not apply,,,,not apply
+1,n,Off,On,Yes,Dense,Hybrid,,,,,not apply,,not apply,,GAP: companion image-state integrity; need other model,,not apply
+1,n,Off,On,Yes,MoE,Pure,,,,,not apply,,not apply,,,,not apply
+1,n,Off,On,Yes,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,,,,not apply,,not apply,covered,covered,covered,not apply
+1,n,On,Off,No,Dense,Pure,,,,,not apply,,GAP: attention-only isolation/load; qualify 32K,not apply,not apply,not apply,not apply
+1,n,On,Off,No,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q4_K_XL,,overlaped by 2:51,covered,not apply,,overlaped by 5:53,not apply,not apply,not apply,not apply
+1,n,On,Off,No,MoE,Pure,,,,,not apply,,,not apply,not apply,not apply,not apply
+1,n,On,Off,No,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,,covered,overlaped by 1:53,not apply,,covered,not apply,not apply,not apply,not apply
+1,n,On,Off,Yes,Dense,Pure,,,,,not apply,,not apply,,GAP: attention-only image state; need other model,,not apply
+1,n,On,Off,Yes,Dense,Hybrid,,,,,not apply,,not apply,,GAP: companion image-state integrity; need other model,,not apply
+1,n,On,Off,Yes,MoE,Pure,,,,,not apply,,not apply,,,,not apply
+1,n,On,Off,Yes,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,,,,not apply,,not apply,covered,covered,covered; GAP: isolated media prefill,not apply
+1,n,On,On,No,Dense,Pure,,,,,not apply,,,not apply,not apply,not apply,not apply
+1,n,On,On,No,Dense,Hybrid,unsloth/Qwen3.8-27B-UD-Q4_K_XL,,,covered,not apply,,overlaped by 5:61,not apply,not apply,not apply,not apply
+1,n,On,On,No,MoE,Pure,,,,,not apply,,,not apply,not apply,not apply,not apply
+1,n,On,On,No,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,,covered,,not apply,,covered,not apply,not apply,not apply,not apply
+1,n,On,On,Yes,Dense,Pure,,,,,not apply,,not apply,,,,not apply
+1,n,On,On,Yes,Dense,Hybrid,,,,,not apply,,not apply,,GAP: companion image-state integrity; need other model,,not apply
+1,n,On,On,Yes,MoE,Pure,,,,,not apply,,not apply,,,,not apply
+1,n,On,On,Yes,MoE,Hybrid,unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL,,,,not apply,,not apply,covered,covered,covered,not apply
+n,1,Off,Off,No,Dense,Pure,,Phase 2; no model selected.,,,,,not apply,not apply,not apply,not apply,
+n,1,Off,Off,No,Dense,Hybrid,,Phase 2; no model selected.,,,,,not apply,not apply,not apply,not apply,
+n,1,Off,Off,No,MoE,Pure,,Phase 2; no model selected.,,,,,not apply,not apply,not apply,not apply,
+n,1,Off,Off,No,MoE,Hybrid,,Phase 2; no model selected.,,,,,not apply,not apply,not apply,not apply,
+n,1,Off,Off,Yes,Dense,Pure,,Phase 2; no model selected.,,,,,not apply,not apply,,not apply,
+n,1,Off,Off,Yes,Dense,Hybrid,,Phase 2; no model selected.,,,,,not apply,not apply,,not apply,
+n,1,Off,Off,Yes,MoE,Pure,,Phase 2; no model selected.,,,,,not apply,not apply,,not apply,
+n,1,Off,Off,Yes,MoE,Hybrid,,Phase 2; no model selected.,,,,,not apply,not apply,,not apply,
+n,1,Off,On,No,Dense,Pure,,Phase 2; no model selected.,,,,,not apply,not apply,not apply,not apply,
+n,1,Off,On,No,Dense,Hybrid,,Phase 2; no model selected.,,,,,not apply,not apply,not apply,not apply,
+n,1,Off,On,No,MoE,Pure,,Phase 2; no model selected.,,,,,not apply,not apply,not apply,not apply,
+n,1,Off,On,No,MoE,Hybrid,,Phase 2; no model selected.,,,,,not apply,not apply,not apply,not apply,
+n,1,Off,On,Yes,Dense,Pure,,Phase 2; no model selected.,,,,,not apply,not apply,,not apply,
+n,1,Off,On,Yes,Dense,Hybrid,,Phase 2; no model selected.,,,,,not apply,not apply,,not apply,
+n,1,Off,On,Yes,MoE,Pure,,Phase 2; no model selected.,,,,,not apply,not apply,,not apply,
+n,1,Off,On,Yes,MoE,Hybrid,,Phase 2; no model selected.,,,,,not apply,not apply,,not apply,
+n,1,On,Off,No,Dense,Pure,,Phase 2; no model selected.,,,,,not apply,not apply,not apply,not apply,
+n,1,On,Off,No,Dense,Hybrid,,Phase 2; no model selected.,,,,,not apply,not apply,not apply,not apply,
+n,1,On,Off,No,MoE,Pure,,Phase 2; no model selected.,,,,,not apply,not apply,not apply,not apply,
+n,1,On,Off,No,MoE,Hybrid,,Phase 2; no model selected.,,,,,not apply,not apply,not apply,not apply,
+n,1,On,Off,Yes,Dense,Pure,,Phase 2; no model selected.,,,,,not apply,not apply,,not apply,
+n,1,On,Off,Yes,Dense,Hybrid,,Phase 2; no model selected.,,,,,not apply,not apply,,not apply,
+n,1,On,Off,Yes,MoE,Pure,,Phase 2; no model selected.,,,,,not apply,not apply,,not apply,
+n,1,On,Off,Yes,MoE,Hybrid,,Phase 2; no model selected.,,,,,not apply,not apply,,not apply,
+n,1,On,On,No,Dense,Pure,,Phase 2; no model selected.,,,,,not apply,not apply,not apply,not apply,
+n,1,On,On,No,Dense,Hybrid,,Phase 2; no model selected.,,,,,not apply,not apply,not apply,not apply,
+n,1,On,On,No,MoE,Pure,,Phase 2; no model selected.,,,,,not apply,not apply,not apply,not apply,
+n,1,On,On,No,MoE,Hybrid,,Phase 2; no model selected.,,,,,not apply,not apply,not apply,not apply,
+n,1,On,On,Yes,Dense,Pure,,Phase 2; no model selected.,,,,,not apply,not apply,,not apply,
+n,1,On,On,Yes,Dense,Hybrid,,Phase 2; no model selected.,,,,,not apply,not apply,,not apply,
+n,1,On,On,Yes,MoE,Pure,,Phase 2; no model selected.,,,,,not apply,not apply,,not apply,
+n,1,On,On,Yes,MoE,Hybrid,,Phase 2; no model selected.,,,,,not apply,not apply,,not apply,
+n,n,Off,Off,No,Dense,Pure,,Phase 2; no model selected.,,,not apply,,,not apply,not apply,not apply,not apply
+n,n,Off,Off,No,Dense,Hybrid,,Phase 2; no model selected.,,,not apply,,,not apply,not apply,not apply,not apply
+n,n,Off,Off,No,MoE,Pure,,Phase 2; no model selected.,,,not apply,,,not apply,not apply,not apply,not apply
+n,n,Off,Off,No,MoE,Hybrid,,Phase 2; no model selected.,,,not apply,,,not apply,not apply,not apply,not apply
+n,n,Off,Off,Yes,Dense,Pure,,Phase 2; no model selected.,,,not apply,,not apply,,,,not apply
+n,n,Off,Off,Yes,Dense,Hybrid,,Phase 2; no model selected.,,,not apply,,not apply,,,,not apply
+n,n,Off,Off,Yes,MoE,Pure,,Phase 2; no model selected.,,,not apply,,not apply,,,,not apply
+n,n,Off,Off,Yes,MoE,Hybrid,,Phase 2; no model selected.,,,not apply,,not apply,,,,not apply
+n,n,Off,On,No,Dense,Pure,,Phase 2; no model selected.,,,not apply,,,not apply,not apply,not apply,not apply
+n,n,Off,On,No,Dense,Hybrid,,Phase 2; no model selected.,,,not apply,,,not apply,not apply,not apply,not apply
+n,n,Off,On,No,MoE,Pure,,Phase 2; no model selected.,,,not apply,,,not apply,not apply,not apply,not apply
+n,n,Off,On,No,MoE,Hybrid,,Phase 2; no model selected.,,,not apply,,,not apply,not apply,not apply,not apply
+n,n,Off,On,Yes,Dense,Pure,,Phase 2; no model selected.,,,not apply,,not apply,,,,not apply
+n,n,Off,On,Yes,Dense,Hybrid,,Phase 2; no model selected.,,,not apply,,not apply,,,,not apply
+n,n,Off,On,Yes,MoE,Pure,,Phase 2; no model selected.,,,not apply,,not apply,,,,not apply
+n,n,Off,On,Yes,MoE,Hybrid,,Phase 2; no model selected.,,,not apply,,not apply,,,,not apply
+n,n,On,Off,No,Dense,Pure,,Phase 2; no model selected.,,,not apply,,,not apply,not apply,not apply,not apply
+n,n,On,Off,No,Dense,Hybrid,,Phase 2; no model selected.,,,not apply,,,not apply,not apply,not apply,not apply
+n,n,On,Off,No,MoE,Pure,,Phase 2; no model selected.,,,not apply,,,not apply,not apply,not apply,not apply
+n,n,On,Off,No,MoE,Hybrid,,Phase 2; no model selected.,,,not apply,,,not apply,not apply,not apply,not apply
+n,n,On,Off,Yes,Dense,Pure,,Phase 2; no model selected.,,,not apply,,not apply,,,,not apply
+n,n,On,Off,Yes,Dense,Hybrid,,Phase 2; no model selected.,,,not apply,,not apply,,,,not apply
+n,n,On,Off,Yes,MoE,Pure,,Phase 2; no model selected.,,,not apply,,not apply,,,,not apply
+n,n,On,Off,Yes,MoE,Hybrid,,Phase 2; no model selected.,,,not apply,,not apply,,,,not apply
+n,n,On,On,No,Dense,Pure,,Phase 2; no model selected.,,,not apply,,,not apply,not apply,not apply,not apply
+n,n,On,On,No,Dense,Hybrid,,Phase 2; no model selected.,,,not apply,,,not apply,not apply,not apply,not apply
+n,n,On,On,No,MoE,Pure,,Phase 2; no model selected.,,,not apply,,,not apply,not apply,not apply,not apply
+n,n,On,On,No,MoE,Hybrid,,Phase 2; no model selected.,,,not apply,,,not apply,not apply,not apply,not apply
+n,n,On,On,Yes,Dense,Pure,,Phase 2; no model selected.,,,not apply,,not apply,,,,not apply
+n,n,On,On,Yes,Dense,Hybrid,,Phase 2; no model selected.,,,not apply,,not apply,,,,not apply
+n,n,On,On,Yes,MoE,Pure,,Phase 2; no model selected.,,,not apply,,not apply,,,,not apply
+n,n,On,On,Yes,MoE,Hybrid,,Phase 2; no model selected.,,,not apply,,not apply,,,,not apply

@@ -14,8 +14,10 @@ not authorization to implement or run the full matrix.
 The intended suite runs a fixed, representative coverage set with **one command**.
 There is no operator-driven sequence of qualification, state, and deep-test runs.
 Fixture validation, mode selection, loading/unloading, short state probes, selected
-context stages, sustained load, and lifecycle checks belong inside that invocation.
-One command does not mean every profile runs in every matrix cell.
+context stages and sustained load belong inside the existing `test-load-all`
+invocation. One command does not mean every profile runs in every matrix cell.
+Lifecycle retains its separate `example-lifecycle-load` command: its one selected
+admission/cancellation case does not need matrix expansion or runner integration.
 
 SDK tests run separately as an existing prerequisite. The reliability command
 must not invoke them again or duplicate their smoke/algorithm checks. Its first
@@ -39,8 +41,8 @@ before they support a performance-regression verdict.
 A passing report should establish that the selected behaviors were exercised and
 no regressions were detected in that scope, with provenance and limitations. It
 cannot prove the absence of all bugs. The current tools do not yet implement this
-whole contract; in particular lifecycle is separate and several selected paths
-remain GAPs. This document defines the target, not a new command implementation.
+whole contract; several selected paths remain GAPs. This document defines extensions
+to the existing command, not a replacement command.
 
 ## Matrix labels
 
@@ -50,12 +52,15 @@ remain GAPs. This document defines the target, not a new command implementation.
 - Empty: uncovered; its priority is not yet decided.
 - `overlaped by T:L`: the required behavior already has a `covered` cell in tool
   column T (the number in its header), CSV line L (header is line 1). No separate
-  run of this profile is needed for that cell's behavior. Update references if
+  run of this profile is needed for the selected behavior. Cross-routing Hybrid
+  references represent common Kronk state/load behavior, not identical native
+  computation or fixture-specific backend qualification. Update references if
   lines or tool numbers move.
 - `GAP: ...`: an uncovered path proposed as important.
+- `covered; GAP: ...`: the current contract exists, but a selected additional
+  workload/path is missing inside the same matrix cell.
 - `GAP: ...; need other model`: important coverage with an outstanding model
-  selection. For classic drafting this includes the separate draft model, even
-  when a target is selected.
+  selection.
 
 `need other model` does **not** necessarily mean downloading a new model. An
 existing model may fit after selecting it for that row and configuring a suitable
@@ -77,7 +82,7 @@ input in these tools, not general audio/video coverage.
 | example-lifecycle-load | unsloth/Qwen3-0.6B-Q8_0 | Dense / Attention-only | 1 | No |
 
 Lifecycle is separate: its fixture has IMC on and no configured MTP, but the
-lifecycle tool does not assert those modes. No `classic-drafter` profile exists.
+lifecycle tool does not assert those modes.
 
 ## What covered cells contain, and their internal gaps
 
@@ -211,26 +216,43 @@ invariants. It does not replace the state, batch, or media profiles.
 ### How internal gaps appear in the CSV
 
 A `covered` marker stays concise: it means the bounded contract above exists,
-even when that contract has limitations. Internal gaps are recorded here; `GAP`
-cells highlight selected missing combinations/workloads elsewhere in the matrix.
+even when that contract has limitations. Internal gaps are recorded here; selected
+additions inside a covered cell use `covered; GAP: ...`. Other `GAP` cells highlight
+selected missing combinations/workloads elsewhere in the matrix.
 Neither notation automatically commits us to extending every profile. Some
 limitations are intentionally covered by another profile instead.
 
 ## Confirmed overlaps
 
-| Empty cell (tool:line) | Covered source (tool:line) | Reason |
+| Overlapped cell (tool:line) | Covered source (tool:line) | Reason |
 | --- | --- | --- |
-| 2:35 | 3:35 | Dense Hybrid target-only control; IMC off. |
-| 3:37 | 2:37 | MoE Hybrid target-only control; IMC off. |
-| 2:51 | 3:51 | Dense Hybrid target-only control; IMC on. |
-| 3:53 | 2:53 | MoE Hybrid target-only control; IMC on. |
+| 1:35 | 2:35 | Dense Hybrid target-only control; IMC off. |
+| 2:37 | 1:37 | MoE Hybrid target-only control; IMC off. |
+| 1:51 | 2:51 | Dense Hybrid target-only control; IMC on. |
+| 2:53 | 1:53 | MoE Hybrid target-only control; IMC on. |
+| 3:3 | 3:5 | Representative Hybrid state recovery; MTP off, IMC off. |
+| 3:11 | 3:13 | Representative Hybrid state recovery; MTP on, IMC off. |
+| 3:19 | 3:21 | Representative Hybrid state recovery; MTP off, IMC on. |
+| 3:27 | 3:29 | Representative Hybrid state recovery; MTP on, IMC on. |
+| 5:35 | 5:37 | Representative Hybrid sustained text load; MTP off, IMC off. |
+| 5:43 | 5:45 | Representative Hybrid sustained text load; MTP on, IMC off. |
+| 5:51 | 5:53 | Representative Hybrid sustained text load; MTP off, IMC on. |
+| 5:59 | 5:61 | Representative Hybrid sustained text load; MTP on, IMC on. |
 
-Both MTP profiles call the same `runMTPProfile` implementation. With MTP off,
+The first four references are exact workload duplication: both MTP profiles call
+the same `runMTPProfile` implementation. With MTP off,
 backend/source and draft-KV evidence checks are skipped, and the profile adds no
 embedded-versus-companion assertion. Each reference stays on the same model,
 slot configuration, media mode, and IMC setting: running the other profile name
 on that configuration would repeat its calibrated concurrent text control.
 This does not remove the controls on either of the two distinct target models.
+
+The eight state/batch references select representative coverage across Hybrid
+routing types. They preserve GPU/slot category, IMC, MTP and media settings while
+using the retained MoE Hybrid fixture. They do not assert that the Dense fixture
+itself ran, that exact slot counts match within the many-slot category, or that
+native expert computation and companion/embedded backends are interchangeable.
+Dedicated speculation checks remain selected separately.
 
 Other empty cells remain unmarked unless the full required behavior is replaced:
 
@@ -254,19 +276,27 @@ Other empty cells remain unmarked unless the full required behavior is replaced:
   Attention-only batch GAPs. Remove the additional MoE Attention-only batch GAPs
   on lines 36/52: a second routing type is not required merely to represent
   attention-only state. Those cells are blank, not proven overlaps.
-- **Classic:** retain four text-only GAPs: attention-only trim rollback on lines
-  2/18 and hybrid snapshot/replay rollback on lines 3/19, with IMC off/on. Remove
-  blanket classic GAPs across MoE and media combinations. Require rejected rounds
-  and evidence of the selected rollback path; a Hybrid label alone does not
-  guarantee the snapshot fallback executes.
+- **No routing-only Hybrid duplication:** remove Dense Hybrid recovery GAPs at
+  3:3/11/19/27 and text-batch GAPs at 5:35/43/51/59. Both Hybrid routing variants
+  use the same Kronk state-management/batching branches; a Dense label alone does
+  not justify another recovery suite or deep batch run. Keep existing Hybrid
+  state/context and sustained text/image workloads. Mark those eight cells
+  `overlaped by T:L` using the representative sources above, not `not apply`.
+  Native Dense/MoE computation differs, but this extra integration coverage is not
+  mandatory in the selected suite. Keep companion/embedded checks for their distinct speculation
+  paths, not their routing labels. Expert cache/offload coverage would need its
+  own explicit configuration and assertions; duplicating default profiles does
+  not establish it.
 - **MTP:** retain embedded/companion activation and one-slot GAPs, without
   multiplying them over Attention-only just to populate another category.
 - **Media prefill:** remove companion-only prefill GAPs. Both current Qwen
   fixtures have input-mixing support; a companion file alone does not identify
-  another scheduler branch. Add isolated-prefill GAPs on lines 40/56, using an
-  Attention-only MoE candidate because it reaches that scheduling path, not
-  because that architecture category needs another test. Shared-capable fixtures
-  may also isolate particular chunks; the runner must attest which paths occur.
+  another scheduler branch. Reuse Qwen3.6 for isolated-prefill workloads with IMC
+  off/on and MTP off: cells 8:41/57 now retain `covered` with an internal GAP.
+  Remove the dedicated Gemma-driven GAPs at 8:40/56; those cells become blank,
+  not overlaps. Shared-capable models can isolate chunks that exceed shared batch
+  capacity. Attest actual execution; Gemma remains optional for capability-driven
+  isolation specifically.
 - **Image batch/lifecycle:** keep existing coverage. Additional architecture
   combinations remain blank rather than mandatory GAPs. They are not claimed to
   be fully covered by other profiles.
@@ -292,96 +322,161 @@ workload changes remain necessary; a suggested model does not close a GAP.
 
 | Gap keywords | Tool columns | Why important | Model fit / selection needed |
 | --- | --- | --- | --- |
-| classic trim rollback | classic-drafter | Cover classic loading, verification, rejection and attention-only position trimming. No dedicated profile exists. | **Repository candidate:** target `unsloth/Qwen3-1.7B-Q4_K_M` + reused draft `unsloth/Qwen3-0.6B-Q8_0`, the pair defined by `CfgClassicDraftChat`. Use one-slot, text-only configurations with IMC off/on. |
-| classic snapshot rollback | classic-drafter | Cover hybrid pre-verification snapshot restoration and accepted-prefix replay when native rollback is insufficient. | **Reused target candidate:** `unsloth/Qwen3.8-27B-UD-Q4_K_XL` with MTP disabled. No compatible full classic draft is established here. A pair remains a required fixture-design dependency, not an operator follow-up. The workload must force and attest this rollback branch. |
 | one-slot drafting / one-slot target-only control | mtp-embedded; mtp-companion | One active request on a multi-slot context does not test native one-slot capacities. Cover active drafting and its disabled control without a deep batch run. | **Reuse** `unsloth/Qwen3.8-27B-UD-Q4_K_XL` for companion rows, configured with one slot. For embedded GAPs, reuse `unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL` with one slot, not Flash-Next: Flash-Next uses a companion, not embedded MTP. No new model or Flash-Next backend adaptation is required for this slot-count path. |
-| dense hybrid recovery | hybrid | Current one-slot state coverage uses MoE Hybrid. Add dense recurrent-state restore and cancellation/recovery. | **Reuse** `unsloth/Qwen3.8-27B-UD-Q4_K_XL` with a one-slot state-probe fixture, for MTP on/off. Its existing two-slot fixture is not sufficient. |
 | attention-only recovery | hybrid | Establish a non-recurrent baseline for deterministic reuse and same-slot cancellation/recovery. The existing assertions are useful beyond hybrid architectures. | **Reuse** `unsloth/Qwen3-0.6B-Q8_0` for both IMC settings, with a one-slot state-probe fixture. The IMC-off row does not require a different model merely because its Model ID is empty. |
-| attention-only context baseline | long-context | Separate ordinary attention/cache behavior from recurrent-state behavior during staged retrieval. | **Reuse** `unsloth/Qwen3-0.6B-Q8_0` for the small stages under its current 8K configuration, for both IMC settings. Native context support above 8K has not been established here. If larger stages are necessary, qualify its GGUF context limit first; no full-128K attention-only candidate is selected by this assessment. |
-| attention-only isolation/load | batch-text | Represent attention-only multi-session state integrity alongside existing Hybrid load coverage; no additional MoE baseline is required by this distinction. | **Reuse candidate** `unsloth/Qwen3-0.6B-Q8_0`, conditional on native support for the unchanged 30K prompt workload plus generation, and a larger-context, multi-slot fixture. Its current 8K fixture cannot do this. Establish supported context during fixture design and validate it automatically in the suite. Both selected rows keep MTP off. |
-| dense hybrid isolation/load | batch-text | Companion activation checks do not cover growing histories, canary isolation, oversubscription, or all-slot generation overlap. | Qwen3.8-27B is already selected and fits Dense Hybrid. Add a matching batch fixture; its current two slots differ from the batch default of four. |
+| attention-only context baseline | long-context | Separate ordinary attention/cache behavior from recurrent-state behavior during staged retrieval. | **Reuse** `unsloth/Qwen3-0.6B-Q8_0`: upstream and Unsloth document 32,768-token context; 8K is only our lifecycle configuration. Add a separate fixture and select stages within that budget with output headroom. No full-128K Attention-only fixture is selected. |
+| attention-only isolation/load | batch-text | Represent attention-only multi-session state integrity alongside existing Hybrid load coverage; no additional MoE baseline is required by this distinction. | **Reuse candidate** `unsloth/Qwen3-0.6B-Q8_0` with a multi-slot, 32K fixture. The 30K minimum is not a ceiling: qualify actual accumulated history, template overhead and output against 32,768 tokens, plus canary correctness and overlap. Current 8K cannot do this. Alternatives: catalog Qwen3-1.7B-Q4_K_M or Qwen2.5-VL-3B-Instruct-Q8_0; both also have documented 32K context, not extra headroom. Keep MTP off. |
 | same-slot image recovery | hybrid | Image cancellation/state cleanup must not be hidden by recovery on a spare slot, for either state representation. | **Hybrid: reuse** `unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL` and its projection, with one slot and MTP on/off. **Attention-only: catalog candidate** `ggml-org/Qwen2.5-VL-3B-Instruct-Q8_0` and its projection, with one slot and MTP off. Confirm normalized state classification when selecting this fixture. Add image-state assertions; the current state workload is text-only. |
 | companion image-state integrity | media-correctness | Image replay/append and cancellation on the embedded model do not qualify the companion model's image-state path. | **Reuse** `unsloth/Qwen3.8-27B-UD-Q4_K_XL` with its projection and companion. Configure the media profile for this fixture; preserve actual image-drafting assertions when MTP is on. |
 | attention-only image state | media-correctness | Represent attention-only image replay/append, text isolation, cancellation and recovery alongside Hybrid state coverage. | **Catalog candidate:** `ggml-org/Qwen2.5-VL-3B-Instruct-Q8_0` and its projection, with a multi-slot fixture and MTP off. Use IMC off/on; state/capability validation belongs inside the eventual suite. |
-| isolated media prefill | media-prefill | Exercise scheduling and text responsiveness where media embeddings cannot join a shared decode contribution. | **Repository candidate:** `unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M`, already used by SDK vision tests, with its projection, at least two slots and MTP off. Gemma4 is unlisted in the input-mixing allowlist and therefore uses isolated embedding contributions. Attest actual execution mode and preserve meaningful responsiveness assertions; current phase-level polling alone does not identify this branch. |
+| isolated media prefill | media-prefill | Exercise scheduling and text responsiveness where media embeddings cannot join a shared decode contribution. | **Reuse** existing Qwen3.6 embedded fixture and projection, at least two slots, MTP off and IMC off/on. Choose chunk size/prefill capacity that forces isolation and attest actual execution. Existing phase-level polling is insufficient. Gemma-4-26B-A4B remains optional only if model-capability-driven isolation itself is selected for model-backed coverage. |
 
-### Classic fixture boundary
+### Latest fixture research and reuse decisions
 
-The Qwen3-1.7B / Qwen3-0.6B pair is suitable for the selected Attention-only fixture,
-not the Hybrid fixture. A compatible Hybrid pair still needs to be established
-as part of suite development. Separate MTP companion heads are not full classic
-draft models; matching vocabulary sizes alone is insufficient. The removed MoE
-and media classic GAPs are not claims of overlap or unsupported combinations:
-they are outside the currently selected regression set.
+- **Why retain Attention-only:** Hybrid contains attention layers, but exercises
+  combined recurrent/attention memory rather than ordinary Attention-only memory
+  in isolation. Keep representative recovery, context and multi-session load
+  checks; do not multiply every Hybrid workload across architectures.
+- **Qwen3-0.6B:** both the official model and Unsloth GGUF cards document 32,768
+  tokens. This establishes advertised capacity, not successful execution of our
+  exact long-history workload. Start with reuse; retain the current lifecycle
+  configuration and create separate reliability aliases. Qwen3-1.7B-Q4_K_M is
+  an existing SDK/catalog alternative, not a larger-context replacement.
+- **Attention-only images:** our existing vision fixtures are Hybrid; our current
+  Attention-only text fixtures lack vision. Qwen2.5-VL-3B supplies the missing
+  combination, not merely another image model. It could also consolidate
+  Attention-only text fixtures if qualified. Catalog alternatives include
+  Qwen2.5-Omni and Ministral-3 vision models; none is selected here.
+- **No mandatory Gemma addition:** Qwen can reach isolated execution when a
+  whole image chunk exceeds shared capacity; noncausal contributions also isolate.
+  Gemma's unlisted mixing capability takes a different planner condition, but a
+  separate model is unnecessary for the selected isolated-execution objective.
+  The existing covered prefill cells do not prove either branch without evidence.
 
-### Existing classic SDK coverage versus reliability additions
-
-This audit concerns classic separate-GGUF drafting, not a coverage audit of every
-SDK model family. `tests/draft` is the only model-backed SDK suite found using
-`CfgClassicDraftChat` / a classic `DraftModel` configuration. Other hybrid/IMC/MTP
-suites cannot be counted as exercising that separate draft context.
-
-| Existing test | Actual assertion | Boundary |
-| --- | --- | --- |
-| `draft/TestSuite/Chats/DraftChat` | Load the Qwen3-1.7B target and Qwen3-0.6B draft; complete an SDK `Chat`; validate response identity/structure and applicable nonempty content/reasoning fields; require a usage block. | One short echo prompt, not growing histories or a controlled rejection scenario. Missing the requested word `Gorilla` is a warning, not a failure. |
-| `draft/TestSuite/Chats/DraftStreamingChat` | Drain SDK `ChatStreaming`, validate response chunks, accumulate nonempty content or reasoning, and require final usage. | No HTTP/SSE server path, client disconnect, or post-cancellation request. Missing `Gorilla` is also warning-only. |
-| `draft/TestSuite/DraftAcceptance` | At least one request across the suite reports accepted drafts. | Per-request zero drafting/acceptance is allowed. This assertion is skipped on ROCm. It does not establish partial rejection, rollback correctness, acceptance rate, or acceleration. |
-| Shared setup/cleanup | Create the model and check `Unload` returns without error. Default configuration has one slot, 8K context, four draft candidates and IMC enabled by default. | No IMC on/off matrix, cache-reuse assertion, draft resource accounting, reload/recovery assertion, or leak bound. Concurrent callers can queue on one slot; they are not multi-slot drafting. |
-| Classic algorithm unit tests | Synthetic greedy partial rejection, probabilistic acceptance/residual rejection sampling, draft sizing/recovery-probe selection, request-state reset, and keep-position arithmetic. | Supplied tokens/probabilities and callbacks, not native target/draft memory. No end-to-end adaptive-throttle recovery assertion. |
-| Engine/controller unit tests | Draft/context/output budget boundaries, snapshot-needed selection, snapshot failure handling, replay-batch token/position construction, and fake-host controller sequencing. | Do not restore a real hybrid sequence and verify the resulting continuation. |
-
-The chat helpers retry returned errors, so eventual success can hide transient
-attempt failures in the overall PASS; the failed attempts remain in logs.
-Missing model files skip the whole SDK draft suite. These are evidence limits,
-not a request to rerun it from reliability or modify SDK tests in this task.
-
-**Keep outside reliability:** another load/chat/accepted-token smoke test,
-duplicate probability arithmetic, or a benchmark claiming this pair must be
-faster. Those do not justify a new profile.
-
-**Add to reliability as one bounded classic state workload:**
-
-1. **Native rejection/continuation:** demonstrate rejected drafts and validate
-   continued output, for attention-only trimming and hybrid snapshot/replay.
-   Record which branch actually executed. Use independently specified output
-   expectations and a controlled greedy target-only comparison where applicable;
-   do not demand identical stochastic text merely because seeds match.
-2. **State reuse:** a long-enough cold/exact/append history with IMC off/on;
-   verify expected output, reuse only when enabled, and no stale-session content.
-   A configured IMC flag or repeated short echo prompt is not reuse evidence.
-3. **Cancellation/recovery:** disconnect during active classic generation, then
-   verify a fresh request on the only slot completes correctly without stale
-   output. Check both target and separate draft state recover; include queued
-   callers without multiplying this into multi-slot classic configurations.
-4. **Native termination boundaries:** small output budgets and a near-context
-   case must terminate within their limits and permit a clean subsequent request.
-   Unit-tested budget arithmetic alone does not validate native finalization.
-
-Exercise these through the server in one planned invocation, retaining existing
-SDK smoke coverage as a separate prerequisite. Several checks can share the same
-requests; this is not a request for four additional tools or a full deep-batch
-matrix. Reliable branch evidence and a compatible Hybrid pair are still design
-dependencies, so the current classic GAP cells remain GAPs. End-to-end throttle
-recovery is a lower-priority follow-up, not a reason to duplicate its existing
-unit cases or add an unbounded performance workload.
+These are source/model-card findings, not inference results. Model
+suggestions remain here rather than populating CSV Model IDs before selection.
 
 ## Boundaries for the follow-up work
 
 - The table marks missing workloads/configurations, not failed executions.
 - GAP marks are proposed priorities, not proof that every blank is dispensable.
   Multiple cells can be addressed by one fixture or workload improvement.
-- Classic drafting is separate from MTP: it requires one slot and occupies
-  MTP-off rows. Classic itself must be enabled; MTP off does not mean all
-  speculation is disabled. Multi-slot and MTP-on combinations remain `not apply`
-  in that column.
 - Some model choices require capability qualification. A routing/state label
-  alone does not prove MTP, classic drafting, or media support.
+  alone does not prove MTP or media support.
 - Keep existing assertions, including batch's per-turn all-slot generation
   overlap. Image batch intentionally does not require whole-output equality.
 - Multi-GPU remains phase 2. Its applicable empty cells have not been promoted
   to current-phase GAPs.
 - Combine short state checks, representative sustained load and selected context
   stages in the same command; do not require manual multi-step execution.
+
+## Final review and implementation plan
+
+### Review result
+
+The CSV has 128 unique combinations: 64 single-GPU rows followed by 64 multi-GPU
+rows. Its tool cells contain 33 covered contracts and 28 selected GAP markers
+(two are inside covered cells), 12 overlap references and 480 `not apply`
+markers; 601 cells remain blank. All overlap references resolve to covered cells
+with matching GPU/slot categories, IMC, MTP, media and state. Eight intentionally
+cross routing types as explained above. These are design counts,
+not execution results or the number of distinct workloads required.
+Excluding lifecycle, there are 58 distinct selected reliability cells:
+32 covered and 28 GAP markers, with two cells belonging to both sets.
+This is a scope refinement, not newly implemented coverage or weakened assertions
+in the retained workloads.
+
+No new requirement mismatch was identified for the current covered fixtures in
+this review. Their bounded assertions and internal gaps remain as described
+above. Active image drafting remains a requirement to validate, not a reason to
+accept target-only fallback. Blank cells are not automatically dispensable, and
+selecting a model does not itself close a GAP.
+
+Dependencies to resolve during development, not through operator follow-up runs:
+
+- An Attention-only fixture supporting the unchanged 30K batch workload plus
+  generation. The existing 8K configuration cannot. Required context stages also
+  need explicit selection per fixture; running any one small stage is inadequate.
+- Request-correlated evidence for required rollback and shared/isolated media
+  execution. Optional logs and phase-only polling do not yet prove these paths.
+  Single-GPU execution also needs placement evidence, not just available hardware.
+
+### Ordered development steps
+
+These are implementation steps, not separate coverage runs for the operator.
+This plan does not authorize implementation by itself.
+
+1. **Freeze the case inventory and fixture contracts.** Map every current covered
+   reliability cell and selected single-GPU GAP to a stable case ID, profile, model alias,
+   slots, IMC mode, speculation mode, media input and required evidence. Preserve
+   the 12 confirmed overlaps without copying their workloads. Resolve the
+   dependencies above and qualify the proposed vision fixture and reused Qwen
+   isolated-prefill configuration.
+   Specify model/projection/drafter identities and context/output budgets. Keep
+   unselected blanks and multi-GPU outside the required inventory. Completion:
+   every required cell has a feasible fixture and explicit assertions.
+
+2. **Extend selection through the existing `test-load-all`.** Reuse its scenario,
+   subprofile and MTP/IMC matrix arguments wherever sufficient. Its current model
+   settings select one fixture per role for the invocation, and the same selected
+   profiles run across the selected mode pairs. Extend only what the final inventory
+   needs: multiple fixtures/slot configurations per role and case-specific mode
+   selection that avoids unnecessary cross-products. Do not build another runner
+   or command. Keep lifecycle separate and do not invoke SDK suites. Keep individual
+   profile commands for diagnosis. Automatically check required configurations.
+   Continue independent cases after ordinary failures, but stop safely after
+   cleanup/server failure and enumerate unrun cases. Missing fixtures must not
+   silently shrink the suite into a PASS.
+
+3. **Validate MTP expectations and establish branch evidence.** Distinguish
+   target-only, embedded MTP and companion MTP. Preserve zero-drafting assertions
+   for target-only controls. Validate intended backends and request-level activity,
+   including active image drafting where selected. Reuse existing evidence where
+   sufficient; identify the smallest instrumentation needed where it is not. Missing required logs or
+   unobserved required branches cannot be treated as optional evidence.
+
+4. **Extend existing short state, MTP and media profiles.** Add selected one-slot
+   embedded/companion active and disabled controls, Attention-only text
+   state recovery, same-slot image recovery, companion image correctness and
+   Attention-only image correctness. Add isolated-media prefill and attest the
+   actual scheduler branch for both selected scheduling paths. Preserve active
+   image-drafting, bounded text gaps and recovery assertions. One-slot image-state
+   cases must not inherit the prefill profile's two-slot concurrency requirement.
+
+5. **Add representative load/context cases, not another Cartesian product.** Add
+   an Attention-only text batch fixture and context baseline; retain existing
+   Hybrid sustained workloads without a routing-only duplicate. Preserve batch's
+   minimum turns/history, oversubscription,
+   every-turn all-slot generation overlap, canaries and reuse assertions. Preserve
+   image batch without whole-output equality. Retain deep Hybrid context coverage
+   and require explicit stages per fixture. Estimate requests and prefill volume;
+   default to one repetition, keeping repetitions configurable. Reduce repeated
+   loading only where clean-state preconditions remain intact. Do not weaken
+   assertions or remove selected cases to achieve an arbitrary runtime target.
+
+6. **Report completeness and regression evidence together.** Account for planned,
+   executed and unrun cases; assertions, branches, missing evidence and required
+   stages; fixture/configuration identities, server/native-library provenance and
+   GPU placement. Distinguish failures, incomplete coverage and deliberate
+   exclusions; none may masquerade as a complete PASS. Retain timings and existing
+   performance aggregates. Automated timing-regression verdicts additionally need
+   comparable baseline inputs, repetition policy and thresholds; without those,
+   report timings as analysis material rather than a performance PASS. Update CSV
+   labels only when the documented workload/evidence contracts exist.
+
+7. **Validate the combined command end to end.** Check that missing fixtures,
+   wrong modes/backends, absent branch evidence, skipped required stages and
+   interrupted cleanup cannot yield complete PASS. Execute the planned single-GPU
+   inventory, validating observable continuation, isolation, recovery and report
+   completeness. Check individual profile commands retain their assertions.
+   Measure total/per-case cost and remove only demonstrated duplication. Document
+   the command, prerequisites and artifact interpretation. Multi-GPU remains a
+   separate phase requiring real placement and cross-device execution evidence.
+
+Completion means one `test-load-all` invocation accounts for all selected single-GPU
+reliability cases and gathers sufficient evidence for analysis. Lifecycle remains
+a separate fixed check. A passing report establishes no detected
+regressions within that scope, not proof that Kronk has no bugs.
 
 ## Sources
 
@@ -394,11 +489,11 @@ unit cases or add an unbounded performance workload.
 - [Shared mode checks](scenario_common.go)
 - [Lifecycle workload](../lifecycle-load/main.go)
 - [Catalog model candidates](../../sdk/tools/defaults/yaml/catalog.yaml)
-- [SDK fixture selections and classic pair](../../sdk/kronk/tests/testlib/testlib.go)
-- [Classic SDK smoke suite](../../sdk/kronk/tests/draft/suite_test.go), [skip conditions](../../sdk/kronk/tests/draft/main_test.go), and [response/retry assertions](../../sdk/kronk/tests/testlib/helpers.go)
-- [Classic algorithm tests](../../sdk/kronk/model/internal/speculation/classic/classic_test.go) and [engine boundary/replay tests](../../sdk/kronk/model/batchgen_speculative_test.go)
+- [SDK fixture selections](../../sdk/kronk/tests/testlib/testlib.go)
 - [Input-mixing capabilities](../../sdk/kronk/modelprofile/batch.go) and [shared/isolated scheduling](../../sdk/kronk/model/batchgen_plan.go)
 - [Hybrid/attention rollback selection](../../sdk/kronk/model/speculation_runtime.go)
-- [Classic drafter compatibility requirements](../../.manual/chapter-06-speculative-decoding-mtp.md#631-classic-separate-draft)
-- [Classic configuration restrictions](../../sdk/kronk/model/config.go)
 - [Speculation mode selection](../../sdk/kronk/model/internal/speculation/speculation.go)
+- [Snapshot depth condition](../../sdk/kronk/model/batchgen_engine.go) and [native rollback-depth readback](../../sdk/kronk/model/model.go)
+- [Media chunk requirements](../../sdk/kronk/model/batchgen_prefill_media.go)
+- [Qwen3-0.6B official capacity](https://huggingface.co/Qwen/Qwen3-0.6B) and [Unsloth GGUF card](https://huggingface.co/unsloth/Qwen3-0.6B-GGUF)
+- [Qwen3-1.7B capacity](https://huggingface.co/Qwen/Qwen3-1.7B-GGUF) and [Qwen2.5-VL image/context capabilities](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct)
