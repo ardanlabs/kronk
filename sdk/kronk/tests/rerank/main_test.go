@@ -1,7 +1,6 @@
 package rerank_test
 
 import (
-	"fmt"
 	"os"
 	"testing"
 
@@ -11,10 +10,7 @@ import (
 func TestMain(m *testing.M) {
 	testlib.Setup()
 
-	if len(testlib.MPRerankBatchSeq.ModelFiles) == 0 {
-		fmt.Println("reranker model not downloaded, skipping rerank tests")
-		os.Exit(0)
-	}
+	testlib.RequireFixtures(testlib.MPRerankBatchSeq.ModelFiles...)
 
 	os.Exit(m.Run())
 }

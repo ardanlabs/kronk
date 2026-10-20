@@ -112,8 +112,8 @@ func Setup() {
 }
 
 // resolveModel populates mp when the model is present on disk. A miss is not
-// fatal — CI installs only the subset in .github/test-models.txt — but it is
-// printed, so a runner with no models cannot look like a passing run.
+// fatal here — CI installs only the subset in .github/test-models.txt. Each
+// suite checks its own prerequisites with RequireFixtures before running.
 func resolveModel(mdls *models.Models, name string, mp *models.Path) {
 	dp, err := mdls.FullPath(name)
 	if err != nil {
@@ -123,6 +123,41 @@ func resolveModel(mdls *models.Models, name string, mp *models.Path) {
 
 	fmt.Printf("RetrieveModel %s...\n", name)
 	*mp = dp
+}
+
+// RequireFixtures checks only the files needed by the executing suite. Missing
+// fixtures fail when CI=true; optional local runs exit with a skip reason.
+// Call from TestMain before m.Run, after resolving model paths with Setup.
+func RequireFixtures(files ...string) {
+	var missing string
+	if len(files) == 0 {
+		missing = "no model files resolved"
+	}
+
+	for _, file := range files {
+		info, err := os.Stat(file)
+		switch {
+		case err != nil:
+			missing = fmt.Sprintf("%q: %v", file, err)
+		case !info.Mode().IsRegular() || info.Size() == 0:
+			missing = fmt.Sprintf("%q: expected a nonempty regular file", file)
+		default:
+			continue
+		}
+		break
+	}
+
+	if missing == "" {
+		return
+	}
+
+	if os.Getenv("CI") == "true" {
+		fmt.Printf("required test fixture missing: %s\n", missing)
+		os.Exit(1)
+	}
+
+	fmt.Printf("skipping tests: required test fixture missing: %s\n", missing)
+	os.Exit(0)
 }
 
 func printInfo(mdls *models.Models) {
@@ -313,6 +348,7 @@ func CfgMoEVisionIMC() model.Config {
 		CacheTypeV:          model.GGMLTypeF16,
 		PtrIncrementalCache: new(true),
 		PtrNSeqMax:          new(1),
+		Speculation:         model.SpeculationDisabled,
 	}
 }
 
@@ -378,6 +414,7 @@ func CfgMoEVision() model.Config {
 		CacheTypeK:          model.GGMLTypeF16,
 		CacheTypeV:          model.GGMLTypeF16,
 		PtrNSeqMax:          new(2),
+		Speculation:         model.SpeculationDisabled,
 	}
 }
 

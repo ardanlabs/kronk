@@ -15,9 +15,13 @@ kronk gpustack/bge-reranker-v2-m3-Q8_0
 kronk chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0
 bucky ggml-tiny.bin
 
+# Dense Hybrid convolution/recurrent-state coverage; kept off hosted runners.
+kronk unsloth/LFM2-700M-Q8_0 gpu
+
 # The two speculative-decoding MTP targets, the only GPU coverage of that path
 # (the classic separate-GGUF drafter is sdk/kronk/tests/draft). Both auto-enable
 # from GGUF metadata: mtp-Qwen3.6 owns its draft KV (sdk/kronk/tests/mtp),
 # gemma-4 shares the target's via its mtp-*.gguf companion (tests/gemma4mtp).
+# Gemma also supplies the no-speculation text and vision IMC suites.
 kronk unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL gpu
 kronk unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M gpu

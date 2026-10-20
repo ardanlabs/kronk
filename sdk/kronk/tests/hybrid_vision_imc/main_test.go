@@ -19,10 +19,8 @@ func TestMain(m *testing.M) {
 
 	testlib.Setup()
 
-	if len(testlib.MPHybridVision.ModelFiles) == 0 {
-		fmt.Println("model Qwopus3.5-4B-Coder.Q4_K_M not downloaded, skipping hybrid_vision_imc tests")
-		os.Exit(0)
-	}
+	testlib.RequireFixtures(testlib.MPHybridVision.ModelFiles...)
+	testlib.RequireFixtures(testlib.MPHybridVision.ProjFile, testlib.ImageFile)
 
 	os.Exit(m.Run())
 }

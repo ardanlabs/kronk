@@ -20,6 +20,7 @@ func Test_CacheIMC(t *testing.T) {
 		CacheTypeV:          model.GGMLTypeF16,
 		PtrNSeqMax:          new(1),
 		PtrIncrementalCache: new(true),
+		Speculation:         model.SpeculationDisabled,
 	}
 
 	testlib.WithModel(t, cfg, func(t *testing.T, krn *kronk.Kronk) {
@@ -168,6 +169,7 @@ func Test_CacheIMCMultiSlot(t *testing.T) {
 		CacheTypeV:          model.GGMLTypeF16,
 		PtrNSeqMax:          new(2),
 		PtrIncrementalCache: new(true),
+		Speculation:         model.SpeculationDisabled,
 	}
 
 	testlib.WithModel(t, cfg, func(t *testing.T, krn *kronk.Kronk) {

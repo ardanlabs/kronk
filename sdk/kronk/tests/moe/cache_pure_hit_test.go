@@ -49,6 +49,7 @@ func Test_CacheIMCMoEPureHitSnapshotSkip(t *testing.T) {
 		PtrNSeqMax:          new(1),
 		PtrIncrementalCache: new(true),
 		PtrCacheMinTokens:   new(1), // exercise IMC even on tiny prompts.
+		Speculation:         model.SpeculationDisabled,
 	}
 
 	testlib.WithModel(t, cfg, func(t *testing.T, krn *kronk.Kronk) {

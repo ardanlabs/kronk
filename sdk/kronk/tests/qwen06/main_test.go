@@ -1,7 +1,6 @@
 package qwen06_test
 
 import (
-	"fmt"
 	"os"
 	"testing"
 
@@ -11,10 +10,7 @@ import (
 func TestMain(m *testing.M) {
 	testlib.Setup()
 
-	if len(testlib.MPDraft.ModelFiles) == 0 {
-		fmt.Println("model Qwen3-0.6B-Q8_0 not downloaded, skipping qwen06 tests")
-		os.Exit(0)
-	}
+	testlib.RequireFixtures(testlib.MPDraft.ModelFiles...)
 
 	os.Exit(m.Run())
 }
