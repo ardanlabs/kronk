@@ -210,22 +210,6 @@ export default function DocsSDKModel() {
               <p className="doc-description">The returned *Model owns the underlying llama.Model, llama.Context, KV memory, batch engine, and (when configured) draft model; release them via Model.Unload when finished.</p>
             </div>
 
-            <div className="doc-section" id="func-detectmodeltypefromfiles">
-              <h4>DetectModelTypeFromFiles</h4>
-              <pre className="code-block">
-                <code>func DetectModelTypeFromFiles(modelFiles []string) (ModelType, string, error)</code>
-              </pre>
-              <p className="doc-description">DetectModelTypeFromFiles loads a model from the given GGUF files, determines the architecture type, and immediately frees the model. It returns the ModelType, the raw general.architecture string from the GGUF metadata, and any error encountered during loading.</p>
-            </div>
-
-            <div className="doc-section" id="func-parsemodeltype">
-              <h4>ParseModelType</h4>
-              <pre className="code-block">
-                <code>func ParseModelType(value string) (ModelType, error)</code>
-              </pre>
-              <p className="doc-description">ParseModelType parses a registered architecture name.</p>
-            </div>
-
             <div className="doc-section" id="func-parsenumastrategy">
               <h4>ParseNUMAStrategy</h4>
               <pre className="code-block">
@@ -950,36 +934,28 @@ export default function DocsSDKModel() {
               <h4>ModelInfo</h4>
               <pre className="code-block">
                 <code>{`type ModelInfo struct {
-	ID              string
-	HasProjection   bool
-	Desc            string
-	Size            uint64
-	FileType        int32
-	Quantization    string
-	VRAMTotal       int64
-	SlotMemory      int64
-	NSWA            int32 // Effective SWA window in tokens; zero means the model does not use SWA.
-	Type            ModelType
-	IsEmbedModel    bool
-	IsRerankModel   bool
-	IsDecisionModel bool
-	Metadata        map[string]string
-	Template        Template
+	ID                 string
+	HasProjection      bool
+	Desc               string
+	Size               uint64
+	FileType           int32
+	Quantization       string
+	VRAMTotal          int64
+	SlotMemory         int64
+	NSWA               int32  // Effective SWA window in tokens; zero means the model does not use SWA.
+	Type               string // Dense or MoE feed-forward parameter activation; independent of sequence processing.
+	SequenceProcessing string // Attention-only, Recurrent, Hybrid, or Unknown topology.
+	Architecture       string // GGUF architecture identifier.
+	IsEmbedModel       bool
+	IsRerankModel      bool
+	IsDecisionModel    bool
+	Metadata           map[string]string
+	Template           Template
 
 	// Has unexported fields.
 }`}</code>
               </pre>
               <p className="doc-description">ModelInfo represents the model's card information.</p>
-            </div>
-
-            <div className="doc-section" id="type-modeltype">
-              <h4>ModelType</h4>
-              <pre className="code-block">
-                <code>{`type ModelType struct {
-	// Has unexported fields.
-}`}</code>
-              </pre>
-              <p className="doc-description">ModelType represents the model architecture. Its zero value is dense.</p>
             </div>
 
             <div className="doc-section" id="type-numastrategy">
@@ -2635,78 +2611,6 @@ export default function DocsSDKModel() {
               </pre>
             </div>
 
-            <div className="doc-section" id="method-modeltype-equal">
-              <h4>ModelType.Equal</h4>
-              <pre className="code-block">
-                <code>func (mt ModelType) Equal(other ModelType) bool</code>
-              </pre>
-              <p className="doc-description">Equal reports whether the values match.</p>
-            </div>
-
-            <div className="doc-section" id="method-modeltype-iszero">
-              <h4>ModelType.IsZero</h4>
-              <pre className="code-block">
-                <code>func (mt ModelType) IsZero() bool</code>
-              </pre>
-              <p className="doc-description">IsZero reports whether the architecture is dense.</p>
-            </div>
-
-            <div className="doc-section" id="method-modeltype-marshaljson">
-              <h4>ModelType.MarshalJSON</h4>
-              <pre className="code-block">
-                <code>func (mt ModelType) MarshalJSON() ([]byte, error)</code>
-              </pre>
-              <p className="doc-description">MarshalJSON preserves the numeric wire representation.</p>
-            </div>
-
-            <div className="doc-section" id="method-modeltype-marshaltext">
-              <h4>ModelType.MarshalText</h4>
-              <pre className="code-block">
-                <code>func (mt ModelType) MarshalText() ([]byte, error)</code>
-              </pre>
-              <p className="doc-description">MarshalText serializes the architecture name.</p>
-            </div>
-
-            <div className="doc-section" id="method-modeltype-marshalyaml">
-              <h4>ModelType.MarshalYAML</h4>
-              <pre className="code-block">
-                <code>func (mt ModelType) MarshalYAML() (any, error)</code>
-              </pre>
-              <p className="doc-description">MarshalYAML preserves the numeric wire representation.</p>
-            </div>
-
-            <div className="doc-section" id="method-modeltype-string">
-              <h4>ModelType.String</h4>
-              <pre className="code-block">
-                <code>func (mt ModelType) String() string</code>
-              </pre>
-              <p className="doc-description">String returns the model architecture name.</p>
-            </div>
-
-            <div className="doc-section" id="method-modeltype-unmarshaljson">
-              <h4>ModelType.UnmarshalJSON</h4>
-              <pre className="code-block">
-                <code>func (mt *ModelType) UnmarshalJSON(data []byte) error</code>
-              </pre>
-              <p className="doc-description">UnmarshalJSON validates a numeric wire value.</p>
-            </div>
-
-            <div className="doc-section" id="method-modeltype-unmarshaltext">
-              <h4>ModelType.UnmarshalText</h4>
-              <pre className="code-block">
-                <code>func (mt *ModelType) UnmarshalText(data []byte) error</code>
-              </pre>
-              <p className="doc-description">UnmarshalText parses a registered architecture name.</p>
-            </div>
-
-            <div className="doc-section" id="method-modeltype-unmarshalyaml">
-              <h4>ModelType.UnmarshalYAML</h4>
-              <pre className="code-block">
-                <code>func (mt *ModelType) UnmarshalYAML(unmarshal func(any) error) error</code>
-              </pre>
-              <p className="doc-description">UnmarshalYAML validates a numeric wire value.</p>
-            </div>
-
             <div className="doc-section" id="method-numastrategy-equal">
               <h4>NUMAStrategy.Equal</h4>
               <pre className="code-block">
@@ -3297,14 +3201,6 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>{`var (`}</code>
               </pre>
-              <p className="doc-description">// ModelTypeDense uses partial-range state cleanup. ModelTypeDense = newModelType("dense", 0) // ModelTypeMoE uses expert routing and partial-range state cleanup. ModelTypeMoE = newModelType("moe", 1) // ModelTypeHybrid requires snapshot/restore for recurrent state. ModelTypeHybrid = newModelType("hybrid", 2)</p>
-            </div>
-
-            <div className="doc-section" id="var-variable">
-              <h4>Variable</h4>
-              <pre className="code-block">
-                <code>{`var (`}</code>
-              </pre>
               <p className="doc-description">// NUMADisabled disables NUMA placement. NUMADisabled = newNUMAStrategy("") // NUMADistribute distributes work across nodes. NUMADistribute = newNUMAStrategy("distribute") // NUMAIsolate restricts work to one node. NUMAIsolate = newNUMAStrategy("isolate") // NUMANumactl uses the numactl configuration. NUMANumactl = newNUMAStrategy("numactl") // NUMAMirror mirrors work across nodes. NUMAMirror = newNUMAStrategy("mirror")</p>
             </div>
 
@@ -3392,8 +3288,6 @@ export default function DocsSDKModel() {
                 <li><a href="#func-parsemediatype">ParseMediaType</a></li>
                 <li><a href="#func-parsemoemode">ParseMoEMode</a></li>
                 <li><a href="#func-newmodel">NewModel</a></li>
-                <li><a href="#func-detectmodeltypefromfiles">DetectModelTypeFromFiles</a></li>
-                <li><a href="#func-parsemodeltype">ParseModelType</a></li>
                 <li><a href="#func-parsenumastrategy">ParseNUMAStrategy</a></li>
                 <li><a href="#func-parseropescalingtype">ParseRopeScalingType</a></li>
                 <li><a href="#func-parsespeculationmode">ParseSpeculationMode</a></li>
@@ -3449,7 +3343,6 @@ export default function DocsSDKModel() {
                 <li><a href="#type-moemode">MoEMode</a></li>
                 <li><a href="#type-model">Model</a></li>
                 <li><a href="#type-modelinfo">ModelInfo</a></li>
-                <li><a href="#type-modeltype">ModelType</a></li>
                 <li><a href="#type-numastrategy">NUMAStrategy</a></li>
                 <li><a href="#type-option">Option</a></li>
                 <li><a href="#type-params">Params</a></li>
@@ -3634,15 +3527,6 @@ export default function DocsSDKModel() {
                 <li><a href="#method-model-tokenize">Model.Tokenize</a></li>
                 <li><a href="#method-model-unload">Model.Unload</a></li>
                 <li><a href="#method-modelinfo-string">ModelInfo.String</a></li>
-                <li><a href="#method-modeltype-equal">ModelType.Equal</a></li>
-                <li><a href="#method-modeltype-iszero">ModelType.IsZero</a></li>
-                <li><a href="#method-modeltype-marshaljson">ModelType.MarshalJSON</a></li>
-                <li><a href="#method-modeltype-marshaltext">ModelType.MarshalText</a></li>
-                <li><a href="#method-modeltype-marshalyaml">ModelType.MarshalYAML</a></li>
-                <li><a href="#method-modeltype-string">ModelType.String</a></li>
-                <li><a href="#method-modeltype-unmarshaljson">ModelType.UnmarshalJSON</a></li>
-                <li><a href="#method-modeltype-unmarshaltext">ModelType.UnmarshalText</a></li>
-                <li><a href="#method-modeltype-unmarshalyaml">ModelType.UnmarshalYAML</a></li>
                 <li><a href="#method-numastrategy-equal">NUMAStrategy.Equal</a></li>
                 <li><a href="#method-numastrategy-iszero">NUMAStrategy.IsZero</a></li>
                 <li><a href="#method-numastrategy-marshaltext">NUMAStrategy.MarshalText</a></li>
@@ -3693,7 +3577,6 @@ export default function DocsSDKModel() {
             <div className="doc-index-section">
               <a href="#variables" className="doc-index-header">Variables</a>
               <ul>
-                <li><a href="#var-variable">Variable</a></li>
                 <li><a href="#var-variable">Variable</a></li>
                 <li><a href="#var-variable">Variable</a></li>
                 <li><a href="#var-variable">Variable</a></li>

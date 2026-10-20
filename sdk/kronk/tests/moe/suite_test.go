@@ -15,6 +15,10 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// expectReasoning preserves the gemma-4-26B-A4B fixture's output expectation;
+// this suite does not require a separate Reasoning field.
+const expectReasoning = false
+
 func TestSuite(t *testing.T) {
 	testlib.WithModel(t, testlib.CfgMoEVision(), func(t *testing.T, krn *kronk.Kronk) {
 		t.Run("ThinkChat", func(t *testing.T) { testChat(t, krn, testlib.DChatNoTool, false) })
@@ -53,7 +57,7 @@ func testChat(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
 			return fmt.Errorf("chat streaming: %w", err)
 		}
 
-		reasoning := testlib.HasReasoningField(krn)
+		reasoning := expectReasoning
 
 		var result testlib.TestResult
 		switch tooling {
@@ -106,7 +110,7 @@ func testChatStreaming(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) 
 			return fmt.Errorf("chat streaming: %w", err)
 		}
 
-		reasoning := testlib.HasReasoningField(krn)
+		reasoning := expectReasoning
 
 		var acc testlib.StreamAccumulator
 		var lastResp model.ChatResponse
@@ -285,7 +289,7 @@ func testResponseStreaming(t *testing.T, krn *kronk.Kronk, d model.D, tooling bo
 			return fmt.Errorf("expected output_text.delta events")
 		}
 
-		if testlib.HasReasoningField(krn) && !hasReasoningDelta {
+		if expectReasoning && !hasReasoningDelta {
 			return fmt.Errorf("expected reasoning_summary_text.delta events")
 		}
 

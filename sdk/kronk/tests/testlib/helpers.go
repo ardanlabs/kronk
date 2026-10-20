@@ -80,13 +80,6 @@ func GetMsg(choice model.Choice, streaming bool) model.ResponseMessage {
 	return model.ResponseMessage{}
 }
 
-// HasReasoningField reports whether the model populates the Reasoning field.
-// MoE and Hybrid models emit reasoning tokens inline in Content.
-func HasReasoningField(krn *kronk.Kronk) bool {
-	mt := krn.ModelInfo().Type
-	return mt != model.ModelTypeMoE && mt != model.ModelTypeHybrid
-}
-
 // =========================================================================
 
 // TestChatBasics validates the common fields of a chat response.

@@ -14,11 +14,14 @@ import (
 
 func TestSuite(t *testing.T) {
 	testlib.WithModel(t, testlib.CfgLFMChat(), func(t *testing.T, krn *kronk.Kronk) {
-		if got := krn.ModelInfo().Type; got != model.ModelTypeHybrid {
-			t.Fatalf("model type = %s, want hybrid", got)
+		if got := krn.ModelInfo().Type; got != "Dense" {
+			t.Fatalf("parameter activation: got %q, want Dense", got)
 		}
-		if got := krn.ModelInfo().Metadata["general.architecture"]; !strings.EqualFold(got, "lfm2") {
-			t.Fatalf("architecture = %q, want lfm2", got)
+		if got := krn.ModelInfo().SequenceProcessing; got != "Hybrid" {
+			t.Fatalf("sequence processing: got %q, want Hybrid", got)
+		}
+		if got := krn.ModelInfo().Architecture; got != "lfm2" {
+			t.Fatalf("architecture: got %q, want lfm2", got)
 		}
 
 		t.Run("Chat", func(t *testing.T) { testChat(t, krn) })

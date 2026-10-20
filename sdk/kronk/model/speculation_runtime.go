@@ -6,6 +6,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
 	classicengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/classic"
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/mtp"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	yzmaspec "github.com/hybridgroup/yzma/exp/speculative"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
@@ -105,7 +106,7 @@ func (e *batchEngine) CommitSpeculative(slotID int, candidates []llama.Token, ta
 	s.specDraftTokens = candidates
 
 	s.specSnapshot = s.specSnapshot[:0]
-	if needsTargetSpecSnapshot(e.model.modelInfo.Type, e.model.ctxParams.NRsSeq, len(candidates)) {
+	if needsTargetSpecSnapshot(e.model.modelInfo.profile.MemorySemantics, e.model.ctxParams.NRsSeq, len(candidates)) {
 		if err := e.captureTargetSpecSnapshot(s); err != nil {
 			e.model.log(s.job.ctx, "speculative", "status", "snapshot-error", "slot", s.id, "err", err)
 			s.specSnapshot = s.specSnapshot[:0]
@@ -262,8 +263,8 @@ func (e *batchEngine) RollbackClassicTarget(slotID int, plan classicengine.Final
 	s := e.slots[slotID]
 	rollbackFrom := s.specBasePast + llama.Pos(1+plan.Accepted)
 	rollbackTo := s.specBasePast + llama.Pos(1+plan.Drafted)
-	hybridRestore := e.model.modelInfo.Type == ModelTypeHybrid && len(s.specSnapshot) > 0 && rollbackFrom < rollbackTo
-	if hybridRestore {
+	recurrentRestore := e.model.modelInfo.profile.MemorySemantics == modelprofile.MemoryRecurrent && len(s.specSnapshot) > 0 && rollbackFrom < rollbackTo
+	if recurrentRestore {
 		if err := e.restoreTargetSpecSnapshot(s, s.specBasePast, s.specPendingOriginalSampled, s.specDraftTokens, plan.Accepted); err != nil {
 			return false, fmt.Errorf("restoring target state after speculative rejection: %w", err)
 		}
@@ -383,8 +384,8 @@ func (e *batchEngine) RollbackMTPTarget(slotID int, plan mtp.FinalizePlan) (bool
 	s := e.slots[slotID]
 	rollbackFrom := s.specBasePast + llama.Pos(1+plan.Accepted)
 	rollbackTo := s.specBasePast + llama.Pos(1+plan.Drafted)
-	hybridRestore := e.model.modelInfo.Type == ModelTypeHybrid && len(s.specSnapshot) > 0 && rollbackFrom < rollbackTo
-	if hybridRestore {
+	recurrentRestore := e.model.modelInfo.profile.MemorySemantics == modelprofile.MemoryRecurrent && len(s.specSnapshot) > 0 && rollbackFrom < rollbackTo
+	if recurrentRestore {
 		if err := e.restoreTargetSpecSnapshot(s, s.specBasePast, s.specPendingOriginalSampled, s.specDraftTokens, plan.Accepted); err != nil {
 			return false, fmt.Errorf("restoring target state after speculative rejection: %w", err)
 		}

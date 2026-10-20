@@ -46,23 +46,25 @@ const (
 
 // ModelInfo represents the model's card information.
 type ModelInfo struct {
-	ID               string
-	HasProjection    bool
-	Desc             string
-	Size             uint64
-	FileType         int32
-	Quantization     string
-	VRAMTotal        int64
-	SlotMemory       int64
-	NSWA             int32 // Effective SWA window in tokens; zero means the model does not use SWA.
-	Type             ModelType
-	IsEmbedModel     bool
-	IsRerankModel    bool
-	IsDecisionModel  bool
-	Metadata         map[string]string
-	Template         Template
-	decisionProtocol DecisionProtocol
-	profile          modelprofile.Profile
+	ID                 string
+	HasProjection      bool
+	Desc               string
+	Size               uint64
+	FileType           int32
+	Quantization       string
+	VRAMTotal          int64
+	SlotMemory         int64
+	NSWA               int32  // Effective SWA window in tokens; zero means the model does not use SWA.
+	Type               string // Dense or MoE feed-forward parameter activation; independent of sequence processing.
+	SequenceProcessing string // Attention-only, Recurrent, Hybrid, or Unknown topology.
+	Architecture       string // GGUF architecture identifier.
+	IsEmbedModel       bool
+	IsRerankModel      bool
+	IsDecisionModel    bool
+	Metadata           map[string]string
+	Template           Template
+	decisionProtocol   DecisionProtocol
+	profile            modelprofile.Profile
 }
 
 func (mi ModelInfo) String() string {
@@ -87,7 +89,7 @@ func (mi ModelInfo) String() string {
 
 	sizeGB := float64(mi.Size) / (1000 * 1000 * 1000)
 
-	return fmt.Sprintf("\nID[%s]\nDesc[%s]\nSize[%.2fGB]\nFileType[%d]\nQuantization[%s]\nNSWA[%d]\nTemplate[%s]\nType[%s]\nFlags[%s]\n", mi.ID, mi.Desc, sizeGB, mi.FileType, mi.Quantization, mi.NSWA, mi.Template.FileName, mi.Type, flagStr)
+	return fmt.Sprintf("\nID[%s]\nDesc[%s]\nSize[%.2fGB]\nFileType[%d]\nQuantization[%s]\nNSWA[%d]\nTemplate[%s]\nType[%s]\nSequenceProcessing[%s]\nArchitecture[%s]\nFlags[%s]\n", mi.ID, mi.Desc, sizeGB, mi.FileType, mi.Quantization, mi.NSWA, mi.Template.FileName, mi.Type, mi.SequenceProcessing, mi.Architecture, flagStr)
 }
 
 func toModelInfo(cfg Config, model llama.Model) ModelInfo {
@@ -123,24 +125,28 @@ func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 
 	isEmbedModel, isRerankModel := detectEmbedRerank(modelID)
 	profile := modelprofile.Resolve(metadata)
+	if llama.ModelIsHybrid(model) {
+		profile.MemorySemantics = modelprofile.MemoryRecurrent
+	}
 	decisionProtocol := detectDecisionProtocol(cfg.DecisionProtocol, modelID, metadata, profile)
-	modelType := detectModelType(model, profile)
 
 	return ModelInfo{
-		ID:               modelID,
-		HasProjection:    cfg.ProjFile != "",
-		Desc:             desc,
-		Size:             size,
-		FileType:         int32(fileType),
-		Quantization:     llama.FtypeName(fileType),
-		NSWA:             llama.ModelNSWA(model),
-		Type:             modelType,
-		IsEmbedModel:     isEmbedModel,
-		IsRerankModel:    isRerankModel,
-		IsDecisionModel:  !decisionProtocol.IsZero(),
-		Metadata:         metadata,
-		decisionProtocol: decisionProtocol,
-		profile:          profile,
+		ID:                 modelID,
+		HasProjection:      cfg.ProjFile != "",
+		Desc:               desc,
+		Size:               size,
+		FileType:           int32(fileType),
+		Quantization:       llama.FtypeName(fileType),
+		NSWA:               llama.ModelNSWA(model),
+		Type:               profile.ParameterActivation(),
+		SequenceProcessing: profile.SequenceProcessing,
+		Architecture:       profile.Architecture,
+		IsEmbedModel:       isEmbedModel,
+		IsRerankModel:      isRerankModel,
+		IsDecisionModel:    !decisionProtocol.IsZero(),
+		Metadata:           metadata,
+		decisionProtocol:   decisionProtocol,
+		profile:            profile,
 	}
 }
 
@@ -221,79 +227,6 @@ func modelIDFromFiles(modelFiles []string) string {
 	default:
 		name := strings.TrimSuffix(filepath.Base(modelFiles[0]), filepath.Ext(modelFiles[0]))
 		return splitPattern.ReplaceAllString(name, "")
-	}
-}
-
-// DetectModelTypeFromFiles loads a model from the given GGUF files, determines
-// the architecture type, and immediately frees the model. It returns the
-// ModelType, the raw general.architecture string from the GGUF metadata, and
-// any error encountered during loading.
-func DetectModelTypeFromFiles(modelFiles []string) (ModelType, string, error) {
-	params := llama.ModelDefaultParams()
-	params.NGpuLayers = 0
-
-	var mdl llama.Model
-	var err error
-
-	switch len(modelFiles) {
-	case 1:
-		mdl, err = llama.ModelLoadFromFile(modelFiles[0], params)
-	default:
-		mdl, err = llama.ModelLoadFromSplits(modelFiles, params)
-	}
-
-	if err != nil {
-		return ModelTypeDense, "", fmt.Errorf("loading model: %w", err)
-	}
-	defer llama.ModelFree(mdl)
-
-	count := llama.ModelMetaCount(mdl)
-	metadata := make(map[string]string)
-
-	for i := range count {
-		func() {
-			defer func() {
-				if rec := recover(); rec != nil {
-					return
-				}
-			}()
-
-			key, ok := llama.ModelMetaKeyByIndex(mdl, i)
-			if !ok {
-				return
-			}
-
-			value, ok := llama.ModelMetaValStrByIndex(mdl, i)
-			if !ok {
-				return
-			}
-
-			metadata[key] = value
-		}()
-	}
-
-	profile := modelprofile.Resolve(metadata)
-	mt := detectModelType(mdl, profile)
-
-	return mt, profile.Architecture, nil
-}
-
-// detectModelType determines the model architecture from llama.cpp's loaded
-// model facts and the normalized GGUF profile. Native hybrid detection remains
-// authoritative; the profile supplies the metadata fallback and MoE class.
-func detectModelType(model llama.Model, profile modelprofile.Profile) ModelType {
-	switch {
-	case llama.ModelIsHybrid(model):
-		return ModelTypeHybrid
-
-	case profile.Class == modelprofile.ClassHybrid:
-		return ModelTypeHybrid
-
-	case profile.Class == modelprofile.ClassMoE:
-		return ModelTypeMoE
-
-	default:
-		return ModelTypeDense
 	}
 }
 

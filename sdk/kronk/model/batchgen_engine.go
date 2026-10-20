@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -616,8 +617,8 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	}
 }
 
-func needsTargetSpecSnapshot(modelType ModelType, rollbackDepth uint32, draftCount int) bool {
-	return modelType == ModelTypeHybrid && int(rollbackDepth) < draftCount
+func needsTargetSpecSnapshot(memory modelprofile.MemorySemantics, rollbackDepth uint32, draftCount int) bool {
+	return memory == modelprofile.MemoryRecurrent && int(rollbackDepth) < draftCount
 }
 
 func (e *batchEngine) maxDraftForSlot(s *slot, configured int) int {

@@ -805,7 +805,36 @@ malina-models:
             <li>backend allocations and safety margins.</li>
           </ul>
           <p>Context length, <code>nseq-max</code>, cache precision, layer placement, SWA, and model architecture all affect the result. Use <strong>Apps → VRAM Calculator</strong> in the BUI to inspect the GGUF metadata and estimate a specific configuration. Treat the result as planning guidance and retain headroom for the backend and other processes.</p>
-          <h4 id="dense-moe-and-hybrid-inference">Dense, MoE, and hybrid inference</h4>
+          <h4 id="independent-dimensions-of-model-design">Independent dimensions of model design</h4>
+          <p>Dense, MoE, and hybrid are not three mutually exclusive model types. Describe a model using independent dimensions:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Dimension</th>
+                <th>Choices</th>
+                <th>What it describes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Parameter activation</td>
+                <td>Dense or Mixture-of-Experts (MoE)</td>
+                <td>Which feed-forward weights compute for a token</td>
+              </tr>
+              <tr>
+                <td>Sequence processing</td>
+                <td>Attention-only, recurrent/state-space-only, or hybrid</td>
+                <td>How information from earlier tokens is processed</td>
+              </tr>
+              <tr>
+                <td>Architecture</td>
+                <td>A specific overall design identifier, such as the GGUF <code>general.architecture</code> value</td>
+                <td>The model's concrete layout, operations, and conventions</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>An architecture identifier is not another activation or sequence-processing category. It identifies the overall design; inspect that design and its metadata to determine both dimensions rather than treating its name as a third axis of mutually exclusive types.</p>
+          <p>The catalog's existing <strong>Type</strong> column reports parameter activation: Dense or MoE. New downloads also store <code>architecture</code> (the GGUF architecture identifier) and <code>sequence_processing</code> (Attention-only, Recurrent, Hybrid, or Unknown) in catalog metadata, without adding list columns. Unknown means the available metadata does not establish the sequence-processing topology. The runtime uses independent MoE facts and memory semantics: recurrent memory requires special speculative rollback and snapshot handling, regardless of expert routing. <code>Profile.Class</code> has been removed. Loaded models report <code>ModelInfo.Type</code> (Dense or MoE parameter activation), <code>ModelInfo.SequenceProcessing</code>, and <code>ModelInfo.Architecture</code> separately. For metadata-only inspection, use <code>modelprofile.Resolve</code>, then <code>Profile.ParameterActivation()</code>, <code>Profile.SequenceProcessing</code>, and <code>Profile.Architecture</code>. A hybrid MoE model reports both MoE activation and Hybrid sequence processing; neither property replaces the other.</p>
           <p>Dense and Mixture-of-Experts (MoE) describe how each layer's feed-forward weights are activated. A dense layer uses its complete feed-forward network for every token. An MoE layer stores many expert feed-forward networks and uses a learned router to select a small subset independently for each token and layer. All experts remain in memory even though only the selected experts compute.</p>
           <p><strong>Experimental GPU expert cache:</strong> <code>moe.cache-size</code> reserves additional GPU storage for frequently used experts whose original weights remain in host memory. The value is bytes per native context; it is one global budget shared across eligible GPUs, not a budget per GPU or per sequence slot. Unset or zero leaves the llama.cpp default unchanged (currently disabled). Non-MoE models ignore this setting.</p>
           <pre className="code-block"><code className="language-yaml">{`my-moe-model:
@@ -814,8 +843,9 @@ malina-models:
     cache-size: 1073741824 # 1 GiB of additional GPU expert-cache capacity`}</code></pre>
           <p>The cache primarily targets small-batch generation (up to 32 tokens per microbatch when capacity permits). Multiple GPUs are supported; tensor parallelism (<code>split-mode: tensor</code>) is not. Native pipeline parallelism is disabled when caching is requested. A cache too small for the selected experts can fail context initialization. Models without eligible host-resident experts may run without an active cache. Benchmark before assuming a speedup.</p>
           <p>All three BUI calculators (standalone, model details, and catalog details) expose <strong>MoE Expert Cache (GiB)</strong> for MoE models and export <code>cache-size</code> in bytes. The calculator and pool reserve this budget in addition to model weights, KV, and compute memory. On unified-memory systems it increases the shared physical-memory footprint; original host weights are not deducted. Per-GPU allocation is an estimate: actual cache placement follows eligible layers and may use free-memory proportions. Retain backend/host-metadata headroom beyond the cache budget.</p>
-          <p>Hybrid describes a separate design choice: which sequence-processing mechanism each layer uses. A hybrid stack can pair those mechanisms with dense feed-forward networks or MoE blocks. Qwen 3.6 combines Gated DeltaNet and full-attention layers with MoE; qwen4exp combines Gated DeltaNet and sparse attention with MoE. Every token still traverses every layer. The hybrid stack changes how context is processed, while an MoE router independently changes which feed-forward experts activate.</p>
-          <p><img src="https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/03c-dense-moe-and-hybrid-inference.svg" alt="Dense, Mixture-of-Experts, and hybrid inference compared" /></p>
+          <p>For sequence processing, <strong>attention-only</strong> models use attention to access prior tokens (full, sliding-window, or sparse attention). <strong>Recurrent/state-space-only</strong> models carry information forward in recurrent state without attention layers; they are not automatically hybrid. Here, <strong>hybrid</strong> means a stack combining attention with recurrent/state-space mechanisms. Mixing full and sliding-window attention alone remains attention-only in this classification.</p>
+          <p>Each sequence-processing choice can pair with dense feed-forward networks or MoE blocks; not every combination needs to be represented in Kronk's catalog. Qwen 3.6 combines Gated DeltaNet and full-attention layers with MoE; qwen4exp combines Gated DeltaNet and sparse attention with MoE. Every token still traverses every layer. The hybrid stack changes how context is processed, while an MoE router independently changes which feed-forward experts activate.</p>
+          <p><img src="https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/03c-dense-moe-and-hybrid-inference.svg" alt="Independent model dimensions: Dense and MoE activation crossed with attention-only, recurrent/state-space-only, and hybrid sequence processing" /></p>
           <p>The estimator follows the model's per-layer attention topology when the GGUF provides it. Full-attention and sliding-window layers can have different KV head counts and dimensions; compact SWA includes its physical-batch headroom, while <code>swa-full: true</code> allocates SWA against the full context. Shared KV layers are not charged twice.</p>
           <p>Hybrid recurrent models such as Qwen 3.5 do not allocate ordinary K/V tensors for recurrent layers. Kronk instead estimates their float32 recurrent state per sequence and, when the active speculative configuration is known, the current state plus required rollback copies. Appended embedded-MTP/NextN layers are excluded from the target context's attention-state allocation because they are not target trunk layers. Their weights remain part of model size, and embedded MTP can increase recurrent rollback-state memory. These distinctions are why a generic transformer KV formula can substantially over- or under-estimate a hybrid model.</p>
           <p>If a configuration does not fit, consider these changes one at a time:</p>

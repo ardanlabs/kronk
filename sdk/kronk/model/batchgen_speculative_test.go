@@ -10,6 +10,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
 	classicengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/classic"
 	mtpengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/mtp"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -56,20 +57,20 @@ func TestSlotResetClearsPerRequestLifecycleState(t *testing.T) {
 func TestNeedsTargetSpecSnapshot(t *testing.T) {
 	tests := []struct {
 		name          string
-		modelType     ModelType
+		memory        modelprofile.MemorySemantics
 		rollbackDepth uint32
 		draftCount    int
 		want          bool
 	}{
-		{"dense target", ModelTypeDense, 0, 2, false},
-		{"hybrid native rollback covers draft", ModelTypeHybrid, 2, 2, false},
-		{"hybrid native rollback is insufficient", ModelTypeHybrid, 1, 2, true},
-		{"hybrid rollback unavailable", ModelTypeHybrid, 0, 2, true},
+		{"attention target", modelprofile.MemoryAttention, 0, 2, false},
+		{"recurrent native rollback covers draft", modelprofile.MemoryRecurrent, 2, 2, false},
+		{"recurrent native rollback is insufficient", modelprofile.MemoryRecurrent, 1, 2, true},
+		{"recurrent rollback unavailable", modelprofile.MemoryRecurrent, 0, 2, true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := needsTargetSpecSnapshot(tt.modelType, tt.rollbackDepth, tt.draftCount)
+			got := needsTargetSpecSnapshot(tt.memory, tt.rollbackDepth, tt.draftCount)
 			if got != tt.want {
 				t.Errorf("needsTargetSpecSnapshot() = %t, want %t", got, tt.want)
 			}
@@ -110,7 +111,7 @@ func TestCommitSpeculativeReturnsRequiredSnapshotFailure(t *testing.T) {
 	e := batchEngine{
 		model: &Model{
 			log:       applog.DiscardLogger,
-			modelInfo: ModelInfo{Type: ModelTypeHybrid},
+			modelInfo: ModelInfo{profile: modelprofile.Profile{MemorySemantics: modelprofile.MemoryRecurrent}},
 		},
 		slots: []*slot{s},
 	}

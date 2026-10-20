@@ -114,6 +114,8 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("- prefill batch  :", krn.ModelConfig().PrefillBatchSize())
 	fmt.Println("- embeddings     :", krn.ModelInfo().IsEmbedModel)
 	fmt.Println("- modelType      :", krn.ModelInfo().Type)
+	fmt.Println("- sequence type  :", krn.ModelInfo().SequenceProcessing)
+	fmt.Println("- architecture   :", krn.ModelInfo().Architecture)
 	fmt.Println("- template       :", krn.ModelInfo().Template.FileName)
 	fmt.Println("- grammar        :", krn.ModelConfig().DefaultParams.Grammar != "")
 	fmt.Println("- nSeqMax        :", krn.ModelConfig().NSeqMax())

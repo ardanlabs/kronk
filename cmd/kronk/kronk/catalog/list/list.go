@@ -67,7 +67,7 @@ func runLocal(mdls *models.Models) error {
 
 func print(summaries []models.CatalogSummary) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "VAL\tMODEL ID\tPROVIDER\tFAMILY\tARCH\tMTMD\tMTP\tSIZE")
+	fmt.Fprintln(w, "VAL\tMODEL ID\tPROVIDER\tFAMILY\tTYPE\tMTMD\tMTP\tSIZE")
 
 	for _, s := range summaries {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",

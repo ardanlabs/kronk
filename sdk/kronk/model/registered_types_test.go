@@ -15,9 +15,6 @@ func TestNumericSetSerialization(t *testing.T) {
 		value any
 		wire  string
 	}{
-		{"dense", ModelTypeDense, "0"},
-		{"moe", ModelTypeMoE, "1"},
-		{"hybrid", ModelTypeHybrid, "2"},
 		{"no media", MediaTypeNone, "0"},
 		{"vision", MediaTypeVision, "1"},
 		{"audio", MediaTypeAudio, "2"},
@@ -64,7 +61,6 @@ func TestNumericSetSerialization(t *testing.T) {
 
 func TestRegisteredSetText(t *testing.T) {
 	for _, value := range []any{
-		ModelTypeDense, ModelTypeMoE, ModelTypeHybrid,
 		MediaTypeNone, MediaTypeVision, MediaTypeAudio,
 		ChannelNone, ChannelReasoning, ChannelAnswer, ChannelTool,
 		DecisionQuestionType{}, DecisionQuestionTypeChoice, DecisionQuestionTypeScore, DecisionQuestionTypeNoul,
@@ -93,9 +89,6 @@ func TestRegisteredSetText(t *testing.T) {
 }
 
 func TestRegisteredSetZeros(t *testing.T) {
-	if !(ModelType{}).Equal(ModelTypeDense) || !(ModelType{}).IsZero() {
-		t.Error("model type zero must be dense")
-	}
 	if !(MediaType{}).Equal(MediaTypeNone) || !(MediaType{}).IsZero() {
 		t.Error("media type zero must be none")
 	}

@@ -5063,6 +5063,8 @@ button.autotest-detail-log-header:focus-visible {
 }
 
 .playground-config-value {
+    display: inline-block;
+    max-width: 100%;
     font-weight: 600;
 }
 

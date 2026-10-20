@@ -16,10 +16,6 @@ func TestRegisteredStringValues(t *testing.T) {
 		value any
 		want  string
 	}{
-		{modelprofile.Class{}, ""},
-		{modelprofile.ClassDense, "dense"},
-		{modelprofile.ClassMoE, "moe"},
-		{modelprofile.ClassHybrid, "hybrid"},
 		{modelprofile.Role{}, ""},
 		{modelprofile.RoleLanguage, "language"},
 		{modelprofile.RoleVisionEncoder, "vision_encoder"},
@@ -151,7 +147,6 @@ func TestComputeKindNumericWireValues(t *testing.T) {
 
 func TestProfileValueOmission(t *testing.T) {
 	type values struct {
-		Class   modelprofile.Class            `json:"class,omitzero" yaml:"class,omitempty"`
 		Role    modelprofile.Role             `json:"role,omitzero" yaml:"role,omitempty"`
 		Purpose modelprofile.Purpose          `json:"purpose,omitzero" yaml:"purpose,omitempty"`
 		Memory  modelprofile.MemorySemantics  `json:"memory,omitzero" yaml:"memory,omitempty"`
@@ -169,7 +164,7 @@ func TestProfileValueOmission(t *testing.T) {
 			t.Fatalf("zero fields: got %s, %v, want empty object", data, err)
 		}
 		data, err = marshal(values{
-			Class: modelprofile.ClassDense, Role: modelprofile.RoleLanguage,
+			Role:    modelprofile.RoleLanguage,
 			Purpose: modelprofile.PurposeGeneration, Memory: modelprofile.MemoryAttention,
 			MTP: modelprofile.MTPArchitectureQwen35OwnKV, Mixing: modelprofile.BatchInputMixingSupported,
 			Compute: modelprofile.ComputeIndexed,
@@ -177,8 +172,8 @@ func TestProfileValueOmission(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := yaml.Unmarshal(data, &fields); err != nil || len(fields) != 7 {
-			t.Fatalf("nonzero fields: got %s, %v, want seven fields", data, err)
+		if err := yaml.Unmarshal(data, &fields); err != nil || len(fields) != 6 {
+			t.Fatalf("nonzero fields: got %s, %v, want six fields", data, err)
 		}
 	}
 }
@@ -188,7 +183,6 @@ func TestMustParseRejectsUnknownValues(t *testing.T) {
 		name  string
 		parse func()
 	}{
-		{"class", func() { modelprofile.MustParseClass("invalid") }},
 		{"role", func() { modelprofile.MustParseRole("invalid") }},
 		{"purpose", func() { modelprofile.MustParsePurpose("invalid") }},
 		{"memory", func() { modelprofile.MustParseMemorySemantics("invalid") }},

@@ -144,6 +144,8 @@ func printModelInfo(krn *kronk.Kronk) {
 	fmt.Println("- flashAttention :", cfg.FlashAttention())
 	fmt.Println("- prefill batch  :", cfg.PrefillBatchSize())
 	fmt.Println("- modelType      :", mi.Type)
+	fmt.Println("- sequence type  :", mi.SequenceProcessing)
+	fmt.Println("- architecture   :", mi.Architecture)
 	fmt.Println("- template       :", mi.Template.FileName)
 	fmt.Println("- grammar        :", cfg.DefaultParams.Grammar != "")
 	fmt.Println("- nSeqMax        :", cfg.NSeqMax())

@@ -9,7 +9,7 @@ func TestResolveArchitectureParity(t *testing.T) {
 	tests := []struct {
 		name       string
 		metadata   map[string]string
-		class      Class
+		moe        bool
 		role       Role
 		purpose    Purpose
 		memory     MemorySemantics
@@ -28,7 +28,6 @@ func TestResolveArchitectureParity(t *testing.T) {
 				"general.architecture": "llama",
 				"llama.block_count":    "32",
 			},
-			class:      ClassDense,
 			role:       RoleLanguage,
 			purpose:    PurposeGeneration,
 			memory:     MemoryAttention,
@@ -42,7 +41,7 @@ func TestResolveArchitectureParity(t *testing.T) {
 				"qwen3.expert_count":      "128",
 				"qwen3.expert_used_count": "8",
 			},
-			class:      ClassMoE,
+			moe:        true,
 			role:       RoleLanguage,
 			purpose:    PurposeGeneration,
 			memory:     MemoryAttention,
@@ -62,7 +61,7 @@ func TestResolveArchitectureParity(t *testing.T) {
 				"qwen35moe.attention.head_count":    "16",
 				"qwen35moe.attention.head_count_kv": "2",
 			},
-			class:      ClassHybrid,
+			moe:        true,
 			role:       RoleLanguage,
 			purpose:    PurposeGeneration,
 			memory:     MemoryRecurrent,
@@ -85,7 +84,7 @@ func TestResolveArchitectureParity(t *testing.T) {
 				"qwen4exp.attention.head_count":    "16",
 				"qwen4exp.attention.head_count_kv": "2",
 			},
-			class:      ClassHybrid,
+			moe:        true,
 			role:       RoleLanguage,
 			purpose:    PurposeGeneration,
 			memory:     MemoryRecurrent,
@@ -109,7 +108,7 @@ func TestResolveArchitectureParity(t *testing.T) {
 				"nemotron_h_moe.ssm.inner_size":          "8192",
 				"nemotron_h_moe.ssm.group_count":         "8",
 			},
-			class:      ClassHybrid,
+			moe:        true,
 			role:       RoleLanguage,
 			purpose:    PurposeGeneration,
 			memory:     MemoryRecurrent,
@@ -124,7 +123,6 @@ func TestResolveArchitectureParity(t *testing.T) {
 				"general.architecture":  "qwen3next",
 				"qwen3next.block_count": "48",
 			},
-			class:      ClassHybrid,
 			role:       RoleLanguage,
 			purpose:    PurposeGeneration,
 			memory:     MemoryRecurrent,
@@ -135,7 +133,6 @@ func TestResolveArchitectureParity(t *testing.T) {
 			metadata: map[string]string{
 				"general.architecture": "qwen2vl",
 			},
-			class:   ClassDense,
 			role:    RoleVisionEncoder,
 			purpose: PurposeGeneration,
 			memory:  MemoryAttention,
@@ -146,7 +143,6 @@ func TestResolveArchitectureParity(t *testing.T) {
 				"general.architecture": "qwen3",
 				"general.basename":     "qwen3-embedding",
 			},
-			class:   ClassDense,
 			role:    RoleLanguage,
 			purpose: PurposeEmbedding,
 			memory:  MemoryAttention,
@@ -156,7 +152,6 @@ func TestResolveArchitectureParity(t *testing.T) {
 			metadata: map[string]string{
 				"general.architecture": "bert",
 			},
-			class:   ClassDense,
 			role:    RoleLanguage,
 			purpose: PurposeRerank,
 			memory:  MemoryAttention,
@@ -167,7 +162,6 @@ func TestResolveArchitectureParity(t *testing.T) {
 				"general.architecture": "qwen3",
 				"general.tags":         "[omni]",
 			},
-			class:   ClassDense,
 			role:    RoleLanguage,
 			purpose: PurposeGeneration,
 			memory:  MemoryAttention,
@@ -179,7 +173,6 @@ func TestResolveArchitectureParity(t *testing.T) {
 			metadata: map[string]string{
 				"general.architecture": "qwen3omni",
 			},
-			class:   ClassDense,
 			role:    RoleLanguage,
 			purpose: PurposeGeneration,
 			memory:  MemoryAttention,
@@ -192,7 +185,6 @@ func TestResolveArchitectureParity(t *testing.T) {
 				"general.architecture":        "gemma4-assistant",
 				"gemma4.nextn_predict_layers": "1",
 			},
-			class:     ClassDense,
 			role:      RoleLanguage,
 			purpose:   PurposeGeneration,
 			memory:    MemoryAttention,
@@ -206,7 +198,6 @@ func TestResolveArchitectureParity(t *testing.T) {
 				"general.architecture":        "qwen35",
 				"qwen35.nextn_predict_layers": "1",
 			},
-			class:     ClassHybrid,
 			role:      RoleLanguage,
 			purpose:   PurposeGeneration,
 			memory:    MemoryRecurrent,
@@ -220,7 +211,6 @@ func TestResolveArchitectureParity(t *testing.T) {
 				"general.architecture":          "qwen4exp",
 				"qwen4exp.nextn_predict_layers": "1",
 			},
-			class:     ClassHybrid,
 			role:      RoleLanguage,
 			purpose:   PurposeGeneration,
 			memory:    MemoryRecurrent,
@@ -233,10 +223,10 @@ func TestResolveArchitectureParity(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := Resolve(tt.metadata)
-			if got.Class != tt.class || got.Role != tt.role || got.Purpose != tt.purpose || got.MemorySemantics != tt.memory {
-				t.Errorf("profile identity = class %q role %q purpose %q memory %q, want %q %q %q %q",
-					got.Class, got.Role, got.Purpose, got.MemorySemantics,
-					tt.class, tt.role, tt.purpose, tt.memory)
+			if got.MoE.IsMoE != tt.moe || got.Role != tt.role || got.Purpose != tt.purpose || got.MemorySemantics != tt.memory {
+				t.Errorf("profile identity = moe %t role %q purpose %q memory %q, want %t %q %q %q",
+					got.MoE.IsMoE, got.Role, got.Purpose, got.MemorySemantics,
+					tt.moe, tt.role, tt.purpose, tt.memory)
 			}
 			if got.Speculation.NextNPredictLayers != tt.mtpLayers || got.Speculation.MTPArchitecture != tt.mtpArch || got.Speculation.SharedKVCompanion != tt.companion || got.Speculation.OwnKVCompanion != tt.ownKV {
 				t.Errorf("speculation = %+v, want layers %d architecture %q shared companion %t own-KV companion %t", got.Speculation, tt.mtpLayers, tt.mtpArch, tt.companion, tt.ownKV)
@@ -284,9 +274,9 @@ func TestResolveGLM5Next(t *testing.T) {
 		"glm5-next.kda.head_dim":            "128",
 	})
 
-	if profile.Class != ClassHybrid || profile.MemorySemantics != MemoryRecurrent || !profile.MoE.IsMoE {
-		t.Fatalf("identity = class %q memory %q moe %t, want hybrid/recurrent/true",
-			profile.Class, profile.MemorySemantics, profile.MoE.IsMoE)
+	if profile.MemorySemantics != MemoryRecurrent || !profile.MoE.IsMoE {
+		t.Fatalf("identity = memory %q moe %t, want recurrent/true",
+			profile.MemorySemantics, profile.MoE.IsMoE)
 	}
 	if profile.Attention.RecurrentLayers != 34 || profile.Attention.FullAttentionLayers != 11 {
 		t.Fatalf("layers = recurrent %d full %d, want 34/11",

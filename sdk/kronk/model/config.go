@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
@@ -1107,7 +1108,7 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 
 		ctxParams.NOutputsMax = uint32(nSeqMax * perSlot)
 		ctxParams.NOutputsMaxPerSeq = uint32(perSlot)
-		if mi.Type == ModelTypeHybrid {
+		if mi.profile.MemorySemantics == modelprofile.MemoryRecurrent {
 			ctxParams.NRsSeq = uint32(rollbackDepth)
 		}
 	}

@@ -387,6 +387,8 @@ export interface CatalogSummary {
   downloaded: boolean;
   validated: boolean;
   model_type?: string;
+  architecture?: string;
+  sequence_processing?: string;
   capabilities?: CatalogCapabilities;
 }
 
@@ -409,7 +411,6 @@ export interface CatalogModelResponse extends CatalogSummary {
 
   // Legacy fields — not returned by the new backend.
   category?: string;
-  architecture?: string;
   metadata?: {
     created?: string;
     collections?: string;

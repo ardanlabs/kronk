@@ -26,6 +26,9 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// expectReasoning is the Qwen3-1.7B target fixture's separate Reasoning-field expectation.
+const expectReasoning = true
+
 // sawAcceptedDraft is set true by checkDraftUsage when any request in the
 // suite gets at least one draft token accepted. It is the suite-level proof
 // that the classic separate-GGUF drafter actually loaded, drafted, and had
@@ -131,7 +134,7 @@ func testChat(t *testing.T, krn *kronk.Kronk, d model.D) {
 			return fmt.Errorf("chat: %w", err)
 		}
 
-		reasoning := testlib.HasReasoningField(krn)
+		reasoning := expectReasoning
 
 		result := testlib.TestChatResponse(resp, krn.ModelInfo().ID, model.ObjectChatTextFinal, "Gorilla", "", "", false, reasoning)
 
@@ -183,7 +186,7 @@ func testChatStreaming(t *testing.T, krn *kronk.Kronk, d model.D) {
 			return fmt.Errorf("chat streaming: %w", err)
 		}
 
-		reasoning := testlib.HasReasoningField(krn)
+		reasoning := expectReasoning
 
 		var (
 			acc      testlib.StreamAccumulator
