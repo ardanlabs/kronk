@@ -177,15 +177,21 @@ func TestIMCCommitMediaAdvanceAndReuse(t *testing.T) {
 		promptPlan:        base,
 		mediaKVCounts:     []int{8},
 		kvState:           oldStore,
+		draftKVState:      populatedTestSessionStore(t),
+		pendingH:          []float32{11, 23},
 		reserved:          true,
 	}
 	m := &Model{imcSessions: []*imcSession{session}, log: func(context.Context, string, ...any) {}}
 	d := D{"messages": []D{{"role": "user", "content": "test"}}}
 	renderHash, _ := m.imcRenderFingerprint(d, dMessages(d))
 
-	gotOld := m.imcCommitMediaAdvance(context.Background(), session, staged, "advanced", 13, 3, 6, advanced, []llama.Token{1, 2, 3}, []int{8}, nil, true, false, renderHash)
+	draftBytes := append([]byte(nil), bytesTestStore(t, session.draftKVState)...)
+	gotOld := m.imcCommitMediaAdvance(context.Background(), session, staged, "advanced", 13, 3, 6, advanced, []llama.Token{1, 2, 3}, []int{8}, nil, true, false, renderHash, true)
 	if gotOld != oldStore || session.kvState != staged || session.totalTokensCached != 13 || session.nextLogicalPos != 6 || !session.promptPlan.equal(advanced) || !reflect.DeepEqual(session.samplerPromptTokens, []llama.Token{1, 2, 3}) {
 		t.Fatal("media advance did not atomically publish the staged state")
+	}
+	if !reflect.DeepEqual(bytesTestStore(t, session.draftKVState), draftBytes) || !reflect.DeepEqual(session.pendingH, []float32{11, 23}) {
+		t.Fatal("media advance discarded its matching draft snapshot or pending hidden state")
 	}
 	m.imcPublishSession(session)
 
@@ -245,7 +251,7 @@ func TestIMCCommitMediaAdvanceRejectsMissingStage(t *testing.T) {
 	}
 	m := &Model{}
 
-	old := m.imcCommitMediaAdvance(context.Background(), session, nil, "new", 13, 3, 6, promptPlan{}, nil, nil, nil, false, false, "render")
+	old := m.imcCommitMediaAdvance(context.Background(), session, nil, "new", 13, 3, 6, promptPlan{}, nil, nil, nil, false, false, "render", false)
 	if old != nil {
 		t.Fatalf("old store = %T, want nil for rejected commit", old)
 	}
@@ -273,7 +279,7 @@ func TestIMCCommitMediaAdvanceInvalidatesDraftMetadataWhenResetFails(t *testing.
 		}
 	}}
 
-	gotOld := m.imcCommitMediaAdvance(context.Background(), session, staged, "advanced", 13, 3, 6, promptPlan{}, nil, nil, nil, false, false, "render")
+	gotOld := m.imcCommitMediaAdvance(context.Background(), session, staged, "advanced", 13, 3, 6, promptPlan{}, nil, nil, nil, false, false, "render", false)
 
 	if !errors.Is(loggedErr, wantErr) {
 		t.Errorf("logged error = %v, want %v", loggedErr, wantErr)

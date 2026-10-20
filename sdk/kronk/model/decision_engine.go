@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -27,15 +28,18 @@ type decisionWork struct {
 // decisionEngine performs only model execution. Protocol implementations own
 // prompting, candidate selection, calibration, and multi-pass decisions.
 type decisionEngine struct {
-	lctx          llama.Context
-	mem           llama.Memory
-	batch         *extendedBatch
-	nVocab        int
-	contextWindow int
-	maxTokens     int
-	maxSequences  int
-	maxOutputs    int
-	scheduler     *decisionScheduler
+	lctx             llama.Context
+	mem              llama.Memory
+	batch            *extendedBatch
+	nVocab           int
+	contextWindow    int
+	maxTokens        int
+	maxSequences     int
+	maxOutputs       int
+	scheduler        *decisionScheduler
+	modelID          string
+	log              applog.Logger
+	graphAllocations graphAllocationLog
 }
 
 func decisionContextParams(base llama.ContextParams, cfg Config) llama.ContextParams {
@@ -43,7 +47,12 @@ func decisionContextParams(base llama.ContextParams, cfg Config) llama.ContextPa
 	nSeqMax := max(cfg.NSeqMax(), 1)
 	params.NCtx = uint32(cfg.ContextWindow() * nSeqMax)
 	params.NBatch = uint32(cfg.ContextWindow())
-	params.NUbatch = min(uint32(cfg.EffectiveNUBatch()), params.NBatch)
+	// PhysicalBatchSize is a generation request, not a decision-protocol override.
+	physical := cfg.EffectiveNUBatch()
+	if cfg.PtrPhysicalBatchSize != nil {
+		physical = cfg.BatchBaseSize()
+	}
+	params.NUbatch = min(uint32(physical), params.NBatch)
 	if decisionUsesEmbeddings(cfg.DecisionProtocol) {
 		params.NBatch = params.NUbatch
 	}
@@ -56,7 +65,18 @@ func decisionContextParams(base llama.ContextParams, cfg Config) llama.ContextPa
 		params.Embeddings = 1
 		params.PoolingType = llama.PoolingTypeNone
 	}
-	if cfg.DecisionProtocol == DecisionProtocolClef {
+	if cfg.DecisionProtocol == DecisionProtocolVllmD3 || cfg.DecisionProtocol == DecisionProtocolVllmDecision2 {
+		// These protocols must evaluate the complete prompt in one ubatch.
+		// D3 is non-causal, so it must also run without concurrent sequences.
+		params.NUbatch = uint32(cfg.ContextWindow())
+		params.NBatch = params.NUbatch
+		if cfg.DecisionProtocol == DecisionProtocolVllmD3 {
+			params.NSeqMax = 1
+			params.NCtx = params.NBatch
+			params.AttentionType = llama.AttentionTypeNonCausal
+		}
+	}
+	if cfg.DecisionProtocol == DecisionProtocolClef || cfg.DecisionProtocol == DecisionProtocolVllmDecision2 {
 		params.NOutputsMax = params.NBatch
 		params.NOutputsMaxPerSeq = params.NBatch
 	}
@@ -98,6 +118,8 @@ func initDecisionRuntime(m *Model) error {
 	m.ctxParams = params
 	m.lctx = lctx
 	m.mem = mem
+	m.cfg.nBatch = int(llama.NBatch(lctx))
+	m.cfg.nUBatch = int(llama.NUBatch(lctx))
 
 	engine := decisionEngine{
 		lctx:          lctx,
@@ -108,6 +130,8 @@ func initDecisionRuntime(m *Model) error {
 		maxTokens:     int(params.NBatch),
 		maxSequences:  int(params.NSeqMax),
 		maxOutputs:    int(params.NOutputsMax),
+		modelID:       m.modelInfo.ID,
+		log:           m.log,
 	}
 	engine.scheduler = newDecisionScheduler(&engine, m.cfg.QueueDepth())
 	engine.scheduler.start()
@@ -336,6 +360,8 @@ func stageDecisionParts(batch *extendedBatch, parts []decisionPart) ([][]int32, 
 }
 
 func (e *decisionEngine) evaluate(entries []decisionScheduledEntry) ([][][]float32, bool, error) {
+	defer e.graphAllocations.record(context.Background(), e.log, e.modelID, "target", e.lctx)
+
 	parts := make([]decisionPart, len(entries))
 	for i, entry := range entries {
 		parts[i] = decisionPart{

@@ -29,7 +29,7 @@ func TestResolve(t *testing.T) {
 		{"MTP rejects classic model", Config{Mode: ModeMTP, ClassicConfigured: true}, SourceNone, MTPArchitectureNone, MTPArtifactNone, false, true},
 		{"MTP requires source", Config{Mode: ModeMTP, MTPAvailable: true}, SourceNone, MTPArchitectureNone, MTPArtifactNone, false, true},
 		{"MTP requires library support", Config{Mode: ModeMTP, EmbeddedMTPArchitecture: MTPArchitectureQwen35OwnKV, MTPArchitectureEnabled: true}, SourceNone, MTPArchitectureNone, MTPArtifactNone, false, true},
-		{"unknown mode rejected", Config{Mode: "future"}, SourceNone, MTPArchitectureNone, MTPArtifactNone, false, true},
+		{"unknown mode rejected", Config{Mode: Mode{value: "future"}}, SourceNone, MTPArchitectureNone, MTPArtifactNone, false, true},
 	}
 
 	for _, tt := range tests {
@@ -39,7 +39,7 @@ func TestResolve(t *testing.T) {
 				t.Fatalf("Resolve() error = %v, wantErr %t", err, tt.wantErr)
 			}
 			if got.Source != tt.wantSource || got.MTPArchitecture != tt.wantArchitecture || got.MTPArtifact != tt.wantArtifact {
-				t.Errorf("plan = %+v, want source %d architecture %d artifact %d", got, tt.wantSource, tt.wantArchitecture, tt.wantArtifact)
+				t.Errorf("plan = %+v, want source %s architecture %s artifact %s", got, tt.wantSource, tt.wantArchitecture, tt.wantArtifact)
 			}
 			if got.LoadMTP != tt.wantLoadMTP {
 				t.Errorf("LoadMTP = %t, want %t", got.LoadMTP, tt.wantLoadMTP)

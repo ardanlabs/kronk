@@ -2,55 +2,12 @@ package model
 
 import "github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 
-type batchInputKind uint8
-
-const (
-	batchInputUnknown batchInputKind = iota
-	batchInputTokens
-	batchInputEmbeddings
-)
-
-type batchPositionKind uint8
-
-const (
-	batchPositionUnknown batchPositionKind = iota
-	batchPositionLinear
-	batchPositionMRoPE
-)
-
-type batchAttentionKind uint8
-
-const (
-	batchAttentionUnknown batchAttentionKind = iota
-	batchAttentionCausal
-	batchAttentionNonCausal
-)
-
 type batchContributionRequirements struct {
 	input     batchInputKind
 	positions batchPositionKind
 	attention batchAttentionKind
 	rows      int
 	mustFit   bool
-}
-
-type batchExecutionMode uint8
-
-const (
-	batchExecutionDeferred batchExecutionMode = iota
-	batchExecutionShared
-	batchExecutionIsolated
-)
-
-func (m batchExecutionMode) String() string {
-	switch m {
-	case batchExecutionShared:
-		return "shared"
-	case batchExecutionIsolated:
-		return "isolated"
-	default:
-		return "deferred"
-	}
 }
 
 type batchContributionPlan struct {

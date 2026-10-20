@@ -35,6 +35,9 @@ var (
 	// BundleLLaDAImageTurbo identifies the LLaDA-Image-Turbo bundle.
 	BundleLLaDAImageTurbo = newBundleName("llada-image-turbo")
 
+	// BundleZImageTurbo identifies the Z-Image-Turbo bundle.
+	BundleZImageTurbo = newBundleName("z-image-turbo")
+
 	// BundleFlux2Klein4B identifies the FLUX.2 Klein 4B bundle.
 	BundleFlux2Klein4B = newBundleName("flux2-klein-4b")
 
@@ -118,32 +121,6 @@ func SupportedBundles() []BundleName {
 	return names
 }
 
-// FileRole identifies a model component's configuration role.
-type FileRole string
-
-// Stable-diffusion model component roles.
-const (
-	RoleModel          FileRole = "model"
-	RoleDiffusion      FileRole = "diffusion"
-	RoleVAE            FileRole = "vae"
-	RoleClipL          FileRole = "clip_l"
-	RoleClipG          FileRole = "clip_g"
-	RoleT5XXL          FileRole = "t5xxl"
-	RoleLLM            FileRole = "llm"
-	RoleLLMVision      FileRole = "llm_vision"
-	RoleTokenizer      FileRole = "tokenizer"
-	RoleControlNet     FileRole = "control_net"
-	RoleTAESD          FileRole = "taesd"
-	RolePhotoMaker     FileRole = "photo_maker"
-	RoleClipVision     FileRole = "clip_vision"
-	RoleHighNoise      FileRole = "high_noise"
-	RoleEmbeddingsConn FileRole = "embeddings_conn"
-	RoleMotionModule   FileRole = "motion_module"
-	RoleUpscaler       FileRole = "upscaler"
-	RoleADetailer      FileRole = "adetailer"
-	RoleAudioEncoder   FileRole = "audio_encoder"
-)
-
 // BundleFile describes one bundle file.
 type BundleFile struct {
 	Role     FileRole
@@ -170,7 +147,7 @@ func (b Bundle) Validate() error {
 	}
 	seen := make(map[FileRole]struct{}, len(b.Files))
 	for _, file := range b.Files {
-		if file.Role == "" || file.Filename == "" || file.URL == "" {
+		if file.Role.IsZero() || file.Filename == "" || file.URL == "" {
 			return fmt.Errorf("bundle %q: incomplete file metadata", b.Name)
 		}
 		if _, ok := seen[file.Role]; ok {
@@ -359,6 +336,32 @@ func Catalog() []Bundle {
 					Filename: "tokenizer.json",
 					URL:      "https://huggingface.co/inclusionAI/LLaDA-Image-Turbo/resolve/f4afc52d925bbac4e22a1c947111fc1f127e37e5/tokenizer/tokenizer.json",
 					Size:     "15 MB",
+				},
+			},
+		},
+		{
+			Name:             BundleZImageTurbo,
+			Description:      "Z-Image-Turbo — 8-step text-to-image at CFG 1 with Q4_K diffusion and Q4_K_M Qwen3-4B text encoder. Three files (~6.7 GB total).",
+			License:          "Apache-2.0",
+			BasicTextToImage: true,
+			Files: []BundleFile{
+				{
+					Role:     RoleDiffusion,
+					Filename: "z_image_turbo-Q4_K.gguf",
+					URL:      "https://huggingface.co/leejet/Z-Image-Turbo-GGUF/resolve/c61c0e422dc8b541b7548cf33a4ef8302b0f8085/z_image_turbo-Q4_K.gguf",
+					Size:     "3.9 GB",
+				},
+				{
+					Role:     RoleLLM,
+					Filename: "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+					URL:      "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/a06e946bb6b655725eafa393f4a9745d460374c9/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+					Size:     "2.5 GB",
+				},
+				{
+					Role:     RoleVAE,
+					Filename: "ae.safetensors",
+					URL:      "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/6fc90a3b1b653e935a0d175e260736de25b84df5/split_files/vae/ae.safetensors",
+					Size:     "335 MB",
 				},
 			},
 		},

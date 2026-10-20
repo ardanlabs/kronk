@@ -132,9 +132,11 @@ self-contained companion GGUFs through the own-KV runtime. Existing
 shared-tensor sidecars are not compatible; the companion must contain its own
 token embeddings and output tensors.
 
-The pinned b11513 bundle contains the recurrent-memory assertion fix from
+The pinned b11738 bundle contains the recurrent-memory assertion fix from
 upstream PR #29799 and the Qwen4Exp QSA/indexer correctness fixes from PR
-#29819. In `auto` mode Kronk loads a compatible Qwen4Exp companion when one is
+#29819. MTP hidden rows use the separate state-embedding input introduced in
+PR #30257; token and media embeddings remain separate. In `auto` mode Kronk
+loads a compatible Qwen4Exp companion when one is
 available, otherwise it uses a compatible embedded head. The `disabled`
 speculation mode continues to run the target without MTP.
 
@@ -265,8 +267,8 @@ logs use `draft_acceptance_rate`. Both also report draft and accepted-token
 counts when a drafter is loaded. Common MTP disable reasons include:
 
 - `imc-hit` — target cache state was restored without compatible draft state
-- `media-mrope` — MTP is not enabled for that M-RoPE media request
-- `sync-error` — draft state could not be synchronized after verification
+- `sync-error` — draft state could not be synchronized after target decoding,
+  including media prefill or verification
 
 Startup events under `draft-model`, `draft-model-mtp`, and
 `draft-model-mtp-shared` show which source loaded or why MTP was skipped. See
@@ -299,12 +301,14 @@ Startup events under `draft-model`, `draft-model-mtp`, and
   target-only rather than drafting from inconsistent state. Text System cache
   entries retain this paired state when it is valid. See
   [Chapter 5](https://www.kronkai.com/manual#chapter-5-message-caching).
-- **Media support is conservative.** Media projection and media prefill run on
-  the target, and target IMC can cache and restore that media state. Kronk does
-  not carry an own-KV draft snapshot across a media cache commit because it
-  cannot prove that the draft covers the projected media cells. Unsupported
-  own-KV media combinations and all M-RoPE media requests therefore run without
-  MTP while target IMC remains active. See
+- **MTP supports projected media rows, including M-RoPE images.** The target
+  performs projection and prefill. Own-KV MTP replays those embeddings at their
+  original positions with shifted target hidden states; shared-KV MTP captures
+  hidden state without replaying the media. IMC retains a matching own-KV draft
+  snapshot and final hidden row when synchronization and snapshotting succeed.
+  Incompatible draft input widths or failed synchronization fall back to
+  target-only execution for that request. Classic separate drafts still cannot
+  reconstruct media prefixes. See
   [Chapter 11](https://www.kronkai.com/manual#chapter-11-multimodal-models).
 - **Drafting consumes resources.** A classic draft loads another model and KV
   cache. MTP heads and companion assistants also require compute and memory.

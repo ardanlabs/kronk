@@ -86,6 +86,7 @@ func (m *Models) kronkResolvedConfig(modelID string, mc map[string]ModelConfig, 
 
 	// Convert to model.Config and attach on-disk paths.
 	out := cfg.ToKronkConfig()
+	out.BasePath = m.basePath
 	out.AutoTune = true
 	out.AutoTuned = autoTuned
 	out.ModelFiles = fp.ModelFiles
@@ -301,6 +302,10 @@ func autoTuneWithConfigAndBudget(info ModelInfo, devs devices.Devices, constrain
 	// 2048-token default and derives llama.cpp's internal batch capacities.
 	cfg.PtrContextWindow = new(int(rec.ContextWindow))
 	cfg.PtrNSeqMax = new(int(rec.NSeqMax))
+	cfg.PtrPhysicalBatchSize = constraints.PtrPhysicalBatchSize
+	if cfg.PtrPhysicalBatchSize == nil && rec.PhysicalBatchSize > 0 {
+		cfg.PtrPhysicalBatchSize = new(int(rec.PhysicalBatchSize))
+	}
 
 	if k, err := model.ParseGGMLType(rec.CacheTypeK); err == nil {
 		cfg.CacheTypeK = k
@@ -401,6 +406,9 @@ func MergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	if src.PtrPrefillBatchSize != nil {
 		dst.PtrPrefillBatchSize = src.PtrPrefillBatchSize
 	}
+	if src.PtrPhysicalBatchSize != nil {
+		dst.PtrPhysicalBatchSize = src.PtrPhysicalBatchSize
+	}
 	if src.PtrImageBatchTokenCapacity != nil {
 		dst.PtrImageBatchTokenCapacity = src.PtrImageBatchTokenCapacity
 	}
@@ -413,10 +421,10 @@ func MergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	if src.PtrNThreadsBatch != nil {
 		dst.PtrNThreadsBatch = src.PtrNThreadsBatch
 	}
-	if src.CacheTypeK != 0 {
+	if !src.CacheTypeK.IsZero() {
 		dst.CacheTypeK = src.CacheTypeK
 	}
-	if src.CacheTypeV != 0 {
+	if !src.CacheTypeV.IsZero() {
 		dst.CacheTypeV = src.CacheTypeV
 	}
 	if src.FlashAttention != nil {
@@ -428,7 +436,10 @@ func MergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	if src.PtrLoadMode != nil {
 		dst.PtrLoadMode = src.PtrLoadMode
 	}
-	if src.NUMA != "" {
+	if src.PtrKVCacheMode != nil {
+		dst.PtrKVCacheMode = src.PtrKVCacheMode
+	}
+	if !src.NUMA.IsZero() {
 		dst.NUMA = src.NUMA
 	}
 	if src.PtrNSeqMax != nil {
@@ -485,13 +496,13 @@ func MergeModelConfig(dst *ModelConfig, src ModelConfig) {
 	if src.SessionStoreKind != (kvstorage.Kind{}) {
 		dst.SessionStoreKind = src.SessionStoreKind
 	}
-	if src.Speculation != "" {
+	if !src.Speculation.IsZero() {
 		dst.Speculation = src.Speculation
 	}
 	if src.PtrInsecureLogging != nil {
 		dst.PtrInsecureLogging = src.PtrInsecureLogging
 	}
-	if src.RopeScaling != 0 {
+	if !src.RopeScaling.IsZero() {
 		dst.RopeScaling = src.RopeScaling
 	}
 	if src.PtrRopeFreqBase != nil {

@@ -112,6 +112,7 @@ Here are some of the known compatible versions:
 
 | kronk  | yzma    | llama.cpp | bucky  | whisper.cpp | malina | stable-diffusion.cpp |
 | ------ | ------- | --------- | ------ | ----------- | ------ | -------------------- |
+| 1.33.0 | 6c94ea9 | b11738    | v1.1.4 | v1.9.5      | v1.1.7 | master-969-8c442fb   |
 | 1.32.9 | 1a800a2 | b11513    | v1.1.4 | v1.9.5      | v1.1.5 | master-929-3f8527a   |
 | 1.32.8 | c25d400 | b11331    | v1.1.3 | v1.9.4      | v1.1.5 | master-929-3f8527a   |
 | 1.32.6 | ece4890 | b10896    | v1.1.2 | v1.9.3      | v1.1.0 | master-849-d04e895   |
@@ -126,6 +127,14 @@ the driver, visible GPUs, and installed runtime/cuBLAS libraries. See
 Default downloads replace managed bundles that do not match the pin. User-managed
 builds remain read-only and must be rebuilt or replaced by the user when an upgrade
 changes the native ABI; do not mix ggml files from unrelated bundles.
+
+Malina v1.1.7's authenticated native pin is
+`master-969-8c442fb@sha256:b7b38cedefb63b398a7fccb5ee22b4d347613ba1f8ad1b3fe0e55da9e42afebf`.
+This is an ABI-breaking upgrade from Malina v1.1.5 / `master-929-3f8527a`:
+upgrade bindings and native libraries together. Default downloads atomically
+replace mismatched managed installations, including arbitrary newer builds.
+User-managed paths must be rebuilt or replaced by their owner before loading.
+See [Malina installation](.manual/chapter-19-malina.md#192-install-stable-diffusion-libraries).
 
 ## Documentation and Examples
 
@@ -198,6 +207,7 @@ and talks about Kronk.
 | Oct 22nd - 23rd | Meetup Austin              | Austin, TX            | Talk           |
 | Oct 31th - 4th  | GoLab (GopherCon Italy)    | Bologna, Italy        | Training, Talk |
 | Nov 6th - 8th   | UM v ND                    | Southbend, IN         | Game Day       |
+| Dec 1st - 2nd   | Meetup Boston              | Boston, MA            | Talk           |
 | DECEMBER        | Winter Vacation            | Miami, FL             | Rest           |
 
 Copyright 2025-2026 Ardan Labs

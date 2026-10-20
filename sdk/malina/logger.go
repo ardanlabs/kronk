@@ -13,7 +13,7 @@ type Logger = applog.Logger
 type LogLevel = applog.LogLevel
 
 // Set of logging levels supported by stable-diffusion.cpp and GGML.
-const (
+var (
 	LogSilent = applog.LogSilent
 	LogNormal = applog.LogNormal
 )

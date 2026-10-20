@@ -473,11 +473,13 @@ func TestFromBytesLlamaWorkspace(t *testing.T) {
 	for _, tt := range []struct {
 		name, backend, blocks, hidden, width string
 		slots, cacheMiB, gpuMiB, cpuMiB      int64
+		unified                              bool
 	}{
-		{"8B", "metal", "32", "4096", "128", 1, 16384, 1536, 640},
-		{"1B", "metal", "16", "2048", "64", 1, 4096, 1152, 576},
-		{"8B two slots", "metal", "32", "4096", "128", 2, 32768, 2112, 640},
-		{"1B CUDA control", "cuda", "16", "2048", "64", 1, 4096, 896, 576},
+		{"8B", "metal", "32", "4096", "128", 1, 16384, 1536, 640, false},
+		{"1B", "metal", "16", "2048", "64", 1, 4096, 1152, 576, false},
+		{"8B two slots", "metal", "32", "4096", "128", 2, 32768, 2112, 640, false},
+		{"8B shared two slots", "metal", "32", "4096", "128", 2, 32768, 2624, 1152, true},
+		{"1B CUDA control", "cuda", "16", "2048", "64", 1, 4096, 896, 576, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			metadata := map[string]string{
@@ -508,7 +510,7 @@ func TestFromBytesLlamaWorkspace(t *testing.T) {
 				write(gguf.MetadataValueTypeString)
 				writeString(value)
 			}
-			result, err := FromBytes(data.Bytes(), 4<<30, Config{ComputeBackend: tt.backend, ContextWindow: 131072, Slots: tt.slots, TypeK: 1, TypeV: 1, BytesPerElement: 2, NUBatch: 2048})
+			result, err := FromBytes(data.Bytes(), 4<<30, Config{ComputeBackend: tt.backend, ContextWindow: 131072, Slots: tt.slots, TypeK: 1, TypeV: 1, BytesPerElement: 2, NUBatch: 2048, KVUnified: tt.unified})
 			if err != nil {
 				t.Fatal(err)
 			}

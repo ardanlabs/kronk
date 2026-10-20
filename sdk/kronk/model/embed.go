@@ -81,7 +81,7 @@ func (m *Model) Embeddings(ctx context.Context, d D) (response EmbedReponse, err
 
 	truncate, _ := d["truncate"].(bool)
 	direction, _ := d["truncate_direction"].(string)
-	nativeDim := llama.ModelNEmbd(m.model)
+	nativeDim := llama.ModelNEmbdOut(m.model)
 	requestedDim, _ := d["dimensions"].(float64)
 
 	if requestedDim > 0 && int(requestedDim) > int(nativeDim) {
@@ -102,6 +102,7 @@ func (m *Model) Embeddings(ctx context.Context, d D) (response EmbedReponse, err
 			return EmbedReponse{}, acquireErr
 		}
 		defer m.pool.release(pc)
+		defer m.pool.graphAllocations[pc.idx].record(ctx, m.log, m.modelInfo.ID, "target", pc.lctx)
 
 		embedData, totalPromptTokens, err = m.processEmbeddings(ctx, pc, inputs, truncate, direction, nativeDim, int(requestedDim))
 	}

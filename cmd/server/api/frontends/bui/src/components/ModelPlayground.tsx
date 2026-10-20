@@ -13,6 +13,7 @@ import type {
   ChatToolCall,
   ModelConfig,
   ModelLoadMode,
+  KVCacheMode,
   VRAM,
 } from '../types';
 import AutomatedTestingPanel from './AutomatedTestingPanel';
@@ -54,9 +55,11 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
     customScript, setCustomScript,
     contextWindow, setContextWindow,
     prefillBatchSize, setPrefillBatchSize,
+    physicalBatchSize, setPhysicalBatchSize,
     nSeqMax, setNSeqMax,
     flashAttention, setFlashAttention,
     cacheType, setCacheType,
+    kvCacheMode, setKVCacheMode,
     loadMode, setLoadMode,
     cacheMode, setCacheMode,
     moeMode, setMoeMode,
@@ -183,6 +186,7 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
       .then((info) => {
         if (cancelled) return;
         const mc = info.model_config;
+        setPhysicalBatchSize(mc?.['physical-batch-size'] ?? undefined);
         if (mc) {
           const nSeqMax = mc['nseq-max'] || 1;
           setCatalogConfig(mc);
@@ -191,6 +195,7 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
           setNSeqMax(nSeqMax);
           setFlashAttention(mc['flash-attention'] || 'auto');
           setCacheType(mc['cache-type-k'] || mc['cache-type-v'] || '');
+          setKVCacheMode(mc['kv-cache-mode'] || 'partitioned');
           setLoadMode(mc['load-mode'] || 'auto');
           setCacheMode(mc['incremental-cache'] ? 'imc' : 'none');
           setMoeMode(mc.moe?.mode || '');
@@ -285,6 +290,10 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
       if (!catalogConfig || prefillBatchSize !== (catalogConfig['prefill-batch-size'] || DEFAULT_PREFILL_BATCH_SIZE)) {
         config['prefill_batch_size'] = prefillBatchSize;
       }
+      if (physicalBatchSize !== undefined && physicalBatchSize > 0 &&
+          (!catalogConfig || physicalBatchSize !== catalogConfig['physical-batch-size'])) {
+        config['physical_batch_size'] = physicalBatchSize;
+      }
       if (!catalogConfig || nSeqMax !== (catalogConfig['nseq-max'] || 1)) {
         config['nseq_max'] = nSeqMax;
       }
@@ -297,6 +306,9 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
       }
       if (!catalogConfig || loadMode !== (catalogConfig['load-mode'] || 'auto')) {
         config['load_mode'] = loadMode;
+      }
+      if (!catalogConfig || kvCacheMode !== (catalogConfig['kv-cache-mode'] || 'partitioned')) {
+        config['kv_cache_mode'] = kvCacheMode;
       }
       const catalogCacheMode = catalogConfig?.['incremental-cache'] ? 'imc' : 'none';
       if (!catalogConfig || cacheMode !== catalogCacheMode) {
@@ -324,6 +336,10 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
         config: config as any,
       });
       setSession(resp);
+      const effectiveLayout = resp.effective_config?.['kv_cache_mode'];
+      if (effectiveLayout === 'partitioned' || effectiveLayout === 'shared') {
+        setKVCacheMode(effectiveLayout);
+      }
       setChatMessages([]);
     } catch (err: any) {
       setSessionError(err.message || 'Failed to load model');
@@ -740,10 +756,12 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
                   base_config: {
                     context_window: contextWindow,
                     prefill_batch_size: prefillBatchSize,
+                    physical_batch_size: physicalBatchSize,
                     nseq_max: nSeqMax,
                     flash_attention: flashAttention,
                     cache_type_k: cacheType || undefined,
                     cache_type_v: cacheType || undefined,
+                    kv_cache_mode: kvCacheMode,
                     load_mode: loadMode,
                     incremental_cache: cacheMode === 'imc',
                     moe_mode: moeMode || undefined,
@@ -816,6 +834,22 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
               />
             </div>
             <div className="form-group">
+              <FieldLabel htmlFor="pg-physical-batch-size" tooltipKey="physicalBatchSize">Physical Batch Size</FieldLabel>
+              <input
+                id="pg-physical-batch-size"
+                type="number"
+                value={physicalBatchSize ?? ''}
+                placeholder="Auto"
+                onChange={(e) => {
+                  const value = e.target.valueAsNumber;
+                  setPhysicalBatchSize(Number.isInteger(value) && value > 0 ? value : undefined);
+                }}
+                min={1}
+                step={1}
+                disabled={!!session}
+              />
+            </div>
+            <div className="form-group">
               <FieldLabel htmlFor="pg-nseqmax" tooltipKey="nSeqMax">NSeqMax</FieldLabel>
               <input
                 id="pg-nseqmax"
@@ -851,6 +885,18 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
                 <option value="f16">f16</option>
                 <option value="q8_0">q8_0</option>
                 <option value="q4_0">q4_0</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <FieldLabel htmlFor="pg-kv-cache-mode" tooltipKey="kvCacheMode">KV Cache Layout</FieldLabel>
+              <select
+                id="pg-kv-cache-mode"
+                value={kvCacheMode}
+                onChange={(e) => setKVCacheMode(e.target.value as KVCacheMode)}
+                disabled={!!session}
+              >
+                <option value="partitioned">Partitioned (default)</option>
+                <option value="shared">Shared</option>
               </select>
             </div>
             <div className="form-group">

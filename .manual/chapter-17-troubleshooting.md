@@ -157,6 +157,24 @@ Unset `KRONK_LIB_VERSION` after the pinned default contains the required fix.
 Libraries are not hot-reloaded; restart the server after switching
 `KRONK_LIB_PATH`.
 
+Also check native backend environment values. Starting with b11696,
+`GGML_CUDA_ENABLE_UNIFIED_MEMORY`, `GGML_CUDA_NO_PINNED`, and
+`GGML_CUDA_REGISTER_HOST` require numeric nonzero values such as `1`;
+`true`, `yes`, empty values, and `0` no longer activate them. Restart after
+changing these settings. See
+[Native backend environment settings](https://www.kronkai.com/manual#native-backend-environment-settings)
+for details.
+
+Native kernel changes can alter floating-point rounding without changing
+Kronk's embedding or sampling algorithms. For example, b11696 changes
+CUDA/HIP RMSNorm reductions and adds an eligible Metal BF16 Flash Attention
+path. Exact embeddings, logits, and generated text can differ across native
+versions, even with a fixed seed. Compare representative output quality and
+numerical tolerances rather than requiring byte-for-byte equality. Crashes,
+NaNs, or materially degraded results are not ordinary rounding differences;
+investigate and report them with the model, backend, library versions, and
+reproduction steps.
+
 ### 17.3 Models, Catalog, and Storage
 
 #### A downloaded model is not listed

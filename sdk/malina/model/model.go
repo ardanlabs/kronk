@@ -48,6 +48,11 @@ const (
 // native attention optimizations for supported models and backends.
 // ConditioningCacheSize limits cached conditioning entries per context;
 // NewConfig defaults it to four, while zero disables it.
+// BatchedCFG requests batched conditional/unconditional branches; NewConfig
+// defaults it to true, but Malina disables it on Metal for correctness.
+// FlashAttentionMode and ConvDirectMode select native on/off/auto policies,
+// optionally per module (for example, "auto,te=off"). Empty selects automatic
+// behavior while honoring legacy true attention flags; use "off" to disable.
 type Config struct {
 	ModelPath                   string
 	ClipLPath                   string
@@ -79,6 +84,9 @@ type Config struct {
 	DiffusionFlashAttention     bool
 	SageAttention               bool
 	ConditioningCacheSize       int32
+	BatchedCFG                  bool
+	FlashAttentionMode          string
+	ConvDirectMode              string
 }
 
 // Option modifies Config.
@@ -244,6 +252,30 @@ func WithConditioningCacheSize(size int32) Option {
 	}
 }
 
+// WithBatchedCFG requests batched conditional/unconditional branches. Malina
+// disables this optimization on Metal regardless of the requested value.
+func WithBatchedCFG(enabled bool) Option {
+	return func(cfg *Config) {
+		cfg.BatchedCFG = enabled
+	}
+}
+
+// WithFlashAttentionMode selects the native on/off/auto attention policy,
+// optionally per module. Use "off" to explicitly disable flash attention.
+func WithFlashAttentionMode(mode string) Option {
+	return func(cfg *Config) {
+		cfg.FlashAttentionMode = mode
+	}
+}
+
+// WithConvDirectMode selects the native on/off/auto direct-convolution policy,
+// optionally per module. An empty string preserves automatic selection.
+func WithConvDirectMode(mode string) Option {
+	return func(cfg *Config) {
+		cfg.ConvDirectMode = mode
+	}
+}
+
 // NewConfig constructs and validates Config.
 func NewConfig(opts ...Option) (Config, error) {
 	cfg := Config{
@@ -251,6 +283,7 @@ func NewConfig(opts ...Option) (Config, error) {
 		QueueDepth:            defaultQueueDepth,
 		AdmissionTimeout:      defaultAdmissionTimeout,
 		ConditioningCacheSize: defaultConditioningCacheSize,
+		BatchedCFG:            true,
 	}
 	for _, opt := range opts {
 		opt(&cfg)
@@ -632,6 +665,9 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		params.DiffusionFlashAttn = cfg.DiffusionFlashAttention
 		params.SageAttn = cfg.SageAttention
 		params.ConditioningCacheSize = cfg.ConditioningCacheSize
+		params.BatchedCFG = cfg.BatchedCFG
+		params.FlashAttnMode = cfg.FlashAttentionMode
+		params.ConvDirectMode = cfg.ConvDirectMode
 		if cfg.CPUThreads > 0 {
 			params.NThreads = cfg.CPUThreads
 		}

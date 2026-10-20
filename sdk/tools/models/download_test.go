@@ -6,6 +6,8 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -464,9 +466,31 @@ func TestDownloadSplits_IndexStale_FileDeleted(t *testing.T) {
 }
 
 func TestDownload_MissingCompanion_ReDownloads(t *testing.T) {
+	// Fail on any real HTTP connection, even in best-effort enrichment paths
+	// whose errors would otherwise be logged and swallowed.
+	previousTransport := http.DefaultTransport
+	http.DefaultTransport = &http.Transport{
+		DialContext: func(_ context.Context, _ string, addr string) (net.Conn, error) {
+			t.Errorf("unexpected network connection to %s", addr)
+			return nil, errors.New("network disabled in test")
+		},
+	}
+	t.Cleanup(func() { http.DefaultTransport = previousTransport })
+
+	t.Setenv("KRONK_SKIP_NETWORK_CHECK", "true")
+
+	// Enrichment reads the model's local GGUF header. Invalid placeholder
+	// bytes would trigger its remote-header fallback despite the fake getter.
+	file := filepath.Join(t.TempDir(), "model.gguf")
+	writeCatalogTestGGUF(t, file, nil)
+	body, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	g := &fakeGetter{
 		contents: map[string][]byte{
-			"/unsloth/gemma-4-26B-A4B-it-GGUF/resolve/main/gemma-4-26B-A4B-it-UD-Q4_K_M.gguf": []byte("model-body-bytes\n"),
+			"/unsloth/gemma-4-26B-A4B-it-GGUF/resolve/main/gemma-4-26B-A4B-it-UD-Q4_K_M.gguf": body,
 			"/unsloth/gemma-4-26B-A4B-it-GGUF/resolve/main/mmproj-F16.gguf":                   []byte("proj-body-bytes\n"),
 			"/ggml-org/gemma-4-26B-A4B-it-GGUF/resolve/main/mtp-gemma-4-26B-A4B-it.gguf":      []byte("mtp-drafter-bytes\n"),
 		},

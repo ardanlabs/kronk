@@ -15,6 +15,35 @@ import (
 	"go.yaml.in/yaml/v2"
 )
 
+func TestKronkResolvedConfigBasePath(t *testing.T) {
+	basePath := t.TempDir()
+	t.Setenv("KRONK_BASE_PATH", t.TempDir())
+	m, err := NewWithPaths(basePath)
+	if err != nil {
+		t.Fatalf("NewWithPaths: %v", err)
+	}
+
+	modelFile := filepath.Join(m.Path(), "model-Q8_0.gguf")
+	writeCatalogTestGGUF(t, modelFile, nil)
+	data, err := yaml.Marshal(map[string]Path{
+		"example/model-Q8_0": {ModelFiles: []string{modelFile}},
+	})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(m.Path(), indexFile), data, 0600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg, err := m.KronkResolvedConfig("example/model-Q8_0", nil)
+	if err != nil {
+		t.Fatalf("KronkResolvedConfig: %v", err)
+	}
+	if cfg.BasePath != basePath {
+		t.Errorf("BasePath: got %q, want %q", cfg.BasePath, basePath)
+	}
+}
+
 func TestResolveSessionStoreFactory(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -371,6 +400,43 @@ func TestModelConfigLoadMode(t *testing.T) {
 	}
 }
 
+func TestModelConfigKVCacheMode(t *testing.T) {
+	base := ModelConfig{PtrKVCacheMode: new(model.KVCacheShared)}
+	for _, tt := range []struct {
+		input string
+		want  model.KVCacheMode
+	}{
+		{"{}", model.KVCacheShared},
+		{"kv-cache-mode: partitioned", model.KVCachePartitioned},
+		{"kv-cache-mode: shared", model.KVCacheShared},
+	} {
+		var override ModelConfig
+		if err := yaml.Unmarshal([]byte(tt.input), &override); err != nil {
+			t.Fatal(err)
+		}
+		cfg := base
+		MergeModelConfig(&cfg, override)
+		if got := cfg.ToKronkConfig().KVCacheMode(); got != tt.want {
+			t.Errorf("%s: got %q, want %q", tt.input, got, tt.want)
+		}
+		data, err := yaml.Marshal(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var restored ModelConfig
+		if err := yaml.Unmarshal(data, &restored); err != nil || restored.ToKronkConfig().KVCacheMode() != tt.want {
+			t.Fatalf("YAML round trip: got %q, error %v, want %q", restored.ToKronkConfig().KVCacheMode(), err, tt.want)
+		}
+	}
+	var cfg ModelConfig
+	if err := yaml.Unmarshal([]byte("kv-cache-mode: invalid"), &cfg); err == nil {
+		t.Fatal("invalid mode accepted")
+	}
+	if got := (ModelConfig{}).ToKronkConfig().KVCacheMode(); got != model.KVCachePartitioned {
+		t.Errorf("default mode: got %q, want partitioned", got)
+	}
+}
+
 func TestModelConfigLazyMode(t *testing.T) {
 	for _, tt := range []struct {
 		input string
@@ -423,6 +489,7 @@ func TestModelConfigAdmissionAndQueue(t *testing.T) {
   admission-timeout: 3m
   imc-session-capacity: 8
   prefill-batch-size: 4096
+  physical-batch-size: 512
   image-batch-token-capacity: 1120
   image-token-budget: 768
   queue-depth: 2
@@ -447,6 +514,9 @@ func TestModelConfigAdmissionAndQueue(t *testing.T) {
 	if got := kronkCfg.PrefillBatchSize(); got != 4096 {
 		t.Errorf("PrefillBatchSize() = %d, want 4096", got)
 	}
+	if got := kronkCfg.PhysicalBatchSize(); got != 512 {
+		t.Errorf("PhysicalBatchSize: got %d, want 512", got)
+	}
 	if got := kronkCfg.ImageBatchTokenCapacity(); got != 1120 {
 		t.Errorf("ImageBatchTokenCapacity() = %d, want 1120", got)
 	}
@@ -462,6 +532,7 @@ func TestModelConfigAdmissionAndQueue(t *testing.T) {
 		PtrAdmissionTimeout:        &overrideTimeout,
 		PtrIMCSessionCapacity:      &overrideSessions,
 		PtrPrefillBatchSize:        &overridePrefillBatchSize,
+		PtrPhysicalBatchSize:       new(256),
 		PtrImageBatchTokenCapacity: new(0),
 		PtrImageTokenBudget:        new(1536),
 		PtrQueueDepth:              &overrideDepth,
@@ -478,6 +549,9 @@ func TestModelConfigAdmissionAndQueue(t *testing.T) {
 	}
 	if got := kronkCfg.PrefillBatchSize(); got != 1024 {
 		t.Errorf("merged PrefillBatchSize() = %d, want 1024", got)
+	}
+	if got := kronkCfg.PhysicalBatchSize(); got != 256 {
+		t.Errorf("merged PhysicalBatchSize: got %d, want 256", got)
 	}
 	if got := kronkCfg.ImageBatchTokenCapacity(); got != 0 || kronkCfg.PtrImageBatchTokenCapacity == nil {
 		t.Errorf("merged ImageBatchTokenCapacity() = %d, want explicit zero", got)

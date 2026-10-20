@@ -39,7 +39,7 @@ func run() error {
 		return err
 	}
 
-	upscaler, err := malina.NewUpscaler(ctx, malina.UpscalerConfig{ModelPath: manifest.Files[string(models.RoleUpscaler)]})
+	upscaler, err := malina.NewUpscaler(ctx, malina.UpscalerConfig{ModelPath: manifest.Files[models.RoleUpscaler.String()]})
 	if err != nil {
 		return err
 	}

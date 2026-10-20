@@ -357,6 +357,7 @@ type ModelConfig struct {
 	PtrImageTokenBudget        *int                      `yaml:"image-token-budget,omitempty"`
 	PtrIncrementalCache        *bool                     `yaml:"incremental-cache,omitempty"`
 	PtrInsecureLogging         *bool                     `yaml:"insecure-logging,omitempty"`
+	PtrKVCacheMode             *model.KVCacheMode        `yaml:"kv-cache-mode,omitempty"`
 	PtrLazyMode                *model.LazyMode           `yaml:"lazy-mode,omitempty"`
 	PtrLoadMode                *model.LoadMode           `yaml:"load-mode,omitempty"`
 	PtrMainGPU                 *int                      `yaml:"main-gpu,omitempty"`
@@ -366,7 +367,8 @@ type ModelConfig struct {
 	PtrNThreads                *int                      `yaml:"nthreads,omitempty"`
 	PtrNThreadsBatch           *int                      `yaml:"nthreads-batch,omitempty"`
 	PtrPrefillBatchSize        *int                      `yaml:"prefill-batch-size,omitempty"`
-	NUMA                       string                    `yaml:"numa,omitempty"`
+	PtrPhysicalBatchSize       *int                      `yaml:"physical-batch-size,omitempty"`
+	NUMA                       model.NUMAStrategy        `yaml:"numa,omitempty"`
 	PtrOffloadKQV              *bool                     `yaml:"offload-kqv,omitempty"`
 	PtrOpOffload               *bool                     `yaml:"op-offload,omitempty"`
 	PtrProjOnCPU               *bool                     `yaml:"proj-on-cpu,omitempty"`
@@ -431,6 +433,7 @@ func (mc ModelConfig) ToKronkConfig() model.Config {
 		PtrIncrementalCache:        mc.PtrIncrementalCache,
 		PtrInsecureLogging:         mc.PtrInsecureLogging,
 		JinjaFile:                  mc.Template,
+		PtrKVCacheMode:             mc.PtrKVCacheMode,
 		LazyMode:                   model.DerefLazyMode(mc.PtrLazyMode),
 		LoadMode:                   model.DerefLoadMode(mc.PtrLoadMode),
 		PtrMainGPU:                 mc.PtrMainGPU,
@@ -440,6 +443,7 @@ func (mc ModelConfig) ToKronkConfig() model.Config {
 		PtrNThreads:                mc.PtrNThreads,
 		PtrNThreadsBatch:           mc.PtrNThreadsBatch,
 		PtrPrefillBatchSize:        mc.PtrPrefillBatchSize,
+		PtrPhysicalBatchSize:       mc.PtrPhysicalBatchSize,
 		NUMA:                       mc.NUMA,
 		PtrOffloadKQV:              mc.PtrOffloadKQV,
 		PtrOpOffload:               mc.PtrOpOffload,

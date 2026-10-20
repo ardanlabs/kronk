@@ -72,7 +72,7 @@ func print(summaries []models.CatalogSummary) {
 	for _, s := range summaries {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			validatedMark(s.Validated), s.ID, s.OwnedBy, s.ModelFamily,
-			dash(s.ModelType), projectionMark(s.HasProjection), dash(string(s.MTPSource)), dash(s.TotalSize))
+			dash(s.ModelType), projectionMark(s.HasProjection), dash(s.MTPSource.String()), dash(s.TotalSize))
 	}
 
 	w.Flush()

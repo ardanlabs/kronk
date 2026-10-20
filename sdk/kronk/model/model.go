@@ -147,17 +147,18 @@ func (s *imcSession) logicalPosition() int {
 //   - Shared MTP draft (*sharedMTPDrafter): a companion assistant model whose
 //     context shares the target's KV memory.
 type draftCore struct {
-	model          llama.Model
-	vocab          llama.Vocab
-	suppressTokens []llama.Token
-	lctx           llama.Context
-	mem            llama.Memory
-	sampler        llama.Sampler
-	batch          *extendedBatch
-	nDraft         int
-	promptBuf      []llama.Token // Reusable buffer for assembling draft prompt tokens
-	draftBuf       []llama.Token // Reusable buffer for generateDraftTokens output
-	mtp            *mtpengine.Resources
+	model            llama.Model
+	vocab            llama.Vocab
+	suppressTokens   []llama.Token
+	lctx             llama.Context
+	mem              llama.Memory
+	sampler          llama.Sampler
+	batch            *extendedBatch
+	graphAllocations graphAllocationLog
+	nDraft           int
+	promptBuf        []llama.Token // Reusable buffer for assembling draft prompt tokens
+	draftBuf         []llama.Token // Reusable buffer for generateDraftTokens output
+	mtp              *mtpengine.Resources
 
 	// Pre-allocated buffers for speculative sampling to avoid per-round
 	// allocations of vocab-sized slices (~600KB each for 152k vocab).
@@ -202,20 +203,22 @@ type Model struct {
 	// to a single request and cannot bleed across requests.
 	// Zero when projFile == "" (text-only models) or for embed/rerank
 	// models.
-	mtmdMetaCtx     mtmd.Context
-	modelInfo       ModelInfo
-	paramsResolved  bool
-	activeStreams   atomic.Int32
-	unloaded        atomic.Bool
-	decodeMu        sync.Mutex
-	cacheMu         sync.RWMutex
-	imcSessions     []*imcSession     // IMC session pool, sized by IMCSessionCapacity; sessions migrate freely between slots via SessionStore. Idle sessions cost only the struct itself — the SessionStore buffer is allocated lazily on first use.
-	imcSystemCaches []*imcSystemCache // Immutable system-prompt preload pool with the same capacity as imcSessions.
-	addBOSToken     bool              // Whether to add BOS token (from model metadata)
-	pool            *contextPool      // Context pool for parallel embed/rerank
-	batchSeq        *batchSeqEngine   // Sequence-batch engine for supported embed/rerank models.
-	parser          Parser            // Selected via selectParser at load time; nil for embed/rerank.
-	draft           drafter           // Speculative-decoding strategy (nil, classic, or MTP); see draft.go
+	mtmdMetaCtx      mtmd.Context
+	modelInfo        ModelInfo
+	paramsResolved   bool
+	activeStreams    atomic.Int32
+	unloaded         atomic.Bool
+	decodeMu         sync.Mutex
+	pendingDecode    bool // Protected by decodeMu; submitted target work may still be executing.
+	graphAllocations graphAllocationLog
+	cacheMu          sync.RWMutex
+	imcSessions      []*imcSession     // IMC session pool, sized by IMCSessionCapacity; sessions migrate freely between slots via SessionStore. Idle sessions cost only the struct itself — the SessionStore buffer is allocated lazily on first use.
+	imcSystemCaches  []*imcSystemCache // Immutable system-prompt preload pool with the same capacity as imcSessions.
+	addBOSToken      bool              // Whether to add BOS token (from model metadata)
+	pool             *contextPool      // Context pool for parallel embed/rerank
+	batchSeq         *batchSeqEngine   // Sequence-batch engine for supported embed/rerank models.
+	parser           Parser            // Selected via selectParser at load time; nil for embed/rerank.
+	draft            drafter           // Speculative-decoding strategy (nil, classic, or MTP); see draft.go
 }
 
 // NewModel loads a model from the GGUF files specified in cfg and returns
@@ -332,6 +335,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	l(ctx, "batch-sizing", "status", "resolved",
 		"configured-prefill-batch-size", configuredPrefillBatchSize,
 		"prefill-batch-size", prefillChunk,
+		"physical-batch-size", cfg.PhysicalBatchSize(),
 		"image-batch-token-capacity", cfg.ImageBatchTokenCapacity(),
 		"image-token-budget", cfg.ImageTokenBudget(),
 		"nseq-max", cfg.NSeqMax(),
@@ -651,7 +655,7 @@ func buildModelParams(ctx context.Context, cfg *Config, loadMTP bool, l applog.L
 // applyNUMA initializes the llama.cpp NUMA strategy. NUMA init must happen
 // once before any model load.
 func applyNUMA(ctx context.Context, cfg Config, l applog.Logger) {
-	if cfg.NUMA == "" {
+	if cfg.NUMA.IsZero() {
 		return
 	}
 
@@ -744,7 +748,7 @@ func logContextParamsTrace(ctx context.Context, ctxParams llama.ContextParams, c
 func logModelParamsTrace(ctx context.Context, params llama.ModelParams, deviceNames []string, tensorSplit []float32, tensorBuftOverrides []string, l applog.Logger) {
 	l(ctx, "LLAMA-MODEL-PARAMS", "values", fmt.Sprintf("\nCheckTensors[%d]\nDevices[%v]\nKvOverridesSet[%t]\nLazyMode[%d]\nLoadMode[%s]\nLoadMTP[%d]\nMainGPU[%d]\nNGpuLayers[%d]\nNoAlloc[%d]\nNoHost[%d]\nProgressCallbackSet[%t]\nProgressCallbackUserDataSet[%t]\nSplitMode[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nUseExtraBufts[%d]\nVocabOnly[%d]\n",
 		params.CheckTensors, deviceNames, params.KvOverrides != 0, params.LazyMode, loadModeName(params.LoadMode), params.LoadMTP,
-		params.MainGpu, params.NGpuLayers, params.NoAlloc, params.NoHost, params.ProgressCallback != 0, params.ProgressCallbackUserData != 0, SplitMode(params.SplitMode).String(),
+		params.MainGpu, params.NGpuLayers, params.NoAlloc, params.NoHost, params.ProgressCallback != 0, params.ProgressCallbackUserData != 0, SplitModeFromYZMA(params.SplitMode).String(),
 		tensorBuftOverrides, tensorSplit, params.UseExtraBufts, params.VocabOnly))
 }
 
@@ -759,10 +763,34 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int, plan specu
 	}
 
 	wantCtxSeq := uint32(m.cfg.ContextWindow())
+	if m.ctxParams.KVUnified != 0 {
+		// Unified NCtxSeq describes the shared, possibly padded allocation.
+		// Request budgeting still uses cfg.ContextWindow, not this value.
+		wantCtxSeq = llama.NCtx(lctx)
+	}
 	if gotCtxSeq := llama.NCtxSeq(lctx); gotCtxSeq != wantCtxSeq {
 		llama.Free(lctx)
 		return fmt.Errorf("init-from-model: context per sequence got %d, want %d", gotCtxSeq, wantCtxSeq)
 	}
+
+	// llama.cpp can clamp the requested capacities to the native context size.
+	// Keep the scheduler, draft contexts, and user-facing diagnostics in agreement.
+	m.cfg.nBatch = int(llama.NBatch(lctx))
+	m.cfg.nUBatch = int(llama.NUBatch(lctx))
+	m.ctxParams.NBatch = uint32(m.cfg.nBatch)
+	m.ctxParams.NUbatch = uint32(m.cfg.nUBatch)
+	reason := "requested-or-default"
+	switch {
+	case plan.MTP() && plan.Active():
+		reason = "active-mtp-policy"
+	case m.cfg.nUBatch < m.cfg.PhysicalBatchSize():
+		reason = "native-logical-capacity-limit"
+	case m.cfg.PtrPhysicalBatchSize != nil && m.cfg.nUBatch > m.cfg.PhysicalBatchSize():
+		reason = "image-capacity-floor"
+	}
+	m.log(ctx, "batch-sizing", "status", "native-resolved",
+		"physical-batch-size", m.cfg.PhysicalBatchSize(),
+		"effective-nbatch", m.cfg.nBatch, "effective-nubatch", m.cfg.nUBatch, "reason", reason)
 
 	mem, err := llama.GetMemory(lctx)
 	if err != nil {
@@ -1176,7 +1204,7 @@ func retrieveTemplate(cfg Config, modelID string, mdl llama.Model) (Template, er
 		}, nil
 	}
 
-	if tmpl, ok := autoDiscoverTemplate(modelID); ok {
+	if tmpl, ok := autoDiscoverTemplate(modelID, cfg.BasePath); ok {
 		return tmpl, nil
 	}
 
@@ -1191,16 +1219,16 @@ func retrieveTemplate(cfg Config, modelID string, mdl llama.Model) (Template, er
 	}, nil
 }
 
-// autoDiscoverTemplate searches the per-user jinja directory for a template
+// autoDiscoverTemplate searches the base path's jinja directory for a template
 // matching the model id. It tries the full id first, then the id with any
 // trailing quant suffix stripped. Returns (Template{}, false) when nothing
-// matches or the model id is empty.
-func autoDiscoverTemplate(modelID string) (Template, bool) {
+// matches or the model id is empty. An empty base path uses environment/home defaults.
+func autoDiscoverTemplate(modelID string, basePath string) (Template, bool) {
 	if modelID == "" {
 		return Template{}, false
 	}
 
-	jinjaDir := defaults.JinjaDir("")
+	jinjaDir := defaults.JinjaDir(basePath)
 
 	candidates := []string{modelID}
 	if stripped := stripQuantSuffix(modelID); stripped != "" && stripped != modelID {
@@ -1604,15 +1632,16 @@ func calculateVRAMDiag(cfg Config, mi ModelInfo) (vramTotal int64, slotMemory in
 		WeightLoading:          cfg.VRAMWeightLoading(devices.List(devices.WithIncludeMemory(false))),
 		ComputeBackend:         devices.Backend(),
 		ContextWindow:          int64(cfg.ContextWindow()),
-		BytesPerElement:        int64(gguf.MaxBytesPerElement(int32(cfg.CacheTypeK), int32(cfg.CacheTypeV))),
-		TypeK:                  int32(cfg.CacheTypeK),
-		TypeV:                  int32(cfg.CacheTypeV),
+		BytesPerElement:        int64(gguf.MaxBytesPerElement(cfg.CacheTypeK.ToVRAMType(), cfg.CacheTypeV.ToVRAMType())),
+		TypeK:                  cfg.CacheTypeK.ToVRAMType(),
+		TypeV:                  cfg.CacheTypeV.ToVRAMType(),
 		Slots:                  int64(max(cfg.NSeqMax(), 1)),
 		NUBatch:                int64(cfg.EffectiveNUBatch()),
 		ExpertLayersOnGPU:      cfg.ExpertLayersOnGPU(),
 		MoECacheSize:           cfg.MoECacheSize(),
 		GPULayers:              int64(cfg.NGpuLayers()),
 		KVCacheOnCPU:           cfg.PtrOffloadKQV != nil && !*cfg.PtrOffloadKQV,
+		KVUnified:              cfg.KVCacheMode() == KVCacheShared,
 		VTransposed:            cfg.FlashAttention() == FlashAttentionDisabled,
 		SWAFull:                effectiveSWAFull(cfg.PtrSWAFull, llama.ContextDefaultParams().SwaFull != 0),
 		RecurrentStateCopies:   RecurrentStateCopies(cfg, false),

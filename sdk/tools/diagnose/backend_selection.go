@@ -6,14 +6,6 @@ import (
 	"strings"
 )
 
-type backendProbeState uint8
-
-const (
-	backendProbeUnknown backendProbeState = iota
-	backendProbeNone
-	backendProbeDevices
-)
-
 // backendSelectionHints reports a verified installed accelerator alternative
 // when the backend selected by the engine explicitly detects no GPU. It is the
 // preferred hint over engineCPUFallbackHints: it names a bundle that saw one.

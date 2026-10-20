@@ -14,13 +14,17 @@ type decisionProtocol interface {
 type decisionProtocolFactory func(m *Model) (decisionProtocol, error)
 
 var decisionProtocolFactories = map[DecisionProtocol]decisionProtocolFactory{
-	DecisionProtocolOpenJEV:  newDetectedOpenJEVProtocol,
-	DecisionProtocolJevStyle: func(m *Model) (decisionProtocol, error) { return newJevStyleProtocol(m) },
-	DecisionProtocolLaya:     func(m *Model) (decisionProtocol, error) { return newLayaProtocol(m) },
-	DecisionProtocolLev:      func(m *Model) (decisionProtocol, error) { return newLevProtocol(m) },
-	DecisionProtocolKev:      func(m *Model) (decisionProtocol, error) { return newKevProtocol(m) },
-	DecisionProtocolNimble:   func(m *Model) (decisionProtocol, error) { return newNimbleProtocol(m) },
-	DecisionProtocolClef:     func(m *Model) (decisionProtocol, error) { return newClefProtocol(m) },
+	DecisionProtocolOpenJEV:       newDetectedOpenJEVProtocol,
+	DecisionProtocolJevStyle:      func(m *Model) (decisionProtocol, error) { return newJevStyleProtocol(m) },
+	DecisionProtocolLaya:          func(m *Model) (decisionProtocol, error) { return newLayaProtocol(m) },
+	DecisionProtocolLev:           func(m *Model) (decisionProtocol, error) { return newLevProtocol(m) },
+	DecisionProtocolKev:           func(m *Model) (decisionProtocol, error) { return newKevProtocol(m) },
+	DecisionProtocolNimble:        func(m *Model) (decisionProtocol, error) { return newNimbleProtocol(m) },
+	DecisionProtocolClef:          func(m *Model) (decisionProtocol, error) { return newClefProtocol(m) },
+	DecisionProtocolPplxDecider:   newDeciderProtocol,
+	DecisionProtocolLfm2D1:        newDeciderProtocol,
+	DecisionProtocolVllmD3:        newDeciderProtocol,
+	DecisionProtocolVllmDecision2: newDecision2Protocol,
 }
 
 func initDecisionProtocol(m *Model) error {
@@ -49,7 +53,7 @@ func (m *Model) Decision(ctx context.Context, req DecisionRequest) (DecisionResp
 	if m.protocol == nil {
 		return DecisionResponse{}, fmt.Errorf("decision: protocol was not detected for model %q; configure model.WithDecisionProtocol(...) with the model's protocol", m.modelInfo.ID)
 	}
-	if err := validateDecisionRequest(req); err != nil {
+	if err := validateDecisionRequest(req, m.modelInfo.decisionProtocol); err != nil {
 		return DecisionResponse{}, err
 	}
 	return m.protocol.decide(ctx, req)

@@ -22,9 +22,10 @@ const defMTPNDraft = 3
 
 // modelFilesMTPArchitecture reports the MTP runtime contract declared by the
 // first GGUF shard, including recognized contracts that Kronk does not enable.
-// GGUF metadata lives in the first shard, so no other file is read. This check
-// must run before llama loads the model: llama.cpp skips gated MTP tensors
-// unless ModelParams.LoadMTP is enabled.
+// Qwen35 also requires its first MTP block's projection in the tensor directory
+// of one of the shards: converted models can retain NextN metadata after
+// stripping the MTP weights. This check must run before llama loads the model:
+// llama.cpp skips gated MTP tensors unless ModelParams.LoadMTP is enabled.
 func modelFilesMTPArchitecture(modelFiles []string) (modelprofile.MTPArchitecture, error) {
 	if len(modelFiles) == 0 {
 		return modelprofile.MTPArchitectureNone, fmt.Errorf("no model files provided")
@@ -40,7 +41,40 @@ func modelFilesMTPArchitecture(modelFiles []string) (modelprofile.MTPArchitectur
 		return modelprofile.MTPArchitectureNone, err
 	}
 
-	return metadataMTPArchitecture(metadata), nil
+	architecture := metadataMTPArchitecture(metadata)
+	if architecture != modelprofile.MTPArchitectureQwen35OwnKV {
+		return architecture, nil
+	}
+
+	profile := modelprofile.Resolve(metadata)
+	blocks := profile.Dimensions.BlockCount
+	nextN := profile.Speculation.NextNPredictLayers
+	if blocks < nextN {
+		return modelprofile.MTPArchitectureNone, fmt.Errorf("MTP layer count %d exceeds block count %d", nextN, blocks)
+	}
+
+	// Match llama.cpp's nextn_flags probe. When this tensor exists, the native
+	// model loader validates the remaining required MTP weights itself.
+	head := fmt.Sprintf("blk.%d.nextn.eh_proj.weight", blocks-nextN)
+	for i, file := range modelFiles {
+		if i > 0 {
+			data, err = gguf.ReadHeaderBytes(file)
+			if err != nil {
+				return modelprofile.MTPArchitectureNone, err
+			}
+		}
+		_, tensors, err := gguf.ParseHeaderAndTensors(data, 0)
+		if err != nil {
+			return modelprofile.MTPArchitectureNone, fmt.Errorf("read MTP tensor directory %q: %w", file, err)
+		}
+		for _, tensor := range tensors {
+			if tensor.Name == head {
+				return architecture, nil
+			}
+		}
+	}
+
+	return modelprofile.MTPArchitectureNone, nil
 }
 
 // metadataHasMTP reports whether metadata declares a positive MTP layer count
@@ -292,19 +326,13 @@ func embeddedMTPContextParams(params, target llama.ContextParams) llama.ContextP
 // probeMTPCompanion reports the runtime shape declared by a separate-file MTP
 // companion. Unsupported architectures return MTPArchitectureNone.
 func probeMTPCompanion(ctx context.Context, log applog.Logger, file string) modelprofile.MTPArchitecture {
-	data, err := gguf.ReadHeaderBytes(file)
+	architecture, err := modelFilesMTPArchitecture([]string{file})
 	if err != nil {
 		log(ctx, "draft-model-mtp", "status", "probe-skip", "file", file, "err", err)
 		return modelprofile.MTPArchitectureNone
 	}
 
-	md, err := gguf.ParseMetadata(data)
-	if err != nil {
-		log(ctx, "draft-model-mtp", "status", "probe-skip", "file", file, "err", err)
-		return modelprofile.MTPArchitectureNone
-	}
-
-	return metadataMTPArchitecture(md)
+	return architecture
 }
 
 // loadDraftModelMTPSeparate loads a Qwen35 MTP-only GGUF into its own model

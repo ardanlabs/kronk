@@ -100,7 +100,7 @@ func (b ownKVMTPBackend) load(req mtpLoadRequest) (drafter, error) {
 		return d, nil
 	}
 
-	return nil, fmt.Errorf("%s MTP: unsupported artifact %d", b.architecture, b.artifact)
+	return nil, fmt.Errorf("%s MTP: unsupported artifact %s", b.architecture, b.artifact)
 }
 
 type gemmaSharedKVBackend struct{}
@@ -148,7 +148,7 @@ func mtpBackendForPlan(plan speculationPlan) (mtpBackend, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("unsupported MTP architecture %d artifact %d", plan.MTPArchitecture, plan.MTPArtifact)
+	return nil, fmt.Errorf("unsupported MTP architecture %s artifact %s", plan.MTPArchitecture, plan.MTPArtifact)
 }
 
 func selectedMTPBackend(d drafter) (mtpBackend, bool) {

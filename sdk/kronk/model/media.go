@@ -6,14 +6,6 @@ import (
 	"strings"
 )
 
-type MediaType int
-
-const (
-	MediaTypeNone MediaType = iota
-	MediaTypeVision
-	MediaTypeAudio
-)
-
 // detectMediaContent detects if the request contains media data in either:
 // - Form1: Plain base64 string as content (hasMedia=true, isOpenAIFormat=false)
 // - Form2: OpenAI structured format with image_url, video_url, or input_audio (hasMedia=true, isOpenAIFormat=true)

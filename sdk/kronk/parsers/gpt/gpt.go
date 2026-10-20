@@ -28,7 +28,13 @@ type Parser struct{}
 // New returns a Parser value if the fingerprint indicates GPT-OSS, otherwise
 // returns false. Detection uses the chat template's Harmony markers.
 func New(fp model.Fingerprint) (model.Parser, bool) {
-	// GPT-OSS chat templates contain the unique Harmony markers.
+	// Beam shares Harmony framing but uses XML parameters rather than JSON.
+	if strings.EqualFold(fp.Architecture, "beam") ||
+		strings.Contains(fp.ChatTemplate, "<|constrain|>xml") && strings.Contains(fp.ChatTemplate, "rfl:parameter") {
+		return Parser{}, false
+	}
+
+	// GPT-OSS chat templates contain Harmony markers.
 	if containsHarmonyMarkers(fp.ChatTemplate) {
 		return Parser{}, true
 	}
@@ -53,8 +59,7 @@ func (Parser) ToolCall(ctx context.Context, log applog.Logger, buf string) []mod
 }
 
 // containsHarmonyMarkers reports whether a chat template carries the
-// distinctive GPT-OSS Harmony tokens. Any one is sufficient because no
-// other parser uses these exact tokens.
+// GPT-OSS Harmony tokens. XML-Harmony templates are excluded by New.
 func containsHarmonyMarkers(template string) bool {
 	for _, marker := range []string{
 		"<|channel|>",

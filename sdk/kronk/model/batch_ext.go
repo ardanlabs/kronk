@@ -6,14 +6,6 @@ import (
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
-type extendedBatchOutput uint8
-
-const (
-	extendedBatchOutputNone extendedBatchOutput = iota
-	extendedBatchOutputLogits
-	extendedBatchOutputEmbeddings
-)
-
 type extendedBatchEntry struct {
 	token            llama.Token
 	hasToken         bool
@@ -173,8 +165,8 @@ func (b *extendedBatch) addEntry(entry extendedBatchEntry, sequenceIDs []llama.S
 	if entry.positionCount == 0 || entry.positionCount > len(entry.positions) {
 		return -1, fmt.Errorf("add extended batch entry: got %d positions, want 1 to 4", entry.positionCount)
 	}
-	if entry.output > extendedBatchOutputEmbeddings {
-		return -1, fmt.Errorf("add extended batch entry: invalid output type %d", entry.output)
+	if entry.output.value > extendedBatchOutputEmbeddings.value {
+		return -1, fmt.Errorf("add extended batch entry: invalid output type %d", entry.output.value)
 	}
 	if len(entry.embedding) > 0 {
 		if entry.embdWidth <= 0 || len(entry.embedding)%entry.embdWidth != 0 {

@@ -203,8 +203,8 @@ func TestModelFilesLoadMTPUsesFirstShard(t *testing.T) {
 	first := filepath.Join(dir, "model-00001-of-00002.gguf")
 	second := filepath.Join(dir, "model-00002-of-00002.gguf")
 
-	writeTestGGUF(t, first, map[string]any{"general.architecture": "qwen35moe", "qwen35moe.nextn_predict_layers": uint32(1)})
-	writeTestGGUF(t, second, nil)
+	writeTestGGUF(t, first, map[string]any{"general.architecture": "qwen35moe", "qwen35moe.block_count": uint32(41), "qwen35moe.nextn_predict_layers": uint32(1)})
+	writeTestGGUF(t, second, nil, "blk.40.nextn.eh_proj.weight")
 
 	got, err := modelFilesMTPArchitecture([]string{first, second})
 	if err != nil {
@@ -226,11 +226,48 @@ func TestModelFilesLoadMTPUsesFirstShard(t *testing.T) {
 	}
 }
 
-func writeTestGGUF(t *testing.T, file string, metadata map[string]any) {
+func TestSpeculationRejectsStrippedQwenMTP(t *testing.T) {
+	for _, arch := range []string{"qwen35", "qwen35moe"} {
+		t.Run(arch, func(t *testing.T) {
+			file := filepath.Join(t.TempDir(), "model.gguf")
+			writeTestGGUF(t, file, map[string]any{
+				"general.architecture":         arch,
+				arch + ".block_count":          uint32(41),
+				arch + ".nextn_predict_layers": uint32(1),
+			}, "blk.39.nextn.eh_proj.weight")
+			plan, err := resolveSpeculationPlan(context.Background(), nil, Config{ModelFiles: []string{file}})
+			if err != nil {
+				t.Fatalf("automatic speculation: %v", err)
+			}
+			if plan.Source != speculationSourceNone || plan.LoadMTP {
+				t.Fatalf("plan = %+v, want target only for missing MTP block 40", plan)
+			}
+			if mtpFilesEnabled([]string{file}) {
+				t.Fatal("missing MTP weights reserve draft resources")
+			}
+			if _, err := resolveSpeculationPlan(context.Background(), nil, Config{ModelFiles: []string{file}, Speculation: SpeculationMTP}); err == nil {
+				t.Fatal("explicit MTP accepted an artifact without its MTP head")
+			}
+
+			data, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(file, data[:len(data)-1], 0600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := resolveSpeculationPlan(context.Background(), nil, Config{ModelFiles: []string{file}}); err == nil {
+				t.Fatal("truncated tensor directory treated as confirmed absent MTP weights")
+			}
+		})
+	}
+}
+
+func writeTestGGUF(t *testing.T, file string, metadata map[string]any, tensorNames ...string) {
 	t.Helper()
 
 	var data bytes.Buffer
-	values := []any{gguf.Magic, uint32(3), uint64(0), uint64(len(metadata))}
+	values := []any{gguf.Magic, uint32(3), uint64(len(tensorNames)), uint64(len(metadata))}
 	for _, value := range values {
 		if err := binary.Write(&data, binary.LittleEndian, value); err != nil {
 			t.Fatalf("binary.Write() error = %v", err)
@@ -264,6 +301,14 @@ func writeTestGGUF(t *testing.T, file string, metadata map[string]any) {
 			}
 		default:
 			t.Fatalf("unsupported metadata value type %T", value)
+		}
+	}
+
+	for _, name := range tensorNames {
+		for _, value := range []any{uint64(len(name)), []byte(name), uint32(1), uint64(1), uint32(0), uint64(0)} {
+			if err := binary.Write(&data, binary.LittleEndian, value); err != nil {
+				t.Fatalf("write tensor descriptor: %v", err)
+			}
 		}
 	}
 

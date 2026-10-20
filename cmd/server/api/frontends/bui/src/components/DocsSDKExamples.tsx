@@ -3032,8 +3032,8 @@ func run() error {
 	}
 
 	mln, err := malina.New(
-		model.WithModelPath(manifest.Files[string(models.RoleModel)]),
-		model.WithADetailerPath(manifest.Files[string(models.RoleADetailer)]),
+		model.WithModelPath(manifest.Files[models.RoleModel.String()]),
+		model.WithADetailerPath(manifest.Files[models.RoleADetailer.String()]),
 	)
 	if err != nil {
 		return err
@@ -3122,8 +3122,8 @@ func run() error {
 	}
 
 	mln, err := malina.New(
-		model.WithModelPath(manifest.Files[string(models.RoleModel)]),
-		model.WithMotionModulePath(manifest.Files[string(models.RoleMotionModule)]),
+		model.WithModelPath(manifest.Files[models.RoleModel.String()]),
+		model.WithMotionModulePath(manifest.Files[models.RoleMotionModule.String()]),
 	)
 	if err != nil {
 		return err
@@ -3212,8 +3212,8 @@ func run() error {
 	}
 
 	mln, err := malina.New(
-		model.WithModelPath(manifest.Files[string(models.RoleModel)]),
-		model.WithControlNetPath(manifest.Files[string(models.RoleControlNet)]),
+		model.WithModelPath(manifest.Files[models.RoleModel.String()]),
+		model.WithControlNetPath(manifest.Files[models.RoleControlNet.String()]),
 	)
 	if err != nil {
 		return err
@@ -3600,10 +3600,10 @@ func run() error {
 
 	mln, err := malina.NewWithContext(
 		ctx,
-		model.WithDiffusionModelPath(manifest.Files[string(models.RoleDiffusion)]),
-		model.WithVAEPath(manifest.Files[string(models.RoleVAE)]),
-		model.WithT5XXLPath(manifest.Files[string(models.RoleT5XXL)]),
-		model.WithAudioEncoderPath(manifest.Files[string(models.RoleAudioEncoder)]),
+		model.WithDiffusionModelPath(manifest.Files[models.RoleDiffusion.String()]),
+		model.WithVAEPath(manifest.Files[models.RoleVAE.String()]),
+		model.WithT5XXLPath(manifest.Files[models.RoleT5XXL.String()]),
+		model.WithAudioEncoderPath(manifest.Files[models.RoleAudioEncoder.String()]),
 		model.WithDiffusionFlashAttention(true),
 	)
 	if err != nil {
@@ -3995,7 +3995,7 @@ func run() error {
 		return err
 	}
 
-	upscaler, err := malina.NewUpscaler(ctx, malina.UpscalerConfig{ModelPath: manifest.Files[string(models.RoleUpscaler)]})
+	upscaler, err := malina.NewUpscaler(ctx, malina.UpscalerConfig{ModelPath: manifest.Files[models.RoleUpscaler.String()]})
 	if err != nil {
 		return err
 	}

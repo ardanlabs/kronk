@@ -63,6 +63,7 @@ type Config struct {
 	ExpertLayersOnGPU      int64         // 0 = all experts on CPU.
 	MoECacheSize           int64         // GPU expert-cache budget in bytes per context; ignored for dense models.
 	KVCacheOnCPU           bool          // Move KV cache off the GPU (offload-kqv: false).
+	KVUnified              bool          // Share aggregate KV capacity across sequences.
 	SWAFull                bool          // Size SWA layers against the full context window.
 	VTransposed            bool          // Size V using the model-wide transposed layout.
 	RecurrentStateCopies   int64         // State copies for separate-model or companion-MTP speculation.

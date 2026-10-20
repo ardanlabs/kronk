@@ -10,16 +10,9 @@ import (
 	yzmaspec "github.com/hybridgroup/yzma/exp/speculative"
 )
 
-// SpeculationMode selects the speculative-decoding implementation for a model.
-type SpeculationMode = internalspec.Mode
 type mtpArtifact = internalspec.MTPArtifact
 
-const (
-	SpeculationAuto     = internalspec.ModeAuto
-	SpeculationDisabled = internalspec.ModeDisabled
-	SpeculationClassic  = internalspec.ModeClassic
-	SpeculationMTP      = internalspec.ModeMTP
-
+var (
 	speculationSourceNone    = internalspec.SourceNone
 	speculationSourceClassic = internalspec.SourceClassic
 	speculationSourceMTP     = internalspec.SourceMTP

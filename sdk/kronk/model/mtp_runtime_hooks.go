@@ -25,8 +25,8 @@ func addMTPBatchEntry(batch llama.BatchExt, token llama.Token, position llama.Po
 			return fmt.Errorf("adding sequence %d: %w", seqID, err)
 		}
 	}
-	if err := llama.BatchExtSetEmbdToken(batch, idx, hidden, nEmbd); err != nil {
-		return fmt.Errorf("setting token embedding: %w", err)
+	if err := llama.BatchExtSetEmbdState(batch, idx, hidden, nEmbd); err != nil {
+		return fmt.Errorf("setting MTP state embedding: %w", err)
 	}
 	if err := llama.BatchExtSetPos(batch, idx, position); err != nil {
 		return fmt.Errorf("setting position %d: %w", position, err)
@@ -37,6 +37,118 @@ func addMTPBatchEntry(batch llama.BatchExt, token llama.Token, position llama.Po
 		}
 	}
 
+	return nil
+}
+
+// mtpSyncInput is the common live-prefill/verification and cache-replay handoff.
+// It borrows existing batch entries rather than rebuilding token-only rows.
+// The caller must capture target hidden states before another target decode,
+// and keep both buffers valid until synchronization completes.
+func (e *batchEngine) mtpSyncInput(s *slot, rows []extendedBatchEntry, hiddenRows []float32, nextPosition llama.Pos) (mtpengine.SyncInput, error) {
+	draft := e.model.draft.core()
+	nEmbd := draft.mtp.EmbeddingSize()
+	input := mtpengine.SyncInput{
+		RowCount:      len(rows),
+		HiddenRows:    hiddenRows,
+		PendingHidden: s.mtp.PendingHidden,
+		HiddenScratch: draft.mtp.MirrorHidden,
+		NextPosition:  nextPosition,
+		EmbeddingSize: nEmbd,
+		ChunkSize:     draft.mtp.MirrorCapacity(),
+		SharedKV:      mtpUsesSharedKV(e.model.draft),
+	}
+	if input.SharedKV {
+		// Shared-KV handoff updates only the pending hidden state and logical
+		// position. It must not write a replay batch through target aliases.
+		return input, nil
+	}
+
+	input.DecodeOwnChunk = func(start, end int, shiftedHidden []float32) error {
+		if len(s.seqIDs) == 0 {
+			return errors.New("MTP replay: no sequence ID")
+		}
+		mirror := extendedBatch{native: draft.mtp.MirrorBatch}
+		if err := llama.BatchExtClear(mirror.native); err != nil {
+			return fmt.Errorf("clearing MTP mirror batch: %w", err)
+		}
+		for i, row := range rows[start:end] {
+			// Projected input embeddings and MTP hidden states are separate
+			// native inputs. Keep the former unshifted, including M-RoPE
+			// coordinates; Synchronize shifts only the latter.
+			if len(row.embedding) > 0 && row.embdWidth != int(llama.ModelNEmbdInp(draft.model)) {
+				return fmt.Errorf("MTP media input width %d does not match draft width %d", row.embdWidth, llama.ModelNEmbdInp(draft.model))
+			}
+			row.sequenceID, row.extraSequenceIDs = s.seqIDs[0], s.seqIDs[1:]
+			row.output = extendedBatchOutputNone
+			idx, err := mirror.renderEntry(row)
+			if err != nil {
+				return fmt.Errorf("adding MTP mirror row: %w", err)
+			}
+			hidden := shiftedHidden[i*nEmbd : (i+1)*nEmbd]
+			if err := llama.BatchExtSetEmbdState(mirror.native, idx, hidden, nEmbd); err != nil {
+				return fmt.Errorf("setting MTP mirror state: %w", err)
+			}
+		}
+		ret, err := llama.Process(draft.lctx, llama.ProcessTypeDecode, mirror.native)
+		if err != nil || ret != 0 {
+			e.model.log(s.job.ctx, "speculative", "status", "mtp-mirror-decode-error",
+				"slot", s.id, "seq", s.seqID, "ret", ret, "err", err)
+			return decodeError(ret, err)
+		}
+		llama.Synchronize(draft.lctx)
+		return nil
+	}
+	return input, nil
+}
+
+func (e *batchEngine) syncMTPRows(s *slot, rows []extendedBatchEntry, hiddenRows []float32, nextPosition llama.Pos) error {
+	input, err := e.mtpSyncInput(s, rows, hiddenRows, nextPosition)
+	if err != nil {
+		return err
+	}
+	result, err := mtpengine.Synchronize(input)
+	if err != nil {
+		return err
+	}
+	s.mtp.PendingHidden = result.PendingHidden
+	s.draftNPast = result.Position
+	return nil
+}
+
+// syncMTPDecodedRows captures and consumes target state before another target
+// decode can replace it. The caller holds decodeMu. A failed draft handoff
+// falls back to target-only execution for this request, not other slots.
+func (e *batchEngine) syncMTPDecodedRows(s *slot, batch *extendedBatch, start int, nextPosition llama.Pos) error {
+	if e.model.draft == nil || !e.model.draft.mtp() || s.mtp.Disabled || batch.len() == start {
+		return nil
+	}
+	nEmbd := e.model.draft.core().mtp.EmbeddingSize()
+	hidden := yzmaspec.GetEmbeddingsNextN(e.model.lctx, batch.len(), nEmbd)
+	if hidden != nil {
+		hidden = hidden[start*nEmbd:]
+	}
+	err := e.syncMTPRows(s, batch.entries[start:], hidden, nextPosition)
+	if err == nil {
+		return nil
+	}
+	e.model.log(s.job.ctx, "speculative", "status", "mtp-sync-error", "slot", s.id, "err", err)
+	return e.disableMTPForRequestSpec(s.job.ctx, s, "sync-error", 0)
+}
+
+// resetMTPMediaPrefix pairs a full target media rebuild with an empty draft
+// prefix. The caller holds decodeMu; shared-KV memory is cleared only through
+// the target, never through its draft alias.
+func (e *batchEngine) resetMTPMediaPrefix(s *slot) error {
+	if e.model.draft == nil || !e.model.draft.mtp() {
+		return nil
+	}
+	if ext, ok := e.model.draft.(draftKVExternalizer); ok {
+		if _, err := llama.MemorySeqRm(ext.core().mem, s.seqID, -1, -1); err != nil {
+			return fmt.Errorf("clearing MTP media prefix: %w", err)
+		}
+	}
+	s.mtp.Reset()
+	s.draftNPast = 0
 	return nil
 }
 
@@ -149,7 +261,7 @@ func (e *batchEngine) decodeTokensIntoCacheMTP(ctx context.Context, s *slot, tok
 		if hiddenRows == nil {
 			return fmt.Errorf("imc-mtp: target pre-norm rows unavailable at pos %d", startPos+i)
 		}
-		if err := e.syncMTPCacheRows(s, tokens[i:end], hiddenRows, llama.Pos(startPos+i)); err != nil {
+		if err := e.syncMTPRows(s, batch.entries, hiddenRows, llama.Pos(startPos+end)); err != nil {
 			return fmt.Errorf("imc-mtp: sync at pos %d: %w", startPos+i, err)
 		}
 		mtpSyncElapsed += time.Since(mtpSyncStart)

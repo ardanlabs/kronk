@@ -41,33 +41,6 @@ var ErrStreamStopped = errors.New("stream stopped")
 // =============================================================================
 // Events
 
-// EventKind classifies a transcript Event delivered on a Stream's channel.
-type EventKind int
-
-const (
-	// EventPartial is a tentative, revisable re-decode of the current
-	// un-committed audio window. Its Text is the COMPLETE hypothesis for
-	// that window (not a delta): each Partial SUPERSEDES the previous one,
-	// so a consumer should REPLACE its pending-text buffer with Text. This
-	// is what produces the "words change as you keep talking" rewrite
-	// effect seen in whisper.cpp's stream example. Partials may be dropped
-	// under load.
-	EventPartial EventKind = iota
-
-	// EventFinal commits the current un-committed region: it will not be
-	// revised. Its Text is the authoritative text for that region. A
-	// consumer should APPEND Text to its permanent transcript and clear
-	// its pending-partial buffer. Finals are never dropped.
-	EventFinal
-
-	// EventReset is emitted after Reset completes, only when the stream
-	// was opened WithEmitResetEvent. Text and Segments are empty.
-	EventReset
-
-	// EventError is terminal. Err is set; the Events channel closes next.
-	EventError
-)
-
 // Event is one item delivered on a Stream's Events channel.
 //
 // Text semantics depend on Kind (see EventPartial / EventFinal): a Partial
@@ -85,23 +58,6 @@ type Event struct {
 
 // =============================================================================
 // Raw PCM input
-
-// SampleEncoding identifies how raw PCM samples are laid out in bytes.
-// Only little-endian encodings are listed because every mainstream
-// capture stack (CoreAudio, WASAPI, ALSA/PulseAudio/PipeWire, Web
-// Audio) emits little-endian on x86 and ARM.
-type SampleEncoding int
-
-const (
-	// Int16LE is signed 16-bit little-endian PCM (2 bytes/sample). The
-	// most universal microphone format. Normalized as v / 32768.
-	Int16LE SampleEncoding = iota
-
-	// Float32LE is 32-bit IEEE-754 little-endian PCM (4 bytes/sample),
-	// already in the [-1, 1] range. The native CoreAudio / Web Audio
-	// format.
-	Float32LE
-)
 
 // AudioFormat describes the raw PCM a producer delivers to FeedPCM. The
 // engine always converts to its fixed internal format: 16 kHz, mono,

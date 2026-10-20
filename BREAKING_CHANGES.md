@@ -4,6 +4,8 @@
 
 - [v1.33.0](#unreleased)
   - [Bucky Flash Attention Configuration](#unreleased-bucky-flash-attention-configuration)
+  - [Malina Native ABI Upgrade](#v1330-malina-native-abi-upgrade)
+  - [Projected Embedding Output Correction](#v1330-projected-embedding-output-correction)
 - [v1.32.8](#v1328)
   - [Authorization Configuration Changes](#v1328-authorization-configuration-changes)
   - [Operation Offload Configuration Changes](#v1328-operation-offload-configuration-changes)
@@ -53,6 +55,47 @@ struct literals, replace `FlashAttn: false` with `FlashAttn: new(false)` and
 `FlashAttn: true` with `FlashAttn: new(true)`. Omit the field to use the native
 default. Loaded model configurations report the resolved, non-nil value;
 dereference it when reading the effective setting.
+
+### v1.33.0: Malina Native ABI Upgrade
+
+Malina v1.1.7 requires stable-diffusion.cpp `master-969-8c442fb`, replacing
+v1.1.5's `master-929-3f8527a`. The native context layout and component-conversion
+signature changed. Neither pairing may be mixed with the other release's
+bindings. Default library downloads replace mismatched managed installations;
+custom user-managed library paths must be rebuilt or replaced before use.
+
+Flash attention and direct convolution now use automatic per-module policies.
+Legacy false attention flags no longer guarantee disabled execution; use
+`model.WithFlashAttentionMode("off")` to force flash attention off. The SDK
+also exposes `WithConvDirectMode` and `WithBatchedCFG`. Batched CFG defaults to
+enabled when using `NewConfig`, but Malina disables it on Metal for correctness.
+Native policy and tiling changes can change output pixels for the same seed.
+
+### v1.33.0: Projected Embedding Output Correction
+
+The embeddings API and Go SDK now read vectors using the model's native output
+embedding width instead of its hidden width. Some embedding models, including
+Qwen3-based models with an output projection, legitimately have different
+widths; this is a model property, not a user configuration error. The correction
+applies to both multi-sequence batching and the context-pool fallback. It does
+not change MTMD image/audio input processing.
+
+For affected models, the default vector length and normalized values can change
+for the same input and model. The `dimensions` parameter is now bounded by the
+actual output width; requests exceeding it are rejected. Reading beyond a
+smaller native output previously accessed memory outside the vector, so there
+is no legacy mode to preserve that unsafe behavior.
+
+Before mixing new query vectors with stored embeddings from an affected model,
+regenerate the stored embeddings and rebuild the vector index, updating its
+dimension if necessary. Keep old and corrected vectors in separate indexes
+during migration. Previously returned reduced vectors whose requested dimension
+fits within both widths use the same prefix and normalization; this correction
+alone does not change those values.
+
+Models whose hidden and output widths are equal are unaffected by this
+correction. This is not a guarantee of numerically identical embeddings across
+llama.cpp versions or inference backends.
 
 ## v1.32.8
 

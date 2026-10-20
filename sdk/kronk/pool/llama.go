@@ -140,14 +140,15 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 		ComputeBackend:         devices.Backend(),
 		ContextWindow:          ctxWin,
 		BytesPerElement:        bpe,
-		TypeK:                  int32(cfg.CacheTypeK),
-		TypeV:                  int32(cfg.CacheTypeV),
+		TypeK:                  cfg.CacheTypeK.ToVRAMType(),
+		TypeV:                  cfg.CacheTypeV.ToVRAMType(),
 		Slots:                  nseq,
 		NUBatch:                effectivePrefillBatchSize(cfg),
 		ExpertLayersOnGPU:      cfg.ExpertLayersOnGPU(),
 		MoECacheSize:           cfg.MoECacheSize(),
 		GPULayers:              int64(cfg.NGpuLayers()),
 		KVCacheOnCPU:           cfg.PtrOffloadKQV != nil && !*cfg.PtrOffloadKQV,
+		KVUnified:              cfg.KVCacheMode() == model.KVCacheShared,
 		SWAFull:                effectiveSWAFull(cfg),
 		VTransposed:            cfg.FlashAttention() == model.FlashAttentionDisabled,
 		RecurrentStateCopies:   model.RecurrentStateCopies(cfg, false),
@@ -158,6 +159,16 @@ func (l *Llama) Plan(ctx context.Context, req loader.LoadRequest) (resman.PlanRe
 	result, source, err := predictResult(l.models, req.ModelID, vramCfg)
 	if err != nil {
 		return resman.PlanRequest{}, fmt.Errorf("plan: modelID[%s]: %w", req.ModelID, err)
+	}
+
+	if result.Input.NextNPredictLayers > 0 && result.Input.ComputeContexts > 1 {
+		// Embedded MTP is identified from the artifact, not the requested batch
+		// size. Reserve the complete tray even when the user requests a smaller ubatch.
+		_, physical := cfg.GenerationBatchSizes(0, true)
+		vramCfg.NUBatch = int64(physical)
+		input := result.Input
+		input.NUBatch = vramCfg.NUBatch
+		result = vram.Calculate(input)
 	}
 
 	if result.Input.ComputeKind != modelprofile.ComputeGeneric && cfg.MTPDrafterFile != "" && model.SpeculativeContextCount(cfg) > 1 {
@@ -346,6 +357,10 @@ func (l *Llama) Load(ctx context.Context, req loader.LoadRequest) (*kronk.Kronk,
 		"model_id", req.ModelID,
 		"context_window", effective.ContextWindow(),
 		"nseq_max", effective.NSeqMax(),
+		"prefill_batch_size", effective.PrefillBatchSize(),
+		"physical_batch_size", effective.PhysicalBatchSize(),
+		"effective_nbatch", effective.EffectiveNBatch(),
+		"effective_nubatch", effective.EffectiveNUBatch(),
 		"cache_type_k", effective.CacheTypeK,
 		"cache_type_v", effective.CacheTypeV,
 		"flash_attention", effective.FlashAttention(),
@@ -637,9 +652,9 @@ func effectivePrefillBatchSize(cfg model.Config) int64 {
 	if cfg.EffectiveNUBatch() > 0 {
 		return int64(cfg.EffectiveNUBatch())
 	}
-	prefillBatchSize := cfg.BatchBaseSize()
+	_, prefillBatchSize := cfg.GenerationBatchSizes(1, false)
 	if model.SpeculativeContextCount(cfg) > 1 {
-		_, prefillBatchSize = model.GenerationBatchSizes(prefillBatchSize, max(int(cfg.NSeqMax()), 1), int(model.RecurrentStateCopies(cfg, false)), true)
+		_, prefillBatchSize = cfg.GenerationBatchSizes(int(model.RecurrentStateCopies(cfg, false)), true)
 	}
 	return int64(prefillBatchSize)
 }
@@ -804,7 +819,7 @@ func predictResult(m *models.Models, modelID string, cfg vram.Config) (vram.Resu
 // max of K and V is used so a budget never undercounts the heavier
 // half.
 func bytesPerElement(k, v model.GGMLType) int64 {
-	return int64(gguf.MaxBytesPerElement(int32(k), int32(v)))
+	return int64(gguf.MaxBytesPerElement(k.ToVRAMType(), v.ToVRAMType()))
 }
 
 // gpuDevices filters out a "CPU" entry that some configs leave

@@ -143,7 +143,7 @@ func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, m
 		RecurrentStateCopies:  recurrentStateCopies,
 		NUBatch:               cfg.NUBatch,
 		OutputRows:            outputRows,
-		KVUnified:             false,
+		KVUnified:             cfg.KVUnified,
 		EmbeddingLength:       embeddingLength,
 		OutputEmbeddingLength: profile.Dimensions.OutputEmbeddingLength,
 		ComputeContexts:       computeContexts,

@@ -806,6 +806,61 @@ func TestAutoTuneLeavesSplitModeUnset(t *testing.T) {
 	if cfg.PtrSplitMode != nil {
 		t.Fatalf("PtrSplitMode: got %s, want nil for load-time device resolution", cfg.PtrSplitMode.String())
 	}
+	for _, tt := range []struct {
+		name        string
+		constraints ModelConfig
+		want        int
+	}{
+		{"one selected GPU", ModelConfig{Devices: []string{"CUDA0"}}, 0},
+		{"multi GPU layer", ModelConfig{}, 512},
+		{"explicit request", ModelConfig{PtrPhysicalBatchSize: new(1024)}, 1024},
+		{"explicit one GPU", ModelConfig{Devices: []string{"CUDA0"}, PtrPhysicalBatchSize: new(256)}, 256},
+		{"tensor split", ModelConfig{PtrSplitMode: new(model.SplitModeTensor)}, 0},
+		{"tensor placement override", ModelConfig{TensorBuftOverrides: []string{"blk.*=CPU"}}, 0},
+		{"CPU only", ModelConfig{PtrNGpuLayers: new(-1)}, 0},
+		{"host KV", ModelConfig{PtrOffloadKQV: new(false)}, 0},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := AutoTuneWithConfig(info, devs, tt.constraints)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := cfg.ToKronkConfig().PhysicalBatchSize(); got != tt.want {
+				t.Errorf("PhysicalBatchSize: got %d, want %d", got, tt.want)
+			}
+			if cfg.PtrPrefillBatchSize != nil {
+				t.Fatal("physical tuning materialized a prompt contribution override")
+			}
+		})
+	}
+	// Companion MTP must reserve the full physical tray regardless of a smaller
+	// request; ordinary text must actually use that smaller compute estimate.
+	constraints := ModelConfig{PtrContextWindow: new(8192), PtrNSeqMax: new(3), PtrPhysicalBatchSize: new(512)}
+	small, err := analyzeModelWithConfig(info, devs, constraints)
+	if err != nil {
+		t.Fatal(err)
+	}
+	constraints.PtrPhysicalBatchSize = new(2048)
+	large, err := analyzeModelWithConfig(info, devs, constraints)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if small.Recommended.EstimatedVRAMBytes >= large.Recommended.EstimatedVRAMBytes {
+		t.Fatal("ordinary text physical size did not reduce the memory estimate")
+	}
+	info.HasMTP = true
+	mtpLarge, err := analyzeModelWithConfig(info, devs, constraints)
+	if err != nil {
+		t.Fatal(err)
+	}
+	constraints.PtrPhysicalBatchSize = new(512)
+	mtpSmall, err := analyzeModelWithConfig(info, devs, constraints)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mtpSmall.Recommended.EstimatedVRAMBytes != mtpLarge.Recommended.EstimatedVRAMBytes {
+		t.Fatal("MTP physical request changed the full-tray reservation")
+	}
 }
 
 func TestAutoTuneSelectsTensorParallelForTwoROCmGPUs(t *testing.T) {

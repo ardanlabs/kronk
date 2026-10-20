@@ -638,6 +638,7 @@ export function AutoTestRunnerProvider({ children }: { children: ReactNode }) {
               try {
                 const resp = await api.calculateVRAM({
                   model_id: sessionSeed.model_id,
+                  kv_cache_mode: sessionSeed.base_config.kv_cache_mode ?? vramInput.kv_cache_mode ?? 'partitioned',
                   context_window: ctxWindow,
                   bytes_per_element: bpe,
                   slots,

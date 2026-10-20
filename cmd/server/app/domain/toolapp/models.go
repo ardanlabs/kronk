@@ -346,6 +346,9 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 		nUBatch = int64(kronkConfig.BatchBaseSize())
 	}
 	swaFull := resolveSWAFull(req.SWAFull, configuredSWAFull)
+	if req.KVCacheMode != nil {
+		kronkConfig.PtrKVCacheMode = req.KVCacheMode
+	}
 
 	cfg := vram.Config{
 		WeightLoading:     kronkConfig.VRAMWeightLoading(devices.List(devices.WithIncludeMemory(false))),
@@ -358,6 +361,7 @@ func (a *app) calculateVRAM(ctx context.Context, r *http.Request) web.Encoder {
 		ExpertLayersOnGPU: req.ExpertLayersOnGPU,
 		MoECacheSize:      req.MoECacheSize,
 		KVCacheOnCPU:      req.KVCacheOnCPU,
+		KVUnified:         kronkConfig.KVCacheMode() == model.KVCacheShared,
 		SWAFull:           swaFull,
 	}
 

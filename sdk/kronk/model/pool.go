@@ -18,11 +18,12 @@ type contextPool struct {
 	ctxParams llama.ContextParams
 	log       applog.Logger
 
-	mu       sync.Mutex
-	contexts []llama.Context
-	memories []llama.Memory
-	batches  []*extendedBatch
-	avail    chan int // indices of available contexts
+	mu               sync.Mutex
+	contexts         []llama.Context
+	memories         []llama.Memory
+	batches          []*extendedBatch
+	graphAllocations []graphAllocationLog
+	avail            chan int // indices of available contexts
 }
 
 // newContextPool creates a pool of n llama contexts from the given model.
@@ -34,13 +35,14 @@ func newContextPool(ctx context.Context, model llama.Model, ctxParams llama.Cont
 	ctxParams = contextPoolFallbackParams(ctxParams)
 
 	p := &contextPool{
-		model:     model,
-		ctxParams: ctxParams,
-		log:       log,
-		contexts:  make([]llama.Context, n),
-		memories:  make([]llama.Memory, n),
-		batches:   make([]*extendedBatch, n),
-		avail:     make(chan int, n),
+		model:            model,
+		ctxParams:        ctxParams,
+		log:              log,
+		contexts:         make([]llama.Context, n),
+		memories:         make([]llama.Memory, n),
+		batches:          make([]*extendedBatch, n),
+		graphAllocations: make([]graphAllocationLog, n),
+		avail:            make(chan int, n),
 	}
 
 	for i := range n {
@@ -79,7 +81,10 @@ func contextPoolFallbackParams(params llama.ContextParams) llama.ContextParams {
 	if params.NSeqMax > 1 && params.NCtx > 0 {
 		params.NCtx /= params.NSeqMax
 	}
-	if params.NOutputsMaxPerSeq > 0 {
+
+	// Preserve 0's native batch-capacity policy. The per-sequence default
+	// of 1 must not turn an uncapped embedding/rerank context into a cap of 1.
+	if params.NOutputsMax > 0 && params.NOutputsMaxPerSeq > 0 {
 		params.NOutputsMax = params.NOutputsMaxPerSeq
 	}
 

@@ -47,7 +47,7 @@ func (t systemOneTemplate) render(question DecisionQuestion, state, instructions
 
 	rendered, err := t.tmpl.Render(D{
 		"id":           question.ID,
-		"type":         string(question.Type),
+		"type":         question.Type.String(),
 		"instructions": instructions,
 		"state":        state,
 		"options":      values,
@@ -69,7 +69,7 @@ func (t systemOneTemplate) renderValues(values D) (string, error) {
 }
 
 func decisionUsesEmbeddings(protocol DecisionProtocol) bool {
-	return protocol == DecisionProtocolLaya || protocol == DecisionProtocolKev || protocol == DecisionProtocolClef
+	return protocol == DecisionProtocolLaya || protocol == DecisionProtocolKev || protocol == DecisionProtocolClef || protocol == DecisionProtocolVllmDecision2
 }
 
 func decisionLabelTokens(vocab llama.Vocab) ([]llama.Token, []string) {
@@ -188,7 +188,7 @@ func decisionTemperature(m *Model, question DecisionQuestion) (float64, error) {
 		}
 	}
 
-	for _, suffix := range []string{string(question.Type) + "." + bucket, string(question.Type)} {
+	for _, suffix := range []string{question.Type.String() + "." + bucket, question.Type.String()} {
 		temperature, exists, err := m.modelInfo.profile.Decision.Temperature(suffix)
 		if !exists {
 			continue
@@ -213,6 +213,14 @@ func decisionOptionCount(question DecisionQuestion) int {
 }
 
 func decisionSoftmax(scores []float32, temperature float64) ([]float64, error) {
+	values := make([]float64, len(scores))
+	for i, score := range scores {
+		values[i] = float64(score)
+	}
+	return decisionSoftmaxValues(values, temperature)
+}
+
+func decisionSoftmaxValues(scores []float64, temperature float64) ([]float64, error) {
 	if len(scores) == 0 {
 		return nil, fmt.Errorf("decision readout has no scores")
 	}

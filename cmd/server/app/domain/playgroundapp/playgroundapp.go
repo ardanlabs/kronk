@@ -122,6 +122,7 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 		"krn-ptr", fmt.Sprintf("%p", krn),
 		"context-window", krn.ModelConfig().ContextWindow(),
 		"prefill-batch-size", krn.ModelConfig().PrefillBatchSize(),
+		"physical-batch-size", krn.ModelConfig().PtrPhysicalBatchSize,
 		"image-batch-token-capacity", krn.ModelConfig().ImageBatchTokenCapacity(),
 		"image-token-budget", krn.ModelConfig().ImageTokenBudget(),
 		"effective-nbatch", krn.ModelConfig().EffectiveNBatch(),
@@ -143,6 +144,7 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 	effectiveConfig := map[string]any{
 		"context_window":             krn.ModelConfig().ContextWindow(),
 		"prefill_batch_size":         krn.ModelConfig().PrefillBatchSize(),
+		"physical_batch_size":        krn.ModelConfig().PtrPhysicalBatchSize,
 		"image_batch_token_capacity": krn.ModelConfig().ImageBatchTokenCapacity(),
 		"image_token_budget":         krn.ModelConfig().PtrImageTokenBudget,
 		"effective_nbatch":           krn.ModelConfig().EffectiveNBatch(),
@@ -151,6 +153,7 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 		"flash_attention":            krn.ModelConfig().FlashAttention().String(),
 		"cache_type_k":               krn.ModelConfig().CacheTypeK.String(),
 		"cache_type_v":               krn.ModelConfig().CacheTypeV.String(),
+		"kv_cache_mode":              krn.ModelConfig().KVCacheMode(),
 		"load_mode":                  krn.ModelConfig().LoadMode.String(),
 		"incremental_cache":          krn.ModelConfig().IncrementalCache(),
 		"split_mode":                 formatSplitMode(krn.ModelConfig().PtrSplitMode),

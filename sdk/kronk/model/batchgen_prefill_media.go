@@ -94,6 +94,7 @@ func (e *batchEngine) planMediaSlot(s *slot) batchContributionPlan {
 
 type stagedMediaContribution struct {
 	slot            *slot
+	rowStart        int
 	nextChunkIdx    int
 	nextChunkTokIdx int
 	nextPast        llama.Pos
@@ -140,6 +141,7 @@ func (e *batchEngine) stageMediaSlot(s *slot, plan batchContributionPlan) (*stag
 	batchStart := e.batch.len()
 	contribution := stagedMediaContribution{
 		slot:            s,
+		rowStart:        batchStart,
 		nextChunkIdx:    s.chunkIdx,
 		nextChunkTokIdx: s.chunkTokIdx,
 		nextPast:        s.nPast,

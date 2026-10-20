@@ -56,7 +56,7 @@ func TestValidateDecisionRequest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateDecisionRequest(tt.req)
+			err := validateDecisionRequest(tt.req, DecisionProtocol{})
 			if tt.wantErr && !errors.Is(err, ErrDecisionRequest) {
 				t.Fatalf("error: got %v, want ErrDecisionRequest", err)
 			}
@@ -179,6 +179,10 @@ func TestDetectDecisionProtocol(t *testing.T) {
 			},
 			want: DecisionProtocolClef,
 		},
+		{name: "pplx-decider metadata", metadata: map[string]string{"general.architecture": "qwen35", "qwen35.decision.type": "pplx-decider"}, want: DecisionProtocolPplxDecider},
+		{name: "lfm2-d1 metadata", metadata: map[string]string{"general.architecture": "lfm2", "lfm2.decision.type": "lfm2-d1"}, want: DecisionProtocolLfm2D1},
+		{name: "decision2 metadata", metadata: map[string]string{"general.architecture": "vllm-decision2", "vllm-decision2.decision.type": "vllm-decision2"}, want: DecisionProtocolVllmDecision2},
+		{name: "D3 metadata", metadata: map[string]string{"general.architecture": "qwen35", "qwen35.decision.type": "vllm-d3"}, want: DecisionProtocolVllmD3},
 		{
 			name:       "explicit override survives unknown identity",
 			configured: DecisionProtocolOpenJEV,

@@ -19,7 +19,7 @@ func TestIntegrityArtifact(t *testing.T) {
 		pointer    string
 		sentinel   func(os.FileInfo) string
 		wantStatus IntegrityStatus
-		wantReason string
+		wantReason IntegrityReason
 		wantDigest string
 	}{
 		{
@@ -200,7 +200,7 @@ func TestModelsIntegrity(t *testing.T) {
 		"mmproj-model.gguf",
 		"mtp-model.gguf",
 	}
-	wantRoles := []string{IntegrityRoleWeights, IntegrityRoleWeights, IntegrityRoleProjection, IntegrityRoleMTP}
+	wantRoles := []IntegrityRole{IntegrityRoleWeights, IntegrityRoleWeights, IntegrityRoleProjection, IntegrityRoleMTP}
 	if len(modelInfo.Artifacts) != len(wantFiles) {
 		t.Fatalf("Artifacts length: got %d, want %d", len(modelInfo.Artifacts), len(wantFiles))
 	}

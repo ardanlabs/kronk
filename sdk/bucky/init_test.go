@@ -3,14 +3,70 @@ package bucky_test
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/bucky"
+	"github.com/ardanlabs/kronk/sdk/kronk"
+	"github.com/ardanlabs/kronk/sdk/malina"
 	"github.com/ardanlabs/kronk/sdk/tools/backend"
 	"github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/bucky/models"
 )
+
+func TestInitOrder(t *testing.T) {
+	// Each order needs a fresh process: native libraries cannot be reset
+	// between test cases. No models or downloads are needed.
+	if order := os.Getenv("KRONK_TEST_INIT_ORDER"); order != "" {
+		if strings.HasPrefix(order, "kronk-first") {
+			if err := kronk.Init(); err != nil {
+				t.Skipf("llama.cpp libraries unavailable: %v", err)
+			}
+		}
+
+		var initErr error
+		mediaInit := "bucky.Init()"
+		if strings.Contains(order, "malina") {
+			mediaInit = "malina.Init()"
+			initErr = malina.Init()
+		} else {
+			initErr = bucky.Init()
+		}
+		if initErr != nil {
+			t.Skipf("%s libraries unavailable: %v", mediaInit, initErr)
+		}
+
+		// An invalid path makes the rejected-order case distinguish an early
+		// ordering error from an attempted native-library load. In the valid
+		// order, repeated initialization must remain idempotent.
+		err := kronk.Init(kronk.WithLibPath(t.TempDir()))
+		if !strings.HasPrefix(order, "kronk-first") {
+			if err == nil || !strings.Contains(err.Error(), "restart the process and call kronk.Init() before "+mediaInit) {
+				t.Fatalf("Init after %s: got %v, want startup-order error", mediaInit, err)
+			}
+			if kronk.Initialized() {
+				t.Fatal("Kronk initialized after rejected startup order")
+			}
+		} else if err != nil {
+			t.Fatalf("repeated Init after %s: %v", mediaInit, err)
+		}
+		return
+	}
+
+	for _, order := range []string{"bucky-first", "kronk-first", "malina-first", "kronk-first-malina"} {
+		t.Run(order, func(t *testing.T) {
+			cmd := exec.Command(os.Args[0], "-test.run=^TestInitOrder$", "-test.v")
+			cmd.Env = append(os.Environ(), "KRONK_TEST_INIT_ORDER="+order)
+			out, err := cmd.CombinedOutput()
+			t.Logf("%s", out)
+			if err != nil {
+				t.Fatalf("%s: %v", order, err)
+			}
+		})
+	}
+}
 
 func TestInitRoundTrip(t *testing.T) {
 	// Init also tries to load the whisper.cpp shared library. That

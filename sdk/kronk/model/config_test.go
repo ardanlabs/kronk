@@ -92,6 +92,10 @@ func TestDecisionProtocol(t *testing.T) {
 		{"Kev", "kev", DecisionProtocolKev, false},
 		{"Nimble", "nimble", DecisionProtocolNimble, false},
 		{"Clef", "clef", DecisionProtocolClef, false},
+		{"PplxDecider", "pplx-decider", DecisionProtocolPplxDecider, false},
+		{"Lfm2D1", "lfm2-d1", DecisionProtocolLfm2D1, false},
+		{"VllmDecision2", "vllm-decision2", DecisionProtocolVllmDecision2, false},
+		{"VllmD3", "vllm-d3", DecisionProtocolVllmD3, false},
 		{"unknown", "unknown", DecisionProtocol{}, true},
 	}
 
@@ -458,6 +462,48 @@ func TestAdjustConfigUsesConfiguredPrefillBatchSize(t *testing.T) {
 	}
 }
 
+func TestPhysicalBatchSize(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		physical   *int
+		floor      int
+		rows       int
+		mtp        bool
+		wantBatch  int
+		wantUBatch int
+	}{
+		{"legacy", nil, 0, 1, false, 2051, 2048},
+		{"split prefill", new(512), 0, 1, false, 2051, 512},
+		{"classic reserve", new(512), 0, 9, false, 2075, 512},
+		{"image floor", new(512), 1120, 1, false, 2051, 1120},
+		{"logical cap", new(8192), 0, 1, false, 2051, 2051},
+		{"MTP default reserve", new(512), 0, 0, true, 2060, 2060},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := NewConfig(WithPrefillBatchSize(2048), WithNSeqMax(3), WithImageBatchTokenCapacity(tt.floor))
+			cfg.PtrPhysicalBatchSize = tt.physical
+			batch, ubatch := cfg.GenerationBatchSizes(tt.rows, tt.mtp)
+			if batch != tt.wantBatch || ubatch != tt.wantUBatch {
+				t.Errorf("capacities: got %d/%d, want %d/%d", batch, ubatch, tt.wantBatch, tt.wantUBatch)
+			}
+			if cfg.PrefillBatchSize() != 2048 || cfg.PtrPhysicalBatchSize != tt.physical {
+				t.Fatal("sizing changed the requested prompt or physical capacity")
+			}
+		})
+	}
+	resolved := adjustConfig(NewConfig(WithPrefillBatchSize(2048), WithPhysicalBatchSize(512), WithNSeqMax(1)), 0)
+	if resolved.EffectiveNBatch() != 2049 || resolved.EffectiveNUBatch() != 512 || resolved.PrefillBatchSize() != 2048 {
+		t.Fatalf("Florin configuration: got prompt=%d batch=%d/%d, want 2048 and 2049/512", resolved.PrefillBatchSize(), resolved.EffectiveNBatch(), resolved.EffectiveNUBatch())
+	}
+	for _, size := range []int{-1, 0, 512, math.MaxInt32 + 1} {
+		cfg := NewConfig(WithModelFiles([]string{"test.gguf"}), WithPhysicalBatchSize(size))
+		err := validateConfig(context.Background(), cfg, func(context.Context, string, ...any) {})
+		if wantErr := size <= 0 || size > math.MaxInt32; (err != nil) != wantErr {
+			t.Errorf("physical %d: got %v, want error=%t", size, err, wantErr)
+		}
+	}
+}
+
 func TestAdjustConfigDoesNotMutateDraftModelConfig(t *testing.T) {
 	draft := &DraftModelConfig{ModelFiles: []string{"draft.gguf"}}
 	cfg := adjustConfig(Config{PtrDraftModel: draft}, 0)
@@ -615,21 +661,28 @@ func TestValidateGenerationBatchCapacity(t *testing.T) {
 }
 
 func TestContextTopologyParamsProvidesFullContextPerSequence(t *testing.T) {
-	got := contextTopologyParams(llama.ContextParams{}, 32_768, 4)
-
-	if got.NCtx != 131_072 {
-		t.Errorf("NCtx: got %d, want %d", got.NCtx, 131_072)
-	}
-	if got.NSeqMax != 4 {
-		t.Errorf("NSeqMax: got %d, want %d", got.NSeqMax, 4)
-	}
-	if got.KVUnified != 0 {
-		t.Errorf("KVUnified: got %d, want %d", got.KVUnified, 0)
+	for _, tt := range []struct {
+		mode    KVCacheMode
+		unified uint8
+	}{
+		{KVCachePartitioned, 0},
+		{KVCacheShared, 1},
+	} {
+		got := contextTopologyParams(llama.ContextParams{}, 32_768, 4, tt.mode)
+		if got.NCtx != 131_072 {
+			t.Errorf("%s NCtx: got %d, want %d", tt.mode, got.NCtx, 131_072)
+		}
+		if got.NSeqMax != 4 {
+			t.Errorf("%s NSeqMax: got %d, want %d", tt.mode, got.NSeqMax, 4)
+		}
+		if got.KVUnified != tt.unified {
+			t.Errorf("%s KVUnified: got %d, want %d", tt.mode, got.KVUnified, tt.unified)
+		}
 	}
 }
 
 func TestContextParamsTraceDistinguishesTotalAndPerSequenceContext(t *testing.T) {
-	params := contextTopologyParams(llama.ContextParams{}, 131_072, 2)
+	params := contextTopologyParams(llama.ContextParams{}, 131_072, 2, KVCachePartitioned)
 
 	var got string
 	log := func(_ context.Context, _ string, args ...any) {
@@ -641,6 +694,30 @@ func TestContextParamsTraceDistinguishesTotalAndPerSequenceContext(t *testing.T)
 		if !strings.Contains(got, want) {
 			t.Errorf("context params trace: got %q, want it to contain %q", got, want)
 		}
+	}
+}
+
+func TestKVCacheMode(t *testing.T) {
+	if got := NewConfig().KVCacheMode(); got != KVCachePartitioned {
+		t.Fatalf("default mode: got %q, want partitioned", got)
+	}
+	for _, mode := range []KVCacheMode{KVCachePartitioned, KVCacheShared} {
+		cfg := NewConfig(WithKVCacheMode(mode))
+		if got := cfg.KVCacheMode(); got != mode {
+			t.Errorf("configured mode: got %q, want %q", got, mode)
+		}
+		data, err := json.Marshal(mode)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var decoded KVCacheMode
+		if err := json.Unmarshal(data, &decoded); err != nil || decoded != mode {
+			t.Fatalf("JSON round trip: got %q, error %v, want %q", decoded, err, mode)
+		}
+	}
+	var mode KVCacheMode
+	if err := json.Unmarshal([]byte(`"unified"`), &mode); err == nil {
+		t.Fatal("invalid mode accepted")
 	}
 }
 
@@ -705,7 +782,7 @@ func TestGGMLTypeString(t *testing.T) {
 		{GGMLTypeQ8_0, "q8_0"},
 		{GGMLTypeBF16, "bf16"},
 		{GGMLTypeAuto, "auto"},
-		{GGMLType(999), "unknown(999)"},
+		{GGMLType{}, "auto"},
 	}
 
 	for _, tt := range tests {
@@ -764,7 +841,7 @@ func TestParseGGMLType(t *testing.T) {
 }
 
 func TestLazyMode(t *testing.T) {
-	if got := NewConfig().LazyMode; got != LazyModeAuto {
+	if got := NewConfig().LazyMode; !got.Equal(LazyModeAuto) {
 		t.Fatalf("default lazy mode: got %v, want auto", got)
 	}
 	if got := DerefLazyMode(nil); got != LazyModeAuto {
@@ -817,7 +894,7 @@ func TestLazyMode(t *testing.T) {
 }
 
 func TestLoadMode(t *testing.T) {
-	if got := LoadMode(0); got != LoadModeAuto {
+	if got := (LoadMode{}); !got.Equal(LoadModeAuto) {
 		t.Errorf("LoadMode zero value = %v, want %v", got, LoadModeAuto)
 	}
 	if got := DerefLoadMode(nil); got != LoadModeAuto {
@@ -958,7 +1035,7 @@ func TestValidateConfig(t *testing.T) {
 		), false},
 		{"unknown lazy mode is invalid", NewConfig(
 			WithModelFiles([]string{"dummy.gguf"}),
-			WithLazyMode(LazyMode(99)),
+			WithLazyMode(LazyMode{value: "unknown"}),
 		), true},
 		{"MTP nDraft override (no draft files) is valid even with NSeqMax>1", NewConfig(
 			WithModelFiles([]string{"dummy.gguf"}),

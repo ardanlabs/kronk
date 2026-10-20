@@ -147,6 +147,7 @@ export default function VRAMCalculator() {
       const response = await api.calculateVRAM(
         {
           model_id: localID,
+          kv_cache_mode: controlsProps.kvCacheMode,
           context_window: controlsProps.contextWindow,
           bytes_per_element: controlsProps.bytesPerElement,
           slots: controlsProps.slots,
@@ -192,6 +193,7 @@ export default function VRAMCalculator() {
       controlsProps.contextWindow,
       controlsProps.bytesPerElement,
       controlsProps.slots,
+      controlsProps.kvCacheMode,
       controlsProps.gpuLayers,
       controlsProps.expertLayersOnGPU,
       controlsProps.kvCacheOnCPU,
@@ -211,6 +213,7 @@ export default function VRAMCalculator() {
       const response = await api.calculateVRAM(
         {
           model_url: url,
+          kv_cache_mode: controlsProps.kvCacheMode,
           context_window: controlsProps.contextWindow,
           bytes_per_element: controlsProps.bytesPerElement,
           slots: controlsProps.slots,

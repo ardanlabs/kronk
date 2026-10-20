@@ -78,6 +78,13 @@ func TestPlanBatchContribution(t *testing.T) {
 			want:          batchContributionPlan{mode: batchExecutionIsolated, rows: 1024},
 		},
 		{
+			name:          "unknown input stays isolated",
+			requirements:  batchContributionRequirements{input: batchInputUnknown, positions: batchPositionLinear, attention: batchAttentionCausal, rows: 32},
+			availableRows: 2048,
+			prefillLimit:  2048,
+			want:          batchContributionPlan{mode: batchExecutionIsolated, rows: 32},
+		},
+		{
 			name:          "whole embeddings stay isolated when tray is short",
 			inputMixing:   modelprofile.BatchInputMixingSupported,
 			requirements:  batchContributionRequirements{input: batchInputEmbeddings, positions: batchPositionLinear, attention: batchAttentionCausal, rows: 1024, mustFit: true},
@@ -90,7 +97,7 @@ func TestPlanBatchContribution(t *testing.T) {
 			requirements:  batchContributionRequirements{input: batchInputTokens, positions: batchPositionLinear, attention: batchAttentionCausal, rows: 32},
 			availableRows: 0,
 			prefillLimit:  2048,
-			want:          batchContributionPlan{},
+			want:          batchContributionPlan{mode: batchExecutionDeferred},
 		},
 	}
 

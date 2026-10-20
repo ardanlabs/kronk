@@ -8,7 +8,8 @@ package model
 // claims the given Fingerprint. Bootstrap is responsible for explicit
 // registration:
 //
-// model.RegisterParser(gpt.New) // template-only — must be first
+// model.RegisterParser(beam.New) // XML-Harmony before generic Harmony
+// model.RegisterParser(gpt.New) // Harmony before architecture lineages
 // model.RegisterParser(lfm.New)
 // model.RegisterParser(deepseek.New)
 // model.RegisterParser(llama.New)

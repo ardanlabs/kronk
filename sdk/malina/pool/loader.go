@@ -149,16 +149,16 @@ func (sd *StableDiffusion) resolveConfig(modelID string) (model.Config, error) {
 	}
 
 	files := manifest.Files
-	if files[string(malinamodels.RoleUpscaler)] != "" {
+	if files[malinamodels.RoleUpscaler.String()] != "" {
 		return model.Config{}, fmt.Errorf("resolve-config: bundle %q is an upscaler, not an image-generation model", modelID)
 	}
 
 	var primary model.Option
 	switch {
-	case files[string(malinamodels.RoleModel)] != "":
-		primary = model.WithModelPath(files[string(malinamodels.RoleModel)])
-	case files[string(malinamodels.RoleDiffusion)] != "":
-		primary = model.WithDiffusionModelPath(files[string(malinamodels.RoleDiffusion)])
+	case files[malinamodels.RoleModel.String()] != "":
+		primary = model.WithModelPath(files[malinamodels.RoleModel.String()])
+	case files[malinamodels.RoleDiffusion.String()] != "":
+		primary = model.WithDiffusionModelPath(files[malinamodels.RoleDiffusion.String()])
 	default:
 		return model.Config{}, fmt.Errorf("resolve-config: bundle %q has no model or diffusion component", modelID)
 	}
@@ -184,22 +184,22 @@ func (sd *StableDiffusion) resolveConfig(modelID string) (model.Config, error) {
 		return model.Config{}, fmt.Errorf("resolve-config: model config: %w", err)
 	}
 
-	cfg.ClipLPath = files[string(malinamodels.RoleClipL)]
-	cfg.ClipGPath = files[string(malinamodels.RoleClipG)]
-	cfg.ClipVisionPath = files[string(malinamodels.RoleClipVision)]
-	cfg.T5XXLPath = files[string(malinamodels.RoleT5XXL)]
-	cfg.LLMPath = files[string(malinamodels.RoleLLM)]
-	cfg.LLMVisionPath = files[string(malinamodels.RoleLLMVision)]
-	cfg.TokenizerPath = files[string(malinamodels.RoleTokenizer)]
-	cfg.HighNoiseDiffusionModelPath = files[string(malinamodels.RoleHighNoise)]
-	cfg.EmbeddingsConnectorsPath = files[string(malinamodels.RoleEmbeddingsConn)]
-	cfg.VAEPath = files[string(malinamodels.RoleVAE)]
-	cfg.TAESDPath = files[string(malinamodels.RoleTAESD)]
-	cfg.ControlNetPath = files[string(malinamodels.RoleControlNet)]
-	cfg.MotionModulePath = files[string(malinamodels.RoleMotionModule)]
-	cfg.ADetailerPath = files[string(malinamodels.RoleADetailer)]
-	cfg.PhotoMakerPath = files[string(malinamodels.RolePhotoMaker)]
-	cfg.AudioEncoderPath = files[string(malinamodels.RoleAudioEncoder)]
+	cfg.ClipLPath = files[malinamodels.RoleClipL.String()]
+	cfg.ClipGPath = files[malinamodels.RoleClipG.String()]
+	cfg.ClipVisionPath = files[malinamodels.RoleClipVision.String()]
+	cfg.T5XXLPath = files[malinamodels.RoleT5XXL.String()]
+	cfg.LLMPath = files[malinamodels.RoleLLM.String()]
+	cfg.LLMVisionPath = files[malinamodels.RoleLLMVision.String()]
+	cfg.TokenizerPath = files[malinamodels.RoleTokenizer.String()]
+	cfg.HighNoiseDiffusionModelPath = files[malinamodels.RoleHighNoise.String()]
+	cfg.EmbeddingsConnectorsPath = files[malinamodels.RoleEmbeddingsConn.String()]
+	cfg.VAEPath = files[malinamodels.RoleVAE.String()]
+	cfg.TAESDPath = files[malinamodels.RoleTAESD.String()]
+	cfg.ControlNetPath = files[malinamodels.RoleControlNet.String()]
+	cfg.MotionModulePath = files[malinamodels.RoleMotionModule.String()]
+	cfg.ADetailerPath = files[malinamodels.RoleADetailer.String()]
+	cfg.PhotoMakerPath = files[malinamodels.RolePhotoMaker.String()]
+	cfg.AudioEncoderPath = files[malinamodels.RoleAudioEncoder.String()]
 
 	return cfg, nil
 }

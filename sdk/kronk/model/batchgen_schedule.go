@@ -10,6 +10,28 @@ func (e *batchEngine) hasActiveSlots() bool {
 	return false
 }
 
+// hasRunnableSlots lets the engine sleep when all admitted requests are still
+// doing CPU preparation. Workers wake the engine when their results are ready.
+func (e *batchEngine) hasRunnableSlots() bool {
+	for _, s := range e.slots {
+		if !s.active {
+			if len(e.pendingJobs) > 0 {
+				return true
+			}
+			continue
+		}
+		if s.mediaSetup == nil || s.mediaSetup.ready {
+			return true
+		}
+		select {
+		case <-s.mediaSetup.done:
+			return true
+		default:
+		}
+	}
+	return false
+}
+
 // fillSlots assigns pending requests to available slots.
 //
 // All IMC jobs (text and media) use first-available slot — externalized KV

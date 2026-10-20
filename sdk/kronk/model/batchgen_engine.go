@@ -210,7 +210,7 @@ func (e *batchEngine) processLoop(ctx context.Context) {
 		default:
 		}
 
-		if e.hasActiveSlots() || len(e.requestQ) > 0 || len(e.pendingJobs) > 0 {
+		if e.hasRunnableSlots() || len(e.requestQ) > 0 {
 			e.processBatch(ctx, buf)
 			continue
 		}
@@ -219,6 +219,9 @@ func (e *batchEngine) processLoop(ctx context.Context) {
 		case <-e.shutdownCh:
 			e.drainSlots()
 			return
+
+		case job := <-e.requestQ:
+			e.pendingJobs = append(e.pendingJobs, job)
 
 		case <-e.wakeCh:
 		}
@@ -252,14 +255,16 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	// one llama.Decode.
 	e.batchAssembling = true
 
-	// Bind queued jobs to every available slot before advancing text IMC
-	// preparation. Text builds and extensions return from startSlot without
+	// Bind queued jobs to every available slot before advancing IMC
+	// preparation. Text/media builds and extensions return from startSlot without
 	// staging shared rows, so requests arriving while another prompt is being
 	// prepared can still claim free slots immediately. If another start path did
 	// stage rows during admission, defer direct IMC decoding until the next
 	// iteration rather than mutating context behind an assembled batch.
+	e.resumeMediaSetup(buf)
 	e.fillSlots(buf)
-	if e.batch.len() == 0 && e.hasIMCPreparation() {
+	trackIMCSchedule := e.hasIMCPreparation()
+	if e.batch.len() == 0 && trackIMCSchedule {
 		e.advanceIMCPreparation(buf)
 	}
 
@@ -270,7 +275,7 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	// Adding these before prefill keeps output responsive and lets prefill use
 	// only the tray capacity that remains.
 	batchRowsBeforeGeneration := e.batch.len()
-	trackPrefillSchedule := len(e.prefillSlotIDs()) > 0
+	trackPrefillSchedule := len(e.prefillSlotIDs()) > 0 || trackIMCSchedule
 	var generationContributions []string
 	if trackPrefillSchedule {
 		generationContributions = make([]string, 0, len(e.slots))
@@ -308,10 +313,9 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 		}
 
 		// llama.cpp expands a token's linear position into its M-RoPE text
-		// position, so M-RoPE generation can use the shared target tray. Media
-		// M-RoPE requests do not speculate until draft position compatibility is
-		// proven, so stage exactly one ordinary target row for them.
-		if s.useMRoPE {
+		// position, including MTP proposal and verification rows. Classic
+		// drafts still cannot reconstruct a media prefix.
+		if s.useMRoPE && (e.model.draft == nil || !e.model.draft.mtp()) {
 			idx, err := e.batch.addToken(s.sampled, s.nPast, s.seqIDs, extendedBatchOutputLogits)
 			if err != nil {
 				e.finishSlot(s, fmt.Errorf("add M-RoPE generation token: %w", err))
@@ -542,10 +546,36 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	}
 
 	// Lock to prevent concurrent decode with cache population.
+	decodeStarted := time.Now()
 	e.model.decodeMu.Lock()
+	// Only ordinary, output-free text can remain in flight. Media and draft
+	// contexts consume additional state even when no logits were requested.
+	deferCompletion := e.model.draft == nil && e.model.projFile == ""
+	for _, entry := range e.batch.entries {
+		if !entry.hasToken || len(entry.embedding) != 0 || entry.positionCount != 1 || entry.output != extendedBatchOutputNone {
+			deferCompletion = false
+			break
+		}
+	}
+	for _, released := range e.batchReleased {
+		if released {
+			deferCompletion = false
+			break
+		}
+	}
+	e.model.pendingDecode = true
 	ret, err := e.batch.process(llama.ProcessTypeDecode)
+	// A failed decode may also leave earlier submissions or partial work in
+	// flight. Complete it before diagnostics and sequence cleanup.
+	if err != nil || ret != 0 || !deferCompletion {
+		err = errors.Join(err, e.model.synchronizeDecode())
+	}
 	if err == nil && ret == 0 {
-		llama.Synchronize(e.model.lctx)
+		if stagedMedia != nil && stagedMedia.slot.active {
+			// Media is the final contribution in the tray. Consume its dense
+			// target states while the projector output and batch rows are valid.
+			err = e.syncMTPDecodedRows(stagedMedia.slot, e.batch, stagedMedia.rowStart, stagedMedia.nextPast)
+		}
 	}
 	for i, released := range e.batchReleased {
 		if released {
@@ -566,6 +596,13 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 			}
 		}
 		return
+	}
+	if trackIMCSchedule && e.diagnosticGenerationRows > 0 {
+		e.model.log(ctx, "batch-engine", "status", "imc-generation-decoded",
+			"iteration", iteration,
+			"generation_contributions", fmt.Sprintf("%v", generationContributions),
+			"generation_rows", e.diagnosticGenerationRows, "tray_tokens", e.batch.len(),
+			"elapsed", fmtDur(time.Since(decodeStarted)))
 	}
 	if stagedMedia != nil && stagedMedia.slot.active {
 		stagedMedia.commit()

@@ -19,6 +19,9 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	if !s.active {
 		return
 	}
+	// Cancellation can arrive between output-free prefill submissions. Finish
+	// their GPU work before clearing the sequence or freeing slot resources.
+	err = errors.Join(err, e.model.waitForPendingDecode())
 	if e.batchAssembling {
 		e.batchReleased[s.id] = true
 	}
@@ -45,6 +48,7 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	var elapsed time.Duration
 
 	defer func() {
+		s.job.releaseIMCSystemCache(e.model)
 		if s.prefillSpan != nil {
 			s.prefillSpan.End()
 			s.prefillSpan = nil
@@ -197,6 +201,11 @@ func (e *batchEngine) finishSlot(s *slot, err error) {
 	// Non-IMC: always clear.
 	e.model.decodeMu.Lock()
 	llama.MemorySeqRm(e.model.mem, s.seqID, -1, -1)
+	e.model.graphAllocations.record(ctx, e.model.log, e.model.modelInfo.ID, "target", e.model.lctx)
+	if e.model.draft != nil {
+		draft := e.model.draft.core()
+		draft.graphAllocations.record(ctx, e.model.log, e.model.modelInfo.ID, "draft", draft.lctx)
+	}
 	e.model.decodeMu.Unlock()
 	e.model.log(ctx, "finish-slot", "status", "seq-cleared", "slot", slotID, "seq", seqID)
 
@@ -677,6 +686,13 @@ func (e *batchEngine) failJob(job *chatJob, err error) {
 }
 
 func (e *batchEngine) freeSlotResources(s *slot) {
+	// Join CPU preparation before freeing its projector, including shutdown
+	// and errors before the worker's resources were handed to prefill.
+	if s.mediaSetup != nil {
+		s.mediaSetup.free()
+		s.mediaSetup = nil
+	}
+
 	// Unregister the per-slot draft sampler from the draft context before
 	// freeing it, to prevent a dangling pointer in the context's sampler map.
 	if s.draftSampler != 0 && e.model.draft != nil {
@@ -698,6 +714,10 @@ func (e *batchEngine) freeSlotResources(s *slot) {
 	}
 
 	// Free MTMD resources.
+	if s.imcPrep != nil && s.imcPrep.media != nil {
+		s.imcPrep.media.free()
+		s.imcPrep.media = nil
+	}
 	if s.inputChunks != 0 {
 		mtmd.InputChunksFree(s.inputChunks)
 		s.inputChunks = 0

@@ -11,21 +11,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
-// IMCSessionState describes the current state of an allocated IMC cache entry.
-type IMCSessionState string
-
-const (
-	// IMCSessionStateActive means a request currently holds the entry's
-	// reservation.
-	IMCSessionStateActive IMCSessionState = "active"
-
-	// IMCSessionStateIdle means the entry contains a reusable cache snapshot.
-	IMCSessionStateIdle IMCSessionState = "idle"
-
-	// IMCSessionStateEmpty means the entry does not contain a cache snapshot.
-	IMCSessionStateEmpty IMCSessionState = "empty"
-)
-
 // IMCSessionDetail is a scalar snapshot of one allocated IMC cache entry.
 type IMCSessionDetail struct {
 	ID             int
@@ -188,11 +173,16 @@ func (m *Model) decodeTokensIntoCache(ctx context.Context, tokens []llama.Token,
 			}
 		}
 
+		m.pendingDecode = true
 		ret, err := batch.process(llama.ProcessTypeDecode)
+		if err != nil || ret != 0 || m.draft != nil || m.projFile != "" {
+			err = errors.Join(err, m.synchronizeDecode())
+		}
 		if err != nil || ret != 0 {
 			return fmt.Errorf("imc: failed to decode extension tokens at pos %d: %w", startPos+i, decodeError(ret, err))
 		}
-		llama.Synchronize(m.lctx)
+		// The engine may call this with just one chunk per iteration. Leave
+		// output-free text in flight across calls, not only within this loop.
 	}
 
 	m.log(ctx, "cache", "status", "finished (decoding tokens into cache)", "seq", seqID, "tokens", nTokens, "nbatch", nBatch)
@@ -344,11 +334,8 @@ func (m *Model) imcCommitSession(ctx context.Context, session *imcSession, hash 
 	switch {
 	case hasMedia:
 		session.cachedTokens = nil
-		// Media is decoded only into the target context. An own-KV MTP
-		// snapshot cannot prove that it covers the projected media cells, so
-		// carrying it across a media commit would pair target and draft states
-		// from different prefixes. Shared-target-KV MTP does not use these
-		// fields and continues to resume from the target snapshot.
+		// Invalidate the previous draft snapshot. Admission snapshots the
+		// newly synchronized draft prefix before publishing this build.
 		clear(session.pendingH[:cap(session.pendingH)])
 		session.pendingH = session.pendingH[:0]
 	case len(cachedTokens) > 0:
@@ -360,13 +347,14 @@ func (m *Model) imcCommitSession(ctx context.Context, session *imcSession, hash 
 // imcCommitMediaAdvance atomically swaps a fully staged target snapshot and
 // its matching media-prefix metadata. The caller owns the returned old store
 // and closes it after the swap. reserved remains set until the caller publishes
-// or releases the reservation.
-func (m *Model) imcCommitMediaAdvance(ctx context.Context, session *imcSession, staged SessionStore, hash string, totalCached, cachedMsgCount, nextLogicalPos int, plan promptPlan, samplerPromptTokens []llama.Token, mediaKVCounts []int, mediaNativeChunks []imcMediaChunk, useMRoPE, useNonCausal bool, renderInputHash string) SessionStore {
+// or releases the reservation. draftSnapshotOK certifies that draftKVState and
+// pendingH were just committed for the same logical prefix as staged.
+func (m *Model) imcCommitMediaAdvance(ctx context.Context, session *imcSession, staged SessionStore, hash string, totalCached, cachedMsgCount, nextLogicalPos int, plan promptPlan, samplerPromptTokens []llama.Token, mediaKVCounts []int, mediaNativeChunks []imcMediaChunk, useMRoPE, useNonCausal bool, renderInputHash string, draftSnapshotOK bool) SessionStore {
 	if session == nil || staged == nil {
 		return nil
 	}
 
-	if session.draftKVState != nil {
+	if !draftSnapshotOK && session.draftKVState != nil {
 		if err := session.draftKVState.Reset(ctx); err != nil {
 			m.log(ctx, "imc", "status", "draft-store-reset-failed", "err", err)
 		}
@@ -391,8 +379,10 @@ func (m *Model) imcCommitMediaAdvance(ctx context.Context, session *imcSession, 
 	session.cachedTokens = nil
 	session.allocatedContext = max(session.allocatedContext, totalCached)
 	session.highWaterContext = max(session.highWaterContext, totalCached)
-	clear(session.pendingH[:cap(session.pendingH)])
-	session.pendingH = session.pendingH[:0]
+	if !draftSnapshotOK {
+		clear(session.pendingH[:cap(session.pendingH)])
+		session.pendingH = session.pendingH[:0]
+	}
 	m.cacheMu.Unlock()
 
 	return oldStore

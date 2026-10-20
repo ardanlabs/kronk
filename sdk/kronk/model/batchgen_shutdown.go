@@ -14,6 +14,9 @@ func (e *batchEngine) drainSlots() {
 	for _, s := range e.slots {
 		if s.active {
 			activeCount++
+			if s.mediaSetup != nil {
+				s.mediaSetup.cancel()
+			}
 		}
 	}
 

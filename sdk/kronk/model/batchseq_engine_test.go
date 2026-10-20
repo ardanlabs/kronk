@@ -51,7 +51,7 @@ func TestStageBatchSeqPlan(t *testing.T) {
 			t.Errorf("entry[%d] sequence: got %d, want %d", i, entry.sequenceID, wantSequences[i])
 		}
 		if entry.output != extendedBatchOutputEmbeddings {
-			t.Errorf("entry[%d] output: got %d, want embeddings", i, entry.output)
+			t.Errorf("entry[%d] output: got %d, want embeddings", i, entry.output.value)
 		}
 	}
 }

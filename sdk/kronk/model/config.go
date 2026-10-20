@@ -2,7 +2,6 @@ package model
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"maps"
 	"math"
@@ -33,21 +32,13 @@ and preprocessing budgets are explicit opt-ins; projector defaults are unchanged
 One slot owns ordinary prefill until it finishes. Generation rows from all
 ready slots are staged first. Non-MTP reserves one row; MTP reserves 1 + nDraft
 rows per configured slot. Non-MTP can split the logical tray into physical
-ubatches. MTP keeps the complete tray in one physical batch because its dense
-NextN output is indexed in physical-ubatch order.
+ubatches. MTP preserves the existing single-physical-batch policy pending
+validation of multi-ubatch hidden-state consumption.
 
 Key principles:
 - NUBatch ≤ NBatch always (enforced in adjustConfig)
 - NUBatch primarily affects prompt processing speed and compute-buffer VRAM
 */
-
-const (
-	NUMADisabled   = ""
-	NUMADistribute = "distribute"
-	NUMAIsolate    = "isolate"
-	NUMANumactl    = "numactl"
-	NUMAMirror     = "mirror"
-)
 
 const (
 	defContextWindow        = 8 * 1024
@@ -163,6 +154,11 @@ type AdapterConfig struct {
 // kronk.New preserves the enabled state for diagnostics without repeating the
 // hardware analysis.
 //
+// BasePath sets the root for automatic chat-template discovery in <BasePath>/jinja.
+// When empty, KRONK_BASE_PATH is used, falling back to ~/.kronk. An explicit
+// path takes precedence over the environment and does not search other roots.
+// It does not change model-file paths or separately configured library managers.
+//
 // CacheMinTokens sets the minimum token count required before caching. Messages
 // shorter than this threshold are not cached, as the overhead of cache management
 // may outweigh the prefill savings. When set to 0, defaults to 100 tokens.
@@ -258,6 +254,12 @@ type AdapterConfig struct {
 // larger compute buffers. Kronk derives llama.cpp's logical and physical batch
 // capacities from this value, the configured slot count, and the generation
 // mode, with ImageBatchTokenCapacity providing an independent media floor.
+//
+// PhysicalBatchSize requests the physical compute capacity independently of
+// the prompt contribution. When unset, it follows the legacy prefill capacity
+// unless AutoTune selects a value. Image floors can raise it, logical capacity
+// caps it, and active MTP and specialized evaluation retain their sizing policies.
+// EffectiveNUBatch reports the resolved capacity; the request is preserved.
 //
 // ImageBatchTokenCapacity provides an independent image-capacity floor for
 // native batches without increasing the text prefill contribution or changing
@@ -407,6 +409,7 @@ type Config struct {
 	PtrAdmissionTimeout        *time.Duration
 	AutoTune                   bool
 	AutoTuned                  bool
+	BasePath                   string
 	PtrCacheMinTokens          *int
 	CacheTypeK                 GGMLType
 	CacheTypeV                 GGMLType
@@ -424,6 +427,7 @@ type Config struct {
 	PtrInsecureLogging         *bool
 	JinjaFile                  string
 	JinjaScript                string
+	PtrKVCacheMode             *KVCacheMode
 	LazyMode                   LazyMode
 	LoadMode                   LoadMode
 	Log                        applog.Logger
@@ -435,7 +439,8 @@ type Config struct {
 	PtrNThreads                *int
 	PtrNThreadsBatch           *int
 	PtrPrefillBatchSize        *int
-	NUMA                       string
+	PtrPhysicalBatchSize       *int
+	NUMA                       NUMAStrategy
 	PtrOffloadKQV              *bool
 	PtrOpOffload               *bool
 	ProjFile                   string
@@ -474,6 +479,17 @@ func (cfg Config) QueueDepth() int         { return intOr(cfg.PtrQueueDepth, 0) 
 func (cfg Config) IMCSessionCapacity() int { return intOr(cfg.PtrIMCSessionCapacity, 0) }
 func (cfg Config) ContextWindow() int      { return intOr(cfg.PtrContextWindow, 0) }
 func (cfg Config) PrefillBatchSize() int   { return intOr(cfg.PtrPrefillBatchSize, 0) }
+
+// PhysicalBatchSize returns the requested physical capacity, or zero when unset.
+func (cfg Config) PhysicalBatchSize() int { return intOr(cfg.PtrPhysicalBatchSize, 0) }
+
+// KVCacheMode returns the cache layout, defaulting to partitioned.
+func (cfg Config) KVCacheMode() KVCacheMode {
+	if cfg.PtrKVCacheMode == nil {
+		return KVCachePartitioned
+	}
+	return *cfg.PtrKVCacheMode
+}
 
 // ImageBatchTokenCapacity returns the explicit image-capacity floor, or zero.
 func (cfg Config) ImageBatchTokenCapacity() int { return intOr(cfg.PtrImageBatchTokenCapacity, 0) }
@@ -516,7 +532,7 @@ func (cfg Config) InsecureLogging() bool   { return boolOr(cfg.PtrInsecureLoggin
 // SpeculationMode returns the selected speculative-decoding implementation.
 // The zero value preserves automatic selection.
 func (cfg Config) SpeculationMode() SpeculationMode {
-	if cfg.Speculation == "" {
+	if cfg.Speculation.IsZero() {
 		return SpeculationAuto
 	}
 	return cfg.Speculation
@@ -580,7 +596,7 @@ func (cfg Config) String() string {
 		return fmt.Sprintf("{mode:%s top_n:%s}", m.Mode, topN)
 	}
 
-	return fmt.Sprintf("\nAdapters[%v]\nAdmissionTimeout[%s]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nDecisionProtocol[%s]\nChatTemplateKwargs[%s]\nDevices[%v]\nFlashAttention[%s]\nIMCSessionCapacity[%d]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLazyMode[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nPrefillBatchSize[%s]\nEffectiveNBatch[%d]\nEffectiveNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nProjDevice[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreFactory[%t]\nSpeculation[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
+	return fmt.Sprintf("\nPhysicalBatchSize[%s]", formatIntPtr(cfg.PtrPhysicalBatchSize)) + fmt.Sprintf("\nAdapters[%v]\nAdmissionTimeout[%s]\nAutoTune[%t]\nCacheMinTokens[%s]\nCacheTypeK[%s]\nCacheTypeV[%s]\nContextWindow[%s]\nDefaultParams[%s]\nDecisionProtocol[%s]\nChatTemplateKwargs[%s]\nDevices[%v]\nFlashAttention[%s]\nIMCSessionCapacity[%d]\nIncrementalCache[%s]\nInsecureLogging[%s]\nJinjaFile[%s]\nLazyMode[%s]\nLoadMode[%s]\nMainGPU[%s]\nMoE[%s]\nModelFiles[%v]\nNGpuLayers[%s]\nNSeqMax[%s]\nNThreads[%s]\nNThreadsBatch[%s]\nPrefillBatchSize[%s]\nEffectiveNBatch[%d]\nEffectiveNUBatch[%d]\nNUMA[%s]\nOffloadKQV[%s]\nOpOffload[%s]\nProjFile[%s]\nMTPDrafterFile[%s]\nProjOnCPU[%s]\nProjDevice[%s]\nQueueDepth[%d]\nRopeFreqBase[%s]\nRopeFreqScale[%s]\nRopeScaling[%s]\nSessionStoreFactory[%t]\nSpeculation[%s]\nSplitMode[%s]\nSWAFull[%s]\nTensorBuftOverrides[%v]\nTensorSplit[%v]\nYarnAttnFactor[%s]\nYarnBetaFast[%s]\nYarnBetaSlow[%s]\nYarnExtFactor[%s]\nYarnOrigCtx[%s]\nDraftModel[%v]\n",
 		cfg.Adapters, formatDurationPtr(cfg.PtrAdmissionTimeout), cfg.AutoTune, formatIntPtr(cfg.PtrCacheMinTokens), cfg.CacheTypeK, cfg.CacheTypeV,
 		formatIntPtr(cfg.PtrContextWindow), cfg.DefaultParams.String(), cfg.DecisionProtocol, chatTemplateKwargsSummary(cfg.ChatTemplateKwargs), cfg.Devices, cfg.FlashAttention(),
 		cfg.IMCSessionCapacity(), formatBoolPtr(cfg.PtrIncrementalCache), formatBoolPtr(cfg.PtrInsecureLogging), cfg.JinjaFile,
@@ -619,8 +635,12 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 		return fmt.Errorf("validate-config: model file is required")
 	}
 
+	if _, err := ParseKVCacheMode(cfg.KVCacheMode().String()); err != nil {
+		return fmt.Errorf("validate-config: %w", err)
+	}
+
 	switch cfg.DecisionProtocol {
-	case DecisionProtocol{}, DecisionProtocolOpenJEV, DecisionProtocolJevStyle, DecisionProtocolLaya, DecisionProtocolLev, DecisionProtocolKev, DecisionProtocolNimble, DecisionProtocolClef:
+	case DecisionProtocol{}, DecisionProtocolOpenJEV, DecisionProtocolJevStyle, DecisionProtocolLaya, DecisionProtocolLev, DecisionProtocolKev, DecisionProtocolNimble, DecisionProtocolClef, DecisionProtocolPplxDecider, DecisionProtocolLfm2D1, DecisionProtocolVllmDecision2, DecisionProtocolVllmD3:
 	default:
 		return fmt.Errorf("validate-config: unsupported decision protocol %q", cfg.DecisionProtocol)
 	}
@@ -651,6 +671,10 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 
 	if cfg.PtrPrefillBatchSize != nil && cfg.PrefillBatchSize() <= 0 {
 		return fmt.Errorf("validate-config: prefill batch size must be > 0, got %d", cfg.PrefillBatchSize())
+	}
+
+	if cfg.PtrPhysicalBatchSize != nil && (cfg.PhysicalBatchSize() <= 0 || cfg.PhysicalBatchSize() > math.MaxInt32) {
+		return fmt.Errorf("validate-config: physical batch size must be between 1 and %d, got %d", math.MaxInt32, cfg.PhysicalBatchSize())
 	}
 
 	if cfg.ImageBatchTokenCapacity() < 0 {
@@ -715,17 +739,17 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 	}
 
 	switch cfg.LazyMode {
-	case LazyModeAuto, LazyModeOff, LazyModeOn:
+	case LazyMode{}, LazyModeAuto, LazyModeOff, LazyModeOn:
 		// valid
 	default:
-		return fmt.Errorf("validate-config: unknown lazy mode: %d (valid: auto, off, on)", cfg.LazyMode)
+		return fmt.Errorf("validate-config: unknown lazy mode: %s (valid: auto, off, on)", cfg.LazyMode)
 	}
 
 	switch cfg.LoadMode {
-	case LoadModeAuto, LoadModeMMap, LoadModeNone, LoadModeMLock, LoadModeMMapMLock, LoadModeDirectIO:
+	case LoadMode{}, LoadModeAuto, LoadModeMMap, LoadModeNone, LoadModeMLock, LoadModeMMapMLock, LoadModeDirectIO:
 		// valid
 	default:
-		return fmt.Errorf("validate-config: unknown load mode: %d (valid: auto, mmap, none, mlock, mmap+mlock, direct-io)", cfg.LoadMode)
+		return fmt.Errorf("validate-config: unknown load mode: %s (valid: auto, mmap, none, mlock, mmap+mlock, direct-io)", cfg.LoadMode)
 	}
 
 	switch cfg.SpeculationMode() {
@@ -929,15 +953,28 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 // adjustGenerationBatch derives llama.cpp's logical and physical generation
 // batch capacities from the user-facing prefill size and generation reserve.
 func adjustGenerationBatch(cfg Config, generationRowsPerSlot int, singlePhysicalBatch bool) Config {
-	cfg.nBatch, cfg.nUBatch = GenerationBatchSizes(cfg.BatchBaseSize(), cfg.NSeqMax(), generationRowsPerSlot, singlePhysicalBatch)
+	cfg.nBatch, cfg.nUBatch = cfg.GenerationBatchSizes(generationRowsPerSlot, singlePhysicalBatch)
 	return cfg
 }
 
 // GenerationBatchSizes derives native batch capacities for both memory planning
-// and runtime configuration. MTP uses one physical batch including rollback rows.
-func GenerationBatchSizes(prefillSize, slots, generationRowsPerSlot int, singlePhysicalBatch bool) (int, int) {
-	nBatch := prefillSize + slots*max(generationRowsPerSlot, 1)
-	nUBatch := prefillSize
+// and runtime configuration. Requests do not change the logical generation reserve.
+// MTP preserves one physical batch including rollback rows. A zero row count
+// selects the configured/default MTP reserve when singlePhysicalBatch is true.
+func (cfg Config) GenerationBatchSizes(generationRowsPerSlot int, singlePhysicalBatch bool) (int, int) {
+	if isEmbedOrRerankConfig(cfg) || !cfg.DecisionProtocol.IsZero() {
+		base := cfg.BatchBaseSize()
+		return base, base
+	}
+	if singlePhysicalBatch && generationRowsPerSlot <= 0 {
+		generationRowsPerSlot = 1 + mtpNDraft(cfg)
+	}
+	base := cfg.BatchBaseSize()
+	nBatch := base + max(cfg.NSeqMax(), 1)*max(generationRowsPerSlot, 1)
+	nUBatch := base
+	if cfg.PtrPhysicalBatchSize != nil {
+		nUBatch = min(nBatch, max(cfg.PhysicalBatchSize(), cfg.ImageBatchTokenCapacity(), cfg.ImageTokenBudget()))
+	}
 	if singlePhysicalBatch {
 		nUBatch = nBatch
 	}
@@ -1022,7 +1059,7 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 	// IMC externalizes KV state after cache build, so it does not
 	// need extra sequences beyond the configured NSeqMax.
 	nSeqMax := max(cfg.NSeqMax(), 1)
-	ctxParams = contextTopologyParams(ctxParams, cfg.ContextWindow(), nSeqMax)
+	ctxParams = contextTopologyParams(ctxParams, cfg.ContextWindow(), nSeqMax, cfg.KVCacheMode())
 
 	if cfg.ContextWindow() > 0 {
 		ctxParams.NBatch = uint32(cfg.EffectiveNBatch())
@@ -1035,11 +1072,11 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 		}
 	}
 
-	if cfg.CacheTypeK != GGMLTypeAuto {
+	if !cfg.CacheTypeK.Equal(GGMLTypeAuto) {
 		ctxParams.TypeK = cfg.CacheTypeK.ToYZMAType()
 	}
 
-	if cfg.CacheTypeV != GGMLTypeAuto {
+	if !cfg.CacheTypeV.Equal(GGMLTypeAuto) {
 		ctxParams.TypeV = cfg.CacheTypeV.ToYZMAType()
 	}
 
@@ -1106,7 +1143,7 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 	// YaRN RoPE scaling for extended context windows.
 	// Only set parameters when explicitly configured (non-nil).
 	// llama.cpp uses special values (0, -1) to mean "use model defaults".
-	if cfg.RopeScaling != RopeScalingNone {
+	if !cfg.RopeScaling.Equal(RopeScalingNone) {
 		ctxParams.RopeScalingType = cfg.RopeScaling.ToYZMAType()
 	}
 	if cfg.PtrRopeFreqBase != nil {
@@ -1134,13 +1171,16 @@ func modelCtxParams(cfg Config, mi ModelInfo) llama.ContextParams {
 	return ctxParams
 }
 
-func contextTopologyParams(params llama.ContextParams, contextWindow, nSeqMax int) llama.ContextParams {
+func contextTopologyParams(params llama.ContextParams, contextWindow, nSeqMax int, mode KVCacheMode) llama.ContextParams {
 	if contextWindow > 0 {
 		params.NCtx = uint32(contextWindow * nSeqMax)
 	}
 
 	params.NSeqMax = uint32(nSeqMax)
 	params.KVUnified = 0
+	if mode == KVCacheShared {
+		params.KVUnified = 1
+	}
 
 	return params
 }
@@ -1168,904 +1208,6 @@ func searchModelMeta(model llama.Model, find string) (string, bool) {
 }
 
 // =============================================================================
-
-// GGMLType represents a ggml data type for the KV cache.
-// These values correspond to the ggml_type enum in llama.cpp.
-type GGMLType int32
-
-const (
-	GGMLTypeAuto GGMLType = 0  // Use default from llama.cpp (zero value)
-	GGMLTypeF32  GGMLType = 50 // 32-bit floating point
-	GGMLTypeF16  GGMLType = 1  // 16-bit floating point
-	GGMLTypeQ4_0 GGMLType = 2  // 4-bit quantization (type 0)
-	GGMLTypeQ4_1 GGMLType = 3  // 4-bit quantization (type 1)
-	GGMLTypeQ5_0 GGMLType = 6  // 5-bit quantization (type 0)
-	GGMLTypeQ5_1 GGMLType = 7  // 5-bit quantization (type 1)
-	GGMLTypeQ8_0 GGMLType = 8  // 8-bit quantization (type 0)
-	GGMLTypeBF16 GGMLType = 30 // Brain floating point 16-bit
-)
-
-// String returns the string representation of a GGMLType.
-func (t GGMLType) String() string {
-	switch t {
-	case GGMLTypeF32:
-		return "f32"
-
-	case GGMLTypeF16:
-		return "f16"
-
-	case GGMLTypeQ4_0:
-		return "q4_0"
-
-	case GGMLTypeQ4_1:
-		return "q4_1"
-
-	case GGMLTypeQ5_0:
-		return "q5_0"
-
-	case GGMLTypeQ5_1:
-		return "q5_1"
-
-	case GGMLTypeQ8_0:
-		return "q8_0"
-
-	case GGMLTypeBF16:
-		return "bf16"
-
-	case GGMLTypeAuto:
-		return "auto"
-
-	default:
-		return fmt.Sprintf("unknown(%d)", t)
-	}
-}
-
-func (t GGMLType) ToYZMAType() llama.GGMLType {
-	switch t {
-	case GGMLTypeAuto:
-		return llama.GGMLType(-1)
-	case GGMLTypeF32:
-		return llama.GGMLType(0)
-	default:
-		return llama.GGMLType(t)
-	}
-}
-
-// GGMLTypeFromYZMA converts a llama.GGMLType back to a GGMLType.
-func GGMLTypeFromYZMA(t llama.GGMLType) GGMLType {
-	switch t {
-	case llama.GGMLType(-1):
-		return GGMLTypeAuto
-	case llama.GGMLType(0):
-		return GGMLTypeF32
-	default:
-		return GGMLType(t)
-	}
-}
-
-func (t GGMLType) MarshalYAML() (any, error) {
-	return t.String(), nil
-}
-
-func (t GGMLType) MarshalJSON() ([]byte, error) {
-	return json.Marshal(t.String())
-}
-
-func (t *GGMLType) UnmarshalJSON(data []byte) error {
-	var s string
-	if err := json.Unmarshal(data, &s); err != nil {
-		return err
-	}
-
-	parsed, err := ParseGGMLType(s)
-	if err != nil {
-		return err
-	}
-
-	*t = parsed
-
-	return nil
-}
-
-// UnmarshalYAML implements yaml.Unmarshaler to parse string values like "f16".
-func (t *GGMLType) UnmarshalYAML(unmarshal func(any) error) error {
-	var s string
-	if err := unmarshal(&s); err != nil {
-		return err
-	}
-
-	parsed, err := ParseGGMLType(s)
-	if err != nil {
-		return err
-	}
-
-	*t = parsed
-
-	return nil
-}
-
-// ParseGGMLType parses a string into a GGMLType.
-// Supported values: "f32", "f16", "q4_0", "q4_1", "q5_0", "q5_1", "q8_0", "bf16", "auto".
-func ParseGGMLType(s string) (GGMLType, error) {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "f32", "fp32":
-		return GGMLTypeF32, nil
-
-	case "f16", "fp16":
-		return GGMLTypeF16, nil
-
-	case "q4_0", "q4":
-		return GGMLTypeQ4_0, nil
-
-	case "q4_1":
-		return GGMLTypeQ4_1, nil
-
-	case "q5_0", "q5":
-		return GGMLTypeQ5_0, nil
-
-	case "q5_1":
-		return GGMLTypeQ5_1, nil
-
-	case "f8", "q8_0", "q8":
-		return GGMLTypeQ8_0, nil
-
-	case "bf16", "bfloat16":
-		return GGMLTypeBF16, nil
-
-	case "auto", "":
-		return GGMLTypeAuto, nil
-
-	default:
-		return GGMLTypeAuto, fmt.Errorf("unknown ggml type: %s", s)
-	}
-}
-
-// =============================================================================
-
-// FlashAttentionType controls when to enable Flash Attention.
-// Flash Attention reduces memory usage and speeds up attention computation,
-// especially beneficial for large context windows.
-type FlashAttentionType int32
-
-const (
-	FlashAttentionEnabled  FlashAttentionType = 0 // Enable Flash Attention
-	FlashAttentionDisabled FlashAttentionType = 1 // Disable Flash Attention
-	FlashAttentionAuto     FlashAttentionType = 2 // Let llama.cpp decide
-)
-
-func (t FlashAttentionType) String() string {
-	switch t {
-	case FlashAttentionEnabled:
-		return "enabled"
-	case FlashAttentionDisabled:
-		return "disabled"
-	case FlashAttentionAuto:
-		return "auto"
-	default:
-		return fmt.Sprintf("unknown(%d)", t)
-	}
-}
-
-func (t FlashAttentionType) toYZMAType() llama.FlashAttentionType {
-	switch t {
-	case FlashAttentionDisabled:
-		return llama.FlashAttentionTypeDisabled
-
-	case FlashAttentionAuto:
-		return llama.FlashAttentionTypeAuto
-
-	default:
-		return llama.FlashAttentionTypeEnabled
-	}
-}
-
-func (t FlashAttentionType) MarshalYAML() (any, error) {
-	return t.String(), nil
-}
-
-func (t FlashAttentionType) MarshalJSON() ([]byte, error) {
-	return json.Marshal(t.String())
-}
-
-func (t *FlashAttentionType) UnmarshalJSON(data []byte) error {
-	var s string
-	if err := json.Unmarshal(data, &s); err != nil {
-		return err
-	}
-
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "enabled", "on", "true", "1":
-		*t = FlashAttentionEnabled
-	case "disabled", "off", "false", "0":
-		*t = FlashAttentionDisabled
-	case "auto", "":
-		*t = FlashAttentionAuto
-	default:
-		return fmt.Errorf("unknown flash attention type: %s", s)
-	}
-
-	return nil
-}
-
-// UnmarshalYAML implements yaml.Unmarshaler to parse string values.
-func (t *FlashAttentionType) UnmarshalYAML(unmarshal func(any) error) error {
-	var s string
-	if err := unmarshal(&s); err != nil {
-		return err
-	}
-
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "enabled", "on", "true", "1":
-		*t = FlashAttentionEnabled
-
-	case "disabled", "off", "false", "0":
-		*t = FlashAttentionDisabled
-
-	case "auto", "":
-		*t = FlashAttentionAuto
-
-	default:
-		return fmt.Errorf("unmarshal-yaml: unknown flash attention type: %s", s)
-	}
-
-	return nil
-}
-
-// DerefFlashAttention returns the value of a FlashAttentionType pointer,
-// defaulting to FlashAttentionAuto when nil.
-func DerefFlashAttention(p *FlashAttentionType) FlashAttentionType {
-	if p == nil {
-		return FlashAttentionAuto
-	}
-	return *p
-}
-
-// =============================================================================
-
-// LazyMode controls on-demand reading of tensors marked eligible by llama.cpp.
-type LazyMode int32
-
-const (
-	// LazyModeAuto enables lazy reading for eligible tensors larger than 4 GiB
-	// when all selected devices support mmap. This is the default.
-	LazyModeAuto LazyMode = iota
-
-	// LazyModeOff reads eligible tensors up front like ordinary weights.
-	LazyModeOff
-
-	// LazyModeOn requests lazy reading for eligible tensors regardless of size.
-	// The platform must support mmap; unmarked tensors are unaffected.
-	LazyModeOn
-)
-
-// String returns the string representation of a LazyMode.
-func (lm LazyMode) String() string {
-	switch lm {
-	case LazyModeAuto:
-		return "auto"
-	case LazyModeOff:
-		return "off"
-	case LazyModeOn:
-		return "on"
-	default:
-		return fmt.Sprintf("unknown(%d)", lm)
-	}
-}
-
-// ToYZMAType converts to the yzma/llama.cpp LazyMode type.
-func (lm LazyMode) ToYZMAType() llama.LazyMode {
-	switch lm {
-	case LazyModeOff:
-		return llama.LazyModeOff
-	case LazyModeOn:
-		return llama.LazyModeOn
-	default:
-		return llama.LazyModeAuto
-	}
-}
-
-// MarshalYAML implements yaml.Marshaler.
-func (lm LazyMode) MarshalYAML() (any, error) {
-	return lm.String(), nil
-}
-
-// MarshalJSON implements json.Marshaler.
-func (lm LazyMode) MarshalJSON() ([]byte, error) {
-	return json.Marshal(lm.String())
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (lm *LazyMode) UnmarshalJSON(data []byte) error {
-	var str string
-	if err := json.Unmarshal(data, &str); err != nil {
-		return err
-	}
-	parsed, err := ParseLazyMode(str)
-	if err != nil {
-		return err
-	}
-	*lm = parsed
-	return nil
-}
-
-// UnmarshalYAML implements yaml.Unmarshaler.
-func (lm *LazyMode) UnmarshalYAML(unmarshal func(any) error) error {
-	var str string
-	if err := unmarshal(&str); err != nil {
-		return err
-	}
-	parsed, err := ParseLazyMode(str)
-	if err != nil {
-		return err
-	}
-	*lm = parsed
-	return nil
-}
-
-// ParseLazyMode parses a string into a LazyMode.
-func ParseLazyMode(s string) (LazyMode, error) {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "auto", "":
-		return LazyModeAuto, nil
-	case "off":
-		return LazyModeOff, nil
-	case "on":
-		return LazyModeOn, nil
-	default:
-		return LazyModeAuto, fmt.Errorf("parse-lazy-mode: unknown lazy mode: %s (valid: auto, off, on)", s)
-	}
-}
-
-// DerefLazyMode returns the value of a LazyMode pointer, defaulting to auto.
-func DerefLazyMode(lm *LazyMode) LazyMode {
-	if lm == nil {
-		return LazyModeAuto
-	}
-	return *lm
-}
-
-// =============================================================================
-
-// LoadMode controls how model weights are loaded from storage.
-type LoadMode int32
-
-const (
-	// LoadModeAuto uses mmap when every selected device supports it and falls
-	// back to ordinary loading otherwise. This is the default.
-	LoadModeAuto LoadMode = iota
-
-	// LoadModeMMap forces model weights to be memory mapped.
-	LoadModeMMap
-
-	// LoadModeNone loads model weights without mmap, mlock, or direct I/O.
-	LoadModeNone
-
-	// LoadModeMLock loads model weights and asks the operating system to keep
-	// their pages resident in RAM without forcing mmap.
-	LoadModeMLock
-
-	// LoadModeDirectIO loads model weights using direct I/O where supported.
-	LoadModeDirectIO
-
-	// LoadModeMMapMLock memory maps model weights and asks the operating system
-	// to keep their pages resident in RAM.
-	LoadModeMMapMLock
-)
-
-// String returns the string representation of a LoadMode.
-func (lm LoadMode) String() string {
-	switch lm {
-	case LoadModeAuto:
-		return "auto"
-	case LoadModeMMap:
-		return "mmap"
-	case LoadModeNone:
-		return "none"
-	case LoadModeMLock:
-		return "mlock"
-	case LoadModeMMapMLock:
-		return "mmap+mlock"
-	case LoadModeDirectIO:
-		return "direct-io"
-	default:
-		return fmt.Sprintf("unknown(%d)", lm)
-	}
-}
-
-// ToYZMAType converts to the yzma/llama.cpp LoadMode type.
-func (lm LoadMode) ToYZMAType() llama.LoadMode {
-	switch lm {
-	case LoadModeAuto:
-		return llama.LoadModeAuto
-	case LoadModeMMap:
-		return llama.LoadModeMmap
-	case LoadModeNone:
-		return llama.LoadModeNone
-	case LoadModeMLock:
-		return llama.LoadModeMlock
-	case LoadModeMMapMLock:
-		return llama.LoadModeMmapMlock
-	case LoadModeDirectIO:
-		return llama.LoadModeDirectIO
-	default:
-		return llama.LoadModeAuto
-	}
-}
-
-// MarshalYAML implements yaml.Marshaler.
-func (lm LoadMode) MarshalYAML() (any, error) {
-	return lm.String(), nil
-}
-
-// MarshalJSON implements json.Marshaler.
-func (lm LoadMode) MarshalJSON() ([]byte, error) {
-	return json.Marshal(lm.String())
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (lm *LoadMode) UnmarshalJSON(data []byte) error {
-	var str string
-	if err := json.Unmarshal(data, &str); err != nil {
-		return err
-	}
-
-	parsed, err := ParseLoadMode(str)
-	if err != nil {
-		return err
-	}
-
-	*lm = parsed
-
-	return nil
-}
-
-// UnmarshalYAML implements yaml.Unmarshaler.
-func (lm *LoadMode) UnmarshalYAML(unmarshal func(any) error) error {
-	var str string
-	if err := unmarshal(&str); err != nil {
-		return err
-	}
-
-	parsed, err := ParseLoadMode(str)
-	if err != nil {
-		return err
-	}
-
-	*lm = parsed
-
-	return nil
-}
-
-// ParseLoadMode parses a string into a LoadMode.
-func ParseLoadMode(s string) (LoadMode, error) {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "auto", "":
-		return LoadModeAuto, nil
-	case "mmap":
-		return LoadModeMMap, nil
-	case "none":
-		return LoadModeNone, nil
-	case "mlock":
-		return LoadModeMLock, nil
-	case "mmap+mlock":
-		return LoadModeMMapMLock, nil
-	case "direct-io", "directio", "dio":
-		return LoadModeDirectIO, nil
-	default:
-		return LoadModeAuto, fmt.Errorf("parse-load-mode: unknown load mode: %s (valid: auto, mmap, none, mlock, mmap+mlock, direct-io)", s)
-	}
-}
-
-// DerefLoadMode returns the value of a LoadMode pointer, defaulting to
-// LoadModeAuto when nil.
-func DerefLoadMode(lm *LoadMode) LoadMode {
-	if lm == nil {
-		return LoadModeAuto
-	}
-	return *lm
-}
-
-// =============================================================================
-
-// SplitMode controls how the model is split across multiple GPUs.
-type SplitMode int32
-
-const (
-	// SplitModeNone uses a single GPU.
-	SplitModeNone SplitMode = 0
-
-	// SplitModeLayer splits layers and KV cache across GPUs. This is the default.
-	SplitModeLayer SplitMode = 1
-
-	// SplitModeRow uses llama.cpp's legacy row-split parallelism.
-	SplitModeRow SplitMode = 2
-
-	// SplitModeTensor uses llama.cpp's tensor parallel implementation.
-	SplitModeTensor SplitMode = 3
-)
-
-// String returns the string representation of a SplitMode.
-func (s SplitMode) String() string {
-	switch s {
-	case SplitModeNone:
-		return "none"
-
-	case SplitModeLayer:
-		return "layer"
-
-	case SplitModeRow:
-		return "row"
-
-	case SplitModeTensor:
-		return "tensor"
-
-	default:
-		return fmt.Sprintf("unknown(%d)", s)
-	}
-}
-
-// ToYZMAType converts to the yzma/llama.cpp SplitMode type.
-func (s SplitMode) ToYZMAType() llama.SplitMode {
-	return llama.SplitMode(s)
-}
-
-// DefaultSplitMode returns llama.cpp's layer-split default when the user has
-// not set one explicitly. The GPU count parameter is retained for API
-// compatibility.
-func DefaultSplitMode(_ int) SplitMode {
-	return SplitModeLayer
-}
-
-func (s SplitMode) MarshalYAML() (any, error) {
-	return s.String(), nil
-}
-
-func (s SplitMode) MarshalJSON() ([]byte, error) {
-	return json.Marshal(s.String())
-}
-
-func (s *SplitMode) UnmarshalJSON(data []byte) error {
-	var str string
-	if err := json.Unmarshal(data, &str); err != nil {
-		return err
-	}
-
-	parsed, err := ParseSplitMode(str)
-	if err != nil {
-		return err
-	}
-
-	*s = parsed
-
-	return nil
-}
-
-// UnmarshalYAML implements yaml.Unmarshaler to parse string values.
-func (s *SplitMode) UnmarshalYAML(unmarshal func(any) error) error {
-	var str string
-	if err := unmarshal(&str); err != nil {
-		return err
-	}
-
-	parsed, err := ParseSplitMode(str)
-	if err != nil {
-		return err
-	}
-
-	*s = parsed
-
-	return nil
-}
-
-// ParseSplitMode parses a string into a SplitMode.
-// Supported values are "none", "layer", "row", and "tensor".
-func ParseSplitMode(s string) (SplitMode, error) {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "none", "single", "0", "":
-		return SplitModeNone, nil
-
-	case "layer", "1":
-		return SplitModeLayer, nil
-
-	case "row", "2":
-		return SplitModeRow, nil
-
-	case "tensor", "tensor-parallel", "expert-parallel", "3":
-		return SplitModeTensor, nil
-
-	default:
-		return SplitModeNone, fmt.Errorf("parse-split-mode: unknown split mode: %s (valid: none, layer, row, tensor)", s)
-	}
-}
-
-// =============================================================================
-
-// RopeScalingType controls RoPE (Rotary Position Embedding) scaling method.
-// This enables extended context windows beyond the model's native training length.
-// For example, Qwen3 models trained on 32k can support 131k with YaRN scaling.
-type RopeScalingType int32
-
-const (
-	// RopeScalingNone disables RoPE scaling. ContextWindow is configured
-	// independently and may still exceed the model's training context.
-	RopeScalingNone RopeScalingType = 0
-
-	// RopeScalingLinear uses linear interpolation scaling.
-	// Use only when required by the model's scaling guidance.
-	RopeScalingLinear RopeScalingType = 1
-
-	// RopeScalingYaRN uses YaRN (Yet another RoPE extensioN) scaling.
-	// It applies frequency-dependent interpolation with attention scaling.
-	// Use only with scaling values supported by the model.
-	RopeScalingYaRN RopeScalingType = 2
-)
-
-// String returns the string representation of a RopeScalingType.
-func (r RopeScalingType) String() string {
-	switch r {
-	case RopeScalingNone:
-		return "none"
-
-	case RopeScalingLinear:
-		return "linear"
-
-	case RopeScalingYaRN:
-		return "yarn"
-
-	default:
-		return fmt.Sprintf("unknown(%d)", r)
-	}
-}
-
-// ToYZMAType converts to the yzma/llama.cpp RopeScalingType.
-func (r RopeScalingType) ToYZMAType() llama.RopeScalingType {
-	return llama.RopeScalingType(r)
-}
-
-func (r RopeScalingType) MarshalYAML() (any, error) {
-	return r.String(), nil
-}
-
-func (r RopeScalingType) MarshalJSON() ([]byte, error) {
-	return json.Marshal(r.String())
-}
-
-func (r *RopeScalingType) UnmarshalJSON(data []byte) error {
-	var s string
-	if err := json.Unmarshal(data, &s); err != nil {
-		return err
-	}
-
-	parsed, err := ParseRopeScalingType(s)
-	if err != nil {
-		return err
-	}
-
-	*r = parsed
-
-	return nil
-}
-
-// UnmarshalYAML implements yaml.Unmarshaler to parse string values.
-func (r *RopeScalingType) UnmarshalYAML(unmarshal func(any) error) error {
-	var s string
-	if err := unmarshal(&s); err != nil {
-		return err
-	}
-
-	parsed, err := ParseRopeScalingType(s)
-	if err != nil {
-		return err
-	}
-
-	*r = parsed
-
-	return nil
-}
-
-// ParseRopeScalingType parses a string into a RopeScalingType.
-// Supported values: "none", "linear", "yarn".
-func ParseRopeScalingType(s string) (RopeScalingType, error) {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "none", "0", "":
-		return RopeScalingNone, nil
-
-	case "linear", "1":
-		return RopeScalingLinear, nil
-
-	case "yarn", "2":
-		return RopeScalingYaRN, nil
-
-	default:
-		return RopeScalingNone, fmt.Errorf("parse-rope-scaling-type: unknown type: %s (valid: none, linear, yarn)", s)
-	}
-}
-
-// =============================================================================
-
-// Set of known decision protocols.
-var decisionProtocols = make(map[string]DecisionProtocol)
-
-var (
-	// DecisionProtocolOpenJEV identifies the OpenJEV letter-readout protocol.
-	DecisionProtocolOpenJEV = newDecisionProtocol("openjev")
-
-	// DecisionProtocolJevStyle identifies the macjev-render-v1 protocol.
-	DecisionProtocolJevStyle = newDecisionProtocol("jev-style")
-
-	// DecisionProtocolLaya identifies the Laya and Julia marker-embedding protocol.
-	DecisionProtocolLaya = newDecisionProtocol("laya")
-
-	// DecisionProtocolLev identifies the Lev label-readout protocol.
-	DecisionProtocolLev = newDecisionProtocol("lev")
-
-	// DecisionProtocolKev identifies the Kev pointer-head protocol.
-	DecisionProtocolKev = newDecisionProtocol("kev")
-
-	// DecisionProtocolNimble identifies the Nimble label-readout protocol.
-	DecisionProtocolNimble = newDecisionProtocol("nimble")
-
-	// DecisionProtocolClef identifies the Clef joint-head protocol.
-	DecisionProtocolClef = newDecisionProtocol("clef")
-)
-
-// DecisionProtocol identifies the prompt and readout protocol used by a
-// decision model.
-type DecisionProtocol struct {
-	value string
-}
-
-func newDecisionProtocol(value string) DecisionProtocol {
-	protocol := DecisionProtocol{value: value}
-	decisionProtocols[value] = protocol
-	return protocol
-}
-
-// String returns the name of the decision protocol.
-func (dp DecisionProtocol) String() string {
-	return dp.value
-}
-
-// Equal provides support for the go-cmp package and testing.
-func (dp DecisionProtocol) Equal(dp2 DecisionProtocol) bool {
-	return dp.value == dp2.value
-}
-
-// IsZero reports whether the decision protocol is unset.
-func (dp DecisionProtocol) IsZero() bool {
-	return dp.value == ""
-}
-
-// MarshalText provides support for logging and serialization.
-func (dp DecisionProtocol) MarshalText() ([]byte, error) {
-	return []byte(dp.value), nil
-}
-
-// UnmarshalText parses serialized text into a known DecisionProtocol.
-func (dp *DecisionProtocol) UnmarshalText(data []byte) error {
-	protocol, err := ParseDecisionProtocol(string(data))
-	if err != nil {
-		return err
-	}
-
-	*dp = protocol
-	return nil
-}
-
-// ParseDecisionProtocol parses value and returns the corresponding
-// DecisionProtocol when it exists.
-func ParseDecisionProtocol(value string) (DecisionProtocol, error) {
-	if value == "" {
-		return DecisionProtocol{}, nil
-	}
-
-	protocol, exists := decisionProtocols[value]
-	if !exists {
-		return DecisionProtocol{}, fmt.Errorf("invalid decision protocol %q", value)
-	}
-
-	return protocol, nil
-}
-
-// MustParseDecisionProtocol parses value and returns the corresponding
-// DecisionProtocol. It panics when value does not identify a known protocol.
-func MustParseDecisionProtocol(value string) DecisionProtocol {
-	protocol, err := ParseDecisionProtocol(value)
-	if err != nil {
-		panic(err)
-	}
-
-	return protocol
-}
-
-// =============================================================================
-
-// Set of known MoE modes.
-var moeModes = make(map[string]MoEMode)
-
-var (
-	// MoEModeAuto uses catalog defaults.
-	MoEModeAuto = newMoEMode("auto")
-
-	// MoEModeExpertsCPU places all routed expert tensors on CPU.
-	// Recommended for VRAM-constrained setups.
-	MoEModeExpertsCPU = newMoEMode("experts_cpu")
-
-	// MoEModeExpertsGPU keeps all expert tensors on GPU.
-	// Requires sufficient VRAM for the full model.
-	MoEModeExpertsGPU = newMoEMode("experts_gpu")
-
-	// MoEModeKeepTopN keeps routed experts on GPU for the top N layers.
-	// All other expert layers go to CPU.
-	MoEModeKeepTopN = newMoEMode("keep_top_n")
-
-	// MoEModeCustom defers to TensorBuftOverrides for expert placement.
-	MoEModeCustom = newMoEMode("custom")
-)
-
-// MoEMode controls expert placement strategy for Mixture of Experts models.
-type MoEMode struct {
-	value string
-}
-
-func newMoEMode(value string) MoEMode {
-	mode := MoEMode{value: value}
-	moeModes[value] = mode
-	return mode
-}
-
-// String returns the name of the MoE mode.
-func (mm MoEMode) String() string {
-	return mm.value
-}
-
-// Equal provides support for the go-cmp package and testing.
-func (mm MoEMode) Equal(mm2 MoEMode) bool {
-	return mm.value == mm2.value
-}
-
-// IsZero reports whether the MoE mode is unset.
-func (mm MoEMode) IsZero() bool {
-	return mm.value == ""
-}
-
-// MarshalText provides support for logging and serialization.
-func (mm MoEMode) MarshalText() ([]byte, error) {
-	return []byte(mm.value), nil
-}
-
-// UnmarshalText parses serialized text into a known MoEMode.
-func (mm *MoEMode) UnmarshalText(data []byte) error {
-	mode, err := ParseMoEMode(string(data))
-	if err != nil {
-		return err
-	}
-
-	*mm = mode
-	return nil
-}
-
-// ParseMoEMode parses value and returns the corresponding MoEMode when it
-// exists.
-func ParseMoEMode(value string) (MoEMode, error) {
-	mode, exists := moeModes[value]
-	if !exists {
-		return MoEMode{}, fmt.Errorf("invalid MoE mode %q", value)
-	}
-
-	return mode, nil
-}
-
-// MustParseMoEMode parses value and returns the corresponding MoEMode. It
-// panics when value does not identify a known MoE mode.
-func MustParseMoEMode(value string) MoEMode {
-	mode, err := ParseMoEMode(value)
-	if err != nil {
-		panic(err)
-	}
-
-	return mode
-}
 
 // MoEConfig configures Mixture of Experts tensor placement.
 // When nil, no MoE-specific behavior is applied.
@@ -2149,11 +1291,15 @@ func WithConfig(src Config) Option {
 		*c = src
 	}
 }
+
 func WithAdapters(v []AdapterConfig) Option { return func(c *Config) { c.Adapters = v } }
+
 func WithAdmissionTimeout(v time.Duration) Option {
 	return func(c *Config) { c.PtrAdmissionTimeout = new(v) }
 }
+
 func WithAutoTune(v bool) Option        { return func(c *Config) { c.AutoTune = v } }
+func WithBasePath(v string) Option      { return func(c *Config) { c.BasePath = v } }
 func WithCacheMinTokens(v int) Option   { return func(c *Config) { c.PtrCacheMinTokens = new(v) } }
 func WithCacheTypeK(v GGMLType) Option  { return func(c *Config) { c.CacheTypeK = v } }
 func WithCacheTypeV(v GGMLType) Option  { return func(c *Config) { c.CacheTypeV = v } }
@@ -2164,11 +1310,14 @@ func WithDefaultParams(v Params) Option { return func(c *Config) { c.DefaultPara
 func WithDecisionProtocol(v DecisionProtocol) Option {
 	return func(c *Config) { c.DecisionProtocol = v }
 }
+
 func WithChatTemplateKwargs(v D) Option {
 	return func(c *Config) { c.ChatTemplateKwargs = v.Clone() }
 }
+
 func WithDevices(v []string) Option             { return func(c *Config) { c.Devices = v } }
 func WithDraftModel(v *DraftModelConfig) Option { return func(c *Config) { c.PtrDraftModel = v } }
+
 func WithFlashAttention(v FlashAttentionType) Option {
 	return func(c *Config) { c.PtrFlashAttention = new(v) }
 }
@@ -2189,6 +1338,7 @@ func WithIncrementalCache(v bool) Option       { return func(c *Config) { c.PtrI
 func WithInsecureLogging(v bool) Option        { return func(c *Config) { c.PtrInsecureLogging = new(v) } }
 func WithJinjaFile(v string) Option            { return func(c *Config) { c.JinjaFile = v } }
 func WithJinjaScript(v string) Option          { return func(c *Config) { c.JinjaScript = v } }
+func WithKVCacheMode(v KVCacheMode) Option     { return func(c *Config) { c.PtrKVCacheMode = new(v) } }
 func WithLazyMode(v LazyMode) Option           { return func(c *Config) { c.LazyMode = v } }
 func WithLoadMode(v LoadMode) Option           { return func(c *Config) { c.LoadMode = v } }
 func WithLog(v applog.Logger) Option           { return func(c *Config) { c.Log = v } }
@@ -2200,7 +1350,8 @@ func WithNSeqMax(v int) Option                 { return func(c *Config) { c.PtrN
 func WithNThreads(v int) Option                { return func(c *Config) { c.PtrNThreads = new(v) } }
 func WithNThreadsBatch(v int) Option           { return func(c *Config) { c.PtrNThreadsBatch = new(v) } }
 func WithPrefillBatchSize(v int) Option        { return func(c *Config) { c.PtrPrefillBatchSize = new(v) } }
-func WithNUMA(v string) Option                 { return func(c *Config) { c.NUMA = v } }
+func WithPhysicalBatchSize(v int) Option       { return func(c *Config) { c.PtrPhysicalBatchSize = new(v) } }
+func WithNUMA(v NUMAStrategy) Option           { return func(c *Config) { c.NUMA = v } }
 func WithOffloadKQV(v bool) Option             { return func(c *Config) { c.PtrOffloadKQV = new(v) } }
 func WithOpOffload(v bool) Option              { return func(c *Config) { c.PtrOpOffload = new(v) } }
 func WithProjFile(v string) Option             { return func(c *Config) { c.ProjFile = v } }
@@ -2210,9 +1361,11 @@ func WithProjDevice(v string) Option           { return func(c *Config) { c.Proj
 func WithRopeFreqBase(v float32) Option        { return func(c *Config) { c.PtrRopeFreqBase = new(v) } }
 func WithRopeFreqScale(v float32) Option       { return func(c *Config) { c.PtrRopeFreqScale = new(v) } }
 func WithRopeScaling(v RopeScalingType) Option { return func(c *Config) { c.RopeScaling = v } }
+
 func WithSpeculationMode(v SpeculationMode) Option {
 	return func(c *Config) { c.Speculation = v }
 }
+
 func WithSplitMode(v SplitMode) Option          { return func(c *Config) { c.PtrSplitMode = new(v) } }
 func WithSWAFull(v bool) Option                 { return func(c *Config) { c.PtrSWAFull = new(v) } }
 func WithTensorBuftOverrides(v []string) Option { return func(c *Config) { c.TensorBuftOverrides = v } }
@@ -2222,6 +1375,7 @@ func WithYarnBetaFast(v float32) Option         { return func(c *Config) { c.Ptr
 func WithYarnBetaSlow(v float32) Option         { return func(c *Config) { c.PtrYarnBetaSlow = new(v) } }
 func WithYarnExtFactor(v float32) Option        { return func(c *Config) { c.PtrYarnExtFactor = new(v) } }
 func WithYarnOrigCtx(v int) Option              { return func(c *Config) { c.PtrYarnOrigCtx = new(v) } }
+
 func WithQueueDepth(v int) Option {
 	return func(c *Config) {
 		c.PtrQueueDepth = new(v)

@@ -1,10 +1,15 @@
 package toolapp
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	buckydownload "github.com/ardanlabs/bucky/pkg/download"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
 	"github.com/ardanlabs/kronk/sdk/tools/backend"
 	buckylibs "github.com/ardanlabs/kronk/sdk/tools/bucky/libs"
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
@@ -12,6 +17,43 @@ import (
 	malinadownload "github.com/ardanlabs/malina/pkg/download"
 	"github.com/hybridgroup/yzma/pkg/download"
 )
+
+func TestMalinaLibsUnavailable(t *testing.T) {
+	a := &app{}
+	tests := []struct {
+		name    string
+		method  string
+		path    string
+		handler func(context.Context, *http.Request) web.Encoder
+	}{
+		{name: "list", method: http.MethodGet, path: "/v1/malina/libs", handler: a.listMalinaLibs},
+		{name: "verify", method: http.MethodGet, path: "/v1/malina/libs/integrity", handler: a.verifyMalinaLibs},
+		{name: "pull", method: http.MethodPost, path: "/v1/malina/libs/pull", handler: a.pullMalinaLibs},
+		{name: "installs", method: http.MethodGet, path: "/v1/malina/libs/installs", handler: a.listMalinaLibsInstalls},
+		{name: "remove", method: http.MethodDelete, path: "/v1/malina/libs/installs?arch=amd64&os=linux&processor=cpu", handler: a.removeMalinaLibsInstall},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := tt.handler(t.Context(), httptest.NewRequest(tt.method, tt.path, nil))
+			appErr, ok := resp.(*errs.Error)
+			if !ok {
+				t.Fatalf("response: got %T, want *errs.Error", resp)
+			}
+			if got := appErr.HTTPStatus(); got != http.StatusServiceUnavailable {
+				t.Errorf("HTTPStatus: got %d, want %d", got, http.StatusServiceUnavailable)
+			}
+		})
+	}
+
+	resp := a.listMalinaLibsCombinations(t.Context(), httptest.NewRequest(http.MethodGet, "/v1/malina/libs/combinations", nil))
+	combinations, ok := resp.(CombinationsResponse)
+	if !ok {
+		t.Fatalf("combinations: got %T, want CombinationsResponse", resp)
+	}
+	if len(combinations.Combinations) == 0 {
+		t.Error("combinations: got empty list, want published combinations")
+	}
+}
 
 func TestToAppLibIntegrity(t *testing.T) {
 	arch, err := download.ParseArch("arm64")

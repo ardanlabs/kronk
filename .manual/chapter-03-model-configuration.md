@@ -256,6 +256,29 @@ an exact ratio for every model and backend. Start with automatic tuning. If an
 explicit quantized cache changes output quality, compare the same workload with
 `f16` before changing unrelated settings.
 
+#### KV Cache Layout
+
+`kv-cache-mode` selects how concurrent generation slots allocate KV storage:
+
+```yaml
+unsloth/Qwen3-0.6B-Q8_0:
+  context-window: 8192
+  nseq-max: 4
+  kv-cache-mode: shared
+```
+
+The default, `partitioned`, gives each slot a dedicated context-window-sized
+partition. `shared` uses one aggregate pool. Both request total context capacity
+of `context-window × nseq-max`, isolate attention between requests, and keep
+Kronk's per-request context limit unchanged. Shared mode does not reserve a
+physical partition for each slot.
+
+Shared mode can improve ordinary generation batching when active sequence IDs
+have gaps. It can also increase attention workspace and long-history processing
+costs. Benchmark your workload rather than assuming it is always faster. This is
+a model-load setting, not a chat-request parameter; restart/reload with the new
+configuration. SDK callers use `model.WithKVCacheMode(model.KVCacheShared)`.
+
 #### Flash Attention
 
 Flash Attention can reduce attention memory traffic and improve performance,
@@ -422,6 +445,32 @@ projector on a specific accelerator, set `proj-device` to a name reported by
 automatic placement. `proj-device` cannot be combined with
 `proj-on-cpu: true`.
 
+#### Native backend environment settings
+
+These optional llama.cpp settings are process-wide environment variables, not
+per-model YAML fields. They affect the CUDA backend and applicable ROCm/HIP
+paths. Leave them unset unless you need to override backend memory behavior.
+
+| Variable | Effect when set to `1` |
+| -------- | ---------------------- |
+| `GGML_CUDA_ENABLE_UNIFIED_MEMORY` | Enable managed/unified memory allocation |
+| `GGML_CUDA_NO_PINNED` | Disable pinned host-memory allocation |
+| `GGML_CUDA_REGISTER_HOST` | Enable host-memory registration |
+
+Starting with llama.cpp b11696, these three settings require a value that
+parses as a nonzero integer. Previously, their presence alone activated them,
+even with an empty value or `0`. Use `1` to activate a setting; `true`, `yes`,
+an empty value, and `0` no longer activate it. For example:
+
+```shell
+GGML_CUDA_ENABLE_UNIFIED_MEMORY=1 kronk server start
+```
+
+Set these variables before backend initialization. Their values are cached
+on first use, so restart the server after changing them. Do not apply this
+numeric rule to every native setting: `GGML_CUDA_P2P` remains presence-based,
+so even `GGML_CUDA_P2P=0` enables it; unset it to disable it.
+
 #### Multiple GPUs
 
 `split-mode` accepts:
@@ -489,6 +538,7 @@ Text scheduling, image capacity, and image preprocessing are configured separate
 | Key | Load-time default | Purpose |
 | --- | ----------------- | ------- |
 | `prefill-batch-size` | `2048` | Generation prefill contribution per decode iteration, or aggregate embedding/reranking tokens per native sequence batch |
+| `physical-batch-size` | Unset | Requested physical compute capacity for generation, independent of the prompt contribution; constrained by image floors, logical capacity, and MTP policy |
 | `image-batch-token-capacity` | `0` (no additional floor) | Independent native capacity floor for image chunks; does not change text scheduling or image detail |
 | `image-token-budget` | Unset (projector default) | Explicit preprocessing budget for supported projectors; lowering it may reduce image resolution and detail |
 
@@ -510,7 +560,24 @@ doing so would allocate a much larger physical compute batch. Increase
 `prefill-batch-size` explicitly when the expected embedding or reranking
 workload needs a larger aggregate batch.
 
-Most deployments should use the default.
+Most deployments should leave the prompt contribution at its default.
+
+For ordinary causal generation, `physical-batch-size` lets llama.cpp divide one
+logical submission into smaller compute batches without changing how many prompt
+tokens Kronk schedules. For example, `prefill-batch-size: 2048`,
+`physical-batch-size: 512`, and `nseq-max: 1` resolve to logical capacity 2049
+and physical capacity 512. This can enable layer-split multi-GPU pipeline overlap
+within a submission. Completion synchronization is unchanged.
+
+Explicit positive physical sizes override AutoTune's recommendation. AutoTune
+initially recommends 512 for ordinary text models using multiple selected GPUs
+with layer splitting and full GPU offload. Single-GPU and other execution modes
+retain the legacy default when the setting is omitted. Image capacity and budget
+floors can raise a request, and logical/native context capacity can cap it.
+Active MTP preserves its existing equal-capacity policy; embedding, reranking,
+and specialized decision evaluation retain their own sizing policies. Requested
+and effective capacities are reported separately. Non-causal media chunks still
+must fit in one physical batch; oversized chunks return an error.
 
 Kronk derives llama.cpp's internal physical and logical batch capacities from
 this value. It reserves one output row per slot for non-MTP generation. MTP
@@ -520,8 +587,8 @@ the sampled token and its draft candidates. With four slots and the default
 for non-MTP and `NUBatch: 2064`, `NBatch: 2064` for MTP. Both can stage
 generation rows and then add a complete 2048-token prefill contribution from
 the current owner in the same logical decode. Non-MTP may split that tray into
-physical ubatches; MTP keeps it in one physical batch so dense NextN rows retain
-their expected mapping.
+physical ubatches; MTP currently keeps it in one physical batch pending validation
+of multi-ubatch execution in Kronk's hidden-state consumption path.
 
 For generation models with a projector, the native base capacity is
 `max(prefill-batch-size, image-batch-token-capacity, image-token-budget)`
@@ -850,12 +917,14 @@ is normally supplied by analysis or by the load-time defaults.
 | --- | ------ | ------- |
 | `context-window` | Positive token count | Per-sequence context capacity |
 | `cache-type-k`, `cache-type-v` | `f16`, `q8_0`, `q4_0`, and supported GGML types | KV-cache precision |
+| `kv-cache-mode` | `partitioned` (default), `shared` | Dedicated slot partitions or shared aggregate KV capacity |
 | `flash-attention` | `enabled`, `disabled`, `auto` | Attention implementation mode |
 | `nseq-max` | Positive integer | Generation slots, sequence-batch width, or fallback context-pool size |
 | `admission-timeout` | Go duration, default `3m` | Maximum SDK admission-permit wait; separate from the server's `KRONK_WEB_INFERENCE_TIMEOUT` (default `60m`) |
 | `queue-depth` | Non-negative integer, default `2` | Admitted request layers: `1` allows slot occupants only; `2` adds one waiting layer |
 | `imc-session-capacity` | Positive integer; derived when omitted | Reusable IMC conversation identities retained in RAM or on disk |
 | `prefill-batch-size` | Positive token count, default `2048` | Generation prefill contribution per decode iteration, or aggregate embedding/reranking tokens per native sequence batch |
+| `physical-batch-size` | Positive token count up to `2147483647`; unset by default | Requested generation compute batch size; AutoTune can choose it, and correctness constraints determine the effective capacity |
 | `image-batch-token-capacity` | Non-negative token count, default `0` | Image-capacity floor for native generation batches; does not change image detail |
 | `image-token-budget` | Positive token count up to `2147483647`; unset by default | Explicit projector preprocessing budget; may reduce image detail; also contributes to native capacity |
 | `ngpu-layers` | `-1`, `0`, or a positive count | CPU/GPU layer placement |

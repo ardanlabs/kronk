@@ -99,14 +99,6 @@ func applyDetectOverrides(options *Options) error {
 	return nil
 }
 
-type runtimeProbeState uint8
-
-const (
-	runtimeProbeUnknown runtimeProbeState = iota
-	runtimeProbeNone
-	runtimeProbeDevices
-)
-
 type runtimeCandidate struct {
 	processor download.Processor
 	path      string
@@ -122,15 +114,6 @@ type runtimeProbe struct {
 }
 
 type runtimeVerifier func(context.Context, runtimeCandidate) error
-
-type hostCUDAState uint8
-
-const (
-	hostCUDAUnknown hostCUDAState = iota
-	hostCUDASupported
-	hostCUDAUnsupported
-	hostCUDAUnavailable
-)
 
 type hostCUDAProbe struct {
 	state        hostCUDAState

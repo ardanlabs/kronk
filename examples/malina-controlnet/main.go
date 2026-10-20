@@ -41,8 +41,8 @@ func run() error {
 	}
 
 	mln, err := malina.New(
-		model.WithModelPath(manifest.Files[string(models.RoleModel)]),
-		model.WithControlNetPath(manifest.Files[string(models.RoleControlNet)]),
+		model.WithModelPath(manifest.Files[models.RoleModel.String()]),
+		model.WithControlNetPath(manifest.Files[models.RoleControlNet.String()]),
 	)
 	if err != nil {
 		return err

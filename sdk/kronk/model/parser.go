@@ -30,40 +30,8 @@ import (
 // registration — every parser is explicitly enumerated at startup).
 // =============================================================================
 
-// Channel labels the semantic class of an emitted token, mapping 1:1 to the
-// OpenAI chat/completions delta fields produced by the SSE writer.
-type Channel uint8
-
-const (
-	// ChannelNone indicates a structural marker the caller should not
-	// surface in either content or tool-call output. The token is still
-	// counted toward the slot's output-token total.
-	ChannelNone Channel = iota
-
-	// ChannelReasoning content is accumulated into the response's
-	// reasoning_content field and streamed as reasoning deltas.
-	ChannelReasoning
-
-	// ChannelAnswer content is accumulated into the response's content
-	// field and streamed as content deltas.
-	ChannelAnswer
-
-	// ChannelTool content is accumulated into the slot's tool-call buffer
-	// and parsed once via ToolCall when generation finishes.
-	ChannelTool
-)
-
 func channelName(channel Channel) string {
-	switch channel {
-	case ChannelReasoning:
-		return "reasoning"
-	case ChannelAnswer:
-		return "answer"
-	case ChannelTool:
-		return "tool"
-	default:
-		return "none"
-	}
+	return channel.String()
 }
 
 func slotChannel(s *slot) Channel {

@@ -79,20 +79,20 @@ func TestResolveConfigMapsBundleComponents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveConfig() error = %v", err)
 	}
-	if cfg.DiffusionModelPath != files[string(malinamodels.RoleDiffusion)] {
-		t.Errorf("DiffusionModelPath: got %q, want %q", cfg.DiffusionModelPath, files[string(malinamodels.RoleDiffusion)])
+	if cfg.DiffusionModelPath != files[malinamodels.RoleDiffusion.String()] {
+		t.Errorf("DiffusionModelPath: got %q, want %q", cfg.DiffusionModelPath, files[malinamodels.RoleDiffusion.String()])
 	}
-	if cfg.VAEPath != files[string(malinamodels.RoleVAE)] {
-		t.Errorf("VAEPath: got %q, want %q", cfg.VAEPath, files[string(malinamodels.RoleVAE)])
+	if cfg.VAEPath != files[malinamodels.RoleVAE.String()] {
+		t.Errorf("VAEPath: got %q, want %q", cfg.VAEPath, files[malinamodels.RoleVAE.String()])
 	}
-	if cfg.LLMPath != files[string(malinamodels.RoleLLM)] {
-		t.Errorf("LLMPath: got %q, want %q", cfg.LLMPath, files[string(malinamodels.RoleLLM)])
+	if cfg.LLMPath != files[malinamodels.RoleLLM.String()] {
+		t.Errorf("LLMPath: got %q, want %q", cfg.LLMPath, files[malinamodels.RoleLLM.String()])
 	}
-	if cfg.EmbeddingsConnectorsPath != files[string(malinamodels.RoleEmbeddingsConn)] {
-		t.Errorf("EmbeddingsConnectorsPath: got %q, want %q", cfg.EmbeddingsConnectorsPath, files[string(malinamodels.RoleEmbeddingsConn)])
+	if cfg.EmbeddingsConnectorsPath != files[malinamodels.RoleEmbeddingsConn.String()] {
+		t.Errorf("EmbeddingsConnectorsPath: got %q, want %q", cfg.EmbeddingsConnectorsPath, files[malinamodels.RoleEmbeddingsConn.String()])
 	}
-	if cfg.TokenizerPath != files[string(malinamodels.RoleTokenizer)] {
-		t.Errorf("TokenizerPath: got %q, want %q", cfg.TokenizerPath, files[string(malinamodels.RoleTokenizer)])
+	if cfg.TokenizerPath != files[malinamodels.RoleTokenizer.String()] {
+		t.Errorf("TokenizerPath: got %q, want %q", cfg.TokenizerPath, files[malinamodels.RoleTokenizer.String()])
 	}
 }
 
@@ -142,8 +142,8 @@ func TestResolveConfigMapsAudioEncoder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveConfig() error = %v", err)
 	}
-	if cfg.AudioEncoderPath != files[string(malinamodels.RoleAudioEncoder)] {
-		t.Errorf("AudioEncoderPath: got %q, want %q", cfg.AudioEncoderPath, files[string(malinamodels.RoleAudioEncoder)])
+	if cfg.AudioEncoderPath != files[malinamodels.RoleAudioEncoder.String()] {
+		t.Errorf("AudioEncoderPath: got %q, want %q", cfg.AudioEncoderPath, files[malinamodels.RoleAudioEncoder.String()])
 	}
 }
 
@@ -158,7 +158,7 @@ func TestResolveConfigRejectsUpscaler(t *testing.T) {
 
 func TestFailedLoadReleasesReservation(t *testing.T) {
 	models, files := testModels(t, malinamodels.BundleSD15, 1)
-	if err := os.Remove(files[string(malinamodels.RoleModel)]); err != nil {
+	if err := os.Remove(files[malinamodels.RoleModel.String()]); err != nil {
 		t.Fatal(err)
 	}
 	rm, err := resman.New(resman.Config{
@@ -230,7 +230,7 @@ func testModels(t *testing.T, name malinamodels.BundleName, size int64) (*malina
 		if err := os.Truncate(path, size); err != nil {
 			t.Fatal(err)
 		}
-		manifest.Files[string(file.Role)] = path
+		manifest.Files[file.Role.String()] = path
 	}
 	data, err := json.Marshal(manifest)
 	if err != nil {

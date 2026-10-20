@@ -37,33 +37,6 @@ import "github.com/hybridgroup/yzma/pkg/llama"
 // the unsafe restore call site is unreachable for it at compile time
 // rather than guarded by a runtime flag.
 
-// draftKind identifies the speculative-decoding strategy. It is used only
-// for logging/metrics; behavioral dispatch is via backend and capability
-// interfaces, never a switch on this value.
-type draftKind uint8
-
-const (
-	draftClassic         draftKind = iota // separate-GGUF, vocab-matched draft
-	draftMTPQwen                          // embedded MTP head, own draft KV (Qwen)
-	draftMTPQwenSeparate                  // separate-file MTP head, own draft KV (Qwen)
-	draftMTPGemma4                        // separate-file MTP assistant, shared KV (Gemma4)
-)
-
-func (k draftKind) String() string {
-	switch k {
-	case draftClassic:
-		return "classic-separate"
-	case draftMTPQwen:
-		return "mtp-qwen"
-	case draftMTPQwenSeparate:
-		return "mtp-qwen-separate"
-	case draftMTPGemma4:
-		return "mtp-gemma4-shared"
-	default:
-		return "unknown"
-	}
-}
-
 // drafter is the speculative-decoding strategy held by a Model. A nil
 // drafter means no speculation. The engine dispatches the mode-varying
 // operations (generate, unload) through this interface; the heavy

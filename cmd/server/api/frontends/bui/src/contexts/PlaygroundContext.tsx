@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useMemo, type ReactNode } from 'react';
 import type { DisplayMessage } from './ChatContext';
-import type { ModelLoadMode, PlaygroundSessionResponse } from '../types';
+import type { KVCacheMode, ModelLoadMode, PlaygroundSessionResponse } from '../types';
 import { DEFAULT_PREFILL_BATCH_SIZE } from '../lib/modelDefaults';
 
 interface PlaygroundState {
@@ -48,12 +48,16 @@ interface PlaygroundState {
   setContextWindow: React.Dispatch<React.SetStateAction<number>>;
   prefillBatchSize: number;
   setPrefillBatchSize: React.Dispatch<React.SetStateAction<number>>;
+  physicalBatchSize: number | undefined;
+  setPhysicalBatchSize: React.Dispatch<React.SetStateAction<number | undefined>>;
   nSeqMax: number;
   setNSeqMax: React.Dispatch<React.SetStateAction<number>>;
   flashAttention: string;
   setFlashAttention: React.Dispatch<React.SetStateAction<string>>;
   cacheType: string;
   setCacheType: React.Dispatch<React.SetStateAction<string>>;
+  kvCacheMode: KVCacheMode;
+  setKVCacheMode: React.Dispatch<React.SetStateAction<KVCacheMode>>;
   loadMode: ModelLoadMode;
   setLoadMode: React.Dispatch<React.SetStateAction<ModelLoadMode>>;
   cacheMode: string;
@@ -87,9 +91,11 @@ export function PlaygroundProvider({ children }: { children: ReactNode }) {
   const [customScript, setCustomScript] = useState('');
   const [contextWindow, setContextWindow] = useState(8192);
   const [prefillBatchSize, setPrefillBatchSize] = useState(DEFAULT_PREFILL_BATCH_SIZE);
+  const [physicalBatchSize, setPhysicalBatchSize] = useState<number | undefined>();
   const [nSeqMax, setNSeqMax] = useState(1);
   const [flashAttention, setFlashAttention] = useState('auto');
   const [cacheType, setCacheType] = useState('');
+  const [kvCacheMode, setKVCacheMode] = useState<KVCacheMode>('partitioned');
   const [loadMode, setLoadMode] = useState<ModelLoadMode>('auto');
   const [cacheMode, setCacheMode] = useState('none');
   const [moeMode, setMoeMode] = useState('');
@@ -111,9 +117,11 @@ export function PlaygroundProvider({ children }: { children: ReactNode }) {
     customScript, setCustomScript,
     contextWindow, setContextWindow,
     prefillBatchSize, setPrefillBatchSize,
+    physicalBatchSize, setPhysicalBatchSize,
     nSeqMax, setNSeqMax,
     flashAttention, setFlashAttention,
     cacheType, setCacheType,
+    kvCacheMode, setKVCacheMode,
     loadMode, setLoadMode,
     cacheMode, setCacheMode,
     moeMode, setMoeMode,
@@ -122,8 +130,8 @@ export function PlaygroundProvider({ children }: { children: ReactNode }) {
     hydratedModelId, setHydratedModelId,
   }), [
     session, chatMessages, selectedModel, playgroundMode, sweepMode, activeTab, systemPrompt, lastTPS,
-    templateMode, selectedTemplate, customScript, contextWindow, prefillBatchSize,
-    nSeqMax, flashAttention, cacheType, loadMode, cacheMode, moeMode, moeKeepTopN, tensorBuftOverrides, hydratedModelId,
+    templateMode, selectedTemplate, customScript, contextWindow, prefillBatchSize, physicalBatchSize,
+    nSeqMax, flashAttention, cacheType, kvCacheMode, loadMode, cacheMode, moeMode, moeKeepTopN, tensorBuftOverrides, hydratedModelId,
   ]);
 
   return (

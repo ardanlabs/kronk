@@ -39,6 +39,10 @@ const (
 // builds that Kronk will load from but never modify.
 var ErrReadOnly = errors.New("libs: install path is read-only (no version.json)")
 
+// ErrNoSupportedRuntime indicates that automatic selection found no published
+// runtime compatible with the host. Explicit library paths bypass selection.
+var ErrNoSupportedRuntime = errors.New("libs: no supported automatic runtime")
+
 var (
 	networkAvailable  = hasNetwork
 	latestVersion     = download.SDLatestVersion
@@ -250,7 +254,7 @@ func New(opts ...Option) (*Libs, error) {
 			return nil, fmt.Errorf("libs: detect runtime: %w", err)
 		}
 		if !supported {
-			return nil, fmt.Errorf("libs: no supported automatic runtime for arch=%s os=%s", arch, opSys)
+			return nil, fmt.Errorf("%w for arch=%s os=%s", ErrNoSupportedRuntime, arch, opSys)
 		}
 		if log != nil {
 			log(ctx, "select malina runtime", "preferred", preferred, "selected", processor, "reason", reason)

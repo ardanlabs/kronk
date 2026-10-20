@@ -13,6 +13,10 @@ import (
 )
 
 func (a *app) listMalinaLibs(ctx context.Context, r *http.Request) web.Encoder {
+	if a.malinaLibs == nil {
+		return errs.Errorf(errs.Unavailable, "Malina libraries unavailable: no supported automatic runtime on this host")
+	}
+
 	tag, err := a.malinaLibs.InstalledVersion()
 	if err != nil {
 		return toAppVersionTag("not installed", tag, a.malinaLibs.AllowUpgrade)
@@ -22,6 +26,10 @@ func (a *app) listMalinaLibs(ctx context.Context, r *http.Request) web.Encoder {
 }
 
 func (a *app) verifyMalinaLibs(ctx context.Context, r *http.Request) web.Encoder {
+	if a.malinaLibs == nil {
+		return errs.Errorf(errs.Unavailable, "Malina libraries unavailable: no supported automatic runtime on this host")
+	}
+
 	version := r.URL.Query().Get("version")
 	if version == "" {
 		tag, err := a.malinaLibs.InstalledVersion()
@@ -54,6 +62,10 @@ func (a *app) verifyMalinaLibs(ctx context.Context, r *http.Request) web.Encoder
 }
 
 func (a *app) pullMalinaLibs(ctx context.Context, r *http.Request) web.Encoder {
+	if a.malinaLibs == nil {
+		return errs.Errorf(errs.Unavailable, "Malina libraries unavailable: no supported automatic runtime on this host")
+	}
+
 	q := r.URL.Query()
 	arch := q.Get("arch")
 	opSys := q.Get("os")
@@ -142,6 +154,10 @@ func (a *app) listMalinaLibsCombinations(ctx context.Context, r *http.Request) w
 }
 
 func (a *app) listMalinaLibsInstalls(ctx context.Context, r *http.Request) web.Encoder {
+	if a.malinaLibs == nil {
+		return errs.Errorf(errs.Unavailable, "Malina libraries unavailable: no supported automatic runtime on this host")
+	}
+
 	tags, err := a.malinaLibs.List()
 	if err != nil {
 		return errs.FromSDK(err)
@@ -151,6 +167,10 @@ func (a *app) listMalinaLibsInstalls(ctx context.Context, r *http.Request) web.E
 }
 
 func (a *app) removeMalinaLibsInstall(ctx context.Context, r *http.Request) web.Encoder {
+	if a.malinaLibs == nil {
+		return errs.Errorf(errs.Unavailable, "Malina libraries unavailable: no supported automatic runtime on this host")
+	}
+
 	q := r.URL.Query()
 	arch := q.Get("arch")
 	opSys := q.Get("os")

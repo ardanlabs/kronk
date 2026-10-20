@@ -336,13 +336,14 @@ kronk libs --list-installs
 
 # Install the supported version using its exact release manifest pin.
 kronk libs --local \\
-  --version=b11513@sha256:7f8b62c6533a72ca1a7e2ade88378cfab51f6ebe10d624d3cd506872124b69b5
+  --version=b11738@sha256:a7647df75ab2c312b8d7fa268946948e13881a37e55dcb7cc05da3d204aaf12e
 
 # Explicitly select CPU instead of an available GPU.
 KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
           <p>The normal command installs the llama.cpp version selected for the installed Kronk release. That default includes the SHA-256 of the release manifest. The manifest contains the digests of every platform archive, allowing Kronk to authenticate the manifest before verifying the selected download. Yzma caches the authenticated manifest and its digest beside the installed libraries so subsequent verification can run without network access. An installation made before Yzma 1.26.1 needs one online verification to populate that cache. <code>--upgrade</code> opts into the latest published llama.cpp build, which may introduce upstream compatibility changes:</p>
           <pre className="code-block"><code className="language-shell">{`kronk libs --local --upgrade`}</code></pre>
           <p>Kronk, its Yzma Go binding, and llama.cpp form a tested compatibility set. Do not infer compatibility from version ordering or upgrade only one member of the set. The current and historical matrix is kept in the repository <a href="../README.md#project-status">README</a>, while the normal non-<code>--upgrade</code> command installs the build pinned for the Kronk release.</p>
+          <p>When upgrading to llama.cpp b11696, check any deployment settings for <code>GGML_CUDA_ENABLE_UNIFIED_MEMORY</code>, <code>GGML_CUDA_NO_PINNED</code>, and <code>GGML_CUDA_REGISTER_HOST</code>. These native CUDA-family environment variables now require numeric nonzero values instead of merely being present. Use <code>1</code> to activate them, not <code>true</code>, <code>yes</code>, or an empty value. See <a href="https://www.kronkai.com/manual#native-backend-environment-settings">Native backend environment settings</a> for their meanings and restart requirements. No change is needed if they are unset.</p>
           <p>Use <code>kronk libs --help</code> for cross-platform bundle installation and removal. Changing the active library path requires a server restart; libraries are not hot-reloaded.</p>
           <p><code>KRONK_LIB_PATH</code> can name an existing versioned Kronk bundle or a user-managed library directory. A non-empty user-managed directory without <code>version.json</code> is treated as read-only: Kronk loads from it but does not install, upgrade, or replace its contents. Changing the selected processor or library path requires a process restart; native libraries are not hot-reloaded.</p>
           <p>Linux CUDA bundles depend on CUDA runtime libraries supplied by the host. A working <code>nvidia-smi</code> confirms the driver but not necessarily the CUDA runtime. If the CUDA backend does not load, inspect <code>libggml-cuda.so</code> with <code>ldd</code> and install the runtime packages appropriate for the CUDA version used by the current bundle. The CUDA container image already includes its matching runtime.</p>
@@ -542,6 +543,14 @@ malina-models:
             </tbody>
           </table>
           <p>The actual memory reduction includes block and alignment overhead, so it is not an exact ratio for every model and backend. Start with automatic tuning. If an explicit quantized cache changes output quality, compare the same workload with <code>f16</code> before changing unrelated settings.</p>
+          <h4 id="kv-cache-layout">KV Cache Layout</h4>
+          <p><code>kv-cache-mode</code> selects how concurrent generation slots allocate KV storage:</p>
+          <pre className="code-block"><code className="language-yaml">{`unsloth/Qwen3-0.6B-Q8_0:
+  context-window: 8192
+  nseq-max: 4
+  kv-cache-mode: shared`}</code></pre>
+          <p>The default, <code>partitioned</code>, gives each slot a dedicated context-window-sized partition. <code>shared</code> uses one aggregate pool. Both request total context capacity of <code>context-window × nseq-max</code>, isolate attention between requests, and keep Kronk's per-request context limit unchanged. Shared mode does not reserve a physical partition for each slot.</p>
+          <p>Shared mode can improve ordinary generation batching when active sequence IDs have gaps. It can also increase attention workspace and long-history processing costs. Benchmark your workload rather than assuming it is always faster. This is a model-load setting, not a chat-request parameter; restart/reload with the new configuration. SDK callers use <code>model.WithKVCacheMode(model.KVCacheShared)</code>.</p>
           <h4 id="flash-attention">Flash Attention</h4>
           <p>Flash Attention can reduce attention memory traffic and improve performance, especially at longer contexts:</p>
           <pre className="code-block"><code className="language-yaml">{`unsloth/Qwen3-0.6B-Q8_0:
@@ -683,6 +692,33 @@ malina-models:
           <p><code>offload-kqv: false</code> keeps the KV cache on the CPU. <code>op-offload: false</code> keeps host tensor operations on the CPU. These options can reduce discrete-GPU VRAM pressure at a performance cost. They do not reduce total memory requirements.</p>
           <p>llama.cpp also supports the process-wide <code>GGML_OP_OFFLOAD_MIN_BATCH</code> environment variable. Set it before Kronk starts; GPU backends read it once during <code>kronk.Init</code>, so it cannot be configured independently per model.</p>
           <p>For multimodal models, <code>proj-on-cpu: true</code> keeps the media projector on the CPU without changing placement of the language model itself. To place the projector on a specific accelerator, set <code>proj-device</code> to a name reported by <code>kronk devices</code> (for example, <code>CUDA1</code> or <code>MTL0</code>). Omit both settings for automatic placement. <code>proj-device</code> cannot be combined with <code>proj-on-cpu: true</code>.</p>
+          <h4 id="native-backend-environment-settings">Native backend environment settings</h4>
+          <p>These optional llama.cpp settings are process-wide environment variables, not per-model YAML fields. They affect the CUDA backend and applicable ROCm/HIP paths. Leave them unset unless you need to override backend memory behavior.</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Variable</th>
+                <th>Effect when set to <code>1</code></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>GGML_CUDA_ENABLE_UNIFIED_MEMORY</code></td>
+                <td>Enable managed/unified memory allocation</td>
+              </tr>
+              <tr>
+                <td><code>GGML_CUDA_NO_PINNED</code></td>
+                <td>Disable pinned host-memory allocation</td>
+              </tr>
+              <tr>
+                <td><code>GGML_CUDA_REGISTER_HOST</code></td>
+                <td>Enable host-memory registration</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>Starting with llama.cpp b11696, these three settings require a value that parses as a nonzero integer. Previously, their presence alone activated them, even with an empty value or <code>0</code>. Use <code>1</code> to activate a setting; <code>true</code>, <code>yes</code>, an empty value, and <code>0</code> no longer activate it. For example:</p>
+          <pre className="code-block"><code className="language-shell">{`GGML_CUDA_ENABLE_UNIFIED_MEMORY=1 kronk server start`}</code></pre>
+          <p>Set these variables before backend initialization. Their values are cached on first use, so restart the server after changing them. Do not apply this numeric rule to every native setting: <code>GGML_CUDA_P2P</code> remains presence-based, so even <code>GGML_CUDA_P2P=0</code> enables it; unset it to disable it.</p>
           <h4 id="multiple-gpus">Multiple GPUs</h4>
           <p><code>split-mode</code> accepts:</p>
           <table className="flags-table">
@@ -741,6 +777,11 @@ malina-models:
                 <td>Generation prefill contribution per decode iteration, or aggregate embedding/reranking tokens per native sequence batch</td>
               </tr>
               <tr>
+                <td><code>physical-batch-size</code></td>
+                <td>Unset</td>
+                <td>Requested physical compute capacity for generation, independent of the prompt contribution; constrained by image floors, logical capacity, and MTP policy</td>
+              </tr>
+              <tr>
                 <td><code>image-batch-token-capacity</code></td>
                 <td><code>0</code> (no additional floor)</td>
                 <td>Independent native capacity floor for image chunks; does not change text scheduling or image detail</td>
@@ -754,8 +795,10 @@ malina-models:
           </table>
           <p>For generation models, a larger value can move a long prompt to generation in fewer decode calls, but requires larger compute buffers and each call runs longer before already-generating slots can run again. A smaller value gives generating slots more frequent scheduling opportunities at the cost of more prefill decode calls.</p>
           <p>For embedding and reranking models, Kronk sets both internal <code>NBatch</code> and <code>NUBatch</code> to <code>prefill-batch-size</code>. This is the aggregate token capacity of one native sequence batch, not a capacity granted separately to every sequence. The batch is constrained independently by <code>nseq-max</code> complete sequences and by <code>prefill-batch-size</code> combined tokens. For example, <code>nseq-max: 8</code> with <code>prefill-batch-size: 2048</code> can evaluate eight 256-token sequences, four 512-token sequences, two 1024-token sequences, or one 2048-token sequence in a single native batch. Kronk does not multiply the token capacity by <code>nseq-max</code>; doing so would allocate a much larger physical compute batch. Increase <code>prefill-batch-size</code> explicitly when the expected embedding or reranking workload needs a larger aggregate batch.</p>
-          <p>Most deployments should use the default.</p>
-          <p>Kronk derives llama.cpp's internal physical and logical batch capacities from this value. It reserves one output row per slot for non-MTP generation. MTP reserves <code>1 + ndraft</code> rows per slot because speculative verification includes the sampled token and its draft candidates. With four slots and the default <code>ndraft: 3</code>, the internal effective sizes are <code>NUBatch: 2048</code>, <code>NBatch: 2052</code> for non-MTP and <code>NUBatch: 2064</code>, <code>NBatch: 2064</code> for MTP. Both can stage generation rows and then add a complete 2048-token prefill contribution from the current owner in the same logical decode. Non-MTP may split that tray into physical ubatches; MTP keeps it in one physical batch so dense NextN rows retain their expected mapping.</p>
+          <p>Most deployments should leave the prompt contribution at its default.</p>
+          <p>For ordinary causal generation, <code>physical-batch-size</code> lets llama.cpp divide one logical submission into smaller compute batches without changing how many prompt tokens Kronk schedules. For example, <code>prefill-batch-size: 2048</code>, <code>physical-batch-size: 512</code>, and <code>nseq-max: 1</code> resolve to logical capacity 2049 and physical capacity 512. This can enable layer-split multi-GPU pipeline overlap within a submission. Completion synchronization is unchanged.</p>
+          <p>Explicit positive physical sizes override AutoTune's recommendation. AutoTune initially recommends 512 for ordinary text models using multiple selected GPUs with layer splitting and full GPU offload. Single-GPU and other execution modes retain the legacy default when the setting is omitted. Image capacity and budget floors can raise a request, and logical/native context capacity can cap it. Active MTP preserves its existing equal-capacity policy; embedding, reranking, and specialized decision evaluation retain their own sizing policies. Requested and effective capacities are reported separately. Non-causal media chunks still must fit in one physical batch; oversized chunks return an error.</p>
+          <p>Kronk derives llama.cpp's internal physical and logical batch capacities from this value. It reserves one output row per slot for non-MTP generation. MTP reserves <code>1 + ndraft</code> rows per slot because speculative verification includes the sampled token and its draft candidates. With four slots and the default <code>ndraft: 3</code>, the internal effective sizes are <code>NUBatch: 2048</code>, <code>NBatch: 2052</code> for non-MTP and <code>NUBatch: 2064</code>, <code>NBatch: 2064</code> for MTP. Both can stage generation rows and then add a complete 2048-token prefill contribution from the current owner in the same logical decode. Non-MTP may split that tray into physical ubatches; MTP currently keeps it in one physical batch pending validation of multi-ubatch execution in Kronk's hidden-state consumption path.</p>
           <p>For generation models with a projector, the native base capacity is <code>max(prefill-batch-size, image-batch-token-capacity, image-token-budget)</code> (an unset image budget contributes zero). Kronk then applies the generation reserve and MTP rules above. The text scheduler still contributes at most <code>prefill-batch-size</code> tokens per iteration.</p>
           <p>There are no model-family image-capacity defaults. Supply a non-negative <code>image-batch-token-capacity</code> when complete non-causal image chunks need more room than text prefill provides. For example, <code>prefill-batch-size: 512</code>, <code>image-batch-token-capacity: 1120</code>, and <code>nseq-max: 2</code> produce <code>NUBatch: 1120</code> and <code>NBatch: 1122</code> without MTP. Text prefill remains <code>512</code>, and the projector's image processing is unchanged. In the SDK, use <code>model.WithImageBatchTokenCapacity(value)</code>.</p>
           <p>Only an explicit positive <code>image-token-budget</code> is passed to MTMD as <code>ImageMaxTokens</code>; neither text prefill nor image capacity silently sets it. Lowering this budget can reduce image resolution and detail. When omitted, Kronk preserves the projector's default. Not all projectors support the option (for example, Gemma 3's fixed-resolution path does not), and resizing alignment can make the final chunk count differ from the budget. Very small budgets may also conflict with a projector's minimum and fail initialization. In the SDK, use <code>model.WithImageTokenBudget(value)</code>. An explicit budget also contributes to native capacity, so a separate capacity setting is unnecessary unless more room is needed. Increasing capacity does not undo a smaller preprocessing budget.</p>
@@ -899,6 +942,11 @@ models:
                 <td>KV-cache precision</td>
               </tr>
               <tr>
+                <td><code>kv-cache-mode</code></td>
+                <td><code>partitioned</code> (default), <code>shared</code></td>
+                <td>Dedicated slot partitions or shared aggregate KV capacity</td>
+              </tr>
+              <tr>
                 <td><code>flash-attention</code></td>
                 <td><code>enabled</code>, <code>disabled</code>, <code>auto</code></td>
                 <td>Attention implementation mode</td>
@@ -927,6 +975,11 @@ models:
                 <td><code>prefill-batch-size</code></td>
                 <td>Positive token count, default <code>2048</code></td>
                 <td>Generation prefill contribution per decode iteration, or aggregate embedding/reranking tokens per native sequence batch</td>
+              </tr>
+              <tr>
+                <td><code>physical-batch-size</code></td>
+                <td>Positive token count up to <code>2147483647</code>; unset by default</td>
+                <td>Requested generation compute batch size; AutoTune can choose it, and correctness constraints determine the effective capacity</td>
               </tr>
               <tr>
                 <td><code>image-batch-token-capacity</code></td>
@@ -1094,9 +1147,10 @@ models:
                         ┌──────────────────────────────────┐
                         │ Shared model context and weights │
                         └──────────────────────────────────┘`}</code></pre>
-          <p>Sequence IDs isolate attention state, so one request cannot attend to another request's tokens. Kronk also gives each sequence a fixed physical KV-cache partition. The aggregate context allocation is:</p>
+          <p>Sequence IDs isolate attention state, so one request cannot attend to another request's tokens in either KV layout. With the default <code>kv-cache-mode: partitioned</code>, Kronk gives each sequence a fixed physical KV-cache partition. Both layouts request aggregate context capacity of:</p>
           <pre className="code-block"><code className="language-text">{`context-window × nseq-max`}</code></pre>
-          <p>llama.cpp divides that allocation into <code>nseq-max</code> streams, so every slot gets the full configured <code>context-window</code>; it is never divided by the slot count. An idle slot's partition is not borrowed by another slot. Increasing <code>nseq-max</code> therefore increases the total capacity Kronk must allocate and budget.</p>
+          <p>In partitioned mode, llama.cpp divides that allocation into <code>nseq-max</code> streams, so every slot gets the full configured <code>context-window</code>; it is never divided by the slot count. An idle slot's partition is not borrowed by another slot. With <code>kv-cache-mode: shared</code>, sequences use one aggregate pool instead, while Kronk enforces the configured context-window limit per request. There is no reserved per-slot partition in shared mode. Increasing <code>nseq-max</code> increases the total capacity Kronk must allocate and budget in both modes.</p>
+          <p>Partitioned ordinary generation may require separate native computations when active sequence IDs have gaps. Shared mode avoids that restriction for ordinary KV batching, but can cost more with long concurrent histories. See Chapter 3's KV Cache Layout setting for the tradeoff.</p>
           <p>When a request finishes, its slot becomes available for another waiting job. Scheduling uses the first available slot; jobs do not reserve a particular slot between requests.</p>
           <h3 id="42-the-four-stage-request-lifecycle">4.2 The Four-Stage Request Lifecycle</h3>
           <p>Every generation request passes through the same four lifecycle stages:</p>
@@ -1138,6 +1192,7 @@ models:
           <p>More precisely, <code>prefill-batch-size</code>—2048 tokens by default—caps the owner's contribution during one scheduler visit. Kronk derives an internal logical batch capacity that also reserves generation rows. For the current prefill owner, Kronk adds:</p>
           <pre className="code-block"><code className="language-text">{`min(remaining prompt tokens, available logical-batch space, prefill-batch-size)`}</code></pre>
           <p>The scheduler retains a prefill cursor between decode iterations. It remains on the current owner across prefill contributions and advances to the next eligible slot only when that owner's prefill completes, is cancelled, or otherwise becomes ineligible. A long prompt can therefore make another new prompt wait, but it cannot block output-token generation between decode iterations.</p>
+          <p>For ordinary text models without a media projector or draft context, intermediate prefill submissions that request no outputs can remain in flight across scheduler iterations. This also applies while IMC builds or extends a text prefix. On eligible layer-split multi-GPU backends, later chunks can execute early layers while earlier chunks execute later layers, without adding another prefill owner. Kronk waits at output, cache-snapshot, admission, sequence-cleanup, and shutdown boundaries rather than after every output-free submission. Mixed batches containing generation outputs, media, and speculative decoding retain completion waits. Actual overlap depends on llama.cpp's backend capabilities and internal synchronization.</p>
           <p>Multimodal generation uses the same logical tray through a contribution planner. Text rows, including M-RoPE text, can use available tray capacity. For validated architectures, causal image or audio embedding rows can share a decode with token rows when the complete media contribution fits. Non-causal media, explicitly unsupported architectures, unvalidated architectures, and media contributions that do not fit use the isolated media decoder instead. This fallback is the same processing path used before mixed batches were available.</p>
           <p>At debug level, each contribution emits <code>status[prefill-scheduled]</code> with <code>iteration</code>, <code>slot</code>, <code>prefill_slots</code>, <code>generation_contributions</code>, <code>chunk_tokens</code>, <code>prefill_remaining</code>, <code>prefill_complete</code>, <code>selector_start</code>, <code>selector_selected</code>, <code>selector_next</code>, <code>generation_rows</code>, <code>tray_tokens</code>, <code>nbatch</code>, and <code>nubatch</code>. <code>prefill_slots</code> lists every eligible prefill slot for that iteration. Each <code>generation_contributions</code> entry reports its slot, staged row count, and mode; <code>mrope-shared</code> identifies M-RoPE generation in the shared tray. Media contributions emit <code>status[media-plan]</code> with <code>mode</code> set to <code>shared</code>, <code>isolated</code>, or <code>deferred</code>, along with the model's input-mixing capability and the contribution's position and attention requirements. The three selector fields show the persistent cursor before selection, the selected slot-array index, and the cursor retained for the next iteration. While an owner is still prefilling, <code>selector_selected</code> and <code>selector_next</code> remain equal. Completion moves <code>selector_next</code> to the following slot-array index. If generation rows consume the complete logical tray, <code>status[prefill-deferred]</code> records the same slot and selector snapshot without a prefill contribution. The older <code>next_slot</code> field remains as an alias for <code>selector_next</code>.</p>
           <p><img src="https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/09-restore-session-state.svg" alt="The two prefill phases: restore reusable IMC state, then compute missing request state" /></p>
@@ -1575,7 +1630,7 @@ krn, err := kronk.New(
           <p>MTP is normally the simpler choice when the downloaded model provides a supported embedded or companion head. It is architecture-matched to its target, supports multiple execution slots, and does not require a <code>model-id</code> in the <code>draft-model</code> configuration.</p>
           <p>An embedded head requires no companion file. A companion MTP head is an additional model-specific file, but Kronk's catalog and download flow can discover and associate files at the repository root or under <code>MTP/</code> with the target automatically. A version 2 catalog entry can instead provide <code>mtp_url</code> when a compatible companion is hosted in another repository. It is not configured as a classic <code>draft-model</code>.</p>
           <p>Qwen3.8 Flash Next's <code>qwen4exp</code> MTP runtime supports embedded heads and self-contained companion GGUFs through the own-KV runtime. Existing shared-tensor sidecars are not compatible; the companion must contain its own token embeddings and output tensors.</p>
-          <p>The pinned b11513 bundle contains the recurrent-memory assertion fix from upstream PR #29799 and the Qwen4Exp QSA/indexer correctness fixes from PR #29819. In <code>auto</code> mode Kronk loads a compatible Qwen4Exp companion when one is available, otherwise it uses a compatible embedded head. The <code>disabled</code> speculation mode continues to run the target without MTP.</p>
+          <p>The pinned b11738 bundle contains the recurrent-memory assertion fix from upstream PR #29799 and the Qwen4Exp QSA/indexer correctness fixes from PR #29819. MTP hidden rows use the separate state-embedding input introduced in PR #30257; token and media embeddings remain separate. In <code>auto</code> mode Kronk loads a compatible Qwen4Exp companion when one is available, otherwise it uses a compatible embedded head. The <code>disabled</code> speculation mode continues to run the target without MTP.</p>
           <p>NVIDIA Nemotron 3 Super uses the embedded own-KV MTP runtime. Kronk recognizes the <code>nemotron_h_moe</code> architecture, preserves recurrent-state rollback for its hybrid Mamba-attention target, and uses the model's Qwen3-Coder-compatible tool protocol. Separate Nemotron MTPv2 companion files and Nemotron Puzzle MTP are not supported; configure <code>speculation: disabled</code> to benchmark target-only generation with the same embedded model.</p>
           <p>MTP availability is a property of the downloaded files and the loaded llama.cpp library. Naming a model “MTP” or adding an <code>ndraft</code> override cannot create an MTP head that is not present.</p>
           <h3 id="64-draft-size-and-classic-adaptive-throttling">6.4 Draft Size and Classic Adaptive Throttling</h3>
@@ -1676,8 +1731,7 @@ krn, err := kronk.New(
           <p>Final <code>chat-completion</code> logs use <code>acceptance_rate</code>, while batch-engine completion logs use <code>draft_acceptance_rate</code>. Both also report draft and accepted-token counts when a drafter is loaded. Common MTP disable reasons include:</p>
           <ul>
             <li><code>imc-hit</code> — target cache state was restored without compatible draft state</li>
-            <li><code>media-mrope</code> — MTP is not enabled for that M-RoPE media request</li>
-            <li><code>sync-error</code> — draft state could not be synchronized after verification</li>
+            <li><code>sync-error</code> — draft state could not be synchronized after target decoding, including media prefill or verification</li>
           </ul>
           <p>Startup events under <code>draft-model</code>, <code>draft-model-mtp</code>, and <code>draft-model-mtp-shared</code> show which source loaded or why MTP was skipped. See <a href="https://www.kronkai.com/manual#chapter-15-observability">Chapter 15</a> for logging and metrics configuration.</p>
           <h3 id="67-limitations-and-fallbacks">6.7 Limitations and Fallbacks</h3>
@@ -1688,7 +1742,7 @@ krn, err := kronk.New(
             <li><strong>MTP at nonzero temperature is an approximation.</strong> MTP proposals are greedy, while target verification uses the request's sampler and accepts exact token matches. Sampling parameters still shape output, but this does not provide strict speculative-sampling distribution equivalence.</li>
             <li><strong>MTP can fall back per request.</strong> A synchronization or compatible-state problem disables MTP for the affected request while target-only generation continues. It does not make an incorrect draft token authoritative. A target rollback or restore failure is different: Kronk fails the affected request rather than continuing from ambiguous recurrent state.</li>
             <li><strong>IMC may restore target state without draft state.</strong> Target-prefix reuse remains valid. Shared-target-KV MTP resumes from the restored target state. Own-KV MTP resumes only when Kronk can restore the matching draft snapshot and saved final hidden row; if either is absent or invalid, that request runs target-only rather than drafting from inconsistent state. Text System cache entries retain this paired state when it is valid. See <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a>.</li>
-            <li><strong>Media support is conservative.</strong> Media projection and media prefill run on the target, and target IMC can cache and restore that media state. Kronk does not carry an own-KV draft snapshot across a media cache commit because it cannot prove that the draft covers the projected media cells. Unsupported own-KV media combinations and all M-RoPE media requests therefore run without MTP while target IMC remains active. See <a href="https://www.kronkai.com/manual#chapter-11-multimodal-models">Chapter 11</a>.</li>
+            <li><strong>MTP supports projected media rows, including M-RoPE images.</strong> The target performs projection and prefill. Own-KV MTP replays those embeddings at their original positions with shifted target hidden states; shared-KV MTP captures hidden state without replaying the media. IMC retains a matching own-KV draft snapshot and final hidden row when synchronization and snapshotting succeed. Incompatible draft input widths or failed synchronization fall back to target-only execution for that request. Classic separate drafts still cannot reconstruct media prefixes. See <a href="https://www.kronkai.com/manual#chapter-11-multimodal-models">Chapter 11</a>.</li>
             <li><strong>Drafting consumes resources.</strong> A classic draft loads another model and KV cache. MTP heads and companion assistants also require compute and memory. Hybrid recurrent targets retain current state plus rollback copies sized by the MTP draft ceiling. Automatic detection does not guarantee a performance improvement.</li>
           </ul>
           <p>Implementation details for drafting, verification, state synchronization, and hybrid-model rollback belong in <a href="https://www.kronkai.com/manual#2066-speculative-decoding-and-mtp">Chapter 20</a>.</p>
@@ -2540,7 +2594,38 @@ data: {"type":"response.completed",...}`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <p>Object order is part of the decision-model input. Kronk preserves the incoming order of state fields, questions, choice options, instructions, and nested criteria rather than normalizing them through unordered maps.</p>
+          <p>Object order is part of the decision-model input. Kronk preserves the incoming order of state fields, questions, choice options, instructions, and nested criteria rather than normalizing them through unordered maps. Protocols may apply their model's normalization rules: decision2 sorts structured state keys, while Clef sorts choice options.</p>
+          <h4 id="decision-protocols">Decision protocols</h4>
+          <p>Kronk detects these protocols from the GGUF's architecture-specific <code>decision.type</code> metadata and uses its named <code>systemone</code> template. The existing OpenJEV, Jev-Style, Laya/Julia, Lev, Kev, Nimble, and Clef protocols remain available. The following additional protocols are implemented:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Protocol</th>
+                <th>Readout and execution</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>pplx-decider</code></td>
+                <td>One final-token label readout per question; unlike Lev, no reverse-order averaging</td>
+              </tr>
+              <tr>
+                <td><code>lfm2-d1</code></td>
+                <td>Final-token label groups, taking the maximum logit per option before calibration</td>
+              </tr>
+              <tr>
+                <td><code>vllm-decision2</code></td>
+                <td>One question per prompt, with marked option/question spans and scalar decision-head outputs</td>
+              </tr>
+              <tr>
+                <td><code>vllm-d3</code></td>
+                <td>Non-causal whole-prompt label readout; questions execute separately without prefix reuse</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>These four protocols apply model-provided temperatures and score-level biases. Decision2 and D3 return normalized entropy concentration as <code>confidence</code> for choice and score questions; <code>noul</code> still returns the true-option probability. Decision2 requires at least two choice options and a state that is text, an object, or an array. D3 permits omitted or empty instructions, using the template's default question; the other protocols require instructions.</p>
+          <p>Decision2 and D3 evaluate each complete prompt in a single physical batch, regardless of the configured prefill batch size. D3 uses one execution sequence even when <code>NSeqMax</code> is larger. Large context windows can therefore increase working memory requirements for these models.</p>
+          <p>The four new protocols have model-free contract coverage, but have not yet been validated against downloaded GGUF models. Treat model-backed compatibility and decision quality as unverified until those models are exercised.</p>
           <p>A response is keyed by the caller's question IDs:</p>
           <pre className="code-block"><code className="language-json">{`{
   "model": "chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0",
@@ -4434,6 +4519,8 @@ KRONK_RENDER_GID=<render GID> KRONK_VIDEO_GID=<video GID> docker compose -f comp
 kronk libs --local --version=b5490
 kronk server start --lib-version=b5490`}</code></pre>
           <p>Unset <code>KRONK_LIB_VERSION</code> after the pinned default contains the required fix. Libraries are not hot-reloaded; restart the server after switching <code>KRONK_LIB_PATH</code>.</p>
+          <p>Also check native backend environment values. Starting with b11696, <code>GGML_CUDA_ENABLE_UNIFIED_MEMORY</code>, <code>GGML_CUDA_NO_PINNED</code>, and <code>GGML_CUDA_REGISTER_HOST</code> require numeric nonzero values such as <code>1</code>; <code>true</code>, <code>yes</code>, empty values, and <code>0</code> no longer activate them. Restart after changing these settings. See <a href="https://www.kronkai.com/manual#native-backend-environment-settings">Native backend environment settings</a> for details.</p>
+          <p>Native kernel changes can alter floating-point rounding without changing Kronk's embedding or sampling algorithms. For example, b11696 changes CUDA/HIP RMSNorm reductions and adds an eligible Metal BF16 Flash Attention path. Exact embeddings, logits, and generated text can differ across native versions, even with a fixed seed. Compare representative output quality and numerical tolerances rather than requiring byte-for-byte equality. Crashes, NaNs, or materially degraded results are not ordinary rounding differences; investigate and report them with the model, backend, library versions, and reproduction steps.</p>
           <h3 id="173-models-catalog-and-storage">17.3 Models, Catalog, and Storage</h3>
           <h4 id="a-downloaded-model-is-not-listed">A downloaded model is not listed</h4>
           <p>Kronk stores data beneath <code>KRONK_BASE_PATH</code>, which defaults to <code>~/.kronk</code>. Inspect the model index rather than relying on a hard-coded directory:</p>
@@ -5290,6 +5377,7 @@ if _, err := libs.Download(ctx, malina.FmtLogger); err != nil {
             </tbody>
           </table>
           <p>Use <code>libs.SupportedCombinations()</code> as the source of truth for combinations available to the installed Kronk version.</p>
+          <p>The macOS <code>cpu</code> and <code>metal</code> choices download the same Metal-capable Darwin archive; choosing the <code>cpu</code> directory alone does not force CPU execution. There are no published Linux CUDA or arm64 Linux/Windows bundles for this pin.</p>
           <p>Automatic selection treats detected hardware and environment-derived runtime values as preferences and falls back to a compatible runtime when possible. The <code>libs.WithArch</code>, <code>libs.WithOS</code>, and <code>libs.WithProcessor</code> options are authoritative when they form a published combination. An explicit library path is also authoritative.</p>
           <p>The library manager recognizes these path and platform overrides:</p>
           <table className="flags-table">
@@ -5333,7 +5421,8 @@ if _, err := libs.Download(ctx, malina.FmtLogger); err != nil {
     libs.WithAllowUpgrade(true),
 )`}</code></pre>
           <p>An upgraded upstream library may not be ABI-compatible with the Malina and Kronk versions in use. Use this option for testing, not as a compatibility guarantee. Without an explicit version or upgrade opt-in, Kronk requires the exact Malina-compatible default even when a numerically newer managed build is already installed. If the host is offline, a mismatched managed build is rejected rather than loaded. Library installation is staged and activated atomically so a failed download does not replace a working installation.</p>
-          <p>Malina v1.1.5 requires stable-diffusion.cpp <code>master-929-3f8527a</code>, authenticated by manifest digest <code>sha256:9c82e359dc51b80b8b598d803f6783364e64de0cd3887356e71b6f41bc7ffa2c</code>. The existing native layouts remain binary-shaped compatible with the <code>master-908-88411ef</code> bundle used by Malina v1.1.3, but VAE tiling has different semantics and the upscaler metadata symbol is new. The pairings are therefore not behaviorally compatible. <code>Download</code> replaces any mismatched Kronk-managed installation with the exact pin. A user-managed library directory is read-only to Kronk and must be rebuilt or replaced by its owner. Do not combine Malina v1.1.5 with an older native bundle, or older Malina bindings with <code>master-929</code>.</p>
+          <p>Malina v1.1.7 requires stable-diffusion.cpp <code>master-969-8c442fb</code>, authenticated by manifest digest <code>sha256:b7b38cedefb63b398a7fccb5ee22b4d347613ba1f8ad1b3fe0e55da9e42afebf</code>. Compared with Malina v1.1.5's <code>master-929-3f8527a</code>, the native context struct grows from 320 to 336 bytes and component conversion adds LoRA arguments. These are ABI-breaking changes: upgrade bindings and native libraries together. Successful symbol loading is not proof of ABI compatibility. <code>Download</code> replaces any mismatched Kronk-managed installation with the exact pin. A user-managed library directory is read-only to Kronk and must be rebuilt or replaced by its owner. Do not combine Malina v1.1.7 with an older native bundle, or v1.1.5 bindings with <code>master-969</code>.</p>
+          <p>The exact upstream changes are available in the <a href="https://github.com/ardanlabs/malina/compare/2791dbbb70eb570de253a116d81d1b1dbafbdfae...def0e4a7977797ddf78f7b56e67184379e13ed60">Malina source comparison</a> and the <a href="https://github.com/leejet/stable-diffusion.cpp/compare/3f8527a46c54ecf4cb4ed6003da8e8982283c73c...8c442fb0ad43cf901663d9fb6783e2cd4929a278">native source comparison</a>.</p>
           <h3 id="193-manage-model-bundles">19.3 Manage Model Bundles</h3>
           <p>Kronk provides a small, curated catalog rather than accepting arbitrary model repository layouts. This keeps component roles and known-compatible files in the high-level SDK instead of requiring applications to use Malina's raw download API.</p>
           <p>The current bundles are:</p>
@@ -5394,6 +5483,12 @@ if _, err := libs.Download(ctx, malina.FmtLogger); err != nil {
                 <td>Quantized diffusion and text encoder, connectors, VAE, and tokenizer</td>
                 <td>Apache-2.0</td>
                 <td>20.2 GB</td>
+              </tr>
+              <tr>
+                <td><code>z-image-turbo</code></td>
+                <td>Q4_K diffusion, Q4_K_M Qwen3-4B text encoder, and VAE</td>
+                <td>Apache-2.0</td>
+                <td>6.7 GB</td>
               </tr>
               <tr>
                 <td><code>flux2-klein-4b</code></td>
@@ -5485,6 +5580,14 @@ defer func() {
     model.WithConditioningCacheSize(8),
 )`}</code></pre>
           <p>The conditioning cache defaults to four entries per model context. Set it to zero to disable caching. SageAttention is useful only for native backends and models that support it.</p>
+          <p>Malina v1.1.7 adds automatic, per-module flash-attention and direct-convolution selection. Empty mode strings use automatic selection and honor legacy true attention flags; false legacy flags do not force those operations off. For an explicit policy, use the SDK options:</p>
+          <pre className="code-block"><code className="language-go">{`mln, err := malina.New(
+    model.WithModelPath(mp.ModelFiles[0]),
+    model.WithFlashAttentionMode("off"),
+    model.WithConvDirectMode("auto,vae=off"),
+    model.WithBatchedCFG(false),
+)`}</code></pre>
+          <p><code>NewConfig</code> requests batched conditional/unconditional UNet execution by default. Unsupported workflows fall back to separate passes. The bindings always disable batching for Metal, including automatic macOS selection, to avoid incorrect group-normalization output. <code>Config.BatchedCFG</code> records the request, not confirmation that the backend used batching. Automatic operator selection can benchmark the device during context construction. The new backend policies and tile blending can change output pixels and memory use; do not expect byte-identical images across native versions.</p>
           <h4 id="1943-generate-an-image">19.4.3 Generate an Image</h4>
           <p>Start with the stable-diffusion.cpp generation defaults and set a prompt:</p>
           <pre className="code-block"><code className="language-go">{`params := model.NewGenerateParams()
@@ -5537,7 +5640,7 @@ if err := os.WriteFile("malina.png", generated.PNG, 0o644); err != nil {
           </table>
           <p>Dimensions must be multiples of 8 from 64 through 1024, with no more than 1,048,576 total pixels. A request needs a non-empty prompt, positive finite CFG scale, and between 1 and 1,000 steps.</p>
           <p><code>GenerateParams.ImagePreprocessRules</code> and <code>VideoParams.ImagePreprocessRules</code> pass stable-diffusion.cpp's shared image preprocessing rules to native generation. Rules are semicolon-separated, and each rule starts with <code>target=...</code> followed by comma-separated key-value pairs, for example <code>target=init,mode=none,canny=true</code>. An empty string preserves the model defaults. Preprocessing uses temporary native pixels and does not mutate the caller's Go images.</p>
-          <p>The underlying v1.1.5 bindings define VAE tiling in image pixels for both encoding and decoding: zero selects 256 pixels, positive relative values up to 1 select a fraction of the image dimension, and values above 1 select a target tile count. Kronk's high-level generation parameters do not currently expose VAE tiling, so they preserve the native defaults.</p>
+          <p>The underlying bindings define VAE tiling in image pixels for both encoding and decoding: zero selects 256 pixels, positive relative values up to 1 select a fraction of the image dimension, and values above 1 select a target tile count. Kronk's high-level generation parameters do not currently expose VAE tiling, so they preserve the native defaults.</p>
           <p>Waiting for admission is cancellable. Canceling a request after native generation starts asks stable-diffusion.cpp to stop, waits for native execution to return, and resets that model context before returning the cancellation error. The context is never reused or freed while native code is still active.</p>
           <h3 id="195-multi-file-model-bundles">19.5 Multi-File Model Bundles</h3>
           <p>Some pipelines require several files with distinct roles. The FLUX.2 example downloads a manifest and maps its diffusion, VAE, and LLM components into the model configuration:</p>
@@ -5571,6 +5674,8 @@ mln, err := malina.New(
     ),
 )`}</code></pre>
           <p>LLaDA-Image-Turbo is tuned for four steps and CFG scale 1.0; set those values on <code>GenerateParams</code>. Stable-diffusion.cpp selects its LLaDA-Image scheduler from the model. The native model also supports reference-image instruction editing, but Kronk's high-level SDK does not yet expose that distinct reference-image input path.</p>
+          <p>Z-Image-Turbo uses the existing diffusion, LLM, and VAE roles, with no external tokenizer. The pool and server map them automatically. Direct SDK users can use the FLUX.2 component-loading pattern above with <code>models.BundleZImageTurbo</code>. Set <code>GenerateParams.Steps = 8</code> and <code>GenerateParams.CFGScale = 1</code>. Catalog selection does not change generation defaults. For the server, explicitly send <code>"steps": 8</code> and <code>"cfg_scale": 1</code>; in the image generator UI, set Steps to 8 and CFG scale to 1 before submitting. Download it with:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk malina model pull --local z-image-turbo`}</code></pre>
           <h3 id="196-image-to-image-generation">19.6 Image-to-Image Generation</h3>
           <p>Set <code>GenerateParams.InitImage</code> to transform an existing Go image. The request still needs a prompt, and <code>Strength</code> must be greater than zero and no more than one:</p>
           <pre className="code-block"><code className="language-go">{`params := model.NewGenerateParams()
@@ -5729,6 +5834,8 @@ fmt.Println(info.Description)`}</code></pre>
             <li>LLaDA-Image-Turbo is available for text-to-image generation. Its native reference-image instruction-editing workflow is not yet exposed by the high-level SDK.</li>
             <li>The native release adds PixArt-α/Σ and Ming-Image Design support. Kronk does not yet curate their component files, validation, VRAM estimates, or server configurations, so these model families are not advertised as supported Kronk workflows. Ming-Image also requires an external tokenizer path.</li>
             <li>VAE tiling is available in the raw Malina bindings but is not yet exposed by Kronk's high-level image or video request types.</li>
+            <li>The new native Iris-3B, Z-Image L2P, FLUX.3, and MoSR workflows have no curated Kronk bundles. The existing catalog still supplies Real-ESRGAN for upscaling; native support alone is not a supported high-level workflow.</li>
+            <li>Raw preview metadata (<code>sd.GetPreviewInfo</code>) and LoRA-aware component conversion remain binding-level APIs. Kronk does not expose preview callbacks or conversion, so adding wrappers would not make those workflows usable. Preview metadata is process-global and requires serialized preview-enabled work.</li>
             <li>Native callbacks and backend initialization are process-wide. Model-context construction and destruction are serialized, while one handle may own multiple contexts and generate concurrently across them. Each concurrency slot loads another copy of the model and increases RAM or VRAM use.</li>
             <li>Context cancellation interrupts active native generation, waits for the native call to return, and resets the same context before reuse. It never frees a context while native code is active.</li>
           </ul>
@@ -6135,7 +6242,7 @@ make benchmark-codegen \\
           <p>Do not attempt prefix sharing by slicing or pointing into the current serialized state buffers. The native interface exposes complete per-sequence size/get/set operations, not partial state serialization, base-plus-delta restoration, copy-on-write KV pages, or immutable-prefix sharing. Hybrid recurrent state makes arbitrary byte slicing especially unsafe. Meaningful shared-prefix storage requires explicit native backend support rather than a different Go buffer layout.</p>
           <p>When investigating another template, correlate <code>match_reason</code>, <code>reusable_tokens</code>, <code>system_boundary_tokens</code>, and <code>full_input_snapshot_messages</code> from <code>plan-ready</code> records with System creation/restore and <code>slot-finished</code> events. Distinguish clean Current appends, System recovery, full rebuilds, and actual restored-token reuse.</p>
           <p>Media-anchor advancement has a stronger replacement contract: it writes a separately staged store and swaps the store plus matching plan/count metadata only after success, so failure leaves the previous media snapshot published. Do not generalize that staged replacement guarantee to every IMC path. A <code>SessionStore</code> implementation must honor the interface's read/prepare/commit/reset lifetime rules and clean up temporary resources; callers must not assume bytes remain stable across the next mutation or modify bytes returned for reading.</p>
-          <p>Restored KV and sampler history are separate correctness concerns. Prime sampler penalties and DRY with the complete logical prompt after restore. An own-KV MTP session may publish draft KV only with the matching target snapshot and final hidden row; a media commit clears that draft state. Shared-target-KV MTP derives its resume point from the restored target and must not allocate or restore an independent draft store. A draft-only restore failure permits target-only fallback. Target-side rejection has two distinct outcomes: a stale expected-version mismatch is a retryable busy error and leaves the published session intact, while empty target bytes or a partial native target restore are request-fatal and invalidate the affected current state.</p>
+          <p>Restored KV and sampler history are separate correctness concerns. Prime sampler penalties and DRY with the complete logical prompt after restore. An own-KV MTP session may publish draft KV only with the matching target snapshot and final hidden row, including media prefixes. Media cache decoding hands off every target batch before another decode or projector encode can replace its borrowed buffers. Own-KV replay preserves projected embeddings and explicit positions and shifts only hidden states; logical continuation comes from mtmd rather than embedding-row count. A media advance retains draft state only after a complete paired snapshot for that prefix. Shared-target-KV MTP derives its resume point from the restored target and must not allocate or restore an independent draft store. A draft-only restore failure permits target-only fallback. Target-side rejection has two distinct outcomes: a stale expected-version mismatch is a retryable busy error and leaves the published session intact, while empty target bytes or a partial native target restore are request-fatal and invalidate the affected current state.</p>
           <p>Snapshot publication failures also differ by path. Ordinary text build/append and initial media build write through the current store; incomplete target serialization invalidates that current cache state, but target generation for the current request can continue. Media-anchor advancement instead uses a replacement store and requires a complete staged snapshot before swapping metadata; decode or snapshot failure fails the request while preserving the old published anchor.</p>
           <h4 id="2062-prompt-plans-text-and-media">20.6.2 Prompt plans: text and media</h4>
           <p>Prompt planning converts normalized messages and parameters into the exact work the engine will execute. The plan, cache identity, token accounting, and decode positions must agree. Text-only plans can compare rendered/tokenized prefixes directly and may take optimized exact-hit paths. Media plans carry more than text tokens: ordered media parts, placeholder/embedding expansion, positions, and render-affecting metadata are part of identity and execution.</p>

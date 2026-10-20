@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import KeyValueTable from '../KeyValueTable';
 import { formatBytes } from '../../lib/format';
 import { labelWithTip } from '../ParamTooltips';
-import type { VRAMInput, MoEInfo, WeightBreakdown, PerDeviceVRAM, AutoTuneRecommendation, FitAssessment } from '../../types';
+import type { KVCacheMode, VRAMInput, MoEInfo, WeightBreakdown, PerDeviceVRAM, AutoTuneRecommendation, FitAssessment } from '../../types';
 
 export interface CatalogConfigDefaults {
   contextWindow: number;
@@ -128,6 +128,7 @@ export default function VRAMResults({
 
   const headerRows: { label: ReactNode; value: string }[] = [
     { label: labelWithTip('Model Size', 'modelSize'), value: formatBytes(input.model_size_bytes) },
+    { label: labelWithTip('KV Cache Layout', 'kvCacheMode'), value: input.kv_cache_mode || 'partitioned' },
     { label: labelWithTip('Layers (Block Count)', 'blockCount'), value: String(input.block_count) },
     { label: labelWithTip('Head Count KV', 'headCountKV'), value: String(input.head_count_kv) },
     { label: labelWithTip('Key Length', 'keyLength'), value: String(input.key_length) },
@@ -350,6 +351,7 @@ export function getCatalogConfigDefaults(recommended?: AutoTuneRecommendation): 
 }
 
 export interface VramComputedConfig {
+  kvCacheMode: KVCacheMode;
   contextWindow: number;
   nseqMax: number;
   cacheTypeK: string;
@@ -412,6 +414,7 @@ function buildComputedCatalogConfig(
 
   return {
     contextWindow: input.context_window,
+    kvCacheMode: input.kv_cache_mode || 'partitioned',
     nseqMax: input.slots,
     cacheTypeK: cacheType,
     cacheTypeV: cacheType,
@@ -434,6 +437,7 @@ function defaultComment(isDefault: boolean): string {
 function configToYAML(config: VramComputedConfig, configName?: string, defaults?: CatalogConfigDefaults): string {
   const lines: string[] = [];
   lines.push(`${configName ?? 'model-name/variant'}:`);
+  lines.push(`  kv-cache-mode: ${config.kvCacheMode}`);
   lines.push(`  context-window: ${config.contextWindow}${defaultComment(config.contextWindow === defaults?.contextWindow)}`);
   lines.push(`  nseq-max: ${config.nseqMax}${defaultComment(config.nseqMax === defaults?.nseqMax)}`);
   lines.push(`  cache-type-k: ${config.cacheTypeK}${defaultComment(config.cacheTypeK === defaults?.cacheTypeK)}`);

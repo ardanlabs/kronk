@@ -2,16 +2,6 @@ package modelprofile
 
 import "strings"
 
-// BatchInputMixing describes whether a language-model architecture may mix
-// token and embedding rows in one llama.cpp batch.
-type BatchInputMixing string
-
-const (
-	BatchInputMixingUnknown     BatchInputMixing = ""
-	BatchInputMixingSupported   BatchInputMixing = "supported"
-	BatchInputMixingUnsupported BatchInputMixing = "unsupported"
-)
-
 // BatchCapabilities contains model-level batch composition capabilities.
 type BatchCapabilities struct {
 	InputMixing BatchInputMixing

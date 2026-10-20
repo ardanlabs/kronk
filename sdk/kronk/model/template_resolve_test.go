@@ -79,13 +79,13 @@ func TestAutoDiscoverTemplate(t *testing.T) {
 	}
 
 	t.Run("empty model id", func(t *testing.T) {
-		if _, ok := autoDiscoverTemplate(""); ok {
+		if _, ok := autoDiscoverTemplate("", ""); ok {
 			t.Fatal("autoDiscoverTemplate(\"\") = ok, want false")
 		}
 	})
 
 	t.Run("no match", func(t *testing.T) {
-		if _, ok := autoDiscoverTemplate("DoesNotExist.Q8_0"); ok {
+		if _, ok := autoDiscoverTemplate("DoesNotExist.Q8_0", ""); ok {
 			t.Fatal("autoDiscoverTemplate(\"DoesNotExist.Q8_0\") = ok, want false")
 		}
 	})
@@ -94,7 +94,7 @@ func TestAutoDiscoverTemplate(t *testing.T) {
 		writeFile(t, "MatchExact.Q8_0.jinja")
 		t.Cleanup(func() { _ = os.Remove(filepath.Join(jinjaDir, "MatchExact.Q8_0.jinja")) })
 
-		tmpl, ok := autoDiscoverTemplate("MatchExact.Q8_0")
+		tmpl, ok := autoDiscoverTemplate("MatchExact.Q8_0", "")
 		if !ok {
 			t.Fatal("autoDiscoverTemplate: ok=false, want true")
 		}
@@ -110,7 +110,7 @@ func TestAutoDiscoverTemplate(t *testing.T) {
 		writeFile(t, "MatchStripped.jinja")
 		t.Cleanup(func() { _ = os.Remove(filepath.Join(jinjaDir, "MatchStripped.jinja")) })
 
-		tmpl, ok := autoDiscoverTemplate("MatchStripped.Q8_0")
+		tmpl, ok := autoDiscoverTemplate("MatchStripped.Q8_0", "")
 		if !ok {
 			t.Fatal("autoDiscoverTemplate: ok=false, want true")
 		}
@@ -127,12 +127,75 @@ func TestAutoDiscoverTemplate(t *testing.T) {
 			_ = os.Remove(filepath.Join(jinjaDir, "Both.jinja"))
 		})
 
-		tmpl, ok := autoDiscoverTemplate("Both.Q8_0")
+		tmpl, ok := autoDiscoverTemplate("Both.Q8_0", "")
 		if !ok {
 			t.Fatal("autoDiscoverTemplate: ok=false, want true")
 		}
 		if want := filepath.Join(jinjaDir, "Both.Q8_0.jinja"); tmpl.FileName != want {
 			t.Errorf("FileName = %q, want exact match %q", tmpl.FileName, want)
+		}
+	})
+}
+
+func TestRetrieveTemplateBasePath(t *testing.T) {
+	appBase := t.TempDir()
+	envBase := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("KRONK_BASE_PATH", envBase)
+	t.Setenv("HOME", home)
+
+	const modelID = "Example-Q8_0"
+	for _, base := range []string{appBase, envBase, filepath.Join(home, ".kronk")} {
+		dir := filepath.Join(base, "jinja")
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
+		// An exact global match must not outrank an app-local stripped match.
+		name := modelID + ".jinja"
+		if base == appBase {
+			name = "Example.jinja"
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(base), 0600); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+	}
+
+	for _, tt := range []struct {
+		name string
+		opts []Option
+		want string
+	}{
+		{"explicit overrides environment", []Option{WithBasePath(appBase)}, appBase},
+		{"omitted uses environment", nil, envBase},
+		{"empty uses environment", []Option{WithBasePath("")}, envBase},
+		{"explicit file wins", []Option{WithBasePath(appBase), WithJinjaFile(filepath.Join(envBase, "jinja", modelID+".jinja"))}, envBase},
+		{"inline script wins", []Option{WithBasePath(appBase), WithJinjaScript("inline")}, "inline"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpl, err := retrieveTemplate(NewConfig(tt.opts...), modelID, 0)
+			if err != nil {
+				t.Fatalf("retrieveTemplate: %v", err)
+			}
+			if tmpl.Script != tt.want {
+				t.Errorf("Script: got %q, want %q", tmpl.Script, tt.want)
+			}
+		})
+	}
+
+	t.Run("missing app template does not search global roots", func(t *testing.T) {
+		if _, ok := autoDiscoverTemplate(modelID, t.TempDir()); ok {
+			t.Fatal("autoDiscoverTemplate: got a global template, want no match")
+		}
+	})
+
+	t.Run("omitted uses home when environment is empty", func(t *testing.T) {
+		t.Setenv("KRONK_BASE_PATH", "")
+		tmpl, err := retrieveTemplate(NewConfig(), modelID, 0)
+		if err != nil {
+			t.Fatalf("retrieveTemplate: %v", err)
+		}
+		if want := filepath.Join(home, ".kronk"); tmpl.Script != want {
+			t.Errorf("Script: got %q, want %q", tmpl.Script, want)
 		}
 	})
 }
