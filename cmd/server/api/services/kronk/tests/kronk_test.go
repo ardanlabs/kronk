@@ -69,8 +69,14 @@ func Test_API(t *testing.T) {
 	test.Run(t, msgsNonStreamQwen3(t, tokens), "msgs-nonstream-qwen3")
 	test.RunStreaming(t, msgsStreamQwen3(t, tokens), "msgs-stream-qwen3")
 	test.Run(t, tokenize200(tokens), "tokenize-200")
+	t.Run("chat-transport-qwen3", func(t *testing.T) {
+		chatTransport(t, test, tokens["chat-completions"], qwen3ModelID, 1)
+	})
 	t.Run("chat-stream-imc-off-qwen3", func(t *testing.T) {
 		chatStreamState(t, test, tokens["chat-completions"], qwen3ModelID+"/IMCOff", false)
+	})
+	t.Run("chat-transport-peer-qwen3", func(t *testing.T) {
+		chatTransport(t, test, tokens["chat-completions"], qwen3ModelID+"/Transport2", 2)
 	})
 
 	// -------------------------------------------------------------------------
@@ -82,6 +88,12 @@ func Test_API(t *testing.T) {
 	test.Run(t, chatImageQwen35(t, tokens), "chat-image-qwen35")
 	test.Run(t, respImageQwen35(t, tokens), "resp-image-qwen35")
 	test.Run(t, msgsImageQwen35(t, tokens), "msgs-image-qwen35")
+	t.Run("chat-transport-qwen35", func(t *testing.T) {
+		chatTransport(t, test, tokens["chat-completions"], visionModelID, 1)
+	})
+	t.Run("chat-transport-peer-qwen35", func(t *testing.T) {
+		chatTransport(t, test, tokens["chat-completions"], visionModelID+"/Transport2", 2)
+	})
 
 	// -------------------------------------------------------------------------
 	// Model: Qwen2.5-Omni-3B-Q4_K_M (audio)

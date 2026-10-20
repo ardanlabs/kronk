@@ -40,11 +40,20 @@ func New(t *testing.T, testName string) *Test {
 func NewWithModelConfig(t *testing.T, testName, modelConfigFile string) *Test {
 	t.Helper()
 	ctx := context.Background()
+	at := new(Test)
 
 	// -------------------------------------------------------------------------
 
 	var buf bytes.Buffer
-	log := logger.New(&buf, logger.LevelInfo, "TEST", web.GetTraceID)
+	log := logger.NewWithEvents(&buf, logger.LevelInfo, "TEST", web.GetTraceID, logger.Events{
+		Info: func(_ context.Context, record logger.Record) {
+			if record.Message == "request-lifecycle" {
+				at.lifecycleMu.Lock()
+				at.lifecycle = append(at.lifecycle, record)
+				at.lifecycleMu.Unlock()
+			}
+		},
+	})
 
 	// -------------------------------------------------------------------------
 
@@ -266,9 +275,6 @@ func NewWithModelConfig(t *testing.T, testName, modelConfigFile string) *Test {
 		build.Routes(),
 	)
 
-	return &Test{
-		Sec:  sec,
-		Pool: p,
-		mux:  mux,
-	}
+	at.Sec, at.Pool, at.mux = sec, p, mux
+	return at
 }

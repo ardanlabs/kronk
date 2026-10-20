@@ -9,7 +9,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,6 +19,7 @@ import (
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/sdk/pool"
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -50,6 +53,22 @@ type Test struct {
 	Sec  *security.Security
 	Pool *pool.Pool
 	mux  http.Handler
+
+	lifecycleMu sync.Mutex
+	lifecycle   []logger.Record
+}
+
+// ServeHTTP serves the production routes through a test-owned HTTP server.
+func (at *Test) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	at.mux.ServeHTTP(w, r)
+}
+
+// RequestLifecycle returns a synchronized snapshot of request lifecycle logs.
+// Callers must treat the records and their attributes as immutable.
+func (at *Test) RequestLifecycle() []logger.Record {
+	at.lifecycleMu.Lock()
+	defer at.lifecycleMu.Unlock()
+	return slices.Clone(at.lifecycle)
 }
 
 // Run performs the actual test logic based on the table data.
