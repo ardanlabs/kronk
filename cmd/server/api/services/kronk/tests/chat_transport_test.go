@@ -31,9 +31,10 @@ func chatTransport(t *testing.T, test *apitest.Test, token, modelID string, slot
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg := krn.ModelConfig(); cfg.NSeqMax() != slots || cfg.Speculation != model.SpeculationDisabled {
+	if cfg := krn.ModelConfig(); cfg.NSeqMax() != slots {
 		t.Fatalf("unexpected transport configuration: %s", cfg.String())
 	}
+	requireRollback := krn.ModelConfig().Speculation == model.SpeculationMTP
 	t.Logf("transport %s: %s / %s / %s; %s", modelID,
 		krn.ModelInfo().Type, krn.ModelInfo().SequenceProcessing, krn.ModelInfo().Architecture, krn.ModelConfig().String())
 
@@ -83,8 +84,16 @@ func chatTransport(t *testing.T, test *apitest.Test, token, modelID string, slot
 		}
 	}
 	cancelled := func(id string) bool {
-		for _, record := range test.RequestLifecycle() {
+		for _, record := range test.ModelEvents() {
 			if record.Attributes["id"] == id && record.Attributes["status"] == "cancel" {
+				return true
+			}
+		}
+		return false
+	}
+	rolledBack := func(id string, marker int) bool {
+		for _, record := range test.ModelEvents()[marker:] {
+			if record.Message == "speculative" && record.Attributes["status"] == "target-rollback" && record.Attributes["id"] == id {
 				return true
 			}
 		}
@@ -123,12 +132,17 @@ func chatTransport(t *testing.T, test *apitest.Test, token, modelID string, slot
 		t.Helper()
 		request := testlib.StateRequest("ALPHA", "DELTA", 101)
 		request["messages"] = []model.D{{"role": "user", "content": "Count from 1 to 2000. Write every number, one per line. Do not abbreviate or skip any numbers."}}
+		if requireRollback {
+			request["messages"] = []model.D{{"role": "user", "content": "Write a detailed tutorial with 40 sections comparing fault recovery in TCP, database transactions and distributed job queues. Include concrete examples and explain the limits of each analogy."}}
+			request["temperature"] = 0.7
+		}
 		request["max_tokens"] = 4096
 		stream := start(t, request)
 		first := stream.content(t)
 		wait(t, "content delivered before generation completes", 20*time.Second, func(s model.BatchEngineSnapshot) bool {
 			for _, slot := range s.Slots {
-				if slot.RequestID == first.ID && slot.Phase == "generation" && krn.ActiveStreams() > 0 {
+				if slot.RequestID == first.ID && slot.Phase == "generation" && krn.ActiveStreams() > 0 &&
+					(!requireRollback || rolledBack(first.ID, 0)) {
 					return true
 				}
 			}
@@ -140,6 +154,7 @@ func chatTransport(t *testing.T, test *apitest.Test, token, modelID string, slot
 	if slots == 2 {
 		t.Run("cancel-with-surviving-peer", func(t *testing.T) {
 			holder, id := hold(t)
+			marker := len(test.ModelEvents())
 			peer := start(t, longRequest("peer"))
 			wait(t, "two occupied slots", 20*time.Second, func(s model.BatchEngineSnapshot) bool {
 				occupied := 0
@@ -148,7 +163,7 @@ func chatTransport(t *testing.T, test *apitest.Test, token, modelID string, slot
 						occupied++
 					}
 				}
-				return occupied == 2 && krn.ActiveStreams() == 2
+				return occupied == 2 && krn.ActiveStreams() == 2 && (!requireRollback || rolledBack(id, marker))
 			})
 			holder.cancel()
 			holder.interrupted(t)
@@ -161,11 +176,11 @@ func chatTransport(t *testing.T, test *apitest.Test, token, modelID string, slot
 
 	t.Run("cancel-queued", func(t *testing.T) {
 		holder, holderID := hold(t)
-		marker := len(test.RequestLifecycle())
+		marker := len(test.ModelEvents())
 		queued := start(t, testlib.StateRequest("BRAVO", "ECHO", 202))
 		var queuedID string
 		wait(t, "queued behind occupied slot", 20*time.Second, func(s model.BatchEngineSnapshot) bool {
-			for _, record := range test.RequestLifecycle()[marker:] {
+			for _, record := range test.ModelEvents()[marker:] {
 				if record.Attributes["status"] == "queued" && record.Attributes["id"] != holderID {
 					queuedID, _ = record.Attributes["id"].(string)
 				}

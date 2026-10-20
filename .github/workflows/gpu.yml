@@ -177,7 +177,7 @@ jobs:
 
       # The MTP speculation path, which the classic drafter above does not
       # cover. Separate for the 26B/35B targets and the longer timeout.
-      - name: Run MTP suites on GPU
+      - name: Run MTP suites and selected HTTP contracts on GPU
         env:
           DYLD_INSERT_LIBRARIES: ${{ matrix.processor == 'metal' && format('{0}/LumeMetalCapabilities.dylib', runner.temp) || '' }}
           LUME_METAL_APPLE_FAMILY_MAX: ${{ matrix.processor == 'metal' && '1009' || '' }}
@@ -186,3 +186,4 @@ jobs:
           export RUN_IN_PARALLEL=no
           go test -v -count=1 -timeout 20m -run '^(TestSuite|TestSuiteMultiSlot)$' ./sdk/kronk/tests/mtp
           go test -v -count=1 -timeout 20m -run '^(TestSuite|TestSuiteMultiSlot)$' ./sdk/kronk/tests/gemma4mtp
+          KRONK_TEST_MTP=yes go test -v -p=1 -count=1 -timeout 20m -run '^Test_API_MTP$' ./cmd/server/api/services/kronk/tests

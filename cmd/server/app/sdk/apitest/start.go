@@ -47,10 +47,11 @@ func NewWithModelConfig(t *testing.T, testName, modelConfigFile string) *Test {
 	var buf bytes.Buffer
 	log := logger.NewWithEvents(&buf, logger.LevelInfo, "TEST", web.GetTraceID, logger.Events{
 		Info: func(_ context.Context, record logger.Record) {
-			if record.Message == "request-lifecycle" {
-				at.lifecycleMu.Lock()
-				at.lifecycle = append(at.lifecycle, record)
-				at.lifecycleMu.Unlock()
+			switch record.Message {
+			case "request-lifecycle", "speculative", "draft-model", "draft-model-mtp", "draft-model-mtp-separate", "draft-model-mtp-shared":
+				at.eventsMu.Lock()
+				at.events = append(at.events, record)
+				at.eventsMu.Unlock()
 			}
 		},
 	})

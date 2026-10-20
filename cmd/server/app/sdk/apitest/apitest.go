@@ -54,8 +54,8 @@ type Test struct {
 	Pool *pool.Pool
 	mux  http.Handler
 
-	lifecycleMu sync.Mutex
-	lifecycle   []logger.Record
+	eventsMu sync.Mutex
+	events   []logger.Record
 }
 
 // ServeHTTP serves the production routes through a test-owned HTTP server.
@@ -63,12 +63,12 @@ func (at *Test) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	at.mux.ServeHTTP(w, r)
 }
 
-// RequestLifecycle returns a synchronized snapshot of request lifecycle logs.
+// ModelEvents returns a synchronized snapshot of model lifecycle and speculation logs.
 // Callers must treat the records and their attributes as immutable.
-func (at *Test) RequestLifecycle() []logger.Record {
-	at.lifecycleMu.Lock()
-	defer at.lifecycleMu.Unlock()
-	return slices.Clone(at.lifecycle)
+func (at *Test) ModelEvents() []logger.Record {
+	at.eventsMu.Lock()
+	defer at.eventsMu.Unlock()
+	return slices.Clone(at.events)
 }
 
 // Run performs the actual test logic based on the table data.

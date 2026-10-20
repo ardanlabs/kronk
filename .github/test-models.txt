@@ -18,10 +18,9 @@ bucky ggml-tiny.bin
 # Dense Hybrid convolution/recurrent-state coverage; kept off hosted runners.
 kronk unsloth/LFM2-700M-Q8_0 gpu
 
-# The two speculative-decoding MTP targets, the only GPU coverage of that path
-# (the classic separate-GGUF drafter is sdk/kronk/tests/draft). Both auto-enable
-# from GGUF metadata: mtp-Qwen3.6 owns its draft KV (sdk/kronk/tests/mtp),
-# gemma-4 shares the target's via its mtp-*.gguf companion (tests/gemma4mtp).
+# MTP SDK suites and the opt-in Test_API_MTP HTTP contracts use these targets
+# (the classic separate-GGUF drafter is sdk/kronk/tests/draft). Qwen3.6 has an
+# embedded own-KV head; Gemma shares target KV via its mtp-*.gguf companion.
 # Gemma also supplies the no-speculation text and vision IMC suites.
 kronk unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL gpu
 kronk unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M gpu
