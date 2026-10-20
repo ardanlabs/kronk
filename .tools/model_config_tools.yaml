@@ -1,7 +1,7 @@
-# Dedicated configuration for the Go reliability and lifecycle tools.
+# Dedicated configuration for the Go reliability, quick-check, and lifecycle tools.
 # Start the current source with:
 #
-#   KRONK_POOL_MODEL_CONFIG_FILE="$PWD/.tools/reliability/model_config_tools.yaml" make kronk-server-detach
+#   KRONK_POOL_MODEL_CONFIG_FILE="$PWD/.tools/model_config_tools.yaml" make kronk-server-detach
 #
 # Keep these model IDs and slot counts aligned with .make/tools.mk. The tools
 # validate the active settings; they never rewrite the config or manage the server.
@@ -16,6 +16,18 @@ kms:
   insecure-logging: false
 
 models:
+  # Quick-check fixtures: single-slot, text-only workload with IMC and MTP.
+  # Separate aliases keep the reliability fixtures' slot counts unchanged.
+  unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK: &quick
+    nseq-max: 1
+    context-window: 32768
+    queue-depth: 2
+    incremental-cache: true
+    speculation: mtp
+
+  unsloth/Qwen3.8-27B-UD-Q4_K_XL/QUICK-CHECK:
+    <<: *quick
+
   # Embedded MTP, four-slot batch load, and multimodal probes.
   unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/TOOLS-MTP-ON-IMC-ON: &embedded
     nseq-max: 4

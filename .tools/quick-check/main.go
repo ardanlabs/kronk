@@ -1,0 +1,474 @@
+// Command quick-check probes one MoE/one-slot/IMC-on/MTP-on/text-only cell
+// through a separately managed Kronk model server. It is not a model benchmark.
+package main
+
+import (
+	"crypto/sha256"
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+)
+
+const modelID = "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK"
+
+type options struct {
+	host, out, serverLog string
+	timeout              time.Duration
+}
+
+type report struct {
+	Status               string         `json:"status"`
+	Workload             string         `json:"workload"`
+	Model                string         `json:"model"`
+	Host                 string         `json:"host"`
+	HarnessRevision      string         `json:"harness_revision"`
+	Metadata             map[string]any `json:"server_metadata"`
+	SystemTokens         int            `json:"system_tokens"`
+	SystemSHA256         string         `json:"system_sha256"`
+	Slot                 int            `json:"slot"`
+	MTPBackend           string         `json:"mtp_backend"`
+	FirstRequest         *result        `json:"first_request,omitempty"`
+	WorkloadSeconds      float64        `json:"workload_seconds"`
+	CancelReleaseSeconds float64        `json:"cancel_release_seconds"`
+	Results              []result       `json:"results"`
+	Findings             []string       `json:"findings"`
+	evidenceValidated    bool
+}
+
+// Keep the decision/comparison surface separate from the diagnostic record.
+func (r report) summary() map[string]any {
+	phases := make([]map[string]any, 0, len(r.Results))
+	for _, res := range r.Results {
+		phases = append(phases, r.phaseSummary(res))
+	}
+	liveness, _ := r.Metadata["/v1/liveness"].(map[string]any)
+	libraries, _ := r.Metadata["/v1/kronk/libs"].(map[string]any)
+	summary := map[string]any{
+		"status": r.Status, "findings": append([]string{}, r.Findings...),
+		"model": r.Model, "cell": "MoE / one slot / IMC on / MTP on / images off",
+		"workload": r.Workload, "system_tokens": r.SystemTokens, "system_sha256": r.SystemSHA256,
+		"harness_revision": r.HarnessRevision, "server_build": liveness["build"],
+		"installed_library": libraries["current"], "mtp_backend": r.MTPBackend,
+		"workload_seconds":       r.WorkloadSeconds,
+		"cancel_release_seconds": r.CancelReleaseSeconds, "results": phases,
+	}
+	if r.FirstRequest != nil {
+		first := r.phaseSummary(*r.FirstRequest)
+		first["initial_state"] = "model-unloaded"
+		summary["first_request"] = first
+	}
+	return summary
+}
+
+func (r report) phaseSummary(res result) map[string]any {
+	findings := []string{}
+	for _, finding := range r.Findings {
+		if text, ok := strings.CutPrefix(finding, res.Phase+": "); ok {
+			findings = append(findings, text)
+		}
+	}
+	if res.Error != "" && len(findings) == 0 {
+		findings = append(findings, res.Error)
+	}
+	status := "UNVERIFIED"
+	if r.evidenceValidated {
+		status = "PASS"
+	}
+	if len(findings) > 0 {
+		status = "FAIL"
+	}
+	phase := map[string]any{
+		"phase": res.Phase, "status": status, "findings": findings,
+		"elapsed_seconds": res.Elapsed, "first_content_seconds": res.FirstContent,
+		"server_timings": res.ServerTimings,
+		"cache_match":    res.CacheMatch, "cache_reason": res.CacheReason,
+		"cached_tokens": res.Execution.ReusedTokens,
+		"draft_tokens":  res.Execution.DraftTokens, "draft_accepted_tokens": res.Execution.DraftAccepted,
+	}
+	// A deliberately interrupted stream has no final usage or meaningful
+	// generation rate. Do not present missing measurements as zero values.
+	if !res.Cancelled && res.Usage.CompletionTokens > 0 {
+		phase["prompt_tokens"] = res.Usage.PromptTokens
+		phase["completion_tokens"] = res.Usage.CompletionTokens
+		phase["generation_seconds"] = res.Generation
+		phase["client_output_tokens_per_second"] = res.OutputTPS
+		phase["server_output_tokens_per_second"] = res.Usage.ServerTPS
+	}
+	return phase
+}
+
+// Probe verdicts summarize their complete phase checks, not a diagnosed cause.
+func (r report) logSummary() string {
+	phases := make(map[string]result)
+	if r.FirstRequest != nil {
+		phases[r.FirstRequest.Phase] = *r.FirstRequest
+	}
+	for _, res := range r.Results {
+		phases[res.Phase] = res
+	}
+	verdict := func(names ...string) string {
+		status := "PASS"
+		for _, name := range names {
+			res, ok := phases[name]
+			if !ok {
+				status = "UNVERIFIED"
+				continue
+			}
+			switch r.phaseSummary(res)["status"] {
+			case "FAIL":
+				return "FAIL"
+			case "UNVERIFIED":
+				status = "UNVERIFIED"
+			}
+		}
+		return status
+	}
+	first, workload := "n/a", "n/a"
+	if r.FirstRequest != nil {
+		first = fmt.Sprintf("%.3fs", r.FirstRequest.Elapsed)
+	}
+	if r.WorkloadSeconds > 0 {
+		workload = fmt.Sprintf("%.3fs", r.WorkloadSeconds)
+	}
+	cache := verdict("load", "cold", "replay", "append", "fresh-session", "cancel", "recovery")
+	isolation := verdict("fresh-session", "recovery")
+	recovery := verdict("cancel", "recovery")
+	var b strings.Builder
+	fmt.Fprintf(&b, "Quick-check: %s\nIMC/MTP: %s | Serial isolation: %s | Cancel/recovery: %s\n", r.Status, cache, isolation, recovery)
+	fmt.Fprintf(&b, "Time: first request %s | warmed workload %s\n", first, workload)
+	if r.Status != "PASS" {
+		fmt.Fprintln(&b, "Details: summary.json (fix setup/evidence failures before deeper inference checks)")
+		if cache == "FAIL" {
+			fmt.Fprintln(&b, "IMC/MTP -> make test-load-hybrid; make test-load-mtp-embedded")
+		}
+		if isolation == "FAIL" || recovery == "FAIL" {
+			fmt.Fprintln(&b, "Isolation/recovery -> make test-load-hybrid")
+		}
+	}
+	fmt.Fprint(&b, "\n--- Phase progress ---\n")
+	return b.String()
+}
+
+type engine struct {
+	ModelID string `json:"model_id"`
+	MTP     bool   `json:"mtp"`
+	NDraft  int    `json:"ndraft"`
+	Slots   []struct {
+		ID    int    `json:"id"`
+		Phase string `json:"phase"`
+	} `json:"slots"`
+}
+
+func main() {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	var o options
+	flag.StringVar(&o.host, "host", "http://localhost:11435", "running Kronk server URL")
+	flag.StringVar(&o.out, "out", ".tools/quick-check/output", "parent for unique per-run artifact directories")
+	flag.StringVar(&o.serverLog, "server-log", filepath.Join(home, ".kronk/kronk.log"), "required local JSON server log")
+	flag.DurationVar(&o.timeout, "timeout", 5*time.Minute, "per-request timeout; not a performance threshold")
+	flag.Parse()
+	if err := run(o); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func run(o options) (runErr error) {
+	if o.timeout <= 0 {
+		return fmt.Errorf("timeout must be positive")
+	}
+	if err := os.MkdirAll(o.out, 0755); err != nil {
+		return err
+	}
+	dir, err := os.MkdirTemp(o.out, time.Now().UTC().Format("20060102T150405Z")+"-")
+	if err != nil {
+		return err
+	}
+	fmt.Println("Quick-check artifacts:", dir)
+	events, err := os.Create(filepath.Join(dir, "events.ndjson"))
+	if err != nil {
+		return err
+	}
+	defer events.Close()
+	toolLog, err := os.Create(filepath.Join(dir, "tool.log"))
+	if err != nil {
+		return err
+	}
+	defer toolLog.Close()
+	var progress strings.Builder
+	log := func(format string, args ...any) {
+		fmt.Fprintf(io.MultiWriter(os.Stdout, toolLog, &progress), format+"\n", args...)
+	}
+	r := report{Status: "FAIL", Workload: workloadVersion, Model: modelID, Host: o.host, Metadata: make(map[string]any)}
+	if revision, err := exec.Command("git", "rev-parse", "HEAD").Output(); err == nil {
+		r.HarnessRevision = strings.TrimSpace(string(revision))
+	}
+	c := &client{host: strings.TrimRight(o.host, "/"), token: os.Getenv("KRONK_TOKEN"), timeout: o.timeout, traces: make(map[string]string), events: json.NewEncoder(events)}
+	defer func() {
+		if runErr != nil {
+			r.Findings = append(r.Findings, runErr.Error())
+		}
+		if len(r.Findings) == 0 {
+			r.Status = "PASS"
+		}
+		// Preserve full metadata, answers, counters, and execution evidence for
+		// investigation without expanding the summary consumed on every merge.
+		evidenceErr := c.events.Encode(map[string]any{"source": "report", "report": r})
+		if evidenceErr != nil {
+			r.Status = "FAIL"
+			r.Findings = append(r.Findings, "write diagnostic report: "+evidenceErr.Error())
+		}
+		data, err := json.MarshalIndent(r.summary(), "", "  ")
+		if err == nil {
+			err = os.WriteFile(filepath.Join(dir, "summary.json"), append(data, '\n'), 0644)
+		}
+		if err != nil {
+			r.Status = "FAIL"
+			r.Findings = append(r.Findings, "write summary: "+err.Error())
+		}
+		runErr = errors.Join(runErr, evidenceErr, err)
+		log("%s: %d findings; warmed workload %.3fs (first request and calibration excluded)", r.Status, len(r.Findings), r.WorkloadSeconds)
+		// Live progress remains append-only; prepend the verdict once finalized.
+		if _, err := toolLog.Seek(0, io.SeekStart); err != nil {
+			runErr = errors.Join(runErr, err)
+		} else {
+			_, err := io.WriteString(toolLog, r.logSummary()+progress.String())
+			runErr = errors.Join(runErr, err)
+		}
+		if len(r.Findings) > 0 {
+			runErr = errors.Join(runErr, fmt.Errorf("quick-check has findings; inspect %s", dir))
+		}
+	}()
+	// Keep a descriptor and identity so rotation cannot silently lose evidence.
+	serverLog, err := os.Open(o.serverLog)
+	if err != nil {
+		return fmt.Errorf("required server log: %w", err)
+	}
+	defer serverLog.Close()
+	info, err := serverLog.Stat()
+	if err != nil {
+		return err
+	}
+	if _, err := serverLog.Seek(0, io.SeekEnd); err != nil {
+		return err
+	}
+	for _, path := range []string{"/v1/liveness", "/v1/kronk/libs"} {
+		var metadata any
+		if err := c.json("GET", path, nil, &metadata); err != nil {
+			return fmt.Errorf("server provenance %s: %w", path, err)
+		}
+		r.Metadata[path] = metadata
+	}
+	// Only this dedicated alias is unloaded. Never disturb unrelated models.
+	if err := c.unload(); err != nil {
+		return err
+	}
+	defer func() { runErr = errors.Join(runErr, c.unload()) }()
+	first, err := c.chat("load", []message{{Role: "user", Content: "Reply OK."}}, 8, false)
+	r.FirstRequest = &first
+	if err != nil {
+		return fmt.Errorf("load fixture: %w", err)
+	}
+	var detail struct {
+		Metadata map[string]string `json:"metadata"`
+		Config   struct {
+			IMC *bool `json:"incremental-cache"`
+		} `json:"model_config"`
+	}
+	var rawDetail json.RawMessage
+	if err := c.json("GET", "/v1/kronk/models/"+url.PathEscape(modelID), nil, &rawDetail); err != nil {
+		return err
+	}
+	if err := json.Unmarshal(rawDetail, &detail); err != nil {
+		return err
+	}
+	r.Metadata["model"] = rawDetail
+	experts, _ := strconv.Atoi(detail.Metadata["qwen35moe.expert_count"])
+	if detail.Metadata["general.architecture"] != "qwen35moe" || experts <= 1 {
+		return fmt.Errorf("fixture metadata must attest the selected Qwen3.6 MoE architecture")
+	}
+	e, err := c.snapshot()
+	if err != nil {
+		return err
+	}
+	r.Metadata["scheduler"] = e
+	if detail.Config.IMC == nil || !*detail.Config.IMC || !e.MTP || e.NDraft <= 0 || len(e.Slots) != 1 {
+		return fmt.Errorf("fixture must expose IMC on, active MTP, and exactly one slot: %+v", e)
+	}
+	r.Slot = e.Slots[0].ID
+	system, tokens, err := c.systemPrompt()
+	if err != nil {
+		return err
+	}
+	r.SystemTokens, r.SystemSHA256 = tokens, fmt.Sprintf("%x", sha256.Sum256([]byte(system)))
+	log("workload=%s model=%s system_tokens=%d", workloadVersion, modelID, tokens)
+	start := time.Now()
+	a := conversation(system, "ORCHID-47", "Maren", "Northport")
+	b := conversation(system, "COBALT-83", "Tobin", "Southbank")
+	perform := func(phase string, messages []message, expected, forbidden []string, cancelled bool) (result, error) {
+		res, err := c.chat(phase, messages, 384, cancelled)
+		if err == nil && !cancelled {
+			err = checkAnswer(res, expected, forbidden)
+		}
+		if err != nil {
+			res.Error = err.Error()
+			err = fmt.Errorf("%s: %w", phase, err)
+		}
+		r.Results = append(r.Results, res)
+		log("phase=%s elapsed=%.3fs first_content=%.3fs prompt=%d cached=%d output=%d drafts=%d error=%v", phase, res.Elapsed, res.FirstContent, res.Usage.PromptTokens, res.Usage.PromptTokensDetails.CachedTokens, res.Usage.CompletionTokens, res.Usage.DraftTokens, err)
+		return res, err
+	}
+	cold, err := perform("cold", a, []string{"ORCHID-47", "Maren", "Northport"}, nil, false)
+	if err == nil {
+		_, err = perform("replay", a, []string{"ORCHID-47", "Maren", "Northport"}, nil, false)
+	}
+	if err == nil {
+		continued := append(append([]message{}, a...), message{Role: "assistant", Content: cold.Content}, message{Role: "user", Content: "Change the destination to Eastmere; keep the identifier and owner unchanged. Review the updated handover in about 160 words, including its current facts. Do not repeat the previous destination."})
+		_, err = perform("append", continued, []string{"ORCHID-47", "Maren", "Eastmere"}, []string{"Northport"}, false)
+	}
+	var fresh result
+	if err == nil {
+		fresh, err = perform("fresh-session", b, []string{"COBALT-83", "Tobin", "Southbank"}, []string{"ORCHID-47", "Maren", "Eastmere", "Northport"}, false)
+	}
+	if err == nil {
+		cancelMessages := append(append([]message{}, b...), message{Role: "assistant", Content: fresh.Content}, message{Role: "user", Content: "For interrupted handover INTERRUPTED-91, write a long recovery checklist, repeating its identifier in every paragraph."})
+		var cancelled result
+		cancelled, err = perform("cancel", cancelMessages, nil, nil, true)
+		if err == nil && !cancelled.Cancelled {
+			err = fmt.Errorf("active cancellation was not observed")
+		}
+		if err == nil {
+			released := time.Now()
+			err = c.waitIdle()
+			r.CancelReleaseSeconds = time.Since(released).Seconds()
+		}
+		if err == nil {
+			_, err = perform("recovery", a, []string{"ORCHID-47", "Maren", "Northport"}, []string{"COBALT-83", "Tobin", "Southbank", "INTERRUPTED-91"}, false)
+		}
+	}
+	if err == nil {
+		err = c.waitIdle()
+	}
+	r.WorkloadSeconds = time.Since(start).Seconds()
+	// Collect even after a workload failure; incomplete evidence never yields PASS.
+	logErr := collectEvidence(serverLog, info, o.serverLog, c, &r)
+	return errors.Join(err, logErr)
+}
+
+func (c *client) snapshot() (engine, error) {
+	var engines []engine
+	if err := c.json("GET", "/v1/kronk/models/slots", nil, &engines); err != nil {
+		return engine{}, err
+	}
+	for _, e := range engines {
+		if e.ModelID == modelID {
+			return e, nil
+		}
+	}
+	return engine{}, fmt.Errorf("missing scheduler for %s", modelID)
+}
+
+func (c *client) waitIdle() error {
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		poll := *c
+		poll.timeout = min(c.timeout, time.Until(deadline))
+		if poll.timeout <= 0 {
+			return fmt.Errorf("capacity not idle after 15s")
+		}
+		e, err := poll.snapshot()
+		if err != nil {
+			return err
+		}
+		idle := len(e.Slots) > 0
+		for _, slot := range e.Slots {
+			idle = idle && slot.Phase == "idle"
+		}
+		if idle {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("one-slot capacity not idle after 15s")
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+}
+
+func (c *client) unload() error {
+	var models []struct {
+		ID string `json:"id"`
+	}
+	if err := c.json("GET", "/v1/kronk/models/ps", nil, &models); err != nil {
+		return err
+	}
+	for _, m := range models {
+		if m.ID != modelID {
+			continue
+		}
+		if err := c.waitIdle(); err != nil {
+			return err
+		}
+		var reply struct{ ID, Status string }
+		if err := c.json("POST", "/v1/kronk/models/unload", map[string]string{"id": modelID}, &reply); err != nil {
+			return err
+		}
+		if reply.ID != modelID || reply.Status != "unloaded" {
+			return fmt.Errorf("unexpected unload response: %+v", reply)
+		}
+		var remaining []struct {
+			ID string `json:"id"`
+		}
+		if err := c.json("GET", "/v1/kronk/models/ps", nil, &remaining); err != nil {
+			return err
+		}
+		for _, m := range remaining {
+			if m.ID == modelID {
+				return fmt.Errorf("fixture remains loaded after unload")
+			}
+		}
+	}
+	return nil
+}
+
+func (c *client) systemPrompt() (string, int, error) {
+	// Calibrate whole handbook records, not bytes or an assumed tokenizer ratio.
+	low, high := 1, 256
+	for low < high {
+		mid := (low + high) / 2
+		var count struct {
+			Tokens int `json:"tokens"`
+		}
+		if err := c.json("POST", "/v1/tokenize", map[string]any{"model": modelID, "input": handbook(mid), "apply_template": false}, &count); err != nil {
+			return "", 0, err
+		}
+		if count.Tokens < 10000 {
+			low = mid + 1
+		} else {
+			high = mid
+		}
+	}
+	text := handbook(low)
+	var count struct {
+		Tokens int `json:"tokens"`
+	}
+	if err := c.json("POST", "/v1/tokenize", map[string]any{"model": modelID, "input": text, "apply_template": false}, &count); err != nil {
+		return "", 0, err
+	}
+	if count.Tokens < 10000 || count.Tokens > 10500 {
+		return "", 0, fmt.Errorf("system prompt outside qualified 10000–10500 token range: %d", count.Tokens)
+	}
+	return text, count.Tokens, nil
+}

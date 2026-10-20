@@ -481,7 +481,7 @@ regressions within that scope, not proof that Kronk has no bugs.
 ## Sources
 
 - [Tool defaults and profile targets](../../.make/tools.mk)
-- [Current model fixtures](model_config_tools.yaml)
+- [Current model fixtures](../model_config_tools.yaml)
 - [MTP workload](scenario_mtp.go) and [backend evidence validation](main.go)
 - [Same-slot state workload](scenario_hybrid.go)
 - [Context workload](scenario_long_context.go)
