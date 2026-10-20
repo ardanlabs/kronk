@@ -20,6 +20,7 @@ const expectReasoning = true
 
 func TestSuite(t *testing.T) {
 	testlib.WithModel(t, testlib.CfgThinkToolChat(), func(t *testing.T, krn *kronk.Kronk) {
+		testlib.TestModelProfile(t, krn, "Dense", "Attention-only", "qwen3")
 		t.Run("ThinkChat", func(t *testing.T) { testChat(t, krn, testlib.DChatNoTool, false) })
 		t.Run("ThinkStreamingChat", func(t *testing.T) { testChatStreaming(t, krn, testlib.DChatNoTool, false) })
 		t.Run("ToolChat", func(t *testing.T) { testChat(t, krn, testlib.DChatTool, true) })

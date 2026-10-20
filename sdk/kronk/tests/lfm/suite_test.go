@@ -3,7 +3,6 @@ package lfm_test
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"testing"
 
@@ -33,7 +32,7 @@ func testChat(t *testing.T, krn *kronk.Kronk) {
 	ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 	defer cancel()
 
-	resp, err := krn.Chat(ctx, lfmRequest("CHARLIE", 42, false))
+	resp, err := krn.Chat(ctx, testlib.StateRequest("CHARLIE", "ZULU", 42))
 	if err != nil {
 		t.Fatalf("chat: %v", err)
 	}
@@ -42,8 +41,8 @@ func testChat(t *testing.T, krn *kronk.Kronk) {
 	}
 
 	content := testlib.GetMsg(resp.Choices[0], false).Content
-	if !strings.Contains(strings.ToUpper(content), "CHARLIE") {
-		t.Fatalf("content = %q, want code word CHARLIE", content)
+	if err := testlib.CheckStateReply(resp, content, "CHARLIE"); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -51,39 +50,57 @@ func testRecurrentStateMultiSlot(t *testing.T, krn *kronk.Kronk) {
 	ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 	defer cancel()
 
+	words := []string{"ALPHA", "BRAVO", "COPPER"}
 	requests := []model.D{
-		lfmRequest("ALPHA", 101, true),
-		lfmRequest("BRAVO", 202, true),
+		testlib.StateRequest("ALPHA", "ZULU", 101),
+		testlib.StateRequest("BRAVO", "ZULU", 202),
+		testlib.StateRequest("COPPER", "ZULU", 303),
+	}
+	baseline := make([]string, len(requests))
+	for i, request := range requests {
+		resp, err := krn.Chat(ctx, request)
+		if err != nil {
+			t.Fatalf("serial baseline %d: %v", i, err)
+		}
+		if len(resp.Choices) != 1 {
+			t.Fatalf("serial baseline %d: expected one choice", i)
+		}
+		content := testlib.GetMsg(resp.Choices[0], false).Content
+		if err := testlib.CheckStateReply(resp, content, words[i]); err != nil {
+			t.Fatalf("serial baseline %d: %v", i, err)
+		}
+		baseline[i] = content
 	}
 
+	// Three warmed conversations oversubscribe two execution slots. Reverse
+	// request order on replay; the barrier does not guarantee arrival order.
 	first := runConcurrentStreaming(ctx, krn, requests)
-	second := runConcurrentStreaming(ctx, krn, requests)
+	second := runConcurrentStreaming(ctx, krn, []model.D{requests[2], requests[1], requests[0]})
 
-	for i, codeWord := range []string{"ALPHA", "BRAVO"} {
-		if first[i].err != nil {
-			t.Errorf("first pass slot %d: %v", i, first[i].err)
-			continue
-		}
-		if second[i].err != nil {
-			t.Errorf("restored pass slot %d: %v", i, second[i].err)
-			continue
-		}
-		if !strings.Contains(strings.ToUpper(first[i].content), codeWord) {
-			t.Errorf("first pass slot %d content = %q, want code word %s", i, first[i].content, codeWord)
-		}
-		if first[i].content != second[i].content {
-			t.Errorf("restored pass slot %d content = %q, want deterministic replay %q", i, second[i].content, first[i].content)
-		}
-		if second[i].usage == nil || second[i].usage.PromptTokensDetails.CachedTokens == 0 {
-			t.Errorf("restored pass slot %d did not report cached prompt tokens", i)
+	for i, codeWord := range words {
+		for pass, result := range []streamResult{first[i], second[len(words)-1-i]} {
+			if result.err != nil {
+				t.Errorf("pass %d conversation %s: %v", pass, codeWord, result.err)
+				continue
+			}
+			if err := testlib.CheckStateReply(result.response, result.content, codeWord); err != nil {
+				t.Errorf("pass %d conversation %s: %v", pass, codeWord, err)
+				continue
+			}
+			if result.content != baseline[i] {
+				t.Errorf("pass %d conversation %s: got %q, want serial baseline %q", pass, codeWord, result.content, baseline[i])
+			}
+			if result.response.Usage.PromptTokensDetails.CachedTokens == 0 {
+				t.Errorf("pass %d conversation %s did not reuse cached prompt tokens", pass, codeWord)
+			}
 		}
 	}
 }
 
 type streamResult struct {
-	content string
-	usage   *model.Usage
-	err     error
+	content  string
+	response model.ChatResponse
+	err      error
 }
 
 func runConcurrentStreaming(ctx context.Context, krn *kronk.Kronk, requests []model.D) []streamResult {
@@ -103,7 +120,7 @@ func runConcurrentStreaming(ctx context.Context, krn *kronk.Kronk, requests []mo
 				return
 			}
 
-			last, content, err := testlib.DrainChat(ctx, ch)
+			last, content, err := testlib.DrainStateChat(ctx, ch)
 			if err != nil {
 				results[i].err = err
 				return
@@ -114,27 +131,11 @@ func runConcurrentStreaming(ctx context.Context, krn *kronk.Kronk, requests []mo
 			}
 
 			results[i].content = content
-			results[i].usage = last.Usage
+			results[i].response = last
 		}()
 	}
 
 	close(start)
 	wg.Wait()
 	return results
-}
-
-func lfmRequest(codeWord string, seed uint32, streaming bool) model.D {
-	d := model.D{
-		"messages": []model.D{
-			{"role": "system", "content": "This conversation's code word is " + codeWord + ". Follow the user's formatting instruction exactly."},
-			{"role": "user", "content": "Reply with only the uppercase code word " + codeWord + "."},
-		},
-		"max_tokens":  16,
-		"temperature": 0,
-		"seed":        seed,
-	}
-	if streaming {
-		d["stream_options"] = model.D{"include_usage": true}
-	}
-	return d
 }
