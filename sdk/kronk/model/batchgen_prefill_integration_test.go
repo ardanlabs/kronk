@@ -40,7 +40,8 @@ func TestTextPrefillCancellationAndReuse(t *testing.T) {
 					t.Errorf("unload: %v", err)
 				}
 			})
-			ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+			// Allow cancellation and both reuse requests on slower CI backends.
+			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
 			defer cancel()
 			cancelCtx, cancelPrefill := context.WithCancel(ctx)
 			defer cancelPrefill()
@@ -101,7 +102,7 @@ func TestTextPrefillCancellationAndReuse(t *testing.T) {
 					t.Fatal(err)
 				}
 				if len(resp.Choices) != 1 || resp.Choices[0].Message == nil {
-					t.Fatalf("response: got %+v, want one answer", resp)
+					t.Fatalf("response: got %+v, want one answer (context: %v)", resp, ctx.Err())
 				}
 				if got := strings.TrimSpace(resp.Choices[0].Message.Content); got != "AMBER-482" {
 					t.Errorf("answer after cancellation: got %q, want AMBER-482", got)

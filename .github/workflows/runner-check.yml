@@ -147,8 +147,8 @@ jobs:
         if: inputs.deep || github.event_name == 'pull_request'
         uses: ./.github/actions/setup-kronk
 
-      # What Kronk itself resolves to, for both backends the gating workflows
-      # use.
+      # What Kronk itself resolves to, including optional backends available
+      # on the host. Linux test jobs select Vulkan explicitly.
       - name: Kronk device + backend report
         if: inputs.deep || github.event_name == 'pull_request'
         continue-on-error: true
@@ -181,12 +181,11 @@ jobs:
             fail=1
           fi
           if ! vulkaninfo --summary >/dev/null 2>&1; then
-            echo "::warning::vulkaninfo missing or failing — gpu.yml's Vulkan leg will not find a device"
+            echo "::warning::vulkaninfo missing or failing — linux.yml's tests will not find a GPU device"
           fi
-          # Each fleet serves one backend, so exactly one of these warnings is
-          # expected; both firing means this box serves neither gpu.yml leg.
+          # ROCm is optional; the test suites use the Vulkan fleet.
           if ! rocminfo >/dev/null 2>&1; then
-            echo "::warning::rocminfo missing or failing — gpu.yml's ROCm leg will not find a device"
+            echo "::warning::rocminfo missing or failing — optional ROCm diagnostics unavailable"
           fi
           exit $fail
 

@@ -20,6 +20,36 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/tests/testlib"
 )
 
+func TestCompareEmbeddingVectors(t *testing.T) {
+	tests := []struct {
+		name    string
+		want    []float32
+		got     []float32
+		others  [][]float32
+		wantErr bool
+	}{
+		{name: "identical", want: []float32{1, 0}, got: []float32{1, 0}},
+		{name: "Vulkan sized drift", want: []float32{1, 0}, got: []float32{0.9998, 0.02}},
+		{name: "above cosine threshold", want: []float32{1, 0}, got: []float32{0.9991, float32(math.Sqrt(1 - 0.9991*0.9991))}},
+		{name: "below cosine threshold", want: []float32{1, 0}, got: []float32{0.9989, float32(math.Sqrt(1 - 0.9989*0.9989))}, wantErr: true},
+		{name: "opposite", want: []float32{1, 0}, got: []float32{-1, 0}, wantErr: true},
+		{name: "dimension mismatch", want: []float32{1, 0}, got: []float32{1}, wantErr: true},
+		{name: "zero vector", want: []float32{0, 0}, got: []float32{0, 0}, wantErr: true},
+		{name: "nonfinite output", want: []float32{1, 0}, got: []float32{float32(math.NaN()), 0}, wantErr: true},
+		{name: "nonfinite reference", want: []float32{float32(math.Inf(1)), 0}, got: []float32{1, 0}, wantErr: true},
+		{name: "intended reference closest", want: []float32{1, 0}, got: []float32{1, 0}, others: [][]float32{{0.9998, 0.02}, {0, 1}}},
+		{name: "swapped nearby input", want: []float32{1, 0}, got: []float32{0.9998, 0.02}, others: [][]float32{{0, 1}, {0.9998, 0.02}}, wantErr: true},
+		{name: "ambiguous identity", want: []float32{1, 0}, got: []float32{1, 0}, others: [][]float32{{1, 0}}, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := testlib.CompareEmbeddingVectors(tt.want, tt.got, tt.others...); (err != nil) != tt.wantErr {
+				t.Fatalf("comparison: got error %v, wantErr %t", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 // Operation checks run inside their existing serial model groups. Concurrent
 // calls here exercise request isolation, not concurrent model loading.
 func operationIntegrity(t *testing.T, test *apitest.Test, token, id, path string) {

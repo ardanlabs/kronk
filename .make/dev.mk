@@ -7,6 +7,21 @@ llama-bench:
 	$$HOME/.kronk/libraries/llama-bench --list-devices
 
 # ==============================================================================
+# SDK inference regression benchmarks
+#
+# Explicit native run; requires installed libraries/models and an idle machine.
+# No downloads or server management. See sdk/kronk/tests/benchmarks/README.md.
+INFERENCE_BENCH ?= ^BenchmarkInferenceMatrix$$
+INFERENCE_BENCH_TIME ?= 5x
+INFERENCE_BENCH_COUNT ?= 10
+INFERENCE_BENCH_TIMEOUT ?= 4h
+
+.PHONY: benchmark-inference
+benchmark-inference:
+	bash sdk/kronk/tests/benchmarks/run.sh '$(INFERENCE_BENCH)' \
+		'$(INFERENCE_BENCH_TIME)' '$(INFERENCE_BENCH_COUNT)' '$(INFERENCE_BENCH_TIMEOUT)'
+
+# ==============================================================================
 # Protobuf support
 
 authapp-proto-gen:

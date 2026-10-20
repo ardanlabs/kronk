@@ -1,7 +1,7 @@
 # macOS CI runner: setup and Metal capability
 
-Self-hosted macOS runner for `macos.yml`, `gpu.yml`'s Metal leg and
-`runner-check.yml`. Ephemeral Tart VMs orchestrated by
+Self-hosted macOS runner for `macos.yml` and `runner-check.yml`.
+Ephemeral Tart VMs orchestrated by
 [sand](https://github.com/khoi/sand), one Apple Silicon host.
 
 Files here:
@@ -77,8 +77,8 @@ runners:
 adds `gpu, metal`. That satisfies every workflow that targets this host:
 
 ```
-macos.yml, runner-check.yml   [self-hosted, macOS, ARM64, sand]
-gpu.yml  (Metal leg)          [self-hosted, macOS, ARM64, sand, metal]
+macos.yml (static), runner-check.yml   [self-hosted, macOS, ARM64, sand]
+macos.yml (tests)                      [self-hosted, macOS, ARM64, sand, metal]
 ```
 
 An unmatched `runs-on` does not fail — it queues silently until the 24h run

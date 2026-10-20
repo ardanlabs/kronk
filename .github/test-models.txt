@@ -1,10 +1,9 @@
 # Pulled by .github/scripts/pull-models.sh. One `<backend> <model-id> [tier]`
 # per line, backend `kronk` or `bucky`; blank lines and `#` comments ignored.
 #
-# tier is `base` when omitted: every runner pulls it, fork PRs included, so
-# the base set stays at ~7.4 GiB — what an ubuntu-latest runner can hold.
-# `gpu` is pulled only by gpu.yml's self-hosted legs, which have the disk and
-# keep it between jobs. Anything a hosted runner could not hold goes there.
+# tier is `base` when omitted: shared setup pulls it for race, API and SDK jobs.
+# `gpu` adds the larger fixtures used by the API and SDK jobs in linux.yml and
+# macos.yml. These jobs require self-hosted GPU runners and never run on forks.
 
 kronk unsloth/Qwen3.5-0.8B-Q8_0
 kronk unsloth/Qwen3-1.7B-Q4_K_M

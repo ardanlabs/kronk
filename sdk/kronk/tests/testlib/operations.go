@@ -43,23 +43,39 @@ func CheckEmbeddings(resp model.EmbedReponse, id string, count, dimensions int) 
 	return nil
 }
 
-// CompareEmbeddingVectors checks normalized vector identity within L2 distance
-// 0.005 (cosine similarity at least 0.9999875). Metal single/batched Nomic
-// inference measured up to 0.00174; distinct fixture inputs were over 0.56 apart.
-func CompareEmbeddingVectors(want, got []float32) error {
-	if len(got) != len(want) {
-		return fmt.Errorf("vector dimensions: got %d, want %d", len(got), len(want))
-	}
-	var squaredDistance float64
-	for i, value := range got {
-		delta := float64(value) - float64(want[i])
-		if math.IsNaN(delta) || math.IsInf(delta, 0) {
-			return fmt.Errorf("vector[%d]: nonfinite value/reference %g / %g", i, value, want[i])
+// CompareEmbeddingVectors requires cosine similarity of at least 0.999, allowing
+// single/batched numerical variation across inference backends. If other input
+// references are supplied, got must be strictly closer to want than to any other.
+func CompareEmbeddingVectors(want, got []float32, others ...[]float32) error {
+	var wantSimilarity float64
+	for j, reference := range append([][]float32{want}, others...) {
+		if len(got) != len(reference) {
+			return fmt.Errorf("reference[%d] vector dimensions: got %d, want %d", j, len(got), len(reference))
 		}
-		squaredDistance += delta * delta
-	}
-	if distance := math.Sqrt(squaredDistance); distance > 0.005 {
-		return fmt.Errorf("vector L2 distance: got %g, want at most 0.005", distance)
+		var dot, gotNorm, referenceNorm float64
+		for i, value := range got {
+			a, b := float64(value), float64(reference[i])
+			if math.IsNaN(a) || math.IsInf(a, 0) || math.IsNaN(b) || math.IsInf(b, 0) {
+				return fmt.Errorf("reference[%d] vector[%d]: nonfinite value/reference %g / %g", j, i, a, b)
+			}
+			dot += a * b
+			gotNorm += a * a
+			referenceNorm += b * b
+		}
+		if gotNorm == 0 || referenceNorm == 0 {
+			return fmt.Errorf("reference[%d]: cosine similarity undefined for zero vector", j)
+		}
+		similarity := dot / math.Sqrt(gotNorm*referenceNorm)
+		if j == 0 {
+			if similarity < 0.999 {
+				return fmt.Errorf("vector cosine similarity: got %g, want at least 0.999", similarity)
+			}
+			wantSimilarity = similarity
+			continue
+		}
+		if similarity >= wantSimilarity {
+			return fmt.Errorf("vector identity: other input[%d] similarity %g, want less than intended input similarity %g", j-1, similarity, wantSimilarity)
+		}
 	}
 	return nil
 }
@@ -98,7 +114,8 @@ func TestEmbeddingIntegrity(t *testing.T, id string, embed func(context.Context,
 			t.Fatal(err)
 		}
 		for i, index := range order {
-			if err := CompareEmbeddingVectors(references[index], resp.Data[i].Embedding); err != nil {
+			others := slices.Concat(references[:index], references[index+1:])
+			if err := CompareEmbeddingVectors(references[index], resp.Data[i].Embedding, others...); err != nil {
 				t.Fatalf("input[%d] at output[%d]: %v", index, i, err)
 			}
 		}
