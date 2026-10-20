@@ -2336,8 +2336,7 @@ helm install kronk zarf/helm/kronk \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "unsloth/Qwen3-0.6B-Q8_0",
-    "messages": [{"role": "user", "content": "Hello!"}],
-    "max_tokens": 100
+    "messages": [{"role": "user", "content": "Hello!"}]
   }'`}</code></pre>
           <p>Inspect the pod with:</p>
           <pre className="code-block"><code className="language-shell">{`kubectl -n kronk get pods
