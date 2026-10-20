@@ -2,6 +2,12 @@ package apitest
 
 import "encoding/json"
 
+// SSEEvent preserves the event name alongside its complete SSE data payload.
+type SSEEvent struct {
+	Event string
+	Data  json.RawMessage
+}
+
 // Table represent fields needed for running an api test.
 //
 // Input is JSON-marshalled into the request body. RawBody, when set,
@@ -22,6 +28,7 @@ type Table struct {
 	ExpResp       any
 	CmpFunc       func(got any, exp any) string
 	StreamCmpFunc func(events []json.RawMessage) string
+	SSECmpFunc    func(events []SSEEvent) string
 	// StreamResponseOffset selects which SSE data event to decode for CmpFunc,
 	// counting backward from the final non-[DONE] event. The default is 0.
 	StreamResponseOffset int

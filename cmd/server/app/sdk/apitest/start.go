@@ -31,8 +31,14 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 )
 
-// New initialized the system to run a test.
+// New initializes the system using the deployment model configuration.
 func New(t *testing.T, testName string) *Test {
+	return NewWithModelConfig(t, testName, "../../../../../../zarf/kms/model_config.yaml")
+}
+
+// NewWithModelConfig initializes the system using a test-owned model configuration.
+func NewWithModelConfig(t *testing.T, testName, modelConfigFile string) *Test {
+	t.Helper()
 	ctx := context.Background()
 
 	// -------------------------------------------------------------------------
@@ -210,7 +216,7 @@ func New(t *testing.T, testName string) *Test {
 		KronkModels:     models,
 		BuckyModels:     buckyModels,
 		MalinaModels:    malinaModels,
-		ModelConfigFile: "../../../../../../zarf/kms/model_config.yaml",
+		ModelConfigFile: modelConfigFile,
 		BudgetPercent:   90,
 		ModelsInPool:    10,
 		TTL:             5 * time.Minute,
@@ -261,7 +267,8 @@ func New(t *testing.T, testName string) *Test {
 	)
 
 	return &Test{
-		Sec: sec,
-		mux: mux,
+		Sec:  sec,
+		Pool: p,
+		mux:  mux,
 	}
 }

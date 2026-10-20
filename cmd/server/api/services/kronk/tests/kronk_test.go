@@ -39,7 +39,7 @@ const (
 )
 
 func Test_API(t *testing.T) {
-	test := apitest.New(t, "Test_API")
+	test := apitest.NewWithModelConfig(t, "Test_API", "testdata/model_config.yaml")
 
 	tokens := createTokens(t, test.Sec)
 
@@ -55,20 +55,30 @@ func Test_API(t *testing.T) {
 	test.Run(t, chatContextOverflowQwen3(tokens), "chat-context-overflow-qwen3")
 	test.Run(t, chatArrayFormatQwen3(t, tokens), "chat-array-format-qwen3")
 	test.RunStreaming(t, chatArrayFormatStreamQwen3(t, tokens), "chat-array-format-stream-qwen3")
-	test.RunStreaming(t, chatStreamIMCQwen3(t, tokens), "chat-stream-imc-qwen3")
+	test.RunStreaming(t, chatStreamOptionsQwen3(tokens), "chat-stream-options-qwen3")
+	t.Run("chat-stream-imc-qwen3", func(t *testing.T) {
+		chatStreamState(t, test, tokens["chat-completions"], qwen3ModelID, true)
+	})
 	test.Run(t, chatGrammarQwen3(t, tokens), "chat-grammar-qwen3")
 	test.RunStreaming(t, chatGrammarStreamQwen3(t, tokens), "chat-grammar-stream-qwen3")
 	test.Run(t, chatToolCallQwen3(t, tokens), "chat-toolcall-qwen3")
 	test.RunStreaming(t, chatToolCallStreamQwen3(t, tokens), "chat-toolcall-stream-qwen3")
 	test.Run(t, respNonStreamQwen3(t, tokens), "resp-nonstream-qwen3")
 	test.RunStreaming(t, respStreamQwen3(t, tokens), "resp-stream-qwen3")
+	test.RunStreaming(t, respStreamContractsQwen3(t, tokens), "resp-stream-contracts-qwen3")
 	test.Run(t, msgsNonStreamQwen3(t, tokens), "msgs-nonstream-qwen3")
 	test.RunStreaming(t, msgsStreamQwen3(t, tokens), "msgs-stream-qwen3")
 	test.Run(t, tokenize200(tokens), "tokenize-200")
+	t.Run("chat-stream-imc-off-qwen3", func(t *testing.T) {
+		chatStreamState(t, test, tokens["chat-completions"], qwen3ModelID+"/IMCOff", false)
+	})
 
 	// -------------------------------------------------------------------------
 	// Model: Qwen3.5-0.8B-Q8_0 (vision)
 
+	t.Run("chat-stream-imc-qwen35", func(t *testing.T) {
+		chatStreamState(t, test, tokens["chat-completions"], visionModelID, true)
+	})
 	test.Run(t, chatImageQwen35(t, tokens), "chat-image-qwen35")
 	test.Run(t, respImageQwen35(t, tokens), "resp-image-qwen35")
 	test.Run(t, msgsImageQwen35(t, tokens), "msgs-image-qwen35")
@@ -574,8 +584,10 @@ func validateChatUsageStreamReasoning(events []json.RawMessage, reasoning bool) 
 	if trailer.Usage.TotalTokens != trailer.Usage.PromptTokens+trailer.Usage.CompletionTokens {
 		return fmt.Sprintf("usage event total_tokens: got %d, want prompt_tokens + completion_tokens", trailer.Usage.TotalTokens)
 	}
-	if trailer.Usage.TokensPerSecond <= 0 {
-		return fmt.Sprintf("usage event tokens_per_second: got %f, want greater than 0", trailer.Usage.TokensPerSecond)
+	// Decode throughput excludes the first token (which arrives with prefill).
+	// A one-token, length-limited completion therefore legitimately reports zero.
+	if trailer.Usage.TokensPerSecond < 0 || (trailer.Usage.CompletionTokens > 1 && trailer.Usage.TokensPerSecond == 0) {
+		return fmt.Sprintf("usage event tokens_per_second: got %f, want nonnegative and positive for multiple tokens", trailer.Usage.TokensPerSecond)
 	}
 	if trailer.ID != terminal.ID ||
 		trailer.Object != terminal.Object ||
