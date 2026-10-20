@@ -138,11 +138,11 @@ func testConcurrentRequests(t *testing.T, krn *kronk.Kronk) {
 	}
 
 	for i := range requests {
-		if err := compareResponses(serial[i], concurrent[i]); err != nil {
+		if err := compareResponses(krn.ModelID(), serial[i], concurrent[i]); err != nil {
 			t.Errorf("request[%d]: %v", i, err)
 		}
 	}
-	if err := compareResponses(concurrent[0], concurrent[len(concurrent)-1]); err != nil {
+	if err := compareResponses(krn.ModelID(), concurrent[0], concurrent[len(concurrent)-1]); err != nil {
 		t.Errorf("duplicate request: %v", err)
 	}
 }
@@ -160,9 +160,9 @@ func decisionRequest(state string) model.DecisionRequest {
 	}
 }
 
-func compareResponses(want, got model.DecisionResponse) error {
+func compareResponses(modelID string, want, got model.DecisionResponse) error {
 	for _, response := range []model.DecisionResponse{want, got} {
-		if response.Model != "chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0" || len(response.Answers) != 1 || response.Usage.InputTokens <= 0 || response.Usage.OutputTokens != 0 {
+		if response.Model != modelID || len(response.Answers) != 1 || response.Usage.InputTokens <= 0 || response.Usage.OutputTokens != 0 {
 			return fmt.Errorf("invalid decision envelope: %+v", response)
 		}
 		answer, exists := response.Answers["route"]
