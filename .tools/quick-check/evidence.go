@@ -18,8 +18,8 @@ func collectEvidence(file *os.File, initial os.FileInfo, path string, c *client,
 		return fmt.Errorf("server log rotated or truncated; evidence incomplete")
 	}
 	requests := make(map[string]*result)
-	if r.FirstRequest != nil {
-		requests[r.FirstRequest.TraceID] = r.FirstRequest
+	if r.WarmupRequest != nil {
+		requests[r.WarmupRequest.TraceID] = r.WarmupRequest
 	}
 	for i := range r.Results {
 		requests[r.Results[i].TraceID] = &r.Results[i]
@@ -37,14 +37,14 @@ func collectEvidence(file *os.File, initial os.FileInfo, path string, c *client,
 		if !ok {
 			continue
 		}
-		if err := c.events.Encode(map[string]any{"source": "server", "phase": phase, "event": event}); err != nil {
+		if err := c.events.Encode(map[string]any{"source": "server", "repetition": c.repetition, "phase": phase, "event": event}); err != nil {
 			return err
 		}
 		if event["level"] == "ERROR" {
 			errorEvents = append(errorEvents, event)
 		}
 		msg, _ := event["msg"].(string)
-		if phase == "load" && strings.HasPrefix(msg, "draft-model-mtp") && event["status"] == "loaded" {
+		if phase == "warmup" && strings.HasPrefix(msg, "draft-model-mtp") && event["status"] == "loaded" {
 			r.MTPBackend, _ = event["backend"].(string)
 		}
 		if res := requests[trace]; res != nil {
@@ -73,8 +73,8 @@ func collectEvidence(file *os.File, initial os.FileInfo, path string, c *client,
 	}
 	validateExecution(r)
 	measured := append([]result{}, r.Results...)
-	if r.FirstRequest != nil {
-		measured = append(measured, *r.FirstRequest)
+	if r.WarmupRequest != nil {
+		measured = append(measured, *r.WarmupRequest)
 	}
 	for _, res := range measured {
 		for _, key := range []string{"admission_seconds", "prepare_seconds", "queue_wait_seconds", "slot_execution_seconds", "slot_prefill_ttft_seconds", "generation_seconds"} {
@@ -190,7 +190,7 @@ func recordExecution(r *result, event map[string]any) {
 func validateExecution(r *report) {
 	fail := func(phase, text string) { r.Findings = append(r.Findings, phase+": "+text) }
 	if r.MTPBackend == "" {
-		fail("load", "MTP backend activation not attested")
+		fail("warmup", "MTP backend activation not attested")
 	}
 	if len(r.Results) != 6 {
 		fail("workload", "incomplete: all six phases required")

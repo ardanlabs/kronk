@@ -86,6 +86,7 @@ type client struct {
 	timeout     time.Duration
 	traces      map[string]string
 	events      *json.Encoder
+	repetition  int
 }
 
 func (c *client) request(ctx context.Context, method, path string, body any) (*http.Response, string, error) {
@@ -156,7 +157,7 @@ func (c *client) chat(phase string, messages []message, limit int, cancelAfterCo
 		"temperature":    0, "seed": 42, "enable_thinking": false, "max_tokens": limit,
 	}
 	if c.events != nil {
-		if err := c.events.Encode(map[string]any{"source": "request", "phase": phase, "body": body}); err != nil {
+		if err := c.events.Encode(map[string]any{"source": "request", "repetition": c.repetition, "phase": phase, "body": body}); err != nil {
 			return r, err
 		}
 	}
@@ -196,7 +197,7 @@ func (c *client) chat(phase string, messages []message, limit int, cancelAfterCo
 			return r, fmt.Errorf("stream error: %s", chunk.Error)
 		}
 		if c.events != nil {
-			if err := c.events.Encode(map[string]any{"source": "client", "phase": phase, "trace_id": trace, "at": time.Now().UTC(), "chunk": json.RawMessage(data)}); err != nil {
+			if err := c.events.Encode(map[string]any{"source": "client", "repetition": c.repetition, "phase": phase, "trace_id": trace, "at": time.Now().UTC(), "chunk": json.RawMessage(data)}); err != nil {
 				return r, err
 			}
 		}
