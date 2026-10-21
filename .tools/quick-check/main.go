@@ -130,6 +130,9 @@ func (r report) phaseSummary(res result) map[string]any {
 		"cached_tokens": res.Execution.ReusedTokens,
 		"draft_tokens":  res.Execution.DraftTokens, "draft_accepted_tokens": res.Execution.DraftAccepted,
 	}
+	if res.StartupTimings != nil {
+		phase["startup_timings"] = res.StartupTimings
+	}
 	// A deliberately interrupted stream has no final usage or meaningful
 	// generation rate. Do not present missing measurements as zero values.
 	if !res.Cancelled && res.Usage.CompletionTokens > 0 {

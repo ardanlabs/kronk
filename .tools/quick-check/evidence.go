@@ -24,6 +24,7 @@ func collectEvidence(file *os.File, initial os.FileInfo, path string, c *client,
 	for i := range r.Results {
 		requests[r.Results[i].TraceID] = &r.Results[i]
 	}
+	startup := make(map[string]time.Time)
 	var errorEvents []map[string]any
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 65536), 4*1024*1024)
@@ -44,6 +45,13 @@ func collectEvidence(file *os.File, initial os.FileInfo, path string, c *client,
 			errorEvents = append(errorEvents, event)
 		}
 		msg, _ := event["msg"].(string)
+		if phase == "warmup" {
+			status, _ := event["status"].(string)
+			stamp, _ := event["time"].(string)
+			if at, err := time.Parse(time.RFC3339Nano, stamp); err == nil {
+				startup[msg+"/"+status] = at
+			}
+		}
 		if phase == "warmup" && strings.HasPrefix(msg, "draft-model-mtp") && event["status"] == "loaded" {
 			r.MTPBackend, _ = event["backend"].(string)
 		}
@@ -53,6 +61,23 @@ func collectEvidence(file *os.File, initial os.FileInfo, path string, c *client,
 	}
 	if err := scanner.Err(); err != nil {
 		return err
+	}
+	// Startup diagnostics: same-server timestamps, not client/server
+	// clock subtraction. Missing or reversed boundaries remain unavailable.
+	if r.WarmupRequest != nil {
+		r.WarmupRequest.StartupTimings = make(map[string]float64)
+		for _, interval := range []struct{ metric, start, end string }{
+			{"server_request_seconds", "request started/", "request completed/"},
+			{"pre_chat_seconds", "request started/", "chat-completions/"},
+			{"native_model_load_seconds", "loading model from file/started", "loading model from file/completed"},
+			{"projection_load_seconds", "loading-prof-file/started", "loading-prof-file/completed"},
+			{"mtp_load_seconds", "draft-model-mtp/loading", "draft-model-mtp/loaded"},
+		} {
+			start, end := startup[interval.start], startup[interval.end]
+			if !start.IsZero() && !end.IsZero() && !end.Before(start) {
+				r.WarmupRequest.StartupTimings[interval.metric] = end.Sub(start).Seconds()
+			}
+		}
 	}
 	for _, event := range errorEvents {
 		trace, _ := event["trace_id"].(string)

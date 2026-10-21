@@ -299,6 +299,57 @@ fabricated zero values. A measured `0s` is valid. Units are converted with Go's
 duration parser; required metrics apply to all six phases and the first request.
 No timing threshold or cross-version verdict is inferred from a single run.
 
+### Startup investigation and retained diagnostics — 2026-10-21
+
+Ramon observed roughly 2–9-second warm-up totals within the original code version
+while warmed workloads stayed consistent. Those historical details are no longer
+available; the retained cross-version pair cannot explain that same-version range.
+Add diagnostic-only `warmup_request.startup_timings` using the existing warm-up
+trace's server timestamps: full server request, pre-Chat acquisition/initialization,
+native model-file load, projection load, and MTP load. Existing slot timings remain
+separate. These intervals overlap, missing/invalid/reversed boundaries are omitted,
+and no new correctness gate, inference request, load, or terminal line is added.
+Collect repeated invocations against the same running binary/library before drawing
+conclusions; do not restart the server between those invocations. Archive each run
+in `output/saved_local_runs/` before retention can remove it. The pre-instrumentation
+baseline is [this commit](https://github.com/ardanlabs/kronk/commit/33cf0229adbff3c4b6b72fe604c17a594f70e471).
+The instrumentation was initially temporary. After reviewing the five runs below,
+Ramon chose to retain its compact five-metric block for future comparisons: it
+adds useful loading diagnostics without extra requests or model loads. Keep its
+measured findings and decisions here rather than assuming startup variability is
+harmless or attributing it to a specific cache without evidence.
+
+Five saved invocations on the same reported revision (`33cf022` +develop), library
+`b11738`, machine, model, and `operations-v2` workload all passed three repetitions.
+System tokens/hashes matched per repetition. Ramon restarted the server between
+runs 3 and 4; this restart boundary is operator-reported, not independently attested
+by the report metadata. Run timestamps below identify directories in
+`output/saved_local_runs/` (UTC):
+
+| Run timestamp | Warm-up total | Native model load | Projection load | Workload median |
+| --- | ---: | ---: | ---: | ---: |
+| 20261021T171314Z | 5.555 s | 3.669 s | 0.675 s | 41.042 s |
+| 20261021T172213Z | 3.668 s | 1.965 s | 0.540 s | 42.273 s |
+| 20261021T172607Z | 2.456 s | 0.960 s | 0.388 s | 42.195 s |
+| 20261021T173000Z (after restart) | 2.502 s | 0.949 s | 0.395 s | 41.193 s |
+| 20261021T173858Z | 3.106 s | 1.442 s | 0.520 s | 40.875 s |
+
+Recomputed server request and native-load intervals directly from each saved trace;
+they match the new summary metrics. Client totals exceed server request intervals
+by only 0.276–1.101 ms. Every warm-up trace attests a pool cache miss and native
+model-file load, not accidental use of an already-resident alias. Native loading
+accounts for about 2.709 s of the 3.099 s warm-up decrease from run 1 to run 3;
+projection loading accounts for another 0.287 s. Warm-up slot execution remains
+0.259–0.324 s. Thus these runs locate most variation in server loading rather than
+the client timer or chat scheduling. They do not reproduce the full historical
+2–9 s range. Restarting did not restore the initial slow loading: run 4 is close
+to run 3, while run 5 is slower without another reported restart. OS/file caching,
+memory pressure, and native/backend state remain hypotheses, not established
+causes; no disk/page-fault or cache-state measurements were collected. Keep startup
+separate from resident workload comparisons and do not impose a startup regression
+threshold from these five samples. Dirty-build provenance also cannot establish
+byte-identical binaries across a rebuild.
+
 Historical example from the 18:22Z run (warm model):
 
 | Measurement | Uncached prompt | Exact replay |

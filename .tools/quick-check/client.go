@@ -55,6 +55,7 @@ type result struct {
 	SystemBoundary  int                `json:"system_boundary_tokens,omitempty"`
 	Execution       execution          `json:"execution"`
 	ServerTimings   map[string]float64 `json:"server_timings"`
+	StartupTimings  map[string]float64 `json:"startup_timings,omitempty"`
 }
 
 // Execution evidence comes from this request's trace, not a server-wide mode.
