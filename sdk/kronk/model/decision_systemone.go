@@ -2,8 +2,10 @@ package model
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -72,11 +74,42 @@ func decisionUsesEmbeddings(protocol DecisionProtocol) bool {
 	return protocol == DecisionProtocolLaya || protocol == DecisionProtocolKev || protocol == DecisionProtocolClef || protocol == DecisionProtocolVllmDecision2
 }
 
-func decisionLabelTokens(vocab llama.Vocab) ([]llama.Token, []string) {
+func (m *Model) decisionLabelTokens() ([]llama.Token, []string, error) {
+	return decisionLabelTokens(func(index uint32) (string, error) {
+		return ModelDecisionLabel(m.model, index)
+	}, func(text string) []llama.Token {
+		return llama.Tokenize(m.vocab, text, false, false)
+	})
+}
+
+func decisionLabelTokens(labelAt func(uint32) (string, error), encode func(string) []llama.Token) ([]llama.Token, []string, error) {
 	var tokens []llama.Token
 	var labels []string
+	for i := range decisionMaxReadouts {
+		label, err := labelAt(uint32(i))
+		if i == 0 && errors.Is(err, ErrModelDecisionLabelUnavailable) {
+			break
+		}
+		if err != nil {
+			return nil, nil, fmt.Errorf("read decision label %d: %w", i, err)
+		}
+		if label == "" {
+			break
+		}
+		encoded := encode(label)
+		if len(encoded) != 1 || slices.Contains(tokens, encoded[0]) {
+			return nil, nil, fmt.Errorf("decision label %q is not a single distinct token", label)
+		}
+		tokens = append(tokens, encoded[0])
+		labels = append(labels, label)
+	}
+	if len(labels) > 0 {
+		return tokens, labels, nil
+	}
+
+	// Older libraries and models without label metadata retain alphabet labels.
 	appendLabel := func(label string) {
-		encoded := llama.Tokenize(vocab, label, false, false)
+		encoded := encode(label)
 		if len(encoded) == 1 {
 			tokens = append(tokens, encoded[0])
 			labels = append(labels, label)
@@ -91,7 +124,7 @@ func decisionLabelTokens(vocab llama.Vocab) ([]llama.Token, []string) {
 			appendLabel(string([]rune{first, second}))
 		}
 	}
-	return tokens, labels
+	return tokens, labels, nil
 }
 
 func decisionTemplateValue(value any) (any, error) {

@@ -27,7 +27,10 @@ func newLevProtocol(m *Model) (*levProtocol, error) {
 		return nil, fmt.Errorf("init-lev: %w", err)
 	}
 
-	labelTokens, labelStrings := decisionLabelTokens(m.vocab)
+	labelTokens, labelStrings, err := m.decisionLabelTokens()
+	if err != nil {
+		return nil, fmt.Errorf("init-lev: %w", err)
+	}
 	if len(labelTokens) < decisionLevRatings {
 		return nil, fmt.Errorf("init-lev: tokenizer provides %d single-token labels, need at least %d", len(labelTokens), decisionLevRatings)
 	}
