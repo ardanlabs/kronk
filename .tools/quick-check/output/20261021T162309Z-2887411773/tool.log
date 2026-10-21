@@ -1,0 +1,34 @@
+Quick-check: PASS
+Tested commit: be7044a+develop from 2026-10-21T16:19:43Z
+IMC/MTP: PASS | Serial isolation: PASS | Cancel/recovery: PASS
+Time: warm-up request 5.973s | warmed workload median 41.042s (SD 1.845s) | repetitions 3/3
+
+--- Phase progress ---
+repetition=1/3
+Tested commit: be7044a8d2dae5dc82cf5eec81210a28a8e691c1+develop from 2026-10-21T16:19:43Z
+workload=operations-v2 model=unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK system_tokens=10140
+phase=cold elapsed=22.303s first_content=16.780s prompt=10222 cached=0 output=321 drafts=368 error=<nil>
+phase=replay elapsed=5.634s first_content=0.168s prompt=10222 cached=10215 output=321 drafts=368 error=<nil>
+phase=append elapsed=4.731s first_content=0.995s prompt=10591 cached=10215 output=303 drafts=248 error=<nil>
+phase=fresh-session elapsed=4.014s first_content=0.480s prompt=10222 cached=10144 output=221 drafts=237 error=<nil>
+phase=cancel elapsed=0.793s first_content=0.793s prompt=0 cached=0 output=0 drafts=0 error=<nil>
+phase=recovery elapsed=5.949s first_content=0.466s prompt=10222 cached=10144 output=321 drafts=368 error=<nil>
+repetition=2/3
+Tested commit: be7044a8d2dae5dc82cf5eec81210a28a8e691c1+develop from 2026-10-21T16:19:43Z
+workload=operations-v2 model=unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK system_tokens=10140
+phase=cold elapsed=21.495s first_content=16.833s prompt=10222 cached=0 output=268 drafts=312 error=<nil>
+phase=replay elapsed=4.757s first_content=0.127s prompt=10222 cached=10215 output=268 drafts=312 error=<nil>
+phase=append elapsed=4.049s first_content=0.804s prompt=10538 cached=10215 output=264 drafts=216 error=<nil>
+phase=fresh-session elapsed=4.786s first_content=0.446s prompt=10222 cached=10144 output=269 drafts=290 error=<nil>
+phase=cancel elapsed=0.806s first_content=0.806s prompt=0 cached=0 output=0 drafts=0 error=<nil>
+phase=recovery elapsed=5.093s first_content=0.458s prompt=10222 cached=10144 output=268 drafts=312 error=<nil>
+repetition=3/3
+Tested commit: be7044a8d2dae5dc82cf5eec81210a28a8e691c1+develop from 2026-10-21T16:19:43Z
+workload=operations-v2 model=unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK system_tokens=10140
+phase=cold elapsed=21.663s first_content=17.322s prompt=10222 cached=0 output=246 drafts=291 error=<nil>
+phase=replay elapsed=4.439s first_content=0.120s prompt=10222 cached=10215 output=246 drafts=291 error=<nil>
+phase=append elapsed=3.772s first_content=0.801s prompt=10516 cached=10215 output=244 drafts=198 error=<nil>
+phase=fresh-session elapsed=4.457s first_content=0.502s prompt=10222 cached=10144 output=245 drafts=267 error=<nil>
+phase=cancel elapsed=0.746s first_content=0.746s prompt=0 cached=0 output=0 drafts=0 error=<nil>
+phase=recovery elapsed=4.742s first_content=0.434s prompt=10222 cached=10144 output=246 drafts=291 error=<nil>
+PASS: 0 findings; repetitions executed 3/3

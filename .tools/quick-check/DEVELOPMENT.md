@@ -148,6 +148,44 @@ all prior results; interrupted or failed-to-write runs can exceed the two-result
 bound. Serialize invocations sharing the output parent with an exclusive lock;
 after a crash, its stale lock requires manual removal once no run is active.
 
+Run artifacts under `output/` are trackable in Git for historical comparisons.
+Keep `output/saved_local_runs/` ignored as a local archive, along with the runtime
+`output/.quick-check.lock`. The archive is outside retention's timestamped-directory
+selection and is never pruned. Retention still applies to trackable run directories,
+including tracked ones; review resulting deletions and commit selected artifacts
+to preserve them in history. Uncommitted output additions/deletions can mark the
+next server build `+develop`, so commit them or move local-only artifacts into the
+ignored archive before building a clean baseline.
+
+### Testing another commit or branch
+
+The tested version is the running server—not the checkout from which you launch
+quick-check. Switching commits alone is insufficient; you must rebuild and restart
+the server.
+
+If the target revision already contains our quick-check tool and configuration:
+
+```sh
+# Stop the current server before switching.
+make kronk-server-stop
+
+# First preserve any uncommitted work, then choose ONE:
+git switch <branch>
+# OR:
+git switch --detach <commit>
+
+make server-for-tools
+make test-quick-check
+```
+
+Check the resulting `Tested commit:` line. It should show the selected commit;
+`+develop` means the server was built with uncommitted changes. The timestamp is
+the commit's timestamp, not the test time.
+
+Copy any results you want to keep long-term outside the managed run directories
+before testing several revisions, for example into `output/saved_local_runs/`;
+automatic retention preserves only the current run and its selected baseline.
+
 ### Machine provenance for timing comparisons
 
 Write summary metadata before request blocks: machine, server/library provenance,
