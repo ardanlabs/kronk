@@ -23,11 +23,10 @@ import (
 // sdk/kronk/tests/testlib so contributors can move between the two
 // trees without re-learning the knobs.
 var (
-	TestDuration  = 60 * time.Second
-	Goroutines    = 2
-	MaxRetries    = 3
-	RunInParallel = false
-	AudioFile     string
+	TestDuration = 60 * time.Second
+	Goroutines   = 2
+	MaxRetries   = 3
+	AudioFile    string
 
 	// StereoAudioFile is a 16 kHz two-channel WAV with one speaker per
 	// channel (English on channel 0, Spanish on channel 1), used to
@@ -58,10 +57,6 @@ func Setup() {
 	// self-hosted fleets have the cores and the GPUs to run concurrently.
 	if os.Getenv("KRONK_TEST_HOSTED") != "" {
 		Goroutines = 1
-	}
-
-	if os.Getenv("RUN_IN_PARALLEL") == "yes" {
-		RunInParallel = true
 	}
 
 	fmt.Println("Initializing bucky models system...")
@@ -97,7 +92,6 @@ func printInfo(mdls *buckymodels.Models) {
 	fmt.Println("goroutines       :", Goroutines)
 	fmt.Println("maxRetries       :", MaxRetries)
 	fmt.Println("testDuration     :", TestDuration)
-	fmt.Println("RUN_IN_PARALLEL  :", RunInParallel)
 }
 
 // =============================================================================

@@ -72,10 +72,6 @@ func TestSuite(t *testing.T) {
 }
 
 func testTranscribe(t *testing.T, w *bucky.Bucky) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	samples := testlib.LoadSamples(t, testlib.AudioFile)
 
 	f := func() error {
@@ -121,10 +117,6 @@ func testTranscribe(t *testing.T, w *bucky.Bucky) {
 }
 
 func testTranscribeWords(t *testing.T, w *bucky.Bucky) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	samples := testlib.LoadSamples(t, testlib.AudioFile)
 
 	ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
@@ -151,10 +143,6 @@ func testTranscribeWords(t *testing.T, w *bucky.Bucky) {
 }
 
 func testTranscribeOnSegment(t *testing.T, w *bucky.Bucky) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	samples := testlib.LoadSamples(t, testlib.AudioFile)
 
 	ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
@@ -180,10 +168,6 @@ func testTranscribeOnSegment(t *testing.T, w *bucky.Bucky) {
 }
 
 func testTranscribeChannels(t *testing.T, w *bucky.Bucky) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	// Decode the real two-channel sample (English speaker on channel 0,
 	// Spanish speaker on channel 1). This exercises the multi-channel
 	// decode path: DecodeRaw -> SplitChannels -> ResampleLinear.
@@ -254,10 +238,6 @@ func testTranscribeChannels(t *testing.T, w *bucky.Bucky) {
 }
 
 func testDecodeChannels(t *testing.T, w *bucky.Bucky) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	// End-to-end: decode the two-channel sample straight from an
 	// io.Reader and diarize it in one call. Channel 0 is the English
 	// speaker, channel 1 the Spanish speaker.
@@ -289,10 +269,6 @@ func testDecodeChannels(t *testing.T, w *bucky.Bucky) {
 }
 
 func testDetectLanguage(t *testing.T, w *bucky.Bucky) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	samples := testlib.LoadSamples(t, testlib.AudioFile)
 
 	ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)

@@ -171,7 +171,20 @@ func (e *batchEngine) generateClassicDraft(s *slot, nDraft int) (classicengine.G
 	// Only re-register when the sampler or seqID changes.
 	if draft.registeredSampler != sampler || draft.registeredSeqID != s.seqID {
 		if draft.registeredSampler != 0 {
+			if err := llama.Synchronize(draft.lctx); err != nil {
+				return classicengine.GenerationResult{}, fmt.Errorf("synchronizing draft before sampler replacement: %w", err)
+			}
 			llama.SetSampler(draft.lctx, draft.registeredSeqID, 0)
+			if draft.registeredSampler == draft.sampler {
+				// Backend initialization is once per chain, even after
+				// detaching. Keep a fresh greedy chain for the next use.
+				fresh := llama.SamplerClone(draft.sampler)
+				if sampler == draft.sampler {
+					sampler = fresh
+				}
+				llama.SamplerFree(draft.sampler)
+				draft.sampler = fresh
+			}
 		}
 		if llama.SetSampler(draft.lctx, s.seqID, sampler) {
 			draft.registeredSampler = sampler

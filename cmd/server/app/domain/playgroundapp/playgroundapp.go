@@ -157,7 +157,9 @@ func (a *app) createSession(ctx context.Context, r *http.Request) web.Encoder {
 		"load_mode":                  krn.ModelConfig().LoadMode.String(),
 		"incremental_cache":          krn.ModelConfig().IncrementalCache(),
 		"split_mode":                 formatSplitMode(krn.ModelConfig().PtrSplitMode),
-		"model_type":                 krn.ModelInfo().Type.String(),
+		"parameter_activation":       krn.ModelInfo().Type,
+		"sequence_processing":        krn.ModelInfo().SequenceProcessing,
+		"architecture":               krn.ModelInfo().Architecture,
 	}
 
 	// Report the active drafter. A separate-GGUF draft carries model files;

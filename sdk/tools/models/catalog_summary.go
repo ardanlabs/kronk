@@ -47,20 +47,22 @@ type CatalogCapabilities struct {
 // the entry was added/refreshed) so the list page can filter by them
 // without paying GGUF I/O on every call.
 type CatalogSummary struct {
-	ID             string              `json:"id"`
-	OwnedBy        string              `json:"owned_by"`
-	ModelFamily    string              `json:"model_family"`
-	Revision       string              `json:"revision"`
-	WebPage        string              `json:"web_page"`
-	TotalSize      string              `json:"total_size"`
-	TotalSizeBytes int64               `json:"total_size_bytes"`
-	HasProjection  bool                `json:"has_projection"`
-	HasMTP         bool                `json:"has_mtp"`
-	MTPSource      MTPSource           `json:"mtp_source,omitzero"`
-	Downloaded     bool                `json:"downloaded"`
-	Validated      bool                `json:"validated"`
-	ModelType      string              `json:"model_type,omitempty"`
-	Capabilities   CatalogCapabilities `json:"capabilities,omitzero"`
+	ID                 string              `json:"id"`
+	OwnedBy            string              `json:"owned_by"`
+	ModelFamily        string              `json:"model_family"`
+	Revision           string              `json:"revision"`
+	WebPage            string              `json:"web_page"`
+	TotalSize          string              `json:"total_size"`
+	TotalSizeBytes     int64               `json:"total_size_bytes"`
+	HasProjection      bool                `json:"has_projection"`
+	HasMTP             bool                `json:"has_mtp"`
+	MTPSource          MTPSource           `json:"mtp_source,omitzero"`
+	Downloaded         bool                `json:"downloaded"`
+	Validated          bool                `json:"validated"`
+	ModelType          string              `json:"model_type,omitempty"`
+	Architecture       string              `json:"architecture,omitempty"`
+	SequenceProcessing string              `json:"sequence_processing,omitempty"`
+	Capabilities       CatalogCapabilities `json:"capabilities,omitzero"`
 }
 
 // CatalogDetail is the full per-entry payload, layering GGUF-derived
@@ -108,20 +110,22 @@ func NewSummary(canonical string, entry CatalogEntry, downloaded, validated map[
 	}
 
 	return CatalogSummary{
-		ID:             canonical,
-		OwnedBy:        entry.Provider,
-		ModelFamily:    entry.Family,
-		Revision:       entry.Revision,
-		WebPage:        webPage(entry.Provider, entry.Family),
-		TotalSize:      FormatBytes(totalBytes),
-		TotalSizeBytes: totalBytes,
-		HasProjection:  entry.MMProj != "",
-		HasMTP:         entry.MTP != "",
-		MTPSource:      entry.MTPSource,
-		Downloaded:     downloaded[canonical],
-		Validated:      validated[canonical],
-		ModelType:      entry.ModelType,
-		Capabilities:   entry.Capabilities,
+		ID:                 canonical,
+		OwnedBy:            entry.Provider,
+		ModelFamily:        entry.Family,
+		Revision:           entry.Revision,
+		WebPage:            webPage(entry.Provider, entry.Family),
+		TotalSize:          FormatBytes(totalBytes),
+		TotalSizeBytes:     totalBytes,
+		HasProjection:      entry.MMProj != "",
+		HasMTP:             entry.MTP != "",
+		MTPSource:          entry.MTPSource,
+		Downloaded:         downloaded[canonical],
+		Validated:          validated[canonical],
+		ModelType:          entry.ModelType,
+		Architecture:       entry.Architecture,
+		SequenceProcessing: entry.SequenceProcessing,
+		Capabilities:       entry.Capabilities,
 	}
 }
 
@@ -317,19 +321,4 @@ func ParametersLabel(metadata map[string]string) string {
 		return FormatParameterCount(n)
 	}
 	return gguf.SizeLabel(metadata)
-}
-
-// ArchitectureClass classifies a model as "Dense", "MoE", or "Hybrid"
-// based on GGUF metadata. Hybrid wins over MoE when both apply because
-// the recurrent state cleanup path is the differentiator that matters
-// for the engine.
-func ArchitectureClass(metadata map[string]string) string {
-	switch modelprofile.Resolve(metadata).Class {
-	case modelprofile.ClassHybrid:
-		return "Hybrid"
-	case modelprofile.ClassMoE:
-		return "MoE"
-	default:
-		return "Dense"
-	}
 }

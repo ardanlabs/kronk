@@ -14,6 +14,10 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// expectReasoning preserves the gpt-oss-20b fixture's output expectation;
+// this suite does not require a separate Reasoning field.
+const expectReasoning = false
+
 func TestSuite(t *testing.T) {
 	t.Run("CacheIMCNonDeterministic", testCacheIMCNonDeterministic)
 
@@ -26,10 +30,6 @@ func TestSuite(t *testing.T) {
 }
 
 func testChat(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
@@ -46,7 +46,7 @@ func testChat(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
 			return fmt.Errorf("chat streaming: %w", err)
 		}
 
-		reasoning := testlib.HasReasoningField(krn)
+		reasoning := expectReasoning
 
 		var result testlib.TestResult
 		switch tooling {
@@ -79,10 +79,6 @@ func testChat(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
 }
 
 func testChatStreaming(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
@@ -99,7 +95,7 @@ func testChatStreaming(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) 
 			return fmt.Errorf("chat streaming: %w", err)
 		}
 
-		reasoning := testlib.HasReasoningField(krn)
+		reasoning := expectReasoning
 
 		var acc testlib.StreamAccumulator
 		var lastResp model.ChatResponse

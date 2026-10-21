@@ -1,0 +1,65 @@
+version: 2
+
+# Opt-in GPU API fixtures. Run and unload each profile before loading the next;
+# never keep multiple copies of these large targets resident just for controls.
+models:
+  unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M/MTP1:
+    context-window: 8192
+    nseq-max: 1
+    prefill-batch-size: 512
+    physical-batch-size: 512
+    cache-type-k: f16
+    cache-type-v: f16
+    incremental-cache: true
+    cache-min-tokens: 1
+    speculation: mtp
+  unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M/MTP2:
+    context-window: 8192
+    nseq-max: 2
+    prefill-batch-size: 512
+    physical-batch-size: 512
+    cache-type-k: f16
+    cache-type-v: f16
+    incremental-cache: true
+    cache-min-tokens: 1
+    speculation: mtp
+  unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M/MTPOff:
+    context-window: 8192
+    nseq-max: 1
+    prefill-batch-size: 512
+    physical-batch-size: 512
+    cache-type-k: f16
+    cache-type-v: f16
+    incremental-cache: true
+    cache-min-tokens: 1
+    speculation: disabled
+  unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/MTP1:
+    context-window: 8192
+    nseq-max: 1
+    prefill-batch-size: 512
+    physical-batch-size: 512
+    cache-type-k: f16
+    cache-type-v: f16
+    incremental-cache: true
+    cache-min-tokens: 1
+    speculation: mtp
+  unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/MTP2:
+    context-window: 8192
+    nseq-max: 2
+    prefill-batch-size: 512
+    physical-batch-size: 512
+    cache-type-k: f16
+    cache-type-v: f16
+    incremental-cache: true
+    cache-min-tokens: 1
+    speculation: mtp
+  unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/MTPOff:
+    context-window: 8192
+    nseq-max: 1
+    prefill-batch-size: 512
+    physical-batch-size: 512
+    cache-type-k: f16
+    cache-type-v: f16
+    incremental-cache: true
+    cache-min-tokens: 1
+    speculation: disabled

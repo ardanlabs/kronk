@@ -6,6 +6,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
 	classicengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/classic"
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/mtp"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	yzmaspec "github.com/hybridgroup/yzma/exp/speculative"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
@@ -105,7 +106,7 @@ func (e *batchEngine) CommitSpeculative(slotID int, candidates []llama.Token, ta
 	s.specDraftTokens = candidates
 
 	s.specSnapshot = s.specSnapshot[:0]
-	if needsTargetSpecSnapshot(e.model.modelInfo.Type, e.model.ctxParams.NRsSeq, len(candidates)) {
+	if needsTargetSpecSnapshot(e.model.modelInfo.profile.MemorySemantics, e.model.ctxParams.NRsSeq, len(candidates)) {
 		if err := e.captureTargetSpecSnapshot(s); err != nil {
 			e.model.log(s.job.ctx, "speculative", "status", "snapshot-error", "slot", s.id, "err", err)
 			s.specSnapshot = s.specSnapshot[:0]
@@ -262,11 +263,12 @@ func (e *batchEngine) RollbackClassicTarget(slotID int, plan classicengine.Final
 	s := e.slots[slotID]
 	rollbackFrom := s.specBasePast + llama.Pos(1+plan.Accepted)
 	rollbackTo := s.specBasePast + llama.Pos(1+plan.Drafted)
-	hybridRestore := e.model.modelInfo.Type == ModelTypeHybrid && len(s.specSnapshot) > 0 && rollbackFrom < rollbackTo
-	if hybridRestore {
+	recurrentRestore := e.model.modelInfo.profile.MemorySemantics == modelprofile.MemoryRecurrent && len(s.specSnapshot) > 0 && rollbackFrom < rollbackTo
+	if recurrentRestore {
 		if err := e.restoreTargetSpecSnapshot(s, s.specBasePast, s.specPendingOriginalSampled, s.specDraftTokens, plan.Accepted); err != nil {
 			return false, fmt.Errorf("restoring target state after speculative rejection: %w", err)
 		}
+		e.logTargetSpecRollback(s, plan.Accepted, plan.Drafted, true)
 		return true, nil
 	}
 	if rollbackFrom < rollbackTo {
@@ -279,6 +281,7 @@ func (e *batchEngine) RollbackClassicTarget(slotID int, plan classicengine.Final
 		if !removed {
 			return false, fmt.Errorf("removing rejected target draft positions for seq %d", s.seqID)
 		}
+		e.logTargetSpecRollback(s, plan.Accepted, plan.Drafted, false)
 	}
 	return false, nil
 }
@@ -383,11 +386,12 @@ func (e *batchEngine) RollbackMTPTarget(slotID int, plan mtp.FinalizePlan) (bool
 	s := e.slots[slotID]
 	rollbackFrom := s.specBasePast + llama.Pos(1+plan.Accepted)
 	rollbackTo := s.specBasePast + llama.Pos(1+plan.Drafted)
-	hybridRestore := e.model.modelInfo.Type == ModelTypeHybrid && len(s.specSnapshot) > 0 && rollbackFrom < rollbackTo
-	if hybridRestore {
+	recurrentRestore := e.model.modelInfo.profile.MemorySemantics == modelprofile.MemoryRecurrent && len(s.specSnapshot) > 0 && rollbackFrom < rollbackTo
+	if recurrentRestore {
 		if err := e.restoreTargetSpecSnapshot(s, s.specBasePast, s.specPendingOriginalSampled, s.specDraftTokens, plan.Accepted); err != nil {
 			return false, fmt.Errorf("restoring target state after speculative rejection: %w", err)
 		}
+		e.logTargetSpecRollback(s, plan.Accepted, plan.Drafted, true)
 		return true, nil
 	}
 	if rollbackFrom < rollbackTo {
@@ -400,8 +404,28 @@ func (e *batchEngine) RollbackMTPTarget(slotID int, plan mtp.FinalizePlan) (bool
 		if !removed {
 			return false, fmt.Errorf("removing rejected target draft positions for seq %d", s.seqID)
 		}
+		e.logTargetSpecRollback(s, plan.Accepted, plan.Drafted, false)
 	}
 	return false, nil
+}
+
+// logTargetSpecRollback records completed native recovery, not just a rejected
+// verification result. A failed restore/removal must never attest this branch.
+func (e *batchEngine) logTargetSpecRollback(s *slot, accepted, drafted int, snapshot bool) {
+	backend := "classic-own-kv"
+	if selected, ok := selectedMTPBackend(e.model.draft); ok {
+		backend = selected.name()
+	}
+	strategy := "attention-suffix"
+	switch {
+	case snapshot:
+		strategy = "recurrent-snapshot-replay"
+	case e.model.modelInfo.profile.MemorySemantics == modelprofile.MemoryRecurrent:
+		strategy = "recurrent-native"
+	}
+	e.model.log(s.job.ctx, "speculative", "status", "target-rollback",
+		"id", s.job.id, "slot", s.id, "backend", backend, "strategy", strategy,
+		"accepted", accepted, "drafted", drafted)
 }
 
 func (e *batchEngine) RollbackMTPDraft(slotID int, plan mtp.FinalizePlan) error {

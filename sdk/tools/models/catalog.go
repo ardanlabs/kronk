@@ -40,23 +40,25 @@ const catalogVersion = 2
 // HF HEAD when the seeding tool builds the embedded default) so the BUI
 // can render total_size for entries that have not been downloaded yet.
 type CatalogEntry struct {
-	Provider     string              `yaml:"provider"`
-	Family       string              `yaml:"family"`
-	Revision     string              `yaml:"revision"`
-	Files        []string            `yaml:"files"`
-	FileSizes    []int64             `yaml:"file_sizes,omitempty"`
-	MMProj       string              `yaml:"mmproj,omitempty"`
-	MMProjOrig   string              `yaml:"mmproj_orig,omitempty"`
-	MMProjSize   int64               `yaml:"mmproj_size,omitempty"`
-	MTP          string              `yaml:"mtp,omitempty"`
-	MTPOrig      string              `yaml:"mtp_orig,omitempty"`
-	MTPURL       string              `yaml:"mtp_url,omitempty"`
-	MTPSize      int64               `yaml:"mtp_size,omitempty"`
-	MTPChecked   bool                `yaml:"mtp_checked,omitempty"`
-	MTPSource    MTPSource           `yaml:"mtp_source,omitempty"`
-	ModelType    string              `yaml:"model_type,omitempty"`
-	Capabilities CatalogCapabilities `yaml:"capabilities,omitempty"`
-	ResolvedAt   time.Time           `yaml:"resolved_at"`
+	Provider           string              `yaml:"provider"`
+	Family             string              `yaml:"family"`
+	Revision           string              `yaml:"revision"`
+	Files              []string            `yaml:"files"`
+	FileSizes          []int64             `yaml:"file_sizes,omitempty"`
+	MMProj             string              `yaml:"mmproj,omitempty"`
+	MMProjOrig         string              `yaml:"mmproj_orig,omitempty"`
+	MMProjSize         int64               `yaml:"mmproj_size,omitempty"`
+	MTP                string              `yaml:"mtp,omitempty"`
+	MTPOrig            string              `yaml:"mtp_orig,omitempty"`
+	MTPURL             string              `yaml:"mtp_url,omitempty"`
+	MTPSize            int64               `yaml:"mtp_size,omitempty"`
+	MTPChecked         bool                `yaml:"mtp_checked,omitempty"`
+	MTPSource          MTPSource           `yaml:"mtp_source,omitempty"`
+	ModelType          string              `yaml:"model_type,omitempty"`
+	Architecture       string              `yaml:"architecture,omitempty"`
+	SequenceProcessing string              `yaml:"sequence_processing,omitempty"`
+	Capabilities       CatalogCapabilities `yaml:"capabilities,omitempty"`
+	ResolvedAt         time.Time           `yaml:"resolved_at"`
 }
 
 // Resolution is the result of a Resolve call. It holds both the persisted
@@ -735,6 +737,8 @@ func (r *Resolver) refreshSizes(canonical string) error {
 		updated.MTPChecked = entry.MTPChecked
 		updated.MTPSource = entry.MTPSource
 		updated.ModelType = entry.ModelType
+		updated.Architecture = entry.Architecture
+		updated.SequenceProcessing = entry.SequenceProcessing
 		updated.Capabilities = entry.Capabilities
 		updated.ResolvedAt = entry.ResolvedAt
 

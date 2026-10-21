@@ -482,7 +482,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 			return nil, errors.Join(err, batchErr, adapterErr)
 		}
 
-	case useBatchSeq(modelInfo):
+	case supportsBatchSeq(modelInfo):
 		if err := initBatchSeqRuntime(ctx, &m); err != nil {
 			adapterErr := m.freeAdapters()
 			llama.ModelFree(mdl)

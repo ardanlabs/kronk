@@ -6,8 +6,8 @@ description: >
   .github/test-models.txt. On macOS it also stages and verifies the Metal
   capability shim, which every macOS job needs because darwin/arm64 has one
   llama.cpp bundle and it always carries Metal
-  (zarf/docker/runner/macos/README.md). Re-used by the Linux, macOS and GPU
-  workflows so every job starts from an identical environment. Also exports
+  (zarf/docker/runner/macos/README.md). Re-used by the Linux and macOS
+  workflows; verifies the selected GPU is visible before tests run. Also exports
   KRONK_TEST_HOSTED=1 on hosted runners, the one signal the suites use to
   recognize a small CPU-only box.
 
@@ -82,6 +82,20 @@ runs:
 
         kronk libs --local
         kronk bucky libs --local
+
+    # Selecting a bundle does not guarantee that the GPU is visible inside
+    # the runner container. Fail instead of silently testing on CPU.
+    - name: Verify Vulkan GPU
+      if: runner.os == 'Linux' && env.KRONK_PROCESSOR == 'vulkan'
+      shell: bash
+      run: |
+        set -euo pipefail
+        kronk devices > "$RUNNER_TEMP/vulkan-devices.txt" 2>&1
+        cat "$RUNNER_TEMP/vulkan-devices.txt"
+        if ! grep -qF 'GPU (Vulkan)' "$RUNNER_TEMP/vulkan-devices.txt"; then
+          echo "::error::no Vulkan GPU device enumerated; the suites would run on CPU"
+          exit 1
+        fi
 
     # The macOS runners are VMs whose paravirtual GPU reports
     # MTLGPUFamilyApple5, below ggml-metal's Apple7 gate, so every unshimmed
@@ -170,6 +184,11 @@ runs:
 
         if ! grep -q 'LumeMetalCapabilities. Enabled' "$RUNNER_TEMP/shim-devices.txt"; then
           echo "::error::the shim did not attach to kronk, a plain-arm64 Go binary, so it will not attach to the test binaries either. Check the staged dylib's slices (lipo -archs) before anything else."
+          exit 1
+        fi
+
+        if ! grep -qF 'GPU (Metal)' "$RUNNER_TEMP/shim-devices.txt"; then
+          echo "::error::no Metal GPU device enumerated; the suites would run on CPU"
           exit 1
         fi
 

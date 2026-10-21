@@ -155,7 +155,7 @@ Follow `AGENTS.md` and the Developer Guide. For changed Go packages:
 1. Run `go fix` on changed packages and review any edits it makes.
 2. Run `gofmt -s -w` on all changed Go files.
 3. Run scoped `go vet` and `staticcheck`.
-4. Set `RUN_IN_PARALLEL=yes` and absolute `GITHUB_WORKSPACE`, then run focused
+4. Set absolute `GITHUB_WORKSPACE`, then run focused
    tests in the affected `sdk/bucky` and `sdk/tools/bucky` packages. Select
    model-backed suites separately according to available prerequisites.
 5. Build direct dependents and every affected Bucky example with an explicit

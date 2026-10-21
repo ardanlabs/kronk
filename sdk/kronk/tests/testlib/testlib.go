@@ -1,4 +1,7 @@
 // Package testlib provides shared test infrastructure for Kronk model test packages.
+// Model cases run serially within each package; concurrency tests explicitly
+// fan out requests against their shared model. Run packages with -p=1 to avoid
+// loading unrelated models concurrently.
 package testlib
 
 import (
@@ -20,12 +23,11 @@ import (
 
 // Settings controls test behavior.
 var (
-	TestDuration  = 60 * 5 * time.Second
-	Goroutines    = 2
-	MaxRetries    = 3
-	RunInParallel = false
-	ImageFile     string
-	AudioFile     string
+	TestDuration = 60 * 5 * time.Second
+	Goroutines   = 2
+	MaxRetries   = 3
+	ImageFile    string
+	AudioFile    string
 )
 
 // Model paths resolved during Setup.
@@ -54,10 +56,6 @@ func Setup() {
 	// self-hosted fleets have the cores and the GPUs to run concurrently.
 	if os.Getenv("KRONK_TEST_HOSTED") != "" {
 		Goroutines = 1
-	}
-
-	if os.Getenv("RUN_IN_PARALLEL") == "yes" {
-		RunInParallel = true
 	}
 
 	fmt.Println("Initializing models system...")
@@ -114,8 +112,8 @@ func Setup() {
 }
 
 // resolveModel populates mp when the model is present on disk. A miss is not
-// fatal — CI installs only the subset in .github/test-models.txt — but it is
-// printed, so a runner with no models cannot look like a passing run.
+// fatal here — CI installs only the subset in .github/test-models.txt. Each
+// suite checks its own prerequisites with RequireFixtures before running.
 func resolveModel(mdls *models.Models, name string, mp *models.Path) {
 	dp, err := mdls.FullPath(name)
 	if err != nil {
@@ -125,6 +123,41 @@ func resolveModel(mdls *models.Models, name string, mp *models.Path) {
 
 	fmt.Printf("RetrieveModel %s...\n", name)
 	*mp = dp
+}
+
+// RequireFixtures checks only the files needed by the executing suite. Missing
+// fixtures fail when CI=true; optional local runs exit with a skip reason.
+// Call from TestMain before m.Run, after resolving model paths with Setup.
+func RequireFixtures(files ...string) {
+	var missing string
+	if len(files) == 0 {
+		missing = "no model files resolved"
+	}
+
+	for _, file := range files {
+		info, err := os.Stat(file)
+		switch {
+		case err != nil:
+			missing = fmt.Sprintf("%q: %v", file, err)
+		case !info.Mode().IsRegular() || info.Size() == 0:
+			missing = fmt.Sprintf("%q: expected a nonempty regular file", file)
+		default:
+			continue
+		}
+		break
+	}
+
+	if missing == "" {
+		return
+	}
+
+	if os.Getenv("CI") == "true" {
+		fmt.Printf("required test fixture missing: %s\n", missing)
+		os.Exit(1)
+	}
+
+	fmt.Printf("skipping tests: required test fixture missing: %s\n", missing)
+	os.Exit(0)
 }
 
 func printInfo(mdls *models.Models) {
@@ -138,7 +171,6 @@ func printInfo(mdls *models.Models) {
 	fmt.Println("goroutines       :", Goroutines)
 	fmt.Println("maxRetries       :", MaxRetries)
 	fmt.Println("testDuration     :", TestDuration)
-	fmt.Println("RUN_IN_PARALLEL  :", RunInParallel)
 
 	l, err := libs.New(libs.WithVersion(defaults.LibVersion("")))
 	if err != nil {
@@ -316,6 +348,7 @@ func CfgMoEVisionIMC() model.Config {
 		CacheTypeV:          model.GGMLTypeF16,
 		PtrIncrementalCache: new(true),
 		PtrNSeqMax:          new(1),
+		Speculation:         model.SpeculationDisabled,
 	}
 }
 
@@ -381,6 +414,7 @@ func CfgMoEVision() model.Config {
 		CacheTypeK:          model.GGMLTypeF16,
 		CacheTypeV:          model.GGMLTypeF16,
 		PtrNSeqMax:          new(2),
+		Speculation:         model.SpeculationDisabled,
 	}
 }
 

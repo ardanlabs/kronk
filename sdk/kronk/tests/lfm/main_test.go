@@ -1,7 +1,6 @@
 package lfm_test
 
 import (
-	"fmt"
 	"os"
 	"testing"
 
@@ -11,10 +10,7 @@ import (
 func TestMain(m *testing.M) {
 	testlib.Setup()
 
-	if len(testlib.MPLFMChat.ModelFiles) == 0 {
-		fmt.Println("model LFM2-700M-Q8_0 not downloaded, skipping lfm tests")
-		os.Exit(0)
-	}
+	testlib.RequireFixtures(testlib.MPLFMChat.ModelFiles...)
 
 	os.Exit(m.Run())
 }

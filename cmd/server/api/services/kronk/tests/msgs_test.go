@@ -87,6 +87,16 @@ func msgsStreamQwen3(_ *testing.T, tokens map[string]string) []apitest.Table {
 					},
 				},
 			},
+			SSECmpFunc: func(events []apitest.SSEEvent) string {
+				got, diff := validateMsgsStream(events, qwen3ModelID, false)
+				if diff == "" && strings.TrimSpace(got.Text) == "" {
+					return "expected non-empty reconstructed text"
+				}
+				if diff == "" && (got.Usage.InputTokens <= 0 || got.Usage.OutputTokens <= 0) {
+					return "expected positive final input and output usage"
+				}
+				return diff
+			},
 			GotResp: &msgsapp.MessageStopEvent{},
 			ExpResp: &msgsapp.MessageStopEvent{
 				Type: "message_stop",

@@ -9,17 +9,15 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/tests/testlib"
 )
 
-func TestUsageCounting(t *testing.T) {
-	testlib.WithModel(t, testlib.CfgMoEVision(), func(t *testing.T, krn *kronk.Kronk) {
-		t.Run("StreamingUsage", func(t *testing.T) {
-			testStreamingUsage(t, krn)
-		})
-		t.Run("NonStreamingUsage", func(t *testing.T) {
-			testNonStreamingUsage(t, krn)
-		})
-		t.Run("UsageOnlyInFinal", func(t *testing.T) {
-			testUsageOnlyInFinal(t, krn)
-		})
+func testUsageCounting(t *testing.T, krn *kronk.Kronk) {
+	t.Run("StreamingUsage", func(t *testing.T) {
+		testStreamingUsage(t, krn)
+	})
+	t.Run("NonStreamingUsage", func(t *testing.T) {
+		testNonStreamingUsage(t, krn)
+	})
+	t.Run("UsageOnlyInFinal", func(t *testing.T) {
+		testUsageOnlyInFinal(t, krn)
 	})
 }
 

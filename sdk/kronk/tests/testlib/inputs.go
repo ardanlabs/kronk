@@ -7,6 +7,9 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
+// GrammarJSONPrompt requests the language schema checked by the grammar validators.
+const GrammarJSONPrompt = `List 3 programming languages with their year of creation. Respond with a JSON object containing a "languages" array of exactly 3 objects. Each object must have a non-empty "name" string and a positive integer "year".`
+
 // GrammarJSONObject is a GBNF grammar for JSON objects.
 var GrammarJSONObject = `root ::= object
 value ::= object | array | string | number | "true" | "false" | "null"
@@ -26,7 +29,6 @@ var (
 	DResponseNoTool  model.D
 	DResponseTool    model.D
 	DChatNoToolArray model.D
-	DMediaArray      model.D
 	DGrammarJSON     model.D
 )
 
@@ -144,7 +146,7 @@ func initInputs() error {
 		"messages": []model.D{
 			{
 				"role":    "user",
-				"content": "List 3 programming languages with their year of creation. Respond in JSON format.",
+				"content": GrammarJSONPrompt,
 			},
 		},
 		"grammar":     GrammarJSONObject,
@@ -161,12 +163,6 @@ func initInputs() error {
 		}
 
 		DMedia = model.D{
-			"messages":        model.ImageMessage("What is in this picture?", mediaBytes, "jpeg"),
-			"max_tokens":      2048,
-			"enable_thinking": false,
-		}
-
-		DMediaArray = model.D{
 			"messages":        model.ImageMessage("What is in this picture?", mediaBytes, "jpeg"),
 			"max_tokens":      2048,
 			"enable_thinking": false,

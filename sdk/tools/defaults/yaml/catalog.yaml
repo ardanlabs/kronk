@@ -10,6 +10,8 @@ models:
       - 639150592
     mtp_checked: true
     model_type: Dense
+    architecture: qwen3
+    sequence_processing: Attention-only
     capabilities:
       mtp: false
       endpoint: embeddings
@@ -24,7 +26,9 @@ models:
     file_sizes:
       - 811843040
     mtp_checked: true
-    model_type: Hybrid
+    model_type: Dense
+    architecture: qwen35
+    sequence_processing: Hybrid
     capabilities:
       mtp: false
       endpoint: decision
@@ -43,6 +47,8 @@ models:
     mmproj_size: 2623983328
     mtp_checked: true
     model_type: Dense
+    architecture: qwen2vl
+    sequence_processing: Attention-only
     capabilities:
       mtp: false
       endpoint: chat_completion
@@ -66,6 +72,8 @@ models:
     mmproj_size: 2623983328
     mtp_checked: true
     model_type: Dense
+    architecture: qwen2vl
+    sequence_processing: Attention-only
     capabilities:
       mtp: false
       endpoint: chat_completion
@@ -86,6 +94,8 @@ models:
       - 168166496
     mtp_checked: true
     model_type: Dense
+    architecture: modern-bert
+    sequence_processing: Attention-only
     capabilities:
       mtp: false
       endpoint: decision
@@ -100,7 +110,9 @@ models:
     file_sizes:
       - 6324185632
     mtp_checked: true
-    model_type: Hybrid
+    model_type: Dense
+    architecture: qwen35
+    sequence_processing: Hybrid
     capabilities:
       mtp: false
       endpoint: decision
@@ -115,7 +127,9 @@ models:
     file_sizes:
       - 6486448192
     mtp_checked: true
-    model_type: Hybrid
+    model_type: Dense
+    architecture: clef
+    sequence_processing: Hybrid
     capabilities:
       mtp: false
       endpoint: decision
@@ -130,7 +144,9 @@ models:
     file_sizes:
       - 19232219104
     mtp_checked: true
-    model_type: Hybrid
+    model_type: Dense
+    architecture: clef
+    sequence_processing: Hybrid
     capabilities:
       mtp: false
       endpoint: decision
@@ -145,7 +161,9 @@ models:
     file_sizes:
       - 3033489824
     mtp_checked: true
-    model_type: Hybrid
+    model_type: Dense
+    architecture: qwen35
+    sequence_processing: Hybrid
     capabilities:
       mtp: false
       endpoint: decision
@@ -161,6 +179,8 @@ models:
       - 449397600
     mtp_checked: true
     model_type: Dense
+    architecture: modern-bert
+    sequence_processing: Attention-only
     capabilities:
       mtp: false
       endpoint: decision
@@ -178,7 +198,9 @@ models:
     mmproj_orig: mmproj-OpenJev-BF16.gguf
     mmproj_size: 931146112
     mtp_checked: true
-    model_type: Hybrid
+    model_type: Dense
+    architecture: qwen35
+    sequence_processing: Hybrid
     capabilities:
       mtp: false
       endpoint: decision
@@ -194,7 +216,9 @@ models:
     file_sizes:
       - 3011777440
     mtp_checked: true
-    model_type: Hybrid
+    model_type: Dense
+    architecture: qwen35
+    sequence_processing: Hybrid
     capabilities:
       mtp: false
       endpoint: decision
@@ -213,6 +237,8 @@ models:
     mmproj_size: 1338428128
     mtp_checked: true
     model_type: Dense
+    architecture: qwen2vl
+    sequence_processing: Attention-only
     capabilities:
       mtp: false
       endpoint: chat_completion
@@ -234,6 +260,8 @@ models:
     mmproj_size: 1325020128
     mtp_checked: true
     model_type: MoE
+    architecture: qwen3vlmoe
+    sequence_processing: Attention-only
     capabilities:
       mtp: false
       endpoint: chat_completion
@@ -254,6 +282,8 @@ models:
       - 146218816
     mtp_checked: true
     model_type: Dense
+    architecture: jina-bert-v2
+    sequence_processing: Attention-only
     capabilities:
       mtp: false
       endpoint: rerank
@@ -269,6 +299,8 @@ models:
       - 635676416
     mtp_checked: true
     model_type: Dense
+    architecture: bert
+    sequence_processing: Attention-only
     capabilities:
       mtp: false
       endpoint: rerank
@@ -287,6 +319,8 @@ models:
     mmproj_size: 1289301504
     mtp_checked: true
     model_type: Dense
+    architecture: qwen2
+    sequence_processing: Attention-only
     capabilities:
       mtp: false
       endpoint: chat_completion
@@ -307,7 +341,9 @@ models:
     mmproj: mmproj-Qwopus3.5-4B-Coder.Q4_K_M.gguf
     mmproj_size: 672424544
     mtp_checked: true
-    model_type: Hybrid
+    model_type: Dense
+    architecture: qwen35
+    sequence_processing: Hybrid
     capabilities:
       mtp: false
       endpoint: chat_completion
@@ -328,7 +364,9 @@ models:
     mmproj_orig: Qwopus3.5-4B-Coder.mmproj-f16.gguf
     mmproj_size: 672424544
     mtp_checked: true
-    model_type: Hybrid
+    model_type: Dense
+    architecture: qwen35
+    sequence_processing: Hybrid
     capabilities:
       mtp: false
       endpoint: chat_completion
@@ -347,6 +385,8 @@ models:
       - 5335291296
     mtp_checked: true
     model_type: Dense
+    architecture: gemma4
+    sequence_processing: Attention-only
     capabilities:
       mtp: false
       endpoint: chat_completion
@@ -364,6 +404,8 @@ models:
       - 146146432
     mtp_checked: true
     model_type: Dense
+    architecture: nomic-bert
+    sequence_processing: Attention-only
     capabilities:
       mtp: false
       endpoint: embeddings
@@ -378,7 +420,9 @@ models:
     file_sizes:
       - 16547400000
     mtp_checked: true
-    model_type: Hybrid
+    model_type: Dense
+    architecture: qwen35
+    sequence_processing: Hybrid
     capabilities:
       mtp: false
       endpoint: decision
@@ -396,7 +440,9 @@ models:
     mmproj_orig: mmproj-Ornith-1.5-9B-BF16.gguf
     mmproj_size: 921704416
     mtp_checked: true
-    model_type: Hybrid
+    model_type: Dense
+    architecture: qwen35
+    sequence_processing: Hybrid
     capabilities:
       mtp: false
       endpoint: chat_completion
@@ -417,7 +463,9 @@ models:
     mmproj_orig: mmproj-Ornith-1.5-35B-BF16.gguf
     mmproj_size: 902822016
     mtp_checked: true
-    model_type: Hybrid
+    model_type: MoE
+    architecture: qwen35moe
+    sequence_processing: Hybrid
     capabilities:
       mtp: false
       endpoint: chat_completion
@@ -436,6 +484,8 @@ models:
       - 25008064
     mtp_checked: true
     model_type: Dense
+    architecture: bert
+    sequence_processing: Attention-only
     capabilities:
       mtp: false
       endpoint: rerank
@@ -453,7 +503,9 @@ models:
     mmproj_orig: mmproj-Swift-Qwen3.8-27B-F16.gguf
     mmproj_size: 927606976
     mtp_checked: true
-    model_type: Hybrid
+    model_type: Dense
+    architecture: qwen35
+    sequence_processing: Hybrid
     capabilities:
       mtp: false
       endpoint: chat_completion
@@ -475,6 +527,8 @@ models:
     mmproj_size: 878053536
     mtp_checked: true
     model_type: Dense
+    architecture: mistral3
+    sequence_processing: Attention-only
     capabilities:
       mtp: false
       endpoint: chat_completion
@@ -495,7 +549,9 @@ models:
     mmproj_orig: mmproj-F16.gguf
     mmproj_size: 899283680
     mtp_checked: true
-    model_type: Hybrid
+    model_type: MoE
+    architecture: qwen35moe
+    sequence_processing: Hybrid
     capabilities:
       mtp: false
       endpoint: chat_completion
@@ -514,6 +570,8 @@ models:
       - 639447744
     mtp_checked: true
     model_type: Dense
+    architecture: qwen3
+    sequence_processing: Attention-only
     capabilities:
       mtp: false
       endpoint: chat_completion
@@ -531,6 +589,8 @@ models:
       - 1107409472
     mtp_checked: true
     model_type: Dense
+    architecture: qwen3
+    sequence_processing: Attention-only
     capabilities:
       mtp: false
       endpoint: chat_completion
@@ -548,6 +608,8 @@ models:
       - 2332582464
     mtp_checked: true
     model_type: Dense
+    architecture: qwen3
+    sequence_processing: Attention-only
     capabilities:
       mtp: false
       endpoint: chat_completion
@@ -567,7 +629,9 @@ models:
     mmproj_orig: mmproj-F16.gguf
     mmproj_size: 204987232
     mtp_checked: true
-    model_type: Hybrid
+    model_type: Dense
+    architecture: qwen35
+    sequence_processing: Hybrid
     capabilities:
       mtp: false
       endpoint: chat_completion
@@ -588,7 +652,9 @@ models:
     mmproj_orig: mmproj-F16.gguf
     mmproj_size: 899283680
     mtp_checked: true
-    model_type: Hybrid
+    model_type: MoE
+    architecture: qwen35moe
+    sequence_processing: Hybrid
     capabilities:
       mtp: false
       endpoint: chat_completion
@@ -612,7 +678,9 @@ models:
     mtp_orig: MTP/mtp-Qwen3.8-27B-Q4_0.gguf
     mtp_checked: true
     mtp_source: companion
-    model_type: Hybrid
+    model_type: Dense
+    architecture: qwen35
+    sequence_processing: Hybrid
     capabilities:
       endpoint: chat_completion
       images: true
@@ -636,7 +704,9 @@ models:
     mtp_orig: MTP/mtp-Qwen3.8-27B-Q4_0.gguf
     mtp_checked: true
     mtp_source: companion
-    model_type: Hybrid
+    model_type: Dense
+    architecture: qwen35
+    sequence_processing: Hybrid
     capabilities:
       endpoint: chat_completion
       images: true
@@ -666,7 +736,9 @@ models:
     mtp_size: 4137429280
     mtp_checked: true
     mtp_source: companion
-    model_type: Hybrid
+    model_type: MoE
+    architecture: qwen4exp
+    sequence_processing: Hybrid
     capabilities:
       endpoint: chat_completion
       images: true
@@ -692,6 +764,8 @@ models:
     mtp_checked: true
     mtp_source: companion
     model_type: MoE
+    architecture: gemma4
+    sequence_processing: Attention-only
     capabilities:
       endpoint: chat_completion
       images: true
@@ -717,6 +791,8 @@ models:
     mtp_checked: true
     mtp_source: companion
     model_type: MoE
+    architecture: gemma4
+    sequence_processing: Attention-only
     capabilities:
       endpoint: chat_completion
       images: true
@@ -742,6 +818,8 @@ models:
     mtp_checked: true
     mtp_source: companion
     model_type: Dense
+    architecture: gemma4
+    sequence_processing: Attention-only
     capabilities:
       endpoint: chat_completion
       images: true
@@ -765,6 +843,8 @@ models:
     mmproj_size: 990372672
     mtp_checked: true
     model_type: Dense
+    architecture: gemma4
+    sequence_processing: Attention-only
     capabilities:
       mtp: false
       endpoint: chat_completion
@@ -783,6 +863,8 @@ models:
       - 12109567168
     mtp_checked: true
     model_type: MoE
+    architecture: gpt-oss
+    sequence_processing: Attention-only
     capabilities:
       mtp: false
       endpoint: chat_completion
@@ -803,7 +885,9 @@ models:
     mmproj_size: 899283584
     mtp_checked: true
     mtp_source: embedded
-    model_type: Hybrid
+    model_type: MoE
+    architecture: qwen35moe
+    sequence_processing: Hybrid
     capabilities:
       endpoint: chat_completion
       images: true
@@ -825,7 +909,9 @@ models:
     mmproj_size: 899283584
     mtp_checked: true
     mtp_source: embedded
-    model_type: Hybrid
+    model_type: MoE
+    architecture: qwen35moe
+    sequence_processing: Hybrid
     capabilities:
       endpoint: chat_completion
       images: true
@@ -844,6 +930,8 @@ models:
       - 6826763968
     mtp_checked: true
     model_type: Dense
+    architecture: gemma3
+    sequence_processing: Attention-only
     capabilities:
       mtp: false
       endpoint: chat_completion

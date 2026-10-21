@@ -623,10 +623,10 @@ export default function CatalogList() {
             </FilterSection>
           )}
 
-          {/* Architecture (Dense/MoE/Hybrid) */}
-          <FilterSection title="Architecture" expanded={expandedSections.has('architecture')} onToggle={() => toggleSection('architecture')}>
+          {/* Parameter activation (Dense/MoE) */}
+          <FilterSection title="Parameter activation" expanded={expandedSections.has('architecture')} onToggle={() => toggleSection('architecture')}>
             <div className="catalog-filter-options">
-              {(['Dense', 'MoE', 'Hybrid'] as const).map(t => (
+              {(['Dense', 'MoE'] as const).map(t => (
                 <label key={t}>
                   <input
                     type="checkbox"
@@ -787,8 +787,8 @@ export default function CatalogList() {
                           </span>
                         </th>
                       ))}
-                      <th onClick={() => handleSort('model_type')} className="catalog-table-sortable" title="Architecture class (Dense, MoE, or Hybrid) derived from GGUF metadata">
-                        Arch
+                      <th onClick={() => handleSort('model_type')} className="catalog-table-sortable" title="Feed-forward parameter activation (Dense or MoE), independent of sequence processing">
+                        Type
                         <span className="catalog-table-sort-indicator">
                           {sortField === 'model_type' ? (sortAsc ? ' ▲' : ' ▼') : ''}
                         </span>
@@ -901,7 +901,7 @@ export default function CatalogList() {
                     <KeyValueTable rows={[
                       { key: 'owner', label: 'Provider', value: modelInfo.owned_by },
                       { key: 'family', label: 'Family', value: modelInfo.model_family },
-                      { key: 'arch', label: 'Architecture', value: modelInfo.model_type || '-' },
+                      { key: 'arch', label: 'Parameter activation', value: modelInfo.model_type || '-' },
                       { key: 'gguf-arch', label: 'GGUF Arch', value: modelInfo.gguf_arch || '-' },
                       { key: 'params', label: 'Parameters', value: modelInfo.parameters || '-' },
                       { key: 'size', label: 'Size', value: modelInfo.total_size || '-' },

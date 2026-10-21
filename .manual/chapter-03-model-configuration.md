@@ -651,7 +651,36 @@ to inspect the GGUF metadata and estimate a specific configuration. Treat the
 result as planning guidance and retain headroom for the backend and other
 processes.
 
-#### Dense, MoE, and hybrid inference
+#### Independent dimensions of model design
+
+Dense, MoE, and hybrid are not three mutually exclusive model types. Describe
+a model using independent dimensions:
+
+| Dimension | Choices | What it describes |
+| --- | --- | --- |
+| Parameter activation | Dense or Mixture-of-Experts (MoE) | Which feed-forward weights compute for a token |
+| Sequence processing | Attention-only, recurrent/state-space-only, or hybrid | How information from earlier tokens is processed |
+| Architecture | A specific overall design identifier, such as the GGUF `general.architecture` value | The model's concrete layout, operations, and conventions |
+
+An architecture identifier is not another activation or sequence-processing
+category. It identifies the overall design; inspect that design and its metadata
+to determine both dimensions rather than treating its name as a third axis of
+mutually exclusive types.
+
+The catalog's existing **Type** column reports parameter activation: Dense or
+MoE. New downloads also store `architecture` (the GGUF architecture identifier)
+and `sequence_processing` (Attention-only, Recurrent, Hybrid, or Unknown) in
+catalog metadata, without adding list columns. Unknown means the available
+metadata does not establish the sequence-processing topology. The runtime uses
+independent MoE facts and memory semantics: recurrent memory requires special
+speculative rollback and snapshot handling, regardless of expert routing.
+`Profile.Class` has been removed. Loaded models report
+`ModelInfo.Type` (Dense or MoE parameter activation), `ModelInfo.SequenceProcessing`, and
+`ModelInfo.Architecture` separately. For metadata-only inspection, use
+`modelprofile.Resolve`, then `Profile.ParameterActivation()`,
+`Profile.SequenceProcessing`, and `Profile.Architecture`. A hybrid MoE model
+reports both MoE activation and Hybrid sequence processing; neither property
+replaces the other.
 
 Dense and Mixture-of-Experts (MoE) describe how each layer's feed-forward
 weights are activated. A dense layer uses its complete feed-forward network for
@@ -689,15 +718,22 @@ Per-GPU allocation is an estimate: actual cache placement follows eligible
 layers and may use free-memory proportions. Retain backend/host-metadata
 headroom beyond the cache budget.
 
-Hybrid describes a separate design choice: which sequence-processing mechanism
-each layer uses. A hybrid stack can pair those mechanisms with dense
-feed-forward networks or MoE blocks. Qwen 3.6 combines Gated DeltaNet and
+For sequence processing, **attention-only** models use attention to access prior
+tokens (full, sliding-window, or sparse attention). **Recurrent/state-space-only**
+models carry information forward in recurrent state without attention layers;
+they are not automatically hybrid. Here, **hybrid** means a stack combining
+attention with recurrent/state-space mechanisms. Mixing full and sliding-window
+attention alone remains attention-only in this classification.
+
+Each sequence-processing choice can pair with dense feed-forward networks or
+MoE blocks; not every combination needs to be represented in Kronk's catalog.
+Qwen 3.6 combines Gated DeltaNet and
 full-attention layers with MoE; qwen4exp combines Gated DeltaNet and sparse
 attention with MoE. Every token still traverses every layer. The hybrid stack
 changes how context is processed, while an MoE router independently changes
 which feed-forward experts activate.
 
-![Dense, Mixture-of-Experts, and hybrid inference compared](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/03c-dense-moe-and-hybrid-inference.svg)
+![Independent model dimensions: Dense and MoE activation crossed with attention-only, recurrent/state-space-only, and hybrid sequence processing](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/03c-dense-moe-and-hybrid-inference.svg)
 
 The estimator follows the model's per-layer attention topology when the GGUF
 provides it. Full-attention and sliding-window layers can have different KV

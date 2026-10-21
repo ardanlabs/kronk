@@ -5,9 +5,13 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,6 +19,8 @@ import (
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
+	"github.com/ardanlabs/kronk/sdk/pool"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -44,8 +50,25 @@ func WithRetries(n int) OptionFunc {
 
 // Test contains functions for executing an api test.
 type Test struct {
-	Sec *security.Security
-	mux http.Handler
+	Sec  *security.Security
+	Pool *pool.Pool
+	mux  http.Handler
+
+	eventsMu sync.Mutex
+	events   []logger.Record
+}
+
+// ServeHTTP serves the production routes through a test-owned HTTP server.
+func (at *Test) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	at.mux.ServeHTTP(w, r)
+}
+
+// ModelEvents returns a synchronized snapshot of model lifecycle and speculation logs.
+// Callers must treat the records and their attributes as immutable.
+func (at *Test) ModelEvents() []logger.Record {
+	at.eventsMu.Lock()
+	defer at.eventsMu.Unlock()
+	return slices.Clone(at.events)
 }
 
 // Run performs the actual test logic based on the table data.
@@ -126,7 +149,7 @@ func (at *Test) Run(t *testing.T, table []Table, testName string, options ...Opt
 }
 
 // RunStreaming performs the actual test logic based on the table data.
-// It parses SSE events and tests only the last data event (ignoring deltas).
+// It compares the selected data event and optionally validates the full stream.
 func (at *Test) RunStreaming(t *testing.T, table []Table, testName string, options ...OptionFunc) {
 	to := new(testOption)
 	for _, f := range options {
@@ -170,24 +193,22 @@ func (at *Test) RunStreaming(t *testing.T, table []Table, testName string, optio
 				}
 
 				var events []json.RawMessage
+				var namedEvents []SSEEvent
 				doneCount := 0
-				scanner := bufio.NewScanner(w.Body)
-				for scanner.Scan() {
-					line := scanner.Text()
-					if after, ok := strings.CutPrefix(line, "data: "); ok {
-						data := after
-						if data == "[DONE]" {
-							doneCount++
-							continue
-						}
-						if tt.RequireDone && doneCount > 0 {
-							t.Fatalf("Should not receive an SSE data event after [DONE]")
-						}
-						events = append(events, json.RawMessage(data))
-					}
+				parsed, err := readSSE(w.Body)
+				if err != nil {
+					t.Fatalf("Should be able to parse the streaming response: %s", err)
 				}
-				if err := scanner.Err(); err != nil {
-					t.Fatalf("Should be able to scan the streaming response: %s", err)
+				for _, event := range parsed {
+					if string(event.Data) == "[DONE]" {
+						doneCount++
+						continue
+					}
+					if tt.RequireDone && doneCount > 0 {
+						t.Fatalf("Should not receive an SSE data event after [DONE]")
+					}
+					events = append(events, event.Data)
+					namedEvents = append(namedEvents, event)
 				}
 				if tt.RequireDone && doneCount != 1 {
 					t.Fatalf("Should receive exactly one [DONE] SSE data event, got %d", doneCount)
@@ -208,6 +229,9 @@ func (at *Test) RunStreaming(t *testing.T, table []Table, testName string, optio
 				lastDiff = tt.CmpFunc(tt.GotResp, tt.ExpResp)
 				if lastDiff == "" && tt.StreamCmpFunc != nil {
 					lastDiff = tt.StreamCmpFunc(events)
+				}
+				if lastDiff == "" && tt.SSECmpFunc != nil {
+					lastDiff = tt.SSECmpFunc(namedEvents)
 				}
 				if lastDiff == "" {
 					if attempt > 0 {
@@ -232,6 +256,42 @@ func (at *Test) RunStreaming(t *testing.T, table []Table, testName string, optio
 
 		t.Run(testName+"-"+tt.Name, f)
 	}
+}
+
+// =============================================================================
+
+// readSSE follows SSE field framing, retaining named and multiline data events.
+func readSSE(r io.Reader) ([]SSEEvent, error) {
+	var events []SSEEvent
+	var name string
+	var data []string
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 4096), 4*1024*1024)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			if len(data) > 0 {
+				events = append(events, SSEEvent{Event: name, Data: json.RawMessage(strings.Join(data, "\n"))})
+			}
+			name, data = "", nil
+			continue
+		}
+		field, value, _ := strings.Cut(line, ":")
+		value = strings.TrimPrefix(value, " ")
+		switch field {
+		case "event":
+			name = value
+		case "data":
+			data = append(data, value)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("scan SSE: %w", err)
+	}
+	if len(data) > 0 {
+		return nil, fmt.Errorf("unterminated SSE event %q", name)
+	}
+	return events, nil
 }
 
 // =============================================================================

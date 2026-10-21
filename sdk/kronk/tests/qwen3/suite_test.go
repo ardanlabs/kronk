@@ -15,8 +15,12 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// expectReasoning is the Qwen3-1.7B fixture's separate Reasoning-field expectation.
+const expectReasoning = true
+
 func TestSuite(t *testing.T) {
 	testlib.WithModel(t, testlib.CfgThinkToolChat(), func(t *testing.T, krn *kronk.Kronk) {
+		testlib.TestModelProfile(t, krn, "Dense", "Attention-only", "qwen3")
 		t.Run("ThinkChat", func(t *testing.T) { testChat(t, krn, testlib.DChatNoTool, false) })
 		t.Run("ThinkStreamingChat", func(t *testing.T) { testChatStreaming(t, krn, testlib.DChatNoTool, false) })
 		t.Run("ToolChat", func(t *testing.T) { testChat(t, krn, testlib.DChatTool, true) })
@@ -31,14 +35,15 @@ func TestSuite(t *testing.T) {
 		t.Run("ToolStreamingResponse", func(t *testing.T) { testResponseStreaming(t, krn, testlib.DResponseTool, true) })
 		t.Run("GrammarJSON", func(t *testing.T) { testGrammarJSON(t, krn) })
 		t.Run("GrammarJSONStreaming", func(t *testing.T) { testGrammarJSONStreaming(t, krn) })
+		t.Run("UsageCounting", func(t *testing.T) { testUsageCounting(t, krn) })
+		t.Run("UsageAccumulation", func(t *testing.T) { testUsageAccumulation(t, krn) })
+		t.Run("UsageWithToolCalls", func(t *testing.T) { testUsageWithToolCalls(t, krn) })
+		t.Run("UsageDeltaNil", func(t *testing.T) { testUsageDeltaNil(t, krn) })
+		t.Run("UsageConsistencyAcrossRequests", func(t *testing.T) { testUsageConsistencyAcrossRequests(t, krn) })
 	})
 }
 
 func testChat(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
@@ -55,7 +60,7 @@ func testChat(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
 			return fmt.Errorf("chat streaming: %w", err)
 		}
 
-		reasoning := testlib.HasReasoningField(krn)
+		reasoning := expectReasoning
 
 		var result testlib.TestResult
 		switch tooling {
@@ -88,10 +93,6 @@ func testChat(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
 }
 
 func testChatStreaming(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
@@ -108,7 +109,7 @@ func testChatStreaming(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) 
 			return fmt.Errorf("chat streaming: %w", err)
 		}
 
-		reasoning := testlib.HasReasoningField(krn)
+		reasoning := expectReasoning
 
 		var acc testlib.StreamAccumulator
 		var lastResp model.ChatResponse
@@ -154,10 +155,6 @@ func testChatStreaming(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) 
 }
 
 func testResponse(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
@@ -201,10 +198,6 @@ func testResponse(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
 }
 
 func testResponseStreaming(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
@@ -287,7 +280,7 @@ func testResponseStreaming(t *testing.T, krn *kronk.Kronk, d model.D, tooling bo
 			return fmt.Errorf("expected output_text.delta events")
 		}
 
-		if testlib.HasReasoningField(krn) && !hasReasoningDelta {
+		if expectReasoning && !hasReasoningDelta {
 			return fmt.Errorf("expected reasoning_summary_text.delta events")
 		}
 
@@ -310,10 +303,6 @@ func testResponseStreaming(t *testing.T, krn *kronk.Kronk, d model.D, tooling bo
 }
 
 func testTokenize(t *testing.T, krn *kronk.Kronk) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
@@ -362,10 +351,6 @@ func testTokenize(t *testing.T, krn *kronk.Kronk) {
 }
 
 func testTokenizeWithTemplate(t *testing.T, krn *kronk.Kronk) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
@@ -426,10 +411,6 @@ func testTokenizeWithTemplate(t *testing.T, krn *kronk.Kronk) {
 }
 
 func testGrammarJSON(t *testing.T, krn *kronk.Kronk) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
@@ -466,10 +447,6 @@ func testGrammarJSON(t *testing.T, krn *kronk.Kronk) {
 }
 
 func testGrammarJSONStreaming(t *testing.T, krn *kronk.Kronk) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()

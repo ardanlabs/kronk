@@ -7,11 +7,17 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/apitest"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/kronk/tests/testlib"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 func rerank200(tokens map[string]string) []apitest.Table {
+	documents := []string{
+		"Paris is the capital and largest city of France.",
+		"Berlin is the capital of Germany.",
+		"The Eiffel Tower is located in Paris.",
+	}
 	table := []apitest.Table{
 		{
 			Name:       "good-token",
@@ -20,13 +26,9 @@ func rerank200(tokens map[string]string) []apitest.Table {
 			Method:     http.MethodPost,
 			StatusCode: http.StatusOK,
 			Input: model.D{
-				"model": "gpustack/bge-reranker-v2-m3-Q8_0",
-				"query": "What is the capital of France?",
-				"documents": []string{
-					"Paris is the capital and largest city of France.",
-					"Berlin is the capital of Germany.",
-					"The Eiffel Tower is located in Paris.",
-				},
+				"model":            "gpustack/bge-reranker-v2-m3-Q8_0",
+				"query":            "What is the capital of France?",
+				"documents":        documents,
 				"top_n":            2,
 				"return_documents": true,
 			},
@@ -49,31 +51,11 @@ func rerank200(tokens map[string]string) []apitest.Table {
 					return fmt.Sprintf("response wrong type: %T", got)
 				}
 
-				if len(gotResp.Data) != 2 {
-					return fmt.Sprintf("expected length of 2 (top_n), got %d", len(gotResp.Data))
+				if err := testlib.CheckRerank(*gotResp, "gpustack/bge-reranker-v2-m3-Q8_0", documents, 2, true); err != nil {
+					return err.Error()
 				}
-
-				// Check scores are in valid range [0, 1].
-				for i, result := range gotResp.Data {
-					if result.RelevanceScore < 0 || result.RelevanceScore > 1 {
-						return fmt.Sprintf("score out of range [0,1]: index %d, score %.4f", i, result.RelevanceScore)
-					}
-				}
-
-				// Check results are sorted by relevance (descending).
-				if len(gotResp.Data) > 1 && gotResp.Data[0].RelevanceScore < gotResp.Data[1].RelevanceScore {
-					return "results not sorted by relevance"
-				}
-
-				// Check return_documents works.
-				for i, result := range gotResp.Data {
-					if result.Document == "" {
-						return fmt.Sprintf("expected document at index %d", i)
-					}
-				}
-
-				if gotResp.Usage.PromptTokens == 0 {
-					return "expected prompt tokens to be non-zero"
+				if gotResp.Data[0].Index != 0 {
+					return "expected Paris/France at source index 0 to rank first"
 				}
 
 				return ""

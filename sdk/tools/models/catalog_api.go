@@ -10,6 +10,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/hf"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 )
 
@@ -181,9 +182,9 @@ func (m *Models) CatalogEntry(canonicalID string) (CatalogEntry, bool, error) {
 	return entry, ok, nil
 }
 
-// ReconcileCatalog populates ModelType, Capabilities, and MTPSource by reading
+// ReconcileCatalog populates model dimensions, Capabilities, and MTPSource by reading
 // the GGUF head bytes (via GGUFHead's cache → local-file → HF Range lookup) so
-// the list page can filter by architecture class and capabilities without
+// the list page can filter by parameter activation and capabilities without
 // paying GGUF I/O on every list call. Legacy unversioned catalogs force this
 // enrichment before being stamped with version 1. Later schema migrations
 // preserve entry data and can advance without repeating GGUF enrichment.
@@ -287,16 +288,20 @@ func (m *Models) enrichEntry(ctx context.Context, entry CatalogEntry) (CatalogEn
 		return entry, false, fmt.Errorf("enrich-entry: parse-gguf: %w", err)
 	}
 
-	modelType := ArchitectureClass(metadata)
+	profile := modelprofile.Resolve(metadata)
+	modelType := profile.ParameterActivation()
 	capabilities := CapabilitiesForModel(metadata, entry.MMProj != "", catalogEntryModelName(entry))
 	mtpSource := MTPSourceFor(metadata, entry.MTP != "")
 	capabilities.MTP = !mtpSource.IsZero()
 
-	if entry.ModelType == modelType && entry.Capabilities == capabilities && entry.MTPSource == mtpSource {
+	if entry.ModelType == modelType && entry.Architecture == profile.Architecture &&
+		entry.SequenceProcessing == profile.SequenceProcessing && entry.Capabilities == capabilities && entry.MTPSource == mtpSource {
 		return entry, false, nil
 	}
 
 	entry.ModelType = modelType
+	entry.Architecture = profile.Architecture
+	entry.SequenceProcessing = profile.SequenceProcessing
 	entry.Capabilities = capabilities
 	entry.MTPSource = mtpSource
 

@@ -6,16 +6,16 @@ require (
 	github.com/ardanlabs/bucky v1.1.5
 	github.com/ardanlabs/conf/v3 v3.13.0
 	github.com/ardanlabs/jinja v1.9.0
-	github.com/ardanlabs/malina v1.1.7
+	github.com/ardanlabs/malina v1.1.8
 	github.com/arl/statsviz v0.8.2
 	github.com/dgraph-io/badger/v4 v4.9.6
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/go-cmp v0.7.0
 	github.com/hashicorp/go-getter v1.8.10
 	github.com/hashicorp/go-version v1.9.0
-	github.com/hybridgroup/yzma v1.30.1-0.20261019132254-6c94ea98e276
+	github.com/hybridgroup/yzma v1.30.1-0.20261020171642-4e61a127c953
 	github.com/icza/mjpeg v0.0.0-20230330134156-38318e5ab8f4
-	github.com/maypok86/otter/v2 v2.3.0
+	github.com/maypok86/otter/v2 v2.4.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/open-policy-agent/opa v1.21.3
 	github.com/prometheus/client_golang v1.25.0
@@ -120,7 +120,6 @@ require (
 	github.com/sirupsen/logrus v1.10.2 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.9.0 // indirect
-	github.com/stretchr/testify v1.12.1 // indirect
 	github.com/tchap/go-patricia/v2 v2.3.3 // indirect
 	github.com/ulikunitz/xz v0.5.17 // indirect
 	github.com/valyala/fastjson v1.6.10 // indirect
@@ -140,7 +139,7 @@ require (
 	golang.org/x/net v0.61.0 // indirect
 	golang.org/x/oauth2 v0.37.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
-	google.golang.org/api v0.305.0 // indirect
+	google.golang.org/api v0.306.0 // indirect
 	google.golang.org/genproto v0.0.0-20261019180522-ce908d29299b // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20261019180522-ce908d29299b // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261019180522-ce908d29299b // indirect

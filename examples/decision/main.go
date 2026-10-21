@@ -127,6 +127,8 @@ func newKronk(mp models.Path) (*kronk.Kronk, error) {
 	fmt.Println("- prefill batch  :", krn.ModelConfig().PrefillBatchSize())
 	fmt.Println("- decision       :", krn.ModelInfo().IsDecisionModel)
 	fmt.Println("- modelType      :", krn.ModelInfo().Type)
+	fmt.Println("- sequence type  :", krn.ModelInfo().SequenceProcessing)
+	fmt.Println("- architecture   :", krn.ModelInfo().Architecture)
 	fmt.Println("- template       :", krn.ModelInfo().Template.FileName)
 	fmt.Println("- nSeqMax        :", krn.ModelConfig().NSeqMax())
 	fmt.Println("- vramTotal      :", krn.ModelInfo().VRAMTotal/(1024*1024), "MiB")

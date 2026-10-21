@@ -1,7 +1,6 @@
 package hybrid_test
 
 import (
-	"fmt"
 	"os"
 	"testing"
 
@@ -11,10 +10,7 @@ import (
 func TestMain(m *testing.M) {
 	testlib.Setup()
 
-	if len(testlib.MPHybridVision.ModelFiles) == 0 {
-		fmt.Println("model Qwopus3.5-4B-Coder.Q4_K_M not downloaded, skipping hybrid tests")
-		os.Exit(0)
-	}
+	testlib.RequireFixtures(testlib.MPHybridVision.ModelFiles...)
 
 	os.Exit(m.Run())
 }

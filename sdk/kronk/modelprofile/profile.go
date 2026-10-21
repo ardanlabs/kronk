@@ -6,6 +6,7 @@ package modelprofile
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 )
@@ -43,7 +44,7 @@ type Modalities struct {
 // Profile is the normalized view of one model artifact.
 type Profile struct {
 	Architecture           string
-	Class                  Class
+	SequenceProcessing     string // Attention-only, Recurrent, Hybrid, or Unknown.
 	Role                   Role
 	Purpose                Purpose
 	MemorySemantics        MemorySemantics
@@ -86,16 +87,61 @@ func Resolve(values map[string]string) Profile {
 	profile.SupportsTensorParallel = profile.Role == RoleLanguage && supportsTensorParallel(profile.Architecture)
 
 	profile.Attention.NextNPredictLayers = profile.Speculation.NextNPredictLayers
-	switch {
-	case profile.MemorySemantics == MemoryRecurrent:
-		profile.Class = ClassHybrid
-	case profile.MoE.IsMoE:
-		profile.Class = ClassMoE
-	default:
-		profile.Class = ClassDense
-	}
+	profile.SequenceProcessing = sequenceProcessing(metadata, profile)
 
 	return profile
+}
+
+// ParameterActivation reports feed-forward parameter activation independently
+// of sequence processing and runtime memory semantics.
+func (p Profile) ParameterActivation() string {
+	if p.MoE.IsMoE {
+		return "MoE"
+	}
+	return "Dense"
+}
+
+// sequenceProcessing describes topology without changing runtime memory facts.
+func sequenceProcessing(metadata metadata, p Profile) string {
+	if p.Architecture == "" {
+		return "Unknown"
+	}
+	// Some architectures expose a layer pattern without a runtime adapter.
+	// Use it for catalog classification without altering memory accounting.
+	if p.Attention.RecurrentPattern == nil && p.Dimensions.BlockCount > 0 {
+		if pattern, ok := parseBoolPattern(metadata.value(p.Architecture+".attention.recurrent_layers"), p.Dimensions.BlockCount); ok {
+			p.Attention.RecurrentPattern = pattern
+			p.Attention.RecurrentLayers = 0
+			trunkLayers := max(p.Dimensions.BlockCount-p.Speculation.NextNPredictLayers, 0)
+			for _, recurrent := range pattern[:trunkLayers] {
+				if recurrent {
+					p.Attention.RecurrentLayers++
+				}
+			}
+			p.Attention.FullAttentionLayers = trunkLayers - p.Attention.RecurrentLayers
+			p.Attention.SlidingWindowLayers = 0
+		}
+	}
+	if p.Attention.RecurrentPattern != nil {
+		switch {
+		case p.Attention.RecurrentLayers == 0:
+			return "Attention-only"
+		case p.Attention.FullAttentionLayers+p.Attention.SlidingWindowLayers > 0:
+			return "Hybrid"
+		default:
+			return "Recurrent"
+		}
+	}
+	if p.MemorySemantics != MemoryRecurrent {
+		return "Attention-only"
+	}
+	if strings.HasPrefix(strings.ToLower(p.Architecture), "mamba") {
+		return "Recurrent"
+	}
+	if (knownRecurrentAdapter{}).Claims(p.Architecture) || (qwenHybridAdapter{}).Claims(p.Architecture) {
+		return "Hybrid"
+	}
+	return "Unknown"
 }
 
 // ValidateForVRAM verifies the facts required to calculate language-model

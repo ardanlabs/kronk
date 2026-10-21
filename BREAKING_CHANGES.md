@@ -3,6 +3,7 @@
 ## Index
 
 - [v1.33.0](#unreleased)
+  - [Model Profile Classification](#v1330-model-profile-classification)
   - [Bucky Flash Attention Configuration](#unreleased-bucky-flash-attention-configuration)
   - [Malina Native ABI Upgrade](#v1330-malina-native-abi-upgrade)
   - [Projected Embedding Output Correction](#v1330-projected-embedding-output-correction)
@@ -42,6 +43,45 @@
   - [Go SDK Changes](#v1303-go-sdk-changes)
 
 ## v1.33.0
+
+### v1.33.0: Model Profile Classification
+
+`sdk/kronk/modelprofile.Profile.Class`, the `Class` type, its Dense/MoE/Hybrid
+members, and `ParseClass`/`MustParseClass` are removed. SDK callers using these
+symbols must use the independent facts instead:
+
+- `Profile.MoE.IsMoE` for feed-forward expert routing.
+- `Profile.MemorySemantics` for attention versus recurrent state management.
+- `Profile.SequenceProcessing` for attention-only, recurrent, or hybrid topology.
+- `Profile.Architecture` for the specific GGUF architecture identifier.
+
+`sdk/kronk/model.ModelInfo.Type` keeps its field name, but is now a string
+describing Dense/MoE parameter activation only. The old `ModelType` type, its
+Dense/MoE/Hybrid members, and `ParseModelType`/`MustParseModelType` are removed.
+Loaded models report three independent string fields on `ModelInfo`:
+
+- `Type`: `Dense` or `MoE` parameter activation.
+- `SequenceProcessing`: `Attention-only`, `Recurrent`, `Hybrid`, or `Unknown`.
+- `Architecture`: the GGUF architecture identifier, such as `qwen35moe`.
+
+Code that reads or prints `ModelInfo().Type` can keep that field access. Code
+using the old enum members or methods must switch to string values. Direct
+JSON/YAML serialization changes `Type` from a number to a string and adds
+`SequenceProcessing` and `Architecture`. The playground session's `effective_config`
+replaces `model_type` with `parameter_activation`, `sequence_processing`, and
+`architecture`. A hybrid MoE model now reports both facts instead of losing its
+expert-routing classification behind the Hybrid label.
+
+`DetectModelTypeFromFiles` is removed. For metadata-only inspection, parse the
+GGUF header with `gguf.ParseMetadata`, then call `modelprofile.Resolve`; use
+`Profile.ParameterActivation()`, `SequenceProcessing`, and `Architecture` for
+reporting. Use `ModelInfo()` for the properties of an already loaded model.
+The catalog helper `models.ArchitectureClass` is also removed; use
+`modelprofile.Resolve(metadata).ParameterActivation()` instead.
+
+Runtime recurrent-memory handling remains independent of expert routing. No
+catalog migration is required and no catalog list columns are added. Bucky's
+Whisper-specific model types are unaffected.
 
 ### v1.33.0: Bucky Flash Attention Configuration
 

@@ -1,12 +1,7 @@
 package qwen3_test
 
 import (
-	"context"
-	"fmt"
-	"maps"
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
@@ -14,118 +9,22 @@ import (
 )
 
 func Test_BatchChatConcurrent(t *testing.T) {
-	// This is the only suite that decodes two sequences concurrently, and on
-	// ROCm it hits a HIP defect: two sequences sharing one llama_decode batch
-	// come back with corrupted logits, which leaves a message empty.
-	// https://github.com/ggml-org/llama.cpp/issues/28537
-	//
-	// Confirmed across two ROCm major versions at llama.cpp b10798, so the
-	// runtime is not what carries it:
-	//
-	//   7.2.4  run 33928022827  pass
-	//   7.2.4  run 33929435557  fail, 1 empty (request 6)
-	//   10.0   run 33931215130  fail, 2 empty (requests 0 and 9)
-	//
-	// Intermittent, so a green run does not clear it — dropping this skip
-	// needs several consecutive green ROCm runs, not one. It also runs first
-	// in gpu.yml's suite list, so while it is un-skipped a failure here aborts
-	// the step and costs the answer for every suite behind it.
+	// On ROCm, two sequences sharing one llama_decode batch can return
+	// corrupted logits: https://github.com/ggml-org/llama.cpp/issues/28537
+	// Confirmed across ROCm 7.2.4 and 10.0 at llama.cpp b10798:
+	// runs 33929435557 and 33931215130 failed with empty responses, while
+	// 33928022827 passed. Removal needs consecutive green runs, not one.
 	testlib.SkipOnBackends(t, "two sequences sharing one decode batch come back with corrupted logits", "rocm")
 
-	const concurrentRequests = 10
-
-	// Exercise batching rather than admission backpressure or long-form
-	// reasoning: admit the complete burst and keep each echo response bounded.
+	words := []string{"ALPHA", "BRAVO", "COPPER", "DELTA", "ECHO", "FOXTROT", "GOLF", "HOTEL", "INDIGO", "JULIET"}
+	// Admit the complete ten-request burst; this tests inference isolation,
+	// not queue rejection. Disable IMC to separate batching from cached replay.
 	cfg := testlib.CfgThinkToolChat()
-	cfg.PtrQueueDepth = new((concurrentRequests + cfg.NSeqMax() - 1) / cfg.NSeqMax())
-
-	d := maps.Clone(testlib.DChatNoTool)
-	d["max_tokens"] = 128
-	d["chat_template_kwargs"] = model.D{"enable_thinking": false}
-
+	cfg.PtrQueueDepth = new((len(words) + cfg.NSeqMax() - 1) / cfg.NSeqMax())
+	cfg.PtrIncrementalCache = new(false)
+	cfg.Speculation = model.SpeculationDisabled
 	testlib.WithModel(t, cfg, func(t *testing.T, krn *kronk.Kronk) {
-		g := concurrentRequests
-
-		t.Logf("Testing batch inference with %d concurrent requests", g)
-
-		var wg sync.WaitGroup
-		wg.Add(g)
-
-		startBarrier := make(chan struct{})
-
-		results := make([]struct {
-			id       int
-			duration time.Duration
-			err      error
-			content  string
-		}, g)
-
-		for i := range g {
-			go func(idx int) {
-				defer wg.Done()
-
-				<-startBarrier
-
-				ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
-				defer cancel()
-
-				start := time.Now()
-
-				ch, err := krn.ChatStreaming(ctx, d)
-				if err != nil {
-					results[idx].err = fmt.Errorf("goroutine %d: chat streaming error: %w", idx, err)
-					return
-				}
-
-				var lastResp model.ChatResponse
-				for resp := range ch {
-					lastResp = resp
-				}
-
-				results[idx].duration = time.Since(start)
-				results[idx].id = idx
-
-				if lastResp.Choices[0].FinishReason() == model.FinishReasonError {
-					errContent := ""
-					if lastResp.Choices[0].Delta != nil {
-						errContent = lastResp.Choices[0].Delta.Content
-					}
-					results[idx].err = fmt.Errorf("goroutine %d: got error response: %s", idx, errContent)
-					return
-				}
-
-				msg := testlib.GetMsg(lastResp.Choices[0], true)
-				results[idx].content = msg.Content
-			}(i)
-		}
-
-		close(startBarrier)
-		wg.Wait()
-
-		var errors []error
-		var totalDuration time.Duration
-		for _, r := range results {
-			if r.err != nil {
-				errors = append(errors, r.err)
-				continue
-			}
-
-			totalDuration += r.duration
-			t.Logf("Request %d completed in %s", r.id, r.duration)
-
-			if r.content == "" {
-				errors = append(errors, fmt.Errorf("request %d: empty content", r.id))
-			}
-		}
-
-		if len(errors) > 0 {
-			for _, err := range errors {
-				t.Error(err)
-			}
-			t.FailNow()
-		}
-
-		avgDuration := totalDuration / time.Duration(g)
-		t.Logf("All %d requests completed. Average duration: %s", g, avgDuration)
+		testlib.TestModelProfile(t, krn, "Dense", "Attention-only", "qwen3")
+		testlib.TestChatIsolation(t, krn, words, false)
 	})
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/apitest"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/kronk/tests/testlib"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
@@ -395,168 +396,6 @@ func chatStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 	}
 }
 
-// chatStreamIMCQwen3 returns streaming chat tests for IMC (Incremental Message Cache).
-// These tests verify multi-turn caching behavior.
-func chatStreamIMCQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
-	return []apitest.Table{
-		{
-			Name:       "imc-first-turn",
-			URL:        "/v1/chat/completions",
-			Token:      tokens["chat-completions"],
-			Method:     http.MethodPost,
-			StatusCode: http.StatusOK,
-			Input: model.D{
-				"model": qwen3ModelID,
-				"messages": model.DocumentArray(
-					model.TextMessage(model.RoleSystem, "You are a helpful assistant."),
-					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
-				),
-				"max_tokens":  2048,
-				"temperature": 0.7,
-				"stream":      true,
-				"stream_options": model.D{
-					"include_usage": true,
-				},
-			},
-			GotResp:              &model.ChatResponse{},
-			StreamResponseOffset: 1,
-			RequireDone:          true,
-			ExpResp: &model.ChatResponse{
-				Choices: []model.Choice{
-					{
-						Message:         nil,
-						FinishReasonPtr: new("stop"),
-					},
-				},
-				Model:             qwen3ModelID,
-				SystemFingerprint: "fp_kronk",
-				Object:            "chat.completion.chunk",
-			},
-			CmpFunc: func(got any, exp any) string {
-				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "internal"),
-					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
-				)
-
-				if diff != "" {
-					return diff
-				}
-
-				return validateResponse(got, true).
-					hasValidUUID().
-					hasCreated().
-					hasValidChoice().
-					result(t)
-			},
-			StreamCmpFunc: validateChatUsageStream,
-		},
-		{
-			Name:       "imc-second-turn-cache-hit",
-			URL:        "/v1/chat/completions",
-			Token:      tokens["chat-completions"],
-			Method:     http.MethodPost,
-			StatusCode: http.StatusOK,
-			Input: model.D{
-				"model": qwen3ModelID,
-				"messages": model.DocumentArray(
-					model.TextMessage(model.RoleSystem, "You are a helpful assistant."),
-					model.TextMessage(model.RoleUser, "Echo back the word: Gorilla"),
-					model.TextMessage(model.RoleAssistant, "Gorilla"),
-					model.TextMessage(model.RoleUser, "Now echo back the word: Elephant"),
-				),
-				"max_tokens":  2048,
-				"temperature": 0.7,
-				"stream":      true,
-				"stream_options": model.D{
-					"include_usage": true,
-				},
-			},
-			GotResp:              &model.ChatResponse{},
-			StreamResponseOffset: 1,
-			RequireDone:          true,
-			ExpResp: &model.ChatResponse{
-				Choices: []model.Choice{
-					{
-						Message:         nil,
-						FinishReasonPtr: new("stop"),
-					},
-				},
-				Model:             qwen3ModelID,
-				SystemFingerprint: "fp_kronk",
-				Object:            "chat.completion.chunk",
-			},
-			CmpFunc: func(got any, exp any) string {
-				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "internal"),
-					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
-				)
-
-				if diff != "" {
-					return diff
-				}
-
-				return validateResponse(got, true).
-					hasValidUUID().
-					hasCreated().
-					hasValidChoice().
-					result(t)
-			},
-			StreamCmpFunc: validateChatUsageStream,
-		},
-		{
-			Name:       "imc-different-session",
-			URL:        "/v1/chat/completions",
-			Token:      tokens["chat-completions"],
-			Method:     http.MethodPost,
-			StatusCode: http.StatusOK,
-			Input: model.D{
-				"model": qwen3ModelID,
-				"messages": model.DocumentArray(
-					model.TextMessage(model.RoleSystem, "You are a helpful assistant."),
-					model.TextMessage(model.RoleUser, "Echo back the word: Tiger"),
-				),
-				"max_tokens":  2048,
-				"temperature": 0.7,
-				"stream":      true,
-				"stream_options": model.D{
-					"include_usage": true,
-				},
-			},
-			GotResp:              &model.ChatResponse{},
-			StreamResponseOffset: 1,
-			RequireDone:          true,
-			ExpResp: &model.ChatResponse{
-				Choices: []model.Choice{
-					{
-						Message:         nil,
-						FinishReasonPtr: new("stop"),
-					},
-				},
-				Model:             qwen3ModelID,
-				SystemFingerprint: "fp_kronk",
-				Object:            "chat.completion.chunk",
-			},
-			CmpFunc: func(got any, exp any) string {
-				diff := cmp.Diff(got, exp,
-					cmpopts.IgnoreFields(model.ChatResponse{}, "ID", "Created", "Usage", "internal"),
-					cmpopts.IgnoreFields(model.Choice{}, "Index", "FinishReasonPtr", "Delta"),
-				)
-
-				if diff != "" {
-					return diff
-				}
-
-				return validateResponse(got, true).
-					hasValidUUID().
-					hasCreated().
-					hasValidChoice().
-					result(t)
-			},
-			StreamCmpFunc: validateChatUsageStream,
-		},
-	}
-}
-
 // chatArrayFormatQwen3 returns chat tests using OpenAI array content format.
 func chatArrayFormatQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 	return []apitest.Table{
@@ -811,7 +650,7 @@ func chatGrammarQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 			Input: model.D{
 				"model": qwen3ModelID,
 				"messages": model.DocumentArray(
-					model.TextMessage(model.RoleUser, "List 3 programming languages with their year of creation. Respond in JSON format."),
+					model.TextMessage(model.RoleUser, testlib.GrammarJSONPrompt),
 				),
 				"grammar":      grammarJSONObject,
 				"temperature":  0.7,
@@ -849,7 +688,7 @@ func chatGrammarQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 					hasValidChoice().
 					hasUsage(false).
 					hasContent().
-					hasValidJSON().
+					hasGrammarJSON().
 					result(t)
 			},
 		},
@@ -868,7 +707,7 @@ func chatGrammarStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Ta
 			Input: model.D{
 				"model": qwen3ModelID,
 				"messages": model.DocumentArray(
-					model.TextMessage(model.RoleUser, "List 3 programming languages with their year of creation. Respond in JSON format."),
+					model.TextMessage(model.RoleUser, testlib.GrammarJSONPrompt),
 				),
 				"grammar":      grammarJSONObject,
 				"temperature":  0.7,
@@ -911,7 +750,23 @@ func chatGrammarStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Ta
 					result(t)
 			},
 			StreamCmpFunc: func(events []json.RawMessage) string {
-				return validateChatUsageStreamReasoning(events, false)
+				if result := validateChatUsageStreamReasoning(events, false); result != "" {
+					return result
+				}
+				var content strings.Builder
+				for _, data := range events {
+					var event model.ChatResponse
+					if err := json.Unmarshal(data, &event); err != nil {
+						return fmt.Sprintf("grammar stream: decoding event: %v", err)
+					}
+					if len(event.Choices) > 0 && event.Choices[0].Delta != nil {
+						content.WriteString(event.Choices[0].Delta.Content)
+					}
+				}
+				if result := testlib.TestGrammarStreamingContent(content.String(), qwen3ModelID); result.Err != nil {
+					return result.Err.Error()
+				}
+				return ""
 			},
 		},
 	}
@@ -949,7 +804,7 @@ func chatToolCallQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 			Input: model.D{
 				"model": qwen3ModelID,
 				"messages": model.DocumentArray(
-					model.TextMessage(model.RoleUser, "What is the weather in NYC?"),
+					model.TextMessage(model.RoleUser, "What is the weather in London, England?"),
 				),
 				"tools":        tools,
 				"max_tokens":   512,
@@ -986,7 +841,7 @@ func chatToolCallQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 					hasCreated().
 					hasValidChoice().
 					hasUsage(true).
-					hasToolCalls("get_weather").
+					hasToolCalls("get_weather", "location", "London").
 					result(t)
 			},
 		},
@@ -1025,7 +880,7 @@ func chatToolCallStreamQwen3(t *testing.T, tokens map[string]string) []apitest.T
 			Input: model.D{
 				"model": qwen3ModelID,
 				"messages": model.DocumentArray(
-					model.TextMessage(model.RoleUser, "What is the weather in NYC?"),
+					model.TextMessage(model.RoleUser, "What is the weather in London, England?"),
 				),
 				"tools":        tools,
 				"stream":       true,
@@ -1074,7 +929,7 @@ func chatToolCallStreamQwen3(t *testing.T, tokens map[string]string) []apitest.T
 					return result
 				}
 
-				return validateToolCallStream(events[:len(events)-1], "get_weather", "location")
+				return validateToolCallStream(events[:len(events)-1], "get_weather", "location", "London")
 			},
 		},
 	}

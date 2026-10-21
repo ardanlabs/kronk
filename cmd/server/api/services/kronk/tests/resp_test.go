@@ -201,7 +201,8 @@ func respStreamQwen3(t *testing.T, tokens map[string]string) []apitest.Table {
 					"include_usage": true,
 				},
 			},
-			GotResp: &kronk.ResponseStreamEvent{},
+			SSECmpFunc: validateRespStream,
+			GotResp:    &kronk.ResponseStreamEvent{},
 			ExpResp: &kronk.ResponseResponse{
 				Object:          "response",
 				Status:          "completed",

@@ -128,7 +128,7 @@ Follow `AGENTS.md` and the writing-Go guidance. For changed Go packages:
 1. Run `gofmt -s` on changed Go files.
 2. Run `go fix` on changed packages and review any edits it makes.
 3. Run scoped `go vet` and `staticcheck`.
-4. Set `RUN_IN_PARALLEL=yes` and absolute `GITHUB_WORKSPACE`, then run focused
+4. Set absolute `GITHUB_WORKSPACE`, then run focused
    tests for `sdk/malina/...` and affected `sdk/tools/malina/...` packages.
 5. Build direct dependents and every affected Malina example with an explicit
    output path when a package directory has the same name as the binary.

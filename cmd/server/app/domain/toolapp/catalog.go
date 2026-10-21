@@ -12,6 +12,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/hf"
 	kronkmodel "github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
@@ -82,7 +83,7 @@ func (a *app) showCatalog(ctx context.Context, r *http.Request) web.Encoder {
 
 	detail.ModelMetadata = metadata
 	detail.GGUFArch = metadata["general.architecture"]
-	detail.ModelType = models.ArchitectureClass(metadata)
+	detail.ModelType = modelprofile.Resolve(metadata).ParameterActivation()
 	detail.ParameterCount = models.ParameterCount(metadata)
 	detail.Parameters = models.ParametersLabel(metadata)
 	detail.Template = models.TemplateName(metadata)

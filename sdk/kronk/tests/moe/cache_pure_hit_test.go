@@ -49,38 +49,49 @@ func Test_CacheIMCMoEPureHitSnapshotSkip(t *testing.T) {
 		PtrNSeqMax:          new(1),
 		PtrIncrementalCache: new(true),
 		PtrCacheMinTokens:   new(1), // exercise IMC even on tiny prompts.
+		Speculation:         model.SpeculationDisabled,
 	}
 
 	testlib.WithModel(t, cfg, func(t *testing.T, krn *kronk.Kronk) {
+		testlib.TestModelProfile(t, krn, "MoE", "Attention-only", "gemma4")
 		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
 
 		skipsBefore := readIMCSnapshotSkippedTotal(t)
 
-		d := model.D{
-			"messages": []model.D{
-				{"role": "system", "content": "You are a helpful assistant."},
-				{"role": "user", "content": "Echo back the word: Red"},
-			},
-			"max_tokens": 256,
-		}
+		d := testlib.StateRequest("ALPHA", "DELTA", 101)
 
 		ch1, err := krn.ChatStreaming(ctx, d)
 		if err != nil {
 			t.Fatalf("turn 1: chat streaming: %v", err)
 		}
-		_, content1, err := testlib.DrainChat(ctx, ch1)
-		if err != nil || content1 == "" {
-			t.Fatalf("turn 1: err=%v content empty=%v", err, content1 == "")
+		resp1, content1, err := testlib.DrainStateChat(ctx, ch1)
+		if err != nil {
+			t.Fatalf("turn 1: %v", err)
+		}
+		if err := testlib.CheckStateReply(resp1, content1, "ALPHA"); err != nil {
+			t.Fatalf("turn 1: %v", err)
+		}
+		if cached := resp1.Usage.PromptTokensDetails.CachedTokens; cached != 0 {
+			t.Errorf("cold request: got %d cached tokens, want 0", cached)
 		}
 
 		ch2, err := krn.ChatStreaming(ctx, d)
 		if err != nil {
 			t.Fatalf("turn 2: chat streaming: %v", err)
 		}
-		_, content2, err := testlib.DrainChat(ctx, ch2)
-		if err != nil || content2 == "" {
-			t.Fatalf("turn 2 (pure hit): err=%v content empty=%v", err, content2 == "")
+		resp2, content2, err := testlib.DrainStateChat(ctx, ch2)
+		if err != nil {
+			t.Fatalf("turn 2: %v", err)
+		}
+		if err := testlib.CheckStateReply(resp2, content2, "ALPHA"); err != nil {
+			t.Fatalf("turn 2: %v", err)
+		}
+		if resp2.Usage.PromptTokensDetails.CachedTokens == 0 {
+			t.Error("pure hit did not report cached prompt tokens")
+		}
+		if content2 != content1 {
+			t.Errorf("pure hit: got %q, want cold response %q", content2, content1)
 		}
 
 		skipsAfter := readIMCSnapshotSkippedTotal(t)
