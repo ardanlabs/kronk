@@ -489,6 +489,27 @@ Server-side downloading is separately controlled by
 See [Chapter 8](https://www.kronkai.com/manual#chapter-8-model-server) for server flags, model pooling,
 runtime paths, and deployment operations.
 
+#### Run as a Linux Service (systemd)
+
+On Linux, instead of starting the server by hand, you can run it as a systemd
+user service that restarts after a crash. It runs as you, on your existing
+`~/.kronk`:
+
+```shell
+# Download the Kronk service file into your user services directory.
+curl -fsSL --create-dirs -o ~/.config/systemd/user/kronk.service \
+  https://raw.githubusercontent.com/ardanlabs/kronk/main/zarf/systemd/kronk.service
+
+# Make systemd read the new file.
+systemctl --user daemon-reload
+
+# Start Kronk now and at every login.
+systemctl --user enable --now kronk
+```
+
+See [Chapter 8](https://www.kronkai.com/manual#88-running-as-a-systemd-service)
+for managing, configuring, and removing the service.
+
 ### 2.7 Verify the Installation
 
 Check server liveness:

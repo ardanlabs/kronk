@@ -9,7 +9,8 @@
 - [8.5 Model Configuration Files](#85-model-configuration-files)
 - [8.6 Catalog Operations](#86-catalog-operations)
 - [8.7 Container Operations](#87-container-operations)
-- [8.8 Related Administration Guides](#88-related-administration-guides)
+- [8.8 Running as a systemd Service](#88-running-as-a-systemd-service)
+- [8.9 Related Administration Guides](#89-related-administration-guides)
 
 ---
 
@@ -577,7 +578,77 @@ The `kronk-net` network is shared with the
 and can remain after both stacks stop; remove it with
 `docker network rm kronk-net`.
 
-## 8.8 Related Administration Guides
+## 8.8 Running as a systemd Service
+
+On Linux, Kronk can run as a systemd user service that starts when you log in
+and restarts after a crash. It runs as you, on your existing `~/.kronk`, so
+models, libraries, and keys installed with the CLI work as they are. Install
+it with:
+
+```shell
+curl -fsSL --create-dirs -o ~/.config/systemd/user/kronk.service \
+  https://raw.githubusercontent.com/ardanlabs/kronk/main/zarf/systemd/kronk.service
+systemctl --user daemon-reload
+systemctl --user enable --now kronk
+```
+
+Stop any server started with `kronk server start --detach` first, since it
+uses the same ports. `kronk server stop` and `kronk server logs` work only
+with `--detach` servers; use `systemctl` and `journalctl` for the service.
+
+Manage it with:
+
+```shell
+systemctl --user status kronk
+systemctl --user restart kronk   # after upgrading the CLI or editing kronk.env
+journalctl --user -u kronk -f
+curl http://localhost:11435/v1/liveness
+```
+
+To remove it, keeping `~/.kronk`:
+
+```shell
+systemctl --user disable --now kronk
+rm ~/.config/systemd/user/kronk.service
+systemctl --user daemon-reload
+```
+
+### Finding the kronk Binary
+
+The service looks for `kronk` in `~/go/bin`, `~/.local/bin`, Linuxbrew
+(`/home/linuxbrew/.linuxbrew/bin` or `~/.linuxbrew/bin`), `/usr/local/bin`,
+and `/usr/bin`, in that order, and uses the first one it finds. It does not
+read your shell's `PATH`. If your `kronk` is elsewhere, such as a custom
+`GOBIN`, or `status=203/EXEC` appears in the log, set the full path with
+`systemctl --user edit kronk`:
+
+```ini
+[Service]
+ExecStart=
+ExecStart=/path/to/kronk server start
+```
+
+The search needs systemd 250 or later. On older versions, such as Ubuntu
+22.04, use the override above.
+
+### Configuration
+
+Every `kronk server start` flag has a `KRONK_*` environment variable (see
+§8.3). The service loads `~/.config/kronk/kronk.env` when it exists, one
+`NAME=value` per line:
+
+```shell
+# ~/.config/kronk/kronk.env
+KRONK_DOWNLOAD_ENABLED=true
+KRONK_AUTHORIZATION_MODE=management
+```
+
+Then run `systemctl --user restart kronk`.
+
+The service listens on `127.0.0.1:11435`. Configure authorization before
+setting `KRONK_WEB_API_HOST` to a public interface.
+
+## 8.9 Related Administration Guides
 
 Detailed administration is divided by responsibility:
 

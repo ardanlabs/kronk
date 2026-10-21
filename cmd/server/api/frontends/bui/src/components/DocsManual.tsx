@@ -387,6 +387,18 @@ kronk server stop`}</code></pre>
   --web-admin-enabled=false`}</code></pre>
           <p>Server-side downloading is separately controlled by <code>KRONK_DOWNLOAD_ENABLED</code> and defaults to <code>false</code>. Local CLI commands using <code>--local</code> are not affected by this setting.</p>
           <p>See <a href="https://www.kronkai.com/manual#chapter-8-model-server">Chapter 8</a> for server flags, model pooling, runtime paths, and deployment operations.</p>
+          <h4 id="run-as-a-linux-service-systemd">Run as a Linux Service (systemd)</h4>
+          <p>On Linux, instead of starting the server by hand, you can run it as a systemd user service that restarts after a crash. It runs as you, on your existing <code>~/.kronk</code>:</p>
+          <pre className="code-block"><code className="language-shell">{`# Download the Kronk service file into your user services directory.
+curl -fsSL --create-dirs -o ~/.config/systemd/user/kronk.service \\
+  https://raw.githubusercontent.com/ardanlabs/kronk/main/zarf/systemd/kronk.service
+
+# Make systemd read the new file.
+systemctl --user daemon-reload
+
+# Start Kronk now and at every login.
+systemctl --user enable --now kronk`}</code></pre>
+          <p>See <a href="https://www.kronkai.com/manual#88-running-as-a-systemd-service">Chapter 8</a> for managing, configuring, and removing the service.</p>
           <h3 id="27-verify-the-installation">2.7 Verify the Installation</h3>
           <p>Check server liveness:</p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/liveness`}</code></pre>
@@ -2310,7 +2322,36 @@ KRONK_IMAGE_VERSION=vX.Y.Z`}</code></pre>
             <li><code>latest</code>: run <code>docker compose pull</code>, then <code>docker compose up -d</code>.</li>
           </ul>
           <p>The <code>kronk-net</code> network is shared with the <a href="https://www.kronkai.com/manual#153-bundled-observability-stack">observability stack</a> and can remain after both stacks stop; remove it with <code>docker network rm kronk-net</code>.</p>
-          <h2 id="88-related-administration-guides">8.8 Related Administration Guides</h2>
+          <h2 id="88-running-as-a-systemd-service">8.8 Running as a systemd Service</h2>
+          <p>On Linux, Kronk can run as a systemd user service that starts when you log in and restarts after a crash. It runs as you, on your existing <code>~/.kronk</code>, so models, libraries, and keys installed with the CLI work as they are. Install it with:</p>
+          <pre className="code-block"><code className="language-shell">{`curl -fsSL --create-dirs -o ~/.config/systemd/user/kronk.service \\
+  https://raw.githubusercontent.com/ardanlabs/kronk/main/zarf/systemd/kronk.service
+systemctl --user daemon-reload
+systemctl --user enable --now kronk`}</code></pre>
+          <p>Stop any server started with <code>kronk server start --detach</code> first, since it uses the same ports. <code>kronk server stop</code> and <code>kronk server logs</code> work only with <code>--detach</code> servers; use <code>systemctl</code> and <code>journalctl</code> for the service.</p>
+          <p>Manage it with:</p>
+          <pre className="code-block"><code className="language-shell">{`systemctl --user status kronk
+systemctl --user restart kronk   # after upgrading the CLI or editing kronk.env
+journalctl --user -u kronk -f
+curl http://localhost:11435/v1/liveness`}</code></pre>
+          <p>To remove it, keeping <code>~/.kronk</code>:</p>
+          <pre className="code-block"><code className="language-shell">{`systemctl --user disable --now kronk
+rm ~/.config/systemd/user/kronk.service
+systemctl --user daemon-reload`}</code></pre>
+          <h3 id="finding-the-kronk-binary">Finding the kronk Binary</h3>
+          <p>The service looks for <code>kronk</code> in <code>~/go/bin</code>, <code>~/.local/bin</code>, Linuxbrew (<code>/home/linuxbrew/.linuxbrew/bin</code> or <code>~/.linuxbrew/bin</code>), <code>/usr/local/bin</code>, and <code>/usr/bin</code>, in that order, and uses the first one it finds. It does not read your shell's <code>PATH</code>. If your <code>kronk</code> is elsewhere, such as a custom <code>GOBIN</code>, or <code>status=203/EXEC</code> appears in the log, set the full path with <code>systemctl --user edit kronk</code>:</p>
+          <pre className="code-block"><code className="language-ini">{`[Service]
+ExecStart=
+ExecStart=/path/to/kronk server start`}</code></pre>
+          <p>The search needs systemd 250 or later. On older versions, such as Ubuntu 22.04, use the override above.</p>
+          <h3 id="configuration">Configuration</h3>
+          <p>Every <code>kronk server start</code> flag has a <code>KRONK_*</code> environment variable (see §8.3). The service loads <code>~/.config/kronk/kronk.env</code> when it exists, one <code>NAME=value</code> per line:</p>
+          <pre className="code-block"><code className="language-shell">{`# ~/.config/kronk/kronk.env
+KRONK_DOWNLOAD_ENABLED=true
+KRONK_AUTHORIZATION_MODE=management`}</code></pre>
+          <p>Then run <code>systemctl --user restart kronk</code>.</p>
+          <p>The service listens on <code>127.0.0.1:11435</code>. Configure authorization before setting <code>KRONK_WEB_API_HOST</code> to a public interface.</p>
+          <h2 id="89-related-administration-guides">8.9 Related Administration Guides</h2>
           <p>Detailed administration is divided by responsibility:</p>
           <ul>
             <li><a href="https://www.kronkai.com/manual#chapter-2-installation-quick-start">Chapter 2</a> — installation, libraries, image variants, and data paths</li>
@@ -4608,6 +4649,63 @@ lsof -nP -iTCP:9000 -sTCP:LISTEN`}</code></pre>
           <p>Detached mode stores <code>kronk.pid</code> and <code>kronk.log</code> under <code>KRONK_BASE_PATH</code>. If <code>kronk server stop</code> encounters a stale PID, verify that no Kronk process owns the API or debug port before removing only the stale PID file.</p>
           <p>BadgerDB also permits only one model-server process to use the rate-limit database. A lock error means another process owns <code>&lt;base&gt;/badger</code>; stop that process. Do not delete Badger's <code>LOCK</code> file while a server may be running.</p>
           <p>For permission errors, make the selected base path writable by the service user. The server enforces mode <code>0700</code> on <code>&lt;base&gt;/keys</code> and <code>0600</code> on private key files. Avoid recursively making credentials readable by other users.</p>
+          <p>When Kronk runs as the systemd service described in <a href="https://www.kronkai.com/manual#88-running-as-a-systemd-service">Chapter 8 §8.8</a>, read its logs with <code>journalctl --user -u kronk</code> and check these common failures:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Symptom</th>
+                <th>Cause</th>
+                <th>Fix</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>status=203/EXEC</code></td>
+                <td>The service cannot find <code>kronk</code>; it does not use your shell's <code>PATH</code></td>
+                <td>Set the full path as described in "Finding the kronk Binary" in <a href="https://www.kronkai.com/manual#88-running-as-a-systemd-service">§8.8</a></td>
+              </tr>
+              <tr>
+                <td><code>Unknown key name 'ExecSearchPath'</code></td>
+                <td>systemd older than 250, such as Ubuntu 22.04</td>
+                <td>Set the full path of <code>kronk</code> with <code>systemctl --user edit kronk</code></td>
+              </tr>
+              <tr>
+                <td><code>Start request repeated too quickly</code></td>
+                <td>Five failed starts within five minutes, such as a port in use or a failed library download</td>
+                <td>Fix the error in <code>journalctl --user -u kronk</code>, then <code>systemctl --user reset-failed kronk</code> and start again</td>
+              </tr>
+              <tr>
+                <td>Service uses the CPU over SSH, but the GPU from a desktop login</td>
+                <td>Your user is not in the groups that own the GPU devices (Debian and Ubuntu, AMD or Intel)</td>
+                <td><code>sudo usermod -aG render,video $USER</code>, then log out of all your sessions and back in</td>
+              </tr>
+              <tr>
+                <td>Service uses the CPU: the log shows <code>"processor":"cpu"</code></td>
+                <td>GPU detection runs <code>nvidia-smi</code>, <code>rocminfo</code>, or <code>vulkaninfo</code>, and the tool for your GPU is missing</td>
+                <td>Install it (for Vulkan, <code>vulkan-tools</code>) or set <code>KRONK_PROCESSOR</code> in <code>~/.config/kronk/kronk.env</code>, then restart the service</td>
+              </tr>
+              <tr>
+                <td><code>Address already in use</code> on <code>11435</code></td>
+                <td>A manual <code>kronk server start</code> is running</td>
+                <td>Stop it with <code>kronk server stop</code></td>
+              </tr>
+              <tr>
+                <td>Service still runs the old version after an upgrade</td>
+                <td>The service was not restarted</td>
+                <td><code>systemctl --user restart kronk</code></td>
+              </tr>
+              <tr>
+                <td><code>kronk server stop</code> fails with <code>read-file: open …/kronk.pid: no such file or directory</code></td>
+                <td>The service has no PID file</td>
+                <td>Use <code>systemctl --user stop kronk</code></td>
+              </tr>
+              <tr>
+                <td>Stop takes long, then the process is killed</td>
+                <td><code>KRONK_WEB_SHUTDOWN_TIMEOUT</code> exceeds the unit's <code>TimeoutStopSec</code> (<code>150s</code>)</td>
+                <td>With <code>systemctl --user edit kronk</code>, set <code>TimeoutStopSec</code> to at least twice the shutdown timeout plus 30 seconds</td>
+              </tr>
+            </tbody>
+          </table>
           <p>Whisper-specific failures are listed in <a href="https://www.kronkai.com/manual#189-troubleshooting">Chapter 18 §18.9</a>.</p>
           <h3 id="1710-reporting-a-problem">17.10 Reporting a Problem</h3>
           <p>Include:</p>
@@ -5984,6 +6082,12 @@ fmt.Println(info.Description)`}</code></pre>
                 <td>Go module files and setup hook</td>
                 <td>evaluate/build the relevant Nix entry point; regenerate gomod2nix data when dependencies change</td>
               </tr>
+              <tr>
+                <td>Linux systemd service</td>
+                <td><code>zarf/systemd/kronk.service</code></td>
+                <td><code>kronk server start</code> flags and env vars, shutdown timeout, Chapter 8 §8.8</td>
+                <td><code>systemd-analyze --user verify</code>; install as in §8.8, then start/stop on a GPU host</td>
+              </tr>
             </tbody>
           </table>
           <p>Tests close to an owner are usually more diagnostic than a repository-wide command. If a change crosses rows, verify each changed contract rather than choosing only the largest command.</p>
@@ -6267,7 +6371,7 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
           <pre className="code-block"><code className="language-shell">{`npm run build`}</code></pre>
           <p>Run it from <code>cmd/server/api/frontends/bui/</code>. For docs or BUI work that affects the production bundle, also build the server to verify the bundle embedded by <code>cmd/server/api/services/kronk/main.go</code> exists and compiles. A successful Vite build alone does not prove the Go binary contains current assets.</p>
           <p>Always report what actually ran, including skipped integration prerequisites. Never claim CI parity from a narrower local test.</p>
-          <h3 id="2010-ci-release-containers-and-nix">20.10 CI, Release, Containers, and Nix</h3>
+          <h3 id="2010-ci-release-containers-nix-and-systemd">20.10 CI, Release, Containers, Nix, and systemd</h3>
           <h4 id="20101-linux-ci">20.10.1 Linux CI</h4>
           <p><code>.github/workflows/linux.yml</code> is the authoritative Linux pipeline. It currently has four parallel jobs:</p>
           <ul>
@@ -6293,6 +6397,13 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
           <p>For a container change, build the affected target and architecture where practical, exercise entrypoint startup/configuration, and verify expected native libraries. Do not infer publication or signature behavior from a local build; review the workflow.</p>
           <h4 id="20104-nix">20.10.4 Nix</h4>
           <p>The flake at <code>zarf/nix/flake.nix</code> defines how developers/users enter or build the project; generated Go dependency data lives beside it. Entering a development shell runs <code>gomod2nix import</code> from its shell hook and may dirty that generated material. When Go module dependencies change, update the Nix dependency material with the repository's configured command and evaluate/build the relevant entry point. Keep Nix fixes in Nix owners rather than adding environment special cases to Go code.</p>
+          <h4 id="20105-linux-systemd-service">20.10.5 Linux systemd Service</h4>
+          <p><code>zarf/systemd/kronk.service</code> is a systemd user unit that runs Kronk as the user, on <code>~/.kronk</code>. Users install it as described in <a href="https://www.kronkai.com/manual#88-running-as-a-systemd-service">Chapter 8 §8.8</a>.</p>
+          <ul>
+            <li>It runs <code>kronk server start</code> in the foreground, without <code>--detach</code>.</li>
+            <li>It has no sandboxing options. In a user unit they block the setuid <code>nvidia-modprobe</code> that CUDA needs.</li>
+            <li><code>ExecSearchPath=</code> (systemd 250+) lists the usual <code>kronk</code> install locations and also sets the server's <code>PATH</code>.</li>
+          </ul>
           <h3 id="2011-change-and-release-checklists">20.11 Change and Release Checklists</h3>
           <h4 id="20111-focused-change-checklist">20.11.1 Focused change checklist</h4>
           <ul>
@@ -6475,7 +6586,14 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
               <a href="#87-container-operations" className={`doc-index-header ${activeSection === '87-container-operations' ? 'active' : ''}`}>8.7 Container Operations</a>
             </div>
             <div className="doc-index-section">
-              <a href="#88-related-administration-guides" className={`doc-index-header ${activeSection === '88-related-administration-guides' ? 'active' : ''}`}>8.8 Related Administration Guides</a>
+              <a href="#88-running-as-a-systemd-service" className={`doc-index-header ${activeSection === '88-running-as-a-systemd-service' ? 'active' : ''}`}>8.8 Running as a systemd Service</a>
+              <ul>
+                <li><a href="#finding-the-kronk-binary" className={activeSection === 'finding-the-kronk-binary' ? 'active' : ''}>Finding the kronk Binary</a></li>
+                <li><a href="#configuration" className={activeSection === 'configuration' ? 'active' : ''}>Configuration</a></li>
+              </ul>
+            </div>
+            <div className="doc-index-section">
+              <a href="#89-related-administration-guides" className={`doc-index-header ${activeSection === '89-related-administration-guides' ? 'active' : ''}`}>8.9 Related Administration Guides</a>
             </div>
             <div className="doc-index-section">
               <a href="#chapter-9-api-endpoints" className={`doc-index-header ${activeSection === 'chapter-9-api-endpoints' ? 'active' : ''}`}>Chapter 9: API Endpoints</a>
@@ -6713,7 +6831,7 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
                 <li><a href="#207-server-bui-and-generated-documentation" className={activeSection === '207-server-bui-and-generated-documentation' ? 'active' : ''}>20.7 Server, BUI, and Generated Documentation</a></li>
                 <li><a href="#208-bucky-implementation-map" className={activeSection === '208-bucky-implementation-map' ? 'active' : ''}>20.8 Bucky Implementation Map</a></li>
                 <li><a href="#209-verification-for-llm-agents" className={activeSection === '209-verification-for-llm-agents' ? 'active' : ''}>20.9 Verification for LLM Agents</a></li>
-                <li><a href="#2010-ci-release-containers-and-nix" className={activeSection === '2010-ci-release-containers-and-nix' ? 'active' : ''}>20.10 CI, Release, Containers, and Nix</a></li>
+                <li><a href="#2010-ci-release-containers-nix-and-systemd" className={activeSection === '2010-ci-release-containers-nix-and-systemd' ? 'active' : ''}>20.10 CI, Release, Containers, Nix, and systemd</a></li>
                 <li><a href="#2011-change-and-release-checklists" className={activeSection === '2011-change-and-release-checklists' ? 'active' : ''}>20.11 Change and Release Checklists</a></li>
               </ul>
             </div>

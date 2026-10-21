@@ -1,0 +1,42 @@
+# Kronk model server systemd user unit.
+#
+# Runs Kronk as your own user on your ~/.kronk, so models, libraries, and keys
+# installed with the CLI are shared with the service. Install it with (see
+# Chapter 8 of the manual):
+#
+#   install -D -m 0644 zarf/systemd/kronk.service ~/.config/systemd/user/kronk.service
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now kronk
+#
+# Override systemd settings with `systemctl --user edit kronk`. Override Kronk
+# settings in ~/.config/kronk/kronk.env.
+
+[Unit]
+Description=Kronk model server
+Documentation=https://www.kronkai.com/manual
+
+# Stop restarting after 5 failed starts in 5 minutes, so a permanent failure
+# (port in use, library download failing) ends in a failed state.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=exec
+
+# The user service manager's PATH has only /usr/local/bin and /usr/bin, so
+# search the usual kronk install locations: go install, ~/.local/bin, and
+# Linuxbrew. This also becomes the server's PATH. For a kronk elsewhere,
+# set its full path in ExecStart= with `systemctl --user edit kronk`.
+ExecSearchPath=%h/go/bin:%h/.local/bin:/home/linuxbrew/.linuxbrew/bin:%h/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=kronk server start
+EnvironmentFile=-%h/.config/kronk/kronk.env
+
+# On SIGTERM Kronk drains HTTP requests and then unloads models, each bounded
+# by KRONK_WEB_SHUTDOWN_TIMEOUT (default 1m). Keep TimeoutStopSec at least
+# 2 x KRONK_WEB_SHUTDOWN_TIMEOUT + 30s.
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=150s
+
+[Install]
+WantedBy=default.target

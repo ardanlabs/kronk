@@ -430,6 +430,23 @@ For permission errors, make the selected base path writable by the service
 user. The server enforces mode `0700` on `<base>/keys` and `0600` on private
 key files. Avoid recursively making credentials readable by other users.
 
+When Kronk runs as the systemd service described in
+[Chapter 8 §8.8](https://www.kronkai.com/manual#88-running-as-a-systemd-service),
+read its logs with `journalctl --user -u kronk` and check these common
+failures:
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| `status=203/EXEC` | The service cannot find `kronk`; it does not use your shell's `PATH` | Set the full path as described in "Finding the kronk Binary" in [§8.8](https://www.kronkai.com/manual#88-running-as-a-systemd-service) |
+| `Unknown key name 'ExecSearchPath'` | systemd older than 250, such as Ubuntu 22.04 | Set the full path of `kronk` with `systemctl --user edit kronk` |
+| `Start request repeated too quickly` | Five failed starts within five minutes, such as a port in use or a failed library download | Fix the error in `journalctl --user -u kronk`, then `systemctl --user reset-failed kronk` and start again |
+| Service uses the CPU over SSH, but the GPU from a desktop login | Your user is not in the groups that own the GPU devices (Debian and Ubuntu, AMD or Intel) | `sudo usermod -aG render,video $USER`, then log out of all your sessions and back in |
+| Service uses the CPU: the log shows `"processor":"cpu"` | GPU detection runs `nvidia-smi`, `rocminfo`, or `vulkaninfo`, and the tool for your GPU is missing | Install it (for Vulkan, `vulkan-tools`) or set `KRONK_PROCESSOR` in `~/.config/kronk/kronk.env`, then restart the service |
+| `Address already in use` on `11435` | A manual `kronk server start` is running | Stop it with `kronk server stop` |
+| Service still runs the old version after an upgrade | The service was not restarted | `systemctl --user restart kronk` |
+| `kronk server stop` fails with `read-file: open …/kronk.pid: no such file or directory` | The service has no PID file | Use `systemctl --user stop kronk` |
+| Stop takes long, then the process is killed | `KRONK_WEB_SHUTDOWN_TIMEOUT` exceeds the unit's `TimeoutStopSec` (`150s`) | With `systemctl --user edit kronk`, set `TimeoutStopSec` to at least twice the shutdown timeout plus 30 seconds |
+
 Whisper-specific failures are listed in
 [Chapter 18 §18.9](https://www.kronkai.com/manual#189-troubleshooting).
 

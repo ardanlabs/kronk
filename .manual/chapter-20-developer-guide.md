@@ -11,7 +11,7 @@
 - [20.7 Server, BUI, and Generated Documentation](#207-server-bui-and-generated-documentation)
 - [20.8 Bucky Implementation Map](#208-bucky-implementation-map)
 - [20.9 Verification for LLM Agents](#209-verification-for-llm-agents)
-- [20.10 CI, Release, Containers, and Nix](#2010-ci-release-containers-and-nix)
+- [20.10 CI, Release, Containers, Nix, and systemd](#2010-ci-release-containers-nix-and-systemd)
 - [20.11 Change and Release Checklists](#2011-change-and-release-checklists)
 
 ---
@@ -88,6 +88,7 @@ change. Go commands require the environment described in [§20.9](#209-verificat
 | Release | `.github/workflows/release.yaml`, `.goreleaser.yaml`, `.release/`, version scripts | `sdk/kronk` version constant and tag convention | version scripts and GoReleaser snapshot/check when appropriate |
 | Container image | `.github/workflows/docker.yml`, `zarf/docker/` | entrypoint, native-library combinations, release tags | build the affected target/variant; workflow is authority for matrix and signing |
 | Nix development/package data | `zarf/nix/flake.nix` | Go module files and setup hook | evaluate/build the relevant Nix entry point; regenerate gomod2nix data when dependencies change |
+| Linux systemd service | `zarf/systemd/kronk.service` | `kronk server start` flags and env vars, shutdown timeout, Chapter 8 §8.8 | `systemd-analyze --user verify`; install as in §8.8, then start/stop on a GPU host |
 
 Tests close to an owner are usually more diagnostic than a repository-wide command.
 If a change crosses rows, verify each changed contract rather than choosing only the
@@ -910,7 +911,7 @@ alone does not prove the Go binary contains current assets.
 Always report what actually ran, including skipped integration prerequisites. Never
 claim CI parity from a narrower local test.
 
-### 20.10 CI, Release, Containers, and Nix
+### 20.10 CI, Release, Containers, Nix, and systemd
 
 #### 20.10.1 Linux CI
 
@@ -970,6 +971,18 @@ runs `gomod2nix import` from its shell hook and may dirty that generated materia
 Go module dependencies change, update the Nix dependency material with the repository's
 configured command and evaluate/build the relevant entry point. Keep Nix fixes in Nix
 owners rather than adding environment special cases to Go code.
+
+#### 20.10.5 Linux systemd Service
+
+`zarf/systemd/kronk.service` is a systemd user unit that runs Kronk as the
+user, on `~/.kronk`. Users install it as described in
+[Chapter 8 §8.8](https://www.kronkai.com/manual#88-running-as-a-systemd-service).
+
+- It runs `kronk server start` in the foreground, without `--detach`.
+- It has no sandboxing options. In a user unit they block the setuid
+  `nvidia-modprobe` that CUDA needs.
+- `ExecSearchPath=` (systemd 250+) lists the usual `kronk` install locations
+  and also sets the server's `PATH`.
 
 ### 20.11 Change and Release Checklists
 
