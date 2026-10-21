@@ -23,6 +23,7 @@ const modelID = "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK"
 type options struct {
 	host, out, serverLog string
 	timeout              time.Duration
+	repetitions          int
 }
 
 type report struct {
@@ -31,40 +32,75 @@ type report struct {
 	Model                string         `json:"model"`
 	Host                 string         `json:"host"`
 	HarnessRevision      string         `json:"harness_revision"`
+	ServerRevision       string         `json:"server_revision"`
+	ServerCommitTime     string         `json:"server_commit_time"`
+	ServerModified       *bool          `json:"server_modified"`
 	Metadata             map[string]any `json:"server_metadata"`
 	SystemTokens         int            `json:"system_tokens"`
 	SystemSHA256         string         `json:"system_sha256"`
 	Slot                 int            `json:"slot"`
 	MTPBackend           string         `json:"mtp_backend"`
-	FirstRequest         *result        `json:"first_request,omitempty"`
+	WarmupRequest        *result        `json:"warmup_request,omitempty"`
 	WorkloadSeconds      float64        `json:"workload_seconds"`
 	CancelReleaseSeconds float64        `json:"cancel_release_seconds"`
 	Results              []result       `json:"results"`
 	Findings             []string       `json:"findings"`
+	RepetitionsRequested int            `json:"repetitions_requested,omitempty"`
+	Repetitions          []report       `json:"repetitions,omitempty"`
 	evidenceValidated    bool
 }
 
+// Field order is the human reading order in summary.json: environment, run,
+// then repetitions and their requests.
+type runSummary struct {
+	Machine              map[string]any                    `json:"machine"`
+	ServerVersion        string                            `json:"server_version"`
+	ServerRevision       string                            `json:"server_revision"`
+	ServerCommitTime     string                            `json:"server_commit_time"`
+	ServerModified       *bool                             `json:"server_modified"`
+	ServerBuild          any                               `json:"server_build"`
+	InstalledLibrary     any                               `json:"installed_library"`
+	MTPBackend           string                            `json:"mtp_backend"`
+	HarnessRevision      string                            `json:"harness_revision"`
+	Model                string                            `json:"model"`
+	Cell                 string                            `json:"cell"`
+	Workload             string                            `json:"workload"`
+	Status               string                            `json:"status"`
+	Findings             []string                          `json:"findings"`
+	RepetitionsRequested int                               `json:"repetitions_requested"`
+	RepetitionsExecuted  int                               `json:"repetitions_executed"`
+	WarmupRequest        map[string]any                    `json:"warmup_request,omitempty"`
+	Measurements         map[string]map[string]measurement `json:"measurements,omitempty"`
+	Repetitions          []repetitionSummary               `json:"repetitions"`
+}
+
 // Keep the decision/comparison surface separate from the diagnostic record.
-func (r report) summary() map[string]any {
-	phases := make([]map[string]any, 0, len(r.Results))
-	for _, res := range r.Results {
-		phases = append(phases, r.phaseSummary(res))
-	}
+func (r report) summary() runSummary {
 	liveness, _ := r.Metadata["/v1/liveness"].(map[string]any)
 	libraries, _ := r.Metadata["/v1/kronk/libs"].(map[string]any)
-	summary := map[string]any{
-		"status": r.Status, "findings": append([]string{}, r.Findings...),
-		"model": r.Model, "cell": "MoE / one slot / IMC on / MTP on / images off",
-		"workload": r.Workload, "system_tokens": r.SystemTokens, "system_sha256": r.SystemSHA256,
-		"harness_revision": r.HarnessRevision, "server_build": liveness["build"],
-		"installed_library": libraries["current"], "mtp_backend": r.MTPBackend,
-		"workload_seconds":       r.WorkloadSeconds,
-		"cancel_release_seconds": r.CancelReleaseSeconds, "results": phases,
+	hardware, _ := r.Metadata["/v1/devices"].(map[string]any)
+	summary := runSummary{
+		Machine: map[string]any{
+			"host": liveness["host"], "os": liveness["os"],
+			"system_ram_bytes": hardware["system_ram_bytes"],
+			"gpu_total_bytes":  hardware["gpu_total_bytes"], "unified_memory": hardware["unified_memory"],
+		},
+		ServerVersion: r.serverVersion(), ServerRevision: r.ServerRevision,
+		ServerCommitTime: r.ServerCommitTime, ServerModified: r.ServerModified,
+		ServerBuild: liveness["build"], InstalledLibrary: libraries["current"],
+		MTPBackend: r.MTPBackend, HarnessRevision: r.HarnessRevision,
+		Model: r.Model, Cell: "MoE / one slot / IMC on / MTP on / images off",
+		Workload: r.Workload,
+		Status:   r.Status, Findings: append([]string{}, r.Findings...),
+		RepetitionsRequested: r.RepetitionsRequested, RepetitionsExecuted: len(r.Repetitions),
+		Measurements: r.measurements(), Repetitions: []repetitionSummary{},
 	}
-	if r.FirstRequest != nil {
-		first := r.phaseSummary(*r.FirstRequest)
-		first["initial_state"] = "model-unloaded"
-		summary["first_request"] = first
+	if r.WarmupRequest != nil {
+		summary.WarmupRequest = r.Repetitions[0].phaseSummary(*r.WarmupRequest)
+		summary.WarmupRequest["initial_state"] = "model-unloaded"
+	}
+	for i, repetition := range r.Repetitions {
+		summary.Repetitions = append(summary.Repetitions, repetition.repetitionSummary(i+1))
 	}
 	return summary
 }
@@ -108,43 +144,63 @@ func (r report) phaseSummary(res result) map[string]any {
 
 // Probe verdicts summarize their complete phase checks, not a diagnosed cause.
 func (r report) logSummary() string {
-	phases := make(map[string]result)
-	if r.FirstRequest != nil {
-		phases[r.FirstRequest.Phase] = *r.FirstRequest
-	}
-	for _, res := range r.Results {
-		phases[res.Phase] = res
-	}
 	verdict := func(names ...string) string {
 		status := "PASS"
-		for _, name := range names {
-			res, ok := phases[name]
-			if !ok {
-				status = "UNVERIFIED"
-				continue
+		if len(r.Repetitions) < r.RepetitionsRequested {
+			status = "UNVERIFIED"
+		}
+		for i, repetition := range r.Repetitions {
+			phases := make(map[string]result)
+			if repetition.WarmupRequest != nil {
+				phases["warmup"] = *repetition.WarmupRequest
 			}
-			switch r.phaseSummary(res)["status"] {
-			case "FAIL":
-				return "FAIL"
-			case "UNVERIFIED":
-				status = "UNVERIFIED"
+			for _, res := range repetition.Results {
+				phases[res.Phase] = res
+			}
+			for _, name := range names {
+				if name == "warmup" && i > 0 {
+					continue // Startup is measured and validated once per invocation.
+				}
+				res, ok := phases[name]
+				if !ok {
+					status = "UNVERIFIED"
+					continue
+				}
+				switch repetition.phaseSummary(res)["status"] {
+				case "FAIL":
+					return "FAIL"
+				case "UNVERIFIED":
+					status = "UNVERIFIED"
+				}
 			}
 		}
 		return status
 	}
-	first, workload := "n/a", "n/a"
-	if r.FirstRequest != nil {
-		first = fmt.Sprintf("%.3fs", r.FirstRequest.Elapsed)
+	warmup, workload := "n/a", "n/a"
+	if r.WarmupRequest != nil {
+		warmup = fmt.Sprintf("%.3fs", r.WarmupRequest.Elapsed)
 	}
-	if r.WorkloadSeconds > 0 {
-		workload = fmt.Sprintf("%.3fs", r.WorkloadSeconds)
+	if measurements := r.measurements(); measurements != nil {
+		m := measurements["workload"]["elapsed_seconds"]
+		sd := "n/a"
+		if m.SampleStdDev != nil {
+			sd = fmt.Sprintf("%.3fs", *m.SampleStdDev)
+		}
+		workload = fmt.Sprintf("%.3fs (SD %s)", m.Median, sd)
 	}
-	cache := verdict("load", "cold", "replay", "append", "fresh-session", "cancel", "recovery")
+	cache := verdict("warmup", "cold", "replay", "append", "fresh-session", "cancel", "recovery")
 	isolation := verdict("fresh-session", "recovery")
 	recovery := verdict("cancel", "recovery")
+	version := r.serverVersion()
+	if version != "unknown" {
+		version = version[:7]
+		if *r.ServerModified {
+			version += "+develop"
+		}
+	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Quick-check: %s\nIMC/MTP: %s | Serial isolation: %s | Cancel/recovery: %s\n", r.Status, cache, isolation, recovery)
-	fmt.Fprintf(&b, "Time: first request %s | warmed workload %s\n", first, workload)
+	fmt.Fprintf(&b, "Quick-check: %s\nTested commit: %s from %s\nIMC/MTP: %s | Serial isolation: %s | Cancel/recovery: %s\n", r.Status, version, r.ServerCommitTime, cache, isolation, recovery)
+	fmt.Fprintf(&b, "Time: warm-up request %s | warmed workload median %s | repetitions %d/%d\n", warmup, workload, len(r.Repetitions), r.RepetitionsRequested)
 	if r.Status != "PASS" {
 		fmt.Fprintln(&b, "Details: summary.json (fix setup/evidence failures before deeper inference checks)")
 		if cache == "FAIL" {
@@ -154,7 +210,6 @@ func (r report) logSummary() string {
 			fmt.Fprintln(&b, "Isolation/recovery -> make test-load-hybrid")
 		}
 	}
-	fmt.Fprint(&b, "\n--- Phase progress ---\n")
 	return b.String()
 }
 
@@ -176,28 +231,46 @@ func main() {
 	}
 	var o options
 	flag.StringVar(&o.host, "host", "http://localhost:11435", "running Kronk server URL")
-	flag.StringVar(&o.out, "out", ".tools/quick-check/output", "parent for unique per-run artifact directories")
+	flag.StringVar(&o.out, "out", ".tools/quick-check/output", "artifact parent; retains committed baseline and latest candidate")
 	flag.StringVar(&o.serverLog, "server-log", filepath.Join(home, ".kronk/kronk.log"), "required local JSON server log")
 	flag.DurationVar(&o.timeout, "timeout", 5*time.Minute, "per-request timeout; not a performance threshold")
+	flag.IntVar(&o.repetitions, "repetitions", 3, "complete workload repetitions; stop on first failure")
 	flag.Parse()
 	if err := run(o); err != nil {
-		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
 func run(o options) (runErr error) {
+	reported := false
+	defer func() {
+		// Setup/storage failures still need a visible explanation when no
+		// finalized summary could fully report the failure.
+		if runErr != nil && !reported {
+			fmt.Fprintln(os.Stderr, runErr)
+		}
+	}()
 	if o.timeout <= 0 {
 		return fmt.Errorf("timeout must be positive")
+	}
+	if o.repetitions <= 0 {
+		return fmt.Errorf("repetitions must be positive")
 	}
 	if err := os.MkdirAll(o.out, 0755); err != nil {
 		return err
 	}
+	// Serialize retention and inference within this output parent.
+	lock := filepath.Join(o.out, ".quick-check.lock")
+	f, err := os.OpenFile(lock, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("acquire output lock (remove stale lock after a crashed run): %w", err)
+	}
+	f.Close()
+	defer os.Remove(lock)
 	dir, err := os.MkdirTemp(o.out, time.Now().UTC().Format("20060102T150405Z")+"-")
 	if err != nil {
 		return err
 	}
-	fmt.Println("Quick-check artifacts:", dir)
 	events, err := os.Create(filepath.Join(dir, "events.ndjson"))
 	if err != nil {
 		return err
@@ -210,9 +283,9 @@ func run(o options) (runErr error) {
 	defer toolLog.Close()
 	var progress strings.Builder
 	log := func(format string, args ...any) {
-		fmt.Fprintf(io.MultiWriter(os.Stdout, toolLog, &progress), format+"\n", args...)
+		fmt.Fprintf(io.MultiWriter(toolLog, &progress), format+"\n", args...)
 	}
-	r := report{Status: "FAIL", Workload: workloadVersion, Model: modelID, Host: o.host, Metadata: make(map[string]any)}
+	r := report{Status: "FAIL", Workload: workloadVersion, Model: modelID, Host: o.host, ServerCommitTime: "unknown", RepetitionsRequested: o.repetitions}
 	if revision, err := exec.Command("git", "rev-parse", "HEAD").Output(); err == nil {
 		r.HarnessRevision = strings.TrimSpace(string(revision))
 	}
@@ -240,18 +313,63 @@ func run(o options) (runErr error) {
 			r.Findings = append(r.Findings, "write summary: "+err.Error())
 		}
 		runErr = errors.Join(runErr, evidenceErr, err)
-		log("%s: %d findings; warmed workload %.3fs (first request and calibration excluded)", r.Status, len(r.Findings), r.WorkloadSeconds)
+		log("%s: %d findings; repetitions executed %d/%d", r.Status, len(r.Findings), len(r.Repetitions), r.RepetitionsRequested)
 		// Live progress remains append-only; prepend the verdict once finalized.
-		if _, err := toolLog.Seek(0, io.SeekStart); err != nil {
-			runErr = errors.Join(runErr, err)
-		} else {
-			_, err := io.WriteString(toolLog, r.logSummary()+progress.String())
-			runErr = errors.Join(runErr, err)
+		var logErr error
+		if _, logErr = toolLog.Seek(0, io.SeekStart); logErr == nil {
+			_, logErr = io.WriteString(toolLog, r.logSummary()+"\n--- Phase progress ---\n"+progress.String())
 		}
+		writeErr := errors.Join(evidenceErr, err, logErr, events.Close(), toolLog.Close())
+		runErr = errors.Join(runErr, writeErr)
+		if writeErr == nil {
+			retentionErr := retainRuns(o.out, dir)
+			runErr = errors.Join(runErr, retentionErr)
+			reported = retentionErr == nil
+		} else {
+			fmt.Fprintln(os.Stderr, "Artifacts could not be finalized; previous runs retained.")
+		}
+		fmt.Fprint(os.Stdout, r.logSummary())
 		if len(r.Findings) > 0 {
 			runErr = errors.Join(runErr, fmt.Errorf("quick-check has findings; inspect %s", dir))
 		}
 	}()
+	defer func() {
+		if r.WarmupRequest != nil {
+			runErr = errors.Join(runErr, c.unload())
+		}
+	}()
+	for i := 1; i <= o.repetitions; i++ {
+		log("repetition=%d/%d", i, o.repetitions)
+		repetition := report{Status: "FAIL", Workload: workloadVersion, Model: modelID, Host: o.host, ServerCommitTime: "unknown", HarnessRevision: r.HarnessRevision, Metadata: make(map[string]any), MTPBackend: r.MTPBackend}
+		c.traces = make(map[string]string)
+		c.repetition = i
+		err := execute(o, c, &repetition, log)
+		if err != nil {
+			repetition.Findings = append(repetition.Findings, err.Error())
+		}
+		if len(repetition.Findings) == 0 {
+			repetition.Status = "PASS"
+		}
+		if i == 1 {
+			// Invocation metadata comes from its first repetition. Full per-run
+			// metadata remains in the diagnostic report, not duplicated in summary.
+			r.Metadata = repetition.Metadata
+			r.ServerRevision, r.ServerCommitTime, r.ServerModified = repetition.ServerRevision, repetition.ServerCommitTime, repetition.ServerModified
+			r.SystemTokens, r.SystemSHA256, r.MTPBackend = repetition.SystemTokens, repetition.SystemSHA256, repetition.MTPBackend
+			r.WarmupRequest = repetition.WarmupRequest
+		}
+		r.Repetitions = append(r.Repetitions, repetition)
+		for _, finding := range repetition.Findings {
+			r.Findings = append(r.Findings, fmt.Sprintf("repetition %d: %s", i, finding))
+		}
+		if repetition.Status != "PASS" {
+			return fmt.Errorf("repetition %d failed; %d remaining repetitions unrun", i, o.repetitions-i)
+		}
+	}
+	return nil
+}
+
+func execute(o options, c *client, r *report, log func(string, ...any)) (runErr error) {
 	// Keep a descriptor and identity so rotation cannot silently lose evidence.
 	serverLog, err := os.Open(o.serverLog)
 	if err != nil {
@@ -265,22 +383,34 @@ func run(o options) (runErr error) {
 	if _, err := serverLog.Seek(0, io.SeekEnd); err != nil {
 		return err
 	}
-	for _, path := range []string{"/v1/liveness", "/v1/kronk/libs"} {
+	for _, path := range []string{"/v1/liveness", "/v1/kronk/libs", "/v1/devices"} {
 		var metadata any
 		if err := c.json("GET", path, nil, &metadata); err != nil {
 			return fmt.Errorf("server provenance %s: %w", path, err)
 		}
 		r.Metadata[path] = metadata
+		if path == "/v1/liveness" {
+			liveness, _ := metadata.(map[string]any)
+			r.ServerRevision, _ = liveness["vcs_revision"].(string)
+			if stamp, ok := liveness["vcs_time"].(string); ok && stamp != "" {
+				r.ServerCommitTime = stamp
+			}
+			if modified, ok := liveness["vcs_modified"].(bool); ok {
+				r.ServerModified = &modified
+			}
+			log("Tested commit: %s from %s", r.serverVersion(), r.ServerCommitTime)
+		}
 	}
-	// Only this dedicated alias is unloaded. Never disturb unrelated models.
-	if err := c.unload(); err != nil {
-		return err
-	}
-	defer func() { runErr = errors.Join(runErr, c.unload()) }()
-	first, err := c.chat("load", []message{{Role: "user", Content: "Reply OK."}}, 8, false)
-	r.FirstRequest = &first
-	if err != nil {
-		return fmt.Errorf("load fixture: %w", err)
+	if c.repetition == 1 {
+		// Reset only at invocation startup; weights stay resident across repetitions.
+		if err := c.unload(); err != nil {
+			return err
+		}
+		warmup, err := c.chat("warmup", []message{{Role: "user", Content: "Reply OK."}}, 8, false)
+		r.WarmupRequest = &warmup
+		if err != nil {
+			return fmt.Errorf("warm-up request: %w", err)
+		}
 	}
 	var detail struct {
 		Metadata map[string]string `json:"metadata"`
@@ -336,7 +466,7 @@ func run(o options) (runErr error) {
 		_, err = perform("replay", a, []string{"ORCHID-47", "Maren", "Northport"}, nil, false)
 	}
 	if err == nil {
-		continued := append(append([]message{}, a...), message{Role: "assistant", Content: cold.Content}, message{Role: "user", Content: "Change the destination to Eastmere; keep the identifier and owner unchanged. Review the updated handover in about 160 words, including its current facts. Do not repeat the previous destination."})
+		continued := append(append([]message{}, a...), message{Role: "assistant", Content: cold.Content}, message{Role: "user", Content: "Change the destination to Eastmere; keep the identifier and owner unchanged. Review the updated handover in about 80 words, including its current facts. Do not repeat the previous destination."})
 		_, err = perform("append", continued, []string{"ORCHID-47", "Maren", "Eastmere"}, []string{"Northport"}, false)
 	}
 	var fresh result
@@ -364,7 +494,7 @@ func run(o options) (runErr error) {
 	}
 	r.WorkloadSeconds = time.Since(start).Seconds()
 	// Collect even after a workload failure; incomplete evidence never yields PASS.
-	logErr := collectEvidence(serverLog, info, o.serverLog, c, &r)
+	logErr := collectEvidence(serverLog, info, o.serverLog, c, r)
 	return errors.Join(err, logErr)
 }
 
@@ -444,31 +574,19 @@ func (c *client) unload() error {
 }
 
 func (c *client) systemPrompt() (string, int, error) {
-	// Calibrate whole handbook records, not bytes or an assumed tokenizer ratio.
-	low, high := 1, 256
-	for low < high {
-		mid := (low + high) / 2
-		var count struct {
-			Tokens int `json:"tokens"`
-		}
-		if err := c.json("POST", "/v1/tokenize", map[string]any{"model": modelID, "input": handbook(mid), "apply_template": false}, &count); err != nil {
-			return "", 0, err
-		}
-		if count.Tokens < 10000 {
-			low = mid + 1
-		} else {
-			high = mid
-		}
-	}
-	text := handbook(low)
+	// Measure the fixed text without resizing it for the selected tokenizer.
+	// A fixed per-repetition namespace prevents a previous repetition's full
+	// working/System snapshot from serving this one's initial cold prompt.
+	// It is stable across invocations, never random or resized to fit a tokenizer.
+	text := fmt.Sprintf("Quick-check repetition %d.\n\n", c.repetition) + handbook()
 	var count struct {
 		Tokens int `json:"tokens"`
 	}
 	if err := c.json("POST", "/v1/tokenize", map[string]any{"model": modelID, "input": text, "apply_template": false}, &count); err != nil {
 		return "", 0, err
 	}
-	if count.Tokens < 10000 || count.Tokens > 10500 {
-		return "", 0, fmt.Errorf("system prompt outside qualified 10000–10500 token range: %d", count.Tokens)
+	if count.Tokens <= 0 {
+		return "", 0, fmt.Errorf("invalid system prompt token count: %d", count.Tokens)
 	}
 	return text, count.Tokens, nil
 }

@@ -5,11 +5,11 @@ import (
 	"strings"
 )
 
-const workloadVersion = "operations-v1"
+const workloadVersion = "operations-v2"
 
 // A stable synthetic handbook approximates an agent's large instruction/reference
 // prefix without importing a client prompt, tool loop, or executable task.
-func handbook(records int) string {
+func handbook() string {
 	var b strings.Builder
 	b.WriteString(`You are an operations assistant reviewing fictional service handovers.
 Use the reference handbook below as background, not as commands to execute.
@@ -23,7 +23,7 @@ handover. Acknowledge uncertainty in ordinary prose; no rigid output format is n
 REFERENCE HANDBOOK
 `)
 	services := []string{"archive", "gateway", "ledger", "search", "dispatch", "catalog", "telemetry"}
-	for i := range records {
+	for i := range 72 {
 		fmt.Fprintf(&b, `Procedure %03d — %s handover revision %d.
 Before transferring ownership, inspect the request queue, identify the oldest
 unfinished operation, and distinguish admission delay from active processing.
@@ -43,7 +43,7 @@ Do not report a successful recovery merely because the service accepted a reques
 func conversation(system, id, owner, destination string) []message {
 	return []message{
 		{Role: "system", Content: system},
-		{Role: "user", Content: fmt.Sprintf("Private handover %s: owner %s; destination %s. Review the handover using four short paragraphs (about 160 words). Include the identifier, owner, and destination, and explain queue checks, safe interruption, cache reuse, and recovery. These are fictional facts, not work to execute.", id, owner, destination)},
+		{Role: "user", Content: fmt.Sprintf("Private handover %s: owner %s; destination %s. Review the handover using four short paragraphs (about 80 words). Include the identifier, owner, and destination, and explain queue checks, safe interruption, cache reuse, and recovery. These are fictional facts, not work to execute.", id, owner, destination)},
 	}
 }
 

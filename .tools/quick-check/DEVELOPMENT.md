@@ -25,14 +25,20 @@ The initial 30-second reference is not an enforced budget.
 | OpenCode versus direct workload | Do not use OpenCode. Its agent loop, retries, tool execution, and client changes introduce variability outside Kronk and complicate attribution. Approximate a realistic agent-sized context without benchmarking an agent. |
 | Generated programs versus prose | Use fictional handover conversations, not compilation/execution of generated code. Validate lightweight fact inclusion/exclusion and infrastructure evidence; do not grade the model generally. |
 | Fixed-format/deterministic answers | Do not require rigid formatting or identical replay output. Temperature zero and a seed reduce variation but do not establish determinism. Content findings need investigation, not automatic attribution to the engine. |
-| Large system prefix | Calibrate a versioned synthetic handbook to 10,000–10,500 untemplated tokens using the selected tokenizer. A large prompt alone is insufficient: deliberately exercise exact replay, append, independent-session System reuse, active cancellation, and recovery. |
+| Large system prefix | Use a versioned synthetic handbook with a fixed 72 records, preserving the text qualified at 10,133 untemplated tokens. Tokenize once to record actual size, not to resize it. A large prompt alone is insufficient: deliberately exercise exact replay, append, independent-session System reuse, active cancellation, and recovery. |
 | Server versus direct SDK | Current prototype uses the server: it also exercises HTTP/SSE, pool acquisition, and transport cancellation and correlates local JSON logs by trace. Direct SDK remains a possible future alternative, not a second implemented runner. |
 | Code ownership | Standalone implementation under `.tools/quick-check`; no code reuse from reliability. Model configurations are shared at `.tools/model_config_tools.yaml`. |
 | Fixtures | Use Qwen3.6 MoE Q2_K_XL for the first cell so it can run on this machine. Reserve Qwen3.8-27B Dense for expansion. Deeper reliability Q8 fixtures remain unchanged; Q2/Q8 timings are not version-only comparisons. |
 | Warm-up | Keep a small unrelated first request before the 10K workload. Measure and preserve it separately rather than hiding startup cost or mixing startup into every phase. The measured cold prompt must still attest zero cached tokens. |
 | Reporting | Keep decision/comparison metrics in `summary.json`; full answers, metadata, counters, and execution evidence remain in `events.ndjson`. Compact reporting must not weaken assertions. |
-| Quick inspection | The initial seven-line header was too verbose for the user's goal. Use three lines: overall result, IMC/MTP + serial isolation + cancel/recovery verdicts, and first-request/workload time. On failures only, add deeper-tool directions (IMC/MTP: hybrid and embedded-MTP tools; isolation/recovery: hybrid tool). Keep detailed metrics in summary.json. Labels summarize complete probes, not root causes; missing phases/evidence are UNVERIFIED. Setup/evidence problems must be resolved before deeper inference checks. |
+| Quick inspection | The initial seven-line header was too verbose for the user's goal. Use four lines: overall result, tested commit, IMC/MTP + serial isolation + cancel/recovery verdicts, and first-request/workload time. On failures only, add deeper-tool directions (IMC/MTP: hybrid and embedded-MTP tools; isolation/recovery: hybrid tool). Keep detailed metrics in summary.json. Labels summarize complete probes, not root causes; missing phases/evidence are UNVERIFIED. Setup/evidence problems must be resolved before deeper inference checks. |
 | AMP analysis | Optional future contextual triage, not a required oracle for PASS and not implemented. Machine-checkable infrastructure evidence is the first gate. |
+
+Terminal output is limited to the finalized log header, with no phase progress,
+startup artifact-path announcement, or duplicate explanation of reported findings.
+Keep live progress in `tool.log`; preserve nonzero failure exits. Setup/storage
+errors that cannot be fully reported by the finalized summary remain visible on
+stderr. The quick-check make target suppresses its recipe echo too.
 
 ### Why this workload instead of OpenCode
 
@@ -69,6 +75,103 @@ OpenCode remains useful for a separate end-to-end coding-agent integration
 benchmark. The tradeoff here is less agent realism in exchange for controlled,
 diagnosable infrastructure checks. The synthetic 10K-token handbook approximates
 context size, not OpenCode's complete prompt semantics or tool-use distribution.
+
+### Why handovers rather than Hello World in several languages
+
+The advantage is the controlled request sequence and observable state markers,
+not an inherently better inference workload. Direct Hello World requests could
+exercise the same Kronk paths if structured with the same replay, append,
+independent-session, cancellation, and recovery transitions. This is a separate
+choice from avoiding OpenCode's agent loop.
+
+Handovers make lightweight content checks easier:
+
+- Distinct private identifiers, owners, and destinations help expose foreign
+  session facts; similar Hello World programs naturally share content.
+- Updating only the destination checks that the latest turn is reflected while
+  the identifier and owner remain available.
+- A marker introduced only in the cancelled request should not appear in the
+  fresh recovery conversation.
+
+If generated-program content were ignored, usage and server evidence could still
+check stream completion, cache reuse, MTP activity, cancellation, cleanup, and
+timing. What would be lost is the lightweight content signal for stale or foreign
+state. Neither subject guarantees infrastructure coverage: requests and execution
+evidence establish the exercised paths, and content findings alone do not prove
+a Kronk defect.
+
+### Fixed prompt size instead of runtime calibration
+
+The initial prototype searched for enough handbook records to reach 10,000–10,500
+tokens. Replace that search with the 72 records used in the qualified runs: fewer
+tokenization requests and no tokenizer-dependent resizing between versions. Keep
+one untemplated tokenization call and record the actual count for timing analysis;
+do not enforce the old size range. The existing prompt hash remains diagnostic
+metadata, not a cross-version equality requirement. Appended histories still use
+actual assistant replies, so per-request token counts can vary.
+
+Repository precedents support both choices: the SDK pure-cache-hit test uses fixed
+messages, and the Hybrid reliability scenario uses a fixed record count. MTP and
+long-context reliability scenarios calibrate because token volume is an explicit
+scenario parameter. Quick-check does not need that sizing machinery.
+
+### Server identity and bounded output retention
+
+Record the running server binary's full VCS revision and modified flag through
+`/v1/liveness`. Display `<hash>`, `<hash>+develop`, or `unknown` in the existing
+four-line log header and preserve structured provenance in the summary. Do not
+infer server identity from the harness checkout or equate the generic server
+`build: develop` label with a dirty source tree. The tools server launcher now runs
+the Go package with explicit VCS stamping rather than a single Go source file.
+An old/unstamped server remains unknown until rebuilt and restarted.
+
+The second header line, directly below the overall verdict, reads
+`Tested commit: <seven-character-hash>[+develop] from <commit-timestamp>`.
+Keep full hashes in JSON reports and retention decisions; only the header is shortened.
+Use the binary's embedded `vcs.time` (exposed as `vcs_time` by liveness), not the
+build or invocation time. Preserve it as `server_commit_time` in the reports;
+missing timestamps display as `unknown` without changing retention eligibility.
+
+After writing and closing all artifacts, retain the current candidate plus the
+newest prior committed run; without one, retain the newest prior candidate. A
+development or unknown candidate cannot evict a committed baseline. A new committed
+candidate is retained alongside the old committed baseline and becomes eligible
+as the next invocation's baseline. FAIL results participate too: retention is not
+an assertion that a baseline passed or that two runs are performance-comparable.
+Automatic comparisons and thresholds remain future work.
+
+Only recognized timestamped run directories with the three regular artifact files
+and a valid quick-check summary are eligible for pruning, including legacy outputs.
+Unknown legacy provenance is never promoted from `harness_revision`. Preserve
+unrecognized/incomplete/symlinked entries. On artifact write/close failure, preserve
+all prior results; interrupted or failed-to-write runs can exceed the two-result
+bound. Serialize invocations sharing the output parent with an exclusive lock;
+after a crash, its stale lock requires manual removal once no run is active.
+
+### Machine provenance for timing comparisons
+
+Write summary metadata before request blocks: machine, server/library provenance,
+run identity and totals, first request, then the workload results in execution
+order. Use an ordered struct for the top-level JSON instead of an alphabetized map;
+preserve existing key names rather than adding numeric prefixes. Request ordering
+is represented by the existing results array, not object-key sorting. This is a
+reading-order change, not a change in measurements or retention semantics.
+
+Keep the `machine` block minimal: server hostname and OS family from liveness;
+RAM bytes, aggregate GPU-memory bytes, and unified-memory flag from `/v1/devices`.
+The initial inventory, CPU/runtime fields, and individual device descriptions were
+too verbose for this summary. Full device data stays in diagnostic events. On
+unified-memory machines GPU-reported capacity is not additional dedicated VRAM;
+do not sum it with RAM. Reuse the lightweight endpoint instead of the broader
+`/v1/diagnose` subprocess and backend probes. Collect before the workload clock,
+never substitute the local harness machine's identity for a remote server's.
+
+These fields expose a changed environment; they do not make different machines
+comparable. Inventory is not actual placement evidence, OS family is not an OS
+release, and driver versions, contention, power/thermal conditions, and client
+networking remain uncontrolled. Older liveness fields are null and unsupported
+memory queries may report zero, never assumed hardware equivalence. Automatic
+comparison compatibility checks remain future work.
 
 ## Findings from actual runs — 2026-10-20
 
@@ -144,9 +247,9 @@ different machines or label their timing difference as pure preprocessing.
 | `server_timings.generation_seconds` | `batch-engine/slot-finished` `elapsed`: first sampled token to start of finish processing, before subsequent KV cleanup/final response work. Available from logs even on active cancellation. |
 | `server_timings.slot_execution_seconds` | Stage 4 terminal `elapsed`: prefill clock through slot finishing/resource cleanup. Includes prefill and generation: do not add those intervals again. Does not include outer admission-release/HTTP completion. |
 | `cancel_release_seconds` | Client cancellation returns to observed scheduler-idle confirmation, including HTTP/poll overhead. Not an exact engine cleanup duration. |
-| `workload_seconds` | Six-phase workload wall time including idle waits; excludes first request, calibration, evidence extraction, and final unload. |
+| `workload_seconds` | Six-phase workload wall time including idle waits; excludes first request, prompt tokenization, evidence extraction, and final unload. |
 
-`first_request` uses the same request metrics but remains separate from `results`.
+`warmup_request` uses the same request metrics but remains separate from `results`.
 It begins after the dedicated alias is unloaded and uses `Reply OK.` with an
 eight-token cap. It is **model-unloaded**, not guaranteed cold-process, cold GPU,
 or cold-filesystem-cache startup. It replaces the misleading `load_seconds`:
@@ -171,15 +274,92 @@ Historical example from the 18:22Z run (warm model):
 This establishes that host preparation still runs on an exact cache replay.
 It does not establish a persistent performance difference between cache modes.
 
+## Repetitions and cache state — 2026-10-21
+
+Start with **three complete workload repetitions**, configurable with
+`-repetitions`. Repeat the full six-phase sequence, not each phase consecutively.
+All repetitions must pass; stop on the first failure and explicitly report the
+requested/executed counts and remaining unrun repetitions. Do not average away
+an intermittent correctness failure. Keep all repetitions within one invocation's
+artifacts, preserving the committed-baseline/latest-candidate retention policy.
+
+**Warning: unloading between repetitions does not reset filesystem, GPU, or
+process caches, so repeated first requests are not equally cold.** Keep
+first-request measurements separate from workload measurements; do not call
+model-unloaded latency a pure loading time or a guaranteed cold start.
+
+Ramon rejected unnecessary unload/reload overhead. The implementation therefore
+resets the alias only at invocation startup, measures `Reply OK.` once, keeps
+weights resident through all repetitions, and unloads once at the end.
+
+An unchanged workload would otherwise reuse a previous repetition's working or
+System snapshot. Inspection of `caching_imc_tokens.go` shows that working reuse
+requires a complete token-prefix match and System reuse requires equal system
+tokens. `operations-v2` prepends a fixed `Quick-check repetition N.` marker to
+the unchanged 72-record handbook. Each index has the same prompt across versions;
+markers differ between repetitions without a random nonce or size calibration.
+Measure the actual token count and retain prompt identity for each repetition.
+Keep the existing zero-reuse build/publication checks: a marker is not evidence
+that the intended path actually executed. No public full-cache-reset API exists;
+the private `clearCaches` only resets working entries, not the shared System tier.
+Avoid adding a production API solely to support this harness.
+
+Report per-phase elapsed/first-content latency and completed workload replies'
+server output rate as sample count, median, minimum, maximum, and sample standard
+deviation (`sample_stddev`, n−1 denominator); also summarize workload total and
+cancellation-release wait. The compact terminal/log header includes workload SD.
+With one repetition, SD is undefined: JSON null and header `SD n/a`, not zero.
+The one-time warm-up-request time measures the actual `Reply OK.` client call through
+its completed response, including model acquisition/loading, processing, inference,
+and delivery. It is not time before issuing that request; preceding unload/setup
+is excluded. Use **warm-up request** consistently: `warmup_request` in summary and
+diagnostic JSON, `warmup` for the event phase, and "warm-up request" in the header.
+It warms the model for subsequent work but starts with the alias unloaded.
+Preserve individual server stage durations,
+token counts, findings, and detailed evidence per repetition. Publish
+aggregates only for a complete passing invocation; startup remains one separate
+sample. These are descriptive measurements, not confidence intervals or automatic
+regression thresholds. `operations-v1` timings are not strictly comparable to
+`operations-v2`, which adds repetition markers and keeps weights resident.
+
+The first resident-model trial with the original 160-word review target passed
+repetition one (38.430 seconds), then stopped at repetition two's first reply:
+zero cache reuse was correctly attested, but generation reached the existing
+384-token limit (`finish_reason: length`). Repetition three was unrun and no
+performance aggregate was published. This finding does not establish an engine
+regression. Reduce the requested reviews to about 80 words rather than increasing
+the cap or accepting truncated replies. The input remains approximately 10K
+tokens, and the same cache/state/isolation/cancellation/MTP assertions apply.
+This also avoids spending extra generation time without exercising another path.
+
+Validation of the revised workload passed all three repetitions on the running
+Q2 fixture: 43.227, 41.145, and 39.747 seconds (median 41.145); the one-time first
+request took 2.887 seconds. Events contained one loading request, one MTP backend
+load, and 19 total chat requests. Each repetition measured 10,140 untemplated
+system tokens, attested zero reuse on its cold phase, and passed all six phases.
+Completed workload replies still varied from 221 to 321 tokens: requesting fewer
+words does not guarantee shorter output or establish a speedup. The run verifies
+resident-model repetition, not cross-version performance stability. Focused
+race-enabled harness tests, package vet, go fix/gofmt, and Staticcheck passed.
+
+**Mandatory review, not an optional follow-up:** once we have results from
+different commit versions **and** other matrix cells, revisit this cache-state
+warning using those results. Review whether three repetitions are sufficient,
+whether repetition order or startup effects bias timings, and which comparisons
+need a different measurement protocol. Do not assume this initial strategy is
+permanently sufficient or establish merge-gate thresholds before that review.
+
 ## Roadmap and open decisions
 
 - Implemented: first-cell workload, per-request infrastructure evidence,
   compact summary plus diagnostics, separately retained first request, normalized
-  lifecycle metrics, and focused harness regression checks.
+  lifecycle metrics, three resident-model repetitions with per-phase median/range
+  reporting, and focused harness regression checks.
 - Next: qualify variability/repetition strategy and comparison thresholds on
   controlled runs before using timing as an automated merge gate. Compare each
   phase separately, with matching prompts, quantization, config, native backend,
   hardware and machine load; preserve token counts alongside durations/rates.
+  The cross-version/other-cell review above is required once those data exist.
 - Establish trustworthy actual server/native-build provenance. Harness HEAD,
   liveness `develop`, and the library endpoint's installed version do not attest
   the exact running binary or loaded library bytes.

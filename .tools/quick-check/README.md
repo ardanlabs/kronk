@@ -24,21 +24,39 @@ make test-quick-check
 make test-quick-check QUICK_CHECK_ARGS='-host http://localhost:11435 -server-log /path/to/kronk.log'
 ```
 
+The default is **three complete repetitions**, not three consecutive copies of
+each phase. Override with `QUICK_CHECK_ARGS='-repetitions N'`. The alias is unloaded
+at startup, the small warm-up request is measured once, and the model stays resident
+for all repetitions. Each repetition executes all six workload phases and validates
+its own correlated evidence. The alias is unloaded once at the end.
+The first failure stops the invocation; requested/executed counts and findings
+identify remaining unrun repetitions. All requested repetitions must pass for an
+overall PASS. All repetitions share one output directory, so retention still
+keeps two invocations.
+
 `KRONK_TOKEN` supplies authentication for inference and administrative endpoints.
 The server is managed separately; the probe never downloads models or starts it.
 Use a dedicated test server: the probe unloads **only its QUICK-CHECK alias** before
-and after the run, but its workload can still contend with other loaded models.
+and after the invocation, but its workload can still contend with other loaded models.
 The local JSON server log is required, including when HTTP connects remotely.
 Restart after changing `.tools/model_config_tools.yaml`.
 
 ## Workload and assertions
 
-The versioned synthetic operations handbook is calibrated through the selected
-model's tokenizer to 10,000–10,500 **untemplated system-text tokens**. This is not
-an OpenCode prompt; actual request usage also includes the template and messages.
-Calibration and a tiny loading request are excluded from workload elapsed time.
+The versioned synthetic operations handbook has a fixed 72 records (10,133
+untemplated tokens before repetition markers were added). Workload `operations-v2`
+prepends `Quick-check repetition N.` to the same handbook. The marker is fixed for
+each repetition index across invocations and versions, not random. Different system
+prefixes prevent cross-repetition working/System snapshot hits without reloading
+weights; logs must still attest a zero-reuse cold build in every repetition.
+One tokenization request per repetition records the resulting size without resizing
+it or enforcing a token-size range. This is not an OpenCode prompt; actual request
+usage also includes the template and messages. Prompt tokenization and the tiny
+loading request are excluded from workload elapsed time.
 The initial uncached 10K prefill is included. Temperature is zero, seed 42,
-thinking disabled, and each measured reply has a 384-token maximum. No 30-second
+thinking disabled, and reviews request about 80 words with a 384-token maximum.
+There is no exact word-count check; completed replies must still pass the existing
+usage, MTP, and lightweight fact checks. No 30-second
 performance limit is imposed; `-timeout` defaults to five minutes per request.
 
 Six serial phases exercise:
@@ -76,7 +94,38 @@ WARN events are retained for investigation without automatically failing the run
 ## Results and limitations
 
 Each invocation creates a unique directory beneath `.tools/quick-check/output`
-(`-out` overrides the parent), preserving previous runs:
+(`-out` overrides the parent). After artifacts are successfully written and
+closed, retain the new candidate and the newest prior committed run. If no prior
+committed run exists, retain the newest prior candidate instead. Older recognized
+run directories are deleted, including historical outputs from before this policy.
+This keeps at most two finalized runs; a running or failed-to-write invocation can
+temporarily add another directory. Failed checks count as candidates too.
+
+The second line of `tool.log`, directly below `Quick-check: PASS/FAIL`, identifies
+the **running server binary** using a seven-character commit hash, with `+develop`
+when built with uncommitted changes, or `unknown` when provenance is unavailable:
+`Tested commit: <short-hash>[+develop] from <commit-timestamp>`.
+The timestamp is the commit time in UTC, not build/run time; unavailable timestamps
+display as `unknown`. `summary.json` records `server_version`, `server_revision`,
+`server_commit_time`, and `server_modified`. These come from Go VCS build metadata
+and retain the full hash; shortening is only for the displayed header. Metadata is
+exposed by `/v1/liveness`, not the tool checkout's `harness_revision` or the server's
+generic `build: develop` label. `make server-for-tools` enables VCS stamping; restart
+the server after rebuilding to expose these fields. Older servers and binaries
+built without VCS metadata are unknown, never committed baselines.
+
+Development/unknown runs cannot evict the newest committed result. When a new
+committed candidate completes, the previous committed result remains alongside it;
+the next invocation can use that new committed result as its baseline. This is a
+storage policy, not automatic performance comparison or a requirement that the
+baseline passed. Save any long-lived reference outside the output parent.
+
+Unrecognized, incomplete, and symlinked directories are left untouched. Invocations
+sharing an output parent are serialized with `.quick-check.lock`; after a crash,
+confirm no run is active before removing a stale lock. Artifact write/close failures
+preserve all previous results rather than triggering retention.
+
+Each retained run contains:
 
 - `summary.json`: overall and per-phase status/findings, matrix cell, model,
   workload identity and prompt hash, available build identifiers, elapsed and
@@ -84,26 +133,75 @@ Each invocation creates a unique directory beneath `.tools/quick-check/output`
   activity. A phase is `UNVERIFIED` if evidence validation did not run; a failed
   assertion is `FAIL`. Run-level failures remain in the top-level findings.
   Cancelled streams omit final usage/output rate because no final usage arrives.
+  Top-level fields are written in reading order: machine/server/library metadata,
+  run identity, requested/executed repetition counts, the one-time `warmup_request`,
+  aggregate `measurements`, then ordered `repetitions`. Each repetition holds its
+  status/findings, measured system-token count and prompt hash, workload/cancellation
+  times, and `results`.
+  Each results array follows execution order: cold, replay, append, fresh-session,
+  cancel, recovery. Request field names are unchanged; consumers of the previous
+  single-run schema must now read them inside `repetitions[]`.
+  Complete passing invocations report sample count, median, minimum, maximum,
+  and sample standard deviation (`sample_stddev`, using the n−1 denominator)
+  for each phase's elapsed/first-content time and completed workload replies'
+  server output rate, plus workload total and cancellation-release wait. Startup
+  has one sample, kept separate and never included in these aggregates. Raw server
+  stage durations and token counts remain per repetition. Failed/partial invocations
+  omit aggregates, but preserve their individual measurements and findings.
+  With `-repetitions 1`, sample standard deviation is undefined: JSON records
+  `null` and the header displays `SD n/a`, not a misleading zero.
 - `events.ndjson`: full requests, client stream events, correlated server logs,
   and a final `source: "report"` record holding full model/configuration metadata,
   assembled answers, trace IDs, diagnostic timestamps, execution evidence, and
-  all counters. To extract the detailed report: `jq 'select(.source == "report")
+  all counters per repetition. Request/client/server records include a `repetition`
+  index. To extract the detailed report: `jq 'select(.source == "report")
   | .report' events.ndjson`. Detailed evidence is still collected and evaluated;
   compacting the summary does not weaken any assertion.
 - `tool.log`: live phase progress, with a brief verdict block prepended when the
-  run finishes: three lines for overall result, probe verdicts, and first-request/
-  workload time. Failures add deeper-tool commands: IMC/MTP → `test-load-hybrid`
+  run finishes: four lines for overall result, tested commit, probe verdicts, and warm-up-request/
+  workload median times, workload sample SD, and executed/requested repetition count. Failures add
+  deeper-tool commands: IMC/MTP → `test-load-hybrid`
   and `test-load-mtp-embedded`; isolation/recovery → `test-load-hybrid`.
   Inspect `summary.json` first to distinguish setup/evidence failures from
   inference findings. These are triage suggestions, not automatic executions or
   root-cause diagnoses. Missing/unvalidated phases are `UNVERIFIED`, never PASS;
   unavailable timings are `n/a`. Detailed metrics remain in `summary.json`.
 
-`first_request` records the model-unloaded `Reply OK.` request separately from
-the six warmed `results`, replacing the ambiguous `load_seconds` field. Its
-total and first-content times include acquisition/loading and inference; neither
+The terminal stays silent during the workload and prints only the finalized
+`tool.log` header, including its failure-only investigation directions. Phase
+progress remains in `tool.log`, not the terminal. Setup/storage errors that cannot
+be fully represented by a finalized report still print their explanation to stderr.
+Failures continue to return a nonzero exit status.
+
+`machine` contains only `host`, `os`, `system_ram_bytes`, `gpu_total_bytes`, and
+`unified_memory`. GPU memory is the aggregate capacity reported by the backend;
+on unified-memory hardware it is not separate dedicated VRAM and must not be added
+to RAM. Data comes from server liveness and the existing `/v1/devices` endpoint,
+not the machine running quick-check. Full device inventory and volatile free-memory
+values remain in diagnostic events. Collection is outside workload timing and does
+not run `/v1/diagnose` or a benchmark.
+
+This is device inventory, not proof of the model's actual placement, driver/OS
+release equality, idle machine state, or comparable client networking. Missing
+fields from older servers remain null; a reported zero memory size can mean the
+platform does not support that query. Rebuild/restart to expose the new liveness
+fields. Hardware metadata does not normalize timing or automatically gate comparisons.
+
+`warmup_request` records the model-unloaded `Reply OK.` request separately from
+the six warmed `results`, replacing the ambiguous `load_seconds` field. The
+displayed label is **warm-up request**: it warms the model for the workload,
+not a request that starts with an already-warm model. Its
+elapsed time runs from starting that client chat call to its completed response,
+not time before issuing the request. Preceding unload/setup is excluded.
+Its total and first-content times include acquisition/loading and inference; neither
 is pure model-load time. Unloading does not guarantee a cold server process or
-cold filesystem/GPU caches. Historical output directories are not rewritten.
+cold filesystem/GPU caches. Unloading between repetitions would not make first
+requests equally cold, so the probe avoids that overhead and keeps only one
+model-unloaded warm-up-request measurement. This warning and the initial
+three-repetition choice **must be reviewed** once results from different commits
+and other matrix cells are available; see
+[the review requirement](DEVELOPMENT.md#repetitions-and-cache-state--2026-10-21).
+Historical output directories are not rewritten.
 
 Every request exposes numeric seconds in `server_timings`: `admission_seconds`,
 `prepare_seconds`, `queue_wait_seconds`, `slot_prefill_ttft_seconds`,
