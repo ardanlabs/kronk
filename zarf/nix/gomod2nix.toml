@@ -101,8 +101,8 @@ schema = 3
     version = "v1.51.4"
     hash = "sha256-bzM4jVJJe7MdTloT+Kjom6i9sTKrMvhAnmKlxy6sCu8="
   [mod."github.com/aws/smithy-go"]
-    version = "v1.28.5"
-    hash = "sha256-QUDyqSobFrr3ZCmHPFY50eXkUlcnMXGQA/DCt8jFJrA="
+    version = "v1.28.6"
+    hash = "sha256-jLErTxkIMnqtlMKiMBePuEb4HG1cK4Xxs39GP6V692A="
   [mod."github.com/beorn7/perks"]
     version = "v1.0.1"
     hash = "sha256-h75GUqfwJKngCJQVE5Ao5wnO3cfKD9lSIteoLp/3xJ4="
@@ -179,8 +179,8 @@ schema = 3
     version = "v0.3.23"
     hash = "sha256-xK//FqCyKVq7SOhzRequjXG7OC0MlwIV0lHmWMwLTZY="
   [mod."github.com/googleapis/gax-go/v2"]
-    version = "v2.26.2"
-    hash = "sha256-LP5j4BMt132nmi2fhRh0JBR7pTmsyo4Y+ZaCZGPswkc="
+    version = "v2.27.0"
+    hash = "sha256-QeAIji8DHk227kAw/L0mgkTCXzTy+b7SXht1Ba3Vkl4="
   [mod."github.com/gorilla/websocket"]
     version = "v1.5.3"
     hash = "sha256-vTIGEFMEi+30ZdO6ffMNJ/kId6pZs5bbyqov8xe9BM0="
@@ -395,8 +395,8 @@ schema = 3
     version = "v0.16.0"
     hash = "sha256-OvekWcaTHMs5n3Img4EmYaORRgSmybBS+tObSnPqftY="
   [mod."google.golang.org/api"]
-    version = "v0.306.0"
-    hash = "sha256-XGn1Yo2HcuvHBCkR6szUo91uLRiET0qAx4J/9ZmYNyc="
+    version = "v0.307.0"
+    hash = "sha256-c3rNBGkoAXS0pbz574eyjg40QybLwQnPEde+lZGwDEk="
   [mod."google.golang.org/genproto"]
     version = "v0.0.0-20261019180522-ce908d29299b"
     hash = "sha256-bmwmNngXZ9gHFZ7pJG+/6vq8KqZTQ+milQlC+o255yU="

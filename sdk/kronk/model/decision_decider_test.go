@@ -11,6 +11,70 @@ import (
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
+func TestDecisionLabelMetadataControlsOptionMapping(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		labels []string
+		err    error
+		winner string
+	}{
+		{name: "model labels preserve order and leading spaces", labels: []string{" B", " A"}, winner: "second"},
+		{name: "no metadata retains alphabet", winner: "first"},
+		{name: "older library retains alphabet", err: ErrModelDecisionLabelUnavailable, winner: "first"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			encodeLabel := func(label string) []llama.Token {
+				return map[string][]llama.Token{"A": {10}, "B": {11}, " A": {12}, " B": {13}}[label]
+			}
+			tokens, labels, err := decisionLabelTokens(func(index uint32) (string, error) {
+				if tc.err != nil {
+					return "", tc.err
+				}
+				if int(index) >= len(tc.labels) {
+					return "", nil
+				}
+				return tc.labels[index], nil
+			}, encodeLabel)
+			if err != nil {
+				t.Fatal(err)
+			}
+			m := Model{modelInfo: ModelInfo{ID: "test-labels", decisionProtocol: DecisionProtocolPplxDecider}}
+			engine := decisionEngine{contextWindow: 128, maxTokens: 128, maxSequences: 1, maxOutputs: 128, nVocab: 32}
+			engine.scheduler = newDecisionScheduler(&engine, 1)
+			engine.scheduler.evaluate = func(entries []decisionScheduledEntry) ([][][]float32, bool, error) {
+				out := make([][][]float32, len(entries))
+				for i, entry := range entries {
+					scores := make([]float32, len(entry.work.readouts[0].candidates))
+					for j, token := range entry.work.readouts[0].candidates {
+						if token == 10 || token == 12 {
+							scores[j] = 3
+						}
+					}
+					out[i] = [][]float32{scores}
+				}
+				return out, false, nil
+			}
+			engine.scheduler.start()
+			t.Cleanup(engine.scheduler.stop)
+			m.decision = &engine
+			tmpl, err := jinja.Compile(`{% for o in options %}{{ o.label }}:{{ o.key }};{% endfor %}`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			m.protocol = &deciderProtocol{model: &m, template: systemOneTemplate{tmpl: tmpl}, labels: labels, labelTokens: tokens, encode: func(string, bool) []llama.Token { return []llama.Token{1, 2} }}
+			resp, err := m.Decision(context.Background(), DecisionRequest{State: "state", Questions: []DecisionQuestion{
+				DecisionQuestionChoice("route", "Pick an option", DecisionQuestionOpt("first", nil), DecisionQuestionOpt("second", nil)),
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if answer := resp.Answers["route"]; answer.Choice != tc.winner || answer.Probabilities[tc.winner] != .9526 {
+				t.Fatalf("Decision: got %+v, want %s with probability .9526", answer, tc.winner)
+			}
+		})
+	}
+}
+
 func TestDeciderDecisionContracts(t *testing.T) {
 	for _, protocol := range []DecisionProtocol{DecisionProtocolPplxDecider, DecisionProtocolLfm2D1, DecisionProtocolVllmD3, DecisionProtocolVllmDecision2} {
 		t.Run(protocol.String(), func(t *testing.T) {
