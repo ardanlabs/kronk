@@ -16,7 +16,7 @@
 #
 #   KRONK_IMAGE_VERSION     latest | vX.Y.Z                    (default: latest)
 #   KRONK_BIND_ADDR         host address the ports bind to      (default: 127.0.0.1)
-#   KRONK_DOWNLOAD_ENABLED  allow BUI model downloads           (default: true)
+#   KRONK_DOWNLOAD_ENABLED  share models/libs with peer servers (default: false)
 #
 # All state (models, config, catalog, keys, libraries) lives in the single
 # `kronk-data` volume on /kronk. Do not split it into several volumes — see
@@ -35,7 +35,7 @@ services:
     container_name: kronk
     restart: unless-stopped
     environment:
-      - KRONK_DOWNLOAD_ENABLED=${KRONK_DOWNLOAD_ENABLED:-true}
+      - KRONK_DOWNLOAD_ENABLED=${KRONK_DOWNLOAD_ENABLED:-false}
       # The image ships Mesa's software Vulkan driver, so GPU detection picks
       # vulkan even without a GPU and downloads that bundle at startup. Pin
       # the CPU libraries built into the image.

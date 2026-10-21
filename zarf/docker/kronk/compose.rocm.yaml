@@ -31,7 +31,7 @@ services:
     security_opt:
       - seccomp=unconfined
     environment:
-      - KRONK_DOWNLOAD_ENABLED=${KRONK_DOWNLOAD_ENABLED:-true}
+      - KRONK_DOWNLOAD_ENABLED=${KRONK_DOWNLOAD_ENABLED:-false}
       # The debug server (metrics, pprof, statsviz) defaults to 127.0.0.1
       # inside the container, which makes the published port unreachable.
       - KRONK_WEB_DEBUG_HOST=0.0.0.0:11445
