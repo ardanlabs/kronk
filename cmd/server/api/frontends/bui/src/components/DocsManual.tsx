@@ -383,7 +383,7 @@ kronk server stop`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`kronk server start \\
   --api-host=127.0.0.1:11435 \\
   --web-admin-enabled=false`}</code></pre>
-          <p>Peer downloads are separately controlled by <code>KRONK_DOWNLOAD_ENABLED</code>, which defaults to <code>false</code>. It shares this server's models and library bundles with other Kronk servers on the network; it is not needed to pull models from Hugging Face.</p>
+          <p>Peer downloads are separately controlled by <code>KRONK_DOWNLOAD_ENABLED</code>, which defaults to <code>false</code>. It shares this server's models and library bundles with other Kronk servers on the network.</p>
           <p>See <a href="https://www.kronkai.com/manual#chapter-8-model-server">Chapter 8</a> for server flags, model pooling, runtime paths, and deployment operations.</p>
           <h3 id="27-verify-the-installation">2.7 Verify the Installation</h3>
           <p>Check server liveness:</p>
@@ -2037,7 +2037,7 @@ kronk libs --local`}</code></pre>
                 <td><code>--download-enabled</code></td>
                 <td><code>KRONK_DOWNLOAD_ENABLED</code></td>
                 <td><code>false</code></td>
-                <td>Share this server's models and library bundles with other Kronk servers on the network (peer downloads). Not needed to pull models from Hugging Face</td>
+                <td>Share this server's models and library bundles with other Kronk servers on the network (peer downloads)</td>
               </tr>
               <tr>
                 <td><code>--lib-download-enabled</code></td>
@@ -2245,7 +2245,7 @@ done`}</code></pre>
               <tr>
                 <td><code>KRONK_DOWNLOAD_ENABLED</code></td>
                 <td><code>false</code></td>
-                <td>Share models and library bundles with other Kronk servers (peer downloads). Not needed to pull models from Hugging Face</td>
+                <td>Share models and library bundles with other Kronk servers (peer downloads)</td>
               </tr>
               <tr>
                 <td><code>KRONK_RENDER_GID</code> / <code>KRONK_VIDEO_GID</code></td>

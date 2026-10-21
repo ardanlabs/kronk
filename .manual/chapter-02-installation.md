@@ -482,8 +482,7 @@ kronk server start \
 
 Peer downloads are separately controlled by `KRONK_DOWNLOAD_ENABLED`, which
 defaults to `false`. It shares this server's models and library bundles with
-other Kronk servers on the network; it is not needed to pull models from
-Hugging Face.
+other Kronk servers on the network.
 
 See [Chapter 8](https://www.kronkai.com/manual#chapter-8-model-server) for server flags, model pooling,
 runtime paths, and deployment operations.

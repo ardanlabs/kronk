@@ -990,9 +990,8 @@ ENV KRONK_BASE_PATH=/kronk \
 # Note on KRONK_DOWNLOAD_ENABLED: enables peer downloads. The server
 # serves its models and library bundles to other Kronk servers on the
 # network (unauthenticated /download/... routes) and its BUI can pull
-# from a peer. Both servers need it on. It is not needed to pull models
-# from Hugging Face. Defaults to `false`; enable at run time with
-# `-e KRONK_DOWNLOAD_ENABLED=true` only on a trusted network.
+# from a peer. Both servers need it on. Defaults to `false`; enable at
+# run time with `-e KRONK_DOWNLOAD_ENABLED=true` only on a trusted network.
 
 # NVIDIA GPU passthrough hints — honoured by the NVIDIA Container Runtime
 # when the user runs with `--gpus all` (or equivalent). Harmless on hosts
