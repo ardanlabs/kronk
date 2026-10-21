@@ -987,11 +987,12 @@ ENV KRONK_BASE_PATH=/kronk \
     KRONK_INSECURE_LOGGING=false \
     KRONK_POOL_MODEL_CONFIG_FILE=/kronk/models/model_config.yaml
 
-# Note on KRONK_DOWNLOAD_ENABLED: defaults to `false` for a security-
-# conscious production posture (no outbound model fetches from the
-# server process). Dev images / docker-compose stacks that want the
-# browser UI's "download library/model" buttons to work should override
-# at run time with `-e KRONK_DOWNLOAD_ENABLED=true`.
+# Note on KRONK_DOWNLOAD_ENABLED: enables peer downloads. The server
+# serves its models and library bundles to other Kronk servers on the
+# network (unauthenticated /download/... routes) and its BUI can pull
+# from a peer. Both servers need it on. It is not needed to pull models
+# from Hugging Face. Defaults to `false`; enable at run time with
+# `-e KRONK_DOWNLOAD_ENABLED=true` only on a trusted network.
 
 # NVIDIA GPU passthrough hints — honoured by the NVIDIA Container Runtime
 # when the user runs with `--gpus all` (or equivalent). Harmless on hosts
@@ -1176,7 +1177,6 @@ ENV KRONK_BASE_PATH=/kronk \
     KRONK_PROCESSOR=cuda
 
 # See note on KRONK_DOWNLOAD_ENABLED in the default runtime stage.
-# Override at run time with `-e KRONK_DOWNLOAD_ENABLED=true` for dev.
 
 # NVIDIA Container Runtime hints. On Jetson the toolkit injects Tegra
 # driver libraries from /usr/lib/aarch64-linux-gnu/tegra/ — adding that

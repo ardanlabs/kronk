@@ -161,14 +161,13 @@ reproducible deployment; `latest-*` tags move when a release is published.
 
 **Local CPU container**
 
-This command binds the service only to the local machine, enables BUI model
-downloads, and persists all state in a named volume:
+This command binds the service only to the local machine and persists all
+state in a named volume:
 
 ```shell
 docker run -d \
   --name kronk \
   --restart unless-stopped \
-  -e KRONK_DOWNLOAD_ENABLED=true \
   -p 127.0.0.1:11435:11435 \
   -v kronk-data:/kronk \
   ghcr.io/ardanlabs/kronk:latest
@@ -188,7 +187,6 @@ docker run -d \
   --name kronk \
   --restart unless-stopped \
   --runtime=nvidia --gpus all \
-  -e KRONK_DOWNLOAD_ENABLED=true \
   -p 127.0.0.1:11435:11435 \
   -v kronk-data:/kronk \
   ghcr.io/ardanlabs/kronk:latest-cuda
@@ -482,9 +480,10 @@ kronk server start \
   --web-admin-enabled=false
 ```
 
-Server-side downloading is separately controlled by
-`KRONK_DOWNLOAD_ENABLED` and defaults to `false`. Local CLI commands using
-`--local` are not affected by this setting.
+Peer downloads are separately controlled by `KRONK_DOWNLOAD_ENABLED`, which
+defaults to `false`. It shares this server's models and library bundles with
+other Kronk servers on the network; it is not needed to pull models from
+Hugging Face.
 
 See [Chapter 8](https://www.kronkai.com/manual#chapter-8-model-server) for server flags, model pooling,
 runtime paths, and deployment operations.

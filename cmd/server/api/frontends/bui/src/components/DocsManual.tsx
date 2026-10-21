@@ -258,11 +258,10 @@ kronk --help`}</code></pre>
           </table>
           <p>Versioned tags use the form <code>vX.Y.Z-&lt;variant&gt;</code>. Pin a versioned tag for a reproducible deployment; <code>latest-*</code> tags move when a release is published.</p>
           <p><strong>Local CPU container</strong></p>
-          <p>This command binds the service only to the local machine, enables BUI model downloads, and persists all state in a named volume:</p>
+          <p>This command binds the service only to the local machine and persists all state in a named volume:</p>
           <pre className="code-block"><code className="language-shell">{`docker run -d \\
   --name kronk \\
   --restart unless-stopped \\
-  -e KRONK_DOWNLOAD_ENABLED=true \\
   -p 127.0.0.1:11435:11435 \\
   -v kronk-data:/kronk \\
   ghcr.io/ardanlabs/kronk:latest`}</code></pre>
@@ -273,7 +272,6 @@ kronk --help`}</code></pre>
   --name kronk \\
   --restart unless-stopped \\
   --runtime=nvidia --gpus all \\
-  -e KRONK_DOWNLOAD_ENABLED=true \\
   -p 127.0.0.1:11435:11435 \\
   -v kronk-data:/kronk \\
   ghcr.io/ardanlabs/kronk:latest-cuda`}</code></pre>
@@ -385,7 +383,7 @@ kronk server stop`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`kronk server start \\
   --api-host=127.0.0.1:11435 \\
   --web-admin-enabled=false`}</code></pre>
-          <p>Server-side downloading is separately controlled by <code>KRONK_DOWNLOAD_ENABLED</code> and defaults to <code>false</code>. Local CLI commands using <code>--local</code> are not affected by this setting.</p>
+          <p>Peer downloads are separately controlled by <code>KRONK_DOWNLOAD_ENABLED</code>, which defaults to <code>false</code>. It shares this server's models and library bundles with other Kronk servers on the network; it is not needed to pull models from Hugging Face.</p>
           <p>See <a href="https://www.kronkai.com/manual#chapter-8-model-server">Chapter 8</a> for server flags, model pooling, runtime paths, and deployment operations.</p>
           <h3 id="27-verify-the-installation">2.7 Verify the Installation</h3>
           <p>Check server liveness:</p>
@@ -2039,7 +2037,7 @@ kronk libs --local`}</code></pre>
                 <td><code>--download-enabled</code></td>
                 <td><code>KRONK_DOWNLOAD_ENABLED</code></td>
                 <td><code>false</code></td>
-                <td>Allow server-side model downloads</td>
+                <td>Share this server's models and library bundles with other Kronk servers on the network (peer downloads). Not needed to pull models from Hugging Face</td>
               </tr>
               <tr>
                 <td><code>--lib-download-enabled</code></td>
@@ -2246,8 +2244,8 @@ done`}</code></pre>
               </tr>
               <tr>
                 <td><code>KRONK_DOWNLOAD_ENABLED</code></td>
-                <td><code>true</code></td>
-                <td>Allow model downloads from the BUI</td>
+                <td><code>false</code></td>
+                <td>Share models and library bundles with other Kronk servers (peer downloads). Not needed to pull models from Hugging Face</td>
               </tr>
               <tr>
                 <td><code>KRONK_RENDER_GID</code> / <code>KRONK_VIDEO_GID</code></td>
