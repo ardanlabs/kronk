@@ -41,6 +41,15 @@ QUICK_CHECK_ARGS ?=
 test-quick-check:
 	@go run ./.tools/quick-check $(QUICK_CHECK_ARGS)
 
+QUICK_CHECK_BASELINE ?=
+QUICK_CHECK_CANDIDATE ?=
+QUICK_CHECK_COMPARE_ARGS ?=
+
+compare-quick-check:
+	@go run ./.tools/quick-check compare \
+		-baseline "$(QUICK_CHECK_BASELINE)" -candidate "$(QUICK_CHECK_CANDIDATE)" \
+		$(QUICK_CHECK_COMPARE_ARGS)
+
 RELIABILITY_HOST ?= http://localhost:11435
 RELIABILITY_OUT ?= .tools/reliability/output
 RELIABILITY_SERVER_LOG ?= $(HOME)/.kronk/kronk.log
