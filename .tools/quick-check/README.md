@@ -242,6 +242,18 @@ and other matrix cells are available; see
 [the review requirement](DEVELOPMENT.md#repetitions-and-cache-state--2026-10-21).
 Historical output directories are not rewritten.
 
+Startup diagnostics: `warmup_request.startup_timings` records
+`server_request_seconds` (server request start to completion), `pre_chat_seconds`
+(server request start to the post-acquisition `chat-completions` log),
+`native_model_load_seconds`, `projection_load_seconds`, and `mtp_load_seconds`
+(each loader's started/loading to completed/loaded log interval). These are
+same-trace, server-timestamp differences, not client/server clock subtraction.
+Missing, malformed, or reversed boundaries omit the affected metric; they do not
+change correctness verdicts. Intervals overlap: loader intervals are inside
+pre-Chat time, which is inside server request time. Keep the existing slot timings
+and client warm-up total separate; do not sum all these metrics. The terminal
+summary and workload are unchanged; no extra requests or loads are added.
+
 Every request exposes numeric seconds in `server_timings`: `admission_seconds`,
 `prepare_seconds`, `queue_wait_seconds`, `slot_prefill_ttft_seconds`,
 `generation_seconds`, and `slot_execution_seconds`. These come from explicit
