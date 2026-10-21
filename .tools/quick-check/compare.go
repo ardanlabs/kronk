@@ -516,7 +516,11 @@ func (c comparison) writeText(out io.Writer) error {
 			fmt.Fprintf(w, "Problem [%s]: %s\n", run.Directory, problem)
 		}
 	}
+	machineWarning := ""
 	for _, warning := range c.Warnings {
+		if strings.HasPrefix(warning, "machine.") {
+			machineWarning = "WARNING: MACHINE METADATA DIFFERS OR IS MISSING!"
+		}
 		if strings.HasPrefix(warning, "harness revision:") {
 			continue
 		}
@@ -526,6 +530,9 @@ func (c comparison) writeText(out io.Writer) error {
 		fmt.Fprintln(w, "Warning:", warning)
 	}
 	cell := strings.NewReplacer("one slot", "1 slot", "images off", "no images", "images on", "images").Replace(c.Cell)
+	if machineWarning != "" {
+		fmt.Fprintln(w, "\n"+machineWarning)
+	}
 	fmt.Fprintln(w, "\nMetric (seconds)\tBaseline median [SD; n]\tCandidate median [SD; n]\tDelta\tChange")
 	fmt.Fprintf(w, "Cell: %s\n", cell)
 	format := func(m *measurement) string {
@@ -550,6 +557,9 @@ func (c comparison) writeText(out io.Writer) error {
 			percent = fmt.Sprintf("%+.2f%%", *row.Percent)
 		}
 		fmt.Fprintf(w, "Warmed workload\t%s\t%s\t%s\t%s\n", format(row.Baseline), format(row.Candidate), delta, percent)
+	}
+	if machineWarning != "" {
+		fmt.Fprintln(w, "\n"+machineWarning)
 	}
 	return w.Flush()
 }

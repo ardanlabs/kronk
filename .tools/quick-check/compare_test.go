@@ -252,6 +252,18 @@ func TestCompareWarningsAndFailures(t *testing.T) {
 			if tc.warning != "" && !strings.Contains(strings.Join(got.Warnings, "\n"), tc.warning) {
 				t.Fatalf("missing warning %q: %v", tc.warning, got.Warnings)
 			}
+			out.Reset()
+			if err := got.writeText(&out); err != nil {
+				t.Fatal(err)
+			}
+			banner := "WARNING: MACHINE METADATA DIFFERS OR IS MISSING; TIMING DELTAS CANNOT BE ATTRIBUTED TO KRONK CODE CHANGES ALONE."
+			if tc.name == "machine" || tc.name == "unknown-memory" {
+				if strings.Count(out.String(), banner) != 2 || strings.Index(out.String(), banner) > strings.Index(out.String(), "Metric (seconds)") || !strings.HasSuffix(out.String(), banner+"\n") {
+					t.Fatal("machine warning must appear before metrics and at the end", out.String())
+				}
+			} else if strings.Contains(out.String(), banner) {
+				t.Fatal("machine warning shown for unrelated changes", out.String())
+			}
 			if tc.name == "single" {
 				for _, row := range got.Metrics {
 					if row.Candidate != nil && row.Candidate.SampleStdDev != nil {

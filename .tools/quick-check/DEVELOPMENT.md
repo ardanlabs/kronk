@@ -475,6 +475,10 @@ Baseline/candidate paths and commits have separate
 lines. Harness changes, matching checks, detailed metrics, and limitations stay out
 of the terminal. Configuration-only warnings are hidden there when effective
 native parameters and request bodies match; otherwise they remain visible.
+Changed or missing machine metadata is exceptional: an uppercase warning brackets
+the metrics (immediately before them and repeated at the end), explaining that
+timing deltas cannot be attributed to Kronk code changes alone. It does not alter
+the status or exit code; unrelated warnings do not trigger the banner.
 The full report is saved to `output/comparison.json`, outside both run folders,
 on each comparison (replacing the previous comparison). `-out DIR` changes this
 directory and the automatic-selection parent; `-json` also prints it for CI.
@@ -500,6 +504,87 @@ These reproduce the objective content of Dave's earlier analysis without AMP.
 The claim remains supported for this comparison, not proven for every possible
 artifact analysis. No regression cause, statistical significance, or performance
 equivalence follows from these facts alone.
+
+## Implementation contracts (moved from README)
+
+The README is an operational quick reference. Keep assertion/reporting details
+here alongside the reasoning and timing definitions above.
+
+### Workload and evidence
+
+The six serial phases are cold conversation, identical request replay, append
+using the actual first assistant reply, independent conversation with the shared
+system prompt, active cancellation followed by scheduler-idle confirmation, and
+fresh first-conversation recovery. Append updates the destination while retaining
+the owner and identifier. Independent/recovery replies exclude foreign and
+interrupted-session facts. Exact replay does not require output equality.
+
+`operations-v2` uses temperature zero, seed 42, thinking disabled, about 80-word
+reviews, and a 384-token cap. Tokenization records untemplated size once per
+repetition; rendered usage also includes templates/messages. The uncached 10K
+prefill counts toward workload time; tokenization and warm-up do not. The default
+request timeout is five minutes, not a 30-second performance gate.
+
+Completed workload replies must finish normally, exceed eight output tokens,
+show positive drafting/coverage, and have no draft-disable reason. Content checks
+are case-insensitive fact inclusion/exclusion, not rigid formatting or model
+grading. A content finding alone does not establish an infrastructure defect.
+
+Trace-correlated `imc/plan-ready` events, executed counters, and usage must attest
+cache build, exact/append/System reuse and its full expected extent, including
+stable-prefix/extension/tail accounting. Require paired target/MTP snapshots and
+restores and resumed drafting from restored draft KV. Exact replay restores its
+read-only snapshot without requiring new publication. Metadata/configuration,
+scheduler evidence, and load traces attest MoE, one slot, IMC, and MTP.
+
+Every phase requires terminal execution and target/draft cleanup on the configured
+physical slot. Engine cancellation acknowledgment and subsequent recovery on that
+same slot are required. Missing evidence cannot PASS. Correlated ERROR events
+fail except the deliberately cancelled request's structured middleware `canceled`
+error with engine acknowledgment; that expected error remains recorded/counted.
+WARN events remain diagnostic, not automatic failures.
+
+### Reports and investigation
+
+`summary.json` orders environment/build metadata, run identity, requested/executed
+counts, one-time `warmup_request`, aggregates, then ordered `repetitions[]`.
+Per-repetition results follow phase execution order. Unvalidated phases are
+`UNVERIFIED`, failed assertions `FAIL`; unavailable timings are not zero.
+Cancelled streams omit final usage/rate because no final usage arrives.
+
+`events.ndjson` retains full request/client/server records with repetition indices
+and a final `source: "report"` record containing model/configuration metadata,
+assembled answers, traces, execution evidence, and counters. Extract it with
+`jq 'select(.source == "report") | .report' events.ndjson`. Compact summaries
+do not reduce evidence collection or assertions. Review server metadata before
+sharing artifacts, even though workload content is synthetic.
+
+The four-line `tool.log` header includes verdict, tested commit, probe verdicts,
+and warm-up/workload median/SD/repetition count. Progress stays below the header,
+not on the terminal. Failures add diagnostic suggestions, not automatic runs or
+root-cause claims: cache/state/recovery → `test-load-hybrid`; drafting →
+`test-load-mtp-embedded`; future many-slot overlap → `test-load-batch-text`.
+Resolve setup/evidence errors before interpreting inference findings.
+
+Failed/incomplete recorded runs still produce a comparison report but no timing
+aggregates/deltas. Invalid/missing/inconsistent artifacts stop before writing a new
+comparison; an existing `comparison.json` then remains the previous report.
+Percentage change is null for a zero baseline, and missing measurements/deltas
+remain null. Generated assistant history can legitimately change later requests.
+
+One slot does not test concurrent scheduling, queue pressure, or cross-slot
+isolation. This prototype does not establish speculative rollback, image,
+attention-only, or other-cell coverage. Model qualification is required before
+merge-gate use. Hardware metadata and installed-library labels do not prove
+actual placement or loaded binary/library bytes.
+
+Focused harness checks need no models or server:
+
+```sh
+RUN_IN_PARALLEL=yes GITHUB_WORKSPACE="$PWD" go test ./.tools/quick-check
+```
+
+These HTTP/SSE fixtures validate the harness, not Kronk inference.
 
 ## Roadmap and open decisions
 
