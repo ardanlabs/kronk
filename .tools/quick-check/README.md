@@ -41,6 +41,35 @@ and after the invocation, but its workload can still contend with other loaded m
 The local JSON server log is required, including when HTTP connects remotely.
 Restart after changing `.tools/model_config_tools.yaml`.
 
+### Testing another commit or branch
+
+The tested version is the running server—not the checkout from which you launch
+quick-check. Switching commits alone is insufficient; you must rebuild and restart
+the server.
+
+If the target revision already contains our quick-check tool and configuration:
+
+```sh
+# Stop the current server before switching.
+make kronk-server-stop
+
+# First preserve any uncommitted work, then choose ONE:
+git switch <branch>
+# OR:
+git switch --detach <commit>
+
+make server-for-tools
+make test-quick-check
+```
+
+Check the resulting `Tested commit:` line. It should show the selected commit;
+`+develop` means the server was built with uncommitted changes. The timestamp is
+the commit's timestamp, not the test time.
+
+Copy any results you want to keep long-term outside the managed run directories
+before testing several revisions, for example into `output/saved_local_runs/`;
+automatic retention preserves only the current run and its selected baseline.
+
 ## Workload and assertions
 
 The versioned synthetic operations handbook has a fixed 72 records (10,133
@@ -118,7 +147,17 @@ Development/unknown runs cannot evict the newest committed result. When a new
 committed candidate completes, the previous committed result remains alongside it;
 the next invocation can use that new committed result as its baseline. This is a
 storage policy, not automatic performance comparison or a requirement that the
-baseline passed. Save any long-lived reference outside the output parent.
+baseline passed.
+
+Run artifacts under `output/` are trackable in Git so selected results can travel
+with commits. `output/saved_local_runs/` is an ignored local archive: copy runs there
+to keep them outside automatic retention without committing them. Retention does
+not inspect or prune that directory. The transient `output/.quick-check.lock` is
+also ignored. Tracking outputs does not disable retention; it can delete tracked
+run directories, leaving Git deletions to review. Commit selected results to keep
+them in history. New or deleted output artifacts can make the checkout dirty and
+cause the next server build to report `+develop`; commit them or move local-only
+artifacts into the ignored archive before building a clean baseline.
 
 Unrecognized, incomplete, and symlinked directories are left untouched. Invocations
 sharing an output parent are serialized with `.quick-check.lock`; after a crash,

@@ -14,8 +14,11 @@ zarf/docker/openwebui/
 .tools/adversarial/output/
 .tools/codegen-benchmark/output/
 .tools/reliability/output/
-.tools/quick-check/output/
 .tools/lifecycle-load/output/
+
+# Quick-check results are trackable; local archives and the runtime lock are not.
+.tools/quick-check/output/saved_local_runs/
+.tools/quick-check/output/.quick-check.lock
 
 # Binaries for programs and plugins
 *.exe
