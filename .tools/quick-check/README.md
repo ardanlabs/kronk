@@ -70,6 +70,113 @@ Copy any results you want to keep long-term outside the managed run directories
 before testing several revisions, for example into `output/saved_local_runs/`;
 automatic retention preserves only the current run and its selected baseline.
 
+## Compare two saved runs
+
+### Quick start
+
+Run from the repository root after saving two quick-check runs:
+
+```sh
+make compare-quick-check
+```
+
+No running server is needed. With exactly two finalized runs directly under
+`output/`, the older run is the baseline and the newer run is the candidate.
+The terminal starts with:
+
+```text
+Comparison status: PASS
+Saved-run checks: baseline PASS / candidate PASS
+```
+
+Then inspect the warnings and warmed-workload comparison: a positive time change
+means the candidate was slower. PASS means the saved checks and evidence passed,
+not that timing changes are acceptable. The full report is written automatically
+to `.tools/quick-check/output/comparison.json`, outside both run folders, and
+replaced on the next comparison.
+
+To compare archived runs or select a different pair, supply **both**
+`QUICK_CHECK_BASELINE` and `QUICK_CHECK_CANDIDATE` as shown below. If either run
+failed, the comparator still reports its status/problems and saves the report,
+but omits timing comparisons and exits nonzero. Missing or inconsistent input
+artifacts stop comparison before a new report is written; an existing JSON file
+then still belongs to the previous comparison.
+
+### Options and interpretation
+
+The offline comparison subcommand reads `summary.json`, `events.ndjson`, and
+`tool.log` from two saved run directories. By default it selects the two finalized
+timestamped runs directly under `.tools/quick-check/output/`, with the older run
+as baseline and the newer as candidate. Ordering uses the directory timestamps,
+not file modification times or commit dates. It ignores `saved_local_runs/`,
+unrelated entries, symlinks, and incomplete directories. Fewer/more than two runs
+or tied timestamps require explicit paths rather than guessing. It does not start
+inference, contact the server, rewrite input artifacts, or apply retention. It saves
+the full report as `.tools/quick-check/output/comparison.json`, outside both run
+directories, replacing the previous comparison. `-out DIR` changes this output
+directory as well as the parent used for automatic run selection.
+
+```sh
+make compare-quick-check
+
+# Optional explicit pair (supply both paths or neither):
+make compare-quick-check \
+  QUICK_CHECK_BASELINE=.tools/quick-check/output/<baseline-run> \
+  QUICK_CHECK_CANDIDATE=.tools/quick-check/output/<candidate-run>
+
+# Full machine-readable output for CI (stdout only; errors go to stderr):
+make compare-quick-check QUICK_CHECK_COMPARE_ARGS=-json > comparison.json
+
+# Custom automatic-selection parent:
+make compare-quick-check QUICK_CHECK_COMPARE_ARGS='-out /path/to/output'
+
+# Direct invocation, optionally with explicit paths:
+go run ./.tools/quick-check compare
+go run ./.tools/quick-check compare -baseline /path/to/baseline -candidate /path/to/candidate -json
+```
+
+The report separates **saved-run checks**, **comparability warnings**, and
+**observed metric changes**. It checks verdict/provenance consistency between the
+artifacts, requested/completed repetitions, the six ordered phases, request
+evidence, and required timings. It does not independently rerun inference
+assertions. Failed/partial runs do not receive passing timing aggregates.
+
+`Saved-run checks: baseline PASS / candidate FAIL` exposes each run's recorded
+status separately. JSON stores them in `saved_run_checks.baseline` and
+`saved_run_checks.candidate`; `comparison_status` separately records whether the
+comparison found two complete, consistent passing runs. The terminal's first line,
+`Comparison status: PASS/FAIL`, displays that overall result.
+
+Comparability checks include model/workload/cell, machine metadata, library,
+harness revision, model metadata/configuration, logged native parameters, request
+bodies/order, per-repetition system tokens/hash, and per-request token/cache/draft
+counts. Differences or missing metadata are warnings, not proof of a regression.
+Different generated assistant histories may legitimately change later inputs.
+Matching metadata is not proof of matching loaded bytes, actual placement,
+machine load, or OS release. Unset configuration fields are compared as reported;
+a newly exposed field can warn even when effective native parameters match.
+
+The terminal shows run paths/commits, actionable warnings, a compact cell label,
+and warmed workload median, sample SD, sample count, absolute delta, and percentage
+change. Harness revision differences remain in JSON only. Configuration-only
+warnings stay in JSON when effective native parameters and request bodies match;
+otherwise they remain visible. The saved JSON includes all latency/rate metrics,
+server stages, token counts, min/max, matching checks, and limitations.
+Positive delta means the candidate's numeric value increased (slower
+for durations, faster for output rate). A zero baseline has a null percentage;
+missing metrics have null values/deltas, never fabricated zeros. Warm-up remains a
+single sample, separate from workload repetitions. Older runs' startup intervals
+are reconstructed from their own recorded warm-up trace when available, without
+rewriting the files.
+
+Exit 0 means both recorded checks passed completely and comparison succeeded,
+**not** that performance is equivalent. Warnings and timing changes alone do not
+fail CI. Exit 1 means failed/incomplete checks, missing/invalid/inconsistent
+artifacts, invalid arguments, or an output error. Valid failed-run comparisons
+still emit their report before exiting nonzero. No calibrated performance gate is
+implemented. Preserve both inputs as CI artifacts;
+AMP is optional investigation help, not required to compute or judge this report.
+
 ## Workload and assertions
 
 The versioned synthetic operations handbook has a fixed 72 records (10,133

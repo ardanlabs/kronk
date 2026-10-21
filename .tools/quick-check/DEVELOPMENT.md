@@ -438,6 +438,69 @@ whether repetition order or startup effects bias timings, and which comparisons
 need a different measurement protocol. Do not assume this initial strategy is
 permanently sufficient or establish merge-gate thresholds before that review.
 
+## Deterministic comparison and AMP boundary — 2026-10-21
+
+**Warning to retain and revisit:** Dave stated that, given only the three output
+files, AMP cannot add an objective finding that deterministic analysis could not
+produce. Validate that claim against the implemented comparator, not by trusting
+an AI's interpretation. If a later manual review finds another objective fact in
+those same artifacts, extend the deterministic comparison or explicitly document
+its coverage gap. Do not turn AMP into a required comparison judge. Explaining
+causes may require outside evidence (code diffs, dependency history, additional
+instrumentation or experiments); label unsupported explanations as hypotheses.
+
+Implemented `quick-check compare [-baseline DIR -candidate DIR] [-out DIR] [-json]`, exposed by
+`make compare-quick-check` with `QUICK_CHECK_BASELINE`, `QUICK_CHECK_CANDIDATE`, and
+`QUICK_CHECK_COMPARE_ARGS`. Both explicit paths are optional together. Without
+them, compare the two finalized timestamped runs directly under `output/` (or
+`-out DIR`), older timestamp as baseline. Ignore local archives, unrelated entries,
+symlinks, and incomplete directories. Reject counts other than two or timestamp
+ties; never silently pick among ambiguous runs or use Git checkout file mtimes.
+It is offline, leaves input artifacts unchanged, requires all three artifacts,
+cross-checks recorded verdict/provenance and summary aggregates, reports incomplete
+phase/request/timing evidence, and keeps correctness separate from comparability
+and performance deltas. Comparability warnings include missing/changed environment,
+model/configuration, harness, native parameters, requests, prompt fingerprints,
+and token/cache/draft work. Hash differences warn; they are not correctness failures.
+Startup intervals can be reconstructed from older saved server traces using the
+same boundaries as the runner. Sample count, median, range, sample SD, absolute
+delta, and percentage change are deterministic; zero denominators and unavailable
+measurements are not converted to misleading zero changes. Terminal output is a
+compact cell/workload view; JSON includes all server-stage and token statistics.
+The terminal label is “Saved-run checks: baseline PASS / candidate PASS,” showing
+each run's recorded status independently, not claiming inference has been rerun.
+JSON exposes both statuses under `saved_run_checks`, with `comparison_status`
+separate for evidence validation and displayed first as “Comparison status: PASS/FAIL.”
+Baseline/candidate paths and commits have separate
+lines. Harness changes, matching checks, detailed metrics, and limitations stay out
+of the terminal. Configuration-only warnings are hidden there when effective
+native parameters and request bodies match; otherwise they remain visible.
+The full report is saved to `output/comparison.json`, outside both run folders,
+on each comparison (replacing the previous comparison). `-out DIR` changes this
+directory and the automatic-selection parent; `-json` also prints it for CI.
+There is no terminal footer or JSON usage note.
+
+Exit success means two complete recorded PASS runs and a successful comparison,
+not performance equivalence. Failed/incomplete runs or invalid artifacts fail;
+warnings/timing differences alone do not. Performance thresholds are deliberately
+not implemented. Within-invocation repetitions
+do not establish between-invocation noise, and one startup sample has no sample SD.
+The comparator reports recorded checks, not independent revalidation of inference.
+
+Checked the claim against the retained cross-commit pair
+`20261021T160436Z-2001953903` → `20261021T162309Z-2887411773`: the automated report
+reproduces both 3/3 PASS results, matching machine/model/workload/request bodies,
+system fingerprints and per-request token/cache/draft counts, workload medians
+40.835568041 → 41.041510084 s (+0.50432026%) with SD 1.721768325 → 1.845389127 s,
+and startup 4.356714 → 5.973091 s. It reconstructs native loading
+2.771098 → 4.194283 s directly from the old traces. It also flags the installed
+library change, dirty candidate build, changed harness revision, and an exposed
+configuration-field difference while confirming matching logged native parameters.
+These reproduce the objective content of Dave's earlier analysis without AMP.
+The claim remains supported for this comparison, not proven for every possible
+artifact analysis. No regression cause, statistical significance, or performance
+equivalence follows from these facts alone.
+
 ## Roadmap and open decisions
 
 - Implemented: first-cell workload, per-request infrastructure evidence,
@@ -460,5 +523,7 @@ permanently sufficient or establish merge-gate thresholds before that review.
   results do not validate that scheduler contract. Images need attested media
   work/state transitions, not an attachment that is silently ignored.
 - Deliberately attested speculative rejection/rollback is not currently covered.
-- CI invocation, automated baseline comparison, and optional AMP triage remain
-  future work, not delivered behavior. Deeper tools remain diagnostic resources.
+- Offline comparison is implemented for terminal/CI callers, with automatic
+  older/newer selection of the two retained runs or an explicit pair override.
+  CI job wiring, calibrated performance gates, and
+  optional AMP triage remain future work. Deeper tools remain diagnostic resources.

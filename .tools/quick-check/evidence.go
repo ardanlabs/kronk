@@ -62,22 +62,8 @@ func collectEvidence(file *os.File, initial os.FileInfo, path string, c *client,
 	if err := scanner.Err(); err != nil {
 		return err
 	}
-	// Startup diagnostics: same-server timestamps, not client/server
-	// clock subtraction. Missing or reversed boundaries remain unavailable.
 	if r.WarmupRequest != nil {
-		r.WarmupRequest.StartupTimings = make(map[string]float64)
-		for _, interval := range []struct{ metric, start, end string }{
-			{"server_request_seconds", "request started/", "request completed/"},
-			{"pre_chat_seconds", "request started/", "chat-completions/"},
-			{"native_model_load_seconds", "loading model from file/started", "loading model from file/completed"},
-			{"projection_load_seconds", "loading-prof-file/started", "loading-prof-file/completed"},
-			{"mtp_load_seconds", "draft-model-mtp/loading", "draft-model-mtp/loaded"},
-		} {
-			start, end := startup[interval.start], startup[interval.end]
-			if !start.IsZero() && !end.IsZero() && !end.Before(start) {
-				r.WarmupRequest.StartupTimings[interval.metric] = end.Sub(start).Seconds()
-			}
-		}
+		r.WarmupRequest.StartupTimings = startupTimings(startup)
 	}
 	for _, event := range errorEvents {
 		trace, _ := event["trace_id"].(string)
@@ -110,6 +96,25 @@ func collectEvidence(file *os.File, initial os.FileInfo, path string, c *client,
 	}
 	r.evidenceValidated = true
 	return nil
+}
+
+// Same-server timestamps, not client/server clock subtraction. Also used by the
+// offline comparator for artifacts written before startup metrics were added.
+func startupTimings(bounds map[string]time.Time) map[string]float64 {
+	timings := make(map[string]float64)
+	for _, interval := range []struct{ metric, start, end string }{
+		{"server_request_seconds", "request started/", "request completed/"},
+		{"pre_chat_seconds", "request started/", "chat-completions/"},
+		{"native_model_load_seconds", "loading model from file/started", "loading model from file/completed"},
+		{"projection_load_seconds", "loading-prof-file/started", "loading-prof-file/completed"},
+		{"mtp_load_seconds", "draft-model-mtp/loading", "draft-model-mtp/loaded"},
+	} {
+		start, end := bounds[interval.start], bounds[interval.end]
+		if !start.IsZero() && !end.IsZero() && !end.Before(start) {
+			timings[interval.metric] = end.Sub(start).Seconds()
+		}
+	}
+	return timings
 }
 
 func recordDuration(r *result, event map[string]any, field, metric string) {

@@ -68,26 +68,30 @@ func (r report) measurements() map[string]map[string]measurement {
 	for phase, metrics := range samples {
 		measurements[phase] = make(map[string]measurement)
 		for metric, values := range metrics {
-			slices.Sort(values)
-			n := len(values)
-			median := values[n/2]
-			if n%2 == 0 {
-				median = (values[n/2-1] + median) / 2
-			}
-			m := measurement{Samples: n, Median: median, Min: values[0], Max: values[n-1]}
-			if n > 1 {
-				var mean, squaredDeviations float64
-				for _, value := range values {
-					mean += value
-				}
-				mean /= float64(n)
-				for _, value := range values {
-					squaredDeviations += (value - mean) * (value - mean)
-				}
-				m.SampleStdDev = new(math.Sqrt(squaredDeviations / float64(n-1)))
-			}
-			measurements[phase][metric] = m
+			measurements[phase][metric] = summarize(values)
 		}
 	}
 	return measurements
+}
+
+func summarize(values []float64) measurement {
+	slices.Sort(values)
+	n := len(values)
+	median := values[n/2]
+	if n%2 == 0 {
+		median = (values[n/2-1] + median) / 2
+	}
+	m := measurement{Samples: n, Median: median, Min: values[0], Max: values[n-1]}
+	if n > 1 {
+		var mean, squaredDeviations float64
+		for _, value := range values {
+			mean += value
+		}
+		mean /= float64(n)
+		for _, value := range values {
+			squaredDeviations += (value - mean) * (value - mean)
+		}
+		m.SampleStdDev = new(math.Sqrt(squaredDeviations / float64(n-1)))
+	}
+	return m
 }
