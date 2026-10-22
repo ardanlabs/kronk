@@ -37,7 +37,7 @@ the tested code is the running server. The header also shows the test start time
 
 **WARNING: Always run quick-check right after a fresh commit, rebuilding/restarting
 the server first. Uncommitted changes are not flagged; another run of the same
-commit replaces its candidate. Copy any run you want to keep into
+commit replaces its saved run. Copy any run you want to keep into
 `output/saved_local_runs/` before running again.**
 
 ## Results
@@ -48,23 +48,39 @@ Runs are saved under `.tools/quick-check/output/`:
 - `summary.json`: structured results and measurements.
 - `events.ndjson`: detailed requests, responses, and server evidence.
 
-Retention keeps the current candidate and baseline: same commit replaces the
-candidate; a different commit promotes the previous candidate to baseline.
-`output/saved_local_runs/` is Git-ignored and outside retention. Managed runs are
-trackable in Git.
+All of `output/` is Git-ignored. Up to three distinct runs are retained:
+
+- `new-<commit>`: fresh run, release or not.
+- `release-<tag>`: most recent older release, excluding the fresh hash.
+- `old-<commit>`: newest remaining older run, release or not.
+
+A fresh release preserves the older release baseline until a later run advances
+the queue. Same-hash runs replace rather than duplicate that hash. Local archives
+under `output/saved_local_runs/` remain outside retention.
+
+Release recognition queries `origin` for exact `vX.Y.Z` tags (including prereleases)
+on the running server's commit. It works without local tags, including shallow CI
+checkouts. Remote access is required; lookup failure preserves outputs and reports
+an error rather than treating releases as ordinary commits.
 
 ## Compare
 
-Compare the two retained runs offline, older as baseline:
+Compare saved results without rerunning inference:
 
 ```sh
-make compare-quick-check
+make quick-check-against-commit   # fresh versus old
+make quick-check-against-release  # fresh versus release baseline
 
-# Or choose both paths explicitly:
-make compare-quick-check \
-  QUICK_CHECK_BASELINE=.tools/quick-check/output/<baseline-run> \
-  QUICK_CHECK_CANDIDATE=.tools/quick-check/output/<candidate-run>
+# Either command also accepts an explicit pair (including archived runs):
+make quick-check-against-commit \
+  QUICK_CHECK_BASELINE=/path/to/baseline \
+  QUICK_CHECK_CANDIDATE=/path/to/candidate
 ```
+
+Release comparisons check remote tags. When both commits are releases, they update
+`release-history.md` beside this README with timings and hostname/RAM/VRAM/unified
+metadata for both runs. Repeating the release pair/cell updates its entry; commit
+this file to preserve inter-release comparisons.
 
 The terminal shows comparison status, each run's status, warnings, and warmed
 workload timings. Reports replace `output/comparison.log` (terminal summary) and

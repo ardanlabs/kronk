@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -18,6 +19,7 @@ import (
 // These servers exercise the command's contract, not Kronk inference. Each
 // defect removes a distinct signal that an apparently successful chat can hide.
 func TestQuickCheckCommand(t *testing.T) {
+	releaseTestRepo(t)
 	for _, defect := range []string{"", "single-repetition", "no-drafts", "second-no-drafts", "no-cache", "wrong-cache-path", "missing-logs", "truncated-stream", "foreign-session", "two-slots", "cancel-internal-error", "cancel-without-ack", "cancel-without-cleanup", "missing-draft-restore", "actual-reuse-mismatch", "wrong-slot", "uncancelled-error", "dense-fixture", "missing-timing", "invalid-timing"} {
 		t.Run(defect, func(t *testing.T) {
 			passing := defect == "" || defect == "single-repetition"
@@ -521,6 +523,7 @@ func TestQuickCheckCommand(t *testing.T) {
 }
 
 func TestRunRetention(t *testing.T) {
+	releaseTestRepo(t)
 	root := t.TempDir()
 	out := filepath.Join(root, "output")
 	protected := []string{"notes", "saved_local_runs", "19990101T000000Z-1"}
@@ -539,7 +542,7 @@ func TestRunRetention(t *testing.T) {
 	}
 	const a = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	const b = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-	var paths []string
+	var revisions []string
 	for index, test := range []struct {
 		revision string
 		modified *bool
@@ -586,21 +589,39 @@ func TestRunRetention(t *testing.T) {
 			t.Fatal("expected inference/write failure")
 		}
 		after, _ := filepath.Glob(filepath.Join(out, "20*"))
-		var current string
-		for _, path := range after {
-			if !slices.Contains(before, path) {
-				current = path
+		for _, prefix := range []string{"old-", "new-"} {
+			roles, _ := filepath.Glob(filepath.Join(out, prefix+"*"))
+			after = append(after, roles...)
+		}
+		short := test.revision
+		if short == "" {
+			short = "unknown"
+		} else {
+			short = short[:7]
+		}
+		current := filepath.Join(out, "new-"+short)
+		if test.broken {
+			for _, path := range after {
+				if strings.HasPrefix(filepath.Base(path), "20") && !slices.Contains(before, path) {
+					current = path
+				}
 			}
 		}
-		if current == "" {
-			t.Fatal("missing new artifacts")
-		}
-		paths = append(paths, current)
+		revisions = append(revisions, short)
 		var expected []string
 		for _, kept := range test.keep {
-			expected = append(expected, paths[kept])
+			role := "old-"
+			if kept == index || (test.broken && kept == index-1) {
+				role = "new-"
+			}
+			path := filepath.Join(out, role+revisions[kept])
+			if test.broken && kept == index {
+				path = current
+			}
+			expected = append(expected, path)
 		}
 		slices.Sort(expected)
+		slices.Sort(after)
 		if !slices.Equal(after, expected) {
 			t.Fatalf("run %d retained %v, want %v", index, after, expected)
 		}
@@ -654,5 +675,203 @@ func TestRunRetention(t *testing.T) {
 	}
 	if err := run(options{out: out, timeout: time.Second, repetitions: 1}); err == nil || !strings.Contains(err.Error(), "acquire output lock") {
 		t.Fatalf("concurrent invocation must not start: %v", err)
+	}
+}
+
+// A real local origin makes tag recognition deterministic without network mocks.
+func releaseTestRepo(t *testing.T) func(...string) string {
+	t.Helper()
+	root := t.TempDir()
+	t.Chdir(root)
+	git := func(args ...string) string {
+		t.Helper()
+		data, err := exec.Command("git", args...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, data)
+		}
+		return strings.TrimSpace(string(data))
+	}
+	git("init", "--quiet")
+	git("remote", "add", "origin", root)
+	return git
+}
+
+func TestReleaseRetention(t *testing.T) {
+	git := releaseTestRepo(t)
+	root := git("rev-parse", "--show-toplevel")
+	commit := func(label, tag string) string {
+		t.Helper()
+		git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "--quiet", "-m", label)
+		revision := git("rev-parse", "HEAD")
+		if tag != "" {
+			git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "tag.gpgsign=false", "tag", "-a", tag, "-m", tag)
+		}
+		return revision
+	}
+	a, b, c, d, e, f := commit("a", "v1.0.0"), commit("b", ""), commit("c", "v1.1.0"), commit("d", "notes"), commit("e", ""), commit("f", "v1.2.0")
+	// Include both annotated and lightweight release tags.
+	git("tag", "-d", "v1.1.0")
+	git("-c", "tag.gpgsign=false", "tag", "v1.1.0", c)
+	t.Run("shallow-checkout-without-tags", func(t *testing.T) {
+		clone := filepath.Join(t.TempDir(), "clone")
+		git("clone", "--quiet", "--depth=1", "--no-tags", "file://"+root, clone)
+		t.Chdir(clone)
+		if git("tag", "--list") != "" {
+			t.Fatal("fixture unexpectedly has local tags")
+		}
+		if err := exec.Command("git", "rev-parse", "--verify", a+"^{commit}").Run(); err == nil {
+			t.Fatal("fixture unexpectedly has the older release commit")
+		}
+		tags, err := releaseTags()
+		if err != nil || len(tags) != 3 || tags[a] != "v1.0.0" || tags[c] != "v1.1.0" || tags[f] != "v1.2.0" || tags[d] != "" {
+			t.Fatal("remote annotated/lightweight recognition failed", tags, err)
+		}
+	})
+	out := filepath.Join(root, "output")
+	if err := os.Mkdir(out, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for i, tc := range []struct {
+		revision, release, old string
+	}{
+		{a, "", ""},
+		{b, "v1.0.0", ""},
+		{b, "v1.0.0", ""},
+		{c, "v1.0.0", b},
+		{c, "v1.0.0", b},
+		{d, "v1.1.0", b},
+		{e, "v1.1.0", d},
+		{f, "v1.1.0", e},
+		{f, "v1.1.0", e},
+		{c, "v1.2.0", e}, // Returning to the protected hash replaces it, not a duplicate slot.
+		{a, "v1.1.0", f}, // All three slots may hold releases.
+		{b, "v1.0.0", c}, // An ordinary commit protects the release role, not every tagged run.
+	} {
+		r := comparisonFixture([]float64{2 + float64(i), 6 + float64(i), 14 + float64(i)})
+		r.ServerRevision = tc.revision
+		r.TestStartedAt = time.Date(2026, 10, 22, 0, 0, i, 0, time.UTC).Format(time.RFC3339Nano)
+		staged := filepath.Join(out, fmt.Sprintf("20261022T0000%02dZ-%d", i, i))
+		if err := os.Rename(writeComparisonFixture(t, r), staged); err != nil {
+			t.Fatal(err)
+		}
+		final, err := retainRuns(out, staged)
+		if err != nil || final != filepath.Join(out, "new-"+tc.revision[:7]) {
+			t.Fatal(final, err)
+		}
+		entries, err := os.ReadDir(out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var names []string
+		for _, entry := range entries {
+			names = append(names, entry.Name())
+		}
+		want := []string{"new-" + tc.revision[:7]}
+		if tc.release != "" {
+			want = append(want, "release-"+tc.release)
+		}
+		if tc.old != "" {
+			want = append(want, "old-"+tc.old[:7])
+		}
+		slices.Sort(want)
+		if !slices.Equal(names, want) {
+			t.Fatalf("step %d: %v, want %v", i, names, want)
+		}
+		if tc.release != "" {
+			release, err := readComparison(filepath.Join(out, "release-"+tc.release))
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantRevision := map[string]string{"v1.0.0": a, "v1.1.0": c, "v1.2.0": f}[tc.release]
+			if release.summary.ServerRevision != wantRevision {
+				t.Fatal("wrong protected release", release.summary.ServerRevision)
+			}
+		}
+		if i == 0 {
+			var output strings.Builder
+			if err := compareCommand([]string{"-against", "release", "-out", out}, &output); err == nil {
+				t.Fatal("compared without an older release")
+			}
+		}
+		if i == 3 || i == 4 || i == 7 || i == 8 {
+			var output strings.Builder
+			if err := compareCommand([]string{"-against", "release", "-out", out}, &output); err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(filepath.Join(root, "release-history.md"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			history := string(data)
+			count := 1
+			if i >= 7 {
+				count = 2
+				if !strings.Contains(history, "v1.1.0 → v1.2.0") || !strings.Contains(history, f) {
+					t.Fatal("second release comparison missing", history)
+				}
+			}
+			if strings.Count(history, "\n## ") != count || !strings.Contains(history, "v1.0.0 → v1.1.0") || !strings.Contains(history, a) || !strings.Contains(history, c) || !strings.Contains(history, fmt.Sprintf("%.6f [SD", 6+float64(i))) || !strings.Contains(history, "| Warm-up request | 6.000000") {
+				t.Fatal("release comparison/history update failed", history)
+			}
+			if !strings.Contains(history, "machine: `test-machine`; RAM: 24000 bytes; VRAM: 18000 bytes; unified memory: true") || strings.Contains(history, "test-os") || !strings.Contains(history, "library: `test-library`") {
+				t.Fatal("incorrect history metadata", history)
+			}
+			if i == 3 && !strings.Contains(history, "+50.00%") {
+				t.Fatal("incorrect timing delta", history)
+			}
+			// Choosing the commit baseline must not change release history.
+			if err := compareCommand([]string{"-against", "commit", "-out", out}, &output); err != nil {
+				t.Fatal(err)
+			}
+			after, err := os.ReadFile(filepath.Join(root, "release-history.md"))
+			if err != nil || string(after) != history {
+				t.Fatal("commit comparison changed release history", err)
+			}
+			// Comparison reports are files, not managed run directories.
+			for _, name := range []string{"comparison.json", "comparison.log"} {
+				if err := os.Remove(filepath.Join(out, name)); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+	}
+	path := filepath.Join(root, "release-history.md")
+	history, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output strings.Builder
+	if err := compareCommand([]string{"-against", "release", "-out", out}, &output); err != nil {
+		t.Fatal(err)
+	}
+	if after, err := os.ReadFile(path); err != nil || string(after) != string(history) {
+		t.Fatal("ordinary-commit versus release changed history", err)
+	}
+	// Broken history is surfaced, never discarded or silently replaced.
+	if err := os.WriteFile(path, []byte("broken"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := compareCommand([]string{"-against", "release", "-out", out, "-baseline", filepath.Join(out, "release-v1.0.0"), "-candidate", filepath.Join(out, "old-"+c[:7])}, &output); err == nil || !strings.Contains(err.Error(), "release history") {
+		t.Fatal("accepted broken history", err)
+	}
+	if after, err := os.ReadFile(path); err != nil || string(after) != "broken" {
+		t.Fatal("overwrote broken history", err)
+	}
+	// Failure to recognize remote releases preserves every saved output.
+	git("remote", "set-url", "origin", filepath.Join(root, "missing-origin"))
+	r := comparisonFixture([]float64{1, 4, 10})
+	r.ServerRevision = d
+	r.TestStartedAt = "2026-10-22T00:01:00Z"
+	staged := filepath.Join(out, "20261022T000100Z-99")
+	if err := os.Rename(writeComparisonFixture(t, r), staged); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := retainRuns(out, staged); err == nil || !strings.Contains(err.Error(), "release recognition unavailable") {
+		t.Fatal("failed lookup treated as an ordinary commit", err)
+	}
+	for _, name := range []string{"release-v1.0.0", "old-" + c[:7], "new-" + b[:7], filepath.Base(staged)} {
+		if _, err := os.Stat(filepath.Join(out, name, "summary.json")); err != nil {
+			t.Fatal("tag lookup error evicted existing data", err)
+		}
 	}
 }

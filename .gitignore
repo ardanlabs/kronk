@@ -16,10 +16,8 @@ zarf/docker/openwebui/
 .tools/reliability/output/
 .tools/lifecycle-load/output/
 
-# Keep the archive directory visible, but ignore saved runs and the runtime lock.
-.tools/quick-check/output/saved_local_runs/*
-!.tools/quick-check/output/saved_local_runs/.gitkeep
-.tools/quick-check/output/.quick-check.lock
+# Quick-check artifacts and local archives.
+.tools/quick-check/output/
 
 # Binaries for programs and plugins
 *.exe

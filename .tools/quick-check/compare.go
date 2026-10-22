@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
-	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -58,50 +57,72 @@ func compareCommand(args []string, out io.Writer) error {
 	baseline := flags.String("baseline", "", "baseline run directory (supply both paths or neither)")
 	candidate := flags.String("candidate", "", "candidate run directory (supply both paths or neither)")
 	parent := flags.String("out", ".tools/quick-check/output", "comparison output directory and run parent for automatic selection")
+	against := flags.String("against", "commit", "baseline role: commit or release")
 	asJSON := flags.Bool("json", false, "write the full comparison as JSON")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if (*baseline == "") != (*candidate == "") || flags.NArg() != 0 {
-		return fmt.Errorf("usage: quick-check compare [-baseline DIR -candidate DIR] [-out DIR] [-json]; supply both paths or neither")
+		return fmt.Errorf("usage: quick-check compare [-against commit|release] [-baseline DIR -candidate DIR] [-out DIR] [-json]; supply both paths or neither")
+	}
+	if *against != "commit" && *against != "release" {
+		return fmt.Errorf("-against must be commit or release")
 	}
 	if *baseline == "" {
-		entries, err := os.ReadDir(*parent)
+		stored, err := savedRuns(*parent)
 		if err != nil {
 			return err
 		}
 		var runs []string
-		for _, entry := range entries {
-			if !entry.IsDir() {
-				continue
+		var release string
+		for _, run := range stored {
+			if strings.HasPrefix(filepath.Base(run.path), "release-") {
+				if release != "" {
+					return fmt.Errorf("multiple release baselines; supply explicit paths")
+				}
+				release = run.path
+			} else {
+				runs = append(runs, run.path)
 			}
-			stamp, suffix, ok := strings.Cut(entry.Name(), "-")
-			if _, err := time.Parse("20060102T150405Z", stamp); err != nil || !ok {
-				continue
-			}
-			if _, err := strconv.ParseUint(suffix, 10, 64); err != nil {
-				continue
-			}
-			complete := true
-			for _, name := range []string{"summary.json", "events.ndjson", "tool.log"} {
-				info, err := os.Lstat(filepath.Join(*parent, entry.Name(), name))
-				if err != nil || !info.Mode().IsRegular() {
-					complete = false
-					break
+		}
+		if *against == "release" {
+			for _, run := range runs {
+				if strings.HasPrefix(filepath.Base(run), "new-") {
+					if *candidate != "" {
+						return fmt.Errorf("ambiguous fresh run; supply explicit paths")
+					}
+					*candidate = run
+				} else if !strings.HasPrefix(filepath.Base(run), "old-") {
+					return fmt.Errorf("ambiguous run queue; supply explicit paths")
 				}
 			}
-			if complete {
-				runs = append(runs, entry.Name())
+			if len(runs) > 2 {
+				return fmt.Errorf("ambiguous run queue; supply explicit paths")
 			}
+			if release == "" || *candidate == "" {
+				return fmt.Errorf("release comparison needs a fresh run and an older release baseline")
+			}
+			*baseline = release
+		} else {
+			if len(runs) != 2 {
+				return fmt.Errorf("automatic comparison needs exactly two finalized runs directly under %s; found %d (supply explicit paths instead)", *parent, len(runs))
+			}
+			// Readable roles take precedence; legacy timestamp folders remain usable.
+			switch {
+			case strings.HasPrefix(filepath.Base(runs[0]), "new-") && strings.HasPrefix(filepath.Base(runs[1]), "old-"):
+			case strings.HasPrefix(filepath.Base(runs[0]), "old-") && strings.HasPrefix(filepath.Base(runs[1]), "new-"):
+				runs[0], runs[1] = runs[1], runs[0]
+			case !strings.HasPrefix(filepath.Base(runs[0]), "old-") && !strings.HasPrefix(filepath.Base(runs[0]), "new-") && !strings.HasPrefix(filepath.Base(runs[1]), "old-") && !strings.HasPrefix(filepath.Base(runs[1]), "new-"):
+				slices.Sort(runs)
+				if strings.SplitN(filepath.Base(runs[0]), "-", 2)[0] == strings.SplitN(filepath.Base(runs[1]), "-", 2)[0] {
+					return fmt.Errorf("run timestamps are tied; supply explicit baseline and candidate paths")
+				}
+				runs[0], runs[1] = runs[1], runs[0]
+			default:
+				return fmt.Errorf("automatic comparison needs an old/new pair; supply explicit baseline and candidate paths")
+			}
+			*candidate, *baseline = runs[0], runs[1]
 		}
-		if len(runs) != 2 {
-			return fmt.Errorf("automatic comparison needs exactly two finalized runs directly under %s; found %d (supply explicit paths instead)", *parent, len(runs))
-		}
-		slices.Sort(runs)
-		if strings.SplitN(runs[0], "-", 2)[0] == strings.SplitN(runs[1], "-", 2)[0] {
-			return fmt.Errorf("run timestamps are tied; supply explicit baseline and candidate paths")
-		}
-		*baseline, *candidate = filepath.Join(*parent, runs[0]), filepath.Join(*parent, runs[1])
 	}
 	a, err := readComparison(*baseline)
 	if err != nil {
@@ -112,6 +133,17 @@ func compareCommand(args []string, out io.Writer) error {
 		return fmt.Errorf("candidate: %w", err)
 	}
 	c := compareRuns(*baseline, *candidate, a, b)
+	var baselineTag, candidateTag string
+	if *against == "release" {
+		tags, err := releaseTags()
+		if err != nil {
+			return err
+		}
+		baselineTag, candidateTag = tags[a.summary.ServerRevision], tags[b.summary.ServerRevision]
+		if baselineTag == "" {
+			return fmt.Errorf("baseline commit does not have a remote release tag")
+		}
+	}
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err
@@ -128,6 +160,11 @@ func compareCommand(args []string, out io.Writer) error {
 	}
 	if err := os.WriteFile(filepath.Join(*parent, "comparison.log"), []byte(summary.String()), 0600); err != nil {
 		return err
+	}
+	if baselineTag != "" && candidateTag != "" && a.summary.ServerRevision != b.summary.ServerRevision {
+		if err := recordReleaseComparison(*parent, baselineTag, candidateTag, a, b, c); err != nil {
+			return err
+		}
 	}
 	if *asJSON {
 		enc := json.NewEncoder(out)

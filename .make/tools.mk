@@ -45,8 +45,13 @@ QUICK_CHECK_BASELINE ?=
 QUICK_CHECK_CANDIDATE ?=
 QUICK_CHECK_COMPARE_ARGS ?=
 
-compare-quick-check:
-	@go run ./.tools/quick-check compare \
+quick-check-against-commit:
+	@go run ./.tools/quick-check compare -against commit \
+		-baseline "$(QUICK_CHECK_BASELINE)" -candidate "$(QUICK_CHECK_CANDIDATE)" \
+		$(QUICK_CHECK_COMPARE_ARGS)
+
+quick-check-against-release:
+	@go run ./.tools/quick-check compare -against release \
 		-baseline "$(QUICK_CHECK_BASELINE)" -candidate "$(QUICK_CHECK_CANDIDATE)" \
 		$(QUICK_CHECK_COMPARE_ARGS)
 

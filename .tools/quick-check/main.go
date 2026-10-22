@@ -1,4 +1,4 @@
-// Command quick-check probes one MoE/one-slot/IMC-on/MTP-on/text-only cell
+// Command quick-check probes a matrix of Kronk features and configurations
 // through a separately managed Kronk model server. It is not a model benchmark.
 package main
 
@@ -330,7 +330,8 @@ func run(o options) (runErr error) {
 		writeErr := errors.Join(evidenceErr, err, logErr, events.Close(), toolLog.Close())
 		runErr = errors.Join(runErr, writeErr)
 		if writeErr == nil {
-			retentionErr := retainRuns(o.out, dir)
+			finalDir, retentionErr := retainRuns(o.out, dir)
+			dir = finalDir
 			runErr = errors.Join(runErr, retentionErr)
 			reported = retentionErr == nil
 		} else {

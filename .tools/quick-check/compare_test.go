@@ -86,6 +86,40 @@ func TestCompareAutomaticSelection(t *testing.T) {
 	}
 }
 
+func TestCompareReadableRoles(t *testing.T) {
+	parent := t.TempDir()
+	for _, role := range []string{"old-aaaaaaa", "new-bbbbbbb", "release-v1.0.0"} {
+		r := comparisonFixture([]float64{1, 4, 10})
+		if strings.HasPrefix(role, "new-") {
+			r.ServerRevision = strings.Repeat("b", 40)
+			// Roles, not copied mtimes or recorded timestamps, select this pair.
+			r.TestStartedAt = "2026-10-20T16:00:00Z"
+		}
+		if err := os.Rename(writeComparisonFixture(t, r), filepath.Join(parent, role)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var out bytes.Buffer
+	if err := compareCommand([]string{"-out", parent, "-json"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	var got comparison
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Base(got.Baseline.Directory) != "old-aaaaaaa" || filepath.Base(got.Candidate.Directory) != "new-bbbbbbb" {
+		t.Fatal("release copy or timestamp overrode old/new roles", out.String())
+	}
+	// An unrotated finalized run (e.g. failed tag recognition) must not silently
+	// cause comparison of the stale fresh role instead of the newest output.
+	if err := os.Rename(writeComparisonFixture(t, comparisonFixture([]float64{2, 6, 14})), filepath.Join(parent, "20261022T170000Z-1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := compareCommand([]string{"-against", "release", "-out", parent}, &out); err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatal("selected a stale candidate from an ambiguous queue", err)
+	}
+}
+
 func TestCompareCommand(t *testing.T) {
 	a := comparisonFixture([]float64{1, 4, 10})
 	b := comparisonFixture([]float64{2, 6, 14})
