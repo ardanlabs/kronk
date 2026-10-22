@@ -87,8 +87,8 @@ func savedRuns(parent string) ([]storedRun, error) {
 
 // Resolve remote tags once per operation, including annotated tags' peeled commits.
 // A failed lookup must never be mistaken for an ordinary, untagged commit.
-func releaseTags() (map[string]string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+func releaseTags(parent context.Context) (map[string]string, error) {
+	ctx, cancel := context.WithTimeout(parent, 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "ls-remote", "--tags", "origin", "refs/tags/v*")
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
@@ -200,12 +200,12 @@ func recordReleaseComparison(parent, baselineTag, candidateTag string, a, b comp
 
 // Keep three distinct runs: fresh, most recent older release, and newest remaining
 // older commit. A fresh release only becomes the release baseline on a later run.
-func retainRuns(parent, current string) (string, error) {
+func retainRuns(ctx context.Context, parent, current string) (string, error) {
 	runs, err := savedRuns(parent)
 	if err != nil {
 		return current, err
 	}
-	tags, err := releaseTags()
+	tags, err := releaseTags(ctx)
 	if err != nil {
 		return current, err
 	}
@@ -269,6 +269,10 @@ func retainRuns(parent, current string) (string, error) {
 	}
 	// Stage retained directories before changing roles, so role swaps cannot
 	// overwrite another retained run. On I/O errors leave staged evidence intact.
+	// Once this short filesystem commit starts, finish it even on interruption.
+	if err := ctx.Err(); err != nil {
+		return current, err
+	}
 	staged, err := os.MkdirTemp(parent, ".retain-*")
 	if err != nil {
 		return current, err

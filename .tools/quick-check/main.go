@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -12,9 +13,11 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -249,6 +252,8 @@ func main() {
 }
 
 func run(o options) (runErr error) {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	reported := false
 	defer func() {
 		// Setup/storage failures still need a visible explanation when no
@@ -279,6 +284,19 @@ func run(o options) (runErr error) {
 	if err != nil {
 		return err
 	}
+	committed := false
+	defer func() {
+		if ctx.Err() != nil && !committed {
+			err := os.RemoveAll(dir)
+			runErr = errors.Join(runErr, ctx.Err(), err)
+			reported = true
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Quick-check interrupted; could not remove unfinished output %s: %v\n", dir, err)
+			} else {
+				fmt.Fprintln(os.Stderr, "Quick-check interrupted; unfinished output removed; previous runs retained.")
+			}
+		}
+	}()
 	events, err := os.Create(filepath.Join(dir, "events.ndjson"))
 	if err != nil {
 		return err
@@ -297,8 +315,11 @@ func run(o options) (runErr error) {
 	if revision, err := exec.Command("git", "rev-parse", "HEAD").Output(); err == nil {
 		r.HarnessRevision = strings.TrimSpace(string(revision))
 	}
-	c := &client{host: strings.TrimRight(o.host, "/"), token: os.Getenv("KRONK_TOKEN"), timeout: o.timeout, traces: make(map[string]string), events: json.NewEncoder(events)}
+	c := &client{ctx: ctx, host: strings.TrimRight(o.host, "/"), token: os.Getenv("KRONK_TOKEN"), timeout: o.timeout, traces: make(map[string]string), events: json.NewEncoder(events)}
 	defer func() {
+		if ctx.Err() != nil {
+			return // The interruption cleanup removes this incomplete run.
+		}
 		if runErr != nil {
 			r.Findings = append(r.Findings, runErr.Error())
 		}
@@ -330,10 +351,14 @@ func run(o options) (runErr error) {
 		writeErr := errors.Join(evidenceErr, err, logErr, events.Close(), toolLog.Close())
 		runErr = errors.Join(runErr, writeErr)
 		if writeErr == nil {
-			finalDir, retentionErr := retainRuns(o.out, dir)
+			finalDir, retentionErr := retainRuns(ctx, o.out, dir)
 			dir = finalDir
 			runErr = errors.Join(runErr, retentionErr)
 			reported = retentionErr == nil
+			committed = retentionErr == nil
+			if ctx.Err() != nil && !committed {
+				return
+			}
 		} else {
 			fmt.Fprintln(os.Stderr, "Artifacts could not be finalized; previous runs retained.")
 		}
@@ -344,7 +369,16 @@ func run(o options) (runErr error) {
 	}()
 	defer func() {
 		if r.WarmupRequest != nil {
-			runErr = errors.Join(runErr, c.unload())
+			// Cancellation must stop inference, not cancel its cleanup request.
+			cleanup := *c
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			cleanup.ctx = cleanupCtx
+			err := cleanup.unload()
+			runErr = errors.Join(runErr, err)
+			if err != nil && ctx.Err() != nil {
+				fmt.Fprintf(os.Stderr, "Interrupted model cleanup: %v\n", err)
+			}
 		}
 	}()
 	for i := 1; i <= o.repetitions; i++ {

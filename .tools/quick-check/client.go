@@ -82,12 +82,20 @@ type execution struct {
 }
 
 type client struct {
+	ctx         context.Context
 	host, token string
 	http        http.Client
 	timeout     time.Duration
 	traces      map[string]string
 	events      *json.Encoder
 	repetition  int
+}
+
+func (c *client) context() context.Context {
+	if c.ctx != nil {
+		return c.ctx
+	}
+	return context.Background()
 }
 
 func (c *client) request(ctx context.Context, method, path string, body any) (*http.Response, string, error) {
@@ -126,7 +134,7 @@ func (c *client) request(ctx context.Context, method, path string, body any) (*h
 }
 
 func (c *client) json(method, path string, body, dst any) error {
-	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	ctx, cancel := context.WithTimeout(c.context(), c.timeout)
 	defer cancel()
 	resp, _, err := c.request(ctx, method, path, body)
 	if err != nil {
@@ -150,7 +158,7 @@ func (c *client) chat(phase string, messages []message, limit int, cancelAfterCo
 			r.Error = err.Error()
 		}
 	}()
-	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	ctx, cancel := context.WithTimeout(c.context(), c.timeout)
 	defer cancel()
 	body := map[string]any{
 		"model": modelID, "messages": messages, "stream": true,

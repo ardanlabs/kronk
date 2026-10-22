@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -135,7 +136,7 @@ func compareCommand(args []string, out io.Writer) error {
 	c := compareRuns(*baseline, *candidate, a, b)
 	var baselineTag, candidateTag string
 	if *against == "release" {
-		tags, err := releaseTags()
+		tags, err := releaseTags(context.Background())
 		if err != nil {
 			return err
 		}

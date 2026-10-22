@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -12,6 +14,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -722,7 +726,7 @@ func TestReleaseRetention(t *testing.T) {
 		if err := exec.Command("git", "rev-parse", "--verify", a+"^{commit}").Run(); err == nil {
 			t.Fatal("fixture unexpectedly has the older release commit")
 		}
-		tags, err := releaseTags()
+		tags, err := releaseTags(context.Background())
 		if err != nil || len(tags) != 3 || tags[a] != "v1.0.0" || tags[c] != "v1.1.0" || tags[f] != "v1.2.0" || tags[d] != "" {
 			t.Fatal("remote annotated/lightweight recognition failed", tags, err)
 		}
@@ -754,7 +758,7 @@ func TestReleaseRetention(t *testing.T) {
 		if err := os.Rename(writeComparisonFixture(t, r), staged); err != nil {
 			t.Fatal(err)
 		}
-		final, err := retainRuns(out, staged)
+		final, err := retainRuns(context.Background(), out, staged)
 		if err != nil || final != filepath.Join(out, "new-"+tc.revision[:7]) {
 			t.Fatal(final, err)
 		}
@@ -866,12 +870,132 @@ func TestReleaseRetention(t *testing.T) {
 	if err := os.Rename(writeComparisonFixture(t, r), staged); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := retainRuns(out, staged); err == nil || !strings.Contains(err.Error(), "release recognition unavailable") {
+	if _, err := retainRuns(context.Background(), out, staged); err == nil || !strings.Contains(err.Error(), "release recognition unavailable") {
 		t.Fatal("failed lookup treated as an ordinary commit", err)
 	}
 	for _, name := range []string{"release-v1.0.0", "old-" + c[:7], "new-" + b[:7], filepath.Base(staged)} {
 		if _, err := os.Stat(filepath.Join(out, name, "summary.json")); err != nil {
 			t.Fatal("tag lookup error evicted existing data", err)
 		}
+	}
+}
+
+func TestQuickCheckInterrupt(t *testing.T) {
+	if os.Getenv("QUICK_CHECK_INTERRUPT_CHILD") == "1" {
+		if err := run(options{host: os.Getenv("QUICK_CHECK_TEST_HOST"), out: os.Getenv("QUICK_CHECK_TEST_OUT"), serverLog: os.Getenv("QUICK_CHECK_TEST_LOG"), timeout: time.Minute, repetitions: 3}); err != nil {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+	for _, tc := range []struct {
+		name, phase string
+		signal      os.Signal
+	}{
+		{"setup-interrupt", "setup", os.Interrupt},
+		{"stream-interrupt", "stream", os.Interrupt},
+		{"stream-terminate", "stream", syscall.SIGTERM},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			out := filepath.Join(root, "output")
+			if err := os.Mkdir(out, 0755); err != nil {
+				t.Fatal(err)
+			}
+			names := []string{"new-aaaaaaa", "old-bbbbbbb", "release-v1.0.0"}
+			for _, name := range names {
+				if err := os.Rename(writeComparisonFixture(t, comparisonFixture([]float64{1, 4, 10})), filepath.Join(out, name)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			logPath := filepath.Join(root, "server.log")
+			if err := os.WriteFile(logPath, nil, 0644); err != nil {
+				t.Fatal(err)
+			}
+			ready, cancelled := make(chan struct{}), make(chan struct{})
+			var loaded, unloaded atomic.Bool
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				switch req.URL.Path {
+				case "/v1/liveness":
+					if tc.phase == "setup" {
+						close(ready)
+						<-req.Context().Done()
+						close(cancelled)
+						return
+					}
+					fmt.Fprintln(w, `{}`)
+				case "/v1/kronk/libs", "/v1/devices":
+					fmt.Fprintln(w, `{}`)
+				case "/v1/kronk/models/ps":
+					if loaded.Load() {
+						json.NewEncoder(w).Encode([]map[string]string{{"id": modelID}})
+					} else {
+						fmt.Fprintln(w, `[]`)
+					}
+				case "/v1/chat/completions":
+					loaded.Store(true)
+					w.Header().Set("Content-Type", "text/event-stream")
+					fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"Hello"}}]}`)
+					w.(http.Flusher).Flush()
+					close(ready)
+					<-req.Context().Done()
+					close(cancelled)
+				case "/v1/kronk/models/slots":
+					json.NewEncoder(w).Encode([]map[string]any{{"model_id": modelID, "slots": []map[string]any{{"id": 0, "phase": "idle"}}}})
+				case "/v1/kronk/models/unload":
+					loaded.Store(false)
+					unloaded.Store(true)
+					json.NewEncoder(w).Encode(map[string]string{"id": modelID, "status": "unloaded"})
+				default:
+					http.NotFound(w, req)
+				}
+			}))
+			defer server.Close()
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestQuickCheckInterrupt$")
+			cmd.Env = append(os.Environ(), "QUICK_CHECK_INTERRUPT_CHILD=1", "QUICK_CHECK_TEST_HOST="+server.URL, "QUICK_CHECK_TEST_OUT="+out, "QUICK_CHECK_TEST_LOG="+logPath)
+			var output bytes.Buffer
+			cmd.Stdout, cmd.Stderr = &output, &output
+			if err := cmd.Start(); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-ready:
+			case <-ctx.Done():
+				cmd.Wait()
+				t.Fatal("child did not reach the interruptible request", output.String())
+			}
+			if err := cmd.Process.Signal(tc.signal); err != nil {
+				t.Fatal(err)
+			}
+			if err := cmd.Wait(); err == nil || ctx.Err() != nil || !strings.Contains(output.String(), "Quick-check interrupted; unfinished output removed; previous runs retained.") || strings.Contains(output.String(), "Quick-check: PASS") {
+				t.Fatalf("interruption was not handled cleanly: %v\n%s", err, output.String())
+			}
+			select {
+			case <-cancelled:
+			case <-ctx.Done():
+				t.Fatal("server request was not cancelled")
+			}
+			if tc.phase == "stream" && (!unloaded.Load() || loaded.Load()) {
+				t.Fatal("interrupted inference did not unload its model", output.String())
+			}
+			entries, err := os.ReadDir(out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, entry := range entries {
+				got = append(got, entry.Name())
+			}
+			slices.Sort(names)
+			if !slices.Equal(got, names) {
+				t.Fatal("interruption changed saved runs or left a lock/partial output", got)
+			}
+			for _, name := range names {
+				if _, err := readComparison(filepath.Join(out, name)); err != nil {
+					t.Fatal("interruption damaged a previous run", err)
+				}
+			}
+		})
 	}
 }
