@@ -67,7 +67,8 @@ make compare-quick-check \
 ```
 
 The terminal shows comparison status, each run's status, warnings, and warmed
-workload timings. Full results replace `output/comparison.json`, outside run folders.
+workload timings. Reports replace `output/comparison.log` (terminal summary) and
+`output/comparison.json` (full results), outside run folders.
 Optional: `QUICK_CHECK_COMPARE_ARGS='-out /path/to/output'` or `'-json'` for JSON stdout.
 
 Both commands return nonzero on failure. Comparison PASS is not a performance

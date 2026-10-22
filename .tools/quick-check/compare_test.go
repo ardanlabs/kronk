@@ -109,6 +109,10 @@ func TestCompareCommand(t *testing.T) {
 	if got.Status != "PASS" || len(got.Warnings) != 0 {
 		t.Fatalf("unexpected verdict/warnings: %+v", got)
 	}
+	jsonModeLog, err := os.ReadFile(filepath.Join(output, "comparison.log"))
+	if err != nil || !bytes.HasPrefix(jsonModeLog, []byte("Comparison status: PASS\n")) {
+		t.Fatal("JSON mode must also save a plain-text summary", err)
+	}
 	rows := map[string]metricComparison{}
 	for _, row := range got.Metrics {
 		rows[row.Metric] = row
@@ -156,6 +160,10 @@ func TestCompareCommand(t *testing.T) {
 	if err != nil || string(saved) != first {
 		t.Fatal("saved full report differs from JSON output", err)
 	}
+	log, err := os.ReadFile(filepath.Join(output, "comparison.log"))
+	if err != nil || string(log) != out.String() || !bytes.Equal(log, jsonModeLog) {
+		t.Fatal("saved log must match terminal output in either mode", err)
+	}
 	for _, dir := range []string{base, candidate} {
 		if _, err := os.Stat(filepath.Join(dir, "comparison.json")); !os.IsNotExist(err) {
 			t.Fatal("comparison must not be saved inside a run", dir, err)
@@ -194,6 +202,10 @@ func TestCompareRunStatuses(t *testing.T) {
 				}
 				if (err != nil) != fails || !strings.HasPrefix(out.String(), fmt.Sprintf("Comparison status: %s\nSaved-run checks: baseline %s / candidate %s\n", status, baselineStatus, candidateStatus)) {
 					t.Fatal(err, out.String())
+				}
+				log, err := os.ReadFile(filepath.Join(output, "comparison.log"))
+				if err != nil || string(log) != out.String() {
+					t.Fatal("passing and failed comparisons must save their terminal summary", err)
 				}
 				data, err := os.ReadFile(filepath.Join(output, "comparison.json"))
 				if err != nil {

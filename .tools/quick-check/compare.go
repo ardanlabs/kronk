@@ -122,12 +122,19 @@ func compareCommand(args []string, out io.Writer) error {
 	if err := os.WriteFile(filepath.Join(*parent, "comparison.json"), append(data, '\n'), 0600); err != nil {
 		return err
 	}
+	var summary strings.Builder
+	if err := c.writeText(&summary); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(*parent, "comparison.log"), []byte(summary.String()), 0600); err != nil {
+		return err
+	}
 	if *asJSON {
 		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
 		err = enc.Encode(c)
 	} else {
-		err = c.writeText(out)
+		_, err = io.WriteString(out, summary.String())
 	}
 	if err != nil {
 		return err
