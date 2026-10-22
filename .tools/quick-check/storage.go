@@ -201,12 +201,8 @@ func recordReleaseComparison(parent, baselineTag, candidateTag string, a, b comp
 
 // Keep three distinct runs: fresh, most recent older release, and newest remaining
 // older commit. A fresh release only becomes the release baseline on a later run.
-func retainRuns(ctx context.Context, parent, current string) (string, error) {
+func retainRuns(ctx context.Context, parent, current string, tags map[string]string) (string, error) {
 	runs, err := savedRuns(parent)
-	if err != nil {
-		return current, err
-	}
-	tags, err := releaseTags(ctx)
 	if err != nil {
 		return current, err
 	}
@@ -240,14 +236,17 @@ func retainRuns(ctx context.Context, parent, current string) (string, error) {
 		older = run
 		break
 	}
-	short := func(run storedRun) string {
+	label := func(run storedRun) string {
 		if version := run.report.serverVersion(); version != "unknown" {
+			if tag := tags[run.report.ServerRevision]; tag != "" {
+				return tag + "-" + version[:7]
+			}
 			return version[:7]
 		}
 		return "unknown"
 	}
 	selected := []storedRun{candidate}
-	names := []string{"new-" + short(candidate)}
+	names := []string{"new-" + label(candidate)}
 	if release.path != "" {
 		tag := tags[release.report.ServerRevision]
 		if tag == "" {
@@ -258,7 +257,7 @@ func retainRuns(ctx context.Context, parent, current string) (string, error) {
 	}
 	if older.path != "" {
 		selected = append(selected, older)
-		names = append(names, "old-"+short(older))
+		names = append(names, "old-"+label(older))
 	}
 	for _, name := range names {
 		path := filepath.Join(parent, name)
