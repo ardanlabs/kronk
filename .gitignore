@@ -16,6 +16,9 @@ zarf/docker/openwebui/
 .tools/reliability/output/
 .tools/lifecycle-load/output/
 
+# Quick-check artifacts and local archives.
+.tools/quick-check/output/
+
 # Binaries for programs and plugins
 *.exe
 *.exe~
