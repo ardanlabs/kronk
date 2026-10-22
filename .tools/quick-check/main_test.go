@@ -45,7 +45,7 @@ func TestQuickCheckCommand(t *testing.T) {
 				w.Header().Set("Content-Type", "application/json")
 				switch {
 				case req.URL.Path == "/v1/liveness":
-					fmt.Fprintln(w, `{"build":"develop","vcs_revision":"0123456789abcdef0123456789abcdef01234567","vcs_time":"2026-10-19T14:23:45Z","vcs_modified":false,"host":"fixture-server","os":"linux","GOMAXPROCS":12}`)
+					fmt.Fprintln(w, `{"build":"develop","vcs_revision":"0123456789abcdef0123456789abcdef01234567","vcs_time":"2026-10-19T14:23:45Z","host":"fixture-server","os":"linux","GOMAXPROCS":12}`)
 				case req.URL.Path == "/v1/kronk/libs":
 					fmt.Fprintln(w, `{"build":"fixture"}`)
 				case req.URL.Path == "/v1/devices":
@@ -85,7 +85,7 @@ func TestQuickCheckCommand(t *testing.T) {
 					if !strings.HasPrefix(body.Input, fmt.Sprintf("Quick-check repetition %d.\n\n", tokenizeCalls)) {
 						t.Error("repetitions must use distinct, fixed system-prefix markers")
 					}
-					// Deliberately outside the old sizing range: record, don't resize.
+					// Record the tokenizer's count without resizing the fixed text.
 					json.NewEncoder(w).Encode(map[string]int{"tokens": 9876})
 				case req.URL.Path == "/v1/chat/completions":
 					var body struct {
@@ -549,19 +549,18 @@ func TestRunRetention(t *testing.T) {
 	var revisions []string
 	for index, test := range []struct {
 		revision string
-		modified *bool
 		broken   bool
 		keep     []int
 	}{
-		{a, nil, false, []int{0}},
-		{a, new(true), false, []int{1}}, // Replace the only candidate; ignore legacy modified state.
-		{b, new(false), false, []int{1, 2}},
-		{b, new(true), false, []int{1, 3}},
-		{b, nil, false, []int{1, 4}}, // Repeated replacement preserves the baseline.
-		{a, nil, false, []int{4, 5}}, // Returning to an older commit still promotes the last candidate.
-		{a, new(true), false, []int{4, 6}},
-		{"", nil, false, []int{6, 7}},        // Unknown hashes cannot establish equality.
-		{b, new(true), true, []int{6, 7, 8}}, // Failed writes must not prune either result.
+		{a, false, []int{0}},
+		{a, false, []int{1}}, // Replace the only candidate.
+		{b, false, []int{1, 2}},
+		{b, false, []int{1, 3}},
+		{b, false, []int{1, 4}}, // Repeated replacement preserves the baseline.
+		{a, false, []int{4, 5}}, // Returning to an older commit still promotes the last candidate.
+		{a, false, []int{4, 6}},
+		{"", false, []int{6, 7}},  // Unknown hashes cannot establish equality.
+		{b, true, []int{6, 7, 8}}, // Failed writes must not prune either result.
 	} {
 		before, _ := filepath.Glob(filepath.Join(out, "20*"))
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -577,7 +576,7 @@ func TestRunRetention(t *testing.T) {
 						}
 					}
 				}
-				json.NewEncoder(w).Encode(map[string]any{"build": "develop", "vcs_revision": test.revision, "vcs_modified": test.modified})
+				json.NewEncoder(w).Encode(map[string]any{"build": "develop", "vcs_revision": test.revision})
 			case "/v1/kronk/libs", "/v1/devices":
 				fmt.Fprintln(w, `{}`)
 			case "/v1/kronk/models/ps":
@@ -664,8 +663,8 @@ func TestRunRetention(t *testing.T) {
 			if err := json.Unmarshal(fields["test_started_at"], &started); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := time.Parse(time.RFC3339Nano, started); err != nil || !strings.Contains(string(text), "\nTest started: "+started+"\n") || fields["server_modified"] != nil || strings.Contains(string(text), "+develop") {
-				t.Fatal("test timestamp missing or retired modified flag present", string(text))
+			if _, err := time.Parse(time.RFC3339Nano, started); err != nil || !strings.Contains(string(text), "\nTest started: "+started+"\n") {
+				t.Fatal("test timestamp missing or invalid", string(text))
 			}
 		}
 	}
@@ -674,6 +673,32 @@ func TestRunRetention(t *testing.T) {
 			t.Fatalf("retention removed protected entry %s: %v", name, err)
 		}
 	}
+	t.Run("invalid-saved-timestamp", func(t *testing.T) {
+		out := t.TempDir()
+		r := comparisonFixture([]float64{1, 4, 10})
+		r.TestStartedAt = ""
+		path := filepath.Join(out, "new-aaaaaaa")
+		if err := os.Rename(writeComparisonFixture(t, r), path); err != nil {
+			t.Fatal(err)
+		}
+		summaryPath := filepath.Join(path, "summary.json")
+		before, err := os.ReadFile(summaryPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			http.Error(w, "server unavailable", http.StatusServiceUnavailable)
+		}))
+		defer server.Close()
+		err = run(options{host: server.URL, out: out, serverLog: logPath, timeout: time.Second, repetitions: 1})
+		if err == nil || !strings.Contains(err.Error(), "missing or invalid test timestamp") {
+			t.Fatal("retention accepted a run without its recorded timestamp", err)
+		}
+		after, err := os.ReadFile(summaryPath)
+		if err != nil || !bytes.Equal(before, after) {
+			t.Fatal("invalid timestamp must stop retention without changing the saved run", err)
+		}
+	})
 	if err := os.WriteFile(filepath.Join(out, ".quick-check.lock"), nil, 0644); err != nil {
 		t.Fatal(err)
 	}

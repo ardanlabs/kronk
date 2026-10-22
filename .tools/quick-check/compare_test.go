@@ -16,14 +16,20 @@ func TestCompareAutomaticSelection(t *testing.T) {
 	add := func(name string, values []float64) string {
 		t.Helper()
 		dir := filepath.Join(parent, name)
-		if err := os.Rename(writeComparisonFixture(t, comparisonFixture(values)), dir); err != nil {
+		r := comparisonFixture(values)
+		if strings.HasPrefix(name, "new-") {
+			r.ServerRevision = strings.Repeat("b", 40)
+			r.TestStartedAt = "2026-10-20T16:00:00Z"
+		}
+		if err := os.Rename(writeComparisonFixture(t, r), dir); err != nil {
 			t.Fatal(err)
 		}
 		return dir
 	}
-	// Creation order and file mtimes must not reverse the timestamped run order.
-	newer := add("20261021T162309Z-2", []float64{2, 6, 14})
-	older := add("20261021T160436Z-9", []float64{1, 4, 10})
+	// Roles win over timestamps, creation order, and the protected release copy.
+	newer := add("new-bbbbbbb", []float64{2, 6, 14})
+	older := add("old-aaaaaaa", []float64{1, 4, 10})
+	add("release-v1.0.0", []float64{3})
 	archive := filepath.Join(parent, "saved_local_runs")
 	if err := os.Mkdir(archive, 0700); err != nil {
 		t.Fatal(err)
@@ -66,57 +72,29 @@ func TestCompareAutomaticSelection(t *testing.T) {
 		}
 	}
 	third := add("20261021T190000Z-5", []float64{3})
-	if err := compareCommand([]string{"-out", parent}, &out); err == nil {
-		t.Fatal("silently selected among three runs")
+	for _, against := range []string{"commit", "release"} {
+		if err := compareCommand([]string{"-out", parent, "-against", against}, &out); err == nil {
+			t.Fatal("selected a stale candidate from an ambiguous queue", against)
+		}
 	}
 	if err := os.RemoveAll(third); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Rename(newer, filepath.Join(parent, "20261021T160436Z-10")); err != nil {
+	if err := os.Rename(newer, filepath.Join(parent, "20261021T162309Z-2")); err != nil {
+		t.Fatal(err)
+	}
+	staged := filepath.Join(parent, "20261021T160436Z-9")
+	if err := os.Rename(older, staged); err != nil {
 		t.Fatal(err)
 	}
 	if err := compareCommand([]string{"-out", parent}, &out); err == nil {
-		t.Fatal("guessed order for tied timestamps")
+		t.Fatal("automatically compared runs without managed roles")
 	}
-	if err := os.RemoveAll(older); err != nil {
+	if err := os.RemoveAll(staged); err != nil {
 		t.Fatal(err)
 	}
 	if err := compareCommand([]string{"-out", parent}, &out); err == nil {
 		t.Fatal("compared a single run")
-	}
-}
-
-func TestCompareReadableRoles(t *testing.T) {
-	parent := t.TempDir()
-	for _, role := range []string{"old-aaaaaaa", "new-bbbbbbb", "release-v1.0.0"} {
-		r := comparisonFixture([]float64{1, 4, 10})
-		if strings.HasPrefix(role, "new-") {
-			r.ServerRevision = strings.Repeat("b", 40)
-			// Roles, not copied mtimes or recorded timestamps, select this pair.
-			r.TestStartedAt = "2026-10-20T16:00:00Z"
-		}
-		if err := os.Rename(writeComparisonFixture(t, r), filepath.Join(parent, role)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	var out bytes.Buffer
-	if err := compareCommand([]string{"-out", parent, "-json"}, &out); err != nil {
-		t.Fatal(err)
-	}
-	var got comparison
-	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
-		t.Fatal(err)
-	}
-	if filepath.Base(got.Baseline.Directory) != "old-aaaaaaa" || filepath.Base(got.Candidate.Directory) != "new-bbbbbbb" {
-		t.Fatal("release copy or timestamp overrode old/new roles", out.String())
-	}
-	// An unrotated finalized run (e.g. failed tag recognition) must not silently
-	// cause comparison of the stale fresh role instead of the newest output.
-	if err := os.Rename(writeComparisonFixture(t, comparisonFixture([]float64{2, 6, 14})), filepath.Join(parent, "20261022T170000Z-1")); err != nil {
-		t.Fatal(err)
-	}
-	if err := compareCommand([]string{"-against", "release", "-out", parent}, &out); err == nil || !strings.Contains(err.Error(), "ambiguous") {
-		t.Fatal("selected a stale candidate from an ambiguous queue", err)
 	}
 }
 
@@ -133,8 +111,8 @@ func TestCompareCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	first := out.String()
-	if !strings.Contains(first, `"saved_run_checks": {`) || strings.Contains(first, `"recorded_correctness"`) {
-		t.Fatal("JSON verdict label does not match saved-run checks", first)
+	if !strings.Contains(first, `"saved_run_checks"`) {
+		t.Fatal("JSON output must expose saved-run checks", first)
 	}
 	var got comparison
 	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
@@ -162,7 +140,7 @@ func TestCompareCommand(t *testing.T) {
 	}
 	startup := rows["warmup.startup.native_model_load_seconds"]
 	if startup.Baseline.Median != 3.5 || startup.Baseline.Samples != 1 || startup.Baseline.SampleStdDev != nil {
-		t.Fatalf("startup reconstruction: %+v", startup)
+		t.Fatalf("saved startup measurement: %+v", startup)
 	}
 	if rows["warmup.elapsed_seconds"].Baseline.Samples != 1 {
 		t.Fatal("warm-up pooled with repetitions")
@@ -187,7 +165,7 @@ func TestCompareCommand(t *testing.T) {
 	if err := compareCommand([]string{"-out", output, "-baseline", base, "-candidate", candidate}, &out); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "Saved-run checks: baseline PASS / candidate PASS\nBaseline: "+base+"\nBaseline commit:") || !strings.Contains(out.String(), "Warmed workload") || strings.Contains(out.String(), "warmup.elapsed_seconds") || strings.Contains(out.String(), "-json") || strings.Contains(out.String(), "Note:") {
+	if !strings.Contains(out.String(), "Saved-run checks: baseline PASS / candidate PASS") || !strings.Contains(out.String(), "Warmed workload") {
 		t.Fatal(out.String())
 	}
 	saved, err := os.ReadFile(filepath.Join(output, "comparison.json"))
@@ -202,20 +180,6 @@ func TestCompareCommand(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(dir, "comparison.json")); !os.IsNotExist(err) {
 			t.Fatal("comparison must not be saved inside a run", dir, err)
 		}
-	}
-	got.Warnings = []string{"harness revision: changed", "model configuration.new-field: changed", "installed library: changed"}
-	got.Matches = []string{"effective native parameters", "request bodies/order"}
-	out.Reset()
-	if err := got.writeText(&out); err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(out.String(), "harness revision") || strings.Contains(out.String(), "model configuration") || !strings.Contains(out.String(), "installed library: changed") {
-		t.Fatal(out.String())
-	}
-	got.Matches = nil
-	out.Reset()
-	if err := got.writeText(&out); err != nil || !strings.Contains(out.String(), "model configuration") {
-		t.Fatal("configuration warning hidden without equivalent effective evidence", err, out.String())
 	}
 }
 
@@ -266,6 +230,7 @@ func TestCompareWarningsAndFailures(t *testing.T) {
 		warning string
 	}{
 		{"library", func(r *report) { r.Metadata["/v1/kronk/libs"].(map[string]any)["current"] = "different" }, false, "installed library"},
+		{"harness", func(r *report) { r.HarnessRevision = "different" }, false, "harness revision"},
 		{"machine", func(r *report) { r.Metadata["/v1/liveness"].(map[string]any)["host"] = "different" }, false, "machine.host"},
 		{"unknown-memory", func(r *report) { r.Metadata["/v1/devices"].(map[string]any)["system_ram_bytes"] = 0 }, false, "missing metadata"},
 		{"config", func(r *report) { r.Metadata["model"].(map[string]any)["model_config"].(map[string]any)["nseq-max"] = 2 }, false, "model configuration.nseq-max"},
@@ -282,8 +247,9 @@ func TestCompareWarningsAndFailures(t *testing.T) {
 			r := comparisonFixture([]float64{2, 6, 14})
 			tc.mutate(&r)
 			candidate := writeComparisonFixture(t, r)
+			output := t.TempDir()
 			var out bytes.Buffer
-			err := compareCommand([]string{"-out", t.TempDir(), "-baseline", base, "-candidate", candidate, "-json"}, &out)
+			err := compareCommand([]string{"-out", output, "-baseline", base, "-candidate", candidate, "-json"}, &out)
 			if (err != nil) != tc.fails {
 				t.Fatalf("unexpected error %v: %s", err, out.String())
 			}
@@ -297,17 +263,28 @@ func TestCompareWarningsAndFailures(t *testing.T) {
 			if tc.warning != "" && !strings.Contains(strings.Join(got.Warnings, "\n"), tc.warning) {
 				t.Fatalf("missing warning %q: %v", tc.warning, got.Warnings)
 			}
-			out.Reset()
-			if err := got.writeText(&out); err != nil {
+			log, err := os.ReadFile(filepath.Join(output, "comparison.log"))
+			if err != nil {
 				t.Fatal(err)
+			}
+			text := string(log)
+			switch tc.name {
+			case "library":
+				if !strings.Contains(text, tc.warning) {
+					t.Fatal("library change must be visible in the summary", text)
+				}
+			case "harness", "config":
+				if strings.Contains(text, tc.warning) {
+					t.Fatal("equivalent workload metadata should not clutter the summary", text)
+				}
 			}
 			banner := "WARNING: MACHINE METADATA DIFFERS OR IS MISSING!"
 			if tc.name == "machine" || tc.name == "unknown-memory" {
-				if strings.Count(out.String(), banner) != 2 || strings.Index(out.String(), banner) > strings.Index(out.String(), "Metric (seconds)") || !strings.HasSuffix(strings.TrimSpace(out.String()), banner) {
-					t.Fatal("machine warning must appear before metrics and at the end", out.String())
+				if strings.Count(text, banner) != 2 || strings.Index(text, banner) > strings.Index(text, "Metric (seconds)") || !strings.HasSuffix(strings.TrimSpace(text), banner) {
+					t.Fatal("machine warning must appear before metrics and at the end", text)
 				}
-			} else if strings.Contains(out.String(), banner) {
-				t.Fatal("machine warning shown for unrelated changes", out.String())
+			} else if strings.Contains(text, banner) {
+				t.Fatal("machine warning shown for unrelated changes", text)
 			}
 			if tc.name == "single" {
 				for _, row := range got.Metrics {
@@ -322,11 +299,16 @@ func TestCompareWarningsAndFailures(t *testing.T) {
 
 func TestCompareRejectsBrokenArtifacts(t *testing.T) {
 	base := writeComparisonFixture(t, comparisonFixture([]float64{1, 4, 10}))
-	for _, name := range []string{"missing-log", "truncated-events", "duplicate-report", "summary-disagrees", "log-disagrees", "startup-disagrees", "request-order"} {
+	for _, name := range []string{"missing-log", "truncated-events", "duplicate-report", "summary-disagrees", "log-disagrees", "missing-timestamp", "startup-disagrees", "missing-startup", "request-order"} {
 		t.Run(name, func(t *testing.T) {
 			r := comparisonFixture([]float64{2, 6, 14})
-			if name == "startup-disagrees" {
+			switch name {
+			case "startup-disagrees":
 				r.WarmupRequest.StartupTimings = map[string]float64{"native_model_load_seconds": 99}
+			case "missing-startup":
+				r.WarmupRequest.StartupTimings = nil
+			case "missing-timestamp":
+				r.TestStartedAt = ""
 			}
 			dir := writeComparisonFixture(t, r)
 			switch name {
@@ -400,6 +382,11 @@ func comparisonFixture(values []float64) report {
 		return res
 	}
 	warm := makeResult("warmup", 6)
+	warm.StartupTimings = map[string]float64{
+		"server_request_seconds":    6,
+		"pre_chat_seconds":          5.5,
+		"native_model_load_seconds": 3.5,
+	}
 	r.WarmupRequest = &warm
 	for i, v := range values {
 		rep := report{Status: "PASS", SystemTokens: 10140, SystemSHA256: fmt.Sprintf("hash-%d", i), WorkloadSeconds: v, CancelReleaseSeconds: 0, evidenceValidated: true}

@@ -98,8 +98,8 @@ func collectEvidence(file *os.File, initial os.FileInfo, path string, c *client,
 	return nil
 }
 
-// Same-server timestamps, not client/server clock subtraction. Also used by the
-// offline comparator for artifacts written before startup metrics were added.
+// Same-server timestamps, not client/server clock subtraction. The offline
+// comparator verifies the saved metrics against these recorded timestamps.
 func startupTimings(bounds map[string]time.Time) map[string]float64 {
 	timings := make(map[string]float64)
 	for _, interval := range []struct{ metric, start, end string }{
