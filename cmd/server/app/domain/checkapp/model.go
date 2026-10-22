@@ -8,7 +8,6 @@ type Info struct {
 	Build      string `json:"build,omitempty"`
 	Revision   string `json:"vcs_revision,omitempty"`
 	CommitTime string `json:"vcs_time,omitempty"`
-	Modified   *bool  `json:"vcs_modified,omitempty"`
 	Host       string `json:"host,omitempty"`
 	Name       string `json:"name,omitempty"`
 	PodIP      string `json:"podIP,omitempty"`

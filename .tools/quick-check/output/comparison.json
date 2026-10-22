@@ -15,7 +15,7 @@
   },
   "candidate": {
     "directory": ".tools/quick-check/output/20261021T162309Z-2887411773",
-    "version": "be7044a8d2dae5dc82cf5eec81210a28a8e691c1+develop",
+    "version": "be7044a8d2dae5dc82cf5eec81210a28a8e691c1",
     "recorded_status": "PASS",
     "repetitions_executed": 3,
     "repetitions_requested": 3,
@@ -45,7 +45,6 @@
     "per-request prompt/output/cache/draft counts"
   ],
   "comparability_warnings": [
-    ".tools/quick-check/output/20261021T162309Z-2887411773: dirty/unknown server build; exact source identity is not established",
     "installed library: \"b11574\" -\u003e \"b11738\"",
     "harness revision: \"6d967812007aa609e15742e081425f441008efc5\" -\u003e \"be7044a8d2dae5dc82cf5eec81210a28a8e691c1\"",
     "model configuration.physical-batch-size: changed or unavailable in one run"

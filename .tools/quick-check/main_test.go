@@ -356,8 +356,8 @@ func TestQuickCheckCommand(t *testing.T) {
 						t.Fatalf("log omitted %q: %s", required, text)
 					}
 				}
-				if len(strings.Split(header, "\n")) != 4 {
-					t.Fatalf("passing summary must be four lines: %s", header)
+				if len(strings.Split(header, "\n")) != 5 {
+					t.Fatalf("passing summary must be five lines: %s", header)
 				}
 				sdText := "(SD n/a)"
 				if requested > 1 {
@@ -523,7 +523,7 @@ func TestQuickCheckCommand(t *testing.T) {
 func TestRunRetention(t *testing.T) {
 	root := t.TempDir()
 	out := filepath.Join(root, "output")
-	protected := []string{"notes", "19990101T000000Z-1"}
+	protected := []string{"notes", "saved_local_runs", "19990101T000000Z-1"}
 	for _, name := range protected {
 		if err := os.MkdirAll(filepath.Join(out, name), 0755); err != nil {
 			t.Fatal(err)
@@ -546,15 +546,15 @@ func TestRunRetention(t *testing.T) {
 		broken   bool
 		keep     []int
 	}{
-		{"", nil, false, []int{0}},
-		{"", nil, false, []int{0, 1}},
-		{a, new(false), false, []int{1, 2}},
-		{a, new(true), false, []int{2, 3}},
-		{"", nil, false, []int{2, 4}},
-		{b, new(false), false, []int{2, 5}},
-		{b, new(true), false, []int{5, 6}},
-		{b, nil, false, []int{5, 7}},         // A hash without modified-state evidence is unknown.
-		{b, new(true), true, []int{5, 7, 8}}, // Failed writes must not prune either result.
+		{a, nil, false, []int{0}},
+		{a, new(true), false, []int{1}}, // Replace the only candidate; ignore legacy modified state.
+		{b, new(false), false, []int{1, 2}},
+		{b, new(true), false, []int{1, 3}},
+		{b, nil, false, []int{1, 4}}, // Repeated replacement preserves the baseline.
+		{a, nil, false, []int{4, 5}}, // Returning to an older commit still promotes the last candidate.
+		{a, new(true), false, []int{4, 6}},
+		{"", nil, false, []int{6, 7}},        // Unknown hashes cannot establish equality.
+		{b, new(true), true, []int{6, 7, 8}}, // Failed writes must not prune either result.
 	} {
 		before, _ := filepath.Glob(filepath.Join(out, "20*"))
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -617,25 +617,30 @@ func TestRunRetention(t *testing.T) {
 				t.Fatal(err)
 			}
 			version := "unknown"
-			if test.revision != "" && test.modified != nil {
+			if test.revision != "" {
 				version = test.revision
-				if *test.modified {
-					version += "+develop"
-				}
 			}
 			if summary.Revision != test.revision || summary.Version != version {
 				t.Fatalf("wrong server provenance: %+v", summary)
 			}
 			display := "unknown"
-			if test.revision != "" && test.modified != nil {
+			if test.revision != "" {
 				display = test.revision[:7]
-				if *test.modified {
-					display += "+develop"
-				}
 			}
 			text, _ := os.ReadFile(filepath.Join(current, "tool.log"))
 			if !strings.HasPrefix(string(text), "Quick-check: FAIL\nTested commit: "+display+" from unknown\n") {
 				t.Fatalf("server provenance missing from log: %s", text)
+			}
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(data, &fields); err != nil {
+				t.Fatal(err)
+			}
+			var started string
+			if err := json.Unmarshal(fields["test_started_at"], &started); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := time.Parse(time.RFC3339Nano, started); err != nil || !strings.Contains(string(text), "\nTest started: "+started+"\n") || fields["server_modified"] != nil || strings.Contains(string(text), "+develop") {
+				t.Fatal("test timestamp missing or retired modified flag present", string(text))
 			}
 		}
 	}

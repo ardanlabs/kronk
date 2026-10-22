@@ -223,8 +223,7 @@ func TestCompareWarningsAndFailures(t *testing.T) {
 		{"machine", func(r *report) { r.Metadata["/v1/liveness"].(map[string]any)["host"] = "different" }, false, "machine.host"},
 		{"unknown-memory", func(r *report) { r.Metadata["/v1/devices"].(map[string]any)["system_ram_bytes"] = 0 }, false, "missing metadata"},
 		{"config", func(r *report) { r.Metadata["model"].(map[string]any)["model_config"].(map[string]any)["nseq-max"] = 2 }, false, "model configuration.nseq-max"},
-		{"dirty", func(r *report) { r.ServerModified = new(true) }, false, "dirty/unknown"},
-		{"unknown", func(r *report) { r.ServerModified = nil }, false, "dirty/unknown"},
+		{"unknown", func(r *report) { r.ServerRevision = "" }, false, "unknown server commit"},
 		{"prompt", func(r *report) { r.Repetitions[1].SystemTokens++ }, false, "system token count/hash"},
 		{"counts", func(r *report) { r.Repetitions[0].Results[0].Usage.CompletionTokens++ }, false, "counts differ"},
 		{"single", func(r *report) { r.Repetitions = r.Repetitions[:1]; r.RepetitionsRequested = 1 }, false, "repetition count"},
@@ -256,9 +255,9 @@ func TestCompareWarningsAndFailures(t *testing.T) {
 			if err := got.writeText(&out); err != nil {
 				t.Fatal(err)
 			}
-			banner := "WARNING: MACHINE METADATA DIFFERS OR IS MISSING; TIMING DELTAS CANNOT BE ATTRIBUTED TO KRONK CODE CHANGES ALONE."
+			banner := "WARNING: MACHINE METADATA DIFFERS OR IS MISSING!"
 			if tc.name == "machine" || tc.name == "unknown-memory" {
-				if strings.Count(out.String(), banner) != 2 || strings.Index(out.String(), banner) > strings.Index(out.String(), "Metric (seconds)") || !strings.HasSuffix(out.String(), banner+"\n") {
+				if strings.Count(out.String(), banner) != 2 || strings.Index(out.String(), banner) > strings.Index(out.String(), "Metric (seconds)") || !strings.HasSuffix(strings.TrimSpace(out.String()), banner) {
 					t.Fatal("machine warning must appear before metrics and at the end", out.String())
 				}
 			} else if strings.Contains(out.String(), banner) {
@@ -336,7 +335,7 @@ func TestCompareRejectsBrokenArtifacts(t *testing.T) {
 }
 
 func comparisonFixture(values []float64) report {
-	r := report{Status: "PASS", Workload: "operations-v2", Model: modelID, ServerRevision: strings.Repeat("a", 40), ServerModified: new(false), HarnessRevision: "fixed-harness", MTPBackend: "qwen35-own-kv", RepetitionsRequested: len(values), evidenceValidated: true}
+	r := report{Status: "PASS", Workload: "operations-v2", Model: modelID, ServerRevision: strings.Repeat("a", 40), TestStartedAt: "2026-10-21T16:00:00Z", HarnessRevision: "fixed-harness", MTPBackend: "qwen35-own-kv", RepetitionsRequested: len(values), evidenceValidated: true}
 	r.Metadata = map[string]any{
 		"/v1/liveness":   map[string]any{"host": "test-machine", "os": "test-os", "vcs_revision": r.ServerRevision},
 		"/v1/devices":    map[string]any{"system_ram_bytes": 24000, "gpu_total_bytes": 18000, "unified_memory": true},

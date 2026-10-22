@@ -16,27 +16,31 @@ func (r report) serverVersion() string {
 	if len(r.ServerRevision) != 40 && len(r.ServerRevision) != 64 {
 		return "unknown"
 	}
-	if _, err := hex.DecodeString(r.ServerRevision); err != nil || r.ServerModified == nil {
+	if _, err := hex.DecodeString(r.ServerRevision); err != nil {
 		return "unknown"
-	}
-	if *r.ServerModified {
-		return r.ServerRevision + "+develop"
 	}
 	return r.ServerRevision
 }
 
-// Retain the new candidate and the newest prior committed run. Without a
-// committed baseline, retain the newest prior candidate instead. Verdicts do not
-// affect retention: a failed check still needs its diagnostic evidence.
+// Replace same-commit candidates while preserving their baseline; otherwise
+// promote the previous candidate. Verdicts do not affect retention.
 func retainRuns(parent, current string) error {
+	data, err := os.ReadFile(filepath.Join(current, "summary.json"))
+	if err != nil {
+		return err
+	}
+	var candidate report
+	if err := json.Unmarshal(data, &candidate); err != nil {
+		return err
+	}
 	entries, err := os.ReadDir(parent)
 	if err != nil {
 		return err
 	}
 	type run struct {
-		path      string
-		finished  time.Time
-		committed bool
+		path     string
+		finished time.Time
+		version  string
 	}
 	var runs []run
 	for _, entry := range entries {
@@ -44,7 +48,8 @@ func retainRuns(parent, current string) error {
 			continue
 		}
 		stamp, suffix, ok := strings.Cut(entry.Name(), "-")
-		if _, err := time.Parse("20060102T150405Z", stamp); err != nil || !ok {
+		started, err := time.Parse("20060102T150405Z", stamp)
+		if err != nil || !ok {
 			continue
 		}
 		if _, err := strconv.ParseUint(suffix, 10, 64); err != nil {
@@ -56,15 +61,11 @@ func retainRuns(parent, current string) error {
 		}
 		// Do not remove unrelated directories, symlinks, or incomplete artifacts.
 		complete := true
-		var finished time.Time
 		for _, name := range []string{"summary.json", "events.ndjson", "tool.log"} {
 			info, err := os.Lstat(filepath.Join(path, name))
 			if err != nil || !info.Mode().IsRegular() {
 				complete = false
 				break
-			}
-			if name == "summary.json" {
-				finished = info.ModTime()
 			}
 		}
 		if !complete {
@@ -78,7 +79,10 @@ func retainRuns(parent, current string) error {
 		if json.Unmarshal(data, &r) != nil || r.Workload == "" || r.Model == "" || (r.Status != "PASS" && r.Status != "FAIL") {
 			continue
 		}
-		runs = append(runs, run{path, finished, r.serverVersion() != "unknown" && !*r.ServerModified})
+		if precise, err := time.Parse(time.RFC3339Nano, r.TestStartedAt); err == nil {
+			started = precise
+		}
+		runs = append(runs, run{path, started, r.serverVersion()})
 	}
 	slices.SortFunc(runs, func(a, b run) int {
 		if order := b.finished.Compare(a.finished); order != 0 {
@@ -87,12 +91,13 @@ func retainRuns(parent, current string) error {
 		return strings.Compare(b.path, a.path)
 	})
 	keep := ""
-	for _, run := range runs {
-		if keep == "" || run.committed {
-			keep = run.path
-		}
-		if run.committed {
-			break
+	if len(runs) > 0 {
+		if candidate.serverVersion() != "unknown" && candidate.serverVersion() == runs[0].version {
+			if len(runs) > 1 {
+				keep = runs[1].path
+			}
+		} else {
+			keep = runs[0].path
 		}
 	}
 	for _, run := range runs {

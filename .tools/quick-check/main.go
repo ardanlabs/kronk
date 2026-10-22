@@ -34,7 +34,7 @@ type report struct {
 	HarnessRevision      string         `json:"harness_revision"`
 	ServerRevision       string         `json:"server_revision"`
 	ServerCommitTime     string         `json:"server_commit_time"`
-	ServerModified       *bool          `json:"server_modified"`
+	TestStartedAt        string         `json:"test_started_at,omitempty"`
 	Metadata             map[string]any `json:"server_metadata"`
 	SystemTokens         int            `json:"system_tokens"`
 	SystemSHA256         string         `json:"system_sha256"`
@@ -57,7 +57,7 @@ type runSummary struct {
 	ServerVersion        string                            `json:"server_version"`
 	ServerRevision       string                            `json:"server_revision"`
 	ServerCommitTime     string                            `json:"server_commit_time"`
-	ServerModified       *bool                             `json:"server_modified"`
+	TestStartedAt        string                            `json:"test_started_at,omitempty"`
 	ServerBuild          any                               `json:"server_build"`
 	InstalledLibrary     any                               `json:"installed_library"`
 	MTPBackend           string                            `json:"mtp_backend"`
@@ -86,7 +86,7 @@ func (r report) summary() runSummary {
 			"gpu_total_bytes":  hardware["gpu_total_bytes"], "unified_memory": hardware["unified_memory"],
 		},
 		ServerVersion: r.serverVersion(), ServerRevision: r.ServerRevision,
-		ServerCommitTime: r.ServerCommitTime, ServerModified: r.ServerModified,
+		ServerCommitTime: r.ServerCommitTime, TestStartedAt: r.TestStartedAt,
 		ServerBuild: liveness["build"], InstalledLibrary: libraries["current"],
 		MTPBackend: r.MTPBackend, HarnessRevision: r.HarnessRevision,
 		Model: r.Model, Cell: "MoE / one slot / IMC on / MTP on / images off",
@@ -197,12 +197,9 @@ func (r report) logSummary() string {
 	version := r.serverVersion()
 	if version != "unknown" {
 		version = version[:7]
-		if *r.ServerModified {
-			version += "+develop"
-		}
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Quick-check: %s\nTested commit: %s from %s\nIMC/MTP: %s | Serial isolation: %s | Cancel/recovery: %s\n", r.Status, version, r.ServerCommitTime, cache, isolation, recovery)
+	fmt.Fprintf(&b, "Quick-check: %s\nTested commit: %s from %s\nTest started: %s\nIMC/MTP: %s | Serial isolation: %s | Cancel/recovery: %s\n", r.Status, version, r.ServerCommitTime, r.TestStartedAt, cache, isolation, recovery)
 	fmt.Fprintf(&b, "Time: warm-up request %s | warmed workload median %s | repetitions %d/%d\n", warmup, workload, len(r.Repetitions), r.RepetitionsRequested)
 	if r.Status != "PASS" {
 		fmt.Fprintln(&b, "Details: summary.json (fix setup/evidence failures before deeper inference checks)")
@@ -277,7 +274,8 @@ func run(o options) (runErr error) {
 	}
 	f.Close()
 	defer os.Remove(lock)
-	dir, err := os.MkdirTemp(o.out, time.Now().UTC().Format("20060102T150405Z")+"-")
+	started := time.Now().UTC()
+	dir, err := os.MkdirTemp(o.out, started.Format("20060102T150405Z")+"-")
 	if err != nil {
 		return err
 	}
@@ -295,7 +293,7 @@ func run(o options) (runErr error) {
 	log := func(format string, args ...any) {
 		fmt.Fprintf(io.MultiWriter(toolLog, &progress), format+"\n", args...)
 	}
-	r := report{Status: "FAIL", Workload: workloadVersion, Model: modelID, Host: o.host, ServerCommitTime: "unknown", RepetitionsRequested: o.repetitions}
+	r := report{Status: "FAIL", Workload: workloadVersion, Model: modelID, Host: o.host, ServerCommitTime: "unknown", TestStartedAt: started.Format(time.RFC3339Nano), RepetitionsRequested: o.repetitions}
 	if revision, err := exec.Command("git", "rev-parse", "HEAD").Output(); err == nil {
 		r.HarnessRevision = strings.TrimSpace(string(revision))
 	}
@@ -364,7 +362,7 @@ func run(o options) (runErr error) {
 			// Invocation metadata comes from its first repetition. Full per-run
 			// metadata remains in the diagnostic report, not duplicated in summary.
 			r.Metadata = repetition.Metadata
-			r.ServerRevision, r.ServerCommitTime, r.ServerModified = repetition.ServerRevision, repetition.ServerCommitTime, repetition.ServerModified
+			r.ServerRevision, r.ServerCommitTime = repetition.ServerRevision, repetition.ServerCommitTime
 			r.SystemTokens, r.SystemSHA256, r.MTPBackend = repetition.SystemTokens, repetition.SystemSHA256, repetition.MTPBackend
 			r.WarmupRequest = repetition.WarmupRequest
 		}
@@ -401,12 +399,10 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 		r.Metadata[path] = metadata
 		if path == "/v1/liveness" {
 			liveness, _ := metadata.(map[string]any)
+			delete(liveness, "vcs_modified") // Older servers may still expose the retired flag.
 			r.ServerRevision, _ = liveness["vcs_revision"].(string)
 			if stamp, ok := liveness["vcs_time"].(string); ok && stamp != "" {
 				r.ServerCommitTime = stamp
-			}
-			if modified, ok := liveness["vcs_modified"].(bool); ok {
-				r.ServerModified = &modified
 			}
 			log("Tested commit: %s from %s", r.serverVersion(), r.ServerCommitTime)
 		}

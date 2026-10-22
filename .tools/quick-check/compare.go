@@ -218,7 +218,7 @@ func readComparison(dir string) (comparisonInput, error) {
 		return input, fmt.Errorf("summary.json: missing supported run identity/status")
 	}
 	if s.Status != r.Status || s.Workload != r.Workload || s.Model != r.Model ||
-		s.ServerRevision != r.ServerRevision || !reflect.DeepEqual(s.ServerModified, r.ServerModified) ||
+		s.ServerRevision != r.ServerRevision || s.TestStartedAt != r.TestStartedAt ||
 		s.RepetitionsRequested != r.RepetitionsRequested || s.RepetitionsExecuted != len(r.Repetitions) ||
 		len(s.Repetitions) != len(r.Repetitions) || !slices.Equal(s.Findings, r.Findings) ||
 		!reflect.DeepEqual(s.Measurements, r.measurements()) {
@@ -245,8 +245,14 @@ func readComparison(dir string) (comparisonInput, error) {
 		return input, err
 	}
 	header := strings.SplitN(r.logSummary(), "\n", 3)
-	if !strings.HasPrefix(string(data), header[0]+"\n"+header[1]+"\n") {
+	// Old saved headers may carry the retired suffix; ignore it without
+	// interpreting or rewriting historical dirty-state metadata.
+	logText := strings.ReplaceAll(string(data), "+develop", "")
+	if !strings.HasPrefix(logText, header[0]+"\n"+header[1]+"\n") {
 		return input, fmt.Errorf("tool.log verdict/provenance disagrees with diagnostic report")
+	}
+	if r.TestStartedAt != "" && !strings.HasPrefix(logText, header[0]+"\n"+header[1]+"\nTest started: "+r.TestStartedAt+"\n") {
+		return input, fmt.Errorf("tool.log test timestamp disagrees with diagnostic report")
 	}
 	if input.report.WarmupRequest != nil {
 		warmup := input.report.WarmupRequest
@@ -347,8 +353,8 @@ func compareRuns(aDir, bDir string, a, b comparisonInput) comparison {
 		}
 	}
 	for _, side := range []comparisonRun{c.Baseline, c.Candidate} {
-		if side.Version == "unknown" || strings.HasSuffix(side.Version, "+develop") {
-			c.Warnings = append(c.Warnings, side.Directory+": dirty/unknown server build; exact source identity is not established")
+		if side.Version == "unknown" {
+			c.Warnings = append(c.Warnings, side.Directory+": unknown server commit")
 		}
 	}
 	check("workload", a.summary.Workload, b.summary.Workload)

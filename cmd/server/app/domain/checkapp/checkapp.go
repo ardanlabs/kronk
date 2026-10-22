@@ -7,7 +7,6 @@ import (
 	"os"
 	"runtime"
 	"runtime/debug"
-	"strconv"
 
 	"github.com/ardanlabs/kronk/cmd/server/foundation/logger"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
@@ -57,10 +56,6 @@ func (a *app) liveness(ctx context.Context, r *http.Request) web.Encoder {
 				info.Revision = setting.Value
 			case "vcs.time":
 				info.CommitTime = setting.Value
-			case "vcs.modified":
-				if modified, err := strconv.ParseBool(setting.Value); err == nil {
-					info.Modified = &modified
-				}
 			}
 		}
 	}

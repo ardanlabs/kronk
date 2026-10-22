@@ -33,7 +33,12 @@ make test-quick-check
 ```
 
 The target revision must contain the tool/configuration. Verify `Tested commit:`;
-the tested code is the running server. `+develop` indicates uncommitted build changes.
+the tested code is the running server. The header also shows the test start time.
+
+**WARNING: Always run quick-check right after a fresh commit, rebuilding/restarting
+the server first. Uncommitted changes are not flagged; another run of the same
+commit replaces its candidate. Copy any run you want to keep into
+`output/saved_local_runs/` before running again.**
 
 ## Results
 
@@ -43,9 +48,10 @@ Runs are saved under `.tools/quick-check/output/`:
 - `summary.json`: structured results and measurements.
 - `events.ndjson`: detailed requests, responses, and server evidence.
 
-Retention keeps the current run plus its selected baseline, preferring a prior
-committed run. Copy runs to `output/saved_local_runs/` to preserve them locally
-outside retention; that archive is Git-ignored. Managed runs are trackable in Git.
+Retention keeps the current candidate and baseline: same commit replaces the
+candidate; a different commit promotes the previous candidate to baseline.
+`output/saved_local_runs/` is Git-ignored and outside retention. Managed runs are
+trackable in Git.
 
 ## Compare
 
@@ -66,6 +72,3 @@ Optional: `QUICK_CHECK_COMPARE_ARGS='-out /path/to/output'` or `'-json'` for JSO
 
 Both commands return nonzero on failure. Comparison PASS is not a performance
 verdict; inspect warnings and timing deltas (positive duration change = slower).
-
-Design, assertions, timing definitions, limitations, and decisions:
-[DEVELOPMENT.md](DEVELOPMENT.md).
