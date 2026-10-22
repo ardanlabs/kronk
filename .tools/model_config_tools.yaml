@@ -1,7 +1,7 @@
 # Dedicated configuration for the Go reliability, quick-check, and lifecycle tools.
 # Start the current source with:
 #
-#   KRONK_POOL_MODEL_CONFIG_FILE="$PWD/.tools/model_config_tools.yaml" make kronk-server-detach
+#   make server-for-tools
 #
 # Keep these model IDs and slot counts aligned with .make/tools.mk. The tools
 # validate the active settings and fail rather than changing server state.

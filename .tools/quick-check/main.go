@@ -24,9 +24,11 @@ import (
 const modelID = "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK"
 
 type options struct {
-	host, out, serverLog string
-	timeout              time.Duration
-	repetitions          int
+	host        string
+	out         string
+	serverLog   string
+	timeout     time.Duration
+	repetitions int
 }
 
 type report struct {
@@ -84,20 +86,31 @@ func (r report) summary() runSummary {
 	hardware, _ := r.Metadata["/v1/devices"].(map[string]any)
 	summary := runSummary{
 		Machine: map[string]any{
-			"host": liveness["host"], "os": liveness["os"],
+			"host":             liveness["host"],
+			"os":               liveness["os"],
 			"system_ram_bytes": hardware["system_ram_bytes"],
-			"gpu_total_bytes":  hardware["gpu_total_bytes"], "unified_memory": hardware["unified_memory"],
+			"gpu_total_bytes":  hardware["gpu_total_bytes"],
+			"unified_memory":   hardware["unified_memory"],
 		},
-		ServerVersion: r.serverVersion(), ServerRevision: r.ServerRevision,
-		ServerCommitTime: r.ServerCommitTime, TestStartedAt: r.TestStartedAt,
-		ServerBuild: liveness["build"], InstalledLibrary: libraries["current"],
-		MTPBackend: r.MTPBackend, HarnessRevision: r.HarnessRevision,
-		Model: r.Model, Cell: "MoE / one slot / IMC on / MTP on / images off",
-		Workload: r.Workload,
-		Status:   r.Status, Findings: append([]string{}, r.Findings...),
-		RepetitionsRequested: r.RepetitionsRequested, RepetitionsExecuted: len(r.Repetitions),
-		Measurements: r.measurements(), Repetitions: []repetitionSummary{},
+		ServerVersion:        r.serverVersion(),
+		ServerRevision:       r.ServerRevision,
+		ServerCommitTime:     r.ServerCommitTime,
+		TestStartedAt:        r.TestStartedAt,
+		ServerBuild:          liveness["build"],
+		InstalledLibrary:     libraries["current"],
+		MTPBackend:           r.MTPBackend,
+		HarnessRevision:      r.HarnessRevision,
+		Model:                r.Model,
+		Cell:                 "MoE / one slot / IMC on / MTP on / images off",
+		Workload:             r.Workload,
+		Status:               r.Status,
+		Findings:             append([]string{}, r.Findings...),
+		RepetitionsRequested: r.RepetitionsRequested,
+		RepetitionsExecuted:  len(r.Repetitions),
+		Measurements:         r.measurements(),
+		Repetitions:          []repetitionSummary{},
 	}
+
 	if r.WarmupRequest != nil {
 		summary.WarmupRequest = r.Repetitions[0].phaseSummary(*r.WarmupRequest)
 		summary.WarmupRequest["initial_state"] = "model-unloaded"
@@ -125,17 +138,25 @@ func (r report) phaseSummary(res result) map[string]any {
 	if len(findings) > 0 {
 		status = "FAIL"
 	}
+
 	phase := map[string]any{
-		"phase": res.Phase, "status": status, "findings": findings,
-		"elapsed_seconds": res.Elapsed, "first_content_seconds": res.FirstContent,
-		"server_timings": res.ServerTimings,
-		"cache_match":    res.CacheMatch, "cache_reason": res.CacheReason,
-		"cached_tokens": res.Execution.ReusedTokens,
-		"draft_tokens":  res.Execution.DraftTokens, "draft_accepted_tokens": res.Execution.DraftAccepted,
+		"phase":                 res.Phase,
+		"status":                status,
+		"findings":              findings,
+		"elapsed_seconds":       res.Elapsed,
+		"first_content_seconds": res.FirstContent,
+		"server_timings":        res.ServerTimings,
+		"cache_match":           res.CacheMatch,
+		"cache_reason":          res.CacheReason,
+		"cached_tokens":         res.Execution.ReusedTokens,
+		"draft_tokens":          res.Execution.DraftTokens,
+		"draft_accepted_tokens": res.Execution.DraftAccepted,
 	}
+
 	if res.StartupTimings != nil {
 		phase["startup_timings"] = res.StartupTimings
 	}
+
 	// A deliberately interrupted stream has no final usage or meaningful
 	// generation rate. Do not present missing measurements as zero values.
 	if !res.Cancelled && res.Usage.CompletionTokens > 0 {
@@ -182,10 +203,12 @@ func (r report) logSummary() string {
 		}
 		return status
 	}
+
 	warmup, workload := "n/a", "n/a"
 	if r.WarmupRequest != nil {
 		warmup = fmt.Sprintf("%.3fs", r.WarmupRequest.Elapsed)
 	}
+
 	if measurements := r.measurements(); measurements != nil {
 		m := measurements["workload"]["elapsed_seconds"]
 		sd := "n/a"
@@ -271,6 +294,7 @@ func run(o options) (runErr error) {
 	if err := os.MkdirAll(o.out, 0755); err != nil {
 		return err
 	}
+
 	// Serialize retention and inference within this output parent.
 	lock := filepath.Join(o.out, ".quick-check.lock")
 	f, err := os.OpenFile(lock, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)

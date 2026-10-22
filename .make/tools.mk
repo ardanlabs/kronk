@@ -35,21 +35,21 @@ server-for-tools: kronk-build
 
 QUICK_CHECK_ARGS ?=
 
-test-quick-check:
+quick-check-this-code:
 	@go run ./.tools/quick-check $(QUICK_CHECK_ARGS)
 
-QUICK_CHECK_BASELINE ?=
-QUICK_CHECK_CANDIDATE ?=
+QUICK_COMPARE_BASELINE ?=
+QUICK_COMPARE_CANDIDATE ?=
 QUICK_CHECK_COMPARE_ARGS ?=
 
-quick-check-against-commit:
+quick-compare-against-commit:
 	@go run ./.tools/quick-check compare -against commit \
-		-baseline "$(QUICK_CHECK_BASELINE)" -candidate "$(QUICK_CHECK_CANDIDATE)" \
+		-baseline "$(QUICK_COMPARE_BASELINE)" -candidate "$(QUICK_COMPARE_CANDIDATE)" \
 		$(QUICK_CHECK_COMPARE_ARGS)
 
-quick-check-against-release:
+quick-compare-against-release:
 	@go run ./.tools/quick-check compare -against release \
-		-baseline "$(QUICK_CHECK_BASELINE)" -candidate "$(QUICK_CHECK_CANDIDATE)" \
+		-baseline "$(QUICK_COMPARE_BASELINE)" -candidate "$(QUICK_COMPARE_CANDIDATE)" \
 		$(QUICK_CHECK_COMPARE_ARGS)
 
 RELIABILITY_HOST ?= http://localhost:11435

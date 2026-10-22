@@ -33,7 +33,7 @@ type storedRun struct {
 }
 
 // Recognize finalized managed runs only; archives, symlinks and partial outputs
-// are never eviction candidates. Timestamp names support existing local outputs.
+// are never eviction candidates. Timestamp names identify runs awaiting retention.
 func savedRuns(parent string) ([]storedRun, error) {
 	entries, err := os.ReadDir(parent)
 	if err != nil {
@@ -45,10 +45,10 @@ func savedRuns(parent string) ([]storedRun, error) {
 			continue
 		}
 		name := entry.Name()
-		stamp, suffix, legacy := strings.Cut(name, "-")
-		started, stampErr := time.Parse("20060102T150405Z", stamp)
+		stamp, suffix, staged := strings.Cut(name, "-")
+		_, stampErr := time.Parse("20060102T150405Z", stamp)
 		_, suffixErr := strconv.ParseUint(suffix, 10, 64)
-		if !(legacy && stampErr == nil && suffixErr == nil) && !strings.HasPrefix(name, "old-") && !strings.HasPrefix(name, "new-") && !strings.HasPrefix(name, "release-") {
+		if !(staged && stampErr == nil && suffixErr == nil) && !strings.HasPrefix(name, "old-") && !strings.HasPrefix(name, "new-") && !strings.HasPrefix(name, "release-") {
 			continue
 		}
 		path := filepath.Join(parent, name)
@@ -71,8 +71,9 @@ func savedRuns(parent string) ([]storedRun, error) {
 		if json.Unmarshal(data, &r) != nil || r.Workload == "" || r.Model == "" || (r.Status != "PASS" && r.Status != "FAIL") {
 			continue
 		}
-		if precise, err := time.Parse(time.RFC3339Nano, r.TestStartedAt); err == nil {
-			started = precise
+		started, err := time.Parse(time.RFC3339Nano, r.TestStartedAt)
+		if err != nil {
+			return nil, fmt.Errorf("%s: missing or invalid test timestamp: %w", path, err)
 		}
 		runs = append(runs, storedRun{path, r, started})
 	}

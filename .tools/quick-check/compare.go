@@ -108,16 +108,9 @@ func compareCommand(args []string, out io.Writer) error {
 			if len(runs) != 2 {
 				return fmt.Errorf("automatic comparison needs exactly two finalized runs directly under %s; found %d (supply explicit paths instead)", *parent, len(runs))
 			}
-			// Readable roles take precedence; legacy timestamp folders remain usable.
 			switch {
 			case strings.HasPrefix(filepath.Base(runs[0]), "new-") && strings.HasPrefix(filepath.Base(runs[1]), "old-"):
 			case strings.HasPrefix(filepath.Base(runs[0]), "old-") && strings.HasPrefix(filepath.Base(runs[1]), "new-"):
-				runs[0], runs[1] = runs[1], runs[0]
-			case !strings.HasPrefix(filepath.Base(runs[0]), "old-") && !strings.HasPrefix(filepath.Base(runs[0]), "new-") && !strings.HasPrefix(filepath.Base(runs[1]), "old-") && !strings.HasPrefix(filepath.Base(runs[1]), "new-"):
-				slices.Sort(runs)
-				if strings.SplitN(filepath.Base(runs[0]), "-", 2)[0] == strings.SplitN(filepath.Base(runs[1]), "-", 2)[0] {
-					return fmt.Errorf("run timestamps are tied; supply explicit baseline and candidate paths")
-				}
 				runs[0], runs[1] = runs[1], runs[0]
 			default:
 				return fmt.Errorf("automatic comparison needs an old/new pair; supply explicit baseline and candidate paths")
@@ -290,23 +283,21 @@ func readComparison(dir string) (comparisonInput, error) {
 		return input, err
 	}
 	header := strings.SplitN(r.logSummary(), "\n", 3)
-	// Old saved headers may carry the retired suffix; ignore it without
-	// interpreting or rewriting historical dirty-state metadata.
-	logText := strings.ReplaceAll(string(data), "+develop", "")
+	logText := string(data)
 	if !strings.HasPrefix(logText, header[0]+"\n"+header[1]+"\n") {
 		return input, fmt.Errorf("tool.log verdict/provenance disagrees with diagnostic report")
 	}
-	if r.TestStartedAt != "" && !strings.HasPrefix(logText, header[0]+"\n"+header[1]+"\nTest started: "+r.TestStartedAt+"\n") {
+	if _, err := time.Parse(time.RFC3339Nano, r.TestStartedAt); err != nil {
+		return input, fmt.Errorf("missing or invalid test timestamp: %w", err)
+	}
+	if !strings.HasPrefix(logText, header[0]+"\n"+header[1]+"\nTest started: "+r.TestStartedAt+"\n") {
 		return input, fmt.Errorf("tool.log test timestamp disagrees with diagnostic report")
 	}
 	if input.report.WarmupRequest != nil {
 		warmup := input.report.WarmupRequest
-		// Reconstruct older runs' startup metrics from their own recorded trace.
-		derived := startupTimings(startup[warmup.TraceID])
-		if len(warmup.StartupTimings) > 0 && !reflect.DeepEqual(warmup.StartupTimings, derived) {
+		if !reflect.DeepEqual(warmup.StartupTimings, startupTimings(startup[warmup.TraceID])) {
 			return input, fmt.Errorf("startup metrics disagree with recorded server timestamps")
 		}
-		warmup.StartupTimings = derived
 		input.native = native[warmup.TraceID]
 	}
 	return input, nil
