@@ -275,7 +275,7 @@ func readComparison(dir string) (comparisonInput, error) {
 	}
 	expected := r.summary()
 	if !reflect.DeepEqual(s.Machine, expected.Machine) || !reflect.DeepEqual(s.InstalledLibrary, expected.InstalledLibrary) ||
-		s.MTPBackend != expected.MTPBackend || s.HarnessRevision != expected.HarnessRevision || s.ServerCommitTime != expected.ServerCommitTime {
+		s.MTPBackend != expected.MTPBackend || s.HarnessRevision != expected.HarnessRevision || s.ServerCommitTime != expected.ServerCommitTime || s.ReleaseTag != expected.ReleaseTag {
 		return input, fmt.Errorf("summary.json and diagnostic report provenance disagree")
 	}
 	data, err = os.ReadFile(filepath.Join(dir, "tool.log"))

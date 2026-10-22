@@ -23,10 +23,17 @@ import (
 // These servers exercise the command's contract, not Kronk inference. Each
 // defect removes a distinct signal that an apparently successful chat can hide.
 func TestQuickCheckCommand(t *testing.T) {
-	releaseTestRepo(t)
-	for _, defect := range []string{"", "single-repetition", "no-drafts", "second-no-drafts", "no-cache", "wrong-cache-path", "missing-logs", "truncated-stream", "foreign-session", "two-slots", "cancel-internal-error", "cancel-without-ack", "cancel-without-cleanup", "missing-draft-restore", "actual-reuse-mismatch", "wrong-slot", "uncancelled-error", "dense-fixture", "missing-timing", "invalid-timing"} {
+	git := releaseTestRepo(t)
+	git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "--quiet", "-m", "release")
+	git("-c", "tag.gpgsign=false", "tag", "v1.0.0")
+	releaseRevision := git("rev-parse", "HEAD")
+	for _, defect := range []string{"", "release", "single-repetition", "no-drafts", "second-no-drafts", "no-cache", "wrong-cache-path", "missing-logs", "truncated-stream", "foreign-session", "two-slots", "cancel-internal-error", "cancel-without-ack", "cancel-without-cleanup", "missing-draft-restore", "actual-reuse-mismatch", "wrong-slot", "uncancelled-error", "dense-fixture", "missing-timing", "invalid-timing"} {
 		t.Run(defect, func(t *testing.T) {
-			passing := defect == "" || defect == "single-repetition"
+			passing := defect == "" || defect == "release" || defect == "single-repetition"
+			revision, tag := "0123456789abcdef0123456789abcdef01234567", ""
+			if defect == "release" {
+				revision, tag = releaseRevision, "v1.0.0"
+			}
 			requested := 3
 			if defect == "single-repetition" {
 				requested = 1
@@ -45,7 +52,7 @@ func TestQuickCheckCommand(t *testing.T) {
 				w.Header().Set("Content-Type", "application/json")
 				switch {
 				case req.URL.Path == "/v1/liveness":
-					fmt.Fprintln(w, `{"build":"develop","vcs_revision":"0123456789abcdef0123456789abcdef01234567","vcs_time":"2026-10-19T14:23:45Z","host":"fixture-server","os":"linux","GOMAXPROCS":12}`)
+					fmt.Fprintf(w, `{"build":"develop","vcs_revision":%q,"vcs_time":"2026-10-19T14:23:45Z","host":"fixture-server","os":"linux","GOMAXPROCS":12}`+"\n", revision)
 				case req.URL.Path == "/v1/kronk/libs":
 					fmt.Fprintln(w, `{"build":"fixture"}`)
 				case req.URL.Path == "/v1/devices":
@@ -289,6 +296,7 @@ func TestQuickCheckCommand(t *testing.T) {
 			var summary struct {
 				Status       string                            `json:"status"`
 				CommitTime   string                            `json:"server_commit_time"`
+				ReleaseTag   string                            `json:"release_tag"`
 				Requested    int                               `json:"repetitions_requested"`
 				Executed     int                               `json:"repetitions_executed"`
 				Measurements map[string]map[string]measurement `json:"measurements"`
@@ -313,7 +321,7 @@ func TestQuickCheckCommand(t *testing.T) {
 				t.Fatalf("server commit timestamp not preserved: %s", data)
 			}
 			executed := 1
-			if defect == "" {
+			if defect == "" || defect == "release" {
 				executed = 3
 			} else if defect == "second-no-drafts" {
 				executed = 2
@@ -345,7 +353,15 @@ func TestQuickCheckCommand(t *testing.T) {
 				t.Fatal(err)
 			}
 			text := string(logData)
-			if !strings.HasPrefix(text, "Quick-check: "+summary.Status+"\nTested commit: 0123456 from 2026-10-19T14:23:45Z\n") || !strings.Contains(text, "--- Phase progress ---\n") {
+			version, folder := revision[:7], "new-"+revision[:7]
+			if tag != "" {
+				version += " (release " + tag + ")"
+				folder = "new-" + tag + "-" + revision[:7]
+			}
+			if filepath.Base(filepath.Dir(paths[0])) != folder || summary.ReleaseTag != tag {
+				t.Fatal("release identity missing from folder or summary", paths[0], summary.ReleaseTag)
+			}
+			if !strings.HasPrefix(text, "Quick-check: "+summary.Status+"\nTested commit: "+version+" from 2026-10-19T14:23:45Z\n") || !strings.Contains(text, "--- Phase progress ---\n") {
 				t.Fatalf("missing log verdict/progress: %s", text)
 			}
 			header, _, _ := strings.Cut(text, "\n\n--- Phase progress ---")
@@ -760,6 +776,14 @@ func TestReleaseRetention(t *testing.T) {
 	if err := os.Mkdir(out, 0755); err != nil {
 		t.Fatal(err)
 	}
+	tags, err := releaseTags(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	labels := map[string]string{
+		a: "v1.0.0-" + a[:7], b: b[:7], c: "v1.1.0-" + c[:7],
+		d: d[:7], e: e[:7], f: "v1.2.0-" + f[:7],
+	}
 	for i, tc := range []struct {
 		revision, release, old string
 	}{
@@ -778,13 +802,14 @@ func TestReleaseRetention(t *testing.T) {
 	} {
 		r := comparisonFixture([]float64{2 + float64(i), 6 + float64(i), 14 + float64(i)})
 		r.ServerRevision = tc.revision
+		r.ReleaseTag = tags[tc.revision]
 		r.TestStartedAt = time.Date(2026, 10, 22, 0, 0, i, 0, time.UTC).Format(time.RFC3339Nano)
 		staged := filepath.Join(out, fmt.Sprintf("20261022T0000%02dZ-%d", i, i))
 		if err := os.Rename(writeComparisonFixture(t, r), staged); err != nil {
 			t.Fatal(err)
 		}
-		final, err := retainRuns(context.Background(), out, staged)
-		if err != nil || final != filepath.Join(out, "new-"+tc.revision[:7]) {
+		final, err := retainRuns(context.Background(), out, staged, tags)
+		if err != nil || final != filepath.Join(out, "new-"+labels[tc.revision]) {
 			t.Fatal(final, err)
 		}
 		entries, err := os.ReadDir(out)
@@ -795,12 +820,12 @@ func TestReleaseRetention(t *testing.T) {
 		for _, entry := range entries {
 			names = append(names, entry.Name())
 		}
-		want := []string{"new-" + tc.revision[:7]}
+		want := []string{"new-" + labels[tc.revision]}
 		if tc.release != "" {
 			want = append(want, "release-"+tc.release)
 		}
 		if tc.old != "" {
-			want = append(want, "old-"+tc.old[:7])
+			want = append(want, "old-"+labels[tc.old])
 		}
 		slices.Sort(want)
 		if !slices.Equal(names, want) {
@@ -880,7 +905,7 @@ func TestReleaseRetention(t *testing.T) {
 	if err := os.WriteFile(path, []byte("broken"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := compareCommand([]string{"-against", "release", "-out", out, "-baseline", filepath.Join(out, "release-v1.0.0"), "-candidate", filepath.Join(out, "old-"+c[:7])}, &output); err == nil || !strings.Contains(err.Error(), "release history") {
+	if err := compareCommand([]string{"-against", "release", "-out", out, "-baseline", filepath.Join(out, "release-v1.0.0"), "-candidate", filepath.Join(out, "old-"+labels[c])}, &output); err == nil || !strings.Contains(err.Error(), "release history") {
 		t.Fatal("accepted broken history", err)
 	}
 	if after, err := os.ReadFile(path); err != nil || string(after) != "broken" {
@@ -888,17 +913,18 @@ func TestReleaseRetention(t *testing.T) {
 	}
 	// Failure to recognize remote releases preserves every saved output.
 	git("remote", "set-url", "origin", filepath.Join(root, "missing-origin"))
-	r := comparisonFixture([]float64{1, 4, 10})
-	r.ServerRevision = d
-	r.TestStartedAt = "2026-10-22T00:01:00Z"
-	staged := filepath.Join(out, "20261022T000100Z-99")
-	if err := os.Rename(writeComparisonFixture(t, r), staged); err != nil {
+	logPath := filepath.Join(root, "server.log")
+	if err := os.WriteFile(logPath, nil, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := retainRuns(context.Background(), out, staged); err == nil || !strings.Contains(err.Error(), "release recognition unavailable") {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		http.Error(w, "server unavailable", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	if err := run(options{host: server.URL, out: out, serverLog: logPath, timeout: time.Second, repetitions: 1}); err == nil || !strings.Contains(err.Error(), "release recognition unavailable") {
 		t.Fatal("failed lookup treated as an ordinary commit", err)
 	}
-	for _, name := range []string{"release-v1.0.0", "old-" + c[:7], "new-" + b[:7], filepath.Base(staged)} {
+	for _, name := range []string{"release-v1.0.0", "old-" + labels[c], "new-" + labels[b]} {
 		if _, err := os.Stat(filepath.Join(out, name, "summary.json")); err != nil {
 			t.Fatal("tag lookup error evicted existing data", err)
 		}

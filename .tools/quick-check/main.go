@@ -39,6 +39,7 @@ type report struct {
 	HarnessRevision      string         `json:"harness_revision"`
 	ServerRevision       string         `json:"server_revision"`
 	ServerCommitTime     string         `json:"server_commit_time"`
+	ReleaseTag           string         `json:"release_tag,omitempty"`
 	TestStartedAt        string         `json:"test_started_at,omitempty"`
 	Metadata             map[string]any `json:"server_metadata"`
 	SystemTokens         int            `json:"system_tokens"`
@@ -62,6 +63,7 @@ type runSummary struct {
 	ServerVersion        string                            `json:"server_version"`
 	ServerRevision       string                            `json:"server_revision"`
 	ServerCommitTime     string                            `json:"server_commit_time"`
+	ReleaseTag           string                            `json:"release_tag,omitempty"`
 	TestStartedAt        string                            `json:"test_started_at,omitempty"`
 	ServerBuild          any                               `json:"server_build"`
 	InstalledLibrary     any                               `json:"installed_library"`
@@ -95,6 +97,7 @@ func (r report) summary() runSummary {
 		ServerVersion:        r.serverVersion(),
 		ServerRevision:       r.ServerRevision,
 		ServerCommitTime:     r.ServerCommitTime,
+		ReleaseTag:           r.ReleaseTag,
 		TestStartedAt:        r.TestStartedAt,
 		ServerBuild:          liveness["build"],
 		InstalledLibrary:     libraries["current"],
@@ -224,6 +227,9 @@ func (r report) logSummary() string {
 	if version != "unknown" {
 		version = version[:7]
 	}
+	if r.ReleaseTag != "" {
+		version += " (release " + r.ReleaseTag + ")"
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "Quick-check: %s\nTested commit: %s from %s\nTest started: %s\nIMC/MTP: %s | Serial isolation: %s | Cancel/recovery: %s\n", r.Status, version, r.ServerCommitTime, r.TestStartedAt, cache, isolation, recovery)
 	fmt.Fprintf(&b, "Time: warm-up request %s | warmed workload median %s | repetitions %d/%d\n", warmup, workload, len(r.Repetitions), r.RepetitionsRequested)
@@ -344,6 +350,9 @@ func run(o options) (runErr error) {
 		if ctx.Err() != nil {
 			return // The interruption cleanup removes this incomplete run.
 		}
+		tags, tagErr := releaseTags(ctx)
+		r.ReleaseTag = tags[r.ServerRevision]
+		runErr = errors.Join(runErr, tagErr)
 		if runErr != nil {
 			r.Findings = append(r.Findings, runErr.Error())
 		}
@@ -374,8 +383,8 @@ func run(o options) (runErr error) {
 		}
 		writeErr := errors.Join(evidenceErr, err, logErr, events.Close(), toolLog.Close())
 		runErr = errors.Join(runErr, writeErr)
-		if writeErr == nil {
-			finalDir, retentionErr := retainRuns(ctx, o.out, dir)
+		if writeErr == nil && tagErr == nil {
+			finalDir, retentionErr := retainRuns(ctx, o.out, dir, tags)
 			dir = finalDir
 			runErr = errors.Join(runErr, retentionErr)
 			reported = retentionErr == nil
@@ -384,7 +393,7 @@ func run(o options) (runErr error) {
 				return
 			}
 		} else {
-			fmt.Fprintln(os.Stderr, "Artifacts could not be finalized; previous runs retained.")
+			fmt.Fprintln(os.Stderr, "Artifacts or release recognition could not be finalized; previous runs retained.")
 		}
 		fmt.Fprint(os.Stdout, r.logSummary())
 		if len(r.Findings) > 0 {
