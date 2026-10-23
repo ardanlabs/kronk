@@ -20,7 +20,7 @@ func TestDecisionLabelMetadataControlsOptionMapping(t *testing.T) {
 	}{
 		{name: "model labels preserve order and leading spaces", labels: []string{" B", " A"}, winner: "second"},
 		{name: "no metadata retains alphabet", winner: "first"},
-		{name: "older library retains alphabet", err: ErrModelDecisionLabelUnavailable, winner: "first"},
+		{name: "older library retains alphabet", err: llama.ErrModelNoDecisionLabel, winner: "first"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			encodeLabel := func(label string) []llama.Token {

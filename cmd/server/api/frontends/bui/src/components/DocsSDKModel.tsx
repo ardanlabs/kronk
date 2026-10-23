@@ -57,14 +57,6 @@ export default function DocsSDKModel() {
               <p className="doc-description">InitYzmaWorkarounds initializes Kronk-specific Yzma compatibility code.</p>
             </div>
 
-            <div className="doc-section" id="func-modeldecisionlabel">
-              <h4>ModelDecisionLabel</h4>
-              <pre className="code-block">
-                <code>func ModelDecisionLabel(model llama.Model, index uint32) (string, error)</code>
-              </pre>
-              <p className="doc-description">ModelDecisionLabel returns a Go-owned copy of the model's decision label at index, preserving whitespace. An empty string and nil error indicate a null model or no label at that index. The model must remain loaded during the call. C and C++ exports (Itanium and 64-bit MSVC ABIs) are supported. ErrModelDecisionLabelUnavailable indicates a library without a supported export.</p>
-            </div>
-
             <div className="doc-section" id="func-recurrentstatecopies">
               <h4>RecurrentStateCopies</h4>
               <pre className="code-block">
@@ -3267,14 +3259,6 @@ export default function DocsSDKModel() {
               </pre>
               <p className="doc-description">ErrMessagesMissing indicates that a chat request has no messages field.</p>
             </div>
-
-            <div className="doc-section" id="var-errmodeldecisionlabelunavailable">
-              <h4>ErrModelDecisionLabelUnavailable</h4>
-              <pre className="code-block">
-                <code>{`var ErrModelDecisionLabelUnavailable = errors.New("llama_model_decision_label not found in library")`}</code>
-              </pre>
-              <p className="doc-description">ErrModelDecisionLabelUnavailable means the loaded llama.cpp library does not export llama_model_decision_label.</p>
-            </div>
           </div>
         </div>
 
@@ -3285,7 +3269,6 @@ export default function DocsSDKModel() {
               <ul>
                 <li><a href="#func-addparams">AddParams</a></li>
                 <li><a href="#func-inityzmaworkarounds">InitYzmaWorkarounds</a></li>
-                <li><a href="#func-modeldecisionlabel">ModelDecisionLabel</a></li>
                 <li><a href="#func-recurrentstatecopies">RecurrentStateCopies</a></li>
                 <li><a href="#func-registerparser">RegisterParser</a></li>
                 <li><a href="#func-speculativecontextcount">SpeculativeContextCount</a></li>
@@ -3615,7 +3598,6 @@ export default function DocsSDKModel() {
                 <li><a href="#var-errinvalidrequest">ErrInvalidRequest</a></li>
                 <li><a href="#var-errmessagesinvalid">ErrMessagesInvalid</a></li>
                 <li><a href="#var-errmessagesmissing">ErrMessagesMissing</a></li>
-                <li><a href="#var-errmodeldecisionlabelunavailable">ErrModelDecisionLabelUnavailable</a></li>
               </ul>
             </div>
           </div>

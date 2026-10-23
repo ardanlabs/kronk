@@ -76,7 +76,7 @@ func decisionUsesEmbeddings(protocol DecisionProtocol) bool {
 
 func (m *Model) decisionLabelTokens() ([]llama.Token, []string, error) {
 	return decisionLabelTokens(func(index uint32) (string, error) {
-		return ModelDecisionLabel(m.model, index)
+		return llama.ModelDecisionLabel(m.model, index)
 	}, func(text string) []llama.Token {
 		return llama.Tokenize(m.vocab, text, false, false)
 	})
@@ -87,7 +87,7 @@ func decisionLabelTokens(labelAt func(uint32) (string, error), encode func(strin
 	var labels []string
 	for i := range decisionMaxReadouts {
 		label, err := labelAt(uint32(i))
-		if i == 0 && errors.Is(err, ErrModelDecisionLabelUnavailable) {
+		if i == 0 && errors.Is(err, llama.ErrModelNoDecisionLabel) {
 			break
 		}
 		if err != nil {
