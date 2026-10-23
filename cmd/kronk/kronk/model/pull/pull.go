@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
+	"github.com/ardanlabs/kronk/cmd/kronk/status"
 	"github.com/ardanlabs/kronk/cmd/server/app/domain/toolapp"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
@@ -49,6 +50,9 @@ func runWeb(ctx context.Context, source string, projURL string, mtpURL string) e
 	var downloaded bool
 	for ver := range ch {
 		prt.print(ver)
+		if ver.Progress != nil {
+			status.Download(ctx, ver.Progress.Src, ver.Progress.CurrentBytes, ver.Progress.TotalBytes)
+		}
 		lastStatus = ver.Status
 		downloaded = downloaded || ver.Downloaded || ver.Status == "downloaded"
 	}
@@ -81,13 +85,14 @@ func runLocal(ctx context.Context, mdls *models.Models, basePath string, source 
 	}
 
 	progress := func(progress models.DownloadProgress) {
-		status := fmt.Sprintf("download-model: Downloading %s... %d MB of %d MB (%.2f MB/s)",
+		status.Download(ctx, progress.Src, progress.CurrentBytes, progress.TotalBytes)
+		msg := fmt.Sprintf("download-model: Downloading %s... %d MB of %d MB (%.2f MB/s)",
 			progress.Src,
 			progress.CurrentBytes/(1000*1000),
 			progress.TotalBytes/(1000*1000),
 			progress.MBPerSec,
 		)
-		prt.progress(status, progress.Src, progress.Complete)
+		prt.progress(msg, progress.Src, progress.Complete)
 	}
 
 	// Default workflow — Download handles every input form (canonical id,

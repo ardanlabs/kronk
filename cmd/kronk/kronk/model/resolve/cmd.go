@@ -3,7 +3,6 @@ package resolve
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
@@ -28,18 +27,15 @@ Environment Variables:
       KRONK_BASE_PATH  Base path for kronk data (defaults to $HOME/.kronk)
       KRONK_HF_TOKEN   HuggingFace token; recommended to avoid rate limiting`,
 	Args: cobra.ExactArgs(1),
-	Run:  main,
+	RunE: main,
 }
 
 func init() {
 	Cmd.Flags().Bool("refresh", false, "Bypass the resolver-file cache and force an HF lookup")
 }
 
-func main(cmd *cobra.Command, args []string) {
-	if err := run(cmd, args); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
+func main(cmd *cobra.Command, args []string) error {
+	return run(cmd, args)
 }
 
 func run(cmd *cobra.Command, args []string) error {

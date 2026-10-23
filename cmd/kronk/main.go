@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"context"
 	"os"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/bucky"
@@ -14,17 +14,20 @@ import (
 	"github.com/ardanlabs/kronk/cmd/kronk/malina"
 	"github.com/ardanlabs/kronk/cmd/kronk/security"
 	"github.com/ardanlabs/kronk/cmd/kronk/server"
+	"github.com/ardanlabs/kronk/cmd/kronk/status"
 	k "github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 var version = k.Version
 
 func main() {
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+	ctx := context.Background()
+	if term.IsTerminal(int(os.Stderr.Fd())) && os.Getenv("TERM") != "dumb" {
+		ctx = status.WithWriter(ctx, os.Stderr)
 	}
+	os.Exit(execute(ctx, rootCmd))
 }
 
 var rootCmd = &cobra.Command{

@@ -2,9 +2,6 @@
 package libs
 
 import (
-	"fmt"
-	"os"
-
 	"github.com/spf13/cobra"
 )
 
@@ -78,7 +75,7 @@ ENVIRONMENT VARIABLES
   KRONK_OS               - Operating system: linux, darwin, windows
   KRONK_PROCESSOR        - Hardware backend: cpu, cuda, metal, vulkan`,
 	Args: cobra.NoArgs,
-	Run:  main,
+	RunE: main,
 }
 
 func init() {
@@ -95,11 +92,8 @@ func init() {
 	Cmd.Flags().Bool("remove-install", false, "Remove the install matching --arch/--os/--processor")
 }
 
-func main(cmd *cobra.Command, args []string) {
-	if err := run(cmd); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
+func main(cmd *cobra.Command, args []string) error {
+	return run(cmd)
 }
 
 func run(cmd *cobra.Command) error {
@@ -128,13 +122,13 @@ func run(cmd *cobra.Command) error {
 
 	if opts.isInstallOp() {
 		if local {
-			return runInstallLocal(opts)
+			return runInstallLocal(cmd.Context(), opts)
 		}
-		return runInstallWeb(opts)
+		return runInstallWeb(cmd.Context(), opts)
 	}
 
 	if local {
-		return runDefaultLocal(upgrade, version)
+		return runDefaultLocal(cmd.Context(), upgrade, version)
 	}
-	return runDefaultWeb(upgrade, version)
+	return runDefaultWeb(cmd.Context(), upgrade, version)
 }

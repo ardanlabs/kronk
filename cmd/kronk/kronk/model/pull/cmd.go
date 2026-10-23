@@ -2,8 +2,6 @@ package pull
 
 import (
 	"fmt"
-	"os"
-	"os/signal"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
@@ -47,7 +45,7 @@ Environment Variables (--local mode):
       KRONK_BASE_PATH  Base path for kronk data (models, libraries, catalog, model_config)
       KRONK_MODELS     (default: $HOME/.kronk/models)  The path to the models directory`,
 	Args: cobra.ExactArgs(1),
-	Run:  main,
+	RunE: run,
 }
 
 func init() {
@@ -56,19 +54,11 @@ func init() {
 	Cmd.Flags().String("mtp-draft", "", "Fully qualified MTP drafter URL to pin")
 }
 
-func main(cmd *cobra.Command, args []string) {
-	if err := run(cmd, args); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-}
-
 func run(cmd *cobra.Command, args []string) error {
 	local, _ := cmd.Flags().GetBool("local")
 	projURL, _ := cmd.Flags().GetString("proj")
 	mtpURL, _ := cmd.Flags().GetString("mtp-draft")
-	ctx, cancel := signal.NotifyContext(cmd.Context(), os.Interrupt)
-	defer cancel()
+	ctx := cmd.Context()
 
 	if !local {
 		return runWeb(ctx, args[0], projURL, mtpURL)

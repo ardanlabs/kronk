@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
+	"github.com/ardanlabs/kronk/cmd/kronk/status"
 	"github.com/ardanlabs/kronk/cmd/server/api/services/kronk"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"github.com/spf13/cobra"
@@ -103,7 +104,10 @@ func runLocal(cmd *cobra.Command) error {
 		}
 	}
 
-	if err := kronk.Run(false); err != nil {
+	ready := func() {
+		status.Report(cmd.Context(), "idle", "Server ready to serve", -1)
+	}
+	if err := kronk.Run(false, ready); err != nil {
 		return fmt.Errorf("run: %w", err)
 	}
 

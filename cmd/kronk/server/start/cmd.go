@@ -2,7 +2,6 @@ package start
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/ardanlabs/kronk/cmd/server/api/services/kronk"
 	"github.com/spf13/cobra"
@@ -13,7 +12,9 @@ var Cmd = &cobra.Command{
 	Short: "Start Kronk model server",
 	Long:  `Start Kronk model server. Use --help to get environment settings.`,
 	Args:  cobra.NoArgs,
-	Run:   main,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return run(cmd)
+	},
 }
 
 func init() {
@@ -77,17 +78,10 @@ func init() {
 	Cmd.Flags().Bool("insecure-logging", false, "Enable logging of sensitive data (messages, model config)")
 
 	Cmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
-		err := kronk.Run(true)
+		err := kronk.Run(true, nil)
 		cmd.Long = fmt.Sprintf("Start Kronk model server\n\n%s", err.Error())
 		cmd.Parent().HelpFunc()(cmd, args)
 	})
-}
-
-func main(cmd *cobra.Command, args []string) {
-	if err := run(cmd); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
 }
 
 func run(cmd *cobra.Command) error {

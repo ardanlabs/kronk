@@ -19,8 +19,8 @@ import (
 // or the latest published release when upgrade is set) and then
 // initializes the bucky runtime against the install path so the
 // libraries can be loaded.
-func runDefaultLocal(upgrade bool, version string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+func runDefaultLocal(ctx context.Context, upgrade bool, version string) error {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 
 	lib, err := libs.New(
@@ -47,7 +47,7 @@ func runDefaultLocal(upgrade bool, version string) error {
 // runDefaultWeb installs the whisper.cpp libraries for the active
 // triple by streaming progress from the model server's
 // /v1/bucky/libs/pull endpoint.
-func runDefaultWeb(upgrade bool, version string) error {
+func runDefaultWeb(ctx context.Context, upgrade bool, version string) error {
 	url, err := client.DefaultURL("/v1/bucky/libs/pull")
 	if err != nil {
 		return fmt.Errorf("bucky libs: default url: %w", err)
@@ -71,18 +71,28 @@ func runDefaultWeb(upgrade bool, version string) error {
 		client.WithBearer(os.Getenv("KRONK_TOKEN")),
 	)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 
 	ch := make(chan toolapp.VersionResponse)
-	if err := cln.Do(ctx, http.MethodPost, url, nil, ch); err != nil {
+	errCh, err := cln.DoWithErrors(ctx, http.MethodPost, url, nil, ch)
+	if err != nil {
 		return fmt.Errorf("bucky libs: unable to install whisper.cpp: %w", err)
 	}
 
+	var status string
 	for ver := range ch {
 		fmt.Print(ver.Status)
+		status = ver.Status
 	}
 	fmt.Println()
+
+	if err := <-errCh; err != nil {
+		return fmt.Errorf("bucky libs: unable to install whisper.cpp: %w", err)
+	}
+	if status != "downloaded" {
+		return fmt.Errorf("bucky libs: install did not complete successfully: %s", status)
+	}
 
 	return nil
 }

@@ -46,21 +46,23 @@ import (
 //go:embed static
 var static embed.FS
 
-func Run(showHelp bool) error {
+// Run starts the service. If ready is non-nil, it is called after the API
+// listener binds successfully and before requests are served.
+func Run(showHelp bool, ready func()) error {
 	log := logger.New(os.Stdout, logger.LevelInfo, "KRONK", web.GetTraceID)
 
 	// -------------------------------------------------------------------------
 
 	ctx := context.Background()
 
-	if err := run(ctx, log, showHelp); err != nil {
+	if err := run(ctx, log, showHelp, ready); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
+func run(ctx context.Context, log *logger.Logger, showHelp bool, ready func()) error {
 
 	// -------------------------------------------------------------------------
 	// GOMAXPROCS
@@ -617,10 +619,19 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 
 	serverErrors := make(chan error, 1)
 
+	listener, err := net.Listen("tcp", api.Addr)
+	if err != nil {
+		return fmt.Errorf("listening for API requests: %w", err)
+	}
+	defer listener.Close()
+	if ready != nil {
+		ready()
+	}
+
 	go func() {
 		log.Info(ctx, "startup", "status", "api router started", "host", api.Addr)
 
-		serverErrors <- api.ListenAndServe()
+		serverErrors <- api.Serve(listener)
 	}()
 
 	// -------------------------------------------------------------------------
