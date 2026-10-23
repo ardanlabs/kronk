@@ -5,6 +5,37 @@ import (
 	"slices"
 )
 
+// Fixed for this one-slot workload: medians from the initial nine observations.
+// Generation excludes the first token per response, matching Kronk's TPS clock.
+const (
+	referenceInputTokens      = 10708
+	referenceGenerationTokens = 1332
+)
+
+// Reference time normalizes completed-request processing, not whole-workload
+// wall time. Prefill includes cache work through the first sampled token.
+func (r report) referenceTime() (float64, bool) {
+	var input, generated int
+	var prefill, generation float64
+	for _, res := range r.Results {
+		if res.Cancelled {
+			continue
+		}
+		p, g := res.ServerTimings["slot_prefill_ttft_seconds"], res.ServerTimings["generation_seconds"]
+		if p <= 0 || g <= 0 || res.Usage.CompletionTokens < 1 {
+			return 0, false
+		}
+		input += res.Usage.PromptTokens - res.Execution.ReusedTokens
+		generated += res.Usage.CompletionTokens - 1
+		prefill += p
+		generation += g
+	}
+	if input <= 0 || generated <= 0 {
+		return 0, false
+	}
+	return referenceInputTokens*prefill/float64(input) + referenceGenerationTokens*generation/float64(generated), true
+}
+
 type repetitionSummary struct {
 	Repetition           int              `json:"repetition"`
 	Status               string           `json:"status"`
@@ -56,6 +87,9 @@ func (r report) measurements() map[string]map[string]measurement {
 		}
 		add("workload", "elapsed_seconds", repetition.WorkloadSeconds)
 		add("workload", "cancel_release_seconds", repetition.CancelReleaseSeconds)
+		if seconds, ok := repetition.referenceTime(); ok {
+			add("workload", "reference_seconds", seconds)
+		}
 		for _, res := range repetition.Results {
 			add(res.Phase, "elapsed_seconds", res.Elapsed)
 			add(res.Phase, "first_content_seconds", res.FirstContent)
@@ -63,6 +97,9 @@ func (r report) measurements() map[string]map[string]measurement {
 				add(res.Phase, "server_output_tokens_per_second", res.Usage.ServerTPS)
 			}
 		}
+	}
+	if len(samples["workload"]["reference_seconds"]) != len(r.Repetitions) {
+		delete(samples["workload"], "reference_seconds")
 	}
 	measurements := make(map[string]map[string]measurement)
 	for phase, metrics := range samples {
