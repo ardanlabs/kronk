@@ -373,7 +373,7 @@ func TestQuickCheckCommand(t *testing.T) {
 				t.Fatalf("terminal must show only the log header, got: %s", terminalData)
 			}
 			if passing {
-				for _, required := range []string{"IMC/MTP: PASS", "Serial isolation: PASS", "Cancel/recovery: PASS", "Warm-up:", "Workload s [SD]", "Reference time s [SD]", "phase=recovery elapsed="} {
+				for _, required := range []string{"IMC/MTP: PASS", "Serial isolation: PASS", "Cancel/recovery: PASS", "Warm-up:", "Workload s [SD]", "Normalized s [SD]", "phase=recovery elapsed="} {
 					if !strings.Contains(text, required) {
 						t.Fatalf("log omitted %q: %s", required, text)
 					}

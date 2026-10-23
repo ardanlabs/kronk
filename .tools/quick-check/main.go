@@ -238,7 +238,7 @@ func (r report) logSummary() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Quick-check: %s\nTested commit: %s from %s\nTest started: %s\nIMC/MTP: %s | Serial isolation: %s | Cancel/recovery: %s\n", r.Status, version, r.ServerCommitTime, r.TestStartedAt, cache, isolation, recovery)
 	fmt.Fprintf(&b, "Cell: MoE/1s/IMC+/MTP+/img- | Warm-up: %s | Repetitions: %d/%d\n", warmup, len(r.Repetitions), r.RepetitionsRequested)
-	fmt.Fprintf(&b, "  Workload s [SD]: %s | Reference time s [SD]: %s\n", workload, reference)
+	fmt.Fprintf(&b, "  Workload s [SD]: %s | Normalized s [SD]: %s\n", workload, reference)
 	if r.Status != "PASS" {
 		fmt.Fprintln(&b, "Details: summary.json (fix setup/evidence failures before deeper inference checks)")
 		if cache == "FAIL" {

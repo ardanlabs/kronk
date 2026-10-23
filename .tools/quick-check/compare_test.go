@@ -165,7 +165,7 @@ func TestCompareCommand(t *testing.T) {
 	if err := compareCommand([]string{"-out", output, "-baseline", base, "-candidate", candidate}, &out); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "Saved-run checks: baseline PASS / candidate PASS") || !strings.Contains(out.String(), "Workload (s)") || !strings.Contains(out.String(), "Reference time (s)") || strings.Contains(out.String(), "Throughput") || strings.Contains(out.String(), "Out tok") {
+	if !strings.Contains(out.String(), "Saved-run checks: baseline PASS / candidate PASS") || !strings.Contains(out.String(), "Workload (s)") || !strings.Contains(out.String(), "Normalized (s)") || strings.Contains(out.String(), "Throughput") || strings.Contains(out.String(), "Out tok") {
 		t.Fatal(out.String())
 	}
 	saved, err := os.ReadFile(filepath.Join(output, "comparison.json"))
@@ -232,7 +232,7 @@ func TestCompareReferenceTime(t *testing.T) {
 	if math.Abs(m.Median-rate.Median) > 1e-10 || m.Samples != rate.Samples {
 		t.Fatal("saved reference time and comparison disagree", m, rate)
 	}
-	if !strings.Contains(r.logSummary(), "Reference time s [SD]: 60.07 [8.07]") {
+	if !strings.Contains(r.logSummary(), "Normalized s [SD]: 60.07 [8.07]") {
 		t.Fatal("run summary and comparison disagree", r.logSummary())
 	}
 }
