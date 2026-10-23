@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
+	"github.com/hybridgroup/yzma/pkg/mtmd"
 )
 
 const (
@@ -21,6 +22,10 @@ type clefProtocol struct {
 	template systemOneTemplate
 }
 
+func (p *clefProtocol) mediaSupport() MediaType {
+	return MediaTypeVision
+}
+
 func newClefProtocol(m *Model) (*clefProtocol, error) {
 	tmpl, err := newSystemOneTemplate(m)
 	if err != nil {
@@ -33,11 +38,19 @@ func newClefProtocol(m *Model) (*clefProtocol, error) {
 }
 
 func (p *clefProtocol) decide(ctx context.Context, req DecisionRequest) (DecisionResponse, error) {
+	// Sanitize only user values, before introducing the template's own markers.
+	sanitize := func(value any) any {
+		value = replaceDecisionTemplateText(value, clefMarker, "<<clef ")
+		if len(req.Images) > 0 {
+			value = replaceDecisionTemplateText(value, mtmd.DefaultMarker(), " ")
+		}
+		return value
+	}
 	state, err := decisionTemplateValue(req.State)
 	if err != nil {
 		return DecisionResponse{}, fmt.Errorf("decision: serialize state: %w", err)
 	}
-	state = replaceDecisionTemplateText(state, clefMarker, "<<clef ")
+	state = sanitize(state)
 
 	questions := make([]D, len(req.Questions))
 	optionsByQuestion := make([][]systemOneOption, len(req.Questions))
@@ -54,12 +67,13 @@ func (p *clefProtocol) decide(ctx context.Context, req DecisionRequest) (Decisio
 		if err != nil {
 			return DecisionResponse{}, fmt.Errorf("decision: question %q: %w", question.ID, err)
 		}
-		instructions = replaceDecisionTemplateText(instructions, clefMarker, "<<clef ")
+		instructions = sanitize(instructions)
 		for j := range options {
-			options[j].name = strings.ReplaceAll(options[j].name, clefMarker, "<<clef ")
-			options[j].description = replaceDecisionTemplateText(options[j].description, clefMarker, "<<clef ")
+			options[j].name = sanitize(options[j].name).(string)
+			options[j].description = sanitize(options[j].description)
 		}
 		questions[i] = decisionTemplateQuestion(question, instructions, options)
+		questions[i]["id"] = sanitize(question.ID)
 		optionsByQuestion[i] = make([]systemOneOption, len(options))
 		for j, option := range options {
 			optionsByQuestion[i][j] = systemOneOption{name: option.name}
@@ -70,9 +84,14 @@ func (p *clefProtocol) decide(ctx context.Context, req DecisionRequest) (Decisio
 		return DecisionResponse{}, fmt.Errorf("decision: clef needs %d option scores, limit is %d", totalOptions, decisionMaxReadouts)
 	}
 
+	images := make([]string, len(req.Images))
+	for i := range images {
+		images[i] = mtmd.DefaultMarker()
+	}
 	prompt, err := p.template.renderValues(D{
 		"state":         state,
 		"questions":     questions,
+		"images":        images,
 		"sep":           clefSeparator,
 		"mark_question": clefQuestionMark,
 		"mark_option":   clefOptionMark,
@@ -83,9 +102,29 @@ func (p *clefProtocol) decide(ctx context.Context, req DecisionRequest) (Decisio
 
 	var tokens []llama.Token
 	var orders []llama.DecisionOrder
+	var prefixRows []extendedBatchEntry
+	var position int
+	pieces := strings.Split(prompt, clefSeparator)
+	if len(req.Images) > 0 {
+		var head strings.Builder
+		for len(pieces) > 0 && !strings.Contains(head.String(), mtmd.DefaultMarker()) {
+			head.WriteString(pieces[0])
+			pieces = pieces[1:]
+		}
+		if strings.Count(head.String(), mtmd.DefaultMarker()) != len(req.Images) || strings.Contains(head.String(), clefMarker) {
+			return DecisionResponse{}, fmt.Errorf("%w: systemone template must place all images before decision spans", ErrDecisionRequest)
+		}
+		prefixRows, position, err = p.model.prepareDecisionMedia(ctx, head.String(), req.Images)
+		if err != nil {
+			return DecisionResponse{}, err
+		}
+	}
 	questionIndex := 0
 	optionCount := 0
-	for piece := range strings.SplitSeq(prompt, clefSeparator) {
+	for _, piece := range pieces {
+		if len(req.Images) > 0 && strings.Contains(piece, mtmd.DefaultMarker()) {
+			return DecisionResponse{}, fmt.Errorf("%w: image marker outside the decision media prefix", ErrDecisionRequest)
+		}
 		order := llama.DecisionOrderNone
 		switch {
 		case strings.HasPrefix(piece, clefQuestionMark):
@@ -120,7 +159,7 @@ func (p *clefProtocol) decide(ctx context.Context, req DecisionRequest) (Decisio
 		return DecisionResponse{}, fmt.Errorf("decision: %w: input needs %d tokens, limit is %d", ErrDecisionBudget, len(tokens), p.model.decision.contextWindow)
 	}
 
-	work := []decisionWork{{tokens: tokens, decisionOrder: orders, jointScores: totalOptions}}
+	work := []decisionWork{{tokens: tokens, prefixRows: prefixRows, position: position, decisionOrder: orders, jointScores: totalOptions}}
 	readouts, err := p.model.decision.run(ctx, work)
 	if err != nil {
 		return DecisionResponse{}, fmt.Errorf("decision: clef readout: %w", err)
@@ -148,7 +187,7 @@ func (p *clefProtocol) decide(ctx context.Context, req DecisionRequest) (Decisio
 	return DecisionResponse{
 		Model:   p.model.responseModelID(),
 		Answers: answers,
-		Usage:   DecisionUsage{InputTokens: len(tokens)},
+		Usage:   DecisionUsage{InputTokens: work[0].rowCount()},
 	}, nil
 }
 

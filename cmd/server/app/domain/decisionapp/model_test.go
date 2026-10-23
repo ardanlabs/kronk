@@ -1,6 +1,7 @@
 package decisionapp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -104,6 +105,24 @@ func TestDecodeDecisionRequestAllowsProtocolDefaultInstructions(t *testing.T) {
 	}
 }
 
+func TestDecisionImagesPreserveOrderAndState(t *testing.T) {
+	got, err := decodeDecisionRequest(strings.NewReader(`{"model":"clef","state":{"image_url":"ordinary state"},"images":["data:image/png;base64,iVBORw0KGgo=","/9j/4A=="],"questions":{"q":{"type":"noul","instructions":"Q?"}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := got.toSDK()
+	if len(req.Images) != 2 || !bytes.Equal(req.Images[0], []byte("\x89PNG\r\n\x1a\n")) || !bytes.Equal(req.Images[1], []byte{0xff, 0xd8, 0xff, 0xe0}) {
+		t.Fatalf("images: got %v, want PNG then JPEG bytes", req.Images)
+	}
+	state, err := json.Marshal(req.State)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(state) != `{"image_url":"ordinary state"}` {
+		t.Errorf("state: got %s, want unchanged structured state", state)
+	}
+}
+
 func TestDecodeDecisionRequestRejectsInvalidWireShapes(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -124,6 +143,13 @@ func TestDecodeDecisionRequestRejectsInvalidWireShapes(t *testing.T) {
 		{name: "noul criteria array", input: `{"model":"m","state":{},"questions":{"q":{"type":"noul","instructions":"Q?","criteria":[]}}}`},
 		{name: "unknown type", input: `{"model":"m","state":{},"questions":{"q":{"type":"other","instructions":"Q?"}}}`},
 		{name: "multiple values", input: `{"model":"m","state":{},"questions":{"q":{"type":"noul","instructions":"Q?"}}} {}`},
+		{name: "images object", input: `{"model":"m","state":{},"images":{},"questions":{"q":{"type":"noul"}}}`},
+		{name: "image number", input: `{"model":"m","state":{},"images":[1],"questions":{"q":{"type":"noul"}}}`},
+		{name: "image URL", input: `{"model":"m","state":{},"images":["https://example.com/image.png"],"questions":{"q":{"type":"noul"}}}`},
+		{name: "malformed base64", input: `{"model":"m","state":{},"images":["%%%"],"questions":{"q":{"type":"noul"}}}`},
+		{name: "empty image", input: `{"model":"m","state":{},"images":[""],"questions":{"q":{"type":"noul"}}}`},
+		{name: "audio data URL", input: `{"model":"m","state":{},"images":["data:audio/wav;base64,UklGRg=="],"questions":{"q":{"type":"noul"}}}`},
+		{name: "video", input: `{"model":"m","state":{},"videos":["video"],"questions":{"q":{"type":"noul"}}}`},
 	}
 
 	for _, tt := range tests {

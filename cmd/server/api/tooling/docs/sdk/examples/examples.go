@@ -26,6 +26,7 @@ var skipDirs = map[string]bool{
 }
 
 var displayNames = map[string]string{
+	"decision-image":    "Decision (Image)",
 	"decision-jevstyle": "Decision (Jev-Style)",
 	"decision-openjev":  "Decision (OpenJEV)",
 }

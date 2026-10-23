@@ -367,6 +367,29 @@ criteria rather than normalizing them through unordered maps. Protocols may
 apply their model's normalization rules: decision2 sorts structured state keys,
 while Clef sorts choice options.
 
+#### Decision images
+
+Vision-capable Clef models accept an optional top-level `images` array of base64
+strings or image data URLs, such as `data:image/jpeg;base64,...`. Remote URLs
+are not fetched. In the Go SDK, set `DecisionRequest.Images` to an ordered
+`[][]byte` containing encoded JPEG, PNG, GIF, or WebP files.
+
+All images appear before `state`, in array order, outside question and option
+spans. Image-shaped values inside `state` remain ordinary structured data;
+Kronk does not extract chat-message attachments from decision state.
+
+This requires a compatible projector configured through `ProjFile` and a Clef
+GGUF whose `systemone` template supports images. A projection file alone does
+not enable images for other decision protocols; OpenJEV and the other protocols
+remain text-only in Kronk's decision API. Audio and video inputs are unsupported.
+
+The complete text-plus-image prompt must fit both the context window and one
+physical batch. Expanded image rows count toward `usage.input_tokens` and the
+batch budget. Oversized inputs are rejected, never truncated; increase
+`context-window` or `prefill-batch-size` as indicated by the error. Decoding
+images also consumes memory proportional to their dimensions, so applications
+accepting untrusted images should bound payload sizes, dimensions, and count.
+
 #### Decision protocols
 
 Kronk detects these protocols from the GGUF's architecture-specific
@@ -495,6 +518,19 @@ use `model.WithDecisionProtocol` with the matching protocol only when a renamed
 model cannot be detected. The complete runnable example is under
 `examples/decision`. The bundled SDK reference documents every constructor,
 request type, response type, protocol, and error.
+
+For an image-based decision, see `examples/decision-image`. It uses the bundled
+giraffe photograph and follows the same installation and initialization pattern
+as `examples/decision`, with a hardcoded model source and image path:
+
+```shell
+make example-decision-image
+```
+
+Set `modelSource` and `imageFile` in the example to change the inputs. The model
+resolver downloads the model and discovers its companion projector. Image
+decisions require a vision-capable Clef conversion with a compatible projector
+and image-capable systemone template; older text-only conversions cannot be used.
 
 ## 9.9 Tokenization
 

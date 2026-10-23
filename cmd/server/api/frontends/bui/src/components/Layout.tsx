@@ -195,6 +195,7 @@ const menuStructure: MenuCategory[] = [
             { page: 'docs-sdk-examples', label: 'Chat', hash: 'example-chat' },
             { page: 'docs-sdk-examples', label: 'Concurrency', hash: 'example-concurrency' },
             { page: 'docs-sdk-examples', label: 'Decision', hash: 'example-decision' },
+            { page: 'docs-sdk-examples', label: 'Decision (Image)', hash: 'example-decision-image' },
             { page: 'docs-sdk-examples', label: 'Embedding', hash: 'example-embedding' },
             { page: 'docs-sdk-examples', label: 'Grammar', hash: 'example-grammar' },
             { page: 'docs-sdk-examples', label: 'Malina', hash: 'example-malina' },

@@ -2582,6 +2582,11 @@ data: {"type":"response.completed",...}`}</code></pre>
             </tbody>
           </table>
           <p>Object order is part of the decision-model input. Kronk preserves the incoming order of state fields, questions, choice options, instructions, and nested criteria rather than normalizing them through unordered maps. Protocols may apply their model's normalization rules: decision2 sorts structured state keys, while Clef sorts choice options.</p>
+          <h4 id="decision-images">Decision images</h4>
+          <p>Vision-capable Clef models accept an optional top-level <code>images</code> array of base64 strings or image data URLs, such as <code>data:image/jpeg;base64,...</code>. Remote URLs are not fetched. In the Go SDK, set <code>DecisionRequest.Images</code> to an ordered <code>[][]byte</code> containing encoded JPEG, PNG, GIF, or WebP files.</p>
+          <p>All images appear before <code>state</code>, in array order, outside question and option spans. Image-shaped values inside <code>state</code> remain ordinary structured data; Kronk does not extract chat-message attachments from decision state.</p>
+          <p>This requires a compatible projector configured through <code>ProjFile</code> and a Clef GGUF whose <code>systemone</code> template supports images. A projection file alone does not enable images for other decision protocols; OpenJEV and the other protocols remain text-only in Kronk's decision API. Audio and video inputs are unsupported.</p>
+          <p>The complete text-plus-image prompt must fit both the context window and one physical batch. Expanded image rows count toward <code>usage.input_tokens</code> and the batch budget. Oversized inputs are rejected, never truncated; increase <code>context-window</code> or <code>prefill-batch-size</code> as indicated by the error. Decoding images also consumes memory proportional to their dimensions, so applications accepting untrusted images should bound payload sizes, dimensions, and count.</p>
           <h4 id="decision-protocols">Decision protocols</h4>
           <p>Kronk detects these protocols from the GGUF's architecture-specific <code>decision.type</code> metadata and uses its named <code>systemone</code> template. The existing OpenJEV, Jev-Style, Laya/Julia, Lev, Kev, Nimble, and Clef protocols remain available. The following additional protocols are implemented:</p>
           <table className="flags-table">
@@ -2687,6 +2692,9 @@ make curl-kronk-systemone`}</code></pre>
 
 resp, err := krn.Decision(ctx, req)`}</code></pre>
           <p><code>Kronk.Decision</code> returns <code>model.DecisionResponse</code>. <code>Kronk.DecisionHTTP</code> performs the same evaluation and writes that response using the public HTTP JSON contract. Supported model names and metadata are detected automatically; use <code>model.WithDecisionProtocol</code> with the matching protocol only when a renamed model cannot be detected. The complete runnable example is under <code>examples/decision</code>. The bundled SDK reference documents every constructor, request type, response type, protocol, and error.</p>
+          <p>For an image-based decision, see <code>examples/decision-image</code>. It uses the bundled giraffe photograph and follows the same installation and initialization pattern as <code>examples/decision</code>, with a hardcoded model source and image path:</p>
+          <pre className="code-block"><code className="language-shell">{`make example-decision-image`}</code></pre>
+          <p>Set <code>modelSource</code> and <code>imageFile</code> in the example to change the inputs. The model resolver downloads the model and discovers its companion projector. Image decisions require a vision-capable Clef conversion with a compatible projector and image-capable systemone template; older text-only conversions cannot be used.</p>
           <h2 id="99-tokenization">9.9 Tokenization</h2>
           <p><code>POST /v1/tokenize</code> returns a token <strong>count</strong>, not token IDs:</p>
           <pre className="code-block"><code className="language-json">{`{

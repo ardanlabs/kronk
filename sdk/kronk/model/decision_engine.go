@@ -19,10 +19,16 @@ type decisionReadout struct {
 
 type decisionWork struct {
 	tokens        []llama.Token
+	prefixRows    []extendedBatchEntry // Owned media prefix; never borrows MTMD buffers.
+	position      int                  // Logical position of the first text token after the prefix.
 	prefixLen     int
 	readouts      []decisionReadout
 	decisionOrder []llama.DecisionOrder
 	jointScores   int
+}
+
+func (w decisionWork) rowCount() int {
+	return len(w.prefixRows) + len(w.tokens)
 }
 
 // decisionEngine performs only model execution. Protocol implementations own
@@ -157,8 +163,8 @@ func (e *decisionEngine) validate(work []decisionWork) error {
 			return fmt.Errorf("decision work[%d] has no tokens", i)
 		}
 
-		if len(item.tokens) > e.contextWindow {
-			return fmt.Errorf("decision work[%d] has %d tokens, context window is %d", i, len(item.tokens), e.contextWindow)
+		if item.rowCount() > e.contextWindow || item.rowCount() > e.maxTokens {
+			return fmt.Errorf("%w: decision work[%d] needs %d text/image rows, context limit is %d and batch limit is %d; increase context-window or prefill-batch-size", ErrDecisionBudget, i, item.rowCount(), e.contextWindow, e.maxTokens)
 		}
 
 		if item.prefixLen < 0 || item.prefixLen > len(item.tokens) {
@@ -227,6 +233,7 @@ func (e *decisionEngine) clear() error {
 
 type decisionPart struct {
 	tokens        []llama.Token
+	prefixRows    []extendedBatchEntry
 	position      int
 	sequence      llama.SeqId
 	readouts      []decisionReadout
@@ -237,7 +244,7 @@ type decisionPart struct {
 func (e *decisionEngine) decode(parts ...decisionPart) ([][][]float32, bool, error) {
 	var total int
 	for _, part := range parts {
-		total += len(part.tokens)
+		total += len(part.prefixRows) + len(part.tokens)
 	}
 
 	if total == 0 {
@@ -322,12 +329,26 @@ func stageDecisionParts(batch *extendedBatch, parts []decisionPart) ([][]int32, 
 
 	indices := make([][]int32, len(parts))
 	for partIndex, part := range parts {
+		sequenceIDs := []llama.SeqId{part.sequence}
+		for _, row := range part.prefixRows {
+			row.decisionOrder = llama.DecisionOrderNone
+			row.output = extendedBatchOutputNone
+			if part.jointScores > 0 {
+				row.output = extendedBatchOutputEmbeddings
+			}
+			idx, err := batch.addEntry(row, sequenceIDs)
+			if err != nil {
+				return nil, fmt.Errorf("add part[%d] prefix row: %w", partIndex, err)
+			}
+			if row.output != extendedBatchOutputNone {
+				indices[partIndex] = append(indices[partIndex], idx)
+			}
+		}
 		readoutAt := make(map[int]bool, len(part.readouts))
 		for _, readout := range part.readouts {
 			readoutAt[readout.position] = true
 		}
 
-		sequenceIDs := []llama.SeqId{part.sequence}
 		for i, token := range part.tokens {
 			position := part.position + i
 			output := extendedBatchOutputNone
@@ -366,6 +387,8 @@ func (e *decisionEngine) evaluate(entries []decisionScheduledEntry) ([][][]float
 	for i, entry := range entries {
 		parts[i] = decisionPart{
 			tokens:        entry.work.tokens,
+			prefixRows:    entry.work.prefixRows,
+			position:      entry.work.position,
 			sequence:      llama.SeqId(i),
 			readouts:      entry.work.readouts,
 			decisionOrder: entry.work.decisionOrder,

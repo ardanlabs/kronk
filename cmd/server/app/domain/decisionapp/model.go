@@ -1,6 +1,7 @@
 package decisionapp
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ type decisionRequest struct {
 	Model     string            `json:"model"`
 	State     any               `json:"state"`
 	Questions decisionQuestions `json:"questions"`
+	Images    [][]byte          `json:"-"`
 }
 
 type decisionQuestions []decisionQuestion
@@ -67,6 +69,35 @@ func decodeDecisionRequest(r io.Reader) (decisionRequest, error) {
 		return decisionRequest{}, fmt.Errorf("missing state field")
 	}
 
+	if videos, exists := objectField(object, "videos"); exists && videos != nil {
+		return decisionRequest{}, fmt.Errorf("videos are not supported by decisions")
+	}
+	var images [][]byte
+	if value, exists := objectField(object, "images"); exists && value != nil {
+		values, ok := value.([]any)
+		if !ok {
+			return decisionRequest{}, fmt.Errorf("images must be an array of base64 strings or data URLs")
+		}
+		for i, value := range values {
+			encoded, ok := value.(string)
+			if !ok {
+				return decisionRequest{}, fmt.Errorf("images[%d] must be a base64 string or data URL", i)
+			}
+			if strings.HasPrefix(encoded, "data:") {
+				header, data, found := strings.Cut(encoded, ";base64,")
+				if !found || !strings.HasPrefix(header, "data:image/") {
+					return decisionRequest{}, fmt.Errorf("images[%d] must be an image base64 data URL", i)
+				}
+				encoded = data
+			}
+			image, err := base64.StdEncoding.DecodeString(encoded)
+			if err != nil || len(image) == 0 {
+				return decisionRequest{}, fmt.Errorf("images[%d] must contain nonempty base64 image data", i)
+			}
+			images = append(images, image)
+		}
+	}
+
 	questionsValue, exists := objectField(object, "questions")
 	if !exists {
 		return decisionRequest{}, fmt.Errorf("missing questions field")
@@ -94,6 +125,7 @@ func decodeDecisionRequest(r io.Reader) (decisionRequest, error) {
 		Model:     modelID,
 		State:     state,
 		Questions: questions,
+		Images:    images,
 	}, nil
 }
 
@@ -260,6 +292,7 @@ func (r decisionRequest) toSDK() model.DecisionRequest {
 	return model.DecisionRequest{
 		State:     toDecisionValue(r.State),
 		Questions: questions,
+		Images:    r.Images,
 	}
 }
 

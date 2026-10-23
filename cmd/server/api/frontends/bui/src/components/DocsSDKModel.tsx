@@ -647,6 +647,10 @@ export default function DocsSDKModel() {
                 <code>{`type DecisionRequest struct {
 	State     any
 	Questions []DecisionQuestion
+	// Images contains encoded JPEG, PNG, GIF, or WebP files, in prompt order.
+	// Images precede State and require a vision-capable decision protocol and
+	// compatible projector. Image-shaped values in State remain ordinary data.
+	Images [][]byte
 }`}</code>
               </pre>
               <p className="doc-description">DecisionRequest evaluates ordered questions independently against one shared state.</p>

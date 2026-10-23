@@ -28,6 +28,9 @@ example-concurrency:
 example-decision:
 	cd examples && go run ./decision/main.go
 
+example-decision-image:
+	cd examples && go run ./decision-image/main.go
+
 example-embedding:
 	cd examples && go run ./embedding/main.go
 

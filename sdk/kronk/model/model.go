@@ -175,34 +175,24 @@ type draftCore struct {
 
 // Model represents a model and provides a low-level API for working with it.
 type Model struct {
-	cfg            Config
-	log            applog.Logger
-	model          llama.Model
-	vocab          llama.Vocab
-	suppressTokens []llama.Token
-	ctxParams      llama.ContextParams
-	lctx           llama.Context
-	mem            llama.Memory
-	adapterHandles []llama.AdapterLora
-	adapterScales  []float32
-	batch          *batchEngine
-	decision       *decisionEngine
-	protocol       decisionProtocol
-	template       Template
-	compiledTmpl   *compiledTemplate // Long-lived compiled jinja template (one-time init via templateOnce).
-	templateOnce   sync.Once         // Guards one-time compile of compiledTmpl.
-	projFile       string
-	projDevice     llama.GGMLBackendDevice
-	// mtmdMetaCtx is a single, long-lived multimodal projector context
-	// loaded in NewModel and freed in Unload. It is used ONLY for
-	// read-only metadata checks (SupportVision/SupportAudio) by chat
-	// handlers — never for Tokenize/Encode/Decode of actual requests.
-	// Per-request slots create their own short-lived mtmd context (via
-	// mtmd.InitFromFile in startSlot, freed in freeSlotResources) so
-	// that any internal accumulation inside an mtmd context is bounded
-	// to a single request and cannot bleed across requests.
-	// Zero when projFile == "" (text-only models) or for embed/rerank
-	// models.
+	cfg              Config
+	log              applog.Logger
+	model            llama.Model
+	vocab            llama.Vocab
+	suppressTokens   []llama.Token
+	ctxParams        llama.ContextParams
+	lctx             llama.Context
+	mem              llama.Memory
+	adapterHandles   []llama.AdapterLora
+	adapterScales    []float32
+	batch            *batchEngine
+	decision         *decisionEngine
+	protocol         decisionProtocol
+	template         Template
+	compiledTmpl     *compiledTemplate // Long-lived compiled jinja template (one-time init via templateOnce).
+	templateOnce     sync.Once         // Guards one-time compile of compiledTmpl.
+	projFile         string
+	projDevice       llama.GGMLBackendDevice
 	mtmdMetaCtx      mtmd.Context
 	modelInfo        ModelInfo
 	paramsResolved   bool
@@ -427,12 +417,10 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	nSlots := max(cfg.NSeqMax(), 1)
 
 	// Load a single, long-lived mtmd context used ONLY for metadata
-	// reads (SupportVision/SupportAudio) by chat handlers. Per-request
-	// processing contexts are created by each slot in startSlot and
-	// freed in freeSlotResources — see Model.mtmdMetaCtx for the
-	// rationale.
+	// reads (SupportVision/SupportAudio) by chat and decision handlers. Per-request
+	// processing contexts are owned by generation slots or decision preparation.
 	isGenerationModel := !(modelInfo.IsEmbedModel || modelInfo.IsRerankModel || modelInfo.IsDecisionModel)
-	if isGenerationModel && m.projFile != "" {
+	if (isGenerationModel || modelInfo.IsDecisionModel) && m.projFile != "" {
 		l(ctx, "loading-prof-file", "status", "started", "proj", path.Base(m.projFile))
 
 		start := time.Now()

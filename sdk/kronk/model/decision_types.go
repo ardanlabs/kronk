@@ -101,6 +101,10 @@ func DecisionQuestionNoul(id string, instructions any, criteria *DecisionNoulCri
 type DecisionRequest struct {
 	State     any
 	Questions []DecisionQuestion
+	// Images contains encoded JPEG, PNG, GIF, or WebP files, in prompt order.
+	// Images precede State and require a vision-capable decision protocol and
+	// compatible projector. Image-shaped values in State remain ordinary data.
+	Images [][]byte
 }
 
 // DecisionAnswer contains the typed answer to one decision question.
@@ -163,6 +167,11 @@ type DecisionResponse struct {
 }
 
 func validateDecisionRequest(req DecisionRequest, protocol DecisionProtocol) error {
+	for i, image := range req.Images {
+		if mediaTypeFromMagicBytes(image) != MediaTypeVision {
+			return fmt.Errorf("%w: images[%d] must be a JPEG, PNG, GIF, or WebP image", ErrDecisionRequest, i)
+		}
+	}
 	if len(req.Questions) == 0 {
 		return fmt.Errorf("%w: questions must not be empty", ErrDecisionRequest)
 	}
