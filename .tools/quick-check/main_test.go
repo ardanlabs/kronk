@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -27,9 +28,10 @@ func TestQuickCheckCommand(t *testing.T) {
 	git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "--quiet", "-m", "release")
 	git("-c", "tag.gpgsign=false", "tag", "v1.0.0")
 	releaseRevision := git("rev-parse", "HEAD")
-	for _, defect := range []string{"", "release", "single-repetition", "no-drafts", "second-no-drafts", "no-cache", "wrong-cache-path", "missing-logs", "truncated-stream", "foreign-session", "two-slots", "cancel-internal-error", "cancel-without-ack", "cancel-without-cleanup", "missing-draft-restore", "actual-reuse-mismatch", "wrong-slot", "uncancelled-error", "dense-fixture", "missing-timing", "invalid-timing"} {
+	for _, defect := range []string{"", "release", "single-repetition", "all-cells", "no-drafts", "second-no-drafts", "no-cache", "wrong-cache-path", "missing-logs", "truncated-stream", "foreign-session", "two-slots", "cancel-internal-error", "cancel-without-ack", "cancel-without-cleanup", "missing-draft-restore", "actual-reuse-mismatch", "wrong-slot", "uncancelled-error", "dense-fixture", "missing-timing", "invalid-timing", "images", "images-no-encode", "images-no-decode", "images-reencode", "images-no-restore", "images-leak", "images-recovery-reuse", "images-recovery-leak"} {
 		t.Run(defect, func(t *testing.T) {
-			passing := defect == "" || defect == "release" || defect == "single-repetition"
+			images := strings.HasPrefix(defect, "images")
+			passing := defect == "" || defect == "release" || defect == "single-repetition" || defect == "all-cells" || defect == "images" || defect == "images-recovery-reuse"
 			revision, tag := "0123456789abcdef0123456789abcdef01234567", ""
 			if defect == "release" {
 				revision, tag = releaseRevision, "v1.0.0"
@@ -89,7 +91,7 @@ func TestQuickCheckCommand(t *testing.T) {
 					if strings.Count(body.Input, "Procedure ") != 72 {
 						t.Error("system prompt must retain its fixed 72 records")
 					}
-					if !strings.HasPrefix(body.Input, fmt.Sprintf("Quick-check repetition %d.\n\n", tokenizeCalls)) {
+					if !strings.HasPrefix(body.Input, fmt.Sprintf("Quick-check repetition %d.\n\n", (tokenizeCalls-1)%requested+1)) {
 						t.Error("repetitions must use distinct, fixed system-prefix markers")
 					}
 					// Record the tokenizer's count without resizing the fixed text.
@@ -102,17 +104,22 @@ func TestQuickCheckCommand(t *testing.T) {
 						t.Error(err)
 					}
 					phases := []string{"cold", "replay", "append", "fresh-session", "cancel", "recovery"}
-					if calls >= 1+3*len(phases) {
+					cellCalls, images := calls, images
+					if defect == "all-cells" {
+						cellCalls = calls % (1 + 6*requested)
+						images = calls >= 1+6*requested
+					}
+					if cellCalls >= 1+3*len(phases) {
 						t.Error("unexpected extra chat")
 						return
 					}
 					phase, repetition := "warmup", 1
-					if calls > 0 {
-						phase, repetition = phases[(calls-1)%len(phases)], (calls-1)/len(phases)+1
+					if cellCalls > 0 {
+						phase, repetition = phases[(cellCalls-1)%len(phases)], (cellCalls-1)/len(phases)+1
 						if !loaded {
 							t.Error("model must stay resident across workload repetitions")
 						}
-						if !strings.HasPrefix(body.Messages[0].Content, fmt.Sprintf("Quick-check repetition %d.\n\n", repetition)) {
+						if !strings.HasPrefix(body.Messages[0].Content.(string), fmt.Sprintf("Quick-check repetition %d.\n\n", repetition)) {
 							t.Error("request must use its repetition's system prefix")
 						}
 					}
@@ -126,8 +133,29 @@ func TestQuickCheckCommand(t *testing.T) {
 					}
 					loaded = true
 					calls++
-					if phase == "append" && (len(body.Messages) != 4 || !strings.Contains(body.Messages[2].Content, "Maren")) {
+					if phase == "append" && (len(body.Messages) != 4 || !strings.Contains(body.Messages[2].Content.(string), "Maren")) {
 						t.Error("continuation did not preserve actual assistant response")
+					}
+					if images && phase != "warmup" {
+						parts, ok := body.Messages[1].Content.([]any)
+						if !ok || len(parts) != 2 {
+							t.Error("image request must include text and image parts")
+							return
+						}
+						question := parts[0].(map[string]any)["text"].(string)
+						if strings.Contains(question, "giraffe") || strings.Contains(question, "deer") {
+							t.Error("question leaked the expected image subject")
+						}
+						url := parts[1].(map[string]any)["image_url"].(map[string]any)["url"].(string)
+						data, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(url, "data:image/jpeg;base64,"))
+						fixture := "giraffe.jpg"
+						if phase == "fresh-session" || phase == "cancel" {
+							fixture = "deer/image10.jpg"
+						}
+						want, readErr := os.ReadFile(filepath.Join(os.Getenv("GITHUB_WORKSPACE"), "examples/samples", fixture))
+						if err != nil || readErr != nil || !bytes.Equal(data, want) {
+							t.Error("wrong or invalid image bytes", err, readErr)
+						}
 					}
 					trace := strings.Split(req.Header.Get("Traceparent"), "-")[1]
 					kind, reason, cached := "append", "complete-prefix-append", 10193
@@ -143,6 +171,25 @@ func TestQuickCheckCommand(t *testing.T) {
 						reason, cached, stable = "system-cache-prefix", 10120, 10223
 					case "cancel":
 						cached = 10223
+					}
+					if images && phase != "warmup" {
+						switch phase {
+						case "cold", "fresh-session", "recovery":
+							kind, reason, cached = "rebuild", "no-exact-media-plan", 0
+							if phase == "recovery" {
+								stable = 10193
+								if defect == "images-recovery-reuse" {
+									kind, reason, cached = "exact", "logical-plan-equal", 9000
+								}
+							}
+						case "replay":
+							kind, reason, cached = "exact", "logical-plan-equal", 9000
+						case "append", "cancel":
+							kind, reason, cached = "anchor", "media-prefix-text-replay", 9000
+							if phase == "cancel" {
+								cached = 9100
+							}
+						}
 					}
 					if defect == "wrong-cache-path" {
 						reason = "system-cache-prefix"
@@ -170,7 +217,31 @@ func TestQuickCheckCommand(t *testing.T) {
 					emit("request-lifecycle", "complete", map[string]any{"stage": 1, "elapsed": "750µs"})
 					emit("request-lifecycle", "complete", map[string]any{"stage": 2, "elapsed": "12.5ms"})
 					emit("request-lifecycle", "complete", map[string]any{"stage": 3, "queue_wait": "0s"})
-					emit("imc", "plan-ready", map[string]any{"match_kind": kind, "match_reason": reason, "reusable_tokens": cached, "stable_tokens": stable, "extension_tokens": stable - cached, "tail_tokens": tail, "system_boundary_tokens": boundary})
+					if images && phase != "warmup" {
+						anchor := 0
+						if cached > 0 {
+							anchor = 10193
+							if phase == "cancel" {
+								anchor = 10223
+							}
+						}
+						emit("imc-media-cache", "plan-ready", map[string]any{"match_kind": kind, "match_reason": reason, "media_count": 1, "replay_text_tokens": tail, "reusable_logical_position": cached, "anchor_physical_kv": anchor})
+						if kind == "rebuild" || (defect == "images-reencode" && phase == "replay") {
+							if defect != "images-no-encode" {
+								emit("imc-media-cache", "encoded-media-chunk", map[string]any{"tokens": 256})
+							}
+							if defect != "images-no-decode" || phase != "recovery" {
+								emit("imc-media-cache", "decoded-media-chunk", map[string]any{"decoded_tokens": 256})
+							}
+							position := 9000
+							if phase == "fresh-session" {
+								position = 9100
+							}
+							emit("start-slot", "imc-cache-ready", map[string]any{"media": true, "next_logical_position": position})
+						}
+					} else {
+						emit("imc", "plan-ready", map[string]any{"match_kind": kind, "match_reason": reason, "reusable_tokens": cached, "stable_tokens": stable, "extension_tokens": stable - cached, "tail_tokens": tail, "system_boundary_tokens": boundary})
+					}
 					if phase == "warmup" {
 						emit("draft-model-mtp", "loaded", map[string]any{"backend": "qwen35-own-kv"})
 					}
@@ -188,9 +259,11 @@ func TestQuickCheckCommand(t *testing.T) {
 					emit("batch-engine", "prefill-done", map[string]any{"ttft": "123ms"})
 					if cached > 0 {
 						emit("start-slot", "imc-restore-done", nil)
-						emit("start-slot", "imc-draft-restore-done", nil)
+						if defect != "images-no-restore" {
+							emit("start-slot", "imc-draft-restore-done", nil)
+						}
 					}
-					if phase != "replay" {
+					if phase != "replay" && !(images && kind == "exact") {
 						emit("start-slot", "imc-snapshot-done", nil)
 						emit("start-slot", "imc-draft-snapshot-done", nil)
 					}
@@ -223,6 +296,19 @@ func TestQuickCheckCommand(t *testing.T) {
 						if defect == "foreign-session" {
 							text += " Maren."
 						}
+					}
+					if images && phase != "warmup" {
+						animal := "giraffe"
+						if phase == "fresh-session" || phase == "cancel" {
+							animal = "deer"
+						}
+						if defect == "images-leak" && phase == "fresh-session" {
+							animal = "giraffe"
+						}
+						if defect == "images-recovery-leak" && phase == "recovery" {
+							animal = "deer"
+						}
+						text += " The picture shows a " + animal + "."
 					}
 					w.Header().Set("Content-Type", "text/event-stream")
 					fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"content\":%q}}]}\n\n", text)
@@ -262,7 +348,7 @@ func TestQuickCheckCommand(t *testing.T) {
 					if defect == "dense-fixture" {
 						experts = "0"
 					}
-					fmt.Fprintf(w, `{"metadata":{"general.architecture":"qwen35moe","qwen35moe.expert_count":%q},"model_config":{"incremental-cache":true}}`, experts)
+					fmt.Fprintf(w, `{"has_projection":true,"metadata":{"general.architecture":"qwen35moe","qwen35moe.expert_count":%q},"model_config":{"incremental-cache":true}}`, experts)
 				default:
 					t.Errorf("unexpected endpoint %s", req.URL.Path)
 					http.NotFound(w, req)
@@ -277,7 +363,14 @@ func TestQuickCheckCommand(t *testing.T) {
 			}
 			stdout, stderr := os.Stdout, os.Stderr
 			os.Stdout, os.Stderr = terminal, terminal
-			err = run(options{host: server.URL, out: out, serverLog: logPath, timeout: time.Second, repetitions: requested})
+			selection, cellIndex := "text", 0
+			if images {
+				selection, cellIndex = "images", 1
+			}
+			if defect == "all-cells" {
+				selection = "all"
+			}
+			err = run(options{host: server.URL, out: out, serverLog: logPath, timeout: time.Second, repetitions: requested, cells: selection})
 			os.Stdout, os.Stderr = stdout, stderr
 			if closeErr := terminal.Close(); closeErr != nil {
 				t.Fatal(closeErr)
@@ -293,14 +386,49 @@ func TestQuickCheckCommand(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			var matrix struct {
+				Status string            `json:"status"`
+				Cells  []json.RawMessage `json:"cells"`
+			}
+			if err := json.Unmarshal(data, &matrix); err != nil {
+				t.Fatal(err)
+			}
+			if defect == "all-cells" {
+				if matrix.Status != "PASS" || len(matrix.Cells) != 2 || tokenizeCalls != 2*requested || calls != 2*(1+6*requested) || unloads != 2 || loaded {
+					t.Fatalf("combined run lost cells/repetitions or changed lifecycle: chats=%d tokenizations=%d unloads=%d summary=%s", calls, tokenizeCalls, unloads, data)
+				}
+				dir := filepath.Dir(paths[0])
+				var comparisonText bytes.Buffer
+				if err := compareCommand([]string{"-out", t.TempDir(), "-baseline", dir, "-candidate", dir, "-json"}, &comparisonText); err != nil {
+					t.Fatal("combined run is not consumable by comparator", err)
+				}
+				var comparison matrixComparison
+				if err := json.Unmarshal(comparisonText.Bytes(), &comparison); err != nil {
+					t.Fatal(err)
+				}
+				if comparison.Status != "PASS" || len(comparison.Cells) != 2 {
+					t.Fatal("combined comparison omitted a cell", comparisonText.String())
+				}
+				for _, cell := range comparison.Cells {
+					if cell.Status != "PASS" || cell.Baseline.ReferenceTokens != referenceTokens(strings.HasSuffix(cell.Cell, "img+")) || cell.Baseline.Executed != requested || len(cell.Metrics) == 0 {
+						t.Fatal("cell evidence/normalization mixed", comparisonText.String())
+					}
+				}
+				return
+			}
+			if len(matrix.Cells) != 2 || (matrix.Status == "PASS") != passing || !bytes.Contains(matrix.Cells[1-cellIndex], []byte(`"status": "NOT_RUN"`)) {
+				t.Fatalf("incorrect matrix coverage/status: %s", data)
+			}
+			data = matrix.Cells[cellIndex]
 			var summary struct {
-				Status       string                            `json:"status"`
-				CommitTime   string                            `json:"server_commit_time"`
-				ReleaseTag   string                            `json:"release_tag"`
-				Requested    int                               `json:"repetitions_requested"`
-				Executed     int                               `json:"repetitions_executed"`
-				Measurements map[string]map[string]measurement `json:"measurements"`
-				Repetitions  []struct {
+				Status          string                            `json:"status"`
+				CommitTime      string                            `json:"server_commit_time"`
+				ReleaseTag      string                            `json:"release_tag"`
+				Requested       int                               `json:"repetitions_requested"`
+				Executed        int                               `json:"repetitions_executed"`
+				Measurements    map[string]map[string]measurement `json:"measurements"`
+				ReferenceTokens normalizationReference            `json:"normalization_reference"`
+				Repetitions     []struct {
 					Repetition   int    `json:"repetition"`
 					Status       string `json:"status"`
 					SystemTokens int    `json:"system_tokens"`
@@ -321,8 +449,8 @@ func TestQuickCheckCommand(t *testing.T) {
 				t.Fatalf("server commit timestamp not preserved: %s", data)
 			}
 			executed := 1
-			if defect == "" || defect == "release" {
-				executed = 3
+			if passing {
+				executed = requested
 			} else if defect == "second-no-drafts" {
 				executed = 2
 			}
@@ -342,7 +470,7 @@ func TestQuickCheckCommand(t *testing.T) {
 			}
 			previous := -1
 			for _, key := range []string{"machine", "server_version", "server_build", "installed_library", "model", "repetitions_requested", "repetitions"} {
-				position := strings.Index(string(data), "\n  \""+key+"\":")
+				position := strings.Index(string(data), "\""+key+"\":")
 				if position <= previous {
 					t.Fatalf("summary must put environment before requests; misplaced %s: %s", key, data)
 				}
@@ -378,8 +506,15 @@ func TestQuickCheckCommand(t *testing.T) {
 						t.Fatalf("log omitted %q: %s", required, text)
 					}
 				}
-				if len(strings.Split(header, "\n")) != 6 {
-					t.Fatalf("passing summary must be six lines: %s", header)
+				lines := 7 // Includes the explicitly unrun cell.
+				if images {
+					lines++
+					if !strings.Contains(header, "Images: PASS") || !strings.Contains(header, "img+") {
+						t.Fatal("image cell not identified", header)
+					}
+				}
+				if len(strings.Split(header, "\n")) != lines {
+					t.Fatalf("passing summary must be %d lines: %s", lines, header)
 				}
 				sdText := "[n/a]"
 				if requested > 1 {
@@ -445,17 +580,18 @@ func TestQuickCheckCommand(t *testing.T) {
 			scanner.Buffer(make([]byte, 65536), 4*1024*1024)
 			for scanner.Scan() {
 				var event struct {
-					Source     string `json:"source"`
-					Report     report `json:"report"`
-					Repetition int    `json:"repetition"`
+					Source     string       `json:"source"`
+					Report     matrixReport `json:"report"`
+					Cell       string       `json:"cell_id"`
+					Repetition int          `json:"repetition"`
 				}
 				if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
 					t.Fatal(err)
 				}
 				if event.Source == "report" {
-					diagnostic = event.Report
+					diagnostic = event.Report.Cells[cellIndex]
 					reports++
-				} else if event.Repetition < 1 || event.Repetition > executed {
+				} else if event.Cell != matrixCells[cellIndex].id || event.Repetition < 1 || event.Repetition > executed {
 					t.Fatalf("event missing repetition identity: %s", scanner.Text())
 				}
 			}
@@ -471,6 +607,21 @@ func TestQuickCheckCommand(t *testing.T) {
 			if passing {
 				if tokenizeCalls != requested || calls != 1+6*requested {
 					t.Fatalf("expected %d complete sequences, got %d tokenizations, %d chats", requested, tokenizeCalls, calls)
+				}
+				if images {
+					// Completed prompt counts: 10200, 10200, 10507, 10230,
+					// 10200. Physical anchors are 10193, not logical 9000.
+					input := 30951.0
+					if defect == "images-recovery-reuse" {
+						input -= 10193
+					}
+					if summary.ReferenceTokens != (normalizationReference{InputTokens: 31962, GenerationTokens: 1001}) {
+						t.Fatal("image cell did not record its fixed normalization reference", summary.ReferenceTokens)
+					}
+					want := 31962.0*(5*0.123)/input + 1001.0*(5*2.345)/(5*89)
+					if got := summary.Measurements["workload"]["reference_seconds"].Median; math.Abs(got-want) > 1e-12 {
+						t.Fatalf("image normalization used logical instead of physical reuse: got %v, want %v", got, want)
+					}
 				}
 				for _, phase := range []string{"cold", "replay"} {
 					want := measurement{Samples: 3, Median: 19, Min: 7, Max: 41}
@@ -525,7 +676,11 @@ func TestQuickCheckCommand(t *testing.T) {
 						t.Fatalf("incorrect phase decision: %+v", phase)
 					}
 				}
-				if string(phases[1]["cached_tokens"]) != "10193" || string(phases[1]["draft_tokens"]) != "40" {
+				wantCached := "10193"
+				if images {
+					wantCached = "9000"
+				}
+				if string(phases[1]["cached_tokens"]) != wantCached || string(phases[1]["draft_tokens"]) != "40" {
 					t.Fatalf("cache/MTP comparison metrics lost: %s", data)
 				}
 				if _, ok := phases[4]["client_output_tokens_per_second"]; ok {

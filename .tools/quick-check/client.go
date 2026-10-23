@@ -16,7 +16,7 @@ import (
 
 type message struct {
 	Role    string `json:"role"`
-	Content string `json:"content"`
+	Content any    `json:"content"`
 }
 
 type usage struct {
@@ -53,6 +53,12 @@ type result struct {
 	ExtensionTokens int                `json:"extension_tokens,omitempty"`
 	TailTokens      int                `json:"tail_tokens,omitempty"`
 	SystemBoundary  int                `json:"system_boundary_tokens,omitempty"`
+	MediaPlan       bool               `json:"media_plan"`
+	MediaCount      int                `json:"media_count"`
+	MediaPosition   int                `json:"cached_logical_position"`
+	MediaAnchorKV   int                `json:"media_anchor_physical_kv"`
+	EncodedTokens   int                `json:"encoded_image_tokens"`
+	DecodedTokens   int                `json:"decoded_image_tokens"`
 	Execution       execution          `json:"execution"`
 	ServerTimings   map[string]float64 `json:"server_timings"`
 	StartupTimings  map[string]float64 `json:"startup_timings,omitempty"`
@@ -82,6 +88,7 @@ type execution struct {
 }
 
 type client struct {
+	cell        string
 	ctx         context.Context
 	host, token string
 	http        http.Client
@@ -159,7 +166,7 @@ func (c *client) chat(phase string, messages []message, limit int, cancelAfterCo
 		"temperature":    0, "seed": 42, "enable_thinking": false, "max_tokens": limit,
 	}
 	if c.events != nil {
-		if err := c.events.Encode(map[string]any{"source": "request", "repetition": c.repetition, "phase": phase, "body": body}); err != nil {
+		if err := c.events.Encode(map[string]any{"source": "request", "cell_id": c.cell, "repetition": c.repetition, "phase": phase, "body": body}); err != nil {
 			return r, err
 		}
 	}
@@ -186,8 +193,10 @@ func (c *client) chat(phase string, messages []message, limit int, cancelAfterCo
 		}
 		var chunk struct {
 			Choices []struct {
-				Delta        message `json:"delta"`
-				FinishReason string  `json:"finish_reason"`
+				Delta struct {
+					Content string `json:"content"`
+				} `json:"delta"`
+				FinishReason string `json:"finish_reason"`
 			} `json:"choices"`
 			Usage usage           `json:"usage"`
 			Error json.RawMessage `json:"error"`
@@ -199,7 +208,7 @@ func (c *client) chat(phase string, messages []message, limit int, cancelAfterCo
 			return r, fmt.Errorf("stream error: %s", chunk.Error)
 		}
 		if c.events != nil {
-			if err := c.events.Encode(map[string]any{"source": "client", "repetition": c.repetition, "phase": phase, "trace_id": trace, "at": time.Now().UTC(), "chunk": json.RawMessage(data)}); err != nil {
+			if err := c.events.Encode(map[string]any{"source": "client", "cell_id": c.cell, "repetition": c.repetition, "phase": phase, "trace_id": trace, "at": time.Now().UTC(), "chunk": json.RawMessage(data)}); err != nil {
 				return r, err
 			}
 		}

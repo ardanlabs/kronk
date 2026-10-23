@@ -1,7 +1,10 @@
 package main
 
 import (
+	"encoding/base64"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -45,6 +48,21 @@ func conversation(system, id, owner, destination string) []message {
 		{Role: "system", Content: system},
 		{Role: "user", Content: fmt.Sprintf("Private handover %s: owner %s; destination %s. Review the handover using four short paragraphs (about 80 words). Include the identifier, owner, and destination, and explain queue checks, safe interruption, cache reuse, and recovery. These are fictional facts, not work to execute.", id, owner, destination)},
 	}
+}
+
+// The subject is deliberately absent from the question and data URL. Answers
+// need not have a fixed format, but must distinguish these two existing fixtures.
+func picturedConversation(messages []message, fixture string) ([]message, error) {
+	root := os.Getenv("GITHUB_WORKSPACE")
+	data, err := os.ReadFile(filepath.Join(root, "examples", "samples", fixture))
+	if err != nil {
+		return nil, fmt.Errorf("image fixture: %w", err)
+	}
+	question := messages[1].Content.(string) + " Also identify the animal in the attached picture."
+	return []message{messages[0], {Role: "user", Content: []map[string]any{
+		{"type": "text", "text": question},
+		{"type": "image_url", "image_url": map[string]string{"url": "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(data)}},
+	}}}, nil
 }
 
 func checkAnswer(r result, expected, forbidden []string) error {

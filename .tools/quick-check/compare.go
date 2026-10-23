@@ -2,11 +2,13 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -17,12 +19,13 @@ import (
 )
 
 type comparisonRun struct {
-	Directory string   `json:"directory"`
-	Version   string   `json:"version"`
-	Status    string   `json:"recorded_status"`
-	Executed  int      `json:"repetitions_executed"`
-	Requested int      `json:"repetitions_requested"`
-	Problems  []string `json:"problems"`
+	Directory       string                 `json:"directory"`
+	Version         string                 `json:"version"`
+	Status          string                 `json:"recorded_status"`
+	Executed        int                    `json:"repetitions_executed,omitempty"`
+	Requested       int                    `json:"repetitions_requested,omitempty"`
+	Problems        []string               `json:"problems"`
+	ReferenceTokens normalizationReference `json:"normalization_reference,omitzero"`
 }
 
 type metricComparison struct {
@@ -37,8 +40,8 @@ type comparison struct {
 	Status         string             `json:"comparison_status"`
 	SavedRunChecks map[string]string  `json:"saved_run_checks"`
 	Cell           string             `json:"cell"`
-	Baseline       comparisonRun      `json:"baseline"`
-	Candidate      comparisonRun      `json:"candidate"`
+	Baseline       comparisonRun      `json:"baseline,omitzero"`
+	Candidate      comparisonRun      `json:"candidate,omitzero"`
 	Matches        []string           `json:"matching_checks"`
 	Warnings       []string           `json:"comparability_warnings"`
 	Metrics        []metricComparison `json:"metrics"`
@@ -63,6 +66,7 @@ func compareCommand(args []string, out io.Writer) error {
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
+	historyParent := *parent
 	if (*baseline == "") != (*candidate == "") || flags.NArg() != 0 {
 		return fmt.Errorf("usage: quick-check compare [-against commit|release] [-baseline DIR -candidate DIR] [-out DIR] [-json]; supply both paths or neither")
 	}
@@ -126,7 +130,7 @@ func compareCommand(args []string, out io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("candidate: %w", err)
 	}
-	c := compareRuns(*baseline, *candidate, a, b)
+	c := compareMatrices(*baseline, *candidate, a, b)
 	var baselineTag, candidateTag string
 	if *against == "release" {
 		tags, err := releaseTags(context.Background())
@@ -156,8 +160,13 @@ func compareCommand(args []string, out io.Writer) error {
 		return err
 	}
 	if baselineTag != "" && candidateTag != "" && a.summary.ServerRevision != b.summary.ServerRevision {
-		if err := recordReleaseComparison(*parent, baselineTag, candidateTag, a, b, c); err != nil {
-			return err
+		for _, cell := range c.Cells {
+			if cell.Status == "NOT_RUN" {
+				continue
+			}
+			if err := recordReleaseComparison(historyParent, baselineTag, candidateTag, a.cells[cell.Cell], b.cells[cell.Cell], cell); err != nil {
+				return err
+			}
 		}
 	}
 	if *asJSON {
@@ -170,6 +179,9 @@ func compareCommand(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if c.Status == "NOT_RUN" {
+		return fmt.Errorf("comparison has no common executed cells")
+	}
 	if c.Status != "PASS" {
 		return fmt.Errorf("comparison contains failed or incomplete recorded checks")
 	}
@@ -178,42 +190,22 @@ func compareCommand(args []string, out io.Writer) error {
 
 // Consume the finalized artifacts without contacting a server or changing retention.
 // This compares recorded evidence; it does not rerun or certify inference checks.
-func readComparison(dir string) (comparisonInput, error) {
-	var input comparisonInput
-	data, err := os.ReadFile(filepath.Join(dir, "summary.json"))
-	if err != nil {
-		return input, err
-	}
-	if err := json.Unmarshal(data, &input.summary); err != nil {
-		return input, fmt.Errorf("summary.json: %w", err)
-	}
-	f, err := os.Open(filepath.Join(dir, "events.ndjson"))
-	if err != nil {
-		return input, err
-	}
-	defer f.Close()
-	scanner := bufio.NewScanner(f)
+func readCellComparison(s runSummary, r report, events []byte) (comparisonInput, error) {
+	input := comparisonInput{summary: s, report: r}
+	scanner := bufio.NewScanner(bytes.NewReader(events))
 	scanner.Buffer(make([]byte, 65536), 64*1024*1024)
-	reports := 0
 	startup := make(map[string]map[string]time.Time)
 	native := make(map[string]map[string]string)
 	for scanner.Scan() {
 		var event struct {
-			Source     string          `json:"source"`
-			Repetition int             `json:"repetition"`
-			Phase      string          `json:"phase"`
-			Body       any             `json:"body"`
-			Report     json.RawMessage `json:"report"`
-			Event      map[string]any  `json:"event"`
+			Source     string         `json:"source"`
+			Repetition int            `json:"repetition"`
+			Phase      string         `json:"phase"`
+			Body       any            `json:"body"`
+			Event      map[string]any `json:"event"`
 		}
 		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
 			return input, fmt.Errorf("events.ndjson: %w", err)
-		}
-		if event.Source == "report" {
-			reports++
-			if err := json.Unmarshal(event.Report, &input.report); err != nil {
-				return input, fmt.Errorf("diagnostic report: %w", err)
-			}
 		}
 		if event.Source == "request" {
 			input.requests = append(input.requests, map[string]any{
@@ -248,14 +240,14 @@ func readComparison(dir string) (comparisonInput, error) {
 	if err := scanner.Err(); err != nil {
 		return input, err
 	}
-	if reports != 1 {
-		return input, fmt.Errorf("events.ndjson: expected one diagnostic report, got %d", reports)
-	}
-	s, r := input.summary, input.report
 	if (s.Status != "PASS" && s.Status != "FAIL") || s.Workload == "" || s.Model == "" {
 		return input, fmt.Errorf("summary.json: missing supported run identity/status")
 	}
-	if s.Status != r.Status || s.Workload != r.Workload || s.Model != r.Model ||
+	if s.ReferenceTokens.InputTokens <= 0 || s.ReferenceTokens.GenerationTokens <= 0 {
+		return input, fmt.Errorf("summary.json: missing or invalid normalization reference; rerun quick-check")
+	}
+	if s.ID != r.ID || s.Status != r.Status || s.Workload != r.Workload || s.Model != r.Model ||
+		s.Cell != r.cell() || s.ReferenceTokens != r.ReferenceTokens ||
 		s.ServerRevision != r.ServerRevision || s.TestStartedAt != r.TestStartedAt ||
 		s.RepetitionsRequested != r.RepetitionsRequested || s.RepetitionsExecuted != len(r.Repetitions) ||
 		len(s.Repetitions) != len(r.Repetitions) || !slices.Equal(s.Findings, r.Findings) ||
@@ -264,7 +256,7 @@ func readComparison(dir string) (comparisonInput, error) {
 	}
 	for i, rep := range r.Repetitions {
 		summary := s.Repetitions[i]
-		if summary.Status != rep.Status || !slices.Equal(summary.Findings, rep.Findings) ||
+		if rep.ReferenceTokens != r.ReferenceTokens || rep.Images != r.Images || summary.Status != rep.Status || !slices.Equal(summary.Findings, rep.Findings) ||
 			summary.SystemTokens != rep.SystemTokens || summary.SystemSHA256 != rep.SystemSHA256 ||
 			summary.WorkloadSeconds != rep.WorkloadSeconds || summary.CancelReleaseSeconds != rep.CancelReleaseSeconds {
 			return input, fmt.Errorf("repetition %d summary and diagnostic report disagree", i+1)
@@ -278,24 +270,12 @@ func readComparison(dir string) (comparisonInput, error) {
 		s.MTPBackend != expected.MTPBackend || s.HarnessRevision != expected.HarnessRevision || s.ServerCommitTime != expected.ServerCommitTime || s.ReleaseTag != expected.ReleaseTag {
 		return input, fmt.Errorf("summary.json and diagnostic report provenance disagree")
 	}
-	data, err = os.ReadFile(filepath.Join(dir, "tool.log"))
-	if err != nil {
-		return input, err
-	}
-	header := strings.SplitN(r.logSummary(), "\n", 3)
-	logText := string(data)
-	if !strings.HasPrefix(logText, header[0]+"\n"+header[1]+"\n") {
-		return input, fmt.Errorf("tool.log verdict/provenance disagrees with diagnostic report")
-	}
 	if _, err := time.Parse(time.RFC3339Nano, r.TestStartedAt); err != nil {
 		return input, fmt.Errorf("missing or invalid test timestamp: %w", err)
 	}
-	if !strings.HasPrefix(logText, header[0]+"\n"+header[1]+"\nTest started: "+r.TestStartedAt+"\n") {
-		return input, fmt.Errorf("tool.log test timestamp disagrees with diagnostic report")
-	}
 	if input.report.WarmupRequest != nil {
 		warmup := input.report.WarmupRequest
-		if !reflect.DeepEqual(warmup.StartupTimings, startupTimings(startup[warmup.TraceID])) {
+		if !maps.Equal(warmup.StartupTimings, startupTimings(startup[warmup.TraceID])) {
 			return input, fmt.Errorf("startup metrics disagree with recorded server timestamps")
 		}
 		input.native = native[warmup.TraceID]
@@ -305,7 +285,7 @@ func readComparison(dir string) (comparisonInput, error) {
 
 func comparisonIdentity(dir string, input comparisonInput) comparisonRun {
 	s := input.summary
-	run := comparisonRun{dir, input.report.serverVersion(), s.Status, s.RepetitionsExecuted, s.RepetitionsRequested, []string{}}
+	run := comparisonRun{dir, input.report.serverVersion(), s.Status, s.RepetitionsExecuted, s.RepetitionsRequested, []string{}, s.ReferenceTokens}
 	run.Problems = append(run.Problems, s.Findings...)
 	if s.Status != "PASS" || s.RepetitionsRequested <= 0 || s.RepetitionsExecuted != s.RepetitionsRequested {
 		run.Problems = append(run.Problems, "run failed or requested repetitions were not completed")
@@ -363,7 +343,7 @@ func comparisonIdentity(dir string, input comparisonInput) comparisonRun {
 func compareRuns(aDir, bDir string, a, b comparisonInput) comparison {
 	c := comparison{
 		Status: "PASS", Baseline: comparisonIdentity(aDir, a), Candidate: comparisonIdentity(bDir, b),
-		Cell:    a.summary.Cell,
+		Cell:    a.summary.ID,
 		Matches: []string{}, Warnings: []string{}, Metrics: []metricComparison{},
 		Limitations: []string{
 			"Recorded assertions only; not proof of absence of bugs or independent revalidation of inference.",
@@ -395,6 +375,10 @@ func compareRuns(aDir, bDir string, a, b comparisonInput) comparison {
 	}
 	check("workload", a.summary.Workload, b.summary.Workload)
 	check("matrix cell", a.summary.Cell, b.summary.Cell)
+	check("normalization reference", a.summary.ReferenceTokens, b.summary.ReferenceTokens)
+	if a.summary.ReferenceTokens != b.summary.ReferenceTokens {
+		c.Warnings = append(c.Warnings, "Normalized delta omitted: reference token amounts differ")
+	}
 	check("model", a.summary.Model, b.summary.Model)
 	check("installed library", a.summary.InstalledLibrary, b.summary.InstalledLibrary)
 	check("MTP backend", a.summary.MTPBackend, b.summary.MTPBackend)
@@ -490,13 +474,13 @@ func compareRuns(aDir, bDir string, a, b comparisonInput) comparison {
 			if values := y[key]; len(values) > 0 {
 				row.Candidate = new(summarize(values))
 			}
-			if row.Baseline != nil && row.Candidate != nil {
+			if row.Baseline == nil || row.Candidate == nil {
+				c.Warnings = append(c.Warnings, key+": unavailable in one run; no delta")
+			} else if key != "workload.reference_seconds" || a.summary.ReferenceTokens == b.summary.ReferenceTokens {
 				row.Delta = new(row.Candidate.Median - row.Baseline.Median)
 				if row.Baseline.Median != 0 {
 					row.Percent = new(*row.Delta / row.Baseline.Median * 100)
 				}
-			} else {
-				c.Warnings = append(c.Warnings, key+": unavailable in one run; no delta")
 			}
 			c.Metrics = append(c.Metrics, row)
 		}
@@ -555,20 +539,13 @@ func comparisonMetrics(r report) map[string][]float64 {
 
 func (c comparison) writeText(out io.Writer) error {
 	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-	fmt.Fprintf(w, "Comparison status: %s\n", c.Status)
-	fmt.Fprintf(w, "Saved-run checks: baseline %s / candidate %s\nBaseline: %s\nBaseline commit: %s (%d/%d runs)\nCandidate: %s\nCandidate commit: %s (%d/%d runs)\n", c.Baseline.Status, c.Candidate.Status,
-		c.Baseline.Directory, c.Baseline.Version, c.Baseline.Executed, c.Baseline.Requested,
-		c.Candidate.Directory, c.Candidate.Version, c.Candidate.Executed, c.Candidate.Requested)
+	fmt.Fprintf(w, "\n%s | baseline %s (%d/%d) / candidate %s (%d/%d)\n", c.Cell, c.Baseline.Status, c.Baseline.Executed, c.Baseline.Requested, c.Candidate.Status, c.Candidate.Executed, c.Candidate.Requested)
 	for _, run := range []comparisonRun{c.Baseline, c.Candidate} {
 		for _, problem := range run.Problems {
 			fmt.Fprintf(w, "Problem [%s]: %s\n", run.Directory, problem)
 		}
 	}
-	machineWarning := ""
 	for _, warning := range c.Warnings {
-		if strings.HasPrefix(warning, "machine.") {
-			machineWarning = "WARNING: MACHINE METADATA DIFFERS OR IS MISSING!"
-		}
 		if strings.HasPrefix(warning, "harness revision:") {
 			continue
 		}
@@ -577,10 +554,7 @@ func (c comparison) writeText(out io.Writer) error {
 		}
 		fmt.Fprintln(w, "Warning:", warning)
 	}
-	cell := strings.NewReplacer(" / ", "/", "one slot", "1s", "IMC on", "IMC+", "MTP on", "MTP+", "images off", "img-", "images on", "img+").Replace(c.Cell)
-	if machineWarning != "" {
-		fmt.Fprintln(w, "\n"+machineWarning)
-	}
+	cell := c.Cell
 	fmt.Fprintln(w, "\nCell\tMetric\tBaseline median [SD]\tCandidate median [SD]\tChange")
 	format := func(m *measurement) string {
 		if m == nil {
@@ -609,9 +583,6 @@ func (c comparison) writeText(out io.Writer) error {
 			cell, label = "", "Normalized (s)"
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", cell, label, baseline, candidate, percent)
-	}
-	if machineWarning != "" {
-		fmt.Fprintln(w, "\n"+machineWarning)
 	}
 	return w.Flush()
 }
