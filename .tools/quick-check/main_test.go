@@ -373,21 +373,21 @@ func TestQuickCheckCommand(t *testing.T) {
 				t.Fatalf("terminal must show only the log header, got: %s", terminalData)
 			}
 			if passing {
-				for _, required := range []string{"IMC/MTP: PASS", "Serial isolation: PASS", "Cancel/recovery: PASS", "warm-up request", "warmed workload", "phase=recovery elapsed="} {
+				for _, required := range []string{"IMC/MTP: PASS", "Serial isolation: PASS", "Cancel/recovery: PASS", "Warm-up:", "Workload s [SD]", "Reference time s [SD]", "phase=recovery elapsed="} {
 					if !strings.Contains(text, required) {
 						t.Fatalf("log omitted %q: %s", required, text)
 					}
 				}
-				if len(strings.Split(header, "\n")) != 5 {
-					t.Fatalf("passing summary must be five lines: %s", header)
+				if len(strings.Split(header, "\n")) != 6 {
+					t.Fatalf("passing summary must be six lines: %s", header)
 				}
-				sdText := "(SD n/a)"
+				sdText := "[n/a]"
 				if requested > 1 {
 					m := summary.Measurements["workload"]["elapsed_seconds"]
 					if m.SampleStdDev == nil {
 						t.Fatal("missing workload sample standard deviation")
 					}
-					sdText = fmt.Sprintf("(SD %.3fs)", *m.SampleStdDev)
+					sdText = fmt.Sprintf("[%.2f]", *m.SampleStdDev)
 				}
 				if !strings.Contains(header, sdText) {
 					t.Fatalf("terminal/log summary omitted standard deviation %q: %s", sdText, header)

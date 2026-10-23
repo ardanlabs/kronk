@@ -543,6 +543,12 @@ func comparisonMetrics(r report) map[string][]float64 {
 		for _, res := range rep.Results {
 			request(res.Phase, res)
 		}
+		if seconds, ok := rep.referenceTime(); ok {
+			add("workload.reference_seconds", seconds)
+		}
+	}
+	if len(metrics["workload.reference_seconds"]) != len(r.Repetitions) {
+		delete(metrics, "workload.reference_seconds")
 	}
 	return metrics
 }
@@ -571,34 +577,38 @@ func (c comparison) writeText(out io.Writer) error {
 		}
 		fmt.Fprintln(w, "Warning:", warning)
 	}
-	cell := strings.NewReplacer("one slot", "1 slot", "images off", "no images", "images on", "images").Replace(c.Cell)
+	cell := strings.NewReplacer(" / ", "/", "one slot", "1s", "IMC on", "IMC+", "MTP on", "MTP+", "images off", "img-", "images on", "img+").Replace(c.Cell)
 	if machineWarning != "" {
 		fmt.Fprintln(w, "\n"+machineWarning)
 	}
-	fmt.Fprintln(w, "\nMetric (seconds)\tBaseline median [SD; n]\tCandidate median [SD; n]\tDelta\tChange")
-	fmt.Fprintf(w, "Cell: %s\n", cell)
+	fmt.Fprintln(w, "\nCell\tMetric\tBaseline median [SD]\tCandidate median [SD]\tChange")
 	format := func(m *measurement) string {
 		if m == nil {
 			return "n/a"
 		}
 		sd := "n/a"
 		if m.SampleStdDev != nil {
-			sd = fmt.Sprintf("%.6f", *m.SampleStdDev)
+			sd = fmt.Sprintf("%.2f", *m.SampleStdDev)
 		}
-		return fmt.Sprintf("%.6f [%s; %d]", m.Median, sd, m.Samples)
+		return fmt.Sprintf("%.2f [%s]", m.Median, sd)
 	}
-	for _, row := range c.Metrics {
-		if row.Metric != "workload.elapsed_seconds" {
-			continue
+	for i, key := range []string{"workload.elapsed_seconds", "workload.reference_seconds"} {
+		baseline, candidate, percent := "n/a", "n/a", "n/a"
+		for _, row := range c.Metrics {
+			if row.Metric != key {
+				continue
+			}
+			baseline, candidate = format(row.Baseline), format(row.Candidate)
+			if row.Percent != nil {
+				percent = fmt.Sprintf("%+.2f%%", *row.Percent)
+			}
+			break
 		}
-		delta, percent := "n/a", "n/a"
-		if row.Delta != nil {
-			delta = fmt.Sprintf("%+.6f", *row.Delta)
+		label := "Workload (s)"
+		if i == 1 {
+			cell, label = "", "Reference time (s)"
 		}
-		if row.Percent != nil {
-			percent = fmt.Sprintf("%+.2f%%", *row.Percent)
-		}
-		fmt.Fprintf(w, "Warmed workload\t%s\t%s\t%s\t%s\n", format(row.Baseline), format(row.Candidate), delta, percent)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", cell, label, baseline, candidate, percent)
 	}
 	if machineWarning != "" {
 		fmt.Fprintln(w, "\n"+machineWarning)

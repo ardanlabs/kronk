@@ -165,7 +165,7 @@ func TestCompareCommand(t *testing.T) {
 	if err := compareCommand([]string{"-out", output, "-baseline", base, "-candidate", candidate}, &out); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "Saved-run checks: baseline PASS / candidate PASS") || !strings.Contains(out.String(), "Warmed workload") {
+	if !strings.Contains(out.String(), "Saved-run checks: baseline PASS / candidate PASS") || !strings.Contains(out.String(), "Workload (s)") || !strings.Contains(out.String(), "Reference time (s)") || strings.Contains(out.String(), "Throughput") || strings.Contains(out.String(), "Out tok") {
 		t.Fatal(out.String())
 	}
 	saved, err := os.ReadFile(filepath.Join(output, "comparison.json"))
@@ -180,6 +180,60 @@ func TestCompareCommand(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(dir, "comparison.json")); !os.IsNotExist(err) {
 			t.Fatal("comparison must not be saved inside a run", dir, err)
 		}
+	}
+}
+
+func TestCompareReferenceTime(t *testing.T) {
+	r := comparisonFixture([]float64{2, 6, 14})
+	for i, tokensPerRequest := range []int{21, 51, 101} {
+		for j := range r.Repetitions[i].Results {
+			res := &r.Repetitions[i].Results[j]
+			res.Usage.CompletionTokens = tokensPerRequest
+			res.Usage.PromptTokens = []int{100, 200, 400}[i]
+			res.Execution.ReusedTokens = []int{20, 100, 200}[i]
+			res.ServerTimings["slot_prefill_ttft_seconds"] = []float64{0.2, 0.4, 0.5}[i]
+			res.ServerTimings["generation_seconds"] = []float64{0.5, 1, 2}[i]
+		}
+		// Neither cancelled tokens nor their durations belong to reference time.
+		r.Repetitions[i].Results[4].Usage.CompletionTokens = 999
+		r.Repetitions[i].Results[4].ServerTimings["generation_seconds"] = 999
+	}
+	dir := writeComparisonFixture(t, r)
+	var out bytes.Buffer
+	if err := compareCommand([]string{"-out", t.TempDir(), "-baseline", dir, "-candidate", dir, "-json"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	var got comparison
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	rows := make(map[string]metricComparison)
+	for _, row := range got.Metrics {
+		rows[row.Metric] = row
+	}
+	// Effective input rates: 400, 250, 400; generation rates: 40, 50, 50.
+	// Fixed 10708/1332 references give 60.07, 69.472, 53.41 seconds.
+	rate := rows["workload.reference_seconds"].Candidate
+	if rate == nil || rate.Samples != 3 || math.Abs(rate.Median-60.07) > 1e-10 || math.Abs(rate.Min-53.41) > 1e-10 || math.Abs(rate.Max-69.472) > 1e-10 || rate.SampleStdDev == nil || math.Abs(*rate.SampleStdDev-math.Sqrt(65.123508)) > 1e-10 {
+		t.Fatalf("incorrect reference time: %+v", rate)
+	}
+	if _, ok := rows["workload.output_tokens_per_second"]; ok {
+		t.Fatal("removed workload throughput still reported")
+	}
+	var saved runSummary
+	data, err := os.ReadFile(filepath.Join(dir, "summary.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &saved); err != nil {
+		t.Fatal(err)
+	}
+	m := saved.Measurements["workload"]["reference_seconds"]
+	if math.Abs(m.Median-rate.Median) > 1e-10 || m.Samples != rate.Samples {
+		t.Fatal("saved reference time and comparison disagree", m, rate)
+	}
+	if !strings.Contains(r.logSummary(), "Reference time s [SD]: 60.07 [8.07]") {
+		t.Fatal("run summary and comparison disagree", r.logSummary())
 	}
 }
 
@@ -280,7 +334,7 @@ func TestCompareWarningsAndFailures(t *testing.T) {
 			}
 			banner := "WARNING: MACHINE METADATA DIFFERS OR IS MISSING!"
 			if tc.name == "machine" || tc.name == "unknown-memory" {
-				if strings.Count(text, banner) != 2 || strings.Index(text, banner) > strings.Index(text, "Metric (seconds)") || !strings.HasSuffix(strings.TrimSpace(text), banner) {
+				if strings.Count(text, banner) != 2 || strings.Index(text, banner) > strings.Index(text, "Baseline median [SD]") || !strings.HasSuffix(strings.TrimSpace(text), banner) {
 					t.Fatal("machine warning must appear before metrics and at the end", text)
 				}
 			} else if strings.Contains(text, banner) {

@@ -13,7 +13,7 @@ make server-for-tools
 make quick-check-this-code
 ```
 
-Flow: one warm-up request → three repetitions of cold chat, replay, append,
+Flow: one warm-up request → two repetitions of cold chat, replay, append,
 independent session, cancellation, and recovery → final report. The tool unloads
 its alias before and after the run. It requires access to the server's JSON log.
 

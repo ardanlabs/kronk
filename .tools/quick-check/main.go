@@ -207,18 +207,23 @@ func (r report) logSummary() string {
 		return status
 	}
 
-	warmup, workload := "n/a", "n/a"
+	warmup, workload, reference := "n/a", "n/a", "n/a"
 	if r.WarmupRequest != nil {
-		warmup = fmt.Sprintf("%.3fs", r.WarmupRequest.Elapsed)
+		warmup = fmt.Sprintf("%.2fs", r.WarmupRequest.Elapsed)
 	}
 
 	if measurements := r.measurements(); measurements != nil {
-		m := measurements["workload"]["elapsed_seconds"]
-		sd := "n/a"
-		if m.SampleStdDev != nil {
-			sd = fmt.Sprintf("%.3fs", *m.SampleStdDev)
+		format := func(m measurement) string {
+			sd := "n/a"
+			if m.SampleStdDev != nil {
+				sd = fmt.Sprintf("%.2f", *m.SampleStdDev)
+			}
+			return fmt.Sprintf("%.2f [%s]", m.Median, sd)
 		}
-		workload = fmt.Sprintf("%.3fs (SD %s)", m.Median, sd)
+		workload = format(measurements["workload"]["elapsed_seconds"])
+		if m, ok := measurements["workload"]["reference_seconds"]; ok {
+			reference = format(m)
+		}
 	}
 	cache := verdict("warmup", "cold", "replay", "append", "fresh-session", "cancel", "recovery")
 	isolation := verdict("fresh-session", "recovery")
@@ -232,7 +237,8 @@ func (r report) logSummary() string {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "Quick-check: %s\nTested commit: %s from %s\nTest started: %s\nIMC/MTP: %s | Serial isolation: %s | Cancel/recovery: %s\n", r.Status, version, r.ServerCommitTime, r.TestStartedAt, cache, isolation, recovery)
-	fmt.Fprintf(&b, "Time: warm-up request %s | warmed workload median %s | repetitions %d/%d\n", warmup, workload, len(r.Repetitions), r.RepetitionsRequested)
+	fmt.Fprintf(&b, "Cell: MoE/1s/IMC+/MTP+/img- | Warm-up: %s | Repetitions: %d/%d\n", warmup, len(r.Repetitions), r.RepetitionsRequested)
+	fmt.Fprintf(&b, "  Workload s [SD]: %s | Reference time s [SD]: %s\n", workload, reference)
 	if r.Status != "PASS" {
 		fmt.Fprintln(&b, "Details: summary.json (fix setup/evidence failures before deeper inference checks)")
 		if cache == "FAIL" {
@@ -273,7 +279,7 @@ func main() {
 	flag.StringVar(&o.out, "out", ".tools/quick-check/output", "artifact parent; retains committed baseline and latest candidate")
 	flag.StringVar(&o.serverLog, "server-log", filepath.Join(home, ".kronk/kronk.log"), "required local JSON server log")
 	flag.DurationVar(&o.timeout, "timeout", 5*time.Minute, "per-request timeout; not a performance threshold")
-	flag.IntVar(&o.repetitions, "repetitions", 3, "complete workload repetitions; stop on first failure")
+	flag.IntVar(&o.repetitions, "repetitions", 2, "complete workload repetitions; stop on first failure")
 	flag.Parse()
 	if err := run(o); err != nil {
 		os.Exit(1)
