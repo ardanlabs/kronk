@@ -444,37 +444,12 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, r
 			return "", nil, cache, fmt.Errorf("chat-streaming: render complete stable prompt: %w", err)
 		}
 
+		systemTokens := m.imcSystemTokens(ctx, stableD)
 		if object == ObjectChatMedia {
-			cache = m.processIMCMediaTokenPlan(ctx, d, stableD, actualPrompt, stablePrompt, actualMedia, stableMedia, requestStart)
+			cache = m.processIMCMediaTokenPlan(ctx, d, stableD, actualPrompt, stablePrompt, actualMedia, stableMedia, systemTokens, requestStart)
 		} else {
 			actualTokens := llama.Tokenize(m.vocab, actualPrompt, m.addBOSToken, true)
 			stableTokens := llama.Tokenize(m.vocab, stablePrompt, m.addBOSToken, true)
-
-			var systemTokens []llama.Token
-			messages := dMessages(stableD)
-			systemMessages := 0
-			for systemMessages < len(messages) {
-				role, _ := messages[systemMessages]["role"].(string)
-				if role != "system" {
-					break
-				}
-				systemMessages++
-			}
-			if systemMessages > 0 {
-				systemD := maps.Clone(stableD)
-				systemD["messages"] = messages[:systemMessages]
-				systemPrompt, _, systemErr := m.createPrompt(ctx, systemD)
-				if systemErr == nil {
-					candidate := llama.Tokenize(m.vocab, systemPrompt, m.addBOSToken, true)
-					if len(candidate) > 0 && len(candidate) < len(stableTokens) && tokensHavePrefix(stableTokens, candidate) {
-						systemTokens = candidate
-					} else {
-						m.log(ctx, "imc", "status", "system-cache-skipped", "reason", "render-not-prefix-compatible")
-					}
-				} else {
-					m.log(ctx, "imc", "status", "system-cache-skipped", "reason", "render-failed", "err", systemErr)
-				}
-			}
 
 			cache = m.processIMCTokenPlan(ctx, d, actualTokens, stableTokens, systemTokens, requestStart)
 		}

@@ -4,11 +4,57 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"time"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
+
+// imcSystemTokens renders the same system-only candidate for text and media
+// requests. Each planner must verify it against its complete stable rendering.
+func (m *Model) imcSystemTokens(ctx context.Context, stableD D) []llama.Token {
+	messages := dMessages(stableD)
+	systemMessages := 0
+	for systemMessages < len(messages) {
+		role, _ := messages[systemMessages]["role"].(string)
+		if role != "system" {
+			break
+		}
+		systemMessages++
+	}
+	if systemMessages == 0 {
+		return nil
+	}
+	systemD := maps.Clone(stableD)
+	systemD["messages"] = messages[:systemMessages]
+	prompt, media, err := m.createPrompt(ctx, systemD)
+	if err != nil {
+		m.log(ctx, "imc", "status", "system-cache-skipped", "reason", "render-failed", "err", err)
+		return nil
+	}
+	if len(media) > 0 {
+		return nil
+	}
+	return llama.Tokenize(m.vocab, prompt, m.addBOSToken, true)
+}
+
+// imcFindSystemCache reserves an immutable preload for restoration. The caller
+// holds cacheMu and has verified tokens against the request's stable prefix.
+func (m *Model) imcFindSystemCache(tokens []llama.Token) *imcSystemCache {
+	if len(tokens) == 0 {
+		return nil
+	}
+	for _, candidate := range m.imcSystemCaches {
+		if candidate != nil && !candidate.building && candidate.kvState != nil && candidate.kvState.Len() > 0 && slices.Equal(candidate.cachedTokens, tokens) {
+			candidate.activeRestores++
+			candidate.restoreCount++
+			candidate.lastUsed = time.Now()
+			return candidate
+		}
+	}
+	return nil
+}
 
 // IMCSystemCacheDetail is a scalar snapshot of one System cache pool entry.
 type IMCSystemCacheDetail struct {

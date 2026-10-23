@@ -24,6 +24,10 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable, sy
 	targetLen := len(stable)
 	target := slices.Clone(actual[:targetLen])
 	tail := slices.Clone(actual[targetLen:])
+	if len(system) >= targetLen || !tokensHavePrefix(target, system) {
+		m.log(ctx, "imc", "status", "system-cache-skipped", "reason", "render-not-prefix-compatible")
+		system = nil
+	}
 	renderFingerprint, fingerprintOK := m.imcRenderFingerprint(d, dMessages(d))
 	result.imcTokenPlan = true
 	result.imcSamplerPromptTokens = slices.Clone(actual)
@@ -71,15 +75,7 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable, sy
 	// session for the new Current state.
 	var systemCache *imcSystemCache
 	if best == nil {
-		for _, candidate := range m.imcSystemCaches {
-			if candidate != nil && !candidate.building && candidate.kvState != nil && candidate.kvState.Len() > 0 && slices.Equal(candidate.cachedTokens, system) {
-				systemCache = candidate
-				candidate.activeRestores++
-				candidate.restoreCount++
-				candidate.lastUsed = time.Now()
-				break
-			}
-		}
+		systemCache = m.imcFindSystemCache(system)
 	}
 
 	matchKind := "rebuild"

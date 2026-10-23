@@ -16,6 +16,7 @@ import (
 // decoded successfully.
 type imcPreparation struct {
 	cacheIdx              llama.Pos
+	baseTokens            int
 	nextToken             int
 	position              int
 	sessionUpdateDisabled bool
@@ -34,24 +35,30 @@ func (e *batchEngine) queueIMCMediaPreparation(s *slot, cacheIdx llama.Pos, sess
 	}
 
 	var prefix []imcMediaChunk
-	if !job.imcMediaBuild {
+	if job.imcSystemCache != nil {
+		prefix = []imcMediaChunk{{kind: imcMediaChunkText, tokens: slices.Clone(job.imcSystemCache.cachedTokens)}}
+		prep.baseTokens = int(cacheIdx)
+	} else if !job.imcMediaBuild {
+		prep.baseTokens = job.imcExpectedTokens
 		prefix = job.imcSession.mediaNativeChunks
 		if !job.imcSession.hasMedia {
 			prefix = []imcMediaChunk{{kind: imcMediaChunkText, tokens: slices.Clone(job.imcSession.cachedTokens)}}
 		}
 	}
-	if job.imcMediaBuild || (!job.imcSession.hasMedia && mtmd.DecodeUseNonCausal(s.mtmdCtx, 0)) {
+	if job.imcSystemCache == nil && (job.imcMediaBuild || (!job.imcSession.hasMedia && mtmd.DecodeUseNonCausal(s.mtmdCtx, 0))) {
 		if err := e.resetIMCMediaPreparation(s); err != nil {
 			return err
 		}
 		prefix = nil
 		prep.cacheIdx = 0
+		prep.baseTokens = 0
 		prep.position = 0
 	}
 	media := s.mediaSetup.media
 	s.mediaSetup.media = nil
 	media.prefixCursor = imcMediaPrefixCursor{chunks: prefix}
 	media.position = prep.position
+	media.systemBoundaryTokens = job.imcSystemBoundaryTokens
 	prep.media = media
 	s.mediaPrefilling = true
 	e.model.log(job.ctx, "start-slot", "status", "imc-media-preparation-queued",
@@ -230,10 +237,7 @@ func (e *batchEngine) advanceIMCMediaPreparation(s *slot, selectorStart, selecte
 			chunkType = "unknown"
 		}
 	}
-	baseTokens := 0
-	if prep.cacheIdx > 0 {
-		baseTokens = job.imcExpectedTokens
-	}
+	baseTokens := prep.baseTokens
 	e.model.log(job.ctx, "start-slot", "status", "imc-media-preparation-start",
 		"iteration", e.batchIteration, "slot", s.id, "seq", s.seqID,
 		"chunk", chunkIdx, "chunk_type", chunkType,
@@ -256,6 +260,7 @@ func (e *batchEngine) advanceIMCMediaPreparation(s *slot, selectorStart, selecte
 			*p = imcMediaPreparation{ctx: p.ctx, span: p.span, bitmaps: p.bitmaps,
 				inputChunks: p.inputChunks, totalPhysicalTokens: p.totalPhysicalTokens}
 			prep.cacheIdx = 0
+			prep.baseTokens = 0
 			prep.position = 0
 			s.nPast = 0
 			return
@@ -272,6 +277,14 @@ func (e *batchEngine) advanceIMCMediaPreparation(s *slot, selectorStart, selecte
 	}
 	prep.position = p.position
 	s.nPast = llama.Pos(p.position)
+	if boundary := p.systemBoundaryTokens; boundary > 0 && p.position == boundary {
+		// Validate the native stream as well as the logical plan before
+		// publishing text-only state from the multimodal pipeline.
+		if p.physicalKVCells == boundary && len(p.mediaKVCounts) == 0 && tokensHavePrefix(p.samplerPromptTokens, job.imcNewCachedTokens[:boundary]) {
+			e.snapshotSystemCache(job.ctx, s, job, boundary)
+		}
+		p.systemBoundaryTokens = 0
+	}
 	e.model.log(job.ctx, "start-slot", "status", "imc-media-preparation-chunk",
 		"iteration", e.batchIteration, "slot", s.id, "seq", s.seqID,
 		"preparation_slots", fmt.Sprintf("%v", preparationSlots),
@@ -291,9 +304,8 @@ func (e *batchEngine) advanceIMCMediaPreparation(s *slot, selectorStart, selecte
 	job.samplerPromptTokens = append(slices.Clone(p.samplerPromptTokens), job.tailTokens...)
 	job.imcMediaNativeChunks = p.nativeChunks
 	job.imcNewLogicalPosition = p.position
-	job.imcNewTotalCached = p.physicalKVCells
+	job.imcNewTotalCached = baseTokens + p.physicalKVCells
 	if job.imcMediaAnchorAdvance && prep.cacheIdx > 0 {
-		job.imcNewTotalCached += job.imcExpectedTokens
 		job.imcMediaKVCounts = append(job.imcMediaKVCounts, p.mediaKVCounts...)
 	} else {
 		job.imcMediaKVCounts = p.mediaKVCounts
