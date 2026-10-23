@@ -11,6 +11,7 @@ import (
 
 	"github.com/ardanlabs/conf/v3"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
+	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 	"go.yaml.in/yaml/v2"
 )
@@ -86,7 +87,7 @@ type config struct {
 
 func newConfig() config {
 	cfg := config{
-		Build: tag,
+		Build: kronk.Version,
 		Desc:  "Kronk",
 	}
 

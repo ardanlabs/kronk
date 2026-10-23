@@ -111,6 +111,10 @@ class ApiService {
     return response.json();
   }
 
+  async getLiveness(): Promise<{ build?: string }> {
+    return this.request<{ build?: string }>('/liveness', { cache: 'no-store' });
+  }
+
   async listModels(): Promise<ListModelInfoResponse> {
     return this.request<ListModelInfoResponse>('/kronk/models');
   }

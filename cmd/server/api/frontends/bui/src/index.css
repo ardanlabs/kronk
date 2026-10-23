@@ -241,6 +241,25 @@ input, select, textarea {
     width: 60px;
 }
 
+.sidebar-version {
+    flex-shrink: 0;
+    padding: 10px 20px;
+    color: rgba(255, 255, 255, 0.65);
+    font-size: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sidebar-collapsed .sidebar-version {
+    padding: 10px 8px;
+    font-size: 10px;
+}
+
+.sidebar-collapsed .sidebar-version-brand {
+    display: none;
+}
+
 .sidebar-collapsed .sidebar-header h1 {
     display: none;
 }

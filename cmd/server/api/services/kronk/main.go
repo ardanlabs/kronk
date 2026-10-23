@@ -46,8 +46,6 @@ import (
 //go:embed static
 var static embed.FS
 
-var tag = "develop"
-
 func Run(showHelp bool) error {
 	log := logger.New(os.Stdout, logger.LevelInfo, "KRONK", web.GetTraceID)
 
@@ -577,7 +575,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool) error {
 	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
 
 	cfgMux := mux.Config{
-		Build:               tag,
+		Build:               cfg.Build,
 		Log:                 log,
 		AuthClient:          authClient,
 		Pool:                p,
