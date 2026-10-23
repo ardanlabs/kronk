@@ -606,7 +606,7 @@ func (c comparison) writeText(out io.Writer) error {
 		}
 		label := "Workload (s)"
 		if i == 1 {
-			cell, label = "", "Reference time (s)"
+			cell, label = "", "Normalized (s)"
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", cell, label, baseline, candidate, percent)
 	}
