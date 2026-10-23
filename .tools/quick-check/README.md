@@ -1,6 +1,6 @@
 # Kronk quick-check
 
-Current cell: **MoE / one slot / IMC on / MTP on / images off**.
+Cells: **MoE / one slot / IMC on / MTP on / images off or on**.
 Model: `unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK`.
 
 ## Run
@@ -10,12 +10,25 @@ start a dedicated test server and run:
 
 ```sh
 make server-for-tools
-make quick-check-this-code
+make quick-check-this-code # All implemented cells, one combined report.
 ```
 
-Flow: one warm-up request → two repetitions of cold chat, replay, append,
-independent session, cancellation, and recovery → final report. The tool unloads
-its alias before and after the run. It requires access to the server's JSON log.
+Select cells during development (images require the model's projection file):
+
+```sh
+make quick-check-this-code QUICK_CHECK_ARGS='-cells text'
+make quick-check-this-code QUICK_CHECK_ARGS='-cells images'
+# -cells all (default) or -cells text,images runs both.
+```
+
+The image cell exercises image rebuild, replay, append, a different image/session,
+cancellation, and recovery with the original image.
+
+Flow: for each selected cell, one warm-up → two repetitions of cold chat, replay,
+append, independent session, cancellation, and recovery → one final report for
+the invocation. The model stays loaded across a cell's repetitions; it is unloaded
+before/after each cell for now. Access to the server's JSON log is required.
+Unselected cells (and those skipped after a failure) appear as `NOT_RUN`.
 
 ```sh
 # Optional settings (KRONK_TOKEN supplies authentication):
@@ -42,13 +55,21 @@ the server first. Uncommitted changes are not flagged, though they are taken int
 commit replaces its saved run. Copy any run you want to keep into
 `output/saved_local_runs/` before running again.**
 
+A subset run also replaces the previous same-commit report; results from separate
+invocations are not merged.
+
 ## Results
 
 Runs are saved under `.tools/quick-check/output/`:
 
 - `tool.log`: brief verdict/timings, failure triage commands, and phase progress.
-- `summary.json`: structured results and measurements.
-- `events.ndjson`: detailed requests, responses, and server evidence.
+- `summary.json`: environment first, then each cell's status and measurements.
+- `events.ndjson`: detailed requests, responses, and server evidence with cell IDs.
+
+All selected cells share these three files and one retention queue, directly under
+`output/`. Archive older single-cell run folders in `output/saved_local_runs/`
+and rerun; old artifacts are not converted. Normalized uses fixed per-cell token
+references; differing references suppress that cell's Normalized delta.
 
 Those files can be useful to feed a harness and investigate reasons for slowdowns or regressions, alongside the bigger reliability tools.
 
@@ -83,6 +104,8 @@ metadata for both runs. Repeating the release pair/cell updates its entry; commi
 that file to preserve inter-release comparisons.
 
 The terminal shows comparison status, each run's status, warnings, and warmed
-workload timings. Reports replace `output/comparison.log` (terminal summary) and
+workload/Normalized timings per cell. Cells are matched by ID, not execution order;
+if either side did not run a cell, it shows `NOT_RUN` with no timing delta. With no
+common executed cell, comparison exits nonzero. Reports replace `output/comparison.log` (terminal summary) and
 `output/comparison.json` (full results), outside run folders.
 Optional: `QUICK_CHECK_COMPARE_ARGS='-out /path/to/output'` or `'-json'` for JSON stdout.

@@ -28,7 +28,7 @@ func (r report) serverVersion() string {
 
 type storedRun struct {
 	path    string
-	report  report
+	report  matrixReport
 	started time.Time
 }
 
@@ -67,9 +67,12 @@ func savedRuns(parent string) ([]storedRun, error) {
 		if err != nil {
 			return nil, err
 		}
-		var r report
-		if json.Unmarshal(data, &r) != nil || r.Workload == "" || r.Model == "" || (r.Status != "PASS" && r.Status != "FAIL") {
+		var r matrixReport
+		if json.Unmarshal(data, &r) != nil || (r.Status != "PASS" && r.Status != "FAIL") {
 			continue
+		}
+		if len(r.Cells) == 0 {
+			return nil, fmt.Errorf("%s: missing matrix cells; archive older artifacts and rerun quick-check", path)
 		}
 		started, err := time.Parse(time.RFC3339Nano, r.TestStartedAt)
 		if err != nil {

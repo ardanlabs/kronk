@@ -5,16 +5,28 @@ import (
 	"slices"
 )
 
-// Fixed for this one-slot workload: medians from the initial nine observations.
-// Generation excludes the first token per response, matching Kronk's TPS clock.
-const (
-	referenceInputTokens      = 10708
-	referenceGenerationTokens = 1332
-)
+type normalizationReference struct {
+	InputTokens      int `json:"input_tokens"`
+	GenerationTokens int `json:"generation_tokens"`
+}
+
+// Freeze a representative volume per cell, not per invocation. Text references
+// come from the initial nine observations; image references are rounded medians
+// from new-f285f48's two image-to-image recovery repetitions. Generation excludes
+// the first token per response, matching Kronk's TPS clock.
+func referenceTokens(images bool) normalizationReference {
+	if images {
+		return normalizationReference{InputTokens: 31962, GenerationTokens: 1001}
+	}
+	return normalizationReference{InputTokens: 10708, GenerationTokens: 1332}
+}
 
 // Reference time normalizes completed-request processing, not whole-workload
 // wall time. Prefill includes cache work through the first sampled token.
 func (r report) referenceTime() (float64, bool) {
+	if r.ReferenceTokens.InputTokens <= 0 || r.ReferenceTokens.GenerationTokens <= 0 {
+		return 0, false
+	}
 	var input, generated int
 	var prefill, generation float64
 	for _, res := range r.Results {
@@ -25,7 +37,11 @@ func (r report) referenceTime() (float64, bool) {
 		if p <= 0 || g <= 0 || res.Usage.CompletionTokens < 1 {
 			return 0, false
 		}
-		input += res.Usage.PromptTokens - res.Execution.ReusedTokens
+		reused := res.Execution.ReusedTokens
+		if res.MediaPlan {
+			reused = res.MediaAnchorKV
+		}
+		input += res.Usage.PromptTokens - reused
 		generated += res.Usage.CompletionTokens - 1
 		prefill += p
 		generation += g
@@ -33,7 +49,7 @@ func (r report) referenceTime() (float64, bool) {
 	if input <= 0 || generated <= 0 {
 		return 0, false
 	}
-	return referenceInputTokens*prefill/float64(input) + referenceGenerationTokens*generation/float64(generated), true
+	return float64(r.ReferenceTokens.InputTokens)*prefill/float64(input) + float64(r.ReferenceTokens.GenerationTokens)*generation/float64(generated), true
 }
 
 type repetitionSummary struct {

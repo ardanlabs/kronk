@@ -38,7 +38,7 @@ func collectEvidence(file *os.File, initial os.FileInfo, path string, c *client,
 		if !ok {
 			continue
 		}
-		if err := c.events.Encode(map[string]any{"source": "server", "repetition": c.repetition, "phase": phase, "event": event}); err != nil {
+		if err := c.events.Encode(map[string]any{"source": "server", "cell_id": c.cell, "repetition": c.repetition, "phase": phase, "event": event}); err != nil {
 			return err
 		}
 		if event["level"] == "ERROR" {
@@ -142,6 +142,21 @@ func recordExecution(r *result, event map[string]any) {
 	msg, _ := event["msg"].(string)
 	status, _ := event["status"].(string)
 	switch msg {
+	case "imc-media-cache":
+		switch status {
+		case "plan-ready":
+			r.MediaPlan = true
+			r.MediaCount = eventInt(event, "media_count")
+			r.ReusableTokens = eventInt(event, "reusable_logical_position")
+			r.MediaAnchorKV = eventInt(event, "anchor_physical_kv")
+			r.CacheMatch, _ = event["match_kind"].(string)
+			r.CacheReason, _ = event["match_reason"].(string)
+			r.TailTokens = eventInt(event, "replay_text_tokens")
+		case "encoded-media-chunk":
+			r.EncodedTokens += eventInt(event, "tokens")
+		case "decoded-media-chunk":
+			r.DecodedTokens += eventInt(event, "decoded_tokens")
+		}
 	case "imc":
 		if status == "plan-ready" {
 			r.CacheMatch, _ = event["match_kind"].(string)
@@ -157,6 +172,10 @@ func recordExecution(r *result, event map[string]any) {
 		}
 	case "start-slot":
 		switch status {
+		case "imc-cache-ready":
+			if event["media"] == true {
+				r.MediaPosition = eventInt(event, "next_logical_position")
+			}
 		case "imc-restore-done":
 			e.TargetRestored = true
 		case "imc-draft-restore-done":
@@ -246,6 +265,19 @@ func validateExecution(r *report) {
 		if !res.Cancelled && (e.OutputTokens != res.Usage.CompletionTokens || e.DraftTokens != res.Usage.DraftTokens || e.DraftAccepted != res.Usage.DraftAcceptedTokens || e.ReusedTokens != res.Usage.PromptTokensDetails.CachedTokens) {
 			fail(res.Phase, "server completion/drafting/reuse counters disagree with client usage")
 		}
+		if res.Phase == "recovery" && (cancelledAt.IsZero() || e.Started.Before(cancelledAt)) {
+			fail(res.Phase, "recovery must execute after cancelled request cleanup on the same slot")
+		}
+		if r.Images {
+			if res.Phase == "cold" {
+				coldStable = res.MediaPosition
+			}
+			if res.Phase == "fresh-session" {
+				freshStable = res.MediaPosition
+			}
+			validateImageExecution(r, res, coldStable, freshStable)
+			continue
+		}
 		if res.StableTokens < r.SystemTokens || res.TailTokens <= 0 || res.ReusableTokens+res.ExtensionTokens != res.StableTokens || e.ReusedTokens != res.ReusableTokens {
 			fail(res.Phase, "actual cache reuse and stable-prefix accounting not attested")
 		}
@@ -281,8 +313,37 @@ func validateExecution(r *report) {
 		if res.Phase != "replay" && (!e.TargetSnapshotted || !e.DraftSnapshotted) {
 			fail(res.Phase, "paired target/MTP snapshot publication not attested")
 		}
-		if res.Phase == "recovery" && (cancelledAt.IsZero() || e.Started.Before(cancelledAt)) {
-			fail(res.Phase, "recovery must execute after cancelled request cleanup on the same slot")
+	}
+}
+
+// Media plans separate logical positions from physical KV cells. Reuse counters
+// follow logical positions; prompt counts include physical image embeddings.
+func validateImageExecution(r *report, res result, cold, fresh int) {
+	fail := func(text string) { r.Findings = append(r.Findings, res.Phase+": "+text) }
+	e := res.Execution
+	if !res.MediaPlan || res.MediaCount != 1 || res.TailTokens <= 0 {
+		fail("single-image cache plan not attested")
+	}
+	if res.Phase == "cold" || res.Phase == "fresh-session" || (res.Phase == "recovery" && res.CacheMatch == "rebuild") {
+		if res.CacheMatch != "rebuild" || e.ReusedTokens != 0 || res.MediaPosition <= 0 || res.EncodedTokens <= 0 || res.DecodedTokens <= 0 {
+			fail("new image must be encoded and decoded into an uncached prefix")
 		}
+	} else {
+		kind, reason, reused := "anchor", "media-prefix-text-replay", cold
+		if res.Phase == "replay" || res.Phase == "recovery" {
+			kind, reason = "exact", "logical-plan-equal"
+		}
+		if res.Phase == "cancel" {
+			reused = fresh
+		}
+		if res.CacheMatch != kind || res.CacheReason != reason || reused <= 0 || e.ReusedTokens != reused || res.ReusableTokens != reused || res.MediaAnchorKV <= 0 || res.EncodedTokens != 0 || res.DecodedTokens != 0 {
+			fail("required media-prefix reuse without image re-encoding not attested")
+		}
+		if !e.TargetRestored || !e.DraftRestored || e.DraftResume != "restored-draft-kv" {
+			fail("paired media target/MTP restore not attested")
+		}
+	}
+	if res.CacheMatch != "exact" && (!e.TargetSnapshotted || !e.DraftSnapshotted) {
+		fail("paired target/MTP snapshot publication not attested")
 	}
 }

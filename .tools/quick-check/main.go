@@ -29,36 +29,42 @@ type options struct {
 	serverLog   string
 	timeout     time.Duration
 	repetitions int
+	images      bool
+	cells       string
 }
 
 type report struct {
-	Status               string         `json:"status"`
-	Workload             string         `json:"workload"`
-	Model                string         `json:"model"`
-	Host                 string         `json:"host"`
-	HarnessRevision      string         `json:"harness_revision"`
-	ServerRevision       string         `json:"server_revision"`
-	ServerCommitTime     string         `json:"server_commit_time"`
-	ReleaseTag           string         `json:"release_tag,omitempty"`
-	TestStartedAt        string         `json:"test_started_at,omitempty"`
-	Metadata             map[string]any `json:"server_metadata"`
-	SystemTokens         int            `json:"system_tokens"`
-	SystemSHA256         string         `json:"system_sha256"`
-	Slot                 int            `json:"slot"`
-	MTPBackend           string         `json:"mtp_backend"`
-	WarmupRequest        *result        `json:"warmup_request,omitempty"`
-	WorkloadSeconds      float64        `json:"workload_seconds"`
-	CancelReleaseSeconds float64        `json:"cancel_release_seconds"`
-	Results              []result       `json:"results"`
-	Findings             []string       `json:"findings"`
-	RepetitionsRequested int            `json:"repetitions_requested,omitempty"`
-	Repetitions          []report       `json:"repetitions,omitempty"`
+	ID                   string                 `json:"cell_id"`
+	Status               string                 `json:"status"`
+	Workload             string                 `json:"workload"`
+	Model                string                 `json:"model"`
+	Images               bool                   `json:"images"`
+	ReferenceTokens      normalizationReference `json:"normalization_reference"`
+	Host                 string                 `json:"host"`
+	HarnessRevision      string                 `json:"harness_revision"`
+	ServerRevision       string                 `json:"server_revision"`
+	ServerCommitTime     string                 `json:"server_commit_time"`
+	ReleaseTag           string                 `json:"release_tag,omitempty"`
+	TestStartedAt        string                 `json:"test_started_at,omitempty"`
+	Metadata             map[string]any         `json:"server_metadata"`
+	SystemTokens         int                    `json:"system_tokens"`
+	SystemSHA256         string                 `json:"system_sha256"`
+	Slot                 int                    `json:"slot"`
+	MTPBackend           string                 `json:"mtp_backend"`
+	WarmupRequest        *result                `json:"warmup_request,omitempty"`
+	WorkloadSeconds      float64                `json:"workload_seconds"`
+	CancelReleaseSeconds float64                `json:"cancel_release_seconds"`
+	Results              []result               `json:"results"`
+	Findings             []string               `json:"findings"`
+	RepetitionsRequested int                    `json:"repetitions_requested,omitempty"`
+	Repetitions          []report               `json:"repetitions,omitempty"`
 	evidenceValidated    bool
 }
 
 // Field order is the human reading order in summary.json: environment, run,
 // then repetitions and their requests.
 type runSummary struct {
+	ID                   string                            `json:"cell_id"`
 	Machine              map[string]any                    `json:"machine"`
 	ServerVersion        string                            `json:"server_version"`
 	ServerRevision       string                            `json:"server_revision"`
@@ -72,6 +78,7 @@ type runSummary struct {
 	Model                string                            `json:"model"`
 	Cell                 string                            `json:"cell"`
 	Workload             string                            `json:"workload"`
+	ReferenceTokens      normalizationReference            `json:"normalization_reference"`
 	Status               string                            `json:"status"`
 	Findings             []string                          `json:"findings"`
 	RepetitionsRequested int                               `json:"repetitions_requested"`
@@ -81,12 +88,28 @@ type runSummary struct {
 	Repetitions          []repetitionSummary               `json:"repetitions"`
 }
 
+func (s runSummary) MarshalJSON() ([]byte, error) {
+	if s.Status == "NOT_RUN" {
+		return json.Marshal(struct {
+			ID     string `json:"cell_id"`
+			Cell   string `json:"cell"`
+			Status string `json:"status"`
+		}{s.ID, s.Cell, s.Status})
+	}
+	type summary runSummary
+	return json.Marshal(summary(s))
+}
+
 // Keep the decision/comparison surface separate from the diagnostic record.
 func (r report) summary() runSummary {
+	if r.Status == "NOT_RUN" {
+		return runSummary{ID: r.ID, Cell: r.cell(), Status: r.Status}
+	}
 	liveness, _ := r.Metadata["/v1/liveness"].(map[string]any)
 	libraries, _ := r.Metadata["/v1/kronk/libs"].(map[string]any)
 	hardware, _ := r.Metadata["/v1/devices"].(map[string]any)
 	summary := runSummary{
+		ID: r.ID,
 		Machine: map[string]any{
 			"host":             liveness["host"],
 			"os":               liveness["os"],
@@ -104,8 +127,9 @@ func (r report) summary() runSummary {
 		MTPBackend:           r.MTPBackend,
 		HarnessRevision:      r.HarnessRevision,
 		Model:                r.Model,
-		Cell:                 "MoE / one slot / IMC on / MTP on / images off",
+		Cell:                 r.cell(),
 		Workload:             r.Workload,
+		ReferenceTokens:      r.ReferenceTokens,
 		Status:               r.Status,
 		Findings:             append([]string{}, r.Findings...),
 		RepetitionsRequested: r.RepetitionsRequested,
@@ -122,6 +146,14 @@ func (r report) summary() runSummary {
 		summary.Repetitions = append(summary.Repetitions, repetition.repetitionSummary(i+1))
 	}
 	return summary
+}
+
+func (r report) cell() string {
+	images := "off"
+	if r.Images {
+		images = "on"
+	}
+	return "MoE / one slot / IMC on / MTP on / images " + images
 }
 
 func (r report) phaseSummary(res result) map[string]any {
@@ -158,6 +190,11 @@ func (r report) phaseSummary(res result) map[string]any {
 
 	if res.StartupTimings != nil {
 		phase["startup_timings"] = res.StartupTimings
+	}
+	if r.Images {
+		phase["media_count"] = res.MediaCount
+		phase["encoded_image_tokens"] = res.EncodedTokens
+		phase["decoded_image_tokens"] = res.DecodedTokens
 	}
 
 	// A deliberately interrupted stream has no final usage or meaningful
@@ -228,19 +265,20 @@ func (r report) logSummary() string {
 	cache := verdict("warmup", "cold", "replay", "append", "fresh-session", "cancel", "recovery")
 	isolation := verdict("fresh-session", "recovery")
 	recovery := verdict("cancel", "recovery")
-	version := r.serverVersion()
-	if version != "unknown" {
-		version = version[:7]
-	}
-	if r.ReleaseTag != "" {
-		version += " (release " + r.ReleaseTag + ")"
-	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Quick-check: %s\nTested commit: %s from %s\nTest started: %s\nIMC/MTP: %s | Serial isolation: %s | Cancel/recovery: %s\n", r.Status, version, r.ServerCommitTime, r.TestStartedAt, cache, isolation, recovery)
-	fmt.Fprintf(&b, "Cell: MoE/1s/IMC+/MTP+/img- | Warm-up: %s | Repetitions: %d/%d\n", warmup, len(r.Repetitions), r.RepetitionsRequested)
+	fmt.Fprintf(&b, "IMC/MTP: %s | Serial isolation: %s | Cancel/recovery: %s\n", cache, isolation, recovery)
+	imageLabel := "-"
+	if r.Images {
+		imageLabel = "+"
+		fmt.Fprintf(&b, "Images: %s\n", verdict("cold", "replay", "append", "fresh-session", "cancel", "recovery"))
+	}
+	fmt.Fprintf(&b, "Cell: MoE/1s/IMC+/MTP+/img%s | Warm-up: %s | Repetitions: %d/%d\n", imageLabel, warmup, len(r.Repetitions), r.RepetitionsRequested)
 	fmt.Fprintf(&b, "  Workload s [SD]: %s | Normalized s [SD]: %s\n", workload, reference)
 	if r.Status != "PASS" {
 		fmt.Fprintln(&b, "Details: summary.json (fix setup/evidence failures before deeper inference checks)")
+		if r.Images {
+			fmt.Fprintln(&b, "Images -> make test-load-media-correctness")
+		}
 		if cache == "FAIL" {
 			fmt.Fprintln(&b, "IMC/MTP -> make test-load-hybrid; make test-load-mtp-embedded")
 		}
@@ -280,6 +318,7 @@ func main() {
 	flag.StringVar(&o.serverLog, "server-log", filepath.Join(home, ".kronk/kronk.log"), "required local JSON server log")
 	flag.DurationVar(&o.timeout, "timeout", 5*time.Minute, "per-request timeout; not a performance threshold")
 	flag.IntVar(&o.repetitions, "repetitions", 2, "complete workload repetitions; stop on first failure")
+	flag.StringVar(&o.cells, "cells", "all", "cells to exercise: all, text, images, or text,images")
 	flag.Parse()
 	if err := run(o); err != nil {
 		os.Exit(1)
@@ -303,6 +342,10 @@ func run(o options) (runErr error) {
 	if o.repetitions <= 0 {
 		return fmt.Errorf("repetitions must be positive")
 	}
+	selected, err := selectedCells(o.cells)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(o.out, 0755); err != nil {
 		return err
 	}
@@ -315,6 +358,9 @@ func run(o options) (runErr error) {
 	}
 	f.Close()
 	defer os.Remove(lock)
+	if _, err := savedRuns(o.out); err != nil {
+		return err
+	}
 	started := time.Now().UTC()
 	dir, err := os.MkdirTemp(o.out, started.Format("20060102T150405Z")+"-")
 	if err != nil {
@@ -347,9 +393,13 @@ func run(o options) (runErr error) {
 	log := func(format string, args ...any) {
 		fmt.Fprintf(io.MultiWriter(toolLog, &progress), format+"\n", args...)
 	}
-	r := report{Status: "FAIL", Workload: workloadVersion, Model: modelID, Host: o.host, ServerCommitTime: "unknown", TestStartedAt: started.Format(time.RFC3339Nano), RepetitionsRequested: o.repetitions}
+	r := matrixReport{Status: "FAIL", ServerCommitTime: "unknown", TestStartedAt: started.Format(time.RFC3339Nano)}
+	for _, cell := range matrixCells {
+		r.Cells = append(r.Cells, report{ID: cell.id, Images: cell.images, Status: "NOT_RUN"})
+	}
+	var harnessRevision string
 	if revision, err := exec.Command("git", "rev-parse", "HEAD").Output(); err == nil {
-		r.HarnessRevision = strings.TrimSpace(string(revision))
+		harnessRevision = strings.TrimSpace(string(revision))
 	}
 	c := &client{ctx: ctx, host: strings.TrimRight(o.host, "/"), token: os.Getenv("KRONK_TOKEN"), timeout: o.timeout, traces: make(map[string]string), events: json.NewEncoder(events)}
 	defer func() {
@@ -358,12 +408,22 @@ func run(o options) (runErr error) {
 		}
 		tags, tagErr := releaseTags(ctx)
 		r.ReleaseTag = tags[r.ServerRevision]
+		for i := range r.Cells {
+			if r.Cells[i].Status != "NOT_RUN" {
+				r.Cells[i].ReleaseTag = r.ReleaseTag
+			}
+		}
 		runErr = errors.Join(runErr, tagErr)
 		if runErr != nil {
 			r.Findings = append(r.Findings, runErr.Error())
 		}
 		if len(r.Findings) == 0 {
 			r.Status = "PASS"
+			for _, cell := range r.Cells {
+				if cell.Status == "FAIL" {
+					r.Status = "FAIL"
+				}
+			}
 		}
 		// Preserve full metadata, answers, counters, and execution evidence for
 		// investigation without expanding the summary consumed on every merge.
@@ -381,7 +441,7 @@ func run(o options) (runErr error) {
 			r.Findings = append(r.Findings, "write summary: "+err.Error())
 		}
 		runErr = errors.Join(runErr, evidenceErr, err)
-		log("%s: %d findings; repetitions executed %d/%d", r.Status, len(r.Findings), len(r.Repetitions), r.RepetitionsRequested)
+		log("%s: %d run findings", r.Status, len(r.Findings))
 		// Live progress remains append-only; prepend the verdict once finalized.
 		var logErr error
 		if _, logErr = toolLog.Seek(0, io.SeekStart); logErr == nil {
@@ -402,10 +462,37 @@ func run(o options) (runErr error) {
 			fmt.Fprintln(os.Stderr, "Artifacts or release recognition could not be finalized; previous runs retained.")
 		}
 		fmt.Fprint(os.Stdout, r.logSummary())
-		if len(r.Findings) > 0 {
+		if r.Status != "PASS" {
 			runErr = errors.Join(runErr, fmt.Errorf("quick-check has findings; inspect %s", dir))
 		}
 	}()
+	for i, cell := range matrixCells {
+		if !selected[cell.id] {
+			continue
+		}
+		o.images = cell.images
+		c.cell = cell.id
+		cr := &r.Cells[i]
+		*cr = report{ID: cell.id, Status: "FAIL", Workload: workloadVersion, Model: modelID, Images: cell.images, Host: o.host, ServerCommitTime: "unknown", TestStartedAt: r.TestStartedAt, RepetitionsRequested: o.repetitions, HarnessRevision: harnessRevision, ReferenceTokens: referenceTokens(cell.images)}
+		log("cell=%s", cell.id)
+		err := executeCell(o, c, cr, log)
+		if r.ServerRevision == "" {
+			r.ServerRevision, r.ServerCommitTime = cr.ServerRevision, cr.ServerCommitTime
+		} else if cr.ServerRevision != r.ServerRevision || cr.ServerCommitTime != r.ServerCommitTime {
+			return fmt.Errorf("server commit changed between cells")
+		}
+		if err != nil {
+			cr.Status = "FAIL"
+			cr.Findings = append(cr.Findings, err.Error())
+			return fmt.Errorf("cell %s: %w", cell.id, err)
+		}
+	}
+	return nil
+}
+
+// Keep the established per-cell lifecycle for now: warm once, resident across
+// its repetitions, unload on exit. Grouping cells by model is a separate decision.
+func executeCell(o options, c *client, r *report, log func(string, ...any)) (runErr error) {
 	defer func() {
 		if r.WarmupRequest != nil {
 			// Cancellation must stop inference, not cancel its cleanup request.
@@ -415,14 +502,15 @@ func run(o options) (runErr error) {
 			cleanup.ctx = cleanupCtx
 			err := cleanup.unload()
 			runErr = errors.Join(runErr, err)
-			if err != nil && ctx.Err() != nil {
+			if err != nil && c.ctx.Err() != nil {
 				fmt.Fprintf(os.Stderr, "Interrupted model cleanup: %v\n", err)
 			}
 		}
 	}()
 	for i := 1; i <= o.repetitions; i++ {
 		log("repetition=%d/%d", i, o.repetitions)
-		repetition := report{Status: "FAIL", Workload: workloadVersion, Model: modelID, Host: o.host, ServerCommitTime: "unknown", HarnessRevision: r.HarnessRevision, Metadata: make(map[string]any), MTPBackend: r.MTPBackend}
+		repetition := report{ID: r.ID, Status: "FAIL", Workload: workloadVersion, Model: modelID, Images: o.images, Host: o.host, ServerCommitTime: "unknown", HarnessRevision: r.HarnessRevision, Metadata: make(map[string]any), MTPBackend: r.MTPBackend}
+		repetition.ReferenceTokens = r.ReferenceTokens
 		c.traces = make(map[string]string)
 		c.repetition = i
 		err := execute(o, c, &repetition, log)
@@ -448,6 +536,7 @@ func run(o options) (runErr error) {
 			return fmt.Errorf("repetition %d failed; %d remaining repetitions unrun", i, o.repetitions-i)
 		}
 	}
+	r.Status = "PASS"
 	return nil
 }
 
@@ -493,8 +582,9 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 		}
 	}
 	var detail struct {
-		Metadata map[string]string `json:"metadata"`
-		Config   struct {
+		Metadata      map[string]string `json:"metadata"`
+		HasProjection bool              `json:"has_projection"`
+		Config        struct {
 			IMC *bool `json:"incremental-cache"`
 		} `json:"model_config"`
 	}
@@ -509,6 +599,9 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 	experts, _ := strconv.Atoi(detail.Metadata["qwen35moe.expert_count"])
 	if detail.Metadata["general.architecture"] != "qwen35moe" || experts <= 1 {
 		return fmt.Errorf("fixture metadata must attest the selected Qwen3.6 MoE architecture")
+	}
+	if o.images && !detail.HasProjection {
+		return fmt.Errorf("image cell requires the model's projection file")
 	}
 	e, err := c.snapshot()
 	if err != nil {
@@ -525,10 +618,28 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 	}
 	r.SystemTokens, r.SystemSHA256 = tokens, fmt.Sprintf("%x", sha256.Sum256([]byte(system)))
 	log("workload=%s model=%s system_tokens=%d", workloadVersion, modelID, tokens)
-	start := time.Now()
 	a := conversation(system, "ORCHID-47", "Maren", "Northport")
 	b := conversation(system, "COBALT-83", "Tobin", "Southbank")
+	if o.images {
+		a, err = picturedConversation(a, "giraffe.jpg")
+		if err != nil {
+			return err
+		}
+		b, err = picturedConversation(b, "deer/image10.jpg")
+		if err != nil {
+			return err
+		}
+	}
+	start := time.Now()
 	perform := func(phase string, messages []message, expected, forbidden []string, cancelled bool) (result, error) {
+		if o.images {
+			animal, foreign := "giraffe", "deer"
+			if phase == "fresh-session" || phase == "cancel" {
+				animal, foreign = foreign, animal
+			}
+			expected = append(expected, animal)
+			forbidden = append(forbidden, foreign)
+		}
 		res, err := c.chat(phase, messages, 384, cancelled)
 		if err == nil && !cancelled {
 			err = checkAnswer(res, expected, forbidden)
@@ -546,7 +657,11 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 		_, err = perform("replay", a, []string{"ORCHID-47", "Maren", "Northport"}, nil, false)
 	}
 	if err == nil {
-		continued := append(append([]message{}, a...), message{Role: "assistant", Content: cold.Content}, message{Role: "user", Content: "Change the destination to Eastmere; keep the identifier and owner unchanged. Review the updated handover in about 80 words, including its current facts. Do not repeat the previous destination."})
+		question := "Change the destination to Eastmere; keep the identifier and owner unchanged. Review the updated handover in about 80 words, including its current facts. Do not repeat the previous destination."
+		if o.images {
+			question += " Include the animal from the picture already in this conversation."
+		}
+		continued := append(append([]message{}, a...), message{Role: "assistant", Content: cold.Content}, message{Role: "user", Content: question})
 		_, err = perform("append", continued, []string{"ORCHID-47", "Maren", "Eastmere"}, []string{"Northport"}, false)
 	}
 	var fresh result
