@@ -29,9 +29,28 @@
 #   slot overlap, queue pressure, and isolation. Distinguish tool assertions
 #   from trace-correlated server evidence, and report failures or evidence gaps.
 
-server-for-tools:
-	KRONK_POOL_MODEL_CONFIG_FILE="$(CURDIR)/.tools/reliability/model_config_tools.yaml" \
-		$(MAKE) kronk-server-detach
+server-for-tools: kronk-build
+	KRONK_POOL_MODEL_CONFIG_FILE="$(CURDIR)/.tools/model_config_tools.yaml" \
+		go run -buildvcs=true ./cmd/kronk server start --detach
+
+QUICK_CHECK_ARGS ?=
+
+quick-check-this-code:
+	@go run ./.tools/quick-check $(QUICK_CHECK_ARGS)
+
+QUICK_COMPARE_BASELINE ?=
+QUICK_COMPARE_CANDIDATE ?=
+QUICK_CHECK_COMPARE_ARGS ?=
+
+quick-compare-against-commit:
+	@go run ./.tools/quick-check compare -against commit \
+		-baseline "$(QUICK_COMPARE_BASELINE)" -candidate "$(QUICK_COMPARE_CANDIDATE)" \
+		$(QUICK_CHECK_COMPARE_ARGS)
+
+quick-compare-against-release:
+	@go run ./.tools/quick-check compare -against release \
+		-baseline "$(QUICK_COMPARE_BASELINE)" -candidate "$(QUICK_COMPARE_CANDIDATE)" \
+		$(QUICK_CHECK_COMPARE_ARGS)
 
 RELIABILITY_HOST ?= http://localhost:11435
 RELIABILITY_OUT ?= .tools/reliability/output
