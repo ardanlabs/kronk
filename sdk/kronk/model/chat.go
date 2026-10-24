@@ -444,7 +444,7 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, r
 			return "", nil, cache, fmt.Errorf("chat-streaming: render complete stable prompt: %w", err)
 		}
 
-		systemTokens := m.imcSystemTokens(ctx, stableD)
+		systemTokens := m.imcSystemTokens(ctx, stableD, stablePrompt)
 		if object == ObjectChatMedia {
 			cache = m.processIMCMediaTokenPlan(ctx, d, stableD, actualPrompt, stablePrompt, actualMedia, stableMedia, systemTokens, requestStart)
 		} else {
