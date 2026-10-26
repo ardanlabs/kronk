@@ -20,7 +20,41 @@ const (
 	invokeClose    = "</" + dsmlToken + "invoke>"
 	parameterOpen  = "<" + dsmlToken + "parameter"
 	parameterClose = "</" + dsmlToken + "parameter>"
+
+	toolCallsOpenV41 = "<" + dsmlToken + " calls>"
 )
+
+// dsmlMarkers keeps a block's dialect consistent without rewriting argument text.
+type dsmlMarkers struct {
+	toolCallsOpen  string
+	toolCallsClose string
+	invokeOpen     string
+	invokeClose    string
+	parameterOpen  string
+	parameterClose string
+}
+
+func markersFor(content string) dsmlMarkers {
+	if strings.HasPrefix(content, toolCallsOpenV41) {
+		return dsmlMarkers{
+			toolCallsOpen:  toolCallsOpenV41,
+			toolCallsClose: "</" + dsmlToken + " calls>",
+			invokeOpen:     "<" + dsmlToken + " invoke",
+			invokeClose:    "</" + dsmlToken + " invoke>",
+			parameterOpen:  "<" + dsmlToken + " parameter",
+			parameterClose: "</" + dsmlToken + " parameter>",
+		}
+	}
+
+	return dsmlMarkers{
+		toolCallsOpen:  toolCallsOpen,
+		toolCallsClose: toolCallsClose,
+		invokeOpen:     invokeOpen,
+		invokeClose:    invokeClose,
+		parameterOpen:  parameterOpen,
+		parameterClose: parameterClose,
+	}
+}
 
 // Parser implements model.Parser for DeepSeek DSML output.
 type Parser struct{}
@@ -69,20 +103,26 @@ func (Parser) ToolCall(ctx context.Context, log applog.Logger, buf string) []mod
 	return calls
 }
 
-// containsDSMLMarkers reports whether a template constructs or contains the
-// canonical DeepSeek DSML tool-call markers. The token value is fixed by the
-// model's vocabulary and is not treated as template-configurable.
+// containsDSMLMarkers reports whether a template constructs or contains either
+// DeepSeek DSML dialect. The token value is fixed by the model's vocabulary and
+// is not treated as template-configurable.
 func containsDSMLMarkers(template string) bool {
-	literal := strings.Contains(template, toolCallsOpen) &&
-		strings.Contains(template, invokeOpen) &&
-		strings.Contains(template, parameterOpen)
-	if literal {
-		return true
+	for _, opener := range []string{toolCallsOpen, toolCallsOpenV41} {
+		markers := markersFor(opener)
+		if strings.Contains(template, markers.toolCallsOpen) &&
+			strings.Contains(template, markers.invokeOpen) &&
+			strings.Contains(template, markers.parameterOpen) {
+			return true
+		}
+
+		assignment := "dsml_token = '" + dsmlToken + "'"
+		if strings.Contains(template, assignment) &&
+			strings.Contains(template, "dsml_token + '"+strings.TrimPrefix(markers.toolCallsOpen, "<"+dsmlToken)) &&
+			strings.Contains(template, "dsml_token + '"+strings.TrimPrefix(markers.invokeOpen, "<"+dsmlToken)+` name="`) &&
+			strings.Contains(template, "dsml_token + '"+strings.TrimPrefix(markers.parameterOpen, "<"+dsmlToken)+` name="`) {
+			return true
+		}
 	}
 
-	assignment := "dsml_token = '" + dsmlToken + "'"
-	return strings.Contains(template, assignment) &&
-		strings.Contains(template, "dsml_token + 'tool_calls>") &&
-		strings.Contains(template, `dsml_token + 'invoke name="`) &&
-		strings.Contains(template, `dsml_token + 'parameter name="`)
+	return false
 }

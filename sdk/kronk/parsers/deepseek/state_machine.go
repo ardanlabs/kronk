@@ -10,7 +10,8 @@ import (
 // The pending opener buffer handles tokenizers that split the DSML marker and
 // tag name across several decoded tokens.
 type stateMachine struct {
-	status model.Channel
+	status  model.Channel
+	markers dsmlMarkers
 
 	pendingOpener strings.Builder
 	toolCallBuf   strings.Builder
@@ -28,6 +29,7 @@ type stateMachine struct {
 // Reset returns the stateMachine to its initial state for reuse.
 func (sm *stateMachine) Reset() {
 	sm.status = model.ChannelAnswer
+	sm.markers = dsmlMarkers{}
 	sm.pendingOpener.Reset()
 	sm.toolCallBuf.Reset()
 	sm.inPending = false
@@ -62,13 +64,13 @@ func (sm *stateMachine) classify(content string) (model.Result, bool) {
 		candidate := sm.pendingOpener.String()
 
 		switch {
-		case strings.HasPrefix(candidate, toolCallsOpen):
+		case strings.HasPrefix(candidate, toolCallsOpen) || strings.HasPrefix(candidate, toolCallsOpenV41):
 			sm.inPending = false
 			sm.pendingOpener.Reset()
 			sm.startToolCall(candidate)
 			return sm.completeBufferedTool(), false
 
-		case strings.HasPrefix(toolCallsOpen, candidate):
+		case strings.HasPrefix(toolCallsOpen, candidate) || strings.HasPrefix(toolCallsOpenV41, candidate):
 			return model.Result{}, false
 
 		default:
@@ -88,7 +90,8 @@ func (sm *stateMachine) classify(content string) (model.Result, bool) {
 		if trimmed == "" {
 			return model.Result{}, false
 		}
-		if strings.HasPrefix(trimmed, toolCallsOpen) || strings.HasPrefix(toolCallsOpen, trimmed) {
+		if strings.HasPrefix(trimmed, toolCallsOpen) || strings.HasPrefix(toolCallsOpen, trimmed) ||
+			strings.HasPrefix(trimmed, toolCallsOpenV41) || strings.HasPrefix(toolCallsOpenV41, trimmed) {
 			return sm.classifyContent(trimmed)
 		}
 		sm.afterToolCall = false
@@ -150,7 +153,11 @@ func (sm *stateMachine) classifyContent(content string) (model.Result, bool) {
 		return model.Result{}, false
 	}
 
-	if openerAt := strings.Index(content, toolCallsOpen); openerAt != -1 {
+	openerAt := strings.Index(content, toolCallsOpen)
+	if v41At := strings.Index(content, toolCallsOpenV41); v41At != -1 && (openerAt == -1 || v41At < openerAt) {
+		openerAt = v41At
+	}
+	if openerAt != -1 {
 		sm.startToolCall(content[openerAt:])
 		result := sm.completeBufferedTool()
 		if openerAt > 0 {
@@ -196,6 +203,7 @@ func (sm *stateMachine) popOutput() model.Result {
 func (sm *stateMachine) startToolCall(content string) {
 	sm.inToolCall = true
 	sm.afterToolCall = false
+	sm.markers = markersFor(content)
 	sm.toolCallBuf.Reset()
 	sm.toolCallBuf.WriteString(content)
 	sm.detectedCalls = 0
@@ -210,30 +218,30 @@ func (sm *stateMachine) bufferToolContent(content string) model.Result {
 
 func (sm *stateMachine) completeBufferedTool() model.Result {
 	content := sm.toolCallBuf.String()
-	closeAt := strings.LastIndex(content, toolCallsClose)
+	closeAt := strings.LastIndex(content, sm.markers.toolCallsClose)
 	if closeAt == -1 {
 		return model.Result{}
 	}
 
-	end := closeAt + len(toolCallsClose)
+	end := closeAt + len(sm.markers.toolCallsClose)
 	complete := content[:end]
 	remainder := content[end:]
 	sm.toolCallBuf.Reset()
 	sm.toolCallBuf.WriteString(remainder)
 	sm.inToolCall = remainder != ""
 	sm.afterToolCall = remainder == ""
-	sm.detectedCalls = countInvokeOpeners(remainder)
+	sm.detectedCalls = countInvokeOpeners(remainder, sm.markers.invokeOpen)
 	return model.Result{Channel: model.ChannelTool, Content: complete}
 }
 
-func countInvokeOpeners(content string) int {
+func countInvokeOpeners(content, marker string) int {
 	count := 0
 	for offset := 0; ; count++ {
-		invokeAt := strings.Index(content[offset:], invokeOpen)
+		invokeAt := strings.Index(content[offset:], marker)
 		if invokeAt == -1 {
 			return count
 		}
-		offset += invokeAt + len(invokeOpen)
+		offset += invokeAt + len(marker)
 	}
 }
 
@@ -242,7 +250,7 @@ func (sm *stateMachine) updateToolCallDeltas() {
 	offset := 0
 	seen := 0
 	for {
-		invokeAt := strings.Index(content[offset:], invokeOpen)
+		invokeAt := strings.Index(content[offset:], sm.markers.invokeOpen)
 		if invokeAt == -1 {
 			return
 		}
@@ -253,7 +261,7 @@ func (sm *stateMachine) updateToolCallDeltas() {
 		}
 		openerEnd += invokeAt
 		if seen >= sm.detectedCalls {
-			attributes, err := parseElementAttributes(content[invokeAt:openerEnd+1], invokeOpen, ">", "name")
+			attributes, err := parseElementAttributes(content[invokeAt:openerEnd+1], sm.markers.invokeOpen, ">", "name")
 			if err == nil {
 				sm.addToolCallDelta(attributes["name"])
 			}
@@ -278,9 +286,10 @@ func (sm *stateMachine) addToolCallDelta(name string) {
 }
 
 func pendingOpenerSuffix(content string) int {
-	limit := min(len(content), len(toolCallsOpen)-1)
+	limit := min(len(content), max(len(toolCallsOpen), len(toolCallsOpenV41))-1)
 	for size := limit; size > 0; size-- {
-		if strings.HasSuffix(content, toolCallsOpen[:size]) {
+		if (size < len(toolCallsOpen) && strings.HasSuffix(content, toolCallsOpen[:size])) ||
+			(size < len(toolCallsOpenV41) && strings.HasSuffix(content, toolCallsOpenV41[:size])) {
 			return len(content) - size
 		}
 	}

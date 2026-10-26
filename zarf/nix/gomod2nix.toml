@@ -41,8 +41,8 @@ schema = 3
     version = "v3.13.0"
     hash = "sha256-WlPMHIHqJJVpe1tryI8si4jknRZr484+z0F/7ojYimw="
   [mod."github.com/ardanlabs/jinja"]
-    version = "v1.9.0"
-    hash = "sha256-GXWMK7P6CkKZxoCqpigD9mh7jekBG+FcpEKdHAbah8c="
+    version = "v1.10.0"
+    hash = "sha256-PvLvtzxQtJcKO/JnZn2n/AlNXA8BfYjBoPhFPdyLWq8="
   [mod."github.com/ardanlabs/malina"]
     version = "v1.1.8"
     hash = "sha256-k8Qp/KVEelQd3itiBr0Q3ySTkEcm0mLs00SIebMqwxc="

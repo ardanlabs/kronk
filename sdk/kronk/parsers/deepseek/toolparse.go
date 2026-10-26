@@ -24,11 +24,12 @@ func parseDSML(content string) []model.ResponseToolCall {
 	}
 
 	for remaining != "" {
-		body, next, err := nextToolCallsBody(remaining, 0)
+		markers := markersFor(remaining)
+		body, next, err := nextToolCallsBody(remaining, 0, markers)
 		if err != nil {
 			return []model.ResponseToolCall{failedToolCall("", nil, raw, err)}
 		}
-		bodyCalls := parseDSMLBody(body)
+		bodyCalls := parseDSMLBody(body, markers)
 		for _, call := range bodyCalls {
 			if call.Status != 0 {
 				return []model.ResponseToolCall{failedToolCall("", nil, raw,
@@ -42,10 +43,10 @@ func parseDSML(content string) []model.ResponseToolCall {
 	return calls
 }
 
-func parseDSMLBody(body string) []model.ResponseToolCall {
+func parseDSMLBody(body string, markers dsmlMarkers) []model.ResponseToolCall {
 	var calls []model.ResponseToolCall
 	for offset := skipDSMLSpace(body, 0); offset < len(body); offset = skipDSMLSpace(body, offset) {
-		if !hasDSMLElementPrefix(body[offset:], invokeOpen) {
+		if !hasDSMLElementPrefix(body[offset:], markers.invokeOpen) {
 			return []model.ResponseToolCall{failedToolCall("", nil, body[offset:],
 				errors.New("parse dsml: unexpected content outside invoke"))}
 		}
@@ -60,7 +61,7 @@ func parseDSMLBody(body string) []model.ResponseToolCall {
 		}
 		openerEnd += invokeAt
 
-		closeAt := strings.Index(body[openerEnd+1:], invokeClose)
+		closeAt := strings.Index(body[openerEnd+1:], markers.invokeClose)
 		if closeAt == -1 {
 			raw := body[invokeAt:]
 			calls = append(calls, failedToolCall("", nil, raw,
@@ -68,13 +69,13 @@ func parseDSMLBody(body string) []model.ResponseToolCall {
 			break
 		}
 		closeAt += openerEnd + 1
-		callEnd := closeAt + len(invokeClose)
+		callEnd := closeAt + len(markers.invokeClose)
 
 		raw := body[invokeAt:callEnd]
 		opener := body[invokeAt : openerEnd+1]
-		attributes, attributeErr := parseElementAttributes(opener, invokeOpen, ">", "name")
+		attributes, attributeErr := parseElementAttributes(opener, markers.invokeOpen, ">", "name")
 		name := attributes["name"]
-		args, argsErr := parseParameters(body[openerEnd+1 : closeAt])
+		args, argsErr := parseParameters(body[openerEnd+1:closeAt], markers)
 		parseErr := errors.Join(attributeErr, argsErr)
 		if parseErr != nil {
 			return []model.ResponseToolCall{failedToolCall(name, args, raw, parseErr)}
@@ -99,27 +100,27 @@ func parseDSMLBody(body string) []model.ResponseToolCall {
 	return calls
 }
 
-func nextToolCallsBody(content string, offset int) (string, int, error) {
-	if offset < 0 || offset > len(content) || !strings.HasPrefix(content[offset:], toolCallsOpen) {
+func nextToolCallsBody(content string, offset int, markers dsmlMarkers) (string, int, error) {
+	if offset < 0 || offset > len(content) || !strings.HasPrefix(content[offset:], markers.toolCallsOpen) {
 		return "", offset, errors.New("parse dsml: missing tool_calls opening marker")
 	}
 	openAt := offset
 
-	bodyStart := openAt + len(toolCallsOpen)
-	closeAt := strings.Index(content[bodyStart:], toolCallsClose)
+	bodyStart := openAt + len(markers.toolCallsOpen)
+	closeAt := strings.Index(content[bodyStart:], markers.toolCallsClose)
 	if closeAt == -1 {
 		return "", offset, errors.New("parse dsml: missing tool_calls closing marker")
 	}
 	closeAt += bodyStart
 
-	return content[bodyStart:closeAt], closeAt + len(toolCallsClose), nil
+	return content[bodyStart:closeAt], closeAt + len(markers.toolCallsClose), nil
 }
 
-func parseParameters(body string) (model.ToolCallArguments, error) {
+func parseParameters(body string, markers dsmlMarkers) (model.ToolCallArguments, error) {
 	args := make(model.ToolCallArguments)
 
 	for offset := skipDSMLSpace(body, 0); offset < len(body); offset = skipDSMLSpace(body, offset) {
-		if !hasDSMLElementPrefix(body[offset:], parameterOpen) {
+		if !hasDSMLElementPrefix(body[offset:], markers.parameterOpen) {
 			return nil, errors.New("parse parameters: unexpected content outside parameter")
 		}
 		parameterAt := offset
@@ -130,14 +131,14 @@ func parseParameters(body string) (model.ToolCallArguments, error) {
 		}
 		openerEnd += parameterAt
 
-		closeAt := strings.Index(body[openerEnd+1:], parameterClose)
+		closeAt := strings.Index(body[openerEnd+1:], markers.parameterClose)
 		if closeAt == -1 {
 			return nil, errors.New("parse parameter: missing closing marker")
 		}
 		closeAt += openerEnd + 1
 
 		opener := body[parameterAt : openerEnd+1]
-		attributes, err := parseElementAttributes(opener, parameterOpen, ">", "name", "string")
+		attributes, err := parseElementAttributes(opener, markers.parameterOpen, ">", "name", "string")
 		if err != nil {
 			return nil, err
 		}
@@ -165,7 +166,7 @@ func parseParameters(body string) (model.ToolCallArguments, error) {
 				parameterName, stringValue)
 		}
 
-		offset = closeAt + len(parameterClose)
+		offset = closeAt + len(markers.parameterClose)
 	}
 
 	return args, nil

@@ -34,8 +34,8 @@ github.com/ardanlabs/bucky v1.1.5 h1:ztRxgeUeva07jMIYV9LgUBGAxMBH+vWQfTrz8kdI804
 github.com/ardanlabs/bucky v1.1.5/go.mod h1:ZlikC6Yw4BdMJSpVr7nFKi0yebapzdkPdpn/bsRc8fw=
 github.com/ardanlabs/conf/v3 v3.13.0 h1:XKQXX35fFq/jencPu19xh0a6NPMT4NrpcRP/F9x7ejY=
 github.com/ardanlabs/conf/v3 v3.13.0/go.mod h1:XlL9P0quWP4m1weOVFmlezabinbZLI05niDof/+Ochk=
-github.com/ardanlabs/jinja v1.9.0 h1:69fjYzJ7OmsjQvXoiiQXuPgZcMmAPHk5vTYmcOMEu7I=
-github.com/ardanlabs/jinja v1.9.0/go.mod h1:VMzH0tsq4PgTbN64PqBqqqBKZvKlhkrxHVagcB5Tj8g=
+github.com/ardanlabs/jinja v1.10.0 h1:+XZgZJXII4do/F8kIz2QzmCY8JIomIsTAIjtvz51Lag=
+github.com/ardanlabs/jinja v1.10.0/go.mod h1:VMzH0tsq4PgTbN64PqBqqqBKZvKlhkrxHVagcB5Tj8g=
 github.com/ardanlabs/malina v1.1.8 h1:mWsgyi/SXm6CNLNpre8+5rBmJLFnZrhUFUof1pMM/sc=
 github.com/ardanlabs/malina v1.1.8/go.mod h1:nW++hLBciaEMwM94s7ER6zygvi1kGDHSGPRl1rIUvtI=
 github.com/arl/statsviz v0.8.2 h1:sceiee7nGyPCEFq3y25krycRqwefBJbC5xnNZjSfLiE=
