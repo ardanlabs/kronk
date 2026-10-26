@@ -105,6 +105,19 @@ type Input struct {
 	IndexerKeyLength      int64                    // Stored raw + pooled indexer key width.
 	IndexerCompression    int64                    // Tokens per scored pool.
 	IndexerTopK           int64                    // Selected token budget.
+	CompressRatios        []int64                  `json:"-"` // Per-block compressed cache ratios.
+	KVSources             []int64                  `json:"-"` // Resolved compressed KV source per block; -1 is raw-only.
+	IndexerSources        []int64                  `json:"-"` // Resolved top-k source per block.
+	CandidateSourceLayer  int64                    `json:"-"` // Candidate block selector; -1 is absent.
+	CandidateTopKBlocks   int64                    `json:"-"` // Selected candidate block count.
+	CandidateBlockSize    int64                    `json:"-"` // Tokens per candidate block.
+	HyperConnections      int64                    `json:"-"` // Internal hidden-state streams.
+	QueryRank             int64                    `json:"-"` // Low-rank query projection width.
+	OutputRank            int64                    `json:"-"` // Low-rank attention output width per group.
+	OutputGroups          int64                    `json:"-"` // Attention output projection groups.
+	IndexerHeads          int64                    `json:"-"` // Query heads in the attention indexer.
+	LayerEmbeddingLength  int64                    `json:"-"` // Width of gathered per-layer embedding rows.
+	LayerEmbeddingRows    int64                    `json:"-"` // Gathered per-layer embedding rows per token.
 	RecurrentStateBytes   int64                    // State bytes per recurrent layer, sequence, and copy.
 	RecurrentStateCopies  int64                    // Current state plus speculative rollback copies.
 	NUBatch               int64                    // Effective physical batch size.
@@ -122,6 +135,7 @@ type Input struct {
 	KVCacheOnCPU          bool                     // Move KV cache off the GPU (offload-kqv: false)
 	SWAFull               bool                     // Size SWA layers against the full context window.
 	VTransposed           bool                     // Size V using the model-wide transposed layout.
+	cacheLayerDevices     []int                    // Internal placement for shared compressed-cache mirrors.
 }
 
 // Result contains the calculated VRAM requirements.

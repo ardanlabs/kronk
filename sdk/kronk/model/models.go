@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -124,7 +125,7 @@ func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 	modelID := modelIDFromFiles(cfg.ModelFiles)
 
 	isEmbedModel, isRerankModel := detectEmbedRerank(modelID)
-	profile := modelprofile.Resolve(metadata)
+	profile := arch.Resolve(metadata)
 	if llama.ModelIsHybrid(model) {
 		profile.MemorySemantics = modelprofile.MemoryRecurrent
 	}

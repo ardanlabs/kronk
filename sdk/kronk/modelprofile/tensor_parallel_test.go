@@ -1,6 +1,10 @@
-package modelprofile
+package modelprofile_test
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
+)
 
 func TestSupportsTensorParallel(t *testing.T) {
 	tests := []struct {
@@ -19,8 +23,8 @@ func TestSupportsTensorParallel(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := supportsTensorParallel(tt.architecture); got != tt.want {
-				t.Errorf("supportsTensorParallel() = %t, want %t", got, tt.want)
+			if got := arch.Resolve(map[string]string{"general.architecture": tt.architecture}).SupportsTensorParallel; got != tt.want {
+				t.Errorf("SupportsTensorParallel = %t, want %t", got, tt.want)
 			}
 		})
 	}

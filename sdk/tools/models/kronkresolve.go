@@ -11,7 +11,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
 	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage/ram"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
-	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
 )
 
@@ -156,7 +156,7 @@ func autoTuneApplied(cfg ModelConfig) bool {
 // pool planning and loading on the same configuration without retrying AutoTune
 // against a fresh device snapshot during load.
 func fallbackAutoTuneSizing(info ModelInfo, constraints ModelConfig) ModelConfig {
-	trainingCtx := modelprofile.Resolve(info.Metadata).Dimensions.ContextLength
+	trainingCtx := arch.Resolve(info.Metadata).Dimensions.ContextLength
 
 	cfg := ModelConfig{
 		PtrContextWindow: new(0),

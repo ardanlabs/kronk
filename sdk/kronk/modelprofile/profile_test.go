@@ -1,8 +1,11 @@
-package modelprofile
+package modelprofile_test
 
 import (
 	"strings"
 	"testing"
+
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
 )
 
 func TestResolveArchitectureParity(t *testing.T) {
@@ -10,11 +13,11 @@ func TestResolveArchitectureParity(t *testing.T) {
 		name       string
 		metadata   map[string]string
 		moe        bool
-		role       Role
-		purpose    Purpose
-		memory     MemorySemantics
+		role       modelprofile.Role
+		purpose    modelprofile.Purpose
+		memory     modelprofile.MemorySemantics
 		mtpLayers  int64
-		mtpArch    MTPArchitecture
+		mtpArch    modelprofile.MTPArchitecture
 		companion  bool
 		ownKV      bool
 		audio      bool
@@ -28,9 +31,9 @@ func TestResolveArchitectureParity(t *testing.T) {
 				"general.architecture": "llama",
 				"llama.block_count":    "32",
 			},
-			role:       RoleLanguage,
-			purpose:    PurposeGeneration,
-			memory:     MemoryAttention,
+			role:       modelprofile.RoleLanguage,
+			purpose:    modelprofile.PurposeGeneration,
+			memory:     modelprofile.MemoryAttention,
 			fullLayers: 32,
 		},
 		{
@@ -42,9 +45,9 @@ func TestResolveArchitectureParity(t *testing.T) {
 				"qwen3.expert_used_count": "8",
 			},
 			moe:        true,
-			role:       RoleLanguage,
-			purpose:    PurposeGeneration,
-			memory:     MemoryAttention,
+			role:       modelprofile.RoleLanguage,
+			purpose:    modelprofile.PurposeGeneration,
+			memory:     modelprofile.MemoryAttention,
 			fullLayers: 94,
 		},
 		{
@@ -62,11 +65,11 @@ func TestResolveArchitectureParity(t *testing.T) {
 				"qwen35moe.attention.head_count_kv": "2",
 			},
 			moe:        true,
-			role:       RoleLanguage,
-			purpose:    PurposeGeneration,
-			memory:     MemoryRecurrent,
+			role:       modelprofile.RoleLanguage,
+			purpose:    modelprofile.PurposeGeneration,
+			memory:     modelprofile.MemoryRecurrent,
 			mtpLayers:  1,
-			mtpArch:    MTPArchitectureQwen35OwnKV,
+			mtpArch:    modelprofile.MTPArchitectureQwen35OwnKV,
 			ownKV:      true,
 			recurrent:  30,
 			fullLayers: 10,
@@ -85,9 +88,9 @@ func TestResolveArchitectureParity(t *testing.T) {
 				"qwen4exp.attention.head_count_kv": "2",
 			},
 			moe:        true,
-			role:       RoleLanguage,
-			purpose:    PurposeGeneration,
-			memory:     MemoryRecurrent,
+			role:       modelprofile.RoleLanguage,
+			purpose:    modelprofile.PurposeGeneration,
+			memory:     modelprofile.MemoryRecurrent,
 			recurrent:  36,
 			fullLayers: 12,
 		},
@@ -109,11 +112,11 @@ func TestResolveArchitectureParity(t *testing.T) {
 				"nemotron_h_moe.ssm.group_count":         "8",
 			},
 			moe:        true,
-			role:       RoleLanguage,
-			purpose:    PurposeGeneration,
-			memory:     MemoryRecurrent,
+			role:       modelprofile.RoleLanguage,
+			purpose:    modelprofile.PurposeGeneration,
+			memory:     modelprofile.MemoryRecurrent,
 			mtpLayers:  1,
-			mtpArch:    MTPArchitectureNemotronOwnKV,
+			mtpArch:    modelprofile.MTPArchitectureNemotronOwnKV,
 			ownKV:      true,
 			fullLayers: 88,
 		},
@@ -123,9 +126,9 @@ func TestResolveArchitectureParity(t *testing.T) {
 				"general.architecture":  "qwen3next",
 				"qwen3next.block_count": "48",
 			},
-			role:       RoleLanguage,
-			purpose:    PurposeGeneration,
-			memory:     MemoryRecurrent,
+			role:       modelprofile.RoleLanguage,
+			purpose:    modelprofile.PurposeGeneration,
+			memory:     modelprofile.MemoryRecurrent,
 			fullLayers: 48,
 		},
 		{
@@ -133,9 +136,9 @@ func TestResolveArchitectureParity(t *testing.T) {
 			metadata: map[string]string{
 				"general.architecture": "qwen2vl",
 			},
-			role:    RoleVisionEncoder,
-			purpose: PurposeGeneration,
-			memory:  MemoryAttention,
+			role:    modelprofile.RoleVisionEncoder,
+			purpose: modelprofile.PurposeGeneration,
+			memory:  modelprofile.MemoryAttention,
 		},
 		{
 			name: "embedding hint",
@@ -143,18 +146,18 @@ func TestResolveArchitectureParity(t *testing.T) {
 				"general.architecture": "qwen3",
 				"general.basename":     "qwen3-embedding",
 			},
-			role:    RoleLanguage,
-			purpose: PurposeEmbedding,
-			memory:  MemoryAttention,
+			role:    modelprofile.RoleLanguage,
+			purpose: modelprofile.PurposeEmbedding,
+			memory:  modelprofile.MemoryAttention,
 		},
 		{
 			name: "reranker architecture",
 			metadata: map[string]string{
 				"general.architecture": "bert",
 			},
-			role:    RoleLanguage,
-			purpose: PurposeRerank,
-			memory:  MemoryAttention,
+			role:    modelprofile.RoleLanguage,
+			purpose: modelprofile.PurposeRerank,
+			memory:  modelprofile.MemoryAttention,
 		},
 		{
 			name: "omni modalities",
@@ -162,9 +165,9 @@ func TestResolveArchitectureParity(t *testing.T) {
 				"general.architecture": "qwen3",
 				"general.tags":         "[omni]",
 			},
-			role:    RoleLanguage,
-			purpose: PurposeGeneration,
-			memory:  MemoryAttention,
+			role:    modelprofile.RoleLanguage,
+			purpose: modelprofile.PurposeGeneration,
+			memory:  modelprofile.MemoryAttention,
 			audio:   true,
 			video:   true,
 		},
@@ -173,9 +176,9 @@ func TestResolveArchitectureParity(t *testing.T) {
 			metadata: map[string]string{
 				"general.architecture": "qwen3omni",
 			},
-			role:    RoleLanguage,
-			purpose: PurposeGeneration,
-			memory:  MemoryAttention,
+			role:    modelprofile.RoleLanguage,
+			purpose: modelprofile.PurposeGeneration,
+			memory:  modelprofile.MemoryAttention,
 			audio:   true,
 			video:   true,
 		},
@@ -185,11 +188,11 @@ func TestResolveArchitectureParity(t *testing.T) {
 				"general.architecture":        "gemma4-assistant",
 				"gemma4.nextn_predict_layers": "1",
 			},
-			role:      RoleLanguage,
-			purpose:   PurposeGeneration,
-			memory:    MemoryAttention,
+			role:      modelprofile.RoleLanguage,
+			purpose:   modelprofile.PurposeGeneration,
+			memory:    modelprofile.MemoryAttention,
 			mtpLayers: 1,
-			mtpArch:   MTPArchitectureGemmaSharedKV,
+			mtpArch:   modelprofile.MTPArchitectureGemmaSharedKV,
 			companion: true,
 		},
 		{
@@ -198,11 +201,11 @@ func TestResolveArchitectureParity(t *testing.T) {
 				"general.architecture":        "qwen35",
 				"qwen35.nextn_predict_layers": "1",
 			},
-			role:      RoleLanguage,
-			purpose:   PurposeGeneration,
-			memory:    MemoryRecurrent,
+			role:      modelprofile.RoleLanguage,
+			purpose:   modelprofile.PurposeGeneration,
+			memory:    modelprofile.MemoryRecurrent,
 			mtpLayers: 1,
-			mtpArch:   MTPArchitectureQwen35OwnKV,
+			mtpArch:   modelprofile.MTPArchitectureQwen35OwnKV,
 			ownKV:     true,
 		},
 		{
@@ -211,18 +214,18 @@ func TestResolveArchitectureParity(t *testing.T) {
 				"general.architecture":          "qwen4exp",
 				"qwen4exp.nextn_predict_layers": "1",
 			},
-			role:      RoleLanguage,
-			purpose:   PurposeGeneration,
-			memory:    MemoryRecurrent,
+			role:      modelprofile.RoleLanguage,
+			purpose:   modelprofile.PurposeGeneration,
+			memory:    modelprofile.MemoryRecurrent,
 			mtpLayers: 1,
-			mtpArch:   MTPArchitectureQwen4ExpOwnKV,
+			mtpArch:   modelprofile.MTPArchitectureQwen4ExpOwnKV,
 			ownKV:     true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := Resolve(tt.metadata)
+			got := arch.Resolve(tt.metadata)
 			if got.MoE.IsMoE != tt.moe || got.Role != tt.role || got.Purpose != tt.purpose || got.MemorySemantics != tt.memory {
 				t.Errorf("profile identity = moe %t role %q purpose %q memory %q, want %t %q %q %q",
 					got.MoE.IsMoE, got.Role, got.Purpose, got.MemorySemantics,
@@ -243,24 +246,24 @@ func TestResolveArchitectureParity(t *testing.T) {
 }
 
 func TestMTPEnabled(t *testing.T) {
-	for _, architecture := range []MTPArchitecture{
-		MTPArchitectureQwen35OwnKV,
-		MTPArchitectureQwen4ExpOwnKV,
-		MTPArchitectureNemotronOwnKV,
-		MTPArchitectureGemmaSharedKV,
+	for _, architecture := range []modelprofile.MTPArchitecture{
+		modelprofile.MTPArchitectureQwen35OwnKV,
+		modelprofile.MTPArchitectureQwen4ExpOwnKV,
+		modelprofile.MTPArchitectureNemotronOwnKV,
+		modelprofile.MTPArchitectureGemmaSharedKV,
 	} {
-		if !MTPEnabled(architecture) {
+		if !modelprofile.MTPEnabled(architecture) {
 			t.Errorf("MTPEnabled(%q) = false, want true", architecture)
 		}
 	}
-	if MTPEnabled(MTPArchitectureGLM5Next) {
+	if modelprofile.MTPEnabled(modelprofile.MTPArchitectureGLM5Next) {
 		t.Fatal("MTPEnabled(GLM5Next) = true, want false")
 	}
 }
 
 func TestResolveGLM5Next(t *testing.T) {
 	headCountKV := "[" + strings.TrimSpace(strings.Repeat("0 ", 34)+strings.Repeat("1 ", 12)) + "]"
-	profile := Resolve(map[string]string{
+	profile := arch.Resolve(map[string]string{
 		"general.architecture":              "glm5-next",
 		"glm5-next.block_count":             "46",
 		"glm5-next.embedding_length":        "6144",
@@ -274,7 +277,7 @@ func TestResolveGLM5Next(t *testing.T) {
 		"glm5-next.kda.head_dim":            "128",
 	})
 
-	if profile.MemorySemantics != MemoryRecurrent || !profile.MoE.IsMoE {
+	if profile.MemorySemantics != modelprofile.MemoryRecurrent || !profile.MoE.IsMoE {
 		t.Fatalf("identity = memory %q moe %t, want recurrent/true",
 			profile.MemorySemantics, profile.MoE.IsMoE)
 	}
@@ -291,8 +294,8 @@ func TestResolveGLM5Next(t *testing.T) {
 	if profile.Attention.RecurrentStateBytes != 4_489_216 {
 		t.Errorf("RecurrentStateBytes = %d, want 4489216", profile.Attention.RecurrentStateBytes)
 	}
-	if profile.Speculation.MTPArchitecture != MTPArchitectureGLM5Next {
-		t.Errorf("MTPArchitecture = %q, want %q", profile.Speculation.MTPArchitecture, MTPArchitectureGLM5Next)
+	if profile.Speculation.MTPArchitecture != modelprofile.MTPArchitectureGLM5Next {
+		t.Errorf("MTPArchitecture = %q, want %q", profile.Speculation.MTPArchitecture, modelprofile.MTPArchitectureGLM5Next)
 	}
 	if err := profile.ValidateForVRAM(); err != nil {
 		t.Fatalf("ValidateForVRAM() error = %v", err)
@@ -300,7 +303,7 @@ func TestResolveGLM5Next(t *testing.T) {
 }
 
 func TestResolveQwen35ExplicitRecurrentPattern(t *testing.T) {
-	profile := Resolve(map[string]string{
+	profile := arch.Resolve(map[string]string{
 		"general.architecture":              "qwen35",
 		"qwen35.block_count":                "5",
 		"qwen35.attention.recurrent_layers": "[true false true false true]",
@@ -320,7 +323,7 @@ func TestResolveQwen35ExplicitRecurrentPattern(t *testing.T) {
 	if profile.Attention.RecurrentPattern[4] {
 		t.Fatal("MTP layer marked recurrent")
 	}
-	if profile.ComputeKind != ComputeQwen35 {
-		t.Errorf("ComputeKind: got %d, want %d", profile.ComputeKind, ComputeQwen35)
+	if profile.ComputeKind != modelprofile.ComputeQwen35 {
+		t.Errorf("ComputeKind: got %d, want %d", profile.ComputeKind, modelprofile.ComputeQwen35)
 	}
 }

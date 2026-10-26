@@ -8,6 +8,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/ardanlabs/kronk/sdk/tools/devices"
 )
@@ -182,7 +183,7 @@ func analyzeModelWithConfigAndBudget(info ModelInfo, devs devices.Devices, cfg M
 	md := info.Metadata
 	devs = analysisDevices(devs, cfg.Devices)
 
-	profile := modelprofile.Resolve(md)
+	profile := arch.Resolve(md)
 	arch := profile.Architecture
 	if err := profile.ValidateForAnalysis(); err != nil {
 		return Analysis{}, fmt.Errorf("model-analysis: %w", err)
@@ -310,6 +311,7 @@ func analyzeModelWithConfigAndBudget(info ModelInfo, devs devices.Devices, cfg M
 		weightLoading:       runtimeCfg.VRAMWeightLoading(devs),
 		lazyTable:           info.lazyTable,
 		computeKind:         profile.ComputeKind,
+		attention:           profile.Attention,
 		vocabSize:           vocabSize,
 		headCount:           headCount,
 		outputEmbLen:        dimensions.OutputEmbeddingLength,
@@ -414,6 +416,7 @@ type profileInput struct {
 	weightLoading       vram.WeightLoading
 	lazyTable           vram.LazyTable
 	computeKind         modelprofile.ComputeKind
+	attention           gguf.AttentionFacts
 	computeBackend      string
 	vocabSize           int64
 	headCount           int64
@@ -704,6 +707,19 @@ func calculateProfile(p profileInput, contextWindow, slots int64, cache cacheRec
 		WeightLoading:         p.weightLoading,
 		LazyTable:             p.lazyTable,
 		ComputeKind:           p.computeKind,
+		CompressRatios:        p.attention.CompressRatios,
+		KVSources:             p.attention.KVSources,
+		IndexerSources:        p.attention.IndexerSources,
+		CandidateSourceLayer:  p.attention.CandidateSourceLayer,
+		CandidateTopKBlocks:   p.attention.CandidateTopKBlocks,
+		CandidateBlockSize:    p.attention.CandidateBlockSize,
+		HyperConnections:      p.attention.HyperConnections,
+		QueryRank:             p.attention.QueryRank,
+		OutputRank:            p.attention.OutputRank,
+		OutputGroups:          p.attention.OutputGroups,
+		IndexerHeads:          p.attention.IndexerHeads,
+		LayerEmbeddingLength:  p.attention.LayerEmbeddingLength,
+		LayerEmbeddingRows:    p.attention.LayerEmbeddingRows,
 		ComputeBackend:        p.computeBackend,
 		VocabularySize:        p.vocabSize,
 		HeadCount:             p.headCount,
@@ -733,6 +749,8 @@ func calculateProfile(p profileInput, contextWindow, slots int64, cache cacheRec
 		SWAPattern:            p.attn.SWAPattern,
 		RecurrentPattern:      p.attn.RecurrentPattern,
 		NextNPredictLayers:    p.attn.NextNPredictLayers,
+		IndexerKeyLength:      p.attention.IndexerKeyLength,
+		IndexerTopK:           p.attention.IndexerTopK,
 		RecurrentStateBytes:   p.attn.RecurrentStateBytes,
 		RecurrentStateCopies:  1,
 		NUBatch:               int64(physical),

@@ -305,6 +305,8 @@ var (
 	ComputeClef = newComputeKind(10)
 	// ComputeModernBERT identifies ModernBERT batch-local encoder workspaces.
 	ComputeModernBERT = newComputeKind(11)
+	// ComputeDeepSeek41 identifies DeepSeek V4.1 compressed-attention workspaces.
+	ComputeDeepSeek41 = newComputeKind(12)
 )
 
 func newComputeKind(value uint8) ComputeKind {

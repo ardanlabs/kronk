@@ -1,7 +1,10 @@
 package vram
 
 import (
+	"bytes"
+	"encoding/binary"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
@@ -594,5 +597,283 @@ func TestCalculateLazyRowWorkingSet(t *testing.T) {
 	input.NUBatch = 1 << 20
 	if got := Calculate(input).LazyResidentBytes; got != 8<<30 {
 		t.Errorf("table cap: got %d, want %d", got, int64(8<<30))
+	}
+}
+
+// Metadata extracted from unsloth/DeepSeek-V4.1-Flash-1017-GGUF UD-IQ1_S,
+// revision 60ad3651641b5c97679c807e064ab1d7a3ca1455. Tokenizer/hash constants
+// and tensor payloads are unnecessary for sizing. The source has 40 target
+// blocks, despite the trailing three zero ratios reserved for separate DSpark.
+func deepseek41Metadata() map[string]string {
+	return map[string]string{
+		"general.architecture":                                "deepseek41",
+		"deepseek41.block_count":                              "40",
+		"deepseek41.embedding_length":                         "5120",
+		"deepseek41.embedding_length_out":                     "20480",
+		"deepseek41.attention.head_count":                     "64",
+		"deepseek41.attention.head_count_kv":                  "1",
+		"deepseek41.attention.key_length":                     "512",
+		"deepseek41.attention.value_length":                   "512",
+		"deepseek41.attention.sliding_window":                 "128",
+		"deepseek41.attention.q_lora_rank":                    "1280",
+		"deepseek41.attention.output_lora_rank":               "1024",
+		"deepseek41.attention.output_group_count":             "8",
+		"deepseek41.attention.indexer.head_count":             "32",
+		"deepseek41.attention.indexer.key_length":             "128",
+		"deepseek41.attention.indexer.top_k":                  "512",
+		"deepseek41.attention.compress_ratios":                "[0 0 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 0 0 0]",
+		"deepseek41.attention.kv_source_layers":               "[2 8 14 20]",
+		"deepseek41.attention.indexer.source_layers":          "[2 8 14 20 24 28 32 36]",
+		"deepseek41.attention.indexer.candidate_source_layer": "20",
+		"deepseek41.attention.indexer.candidate_top_k_blocks": "2048",
+		"deepseek41.attention.indexer.candidate_block_size":   "8",
+		"deepseek41.hyper_connection.count":                   "4",
+		"deepseek41.ple.layers":                               "[1 14]",
+		"deepseek41.ple.ngram_size":                           "4",
+		"deepseek41.ple.heads_per_ngram":                      "8",
+		"deepseek41.embedding_length_per_layer_input":         "256",
+		"deepseek41.expert_count":                             "384",
+		"deepseek41.expert_used_count":                        "6",
+		"deepseek41.expert_shared_count":                      "1",
+	}
+}
+
+func deepseek41Header(t *testing.T, metadata map[string]string, tensors []gguf.TensorInfo) []byte {
+	t.Helper()
+	var data bytes.Buffer
+	write := func(value any) {
+		t.Helper()
+		if err := binary.Write(&data, binary.LittleEndian, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeString := func(value string) {
+		write(uint64(len(value)))
+		if _, err := data.WriteString(value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(gguf.Magic)
+	write(uint32(3))
+	write(uint64(len(tensors)))
+	write(uint64(len(metadata)))
+	for key, value := range metadata {
+		writeString(key)
+		write(gguf.MetadataValueTypeString)
+		writeString(value)
+	}
+	for _, tensor := range tensors {
+		writeString(tensor.Name)
+		write(uint32(len(tensor.Dims)))
+		for _, dim := range tensor.Dims {
+			write(uint64(dim))
+		}
+		write(tensor.GGMLType)
+		write(tensor.Offset)
+	}
+	return data.Bytes()
+}
+
+func TestFromBytesDeepSeek41Cache(t *testing.T) {
+	// Native payload expectations: 40 raw K caches × 768 cells × 1024 bytes,
+	// three ratio-2 and one ratio-1 compressed source (1280 bytes/row),
+	// and 28 KiB of F32 compressor state per current-state copy and stream.
+	const mib int64 = 1 << 20
+	for _, tt := range []struct {
+		name           string
+		context, slots int64
+		unified, full  bool
+		typeK          int32
+		copies         int64
+		want           int64
+	}{
+		{"8K", 8192, 1, false, false, 1, 1, 55*mib + 28672},
+		{"32K", 32768, 1, false, false, 1, 1, 130*mib + 28672},
+		{"1M", 1048576, 1, false, false, 1, 1, 3230*mib + 28672},
+		{"padding boundary", 32769, 1, false, false, 1, 1, 130*mib + 1310720 + 28672},
+		{"two streams", 32768, 2, false, false, 1, 1, 260*mib + 57344},
+		{"unified capacity with two streams", 32768, 2, true, false, 1, 1, 460*mib + 57344},
+		{"full raw cache", 32768, 1, false, true, 1, 1, 1380*mib + 28672},
+		{"quantized K only", 32768, 1, false, false, 8, 1, 72417280 + 28672},
+		{"rollback state copies", 32768, 1, false, false, 1, 4, 130*mib + 114688},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := FromBytes(deepseek41Header(t, deepseek41Metadata(), nil), 200<<30, Config{
+				ContextWindow: tt.context, Slots: tt.slots, NUBatch: 512,
+				TypeK: tt.typeK, TypeV: 50, BytesPerElement: 4, // F32 V must not allocate a V cache.
+				KVUnified: tt.unified, SWAFull: tt.full, RecurrentStateCopies: tt.copies,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.SlotMemory != tt.want || result.KVPerSlot != tt.want/tt.slots {
+				t.Fatalf("cache total/per slot: got %d/%d, want %d/%d", result.SlotMemory, result.KVPerSlot, tt.want, tt.want/tt.slots)
+			}
+			if result.Input.ComputeKind != modelprofile.ComputeDeepSeek41 || result.Input.OutputEmbeddingLength != 5120 {
+				t.Fatalf("V4.1 compute/output width: got %v/%d", result.Input.ComputeKind, result.Input.OutputEmbeddingLength)
+			}
+			if result.MoE == nil || !result.MoE.HasSharedExperts {
+				t.Fatal("missing shared expert classification")
+			}
+		})
+	}
+}
+
+func TestFromBytesDeepSeek41SourceValidation(t *testing.T) {
+	for _, tt := range []struct{ key, value string }{
+		{"attention.compress_ratios", "[0 0 2]"},
+		{"attention.kv_source_layers", "[0 8 14 20]"},
+		{"attention.kv_source_layers", "[2 8 14 40]"},
+		{"attention.indexer.source_layers", "[8 14 20]"},
+		{"attention.indexer.candidate_source_layer", "21"},
+		{"ple.layers", "[14 1]"},
+		{"ple.ngram_size", "1"},
+	} {
+		t.Run(tt.key+tt.value, func(t *testing.T) {
+			metadata := deepseek41Metadata()
+			metadata["deepseek41."+tt.key] = tt.value
+			if _, err := FromBytes(deepseek41Header(t, metadata, nil), 200<<30, Config{}); err == nil {
+				t.Fatal("invalid source metadata accepted")
+			}
+		})
+	}
+}
+
+func TestFromFilesDeepSeek41Engram(t *testing.T) {
+	const tableBytes int64 = 110595290400 // 768022850 IQ4_NL rows × 144 encoded bytes.
+	var paths []string
+	for i, tensors := range [][]gguf.TensorInfo{
+		nil, // Actual first shard is metadata-only.
+		{{Name: "token_embd.weight", Dims: []int64{5120, 129280}, GGMLType: 14}},
+		{{Name: "per_layer_token_embd.weight", Dims: []int64{256, 768022850}, GGMLType: 20}},
+	} {
+		metadata := map[string]string{}
+		if i == 0 {
+			metadata = deepseek41Metadata()
+		}
+		path := filepath.Join(t.TempDir(), "shard.gguf")
+		if err := os.WriteFile(path, deepseek41Header(t, metadata, tensors), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if i == 2 {
+			// Sparse: preserve the real table extent without allocating its payload.
+			if err := os.Truncate(path, tableBytes+4096); err != nil {
+				t.Fatal(err)
+			}
+		}
+		paths = append(paths, path)
+	}
+	cfg := Config{ComputeBackend: "metal", ContextWindow: 32768, Slots: 1, TypeK: 1, NUBatch: 512,
+		WeightLoading: WeightLoading{LazyMode: "on", LoadMode: "mmap", MMapSupported: true, Metal: true}}
+	result, err := FromFiles(paths, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 48 gathers/token, two batches, at most two host pages per encoded row.
+	wantResident := max(256<<20, 98304*int64(os.Getpagesize()))
+	if result.LazyTableBytes != tableBytes || result.LazyResidentBytes != wantResident {
+		t.Fatalf("table/residency: got %d/%d, want %d/%d", result.LazyTableBytes, result.LazyResidentBytes, tableBytes, wantResident)
+	}
+	cfg.WeightLoading.LazyMode = "off"
+	full, err := FromFiles(paths, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if full.LazyResidentBytes != tableBytes || full.UnifiedFootprint()-result.UnifiedFootprint() != tableBytes-wantResident {
+		t.Fatal("disabled lazy loading did not restore full table residency")
+	}
+	cfg.WeightLoading.LazyMode = "on"
+	cfg.WeightLoading.MMapSupported = false
+	unsupported, err := FromFiles(paths, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unsupported.LazyResidentBytes != tableBytes {
+		t.Fatal("unsupported lazy mapping did not retain full residency")
+	}
+}
+
+func TestDeepSeek41CachePlacement(t *testing.T) {
+	base, err := FromBytes(deepseek41Header(t, deepseek41Metadata(), nil), 200<<30, Config{
+		ContextWindow: 32768, Slots: 1, NUBatch: 512, TypeK: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := base.Input
+	input.GPULayers = 11 // Ten blocks, including consumers of CPU source 20.
+	partial := Calculate(input)
+	// CPU owns all four compressed sources and their state; GPU gets one
+	// ratio-1 mirror, not a copy at every one of its ten consumer blocks.
+	if partial.KVVRAMBytes != 49807360 || partial.KVCPUBytes != 128479232 || partial.SlotMemory != 178286592 {
+		t.Fatalf("partial cache GPU/CPU/total: got %d/%d/%d", partial.KVVRAMBytes, partial.KVCPUBytes, partial.SlotMemory)
+	}
+	devices := base.CalculatePerDevice(2, []float64{1, 3}, nil, 0)
+	// Native's N+1 split places blocks 0..10 on GPU0. Source 8 is mirrored
+	// once on GPU1; it is not merely a 1:3 split of a single cache total.
+	if devices[0].KVBytes != 50610176 || devices[1].KVBytes != 106704896 {
+		t.Fatalf("two-device cache: got %d/%d, want 50610176/106704896", devices[0].KVBytes, devices[1].KVBytes)
+	}
+	assessment := AssessFit(base, FitConstraints{DeviceCount: 2, GPUFreeBytes: []int64{300 << 30, 300 << 30}, TensorSplit: []float64{1, 3}, SystemRAMBytes: 300 << 30})
+	if assessment.GPU.RequiredBytes != devices[0].TotalBytes+devices[1].TotalBytes {
+		t.Fatal("fit assessment omitted compressed-cache mirrors")
+	}
+	aggregate := AssessFit(base, FitConstraints{DeviceCount: 2, CombinedFreeBytes: 600 << 30, TensorSplit: []float64{1, 3}, SystemRAMBytes: 300 << 30})
+	if aggregate.GPU.RequiredBytes != assessment.GPU.RequiredBytes {
+		t.Fatal("aggregate capacity omitted compressed-cache mirrors")
+	}
+	input.KVCacheOnCPU = true
+	cpu := Calculate(input)
+	if cpu.KVVRAMBytes != 0 || cpu.SlotMemory != base.SlotMemory {
+		t.Fatal("CPU-only cache retained a device mirror")
+	}
+}
+
+func TestFromBytesDeepSeek41Compute(t *testing.T) {
+	header := deepseek41Header(t, deepseek41Metadata(), nil)
+	cfg := Config{ContextWindow: 32768, Slots: 1, NUBatch: 512, TypeK: 1}
+	base, err := FromBytes(header, 200<<30, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata := deepseek41Metadata()
+	delete(metadata, "deepseek41.ple.layers")
+	withoutTable, err := FromBytes(deepseek41Header(t, metadata, nil), 200<<30, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Forty-eight F32 gathers/token coexist on both sides. Host also owns
+	// the I32 IDs; GPU adds one layer's projection/gating scratch.
+	const gathered = 4 * 48 * 256 * 512
+	if got := base.ComputeMemory.WorkspaceCPU - withoutTable.ComputeMemory.WorkspaceCPU; got != gathered+4*48*512 {
+		t.Fatalf("host embedding workspace: got %d, want %d", got, gathered+4*48*512)
+	}
+	if got := base.ComputeMemory.WorkspaceGPU - withoutTable.ComputeMemory.WorkspaceGPU; got != gathered+8*5120*5*512 {
+		t.Fatalf("GPU embedding workspace: got %d, want %d", got, gathered+8*5120*5*512)
+	}
+	for _, backend := range []string{"metal", "non-flash"} {
+		t.Run(backend, func(t *testing.T) {
+			cfg.ComputeBackend = backend
+			cfg.VTransposed = backend == "non-flash"
+			result, err := FromBytes(header, 200<<30, cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.ComputeBufferEst <= base.ComputeBufferEst || result.SlotMemory != base.SlotMemory {
+				t.Fatal("attention workspace did not grow independently of persistent K-only cache")
+			}
+		})
+	}
+	// Force vocabulary projection to dominate attention, then check that
+	// the public row cap changes workspace, not persistent state.
+	input := base.Input
+	input.NUBatch = 2
+	input.VocabularySize = 1 << 28
+	input.OutputRows = 1
+	one := Calculate(input)
+	input.OutputRows = 2
+	two := Calculate(input)
+	if got := two.ComputeMemory.WorkspaceGPU - one.ComputeMemory.WorkspaceGPU; got != 4*input.VocabularySize || two.SlotMemory != one.SlotMemory {
+		t.Fatalf("logits row workspace delta: got %d, want %d, cache %d/%d", got, 4*input.VocabularySize, two.SlotMemory, one.SlotMemory)
 	}
 }

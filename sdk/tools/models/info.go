@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
-	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 )
 
@@ -98,7 +98,7 @@ func ModelInfoFromPath(id string, modelFiles []string, projFile string, mtpFile 
 		shards = append(shards, shardTensors)
 	}
 
-	profile := modelprofile.Resolve(metadata)
+	profile := arch.Resolve(metadata)
 	result.lazyTable = vram.LazyTableForShards(profile, shards)
 	blockCount := profile.Dimensions.BlockCount
 	if len(tensors) > 0 && blockCount > 0 {

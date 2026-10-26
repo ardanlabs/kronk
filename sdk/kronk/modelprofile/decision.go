@@ -72,17 +72,18 @@ func (d Decision) ScoreBias(levels int) ([]float64, error) {
 	return bias, nil
 }
 
-func resolveDecision(metadata metadata, architecture string) Decision {
+// ResolveDecision extracts decision-head metadata for the given architecture.
+func ResolveDecision(metadata map[string]string, architecture string) Decision {
 	prefix := architecture + ".decision."
 	temperaturePrefix := prefix + "temperature."
 	decision := Decision{
-		Type:          metadata.value(prefix + "type"),
-		maxHeadTokens: metadata.value(prefix + "max_head_tokens"),
+		Type:          metadata[prefix+"type"],
+		maxHeadTokens: metadata[prefix+"max_head_tokens"],
 		temperatures:  make(map[string]decisionValue),
 		scoreBiases:   make(map[string]decisionValue),
 	}
 
-	for key, value := range metadata.values {
+	for key, value := range metadata {
 		if suffix, ok := strings.CutPrefix(key, temperaturePrefix); ok {
 			decision.temperatures[suffix] = decisionValue{key: key, value: value}
 		}

@@ -10,7 +10,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/hf"
-	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
 )
 
@@ -288,7 +288,7 @@ func (m *Models) enrichEntry(ctx context.Context, entry CatalogEntry) (CatalogEn
 		return entry, false, fmt.Errorf("enrich-entry: parse-gguf: %w", err)
 	}
 
-	profile := modelprofile.Resolve(metadata)
+	profile := arch.Resolve(metadata)
 	modelType := profile.ParameterActivation()
 	capabilities := CapabilitiesForModel(metadata, entry.MMProj != "", catalogEntryModelName(entry))
 	mtpSource := MTPSourceFor(metadata, entry.MTP != "")

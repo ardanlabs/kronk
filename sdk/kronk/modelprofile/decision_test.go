@@ -1,13 +1,15 @@
-package modelprofile
+package modelprofile_test
 
 import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
 )
 
 func TestResolveDecisionFacts(t *testing.T) {
-	profile := Resolve(map[string]string{
+	profile := arch.Resolve(map[string]string{
 		"general.architecture":                    "modern-bert",
 		"modern-bert.decision.type":               "laya",
 		"modern-bert.decision.max_head_tokens":    "256",
@@ -34,7 +36,7 @@ func TestResolveDecisionFacts(t *testing.T) {
 }
 
 func TestDecisionFactsRejectInvalidValues(t *testing.T) {
-	profile := Resolve(map[string]string{
+	profile := arch.Resolve(map[string]string{
 		"general.architecture":                    "modern-bert",
 		"modern-bert.decision.max_head_tokens":    "invalid",
 		"modern-bert.decision.temperature.choice": "0",
@@ -52,11 +54,12 @@ func TestDecisionFactsRejectInvalidValues(t *testing.T) {
 }
 
 func TestDecisionScoreBias(t *testing.T) {
-	profile := Resolve(map[string]string{
+	profile := arch.Resolve(map[string]string{
 		"general.architecture":           "qwen35",
 		"qwen35.decision.score_bias.3.1": "-2.5",
 		"qwen35.decision.score_bias.2.0": "9",
 	})
+
 	bias, err := profile.Decision.ScoreBias(3)
 	if err != nil || !slices.Equal(bias, []float64{0, -2.5, 0}) {
 		t.Fatalf("ScoreBias: got %v/%v, want [0 -2.5 0]", bias, err)
@@ -64,7 +67,7 @@ func TestDecisionScoreBias(t *testing.T) {
 	for _, tt := range []struct{ suffix, value string }{
 		{"3.3", "1"}, {"1.0", "1"}, {"256.0", "1"}, {"3.-1", "1"}, {"3.1.extra", "1"}, {"3.1", "NaN"}, {"3.1", "+Inf"},
 	} {
-		profile := Resolve(map[string]string{"general.architecture": "qwen35", "qwen35.decision.score_bias." + tt.suffix: tt.value})
+		profile := arch.Resolve(map[string]string{"general.architecture": "qwen35", "qwen35.decision.score_bias." + tt.suffix: tt.value})
 		if _, err := profile.Decision.ScoreBias(2); err == nil {
 			t.Errorf("ScoreBias %s=%s: got nil, want error", tt.suffix, tt.value)
 		}
