@@ -984,8 +984,7 @@ USER kronk:kronk
 ENV KRONK_BASE_PATH=/kronk \
     KRONK_WEB_API_HOST=0.0.0.0:11435 \
     KRONK_DOWNLOAD_ENABLED=false \
-    KRONK_INSECURE_LOGGING=false \
-    KRONK_POOL_MODEL_CONFIG_FILE=/kronk/models/model_config.yaml
+    KRONK_INSECURE_LOGGING=false
 
 # Note on KRONK_DOWNLOAD_ENABLED: enables peer downloads. The server
 # serves its models and library bundles to other Kronk servers on the
@@ -1172,7 +1171,6 @@ ENV KRONK_BASE_PATH=/kronk \
     KRONK_WEB_API_HOST=0.0.0.0:11435 \
     KRONK_DOWNLOAD_ENABLED=false \
     KRONK_INSECURE_LOGGING=false \
-    KRONK_POOL_MODEL_CONFIG_FILE=/kronk/models/model_config.yaml \
     KRONK_PROCESSOR=cuda
 
 # See note on KRONK_DOWNLOAD_ENABLED in the default runtime stage.
