@@ -2,6 +2,7 @@ package models
 
 import (
 	"bufio"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -13,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
@@ -29,20 +31,20 @@ type verifiedSentinel struct {
 // checkModel verifies modelFile against the sha pointer in <dir>/sha/<base>.
 // A missing pointer passes vacuously, so a hand-dropped .gguf still loads.
 func checkModel(modelFile string, checkSHA bool) error {
-	return checkModelFile(modelFile, checkSHA, false)
+	return checkModelFile(context.Background(), applog.DiscardLogger, modelFile, checkSHA, false)
 }
 
 // checkModelStrict is checkModel with the pointer-less pass removed: a
 // missing sha pointer is a verification failure. Download-path callers use it
 // because a file nothing can vouch for must not be adopted as the finished
 // artifact — a truncated body, a leftover quant, an HTML page named .gguf.
-func checkModelStrict(modelFile string) error {
-	return checkModelFile(modelFile, true, true)
+func checkModelStrict(ctx context.Context, log applog.Logger, modelFile string) error {
+	return checkModelFile(ctx, log, modelFile, true, true)
 }
 
 // checkModelFile is the body behind checkModel and checkModelStrict, which
 // differ only in how they read a missing pointer.
-func checkModelFile(modelFile string, checkSHA bool, requirePointer bool) error {
+func checkModelFile(ctx context.Context, log applog.Logger, modelFile string, checkSHA bool, requirePointer bool) error {
 	integrity, exists, err := loadArtifactIntegrity(modelFile)
 	if err != nil {
 		return fmt.Errorf("check-model: %w", err)
@@ -55,7 +57,7 @@ func checkModelFile(modelFile string, checkSHA bool, requirePointer bool) error 
 		return nil
 	}
 
-	verification, changed, err := model.VerifyArtifact(modelFile, integrity.Digest, integrity.Verification, checkSHA)
+	verification, changed, err := model.VerifyArtifactWithLogger(ctx, log, modelFile, integrity.Digest, integrity.Verification, checkSHA)
 	if err != nil {
 		return fmt.Errorf("check-model: %w", err)
 	}

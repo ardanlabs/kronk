@@ -1,13 +1,17 @@
 package model
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/ardanlabs/kronk/sdk/applog"
 )
 
 // ArtifactDigest provides the expected SHA256 and size for an artifact.
@@ -42,6 +46,13 @@ type ArtifactVerificationRecorder func(modelFile string, verification ArtifactVe
 // whether a new verification was produced and should be persisted by the
 // caller.
 func VerifyArtifact(modelFile string, digest ArtifactDigest, previous *ArtifactVerification, checkSHA bool) (ArtifactVerification, bool, error) {
+	return VerifyArtifactWithLogger(context.Background(), applog.DiscardLogger, modelFile, digest, previous, checkSHA)
+}
+
+// VerifyArtifactWithLogger performs VerifyArtifact and logs the start and
+// successful completion of full-file hashing. Cached and size-only checks
+// produce no verification logs.
+func VerifyArtifactWithLogger(ctx context.Context, log applog.Logger, modelFile string, digest ArtifactDigest, previous *ArtifactVerification, checkSHA bool) (ArtifactVerification, bool, error) {
 	expectedSHA := strings.ToLower(digest.SHA256)
 	decoded, err := hex.DecodeString(expectedSHA)
 	if err != nil || len(decoded) != sha256.Size {
@@ -72,6 +83,9 @@ func VerifyArtifact(modelFile string, digest ArtifactDigest, previous *ArtifactV
 	}
 	defer f.Close()
 
+	log(ctx, fmt.Sprintf("verify-artifact: verifying SHA-256 for %s (%d MB)...", filepath.Base(modelFile), info.Size()/(1000*1000)))
+	start := time.Now()
+
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return ArtifactVerification{}, false, fmt.Errorf("verify-artifact: compute sha256: %w", err)
@@ -88,6 +102,8 @@ func VerifyArtifact(modelFile string, digest ArtifactDigest, previous *ArtifactV
 		MTimeNS:    info.ModTime().UnixNano(),
 		VerifiedAt: time.Now().Unix(),
 	}
+
+	log(ctx, fmt.Sprintf("verify-artifact: SHA-256 verified for %s in %s", filepath.Base(modelFile), time.Since(start).Round(time.Millisecond)))
 
 	return verification, true, nil
 }

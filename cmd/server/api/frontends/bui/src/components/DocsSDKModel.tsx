@@ -129,6 +129,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">VerifyArtifact checks modelFile against parsed integrity values. It reads the artifact itself but performs no sidecar I/O. The returned bool reports whether a new verification was produced and should be persisted by the caller.</p>
             </div>
 
+            <div className="doc-section" id="func-verifyartifactwithlogger">
+              <h4>VerifyArtifactWithLogger</h4>
+              <pre className="code-block">
+                <code>func VerifyArtifactWithLogger(ctx context.Context, log applog.Logger, modelFile string, digest ArtifactDigest, previous *ArtifactVerification, checkSHA bool) (ArtifactVerification, bool, error)</code>
+              </pre>
+              <p className="doc-description">VerifyArtifactWithLogger performs VerifyArtifact and logs the start and successful completion of full-file hashing. Cached and size-only checks produce no verification logs.</p>
+            </div>
+
             <div className="doc-section" id="func-parsechannel">
               <h4>ParseChannel</h4>
               <pre className="code-block">
@@ -3331,6 +3339,7 @@ export default function DocsSDKModel() {
                 <li><a href="#func-validatemessages">ValidateMessages</a></li>
                 <li><a href="#func-newgrammarsampler">NewGrammarSampler</a></li>
                 <li><a href="#func-verifyartifact">VerifyArtifact</a></li>
+                <li><a href="#func-verifyartifactwithlogger">VerifyArtifactWithLogger</a></li>
                 <li><a href="#func-parsechannel">ParseChannel</a></li>
                 <li><a href="#func-parsedecisionprotocol">ParseDecisionProtocol</a></li>
                 <li><a href="#func-parsedecisionquestiontype">ParseDecisionQuestionType</a></li>
