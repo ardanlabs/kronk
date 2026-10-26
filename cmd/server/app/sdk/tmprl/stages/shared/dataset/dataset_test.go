@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/model"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/shared/model"
 )
 
 func TestDatasetImportIntegrityAndRollback(t *testing.T) {

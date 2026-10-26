@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/gomlx/engine"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/model"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/shared/model"
 )
 
 // goMLXTrainer uses the existing in-process Gemma 3 runtime, not the legacy

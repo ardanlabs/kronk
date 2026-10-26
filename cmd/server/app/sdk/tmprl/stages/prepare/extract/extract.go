@@ -13,8 +13,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/dataset"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/model"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/shared/dataset"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/shared/model"
 )
 
 // Extraction output is cached by source identity and extractor settings inside

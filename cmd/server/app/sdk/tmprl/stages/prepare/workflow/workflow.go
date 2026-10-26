@@ -3,7 +3,7 @@ package prepare
 import (
 	"time"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/model"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/shared/model"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
@@ -14,6 +14,10 @@ const (
 	StateQuery   = "tuning-state"
 )
 
+// Workflow schedules one preparation activity, prepareDataset in activity.go.
+// That activity calls Engine.Build in pipeline.go to coordinate extraction,
+// generation, and verification, including batching and checkpoint recovery.
+// These substages are not separate Temporal activities.
 func Workflow(ctx workflow.Context, input model.PreparationInput) (model.PreparationRun, error) {
 	info := workflow.GetInfo(ctx)
 	run := model.PreparationRun{WorkflowID: info.WorkflowExecution.ID, RunID: info.WorkflowExecution.RunID, Request: input.Request, Kind: input.Kind, Status: model.StatusRunning, StartedAt: workflow.Now(ctx)}

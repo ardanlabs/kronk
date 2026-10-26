@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/model"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/prepare/internal/modeljson"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/shared/model"
 )
 
 func Run(ctx context.Context, completer model.ModelCompleter, request model.PreparationRequest, records []model.Record) ([]string, model.Completion, error) {

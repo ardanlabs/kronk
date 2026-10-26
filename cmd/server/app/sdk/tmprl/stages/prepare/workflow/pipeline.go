@@ -15,15 +15,15 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/dataset"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/model"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/prepare/extract"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/prepare/generate"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/prepare/verify"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/shared/dataset"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/shared/model"
 )
 
-// Engine performs computation through injected services without
-// calling Temporal. The activity supplies its progress callback.
+// Engine coordinates the preparation pipeline without calling Temporal.
+// prepareDataset in activity.go supplies its services, workspace, and progress callback.
 type Engine struct {
 	Extractor model.DocumentExtractor
 	Completer model.ModelCompleter
@@ -38,8 +38,11 @@ type preparationCheckpoint struct {
 	CompletionTokens int            `json:"completion_tokens"`
 }
 
-// Build extracts an imported source, prepares preview or full records, and
-// persists artifacts and retry checkpoints. A nil callback disables progress.
+// Build coordinates extract.Run, generate.Run, and verify.Run, then persists
+// the resulting records and report. Preview samples passages to generate and verify;
+// full preparation generates and verifies batches, checkpoints their progress,
+// and generates and verifies evaluation questions. Retries resume checkpoints
+// within the same Temporal activity. A nil callback disables progress.
 func (b *Engine) Build(ctx context.Context, input model.PreparationInput, source model.PreparationSource, sourceRoot, workspace *os.Root, publish func(model.Progress)) (model.PreparationResult, error) {
 	if b.Completer == nil {
 		return model.PreparationResult{}, fmt.Errorf("%w: preparation completer is required", model.ErrInvalidArgument)

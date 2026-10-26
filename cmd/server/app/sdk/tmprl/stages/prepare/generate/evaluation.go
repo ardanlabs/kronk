@@ -6,9 +6,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/dataset"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/model"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/prepare/internal/modeljson"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/shared/dataset"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/shared/model"
 )
 
 func EvaluationRecord(ctx context.Context, completer model.ModelCompleter, request model.PreparationRequest, fact model.Record, previous []model.Record) (model.Record, model.Completion, error) {

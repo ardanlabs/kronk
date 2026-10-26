@@ -8,8 +8,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/dataset"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/model"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/shared/dataset"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/shared/model"
 
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/temporal"
@@ -17,6 +17,9 @@ import (
 
 const preparationWorkflowName = WorkflowName
 
+// prepareDataset is the Temporal activity boundary: it validates execution
+// identity, supplies a confined workspace and heartbeats, and reuses a completed
+// result on retry. Engine.Build in pipeline.go coordinates the substages.
 func (b *Business) prepareDataset(ctx context.Context, input preparationInput, e Execution) (PreparationResult, error) {
 	// The execution identity, not caller-supplied paths, owns this workspace.
 	info := activity.GetInfo(ctx)

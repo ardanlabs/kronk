@@ -1,6 +1,6 @@
 package prepare
 
-import "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/model"
+import "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/shared/model"
 
 type (
 	Execution          = model.Execution

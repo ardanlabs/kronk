@@ -1,6 +1,6 @@
 package training
 
-import "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/model"
+import "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/shared/model"
 
 type (
 	Request          = model.Request

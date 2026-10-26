@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	. "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/model"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/prepare/extract"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/prepare/provider"
+	. "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/shared/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 
 	"go.temporal.io/sdk/client"
