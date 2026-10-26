@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
-	"github.com/hybridgroup/yzma/pkg/mtmd"
 )
 
 type decisionProtocol interface {
@@ -68,7 +67,7 @@ func (m *Model) Decision(ctx context.Context, req DecisionRequest) (DecisionResp
 		if !ok || media.mediaSupport() != MediaTypeVision {
 			return DecisionResponse{}, fmt.Errorf("%w: decision protocol %q does not support images", ErrDecisionRequest, m.modelInfo.decisionProtocol)
 		}
-		if m.mtmdMetaCtx == 0 || !mtmd.SupportVision(m.mtmdMetaCtx) {
+		if m.mtmdMetaCtx == 0 || !m.mtmdCapabilities.Vision {
 			return DecisionResponse{}, fmt.Errorf("%w: decision images require a compatible vision projector", ErrDecisionRequest)
 		}
 	}
