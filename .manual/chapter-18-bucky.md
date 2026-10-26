@@ -455,6 +455,23 @@ whisper.cpp library. `WithBeamSize` selects beam search; use it with
 `WithBeamSearchPatience` instead of `WithGreedyBestOf`. Without a positive beam
 size, decoding uses greedy sampling.
 
+Each `Segment` includes `TextConfidence`: the arithmetic mean of its decoded
+text-token probabilities, excluding timestamp and control tokens. The score
+ranges from 0 to 1, with higher values indicating greater decoder confidence;
+segments with no text tokens have a score of 0. Batch results, `OnSegment`
+callbacks, diarized segments, and streaming partial/final segments all use the
+same calculation.
+
+`NoSpeechProb` estimates whether speech occurred; `TextConfidence` describes the
+decoder's confidence in its chosen text. Neither guarantees that the words were
+actually spoken, and hallucinations can have high text confidence. Bucky applies
+no confidence filter. A caller might start by rejecting segments below 0.5, but
+this is only an illustrative threshold, not a validated universal cutoff. Tune
+it on representative speech and noise, balancing missed speech against phantom
+text. Filtering segments does not change the returned `Transcription.Text` or
+stream `Event.Text`; callers should build their filtered text from accepted
+segments.
+
 #### 18.7.2 Channel-Separated Diarization
 
 `TranscribeChannelsFile` treats each source channel as a separate speaker and
