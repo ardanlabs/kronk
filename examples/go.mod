@@ -9,7 +9,7 @@ require (
 	github.com/ardanlabs/kronk v1.33.0
 	github.com/duckdb/duckdb-go/v2 v2.20000.0
 	github.com/gen2brain/malgo v0.11.26
-	github.com/hybridgroup/yzma v1.30.1-0.20261022172255-8105bcf36f9a
+	github.com/hybridgroup/yzma v1.30.1-0.20261026084950-3887a1bfe576
 	golang.org/x/image v0.47.0
 )
 
@@ -25,7 +25,7 @@ require (
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.62.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.62.0 // indirect
 	github.com/apache/arrow-go/v18 v18.8.0 // indirect
-	github.com/ardanlabs/jinja v1.9.0 // indirect
+	github.com/ardanlabs/jinja v1.10.0 // indirect
 	github.com/ardanlabs/malina v1.1.8 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.47.4 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.24 // indirect

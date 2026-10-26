@@ -5,7 +5,7 @@ go 1.27.0
 require (
 	github.com/ardanlabs/bucky v1.1.5
 	github.com/ardanlabs/conf/v3 v3.13.0
-	github.com/ardanlabs/jinja v1.9.0
+	github.com/ardanlabs/jinja v1.10.0
 	github.com/ardanlabs/malina v1.1.8
 	github.com/arl/statsviz v0.8.2
 	github.com/dgraph-io/badger/v4 v4.9.6
@@ -13,8 +13,9 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/hashicorp/go-getter v1.8.10
 	github.com/hashicorp/go-version v1.9.0
-	github.com/hybridgroup/yzma v1.30.1-0.20261022172255-8105bcf36f9a
+	github.com/hybridgroup/yzma v1.30.1-0.20261026084950-3887a1bfe576
 	github.com/icza/mjpeg v0.0.0-20230330134156-38318e5ab8f4
+	github.com/jupiterrider/ffi v0.8.0
 	github.com/maypok86/otter/v2 v2.4.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/open-policy-agent/opa v1.21.4
@@ -98,7 +99,6 @@ require (
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/icza/bitio v1.1.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/jupiterrider/ffi v0.8.0 // indirect
 	github.com/klauspost/compress v1.20.3 // indirect
 	github.com/lestrrat-go/blackmagic v1.0.4 // indirect
 	github.com/lestrrat-go/dsig v1.4.0 // indirect

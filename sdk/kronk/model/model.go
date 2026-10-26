@@ -194,6 +194,7 @@ type Model struct {
 	projFile         string
 	projDevice       llama.GGMLBackendDevice
 	mtmdMetaCtx      mtmd.Context
+	mtmdCapabilities MTMDHelperCapabilities
 	modelInfo        ModelInfo
 	paramsResolved   bool
 	activeStreams    atomic.Int32
@@ -416,8 +417,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	// context-pool fallback, and generation models use the generation engine.
 	nSlots := max(cfg.NSeqMax(), 1)
 
-	// Load a single, long-lived mtmd context used ONLY for metadata
-	// reads (SupportVision/SupportAudio) by chat and decision handlers. Per-request
+	// Load a single, long-lived mtmd context for capability discovery. Per-request
 	// processing contexts are owned by generation slots or decision preparation.
 	isGenerationModel := !(modelInfo.IsEmbedModel || modelInfo.IsRerankModel || modelInfo.IsDecisionModel)
 	if (isGenerationModel || modelInfo.IsDecisionModel) && m.projFile != "" {
@@ -436,6 +436,17 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 
 		l(ctx, "loading-prof-file", "status", "completed", "proj", path.Base(m.projFile))
 	}
+
+	capabilities, err := MTMDHelperGetCapabilities(m.model, m.mtmdMetaCtx)
+	if err != nil {
+		// Older bundles lack the helper; preserve their existing input checks.
+		capabilities = MTMDHelperCapabilities{Chat: true, TextGen: true}
+		if m.mtmdMetaCtx != 0 {
+			capabilities.Vision = mtmd.SupportVision(m.mtmdMetaCtx)
+			capabilities.Audio = mtmd.SupportAudio(m.mtmdMetaCtx)
+		}
+	}
+	m.mtmdCapabilities = capabilities
 
 	if err := m.loadAdapters(ctx); err != nil {
 		if m.mtmdMetaCtx != 0 {
