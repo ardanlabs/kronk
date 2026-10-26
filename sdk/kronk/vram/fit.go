@@ -61,7 +61,9 @@ func AssessFit(result Result, constraints FitConstraints) FitAssessment {
 	var gpu CapacityAssessment
 	if hasPerGPU && deviceCount > 1 {
 		perDevice := result.CalculatePerDevice(deviceCount, constraints.TensorSplit, nil, 0)
-		gpu.RequiredBytes = result.TotalVRAM
+		for _, device := range perDevice {
+			gpu.RequiredBytes += device.TotalBytes
+		}
 		for _, capacity := range constraints.GPUFreeBytes {
 			gpu.CapacityBytes += capacity
 		}
@@ -80,7 +82,14 @@ func AssessFit(result Result, constraints FitConstraints) FitAssessment {
 		if hasPerGPU {
 			capacity = constraints.GPUFreeBytes[0]
 		}
-		gpu = assessCapacity(result.TotalVRAM, capacity, threshold)
+		required := result.TotalVRAM
+		if deviceCount > 1 {
+			required = 0
+			for _, device := range result.CalculatePerDevice(deviceCount, constraints.TensorSplit, nil, 0) {
+				required += device.TotalBytes
+			}
+		}
+		gpu = assessCapacity(required, capacity, threshold)
 	}
 
 	ram := CapacityAssessment{Status: FitStatusUnknown}

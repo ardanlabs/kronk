@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/ardanlabs/jinja"
-	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -79,12 +79,13 @@ func TestDeciderDecisionContracts(t *testing.T) {
 	for _, protocol := range []DecisionProtocol{DecisionProtocolPplxDecider, DecisionProtocolLfm2D1, DecisionProtocolVllmD3, DecisionProtocolVllmDecision2} {
 		t.Run(protocol.String(), func(t *testing.T) {
 			m := Model{modelInfo: ModelInfo{ID: "test-decider", decisionProtocol: protocol}}
-			m.modelInfo.profile = modelprofile.Resolve(map[string]string{
+			m.modelInfo.profile = arch.Resolve(map[string]string{
 				"general.architecture": "qwen35", "qwen35.decision.type": protocol.String(),
 				"qwen35.decision.score_bias.2.1":      "2",
 				"qwen35.decision.temperature.score":   "9",
 				"qwen35.decision.temperature.score.2": "2",
 			})
+
 			engine := decisionEngine{contextWindow: 4096, maxTokens: 4096, maxSequences: 1, maxOutputs: 4096, nVocab: 128}
 			engine.scheduler = newDecisionScheduler(&engine, 1)
 			engine.scheduler.evaluate = func(entries []decisionScheduledEntry) ([][][]float32, bool, error) {

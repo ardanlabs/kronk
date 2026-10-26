@@ -1529,8 +1529,14 @@ func toVRAMResponse(v vram.Result, repoFiles []HFRepoFile) VRAMResponse {
 	}
 
 	if len(v.PerDevice) > 0 {
+		// Shared compressed caches can require extra device-local mirrors.
+		// Keep aggregate fields consistent with the selected device split.
+		resp.TotalVRAM = 0
+		resp.KVVRAMBytes = 0
 		resp.PerDevice = make([]PerDeviceVRAM, len(v.PerDevice))
 		for i, d := range v.PerDevice {
+			resp.TotalVRAM += d.TotalBytes
+			resp.KVVRAMBytes += d.KVBytes
 			resp.PerDevice[i] = PerDeviceVRAM{
 				Label:         d.Label,
 				WeightsBytes:  d.WeightsBytes,
@@ -1540,6 +1546,9 @@ func toVRAMResponse(v vram.Result, repoFiles []HFRepoFile) VRAMResponse {
 				TotalBytes:    d.TotalBytes,
 			}
 		}
+		resp.SlotMemory = resp.KVVRAMBytes + resp.KVCPUBytes
+		resp.KVPerSlot = resp.SlotMemory / max(v.Input.Slots, 1)
+		resp.UnifiedFootprint += resp.SlotMemory - v.SlotMemory
 	}
 
 	return resp

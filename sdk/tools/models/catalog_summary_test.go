@@ -3,7 +3,7 @@ package models_test
 import (
 	"testing"
 
-	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
@@ -27,7 +27,7 @@ func TestCatalogModelDimensions(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			profile := modelprofile.Resolve(tt.metadata)
+			profile := arch.Resolve(tt.metadata)
 			if got := profile.ParameterActivation(); got != tt.wantType {
 				t.Errorf("profile parameter activation: got %q, want %q", got, tt.wantType)
 			}

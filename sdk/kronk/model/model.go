@@ -22,6 +22,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	mtpengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/mtp"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
@@ -621,7 +622,7 @@ func buildModelParams(ctx context.Context, cfg *Config, loadMTP bool, l applog.L
 					if err != nil {
 						return mParams, ka, fmt.Errorf("moe-placement: %w", err)
 					}
-					blockCount := modelprofile.Resolve(metadata).Dimensions.BlockCount
+					blockCount := arch.Resolve(metadata).Dimensions.BlockCount
 					for block := int64(0); block < blockCount-int64(topN); block++ {
 						cfg.TensorBuftOverrides = append(cfg.TensorBuftOverrides, fmt.Sprintf("moe-experts:block:%d", block))
 					}

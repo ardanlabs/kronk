@@ -9,6 +9,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/hf"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
 )
 
 // CatalogFile is one downloadable artifact (model or projection).
@@ -240,7 +241,7 @@ func CapabilitiesFor(metadata map[string]string, hasProjection bool) CatalogCapa
 // identifier. Current decision models carry a standardized decision type;
 // published model names remain as a fallback for older GGUFs.
 func CapabilitiesForModel(metadata map[string]string, hasProjection bool, modelID string) CatalogCapabilities {
-	profile := modelprofile.Resolve(metadata)
+	profile := arch.Resolve(metadata)
 	caps := CatalogCapabilities{
 		Streaming: true,
 	}
@@ -282,7 +283,7 @@ func MTPSourceFor(metadata map[string]string, hasCompanion bool) MTPSource {
 	if hasCompanion {
 		return MTPSourceCompanion
 	}
-	if modelprofile.Resolve(metadata).Speculation.NextNPredictLayers > 0 {
+	if arch.Resolve(metadata).Speculation.NextNPredictLayers > 0 {
 		return MTPSourceEmbedded
 	}
 
