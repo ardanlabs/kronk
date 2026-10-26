@@ -162,8 +162,8 @@ github.com/hashicorp/go-getter v1.8.10 h1:uufJp+uacA0fSDRxclsHkiE6yUQTKgwv5b25Qe
 github.com/hashicorp/go-getter v1.8.10/go.mod h1:5HyKGCQmT+I3MGAM76vk/fWpktjwxn7xruCUr9CrVuo=
 github.com/hashicorp/go-version v1.9.0 h1:CeOIz6k+LoN3qX9Z0tyQrPtiB1DFYRPfCIBtaXPSCnA=
 github.com/hashicorp/go-version v1.9.0/go.mod h1:fltr4n8CU8Ke44wwGCBoEymUuxUHl09ZGVZPK5anwXA=
-github.com/hybridgroup/yzma v1.30.1-0.20261022172255-8105bcf36f9a h1:u4DubTuFR16xKM2vC9mJzamDkhWz8rCvXzYCJd8JvCs=
-github.com/hybridgroup/yzma v1.30.1-0.20261022172255-8105bcf36f9a/go.mod h1:ovV3WQ5v3X53vqo9Izg/28QHEXaVasW9b4Kgkhk05T0=
+github.com/hybridgroup/yzma v1.30.1-0.20261026084950-3887a1bfe576 h1:UWBQJ0cXOQVONxVs7s4s4lCOq4riNZ6G48h9SXROFNk=
+github.com/hybridgroup/yzma v1.30.1-0.20261026084950-3887a1bfe576/go.mod h1:ovV3WQ5v3X53vqo9Izg/28QHEXaVasW9b4Kgkhk05T0=
 github.com/icza/bitio v1.1.0 h1:ysX4vtldjdi3Ygai5m1cWy4oLkhWTAi+SyO6HC8L9T0=
 github.com/icza/bitio v1.1.0/go.mod h1:0jGnlLAx8MKMr9VGnn/4YrvZiprkvBelsVIbA9Jjr9A=
 github.com/icza/mighty v0.0.0-20180919140131-cfd07d671de6 h1:8UsGZ2rr2ksmEru6lToqnXgA8Mz1DP11X4zSJ159C3k=
