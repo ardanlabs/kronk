@@ -78,8 +78,12 @@ function Invoke-TestsOnly {
                 go test -v -p=1 -count=1 ./cmd/kronk/...
                 Assert-NativeCommandSucceeded -Command "go test ./cmd/kronk/..."
 
-                go test -v -p=1 -count=1 ./cmd/server/...
-                Assert-NativeCommandSucceeded -Command "go test ./cmd/server/..."
+                # Temporal tests are on-demand only: make test-tmprl.
+                $serverPackages = @(go list ./cmd/server/...)
+                Assert-NativeCommandSucceeded -Command "go list ./cmd/server/..."
+                $serverPackages = @($serverPackages | Where-Object { $_ -notmatch '/cmd/server/(app/sdk|foundation)/tmprl(/|$)' })
+                go test -v -p=1 -count=1 $serverPackages
+                Assert-NativeCommandSucceeded -Command "go test server packages"
 
                 go test -v -p=1 -count=1 ./sdk/...
                 Assert-NativeCommandSucceeded -Command "go test ./sdk/..."
@@ -116,8 +120,12 @@ function Invoke-GhTestsOnly {
                 go test -v -p=1 -count=1 ./cmd/kronk/...
                 Assert-NativeCommandSucceeded -Command "go test ./cmd/kronk/..."
 
-                go test -v -p=1 -count=1 ./cmd/server/...
-                Assert-NativeCommandSucceeded -Command "go test ./cmd/server/..."
+                # Temporal tests are on-demand only: make test-tmprl.
+                $serverPackages = @(go list ./cmd/server/...)
+                Assert-NativeCommandSucceeded -Command "go list ./cmd/server/..."
+                $serverPackages = @($serverPackages | Where-Object { $_ -notmatch '/cmd/server/(app/sdk|foundation)/tmprl(/|$)' })
+                go test -v -p=1 -count=1 $serverPackages
+                Assert-NativeCommandSucceeded -Command "go test server packages"
 
                 $sdkPackages = @(go list ./sdk/...)
                 Assert-NativeCommandSucceeded -Command "go list ./sdk/..."

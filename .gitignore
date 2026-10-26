@@ -6,7 +6,9 @@
 node_modules
 
 # Docker compose data directories
+zarf/docker/docling/
 zarf/docker/openwebui/
+zarf/docker/temporal/
 
 # Scratch output from local tooling
 .tools/adversarial/output/
