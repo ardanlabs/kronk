@@ -286,10 +286,10 @@ type AdapterConfig struct {
 // context. When set to 0, a default of 1 is used.
 //
 // NThreads is the number of threads to use for generation. When unset or set
-// to 0, it defaults to the greater of 4 and runtime.NumCPU().
+// to 0, it defaults to the greater of 4 and runtime.GOMAXPROCS(0).
 //
 // NThreadsBatch is the number of threads to use for batch processing. When
-// unset or set to 0, it defaults to the greater of 4 and runtime.NumCPU().
+// unset or set to 0, it defaults to the greater of 4 and runtime.GOMAXPROCS(0).
 //
 // NUMA controls the NUMA (Non-Uniform Memory Access) strategy. This matters
 // most when expert tensors are on CPU and the system has multiple NUMA nodes.
@@ -910,7 +910,7 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 		cfg = adjustGenerationBatch(cfg, 1, false)
 	}
 
-	nThreads := max(defNThreads, runtime.NumCPU())
+	nThreads := max(defNThreads, runtime.GOMAXPROCS(0))
 	if cfg.NThreads() <= 0 {
 		cfg.PtrNThreads = new(nThreads)
 	}

@@ -129,6 +129,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">VerifyArtifact checks modelFile against parsed integrity values. It reads the artifact itself but performs no sidecar I/O. The returned bool reports whether a new verification was produced and should be persisted by the caller.</p>
             </div>
 
+            <div className="doc-section" id="func-verifyartifactwithlogger">
+              <h4>VerifyArtifactWithLogger</h4>
+              <pre className="code-block">
+                <code>func VerifyArtifactWithLogger(ctx context.Context, log applog.Logger, modelFile string, digest ArtifactDigest, previous *ArtifactVerification, checkSHA bool) (ArtifactVerification, bool, error)</code>
+              </pre>
+              <p className="doc-description">VerifyArtifactWithLogger performs VerifyArtifact and logs the start and successful completion of full-file hashing. Cached and size-only checks produce no verification logs.</p>
+            </div>
+
             <div className="doc-section" id="func-parsechannel">
               <h4>ParseChannel</h4>
               <pre className="code-block">
@@ -544,8 +552,8 @@ export default function DocsSDKModel() {
               <p className="doc-description">ImageTokenBudget explicitly sets the preprocessing token budget for supported projectors. Lower values can reduce image resolution and detail. When unset, the projector's default is preserved. Explicit values must be positive and also contribute to native batch capacity. Not all projectors honor the budget, and final chunk sizes are still checked before decoding.</p>
               <p className="doc-description">NGpuLayers is the number of model layers to offload to the GPU. When set to 0, all layers are offloaded (default). Set to -1 to keep all layers on CPU. Any positive value specifies the exact number of layers to offload.</p>
               <p className="doc-description">NSeqMax controls concurrency behavior based on model type. For text inference models (including vision/audio), it sets the maximum number of generation slots. For supported embedding and reranking architectures, it sets the maximum sequence width of the sequence-batch engine. Other embedding and reranking architectures use it as the context-pool size. For decision models, it sets the maximum number of work items evaluated together on one context. When set to 0, a default of 1 is used.</p>
-              <p className="doc-description">NThreads is the number of threads to use for generation. When unset or set to 0, it defaults to the greater of 4 and runtime.NumCPU().</p>
-              <p className="doc-description">NThreadsBatch is the number of threads to use for batch processing. When unset or set to 0, it defaults to the greater of 4 and runtime.NumCPU().</p>
+              <p className="doc-description">NThreads is the number of threads to use for generation. When unset or set to 0, it defaults to the greater of 4 and runtime.GOMAXPROCS(0).</p>
+              <p className="doc-description">NThreadsBatch is the number of threads to use for batch processing. When unset or set to 0, it defaults to the greater of 4 and runtime.GOMAXPROCS(0).</p>
               <p className="doc-description">NUMA controls the NUMA (Non-Uniform Memory Access) strategy. This matters most when expert tensors are on CPU and the system has multiple NUMA nodes. Valid values: "" (disabled), "distribute", "isolate", "numactl", "mirror". "distribute" is recommended for multi-socket MoE setups; without it, cross-socket memory access can cause significant bandwidth collapse.</p>
               <p className="doc-description">OffloadKQV controls whether the KV cache is offloaded to the GPU. When nil or true, the KV cache is stored on the GPU (default behavior). Set to false to keep the KV cache on the CPU, which reduces VRAM usage but may slow inference.</p>
               <p className="doc-description">OpOffload controls whether host tensor operations are offloaded to the device (GPU). When nil or true, operations are offloaded (default behavior). Set to false to keep operations on the CPU.</p>
@@ -3331,6 +3339,7 @@ export default function DocsSDKModel() {
                 <li><a href="#func-validatemessages">ValidateMessages</a></li>
                 <li><a href="#func-newgrammarsampler">NewGrammarSampler</a></li>
                 <li><a href="#func-verifyartifact">VerifyArtifact</a></li>
+                <li><a href="#func-verifyartifactwithlogger">VerifyArtifactWithLogger</a></li>
                 <li><a href="#func-parsechannel">ParseChannel</a></li>
                 <li><a href="#func-parsedecisionprotocol">ParseDecisionProtocol</a></li>
                 <li><a href="#func-parsedecisionquestiontype">ParseDecisionQuestionType</a></li>

@@ -16,6 +16,9 @@ name: Docker
 # container entrypoint redirects KRONK_BUCKY_LIB_PATH at it on ROCm hosts.
 # See the BUCKY_PROCESSORS map in the plan job below.
 #
+# Linux amd64 images also include stable-diffusion.cpp (malina) bundles.
+# See MALINA_PROCESSORS; no Linux arm64 Malina bundle is published.
+#
 # Multi-arch images (cpu / cuda / vulkan / all) are built natively on
 # `ubuntu-24.04` (amd64) and `ubuntu-24.04-arm` (arm64) runners, then
 # stitched into a single manifest with `docker buildx imagetools create`.
@@ -239,6 +242,17 @@ jobs:
             [all]="cpu cuda cuda13 vulkan"
           )
 
+          # Malina publishes Linux amd64 cpu/vulkan/rocm bundles only.
+          # CUDA falls back to Vulkan or CPU; include both offline choices.
+          # The fetcher skips downloads on unsupported arm64 targets.
+          declare -A MALINA_PROCESSORS=(
+            [cpu]="cpu"
+            [cuda]="vulkan cpu"
+            [vulkan]="vulkan cpu"
+            [rocm]="rocm"
+            [all]="cpu vulkan rocm"
+          )
+
           # -------------------------------------------------------------------
           # PR relevance gate
           #
@@ -397,8 +411,9 @@ jobs:
                 --arg target "${TARGET[$v]}" \
                 --arg processors "$PROCESSORS_FOR_ARCH" \
                 --arg bucky_processors "${BUCKY_PROCESSORS[$v]}" \
+                --arg malina_processors "${MALINA_PROCESSORS[$v]}" \
                 --arg runner "$RUNNER" \
-                '{variant:$variant, arch:$arch, platform:$platform, target:$target, processors:$processors, bucky_processors:$bucky_processors, runner:$runner}')
+                '{variant:$variant, arch:$arch, platform:$platform, target:$target, processors:$processors, bucky_processors:$bucky_processors, malina_processors:$malina_processors, runner:$runner}')
               INCLUDE=$(echo "$INCLUDE" | jq -c --argjson i "$ITEM" '. + [$i]')
             done
           done
@@ -525,6 +540,7 @@ jobs:
           build-args: |
             LLAMA_PROCESSORS=${{ matrix.processors }}
             BUCKY_PROCESSORS=${{ matrix.bucky_processors }}
+            MALINA_PROCESSORS=${{ matrix.malina_processors }}
             KRONK_VERSION=${{ needs.plan.outputs.version }}-${{ matrix.variant }}
           cache-from: type=registry,ref=${{ env.BUILDCACHE_IMAGE }}:${{ matrix.variant }}-${{ matrix.arch }}
 
@@ -550,6 +566,34 @@ jobs:
         run: |
           docker run --rm --entrypoint kronk kronk-smoke:latest --version
           docker run --rm --entrypoint kronk kronk-smoke:latest --help
+
+      # Regression for missing media bundles: a fresh image must start
+      # without network access, with verification and media backends enabled.
+      - name: Smoke test offline cpu/amd64 startup
+        if: >-
+          needs.plan.outputs.is_tag != 'true'
+          && matrix.variant == 'cpu'
+          && matrix.arch == 'amd64'
+        run: |
+          set -euo pipefail
+          container=$(docker run -d --network none \
+            -e KRONK_PROCESSOR=cpu \
+            -e KRONK_MEDIA_BACKENDS_ENABLED=true \
+            -e KRONK_LIB_VERIFY_ENABLED=true \
+            kronk-smoke:latest)
+          trap 'docker logs "$container"; docker rm -f "$container"' EXIT
+          for attempt in $(seq 1 60); do
+            if docker exec "$container" curl -fsS http://127.0.0.1:11435/v1/liveness; then
+              docker logs "$container" 2>&1 | grep -F 'verified stable-diffusion.cpp runtime'
+              exit 0
+            fi
+            if [ "$(docker inspect -f '{{.State.Running}}' "$container")" != "true" ]; then
+              exit 1
+            fi
+            sleep 2
+          done
+          echo "Offline server did not become live within 120 seconds" >&2
+          exit 1
 
       # Vulnerability scan the runtime image before it can ship. Runs on
       # the same (cpu, amd64, no-push) path as the smoke test — the only
@@ -614,6 +658,7 @@ jobs:
           build-args: |
             LLAMA_PROCESSORS=${{ matrix.processors }}
             BUCKY_PROCESSORS=${{ matrix.bucky_processors }}
+            MALINA_PROCESSORS=${{ matrix.malina_processors }}
             KRONK_VERSION=${{ needs.plan.outputs.version }}-${{ matrix.variant }}
           outputs: type=image,name=${{ env.GHCR_IMAGE }},push-by-digest=true,name-canonical=true,push=true
           # Supply-chain attestations: max-mode SLSA provenance plus an
@@ -647,6 +692,7 @@ jobs:
           build-args: |
             LLAMA_PROCESSORS=${{ matrix.processors }}
             BUCKY_PROCESSORS=${{ matrix.bucky_processors }}
+            MALINA_PROCESSORS=${{ matrix.malina_processors }}
             KRONK_VERSION=${{ needs.plan.outputs.version }}-${{ matrix.variant }}
           outputs: type=image,name=${{ env.DH_IMAGE }},push-by-digest=true,name-canonical=true,push=true
           # Same provenance + SBOM attestations as the GHCR push above so
@@ -685,6 +731,7 @@ jobs:
           build-args: |
             LLAMA_PROCESSORS=${{ matrix.processors }}
             BUCKY_PROCESSORS=${{ matrix.bucky_processors }}
+            MALINA_PROCESSORS=${{ matrix.malina_processors }}
             KRONK_VERSION=${{ needs.plan.outputs.version }}-${{ matrix.variant }}
           outputs: type=image,name=${{ env.GHCR_MAIN_IMAGE }},push-by-digest=true,name-canonical=true,push=true
           provenance: mode=max
@@ -704,6 +751,7 @@ jobs:
           build-args: |
             LLAMA_PROCESSORS=${{ matrix.processors }}
             BUCKY_PROCESSORS=${{ matrix.bucky_processors }}
+            MALINA_PROCESSORS=${{ matrix.malina_processors }}
             KRONK_VERSION=${{ needs.plan.outputs.version }}-${{ matrix.variant }}
           outputs: type=image,name=${{ env.DH_MAIN_IMAGE }},push-by-digest=true,name-canonical=true,push=true
           provenance: mode=max

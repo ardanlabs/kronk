@@ -136,12 +136,22 @@ func TestDownloadURLsWithProgress(t *testing.T) {
 
 	m := newTestModels(t)
 
+	var messages []string
+	log := func(ctx context.Context, msg string, args ...any) {
+		messages = append(messages, msg)
+	}
 	var got []DownloadProgress
-	_, err := m.DownloadURLsWithProgress(context.Background(), testLog, []string{modelURL}, "", "", func(progress DownloadProgress) {
+	_, err := m.DownloadURLsWithProgress(context.Background(), log, []string{modelURL}, "", "", func(progress DownloadProgress) {
 		got = append(got, progress)
 	})
 	if err != nil {
 		t.Fatalf("DownloadURLsWithProgress: %v", err)
+	}
+
+	logs := strings.Join(messages, "\n")
+	if !strings.Contains(logs, "verifying SHA-256 for Qwen3-0.6B-Q8_0.gguf") ||
+		!strings.Contains(logs, "SHA-256 verified for Qwen3-0.6B-Q8_0.gguf in ") {
+		t.Errorf("logs: got %q, want verification start and success with duration", logs)
 	}
 
 	if len(got) != 1 {
@@ -1064,7 +1074,7 @@ func TestSHAPointerDownloadsUseRequestContext(t *testing.T) {
 	cancel()
 	m := newTestModels(t)
 
-	if _, _, err := m.downloadModelFile(ctx, loc, nil); !errors.Is(err, context.Canceled) {
+	if _, _, err := m.downloadModelFile(ctx, testLog, loc, nil); !errors.Is(err, context.Canceled) {
 		t.Errorf("downloadModelFile: got %v, want context.Canceled", err)
 	}
 	modelFile := filepath.Join(m.modelsPath, "provider", "family", "model.gguf")

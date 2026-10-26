@@ -535,7 +535,7 @@ func (m *Models) downloadModel(ctx context.Context, log applog.Logger, mLoc Loca
 		return mp, nil
 	}
 
-	modelFileName, downloadedMF, err := m.downloadModelFile(ctx, mLoc, progress)
+	modelFileName, downloadedMF, err := m.downloadModelFile(ctx, log, mLoc, progress)
 	if err != nil {
 		return Path{}, err
 	}
@@ -664,7 +664,7 @@ func (m *Models) downloadCompanion(ctx context.Context, log applog.Logger, loc L
 
 	// Strict: the getter no-ops on a complete-looking destination, so the
 	// body renamed into place need not be one this run actually fetched.
-	if err := checkModelStrict(dstFileName); err != nil {
+	if err := checkModelStrict(ctx, log, dstFileName); err != nil {
 		return "", false, fmt.Errorf("download-model: unable to check model: %w", err)
 	}
 
@@ -743,7 +743,7 @@ func (m *Models) checkValidatedIndex(ctx context.Context, log applog.Logger, mLo
 // The boolean indicates whether the body was freshly downloaded (false
 // when the getter no-op'd because the file already existed at the expected
 // size).
-func (m *Models) downloadModelFile(ctx context.Context, mLoc Locator, progress downloader.ProgressFunc) (string, bool, error) {
+func (m *Models) downloadModelFile(ctx context.Context, log applog.Logger, mLoc Locator, progress downloader.ProgressFunc) (string, bool, error) {
 	if _, _, err := m.pull(ctx, mLoc, pullSha, progress); err != nil {
 		return "", false, fmt.Errorf("download-model: unable to download sha file: %w", err)
 	}
@@ -755,7 +755,7 @@ func (m *Models) downloadModelFile(ctx context.Context, mLoc Locator, progress d
 
 	// Strict: on downloaded==false the getter left an existing destination
 	// alone, so this is all that stands between a leftover and "installed".
-	if err := checkModelStrict(modelFileName); err != nil {
+	if err := checkModelStrict(ctx, log, modelFileName); err != nil {
 		return "", false, fmt.Errorf("download-model: unable to check model: %w", err)
 	}
 
@@ -776,7 +776,7 @@ func (m *Models) tryReuseCompanionFromURLName(ctx context.Context, log applog.Lo
 		return "", false, nil
 	}
 	if filepath.Clean(urlFilePath) == filepath.Clean(dstFileName) {
-		if err := checkModelStrict(dstFileName); err != nil {
+		if err := checkModelStrict(ctx, log, dstFileName); err != nil {
 			return "", false, nil
 		}
 		log(ctx, "download-model: companion already present under canonical URL name, reusing in place", "kind", kind.label, "file", filepath.Base(dstFileName))
@@ -797,7 +797,7 @@ func (m *Models) tryReuseCompanionFromURLName(ctx context.Context, log applog.Lo
 
 	// Strict: the pointer copy above is conditional, so a lenient check would
 	// pass on "no pointer" and hand back an arbitrary leftover.
-	if err := checkModelStrict(dstFileName); err != nil {
+	if err := checkModelStrict(ctx, log, dstFileName); err != nil {
 		// Unverifiable — fall through to the download, which renames over the
 		// copy.
 		return "", false, nil
@@ -826,7 +826,7 @@ func (m *Models) tryReuseCompanionFromSHA(ctx context.Context, log applog.Logger
 	if filepath.Clean(existing) == filepath.Clean(dstFileName) {
 		// Strict: the matched pointer is the canonical one by construction,
 		// and this closes the unlink window between that scan and here.
-		if err := checkModelStrict(dstFileName); err != nil {
+		if err := checkModelStrict(ctx, log, dstFileName); err != nil {
 			// On-disk companion is bad — fall through to a fresh download.
 			return "", false, nil
 		}
@@ -850,7 +850,7 @@ func (m *Models) tryReuseCompanionFromSHA(ctx context.Context, log applog.Logger
 	}
 
 	// Strict: the unconditional copy above guarantees the canonical pointer.
-	if err := checkModelStrict(dstFileName); err != nil {
+	if err := checkModelStrict(ctx, log, dstFileName); err != nil {
 		// Copied file failed verification — fall through to regular download.
 		// orgShaFileName is intentionally left in place for the caller's
 		// rename step.

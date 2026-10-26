@@ -7,8 +7,9 @@
 # Produces a slim Linux container that runs the `kronk` server. Built
 # llama.cpp shared libraries for one or more processor backends (cpu / cuda /
 # vulkan / rocm) AND whisper.cpp (bucky) shared libraries (cpu / cuda /
-# vulkan) are baked into the image at build time so the resulting container
-# is offline-ready for both LLM inference and audio transcription.
+# vulkan) plus stable-diffusion.cpp (malina) libraries (amd64 only) are baked
+# into the image at build time for offline startup. Models are not included,
+# and a bind mount over /kronk hides the baked libraries.
 #
 # Bucky's `/v1/audio/transcriptions` endpoint relies on the host `ffmpeg`
 # binary for non-PCM uploads (WebM/Opus, MP4/AAC, OGG, M4A — most browser
@@ -90,12 +91,17 @@
 #   :jetson  → LLAMA=cuda                 BUCKY=cuda
 #   :all     → LLAMA=cpu cuda vulkan rocm BUCKY=cpu cuda cuda13 vulkan
 #
+# Malina bundles are amd64-only: cpu uses cpu, cuda/vulkan use
+# "vulkan cpu", rocm uses rocm, and all uses "cpu vulkan rocm".
+# Set MALINA_PROCESSORS accordingly; the fetcher skips arm64.
+#
 # Default (all backends bundled, both arches):
 #
 #   docker buildx build \
 #       --platform linux/amd64,linux/arm64 \
 #       --build-arg LLAMA_PROCESSORS="cpu cuda vulkan rocm" \
 #       --build-arg BUCKY_PROCESSORS="cpu cuda cuda13 vulkan" \
+#       --build-arg MALINA_PROCESSORS="cpu vulkan rocm" \
 #       -f zarf/docker/kronk/Dockerfile \
 #       -t ghcr.io/ardanlabs/kronk:latest \
 #       -t ghcr.io/ardanlabs/kronk:all \
@@ -107,6 +113,7 @@
 #       --platform linux/amd64,linux/arm64 \
 #       --build-arg LLAMA_PROCESSORS="cpu" \
 #       --build-arg BUCKY_PROCESSORS="cpu" \
+#       --build-arg MALINA_PROCESSORS="cpu" \
 #       -t ghcr.io/ardanlabs/kronk:cpu \
 #       -f zarf/docker/kronk/Dockerfile .
 #
@@ -116,6 +123,7 @@
 #       --platform linux/amd64,linux/arm64 \
 #       --build-arg LLAMA_PROCESSORS="cuda" \
 #       --build-arg BUCKY_PROCESSORS="cuda cuda13" \
+#       --build-arg MALINA_PROCESSORS="vulkan cpu" \
 #       -t ghcr.io/ardanlabs/kronk:cuda \
 #       -f zarf/docker/kronk/Dockerfile .
 #
@@ -125,6 +133,7 @@
 #       --platform linux/amd64 \
 #       --build-arg LLAMA_PROCESSORS="vulkan" \
 #       --build-arg BUCKY_PROCESSORS="vulkan" \
+#       --build-arg MALINA_PROCESSORS="vulkan cpu" \
 #       -t ghcr.io/ardanlabs/kronk:vulkan \
 #       -f zarf/docker/kronk/Dockerfile .
 #
@@ -140,6 +149,7 @@
 #       --platform linux/amd64 \
 #       --build-arg LLAMA_PROCESSORS="rocm" \
 #       --build-arg BUCKY_PROCESSORS="vulkan" \
+#       --build-arg MALINA_PROCESSORS="rocm" \
 #       -t ghcr.io/ardanlabs/kronk:rocm \
 #       -f zarf/docker/kronk/Dockerfile .
 #
@@ -439,6 +449,13 @@ ARG BUCKY_PROCESSORS="cpu cuda cuda13 vulkan"
 # choose its baked-in `defaultVersion` (see sdk/tools/bucky/libs/libs.go).
 ARG BUCKY_VERSION=""
 
+# Space-separated stable-diffusion.cpp backends. Linux bundles are amd64
+# only and publish cpu / vulkan / rocm, but no cuda bundle.
+ARG MALINA_PROCESSORS="cpu vulkan rocm"
+
+# Empty string uses Malina's baked-in defaultVersion, matching startup.
+ARG MALINA_VERSION=""
+
 # Free-form tag string written into the OCI image labels. CI should set this
 # from `git describe` or the release tag.
 ARG KRONK_VERSION="dev"
@@ -721,6 +738,51 @@ RUN set -eux; \
     kronk bucky libs --local --list-installs || true
 
 # =============================================================================
+# Stage 2c — malina-libs-fetcher
+#
+# Download stable-diffusion.cpp bundles using the same managed install
+# layout and version records that the server checks at startup.
+# =============================================================================
+
+FROM ubuntu:24.04@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517 AS malina-libs-fetcher
+
+ARG TARGETARCH
+ARG MALINA_PROCESSORS
+ARG MALINA_VERSION
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /out/kronk /usr/local/bin/kronk
+RUN chmod +x /usr/local/bin/kronk && /usr/local/bin/kronk --help >/dev/null
+
+ENV KRONK_BASE_PATH=/kronk
+
+# Keep the COPY source present even when there is no published bundle.
+RUN set -eux; \
+    mkdir -p /kronk/malina-libraries; \
+    if [ "${TARGETARCH}" != "amd64" ]; then \
+        echo ">>> Skipping Malina: no Linux/${TARGETARCH} bundles published"; \
+        exit 0; \
+    fi; \
+    for processor in ${MALINA_PROCESSORS}; do \
+        echo ">>> Installing stable-diffusion.cpp libs: linux/${TARGETARCH}/${processor}"; \
+        if [ -n "${MALINA_VERSION}" ]; then \
+            kronk malina libs --local --install \
+                --arch="${TARGETARCH}" --os=linux \
+                --processor="${processor}" --version="${MALINA_VERSION}"; \
+        else \
+            kronk malina libs --local --install \
+                --arch="${TARGETARCH}" --os=linux \
+                --processor="${processor}"; \
+        fi; \
+    done
+
+# =============================================================================
 # Stage 3 — runtime
 #
 # The slimmest viable runtime image. Ubuntu 24.04 is required because
@@ -733,6 +795,7 @@ FROM ubuntu:24.04@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a
 
 ARG KRONK_VERSION
 ARG LLAMA_PROCESSORS
+ARG MALINA_PROCESSORS
 # TARGETARCH is auto-provided by BuildKit; declared here so the ROCm
 # install block below can gate on architecture (ROCm has no upstream
 # arm64 build).
@@ -963,6 +1026,26 @@ RUN set -eux; \
 # side — and falls through to KRONK_BUCKY_LIB_PATH when set.
 COPY --from=bucky-libs-fetcher /kronk/bucky-libraries /kronk/bucky-libraries
 
+# Pre-baked stable-diffusion.cpp bundles (empty on unsupported arm64).
+COPY --from=malina-libs-fetcher /kronk/malina-libraries /kronk/malina-libraries
+
+# Malina's ROCm build may advance independently of llama.cpp's. Do not
+# publish an image whose installed ROCm runtime cannot resolve its HIP backend.
+RUN set -eux; \
+    if [ "${TARGETARCH}" = "amd64" ] && echo " ${MALINA_PROCESSORS} " | grep -q ' rocm '; then \
+        hip="$(find /kronk/malina-libraries/linux/amd64/rocm -name libggml-hip.so -print -quit)"; \
+        if [ -z "${hip}" ]; then \
+            echo "Malina rocm requested but no libggml-hip.so in the bundle" >&2; \
+            exit 1; \
+        fi; \
+        missing="$(ldd "${hip}" | awk '/not found/ {print $1}')"; \
+        if [ -n "${missing}" ]; then \
+            echo "ROCm runtime does not satisfy Malina ${hip}:" >&2; \
+            echo "${missing}" >&2; \
+            exit 1; \
+        fi; \
+    fi
+
 # Default model config, at the location kronk uses natively. A named volume
 # on /kronk seeds from the image; a bind mount shadows this file.
 COPY zarf/kms/model_config.yaml /kronk/models/model_config.yaml
@@ -984,8 +1067,7 @@ USER kronk:kronk
 ENV KRONK_BASE_PATH=/kronk \
     KRONK_WEB_API_HOST=0.0.0.0:11435 \
     KRONK_DOWNLOAD_ENABLED=false \
-    KRONK_INSECURE_LOGGING=false \
-    KRONK_POOL_MODEL_CONFIG_FILE=/kronk/models/model_config.yaml
+    KRONK_INSECURE_LOGGING=false
 
 # Note on KRONK_DOWNLOAD_ENABLED: enables peer downloads. The server
 # serves its models and library bundles to other Kronk servers on the
@@ -1150,6 +1232,9 @@ COPY --from=libs-fetcher /kronk/libraries /kronk/libraries
 # can transcribe on Jetson out of the box.
 COPY --from=bucky-libs-fetcher /kronk/bucky-libraries /kronk/bucky-libraries
 
+# No Linux arm64 Malina bundle is published; preserve the shared layout.
+COPY --from=malina-libs-fetcher /kronk/malina-libraries /kronk/malina-libraries
+
 # Default model config, at the location kronk uses natively. A named volume
 # on /kronk seeds from the image; a bind mount shadows this file.
 COPY zarf/kms/model_config.yaml /kronk/models/model_config.yaml
@@ -1172,7 +1257,6 @@ ENV KRONK_BASE_PATH=/kronk \
     KRONK_WEB_API_HOST=0.0.0.0:11435 \
     KRONK_DOWNLOAD_ENABLED=false \
     KRONK_INSECURE_LOGGING=false \
-    KRONK_POOL_MODEL_CONFIG_FILE=/kronk/models/model_config.yaml \
     KRONK_PROCESSOR=cuda
 
 # See note on KRONK_DOWNLOAD_ENABLED in the default runtime stage.
