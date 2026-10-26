@@ -12,11 +12,11 @@ type normalizationReference struct {
 
 // Freeze a representative volume per cell, not per invocation. Text references
 // come from the initial nine observations; image references are rounded medians
-// from new-f285f48's two image-to-image recovery repetitions. Generation excludes
-// the first token per response, matching Kronk's TPS clock.
+// from new-0466efe's two repetitions with media System-cache reuse. Generation
+// excludes the first token per response, matching Kronk's TPS clock.
 func referenceTokens(images bool) normalizationReference {
 	if images {
-		return normalizationReference{InputTokens: 31962, GenerationTokens: 1001}
+		return normalizationReference{InputTokens: 11674, GenerationTokens: 1001}
 	}
 	return normalizationReference{InputTokens: 10708, GenerationTokens: 1332}
 }
@@ -38,7 +38,9 @@ func (r report) referenceTime() (float64, bool) {
 			return 0, false
 		}
 		reused := res.Execution.ReusedTokens
-		if res.MediaPlan {
+		if res.MediaPlan && res.CacheReason != "system-cache-prefix" {
+			// Media anchors have distinct logical/physical extents. A restored
+			// text-only System prefix instead uses its actual reused token count.
 			reused = res.MediaAnchorKV
 		}
 		input += res.Usage.PromptTokens - reused

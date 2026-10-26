@@ -28,10 +28,11 @@ func TestQuickCheckCommand(t *testing.T) {
 	git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "--quiet", "-m", "release")
 	git("-c", "tag.gpgsign=false", "tag", "v1.0.0")
 	releaseRevision := git("rev-parse", "HEAD")
-	for _, defect := range []string{"", "release", "single-repetition", "all-cells", "no-drafts", "second-no-drafts", "no-cache", "wrong-cache-path", "missing-logs", "truncated-stream", "foreign-session", "two-slots", "cancel-internal-error", "cancel-without-ack", "cancel-without-cleanup", "missing-draft-restore", "actual-reuse-mismatch", "wrong-slot", "uncancelled-error", "dense-fixture", "missing-timing", "invalid-timing", "images", "images-no-encode", "images-no-decode", "images-reencode", "images-no-restore", "images-leak", "images-recovery-reuse", "images-recovery-leak"} {
+	for _, defect := range []string{"", "release", "single-repetition", "all-cells", "no-drafts", "second-no-drafts", "no-cache", "wrong-cache-path", "missing-logs", "truncated-stream", "foreign-session", "two-slots", "cancel-internal-error", "cancel-without-ack", "cancel-without-cleanup", "missing-draft-restore", "actual-reuse-mismatch", "wrong-slot", "uncancelled-error", "dense-fixture", "missing-timing", "invalid-timing", "images", "images-system", "images-system-no-encode", "images-system-no-decode", "images-system-no-restore", "images-system-wrong-reuse", "images-no-encode", "images-no-decode", "images-reencode", "images-no-restore", "images-leak", "images-recovery-reuse", "images-recovery-leak"} {
 		t.Run(defect, func(t *testing.T) {
 			images := strings.HasPrefix(defect, "images")
-			passing := defect == "" || defect == "release" || defect == "single-repetition" || defect == "all-cells" || defect == "images" || defect == "images-recovery-reuse"
+			systemReuse := strings.HasPrefix(defect, "images-system")
+			passing := defect == "" || defect == "release" || defect == "single-repetition" || defect == "all-cells" || defect == "images" || defect == "images-system" || defect == "images-recovery-reuse"
 			revision, tag := "0123456789abcdef0123456789abcdef01234567", ""
 			if defect == "release" {
 				revision, tag = releaseRevision, "v1.0.0"
@@ -190,6 +191,17 @@ func TestQuickCheckCommand(t *testing.T) {
 								cached = 9100
 							}
 						}
+						if systemReuse {
+							if phase == "fresh-session" || phase == "recovery" {
+								kind, reason, cached = "append", "system-cache-prefix", 10120
+								if defect == "images-system-wrong-reuse" {
+									cached--
+								}
+							}
+							if phase == "cancel" {
+								cached = 10600
+							}
+						}
 					}
 					if defect == "wrong-cache-path" {
 						reason = "system-cache-prefix"
@@ -219,23 +231,29 @@ func TestQuickCheckCommand(t *testing.T) {
 					emit("request-lifecycle", "complete", map[string]any{"stage": 3, "queue_wait": "0s"})
 					if images && phase != "warmup" {
 						anchor := 0
-						if cached > 0 {
+						if cached > 0 && reason != "system-cache-prefix" {
 							anchor = 10193
 							if phase == "cancel" {
 								anchor = 10223
 							}
 						}
 						emit("imc-media-cache", "plan-ready", map[string]any{"match_kind": kind, "match_reason": reason, "media_count": 1, "replay_text_tokens": tail, "reusable_logical_position": cached, "anchor_physical_kv": anchor})
-						if kind == "rebuild" || (defect == "images-reencode" && phase == "replay") {
-							if defect != "images-no-encode" {
+						if kind == "rebuild" || reason == "system-cache-prefix" || (defect == "images-reencode" && phase == "replay") {
+							if defect != "images-no-encode" && !(defect == "images-system-no-encode" && reason == "system-cache-prefix") {
 								emit("imc-media-cache", "encoded-media-chunk", map[string]any{"tokens": 256})
 							}
-							if defect != "images-no-decode" || phase != "recovery" {
+							if (defect != "images-no-decode" || phase != "recovery") && !(defect == "images-system-no-decode" && reason == "system-cache-prefix") {
 								emit("imc-media-cache", "decoded-media-chunk", map[string]any{"decoded_tokens": 256})
 							}
 							position := 9000
 							if phase == "fresh-session" {
 								position = 9100
+							}
+							if reason == "system-cache-prefix" {
+								position = 10500
+								if phase == "fresh-session" {
+									position = 10600
+								}
 							}
 							emit("start-slot", "imc-cache-ready", map[string]any{"media": true, "next_logical_position": position})
 						}
@@ -259,7 +277,7 @@ func TestQuickCheckCommand(t *testing.T) {
 					emit("batch-engine", "prefill-done", map[string]any{"ttft": "123ms"})
 					if cached > 0 {
 						emit("start-slot", "imc-restore-done", nil)
-						if defect != "images-no-restore" {
+						if defect != "images-no-restore" && !(defect == "images-system-no-restore" && reason == "system-cache-prefix") {
 							emit("start-slot", "imc-draft-restore-done", nil)
 						}
 					}
@@ -615,10 +633,15 @@ func TestQuickCheckCommand(t *testing.T) {
 					if defect == "images-recovery-reuse" {
 						input -= 10193
 					}
-					if summary.ReferenceTokens != (normalizationReference{InputTokens: 31962, GenerationTokens: 1001}) {
+					if systemReuse {
+						// The text-only System prefix is physical reuse even though
+						// there is no saved media anchor in these two requests.
+						input -= 2 * 10120
+					}
+					if summary.ReferenceTokens != (normalizationReference{InputTokens: 11674, GenerationTokens: 1001}) {
 						t.Fatal("image cell did not record its fixed normalization reference", summary.ReferenceTokens)
 					}
-					want := 31962.0*(5*0.123)/input + 1001.0*(5*2.345)/(5*89)
+					want := 11674.0*(5*0.123)/input + 1001.0*(5*2.345)/(5*89)
 					if got := summary.Measurements["workload"]["reference_seconds"].Median; math.Abs(got-want) > 1e-12 {
 						t.Fatalf("image normalization used logical instead of physical reuse: got %v, want %v", got, want)
 					}
@@ -689,6 +712,12 @@ func TestQuickCheckCommand(t *testing.T) {
 			}
 			if (defect == "missing-draft-restore" || defect == "missing-timing" || defect == "invalid-timing") && (summary.Repetitions[0].Results[1].Status != "FAIL" || len(summary.Repetitions[0].Results[1].Findings) == 0) {
 				t.Fatalf("missing phase-level failure: %+v", summary)
+			}
+			if systemReuse && !passing {
+				results := summary.Repetitions[0].Results
+				if len(results) != 6 || results[0].Status != "PASS" || results[1].Status != "PASS" || results[2].Status != "PASS" || results[3].Status != "FAIL" {
+					t.Fatalf("System-reuse defect must fail the fresh image, not an earlier phase: %+v", summary)
+				}
 			}
 			if loaded {
 				t.Fatal("fixture alias left loaded")

@@ -271,11 +271,12 @@ func validateExecution(r *report) {
 		if r.Images {
 			if res.Phase == "cold" {
 				coldStable = res.MediaPosition
+				systemTokens = e.SystemPublished
 			}
 			if res.Phase == "fresh-session" {
 				freshStable = res.MediaPosition
 			}
-			validateImageExecution(r, res, coldStable, freshStable)
+			validateImageExecution(r, res, coldStable, freshStable, systemTokens)
 			continue
 		}
 		if res.StableTokens < r.SystemTokens || res.TailTokens <= 0 || res.ReusableTokens+res.ExtensionTokens != res.StableTokens || e.ReusedTokens != res.ReusableTokens {
@@ -318,13 +319,22 @@ func validateExecution(r *report) {
 
 // Media plans separate logical positions from physical KV cells. Reuse counters
 // follow logical positions; prompt counts include physical image embeddings.
-func validateImageExecution(r *report, res result, cold, fresh int) {
+func validateImageExecution(r *report, res result, cold, fresh, system int) {
 	fail := func(text string) { r.Findings = append(r.Findings, res.Phase+": "+text) }
 	e := res.Execution
 	if !res.MediaPlan || res.MediaCount != 1 || res.TailTokens <= 0 {
 		fail("single-image cache plan not attested")
 	}
-	if res.Phase == "cold" || res.Phase == "fresh-session" || (res.Phase == "recovery" && res.CacheMatch == "rebuild") {
+	if (res.Phase == "fresh-session" || res.Phase == "recovery") && res.CacheReason == "system-cache-prefix" {
+		// The immutable text prefix can be restored independently of images.
+		// This is not a media-anchor restore: the new image must still be processed.
+		if res.CacheMatch != "append" || system < r.SystemTokens || system <= 0 || e.ReusedTokens != system || res.ReusableTokens != system || res.MediaAnchorKV != 0 || res.MediaPosition <= system || res.EncodedTokens <= 0 || res.DecodedTokens <= 0 {
+			fail("System-prefix reuse with new image encoding/decoding not attested")
+		}
+		if !e.TargetRestored || !e.DraftRestored || e.DraftResume != "restored-draft-kv" {
+			fail("paired System target/MTP restore not attested")
+		}
+	} else if res.Phase == "cold" || res.Phase == "fresh-session" || (res.Phase == "recovery" && res.CacheMatch == "rebuild") {
 		if res.CacheMatch != "rebuild" || e.ReusedTokens != 0 || res.MediaPosition <= 0 || res.EncodedTokens <= 0 || res.DecodedTokens <= 0 {
 			fail("new image must be encoded and decoded into an uncached prefix")
 		}
