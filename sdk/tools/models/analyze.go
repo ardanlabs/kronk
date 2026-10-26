@@ -750,6 +750,7 @@ func calculateProfile(p profileInput, contextWindow, slots int64, cache cacheRec
 		RecurrentPattern:      p.attn.RecurrentPattern,
 		NextNPredictLayers:    p.attn.NextNPredictLayers,
 		IndexerKeyLength:      p.attention.IndexerKeyLength,
+		IndexerCompression:    p.attention.IndexerCompression,
 		IndexerTopK:           p.attention.IndexerTopK,
 		RecurrentStateBytes:   p.attn.RecurrentStateBytes,
 		RecurrentStateCopies:  1,

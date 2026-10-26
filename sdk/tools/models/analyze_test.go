@@ -176,6 +176,77 @@ func TestBuildProfileUsesLayerSplitDefault(t *testing.T) {
 	}
 }
 
+func TestAnalyzeIndexedWorkspaceMatchesCalculator(t *testing.T) {
+	for _, indexed := range []bool{false, true} {
+		name := "non-indexed control"
+		if indexed {
+			name = "indexed"
+		}
+		t.Run(name, func(t *testing.T) {
+			info := ModelInfo{
+				ID: "Qwen4Exp", Size: 80 << 30,
+				Metadata: map[string]string{
+					"general.architecture":             "qwen4exp",
+					"qwen4exp.block_count":             "48",
+					"qwen4exp.context_length":          "131072",
+					"qwen4exp.embedding_length":        "2560",
+					"qwen4exp.attention.head_count":    "24",
+					"qwen4exp.attention.head_count_kv": "2",
+					"qwen4exp.attention.key_length":    "256",
+					"qwen4exp.attention.value_length":  "256",
+					"qwen4exp.ssm.conv_kernel":         "4",
+					"qwen4exp.ssm.inner_size":          "6144",
+					"qwen4exp.ssm.state_size":          "128",
+					"qwen4exp.ssm.group_count":         "16",
+					"qwen4exp.hyper_connection.count":  "4",
+				},
+			}
+			input := vram.Input{
+				ModelSizeBytes: 80 << 30, BlockCount: 48, EmbeddingLength: 2560,
+				HeadCount: 24, HeadCountKV: 2, KeyLength: 256, ValueLength: 256,
+				OutputEmbeddingLength: 10240, TypeK: 1, TypeV: 1, BytesPerElement: 2,
+				RecurrentStateBytes: 4 * (3*(6144+2*16*128) + 128*6144),
+				RecurrentPattern:    make([]bool, 48),
+			}
+			for layer := range input.RecurrentPattern {
+				input.RecurrentPattern[layer] = (layer+1)%4 != 0
+			}
+			if indexed {
+				info.Metadata["qwen4exp.attention.indexer.key_length"] = "128"
+				info.Metadata["qwen4exp.attention.indexer.top_k"] = "2048"
+				info.Metadata["qwen4exp.attention.compress_ratios"] = "[0 0 0 4]"
+				input.ComputeKind = modelprofile.ComputeIndexed
+				input.IndexerKeyLength = 256 // One raw and one pooled 128-value key.
+				input.IndexerCompression = 4
+				input.IndexerTopK = 2048
+			}
+			devs := devices.Devices{
+				GPUCount: 1, GPUTotalBytes: 256 << 30, SystemRAMBytes: 256 << 30,
+				SupportsGPUOffload: true,
+				Devices:            []devices.DeviceInfo{{Name: "GPU", Type: "gpu_cuda", FreeBytes: 240 << 30, TotalBytes: 256 << 30}},
+			}
+			analysis, err := Analyze(info, devs)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, rec := range analysis.Profiles {
+				if !rec.Fits || rec.CacheTypeK != "f16" || rec.CacheTypeV != "f16" {
+					t.Fatalf("%s recommendation: got %+v, want fitting F16 cache", rec.Name, rec)
+				}
+				input.ContextWindow = rec.ContextWindow
+				input.Slots = rec.NSeqMax
+				cfg := model.Config{PtrNSeqMax: new(int(rec.NSeqMax))}
+				_, physical := cfg.GenerationBatchSizes(1, false)
+				input.NUBatch = int64(physical)
+				want := vram.Calculate(input)
+				if rec.EstimatedVRAMBytes != want.TotalVRAM {
+					t.Errorf("%s VRAM: got %d, want direct calculator %d", rec.Name, rec.EstimatedVRAMBytes, want.TotalVRAM)
+				}
+			}
+		})
+	}
+}
+
 func TestAnalyzeModelMoE(t *testing.T) {
 
 	// Simulate a Qwen3-30B-A3B MoE model.
