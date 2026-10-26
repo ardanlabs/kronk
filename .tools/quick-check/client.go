@@ -89,6 +89,7 @@ type execution struct {
 
 type client struct {
 	cell        string
+	model       string
 	ctx         context.Context
 	host, token string
 	http        http.Client
@@ -161,7 +162,7 @@ func (c *client) chat(phase string, messages []message, limit int, cancelAfterCo
 	ctx, cancel := context.WithTimeout(c.ctx, c.timeout)
 	defer cancel()
 	body := map[string]any{
-		"model": modelID, "messages": messages, "stream": true,
+		"model": c.model, "messages": messages, "stream": true,
 		"stream_options": map[string]bool{"include_usage": true},
 		"temperature":    0, "seed": 42, "enable_thinking": false, "max_tokens": limit,
 	}

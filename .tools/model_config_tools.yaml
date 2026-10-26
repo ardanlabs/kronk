@@ -13,7 +13,7 @@ kms:
   insecure-logging: false
 
 models:
-  # Quick-check fixtures: single-slot text/image workloads with IMC and MTP.
+  # Quick-check fixtures: single-slot text/image workloads with IMC.
   # Separate aliases keep the reliability fixtures' slot counts unchanged.
   unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK: &quick
     nseq-max: 1
@@ -21,6 +21,10 @@ models:
     queue-depth: 2
     incremental-cache: true
     speculation: mtp
+
+  unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK-NO-MTP:
+    <<: *quick
+    speculation: disabled
 
   unsloth/Qwen3.8-27B-UD-Q4_K_XL/QUICK-CHECK:
     <<: *quick

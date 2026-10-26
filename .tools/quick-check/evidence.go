@@ -238,8 +238,11 @@ func recordExecution(r *result, event map[string]any) {
 
 func validateExecution(r *report) {
 	fail := func(phase, text string) { r.Findings = append(r.Findings, phase+": "+text) }
-	if r.MTPBackend == "" {
+	if !r.TargetOnly && r.MTPBackend == "" {
 		fail("warmup", "MTP backend activation not attested")
+	}
+	if r.TargetOnly && r.MTPBackend != "" {
+		fail("warmup", "target-only model loaded an MTP backend")
 	}
 	if len(r.Results) != 6 {
 		fail("workload", "incomplete: all six phases required")
@@ -248,8 +251,11 @@ func validateExecution(r *report) {
 	var cancelledAt time.Time
 	for _, res := range r.Results {
 		e := res.Execution
-		if e.Slot == nil || *e.Slot != r.Slot || e.SlotConflict || e.Started.IsZero() || e.Finished.Before(e.Started) || !e.SlotFinished || !e.SequenceCleared || !e.DraftCleaned {
-			fail(res.Phase, "execution on configured slot and target/draft cleanup not attested")
+		if e.Slot == nil || *e.Slot != r.Slot || e.SlotConflict || e.Started.IsZero() || e.Finished.Before(e.Started) || !e.SlotFinished || !e.SequenceCleared || (!r.TargetOnly && !e.DraftCleaned) {
+			fail(res.Phase, "execution on configured slot, target cleanup, and any required draft cleanup not attested")
+		}
+		if r.TargetOnly && (e.DraftTokens != 0 || e.DraftAccepted != 0 || e.DraftRestored || e.DraftSnapshotted || e.DraftResume != "" || res.Usage.DraftTokens != 0 || res.Usage.DraftAcceptedTokens != 0 || res.Usage.DraftCoverage != 0 || res.Usage.DraftDisableReason != "") {
+			fail(res.Phase, "target-only execution reported speculative activity")
 		}
 		terminal := "complete"
 		if res.Phase == "cancel" {
@@ -287,7 +293,7 @@ func validateExecution(r *report) {
 		}
 		if res.Phase == "cold" {
 			coldStable, systemTokens = res.StableTokens, e.SystemPublished
-			if res.CacheMatch != "rebuild" || res.ReusableTokens != 0 || res.SystemBoundary != systemTokens || systemTokens < r.SystemTokens || e.DraftResume != "fresh-prefill" {
+			if res.CacheMatch != "rebuild" || res.ReusableTokens != 0 || res.SystemBoundary != systemTokens || systemTokens < r.SystemTokens || (!r.TargetOnly && e.DraftResume != "fresh-prefill") {
 				fail(res.Phase, "uncached build and large System-prefix publication not attested")
 			}
 		} else {
@@ -304,15 +310,15 @@ func validateExecution(r *report) {
 			if res.CacheMatch != kind || res.CacheReason != reason || reused <= 0 || res.ReusableTokens != reused || (kind == "exact" && res.ExtensionTokens != 0) || (kind == "append" && res.ExtensionTokens <= 0) {
 				fail(res.Phase, "required "+reason+" reuse extent not attested")
 			}
-			if !e.TargetRestored || !e.DraftRestored || e.DraftResume != "restored-draft-kv" {
-				fail(res.Phase, "paired target/MTP restore and drafting continuation not attested")
+			if !e.TargetRestored || (!r.TargetOnly && (!e.DraftRestored || e.DraftResume != "restored-draft-kv")) {
+				fail(res.Phase, "target restore and any required MTP continuation not attested")
 			}
 		}
 		if res.Phase == "fresh-session" {
 			freshStable = res.StableTokens
 		}
-		if res.Phase != "replay" && (!e.TargetSnapshotted || !e.DraftSnapshotted) {
-			fail(res.Phase, "paired target/MTP snapshot publication not attested")
+		if res.Phase != "replay" && (!e.TargetSnapshotted || (!r.TargetOnly && !e.DraftSnapshotted)) {
+			fail(res.Phase, "target snapshot and any required MTP snapshot publication not attested")
 		}
 	}
 }
@@ -331,8 +337,8 @@ func validateImageExecution(r *report, res result, cold, fresh, system int) {
 		if res.CacheMatch != "append" || system < r.SystemTokens || system <= 0 || e.ReusedTokens != system || res.ReusableTokens != system || res.MediaAnchorKV != 0 || res.MediaPosition <= system || res.EncodedTokens <= 0 || res.DecodedTokens <= 0 {
 			fail("System-prefix reuse with new image encoding/decoding not attested")
 		}
-		if !e.TargetRestored || !e.DraftRestored || e.DraftResume != "restored-draft-kv" {
-			fail("paired System target/MTP restore not attested")
+		if !e.TargetRestored || (!r.TargetOnly && (!e.DraftRestored || e.DraftResume != "restored-draft-kv")) {
+			fail("System target restore and any required MTP restore not attested")
 		}
 	} else if res.Phase == "cold" || res.Phase == "fresh-session" || (res.Phase == "recovery" && res.CacheMatch == "rebuild") {
 		if res.CacheMatch != "rebuild" || e.ReusedTokens != 0 || res.MediaPosition <= 0 || res.EncodedTokens <= 0 || res.DecodedTokens <= 0 {
@@ -349,11 +355,11 @@ func validateImageExecution(r *report, res result, cold, fresh, system int) {
 		if res.CacheMatch != kind || res.CacheReason != reason || reused <= 0 || e.ReusedTokens != reused || res.ReusableTokens != reused || res.MediaAnchorKV <= 0 || res.EncodedTokens != 0 || res.DecodedTokens != 0 {
 			fail("required media-prefix reuse without image re-encoding not attested")
 		}
-		if !e.TargetRestored || !e.DraftRestored || e.DraftResume != "restored-draft-kv" {
-			fail("paired media target/MTP restore not attested")
+		if !e.TargetRestored || (!r.TargetOnly && (!e.DraftRestored || e.DraftResume != "restored-draft-kv")) {
+			fail("media target restore and any required MTP restore not attested")
 		}
 	}
-	if res.CacheMatch != "exact" && (!e.TargetSnapshotted || !e.DraftSnapshotted) {
-		fail("paired target/MTP snapshot publication not attested")
+	if res.CacheMatch != "exact" && (!e.TargetSnapshotted || (!r.TargetOnly && !e.DraftSnapshotted)) {
+		fail("target snapshot and any required MTP snapshot publication not attested")
 	}
 }

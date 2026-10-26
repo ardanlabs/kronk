@@ -1,7 +1,8 @@
 # Kronk quick-check
 
-Cells: **MoE / one slot / IMC on / MTP on / images off or on**.
-Model: `unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK`.
+Cells: **MoE / one slot / IMC on / MTP off or on / images off or on**.
+Model: `unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL`, using the
+`QUICK-CHECK` (MTP on) and `QUICK-CHECK-NO-MTP` (target-only) aliases.
 
 ## Run
 
@@ -18,10 +19,16 @@ Select cells during development (images require the model's projection file):
 ```sh
 make quick-check-this-code QUICK_CHECK_ARGS='-cells text'
 make quick-check-this-code QUICK_CHECK_ARGS='-cells images'
-# -cells all (default) or -cells text,images runs both.
+make quick-check-this-code QUICK_CHECK_ARGS='-cells text-no-mtp'
+make quick-check-this-code QUICK_CHECK_ARGS='-cells images-no-mtp'
+# -cells no-mtp runs both target-only cells; -cells all (default) runs all four.
+# Selectors can be combined, e.g. -cells text,images-no-mtp.
 ```
 
-The image cell exercises image rebuild, replay, append, a different image/session,
+`text` and `images` retain their MTP-on meaning. Restart the server after updating
+the tools model configuration to make the target-only alias available.
+
+Image cells exercise image rebuild, replay, append, a different image/session,
 cancellation, and recovery with the original image.
 
 Flow: for each selected cell, one warm-up → two repetitions of cold chat, replay,

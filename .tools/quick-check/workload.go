@@ -65,14 +65,17 @@ func picturedConversation(messages []message, fixture string) ([]message, error)
 	}}}, nil
 }
 
-func checkAnswer(r result, expected, forbidden []string) error {
+func checkAnswer(r result, expected, forbidden []string, targetOnly bool) error {
 	if strings.TrimSpace(r.Content) == "" || r.FinishReason != "stop" {
 		return fmt.Errorf("expected nonempty completed answer, finish=%q", r.FinishReason)
 	}
 	if r.Usage.PromptTokens <= 0 || r.Usage.CompletionTokens <= 8 {
 		return fmt.Errorf("insufficient prompt/generation usage: prompt=%d completion=%d", r.Usage.PromptTokens, r.Usage.CompletionTokens)
 	}
-	if r.Usage.DraftDisableReason != "" || r.Usage.DraftTokens <= 0 || r.Usage.DraftCoverage <= 0 {
+	if targetOnly && (r.Usage.DraftTokens != 0 || r.Usage.DraftAcceptedTokens != 0 || r.Usage.DraftCoverage != 0 || r.Usage.DraftDisableReason != "") {
+		return fmt.Errorf("target-only request reported speculative activity: %+v", r.Usage)
+	}
+	if !targetOnly && (r.Usage.DraftDisableReason != "" || r.Usage.DraftTokens <= 0 || r.Usage.DraftCoverage <= 0) {
 		return fmt.Errorf("MTP did not remain active: drafts=%d coverage=%g disabled=%q", r.Usage.DraftTokens, r.Usage.DraftCoverage, r.Usage.DraftDisableReason)
 	}
 	text := strings.ToLower(r.Content)

@@ -8,11 +8,14 @@ import (
 // Only implemented cells belong here. Adding a workload also adds its explicit
 // NOT_RUN entry to reports made with a subset of the matrix selected.
 var matrixCells = []struct {
-	id     string
-	images bool
+	id         string
+	images     bool
+	targetOnly bool
 }{
-	{"MoE/1s/IMC+/MTP+/img-", false},
-	{"MoE/1s/IMC+/MTP+/img+", true},
+	{"MoE/1s/IMC+/MTP+/img-", false, false},
+	{"MoE/1s/IMC+/MTP+/img+", true, false},
+	{"MoE/1s/IMC+/MTP-/img-", false, true},
+	{"MoE/1s/IMC+/MTP-/img+", true, true},
 }
 
 func selectedCells(selection string) (map[string]bool, error) {
@@ -27,8 +30,15 @@ func selectedCells(selection string) (map[string]bool, error) {
 			selected[matrixCells[0].id] = true
 		case "images":
 			selected[matrixCells[1].id] = true
+		case "text-no-mtp":
+			selected[matrixCells[2].id] = true
+		case "images-no-mtp":
+			selected[matrixCells[3].id] = true
+		case "no-mtp":
+			selected[matrixCells[2].id] = true
+			selected[matrixCells[3].id] = true
 		default:
-			return nil, fmt.Errorf("unknown cell selector %q; use -cells all, text, images, or text,images", name)
+			return nil, fmt.Errorf("unknown cell selector %q; use all, text, images, text-no-mtp, images-no-mtp, no-mtp, or a comma-separated list", name)
 		}
 	}
 	return selected, nil

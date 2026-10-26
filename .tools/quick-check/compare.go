@@ -256,7 +256,7 @@ func readCellComparison(s runSummary, r report, events []byte) (comparisonInput,
 	}
 	for i, rep := range r.Repetitions {
 		summary := s.Repetitions[i]
-		if rep.ReferenceTokens != r.ReferenceTokens || rep.Images != r.Images || summary.Status != rep.Status || !slices.Equal(summary.Findings, rep.Findings) ||
+		if rep.ReferenceTokens != r.ReferenceTokens || rep.Images != r.Images || rep.TargetOnly != r.TargetOnly || summary.Status != rep.Status || !slices.Equal(summary.Findings, rep.Findings) ||
 			summary.SystemTokens != rep.SystemTokens || summary.SystemSHA256 != rep.SystemSHA256 ||
 			summary.WorkloadSeconds != rep.WorkloadSeconds || summary.CancelReleaseSeconds != rep.CancelReleaseSeconds {
 			return input, fmt.Errorf("repetition %d summary and diagnostic report disagree", i+1)

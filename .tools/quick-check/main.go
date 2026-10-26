@@ -22,6 +22,7 @@ import (
 )
 
 const modelID = "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK"
+const targetOnlyModelID = "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK-NO-MTP"
 
 type options struct {
 	host        string
@@ -39,6 +40,7 @@ type report struct {
 	Workload             string                 `json:"workload"`
 	Model                string                 `json:"model"`
 	Images               bool                   `json:"images"`
+	TargetOnly           bool                   `json:"target_only"`
 	ReferenceTokens      normalizationReference `json:"normalization_reference"`
 	Host                 string                 `json:"host"`
 	HarnessRevision      string                 `json:"harness_revision"`
@@ -153,7 +155,11 @@ func (r report) cell() string {
 	if r.Images {
 		images = "on"
 	}
-	return "MoE / one slot / IMC on / MTP on / images " + images
+	mtp := "on"
+	if r.TargetOnly {
+		mtp = "off"
+	}
+	return "MoE / one slot / IMC on / MTP " + mtp + " / images " + images
 }
 
 func (r report) phaseSummary(res result) map[string]any {
@@ -267,12 +273,10 @@ func (r report) logSummary() string {
 	recovery := verdict("cancel", "recovery")
 	var b strings.Builder
 	fmt.Fprintf(&b, "IMC/MTP: %s | Serial isolation: %s | Cancel/recovery: %s\n", cache, isolation, recovery)
-	imageLabel := "-"
 	if r.Images {
-		imageLabel = "+"
 		fmt.Fprintf(&b, "Images: %s\n", verdict("cold", "replay", "append", "fresh-session", "cancel", "recovery"))
 	}
-	fmt.Fprintf(&b, "Cell: MoE/1s/IMC+/MTP+/img%s | Warm-up: %s | Repetitions: %d/%d\n", imageLabel, warmup, len(r.Repetitions), r.RepetitionsRequested)
+	fmt.Fprintf(&b, "Cell: %s | Warm-up: %s | Repetitions: %d/%d\n", r.ID, warmup, len(r.Repetitions), r.RepetitionsRequested)
 	fmt.Fprintf(&b, "  Workload s [SD]: %s | Normalized s [SD]: %s\n", workload, reference)
 	if r.Status != "PASS" {
 		fmt.Fprintln(&b, "Details: summary.json (fix setup/evidence failures before deeper inference checks)")
@@ -318,7 +322,7 @@ func main() {
 	flag.StringVar(&o.serverLog, "server-log", filepath.Join(home, ".kronk/kronk.log"), "required local JSON server log")
 	flag.DurationVar(&o.timeout, "timeout", 5*time.Minute, "per-request timeout; not a performance threshold")
 	flag.IntVar(&o.repetitions, "repetitions", 2, "complete workload repetitions; stop on first failure")
-	flag.StringVar(&o.cells, "cells", "all", "cells to exercise: all, text, images, or text,images")
+	flag.StringVar(&o.cells, "cells", "all", "cells: all, text, images, text-no-mtp, images-no-mtp, no-mtp, or a comma-separated list")
 	flag.Parse()
 	if err := run(o); err != nil {
 		os.Exit(1)
@@ -395,7 +399,7 @@ func run(o options) (runErr error) {
 	}
 	r := matrixReport{Status: "FAIL", ServerCommitTime: "unknown", TestStartedAt: started.Format(time.RFC3339Nano)}
 	for _, cell := range matrixCells {
-		r.Cells = append(r.Cells, report{ID: cell.id, Images: cell.images, Status: "NOT_RUN"})
+		r.Cells = append(r.Cells, report{ID: cell.id, Images: cell.images, TargetOnly: cell.targetOnly, Status: "NOT_RUN"})
 	}
 	var harnessRevision string
 	if revision, err := exec.Command("git", "rev-parse", "HEAD").Output(); err == nil {
@@ -472,8 +476,12 @@ func run(o options) (runErr error) {
 		}
 		o.images = cell.images
 		c.cell = cell.id
+		c.model = modelID
+		if cell.targetOnly {
+			c.model = targetOnlyModelID
+		}
 		cr := &r.Cells[i]
-		*cr = report{ID: cell.id, Status: "FAIL", Workload: workloadVersion, Model: modelID, Images: cell.images, Host: o.host, ServerCommitTime: "unknown", TestStartedAt: r.TestStartedAt, RepetitionsRequested: o.repetitions, HarnessRevision: harnessRevision, ReferenceTokens: referenceTokens(cell.images)}
+		*cr = report{ID: cell.id, Status: "FAIL", Workload: workloadVersion, Model: c.model, Images: cell.images, TargetOnly: cell.targetOnly, Host: o.host, ServerCommitTime: "unknown", TestStartedAt: r.TestStartedAt, RepetitionsRequested: o.repetitions, HarnessRevision: harnessRevision, ReferenceTokens: referenceTokens(cell.images)}
 		log("cell=%s", cell.id)
 		err := executeCell(o, c, cr, log)
 		if r.ServerRevision == "" {
@@ -509,7 +517,7 @@ func executeCell(o options, c *client, r *report, log func(string, ...any)) (run
 	}()
 	for i := 1; i <= o.repetitions; i++ {
 		log("repetition=%d/%d", i, o.repetitions)
-		repetition := report{ID: r.ID, Status: "FAIL", Workload: workloadVersion, Model: modelID, Images: o.images, Host: o.host, ServerCommitTime: "unknown", HarnessRevision: r.HarnessRevision, Metadata: make(map[string]any), MTPBackend: r.MTPBackend}
+		repetition := report{ID: r.ID, Status: "FAIL", Workload: workloadVersion, Model: r.Model, Images: o.images, TargetOnly: r.TargetOnly, Host: o.host, ServerCommitTime: "unknown", HarnessRevision: r.HarnessRevision, Metadata: make(map[string]any), MTPBackend: r.MTPBackend}
 		repetition.ReferenceTokens = r.ReferenceTokens
 		c.traces = make(map[string]string)
 		c.repetition = i
@@ -589,7 +597,7 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 		} `json:"model_config"`
 	}
 	var rawDetail json.RawMessage
-	if err := c.json("GET", "/v1/kronk/models/"+url.PathEscape(modelID), nil, &rawDetail); err != nil {
+	if err := c.json("GET", "/v1/kronk/models/"+url.PathEscape(c.model), nil, &rawDetail); err != nil {
 		return err
 	}
 	if err := json.Unmarshal(rawDetail, &detail); err != nil {
@@ -608,8 +616,8 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 		return err
 	}
 	r.Metadata["scheduler"] = e
-	if detail.Config.IMC == nil || !*detail.Config.IMC || !e.MTP || e.NDraft <= 0 || len(e.Slots) != 1 {
-		return fmt.Errorf("fixture must expose IMC on, active MTP, and exactly one slot: %+v", e)
+	if detail.Config.IMC == nil || !*detail.Config.IMC || len(e.Slots) != 1 || (!r.TargetOnly && (!e.MTP || e.NDraft <= 0)) || (r.TargetOnly && (e.MTP || e.NDraft != 0)) {
+		return fmt.Errorf("fixture must expose IMC on, exactly one slot, and requested MTP mode (target-only=%t): %+v", r.TargetOnly, e)
 	}
 	r.Slot = e.Slots[0].ID
 	system, tokens, err := c.systemPrompt()
@@ -617,7 +625,7 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 		return err
 	}
 	r.SystemTokens, r.SystemSHA256 = tokens, fmt.Sprintf("%x", sha256.Sum256([]byte(system)))
-	log("workload=%s model=%s system_tokens=%d", workloadVersion, modelID, tokens)
+	log("workload=%s model=%s system_tokens=%d", workloadVersion, c.model, tokens)
 	a := conversation(system, "ORCHID-47", "Maren", "Northport")
 	b := conversation(system, "COBALT-83", "Tobin", "Southbank")
 	if o.images {
@@ -642,7 +650,7 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 		}
 		res, err := c.chat(phase, messages, 384, cancelled)
 		if err == nil && !cancelled {
-			err = checkAnswer(res, expected, forbidden)
+			err = checkAnswer(res, expected, forbidden, r.TargetOnly)
 		}
 		if err != nil {
 			res.Error = err.Error()
@@ -699,11 +707,11 @@ func (c *client) snapshot() (engine, error) {
 		return engine{}, err
 	}
 	for _, e := range engines {
-		if e.ModelID == modelID {
+		if e.ModelID == c.model {
 			return e, nil
 		}
 	}
-	return engine{}, fmt.Errorf("missing scheduler for %s", modelID)
+	return engine{}, fmt.Errorf("missing scheduler for %s", c.model)
 }
 
 func (c *client) waitIdle() error {
@@ -740,17 +748,17 @@ func (c *client) unload() error {
 		return err
 	}
 	for _, m := range models {
-		if m.ID != modelID {
+		if m.ID != c.model {
 			continue
 		}
 		if err := c.waitIdle(); err != nil {
 			return err
 		}
 		var reply struct{ ID, Status string }
-		if err := c.json("POST", "/v1/kronk/models/unload", map[string]string{"id": modelID}, &reply); err != nil {
+		if err := c.json("POST", "/v1/kronk/models/unload", map[string]string{"id": c.model}, &reply); err != nil {
 			return err
 		}
-		if reply.ID != modelID || reply.Status != "unloaded" {
+		if reply.ID != c.model || reply.Status != "unloaded" {
 			return fmt.Errorf("unexpected unload response: %+v", reply)
 		}
 		var remaining []struct {
@@ -760,7 +768,7 @@ func (c *client) unload() error {
 			return err
 		}
 		for _, m := range remaining {
-			if m.ID == modelID {
+			if m.ID == c.model {
 				return fmt.Errorf("fixture remains loaded after unload")
 			}
 		}
@@ -777,7 +785,7 @@ func (c *client) systemPrompt() (string, int, error) {
 	var count struct {
 		Tokens int `json:"tokens"`
 	}
-	if err := c.json("POST", "/v1/tokenize", map[string]any{"model": modelID, "input": text, "apply_template": false}, &count); err != nil {
+	if err := c.json("POST", "/v1/tokenize", map[string]any{"model": c.model, "input": text, "apply_template": false}, &count); err != nil {
 		return "", 0, err
 	}
 	if count.Tokens <= 0 {

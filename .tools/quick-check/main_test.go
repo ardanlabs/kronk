@@ -28,11 +28,12 @@ func TestQuickCheckCommand(t *testing.T) {
 	git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "--quiet", "-m", "release")
 	git("-c", "tag.gpgsign=false", "tag", "v1.0.0")
 	releaseRevision := git("rev-parse", "HEAD")
-	for _, defect := range []string{"", "release", "single-repetition", "all-cells", "no-drafts", "second-no-drafts", "no-cache", "wrong-cache-path", "missing-logs", "truncated-stream", "foreign-session", "two-slots", "cancel-internal-error", "cancel-without-ack", "cancel-without-cleanup", "missing-draft-restore", "actual-reuse-mismatch", "wrong-slot", "uncancelled-error", "dense-fixture", "missing-timing", "invalid-timing", "images", "images-system", "images-system-no-encode", "images-system-no-decode", "images-system-no-restore", "images-system-wrong-reuse", "images-no-encode", "images-no-decode", "images-reencode", "images-no-restore", "images-leak", "images-recovery-reuse", "images-recovery-leak"} {
+	for _, defect := range []string{"", "release", "single-repetition", "all-cells", "mtp-off", "images-mtp-off", "mtp-off-drafts", "mtp-off-cancel-drafts", "mtp-off-no-restore", "no-drafts", "second-no-drafts", "no-cache", "wrong-cache-path", "missing-logs", "truncated-stream", "foreign-session", "two-slots", "cancel-internal-error", "cancel-without-ack", "cancel-without-cleanup", "missing-draft-restore", "actual-reuse-mismatch", "wrong-slot", "uncancelled-error", "dense-fixture", "missing-timing", "invalid-timing", "images", "images-system", "images-system-no-encode", "images-system-no-decode", "images-system-no-restore", "images-system-wrong-reuse", "images-no-encode", "images-no-decode", "images-reencode", "images-no-restore", "images-leak", "images-recovery-reuse", "images-recovery-leak"} {
 		t.Run(defect, func(t *testing.T) {
 			images := strings.HasPrefix(defect, "images")
-			systemReuse := strings.HasPrefix(defect, "images-system")
-			passing := defect == "" || defect == "release" || defect == "single-repetition" || defect == "all-cells" || defect == "images" || defect == "images-system" || defect == "images-recovery-reuse"
+			targetOnly := strings.Contains(defect, "mtp-off")
+			systemReuse := strings.HasPrefix(defect, "images-system") || defect == "images-mtp-off"
+			passing := defect == "" || defect == "release" || defect == "single-repetition" || defect == "all-cells" || defect == "images" || defect == "images-system" || defect == "images-recovery-reuse" || defect == "mtp-off" || defect == "images-mtp-off"
 			revision, tag := "0123456789abcdef0123456789abcdef01234567", ""
 			if defect == "release" {
 				revision, tag = releaseRevision, "v1.0.0"
@@ -49,6 +50,7 @@ func TestQuickCheckCommand(t *testing.T) {
 			}
 			defer log.Close()
 			loaded, calls, unloads := false, 0, 0
+			loadedModel := modelID
 			tokenizeCalls := 0
 			cancelStarted, cancelFinished := make(chan struct{}), make(chan struct{})
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -64,7 +66,7 @@ func TestQuickCheckCommand(t *testing.T) {
 {"index":1,"name":"CUDA0","description":"Fixture GPU","type":"gpu_cuda","backend":"CUDA","total_bytes":25769803776,"free_bytes":21474836480}]}`)
 				case req.URL.Path == "/v1/kronk/models/ps":
 					if loaded {
-						json.NewEncoder(w).Encode([]map[string]any{{"id": modelID, "slots": 1}})
+						json.NewEncoder(w).Encode([]map[string]any{{"id": loadedModel, "slots": 1}})
 					} else {
 						fmt.Fprintln(w, `[]`)
 					}
@@ -78,11 +80,15 @@ func TestQuickCheckCommand(t *testing.T) {
 					if defect == "two-slots" {
 						slots = append(slots, map[string]any{"id": 1, "phase": "idle"})
 					}
-					json.NewEncoder(w).Encode([]map[string]any{{"model_id": modelID, "mtp": true, "ndraft": 5, "slots": slots}})
+					ndraft := 5
+					if loadedModel == targetOnlyModelID {
+						ndraft = 0
+					}
+					json.NewEncoder(w).Encode([]map[string]any{{"model_id": loadedModel, "mtp": ndraft > 0, "ndraft": ndraft, "slots": slots}})
 				case req.URL.Path == "/v1/kronk/models/unload":
 					loaded = false
 					unloads++
-					json.NewEncoder(w).Encode(map[string]any{"id": modelID, "status": "unloaded"})
+					json.NewEncoder(w).Encode(map[string]any{"id": loadedModel, "status": "unloaded"})
 				case req.URL.Path == "/v1/tokenize":
 					tokenizeCalls++
 					var body struct {
@@ -99,17 +105,27 @@ func TestQuickCheckCommand(t *testing.T) {
 					json.NewEncoder(w).Encode(map[string]int{"tokens": 9876})
 				case req.URL.Path == "/v1/chat/completions":
 					var body struct {
+						Model    string    `json:"model"`
 						Messages []message `json:"messages"`
 					}
 					if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 						t.Error(err)
 					}
 					phases := []string{"cold", "replay", "append", "fresh-session", "cancel", "recovery"}
-					cellCalls, images := calls, images
+					cellCalls, images, targetOnly := calls, images, targetOnly
 					if defect == "all-cells" {
 						cellCalls = calls % (1 + 6*requested)
-						images = calls >= 1+6*requested
+						cell := matrixCells[calls/(1+6*requested)]
+						images, targetOnly = cell.images, cell.targetOnly
 					}
+					wantModel := modelID
+					if targetOnly {
+						wantModel = targetOnlyModelID
+					}
+					if body.Model != wantModel {
+						t.Errorf("wrong model alias: got %q, want %q", body.Model, wantModel)
+					}
+					loadedModel = body.Model
 					if cellCalls >= 1+3*len(phases) {
 						t.Error("unexpected extra chat")
 						return
@@ -207,6 +223,12 @@ func TestQuickCheckCommand(t *testing.T) {
 						reason = "system-cache-prefix"
 					}
 					emit := func(msg, status string, fields map[string]any) {
+						if targetOnly && (msg == "draft-model-mtp" || msg == "speculative" || strings.HasPrefix(status, "imc-draft-")) {
+							return
+						}
+						if defect == "mtp-off-no-restore" && status == "imc-restore-done" {
+							return
+						}
 						if defect == "missing-logs" || (defect == "missing-draft-restore" && status == "imc-draft-restore-done") || (defect == "cancel-without-cleanup" && phase == "cancel" && msg == "finish-slot") {
 							return
 						}
@@ -292,6 +314,13 @@ func TestQuickCheckCommand(t *testing.T) {
 						if cached == 0 {
 							resume = "fresh-prefill"
 						}
+						if targetOnly {
+							resume = ""
+							drafts = 0
+							if defect == "mtp-off-cancel-drafts" && terminal == "cancel" {
+								drafts = 3
+							}
+						}
 						actual := cached
 						if defect == "actual-reuse-mismatch" {
 							actual = 1
@@ -353,6 +382,13 @@ func TestQuickCheckCommand(t *testing.T) {
 					if defect == "no-drafts" || (defect == "second-no-drafts" && calls > 7) {
 						drafts = 0
 					}
+					coverage := 0.5
+					if targetOnly {
+						drafts, coverage = 0, 0
+						if defect == "mtp-off-drafts" {
+							drafts, coverage = 40, 0.5
+						}
+					}
 					finish("complete", 90, drafts)
 					// Asymmetric rates catch averaging, pooling phases, and keeping
 					// only the last repetition instead of reporting the median.
@@ -360,7 +396,7 @@ func TestQuickCheckCommand(t *testing.T) {
 					if phase == "replay" {
 						rate *= 2
 					}
-					fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":%d,\"completion_tokens\":90,\"draft_tokens\":%d,\"draft_coverage\":0.5,\"tokens_per_second\":%d,\"prompt_tokens_details\":{\"cached_tokens\":%d}}}\n\ndata: [DONE]\n\n", stable+tail, drafts, rate, cached)
+					fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":%d,\"completion_tokens\":90,\"draft_tokens\":%d,\"draft_coverage\":%g,\"tokens_per_second\":%d,\"prompt_tokens_details\":{\"cached_tokens\":%d}}}\n\ndata: [DONE]\n\n", stable+tail, drafts, coverage, rate, cached)
 				case strings.HasPrefix(req.URL.Path, "/v1/kronk/models/"):
 					experts := "256"
 					if defect == "dense-fixture" {
@@ -384,6 +420,10 @@ func TestQuickCheckCommand(t *testing.T) {
 			selection, cellIndex := "text", 0
 			if images {
 				selection, cellIndex = "images", 1
+			}
+			if targetOnly {
+				selection += "-no-mtp"
+				cellIndex += 2
 			}
 			if defect == "all-cells" {
 				selection = "all"
@@ -412,7 +452,7 @@ func TestQuickCheckCommand(t *testing.T) {
 				t.Fatal(err)
 			}
 			if defect == "all-cells" {
-				if matrix.Status != "PASS" || len(matrix.Cells) != 2 || tokenizeCalls != 2*requested || calls != 2*(1+6*requested) || unloads != 2 || loaded {
+				if matrix.Status != "PASS" || len(matrix.Cells) != 4 || tokenizeCalls != 4*requested || calls != 4*(1+6*requested) || unloads != 4 || loaded {
 					t.Fatalf("combined run lost cells/repetitions or changed lifecycle: chats=%d tokenizations=%d unloads=%d summary=%s", calls, tokenizeCalls, unloads, data)
 				}
 				dir := filepath.Dir(paths[0])
@@ -424,7 +464,7 @@ func TestQuickCheckCommand(t *testing.T) {
 				if err := json.Unmarshal(comparisonText.Bytes(), &comparison); err != nil {
 					t.Fatal(err)
 				}
-				if comparison.Status != "PASS" || len(comparison.Cells) != 2 {
+				if comparison.Status != "PASS" || len(comparison.Cells) != 4 {
 					t.Fatal("combined comparison omitted a cell", comparisonText.String())
 				}
 				for _, cell := range comparison.Cells {
@@ -434,8 +474,13 @@ func TestQuickCheckCommand(t *testing.T) {
 				}
 				return
 			}
-			if len(matrix.Cells) != 2 || (matrix.Status == "PASS") != passing || !bytes.Contains(matrix.Cells[1-cellIndex], []byte(`"status": "NOT_RUN"`)) {
+			if len(matrix.Cells) != 4 || (matrix.Status == "PASS") != passing {
 				t.Fatalf("incorrect matrix coverage/status: %s", data)
+			}
+			for i, cell := range matrix.Cells {
+				if i != cellIndex && !bytes.Contains(cell, []byte(`"status": "NOT_RUN"`)) {
+					t.Fatalf("unselected cell ran: %s", cell)
+				}
 			}
 			data = matrix.Cells[cellIndex]
 			var summary struct {
@@ -524,7 +569,7 @@ func TestQuickCheckCommand(t *testing.T) {
 						t.Fatalf("log omitted %q: %s", required, text)
 					}
 				}
-				lines := 7 // Includes the explicitly unrun cell.
+				lines := 9 // Includes the three explicitly unrun cells.
 				if images {
 					lines++
 					if !strings.Contains(header, "Images: PASS") || !strings.Contains(header, "img+") {
@@ -703,7 +748,11 @@ func TestQuickCheckCommand(t *testing.T) {
 				if images {
 					wantCached = "9000"
 				}
-				if string(phases[1]["cached_tokens"]) != wantCached || string(phases[1]["draft_tokens"]) != "40" {
+				wantDrafts := "40"
+				if targetOnly {
+					wantDrafts = "0"
+				}
+				if string(phases[1]["cached_tokens"]) != wantCached || string(phases[1]["draft_tokens"]) != wantDrafts {
 					t.Fatalf("cache/MTP comparison metrics lost: %s", data)
 				}
 				if _, ok := phases[4]["client_output_tokens_per_second"]; ok {
