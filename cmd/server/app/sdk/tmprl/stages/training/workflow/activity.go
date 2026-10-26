@@ -3,7 +3,7 @@ package training
 import (
 	"context"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/model"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/shared/model"
 	"go.temporal.io/sdk/temporal"
 )
 
@@ -15,7 +15,9 @@ const (
 
 type workflowInput = Input
 
-// RunStage is the registered training activity entrypoint.
+// RunStage is the registered training activity entrypoint. It supplies progress
+// heartbeats, delegates managed input to trainingStage in pipeline.go (or uses
+// the configured Backend), and validates the returned stage artifacts.
 func (b *Business) RunStage(ctx context.Context, input StageRequest) (Artifacts, error) {
 	publish, stop := model.ActivityProgress(ctx, input.Execution, input.Stage, b.publishProgress)
 	defer stop()

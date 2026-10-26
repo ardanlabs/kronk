@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/model"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/prepare/generate"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/shared/model"
 )
 
 type completer struct {

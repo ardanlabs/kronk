@@ -8,7 +8,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/dataset"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/shared/dataset"
 )
 
 // CopyArtifact atomically publishes a nonempty artifact of at most 1 GiB.

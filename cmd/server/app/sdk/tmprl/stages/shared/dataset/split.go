@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/model"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/shared/model"
 )
 
 // Readiness is a gate, not a training implementation. Explicit fact-mode
