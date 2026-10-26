@@ -103,7 +103,7 @@ func TestCompareImageCell(t *testing.T) {
 	for _, role := range []string{"old-aaaaaaa", "new-aaaaaaa"} {
 		r := comparisonFixture([]float64{2, 6})
 		r.Images = true
-		r.ReferenceTokens = referenceTokens(true)
+		r.ReferenceTokens = referenceTokens(true, false)
 		for i := range r.Repetitions {
 			r.Repetitions[i].Images = true
 			r.Repetitions[i].ReferenceTokens = r.ReferenceTokens
@@ -135,7 +135,7 @@ func TestCompareMatrixSelection(t *testing.T) {
 	image := func(values ...float64) report {
 		r := comparisonFixture(values)
 		r.Images = true
-		r.ReferenceTokens = referenceTokens(true)
+		r.ReferenceTokens = referenceTokens(true, false)
 		for i := range r.Repetitions {
 			r.Repetitions[i].Images = true
 			r.Repetitions[i].ReferenceTokens = r.ReferenceTokens
@@ -400,6 +400,7 @@ func TestCompareWarningsAndFailures(t *testing.T) {
 		warning string
 	}{
 		{"library", func(r *report) { r.Metadata["/v1/kronk/libs"].(map[string]any)["current"] = "different" }, false, "installed library"},
+		{"missing-mtp-backend", func(r *report) { r.MTPBackend = "" }, false, "MTP backend: missing metadata"},
 		{"harness", func(r *report) { r.HarnessRevision = "different" }, false, "harness revision"},
 		{"machine", func(r *report) { r.Metadata["/v1/liveness"].(map[string]any)["host"] = "different" }, false, "machine.host"},
 		{"unknown-memory", func(r *report) { r.Metadata["/v1/devices"].(map[string]any)["system_ram_bytes"] = 0 }, false, "missing metadata"},
@@ -545,7 +546,7 @@ func TestCompareRejectsBrokenArtifacts(t *testing.T) {
 
 func comparisonFixture(values []float64) report {
 	r := report{Status: "PASS", Workload: "operations-v2", Model: modelID, ServerRevision: strings.Repeat("a", 40), TestStartedAt: "2026-10-21T16:00:00Z", HarnessRevision: "fixed-harness", MTPBackend: "qwen35-own-kv", RepetitionsRequested: len(values), evidenceValidated: true}
-	r.ReferenceTokens = referenceTokens(false)
+	r.ReferenceTokens = referenceTokens(false, false)
 	r.Metadata = map[string]any{
 		"/v1/liveness":   map[string]any{"host": "test-machine", "os": "test-os", "vcs_revision": r.ServerRevision},
 		"/v1/devices":    map[string]any{"system_ram_bytes": 24000, "gpu_total_bytes": 18000, "unified_memory": true},

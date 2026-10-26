@@ -26,6 +26,15 @@ models:
     <<: *quick
     speculation: disabled
 
+  unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK-NO-IMC:
+    <<: *quick
+    incremental-cache: false
+
+  unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK-NO-IMC-NO-MTP:
+    <<: *quick
+    incremental-cache: false
+    speculation: disabled
+
   unsloth/Qwen3.8-27B-UD-Q4_K_XL/QUICK-CHECK:
     <<: *quick
 

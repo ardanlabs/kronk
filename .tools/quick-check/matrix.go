@@ -11,11 +11,16 @@ var matrixCells = []struct {
 	id         string
 	images     bool
 	targetOnly bool
+	noCache    bool
 }{
-	{"MoE/1s/IMC+/MTP+/img-", false, false},
-	{"MoE/1s/IMC+/MTP+/img+", true, false},
-	{"MoE/1s/IMC+/MTP-/img-", false, true},
-	{"MoE/1s/IMC+/MTP-/img+", true, true},
+	{"MoE/1s/IMC+/MTP+/img-", false, false, false},
+	{"MoE/1s/IMC+/MTP+/img+", true, false, false},
+	{"MoE/1s/IMC+/MTP-/img-", false, true, false},
+	{"MoE/1s/IMC+/MTP-/img+", true, true, false},
+	{"MoE/1s/IMC-/MTP+/img-", false, false, true},
+	{"MoE/1s/IMC-/MTP+/img+", true, false, true},
+	{"MoE/1s/IMC-/MTP-/img-", false, true, true},
+	{"MoE/1s/IMC-/MTP-/img+", true, true, true},
 }
 
 func selectedCells(selection string) (map[string]bool, error) {
@@ -37,8 +42,22 @@ func selectedCells(selection string) (map[string]bool, error) {
 		case "no-mtp":
 			selected[matrixCells[2].id] = true
 			selected[matrixCells[3].id] = true
+		case "text-no-imc":
+			selected[matrixCells[4].id] = true
+		case "images-no-imc":
+			selected[matrixCells[5].id] = true
+		case "text-no-imc-no-mtp":
+			selected[matrixCells[6].id] = true
+		case "images-no-imc-no-mtp":
+			selected[matrixCells[7].id] = true
+		case "no-imc":
+			for _, cell := range matrixCells {
+				if cell.noCache {
+					selected[cell.id] = true
+				}
+			}
 		default:
-			return nil, fmt.Errorf("unknown cell selector %q; use all, text, images, text-no-mtp, images-no-mtp, no-mtp, or a comma-separated list", name)
+			return nil, fmt.Errorf("unknown cell selector %q; use all, text, images, text-no-mtp, images-no-mtp, no-mtp, text-no-imc, images-no-imc, text-no-imc-no-mtp, images-no-imc-no-mtp, no-imc, or a comma-separated list", name)
 		}
 	}
 	return selected, nil

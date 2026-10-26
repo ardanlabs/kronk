@@ -256,7 +256,7 @@ func readCellComparison(s runSummary, r report, events []byte) (comparisonInput,
 	}
 	for i, rep := range r.Repetitions {
 		summary := s.Repetitions[i]
-		if rep.ReferenceTokens != r.ReferenceTokens || rep.Images != r.Images || rep.TargetOnly != r.TargetOnly || summary.Status != rep.Status || !slices.Equal(summary.Findings, rep.Findings) ||
+		if rep.ReferenceTokens != r.ReferenceTokens || rep.Images != r.Images || rep.TargetOnly != r.TargetOnly || rep.NoCache != r.NoCache || summary.Status != rep.Status || !slices.Equal(summary.Findings, rep.Findings) ||
 			summary.SystemTokens != rep.SystemTokens || summary.SystemSHA256 != rep.SystemSHA256 ||
 			summary.WorkloadSeconds != rep.WorkloadSeconds || summary.CancelReleaseSeconds != rep.CancelReleaseSeconds {
 			return input, fmt.Errorf("repetition %d summary and diagnostic report disagree", i+1)
@@ -381,7 +381,9 @@ func compareRuns(aDir, bDir string, a, b comparisonInput) comparison {
 	}
 	check("model", a.summary.Model, b.summary.Model)
 	check("installed library", a.summary.InstalledLibrary, b.summary.InstalledLibrary)
-	check("MTP backend", a.summary.MTPBackend, b.summary.MTPBackend)
+	if !a.report.TargetOnly || !b.report.TargetOnly {
+		check("MTP backend", a.summary.MTPBackend, b.summary.MTPBackend)
+	}
 	check("harness revision", a.summary.HarnessRevision, b.summary.HarnessRevision)
 	check("repetition count", a.summary.RepetitionsRequested, b.summary.RepetitionsRequested)
 	if len(a.native) == 0 || len(b.native) == 0 {

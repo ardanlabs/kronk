@@ -54,6 +54,7 @@ type result struct {
 	TailTokens      int                `json:"tail_tokens,omitempty"`
 	SystemBoundary  int                `json:"system_boundary_tokens,omitempty"`
 	MediaPlan       bool               `json:"media_plan"`
+	MediaPrefill    bool               `json:"uncached_media_prefill"`
 	MediaCount      int                `json:"media_count"`
 	MediaPosition   int                `json:"cached_logical_position"`
 	MediaAnchorKV   int                `json:"media_anchor_physical_kv"`
@@ -80,6 +81,7 @@ type execution struct {
 	DraftSnapshotted  bool      `json:"draft_snapshotted"`
 	SystemPublished   int       `json:"system_published_tokens"`
 	ReusedTokens      int       `json:"actual_reused_tokens"`
+	InputTokens       int       `json:"input_tokens"`
 	OutputTokens      int       `json:"output_tokens"`
 	DraftTokens       int       `json:"draft_tokens"`
 	DraftAccepted     int       `json:"draft_accepted_tokens"`

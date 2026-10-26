@@ -1,8 +1,8 @@
 # Kronk quick-check
 
-Cells: **MoE / one slot / IMC on / MTP off or on / images off or on**.
+Cells: **MoE / one slot / IMC off or on / MTP off or on / images off or on**.
 Model: `unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL`, using the
-`QUICK-CHECK` (MTP on) and `QUICK-CHECK-NO-MTP` (target-only) aliases.
+`QUICK-CHECK` aliases from `.tools/model_config_tools.yaml`.
 
 ## Run
 
@@ -21,21 +21,25 @@ make quick-check-this-code QUICK_CHECK_ARGS='-cells text'
 make quick-check-this-code QUICK_CHECK_ARGS='-cells images'
 make quick-check-this-code QUICK_CHECK_ARGS='-cells text-no-mtp'
 make quick-check-this-code QUICK_CHECK_ARGS='-cells images-no-mtp'
-# -cells no-mtp runs both target-only cells; -cells all (default) runs all four.
+make quick-check-this-code QUICK_CHECK_ARGS='-cells no-imc' # All four IMC-off cells.
+# Individual IMC-off selectors: text-no-imc, images-no-imc,
+# text-no-imc-no-mtp, images-no-imc-no-mtp.
+# -cells no-mtp retains both IMC-on target-only cells; all runs all eight.
 # Selectors can be combined, e.g. -cells text,images-no-mtp.
 ```
 
 `text` and `images` retain their MTP-on meaning. Restart the server after updating
-the tools model configuration to make the target-only alias available.
+the tools model configuration to make the new aliases available.
 
 Image cells exercise image rebuild, replay, append, a different image/session,
 cancellation, and recovery with the original image.
 
-Flow: for each selected cell, one warm-up → two repetitions of cold chat, replay,
+Flow: for each selected cell, one warm-up → one repetition of cold chat, replay,
 append, independent session, cancellation, and recovery → one final report for
 the invocation. The model stays loaded across a cell's repetitions; it is unloaded
 before/after each cell for now. Access to the server's JSON log is required.
 Unselected cells (and those skipped after a failure) appear as `NOT_RUN`.
+With one repetition, SD is `n/a`; increase `-repetitions` to measure variation.
 
 ```sh
 # Optional settings (KRONK_TOKEN supplies authentication):

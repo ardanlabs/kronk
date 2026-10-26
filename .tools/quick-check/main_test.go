@@ -28,10 +28,11 @@ func TestQuickCheckCommand(t *testing.T) {
 	git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "--quiet", "-m", "release")
 	git("-c", "tag.gpgsign=false", "tag", "v1.0.0")
 	releaseRevision := git("rev-parse", "HEAD")
-	for _, defect := range []string{"", "release", "single-repetition", "all-cells", "mtp-off", "images-mtp-off", "mtp-off-drafts", "mtp-off-cancel-drafts", "mtp-off-no-restore", "no-drafts", "second-no-drafts", "no-cache", "wrong-cache-path", "missing-logs", "truncated-stream", "foreign-session", "two-slots", "cancel-internal-error", "cancel-without-ack", "cancel-without-cleanup", "missing-draft-restore", "actual-reuse-mismatch", "wrong-slot", "uncancelled-error", "dense-fixture", "missing-timing", "invalid-timing", "images", "images-system", "images-system-no-encode", "images-system-no-decode", "images-system-no-restore", "images-system-wrong-reuse", "images-no-encode", "images-no-decode", "images-reencode", "images-no-restore", "images-leak", "images-recovery-reuse", "images-recovery-leak"} {
+	for _, defect := range []string{"", "release", "single-repetition", "all-cells", "no-imc-config", "no-imc-reuse", "images-no-imc-no-encode", "mtp-off", "images-mtp-off", "mtp-off-drafts", "mtp-off-cancel-drafts", "mtp-off-no-restore", "no-drafts", "second-no-drafts", "no-cache", "wrong-cache-path", "missing-logs", "truncated-stream", "foreign-session", "two-slots", "cancel-internal-error", "cancel-without-ack", "cancel-without-cleanup", "missing-draft-restore", "actual-reuse-mismatch", "wrong-slot", "uncancelled-error", "dense-fixture", "missing-timing", "invalid-timing", "images", "images-system", "images-system-no-encode", "images-system-no-decode", "images-system-no-restore", "images-system-wrong-reuse", "images-no-encode", "images-no-decode", "images-reencode", "images-no-restore", "images-leak", "images-recovery-reuse", "images-recovery-leak"} {
 		t.Run(defect, func(t *testing.T) {
 			images := strings.HasPrefix(defect, "images")
 			targetOnly := strings.Contains(defect, "mtp-off")
+			noCache := strings.Contains(defect, "no-imc")
 			systemReuse := strings.HasPrefix(defect, "images-system") || defect == "images-mtp-off"
 			passing := defect == "" || defect == "release" || defect == "single-repetition" || defect == "all-cells" || defect == "images" || defect == "images-system" || defect == "images-recovery-reuse" || defect == "mtp-off" || defect == "images-mtp-off"
 			revision, tag := "0123456789abcdef0123456789abcdef01234567", ""
@@ -81,7 +82,7 @@ func TestQuickCheckCommand(t *testing.T) {
 						slots = append(slots, map[string]any{"id": 1, "phase": "idle"})
 					}
 					ndraft := 5
-					if loadedModel == targetOnlyModelID {
+					if loadedModel == targetOnlyModelID || loadedModel == noCacheTargetOnlyModelID {
 						ndraft = 0
 					}
 					json.NewEncoder(w).Encode([]map[string]any{{"model_id": loadedModel, "mtp": ndraft > 0, "ndraft": ndraft, "slots": slots}})
@@ -112,15 +113,21 @@ func TestQuickCheckCommand(t *testing.T) {
 						t.Error(err)
 					}
 					phases := []string{"cold", "replay", "append", "fresh-session", "cancel", "recovery"}
-					cellCalls, images, targetOnly := calls, images, targetOnly
+					cellCalls, images, targetOnly, noCache := calls, images, targetOnly, noCache
 					if defect == "all-cells" {
 						cellCalls = calls % (1 + 6*requested)
 						cell := matrixCells[calls/(1+6*requested)]
-						images, targetOnly = cell.images, cell.targetOnly
+						images, targetOnly, noCache = cell.images, cell.targetOnly, cell.noCache
 					}
 					wantModel := modelID
 					if targetOnly {
 						wantModel = targetOnlyModelID
+					}
+					if noCache {
+						wantModel = noCacheModelID
+						if targetOnly {
+							wantModel = noCacheTargetOnlyModelID
+						}
 					}
 					if body.Model != wantModel {
 						t.Errorf("wrong model alias: got %q, want %q", body.Model, wantModel)
@@ -222,7 +229,13 @@ func TestQuickCheckCommand(t *testing.T) {
 					if defect == "wrong-cache-path" {
 						reason = "system-cache-prefix"
 					}
+					if noCache {
+						cached = 0
+					}
 					emit := func(msg, status string, fields map[string]any) {
+						if noCache && (msg == "imc" || msg == "imc-media-cache" || strings.HasPrefix(status, "imc-")) {
+							return
+						}
 						if targetOnly && (msg == "draft-model-mtp" || msg == "speculative" || strings.HasPrefix(status, "imc-draft-")) {
 							return
 						}
@@ -251,7 +264,12 @@ func TestQuickCheckCommand(t *testing.T) {
 					emit("request-lifecycle", "complete", map[string]any{"stage": 1, "elapsed": "750µs"})
 					emit("request-lifecycle", "complete", map[string]any{"stage": 2, "elapsed": "12.5ms"})
 					emit("request-lifecycle", "complete", map[string]any{"stage": 3, "queue_wait": "0s"})
-					if images && phase != "warmup" {
+					if noCache && images && phase != "warmup" {
+						emit("start-slot-media", "tokenized", map[string]any{"cached_tokens": 0, "total_tokens": stable + tail})
+						if defect != "images-no-imc-no-encode" || phase != "replay" {
+							emit("prefill-media", "encoding-shared", map[string]any{"tokens": 256})
+						}
+					} else if images && phase != "warmup" {
 						anchor := 0
 						if cached > 0 && reason != "system-cache-prefix" {
 							anchor = 10193
@@ -322,10 +340,13 @@ func TestQuickCheckCommand(t *testing.T) {
 							}
 						}
 						actual := cached
+						if defect == "no-imc-reuse" && terminal == "cancel" {
+							actual = 10120
+						}
 						if defect == "actual-reuse-mismatch" {
 							actual = 1
 						}
-						emit("batch-engine", "slot-finished", map[string]any{"imc_actual_reused_tokens": actual, "output_tokens": output, "draft_tokens": drafts, "draft_resume_source": resume, "elapsed": "2.345s"})
+						emit("batch-engine", "slot-finished", map[string]any{"total_prompt": stable + tail, "imc_actual_reused_tokens": actual, "output_tokens": output, "draft_tokens": drafts, "draft_resume_source": resume, "elapsed": "2.345s"})
 						emit("request-lifecycle", terminal, map[string]any{"stage": 4, "slot": slot, "elapsed": "2.5s"})
 					}
 					if defect == "no-cache" {
@@ -402,7 +423,11 @@ func TestQuickCheckCommand(t *testing.T) {
 					if defect == "dense-fixture" {
 						experts = "0"
 					}
-					fmt.Fprintf(w, `{"has_projection":true,"metadata":{"general.architecture":"qwen35moe","qwen35moe.expert_count":%q},"model_config":{"incremental-cache":true}}`, experts)
+					imc := loadedModel != noCacheModelID && loadedModel != noCacheTargetOnlyModelID
+					if defect == "no-imc-config" {
+						imc = true
+					}
+					fmt.Fprintf(w, `{"has_projection":true,"metadata":{"general.architecture":"qwen35moe","qwen35moe.expert_count":%q},"model_config":{"incremental-cache":%t}}`, experts, imc)
 				default:
 					t.Errorf("unexpected endpoint %s", req.URL.Path)
 					http.NotFound(w, req)
@@ -424,6 +449,14 @@ func TestQuickCheckCommand(t *testing.T) {
 			if targetOnly {
 				selection += "-no-mtp"
 				cellIndex += 2
+			}
+			if noCache {
+				selection = "text-no-imc"
+				cellIndex = 4
+				if images {
+					selection = "images-no-imc"
+					cellIndex++
+				}
 			}
 			if defect == "all-cells" {
 				selection = "all"
@@ -452,7 +485,7 @@ func TestQuickCheckCommand(t *testing.T) {
 				t.Fatal(err)
 			}
 			if defect == "all-cells" {
-				if matrix.Status != "PASS" || len(matrix.Cells) != 4 || tokenizeCalls != 4*requested || calls != 4*(1+6*requested) || unloads != 4 || loaded {
+				if matrix.Status != "PASS" || len(matrix.Cells) != 8 || tokenizeCalls != 8*requested || calls != 8*(1+6*requested) || unloads != 8 || loaded {
 					t.Fatalf("combined run lost cells/repetitions or changed lifecycle: chats=%d tokenizations=%d unloads=%d summary=%s", calls, tokenizeCalls, unloads, data)
 				}
 				dir := filepath.Dir(paths[0])
@@ -464,17 +497,39 @@ func TestQuickCheckCommand(t *testing.T) {
 				if err := json.Unmarshal(comparisonText.Bytes(), &comparison); err != nil {
 					t.Fatal(err)
 				}
-				if comparison.Status != "PASS" || len(comparison.Cells) != 4 {
+				if comparison.Status != "PASS" || len(comparison.Cells) != 8 {
 					t.Fatal("combined comparison omitted a cell", comparisonText.String())
 				}
 				for _, cell := range comparison.Cells {
-					if cell.Status != "PASS" || cell.Baseline.ReferenceTokens != referenceTokens(strings.HasSuffix(cell.Cell, "img+")) || cell.Baseline.Executed != requested || len(cell.Metrics) == 0 {
+					if cell.Status != "PASS" || cell.Baseline.ReferenceTokens != referenceTokens(strings.HasSuffix(cell.Cell, "img+"), strings.Contains(cell.Cell, "IMC-")) || cell.Baseline.Executed != requested || len(cell.Metrics) == 0 {
 						t.Fatal("cell evidence/normalization mixed", comparisonText.String())
+					}
+					if strings.Contains(cell.Cell, "MTP-") && strings.Contains(strings.Join(cell.Warnings, "\n"), "MTP backend") {
+						t.Fatal("target-only comparison must not require an MTP backend", comparisonText.String())
+					}
+					if strings.Contains(cell.Cell, "IMC-") {
+						input, reference, generated := 51367.0, 51405.0, 1332.0
+						if strings.HasSuffix(cell.Cell, "img+") {
+							input, reference, generated = 51337, 53095, 1001
+						}
+						want := reference*(5*0.123)/input + generated*(5*2.345)/(5*89)
+						found := false
+						for _, metric := range cell.Metrics {
+							if metric.Metric == "workload.reference_seconds" {
+								found = true
+								if metric.Baseline == nil || math.Abs(metric.Baseline.Median-want) > 1e-12 {
+									t.Fatalf("uncached normalization must count all completed prompts: %+v, want %v", metric.Baseline, want)
+								}
+							}
+						}
+						if !found {
+							t.Fatal("uncached normalization omitted", cell.Cell)
+						}
 					}
 				}
 				return
 			}
-			if len(matrix.Cells) != 4 || (matrix.Status == "PASS") != passing {
+			if len(matrix.Cells) != 8 || (matrix.Status == "PASS") != passing {
 				t.Fatalf("incorrect matrix coverage/status: %s", data)
 			}
 			for i, cell := range matrix.Cells {
@@ -569,7 +624,7 @@ func TestQuickCheckCommand(t *testing.T) {
 						t.Fatalf("log omitted %q: %s", required, text)
 					}
 				}
-				lines := 9 // Includes the three explicitly unrun cells.
+				lines := 13 // Includes the seven explicitly unrun cells.
 				if images {
 					lines++
 					if !strings.Contains(header, "Images: PASS") || !strings.Contains(header, "img+") {

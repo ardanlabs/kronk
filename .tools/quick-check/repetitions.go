@@ -13,10 +13,18 @@ type normalizationReference struct {
 // Freeze a representative volume per cell, not per invocation. Text references
 // come from the initial nine observations; image references are rounded medians
 // from new-0466efe's two repetitions with media System-cache reuse. Generation
-// excludes the first token per response, matching Kronk's TPS clock.
-func referenceTokens(images bool) normalizationReference {
+// excludes the first token per response, matching Kronk's TPS clock. IMC-off
+// input references are provisional full-prompt medians from new-48db127:
+// text 51384/51426, images 53093/53097. Confirm with real uncached runs.
+func referenceTokens(images, noCache bool) normalizationReference {
 	if images {
+		if noCache {
+			return normalizationReference{InputTokens: 53095, GenerationTokens: 1001}
+		}
 		return normalizationReference{InputTokens: 11674, GenerationTokens: 1001}
+	}
+	if noCache {
+		return normalizationReference{InputTokens: 51405, GenerationTokens: 1332}
 	}
 	return normalizationReference{InputTokens: 10708, GenerationTokens: 1332}
 }

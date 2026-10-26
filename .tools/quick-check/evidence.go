@@ -185,6 +185,15 @@ func recordExecution(r *result, event map[string]any) {
 		case "imc-draft-snapshot-done":
 			e.DraftSnapshotted = true
 		}
+	case "start-slot-media":
+		if status == "tokenized" {
+			r.MediaPrefill = true
+			r.ReusableTokens = eventInt(event, "cached_tokens")
+		}
+	case "prefill-media":
+		if status == "encoding-shared" || status == "encoding-image" {
+			r.EncodedTokens += eventInt(event, "tokens")
+		}
 	case "speculative":
 		if status == "draft-kv-cleared" || status == "draft-kv-trimmed" {
 			e.DraftCleaned = true
@@ -201,6 +210,7 @@ func recordExecution(r *result, event map[string]any) {
 			recordDuration(r, event, "elapsed", "generation_seconds")
 			e.SlotFinished = true
 			e.ReusedTokens = eventInt(event, "imc_actual_reused_tokens")
+			e.InputTokens = eventInt(event, "total_prompt")
 			e.OutputTokens = eventInt(event, "output_tokens")
 			e.DraftTokens = eventInt(event, "draft_tokens")
 			e.DraftAccepted = eventInt(event, "draft_accepted_tokens")
@@ -273,6 +283,20 @@ func validateExecution(r *report) {
 		}
 		if res.Phase == "recovery" && (cancelledAt.IsZero() || e.Started.Before(cancelledAt)) {
 			fail(res.Phase, "recovery must execute after cancelled request cleanup on the same slot")
+		}
+		if r.NoCache {
+			if e.ReusedTokens != 0 || res.ReusableTokens != 0 || res.Usage.PromptTokensDetails.CachedTokens != 0 || res.CacheMatch != "" || res.MediaPlan || e.SystemPublished != 0 || e.TargetRestored || e.DraftRestored || e.TargetSnapshotted || e.DraftSnapshotted {
+				fail(res.Phase, "IMC-off execution reported cache planning, reuse, or saved state")
+			}
+			if e.InputTokens <= r.SystemTokens || (!res.Cancelled && e.InputTokens != res.Usage.PromptTokens) || (!r.TargetOnly && e.DraftResume != "fresh-prefill") {
+				fail(res.Phase, "full prompt prefill and any required fresh MTP prefill not attested")
+			}
+			// Ordinary media prefill has no IMC decode-chunk event. Encoding,
+			// successful prefill/slot completion, and semantic answers attest it.
+			if r.Images && (!res.MediaPrefill || res.EncodedTokens <= 0) {
+				fail(res.Phase, "IMC-off image must be processed again on every request")
+			}
+			continue
 		}
 		if r.Images {
 			if res.Phase == "cold" {

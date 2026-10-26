@@ -23,6 +23,8 @@ import (
 
 const modelID = "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK"
 const targetOnlyModelID = "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK-NO-MTP"
+const noCacheModelID = "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK-NO-IMC"
+const noCacheTargetOnlyModelID = "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK-NO-IMC-NO-MTP"
 
 type options struct {
 	host        string
@@ -41,6 +43,7 @@ type report struct {
 	Model                string                 `json:"model"`
 	Images               bool                   `json:"images"`
 	TargetOnly           bool                   `json:"target_only"`
+	NoCache              bool                   `json:"no_cache"`
 	ReferenceTokens      normalizationReference `json:"normalization_reference"`
 	Host                 string                 `json:"host"`
 	HarnessRevision      string                 `json:"harness_revision"`
@@ -159,7 +162,11 @@ func (r report) cell() string {
 	if r.TargetOnly {
 		mtp = "off"
 	}
-	return "MoE / one slot / IMC on / MTP " + mtp + " / images " + images
+	imc := "on"
+	if r.NoCache {
+		imc = "off"
+	}
+	return "MoE / one slot / IMC " + imc + " / MTP " + mtp + " / images " + images
 }
 
 func (r report) phaseSummary(res result) map[string]any {
@@ -272,12 +279,15 @@ func (r report) logSummary() string {
 	isolation := verdict("fresh-session", "recovery")
 	recovery := verdict("cancel", "recovery")
 	var b strings.Builder
-	fmt.Fprintf(&b, "IMC/MTP: %s | Serial isolation: %s | Cancel/recovery: %s\n", cache, isolation, recovery)
-	if r.Images {
-		fmt.Fprintf(&b, "Images: %s\n", verdict("cold", "replay", "append", "fresh-session", "cancel", "recovery"))
-	}
+	fmt.Println()
 	fmt.Fprintf(&b, "Cell: %s | Warm-up: %s | Repetitions: %d/%d\n", r.ID, warmup, len(r.Repetitions), r.RepetitionsRequested)
 	fmt.Fprintf(&b, "  Workload s [SD]: %s | Normalized s [SD]: %s\n", workload, reference)
+	fmt.Fprintf(&b, "IMC/MTP: %s | Serial isolation: %s | Cancel/recovery: %s", cache, isolation, recovery)
+	if r.Images {
+		fmt.Fprintf(&b, " | Images: %s\n", verdict("cold", "replay", "append", "fresh-session", "cancel", "recovery"))
+	} else {
+		fmt.Println()
+	}
 	if r.Status != "PASS" {
 		fmt.Fprintln(&b, "Details: summary.json (fix setup/evidence failures before deeper inference checks)")
 		if r.Images {
@@ -321,8 +331,8 @@ func main() {
 	flag.StringVar(&o.out, "out", ".tools/quick-check/output", "artifact parent; retains committed baseline and latest candidate")
 	flag.StringVar(&o.serverLog, "server-log", filepath.Join(home, ".kronk/kronk.log"), "required local JSON server log")
 	flag.DurationVar(&o.timeout, "timeout", 5*time.Minute, "per-request timeout; not a performance threshold")
-	flag.IntVar(&o.repetitions, "repetitions", 2, "complete workload repetitions; stop on first failure")
-	flag.StringVar(&o.cells, "cells", "all", "cells: all, text, images, text-no-mtp, images-no-mtp, no-mtp, or a comma-separated list")
+	flag.IntVar(&o.repetitions, "repetitions", 1, "complete workload repetitions; stop on first failure")
+	flag.StringVar(&o.cells, "cells", "all", "cells: all, text, images, text-no-mtp, images-no-mtp, no-mtp, text-no-imc, images-no-imc, text-no-imc-no-mtp, images-no-imc-no-mtp, no-imc, or a comma-separated list")
 	flag.Parse()
 	if err := run(o); err != nil {
 		os.Exit(1)
@@ -399,7 +409,7 @@ func run(o options) (runErr error) {
 	}
 	r := matrixReport{Status: "FAIL", ServerCommitTime: "unknown", TestStartedAt: started.Format(time.RFC3339Nano)}
 	for _, cell := range matrixCells {
-		r.Cells = append(r.Cells, report{ID: cell.id, Images: cell.images, TargetOnly: cell.targetOnly, Status: "NOT_RUN"})
+		r.Cells = append(r.Cells, report{ID: cell.id, Images: cell.images, TargetOnly: cell.targetOnly, NoCache: cell.noCache, Status: "NOT_RUN"})
 	}
 	var harnessRevision string
 	if revision, err := exec.Command("git", "rev-parse", "HEAD").Output(); err == nil {
@@ -480,8 +490,14 @@ func run(o options) (runErr error) {
 		if cell.targetOnly {
 			c.model = targetOnlyModelID
 		}
+		if cell.noCache {
+			c.model = noCacheModelID
+			if cell.targetOnly {
+				c.model = noCacheTargetOnlyModelID
+			}
+		}
 		cr := &r.Cells[i]
-		*cr = report{ID: cell.id, Status: "FAIL", Workload: workloadVersion, Model: c.model, Images: cell.images, TargetOnly: cell.targetOnly, Host: o.host, ServerCommitTime: "unknown", TestStartedAt: r.TestStartedAt, RepetitionsRequested: o.repetitions, HarnessRevision: harnessRevision, ReferenceTokens: referenceTokens(cell.images)}
+		*cr = report{ID: cell.id, Status: "FAIL", Workload: workloadVersion, Model: c.model, Images: cell.images, TargetOnly: cell.targetOnly, NoCache: cell.noCache, Host: o.host, ServerCommitTime: "unknown", TestStartedAt: r.TestStartedAt, RepetitionsRequested: o.repetitions, HarnessRevision: harnessRevision, ReferenceTokens: referenceTokens(cell.images, cell.noCache)}
 		log("cell=%s", cell.id)
 		err := executeCell(o, c, cr, log)
 		if r.ServerRevision == "" {
@@ -517,7 +533,7 @@ func executeCell(o options, c *client, r *report, log func(string, ...any)) (run
 	}()
 	for i := 1; i <= o.repetitions; i++ {
 		log("repetition=%d/%d", i, o.repetitions)
-		repetition := report{ID: r.ID, Status: "FAIL", Workload: workloadVersion, Model: r.Model, Images: o.images, TargetOnly: r.TargetOnly, Host: o.host, ServerCommitTime: "unknown", HarnessRevision: r.HarnessRevision, Metadata: make(map[string]any), MTPBackend: r.MTPBackend}
+		repetition := report{ID: r.ID, Status: "FAIL", Workload: workloadVersion, Model: r.Model, Images: o.images, TargetOnly: r.TargetOnly, NoCache: r.NoCache, Host: o.host, ServerCommitTime: "unknown", HarnessRevision: r.HarnessRevision, Metadata: make(map[string]any), MTPBackend: r.MTPBackend}
 		repetition.ReferenceTokens = r.ReferenceTokens
 		c.traces = make(map[string]string)
 		c.repetition = i
@@ -616,8 +632,8 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 		return err
 	}
 	r.Metadata["scheduler"] = e
-	if detail.Config.IMC == nil || !*detail.Config.IMC || len(e.Slots) != 1 || (!r.TargetOnly && (!e.MTP || e.NDraft <= 0)) || (r.TargetOnly && (e.MTP || e.NDraft != 0)) {
-		return fmt.Errorf("fixture must expose IMC on, exactly one slot, and requested MTP mode (target-only=%t): %+v", r.TargetOnly, e)
+	if detail.Config.IMC == nil || *detail.Config.IMC == r.NoCache || len(e.Slots) != 1 || (!r.TargetOnly && (!e.MTP || e.NDraft <= 0)) || (r.TargetOnly && (e.MTP || e.NDraft != 0)) {
+		return fmt.Errorf("fixture must expose requested IMC mode (off=%t), exactly one slot, and requested MTP mode (target-only=%t): %+v", r.NoCache, r.TargetOnly, e)
 	}
 	r.Slot = e.Slots[0].ID
 	system, tokens, err := c.systemPrompt()
