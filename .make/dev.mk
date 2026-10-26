@@ -22,13 +22,14 @@ authapp-proto-gen: ## Generate authentication protobuf bindings
 
 .PHONY: test-tmprl test-tmprl-down
 
-# Stage unit tests, workflows, and the controlled-model end-to-end pipeline.
+# On-demand only: excluded from ordinary local and GitHub test suites.
+# Step unit tests, workflows, and the controlled-model end-to-end pipeline.
 # Server-backed tests start/reuse Docker automatically, like Service's dbtest.
 # TEMPORAL_ADDRESS/TEMPORAL_NAMESPACE optionally select an existing server.
-# Individual stage: go test -v ./cmd/server/app/sdk/tmprl/stages/prepare/extract
+# Individual step: go test -v ./cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/preparation/extract
 test-tmprl:
 	RUN_IN_PARALLEL=yes GITHUB_WORKSPACE="$(CURDIR)" \
-		go test -race -v -count=1 -timeout 10m ./cmd/server/app/sdk/tmprl/...
+		go test -race -v -count=1 -timeout 10m ./cmd/server/foundation/tmprl/... ./cmd/server/app/sdk/tmprl/...
 
 # Disposable test history is removed. Other Temporal containers are untouched.
 test-tmprl-down:
@@ -61,7 +62,7 @@ test-only: install-libraries install-test-models ## Install fixtures and run the
 	unset KRONK_TEST_HOSTED KRONK_BASE_PATH KRONK_LIB_PATH KRONK_BUCKY_LIB_PATH KRONK_MALINA_LIB_PATH MALINA_LIB KRONK_PROCESSOR KRONK_ARCH KRONK_OS && \
 	export GITHUB_WORKSPACE=$(shell pwd) && \
 	go test -v -p=1 -count=1 ./cmd/kronk/... && \
-	go test -v -p=1 -count=1 ./cmd/server/... && \
+	go test -v -p=1 -count=1 $$(go list ./cmd/server/... | grep -Ev '/cmd/server/(app/sdk|foundation)/tmprl(/|$$)') && \
 	go test -v -p=1 -count=1 ./sdk/... && \
 	go -C examples test -v -p=1 -count=1 ./...
 
@@ -72,7 +73,7 @@ test-gh-only: install-libraries install-test-gh-models ## Install GitHub fixture
 	unset KRONK_BASE_PATH KRONK_LIB_PATH KRONK_BUCKY_LIB_PATH KRONK_PROCESSOR KRONK_ARCH KRONK_OS && \
 	export GITHUB_WORKSPACE=$(shell pwd) && \
 	go test -v -p=1 -count=1 ./cmd/kronk/... && \
-	go test -v -p=1 -count=1 ./cmd/server/... && \
+	go test -v -p=1 -count=1 $$(go list ./cmd/server/... | grep -Ev '/cmd/server/(app/sdk|foundation)/tmprl(/|$$)') && \
 	go test -v -p=1 -count=1 $$(go list ./sdk/... | grep -v '/sdk/kronk/tests') && \
 	go test -v -count=1 -timeout 20m ./sdk/kronk/tests/qwen3 && \
 	go test -v -count=1 -timeout 6m -run '^TestLengthTerminatedToolCallBecomesContent$$' ./sdk/kronk/tests/qwen06 && \

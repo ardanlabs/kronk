@@ -1,0 +1,43 @@
+name: model-training
+queue_timeout: 24h
+reservation_timeout: 168h
+session_attempts: 3
+stages:
+  - name: preparation
+    timeout: 24h
+    steps:
+      - name: extract
+        timeout: 24h
+        heartbeat_timeout: 5s
+        retry: &retry
+          maximum_attempts: 3
+          initial_interval: 1s
+          backoff_coefficient: 2
+          maximum_interval: 1m
+      - name: generate
+        timeout: 24h
+        heartbeat_timeout: 5s
+        retry: *retry
+      - name: verify
+        timeout: 24h
+        heartbeat_timeout: 5s
+        retry: *retry
+  - name: training
+    timeout: 144h
+    steps:
+      - name: split
+        timeout: 24h
+        heartbeat_timeout: 5s
+        retry: *retry
+      - name: train
+        timeout: 24h
+        heartbeat_timeout: 5s
+        retry: *retry
+      - name: evaluate
+        timeout: 24h
+        heartbeat_timeout: 5s
+        retry: *retry
+      - name: publish
+        timeout: 24h
+        heartbeat_timeout: 5s
+        retry: *retry

@@ -169,14 +169,15 @@ install-class-models: install-kronk ## Download class models
 	kronk model pull --local "LiquidAI/d1-Omni-2B-Q8_0"
 	@echo
 
-OPENWEBUI  := ghcr.io/open-webui/open-webui:v0.11.1
-GRAFANA    := grafana/grafana:13.2.1
-PROMETHEUS := prom/prometheus:v3.14.0
-TEMPO      := grafana/tempo:3.0.3
-LOKI       := grafana/loki:3.7.7
-ALLOY      := grafana/alloy:v1.19.2
+OPENWEBUI  := ghcr.io/open-webui/open-webui:v0.12.4
+GRAFANA    := grafana/grafana:13.2.4
+PROMETHEUS := prom/prometheus:v3.15.1
+TEMPO      := grafana/tempo:3.1.1
+LOKI       := grafana/loki:3.7.9
+ALLOY      := grafana/alloy:v1.21.2
+DOCLING    := quay.io/docling-project/docling-serve:v1.38.1
 
-# Keep these values in sync with cmd/server/app/sdk/tmprl/tmprltest/docker.go.
+# Keep these values in sync with cmd/server/foundation/tmprl/tmprltest/docker.go.
 TMPRL_TEST_IMAGE := temporalio/temporal:1.9.1
 TMPRL_TEST_CONTAINER := moxie-tmprl-test
 
@@ -188,5 +189,6 @@ install-docker: ## Pull supporting Docker images
 	docker pull $(TEMPO) & \
 	docker pull $(LOKI) & \
 	docker pull $(ALLOY) & \
+	docker pull $(DOCLING) & \
 	docker pull $(TMPRL_TEST_IMAGE) & \
 	wait;

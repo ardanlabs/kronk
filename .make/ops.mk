@@ -1,17 +1,17 @@
 ##@ Operations and observability
 
 # ==============================================================================
-# Running Docling
+# Development dependencies (Docling and Temporal only)
 
-docling-up:
-	mkdir -p "$$HOME/.moxie/docling"
-	docker compose -f zarf/docker/compose.yaml up -d docling
+tuning-up:
+	docker compose -f zarf/docker/compose.yaml up -d --no-deps docling temporal
 
-docling-down:
-	docker compose -f zarf/docker/compose.yaml stop docling
+# Stop without removing persisted Temporal history or Docling scratch files.
+tuning-down:
+	docker compose -f zarf/docker/compose.yaml stop docling temporal
 
-docling-logs:
-	docker compose -f zarf/docker/compose.yaml logs -f docling
+tuning-logs:
+	docker compose -f zarf/docker/compose.yaml logs -f docling temporal
 
 # ==============================================================================
 # Running OpenWebUI
@@ -24,6 +24,18 @@ owu-down: ## Stop Open WebUI
 
 owu-browse: ## Open Open WebUI in a browser
 	$(OPEN_CMD) http://localhost:8081/
+
+# ==============================================================================
+# Running Grafana
+
+grafana-up: ## Start the observability stack
+	docker compose -f zarf/docker/compose.yaml up grafana loki prometheus alloy tempo
+
+grafana-down: ## Stop the observability stack
+	docker compose -f zarf/docker/compose.yaml down grafana loki prometheus alloy tempo
+
+grafana-browse: ## Open Grafana
+	$(OPEN_CMD) http://localhost:3100/
 
 # ==============================================================================
 # Running Kronk in a container
@@ -59,15 +71,6 @@ website: ## Open the Kronk browser UI
 
 statsviz: ## Open runtime statistics
 	$(OPEN_CMD) http://localhost:11445/debug/statsviz
-
-grafana-up: ## Start the observability stack
-	docker compose -f zarf/docker/compose.yaml up grafana loki prometheus alloy tempo
-
-grafana-down: ## Stop the observability stack
-	docker compose -f zarf/docker/compose.yaml down grafana loki prometheus alloy tempo
-
-grafana-browse: ## Open Grafana
-	$(OPEN_CMD) http://localhost:3100/
 
 # ==============================================================================
 # Debugging

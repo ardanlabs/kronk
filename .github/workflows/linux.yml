@@ -193,7 +193,8 @@ jobs:
       - name: Run api/service tests
         run: |
           go test -v -p=1 -count=1 -timeout 20m ./cmd/kronk/...
-          go test -v -p=1 -count=1 -timeout 20m ./cmd/server/...
+          # Temporal tests are on-demand only: make test-tmprl.
+          go test -v -p=1 -count=1 -timeout 20m $(go list ./cmd/server/... | grep -Ev '/cmd/server/(app/sdk|foundation)/tmprl(/|$)')
           KRONK_TEST_MEDIA=yes go test -v -p=1 -count=1 -timeout 10m -run '^Test_API_Media$' ./cmd/server/api/services/kronk/tests
           KRONK_TEST_MTP=yes go test -v -p=1 -count=1 -timeout 20m -run '^Test_API_MTP$' ./cmd/server/api/services/kronk/tests
 
