@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/model"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/shared/model"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/training/publish"
 )
 

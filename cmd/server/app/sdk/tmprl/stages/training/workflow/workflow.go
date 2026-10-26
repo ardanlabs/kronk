@@ -6,7 +6,7 @@ package training
 import (
 	"time"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/model"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/shared/model"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
@@ -28,6 +28,8 @@ type Input struct {
 // Workflow orchestrates the main training execution, not source preparation.
 // It owns stage order, retries, cooperative cancellation, state queries, and
 // pause/resume at stage boundaries. Rejected evaluations never reach publication.
+// Each stage schedules RunStage in activity.go as a separate activity execution;
+// managed input is dispatched to the stage's Run function through pipeline.go.
 func Workflow(ctx workflow.Context, input Input) (model.Run, error) {
 	info := workflow.GetInfo(ctx)
 	state := model.Run{WorkflowID: info.WorkflowExecution.ID, RunID: info.WorkflowExecution.RunID, Request: input.Request, Status: model.StatusRunning, StartedAt: workflow.Now(ctx)}

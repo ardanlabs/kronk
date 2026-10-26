@@ -13,8 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/dataset"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/model"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/shared/dataset"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/shared/model"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/training/evaluate"
 	publishstage "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/training/publish"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/training/split"
@@ -130,6 +130,11 @@ func (b *Business) trainingRecords(ctx context.Context, input Request) ([]Record
 	return records, nil
 }
 
+// trainingStage resolves managed input and dispatches one stage selected by
+// Workflow in workflow.go: split.Run, train.Run, evaluate.Run, or publish.Run.
+// RunStage in activity.go calls it once per activity execution. The workflow,
+// not this function, owns stage order; this function owns input fingerprints,
+// workspace lifetime, and persisted stage results for retry reuse.
 func (b *Business) trainingStage(ctx context.Context, input StageRequest, publish func(Progress)) (Artifacts, error) {
 	info := activity.GetInfo(ctx)
 	if input.Execution != (Execution{WorkflowID: info.WorkflowExecution.ID, RunID: info.WorkflowExecution.RunID}) || input.Key != input.RunID+"/"+string(input.Stage) {

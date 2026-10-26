@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/dataset"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/model"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/prepare"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/prepare/workflow"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/shared/dataset"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/shared/model"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/stages/training/provider"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/activity"
