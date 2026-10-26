@@ -890,8 +890,10 @@ func transcribe(b *bucky.Bucky, samples []float32) error {
 	tr, err := b.Transcribe(ctx, samples,
 		model.WithLanguage("en"),
 		model.WithOnSegment(func(seg model.Segment) {
-			fmt.Printf("  segment %2d [%6dms → %6dms] %s\\n",
-				seg.Index, seg.StartMs, seg.EndMs, seg.Text)
+			// TextConfidence ranges from 0 to 1; higher means greater
+			// decoder confidence, not a guarantee that the words are correct.
+			fmt.Printf("  segment %2d [%6dms → %6dms] confidence=%.3f %s\\n",
+				seg.Index, seg.StartMs, seg.EndMs, seg.TextConfidence, seg.Text)
 		}),
 	)
 	if err != nil {

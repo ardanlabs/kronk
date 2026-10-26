@@ -954,6 +954,16 @@ kronk server start`})]})]})}function Ms(e){let t=/^([\d.]+)\s*(MB|GB|KB|B)?$/i.e
 	EndMs        int64
 	Text         string
 	NoSpeechProb float32
+
+	// TextConfidence is the arithmetic mean of the decoded text-token
+	// probabilities, excluding timestamp and control tokens. It ranges
+	// from 0 to 1, with higher values indicating greater decoder confidence;
+	// it is 0 when there are no text tokens. Batch and streaming segments
+	// use the same calculation. This is not a calibrated probability that
+	// speech occurred or that the text is correct: hallucinations can score
+	// highly. A caller might start by rejecting scores below 0.5, but must
+	// tune its threshold on representative audio. No filtering is applied.
+	TextConfidence float32
 }`})}),(0,G.jsx)(`p`,{className:`doc-description`,children:`Segment is one decoded segment from a Transcribe call.`})]}),(0,G.jsxs)(`div`,{className:`doc-section`,id:`type-stream`,children:[(0,G.jsx)(`h4`,{children:`Stream`}),(0,G.jsx)(`pre`,{className:`code-block`,children:(0,G.jsx)(`code`,{children:`type Stream struct {
 	// Has unexported fields.
 }`})}),(0,G.jsx)(`p`,{className:`doc-description`,children:`Stream is a long-lived transcription session. It borrows one whisper.State from the model's pool for its entire lifetime and emits transcript Events incrementally as audio is fed in. A Stream is reusable indefinitely via Reset. Close must be called exactly once when done.`}),(0,G.jsx)(`p`,{className:`doc-description`,children:`Feed/FeedPCM are producer-side (single goroutine). Consumers must range over Events() until it is closed. Reset and Close are safe to call from any goroutine; both serialize with the worker.`})]}),(0,G.jsxs)(`div`,{className:`doc-section`,id:`type-streamconfig`,children:[(0,G.jsx)(`h4`,{children:`StreamConfig`}),(0,G.jsx)(`pre`,{className:`code-block`,children:(0,G.jsx)(`code`,{children:`type StreamConfig struct {
@@ -2158,8 +2168,10 @@ func transcribe(b *bucky.Bucky, samples []float32) error {
 	tr, err := b.Transcribe(ctx, samples,
 		model.WithLanguage("en"),
 		model.WithOnSegment(func(seg model.Segment) {
-			fmt.Printf("  segment %2d [%6dms → %6dms] %s\\n",
-				seg.Index, seg.StartMs, seg.EndMs, seg.Text)
+			// TextConfidence ranges from 0 to 1; higher means greater
+			// decoder confidence, not a guarantee that the words are correct.
+			fmt.Printf("  segment %2d [%6dms → %6dms] confidence=%.3f %s\\n",
+				seg.Index, seg.StartMs, seg.EndMs, seg.TextConfidence, seg.Text)
 		}),
 	)
 	if err != nil {
@@ -8881,7 +8893,7 @@ fmt.Println(tr.Text)`})}),(0,G.jsxs)(`p`,{children:[`Use `,(0,G.jsx)(`code`,{chi
     model.WithNoSpeechThreshold(0.6),
     model.WithGreedyBestOf(2),
     model.WithLengthPenalty(-1),
-)`})}),(0,G.jsxs)(`p`,{children:[`Only specify values that should override the defaults supplied by the loaded whisper.cpp library. `,(0,G.jsx)(`code`,{children:`WithBeamSize`}),` selects beam search; use it with `,(0,G.jsx)(`code`,{children:`WithBeamSearchPatience`}),` instead of `,(0,G.jsx)(`code`,{children:`WithGreedyBestOf`}),`. Without a positive beam size, decoding uses greedy sampling.`]}),(0,G.jsx)(`h4`,{id:`1872-channel-separated-diarization`,children:`18.7.2 Channel-Separated Diarization`}),(0,G.jsxs)(`p`,{children:[(0,G.jsx)(`code`,{children:`TranscribeChannelsFile`}),` treats each source channel as a separate speaker and merges their timestamped segments:`]}),(0,G.jsx)(`pre`,{className:`code-block`,children:(0,G.jsx)(`code`,{className:`language-go`,children:`d, err := b.TranscribeChannelsFile(ctx, f, model.WithLanguage("en"))
+)`})}),(0,G.jsxs)(`p`,{children:[`Only specify values that should override the defaults supplied by the loaded whisper.cpp library. `,(0,G.jsx)(`code`,{children:`WithBeamSize`}),` selects beam search; use it with `,(0,G.jsx)(`code`,{children:`WithBeamSearchPatience`}),` instead of `,(0,G.jsx)(`code`,{children:`WithGreedyBestOf`}),`. Without a positive beam size, decoding uses greedy sampling.`]}),(0,G.jsxs)(`p`,{children:[`Each `,(0,G.jsx)(`code`,{children:`Segment`}),` includes `,(0,G.jsx)(`code`,{children:`TextConfidence`}),`: the arithmetic mean of its decoded text-token probabilities, excluding timestamp and control tokens. The score ranges from 0 to 1, with higher values indicating greater decoder confidence; segments with no text tokens have a score of 0. Batch results, `,(0,G.jsx)(`code`,{children:`OnSegment`}),` callbacks, diarized segments, and streaming partial/final segments all use the same calculation.`]}),(0,G.jsxs)(`p`,{children:[(0,G.jsx)(`code`,{children:`NoSpeechProb`}),` estimates whether speech occurred; `,(0,G.jsx)(`code`,{children:`TextConfidence`}),` describes the decoder's confidence in its chosen text. Neither guarantees that the words were actually spoken, and hallucinations can have high text confidence. Bucky applies no confidence filter. A caller might start by rejecting segments below 0.5, but this is only an illustrative threshold, not a validated universal cutoff. Tune it on representative speech and noise, balancing missed speech against phantom text. Filtering segments does not change the returned `,(0,G.jsx)(`code`,{children:`Transcription.Text`}),` or stream `,(0,G.jsx)(`code`,{children:`Event.Text`}),`; callers should build their filtered text from accepted segments.`]}),(0,G.jsx)(`h4`,{id:`1872-channel-separated-diarization`,children:`18.7.2 Channel-Separated Diarization`}),(0,G.jsxs)(`p`,{children:[(0,G.jsx)(`code`,{children:`TranscribeChannelsFile`}),` treats each source channel as a separate speaker and merges their timestamped segments:`]}),(0,G.jsx)(`pre`,{className:`code-block`,children:(0,G.jsx)(`code`,{className:`language-go`,children:`d, err := b.TranscribeChannelsFile(ctx, f, model.WithLanguage("en"))
 if err != nil {
     return err
 }

@@ -19,6 +19,16 @@ type Segment struct {
 	EndMs        int64
 	Text         string
 	NoSpeechProb float32
+
+	// TextConfidence is the arithmetic mean of the decoded text-token
+	// probabilities, excluding timestamp and control tokens. It ranges
+	// from 0 to 1, with higher values indicating greater decoder confidence;
+	// it is 0 when there are no text tokens. Batch and streaming segments
+	// use the same calculation. This is not a calibrated probability that
+	// speech occurred or that the text is correct: hallucinations can score
+	// highly. A caller might start by rejecting scores below 0.5, but must
+	// tune its threshold on representative audio. No filtering is applied.
+	TextConfidence float32
 }
 
 // Word is one decoded word with its position in the source audio.
@@ -445,6 +455,7 @@ func collectTranscription(handle whisper.Context, state whisper.State, requested
 	}
 
 	var sb strings.Builder
+	eot := whisper.TokenEOT(handle)
 	for i := range n {
 		seg := Segment{
 			Index:        i,
@@ -452,6 +463,18 @@ func collectTranscription(handle whisper.Context, state whisper.State, requested
 			EndMs:        whisper.FullGetSegmentT1FromState(state, i) * 10,
 			Text:         whisper.FullGetSegmentTextFromState(state, i),
 			NoSpeechProb: whisper.FullGetSegmentNoSpeechProbFromState(state, i),
+		}
+		var probabilitySum float64
+		var textTokens int
+		for j := range whisper.FullNTokensFromState(state, i) {
+			if whisper.FullGetTokenIDFromState(state, i, j) >= eot {
+				continue
+			}
+			probabilitySum += float64(whisper.FullGetTokenPFromState(state, i, j))
+			textTokens++
+		}
+		if textTokens > 0 {
+			seg.TextConfidence = float32(probabilitySum / float64(textTokens))
 		}
 		out.Segments = append(out.Segments, seg)
 		sb.WriteString(seg.Text)
