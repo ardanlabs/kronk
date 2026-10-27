@@ -279,14 +279,14 @@ func (r report) logSummary() string {
 	isolation := verdict("fresh-session", "recovery")
 	recovery := verdict("cancel", "recovery")
 	var b strings.Builder
-	fmt.Println()
+	fmt.Fprintln(&b)
 	fmt.Fprintf(&b, "Cell: %s | Warm-up: %s | Repetitions: %d/%d\n", r.ID, warmup, len(r.Repetitions), r.RepetitionsRequested)
 	fmt.Fprintf(&b, "  Workload s [SD]: %s | Normalized s [SD]: %s\n", workload, reference)
 	fmt.Fprintf(&b, "IMC/MTP: %s | Serial isolation: %s | Cancel/recovery: %s", cache, isolation, recovery)
 	if r.Images {
 		fmt.Fprintf(&b, " | Images: %s\n", verdict("cold", "replay", "append", "fresh-session", "cancel", "recovery"))
 	} else {
-		fmt.Println()
+		fmt.Fprintln(&b)
 	}
 	if r.Status != "PASS" {
 		fmt.Fprintln(&b, "Details: summary.json (fix setup/evidence failures before deeper inference checks)")
@@ -497,7 +497,7 @@ func run(o options) (runErr error) {
 			}
 		}
 		cr := &r.Cells[i]
-		*cr = report{ID: cell.id, Status: "FAIL", Workload: workloadVersion, Model: c.model, Images: cell.images, TargetOnly: cell.targetOnly, NoCache: cell.noCache, Host: o.host, ServerCommitTime: "unknown", TestStartedAt: r.TestStartedAt, RepetitionsRequested: o.repetitions, HarnessRevision: harnessRevision, ReferenceTokens: referenceTokens(cell.images, cell.noCache)}
+		*cr = report{ID: cell.id, Status: "FAIL", Workload: workloadVersion, Model: c.model, Images: cell.images, TargetOnly: cell.targetOnly, NoCache: cell.noCache, Host: o.host, ServerCommitTime: "unknown", TestStartedAt: r.TestStartedAt, RepetitionsRequested: o.repetitions, HarnessRevision: harnessRevision, ReferenceTokens: referenceTokens(cell.images, cell.noCache, cell.targetOnly)}
 		log("cell=%s", cell.id)
 		err := executeCell(o, c, cr, log)
 		if r.ServerRevision == "" {

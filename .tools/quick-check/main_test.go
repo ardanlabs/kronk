@@ -501,16 +501,22 @@ func TestQuickCheckCommand(t *testing.T) {
 					t.Fatal("combined comparison omitted a cell", comparisonText.String())
 				}
 				for _, cell := range comparison.Cells {
-					if cell.Status != "PASS" || cell.Baseline.ReferenceTokens != referenceTokens(strings.HasSuffix(cell.Cell, "img+"), strings.Contains(cell.Cell, "IMC-")) || cell.Baseline.Executed != requested || len(cell.Metrics) == 0 {
+					if cell.Status != "PASS" || cell.Baseline.ReferenceTokens != referenceTokens(strings.HasSuffix(cell.Cell, "img+"), strings.Contains(cell.Cell, "IMC-"), strings.Contains(cell.Cell, "MTP-")) || cell.Baseline.Executed != requested || len(cell.Metrics) == 0 {
 						t.Fatal("cell evidence/normalization mixed", comparisonText.String())
 					}
 					if strings.Contains(cell.Cell, "MTP-") && strings.Contains(strings.Join(cell.Warnings, "\n"), "MTP backend") {
 						t.Fatal("target-only comparison must not require an MTP backend", comparisonText.String())
 					}
 					if strings.Contains(cell.Cell, "IMC-") {
-						input, reference, generated := 51367.0, 51405.0, 1332.0
+						input, reference, generated := 51367.0, 51405.0, 1085.0
+						if strings.Contains(cell.Cell, "MTP-") {
+							generated = 1117
+						}
 						if strings.HasSuffix(cell.Cell, "img+") {
-							input, reference, generated = 51337, 53095, 1001
+							input, reference, generated = 51337, 53095, 958
+							if strings.Contains(cell.Cell, "MTP-") {
+								generated = 865
+							}
 						}
 						want := reference*(5*0.123)/input + generated*(5*2.345)/(5*89)
 						found := false

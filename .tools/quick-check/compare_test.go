@@ -103,7 +103,7 @@ func TestCompareImageCell(t *testing.T) {
 	for _, role := range []string{"old-aaaaaaa", "new-aaaaaaa"} {
 		r := comparisonFixture([]float64{2, 6})
 		r.Images = true
-		r.ReferenceTokens = referenceTokens(true, false)
+		r.ReferenceTokens = referenceTokens(true, false, false)
 		for i := range r.Repetitions {
 			r.Repetitions[i].Images = true
 			r.Repetitions[i].ReferenceTokens = r.ReferenceTokens
@@ -135,7 +135,7 @@ func TestCompareMatrixSelection(t *testing.T) {
 	image := func(values ...float64) report {
 		r := comparisonFixture(values)
 		r.Images = true
-		r.ReferenceTokens = referenceTokens(true, false)
+		r.ReferenceTokens = referenceTokens(true, false, false)
 		for i := range r.Repetitions {
 			r.Repetitions[i].Images = true
 			r.Repetitions[i].ReferenceTokens = r.ReferenceTokens
@@ -546,7 +546,7 @@ func TestCompareRejectsBrokenArtifacts(t *testing.T) {
 
 func comparisonFixture(values []float64) report {
 	r := report{Status: "PASS", Workload: "operations-v2", Model: modelID, ServerRevision: strings.Repeat("a", 40), TestStartedAt: "2026-10-21T16:00:00Z", HarnessRevision: "fixed-harness", MTPBackend: "qwen35-own-kv", RepetitionsRequested: len(values), evidenceValidated: true}
-	r.ReferenceTokens = referenceTokens(false, false)
+	r.ReferenceTokens = referenceTokens(false, false, false)
 	r.Metadata = map[string]any{
 		"/v1/liveness":   map[string]any{"host": "test-machine", "os": "test-os", "vcs_revision": r.ServerRevision},
 		"/v1/devices":    map[string]any{"system_ram_bytes": 24000, "gpu_total_bytes": 18000, "unified_memory": true},

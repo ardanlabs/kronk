@@ -5,28 +5,53 @@ import (
 	"slices"
 )
 
+// Freeze a representative volume per cell, not per invocation. Text references
+// come from the initial nine observations; image references are rounded medians
+// from new-0466efe's two repetitions with media System-cache reuse. Generation
+// excludes the first token per response, matching Kronk's TPS clock. IMC-off
+// input references are full-prompt medians from the initial new-48db127 run.
+// IMC-off generation references match both old-48db127 and new-732c041's
+// uncached runs, separately for each MTP/image mode.
+const (
+	// MoE/1s/IMC+: both MTP modes share the same reference pair.
+	moe1SlotIMCTextInputTokens        = 10708
+	moe1SlotIMCTextGenerationTokens   = 1332
+	moe1SlotIMCImagesInputTokens      = 11674
+	moe1SlotIMCImagesGenerationTokens = 1001
+
+	// MoE/1s/IMC-: input is shared; generation is calibrated per MTP mode.
+	moe1SlotNoIMCTextInputTokens              = 51405
+	moe1SlotNoIMCTextMTPOnGenerationTokens    = 1085
+	moe1SlotNoIMCTextMTPOffGenerationTokens   = 1117
+	moe1SlotNoIMCImagesInputTokens            = 53095
+	moe1SlotNoIMCImagesMTPOnGenerationTokens  = 958
+	moe1SlotNoIMCImagesMTPOffGenerationTokens = 865
+)
+
 type normalizationReference struct {
 	InputTokens      int `json:"input_tokens"`
 	GenerationTokens int `json:"generation_tokens"`
 }
 
-// Freeze a representative volume per cell, not per invocation. Text references
-// come from the initial nine observations; image references are rounded medians
-// from new-0466efe's two repetitions with media System-cache reuse. Generation
-// excludes the first token per response, matching Kronk's TPS clock. IMC-off
-// input references are provisional full-prompt medians from new-48db127:
-// text 51384/51426, images 53093/53097. Confirm with real uncached runs.
-func referenceTokens(images, noCache bool) normalizationReference {
+func referenceTokens(images, noCache, targetOnly bool) normalizationReference {
 	if images {
 		if noCache {
-			return normalizationReference{InputTokens: 53095, GenerationTokens: 1001}
+			generated := moe1SlotNoIMCImagesMTPOnGenerationTokens
+			if targetOnly {
+				generated = moe1SlotNoIMCImagesMTPOffGenerationTokens
+			}
+			return normalizationReference{InputTokens: moe1SlotNoIMCImagesInputTokens, GenerationTokens: generated}
 		}
-		return normalizationReference{InputTokens: 11674, GenerationTokens: 1001}
+		return normalizationReference{InputTokens: moe1SlotIMCImagesInputTokens, GenerationTokens: moe1SlotIMCImagesGenerationTokens}
 	}
 	if noCache {
-		return normalizationReference{InputTokens: 51405, GenerationTokens: 1332}
+		generated := moe1SlotNoIMCTextMTPOnGenerationTokens
+		if targetOnly {
+			generated = moe1SlotNoIMCTextMTPOffGenerationTokens
+		}
+		return normalizationReference{InputTokens: moe1SlotNoIMCTextInputTokens, GenerationTokens: generated}
 	}
-	return normalizationReference{InputTokens: 10708, GenerationTokens: 1332}
+	return normalizationReference{InputTokens: moe1SlotIMCTextInputTokens, GenerationTokens: moe1SlotIMCTextGenerationTokens}
 }
 
 // Reference time normalizes completed-request processing, not whole-workload
