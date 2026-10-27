@@ -866,6 +866,19 @@ export default function DocsSDKModel() {
               <p className="doc-description">IMCSystemCacheDetail is a scalar snapshot of one System cache pool entry.</p>
             </div>
 
+            <div className="doc-section" id="type-inputcapabilities">
+              <h4>InputCapabilities</h4>
+              <pre className="code-block">
+                <code>{`type InputCapabilities struct {
+	Available bool \`json:"available"\`
+	Chat      bool \`json:"chat"\`
+	Vision    bool \`json:"vision"\`
+	Audio     bool \`json:"audio"\`
+}`}</code>
+              </pre>
+              <p className="doc-description">InputCapabilities describes detected chat inputs for the loaded model, projector, and native build. Available is false when detection is unavailable; the remaining fields must not then be interpreted as confirmed support.</p>
+            </div>
+
             <div className="doc-section" id="type-kvcachemode">
               <h4>KVCacheMode</h4>
               <pre className="code-block">
@@ -2607,6 +2620,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">IMCSystemCaches returns every entry in the immutable System preload pool.</p>
             </div>
 
+            <div className="doc-section" id="method-model-inputcapabilities">
+              <h4>Model.InputCapabilities</h4>
+              <pre className="code-block">
+                <code>func (m *Model) InputCapabilities() InputCapabilities</code>
+              </pre>
+              <p className="doc-description">InputCapabilities returns cached runtime input capabilities. Native output capabilities do not imply that Kronk implements those output pipelines.</p>
+            </div>
+
             <div className="doc-section" id="method-model-modelinfo">
               <h4>Model.ModelInfo</h4>
               <pre className="code-block">
@@ -3382,6 +3403,7 @@ export default function DocsSDKModel() {
                 <li><a href="#type-imcsessiondetail">IMCSessionDetail</a></li>
                 <li><a href="#type-imcsessionstate">IMCSessionState</a></li>
                 <li><a href="#type-imcsystemcachedetail">IMCSystemCacheDetail</a></li>
+                <li><a href="#type-inputcapabilities">InputCapabilities</a></li>
                 <li><a href="#type-kvcachemode">KVCacheMode</a></li>
                 <li><a href="#type-lazymode">LazyMode</a></li>
                 <li><a href="#type-loadmode">LoadMode</a></li>
@@ -3570,6 +3592,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-model-embeddings">Model.Embeddings</a></li>
                 <li><a href="#method-model-imcsessions">Model.IMCSessions</a></li>
                 <li><a href="#method-model-imcsystemcaches">Model.IMCSystemCaches</a></li>
+                <li><a href="#method-model-inputcapabilities">Model.InputCapabilities</a></li>
                 <li><a href="#method-model-modelinfo">Model.ModelInfo</a></li>
                 <li><a href="#method-model-rerank">Model.Rerank</a></li>
                 <li><a href="#method-model-tokenize">Model.Tokenize</a></li>

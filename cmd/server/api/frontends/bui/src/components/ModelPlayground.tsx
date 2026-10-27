@@ -1172,7 +1172,8 @@ export default function ModelPlayground({ mode }: { mode: TestingMode }) {
                   modelVRAM={modelVramInfo}
                   isMoE={isMoE}
                   disabled={!session}
-                  disabledPlaceholder="Load a model to start chatting"
+                  disabledPlaceholder={session ? 'Start chatting with the loaded model' : 'Load a model to start chatting'}
+                  inputCapabilities={session?.input_capabilities ?? null}
                   headerLeft={<h2>Basic Chat</h2>}
                 />
               </div>

@@ -198,6 +198,7 @@ type Model struct {
 	projDevice       llama.GGMLBackendDevice
 	mtmdMetaCtx      mtmd.Context
 	mtmdCapabilities MTMDHelperCapabilities
+	mtmdCapsKnown    bool
 	modelInfo        ModelInfo
 	paramsResolved   bool
 	activeStreams    atomic.Int32
@@ -441,6 +442,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	}
 
 	capabilities, err := MTMDHelperGetCapabilities(m.model, m.mtmdMetaCtx)
+	m.mtmdCapsKnown = err == nil
 	if err != nil {
 		// Older bundles lack the helper; preserve their existing input checks.
 		capabilities = MTMDHelperCapabilities{Chat: true, TextGen: true}
@@ -1426,6 +1428,27 @@ func (m *Model) Config() Config {
 
 func (m *Model) ModelInfo() ModelInfo {
 	return m.modelInfo
+}
+
+// InputCapabilities describes detected chat inputs for the loaded model,
+// projector, and native build. Available is false when detection is unavailable;
+// the remaining fields must not then be interpreted as confirmed support.
+type InputCapabilities struct {
+	Available bool `json:"available"`
+	Chat      bool `json:"chat"`
+	Vision    bool `json:"vision"`
+	Audio     bool `json:"audio"`
+}
+
+// InputCapabilities returns cached runtime input capabilities. Native output
+// capabilities do not imply that Kronk implements those output pipelines.
+func (m *Model) InputCapabilities() InputCapabilities {
+	return InputCapabilities{
+		Available: m.mtmdCapsKnown,
+		Chat:      m.mtmdCapabilities.Chat && !m.modelInfo.IsEmbedModel && !m.modelInfo.IsRerankModel && !m.modelInfo.IsDecisionModel,
+		Vision:    m.mtmdCapabilities.Vision,
+		Audio:     m.mtmdCapabilities.Audio,
+	}
 }
 
 func (m *Model) responseModelID() string {

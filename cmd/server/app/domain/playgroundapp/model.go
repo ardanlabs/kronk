@@ -272,10 +272,11 @@ func (sc SessionConfig) Validate() error {
 
 // SessionResponse represents the response from creating a session.
 type SessionResponse struct {
-	SessionID       string         `json:"session_id"`
-	CacheKey        string         `json:"cache_key,omitempty"`
-	Status          string         `json:"status"`
-	EffectiveConfig map[string]any `json:"effective_config"`
+	SessionID         string                  `json:"session_id"`
+	CacheKey          string                  `json:"cache_key,omitempty"`
+	Status            string                  `json:"status"`
+	EffectiveConfig   map[string]any          `json:"effective_config"`
+	InputCapabilities model.InputCapabilities `json:"input_capabilities"`
 }
 
 // Encode implements the encoder interface.
