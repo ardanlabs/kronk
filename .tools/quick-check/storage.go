@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -130,62 +132,77 @@ func releaseTags(parent context.Context) (map[string]string, error) {
 	return tags, nil
 }
 
-func recordReleaseComparison(parent, baselineTag, candidateTag string, a, b comparisonInput, c comparison) error {
-	path := filepath.Join(filepath.Dir(parent), "release-history.md")
-	const header = "# Quick-check release history\n"
-	history := header
+func recordReleaseComparison(parent, baselineTag, candidateTag string, a, b matrixInput, c matrixComparison) error {
+	// The compact history has no diagnostics or room for two machine descriptions.
+	// Keep failed comparisons and mismatched/unknown machines in comparison.log only.
+	host, _ := b.summary.Machine["host"].(string)
+	ram, vram := eventInt(b.summary.Machine, "system_ram_bytes"), eventInt(b.summary.Machine, "gpu_total_bytes")
+	unified, knownUnified := b.summary.Machine["unified_memory"].(bool)
+	if c.Status != "PASS" || !reflect.DeepEqual(a.summary.Machine, b.summary.Machine) || host == "" || ram <= 0 || vram <= 0 || !knownUnified {
+		return nil
+	}
+	path := filepath.Join(filepath.Dir(parent), "release-history.log")
+	const title = "Release comparison: "
+	const referenceIDLabel = "; reference ID: "
+	var sections []string
 	data, err := os.ReadFile(path)
 	if err == nil {
-		if !strings.HasPrefix(string(data), header) {
-			return fmt.Errorf("release history: missing Markdown title")
+		if !strings.HasPrefix(string(data), title) {
+			return fmt.Errorf("release history: missing release comparison title")
 		}
-		history = string(data)
+		sections = strings.Split(strings.TrimSpace(strings.TrimPrefix(string(data), title)), "\n\n"+title)
+		for _, section := range sections {
+			lines := strings.Split(section, "\n")
+			if len(lines) < 6 || !strings.HasPrefix(lines[1], "machine: ") || !strings.HasPrefix(lines[2], "References updated: ") || !strings.Contains(lines[2], referenceIDLabel) || !strings.Contains(lines[4], "Baseline median [SD]") {
+				return fmt.Errorf("release history: invalid comparison entry")
+			}
+		}
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	text := strings.NewReplacer("\r", " ", "\n", " ", "`", "'", "|", "\\|").Replace
-	key := fmt.Sprintf("- Commits: `%s` → `%s`\n- Cell: %s\n", a.summary.ServerRevision, b.summary.ServerRevision, text(c.Cell))
+	text := strings.NewReplacer("\r", " ", "\n", " ").Replace
+	gib := func(bytes int) string {
+		return strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.2f", float64(bytes)/(1<<30)), "0"), ".") + "GiB"
+	}
+	machine := fmt.Sprintf("machine: %s; RAM: %s; VRAM: %s; unified memory: %t", text(host), gib(ram), gib(vram), unified)
+	references := make(map[string]normalizationReference)
+	for _, cell := range c.Cells {
+		if cell.Status != "NOT_RUN" {
+			references[cell.Cell] = b.cells[cell.Cell].summary.ReferenceTokens
+		}
+	}
+	// JSON sorts map keys; arrival order and repetitions cannot change this ID.
+	data, err = json.Marshal(references)
+	if err != nil {
+		return err
+	}
+	digest := sha256.Sum256(data)
+	referenceID := hex.EncodeToString(digest[:])[:16]
+	previousID := "unknown"
+	for _, section := range sections {
+		lines := strings.Split(section, "\n")
+		if lines[1] == machine {
+			_, previousID, _ = strings.Cut(lines[2], referenceIDLabel)
+		}
+	}
+	updated := "unknown"
+	if previousID != "unknown" && previousID != referenceID {
+		updated = "yes"
+	} else if previousID == referenceID {
+		updated = "no"
+	}
+	key := fmt.Sprintf("%s → %s\n%s\n", text(baselineTag), text(candidateTag), machine)
 	var entry strings.Builder
-	fmt.Fprintf(&entry, "%s → %s\n\n%s", text(baselineTag), text(candidateTag), key)
-	fmt.Fprintf(&entry, "- Comparison: **%s**; saved runs: baseline **%s** / candidate **%s**\n", c.Status, a.summary.Status, b.summary.Status)
-	for i, run := range []runSummary{a.summary, b.summary} {
-		label := []string{"Baseline", "Candidate"}[i]
-		fmt.Fprintf(&entry, "- %s: %s; model: `%s`; workload: `%s`; library: `%s`\n", label, text(run.TestStartedAt), text(run.Model), text(run.Workload), text(fmt.Sprint(run.InstalledLibrary)))
-		fmt.Fprintf(&entry, "- %s machine: `%s`; RAM: %v bytes; VRAM: %v bytes; unified memory: %v\n", label,
-			text(fmt.Sprint(run.Machine["host"])), run.Machine["system_ram_bytes"], run.Machine["gpu_total_bytes"], run.Machine["unified_memory"])
+	entry.WriteString(key)
+	fmt.Fprintf(&entry, "References updated: %s%s%s\n", updated, referenceIDLabel, referenceID)
+	if err := c.writeTable(&entry); err != nil {
+		return err
 	}
-	for _, warning := range c.Warnings {
-		if strings.Contains(warning, "machine") || strings.Contains(warning, "missing metadata") {
-			entry.WriteString("\n**WARNING: MACHINE METADATA DIFFERS OR IS MISSING!**\n")
-			break
-		}
-	}
-	format := func(value *measurement) string {
-		if value == nil {
-			return "unavailable"
-		}
-		sd := "unavailable"
-		if value.SampleStdDev != nil {
-			sd = fmt.Sprintf("%.6f", *value.SampleStdDev)
-		}
-		return fmt.Sprintf("%.6f [SD %s; n %d]", value.Median, sd, value.Samples)
-	}
-	entry.WriteString("\n| Seconds | Baseline median [SD; n] | Candidate median [SD; n] | Change |\n| --- | ---: | ---: | ---: |\n")
-	for _, metric := range c.Metrics {
-		label := map[string]string{"workload.elapsed_seconds": "Warmed workload", "warmup.elapsed_seconds": "Warm-up request"}[metric.Metric]
-		if label != "" {
-			change := "unavailable"
-			if metric.Percent != nil {
-				change = fmt.Sprintf("%+.2f%%", *metric.Percent)
-			}
-			fmt.Fprintf(&entry, "| %s | %s | %s | %s |\n", label, format(metric.Baseline), format(metric.Candidate), change)
-		}
-	}
-	// Keep the latest comparison for each ordered release pair and cell.
-	sections := strings.Split(strings.TrimSpace(history), "\n## ")
-	sections = slices.DeleteFunc(sections, func(section string) bool { return strings.Contains(section, "\n"+key) })
-	sections = append(sections, entry.String())
-	data = []byte(strings.Join(sections, "\n## "))
+	// One complete table per ordered release pair and machine. Move updated
+	// entries to the end so the next comparison sees the latest reference ID.
+	sections = slices.DeleteFunc(sections, func(section string) bool { return strings.HasPrefix(section, key) })
+	sections = append(sections, strings.TrimSpace(entry.String()))
+	data = []byte(title + strings.Join(sections, "\n\n"+title))
 	f, err := os.CreateTemp(filepath.Dir(path), ".release-history-*")
 	if err != nil {
 		return err

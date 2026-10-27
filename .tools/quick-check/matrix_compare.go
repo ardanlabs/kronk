@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"text/tabwriter"
 	"time"
 )
 
@@ -195,28 +196,71 @@ func (c matrixComparison) writeText(out io.Writer) error {
 		}
 	}
 	machineWarning := ""
+	compared := 0
+	warningCells := make(map[string]int)
 	for _, cell := range c.Cells {
-		for _, warning := range cell.Warnings {
+		if cell.Status == "NOT_RUN" {
+			continue
+		}
+		compared++
+		seen := make(map[string]bool)
+		for _, warning := range cell.textWarnings() {
+			if !seen[warning] {
+				warningCells[warning]++
+				seen[warning] = true
+			}
 			if strings.HasPrefix(warning, "machine.") {
 				machineWarning = "WARNING: MACHINE METADATA DIFFERS OR IS MISSING!"
 			}
 		}
 	}
+	commonWarnings := make(map[string]bool)
+	for _, warning := range sortedKeys(warningCells) {
+		if warningCells[warning] == compared {
+			if len(commonWarnings) == 0 {
+				fmt.Fprintln(out, "\nWarnings applying to all compared cells:")
+			}
+			fmt.Fprintln(out, "Warning:", warning)
+			commonWarnings[warning] = true
+		}
+	}
 	if machineWarning != "" {
 		fmt.Fprintln(out, "\n"+machineWarning)
 	}
-	// Keep the established two timing rows per compared cell.
 	for _, cell := range c.Cells {
 		if cell.Status == "NOT_RUN" {
-			fmt.Fprintf(out, "\n%s | baseline %s / candidate %s | NOT_RUN\n", cell.Cell, cell.SavedRunChecks["baseline"], cell.SavedRunChecks["candidate"])
 			continue
 		}
-		if err := cell.writeText(out); err != nil {
-			return err
+		for _, run := range []comparisonRun{cell.Baseline, cell.Candidate} {
+			for _, problem := range run.Problems {
+				fmt.Fprintf(out, "Problem [%s; %s]: %s\n", cell.Cell, run.Directory, problem)
+			}
 		}
+		for _, warning := range cell.textWarnings() {
+			if !commonWarnings[warning] {
+				fmt.Fprintf(out, "Warning [%s]: %s\n", cell.Cell, warning)
+			}
+		}
+	}
+	if err := c.writeTable(out); err != nil {
+		return err
 	}
 	if machineWarning != "" {
 		fmt.Fprintln(out, "\n"+machineWarning)
 	}
 	return nil
+}
+
+func (c matrixComparison) writeTable(out io.Writer) error {
+	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(w, "\nCell\tMetric\tBaseline median [SD]\tCandidate median [SD]\tChange")
+	// One table, with a blank line between each cell's two timing rows.
+	for _, cell := range c.Cells {
+		if cell.Status == "NOT_RUN" {
+			fmt.Fprintf(w, "\t\t\t\t\n%s\tNOT_RUN (baseline %s / candidate %s)\n", cell.Cell, cell.SavedRunChecks["baseline"], cell.SavedRunChecks["candidate"])
+			continue
+		}
+		cell.writeRows(w)
+	}
+	return w.Flush()
 }

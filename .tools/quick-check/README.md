@@ -99,8 +99,18 @@ make quick-compare-against-commit \
   QUICK_COMPARE_CANDIDATE=/path/to/candidate
 ```
 
-Release comparisons check remote tags. When both commits are releases, they update
-`release-history.md`. Repeating the release pair/cell updates its entry; commit
-that file to preserve inter-release comparisons.
+Release comparisons check remote tags. Successful same-machine release comparisons
+update `release-history.log`: release tags, machine, reference-update flag, and the
+comparison table only. Repeating a release pair on that machine replaces its entry;
+commit the file to preserve history. The flag compares the candidate's reference
+set with the previous saved comparison on that machine (`unknown` initially);
+its reference ID also changes when the compared cell set changes.
 
+## Read the timings together:
 
+- **Workload:** “How long did the actual workload take?”
+- **Normalized:** “How much processing time would this workload require for fixed input and output token counts?”
+
+The same test can produce different answer lengths across runs, changing Workload time even when processing performance stays the same. Normalized scales measured prefill and generation times to fixed token counts for each cell, reducing that variation and helping compare processing performance between code versions.
+
+Lower is better, when comparing the same cell with unchanged references on the same machine. Read it alongside Workload: Normalized sums request processing durations, so overlapping slots can make it exceed actual elapsed time. It is an index, not a prediction of total workload duration.

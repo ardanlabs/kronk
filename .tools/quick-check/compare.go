@@ -14,7 +14,6 @@ import (
 	"reflect"
 	"slices"
 	"strings"
-	"text/tabwriter"
 	"time"
 )
 
@@ -161,13 +160,8 @@ func compareCommand(args []string, out io.Writer) error {
 		return err
 	}
 	if baselineTag != "" && candidateTag != "" && a.summary.ServerRevision != b.summary.ServerRevision {
-		for _, cell := range c.Cells {
-			if cell.Status == "NOT_RUN" {
-				continue
-			}
-			if err := recordReleaseComparison(historyParent, baselineTag, candidateTag, a.cells[cell.Cell], b.cells[cell.Cell], cell); err != nil {
-				return err
-			}
+		if err := recordReleaseComparison(historyParent, baselineTag, candidateTag, a, b, c); err != nil {
+			return err
 		}
 	}
 	if *asJSON {
@@ -588,14 +582,8 @@ func comparisonMetrics(r report) map[string][]float64 {
 	return metrics
 }
 
-func (c comparison) writeText(out io.Writer) error {
-	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-	fmt.Fprintf(w, "\n%s | baseline %s (%d/%d) / candidate %s (%d/%d)\n", c.Cell, c.Baseline.Status, c.Baseline.Executed, c.Baseline.Requested, c.Candidate.Status, c.Candidate.Executed, c.Candidate.Requested)
-	for _, run := range []comparisonRun{c.Baseline, c.Candidate} {
-		for _, problem := range run.Problems {
-			fmt.Fprintf(w, "Problem [%s]: %s\n", run.Directory, problem)
-		}
-	}
+func (c comparison) textWarnings() []string {
+	var warnings []string
 	for _, warning := range c.Warnings {
 		if strings.HasPrefix(warning, "harness revision:") {
 			continue
@@ -603,10 +591,15 @@ func (c comparison) writeText(out io.Writer) error {
 		if strings.HasPrefix(warning, "model configuration") && slices.Contains(c.Matches, "effective native parameters") && slices.Contains(c.Matches, "request bodies/order") {
 			continue
 		}
-		fmt.Fprintln(w, "Warning:", warning)
+		warnings = append(warnings, warning)
 	}
+	return warnings
+}
+
+func (c comparison) writeRows(w io.Writer) {
+	// Empty cells preserve tabwriter's column widths across visual blank lines.
+	fmt.Fprintln(w, "\t\t\t\t")
 	cell := c.Cell
-	fmt.Fprintln(w, "\nCell\tMetric\tBaseline median [SD]\tCandidate median [SD]\tChange")
 	format := func(m *measurement) string {
 		if m == nil {
 			return "n/a"
@@ -635,5 +628,4 @@ func (c comparison) writeText(out io.Writer) error {
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", cell, label, baseline, candidate, percent)
 	}
-	return w.Flush()
 }

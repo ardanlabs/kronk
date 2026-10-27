@@ -146,6 +146,11 @@ func TestCompareMatrixSelection(t *testing.T) {
 	base := writeComparisonFixture(t, comparisonFixture([]float64{1, 4}), image(10, 20))
 	for _, subset := range []bool{false, true} {
 		text, pictures := comparisonFixture([]float64{2, 6}), image(8, 12)
+		for _, r := range []*report{&text, &pictures} {
+			r.Metadata["/v1/kronk/libs"].(map[string]any)["current"] = "new-library"
+			r.HarnessRevision = "new-harness"
+		}
+		text.Repetitions[0].SystemTokens++ // A warning belonging only to the text cell.
 		if subset {
 			pictures = report{Images: true, Status: "NOT_RUN"}
 		}
@@ -161,6 +166,42 @@ func TestCompareMatrixSelection(t *testing.T) {
 		}
 		if got.Status != "PASS" || len(got.Cells) != 2 {
 			t.Fatal("missing matrix comparisons", out.String())
+		}
+		jsonBefore, _ := json.Marshal(got)
+		var display bytes.Buffer
+		if err := got.writeText(&display); err != nil {
+			t.Fatal(err)
+		}
+		shown := display.String()
+		shared := `Warning: installed library: "test-library" -> "new-library"`
+		if strings.Count(shown, shared) != 1 || strings.Index(shown, shared) > strings.Index(shown, "Baseline median [SD]") || strings.Contains(shown, "harness revision:") {
+			t.Fatal("common warning must appear once above metrics without exposing hidden warnings", shown)
+		}
+		local := "repetition 1: system token count/hash changed or missing"
+		if strings.Count(shown, local) != 1 || (!subset && !strings.Contains(shown, "Warning [MoE/1s/IMC+/MTP+/img-]: "+local)) {
+			t.Fatal("cell-specific warning lost or moved to the common header", shown)
+		}
+		if strings.Count(shown, "Baseline median [SD]") != 1 || strings.Contains(shown, "| baseline") {
+			t.Fatal("comparison must have one table header without repeated cell-status lines", shown)
+		}
+		metricColumn := -1
+		lines := strings.Split(shown, "\n")
+		for i, line := range lines {
+			if strings.HasPrefix(line, "Cell ") {
+				metricColumn = strings.Index(line, "Metric")
+			}
+			for _, label := range []string{"Workload (s)", "Normalized (s)"} {
+				if column := strings.Index(line, label); column >= 0 && (metricColumn < 0 || column != metricColumn) {
+					t.Fatal("timing rows must align with the shared header", shown)
+				}
+			}
+			if strings.HasPrefix(line, "MoE/") && strings.Contains(line, "Workload (s)") && (i == 0 || strings.TrimSpace(lines[i-1]) != "") {
+				t.Fatal("cells must be separated by a blank line", shown)
+			}
+		}
+		jsonAfter, _ := json.Marshal(got)
+		if !bytes.Equal(jsonBefore, jsonAfter) {
+			t.Fatal("text rendering changed per-cell JSON warnings")
 		}
 		for _, cell := range got.Cells {
 			if strings.HasSuffix(cell.Cell, "img+") && subset {

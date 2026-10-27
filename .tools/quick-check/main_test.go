@@ -1126,8 +1126,23 @@ func TestReleaseRetention(t *testing.T) {
 		r.ServerRevision = tc.revision
 		r.ReleaseTag = tags[tc.revision]
 		r.TestStartedAt = time.Date(2026, 10, 22, 0, 0, i, 0, time.UTC).Format(time.RFC3339Nano)
+		r.Metadata["/v1/devices"] = map[string]any{"system_ram_bytes": 24 * (1 << 30), "gpu_total_bytes": 19069665280, "unified_memory": true}
+		image := r
+		image.Images = true
+		image.ReferenceTokens = referenceTokens(true, false, false, false)
+		if i >= 7 {
+			image.ReferenceTokens.InputTokens++
+		}
+		if i >= 8 {
+			image.ReferenceTokens.GenerationTokens++
+		}
+		image.Repetitions = slices.Clone(r.Repetitions)
+		for j := range image.Repetitions {
+			image.Repetitions[j].Images = true
+			image.Repetitions[j].ReferenceTokens = image.ReferenceTokens
+		}
 		staged := filepath.Join(out, fmt.Sprintf("20261022T0000%02dZ-%d", i, i))
-		if err := os.Rename(writeComparisonFixture(t, r), staged); err != nil {
+		if err := os.Rename(writeComparisonFixture(t, r, image), staged); err != nil {
 			t.Fatal(err)
 		}
 		final, err := retainRuns(context.Background(), out, staged, tags)
@@ -1174,7 +1189,7 @@ func TestReleaseRetention(t *testing.T) {
 			if err := compareCommand([]string{"-against", "release", "-out", out}, &output); err != nil {
 				t.Fatal(err)
 			}
-			data, err := os.ReadFile(filepath.Join(root, "release-history.md"))
+			data, err := os.ReadFile(filepath.Join(root, "release-history.log"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1182,15 +1197,24 @@ func TestReleaseRetention(t *testing.T) {
 			count := 1
 			if i >= 7 {
 				count = 2
-				if !strings.Contains(history, "v1.1.0 → v1.2.0") || !strings.Contains(history, f) {
+				if !strings.Contains(history, "v1.1.0 → v1.2.0") {
 					t.Fatal("second release comparison missing", history)
 				}
 			}
-			if strings.Count(history, "\n## ") != count || !strings.Contains(history, "v1.0.0 → v1.1.0") || !strings.Contains(history, a) || !strings.Contains(history, c) || !strings.Contains(history, fmt.Sprintf("%.6f [SD", 6+float64(i))) || !strings.Contains(history, "| Warm-up request | 6.000000") {
+			if strings.Count(history, "Release comparison: ") != count || strings.Count(history, "Baseline median [SD]") != count || !strings.Contains(history, "v1.0.0 → v1.1.0") || !strings.Contains(history, fmt.Sprintf("%.2f [", 6+float64(i))) || !strings.Contains(history, "Normalized (s)") {
 				t.Fatal("release comparison/history update failed", history)
 			}
-			if !strings.Contains(history, "machine: `test-machine`; RAM: 24000 bytes; VRAM: 18000 bytes; unified memory: true") || strings.Contains(history, "test-os") || !strings.Contains(history, "library: `test-library`") {
+			if !strings.Contains(history, "machine: test-machine; RAM: 24GiB; VRAM: 17.76GiB; unified memory: true") || strings.Contains(history, "test-os") || strings.Contains(history, "library:") || strings.Contains(history, "Warning") || strings.Contains(history, "Warm-up") {
 				t.Fatal("incorrect history metadata", history)
+			}
+			table := strings.Index(output.String(), "\nCell")
+			if table < 0 || !strings.HasSuffix(history, output.String()[table:]) || strings.Count(history, "MoE/1s/IMC+/MTP+/img+") != count || strings.Count(history, "MoE/1s/IMC+/MTP+/img-") != count {
+				t.Fatal("history must keep the complete comparison table without diagnostics", history)
+			}
+			updated := map[int]string{3: "unknown", 4: "no", 7: "yes", 8: "yes"}[i]
+			entries := strings.Split(history, "Release comparison: ")
+			if !strings.Contains(entries[len(entries)-1], "References updated: "+updated+"; reference ID: ") {
+				t.Fatal("incorrect reference update flag", history)
 			}
 			if i == 3 && !strings.Contains(history, "+50.00%") {
 				t.Fatal("incorrect timing delta", history)
@@ -1199,7 +1223,7 @@ func TestReleaseRetention(t *testing.T) {
 			if err := compareCommand([]string{"-against", "commit", "-out", out}, &output); err != nil {
 				t.Fatal(err)
 			}
-			after, err := os.ReadFile(filepath.Join(root, "release-history.md"))
+			after, err := os.ReadFile(filepath.Join(root, "release-history.log"))
 			if err != nil || string(after) != history {
 				t.Fatal("commit comparison changed release history", err)
 			}
@@ -1211,7 +1235,7 @@ func TestReleaseRetention(t *testing.T) {
 			}
 		}
 	}
-	path := filepath.Join(root, "release-history.md")
+	path := filepath.Join(root, "release-history.log")
 	history, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -1222,6 +1246,42 @@ func TestReleaseRetention(t *testing.T) {
 	}
 	if after, err := os.ReadFile(path); err != nil || string(after) != string(history) {
 		t.Fatal("ordinary-commit versus release changed history", err)
+	}
+	// A second machine keeps its own entry and reference history for the same tags.
+	other := make([]string, 2)
+	for i, revision := range []string{a, c} {
+		r := comparisonFixture([]float64{2, 6})
+		r.ServerRevision = revision
+		r.Metadata["/v1/liveness"].(map[string]any)["host"] = "other-machine"
+		r.Metadata["/v1/devices"] = map[string]any{"system_ram_bytes": 64 * (1 << 30), "gpu_total_bytes": 16 * (1 << 30), "unified_memory": false}
+		other[i] = writeComparisonFixture(t, r)
+	}
+	if err := compareCommand([]string{"-against", "release", "-out", out, "-baseline", other[0], "-candidate", other[1]}, &output); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || !strings.HasPrefix(string(data), string(history)) || strings.Count(string(data), "Release comparison: ") != 3 || !strings.Contains(string(data[len(history):]), "References updated: unknown;") {
+		t.Fatal("second machine replaced history or inherited another machine's reference flag", err, string(data))
+	}
+	if err := compareCommand([]string{"-against", "release", "-out", out, "-baseline", filepath.Join(out, "release-v1.0.0"), "-candidate", filepath.Join(out, "old-"+labels[c])}, &output); err != nil {
+		t.Fatal(err)
+	}
+	history, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := strings.Split(string(history), "Release comparison: ")
+	if len(entries) != 4 || !strings.Contains(entries[3], "References updated: no;") || !strings.Contains(string(history), "machine: other-machine; RAM: 64GiB; VRAM: 16GiB; unified memory: false") {
+		t.Fatal("upsert lost a machine or checked the wrong reference history", string(history))
+	}
+	// Mixed-machine comparisons still emit their warning, but not a misleading
+	// warning-free history entry with a single machine description.
+	output.Reset()
+	if err := compareCommand([]string{"-against", "release", "-out", out, "-baseline", filepath.Join(out, "release-v1.0.0"), "-candidate", other[1]}, &output); err != nil {
+		t.Fatal(err)
+	}
+	if after, err := os.ReadFile(path); err != nil || string(after) != string(history) || !strings.Contains(output.String(), "WARNING: MACHINE") {
+		t.Fatal("mixed-machine comparison changed history or hid its warning", err, output.String())
 	}
 	// Broken history is surfaced, never discarded or silently replaced.
 	if err := os.WriteFile(path, []byte("broken"), 0644); err != nil {
