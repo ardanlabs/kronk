@@ -28,7 +28,7 @@ func TestQuickCheckCommand(t *testing.T) {
 	git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "--quiet", "-m", "release")
 	git("-c", "tag.gpgsign=false", "tag", "v1.0.0")
 	releaseRevision := git("rev-parse", "HEAD")
-	for _, defect := range []string{"", "release", "single-repetition", "all-cells", "all-cells-failure", "no-imc-config", "no-imc-reuse", "images-no-imc-no-encode", "mtp-off", "images-mtp-off", "mtp-off-drafts", "mtp-off-cancel-drafts", "mtp-off-no-restore", "no-drafts", "second-no-drafts", "no-cache", "wrong-cache-path", "missing-logs", "truncated-stream", "foreign-session", "two-slots", "cancel-internal-error", "cancel-without-ack", "cancel-without-cleanup", "missing-draft-restore", "actual-reuse-mismatch", "wrong-slot", "uncancelled-error", "dense-fixture", "missing-timing", "invalid-timing", "images", "images-system", "images-system-no-encode", "images-system-no-decode", "images-system-wrong-reuse", "images-system-no-restore", "images-no-encode", "images-no-decode", "images-reencode", "images-no-restore", "images-leak", "images-recovery-reuse", "images-recovery-leak"} {
+	for _, defect := range []string{"", "release", "single-repetition", "all-cells", "all-cells-failure", "all-cells-owner-failure", "all-cells-cleanup-failure", "all-cells-server-change", "no-imc-config", "no-imc-reuse", "images-no-imc-no-encode", "mtp-off", "images-mtp-off", "mtp-off-drafts", "mtp-off-cancel-drafts", "mtp-off-no-restore", "no-drafts", "second-no-drafts", "no-cache", "wrong-cache-path", "missing-logs", "truncated-stream", "foreign-session", "two-slots", "cancel-internal-error", "cancel-without-ack", "cancel-without-cleanup", "missing-draft-restore", "actual-reuse-mismatch", "wrong-slot", "uncancelled-error", "dense-fixture", "missing-timing", "invalid-timing", "images", "images-system", "images-system-no-encode", "images-system-no-decode", "images-system-wrong-reuse", "images-system-no-restore", "images-no-encode", "images-no-decode", "images-reencode", "images-no-restore", "images-leak", "images-recovery-reuse", "images-recovery-leak"} {
 		t.Run(defect, func(t *testing.T) {
 			grouped := strings.HasPrefix(defect, "all-cells")
 			images := strings.HasPrefix(defect, "images")
@@ -56,12 +56,18 @@ func TestQuickCheckCommand(t *testing.T) {
 			tokenizeCalls := 0
 			currentSystem := ""
 			seenSystems := make(map[string]bool)
+			systemRepetitions := make(map[string]int)
+			cellChats := make(map[string]int)
 			cancelStarted, cancelFinished := make(chan struct{}), make(chan struct{})
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				switch {
 				case req.URL.Path == "/v1/liveness":
-					fmt.Fprintf(w, `{"build":"develop","vcs_revision":%q,"vcs_time":"2026-10-19T14:23:45Z","host":"fixture-server","os":"linux","GOMAXPROCS":12}`+"\n", revision)
+					serverRevision := revision
+					if defect == "all-cells-server-change" && calls >= 1+6*requested {
+						serverRevision = strings.Repeat("f", 40)
+					}
+					fmt.Fprintf(w, `{"build":"develop","vcs_revision":%q,"vcs_time":"2026-10-19T14:23:45Z","host":"fixture-server","os":"linux","GOMAXPROCS":12}`+"\n", serverRevision)
 				case req.URL.Path == "/v1/kronk/libs":
 					fmt.Fprintln(w, `{"build":"fixture"}`)
 				case req.URL.Path == "/v1/devices":
@@ -90,8 +96,12 @@ func TestQuickCheckCommand(t *testing.T) {
 					}
 					json.NewEncoder(w).Encode([]map[string]any{{"model_id": loadedModel, "mtp": ndraft > 0, "ndraft": ndraft, "slots": slots}})
 				case req.URL.Path == "/v1/kronk/models/unload":
-					loaded = false
 					unloads++
+					if defect == "all-cells-cleanup-failure" {
+						http.Error(w, "unload failed", http.StatusInternalServerError)
+						return
+					}
+					loaded = false
 					json.NewEncoder(w).Encode(map[string]any{"id": loadedModel, "status": "unloaded"})
 				case req.URL.Path == "/v1/tokenize":
 					tokenizeCalls++
@@ -102,7 +112,9 @@ func TestQuickCheckCommand(t *testing.T) {
 					if strings.Count(body.Input, "Procedure ") != 72 {
 						t.Error("system prompt must retain its fixed 72 records")
 					}
-					if !strings.HasPrefix(body.Input, "Quick-check cell ") || !strings.Contains(body.Input, fmt.Sprintf("; repetition %d.\n\n", (tokenizeCalls-1)%requested+1)) || seenSystems[body.Input] {
+					prefix, _, _ := strings.Cut(body.Input, "; repetition ")
+					systemRepetitions[prefix]++
+					if !strings.HasPrefix(body.Input, "Quick-check cell ") || !strings.Contains(body.Input, fmt.Sprintf("; repetition %d.\n\n", systemRepetitions[prefix])) || seenSystems[body.Input] {
 						t.Error("cells and repetitions must use distinct, fixed system-prefix markers")
 					}
 					seenSystems[body.Input], currentSystem = true, body.Input
@@ -119,15 +131,16 @@ func TestQuickCheckCommand(t *testing.T) {
 					phases := []string{"cold", "replay", "append", "fresh-session", "cancel", "recovery"}
 					cellCalls, images, targetOnly, noCache := calls, images, targetOnly, noCache
 					if grouped {
-						groupCalls := calls % (1 + 12*requested)
-						index := 2 * (calls / (1 + 12*requested))
-						cellCalls = groupCalls
-						if groupCalls >= 1+6*requested {
-							index++
-							cellCalls = groupCalls - 6*requested
+						targetOnly = body.Model == targetOnlyModelID || body.Model == noCacheTargetOnlyModelID
+						noCache = body.Model == noCacheModelID || body.Model == noCacheTargetOnlyModelID
+						cellCalls = 0
+						if body.Messages[0].Content != "Reply OK." {
+							prefix, _, _ := strings.Cut(body.Messages[0].Content.(string), "; repetition ")
+							id := strings.TrimPrefix(prefix, "Quick-check cell ")
+							images = strings.HasSuffix(id, "img+")
+							cellChats[id]++
+							cellCalls = cellChats[id]
 						}
-						cell := matrixCells[index]
-						images, targetOnly, noCache = cell.images, cell.targetOnly, cell.noCache
 					}
 					wantModel := modelID
 					if targetOnly {
@@ -371,7 +384,8 @@ func TestQuickCheckCommand(t *testing.T) {
 					}
 					if phase == "fresh-session" {
 						text = "COBALT-83 belongs to Tobin, destination Southbank. Review the pending work."
-						if defect == "foreign-session" || (defect == "all-cells-failure" && images) {
+						failedCell := !targetOnly && !noCache && ((defect == "all-cells-failure" || defect == "all-cells-cleanup-failure") && images || defect == "all-cells-owner-failure" && !images)
+						if defect == "foreign-session" || failedCell {
 							text += " Maren."
 						}
 					}
@@ -492,13 +506,39 @@ func TestQuickCheckCommand(t *testing.T) {
 			if err := json.Unmarshal(data, &matrix); err != nil {
 				t.Fatal(err)
 			}
-			if defect == "all-cells-failure" {
-				if matrix.Status != "FAIL" || unloads != 1 || loaded || calls != 1+6*requested+4 || !bytes.Contains(matrix.Cells[0], []byte(`"status": "PASS"`)) || !bytes.Contains(matrix.Cells[1], []byte(`"status": "FAIL"`)) {
-					t.Fatalf("shared-cell failure did not stop and unload its group: %s", data)
+			if defect == "all-cells-cleanup-failure" || defect == "all-cells-server-change" {
+				wantCalls := 1 + 6*requested + 4
+				if defect == "all-cells-server-change" {
+					wantCalls = 1 + 12*requested
+					if !bytes.Contains(data, []byte("server commit changed between cells")) {
+						t.Fatal("server change was not reported", string(data))
+					}
+				}
+				if matrix.Status != "FAIL" || unloads != 1 || loaded != (defect == "all-cells-cleanup-failure") || calls != wantCalls {
+					t.Fatalf("unsafe cleanup/server change did not stop the matrix: %s", data)
 				}
 				for _, cell := range matrix.Cells[2:] {
 					if !bytes.Contains(cell, []byte(`"status": "NOT_RUN"`)) {
-						t.Fatal("continued after group failure", string(cell))
+						t.Fatal("continued after unsafe cleanup/server change", string(cell))
+					}
+				}
+				return
+			}
+			if defect == "all-cells-failure" || defect == "all-cells-owner-failure" {
+				failed, wantLoads := 1, 4
+				if defect == "all-cells-owner-failure" {
+					failed, wantLoads = 0, 5 // Its image partner needs a fresh warm-up.
+				}
+				if matrix.Status != "FAIL" || unloads != wantLoads || loaded || calls != wantLoads+7*6*requested+4 {
+					t.Fatalf("failed cell did not clean up and continue the matrix: chats=%d unloads=%d summary=%s", calls, unloads, data)
+				}
+				for i, cell := range matrix.Cells[:8] {
+					status := "PASS"
+					if i == failed {
+						status = "FAIL"
+					}
+					if !bytes.Contains(cell, []byte(`"status": "`+status+`"`)) {
+						t.Fatal("lost a cell verdict after failure", string(cell))
 					}
 				}
 				return
@@ -924,7 +964,7 @@ func TestRunRetention(t *testing.T) {
 				http.Error(w, "inference unavailable", http.StatusServiceUnavailable)
 			}
 		}))
-		err := run(options{host: server.URL, out: out, serverLog: logPath, timeout: time.Second, repetitions: 1})
+		err := run(options{host: server.URL, out: out, serverLog: logPath, timeout: time.Second, repetitions: 1, cells: []string{matrixCells[0].id}})
 		server.Close()
 		if err == nil {
 			t.Fatal("expected inference/write failure")

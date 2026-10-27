@@ -348,7 +348,7 @@ func main() {
 	flag.StringVar(&o.out, "out", ".tools/quick-check/output", "artifact parent; retains committed baseline and latest candidate")
 	flag.StringVar(&o.serverLog, "server-log", filepath.Join(home, ".kronk/kronk.log"), "required local JSON server log")
 	flag.DurationVar(&o.timeout, "timeout", 5*time.Minute, "per-request timeout; not a performance threshold")
-	flag.IntVar(&o.repetitions, "repetitions", 2, "complete workload repetitions; stop on first failure")
+	flag.IntVar(&o.repetitions, "repetitions", 2, "workload repetitions per cell; stop a failing cell, then continue remaining cells")
 	flag.Func("cell", "implemented cell ID, e.g. MoE/1s/IMC+/MTP+/img- (repeat for each wanted cell; omit to run all)", func(id string) error {
 		o.cells = append(o.cells, id)
 		return nil
@@ -528,6 +528,7 @@ func run(o options) (runErr error) {
 		return err
 	}
 	defer func() { runErr = errors.Join(runErr, finishGroup()) }()
+	var cellErrors error
 	for i, cell := range matrixCells {
 		if !selected[cell.id] {
 			continue
@@ -549,7 +550,7 @@ func run(o options) (runErr error) {
 		}
 		if group != nil && group.Model != c.model {
 			if err := finishGroup(); err != nil {
-				return err
+				return errors.Join(cellErrors, err)
 			}
 		}
 		cr := &r.Cells[i]
@@ -557,29 +558,39 @@ func run(o options) (runErr error) {
 		if cr.TwoSlots {
 			cr.Workload = "operations-concurrent-v1"
 		}
+		var err error
 		if group == nil {
 			group = cr
 		} else {
 			cr.SharedWarmupFrom, cr.MTPBackend = group.ID, group.MTPBackend
-			if err := c.waitIdle(); err != nil {
-				cr.Findings = append(cr.Findings, err.Error())
-				return err
-			}
+			err = c.waitIdle()
 		}
 		log("cell=%s", cell.id)
-		err := executeCell(o, c, cr, log)
-		if r.ServerRevision == "" {
-			r.ServerRevision, r.ServerCommitTime = cr.ServerRevision, cr.ServerCommitTime
-		} else if cr.ServerRevision != r.ServerRevision || cr.ServerCommitTime != r.ServerCommitTime {
-			return fmt.Errorf("server commit changed between cells")
+		if err == nil {
+			err = executeCell(o, c, cr, log)
+		}
+		if cr.ServerRevision != "" {
+			if r.ServerRevision == "" {
+				r.ServerRevision, r.ServerCommitTime = cr.ServerRevision, cr.ServerCommitTime
+			} else if cr.ServerRevision != r.ServerRevision || cr.ServerCommitTime != r.ServerCommitTime {
+				return errors.Join(cellErrors, fmt.Errorf("server commit changed between cells"))
+			}
 		}
 		if err != nil {
 			cr.Status = "FAIL"
 			cr.Findings = append(cr.Findings, err.Error())
-			return fmt.Errorf("cell %s: %w", cell.id, err)
+			cellErrors = errors.Join(cellErrors, fmt.Errorf("cell %s: %w", cell.id, err))
+			if ctx.Err() != nil {
+				return cellErrors
+			}
+			// Do not carry potentially damaged state into another cell. A successful
+			// unload allows a fresh group; failed cleanup makes continuation unsafe.
+			if err := finishGroup(); err != nil {
+				return errors.Join(cellErrors, err)
+			}
 		}
 	}
-	return nil
+	return cellErrors
 }
 
 // Weights remain resident across the group's cells and their repetitions.
