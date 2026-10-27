@@ -7,7 +7,7 @@ import (
 var Cmd = &cobra.Command{
 	Use:   "stop",
 	Short: "Stop the Kronk model server",
-	Long:  `Stop the Kronk model server by sending SIGTERM`,
+	Long:  `Stop a server started with --detach by sending SIGTERM. For a systemd service, use "kronk systemd stop".`,
 	Args:  cobra.NoArgs,
 	RunE:  main,
 }

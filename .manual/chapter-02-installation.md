@@ -487,6 +487,24 @@ other Kronk servers on the network.
 See [Chapter 8](https://www.kronkai.com/manual#chapter-8-model-server) for server flags, model pooling,
 runtime paths, and deployment operations.
 
+#### Run as a Linux Service (systemd)
+
+With Kronk installed in a permanent location, run these as your normal user:
+
+```shell
+kronk systemd install
+kronk systemd start
+kronk systemd status
+```
+
+The embedded service definition runs against your existing `~/.kronk` and
+enables startup at login. Use `kronk systemd install --boot` instead to
+enable startup before login and operation after logout (may require
+authorization). Stop any manually started server before starting the service.
+Use `kronk systemd stop` and `kronk systemd logs` for this process, not the
+detached-server commands. See [Chapter 8 §8.8](https://www.kronkai.com/manual#88-running-as-a-systemd-service)
+for configuration, upgrades, and removal.
+
 ### 2.7 Verify the Installation
 
 Check server liveness:

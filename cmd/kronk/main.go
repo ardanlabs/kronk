@@ -19,6 +19,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/kronk/security"
 	"github.com/ardanlabs/kronk/cmd/kronk/server"
 	"github.com/ardanlabs/kronk/cmd/kronk/status"
+	"github.com/ardanlabs/kronk/cmd/kronk/systemd"
 	k "github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -48,6 +49,7 @@ USAGE
 
 COMMANDS
   server    Start/stop the model server
+  systemd   Install/manage the Linux systemd user service
   model     Manage local models (list, pull, remove, show, ps)
   catalog   Browse and manage the model catalog (list, show, remove)
   libs      Install/upgrade llama.cpp libraries
@@ -114,6 +116,7 @@ func init() {
 
 	// Cross-backend verbs.
 	rootCmd.AddCommand(server.Cmd)
+	rootCmd.AddCommand(systemd.Cmd)
 	rootCmd.AddCommand(security.Cmd)
 	rootCmd.AddCommand(devices.Cmd)
 	rootCmd.AddCommand(diagnose.Cmd)
