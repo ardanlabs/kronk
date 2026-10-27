@@ -21,6 +21,11 @@ type trainer struct {
 	loss float64
 }
 
+func (s trainer) Validate(context.Context, training.TrainingJob) error {
+	s.t.Fatal("train step must not repeat split validation")
+	return nil
+}
+
 func (s trainer) Train(_ context.Context, job training.TrainingJob, _ func(tmprl.Progress)) (training.TrainingCandidate, error) {
 	if len(job.Dataset.Test) != 0 {
 		s.t.Fatal("protected rows exposed to training")

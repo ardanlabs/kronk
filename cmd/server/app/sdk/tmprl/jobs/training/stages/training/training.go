@@ -45,6 +45,7 @@ type TrainingDataset struct {
 
 // TrainingJob supplies worker-local computation inputs and disposable storage.
 type TrainingJob struct {
+	ModelID  string          `json:"model_id"`
 	Model    string          `json:"model"`
 	Training Training        `json:"training"`
 	Dataset  TrainingDataset `json:"dataset"`
@@ -62,6 +63,7 @@ type TrainingCandidate struct {
 // Trainer performs computation without owning orchestration or persistence.
 // Predict loads the candidate when adapter is nonempty, or the frozen base otherwise.
 type Trainer interface {
+	Validate(context.Context, TrainingJob) error
 	Train(context.Context, TrainingJob, func(tmprl.Progress)) (TrainingCandidate, error)
 	Predict(context.Context, TrainingJob, string, []Record) ([]string, error)
 }

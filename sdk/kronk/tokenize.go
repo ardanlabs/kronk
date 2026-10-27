@@ -9,6 +9,20 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
+// TokenizeIDs returns the model vocabulary's token IDs for non-empty input.
+// It preserves whitespace, applies no chat template, and adds no BOS or other
+// special tokens. Model control tokens already in input are parsed as special
+// tokens, allowing callers to supply already-formatted Gemma text.
+// It uses normal request admission and lifecycle handling. Cancellation is
+// checked before and after tokenization, but cannot interrupt the native call.
+func (krn *Kronk) TokenizeIDs(ctx context.Context, input string) ([]int32, error) {
+	f := func(m *model.Model) ([]int32, error) {
+		return m.TokenizeIDs(ctx, input)
+	}
+
+	return nonStreaming(ctx, krn, f)
+}
+
 // Tokenize returns the token count for a text input.
 //
 // Supported options in d:

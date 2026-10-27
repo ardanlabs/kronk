@@ -11,9 +11,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/imports"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/uploads"
 )
 
 // File is the shared checkpoint path within the preparation workspace.
@@ -39,7 +39,7 @@ func Load(ctx context.Context, input preparation.StepContext, allowMissing bool)
 		return State{}, false, err
 	}
 	p := input.Preparation
-	if p == nil || input.Workspace == nil || p.SourceRoot == nil {
+	if p == nil || input.Workspace == nil || p.OpenSource == nil {
 		return State{}, false, fmt.Errorf("%w: preparation resources are required", preparation.ErrInvalidArgument)
 	}
 	if p.Input.Kind != preparation.PreparationFull && p.Input.Kind != preparation.PreparationPreview || p.Input.Kind == preparation.PreparationPreview && (p.Input.Request.PreviewRecords < 1 || p.Input.Request.PreviewRecords > 5) {
@@ -47,7 +47,7 @@ func Load(ctx context.Context, input preparation.StepContext, allowMissing bool)
 	}
 	identity, err := json.Marshal(struct {
 		Input  preparation.PreparationInput
-		Source imports.PreparationSource
+		Source uploads.File
 	}{p.Input, p.Source})
 	if err != nil {
 		return State{}, false, err

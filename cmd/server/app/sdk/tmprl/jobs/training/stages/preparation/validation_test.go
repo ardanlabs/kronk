@@ -8,19 +8,19 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/imports"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/uploads"
 	"go.temporal.io/sdk/temporal"
 )
 
 func TestValidateRequest(t *testing.T) {
-	datasets, err := imports.New(imports.Config{DatasetRoot: t.TempDir()})
+	datasets, err := uploads.New(uploads.Config{Root: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
 	const evidence = "The harbor opens at dawn."
-	dataset, err := datasets.ImportDataset(t.Context(), imports.ImportInput{Name: "source.md"}, strings.NewReader(evidence))
+	dataset, err := datasets.Put(t.Context(), uploads.Input{Name: "source.md"}, strings.NewReader(evidence))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,8 +72,8 @@ func TestValidateRequest(t *testing.T) {
 			}
 		})
 	}
-	input.DatasetID = "dataset-" + strings.Repeat("A", 26)
-	if _, err := preparation.ValidateRequest(t.Context(), datasets, input); !errors.Is(err, imports.ErrNotFound) {
+	input.DatasetID = "upload-" + strings.Repeat("A", 26)
+	if _, err := preparation.ValidateRequest(t.Context(), datasets, input); !errors.Is(err, uploads.ErrNotFound) {
 		t.Fatalf("got %v, want dataset not found", err)
 	}
 	var rows strings.Builder
@@ -83,13 +83,21 @@ func TestValidateRequest(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	prepared, err := datasets.ImportDataset(t.Context(), imports.ImportInput{Name: "prepared.jsonl"}, strings.NewReader(rows.String()))
+	prepared, err := datasets.Put(t.Context(), uploads.Input{Name: "prepared.jsonl"}, strings.NewReader(rows.String()))
 	if err != nil {
 		t.Fatal(err)
 	}
 	input.DatasetID = prepared.ID
 	if _, err := preparation.ValidateRequest(t.Context(), datasets, input); !errors.Is(err, preparation.ErrInvalidArgument) || !strings.Contains(err.Error(), "prepared JSONL does not need document preparation") {
 		t.Fatalf("got %v, want prepared JSONL rejection", err)
+	}
+	unsupported, err := datasets.Put(t.Context(), uploads.Input{Name: "source.csv"}, strings.NewReader("value\n42\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.DatasetID = unsupported.ID
+	if _, err := preparation.ValidateRequest(t.Context(), datasets, input); !errors.Is(err, preparation.ErrInvalidArgument) {
+		t.Fatalf("got %v, want unsupported document rejection", err)
 	}
 	if _, err := preparation.ValidateRequest(t.Context(), nil, input); !errors.Is(err, preparation.ErrInvalidArgument) {
 		t.Fatalf("got %v, want missing dataset service rejection", err)

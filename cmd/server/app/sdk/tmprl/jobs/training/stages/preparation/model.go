@@ -3,20 +3,17 @@ package preparation
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
+	"io"
 	"os"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/imports"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/providers"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/uploads"
 )
 
 // ErrInvalidArgument identifies invalid preparation input.
 var ErrInvalidArgument = tmprl.ErrInvalidArgument
-
-// ErrCompletionTruncated identifies completions that reach their token limit.
-var ErrCompletionTruncated = errors.New("preparation completion reached its token limit")
 
 // Goal identifies the supervised task generated from a source document.
 type Goal string
@@ -71,44 +68,15 @@ type PreparationInput struct {
 	Kind    PreparationKind    `json:"kind"`
 }
 
-// Document preserves extracted document content and conversion metadata.
-type Document struct {
-	Markdown       string          `json:"markdown"`
-	StructuredJSON json.RawMessage `json:"structured_json"`
-	ProcessingTime float64         `json:"processing_time"`
-}
-
-// Message is one model conversation message.
-type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-// CompletionRequest requests a structured preparation completion.
-type CompletionRequest struct {
-	Model          string         `json:"model"`
-	Messages       []Message      `json:"messages"`
-	ResponseSchema map[string]any `json:"response_schema"`
-	MaxTokens      int            `json:"max_tokens"`
-	Seed           uint32         `json:"seed"`
-}
-
-// Completion contains generated content and model usage.
-type Completion struct {
-	Content          string `json:"content"`
-	PromptTokens     int    `json:"prompt_tokens"`
-	CompletionTokens int    `json:"completion_tokens"`
-}
-
 // DocumentExtractor converts a source and identifies its extraction profile.
 type DocumentExtractor interface {
-	Convert(context.Context, string) (Document, error)
+	Convert(context.Context, string) (providers.Document, error)
 	ExtractionProfile() string
 }
 
 // ModelCompleter performs structured model completions.
 type ModelCompleter interface {
-	Complete(context.Context, CompletionRequest) (Completion, error)
+	Complete(context.Context, providers.CompletionRequest) (providers.Completion, error)
 }
 
 // Artifacts contains only the outputs owned by preparation.
@@ -133,8 +101,8 @@ type StepContext struct {
 // PreparationContext supplies worker-local preparation dependencies.
 type PreparationContext struct {
 	Input      PreparationInput
-	Source     imports.PreparationSource
-	SourceRoot *os.Root
+	Source     uploads.File
+	OpenSource func(context.Context) (io.ReadCloser, error)
 	Extractor  DocumentExtractor
 	Completer  ModelCompleter
 }

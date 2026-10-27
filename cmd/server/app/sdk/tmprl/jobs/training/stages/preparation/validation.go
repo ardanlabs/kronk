@@ -3,22 +3,23 @@ package preparation
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
 	"unicode/utf8"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/imports"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/uploads"
 )
 
 // ValidateRequest normalizes and validates full document preparation without
 // starting execution. The returned request owns a copy of ReviewedRecords.
-func ValidateRequest(ctx context.Context, datasets *imports.Business, input PreparationRequest) (PreparationRequest, error) {
+func ValidateRequest(ctx context.Context, store *uploads.Store, input PreparationRequest) (PreparationRequest, error) {
 	if err := ctx.Err(); err != nil {
 		return PreparationRequest{}, err
 	}
-	if datasets == nil {
+	if store == nil {
 		return PreparationRequest{}, fmt.Errorf("%w: dataset service is required", ErrInvalidArgument)
 	}
 	input.DatasetID = strings.TrimSpace(input.DatasetID)
@@ -46,12 +47,20 @@ func ValidateRequest(ctx context.Context, datasets *imports.Business, input Prep
 	if len(data) > 64<<10 {
 		return PreparationRequest{}, fmt.Errorf("%w: preparation input exceeds 64 KiB", ErrInvalidArgument)
 	}
-	source, err := datasets.DatasetSource(ctx, input.DatasetID)
+	source, err := store.Get(ctx, input.DatasetID)
+	if errors.Is(err, uploads.ErrInvalidArgument) {
+		return PreparationRequest{}, fmt.Errorf("%w: source: %s", ErrInvalidArgument, err)
+	}
 	if err != nil {
 		return PreparationRequest{}, err
 	}
 	if source.Format == ".jsonl" {
 		return PreparationRequest{}, fmt.Errorf("%w: prepared JSONL does not need document preparation", ErrInvalidArgument)
+	}
+	switch source.Format {
+	case ".pdf", ".docx", ".md", ".txt":
+	default:
+		return PreparationRequest{}, fmt.Errorf("%w: unsupported document format %q", ErrInvalidArgument, source.Format)
 	}
 	return input, nil
 }
