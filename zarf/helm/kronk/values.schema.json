@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["replicaCount", "image", "auth", "persistence", "service", "metrics"],
+  "properties": {
+    "replicaCount": {"type": "integer", "enum": [1]},
+    "image": {
+      "type": "object",
+      "required": ["repository", "variant", "tag", "pullPolicy"],
+      "properties": {
+        "repository": {"type": "string", "minLength": 1},
+        "variant": {"enum": ["cpu", "cuda", "vulkan", "rocm", "all"]},
+        "tag": {"type": "string"},
+        "pullPolicy": {"enum": ["IfNotPresent", "Always", "Never"]}
+      },
+      "additionalProperties": false
+    },
+    "auth": {
+      "type": "object",
+      "required": ["mode", "existingSecret"],
+      "properties": {
+        "mode": {"enum": ["open", "management", "authenticated", "full-protected"]},
+        "existingSecret": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "models": {
+      "type": "object",
+      "properties": {"pull": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}},
+      "additionalProperties": false
+    },
+    "modelConfig": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "existingConfigMap": {"type": "string"},
+        "content": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "persistence": {
+      "type": "object",
+      "properties": {
+        "existingClaim": {"type": "string"},
+        "storageClass": {"type": "string"},
+        "accessMode": {"enum": ["ReadWriteOnce", "ReadWriteOncePod", "ReadWriteMany"]},
+        "size": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "service": {
+      "type": "object",
+      "properties": {
+        "type": {"enum": ["ClusterIP", "NodePort", "LoadBalancer"]},
+        "port": {"type": "integer", "minimum": 1, "maximum": 65535}
+      },
+      "additionalProperties": false
+    },
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "serviceMonitor": {
+          "type": "object",
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "interval": {"type": "string", "minLength": 1},
+            "labels": {"type": "object", "additionalProperties": {"type": "string"}}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "env": {"type": "object"},
+    "extraEnv": {"type": "array", "items": {"type": "object", "required": ["name"], "properties": {"name": {"type": "string", "minLength": 1}}}},
+    "ingress": {"type": "object"},
+    "resources": {"type": "object"},
+    "runtimeClassName": {"type": "string"},
+    "nodeSelector": {"type": "object", "additionalProperties": {"type": "string"}},
+    "tolerations": {"type": "array"},
+    "affinity": {"type": "object"},
+    "podSecurityContext": {"type": "object"},
+    "startupProbe": {"type": "object"},
+    "livenessProbe": {"type": "object"},
+    "readinessProbe": {"type": "object"}
+  },
+  "additionalProperties": false
+}

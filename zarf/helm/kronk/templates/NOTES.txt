@@ -1,0 +1,18 @@
+Kronk is installed as one server with persistent storage.
+
+Forward the API:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "kronk.fullname" . }} 11435:{{ .Values.service.port }}
+
+Check connectivity:
+  helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
+
+{{- if ne .Values.auth.mode "open" }}
+For embedded authentication, retrieve the admin token (keep it private):
+  kubectl -n {{ .Release.Namespace }} exec {{ include "kronk.fullname" . }}-0 -c kronk -- cat /kronk/keys/master.jwt
+{{- else }}
+WARNING: auth.mode=open exposes inference AND management without authentication.
+{{- end }}
+
+Default installs disable the BUI. Configure its password before enabling it.
+Uninstall retains the PVC. Back up models and keys before deleting storage.
+See zarf/helm/kronk/README.md for GPU prerequisites and upgrade instructions.

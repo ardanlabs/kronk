@@ -1,0 +1,16 @@
+# Install the NVIDIA device plugin and container runtime first.
+# Add runtimeClassName: nvidia only if your cluster defines that RuntimeClass.
+image:
+  variant: cuda
+nodeSelector:
+  kubernetes.io/arch: amd64
+models:
+  pull:
+    - unsloth/Qwen3-0.6B-Q8_0
+resources:
+  requests:
+    cpu: "2"
+    memory: 4Gi
+  limits:
+    memory: 8Gi
+    nvidia.com/gpu: 1

@@ -11,7 +11,8 @@
 - [8.7 Container Operations](#87-container-operations)
 - [8.8 Running as a systemd Service](#88-running-as-a-systemd-service)
 - [8.9 Running as a launchd Agent](#89-running-as-a-launchd-agent)
-- [8.10 Related Administration Guides](#810-related-administration-guides)
+- [8.10 Kubernetes with Helm](#810-kubernetes-with-helm)
+- [8.11 Related Administration Guides](#811-related-administration-guides)
 
 ---
 
@@ -787,7 +788,42 @@ Uninstall unloads and disables the agent and removes its plist, retaining
 server data and logs. Any environment settings stored only in the removed
 plist are removed with it.
 
-## 8.10 Related Administration Guides
+## 8.10 Kubernetes with Helm
+
+The chart in `zarf/helm/kronk` runs the published image as one server with a
+retained data PVC; it does not provide synchronized HA. Requirements are an
+existing Kubernetes 1.27+ cluster, Helm 3, kubectl, a default StorageClass (or
+configured storage), and enough node memory/disk for your models. The default
+claim is `50Gi` RWO. Image and model downloads require network access.
+
+From a repository checkout, copy the CPU example to your own values file and
+install into the intended cluster:
+
+```shell
+kubectl config current-context
+cp zarf/helm/kronk/examples/cpu.yaml my-kronk.yaml
+helm upgrade --install kronk zarf/helm/kronk -n kronk --create-namespace \
+  -f my-kronk.yaml --wait --timeout 20m
+helm test kronk -n kronk
+kubectl port-forward -n kronk service/kronk 11435:11435
+```
+
+Authentication is enabled and the BUI is disabled by default. Port-forwarding
+provides temporary local access; keep authentication enabled and configure TLS
+and access restrictions before exposing the API remotely. Optional metrics also
+expose unauthenticated pprof and must remain restricted to trusted clients.
+
+GPU deployments require compatible node drivers, device access, and runtime
+configuration; selecting an image variant does not provision a GPU. CPU smoke
+tests do not validate GPU inference. Uninstall retains data, but deleting its
+PVC **or namespace** can destroy models and keys. Back up before maintenance.
+
+See the [Helm chart README](https://github.com/ardanlabs/kronk/blob/main/zarf/helm/kronk/README.md)
+for the complete first-request walkthrough, backend selection, configuration,
+troubleshooting, upgrades, and storage/key management. Keep deployment overrides
+in your own values file rather than editing the chart.
+
+## 8.11 Related Administration Guides
 
 Detailed administration is divided by responsibility:
 

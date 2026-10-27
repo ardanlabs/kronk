@@ -1,0 +1,106 @@
+# One server per release. Independent replicas do not synchronize keys,
+# administrative changes, models, or rate-limit counters.
+replicaCount: 1
+
+image:
+  repository: ghcr.io/ardanlabs/kronk
+  variant: cpu # cpu, cuda, vulkan, rocm (amd64 only), all
+  tag: "" # Defaults to v<Chart.appVersion>-<variant>. Match variant when overriding.
+  pullPolicy: IfNotPresent
+
+auth:
+  mode: authenticated # open, management, authenticated, full-protected
+  # Optional existing Secret containing master.pem, master.jwt, and other PEMs.
+  # Authoritative for ALL signing keys: pod initialization replaces the on-disk
+  # keyset with this Secret. Back up existing keys before enabling it.
+  # Secret updates require a pod restart. Do not put private keys in Helm values.
+  existingSecret: ""
+
+# Additional Kronk or GPU runtime settings. Chart-owned paths, ports, processor, and auth mode
+# cannot be overridden here. Use auth.mode / image.variant instead.
+# The BUI is disabled by default; configure its password before enabling it.
+env: {}
+extraEnv: [] # Kubernetes env entries, including valueFrom for KRONK_HF_TOKEN
+
+models:
+  # Canonical IDs pulled before startup. Rechecked on pod recreation; Kronk
+  # reuses existing validated downloads. Requires provider access on first use.
+  pull: []
+
+modelConfig:
+  enabled: false
+  existingConfigMap: "" # Must contain model_config.yaml; restart after updates.
+  content: |
+    version: 2
+    kms: {}
+    models: {}
+
+persistence:
+  existingClaim: ""
+  # Empty: use the cluster default. "-": request no StorageClass.
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 50Gi
+
+service:
+  type: ClusterIP
+  port: 11435
+
+# Always uses a separate ClusterIP Service. This port also serves unauthenticated
+# pprof: restrict access to trusted clients using your cluster's network policy.
+metrics:
+  enabled: false
+  port: 11445
+  serviceMonitor:
+    enabled: false # Requires Prometheus Operator CRDs and metrics.enabled.
+    interval: 30s
+    labels: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: kronk.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# Size CPU/RAM for weights + KV cache + native libraries. GPU resources go here,
+# e.g. limits: {nvidia.com/gpu: 1}. Install the device plugin/runtime separately.
+resources: {}
+runtimeClassName: ""
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  fsGroupChangePolicy: OnRootMismatch
+  seccompProfile:
+    type: RuntimeDefault
+
+# These cover server initialization, not the preceding model-pull init container.
+startupProbe:
+  httpGet:
+    path: /v1/liveness
+    port: http
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 60
+livenessProbe:
+  httpGet:
+    path: /v1/liveness
+    port: http
+  periodSeconds: 30
+  timeoutSeconds: 5
+readinessProbe:
+  httpGet:
+    path: /v1/readiness
+    port: http
+  periodSeconds: 10
+  timeoutSeconds: 5
