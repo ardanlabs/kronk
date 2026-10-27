@@ -88,3 +88,40 @@ requests/artifacts and a custom terminal outcome.
 Run both infrastructure and application tests with `make test-tmprl`. They use
 controlled computation against Temporal, not native model training, unless the
 application's opt-in real-model test is explicitly configured.
+
+## Test boundaries
+
+The regular suite covers two-stage/two-step lifecycle combinations, retries,
+pause/resume, cancellation, queue/stage/reservation deadlines, and worker-process
+crashes. Crash tests kill a separate worker after a step commits, then require a
+replacement to replay the workflow and resume unfinished work using shared
+storage. Both step-first and session-first heartbeat expiry are exercised, along
+with exhausted session attempts. A step heartbeat failure allows up to one
+session-heartbeat interval for worker-loss detection before deciding whether to
+recover; a healthy session does not gain extra step retries.
+
+Public polling/listing tests cover durable snapshots, heartbeat diagnostics,
+staleness, exact logical-status filters, custom outcomes and opaque page tokens.
+The application suite also verifies real visibility results and artifact reads
+after its worker stops. Logs remain buffered and print only on failure.
+
+Native smoke tests are separate opt-in checks. They require compatible installed
+llama.cpp libraries and an existing indexed single-file GGUF chat model; they
+never download models or run optimization. Set these paths for your machine:
+
+```shell
+GITHUB_WORKSPACE="$PWD" KRONK_TMPRL_NATIVE_SMOKE=1 \
+KRONK_TMPRL_SMOKE_BASE=/path/to/existing/kronk-base \
+KRONK_TMPRL_SMOKE_LIBS=/path/to/compatible/llama-libraries \
+KRONK_TMPRL_SMOKE_MODEL=owner/small-chat-model \
+go test -race -count=1 -v -timeout 3m \
+  -run '^(TestKMSNativeSmoke|TestGoMLXTrainer)' \
+  ./cmd/server/foundation/tmprl/providers \
+  ./cmd/server/app/sdk/tmprl/jobs/training/stages/training
+```
+
+These checks exercise real pool-backed tokenization, GoMLX context preflight,
+structured KMS completion and training-stage base prediction. They do not prove
+optimization quality, candidate-adapter inference or an actual Docling service.
+Without the opt-in, the native tests skip; invalid explicitly supplied native
+configuration fails rather than silently skipping.

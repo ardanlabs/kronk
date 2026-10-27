@@ -1,12 +1,16 @@
 package tmprl
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
+	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
+
+const sessionHeartbeatTimeout = 5 * time.Second
 
 // QueuedJob constructs the initial snapshot for a validated submitted plan.
 func QueuedJob[R, A any](input JobInput[R]) Run[R, A] {
@@ -114,7 +118,7 @@ func RunJob[R, A any](ctx workflow.Context, input JobInput[R], names Names) (res
 		}
 		log.Info("job waiting for worker", "session_attempt", attempt)
 		session, err := workflow.CreateSession(work, &workflow.SessionOptions{
-			CreationTimeout: input.Job.QueueTimeout, ExecutionTimeout: input.Job.ReservationTimeout + input.Job.QueueTimeout, HeartbeatTimeout: 5 * time.Second,
+			CreationTimeout: input.Job.QueueTimeout, ExecutionTimeout: input.Job.ReservationTimeout + input.Job.QueueTimeout, HeartbeatTimeout: sessionHeartbeatTimeout,
 		})
 		if err != nil {
 			if controlErr != nil {
@@ -136,6 +140,19 @@ func RunJob[R, A any](ctx workflow.Context, input JobInput[R], names Names) (res
 			}
 		})
 		err = runJobStages(execution, input, names, &state, &paused, &stageIndex, &stepIndex)
+		// A crashed worker's step heartbeat can expire before its session
+		// heartbeat. Allow session failure detection before releasing it; closing
+		// the session immediately would suppress recovery of unfinished work.
+		// Version the extra timer so pre-change histories remain replayable.
+		if timeout, ok := errors.AsType[*temporal.TimeoutError](err); ok && timeout.TimeoutType() == enumspb.TIMEOUT_TYPE_HEARTBEAT && si.SessionState == workflow.SessionStateOpen &&
+			workflow.GetVersion(work, "step-heartbeat-session-loss", workflow.DefaultVersion, 1) == 1 {
+			log.Warn("job step heartbeat lost; checking worker session", "stage", state.Stage, "step", state.Step)
+			if _, waitErr := workflow.AwaitWithTimeout(execution, sessionHeartbeatTimeout, func() bool {
+				return si.SessionState == workflow.SessionStateFailed
+			}); waitErr != nil && si.SessionState != workflow.SessionStateFailed {
+				err = waitErr
+			}
+		}
 		cancelTimer()
 		cancelExecution()
 		reserved = false

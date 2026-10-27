@@ -34,6 +34,7 @@ func TestJobsLifecycle(t *testing.T) {
 		{name: "last-step-recovers-on-final-attempt", mode: "retry", at: 4, failures: 2, wantStatus: tmprl.StatusCompleted, wantCompleted: 4, wantAttempts: [4]int{1, 1, 1, 3}},
 		{name: "retries-exhausted", mode: "retry", at: 3, failures: 3, wantStatus: tmprl.StatusFailed, wantCompleted: 2, wantAttempts: [4]int{1, 1, 3}},
 		{name: "step-timeout-exhausts-retries", mode: "step-timeout", at: 3, wantStatus: tmprl.StatusFailed, wantCompleted: 2, wantAttempts: [4]int{1, 1, 3}},
+		{name: "heartbeat-error-with-live-session", mode: "heartbeat-timeout", at: 3, wantStatus: tmprl.StatusFailed, wantCompleted: 2, wantAttempts: [4]int{1, 1, 3}},
 		{name: "stage-deadline", mode: "stage-timeout", at: 3, wantStatus: tmprl.StatusFailed, wantCompleted: 2, wantAttempts: [4]int{1, 1, 1}},
 		{name: "cancel-running-step", mode: "cancel", at: 3, wantStatus: tmprl.StatusStopped, wantCompleted: 2, wantAttempts: [4]int{1, 1, 1}},
 		{name: "pause-at-step-boundary-and-resume", mode: "pause", at: 2, wantStatus: tmprl.StatusCompleted, wantCompleted: 4, wantAttempts: [4]int{1, 1, 1, 1}},
@@ -44,6 +45,9 @@ func TestJobsLifecycle(t *testing.T) {
 			defer cancel()
 			job := tmprl.Job{
 				Name: "lifecycle", QueueTimeout: 30 * time.Second, ReservationTimeout: time.Minute, SessionAttempts: 1,
+			}
+			if test.mode == "heartbeat-timeout" {
+				job.SessionAttempts = 2 // A healthy session must not consume recovery attempts.
 			}
 			keys := []string{"first/one", "first/two", "second/one", "second/two"}
 			var mu sync.Mutex
@@ -76,6 +80,8 @@ func TestJobsLifecycle(t *testing.T) {
 							switch test.mode {
 							case "permanent":
 								return tmprl.StepResult[[]string]{}, temporal.NewNonRetryableApplicationError("controlled failure", "controlled-failure", nil)
+							case "heartbeat-timeout":
+								return tmprl.StepResult[[]string]{}, temporal.NewHeartbeatTimeoutError()
 							case "retry":
 								if attempt <= test.failures {
 									return tmprl.StepResult[[]string]{}, temporal.NewApplicationError("controlled failure", "controlled-failure")
@@ -167,12 +173,12 @@ func TestJobsLifecycle(t *testing.T) {
 			if test.wantStatus == tmprl.StatusStopped && !temporal.IsCanceledError(waitErr) {
 				t.Fatalf("Wait: got %v, want cancellation", waitErr)
 			}
-			if test.mode == "step-timeout" {
+			if test.mode == "step-timeout" || test.mode == "heartbeat-timeout" {
 				if _, ok := errors.AsType[*temporal.TimeoutError](waitErr); !ok {
 					t.Fatalf("Wait: got %v, want timeout", waitErr)
 				}
 			}
-			if test.wantStatus == tmprl.StatusFailed && test.mode != "step-timeout" {
+			if test.wantStatus == tmprl.StatusFailed && test.mode != "step-timeout" && test.mode != "heartbeat-timeout" {
 				wantType := "controlled-failure"
 				if test.mode == "stage-timeout" {
 					wantType = "stage-expired"

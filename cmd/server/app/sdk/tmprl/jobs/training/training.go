@@ -177,7 +177,11 @@ func (j *Job) Evaluation(ctx context.Context, e tmprl.Execution) (evaluate.Evalu
 
 // OpenAdapter streams an accepted, published adapter. The caller closes it.
 func (j *Job) OpenAdapter(ctx context.Context, e tmprl.Execution) (io.ReadCloser, error) {
-	return j.openArtifact(ctx, e, true)
+	file, err := j.openArtifact(ctx, e, true)
+	if err != nil {
+		return nil, err
+	}
+	return file, nil
 }
 
 // =============================================================================
