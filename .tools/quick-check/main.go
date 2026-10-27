@@ -34,7 +34,7 @@ type options struct {
 	timeout     time.Duration
 	repetitions int
 	images      bool
-	cells       string
+	cells       []string
 }
 
 type report struct {
@@ -348,9 +348,16 @@ func main() {
 	flag.StringVar(&o.out, "out", ".tools/quick-check/output", "artifact parent; retains committed baseline and latest candidate")
 	flag.StringVar(&o.serverLog, "server-log", filepath.Join(home, ".kronk/kronk.log"), "required local JSON server log")
 	flag.DurationVar(&o.timeout, "timeout", 5*time.Minute, "per-request timeout; not a performance threshold")
-	flag.IntVar(&o.repetitions, "repetitions", 1, "complete workload repetitions; stop on first failure")
-	flag.StringVar(&o.cells, "cells", "all", "cells: all, one-slot, two-slots, text, images, text-no-mtp, images-no-mtp, no-mtp, text-no-imc, images-no-imc, text-no-imc-no-mtp, images-no-imc-no-mtp, no-imc; append -2s for two-slot variants or combine with commas")
+	flag.IntVar(&o.repetitions, "repetitions", 2, "complete workload repetitions; stop on first failure")
+	flag.Func("cell", "implemented cell ID, e.g. MoE/1s/IMC+/MTP+/img- (repeat for each wanted cell; omit to run all)", func(id string) error {
+		o.cells = append(o.cells, id)
+		return nil
+	})
 	flag.Parse()
+	if flag.NArg() != 0 {
+		fmt.Fprintln(os.Stderr, "unexpected positional arguments; use -cell ID for each wanted cell")
+		os.Exit(1)
+	}
 	if err := run(o); err != nil {
 		os.Exit(1)
 	}

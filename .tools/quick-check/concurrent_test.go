@@ -18,19 +18,19 @@ import (
 // evidence. This validates the harness, not model quality or Kronk inference.
 func TestQuickCheckTwoSlots(t *testing.T) {
 	releaseTestRepo(t)
-	for _, selector := range []string{"text-2s", "images-2s", "text-no-mtp-2s", "images-no-mtp-2s", "text-no-imc-2s", "images-no-imc-2s", "text-no-imc-no-mtp-2s", "images-no-imc-no-mtp-2s"} {
-		t.Run(selector, func(t *testing.T) { checkTwoSlotFixture(t, selector, "") })
+	for _, cell := range matrixCells[8:] {
+		t.Run(cell.id, func(t *testing.T) { checkTwoSlotFixture(t, cell.id, "") })
 	}
 	for _, defect := range []string{"serialized", "wrong-recovery-slot", "no-survivor-progress", "system-only-media-append", "missing-cancel-ack", "foreign-session"} {
-		t.Run(defect, func(t *testing.T) { checkTwoSlotFixture(t, "images-2s", defect) })
+		t.Run(defect, func(t *testing.T) { checkTwoSlotFixture(t, "MoE/2s/IMC+/MTP+/img+", defect) })
 	}
-	t.Run("uncached-reuse", func(t *testing.T) { checkTwoSlotFixture(t, "images-no-imc-2s", "uncached-reuse") })
-	t.Run("target-only-drafts", func(t *testing.T) { checkTwoSlotFixture(t, "images-no-mtp-2s", "target-only-drafts") })
+	t.Run("uncached-reuse", func(t *testing.T) { checkTwoSlotFixture(t, "MoE/2s/IMC-/MTP+/img+", "uncached-reuse") })
+	t.Run("target-only-drafts", func(t *testing.T) { checkTwoSlotFixture(t, "MoE/2s/IMC+/MTP-/img+", "target-only-drafts") })
 }
 
 func checkTwoSlotFixture(t *testing.T, selector, defect string) {
 	t.Helper()
-	images, noCache, targetOnly := strings.HasPrefix(selector, "images"), strings.Contains(selector, "no-imc"), strings.Contains(selector, "no-mtp")
+	images, noCache, targetOnly := strings.HasSuffix(selector, "img+"), strings.Contains(selector, "IMC-"), strings.Contains(selector, "MTP-")
 	root := t.TempDir()
 	logPath := filepath.Join(root, "server.log")
 	serverLog, err := os.Create(logPath)
@@ -289,7 +289,7 @@ func checkTwoSlotFixture(t *testing.T, selector, defect string) {
 	}))
 	defer server.Close()
 	out := filepath.Join(root, "output")
-	err = run(options{host: server.URL, out: out, serverLog: logPath, timeout: 2 * time.Second, repetitions: 1, cells: selector})
+	err = run(options{host: server.URL, out: out, serverLog: logPath, timeout: 2 * time.Second, repetitions: 1, cells: []string{selector}})
 	if (err == nil) != (defect == "") {
 		t.Fatalf("selector=%s defect=%s: %v", selector, defect, err)
 	}

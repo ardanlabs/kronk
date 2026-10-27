@@ -1,6 +1,6 @@
 # Kronk quick-check
 
-Cells: **MoE / one or two slots / IMC off or on / MTP off or on / images off or on**.
+Matrix cells (16): **MoE / one or two slots / IMC off or on / MTP off or on / images off or on**.
 Model: `unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL`, using the
 `QUICK-CHECK` aliases from `.tools/model_config_tools.yaml`.
 
@@ -14,41 +14,23 @@ make server-for-tools
 make quick-check-this-code # All implemented cells, one combined report.
 ```
 
-Select cells during development (images require the model's projection file):
+To run a subset, repeat `-cell` with each exact cell ID:
 
 ```sh
-make quick-check-this-code QUICK_CHECK_ARGS='-cells text'
-make quick-check-this-code QUICK_CHECK_ARGS='-cells images'
-make quick-check-this-code QUICK_CHECK_ARGS='-cells text-no-mtp'
-make quick-check-this-code QUICK_CHECK_ARGS='-cells images-no-mtp'
-make quick-check-this-code QUICK_CHECK_ARGS='-cells no-imc' # All four IMC-off cells.
-# Individual IMC-off selectors: text-no-imc, images-no-imc,
-# text-no-imc-no-mtp, images-no-imc-no-mtp.
-# -cells no-mtp retains both one-slot IMC-on target-only cells.
-make quick-check-this-code QUICK_CHECK_ARGS='-cells one-slot' # Eight serial cells.
-make quick-check-this-code QUICK_CHECK_ARGS='-cells two-slots' # Eight concurrent cells.
-make quick-check-this-code QUICK_CHECK_ARGS='-cells images-2s' # One concurrent image cell.
-# Append -2s to existing selectors for their two-slot variants; all runs all 16.
-# Selectors can be combined, e.g. -cells text,images-no-mtp.
+make quick-check-this-code QUICK_CHECK_ARGS='-cell MoE/1s/IMC+/MTP+/img-'
+make quick-check-this-code QUICK_CHECK_ARGS='-cell MoE/1s/IMC+/MTP+/img- -cell MoE/2s/IMC-/MTP-/img+'
 ```
 
-`text` and `images` retain their MTP-on meaning. Restart the server after updating
-the tools model configuration to make the new aliases available.
+IDs use `MoE/<slots>/IMC<mode>/MTP<mode>/img<mode>`: slots are `1s` or `2s`,
+and each mode is `+` (on) or `-` (off). All 16 combinations are implemented.
+There are no group selectors or comma-separated lists. Selected cells run in
+matrix order, regardless of argument order. Images require the projection file.
 
 One-slot image cells exercise image rebuild, replay, append, a different
 image/session, cancellation, and recovery with the original image. Two-slot cells
 exercise overlapping conversations, peer cancellation, and same-slot recovery.
 Their image variants add a first image to text history, then another image to
 image history, and recover with text while the other conversation continues.
-
-Flow: load/warm once per slot/IMC/MTP configuration → run its selected text/image
-cells and repetitions → unload. All cells share one final report. Cell/repetition
-prefixes keep caches independent while weights stay loaded. The first selected
-cell records warm-up timing; its partner shows `Warm-up: shared` and references
-that cell in JSON. All 16 cells require eight loads; a single selected cell still
-gets its own warm-up. Access to the server's JSON log is required.
-Unselected cells (and those skipped after a failure) appear as `NOT_RUN`.
-With one repetition, SD is `n/a`; increase `-repetitions` to measure variation.
 
 ```sh
 # Optional settings (KRONK_TOKEN supplies authentication):
@@ -68,7 +50,8 @@ make quick-check-this-code
 The target revision must contain the tool/configuration. Verify `Tested commit:`;
 the tested code is the running server. The header also shows the test start time.
 
-Keep in mind that reverting to an older commit does not automatically downgrade the llama libraries. If you wish, you can pin a specific version of a library to ensure a fair comparison.
+Keep in mind that reverting to an older commit does not automatically downgrade the llama libraries.
+If you wish, you can pin a specific version of a library to ensure a fair comparison.
 
 **WARNING: We suggest to run quick-check right after a fresh commit, rebuilding/restarting
 the server first. Uncommitted changes are not flagged, though they are taken into account as soon as the server is restarted using `server-for-tools`;; another run of the same
@@ -87,11 +70,7 @@ Runs are saved under `.tools/quick-check/output/`:
 - `events.ndjson`: detailed requests, responses, and server evidence with cell IDs.
 
 All selected cells share these three files and one retention queue, directly under
-`output/`. Archive older single-cell run folders in `output/saved_local_runs/`
-and rerun; old artifacts are not converted. Normalized uses fixed per-cell token
-references; differing references suppress that cell's Normalized delta.
-For two slots, Normalized sums overlapping request processing times; it is not
-wall-clock workload time and can exceed it.
+`output/`.
 
 Those files can be useful to feed a harness and investigate reasons for slowdowns or regressions, alongside the bigger reliability tools.
 
@@ -121,13 +100,7 @@ make quick-compare-against-commit \
 ```
 
 Release comparisons check remote tags. When both commits are releases, they update
-`release-history.md` with timings and hostname/RAM/VRAM/unified
-metadata for both runs. Repeating the release pair/cell updates its entry; commit
+`release-history.md`. Repeating the release pair/cell updates its entry; commit
 that file to preserve inter-release comparisons.
 
-The terminal shows comparison status, each run's status, warnings, and warmed
-workload/Normalized timings per cell. Cells are matched by ID, not execution order;
-if either side did not run a cell, it shows `NOT_RUN` with no timing delta. With no
-common executed cell, comparison exits nonzero. Reports replace `output/comparison.log` (terminal summary) and
-`output/comparison.json` (full results), outside run folders.
-Optional: `QUICK_CHECK_COMPARE_ARGS='-out /path/to/output'` or `'-json'` for JSON stdout.
+

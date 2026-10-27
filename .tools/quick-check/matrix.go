@@ -32,60 +32,23 @@ var matrixCells = []struct {
 	{"MoE/2s/IMC-/MTP-/img+", true, true, true, true},
 }
 
-func selectedCells(selection string) (map[string]bool, error) {
+func selectedCells(selection []string) (map[string]bool, error) {
 	selected := make(map[string]bool)
-	for name := range strings.SplitSeq(selection, ",") {
-		name = strings.TrimSpace(name)
-		if name == "one-slot" || name == "two-slots" {
-			for _, cell := range matrixCells {
-				if cell.twoSlots == (name == "two-slots") {
-					selected[cell.id] = true
-				}
-			}
-			continue
+	for _, cell := range matrixCells {
+		if len(selection) == 0 {
+			selected[cell.id] = true
 		}
-		if base, ok := strings.CutSuffix(name, "-2s"); ok {
-			cells, err := selectedCells(base)
-			if err != nil {
-				return nil, err
+	}
+	for _, id := range selection {
+		found := false
+		for _, cell := range matrixCells {
+			if cell.id == id {
+				selected[id], found = true, true
+				break
 			}
-			for id := range cells {
-				selected[strings.Replace(id, "/1s/", "/2s/", 1)] = true
-			}
-			continue
 		}
-		switch name {
-		case "all", "":
-			for _, cell := range matrixCells {
-				selected[cell.id] = true
-			}
-		case "text":
-			selected[matrixCells[0].id] = true
-		case "images":
-			selected[matrixCells[1].id] = true
-		case "text-no-mtp":
-			selected[matrixCells[2].id] = true
-		case "images-no-mtp":
-			selected[matrixCells[3].id] = true
-		case "no-mtp":
-			selected[matrixCells[2].id] = true
-			selected[matrixCells[3].id] = true
-		case "text-no-imc":
-			selected[matrixCells[4].id] = true
-		case "images-no-imc":
-			selected[matrixCells[5].id] = true
-		case "text-no-imc-no-mtp":
-			selected[matrixCells[6].id] = true
-		case "images-no-imc-no-mtp":
-			selected[matrixCells[7].id] = true
-		case "no-imc":
-			for _, cell := range matrixCells {
-				if cell.noCache && !cell.twoSlots {
-					selected[cell.id] = true
-				}
-			}
-		default:
-			return nil, fmt.Errorf("unknown cell selector %q; use all, one-slot, two-slots, text, images, text-no-mtp, images-no-mtp, no-mtp, text-no-imc, images-no-imc, text-no-imc-no-mtp, images-no-imc-no-mtp, no-imc; append -2s for two-slot variants or combine with commas", name)
+		if !found {
+			return nil, fmt.Errorf("unknown cell %q; repeat -cell with an implemented ID, such as %s; omit -cell to run all implemented cells", id, matrixCells[0].id)
 		}
 	}
 	return selected, nil

@@ -452,24 +452,22 @@ func TestQuickCheckCommand(t *testing.T) {
 			}
 			stdout, stderr := os.Stdout, os.Stderr
 			os.Stdout, os.Stderr = terminal, terminal
-			selection, cellIndex := "text", 0
+			cellIndex := 0
 			if images {
-				selection, cellIndex = "images", 1
+				cellIndex++
 			}
 			if targetOnly {
-				selection += "-no-mtp"
 				cellIndex += 2
 			}
 			if noCache {
-				selection = "text-no-imc"
-				cellIndex = 4
-				if images {
-					selection = "images-no-imc"
-					cellIndex++
-				}
+				cellIndex += 4
 			}
+			selection := []string{matrixCells[cellIndex].id}
 			if grouped {
-				selection = "one-slot" // This serial fixture covers all eight one-slot cells.
+				selection = nil
+				for _, cell := range matrixCells[:8] { // The serial fixture's eight explicit cells.
+					selection = append(selection, cell.id)
+				}
 			}
 			err = run(options{host: server.URL, out: out, serverLog: logPath, timeout: time.Second, repetitions: requested, cells: selection})
 			os.Stdout, os.Stderr = stdout, stderr
