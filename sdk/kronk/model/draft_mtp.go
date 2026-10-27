@@ -9,6 +9,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
+	internalspec "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
 	mtpengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/mtp"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
@@ -571,7 +572,7 @@ func loadDraftModelMTPShared(ctx context.Context, log applog.Logger, cfg Config,
 //
 // The caller is responsible for cleanup on error; this function only
 // owns resources it returns successfully.
-func selectAndLoadDraft(ctx context.Context, log applog.Logger, cfg Config, targetCtx llama.Context, targetModel llama.Model, targetCtxParams llama.ContextParams, plan speculationPlan) (drafter, error) {
+func selectAndLoadDraft(ctx context.Context, log applog.Logger, cfg Config, targetCtx llama.Context, targetModel llama.Model, targetCtxParams llama.ContextParams, plan internalspec.Plan) (drafter, error) {
 	switch plan.Source {
 	case speculationSourceNone:
 		return nil, nil

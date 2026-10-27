@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/applog"
+	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -329,7 +330,7 @@ func TestProcessIMCTokenPlanRebuildsExactTokensWhenRenderFingerprintChanges(t *t
 	}
 }
 
-func populatedTestSessionStore(t testing.TB) SessionStore {
+func populatedTestSessionStore(t testing.TB) kvstorage.Store {
 	t.Helper()
 	store := ramSessionStore()
 	buf := prepareTestStore(t, store, 1)

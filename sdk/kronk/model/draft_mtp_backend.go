@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
+	internalspec "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
 	yzmaspec "github.com/hybridgroup/yzma/exp/speculative"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
@@ -38,7 +39,7 @@ type mtpLoadRequest struct {
 
 type ownKVMTPBackend struct {
 	architecture  string
-	artifact      mtpArtifact
+	artifact      internalspec.MTPArtifact
 	wideEmbedding bool
 }
 
@@ -126,7 +127,7 @@ func (b gemmaSharedKVBackend) load(req mtpLoadRequest) (drafter, error) {
 	return d, nil
 }
 
-func mtpBackendForPlan(plan speculationPlan) (mtpBackend, error) {
+func mtpBackendForPlan(plan internalspec.Plan) (mtpBackend, error) {
 	switch plan.MTPArchitecture {
 	case mtpArchitectureQwen35OwnKV:
 		switch plan.MTPArtifact {

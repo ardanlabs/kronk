@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
+	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
+	internalspec "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -57,9 +59,6 @@ const DefaultPrefillBatchSize = int(vram.DefaultNUBatch)
 // DefaultQueueDepth is the number of admitted request layers used when queue
 // depth is not explicitly configured.
 const DefaultQueueDepth = 2
-
-// Logger provides a function for logging messages from different APIs.
-type Logger = applog.Logger
 
 // =============================================================================
 
@@ -454,7 +453,7 @@ type Config struct {
 	PtrRopeFreqScale           *float32
 	RecordArtifactVerification ArtifactVerificationRecorder
 	RopeScaling                RopeScalingType
-	SessionStoreFactory        SessionStoreFactory
+	SessionStoreFactory        kvstorage.Factory
 	Speculation                SpeculationMode
 	PtrSplitMode               *SplitMode
 	PtrSWAFull                 *bool
@@ -467,7 +466,7 @@ type Config struct {
 	PtrYarnOrigCtx             *int
 	nBatch                     int
 	nUBatch                    int
-	speculationPlan            speculationPlan
+	speculationPlan            internalspec.Plan
 }
 
 func (cfg Config) AdmissionTimeout() time.Duration {
@@ -1383,6 +1382,6 @@ func WithQueueDepth(v int) Option {
 	}
 }
 
-func WithSessionStoreFactory(v SessionStoreFactory) Option {
+func WithSessionStoreFactory(v kvstorage.Factory) Option {
 	return func(c *Config) { c.SessionStoreFactory = v }
 }

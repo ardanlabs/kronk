@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -216,7 +217,7 @@ func (e *batchEngine) continueStartSlot(s *slot, job *chatJob, buf []byte) {
 		// state against a suffix prompt rendered for the older boundary
 		// would corrupt the request. On mismatch we fail with a retryable
 		// error so the caller re-runs token-v2 planner against the new boundary.
-		var restoreStore SessionStore
+		var restoreStore kvstorage.Store
 		var restoreLength int
 		if job.imcSession != nil {
 			session := job.imcSession
@@ -346,7 +347,7 @@ func (e *batchEngine) continueStartSlot(s *slot, job *chatJob, buf []byte) {
 			if ext, ok := e.model.draft.(draftKVExternalizer); ok && job.imcSession != nil {
 				draft := ext.core()
 
-				var draftStore SessionStore
+				var draftStore kvstorage.Store
 				var draftLength int
 				var savedPendingH []float32
 				e.model.cacheMu.RLock()
@@ -1246,7 +1247,7 @@ func (e *batchEngine) snapshotSystemCache(ctx context.Context, s *slot, job *cha
 		return false
 	}
 
-	var draftStore SessionStore
+	var draftStore kvstorage.Store
 	var pendingH []float32
 	if ext, ok := e.model.draft.(draftKVExternalizer); ok && !s.mtp.Disabled {
 		draftStore, err = e.model.imcSystemCacheStore(ctx, cache, true)

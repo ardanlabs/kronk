@@ -503,7 +503,7 @@ export default function DocsSDKModel() {
 	PtrRopeFreqScale           *float32
 	RecordArtifactVerification ArtifactVerificationRecorder
 	RopeScaling                RopeScalingType
-	SessionStoreFactory        SessionStoreFactory
+	SessionStoreFactory        kvstorage.Factory
 	Speculation                SpeculationMode
 	PtrSplitMode               *SplitMode
 	PtrSWAFull                 *bool
@@ -894,14 +894,6 @@ export default function DocsSDKModel() {
 }`}</code>
               </pre>
               <p className="doc-description">LoadMode controls model weight loading. Its zero value is auto.</p>
-            </div>
-
-            <div className="doc-section" id="type-logger">
-              <h4>Logger</h4>
-              <pre className="code-block">
-                <code>{`type Logger = applog.Logger`}</code>
-              </pre>
-              <p className="doc-description">Logger provides a function for logging messages from different APIs.</p>
             </div>
 
             <div className="doc-section" id="type-logprobs">
@@ -1336,22 +1328,6 @@ export default function DocsSDKModel() {
 }`}</code>
               </pre>
               <p className="doc-description">RopeScalingType controls RoPE scaling. Its zero value is none.</p>
-            </div>
-
-            <div className="doc-section" id="type-sessionstore">
-              <h4>SessionStore</h4>
-              <pre className="code-block">
-                <code>{`type SessionStore = kvstorage.Store`}</code>
-              </pre>
-              <p className="doc-description">SessionStore is the storage contract used for an externalized IMC session.</p>
-            </div>
-
-            <div className="doc-section" id="type-sessionstorefactory">
-              <h4>SessionStoreFactory</h4>
-              <pre className="code-block">
-                <code>{`type SessionStoreFactory = kvstorage.Factory`}</code>
-              </pre>
-              <p className="doc-description">SessionStoreFactory constructs an independent SessionStore.</p>
             </div>
 
             <div className="doc-section" id="type-speculationmode">
@@ -3401,7 +3377,6 @@ export default function DocsSDKModel() {
                 <li><a href="#type-kvcachemode">KVCacheMode</a></li>
                 <li><a href="#type-lazymode">LazyMode</a></li>
                 <li><a href="#type-loadmode">LoadMode</a></li>
-                <li><a href="#type-logger">Logger</a></li>
                 <li><a href="#type-logprobs">Logprobs</a></li>
                 <li><a href="#type-mtmdaudiostream">MTMDAudioStream</a></li>
                 <li><a href="#type-mtmdhelpercapabilities">MTMDHelperCapabilities</a></li>
@@ -3427,8 +3402,6 @@ export default function DocsSDKModel() {
                 <li><a href="#type-responsetoolcallfunction">ResponseToolCallFunction</a></li>
                 <li><a href="#type-result">Result</a></li>
                 <li><a href="#type-ropescalingtype">RopeScalingType</a></li>
-                <li><a href="#type-sessionstore">SessionStore</a></li>
-                <li><a href="#type-sessionstorefactory">SessionStoreFactory</a></li>
                 <li><a href="#type-speculationmode">SpeculationMode</a></li>
                 <li><a href="#type-splitmode">SplitMode</a></li>
                 <li><a href="#type-statemachine">StateMachine</a></li>
