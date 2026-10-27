@@ -87,6 +87,7 @@ change. Go commands require the environment described in [§20.9](#209-verificat
 | Linux CI | `.github/workflows/linux.yml`, `.github/actions/setup-kronk/`, `.github/test-models.txt` | make targets and version-check scripts | syntax/action review; run changed scripts locally; package checks represented by changed job |
 | Release | `.github/workflows/release.yaml`, `.goreleaser.yaml`, `.release/`, version scripts | `sdk/kronk` version constant and tag convention | version scripts and GoReleaser snapshot/check when appropriate |
 | Container image | `.github/workflows/docker.yml`, `zarf/docker/` | entrypoint, native-library combinations, release tags | build the affected target/variant; workflow is authority for matrix and signing |
+| Helm chart | `zarf/helm/kronk/` | container entrypoint, [Chapter 8 §8.10](https://www.kronkai.com/manual#810-kubernetes-with-helm), CPU/CUDA examples | `zarf/helm/kronk/test.sh`; smoke test on an explicitly selected disposable cluster context; no Go tests for chart-only changes |
 | Nix development/package data | `zarf/nix/flake.nix` | Go module files and setup hook | evaluate/build the relevant Nix entry point; regenerate gomod2nix data when dependencies change |
 
 Tests close to an owner are usually more diagnostic than a repository-wide command.
@@ -961,6 +962,32 @@ it becomes stale faster than the workflow.
 For a container change, build the affected target and architecture where practical,
 exercise entrypoint startup/configuration, and verify expected native libraries. Do not
 infer publication or signature behavior from a local build; review the workflow.
+
+**Helm chart**
+
+`zarf/helm/kronk/` owns the chart, CPU/CUDA examples, and chart checks. Validate
+chart changes from the repository root with:
+
+```shell
+zarf/helm/kronk/test.sh
+```
+
+This requires Helm and Python 3 with PyYAML. Chart-only changes do not require Go
+tests. For integration, use `zarf/helm/kronk/smoke-test.sh` only against an
+explicitly selected disposable Kubernetes context; inspect its usage and required
+tools first. Do not use your ambient production context. Rendering checks are not
+proof of cluster startup or GPU inference. GPU examples require real-node
+validation with compatible hardware, drivers, device plugins, and runtimes;
+disposable kind smoke tests do not prove GPU inference.
+
+Keep the single-replica/retained-PVC contract, authenticated defaults, Secret
+keyset reconciliation, and private metrics Service intact. Update
+[Chapter 8 §8.10](https://www.kronkai.com/manual#810-kubernetes-with-helm)
+when changing operator-facing values. Bump the chart `version` for chart changes;
+`appVersion` must reference an already published container image, not an unreleased
+CLI version. `zarf/helm/kronk/Chart.yaml` is authoritative for the default app
+version. Installation uses the local checkout; there is no Helm OCI publication
+workflow to run.
 
 #### 20.10.4 Nix
 

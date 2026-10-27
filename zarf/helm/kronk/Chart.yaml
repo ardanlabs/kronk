@@ -1,0 +1,12 @@
+apiVersion: v2
+name: kronk
+description: A single Kronk model server with persistent storage.
+type: application
+version: 0.1.0
+# Must reference an already published release, not the development version.
+appVersion: "1.33.0"
+kubeVersion: ">=1.27.0-0"
+home: https://www.kronkai.com
+sources:
+  - https://github.com/ardanlabs/kronk
+keywords: [llm, inference, openai]

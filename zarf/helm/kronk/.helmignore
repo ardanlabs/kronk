@@ -1,0 +1,5 @@
+.git/
+/tests/
+/examples/
+*.sh
+__pycache__/

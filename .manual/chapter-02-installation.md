@@ -94,6 +94,7 @@ The prerequisites depend on how you install Kronk:
 | Release archive | Supported release platforms | None beyond the host OS |
 | `go install` | Platforms supported by the Go toolchain and Kronk libraries | Go 1.27 or later |
 | Container | Any host supported by the selected Linux image | Docker or another OCI runtime |
+| Kubernetes / Helm | Linux nodes supported by the selected image | Helm, kubectl, a cluster, and a suitable StorageClass |
 
 Regardless of installation method, model downloads require enough disk space,
 and inference requires enough RAM or VRAM for the selected model and
@@ -237,6 +238,25 @@ sudo chown -R 10001:10001 /srv/kronk
 
 For pinned releases, updates, and remote operation,
 see [Chapter 8: Model Server](https://www.kronkai.com/manual#87-container-operations).
+
+**Kubernetes with Helm**
+
+From a repository checkout, with your intended Kubernetes context selected:
+
+```shell
+helm upgrade --install kronk zarf/helm/kronk -n kronk --create-namespace \
+  -f zarf/helm/kronk/examples/cpu.yaml --wait --timeout 20m
+```
+
+This installs one StatefulSet replica, a retained `50Gi` RWO data claim, and
+the small `unsloth/Qwen3-0.6B-Q8_0` starter model. A default StorageClass is
+required unless you select another class or an existing claim. Unlike the
+local container quick start, the chart defaults to authenticated access and
+disables the BUI. See [8.10 Kubernetes with Helm](https://www.kronkai.com/manual#810-kubernetes-with-helm)
+for port-forwarding, private admin-token retrieval, a chat request, GPU
+prerequisites, TLS ingress, secrets, and retained-PVC maintenance. Installation
+is from the local chart only. GPU examples require validation on real nodes
+with compatible drivers and runtimes.
 
 ### 2.4 Libraries
 

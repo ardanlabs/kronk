@@ -1,0 +1,222 @@
+{{- if ne (int .Values.replicaCount) 1 }}
+{{- fail "Only replicaCount=1 is supported; use independent releases for separate servers" }}
+{{- end }}
+{{- $extraEnv := include "kronk.extraEnv" . }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "kronk.fullname" . }}
+  labels:
+    {{- include "kronk.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  serviceName: {{ include "kronk.fullname" . }}-headless
+  selector:
+    matchLabels:
+      {{- include "kronk.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- if and .Values.modelConfig.enabled (not .Values.modelConfig.existingConfigMap) }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+      {{- end }}
+      labels:
+        {{- include "kronk.selectorLabels" . | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      {{- with .Values.runtimeClassName }}
+      runtimeClassName: {{ . | quote }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: 75
+      initContainers:
+        # Kubernetes does not populate an empty PVC from image contents.
+        - name: seed
+          image: {{ include "kronk.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              # Always seed the running image's bundles, including on rollback,
+              # mutable-tag updates, and moves between node architectures.
+              for name in libraries bucky-libraries malina-libraries; do
+                [ -d "/kronk/$name" ] || continue
+                for bundle in /kronk/"$name"/*/*/*; do
+                  [ -d "$bundle" ] || continue
+                  relative="${bundle#/kronk/}"
+                  rm -rf "/data/$relative"
+                  mkdir -p "$(dirname "/data/$relative")"
+                  cp -a "$bundle" "/data/$relative"
+                done
+              done
+              mkdir -p /data/models /data/keys
+              if [ ! -e /data/models/model_config.yaml ]; then
+                cp /kronk/models/model_config.yaml /data/models/model_config.yaml
+              fi
+              {{- if .Values.auth.existingSecret }}
+              # The Secret owns the complete keyset. Reconcile deletions so a
+              # revoked key cannot survive on the PVC across pod recreation.
+              test -s /secrets/keys/master.pem
+              test -s /secrets/keys/master.jwt
+              rm -f /data/keys/*.pem /data/keys/*.jwt
+              for f in /secrets/keys/*.pem /secrets/keys/*.jwt; do
+                [ -f "$f" ] || continue
+                cp "$f" /data/keys/
+                chmod 600 "/data/keys/$(basename "$f")"
+              done
+              # Kronk signs with the newest PEM. Keep master as recovery when
+              # the Secret also contains non-master signing keys.
+              touch -t 197001010000 /data/keys/master.pem
+              {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            {{- if .Values.auth.existingSecret }}
+            - name: keys
+              mountPath: /secrets/keys
+              readOnly: true
+            {{- end }}
+        {{- if .Values.models.pull }}
+        - name: pull-models
+          image: {{ include "kronk.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              for id in "$@"; do
+                kronk model pull "$id" --local
+              done
+            - pull-models
+            {{- range .Values.models.pull }}
+            - {{ . | quote }}
+            {{- end }}
+          env:
+            - name: KRONK_BASE_PATH
+              value: /kronk
+            {{- if $extraEnv }}
+            {{- $extraEnv | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /kronk
+        {{- end }}
+      containers:
+        - name: kronk
+          image: {{ include "kronk.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 11435
+            {{- if .Values.metrics.enabled }}
+            - name: metrics
+              containerPort: 11445
+            {{- end }}
+          env:
+            - name: KRONK_BASE_PATH
+              value: /kronk
+            - name: KRONK_POOL_MODEL_CONFIG_FILE
+              value: /kronk/models/model_config.yaml
+            - name: KRONK_WEB_API_HOST
+              value: "0.0.0.0:11435"
+            - name: KRONK_WEB_DEBUG_HOST
+              value: {{ ternary "0.0.0.0:11445" "127.0.0.1:11445" .Values.metrics.enabled | quote }}
+            - name: KRONK_AUTHORIZATION_MODE
+              value: {{ .Values.auth.mode | quote }}
+            {{- if ne .Values.image.variant "all" }}
+            - name: KRONK_PROCESSOR
+              value: {{ .Values.image.variant | quote }}
+            {{- end }}
+            {{- if not (hasKey .Values.env "KRONK_WEB_ADMIN_ENABLED") }}
+            {{- $admin := dict "enabled" false }}
+            {{- range .Values.extraEnv }}
+            {{- if eq .name "KRONK_WEB_ADMIN_ENABLED" }}{{- $_ := set $admin "enabled" true }}{{- end }}
+            {{- end }}
+            {{- if not $admin.enabled }}
+            - name: KRONK_WEB_ADMIN_ENABLED
+              value: "false"
+            {{- end }}
+            {{- end }}
+            {{- if $extraEnv }}
+            {{- $extraEnv | nindent 12 }}
+            {{- end }}
+          startupProbe:
+            {{- toYaml .Values.startupProbe | nindent 12 }}
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /kronk
+            {{- if .Values.modelConfig.enabled }}
+            - name: model-config
+              mountPath: /kronk/models/model_config.yaml
+              subPath: model_config.yaml
+              readOnly: true
+            {{- end }}
+      volumes:
+        {{- if .Values.auth.existingSecret }}
+        - name: keys
+          secret:
+            secretName: {{ .Values.auth.existingSecret }}
+            defaultMode: 0440
+        {{- end }}
+        {{- if .Values.modelConfig.enabled }}
+        - name: model-config
+          configMap:
+            name: {{ default (printf "%s-config" (include "kronk.fullname" .)) .Values.modelConfig.existingConfigMap }}
+        {{- end }}
+        {{- with .Values.persistence.existingClaim }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ . }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- if not .Values.persistence.existingClaim }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "kronk.selectorLabels" . | nindent 10 }}
+      spec:
+        accessModes:
+          - {{ .Values.persistence.accessMode }}
+        {{- if eq .Values.persistence.storageClass "-" }}
+        storageClassName: ""
+        {{- else if .Values.persistence.storageClass }}
+        storageClassName: {{ .Values.persistence.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size }}
+  {{- end }}

@@ -201,6 +201,11 @@ export default function DocsManual() {
                 <td>Any host supported by the selected Linux image</td>
                 <td>Docker or another OCI runtime</td>
               </tr>
+              <tr>
+                <td>Kubernetes / Helm</td>
+                <td>Linux nodes supported by the selected image</td>
+                <td>Helm, kubectl, a cluster, and a suitable StorageClass</td>
+              </tr>
             </tbody>
           </table>
           <p>Regardless of installation method, model downloads require enough disk space, and inference requires enough RAM or VRAM for the selected model and configuration. Quantization, context size, KV cache type, and concurrency all affect memory use; parameter count alone is not a reliable requirement. See <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3: Model Configuration</a>.</p>
@@ -292,6 +297,11 @@ docker compose -f compose.vulkan.yaml up -d   # AMD or Intel with Vulkan, needs 
           <pre className="code-block"><code className="language-shell">{`sudo mkdir -p /srv/kronk
 sudo chown -R 10001:10001 /srv/kronk`}</code></pre>
           <p>For pinned releases, updates, and remote operation, see <a href="https://www.kronkai.com/manual#87-container-operations">Chapter 8: Model Server</a>.</p>
+          <p><strong>Kubernetes with Helm</strong></p>
+          <p>From a repository checkout, with your intended Kubernetes context selected:</p>
+          <pre className="code-block"><code className="language-shell">{`helm upgrade --install kronk zarf/helm/kronk -n kronk --create-namespace \\
+  -f zarf/helm/kronk/examples/cpu.yaml --wait --timeout 20m`}</code></pre>
+          <p>This installs one StatefulSet replica, a retained <code>50Gi</code> RWO data claim, and the small <code>unsloth/Qwen3-0.6B-Q8_0</code> starter model. A default StorageClass is required unless you select another class or an existing claim. Unlike the local container quick start, the chart defaults to authenticated access and disables the BUI. See <a href="https://www.kronkai.com/manual#810-kubernetes-with-helm">8.10 Kubernetes with Helm</a> for port-forwarding, private admin-token retrieval, a chat request, GPU prerequisites, TLS ingress, secrets, and retained-PVC maintenance. Installation is from the local chart only. GPU examples require validation on real nodes with compatible drivers and runtimes.</p>
           <h3 id="24-libraries">2.4 Libraries</h3>
           <p>Kronk needs a native llama.cpp library bundle before it can run GGUF models. The server checks the selected bundle during startup and installs it when needed. To install it explicitly before starting the server, run:</p>
           <pre className="code-block"><code className="language-shell">{`kronk libs --local`}</code></pre>
@@ -2386,7 +2396,87 @@ kronk launchd uninstall`}</code></pre>
           <p><code>RunAtLoad</code> starts the server when the agent is loaded. <code>KeepAlive</code> restarts it if the process exits, with a 10-second throttle for repeated short-lived runs. <code>stop</code> unloads the agent so it stays stopped for the current login session, until explicitly started again. It starts again at the next desktop login. <code>restart</code> gracefully unloads and reloads the plist, applying configuration changes rather than just killing the process. The plist requests a 150-second <code>ExitTimeOut</code> for graceful HTTP shutdown and model unload, but macOS can cap this: a 60-second effective limit was observed on the development host. Inspect <code>kronk launchd status</code> for the effective exit timeout. If shutdown can exceed it, reduce <code>KRONK_WEB_SHUTDOWN_TIMEOUT</code> so twice that timeout plus 30 seconds fits the available grace period. Merely increasing <code>ExitTimeOut</code> does not guarantee a longer grace period.</p>
           <p>Both standard output and standard error append to <code>~/Library/Logs/kronk/kronk.log</code>. <code>logs</code> follows that file, including after rotation; Ctrl-C stops following, not the server. Arrange log rotation if running long-term, since launchd does not impose a size limit on this file.</p>
           <p>Restart after upgrading the binary at the same path. If its location changes, reinstall with <code>kronk launchd install --force</code>, then restart. <code>--force</code> replaces the plist and resets manual plist edits; save those edits first. Models, keys, server YAML configuration, and logs are preserved. Uninstall unloads and disables the agent and removes its plist, retaining server data and logs. Any environment settings stored only in the removed plist are removed with it.</p>
-          <h2 id="810-related-administration-guides">8.10 Related Administration Guides</h2>
+          <h2 id="810-kubernetes-with-helm">8.10 Kubernetes with Helm</h2>
+          <p>The chart in <code>zarf/helm/kronk</code> installs a single-replica StatefulSet and retains its data PVC. <code>replicaCount</code> must be <code>1</code>: shared storage does not provide synchronized HA. Use independent releases with separate storage and keysets when running multiple servers.</p>
+          <h3 id="install-from-a-checkout">Install from a checkout</h3>
+          <p>Install Helm and kubectl, select the intended cluster context, and provide a default StorageClass or set <code>persistence.storageClass</code> to an available class. The default claim requests <code>50Gi</code> with <code>ReadWriteOnce</code> (<code>RWO</code>) access. Ensure nodes have enough model memory and access to image, library, and model downloads. Run from a repository checkout; installation uses the local chart:</p>
+          <pre className="code-block"><code className="language-shell">{`kubectl config current-context
+helm upgrade --install kronk zarf/helm/kronk -n kronk --create-namespace \\
+  -f zarf/helm/kronk/examples/cpu.yaml --wait --timeout 20m
+helm test kronk -n kronk`}</code></pre>
+          <p>The CPU example pulls <code>unsloth/Qwen3-0.6B-Q8_0</code>. Downloads can extend initial startup; inspect <code>kubectl logs -n kronk kronk-0 --all-containers</code> if it stalls. The chart defaults to <code>ghcr.io/ardanlabs/kronk</code>, the published release selected by <code>Chart.yaml</code>, and the CPU variant. <code>image.variant</code> selects <code>cpu</code>, <code>cuda</code>, <code>vulkan</code>, <code>rocm</code>, or <code>all</code>; <code>image.tag</code> overrides the generated versioned tag.</p>
+          <p>Authentication defaults to <code>auth.mode: authenticated</code>, and the BUI is disabled. In one terminal, start port-forwarding and leave it running:</p>
+          <pre className="code-block"><code className="language-shell">{`kubectl port-forward -n kronk service/kronk 11435:11435`}</code></pre>
+          <p>In another terminal, retrieve the administrator JWT through RBAC-protected exec and send a chat request. Disable shell tracing first so it cannot log the token:</p>
+          <pre className="code-block"><code className="language-shell">{`set +x
+KRONK_TOKEN=$(kubectl exec -n kronk kronk-0 -c kronk -- cat /kronk/keys/master.jwt)
+curl http://localhost:11435/v1/chat/completions \\
+  -H "Authorization: Bearer $KRONK_TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "unsloth/Qwen3-0.6B-Q8_0",
+    "messages": [{"role": "user", "content": "Say hello in one sentence."}],
+    "max_tokens": 128
+  }'
+unset KRONK_TOKEN`}</code></pre>
+          <p>Keep the administrator token private; do not echo it, enable curl verbose output, or paste it into logs or Helm values. Before remote exposure, configure a TLS ingress with authentication enabled, restrict network access, and review <a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication">Chapter 12</a>. Do not expose an <code>open</code> server publicly.</p>
+          <h3 id="configuration-and-accelerators">Configuration and accelerators</h3>
+          <p>Keep deployment overrides in a values file. The main controls are:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Values</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>auth.mode</code></td>
+                <td><code>open</code>, <code>management</code>, <code>authenticated</code> (default), or <code>full-protected</code>; see Chapter 12 for policy differences</td>
+              </tr>
+              <tr>
+                <td><code>auth.existingSecret</code></td>
+                <td>Optional existing Secret containing <code>master.pem</code>, <code>master.jwt</code>, and other PEM signing keys; no inline credentials in values</td>
+              </tr>
+              <tr>
+                <td><code>modelConfig.enabled</code>, <code>modelConfig.content</code>, <code>modelConfig.existingConfigMap</code></td>
+                <td>Supply model configuration inline or through an existing ConfigMap</td>
+              </tr>
+              <tr>
+                <td><code>models.pull</code></td>
+                <td>Model IDs to pull locally in an init container on every pod startup; Kronk handles already validated models</td>
+              </tr>
+              <tr>
+                <td><code>env</code>, <code>extraEnv</code></td>
+                <td>Plain environment map and Kubernetes environment entries, including <code>valueFrom</code> references for secrets</td>
+              </tr>
+              <tr>
+                <td><code>persistence.existingClaim</code>, <code>persistence.storageClass</code>, <code>persistence.accessMode</code>, <code>persistence.size</code></td>
+                <td>Reuse a claim or configure the chart-created data claim</td>
+              </tr>
+              <tr>
+                <td><code>service.type</code>, <code>ingress</code></td>
+                <td>API exposure and standard ingress routing/TLS settings</td>
+              </tr>
+              <tr>
+                <td><code>metrics.enabled</code>, <code>metrics.serviceMonitor.enabled</code></td>
+                <td>Separate internal-only ClusterIP metrics Service and optional ServiceMonitor (requires its CRD)</td>
+              </tr>
+              <tr>
+                <td><code>resources</code>, <code>nodeSelector</code>, <code>tolerations</code>, <code>affinity</code>, <code>runtimeClassName</code>, <code>podSecurityContext</code></td>
+                <td>Model-sized resources, scheduling, GPU runtime, and pod identity/storage permissions</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>With <code>auth.existingSecret</code>, the Secret is authoritative for the <strong>entire keyset</strong> on restart, including removals. Export API-created keys into that Secret before restarting or they will be discarded. Protect it with appropriate RBAC and backups. Existing Secret or ConfigMap changes require an explicit restart:</p>
+          <pre className="code-block"><code className="language-shell">{`kubectl rollout restart -n kronk statefulset/kronk
+kubectl rollout status -n kronk statefulset/kronk --timeout=20m`}</code></pre>
+          <p>For NVIDIA, substitute <code>zarf/helm/kronk/examples/cuda.yaml</code> in the install command. It pulls the same starter model, requests a GPU, and selects <code>linux/amd64</code> nodes. Install compatible host drivers, the NVIDIA device plugin, and the container runtime/toolkit first; set <code>runtimeClassName</code> if your cluster requires it. Other GPU variants likewise need their vendor's device-plugin/runtime and device access configuration; changing the image alone does not allocate a GPU. Choose RAM/VRAM and CPU requests/limits for the model, context, and concurrency, not just the example. GPU examples require validation on real nodes with the intended hardware and runtime; rendering or CPU smoke tests do not prove GPU inference.</p>
+          <p>The metrics/debug endpoint is unauthenticated. Even with an API <code>service.type: LoadBalancer</code>, metrics use a separate ClusterIP Service. Do not route that Service through a public ingress; restrict in-cluster access with network policy as appropriate.</p>
+          <h3 id="upgrades-and-retained-storage">Upgrades and retained storage</h3>
+          <p>Repeat <code>helm upgrade --install</code> with the same values files for upgrades. Storage size, class, and access mode are creation-time immutable StatefulSet claim-template fields. For expansion, use a StorageClass that permits it and manually expand the existing PVC; do <strong>not</strong> change <code>persistence.size</code> in the chart template for that release. Class/access-mode changes require a deliberate storage migration, not a normal Helm upgrade.</p>
+          <p><code>helm uninstall kronk -n kronk</code> retains the data PVC, including models and keys. Back it up before maintenance. To deliberately destroy that data after uninstall, inspect <code>kubectl get pvc -n kronk</code>, then explicitly delete only the intended claim with <code>kubectl delete pvc -n kronk &lt;claim-name&gt;</code>. Check the storage provider's reclaim policy too. PVC deletion is destructive, not an upgrade step.</p>
+          <h2 id="811-related-administration-guides">8.11 Related Administration Guides</h2>
           <p>Detailed administration is divided by responsibility:</p>
           <ul>
             <li><a href="https://www.kronkai.com/manual#chapter-2-installation-quick-start">Chapter 2</a> — installation, libraries, image variants, and data paths</li>
@@ -6085,6 +6175,12 @@ fmt.Println(info.Description)`}</code></pre>
                 <td>build the affected target/variant; workflow is authority for matrix and signing</td>
               </tr>
               <tr>
+                <td>Helm chart</td>
+                <td><code>zarf/helm/kronk/</code></td>
+                <td>container entrypoint, <a href="https://www.kronkai.com/manual#810-kubernetes-with-helm">Chapter 8 §8.10</a>, CPU/CUDA examples</td>
+                <td><code>zarf/helm/kronk/test.sh</code>; smoke test on an explicitly selected disposable cluster context; no Go tests for chart-only changes</td>
+              </tr>
+              <tr>
                 <td>Nix development/package data</td>
                 <td><code>zarf/nix/flake.nix</code></td>
                 <td>Go module files and setup hook</td>
@@ -6397,6 +6493,11 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
           <h4 id="20103-containers">20.10.3 Containers</h4>
           <p><code>.github/workflows/docker.yml</code> is authoritative for image variants, target/platform matrix, registry publication, attestations, and signing. <code>zarf/docker/</code> owns Dockerfile, runtime configuration, and entrypoint behavior. Native llama and Bucky processor availability can differ by image variant, so inspect the workflow matrix and tooling combination tables before changing an image. Avoid copying a variant table into docs; it becomes stale faster than the workflow.</p>
           <p>For a container change, build the affected target and architecture where practical, exercise entrypoint startup/configuration, and verify expected native libraries. Do not infer publication or signature behavior from a local build; review the workflow.</p>
+          <p><strong>Helm chart</strong></p>
+          <p><code>zarf/helm/kronk/</code> owns the chart, CPU/CUDA examples, and chart checks. Validate chart changes from the repository root with:</p>
+          <pre className="code-block"><code className="language-shell">{`zarf/helm/kronk/test.sh`}</code></pre>
+          <p>This requires Helm and Python 3 with PyYAML. Chart-only changes do not require Go tests. For integration, use <code>zarf/helm/kronk/smoke-test.sh</code> only against an explicitly selected disposable Kubernetes context; inspect its usage and required tools first. Do not use your ambient production context. Rendering checks are not proof of cluster startup or GPU inference. GPU examples require real-node validation with compatible hardware, drivers, device plugins, and runtimes; disposable kind smoke tests do not prove GPU inference.</p>
+          <p>Keep the single-replica/retained-PVC contract, authenticated defaults, Secret keyset reconciliation, and private metrics Service intact. Update <a href="https://www.kronkai.com/manual#810-kubernetes-with-helm">Chapter 8 §8.10</a> when changing operator-facing values. Bump the chart <code>version</code> for chart changes; <code>appVersion</code> must reference an already published container image, not an unreleased CLI version. <code>zarf/helm/kronk/Chart.yaml</code> is authoritative for the default app version. Installation uses the local checkout; there is no Helm OCI publication workflow to run.</p>
           <h4 id="20104-nix">20.10.4 Nix</h4>
           <p>The flake at <code>zarf/nix/flake.nix</code> defines how developers/users enter or build the project; generated Go dependency data lives beside it. Entering a development shell runs <code>gomod2nix import</code> from its shell hook and may dirty that generated material. When Go module dependencies change, update the Nix dependency material with the repository's configured command and evaluate/build the relevant entry point. Keep Nix fixes in Nix owners rather than adding environment special cases to Go code.</p>
           <h3 id="2011-change-and-release-checklists">20.11 Change and Release Checklists</h3>
@@ -6596,7 +6697,15 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#810-related-administration-guides" className={`doc-index-header ${activeSection === '810-related-administration-guides' ? 'active' : ''}`}>8.10 Related Administration Guides</a>
+              <a href="#810-kubernetes-with-helm" className={`doc-index-header ${activeSection === '810-kubernetes-with-helm' ? 'active' : ''}`}>8.10 Kubernetes with Helm</a>
+              <ul>
+                <li><a href="#install-from-a-checkout" className={activeSection === 'install-from-a-checkout' ? 'active' : ''}>Install from a checkout</a></li>
+                <li><a href="#configuration-and-accelerators" className={activeSection === 'configuration-and-accelerators' ? 'active' : ''}>Configuration and accelerators</a></li>
+                <li><a href="#upgrades-and-retained-storage" className={activeSection === 'upgrades-and-retained-storage' ? 'active' : ''}>Upgrades and retained storage</a></li>
+              </ul>
+            </div>
+            <div className="doc-index-section">
+              <a href="#811-related-administration-guides" className={`doc-index-header ${activeSection === '811-related-administration-guides' ? 'active' : ''}`}>8.11 Related Administration Guides</a>
             </div>
             <div className="doc-index-section">
               <a href="#chapter-9-api-endpoints" className={`doc-index-header ${activeSection === 'chapter-9-api-endpoints' ? 'active' : ''}`}>Chapter 9: API Endpoints</a>

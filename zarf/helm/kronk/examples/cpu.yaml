@@ -1,0 +1,10 @@
+# Small CPU quick start. Requires a default StorageClass and provider access.
+models:
+  pull:
+    - unsloth/Qwen3-0.6B-Q8_0
+resources:
+  requests:
+    cpu: "2"
+    memory: 4Gi
+  limits:
+    memory: 8Gi
