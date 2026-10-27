@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -12,6 +13,121 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
+
+func TestIMCSystemCacheAcrossMediaRequests(t *testing.T) {
+	mdls, err := models.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := mdls.FullPath("unsloth/Qwen3.5-0.8B-Q8_0")
+	if err != nil || len(path.ModelFiles) == 0 || path.ProjFile == "" {
+		t.Skip("Qwen3.5-0.8B vision model not downloaded")
+	}
+	imageA, err := os.ReadFile(filepath.Join(os.Getenv("GITHUB_WORKSPACE"), "examples/samples/giraffe.jpg"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	imageB, err := os.ReadFile(filepath.Join(os.Getenv("GITHUB_WORKSPACE"), "examples/samples/adetailer-face.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := kronk.Init(); err != nil {
+		t.Fatal(err)
+	}
+	// Use a prefix-compatible ChatML template: the model's bundled template
+	// rejects system-only renders, independently of whether media is present.
+	const template = `{% for message in messages %}{{ '<|im_start|>' + message.role + '\n' + message.content + '<|im_end|>\n' }}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n<think>\n\n</think>\n\n' }}{% endif %}`
+	system := strings.Repeat("Describe only what is visible. Be brief and accurate. ", 30)
+	tests := []struct {
+		name     string
+		system   string
+		image    []byte
+		prompt   string
+		wantText string
+		reuse    string
+	}{
+		{name: "first image", system: system, image: imageA, prompt: "Name the animal.", wantText: "giraffe"},
+		{name: "different image", system: system, image: imageB, prompt: "Describe the subject.", wantText: "suit", reuse: "system"},
+		{name: "text after media", system: system, prompt: "Say hello.", wantText: "hello", reuse: "system"},
+		{name: "media after text", system: system, image: imageA, prompt: "Describe the animal's neck.", wantText: "neck", reuse: "system"},
+		{name: "changed system", system: "Use one short sentence. " + system, image: imageB, prompt: "Describe the subject.", wantText: "suit"},
+		{name: "exact media replay", system: "Use one short sentence. " + system, image: imageB, prompt: "Describe the subject.", wantText: "suit", reuse: "complete"},
+	}
+	coldPromptTokens := make([]int, len(tests))
+	for _, caching := range []bool{false, true} {
+		name := "uncached"
+		if caching {
+			name = "cached"
+		}
+		t.Run(name, func(t *testing.T) {
+			krn, err := kronk.New(model.WithModelFiles(path.ModelFiles), model.WithProjFile(path.ProjFile),
+				model.WithContextWindow(8192), model.WithNSeqMax(1), model.WithQueueDepth(1), model.WithIMCSessionCapacity(1),
+				model.WithPrefillBatchSize(256), model.WithIncrementalCache(caching), model.WithCacheMinTokens(1),
+				model.WithJinjaScript(template),
+				model.WithSpeculationMode(model.MustParseSpeculationMode("disabled")))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				if err := krn.Unload(context.Background()); err != nil {
+					t.Errorf("unload: %v", err)
+				}
+			})
+			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
+			defer cancel()
+			for i, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					messages := model.Messages(model.TextMessage(model.RoleSystem, tt.system))
+					if tt.image != nil {
+						messages = append(messages, model.ImageMessage(tt.prompt, tt.image, "image")...)
+					} else {
+						messages = append(messages, model.TextMessage(model.RoleUser, tt.prompt))
+					}
+					response, err := krn.Chat(ctx, model.D{"messages": messages,
+						"max_tokens": 24, "temperature": 0.0, "top_k": 1, "enable_thinking": false})
+					if err != nil {
+						t.Fatal(err)
+					}
+					if response.Usage == nil || response.Usage.CompletionTokens == 0 || len(response.Choices) == 0 {
+						t.Fatalf("response: got %+v, want generated output and usage", response)
+					}
+					// Decode boundaries and backend arithmetic can change prose.
+					// Check the subject instead of requiring byte-identical output.
+					if got := response.Choices[0].Message.Content; !strings.Contains(strings.ToLower(got), tt.wantText) {
+						t.Errorf("content: got %q, want mention of %q", got, tt.wantText)
+					}
+					if !caching {
+						coldPromptTokens[i] = response.Usage.PromptTokens
+						return
+					}
+					if got, want := response.Usage.PromptTokens, coldPromptTokens[i]; got != want {
+						t.Errorf("prompt tokens: got %d, want uncached %d", got, want)
+					}
+					caches := krn.IMCSystemCaches()
+					if len(caches) != 1 || caches[0].Tokens == 0 || caches[0].SnapshotBytes == 0 || caches[0].ActiveRestores != 0 {
+						t.Fatalf("system caches: got %+v, want one published, unreserved snapshot", caches)
+					}
+					cached := response.Usage.PromptTokensDetails.CachedTokens
+					switch tt.reuse {
+					case "system":
+						if cached != caches[0].Tokens {
+							t.Errorf("cached tokens: got %d, want system prefix %d", cached, caches[0].Tokens)
+						}
+					case "complete":
+						if cached <= caches[0].Tokens {
+							t.Errorf("cached tokens: got %d, want complete media snapshot larger than %d", cached, caches[0].Tokens)
+						}
+					default:
+						if cached != 0 {
+							t.Errorf("cached tokens: got %d, want 0", cached)
+						}
+					}
+					t.Logf("prompt=%d cached=%d system=%d", response.Usage.PromptTokens, cached, caches[0].Tokens)
+				})
+			}
+		})
+	}
+}
 
 func TestIMCMediaPreparationAllowsGenerationProgress(t *testing.T) {
 	mdls, err := models.New()

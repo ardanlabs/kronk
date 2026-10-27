@@ -15,7 +15,6 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/hybridgroup/yzma/pkg/llama"
-	"github.com/hybridgroup/yzma/pkg/mtmd"
 )
 
 const streamChBuffer = 32
@@ -444,37 +443,12 @@ func (m *Model) prepareCacheAndPrompt(ctx context.Context, d D, object string, r
 			return "", nil, cache, fmt.Errorf("chat-streaming: render complete stable prompt: %w", err)
 		}
 
+		systemTokens := m.imcSystemTokens(ctx, stableD)
 		if object == ObjectChatMedia {
-			cache = m.processIMCMediaTokenPlan(ctx, d, stableD, actualPrompt, stablePrompt, actualMedia, stableMedia, requestStart)
+			cache = m.processIMCMediaTokenPlan(ctx, d, stableD, actualPrompt, stablePrompt, actualMedia, stableMedia, systemTokens, requestStart)
 		} else {
 			actualTokens := llama.Tokenize(m.vocab, actualPrompt, m.addBOSToken, true)
 			stableTokens := llama.Tokenize(m.vocab, stablePrompt, m.addBOSToken, true)
-
-			var systemTokens []llama.Token
-			messages := dMessages(stableD)
-			systemMessages := 0
-			for systemMessages < len(messages) {
-				role, _ := messages[systemMessages]["role"].(string)
-				if role != "system" {
-					break
-				}
-				systemMessages++
-			}
-			if systemMessages > 0 {
-				systemD := maps.Clone(stableD)
-				systemD["messages"] = messages[:systemMessages]
-				systemPrompt, _, systemErr := m.createPrompt(ctx, systemD)
-				if systemErr == nil {
-					candidate := llama.Tokenize(m.vocab, systemPrompt, m.addBOSToken, true)
-					if len(candidate) > 0 && len(candidate) < len(stableTokens) && tokensHavePrefix(stableTokens, candidate) {
-						systemTokens = candidate
-					} else {
-						m.log(ctx, "imc", "status", "system-cache-skipped", "reason", "render-not-prefix-compatible")
-					}
-				} else {
-					m.log(ctx, "imc", "status", "system-cache-skipped", "reason", "render-failed", "err", systemErr)
-				}
-			}
 
 			cache = m.processIMCTokenPlan(ctx, d, actualTokens, stableTokens, systemTokens, requestStart)
 		}
@@ -663,22 +637,20 @@ func (m *Model) prepareMediaContext(ctx context.Context, d D) (D, error) {
 		return nil, fmt.Errorf("prepare-media-context: media detected in request but model does not support media processing")
 	}
 
-	// The chat handler only needs metadata (vision/audio support), so we
-	// use the long-lived metadata-only mtmd context. Per-request
-	// processing contexts are created and freed by each slot.
+	// Capabilities are captured at load time. Per-request processing contexts
+	// are created and freed by each slot.
 	if m.mtmdMetaCtx == 0 {
 		return nil, fmt.Errorf("prepare-media-context: model has no mtmd context loaded")
 	}
-	metaCtx := m.mtmdMetaCtx
 
 	switch mediaType {
 	case MediaTypeVision:
-		if !mtmd.SupportVision(metaCtx) {
+		if !m.mtmdCapabilities.Vision {
 			return nil, fmt.Errorf("prepare-media-context: image/video detected but model does not support vision")
 		}
 
 	case MediaTypeAudio:
-		if !mtmd.SupportAudio(metaCtx) {
+		if !m.mtmdCapabilities.Audio {
 			return nil, fmt.Errorf("prepare-media-context: audio detected but model does not support audio")
 		}
 	}

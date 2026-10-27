@@ -18,7 +18,7 @@ import (
 // release pipeline (.github/workflows/release.yaml and docker.yml, via
 // .github/scripts/check-version.sh) and refuses to publish a tag whose
 // value does not match this constant.
-const Version = "1.33.0-rc"
+const Version = "1.33.1-rc"
 
 // =============================================================================
 
@@ -153,6 +153,11 @@ func (krn *Kronk) SystemInfo() map[string]string {
 // ModelInfo returns the model information.
 func (krn *Kronk) ModelInfo() model.ModelInfo {
 	return krn.modelInfo
+}
+
+// InputCapabilities returns cached runtime input capabilities for the loaded model.
+func (krn *Kronk) InputCapabilities() model.InputCapabilities {
+	return krn.model.InputCapabilities()
 }
 
 // ModelID returns the identifier emitted by public inference responses.

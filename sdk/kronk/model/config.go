@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
+	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
+	internalspec "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -57,9 +59,6 @@ const DefaultPrefillBatchSize = int(vram.DefaultNUBatch)
 // DefaultQueueDepth is the number of admitted request layers used when queue
 // depth is not explicitly configured.
 const DefaultQueueDepth = 2
-
-// Logger provides a function for logging messages from different APIs.
-type Logger = applog.Logger
 
 // =============================================================================
 
@@ -286,10 +285,10 @@ type AdapterConfig struct {
 // context. When set to 0, a default of 1 is used.
 //
 // NThreads is the number of threads to use for generation. When unset or set
-// to 0, it defaults to the greater of 4 and runtime.NumCPU().
+// to 0, it defaults to the greater of 4 and runtime.GOMAXPROCS(0).
 //
 // NThreadsBatch is the number of threads to use for batch processing. When
-// unset or set to 0, it defaults to the greater of 4 and runtime.NumCPU().
+// unset or set to 0, it defaults to the greater of 4 and runtime.GOMAXPROCS(0).
 //
 // NUMA controls the NUMA (Non-Uniform Memory Access) strategy. This matters
 // most when expert tensors are on CPU and the system has multiple NUMA nodes.
@@ -454,7 +453,7 @@ type Config struct {
 	PtrRopeFreqScale           *float32
 	RecordArtifactVerification ArtifactVerificationRecorder
 	RopeScaling                RopeScalingType
-	SessionStoreFactory        SessionStoreFactory
+	SessionStoreFactory        kvstorage.Factory
 	Speculation                SpeculationMode
 	PtrSplitMode               *SplitMode
 	PtrSWAFull                 *bool
@@ -467,7 +466,7 @@ type Config struct {
 	PtrYarnOrigCtx             *int
 	nBatch                     int
 	nUBatch                    int
-	speculationPlan            speculationPlan
+	speculationPlan            internalspec.Plan
 }
 
 func (cfg Config) AdmissionTimeout() time.Duration {
@@ -910,7 +909,7 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 		cfg = adjustGenerationBatch(cfg, 1, false)
 	}
 
-	nThreads := max(defNThreads, runtime.NumCPU())
+	nThreads := max(defNThreads, runtime.GOMAXPROCS(0))
 	if cfg.NThreads() <= 0 {
 		cfg.PtrNThreads = new(nThreads)
 	}
@@ -1383,6 +1382,6 @@ func WithQueueDepth(v int) Option {
 	}
 }
 
-func WithSessionStoreFactory(v SessionStoreFactory) Option {
+func WithSessionStoreFactory(v kvstorage.Factory) Option {
 	return func(c *Config) { c.SessionStoreFactory = v }
 }

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"slices"
 	"testing"
 
@@ -178,5 +179,58 @@ func TestStageDecisionJointPart(t *testing.T) {
 		if entry.decisionOrder != part.decisionOrder[i] {
 			t.Errorf("entry[%d] decision order: got %d, want %d", i, entry.decisionOrder, part.decisionOrder[i])
 		}
+	}
+}
+
+func TestStageDecisionMediaPart(t *testing.T) {
+	batch := extendedBatch{capacity: 5}
+	part := decisionPart{
+		prefixRows: []extendedBatchEntry{
+			{hasToken: true, token: 41, positions: [4]llama.Pos{0}, positionCount: 1},
+			{embedding: []float32{1, 2}, embdWidth: 2, positions: [4]llama.Pos{1, 3, 5, 7}, positionCount: 4},
+			{embedding: []float32{8, 9}, embdWidth: 2, positions: [4]llama.Pos{1, 4, 6, 7}, positionCount: 4},
+		},
+		// Three physical prefix rows advance only two logical positions.
+		position: 2, sequence: 7, tokens: []llama.Token{42, 43},
+		decisionOrder: []llama.DecisionOrder{llama.DecisionOrderQuestionNoul, llama.DecisionOrderOption},
+		jointScores:   1,
+	}
+	indices, err := stageDecisionParts(&batch, []decisionPart{part})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(indices[0], []int32{0, 1, 2, 3, 4}) {
+		t.Fatalf("outputs: got %v, want all five rows", indices)
+	}
+	for i, row := range batch.entries {
+		if row.sequenceID != 7 || row.output != extendedBatchOutputEmbeddings {
+			t.Errorf("row[%d]: got sequence=%d output=%v, want 7/embeddings", i, row.sequenceID, row.output)
+		}
+		if i < 3 {
+			if row.decisionOrder != llama.DecisionOrderNone || row.positions != part.prefixRows[i].positions {
+				t.Errorf("prefix[%d]: got order=%v positions=%v", i, row.decisionOrder, row.positions)
+			}
+		} else if row.positions[0] != llama.Pos(i-1) || row.decisionOrder != part.decisionOrder[i-3] {
+			t.Errorf("text[%d]: got position=%d order=%v", i, row.positions[0], row.decisionOrder)
+		}
+	}
+	part.prefixRows[1].embedding[0] = 99
+	if !slices.Equal(batch.entries[1].embedding, []float32{1, 2}) {
+		t.Fatalf("staged embeddings: got %v, want owned [1 2]", batch.entries[1].embedding)
+	}
+}
+
+func TestDecisionMediaBudget(t *testing.T) {
+	engine := decisionEngine{contextWindow: 10, maxTokens: 5}
+	work := decisionWork{
+		tokens: []llama.Token{1, 2}, prefixRows: make([]extendedBatchEntry, 3),
+		decisionOrder: []llama.DecisionOrder{llama.DecisionOrderQuestionNoul, llama.DecisionOrderOption}, jointScores: 1,
+	}
+	if err := engine.validate([]decisionWork{work}); err != nil {
+		t.Fatalf("exact fit: %v", err)
+	}
+	work.prefixRows = append(work.prefixRows, extendedBatchEntry{})
+	if err := engine.validate([]decisionWork{work}); !errors.Is(err, ErrDecisionBudget) {
+		t.Fatalf("one row over: got %v, want ErrDecisionBudget", err)
 	}
 }

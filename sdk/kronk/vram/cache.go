@@ -1,25 +1,22 @@
 package vram
 
-import (
-	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
-	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
-)
+import "github.com/ardanlabs/kronk/sdk/kronk/gguf"
 
 // calculateSlotState sizes persistent attention, indexer, and recurrent state
 // using the shared GGUF allocator formulas and normalized architecture facts.
 // This reports both per-slot and total state; it excludes model residency and
 // shared execution workspace. Weight layout (dense or MoE) does not affect it.
 func calculateSlotState(input Input) gguf.KVCache {
-	if input.ComputeKind == modelprofile.ComputeModernBERT {
-		// b11513 runs ModernBERT's encoder with no persistent memory
-		// module. K/V tensors are temporary graph intermediates.
-		return gguf.KVCache{}
-	}
-	if input.ComputeKind == modelprofile.ComputeClef {
-		// b11513 creates no memory module for Clef. Its attention and
-		// zero-initialized recurrent states live only in the compute graph.
-		return gguf.KVCache{}
-	}
+	return selectMemoryPolicy(input).cache(input)
+}
+
+// noPersistentCache is used when attention and recurrent state exist only as
+// temporary compute graph intermediates, with no persistent memory module.
+func noPersistentCache(Input) gguf.KVCache {
+	return gguf.KVCache{}
+}
+
+func genericCache(input Input) gguf.KVCache {
 	kvInput := gguf.KVCacheInput{
 		ContextWindow:        input.ContextWindow,
 		BlockCount:           input.BlockCount,

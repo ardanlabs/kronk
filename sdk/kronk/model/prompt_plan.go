@@ -69,6 +69,18 @@ func (p promptPlan) hasPrefix(prefix promptPlan) bool {
 	return len(prefix.units) <= len(p.units) && slices.Equal(p.units[:len(prefix.units)], prefix.units)
 }
 
+func (p promptPlan) hasTextPrefix(tokens []llama.Token) bool {
+	if len(tokens) > len(p.units) {
+		return false
+	}
+	for i, token := range tokens {
+		if p.units[i].isMedia || p.units[i].token != token {
+			return false
+		}
+	}
+	return true
+}
+
 func (p promptPlan) equal(other promptPlan) bool {
 	return slices.Equal(p.units, other.units)
 }

@@ -19,7 +19,10 @@ func newNimbleProtocol(m *Model) (*nimbleProtocol, error) {
 	if err != nil {
 		return nil, fmt.Errorf("init-nimble: %w", err)
 	}
-	labelTokens, labelStrings := decisionLabelTokens(m.vocab)
+	labelTokens, labelStrings, err := m.decisionLabelTokens()
+	if err != nil {
+		return nil, fmt.Errorf("init-nimble: %w", err)
+	}
 	if len(labelTokens) < 2 {
 		return nil, fmt.Errorf("init-nimble: tokenizer provides %d single-token labels, need at least 2", len(labelTokens))
 	}

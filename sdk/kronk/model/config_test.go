@@ -520,29 +520,43 @@ func TestAdjustConfigDoesNotMutateDraftModelConfig(t *testing.T) {
 }
 
 func TestAdjustConfigUsesKronkThreadDefault(t *testing.T) {
-	defaultThreads := max(defNThreads, runtime.NumCPU())
-	tests := []struct {
-		name             string
-		cfg              Config
-		wantThreads      int
-		wantThreadsBatch int
-	}{
-		{"unset", NewConfig(WithContextWindow(8192)), defaultThreads, defaultThreads},
-		{"zero", NewConfig(WithContextWindow(8192), WithNThreads(0), WithNThreadsBatch(0)), defaultThreads, defaultThreads},
-		{"negative", NewConfig(WithContextWindow(8192), WithNThreads(-1), WithNThreadsBatch(-1)), defaultThreads, defaultThreads},
-		{"configured", NewConfig(WithContextWindow(8192), WithNThreads(2), WithNThreadsBatch(6)), 2, 6},
-	}
+	previous := runtime.GOMAXPROCS(0)
+	t.Cleanup(func() { runtime.GOMAXPROCS(previous) })
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg := adjustConfig(tt.cfg, 0)
-			if got := cfg.NThreads(); got != tt.wantThreads {
-				t.Errorf("NThreads: got %d, want %d", got, tt.wantThreads)
-			}
-			if got := cfg.NThreadsBatch(); got != tt.wantThreadsBatch {
-				t.Errorf("NThreadsBatch: got %d, want %d", got, tt.wantThreadsBatch)
-			}
-		})
+	for _, limit := range []struct {
+		maxProcs int
+		want     int
+	}{
+		{1, 4},
+		{2, 4},
+		{4, 4},
+		{7, 7},
+	} {
+		runtime.GOMAXPROCS(limit.maxProcs)
+
+		for _, tt := range []struct {
+			name             string
+			cfg              Config
+			wantThreads      int
+			wantThreadsBatch int
+		}{
+			{"unset", NewConfig(WithContextWindow(8192)), limit.want, limit.want},
+			{"zero", NewConfig(WithContextWindow(8192), WithNThreads(0), WithNThreadsBatch(0)), limit.want, limit.want},
+			{"negative", NewConfig(WithContextWindow(8192), WithNThreads(-1), WithNThreadsBatch(-1)), limit.want, limit.want},
+			{"configured", NewConfig(WithContextWindow(8192), WithNThreads(2), WithNThreadsBatch(6)), 2, 6},
+			{"generation only", NewConfig(WithContextWindow(8192), WithNThreads(3)), 3, limit.want},
+			{"batch only", NewConfig(WithContextWindow(8192), WithNThreadsBatch(9)), limit.want, 9},
+		} {
+			t.Run(fmt.Sprintf("GOMAXPROCS=%d/%s", limit.maxProcs, tt.name), func(t *testing.T) {
+				cfg := adjustConfig(tt.cfg, 0)
+				if got := cfg.NThreads(); got != tt.wantThreads {
+					t.Errorf("NThreads: got %d, want %d", got, tt.wantThreads)
+				}
+				if got := cfg.NThreadsBatch(); got != tt.wantThreadsBatch {
+					t.Errorf("NThreadsBatch: got %d, want %d", got, tt.wantThreadsBatch)
+				}
+			})
+		}
 	}
 }
 

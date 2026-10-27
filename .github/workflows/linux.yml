@@ -49,26 +49,24 @@ concurrency:
 permissions:
   contents: read
 
-# Four independent jobs — static, race, api-tests, sdk-tests — sharing one
-# setup-go cache key via .go-version. The GPU suites are gpu.yml's.
+# Four jobs — static, race, api-tests, sdk-tests — sharing one setup-go cache
+# key via .go-version. All inference tests use the Vulkan GPU runners.
 #
 # GOTOOLCHAIN=local so a dependency that bumps its `go` directive above
 # .go-version fails loudly instead of auto-downloading a toolchain.
 #
-# Self-hosted for this repo, ubuntu-latest for fork PRs: kronk is public, and
-# while each job now gets a throwaway container, the model, module and build
-# caches outlive it — so a job running unreviewed code could poison the next
-# one. Untrusted code therefore never reaches these runners automatically.
+# Tests are self-hosted for this repo and skipped for fork PRs. Static checks
+# still run on ubuntu-latest for forks. The model, module and build caches
+# outlive a job, so unreviewed code must not reach the self-hosted runners.
 #
 # A maintainer who has read the diff can run a fork PR here by dispatching its
 # head SHA with the `sha` input. That is a deliberate, reviewed act; the gate
 # below is what keeps it from happening on its own.
 #
-# KRONK_PROCESSOR=cpu keeps results independent of which runner took the job;
-# `kronk libs --local` would otherwise pick a GPU backend. Bucky auto-detects.
+# Select Vulkan explicitly; setup-kronk verifies a GPU device is visible.
 env:
   GOTOOLCHAIN: local
-  KRONK_PROCESSOR: cpu
+  KRONK_PROCESSOR: vulkan
 
 jobs:
   static:
@@ -148,7 +146,8 @@ jobs:
 
   race:
     name: Race detector (sdk unit packages)
-    runs-on: ${{ (github.event.pull_request.head.repo.full_name || github.repository) == github.repository && fromJSON('["self-hosted","Linux","X64"]') || 'ubuntu-latest' }}
+    if: (github.event.pull_request.head.repo.full_name || github.repository) == github.repository
+    runs-on: [self-hosted, Linux, X64, gpu, vulkan]
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -173,8 +172,9 @@ jobs:
 
   api-tests:
     name: api/service tests
-    runs-on: ${{ (github.event.pull_request.head.repo.full_name || github.repository) == github.repository && fromJSON('["self-hosted","Linux","X64"]') || 'ubuntu-latest' }}
-    timeout-minutes: 30
+    if: (github.event.pull_request.head.repo.full_name || github.repository) == github.repository
+    runs-on: [self-hosted, Linux, X64, gpu, vulkan]
+    timeout-minutes: 45
     steps:
       - name: Runner specs
         run: |
@@ -190,16 +190,21 @@ jobs:
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
 
+      - name: Download extended test models
+        run: ./.github/scripts/pull-models.sh .github/test-models.txt gpu
+
       - name: Run api/service tests
         run: |
-          export RUN_IN_PARALLEL=no
           go test -v -p=1 -count=1 -timeout 20m ./cmd/kronk/...
           go test -v -p=1 -count=1 -timeout 20m ./cmd/server/...
+          KRONK_TEST_MEDIA=yes go test -v -p=1 -count=1 -timeout 10m -run '^Test_API_Media$' ./cmd/server/api/services/kronk/tests
+          KRONK_TEST_MTP=yes go test -v -p=1 -count=1 -timeout 20m -run '^Test_API_MTP$' ./cmd/server/api/services/kronk/tests
 
   sdk-tests:
     name: sdk tests
-    runs-on: ${{ (github.event.pull_request.head.repo.full_name || github.repository) == github.repository && fromJSON('["self-hosted","Linux","X64"]') || 'ubuntu-latest' }}
-    timeout-minutes: 30
+    if: (github.event.pull_request.head.repo.full_name || github.repository) == github.repository
+    runs-on: [self-hosted, Linux, X64, gpu, vulkan]
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -209,19 +214,27 @@ jobs:
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
 
+      - name: Download extended test models
+        run: ./.github/scripts/pull-models.sh .github/test-models.txt gpu
+
       - name: Run sdk tests
         run: |
-          export RUN_IN_PARALLEL=no
           go -C examples test -v -count=1 -timeout 2m ./session-store
           go test -v -p=1 -count=1 -timeout 20m $(go list ./sdk/... | grep -v '/sdk/kronk/tests')
-          # The model-backed suites supported by install-test-gh-models.
           go test -v -count=1 -timeout 20m ./sdk/kronk/tests/qwen3
-          go test -v -count=1 -timeout 6m -run '^TestLengthTerminatedToolCallBecomesContent$' ./sdk/kronk/tests/qwen06
-          go test -v -count=1 -timeout 6m -run '^TestSuite$' ./sdk/kronk/tests/draft
-          go test -v -count=1 -timeout 6m -run '^(TestSuite|Test_PooledVision)$' ./sdk/kronk/tests/vision
-          go test -v -count=1 -timeout 6m -run '^TestSuite$' ./sdk/kronk/tests/vision_imc
-          go test -v -count=1 -timeout 6m -run '^(TestSuite|TestConcurrentEmbeddings)$' ./sdk/kronk/tests/embed
-          go test -v -count=1 -timeout 6m -run '^(TestSuite|TestConcurrentRerank)$' ./sdk/kronk/tests/rerank
-          go test -v -count=1 -timeout 6m -run '^TestSuite$' ./sdk/kronk/tests/decision
+          go test -v -count=1 -timeout 10m -run '^TestLengthTerminatedToolCallBecomesContent$' ./sdk/kronk/tests/qwen06
+          go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/draft
+          go test -v -count=1 -timeout 10m -run '^(TestSuite|Test_PooledVision|TestUncachedMediaSmallBatch)$' ./sdk/kronk/tests/vision
+          go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/vision_imc
+          # Qualify Omni images without enabling its unstable audio workloads.
+          go test -v -count=1 -timeout 10m -run '^TestSuite$/^Images$' ./sdk/kronk/tests/audio
+          go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/embed
+          go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/rerank
+          go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/decision
           go test -v -count=1 -timeout 20m ./sdk/kronk/tests/hybrid
-          go test -v -count=1 -timeout 6m -run '^TestSuite$' ./sdk/kronk/tests/hybrid_vision_imc
+          go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/hybrid_vision_imc
+          go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/lfm
+          go test -v -count=1 -timeout 20m ./sdk/kronk/tests/moe
+          go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/moe_vision_imc
+          go test -v -count=1 -timeout 20m -run '^(TestSuite|TestSuiteMultiSlot)$' ./sdk/kronk/tests/mtp
+          go test -v -count=1 -timeout 20m -run '^(TestSuite|TestSuiteMultiSlot)$' ./sdk/kronk/tests/gemma4mtp

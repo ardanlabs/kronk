@@ -51,18 +51,15 @@ ENVIRONMENT VARIABLES
 
   KRONK_BASE_PATH  Base path for kronk data (models, libraries, catalog, model_config)`,
 	Args: cobra.ExactArgs(1),
-	Run:  main,
+	RunE: main,
 }
 
 func init() {
 	Cmd.Flags().Bool("local", false, "Run without the model server")
 }
 
-func main(cmd *cobra.Command, args []string) {
-	if err := run(cmd, args[0]); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
+func main(cmd *cobra.Command, args []string) error {
+	return run(cmd, args[0])
 }
 
 func run(cmd *cobra.Command, source string) error {
@@ -70,10 +67,10 @@ func run(cmd *cobra.Command, source string) error {
 	if local {
 		return runLocal(cmd, source)
 	}
-	return runWeb(source)
+	return runWeb(cmd.Context(), source)
 }
 
-func runWeb(source string) error {
+func runWeb(ctx context.Context, source string) error {
 	url, err := client.DefaultURL("/v1/bucky/models/pull")
 	if err != nil {
 		return fmt.Errorf("default-url: %w", err)
@@ -90,19 +87,29 @@ func runWeb(source string) error {
 		client.WithBearer(os.Getenv("KRONK_TOKEN")),
 	)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancel()
 
 	ch := make(chan toolapp.PullResponse)
-	if err := cln.Do(ctx, http.MethodPost, url, body, ch); err != nil {
+	errCh, err := cln.DoWithErrors(ctx, http.MethodPost, url, body, ch)
+	if err != nil {
 		return fmt.Errorf("do: unable to download whisper model: %w", err)
 	}
 
+	var status string
 	for ver := range ch {
 		fmt.Print(ver.Status)
+		status = ver.Status
 	}
 
 	fmt.Println()
+
+	if err := <-errCh; err != nil {
+		return fmt.Errorf("do: unable to download whisper model: %w", err)
+	}
+	if status != "downloaded" {
+		return fmt.Errorf("whisper model download did not complete successfully: %s", status)
+	}
 
 	return nil
 }
@@ -113,7 +120,7 @@ func runLocal(cmd *cobra.Command, source string) error {
 		return fmt.Errorf("bucky model pull: new: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Minute)
 	defer cancel()
 
 	path, err := mdls.Download(ctx, bucky.FmtLogger, source)

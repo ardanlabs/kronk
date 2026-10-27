@@ -1,7 +1,6 @@
 package decision_test
 
 import (
-	"fmt"
 	"os"
 	"testing"
 
@@ -11,10 +10,7 @@ import (
 func TestMain(m *testing.M) {
 	testlib.Setup()
 
-	if len(testlib.MPDecision.ModelFiles) == 0 {
-		fmt.Println("decision model not downloaded, skipping decision tests")
-		os.Exit(0)
-	}
+	testlib.RequireFixtures(testlib.MPDecision.ModelFiles...)
 
 	os.Exit(m.Run())
 }

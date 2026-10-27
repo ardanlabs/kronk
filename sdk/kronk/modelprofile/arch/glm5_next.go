@@ -1,23 +1,28 @@
-package modelprofile
+package arch
 
 import (
 	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 )
 
-type glm5NextAdapter struct{}
+// GLM5Next normalizes GLM5 Next attention, recurrent state, and MTP metadata.
+type GLM5Next struct{}
 
-func (glm5NextAdapter) Name() string { return "glm5-next" }
+// Name returns the adapter's diagnostic name.
+func (GLM5Next) Name() string { return "glm5-next" }
 
-func (glm5NextAdapter) Claims(architecture string) bool {
+// Claims reports whether the architecture uses this adapter.
+func (GLM5Next) Claims(architecture string) bool {
 	return strings.EqualFold(architecture, "glm5-next")
 }
 
-func (glm5NextAdapter) Apply(metadata metadata, profile *Profile) error {
-	profile.MemorySemantics = MemoryRecurrent
+// Apply normalizes per-layer attention, recurrent state, and MTP dimensions.
+func (GLM5Next) Apply(metadata Metadata, profile *modelprofile.Profile) error {
+	profile.MemorySemantics = modelprofile.MemoryRecurrent
 	if profile.Speculation.NextNPredictLayers > 0 {
-		profile.Speculation.MTPArchitecture = MTPArchitectureGLM5Next
+		profile.Speculation.MTPArchitecture = modelprofile.MTPArchitectureGLM5Next
 	}
 
 	blockCount := profile.Dimensions.BlockCount

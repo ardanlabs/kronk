@@ -20,8 +20,11 @@ import (
 	"github.com/ardanlabs/jinja"
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
+	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
+	internalspec "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
 	mtpengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/mtp"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/metrics"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
@@ -67,8 +70,8 @@ type imcSession struct {
 	totalTokensCached   int             // Physical KV cells in the cached prefix.
 	nextLogicalPos      int             // Next logical decode position; equals totalTokensCached except for M-RoPE media.
 	cachedMsgCount      int             // Number of messages cached
-	kvState             SessionStore    // Externalized KV cache state, accessed only through the pluggable SessionStore interface.
-	draftKVState        SessionStore    // Externalized MTP draft seq KV state. Nil unless the model has an MTP drafter (allocated post-draft-load in initGenerationRuntime). Captured alongside kvState during cache build so a cache hit on the next request can restore the draft seq in lock-step with the target seq and MTP can keep running for IMC-cache-hit requests.
+	kvState             kvstorage.Store // Externalized KV cache state, accessed only through the pluggable SessionStore interface.
+	draftKVState        kvstorage.Store // Externalized MTP draft seq KV state. Nil unless the model has an MTP drafter (allocated post-draft-load in initGenerationRuntime). Captured alongside kvState during cache build so a cache hit on the next request can restore the draft seq in lock-step with the target seq and MTP can keep running for IMC-cache-hit requests.
 	pendingH            []float32       // Copy of the slot's pre-norm hidden row taken at cache-build snapshot time (one row of nEmbd floats). Restored into slot.pendingH on cache hit so the very first MTP draft round can condition correctly on the cached prefix's last position. Empty when the session has no MTP draft snapshot.
 	lastUsed            time.Time       // Last access time (for eviction)
 	reserved            bool            // True when a build/extend is in-flight on this session — protects kvState from concurrent writers.
@@ -101,8 +104,8 @@ type imcSystemCache struct {
 	id               int
 	cachedTokens     []llama.Token
 	buildingTokens   []llama.Token // Pending replacement identity while building keeps published metadata separate.
-	kvState          SessionStore
-	draftKVState     SessionStore
+	kvState          kvstorage.Store
+	draftKVState     kvstorage.Store
 	pendingH         []float32
 	allocatedContext int
 	snapshotBytes    int // Retained target, draft, and pending-H capacity, safe to read while the stores are rebuilt.
@@ -175,35 +178,27 @@ type draftCore struct {
 
 // Model represents a model and provides a low-level API for working with it.
 type Model struct {
-	cfg            Config
-	log            applog.Logger
-	model          llama.Model
-	vocab          llama.Vocab
-	suppressTokens []llama.Token
-	ctxParams      llama.ContextParams
-	lctx           llama.Context
-	mem            llama.Memory
-	adapterHandles []llama.AdapterLora
-	adapterScales  []float32
-	batch          *batchEngine
-	decision       *decisionEngine
-	protocol       decisionProtocol
-	template       Template
-	compiledTmpl   *compiledTemplate // Long-lived compiled jinja template (one-time init via templateOnce).
-	templateOnce   sync.Once         // Guards one-time compile of compiledTmpl.
-	projFile       string
-	projDevice     llama.GGMLBackendDevice
-	// mtmdMetaCtx is a single, long-lived multimodal projector context
-	// loaded in NewModel and freed in Unload. It is used ONLY for
-	// read-only metadata checks (SupportVision/SupportAudio) by chat
-	// handlers — never for Tokenize/Encode/Decode of actual requests.
-	// Per-request slots create their own short-lived mtmd context (via
-	// mtmd.InitFromFile in startSlot, freed in freeSlotResources) so
-	// that any internal accumulation inside an mtmd context is bounded
-	// to a single request and cannot bleed across requests.
-	// Zero when projFile == "" (text-only models) or for embed/rerank
-	// models.
+	cfg              Config
+	log              applog.Logger
+	model            llama.Model
+	vocab            llama.Vocab
+	suppressTokens   []llama.Token
+	ctxParams        llama.ContextParams
+	lctx             llama.Context
+	mem              llama.Memory
+	adapterHandles   []llama.AdapterLora
+	adapterScales    []float32
+	batch            *batchEngine
+	decision         *decisionEngine
+	protocol         decisionProtocol
+	template         Template
+	compiledTmpl     *compiledTemplate // Long-lived compiled jinja template (one-time init via templateOnce).
+	templateOnce     sync.Once         // Guards one-time compile of compiledTmpl.
+	projFile         string
+	projDevice       llama.GGMLBackendDevice
 	mtmdMetaCtx      mtmd.Context
+	mtmdCapabilities MTMDHelperCapabilities
+	mtmdCapsKnown    bool
 	modelInfo        ModelInfo
 	paramsResolved   bool
 	activeStreams    atomic.Int32
@@ -426,13 +421,10 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	// context-pool fallback, and generation models use the generation engine.
 	nSlots := max(cfg.NSeqMax(), 1)
 
-	// Load a single, long-lived mtmd context used ONLY for metadata
-	// reads (SupportVision/SupportAudio) by chat handlers. Per-request
-	// processing contexts are created by each slot in startSlot and
-	// freed in freeSlotResources — see Model.mtmdMetaCtx for the
-	// rationale.
+	// Load a single, long-lived mtmd context for capability discovery. Per-request
+	// processing contexts are owned by generation slots or decision preparation.
 	isGenerationModel := !(modelInfo.IsEmbedModel || modelInfo.IsRerankModel || modelInfo.IsDecisionModel)
-	if isGenerationModel && m.projFile != "" {
+	if (isGenerationModel || modelInfo.IsDecisionModel) && m.projFile != "" {
 		l(ctx, "loading-prof-file", "status", "started", "proj", path.Base(m.projFile))
 
 		start := time.Now()
@@ -448,6 +440,18 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 
 		l(ctx, "loading-prof-file", "status", "completed", "proj", path.Base(m.projFile))
 	}
+
+	capabilities, err := MTMDHelperGetCapabilities(m.model, m.mtmdMetaCtx)
+	m.mtmdCapsKnown = err == nil
+	if err != nil {
+		// Older bundles lack the helper; preserve their existing input checks.
+		capabilities = MTMDHelperCapabilities{Chat: true, TextGen: true}
+		if m.mtmdMetaCtx != 0 {
+			capabilities.Vision = mtmd.SupportVision(m.mtmdMetaCtx)
+			capabilities.Audio = mtmd.SupportAudio(m.mtmdMetaCtx)
+		}
+	}
+	m.mtmdCapabilities = capabilities
 
 	if err := m.loadAdapters(ctx); err != nil {
 		if m.mtmdMetaCtx != 0 {
@@ -482,7 +486,7 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 			return nil, errors.Join(err, batchErr, adapterErr)
 		}
 
-	case useBatchSeq(modelInfo):
+	case supportsBatchSeq(modelInfo):
 		if err := initBatchSeqRuntime(ctx, &m); err != nil {
 			adapterErr := m.freeAdapters()
 			llama.ModelFree(mdl)
@@ -622,7 +626,7 @@ func buildModelParams(ctx context.Context, cfg *Config, loadMTP bool, l applog.L
 					if err != nil {
 						return mParams, ka, fmt.Errorf("moe-placement: %w", err)
 					}
-					blockCount := modelprofile.Resolve(metadata).Dimensions.BlockCount
+					blockCount := arch.Resolve(metadata).Dimensions.BlockCount
 					for block := int64(0); block < blockCount-int64(topN); block++ {
 						cfg.TensorBuftOverrides = append(cfg.TensorBuftOverrides, fmt.Sprintf("moe-experts:block:%d", block))
 					}
@@ -756,7 +760,7 @@ func logModelParamsTrace(ctx context.Context, params llama.ModelParams, deviceNa
 // context, KV memory, IMC sessions, family plugin, batch engine, and the
 // optional draft model for speculative decoding. On error the helper frees
 // any partial state it created, but leaves m.model for the caller to free.
-func initGenerationRuntime(ctx context.Context, m *Model, nSlots int, plan speculationPlan) error {
+func initGenerationRuntime(ctx context.Context, m *Model, nSlots int, plan internalspec.Plan) error {
 	lctx, err := llama.InitFromModel(m.model, m.ctxParams)
 	if err != nil {
 		return fmt.Errorf("init-from-model: unable to init context: %w", err)
@@ -1424,6 +1428,27 @@ func (m *Model) Config() Config {
 
 func (m *Model) ModelInfo() ModelInfo {
 	return m.modelInfo
+}
+
+// InputCapabilities describes detected chat inputs for the loaded model,
+// projector, and native build. Available is false when detection is unavailable;
+// the remaining fields must not then be interpreted as confirmed support.
+type InputCapabilities struct {
+	Available bool `json:"available"`
+	Chat      bool `json:"chat"`
+	Vision    bool `json:"vision"`
+	Audio     bool `json:"audio"`
+}
+
+// InputCapabilities returns cached runtime input capabilities. Native output
+// capabilities do not imply that Kronk implements those output pipelines.
+func (m *Model) InputCapabilities() InputCapabilities {
+	return InputCapabilities{
+		Available: m.mtmdCapsKnown,
+		Chat:      m.mtmdCapabilities.Chat && !m.modelInfo.IsEmbedModel && !m.modelInfo.IsRerankModel && !m.modelInfo.IsDecisionModel,
+		Vision:    m.mtmdCapabilities.Vision,
+		Audio:     m.mtmdCapabilities.Audio,
+	}
 }
 
 func (m *Model) responseModelID() string {

@@ -1,10 +1,12 @@
 package model
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -113,5 +115,53 @@ func TestVerifyArtifactInvalidDigest(t *testing.T) {
 
 	if _, _, err := VerifyArtifact(modelPath, ArtifactDigest{SHA256: "invalid", Size: 11}, nil, true); err == nil {
 		t.Fatal("VerifyArtifact: got nil, want invalid digest error")
+	}
+}
+
+func TestVerifyArtifactWithLogger(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		cached   bool
+		checkSHA bool
+		corrupt  bool
+		wantLogs int
+	}{
+		{name: "hash", checkSHA: true, wantLogs: 2},
+		{name: "cached", cached: true, checkSHA: true},
+		{name: "size only"},
+		{name: "mismatch", checkSHA: true, corrupt: true, wantLogs: 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			modelPath, digest := writeArtifact(t, []byte("hello kronk"))
+			var previous *ArtifactVerification
+			if tt.cached {
+				verification, _, err := VerifyArtifact(modelPath, digest, nil, true)
+				if err != nil {
+					t.Fatalf("VerifyArtifact: %v", err)
+				}
+				previous = &verification
+			}
+			if tt.corrupt {
+				digest.SHA256 = strings.Repeat("0", 64)
+			}
+
+			var messages []string
+			log := func(ctx context.Context, msg string, args ...any) {
+				messages = append(messages, msg)
+			}
+			_, _, err := VerifyArtifactWithLogger(t.Context(), log, modelPath, digest, previous, tt.checkSHA)
+			if (err != nil) != tt.corrupt {
+				t.Fatalf("error: got %v, want mismatch %t", err, tt.corrupt)
+			}
+			if len(messages) != tt.wantLogs {
+				t.Fatalf("logs: got %v, want %d messages", messages, tt.wantLogs)
+			}
+			if tt.wantLogs > 0 && !strings.Contains(messages[0], "verifying SHA-256 for model.gguf") {
+				t.Errorf("start log: got %q, want verification start", messages[0])
+			}
+			if tt.wantLogs == 2 && !strings.Contains(messages[1], "SHA-256 verified for model.gguf in ") {
+				t.Errorf("completion log: got %q, want success with duration", messages[1])
+			}
+		})
 	}
 }

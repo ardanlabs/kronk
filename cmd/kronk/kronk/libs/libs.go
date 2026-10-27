@@ -16,7 +16,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/libs"
 )
 
-func runWeb(upgrade bool, version string) error {
+func runWeb(ctx context.Context, upgrade bool, version string) error {
 	url, err := client.DefaultURL("/v1/kronk/libs/pull")
 	if err != nil {
 		return fmt.Errorf("libs: default: %w", err)
@@ -40,25 +40,35 @@ func runWeb(upgrade bool, version string) error {
 		client.WithBearer(os.Getenv("KRONK_TOKEN")),
 	)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 
 	ch := make(chan toolapp.VersionResponse)
-	if err := cln.Do(ctx, http.MethodPost, url, nil, ch); err != nil {
+	errCh, err := cln.DoWithErrors(ctx, http.MethodPost, url, nil, ch)
+	if err != nil {
 		return fmt.Errorf("libs: unable to download libs: %w", err)
 	}
 
+	var status string
 	for ver := range ch {
 		fmt.Print(ver.Status)
+		status = ver.Status
 	}
 
 	fmt.Println()
 
+	if err := <-errCh; err != nil {
+		return fmt.Errorf("libs: unable to download libs: %w", err)
+	}
+	if status != "downloaded" && status != "using installed version" {
+		return fmt.Errorf("libs: install did not complete successfully: %s", status)
+	}
+
 	return nil
 }
 
-func runLocal(basePath string, upgrade bool, version string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+func runLocal(ctx context.Context, basePath string, upgrade bool, version string) error {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 
 	v := defaults.LibVersion("")

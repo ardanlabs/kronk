@@ -57,6 +57,10 @@ type batchEngine struct {
 	diagnosticGeneration      []BatchGenerationContribution
 	diagnosticLastPublished   time.Time
 
+	// Reused across iterations; ordinary progress is applied only after a
+	// successful submission, before speculative synchronization and sampling.
+	stagedGeneration []stagedSlotProgress
+
 	// Pre-allocated extended batch for isolated media work. Unsupported,
 	// unknown, non-causal, or capacity-constrained contributions use it.
 	mropeBatch *extendedBatch
@@ -245,6 +249,8 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 
 	// Clear the batch.
 	e.batch.clear()
+	clear(e.stagedGeneration)
+	e.stagedGeneration = e.stagedGeneration[:0]
 	for i := range e.batchReleased {
 		e.batchReleased[i] = false
 	}
@@ -322,9 +328,11 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 				e.finishSlot(s, fmt.Errorf("add M-RoPE generation token: %w", err))
 				continue
 			}
-			s.iBatch = idx
+			e.stagedGeneration = append(e.stagedGeneration, stagedSlotProgress{
+				slot: s, nextPast: s.nPast + 1, outputIndex: idx,
+			})
 			e.speculation.TargetRowsStaged(s.id, speculation.TargetRange{
-				Start:   s.iBatch,
+				Start:   idx,
 				Count:   1,
 				BasePos: s.nPast,
 			})
@@ -337,7 +345,6 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 				Rows:   1,
 				Mode:   "mrope-shared",
 			})
-			s.nPast++
 			continue
 		}
 
@@ -393,9 +400,11 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 			e.finishSlot(s, fmt.Errorf("add generation token: %w", err))
 			continue
 		}
-		s.iBatch = idx
+		e.stagedGeneration = append(e.stagedGeneration, stagedSlotProgress{
+			slot: s, nextPast: s.nPast + 1, outputIndex: idx,
+		})
 		e.speculation.TargetRowsStaged(s.id, speculation.TargetRange{
-			Start:   s.iBatch,
+			Start:   idx,
 			Count:   1,
 			BasePos: s.nPast,
 		})
@@ -408,7 +417,6 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 			Rows:   1,
 			Mode:   "ordinary",
 		})
-		s.nPast++
 	}
 	generationRows := e.batch.len()
 	e.diagnosticGenerationRows = generationRows - batchRowsBeforeGeneration
@@ -422,6 +430,8 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	prefillSlots := e.prefillSlotIDs()
 	selectorStart := e.prefillNext
 	s, idx := e.nextPrefillSlot()
+	var stagedPrefill stagedTextPrefill
+	selectorNext := selectorStart
 	e.diagnosticPrefillStart = selectorStart
 	if s != nil && e.batch.len() >= e.model.cfg.EffectiveNBatch() {
 		e.model.log(s.job.ctx, "batch-engine", "status", "prefill-deferred",
@@ -439,17 +449,19 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 	}
 	if s != nil && e.batch.len() < e.model.cfg.EffectiveNBatch() {
 		beforeSlot := e.batch.len()
-		if !e.addPrefillChunk(s, e.model.cfg.PrefillBatchSize()) {
+		var ok bool
+		stagedPrefill, ok = e.addPrefillChunk(s, e.model.cfg.PrefillBatchSize())
+		if !ok {
 			if s.job != nil {
 				e.finishSlot(s, e.slotCancelError(s))
 			}
 		} else if e.batch.len() > beforeSlot {
 			e.diagnosticPrefillSelected = idx
-			prefillComplete := s.prefillTokens == nil
+			prefillComplete := stagedPrefill.complete
 			if prefillComplete {
-				e.prefillNext = (idx + 1) % len(e.slots)
+				selectorNext = (idx + 1) % len(e.slots)
 			} else {
-				e.prefillNext = idx
+				selectorNext = idx
 			}
 			e.model.log(s.job.ctx, "batch-engine", "status", "prefill-scheduled",
 				"iteration", iteration,
@@ -457,12 +469,12 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 				"prefill_slots", fmt.Sprintf("%v", prefillSlots),
 				"generation_contributions", fmt.Sprintf("%v", generationContributions),
 				"chunk_tokens", e.batch.len()-beforeSlot,
-				"prefill_remaining", max(0, len(s.prefillTokens)-s.nPrefilled),
+				"prefill_remaining", len(s.prefillTokens)-stagedPrefill.nextPrefilled,
 				"prefill_complete", prefillComplete,
 				"selector_start", selectorStart,
 				"selector_selected", idx,
-				"selector_next", e.prefillNext,
-				"next_slot", e.prefillNext,
+				"selector_next", selectorNext,
+				"next_slot", selectorNext,
 				"generation_rows", generationRows,
 				"tray_tokens", e.batch.len(),
 				"nbatch", e.model.cfg.EffectiveNBatch(),
@@ -597,6 +609,18 @@ func (e *batchEngine) processBatch(ctx context.Context, buf []byte) {
 			}
 		}
 		return
+	}
+	// Submission succeeded. Output-free text may still be in flight; do not
+	// add a completion wait here. Released slots cannot be reused in this tray
+	// and must not receive pending progress after their state has been reset.
+	for _, progress := range e.stagedGeneration {
+		if progress.slot.active {
+			progress.commit()
+		}
+	}
+	if stagedPrefill.slot != nil && stagedPrefill.slot.active {
+		stagedPrefill.commit()
+		e.prefillNext = selectorNext
 	}
 	if trackIMCSchedule && e.diagnosticGenerationRows > 0 {
 		e.model.log(ctx, "batch-engine", "status", "imc-generation-decoded",

@@ -1,23 +1,28 @@
-package modelprofile
+package arch
 
 import (
 	"fmt"
 	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 )
 
-type lfm2Adapter struct{}
+// LFM2 normalizes LFM2 attention and short-convolution state.
+type LFM2 struct{}
 
-func (lfm2Adapter) Name() string { return "lfm2" }
+// Name returns the adapter's diagnostic name.
+func (LFM2) Name() string { return "lfm2" }
 
-func (lfm2Adapter) Claims(architecture string) bool {
+// Claims reports whether the architecture uses this adapter.
+func (LFM2) Claims(architecture string) bool {
 	return strings.EqualFold(architecture, "lfm2")
 }
 
-func (lfm2Adapter) Apply(metadata metadata, profile *Profile) error {
-	profile.ComputeKind = ComputeLFM2
-	profile.MemorySemantics = MemoryRecurrent
+// Apply normalizes per-layer attention and short-convolution state dimensions.
+func (LFM2) Apply(metadata Metadata, profile *modelprofile.Profile) error {
+	profile.ComputeKind = modelprofile.ComputeLFM2
+	profile.MemorySemantics = modelprofile.MemoryRecurrent
 	blocks := profile.Dimensions.BlockCount
 	if blocks <= 0 {
 		return nil

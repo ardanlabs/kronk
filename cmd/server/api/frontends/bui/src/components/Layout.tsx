@@ -195,6 +195,7 @@ const menuStructure: MenuCategory[] = [
             { page: 'docs-sdk-examples', label: 'Chat', hash: 'example-chat' },
             { page: 'docs-sdk-examples', label: 'Concurrency', hash: 'example-concurrency' },
             { page: 'docs-sdk-examples', label: 'Decision', hash: 'example-decision' },
+            { page: 'docs-sdk-examples', label: 'Decision (Image)', hash: 'example-decision-image' },
             { page: 'docs-sdk-examples', label: 'Embedding', hash: 'example-embedding' },
             { page: 'docs-sdk-examples', label: 'Grammar', hash: 'example-grammar' },
             { page: 'docs-sdk-examples', label: 'Malina', hash: 'example-malina' },
@@ -328,6 +329,28 @@ export default function Layout({ children }: LayoutProps) {
   const { session, setSession, selectedModel, setChatMessages } = usePlayground();
   const { theme, toggleTheme } = useTheme();
   const { authenticationRequired, logout } = useAuth();
+
+  const [serverVersion, setServerVersion] = useState<string>();
+
+  useEffect(() => {
+    let active = true;
+    const refreshVersion = async () => {
+      try {
+        const info = await api.getLiveness();
+        if (active) setServerVersion(info.build);
+      } catch {
+        // Version discovery must not prevent use of the BUI.
+        if (active) setServerVersion(undefined);
+      }
+    };
+
+    void refreshVersion();
+    window.addEventListener('focus', refreshVersion);
+    return () => {
+      active = false;
+      window.removeEventListener('focus', refreshVersion);
+    };
+  }, []);
 
   // Unload the active Basic session from the sidebar indicator.
   const [unloadingSession, setUnloadingSession] = useState(false);
@@ -899,6 +922,11 @@ export default function Layout({ children }: LayoutProps) {
             </svg>
           )}
         </button>
+        {serverVersion && (
+          <div className="sidebar-version" title={`Kronk v${serverVersion}`}>
+            <span className="sidebar-version-brand">Kronk v</span>{serverVersion}
+          </div>
+        )}
       </aside>
       <main className="main-content">{children}</main>
     </div>

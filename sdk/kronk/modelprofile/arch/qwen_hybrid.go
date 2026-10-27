@@ -1,17 +1,21 @@
-package modelprofile
+package arch
 
 import (
 	"strconv"
 	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 )
 
-type qwenHybridAdapter struct{}
+// QwenHybrid normalizes Qwen hybrid attention, recurrence, and indexed caches.
+type QwenHybrid struct{}
 
-func (qwenHybridAdapter) Name() string { return "qwen-hybrid" }
+// Name returns the adapter's diagnostic name.
+func (QwenHybrid) Name() string { return "qwen-hybrid" }
 
-func (qwenHybridAdapter) Claims(architecture string) bool {
+// Claims reports whether the architecture uses this adapter.
+func (QwenHybrid) Claims(architecture string) bool {
 	switch strings.ToLower(architecture) {
 	case "qwen35", "qwen35moe", "qwen4exp":
 		return true
@@ -20,12 +24,13 @@ func (qwenHybridAdapter) Claims(architecture string) bool {
 	}
 }
 
-func (qwenHybridAdapter) Apply(metadata metadata, profile *Profile) error {
-	profile.MemorySemantics = MemoryRecurrent
+// Apply normalizes hybrid layer patterns, recurrent state, and indexed caches.
+func (QwenHybrid) Apply(metadata Metadata, profile *modelprofile.Profile) error {
+	profile.MemorySemantics = modelprofile.MemoryRecurrent
 
 	arch := profile.Architecture
 	if arch == "qwen35" || arch == "qwen35moe" {
-		profile.ComputeKind = ComputeQwen35
+		profile.ComputeKind = modelprofile.ComputeQwen35
 	}
 	blockCount := profile.Dimensions.BlockCount
 	if blockCount <= 0 {
@@ -44,7 +49,7 @@ func (qwenHybridAdapter) Apply(metadata metadata, profile *Profile) error {
 		keyLength := parseInt64(metadata, arch+".attention.indexer.key_length")
 		a.IndexerKeyLength = 2 * max(keyLength, 0)
 		if a.IndexerKeyLength > 0 {
-			profile.ComputeKind = ComputeIndexed
+			profile.ComputeKind = modelprofile.ComputeIndexed
 		}
 		a.IndexerTopK = parseInt64(metadata, arch+".attention.indexer.top_k")
 		ratios, _ := gguf.ParseInt64OrArray(metadata.values, arch+".attention.compress_ratios")

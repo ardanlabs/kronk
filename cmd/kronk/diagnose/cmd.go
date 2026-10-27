@@ -3,12 +3,7 @@
 // to help debug problems on a user's machine.
 package diagnose
 
-import (
-	"fmt"
-	"os"
-
-	"github.com/spf13/cobra"
-)
+import "github.com/spf13/cobra"
 
 // Cmd is the "kronk diagnose" command.
 var Cmd = &cobra.Command{
@@ -43,14 +38,31 @@ EXAMPLES
   # Benchmark a specific model (source or local .gguf path)
   kronk diagnose --model unsloth/Qwen3-1.7B-UD-Q8_K_XL`,
 	Args: cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		code, err := run(cmd)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
+		if code != 0 {
+			return commandError{code: code, err: err}
 		}
-		os.Exit(code)
+		return err
 	},
 }
+
+// commandError preserves the diagnostic exit code without repeating a report.
+type commandError struct {
+	code int
+	err  error
+}
+
+func (e commandError) Error() string {
+	if e.err != nil {
+		return e.err.Error()
+	}
+	return ""
+}
+
+func (e commandError) ExitCode() int { return e.code }
+
+func (e commandError) Unwrap() error { return e.err }
 
 func init() {
 	Cmd.Flags().String("format", "text", "Output format: text, json, or yaml")

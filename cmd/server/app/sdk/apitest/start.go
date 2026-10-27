@@ -31,14 +31,36 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 )
 
-// New initialized the system to run a test.
+// New initializes the system using the deployment model configuration.
 func New(t *testing.T, testName string) *Test {
+	return NewWithModelConfig(t, testName, "../../../../../../zarf/kms/model_config.yaml")
+}
+
+// NewWithModelConfig initializes the system using a test-owned model configuration.
+func NewWithModelConfig(t *testing.T, testName, modelConfigFile string) *Test {
+	t.Helper()
 	ctx := context.Background()
+	at := new(Test)
 
 	// -------------------------------------------------------------------------
 
 	var buf bytes.Buffer
-	log := logger.New(&buf, logger.LevelInfo, "TEST", web.GetTraceID)
+	log := logger.NewWithEvents(&buf, logger.LevelInfo, "TEST", web.GetTraceID, logger.Events{
+		Info: func(_ context.Context, record logger.Record) {
+			switch record.Message {
+			case "batch-engine":
+				if record.Attributes["status"] != "media-plan" {
+					return
+				}
+			case "prefill-media", "request-lifecycle", "speculative", "draft-model", "draft-model-mtp", "draft-model-mtp-separate", "draft-model-mtp-shared":
+			default:
+				return
+			}
+			at.eventsMu.Lock()
+			at.events = append(at.events, record)
+			at.eventsMu.Unlock()
+		},
+	})
 
 	// -------------------------------------------------------------------------
 
@@ -210,7 +232,7 @@ func New(t *testing.T, testName string) *Test {
 		KronkModels:     models,
 		BuckyModels:     buckyModels,
 		MalinaModels:    malinaModels,
-		ModelConfigFile: "../../../../../../zarf/kms/model_config.yaml",
+		ModelConfigFile: modelConfigFile,
 		BudgetPercent:   90,
 		ModelsInPool:    10,
 		TTL:             5 * time.Minute,
@@ -260,8 +282,6 @@ func New(t *testing.T, testName string) *Test {
 		build.Routes(),
 	)
 
-	return &Test{
-		Sec: sec,
-		mux: mux,
-	}
+	at.Sec, at.Pool, at.mux = sec, p, mux
+	return at
 }

@@ -45,7 +45,7 @@ func (o installOpts) requireTriple() error {
 
 // runInstallLocal handles every install-related subcommand against an
 // in-process libs.Libs without contacting a running server.
-func runInstallLocal(opts installOpts) error {
+func runInstallLocal(ctx context.Context, opts installOpts) error {
 	if opts.listCombo {
 		printCombinations(libs.SupportedCombinations())
 		return nil
@@ -83,7 +83,7 @@ func runInstallLocal(opts installOpts) error {
 			return fmt.Errorf("bucky libs: unsupported combination arch=%s os=%s processor=%s", opts.arch, opts.os, opts.processor)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+		ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 		defer cancel()
 
 		if _, err := lib.DownloadFor(ctx, bucky.FmtLogger, opts.arch, opts.os, opts.processor, opts.version); err != nil {
@@ -101,7 +101,7 @@ func runInstallLocal(opts installOpts) error {
 // runInstallWeb handles every install-related subcommand by issuing
 // requests to a running model server using the same client transport
 // as the existing bucky CLI commands.
-func runInstallWeb(opts installOpts) error {
+func runInstallWeb(ctx context.Context, opts installOpts) error {
 	switch {
 	case opts.listCombo:
 		return webListCombinations()
@@ -119,7 +119,7 @@ func runInstallWeb(opts installOpts) error {
 		if err := opts.requireTriple(); err != nil {
 			return err
 		}
-		return webPullInstall(opts)
+		return webPullInstall(ctx, opts)
 	}
 
 	return fmt.Errorf("bucky libs: no install operation requested")
@@ -173,7 +173,7 @@ func webMutateInstall(method string, path string, opts installOpts) error {
 	return nil
 }
 
-func webPullInstall(opts installOpts) error {
+func webPullInstall(ctx context.Context, opts installOpts) error {
 	q := neturl.Values{}
 	q.Set("arch", opts.arch)
 	q.Set("os", opts.os)
@@ -193,18 +193,27 @@ func webPullInstall(opts installOpts) error {
 		client.WithBearer(os.Getenv("KRONK_TOKEN")),
 	)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 
 	ch := make(chan toolapp.VersionResponse)
-	if err := cln.Do(ctx, http.MethodPost, url, nil, ch); err != nil {
+	errCh, err := cln.DoWithErrors(ctx, http.MethodPost, url, nil, ch)
+	if err != nil {
 		return fmt.Errorf("bucky libs: install: %w", err)
 	}
 
+	var status string
 	for ver := range ch {
 		fmt.Print(ver.Status)
+		status = ver.Status
 	}
 	fmt.Println()
+	if err := <-errCh; err != nil {
+		return fmt.Errorf("bucky libs: install: %w", err)
+	}
+	if status != "downloaded" {
+		return fmt.Errorf("bucky libs: install did not complete successfully: %s", status)
+	}
 	return nil
 }
 

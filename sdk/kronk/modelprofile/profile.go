@@ -1,12 +1,10 @@
-// Package modelprofile owns the translation from raw GGUF metadata into
-// architecture-independent model capabilities. Runtime and tooling packages
-// consume Profile values and must not interpret architecture names directly.
+// Package modelprofile defines normalized model capabilities shared by runtime
+// and tooling. Architecture adapters in modelprofile/arch populate these facts.
 package modelprofile
 
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 )
@@ -41,6 +39,11 @@ type Modalities struct {
 	Video bool
 }
 
+// BatchCapabilities contains model-level batch composition capabilities.
+type BatchCapabilities struct {
+	InputMixing BatchInputMixing
+}
+
 // Profile is the normalized view of one model artifact.
 type Profile struct {
 	Architecture           string
@@ -66,30 +69,9 @@ type Profile struct {
 	issues []error
 }
 
-// Resolve translates raw GGUF metadata into normalized model capabilities.
-// Missing optional fields retain their zero values; consumers validate the
-// subset required for their operation.
-func Resolve(values map[string]string) Profile {
-	metadata := newMetadata(values)
-	profile := resolveGeneric(metadata)
-
-	for _, adapter := range architectureAdapters {
-		if !adapter.Claims(profile.Architecture) {
-			continue
-		}
-		if err := adapter.Apply(metadata, &profile); err != nil {
-			profile.issues = append(profile.issues, fmt.Errorf("%s profile: %w", adapter.Name(), err))
-		}
-	}
-	if profile.Role == RoleLanguage {
-		profile.Batch = batchCapabilities(profile.Architecture)
-	}
-	profile.SupportsTensorParallel = profile.Role == RoleLanguage && supportsTensorParallel(profile.Architecture)
-
-	profile.Attention.NextNPredictLayers = profile.Speculation.NextNPredictLayers
-	profile.SequenceProcessing = sequenceProcessing(metadata, profile)
-
-	return profile
+// AddIssue retains a resolution error for operation-specific validation.
+func AddIssue(profile *Profile, err error) {
+	profile.issues = append(profile.issues, err)
 }
 
 // ParameterActivation reports feed-forward parameter activation independently
@@ -99,49 +81,6 @@ func (p Profile) ParameterActivation() string {
 		return "MoE"
 	}
 	return "Dense"
-}
-
-// sequenceProcessing describes topology without changing runtime memory facts.
-func sequenceProcessing(metadata metadata, p Profile) string {
-	if p.Architecture == "" {
-		return "Unknown"
-	}
-	// Some architectures expose a layer pattern without a runtime adapter.
-	// Use it for catalog classification without altering memory accounting.
-	if p.Attention.RecurrentPattern == nil && p.Dimensions.BlockCount > 0 {
-		if pattern, ok := parseBoolPattern(metadata.value(p.Architecture+".attention.recurrent_layers"), p.Dimensions.BlockCount); ok {
-			p.Attention.RecurrentPattern = pattern
-			p.Attention.RecurrentLayers = 0
-			trunkLayers := max(p.Dimensions.BlockCount-p.Speculation.NextNPredictLayers, 0)
-			for _, recurrent := range pattern[:trunkLayers] {
-				if recurrent {
-					p.Attention.RecurrentLayers++
-				}
-			}
-			p.Attention.FullAttentionLayers = trunkLayers - p.Attention.RecurrentLayers
-			p.Attention.SlidingWindowLayers = 0
-		}
-	}
-	if p.Attention.RecurrentPattern != nil {
-		switch {
-		case p.Attention.RecurrentLayers == 0:
-			return "Attention-only"
-		case p.Attention.FullAttentionLayers+p.Attention.SlidingWindowLayers > 0:
-			return "Hybrid"
-		default:
-			return "Recurrent"
-		}
-	}
-	if p.MemorySemantics != MemoryRecurrent {
-		return "Attention-only"
-	}
-	if strings.HasPrefix(strings.ToLower(p.Architecture), "mamba") {
-		return "Recurrent"
-	}
-	if (knownRecurrentAdapter{}).Claims(p.Architecture) || (qwenHybridAdapter{}).Claims(p.Architecture) {
-		return "Hybrid"
-	}
-	return "Unknown"
 }
 
 // ValidateForVRAM verifies the facts required to calculate language-model

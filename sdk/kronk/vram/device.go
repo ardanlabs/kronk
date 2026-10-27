@@ -40,31 +40,7 @@ func CalculatePerDevice(modelWeightsGPU, slotMemory, computeBufferEst, deviceCou
 		}}
 	}
 
-	fractions := make([]float64, deviceCount)
-	if int64(len(tensorSplit)) == deviceCount {
-		var sum float64
-		for i, v := range tensorSplit {
-			if v < 0 || v != v { // NaN check
-				v = 0
-			}
-			fractions[i] = v
-			sum += v
-		}
-		if sum > 0 {
-			for i := range fractions {
-				fractions[i] /= sum
-			}
-		} else {
-			for i := range fractions {
-				fractions[i] = 1.0 / float64(deviceCount)
-			}
-		}
-	} else {
-		for i := range fractions {
-			fractions[i] = 1.0 / float64(deviceCount)
-		}
-	}
-
+	fractions := deviceFractions(deviceCount, tensorSplit)
 	out := make([]PerDeviceVRAM, 0, deviceCount)
 	wRemaining := modelWeightsGPU
 	kvRemaining := slotMemory
@@ -105,10 +81,41 @@ func CalculatePerDevice(modelWeightsGPU, slotMemory, computeBufferEst, deviceCou
 // actual eligible layer placement and free-memory-based splitting may differ.
 func (r Result) CalculatePerDevice(deviceCount int64, tensorSplit []float64, deviceLabels []string, mainGPUIndex int) []PerDeviceVRAM {
 	devices := CalculatePerDevice(r.ModelWeightsGPU, r.KVVRAMBytes, r.ComputeBufferEst, deviceCount, tensorSplit, deviceLabels, mainGPUIndex)
+	if policy := selectMemoryPolicy(r.Input); policy.deviceCache != nil && deviceCount > 1 {
+		kv := policy.deviceCache(r.Input, deviceFractions(deviceCount, tensorSplit))
+		for i := range devices {
+			devices[i].TotalBytes += kv[i] - devices[i].KVBytes
+			devices[i].KVBytes = kv[i]
+		}
+	}
 	cache := CalculatePerDevice(r.MoECacheBytes, 0, 0, deviceCount, tensorSplit, nil, mainGPUIndex)
 	for i := range devices {
 		devices[i].MoECacheBytes = cache[i].WeightsBytes
 		devices[i].TotalBytes += devices[i].MoECacheBytes
 	}
 	return devices
+}
+
+func deviceFractions(deviceCount int64, tensorSplit []float64) []float64 {
+	fractions := make([]float64, deviceCount)
+	if int64(len(tensorSplit)) == deviceCount {
+		var sum float64
+		for i, v := range tensorSplit {
+			if v < 0 || v != v { // NaN check
+				v = 0
+			}
+			fractions[i] = v
+			sum += v
+		}
+		if sum > 0 {
+			for i := range fractions {
+				fractions[i] /= sum
+			}
+			return fractions
+		}
+	}
+	for i := range fractions {
+		fractions[i] = 1.0 / float64(deviceCount)
+	}
+	return fractions
 }

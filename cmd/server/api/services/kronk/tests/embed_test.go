@@ -7,6 +7,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/apitest"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/errs"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/kronk/tests/testlib"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
@@ -58,16 +59,8 @@ func chatEmbed200(tokens map[string]string) []apitest.Table {
 					return fmt.Sprintf("response wrong type: %T", got)
 				}
 
-				if len(expResp.Data) != 1 {
-					return fmt.Sprintf("expected length of 1, got %d", len(expResp.Data))
-				}
-
-				if len(expResp.Data[0].Embedding) != embeddingDimension {
-					return fmt.Sprintf("expecting a vector of %d dimensions", embeddingDimension)
-				}
-
-				if expResp.Usage.PromptTokens == 0 {
-					return "expected prompt tokens to be non-zero"
+				if err := testlib.CheckEmbeddings(*expResp, embeddingModelID, 1, embeddingDimension); err != nil {
+					return err.Error()
 				}
 
 				return ""
@@ -113,20 +106,8 @@ func chatEmbed200(tokens map[string]string) []apitest.Table {
 					return fmt.Sprintf("response wrong type: %T", got)
 				}
 
-				if len(expResp.Data) != 2 {
-					return fmt.Sprintf("expected length of 2, got %d", len(expResp.Data))
-				}
-
-				if len(expResp.Data[0].Embedding) != embeddingDimension {
-					return fmt.Sprintf("expecting a vector of %d dimensions", embeddingDimension)
-				}
-
-				if len(expResp.Data[1].Embedding) != embeddingDimension {
-					return fmt.Sprintf("expecting a vector of %d dimensions", embeddingDimension)
-				}
-
-				if expResp.Usage.PromptTokens == 0 {
-					return "expected prompt tokens to be non-zero"
+				if err := testlib.CheckEmbeddings(*expResp, embeddingModelID, 2, embeddingDimension); err != nil {
+					return err.Error()
 				}
 
 				return ""

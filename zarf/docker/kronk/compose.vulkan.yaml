@@ -30,7 +30,7 @@ services:
       - ${KRONK_VIDEO_GID:-video}
       - ${KRONK_RENDER_GID:-render}
     environment:
-      - KRONK_DOWNLOAD_ENABLED=${KRONK_DOWNLOAD_ENABLED:-true}
+      - KRONK_DOWNLOAD_ENABLED=${KRONK_DOWNLOAD_ENABLED:-false}
       # The debug server (metrics, pprof, statsviz) defaults to 127.0.0.1
       # inside the container, which makes the published port unreachable.
       - KRONK_WEB_DEBUG_HOST=0.0.0.0:11445

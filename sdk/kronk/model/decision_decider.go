@@ -30,7 +30,10 @@ func newDeciderProtocol(m *Model) (decisionProtocol, error) {
 		return llama.Tokenize(m.vocab, text, false, special)
 	}}
 	if m.modelInfo.decisionProtocol != DecisionProtocolLfm2D1 {
-		p.labelTokens, p.labels = decisionLabelTokens(m.vocab)
+		p.labelTokens, p.labels, err = m.decisionLabelTokens()
+		if err != nil {
+			return nil, fmt.Errorf("init-decider: %w", err)
+		}
 		if len(p.labels) < 9 {
 			return nil, fmt.Errorf("init-decider: tokenizer provides %d single-token labels, need at least 9", len(p.labels))
 		}

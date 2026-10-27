@@ -16,6 +16,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/kronk/tests/testlib"
 )
 
 var grammarJSONObject = `root ::= object
@@ -38,7 +39,7 @@ const (
 )
 
 func Test_API(t *testing.T) {
-	test := apitest.New(t, "Test_API")
+	test := apitest.NewWithModelConfig(t, "Test_API", "testdata/model_config.yaml")
 
 	tokens := createTokens(t, test.Sec)
 
@@ -54,23 +55,48 @@ func Test_API(t *testing.T) {
 	test.Run(t, chatContextOverflowQwen3(tokens), "chat-context-overflow-qwen3")
 	test.Run(t, chatArrayFormatQwen3(t, tokens), "chat-array-format-qwen3")
 	test.RunStreaming(t, chatArrayFormatStreamQwen3(t, tokens), "chat-array-format-stream-qwen3")
-	test.RunStreaming(t, chatStreamIMCQwen3(t, tokens), "chat-stream-imc-qwen3")
+	test.RunStreaming(t, chatStreamOptionsQwen3(tokens), "chat-stream-options-qwen3")
+	t.Run("chat-stream-imc-qwen3", func(t *testing.T) {
+		chatStreamState(t, test, tokens["chat-completions"], qwen3ModelID, true)
+	})
 	test.Run(t, chatGrammarQwen3(t, tokens), "chat-grammar-qwen3")
 	test.RunStreaming(t, chatGrammarStreamQwen3(t, tokens), "chat-grammar-stream-qwen3")
 	test.Run(t, chatToolCallQwen3(t, tokens), "chat-toolcall-qwen3")
 	test.RunStreaming(t, chatToolCallStreamQwen3(t, tokens), "chat-toolcall-stream-qwen3")
 	test.Run(t, respNonStreamQwen3(t, tokens), "resp-nonstream-qwen3")
 	test.RunStreaming(t, respStreamQwen3(t, tokens), "resp-stream-qwen3")
+	test.RunStreaming(t, respStreamContractsQwen3(t, tokens), "resp-stream-contracts-qwen3")
 	test.Run(t, msgsNonStreamQwen3(t, tokens), "msgs-nonstream-qwen3")
 	test.RunStreaming(t, msgsStreamQwen3(t, tokens), "msgs-stream-qwen3")
 	test.Run(t, tokenize200(tokens), "tokenize-200")
+	t.Run("chat-transport-qwen3", func(t *testing.T) {
+		chatTransport(t, test, tokens["chat-completions"], qwen3ModelID, 1)
+	})
+	t.Run("chat-stream-imc-off-qwen3", func(t *testing.T) {
+		chatStreamState(t, test, tokens["chat-completions"], qwen3ModelID+"/IMCOff", false)
+	})
+	t.Run("chat-transport-peer-qwen3", func(t *testing.T) {
+		chatTransport(t, test, tokens["chat-completions"], qwen3ModelID+"/Transport2", 2)
+	})
 
 	// -------------------------------------------------------------------------
 	// Model: Qwen3.5-0.8B-Q8_0 (vision)
 
+	t.Run("chat-stream-imc-qwen35", func(t *testing.T) {
+		chatStreamState(t, test, tokens["chat-completions"], visionModelID, true)
+	})
 	test.Run(t, chatImageQwen35(t, tokens), "chat-image-qwen35")
 	test.Run(t, respImageQwen35(t, tokens), "resp-image-qwen35")
 	test.Run(t, msgsImageQwen35(t, tokens), "msgs-image-qwen35")
+	t.Run("chat-media-state-qwen35", func(t *testing.T) {
+		chatMediaState(t, test, tokens["chat-completions"], visionModelID)
+	})
+	t.Run("chat-transport-qwen35", func(t *testing.T) {
+		chatTransport(t, test, tokens["chat-completions"], visionModelID, 1)
+	})
+	t.Run("chat-transport-peer-qwen35", func(t *testing.T) {
+		chatTransport(t, test, tokens["chat-completions"], visionModelID+"/Transport2", 2)
+	})
 
 	// -------------------------------------------------------------------------
 	// Model: Qwen2.5-Omni-3B-Q4_K_M (audio)
@@ -83,11 +109,17 @@ func Test_API(t *testing.T) {
 	// Model: nomic-embed-text-v1.5.Q8_0
 
 	test.Run(t, chatEmbed200(tokens), "embedding-200")
+	t.Run("embedding-integrity", func(t *testing.T) {
+		operationIntegrity(t, test, tokens["embeddings"], embeddingModelID, "/v1/embeddings")
+	})
 
 	// -------------------------------------------------------------------------
 	// Model: bge-reranker-v2-m3-Q8_0
 
 	test.Run(t, rerank200(tokens), "rerank-200")
+	t.Run("rerank-integrity", func(t *testing.T) {
+		operationIntegrity(t, test, tokens["rerank"], "gpustack/bge-reranker-v2-m3-Q8_0", "/v1/rerank")
+	})
 
 	// -------------------------------------------------------------------------
 	// Model: Jev-Style-0.8B-Decision-v3-Q8_0
@@ -486,7 +518,7 @@ func (v responseValidator) hasLogprobs(topLogprobs int) responseValidator {
 	return v
 }
 
-func (v responseValidator) hasValidJSON() responseValidator {
+func (v responseValidator) hasGrammarJSON() responseValidator {
 	if len(v.resp.Choices) == 0 {
 		v.errors = append(v.errors, "expected at least one choice")
 		return v
@@ -498,44 +530,17 @@ func (v responseValidator) hasValidJSON() responseValidator {
 		return v
 	}
 
-	var js any
-	if err := json.Unmarshal([]byte(content), &js); err != nil {
-		v.errors = append(v.errors, fmt.Sprintf("expected valid JSON, got parse error: %v, content: %s", err, content))
+	if result := testlib.TestGrammarStreamingContent(content, v.resp.Model); result.Err != nil {
+		v.errors = append(v.errors, result.Err.Error())
 	}
 
 	return v
 }
 
-func (v responseValidator) hasToolCalls(funcName string) responseValidator {
-	if len(v.resp.Choices) == 0 {
-		v.errors = append(v.errors, "expected at least one choice")
-		return v
-	}
-
-	choice := v.resp.Choices[0]
-
-	// Check finish reason is "tool_calls".
-	if choice.FinishReason() != "tool_calls" {
-		v.errors = append(v.errors, fmt.Sprintf("expected finish_reason to be 'tool_calls', got '%s'", choice.FinishReason()))
-		return v
-	}
-
-	// For non-streaming: check tool calls in Message.
-	// For streaming: check tool calls in Delta.
-	switch v.streaming {
-	case true:
-		if choice.Delta == nil || len(choice.Delta.ToolCalls) == 0 {
-			v.errors = append(v.errors, "expected tool calls in Delta for streaming")
-		} else if !strings.Contains(strings.ToLower(choice.Delta.ToolCalls[0].Function.Name), strings.ToLower(funcName)) {
-			v.errors = append(v.errors, fmt.Sprintf("expected Delta tool call function name to contain '%s', got '%s'", funcName, choice.Delta.ToolCalls[0].Function.Name))
-		}
-
-	default:
-		if choice.Message == nil || len(choice.Message.ToolCalls) == 0 {
-			v.errors = append(v.errors, "expected tool calls in Message")
-		} else if !strings.Contains(strings.ToLower(choice.Message.ToolCalls[0].Function.Name), strings.ToLower(funcName)) {
-			v.errors = append(v.errors, fmt.Sprintf("expected tool call function name to contain '%s', got '%s'", funcName, choice.Message.ToolCalls[0].Function.Name))
-		}
+func (v responseValidator) hasToolCalls(funcName string, argName string, find string) responseValidator {
+	result := testlib.TestChatResponse(*v.resp, v.resp.Model, v.resp.Object, find, funcName, argName, v.streaming, false)
+	if result.Err != nil {
+		v.errors = append(v.errors, result.Err.Error())
 	}
 
 	return v
@@ -600,8 +605,10 @@ func validateChatUsageStreamReasoning(events []json.RawMessage, reasoning bool) 
 	if trailer.Usage.TotalTokens != trailer.Usage.PromptTokens+trailer.Usage.CompletionTokens {
 		return fmt.Sprintf("usage event total_tokens: got %d, want prompt_tokens + completion_tokens", trailer.Usage.TotalTokens)
 	}
-	if trailer.Usage.TokensPerSecond <= 0 {
-		return fmt.Sprintf("usage event tokens_per_second: got %f, want greater than 0", trailer.Usage.TokensPerSecond)
+	// Decode throughput excludes the first token (which arrives with prefill).
+	// A one-token, length-limited completion therefore legitimately reports zero.
+	if trailer.Usage.TokensPerSecond < 0 || (trailer.Usage.CompletionTokens > 1 && trailer.Usage.TokensPerSecond == 0) {
+		return fmt.Sprintf("usage event tokens_per_second: got %f, want nonnegative and positive for multiple tokens", trailer.Usage.TokensPerSecond)
 	}
 	if trailer.ID != terminal.ID ||
 		trailer.Object != terminal.Object ||
@@ -614,7 +621,7 @@ func validateChatUsageStreamReasoning(events []json.RawMessage, reasoning bool) 
 	return ""
 }
 
-func validateToolCallStream(events []json.RawMessage, funcName string, argName string) string {
+func validateToolCallStream(events []json.RawMessage, funcName string, argName string, find string) string {
 	type functionDelta struct {
 		Name      string `json:"name"`
 		Arguments string `json:"arguments"`
@@ -683,7 +690,7 @@ func validateToolCallStream(events []json.RawMessage, funcName string, argName s
 				return fmt.Sprintf("stream event %d: tool call type: got %q, want %q", i, toolCall.Type, "function")
 			}
 			if toolCall.Function.Name != "" {
-				if !strings.EqualFold(toolCall.Function.Name, funcName) {
+				if toolCall.Function.Name != funcName {
 					return fmt.Sprintf("stream event %d: function name: got %q, want %q", i, toolCall.Function.Name, funcName)
 				}
 				seenFunctionName = true
@@ -709,8 +716,9 @@ func validateToolCallStream(events []json.RawMessage, funcName string, argName s
 	if err := json.Unmarshal([]byte(arguments.String()), &args); err != nil {
 		return fmt.Sprintf("streamed tool call arguments: expected valid JSON, got %q: %v", arguments.String(), err)
 	}
-	if _, exists := args[argName]; !exists {
-		return fmt.Sprintf("streamed tool call arguments: expected argument %q, got %v", argName, args)
+	value, ok := args[argName].(string)
+	if !ok || !strings.Contains(strings.ToLower(value), strings.ToLower(find)) {
+		return fmt.Sprintf("streamed tool call arguments: expected string argument %q containing %q, got %v", argName, find, args)
 	}
 
 	return ""

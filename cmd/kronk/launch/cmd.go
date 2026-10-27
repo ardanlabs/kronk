@@ -3,13 +3,11 @@ package launch
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"os/signal"
 	"slices"
 	"strings"
@@ -45,16 +43,7 @@ configuration is not loaded or modified.
 Run 'kronk launch opencode uninstall' to invoke OpenCode's confirmed uninstall
 flow.`,
 		Args: cobra.ArbitraryArgs,
-		Run: func(cmd *cobra.Command, args []string) {
-			if err := run(cmd, args); err != nil {
-				fmt.Fprintln(os.Stderr, err)
-
-				if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
-					os.Exit(exitErr.ExitCode())
-				}
-				os.Exit(1)
-			}
-		},
+		RunE: run,
 	}
 	cmd.Flags().String("host", "localhost:11435", "Address of the running Kronk server (IP:PORT)")
 

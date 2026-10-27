@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
 	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage/ram"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
@@ -39,7 +40,7 @@ func TestNewSessionStore_InjectedRAM(t *testing.T) {
 func TestNewSessionStore_CustomFactory(t *testing.T) {
 	var calls int
 	cfg := NewConfig(
-		WithSessionStoreFactory(func(ctx context.Context) (SessionStore, error) {
+		WithSessionStoreFactory(func(ctx context.Context) (kvstorage.Store, error) {
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
@@ -69,7 +70,7 @@ func TestNewSessionStore_CustomFactory(t *testing.T) {
 func TestNewSessionStore_CustomFactoryError(t *testing.T) {
 	wantErr := errors.New("unavailable")
 	cfg := Config{
-		SessionStoreFactory: func(context.Context) (SessionStore, error) {
+		SessionStoreFactory: func(context.Context) (kvstorage.Store, error) {
 			return nil, wantErr
 		},
 	}
@@ -87,7 +88,7 @@ func TestNewSessionStore_CustomFactoryError(t *testing.T) {
 // factory result fails during construction rather than panicking during use.
 func TestNewSessionStore_CustomFactoryNilStore(t *testing.T) {
 	cfg := Config{
-		SessionStoreFactory: func(context.Context) (SessionStore, error) {
+		SessionStoreFactory: func(context.Context) (kvstorage.Store, error) {
 			return nil, nil
 		},
 	}
@@ -106,7 +107,7 @@ func TestNewSessionStorePassesContext(t *testing.T) {
 	want := "request"
 	ctx := context.WithValue(context.Background(), contextKey{}, want)
 	cfg := Config{
-		SessionStoreFactory: func(ctx context.Context) (SessionStore, error) {
+		SessionStoreFactory: func(ctx context.Context) (kvstorage.Store, error) {
 			if got := ctx.Value(contextKey{}); got != want {
 				return nil, errors.New("factory did not receive caller context")
 			}

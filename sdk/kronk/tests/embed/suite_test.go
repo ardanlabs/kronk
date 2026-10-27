@@ -19,7 +19,10 @@ func TestSuite(t *testing.T) {
 		t.Skip("model not downloaded")
 	}
 
-	testlib.WithModel(t, testlib.CfgEmbedBatchSeq(), testEmbedding)
+	testlib.WithModel(t, testlib.CfgEmbedBatchSeq(), func(t *testing.T, krn *kronk.Kronk) {
+		t.Run("Embedding", func(t *testing.T) { testEmbedding(t, krn) })
+		t.Run("ConcurrentEmbeddings", func(t *testing.T) { testlib.TestEmbeddingIntegrity(t, krn.ModelInfo().ID, krn.Embeddings) })
+	})
 }
 
 func testEmbedding(t *testing.T, krn *kronk.Kronk) {
@@ -46,41 +49,7 @@ func testEmbedding(t *testing.T, krn *kronk.Kronk) {
 			return fmt.Errorf("embed: %w", err)
 		}
 
-		if embed.Object != "list" {
-			return fmt.Errorf("unexpected object: got %s, exp %s", embed.Object, "list")
-		}
-
-		if embed.Model != krn.ModelInfo().ID {
-			return fmt.Errorf("unexpected model: got %s, exp %s", embed.Model, krn.ModelInfo().ID)
-		}
-
-		if embed.Created == 0 {
-			return fmt.Errorf("unexpected created: got %d", embed.Created)
-		}
-
-		if len(embed.Data) != len(inputs) {
-			return fmt.Errorf("unexpected data length: got %d, exp %d", len(embed.Data), len(inputs))
-		}
-
-		for i, data := range embed.Data {
-			if data.Object != "embedding" {
-				return fmt.Errorf("data[%d]: unexpected object: got %s, exp %s", i, data.Object, "embedding")
-			}
-
-			if data.Index != i {
-				return fmt.Errorf("data[%d]: unexpected index: got %d", i, data.Index)
-			}
-
-			if len(data.Embedding) == 0 {
-				return fmt.Errorf("data[%d]: empty embedding", i)
-			}
-
-			if data.Embedding[0] == 0 && data.Embedding[len(data.Embedding)-1] == 0 {
-				return fmt.Errorf("data[%d]: expected to have values in the embedding", i)
-			}
-		}
-
-		return nil
+		return testlib.CheckEmbeddings(embed, krn.ModelInfo().ID, len(inputs), 768)
 	}
 
 	var g errgroup.Group

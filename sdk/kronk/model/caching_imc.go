@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
 	"github.com/ardanlabs/kronk/sdk/kronk/observ/otel"
 	"github.com/hybridgroup/yzma/pkg/llama"
 	"go.opentelemetry.io/otel/attribute"
@@ -74,7 +75,7 @@ func (m *Model) IMCSessions() []IMCSessionDetail {
 	return details
 }
 
-func imcSnapshotBytes(targetStore, draftStore SessionStore, pendingH []float32) int {
+func imcSnapshotBytes(targetStore, draftStore kvstorage.Store, pendingH []float32) int {
 	bytes := cap(pendingH) * 4
 	if targetStore != nil {
 		bytes += targetStore.Cap()
@@ -86,7 +87,7 @@ func imcSnapshotBytes(targetStore, draftStore SessionStore, pendingH []float32) 
 	return bytes
 }
 
-func prepareSessionSnapshot(ctx context.Context, store SessionStore, size uint64) ([]byte, error) {
+func prepareSessionSnapshot(ctx context.Context, store kvstorage.Store, size uint64) ([]byte, error) {
 	n := int(size)
 	if n < 0 || uint64(n) != size {
 		return nil, fmt.Errorf("snapshot size %d exceeds platform limit", size)
@@ -349,7 +350,7 @@ func (m *Model) imcCommitSession(ctx context.Context, session *imcSession, hash 
 // and closes it after the swap. reserved remains set until the caller publishes
 // or releases the reservation. draftSnapshotOK certifies that draftKVState and
 // pendingH were just committed for the same logical prefix as staged.
-func (m *Model) imcCommitMediaAdvance(ctx context.Context, session *imcSession, staged SessionStore, hash string, totalCached, cachedMsgCount, nextLogicalPos int, plan promptPlan, samplerPromptTokens []llama.Token, mediaKVCounts []int, mediaNativeChunks []imcMediaChunk, useMRoPE, useNonCausal bool, renderInputHash string, draftSnapshotOK bool) SessionStore {
+func (m *Model) imcCommitMediaAdvance(ctx context.Context, session *imcSession, staged kvstorage.Store, hash string, totalCached, cachedMsgCount, nextLogicalPos int, plan promptPlan, samplerPromptTokens []llama.Token, mediaKVCounts []int, mediaNativeChunks []imcMediaChunk, useMRoPE, useNonCausal bool, renderInputHash string, draftSnapshotOK bool) kvstorage.Store {
 	if session == nil || staged == nil {
 		return nil
 	}

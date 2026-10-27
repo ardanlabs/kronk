@@ -9,7 +9,7 @@ import (
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
-func (m *Model) processIMCMediaTokenPlan(ctx context.Context, d, stableD D, actualPrompt, stablePrompt string, actualMedia, stableMedia [][]byte, requestStart time.Time) cacheResult {
+func (m *Model) processIMCMediaTokenPlan(ctx context.Context, d, stableD D, actualPrompt, stablePrompt string, actualMedia, stableMedia [][]byte, system []llama.Token, requestStart time.Time) cacheResult {
 	result := cacheResult{modifiedD: d}
 	actual, err := buildPromptPlan(m.vocab, actualPrompt, actualMedia)
 	if err != nil {
@@ -26,10 +26,10 @@ func (m *Model) processIMCMediaTokenPlan(ctx context.Context, d, stableD D, actu
 		m.log(ctx, "imc-media-cache", "status", "plan-fallback", "cache_mode", "token-v2", "reason", "non-text-or-empty-tail")
 		return result
 	}
-	return m.processIMCMediaPlans(ctx, d, stableD, actual, stable, tail, requestStart)
+	return m.processIMCMediaPlans(ctx, d, stableD, actual, stable, tail, system, requestStart)
 }
 
-func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, stable promptPlan, defaultTail []llama.Token, requestStart time.Time) cacheResult {
+func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, stable promptPlan, defaultTail, system []llama.Token, requestStart time.Time) cacheResult {
 	result := cacheResult{modifiedD: d,
 		imcTokenPlan:         true,
 		imcTailTokens:        slices.Clone(defaultTail),
@@ -37,6 +37,10 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 		imcNewCachedMsgCount: messageCount(d),
 		imcNewMsgsHash:       documentMessagesHash(d),
 		imcMediaCacheD:       stableD}
+	if len(system) >= len(stable.units) || !stable.hasTextPrefix(system) {
+		m.log(ctx, "imc", "status", "system-cache-skipped", "reason", "render-not-prefix-compatible")
+		system = nil
+	}
 	renderFingerprint, fingerprintOK := m.imcRenderFingerprint(d, dMessages(d))
 
 	m.cacheMu.Lock()
@@ -148,6 +152,16 @@ func (m *Model) processIMCMediaPlans(ctx context.Context, d, stableD D, actual, 
 		}
 		result.imcMediaBuild = true
 		result.imcClearSeq = true
+		result.imcSystemCache = m.imcFindSystemCache(system)
+		if result.imcSystemCache != nil {
+			result.cacheIdx = llama.Pos(len(system))
+			result.imcClearSeq = false
+			matchKind = "append"
+			matchReason = "system-cache-prefix"
+		} else if len(system) > 0 && len(system) >= m.cfg.CacheMinTokens() {
+			result.imcSystemBoundaryTokens = len(system)
+			result.imcNewCachedTokens = slices.Clone(system)
+		}
 	}
 	if matchKind != "exact" && !result.imcMediaAnchorAdvance {
 		selected.lastUsed = time.Now()
@@ -221,11 +235,8 @@ func validTextToMediaAnchorSession(session *imcSession, stable promptPlan) bool 
 		return false
 	}
 
-	for i, token := range session.cachedTokens {
-		unit := stable.units[i]
-		if unit.isMedia || unit.token != token {
-			return false
-		}
+	if !stable.hasTextPrefix(session.cachedTokens) {
+		return false
 	}
 
 	return slices.ContainsFunc(stable.units[len(session.cachedTokens):], func(unit promptUnit) bool {

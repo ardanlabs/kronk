@@ -30,6 +30,23 @@ func TestVRAMResponsePreservesZeroExpertLayers(t *testing.T) {
 	}
 }
 
+func TestVRAMResponseIncludesDeviceCacheMirrors(t *testing.T) {
+	result := vram.Result{
+		Input:      vram.Input{ModelSizeBytes: 1000, Slots: 2},
+		SlotMemory: 120, KVVRAMBytes: 80, KVCPUBytes: 40,
+		TotalVRAM: 1080,
+		PerDevice: []vram.PerDeviceVRAM{
+			{WeightsBytes: 250, KVBytes: 30, TotalBytes: 280},
+			{WeightsBytes: 750, KVBytes: 70, TotalBytes: 820},
+		},
+	}
+	resp := toVRAMResponse(result, nil)
+	if resp.TotalVRAM != 1100 || resp.KVVRAMBytes != 100 || resp.SlotMemory != 140 || resp.KVPerSlot != 70 || resp.UnifiedFootprint != 1140 {
+		t.Fatalf("device-aware totals: got VRAM/cache/slots/per-slot/unified %d/%d/%d/%d/%d, want 1100/100/140/70/1140",
+			resp.TotalVRAM, resp.KVVRAMBytes, resp.SlotMemory, resp.KVPerSlot, resp.UnifiedFootprint)
+	}
+}
+
 func TestModelDetailsNotFound(t *testing.T) {
 	models, err := llamamodels.NewWithPaths(t.TempDir())
 	if err != nil {

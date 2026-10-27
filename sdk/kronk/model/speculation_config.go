@@ -10,8 +10,6 @@ import (
 	yzmaspec "github.com/hybridgroup/yzma/exp/speculative"
 )
 
-type mtpArtifact = internalspec.MTPArtifact
-
 var (
 	speculationSourceNone    = internalspec.SourceNone
 	speculationSourceClassic = internalspec.SourceClassic
@@ -26,9 +24,7 @@ var (
 	mtpArtifactCompanion = internalspec.MTPArtifactCompanion
 )
 
-type speculationPlan = internalspec.Plan
-
-func resolveSpeculationPlan(ctx context.Context, log applog.Logger, cfg Config) (speculationPlan, error) {
+func resolveSpeculationPlan(ctx context.Context, log applog.Logger, cfg Config) (internalspec.Plan, error) {
 	mode := cfg.SpeculationMode()
 	classic := cfg.PtrDraftModel != nil && cfg.PtrDraftModel.IsSeparate()
 	if mode == SpeculationDisabled || classic && mode == SpeculationAuto || mode == SpeculationClassic {
@@ -41,7 +37,7 @@ func resolveSpeculationPlan(ctx context.Context, log applog.Logger, cfg Config) 
 
 	embedded, err := modelFilesMTPArchitecture(cfg.ModelFiles)
 	if err != nil {
-		return speculationPlan{}, fmt.Errorf("detect embedded MTP: %w", err)
+		return internalspec.Plan{}, fmt.Errorf("detect embedded MTP: %w", err)
 	}
 	companion := modelprofile.MTPArchitectureNone
 	if cfg.MTPDrafterFile != "" {
@@ -86,7 +82,7 @@ func internalMTPArchitecture(architecture modelprofile.MTPArchitecture) internal
 // can expose an integral multiple containing several hidden-state planes.
 // Automatic speculation falls back to target-only generation on mismatch; an
 // explicitly required MTP implementation fails instead.
-func resolveEmbeddedMTPCompatibility(plan speculationPlan, targetEmbeddingWidth, mtpOutputWidth int32) (speculationPlan, error) {
+func resolveEmbeddedMTPCompatibility(plan internalspec.Plan, targetEmbeddingWidth, mtpOutputWidth int32) (internalspec.Plan, error) {
 	if plan.Source != speculationSourceMTP || plan.MTPArtifact != mtpArtifactEmbedded {
 		return plan, nil
 	}
@@ -99,10 +95,10 @@ func resolveEmbeddedMTPCompatibility(plan speculationPlan, targetEmbeddingWidth,
 	}
 
 	if plan.Mode == SpeculationMTP {
-		return speculationPlan{}, fmt.Errorf("embedded MTP output width %d does not match target embedding width %d", mtpOutputWidth, targetEmbeddingWidth)
+		return internalspec.Plan{}, fmt.Errorf("embedded MTP output width %d does not match target embedding width %d", mtpOutputWidth, targetEmbeddingWidth)
 	}
 
-	return speculationPlan{Mode: plan.Mode}, nil
+	return internalspec.Plan{Mode: plan.Mode}, nil
 }
 
 func configuredClassicNDraft(cfg Config) int {

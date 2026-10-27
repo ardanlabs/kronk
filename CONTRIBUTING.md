@@ -38,10 +38,9 @@ large and are not committed.
 ## Validate changes
 
 Run the narrowest tests and static checks that exercise the changed package.
-Go tests require these environment variables:
+Go tests require this environment variable:
 
 ```sh
-export RUN_IN_PARALLEL=yes
 export GITHUB_WORKSPACE="$(pwd -P)"
 
 go fix ./path/to/changed/package

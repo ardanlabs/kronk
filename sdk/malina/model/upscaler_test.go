@@ -53,6 +53,9 @@ func TestUpscalerWithoutNativeContext(t *testing.T) {
 	if _, err := u.Upscale(t.Context(), input); err == nil {
 		t.Fatal("Upscale() error = nil, want unloaded error")
 	}
+	if _, err := u.UpscaleWithInfo(t.Context(), input); err == nil {
+		t.Fatal("UpscaleWithInfo() error = nil, want unloaded error")
+	}
 
 	if err := u.Unload(); err != nil {
 		t.Fatalf("Unload() error = %v", err)
@@ -69,6 +72,9 @@ func TestUpscalerRequestValidation(t *testing.T) {
 	if _, err := u.Upscale(t.Context(), nil); !errors.Is(err, ErrInvalidRequest) {
 		t.Errorf("Upscale() error = %v, want ErrInvalidRequest", err)
 	}
+	if _, err := u.UpscaleWithInfo(t.Context(), nil); !errors.Is(err, ErrInvalidRequest) {
+		t.Errorf("UpscaleWithInfo() error = %v, want ErrInvalidRequest", err)
+	}
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
@@ -83,5 +89,8 @@ func TestUpscalerRequestValidation(t *testing.T) {
 	input := image.NewRGBA(image.Rect(0, 0, 8, 8))
 	if _, err := u.Upscale(ctx, input); !errors.Is(err, context.Canceled) {
 		t.Errorf("Upscale() error = %v, want context.Canceled", err)
+	}
+	if _, err := u.UpscaleWithInfo(ctx, input); !errors.Is(err, context.Canceled) {
+		t.Errorf("UpscaleWithInfo() error = %v, want context.Canceled", err)
 	}
 }

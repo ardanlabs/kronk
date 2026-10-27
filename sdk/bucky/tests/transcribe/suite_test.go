@@ -3,6 +3,7 @@ package transcribe_test
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"testing"
 	"time"
@@ -71,11 +72,127 @@ func TestSuite(t *testing.T) {
 	})
 }
 
-func testTranscribe(t *testing.T, w *bucky.Bucky) {
-	if testlib.RunInParallel {
-		t.Parallel()
+func TestTextConfidence(t *testing.T) {
+	samples := testlib.LoadSamples(t, testlib.AudioFile)
+
+	// Use a separate native decode as the reference, with single-threaded
+	// CPU inference so both decodes see the same probabilities.
+	cp := whisper.ContextDefaultParams()
+	cp.UseGPU = 0
+	handle, err := whisper.InitFromFileWithParams(testlib.MPTinyEn.ModelFiles[0], cp)
+	if err != nil {
+		t.Fatalf("init reference model: %v", err)
+	}
+	defer whisper.Free(handle)
+
+	params := whisper.FullDefaultParams(whisper.SamplingGreedy)
+	params.NThreads = 1
+	params.PrintProgress = 0
+	params.PrintRealtime = 0
+	params.PrintTimestamps = 0
+	var refs whisper.StringRefs
+	if err := refs.SetLanguage(&params, "en"); err != nil {
+		t.Fatalf("set language: %v", err)
+	}
+	defer refs.KeepAlive()
+	if err := whisper.Full(handle, params, samples); err != nil {
+		t.Fatalf("reference transcription: %v", err)
 	}
 
+	want := make([]float64, whisper.FullNSegments(handle))
+	var specialTokens int
+	for i := range want {
+		var probabilities []float64
+		for j := range whisper.FullNTokens(handle, int32(i)) {
+			if whisper.FullGetTokenID(handle, int32(i), j) >= whisper.TokenEOT(handle) {
+				specialTokens++
+				continue
+			}
+			probabilities = append(probabilities, float64(whisper.FullGetTokenP(handle, int32(i), j)))
+		}
+		for _, p := range probabilities {
+			want[i] += p / float64(len(probabilities))
+		}
+		if !(want[i] > 0 && want[i] < 1) {
+			t.Fatalf("reference confidence[%d]: got %v, want between 0 and 1", i, want[i])
+		}
+	}
+	if len(want) == 0 || specialTokens == 0 {
+		t.Fatal("reference decode must contain text segments and special tokens")
+	}
+
+	check := func(t *testing.T, segments []model.Segment) {
+		t.Helper()
+		if len(segments) != len(want) {
+			t.Fatalf("segments: got %d, want %d", len(segments), len(want))
+		}
+		for i, seg := range segments {
+			if got := float64(seg.TextConfidence); math.IsNaN(got) || math.Abs(got-want[i]) > 1e-5 {
+				t.Errorf("TextConfidence[%d]: got %v, want %v", i, got, want[i])
+			}
+			if seg.Text != whisper.FullGetSegmentText(handle, int32(i)) {
+				t.Errorf("Text[%d]: got %q, want %q", i, seg.Text, whisper.FullGetSegmentText(handle, int32(i)))
+			}
+		}
+	}
+
+	cfg := model.Config{ModelPath: testlib.MPTinyEn.ModelFiles[0], NThreads: 1}
+	testlib.WithWhisper(t, cfg, func(t *testing.T, w *bucky.Bucky) {
+		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
+		defer cancel()
+
+		var callbackSegments []model.Segment
+		tr, err := w.Transcribe(ctx, samples, model.WithLanguage("en"),
+			model.WithOnSegment(func(seg model.Segment) { callbackSegments = append(callbackSegments, seg) }),
+		)
+		if err != nil {
+			t.Fatalf("Transcribe: %v", err)
+		}
+		check(t, tr.Segments)
+		check(t, callbackSegments)
+
+		// Decode the same complete window as both a partial and a final,
+		// without VAD or periodic commits changing its audio or prompt context.
+		s, err := w.NewStream(ctx, model.WithStreamLanguage("en"),
+			model.WithVAD(false), model.WithPartialEveryMs(1),
+			model.WithCommitEveryMs(100000), model.WithMaxUtteranceMs(100000),
+		)
+		if err != nil {
+			t.Fatalf("NewStream: %v", err)
+		}
+		defer s.Close()
+		if err := s.Feed(ctx, samples); err != nil {
+			t.Fatalf("Feed: %v", err)
+		}
+		select {
+		case ev := <-s.Events():
+			if ev.Kind != model.EventPartial {
+				t.Fatalf("first event: got %v (error %v), want partial", ev.Kind, ev.Err)
+			}
+			check(t, ev.Segments)
+		case <-ctx.Done():
+			t.Fatalf("waiting for partial: %v", ctx.Err())
+		}
+		if err := s.Close(); err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+		var finals int
+		for ev := range s.Events() {
+			if ev.Kind == model.EventError {
+				t.Fatalf("stream error: %v", ev.Err)
+			}
+			if ev.Kind == model.EventFinal {
+				finals++
+				check(t, ev.Segments)
+			}
+		}
+		if finals != 1 {
+			t.Errorf("finals: got %d, want 1", finals)
+		}
+	})
+}
+
+func testTranscribe(t *testing.T, w *bucky.Bucky) {
 	samples := testlib.LoadSamples(t, testlib.AudioFile)
 
 	f := func() error {
@@ -121,10 +238,6 @@ func testTranscribe(t *testing.T, w *bucky.Bucky) {
 }
 
 func testTranscribeWords(t *testing.T, w *bucky.Bucky) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	samples := testlib.LoadSamples(t, testlib.AudioFile)
 
 	ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
@@ -151,10 +264,6 @@ func testTranscribeWords(t *testing.T, w *bucky.Bucky) {
 }
 
 func testTranscribeOnSegment(t *testing.T, w *bucky.Bucky) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	samples := testlib.LoadSamples(t, testlib.AudioFile)
 
 	ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
@@ -180,10 +289,6 @@ func testTranscribeOnSegment(t *testing.T, w *bucky.Bucky) {
 }
 
 func testTranscribeChannels(t *testing.T, w *bucky.Bucky) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	// Decode the real two-channel sample (English speaker on channel 0,
 	// Spanish speaker on channel 1). This exercises the multi-channel
 	// decode path: DecodeRaw -> SplitChannels -> ResampleLinear.
@@ -254,10 +359,6 @@ func testTranscribeChannels(t *testing.T, w *bucky.Bucky) {
 }
 
 func testDecodeChannels(t *testing.T, w *bucky.Bucky) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	// End-to-end: decode the two-channel sample straight from an
 	// io.Reader and diarize it in one call. Channel 0 is the English
 	// speaker, channel 1 the Spanish speaker.
@@ -289,10 +390,6 @@ func testDecodeChannels(t *testing.T, w *bucky.Bucky) {
 }
 
 func testDetectLanguage(t *testing.T, w *bucky.Bucky) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	samples := testlib.LoadSamples(t, testlib.AudioFile)
 
 	ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)

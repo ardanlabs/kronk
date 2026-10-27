@@ -21,6 +21,7 @@ const expectReasoning = false
 
 func TestSuite(t *testing.T) {
 	testlib.WithModel(t, testlib.CfgMoEVision(), func(t *testing.T, krn *kronk.Kronk) {
+		testlib.TestModelProfile(t, krn, "MoE", "Attention-only", "gemma4")
 		t.Run("ThinkChat", func(t *testing.T) { testChat(t, krn, testlib.DChatNoTool, false) })
 		t.Run("ThinkStreamingChat", func(t *testing.T) { testChatStreaming(t, krn, testlib.DChatNoTool, false) })
 		t.Run("ToolChat", func(t *testing.T) { testChat(t, krn, testlib.DChatTool, true) })
@@ -31,16 +32,14 @@ func TestSuite(t *testing.T) {
 		t.Run("ToolStreamingResponse", func(t *testing.T) { testResponseStreaming(t, krn, testlib.DResponseTool, true) })
 		t.Run("GrammarJSON", func(t *testing.T) { testGrammarJSON(t, krn) })
 		t.Run("GrammarJSONStreaming", func(t *testing.T) { testGrammarJSONStreaming(t, krn) })
+		t.Run("UsageCounting", func(t *testing.T) { testUsageCounting(t, krn) })
+		t.Run("BatchChatConcurrent", func(t *testing.T) { testBatchChatConcurrent(t, krn) })
 	})
 }
 
 // =============================================================================
 
 func testChat(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
@@ -90,10 +89,6 @@ func testChat(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
 }
 
 func testChatStreaming(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
@@ -156,10 +151,6 @@ func testChatStreaming(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) 
 }
 
 func testResponse(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
@@ -203,10 +194,6 @@ func testResponse(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
 }
 
 func testResponseStreaming(t *testing.T, krn *kronk.Kronk, d model.D, tooling bool) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
@@ -312,10 +299,6 @@ func testResponseStreaming(t *testing.T, krn *kronk.Kronk, d model.D, tooling bo
 }
 
 func testGrammarJSON(t *testing.T, krn *kronk.Kronk) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()
@@ -352,10 +335,6 @@ func testGrammarJSON(t *testing.T, krn *kronk.Kronk) {
 }
 
 func testGrammarJSONStreaming(t *testing.T, krn *kronk.Kronk) {
-	if testlib.RunInParallel {
-		t.Parallel()
-	}
-
 	f := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), testlib.TestDuration)
 		defer cancel()

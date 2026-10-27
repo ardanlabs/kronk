@@ -1,7 +1,6 @@
 package audio_test
 
 import (
-	"fmt"
 	"os"
 	"testing"
 
@@ -11,10 +10,8 @@ import (
 func TestMain(m *testing.M) {
 	testlib.Setup()
 
-	if len(testlib.MPAudio.ModelFiles) == 0 {
-		fmt.Println("model Qwen2.5-Omni-3B-Q4_K_M not downloaded, skipping audio tests")
-		os.Exit(0)
-	}
+	testlib.RequireFixtures(testlib.MPAudio.ModelFiles...)
+	testlib.RequireFixtures(testlib.MPAudio.ProjFile, testlib.AudioFile)
 
 	os.Exit(m.Run())
 }

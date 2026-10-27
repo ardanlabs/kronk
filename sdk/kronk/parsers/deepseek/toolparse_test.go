@@ -32,6 +32,45 @@ func TestToolCallWeather(t *testing.T) {
 	}
 }
 
+func TestToolCallV41TypedParameters(t *testing.T) {
+	const content = `<｜DSML｜ calls>
+<｜DSML｜ invoke name="write_file">
+<｜DSML｜ parameter name="content" string="true">  literal </｜DSML｜parameter>
+keep whitespace  </｜DSML｜ parameter>
+<｜DSML｜ parameter name="count" string="false">9007199254740993</｜DSML｜ parameter>
+<｜DSML｜ parameter name="options" string="false">{"enabled":false,"items":[1,"two"],"empty":null}</｜DSML｜ parameter>
+</｜DSML｜ invoke>
+<｜DSML｜ invoke name="clock::get_time"></｜DSML｜ invoke>
+</｜DSML｜ calls>`
+	calls := Parser{}.ToolCall(t.Context(), nil, content)
+	if len(calls) != 2 || calls[0].Status != 0 || calls[1].Status != 0 ||
+		calls[0].Function.Name != "write_file" || calls[1].Function.Name != "clock::get_time" {
+		t.Fatalf("ToolCall: got %+v, want two successful named calls", calls)
+	}
+	want := map[string]any{
+		"content": "  literal </｜DSML｜parameter>\nkeep whitespace  ",
+		"count":   json.Number("9007199254740993"),
+		"options": map[string]any{"enabled": false, "items": []any{json.Number("1"), "two"}, "empty": nil},
+	}
+	if got := map[string]any(calls[0].Function.Arguments); !reflect.DeepEqual(got, want) {
+		t.Errorf("Arguments: got %#v, want %#v", got, want)
+	}
+}
+
+func TestToolCallRejectsMixedDSMLDialects(t *testing.T) {
+	for _, content := range []string{
+		`<｜DSML｜ calls><｜DSML｜invoke name="ping"></｜DSML｜invoke></｜DSML｜ calls>`,
+		`<｜DSML｜ calls><｜DSML｜ invoke name="ping"></｜DSML｜ invoke></｜DSML｜tool_calls>`,
+		`<｜DSML｜ calls><｜DSML｜ invoke name="ping"><｜DSML｜parameter name="value" string="true">x</｜DSML｜parameter></｜DSML｜ invoke></｜DSML｜ calls>`,
+		`<｜DSML｜tool_calls><｜DSML｜ invoke name="ping"></｜DSML｜ invoke></｜DSML｜tool_calls>`,
+	} {
+		calls := Parser{}.ToolCall(t.Context(), nil, content)
+		if len(calls) != 1 || calls[0].Status == 0 || calls[0].Function.Name != "" || calls[0].Raw != content {
+			t.Fatalf("ToolCall(%q): got %+v, want one non-executable failure preserving raw output", content, calls)
+		}
+	}
+}
+
 func TestToolCallWeatherTemplateRoundTrip(t *testing.T) {
 	content := `<｜DSML｜tool_calls>
 <｜DSML｜invoke name="get_weather">
@@ -227,14 +266,21 @@ func TestToolCallRejectsMalformedOutputAtomically(t *testing.T) {
 		{name: "trailing invoke junk", content: toolCallsOpen + invokeOpen + ` name="first" junk>` + invokeClose + toolCallsClose},
 	}
 
+	v41 := strings.NewReplacer(
+		"｜DSML｜tool_calls>", "｜DSML｜ calls>",
+		"｜DSML｜invoke", "｜DSML｜ invoke",
+		"｜DSML｜parameter", "｜DSML｜ parameter",
+	)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			calls := parseDSML(tt.content)
-			if len(calls) != 1 || calls[0].Status == 0 || calls[0].Function.Name != "" {
-				t.Fatalf("calls = %+v, want one non-executable failed call", calls)
-			}
-			if calls[0].Raw != tt.content {
-				t.Errorf("Raw = %q, want %q", calls[0].Raw, tt.content)
+			for _, content := range []string{tt.content, v41.Replace(tt.content)} {
+				calls := Parser{}.ToolCall(t.Context(), nil, content)
+				if len(calls) != 1 || calls[0].Status == 0 || calls[0].Function.Name != "" {
+					t.Fatalf("ToolCall(%q): got %+v, want one non-executable failed call", content, calls)
+				}
+				if calls[0].Raw != content {
+					t.Errorf("Raw = %q, want %q", calls[0].Raw, content)
+				}
 			}
 		})
 	}

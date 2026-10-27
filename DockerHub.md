@@ -259,7 +259,7 @@ Models, libraries, catalog data, and API keys are all stored under `/kronk`. Nam
 
 | Variable                       | Default                           | Description                                                                          |
 | ------------------------------ | --------------------------------- | ------------------------------------------------------------------------------------ |
-| `KRONK_DOWNLOAD_ENABLED`       | `false`                           | Allow model/library downloads from the browser UI (disabled by default for security) |
+| `KRONK_DOWNLOAD_ENABLED`       | `false`                           | Share this server's models and library bundles with other Kronk servers on the network (peer downloads) |
 | `KRONK_WEB_API_HOST`           | `0.0.0.0:11435`                   | API bind address                                                                     |
 | `KRONK_WEB_DEBUG_HOST`         | `127.0.0.1:11445`                 | Debug server bind address                                                            |
 | `KRONK_POOL_MODEL_CONFIG_FILE` | `/kronk/models/model_config.yaml` | Path to model configuration file                                                     |

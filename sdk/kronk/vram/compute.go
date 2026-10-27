@@ -1,6 +1,9 @@
 package vram
 
-import "github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
+import (
+	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
+)
 
 // ComputeMemory separates shared execution workspace from the runtime allowance
 // and safety margin. These are per native context, not fixed per-slot costs;
@@ -31,30 +34,53 @@ func EstimateComputeBuffer(input Input) int64 {
 }
 
 func estimateComputeMemory(input Input) ComputeMemory {
-	switch {
-	case input.ComputeKind == modelprofile.ComputeGemma4:
-		return gemma4ComputeMemory(input)
-	case input.ComputeKind == modelprofile.ComputeQwen35:
-		return qwen35ComputeMemory(input)
-	case input.ComputeKind == modelprofile.ComputeGPTOSS:
-		return gptossComputeMemory(input)
-	case input.ComputeKind == modelprofile.ComputeMistral3:
-		return mistral3ComputeMemory(input)
-	case input.ComputeKind == modelprofile.ComputeLFM2:
-		return lfm2ComputeMemory(input)
-	case input.ComputeKind == modelprofile.ComputeGLM4MoE:
-		return glm4moeComputeMemory(input)
-	case input.ComputeKind == modelprofile.ComputeGemma3:
-		return gemma3ComputeMemory(input)
-	case input.ComputeKind == modelprofile.ComputeLlama:
-		return llamaComputeMemory(input)
-	case input.ComputeKind == modelprofile.ComputeClef:
-		return clefComputeMemory(input)
-	case input.ComputeKind == modelprofile.ComputeModernBERT:
-		return modernbertComputeMemory(input)
-	case input.ComputeKind == modelprofile.ComputeIndexed || input.IndexerKeyLength > 0:
-		return qwen4expComputeMemory(input)
-	default:
-		return genericComputeMemory(input)
+	return selectMemoryPolicy(input).compute(input)
+}
+
+// memoryPolicy keeps architecture selection consistent across compute, persistent
+// state, and per-device cache sizing. A nil deviceCache uses proportional sizing.
+type memoryPolicy struct {
+	compute     func(Input) ComputeMemory
+	cache       func(Input) gguf.KVCache
+	deviceCache func(Input, []float64) []int64
+}
+
+func selectMemoryPolicy(input Input) memoryPolicy {
+	policy := memoryPolicy{
+		compute: genericComputeMemory,
+		cache:   genericCache,
 	}
+
+	switch {
+	case input.ComputeKind == modelprofile.ComputeDeepSeek41:
+		policy.compute = deepseek41ComputeMemory
+		policy.cache = deepseek41Cache
+		policy.deviceCache = deepseek41DeviceCache
+	case input.ComputeKind == modelprofile.ComputeGemma4:
+		policy.compute = gemma4ComputeMemory
+	case input.ComputeKind == modelprofile.ComputeQwen35:
+		policy.compute = qwen35ComputeMemory
+	case input.ComputeKind == modelprofile.ComputeGPTOSS:
+		policy.compute = gptossComputeMemory
+	case input.ComputeKind == modelprofile.ComputeMistral3:
+		policy.compute = mistral3ComputeMemory
+	case input.ComputeKind == modelprofile.ComputeLFM2:
+		policy.compute = lfm2ComputeMemory
+	case input.ComputeKind == modelprofile.ComputeGLM4MoE:
+		policy.compute = glm4moeComputeMemory
+	case input.ComputeKind == modelprofile.ComputeGemma3:
+		policy.compute = gemma3ComputeMemory
+	case input.ComputeKind == modelprofile.ComputeLlama:
+		policy.compute = llamaComputeMemory
+	case input.ComputeKind == modelprofile.ComputeClef:
+		policy.compute = clefComputeMemory
+		policy.cache = noPersistentCache
+	case input.ComputeKind == modelprofile.ComputeModernBERT:
+		policy.compute = modernbertComputeMemory
+		policy.cache = noPersistentCache
+	case input.ComputeKind == modelprofile.ComputeIndexed || input.IndexerKeyLength > 0:
+		policy.compute = qwen4expComputeMemory
+	}
+
+	return policy
 }

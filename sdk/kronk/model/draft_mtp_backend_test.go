@@ -1,27 +1,31 @@
 package model
 
-import "testing"
+import (
+	"testing"
+
+	internalspec "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
+)
 
 func TestMTPBackendForPlan(t *testing.T) {
 	tests := []struct {
 		name              string
-		plan              speculationPlan
+		plan              internalspec.Plan
 		wantName          string
-		wantArtifact      mtpArtifact
+		wantArtifact      internalspec.MTPArtifact
 		wantSharedKV      bool
 		wantFixedPosition bool
 		wantWideEmbedding bool
 		wantErr           bool
 	}{
-		{"embedded Qwen35", speculationPlan{MTPArchitecture: mtpArchitectureQwen35OwnKV, MTPArtifact: mtpArtifactEmbedded}, "qwen35-own-kv", mtpArtifactEmbedded, false, false, false, false},
-		{"companion Qwen35", speculationPlan{MTPArchitecture: mtpArchitectureQwen35OwnKV, MTPArtifact: mtpArtifactCompanion}, "qwen35-own-kv", mtpArtifactCompanion, false, false, false, false},
-		{"embedded Qwen4Exp", speculationPlan{MTPArchitecture: mtpArchitectureQwen4ExpOwnKV, MTPArtifact: mtpArtifactEmbedded}, "qwen4exp-own-kv", mtpArtifactEmbedded, false, false, true, false},
-		{"companion Qwen4Exp", speculationPlan{MTPArchitecture: mtpArchitectureQwen4ExpOwnKV, MTPArtifact: mtpArtifactCompanion}, "qwen4exp-own-kv", mtpArtifactCompanion, false, false, true, false},
-		{"embedded Nemotron", speculationPlan{MTPArchitecture: mtpArchitectureNemotronOwnKV, MTPArtifact: mtpArtifactEmbedded}, "nemotron-own-kv", mtpArtifactEmbedded, false, false, false, false},
-		{"companion Nemotron rejected", speculationPlan{MTPArchitecture: mtpArchitectureNemotronOwnKV, MTPArtifact: mtpArtifactCompanion}, "", mtpArtifact{}, false, false, false, true},
-		{"companion Gemma", speculationPlan{MTPArchitecture: mtpArchitectureGemmaSharedKV, MTPArtifact: mtpArtifactCompanion}, "gemma-shared-kv", mtpArtifact{}, true, true, false, false},
-		{"embedded Gemma rejected", speculationPlan{MTPArchitecture: mtpArchitectureGemmaSharedKV, MTPArtifact: mtpArtifactEmbedded}, "", mtpArtifact{}, false, false, false, true},
-		{"missing architecture rejected", speculationPlan{MTPArtifact: mtpArtifactCompanion}, "", mtpArtifact{}, false, false, false, true},
+		{"embedded Qwen35", internalspec.Plan{MTPArchitecture: mtpArchitectureQwen35OwnKV, MTPArtifact: mtpArtifactEmbedded}, "qwen35-own-kv", mtpArtifactEmbedded, false, false, false, false},
+		{"companion Qwen35", internalspec.Plan{MTPArchitecture: mtpArchitectureQwen35OwnKV, MTPArtifact: mtpArtifactCompanion}, "qwen35-own-kv", mtpArtifactCompanion, false, false, false, false},
+		{"embedded Qwen4Exp", internalspec.Plan{MTPArchitecture: mtpArchitectureQwen4ExpOwnKV, MTPArtifact: mtpArtifactEmbedded}, "qwen4exp-own-kv", mtpArtifactEmbedded, false, false, true, false},
+		{"companion Qwen4Exp", internalspec.Plan{MTPArchitecture: mtpArchitectureQwen4ExpOwnKV, MTPArtifact: mtpArtifactCompanion}, "qwen4exp-own-kv", mtpArtifactCompanion, false, false, true, false},
+		{"embedded Nemotron", internalspec.Plan{MTPArchitecture: mtpArchitectureNemotronOwnKV, MTPArtifact: mtpArtifactEmbedded}, "nemotron-own-kv", mtpArtifactEmbedded, false, false, false, false},
+		{"companion Nemotron rejected", internalspec.Plan{MTPArchitecture: mtpArchitectureNemotronOwnKV, MTPArtifact: mtpArtifactCompanion}, "", internalspec.MTPArtifact{}, false, false, false, true},
+		{"companion Gemma", internalspec.Plan{MTPArchitecture: mtpArchitectureGemmaSharedKV, MTPArtifact: mtpArtifactCompanion}, "gemma-shared-kv", internalspec.MTPArtifact{}, true, true, false, false},
+		{"embedded Gemma rejected", internalspec.Plan{MTPArchitecture: mtpArchitectureGemmaSharedKV, MTPArtifact: mtpArtifactEmbedded}, "", internalspec.MTPArtifact{}, false, false, false, true},
+		{"missing architecture rejected", internalspec.Plan{MTPArtifact: mtpArtifactCompanion}, "", internalspec.MTPArtifact{}, false, false, false, true},
 	}
 
 	for _, tt := range tests {

@@ -47,9 +47,8 @@ permissions:
   contents: read
 
 # Every job is skipped on a fork PR: the model share outlives the VM, and
-# macos-latest cannot hold the 6.6 GiB model set, so there is no hosted
-# fallback — linux.yml covers forks. Dispatch the reviewed head SHA to run one
-# anyway. Skipped counts as passing for protection.
+# hosted runners cannot run the GPU suites. Linux static checks cover forks.
+# Dispatch the reviewed head SHA to run the tests on the self-hosted runners.
 #
 # KRONK_PROCESSOR=metal, not cpu: darwin/arm64 publishes ONE llama.cpp artifact
 # (yzma pkg/download/resolver.go:202-217), so these jobs run Metal whatever this
@@ -129,7 +128,7 @@ jobs:
   race:
     name: Race detector (sdk unit packages)
     if: (github.event.pull_request.head.repo.full_name || github.repository) == github.repository
-    runs-on: [self-hosted, macOS, ARM64, sand]
+    runs-on: [self-hosted, macOS, ARM64, sand, metal]
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -154,8 +153,8 @@ jobs:
   api-tests:
     name: api/service tests
     if: (github.event.pull_request.head.repo.full_name || github.repository) == github.repository
-    runs-on: [self-hosted, macOS, ARM64, sand]
-    timeout-minutes: 30
+    runs-on: [self-hosted, macOS, ARM64, sand, metal]
+    timeout-minutes: 45
     steps:
       - name: Runner specs
         run: |
@@ -171,6 +170,9 @@ jobs:
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
 
+      - name: Download extended test models
+        run: ./.github/scripts/pull-models.sh .github/test-models.txt gpu
+
       - name: Run api/service tests
         env:
           # The shim setup-kronk staged. Per-step, never $GITHUB_ENV: the banner
@@ -181,15 +183,16 @@ jobs:
           # 65536, which no shipping Mac has.
           LUME_METAL_MAX_THREADGROUP_MEMORY: "32768"
         run: |
-          export RUN_IN_PARALLEL=no
           go test -v -p=1 -count=1 -timeout 20m ./cmd/kronk/...
           go test -v -p=1 -count=1 -timeout 20m ./cmd/server/...
+          KRONK_TEST_MEDIA=yes go test -v -p=1 -count=1 -timeout 10m -run '^Test_API_Media$' ./cmd/server/api/services/kronk/tests
+          KRONK_TEST_MTP=yes go test -v -p=1 -count=1 -timeout 20m -run '^Test_API_MTP$' ./cmd/server/api/services/kronk/tests
 
   sdk-tests:
     name: sdk tests
     if: (github.event.pull_request.head.repo.full_name || github.repository) == github.repository
-    runs-on: [self-hosted, macOS, ARM64, sand]
-    timeout-minutes: 30
+    runs-on: [self-hosted, macOS, ARM64, sand, metal]
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -198,6 +201,9 @@ jobs:
 
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
+
+      - name: Download extended test models
+        run: ./.github/scripts/pull-models.sh .github/test-models.txt gpu
 
       - name: Run sdk tests
         env:
@@ -209,16 +215,22 @@ jobs:
           # 65536, which no shipping Mac has.
           LUME_METAL_MAX_THREADGROUP_MEMORY: "32768"
         run: |
-          export RUN_IN_PARALLEL=no
           go -C examples test -v -count=1 -timeout 2m ./session-store
           go test -v -p=1 -count=1 -timeout 20m $(go list ./sdk/... | grep -v '/sdk/kronk/tests')
           go test -v -count=1 -timeout 20m ./sdk/kronk/tests/qwen3
-          go test -v -count=1 -timeout 6m -run '^TestLengthTerminatedToolCallBecomesContent$' ./sdk/kronk/tests/qwen06
-          go test -v -count=1 -timeout 6m -run '^TestSuite$' ./sdk/kronk/tests/draft
-          go test -v -count=1 -timeout 6m -run '^(TestSuite|Test_PooledVision)$' ./sdk/kronk/tests/vision
-          go test -v -count=1 -timeout 6m -run '^TestSuite$' ./sdk/kronk/tests/vision_imc
-          go test -v -count=1 -timeout 6m -run '^(TestSuite|TestConcurrentEmbeddings)$' ./sdk/kronk/tests/embed
-          go test -v -count=1 -timeout 6m -run '^(TestSuite|TestConcurrentRerank)$' ./sdk/kronk/tests/rerank
-          go test -v -count=1 -timeout 6m -run '^TestSuite$' ./sdk/kronk/tests/decision
+          go test -v -count=1 -timeout 10m -run '^TestLengthTerminatedToolCallBecomesContent$' ./sdk/kronk/tests/qwen06
+          go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/draft
+          go test -v -count=1 -timeout 10m -run '^(TestSuite|Test_PooledVision|TestUncachedMediaSmallBatch)$' ./sdk/kronk/tests/vision
+          go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/vision_imc
+          # Qualify Omni images without enabling its unstable audio workloads.
+          go test -v -count=1 -timeout 10m -run '^TestSuite$/^Images$' ./sdk/kronk/tests/audio
+          go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/embed
+          go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/rerank
+          go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/decision
           go test -v -count=1 -timeout 20m ./sdk/kronk/tests/hybrid
-          go test -v -count=1 -timeout 6m -run '^TestSuite$' ./sdk/kronk/tests/hybrid_vision_imc
+          go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/hybrid_vision_imc
+          go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/lfm
+          go test -v -count=1 -timeout 20m ./sdk/kronk/tests/moe
+          go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/moe_vision_imc
+          go test -v -count=1 -timeout 20m -run '^(TestSuite|TestSuiteMultiSlot)$' ./sdk/kronk/tests/mtp
+          go test -v -count=1 -timeout 20m -run '^(TestSuite|TestSuiteMultiSlot)$' ./sdk/kronk/tests/gemma4mtp

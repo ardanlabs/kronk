@@ -101,20 +101,21 @@ func (c *imcMediaPrefixCursor) skipEmptyText() {
 // turns. Its chunks are separate from ordinary suffix prefill so only the IMC
 // scheduler can advance them. position is logical; physicalKVCells counts rows.
 type imcMediaPreparation struct {
-	ctx                 context.Context
-	span                trace.Span
-	bitmaps             []mtmd.Bitmap
-	inputChunks         mtmd.InputChunks
-	chunkIdx            uint64
-	textPrepared        bool
-	textRemaining       []llama.Token
-	prefixCursor        imcMediaPrefixCursor
-	position            int
-	physicalKVCells     int
-	totalPhysicalTokens int
-	mediaKVCounts       []int
-	samplerPromptTokens []llama.Token
-	nativeChunks        []imcMediaChunk
+	ctx                  context.Context
+	span                 trace.Span
+	bitmaps              []mtmd.Bitmap
+	inputChunks          mtmd.InputChunks
+	chunkIdx             uint64
+	textPrepared         bool
+	textRemaining        []llama.Token
+	prefixCursor         imcMediaPrefixCursor
+	position             int
+	physicalKVCells      int
+	totalPhysicalTokens  int
+	systemBoundaryTokens int
+	mediaKVCounts        []int
+	samplerPromptTokens  []llama.Token
+	nativeChunks         []imcMediaChunk
 }
 
 func (p *imcMediaPreparation) free() {
@@ -238,6 +239,9 @@ func (m *Model) advanceIMCMediaChunk(p *imcMediaPreparation, seqID llama.SeqId, 
 			p.textPrepared = true
 		}
 		n := min(len(p.textRemaining), m.cfg.PrefillBatchSize())
+		if p.systemBoundaryTokens > p.position {
+			n = min(n, p.systemBoundaryTokens-p.position)
+		}
 		if n > 0 {
 			if _, err := m.decodeTextMRoPEIntoCache(p.textRemaining[:n], seqID, p.position, handoff); err != nil {
 				return false, fmt.Errorf("imc-media-cache: text chunk %d: %w", p.chunkIdx, err)

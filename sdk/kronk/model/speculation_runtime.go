@@ -268,6 +268,7 @@ func (e *batchEngine) RollbackClassicTarget(slotID int, plan classicengine.Final
 		if err := e.restoreTargetSpecSnapshot(s, s.specBasePast, s.specPendingOriginalSampled, s.specDraftTokens, plan.Accepted); err != nil {
 			return false, fmt.Errorf("restoring target state after speculative rejection: %w", err)
 		}
+		e.logTargetSpecRollback(s, plan.Accepted, plan.Drafted, true)
 		return true, nil
 	}
 	if rollbackFrom < rollbackTo {
@@ -280,6 +281,7 @@ func (e *batchEngine) RollbackClassicTarget(slotID int, plan classicengine.Final
 		if !removed {
 			return false, fmt.Errorf("removing rejected target draft positions for seq %d", s.seqID)
 		}
+		e.logTargetSpecRollback(s, plan.Accepted, plan.Drafted, false)
 	}
 	return false, nil
 }
@@ -389,6 +391,7 @@ func (e *batchEngine) RollbackMTPTarget(slotID int, plan mtp.FinalizePlan) (bool
 		if err := e.restoreTargetSpecSnapshot(s, s.specBasePast, s.specPendingOriginalSampled, s.specDraftTokens, plan.Accepted); err != nil {
 			return false, fmt.Errorf("restoring target state after speculative rejection: %w", err)
 		}
+		e.logTargetSpecRollback(s, plan.Accepted, plan.Drafted, true)
 		return true, nil
 	}
 	if rollbackFrom < rollbackTo {
@@ -401,8 +404,28 @@ func (e *batchEngine) RollbackMTPTarget(slotID int, plan mtp.FinalizePlan) (bool
 		if !removed {
 			return false, fmt.Errorf("removing rejected target draft positions for seq %d", s.seqID)
 		}
+		e.logTargetSpecRollback(s, plan.Accepted, plan.Drafted, false)
 	}
 	return false, nil
+}
+
+// logTargetSpecRollback records completed native recovery, not just a rejected
+// verification result. A failed restore/removal must never attest this branch.
+func (e *batchEngine) logTargetSpecRollback(s *slot, accepted, drafted int, snapshot bool) {
+	backend := "classic-own-kv"
+	if selected, ok := selectedMTPBackend(e.model.draft); ok {
+		backend = selected.name()
+	}
+	strategy := "attention-suffix"
+	switch {
+	case snapshot:
+		strategy = "recurrent-snapshot-replay"
+	case e.model.modelInfo.profile.MemorySemantics == modelprofile.MemoryRecurrent:
+		strategy = "recurrent-native"
+	}
+	e.model.log(s.job.ctx, "speculative", "status", "target-rollback",
+		"id", s.job.id, "slot", s.id, "backend", backend, "strategy", strategy,
+		"accepted", accepted, "drafted", drafted)
 }
 
 func (e *batchEngine) RollbackMTPDraft(slotID int, plan mtp.FinalizePlan) error {

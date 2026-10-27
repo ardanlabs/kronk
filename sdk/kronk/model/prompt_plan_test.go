@@ -85,7 +85,7 @@ func TestProcessIMCMediaPlansMatches(t *testing.T) {
 			}
 			d := D{"messages": []D{{"role": "user", "content": "test"}}}
 			session.cachedRenderInputHash, _ = m.imcRenderFingerprint(d, dMessages(d))
-			result := m.processIMCMediaPlans(context.Background(), d, d, tt.actual, tt.stable, []llama.Token{9}, time.Now())
+			result := m.processIMCMediaPlans(context.Background(), d, d, tt.actual, tt.stable, []llama.Token{9}, nil, time.Now())
 			if result.imcMatchKind != tt.wantMatch {
 				t.Fatalf("imcMatchKind = %q, want %q", result.imcMatchKind, tt.wantMatch)
 			}
@@ -137,7 +137,7 @@ func TestProcessIMCMediaAnchorPlanningIsImmutableAndUsesLogicalPosition(t *testi
 	m := &Model{imcSessions: []*imcSession{session}, log: func(context.Context, string, ...any) {}}
 	d := D{"messages": []D{{"role": "user", "content": "test"}}}
 
-	result := m.processIMCMediaPlans(context.Background(), d, d, actual, stable, []llama.Token{4}, time.Now())
+	result := m.processIMCMediaPlans(context.Background(), d, d, actual, stable, []llama.Token{4}, nil, time.Now())
 
 	if result.imcMatchKind != "anchor" || result.cacheIdx != 5 || result.imcExpectedTokens != 12 {
 		t.Fatalf("anchor result = kind %q cacheIdx %d physical %d", result.imcMatchKind, result.cacheIdx, result.imcExpectedTokens)
@@ -196,14 +196,14 @@ func TestIMCCommitMediaAdvanceAndReuse(t *testing.T) {
 	m.imcPublishSession(session)
 
 	exactActual := mediaPlan(append(append([]promptUnit{}, advanced.units...), promptUnit{token: 9})...)
-	exact := m.processIMCMediaPlans(context.Background(), d, d, exactActual, advanced, []llama.Token{9}, time.Now())
+	exact := m.processIMCMediaPlans(context.Background(), d, d, exactActual, advanced, []llama.Token{9}, nil, time.Now())
 	if exact.imcMatchKind != "exact" {
 		t.Fatalf("advanced exact match = %q, want exact", exact.imcMatchKind)
 	}
 	m.imcReleaseReservation(session.id)
 
 	nextActual := mediaPlan(append(append([]promptUnit{}, next.units...), promptUnit{token: 9})...)
-	appendResult := m.processIMCMediaPlans(context.Background(), d, d, nextActual, next, []llama.Token{9}, time.Now())
+	appendResult := m.processIMCMediaPlans(context.Background(), d, d, nextActual, next, []llama.Token{9}, nil, time.Now())
 	if appendResult.imcMatchKind != "anchor" || !reflect.DeepEqual(appendResult.imcNewCacheTokens, []llama.Token{4}) {
 		t.Fatalf("next append = kind %q tokens %v, want anchor [4]", appendResult.imcMatchKind, appendResult.imcNewCacheTokens)
 	}
@@ -232,7 +232,7 @@ func TestProcessIMCMediaPlansRebuildsExactPlanWhenRenderFingerprintChanges(t *te
 	m := &Model{imcSessions: []*imcSession{session}, log: func(context.Context, string, ...any) {}}
 	session.cachedRenderInputHash, _ = m.imcRenderFingerprint(priorD, dMessages(priorD))
 
-	result := m.processIMCMediaPlans(context.Background(), currentD, currentD, actual, stable, []llama.Token{9}, time.Now())
+	result := m.processIMCMediaPlans(context.Background(), currentD, currentD, actual, stable, []llama.Token{9}, nil, time.Now())
 	if result.imcMatchKind != "rebuild" {
 		t.Errorf("imcMatchKind: got %q, want %q", result.imcMatchKind, "rebuild")
 	}
@@ -407,7 +407,7 @@ func TestProcessIMCMediaPlansReusesTextSessionForFirstMedia(t *testing.T) {
 	m := &Model{imcSessions: []*imcSession{session}, log: func(context.Context, string, ...any) {}}
 	d := D{"messages": []D{{"role": "user", "content": "test"}}}
 
-	result := m.processIMCMediaPlans(context.Background(), d, d, actual, stable, []llama.Token{9}, time.Now())
+	result := m.processIMCMediaPlans(context.Background(), d, d, actual, stable, []llama.Token{9}, nil, time.Now())
 
 	if result.imcMatchKind != "media-append" || result.imcSession != session || result.cacheIdx != 2 {
 		t.Fatalf("text-to-media result = kind %q, session %p, cache index %d; want media-append, %p, 2", result.imcMatchKind, result.imcSession, result.cacheIdx, session)

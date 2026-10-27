@@ -42,18 +42,15 @@ ENVIRONMENT VARIABLES
 
   KRONK_BASE_PATH  Base path for kronk data (models, libraries, catalog, model_config)`,
 	Args: cobra.ExactArgs(1),
-	Run:  main,
+	RunE: main,
 }
 
 func init() {
 	Cmd.Flags().Bool("local", false, "Run without the model server")
 }
 
-func main(cmd *cobra.Command, args []string) {
-	if err := run(cmd, args[0]); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
+func main(cmd *cobra.Command, args []string) error {
+	return run(cmd, args[0])
 }
 
 func run(cmd *cobra.Command, modelID string) error {

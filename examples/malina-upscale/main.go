@@ -50,7 +50,7 @@ func run() error {
 		}
 	}()
 
-	images, err := upscaler.Upscale(ctx, input)
+	images, err := upscaler.UpscaleWithInfo(ctx, input)
 	if err != nil {
 		return err
 	}
@@ -59,12 +59,14 @@ func run() error {
 		return fmt.Errorf("upscaler returned no images")
 	}
 
+	fmt.Println("Generation metadata:", images[0].GenerationInfo)
+
 	file, err := os.Create("malina-upscaled.png")
 	if err != nil {
 		return err
 	}
 
-	return errors.Join(png.Encode(file, images[0]), file.Close())
+	return errors.Join(png.Encode(file, images[0].Image), file.Close())
 }
 
 func install(ctx context.Context) (models.Manifest, error) {

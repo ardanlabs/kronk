@@ -2,7 +2,6 @@ package list
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/client"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
@@ -21,18 +20,15 @@ Environment Variables (web mode - default):
 Environment Variables (--local mode):
       KRONK_BASE_PATH  Base path for kronk data (models, libraries, catalog, model_config)`,
 	Args: cobra.NoArgs,
-	Run:  main,
+	RunE: main,
 }
 
 func init() {
 	Cmd.Flags().Bool("local", false, "Run without the model server")
 }
 
-func main(cmd *cobra.Command, args []string) {
-	if err := run(cmd); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
+func main(cmd *cobra.Command, args []string) error {
+	return run(cmd)
 }
 
 func run(cmd *cobra.Command) error {

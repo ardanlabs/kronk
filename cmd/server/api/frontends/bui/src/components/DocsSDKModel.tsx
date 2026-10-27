@@ -52,9 +52,25 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="func-inityzmaworkarounds">
               <h4>InitYzmaWorkarounds</h4>
               <pre className="code-block">
-                <code>func InitYzmaWorkarounds(string) error</code>
+                <code>func InitYzmaWorkarounds(path string) error</code>
               </pre>
-              <p className="doc-description">InitYzmaWorkarounds initializes Kronk-specific Yzma compatibility code.</p>
+              <p className="doc-description">InitYzmaWorkarounds initializes Kronk-specific Yzma compatibility code. Call it during native library initialization, before using these bindings.</p>
+            </div>
+
+            <div className="doc-section" id="func-mtmdaudiostreamgetnrows">
+              <h4>MTMDAudioStreamGetNRows</h4>
+              <pre className="code-block">
+                <code>func MTMDAudioStreamGetNRows(stream MTMDAudioStream) (int64, error)</code>
+              </pre>
+              <p className="doc-description">MTMDAudioStreamGetNRows returns the rows produced so far, including prefix rows. The stream must be a nonzero, live native stream. An error means the binding is unavailable.</p>
+            </div>
+
+            <div className="doc-section" id="func-mtmdaudiostreamgetnrowsflushed">
+              <h4>MTMDAudioStreamGetNRowsFlushed</h4>
+              <pre className="code-block">
+                <code>func MTMDAudioStreamGetNRowsFlushed(stream MTMDAudioStream) (int64, error)</code>
+              </pre>
+              <p className="doc-description">MTMDAudioStreamGetNRowsFlushed returns the row endpoint of the last flush. Once produced rows reach this endpoint, all flushed audio rows have been produced, not necessarily decoded or delivered. The stream must be nonzero and live. An error means the binding is unavailable.</p>
             </div>
 
             <div className="doc-section" id="func-recurrentstatecopies">
@@ -111,6 +127,14 @@ export default function DocsSDKModel() {
                 <code>func VerifyArtifact(modelFile string, digest ArtifactDigest, previous *ArtifactVerification, checkSHA bool) (ArtifactVerification, bool, error)</code>
               </pre>
               <p className="doc-description">VerifyArtifact checks modelFile against parsed integrity values. It reads the artifact itself but performs no sidecar I/O. The returned bool reports whether a new verification was produced and should be persisted by the caller.</p>
+            </div>
+
+            <div className="doc-section" id="func-verifyartifactwithlogger">
+              <h4>VerifyArtifactWithLogger</h4>
+              <pre className="code-block">
+                <code>func VerifyArtifactWithLogger(ctx context.Context, log applog.Logger, modelFile string, digest ArtifactDigest, previous *ArtifactVerification, checkSHA bool) (ArtifactVerification, bool, error)</code>
+              </pre>
+              <p className="doc-description">VerifyArtifactWithLogger performs VerifyArtifact and logs the start and successful completion of full-file hashing. Cached and size-only checks produce no verification logs.</p>
             </div>
 
             <div className="doc-section" id="func-parsechannel">
@@ -183,6 +207,14 @@ export default function DocsSDKModel() {
                 <code>func ParseLoadMode(value string) (LoadMode, error)</code>
               </pre>
               <p className="doc-description">ParseLoadMode parses a load mode name or direct-I/O alias.</p>
+            </div>
+
+            <div className="doc-section" id="func-mtmdhelpergetcapabilities">
+              <h4>MTMDHelperGetCapabilities</h4>
+              <pre className="code-block">
+                <code>func MTMDHelperGetCapabilities(model llama.Model, ctx mtmd.Context) (MTMDHelperCapabilities, error)</code>
+              </pre>
+              <p className="doc-description">MTMDHelperGetCapabilities returns native capabilities for a loaded model and projector. The projector may be zero for a text-only model. The handles must remain loaded during the call. An error means the binding is unavailable.</p>
             </div>
 
             <div className="doc-section" id="func-parsemediatype">
@@ -471,7 +503,7 @@ export default function DocsSDKModel() {
 	PtrRopeFreqScale           *float32
 	RecordArtifactVerification ArtifactVerificationRecorder
 	RopeScaling                RopeScalingType
-	SessionStoreFactory        SessionStoreFactory
+	SessionStoreFactory        kvstorage.Factory
 	Speculation                SpeculationMode
 	PtrSplitMode               *SplitMode
 	PtrSWAFull                 *bool
@@ -520,8 +552,8 @@ export default function DocsSDKModel() {
               <p className="doc-description">ImageTokenBudget explicitly sets the preprocessing token budget for supported projectors. Lower values can reduce image resolution and detail. When unset, the projector's default is preserved. Explicit values must be positive and also contribute to native batch capacity. Not all projectors honor the budget, and final chunk sizes are still checked before decoding.</p>
               <p className="doc-description">NGpuLayers is the number of model layers to offload to the GPU. When set to 0, all layers are offloaded (default). Set to -1 to keep all layers on CPU. Any positive value specifies the exact number of layers to offload.</p>
               <p className="doc-description">NSeqMax controls concurrency behavior based on model type. For text inference models (including vision/audio), it sets the maximum number of generation slots. For supported embedding and reranking architectures, it sets the maximum sequence width of the sequence-batch engine. Other embedding and reranking architectures use it as the context-pool size. For decision models, it sets the maximum number of work items evaluated together on one context. When set to 0, a default of 1 is used.</p>
-              <p className="doc-description">NThreads is the number of threads to use for generation. When unset or set to 0, it defaults to the greater of 4 and runtime.NumCPU().</p>
-              <p className="doc-description">NThreadsBatch is the number of threads to use for batch processing. When unset or set to 0, it defaults to the greater of 4 and runtime.NumCPU().</p>
+              <p className="doc-description">NThreads is the number of threads to use for generation. When unset or set to 0, it defaults to the greater of 4 and runtime.GOMAXPROCS(0).</p>
+              <p className="doc-description">NThreadsBatch is the number of threads to use for batch processing. When unset or set to 0, it defaults to the greater of 4 and runtime.GOMAXPROCS(0).</p>
               <p className="doc-description">NUMA controls the NUMA (Non-Uniform Memory Access) strategy. This matters most when expert tensors are on CPU and the system has multiple NUMA nodes. Valid values: "" (disabled), "distribute", "isolate", "numactl", "mirror". "distribute" is recommended for multi-socket MoE setups; without it, cross-socket memory access can cause significant bandwidth collapse.</p>
               <p className="doc-description">OffloadKQV controls whether the KV cache is offloaded to the GPU. When nil or true, the KV cache is stored on the GPU (default behavior). Set to false to keep the KV cache on the CPU, which reduces VRAM usage but may slow inference.</p>
               <p className="doc-description">OpOffload controls whether host tensor operations are offloaded to the device (GPU). When nil or true, operations are offloaded (default behavior). Set to false to keep operations on the CPU.</p>
@@ -647,6 +679,10 @@ export default function DocsSDKModel() {
                 <code>{`type DecisionRequest struct {
 	State     any
 	Questions []DecisionQuestion
+	// Images contains encoded JPEG, PNG, GIF, or WebP files, in prompt order.
+	// Images precede State and require a vision-capable decision protocol and
+	// compatible projector. Image-shaped values in State remain ordinary data.
+	Images [][]byte
 }`}</code>
               </pre>
               <p className="doc-description">DecisionRequest evaluates ordered questions independently against one shared state.</p>
@@ -830,6 +866,19 @@ export default function DocsSDKModel() {
               <p className="doc-description">IMCSystemCacheDetail is a scalar snapshot of one System cache pool entry.</p>
             </div>
 
+            <div className="doc-section" id="type-inputcapabilities">
+              <h4>InputCapabilities</h4>
+              <pre className="code-block">
+                <code>{`type InputCapabilities struct {
+	Available bool \`json:"available"\`
+	Chat      bool \`json:"chat"\`
+	Vision    bool \`json:"vision"\`
+	Audio     bool \`json:"audio"\`
+}`}</code>
+              </pre>
+              <p className="doc-description">InputCapabilities describes detected chat inputs for the loaded model, projector, and native build. Available is false when detection is unavailable; the remaining fields must not then be interpreted as confirmed support.</p>
+            </div>
+
             <div className="doc-section" id="type-kvcachemode">
               <h4>KVCacheMode</h4>
               <pre className="code-block">
@@ -860,14 +909,6 @@ export default function DocsSDKModel() {
               <p className="doc-description">LoadMode controls model weight loading. Its zero value is auto.</p>
             </div>
 
-            <div className="doc-section" id="type-logger">
-              <h4>Logger</h4>
-              <pre className="code-block">
-                <code>{`type Logger = applog.Logger`}</code>
-              </pre>
-              <p className="doc-description">Logger provides a function for logging messages from different APIs.</p>
-            </div>
-
             <div className="doc-section" id="type-logprobs">
               <h4>Logprobs</h4>
               <pre className="code-block">
@@ -876,6 +917,31 @@ export default function DocsSDKModel() {
 }`}</code>
               </pre>
               <p className="doc-description">Logprobs contains log probability information for the response.</p>
+            </div>
+
+            <div className="doc-section" id="type-mtmdaudiostream">
+              <h4>MTMDAudioStream</h4>
+              <pre className="code-block">
+                <code>{`type MTMDAudioStream uintptr`}</code>
+              </pre>
+              <p className="doc-description">MTMDAudioStream is an opaque native mtmd_audio_stream pointer. Its owner must keep the stream alive while calling the row getters below.</p>
+            </div>
+
+            <div className="doc-section" id="type-mtmdhelpercapabilities">
+              <h4>MTMDHelperCapabilities</h4>
+              <pre className="code-block">
+                <code>{`type MTMDHelperCapabilities struct {
+	Chat           bool
+	Vision         bool
+	Audio          bool
+	Video          bool
+	AudioStream    bool
+	TextGen        bool
+	AudioGen       bool
+	AudioGenSpkRef bool
+}`}</code>
+              </pre>
+              <p className="doc-description">MTMDHelperCapabilities describes native model and projector capabilities, not features implemented by Kronk. It mirrors struct mtmd_helper_cap in field order.</p>
             </div>
 
             <div className="doc-section" id="type-mediatype">
@@ -1275,22 +1341,6 @@ export default function DocsSDKModel() {
 }`}</code>
               </pre>
               <p className="doc-description">RopeScalingType controls RoPE scaling. Its zero value is none.</p>
-            </div>
-
-            <div className="doc-section" id="type-sessionstore">
-              <h4>SessionStore</h4>
-              <pre className="code-block">
-                <code>{`type SessionStore = kvstorage.Store`}</code>
-              </pre>
-              <p className="doc-description">SessionStore is the storage contract used for an externalized IMC session.</p>
-            </div>
-
-            <div className="doc-section" id="type-sessionstorefactory">
-              <h4>SessionStoreFactory</h4>
-              <pre className="code-block">
-                <code>{`type SessionStoreFactory = kvstorage.Factory`}</code>
-              </pre>
-              <p className="doc-description">SessionStoreFactory constructs an independent SessionStore.</p>
             </div>
 
             <div className="doc-section" id="type-speculationmode">
@@ -2570,6 +2620,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">IMCSystemCaches returns every entry in the immutable System preload pool.</p>
             </div>
 
+            <div className="doc-section" id="method-model-inputcapabilities">
+              <h4>Model.InputCapabilities</h4>
+              <pre className="code-block">
+                <code>func (m *Model) InputCapabilities() InputCapabilities</code>
+              </pre>
+              <p className="doc-description">InputCapabilities returns cached runtime input capabilities. Native output capabilities do not imply that Kronk implements those output pipelines.</p>
+            </div>
+
             <div className="doc-section" id="method-model-modelinfo">
               <h4>Model.ModelInfo</h4>
               <pre className="code-block">
@@ -3212,6 +3270,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">// ChannelNone identifies a structural marker, counted but not surfaced. ChannelNone = newChannel("none", 0) // ChannelReasoning identifies reasoning_content deltas. ChannelReasoning = newChannel("reasoning", 1) // ChannelAnswer identifies content deltas. ChannelAnswer = newChannel("answer", 2) // ChannelTool identifies content accumulated for ToolCall parsing. ChannelTool = newChannel("tool", 3)</p>
             </div>
 
+            <div className="doc-section" id="var-errartifactsizemismatch">
+              <h4>ErrArtifactSizeMismatch</h4>
+              <pre className="code-block">
+                <code>{`var ErrArtifactSizeMismatch = errors.New("model artifact size mismatch; wait for any active pull to finish or run \`kronk model pull\` again")`}</code>
+              </pre>
+              <p className="doc-description">ErrArtifactSizeMismatch indicates an incomplete or invalid model artifact.</p>
+            </div>
+
             <div className="doc-section" id="var-errdecisionbudget">
               <h4>ErrDecisionBudget</h4>
               <pre className="code-block">
@@ -3269,6 +3335,8 @@ export default function DocsSDKModel() {
               <ul>
                 <li><a href="#func-addparams">AddParams</a></li>
                 <li><a href="#func-inityzmaworkarounds">InitYzmaWorkarounds</a></li>
+                <li><a href="#func-mtmdaudiostreamgetnrows">MTMDAudioStreamGetNRows</a></li>
+                <li><a href="#func-mtmdaudiostreamgetnrowsflushed">MTMDAudioStreamGetNRowsFlushed</a></li>
                 <li><a href="#func-recurrentstatecopies">RecurrentStateCopies</a></li>
                 <li><a href="#func-registerparser">RegisterParser</a></li>
                 <li><a href="#func-speculativecontextcount">SpeculativeContextCount</a></li>
@@ -3276,6 +3344,7 @@ export default function DocsSDKModel() {
                 <li><a href="#func-validatemessages">ValidateMessages</a></li>
                 <li><a href="#func-newgrammarsampler">NewGrammarSampler</a></li>
                 <li><a href="#func-verifyartifact">VerifyArtifact</a></li>
+                <li><a href="#func-verifyartifactwithlogger">VerifyArtifactWithLogger</a></li>
                 <li><a href="#func-parsechannel">ParseChannel</a></li>
                 <li><a href="#func-parsedecisionprotocol">ParseDecisionProtocol</a></li>
                 <li><a href="#func-parsedecisionquestiontype">ParseDecisionQuestionType</a></li>
@@ -3285,6 +3354,7 @@ export default function DocsSDKModel() {
                 <li><a href="#func-parsekvcachemode">ParseKVCacheMode</a></li>
                 <li><a href="#func-parselazymode">ParseLazyMode</a></li>
                 <li><a href="#func-parseloadmode">ParseLoadMode</a></li>
+                <li><a href="#func-mtmdhelpergetcapabilities">MTMDHelperGetCapabilities</a></li>
                 <li><a href="#func-parsemediatype">ParseMediaType</a></li>
                 <li><a href="#func-parsemoemode">ParseMoEMode</a></li>
                 <li><a href="#func-newmodel">NewModel</a></li>
@@ -3333,11 +3403,13 @@ export default function DocsSDKModel() {
                 <li><a href="#type-imcsessiondetail">IMCSessionDetail</a></li>
                 <li><a href="#type-imcsessionstate">IMCSessionState</a></li>
                 <li><a href="#type-imcsystemcachedetail">IMCSystemCacheDetail</a></li>
+                <li><a href="#type-inputcapabilities">InputCapabilities</a></li>
                 <li><a href="#type-kvcachemode">KVCacheMode</a></li>
                 <li><a href="#type-lazymode">LazyMode</a></li>
                 <li><a href="#type-loadmode">LoadMode</a></li>
-                <li><a href="#type-logger">Logger</a></li>
                 <li><a href="#type-logprobs">Logprobs</a></li>
+                <li><a href="#type-mtmdaudiostream">MTMDAudioStream</a></li>
+                <li><a href="#type-mtmdhelpercapabilities">MTMDHelperCapabilities</a></li>
                 <li><a href="#type-mediatype">MediaType</a></li>
                 <li><a href="#type-moeconfig">MoEConfig</a></li>
                 <li><a href="#type-moemode">MoEMode</a></li>
@@ -3360,8 +3432,6 @@ export default function DocsSDKModel() {
                 <li><a href="#type-responsetoolcallfunction">ResponseToolCallFunction</a></li>
                 <li><a href="#type-result">Result</a></li>
                 <li><a href="#type-ropescalingtype">RopeScalingType</a></li>
-                <li><a href="#type-sessionstore">SessionStore</a></li>
-                <li><a href="#type-sessionstorefactory">SessionStoreFactory</a></li>
                 <li><a href="#type-speculationmode">SpeculationMode</a></li>
                 <li><a href="#type-splitmode">SplitMode</a></li>
                 <li><a href="#type-statemachine">StateMachine</a></li>
@@ -3522,6 +3592,7 @@ export default function DocsSDKModel() {
                 <li><a href="#method-model-embeddings">Model.Embeddings</a></li>
                 <li><a href="#method-model-imcsessions">Model.IMCSessions</a></li>
                 <li><a href="#method-model-imcsystemcaches">Model.IMCSystemCaches</a></li>
+                <li><a href="#method-model-inputcapabilities">Model.InputCapabilities</a></li>
                 <li><a href="#method-model-modelinfo">Model.ModelInfo</a></li>
                 <li><a href="#method-model-rerank">Model.Rerank</a></li>
                 <li><a href="#method-model-tokenize">Model.Tokenize</a></li>
@@ -3592,6 +3663,7 @@ export default function DocsSDKModel() {
                 <li><a href="#var-variable">Variable</a></li>
                 <li><a href="#var-variable">Variable</a></li>
                 <li><a href="#var-variable">Variable</a></li>
+                <li><a href="#var-errartifactsizemismatch">ErrArtifactSizeMismatch</a></li>
                 <li><a href="#var-errdecisionbudget">ErrDecisionBudget</a></li>
                 <li><a href="#var-errdecisionrequest">ErrDecisionRequest</a></li>
                 <li><a href="#var-errfileinputsunsupported">ErrFileInputsUnsupported</a></li>

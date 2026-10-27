@@ -3,7 +3,6 @@ package devices
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	sdkdevices "github.com/ardanlabs/kronk/sdk/tools/devices"
@@ -22,11 +21,8 @@ EXAMPLES
 
   # List all devices
   kronk devices`,
-	Run: func(cmd *cobra.Command, args []string) {
-		if err := run(); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return run()
 	},
 }
 

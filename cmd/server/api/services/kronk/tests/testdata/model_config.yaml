@@ -1,0 +1,73 @@
+version: 2
+
+# Pin memory/state settings, not device selection. Native effective settings are
+# logged on load; text-state tests also assert the loaded configuration.
+models:
+  unsloth/Qwen3-1.7B-Q4_K_M:
+    context-window: 8192
+    nseq-max: 1
+    prefill-batch-size: 512
+    physical-batch-size: 512
+    cache-type-k: f16
+    cache-type-v: f16
+    incremental-cache: true
+    cache-min-tokens: 1
+    speculation: disabled
+  unsloth/Qwen3-1.7B-Q4_K_M/IMCOff:
+    context-window: 8192
+    nseq-max: 1
+    prefill-batch-size: 512
+    physical-batch-size: 512
+    cache-type-k: f16
+    cache-type-v: f16
+    incremental-cache: false
+    cache-min-tokens: 1
+    speculation: disabled
+  unsloth/Qwen3-1.7B-Q4_K_M/Transport2:
+    context-window: 8192
+    nseq-max: 2
+    prefill-batch-size: 512
+    physical-batch-size: 512
+    cache-type-k: f16
+    cache-type-v: f16
+    incremental-cache: true
+    cache-min-tokens: 1
+    speculation: disabled
+  unsloth/Qwen3.5-0.8B-Q8_0:
+    context-window: 8192
+    nseq-max: 1
+    prefill-batch-size: 512
+    physical-batch-size: 512
+    cache-type-k: f16
+    cache-type-v: f16
+    incremental-cache: true
+    cache-min-tokens: 1
+    speculation: disabled
+  unsloth/Qwen3.5-0.8B-Q8_0/Transport2:
+    context-window: 8192
+    nseq-max: 2
+    prefill-batch-size: 512
+    physical-batch-size: 512
+    cache-type-k: f16
+    cache-type-v: f16
+    incremental-cache: true
+    cache-min-tokens: 1
+    speculation: disabled
+  nomic-ai/nomic-embed-text-v1.5.Q8_0:
+    context-window: 8192
+    nseq-max: 4
+    cache-type-k: f16
+    cache-type-v: f16
+    speculation: disabled
+  gpustack/bge-reranker-v2-m3-Q8_0:
+    context-window: 2048
+    nseq-max: 4
+    cache-type-k: f16
+    cache-type-v: f16
+    speculation: disabled
+  chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0:
+    context-window: 4096
+    nseq-max: 4
+    cache-type-k: f16
+    cache-type-v: f16
+    speculation: disabled

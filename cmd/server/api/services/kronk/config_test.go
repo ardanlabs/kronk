@@ -7,7 +7,14 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
+	"github.com/ardanlabs/kronk/sdk/kronk"
 )
+
+func TestNewConfigBuild(t *testing.T) {
+	if got := newConfig().Build; got != kronk.Version {
+		t.Errorf("Build: got %q, want %q", got, kronk.Version)
+	}
+}
 
 func TestNewConfigMemoryBudget(t *testing.T) {
 	if got := newConfig().Pool.BudgetPercent; got != 90 {

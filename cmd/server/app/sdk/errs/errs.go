@@ -147,6 +147,8 @@ func FromSDK(err error) *Error {
 		code = TooManyRequests
 	case errors.Is(err, github.ErrRateLimited):
 		code = TooManyRequests
+	case errors.Is(err, model.ErrArtifactSizeMismatch):
+		code = FailedPrecondition
 	case errors.Is(err, buckyffmpeg.ErrNotInstalled):
 		code = FailedPrecondition
 	case errors.Is(err, audio.ErrUnsupportedFormat):

@@ -26,7 +26,7 @@ type decisionSchedule struct {
 
 func decisionWorkOutputs(work decisionWork) int {
 	if work.jointScores > 0 {
-		return len(work.tokens)
+		return work.rowCount()
 	}
 	return len(work.readouts)
 }
@@ -75,10 +75,10 @@ func scheduleDecision(jobs []*decisionJob, maxSequences, maxTokens, maxOutputs i
 			deferred = 0
 			continue
 
-		case len(item.tokens) > maxTokens:
+		case item.rowCount() > maxTokens:
 			schedule.failed = append(schedule.failed, decisionJobFailure{
 				job: job,
-				err: fmt.Errorf("schedule-decision: work[%d] has %d tokens but limit is %d", job.next, len(item.tokens), maxTokens),
+				err: fmt.Errorf("%w: work[%d] needs %d text/image rows but batch limit is %d", ErrDecisionBudget, job.next, item.rowCount(), maxTokens),
 			})
 			deferred = 0
 			continue
@@ -91,7 +91,7 @@ func scheduleDecision(jobs []*decisionJob, maxSequences, maxTokens, maxOutputs i
 			deferred = 0
 			continue
 
-		case schedule.nTokens+len(item.tokens) > maxTokens || schedule.nOutputs+outputs > maxOutputs || item.jointScores > 0 && len(schedule.entries) > 0:
+		case schedule.nTokens+item.rowCount() > maxTokens || schedule.nOutputs+outputs > maxOutputs || item.jointScores > 0 && len(schedule.entries) > 0:
 			pending = append(pending, job)
 			deferred++
 			if deferred >= len(pending) {
@@ -105,7 +105,7 @@ func scheduleDecision(jobs []*decisionJob, maxSequences, maxTokens, maxOutputs i
 			workOffset: job.next,
 			work:       item,
 		})
-		schedule.nTokens += len(item.tokens)
+		schedule.nTokens += item.rowCount()
 		schedule.nOutputs += outputs
 		job.next++
 		deferred = 0

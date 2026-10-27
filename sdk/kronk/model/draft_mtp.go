@@ -9,8 +9,10 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
+	internalspec "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
 	mtpengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/mtp"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
 	yzmaspec "github.com/hybridgroup/yzma/exp/speculative"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
@@ -46,7 +48,7 @@ func modelFilesMTPArchitecture(modelFiles []string) (modelprofile.MTPArchitectur
 		return architecture, nil
 	}
 
-	profile := modelprofile.Resolve(metadata)
+	profile := arch.Resolve(metadata)
 	blocks := profile.Dimensions.BlockCount
 	nextN := profile.Speculation.NextNPredictLayers
 	if blocks < nextN {
@@ -84,7 +86,7 @@ func metadataHasMTP(metadata map[string]string) bool {
 }
 
 func metadataMTPArchitecture(metadata map[string]string) modelprofile.MTPArchitecture {
-	speculation := modelprofile.Resolve(metadata).Speculation
+	speculation := arch.Resolve(metadata).Speculation
 	if speculation.NextNPredictLayers <= 0 {
 		return modelprofile.MTPArchitectureNone
 	}
@@ -92,7 +94,7 @@ func metadataMTPArchitecture(metadata map[string]string) modelprofile.MTPArchite
 }
 
 func metadataHasAssistantMTP(metadata map[string]string) bool {
-	return modelprofile.Resolve(metadata).Speculation.SharedKVCompanion
+	return arch.Resolve(metadata).Speculation.SharedKVCompanion
 }
 
 // mtpNDraft returns the starting (ceiling) number of draft tokens for the
@@ -570,7 +572,7 @@ func loadDraftModelMTPShared(ctx context.Context, log applog.Logger, cfg Config,
 //
 // The caller is responsible for cleanup on error; this function only
 // owns resources it returns successfully.
-func selectAndLoadDraft(ctx context.Context, log applog.Logger, cfg Config, targetCtx llama.Context, targetModel llama.Model, targetCtxParams llama.ContextParams, plan speculationPlan) (drafter, error) {
+func selectAndLoadDraft(ctx context.Context, log applog.Logger, cfg Config, targetCtx llama.Context, targetModel llama.Model, targetCtxParams llama.ContextParams, plan internalspec.Plan) (drafter, error) {
 	switch plan.Source {
 	case speculationSourceNone:
 		return nil, nil

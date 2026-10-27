@@ -24,14 +24,11 @@ var Cmd = &cobra.Command{
 Environment Variables:
       KRONK_TOKEN         (required when auth enabled)  Authentication token for the kronk server.
       KRONK_WEB_API_HOST  (default localhost:11435)  IP Address for the kronk server.`,
-	Run: main,
+	RunE: main,
 }
 
-func main(cmd *cobra.Command, args []string) {
-	if err := run(); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
+func main(cmd *cobra.Command, args []string) error {
+	return run()
 }
 
 func run() error {

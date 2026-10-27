@@ -401,6 +401,14 @@ export default function DocsSDKKronk() {
               <p className="doc-description">IMCSystemCaches returns the model's immutable System cache pool entries.</p>
             </div>
 
+            <div className="doc-section" id="method-kronk-inputcapabilities">
+              <h4>Kronk.InputCapabilities</h4>
+              <pre className="code-block">
+                <code>func (krn *Kronk) InputCapabilities() model.InputCapabilities</code>
+              </pre>
+              <p className="doc-description">InputCapabilities returns cached runtime input capabilities for the loaded model.</p>
+            </div>
+
             <div className="doc-section" id="method-kronk-modelconfig">
               <h4>Kronk.ModelConfig</h4>
               <pre className="code-block">
@@ -508,7 +516,7 @@ export default function DocsSDKKronk() {
             <div className="doc-section" id="const-version">
               <h4>Version</h4>
               <pre className="code-block">
-                <code>{`const Version = "1.33.0-rc"`}</code>
+                <code>{`const Version = "1.33.1-rc"`}</code>
               </pre>
               <p className="doc-description">Version contains the current version of the kronk package. Bump this in the same commit that prepares a `v&lt;X.Y.Z&gt;` release tag — CI guards the release pipeline (.github/workflows/release.yaml and docker.yml, via .github/scripts/check-version.sh) and refuses to publish a tag whose value does not match this constant.</p>
             </div>
@@ -608,6 +616,7 @@ export default function DocsSDKKronk() {
                 <li><a href="#method-kronk-embeddingshttp">Kronk.EmbeddingsHTTP</a></li>
                 <li><a href="#method-kronk-imcsessions">Kronk.IMCSessions</a></li>
                 <li><a href="#method-kronk-imcsystemcaches">Kronk.IMCSystemCaches</a></li>
+                <li><a href="#method-kronk-inputcapabilities">Kronk.InputCapabilities</a></li>
                 <li><a href="#method-kronk-modelconfig">Kronk.ModelConfig</a></li>
                 <li><a href="#method-kronk-modelid">Kronk.ModelID</a></li>
                 <li><a href="#method-kronk-modelinfo">Kronk.ModelInfo</a></li>

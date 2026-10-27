@@ -1,12 +1,16 @@
-package modelprofile
+// Package arch implements GGUF architecture adapters. Adapters normalize model
+// facts; runtime and tooling consume those facts through modelprofile.
+package arch
 
 import (
 	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 )
 
-func resolveGeneric(metadata metadata) Profile {
+// Generic extracts common facts and loader defaults before adapters are applied.
+func Generic(metadata Metadata) modelprofile.Profile {
 	arch := gguf.DetectArchitecture(metadata.values)
 	blockCount, _ := gguf.ParseInt64WithFallback(metadata.values, arch+".block_count", ".block_count")
 	headCount, _ := gguf.ParseInt64(metadata.values, arch+".attention.head_count")
@@ -16,12 +20,12 @@ func resolveGeneric(metadata metadata) Profile {
 	}
 	keyLength, valueLength, _ := gguf.ResolveKVLengths(metadata.values, arch)
 
-	profile := Profile{
+	profile := modelprofile.Profile{
 		Architecture:    arch,
-		Role:            RoleLanguage,
-		Purpose:         PurposeGeneration,
-		MemorySemantics: MemoryAttention,
-		Dimensions: Dimensions{
+		Role:            modelprofile.RoleLanguage,
+		Purpose:         modelprofile.PurposeGeneration,
+		MemorySemantics: modelprofile.MemoryAttention,
+		Dimensions: modelprofile.Dimensions{
 			BlockCount:            blockCount,
 			ContextLength:         parseInt64WithFallback(metadata, arch+".context_length", ".context_length"),
 			EmbeddingLength:       parseInt64WithFallback(metadata, arch+".embedding_length", ".embedding_length"),
@@ -33,16 +37,16 @@ func resolveGeneric(metadata metadata) Profile {
 			KeyLength:             keyLength,
 			ValueLength:           valueLength,
 		},
-		Decision:        resolveDecision(metadata, arch),
+		Decision:        modelprofile.ResolveDecision(metadata.values, arch),
 		Attention:       gguf.ParseAttentionFacts(metadata.values, arch, blockCount),
 		MoE:             gguf.DetectMoE(metadata.values),
 		Rope:            gguf.ParseRopeFacts(metadata.values, arch),
-		Speculation:     Speculation{NextNPredictLayers: metadata.positiveNextNPredictLayers()},
+		Speculation:     modelprofile.Speculation{NextNPredictLayers: metadata.positiveNextNPredictLayers()},
 		FileType:        parseInt64(metadata, "general.file_type"),
 		HasChatTemplate: gguf.HasChatTemplate(metadata.values),
 	}
 	if arch == "gemma4" || arch == "gemma4-assistant" {
-		profile.ComputeKind = ComputeGemma4
+		profile.ComputeKind = modelprofile.ComputeGemma4
 	}
 	if arch == "gemma4" && parseInt64(metadata, arch+".embedding_length_per_layer_input") > 0 {
 		// The assistant does not create a lazy table. The target gathers
@@ -50,27 +54,27 @@ func resolveGeneric(metadata metadata) Profile {
 		profile.LazyRowsPerToken = 1
 	}
 	if arch == "llama" {
-		profile.ComputeKind = ComputeLlama
+		profile.ComputeKind = modelprofile.ComputeLlama
 	}
 	if arch == "clef" {
-		profile.ComputeKind = ComputeClef
+		profile.ComputeKind = modelprofile.ComputeClef
 	}
 	if arch == "modern-bert" {
-		profile.ComputeKind = ComputeModernBERT
+		profile.ComputeKind = modelprofile.ComputeModernBERT
 	}
 	if arch == "gemma3" && profile.Attention.SlidingWindow <= 0 {
 		// RNJ uses Gemma3's ordinary KV graph. SWA Gemma3 graphs remain
 		// on the fallback until their separate mask policy is validated.
-		profile.ComputeKind = ComputeGemma3
+		profile.ComputeKind = modelprofile.ComputeGemma3
 	}
 	if arch == "mistral3" {
-		profile.ComputeKind = ComputeMistral3
+		profile.ComputeKind = modelprofile.ComputeMistral3
 	}
 	if arch == "glm4moe" {
-		profile.ComputeKind = ComputeGLM4MoE
+		profile.ComputeKind = modelprofile.ComputeGLM4MoE
 	}
 	if arch == "gpt-oss" {
-		profile.ComputeKind = ComputeGPTOSS
+		profile.ComputeKind = modelprofile.ComputeGPTOSS
 		// b11513 alternates SWA on even blocks and full attention on odd
 		// blocks; sliding_window alone does not make every block SWA.
 		profile.Attention.SWAPattern = make([]bool, max(blockCount, 0))
@@ -91,13 +95,13 @@ func resolveGeneric(metadata metadata) Profile {
 
 	applyGenericPurposeAndModalities(metadata, &profile)
 	if metadata.hasKeyFragment(".ssm.", ".mamba.", ".recurrent.") {
-		profile.MemorySemantics = MemoryRecurrent
+		profile.MemorySemantics = modelprofile.MemoryRecurrent
 	}
 
 	return profile
 }
 
-func applyGenericPurposeAndModalities(metadata metadata, profile *Profile) {
+func applyGenericPurposeAndModalities(metadata Metadata, profile *modelprofile.Profile) {
 	hint := strings.ToLower(strings.Join([]string{
 		gguf.GeneralName(metadata.values),
 		gguf.GeneralBasename(metadata.values),
@@ -105,7 +109,7 @@ func applyGenericPurposeAndModalities(metadata metadata, profile *Profile) {
 	}, " "))
 
 	if strings.Contains(hint, "embed") {
-		profile.Purpose = PurposeEmbedding
+		profile.Purpose = modelprofile.PurposeEmbedding
 	}
 
 	anyToAny := strings.Contains(hint, "any-to-any") || strings.Contains(hint, "omni")
@@ -113,12 +117,12 @@ func applyGenericPurposeAndModalities(metadata metadata, profile *Profile) {
 	profile.Modalities.Video = anyToAny || strings.Contains(hint, "video")
 }
 
-func parseInt64(metadata metadata, key string) int64 {
+func parseInt64(metadata Metadata, key string) int64 {
 	value, _ := gguf.ParseInt64(metadata.values, key)
 	return value
 }
 
-func parseInt64WithFallback(metadata metadata, key, suffix string) int64 {
+func parseInt64WithFallback(metadata Metadata, key, suffix string) int64 {
 	value, _ := gguf.ParseInt64WithFallback(metadata.values, key, suffix)
 	return value
 }

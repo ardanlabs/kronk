@@ -57,18 +57,17 @@
 #
 # 20g therefore clears the largest job with headroom. Four of them nominally
 # oversubscribe 62 GiB on purpose: the cap is a blast radius, not admission
-# control, and gpu.yml schedules one GPU leg per fleet, so the realistic peak
-# is two GPU legs at ~16 GiB beside two CPU jobs.
+# control. linux.yml's API and SDK jobs can run GPU workloads concurrently;
+# account for both when choosing the runner count.
 #
 # The cap bounds system RAM only, not VRAM: this Strix Halo part carves GPU
 # memory out of the same 62 GiB and that is not charged to the cgroup.
 #
 # TWO FLEETS ON ONE HOST
 #
-# One backend per image, one fleet per backend. gpu.yml's matrix puts the
-# backend in runs-on, so each leg lands on its own fleet instead of on
-# whichever runner GitHub picks first. Both fleets must be running, or the
-# unmatched leg queues silently until the 24h run limit.
+# One backend per image, one fleet per backend. linux.yml's tests require
+# the Vulkan fleet. A separate ROCm fleet is optional for diagnostics and
+# static checks; it is no longer needed to run the test suites.
 #
 # The second fleet needs a PREFIX of its own: that is what keeps container
 # names, runner names and the per-runner cache volumes distinct.
@@ -77,9 +76,8 @@
 #   PREFIX=kronk-linux-rocm COUNT=2 IMAGE=kronk-runner:rocm \
 #       APP_ID=... APP_KEY=~/kronk-runners.pem ./start-runners.sh
 #
-# The CPU jobs ask only for self-hosted/Linux/X64, so either fleet serves them
-# and the split between the two is a capacity choice. Only the GPU legs are
-# pinned.
+# Static checks ask only for self-hosted/Linux/X64, so either fleet can serve
+# them. Test jobs additionally require gpu,vulkan.
 
 set -euo pipefail
 
@@ -96,9 +94,9 @@ LOG_DIR="${LOG_DIR:-$HOME/.kronk-runners}"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # The backend is read off the image rather than hardcoded, so a vulkan image
-# can never register runners advertising rocm. gpu.yml's matrix puts the
-# backend in runs-on: a wrong label here sends ROCm suites to a runner with no
-# HIP userspace, and a missing one leaves that leg queued with no error.
+# can never register runners advertising rocm. Test jobs select the backend
+# in runs-on: a wrong label sends tests to an incompatible image, and a
+# missing one leaves the job queued with no error.
 if [[ -z "${LABELS:-}" ]]; then
     backend="$(docker image inspect \
         -f '{{ index .Config.Labels "com.ardanlabs.kronk.backend" }}' \
@@ -111,7 +109,7 @@ if [[ -z "${LABELS:-}" ]]; then
     fi
 
     # A JIT runner gets exactly these labels: GitHub adds no self-hosted/OS/arch
-    # defaults, and linux.yml and gpu.yml both ask for self-hosted,Linux,X64.
+    # defaults, and linux.yml asks for self-hosted,Linux,X64.
     LABELS="self-hosted,Linux,X64,gpu,${backend}"
 fi
 

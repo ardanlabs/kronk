@@ -120,7 +120,7 @@ Common settings can be supplied as flags or environment variables:
 | `--pool-ttl` | `KRONK_POOL_TTL` | `0m` | Idle model retention time; `0` disables idle expiration |
 | `--web-admin-enabled` | `KRONK_WEB_ADMIN_ENABLED` | `true` | Serve the BUI under `/admin/` |
 | `--authorization-mode` | `KRONK_AUTHORIZATION_MODE` | `open` | Select the API access policy |
-| `--download-enabled` | `KRONK_DOWNLOAD_ENABLED` | `false` | Allow server-side model downloads |
+| `--download-enabled` | `KRONK_DOWNLOAD_ENABLED` | `false` | Share this server's models and library bundles with other Kronk servers on the network (peer downloads) |
 | `--lib-download-enabled` | `KRONK_LIB_DOWNLOAD_ENABLED` | `true` | Download or update the llama.cpp library during server startup |
 | `--media-backends-enabled` | `KRONK_MEDIA_BACKENDS_ENABLED` | `true` | Download and load the Bucky and Malina native backends during server startup |
 | `--allow-upgrade` | `KRONK_ALLOW_UPGRADE` | `false` | Opt in to automatic native-library upgrades |
@@ -499,7 +499,7 @@ These variables configure the Compose files. Set them in the shell or in a
 | -------- | ------- | ------- |
 | `KRONK_IMAGE_VERSION` | `latest` | `latest` or a release such as `vX.Y.Z`; pin a release outside local testing |
 | `KRONK_BIND_ADDR` | `127.0.0.1` | Host address for ports `11435` and `11445` |
-| `KRONK_DOWNLOAD_ENABLED` | `true` | Allow model downloads from the BUI |
+| `KRONK_DOWNLOAD_ENABLED` | `false` | Share models and library bundles with other Kronk servers (peer downloads) |
 | `KRONK_RENDER_GID` / `KRONK_VIDEO_GID` | `render` / `video` | Host group IDs for GPU devices (ROCm, Vulkan) |
 | `KRONK_TEMPO_HOST` | unset | OTLP endpoint, e.g. `tempo:4317` |
 

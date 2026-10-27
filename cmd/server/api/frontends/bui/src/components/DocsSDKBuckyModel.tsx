@@ -340,6 +340,16 @@ export default function DocsSDKBuckyModel() {
 	EndMs        int64
 	Text         string
 	NoSpeechProb float32
+
+	// TextConfidence is the arithmetic mean of the decoded text-token
+	// probabilities, excluding timestamp and control tokens. It ranges
+	// from 0 to 1, with higher values indicating greater decoder confidence;
+	// it is 0 when there are no text tokens. Batch and streaming segments
+	// use the same calculation. This is not a calibrated probability that
+	// speech occurred or that the text is correct: hallucinations can score
+	// highly. A caller might start by rejecting scores below 0.5, but must
+	// tune its threshold on representative audio. No filtering is applied.
+	TextConfidence float32
 }`}</code>
               </pre>
               <p className="doc-description">Segment is one decoded segment from a Transcribe call.</p>

@@ -1,7 +1,6 @@
 package vision_test
 
 import (
-	"fmt"
 	"os"
 	"testing"
 
@@ -11,10 +10,8 @@ import (
 func TestMain(m *testing.M) {
 	testlib.Setup()
 
-	if len(testlib.MPSimpleVision.ModelFiles) == 0 {
-		fmt.Println("model Qwen3.5-0.8B-Q8_0 not downloaded, skipping vision tests")
-		os.Exit(0)
-	}
+	testlib.RequireFixtures(testlib.MPSimpleVision.ModelFiles...)
+	testlib.RequireFixtures(testlib.MPSimpleVision.ProjFile, testlib.ImageFile)
 
 	os.Exit(m.Run())
 }

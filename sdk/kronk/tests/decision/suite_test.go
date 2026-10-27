@@ -59,8 +59,11 @@ func testTypedQuestions(t *testing.T, krn *kronk.Kronk) {
 	if response.Model != krn.ModelID() {
 		t.Errorf("model: got %q, want %q", response.Model, krn.ModelID())
 	}
-	if response.Usage.InputTokens == 0 {
-		t.Error("input tokens: got 0, want positive")
+	if response.Usage.InputTokens <= 0 || response.Usage.OutputTokens != 0 {
+		t.Errorf("invalid usage: %+v", response.Usage)
+	}
+	if len(response.Answers) != 3 {
+		t.Errorf("answer count: got %d, want 3", len(response.Answers))
 	}
 	route, exists := response.Answers["route"]
 	if !exists || route.Type != model.DecisionQuestionTypeChoice {
@@ -69,18 +72,24 @@ func testTypedQuestions(t *testing.T, krn *kronk.Kronk) {
 	if got := route.Choice; got != "billing" {
 		t.Errorf("route: got %q, want billing", got)
 	}
+	if err := testlib.CheckDecisionProbabilities(route, []string{"billing", "support", "sales"}); err != nil {
+		t.Errorf("route: %v", err)
+	}
 	urgency, exists := response.Answers["urgency"]
 	if !exists || urgency.Type != model.DecisionQuestionTypeScore {
 		t.Fatalf("urgency: got type %q and exists=%t, want score answer", urgency.Type, exists)
 	}
-	if got := urgency.Score; got < 0 || got > 3 {
+	if err := testlib.CheckDecisionProbabilities(urgency, []string{"0", "1", "2", "3"}); err != nil {
+		t.Errorf("urgency: %v", err)
+	}
+	if got := urgency.Score; math.IsNaN(got) || math.IsInf(got, 0) || got < 0 || got > 3 {
 		t.Errorf("urgency: got %v, want within [0,3]", got)
 	}
 	human, exists := response.Answers["human"]
 	if !exists || human.Type != model.DecisionQuestionTypeNoul {
 		t.Fatalf("human: got type %q and exists=%t, want noul answer", human.Type, exists)
 	}
-	if got := human.Noul; got < 0 || got > 1 {
+	if got := human.Noul; math.IsNaN(got) || math.IsInf(got, 0) || got < 0 || got > 1 {
 		t.Errorf("human: got %v, want within [0,1]", got)
 	}
 }
@@ -129,11 +138,11 @@ func testConcurrentRequests(t *testing.T, krn *kronk.Kronk) {
 	}
 
 	for i := range requests {
-		if err := compareResponses(serial[i], concurrent[i]); err != nil {
+		if err := compareResponses(krn.ModelID(), serial[i], concurrent[i]); err != nil {
 			t.Errorf("request[%d]: %v", i, err)
 		}
 	}
-	if err := compareResponses(concurrent[0], concurrent[len(concurrent)-1]); err != nil {
+	if err := compareResponses(krn.ModelID(), concurrent[0], concurrent[len(concurrent)-1]); err != nil {
 		t.Errorf("duplicate request: %v", err)
 	}
 }
@@ -151,7 +160,19 @@ func decisionRequest(state string) model.DecisionRequest {
 	}
 }
 
-func compareResponses(want, got model.DecisionResponse) error {
+func compareResponses(modelID string, want, got model.DecisionResponse) error {
+	for _, response := range []model.DecisionResponse{want, got} {
+		if response.Model != modelID || len(response.Answers) != 1 || response.Usage.InputTokens <= 0 || response.Usage.OutputTokens != 0 {
+			return fmt.Errorf("invalid decision envelope: %+v", response)
+		}
+		answer, exists := response.Answers["route"]
+		if !exists || answer.Type != model.DecisionQuestionTypeChoice {
+			return fmt.Errorf("route: got type %q (exists=%t), want choice", answer.Type, exists)
+		}
+		if err := testlib.CheckDecisionProbabilities(answer, []string{"billing", "accounts", "sales"}); err != nil {
+			return err
+		}
+	}
 	wantAnswer := want.Answers["route"]
 	gotAnswer := got.Answers["route"]
 	if gotAnswer.Choice != wantAnswer.Choice {

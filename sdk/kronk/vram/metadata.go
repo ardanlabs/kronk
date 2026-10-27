@@ -5,6 +5,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
 )
 
 // FromBytes computes the VRAM requirements directly from already-fetched
@@ -23,7 +24,7 @@ func FromBytes(data []byte, totalSize int64, cfg Config) (Result, error) {
 // buildFromMetadata resolves architecture-specific facts once for both local
 // and remote inputs. Model profiles own architecture rules; Calculate owns math.
 func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, modelSizeBytes int64, cfg Config) (Result, error) {
-	profile := modelprofile.Resolve(metadata)
+	profile := arch.Resolve(metadata)
 	if err := profile.ValidateForVRAM(); err != nil {
 		return Result{}, fmt.Errorf("build-from-metadata: %w", err)
 	}
@@ -87,7 +88,8 @@ func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, m
 		switch profile.ComputeKind {
 		case modelprofile.ComputeQwen35, modelprofile.ComputeGPTOSS,
 			modelprofile.ComputeMistral3, modelprofile.ComputeLFM2,
-			modelprofile.ComputeGLM4MoE, modelprofile.ComputeGemma3, modelprofile.ComputeLlama:
+			modelprofile.ComputeGLM4MoE, modelprofile.ComputeGemma3, modelprofile.ComputeLlama,
+			modelprofile.ComputeDeepSeek41:
 			// Generation caps logits at one current row plus NDraft rows
 			// per slot, matching current/rollback copies from callers.
 			// Own-KV MTP emits only one row per slot.
@@ -139,6 +141,19 @@ func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, m
 		IndexerKeyLength:      att.IndexerKeyLength,
 		IndexerCompression:    att.IndexerCompression,
 		IndexerTopK:           att.IndexerTopK,
+		CompressRatios:        att.CompressRatios,
+		KVSources:             att.KVSources,
+		IndexerSources:        att.IndexerSources,
+		CandidateSourceLayer:  att.CandidateSourceLayer,
+		CandidateTopKBlocks:   att.CandidateTopKBlocks,
+		CandidateBlockSize:    att.CandidateBlockSize,
+		HyperConnections:      att.HyperConnections,
+		QueryRank:             att.QueryRank,
+		OutputRank:            att.OutputRank,
+		OutputGroups:          att.OutputGroups,
+		IndexerHeads:          att.IndexerHeads,
+		LayerEmbeddingLength:  att.LayerEmbeddingLength,
+		LayerEmbeddingRows:    att.LayerEmbeddingRows,
 		RecurrentStateBytes:   att.RecurrentStateBytes,
 		RecurrentStateCopies:  recurrentStateCopies,
 		NUBatch:               cfg.NUBatch,

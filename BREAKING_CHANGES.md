@@ -2,9 +2,12 @@
 
 ## Index
 
-- [v1.33.0](#unreleased)
+- [v1.33.1](#v1331)
+  - [Bucky Segment Text Confidence](#v1331-bucky-segment-text-confidence)
+  - [Malina Generation Result ABI](#v1331-malina-generation-result-abi)
+- [v1.33.0](#v1330)
   - [Model Profile Classification](#v1330-model-profile-classification)
-  - [Bucky Flash Attention Configuration](#unreleased-bucky-flash-attention-configuration)
+  - [Bucky Flash Attention Configuration](#v1330-bucky-flash-attention-configuration)
   - [Malina Native ABI Upgrade](#v1330-malina-native-abi-upgrade)
   - [Projected Embedding Output Correction](#v1330-projected-embedding-output-correction)
 - [v1.32.8](#v1328)
@@ -41,6 +44,49 @@
   - [HTTP Error Response Changes](#v1303-http-error-response-changes)
   - [Session Storage Changes](#v1303-session-storage-changes)
   - [Go SDK Changes](#v1303-go-sdk-changes)
+
+## v1.33.1
+
+### v1.33.1: Bucky Segment Text Confidence
+
+`sdk/bucky/model.Segment` adds `TextConfidence float32`, the arithmetic mean
+of decoded text-token probabilities, excluding timestamp and control tokens.
+The score ranges from 0 to 1 (higher means greater decoder confidence) and is
+0 when there are no text tokens. Batch results, segment callbacks, diarized
+segments, and streaming partial/final segments use the same calculation.
+
+Existing field access and keyed struct literals continue to compile. Unkeyed
+`Segment` literals must be converted to keyed literals or updated for the new
+field. Whole-struct equality comparisons now include `TextConfidence`.
+Direct JSON serialization of `Segment` adds a `TextConfidence` property;
+update strict consumers and exact-output expectations accordingly. Kronk's
+HTTP transcription response format is unchanged.
+
+No confidence filtering is applied, and existing text and no-speech scores
+are unchanged. Callers choose their own threshold and build filtered text
+from accepted segments. Text confidence is not a calibrated probability that
+speech occurred or that the words are correct; hallucinations can score highly.
+
+### v1.33.1: Malina Generation Result ABI
+
+Malina v1.1.9 requires stable-diffusion.cpp `master-1017-be48649`, replacing
+v1.1.8's `master-975-95b3090`. Image, video, ADetailer, and upscaler generation
+now use native result objects with new function signatures and matching
+destructors. Video generation parameters also have a new layout. Neither
+version's bindings can safely use the other version's native runtime.
+
+Upgrade the bindings and native libraries together. Default library downloads
+replace mismatched Kronk-managed installations with the exact compatible pin.
+User-managed library paths must be rebuilt or replaced by their owners.
+
+`model.GeneratedImage` and `model.GeneratedVideo` add `GenerationInfo string`
+with the native JSON record. Their `Seed` fields still report the requested
+seed; the resolved native seed is recorded in `GenerationInfo`. Keyed struct
+literals continue to compile; unkeyed literals need updating. Direct JSON
+serialization includes the new field. Image metadata is not embedded in PNG
+output. `Upscaler.UpscaleWithInfo` exposes upscale pixels and metadata through
+`model.UpscaledImage`; the existing pixel-only `Upscale` signature is unchanged.
+Kronk's HTTP image response format is unchanged.
 
 ## v1.33.0
 

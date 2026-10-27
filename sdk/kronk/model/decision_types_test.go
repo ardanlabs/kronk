@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
 )
 
 func TestValidateDecisionRequest(t *testing.T) {
@@ -62,6 +62,34 @@ func TestValidateDecisionRequest(t *testing.T) {
 			}
 			if !tt.wantErr && err != nil {
 				t.Fatalf("error: got %v, want nil", err)
+			}
+		})
+	}
+}
+
+func TestDecisionRejectsUnsupportedImages(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		protocol decisionProtocol
+		image    []byte
+		want     string
+	}{
+		{"missing projector", &clefProtocol{}, []byte("\x89PNG\r\n\x1a\n"), "vision projector"},
+		{"Laya", &layaProtocol{}, []byte("\x89PNG\r\n\x1a\n"), "does not support images"},
+		{"Kev", &kevProtocol{}, []byte("\x89PNG\r\n\x1a\n"), "does not support images"},
+		{"OpenJEV remains text only", &openJEVProtocol{}, []byte("\x89PNG\r\n\x1a\n"), "does not support images"},
+		{"audio", &clefProtocol{}, []byte("RIFF\x00\x00\x00\x00WAVE"), "images[0]"},
+		{"video", &clefProtocol{}, []byte("\x00\x00\x00\x18ftypmp42"), "images[0]"},
+		{"empty", &clefProtocol{}, nil, "images[0]"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{protocol: tt.protocol}
+			_, err := m.Decision(t.Context(), DecisionRequest{
+				Images:    [][]byte{tt.image},
+				Questions: []DecisionQuestion{DecisionQuestionNoul("q", "Is it red?", nil)},
+			})
+			if !errors.Is(err, ErrDecisionRequest) || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Decision: got %v, want ErrDecisionRequest containing %q", err, tt.want)
 			}
 		})
 	}
@@ -197,7 +225,7 @@ func TestDetectDecisionProtocol(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := detectDecisionProtocol(tt.configured, tt.modelID, tt.metadata, modelprofile.Resolve(tt.metadata))
+			got := detectDecisionProtocol(tt.configured, tt.modelID, tt.metadata, arch.Resolve(tt.metadata))
 			if got != tt.want {
 				t.Fatalf("protocol: got %q, want %q", got, tt.want)
 			}

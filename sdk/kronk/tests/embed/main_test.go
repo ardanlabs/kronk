@@ -1,7 +1,6 @@
 package embed_test
 
 import (
-	"fmt"
 	"os"
 	"testing"
 
@@ -11,10 +10,7 @@ import (
 func TestMain(m *testing.M) {
 	testlib.Setup()
 
-	if len(testlib.MPEmbedBatchSeq.ModelFiles) == 0 {
-		fmt.Println("embedding model not downloaded, skipping embed tests")
-		os.Exit(0)
-	}
+	testlib.RequireFixtures(testlib.MPEmbedBatchSeq.ModelFiles...)
 
 	os.Exit(m.Run())
 }

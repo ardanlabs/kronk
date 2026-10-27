@@ -1,11 +1,11 @@
-package modelprofile
+package arch
 
 import "strings"
 
-// supportsTensorParallel mirrors llm_arch_supports_sm_tensor in the bundled
+// SupportsTensorParallel mirrors llm_arch_supports_sm_tensor in the bundled
 // llama.cpp release. Keep this list synchronized when the native dependency is
 // updated.
-func supportsTensorParallel(architecture string) bool {
+func SupportsTensorParallel(architecture string) bool {
 	if architecture == "" {
 		return false
 	}
