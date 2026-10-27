@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/model"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/preparation"
 )
 
 func TestHTTPCompleter(t *testing.T) {
@@ -17,10 +17,10 @@ func TestHTTPCompleter(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				var wire struct {
-					Model     string          `json:"model"`
-					MaxTokens int             `json:"max_tokens"`
-					Seed      uint32          `json:"seed"`
-					Messages  []model.Message `json:"messages"`
+					Model     string                `json:"model"`
+					MaxTokens int                   `json:"max_tokens"`
+					Seed      uint32                `json:"seed"`
+					Messages  []preparation.Message `json:"messages"`
 					Format    struct {
 						Type   string `json:"type"`
 						Schema struct {
@@ -58,14 +58,14 @@ func TestHTTPCompleter(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			result, err := c.Complete(t.Context(), model.CompletionRequest{Model: "preparer", MaxTokens: 73, Seed: 19, Messages: []model.Message{{Role: "user", Content: "source"}}, ResponseSchema: map[string]any{"type": "object"}})
+			result, err := c.Complete(t.Context(), preparation.CompletionRequest{Model: "preparer", MaxTokens: 73, Seed: 19, Messages: []preparation.Message{{Role: "user", Content: "source"}}, ResponseSchema: map[string]any{"type": "object"}})
 			switch mode {
 			case "success":
 				if err != nil || result.Content != "generated" || result.PromptTokens != 31 || result.CompletionTokens != 7 {
 					t.Fatalf("completion: %+v %v", result, err)
 				}
 			case "truncated":
-				if !errors.Is(err, model.ErrCompletionTruncated) {
+				if !errors.Is(err, preparation.ErrCompletionTruncated) {
 					t.Fatalf("truncation: %v", err)
 				}
 			default:

@@ -8,7 +8,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/dataset"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 )
 
 // CopyArtifact atomically publishes a nonempty artifact of at most 1 GiB.
@@ -19,7 +19,7 @@ func CopyArtifact(ctx context.Context, root *os.Root, path string, reader io.Rea
 		return err
 	}
 	defer root.Remove(temporary)
-	size, copyErr := io.Copy(file, io.LimitReader(dataset.ContextReader{Context: ctx, Reader: reader}, (1<<30)+1))
+	size, copyErr := io.Copy(file, io.LimitReader(tmprl.ContextReader{Context: ctx, Reader: reader}, (1<<30)+1))
 	if err := errors.Join(copyErr, file.Close()); err != nil {
 		return err
 	}

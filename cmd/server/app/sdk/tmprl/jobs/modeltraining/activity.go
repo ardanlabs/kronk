@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/model"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/temporal"
@@ -17,11 +17,9 @@ const (
 	controlSignal = ControlSignal
 )
 
-type workflowInput = Input
-
 // ExecuteStage preserves the activity boundary for legacy flat-pipeline steps.
 // New jobs execute steps through ExecuteJobStep; their stages are YAML groups.
-func (b *Business) ExecuteStage(ctx context.Context, input LegacyStepRequest) (result tmprl.StepResult[model.Artifacts], err error) {
+func (b *Business) ExecuteStage(ctx context.Context, input LegacyStepRequest) (result tmprl.StepResult[Artifacts], err error) {
 	info := activity.GetInfo(ctx)
 	log := activity.GetLogger(ctx)
 	started := time.Now()
@@ -35,13 +33,13 @@ func (b *Business) ExecuteStage(ctx context.Context, input LegacyStepRequest) (r
 		log.Info("training stage finished", "stage", input.Stage, "attempt", info.Attempt, "elapsed", time.Since(started), "outcome", result.Status, "accepted", result.Artifacts.Accepted)
 	}()
 	if input.Execution != (tmprl.Execution{WorkflowID: info.WorkflowExecution.ID, RunID: info.WorkflowExecution.RunID}) || input.Key != input.RunID+"/"+string(input.Stage) {
-		return tmprl.StepResult[model.Artifacts]{}, model.InvalidOutput(string(input.Stage))
+		return tmprl.StepResult[Artifacts]{}, InvalidOutput(string(input.Stage))
 	}
 	stage, exists := b.legacySteps[input.Stage]
 	if !exists {
-		return tmprl.StepResult[model.Artifacts]{}, temporal.NewNonRetryableApplicationError(fmt.Sprintf("stage %q is not registered on this worker", input.Stage), "unregistered-stage", nil)
+		return tmprl.StepResult[Artifacts]{}, temporal.NewNonRetryableApplicationError(fmt.Sprintf("stage %q is not registered on this worker", input.Stage), "unregistered-stage", nil)
 	}
-	publish, stop := model.ActivityProgress(ctx, input.Execution, input.Stage, b.publishProgress)
+	publish, stop := ActivityProgress(ctx, input.Execution, input.Stage, b.publishProgress)
 	defer stop()
 	report := func(update tmprl.Progress) {
 		log.Debug("training stage progress", "stage", input.Stage, "completed", update.Completed, "total", update.Total)
@@ -59,24 +57,24 @@ func (b *Business) ExecuteStage(ctx context.Context, input LegacyStepRequest) (r
 			result, err = legacyStepResult(input, output)
 		}
 	case b.customLegacySteps:
-		result, err = stage.Execute(ctx, model.StepContext{Request: input, Publish: report})
+		result, err = stage.Execute(ctx, StepContext{Request: input, Publish: report})
 	default:
 		err = temporal.NewNonRetryableApplicationError("training requires managed input or a configured backend", "invalid-training", nil)
 	}
 	if err == nil {
 		err = ctx.Err()
 	}
-	if err == nil && result.Status != "" && result.Status != tmprl.StatusCompleted && result.Status != model.StatusNeedsImprovement {
-		return tmprl.StepResult[model.Artifacts]{}, model.InvalidOutput(string(input.Stage))
+	if err == nil && result.Status != "" && result.Status != tmprl.StatusCompleted && result.Status != training.StatusNeedsImprovement {
+		return tmprl.StepResult[Artifacts]{}, InvalidOutput(string(input.Stage))
 	}
 	return result, err
 }
 
-func legacyStepResult(input LegacyStepRequest, output Artifacts) (tmprl.StepResult[model.Artifacts], error) {
+func legacyStepResult(input LegacyStepRequest, output Artifacts) (tmprl.StepResult[Artifacts], error) {
 	artifacts, err := legacyStepArtifacts(input, output)
-	result := tmprl.StepResult[model.Artifacts]{Artifacts: artifacts}
+	result := tmprl.StepResult[Artifacts]{Artifacts: artifacts}
 	if input.Stage == StageEvaluate && !artifacts.Accepted {
-		result.Status = model.StatusNeedsImprovement
+		result.Status = training.StatusNeedsImprovement
 	}
 	return result, err
 }
@@ -85,7 +83,7 @@ func legacyStepResult(input LegacyStepRequest, output Artifacts) (tmprl.StepResu
 // heartbeats, delegates managed input to trainingStage in pipeline.go (or uses
 // the configured Backend), and validates the returned stage artifacts.
 func (b *Business) RunStage(ctx context.Context, input LegacyStepRequest) (Artifacts, error) {
-	publish, stop := model.ActivityProgress(ctx, input.Execution, input.Stage, b.publishProgress)
+	publish, stop := ActivityProgress(ctx, input.Execution, input.Stage, b.publishProgress)
 	defer stop()
 	var output Artifacts
 	var err error
@@ -139,6 +137,6 @@ func legacyStepArtifacts(input LegacyStepRequest, output Artifacts) (Artifacts, 
 	return result, nil
 }
 
-func invalidOutput(stage tmprl.Stage) error {
-	return model.InvalidOutput(string(stage))
+func invalidOutput(stage tmprl.StageName) error {
+	return InvalidOutput(string(stage))
 }

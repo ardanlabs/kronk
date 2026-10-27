@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/definition"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
@@ -13,7 +12,7 @@ import (
 func QueuedJob[R, A any](input JobInput[R]) Run[R, A] {
 	state := Run[R, A]{Request: input.Request, Definition: input.Job, Status: StatusQueued}
 	for _, stage := range input.Job.Stages {
-		entry := StageState{Name: Stage(stage.Name), Status: StatusQueued}
+		entry := StageState{Name: StageName(stage.Name), Status: StatusQueued}
 		for _, step := range stage.Steps {
 			entry.Steps = append(entry.Steps, StepState{Name: step.Name, Status: StatusQueued})
 		}
@@ -232,7 +231,7 @@ func runJobStages[R, A any](ctx workflow.Context, input JobInput[R], names Names
 	return nil
 }
 
-func runJobSteps[R, A any](ctx workflow.Context, plan definition.Stage, names Names, state *Run[R, A], stage *StageState, paused *bool, index *int) error {
+func runJobSteps[R, A any](ctx workflow.Context, plan Stage, names Names, state *Run[R, A], stage *StageState, paused *bool, index *int) error {
 	for *index < len(plan.Steps) {
 		if err := awaitJobResume(ctx, names, state, paused); err != nil {
 			return err

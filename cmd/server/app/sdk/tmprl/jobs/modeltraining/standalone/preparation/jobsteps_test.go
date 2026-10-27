@@ -13,12 +13,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/dataset"
-	. "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/model"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/preparation"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/imports"
+	. "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/preparation"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/preparation/extract"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/preparation/generate"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/preparation/verify"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training"
 	prepare "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/standalone/preparation"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 	"go.temporal.io/sdk/mocks"
@@ -33,15 +33,13 @@ func (f jobStepCompleter) Complete(ctx context.Context, request CompletionReques
 func executePreparationStep(t *testing.T, b *prepare.Business, name string, input PreparationInput, execution tmprl.Execution) (PreparationResult, error) {
 	t.Helper()
 	steps := map[string]StepHandler{"extract": extract.Step{}, "generate": generate.Step{}, "verify": verify.Step{}}
-	incoming := Artifacts{Dataset: "split.json", Checkpoint: "candidate.gguf", Report: "evaluation.json", Adapter: "adapter.gguf", Accepted: true}
+	incoming := Artifacts{Preparation: &PreparationResult{DatasetID: input.Request.DatasetID}}
 	output, err := b.ExecuteJobStep(t.Context(), steps[name], input, execution, incoming, nil)
 	if err != nil {
 		return PreparationResult{}, err
 	}
-	preserved := output.Artifacts
-	preserved.Preparation = nil
-	if preserved != incoming {
-		t.Fatalf("got artifacts %+v, want preserved %+v", preserved, incoming)
+	if name != "verify" && output.Artifacts != incoming {
+		t.Fatalf("got artifacts %+v, want preserved %+v", output.Artifacts, incoming)
 	}
 	if output.Status != "" {
 		t.Fatalf("got terminal status %q, want continuation", output.Status)
@@ -56,7 +54,7 @@ func executePreparationStep(t *testing.T, b *prepare.Business, name string, inpu
 // Temporal server, native model, trainer, or activity context is involved.
 func TestJobPreparationStepsRecovery(t *testing.T) {
 	root := t.TempDir()
-	datasets, err := dataset.New(dataset.Config{DatasetRoot: root})
+	datasets, err := imports.New(imports.Config{DatasetRoot: root})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +62,7 @@ func TestJobPreparationStepsRecovery(t *testing.T) {
 	for i := range 20 {
 		fmt.Fprintf(&text, "Device %02d has calibration code C%02d.\n\n", i, i)
 	}
-	imported, err := datasets.ImportDataset(t.Context(), ImportInput{Name: "devices.md"}, strings.NewReader(text.String()))
+	imported, err := datasets.ImportDataset(t.Context(), imports.ImportInput{Name: "devices.md"}, strings.NewReader(text.String()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +191,7 @@ func TestJobPreparationStepsRecovery(t *testing.T) {
 	decoder := json.NewDecoder(reader)
 	train, validation, heldout := 0, 0, 0
 	for {
-		var r Record
+		var r training.Record
 		if err := decoder.Decode(&r); errors.Is(err, io.EOF) {
 			break
 		} else if err != nil {
@@ -226,11 +224,11 @@ func TestJobPreparationStepsRecovery(t *testing.T) {
 
 func TestJobPreparationVerificationRejects(t *testing.T) {
 	root := t.TempDir()
-	datasets, err := dataset.New(dataset.Config{DatasetRoot: root})
+	datasets, err := imports.New(imports.Config{DatasetRoot: root})
 	if err != nil {
 		t.Fatal(err)
 	}
-	imported, err := datasets.ImportDataset(t.Context(), ImportInput{Name: "source.md"}, strings.NewReader("A goroutine is an independently executing function in Go."))
+	imported, err := datasets.ImportDataset(t.Context(), imports.ImportInput{Name: "source.md"}, strings.NewReader("A goroutine is an independently executing function in Go."))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,11 +266,11 @@ func TestEngineBuildStepReplayAndLegacyCheckpoint(t *testing.T) {
 	for _, legacy := range []bool{false, true} {
 		t.Run(fmt.Sprintf("legacy=%t", legacy), func(t *testing.T) {
 			const text = "A goroutine is an independently executing function in Go."
-			datasets, err := dataset.New(dataset.Config{DatasetRoot: t.TempDir()})
+			datasets, err := imports.New(imports.Config{DatasetRoot: t.TempDir()})
 			if err != nil {
 				t.Fatal(err)
 			}
-			imported, err := datasets.ImportDataset(t.Context(), ImportInput{Name: "source.md"}, strings.NewReader(text))
+			imported, err := datasets.ImportDataset(t.Context(), imports.ImportInput{Name: "source.md"}, strings.NewReader(text))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -299,13 +297,13 @@ func TestEngineBuildStepReplayAndLegacyCheckpoint(t *testing.T) {
 				hash := sha256.Sum256(append(identity, []byte(text)...))
 				// This is the original on-disk v1 shape: its existing record
 				// was already verified and must not call either provider again.
-				checkpoint := map[string]any{"fingerprint": "tuning-preparation-v1/" + hex.EncodeToString(hash[:]), "next": 1, "evaluation_next": 0, "records": []Record{{Prompt: "What is a goroutine?", Target: text, Evidence: text, FactID: dataset.FactID(text, text), SourceDocument: imported.ID}}}
-				if err := dataset.WriteJSON(workspace, "checkpoint.json", checkpoint); err != nil {
+				checkpoint := map[string]any{"fingerprint": "tuning-preparation-v1/" + hex.EncodeToString(hash[:]), "next": 1, "evaluation_next": 0, "records": []training.Record{{Prompt: "What is a goroutine?", Target: text, Evidence: text, FactID: training.FactID(text, text), SourceDocument: imported.ID}}}
+				if err := tmprl.WriteJSON(workspace, "checkpoint.json", checkpoint); err != nil {
 					t.Fatal(err)
 				}
 			}
 			calls := 0
-			engine := preparation.Engine{Completer: jobStepCompleter(func(ctx context.Context, r CompletionRequest) (Completion, error) {
+			engine := prepare.Engine{Completer: jobStepCompleter(func(ctx context.Context, r CompletionRequest) (Completion, error) {
 				calls++
 				if legacy {
 					return Completion{}, errors.New("legacy committed work repeated")

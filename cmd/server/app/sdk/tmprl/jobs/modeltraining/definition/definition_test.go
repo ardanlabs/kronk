@@ -5,7 +5,7 @@ import (
 	"time"
 
 	trainingdefinition "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/definition"
-	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/definition"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 )
 
 func TestLoad(t *testing.T) {
@@ -29,7 +29,7 @@ func TestLoad(t *testing.T) {
 			t.Fatalf("stage %d: got %+v, want %+v", i, stage, want[i])
 		}
 		for k, step := range stage.Steps {
-			retry := definition.Retry{MaximumAttempts: 3, InitialInterval: time.Second, BackoffCoefficient: 2, MaximumInterval: time.Minute}
+			retry := tmprl.Retry{MaximumAttempts: 3, InitialInterval: time.Second, BackoffCoefficient: 2, MaximumInterval: time.Minute}
 			if step.Name != want[i].steps[k] || step.Timeout != 24*time.Hour || step.HeartbeatTimeout != 5*time.Second || step.Retry != retry {
 				t.Errorf("step %d/%d: got %+v, want %s with 24h timeout, 5s heartbeat and %+v", i, k, step, want[i].steps[k], retry)
 			}
@@ -52,7 +52,7 @@ func TestLoad(t *testing.T) {
 	}
 }
 
-func load(t *testing.T) definition.Job {
+func load(t *testing.T) tmprl.Job {
 	t.Helper()
 	job, err := trainingdefinition.Load()
 	if err != nil {

@@ -8,10 +8,8 @@ import (
 	"testing"
 	"time"
 
-	modeltraining "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining"
-	. "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/model"
+	. "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
-	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/tmprltest"
 	"go.temporal.io/sdk/temporal"
 )
 
@@ -24,7 +22,7 @@ func TestTemporalManagementLifecycle(t *testing.T) {
 			name = "expire-while-paused"
 		}
 		t.Run(name, func(t *testing.T) {
-			env := tmprltest.New(t)
+			env := newTestEnvironment(t)
 			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 			defer cancel()
 			entered := make(chan struct{})
@@ -96,7 +94,7 @@ func TestTemporalManagementLifecycle(t *testing.T) {
 			if err := b.Pause(ctx, run.Execution); err != nil {
 				t.Fatal(err)
 			}
-			value, err := env.Client.QueryWorkflow(ctx, run.WorkflowID, run.RunID, modeltraining.StateQuery)
+			value, err := env.Client.QueryWorkflow(ctx, run.WorkflowID, run.RunID, StateQuery)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/model"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/preparation"
 )
 
 type doclingExtractor struct {
@@ -24,13 +24,13 @@ type doclingExtractor struct {
 
 // NewDoclingExtractor connects to an existing Docling service, never starts
 // containers. A custom HTTP client can supply authentication and timeouts.
-func NewDoclingExtractor(endpoint string, client *http.Client) (model.DocumentExtractor, error) {
+func NewDoclingExtractor(endpoint string, client *http.Client) (preparation.DocumentExtractor, error) {
 	if endpoint == "" {
 		endpoint = "http://127.0.0.1:5001"
 	}
 	parsed, err := url.Parse(endpoint)
 	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return nil, fmt.Errorf("%w: invalid Docling endpoint", model.ErrInvalidArgument)
+		return nil, fmt.Errorf("%w: invalid Docling endpoint", preparation.ErrInvalidArgument)
 	}
 	if client == nil {
 		client = http.DefaultClient
@@ -40,18 +40,18 @@ func NewDoclingExtractor(endpoint string, client *http.Client) (model.DocumentEx
 
 func (*doclingExtractor) ExtractionProfile() string { return "tuning-docling-dlparse_v4-accurate-v1" }
 
-func (e *doclingExtractor) Convert(ctx context.Context, path string) (model.Document, error) {
+func (e *doclingExtractor) Convert(ctx context.Context, path string) (preparation.Document, error) {
 	mediaType := "application/pdf"
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".pdf":
 	case ".docx":
 		mediaType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 	default:
-		return model.Document{}, fmt.Errorf("%w: Docling accepts PDF or DOCX", model.ErrInvalidArgument)
+		return preparation.Document{}, fmt.Errorf("%w: Docling accepts PDF or DOCX", preparation.ErrInvalidArgument)
 	}
 	file, err := os.Open(path)
 	if err != nil {
-		return model.Document{}, err
+		return preparation.Document{}, err
 	}
 	reader, writer := io.Pipe()
 	defer reader.Close()
@@ -87,25 +87,25 @@ func (e *doclingExtractor) Convert(ctx context.Context, path string) (model.Docu
 		Status string `json:"task_status"`
 	}
 	if _, err := e.request(ctx, http.MethodPost, "/v1/convert/file/async", reader, form.FormDataContentType(), &task); err != nil {
-		return model.Document{}, err
+		return preparation.Document{}, err
 	}
 	if task.ID == "" {
-		return model.Document{}, fmt.Errorf("docling returned an empty task ID")
+		return preparation.Document{}, fmt.Errorf("docling returned an empty task ID")
 	}
 	id := task.ID
 	for task.Status != "success" {
 		switch task.Status {
 		case "pending", "started":
 		default:
-			return model.Document{}, fmt.Errorf("docling conversion did not succeed: %s", task.Status)
+			return preparation.Document{}, fmt.Errorf("docling conversion did not succeed: %s", task.Status)
 		}
 		select {
 		case <-ctx.Done():
-			return model.Document{}, ctx.Err()
+			return preparation.Document{}, ctx.Err()
 		case <-time.After(500 * time.Millisecond):
 		}
 		if err := e.read(ctx, "/v1/status/poll/"+url.PathEscape(id), &task); err != nil {
-			return model.Document{}, err
+			return preparation.Document{}, err
 		}
 	}
 	var result struct {
@@ -117,7 +117,7 @@ func (e *doclingExtractor) Convert(ctx context.Context, path string) (model.Docu
 		} `json:"document"`
 	}
 	if err := e.read(ctx, "/v1/result/"+url.PathEscape(id), &result); err != nil {
-		return model.Document{}, err
+		return preparation.Document{}, err
 	}
 	var structured struct {
 		Texts    []json.RawMessage `json:"texts"`
@@ -125,9 +125,9 @@ func (e *doclingExtractor) Convert(ctx context.Context, path string) (model.Docu
 		Pictures []json.RawMessage `json:"pictures"`
 	}
 	if result.Status != "success" || strings.TrimSpace(result.Document.Markdown) == "" || json.Unmarshal(result.Document.JSON, &structured) != nil || len(structured.Texts)+len(structured.Tables)+len(structured.Pictures) == 0 {
-		return model.Document{}, fmt.Errorf("docling returned invalid or empty document content")
+		return preparation.Document{}, fmt.Errorf("docling returned invalid or empty document content")
 	}
-	return model.Document{Markdown: result.Document.Markdown, StructuredJSON: result.Document.JSON, ProcessingTime: result.ProcessingTime}, nil
+	return preparation.Document{Markdown: result.Document.Markdown, StructuredJSON: result.Document.JSON, ProcessingTime: result.ProcessingTime}, nil
 }
 
 func (e *doclingExtractor) read(ctx context.Context, path string, out any) error {

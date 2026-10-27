@@ -11,7 +11,6 @@ import (
 	"slices"
 	"time"
 
-	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/definition"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/temporal"
 )
@@ -33,7 +32,7 @@ func (j *Jobs[R, A]) ExecuteStep(ctx context.Context, input StepRequest[R, A]) (
 		}
 	}()
 	if input.Execution != (Execution{WorkflowID: info.WorkflowExecution.ID, RunID: info.WorkflowExecution.RunID}) ||
-		!definition.ValidName(input.Stage) || !definition.ValidName(input.Step) ||
+		!ValidName(input.Stage) || !ValidName(input.Step) ||
 		!filepath.IsLocal(input.RunID) || filepath.Base(input.RunID) != input.RunID || input.RunID == "." ||
 		input.Key != input.RunID+"/"+input.Stage+"/"+input.Step {
 		return output, temporal.NewNonRetryableApplicationError("invalid job step identity", "invalid-step", nil)
@@ -42,7 +41,7 @@ func (j *Jobs[R, A]) ExecuteStep(ctx context.Context, input StepRequest[R, A]) (
 	if implementation == nil {
 		return output, temporal.NewNonRetryableApplicationError(fmt.Sprintf("unregistered step %s/%s", input.Stage, input.Step), "unregistered-step", nil)
 	}
-	report, stop := Heartbeat(ctx, Progress{Execution: input.Execution, Stage: Stage(input.Stage), Step: input.Step}, func(update Progress) {
+	report, stop := Heartbeat(ctx, Progress{Execution: input.Execution, Stage: StageName(input.Stage), Step: input.Step}, func(update Progress) {
 		j.cfg.Progress.Publish(update.Execution, update)
 	})
 	defer stop()
@@ -64,7 +63,7 @@ func (j *Jobs[R, A]) ExecuteStep(ctx context.Context, input StepRequest[R, A]) (
 	output, err = implementation.Execute(ctx, StepContext[R, A]{
 		Request: input, Workspace: workspace,
 		Publish: func(progress Progress) {
-			progress.Execution, progress.Stage, progress.Step = input.Execution, Stage(input.Stage), input.Step
+			progress.Execution, progress.Stage, progress.Step = input.Execution, StageName(input.Stage), input.Step
 			log.Debug("job step progress", "stage", input.Stage, "step", input.Step, "completed", progress.Completed, "total", progress.Total)
 			report(progress)
 		},

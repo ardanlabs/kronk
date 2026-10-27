@@ -7,18 +7,20 @@ import (
 	"strings"
 	"testing"
 
-	. "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/model"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/imports"
+	. "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/preparation"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training"
 	prepare "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/standalone/preparation"
 	"go.temporal.io/sdk/mocks"
 )
 
 func TestPreparationValidateRequest(t *testing.T) {
 	b := newPreparationFixture(t, &mocks.Client{}, preparationOptions{DatasetRoot: t.TempDir()})
-	imported, err := b.Datasets.ImportDataset(t.Context(), ImportInput{Name: "source.md"}, strings.NewReader(preparationSource))
+	imported, err := b.Datasets.ImportDataset(t.Context(), imports.ImportInput{Name: "source.md"}, strings.NewReader(preparationSource))
 	if err != nil {
 		t.Fatal(err)
 	}
-	input := PreparationRequest{ID: "  supplied-id  ", DatasetID: imported.ID, Model: "  preparer  ", Instructions: "  answer clearly  ", Goal: GoalQuestionAnswer, ReviewedRecords: []Record{{Prompt: "What is a goroutine?", Target: preparationSource, Evidence: preparationSource}}}
+	input := PreparationRequest{ID: "  supplied-id  ", DatasetID: imported.ID, Model: "  preparer  ", Instructions: "  answer clearly  ", Goal: GoalQuestionAnswer, ReviewedRecords: []training.Record{{Prompt: "What is a goroutine?", Target: preparationSource, Evidence: preparationSource}}}
 	normalized, err := b.Preparation.ValidateRequest(t.Context(), input, PreparationFull)
 	if err != nil {
 		t.Fatal(err)
@@ -45,7 +47,7 @@ func TestPreparationValidateRequest(t *testing.T) {
 		{name: "instructions", change: func(r *PreparationRequest) { r.Instructions = strings.Repeat("界", 2001) }},
 		{name: "goal", change: func(r *PreparationRequest) { r.Goal = "unknown" }},
 		{name: "preview count", change: func(r *PreparationRequest) { r.PreviewRecords = 1 }},
-		{name: "reviewed", change: func(r *PreparationRequest) { r.ReviewedRecords = []Record{{Prompt: "Missing evidence?"}} }},
+		{name: "reviewed", change: func(r *PreparationRequest) { r.ReviewedRecords = []training.Record{{Prompt: "Missing evidence?"}} }},
 		{name: "size", change: func(r *PreparationRequest) { r.Model = strings.Repeat("x", 64<<10) }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -68,11 +70,11 @@ func TestPreparationValidateRequest(t *testing.T) {
 	var rows strings.Builder
 	encoder := json.NewEncoder(&rows)
 	for i := range 50 {
-		if err := encoder.Encode(Record{Prompt: fmt.Sprintf("Question %d?", i), Target: "yes", Evidence: fmt.Sprintf("Source %d says yes.", i)}); err != nil {
+		if err := encoder.Encode(training.Record{Prompt: fmt.Sprintf("Question %d?", i), Target: "yes", Evidence: fmt.Sprintf("Source %d says yes.", i)}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	prepared, err := b.Datasets.ImportDataset(t.Context(), ImportInput{Name: "prepared.jsonl"}, strings.NewReader(rows.String()))
+	prepared, err := b.Datasets.ImportDataset(t.Context(), imports.ImportInput{Name: "prepared.jsonl"}, strings.NewReader(rows.String()))
 	if err != nil {
 		t.Fatal(err)
 	}

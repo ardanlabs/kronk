@@ -16,8 +16,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/dataset"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/model"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/imports"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/preparation"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 	"github.com/ardanlabs/kronk/sdk/applog"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -28,16 +29,16 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
-var ErrInvalidArgument = model.ErrInvalidArgument
-var ErrCompletionTruncated = model.ErrCompletionTruncated
-var ErrNotFound = dataset.ErrNotFound
+var ErrInvalidArgument = preparation.ErrInvalidArgument
+var ErrCompletionTruncated = preparation.ErrCompletionTruncated
+var ErrNotFound = imports.ErrNotFound
 
 type Config struct {
 	TaskQueue    string
 	StageTimeout time.Duration
-	Datasets     *dataset.Business
-	Extractor    DocumentExtractor
-	Completer    ModelCompleter
+	Datasets     *imports.Business
+	Extractor    preparation.DocumentExtractor
+	Completer    preparation.ModelCompleter
 	Progress     *tmprl.ProgressBroker[tmprl.Execution, tmprl.Progress]
 	Log          applog.Logger
 }
@@ -104,73 +105,73 @@ func (b *Business) publishProgress(update tmprl.Progress) {
 	b.progress.Publish(update.Execution, update)
 }
 
-func (b *Business) StartPreview(ctx context.Context, input PreparationRequest) (PreparationRun, error) {
-	return b.startPreparation(ctx, input, PreparationPreview)
+func (b *Business) StartPreview(ctx context.Context, input preparation.PreparationRequest) (preparation.PreparationRun, error) {
+	return b.startPreparation(ctx, input, preparation.PreparationPreview)
 }
-func (b *Business) StartPreparation(ctx context.Context, input PreparationRequest) (PreparationRun, error) {
-	return b.startPreparation(ctx, input, PreparationFull)
+func (b *Business) StartPreparation(ctx context.Context, input preparation.PreparationRequest) (preparation.PreparationRun, error) {
+	return b.startPreparation(ctx, input, preparation.PreparationFull)
 }
 
 // ValidateRequest normalizes and validates a preparation request and its imported
 // dataset without starting a workflow or assigning an ID. The returned request
 // owns a copy of ReviewedRecords.
-func (b *Business) ValidateRequest(ctx context.Context, input PreparationRequest, kind PreparationKind) (PreparationRequest, error) {
+func (b *Business) ValidateRequest(ctx context.Context, input preparation.PreparationRequest, kind preparation.PreparationKind) (preparation.PreparationRequest, error) {
 	input.ID = strings.TrimSpace(input.ID)
 	input.Model = strings.TrimSpace(input.Model)
 	input.Instructions = strings.TrimSpace(input.Instructions)
 	input.ReviewedRecords = slices.Clone(input.ReviewedRecords)
 	if input.Model == "" || len(input.ID) > 200 || utf8.RuneCountInString(input.Instructions) > 2000 {
-		return PreparationRequest{}, fmt.Errorf("%w: invalid preparation model, ID or instructions", ErrInvalidArgument)
+		return preparation.PreparationRequest{}, fmt.Errorf("%w: invalid preparation model, ID or instructions", ErrInvalidArgument)
 	}
 	switch input.Goal {
-	case GoalQuestionAnswer, GoalClassification, GoalNumericPrediction, GoalTextGeneration:
+	case preparation.GoalQuestionAnswer, preparation.GoalClassification, preparation.GoalNumericPrediction, preparation.GoalTextGeneration:
 	default:
-		return PreparationRequest{}, fmt.Errorf("%w: unsupported preparation goal", ErrInvalidArgument)
+		return preparation.PreparationRequest{}, fmt.Errorf("%w: unsupported preparation goal", ErrInvalidArgument)
 	}
 	switch kind {
-	case PreparationPreview:
+	case preparation.PreparationPreview:
 		if input.PreviewRecords < 1 || input.PreviewRecords > 5 || len(input.ReviewedRecords) != 0 {
-			return PreparationRequest{}, fmt.Errorf("%w: preview requires 1–5 samples and no reviewed records", ErrInvalidArgument)
+			return preparation.PreparationRequest{}, fmt.Errorf("%w: preview requires 1–5 samples and no reviewed records", ErrInvalidArgument)
 		}
-	case PreparationFull:
+	case preparation.PreparationFull:
 		if input.PreviewRecords != 0 || len(input.ReviewedRecords) > 5 {
-			return PreparationRequest{}, fmt.Errorf("%w: full preparation accepts at most five reviewed records, not a preview count", ErrInvalidArgument)
+			return preparation.PreparationRequest{}, fmt.Errorf("%w: full preparation accepts at most five reviewed records, not a preview count", ErrInvalidArgument)
 		}
-		if err := dataset.ValidateReviewedRecords(input.ReviewedRecords); err != nil {
-			return PreparationRequest{}, fmt.Errorf("%w: reviewed records: %s", ErrInvalidArgument, err)
+		if err := training.ValidateReviewedRecords(input.ReviewedRecords); err != nil {
+			return preparation.PreparationRequest{}, fmt.Errorf("%w: reviewed records: %s", ErrInvalidArgument, err)
 		}
 	}
 	data, err := json.Marshal(input)
 	if err != nil {
-		return PreparationRequest{}, err
+		return preparation.PreparationRequest{}, err
 	}
 	if len(data) > 64<<10 {
-		return PreparationRequest{}, fmt.Errorf("%w: preparation input exceeds 64 KiB", ErrInvalidArgument)
+		return preparation.PreparationRequest{}, fmt.Errorf("%w: preparation input exceeds 64 KiB", ErrInvalidArgument)
 	}
 	dataset, err := b.cfg.Datasets.DatasetSource(ctx, input.DatasetID)
 	if err != nil {
-		return PreparationRequest{}, err
+		return preparation.PreparationRequest{}, err
 	}
 	if dataset.Format == ".jsonl" {
-		return PreparationRequest{}, fmt.Errorf("%w: prepared JSONL does not need document preparation", ErrInvalidArgument)
+		return preparation.PreparationRequest{}, fmt.Errorf("%w: prepared JSONL does not need document preparation", ErrInvalidArgument)
 	}
 	return input, nil
 }
 
-func (b *Business) startPreparation(ctx context.Context, input PreparationRequest, kind PreparationKind) (PreparationRun, error) {
+func (b *Business) startPreparation(ctx context.Context, input preparation.PreparationRequest, kind preparation.PreparationKind) (preparation.PreparationRun, error) {
 	input, err := b.ValidateRequest(ctx, input, kind)
 	if err != nil {
-		return PreparationRun{}, err
+		return preparation.PreparationRun{}, err
 	}
 	if input.ID == "" {
 		input.ID = "preparation-" + rand.Text()
 	}
-	run, err := tmprl.Start(ctx, b.client, client.StartWorkflowOptions{ID: input.ID, TaskQueue: b.cfg.TaskQueue, WorkflowIDReusePolicy: enumspb.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE, WorkflowExecutionErrorWhenAlreadyStarted: true}, preparationWorkflowName, preparationInput{Request: input, Kind: kind, Timeout: b.cfg.StageTimeout})
+	run, err := tmprl.Start(ctx, b.client, client.StartWorkflowOptions{ID: input.ID, TaskQueue: b.cfg.TaskQueue, WorkflowIDReusePolicy: enumspb.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE, WorkflowExecutionErrorWhenAlreadyStarted: true}, preparationWorkflowName, preparation.PreparationInput{Request: input, Kind: kind, Timeout: b.cfg.StageTimeout})
 	if err != nil {
-		return PreparationRun{}, err
+		return preparation.PreparationRun{}, err
 	}
 	b.cfg.Log(ctx, "preparation job submitted", "workflow_id", run.WorkflowID, "run_id", run.RunID, "task_queue", b.cfg.TaskQueue, "kind", kind, "dataset_id", input.DatasetID)
-	return PreparationRun{Execution: run, Request: input, Kind: kind, Status: tmprl.StatusRunning}, nil
+	return preparation.PreparationRun{Execution: run, Request: input, Kind: kind, Status: tmprl.StatusRunning}, nil
 }
 
 // PreparationHistory pages through preview and full preparation executions,
@@ -183,38 +184,38 @@ func (b *Business) PreparationHistory(ctx context.Context, pageSize int, next []
 	return runs, token, err
 }
 
-func (b *Business) WaitPreparation(ctx context.Context, e tmprl.Execution) (PreparationRun, error) {
-	var result PreparationRun
+func (b *Business) WaitPreparation(ctx context.Context, e tmprl.Execution) (preparation.PreparationRun, error) {
+	var result preparation.PreparationRun
 	err := tmprl.Wait(ctx, b.client, e, &result, preparationWorkflowName)
 	if errors.Is(err, tmprl.ErrUnsupportedWorkflow) {
-		return PreparationRun{}, fmt.Errorf("%w: not a preparation workflow", ErrInvalidArgument)
+		return preparation.PreparationRun{}, fmt.Errorf("%w: not a preparation workflow", ErrInvalidArgument)
 	}
-	return result, model.ExecutionError(err)
+	return result, preparation.ExecutionError(err)
 }
 
 // GetPreparation never queries a closed execution: its durable result or
 // terminal history is authoritative, even if no worker remains running.
-func (b *Business) GetPreparation(ctx context.Context, e tmprl.Execution) (PreparationRun, error) {
-	if err := model.ValidateExecution(e); err != nil {
-		return PreparationRun{}, err
+func (b *Business) GetPreparation(ctx context.Context, e tmprl.Execution) (preparation.PreparationRun, error) {
+	if err := preparation.ValidateExecution(e); err != nil {
+		return preparation.PreparationRun{}, err
 	}
 	description, err := b.client.DescribeWorkflowExecution(ctx, e.WorkflowID, e.RunID)
 	if err != nil {
-		return PreparationRun{}, err
+		return preparation.PreparationRun{}, err
 	}
 	info := description.GetWorkflowExecutionInfo()
 	if info.GetType().GetName() != preparationWorkflowName {
-		return PreparationRun{}, fmt.Errorf("%w: not a preparation workflow", ErrInvalidArgument)
+		return preparation.PreparationRun{}, fmt.Errorf("%w: not a preparation workflow", ErrInvalidArgument)
 	}
 	switch info.GetStatus() {
 	case enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED:
-		var result PreparationRun
+		var result preparation.PreparationRun
 		err := b.client.GetWorkflow(ctx, e.WorkflowID, e.RunID).Get(ctx, &result)
 		return result, err
 	case enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING:
-		var result PreparationRun
+		var result preparation.PreparationRun
 		if err := tmprl.Query(ctx, b.client, e, StateQuery, &result); err != nil {
-			return PreparationRun{}, err
+			return preparation.PreparationRun{}, err
 		}
 		for _, pending := range description.GetPendingActivities() {
 			if pending.GetHeartbeatDetails() == nil {
@@ -222,7 +223,7 @@ func (b *Business) GetPreparation(ctx context.Context, e tmprl.Execution) (Prepa
 			}
 			var progress tmprl.Progress
 			if err := converter.GetDefaultDataConverter().FromPayloads(pending.GetHeartbeatDetails(), &progress); err != nil {
-				return PreparationRun{}, err
+				return preparation.PreparationRun{}, err
 			}
 			if progress.Execution == e {
 				result.Progress = &progress
@@ -230,18 +231,18 @@ func (b *Business) GetPreparation(ctx context.Context, e tmprl.Execution) (Prepa
 		}
 		return result, nil
 	}
-	result := PreparationRun{Execution: e, Status: tmprl.StatusFailed, StartedAt: info.GetStartTime().AsTime(), ClosedAt: info.GetCloseTime().AsTime()}
+	result := preparation.PreparationRun{Execution: e, Status: tmprl.StatusFailed, StartedAt: info.GetStartTime().AsTime(), ClosedAt: info.GetCloseTime().AsTime()}
 	it := b.client.GetWorkflowHistory(ctx, e.WorkflowID, e.RunID, false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 	for it.HasNext() {
 		event, err := it.Next()
 		if err != nil {
-			return PreparationRun{}, err
+			return preparation.PreparationRun{}, err
 		}
 		switch event.GetEventType() {
 		case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED:
-			var input preparationInput
+			var input preparation.PreparationInput
 			if err := converter.GetDefaultDataConverter().FromPayloads(event.GetWorkflowExecutionStartedEventAttributes().GetInput(), &input); err != nil {
-				return PreparationRun{}, err
+				return preparation.PreparationRun{}, err
 			}
 			result.Request = input.Request
 			result.Kind = input.Kind
@@ -259,7 +260,7 @@ func (b *Business) GetPreparation(ctx context.Context, e tmprl.Execution) (Prepa
 }
 
 func (b *Business) StopPreparation(ctx context.Context, e tmprl.Execution) error {
-	return model.ExecutionError(tmprl.Stop(ctx, b.client, e, preparationWorkflowName))
+	return preparation.ExecutionError(tmprl.Stop(ctx, b.client, e, preparationWorkflowName))
 }
 
 // OpenPreparationRecords lets any head stream persisted JSONL without knowing
@@ -274,7 +275,7 @@ func (b *Business) OpenPreparationRecords(ctx context.Context, e tmprl.Execution
 }
 
 // OpenRecords opens records from an already resolved preparation result.
-func (b *Business) OpenRecords(run PreparationRun) (io.ReadCloser, error) {
+func (b *Business) OpenRecords(run preparation.PreparationRun) (io.ReadCloser, error) {
 	if run.Status != tmprl.StatusCompleted || run.Result == nil {
 		return nil, fmt.Errorf("%w: preparation has no completed records", ErrInvalidArgument)
 	}

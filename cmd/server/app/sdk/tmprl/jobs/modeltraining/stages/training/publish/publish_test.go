@@ -5,7 +5,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/model"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training/evaluate"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training/publish"
 )
 
@@ -16,7 +17,7 @@ func TestBothAcceptancesRequired(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			data, err := json.Marshal(model.EvaluationReport{Accepted: stored})
+			data, err := json.Marshal(evaluate.EvaluationReport{Accepted: stored})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -26,13 +27,13 @@ func TestBothAcceptancesRequired(t *testing.T) {
 			if err := root.WriteFile("candidate.gguf", []byte("adapter"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			artifacts, err := publish.Run(t.Context(), root, model.Artifacts{Accepted: incoming})
+			artifacts, err := publish.Run(t.Context(), root, training.Artifacts{Accepted: incoming})
 			if (err == nil) != (stored && incoming) {
 				t.Fatalf("stored=%v incoming=%v: %v", stored, incoming, err)
 			}
-			previous := model.Artifacts{Dataset: "dataset", Checkpoint: "checkpoint", Report: "report", Adapter: "old", Accepted: incoming}
-			var step model.TrainingStep = publish.Step{}
-			result, err := step.Execute(t.Context(), model.StepContext{Workspace: root, Request: model.LegacyStepRequest{Artifacts: previous}})
+			previous := training.Artifacts{Dataset: "dataset", Checkpoint: "checkpoint", Report: "report", Adapter: "old", Accepted: incoming}
+			var step training.TrainingStep = publish.Step{}
+			result, err := step.Execute(t.Context(), training.StepContext{Workspace: root, Artifacts: previous})
 			if (err == nil) != (stored && incoming) {
 				t.Fatalf("stage stored=%v incoming=%v: %v", stored, incoming, err)
 			}

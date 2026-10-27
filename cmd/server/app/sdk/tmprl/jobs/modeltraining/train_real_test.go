@@ -14,9 +14,12 @@ import (
 	"testing"
 	"time"
 
-	. "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/model"
+	. "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/imports"
 	provider "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/providers/preparation"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/preparation"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/preparation/extract"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
@@ -82,13 +85,13 @@ func TestTemporalRealGemmaTraining(t *testing.T) {
 	b := services.Training
 	w := startServices(t, services)
 	t.Cleanup(w.Stop)
-	request := TrainingRequest{Model: "gemma", Training: Training{MaximumEpochs: 1, BatchSize: 1, LearningRate: 0.0002, Seed: 3407, LoRARank: 8, LoRAAlpha: 8}}
+	request := TrainingRequest{Model: "gemma", Training: training.Training{MaximumEpochs: 1, BatchSize: 1, LearningRate: 0.0002, Seed: 3407, LoRARank: 8, LoRAAlpha: 8}}
 	if document != "" {
 		file, err := os.Open(document)
 		if err != nil {
 			t.Fatal(err)
 		}
-		dataset, err := services.Datasets.ImportDataset(ctx, ImportInput{Name: filepath.Base(document)}, file)
+		dataset, err := services.Datasets.ImportDataset(ctx, imports.ImportInput{Name: filepath.Base(document)}, file)
 		file.Close()
 		if err != nil {
 			t.Fatal(err)
@@ -97,9 +100,9 @@ func TestTemporalRealGemmaTraining(t *testing.T) {
 		if preparationModel == "" {
 			preparationModel = "gemma"
 		}
-		input := PreparationRequest{DatasetID: dataset.ID, Model: preparationModel, Goal: GoalQuestionAnswer, PreviewRecords: 3}
+		input := preparation.PreparationRequest{DatasetID: dataset.ID, Model: preparationModel, Goal: preparation.GoalQuestionAnswer, PreviewRecords: 3}
 		for _, preview := range []bool{true, false} {
-			var run PreparationRun
+			var run preparation.PreparationRun
 			if preview {
 				run, err = services.Preparation.StartPreview(ctx, input)
 			} else {
@@ -145,13 +148,13 @@ func TestTemporalRealGemmaTraining(t *testing.T) {
 				if split == 1 && i >= 10 {
 					continue
 				}
-				record := Record{Prompt: prompt, Target: target, Evidence: fmt.Sprintf("Device %02d has calibration code %s.", i, target), FactID: fmt.Sprintf("device-%02d", i), ValidationPrompt: split == 1, IndependentPrompt: split == 2}
+				record := training.Record{Prompt: prompt, Target: target, Evidence: fmt.Sprintf("Device %02d has calibration code %s.", i, target), FactID: fmt.Sprintf("device-%02d", i), ValidationPrompt: split == 1, IndependentPrompt: split == 2}
 				if err := json.NewEncoder(&source).Encode(record); err != nil {
 					t.Fatal(err)
 				}
 			}
 		}
-		dataset, err := services.Datasets.ImportDataset(ctx, ImportInput{Name: "calibration.jsonl"}, strings.NewReader(source.String()))
+		dataset, err := services.Datasets.ImportDataset(ctx, imports.ImportInput{Name: "calibration.jsonl"}, strings.NewReader(source.String()))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -173,7 +176,7 @@ func TestTemporalRealGemmaTraining(t *testing.T) {
 	if err != nil {
 		t.Fatalf("real training failed: %v", err)
 	}
-	if result.Status != tmprl.StatusCompleted && result.Status != StatusNeedsImprovement {
+	if result.Status != tmprl.StatusCompleted && result.Status != training.StatusNeedsImprovement {
 		t.Fatalf("unexpected terminal state: %+v", result)
 	}
 	report, err := b.GetTrainingEvaluation(ctx, run.Execution)
@@ -285,7 +288,7 @@ func TestTemporalRealGemmaContextPreflight(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 			defer cancel()
 			source := strings.Replace(trainingFixture(t), fmt.Sprintf("Device 00 question variant %d?", split), strings.Repeat("hello ", int(capacity)+128)+"Question?", 1)
-			dataset, err := services.Datasets.ImportDataset(ctx, ImportInput{Name: "oversized.jsonl"}, strings.NewReader(source))
+			dataset, err := services.Datasets.ImportDataset(ctx, imports.ImportInput{Name: "oversized.jsonl"}, strings.NewReader(source))
 			if err != nil {
 				t.Fatal(err)
 			}

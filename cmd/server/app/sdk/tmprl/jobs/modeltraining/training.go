@@ -12,12 +12,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/dataset"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/model"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/imports"
 	provider "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/providers/training"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training"
 	prepare "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/standalone/preparation"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
-	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/definition"
 	"github.com/ardanlabs/kronk/sdk/applog"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/activity"
@@ -26,8 +25,7 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
-var ErrInvalidArgument = model.ErrInvalidArgument
-var ErrNotFound = dataset.ErrNotFound
+var ErrNotFound = imports.ErrNotFound
 
 // Backend performs model-specific computation, never presentation work. It
 // must honor ctx and deduplicate side effects using LegacyStepRequest.Key because
@@ -43,8 +41,8 @@ type Backend interface {
 type Config struct {
 	// Job defaults to the embedded YAML definition. Steps registers additional
 	// implementations by "stage/step"; the YAML, not this map, owns execution order.
-	Job       *definition.Job
-	Steps     map[string]model.StepHandler
+	Job       *tmprl.Job
+	Steps     map[string]StepHandler
 	TaskQueue string
 	// StageTimeout and the following legacy timeout fields configure Start only.
 	// StartJob and StartTraining use Job's YAML-derived policies instead.
@@ -55,18 +53,18 @@ type Config struct {
 	QueueTimeout time.Duration
 	// LegacySteps is the legacy Start API's flat plan. Nil uses DefaultSteps.
 	// Keep implementations registered while submitted jobs still reference them.
-	LegacySteps []model.TrainingStep
+	LegacySteps []TrainingStep
 	Log         applog.Logger
 	// Backend executes the optional alternative pipeline submitted through Start.
 	// Workers using a Trainer do not require it.
 	Backend     Backend
-	Datasets    *dataset.Business
+	Datasets    *imports.Business
 	Preparation *prepare.Business
 	Progress    *tmprl.ProgressBroker[tmprl.Execution, tmprl.Progress]
 	// Models maps approved IDs to local Gemma 3 GGUFs. Trainer defaults to the
 	// SDK GoMLX implementation. These host settings never become workflow inputs.
 	Models      map[string]string
-	Trainer     Trainer
+	Trainer     training.Trainer
 	LlamaServer string
 }
 
@@ -74,11 +72,11 @@ type Business struct {
 	client            client.Client
 	cfg               Config
 	progress          *tmprl.ProgressBroker[tmprl.Execution, tmprl.Progress]
-	legacySteps       map[tmprl.Stage]model.TrainingStep
+	legacySteps       map[tmprl.StageName]TrainingStep
 	enabled           bool
 	customLegacySteps bool
-	job               definition.Job
-	steps             map[string]model.StepHandler
+	job               tmprl.Job
+	steps             map[string]StepHandler
 	jobs              *tmprl.Jobs[Request, Artifacts]
 }
 
@@ -125,7 +123,7 @@ func New(c client.Client, cfg Config) (*Business, error) {
 		cfg.LegacySteps = DefaultSteps()
 	}
 	cfg.LegacySteps = slices.Clone(cfg.LegacySteps)
-	legacySteps := make(map[tmprl.Stage]model.TrainingStep, len(cfg.LegacySteps))
+	legacySteps := make(map[tmprl.StageName]TrainingStep, len(cfg.LegacySteps))
 	for _, step := range cfg.LegacySteps {
 		if step == nil || !validStepName(step.Name()) {
 			return nil, fmt.Errorf("%w: steps require a safe, nonempty name", ErrInvalidArgument)
@@ -199,7 +197,7 @@ func (b *Business) Subscribe(e tmprl.Execution) (<-chan tmprl.Progress, func()) 
 	return b.progress.Subscribe(e)
 }
 
-func (b *Business) Start(ctx context.Context, input Request) (tmprl.Run[model.Request, model.Artifacts], error) {
+func (b *Business) Start(ctx context.Context, input Request) (tmprl.Run[Request, Artifacts], error) {
 	input.ID = strings.TrimSpace(input.ID)
 	input.Model = strings.TrimSpace(input.Model)
 	input.Output = strings.TrimSpace(input.Output)
@@ -208,16 +206,16 @@ func (b *Business) Start(ctx context.Context, input Request) (tmprl.Run[model.Re
 		input.Sources[i] = strings.TrimSpace(input.Sources[i])
 	}
 	if err := validate(input); err != nil {
-		return tmprl.Run[model.Request, model.Artifacts]{}, err
+		return tmprl.Run[Request, Artifacts]{}, err
 	}
 	if input.ID == "" {
 		input.ID = "tuning-" + rand.Text()
 	}
-	stages := make([]tmprl.Stage, len(b.cfg.LegacySteps))
+	stages := make([]tmprl.StageName, len(b.cfg.LegacySteps))
 	for i, step := range b.cfg.LegacySteps {
 		stages[i] = legacyStepID(step.Name())
 	}
-	plan := workflowInput{Request: input, StageTimeout: b.cfg.StageTimeout, Stages: stages, JobTimeout: b.cfg.JobTimeout, QueueTimeout: b.cfg.QueueTimeout}
+	plan := Input{Request: input, StageTimeout: b.cfg.StageTimeout, Stages: stages, JobTimeout: b.cfg.JobTimeout, QueueTimeout: b.cfg.QueueTimeout}
 	state := queuedRun(plan)
 	execution, err := tmprl.Start(ctx, b.client, client.StartWorkflowOptions{
 		ID: input.ID, TaskQueue: b.cfg.TaskQueue,
@@ -226,7 +224,7 @@ func (b *Business) Start(ctx context.Context, input Request) (tmprl.Run[model.Re
 		WorkflowExecutionErrorWhenAlreadyStarted: true,
 	}, workflowName, plan)
 	if err != nil {
-		return tmprl.Run[model.Request, model.Artifacts]{}, fmt.Errorf("start tuning: %w", err)
+		return tmprl.Run[Request, Artifacts]{}, fmt.Errorf("start tuning: %w", err)
 	}
 	b.cfg.Log(ctx, "training job submitted", "workflow_id", execution.WorkflowID, "run_id", execution.RunID, "task_queue", b.cfg.TaskQueue, "stages", stages)
 	state.Execution = execution
@@ -253,29 +251,29 @@ func validate(r Request) error {
 // Resume continues that same
 // run; it does not restart a stopped run or repeat completed stages.
 func (b *Business) Pause(ctx context.Context, e tmprl.Execution) error {
-	return model.ExecutionError(b.jobs.Pause(ctx, e))
+	return ExecutionError(b.jobs.Pause(ctx, e))
 }
 func (b *Business) Resume(ctx context.Context, e tmprl.Execution) error {
-	return model.ExecutionError(b.jobs.Resume(ctx, e))
+	return ExecutionError(b.jobs.Resume(ctx, e))
 }
 
 // Stop requests cooperative cancellation of training. Wait/Get establish when
 // the execution is closed.
 func (b *Business) Stop(ctx context.Context, e tmprl.Execution) error {
-	return model.ExecutionError(b.jobs.Stop(ctx, e))
+	return ExecutionError(b.jobs.Stop(ctx, e))
 }
 
-func (b *Business) Wait(ctx context.Context, e tmprl.Execution) (tmprl.Run[model.Request, model.Artifacts], error) {
+func (b *Business) Wait(ctx context.Context, e tmprl.Execution) (tmprl.Run[Request, Artifacts], error) {
 	result, err := b.jobs.Wait(ctx, e)
-	return result, model.ExecutionError(err)
+	return result, ExecutionError(err)
 }
 
 // Get reads durable lifecycle snapshots and enriches active stages with server
 // heartbeat/retry diagnostics. It remains usable without a live worker. Older
 // runs fall back to a bounded live query, then last-known history.
-func (b *Business) Get(ctx context.Context, e tmprl.Execution) (tmprl.Run[model.Request, model.Artifacts], error) {
+func (b *Business) Get(ctx context.Context, e tmprl.Execution) (tmprl.Run[Request, Artifacts], error) {
 	result, err := b.jobs.Get(ctx, e)
-	return result, model.ExecutionError(err)
+	return result, ExecutionError(err)
 }
 
 // History pages through training executions, including active runs.

@@ -3,7 +3,6 @@ package modeltraining
 import (
 	"context"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/model"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 )
 
@@ -13,7 +12,7 @@ import (
 // matched exactly after decoding snapshots and reconciling terminal lifecycle.
 // Filtering can produce short or empty pages with a nonempty next-page token.
 // Continue with that opaque token and the same filters to read subsequent pages.
-func (b *Business) List(ctx context.Context, options tmprl.ListOptions) ([]tmprl.Run[model.Request, model.Artifacts], []byte, error) {
+func (b *Business) List(ctx context.Context, options tmprl.ListOptions) ([]tmprl.Run[Request, Artifacts], []byte, error) {
 	runs, next, err := b.jobs.List(ctx, options)
-	return runs, next, model.ExecutionError(err)
+	return runs, next, ExecutionError(err)
 }

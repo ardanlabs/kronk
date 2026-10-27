@@ -14,11 +14,11 @@ import (
 	"testing"
 	"time"
 
-	modeltraining "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining"
+	. "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/definition"
-	. "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/model"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/imports"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/preparation"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
-	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/tmprltest"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/converter"
@@ -43,10 +43,10 @@ func jobModel(t *testing.T) string {
 // Real Temporal, actual preparation/training step implementations, and only the
 // model computation substituted. No preparation worker or second workflow exists.
 func TestTemporalYAMLDocumentJob(t *testing.T) {
-	env := tmprltest.New(t)
+	env := newTestEnvironment(t)
 	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 	defer cancel()
-	completer := completerFunc(func(ctx context.Context, r CompletionRequest) (Completion, error) {
+	completer := completerFunc(func(ctx context.Context, r preparation.CompletionRequest) (preparation.Completion, error) {
 		prompt := r.Messages[1].Content
 		var output any
 		switch {
@@ -60,7 +60,7 @@ func TestTemporalYAMLDocumentJob(t *testing.T) {
 			_, target, _ := strings.Cut(prompt, "Locked target: ")
 			var index int
 			if _, err := fmt.Sscanf(target, "Device %d", &index); err != nil {
-				return Completion{}, err
+				return preparation.Completion{}, err
 			}
 			question := fmt.Sprintf("Which calibration code belongs to device %02d?", index)
 			if strings.Contains(prompt, "Do not repeat: "+question) {
@@ -74,25 +74,25 @@ func TestTemporalYAMLDocumentJob(t *testing.T) {
 				_, passage, _ := strings.Cut(section, "]\n")
 				var index int
 				if _, err := fmt.Sscanf(passage, "Device %d", &index); err != nil {
-					return Completion{}, err
+					return preparation.Completion{}, err
 				}
 				rows = append(rows, map[string]any{"prompt": fmt.Sprintf("What calibration code applies to device %02d?", index), "evidence_id": i + 1, "target_id": 1})
 			}
 			output = map[string]any{"records": rows}
 		}
 		data, err := json.Marshal(output)
-		return Completion{Content: string(data)}, err
+		return preparation.Completion{Content: string(data)}, err
 	})
 	s := newServices(t, env.Client, serviceConfig{TaskQueue: env.TaskQueue, Models: map[string]string{"gemma": jobModel(t)}, Trainer: &controlledTrainer{base: 16, adapted: 18, validationRows: 10}, Completer: completer})
 	var document strings.Builder
 	for i := range 20 {
 		fmt.Fprintf(&document, "Device %02d has calibration code C%02d.\n\n", i, i)
 	}
-	source, err := s.Datasets.ImportDataset(ctx, ImportInput{Name: "devices.md"}, strings.NewReader(document.String()))
+	source, err := s.Datasets.ImportDataset(ctx, imports.ImportInput{Name: "devices.md"}, strings.NewReader(document.String()))
 	if err != nil {
 		t.Fatal(err)
 	}
-	run, err := s.Training.StartJob(ctx, JobRequest{Model: "gemma", Prepare: &PreparationRequest{DatasetID: source.ID, Model: "generator", Goal: GoalQuestionAnswer}})
+	run, err := s.Training.StartJob(ctx, JobRequest{Model: "gemma", Prepare: &preparation.PreparationRequest{DatasetID: source.ID, Model: "generator", Goal: preparation.GoalQuestionAnswer}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestTemporalYAMLDocumentJob(t *testing.T) {
 			t.Fatal(err)
 		}
 		scheduled := event.GetActivityTaskScheduledEventAttributes()
-		if scheduled.GetActivityType().GetName() != modeltraining.JobStepActivityName {
+		if scheduled.GetActivityType().GetName() != JobStepActivityName {
 			continue
 		}
 		var request tmprl.StepRequest[Request, Artifacts]
@@ -158,7 +158,7 @@ func TestTemporalYAMLDocumentJob(t *testing.T) {
 func TestTemporalJobStepPolicies(t *testing.T) {
 	for _, mode := range []string{"retry-timeout", "exhaust-timeout", "stage-deadline", "pause", "paused-stage-deadline", "reservation-deadline", "recover"} {
 		t.Run(mode, func(t *testing.T) {
-			env := tmprltest.New(t)
+			env := newTestEnvironment(t)
 			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 			defer cancel()
 			job, err := definition.Load()
@@ -219,7 +219,7 @@ func TestTemporalJobStepPolicies(t *testing.T) {
 				}),
 			}
 			s := newServices(t, env.Client, serviceConfig{TaskQueue: env.TaskQueue, Models: map[string]string{"gemma": jobModel(t)}, Job: &job, Steps: handlers})
-			dataset, err := s.Datasets.ImportDataset(ctx, ImportInput{Name: "prepared.jsonl"}, strings.NewReader(trainingFixture(t)))
+			dataset, err := s.Datasets.ImportDataset(ctx, imports.ImportInput{Name: "prepared.jsonl"}, strings.NewReader(trainingFixture(t)))
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -9,7 +9,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/model"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training/evaluate"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 )
@@ -17,15 +17,15 @@ import (
 type trainer struct {
 	t             *testing.T
 	base, adapted []string
-	records       []model.Record
+	records       []training.Record
 	err           error
 }
 
-func (tr trainer) Train(context.Context, model.TrainingJob, func(tmprl.Progress)) (model.TrainingCandidate, error) {
+func (tr trainer) Train(context.Context, training.TrainingJob, func(tmprl.Progress)) (training.TrainingCandidate, error) {
 	tr.t.Fatal("evaluation must not train")
-	return model.TrainingCandidate{}, nil
+	return training.TrainingCandidate{}, nil
 }
-func (tr trainer) Predict(_ context.Context, _ model.TrainingJob, adapter string, records []model.Record) ([]string, error) {
+func (tr trainer) Predict(_ context.Context, _ training.TrainingJob, adapter string, records []training.Record) ([]string, error) {
 	if !reflect.DeepEqual(records, tr.records) {
 		tr.t.Fatalf("prediction received non-test rows: %+v", records)
 	}
@@ -59,10 +59,10 @@ func TestRunAcceptance(t *testing.T) {
 			if err := root.WriteFile("candidate.gguf", []byte("candidate bytes"), 0600); err != nil {
 				t.Fatal(err)
 			}
-			job := model.TrainingJob{Workdir: t.TempDir(), Dataset: model.TrainingDataset{Train: []model.Record{{Prompt: "training only"}}, Validation: []model.Record{{Prompt: "validation only"}}}}
+			job := training.TrainingJob{Workdir: t.TempDir(), Dataset: training.TrainingDataset{Train: []training.Record{{Prompt: "training only"}}, Validation: []training.Record{{Prompt: "validation only"}}}}
 			tr := trainer{t: t}
 			for i := range tc.total {
-				job.Dataset.Test = append(job.Dataset.Test, model.Record{Prompt: fmt.Sprintf("Question %d?", i), Target: "Correct Answer", Evidence: "Correct Answer"})
+				job.Dataset.Test = append(job.Dataset.Test, training.Record{Prompt: fmt.Sprintf("Question %d?", i), Target: "Correct Answer", Evidence: "Correct Answer"})
 				base, adapted := "wrong", "wrong"
 				if i < tc.base {
 					base = " correct\tanswer "
@@ -82,23 +82,23 @@ func TestRunAcceptance(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			var report model.EvaluationReport
+			var report evaluate.EvaluationReport
 			if err := json.Unmarshal(data, &report); err != nil {
 				t.Fatal(err)
 			}
 			if report.Total != tc.total || report.BaseCorrect != tc.base || report.AdapterCorrect != tc.adapted || report.Accepted != tc.accepted || artifacts.Accepted != tc.accepted || len(report.Answers) != tc.total {
 				t.Fatalf("report = %+v; artifacts = %+v", report, artifacts)
 			}
-			incoming := model.Artifacts{Dataset: "dataset", Checkpoint: "checkpoint", Report: "old", Adapter: "adapter", Accepted: !tc.accepted}
-			var step model.TrainingStep = evaluate.Step{}
-			result, err := step.Execute(t.Context(), model.StepContext{Workspace: root, Trainer: tr, Job: job, Request: model.LegacyStepRequest{Artifacts: incoming}})
+			incoming := training.Artifacts{Dataset: "dataset", Checkpoint: "checkpoint", Report: "old", Adapter: "adapter", Accepted: !tc.accepted}
+			var step training.TrainingStep = evaluate.Step{}
+			result, err := step.Execute(t.Context(), training.StepContext{Workspace: root, Trainer: tr, Job: job, Artifacts: incoming})
 			if err != nil {
 				t.Fatal(err)
 			}
 			incoming.Report, incoming.Accepted = artifacts.Report, tc.accepted
 			var status tmprl.Status
 			if !tc.accepted {
-				status = model.StatusNeedsImprovement
+				status = training.StatusNeedsImprovement
 			}
 			if step.Name() != "evaluate" || result.Status != status || result.Artifacts != incoming {
 				t.Fatalf("stage result = %+v, want artifacts %+v and status %q", result, incoming, status)
@@ -132,8 +132,8 @@ func TestRunRejectsPredictionFailures(t *testing.T) {
 			if err := root.WriteFile("candidate.gguf", []byte("candidate bytes"), 0600); err != nil {
 				t.Fatal(err)
 			}
-			rows := []model.Record{{Prompt: "Question?", Target: "a", Evidence: "a"}}
-			_, err = evaluate.Run(t.Context(), root, trainer{t: t, records: rows, base: tc.base, adapted: tc.adapted, err: tc.err}, model.TrainingJob{Workdir: t.TempDir(), Dataset: model.TrainingDataset{Test: rows}})
+			rows := []training.Record{{Prompt: "Question?", Target: "a", Evidence: "a"}}
+			_, err = evaluate.Run(t.Context(), root, trainer{t: t, records: rows, base: tc.base, adapted: tc.adapted, err: tc.err}, training.TrainingJob{Workdir: t.TempDir(), Dataset: training.TrainingDataset{Test: rows}})
 			if err == nil || tc.err != nil && !errors.Is(err, tc.err) {
 				t.Fatalf("error = %v", err)
 			}

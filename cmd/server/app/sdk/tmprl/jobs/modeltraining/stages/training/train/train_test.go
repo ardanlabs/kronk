@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/model"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training/train"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 	"go.temporal.io/sdk/temporal"
@@ -21,13 +21,13 @@ type trainer struct {
 	loss float64
 }
 
-func (s trainer) Train(_ context.Context, job model.TrainingJob, _ func(tmprl.Progress)) (model.TrainingCandidate, error) {
+func (s trainer) Train(_ context.Context, job training.TrainingJob, _ func(tmprl.Progress)) (training.TrainingCandidate, error) {
 	if len(job.Dataset.Test) != 0 {
 		s.t.Fatal("protected rows exposed to training")
 	}
-	return model.TrainingCandidate{Path: s.path, BestEpoch: 1, TrainingLoss: s.loss}, s.err
+	return training.TrainingCandidate{Path: s.path, BestEpoch: 1, TrainingLoss: s.loss}, s.err
 }
-func (trainer) Predict(context.Context, model.TrainingJob, string, []model.Record) ([]string, error) {
+func (trainer) Predict(context.Context, training.TrainingJob, string, []training.Record) ([]string, error) {
 	panic("unexpected prediction")
 }
 
@@ -43,7 +43,7 @@ func TestNonfiniteTrainingLossDoesNotCommitCandidate(t *testing.T) {
 		if err := os.WriteFile(path, []byte("adapter"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		job := model.TrainingJob{Workdir: scratch, Training: model.Training{MaximumEpochs: 1}}
+		job := training.TrainingJob{Workdir: scratch, Training: training.Training{MaximumEpochs: 1}}
 		_, err = train.Run(t.Context(), workspace, trainer{t: t, path: path, loss: loss}, job, nil)
 		var app *temporal.ApplicationError
 		if !errors.As(err, &app) || !app.NonRetryable() || app.Type() != "invalid-stage-output" {
@@ -73,7 +73,7 @@ func TestCandidateConfinementAndProtectedRows(t *testing.T) {
 			if err := os.WriteFile(path, []byte("adapter"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			job := model.TrainingJob{Workdir: scratch, Training: model.Training{MaximumEpochs: 1}, Dataset: model.TrainingDataset{Test: []model.Record{{Prompt: "secret"}}}}
+			job := training.TrainingJob{Workdir: scratch, Training: training.Training{MaximumEpochs: 1}, Dataset: training.TrainingDataset{Test: []training.Record{{Prompt: "secret"}}}}
 			output, err := train.Run(t.Context(), workspace, trainer{t: t, path: path}, job, func(tmprl.Progress) {})
 			if escape {
 				if err == nil {
@@ -91,9 +91,9 @@ func TestCandidateConfinementAndProtectedRows(t *testing.T) {
 			if err != nil || string(data) != "adapter" {
 				t.Fatalf("candidate: %q, %v", data, err)
 			}
-			incoming := model.Artifacts{Dataset: "dataset", Checkpoint: "old", Report: "report", Adapter: "adapter", Accepted: true}
-			var step model.TrainingStep = train.Step{}
-			result, err := step.Execute(t.Context(), model.StepContext{Workspace: workspace, Trainer: trainer{t: t, path: path}, Job: job, Request: model.LegacyStepRequest{Artifacts: incoming}})
+			incoming := training.Artifacts{Dataset: "dataset", Checkpoint: "old", Report: "report", Adapter: "adapter", Accepted: true}
+			var step training.TrainingStep = train.Step{}
+			result, err := step.Execute(t.Context(), training.StepContext{Workspace: workspace, Trainer: trainer{t: t, path: path}, Job: job, Artifacts: incoming})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -126,7 +126,7 @@ func TestFailureDoesNotCommitCandidate(t *testing.T) {
 				cancel()
 				providerErr, want = nil, context.Canceled
 			}
-			job := model.TrainingJob{Workdir: scratch, Training: model.Training{MaximumEpochs: 1}}
+			job := training.TrainingJob{Workdir: scratch, Training: training.Training{MaximumEpochs: 1}}
 			_, err = train.Run(ctx, workspace, trainer{t: t, path: path, err: providerErr}, job, func(tmprl.Progress) {})
 			if !errors.Is(err, want) {
 				t.Fatalf("training error = %v, want %v", err, want)

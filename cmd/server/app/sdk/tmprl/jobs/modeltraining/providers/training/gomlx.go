@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/gomlx/engine"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/model"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 )
 
@@ -27,10 +27,10 @@ import (
 type goMLXTrainer struct{ executable string }
 
 // NewGoMLX returns the built-in training provider.
-func NewGoMLX(executable string) model.Trainer { return goMLXTrainer{executable: executable} }
+func NewGoMLX(executable string) training.Trainer { return goMLXTrainer{executable: executable} }
 
 // Preflight validates all splits only for the built-in provider.
-func Preflight(ctx context.Context, trainer model.Trainer, job model.TrainingJob) error {
+func Preflight(ctx context.Context, trainer training.Trainer, job training.TrainingJob) error {
 	t, ok := trainer.(goMLXTrainer)
 	if !ok {
 		return nil
@@ -45,20 +45,20 @@ func Preflight(ctx context.Context, trainer model.Trainer, job model.TrainingJob
 
 const predictionTokens = 192
 
-func (t goMLXTrainer) Train(ctx context.Context, job model.TrainingJob, publish func(tmprl.Progress)) (model.TrainingCandidate, error) {
+func (t goMLXTrainer) Train(ctx context.Context, job training.TrainingJob, publish func(tmprl.Progress)) (training.TrainingCandidate, error) {
 	runtime, err := engine.NewLoRARuntime(job.Model, engine.AdapterConfig{Rank: job.Training.LoRARank, Alpha: job.Training.LoRAAlpha, AdapterScale: 1, Seed: job.Training.Seed})
 	if err != nil {
-		return model.TrainingCandidate{}, err
+		return training.TrainingCandidate{}, err
 	}
 	defer runtime.Close()
 	endpoint, stop, err := t.server(ctx, job, "")
 	if err != nil {
-		return model.TrainingCandidate{}, err
+		return training.TrainingCandidate{}, err
 	}
 	defer stop()
 	tokenizer, err := engine.New(endpoint, &http.Client{Timeout: 2 * time.Minute})
 	if err != nil {
-		return model.TrainingCandidate{}, err
+		return training.TrainingCandidate{}, err
 	}
 	dataset := engine.Dataset{}
 	for _, r := range job.Dataset.Train {
@@ -68,10 +68,10 @@ func (t goMLXTrainer) Train(ctx context.Context, job model.TrainingJob, publish 
 		dataset.Validation = append(dataset.Validation, engine.Record{Prompt: r.Prompt, Target: r.Target})
 	}
 	prepared, err := runtime.PrepareDataset(ctx, dataset, tokenizer, func(p engine.TokenizationProgress) {
-		publish(tmprl.Progress{Stage: model.StageTrain, Completed: p.Completed, Total: p.Total, Message: "Tokenizing " + p.Split})
+		publish(tmprl.Progress{Stage: "train", Completed: p.Completed, Total: p.Total, Message: "Tokenizing " + p.Split})
 	})
 	if err != nil {
-		return model.TrainingCandidate{}, err
+		return training.TrainingCandidate{}, err
 	}
 	stop() // Free the inference model before allocating training graphs.
 	result, err := runtime.TrainDataset(ctx, prepared, engine.TrainingConfig{
@@ -80,19 +80,19 @@ func (t goMLXTrainer) Train(ctx context.Context, job model.TrainingJob, publish 
 		EarlyStoppingPatience: 3, MinimumValidationImprovement: 0.0001,
 		AdapterCheckpointDirectory: filepath.Join(job.Workdir, "epochs"),
 	}, func(p engine.TrainingProgress) {
-		publish(tmprl.Progress{Stage: model.StageTrain, Completed: p.CompletedSteps, Total: p.TotalSteps, Message: fmt.Sprintf("Training epoch %d", p.Epoch)})
+		publish(tmprl.Progress{Stage: "train", Completed: p.CompletedSteps, Total: p.TotalSteps, Message: fmt.Sprintf("Training epoch %d", p.Epoch)})
 	})
 	if err != nil {
-		return model.TrainingCandidate{}, err
+		return training.TrainingCandidate{}, err
 	}
 	if err := ctx.Err(); err != nil {
-		return model.TrainingCandidate{}, err
+		return training.TrainingCandidate{}, err
 	}
 	path := filepath.Join(job.Workdir, "candidate.gguf")
 	if err := runtime.ExportBestAdapter(result, path); err != nil {
-		return model.TrainingCandidate{}, err
+		return training.TrainingCandidate{}, err
 	}
-	candidate := model.TrainingCandidate{Path: path, BestEpoch: result.BestEpoch, ValidationLoss: result.BestValidationLoss}
+	candidate := training.TrainingCandidate{Path: path, BestEpoch: result.BestEpoch, ValidationLoss: result.BestValidationLoss}
 	for _, metrics := range result.Epochs {
 		if metrics.Epoch == result.BestEpoch {
 			candidate.TrainingLoss = metrics.TrainingLoss
@@ -101,13 +101,13 @@ func (t goMLXTrainer) Train(ctx context.Context, job model.TrainingJob, publish 
 	return candidate, nil
 }
 
-func (t goMLXTrainer) Predict(ctx context.Context, job model.TrainingJob, adapter string, records []model.Record) ([]string, error) {
+func (t goMLXTrainer) Predict(ctx context.Context, job training.TrainingJob, adapter string, records []training.Record) ([]string, error) {
 	endpoint, stop, err := t.server(ctx, job, adapter)
 	if err != nil {
 		return nil, err
 	}
 	defer stop()
-	if err := t.validateContext(ctx, endpoint, model.TrainingDataset{Test: records}); err != nil {
+	if err := t.validateContext(ctx, endpoint, training.TrainingDataset{Test: records}); err != nil {
 		return nil, err
 	}
 	client := &http.Client{Timeout: 2 * time.Minute}
@@ -137,7 +137,7 @@ func (t goMLXTrainer) Predict(ctx context.Context, job model.TrainingJob, adapte
 
 // validateContext checks the actual chat template and tokenizer, without
 // generating answers or allowing protected targets into optimization.
-func (t goMLXTrainer) validateContext(ctx context.Context, endpoint string, dataset model.TrainingDataset) error {
+func (t goMLXTrainer) validateContext(ctx context.Context, endpoint string, dataset training.TrainingDataset) error {
 	client := &http.Client{Timeout: 2 * time.Minute}
 	var props struct {
 		BOS      string `json:"bos_token"`
@@ -157,7 +157,7 @@ func (t goMLXTrainer) validateContext(ctx context.Context, endpoint string, data
 	}
 	for _, split := range []struct {
 		name      string
-		rows      []model.Record
+		rows      []training.Record
 		protected bool
 	}{
 		{"training", dataset.Train, false}, {"validation", dataset.Validation, false}, {"protected test", dataset.Test, true},
@@ -193,7 +193,7 @@ func (t goMLXTrainer) validateContext(ctx context.Context, endpoint string, data
 				return err
 			}
 			if len(tokens)+reserve > props.Settings.Context {
-				return fmt.Errorf("%w: %s record %d needs %d tokens including answer space; model context is %d", model.ErrInvalidArgument, split.name, i+1, len(tokens)+reserve, props.Settings.Context)
+				return fmt.Errorf("%w: %s record %d needs %d tokens including answer space; model context is %d", training.ErrInvalidArgument, split.name, i+1, len(tokens)+reserve, props.Settings.Context)
 			}
 		}
 	}
@@ -235,7 +235,7 @@ func inferenceJSON(ctx context.Context, client *http.Client, endpoint string, in
 
 // server is worker-local: loopback-only, bounded startup, no unbounded logs and
 // cooperative process cancellation. Every exit is reaped, including failures.
-func (t goMLXTrainer) server(ctx context.Context, job model.TrainingJob, adapter string) (string, func(), error) {
+func (t goMLXTrainer) server(ctx context.Context, job training.TrainingJob, adapter string) (string, func(), error) {
 	name := t.executable
 	if name == "" {
 		name = "llama-server"
@@ -323,4 +323,4 @@ func (o *serverErrorOutput) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-var _ model.Trainer = goMLXTrainer{}
+var _ training.Trainer = goMLXTrainer{}

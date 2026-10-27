@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/model"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training/split"
 	"go.temporal.io/sdk/temporal"
 )
@@ -19,13 +19,13 @@ func TestRunLocksDisjointSplits(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer root.Close()
-	var records []model.Record
+	var records []training.Record
 	for i := range 60 {
 		for j := range 2 {
-			records = append(records, model.Record{Prompt: fmt.Sprintf("Question %d variant %d?", i, j), Target: fmt.Sprintf("answer%d", i), Evidence: fmt.Sprintf("Source %d says answer%d", i, i)})
+			records = append(records, training.Record{Prompt: fmt.Sprintf("Question %d variant %d?", i, j), Target: fmt.Sprintf("answer%d", i), Evidence: fmt.Sprintf("Source %d says answer%d", i, i)})
 		}
 	}
-	artifacts, err := split.Run(t.Context(), root, nil, model.TrainingJob{}, records, "locked")
+	artifacts, err := split.Run(t.Context(), root, nil, training.TrainingJob{}, records, "locked")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func TestRunLocksDisjointSplits(t *testing.T) {
 	}
 	seen := map[string]string{}
 	total := 0
-	for name, rows := range map[string][]model.Record{"train": state.Dataset.Train, "validation": state.Dataset.Validation, "test": state.Dataset.Test} {
+	for name, rows := range map[string][]training.Record{"train": state.Dataset.Train, "validation": state.Dataset.Validation, "test": state.Dataset.Test} {
 		for _, r := range rows {
 			if previous, ok := seen[r.Evidence]; ok && previous != name {
 				t.Fatalf("source leaked from %s to %s: %s", previous, name, r.Evidence)
@@ -54,9 +54,9 @@ func TestRunLocksDisjointSplits(t *testing.T) {
 	if total != len(records) {
 		t.Fatalf("lost records: %d of %d", total, len(records))
 	}
-	incoming := model.Artifacts{Dataset: "old", Checkpoint: "checkpoint", Report: "report", Adapter: "adapter", Accepted: true}
-	var step model.TrainingStep = split.Step{}
-	result, err := step.Execute(t.Context(), model.StepContext{Workspace: root, Records: records, Fingerprint: "locked", Request: model.LegacyStepRequest{Artifacts: incoming}})
+	incoming := training.Artifacts{Dataset: "old", Checkpoint: "checkpoint", Report: "report", Adapter: "adapter", Accepted: true}
+	var step training.TrainingStep = split.Step{}
+	result, err := step.Execute(t.Context(), training.StepContext{Workspace: root, Records: records, Fingerprint: "locked", Artifacts: incoming})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,14 +64,14 @@ func TestRunLocksDisjointSplits(t *testing.T) {
 	if step.Name() != "split" || result.Status != "" || result.Artifacts != incoming {
 		t.Fatalf("stage result = %+v, want artifacts %+v and continuing status", result, incoming)
 	}
-	if _, err := split.Run(t.Context(), root, nil, model.TrainingJob{}, records, "locked"); err != nil {
+	if _, err := split.Run(t.Context(), root, nil, training.TrainingJob{}, records, "locked"); err != nil {
 		t.Fatal(err)
 	}
 	retry, err := root.ReadFile("dataset.json")
 	if err != nil || !reflect.DeepEqual(data, retry) {
 		t.Fatalf("retry changed split: %v", err)
 	}
-	if _, err := split.Run(t.Context(), root, nil, model.TrainingJob{}, records, "changed"); err == nil {
+	if _, err := split.Run(t.Context(), root, nil, training.TrainingJob{}, records, "changed"); err == nil {
 		t.Fatal("accepted changed identity")
 	}
 	after, err := root.ReadFile("dataset.json")
@@ -81,13 +81,13 @@ func TestRunLocksDisjointSplits(t *testing.T) {
 }
 
 func TestRunRejectsUnreadyDataset(t *testing.T) {
-	for _, records := range [][]model.Record{nil, {{Prompt: "Question?", Target: "answer", Evidence: "answer"}}, {{Prompt: "Same?", Target: "a", Evidence: "a"}, {Prompt: "Same?", Target: "b", Evidence: "b"}}} {
+	for _, records := range [][]training.Record{nil, {{Prompt: "Question?", Target: "answer", Evidence: "answer"}}, {{Prompt: "Same?", Target: "a", Evidence: "a"}, {Prompt: "Same?", Target: "b", Evidence: "b"}}} {
 		root, err := os.OpenRoot(t.TempDir())
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer root.Close()
-		_, err = split.Run(t.Context(), root, nil, model.TrainingJob{}, records, "invalid")
+		_, err = split.Run(t.Context(), root, nil, training.TrainingJob{}, records, "invalid")
 		var app *temporal.ApplicationError
 		if !errors.As(err, &app) || !app.NonRetryable() {
 			t.Fatalf("expected nonretryable rejection, got %v", err)
