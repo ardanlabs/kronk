@@ -536,20 +536,26 @@ type Audio struct {
 }
 
 // GeneratedVideo contains owned frames, optional generated audio, and the
-// effective frame rate reported by stable-diffusion.cpp.
+// effective frame rate reported by stable-diffusion.cpp. GenerationInfo contains
+// the native sdcpp.generation/v1 JSON record. Seed retains the requested seed;
+// the resolved seed is available in GenerationInfo.
 type GeneratedVideo struct {
-	Frames []image.Image
-	Audio  *Audio
-	FPS    int
-	Seed   int64
+	Frames         []image.Image
+	Audio          *Audio
+	FPS            int
+	Seed           int64
+	GenerationInfo string
 }
 
-// GeneratedImage contains an owned PNG and generation metadata.
+// GeneratedImage contains an owned PNG and generation metadata. GenerationInfo
+// contains the native sdcpp.generation/v1 JSON record, separate from the PNG.
+// Seed retains the requested seed; GenerationInfo includes the resolved seed.
 type GeneratedImage struct {
-	PNG    []byte
-	Width  int
-	Height int
-	Seed   int64
+	PNG            []byte
+	Width          int
+	Height         int
+	Seed           int64
+	GenerationInfo string
 }
 
 // ModelInfo describes a loaded model.
@@ -983,33 +989,31 @@ func (m *Model) GenerateVideo(ctx context.Context, params VideoParams) (Generate
 		}
 	}
 
-	var raw []*sd.SDImage
-	var audio *sd.Audio
-	var fps int32
+	var raw *sd.VideoGenerationResult
 
 	err = m.runGeneration(ctx, func() error {
 		var err error
-		raw, audio, fps, err = sd.GenerateVideoWithFPS(m.ctx, p)
+		raw, err = sd.GenerateVideoWithInfo(m.ctx, p)
 		return err
 	})
 	if err != nil {
 		return GeneratedVideo{}, err
 	}
 
-	frames := make([]image.Image, len(raw))
-	for i, frame := range raw {
+	frames := make([]image.Image, len(raw.Frames))
+	for i, frame := range raw.Frames {
 		frames[i], err = decodeImage(frame)
 		if err != nil {
 			return GeneratedVideo{}, fmt.Errorf("decode frame %d: %w", i, err)
 		}
 	}
 
-	result := GeneratedVideo{Frames: frames, FPS: int(fps), Seed: params.Seed}
-	if audio != nil {
+	result := GeneratedVideo{Frames: frames, FPS: int(raw.FPS), Seed: params.Seed, GenerationInfo: raw.GenerationInfo}
+	if raw.Audio != nil {
 		result.Audio = &Audio{
-			SampleRate: audio.SampleRate,
-			Channels:   audio.Channels,
-			Data:       append([]float32(nil), audio.Data...),
+			SampleRate: raw.Audio.SampleRate,
+			Channels:   raw.Audio.Channels,
+			Data:       append([]float32(nil), raw.Audio.Data...),
 		}
 	}
 
@@ -1120,10 +1124,11 @@ func encodeImage(raw *sd.SDImage, seed int64) (GeneratedImage, error) {
 	}
 
 	image := GeneratedImage{
-		PNG:    buf.Bytes(),
-		Width:  int(raw.Width),
-		Height: int(raw.Height),
-		Seed:   seed,
+		PNG:            buf.Bytes(),
+		Width:          int(raw.Width),
+		Height:         int(raw.Height),
+		Seed:           seed,
+		GenerationInfo: raw.GenerationInfo,
 	}
 
 	return image, nil

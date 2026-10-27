@@ -182,22 +182,23 @@ already installed. If the host is offline, a mismatched managed build is
 rejected rather than loaded. Library installation is staged and activated
 atomically so a failed download does not replace a working installation.
 
-Malina v1.1.7 requires stable-diffusion.cpp `master-969-8c442fb`, authenticated
+Malina v1.1.9 requires stable-diffusion.cpp `master-1017-be48649`, authenticated
 by manifest digest
-`sha256:b7b38cedefb63b398a7fccb5ee22b4d347613ba1f8ad1b3fe0e55da9e42afebf`.
-Compared with Malina v1.1.5's `master-929-3f8527a`, the native context struct
-grows from 320 to 336 bytes and component conversion adds LoRA arguments.
-These are ABI-breaking changes: upgrade bindings and native libraries together.
+`sha256:7ecdc95bbc9adfadf813750ba84fc3f3d1f312cbcad339ee46a3e87e190cca03`.
+Compared with v1.1.8's `master-975-95b3090`, image, video, upscaler, and
+ADetailer results use a new native ABI with matching result destructors and
+generation metadata. Video generation parameters also grow a reference-image
+arguments field. Upgrade bindings and native libraries together.
 Successful symbol loading is not proof of ABI compatibility.
 `Download` replaces any mismatched Kronk-managed
 installation with the exact pin. A user-managed library directory is read-only
 to Kronk and must be rebuilt or replaced by its owner. Do not combine Malina
-v1.1.7 with an older native bundle, or v1.1.5 bindings with `master-969`.
+v1.1.9 with an older native bundle, or older bindings with `master-1017`.
 
 The exact upstream changes are available in the
-[Malina source comparison](https://github.com/ardanlabs/malina/compare/2791dbbb70eb570de253a116d81d1b1dbafbdfae...def0e4a7977797ddf78f7b56e67184379e13ed60)
+[Malina source comparison](https://github.com/ardanlabs/malina/compare/v1.1.8...v1.1.9)
 and the
-[native source comparison](https://github.com/leejet/stable-diffusion.cpp/compare/3f8527a46c54ecf4cb4ed6003da8e8982283c73c...8c442fb0ad43cf901663d9fb6783e2cd4929a278).
+[native source comparison](https://github.com/leejet/stable-diffusion.cpp/compare/master-975-95b3090...master-1017-be48649).
 
 ### 19.3 Manage Model Bundles
 
@@ -219,6 +220,8 @@ The current bundles are:
 | `sdxl-base-1.0` | SDXL Base 1.0 checkpoint | CreativeML Open RAIL++-M | 6.9 GB |
 | `llada-image-turbo` | Quantized diffusion and text encoder, connectors, VAE, and tokenizer | Apache-2.0 | 20.2 GB |
 | `z-image-turbo` | Q4_K diffusion, Q4_K_M Qwen3-4B text encoder, and VAE | Apache-2.0 | 6.7 GB |
+| `moss-image-sft` | Q4_0 diffusion, Q4_K_M Qwen3.5-9B text encoder, FLUX.2 VAE, and tokenizer | Apache-2.0 | 9.4 GB |
+| `z-image-turbo-controlnet-union` | Z-Image-Turbo components and Union 2.1 ControlNet (2601) | Apache-2.0 | 13.4 GB |
 | `flux2-klein-4b` | Diffusion model, VAE, and LLM text encoder | FLUX Non-Commercial | 5.3 GB |
 | `flux2-klein-9b` | Diffusion model, VAE, and LLM text encoder | FLUX Non-Commercial | 11 GB of unique downloads, 16 GB installed |
 
@@ -421,7 +424,11 @@ if err := os.WriteFile("malina.png", generated.PNG, 0o644); err != nil {
 
 `GeneratedImage` contains an owned PNG byte slice, output dimensions, and the
 requested seed value. When `-1` asks the native backend to select a random
-seed, the result retains `-1`; it does not expose the effective native seed.
+seed, `Seed` retains `-1`. `GenerationInfo` contains the native
+`sdcpp.generation/v1` JSON record, including the resolved seed as a string.
+This metadata remains valid after unloading the model but is not embedded in
+the PNG. `GeneratedVideo.GenerationInfo` similarly carries sequence metadata;
+its `Seed` field also retains the requested value.
 
 The default parameters are:
 
@@ -522,6 +529,15 @@ CFG scale to 1 before submitting. Download it with:
 kronk malina model pull --local z-image-turbo
 ```
 
+MOSS-Image-SFT adds a mandatory external Qwen3.5 tokenizer to the diffusion,
+LLM, and VAE roles. The pool and server map all four roles automatically;
+direct SDK users should also pass `model.WithTokenizerPath` with
+`manifest.Files[models.RoleTokenizer.String()]`. Use
+`models.BundleMOSSImageSFT`, dimensions divisible by 16, and CFG scale 3,
+as recommended by the native MOSS-Image guide. Catalog selection does not
+change generation defaults. The bundle is ungated and Apache-2.0, but has not
+been locally inference-validated.
+
 ### 19.6 Image-to-Image Generation
 
 Set `GenerateParams.InitImage` to transform an existing Go image. The request
@@ -564,6 +580,15 @@ canny := model.NewCannyParams()
 params.Canny = &canny
 generated, err := mln.Generate(ctx, params)
 ```
+
+The `models.BundleZImageTurboControlNetUnion` bundle instead uses diffusion,
+LLM, VAE, and ControlNet roles. Configure those component paths and supply an
+already prepared control map through `ControlImage`, with 8 steps and CFG
+scale 1. Leave `Canny` unset for pose or depth maps. Upstream recommends
+disabling VAE encode tiling; Kronk's native defaults already leave VAE tiling
+disabled. Pose/depth preprocessing and simultaneous reference-image editing
+are not exposed by the high-level SDK. This ungated Apache-2.0 bundle is
+SDK-only and has not been locally inference-validated.
 
 #### 19.6.2 ADetailer
 
@@ -764,6 +789,10 @@ Later runs reuse complete installations.
   conversion remain binding-level APIs. Kronk does not expose preview callbacks
   or conversion, so adding wrappers would not make those workflows usable.
   Preview metadata is process-global and requires serialized preview-enabled work.
+- Native Fibo 2.0 and FLUX.3 are not curated because their non-commercial or
+  custom licenses have not been cleared for this catalog. RPC server registration
+  and video reference-image arguments remain binding-level APIs; Kronk does not
+  expose distributed inference or video reference-image inputs.
 - Native callbacks and backend initialization are process-wide. Model-context
   construction and destruction are serialized, while one handle may own
   multiple contexts and generate concurrently across them. Each concurrency

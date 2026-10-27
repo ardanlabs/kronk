@@ -4,7 +4,9 @@ package malina_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -151,8 +153,27 @@ func TestMalinaModelInference(t *testing.T) {
 
 	reuse := params
 	reuse.Steps = 1
-	if _, err := handle.Generate(t.Context(), reuse); err != nil {
+	reuse.Seed = -1
+	generated, err := handle.Generate(t.Context(), reuse)
+	if err != nil {
 		t.Fatalf("Generate() after cancellation error = %v", err)
+	}
+	if err := handle.Unload(t.Context()); err != nil {
+		t.Fatalf("Unload() error = %v", err)
+	}
+
+	var info struct {
+		Schema string `json:"schema"`
+		Seed   string `json:"seed"`
+	}
+	if err := json.Unmarshal([]byte(generated.GenerationInfo), &info); err != nil {
+		t.Fatalf("generation metadata after unload: %v", err)
+	}
+	if info.Schema != "sdcpp.generation/v1" || generated.Seed != -1 {
+		t.Errorf("metadata: got schema %q, requested seed %d, want sdcpp.generation/v1 and -1", info.Schema, generated.Seed)
+	}
+	if _, err := strconv.ParseUint(info.Seed, 10, 64); err != nil {
+		t.Errorf("resolved seed: got %q, want a nonnegative native seed", info.Seed)
 	}
 }
 

@@ -188,26 +188,28 @@ export default function DocsSDKMalinaModel() {
               <h4>GeneratedImage</h4>
               <pre className="code-block">
                 <code>{`type GeneratedImage struct {
-	PNG    []byte
-	Width  int
-	Height int
-	Seed   int64
+	PNG            []byte
+	Width          int
+	Height         int
+	Seed           int64
+	GenerationInfo string
 }`}</code>
               </pre>
-              <p className="doc-description">GeneratedImage contains an owned PNG and generation metadata.</p>
+              <p className="doc-description">GeneratedImage contains an owned PNG and generation metadata. GenerationInfo contains the native sdcpp.generation/v1 JSON record, separate from the PNG. Seed retains the requested seed; GenerationInfo includes the resolved seed.</p>
             </div>
 
             <div className="doc-section" id="type-generatedvideo">
               <h4>GeneratedVideo</h4>
               <pre className="code-block">
                 <code>{`type GeneratedVideo struct {
-	Frames []image.Image
-	Audio  *Audio
-	FPS    int
-	Seed   int64
+	Frames         []image.Image
+	Audio          *Audio
+	FPS            int
+	Seed           int64
+	GenerationInfo string
 }`}</code>
               </pre>
-              <p className="doc-description">GeneratedVideo contains owned frames, optional generated audio, and the effective frame rate reported by stable-diffusion.cpp.</p>
+              <p className="doc-description">GeneratedVideo contains owned frames, optional generated audio, and the effective frame rate reported by stable-diffusion.cpp. GenerationInfo contains the native sdcpp.generation/v1 JSON record. Seed retains the requested seed; the resolved seed is available in GenerationInfo.</p>
             </div>
 
             <div className="doc-section" id="type-model">

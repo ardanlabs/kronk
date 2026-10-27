@@ -38,6 +38,12 @@ var (
 	// BundleZImageTurbo identifies the Z-Image-Turbo bundle.
 	BundleZImageTurbo = newBundleName("z-image-turbo")
 
+	// BundleMOSSImageSFT identifies the MOSS-Image SFT bundle.
+	BundleMOSSImageSFT = newBundleName("moss-image-sft")
+
+	// BundleZImageTurboControlNetUnion identifies the Z-Image-Turbo Union ControlNet bundle.
+	BundleZImageTurboControlNetUnion = newBundleName("z-image-turbo-controlnet-union")
+
 	// BundleFlux2Klein4B identifies the FLUX.2 Klein 4B bundle.
 	BundleFlux2Klein4B = newBundleName("flux2-klein-4b")
 
@@ -362,6 +368,69 @@ func Catalog() []Bundle {
 					Filename: "ae.safetensors",
 					URL:      "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/6fc90a3b1b653e935a0d175e260736de25b84df5/split_files/vae/ae.safetensors",
 					Size:     "335 MB",
+				},
+			},
+		},
+		{
+			Name:             BundleMOSSImageSFT,
+			Description:      "MOSS-Image SFT — text-to-image with Q4_0 diffusion, Q4_K_M Qwen3.5-9B text encoder, FLUX.2 VAE, and tokenizer. Four files (~9.4 GB total).",
+			License:          "Apache-2.0",
+			BasicTextToImage: true,
+			Files: []BundleFile{
+				{
+					Role:     RoleDiffusion,
+					Filename: "MOSS-Image-SFT-Q4_0.gguf",
+					URL:      "https://huggingface.co/leejet/MOSS-Image-SFT-GGUF/resolve/238daf423f0de65316207453591f275407aac9a7/MOSS-Image-SFT-Q4_0.gguf",
+					Size:     "3.3 GB",
+				},
+				{
+					Role:     RoleLLM,
+					Filename: "Qwen3.5-9B-Q4_K_M.gguf",
+					URL:      "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/3885219b6810b007914f3a7950a8d1b469d598a5/Qwen3.5-9B-Q4_K_M.gguf",
+					Size:     "5.7 GB",
+				},
+				{
+					Role:     RoleVAE,
+					Filename: "flux2-vae.safetensors",
+					URL:      "https://huggingface.co/Comfy-Org/MOSS-Image/resolve/530a4c94f92c35ef6818b1b035a983fe9dcf5f54/vae/flux2-vae.safetensors",
+					Size:     "336 MB",
+				},
+				{
+					Role:     RoleTokenizer,
+					Filename: "tokenizer.json",
+					URL:      "https://huggingface.co/OpenMOSS-Team/MOSS-Image-Base/resolve/85975793d8b3d432f1b6e27f352abaa4c2a4c0d3/tokenizer/tokenizer.json",
+					Size:     "20 MB",
+				},
+			},
+		},
+		{
+			Name:        BundleZImageTurboControlNetUnion,
+			Description: "Z-Image-Turbo with Union 2.1 ControlNet (2601) for supplied control maps. Four files (~13.4 GB total); disable VAE encode tiling.",
+			License:     "Apache-2.0",
+			Files: []BundleFile{
+				{
+					Role:     RoleDiffusion,
+					Filename: "z_image_turbo-Q4_K.gguf",
+					URL:      "https://huggingface.co/leejet/Z-Image-Turbo-GGUF/resolve/c61c0e422dc8b541b7548cf33a4ef8302b0f8085/z_image_turbo-Q4_K.gguf",
+					Size:     "3.9 GB",
+				},
+				{
+					Role:     RoleLLM,
+					Filename: "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+					URL:      "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/a06e946bb6b655725eafa393f4a9745d460374c9/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+					Size:     "2.5 GB",
+				},
+				{
+					Role:     RoleVAE,
+					Filename: "ae.safetensors",
+					URL:      "https://huggingface.co/Comfy-Org/z_image_turbo/resolve/6fc90a3b1b653e935a0d175e260736de25b84df5/split_files/vae/ae.safetensors",
+					Size:     "335 MB",
+				},
+				{
+					Role:     RoleControlNet,
+					Filename: "Z-Image-Turbo-Fun-Controlnet-Union-2.1-2601-8steps.safetensors",
+					URL:      "https://huggingface.co/alibaba-pai/Z-Image-Turbo-Fun-Controlnet-Union-2.1/resolve/5155fc56d17821007d6f62ac192c09e0f0e72016/Z-Image-Turbo-Fun-Controlnet-Union-2.1-2601-8steps.safetensors",
+					Size:     "6.7 GB",
 				},
 			},
 		},

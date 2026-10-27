@@ -44,8 +44,8 @@ schema = 3
     version = "v1.11.0"
     hash = "sha256-Ew1FN/f1GG1xG+t0HsgNpoCYYz3ZzhPrEl+F7xAkZ5Q="
   [mod."github.com/ardanlabs/malina"]
-    version = "v1.1.8"
-    hash = "sha256-k8Qp/KVEelQd3itiBr0Q3ySTkEcm0mLs00SIebMqwxc="
+    version = "v1.1.9"
+    hash = "sha256-V/3kxI4XlsVf5m5oFqdBKT5K+V8zda4LOlfzk6elm88="
   [mod."github.com/arl/statsviz"]
     version = "v0.8.2"
     hash = "sha256-8KmSQolXTl2aBo9bY8/dmby82ItHVHiYLRu/UNGRF8Q="
@@ -185,8 +185,8 @@ schema = 3
     version = "v1.5.3"
     hash = "sha256-vTIGEFMEi+30ZdO6ffMNJ/kId6pZs5bbyqov8xe9BM0="
   [mod."github.com/grpc-ecosystem/grpc-gateway/v2"]
-    version = "v2.32.0"
-    hash = "sha256-FNRmZp1/LJ1c+KTUYNXdDzzFmIJoGaR3tqS96w5bjvg="
+    version = "v2.33.0"
+    hash = "sha256-WvVvp0wWqIZE4qi3lUOb+VTt1urJAEnjQp7dvRkg2Hg="
   [mod."github.com/hajimehoshi/go-mp3"]
     version = "v0.3.4"
     hash = "sha256-h6l0PuIS0h1zdB8MEqHTTgg8dE6nL6PSOt583ymaPnA="
@@ -410,8 +410,8 @@ schema = 3
     version = "v0.0.0-20261026165753-2ffab32bce7e"
     hash = "sha256-qBJJ3Go2HqyEE+jp6FMafhXbMBbA/PIXvbdROnLPAYA="
   [mod."google.golang.org/grpc"]
-    version = "v1.84.0"
-    hash = "sha256-gUDleBLGxwuzhA0emDRNAr1GnPlMfjgpkOX9u/0WsOk="
+    version = "v1.85.0"
+    hash = "sha256-sxkCMSO1ZctKJ2W4vmNJtchvqRzO4dJergLqmP0SbA8="
   [mod."google.golang.org/protobuf"]
     version = "v1.36.12"
     hash = "sha256-MKd0AdkWEe2A79mGPzOY5I76nMqTsGJKQNPJOKyOwkQ="
