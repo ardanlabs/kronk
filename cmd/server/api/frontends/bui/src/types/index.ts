@@ -814,11 +814,19 @@ export interface PlaygroundModelConfig {
   'draft_ndraft'?: number;
 }
 
+export interface InputCapabilities {
+  available: boolean;
+  chat: boolean;
+  vision: boolean;
+  audio: boolean;
+}
+
 export interface PlaygroundSessionResponse {
   session_id: string;
   cache_key?: string;
   status: string;
   effective_config: Record<string, unknown>;
+  input_capabilities?: InputCapabilities;
 }
 
 export interface PlaygroundTemplateInfo {

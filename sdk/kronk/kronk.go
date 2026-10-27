@@ -155,6 +155,11 @@ func (krn *Kronk) ModelInfo() model.ModelInfo {
 	return krn.modelInfo
 }
 
+// InputCapabilities returns cached runtime input capabilities for the loaded model.
+func (krn *Kronk) InputCapabilities() model.InputCapabilities {
+	return krn.model.InputCapabilities()
+}
+
 // ModelID returns the identifier emitted by public inference responses.
 func (krn *Kronk) ModelID() string {
 	if krn.cfg.ResponseModelID != "" {

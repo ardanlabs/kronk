@@ -6,7 +6,7 @@ import { isChangedFrom, formatBaselineValue, hasAnyChange, hasAdvancedChange, ty
 import CodeBlock from './CodeBlock';
 import { PARAM_TOOLTIPS, FieldLabel } from './ParamTooltips';
 import { formatBytes } from '../lib/format';
-import type { ChatMessage, ChatUsage, ChatToolCall, ChatContentPart, ChatStreamResponse, VRAM } from '../types';
+import type { ChatMessage, ChatUsage, ChatToolCall, ChatContentPart, ChatStreamResponse, InputCapabilities, VRAM } from '../types';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -40,6 +40,7 @@ export interface ChatPanelProps {
 
   disabled?: boolean;
   disabledPlaceholder?: string;
+  inputCapabilities?: InputCapabilities | null;
   headerLeft?: React.ReactNode;
   headerRight?: React.ReactNode;
 }
@@ -140,11 +141,23 @@ export default function ChatPanel({
   transport,
   modelVRAM,
   isMoE,
-  disabled = false,
+  disabled: externallyDisabled = false,
   disabledPlaceholder,
+  inputCapabilities,
   headerLeft,
   headerRight,
 }: ChatPanelProps) {
+  const known = inputCapabilities?.available === true;
+  const noChat = known && !inputCapabilities.chat;
+  const disabled = externallyDisabled || noChat;
+  const allowImages = !known || inputCapabilities.vision;
+  const allowAudio = !known || inputCapabilities.audio;
+  const attachmentAccept = [allowImages && 'image/*', allowAudio && 'audio/*'].filter(Boolean).join(',');
+  const capabilityMessage = inputCapabilities === undefined || externallyDisabled ? null
+    : !known ? 'Runtime input capabilities are unavailable. Attachments will be validated by the server.'
+    : noChat ? 'This loaded model does not support chat.'
+    : !allowImages && !allowAudio ? 'This loaded model supports text chat only. Attachments are disabled.'
+    : `Supported attachments: ${[allowImages && 'images', allowAudio && 'audio'].filter(Boolean).join(' and ')}.`;
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -265,6 +278,13 @@ export default function ChatPanel({
   // ── Streaming ──────────────────────────────────────────────────────
 
   const streamResponse = useCallback((chatMessages: ChatMessage[]) => {
+    if (disabled) return;
+    if (chatMessages.some(message => Array.isArray(message.content) && message.content.some(part =>
+      (part.type === 'image_url' && !allowImages) || (part.type === 'input_audio' && !allowAudio)
+    ))) {
+      setError('The conversation contains attachments unsupported by this loaded model. Clear the conversation and try again.');
+      return;
+    }
     setError(null);
     setIsStreaming(true);
 
@@ -331,7 +351,7 @@ export default function ChatPanel({
         setIsStreaming(false);
       },
     });
-  }, [sampling, setMessages, transport]);
+  }, [sampling, setMessages, transport, disabled, allowImages, allowAudio]);
 
   // ── Handlers ───────────────────────────────────────────────────────
 
@@ -430,12 +450,18 @@ export default function ChatPanel({
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (!files) return;
+    if (!files || disabled || isStreaming) return;
     Array.from(files).forEach(file => {
+      const isImage = file.type.startsWith('image/');
+      const isAudio = file.type.startsWith('audio/');
+      if ((!isImage && !isAudio) || (isImage && !allowImages) || (isAudio && !allowAudio)) {
+        setError(`Unsupported attachment: ${file.name}. Choose ${attachmentAccept || 'no attachments for this model'}.`);
+        return;
+      }
       const reader = new FileReader();
       reader.onload = () => {
         const dataUrl = reader.result as string;
-        const fileType: 'image' | 'audio' = file.type.startsWith('image/') ? 'image' : 'audio';
+        const fileType: 'image' | 'audio' = isImage ? 'image' : 'audio';
         setAttachedFiles(prev => [...prev, { type: fileType, name: file.name, dataUrl }]);
       };
       reader.readAsDataURL(file);
@@ -920,8 +946,8 @@ export default function ChatPanel({
       <div className="chat-messages" ref={messagesContainerRef} onScroll={handleMessagesScroll} onWheel={handleWheel}>
         {messages.length === 0 && (
           <div className="chat-empty">
-            <p>{disabledPlaceholder || 'Select a model and start chatting'}</p>
-            <p className="chat-empty-hint">Type a message below to begin</p>
+            <p>{noChat ? capabilityMessage : disabledPlaceholder || 'Select a model and start chatting'}</p>
+            {!noChat && <p className="chat-empty-hint">Type a message below to begin</p>}
           </div>
         )}
         {messages.map((msg, idx) => (
@@ -1025,6 +1051,7 @@ export default function ChatPanel({
       )}
       </div>
 
+      {capabilityMessage && <p role="status">{capabilityMessage}</p>}
       <form onSubmit={handleSubmit} className="chat-input-form">
         <div className="chat-input-row">
           {attachedFiles.length > 0 && (
@@ -1053,7 +1080,7 @@ export default function ChatPanel({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={disabled ? (disabledPlaceholder || 'Chat is disabled') : 'Type your message... (Enter to send, Shift+Enter for new line)'}
+            placeholder={disabled ? (noChat ? 'This loaded model does not support chat.' : disabledPlaceholder || 'Chat is disabled') : 'Type your message... (Enter to send, Shift+Enter for new line)'}
             disabled={isStreaming || disabled}
             className="chat-input"
             rows={3}
@@ -1062,16 +1089,19 @@ export default function ChatPanel({
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*,audio/*"
+              accept={attachmentAccept}
               multiple
               onChange={handleFileSelect}
+              disabled={isStreaming || disabled || (!allowImages && !allowAudio)}
               style={{ display: 'none' }}
             />
             <button
               type="button"
               className="btn btn-secondary chat-attach-btn"
               onClick={() => fileInputRef.current?.click()}
-              disabled={isStreaming || disabled}
+              disabled={isStreaming || disabled || (!allowImages && !allowAudio)}
+              aria-label="Attach image or audio"
+              title={capabilityMessage || 'Attach image or audio'}
             >
               📎
             </button>

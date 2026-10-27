@@ -8,6 +8,47 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
+func TestSessionResponseInputCapabilities(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		caps model.InputCapabilities
+		want string
+	}{
+		{"unknown", model.InputCapabilities{}, `{"available":false,"chat":false,"vision":false,"audio":false}`},
+		{"text", model.InputCapabilities{Available: true, Chat: true}, `{"available":true,"chat":true,"vision":false,"audio":false}`},
+		{"vision", model.InputCapabilities{Available: true, Chat: true, Vision: true}, `{"available":true,"chat":true,"vision":true,"audio":false}`},
+		{"audio", model.InputCapabilities{Available: true, Chat: true, Audio: true}, `{"available":true,"chat":true,"vision":false,"audio":true}`},
+		{"combined", model.InputCapabilities{Available: true, Chat: true, Vision: true, Audio: true}, `{"available":true,"chat":true,"vision":true,"audio":true}`},
+		{"no chat", model.InputCapabilities{Available: true}, `{"available":true,"chat":false,"vision":false,"audio":false}`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			data, _, err := (SessionResponse{InputCapabilities: tt.caps}).Encode()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(data, &fields); err != nil {
+				t.Fatal(err)
+			}
+			var got, want map[string]bool
+			if err := json.Unmarshal(fields["input_capabilities"], &got); err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal([]byte(tt.want), &want); err != nil {
+				t.Fatal(err)
+			}
+			if len(got) != len(want) {
+				t.Fatalf("capability fields: got %v, want %v", got, want)
+			}
+			for key, value := range want {
+				if actual, ok := got[key]; !ok || actual != value {
+					t.Errorf("%s: got %v (present=%t), want %v", key, actual, ok, value)
+				}
+			}
+		})
+	}
+}
+
 func TestSessionConfigPrefillBatchSizeJSON(t *testing.T) {
 	var cfg SessionConfig
 	if err := json.Unmarshal([]byte(`{"prefill_batch_size":4096,"physical_batch_size":512,"image_batch_token_capacity":768,"image_token_budget":1120}`), &cfg); err != nil {
