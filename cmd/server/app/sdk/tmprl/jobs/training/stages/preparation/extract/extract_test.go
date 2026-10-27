@@ -6,26 +6,27 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"reflect"
 	"testing"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/imports"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/extract"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/providers"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/uploads"
 )
 
 type extractor struct {
 	profile string
-	convert func(context.Context, string) (preparation.Document, error)
+	convert func(context.Context, string) (providers.Document, error)
 }
 
 func (e extractor) ExtractionProfile() string { return e.profile }
-func (e extractor) Convert(ctx context.Context, path string) (preparation.Document, error) {
+func (e extractor) Convert(ctx context.Context, path string) (providers.Document, error) {
 	return e.convert(ctx, path)
 }
 
-func roots(t *testing.T, format, content string) (*os.Root, *os.Root, imports.PreparationSource) {
+func roots(t *testing.T, format, content string) (*os.Root, *os.Root, uploads.File) {
 	t.Helper()
 	source, err := os.OpenRoot(t.TempDir())
 	if err != nil {
@@ -43,7 +44,13 @@ func roots(t *testing.T, format, content string) (*os.Root, *os.Root, imports.Pr
 	if err := source.WriteFile("imports/doc/source"+format, []byte(content), 0600); err != nil {
 		t.Fatal(err)
 	}
-	return source, workspace, imports.PreparationSource{ID: "doc", Format: format, SHA256: fmt.Sprintf("%x", sha256.Sum256([]byte(content)))}
+	return source, workspace, uploads.File{ID: "doc", Format: format, SHA256: fmt.Sprintf("%x", sha256.Sum256([]byte(content)))}
+}
+
+func openSource(root *os.Root, info uploads.File) func(context.Context) (io.ReadCloser, error) {
+	return func(context.Context) (io.ReadCloser, error) {
+		return root.Open("imports/doc/source" + info.Format)
+	}
 }
 
 func TestRunText(t *testing.T) {
@@ -51,7 +58,7 @@ func TestRunText(t *testing.T) {
 		t.Run(format, func(t *testing.T) {
 			text := "# Harbor\n\nThe harbor opens at dawn."
 			source, workspace, info := roots(t, format, text)
-			doc, err := extract.Run(t.Context(), nil, info, source, workspace)
+			doc, err := extract.Run(t.Context(), nil, info, openSource(source, info), workspace)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -69,7 +76,7 @@ func TestRunText(t *testing.T) {
 			if err := source.Remove("imports/doc/source" + format); err != nil {
 				t.Fatal(err)
 			}
-			cached, err := extract.Run(t.Context(), nil, info, source, workspace)
+			cached, err := extract.Run(t.Context(), nil, info, openSource(source, info), workspace)
 			if err != nil || !reflect.DeepEqual(cached, doc) {
 				t.Fatalf("cached = %+v, %v", cached, err)
 			}
@@ -79,9 +86,9 @@ func TestRunText(t *testing.T) {
 
 func TestRunConversion(t *testing.T) {
 	source, workspace, info := roots(t, ".pdf", "private source bytes")
-	want := preparation.Document{Markdown: "Converted evidence.", StructuredJSON: json.RawMessage(`{"texts":[]}`)}
+	want := providers.Document{Markdown: "Converted evidence.", StructuredJSON: json.RawMessage(`{"texts":[]}`)}
 	var snapshot string
-	e := extractor{profile: "v1", convert: func(ctx context.Context, path string) (preparation.Document, error) {
+	e := extractor{profile: "v1", convert: func(ctx context.Context, path string) (providers.Document, error) {
 		snapshot = path
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -92,7 +99,7 @@ func TestRunConversion(t *testing.T) {
 		}
 		return want, nil
 	}}
-	got, err := extract.Run(t.Context(), e, info, source, workspace)
+	got, err := extract.Run(t.Context(), e, info, openSource(source, info), workspace)
 	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("document = %+v, %v", got, err)
 	}
@@ -100,12 +107,12 @@ func TestRunConversion(t *testing.T) {
 		t.Fatalf("snapshot not cleaned up: %v", err)
 	}
 	failure := errors.New("conversion failed")
-	e.convert = func(context.Context, string) (preparation.Document, error) { return preparation.Document{}, failure }
-	if _, err := extract.Run(t.Context(), e, info, source, workspace); err != nil {
+	e.convert = func(context.Context, string) (providers.Document, error) { return providers.Document{}, failure }
+	if _, err := extract.Run(t.Context(), e, info, openSource(source, info), workspace); err != nil {
 		t.Fatalf("cached conversion retried: %v", err)
 	}
 	e.profile = "v2"
-	if _, err := extract.Run(t.Context(), e, info, source, workspace); !errors.Is(err, failure) {
+	if _, err := extract.Run(t.Context(), e, info, openSource(source, info), workspace); !errors.Is(err, failure) {
 		t.Fatalf("profile change error = %v", err)
 	}
 }
@@ -131,7 +138,7 @@ func TestRunRejectsInvalidSources(t *testing.T) {
 			if tc.cancel {
 				cancel()
 			}
-			if _, err := extract.Run(ctx, nil, info, source, workspace); err == nil {
+			if _, err := extract.Run(ctx, nil, info, openSource(source, info), workspace); err == nil {
 				t.Fatal("accepted invalid source")
 			} else if tc.cancel && !errors.Is(err, context.Canceled) {
 				t.Fatalf("error = %v", err)

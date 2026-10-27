@@ -7,6 +7,7 @@ import (
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/preparation/generate"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/providers"
 )
 
 type completer struct {
@@ -14,8 +15,8 @@ type completer struct {
 	err     error
 }
 
-func (c completer) Complete(context.Context, preparation.CompletionRequest) (preparation.Completion, error) {
-	return preparation.Completion{Content: c.content, PromptTokens: 12, CompletionTokens: 7}, c.err
+func (c completer) Complete(context.Context, providers.CompletionRequest) (providers.Completion, error) {
+	return providers.Completion{Content: c.content, PromptTokens: 12, CompletionTokens: 7}, c.err
 }
 
 func TestRun(t *testing.T) {

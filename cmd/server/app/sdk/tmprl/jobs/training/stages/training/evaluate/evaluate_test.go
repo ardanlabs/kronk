@@ -21,6 +21,11 @@ type trainer struct {
 	err           error
 }
 
+func (tr trainer) Validate(context.Context, training.TrainingJob) error {
+	tr.t.Fatal("evaluation must not repeat split validation")
+	return nil
+}
+
 func (tr trainer) Train(context.Context, training.TrainingJob, func(tmprl.Progress)) (training.TrainingCandidate, error) {
 	tr.t.Fatal("evaluation must not train")
 	return training.TrainingCandidate{}, nil

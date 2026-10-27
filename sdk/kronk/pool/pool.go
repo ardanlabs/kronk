@@ -242,10 +242,21 @@ func customModelID(key string) (string, error) {
 		return "", fmt.Errorf("acquire-custom: key %q collides with a catalog model id", key)
 	}
 
-	modelID := strings.TrimSuffix(key, "/custom/accuracy")
-	modelID = strings.TrimSuffix(modelID, "/custom/efficiency")
-	if before, _, found := strings.Cut(modelID, "/playground/"); found {
-		modelID = before
+	// Skip the provider separator so a model named "training" is not
+	// mistaken for the workload delimiter.
+	providerEnd := strings.IndexByte(key, '/') + 1
+	modelID := key
+	if before, suffix, found := strings.Cut(key[providerEnd:], "/training/"); found && !strings.Contains(before, "/playground/") {
+		if suffix == "" {
+			return "", fmt.Errorf("acquire-custom: invalid key %q: empty training run/session suffix", key)
+		}
+		modelID = key[:providerEnd] + before
+	} else {
+		modelID = strings.TrimSuffix(key, "/custom/accuracy")
+		modelID = strings.TrimSuffix(modelID, "/custom/efficiency")
+		if before, _, found := strings.Cut(modelID, "/playground/"); found {
+			modelID = before
+		}
 	}
 	if modelID == key {
 		return "", fmt.Errorf("acquire-custom: invalid key %q", key)

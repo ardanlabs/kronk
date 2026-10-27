@@ -28,7 +28,7 @@ func (Step) Execute(ctx context.Context, input preparation.StepContext) (tmprl.S
 	}
 	if !exists {
 		p := input.Preparation
-		document, err := Run(ctx, p.Extractor, p.Source, p.SourceRoot, input.Workspace)
+		document, err := Run(ctx, p.Extractor, p.Source, p.OpenSource, input.Workspace)
 		if err != nil {
 			return tmprl.StepResult[preparation.Artifacts]{}, err
 		}

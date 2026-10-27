@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 
-	provider "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/providers/training"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 	"go.temporal.io/sdk/temporal"
@@ -29,7 +28,10 @@ func Run(ctx context.Context, workspace *os.Root, trainer training.Trainer, job 
 		return training.Artifacts{}, temporal.NewNonRetryableApplicationError(err.Error(), "invalid-training", err)
 	}
 	job.Dataset = splits
-	if err := provider.Preflight(ctx, trainer, job); err != nil {
+	if trainer == nil {
+		return training.Artifacts{}, fmt.Errorf("%w: trainer is required", training.ErrInvalidArgument)
+	}
+	if err := trainer.Validate(ctx, job); err != nil {
 		if errors.Is(err, training.ErrInvalidArgument) {
 			return training.Artifacts{}, temporal.NewNonRetryableApplicationError(err.Error(), "invalid-training", err)
 		}

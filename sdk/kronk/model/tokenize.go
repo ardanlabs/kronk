@@ -8,6 +8,33 @@ import (
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
+// TokenizeIDs returns the model vocabulary's token IDs for non-empty input.
+// It does not apply a chat template or add BOS or other special tokens. Model
+// control tokens already present in input (such as formatted Gemma text) are
+// parsed as special tokens, not ordinary text. Whitespace is preserved.
+// Cancellation is checked before and after the synchronous native tokenizer;
+// an in-progress native call cannot be interrupted.
+func (m *Model) TokenizeIDs(ctx context.Context, input string) ([]int32, error) {
+	if input == "" {
+		return nil, fmt.Errorf("%w: tokenize-ids: expected non-empty input", ErrInvalidRequest)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("tokenize-ids: %w", err)
+	}
+
+	tokens := llama.Tokenize(m.vocab, input, false, true)
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("tokenize-ids: %w", err)
+	}
+
+	ids := make([]int32, len(tokens))
+	for i, token := range tokens {
+		ids[i] = int32(token)
+	}
+
+	return ids, nil
+}
+
 // Tokenize returns the token count for a text input.
 //
 // Supported options in d:

@@ -1,6 +1,7 @@
 package split_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,8 +11,26 @@ import (
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/training/stages/training/split"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 	"go.temporal.io/sdk/temporal"
 )
+
+type trainer struct{ err error }
+
+func (tr trainer) Validate(_ context.Context, job training.TrainingJob) error {
+	if len(job.Dataset.Train) < 20 || len(job.Dataset.Validation) < 10 || len(job.Dataset.Test) < 20 {
+		return errors.New("missing validation splits")
+	}
+	return tr.err
+}
+
+func (trainer) Train(context.Context, training.TrainingJob, func(tmprl.Progress)) (training.TrainingCandidate, error) {
+	panic("unexpected training")
+}
+
+func (trainer) Predict(context.Context, training.TrainingJob, string, []training.Record) ([]string, error) {
+	panic("unexpected prediction")
+}
 
 func TestRunLocksDisjointSplits(t *testing.T) {
 	root, err := os.OpenRoot(t.TempDir())
@@ -25,7 +44,14 @@ func TestRunLocksDisjointSplits(t *testing.T) {
 			records = append(records, training.Record{Prompt: fmt.Sprintf("Question %d variant %d?", i, j), Target: fmt.Sprintf("answer%d", i), Evidence: fmt.Sprintf("Source %d says answer%d", i, i)})
 		}
 	}
-	artifacts, err := split.Run(t.Context(), root, nil, training.TrainingJob{}, records, "locked")
+	rejected := errors.New("model unavailable")
+	if _, err := split.Run(t.Context(), root, trainer{err: rejected}, training.TrainingJob{}, records, "locked"); !errors.Is(err, rejected) {
+		t.Fatalf("validation: got %v, want %v", err, rejected)
+	}
+	if _, err := root.Stat("dataset.json"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("failed validation published dataset: %v", err)
+	}
+	artifacts, err := split.Run(t.Context(), root, trainer{}, training.TrainingJob{}, records, "locked")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +82,7 @@ func TestRunLocksDisjointSplits(t *testing.T) {
 	}
 	incoming := training.Artifacts{Dataset: "old", Checkpoint: "checkpoint", Report: "report", Adapter: "adapter", Accepted: true}
 	var step training.TrainingStep = split.Step{}
-	result, err := step.Execute(t.Context(), training.StepContext{Workspace: root, Records: records, Fingerprint: "locked", Artifacts: incoming})
+	result, err := step.Execute(t.Context(), training.StepContext{Workspace: root, Trainer: trainer{}, Records: records, Fingerprint: "locked", Artifacts: incoming})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,14 +90,14 @@ func TestRunLocksDisjointSplits(t *testing.T) {
 	if step.Name() != "split" || result.Status != "" || result.Artifacts != incoming {
 		t.Fatalf("stage result = %+v, want artifacts %+v and continuing status", result, incoming)
 	}
-	if _, err := split.Run(t.Context(), root, nil, training.TrainingJob{}, records, "locked"); err != nil {
+	if _, err := split.Run(t.Context(), root, trainer{}, training.TrainingJob{}, records, "locked"); err != nil {
 		t.Fatal(err)
 	}
 	retry, err := root.ReadFile("dataset.json")
 	if err != nil || !reflect.DeepEqual(data, retry) {
 		t.Fatalf("retry changed split: %v", err)
 	}
-	if _, err := split.Run(t.Context(), root, nil, training.TrainingJob{}, records, "changed"); err == nil {
+	if _, err := split.Run(t.Context(), root, trainer{}, training.TrainingJob{}, records, "changed"); err == nil {
 		t.Fatal("accepted changed identity")
 	}
 	after, err := root.ReadFile("dataset.json")
