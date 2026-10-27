@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -24,6 +25,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/uploads"
 	"github.com/stretchr/testify/mock"
 	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/mocks"
 	"go.temporal.io/sdk/temporal"
@@ -195,13 +197,26 @@ func TestTrainingJob(t *testing.T) {
 			if run.Request.Training != wantTraining {
 				t.Fatalf("default training parameters: got %+v, want %+v", run.Request.Training, wantTraining)
 			}
+			if _, err := trainingJob.Evaluation(ctx, run.Execution); !errors.Is(err, tmprl.ErrInvalidArgument) {
+				t.Fatalf("queued evaluation: got %v, want artifact unavailable", err)
+			}
+			if adapter, err := trainingJob.OpenAdapter(ctx, run.Execution); adapter != nil || !errors.Is(err, tmprl.ErrInvalidArgument) {
+				t.Fatalf("queued adapter: got %v, %v, want artifact unavailable", adapter, err)
+			}
+			request.ID = run.WorkflowID
+			if _, err := trainingJob.Start(ctx, request); err == nil {
+				t.Fatal("duplicate submission: got success, want already started")
+			} else if _, ok := errors.AsType[*serviceerror.WorkflowExecutionAlreadyStarted](err); !ok {
+				t.Fatalf("duplicate submission: got %v, want already started", err)
+			}
 			// Mutating the returned snapshot cannot change durable execution input.
 			run.Definition.Stages[0].Name = "mutated"
 			worker := trainingJob.Jobs().NewWorker()
 			if err := worker.Start(); err != nil {
 				t.Fatal(err)
 			}
-			t.Cleanup(worker.Stop)
+			stopWorker := sync.OnceFunc(worker.Stop)
+			t.Cleanup(stopWorker)
 			result, err := trainingJob.Jobs().Wait(ctx, run.Execution)
 			if (err != nil) != (test.mode == "fail") {
 				t.Fatalf("Wait: got %v, want failure=%v", err, test.mode == "fail")
@@ -221,6 +236,12 @@ func TestTrainingJob(t *testing.T) {
 			}
 			if got := compute.attempts.Load(); got != wantAttempts {
 				t.Fatalf("training attempts: got %d, want %d", got, wantAttempts)
+			}
+			// Endpoint reads must still work when no worker is available.
+			stopWorker()
+			polled, err := trainingJob.Jobs().Get(ctx, run.Execution)
+			if err != nil || polled.Status != test.status || !reflect.DeepEqual(polled.Artifacts, result.Artifacts) {
+				t.Fatalf("workerless polling: got %+v, %v, want terminal result artifacts", polled, err)
 			}
 			if test.mode != "fail" {
 				report, err := trainingJob.Evaluation(ctx, run.Execution)
@@ -254,6 +275,42 @@ func TestTrainingJob(t *testing.T) {
 				}
 			}
 			assertSteps(t, env, run.Execution, wantSteps)
+			// Visibility is eventually consistent. Follow every opaque page token,
+			// including empty filtered pages, rather than assuming an empty page ends it.
+			ticker := time.NewTicker(50 * time.Millisecond)
+			defer ticker.Stop()
+			found := false
+			for !found {
+				var next []byte
+				for {
+					page, token, err := trainingJob.Jobs().List(ctx, tmprl.ListOptions{PageSize: 100, NextPageToken: next, Statuses: []tmprl.Status{test.status}})
+					if err != nil {
+						t.Fatal(err)
+					}
+					for _, listed := range page {
+						if listed.Status != test.status {
+							t.Fatalf("filtered list: got %s, want %s", listed.Status, test.status)
+						}
+						if listed.Execution == run.Execution {
+							found = true
+							if listed.ClosedAt.IsZero() || !reflect.DeepEqual(listed.Artifacts, result.Artifacts) {
+								t.Fatalf("listed run: got %+v, want closed run with result artifacts", listed)
+							}
+						}
+					}
+					if len(token) == 0 || found {
+						break
+					}
+					next = token
+				}
+				if !found {
+					select {
+					case <-ctx.Done():
+						t.Fatalf("listing completed run: %v", ctx.Err())
+					case <-ticker.C:
+					}
+				}
+			}
 		})
 	}
 }
