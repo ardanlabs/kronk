@@ -5,13 +5,8 @@ import (
 	"slices"
 )
 
-// Freeze a representative volume per cell, not per invocation. Text references
-// come from the initial nine observations; image references are rounded medians
-// from new-0466efe's two repetitions with media System-cache reuse. Generation
-// excludes the first token per response, matching Kronk's TPS clock. IMC-off
-// input references are full-prompt medians from the initial new-48db127 run.
-// IMC-off generation references match both old-48db127 and new-732c041's
-// uncached runs, separately for each MTP/image mode.
+// Freeze a representative volume per cell, not per invocation.
+// Values may need to be updated after some important change in the tested sequence.
 const (
 	// MoE/1s/IMC+: both MTP modes share the same reference pair.
 	moe1SlotIMCTextInputTokens        = 10708
@@ -26,6 +21,24 @@ const (
 	moe1SlotNoIMCImagesInputTokens            = 53095
 	moe1SlotNoIMCImagesMTPOnGenerationTokens  = 958
 	moe1SlotNoIMCImagesMTPOffGenerationTokens = 865
+
+	// MoE/2s: initial effective input/generation volumes, one sample per cell.
+	moe2SlotIMCTextMTPOnInputTokens           = 11396
+	moe2SlotIMCTextMTPOnGenerationTokens      = 2047
+	moe2SlotIMCImagesMTPOnInputTokens         = 12379
+	moe2SlotIMCImagesMTPOnGenerationTokens    = 1864
+	moe2SlotIMCTextMTPOffInputTokens          = 11223
+	moe2SlotIMCTextMTPOffGenerationTokens     = 1562
+	moe2SlotIMCImagesMTPOffInputTokens        = 12254
+	moe2SlotIMCImagesMTPOffGenerationTokens   = 1515
+	moe2SlotNoIMCTextMTPOnInputTokens         = 72619
+	moe2SlotNoIMCTextMTPOnGenerationTokens    = 1556
+	moe2SlotNoIMCImagesMTPOnInputTokens       = 74370
+	moe2SlotNoIMCImagesMTPOnGenerationTokens  = 1576
+	moe2SlotNoIMCTextMTPOffInputTokens        = 72644
+	moe2SlotNoIMCTextMTPOffGenerationTokens   = 1595
+	moe2SlotNoIMCImagesMTPOffInputTokens      = 74388
+	moe2SlotNoIMCImagesMTPOffGenerationTokens = 1613
 )
 
 type normalizationReference struct {
@@ -33,7 +46,27 @@ type normalizationReference struct {
 	GenerationTokens int `json:"generation_tokens"`
 }
 
-func referenceTokens(images, noCache, targetOnly bool) normalizationReference {
+func referenceTokens(images, noCache, targetOnly, twoSlots bool) normalizationReference {
+	if twoSlots {
+		switch {
+		case noCache && images && targetOnly:
+			return normalizationReference{moe2SlotNoIMCImagesMTPOffInputTokens, moe2SlotNoIMCImagesMTPOffGenerationTokens}
+		case noCache && images:
+			return normalizationReference{moe2SlotNoIMCImagesMTPOnInputTokens, moe2SlotNoIMCImagesMTPOnGenerationTokens}
+		case noCache && targetOnly:
+			return normalizationReference{moe2SlotNoIMCTextMTPOffInputTokens, moe2SlotNoIMCTextMTPOffGenerationTokens}
+		case noCache:
+			return normalizationReference{moe2SlotNoIMCTextMTPOnInputTokens, moe2SlotNoIMCTextMTPOnGenerationTokens}
+		case images && targetOnly:
+			return normalizationReference{moe2SlotIMCImagesMTPOffInputTokens, moe2SlotIMCImagesMTPOffGenerationTokens}
+		case images:
+			return normalizationReference{moe2SlotIMCImagesMTPOnInputTokens, moe2SlotIMCImagesMTPOnGenerationTokens}
+		case targetOnly:
+			return normalizationReference{moe2SlotIMCTextMTPOffInputTokens, moe2SlotIMCTextMTPOffGenerationTokens}
+		default:
+			return normalizationReference{moe2SlotIMCTextMTPOnInputTokens, moe2SlotIMCTextMTPOnGenerationTokens}
+		}
+	}
 	if images {
 		if noCache {
 			generated := moe1SlotNoIMCImagesMTPOnGenerationTokens
@@ -56,6 +89,7 @@ func referenceTokens(images, noCache, targetOnly bool) normalizationReference {
 
 // Reference time normalizes completed-request processing, not whole-workload
 // wall time. Prefill includes cache work through the first sampled token.
+// Two-slot processing durations overlap: their sum is not elapsed wall time.
 func (r report) referenceTime() (float64, bool) {
 	if r.ReferenceTokens.InputTokens <= 0 || r.ReferenceTokens.GenerationTokens <= 0 {
 		return 0, false

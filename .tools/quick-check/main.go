@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -44,6 +45,8 @@ type report struct {
 	Images               bool                   `json:"images"`
 	TargetOnly           bool                   `json:"target_only"`
 	NoCache              bool                   `json:"no_cache"`
+	TwoSlots             bool                   `json:"two_slots"`
+	ConfiguredSlots      []int                  `json:"configured_slots"`
 	ReferenceTokens      normalizationReference `json:"normalization_reference"`
 	Host                 string                 `json:"host"`
 	HarnessRevision      string                 `json:"harness_revision"`
@@ -57,6 +60,7 @@ type report struct {
 	Slot                 int                    `json:"slot"`
 	MTPBackend           string                 `json:"mtp_backend"`
 	WarmupRequest        *result                `json:"warmup_request,omitempty"`
+	SharedWarmupFrom     string                 `json:"shared_warmup_from,omitempty"`
 	WorkloadSeconds      float64                `json:"workload_seconds"`
 	CancelReleaseSeconds float64                `json:"cancel_release_seconds"`
 	Results              []result               `json:"results"`
@@ -89,6 +93,7 @@ type runSummary struct {
 	RepetitionsRequested int                               `json:"repetitions_requested"`
 	RepetitionsExecuted  int                               `json:"repetitions_executed"`
 	WarmupRequest        map[string]any                    `json:"warmup_request,omitempty"`
+	SharedWarmupFrom     string                            `json:"shared_warmup_from,omitempty"`
 	Measurements         map[string]map[string]measurement `json:"measurements,omitempty"`
 	Repetitions          []repetitionSummary               `json:"repetitions"`
 }
@@ -139,6 +144,7 @@ func (r report) summary() runSummary {
 		Findings:             append([]string{}, r.Findings...),
 		RepetitionsRequested: r.RepetitionsRequested,
 		RepetitionsExecuted:  len(r.Repetitions),
+		SharedWarmupFrom:     r.SharedWarmupFrom,
 		Measurements:         r.measurements(),
 		Repetitions:          []repetitionSummary{},
 	}
@@ -166,7 +172,11 @@ func (r report) cell() string {
 	if r.NoCache {
 		imc = "off"
 	}
-	return "MoE / one slot / IMC " + imc + " / MTP " + mtp + " / images " + images
+	slots := "one slot"
+	if r.TwoSlots {
+		slots = "two slots"
+	}
+	return "MoE / " + slots + " / IMC " + imc + " / MTP " + mtp + " / images " + images
 }
 
 func (r report) phaseSummary(res result) map[string]any {
@@ -238,8 +248,8 @@ func (r report) logSummary() string {
 				phases[res.Phase] = res
 			}
 			for _, name := range names {
-				if name == "warmup" && i > 0 {
-					continue // Startup is measured and validated once per invocation.
+				if name == "warmup" && (i > 0 || r.SharedWarmupFrom != "") {
+					continue // Startup belongs to the group's first selected cell.
 				}
 				res, ok := phases[name]
 				if !ok {
@@ -260,6 +270,8 @@ func (r report) logSummary() string {
 	warmup, workload, reference := "n/a", "n/a", "n/a"
 	if r.WarmupRequest != nil {
 		warmup = fmt.Sprintf("%.2fs", r.WarmupRequest.Elapsed)
+	} else if r.SharedWarmupFrom != "" {
+		warmup = "shared"
 	}
 
 	if measurements := r.measurements(); measurements != nil {
@@ -275,16 +287,21 @@ func (r report) logSummary() string {
 			reference = format(m)
 		}
 	}
-	cache := verdict("warmup", "cold", "replay", "append", "fresh-session", "cancel", "recovery")
+	cache := verdict(append([]string{"warmup"}, r.phases()...)...)
 	isolation := verdict("fresh-session", "recovery")
 	recovery := verdict("cancel", "recovery")
+	isolationLabel := "Serial isolation"
+	if r.TwoSlots {
+		isolation = verdict("append", "peer-append", "survivor", "cancel", "recovery")
+		isolationLabel = "Concurrent isolation"
+	}
 	var b strings.Builder
 	fmt.Fprintln(&b)
 	fmt.Fprintf(&b, "Cell: %s | Warm-up: %s | Repetitions: %d/%d\n", r.ID, warmup, len(r.Repetitions), r.RepetitionsRequested)
 	fmt.Fprintf(&b, "  Workload s [SD]: %s | Normalized s [SD]: %s\n", workload, reference)
-	fmt.Fprintf(&b, "IMC/MTP: %s | Serial isolation: %s | Cancel/recovery: %s", cache, isolation, recovery)
+	fmt.Fprintf(&b, "IMC/MTP: %s | %s: %s | Cancel/recovery: %s", cache, isolationLabel, isolation, recovery)
 	if r.Images {
-		fmt.Fprintf(&b, " | Images: %s\n", verdict("cold", "replay", "append", "fresh-session", "cancel", "recovery"))
+		fmt.Fprintf(&b, " | Images: %s\n", verdict(r.phases()...))
 	} else {
 		fmt.Fprintln(&b)
 	}
@@ -332,7 +349,7 @@ func main() {
 	flag.StringVar(&o.serverLog, "server-log", filepath.Join(home, ".kronk/kronk.log"), "required local JSON server log")
 	flag.DurationVar(&o.timeout, "timeout", 5*time.Minute, "per-request timeout; not a performance threshold")
 	flag.IntVar(&o.repetitions, "repetitions", 1, "complete workload repetitions; stop on first failure")
-	flag.StringVar(&o.cells, "cells", "all", "cells: all, text, images, text-no-mtp, images-no-mtp, no-mtp, text-no-imc, images-no-imc, text-no-imc-no-mtp, images-no-imc-no-mtp, no-imc, or a comma-separated list")
+	flag.StringVar(&o.cells, "cells", "all", "cells: all, one-slot, two-slots, text, images, text-no-mtp, images-no-mtp, no-mtp, text-no-imc, images-no-imc, text-no-imc-no-mtp, images-no-imc-no-mtp, no-imc; append -2s for two-slot variants or combine with commas")
 	flag.Parse()
 	if err := run(o); err != nil {
 		os.Exit(1)
@@ -409,13 +426,13 @@ func run(o options) (runErr error) {
 	}
 	r := matrixReport{Status: "FAIL", ServerCommitTime: "unknown", TestStartedAt: started.Format(time.RFC3339Nano)}
 	for _, cell := range matrixCells {
-		r.Cells = append(r.Cells, report{ID: cell.id, Images: cell.images, TargetOnly: cell.targetOnly, NoCache: cell.noCache, Status: "NOT_RUN"})
+		r.Cells = append(r.Cells, report{ID: cell.id, Images: cell.images, TargetOnly: cell.targetOnly, NoCache: cell.noCache, TwoSlots: cell.twoSlots, Status: "NOT_RUN"})
 	}
 	var harnessRevision string
 	if revision, err := exec.Command("git", "rev-parse", "HEAD").Output(); err == nil {
 		harnessRevision = strings.TrimSpace(string(revision))
 	}
-	c := &client{ctx: ctx, host: strings.TrimRight(o.host, "/"), token: os.Getenv("KRONK_TOKEN"), timeout: o.timeout, traces: make(map[string]string), events: json.NewEncoder(events)}
+	c := &client{ctx: ctx, host: strings.TrimRight(o.host, "/"), token: os.Getenv("KRONK_TOKEN"), timeout: o.timeout, traces: make(map[string]string), events: json.NewEncoder(events), eventMu: new(sync.Mutex)}
 	defer func() {
 		if ctx.Err() != nil {
 			return // The interruption cleanup removes this incomplete run.
@@ -480,6 +497,30 @@ func run(o options) (runErr error) {
 			runErr = errors.Join(runErr, fmt.Errorf("quick-check has findings; inspect %s", dir))
 		}
 	}()
+	var group *report
+	finishGroup := func() error {
+		owner := group
+		group = nil
+		if owner == nil || owner.WarmupRequest == nil {
+			return nil
+		}
+		// Cancellation must stop inference, not cancel its cleanup request.
+		cleanup := *c
+		cleanup.model = owner.Model
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		cleanup.ctx = cleanupCtx
+		err := cleanup.unload()
+		if err != nil {
+			owner.Status = "FAIL"
+			owner.Findings = append(owner.Findings, "model group cleanup: "+err.Error())
+			if ctx.Err() != nil {
+				fmt.Fprintf(os.Stderr, "Interrupted model cleanup: %v\n", err)
+			}
+		}
+		return err
+	}
+	defer func() { runErr = errors.Join(runErr, finishGroup()) }()
 	for i, cell := range matrixCells {
 		if !selected[cell.id] {
 			continue
@@ -496,8 +537,28 @@ func run(o options) (runErr error) {
 				c.model = noCacheTargetOnlyModelID
 			}
 		}
+		if cell.twoSlots {
+			c.model += "-2S"
+		}
+		if group != nil && group.Model != c.model {
+			if err := finishGroup(); err != nil {
+				return err
+			}
+		}
 		cr := &r.Cells[i]
-		*cr = report{ID: cell.id, Status: "FAIL", Workload: workloadVersion, Model: c.model, Images: cell.images, TargetOnly: cell.targetOnly, NoCache: cell.noCache, Host: o.host, ServerCommitTime: "unknown", TestStartedAt: r.TestStartedAt, RepetitionsRequested: o.repetitions, HarnessRevision: harnessRevision, ReferenceTokens: referenceTokens(cell.images, cell.noCache, cell.targetOnly)}
+		*cr = report{ID: cell.id, Status: "FAIL", Workload: workloadVersion, Model: c.model, Images: cell.images, TargetOnly: cell.targetOnly, NoCache: cell.noCache, TwoSlots: cell.twoSlots, Host: o.host, ServerCommitTime: "unknown", TestStartedAt: r.TestStartedAt, RepetitionsRequested: o.repetitions, HarnessRevision: harnessRevision, ReferenceTokens: referenceTokens(cell.images, cell.noCache, cell.targetOnly, cell.twoSlots)}
+		if cr.TwoSlots {
+			cr.Workload = "operations-concurrent-v1"
+		}
+		if group == nil {
+			group = cr
+		} else {
+			cr.SharedWarmupFrom, cr.MTPBackend = group.ID, group.MTPBackend
+			if err := c.waitIdle(); err != nil {
+				cr.Findings = append(cr.Findings, err.Error())
+				return err
+			}
+		}
 		log("cell=%s", cell.id)
 		err := executeCell(o, c, cr, log)
 		if r.ServerRevision == "" {
@@ -514,27 +575,14 @@ func run(o options) (runErr error) {
 	return nil
 }
 
-// Keep the established per-cell lifecycle for now: warm once, resident across
-// its repetitions, unload on exit. Grouping cells by model is a separate decision.
+// Weights remain resident across the group's cells and their repetitions.
+// Only its first selected cell owns the startup request and evidence.
 func executeCell(o options, c *client, r *report, log func(string, ...any)) (runErr error) {
-	defer func() {
-		if r.WarmupRequest != nil {
-			// Cancellation must stop inference, not cancel its cleanup request.
-			cleanup := *c
-			cleanupCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-			defer cancel()
-			cleanup.ctx = cleanupCtx
-			err := cleanup.unload()
-			runErr = errors.Join(runErr, err)
-			if err != nil && c.ctx.Err() != nil {
-				fmt.Fprintf(os.Stderr, "Interrupted model cleanup: %v\n", err)
-			}
-		}
-	}()
 	for i := 1; i <= o.repetitions; i++ {
 		log("repetition=%d/%d", i, o.repetitions)
-		repetition := report{ID: r.ID, Status: "FAIL", Workload: workloadVersion, Model: r.Model, Images: o.images, TargetOnly: r.TargetOnly, NoCache: r.NoCache, Host: o.host, ServerCommitTime: "unknown", HarnessRevision: r.HarnessRevision, Metadata: make(map[string]any), MTPBackend: r.MTPBackend}
+		repetition := report{ID: r.ID, Status: "FAIL", Workload: r.Workload, Model: r.Model, Images: o.images, TargetOnly: r.TargetOnly, NoCache: r.NoCache, TwoSlots: r.TwoSlots, Host: o.host, ServerCommitTime: "unknown", HarnessRevision: r.HarnessRevision, Metadata: make(map[string]any), MTPBackend: r.MTPBackend}
 		repetition.ReferenceTokens = r.ReferenceTokens
+		repetition.SharedWarmupFrom = r.SharedWarmupFrom
 		c.traces = make(map[string]string)
 		c.repetition = i
 		err := execute(o, c, &repetition, log)
@@ -550,6 +598,7 @@ func executeCell(o options, c *client, r *report, log func(string, ...any)) (run
 			r.Metadata = repetition.Metadata
 			r.ServerRevision, r.ServerCommitTime = repetition.ServerRevision, repetition.ServerCommitTime
 			r.SystemTokens, r.SystemSHA256, r.MTPBackend = repetition.SystemTokens, repetition.SystemSHA256, repetition.MTPBackend
+			r.ConfiguredSlots = repetition.ConfiguredSlots
 			r.WarmupRequest = repetition.WarmupRequest
 		}
 		r.Repetitions = append(r.Repetitions, repetition)
@@ -594,8 +643,8 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 			log("Tested commit: %s from %s", r.serverVersion(), r.ServerCommitTime)
 		}
 	}
-	if c.repetition == 1 {
-		// Reset only at invocation startup; weights stay resident across repetitions.
+	if c.repetition == 1 && r.SharedWarmupFrom == "" {
+		// Reset only at group startup, not between its cells or repetitions.
 		if err := c.unload(); err != nil {
 			return err
 		}
@@ -632,16 +681,27 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 		return err
 	}
 	r.Metadata["scheduler"] = e
-	if detail.Config.IMC == nil || *detail.Config.IMC == r.NoCache || len(e.Slots) != 1 || (!r.TargetOnly && (!e.MTP || e.NDraft <= 0)) || (r.TargetOnly && (e.MTP || e.NDraft != 0)) {
-		return fmt.Errorf("fixture must expose requested IMC mode (off=%t), exactly one slot, and requested MTP mode (target-only=%t): %+v", r.NoCache, r.TargetOnly, e)
+	slots := 1
+	if r.TwoSlots {
+		slots = 2
+	}
+	if detail.Config.IMC == nil || *detail.Config.IMC == r.NoCache || len(e.Slots) != slots || (!r.TargetOnly && (!e.MTP || e.NDraft <= 0)) || (r.TargetOnly && (e.MTP || e.NDraft != 0)) {
+		return fmt.Errorf("fixture must expose requested IMC mode (off=%t), exactly %d slots, and requested MTP mode (target-only=%t): %+v", r.NoCache, slots, r.TargetOnly, e)
 	}
 	r.Slot = e.Slots[0].ID
+	for _, slot := range e.Slots {
+		r.ConfiguredSlots = append(r.ConfiguredSlots, slot.ID)
+	}
 	system, tokens, err := c.systemPrompt()
 	if err != nil {
 		return err
 	}
 	r.SystemTokens, r.SystemSHA256 = tokens, fmt.Sprintf("%x", sha256.Sum256([]byte(system)))
-	log("workload=%s model=%s system_tokens=%d", workloadVersion, c.model, tokens)
+	log("workload=%s model=%s system_tokens=%d", r.Workload, c.model, tokens)
+	if r.TwoSlots {
+		runErr := runConcurrent(c, r, system, log)
+		return errors.Join(runErr, collectEvidence(serverLog, info, o.serverLog, c, r))
+	}
 	a := conversation(system, "ORCHID-47", "Maren", "Northport")
 	b := conversation(system, "COBALT-83", "Tobin", "Southbank")
 	if o.images {
@@ -750,7 +810,7 @@ func (c *client) waitIdle() error {
 			return nil
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("one-slot capacity not idle after 15s")
+			return fmt.Errorf("capacity not idle after 15s")
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
@@ -794,10 +854,10 @@ func (c *client) unload() error {
 
 func (c *client) systemPrompt() (string, int, error) {
 	// Measure the fixed text without resizing it for the selected tokenizer.
-	// A fixed per-repetition namespace prevents a previous repetition's full
-	// working/System snapshot from serving this one's initial cold prompt.
+	// A fixed per-cell/repetition namespace prevents earlier working/System
+	// snapshots from serving this cell/repetition's initial cold prompt.
 	// It is stable across invocations, never random or resized to fit a tokenizer.
-	text := fmt.Sprintf("Quick-check repetition %d.\n\n", c.repetition) + handbook()
+	text := fmt.Sprintf("Quick-check cell %s; repetition %d.\n\n", c.cell, c.repetition) + handbook()
 	var count struct {
 		Tokens int `json:"tokens"`
 	}

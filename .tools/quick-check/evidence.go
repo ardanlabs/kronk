@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 )
@@ -205,6 +206,8 @@ func recordExecution(r *result, event map[string]any) {
 	case "batch-engine":
 		if status == "prefill-done" {
 			recordDuration(r, event, "ttft", "slot_prefill_ttft_seconds")
+			stamp, _ := event["time"].(string)
+			e.FirstToken, _ = time.Parse(time.RFC3339Nano, stamp)
 		}
 		if status == "slot-finished" {
 			recordDuration(r, event, "elapsed", "generation_seconds")
@@ -254,14 +257,18 @@ func validateExecution(r *report) {
 	if r.TargetOnly && r.MTPBackend != "" {
 		fail("warmup", "target-only model loaded an MTP backend")
 	}
-	if len(r.Results) != 6 {
-		fail("workload", "incomplete: all six phases required")
+	if len(r.Results) != len(r.phases()) {
+		fail("workload", "incomplete: all workload phases required")
+	}
+	if r.TwoSlots {
+		defer validateConcurrentExecution(r)
 	}
 	var coldStable, freshStable, systemTokens int
 	var cancelledAt time.Time
 	for _, res := range r.Results {
 		e := res.Execution
-		if e.Slot == nil || *e.Slot != r.Slot || e.SlotConflict || e.Started.IsZero() || e.Finished.Before(e.Started) || !e.SlotFinished || !e.SequenceCleared || (!r.TargetOnly && !e.DraftCleaned) {
+		validSlot := e.Slot != nil && ((!r.TwoSlots && *e.Slot == r.Slot) || (r.TwoSlots && slices.Contains(r.ConfiguredSlots, *e.Slot)))
+		if !validSlot || e.SlotConflict || e.Started.IsZero() || e.Finished.Before(e.Started) || !e.SlotFinished || !e.SequenceCleared || (!r.TargetOnly && !e.DraftCleaned) {
 			fail(res.Phase, "execution on configured slot, target cleanup, and any required draft cleanup not attested")
 		}
 		if r.TargetOnly && (e.DraftTokens != 0 || e.DraftAccepted != 0 || e.DraftRestored || e.DraftSnapshotted || e.DraftResume != "" || res.Usage.DraftTokens != 0 || res.Usage.DraftAcceptedTokens != 0 || res.Usage.DraftCoverage != 0 || res.Usage.DraftDisableReason != "") {
@@ -293,10 +300,14 @@ func validateExecution(r *report) {
 			}
 			// Ordinary media prefill has no IMC decode-chunk event. Encoding,
 			// successful prefill/slot completion, and semantic answers attest it.
-			if r.Images && (!res.MediaPrefill || res.EncodedTokens <= 0) {
+			media := r.Images && (!r.TwoSlots || (res.Phase != "cold" && res.Phase != "replay" && res.Phase != "recovery"))
+			if media && (!res.MediaPrefill || res.EncodedTokens <= 0) {
 				fail(res.Phase, "IMC-off image must be processed again on every request")
 			}
 			continue
+		}
+		if r.TwoSlots {
+			continue // Concurrent cache paths are validated after common cleanup/mode checks.
 		}
 		if r.Images {
 			if res.Phase == "cold" {

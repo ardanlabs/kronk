@@ -12,21 +12,49 @@ var matrixCells = []struct {
 	images     bool
 	targetOnly bool
 	noCache    bool
+	twoSlots   bool
 }{
-	{"MoE/1s/IMC+/MTP+/img-", false, false, false},
-	{"MoE/1s/IMC+/MTP+/img+", true, false, false},
-	{"MoE/1s/IMC+/MTP-/img-", false, true, false},
-	{"MoE/1s/IMC+/MTP-/img+", true, true, false},
-	{"MoE/1s/IMC-/MTP+/img-", false, false, true},
-	{"MoE/1s/IMC-/MTP+/img+", true, false, true},
-	{"MoE/1s/IMC-/MTP-/img-", false, true, true},
-	{"MoE/1s/IMC-/MTP-/img+", true, true, true},
+	{"MoE/1s/IMC+/MTP+/img-", false, false, false, false},
+	{"MoE/1s/IMC+/MTP+/img+", true, false, false, false},
+	{"MoE/1s/IMC+/MTP-/img-", false, true, false, false},
+	{"MoE/1s/IMC+/MTP-/img+", true, true, false, false},
+	{"MoE/1s/IMC-/MTP+/img-", false, false, true, false},
+	{"MoE/1s/IMC-/MTP+/img+", true, false, true, false},
+	{"MoE/1s/IMC-/MTP-/img-", false, true, true, false},
+	{"MoE/1s/IMC-/MTP-/img+", true, true, true, false},
+	{"MoE/2s/IMC+/MTP+/img-", false, false, false, true},
+	{"MoE/2s/IMC+/MTP+/img+", true, false, false, true},
+	{"MoE/2s/IMC+/MTP-/img-", false, true, false, true},
+	{"MoE/2s/IMC+/MTP-/img+", true, true, false, true},
+	{"MoE/2s/IMC-/MTP+/img-", false, false, true, true},
+	{"MoE/2s/IMC-/MTP+/img+", true, false, true, true},
+	{"MoE/2s/IMC-/MTP-/img-", false, true, true, true},
+	{"MoE/2s/IMC-/MTP-/img+", true, true, true, true},
 }
 
 func selectedCells(selection string) (map[string]bool, error) {
 	selected := make(map[string]bool)
 	for name := range strings.SplitSeq(selection, ",") {
-		switch strings.TrimSpace(name) {
+		name = strings.TrimSpace(name)
+		if name == "one-slot" || name == "two-slots" {
+			for _, cell := range matrixCells {
+				if cell.twoSlots == (name == "two-slots") {
+					selected[cell.id] = true
+				}
+			}
+			continue
+		}
+		if base, ok := strings.CutSuffix(name, "-2s"); ok {
+			cells, err := selectedCells(base)
+			if err != nil {
+				return nil, err
+			}
+			for id := range cells {
+				selected[strings.Replace(id, "/1s/", "/2s/", 1)] = true
+			}
+			continue
+		}
+		switch name {
 		case "all", "":
 			for _, cell := range matrixCells {
 				selected[cell.id] = true
@@ -52,15 +80,22 @@ func selectedCells(selection string) (map[string]bool, error) {
 			selected[matrixCells[7].id] = true
 		case "no-imc":
 			for _, cell := range matrixCells {
-				if cell.noCache {
+				if cell.noCache && !cell.twoSlots {
 					selected[cell.id] = true
 				}
 			}
 		default:
-			return nil, fmt.Errorf("unknown cell selector %q; use all, text, images, text-no-mtp, images-no-mtp, no-mtp, text-no-imc, images-no-imc, text-no-imc-no-mtp, images-no-imc-no-mtp, no-imc, or a comma-separated list", name)
+			return nil, fmt.Errorf("unknown cell selector %q; use all, one-slot, two-slots, text, images, text-no-mtp, images-no-mtp, no-mtp, text-no-imc, images-no-imc, text-no-imc-no-mtp, images-no-imc-no-mtp, no-imc; append -2s for two-slot variants or combine with commas", name)
 		}
 	}
 	return selected, nil
+}
+
+func (r report) phases() []string {
+	if r.TwoSlots {
+		return []string{"cold", "replay", "fresh-session", "append", "peer-append", "survivor", "cancel", "recovery"}
+	}
+	return []string{"cold", "replay", "append", "fresh-session", "cancel", "recovery"}
 }
 
 type matrixReport struct {

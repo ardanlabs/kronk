@@ -49,10 +49,11 @@ type comparison struct {
 }
 
 type comparisonInput struct {
-	summary  runSummary
-	report   report
-	requests []any
-	native   map[string]string
+	summary               runSummary
+	report                report
+	requests              []any
+	native                map[string]string
+	sharedWarmupValidated bool
 }
 
 func compareCommand(args []string, out io.Writer) error {
@@ -243,11 +244,12 @@ func readCellComparison(s runSummary, r report, events []byte) (comparisonInput,
 	if (s.Status != "PASS" && s.Status != "FAIL") || s.Workload == "" || s.Model == "" {
 		return input, fmt.Errorf("summary.json: missing supported run identity/status")
 	}
-	if s.ReferenceTokens.InputTokens <= 0 || s.ReferenceTokens.GenerationTokens <= 0 {
+	uncalibrated := r.TwoSlots && s.ReferenceTokens == (normalizationReference{})
+	if !uncalibrated && (s.ReferenceTokens.InputTokens <= 0 || s.ReferenceTokens.GenerationTokens <= 0) {
 		return input, fmt.Errorf("summary.json: missing or invalid normalization reference; rerun quick-check")
 	}
 	if s.ID != r.ID || s.Status != r.Status || s.Workload != r.Workload || s.Model != r.Model ||
-		s.Cell != r.cell() || s.ReferenceTokens != r.ReferenceTokens ||
+		s.Cell != r.cell() || s.ReferenceTokens != r.ReferenceTokens || s.SharedWarmupFrom != r.SharedWarmupFrom ||
 		s.ServerRevision != r.ServerRevision || s.TestStartedAt != r.TestStartedAt ||
 		s.RepetitionsRequested != r.RepetitionsRequested || s.RepetitionsExecuted != len(r.Repetitions) ||
 		len(s.Repetitions) != len(r.Repetitions) || !slices.Equal(s.Findings, r.Findings) ||
@@ -256,7 +258,7 @@ func readCellComparison(s runSummary, r report, events []byte) (comparisonInput,
 	}
 	for i, rep := range r.Repetitions {
 		summary := s.Repetitions[i]
-		if rep.ReferenceTokens != r.ReferenceTokens || rep.Images != r.Images || rep.TargetOnly != r.TargetOnly || rep.NoCache != r.NoCache || summary.Status != rep.Status || !slices.Equal(summary.Findings, rep.Findings) ||
+		if rep.ReferenceTokens != r.ReferenceTokens || rep.Images != r.Images || rep.TargetOnly != r.TargetOnly || rep.NoCache != r.NoCache || rep.TwoSlots != r.TwoSlots || rep.SharedWarmupFrom != r.SharedWarmupFrom || summary.Status != rep.Status || !slices.Equal(summary.Findings, rep.Findings) ||
 			summary.SystemTokens != rep.SystemTokens || summary.SystemSHA256 != rep.SystemSHA256 ||
 			summary.WorkloadSeconds != rep.WorkloadSeconds || summary.CancelReleaseSeconds != rep.CancelReleaseSeconds {
 			return input, fmt.Errorf("repetition %d summary and diagnostic report disagree", i+1)
@@ -264,6 +266,9 @@ func readCellComparison(s runSummary, r report, events []byte) (comparisonInput,
 	}
 	if r.WarmupRequest != nil && len(r.Repetitions) == 0 {
 		return input, fmt.Errorf("warm-up report has no owning repetition")
+	}
+	if r.SharedWarmupFrom != "" && (r.WarmupRequest != nil || len(s.WarmupRequest) > 0) {
+		return input, fmt.Errorf("shared warm-up must not duplicate startup measurements")
 	}
 	expected := r.summary()
 	if !reflect.DeepEqual(s.Machine, expected.Machine) || !reflect.DeepEqual(s.InstalledLibrary, expected.InstalledLibrary) ||
@@ -290,18 +295,40 @@ func comparisonIdentity(dir string, input comparisonInput) comparisonRun {
 	if s.Status != "PASS" || s.RepetitionsRequested <= 0 || s.RepetitionsExecuted != s.RepetitionsRequested {
 		run.Problems = append(run.Problems, "run failed or requested repetitions were not completed")
 	}
-	if len(input.requests) != 1+6*s.RepetitionsExecuted {
+	phases := input.report.phases()
+	warmups := 1
+	if input.report.SharedWarmupFrom != "" {
+		warmups = 0
+	}
+	if len(input.requests) != warmups+len(phases)*s.RepetitionsExecuted {
 		run.Problems = append(run.Problems, "request evidence is missing or unexpected")
 	}
-	if s.WarmupRequest["status"] != "PASS" || input.report.WarmupRequest == nil {
+	if warmups == 0 && !input.sharedWarmupValidated {
+		run.Problems = append(run.Problems, "shared warm-up source not validated")
+	} else if warmups == 1 && (s.WarmupRequest["status"] != "PASS" || input.report.WarmupRequest == nil) {
 		run.Problems = append(run.Problems, "warm-up evidence did not PASS")
 	}
-	phases := []string{"cold", "replay", "append", "fresh-session", "cancel", "recovery"}
+	seen := make(map[string]bool)
 	for i, value := range input.requests {
 		request := value.(map[string]any)
+		if input.report.TwoSlots {
+			phase, _ := request["phase"].(string)
+			repetition, _ := request["repetition"].(int)
+			key := fmt.Sprintf("%d/%s", repetition, phase)
+			valid := repetition >= 1 && repetition <= s.RepetitionsExecuted && slices.Contains(phases, phase)
+			if phase == "warmup" {
+				valid = warmups == 1 && repetition == 1
+			}
+			if !valid || seen[key] || request["body"] == nil {
+				run.Problems = append(run.Problems, "request evidence has missing bodies, duplicate or unexpected phases/repetitions")
+				break
+			}
+			seen[key] = true
+			continue
+		}
 		phase, repetition := "warmup", 1
-		if i > 0 {
-			phase, repetition = phases[(i-1)%len(phases)], (i-1)/len(phases)+1
+		if i >= warmups {
+			phase, repetition = phases[(i-warmups)%len(phases)], (i-warmups)/len(phases)+1
 		}
 		if request["phase"] != phase || request["repetition"] != repetition || request["body"] == nil {
 			run.Problems = append(run.Problems, "request evidence has missing bodies or incorrect execution order")
@@ -340,6 +367,24 @@ func comparisonIdentity(dir string, input comparisonInput) comparisonRun {
 	return run
 }
 
+// Two-slot requests can arrive in goroutine order, unlike their canonical results.
+// Sort a copy so validation and the saved evidence retain the actual arrival order.
+func comparisonRequests(input comparisonInput) []any {
+	if !input.report.TwoSlots {
+		return input.requests
+	}
+	phases := append([]string{"warmup"}, input.report.phases()...)
+	requests := slices.Clone(input.requests)
+	slices.SortStableFunc(requests, func(a, b any) int {
+		x, y := a.(map[string]any), b.(map[string]any)
+		if delta := x["repetition"].(int) - y["repetition"].(int); delta != 0 {
+			return delta
+		}
+		return slices.Index(phases, x["phase"].(string)) - slices.Index(phases, y["phase"].(string))
+	})
+	return requests
+}
+
 func compareRuns(aDir, bDir string, a, b comparisonInput) comparison {
 	c := comparison{
 		Status: "PASS", Baseline: comparisonIdentity(aDir, a), Candidate: comparisonIdentity(bDir, b),
@@ -349,7 +394,7 @@ func compareRuns(aDir, bDir string, a, b comparisonInput) comparison {
 			"Recorded assertions only; not proof of absence of bugs or independent revalidation of inference.",
 			"Deltas are observations, not performance-regression verdicts; no calibrated timing gate.",
 			"Repetitions measure within-invocation variability, not between-invocation variability.",
-			"Warm-up has one sample per invocation; unloading/restarting does not establish cold OS/GPU caches.",
+			"Warm-up has one sample per model group; unloading/restarting does not establish cold OS/GPU caches.",
 			"Metadata does not attest loaded binary/library bytes, actual placement, OS release, or idle hardware.",
 		},
 	}
@@ -376,6 +421,10 @@ func compareRuns(aDir, bDir string, a, b comparisonInput) comparison {
 	check("workload", a.summary.Workload, b.summary.Workload)
 	check("matrix cell", a.summary.Cell, b.summary.Cell)
 	check("normalization reference", a.summary.ReferenceTokens, b.summary.ReferenceTokens)
+	if (a.report.TwoSlots && a.summary.ReferenceTokens == (normalizationReference{})) ||
+		(b.report.TwoSlots && b.summary.ReferenceTokens == (normalizationReference{})) {
+		c.Warnings = append(c.Warnings, "Normalized metrics unavailable: two-slot normalization reference is uncalibrated")
+	}
 	if a.summary.ReferenceTokens != b.summary.ReferenceTokens {
 		c.Warnings = append(c.Warnings, "Normalized delta omitted: reference token amounts differ")
 	}
@@ -425,7 +474,7 @@ func compareRuns(aDir, bDir string, a, b comparisonInput) comparison {
 			c.Warnings = append(c.Warnings, "model configuration."+key+": changed or unavailable in one run")
 		}
 	}
-	if !reflect.DeepEqual(a.requests, b.requests) {
+	if !reflect.DeepEqual(comparisonRequests(a), comparisonRequests(b)) {
 		c.Warnings = append(c.Warnings, "request bodies/order differ (includes generated assistant history); input/settings are not identical")
 	} else {
 		c.Matches = append(c.Matches, "request bodies/order")

@@ -1,6 +1,6 @@
 # Kronk quick-check
 
-Cells: **MoE / one slot / IMC off or on / MTP off or on / images off or on**.
+Cells: **MoE / one or two slots / IMC off or on / MTP off or on / images off or on**.
 Model: `unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL`, using the
 `QUICK-CHECK` aliases from `.tools/model_config_tools.yaml`.
 
@@ -24,20 +24,29 @@ make quick-check-this-code QUICK_CHECK_ARGS='-cells images-no-mtp'
 make quick-check-this-code QUICK_CHECK_ARGS='-cells no-imc' # All four IMC-off cells.
 # Individual IMC-off selectors: text-no-imc, images-no-imc,
 # text-no-imc-no-mtp, images-no-imc-no-mtp.
-# -cells no-mtp retains both IMC-on target-only cells; all runs all eight.
+# -cells no-mtp retains both one-slot IMC-on target-only cells.
+make quick-check-this-code QUICK_CHECK_ARGS='-cells one-slot' # Eight serial cells.
+make quick-check-this-code QUICK_CHECK_ARGS='-cells two-slots' # Eight concurrent cells.
+make quick-check-this-code QUICK_CHECK_ARGS='-cells images-2s' # One concurrent image cell.
+# Append -2s to existing selectors for their two-slot variants; all runs all 16.
 # Selectors can be combined, e.g. -cells text,images-no-mtp.
 ```
 
 `text` and `images` retain their MTP-on meaning. Restart the server after updating
 the tools model configuration to make the new aliases available.
 
-Image cells exercise image rebuild, replay, append, a different image/session,
-cancellation, and recovery with the original image.
+One-slot image cells exercise image rebuild, replay, append, a different
+image/session, cancellation, and recovery with the original image. Two-slot cells
+exercise overlapping conversations, peer cancellation, and same-slot recovery.
+Their image variants add a first image to text history, then another image to
+image history, and recover with text while the other conversation continues.
 
-Flow: for each selected cell, one warm-up → one repetition of cold chat, replay,
-append, independent session, cancellation, and recovery → one final report for
-the invocation. The model stays loaded across a cell's repetitions; it is unloaded
-before/after each cell for now. Access to the server's JSON log is required.
+Flow: load/warm once per slot/IMC/MTP configuration → run its selected text/image
+cells and repetitions → unload. All cells share one final report. Cell/repetition
+prefixes keep caches independent while weights stay loaded. The first selected
+cell records warm-up timing; its partner shows `Warm-up: shared` and references
+that cell in JSON. All 16 cells require eight loads; a single selected cell still
+gets its own warm-up. Access to the server's JSON log is required.
 Unselected cells (and those skipped after a failure) appear as `NOT_RUN`.
 With one repetition, SD is `n/a`; increase `-repetitions` to measure variation.
 
@@ -81,6 +90,8 @@ All selected cells share these three files and one retention queue, directly und
 `output/`. Archive older single-cell run folders in `output/saved_local_runs/`
 and rerun; old artifacts are not converted. Normalized uses fixed per-cell token
 references; differing references suppress that cell's Normalized delta.
+For two slots, Normalized sums overlapping request processing times; it is not
+wall-clock workload time and can exceed it.
 
 Those files can be useful to feed a harness and investigate reasons for slowdowns or regressions, alongside the bigger reliability tools.
 

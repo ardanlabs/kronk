@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -42,6 +43,7 @@ type result struct {
 	Started         time.Time          `json:"started_at"`
 	Elapsed         float64            `json:"elapsed_seconds"`
 	FirstContent    float64            `json:"first_content_seconds"`
+	LastContentAt   time.Time          `json:"last_content_at"`
 	Generation      float64            `json:"generation_seconds"`
 	OutputTPS       float64            `json:"client_output_tokens_per_second"`
 	Cancelled       bool               `json:"cancelled"`
@@ -70,6 +72,7 @@ type execution struct {
 	Slot              *int      `json:"slot"`
 	SlotConflict      bool      `json:"slot_conflict"`
 	Started           time.Time `json:"started_at"`
+	FirstToken        time.Time `json:"first_token_at"`
 	Finished          time.Time `json:"finished_at"`
 	TerminalStatus    string    `json:"terminal_status"`
 	SlotFinished      bool      `json:"slot_finished"`
@@ -98,7 +101,18 @@ type client struct {
 	timeout     time.Duration
 	traces      map[string]string
 	events      *json.Encoder
+	eventMu     *sync.Mutex
+	onContent   func(context.Context) error
 	repetition  int
+}
+
+func (c *client) encodeEvent(event any) error {
+	if c.events == nil {
+		return nil
+	}
+	c.eventMu.Lock()
+	defer c.eventMu.Unlock()
+	return c.events.Encode(event)
 }
 
 func (c *client) request(ctx context.Context, method, path string, body any) (*http.Response, string, error) {
@@ -169,13 +183,15 @@ func (c *client) chat(phase string, messages []message, limit int, cancelAfterCo
 		"temperature":    0, "seed": 42, "enable_thinking": false, "max_tokens": limit,
 	}
 	if c.events != nil {
-		if err := c.events.Encode(map[string]any{"source": "request", "cell_id": c.cell, "repetition": c.repetition, "phase": phase, "body": body}); err != nil {
+		if err := c.encodeEvent(map[string]any{"source": "request", "cell_id": c.cell, "repetition": c.repetition, "phase": phase, "body": body}); err != nil {
 			return r, err
 		}
 	}
 	resp, trace, err := c.request(ctx, "POST", "/v1/chat/completions", body)
 	r.TraceID = trace
+	c.eventMu.Lock()
 	c.traces[trace] = phase
+	c.eventMu.Unlock()
 	if err != nil {
 		return r, err
 	}
@@ -211,7 +227,7 @@ func (c *client) chat(phase string, messages []message, limit int, cancelAfterCo
 			return r, fmt.Errorf("stream error: %s", chunk.Error)
 		}
 		if c.events != nil {
-			if err := c.events.Encode(map[string]any{"source": "client", "cell_id": c.cell, "repetition": c.repetition, "phase": phase, "trace_id": trace, "at": time.Now().UTC(), "chunk": json.RawMessage(data)}); err != nil {
+			if err := c.encodeEvent(map[string]any{"source": "client", "cell_id": c.cell, "repetition": c.repetition, "phase": phase, "trace_id": trace, "at": time.Now().UTC(), "chunk": json.RawMessage(data)}); err != nil {
 				return r, err
 			}
 		}
@@ -223,10 +239,16 @@ func (c *client) chat(phase string, messages []message, limit int, cancelAfterCo
 				r.FinishReason = choice.FinishReason
 			}
 			if choice.Delta.Content != "" {
+				r.LastContentAt = time.Now().UTC()
 				if r.FirstContent == 0 {
 					r.FirstContent = time.Since(r.Started).Seconds()
 				}
 				r.Content += choice.Delta.Content
+				if c.onContent != nil {
+					if err := c.onContent(ctx); err != nil {
+						return r, err
+					}
+				}
 				if cancelAfterContent {
 					r.Cancelled = true
 					cancel()

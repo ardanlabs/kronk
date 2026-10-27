@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -103,7 +104,7 @@ func TestCompareImageCell(t *testing.T) {
 	for _, role := range []string{"old-aaaaaaa", "new-aaaaaaa"} {
 		r := comparisonFixture([]float64{2, 6})
 		r.Images = true
-		r.ReferenceTokens = referenceTokens(true, false, false)
+		r.ReferenceTokens = referenceTokens(true, false, false, false)
 		for i := range r.Repetitions {
 			r.Repetitions[i].Images = true
 			r.Repetitions[i].ReferenceTokens = r.ReferenceTokens
@@ -135,7 +136,7 @@ func TestCompareMatrixSelection(t *testing.T) {
 	image := func(values ...float64) report {
 		r := comparisonFixture(values)
 		r.Images = true
-		r.ReferenceTokens = referenceTokens(true, false, false)
+		r.ReferenceTokens = referenceTokens(true, false, false, false)
 		for i := range r.Repetitions {
 			r.Repetitions[i].Images = true
 			r.Repetitions[i].ReferenceTokens = r.ReferenceTokens
@@ -544,9 +545,211 @@ func TestCompareRejectsBrokenArtifacts(t *testing.T) {
 	}
 }
 
+func TestCompareTwoSlots(t *testing.T) {
+	r := comparisonTwoSlotFixture([]float64{2, 6})
+	baseline := readComparisonCellFixture(t, r)
+	candidate := readComparisonCellFixture(t, comparisonTwoSlotFixture([]float64{3, 7}))
+	// Reverse all arrivals, including warm-up and the repetition boundaries.
+	// Give each request its own body to ensure the comparison follows phase IDs.
+	for i, value := range baseline.requests {
+		request := value.(map[string]any)
+		request["body"] = map[string]any{"phase": request["phase"], "repetition": request["repetition"]}
+		candidate.requests[i].(map[string]any)["body"] = request["body"]
+	}
+	slices.Reverse(candidate.requests)
+	got := compareRuns("baseline", "candidate", baseline, candidate)
+	if got.Status != "PASS" || len(got.Baseline.Problems) != 0 || len(got.Candidate.Problems) != 0 {
+		t.Fatalf("complete two-slot evidence rejected: %+v", got)
+	}
+	if !slices.Contains(got.Matches, "request bodies/order") || strings.Contains(strings.Join(got.Warnings, "\n"), "request bodies/order differ") {
+		t.Fatal("arrival order changed request comparison", got.Warnings)
+	}
+	if !strings.Contains(strings.Join(got.Warnings, "\n"), "two-slot normalization reference is uncalibrated") {
+		t.Fatal("uncalibrated normalization warning missing", got.Warnings)
+	}
+	for _, metric := range got.Metrics {
+		if metric.Metric == "workload.reference_seconds" {
+			t.Fatal("uncalibrated run received Normalized metrics", metric)
+		}
+	}
+	if candidate.requests[0].(map[string]any)["repetition"] != 2 {
+		t.Fatal("comparison mutated recorded request order")
+	}
+	candidate.requests[0].(map[string]any)["body"] = map[string]any{"changed": true}
+	got = compareRuns("baseline", "candidate", baseline, candidate)
+	if !strings.Contains(strings.Join(got.Warnings, "\n"), "request bodies/order differ") {
+		t.Fatal("real request body change was hidden", got.Warnings)
+	}
+}
+
+func TestCompareTwoSlotsRejectsBrokenEvidence(t *testing.T) {
+	for _, name := range []string{"missing-request", "duplicate-request", "missing-warmup", "duplicate-warmup", "wrong-warmup-repetition", "wrong-repetition", "unknown-phase", "nil-body", "result-order", "missing-result"} {
+		t.Run(name, func(t *testing.T) {
+			r := comparisonTwoSlotFixture([]float64{2, 6})
+			if name == "result-order" {
+				r.Repetitions[0].Results[2], r.Repetitions[0].Results[3] = r.Repetitions[0].Results[3], r.Repetitions[0].Results[2]
+			}
+			if name == "missing-result" {
+				r.Repetitions[0].Results = r.Repetitions[0].Results[:7]
+			}
+			input := readComparisonCellFixture(t, r)
+			switch name {
+			case "missing-request":
+				input.requests = input.requests[:len(input.requests)-1]
+			case "duplicate-request":
+				// Keep the count unchanged: one duplicate replaces a required phase.
+				input.requests[2] = input.requests[1]
+			case "missing-warmup":
+				input.requests = input.requests[1:]
+			case "duplicate-warmup":
+				input.requests[1] = input.requests[0]
+			case "wrong-warmup-repetition":
+				input.requests[0].(map[string]any)["repetition"] = 2
+			case "wrong-repetition":
+				input.requests[1].(map[string]any)["repetition"] = 3
+			case "unknown-phase":
+				input.requests[1].(map[string]any)["phase"] = "unexpected"
+			case "nil-body":
+				input.requests[1].(map[string]any)["body"] = nil
+			}
+			got := compareRuns("baseline", "candidate", input, input)
+			if got.Status != "FAIL" || len(got.Metrics) != 0 {
+				t.Fatalf("broken two-slot evidence received passing metrics: %+v", got)
+			}
+		})
+	}
+}
+
+func TestCompareNormalizationReferences(t *testing.T) {
+	for _, twoSlots := range []bool{false, true} {
+		for _, reference := range []normalizationReference{{}, {InputTokens: 1}, {GenerationTokens: 1}, {InputTokens: -1, GenerationTokens: 1}, {InputTokens: 1, GenerationTokens: -1}, {InputTokens: -1, GenerationTokens: -1}, {InputTokens: 1, GenerationTokens: 1}} {
+			t.Run(fmt.Sprintf("twoSlots=%t/%+v", twoSlots, reference), func(t *testing.T) {
+				r := comparisonFixture([]float64{2})
+				if twoSlots {
+					r = comparisonTwoSlotFixture([]float64{2})
+				}
+				r.ReferenceTokens = reference
+				r.Repetitions[0].ReferenceTokens = reference
+				// This fixture has startup metrics, so supply its saved timestamps.
+				data, err := os.ReadFile(filepath.Join(writeComparisonFixture(t, r), "events.ndjson"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, err = readCellComparison(r.summary(), r, data)
+				valid := reference.InputTokens > 0 && reference.GenerationTokens > 0 || twoSlots && reference == (normalizationReference{})
+				if (err == nil) != valid {
+					t.Fatalf("reference validation: valid=%t, err=%v", valid, err)
+				}
+			})
+		}
+	}
+}
+
+func TestCompareRejectsRepetitionSlotModeMismatch(t *testing.T) {
+	for _, twoSlots := range []bool{false, true} {
+		r := comparisonFixture([]float64{2})
+		if twoSlots {
+			r = comparisonTwoSlotFixture([]float64{2})
+		}
+		r.Repetitions[0].TwoSlots = !twoSlots
+		if _, err := readCellComparison(r.summary(), r, nil); err == nil || !strings.Contains(err.Error(), "repetition 1") {
+			t.Fatal("accepted inconsistent repetition slot mode", err)
+		}
+	}
+}
+
+func comparisonTwoSlotFixture(values []float64) report {
+	r := comparisonFixture(values)
+	r.TwoSlots = true
+	r.ID = "MoE/2s/IMC+/MTP+/img-"
+	r.ReferenceTokens = normalizationReference{}
+	r.Metadata["model"].(map[string]any)["model_config"] = map[string]any{"nseq-max": 2}
+	for i := range r.Repetitions {
+		rep := &r.Repetitions[i]
+		rep.TwoSlots = true
+		rep.ReferenceTokens = r.ReferenceTokens
+		old := rep.Results
+		rep.Results = []result{old[0], old[1], old[3], old[2], old[2], old[3], old[4], old[5]}
+		for j, phase := range []string{"cold", "replay", "fresh-session", "append", "peer-append", "survivor", "cancel", "recovery"} {
+			rep.Results[j].Phase = phase
+			rep.Results[j].TraceID = phase
+		}
+	}
+	return r
+}
+
+func readComparisonCellFixture(t *testing.T, r report) comparisonInput {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(writeComparisonFixture(t, r), "events.ndjson"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, err := readCellComparison(r.summary(), r, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return input
+}
+
+func TestCompareSharedWarmup(t *testing.T) {
+	for _, defect := range []string{"", "missing-source", "wrong-model", "failed-warmup", "duplicate-warmup"} {
+		t.Run(defect, func(t *testing.T) {
+			owner := comparisonFixture([]float64{2})
+			shared := comparisonFixture([]float64{3})
+			shared.Images = true
+			shared.SharedWarmupFrom = matrixCells[0].id
+			shared.WarmupRequest = nil
+			shared.Repetitions[0].Images = true
+			shared.Repetitions[0].SharedWarmupFrom = shared.SharedWarmupFrom
+			shared.Repetitions[0].WarmupRequest = nil
+			switch defect {
+			case "missing-source":
+				shared.SharedWarmupFrom = "missing"
+				shared.Repetitions[0].SharedWarmupFrom = "missing"
+			case "wrong-model":
+				shared.Model += "-different-configuration"
+			case "failed-warmup":
+				owner.Status, owner.Repetitions[0].Status = "FAIL", "FAIL"
+				owner.WarmupRequest.Error = "startup failed"
+				owner.Findings = []string{"warmup: startup failed"}
+				owner.Repetitions[0].Findings = owner.Findings
+			case "duplicate-warmup":
+				shared.WarmupRequest = owner.WarmupRequest
+				shared.Repetitions[0].WarmupRequest = owner.WarmupRequest
+			}
+			input, err := readComparison(writeComparisonFixture(t, owner, shared))
+			if defect == "missing-source" || defect == "wrong-model" || defect == "duplicate-warmup" {
+				if err == nil {
+					t.Fatal("accepted invalid shared startup evidence", defect)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := compareMatrices("baseline", "candidate", input, input)
+			if (got.Status == "PASS") != (defect == "") {
+				t.Fatal("incorrect shared startup verdict", got)
+			}
+			if defect == "" {
+				for _, cell := range got.Cells {
+					if cell.Cell != matrixCells[1].id {
+						continue
+					}
+					for _, metric := range cell.Metrics {
+						if strings.HasPrefix(metric.Metric, "warmup.") {
+							t.Fatal("shared cell duplicated startup measurements", metric)
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
 func comparisonFixture(values []float64) report {
 	r := report{Status: "PASS", Workload: "operations-v2", Model: modelID, ServerRevision: strings.Repeat("a", 40), TestStartedAt: "2026-10-21T16:00:00Z", HarnessRevision: "fixed-harness", MTPBackend: "qwen35-own-kv", RepetitionsRequested: len(values), evidenceValidated: true}
-	r.ReferenceTokens = referenceTokens(false, false, false)
+	r.ReferenceTokens = referenceTokens(false, false, false, false)
 	r.Metadata = map[string]any{
 		"/v1/liveness":   map[string]any{"host": "test-machine", "os": "test-os", "vcs_revision": r.ServerRevision},
 		"/v1/devices":    map[string]any{"system_ram_bytes": 24000, "gpu_total_bytes": 18000, "unified_memory": true},
@@ -635,11 +838,16 @@ func writeComparisonFixture(t *testing.T, cells ...report) string {
 			continue
 		}
 		first = cell
-		emit(map[string]any{"source": "request", "phase": "warmup", "repetition": 1, "body": map[string]any{"max_tokens": 8}})
+		if cell.WarmupRequest != nil {
+			emit(map[string]any{"source": "request", "phase": "warmup", "repetition": 1, "body": map[string]any{"max_tokens": 8}})
+		}
 		for i, rep := range cell.Repetitions {
 			for _, res := range rep.Results {
 				emit(map[string]any{"source": "request", "phase": res.Phase, "repetition": i + 1, "body": map[string]any{"seed": 42}})
 			}
+		}
+		if cell.WarmupRequest == nil {
+			continue
 		}
 		for _, e := range []map[string]any{
 			{"msg": "request started", "time": "2026-10-21T16:00:00Z"},

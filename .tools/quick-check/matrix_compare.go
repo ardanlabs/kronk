@@ -96,7 +96,7 @@ func readComparison(dir string) (matrixInput, error) {
 			return input, fmt.Errorf("duplicate cell %s", cell.ID)
 		}
 		if cell.Status == "NOT_RUN" {
-			if cs.Status != "NOT_RUN" || len(events[cell.ID]) > 0 || len(cell.Repetitions) > 0 || len(cs.Repetitions) > 0 || cs.Measurements != nil || cell.WarmupRequest != nil {
+			if cs.Status != "NOT_RUN" || len(events[cell.ID]) > 0 || len(cell.Repetitions) > 0 || len(cs.Repetitions) > 0 || cs.Measurements != nil || cell.WarmupRequest != nil || cell.SharedWarmupFrom != "" {
 				return input, fmt.Errorf("%s: NOT_RUN cell has execution evidence", cell.ID)
 			}
 			input.cells[cell.ID] = comparisonInput{summary: cs, report: cell}
@@ -109,6 +109,17 @@ func readComparison(dir string) (matrixInput, error) {
 			ci, err := readCellComparison(cs, cell, events[cell.ID])
 			if err != nil {
 				return input, fmt.Errorf("%s: %w", cell.ID, err)
+			}
+			if cell.SharedWarmupFrom != "" {
+				owner, ok := input.cells[cell.SharedWarmupFrom]
+				if !ok || owner.report.WarmupRequest == nil || owner.report.SharedWarmupFrom != "" ||
+					owner.report.Model != cell.Model || owner.report.TwoSlots != cell.TwoSlots ||
+					owner.report.NoCache != cell.NoCache || owner.report.TargetOnly != cell.TargetOnly ||
+					owner.report.MTPBackend != cell.MTPBackend {
+					return input, fmt.Errorf("%s: missing or incompatible shared warm-up source %s", cell.ID, cell.SharedWarmupFrom)
+				}
+				ci.sharedWarmupValidated = owner.summary.WarmupRequest["status"] == "PASS" && owner.report.WarmupRequest.Error == ""
+				ci.native = owner.native
 			}
 			input.cells[cell.ID] = ci
 		}

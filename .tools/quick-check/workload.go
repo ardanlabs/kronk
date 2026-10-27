@@ -53,16 +53,24 @@ func conversation(system, id, owner, destination string) []message {
 // The subject is deliberately absent from the question and data URL. Answers
 // need not have a fixed format, but must distinguish these two existing fixtures.
 func picturedConversation(messages []message, fixture string) ([]message, error) {
+	question := messages[1].Content.(string) + " Also identify the animal in the attached picture."
+	pictured, err := picturedMessage(question, fixture)
+	if err != nil {
+		return nil, err
+	}
+	return []message{messages[0], pictured}, nil
+}
+
+func picturedMessage(question, fixture string) (message, error) {
 	root := os.Getenv("GITHUB_WORKSPACE")
 	data, err := os.ReadFile(filepath.Join(root, "examples", "samples", fixture))
 	if err != nil {
-		return nil, fmt.Errorf("image fixture: %w", err)
+		return message{}, fmt.Errorf("image fixture: %w", err)
 	}
-	question := messages[1].Content.(string) + " Also identify the animal in the attached picture."
-	return []message{messages[0], {Role: "user", Content: []map[string]any{
+	return message{Role: "user", Content: []map[string]any{
 		{"type": "text", "text": question},
 		{"type": "image_url", "image_url": map[string]string{"url": "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(data)}},
-	}}}, nil
+	}}, nil
 }
 
 func checkAnswer(r result, expected, forbidden []string, targetOnly bool) error {
