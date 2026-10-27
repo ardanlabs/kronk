@@ -14,20 +14,22 @@ import (
 	"testing"
 	"time"
 
-	. "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/model"
+	. "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/imports"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/preparation"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
-	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/tmprltest"
 )
 
-type completerFunc func(context.Context, CompletionRequest) (Completion, error)
+type completerFunc func(context.Context, preparation.CompletionRequest) (preparation.Completion, error)
 
-func (f completerFunc) Complete(ctx context.Context, r CompletionRequest) (Completion, error) {
+func (f completerFunc) Complete(ctx context.Context, r preparation.CompletionRequest) (preparation.Completion, error) {
 	return f(ctx, r)
 }
 
-func livePreparation(t *testing.T, completer ModelCompleter, configure ...func(*serviceConfig)) (services, func()) {
+func livePreparation(t *testing.T, completer preparation.ModelCompleter, configure ...func(*serviceConfig)) (services, func()) {
 	t.Helper()
-	env := tmprltest.New(t)
+	env := newTestEnvironment(t)
 	cfg := serviceConfig{TaskQueue: env.TaskQueue, DatasetRoot: t.TempDir(), Completer: completer, StageTimeout: 30 * time.Second}
 	for _, option := range configure {
 		option(&cfg)
@@ -51,7 +53,7 @@ type controlledTrainer struct {
 // Make the rejected report exceed the old 64 KiB read limit.
 var incorrectAnswer = strings.Repeat("wrong ", 1500)
 
-func (t *controlledTrainer) Train(ctx context.Context, job TrainingJob, publish func(tmprl.Progress)) (TrainingCandidate, error) {
+func (t *controlledTrainer) Train(ctx context.Context, job training.TrainingJob, publish func(tmprl.Progress)) (training.TrainingCandidate, error) {
 	validationRows := t.validationRows
 	if validationRows == 0 {
 		validationRows = 20
@@ -61,36 +63,36 @@ func (t *controlledTrainer) Train(ctx context.Context, job TrainingJob, publish 
 		trainRows, validationRows = 90, 30
 	}
 	if len(job.Dataset.Test) != 0 || len(job.Dataset.Train) != trainRows || len(job.Dataset.Validation) != validationRows {
-		return TrainingCandidate{}, fmt.Errorf("wrong or leaked splits")
+		return training.TrainingCandidate{}, fmt.Errorf("wrong or leaked splits")
 	}
 	for _, record := range job.Dataset.Train {
 		if record.ValidationPrompt || record.IndependentPrompt || t.legacy && !record.UserApproved {
-			return TrainingCandidate{}, fmt.Errorf("evaluation record used for training")
+			return training.TrainingCandidate{}, fmt.Errorf("evaluation record used for training")
 		}
 	}
 	for _, record := range job.Dataset.Validation {
 		if record.IndependentPrompt || record.UserApproved || !t.legacy && !record.ValidationPrompt {
-			return TrainingCandidate{}, fmt.Errorf("protected record used for validation")
+			return training.TrainingCandidate{}, fmt.Errorf("protected record used for validation")
 		}
 	}
 	attempt := t.attempts.Add(1)
 	if t.started != nil {
 		close(t.started)
 		<-ctx.Done()
-		return TrainingCandidate{}, ctx.Err()
+		return training.TrainingCandidate{}, ctx.Err()
 	}
 	if t.retry && attempt == 1 {
-		return TrainingCandidate{}, errors.New("temporary computation failure")
+		return training.TrainingCandidate{}, errors.New("temporary computation failure")
 	}
 	publish(tmprl.Progress{Completed: 1, Total: 1, Message: "Controlled optimizer completed"})
 	path := filepath.Join(job.Workdir, "adapter.gguf")
 	if err := os.WriteFile(path, []byte("controlled adapter"), 0o600); err != nil {
-		return TrainingCandidate{}, err
+		return training.TrainingCandidate{}, err
 	}
-	return TrainingCandidate{Path: path, BestEpoch: 1, TrainingLoss: 0.7, ValidationLoss: 0.8}, nil
+	return training.TrainingCandidate{Path: path, BestEpoch: 1, TrainingLoss: 0.7, ValidationLoss: 0.8}, nil
 }
 
-func (t *controlledTrainer) Predict(ctx context.Context, job TrainingJob, adapter string, records []Record) ([]string, error) {
+func (t *controlledTrainer) Predict(ctx context.Context, job training.TrainingJob, adapter string, records []training.Record) ([]string, error) {
 	count := 20
 	if t.legacy {
 		count = 30
@@ -124,7 +126,7 @@ func trainingFixture(t *testing.T) string {
 	var source strings.Builder
 	for i := range 20 {
 		for split := range 3 {
-			r := Record{Prompt: fmt.Sprintf("Device %02d question variant %d?", i, split), Target: fmt.Sprintf("Code-%02d", i), Evidence: fmt.Sprintf("Device %02d has Code-%02d.", i, i), FactID: fmt.Sprintf("fact-%02d", i), ValidationPrompt: split == 1, IndependentPrompt: split == 2}
+			r := training.Record{Prompt: fmt.Sprintf("Device %02d question variant %d?", i, split), Target: fmt.Sprintf("Code-%02d", i), Evidence: fmt.Sprintf("Device %02d has Code-%02d.", i, i), FactID: fmt.Sprintf("fact-%02d", i), ValidationPrompt: split == 1, IndependentPrompt: split == 2}
 			if err := json.NewEncoder(&source).Encode(r); err != nil {
 				t.Fatal(err)
 			}
@@ -133,21 +135,21 @@ func trainingFixture(t *testing.T) string {
 	return source.String()
 }
 
-func trainingBusiness(t *testing.T, trainer Trainer) (services, string) {
+func trainingBusiness(t *testing.T, trainer training.Trainer) (services, string) {
 	t.Helper()
 	root := t.TempDir()
 	model := filepath.Join(root, "model.gguf")
 	if err := os.WriteFile(model, []byte("controlled model"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	b, _ := livePreparation(t, completerFunc(func(context.Context, CompletionRequest) (Completion, error) {
-		return Completion{}, errors.New("unexpected preparation computation")
+	b, _ := livePreparation(t, completerFunc(func(context.Context, preparation.CompletionRequest) (preparation.Completion, error) {
+		return preparation.Completion{}, errors.New("unexpected preparation computation")
 	}), func(cfg *serviceConfig) {
 		cfg.DatasetRoot = root
 		cfg.Models = map[string]string{"gemma": model}
 		cfg.Trainer = trainer
 	})
-	dataset, err := b.Datasets.ImportDataset(t.Context(), ImportInput{Name: "prepared.jsonl"}, strings.NewReader(trainingFixture(t)))
+	dataset, err := b.Datasets.ImportDataset(t.Context(), imports.ImportInput{Name: "prepared.jsonl"}, strings.NewReader(trainingFixture(t)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,8 +164,8 @@ func TestTemporalManagedTraining(t *testing.T) {
 		retry         bool
 	}{
 		{"accepted-boundary-with-retry", 17, 18, tmprl.StatusCompleted, true},
-		{"below-threshold", 12, 17, StatusNeedsImprovement, false},
-		{"base-regression", 19, 18, StatusNeedsImprovement, false},
+		{"below-threshold", 12, 17, training.StatusNeedsImprovement, false},
+		{"base-regression", 19, 18, training.StatusNeedsImprovement, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			trainer := &controlledTrainer{base: test.base, adapted: test.adapted, retry: test.retry}
@@ -276,7 +278,7 @@ func TestTemporalManagedLegacyTraining(t *testing.T) {
 	var source strings.Builder
 	for fact := range 30 {
 		for variant := range 5 {
-			r := Record{Prompt: fmt.Sprintf("Fact %d variant %d?", fact, variant), Target: "yes", Evidence: fmt.Sprintf("Fact %d says yes.", fact), FactID: fmt.Sprintf("fact-%d", fact), UserApproved: variant < 3}
+			r := training.Record{Prompt: fmt.Sprintf("Fact %d variant %d?", fact, variant), Target: "yes", Evidence: fmt.Sprintf("Fact %d says yes.", fact), FactID: fmt.Sprintf("fact-%d", fact), UserApproved: variant < 3}
 			if err := json.NewEncoder(&source).Encode(r); err != nil {
 				t.Fatal(err)
 			}
@@ -284,7 +286,7 @@ func TestTemporalManagedLegacyTraining(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
-	dataset, err := b.Datasets.ImportDataset(ctx, ImportInput{Name: "legacy.jsonl"}, strings.NewReader(source.String()))
+	dataset, err := b.Datasets.ImportDataset(ctx, imports.ImportInput{Name: "legacy.jsonl"}, strings.NewReader(source.String()))
 	if err != nil {
 		t.Fatal(err)
 	}

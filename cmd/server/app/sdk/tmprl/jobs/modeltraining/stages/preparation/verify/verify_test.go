@@ -6,8 +6,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/model"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/preparation"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/preparation/verify"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training"
 )
 
 type completer struct {
@@ -15,12 +16,12 @@ type completer struct {
 	err     error
 }
 
-func (c completer) Complete(context.Context, model.CompletionRequest) (model.Completion, error) {
-	return model.Completion{Content: c.content, PromptTokens: 9}, c.err
+func (c completer) Complete(context.Context, preparation.CompletionRequest) (preparation.Completion, error) {
+	return preparation.Completion{Content: c.content, PromptTokens: 9}, c.err
 }
 
 func TestRun(t *testing.T) {
-	records := []model.Record{{Prompt: "Where?", Target: "here", Evidence: "It is here."}, {Prompt: "When?", Target: "now", Evidence: "It is now."}, {Prompt: "Who?", Target: "Ada", Evidence: "Ada works."}, {Prompt: "What?", Target: "boat", Evidence: "A boat."}}
+	records := []training.Record{{Prompt: "Where?", Target: "here", Evidence: "It is here."}, {Prompt: "When?", Target: "now", Evidence: "It is now."}, {Prompt: "Who?", Target: "Ada", Evidence: "Ada works."}, {Prompt: "What?", Target: "boat", Evidence: "A boat."}}
 	for _, tc := range []struct {
 		name, response string
 		warnings       []string
@@ -35,7 +36,7 @@ func TestRun(t *testing.T) {
 		{name: "trailing", response: `{} {}`, invalid: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			warnings, usage, err := verify.Run(t.Context(), completer{content: tc.response}, model.PreparationRequest{Goal: model.GoalQuestionAnswer}, records)
+			warnings, usage, err := verify.Run(t.Context(), completer{content: tc.response}, preparation.PreparationRequest{Goal: preparation.GoalQuestionAnswer}, records)
 			if (err != nil) != tc.invalid {
 				t.Fatalf("error = %v", err)
 			}
@@ -48,7 +49,7 @@ func TestRun(t *testing.T) {
 		})
 	}
 	want := errors.New("completion failed")
-	if _, _, err := verify.Run(t.Context(), completer{err: want}, model.PreparationRequest{}, records); !errors.Is(err, want) {
+	if _, _, err := verify.Run(t.Context(), completer{err: want}, preparation.PreparationRequest{}, records); !errors.Is(err, want) {
 		t.Fatalf("error = %v", err)
 	}
 }

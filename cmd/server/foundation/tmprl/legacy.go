@@ -11,7 +11,7 @@ import (
 // LegacyInput preserves the flat-stage execution plan used before job definitions.
 type LegacyInput[R any] struct {
 	Request      R             `json:"request"`
-	Stages       []Stage       `json:"stages,omitzero"`
+	Stages       []StageName   `json:"stages,omitzero"`
 	StageTimeout time.Duration `json:"stage_timeout"`
 	JobTimeout   time.Duration `json:"job_timeout,omitzero"`
 	QueueTimeout time.Duration `json:"queue_timeout,omitzero"`
@@ -20,10 +20,10 @@ type LegacyInput[R any] struct {
 // LegacyStageRequest preserves the historical stage payload without a step field.
 type LegacyStageRequest[R, A any] struct {
 	Execution
-	Key       string `json:"key"`
-	Stage     Stage  `json:"stage"`
-	Request   R      `json:"request"`
-	Artifacts A      `json:"artifacts"`
+	Key       string    `json:"key"`
+	Stage     StageName `json:"stage"`
+	Request   R         `json:"request"`
+	Artifacts A         `json:"artifacts"`
 }
 
 // QueuedLegacyRun constructs the initial snapshot for a flat-stage plan.

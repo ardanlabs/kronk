@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/model"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/preparation"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/preparation/generate"
 )
 
@@ -14,12 +14,12 @@ type completer struct {
 	err     error
 }
 
-func (c completer) Complete(context.Context, model.CompletionRequest) (model.Completion, error) {
-	return model.Completion{Content: c.content, PromptTokens: 12, CompletionTokens: 7}, c.err
+func (c completer) Complete(context.Context, preparation.CompletionRequest) (preparation.Completion, error) {
+	return preparation.Completion{Content: c.content, PromptTokens: 12, CompletionTokens: 7}, c.err
 }
 
 func TestRun(t *testing.T) {
-	request := model.PreparationRequest{Goal: model.GoalQuestionAnswer, Model: "controlled"}
+	request := preparation.PreparationRequest{Goal: preparation.GoalQuestionAnswer, Model: "controlled"}
 	passages := []string{"The harbor opens at dawn.", "The ferry leaves at noon."}
 	valid := `{"records":[{"prompt":" When does the ferry leave? ","evidence_id":2,"target_id":1},{"prompt":"When does the harbor open?","evidence_id":1,"target_id":1}]}`
 	records, usage, err := generate.Run(t.Context(), completer{content: valid}, request, passages, nil)

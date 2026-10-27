@@ -3,7 +3,7 @@ package evaluate
 import (
 	"context"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/model"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 )
 
@@ -14,20 +14,20 @@ type Step struct{}
 func (Step) Name() string { return "evaluate" }
 
 // Execute merges the evaluation report and ends rejected pipelines.
-func (s Step) Execute(ctx context.Context, input model.StepContext) (tmprl.StepResult[model.Artifacts], error) {
+func (s Step) Execute(ctx context.Context, input training.StepContext) (tmprl.StepResult[training.Artifacts], error) {
 	output, err := Run(ctx, input.Workspace, input.Trainer, input.Job)
 	if err != nil {
-		return tmprl.StepResult[model.Artifacts]{}, err
+		return tmprl.StepResult[training.Artifacts]{}, err
 	}
 	if output.Report == "" {
-		return tmprl.StepResult[model.Artifacts]{}, model.InvalidOutput(s.Name())
+		return tmprl.StepResult[training.Artifacts]{}, training.InvalidOutput(s.Name())
 	}
-	artifacts := input.Request.Artifacts
+	artifacts := input.Artifacts
 	artifacts.Report = output.Report
 	artifacts.Accepted = output.Accepted
-	result := tmprl.StepResult[model.Artifacts]{Artifacts: artifacts}
+	result := tmprl.StepResult[training.Artifacts]{Artifacts: artifacts}
 	if !output.Accepted {
-		result.Status = model.StatusNeedsImprovement
+		result.Status = training.StatusNeedsImprovement
 	}
 	return result, nil
 }

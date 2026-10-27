@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
-	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/definition"
-	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/tmprltest"
 	"go.temporal.io/sdk/temporal"
 )
 
@@ -41,10 +39,10 @@ func TestJobsLifecycle(t *testing.T) {
 		{name: "pause-at-step-boundary-and-resume", mode: "pause", at: 2, wantStatus: tmprl.StatusCompleted, wantCompleted: 4, wantAttempts: [4]int{1, 1, 1, 1}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			env := tmprltest.New(t)
+			env := newTestEnvironment(t)
 			ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
 			defer cancel()
-			job := definition.Job{
+			job := tmprl.Job{
 				Name: "lifecycle", QueueTimeout: 30 * time.Second, ReservationTimeout: time.Minute, SessionAttempts: 1,
 			}
 			keys := []string{"first/one", "first/two", "second/one", "second/two"}
@@ -53,12 +51,12 @@ func TestJobsLifecycle(t *testing.T) {
 			entered, release := make(chan struct{}, 1), make(chan struct{})
 			handlers := make(map[string]tmprl.StepHandler[string, []string])
 			for stageIndex, name := range []string{"first", "second"} {
-				stage := definition.Stage{Name: name, Timeout: 30 * time.Second}
+				stage := tmprl.Stage{Name: name, Timeout: 30 * time.Second}
 				for stepIndex, name := range []string{"one", "two"} {
 					index := stageIndex*2 + stepIndex
-					step := definition.Step{
+					step := tmprl.Step{
 						Name: name, Timeout: 10 * time.Second, HeartbeatTimeout: 200 * time.Millisecond,
-						Retry: definition.Retry{MaximumAttempts: 3, InitialInterval: 100 * time.Millisecond, MaximumInterval: 200 * time.Millisecond, BackoffCoefficient: 2},
+						Retry: tmprl.Retry{MaximumAttempts: 3, InitialInterval: 100 * time.Millisecond, MaximumInterval: 200 * time.Millisecond, BackoffCoefficient: 2},
 					}
 					if index+1 == test.at {
 						switch test.mode {
@@ -251,20 +249,20 @@ func TestJobsApplicationIndependent(t *testing.T) {
 		{name: "application-outcome", outcome: "review_required", want: 39},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			env := tmprltest.New(t)
+			env := newTestEnvironment(t)
 			ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 			defer cancel()
-			policy := definition.Step{
+			policy := tmprl.Step{
 				Timeout: time.Minute, HeartbeatTimeout: 5 * time.Second,
-				Retry: definition.Retry{MaximumAttempts: 2, InitialInterval: time.Millisecond, MaximumInterval: time.Second, BackoffCoefficient: 2},
+				Retry: tmprl.Retry{MaximumAttempts: 2, InitialInterval: time.Millisecond, MaximumInterval: time.Second, BackoffCoefficient: 2},
 			}
 			add, multiply, subtract := policy, policy, policy
 			add.Name, multiply.Name, subtract.Name = "add", "multiply", "subtract"
-			job := definition.Job{
+			job := tmprl.Job{
 				Name: "arithmetic", QueueTimeout: time.Minute, ReservationTimeout: time.Minute, SessionAttempts: 2,
-				Stages: []definition.Stage{
-					{Name: "calculate", Timeout: time.Minute, Steps: []definition.Step{add, multiply}},
-					{Name: "finish", Timeout: time.Minute, Steps: []definition.Step{subtract}},
+				Stages: []tmprl.Stage{
+					{Name: "calculate", Timeout: time.Minute, Steps: []tmprl.Step{add, multiply}},
+					{Name: "finish", Timeout: time.Minute, Steps: []tmprl.Step{subtract}},
 				},
 			}
 			j, err := tmprl.New(env.Client, tmprl.Config[int, int]{

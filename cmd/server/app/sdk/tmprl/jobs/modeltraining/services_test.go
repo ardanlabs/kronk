@@ -4,37 +4,37 @@ import (
 	"testing"
 	"time"
 
-	modeltraining "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/dataset"
-	. "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/model"
+	. "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/imports"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/preparation"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training"
 	prepare "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/standalone/preparation"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
-	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/definition"
 	"github.com/ardanlabs/kronk/sdk/applog"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/worker"
 )
 
 type serviceConfig struct {
-	Job          *definition.Job
+	Job          *tmprl.Job
 	Steps        map[string]StepHandler
 	TaskQueue    string
 	StageTimeout time.Duration
 	JobTimeout   time.Duration
 	DatasetRoot  string
-	Extractor    DocumentExtractor
-	Completer    ModelCompleter
+	Extractor    preparation.DocumentExtractor
+	Completer    preparation.ModelCompleter
 	Models       map[string]string
-	Trainer      Trainer
-	Backend      modeltraining.Backend
+	Trainer      training.Trainer
+	Backend      Backend
 	LlamaServer  string
 	LegacySteps  []TrainingStep
 }
 
 type services struct {
-	Datasets    *dataset.Business
+	Datasets    *imports.Business
 	Preparation *prepare.Business
-	Training    *modeltraining.Business
+	Training    *Business
 }
 
 func newServices(t *testing.T, c client.Client, cfg serviceConfig) services {
@@ -42,7 +42,7 @@ func newServices(t *testing.T, c client.Client, cfg serviceConfig) services {
 	if cfg.DatasetRoot == "" {
 		cfg.DatasetRoot = t.TempDir()
 	}
-	d, err := dataset.New(dataset.Config{DatasetRoot: cfg.DatasetRoot})
+	d, err := imports.New(imports.Config{DatasetRoot: cfg.DatasetRoot})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func newServices(t *testing.T, c client.Client, cfg serviceConfig) services {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := modeltraining.New(c, modeltraining.Config{Job: cfg.Job, Steps: cfg.Steps, TaskQueue: cfg.TaskQueue, StageTimeout: cfg.StageTimeout, JobTimeout: cfg.JobTimeout, Datasets: d, Preparation: p, Backend: cfg.Backend, Models: cfg.Models, Trainer: cfg.Trainer, LlamaServer: cfg.LlamaServer, Progress: progress, LegacySteps: cfg.LegacySteps, Log: applog.DiscardLogger})
+	b, err := New(c, Config{Job: cfg.Job, Steps: cfg.Steps, TaskQueue: cfg.TaskQueue, StageTimeout: cfg.StageTimeout, JobTimeout: cfg.JobTimeout, Datasets: d, Preparation: p, Backend: cfg.Backend, Models: cfg.Models, Trainer: cfg.Trainer, LlamaServer: cfg.LlamaServer, Progress: progress, LegacySteps: cfg.LegacySteps, Log: applog.DiscardLogger})
 	if err != nil {
 		t.Fatal(err)
 	}

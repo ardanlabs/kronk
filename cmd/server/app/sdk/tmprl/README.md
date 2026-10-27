@@ -1,5 +1,12 @@
 # Jobs, stages, and steps
 
+The new implementation lives in [`jobs/training`](jobs/training/README.md).
+It uses foundation's runner directly, with no dependency on `jobs/modeltraining`.
+The latter remains a reference while the new job is reviewed. The sections below
+describe that reference implementation, not the new job's public API.
+
+## Reference implementation
+
 Reusable Temporal execution belongs to
 [`cmd/server/foundation/tmprl`](../../../foundation/tmprl/README.md): worker
 reservations, scheduling, retries/timeouts, controls, snapshots, polling,
@@ -8,9 +15,9 @@ the training definition, requests/artifacts, model/data resources, and computati
 The foundation does not import this tree or know any training stage/step names.
 See its README for adding an unrelated job without copying Temporal plumbing.
 Application APIs use foundation types directly: `tmprl.Execution`, `tmprl.Status`,
-`tmprl.Progress`, `tmprl.Run[model.Request, model.Artifacts]`, and
-`tmprl.StepResult[model.Artifacts]`. The embedded loader returns foundation's
-`definition.Job`; application packages do not re-export these types with aliases.
+`tmprl.Progress`, `tmprl.Run[modeltraining.Request, modeltraining.Artifacts]`, and
+`tmprl.StepResult[modeltraining.Artifacts]`. The embedded loader returns foundation's
+`tmprl.Job`; application packages do not re-export these types with aliases.
 
 ## Package layout
 
@@ -18,15 +25,14 @@ Application APIs use foundation types directly: `tmprl.Execution`, `tmprl.Status
 tmprl/
 └── jobs/
     └── modeltraining/     # One job: submission, controls, and resource wiring
-        ├── dataset/      # Job-owned storage, validation, and split policy
+        ├── imports/      # Immutable uploads, metadata, and verified source identity
         ├── definition/   # Embedded job YAML
-        ├── model/        # Job-wide requests, artifacts, and contracts
         ├── providers/
         │   ├── preparation/  # Model-completion client
         │   └── training/     # GoMLX / llama-server integration
         ├── stages/
-        │   ├── preparation/  # Stage engine; extract, generate, verify steps
-        │   └── training/     # split, train, evaluate, publish steps
+        │   ├── preparation/  # Preparation contracts; extract, generate, verify steps
+        │   └── training/     # Records, split policy; split, train, evaluate, publish
         └── standalone/
             └── preparation/  # Optional preparation/preview workflow APIs
 ```
@@ -36,9 +42,24 @@ foundation's Temporal runner. Its definition, models, datasets, and providers
 are job-specific, not shared infrastructure for unrelated jobs. Providers perform
 computation, not scheduling. Stage packages own computation and checkpoints.
 The standalone preparation/preview adapter preserves the independent APIs and
-delegates to the same preparation-stage engine; it is not a second stage or a
+coordinates the same concrete preparation steps; it is not a second stage or a
 second job required by the combined operation. Nothing in a stage imports the
 whole-job package or the standalone workflow adapter.
+
+Types live with their owners, without type aliases or a common model package:
+`imports` owns upload metadata and source identities; `preparation` owns document
+requests/results and completion/extraction contracts; `training` owns records,
+record validation, JSONL I/O, split policy and trainer contracts; `evaluate` owns
+evaluation reports. Importing prepared JSONL uses training's record validation and
+readiness policy rather than defining another record model. Preparation generates
+`training.Record` values because training owns the format it accepts.
+
+The `modeltraining` package defines whole-job requests, combined artifacts and
+custom job-step contracts directly. Its adapters merge stage-local results into
+the combined artifacts, preserving outputs from the other stage. Built-in steps
+accept their stage's own `StepContext` and return its own `Artifacts`; they do not
+depend on whole-job request types. Generic reading/persistence uses foundation
+directly rather than application forwarding wrappers.
 
 `jobs/modeltraining/definition/job.yaml` is the single embedded execution definition.
 It is compiled into the binary with `go:embed`; changes require a rebuild.
@@ -71,7 +92,7 @@ hyperparameters remain per-job inputs, not execution policy.
 
 ## Hosting workers
 
-Construct the dataset, preparation and training services, then start the
+Construct the imports, standalone preparation and model-training services, then start the
 training service's `NewWorker`. The combined job calls preparation implementations
 directly in its reserved worker; **no preparation worker or child workflow is
 needed**. Stop workers before closing the borrowed Temporal client. Worker options enable sessions with capacity
@@ -160,7 +181,7 @@ metadata-only list entries; use `Get` for their details and exact domain outcome
 
 Edit the ordered stages/steps and policies in `jobs/modeltraining/definition/job.yaml`.
 Stages are declarative groups, not additional code interfaces. Implement
-`model.StepHandler.Execute(context.Context, model.StepContext)` for a new operation
+`modeltraining.StepHandler.Execute(context.Context, modeltraining.StepContext)` for a new operation
 and register it in `Config.Steps` by `"stage/step"` (or in `builtinSteps` for a
 built-in operation). The registry supplies capabilities only; it never supplies
 execution order. Removing a step from YAML removes it from new jobs. No workflow
@@ -173,7 +194,7 @@ artifacts, `Workspace` is the confined per-step workspace, and `Publish` reports
 progress. Built-in training adapters additionally resolve scratch training jobs,
 records, trainer and input fingerprints. Do not close these resources or retain
 them after `Execute` returns. Preserve incoming artifacts, merge your outputs,
-validate them, and return `tmprl.StepResult[model.Artifacts]`. Empty status continues; `completed` or
+validate them, and return `tmprl.StepResult[modeltraining.Artifacts]`. Empty status continues; `completed` or
 `needs_improvement` ends the pipeline. Return invalid outputs as nonretryable
 errors. Honor context cancellation and deduplicate external side effects with
 `JobStep.Key` (`run/stage/step`), because activities provide at-least-once execution.
@@ -197,7 +218,7 @@ example/question generation, and `verify` owns verification and final dataset
 publication. Their private checkpoint package shares only the durable format,
 identity checks and bounds validation; it does not dispatch or execute steps.
 Both the combined job and standalone preparation APIs invoke these handlers.
-Preparation adapters supply `StepContext.Preparation` with borrowed document
+Preparation adapters supply `preparation.StepContext.Preparation` with borrowed document
 resources; handlers preserve incoming artifacts and verification merges its result.
 
 The original `Start` API uses `Config.LegacySteps` (default: `DefaultSteps`) for
@@ -207,7 +228,7 @@ they do not define YAML stages. The split step is named `split`; only the legacy
 boundary maps it to its original `prepare` identity. Original workflow histories
 and v1 preparation checkpoints keep their existing recovery semantics.
 New callers should use `StartJob`, `StepHandler`, `StepContext`, and foundation's
-`tmprl.StepResult[model.Artifacts]`.
+`tmprl.StepResult[modeltraining.Artifacts]`.
 Legacy Go timeout overrides apply only to legacy APIs; YAML controls new jobs.
 
 ## Diagnostics and tests

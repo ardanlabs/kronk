@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	trainingdefinition "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/definition"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/model"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/preparation"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
-	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/definition"
 )
 
 func jobNames() tmprl.Names {
@@ -40,15 +40,15 @@ func (b *Business) configureJob() error {
 	b.jobs, err = tmprl.New(b.client, tmprl.Config[Request, Artifacts]{
 		Names: jobNames(), TaskQueue: b.cfg.TaskQueue,
 		StorageRoot: b.cfg.Datasets.Root(), StorageDirectory: "training",
-		Steps: b.jobSteps(), Outcomes: []tmprl.Status{StatusNeedsImprovement},
+		Steps: b.jobSteps(), Outcomes: []tmprl.Status{training.StatusNeedsImprovement},
 		Log: b.cfg.Log, Progress: b.progress,
 		ResultActivities: []string{SessionActivityName}, ArtifactActivities: []string{ActivityName},
 	})
 	if err != nil {
-		return model.ExecutionError(err)
+		return ExecutionError(err)
 	}
 	if err := b.jobs.ValidatePlan(job); err != nil {
-		return model.ExecutionError(err)
+		return ExecutionError(err)
 	}
 	b.enabled = b.enabled || len(b.cfg.Steps) > 0
 	return nil
@@ -57,10 +57,10 @@ func (b *Business) configureJob() error {
 // StartJob submits the YAML-defined job. Preparation and training execute in
 // one reserved worker, with one Temporal activity per step. Get, List, Pause,
 // Resume, Stop and Wait use the returned execution identity.
-func (b *Business) StartJob(ctx context.Context, input model.JobRequest) (tmprl.Run[model.Request, model.Artifacts], error) {
+func (b *Business) StartJob(ctx context.Context, input JobRequest) (tmprl.Run[Request, Artifacts], error) {
 	r := Request{ID: strings.TrimSpace(input.ID), Model: strings.TrimSpace(input.Model), Training: input.Training, DatasetID: strings.TrimSpace(input.DatasetID), Preparation: input.Preparation, Prepare: input.Prepare}
-	if r.Training == (Training{}) {
-		r.Training = Training{MaximumEpochs: 3, BatchSize: 2, LearningRate: 0.0002, Seed: 3407}
+	if r.Training == (training.Training{}) {
+		r.Training = training.Training{MaximumEpochs: 3, BatchSize: 2, LearningRate: 0.0002, Seed: 3407}
 	}
 	if r.Training.LoRARank == 0 {
 		r.Training.LoRARank = 8
@@ -69,17 +69,17 @@ func (b *Business) StartJob(ctx context.Context, input model.JobRequest) (tmprl.
 		r.Training.LoRAAlpha = 8
 	}
 	if err := b.validateTraining(r); err != nil {
-		return tmprl.Run[model.Request, model.Artifacts]{}, err
+		return tmprl.Run[Request, Artifacts]{}, err
 	}
 	if r.Prepare != nil {
-		prepared, err := b.cfg.Preparation.ValidateRequest(ctx, *r.Prepare, model.PreparationFull)
+		prepared, err := b.cfg.Preparation.ValidateRequest(ctx, *r.Prepare, preparation.PreparationFull)
 		if err != nil {
-			return tmprl.Run[model.Request, model.Artifacts]{}, err
+			return tmprl.Run[Request, Artifacts]{}, err
 		}
 		prepared.ID = ""
 		r.Prepare = &prepared
 	} else if _, err := b.trainingRecords(ctx, r); err != nil {
-		return tmprl.Run[model.Request, model.Artifacts]{}, err
+		return tmprl.Run[Request, Artifacts]{}, err
 	}
 	if r.ID == "" {
 		r.ID = "training-" + rand.Text()
@@ -92,8 +92,8 @@ func (b *Business) StartJob(ctx context.Context, input model.JobRequest) (tmprl.
 	// Already-prepared data deliberately skips the preparation stage. Its steps
 	// must not fabricate or overwrite the supplied dataset.
 	if r.Prepare == nil {
-		job.Stages = slices.DeleteFunc(job.Stages, func(stage definition.Stage) bool { return stage.Name == "preparation" })
+		job.Stages = slices.DeleteFunc(job.Stages, func(stage tmprl.Stage) bool { return stage.Name == "preparation" })
 	}
 	state, err := b.jobs.Submit(ctx, r.ID, tmprl.JobInput[Request]{Job: &job, Request: r})
-	return state, model.ExecutionError(err)
+	return state, ExecutionError(err)
 }

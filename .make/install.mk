@@ -177,7 +177,7 @@ LOKI       := grafana/loki:3.7.9
 ALLOY      := grafana/alloy:v1.21.2
 DOCLING    := quay.io/docling-project/docling-serve:v1.38.1
 
-# Keep these values in sync with cmd/server/foundation/tmprl/tmprltest/docker.go.
+# Keep these values in sync with cmd/server/foundation/tmprl/docker_test.go.
 TMPRL_TEST_IMAGE := temporalio/temporal:1.9.1
 TMPRL_TEST_CONTAINER := moxie-tmprl-test
 

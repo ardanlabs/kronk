@@ -7,31 +7,32 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/model"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training/evaluate"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training/train"
 )
 
 // Run requires agreement between the workflow and persisted evaluation report
 // before publishing an adapter in the caller-owned workspace.
-func Run(ctx context.Context, workspace *os.Root, incoming model.Artifacts) (model.Artifacts, error) {
+func Run(ctx context.Context, workspace *os.Root, incoming training.Artifacts) (training.Artifacts, error) {
 	file, err := workspace.Open("candidate.gguf")
 	if err != nil {
-		return model.Artifacts{}, err
+		return training.Artifacts{}, err
 	}
 	defer file.Close()
 	data, err := workspace.ReadFile("evaluation.json")
 	if err != nil {
-		return model.Artifacts{}, err
+		return training.Artifacts{}, err
 	}
-	var report model.EvaluationReport
+	var report evaluate.EvaluationReport
 	if err := json.Unmarshal(data, &report); err != nil {
-		return model.Artifacts{}, err
+		return training.Artifacts{}, err
 	}
 	if !report.Accepted || !incoming.Accepted {
-		return model.Artifacts{}, model.InvalidOutput(string(model.StagePublish))
+		return training.Artifacts{}, training.InvalidOutput("publish")
 	}
 	if err := train.CopyArtifact(ctx, workspace, "adapter.gguf", file); err != nil {
-		return model.Artifacts{}, err
+		return training.Artifacts{}, err
 	}
-	return model.Artifacts{Adapter: filepath.Join(workspace.Name(), "adapter.gguf")}, nil
+	return training.Artifacts{Adapter: filepath.Join(workspace.Name(), "adapter.gguf")}, nil
 }

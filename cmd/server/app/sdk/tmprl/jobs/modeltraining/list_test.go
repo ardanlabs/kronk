@@ -8,7 +8,7 @@ import (
 	"time"
 
 	modeltraining "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/model"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 	"github.com/stretchr/testify/mock"
 	commonpb "go.temporal.io/api/common/v1"
@@ -71,7 +71,7 @@ func TestListStatusFiltering(t *testing.T) {
 		{name: "all", want: []tmprl.Status{tmprl.StatusRunning, tmprl.StatusCompleted, tmprl.StatusStopped, tmprl.StatusFailed}},
 		{name: "terminal", statuses: []tmprl.Status{tmprl.StatusStopped, tmprl.StatusFailed}, want: []tmprl.Status{tmprl.StatusStopped, tmprl.StatusFailed}},
 		{name: "empty-page", statuses: []tmprl.Status{tmprl.StatusPaused}},
-		{name: "all-known-statuses", statuses: []tmprl.Status{tmprl.StatusQueued, tmprl.StatusRecovering, tmprl.StatusRunning, tmprl.StatusPauseRequested, tmprl.StatusPaused, tmprl.StatusCompleted, modeltraining.StatusNeedsImprovement, tmprl.StatusStopped, tmprl.StatusFailed}, want: []tmprl.Status{tmprl.StatusRunning, tmprl.StatusCompleted, tmprl.StatusStopped, tmprl.StatusFailed}},
+		{name: "all-known-statuses", statuses: []tmprl.Status{tmprl.StatusQueued, tmprl.StatusRecovering, tmprl.StatusRunning, tmprl.StatusPauseRequested, tmprl.StatusPaused, tmprl.StatusCompleted, training.StatusNeedsImprovement, tmprl.StatusStopped, tmprl.StatusFailed}, want: []tmprl.Status{tmprl.StatusRunning, tmprl.StatusCompleted, tmprl.StatusStopped, tmprl.StatusFailed}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var infos []*workflowpb.WorkflowExecutionInfo
@@ -118,13 +118,13 @@ func TestListSnapshotsAndTerminalStatus(t *testing.T) {
 		{name: "queued", logical: tmprl.StatusQueued, lifecycle: enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING, want: tmprl.StatusQueued},
 		{name: "paused", logical: tmprl.StatusPaused, lifecycle: enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING, want: tmprl.StatusPaused},
 		{name: "recovering", logical: tmprl.StatusRecovering, lifecycle: enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING, want: tmprl.StatusRecovering},
-		{name: "rejected", logical: modeltraining.StatusNeedsImprovement, lifecycle: enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED, want: modeltraining.StatusNeedsImprovement},
+		{name: "rejected", logical: training.StatusNeedsImprovement, lifecycle: enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED, want: training.StatusNeedsImprovement},
 		{name: "stale-running-canceled", logical: tmprl.StatusRunning, lifecycle: enumspb.WORKFLOW_EXECUTION_STATUS_CANCELED, want: tmprl.StatusStopped},
 		{name: "stale-paused-terminated", logical: tmprl.StatusPaused, lifecycle: enumspb.WORKFLOW_EXECUTION_STATUS_TERMINATED, want: tmprl.StatusFailed},
 		{name: "stale-running-completed", logical: tmprl.StatusRunning, lifecycle: enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED, want: tmprl.StatusCompleted},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			snapshot := tmprl.Run[model.Request, model.Artifacts]{
+			snapshot := tmprl.Run[modeltraining.Request, modeltraining.Artifacts]{
 				Status: test.logical, Request: modeltraining.Request{Model: "model-from-snapshot"}, Stage: modeltraining.StageTrain,
 				Stages: []tmprl.StageState{{Name: modeltraining.StageSplit, Status: tmprl.StatusCompleted}, {Name: modeltraining.StageTrain, Status: tmprl.StatusRunning}},
 			}

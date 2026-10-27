@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	modeltraining "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining"
-	. "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/model"
+	. "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining"
 	provider "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/providers/training"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training"
 	prepare "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/standalone/preparation"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
@@ -23,14 +23,12 @@ import (
 )
 
 const (
-	workflowName            = modeltraining.WorkflowName
-	activityName            = modeltraining.ActivityName
-	stateQuery              = modeltraining.StateQuery
-	controlSignal           = modeltraining.ControlSignal
+	workflowName            = WorkflowName
+	activityName            = ActivityName
+	stateQuery              = StateQuery
+	controlSignal           = ControlSignal
 	preparationWorkflowName = prepare.WorkflowName
 )
-
-type workflowInput = modeltraining.Input
 
 type backendFunc func(context.Context, LegacyStepRequest, func(tmprl.Progress)) (Artifacts, error)
 
@@ -39,7 +37,7 @@ func (f backendFunc) RunStage(ctx context.Context, r LegacyStepRequest, p func(t
 }
 
 func request(model string) Request {
-	return Request{Sources: []string{"document-a", "document-b"}, Model: model, Output: "output-a", Training: Training{MaximumEpochs: 7, BatchSize: 3, LearningRate: 0.0002, Seed: 19}}
+	return Request{Sources: []string{"document-a", "document-b"}, Model: model, Output: "output-a", Training: training.Training{MaximumEpochs: 7, BatchSize: 3, LearningRate: 0.0002, Seed: 19}}
 }
 
 func TestInvalidInputs(t *testing.T) {
@@ -134,7 +132,7 @@ func TestTrainerStartupDiagnostics(t *testing.T) {
 		t.Fatal(err)
 	}
 	trainer := provider.NewGoMLX(executable)
-	_, err := trainer.Predict(t.Context(), TrainingJob{Model: "model.gguf"}, "adapter.gguf", []Record{{Prompt: "Question?"}})
+	_, err := trainer.Predict(t.Context(), training.TrainingJob{Model: "model.gguf"}, "adapter.gguf", []training.Record{{Prompt: "Question?"}})
 	if err == nil || !strings.Contains(err.Error(), "GGUF adapter rejected") || len(err.Error()) > 4300 {
 		t.Fatalf("missing or unbounded startup diagnostics: %v", err)
 	}
@@ -169,7 +167,7 @@ func TestRealGemmaPredictionContext(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			prompt := strings.Repeat("hello ", test.words) + "Reply with only the word OK."
-			answers, err := trainer.Predict(t.Context(), TrainingJob{Model: model}, "", []Record{{Prompt: prompt}})
+			answers, err := trainer.Predict(t.Context(), training.TrainingJob{Model: model}, "", []training.Record{{Prompt: prompt}})
 			if test.tooLong {
 				if !errors.Is(err, ErrInvalidArgument) {
 					t.Fatalf("oversized question not rejected as invalid input: %v", err)

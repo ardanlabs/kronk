@@ -8,12 +8,16 @@ It has no dependency on application jobs, datasets, models, or training provider
 An application supplies:
 
 1. Its request and artifact types: `R` and `A`.
-2. An ordered `definition.Job`, normally parsed from application-owned embedded
-   YAML with `definition.Parse`. The foundation supplies the schema and strict
+2. An ordered `tmprl.Job`, normally parsed from application-owned embedded
+   YAML with `tmprl.ParseJob`. The foundation supplies the schema and strict
    validation, not a default job or model-specific execution policy.
 3. `StepHandler[R, A]` implementations registered by `"stage/step"`.
 4. `Config[R, A]`: stable Temporal protocol names, task queue, shared storage
    location, logger, and any application-specific terminal outcomes.
+
+`Job`, `Stage`, `Step`, and `Retry` are concrete models in this package.
+`StageName` is the string identifier used in progress and execution snapshots;
+`Stage` is the configuration containing a timeout and ordered steps.
 
 Construct `Jobs[R, A]` with `New`, start its `NewWorker`, and call
 `Submit(ctx, id, JobInput[R]{Job: &plan, Request: request})`. The application owns
@@ -61,19 +65,25 @@ Keep implementations available while submitted plans still reference them.
 
 ## Existing integrations
 
-Model training keeps its YAML, computation contracts, input validation, model
-resources, and built-in step registry under `app/sdk/tmprl`. It uses foundation
-execution, state, result, and definition types directly, parameterized by its
-own request and artifact types. Serialized payload shapes stay unchanged. Small
-application adapters retain historical workflow names and old payload dispatch.
-`legacy.go` preserves flat-stage session command ordering for those histories;
-new integrations use `JobInput` and the YAML hierarchy, not `LegacyInput`.
+The new [`training` job](../../app/sdk/tmprl/jobs/training/README.md) uses `Jobs`
+directly for worker registration, workflow execution, controls and state. Its
+application code supplies the embedded YAML, request/artifact types, business
+validation and concrete step resources. It does not implement its own workflow
+or activity runner, or depend on the older `modeltraining` reference tree.
+
+The reference implementation still uses `legacy.go` for its earlier flat-stage
+session protocol. That compatibility code is not used by the new training job;
+new integrations use `JobInput` and the YAML hierarchy.
 
 Low-level `Start`, `Signal`, `Stop`, `Wait`, `Query`, `History`, `Heartbeat`, and
 `ProgressBroker` remain available for workflows outside the job runner.
-`tmprltest` supplies shared real-Temporal test infrastructure with isolated queues
-and execution cleanup. `jobs_test.go` demonstrates an unrelated arithmetic job
-with scalar requests/artifacts and a custom terminal outcome.
+All foundation tests and their helpers live directly in this directory as
+`package tmprl_test` in `_test.go` files. `docker_test.go` starts or reuses the
+static test container; `tmprl_test.go` owns isolated clients/queues, buffered logs,
+execution cleanup, and tests of that lifecycle. There is no importable test-helper
+package. Application tests remain in their own directories with local test-only
+setup. `jobs_test.go` demonstrates an unrelated arithmetic job with scalar
+requests/artifacts and a custom terminal outcome.
 
 Run both infrastructure and application tests with `make test-tmprl`. They use
 controlled computation against Temporal, not native model training, unless the

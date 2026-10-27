@@ -4,7 +4,7 @@ package definition
 import (
 	_ "embed"
 
-	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/definition"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 )
 
 // jobYAML is immutable embedded source, never a cached decoded job.
@@ -13,6 +13,6 @@ import (
 var jobYAML string
 
 // Load parses the embedded job, returning fresh, caller-owned stages and steps.
-func Load() (definition.Job, error) {
-	return definition.Parse([]byte(jobYAML))
+func Load() (tmprl.Job, error) {
+	return tmprl.ParseJob([]byte(jobYAML))
 }

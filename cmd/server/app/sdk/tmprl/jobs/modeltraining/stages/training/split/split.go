@@ -9,31 +9,31 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/dataset"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/model"
 	provider "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/providers/training"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training"
+	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 	"go.temporal.io/sdk/temporal"
 )
 
 // State is the persisted split identity shared by subsequent training steps.
 type State struct {
-	Fingerprint string                `json:"fingerprint"`
-	Dataset     model.TrainingDataset `json:"dataset"`
+	Fingerprint string                   `json:"fingerprint"`
+	Dataset     training.TrainingDataset `json:"dataset"`
 }
 
 // Run checks model context support and publishes the immutable split identity.
 // The caller owns workspace and supplies the fingerprint of its resolved inputs.
-func Run(ctx context.Context, workspace *os.Root, trainer model.Trainer, job model.TrainingJob, records []model.Record, fingerprint string) (model.Artifacts, error) {
-	splits, err := dataset.Split(records)
+func Run(ctx context.Context, workspace *os.Root, trainer training.Trainer, job training.TrainingJob, records []training.Record, fingerprint string) (training.Artifacts, error) {
+	splits, err := training.Split(records)
 	if err != nil {
-		return model.Artifacts{}, temporal.NewNonRetryableApplicationError(err.Error(), "invalid-training", err)
+		return training.Artifacts{}, temporal.NewNonRetryableApplicationError(err.Error(), "invalid-training", err)
 	}
 	job.Dataset = splits
 	if err := provider.Preflight(ctx, trainer, job); err != nil {
-		if errors.Is(err, model.ErrInvalidArgument) {
-			return model.Artifacts{}, temporal.NewNonRetryableApplicationError(err.Error(), "invalid-training", err)
+		if errors.Is(err, training.ErrInvalidArgument) {
+			return training.Artifacts{}, temporal.NewNonRetryableApplicationError(err.Error(), "invalid-training", err)
 		}
-		return model.Artifacts{}, err
+		return training.Artifacts{}, err
 	}
 	state := State{Fingerprint: fingerprint, Dataset: splits}
 	if data, err := workspace.ReadFile("dataset.json"); err == nil {
@@ -41,16 +41,16 @@ func Run(ctx context.Context, workspace *os.Root, trainer model.Trainer, job mod
 			Fingerprint string `json:"fingerprint"`
 		}
 		if err := json.Unmarshal(data, &previous); err != nil {
-			return model.Artifacts{}, err
+			return training.Artifacts{}, err
 		}
 		if previous.Fingerprint != fingerprint {
-			return model.Artifacts{}, fmt.Errorf("training input changed")
+			return training.Artifacts{}, fmt.Errorf("training input changed")
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return model.Artifacts{}, err
+		return training.Artifacts{}, err
 	}
-	if err := dataset.WriteJSON(workspace, "dataset.json", state); err != nil {
-		return model.Artifacts{}, err
+	if err := tmprl.WriteJSON(workspace, "dataset.json", state); err != nil {
+		return training.Artifacts{}, err
 	}
-	return model.Artifacts{Dataset: filepath.Join(workspace.Name(), "dataset.json")}, nil
+	return training.Artifacts{Dataset: filepath.Join(workspace.Name(), "dataset.json")}, nil
 }

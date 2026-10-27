@@ -10,21 +10,22 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/model"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/imports"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/preparation"
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/preparation/extract"
 )
 
 type extractor struct {
 	profile string
-	convert func(context.Context, string) (model.Document, error)
+	convert func(context.Context, string) (preparation.Document, error)
 }
 
 func (e extractor) ExtractionProfile() string { return e.profile }
-func (e extractor) Convert(ctx context.Context, path string) (model.Document, error) {
+func (e extractor) Convert(ctx context.Context, path string) (preparation.Document, error) {
 	return e.convert(ctx, path)
 }
 
-func roots(t *testing.T, format, content string) (*os.Root, *os.Root, model.PreparationSource) {
+func roots(t *testing.T, format, content string) (*os.Root, *os.Root, imports.PreparationSource) {
 	t.Helper()
 	source, err := os.OpenRoot(t.TempDir())
 	if err != nil {
@@ -42,7 +43,7 @@ func roots(t *testing.T, format, content string) (*os.Root, *os.Root, model.Prep
 	if err := source.WriteFile("imports/doc/source"+format, []byte(content), 0600); err != nil {
 		t.Fatal(err)
 	}
-	return source, workspace, model.PreparationSource{ID: "doc", Format: format, SHA256: fmt.Sprintf("%x", sha256.Sum256([]byte(content)))}
+	return source, workspace, imports.PreparationSource{ID: "doc", Format: format, SHA256: fmt.Sprintf("%x", sha256.Sum256([]byte(content)))}
 }
 
 func TestRunText(t *testing.T) {
@@ -78,9 +79,9 @@ func TestRunText(t *testing.T) {
 
 func TestRunConversion(t *testing.T) {
 	source, workspace, info := roots(t, ".pdf", "private source bytes")
-	want := model.Document{Markdown: "Converted evidence.", StructuredJSON: json.RawMessage(`{"texts":[]}`)}
+	want := preparation.Document{Markdown: "Converted evidence.", StructuredJSON: json.RawMessage(`{"texts":[]}`)}
 	var snapshot string
-	e := extractor{profile: "v1", convert: func(ctx context.Context, path string) (model.Document, error) {
+	e := extractor{profile: "v1", convert: func(ctx context.Context, path string) (preparation.Document, error) {
 		snapshot = path
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -99,7 +100,7 @@ func TestRunConversion(t *testing.T) {
 		t.Fatalf("snapshot not cleaned up: %v", err)
 	}
 	failure := errors.New("conversion failed")
-	e.convert = func(context.Context, string) (model.Document, error) { return model.Document{}, failure }
+	e.convert = func(context.Context, string) (preparation.Document, error) { return preparation.Document{}, failure }
 	if _, err := extract.Run(t.Context(), e, info, source, workspace); err != nil {
 		t.Fatalf("cached conversion retried: %v", err)
 	}

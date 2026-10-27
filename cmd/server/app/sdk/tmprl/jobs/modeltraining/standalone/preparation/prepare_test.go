@@ -16,13 +16,13 @@ import (
 	"testing"
 	"time"
 
-	training "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/dataset"
-	. "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/model"
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/preparation"
+	modeltraining "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/imports"
+	. "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/preparation"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training/evaluate"
 	prepare "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/standalone/preparation"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
-	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/tmprltest"
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/mocks"
@@ -37,9 +37,9 @@ func (f completerFunc) Complete(ctx context.Context, r CompletionRequest) (Compl
 }
 
 type preparationFixture struct {
-	Datasets    *dataset.Business
+	Datasets    *imports.Business
 	Preparation *prepare.Business
-	Training    *training.Business
+	Training    *modeltraining.Business
 	Worker      worker.Worker
 }
 
@@ -49,12 +49,12 @@ type preparationOptions struct {
 	Completer   ModelCompleter
 	Extractor   DocumentExtractor
 	Models      map[string]string
-	Trainer     Trainer
+	Trainer     training.Trainer
 }
 
 func newPreparationFixture(t *testing.T, c client.Client, cfg preparationOptions) *preparationFixture {
 	t.Helper()
-	datasets, err := dataset.New(dataset.Config{DatasetRoot: cfg.DatasetRoot})
+	datasets, err := imports.New(imports.Config{DatasetRoot: cfg.DatasetRoot})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func newPreparationFixture(t *testing.T, c client.Client, cfg preparationOptions
 	if cfg.TaskQueue != "" {
 		trainingQueue = cfg.TaskQueue + "-training"
 	}
-	trainingService, err := training.New(c, training.Config{TaskQueue: trainingQueue, StageTimeout: 30 * time.Second, Datasets: datasets, Preparation: preparation, Models: cfg.Models, Trainer: cfg.Trainer, Progress: progress})
+	trainingService, err := modeltraining.New(c, modeltraining.Config{TaskQueue: trainingQueue, StageTimeout: 30 * time.Second, Datasets: datasets, Preparation: preparation, Models: cfg.Models, Trainer: cfg.Trainer, Progress: progress})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func newPreparationFixture(t *testing.T, c client.Client, cfg preparationOptions
 
 func livePreparation(t *testing.T, completer ModelCompleter, configure ...func(*preparationOptions)) (*preparationFixture, func()) {
 	t.Helper()
-	env := tmprltest.New(t)
+	env := newTestEnvironment(t)
 	root := t.TempDir()
 	cfg := preparationOptions{TaskQueue: env.TaskQueue, DatasetRoot: root, Completer: completer}
 	for _, option := range configure {
@@ -117,29 +117,29 @@ type controlledTrainer struct {
 	validationRows int
 }
 
-func (t *controlledTrainer) Train(ctx context.Context, job TrainingJob, publish func(tmprl.Progress)) (TrainingCandidate, error) {
+func (t *controlledTrainer) Train(ctx context.Context, job training.TrainingJob, publish func(tmprl.Progress)) (training.TrainingCandidate, error) {
 	if len(job.Dataset.Test) != 0 || len(job.Dataset.Train) != 20 || len(job.Dataset.Validation) != t.validationRows {
-		return TrainingCandidate{}, fmt.Errorf("wrong or leaked splits")
+		return training.TrainingCandidate{}, fmt.Errorf("wrong or leaked splits")
 	}
 	for _, record := range job.Dataset.Train {
 		if record.ValidationPrompt || record.IndependentPrompt {
-			return TrainingCandidate{}, fmt.Errorf("evaluation record used for training")
+			return training.TrainingCandidate{}, fmt.Errorf("evaluation record used for training")
 		}
 	}
 	for _, record := range job.Dataset.Validation {
 		if record.IndependentPrompt || record.UserApproved || !record.ValidationPrompt {
-			return TrainingCandidate{}, fmt.Errorf("protected record used for validation")
+			return training.TrainingCandidate{}, fmt.Errorf("protected record used for validation")
 		}
 	}
 	publish(tmprl.Progress{Completed: 1, Total: 1, Message: "Controlled optimizer completed"})
 	path := filepath.Join(job.Workdir, "adapter.gguf")
 	if err := os.WriteFile(path, []byte("controlled adapter"), 0o600); err != nil {
-		return TrainingCandidate{}, err
+		return training.TrainingCandidate{}, err
 	}
-	return TrainingCandidate{Path: path, BestEpoch: 1, TrainingLoss: 0.7, ValidationLoss: 0.8}, nil
+	return training.TrainingCandidate{Path: path, BestEpoch: 1, TrainingLoss: 0.7, ValidationLoss: 0.8}, nil
 }
 
-func (t *controlledTrainer) Predict(ctx context.Context, job TrainingJob, adapter string, records []Record) ([]string, error) {
+func (t *controlledTrainer) Predict(ctx context.Context, job training.TrainingJob, adapter string, records []training.Record) ([]string, error) {
 	if len(records) != 20 {
 		return nil, fmt.Errorf("wrong protected split")
 	}
@@ -170,7 +170,7 @@ func TestPreparationStages(t *testing.T) {
 			t.Run(string(kind)+"/"+outcome, func(t *testing.T) {
 				path := t.TempDir()
 				b := newPreparationFixture(t, &mocks.Client{}, preparationOptions{DatasetRoot: path})
-				imported, err := b.Datasets.ImportDataset(t.Context(), ImportInput{Name: "goroutines.md"}, strings.NewReader(preparationSource))
+				imported, err := b.Datasets.ImportDataset(t.Context(), imports.ImportInput{Name: "goroutines.md"}, strings.NewReader(preparationSource))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -188,7 +188,7 @@ func TestPreparationStages(t *testing.T) {
 					t.Fatal(err)
 				}
 				defer workspace.Close()
-				engine := preparation.Engine{Completer: completerFunc(func(ctx context.Context, r CompletionRequest) (Completion, error) {
+				engine := prepare.Engine{Completer: completerFunc(func(ctx context.Context, r CompletionRequest) (Completion, error) {
 					if strings.Contains(r.Messages[1].Content, "[RECORD 1]") {
 						return Completion{Content: fmt.Sprintf(`{"record_1":%q}`, outcome), PromptTokens: 13, CompletionTokens: 2}, nil
 					}
@@ -221,7 +221,7 @@ func TestPreparationStages(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				var record Record
+				var record training.Record
 				if err := json.Unmarshal(data, &record); err != nil {
 					t.Fatal(err)
 				}
@@ -253,7 +253,7 @@ func TestTemporalDatasetPreviewAndFullPreparation(t *testing.T) {
 	}))
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
-	dataset, err := b.Datasets.ImportDataset(ctx, ImportInput{Name: "goroutines.md"}, strings.NewReader(preparationSource))
+	dataset, err := b.Datasets.ImportDataset(ctx, imports.ImportInput{Name: "goroutines.md"}, strings.NewReader(preparationSource))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,7 +279,7 @@ func TestTemporalDatasetPreviewAndFullPreparation(t *testing.T) {
 	if result.Result.PromptTokens != 30 || result.Result.CompletionTokens != 7 || len(result.Result.Warnings) != 0 {
 		t.Fatalf("preview metrics: %+v", result.Result)
 	}
-	fullInput := PreparationRequest{DatasetID: dataset.ID, Model: "preparer", Goal: GoalTextGeneration, ReviewedRecords: []Record{{Prompt: "Explain Go goroutines.", Target: preparationSource, Evidence: preparationSource}}}
+	fullInput := PreparationRequest{DatasetID: dataset.ID, Model: "preparer", Goal: GoalTextGeneration, ReviewedRecords: []training.Record{{Prompt: "Explain Go goroutines.", Target: preparationSource, Evidence: preparationSource}}}
 	full, err := b.Preparation.StartPreparation(ctx, fullInput)
 	if err != nil {
 		t.Fatal(err)
@@ -296,7 +296,7 @@ func TestTemporalDatasetPreviewAndFullPreparation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reader.Close()
-	var record Record
+	var record training.Record
 	decoder := json.NewDecoder(reader)
 	if err := decoder.Decode(&record); err != nil {
 		t.Fatal(err)
@@ -340,7 +340,7 @@ func TestTemporalPreparationCancellation(t *testing.T) {
 	}))
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
-	dataset, err := b.Datasets.ImportDataset(ctx, ImportInput{Name: "source.txt"}, strings.NewReader(preparationSource))
+	dataset, err := b.Datasets.ImportDataset(ctx, imports.ImportInput{Name: "source.txt"}, strings.NewReader(preparationSource))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -368,7 +368,7 @@ func TestTemporalPreparationCancellation(t *testing.T) {
 func TestTemporalFullGenerationCheckpointAndReadiness(t *testing.T) {
 	// Model an interrupted earlier test: its workflow remains active, but no
 	// worker polls its queue. History must not query that unrelated execution.
-	unserved := tmprltest.New(t)
+	unserved := newTestEnvironment(t)
 	queued, err := unserved.Client.ExecuteWorkflow(t.Context(), client.StartWorkflowOptions{
 		ID: unserved.TaskQueue, TaskQueue: unserved.TaskQueue, WorkflowExecutionTimeout: time.Minute,
 	}, prepare.WorkflowName)
@@ -443,7 +443,7 @@ func TestTemporalFullGenerationCheckpointAndReadiness(t *testing.T) {
 	for i := range 20 {
 		fmt.Fprintf(&source, "Device %02d has calibration code C%02d.\n\n", i, i)
 	}
-	dataset, err := b.Datasets.ImportDataset(ctx, ImportInput{Name: "devices.md"}, strings.NewReader(source.String()))
+	dataset, err := b.Datasets.ImportDataset(ctx, imports.ImportInput{Name: "devices.md"}, strings.NewReader(source.String()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -469,7 +469,7 @@ func TestTemporalFullGenerationCheckpointAndReadiness(t *testing.T) {
 	decoder := json.NewDecoder(reader)
 	train, validation, test := 0, 0, 0
 	for {
-		var row Record
+		var row training.Record
 		err := decoder.Decode(&row)
 		if errors.Is(err, io.EOF) {
 			break
@@ -502,7 +502,7 @@ func TestTemporalFullGenerationCheckpointAndReadiness(t *testing.T) {
 	if train != 20 || validation != 10 || test != 20 {
 		t.Fatalf("split flags: %d/%d/%d", train, validation, test)
 	}
-	training, err := b.Training.StartTraining(ctx, TrainingRequest{Preparation: run.Execution, Model: "gemma"})
+	training, err := b.Training.StartTraining(ctx, modeltraining.TrainingRequest{Preparation: run.Execution, Model: "gemma"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -518,7 +518,7 @@ func TestTemporalFullGenerationCheckpointAndReadiness(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var report EvaluationReport
+	var report evaluate.EvaluationReport
 	if err := json.Unmarshal(data, &report); err != nil {
 		t.Fatal(err)
 	}
@@ -593,13 +593,13 @@ func TestTemporalRejectsUngroundedAndInvalidModelRecords(t *testing.T) {
 			}))
 			ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 			defer cancel()
-			dataset, err := b.Datasets.ImportDataset(ctx, ImportInput{Name: "source.md"}, strings.NewReader(preparationSource))
+			dataset, err := b.Datasets.ImportDataset(ctx, imports.ImportInput{Name: "source.md"}, strings.NewReader(preparationSource))
 			if err != nil {
 				t.Fatal(err)
 			}
 			input := PreparationRequest{DatasetID: dataset.ID, Model: "preparer", Goal: GoalQuestionAnswer}
 			if mode == "rejected-review" {
-				input.ReviewedRecords = []Record{{Prompt: "What is a goroutine?", Target: preparationSource, Evidence: preparationSource, UserApproved: true}}
+				input.ReviewedRecords = []training.Record{{Prompt: "What is a goroutine?", Target: preparationSource, Evidence: preparationSource, UserApproved: true}}
 			}
 			run, err := b.Preparation.StartPreparation(ctx, input)
 			if err != nil {
@@ -650,7 +650,7 @@ func TestTemporalPreviewGoals(t *testing.T) {
 			}))
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
-			dataset, err := b.Datasets.ImportDataset(ctx, ImportInput{Name: "sample.md"}, strings.NewReader("# Sample\n"+test.source))
+			dataset, err := b.Datasets.ImportDataset(ctx, imports.ImportInput{Name: "sample.md"}, strings.NewReader("# Sample\n"+test.source))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -723,7 +723,7 @@ func TestTemporalDocumentExtraction(t *testing.T) {
 			if mode == ".docx" {
 				ext = mode
 			}
-			dataset, err := b.Datasets.ImportDataset(t.Context(), ImportInput{Name: "source" + ext}, strings.NewReader("document fixture"))
+			dataset, err := b.Datasets.ImportDataset(t.Context(), imports.ImportInput{Name: "source" + ext}, strings.NewReader("document fixture"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -751,7 +751,7 @@ func TestTemporalDocumentExtraction(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer reader.Close()
-			var record Record
+			var record training.Record
 			if err := json.NewDecoder(reader).Decode(&record); err != nil {
 				t.Fatal(err)
 			}
@@ -766,7 +766,7 @@ func TestTemporalDocumentExtraction(t *testing.T) {
 }
 
 func TestTemporalPreparationStorageRecovery(t *testing.T) {
-	c := tmprltest.New(t).Client
+	c := newTestEnvironment(t).Client
 	for _, mode := range []string{"transient", "corrupt", "escaping-workspace"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
@@ -778,7 +778,7 @@ func TestTemporalPreparationStorageRecovery(t *testing.T) {
 				}
 				return Completion{Content: `{"records":[{"prompt":"What is a goroutine?","evidence_id":1,"target_id":1}]}`}, nil
 			})})
-			dataset, err := b.Datasets.ImportDataset(ctx, ImportInput{Name: "source.txt"}, strings.NewReader(preparationSource))
+			dataset, err := b.Datasets.ImportDataset(ctx, imports.ImportInput{Name: "source.txt"}, strings.NewReader(preparationSource))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -878,7 +878,7 @@ func TestPreparationInputValidation(t *testing.T) {
 		func(r *PreparationRequest) { r.Model = " " },
 		func(r *PreparationRequest) { r.Goal = "unknown" },
 		func(r *PreparationRequest) { r.Instructions = strings.Repeat("x", 2001) },
-		func(r *PreparationRequest) { r.ReviewedRecords = []Record{{Prompt: "unexpected seed"}} },
+		func(r *PreparationRequest) { r.ReviewedRecords = []training.Record{{Prompt: "unexpected seed"}} },
 	} {
 		input := PreparationRequest{DatasetID: "unused", Model: "preparer", Goal: GoalQuestionAnswer, PreviewRecords: 1}
 		change(&input)
@@ -886,17 +886,17 @@ func TestPreparationInputValidation(t *testing.T) {
 			t.Fatalf("accepted invalid preparation input: %+v %v", input, err)
 		}
 	}
-	if _, err := b.Preparation.StartPreparation(t.Context(), PreparationRequest{Model: "preparer", Goal: GoalQuestionAnswer, ReviewedRecords: []Record{{Prompt: "Question?", Target: "Unsupported answer."}}}); !errors.Is(err, ErrInvalidArgument) {
+	if _, err := b.Preparation.StartPreparation(t.Context(), PreparationRequest{Model: "preparer", Goal: GoalQuestionAnswer, ReviewedRecords: []training.Record{{Prompt: "Question?", Target: "Unsupported answer."}}}); !errors.Is(err, ErrInvalidArgument) {
 		t.Fatalf("accepted reviewed record without evidence: %v", err)
 	}
 	var source strings.Builder
 	encoder := json.NewEncoder(&source)
 	for i := range 50 {
-		if err := encoder.Encode(Record{Prompt: fmt.Sprintf("Question %d?", i), Target: "yes", Evidence: fmt.Sprintf("Source %d says yes.", i)}); err != nil {
+		if err := encoder.Encode(training.Record{Prompt: fmt.Sprintf("Question %d?", i), Target: "yes", Evidence: fmt.Sprintf("Source %d says yes.", i)}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	dataset, err := b.Datasets.ImportDataset(t.Context(), ImportInput{Name: "prepared.jsonl"}, strings.NewReader(source.String()))
+	dataset, err := b.Datasets.ImportDataset(t.Context(), imports.ImportInput{Name: "prepared.jsonl"}, strings.NewReader(source.String()))
 	if err != nil {
 		t.Fatal(err)
 	}

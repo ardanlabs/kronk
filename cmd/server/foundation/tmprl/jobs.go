@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/definition"
 	"github.com/ardanlabs/kronk/sdk/applog"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/activity"
@@ -81,17 +80,17 @@ func New[R, A any](c client.Client, cfg Config[R, A]) (*Jobs[R, A], error) {
 			return nil, fmt.Errorf("%w: nonempty protocol names without quotes or backslashes are required", ErrInvalidArgument)
 		}
 	}
-	if cfg.StorageRoot == "" || !definition.ValidName(cfg.StorageDirectory) {
+	if cfg.StorageRoot == "" || !ValidName(cfg.StorageDirectory) {
 		return nil, fmt.Errorf("%w: storage root and a safe storage directory are required", ErrInvalidArgument)
 	}
 	for name, handler := range cfg.Steps {
 		stage, step, ok := strings.Cut(name, "/")
-		if !ok || !definition.ValidName(stage) || !definition.ValidName(step) || handler == nil {
+		if !ok || !ValidName(stage) || !ValidName(step) || handler == nil {
 			return nil, fmt.Errorf("%w: invalid step registration %q", ErrInvalidArgument, name)
 		}
 	}
 	for _, outcome := range cfg.Outcomes {
-		if !definition.ValidName(string(outcome)) || !outcome.Terminal() || outcome == StatusFailed || outcome == StatusStopped || outcome == StatusCompleted {
+		if !ValidName(string(outcome)) || !outcome.Terminal() || outcome == StatusFailed || outcome == StatusStopped || outcome == StatusCompleted {
 			return nil, fmt.Errorf("%w: invalid application outcome %q", ErrInvalidArgument, outcome)
 		}
 	}
@@ -110,7 +109,7 @@ func New[R, A any](c client.Client, cfg Config[R, A]) (*Jobs[R, A], error) {
 }
 
 // ValidatePlan checks policies and ensures every submitted step can run locally.
-func (j *Jobs[R, A]) ValidatePlan(job definition.Job) error {
+func (j *Jobs[R, A]) ValidatePlan(job Job) error {
 	if err := job.Validate(); err != nil {
 		return fmt.Errorf("%w: job definition: %s", ErrInvalidArgument, err)
 	}

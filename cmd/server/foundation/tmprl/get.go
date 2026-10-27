@@ -49,7 +49,7 @@ func (j *Jobs[R, A]) Get(ctx context.Context, e Execution) (Run[R, A], error) {
 	}
 	type scheduledActivity struct {
 		name  string
-		stage Stage
+		stage StageName
 		step  string
 	}
 	activities := make(map[int64]scheduledActivity)
@@ -81,9 +81,9 @@ func (j *Jobs[R, A]) Get(ctx context.Context, e Execution) (Run[R, A], error) {
 			if err := converter.GetDefaultDataConverter().FromPayloads(scheduled.GetInput(), &request); err != nil {
 				return Run[R, A]{}, err
 			}
-			activities[event.GetEventId()] = scheduledActivity{name, Stage(request.Stage), request.Step}
+			activities[event.GetEventId()] = scheduledActivity{name, StageName(request.Stage), request.Step}
 			if !snapshot {
-				result.Stage, result.Step = Stage(request.Stage), request.Step
+				result.Stage, result.Step = StageName(request.Stage), request.Step
 			}
 		case enumspb.EVENT_TYPE_ACTIVITY_TASK_STARTED:
 			started := event.GetActivityTaskStartedEventAttributes()

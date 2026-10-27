@@ -2,12 +2,10 @@ package tmprl
 
 import (
 	"time"
-
-	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/definition"
 )
 
-// Stage identifies a stage in a submitted job.
-type Stage string
+// StageName identifies a stage in a submitted job.
+type StageName string
 
 // Status describes execution lifecycle or an application-defined terminal outcome.
 type Status string
@@ -36,35 +34,35 @@ func (s Status) Terminal() bool {
 
 // JobInput captures the immutable plan and application request in workflow history.
 type JobInput[R any] struct {
-	Job     *definition.Job `json:"job,omitzero"`
-	Request R               `json:"request"`
+	Job     *Job `json:"job,omitzero"`
+	Request R    `json:"request"`
 }
 
 // Run contains durable state. R and A are application-owned requests and artifacts.
 // These JSON fields are also the workflow, memo, and polling wire contract.
 type Run[R, A any] struct {
 	Execution
-	Definition          *definition.Job `json:"definition,omitzero"`
-	Request             R               `json:"request"`
-	Status              Status          `json:"status"`
-	Stage               Stage           `json:"stage,omitzero"`
-	Step                string          `json:"step,omitzero"`
-	Artifacts           A               `json:"artifacts"`
-	Progress            *Progress       `json:"progress,omitzero"`
-	StartedAt           time.Time       `json:"started_at"`
-	ClosedAt            time.Time       `json:"closed_at,omitzero"`
-	Error               string          `json:"error,omitzero"`
-	Stages              []StageState    `json:"stages,omitzero"`
-	SessionAttempt      int             `json:"session_attempt,omitzero"`
-	WorkerHost          string          `json:"worker_host,omitzero"`
-	ReservationDeadline time.Time       `json:"reservation_deadline,omitzero"`
-	UpdatedAt           time.Time       `json:"updated_at,omitzero"`
-	StateStale          bool            `json:"state_stale,omitzero"`
+	Definition          *Job         `json:"definition,omitzero"`
+	Request             R            `json:"request"`
+	Status              Status       `json:"status"`
+	Stage               StageName    `json:"stage,omitzero"`
+	Step                string       `json:"step,omitzero"`
+	Artifacts           A            `json:"artifacts"`
+	Progress            *Progress    `json:"progress,omitzero"`
+	StartedAt           time.Time    `json:"started_at"`
+	ClosedAt            time.Time    `json:"closed_at,omitzero"`
+	Error               string       `json:"error,omitzero"`
+	Stages              []StageState `json:"stages,omitzero"`
+	SessionAttempt      int          `json:"session_attempt,omitzero"`
+	WorkerHost          string       `json:"worker_host,omitzero"`
+	ReservationDeadline time.Time    `json:"reservation_deadline,omitzero"`
+	UpdatedAt           time.Time    `json:"updated_at,omitzero"`
+	StateStale          bool         `json:"state_stale,omitzero"`
 }
 
 // StageState records a stage's total budget and its ordered step diagnostics.
 type StageState struct {
-	Name            Stage       `json:"name"`
+	Name            StageName   `json:"name"`
 	Status          Status      `json:"status"`
 	Steps           []StepState `json:"steps,omitzero"`
 	Deadline        time.Time   `json:"deadline,omitzero"`
@@ -89,11 +87,11 @@ type StepState struct {
 // Progress is an identity-bound heartbeat and optional local notification.
 type Progress struct {
 	Execution
-	Stage     Stage  `json:"stage"`
-	Step      string `json:"step,omitzero"`
-	Completed int    `json:"completed"`
-	Total     int    `json:"total"`
-	Message   string `json:"message"`
+	Stage     StageName `json:"stage"`
+	Step      string    `json:"step,omitzero"`
+	Completed int       `json:"completed"`
+	Total     int       `json:"total"`
+	Message   string    `json:"message"`
 }
 
 // StepRequest carries a stable idempotency key and the incoming artifact set.

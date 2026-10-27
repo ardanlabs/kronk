@@ -14,10 +14,11 @@ import (
 	"testing"
 	"time"
 
-	modeltraining "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining"
-	. "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/model"
+	. "github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/imports"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training/evaluate"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
-	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl/tmprltest"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/mocks"
 	"go.temporal.io/sdk/temporal"
@@ -35,8 +36,8 @@ func TestManagedWorkflowStages(t *testing.T) {
 		status        tmprl.Status
 	}{
 		{"accepted-at-threshold", 16, 18, tmprl.StatusCompleted},
-		{"below-threshold", 16, 17, StatusNeedsImprovement},
-		{"regressed-against-base", 19, 18, StatusNeedsImprovement},
+		{"below-threshold", 16, 17, training.StatusNeedsImprovement},
+		{"regressed-against-base", 19, 18, training.StatusNeedsImprovement},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			modelPath := filepath.Join(t.TempDir(), "model.gguf")
@@ -50,12 +51,12 @@ func TestManagedWorkflowStages(t *testing.T) {
 			b := services.Training
 			var source strings.Builder
 			for i := range 60 {
-				r := Record{Prompt: fmt.Sprintf("Question %d?", i), Target: fmt.Sprintf("Answer %d", i), Evidence: fmt.Sprintf("Evidence %d", i)}
+				r := training.Record{Prompt: fmt.Sprintf("Question %d?", i), Target: fmt.Sprintf("Answer %d", i), Evidence: fmt.Sprintf("Evidence %d", i)}
 				if err := json.NewEncoder(&source).Encode(r); err != nil {
 					t.Fatal(err)
 				}
 			}
-			imported, err := services.Datasets.ImportDataset(t.Context(), ImportInput{Name: "prepared.jsonl"}, strings.NewReader(source.String()))
+			imported, err := services.Datasets.ImportDataset(t.Context(), imports.ImportInput{Name: "prepared.jsonl"}, strings.NewReader(source.String()))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -68,9 +69,9 @@ func TestManagedWorkflowStages(t *testing.T) {
 			// The in-process harness only consumes session capacity here; real
 			// worker concurrency is exercised by the server-backed tests below.
 			env.SetWorkerOptions(worker.Options{EnableSessionWorker: true, MaxConcurrentSessionExecutionSize: 1})
-			env.RegisterWorkflowWithOptions(modeltraining.Workflow, workflow.RegisterOptions{Name: workflowName})
-			env.RegisterActivityWithOptions(b.ExecuteStage, activity.RegisterOptions{Name: modeltraining.SessionActivityName})
-			env.ExecuteWorkflow(workflowName, workflowInput{Request: input, StageTimeout: time.Minute, Stages: []tmprl.Stage{StageSplit, StageTrain, StageEvaluate, StagePublish}, JobTimeout: time.Hour, QueueTimeout: time.Minute})
+			env.RegisterWorkflowWithOptions(Workflow, workflow.RegisterOptions{Name: workflowName})
+			env.RegisterActivityWithOptions(b.ExecuteStage, activity.RegisterOptions{Name: SessionActivityName})
+			env.ExecuteWorkflow(workflowName, Input{Request: input, StageTimeout: time.Minute, Stages: []tmprl.StageName{StageSplit, StageTrain, StageEvaluate, StagePublish}, JobTimeout: time.Hour, QueueTimeout: time.Minute})
 			if err := env.GetWorkflowError(); err != nil {
 				t.Fatal(err)
 			}
@@ -86,7 +87,7 @@ func TestManagedWorkflowStages(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			var report EvaluationReport
+			var report evaluate.EvaluationReport
 			if err := json.Unmarshal(data, &report); err != nil {
 				t.Fatal(err)
 			}
@@ -113,18 +114,18 @@ func TestManagedWorkflowStages(t *testing.T) {
 
 type workflowTrainer struct{ base, adapted int }
 
-func (workflowTrainer) Train(ctx context.Context, job TrainingJob, progress func(tmprl.Progress)) (TrainingCandidate, error) {
+func (workflowTrainer) Train(ctx context.Context, job training.TrainingJob, progress func(tmprl.Progress)) (training.TrainingCandidate, error) {
 	if len(job.Dataset.Train) != 30 || len(job.Dataset.Validation) != 10 || len(job.Dataset.Test) != 0 {
-		return TrainingCandidate{}, fmt.Errorf("incorrect splits or protected test data exposed to training")
+		return training.TrainingCandidate{}, fmt.Errorf("incorrect splits or protected test data exposed to training")
 	}
 	path := filepath.Join(job.Workdir, "candidate.gguf")
 	if err := os.WriteFile(path, []byte("trained adapter"), 0o600); err != nil {
-		return TrainingCandidate{}, err
+		return training.TrainingCandidate{}, err
 	}
-	return TrainingCandidate{Path: path, BestEpoch: 2, ValidationLoss: 0.25}, nil
+	return training.TrainingCandidate{Path: path, BestEpoch: 2, ValidationLoss: 0.25}, nil
 }
 
-func (t workflowTrainer) Predict(ctx context.Context, job TrainingJob, adapter string, records []Record) ([]string, error) {
+func (t workflowTrainer) Predict(ctx context.Context, job training.TrainingJob, adapter string, records []training.Record) ([]string, error) {
 	correct := t.base
 	if adapter != "" {
 		data, err := os.ReadFile(adapter)
@@ -143,11 +144,11 @@ func (t workflowTrainer) Predict(ctx context.Context, job TrainingJob, adapter s
 	return answers, nil
 }
 
-// These integration tests bootstrap or reuse Temporal through tmprltest.
+// These integration tests bootstrap or reuse Temporal through local test helpers.
 // They use unique queues and IDs; no shared histories are reset.
-func liveBusiness(t *testing.T, backend modeltraining.Backend) *modeltraining.Business {
+func liveBusiness(t *testing.T, backend Backend) *Business {
 	t.Helper()
-	env := tmprltest.New(t)
+	env := newTestEnvironment(t)
 	b := newServices(t, env.Client, serviceConfig{TaskQueue: env.TaskQueue, Backend: backend, StageTimeout: 30 * time.Second}).Training
 	w, err := b.NewWorker()
 	if err != nil {
@@ -164,7 +165,7 @@ func liveBusiness(t *testing.T, backend modeltraining.Backend) *modeltraining.Bu
 // dropping data, or reordering stages cannot produce the expected adapter.
 func stageOutput(r LegacyStepRequest) Artifacts {
 	switch r.Stage {
-	case StagePrepare:
+	case StageSplit:
 		return Artifacts{Dataset: "prepared:" + r.Request.Sources[1]}
 	case StageTrain:
 		return Artifacts{Checkpoint: "trained:" + r.Artifacts.Dataset}
@@ -176,7 +177,7 @@ func stageOutput(r LegacyStepRequest) Artifacts {
 	return Artifacts{}
 }
 
-func pollRun(t *testing.T, b *modeltraining.Business, ctx context.Context, e tmprl.Execution, status tmprl.Status) tmprl.Run[Request, Artifacts] {
+func pollRun(t *testing.T, b *Business, ctx context.Context, e tmprl.Execution, status tmprl.Status) tmprl.Run[Request, Artifacts] {
 	t.Helper()
 	for {
 		r, err := b.Get(ctx, e)
@@ -199,7 +200,7 @@ func TestTemporalPauseResumeProgressAndHistory(t *testing.T) {
 	release := make(chan struct{})
 	var preparations atomic.Int32
 	b := liveBusiness(t, backendFunc(func(ctx context.Context, r LegacyStepRequest, publish func(tmprl.Progress)) (Artifacts, error) {
-		if r.Stage == StagePrepare {
+		if r.Stage == StageSplit {
 			if preparations.Add(1) != 1 {
 				return Artifacts{}, temporal.NewNonRetryableApplicationError("preparation already committed", "repeated-stage", nil)
 			}
@@ -248,7 +249,7 @@ func TestTemporalPauseResumeProgressAndHistory(t *testing.T) {
 	}
 	select {
 	case progress := <-updates:
-		if progress.Execution != run.Execution || progress.Stage != StagePrepare || progress.Completed != 100 {
+		if progress.Execution != run.Execution || progress.Stage != StageSplit || progress.Completed != 100 {
 			t.Fatalf("latest progress: %+v", progress)
 		}
 	default:
@@ -353,7 +354,7 @@ func TestTemporalRejectedAndInvalidArtifacts(t *testing.T) {
 				}
 				return
 			}
-			if err != nil || result.Status != StatusNeedsImprovement || result.Artifacts.Adapter != "" || result.Artifacts.Report != "evaluated:trained:prepared:document-b" {
+			if err != nil || result.Status != training.StatusNeedsImprovement || result.Artifacts.Adapter != "" || result.Artifacts.Report != "evaluated:trained:prepared:document-b" {
 				t.Fatalf("rejected candidate published: %+v %v", result, err)
 			}
 		})
@@ -479,7 +480,7 @@ func TestTemporalRetryKeepsOperationIdentity(t *testing.T) {
 }
 
 type legacyStepFunc struct {
-	name tmprl.Stage
+	name tmprl.StageName
 	run  func(context.Context, StepContext) (tmprl.StepResult[Artifacts], error)
 }
 
@@ -494,12 +495,12 @@ func (s legacyStepFunc) Execute(ctx context.Context, input StepContext) (tmprl.S
 func TestTemporalWholeJobWorkerOwnership(t *testing.T) {
 	for _, workerCount := range []int{1, 2} {
 		t.Run(fmt.Sprintf("workers-%d", workerCount), func(t *testing.T) {
-			env := tmprltest.New(t)
+			env := newTestEnvironment(t)
 			ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
 			defer cancel()
 			type event struct {
 				job, worker string
-				stage       tmprl.Stage
+				stage       tmprl.StageName
 			}
 			started := make(chan event, workerCount+1)
 			var mu sync.Mutex
@@ -514,17 +515,17 @@ func TestTemporalWholeJobWorkerOwnership(t *testing.T) {
 				defer closeRelease[id]()
 			}
 			plan := []string{"load", "optimize", "score", "deliver"}
-			var business *modeltraining.Business
+			var business *Business
 			for i := range workerCount {
 				workerID := fmt.Sprintf("worker-%d", i)
 				stages := make([]TrainingStep, len(plan))
 				for index, name := range plan {
-					stages[index] = legacyStepFunc{name: tmprl.Stage(name), run: func(ctx context.Context, input StepContext) (tmprl.StepResult[Artifacts], error) {
+					stages[index] = legacyStepFunc{name: tmprl.StageName(name), run: func(ctx context.Context, input StepContext) (tmprl.StepResult[Artifacts], error) {
 						want := strings.Join(plan[:index], "/")
 						if input.Request.Artifacts.Checkpoint != want {
 							return tmprl.StepResult[Artifacts]{}, fmt.Errorf("incoming checkpoint: got %q, want %q", input.Request.Artifacts.Checkpoint, want)
 						}
-						e := event{job: input.Request.WorkflowID, worker: workerID, stage: tmprl.Stage(name)}
+						e := event{job: input.Request.WorkflowID, worker: workerID, stage: tmprl.StageName(name)}
 						mu.Lock()
 						events = append(events, e)
 						mu.Unlock()
@@ -628,7 +629,7 @@ func TestTemporalWholeJobWorkerOwnership(t *testing.T) {
 					t.Fatalf("job %s stages: got %d, want %d", job, len(entries), len(plan))
 				}
 				for i, e := range entries {
-					if e.stage != tmprl.Stage(plan[i]) || e.worker != entries[0].worker {
+					if e.stage != tmprl.StageName(plan[i]) || e.worker != entries[0].worker {
 						t.Fatalf("job changed worker or stage order: %+v", entries)
 					}
 				}
@@ -652,7 +653,7 @@ func TestTemporalWholeJobWorkerOwnership(t *testing.T) {
 }
 
 func TestTemporalWorkerRecoveryKeepsCommittedStages(t *testing.T) {
-	env := tmprltest.New(t)
+	env := newTestEnvironment(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 45*time.Second)
 	defer cancel()
 	entered := make(chan struct{})
@@ -719,7 +720,7 @@ func TestTemporalWorkerRecoveryKeepsCommittedStages(t *testing.T) {
 	// Allow orchestration to detect worker loss while no session execution
 	// capacity exists. This keeps the recovering state observable until replaced.
 	observer := worker.New(env.Client, env.TaskQueue, worker.Options{LocalActivityWorkerOnly: true})
-	observer.RegisterWorkflowWithOptions(modeltraining.Workflow, workflow.RegisterOptions{Name: modeltraining.WorkflowName})
+	observer.RegisterWorkflowWithOptions(Workflow, workflow.RegisterOptions{Name: WorkflowName})
 	if err := observer.Start(); err != nil {
 		t.Fatal(err)
 	}

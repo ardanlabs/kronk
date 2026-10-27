@@ -3,7 +3,7 @@ package publish
 import (
 	"context"
 
-	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/model"
+	"github.com/ardanlabs/kronk/cmd/server/app/sdk/tmprl/jobs/modeltraining/stages/training"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/tmprl"
 )
 
@@ -15,18 +15,18 @@ func (Step) Name() string { return "publish" }
 
 // Execute validates acceptance and merges the published adapter artifact.
 // Pipeline completion remains the orchestrator's responsibility.
-func (s Step) Execute(ctx context.Context, input model.StepContext) (tmprl.StepResult[model.Artifacts], error) {
-	if !input.Request.Artifacts.Accepted {
-		return tmprl.StepResult[model.Artifacts]{}, model.InvalidOutput(s.Name())
+func (s Step) Execute(ctx context.Context, input training.StepContext) (tmprl.StepResult[training.Artifacts], error) {
+	if !input.Artifacts.Accepted {
+		return tmprl.StepResult[training.Artifacts]{}, training.InvalidOutput(s.Name())
 	}
-	output, err := Run(ctx, input.Workspace, input.Request.Artifacts)
+	output, err := Run(ctx, input.Workspace, input.Artifacts)
 	if err != nil {
-		return tmprl.StepResult[model.Artifacts]{}, err
+		return tmprl.StepResult[training.Artifacts]{}, err
 	}
 	if output.Adapter == "" {
-		return tmprl.StepResult[model.Artifacts]{}, model.InvalidOutput(s.Name())
+		return tmprl.StepResult[training.Artifacts]{}, training.InvalidOutput(s.Name())
 	}
-	artifacts := input.Request.Artifacts
+	artifacts := input.Artifacts
 	artifacts.Adapter = output.Adapter
-	return tmprl.StepResult[model.Artifacts]{Artifacts: artifacts}, nil
+	return tmprl.StepResult[training.Artifacts]{Artifacts: artifacts}, nil
 }
