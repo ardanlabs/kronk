@@ -444,6 +444,20 @@ device permissions, and GPU environment settings in `kronk.env` (§8.8).
 After five failed starts within five minutes, fix the journal's reported
 error, run `systemctl --user reset-failed kronk`, then `kronk systemd start`.
 
+For the macOS LaunchAgent, use `kronk launchd status` and
+`kronk launchd logs`. A failure to find the `gui/<uid>` domain means a
+macOS desktop login session is unavailable; this agent is not a headless
+system service. Run as your normal user, not with `sudo`. A missing agent
+after `kronk launchd stop` is expected: `stop` unloads it to prevent
+`KeepAlive` from restarting it. Use `kronk launchd start` to load it again.
+
+If launchd keeps restarting a failing process, stop the agent and inspect
+`~/Library/Logs/kronk/kronk.log`. Check the recorded executable path,
+port conflicts, and the plist's `EnvironmentVariables`; shell startup
+files and `kronk.env` are not read. Validate manual edits with `plutil -lint`
+and run `kronk launchd restart` to reload them. See
+[Chapter 8 §8.9](https://www.kronkai.com/manual#89-running-as-a-launchd-agent).
+
 Whisper-specific failures are listed in
 [Chapter 18 §18.9](https://www.kronkai.com/manual#189-troubleshooting).
 

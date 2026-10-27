@@ -10,7 +10,8 @@
 - [8.6 Catalog Operations](#86-catalog-operations)
 - [8.7 Container Operations](#87-container-operations)
 - [8.8 Running as a systemd Service](#88-running-as-a-systemd-service)
-- [8.9 Related Administration Guides](#89-related-administration-guides)
+- [8.9 Running as a launchd Agent](#89-running-as-a-launchd-agent)
+- [8.10 Related Administration Guides](#810-related-administration-guides)
 
 ---
 
@@ -682,7 +683,111 @@ systemd. It preserves models, libraries, keys, `kronk.env`, and systemd
 drop-ins. It also preserves user lingering because other services may
 depend on it; use `loginctl disable-linger` only if none do.
 
-## 8.9 Related Administration Guides
+## 8.9 Running as a launchd Agent
+
+On macOS, `kronk launchd` installs and manages a per-user **LaunchAgent**.
+It runs as you, reuses your existing `~/.kronk` models, libraries, keys, and
+server configuration, and starts at desktop login. It is not a system-wide
+LaunchDaemon and does not run before login or continue after logout.
+Run the commands as your normal user, not with `sudo`; a macOS desktop
+login session must be available.
+
+Install Kronk in a permanent location using `go install`, Homebrew, or a
+release binary, then run:
+
+```shell
+kronk launchd install
+kronk launchd start
+kronk launchd status
+curl http://localhost:11435/v1/liveness
+```
+
+Installation writes the embedded definition to
+`~/Library/LaunchAgents/com.ardanlabs.kronk.plist` and enables startup at
+login, without loading or starting the agent immediately. It records the
+absolute path used to invoke Kronk, preserving stable symlinks such as
+Homebrew's `/opt/homebrew/bin/kronk` (Apple Silicon) or
+`/usr/local/bin/kronk` (Intel). Do not install using `go run`: its temporary
+executable will disappear.
+
+Stop any existing foreground server with Ctrl-C, or a detached server with
+`kronk server stop`, before starting the agent. The agent runs
+`kronk server start` in the foreground; launchd owns its process and logs.
+Use `kronk launchd stop` and `kronk launchd logs` for that process, not the
+detached-server commands.
+
+### LaunchAgent Configuration
+
+`--base-path` or `KRONK_BASE_PATH` at installation records a custom data
+directory. Otherwise Kronk uses `~/.kronk`. Server settings in the existing
+`model_config.yaml` continue to apply (see §8.5). To override settings for
+the agent, edit its plist's `EnvironmentVariables` dictionary. For example,
+add these entries inside that dictionary:
+
+```xml
+<key>KRONK_WEB_API_HOST</key>
+<string>127.0.0.1:11435</string>
+<key>KRONK_AUTHORIZATION_MODE</key>
+<string>management</string>
+```
+
+Launchd does not source shell startup files or read the systemd
+`kronk.env` file. Other shell settings are not automatically copied at
+installation. Use literal values and absolute paths, not `~`, `$HOME`, or
+`$PATH` substitutions. The plist includes a `PATH` covering both standard
+Homebrew locations and macOS system tools. Its initial permissions are
+`0600`; keep it private if adding sensitive environment values.
+
+Validate an edited plist, then reload it:
+
+```shell
+plutil -lint ~/Library/LaunchAgents/com.ardanlabs.kronk.plist
+kronk launchd restart
+```
+
+The default API listener remains local-only at `127.0.0.1:11435`. Configure
+authorization before exposing it on a public interface. `status` shows
+launchd's agent information, not HTTP readiness; startup may include library
+downloads. Check `/v1/liveness` before sending requests.
+
+### LaunchAgent Lifecycle and Logs
+
+```shell
+kronk launchd stop
+kronk launchd start
+kronk launchd restart
+kronk launchd status
+kronk launchd logs
+kronk launchd uninstall
+```
+
+`RunAtLoad` starts the server when the agent is loaded. `KeepAlive` restarts
+it if the process exits, with a 10-second throttle for repeated short-lived
+runs. `stop` unloads the agent so it stays stopped for the current login
+session, until explicitly started again. It starts again at the next
+desktop login. `restart` gracefully unloads and reloads the plist, applying
+configuration changes rather than just killing the process. The plist
+requests a 150-second `ExitTimeOut` for graceful HTTP shutdown and model
+unload, but macOS can cap this: a 60-second effective limit was observed on
+the development host. Inspect `kronk launchd status` for the effective exit
+timeout. If shutdown can exceed it, reduce `KRONK_WEB_SHUTDOWN_TIMEOUT` so
+twice that timeout plus 30 seconds fits the available grace period. Merely
+increasing `ExitTimeOut` does not guarantee a longer grace period.
+
+Both standard output and standard error append to
+`~/Library/Logs/kronk/kronk.log`. `logs` follows that file, including after
+rotation; Ctrl-C stops following, not the server. Arrange log rotation if
+running long-term, since launchd does not impose a size limit on this file.
+
+Restart after upgrading the binary at the same path. If its location
+changes, reinstall with `kronk launchd install --force`, then restart.
+`--force` replaces the plist and resets manual plist edits; save those edits
+first. Models, keys, server YAML configuration, and logs are preserved.
+Uninstall unloads and disables the agent and removes its plist, retaining
+server data and logs. Any environment settings stored only in the removed
+plist are removed with it.
+
+## 8.10 Related Administration Guides
 
 Detailed administration is divided by responsibility:
 

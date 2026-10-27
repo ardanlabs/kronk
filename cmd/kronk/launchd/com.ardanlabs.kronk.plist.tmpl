@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ardanlabs.kronk</string>
+    <key>ProgramArguments</key>
+    <array>
+        {{string .Executable}}
+        <string>server</string>
+        <string>start</string>
+    </array>
+    <key>WorkingDirectory</key>
+    {{string .Home}}
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        {{string .Home}}
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        {{if .BasePath}}<key>KRONK_BASE_PATH</key>
+        {{string .BasePath}}{{end}}
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+    <key>ExitTimeOut</key>
+    <integer>150</integer>
+    <key>StandardOutPath</key>
+    {{string .LogPath}}
+    <key>StandardErrorPath</key>
+    {{string .LogPath}}
+</dict>
+</plist>
