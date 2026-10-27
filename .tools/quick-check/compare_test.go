@@ -428,6 +428,43 @@ func TestCompareRunStatuses(t *testing.T) {
 				if got.SavedRunChecks["baseline"] != baselineStatus || got.SavedRunChecks["candidate"] != candidateStatus || (got.Status == "FAIL") != fails {
 					t.Fatal(string(data))
 				}
+				found := make(map[string]bool)
+				for _, row := range got.Cells[0].Metrics {
+					if (row.Baseline != nil) != (baselineStatus == "PASS") || (row.Candidate != nil) != (candidateStatus == "PASS") {
+						t.Fatalf("metric must preserve only passing sides: %+v", row)
+					}
+					if fails && (row.Delta != nil || row.Percent != nil) {
+						t.Fatalf("failed comparison received a delta: %+v", row)
+					}
+					found[row.Metric] = true
+					if row.Metric == "workload.elapsed_seconds" {
+						if row.Baseline != nil && row.Baseline.Median != 4 || row.Candidate != nil && row.Candidate.Median != 6 {
+							t.Fatalf("passing workload median changed: %+v", row)
+						}
+					}
+				}
+				if baselineStatus == "PASS" || candidateStatus == "PASS" {
+					if !found["workload.elapsed_seconds"] || !found["workload.reference_seconds"] {
+						t.Fatal("passing workload and normalized measurements must remain visible", found)
+					}
+				}
+				missing := 0
+				if baselineStatus == "FAIL" {
+					missing++
+				}
+				if candidateStatus == "FAIL" {
+					missing++
+				}
+				if fails {
+					missing++ // A failed side also makes the change unavailable.
+				}
+				for line := range strings.SplitSeq(out.String(), "\n") {
+					if strings.Contains(line, "Workload (s)") || strings.Contains(line, "Normalized (s)") {
+						if strings.Count(line, "n/a") != missing {
+							t.Fatal("only failed sides and their changes should render n/a", line)
+						}
+					}
+				}
 			})
 		}
 	}
@@ -470,8 +507,15 @@ func TestCompareWarningsAndFailures(t *testing.T) {
 			if err := json.Unmarshal(out.Bytes(), &got); err != nil {
 				t.Fatal(err, out.String())
 			}
-			if tc.fails && (got.Status != "FAIL" || len(got.Cells[0].Metrics) != 0) {
-				t.Fatalf("failure received passing timing aggregates: %+v", got)
+			if tc.fails {
+				if got.Status != "FAIL" || len(got.Cells[0].Metrics) == 0 {
+					t.Fatalf("failed candidate must preserve valid baseline measurements: %+v", got)
+				}
+				for _, row := range got.Cells[0].Metrics {
+					if row.Baseline == nil || row.Candidate != nil || row.Delta != nil || row.Percent != nil {
+						t.Fatalf("invalid candidate received timing aggregates: %+v", row)
+					}
+				}
 			}
 			if tc.warning != "" && !strings.Contains(strings.Join(got.Cells[0].Warnings, "\n"), tc.warning) {
 				t.Fatalf("missing warning %q: %v", tc.warning, got.Cells[0].Warnings)

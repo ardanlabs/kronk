@@ -501,34 +501,41 @@ func compareRuns(aDir, bDir string, a, b comparisonInput) comparison {
 	} else {
 		c.Warnings = append(c.Warnings, "per-request prompt/output/cache/draft counts differ; elapsed times may include different work")
 	}
-	// Failed/partial runs remain visible, but never receive passing timing aggregates.
-	if c.Status == "PASS" {
-		x, y := comparisonMetrics(a.report), comparisonMetrics(b.report)
-		metricKeys := make(map[string]bool)
-		for key := range x {
-			metricKeys[key] = true
+	// Validate each side independently: a failed/partial run must not hide the
+	// other run's valid measurements, but it cannot contribute values or deltas.
+	var x, y map[string][]float64
+	if len(c.Baseline.Problems) == 0 {
+		x = comparisonMetrics(a.report)
+	}
+	if len(c.Candidate.Problems) == 0 {
+		y = comparisonMetrics(b.report)
+	}
+	metricKeys := make(map[string]bool)
+	for key := range x {
+		metricKeys[key] = true
+	}
+	for key := range y {
+		metricKeys[key] = true
+	}
+	for _, key := range sortedKeys(metricKeys) {
+		row := metricComparison{Metric: key}
+		if values := x[key]; len(values) > 0 {
+			row.Baseline = new(summarize(values))
 		}
-		for key := range y {
-			metricKeys[key] = true
+		if values := y[key]; len(values) > 0 {
+			row.Candidate = new(summarize(values))
 		}
-		for _, key := range sortedKeys(metricKeys) {
-			row := metricComparison{Metric: key}
-			if values := x[key]; len(values) > 0 {
-				row.Baseline = new(summarize(values))
-			}
-			if values := y[key]; len(values) > 0 {
-				row.Candidate = new(summarize(values))
-			}
-			if row.Baseline == nil || row.Candidate == nil {
+		if row.Baseline == nil || row.Candidate == nil {
+			if c.Status == "PASS" {
 				c.Warnings = append(c.Warnings, key+": unavailable in one run; no delta")
-			} else if key != "workload.reference_seconds" || a.summary.ReferenceTokens == b.summary.ReferenceTokens {
-				row.Delta = new(row.Candidate.Median - row.Baseline.Median)
-				if row.Baseline.Median != 0 {
-					row.Percent = new(*row.Delta / row.Baseline.Median * 100)
-				}
 			}
-			c.Metrics = append(c.Metrics, row)
+		} else if key != "workload.reference_seconds" || a.summary.ReferenceTokens == b.summary.ReferenceTokens {
+			row.Delta = new(row.Candidate.Median - row.Baseline.Median)
+			if row.Baseline.Median != 0 {
+				row.Percent = new(*row.Delta / row.Baseline.Median * 100)
+			}
 		}
+		c.Metrics = append(c.Metrics, row)
 	}
 	return c
 }
