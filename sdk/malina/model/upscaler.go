@@ -21,6 +21,15 @@ type UpscalerConfig struct {
 	ParamsBackend string
 }
 
+// UpscaledImage contains owned pixels and the native sdcpp.generation/v1 JSON
+// record, including upscale.upscale_factor. Both remain valid after Unload.
+// GenerationInfo is separate from the pixels and is not embedded when encoding
+// the image as PNG or JPEG.
+type UpscaledImage struct {
+	Image          image.Image
+	GenerationInfo string
+}
+
 // Upscaler owns one native ESRGAN context.
 type Upscaler struct {
 	mu       sync.Mutex
@@ -108,9 +117,28 @@ func (u *Upscaler) Factor(ctx context.Context) (int, error) {
 	return int(u.factor), nil
 }
 
-// Upscale enlarges an image using the model's native scale factor.
+// Upscale enlarges an image using the model's native scale factor and returns
+// only its pixels. Use UpscaleWithInfo to retain native generation metadata.
 // Cancellation cannot interrupt an ESRGAN call that has already entered native code.
 func (u *Upscaler) Upscale(ctx context.Context, input image.Image) ([]image.Image, error) {
+	results, err := u.UpscaleWithInfo(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+
+	images := make([]image.Image, len(results))
+	for i, result := range results {
+		images[i] = result.Image
+	}
+
+	return images, nil
+}
+
+// UpscaleWithInfo enlarges an image using the model's native scale factor and
+// returns owned pixels and native generation metadata for every result.
+// Cancellation cannot interrupt an ESRGAN call that has already entered native
+// code; completed results are discarded if ctx is canceled.
+func (u *Upscaler) UpscaleWithInfo(ctx context.Context, input image.Image) ([]UpscaledImage, error) {
 	if input == nil {
 		return nil, errors.Join(ErrInvalidRequest, errors.New("upscale image is required"))
 	}
@@ -143,12 +171,13 @@ func (u *Upscaler) Upscale(ctx context.Context, input image.Image) ([]image.Imag
 		return nil, err
 	}
 
-	images := make([]image.Image, len(output))
+	images := make([]UpscaledImage, len(output))
 	for i, result := range output {
-		images[i], err = decodeImage(result)
+		pixels, err := decodeImage(result)
 		if err != nil {
 			return nil, fmt.Errorf("upscale: decode image %d: %w", i, err)
 		}
+		images[i] = UpscaledImage{Image: pixels, GenerationInfo: result.GenerationInfo}
 	}
 
 	return images, nil

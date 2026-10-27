@@ -4,7 +4,11 @@ package malina_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"image"
+	"image/color"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -151,8 +155,96 @@ func TestMalinaModelInference(t *testing.T) {
 
 	reuse := params
 	reuse.Steps = 1
-	if _, err := handle.Generate(t.Context(), reuse); err != nil {
+	reuse.Seed = -1
+	generated, err := handle.Generate(t.Context(), reuse)
+	if err != nil {
 		t.Fatalf("Generate() after cancellation error = %v", err)
+	}
+	if err := handle.Unload(t.Context()); err != nil {
+		t.Fatalf("Unload() error = %v", err)
+	}
+
+	var info struct {
+		Schema string `json:"schema"`
+		Seed   string `json:"seed"`
+	}
+	if err := json.Unmarshal([]byte(generated.GenerationInfo), &info); err != nil {
+		t.Fatalf("generation metadata after unload: %v", err)
+	}
+	if info.Schema != "sdcpp.generation/v1" || generated.Seed != -1 {
+		t.Errorf("metadata: got schema %q, requested seed %d, want sdcpp.generation/v1 and -1", info.Schema, generated.Seed)
+	}
+	if _, err := strconv.ParseUint(info.Seed, 10, 64); err != nil {
+		t.Errorf("resolved seed: got %q, want a nonnegative native seed", info.Seed)
+	}
+}
+
+func TestMalinaUpscaleMetadata(t *testing.T) {
+	mdls, err := malinamodels.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := mdls.LoadManifest(malinamodels.BundleRealESRGANX4Anime)
+	if err != nil {
+		t.Skipf("upscaler bundle is not installed: %v", err)
+	}
+	if err := malina.Init(malina.WithLibPath(malinalibs.Path(""))); err != nil {
+		t.Fatal(err)
+	}
+	u, err := malina.NewUpscaler(t.Context(), malina.UpscalerConfig{
+		ModelPath: manifest.Files[malinamodels.RoleUpscaler.String()],
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := u.Unload(); err != nil {
+			t.Error(err)
+		}
+	})
+
+	input := image.NewRGBA(image.Rect(0, 0, 8, 16))
+	for y := range 16 {
+		for x := range 8 {
+			input.SetRGBA(x, y, color.RGBA{R: uint8(x * 30), G: uint8(y * 15), B: 90, A: 255})
+		}
+	}
+	results, err := u.UpscaleWithInfo(t.Context(), input)
+	if err != nil {
+		t.Fatalf("UpscaleWithInfo(): %v", err)
+	}
+	legacy, err := u.Upscale(t.Context(), input)
+	if err != nil {
+		t.Fatalf("Upscale(): %v", err)
+	}
+	if err := u.Unload(); err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || len(legacy) != 1 {
+		t.Fatalf("result counts: got %d/%d, want 1/1", len(results), len(legacy))
+	}
+	wantBounds := image.Rect(0, 0, 32, 64)
+	if results[0].Image.Bounds() != wantBounds || legacy[0].Bounds() != wantBounds {
+		t.Fatalf("bounds: got %v/%v, want %v", results[0].Image.Bounds(), legacy[0].Bounds(), wantBounds)
+	}
+	for y := range 64 {
+		for x := range 32 {
+			if results[0].Image.At(x, y) != legacy[0].At(x, y) {
+				t.Fatalf("pixel (%d,%d): got %v, want legacy %v", x, y, results[0].Image.At(x, y), legacy[0].At(x, y))
+			}
+		}
+	}
+	var info struct {
+		Schema  string `json:"schema"`
+		Upscale struct {
+			Factor int `json:"upscale_factor"`
+		} `json:"upscale"`
+	}
+	if err := json.Unmarshal([]byte(results[0].GenerationInfo), &info); err != nil {
+		t.Fatalf("metadata after unload: %v", err)
+	}
+	if info.Schema != "sdcpp.generation/v1" || info.Upscale.Factor != 4 {
+		t.Errorf("metadata: got %+v, want sdcpp.generation/v1 and factor 4", info)
 	}
 }
 

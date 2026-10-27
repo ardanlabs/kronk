@@ -112,27 +112,11 @@ Here are some of the known compatible versions:
 
 | kronk  | yzma    | llama.cpp | bucky  | whisper.cpp | malina | stable-diffusion.cpp |
 | ------ | ------- | --------- | ------ | ----------- | ------ | -------------------- |
-| 1.33.0 | 3887a1b | b11901    | v1.1.5 | v1.9.5      | v1.1.8 | master-975-95b3090   |
+| 1.33.1 | 3887a1b | b11901    | v1.1.5 | v1.9.5      | v1.1.9 | master-1017-be48649  |
+| 1.33.0 | 4e61a12 | b11797    | v1.1.5 | v1.9.5      | v1.1.8 | master-975-95b3090   |
 | 1.32.9 | 1a800a2 | b11513    | v1.1.4 | v1.9.5      | v1.1.5 | master-929-3f8527a   |
 | 1.32.8 | c25d400 | b11331    | v1.1.3 | v1.9.4      | v1.1.5 | master-929-3f8527a   |
 | 1.32.6 | ece4890 | b10896    | v1.1.2 | v1.9.3      | v1.1.0 | master-849-d04e895   |
-
-Bucky's authenticated native pin is
-`v1.9.5@sha256:b835b4214be7025620d5cc89147ecbe14bb30a21939abe3e5524fe18cc892ecb`.
-Linux supports separate CUDA 12 and CUDA 13 bundles; automatic selection checks
-the driver, visible GPUs, and installed runtime/cuBLAS libraries. See
-[Bucky installation](.manual/chapter-18-bucky.md#182-install-whisper-libraries).
-Default downloads replace managed bundles that do not match the pin. User-managed
-builds remain read-only and must be rebuilt or replaced by the user when an upgrade
-changes the native ABI; do not mix ggml files from unrelated bundles.
-
-Malina v1.1.7's authenticated native pin is
-`master-969-8c442fb@sha256:b7b38cedefb63b398a7fccb5ee22b4d347613ba1f8ad1b3fe0e55da9e42afebf`.
-This is an ABI-breaking upgrade from Malina v1.1.5 / `master-929-3f8527a`:
-upgrade bindings and native libraries together. Default downloads atomically
-replace mismatched managed installations, including arbitrary newer builds.
-User-managed paths must be rebuilt or replaced by their owner before loading.
-See [Malina installation](.manual/chapter-19-malina.md#192-install-stable-diffusion-libraries).
 
 ## Documentation and Examples
 
