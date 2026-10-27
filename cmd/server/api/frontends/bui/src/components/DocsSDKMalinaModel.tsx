@@ -245,6 +245,17 @@ export default function DocsSDKMalinaModel() {
               <p className="doc-description">Option modifies Config.</p>
             </div>
 
+            <div className="doc-section" id="type-upscaledimage">
+              <h4>UpscaledImage</h4>
+              <pre className="code-block">
+                <code>{`type UpscaledImage struct {
+	Image          image.Image
+	GenerationInfo string
+}`}</code>
+              </pre>
+              <p className="doc-description">UpscaledImage contains owned pixels and the native sdcpp.generation/v1 JSON record, including upscale.upscale_factor. Both remain valid after Unload. GenerationInfo is separate from the pixels and is not embedded when encoding the image as PNG or JPEG.</p>
+            </div>
+
             <div className="doc-section" id="type-upscaler">
               <h4>Upscaler</h4>
               <pre className="code-block">
@@ -395,7 +406,15 @@ export default function DocsSDKMalinaModel() {
               <pre className="code-block">
                 <code>func (u *Upscaler) Upscale(ctx context.Context, input image.Image) ([]image.Image, error)</code>
               </pre>
-              <p className="doc-description">Upscale enlarges an image using the model's native scale factor. Cancellation cannot interrupt an ESRGAN call that has already entered native code.</p>
+              <p className="doc-description">Upscale enlarges an image using the model's native scale factor and returns only its pixels. Use UpscaleWithInfo to retain native generation metadata. Cancellation cannot interrupt an ESRGAN call that has already entered native code.</p>
+            </div>
+
+            <div className="doc-section" id="method-upscaler-upscalewithinfo">
+              <h4>Upscaler.UpscaleWithInfo</h4>
+              <pre className="code-block">
+                <code>func (u *Upscaler) UpscaleWithInfo(ctx context.Context, input image.Image) ([]UpscaledImage, error)</code>
+              </pre>
+              <p className="doc-description">UpscaleWithInfo enlarges an image using the model's native scale factor and returns owned pixels and native generation metadata for every result. Cancellation cannot interrupt an ESRGAN call that has already entered native code; completed results are discarded if ctx is canceled.</p>
             </div>
 
             <div className="doc-section" id="method-videoparams-validate">
@@ -445,6 +464,7 @@ export default function DocsSDKMalinaModel() {
                 <li><a href="#type-model">Model</a></li>
                 <li><a href="#type-modelinfo">ModelInfo</a></li>
                 <li><a href="#type-option">Option</a></li>
+                <li><a href="#type-upscaledimage">UpscaledImage</a></li>
                 <li><a href="#type-upscaler">Upscaler</a></li>
                 <li><a href="#type-upscalerconfig">UpscalerConfig</a></li>
                 <li><a href="#type-videoparams">VideoParams</a></li>
@@ -466,6 +486,7 @@ export default function DocsSDKMalinaModel() {
                 <li><a href="#method-upscaler-factor">Upscaler.Factor</a></li>
                 <li><a href="#method-upscaler-unload">Upscaler.Unload</a></li>
                 <li><a href="#method-upscaler-upscale">Upscaler.Upscale</a></li>
+                <li><a href="#method-upscaler-upscalewithinfo">Upscaler.UpscaleWithInfo</a></li>
                 <li><a href="#method-videoparams-validate">VideoParams.Validate</a></li>
               </ul>
             </div>

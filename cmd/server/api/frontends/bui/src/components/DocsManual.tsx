@@ -5687,14 +5687,15 @@ if err == nil {
           <h4 id="1965-upscaling">19.6.5 Upscaling</h4>
           <p>Upscalers use a standalone handle because their bundles do not contain a diffusion model:</p>
           <pre className="code-block"><code className="language-go">{`upscaler, err := malina.NewUpscaler(ctx, malina.UpscalerConfig{
-    ModelPath: manifest.Files[string(models.RoleUpscaler)],
+    ModelPath: manifest.Files[models.RoleUpscaler.String()],
 })
 if err != nil {
     return err
 }
 defer upscaler.Unload()
 
-images, err := upscaler.Upscale(ctx, source)`}</code></pre>
+images, err := upscaler.UpscaleWithInfo(ctx, source)`}</code></pre>
+          <p>Each <code>model.UpscaledImage</code> contains an <code>Image</code> with owned pixels and a <code>GenerationInfo</code> string with the native <code>sdcpp.generation/v1</code> JSON record, including <code>upscale.upscale_factor</code>. Both remain valid after unloading the upscaler. Pass <code>images[0].Image</code> to an image encoder and save or parse <code>images[0].GenerationInfo</code> separately; PNG/JPEG encoding does not embed it. The existing <code>Upscale</code> method remains available and returns only <code>[]image.Image</code>, discarding metadata.</p>
           <p>Construction reads the model's native scale directly from ESRGAN metadata, then verifies that the loaded context reports the same factor. <code>Factor</code> returns that verified value without another native call. An unrecognized RGB ESRGAN model or a native library without the metadata API is rejected.</p>
           <p>An ESRGAN call already executing in native code cannot be interrupted. A canceled context prevents queued work from starting and causes completed work to be discarded.</p>
           <h3 id="197-logging-progress-and-diagnostics">19.7 Logging, Progress, and Diagnostics</h3>

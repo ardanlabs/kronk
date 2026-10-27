@@ -658,15 +658,23 @@ diffusion model:
 
 ```go
 upscaler, err := malina.NewUpscaler(ctx, malina.UpscalerConfig{
-    ModelPath: manifest.Files[string(models.RoleUpscaler)],
+    ModelPath: manifest.Files[models.RoleUpscaler.String()],
 })
 if err != nil {
     return err
 }
 defer upscaler.Unload()
 
-images, err := upscaler.Upscale(ctx, source)
+images, err := upscaler.UpscaleWithInfo(ctx, source)
 ```
+
+Each `model.UpscaledImage` contains an `Image` with owned pixels and a
+`GenerationInfo` string with the native `sdcpp.generation/v1` JSON record,
+including `upscale.upscale_factor`. Both remain valid after unloading the
+upscaler. Pass `images[0].Image` to an image encoder and save or parse
+`images[0].GenerationInfo` separately; PNG/JPEG encoding does not embed it.
+The existing `Upscale` method remains available and returns only
+`[]image.Image`, discarding metadata.
 
 Construction reads the model's native scale directly from ESRGAN metadata,
 then verifies that the loaded context reports the same factor. `Factor` returns

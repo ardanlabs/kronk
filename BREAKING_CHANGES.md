@@ -4,6 +4,7 @@
 
 - [v1.33.1](#v1331)
   - [Bucky Segment Text Confidence](#v1331-bucky-segment-text-confidence)
+  - [Malina Generation Result ABI](#v1331-malina-generation-result-abi)
 - [v1.33.0](#v1330)
   - [Model Profile Classification](#v1330-model-profile-classification)
   - [Bucky Flash Attention Configuration](#v1330-bucky-flash-attention-configuration)
@@ -65,6 +66,27 @@ No confidence filtering is applied, and existing text and no-speech scores
 are unchanged. Callers choose their own threshold and build filtered text
 from accepted segments. Text confidence is not a calibrated probability that
 speech occurred or that the words are correct; hallucinations can score highly.
+
+### v1.33.1: Malina Generation Result ABI
+
+Malina v1.1.9 requires stable-diffusion.cpp `master-1017-be48649`, replacing
+v1.1.8's `master-975-95b3090`. Image, video, ADetailer, and upscaler generation
+now use native result objects with new function signatures and matching
+destructors. Video generation parameters also have a new layout. Neither
+version's bindings can safely use the other version's native runtime.
+
+Upgrade the bindings and native libraries together. Default library downloads
+replace mismatched Kronk-managed installations with the exact compatible pin.
+User-managed library paths must be rebuilt or replaced by their owners.
+
+`model.GeneratedImage` and `model.GeneratedVideo` add `GenerationInfo string`
+with the native JSON record. Their `Seed` fields still report the requested
+seed; the resolved native seed is recorded in `GenerationInfo`. Keyed struct
+literals continue to compile; unkeyed literals need updating. Direct JSON
+serialization includes the new field. Image metadata is not embedded in PNG
+output. `Upscaler.UpscaleWithInfo` exposes upscale pixels and metadata through
+`model.UpscaledImage`; the existing pixel-only `Upscale` signature is unchanged.
+Kronk's HTTP image response format is unchanged.
 
 ## v1.33.0
 
