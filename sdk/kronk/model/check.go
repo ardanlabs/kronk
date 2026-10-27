@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -13,6 +14,9 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/applog"
 )
+
+// ErrArtifactSizeMismatch indicates an incomplete or invalid model artifact.
+var ErrArtifactSizeMismatch = errors.New("model artifact size mismatch; wait for any active pull to finish or run `kronk model pull` again")
 
 // ArtifactDigest provides the expected SHA256 and size for an artifact.
 type ArtifactDigest struct {
@@ -58,6 +62,7 @@ func VerifyArtifactWithLogger(ctx context.Context, log applog.Logger, modelFile 
 	if err != nil || len(decoded) != sha256.Size {
 		return ArtifactVerification{}, false, fmt.Errorf("verify-artifact: invalid sha256")
 	}
+
 	if digest.Size < 0 {
 		return ArtifactVerification{}, false, fmt.Errorf("verify-artifact: invalid size")
 	}
@@ -66,13 +71,15 @@ func VerifyArtifactWithLogger(ctx context.Context, log applog.Logger, modelFile 
 	if err != nil {
 		return ArtifactVerification{}, false, fmt.Errorf("verify-artifact: stat model file: %w", err)
 	}
+
 	if info.Size() != digest.Size {
-		return ArtifactVerification{}, false, fmt.Errorf("verify-artifact: size mismatch: expected %d, got %d", digest.Size, info.Size())
+		return ArtifactVerification{}, false, fmt.Errorf("verify-artifact: %w: expected %d, got %d", ErrArtifactSizeMismatch, digest.Size, info.Size())
 	}
 
 	if !checkSHA {
 		return ArtifactVerification{}, false, nil
 	}
+
 	if verificationMatches(previous, expectedSHA, info) {
 		return *previous, false, nil
 	}

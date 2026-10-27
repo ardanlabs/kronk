@@ -3249,6 +3249,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">// ChannelNone identifies a structural marker, counted but not surfaced. ChannelNone = newChannel("none", 0) // ChannelReasoning identifies reasoning_content deltas. ChannelReasoning = newChannel("reasoning", 1) // ChannelAnswer identifies content deltas. ChannelAnswer = newChannel("answer", 2) // ChannelTool identifies content accumulated for ToolCall parsing. ChannelTool = newChannel("tool", 3)</p>
             </div>
 
+            <div className="doc-section" id="var-errartifactsizemismatch">
+              <h4>ErrArtifactSizeMismatch</h4>
+              <pre className="code-block">
+                <code>{`var ErrArtifactSizeMismatch = errors.New("model artifact size mismatch; wait for any active pull to finish or run \`kronk model pull\` again")`}</code>
+              </pre>
+              <p className="doc-description">ErrArtifactSizeMismatch indicates an incomplete or invalid model artifact.</p>
+            </div>
+
             <div className="doc-section" id="var-errdecisionbudget">
               <h4>ErrDecisionBudget</h4>
               <pre className="code-block">
@@ -3632,6 +3640,7 @@ export default function DocsSDKModel() {
                 <li><a href="#var-variable">Variable</a></li>
                 <li><a href="#var-variable">Variable</a></li>
                 <li><a href="#var-variable">Variable</a></li>
+                <li><a href="#var-errartifactsizemismatch">ErrArtifactSizeMismatch</a></li>
                 <li><a href="#var-errdecisionbudget">ErrDecisionBudget</a></li>
                 <li><a href="#var-errdecisionrequest">ErrDecisionRequest</a></li>
                 <li><a href="#var-errfileinputsunsupported">ErrFileInputsUnsupported</a></li>
