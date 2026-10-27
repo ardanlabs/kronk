@@ -568,7 +568,7 @@ func run(o options) (runErr error) {
 			cr.ReferenceTokens = normalizationReference{}
 		}
 		if cr.TwoSlots {
-			cr.Workload = "operations-concurrent-v1"
+			cr.Workload = "operations-concurrent-v2"
 		}
 		var err error
 		if group == nil {
@@ -777,7 +777,7 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 		_, err = perform("replay", a, []string{"ORCHID-47", "Maren", "Northport"}, nil, false)
 	}
 	if err == nil {
-		question := "Change the destination to Eastmere; keep the identifier and owner unchanged. Review the updated handover in about 80 words, including its current facts. Do not repeat the previous destination."
+		question := "Change the destination to Eastmere; keep the identifier and owner unchanged. Review the updated handover using between 60 and 80 words in total, including its current facts. Do not repeat the previous destination."
 		if o.images {
 			question += " Include the animal from the picture already in this conversation."
 		}

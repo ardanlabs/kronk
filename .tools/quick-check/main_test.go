@@ -23,6 +23,38 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
+func TestAnswerHyphens(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		content string
+		wantErr string
+	}{
+		{"ascii", "COBALT-83 belongs to Tobin in Westhaven.", ""},
+		{"hyphen", "COBALT\u201083 belongs to Tobin in Westhaven.", ""},
+		{"nonbreaking-hyphen", "COBALT\u201183 belongs to Tobin in Westhaven.", ""},
+		{"missing-hyphen", "COBALT83 belongs to Tobin in Westhaven.", "omitted handover fact"},
+		{"wrong-identifier", "COBALT\u201184 belongs to Tobin in Westhaven.", "omitted handover fact"},
+		{"foreign-hyphen", "COBALT-83 belongs to Tobin in Westhaven. ORCHID\u201047.", "leaked foreign handover fact"},
+		{"foreign-nonbreaking-hyphen", "COBALT-83 belongs to Tobin in Westhaven. ORCHID\u201147.", "leaked foreign handover fact"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := result{
+				Content:      tc.content,
+				FinishReason: "stop",
+				Usage:        usage{PromptTokens: 10000, CompletionTokens: 20},
+			}
+			err := checkAnswer(r, []string{"COBALT-83", "Tobin", "Westhaven"}, []string{"ORCHID-47"}, true)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("expected %q, got %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
 // These servers exercise the command's contract, not Kronk inference. Each
 // defect removes a distinct signal that an apparently successful chat can hide.
 func TestQuickCheckCommand(t *testing.T) {

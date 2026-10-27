@@ -63,8 +63,8 @@ func runConcurrent(c *client, r *report, system string, log func(string, ...any)
 	if err := save(fresh); err != nil {
 		return err
 	}
-	aQuestion := message{Role: "user", Content: "Change the destination to Eastmere; keep the identifier and owner unchanged. Review the updated handover in about 80 words, including its current facts. Do not repeat the previous destination."}
-	bQuestion := message{Role: "user", Content: "Change the destination to Westhaven; keep the identifier and owner unchanged. Review the updated handover in about 80 words, including its current facts. Do not repeat the previous destination."}
+	aQuestion := message{Role: "user", Content: "Change the destination to Eastmere; keep the identifier and owner unchanged. Review the updated handover using between 60 and 80 words in total, including its current facts. Do not repeat the previous destination."}
+	bQuestion := message{Role: "user", Content: "Change the destination to Westhaven; keep the identifier and owner unchanged. Review the updated handover using between 60 and 80 words in total, including its current facts. Do not repeat the previous destination."}
 	aFacts, bFacts := []string{"ORCHID-47", "Maren", "Eastmere"}, []string{"COBALT-83", "Tobin", "Westhaven"}
 	aForeign, bForeign := []string{"Northport", "COBALT-83", "Tobin", "Westhaven"}, []string{"Southbank", "ORCHID-47", "Maren", "Eastmere"}
 	if r.Images {

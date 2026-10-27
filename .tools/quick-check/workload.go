@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-const workloadVersion = "operations-v2"
+const workloadVersion = "operations-v3"
 
 // A stable synthetic handbook approximates an agent's large instruction/reference
 // prefix without importing a client prompt, tool loop, or executable task.
@@ -46,7 +46,7 @@ Do not report a successful recovery merely because the service accepted a reques
 func conversation(system, id, owner, destination string) []message {
 	return []message{
 		{Role: "system", Content: system},
-		{Role: "user", Content: fmt.Sprintf("Private handover %s: owner %s; destination %s. Review the handover using four short paragraphs (about 80 words). Include the identifier, owner, and destination, and explain queue checks, safe interruption, cache reuse, and recovery. These are fictional facts, not work to execute.", id, owner, destination)},
+		{Role: "user", Content: fmt.Sprintf("Private handover %s: owner %s; destination %s. Review the handover using four short paragraphs, with between 60 and 80 words in total. Include the identifier, owner, and destination, and explain queue checks, safe interruption, cache reuse, and recovery. These are fictional facts, not work to execute.", id, owner, destination)},
 	}
 }
 
@@ -86,14 +86,16 @@ func checkAnswer(r result, expected, forbidden []string, targetOnly bool) error 
 	if !targetOnly && (r.Usage.DraftDisableReason != "" || r.Usage.DraftTokens <= 0 || r.Usage.DraftCoverage <= 0) {
 		return fmt.Errorf("MTP did not remain active: drafts=%d coverage=%g disabled=%q", r.Usage.DraftTokens, r.Usage.DraftCoverage, r.Usage.DraftDisableReason)
 	}
-	text := strings.ToLower(r.Content)
+	// Typography must neither hide a required identifier nor bypass isolation.
+	hyphens := strings.NewReplacer("\u2010", "-", "\u2011", "-")
+	text := strings.ToLower(hyphens.Replace(r.Content))
 	for _, fact := range expected {
-		if !strings.Contains(text, strings.ToLower(fact)) {
+		if !strings.Contains(text, strings.ToLower(hyphens.Replace(fact))) {
 			return fmt.Errorf("answer omitted handover fact %q (content finding, not a proven engine defect)", fact)
 		}
 	}
 	for _, fact := range forbidden {
-		if strings.Contains(text, strings.ToLower(fact)) {
+		if strings.Contains(text, strings.ToLower(hyphens.Replace(fact))) {
 			return fmt.Errorf("answer leaked foreign handover fact %q", fact)
 		}
 	}
