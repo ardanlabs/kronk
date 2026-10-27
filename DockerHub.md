@@ -56,10 +56,11 @@ Models download automatically on first use.
 - Every variant also has an immutable per-release tag, `<version>-<variant>`
   (e.g. `1.28.8-cuda`). **Pin these in production** so restarts are
   reproducible.
-- **NVIDIA Jetson (Orin / Xavier):** published as `:jetson`. It is built on
-  demand via the `--target runtime-jetson` path documented in the
-  [Dockerfile](https://github.com/ardanlabs/kronk/blob/main/zarf/docker/kronk/Dockerfile),
-  not as part of the automatic build matrix. See the run example below.
+- **NVIDIA Jetson (Orin / Xavier):** the automated Docker workflow does not
+  publish a `:jetson` image. Build a local image with the
+  `--target runtime-jetson` path documented in the
+  [Dockerfile](https://github.com/ardanlabs/kronk/blob/main/zarf/docker/kronk/Dockerfile)
+  before using the run example below.
 
 **Development snapshots** (bleeding edge, not for production) are published
 from every push to `main` in a separate repo,
@@ -80,7 +81,7 @@ in [`ardanlabs/kronk-main-signatures`](https://hub.docker.com/r/ardanlabs/kronk-
 | **Linux**       | Intel     | `:latest-vulkan`  | Vulkan  | ✅ Fully supported                                     |
 | **Linux**       | NVIDIA    | `:latest-vulkan`  | Vulkan  | ✅ Fully supported                                     |
 | **Linux**       | None      | `:latest`         | CPU     | ✅ Fully supported                                     |
-| **Linux arm64** | Jetson    | `:jetson`         | CUDA    | ✅ Fully supported (built on demand — see tag scheme)  |
+| **Linux arm64** | Jetson    | `kronk:jetson` | CUDA    | ✅ Local build only; not published by the workflow |
 | **Linux arm64** | SoC iGPU  | `:latest-vulkan`  | Vulkan  | ✅ Fully supported                                     |
 | **macOS**       | Any       | `:latest`         | CPU     | ⚠️ Works (Apple Silicon GPU not exposed to containers) |
 | **Windows**     | NVIDIA    | `:latest-cuda`    | CUDA    | ✅ Supported (Docker Desktop + WSL2)                   |
@@ -181,13 +182,24 @@ docker exec -it <container> vulkaninfo --summary
 
 ### NVIDIA Jetson (Orin / Xavier)
 
-Requires JetPack 6+ and `nvidia-container-runtime` configured as the default runtime.
+Requires JetPack 6+ and `nvidia-container-runtime` configured as the default runtime. The automated workflow does not publish this image; build it locally from the repository root first:
+
+```bash
+docker buildx build --load --platform linux/arm64 \
+  --build-arg LLAMA_PROCESSORS=cuda \
+  --build-arg BUCKY_PROCESSORS=cuda \
+  --target runtime-jetson \
+  -t kronk:jetson \
+  -f zarf/docker/kronk/Dockerfile .
+```
+
+Run the local image:
 
 ```bash
 docker run --rm --runtime nvidia \
   -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics \
   -p 11435:11435 -v kronk-data:/kronk \
-  ghcr.io/ardanlabs/kronk:jetson
+  kronk:jetson
 ```
 
 Verify CUDA detection:
@@ -195,7 +207,7 @@ Verify CUDA detection:
 ```bash
 docker run --rm --runtime nvidia \
   --entrypoint nvidia-smi \
-  ghcr.io/ardanlabs/kronk:jetson
+  kronk:jetson
 ```
 
 ---
