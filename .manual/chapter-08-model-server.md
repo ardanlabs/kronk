@@ -9,7 +9,8 @@
 - [8.5 Model Configuration Files](#85-model-configuration-files)
 - [8.6 Catalog Operations](#86-catalog-operations)
 - [8.7 Container Operations](#87-container-operations)
-- [8.8 Related Administration Guides](#88-related-administration-guides)
+- [8.8 Running as a systemd Service](#88-running-as-a-systemd-service)
+- [8.9 Related Administration Guides](#89-related-administration-guides)
 
 ---
 
@@ -577,7 +578,111 @@ The `kronk-net` network is shared with the
 and can remain after both stacks stop; remove it with
 `docker network rm kronk-net`.
 
-## 8.8 Related Administration Guides
+## 8.8 Running as a systemd Service
+
+On Linux, `kronk systemd` installs and manages a systemd **user service**.
+It runs as your normal user and uses your existing `~/.kronk` models,
+libraries, and keys. It is separate from `kronk server start --detach`:
+systemd owns the process, restarts it after failures, and stores its logs
+in the journal. Do not use `sudo kronk systemd`.
+
+Install Kronk in a permanent location using `go install`, Homebrew, or a
+release binary, then run:
+
+```shell
+kronk systemd install
+kronk systemd start
+kronk systemd status
+curl http://localhost:11435/v1/liveness
+```
+
+Stop any existing foreground or detached server first to avoid port and
+database-lock conflicts. Use Ctrl-C for a foreground server or
+`kronk server stop` for a detached server. Once systemd manages the server,
+use `kronk systemd stop` and `kronk systemd logs` instead.
+
+### Installation and Startup
+
+The service definition is embedded in the executable; there is no separate
+download or shell script. Installation records the absolute path of the
+running executable and writes `~/.config/systemd/user/kronk.service`.
+With `XDG_CONFIG_HOME` set, that directory replaces `~/.config` for both
+the service file and the optional configuration file below. Do not install
+using `go run`: its temporary executable will disappear.
+
+Installation enables startup at login but does not start the server.
+To start at boot without logging in and keep running after logout, use:
+
+```shell
+kronk systemd install --boot
+```
+
+`--boot` runs `loginctl enable-linger` for your account. It may require
+authorization and affects all your user services. If already installed,
+use `loginctl enable-linger` directly, or reinstall with `--force --boot`.
+A machine-wide service with a dedicated system account is not installed.
+
+### Configuration
+
+The optional `~/.config/kronk/kronk.env` contains server environment settings
+(see §8.3). Create its directory if needed and protect sensitive settings:
+
+```shell
+mkdir -p ~/.config/kronk
+touch ~/.config/kronk/kronk.env
+chmod 600 ~/.config/kronk/kronk.env
+```
+
+For example:
+
+```text
+KRONK_AUTHORIZATION_MODE=management
+# Optional GPU settings; use values appropriate to your host:
+# KRONK_PROCESSOR=rocm
+# PATH=/opt/rocm/bin:/usr/local/bin:/usr/bin:/bin
+# LD_LIBRARY_PATH=/opt/rocm/lib
+```
+
+This is not a shell script: use `NAME=value`, without `export`, and absolute
+paths, not `~`, `$HOME`, or `$PATH` substitutions. The service does not read
+your shell startup files. GPU detection tools and native libraries must be
+available in its environment. Configure GPU-specific values here if a
+working interactive shell depends on them.
+
+`--base-path` or `KRONK_BASE_PATH` when installing records a custom data
+directory in the unit; `KRONK_BASE_PATH` in `kronk.env` overrides that value.
+Other shell settings are not copied into the unit automatically. By default
+the API listens on `127.0.0.1:11435`. Configure authorization before exposing
+it on a public interface with `KRONK_WEB_API_HOST`.
+
+### Managing and Removing the Service
+
+```shell
+kronk systemd stop
+kronk systemd start
+kronk systemd restart
+kronk systemd status
+kronk systemd logs
+kronk systemd uninstall
+```
+
+Restart after editing `kronk.env` or upgrading the binary at the same path.
+If the binary moves, run `kronk systemd install --force` to update its path,
+then restart. An existing unit is not overwritten without `--force`.
+`status` reports systemd process state, not HTTP readiness; startup can
+include library downloads. Check `/v1/liveness` before sending requests.
+
+Use `systemctl --user edit kronk` for systemd overrides. The unit allows
+150 seconds to stop. If increasing `KRONK_WEB_SHUTDOWN_TIMEOUT` above its
+default of one minute, set `TimeoutStopSec` to at least twice that timeout
+plus 30 seconds. The unit requires systemd 240 or newer (`Type=exec`).
+
+Uninstall stops and disables the service, removes the unit, and reloads
+systemd. It preserves models, libraries, keys, `kronk.env`, and systemd
+drop-ins. It also preserves user lingering because other services may
+depend on it; use `loginctl disable-linger` only if none do.
+
+## 8.9 Related Administration Guides
 
 Detailed administration is divided by responsibility:
 

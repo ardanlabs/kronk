@@ -385,6 +385,12 @@ kronk server stop`}</code></pre>
   --web-admin-enabled=false`}</code></pre>
           <p>Peer downloads are separately controlled by <code>KRONK_DOWNLOAD_ENABLED</code>, which defaults to <code>false</code>. It shares this server's models and library bundles with other Kronk servers on the network.</p>
           <p>See <a href="https://www.kronkai.com/manual#chapter-8-model-server">Chapter 8</a> for server flags, model pooling, runtime paths, and deployment operations.</p>
+          <h4 id="run-as-a-linux-service-systemd">Run as a Linux Service (systemd)</h4>
+          <p>With Kronk installed in a permanent location, run these as your normal user:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk systemd install
+kronk systemd start
+kronk systemd status`}</code></pre>
+          <p>The embedded service definition runs against your existing <code>~/.kronk</code> and enables startup at login. Use <code>kronk systemd install --boot</code> instead to enable startup before login and operation after logout (may require authorization). Stop any manually started server before starting the service. Use <code>kronk systemd stop</code> and <code>kronk systemd logs</code> for this process, not the detached-server commands. See <a href="https://www.kronkai.com/manual#88-running-as-a-systemd-service">Chapter 8 §8.8</a> for configuration, upgrades, and removal.</p>
           <h3 id="27-verify-the-installation">2.7 Verify the Installation</h3>
           <p>Check server liveness:</p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/liveness`}</code></pre>
@@ -2308,7 +2314,43 @@ KRONK_IMAGE_VERSION=vX.Y.Z`}</code></pre>
             <li><code>latest</code>: run <code>docker compose pull</code>, then <code>docker compose up -d</code>.</li>
           </ul>
           <p>The <code>kronk-net</code> network is shared with the <a href="https://www.kronkai.com/manual#153-bundled-observability-stack">observability stack</a> and can remain after both stacks stop; remove it with <code>docker network rm kronk-net</code>.</p>
-          <h2 id="88-related-administration-guides">8.8 Related Administration Guides</h2>
+          <h2 id="88-running-as-a-systemd-service">8.8 Running as a systemd Service</h2>
+          <p>On Linux, <code>kronk systemd</code> installs and manages a systemd <strong>user service</strong>. It runs as your normal user and uses your existing <code>~/.kronk</code> models, libraries, and keys. It is separate from <code>kronk server start --detach</code>: systemd owns the process, restarts it after failures, and stores its logs in the journal. Do not use <code>sudo kronk systemd</code>.</p>
+          <p>Install Kronk in a permanent location using <code>go install</code>, Homebrew, or a release binary, then run:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk systemd install
+kronk systemd start
+kronk systemd status
+curl http://localhost:11435/v1/liveness`}</code></pre>
+          <p>Stop any existing foreground or detached server first to avoid port and database-lock conflicts. Use Ctrl-C for a foreground server or <code>kronk server stop</code> for a detached server. Once systemd manages the server, use <code>kronk systemd stop</code> and <code>kronk systemd logs</code> instead.</p>
+          <h3 id="installation-and-startup">Installation and Startup</h3>
+          <p>The service definition is embedded in the executable; there is no separate download or shell script. Installation records the absolute path of the running executable and writes <code>~/.config/systemd/user/kronk.service</code>. With <code>XDG_CONFIG_HOME</code> set, that directory replaces <code>~/.config</code> for both the service file and the optional configuration file below. Do not install using <code>go run</code>: its temporary executable will disappear.</p>
+          <p>Installation enables startup at login but does not start the server. To start at boot without logging in and keep running after logout, use:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk systemd install --boot`}</code></pre>
+          <p><code>--boot</code> runs <code>loginctl enable-linger</code> for your account. It may require authorization and affects all your user services. If already installed, use <code>loginctl enable-linger</code> directly, or reinstall with <code>--force --boot</code>. A machine-wide service with a dedicated system account is not installed.</p>
+          <h3 id="configuration">Configuration</h3>
+          <p>The optional <code>~/.config/kronk/kronk.env</code> contains server environment settings (see §8.3). Create its directory if needed and protect sensitive settings:</p>
+          <pre className="code-block"><code className="language-shell">{`mkdir -p ~/.config/kronk
+touch ~/.config/kronk/kronk.env
+chmod 600 ~/.config/kronk/kronk.env`}</code></pre>
+          <p>For example:</p>
+          <pre className="code-block"><code className="language-text">{`KRONK_AUTHORIZATION_MODE=management
+# Optional GPU settings; use values appropriate to your host:
+# KRONK_PROCESSOR=rocm
+# PATH=/opt/rocm/bin:/usr/local/bin:/usr/bin:/bin
+# LD_LIBRARY_PATH=/opt/rocm/lib`}</code></pre>
+          <p>This is not a shell script: use <code>NAME=value</code>, without <code>export</code>, and absolute paths, not <code>~</code>, <code>$HOME</code>, or <code>$PATH</code> substitutions. The service does not read your shell startup files. GPU detection tools and native libraries must be available in its environment. Configure GPU-specific values here if a working interactive shell depends on them.</p>
+          <p><code>--base-path</code> or <code>KRONK_BASE_PATH</code> when installing records a custom data directory in the unit; <code>KRONK_BASE_PATH</code> in <code>kronk.env</code> overrides that value. Other shell settings are not copied into the unit automatically. By default the API listens on <code>127.0.0.1:11435</code>. Configure authorization before exposing it on a public interface with <code>KRONK_WEB_API_HOST</code>.</p>
+          <h3 id="managing-and-removing-the-service">Managing and Removing the Service</h3>
+          <pre className="code-block"><code className="language-shell">{`kronk systemd stop
+kronk systemd start
+kronk systemd restart
+kronk systemd status
+kronk systemd logs
+kronk systemd uninstall`}</code></pre>
+          <p>Restart after editing <code>kronk.env</code> or upgrading the binary at the same path. If the binary moves, run <code>kronk systemd install --force</code> to update its path, then restart. An existing unit is not overwritten without <code>--force</code>. <code>status</code> reports systemd process state, not HTTP readiness; startup can include library downloads. Check <code>/v1/liveness</code> before sending requests.</p>
+          <p>Use <code>systemctl --user edit kronk</code> for systemd overrides. The unit allows 150 seconds to stop. If increasing <code>KRONK_WEB_SHUTDOWN_TIMEOUT</code> above its default of one minute, set <code>TimeoutStopSec</code> to at least twice that timeout plus 30 seconds. The unit requires systemd 240 or newer (<code>Type=exec</code>).</p>
+          <p>Uninstall stops and disables the service, removes the unit, and reloads systemd. It preserves models, libraries, keys, <code>kronk.env</code>, and systemd drop-ins. It also preserves user lingering because other services may depend on it; use <code>loginctl disable-linger</code> only if none do.</p>
+          <h2 id="89-related-administration-guides">8.9 Related Administration Guides</h2>
           <p>Detailed administration is divided by responsibility:</p>
           <ul>
             <li><a href="https://www.kronkai.com/manual#chapter-2-installation-quick-start">Chapter 2</a> — installation, libraries, image variants, and data paths</li>
@@ -4614,6 +4656,8 @@ lsof -nP -iTCP:9000 -sTCP:LISTEN`}</code></pre>
           <p>Detached mode stores <code>kronk.pid</code> and <code>kronk.log</code> under <code>KRONK_BASE_PATH</code>. If <code>kronk server stop</code> encounters a stale PID, verify that no Kronk process owns the API or debug port before removing only the stale PID file.</p>
           <p>BadgerDB also permits only one model-server process to use the rate-limit database. A lock error means another process owns <code>&lt;base&gt;/badger</code>; stop that process. Do not delete Badger's <code>LOCK</code> file while a server may be running.</p>
           <p>For permission errors, make the selected base path writable by the service user. The server enforces mode <code>0700</code> on <code>&lt;base&gt;/keys</code> and <code>0600</code> on private key files. Avoid recursively making credentials readable by other users.</p>
+          <p>For the Linux user service, use <code>kronk systemd status</code> and <code>kronk systemd logs</code>, not the detached-server commands. A failure to connect to the user bus means the systemd user manager is unavailable; run as your normal user in a systemd login session, not with <code>sudo</code>. To run at boot without login, enable lingering as described in <a href="https://www.kronkai.com/manual#88-running-as-a-systemd-service">Chapter 8 §8.8</a>.</p>
+          <p>If the service cannot execute Kronk after moving the binary, reinstall with <code>kronk systemd install --force</code>, then restart. If GPU detection differs from your interactive shell, check the service's <code>PATH</code>, native library paths, device permissions, and GPU environment settings in <code>kronk.env</code> (§8.8). After five failed starts within five minutes, fix the journal's reported error, run <code>systemctl --user reset-failed kronk</code>, then <code>kronk systemd start</code>.</p>
           <p>Whisper-specific failures are listed in <a href="https://www.kronkai.com/manual#189-troubleshooting">Chapter 18 §18.9</a>.</p>
           <h3 id="1710-reporting-a-problem">17.10 Reporting a Problem</h3>
           <p>Include:</p>
@@ -6499,7 +6543,15 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
               <a href="#87-container-operations" className={`doc-index-header ${activeSection === '87-container-operations' ? 'active' : ''}`}>8.7 Container Operations</a>
             </div>
             <div className="doc-index-section">
-              <a href="#88-related-administration-guides" className={`doc-index-header ${activeSection === '88-related-administration-guides' ? 'active' : ''}`}>8.8 Related Administration Guides</a>
+              <a href="#88-running-as-a-systemd-service" className={`doc-index-header ${activeSection === '88-running-as-a-systemd-service' ? 'active' : ''}`}>8.8 Running as a systemd Service</a>
+              <ul>
+                <li><a href="#installation-and-startup" className={activeSection === 'installation-and-startup' ? 'active' : ''}>Installation and Startup</a></li>
+                <li><a href="#configuration" className={activeSection === 'configuration' ? 'active' : ''}>Configuration</a></li>
+                <li><a href="#managing-and-removing-the-service" className={activeSection === 'managing-and-removing-the-service' ? 'active' : ''}>Managing and Removing the Service</a></li>
+              </ul>
+            </div>
+            <div className="doc-index-section">
+              <a href="#89-related-administration-guides" className={`doc-index-header ${activeSection === '89-related-administration-guides' ? 'active' : ''}`}>8.9 Related Administration Guides</a>
             </div>
             <div className="doc-index-section">
               <a href="#chapter-9-api-endpoints" className={`doc-index-header ${activeSection === 'chapter-9-api-endpoints' ? 'active' : ''}`}>Chapter 9: API Endpoints</a>

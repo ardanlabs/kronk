@@ -430,6 +430,20 @@ For permission errors, make the selected base path writable by the service
 user. The server enforces mode `0700` on `<base>/keys` and `0600` on private
 key files. Avoid recursively making credentials readable by other users.
 
+For the Linux user service, use `kronk systemd status` and
+`kronk systemd logs`, not the detached-server commands. A failure to connect
+to the user bus means the systemd user manager is unavailable; run as your
+normal user in a systemd login session, not with `sudo`. To run at boot
+without login, enable lingering as described in
+[Chapter 8 §8.8](https://www.kronkai.com/manual#88-running-as-a-systemd-service).
+
+If the service cannot execute Kronk after moving the binary, reinstall with
+`kronk systemd install --force`, then restart. If GPU detection differs from
+your interactive shell, check the service's `PATH`, native library paths,
+device permissions, and GPU environment settings in `kronk.env` (§8.8).
+After five failed starts within five minutes, fix the journal's reported
+error, run `systemctl --user reset-failed kronk`, then `kronk systemd start`.
+
 Whisper-specific failures are listed in
 [Chapter 18 §18.9](https://www.kronkai.com/manual#189-troubleshooting).
 

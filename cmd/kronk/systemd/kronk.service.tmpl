@@ -1,0 +1,20 @@
+# Installed by kronk systemd install. Use systemctl --user edit kronk for overrides.
+[Unit]
+Description=Kronk model server
+Documentation=https://www.kronkai.com/manual#88-running-as-a-systemd-service
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=exec
+# Disable environment-variable expansion in the executable's path.
+ExecStart=:@EXECUTABLE@ server start
+@BASE_PATH@
+EnvironmentFile=@ENVIRONMENT_FILE@
+Restart=on-failure
+RestartSec=5s
+# Allow HTTP shutdown and model unload, each with a default timeout of 1m.
+TimeoutStopSec=150s
+
+[Install]
+WantedBy=default.target
