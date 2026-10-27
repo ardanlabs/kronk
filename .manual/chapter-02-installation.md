@@ -253,10 +253,11 @@ the small `unsloth/Qwen3-0.6B-Q8_0` starter model. A default StorageClass is
 required unless you select another class or an existing claim. Unlike the
 local container quick start, the chart defaults to authenticated access and
 disables the BUI. See [8.10 Kubernetes with Helm](https://www.kronkai.com/manual#810-kubernetes-with-helm)
-for port-forwarding, private admin-token retrieval, a chat request, GPU
-prerequisites, TLS ingress, secrets, and retained-PVC maintenance. Installation
-is from the local chart only. GPU examples require validation on real nodes
-with compatible drivers and runtimes.
+for installation and essential operating warnings, and the
+[chart README](https://github.com/ardanlabs/kronk/blob/main/zarf/helm/kronk/README.md)
+for configuration, the first chat request, and troubleshooting. Installation is
+from the local chart only. GPU examples require validation on real nodes with
+compatible drivers and runtimes.
 
 ### 2.4 Libraries
 

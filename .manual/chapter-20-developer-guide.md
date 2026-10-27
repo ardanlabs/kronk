@@ -982,8 +982,9 @@ disposable kind smoke tests do not prove GPU inference.
 
 Keep the single-replica/retained-PVC contract, authenticated defaults, Secret
 keyset reconciliation, and private metrics Service intact. Update
+`zarf/helm/kronk/README.md` when changing operator-facing values; keep
 [Chapter 8 §8.10](https://www.kronkai.com/manual#810-kubernetes-with-helm)
-when changing operator-facing values. Bump the chart `version` for chart changes;
+focused on installation and essential warnings. Bump the chart `version` for chart changes;
 `appVersion` must reference an already published container image, not an unreleased
 CLI version. `zarf/helm/kronk/Chart.yaml` is authoritative for the default app
 version. Installation uses the local checkout; there is no Helm OCI publication
