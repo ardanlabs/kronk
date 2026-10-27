@@ -18,7 +18,8 @@ It supports text generation, vision, audio, embeddings, and reranking with hardw
 acceleration via Metal (macOS), CUDA (NVIDIA), ROCm (AMD), Vulkan, or CPU.
 
 These commands run the server directly. stop and logs manage only servers started
-with --detach. For a Linux systemd-managed service, use "kronk systemd" instead.
+with --detach. For an OS-managed service, use "kronk systemd" on Linux or
+"kronk launchd" on macOS instead.
 
 The server includes:
   • OpenAI-compatible REST API endpoints

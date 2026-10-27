@@ -505,6 +505,23 @@ Use `kronk systemd stop` and `kronk systemd logs` for this process, not the
 detached-server commands. See [Chapter 8 §8.8](https://www.kronkai.com/manual#88-running-as-a-systemd-service)
 for configuration, upgrades, and removal.
 
+#### Run as a macOS Agent (launchd)
+
+With Kronk installed in a permanent location, run these as your normal user:
+
+```shell
+kronk launchd install
+kronk launchd start
+kronk launchd status
+```
+
+The embedded LaunchAgent reuses your existing `~/.kronk` and enables startup
+at desktop login. Stop any manually started server before starting the
+agent. Use `kronk launchd stop` and `kronk launchd logs` to manage it.
+This is a per-user agent, not a system-wide service or a before-login boot
+service. See [Chapter 8 §8.9](https://www.kronkai.com/manual#89-running-as-a-launchd-agent)
+for configuration, upgrades, logs, and removal.
+
 ### 2.7 Verify the Installation
 
 Check server liveness:

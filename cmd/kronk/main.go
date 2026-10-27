@@ -15,6 +15,7 @@ import (
 	"github.com/ardanlabs/kronk/cmd/kronk/kronk/libs"
 	"github.com/ardanlabs/kronk/cmd/kronk/kronk/model"
 	"github.com/ardanlabs/kronk/cmd/kronk/launch"
+	"github.com/ardanlabs/kronk/cmd/kronk/launchd"
 	"github.com/ardanlabs/kronk/cmd/kronk/malina"
 	"github.com/ardanlabs/kronk/cmd/kronk/security"
 	"github.com/ardanlabs/kronk/cmd/kronk/server"
@@ -50,6 +51,7 @@ USAGE
 COMMANDS
   server    Start/stop the model server
   systemd   Install/manage the Linux systemd user service
+  launchd   Install/manage the macOS launchd user agent
   model     Manage local models (list, pull, remove, show, ps)
   catalog   Browse and manage the model catalog (list, show, remove)
   libs      Install/upgrade llama.cpp libraries
@@ -117,6 +119,7 @@ func init() {
 	// Cross-backend verbs.
 	rootCmd.AddCommand(server.Cmd)
 	rootCmd.AddCommand(systemd.Cmd)
+	rootCmd.AddCommand(launchd.Cmd)
 	rootCmd.AddCommand(security.Cmd)
 	rootCmd.AddCommand(devices.Cmd)
 	rootCmd.AddCommand(diagnose.Cmd)

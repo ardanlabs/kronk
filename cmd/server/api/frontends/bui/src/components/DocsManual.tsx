@@ -391,6 +391,12 @@ kronk server stop`}</code></pre>
 kronk systemd start
 kronk systemd status`}</code></pre>
           <p>The embedded service definition runs against your existing <code>~/.kronk</code> and enables startup at login. Use <code>kronk systemd install --boot</code> instead to enable startup before login and operation after logout (may require authorization). Stop any manually started server before starting the service. Use <code>kronk systemd stop</code> and <code>kronk systemd logs</code> for this process, not the detached-server commands. See <a href="https://www.kronkai.com/manual#88-running-as-a-systemd-service">Chapter 8 §8.8</a> for configuration, upgrades, and removal.</p>
+          <h4 id="run-as-a-macos-agent-launchd">Run as a macOS Agent (launchd)</h4>
+          <p>With Kronk installed in a permanent location, run these as your normal user:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk launchd install
+kronk launchd start
+kronk launchd status`}</code></pre>
+          <p>The embedded LaunchAgent reuses your existing <code>~/.kronk</code> and enables startup at desktop login. Stop any manually started server before starting the agent. Use <code>kronk launchd stop</code> and <code>kronk launchd logs</code> to manage it. This is a per-user agent, not a system-wide service or a before-login boot service. See <a href="https://www.kronkai.com/manual#89-running-as-a-launchd-agent">Chapter 8 §8.9</a> for configuration, upgrades, logs, and removal.</p>
           <h3 id="27-verify-the-installation">2.7 Verify the Installation</h3>
           <p>Check server liveness:</p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/liveness`}</code></pre>
@@ -2350,7 +2356,37 @@ kronk systemd uninstall`}</code></pre>
           <p>Restart after editing <code>kronk.env</code> or upgrading the binary at the same path. If the binary moves, run <code>kronk systemd install --force</code> to update its path, then restart. An existing unit is not overwritten without <code>--force</code>. <code>status</code> reports systemd process state, not HTTP readiness; startup can include library downloads. Check <code>/v1/liveness</code> before sending requests.</p>
           <p>Use <code>systemctl --user edit kronk</code> for systemd overrides. The unit allows 150 seconds to stop. If increasing <code>KRONK_WEB_SHUTDOWN_TIMEOUT</code> above its default of one minute, set <code>TimeoutStopSec</code> to at least twice that timeout plus 30 seconds. The unit requires systemd 240 or newer (<code>Type=exec</code>).</p>
           <p>Uninstall stops and disables the service, removes the unit, and reloads systemd. It preserves models, libraries, keys, <code>kronk.env</code>, and systemd drop-ins. It also preserves user lingering because other services may depend on it; use <code>loginctl disable-linger</code> only if none do.</p>
-          <h2 id="89-related-administration-guides">8.9 Related Administration Guides</h2>
+          <h2 id="89-running-as-a-launchd-agent">8.9 Running as a launchd Agent</h2>
+          <p>On macOS, <code>kronk launchd</code> installs and manages a per-user <strong>LaunchAgent</strong>. It runs as you, reuses your existing <code>~/.kronk</code> models, libraries, keys, and server configuration, and starts at desktop login. It is not a system-wide LaunchDaemon and does not run before login or continue after logout. Run the commands as your normal user, not with <code>sudo</code>; a macOS desktop login session must be available.</p>
+          <p>Install Kronk in a permanent location using <code>go install</code>, Homebrew, or a release binary, then run:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk launchd install
+kronk launchd start
+kronk launchd status
+curl http://localhost:11435/v1/liveness`}</code></pre>
+          <p>Installation writes the embedded definition to <code>~/Library/LaunchAgents/com.ardanlabs.kronk.plist</code> and enables startup at login, without loading or starting the agent immediately. It records the absolute path used to invoke Kronk, preserving stable symlinks such as Homebrew's <code>/opt/homebrew/bin/kronk</code> (Apple Silicon) or <code>/usr/local/bin/kronk</code> (Intel). Do not install using <code>go run</code>: its temporary executable will disappear.</p>
+          <p>Stop any existing foreground server with Ctrl-C, or a detached server with <code>kronk server stop</code>, before starting the agent. The agent runs <code>kronk server start</code> in the foreground; launchd owns its process and logs. Use <code>kronk launchd stop</code> and <code>kronk launchd logs</code> for that process, not the detached-server commands.</p>
+          <h3 id="launchagent-configuration">LaunchAgent Configuration</h3>
+          <p><code>--base-path</code> or <code>KRONK_BASE_PATH</code> at installation records a custom data directory. Otherwise Kronk uses <code>~/.kronk</code>. Server settings in the existing <code>model_config.yaml</code> continue to apply (see §8.5). To override settings for the agent, edit its plist's <code>EnvironmentVariables</code> dictionary. For example, add these entries inside that dictionary:</p>
+          <pre className="code-block"><code className="language-xml">{`<key>KRONK_WEB_API_HOST</key>
+<string>127.0.0.1:11435</string>
+<key>KRONK_AUTHORIZATION_MODE</key>
+<string>management</string>`}</code></pre>
+          <p>Launchd does not source shell startup files or read the systemd <code>kronk.env</code> file. Other shell settings are not automatically copied at installation. Use literal values and absolute paths, not <code>~</code>, <code>$HOME</code>, or <code>$PATH</code> substitutions. The plist includes a <code>PATH</code> covering both standard Homebrew locations and macOS system tools. Its initial permissions are <code>0600</code>; keep it private if adding sensitive environment values.</p>
+          <p>Validate an edited plist, then reload it:</p>
+          <pre className="code-block"><code className="language-shell">{`plutil -lint ~/Library/LaunchAgents/com.ardanlabs.kronk.plist
+kronk launchd restart`}</code></pre>
+          <p>The default API listener remains local-only at <code>127.0.0.1:11435</code>. Configure authorization before exposing it on a public interface. <code>status</code> shows launchd's agent information, not HTTP readiness; startup may include library downloads. Check <code>/v1/liveness</code> before sending requests.</p>
+          <h3 id="launchagent-lifecycle-and-logs">LaunchAgent Lifecycle and Logs</h3>
+          <pre className="code-block"><code className="language-shell">{`kronk launchd stop
+kronk launchd start
+kronk launchd restart
+kronk launchd status
+kronk launchd logs
+kronk launchd uninstall`}</code></pre>
+          <p><code>RunAtLoad</code> starts the server when the agent is loaded. <code>KeepAlive</code> restarts it if the process exits, with a 10-second throttle for repeated short-lived runs. <code>stop</code> unloads the agent so it stays stopped for the current login session, until explicitly started again. It starts again at the next desktop login. <code>restart</code> gracefully unloads and reloads the plist, applying configuration changes rather than just killing the process. The plist requests a 150-second <code>ExitTimeOut</code> for graceful HTTP shutdown and model unload, but macOS can cap this: a 60-second effective limit was observed on the development host. Inspect <code>kronk launchd status</code> for the effective exit timeout. If shutdown can exceed it, reduce <code>KRONK_WEB_SHUTDOWN_TIMEOUT</code> so twice that timeout plus 30 seconds fits the available grace period. Merely increasing <code>ExitTimeOut</code> does not guarantee a longer grace period.</p>
+          <p>Both standard output and standard error append to <code>~/Library/Logs/kronk/kronk.log</code>. <code>logs</code> follows that file, including after rotation; Ctrl-C stops following, not the server. Arrange log rotation if running long-term, since launchd does not impose a size limit on this file.</p>
+          <p>Restart after upgrading the binary at the same path. If its location changes, reinstall with <code>kronk launchd install --force</code>, then restart. <code>--force</code> replaces the plist and resets manual plist edits; save those edits first. Models, keys, server YAML configuration, and logs are preserved. Uninstall unloads and disables the agent and removes its plist, retaining server data and logs. Any environment settings stored only in the removed plist are removed with it.</p>
+          <h2 id="810-related-administration-guides">8.10 Related Administration Guides</h2>
           <p>Detailed administration is divided by responsibility:</p>
           <ul>
             <li><a href="https://www.kronkai.com/manual#chapter-2-installation-quick-start">Chapter 2</a> — installation, libraries, image variants, and data paths</li>
@@ -4658,6 +4694,8 @@ lsof -nP -iTCP:9000 -sTCP:LISTEN`}</code></pre>
           <p>For permission errors, make the selected base path writable by the service user. The server enforces mode <code>0700</code> on <code>&lt;base&gt;/keys</code> and <code>0600</code> on private key files. Avoid recursively making credentials readable by other users.</p>
           <p>For the Linux user service, use <code>kronk systemd status</code> and <code>kronk systemd logs</code>, not the detached-server commands. A failure to connect to the user bus means the systemd user manager is unavailable; run as your normal user in a systemd login session, not with <code>sudo</code>. To run at boot without login, enable lingering as described in <a href="https://www.kronkai.com/manual#88-running-as-a-systemd-service">Chapter 8 §8.8</a>.</p>
           <p>If the service cannot execute Kronk after moving the binary, reinstall with <code>kronk systemd install --force</code>, then restart. If GPU detection differs from your interactive shell, check the service's <code>PATH</code>, native library paths, device permissions, and GPU environment settings in <code>kronk.env</code> (§8.8). After five failed starts within five minutes, fix the journal's reported error, run <code>systemctl --user reset-failed kronk</code>, then <code>kronk systemd start</code>.</p>
+          <p>For the macOS LaunchAgent, use <code>kronk launchd status</code> and <code>kronk launchd logs</code>. A failure to find the <code>gui/&lt;uid&gt;</code> domain means a macOS desktop login session is unavailable; this agent is not a headless system service. Run as your normal user, not with <code>sudo</code>. A missing agent after <code>kronk launchd stop</code> is expected: <code>stop</code> unloads it to prevent <code>KeepAlive</code> from restarting it. Use <code>kronk launchd start</code> to load it again.</p>
+          <p>If launchd keeps restarting a failing process, stop the agent and inspect <code>~/Library/Logs/kronk/kronk.log</code>. Check the recorded executable path, port conflicts, and the plist's <code>EnvironmentVariables</code>; shell startup files and <code>kronk.env</code> are not read. Validate manual edits with <code>plutil -lint</code> and run <code>kronk launchd restart</code> to reload them. See <a href="https://www.kronkai.com/manual#89-running-as-a-launchd-agent">Chapter 8 §8.9</a>.</p>
           <p>Whisper-specific failures are listed in <a href="https://www.kronkai.com/manual#189-troubleshooting">Chapter 18 §18.9</a>.</p>
           <h3 id="1710-reporting-a-problem">17.10 Reporting a Problem</h3>
           <p>Include:</p>
@@ -6551,7 +6589,14 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
               </ul>
             </div>
             <div className="doc-index-section">
-              <a href="#89-related-administration-guides" className={`doc-index-header ${activeSection === '89-related-administration-guides' ? 'active' : ''}`}>8.9 Related Administration Guides</a>
+              <a href="#89-running-as-a-launchd-agent" className={`doc-index-header ${activeSection === '89-running-as-a-launchd-agent' ? 'active' : ''}`}>8.9 Running as a launchd Agent</a>
+              <ul>
+                <li><a href="#launchagent-configuration" className={activeSection === 'launchagent-configuration' ? 'active' : ''}>LaunchAgent Configuration</a></li>
+                <li><a href="#launchagent-lifecycle-and-logs" className={activeSection === 'launchagent-lifecycle-and-logs' ? 'active' : ''}>LaunchAgent Lifecycle and Logs</a></li>
+              </ul>
+            </div>
+            <div className="doc-index-section">
+              <a href="#810-related-administration-guides" className={`doc-index-header ${activeSection === '810-related-administration-guides' ? 'active' : ''}`}>8.10 Related Administration Guides</a>
             </div>
             <div className="doc-index-section">
               <a href="#chapter-9-api-endpoints" className={`doc-index-header ${activeSection === 'chapter-9-api-endpoints' ? 'active' : ''}`}>Chapter 9: API Endpoints</a>
