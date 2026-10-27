@@ -18,8 +18,10 @@ import (
 // evidence. This validates the harness, not model quality or Kronk inference.
 func TestQuickCheckTwoSlots(t *testing.T) {
 	releaseTestRepo(t)
-	for _, cell := range matrixCells[8:] {
-		t.Run(cell.id, func(t *testing.T) { checkTwoSlotFixture(t, cell.id, "") })
+	for _, cell := range matrixCells {
+		if cell.twoSlots {
+			t.Run(cell.id, func(t *testing.T) { checkTwoSlotFixture(t, cell.id, "") })
+		}
 	}
 	for _, defect := range []string{"serialized", "wrong-recovery-slot", "no-survivor-progress", "system-only-media-append", "missing-cancel-ack", "foreign-session"} {
 		t.Run(defect, func(t *testing.T) { checkTwoSlotFixture(t, "MoE/2s/IMC+/MTP+/img+", defect) })
@@ -31,6 +33,10 @@ func TestQuickCheckTwoSlots(t *testing.T) {
 func checkTwoSlotFixture(t *testing.T, selector, defect string) {
 	t.Helper()
 	images, noCache, targetOnly := strings.HasSuffix(selector, "img+"), strings.Contains(selector, "IMC-"), strings.Contains(selector, "MTP-")
+	denseModel := ""
+	if strings.HasPrefix(selector, "Dense/") {
+		denseModel = "unsloth/Qwen3.8-27B-UD-Q2_K_XL"
+	}
 	root := t.TempDir()
 	logPath := filepath.Join(root, "server.log")
 	serverLog, err := os.Create(logPath)
@@ -83,7 +89,11 @@ func checkTwoSlotFixture(t *testing.T, selector, defect string) {
 				}
 				json.NewEncoder(w).Encode([]map[string]any{{"model_id": model, "mtp": !targetOnly, "ndraft": ndraft, "slots": slots}})
 			default:
-				json.NewEncoder(w).Encode(map[string]any{"has_projection": true, "model_config": map[string]any{"incremental-cache": !noCache, "nseq-max": 2}, "metadata": map[string]string{"general.architecture": "qwen35moe", "qwen35moe.expert_count": "256"}})
+				metadata := map[string]string{"general.architecture": "qwen35moe", "qwen35moe.expert_count": "256"}
+				if denseModel != "" {
+					metadata = map[string]string{"general.architecture": "qwen35"}
+				}
+				json.NewEncoder(w).Encode(map[string]any{"has_projection": true, "model_config": map[string]any{"incremental-cache": !noCache, "nseq-max": 2}, "metadata": metadata})
 			}
 			return
 		}
@@ -94,6 +104,18 @@ func checkTwoSlotFixture(t *testing.T, selector, defect string) {
 		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 			t.Error(err)
 			return
+		}
+		if denseModel != "" {
+			alias := denseModel + "/QUICK-CHECK"
+			if noCache {
+				alias += "-NO-IMC"
+			}
+			if targetOnly {
+				alias += "-NO-MTP"
+			}
+			if body.Model != alias+"-2S" {
+				t.Errorf("wrong Dense alias: %s", body.Model)
+			}
 		}
 		text, _ := json.Marshal(body.Messages)
 		isA := bytes.Contains(text, []byte("ORCHID-47"))
@@ -327,12 +349,15 @@ func checkTwoSlotFixture(t *testing.T, selector, defect string) {
 		if (cell.Status == "PASS") != (defect == "") || (defect == "" && (len(cell.Repetitions) != 1 || len(cell.Repetitions[0].Results) != 8 || cell.Measurements["workload"]["elapsed_seconds"].Median <= 0)) {
 			t.Fatalf("unexpected two-slot report: %s", data)
 		}
-		if defect == "" && cell.Measurements["workload"]["reference_seconds"].Median <= 0 {
+		if defect == "" && denseModel == "" && cell.Measurements["workload"]["reference_seconds"].Median <= 0 {
 			t.Fatal("calibrated two-slot cell must publish Normalized", string(data))
 		}
+		if denseModel != "" && (cell.ReferenceTokens != (normalizationReference{}) || cell.Measurements["workload"]["reference_seconds"].Samples != 0) {
+			t.Fatal("Dense cell borrowed MoE calibration", string(data))
+		}
 	}
-	if executed != 1 || len(summary.Cells) != 16 {
-		t.Fatalf("expected one selected cell and 15 NOT_RUN entries: %s", data)
+	if executed != 1 || len(summary.Cells) != len(matrixCells) {
+		t.Fatalf("expected one selected cell and remaining NOT_RUN entries: %s", data)
 	}
 	if defect == "" {
 		var comparison bytes.Buffer

@@ -26,6 +26,7 @@ const modelID = "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK"
 const targetOnlyModelID = "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK-NO-MTP"
 const noCacheModelID = "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK-NO-IMC"
 const noCacheTargetOnlyModelID = "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK-NO-IMC-NO-MTP"
+const denseModelID = "unsloth/Qwen3.8-27B-UD-Q2_K_XL"
 
 type options struct {
 	host        string
@@ -176,7 +177,11 @@ func (r report) cell() string {
 	if r.TwoSlots {
 		slots = "two slots"
 	}
-	return "MoE / " + slots + " / IMC " + imc + " / MTP " + mtp + " / images " + images
+	routing := "MoE"
+	if r.isDense() {
+		routing = "Dense"
+	}
+	return routing + " / " + slots + " / IMC " + imc + " / MTP " + mtp + " / images " + images
 }
 
 func (r report) phaseSummary(res result) map[string]any {
@@ -548,6 +553,9 @@ func run(o options) (runErr error) {
 		if cell.twoSlots {
 			c.model += "-2S"
 		}
+		if (report{ID: cell.id}).isDense() {
+			c.model = denseModelID + strings.TrimPrefix(c.model, strings.TrimSuffix(modelID, "/QUICK-CHECK"))
+		}
 		if group != nil && group.Model != c.model {
 			if err := finishGroup(); err != nil {
 				return errors.Join(cellErrors, err)
@@ -555,6 +563,10 @@ func run(o options) (runErr error) {
 		}
 		cr := &r.Cells[i]
 		*cr = report{ID: cell.id, Status: "FAIL", Workload: workloadVersion, Model: c.model, Images: cell.images, TargetOnly: cell.targetOnly, NoCache: cell.noCache, TwoSlots: cell.twoSlots, Host: o.host, ServerCommitTime: "unknown", TestStartedAt: r.TestStartedAt, RepetitionsRequested: o.repetitions, HarnessRevision: harnessRevision, ReferenceTokens: referenceTokens(cell.images, cell.noCache, cell.targetOnly, cell.twoSlots)}
+		if cr.isDense() {
+			// Calibrate against the chosen Dense fixture, never MoE token volumes.
+			cr.ReferenceTokens = normalizationReference{}
+		}
 		if cr.TwoSlots {
 			cr.Workload = "operations-concurrent-v1"
 		}
@@ -687,8 +699,14 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 		return err
 	}
 	r.Metadata["model"] = rawDetail
-	experts, _ := strconv.Atoi(detail.Metadata["qwen35moe.expert_count"])
-	if detail.Metadata["general.architecture"] != "qwen35moe" || experts <= 1 {
+	architecture := detail.Metadata["general.architecture"]
+	expertCount := detail.Metadata[architecture+".expert_count"]
+	experts, expertErr := strconv.Atoi(expertCount)
+	if r.isDense() {
+		if architecture == "" || strings.Contains(strings.ToLower(architecture), "moe") || experts > 1 || (expertCount != "" && (expertErr != nil || experts < 0)) {
+			return fmt.Errorf("fixture metadata must attest Dense routing, architecture=%q expert_count=%q", architecture, expertCount)
+		}
+	} else if architecture != "qwen35moe" || experts <= 1 {
 		return fmt.Errorf("fixture metadata must attest the selected Qwen3.6 MoE architecture")
 	}
 	if o.images && !detail.HasProjection {

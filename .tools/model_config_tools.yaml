@@ -55,8 +55,41 @@ models:
     incremental-cache: false
     speculation: disabled
 
-  unsloth/Qwen3.8-27B-UD-Q4_K_XL/QUICK-CHECK:
+  unsloth/Qwen3.8-27B-UD-Q2_K_XL/QUICK-CHECK:
     <<: *quick
+
+  unsloth/Qwen3.8-27B-UD-Q2_K_XL/QUICK-CHECK-NO-MTP:
+    <<: *quick
+    speculation: disabled
+
+  unsloth/Qwen3.8-27B-UD-Q2_K_XL/QUICK-CHECK-NO-IMC:
+    <<: *quick
+    incremental-cache: false
+
+  unsloth/Qwen3.8-27B-UD-Q2_K_XL/QUICK-CHECK-NO-IMC-NO-MTP:
+    <<: *quick
+    incremental-cache: false
+    speculation: disabled
+
+  unsloth/Qwen3.8-27B-UD-Q2_K_XL/QUICK-CHECK-2S:
+    <<: *quick
+    nseq-max: 2
+
+  unsloth/Qwen3.8-27B-UD-Q2_K_XL/QUICK-CHECK-NO-MTP-2S:
+    <<: *quick
+    nseq-max: 2
+    speculation: disabled
+
+  unsloth/Qwen3.8-27B-UD-Q2_K_XL/QUICK-CHECK-NO-IMC-2S:
+    <<: *quick
+    nseq-max: 2
+    incremental-cache: false
+
+  unsloth/Qwen3.8-27B-UD-Q2_K_XL/QUICK-CHECK-NO-IMC-NO-MTP-2S:
+    <<: *quick
+    nseq-max: 2
+    incremental-cache: false
+    speculation: disabled
 
   # Embedded MTP, four-slot batch load, and multimodal probes.
   unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:

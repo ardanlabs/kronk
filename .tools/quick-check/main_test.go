@@ -19,6 +19,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"go.yaml.in/yaml/v3"
 )
 
 // These servers exercise the command's contract, not Kronk inference. Each
@@ -28,14 +30,16 @@ func TestQuickCheckCommand(t *testing.T) {
 	git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "--quiet", "-m", "release")
 	git("-c", "tag.gpgsign=false", "tag", "v1.0.0")
 	releaseRevision := git("rev-parse", "HEAD")
-	for _, defect := range []string{"", "release", "single-repetition", "all-cells", "all-cells-failure", "all-cells-owner-failure", "all-cells-cleanup-failure", "all-cells-server-change", "no-imc-config", "no-imc-reuse", "images-no-imc-no-encode", "mtp-off", "images-mtp-off", "mtp-off-drafts", "mtp-off-cancel-drafts", "mtp-off-no-restore", "no-drafts", "second-no-drafts", "no-cache", "wrong-cache-path", "missing-logs", "truncated-stream", "foreign-session", "two-slots", "cancel-internal-error", "cancel-without-ack", "cancel-without-cleanup", "missing-draft-restore", "actual-reuse-mismatch", "wrong-slot", "uncancelled-error", "dense-fixture", "missing-timing", "invalid-timing", "images", "images-system", "images-system-no-encode", "images-system-no-decode", "images-system-wrong-reuse", "images-system-no-restore", "images-no-encode", "images-no-decode", "images-reencode", "images-no-restore", "images-leak", "images-recovery-reuse", "images-recovery-leak"} {
+	for _, defect := range []string{"", "release", "single-repetition", "all-cells", "all-cells-failure", "all-cells-owner-failure", "all-cells-cleanup-failure", "all-cells-server-change", "no-imc-config", "no-imc-reuse", "images-no-imc-no-encode", "mtp-off", "images-mtp-off", "mtp-off-drafts", "mtp-off-cancel-drafts", "mtp-off-no-restore", "no-drafts", "second-no-drafts", "no-cache", "wrong-cache-path", "missing-logs", "truncated-stream", "foreign-session", "two-slots", "cancel-internal-error", "cancel-without-ack", "cancel-without-cleanup", "missing-draft-restore", "actual-reuse-mismatch", "wrong-slot", "uncancelled-error", "dense-fixture", "missing-timing", "invalid-timing", "images", "images-system", "images-system-no-encode", "images-system-no-decode", "images-system-wrong-reuse", "images-system-no-restore", "images-no-encode", "images-no-decode", "images-reencode", "images-no-restore", "images-leak", "images-recovery-reuse", "images-recovery-leak", "dense", "images-dense", "dense-mtp-off", "images-dense-mtp-off", "dense-no-imc", "images-dense-no-imc", "dense-no-imc-mtp-off", "images-dense-no-imc-mtp-off", "dense-moe-fixture", "dense-unknown-fixture"} {
 		t.Run(defect, func(t *testing.T) {
 			grouped := strings.HasPrefix(defect, "all-cells")
+			dense := strings.Contains(defect, "dense") && defect != "dense-fixture"
 			images := strings.HasPrefix(defect, "images")
 			targetOnly := strings.Contains(defect, "mtp-off")
 			noCache := strings.Contains(defect, "no-imc")
 			systemReuse := strings.HasPrefix(defect, "images-system") || defect == "images-mtp-off"
 			passing := defect == "" || defect == "release" || defect == "single-repetition" || defect == "all-cells" || defect == "images" || defect == "images-system" || defect == "images-recovery-reuse" || defect == "mtp-off" || defect == "images-mtp-off"
+			passing = passing || dense && defect != "dense-moe-fixture" && defect != "dense-unknown-fixture"
 			revision, tag := "0123456789abcdef0123456789abcdef01234567", ""
 			if defect == "release" {
 				revision, tag = releaseRevision, "v1.0.0"
@@ -91,7 +95,7 @@ func TestQuickCheckCommand(t *testing.T) {
 						slots = append(slots, map[string]any{"id": 1, "phase": "idle"})
 					}
 					ndraft := 5
-					if loadedModel == targetOnlyModelID || loadedModel == noCacheTargetOnlyModelID {
+					if strings.Contains(loadedModel, "NO-MTP") {
 						ndraft = 0
 					}
 					json.NewEncoder(w).Encode([]map[string]any{{"model_id": loadedModel, "mtp": ndraft > 0, "ndraft": ndraft, "slots": slots}})
@@ -151,6 +155,9 @@ func TestQuickCheckCommand(t *testing.T) {
 						if targetOnly {
 							wantModel = noCacheTargetOnlyModelID
 						}
+					}
+					if dense {
+						wantModel = "unsloth/Qwen3.8-27B-UD-Q2_K_XL" + strings.TrimPrefix(wantModel, strings.TrimSuffix(modelID, "/QUICK-CHECK"))
 					}
 					if body.Model != wantModel {
 						t.Errorf("wrong model alias: got %q, want %q", body.Model, wantModel)
@@ -447,11 +454,18 @@ func TestQuickCheckCommand(t *testing.T) {
 					if defect == "dense-fixture" {
 						experts = "0"
 					}
-					imc := loadedModel != noCacheModelID && loadedModel != noCacheTargetOnlyModelID
+					imc := !strings.Contains(loadedModel, "QUICK-CHECK-NO-IMC")
 					if defect == "no-imc-config" {
 						imc = true
 					}
-					fmt.Fprintf(w, `{"has_projection":true,"metadata":{"general.architecture":"qwen35moe","qwen35moe.expert_count":%q},"model_config":{"incremental-cache":%t}}`, experts, imc)
+					architecture := "qwen35moe"
+					if dense && defect != "dense-moe-fixture" {
+						architecture, experts = "qwen35", "0"
+					}
+					if defect == "dense-unknown-fixture" {
+						architecture = ""
+					}
+					fmt.Fprintf(w, `{"has_projection":true,"metadata":{"general.architecture":%q,%q:%q},"model_config":{"incremental-cache":%t}}`, architecture, architecture+".expert_count", experts, imc)
 				default:
 					t.Errorf("unexpected endpoint %s", req.URL.Path)
 					http.NotFound(w, req)
@@ -475,6 +489,9 @@ func TestQuickCheckCommand(t *testing.T) {
 			}
 			if noCache {
 				cellIndex += 4
+			}
+			if dense {
+				cellIndex += 16
 			}
 			selection := []string{matrixCells[cellIndex].id}
 			if grouped {
@@ -544,7 +561,7 @@ func TestQuickCheckCommand(t *testing.T) {
 				return
 			}
 			if defect == "all-cells" {
-				if matrix.Status != "PASS" || len(matrix.Cells) != 16 || tokenizeCalls != 8*requested || calls != 4+8*6*requested || unloads != 4 || loaded {
+				if matrix.Status != "PASS" || len(matrix.Cells) != len(matrixCells) || tokenizeCalls != 8*requested || calls != 4+8*6*requested || unloads != 4 || loaded {
 					t.Fatalf("combined run lost cells/repetitions or changed lifecycle: chats=%d tokenizations=%d unloads=%d summary=%s", calls, tokenizeCalls, unloads, data)
 				}
 				for i := 0; i < 8; i += 2 {
@@ -564,11 +581,11 @@ func TestQuickCheckCommand(t *testing.T) {
 				if err := json.Unmarshal(comparisonText.Bytes(), &comparison); err != nil {
 					t.Fatal(err)
 				}
-				if comparison.Status != "PASS" || len(comparison.Cells) != 16 {
+				if comparison.Status != "PASS" || len(comparison.Cells) != len(matrixCells) {
 					t.Fatal("combined comparison omitted a cell", comparisonText.String())
 				}
 				for _, cell := range comparison.Cells {
-					if strings.Contains(cell.Cell, "/2s/") {
+					if strings.Contains(cell.Cell, "/2s/") || strings.HasPrefix(cell.Cell, "Dense/") {
 						if cell.Status != "NOT_RUN" {
 							t.Fatal("unselected two-slot comparison must be NOT_RUN", cell.Cell)
 						}
@@ -608,7 +625,7 @@ func TestQuickCheckCommand(t *testing.T) {
 				}
 				return
 			}
-			if len(matrix.Cells) != 16 || (matrix.Status == "PASS") != passing {
+			if len(matrix.Cells) != len(matrixCells) || (matrix.Status == "PASS") != passing {
 				t.Fatalf("incorrect matrix coverage/status: %s", data)
 			}
 			for i, cell := range matrix.Cells {
@@ -796,11 +813,21 @@ func TestQuickCheckCommand(t *testing.T) {
 			if len(diagnostic.Repetitions) != executed {
 				t.Fatalf("repetition diagnostics lost: %+v", diagnostic)
 			}
+			if dense && passing {
+				if summary.ReferenceTokens != (normalizationReference{}) || summary.Measurements["workload"]["reference_seconds"].Samples != 0 || !strings.HasPrefix(diagnostic.cell(), "Dense / ") {
+					t.Fatal("Dense report borrowed MoE identity/calibration", string(data))
+				}
+				dir := filepath.Dir(paths[0])
+				var comparison bytes.Buffer
+				if err := compareCommand([]string{"-baseline", dir, "-candidate", dir, "-out", t.TempDir()}, &comparison); err != nil || !strings.Contains(comparison.String(), "Dense normalization reference is uncalibrated") {
+					t.Fatal("uncalibrated Dense artifacts must remain comparable with a warning", err, comparison.String())
+				}
+			}
 			if passing {
 				if tokenizeCalls != requested || calls != 1+6*requested {
 					t.Fatalf("expected %d complete sequences, got %d tokenizations, %d chats", requested, tokenizeCalls, calls)
 				}
-				if images {
+				if images && !dense {
 					// Completed prompt counts: 10200, 10200, 10507, 10230,
 					// 10200. Physical anchors are 10193, not logical 9000.
 					input := 30951.0
@@ -877,6 +904,9 @@ func TestQuickCheckCommand(t *testing.T) {
 				if images {
 					wantCached = "9000"
 				}
+				if noCache {
+					wantCached = "0"
+				}
 				wantDrafts := "40"
 				if targetOnly {
 					wantDrafts = "0"
@@ -901,6 +931,52 @@ func TestQuickCheckCommand(t *testing.T) {
 				t.Fatal("fixture alias left loaded")
 			}
 		})
+	}
+}
+
+func TestQuickCheckModelConfig(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join(os.Getenv("GITHUB_WORKSPACE"), ".tools", "model_config_tools.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config struct {
+		Models map[string]struct {
+			Slots       int    `yaml:"nseq-max"`
+			Context     int    `yaml:"context-window"`
+			IMC         bool   `yaml:"incremental-cache"`
+			Speculation string `yaml:"speculation"`
+		} `yaml:"models"`
+	}
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		t.Fatal(err)
+	}
+	selected, err := selectedCells(nil)
+	if err != nil || len(selected) != 32 {
+		t.Fatal("default selection must include all MoE and Dense cells", selected, err)
+	}
+	for _, cell := range matrixCells {
+		model := "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL"
+		if strings.HasPrefix(cell.id, "Dense/") {
+			model = "unsloth/Qwen3.8-27B-UD-Q2_K_XL"
+		}
+		model += "/QUICK-CHECK"
+		if cell.noCache {
+			model += "-NO-IMC"
+		}
+		speculation := "mtp"
+		if cell.targetOnly {
+			model += "-NO-MTP"
+			speculation = "disabled"
+		}
+		slots := 1
+		if cell.twoSlots {
+			model += "-2S"
+			slots = 2
+		}
+		cfg, ok := config.Models[model]
+		if !selected[cell.id] || !ok || cfg.Slots != slots || cfg.Context != 32768 || cfg.IMC == cell.noCache || cfg.Speculation != speculation {
+			t.Fatalf("%s: missing or incorrect alias %s: %+v", cell.id, model, cfg)
+		}
 	}
 }
 

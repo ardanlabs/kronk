@@ -1,8 +1,11 @@
 # Kronk quick-check
 
-Matrix cells (16): **MoE / one or two slots / IMC off or on / MTP off or on / images off or on**.
-Model: `unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL`, using the
-`QUICK-CHECK` aliases from `.tools/model_config_tools.yaml`.
+Matrix cells (32): **MoE or Dense / one or two slots / IMC off or on / MTP off or on / images off or on**.
+Models: **MoE** `unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL` and
+**Dense** `unsloth/Qwen3.8-27B-UD-Q2_K_XL`, using the `QUICK-CHECK` aliases
+from `.tools/model_config_tools.yaml`, with **32,768 tokens per slot**.
+Both require their image projection files; Dense MTP also requires its companion
+MTP file. Dense cells await real-run qualification.
 
 ## Run
 
@@ -11,7 +14,7 @@ start a dedicated test server and run:
 
 ```sh
 make server-for-tools
-make quick-check-this-code # All implemented cells, one combined report.
+make quick-check-this-code # All 32 cells, one combined report.
 ```
 
 To run a subset, repeat `-cell` with each exact cell ID:
@@ -19,12 +22,16 @@ To run a subset, repeat `-cell` with each exact cell ID:
 ```sh
 make quick-check-this-code QUICK_CHECK_ARGS='-cell MoE/1s/IMC+/MTP+/img-'
 make quick-check-this-code QUICK_CHECK_ARGS='-cell MoE/1s/IMC+/MTP+/img- -cell MoE/2s/IMC-/MTP-/img+'
+make quick-check-this-code QUICK_CHECK_ARGS='-cell Dense/1s/IMC+/MTP+/img-'
 ```
 
-IDs use `MoE/<slots>/IMC<mode>/MTP<mode>/img<mode>`: slots are `1s` or `2s`,
-and each mode is `+` (on) or `-` (off). All 16 combinations are implemented.
+IDs use `<routing>/<slots>/IMC<mode>/MTP<mode>/img<mode>`: routing is `MoE` or `Dense`,
+slots are `1s` or `2s`, and each mode is `+` (on) or `-` (off).
 There are no group selectors or comma-separated lists. Selected cells run in
 matrix order, regardless of argument order. Images require the projection file.
+
+Dense Normalized values remain `n/a` until references are calibrated from real
+runs. Workload timings and correctness comparisons remain available.
 
 One-slot image cells exercise image rebuild, replay, append, a different
 image/session, cancellation, and recovery with the original image. Two-slot cells

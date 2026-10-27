@@ -30,6 +30,26 @@ var matrixCells = []struct {
 	{"MoE/2s/IMC-/MTP+/img+", true, false, true, true},
 	{"MoE/2s/IMC-/MTP-/img-", false, true, true, true},
 	{"MoE/2s/IMC-/MTP-/img+", true, true, true, true},
+	{"Dense/1s/IMC+/MTP+/img-", false, false, false, false},
+	{"Dense/1s/IMC+/MTP+/img+", true, false, false, false},
+	{"Dense/1s/IMC+/MTP-/img-", false, true, false, false},
+	{"Dense/1s/IMC+/MTP-/img+", true, true, false, false},
+	{"Dense/1s/IMC-/MTP+/img-", false, false, true, false},
+	{"Dense/1s/IMC-/MTP+/img+", true, false, true, false},
+	{"Dense/1s/IMC-/MTP-/img-", false, true, true, false},
+	{"Dense/1s/IMC-/MTP-/img+", true, true, true, false},
+	{"Dense/2s/IMC+/MTP+/img-", false, false, false, true},
+	{"Dense/2s/IMC+/MTP+/img+", true, false, false, true},
+	{"Dense/2s/IMC+/MTP-/img-", false, true, false, true},
+	{"Dense/2s/IMC+/MTP-/img+", true, true, false, true},
+	{"Dense/2s/IMC-/MTP+/img-", false, false, true, true},
+	{"Dense/2s/IMC-/MTP+/img+", true, false, true, true},
+	{"Dense/2s/IMC-/MTP-/img-", false, true, true, true},
+	{"Dense/2s/IMC-/MTP-/img+", true, true, true, true},
+}
+
+func (r report) isDense() bool {
+	return strings.HasPrefix(r.ID, "Dense/")
 }
 
 func selectedCells(selection []string) (map[string]bool, error) {
