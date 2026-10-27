@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk"
-	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/kronk/pool"
 	"github.com/ardanlabs/kronk/sdk/pool/engine/resman"
 	"github.com/ardanlabs/kronk/sdk/tools/defaults"
@@ -21,7 +21,7 @@ import (
 )
 
 var (
-	log        model.Logger
+	log        applog.Logger
 	testModels *models.Models
 )
 
@@ -390,7 +390,7 @@ func eviction(t *testing.T) {
 
 // =============================================================================
 
-func initKronk(t *testing.T) model.Logger {
+func initKronk(t *testing.T) applog.Logger {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 

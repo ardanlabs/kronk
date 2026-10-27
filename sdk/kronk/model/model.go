@@ -20,6 +20,8 @@ import (
 	"github.com/ardanlabs/jinja"
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
+	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
+	internalspec "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
 	mtpengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/mtp"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
@@ -68,8 +70,8 @@ type imcSession struct {
 	totalTokensCached   int             // Physical KV cells in the cached prefix.
 	nextLogicalPos      int             // Next logical decode position; equals totalTokensCached except for M-RoPE media.
 	cachedMsgCount      int             // Number of messages cached
-	kvState             SessionStore    // Externalized KV cache state, accessed only through the pluggable SessionStore interface.
-	draftKVState        SessionStore    // Externalized MTP draft seq KV state. Nil unless the model has an MTP drafter (allocated post-draft-load in initGenerationRuntime). Captured alongside kvState during cache build so a cache hit on the next request can restore the draft seq in lock-step with the target seq and MTP can keep running for IMC-cache-hit requests.
+	kvState             kvstorage.Store // Externalized KV cache state, accessed only through the pluggable SessionStore interface.
+	draftKVState        kvstorage.Store // Externalized MTP draft seq KV state. Nil unless the model has an MTP drafter (allocated post-draft-load in initGenerationRuntime). Captured alongside kvState during cache build so a cache hit on the next request can restore the draft seq in lock-step with the target seq and MTP can keep running for IMC-cache-hit requests.
 	pendingH            []float32       // Copy of the slot's pre-norm hidden row taken at cache-build snapshot time (one row of nEmbd floats). Restored into slot.pendingH on cache hit so the very first MTP draft round can condition correctly on the cached prefix's last position. Empty when the session has no MTP draft snapshot.
 	lastUsed            time.Time       // Last access time (for eviction)
 	reserved            bool            // True when a build/extend is in-flight on this session — protects kvState from concurrent writers.
@@ -102,8 +104,8 @@ type imcSystemCache struct {
 	id               int
 	cachedTokens     []llama.Token
 	buildingTokens   []llama.Token // Pending replacement identity while building keeps published metadata separate.
-	kvState          SessionStore
-	draftKVState     SessionStore
+	kvState          kvstorage.Store
+	draftKVState     kvstorage.Store
 	pendingH         []float32
 	allocatedContext int
 	snapshotBytes    int // Retained target, draft, and pending-H capacity, safe to read while the stores are rebuilt.
@@ -756,7 +758,7 @@ func logModelParamsTrace(ctx context.Context, params llama.ModelParams, deviceNa
 // context, KV memory, IMC sessions, family plugin, batch engine, and the
 // optional draft model for speculative decoding. On error the helper frees
 // any partial state it created, but leaves m.model for the caller to free.
-func initGenerationRuntime(ctx context.Context, m *Model, nSlots int, plan speculationPlan) error {
+func initGenerationRuntime(ctx context.Context, m *Model, nSlots int, plan internalspec.Plan) error {
 	lctx, err := llama.InitFromModel(m.model, m.ctxParams)
 	if err != nil {
 		return fmt.Errorf("init-from-model: unable to init context: %w", err)

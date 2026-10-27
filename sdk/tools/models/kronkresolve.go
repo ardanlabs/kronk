@@ -138,7 +138,7 @@ func (m *Models) kronkResolvedConfig(modelID string, mc map[string]ModelConfig, 
 	return out, nil
 }
 
-func resolveSessionStoreFactory(cfg ModelConfig) (model.SessionStoreFactory, error) {
+func resolveSessionStoreFactory(cfg ModelConfig) (kvstorage.Factory, error) {
 	switch cfg.SessionStoreKind {
 	case kvstorage.Kind{}, kvstorage.RAM:
 		return ram.NewFactory(), nil

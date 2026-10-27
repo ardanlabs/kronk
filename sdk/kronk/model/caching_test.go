@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
 	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage/ram"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
@@ -15,7 +16,7 @@ import (
 // kvState. The production code path goes through newSessionStore(ctx, cfg)
 // which dispatches by config; tests don't exercise that dispatch and
 // just need the default backend.
-func ramSessionStore() SessionStore {
+func ramSessionStore() kvstorage.Store {
 	return ram.New()
 }
 
