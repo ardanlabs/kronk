@@ -101,9 +101,8 @@ func Test_API(t *testing.T) {
 	// -------------------------------------------------------------------------
 	// Model: Qwen2.5-Omni-3B-Q4_K_M (audio)
 
-	const audioSkipReason = "disabled until Qwen2.5-Omni audio generation is stable"
-	test.Run(t, chatAudioQwen25Omni(t, tokens), "chat-audio-qwen25omni", apitest.WithSkip(true, audioSkipReason))
-	test.Run(t, respAudioQwen25Omni(t, tokens), "resp-audio-qwen25omni", apitest.WithSkip(true, audioSkipReason))
+	test.Run(t, chatAudioQwen25Omni(t, tokens), "chat-audio-qwen25omni")
+	test.Run(t, respAudioQwen25Omni(t, tokens), "resp-audio-qwen25omni")
 
 	// -------------------------------------------------------------------------
 	// Model: nomic-embed-text-v1.5.Q8_0

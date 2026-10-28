@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
 	"github.com/hybridgroup/yzma/pkg/llama"
@@ -93,7 +94,7 @@ func (mi ModelInfo) String() string {
 	return fmt.Sprintf("\nID[%s]\nDesc[%s]\nSize[%.2fGB]\nFileType[%d]\nQuantization[%s]\nNSWA[%d]\nTemplate[%s]\nType[%s]\nSequenceProcessing[%s]\nArchitecture[%s]\nFlags[%s]\n", mi.ID, mi.Desc, sizeGB, mi.FileType, mi.Quantization, mi.NSWA, mi.Template.FileName, mi.Type, mi.SequenceProcessing, mi.Architecture, flagStr)
 }
 
-func toModelInfo(cfg Config, model llama.Model) ModelInfo {
+func toModelInfo(cfg Config, model llama.Model) (ModelInfo, error) {
 	desc := llama.ModelDesc(model)
 	size := llama.ModelSize(model)
 	fileType := llama.ModelFtype(model)
@@ -122,10 +123,31 @@ func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 		}()
 	}
 
+	// llama_model_meta_* deliberately omits GGUF arrays. LFM3 needs its
+	// per-layer KV heads and SWA pattern to classify the hybrid runtime.
+	profile := arch.Resolve(metadata)
+	if profile.Architecture == "lfm3" {
+		data, err := gguf.ReadHeaderBytes(cfg.ModelFiles[0])
+		if err != nil {
+			return ModelInfo{}, fmt.Errorf("read LFM3 topology: %w", err)
+		}
+		fileMetadata, err := gguf.ParseMetadata(data)
+		if err != nil {
+			return ModelInfo{}, fmt.Errorf("parse LFM3 topology: %w", err)
+		}
+		for key, value := range fileMetadata {
+			if strings.HasPrefix(key, "lfm3.") {
+				if _, exists := metadata[key]; !exists {
+					metadata[key] = value
+				}
+			}
+		}
+		profile = arch.Resolve(metadata)
+	}
+
 	modelID := modelIDFromFiles(cfg.ModelFiles)
 
 	isEmbedModel, isRerankModel := detectEmbedRerank(modelID)
-	profile := arch.Resolve(metadata)
 	if llama.ModelIsHybrid(model) {
 		profile.MemorySemantics = modelprofile.MemoryRecurrent
 	}
@@ -148,7 +170,7 @@ func toModelInfo(cfg Config, model llama.Model) ModelInfo {
 		Metadata:           metadata,
 		decisionProtocol:   decisionProtocol,
 		profile:            profile,
-	}
+	}, nil
 }
 
 func detectDecisionProtocol(configured DecisionProtocol, modelID string, metadata map[string]string, profile modelprofile.Profile) DecisionProtocol {
@@ -173,6 +195,10 @@ func detectDecisionProtocol(configured DecisionProtocol, modelID string, metadat
 		return DecisionProtocolPplxDecider
 	case "lfm2-d1":
 		return DecisionProtocolLfm2D1
+	case "lfm3-d1":
+		return DecisionProtocolLfm3D1
+	case "lfm3-d1-omni":
+		return DecisionProtocolLfm3D1Omni
 	case "vllm-decision2":
 		return DecisionProtocolVllmDecision2
 	case "vllm-d3":

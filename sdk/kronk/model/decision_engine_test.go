@@ -29,16 +29,16 @@ func TestDecisionContextParams(t *testing.T) {
 }
 
 func TestDecisionContextParamsWholePrompt(t *testing.T) {
-	for _, protocol := range []DecisionProtocol{DecisionProtocolVllmD3, DecisionProtocolVllmDecision2} {
+	for _, protocol := range []DecisionProtocol{DecisionProtocolVllmD3, DecisionProtocolVllmDecision2, DecisionProtocolLfm3D1, DecisionProtocolLfm3D1Omni} {
 		t.Run(protocol.String(), func(t *testing.T) {
 			cfg := NewConfig(WithContextWindow(4096), WithNSeqMax(4), WithPrefillBatchSize(768), WithDecisionProtocol(protocol))
 			got := decisionContextParams(llama.ContextParams{}, cfg)
 			if got.NBatch != 4096 || got.NUbatch != 4096 {
 				t.Errorf("whole prompt: got batch=%d ubatch=%d, want 4096/4096", got.NBatch, got.NUbatch)
 			}
-			if protocol == DecisionProtocolVllmD3 {
+			if protocol == DecisionProtocolVllmD3 || protocol == DecisionProtocolLfm3D1 || protocol == DecisionProtocolLfm3D1Omni {
 				if got.NSeqMax != 1 || got.NCtx != 4096 || got.AttentionType != llama.AttentionTypeNonCausal || got.Embeddings != 0 {
-					t.Errorf("D3 isolation: got %+v", got)
+					t.Errorf("non-causal isolation: got %+v", got)
 				}
 			} else if got.Embeddings != 1 || got.NOutputsMax != 4096 || got.NOutputsMaxPerSeq != 4096 {
 				t.Errorf("decision2 all-token outputs: got %+v", got)
@@ -221,7 +221,7 @@ func TestStageDecisionMediaPart(t *testing.T) {
 }
 
 func TestDecisionMediaBudget(t *testing.T) {
-	engine := decisionEngine{contextWindow: 10, maxTokens: 5}
+	engine := decisionEngine{contextWindow: 10, maxTokens: 5, nVocab: 64}
 	work := decisionWork{
 		tokens: []llama.Token{1, 2}, prefixRows: make([]extendedBatchEntry, 3),
 		decisionOrder: []llama.DecisionOrder{llama.DecisionOrderQuestionNoul, llama.DecisionOrderOption}, jointScores: 1,
@@ -232,5 +232,18 @@ func TestDecisionMediaBudget(t *testing.T) {
 	work.prefixRows = append(work.prefixRows, extendedBatchEntry{})
 	if err := engine.validate([]decisionWork{work}); !errors.Is(err, ErrDecisionBudget) {
 		t.Fatalf("one row over: got %v, want ErrDecisionBudget", err)
+	}
+	// Final-token protocols read a logical position after the media prefix,
+	// not a physical row index or an offset into the trailing token slice.
+	work = decisionWork{prefixRows: make([]extendedBatchEntry, 3), position: 7,
+		tokens: []llama.Token{42}, readouts: []decisionReadout{{position: 7, candidates: []llama.Token{10, 11}}}}
+	if err := engine.validate([]decisionWork{work}); err != nil {
+		t.Fatalf("media final-token readout: %v", err)
+	}
+	for _, position := range []int{0, 6, 8} {
+		work.readouts[0].position = position
+		if err := engine.validate([]decisionWork{work}); err == nil {
+			t.Errorf("readout position %d: got nil error, want outside text range", position)
+		}
 	}
 }

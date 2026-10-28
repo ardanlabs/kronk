@@ -10,6 +10,7 @@
 - [2.6 Running the Server](#26-running-the-server)
 - [2.7 Verify the Installation](#27-verify-the-installation)
 - [2.8 Security and Next Steps](#28-security-and-next-steps)
+- [2.9 CLI Reference and Shell Completion](#29-cli-reference-and-shell-completion)
 
 ---
 
@@ -363,7 +364,7 @@ kronk libs --list-installs
 
 # Install the supported version using its exact release manifest pin.
 kronk libs --local \
-  --version=b11901@sha256:d8f88fdeba339bacad9ed6d70c6b5e00b9c83eb5744d004506fd022420042d99
+  --version=b11960@sha256:bab64a43d056b39e64c9ce46f966e43757a0dcf07cce5c4939c0fcf19cd01b38
 
 # Explicitly select CPU instead of an available GPU.
 KRONK_PROCESSOR=cpu kronk libs --local
@@ -591,5 +592,40 @@ Continue with:
 - [Chapter 14: Client Integration](https://www.kronkai.com/manual#chapter-14-client-integration) to connect
   an editor or coding agent.
 - [Chapter 18: Bucky](https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription) for speech-to-text.
+
+### 2.9 CLI Reference and Shell Completion
+
+The BUI's **Docs → CLI** reference is generated from the same command definitions
+as `kronk --help`. It includes every visible command, its flags and declared defaults,
+and short examples. Use this manual for workflows, environment settings, and service
+configuration. A flag's declared default may be an unset sentinel; server defaults
+and environment/configuration precedence are described in Chapter 8.
+
+Cobra provides shell completion for Bash, Fish, PowerShell, and Zsh. For the current
+session:
+
+```shell
+# Bash
+source <(kronk completion bash)
+
+# Fish
+kronk completion fish | source
+
+# PowerShell
+kronk completion powershell | Out-String | Invoke-Expression
+
+# Zsh (initialize compinit first if your shell has not already done so)
+autoload -Uz compinit && compinit
+source <(kronk completion zsh)
+```
+
+For future sessions, save Fish output to `~/.config/fish/completions/kronk.fish`,
+or add the PowerShell command to your profile. Save Bash output to your installed
+bash-completion directory (`/etc/bash_completion.d/kronk` on many Linux systems,
+or `$(brew --prefix)/etc/bash_completion.d/kronk` with Homebrew). For Zsh, save the
+output as `_kronk` in a directory on `$fpath`, then initialize completion in your
+shell startup file. Create the destination directory if needed and use a location
+your account can write to. `kronk completion <shell> --help` describes shell-specific
+options such as omitting descriptions.
 
 ---

@@ -877,3 +877,83 @@ func TestFromBytesDeepSeek41Compute(t *testing.T) {
 		t.Fatalf("logits row workspace delta: got %d, want %d, cache %d/%d", got, 4*input.VocabularySize, two.SlotMemory, one.SlotMemory)
 	}
 }
+
+func TestFromBytesLFM3Memory(t *testing.T) {
+	for _, tt := range []struct {
+		name, causal string
+		full, onCPU  bool
+		wantCache    int64
+		wantErr      bool
+	}{
+		{"causal default", "", false, false, 4612096, false},
+		{"causal explicit", "true", false, false, 4612096, false},
+		{"full SWA", "true", true, false, 6316032, false},
+		{"CPU cache", "true", false, true, 4612096, false},
+		{"noncausal has no persistent memory", "false", false, false, 0, false},
+		{"noncausal CPU cache flag", "false", false, true, 0, false},
+		{"invalid causal flag", "invalid", false, false, 0, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			metadata := map[string]string{
+				"general.architecture": "lfm3",
+				"lfm3.block_count":     "4", "lfm3.embedding_length": "256", "lfm3.vocab_size": "1024",
+				"lfm3.attention.head_count": "8", "lfm3.attention.key_length": "32", "lfm3.attention.value_length": "32",
+				"lfm3.attention.head_count_kv": "[0 2 0 4]", "lfm3.attention.sliding_window_pattern": "[false true false false]",
+				"lfm3.attention.sliding_window": "512", "lfm3.shortconv.l_cache": "3",
+			}
+			if tt.causal != "" {
+				metadata["lfm3.attention.causal"] = tt.causal
+			}
+			cfg := Config{ContextWindow: 4096, Slots: 2, NUBatch: 128, BytesPerElement: 2, RecurrentStateCopies: 3, SWAFull: tt.full, KVCacheOnCPU: tt.onCPU}
+			result, err := FromBytes(deepseek41Header(t, metadata, nil), 1<<30, cfg)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("FromBytes: got error %v, want error %v", err, tt.wantErr)
+			}
+			if tt.wantErr {
+				return
+			}
+			if result.SlotMemory != tt.wantCache || result.KVPerSlot != tt.wantCache/2 {
+				t.Errorf("persistent total/per slot: got %d/%d, want %d/%d", result.SlotMemory, result.KVPerSlot, tt.wantCache, tt.wantCache/2)
+			}
+			if tt.onCPU && result.KVVRAMBytes != 0 {
+				t.Errorf("GPU cache: got %d, want 0", result.KVVRAMBytes)
+			}
+			if result.Input.ComputeKind != modelprofile.ComputeGeneric || result.ComputeMemory.RuntimeAllowanceGPU != 256<<20 {
+				t.Errorf("compute policy: got %v, allowance %d", result.Input.ComputeKind, result.ComputeMemory.RuntimeAllowanceGPU)
+			}
+			input := result.Input
+			input.ComputeBackend = "metal"
+			metal := Calculate(input)
+			if (!tt.onCPU || input.NoPersistentCache) && metal.ComputeBufferEst <= result.ComputeBufferEst {
+				t.Error("Metal attention scratch did not increase workspace")
+			}
+			input.ContextWindow *= 2
+			larger := Calculate(input)
+			if input.NoPersistentCache && (larger.SlotMemory != 0 || larger.ComputeBufferEst != metal.ComputeBufferEst) {
+				t.Error("batch-local decision memory depends on configured cache capacity")
+			}
+			if !input.NoPersistentCache && !tt.onCPU && larger.ComputeBufferEst <= metal.ComputeBufferEst {
+				t.Error("causal attention workspace did not grow with context")
+			}
+			input = result.Input
+			input.GPULayers = 2 // Output plus the last full-attention block.
+			partial := Calculate(input)
+			if !input.NoPersistentCache && !tt.onCPU && partial.KVVRAMBytes != 4194304 {
+				t.Errorf("partial-offload GPU cache: got %d, want 4194304", partial.KVVRAMBytes)
+			}
+			if tt.causal == "false" {
+				metadata["lfm3.decision.type"] = "lfm3-d1"
+				d1, err := FromBytes(deepseek41Header(t, metadata, nil), 1<<30, cfg)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if d1.Input.NUBatch != 4096 || d1.Input.Slots != 1 || d1.Input.OutputRows != 1 || d1.SlotMemory != 0 {
+					t.Errorf("d1 must budget one whole-context physical batch without cache: %+v", d1.Input)
+				}
+				if d1.ComputeBufferEst <= result.ComputeBufferEst {
+					t.Error("whole-prompt d1 workspace did not exceed the 128-token batch allowance")
+				}
+			}
+		})
+	}
+}

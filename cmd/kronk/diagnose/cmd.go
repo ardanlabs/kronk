@@ -18,10 +18,8 @@ llama-bench run.
 
 By default this command is inspect-only and never downloads: it reports on the
 llama.cpp libraries and model already installed. Use --install to download
-anything missing.
-
-EXAMPLES
-
+anything missing.`,
+	Example: `
   # Human-readable report (default, inspect-only)
   kronk diagnose
 

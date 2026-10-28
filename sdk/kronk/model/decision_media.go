@@ -11,7 +11,7 @@ import (
 // prepareDecisionMedia owns all native preparation resources. Returned rows own
 // their embeddings, so queued work remains valid after cancellation or another
 // encoder pass. Protocols own prompt layout and decision spans, not MTMD state.
-func (m *Model) prepareDecisionMedia(ctx context.Context, prompt string, images [][]byte) ([]extendedBatchEntry, int, error) {
+func (m *Model) prepareDecisionMedia(ctx context.Context, prompt string, files [][]byte) ([]extendedBatchEntry, int, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, 0, err
 	}
@@ -21,7 +21,7 @@ func (m *Model) prepareDecisionMedia(ctx context.Context, prompt string, images 
 	}
 	defer mtmd.Free(mctx)
 
-	bitmaps := make([]mtmd.Bitmap, len(images))
+	bitmaps := make([]mtmd.Bitmap, len(files))
 	defer func() {
 		for _, bitmap := range bitmaps {
 			if bitmap != 0 {
@@ -29,13 +29,13 @@ func (m *Model) prepareDecisionMedia(ctx context.Context, prompt string, images 
 			}
 		}
 	}()
-	for i, image := range images {
+	for i, file := range files {
 		if err := ctx.Err(); err != nil {
 			return nil, 0, err
 		}
-		bitmap, err := newImageBitmap(image)
+		bitmap, err := newMediaBitmap(mctx, file)
 		if err != nil {
-			return nil, 0, fmt.Errorf("%w: images[%d]: %w", ErrDecisionRequest, i, err)
+			return nil, 0, fmt.Errorf("%w: media[%d]: %w", ErrDecisionRequest, i, err)
 		}
 		bitmaps[i] = bitmap
 	}
@@ -51,7 +51,7 @@ func (m *Model) prepareDecisionMedia(ctx context.Context, prompt string, images 
 		rows += int(mtmd.InputChunkGetNTokens(mtmd.InputChunksGet(chunks, i)))
 	}
 	if rows > limit {
-		return nil, 0, fmt.Errorf("%w: image prefix needs %d text/image rows, limit is %d; increase context-window or prefill-batch-size", ErrDecisionBudget, rows, limit)
+		return nil, 0, fmt.Errorf("%w: media prompt needs %d rows, limit is %d; increase context-window or prefill-batch-size", ErrDecisionBudget, rows, limit)
 	}
 
 	batch := extendedBatch{capacity: limit}
@@ -71,19 +71,19 @@ func (m *Model) prepareDecisionMedia(ctx context.Context, prompt string, images 
 				}
 				position++
 			}
-		case mtmd.InputChunkTypeImage:
+		case mtmd.InputChunkTypeImage, mtmd.InputChunkTypeAudio:
 			if err := mtmd.EncodeChunk(mctx, chunk); err != nil {
-				return nil, 0, fmt.Errorf("encode decision image: %w", err)
+				return nil, 0, fmt.Errorf("encode decision media: %w", err)
 			}
 			count := int32(mtmd.InputChunkGetNTokens(chunk))
 			embeddings, err := mtmd.GetOutputEmbd(mctx, width*count)
 			if err != nil {
-				return nil, 0, fmt.Errorf("decision image embeddings: %w", err)
+				return nil, 0, fmt.Errorf("decision media embeddings: %w", err)
 			}
 			for j := range count {
 				p := position + llama.Pos(j)
 				positions := []llama.Pos{p, p, p, p}
-				if mtmd.DecodeUseMRope(mctx) {
+				if mtmd.InputChunkGetType(chunk) == mtmd.InputChunkTypeImage && mtmd.DecodeUseMRope(mctx) {
 					rel := mtmd.ImageTokensGetDecoderPos(mtmd.InputChunkGetTokensImage(chunk), position, uint64(j))
 					positions = []llama.Pos{llama.Pos(rel.T), llama.Pos(rel.Y), llama.Pos(rel.X), llama.Pos(rel.Z)}
 				}
@@ -91,13 +91,13 @@ func (m *Model) prepareDecisionMedia(ctx context.Context, prompt string, images 
 					return nil, 0, err
 				}
 			}
-			if mtmd.DecodeUseMRope(mctx) {
+			if mtmd.InputChunkGetType(chunk) == mtmd.InputChunkTypeImage && mtmd.DecodeUseMRope(mctx) {
 				position += mtmd.InputChunkGetNPos(chunk)
 			} else {
 				position += llama.Pos(count)
 			}
 		default:
-			return nil, 0, fmt.Errorf("%w: decision media supports images only", ErrDecisionRequest)
+			return nil, 0, fmt.Errorf("%w: unsupported decision media chunk", ErrDecisionRequest)
 		}
 	}
 	return batch.entries, int(position), ctx.Err()

@@ -17,16 +17,9 @@ func newCmd() *cobra.Command {
 		Short: "Stable Diffusion backend: libs and model management",
 		Long: `Manage the local stable-diffusion.cpp runtime and curated image-model bundles.
 
-Malina is not yet served by the Kronk model server. Use --local on management
-commands to operate directly on local files.
-
-COMMANDS
-
-  libs    Install or manage stable-diffusion.cpp libraries
-  model   Manage curated image-model bundles
-
-EXAMPLES
-
+The Malina CLI currently requires --local on management commands and operates
+directly on local files without a running server.`,
+		Example: `
   kronk malina libs --local
   kronk malina model catalog --local
   kronk malina model pull --local sd-1.5

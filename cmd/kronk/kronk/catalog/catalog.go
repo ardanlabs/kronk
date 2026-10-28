@@ -10,26 +10,18 @@ import (
 
 var Cmd = &cobra.Command{
 	Use:   "catalog",
-	Short: "Browse and manage the model catalog (list, show, remove)",
+	Short: "Browse and manage the model catalog",
 	Long: `Browse and manage the model catalog.
 
 The catalog is the curated set of HuggingFace models the system knows how to
 download. Entries are stored in catalog.yaml under ~/.kronk/catalog/ and seeded
 from an embedded default on first run.
 
-COMMANDS
-
-  list     List all catalog entries
-  show     Display detailed information about a catalog entry
-  remove   Remove a catalog entry, its GGUF cache, and any downloaded files
-
 MODES
 
   Web Mode (default): Communicates with running server at localhost:11435.
-  Local Mode (--local): Direct file access without requiring a server.
-
-EXAMPLES
-
+  Local Mode (--local): Direct file access without requiring a server.`,
+	Example: `
   # List every catalog entry
   kronk catalog list
 

@@ -15,10 +15,10 @@ import (
 // Supply an embedding GGUF with different hidden/output widths to exercise
 // projected embeddings. The same test also covers ordinary equal-width models.
 func TestEmbeddingsOutputWidth(t *testing.T) {
-	modelPath := os.Getenv("KRONK_TEST_EMBED_MODEL")
-	if modelPath == "" {
-		t.Skip("KRONK_TEST_EMBED_MODEL is required")
+	if testing.Short() {
+		t.Skip("model inference skipped in short mode")
 	}
+	modelPath := installedTestModel(t, "KRONK_TEST_EMBED_MODEL", "nomic-embed-text-v1.5.Q8_0.gguf")
 	if err := llama.Load(libs.Path(os.Getenv("KRONK_TEST_LIB_PATH"))); err != nil {
 		t.Fatalf("load llama.cpp: %v", err)
 	}

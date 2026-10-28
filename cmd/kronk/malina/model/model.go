@@ -24,15 +24,8 @@ func newCmd() *cobra.Command {
 		Short: "Manage curated image-model bundles",
 		Long: `Manage curated image-model bundles stored under the local Kronk base path.
 
-Malina model routes are not yet available in the model server, so --local is
-currently required on each management command.
-
-COMMANDS
-
-  catalog  List supported bundles
-  list     List installed bundles
-  pull     Download a curated bundle
-  remove   Remove an installed bundle`,
+The Malina CLI currently requires --local on each management command and operates
+directly on local files without a running server.`,
 		Run: func(cmd *cobra.Command, args []string) {
 			cmd.Help()
 		},

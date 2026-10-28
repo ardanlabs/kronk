@@ -747,17 +747,31 @@ output.
 
 #### 20.7.3 Documentation generation
 
-`cmd/server/api/tooling/docs/main.go` orchestrates three conceptual pipelines:
+`cmd/server/api/tooling/docs/main.go` orchestrates four conceptual pipelines:
 
 ```text
+registered Cobra commands   -> cli-reference.json -> CLI BUI reference and navigation
 public SDK Go documentation -> SDK BUI documentation
 examples source             -> example BUI documentation
 .manual chapter Markdown    -> DocsManual.tsx
 ```
 
 Author manual content in `.manual/`, public API descriptions in Go doc comments, and
-examples in `examples/`. `DocsManual.tsx` and generated SDK/example documentation are
-outputs and must not be hand-edited. Run:
+examples in `examples/`. The shared CLI tree lives in `cmd/kronk/commands/`.
+Author CLI descriptions and short examples in the owning Cobra command's `Long`
+and `Example` fields; usage, flags, types, defaults, and inherited flags come from
+the command definitions. The generator inspects the tree without executing commands
+or their authentication/platform hooks. New top-level commands automatically appear
+in the BUI sidebar. `DocsCLI.tsx` is the shared renderer, not a per-command reference.
+
+Keep operational workflows and authoritative environment-variable guidance in the
+manual rather than duplicating flag tables in React. Generated flag defaults are
+not necessarily effective server defaults: environment variables and configuration
+can override them. API reference components remain hand-written.
+
+`cli-reference.json`, `DocsManual.tsx`, and generated SDK/example documentation are
+outputs and must not be hand-edited. The pre-commit hook regenerates docs and builds
+the BUI. To regenerate explicitly, run:
 
 ```shell
 make kronk-docs

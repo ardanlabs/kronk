@@ -32,14 +32,13 @@ Unlike "kronk server start --detach", systemd owns this process and its logs.
 Use "kronk systemd stop" and "kronk systemd logs" to manage it.
 
 Install from a permanent location (go install, Homebrew, or a release binary),
-not go run: the service records the absolute path of this executable.
-
-EXAMPLES
-  kronk systemd install          Register and enable startup at login
-  kronk systemd install --boot   Also enable startup before login and after logout
-  kronk systemd start            Start the installed service
-  kronk systemd logs             Follow the service journal
-  kronk systemd uninstall        Remove the service, preserving data and settings`,
+not go run: the service records the absolute path of this executable.`,
+		Example: `
+  kronk systemd install          # Register and enable startup at login
+  kronk systemd install --boot   # Enable startup before login and after logout
+  kronk systemd start            # Start the installed service
+  kronk systemd logs             # Follow the service journal
+  kronk systemd uninstall        # Remove the service, preserving data and settings`,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if runtime.GOOS != "linux" {
 				return errors.New("systemd user services are supported only on Linux")

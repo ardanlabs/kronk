@@ -1,170 +1,87 @@
 package model
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
-	"strings"
+
+	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/decision"
 )
 
 // ErrDecisionRequest indicates that a decision request is invalid.
-var ErrDecisionRequest = errors.New("invalid decision request")
+var ErrDecisionRequest = decision.ErrDecisionRequest
 
 // ErrDecisionBudget indicates that a rendered decision input exceeds the
 // protocol's token budget. Inputs are never truncated.
-var ErrDecisionBudget = errors.New("decision input exceeds token budget")
+var ErrDecisionBudget = decision.ErrDecisionBudget
 
 // DecisionStateField is one ordered field in a DecisionStateValue.
-type DecisionStateField struct {
-	Name  string
-	Value any
-}
+type DecisionStateField = decision.DecisionStateField
 
 // DecisionStateValue represents a JSON object whose field order must be retained.
 // Use this for structured state, instructions, or criteria when prompt byte
 // compatibility matters. Plain Go maps are accepted but have sorted keys.
-type DecisionStateValue []DecisionStateField
+type DecisionStateValue = decision.DecisionStateValue
 
 // DecisionStateData constructs one ordered field for decision state.
 func DecisionStateData(name string, value any) DecisionStateField {
-	return DecisionStateField{Name: name, Value: value}
+	return decision.DecisionStateData(name, value)
 }
 
 // DecisionState constructs an ordered decision state value.
 func DecisionState(fields ...DecisionStateField) DecisionStateValue {
-	return DecisionStateValue(fields)
+	return decision.DecisionState(fields...)
 }
 
 // DecisionOption is one ordered choice option.
-type DecisionOption struct {
-	Name        string
-	Description any
-}
+type DecisionOption = decision.DecisionOption
 
 // DecisionQuestionOpt constructs one choice option.
 func DecisionQuestionOpt(name string, description any) DecisionOption {
-	return DecisionOption{Name: name, Description: description}
+	return decision.DecisionQuestionOpt(name, description)
 }
 
 // DecisionNoulCriteria optionally describes the false and true boundaries of
 // a Noul question.
-type DecisionNoulCriteria struct {
-	False any
-	True  any
-}
+type DecisionNoulCriteria = decision.DecisionNoulCriteria
 
 // DecisionQuestion is one named, typed question. Construct values with
 // DecisionQuestionChoice, DecisionQuestionScore, and DecisionQuestionNoul so
 // criteria remain ordered.
-type DecisionQuestion struct {
-	ID           string
-	Type         DecisionQuestionType
-	Instructions any
-	Options      []DecisionOption
-	Levels       []any
-	NoulCriteria *DecisionNoulCriteria
-}
+type DecisionQuestion = decision.DecisionQuestion
 
 // DecisionQuestionChoice constructs a question that selects one ordered option.
 func DecisionQuestionChoice(id string, instructions any, options ...DecisionOption) DecisionQuestion {
-	return DecisionQuestion{
-		ID:           id,
-		Type:         DecisionQuestionTypeChoice,
-		Instructions: instructions,
-		Options:      options,
-	}
+	return decision.DecisionQuestionChoice(id, instructions, options...)
 }
 
 // DecisionQuestionScore constructs a question that rates state against ordered levels.
 func DecisionQuestionScore(id string, instructions any, levels ...any) DecisionQuestion {
-	return DecisionQuestion{
-		ID:           id,
-		Type:         DecisionQuestionTypeScore,
-		Instructions: instructions,
-		Levels:       levels,
-	}
+	return decision.DecisionQuestionScore(id, instructions, levels...)
 }
 
 // DecisionQuestionNoul constructs a calibrated yes/no question. Criteria may be nil
 // when the default true and false descriptions are sufficient.
 func DecisionQuestionNoul(id string, instructions any, criteria *DecisionNoulCriteria) DecisionQuestion {
-	return DecisionQuestion{
-		ID:           id,
-		Type:         DecisionQuestionTypeNoul,
-		Instructions: instructions,
-		NoulCriteria: criteria,
-	}
+	return decision.DecisionQuestionNoul(id, instructions, criteria)
 }
 
-// DecisionRequest evaluates ordered questions independently against one
-// shared state.
-type DecisionRequest struct {
-	State     any
-	Questions []DecisionQuestion
-	// Images contains encoded JPEG, PNG, GIF, or WebP files, in prompt order.
-	// Images precede State and require a vision-capable decision protocol and
-	// compatible projector. Image-shaped values in State remain ordinary data.
-	Images [][]byte
-}
+// DecisionRequest evaluates ordered questions independently against one shared state.
+type DecisionRequest = decision.DecisionRequest
+
+// DecisionAudioInstructions supplies encoded audio in place of a question's
+// text instructions. It requires an audio-capable decision protocol and projector.
+type DecisionAudioInstructions = decision.DecisionAudioInstructions
 
 // DecisionAnswer contains the typed answer to one decision question.
 // Choice is populated for Choice, Score and Legend for Score, Noul for Noul,
 // and Probabilities and Confidence for Choice and Score.
-type DecisionAnswer struct {
-	Type          DecisionQuestionType `json:"type"`
-	Choice        string               `json:"choice,omitempty"`
-	Score         float64              `json:"score,omitempty"`
-	Noul          float64              `json:"noul,omitempty"`
-	Probabilities map[string]float64   `json:"probabilities,omitempty"`
-	Legend        map[string]any       `json:"legend,omitempty"`
-	Confidence    float64              `json:"confidence,omitempty"`
-}
-
-// MarshalJSON emits the type-specific HTTP answer shape, including meaningful
-// zero values and excluding fields owned by other question types.
-func (a DecisionAnswer) MarshalJSON() ([]byte, error) {
-	switch a.Type {
-	case DecisionQuestionTypeChoice:
-		return json.Marshal(struct {
-			Type          DecisionQuestionType `json:"type"`
-			Choice        string               `json:"choice"`
-			Probabilities map[string]float64   `json:"probabilities"`
-			Confidence    float64              `json:"confidence"`
-		}{a.Type, a.Choice, a.Probabilities, a.Confidence})
-
-	case DecisionQuestionTypeScore:
-		return json.Marshal(struct {
-			Type          DecisionQuestionType `json:"type"`
-			Score         float64              `json:"score"`
-			Legend        map[string]any       `json:"legend"`
-			Probabilities map[string]float64   `json:"probabilities"`
-			Confidence    float64              `json:"confidence"`
-		}{a.Type, a.Score, a.Legend, a.Probabilities, a.Confidence})
-
-	case DecisionQuestionTypeNoul:
-		return json.Marshal(struct {
-			Type DecisionQuestionType `json:"type"`
-			Noul float64              `json:"noul"`
-		}{a.Type, a.Noul})
-
-	default:
-		return nil, fmt.Errorf("marshal decision answer: unknown type %q", a.Type)
-	}
-}
+type DecisionAnswer = decision.DecisionAnswer
 
 // DecisionUsage contains model token usage. Decision readouts do not generate
 // output tokens, so OutputTokens is zero.
-type DecisionUsage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
-}
+type DecisionUsage = decision.DecisionUsage
 
 // DecisionResponse contains answers keyed by the caller's question IDs.
-type DecisionResponse struct {
-	Model   string                    `json:"model"`
-	Answers map[string]DecisionAnswer `json:"answers"`
-	Usage   DecisionUsage             `json:"usage"`
-}
+type DecisionResponse = decision.DecisionResponse
 
 func validateDecisionRequest(req DecisionRequest, protocol DecisionProtocol) error {
 	for i, image := range req.Images {
@@ -172,63 +89,17 @@ func validateDecisionRequest(req DecisionRequest, protocol DecisionProtocol) err
 			return fmt.Errorf("%w: images[%d] must be a JPEG, PNG, GIF, or WebP image", ErrDecisionRequest, i)
 		}
 	}
-	if len(req.Questions) == 0 {
-		return fmt.Errorf("%w: questions must not be empty", ErrDecisionRequest)
-	}
-
-	seen := make(map[string]bool, len(req.Questions))
-	for i, question := range req.Questions {
-		if strings.TrimSpace(question.ID) == "" {
-			return fmt.Errorf("%w: question[%d] has no id", ErrDecisionRequest, i)
-		}
-		if seen[question.ID] {
-			return fmt.Errorf("%w: duplicate question id %q", ErrDecisionRequest, question.ID)
-		}
-		seen[question.ID] = true
-
-		if question.Instructions == nil && protocol != DecisionProtocolVllmD3 {
-			return fmt.Errorf("%w: question %q has no instructions", ErrDecisionRequest, question.ID)
-		}
-		if text, ok := question.Instructions.(string); ok && strings.TrimSpace(text) == "" && protocol != DecisionProtocolVllmD3 {
-			return fmt.Errorf("%w: question %q has empty instructions", ErrDecisionRequest, question.ID)
-		}
-
-		switch question.Type {
-		case DecisionQuestionTypeChoice:
-			if err := validateDecisionChoice(question); err != nil {
-				return err
-			}
-
-		case DecisionQuestionTypeScore:
-			if len(question.Levels) < 2 || len(question.Levels) > 10 {
-				return fmt.Errorf("%w: score question %q needs 2 to 10 levels, got %d", ErrDecisionRequest, question.ID, len(question.Levels))
-			}
-
-		case DecisionQuestionTypeNoul:
-
+	for i, file := range req.Files {
+		switch mediaTypeFromMagicBytes(file) {
+		case MediaTypeVision, MediaTypeAudio:
 		default:
-			return fmt.Errorf("%w: question %q has unknown type %q", ErrDecisionRequest, question.ID, question.Type)
+			return fmt.Errorf("%w: files[%d] must be an encoded image or audio clip", ErrDecisionRequest, i)
 		}
 	}
-
-	return nil
-}
-
-func validateDecisionChoice(question DecisionQuestion) error {
-	if len(question.Options) == 0 || len(question.Options) > 255 {
-		return fmt.Errorf("%w: choice question %q needs 1 to 255 options, got %d", ErrDecisionRequest, question.ID, len(question.Options))
-	}
-
-	seen := make(map[string]bool, len(question.Options))
-	for i, option := range question.Options {
-		if option.Name == "" {
-			return fmt.Errorf("%w: choice question %q option[%d] has no name", ErrDecisionRequest, question.ID, i)
+	for _, question := range req.Questions {
+		if audio, ok := question.Instructions.(DecisionAudioInstructions); ok && mediaTypeFromMagicBytes(audio.Data) != MediaTypeAudio {
+			return fmt.Errorf("%w: question %q instructions must contain an encoded audio clip", ErrDecisionRequest, question.ID)
 		}
-		if seen[option.Name] {
-			return fmt.Errorf("%w: choice question %q has duplicate option %q", ErrDecisionRequest, question.ID, option.Name)
-		}
-		seen[option.Name] = true
 	}
-
-	return nil
+	return decision.ValidateRequest(req, protocol.String())
 }

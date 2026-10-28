@@ -14,6 +14,52 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
+func TestAudioMediaChat(t *testing.T) {
+	mdls, err := models.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := mdls.FullPath("ggml-org/Qwen2.5-Omni-3B-Q4_K_M")
+	if err != nil || len(path.ModelFiles) == 0 || path.ProjFile == "" {
+		t.Skip("Qwen2.5-Omni-3B audio model not downloaded")
+	}
+	audio, err := os.ReadFile(filepath.Join(os.Getenv("GITHUB_WORKSPACE"), "examples/samples/jfk.wav"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := kronk.Init(kronk.WithLibPath(os.Getenv("KRONK_TEST_LIB_PATH"))); err != nil {
+		t.Fatal(err)
+	}
+	krn, err := kronk.New(model.WithModelFiles(path.ModelFiles), model.WithProjFile(path.ProjFile),
+		model.WithContextWindow(4096), model.WithNSeqMax(1),
+		model.WithSpeculationMode(model.MustParseSpeculationMode("disabled")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := krn.Unload(context.Background()); err != nil {
+			t.Errorf("unload: %v", err)
+		}
+	})
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
+	defer cancel()
+	resp, err := krn.Chat(ctx, model.D{
+		"messages":   model.AudioMessage("Transcribe the recording.", audio, "wav"),
+		"max_tokens": 128, "temperature": 0.0, "top_k": 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Choices) == 0 || resp.Choices[0].Message == nil {
+		t.Fatal("audio response: got no message, want a transcript")
+	}
+	text := strings.ToLower(resp.Choices[0].Message.Content)
+	if !strings.Contains(text, "country") || !strings.Contains(text, "ask") {
+		t.Fatalf("audio response: got %q, want JFK's ask-not speech", text)
+	}
+	t.Logf("audio transcript: %s", resp.Choices[0].Message.Content)
+}
+
 func TestIMCSystemCacheAcrossMediaRequests(t *testing.T) {
 	mdls, err := models.New()
 	if err != nil {

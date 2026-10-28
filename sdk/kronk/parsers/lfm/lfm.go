@@ -23,6 +23,11 @@ type Parser struct{}
 // New returns a Parser when the fingerprint identifies an LFM model.
 func New(fp model.Fingerprint) (model.Parser, bool) {
 	template := fp.ChatTemplate
+	// LFM3 uses Qwen-style XML calls, not LFM2's Python-style tool markers.
+	// Let the template-aware Qwen parser claim that protocol.
+	if strings.Contains(template, "<function=") && strings.Contains(template, "<parameter=") {
+		return nil, false
+	}
 	if strings.Contains(template, toolOpen) && strings.Contains(template, toolClose) {
 		return Parser{}, true
 	}

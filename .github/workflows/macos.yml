@@ -170,9 +170,6 @@ jobs:
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
 
-      - name: Download extended test models
-        run: ./.github/scripts/pull-models.sh .github/test-models.txt gpu
-
       - name: Run api/service tests
         env:
           # The shim setup-kronk staged. Per-step, never $GITHUB_ENV: the banner
@@ -202,9 +199,6 @@ jobs:
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
 
-      - name: Download extended test models
-        run: ./.github/scripts/pull-models.sh .github/test-models.txt gpu
-
       - name: Run sdk tests
         env:
           # The shim setup-kronk staged. Per-step, never $GITHUB_ENV: the banner
@@ -222,8 +216,7 @@ jobs:
           go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/draft
           go test -v -count=1 -timeout 10m -run '^(TestSuite|Test_PooledVision|TestUncachedMediaSmallBatch)$' ./sdk/kronk/tests/vision
           go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/vision_imc
-          # Qualify Omni images without enabling its unstable audio workloads.
-          go test -v -count=1 -timeout 10m -run '^TestSuite$/^Images$' ./sdk/kronk/tests/audio
+          go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/audio
           go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/embed
           go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/rerank
           go test -v -count=1 -timeout 10m -run '^TestSuite$' ./sdk/kronk/tests/decision

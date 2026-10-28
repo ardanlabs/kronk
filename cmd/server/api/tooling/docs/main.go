@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/ardanlabs/kronk/cmd/server/api/tooling/docs/cli"
 	"github.com/ardanlabs/kronk/cmd/server/api/tooling/docs/manual"
 	"github.com/ardanlabs/kronk/cmd/server/api/tooling/docs/sdk/examples"
 	"github.com/ardanlabs/kronk/cmd/server/api/tooling/docs/sdk/gofmt"
@@ -17,6 +18,10 @@ func main() {
 }
 
 func run() error {
+	if err := cli.Run(); err != nil {
+		return err
+	}
+
 	if err := gofmt.Run(); err != nil {
 		return err
 	}

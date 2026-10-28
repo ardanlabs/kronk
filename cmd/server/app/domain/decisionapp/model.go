@@ -15,6 +15,7 @@ type decisionRequest struct {
 	State     any               `json:"state"`
 	Questions decisionQuestions `json:"questions"`
 	Images    [][]byte          `json:"-"`
+	Files     [][]byte          `json:"-"`
 }
 
 type decisionQuestions []decisionQuestion
@@ -98,6 +99,21 @@ func decodeDecisionRequest(r io.Reader) (decisionRequest, error) {
 		}
 	}
 
+	var files [][]byte
+	if value, exists := objectField(object, "files"); exists && value != nil {
+		values, ok := value.([]any)
+		if !ok {
+			return decisionRequest{}, fmt.Errorf("files must be an array of base64 strings or image/audio data URLs")
+		}
+		for i, value := range values {
+			data, err := decodeDecisionMedia(value, "image/", "audio/")
+			if err != nil {
+				return decisionRequest{}, fmt.Errorf("files[%d]: %w", i, err)
+			}
+			files = append(files, data)
+		}
+	}
+
 	questionsValue, exists := objectField(object, "questions")
 	if !exists {
 		return decisionRequest{}, fmt.Errorf("missing questions field")
@@ -126,7 +142,33 @@ func decodeDecisionRequest(r io.Reader) (decisionRequest, error) {
 		State:     state,
 		Questions: questions,
 		Images:    images,
+		Files:     files,
 	}, nil
+}
+
+func decodeDecisionMedia(value any, mediaTypes ...string) ([]byte, error) {
+	encoded, ok := value.(string)
+	if !ok {
+		return nil, fmt.Errorf("must be a base64 string or data URL")
+	}
+	if strings.HasPrefix(encoded, "data:") {
+		header, data, found := strings.Cut(encoded, ";base64,")
+		var supported bool
+		for _, mediaType := range mediaTypes {
+			if strings.HasPrefix(header, "data:"+mediaType) && len(header) > len("data:"+mediaType) {
+				supported = true
+			}
+		}
+		if !found || !supported {
+			return nil, fmt.Errorf("must be a base64 data URL with media type %s", strings.Join(mediaTypes, " or "))
+		}
+		encoded = data
+	}
+	data, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil || len(data) == 0 {
+		return nil, fmt.Errorf("must contain nonempty base64 data")
+	}
+	return data, nil
 }
 
 func decodeQuestion(id string, value any) (decisionQuestion, error) {
@@ -152,6 +194,21 @@ func decodeQuestion(id string, value any) (decisionQuestion, error) {
 	// Instruction requirements are protocol-specific (D3 supplies a default).
 	// The SDK validates this after the model's protocol has been resolved.
 	instructions, _ := objectField(object, "instructions")
+	if object, ok := instructions.(orderedObject); ok {
+		if instructionType, _ := objectField(object, "type"); instructionType == "input_audio" {
+			inputAudio, _ := objectField(object, "input_audio")
+			audio, ok := inputAudio.(orderedObject)
+			if !ok {
+				return decisionQuestion{}, fmt.Errorf("input_audio instructions must contain an input_audio object")
+			}
+			value, _ := objectField(audio, "data")
+			data, err := decodeDecisionMedia(value, "audio/")
+			if err != nil {
+				return decisionQuestion{}, fmt.Errorf("input_audio instructions data: %w", err)
+			}
+			instructions = model.DecisionAudioInstructions{Data: data}
+		}
+	}
 
 	criteria, hasCriteria := objectField(object, "criteria")
 
@@ -293,6 +350,7 @@ func (r decisionRequest) toSDK() model.DecisionRequest {
 		State:     toDecisionValue(r.State),
 		Questions: questions,
 		Images:    r.Images,
+		Files:     r.Files,
 	}
 }
 

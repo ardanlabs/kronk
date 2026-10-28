@@ -77,6 +77,8 @@ type Config struct {
 type Input struct {
 	WeightLoading         WeightLoading            // Native loading policy and verified mmap support.
 	LazyTable             LazyTable                // Optional eligible encoded embedding table.
+	Architecture          string                   // GGUF architecture for uncalibrated architecture-specific policies.
+	NoPersistentCache     bool                     // Graph evaluates a whole batch without retaining attention or recurrent state.
 	ComputeBackend        string                   // Selected backend; empty uses generic workspace rules.
 	ComputeKind           modelprofile.ComputeKind // Normalized workspace allocation family.
 	VocabularySize        int64                    // Vocabulary rows in the output projection.

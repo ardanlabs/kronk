@@ -54,23 +54,7 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func InitYzmaWorkarounds(path string) error</code>
               </pre>
-              <p className="doc-description">InitYzmaWorkarounds initializes Kronk-specific Yzma compatibility code. Call it during native library initialization, before using these bindings.</p>
-            </div>
-
-            <div className="doc-section" id="func-mtmdaudiostreamgetnrows">
-              <h4>MTMDAudioStreamGetNRows</h4>
-              <pre className="code-block">
-                <code>func MTMDAudioStreamGetNRows(stream MTMDAudioStream) (int64, error)</code>
-              </pre>
-              <p className="doc-description">MTMDAudioStreamGetNRows returns the rows produced so far, including prefix rows. The stream must be a nonzero, live native stream. An error means the binding is unavailable.</p>
-            </div>
-
-            <div className="doc-section" id="func-mtmdaudiostreamgetnrowsflushed">
-              <h4>MTMDAudioStreamGetNRowsFlushed</h4>
-              <pre className="code-block">
-                <code>func MTMDAudioStreamGetNRowsFlushed(stream MTMDAudioStream) (int64, error)</code>
-              </pre>
-              <p className="doc-description">MTMDAudioStreamGetNRowsFlushed returns the row endpoint of the last flush. Once produced rows reach this endpoint, all flushed audio rows have been produced, not necessarily decoded or delivered. The stream must be nonzero and live. An error means the binding is unavailable.</p>
+              <p className="doc-description">InitYzmaWorkarounds initializes Kronk-specific Yzma compatibility code. There are currently no workarounds to initialize.</p>
             </div>
 
             <div className="doc-section" id="func-recurrentstatecopies">
@@ -207,14 +191,6 @@ export default function DocsSDKModel() {
                 <code>func ParseLoadMode(value string) (LoadMode, error)</code>
               </pre>
               <p className="doc-description">ParseLoadMode parses a load mode name or direct-I/O alias.</p>
-            </div>
-
-            <div className="doc-section" id="func-mtmdhelpergetcapabilities">
-              <h4>MTMDHelperGetCapabilities</h4>
-              <pre className="code-block">
-                <code>func MTMDHelperGetCapabilities(model llama.Model, ctx mtmd.Context) (MTMDHelperCapabilities, error)</code>
-              </pre>
-              <p className="doc-description">MTMDHelperGetCapabilities returns native capabilities for a loaded model and projector. The projector may be zero for a text-only model. The handles must remain loaded during the call. An error means the binding is unavailable.</p>
             </div>
 
             <div className="doc-section" id="func-parsemediatype">
@@ -603,26 +579,23 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="type-decisionanswer">
               <h4>DecisionAnswer</h4>
               <pre className="code-block">
-                <code>{`type DecisionAnswer struct {
-	Type          DecisionQuestionType \`json:"type"\`
-	Choice        string               \`json:"choice,omitempty"\`
-	Score         float64              \`json:"score,omitempty"\`
-	Noul          float64              \`json:"noul,omitempty"\`
-	Probabilities map[string]float64   \`json:"probabilities,omitempty"\`
-	Legend        map[string]any       \`json:"legend,omitempty"\`
-	Confidence    float64              \`json:"confidence,omitempty"\`
-}`}</code>
+                <code>{`type DecisionAnswer = decision.DecisionAnswer`}</code>
               </pre>
               <p className="doc-description">DecisionAnswer contains the typed answer to one decision question. Choice is populated for Choice, Score and Legend for Score, Noul for Noul, and Probabilities and Confidence for Choice and Score.</p>
+            </div>
+
+            <div className="doc-section" id="type-decisionaudioinstructions">
+              <h4>DecisionAudioInstructions</h4>
+              <pre className="code-block">
+                <code>{`type DecisionAudioInstructions = decision.DecisionAudioInstructions`}</code>
+              </pre>
+              <p className="doc-description">DecisionAudioInstructions supplies encoded audio in place of a question's text instructions. It requires an audio-capable decision protocol and projector.</p>
             </div>
 
             <div className="doc-section" id="type-decisionnoulcriteria">
               <h4>DecisionNoulCriteria</h4>
               <pre className="code-block">
-                <code>{`type DecisionNoulCriteria struct {
-	False any
-	True  any
-}`}</code>
+                <code>{`type DecisionNoulCriteria = decision.DecisionNoulCriteria`}</code>
               </pre>
               <p className="doc-description">DecisionNoulCriteria optionally describes the false and true boundaries of a Noul question.</p>
             </div>
@@ -630,10 +603,7 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="type-decisionoption">
               <h4>DecisionOption</h4>
               <pre className="code-block">
-                <code>{`type DecisionOption struct {
-	Name        string
-	Description any
-}`}</code>
+                <code>{`type DecisionOption = decision.DecisionOption`}</code>
               </pre>
               <p className="doc-description">DecisionOption is one ordered choice option.</p>
             </div>
@@ -651,14 +621,7 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="type-decisionquestion">
               <h4>DecisionQuestion</h4>
               <pre className="code-block">
-                <code>{`type DecisionQuestion struct {
-	ID           string
-	Type         DecisionQuestionType
-	Instructions any
-	Options      []DecisionOption
-	Levels       []any
-	NoulCriteria *DecisionNoulCriteria
-}`}</code>
+                <code>{`type DecisionQuestion = decision.DecisionQuestion`}</code>
               </pre>
               <p className="doc-description">DecisionQuestion is one named, typed question. Construct values with DecisionQuestionChoice, DecisionQuestionScore, and DecisionQuestionNoul so criteria remain ordered.</p>
             </div>
@@ -666,9 +629,7 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="type-decisionquestiontype">
               <h4>DecisionQuestionType</h4>
               <pre className="code-block">
-                <code>{`type DecisionQuestionType struct {
-	// Has unexported fields.
-}`}</code>
+                <code>{`type DecisionQuestionType = decision.DecisionQuestionType`}</code>
               </pre>
               <p className="doc-description">DecisionQuestionType identifies the answer shape. Its zero value is unset.</p>
             </div>
@@ -676,14 +637,7 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="type-decisionrequest">
               <h4>DecisionRequest</h4>
               <pre className="code-block">
-                <code>{`type DecisionRequest struct {
-	State     any
-	Questions []DecisionQuestion
-	// Images contains encoded JPEG, PNG, GIF, or WebP files, in prompt order.
-	// Images precede State and require a vision-capable decision protocol and
-	// compatible projector. Image-shaped values in State remain ordinary data.
-	Images [][]byte
-}`}</code>
+                <code>{`type DecisionRequest = decision.DecisionRequest`}</code>
               </pre>
               <p className="doc-description">DecisionRequest evaluates ordered questions independently against one shared state.</p>
             </div>
@@ -691,11 +645,7 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="type-decisionresponse">
               <h4>DecisionResponse</h4>
               <pre className="code-block">
-                <code>{`type DecisionResponse struct {
-	Model   string                    \`json:"model"\`
-	Answers map[string]DecisionAnswer \`json:"answers"\`
-	Usage   DecisionUsage             \`json:"usage"\`
-}`}</code>
+                <code>{`type DecisionResponse = decision.DecisionResponse`}</code>
               </pre>
               <p className="doc-description">DecisionResponse contains answers keyed by the caller's question IDs.</p>
             </div>
@@ -703,10 +653,7 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="type-decisionstatefield">
               <h4>DecisionStateField</h4>
               <pre className="code-block">
-                <code>{`type DecisionStateField struct {
-	Name  string
-	Value any
-}`}</code>
+                <code>{`type DecisionStateField = decision.DecisionStateField`}</code>
               </pre>
               <p className="doc-description">DecisionStateField is one ordered field in a DecisionStateValue.</p>
             </div>
@@ -714,7 +661,7 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="type-decisionstatevalue">
               <h4>DecisionStateValue</h4>
               <pre className="code-block">
-                <code>{`type DecisionStateValue []DecisionStateField`}</code>
+                <code>{`type DecisionStateValue = decision.DecisionStateValue`}</code>
               </pre>
               <p className="doc-description">DecisionStateValue represents a JSON object whose field order must be retained. Use this for structured state, instructions, or criteria when prompt byte compatibility matters. Plain Go maps are accepted but have sorted keys.</p>
             </div>
@@ -722,10 +669,7 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="type-decisionusage">
               <h4>DecisionUsage</h4>
               <pre className="code-block">
-                <code>{`type DecisionUsage struct {
-	InputTokens  int \`json:"input_tokens"\`
-	OutputTokens int \`json:"output_tokens"\`
-}`}</code>
+                <code>{`type DecisionUsage = decision.DecisionUsage`}</code>
               </pre>
               <p className="doc-description">DecisionUsage contains model token usage. Decision readouts do not generate output tokens, so OutputTokens is zero.</p>
             </div>
@@ -917,31 +861,6 @@ export default function DocsSDKModel() {
 }`}</code>
               </pre>
               <p className="doc-description">Logprobs contains log probability information for the response.</p>
-            </div>
-
-            <div className="doc-section" id="type-mtmdaudiostream">
-              <h4>MTMDAudioStream</h4>
-              <pre className="code-block">
-                <code>{`type MTMDAudioStream uintptr`}</code>
-              </pre>
-              <p className="doc-description">MTMDAudioStream is an opaque native mtmd_audio_stream pointer. Its owner must keep the stream alive while calling the row getters below.</p>
-            </div>
-
-            <div className="doc-section" id="type-mtmdhelpercapabilities">
-              <h4>MTMDHelperCapabilities</h4>
-              <pre className="code-block">
-                <code>{`type MTMDHelperCapabilities struct {
-	Chat           bool
-	Vision         bool
-	Audio          bool
-	Video          bool
-	AudioStream    bool
-	TextGen        bool
-	AudioGen       bool
-	AudioGenSpkRef bool
-}`}</code>
-              </pre>
-              <p className="doc-description">MTMDHelperCapabilities describes native model and projector capabilities, not features implemented by Kronk. It mirrors struct mtmd_helper_cap in field order.</p>
             </div>
 
             <div className="doc-section" id="type-mediatype">
@@ -1886,14 +1805,6 @@ export default function DocsSDKModel() {
               <p className="doc-description">String returns a string representation of the document containing only fields that are safe to log. This excludes sensitive fields like messages and input which may contain private user data.</p>
             </div>
 
-            <div className="doc-section" id="method-decisionanswer-marshaljson">
-              <h4>DecisionAnswer.MarshalJSON</h4>
-              <pre className="code-block">
-                <code>func (a DecisionAnswer) MarshalJSON() ([]byte, error)</code>
-              </pre>
-              <p className="doc-description">MarshalJSON emits the type-specific HTTP answer shape, including meaningful zero values and excluding fields owned by other question types.</p>
-            </div>
-
             <div className="doc-section" id="method-decisionprotocol-equal">
               <h4>DecisionProtocol.Equal</h4>
               <pre className="code-block">
@@ -1932,54 +1843,6 @@ export default function DocsSDKModel() {
                 <code>func (dp *DecisionProtocol) UnmarshalText(data []byte) error</code>
               </pre>
               <p className="doc-description">UnmarshalText parses serialized text into a known DecisionProtocol.</p>
-            </div>
-
-            <div className="doc-section" id="method-decisionquestiontype-equal">
-              <h4>DecisionQuestionType.Equal</h4>
-              <pre className="code-block">
-                <code>func (dqt DecisionQuestionType) Equal(other DecisionQuestionType) bool</code>
-              </pre>
-              <p className="doc-description">Equal reports whether the values match.</p>
-            </div>
-
-            <div className="doc-section" id="method-decisionquestiontype-iszero">
-              <h4>DecisionQuestionType.IsZero</h4>
-              <pre className="code-block">
-                <code>func (dqt DecisionQuestionType) IsZero() bool</code>
-              </pre>
-              <p className="doc-description">IsZero reports whether the answer shape is unset.</p>
-            </div>
-
-            <div className="doc-section" id="method-decisionquestiontype-marshaltext">
-              <h4>DecisionQuestionType.MarshalText</h4>
-              <pre className="code-block">
-                <code>func (dqt DecisionQuestionType) MarshalText() ([]byte, error)</code>
-              </pre>
-              <p className="doc-description">MarshalText serializes the answer shape name.</p>
-            </div>
-
-            <div className="doc-section" id="method-decisionquestiontype-string">
-              <h4>DecisionQuestionType.String</h4>
-              <pre className="code-block">
-                <code>func (dqt DecisionQuestionType) String() string</code>
-              </pre>
-              <p className="doc-description">String returns the answer shape name.</p>
-            </div>
-
-            <div className="doc-section" id="method-decisionquestiontype-unmarshaltext">
-              <h4>DecisionQuestionType.UnmarshalText</h4>
-              <pre className="code-block">
-                <code>func (dqt *DecisionQuestionType) UnmarshalText(data []byte) error</code>
-              </pre>
-              <p className="doc-description">UnmarshalText parses a known answer shape or an unset value.</p>
-            </div>
-
-            <div className="doc-section" id="method-decisionstatevalue-marshaljson">
-              <h4>DecisionStateValue.MarshalJSON</h4>
-              <pre className="code-block">
-                <code>func (o DecisionStateValue) MarshalJSON() ([]byte, error)</code>
-              </pre>
-              <p className="doc-description">MarshalJSON preserves the field order of a DecisionStateValue.</p>
             </div>
 
             <div className="doc-section" id="method-draftmodelconfig-isseparate">
@@ -3214,6 +3077,8 @@ export default function DocsSDKModel() {
               <p className="doc-description">// DecisionProtocolClef identifies the Clef joint-head protocol. DecisionProtocolClef = newDecisionProtocol("clef")</p>
               <p className="doc-description">// DecisionProtocolPplxDecider identifies the Perplexity label-readout protocol. DecisionProtocolPplxDecider = newDecisionProtocol("pplx-decider")</p>
               <p className="doc-description">// DecisionProtocolLfm2D1 identifies the LFM2 grouped-label protocol. DecisionProtocolLfm2D1 = newDecisionProtocol("lfm2-d1")</p>
+              <p className="doc-description">// DecisionProtocolLfm3D1 identifies the LFM3 whole-prompt grouped-label protocol. DecisionProtocolLfm3D1 = newDecisionProtocol("lfm3-d1")</p>
+              <p className="doc-description">// DecisionProtocolLfm3D1Omni identifies the LFM3 multimodal grouped-label protocol. DecisionProtocolLfm3D1Omni = newDecisionProtocol("lfm3-d1-omni")</p>
               <p className="doc-description">// DecisionProtocolVllmDecision2 identifies the single-question decision-head protocol. DecisionProtocolVllmDecision2 = newDecisionProtocol("vllm-decision2")</p>
               <p className="doc-description">// DecisionProtocolVllmD3 identifies the non-causal whole-prompt label protocol. DecisionProtocolVllmD3 = newDecisionProtocol("vllm-d3")</p>
             </div>
@@ -3243,7 +3108,7 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>{`var (`}</code>
               </pre>
-              <p className="doc-description">// DecisionQuestionTypeChoice selects one named option. DecisionQuestionTypeChoice = newDecisionQuestionType("choice") // DecisionQuestionTypeScore rates state against ordered levels. DecisionQuestionTypeScore = newDecisionQuestionType("score") // DecisionQuestionTypeNoul returns a calibrated yes probability. DecisionQuestionTypeNoul = newDecisionQuestionType("noul")</p>
+              <p className="doc-description">// DecisionQuestionTypeChoice selects one named option. DecisionQuestionTypeChoice = decision.DecisionQuestionTypeChoice // DecisionQuestionTypeScore rates state against ordered levels. DecisionQuestionTypeScore = decision.DecisionQuestionTypeScore // DecisionQuestionTypeNoul returns a calibrated yes probability. DecisionQuestionTypeNoul = decision.DecisionQuestionTypeNoul</p>
             </div>
 
             <div className="doc-section" id="var-variable">
@@ -3281,7 +3146,7 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="var-errdecisionbudget">
               <h4>ErrDecisionBudget</h4>
               <pre className="code-block">
-                <code>{`var ErrDecisionBudget = errors.New("decision input exceeds token budget")`}</code>
+                <code>{`var ErrDecisionBudget = decision.ErrDecisionBudget`}</code>
               </pre>
               <p className="doc-description">ErrDecisionBudget indicates that a rendered decision input exceeds the protocol's token budget. Inputs are never truncated.</p>
             </div>
@@ -3289,7 +3154,7 @@ export default function DocsSDKModel() {
             <div className="doc-section" id="var-errdecisionrequest">
               <h4>ErrDecisionRequest</h4>
               <pre className="code-block">
-                <code>{`var ErrDecisionRequest = errors.New("invalid decision request")`}</code>
+                <code>{`var ErrDecisionRequest = decision.ErrDecisionRequest`}</code>
               </pre>
               <p className="doc-description">ErrDecisionRequest indicates that a decision request is invalid.</p>
             </div>
@@ -3335,8 +3200,6 @@ export default function DocsSDKModel() {
               <ul>
                 <li><a href="#func-addparams">AddParams</a></li>
                 <li><a href="#func-inityzmaworkarounds">InitYzmaWorkarounds</a></li>
-                <li><a href="#func-mtmdaudiostreamgetnrows">MTMDAudioStreamGetNRows</a></li>
-                <li><a href="#func-mtmdaudiostreamgetnrowsflushed">MTMDAudioStreamGetNRowsFlushed</a></li>
                 <li><a href="#func-recurrentstatecopies">RecurrentStateCopies</a></li>
                 <li><a href="#func-registerparser">RegisterParser</a></li>
                 <li><a href="#func-speculativecontextcount">SpeculativeContextCount</a></li>
@@ -3354,7 +3217,6 @@ export default function DocsSDKModel() {
                 <li><a href="#func-parsekvcachemode">ParseKVCacheMode</a></li>
                 <li><a href="#func-parselazymode">ParseLazyMode</a></li>
                 <li><a href="#func-parseloadmode">ParseLoadMode</a></li>
-                <li><a href="#func-mtmdhelpergetcapabilities">MTMDHelperGetCapabilities</a></li>
                 <li><a href="#func-parsemediatype">ParseMediaType</a></li>
                 <li><a href="#func-parsemoemode">ParseMoEMode</a></li>
                 <li><a href="#func-newmodel">NewModel</a></li>
@@ -3383,6 +3245,7 @@ export default function DocsSDKModel() {
                 <li><a href="#type-contentlogprob">ContentLogprob</a></li>
                 <li><a href="#type-d">D</a></li>
                 <li><a href="#type-decisionanswer">DecisionAnswer</a></li>
+                <li><a href="#type-decisionaudioinstructions">DecisionAudioInstructions</a></li>
                 <li><a href="#type-decisionnoulcriteria">DecisionNoulCriteria</a></li>
                 <li><a href="#type-decisionoption">DecisionOption</a></li>
                 <li><a href="#type-decisionprotocol">DecisionProtocol</a></li>
@@ -3408,8 +3271,6 @@ export default function DocsSDKModel() {
                 <li><a href="#type-lazymode">LazyMode</a></li>
                 <li><a href="#type-loadmode">LoadMode</a></li>
                 <li><a href="#type-logprobs">Logprobs</a></li>
-                <li><a href="#type-mtmdaudiostream">MTMDAudioStream</a></li>
-                <li><a href="#type-mtmdhelpercapabilities">MTMDHelperCapabilities</a></li>
                 <li><a href="#type-mediatype">MediaType</a></li>
                 <li><a href="#type-moeconfig">MoEConfig</a></li>
                 <li><a href="#type-moemode">MoEMode</a></li>
@@ -3500,18 +3361,11 @@ export default function DocsSDKModel() {
                 <li><a href="#method-d-messages">D.Messages</a></li>
                 <li><a href="#method-d-shallowclone">D.ShallowClone</a></li>
                 <li><a href="#method-d-string">D.String</a></li>
-                <li><a href="#method-decisionanswer-marshaljson">DecisionAnswer.MarshalJSON</a></li>
                 <li><a href="#method-decisionprotocol-equal">DecisionProtocol.Equal</a></li>
                 <li><a href="#method-decisionprotocol-iszero">DecisionProtocol.IsZero</a></li>
                 <li><a href="#method-decisionprotocol-marshaltext">DecisionProtocol.MarshalText</a></li>
                 <li><a href="#method-decisionprotocol-string">DecisionProtocol.String</a></li>
                 <li><a href="#method-decisionprotocol-unmarshaltext">DecisionProtocol.UnmarshalText</a></li>
-                <li><a href="#method-decisionquestiontype-equal">DecisionQuestionType.Equal</a></li>
-                <li><a href="#method-decisionquestiontype-iszero">DecisionQuestionType.IsZero</a></li>
-                <li><a href="#method-decisionquestiontype-marshaltext">DecisionQuestionType.MarshalText</a></li>
-                <li><a href="#method-decisionquestiontype-string">DecisionQuestionType.String</a></li>
-                <li><a href="#method-decisionquestiontype-unmarshaltext">DecisionQuestionType.UnmarshalText</a></li>
-                <li><a href="#method-decisionstatevalue-marshaljson">DecisionStateValue.MarshalJSON</a></li>
                 <li><a href="#method-draftmodelconfig-isseparate">DraftModelConfig.IsSeparate</a></li>
                 <li><a href="#method-draftmodelconfig-maingpu">DraftModelConfig.MainGPU</a></li>
                 <li><a href="#method-draftmodelconfig-ngpulayers">DraftModelConfig.NGpuLayers</a></li>

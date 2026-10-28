@@ -14,11 +14,8 @@ var Cmd = &cobra.Command{
 	Short: "List available compute devices",
 	Long: `List all available compute devices that can be used for model inference.
 
-Device names shown here can be used with --devices flag in the run command
-or the "devices" field in model configuration.
-
-EXAMPLES
-
+Device names shown here can be used with the "devices" field in model configuration.`,
+	Example: `
   # List all devices
   kronk devices`,
 	RunE: func(cmd *cobra.Command, args []string) error {

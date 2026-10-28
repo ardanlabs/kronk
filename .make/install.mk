@@ -41,26 +41,6 @@ install-libraries: install-kronk
 	kronk malina libs --local
 	@echo
 
-# Use this to install the test GH models.
-install-test-gh-models: install-kronk
-	@echo ========== INSTALL MODELS ==========
-	kronk model pull --local "unsloth/Qwen3.5-0.8B-Q8_0"
-	@echo
-	kronk model pull --local "unsloth/Qwen3-1.7B-Q4_K_M"
-	@echo
-	kronk model pull --local "unsloth/Qwen3-0.6B-Q8_0"
-	@echo
-	kronk model pull --local "mradermacher/Qwopus3.5-4B-Coder.Q4_K_M"
-	@echo
-	kronk model pull --local "nomic-ai/nomic-embed-text-v1.5.Q8_0"
-	@echo
-	kronk model pull --local "gpustack/bge-reranker-v2-m3-Q8_0"
-	@echo
-	kronk model pull --local "chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0.gguf"
-	@echo
-	kronk bucky model pull --local "ggml-tiny.bin"
-	@echo
-
 # Use this to install the test models.
 install-test-models: install-kronk
 	@echo ========== INSTALL KRONK MODELS ==========
@@ -87,6 +67,10 @@ install-test-models: install-kronk
 	kronk model pull --local "gpustack/bge-reranker-v2-m3-Q8_0"
 	@echo
 	kronk model pull --local "chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0.gguf"
+	@echo
+	kronk model pull --local "LiquidAI/d1-Omni-2B-Q8_0"
+	@echo
+	kronk model pull --local "LiquidAI/LFM3-1.7B-Q4_K_M"
 	@echo
 	@echo ========== INSTALL BUCKY MODELS ==========
 	kronk bucky model pull --local "ggml-tiny.bin"
@@ -123,6 +107,10 @@ install-class-models: install-kronk
 	kronk bucky model pull --local "ggml-tiny.bin"
 	@echo
 	kronk malina model pull --local "sd-1.5"
+	@echo
+	kronk model pull --local "chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0.gguf"
+	@echo
+	kronk model pull --local "LiquidAI/d1-Omni-2B-Q8_0"
 	@echo
 
 OPENWEBUI  := ghcr.io/open-webui/open-webui:v0.11.1

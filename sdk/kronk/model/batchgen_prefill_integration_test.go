@@ -3,6 +3,7 @@ package model_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +12,70 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
+
+func TestLFM3TopologyAndToolCalls(t *testing.T) {
+	if testing.Short() {
+		t.Skip("model inference skipped in short mode")
+	}
+	file := os.Getenv("KRONK_TEST_LFM3_MODEL")
+	if file == "" {
+		mdls, err := models.New()
+		if err != nil {
+			t.Fatal(err)
+		}
+		mp, err := mdls.FullPath("LiquidAI/LFM3-1.7B-Q4_K_M")
+		if err != nil || len(mp.ModelFiles) == 0 {
+			if os.Getenv("CI") == "true" {
+				t.Fatalf("required LFM3 text model not installed: %v", err)
+			}
+			t.Skipf("LFM3 text model not installed: %v", err)
+		}
+		file = mp.ModelFiles[0]
+	}
+	if err := kronk.Init(kronk.WithLibPath(os.Getenv("KRONK_TEST_LIB_PATH"))); err != nil {
+		t.Fatal(err)
+	}
+	krn, err := kronk.New(model.WithModelFiles([]string{file}),
+		model.WithContextWindow(4096), model.WithNSeqMax(2),
+		model.WithIncrementalCache(true), model.WithCacheMinTokens(1),
+		model.WithSpeculationMode(model.MustParseSpeculationMode("disabled")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := krn.Unload(context.Background()); err != nil {
+			t.Errorf("unload: %v", err)
+		}
+	})
+	if got := krn.ModelInfo().SequenceProcessing; got != "Hybrid" {
+		t.Errorf("sequence processing: got %q, want Hybrid", got)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
+	defer cancel()
+	for run := range 2 {
+		resp, err := krn.Chat(ctx, model.D{
+			"messages": model.Messages(model.TextMessage(model.RoleUser, "Use get_weather to find the weather in Paris. Do not answer without calling the tool.")),
+			"tools": []model.D{{"type": "function", "function": model.D{
+				"name": "get_weather", "description": "Look up current weather for a city.",
+				"parameters": model.D{"type": "object", "properties": model.D{"city": model.D{"type": "string"}}, "required": []string{"city"}},
+			}}},
+			"temperature": 0.0, "top_k": 1, "max_tokens": 256, "enable_thinking": false,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(resp.Choices) != 1 || resp.Choices[0].Message == nil || len(resp.Choices[0].Message.ToolCalls) != 1 {
+			t.Fatalf("response: got %+v, want one tool call", resp)
+		}
+		call := resp.Choices[0].Message.ToolCalls[0]
+		if call.Function.Name != "get_weather" || call.Function.Arguments["city"] != "Paris" {
+			t.Errorf("tool call: got %+v, want get_weather(city=Paris)", call)
+		}
+		if run == 1 && (resp.Usage == nil || resp.Usage.PromptTokensDetails.CachedTokens == 0) {
+			t.Error("repeated tool request did not reuse cached tokens")
+		}
+	}
+}
 
 func TestTextPrefillCancellationAndReuse(t *testing.T) {
 	mdls, err := models.New()

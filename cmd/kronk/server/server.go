@@ -28,13 +28,7 @@ The server includes:
   • Distributed tracing via Tempo/OpenTelemetry
   • Prometheus metrics for observability
   • JWT authentication and rate limiting
-  • Built-in MCP service for AI agent tool integration
-
-COMMANDS
-
-  start    Start the Kronk model server
-  stop     Stop the running Kronk model server
-  logs     View server logs`,
+  • Built-in MCP service for AI agent tool integration`,
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()
 	},

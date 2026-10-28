@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/decision"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
 )
 
@@ -70,17 +71,16 @@ func TestValidateDecisionRequest(t *testing.T) {
 func TestDecisionRejectsUnsupportedImages(t *testing.T) {
 	for _, tt := range []struct {
 		name     string
-		protocol decisionProtocol
+		protocol decision.Protocol
 		image    []byte
 		want     string
 	}{
-		{"missing projector", &clefProtocol{}, []byte("\x89PNG\r\n\x1a\n"), "vision projector"},
-		{"Laya", &layaProtocol{}, []byte("\x89PNG\r\n\x1a\n"), "does not support images"},
-		{"Kev", &kevProtocol{}, []byte("\x89PNG\r\n\x1a\n"), "does not support images"},
-		{"OpenJEV remains text only", &openJEVProtocol{}, []byte("\x89PNG\r\n\x1a\n"), "does not support images"},
-		{"audio", &clefProtocol{}, []byte("RIFF\x00\x00\x00\x00WAVE"), "images[0]"},
-		{"video", &clefProtocol{}, []byte("\x00\x00\x00\x18ftypmp42"), "images[0]"},
-		{"empty", &clefProtocol{}, nil, "images[0]"},
+		{"missing projector", decisionImageTestProtocol{true}, []byte("\x89PNG\r\n\x1a\n"), "vision projector"},
+		{"no image contract", decisionTestProtocol{}, []byte("\x89PNG\r\n\x1a\n"), "does not support images"},
+		{"text only", decisionImageTestProtocol{false}, []byte("\x89PNG\r\n\x1a\n"), "does not support images"},
+		{"audio", decisionImageTestProtocol{true}, []byte("RIFF\x00\x00\x00\x00WAVE"), "images[0]"},
+		{"video", decisionImageTestProtocol{true}, []byte("\x00\x00\x00\x18ftypmp42"), "images[0]"},
+		{"empty", decisionImageTestProtocol{true}, nil, "images[0]"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			m := Model{protocol: tt.protocol}
@@ -94,6 +94,56 @@ func TestDecisionRejectsUnsupportedImages(t *testing.T) {
 		})
 	}
 }
+
+type decisionTestProtocol struct{}
+
+func (decisionTestProtocol) Decide(context.Context, DecisionRequest) (DecisionResponse, error) {
+	return DecisionResponse{}, errors.New("unexpected protocol invocation")
+}
+
+type decisionImageTestProtocol struct {
+	supportsImages bool
+}
+
+func (decisionImageTestProtocol) Decide(context.Context, DecisionRequest) (DecisionResponse, error) {
+	return DecisionResponse{}, errors.New("unexpected protocol invocation")
+}
+
+func (p decisionImageTestProtocol) SupportsImages() bool {
+	return p.supportsImages
+}
+
+func TestDecisionRejectsUnsupportedAudio(t *testing.T) {
+	audio := []byte("RIFF\x00\x00\x00\x00WAVE")
+	for _, tt := range []struct {
+		name         string
+		protocol     decision.Protocol
+		files        [][]byte
+		instructions any
+		want         string
+	}{
+		{"no audio contract", decisionTestProtocol{}, [][]byte{audio}, "Question?", "does not support audio"},
+		{"image-only protocol", decisionImageTestProtocol{true}, nil, DecisionAudioInstructions{Data: audio}, "does not support audio"},
+		{"missing audio projector", decisionAudioTestProtocol{}, [][]byte{audio}, "Question?", "audio projector"},
+		{"spoken question missing projector", decisionAudioTestProtocol{}, nil, DecisionAudioInstructions{Data: audio}, "audio projector"},
+		{"empty file", decisionAudioTestProtocol{}, [][]byte{nil}, "Question?", "files[0]"},
+		{"video file", decisionAudioTestProtocol{}, [][]byte{[]byte("\x00\x00\x00\x18ftypmp42")}, "Question?", "files[0]"},
+		{"empty instructions audio", decisionAudioTestProtocol{}, nil, DecisionAudioInstructions{}, "instructions"},
+		{"image instructions", decisionAudioTestProtocol{}, nil, DecisionAudioInstructions{Data: []byte("\x89PNG\r\n\x1a\n")}, "instructions"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{protocol: tt.protocol}
+			_, err := m.Decision(t.Context(), DecisionRequest{Files: tt.files, Questions: []DecisionQuestion{DecisionQuestionNoul("q", tt.instructions, nil)}})
+			if !errors.Is(err, ErrDecisionRequest) || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Decision: got %v, want ErrDecisionRequest containing %q", err, tt.want)
+			}
+		})
+	}
+}
+
+type decisionAudioTestProtocol struct{ decisionTestProtocol }
+
+func (decisionAudioTestProtocol) SupportsAudio() bool { return true }
 
 func TestDecisionResponseMarshalJSON(t *testing.T) {
 	resp := DecisionResponse{
@@ -209,6 +259,8 @@ func TestDetectDecisionProtocol(t *testing.T) {
 		},
 		{name: "pplx-decider metadata", metadata: map[string]string{"general.architecture": "qwen35", "qwen35.decision.type": "pplx-decider"}, want: DecisionProtocolPplxDecider},
 		{name: "lfm2-d1 metadata", metadata: map[string]string{"general.architecture": "lfm2", "lfm2.decision.type": "lfm2-d1"}, want: DecisionProtocolLfm2D1},
+		{name: "lfm3-d1 metadata", metadata: map[string]string{"general.architecture": "lfm3", "lfm3.decision.type": "lfm3-d1"}, want: DecisionProtocolLfm3D1},
+		{name: "lfm3-d1-omni metadata", metadata: map[string]string{"general.architecture": "lfm3", "lfm3.decision.type": "lfm3-d1-omni"}, want: DecisionProtocolLfm3D1Omni},
 		{name: "decision2 metadata", metadata: map[string]string{"general.architecture": "vllm-decision2", "vllm-decision2.decision.type": "vllm-decision2"}, want: DecisionProtocolVllmDecision2},
 		{name: "D3 metadata", metadata: map[string]string{"general.architecture": "qwen35", "qwen35.decision.type": "vllm-d3"}, want: DecisionProtocolVllmD3},
 		{

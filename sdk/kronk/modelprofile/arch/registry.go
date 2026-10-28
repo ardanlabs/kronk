@@ -19,6 +19,7 @@ var architectureAdapters = []architectureAdapter{
 	Vision{},
 	KnownRecurrent{},
 	LFM2{},
+	LFM3{},
 	GLM5Next{},
 	QwenHybrid{},
 	DeepSeek41{},

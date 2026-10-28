@@ -344,7 +344,7 @@ kronk libs --list-installs
 
 # Install the supported version using its exact release manifest pin.
 kronk libs --local \\
-  --version=b11901@sha256:d8f88fdeba339bacad9ed6d70c6b5e00b9c83eb5744d004506fd022420042d99
+  --version=b11960@sha256:bab64a43d056b39e64c9ce46f966e43757a0dcf07cce5c4939c0fcf19cd01b38
 
 # Explicitly select CPU instead of an available GPU.
 KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
@@ -431,6 +431,22 @@ kronk launchd status`}</code></pre>
             <li><a href="https://www.kronkai.com/manual#chapter-14-client-integration">Chapter 14: Client Integration</a> to connect an editor or coding agent.</li>
             <li><a href="https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription">Chapter 18: Bucky</a> for speech-to-text.</li>
           </ul>
+          <h3 id="29-cli-reference-and-shell-completion">2.9 CLI Reference and Shell Completion</h3>
+          <p>The BUI's <strong>Docs → CLI</strong> reference is generated from the same command definitions as <code>kronk --help</code>. It includes every visible command, its flags and declared defaults, and short examples. Use this manual for workflows, environment settings, and service configuration. A flag's declared default may be an unset sentinel; server defaults and environment/configuration precedence are described in Chapter 8.</p>
+          <p>Cobra provides shell completion for Bash, Fish, PowerShell, and Zsh. For the current session:</p>
+          <pre className="code-block"><code className="language-shell">{`# Bash
+source <(kronk completion bash)
+
+# Fish
+kronk completion fish | source
+
+# PowerShell
+kronk completion powershell | Out-String | Invoke-Expression
+
+# Zsh (initialize compinit first if your shell has not already done so)
+autoload -Uz compinit && compinit
+source <(kronk completion zsh)`}</code></pre>
+          <p>For future sessions, save Fish output to <code>~/.config/fish/completions/kronk.fish</code>, or add the PowerShell command to your profile. Save Bash output to your installed bash-completion directory (<code>/etc/bash_completion.d/kronk</code> on many Linux systems, or <code>$(brew --prefix)/etc/bash_completion.d/kronk</code> with Homebrew). For Zsh, save the output as <code>_kronk</code> in a directory on <code>$fpath</code>, then initialize completion in your shell startup file. Create the destination directory if needed and use a location your account can write to. <code>kronk completion &lt;shell&gt; --help</code> describes shell-specific options such as omitting descriptions.</p>
           <hr />
           <h2 id="chapter-3-model-configuration">Chapter 3: Model Configuration</h2>
           <p>Kronk analyzes each model and the available hardware before loading it. Most models run well without manual tuning. Use per-model configuration when you need a different context window, more concurrent requests, explicit device placement, or an advanced feature such as speculative decoding.</p>
@@ -1668,7 +1684,7 @@ krn, err := kronk.New(
           <p>MTP is normally the simpler choice when the downloaded model provides a supported embedded or companion head. It is architecture-matched to its target, supports multiple execution slots, and does not require a <code>model-id</code> in the <code>draft-model</code> configuration.</p>
           <p>An embedded head requires no companion file. A companion MTP head is an additional model-specific file, but Kronk's catalog and download flow can discover and associate files at the repository root or under <code>MTP/</code> with the target automatically. A version 2 catalog entry can instead provide <code>mtp_url</code> when a compatible companion is hosted in another repository. It is not configured as a classic <code>draft-model</code>.</p>
           <p>Qwen3.8 Flash Next's <code>qwen4exp</code> MTP runtime supports embedded heads and self-contained companion GGUFs through the own-KV runtime. Existing shared-tensor sidecars are not compatible; the companion must contain its own token embeddings and output tensors.</p>
-          <p>The pinned b11901 bundle contains the recurrent-memory assertion fix from upstream PR #29799 and the Qwen4Exp QSA/indexer correctness fixes from PR #29819. MTP hidden rows use the separate state-embedding input introduced in PR #30257; token and media embeddings remain separate. In <code>auto</code> mode Kronk loads a compatible Qwen4Exp companion when one is available, otherwise it uses a compatible embedded head. The <code>disabled</code> speculation mode continues to run the target without MTP.</p>
+          <p>The pinned b11960 bundle contains the recurrent-memory assertion fix from upstream PR #29799 and the Qwen4Exp QSA/indexer correctness fixes from PR #29819. MTP hidden rows use the separate state-embedding input introduced in PR #30257; token and media embeddings remain separate. In <code>auto</code> mode Kronk loads a compatible Qwen4Exp companion when one is available, otherwise it uses a compatible embedded head. The <code>disabled</code> speculation mode continues to run the target without MTP.</p>
           <p>NVIDIA Nemotron 3 Super uses the embedded own-KV MTP runtime. Kronk recognizes the <code>nemotron_h_moe</code> architecture, preserves recurrent-state rollback for its hybrid Mamba-attention target, and uses the model's Qwen3-Coder-compatible tool protocol. Separate Nemotron MTPv2 companion files and Nemotron Puzzle MTP are not supported; configure <code>speculation: disabled</code> to benchmark target-only generation with the same embedded model.</p>
           <p>MTP availability is a property of the downloaded files and the loaded llama.cpp library. Naming a model “MTP” or adding an <code>ndraft</code> override cannot create an MTP head that is not present.</p>
           <h3 id="64-draft-size-and-classic-adaptive-throttling">6.4 Draft Size and Classic Adaptive Throttling</h3>
@@ -2685,8 +2701,22 @@ data: {"type":"response.completed",...}`}</code></pre>
           <h4 id="decision-images">Decision images</h4>
           <p>Vision-capable Clef models accept an optional top-level <code>images</code> array of base64 strings or image data URLs, such as <code>data:image/jpeg;base64,...</code>. Remote URLs are not fetched. In the Go SDK, set <code>DecisionRequest.Images</code> to an ordered <code>[][]byte</code> containing encoded JPEG, PNG, GIF, or WebP files.</p>
           <p>All images appear before <code>state</code>, in array order, outside question and option spans. Image-shaped values inside <code>state</code> remain ordinary structured data; Kronk does not extract chat-message attachments from decision state.</p>
-          <p>This requires a compatible projector configured through <code>ProjFile</code> and a Clef GGUF whose <code>systemone</code> template supports images. A projection file alone does not enable images for other decision protocols; OpenJEV and the other protocols remain text-only in Kronk's decision API. Audio and video inputs are unsupported.</p>
+          <p>This requires a compatible projector configured through <code>ProjFile</code> and a Clef GGUF whose <code>systemone</code> template supports images. A projection file alone does not enable images for other decision protocols. LFM3-d1-omni supports image and audio inputs as described below; OpenJEV and the remaining protocols stay text-only. Video inputs are unsupported.</p>
           <p>The complete text-plus-image prompt must fit both the context window and one physical batch. Expanded image rows count toward <code>usage.input_tokens</code> and the batch budget. Oversized inputs are rejected, never truncated; increase <code>context-window</code> or <code>prefill-batch-size</code> as indicated by the error. Decoding images also consumes memory proportional to their dimensions, so applications accepting untrusted images should bound payload sizes, dimensions, and count.</p>
+          <h4 id="lfm3-d1-omni-inputs">LFM3-d1-omni inputs</h4>
+          <p>LFM3-d1-omni models with a compatible projector accept an optional top-level <code>files</code> array containing nonempty base64 strings or image/audio data URLs, such as <code>data:image/png;base64,...</code> and <code>data:audio/wav;base64,...</code>. The existing <code>images</code> field remains image-only. Images appear first, followed by <code>files</code> in array order, before state. Remote URLs are not fetched and video data URLs are rejected. Encoded media formats and protocol/projector support are validated by the SDK.</p>
+          <p>A question can use audio instructions instead of text or structured data:</p>
+          <pre className="code-block"><code className="language-json">{`{
+  "type": "noul",
+  "instructions": {
+    "type": "input_audio",
+    "input_audio": {
+      "data": "data:audio/wav;base64,...",
+      "format": "wav"
+    }
+  }
+}`}</code></pre>
+          <p><code>input_audio.data</code> must contain nonempty base64 audio or an audio base64 data URL. Only an instructions object with the exact <code>type</code> value <code>input_audio</code> triggers audio decoding; other structured instructions and state remain ordinary JSON. In the Go SDK, use <code>DecisionRequest.Files</code> for encoded image/audio bytes and <code>model.DecisionAudioInstructions&#123;Data: audioBytes&#125;</code> for question instructions.</p>
           <h4 id="decision-protocols">Decision protocols</h4>
           <p>Kronk detects these protocols from the GGUF's architecture-specific <code>decision.type</code> metadata and uses its named <code>systemone</code> template. The existing OpenJEV, Jev-Style, Laya/Julia, Lev, Kev, Nimble, and Clef protocols remain available. The following additional protocols are implemented:</p>
           <table className="flags-table">
@@ -2706,6 +2736,14 @@ data: {"type":"response.completed",...}`}</code></pre>
                 <td>Final-token label groups, taking the maximum logit per option before calibration</td>
               </tr>
               <tr>
+                <td><code>lfm3-d1</code></td>
+                <td>Non-causal whole-prompt label groups; median score and maximum-probability confidence</td>
+              </tr>
+              <tr>
+                <td><code>lfm3-d1-omni</code></td>
+                <td>LFM3-d1 readouts with image/audio state inputs and spoken instructions</td>
+              </tr>
+              <tr>
                 <td><code>vllm-decision2</code></td>
                 <td>One question per prompt, with marked option/question spans and scalar decision-head outputs</td>
               </tr>
@@ -2715,9 +2753,12 @@ data: {"type":"response.completed",...}`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <p>These four protocols apply model-provided temperatures and score-level biases. Decision2 and D3 return normalized entropy concentration as <code>confidence</code> for choice and score questions; <code>noul</code> still returns the true-option probability. Decision2 requires at least two choice options and a state that is text, an object, or an array. D3 permits omitted or empty instructions, using the template's default question; the other protocols require instructions.</p>
-          <p>Decision2 and D3 evaluate each complete prompt in a single physical batch, regardless of the configured prefill batch size. D3 uses one execution sequence even when <code>NSeqMax</code> is larger. Large context windows can therefore increase working memory requirements for these models.</p>
-          <p>The four new protocols have model-free contract coverage, but have not yet been validated against downloaded GGUF models. Treat model-backed compatibility and decision quality as unverified until those models are exercised.</p>
+          <p>These protocols apply model-provided temperatures and score-level biases. Decision2 and D3 return normalized entropy concentration as <code>confidence</code> for choice and score questions; <code>noul</code> still returns the true-option probability. Decision2 requires at least two choice options and a state that is text, an object, or an array. D3 permits omitted or empty instructions, using the template's default question; the other protocols require instructions.</p>
+          <p>Decision2, D3, and LFM3 d1 evaluate each complete prompt in a single physical batch, regardless of the configured prefill batch size. D3 and LFM3 d1 use one execution sequence even when <code>NSeqMax</code> is larger. Large context windows can therefore increase working memory requirements for these models. LFM3 d1 does not reuse persistent sequence state; independent questions and concurrent requests are serialized through that single execution sequence.</p>
+          <p>LFM3 d1 preserves structured JSON state and option descriptions for the model's template. It uses alphabetic choice labels beyond 26 options (<code>AA</code>, <code>AB</code>, …), quotes control-token spellings in user input, returns the median score level rather than an expected level, and uses maximum answer probability for choice and score <code>confidence</code>. The <code>lfm3-d1-omni</code> protocol shares these semantics and supports image/audio state inputs and spoken instructions with a compatible projector. Spoken instructions are placed after state media, at the question's instructions position. All expanded media rows count toward usage and the whole-prompt budget; inputs are never truncated.</p>
+          <p>LFM3 d1 has been exercised with a Q4_K_M d1-2B model for choice, score, <code>noul</code>, concurrent request isolation, and prompt-budget rejection on macOS Metal with llama.cpp b11960. This is compatibility coverage, not a decision-quality benchmark. The Q8_0 d1-Omni-2B model has also been exercised for image and audio decisions, spoken questions about images, concurrent image requests, malformed media rejection, and recovery after budget errors on the same platform. The other four protocols have model-free contract coverage, but their model-backed compatibility remains unverified.</p>
+          <p>LFM3 text chat uses its own hybrid short-convolution/full/SWA topology and its bundled XML tool-call template. It is not treated as an LFM2 architecture alias. Resource estimates include recurrent state and attention caches; workspace allowances remain conservative heuristics rather than measured calibration. LFM3 MTP, video input, realtime audio, and audio generation are not enabled by this integration.</p>
+          <p>LFM3-VL image chat has been exercised with image-identification controls. LFM3-Audio accepts audio, but the tested Q4_K_M Audio-2B model's bundled template summarized the JFK sample instead of transcribing it. This also reproduced in llama.cpp's Jinja CLI path. Setting the request's <code>bos_token</code> to an empty string restored transcription in that sample; this is a diagnostic workaround, not a general model default or a transcription-quality guarantee.</p>
           <p>A response is keyed by the caller's question IDs:</p>
           <pre className="code-block"><code className="language-json">{`{
   "model": "chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0",
@@ -2795,6 +2836,7 @@ resp, err := krn.Decision(ctx, req)`}</code></pre>
           <p>For an image-based decision, see <code>examples/decision-image</code>. It uses the bundled giraffe photograph and follows the same installation and initialization pattern as <code>examples/decision</code>, with a hardcoded model source and image path:</p>
           <pre className="code-block"><code className="language-shell">{`make example-decision-image`}</code></pre>
           <p>Set <code>modelSource</code> and <code>imageFile</code> in the example to change the inputs. The model resolver downloads the model and discovers its companion projector. Image decisions require a vision-capable Clef conversion with a compatible projector and image-capable systemone template; older text-only conversions cannot be used.</p>
+          <p>For an audio-based decision, run <code>make example-decision-audio</code>. The <code>examples/decision-audio</code> program uses <code>LiquidAI/d1-Omni-2B-Q8_0</code> and the bundled <code>samples/jfk.wav</code> recording. It supplies audio through <code>DecisionRequest.Files</code> and asks choice, noul, and score questions directly, without generating a transcript. The model and its projector are installed in the normal Kronk store and reused on subsequent runs. Change <code>modelSource</code> and <code>audioFile</code> to try other compatible models or recordings.</p>
           <h2 id="99-tokenization">9.9 Tokenization</h2>
           <p><code>POST /v1/tokenize</code> returns a token <strong>count</strong>, not token IDs:</p>
           <pre className="code-block"><code className="language-json">{`{
@@ -6344,11 +6386,14 @@ make benchmark-codegen \\
 npm run build`}</code></pre>
           <p>Then build the server (or the narrow service package) and verify that the expected static bundle is present in the embedding location. Avoid hand-editing minified/static output.</p>
           <h4 id="2073-documentation-generation">20.7.3 Documentation generation</h4>
-          <p><code>cmd/server/api/tooling/docs/main.go</code> orchestrates three conceptual pipelines:</p>
-          <pre className="code-block"><code className="language-text">{`public SDK Go documentation -> SDK BUI documentation
+          <p><code>cmd/server/api/tooling/docs/main.go</code> orchestrates four conceptual pipelines:</p>
+          <pre className="code-block"><code className="language-text">{`registered Cobra commands   -> cli-reference.json -> CLI BUI reference and navigation
+public SDK Go documentation -> SDK BUI documentation
 examples source             -> example BUI documentation
 .manual chapter Markdown    -> DocsManual.tsx`}</code></pre>
-          <p>Author manual content in <code>.manual/</code>, public API descriptions in Go doc comments, and examples in <code>examples/</code>. <code>DocsManual.tsx</code> and generated SDK/example documentation are outputs and must not be hand-edited. Run:</p>
+          <p>Author manual content in <code>.manual/</code>, public API descriptions in Go doc comments, and examples in <code>examples/</code>. The shared CLI tree lives in <code>cmd/kronk/commands/</code>. Author CLI descriptions and short examples in the owning Cobra command's <code>Long</code> and <code>Example</code> fields; usage, flags, types, defaults, and inherited flags come from the command definitions. The generator inspects the tree without executing commands or their authentication/platform hooks. New top-level commands automatically appear in the BUI sidebar. <code>DocsCLI.tsx</code> is the shared renderer, not a per-command reference.</p>
+          <p>Keep operational workflows and authoritative environment-variable guidance in the manual rather than duplicating flag tables in React. Generated flag defaults are not necessarily effective server defaults: environment variables and configuration can override them. API reference components remain hand-written.</p>
+          <p><code>cli-reference.json</code>, <code>DocsManual.tsx</code>, and generated SDK/example documentation are outputs and must not be hand-edited. The pre-commit hook regenerates docs and builds the BUI. To regenerate explicitly, run:</p>
           <pre className="code-block"><code className="language-shell">{`make kronk-docs`}</code></pre>
           <p>Review generated diffs for malformed Markdown conversion and then run <code>npm run build</code> in the BUI. Finally build the server to check that generated components compile into the embedded bundle. Generation may update more than one documented package; do not discard legitimate generated changes. If the requested scope intentionally excludes generated artifacts, report that regeneration remains pending.</p>
           <h3 id="208-bucky-implementation-map">20.8 Bucky Implementation Map</h3>
@@ -6488,6 +6533,7 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
                 <li><a href="#26-running-the-server" className={activeSection === '26-running-the-server' ? 'active' : ''}>2.6 Running the Server</a></li>
                 <li><a href="#27-verify-the-installation" className={activeSection === '27-verify-the-installation' ? 'active' : ''}>2.7 Verify the Installation</a></li>
                 <li><a href="#28-security-and-next-steps" className={activeSection === '28-security-and-next-steps' ? 'active' : ''}>2.8 Security and Next Steps</a></li>
+                <li><a href="#29-cli-reference-and-shell-completion" className={activeSection === '29-cli-reference-and-shell-completion' ? 'active' : ''}>2.9 CLI Reference and Shell Completion</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
