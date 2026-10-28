@@ -32,16 +32,8 @@ import DocsSDKBuckyModel from './components/DocsSDKBuckyModel';
 import DocsSDKMalina from './components/DocsSDKMalina';
 import DocsSDKMalinaModel from './components/DocsSDKMalinaModel';
 import DocsSDKExamples from './components/DocsSDKExamples';
-import DocsCLIBucky from './components/DocsCLIBucky';
-import DocsCLICatalog from './components/DocsCLICatalog';
-import DocsCLICompletion from './components/DocsCLICompletion';
-import DocsCLIDevices from './components/DocsCLIDevices';
-import DocsCLIDiagnose from './components/DocsCLIDiagnose';
-import DocsCLILibs from './components/DocsCLILibs';
-import DocsCLILaunch from './components/DocsCLILaunch';
-import DocsCLIModel from './components/DocsCLIModel';
-import DocsCLISecurity from './components/DocsCLISecurity';
-import DocsCLIServer from './components/DocsCLIServer';
+import DocsCLI from './components/DocsCLI';
+import cliReference from './components/cli-reference.json';
 import DocsAPIChat from './components/DocsAPIChat';
 import DocsAPIMessages from './components/DocsAPIMessages';
 import DocsAPIResponses from './components/DocsAPIResponses';
@@ -108,16 +100,8 @@ export type Page =
   | 'docs-sdk-malina'
   | 'docs-sdk-malina-model'
   | 'docs-sdk-examples'
-  | 'docs-cli-bucky'
-  | 'docs-cli-catalog'
-  | 'docs-cli-completion'
-  | 'docs-cli-devices'
-  | 'docs-cli-diagnose'
-  | 'docs-cli-libs'
-  | 'docs-cli-launch'
-  | 'docs-cli-model'
-  | 'docs-cli-security'
-  | 'docs-cli-server'
+  | 'docs-cli'
+  | `docs-cli-${string}`
   | 'docs-api-chat'
   | 'docs-api-messages'
   | 'docs-api-responses'
@@ -167,16 +151,9 @@ export const routeMap: Record<Page, string> = {
   'docs-sdk-malina': '/docs/sdk/malina',
   'docs-sdk-malina-model': '/docs/sdk/malina/model',
   'docs-sdk-examples': '/docs/sdk/examples',
-  'docs-cli-bucky': '/docs/cli/bucky',
-  'docs-cli-catalog': '/docs/cli/catalog',
-  'docs-cli-completion': '/docs/cli/completion',
-  'docs-cli-devices': '/docs/cli/devices',
-  'docs-cli-diagnose': '/docs/cli/diagnose',
-  'docs-cli-libs': '/docs/cli/libs',
-  'docs-cli-launch': '/docs/cli/launch',
-  'docs-cli-model': '/docs/cli/model',
-  'docs-cli-security': '/docs/cli/security',
-  'docs-cli-server': '/docs/cli/server',
+  'docs-cli': '/docs/cli',
+  ...Object.fromEntries(cliReference.filter((entry) => entry.path === `kronk ${entry.name}`)
+    .map((entry) => [`docs-cli-${entry.name}`, `/docs/cli/${entry.name}`])),
   'docs-api-chat': '/docs/api/chat',
   'docs-api-messages': '/docs/api/messages',
   'docs-api-responses': '/docs/api/responses',
@@ -322,16 +299,7 @@ function App() {
                 <Route path="/docs/sdk/malina" element={<DocsSDKMalina />} />
                 <Route path="/docs/sdk/malina/model" element={<DocsSDKMalinaModel />} />
                 <Route path="/docs/sdk/examples" element={<DocsSDKExamples />} />
-                <Route path="/docs/cli/bucky" element={<DocsCLIBucky />} />
-                <Route path="/docs/cli/catalog" element={<DocsCLICatalog />} />
-                <Route path="/docs/cli/completion" element={<DocsCLICompletion />} />
-                <Route path="/docs/cli/devices" element={<DocsCLIDevices />} />
-                <Route path="/docs/cli/diagnose" element={<DocsCLIDiagnose />} />
-                <Route path="/docs/cli/libs" element={<DocsCLILibs />} />
-                <Route path="/docs/cli/launch" element={<DocsCLILaunch />} />
-                <Route path="/docs/cli/model" element={<DocsCLIModel />} />
-                <Route path="/docs/cli/security" element={<DocsCLISecurity />} />
-                <Route path="/docs/cli/server" element={<DocsCLIServer />} />
+                <Route path="/docs/cli/*" element={<DocsCLI />} />
                 <Route path="/docs/api/chat" element={<DocsAPIChat />} />
                 <Route path="/docs/api/messages" element={<DocsAPIMessages />} />
                 <Route path="/docs/api/responses" element={<DocsAPIResponses />} />

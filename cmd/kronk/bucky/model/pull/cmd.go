@@ -36,8 +36,10 @@ MODES
   Local Mode (--local): Downloads in-process directly to the bucky
     models root.
 
-EXAMPLES
+ENVIRONMENT VARIABLES
 
+  KRONK_BASE_PATH  Base path for kronk data (models, libraries, catalog, model_config)`,
+	Example: `
   # Download the tiny English model via a running server.
   kronk bucky model pull ggml-tiny.bin
 
@@ -45,11 +47,7 @@ EXAMPLES
   kronk bucky model pull --local ggml-base.bin
 
   # Download from a custom URL.
-  kronk bucky model pull --local https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin
-
-ENVIRONMENT VARIABLES
-
-  KRONK_BASE_PATH  Base path for kronk data (models, libraries, catalog, model_config)`,
+  kronk bucky model pull --local https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin`,
 	Args: cobra.ExactArgs(1),
 	RunE: main,
 }

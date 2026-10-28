@@ -15,32 +15,19 @@ import (
 
 var Cmd = &cobra.Command{
 	Use:   "model",
-	Short: "Manage local models (index, list, pull, remove, show, ps, sessions)",
-	Long: `Manage local models - index, list, pull, remove, show, and check running models.
+	Short: "Manage local models and inspect running models",
+	Long: `Manage local models and inspect running models.
 
 This command manages GGUF model files stored locally on your system. It provides
 operations for building indexes, listing available models, downloading from the
 catalog, removing unused models, and querying which models are currently loaded
 in memory.
 
-COMMANDS
-
-  index    Build or rebuild the local model index
-  list     List all downloaded models
-  pull     Download a model from the catalog
-  remove   Remove a model from the local system
-  resolve  Resolve a model id to a provider, repo, files and download URLs
-  show     Display detailed information about a model
-  ps       Show models currently loaded in server memory
-  sessions Show current IMC cache entries
-
 MODES
 
   Web Mode (default): Communicates with running server at localhost:11435.
-  Local Mode (--local): Direct file access without requiring a server.
-
-EXAMPLES
-
+  Local Mode (--local): Direct file access without requiring a server.`,
+	Example: `
   # List all downloaded models
   kronk model list
 

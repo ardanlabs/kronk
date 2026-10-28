@@ -33,18 +33,11 @@ REQUIREMENTS
   This command requires an admin-level token to be set via the KRONK_TOKEN
   environment variable before execution.
 
-COMMANDS
-
-  key     Manage private keys (create, list, delete)
-  token   Manage JWT tokens (create)
-
 ENVIRONMENT VARIABLES
 
   KRONK_TOKEN    Admin-level token required for authentication. Must be set
-                 before running any security commands.
-
-EXAMPLES
-
+                 before running any security commands.`,
+	Example: `
   # Set admin token and list keys
   export KRONK_TOKEN=<admin-token>
   kronk security key list

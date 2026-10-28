@@ -39,8 +39,13 @@ HARDWARE BACKENDS
   cuda13 - NVIDIA CUDA 13 GPU acceleration (Linux only)
   vulkan - Cross-platform GPU acceleration (Linux)
 
-EXAMPLES
+ENVIRONMENT VARIABLES
 
+  KRONK_ARCH             - Architecture: amd64, arm64
+  KRONK_BUCKY_LIB_PATH   - Whisper library directory path
+  KRONK_OS               - Operating system: linux, darwin, windows
+  KRONK_PROCESSOR        - Hardware backend: cpu, cuda, cuda12, cuda13, metal, vulkan`,
+	Example: `
   # Install the default whisper.cpp libraries for the current host.
   kronk bucky libs
 
@@ -66,14 +71,7 @@ EXAMPLES
   kronk bucky libs --remove-install --arch=amd64 --os=linux --processor=cuda
 
   # Switch to a previously installed bundle by setting KRONK_BUCKY_LIB_PATH.
-  export KRONK_BUCKY_LIB_PATH=~/.kronk/bucky-libraries/linux/amd64/cuda
-
-ENVIRONMENT VARIABLES
-
-  KRONK_ARCH             - Architecture: amd64, arm64
-  KRONK_BUCKY_LIB_PATH   - Whisper library directory path
-  KRONK_OS               - Operating system: linux, darwin, windows
-  KRONK_PROCESSOR        - Hardware backend: cpu, cuda, metal, vulkan`,
+  export KRONK_BUCKY_LIB_PATH=~/.kronk/bucky-libraries/linux/amd64/cuda`,
 	Args: cobra.NoArgs,
 	RunE: main,
 }

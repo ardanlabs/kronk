@@ -39,8 +39,13 @@ MODES
   Web Mode (default): Installs via the running server at localhost:11435.
   Local Mode (--local): Direct download without requiring a server.
 
-EXAMPLES
+ENVIRONMENT VARIABLES (Local Mode)
 
+  KRONK_ARCH       - Architecture: amd64, arm64
+  KRONK_LIB_PATH   - Library directory path
+  KRONK_OS         - Operating system: linux, bookworm, trixie, darwin, windows
+  KRONK_PROCESSOR  - Hardware backend: cpu, cuda, metal, openvino, rocm, vulkan`,
+	Example: `
   # Install the well-known default version of the libraries
   kronk libs --local
 
@@ -63,14 +68,7 @@ EXAMPLES
   kronk libs --remove-install --arch=amd64 --os=linux --processor=cuda
 
   # Switch to a previously installed bundle by setting KRONK_LIB_PATH
-  export KRONK_LIB_PATH=~/.kronk/libraries/linux/amd64/cuda
-
-ENVIRONMENT VARIABLES (Local Mode)
-
-  KRONK_ARCH       - Architecture: amd64, arm64
-  KRONK_LIB_PATH   - Library directory path
-  KRONK_OS         - Operating system: linux, bookworm, trixie, darwin, windows
-  KRONK_PROCESSOR  - Hardware backend: cpu, cuda, metal, openvino, rocm, vulkan`,
+  export KRONK_LIB_PATH=~/.kronk/libraries/linux/amd64/cuda`,
 	Args: cobra.NoArgs,
 	RunE: main,
 }

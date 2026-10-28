@@ -24,13 +24,11 @@ func newCmd() *cobra.Command {
 		Short: "Install or manage stable-diffusion.cpp libraries",
 		Long: `Install or manage stable-diffusion.cpp libraries on the local machine.
 
-Malina library routes are not yet available in the model server, so --local is
-currently required. With no operation flag, the command detects the current
+The Malina CLI currently requires --local and operates without a running server.
+With no operation flag, the command detects the current
 host and installs Kronk's pinned stable-diffusion.cpp version. Use --upgrade to
-track the latest published release or --version to select a specific release.
-
-EXAMPLES
-
+track the latest published release or --version to select a specific release.`,
+		Example: `
   kronk malina libs --local
   kronk malina libs --local --upgrade
   kronk malina libs --local --list-combinations

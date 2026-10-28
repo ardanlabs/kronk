@@ -30,17 +30,15 @@ MODES
   Local Mode (--local): Removes the model file from disk directly
     without contacting a server.
 
-EXAMPLES
+ENVIRONMENT VARIABLES
 
+  KRONK_BASE_PATH  Base path for kronk data (models, libraries, catalog, model_config)`,
+	Example: `
   # Remove the tiny English model from a running server.
   kronk bucky model remove ggml-tiny.bin
 
   # Remove the tiny English model in-process.
-  kronk bucky model remove --local ggml-tiny.bin
-
-ENVIRONMENT VARIABLES
-
-  KRONK_BASE_PATH  Base path for kronk data (models, libraries, catalog, model_config)`,
+  kronk bucky model remove --local ggml-tiny.bin`,
 	Args: cobra.ExactArgs(1),
 	RunE: main,
 }

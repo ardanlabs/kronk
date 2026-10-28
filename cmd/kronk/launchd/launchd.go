@@ -37,14 +37,13 @@ Unlike "kronk server start --detach", launchd owns this process and its logs.
 Use "kronk launchd stop" and "kronk launchd logs" to manage it.
 
 Install from a permanent location (go install, Homebrew, or a release binary),
-not go run: the agent records the absolute path used to invoke this executable.
-
-EXAMPLES
-  kronk launchd install     Install and enable startup at desktop login
-  kronk launchd start       Load the agent and start the server
-  kronk launchd restart     Reload the plist and restart the server
-  kronk launchd logs        Follow ~/Library/Logs/kronk/kronk.log
-  kronk launchd uninstall   Remove the agent, preserving server data and logs`,
+not go run: the agent records the absolute path used to invoke this executable.`,
+		Example: `
+  kronk launchd install     # Install and enable startup at desktop login
+  kronk launchd start       # Load the agent and start the server
+  kronk launchd restart     # Reload the plist and restart the server
+  kronk launchd logs        # Follow ~/Library/Logs/kronk/kronk.log
+  kronk launchd uninstall   # Remove the agent, preserving server data and logs`,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if runtime.GOOS != "darwin" {
 				return errors.New("launchd user agents are supported only on macOS")

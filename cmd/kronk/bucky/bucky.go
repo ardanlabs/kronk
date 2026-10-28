@@ -31,13 +31,9 @@ This sub-command tree mirrors the top-level llama verbs but targets the
 whisper.cpp runtime instead of llama.cpp. Use it to install the whisper
 shared libraries and download whisper GGML models.
 
-COMMANDS
-
-  libs    Install or upgrade whisper.cpp libraries
-  model   Manage local whisper models (catalog, list, pull, remove)
-
-EXAMPLES
-
+Whisper has no chat / generation CLI. Management commands accept --local;
+the default web mode talks to the model server's whisper endpoints.`,
+	Example: `
   # Install the default whisper.cpp libraries for the current host.
   kronk bucky libs
 
@@ -48,14 +44,7 @@ EXAMPLES
   kronk bucky model pull ggml-tiny.bin
 
   # List downloaded whisper models.
-  kronk bucky model list
-
-NOTES
-
-  Whisper has no chat / generation surface, so there is no "bucky run"
-  verb. The bucky verbs accept a --local flag mirroring the llama
-  tree; the default web mode talks to the model server's whisper
-  endpoints.`,
+  kronk bucky model list`,
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()
 	},

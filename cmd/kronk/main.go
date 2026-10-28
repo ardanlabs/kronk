@@ -8,25 +8,13 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/ardanlabs/kronk/cmd/kronk/bucky"
-	"github.com/ardanlabs/kronk/cmd/kronk/devices"
-	"github.com/ardanlabs/kronk/cmd/kronk/diagnose"
-	"github.com/ardanlabs/kronk/cmd/kronk/kronk/catalog"
-	"github.com/ardanlabs/kronk/cmd/kronk/kronk/libs"
-	"github.com/ardanlabs/kronk/cmd/kronk/kronk/model"
-	"github.com/ardanlabs/kronk/cmd/kronk/launch"
-	"github.com/ardanlabs/kronk/cmd/kronk/launchd"
-	"github.com/ardanlabs/kronk/cmd/kronk/malina"
-	"github.com/ardanlabs/kronk/cmd/kronk/security"
-	"github.com/ardanlabs/kronk/cmd/kronk/server"
+	"github.com/ardanlabs/kronk/cmd/kronk/commands"
 	"github.com/ardanlabs/kronk/cmd/kronk/status"
-	"github.com/ardanlabs/kronk/cmd/kronk/systemd"
-	k "github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
 
-var version = k.Version
+var rootCmd = commands.Cmd
 
 func main() {
 	ctx := context.Background()
@@ -34,96 +22,6 @@ func main() {
 		ctx = status.WithWriter(ctx, os.Stderr)
 	}
 	os.Exit(execute(ctx, rootCmd))
-}
-
-var rootCmd = &cobra.Command{
-	Use:   "kronk",
-	Short: "Local LLM inference with hardware acceleration",
-	Long: `KRONK - Local LLM inference server with hardware acceleration
-
-Kronk provides a complete solution for running large language models locally
-with support for GPU acceleration via Metal (macOS), CUDA (NVIDIA), ROCm (AMD),
-and Vulkan across multiple platforms.
-
-USAGE
-  kronk [command]
-
-COMMANDS
-  server    Start/stop the model server
-  systemd   Install/manage the Linux systemd user service
-  launchd   Install/manage the macOS launchd user agent
-  model     Manage local models (list, pull, remove, show, ps)
-  catalog   Browse and manage the model catalog (list, show, remove)
-  libs      Install/upgrade llama.cpp libraries
-  security  Manage API keys and JWT tokens
-  launch    Run OpenCode with a local Kronk model
-  bucky     Whisper (whisper.cpp) backend: libs and model management
-  malina    Stable Diffusion backend: libs and model management
-
-QUICK START
-  # Download a model
-  $ kronk model pull unsloth/Qwen3-1.7B-UD-Q8_K_XL --local
-
-  # Start the server with the Browser UI
-  $ kronk server start --web-admin-enabled
-
-  # Open the Browser UI in your browser
-  $ open http://localhost:11435/admin/
-
-FEATURES
-  - Text generation, Vision, Audio, Embeddings, and Reranking
-  - Hardware acceleration: Metal, CUDA, ROCm, Vulkan, CPU
-  - Batch processing with message caching (SPC/IMC)
-  - YaRN context extension for extended context windows
-  - Model pooling, catalog system, and Browser UI
-  - MCP service integration, authentication, and observability
-
-OPERATING MODES
-  Web mode (default)    - CLI communicates with running server at localhost:11435
-  Local mode (--local)  - Direct file operations without connecting to a server
-
-ENVIRONMENT VARIABLES
-  KRONK_BASE_PATH      Base path for kronk data (models, libraries, catalog, model_config)
-  KRONK_PROCESSOR      Hardware target: cpu, cuda, metal, rocm, vulkan
-  KRONK_LIB_VERSION    Pin llama.cpp library version
-  KRONK_HF_TOKEN       HuggingFace auth token for gated models
-  KRONK_WEB_API_HOST   Override web API host when server runs elsewhere
-  KRONK_TOKEN          Pre-authenticated JWT token for API calls
-
-FOR MORE INFORMATION
-  $ kronk <command> --help    Get detailed help for any command
-  $ kronk --help              View this complete help message
-  See .manual/ directory or AGENTS.md for full documentation`,
-	Run: func(cmd *cobra.Command, args []string) {
-		cmd.Help()
-	},
-}
-
-func init() {
-	rootCmd.Version = version
-
-	rootCmd.PersistentFlags().String("base-path", "", "Base path for kronk data (models, libraries, catalog, model_config)")
-
-	// Llama (kronk) backend verbs mount at the top level so the
-	// existing CLI surface is unchanged.
-	rootCmd.AddCommand(libs.Cmd)
-	rootCmd.AddCommand(model.Cmd)
-	rootCmd.AddCommand(catalog.Cmd)
-
-	// Whisper (bucky) backend verbs mount under "bucky".
-	rootCmd.AddCommand(bucky.Cmd)
-
-	// Stable Diffusion (malina) management verbs operate locally.
-	rootCmd.AddCommand(malina.Cmd)
-
-	// Cross-backend verbs.
-	rootCmd.AddCommand(server.Cmd)
-	rootCmd.AddCommand(systemd.Cmd)
-	rootCmd.AddCommand(launchd.Cmd)
-	rootCmd.AddCommand(security.Cmd)
-	rootCmd.AddCommand(devices.Cmd)
-	rootCmd.AddCommand(diagnose.Cmd)
-	rootCmd.AddCommand(launch.Cmd)
 }
 
 // =============================================================================

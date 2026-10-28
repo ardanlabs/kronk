@@ -1,0 +1,2596 @@
+[
+  {
+    "name": "kronk",
+    "path": "kronk",
+    "usage": "kronk [flags]",
+    "short": "Local LLM inference with hardware acceleration",
+    "description": "Kronk runs local inference with hardware acceleration and provides tools\nfor provisioning models, managing libraries and credentials, and operating the service.\n\nManagement commands use a running server by default. Commands offering --local\ncan operate directly on files without a server. See each command's help for details.\n\nSee the manual for installation, environment settings, security, and service workflows.",
+    "example": "# Download a model without a running server\n  kronk model pull unsloth/Qwen3-1.7B-UD-Q8_K_XL --local\n\n  # Start the server with the Browser UI\n  kronk server start --web-admin-enabled\n\n  # Open http://localhost:11435/admin/ in your browser",
+    "flags": [
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": false
+      },
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for kronk",
+        "inherited": false
+      },
+      {
+        "name": "version",
+        "shorthand": "v",
+        "type": "bool",
+        "default": "false",
+        "usage": "version for kronk",
+        "inherited": false
+      }
+    ]
+  },
+  {
+    "name": "bucky",
+    "path": "kronk bucky",
+    "usage": "kronk bucky [flags]",
+    "short": "Whisper (whisper.cpp) backend: libs and model management",
+    "description": "Whisper backend verbs (whisper.cpp via github.com/ardanlabs/bucky).\n\nThis sub-command tree mirrors the top-level llama verbs but targets the\nwhisper.cpp runtime instead of llama.cpp. Use it to install the whisper\nshared libraries and download whisper GGML models.\n\nWhisper has no chat / generation CLI. Management commands accept --local;\nthe default web mode talks to the model server's whisper endpoints.",
+    "example": "# Install the default whisper.cpp libraries for the current host.\n  kronk bucky libs\n\n  # Install a Linux/CUDA bundle alongside the active install.\n  kronk bucky libs --install --arch=amd64 --os=linux --processor=cuda\n\n  # Download the tiny English whisper model.\n  kronk bucky model pull ggml-tiny.bin\n\n  # List downloaded whisper models.\n  kronk bucky model list",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for bucky",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "libs",
+    "path": "kronk bucky libs",
+    "usage": "kronk bucky libs [flags]",
+    "short": "Install or upgrade whisper.cpp libraries",
+    "description": "Install or upgrade whisper.cpp libraries.\n\nKronk's whisper backend (bucky) requires whisper.cpp shared libraries\nfor runtime inference. This command downloads and installs the\nappropriate library bundle for your hardware platform under the bucky\nlibraries root (default: ~/.kronk/bucky-libraries/).\n\nMODES\n\n  Web Mode (default): Installs through the model server at\n    /v1/bucky/libs/pull.\n  Local Mode (--local): Direct download without requiring a server.\n\nThe command auto-detects your system architecture (amd64/arm64),\noperating system (linux/darwin/windows), and processor type\n(cpu/metal/cuda/cuda12/cuda13/vulkan). Automatic Linux CUDA selection\nprefers CUDA 13 when the driver, visible GPUs, and runtime libraries support\nit; otherwise it uses compatible CUDA 12, Vulkan, or CPU.\n\nHARDWARE BACKENDS\n\n  cpu    - CPU-only inference (works on all systems)\n  metal  - Apple Silicon GPU acceleration (macOS, universal slice)\n  cuda   - NVIDIA CUDA 12 GPU acceleration (Linux, Windows; legacy alias)\n  cuda12 - NVIDIA CUDA 12 GPU acceleration (Linux, Windows)\n  cuda13 - NVIDIA CUDA 13 GPU acceleration (Linux only)\n  vulkan - Cross-platform GPU acceleration (Linux)\n\nENVIRONMENT VARIABLES\n\n  KRONK_ARCH             - Architecture: amd64, arm64\n  KRONK_BUCKY_LIB_PATH   - Whisper library directory path\n  KRONK_OS               - Operating system: linux, darwin, windows\n  KRONK_PROCESSOR        - Hardware backend: cpu, cuda, cuda12, cuda13, metal, vulkan",
+    "example": "# Install the default whisper.cpp libraries for the current host.\n  kronk bucky libs\n\n  # Track and install the latest published whisper.cpp release.\n  kronk bucky libs --local --upgrade\n\n  # Install a specific whisper.cpp version.\n  kronk bucky libs --version=v1.7.0\n\n  # List supported (arch, os, processor) combinations.\n  kronk bucky libs --list-combinations\n\n  # Install a Linux/CUDA bundle alongside the active install.\n  kronk bucky libs --install --arch=amd64 --os=linux --processor=cuda\n\n  # Install the Linux CUDA 13 bundle (requires CUDA 13 runtime and cuBLAS).\n  kronk bucky libs --install --arch=amd64 --os=linux --processor=cuda13\n\n  # List installed library bundles.\n  kronk bucky libs --list-installs\n\n  # Remove an install.\n  kronk bucky libs --remove-install --arch=amd64 --os=linux --processor=cuda\n\n  # Switch to a previously installed bundle by setting KRONK_BUCKY_LIB_PATH.\n  export KRONK_BUCKY_LIB_PATH=~/.kronk/bucky-libraries/linux/amd64/cuda",
+    "flags": [
+      {
+        "name": "arch",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Architecture for triple-aware install operations (amd64, arm64)",
+        "inherited": false
+      },
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for libs",
+        "inherited": false
+      },
+      {
+        "name": "install",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Install for the supplied --arch/--os/--processor triple (lands in its own folder under the libraries root)",
+        "inherited": false
+      },
+      {
+        "name": "list-combinations",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "List supported (arch, os, processor) combinations and exit",
+        "inherited": false
+      },
+      {
+        "name": "list-installs",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "List installed library bundles under the libraries root and exit",
+        "inherited": false
+      },
+      {
+        "name": "local",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Run without the model server",
+        "inherited": false
+      },
+      {
+        "name": "os",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Operating system for triple-aware install operations (linux, darwin, windows)",
+        "inherited": false
+      },
+      {
+        "name": "processor",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Processor for triple-aware install operations (cpu, cuda, cuda12, cuda13, metal, vulkan)",
+        "inherited": false
+      },
+      {
+        "name": "remove-install",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Remove the install matching --arch/--os/--processor",
+        "inherited": false
+      },
+      {
+        "name": "upgrade",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Track the latest whisper.cpp release instead of the well-known default version",
+        "inherited": false
+      },
+      {
+        "name": "version",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Download a specific whisper.cpp version instead of the default",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "model",
+    "path": "kronk bucky model",
+    "usage": "kronk bucky model [flags]",
+    "short": "Manage local whisper models",
+    "description": "Manage local whisper (GGML) models.\n\nWhisper models are single .bin files stored flat under the bucky models\nroot (default: ~/.kronk/bucky-models/). The on-disk filename convention\nmirrors the upstream HuggingFace mirror (ggml-\u003cname\u003e.bin); the short\nname strips the \"ggml-\" prefix and \".bin\" suffix.",
+    "example": "# List the bundled catalog.\n  kronk bucky model catalog\n\n  # Download the tiny English whisper model.\n  kronk bucky model pull ggml-tiny.bin\n\n  # List installed models.\n  kronk bucky model list\n\n  # Remove a model.\n  kronk bucky model remove ggml-tiny.bin",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for model",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "catalog",
+    "path": "kronk bucky model catalog",
+    "usage": "kronk bucky model catalog [flags]",
+    "short": "List the bundled catalog of well-known whisper models",
+    "description": "List the bundled catalog of well-known whisper models that the bucky\nbackend knows how to download by short name (tiny, base.en, large-v3,\n...). Each row reports the short name, the published download size, and\nthe resolved download URL.\n\nMODES\n\n  Web Mode (default): Reads the bundled catalog through the model\n    server at /v1/bucky/models/catalog.\n  Local Mode (--local): Reads the bundled catalog in-process without\n    contacting a server.",
+    "example": "# List every bundled catalog entry from a running server.\n  kronk bucky model catalog\n\n  # List the bundled catalog in-process.\n  kronk bucky model catalog --local",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for catalog",
+        "inherited": false
+      },
+      {
+        "name": "local",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Run without the model server",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "list",
+    "path": "kronk bucky model list",
+    "usage": "kronk bucky model list [flags]",
+    "short": "List installed whisper models",
+    "description": "List installed whisper models found under the bucky models root\n(default: ~/.kronk/bucky-models/).\n\nMODES\n\n  Web Mode (default): Lists installed models reported by the model\n    server at /v1/bucky/models.\n  Local Mode (--local): Lists model files on disk in-process without\n    contacting a server.\n\nENVIRONMENT VARIABLES\n\n  KRONK_BASE_PATH  Base path for kronk data (models, libraries, catalog, model_config)",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for list",
+        "inherited": false
+      },
+      {
+        "name": "local",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Run without the model server",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "pull",
+    "path": "kronk bucky model pull",
+    "usage": "kronk bucky model pull \u003cMODEL\u003e [flags]",
+    "short": "Download a whisper model by short name or URL",
+    "description": "Download a whisper model from the bundled catalog or from a URL.\n\nThe argument may be:\n\n  - A short catalog name        (\"tiny\", \"base.en\", \"large-v3\")\n  - A full ggml filename        (\"ggml-tiny.bin\")\n  - A fully qualified URL       (any go-getter-compatible URL)\n\nUse \"kronk bucky model catalog\" to list the bundled short names.\n\nMODES\n\n  Web Mode (default): Downloads through the model server at\n    /v1/bucky/models/pull.\n  Local Mode (--local): Downloads in-process directly to the bucky\n    models root.\n\nENVIRONMENT VARIABLES\n\n  KRONK_BASE_PATH  Base path for kronk data (models, libraries, catalog, model_config)",
+    "example": "# Download the tiny English model via a running server.\n  kronk bucky model pull ggml-tiny.bin\n\n  # Download in-process by full filename.\n  kronk bucky model pull --local ggml-base.bin\n\n  # Download from a custom URL.\n  kronk bucky model pull --local https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for pull",
+        "inherited": false
+      },
+      {
+        "name": "local",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Run without the model server",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "remove",
+    "path": "kronk bucky model remove",
+    "usage": "kronk bucky model remove \u003cMODEL\u003e [flags]",
+    "short": "Remove an installed whisper model from disk",
+    "description": "Remove an installed whisper model from disk. The argument is the\nshort name (\"tiny\", \"base.en\"), the full ggml filename, or the bare\nbasename without extension.\n\nMODES\n\n  Web Mode (default): Removes the model through the model server at\n    /v1/bucky/models/{model}.\n  Local Mode (--local): Removes the model file from disk directly\n    without contacting a server.\n\nENVIRONMENT VARIABLES\n\n  KRONK_BASE_PATH  Base path for kronk data (models, libraries, catalog, model_config)",
+    "example": "# Remove the tiny English model from a running server.\n  kronk bucky model remove ggml-tiny.bin\n\n  # Remove the tiny English model in-process.\n  kronk bucky model remove --local ggml-tiny.bin",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for remove",
+        "inherited": false
+      },
+      {
+        "name": "local",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Run without the model server",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "catalog",
+    "path": "kronk catalog",
+    "usage": "kronk catalog [flags]",
+    "short": "Browse and manage the model catalog",
+    "description": "Browse and manage the model catalog.\n\nThe catalog is the curated set of HuggingFace models the system knows how to\ndownload. Entries are stored in catalog.yaml under ~/.kronk/catalog/ and seeded\nfrom an embedded default on first run.\n\nMODES\n\n  Web Mode (default): Communicates with running server at localhost:11435.\n  Local Mode (--local): Direct file access without requiring a server.",
+    "example": "# List every catalog entry\n  kronk catalog list\n\n  # Show full details for a single entry\n  kronk catalog show unsloth/Qwen3-1.7B-UD-Q8_K_XL\n\n  # Remove an entry plus its downloaded files\n  kronk catalog remove unsloth/Qwen3-1.7B-UD-Q8_K_XL",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for catalog",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "list",
+    "path": "kronk catalog list",
+    "usage": "kronk catalog list [flags]",
+    "short": "List catalog entries",
+    "description": "List catalog entries\n\nEnvironment Variables (web mode - default):\n      KRONK_TOKEN         (required when auth enabled)  Authentication token for the kronk server.\n      KRONK_WEB_API_HOST  (default localhost:11435)  IP Address for the kronk server.\n\nEnvironment Variables (--local mode):\n      KRONK_BASE_PATH  Base path for kronk data (models, libraries, catalog, model_config)",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for list",
+        "inherited": false
+      },
+      {
+        "name": "local",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Run without the model server",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "remove",
+    "path": "kronk catalog remove",
+    "usage": "kronk catalog remove CATALOG_ID [flags]",
+    "short": "Remove a catalog entry, GGUF cache, and downloaded files",
+    "description": "Remove a catalog entry, GGUF cache, and downloaded files\n\nThis permanently removes the catalog.yaml entry, the cached GGUF head bytes\nunder \u003cbasePath\u003e/catalog/gguf_cache/, and any downloaded model files.\n\nEnvironment Variables (web mode - default):\n      KRONK_TOKEN         (required when auth enabled)  Authentication token for the kronk server.\n      KRONK_WEB_API_HOST  (default localhost:11435)  IP Address for the kronk server.\n\nEnvironment Variables (--local mode):\n      KRONK_BASE_PATH  Base path for kronk data (models, libraries, catalog, model_config)",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for remove",
+        "inherited": false
+      },
+      {
+        "name": "local",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Run without the model server",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "show",
+    "path": "kronk catalog show",
+    "usage": "kronk catalog show CATALOG_ID [flags]",
+    "short": "Show a catalog entry",
+    "description": "Show a catalog entry\n\nEnvironment Variables (web mode - default):\n      KRONK_TOKEN         (required when auth enabled)  Authentication token for the kronk server.\n      KRONK_WEB_API_HOST  (default localhost:11435)  IP Address for the kronk server.\n\nEnvironment Variables (--local mode):\n      KRONK_BASE_PATH  Base path for kronk data (models, libraries, catalog, model_config)",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for show",
+        "inherited": false
+      },
+      {
+        "name": "local",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Run without the model server",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "completion",
+    "path": "kronk completion",
+    "usage": "kronk completion [flags]",
+    "short": "Generate the autocompletion script for the specified shell",
+    "description": "Generate the autocompletion script for kronk for the specified shell.\nSee each sub-command's help for details on how to use the generated script.",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for completion",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "bash",
+    "path": "kronk completion bash",
+    "usage": "kronk completion bash",
+    "short": "Generate the autocompletion script for bash",
+    "description": "Generate the autocompletion script for the bash shell.\n\nThis script depends on the 'bash-completion' package.\nIf it is not installed already, you can install it via your OS's package manager.\n\nTo load completions in your current shell session:\n\n\tsource \u003c(kronk completion bash)\n\nTo load completions for every new session, execute once:\n\n#### Linux:\n\n\tkronk completion bash \u003e /etc/bash_completion.d/kronk\n\n#### macOS:\n\n\tkronk completion bash \u003e $(brew --prefix)/etc/bash_completion.d/kronk\n\nYou will need to start a new shell for this setup to take effect.",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for bash",
+        "inherited": false
+      },
+      {
+        "name": "no-descriptions",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "disable completion descriptions",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "fish",
+    "path": "kronk completion fish",
+    "usage": "kronk completion fish [flags]",
+    "short": "Generate the autocompletion script for fish",
+    "description": "Generate the autocompletion script for the fish shell.\n\nTo load completions in your current shell session:\n\n\tkronk completion fish | source\n\nTo load completions for every new session, execute once:\n\n\tkronk completion fish \u003e ~/.config/fish/completions/kronk.fish\n\nYou will need to start a new shell for this setup to take effect.",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for fish",
+        "inherited": false
+      },
+      {
+        "name": "no-descriptions",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "disable completion descriptions",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "powershell",
+    "path": "kronk completion powershell",
+    "usage": "kronk completion powershell [flags]",
+    "short": "Generate the autocompletion script for powershell",
+    "description": "Generate the autocompletion script for powershell.\n\nTo load completions in your current shell session:\n\n\tkronk completion powershell | Out-String | Invoke-Expression\n\nTo load completions for every new session, add the output of the above command\nto your powershell profile.",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for powershell",
+        "inherited": false
+      },
+      {
+        "name": "no-descriptions",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "disable completion descriptions",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "zsh",
+    "path": "kronk completion zsh",
+    "usage": "kronk completion zsh [flags]",
+    "short": "Generate the autocompletion script for zsh",
+    "description": "Generate the autocompletion script for the zsh shell.\n\nIf shell completion is not already enabled in your environment you will need\nto enable it.  You can execute the following once:\n\n\techo \"autoload -U compinit; compinit\" \u003e\u003e ~/.zshrc\n\nTo load completions in your current shell session:\n\n\tsource \u003c(kronk completion zsh)\n\nTo load completions for every new session, execute once:\n\n#### Linux:\n\n\tkronk completion zsh \u003e \"${fpath[1]}/_kronk\"\n\n#### macOS:\n\n\tkronk completion zsh \u003e $(brew --prefix)/share/zsh/site-functions/_kronk\n\nYou will need to start a new shell for this setup to take effect.",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for zsh",
+        "inherited": false
+      },
+      {
+        "name": "no-descriptions",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "disable completion descriptions",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "devices",
+    "path": "kronk devices",
+    "usage": "kronk devices [flags]",
+    "short": "List available compute devices",
+    "description": "List all available compute devices that can be used for model inference.\n\nDevice names shown here can be used with the \"devices\" field in model configuration.",
+    "example": "# List all devices\n  kronk devices",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for devices",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "diagnose",
+    "path": "kronk diagnose",
+    "usage": "kronk diagnose [flags]",
+    "short": "Inspect the host environment for debugging",
+    "description": "Inspect the host environment and report information useful for debugging\n\"Kronk doesn't work\" or \"the model is slow\" problems.\n\nThe report includes component versions (Kronk, yzma), host/hardware details,\nthe installed llama.cpp build and the compute devices it sees, and a small\nllama-bench run.\n\nBy default this command is inspect-only and never downloads: it reports on the\nllama.cpp libraries and model already installed. Use --install to download\nanything missing.",
+    "example": "# Human-readable report (default, inspect-only)\n  kronk diagnose\n\n  # Download missing llama.cpp libraries / benchmark model, then report\n  kronk diagnose --install\n\n  # Machine-readable report (paste into a bug report)\n  kronk diagnose --format json\n  kronk diagnose --format yaml\n\n  # Skip the benchmark (faster)\n  kronk diagnose --no-bench\n\n  # Benchmark a specific model (source or local .gguf path)\n  kronk diagnose --model unsloth/Qwen3-1.7B-UD-Q8_K_XL",
+    "flags": [
+      {
+        "name": "format",
+        "shorthand": "",
+        "type": "string",
+        "default": "text",
+        "usage": "Output format: text, json, or yaml",
+        "inherited": false
+      },
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for diagnose",
+        "inherited": false
+      },
+      {
+        "name": "install",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Download missing llama.cpp libraries and benchmark model",
+        "inherited": false
+      },
+      {
+        "name": "model",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Model source or local .gguf path to benchmark",
+        "inherited": false
+      },
+      {
+        "name": "no-bench",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Skip the llama-bench step",
+        "inherited": false
+      },
+      {
+        "name": "processor",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Processor to benchmark: cpu, cuda, metal, rocm, or vulkan (default: KRONK_PROCESSOR or auto-detect)",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "help",
+    "path": "kronk help",
+    "usage": "kronk help [command] [flags]",
+    "short": "Help about any command",
+    "description": "Help provides help for any command in the application.\nSimply type kronk help [path to command] for full details.",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for help",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "launch",
+    "path": "kronk launch",
+    "usage": "kronk launch opencode \u003cmodel\u003e [--host \u003cIP:PORT\u003e] [-- OpenCode arguments] [flags]",
+    "short": "Install and launch OpenCode in an isolated temporary environment",
+    "description": "Install OpenCode when necessary and launch it with Kronk's default\nconfiguration in an isolated temporary environment.\n\nOpenCode uses the selected model ID exactly as provided. Kronk resolves that ID\nto an available downloaded model and optional configuration profile. Only that\nmodel is exposed to the launched session.\n\nLaunch requires an already-running Kronk server. The default address is\nlocalhost:11435; use --host when it runs elsewhere. Launch does not start,\nconfigure, or stop the server.\n\nThe temporary workspace, configuration, credentials, cache, and session data\nare removed when OpenCode exits. Existing user and project OpenCode\nconfiguration is not loaded or modified.\n\nRun 'kronk launch opencode uninstall' to invoke OpenCode's confirmed uninstall\nflow.",
+    "example": "kronk launch opencode mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT\n  kronk launch opencode mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT --host 192.168.1.10:11435\n  kronk launch opencode mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT -- --help\n  kronk launch opencode uninstall",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for launch",
+        "inherited": false
+      },
+      {
+        "name": "host",
+        "shorthand": "",
+        "type": "string",
+        "default": "localhost:11435",
+        "usage": "Address of the running Kronk server (IP:PORT)",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "launchd",
+    "path": "kronk launchd",
+    "usage": "kronk launchd [flags]",
+    "short": "Install and manage the macOS launchd user agent",
+    "description": "Install and manage Kronk as a macOS per-user LaunchAgent. Run as your\nnormal user, not with sudo. A macOS desktop login session must be available.\n\nUnlike \"kronk server start --detach\", launchd owns this process and its logs.\nUse \"kronk launchd stop\" and \"kronk launchd logs\" to manage it.\n\nInstall from a permanent location (go install, Homebrew, or a release binary),\nnot go run: the agent records the absolute path used to invoke this executable.",
+    "example": "kronk launchd install     # Install and enable startup at desktop login\n  kronk launchd start       # Load the agent and start the server\n  kronk launchd restart     # Reload the plist and restart the server\n  kronk launchd logs        # Follow ~/Library/Logs/kronk/kronk.log\n  kronk launchd uninstall   # Remove the agent, preserving server data and logs",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for launchd",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "install",
+    "path": "kronk launchd install",
+    "usage": "kronk launchd install [flags]",
+    "short": "Install and enable the user agent without starting it",
+    "description": "Install the embedded LaunchAgent and enable startup at desktop login,\nwithout starting the server. Stop any manual server before \"kronk launchd start\".\n\n--base-path or KRONK_BASE_PATH at installation selects the data directory.\nOther server settings can be set in the existing model_config.yaml or in the\nplist's EnvironmentVariables dictionary. Shell startup files are not sourced.\n\nUse --force to replace an existing plist after moving the binary. This resets\nmanual plist edits, but preserves models, keys, server YAML configuration, and\nlogs. Run \"kronk launchd restart\" afterwards if the agent is already loaded.",
+    "example": "",
+    "flags": [
+      {
+        "name": "force",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Replace the existing plist, resetting manual plist edits",
+        "inherited": false
+      },
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for install",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "logs",
+    "path": "kronk launchd logs",
+    "usage": "kronk launchd logs [flags]",
+    "short": "Follow the agent's combined output log (Ctrl-C to stop following)",
+    "description": "",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for logs",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "restart",
+    "path": "kronk launchd restart",
+    "usage": "kronk launchd restart [flags]",
+    "short": "Gracefully unload and reload the LaunchAgent from its plist",
+    "description": "",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for restart",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "start",
+    "path": "kronk launchd start",
+    "usage": "kronk launchd start [flags]",
+    "short": "Load and start the installed LaunchAgent",
+    "description": "",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for start",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "status",
+    "path": "kronk launchd status",
+    "usage": "kronk launchd status [flags]",
+    "short": "Show launchd agent status (not HTTP readiness)",
+    "description": "",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for status",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "stop",
+    "path": "kronk launchd stop",
+    "usage": "kronk launchd stop [flags]",
+    "short": "Unload the LaunchAgent until started again or the next desktop login",
+    "description": "",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for stop",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "uninstall",
+    "path": "kronk launchd uninstall",
+    "usage": "kronk launchd uninstall [flags]",
+    "short": "Stop, disable, and remove the agent, preserving server data and logs",
+    "description": "",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for uninstall",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "libs",
+    "path": "kronk libs",
+    "usage": "kronk libs [flags]",
+    "short": "Install or upgrade llama.cpp libraries",
+    "description": "Install or upgrade llama.cpp libraries.\n\nKronk requires llama.cpp shared libraries for runtime inference. This command\ndownloads and installs the appropriate library version for your hardware platform.\n\nThe command auto-detects your system architecture (amd64/arm64), operating system\n(linux/bookworm/trixie/darwin/windows), and processor type\n(cpu/metal/cuda/rocm/vulkan).\n\nThe well-known default version is pinned to the SHA-256 of its release manifest.\nThe manifest authenticates the selected platform archive and is cached with the\ninstallation so subsequent library verification can run without network access.\n\nHARDWARE BACKENDS\n\n  cpu   - CPU-only inference (works on all systems)\n  metal - Apple Silicon GPU acceleration (macOS)\n  cuda  - NVIDIA GPU acceleration\n  rocm  - AMD GPU acceleration\n  vulkan - Cross-platform GPU acceleration\n  openvino - Preview acceleration for Intel CPUs, GPUs, and NPUs (Linux/Windows amd64)\n\nOpenVINO is supported only on Intel systems. Performance and model compatibility\nvary by target device, so benchmark it against the standard CPU backend and\nvalidate complete serving workloads before production use.\n\nMODES\n\n  Web Mode (default): Installs via the running server at localhost:11435.\n  Local Mode (--local): Direct download without requiring a server.\n\nENVIRONMENT VARIABLES (Local Mode)\n\n  KRONK_ARCH       - Architecture: amd64, arm64\n  KRONK_LIB_PATH   - Library directory path\n  KRONK_OS         - Operating system: linux, bookworm, trixie, darwin, windows\n  KRONK_PROCESSOR  - Hardware backend: cpu, cuda, metal, openvino, rocm, vulkan",
+    "example": "# Install the well-known default version of the libraries\n  kronk libs --local\n\n  # Track and install the latest published llama.cpp release\n  kronk libs --local --upgrade\n\n  # Install CUDA libraries explicitly\n  KRONK_PROCESSOR=cuda kronk libs --local\n\n  # List supported (arch, os, processor) combinations\n  kronk libs --list-combinations\n\n  # Install a Linux/CUDA bundle alongside the active install\n  kronk libs --install --arch=amd64 --os=linux --processor=cuda\n\n  # List installed library bundles\n  kronk libs --list-installs\n\n  # Remove an install\n  kronk libs --remove-install --arch=amd64 --os=linux --processor=cuda\n\n  # Switch to a previously installed bundle by setting KRONK_LIB_PATH\n  export KRONK_LIB_PATH=~/.kronk/libraries/linux/amd64/cuda",
+    "flags": [
+      {
+        "name": "arch",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Architecture for triple-aware install operations (amd64, arm64)",
+        "inherited": false
+      },
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for libs",
+        "inherited": false
+      },
+      {
+        "name": "install",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Install for the supplied --arch/--os/--processor triple (lands in its own folder under the libraries root)",
+        "inherited": false
+      },
+      {
+        "name": "list-combinations",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "List supported (arch, os, processor) combinations and exit",
+        "inherited": false
+      },
+      {
+        "name": "list-installs",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "List installed library bundles under the libraries root and exit",
+        "inherited": false
+      },
+      {
+        "name": "local",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Run without the model server",
+        "inherited": false
+      },
+      {
+        "name": "os",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Operating system for triple-aware install operations (linux, bookworm, trixie, darwin, windows)",
+        "inherited": false
+      },
+      {
+        "name": "processor",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Processor for triple-aware install operations (cpu, cuda, metal, openvino, rocm, vulkan)",
+        "inherited": false
+      },
+      {
+        "name": "remove-install",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Remove the install matching --arch/--os/--processor",
+        "inherited": false
+      },
+      {
+        "name": "upgrade",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Track the latest llama.cpp release instead of the well-known default version",
+        "inherited": false
+      },
+      {
+        "name": "version",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Download a specific llama.cpp version, optionally VERSION@sha256:DIGEST",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "malina",
+    "path": "kronk malina",
+    "usage": "kronk malina [flags]",
+    "short": "Stable Diffusion backend: libs and model management",
+    "description": "Manage the local stable-diffusion.cpp runtime and curated image-model bundles.\n\nThe Malina CLI currently requires --local on management commands and operates\ndirectly on local files without a running server.",
+    "example": "kronk malina libs --local\n  kronk malina model catalog --local\n  kronk malina model pull --local sd-1.5\n  kronk malina model list --local",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for malina",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "libs",
+    "path": "kronk malina libs",
+    "usage": "kronk malina libs [flags]",
+    "short": "Install or manage stable-diffusion.cpp libraries",
+    "description": "Install or manage stable-diffusion.cpp libraries on the local machine.\n\nThe Malina CLI currently requires --local and operates without a running server.\nWith no operation flag, the command detects the current\nhost and installs Kronk's pinned stable-diffusion.cpp version. Use --upgrade to\ntrack the latest published release or --version to select a specific release.",
+    "example": "kronk malina libs --local\n  kronk malina libs --local --upgrade\n  kronk malina libs --local --list-combinations\n  kronk malina libs --local --list-installs\n  kronk malina libs --local --install --arch=arm64 --os=darwin --processor=metal\n  kronk malina libs --local --remove-install --arch=arm64 --os=darwin --processor=metal",
+    "flags": [
+      {
+        "name": "arch",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Architecture for an explicit install operation",
+        "inherited": false
+      },
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for libs",
+        "inherited": false
+      },
+      {
+        "name": "install",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Install for the supplied --arch/--os/--processor triple",
+        "inherited": false
+      },
+      {
+        "name": "list-combinations",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "List supported platform combinations",
+        "inherited": false
+      },
+      {
+        "name": "list-installs",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "List installed library bundles",
+        "inherited": false
+      },
+      {
+        "name": "local",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Run without the model server",
+        "inherited": false
+      },
+      {
+        "name": "os",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Operating system for an explicit install operation",
+        "inherited": false
+      },
+      {
+        "name": "processor",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Processor for an explicit install operation",
+        "inherited": false
+      },
+      {
+        "name": "remove-install",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Remove the install matching --arch/--os/--processor",
+        "inherited": false
+      },
+      {
+        "name": "upgrade",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Track the latest stable-diffusion.cpp release",
+        "inherited": false
+      },
+      {
+        "name": "version",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Install a specific stable-diffusion.cpp version",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "model",
+    "path": "kronk malina model",
+    "usage": "kronk malina model [flags]",
+    "short": "Manage curated image-model bundles",
+    "description": "Manage curated image-model bundles stored under the local Kronk base path.\n\nThe Malina CLI currently requires --local on each management command and operates\ndirectly on local files without a running server.",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for model",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "catalog",
+    "path": "kronk malina model catalog",
+    "usage": "kronk malina model catalog [flags]",
+    "short": "List supported image-model bundles",
+    "description": "",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for catalog",
+        "inherited": false
+      },
+      {
+        "name": "local",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Run without the model server",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "list",
+    "path": "kronk malina model list",
+    "usage": "kronk malina model list [flags]",
+    "short": "List installed image-model bundles",
+    "description": "",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for list",
+        "inherited": false
+      },
+      {
+        "name": "local",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Run without the model server",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "pull",
+    "path": "kronk malina model pull",
+    "usage": "kronk malina model pull \u003cBUNDLE\u003e [flags]",
+    "short": "Download a curated image-model bundle",
+    "description": "",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for pull",
+        "inherited": false
+      },
+      {
+        "name": "local",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Run without the model server",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "remove",
+    "path": "kronk malina model remove",
+    "usage": "kronk malina model remove \u003cBUNDLE\u003e [flags]",
+    "short": "Remove an installed image-model bundle",
+    "description": "",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for remove",
+        "inherited": false
+      },
+      {
+        "name": "local",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Run without the model server",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "model",
+    "path": "kronk model",
+    "usage": "kronk model [flags]",
+    "short": "Manage local models and inspect running models",
+    "description": "Manage local models and inspect running models.\n\nThis command manages GGUF model files stored locally on your system. It provides\noperations for building indexes, listing available models, downloading from the\ncatalog, removing unused models, and querying which models are currently loaded\nin memory.\n\nMODES\n\n  Web Mode (default): Communicates with running server at localhost:11435.\n  Local Mode (--local): Direct file access without requiring a server.",
+    "example": "# List all downloaded models\n  kronk model list\n\n  # Download a model via catalog\n  kronk model pull unsloth/Qwen3-1.7B-UD-Q8_K_XL\n\n  # Show model details\n  kronk model show unsloth/Qwen3-1.7B-UD-Q8_K_XL\n\n  # Check which models are loaded in memory\n  kronk model ps",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for model",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "index",
+    "path": "kronk model index",
+    "usage": "kronk model index [flags]",
+    "short": "Rebuild the model index",
+    "description": "Rebuild the model index for fast model access\n\nEnvironment Variables (web mode - default):\n      KRONK_TOKEN         (required when auth enabled)  Authentication token for the kronk server.\n      KRONK_WEB_API_HOST  (default localhost:11435)  IP Address for the kronk server.\n\nEnvironment Variables (--local mode):\n      KRONK_BASE_PATH  Base path for kronk data (models, libraries, catalog, model_config)\n      KRONK_MODELS     (default: $HOME/.kronk/models)  The path to the models directory",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for index",
+        "inherited": false
+      },
+      {
+        "name": "local",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Run without the model server",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "list",
+    "path": "kronk model list",
+    "usage": "kronk model list [flags]",
+    "short": "List models",
+    "description": "List models\n\nEnvironment Variables (web mode - default):\n      KRONK_TOKEN         (required when auth enabled)  Authentication token for the kronk server.\n      KRONK_WEB_API_HOST  (default localhost:11435)  IP Address for the kronk server.\n\nEnvironment Variables (--local mode):\n      KRONK_BASE_PATH  Base path for kronk data (models, libraries, catalog, model_config)\n      KRONK_MODELS     (default: ./models)  The path to the models directory",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for list",
+        "inherited": false
+      },
+      {
+        "name": "local",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Run without the model server",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "ps",
+    "path": "kronk model ps",
+    "usage": "kronk model ps [flags]",
+    "short": "List running models",
+    "description": "List running models\n\nEnvironment Variables:\n      KRONK_TOKEN         (required when auth enabled)  Authentication token for the kronk server.\n      KRONK_WEB_API_HOST  (default localhost:11435)  IP Address for the kronk server.",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for ps",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "pull",
+    "path": "kronk model pull",
+    "usage": "kronk model pull \u003cSOURCE\u003e [flags]",
+    "short": "Pull a model from the web",
+    "description": "Pull a model from the web.\n\nThe source may be:\n  - A canonical id: unsloth/Qwen3-0.6B-Q8_0\n  - A full HuggingFace URL: https://huggingface.co/org/repo/resolve/main/model.gguf\n  - A short form: org/repo/model.gguf\n  - A shorthand: owner/repo:Q4_K_M (auto-resolves files via HuggingFace API)\n  - With hf.co prefix: hf.co/owner/repo:Q4_K_M\n  - With revision: owner/repo:Q4_K_M@revision\n\nBy default the projection file (when applicable) is located automatically.\nCanonical ids consult ~/.kronk/catalog/catalog.yaml first, then query the specified\nprovider and persist the resolution. Multi-file (split) models are downloaded\nin full when the resolver expands them. Successful pulls update the catalog so\nthe next request becomes a cache hit.\n\nUse --proj \u003cURL\u003e to pin a specific projection file and --mtp-draft \u003cURL\u003e\nto pin a specific MTP drafter file. Each flag takes a fully qualified\nHuggingFace URL and forces the explicit-URL workflow:\n  - With an id source the resolver is consulted to expand split shards.\n    Any companion you pin replaces the resolver's choice; any companion\n    you do not pin is still auto-resolved (the MTP drafter is always\n    fetched when the catalog knows about it).\n  - With a URL source the model file at that URL is paired directly\n    with the supplied companion URLs — no resolver lookup.\n\nEnvironment Variables (web mode - default):\n      KRONK_TOKEN         (required when auth enabled)  Authentication token for the kronk server.\n      KRONK_WEB_API_HOST  (default localhost:11435)  IP Address for the kronk server.\n\nEnvironment Variables (--local mode):\n      KRONK_BASE_PATH  Base path for kronk data (models, libraries, catalog, model_config)\n      KRONK_MODELS     (default: $HOME/.kronk/models)  The path to the models directory",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for pull",
+        "inherited": false
+      },
+      {
+        "name": "local",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Run without the model server",
+        "inherited": false
+      },
+      {
+        "name": "mtp-draft",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Fully qualified MTP drafter URL to pin",
+        "inherited": false
+      },
+      {
+        "name": "proj",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Fully qualified projection (mmproj) URL to pin",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "remove",
+    "path": "kronk model remove",
+    "usage": "kronk model remove MODEL_NAME [flags]",
+    "short": "Remove a model",
+    "description": "Remove a model\n\nEnvironment Variables (web mode - default):\n      KRONK_TOKEN         (required when auth enabled)  Authentication token for the kronk server.\n      KRONK_WEB_API_HOST  (default localhost:11435)  IP Address for the kronk server.\n\nEnvironment Variables (--local mode):\n      KRONK_BASE_PATH  Base path for kronk data (models, libraries, catalog, model_config)\n      KRONK_MODELS     (default: $HOME/.kronk/models)  The path to the models directory",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for remove",
+        "inherited": false
+      },
+      {
+        "name": "local",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Run without the model server",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "resolve",
+    "path": "kronk model resolve",
+    "usage": "kronk model resolve \u003cMODEL_ID\u003e [flags]",
+    "short": "Resolve a model id to a provider, repo, files and download URLs",
+    "description": "Resolve a model id to a provider, repo, files and download URLs.\n\nResolution order:\n  1. Resolver file (~/.kronk/catalog/catalog.yaml)\n  2. Local on-disk index for the specified provider\n  3. HuggingFace API for the specified provider\n\nThe id must include its provider (unsloth/Qwen3.6-35B-A3B-UD-Q4_K_M). On a\nsuccessful HuggingFace lookup the resolution is cached in the resolver file.\n\nEnvironment Variables:\n      KRONK_BASE_PATH  Base path for kronk data (defaults to $HOME/.kronk)\n      KRONK_HF_TOKEN   HuggingFace token; recommended to avoid rate limiting",
+    "example": "kronk model resolve unsloth/Qwen3-0.6B-Q8_0\n  kronk model resolve unsloth/Qwen3-0.6B-Q8_0 --refresh",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for resolve",
+        "inherited": false
+      },
+      {
+        "name": "refresh",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Bypass the resolver-file cache and force an HF lookup",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "sessions",
+    "path": "kronk model sessions",
+    "usage": "kronk model sessions [flags]",
+    "short": "List current IMC cache entries",
+    "description": "List the current bounded IMC cache entries for loaded models.\n\nEnvironment Variables:\n      KRONK_TOKEN         (required when auth enabled)  Authentication token for the kronk server.\n      KRONK_WEB_API_HOST  (default localhost:11435)  IP Address for the kronk server.",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for sessions",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "show",
+    "path": "kronk model show",
+    "usage": "kronk model show \u003cMODEL_NAME\u003e [flags]",
+    "short": "Show information for a model",
+    "description": "Show information for a model\n\nEnvironment Variables (web mode - default):\n      KRONK_TOKEN         (required when auth enabled)  Authentication token for the kronk server.\n      KRONK_WEB_API_HOST  (default localhost:11435)  IP Address for the kronk server.\n\nEnvironment Variables (--local mode):\n      KRONK_BASE_PATH  Base path for kronk data (models, libraries, catalog, model_config)\n      KRONK_MODELS     (default: $HOME/.kronk/models)  The path to the models directory",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for show",
+        "inherited": false
+      },
+      {
+        "name": "local",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Run without the model server",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "security",
+    "path": "kronk security",
+    "usage": "kronk security [flags]",
+    "short": "Manage API security (keys and tokens)",
+    "description": "Manage API security - create, list, and revoke private keys and JWT tokens.\n\nThe security command provides access control for the Kronk Model Server through\nJWT-based authentication. It manages two types of credentials:\n\nPRIVATE KEYS\n  Used to sign JWT tokens. Each key has a unique ID and is used for token\n  issuance. Keys can be created, listed, and revoked.\n\nJWT TOKENS\n  Short-lived credentials issued by private keys. Tokens are used to authenticate\n  API requests and can include custom claims for fine-grained authorization.\n\nREQUIREMENTS\n\n  This command requires an admin-level token to be set via the KRONK_TOKEN\n  environment variable before execution.\n\nENVIRONMENT VARIABLES\n\n  KRONK_TOKEN    Admin-level token required for authentication. Must be set\n                 before running any security commands.",
+    "example": "# Set admin token and list keys\n  export KRONK_TOKEN=\u003cadmin-token\u003e\n  kronk security key list\n\n  # Create a new private key\n  kronk security key create\n\n  # Create a JWT token with endpoint grants\n  kronk security token create --duration=1h --endpoints=chat-completions,responses",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for security",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "key",
+    "path": "kronk security key",
+    "usage": "kronk security key [flags]",
+    "short": "Manage private keys",
+    "description": "Manage private keys - create and delete private keys",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for key",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "create",
+    "path": "kronk security key create",
+    "usage": "kronk security key create [flags]",
+    "short": "Create a new private key",
+    "description": "Create a new private key and add it to the keystore\n\nEnvironment Variables (web mode - default):\n      KRONK_TOKEN         (required when auth enabled)  Authentication token for the kronk server.\n      KRONK_WEB_API_HOST  (default localhost:11435)  IP Address for the kronk server.",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for create",
+        "inherited": false
+      },
+      {
+        "name": "local",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Run without the model server",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "delete",
+    "path": "kronk security key delete",
+    "usage": "kronk security key delete [flags]",
+    "short": "Delete a private key",
+    "description": "Delete a private key by its key ID (file name without extension)\n\nThe master key cannot be deleted.\n\nEnvironment Variables (web mode - default):\n      KRONK_TOKEN         (required when auth enabled)  Authentication token for the kronk server.\n      KRONK_WEB_API_HOST  (default localhost:11435)  IP Address for the kronk server.",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for delete",
+        "inherited": false
+      },
+      {
+        "name": "keyid",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "The key ID to delete (required)",
+        "inherited": false
+      },
+      {
+        "name": "local",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Run without the model server",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "list",
+    "path": "kronk security key list",
+    "usage": "kronk security key list [flags]",
+    "short": "List all private keys",
+    "description": "List all private keys in the system.\n\nEnvironment Variables (web mode - default):\n      KRONK_TOKEN         (required when auth enabled)  Authentication token for the kronk server.\n      KRONK_WEB_API_HOST  (default localhost:11435)  IP Address for the kronk server.",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for list",
+        "inherited": false
+      },
+      {
+        "name": "local",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Run without the model server",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "token",
+    "path": "kronk security token",
+    "usage": "kronk security token [flags]",
+    "short": "Manage tokens",
+    "description": "Manage tokens - create and manage security tokens",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for token",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "create",
+    "path": "kronk security token create",
+    "usage": "kronk security token create [flags]",
+    "short": "Create a security token",
+    "description": "Create a security token\n\nFlags:\n      --duration     Token duration (e.g., 1h, 24h, 720h)\n      --endpoints    Comma-separated list of endpoints with optional rate limits\n\nEndpoint format:\n      endpoint                  Unlimited access (default)\n      endpoint:unlimited        Unlimited access (explicit)\n      endpoint:limit/window     Rate limited (window: day, month, year)\n\nExamples:\n      --endpoints chat-completions,embeddings\n      --endpoints \"chat-completions:1000/day,embeddings:unlimited\"\n      --endpoints \"chat-completions:100/month,embeddings:500/year\"\n\nEnvironment Variables (web mode - default):\n      KRONK_TOKEN         (required when auth enabled)  Authentication token for the kronk server.\n      KRONK_WEB_API_HOST  (default localhost:11435)  IP Address for the kronk server.",
+    "example": "",
+    "flags": [
+      {
+        "name": "duration",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Token duration (e.g., 1h, 24h, 720h)",
+        "inherited": false
+      },
+      {
+        "name": "endpoints",
+        "shorthand": "",
+        "type": "stringSlice",
+        "default": "[]",
+        "usage": "Endpoints with optional rate limits (e.g., chat-completions:1000/day)",
+        "inherited": false
+      },
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for create",
+        "inherited": false
+      },
+      {
+        "name": "local",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Run without the model server",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "server",
+    "path": "kronk server",
+    "usage": "kronk server [flags]",
+    "short": "Start, stop, and manage the Kronk model server",
+    "description": "Start, stop, and manage the Kronk model server.\n\nThe Model Server provides an OpenAI-compatible REST API for local LLM inference.\nIt supports text generation, vision, audio, embeddings, and reranking with hardware\nacceleration via Metal (macOS), CUDA (NVIDIA), ROCm (AMD), Vulkan, or CPU.\n\nThese commands run the server directly. stop and logs manage only servers started\nwith --detach. For an OS-managed service, use \"kronk systemd\" on Linux or\n\"kronk launchd\" on macOS instead.\n\nThe server includes:\n  • OpenAI-compatible REST API endpoints\n  • Browser UI (BUI) for interactive testing and management\n  • Model caching with configurable TTL\n  • Distributed tracing via Tempo/OpenTelemetry\n  • Prometheus metrics for observability\n  • JWT authentication and rate limiting\n  • Built-in MCP service for AI agent tool integration",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for server",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "logs",
+    "path": "kronk server logs",
+    "usage": "kronk server logs [flags]",
+    "short": "Stream server logs",
+    "description": "Stream logs from a server started with --detach. For an OS-managed service, use \"kronk systemd logs\" on Linux or \"kronk launchd logs\" on macOS.",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for logs",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "start",
+    "path": "kronk server start",
+    "usage": "kronk server start [flags]",
+    "short": "Start Kronk model server",
+    "description": "Start Kronk model server. Use --help to get environment settings.",
+    "example": "",
+    "flags": [
+      {
+        "name": "allow-upgrade",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Allow automatic upgrades",
+        "inherited": false
+      },
+      {
+        "name": "api-host",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "API host address (e.g., localhost:11435)",
+        "inherited": false
+      },
+      {
+        "name": "arch",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Architecture override",
+        "inherited": false
+      },
+      {
+        "name": "auth-host",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "External auth service host",
+        "inherited": false
+      },
+      {
+        "name": "auth-issuer",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Local auth issuer name",
+        "inherited": false
+      },
+      {
+        "name": "auth-tls-ca-file",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "CA certificate file for the external auth service",
+        "inherited": false
+      },
+      {
+        "name": "auth-tls-enabled",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Use TLS for the external auth service",
+        "inherited": false
+      },
+      {
+        "name": "auth-tls-server-name",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "TLS server name for the external auth service",
+        "inherited": false
+      },
+      {
+        "name": "authorization-mode",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "API authorization mode (open, management, authenticated, full-protected)",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data",
+        "inherited": false
+      },
+      {
+        "name": "bucky-lib-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Path to whisper library",
+        "inherited": false
+      },
+      {
+        "name": "budget-percent",
+        "shorthand": "",
+        "type": "int",
+        "default": "0",
+        "usage": "Percentage (1..100) of system/VRAM memory the resource manager may consume (default: 90)",
+        "inherited": false
+      },
+      {
+        "name": "cors-allowed-origins",
+        "shorthand": "",
+        "type": "stringSlice",
+        "default": "[]",
+        "usage": "CORS allowed origins",
+        "inherited": false
+      },
+      {
+        "name": "debug-host",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Debug host address (e.g., localhost:11445)",
+        "inherited": false
+      },
+      {
+        "name": "detach",
+        "shorthand": "d",
+        "type": "bool",
+        "default": "false",
+        "usage": "Run server in the background",
+        "inherited": false
+      },
+      {
+        "name": "download-enabled",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Allow server-side model downloads",
+        "inherited": false
+      },
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for start",
+        "inherited": false
+      },
+      {
+        "name": "hf-token",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Hugging Face API token",
+        "inherited": false
+      },
+      {
+        "name": "idle-timeout",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "HTTP idle timeout (e.g., 1m)",
+        "inherited": false
+      },
+      {
+        "name": "inference-timeout",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Total inference timeout (e.g., 60m)",
+        "inherited": false
+      },
+      {
+        "name": "insecure-logging",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Enable logging of sensitive data (messages, model config)",
+        "inherited": false
+      },
+      {
+        "name": "lib-download-enabled",
+        "shorthand": "",
+        "type": "bool",
+        "default": "true",
+        "usage": "Enable automatic llama library downloads at startup",
+        "inherited": false
+      },
+      {
+        "name": "lib-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Path to llama library",
+        "inherited": false
+      },
+      {
+        "name": "lib-verify-enabled",
+        "shorthand": "",
+        "type": "bool",
+        "default": "true",
+        "usage": "Verify the selected llama and whisper libraries before loading them",
+        "inherited": false
+      },
+      {
+        "name": "lib-version",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Version of llama library, optionally VERSION@sha256:DIGEST",
+        "inherited": false
+      },
+      {
+        "name": "llama-log",
+        "shorthand": "",
+        "type": "int",
+        "default": "-1",
+        "usage": "Llama log level (0=off, 1=on)",
+        "inherited": false
+      },
+      {
+        "name": "malina-lib-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Path to stable-diffusion library",
+        "inherited": false
+      },
+      {
+        "name": "mcp-auth-enabled",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Require a Kronk admin bearer token for MCP access",
+        "inherited": false
+      },
+      {
+        "name": "mcp-brave-api-key",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Brave Search API key for the embedded MCP service",
+        "inherited": false
+      },
+      {
+        "name": "mcp-enabled",
+        "shorthand": "",
+        "type": "bool",
+        "default": "true",
+        "usage": "Enable or disable the embedded MCP service",
+        "inherited": false
+      },
+      {
+        "name": "mcp-host",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Disable the embedded MCP service when an external host is configured",
+        "inherited": false
+      },
+      {
+        "name": "media-backends-enabled",
+        "shorthand": "",
+        "type": "bool",
+        "default": "true",
+        "usage": "Download and load the Bucky and Malina backends at startup",
+        "inherited": false
+      },
+      {
+        "name": "model-config-file",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Special config file for model specific config",
+        "inherited": false
+      },
+      {
+        "name": "models-in-pool",
+        "shorthand": "",
+        "type": "int",
+        "default": "0",
+        "usage": "Safety-net cap on the number of distinct models kept loaded, regardless of budget (default: 10)",
+        "inherited": false
+      },
+      {
+        "name": "os",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "OS override",
+        "inherited": false
+      },
+      {
+        "name": "pool-ttl",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Idle model TTL (e.g., 5m, 1h; 0 disables expiration)",
+        "inherited": false
+      },
+      {
+        "name": "processor",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Processor type (e.g., vulkan, metal, cuda, rocm)",
+        "inherited": false
+      },
+      {
+        "name": "read-timeout",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "HTTP read timeout (e.g., 30s)",
+        "inherited": false
+      },
+      {
+        "name": "shutdown-timeout",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Server shutdown timeout (e.g., 1m)",
+        "inherited": false
+      },
+      {
+        "name": "tempo-host",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Tempo host address (e.g., localhost:4317)",
+        "inherited": false
+      },
+      {
+        "name": "tempo-probability",
+        "shorthand": "",
+        "type": "float64",
+        "default": "-1",
+        "usage": "Tempo sampling probability (0.0-1.0)",
+        "inherited": false
+      },
+      {
+        "name": "tempo-service-name",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Tempo service name",
+        "inherited": false
+      },
+      {
+        "name": "web-admin-enabled",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Serve the browser admin UI at /admin/",
+        "inherited": false
+      },
+      {
+        "name": "web-admin-password-sha-256",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "SHA-256 digest for browser admin login",
+        "inherited": false
+      },
+      {
+        "name": "write-timeout",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "HTTP write timeout (e.g., 15m)",
+        "inherited": false
+      }
+    ]
+  },
+  {
+    "name": "stop",
+    "path": "kronk server stop",
+    "usage": "kronk server stop [flags]",
+    "short": "Stop the Kronk model server",
+    "description": "Stop a server started with --detach by sending SIGTERM. For an OS-managed service, use \"kronk systemd stop\" on Linux or \"kronk launchd stop\" on macOS.",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for stop",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "systemd",
+    "path": "kronk systemd",
+    "usage": "kronk systemd [flags]",
+    "short": "Install and manage the Linux systemd user service",
+    "description": "Install and manage Kronk as a Linux systemd user service. Run as your\nnormal user, not with sudo. systemd must be installed and its user manager available.\n\nUnlike \"kronk server start --detach\", systemd owns this process and its logs.\nUse \"kronk systemd stop\" and \"kronk systemd logs\" to manage it.\n\nInstall from a permanent location (go install, Homebrew, or a release binary),\nnot go run: the service records the absolute path of this executable.",
+    "example": "kronk systemd install          # Register and enable startup at login\n  kronk systemd install --boot   # Enable startup before login and after logout\n  kronk systemd start            # Start the installed service\n  kronk systemd logs             # Follow the service journal\n  kronk systemd uninstall        # Remove the service, preserving data and settings",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for systemd",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "install",
+    "path": "kronk systemd install",
+    "usage": "kronk systemd install [flags]",
+    "short": "Install and enable the user service without starting it",
+    "description": "Install the embedded unit and enable startup at login, without starting\nthe server. Stop any manually started server before using \"kronk systemd start\".\n\nUse --force to replace an existing unit after moving the binary. Configuration\nin kronk.env and systemctl drop-ins is preserved. --base-path or KRONK_BASE_PATH\nat installation selects the data directory; kronk.env can override it later.\n\n--boot enables lingering for your account using loginctl. This may require\nauthorization and affects all your user services, not only Kronk. Uninstall\ndoes not disable lingering because other services may depend on it.",
+    "example": "",
+    "flags": [
+      {
+        "name": "boot",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Enable user lingering for startup at boot and operation after logout",
+        "inherited": false
+      },
+      {
+        "name": "force",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Replace an existing service unit",
+        "inherited": false
+      },
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for install",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "logs",
+    "path": "kronk systemd logs",
+    "usage": "kronk systemd logs [flags]",
+    "short": "Follow the systemd service journal (Ctrl-C to stop following)",
+    "description": "",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for logs",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "restart",
+    "path": "kronk systemd restart",
+    "usage": "kronk systemd restart [flags]",
+    "short": "Restart the systemd service after configuration or binary changes",
+    "description": "",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for restart",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "start",
+    "path": "kronk systemd start",
+    "usage": "kronk systemd start [flags]",
+    "short": "Start the installed systemd service",
+    "description": "",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for start",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "status",
+    "path": "kronk systemd status",
+    "usage": "kronk systemd status [flags]",
+    "short": "Show systemd service status (not HTTP readiness)",
+    "description": "",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for status",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "stop",
+    "path": "kronk systemd stop",
+    "usage": "kronk systemd stop [flags]",
+    "short": "Stop the systemd service",
+    "description": "",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for stop",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "uninstall",
+    "path": "kronk systemd uninstall",
+    "usage": "kronk systemd uninstall [flags]",
+    "short": "Stop, disable, and remove the service, preserving data and settings",
+    "description": "",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for uninstall",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  }
+]

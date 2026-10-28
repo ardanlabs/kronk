@@ -11,6 +11,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { TRIAL_PAUSE_MS } from '../services/autoTestRunner';
+import cliReference from './cli-reference.json';
 
 interface LayoutProps {
   children: ReactNode;
@@ -222,16 +223,9 @@ const menuStructure: MenuCategory[] = [
         id: 'docs-cli-sub',
         label: 'CLI',
         items: [
-          { page: 'docs-cli-bucky', label: 'bucky' },
-          { page: 'docs-cli-catalog', label: 'catalog' },
-          { page: 'docs-cli-completion', label: 'completion' },
-          { page: 'docs-cli-devices', label: 'devices' },
-          { page: 'docs-cli-diagnose', label: 'diagnose' },
-          { page: 'docs-cli-libs', label: 'libs' },
-          { page: 'docs-cli-launch', label: 'launch' },
-          { page: 'docs-cli-model', label: 'model' },
-          { page: 'docs-cli-security', label: 'security' },
-          { page: 'docs-cli-server', label: 'server' },
+          { page: 'docs-cli', label: 'Overview' },
+          ...cliReference.filter((entry) => entry.path === `kronk ${entry.name}`)
+            .map((entry): MenuItem => ({ page: `docs-cli-${entry.name}`, label: entry.name })),
         ],
       },
       {

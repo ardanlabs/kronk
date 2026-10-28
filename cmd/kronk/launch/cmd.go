@@ -42,6 +42,10 @@ configuration is not loaded or modified.
 
 Run 'kronk launch opencode uninstall' to invoke OpenCode's confirmed uninstall
 flow.`,
+		Example: `  kronk launch opencode mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT
+  kronk launch opencode mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT --host 192.168.1.10:11435
+  kronk launch opencode mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT -- --help
+  kronk launch opencode uninstall`,
 		Args: cobra.ArbitraryArgs,
 		RunE: run,
 	}

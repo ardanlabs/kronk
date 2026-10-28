@@ -14,23 +14,14 @@ import (
 // whisper model management verbs (catalog, list, pull, remove).
 var Cmd = &cobra.Command{
 	Use:   "model",
-	Short: "Manage local whisper models (catalog, list, pull, remove)",
+	Short: "Manage local whisper models",
 	Long: `Manage local whisper (GGML) models.
 
 Whisper models are single .bin files stored flat under the bucky models
 root (default: ~/.kronk/bucky-models/). The on-disk filename convention
 mirrors the upstream HuggingFace mirror (ggml-<name>.bin); the short
-name strips the "ggml-" prefix and ".bin" suffix.
-
-COMMANDS
-
-  catalog  List the bundled catalog of well-known whisper models
-  list     List installed whisper models
-  pull     Download a whisper model by short name or URL
-  remove   Remove a whisper model from disk
-
-EXAMPLES
-
+name strips the "ggml-" prefix and ".bin" suffix.`,
+	Example: `
   # List the bundled catalog.
   kronk bucky model catalog
 

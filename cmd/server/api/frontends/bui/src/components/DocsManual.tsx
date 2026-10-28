@@ -431,6 +431,22 @@ kronk launchd status`}</code></pre>
             <li><a href="https://www.kronkai.com/manual#chapter-14-client-integration">Chapter 14: Client Integration</a> to connect an editor or coding agent.</li>
             <li><a href="https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription">Chapter 18: Bucky</a> for speech-to-text.</li>
           </ul>
+          <h3 id="29-cli-reference-and-shell-completion">2.9 CLI Reference and Shell Completion</h3>
+          <p>The BUI's <strong>Docs → CLI</strong> reference is generated from the same command definitions as <code>kronk --help</code>. It includes every visible command, its flags and declared defaults, and short examples. Use this manual for workflows, environment settings, and service configuration. A flag's declared default may be an unset sentinel; server defaults and environment/configuration precedence are described in Chapter 8.</p>
+          <p>Cobra provides shell completion for Bash, Fish, PowerShell, and Zsh. For the current session:</p>
+          <pre className="code-block"><code className="language-shell">{`# Bash
+source <(kronk completion bash)
+
+# Fish
+kronk completion fish | source
+
+# PowerShell
+kronk completion powershell | Out-String | Invoke-Expression
+
+# Zsh (initialize compinit first if your shell has not already done so)
+autoload -Uz compinit && compinit
+source <(kronk completion zsh)`}</code></pre>
+          <p>For future sessions, save Fish output to <code>~/.config/fish/completions/kronk.fish</code>, or add the PowerShell command to your profile. Save Bash output to your installed bash-completion directory (<code>/etc/bash_completion.d/kronk</code> on many Linux systems, or <code>$(brew --prefix)/etc/bash_completion.d/kronk</code> with Homebrew). For Zsh, save the output as <code>_kronk</code> in a directory on <code>$fpath</code>, then initialize completion in your shell startup file. Create the destination directory if needed and use a location your account can write to. <code>kronk completion &lt;shell&gt; --help</code> describes shell-specific options such as omitting descriptions.</p>
           <hr />
           <h2 id="chapter-3-model-configuration">Chapter 3: Model Configuration</h2>
           <p>Kronk analyzes each model and the available hardware before loading it. Most models run well without manual tuning. Use per-model configuration when you need a different context window, more concurrent requests, explicit device placement, or an advanced feature such as speculative decoding.</p>
@@ -6370,11 +6386,14 @@ make benchmark-codegen \\
 npm run build`}</code></pre>
           <p>Then build the server (or the narrow service package) and verify that the expected static bundle is present in the embedding location. Avoid hand-editing minified/static output.</p>
           <h4 id="2073-documentation-generation">20.7.3 Documentation generation</h4>
-          <p><code>cmd/server/api/tooling/docs/main.go</code> orchestrates three conceptual pipelines:</p>
-          <pre className="code-block"><code className="language-text">{`public SDK Go documentation -> SDK BUI documentation
+          <p><code>cmd/server/api/tooling/docs/main.go</code> orchestrates four conceptual pipelines:</p>
+          <pre className="code-block"><code className="language-text">{`registered Cobra commands   -> cli-reference.json -> CLI BUI reference and navigation
+public SDK Go documentation -> SDK BUI documentation
 examples source             -> example BUI documentation
 .manual chapter Markdown    -> DocsManual.tsx`}</code></pre>
-          <p>Author manual content in <code>.manual/</code>, public API descriptions in Go doc comments, and examples in <code>examples/</code>. <code>DocsManual.tsx</code> and generated SDK/example documentation are outputs and must not be hand-edited. Run:</p>
+          <p>Author manual content in <code>.manual/</code>, public API descriptions in Go doc comments, and examples in <code>examples/</code>. The shared CLI tree lives in <code>cmd/kronk/commands/</code>. Author CLI descriptions and short examples in the owning Cobra command's <code>Long</code> and <code>Example</code> fields; usage, flags, types, defaults, and inherited flags come from the command definitions. The generator inspects the tree without executing commands or their authentication/platform hooks. New top-level commands automatically appear in the BUI sidebar. <code>DocsCLI.tsx</code> is the shared renderer, not a per-command reference.</p>
+          <p>Keep operational workflows and authoritative environment-variable guidance in the manual rather than duplicating flag tables in React. Generated flag defaults are not necessarily effective server defaults: environment variables and configuration can override them. API reference components remain hand-written.</p>
+          <p><code>cli-reference.json</code>, <code>DocsManual.tsx</code>, and generated SDK/example documentation are outputs and must not be hand-edited. The pre-commit hook regenerates docs and builds the BUI. To regenerate explicitly, run:</p>
           <pre className="code-block"><code className="language-shell">{`make kronk-docs`}</code></pre>
           <p>Review generated diffs for malformed Markdown conversion and then run <code>npm run build</code> in the BUI. Finally build the server to check that generated components compile into the embedded bundle. Generation may update more than one documented package; do not discard legitimate generated changes. If the requested scope intentionally excludes generated artifacts, report that regeneration remains pending.</p>
           <h3 id="208-bucky-implementation-map">20.8 Bucky Implementation Map</h3>
@@ -6514,6 +6533,7 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
                 <li><a href="#26-running-the-server" className={activeSection === '26-running-the-server' ? 'active' : ''}>2.6 Running the Server</a></li>
                 <li><a href="#27-verify-the-installation" className={activeSection === '27-verify-the-installation' ? 'active' : ''}>2.7 Verify the Installation</a></li>
                 <li><a href="#28-security-and-next-steps" className={activeSection === '28-security-and-next-steps' ? 'active' : ''}>2.8 Security and Next Steps</a></li>
+                <li><a href="#29-cli-reference-and-shell-completion" className={activeSection === '29-cli-reference-and-shell-completion' ? 'active' : ''}>2.9 CLI Reference and Shell Completion</a></li>
               </ul>
             </div>
             <div className="doc-index-section">

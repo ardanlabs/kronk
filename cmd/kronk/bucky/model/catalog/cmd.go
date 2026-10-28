@@ -28,10 +28,8 @@ MODES
   Web Mode (default): Reads the bundled catalog through the model
     server at /v1/bucky/models/catalog.
   Local Mode (--local): Reads the bundled catalog in-process without
-    contacting a server.
-
-EXAMPLES
-
+    contacting a server.`,
+	Example: `
   # List every bundled catalog entry from a running server.
   kronk bucky model catalog
 
