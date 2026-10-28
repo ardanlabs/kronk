@@ -24,6 +24,7 @@ func TestDecisionContracts(t *testing.T) {
 		{"vllm-decision2", modelprofile.DecisionExecution{Batch: modelprofile.DecisionBatchWholePrompt, Embeddings: true, AllTokenOutputs: true}},
 		{"vllm-d3", modelprofile.DecisionExecution{Batch: modelprofile.DecisionBatchWholePrompt, SingleSequence: true, NonCausal: true}},
 		{"lfm3-d1", modelprofile.DecisionExecution{Batch: modelprofile.DecisionBatchWholePrompt, SingleSequence: true, NonCausal: true}},
+		{"lfm3-d1-omni", modelprofile.DecisionExecution{Batch: modelprofile.DecisionBatchWholePrompt, SingleSequence: true, NonCausal: true}},
 	} {
 		t.Run(tt.protocol, func(t *testing.T) {
 			contract := modelprofile.DecisionContractFor(tt.protocol)
@@ -60,6 +61,7 @@ func TestDecisionTemperaturePrecision(t *testing.T) {
 		bits     int
 	}{
 		{"pplx-decider", 32}, {"lfm2-d1", 32}, {"lfm3-d1", 32},
+		{"lfm3-d1-omni", 32},
 		{"vllm-decision2", 32}, {"vllm-d3", 32}, {"lev", 64},
 		{"laya", 64}, {"kev", 64}, {"clef", 64}, {"unknown", 64}, {"", 64},
 	} {

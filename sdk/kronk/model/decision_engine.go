@@ -202,8 +202,8 @@ func (e *decisionEngine) validate(work []decisionWork) error {
 				return fmt.Errorf("decision work[%d] readout positions are not strictly increasing", i)
 			}
 
-			if readout.position < item.prefixLen || readout.position >= len(item.tokens) {
-				return fmt.Errorf("decision work[%d] readout[%d] position %d is outside [%d,%d)", i, j, readout.position, item.prefixLen, len(item.tokens))
+			if readout.position < item.position+item.prefixLen || readout.position >= item.position+len(item.tokens) {
+				return fmt.Errorf("decision work[%d] readout[%d] position %d is outside [%d,%d)", i, j, readout.position, item.position+item.prefixLen, item.position+len(item.tokens))
 			}
 
 			if len(readout.candidates) == 0 && readout.embeddingWidth <= 0 {

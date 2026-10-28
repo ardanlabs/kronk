@@ -78,13 +78,37 @@ func (m *Model) Decision(ctx context.Context, req DecisionRequest) (DecisionResp
 	if err := validateDecisionRequest(req, m.modelInfo.decisionProtocol); err != nil {
 		return DecisionResponse{}, err
 	}
-	if len(req.Images) > 0 {
+	hasImages := len(req.Images) > 0
+	var hasAudio bool
+	for _, file := range req.Files {
+		switch mediaTypeFromMagicBytes(file) {
+		case MediaTypeVision:
+			hasImages = true
+		case MediaTypeAudio:
+			hasAudio = true
+		}
+	}
+	for _, question := range req.Questions {
+		if _, spoken := question.Instructions.(DecisionAudioInstructions); spoken {
+			hasAudio = true
+		}
+	}
+	if hasImages {
 		media, ok := m.protocol.(decision.ImageProtocol)
 		if !ok || !media.SupportsImages() {
 			return DecisionResponse{}, fmt.Errorf("%w: decision protocol %q does not support images", ErrDecisionRequest, m.modelInfo.decisionProtocol)
 		}
 		if m.mtmdMetaCtx == 0 || !m.mtmdCapabilities.Vision {
 			return DecisionResponse{}, fmt.Errorf("%w: decision images require a compatible vision projector", ErrDecisionRequest)
+		}
+	}
+	if hasAudio {
+		media, ok := m.protocol.(decision.AudioProtocol)
+		if !ok || !media.SupportsAudio() {
+			return DecisionResponse{}, fmt.Errorf("%w: decision protocol %q does not support audio", ErrDecisionRequest, m.modelInfo.decisionProtocol)
+		}
+		if m.mtmdMetaCtx == 0 || !m.mtmdCapabilities.Audio {
+			return DecisionResponse{}, fmt.Errorf("%w: decision audio requires a compatible audio projector", ErrDecisionRequest)
 		}
 	}
 	return m.protocol.Decide(ctx, req)

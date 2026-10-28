@@ -13,6 +13,7 @@ You will want to look at `Chapter 20: Developer Guide` for detailed information 
 - You need this env var to run tests
   - export GITHUB_WORKSPACE=<Root Location Of Kronk Project>
 - Never perform a full repo test run and never run tests from this location `sdk/kronk/tests`.
+- Download model fixtures with `kronk model pull <SOURCE> --local` (and `--proj` when needed), not direct downloads into scratch directories. Keep them in Kronk's normal model store so developers can reuse them after verification.
 
 ## MCP Services
 

@@ -380,8 +380,9 @@ Kronk does not extract chat-message attachments from decision state.
 
 This requires a compatible projector configured through `ProjFile` and a Clef
 GGUF whose `systemone` template supports images. A projection file alone does
-not enable images for other decision protocols; OpenJEV and the other protocols
-remain text-only in Kronk's decision API. Audio and video inputs are unsupported.
+not enable images for other decision protocols. LFM3-d1-omni supports image and
+audio inputs as described below; OpenJEV and the remaining protocols stay
+text-only. Video inputs are unsupported.
 
 The complete text-plus-image prompt must fit both the context window and one
 physical batch. Expanded image rows count toward `usage.input_tokens` and the
@@ -389,6 +390,37 @@ batch budget. Oversized inputs are rejected, never truncated; increase
 `context-window` or `prefill-batch-size` as indicated by the error. Decoding
 images also consumes memory proportional to their dimensions, so applications
 accepting untrusted images should bound payload sizes, dimensions, and count.
+
+#### LFM3-d1-omni inputs
+
+LFM3-d1-omni models with a compatible projector accept an optional top-level
+`files` array containing nonempty base64 strings or image/audio data URLs, such
+as `data:image/png;base64,...` and `data:audio/wav;base64,...`. The existing
+`images` field remains image-only. Images appear first, followed by `files` in
+array order, before state. Remote URLs are not fetched and video data URLs are
+rejected. Encoded media formats and protocol/projector support are validated by
+the SDK.
+
+A question can use audio instructions instead of text or structured data:
+
+```json
+{
+  "type": "noul",
+  "instructions": {
+    "type": "input_audio",
+    "input_audio": {
+      "data": "data:audio/wav;base64,...",
+      "format": "wav"
+    }
+  }
+}
+```
+
+`input_audio.data` must contain nonempty base64 audio or an audio base64 data URL.
+Only an instructions object with the exact `type` value `input_audio` triggers
+audio decoding; other structured instructions and state remain ordinary JSON.
+In the Go SDK, use `DecisionRequest.Files` for encoded image/audio bytes and
+`model.DecisionAudioInstructions{Data: audioBytes}` for question instructions.
 
 #### Decision protocols
 
@@ -401,7 +433,8 @@ available. The following additional protocols are implemented:
 | --- | --- |
 | `pplx-decider` | One final-token label readout per question; unlike Lev, no reverse-order averaging |
 | `lfm2-d1` | Final-token label groups, taking the maximum logit per option before calibration |
-| `lfm3-d1` | Text-only, non-causal whole-prompt label groups; median score and maximum-probability confidence |
+| `lfm3-d1` | Non-causal whole-prompt label groups; median score and maximum-probability confidence |
+| `lfm3-d1-omni` | LFM3-d1 readouts with image/audio state inputs and spoken instructions |
 | `vllm-decision2` | One question per prompt, with marked option/question spans and scalar decision-head outputs |
 | `vllm-d3` | Non-causal whole-prompt label readout; questions execute separately without prefix reuse |
 
@@ -423,13 +456,19 @@ LFM3 d1 preserves structured JSON state and option descriptions for the model's
 template. It uses alphabetic choice labels beyond 26 options (`AA`, `AB`, …),
 quotes control-token spellings in user input, returns the median score level
 rather than an expected level, and uses maximum answer probability for choice
-and score `confidence`. Spoken instructions and the `lfm3-d1-omni` protocol are
-not implemented.
+and score `confidence`. The `lfm3-d1-omni` protocol shares these semantics and
+supports image/audio state inputs and spoken instructions with a compatible
+projector. Spoken instructions are placed after state media, at the question's
+instructions position. All expanded media rows count toward usage and the
+whole-prompt budget; inputs are never truncated.
 
 LFM3 d1 has been exercised with a Q4_K_M d1-2B model for choice, score, `noul`,
 concurrent request isolation, and prompt-budget rejection on macOS Metal with
 llama.cpp b11960. This is compatibility coverage, not a decision-quality
-benchmark. The other four protocols have model-free contract coverage, but
+benchmark. The Q8_0 d1-Omni-2B model has also been exercised for image and audio
+decisions, spoken questions about images, concurrent image requests, malformed
+media rejection, and recovery after budget errors on the same platform.
+The other four protocols have model-free contract coverage, but
 their model-backed compatibility remains unverified.
 
 LFM3 text chat uses its own hybrid short-convolution/full/SWA topology and its
@@ -557,6 +596,14 @@ Set `modelSource` and `imageFile` in the example to change the inputs. The model
 resolver downloads the model and discovers its companion projector. Image
 decisions require a vision-capable Clef conversion with a compatible projector
 and image-capable systemone template; older text-only conversions cannot be used.
+
+For an audio-based decision, run `make example-decision-audio`. The
+`examples/decision-audio` program uses `LiquidAI/d1-Omni-2B-Q8_0` and the bundled
+`samples/jfk.wav` recording. It supplies audio through `DecisionRequest.Files`
+and asks choice, noul, and score questions directly, without generating a
+transcript. The model and its projector are installed in the normal Kronk store
+and reused on subsequent runs. Change `modelSource` and `audioFile` to try other
+compatible models or recordings.
 
 ## 9.9 Tokenization
 

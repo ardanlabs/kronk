@@ -113,6 +113,38 @@ func (p decisionImageTestProtocol) SupportsImages() bool {
 	return p.supportsImages
 }
 
+func TestDecisionRejectsUnsupportedAudio(t *testing.T) {
+	audio := []byte("RIFF\x00\x00\x00\x00WAVE")
+	for _, tt := range []struct {
+		name         string
+		protocol     decision.Protocol
+		files        [][]byte
+		instructions any
+		want         string
+	}{
+		{"no audio contract", decisionTestProtocol{}, [][]byte{audio}, "Question?", "does not support audio"},
+		{"image-only protocol", decisionImageTestProtocol{true}, nil, DecisionAudioInstructions{Data: audio}, "does not support audio"},
+		{"missing audio projector", decisionAudioTestProtocol{}, [][]byte{audio}, "Question?", "audio projector"},
+		{"spoken question missing projector", decisionAudioTestProtocol{}, nil, DecisionAudioInstructions{Data: audio}, "audio projector"},
+		{"empty file", decisionAudioTestProtocol{}, [][]byte{nil}, "Question?", "files[0]"},
+		{"video file", decisionAudioTestProtocol{}, [][]byte{[]byte("\x00\x00\x00\x18ftypmp42")}, "Question?", "files[0]"},
+		{"empty instructions audio", decisionAudioTestProtocol{}, nil, DecisionAudioInstructions{}, "instructions"},
+		{"image instructions", decisionAudioTestProtocol{}, nil, DecisionAudioInstructions{Data: []byte("\x89PNG\r\n\x1a\n")}, "instructions"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{protocol: tt.protocol}
+			_, err := m.Decision(t.Context(), DecisionRequest{Files: tt.files, Questions: []DecisionQuestion{DecisionQuestionNoul("q", tt.instructions, nil)}})
+			if !errors.Is(err, ErrDecisionRequest) || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Decision: got %v, want ErrDecisionRequest containing %q", err, tt.want)
+			}
+		})
+	}
+}
+
+type decisionAudioTestProtocol struct{ decisionTestProtocol }
+
+func (decisionAudioTestProtocol) SupportsAudio() bool { return true }
+
 func TestDecisionResponseMarshalJSON(t *testing.T) {
 	resp := DecisionResponse{
 		Model: "decision-model",
@@ -228,6 +260,7 @@ func TestDetectDecisionProtocol(t *testing.T) {
 		{name: "pplx-decider metadata", metadata: map[string]string{"general.architecture": "qwen35", "qwen35.decision.type": "pplx-decider"}, want: DecisionProtocolPplxDecider},
 		{name: "lfm2-d1 metadata", metadata: map[string]string{"general.architecture": "lfm2", "lfm2.decision.type": "lfm2-d1"}, want: DecisionProtocolLfm2D1},
 		{name: "lfm3-d1 metadata", metadata: map[string]string{"general.architecture": "lfm3", "lfm3.decision.type": "lfm3-d1"}, want: DecisionProtocolLfm3D1},
+		{name: "lfm3-d1-omni metadata", metadata: map[string]string{"general.architecture": "lfm3", "lfm3.decision.type": "lfm3-d1-omni"}, want: DecisionProtocolLfm3D1Omni},
 		{name: "decision2 metadata", metadata: map[string]string{"general.architecture": "vllm-decision2", "vllm-decision2.decision.type": "vllm-decision2"}, want: DecisionProtocolVllmDecision2},
 		{name: "D3 metadata", metadata: map[string]string{"general.architecture": "qwen35", "qwen35.decision.type": "vllm-d3"}, want: DecisionProtocolVllmD3},
 		{

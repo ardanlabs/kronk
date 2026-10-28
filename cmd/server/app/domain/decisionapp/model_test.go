@@ -12,6 +12,7 @@ import (
 
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
 	"github.com/ardanlabs/kronk/cmd/server/foundation/web"
+	"github.com/ardanlabs/kronk/sdk/kronk/model"
 )
 
 func TestDecodeDecisionRequestPreservesOrder(t *testing.T) {
@@ -120,6 +121,122 @@ func TestDecisionImagesPreserveOrderAndState(t *testing.T) {
 	}
 	if string(state) != `{"image_url":"ordinary state"}` {
 		t.Errorf("state: got %s, want unchanged structured state", state)
+	}
+}
+
+func TestDecisionFilesPreserveOrderAndState(t *testing.T) {
+	// JSON field order does not change the SDK's images-before-files contract.
+	input := `{"model":"lfm3-d1-omni","files":["data:audio/wav;base64,UklGRg==","data:image/png;base64,iVBORw0KGgo=","/9j/4A==","UklGRg=="],"images":["/9j/4A=="],"state":{"files":["ordinary state"],"type":"input_audio"},"questions":{"q":{"type":"noul"}}}`
+	got, err := decodeDecisionRequest(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("decodeDecisionRequest: %v", err)
+	}
+	req := got.toSDK()
+	if len(req.Images) != 1 || !bytes.Equal(req.Images[0], []byte{0xff, 0xd8, 0xff, 0xe0}) {
+		t.Fatalf("images: got %v, want JPEG bytes", req.Images)
+	}
+	want := [][]byte{[]byte("RIFF"), []byte("\x89PNG\r\n\x1a\n"), {0xff, 0xd8, 0xff, 0xe0}, []byte("RIFF")}
+	if len(req.Files) != len(want) {
+		t.Fatalf("files: got %d, want %d", len(req.Files), len(want))
+	}
+	for i, data := range want {
+		if !bytes.Equal(req.Files[i], data) {
+			t.Errorf("files[%d]: got %v, want %v", i, req.Files[i], data)
+		}
+	}
+	state, err := json.Marshal(req.State)
+	if err != nil {
+		t.Fatalf("marshal state: %v", err)
+	}
+	if want := `{"files":["ordinary state"],"type":"input_audio"}`; string(state) != want {
+		t.Errorf("state: got %s, want %s", state, want)
+	}
+}
+
+func TestDecisionAudioInstructions(t *testing.T) {
+	for _, encoded := range []string{"UklGRg==", "data:audio/wav;base64,UklGRg=="} {
+		t.Run(encoded, func(t *testing.T) {
+			input := `{"model":"lfm3-d1-omni","state":null,"questions":{"choice":{"type":"choice","instructions":{"type":"input_audio","input_audio":{"data":"` + encoded + `","format":"wav"}},"criteria":{"a":"A","b":"B"}},"score":{"type":"score","instructions":{"type":"input_audio","input_audio":{"data":"` + encoded + `","format":"wav"}},"criteria":["low","high"]},"noul":{"type":"noul","instructions":{"type":"input_audio","input_audio":{"data":"` + encoded + `","format":"wav"}}}}}`
+			got, err := decodeDecisionRequest(strings.NewReader(input))
+			if err != nil {
+				t.Fatalf("decodeDecisionRequest: %v", err)
+			}
+			for _, question := range got.toSDK().Questions {
+				audio, ok := question.Instructions.(model.DecisionAudioInstructions)
+				if !ok {
+					t.Fatalf("%s instructions: got %T, want DecisionAudioInstructions", question.ID, question.Instructions)
+				}
+				if !bytes.Equal(audio.Data, []byte("RIFF")) {
+					t.Errorf("%s audio: got %v, want RIFF bytes", question.ID, audio.Data)
+				}
+			}
+		})
+	}
+}
+
+func TestDecisionOrdinaryInstructionsUnchanged(t *testing.T) {
+	for _, instructions := range []string{
+		`{"type":"INPUT_AUDIO","input_audio":{"data":"not base64"}}`,
+		`{"type":"other","input_audio":{"data":"https://example.com/audio.wav"}}`,
+		`{"type":{"nested":"input_audio"},"goal":"ordinary"}`,
+		`{"input_audio":{"data":"not base64"},"nested":{"type":"input_audio"}}`,
+		`[{"type":"input_audio","input_audio":{"data":"not base64"}}]`,
+	} {
+		t.Run(instructions, func(t *testing.T) {
+			input := `{"model":"m","state":{},"questions":{"q":{"type":"noul","instructions":` + instructions + `}}}`
+			got, err := decodeDecisionRequest(strings.NewReader(input))
+			if err != nil {
+				t.Fatalf("decodeDecisionRequest: %v", err)
+			}
+			data, err := json.Marshal(got.toSDK().Questions[0].Instructions)
+			if err != nil {
+				t.Fatalf("marshal instructions: %v", err)
+			}
+			if string(data) != instructions {
+				t.Errorf("instructions: got %s, want %s", data, instructions)
+			}
+		})
+	}
+}
+
+func TestDecisionRejectsInvalidFilesAndAudioInstructions(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{name: "files object", input: `"files":{}`},
+		{name: "file number", input: `"files":[1]`},
+		{name: "file null", input: `"files":[null]`},
+		{name: "empty file", input: `"files":[""]`},
+		{name: "malformed file", input: `"files":["%%%"]`},
+		{name: "remote file", input: `"files":["https://example.com/audio.wav"]`},
+		{name: "video data URL", input: `"files":["data:video/mp4;base64,UklGRg=="]`},
+		{name: "text data URL", input: `"files":["data:text/plain;base64,UklGRg=="]`},
+		{name: "non-base64 data URL", input: `"files":["data:audio/wav,UklGRg=="]`},
+		{name: "empty data URL", input: `"files":["data:audio/wav;base64,"]`},
+		{name: "empty media subtype", input: `"files":["data:audio/;base64,UklGRg=="]`},
+		{name: "audio object missing", input: `"instructions":{"type":"input_audio"}`},
+		{name: "audio object null", input: `"instructions":{"type":"input_audio","input_audio":null}`},
+		{name: "audio object array", input: `"instructions":{"type":"input_audio","input_audio":[]}`},
+		{name: "audio object string", input: `"instructions":{"type":"input_audio","input_audio":"UklGRg=="}`},
+		{name: "audio data missing", input: `"instructions":{"type":"input_audio","input_audio":{}}`},
+		{name: "audio data number", input: `"instructions":{"type":"input_audio","input_audio":{"data":42}}`},
+		{name: "audio data empty", input: `"instructions":{"type":"input_audio","input_audio":{"data":""}}`},
+		{name: "audio data malformed", input: `"instructions":{"type":"input_audio","input_audio":{"data":"%%%"}}`},
+		{name: "remote audio", input: `"instructions":{"type":"input_audio","input_audio":{"data":"https://example.com/audio.wav"}}`},
+		{name: "image instruction URL", input: `"instructions":{"type":"input_audio","input_audio":{"data":"data:image/png;base64,iVBORw0KGgo="}}`},
+		{name: "video instruction URL", input: `"instructions":{"type":"input_audio","input_audio":{"data":"data:video/mp4;base64,UklGRg=="}}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := `{"model":"m","state":{},` + tt.input + `,"questions":{"q":{"type":"noul"}}}`
+			if strings.HasPrefix(tt.input, `"instructions"`) {
+				input = `{"model":"m","state":{},"questions":{"q":{"type":"noul",` + tt.input + `}}}`
+			}
+			if _, err := decodeDecisionRequest(strings.NewReader(input)); err == nil {
+				t.Fatal("decodeDecisionRequest: got nil error, want error")
+			}
+		})
 	}
 }
 

@@ -197,6 +197,8 @@ func detectDecisionProtocol(configured DecisionProtocol, modelID string, metadat
 		return DecisionProtocolLfm2D1
 	case "lfm3-d1":
 		return DecisionProtocolLfm3D1
+	case "lfm3-d1-omni":
+		return DecisionProtocolLfm3D1Omni
 	case "vllm-decision2":
 		return DecisionProtocolVllmDecision2
 	case "vllm-d3":

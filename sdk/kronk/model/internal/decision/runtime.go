@@ -27,6 +27,11 @@ type ImageProtocol interface {
 	SupportsImages() bool
 }
 
+// AudioProtocol declares support for audio state and spoken instructions.
+type AudioProtocol interface {
+	SupportsAudio() bool
+}
+
 // Runtime supplies borrowed model metadata and model-owned operations. Protocols
 // never create or free native contexts, schedule work, or retain MTMD resources.
 type Runtime struct {
@@ -87,7 +92,8 @@ var protocolFactories = map[string]protocolFactory{
 	"clef":           func(r *Runtime) (Protocol, error) { return newClefProtocol(r) },
 	"pplx-decider":   newPplxDeciderProtocol,
 	"lfm2-d1":        newLFM2D1Protocol,
-	"lfm3-d1":        newLFM3D1Protocol,
+	"lfm3-d1":        func(r *Runtime) (Protocol, error) { return newLFM3D1Protocol(r) },
+	"lfm3-d1-omni":   newLFM3D1OmniProtocol,
 	"vllm-d3":        newD3Protocol,
 	"vllm-decision2": newDecision2Protocol,
 }

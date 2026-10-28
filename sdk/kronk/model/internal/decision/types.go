@@ -98,6 +98,12 @@ func DecisionQuestionNoul(id string, instructions any, criteria *DecisionNoulCri
 	}
 }
 
+// DecisionAudioInstructions supplies encoded audio in place of a question's
+// text instructions. It requires an audio-capable decision protocol and projector.
+type DecisionAudioInstructions struct {
+	Data []byte
+}
+
 // DecisionRequest evaluates ordered questions independently against one
 // shared state.
 type DecisionRequest struct {
@@ -107,6 +113,9 @@ type DecisionRequest struct {
 	// Images precede State and require a vision-capable decision protocol and
 	// compatible projector. Image-shaped values in State remain ordinary data.
 	Images [][]byte
+	// Files contains encoded images or audio clips accompanying State. Files
+	// follow Images in prompt order and require compatible protocol/projector support.
+	Files [][]byte
 }
 
 // DecisionAnswer contains the typed answer to one decision question.

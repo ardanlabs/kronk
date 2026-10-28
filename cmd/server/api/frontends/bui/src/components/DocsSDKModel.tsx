@@ -584,6 +584,14 @@ export default function DocsSDKModel() {
               <p className="doc-description">DecisionAnswer contains the typed answer to one decision question. Choice is populated for Choice, Score and Legend for Score, Noul for Noul, and Probabilities and Confidence for Choice and Score.</p>
             </div>
 
+            <div className="doc-section" id="type-decisionaudioinstructions">
+              <h4>DecisionAudioInstructions</h4>
+              <pre className="code-block">
+                <code>{`type DecisionAudioInstructions = decision.DecisionAudioInstructions`}</code>
+              </pre>
+              <p className="doc-description">DecisionAudioInstructions supplies encoded audio in place of a question's text instructions. It requires an audio-capable decision protocol and projector.</p>
+            </div>
+
             <div className="doc-section" id="type-decisionnoulcriteria">
               <h4>DecisionNoulCriteria</h4>
               <pre className="code-block">
@@ -3070,6 +3078,7 @@ export default function DocsSDKModel() {
               <p className="doc-description">// DecisionProtocolPplxDecider identifies the Perplexity label-readout protocol. DecisionProtocolPplxDecider = newDecisionProtocol("pplx-decider")</p>
               <p className="doc-description">// DecisionProtocolLfm2D1 identifies the LFM2 grouped-label protocol. DecisionProtocolLfm2D1 = newDecisionProtocol("lfm2-d1")</p>
               <p className="doc-description">// DecisionProtocolLfm3D1 identifies the LFM3 whole-prompt grouped-label protocol. DecisionProtocolLfm3D1 = newDecisionProtocol("lfm3-d1")</p>
+              <p className="doc-description">// DecisionProtocolLfm3D1Omni identifies the LFM3 multimodal grouped-label protocol. DecisionProtocolLfm3D1Omni = newDecisionProtocol("lfm3-d1-omni")</p>
               <p className="doc-description">// DecisionProtocolVllmDecision2 identifies the single-question decision-head protocol. DecisionProtocolVllmDecision2 = newDecisionProtocol("vllm-decision2")</p>
               <p className="doc-description">// DecisionProtocolVllmD3 identifies the non-causal whole-prompt label protocol. DecisionProtocolVllmD3 = newDecisionProtocol("vllm-d3")</p>
             </div>
@@ -3236,6 +3245,7 @@ export default function DocsSDKModel() {
                 <li><a href="#type-contentlogprob">ContentLogprob</a></li>
                 <li><a href="#type-d">D</a></li>
                 <li><a href="#type-decisionanswer">DecisionAnswer</a></li>
+                <li><a href="#type-decisionaudioinstructions">DecisionAudioInstructions</a></li>
                 <li><a href="#type-decisionnoulcriteria">DecisionNoulCriteria</a></li>
                 <li><a href="#type-decisionoption">DecisionOption</a></li>
                 <li><a href="#type-decisionprotocol">DecisionProtocol</a></li>

@@ -3,6 +3,7 @@ package decision
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -38,6 +39,7 @@ func newClefProtocol(m *Runtime) (*clefProtocol, error) {
 }
 
 func (p *clefProtocol) Decide(ctx context.Context, req DecisionRequest) (DecisionResponse, error) {
+	req.Images = slices.Concat(req.Images, req.Files)
 	// Sanitize only user values, before introducing the template's own markers.
 	sanitize := func(value any) any {
 		value = replaceDecisionTemplateText(value, clefMarker, "<<clef ")

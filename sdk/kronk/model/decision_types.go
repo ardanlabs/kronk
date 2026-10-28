@@ -67,6 +67,10 @@ func DecisionQuestionNoul(id string, instructions any, criteria *DecisionNoulCri
 // DecisionRequest evaluates ordered questions independently against one shared state.
 type DecisionRequest = decision.DecisionRequest
 
+// DecisionAudioInstructions supplies encoded audio in place of a question's
+// text instructions. It requires an audio-capable decision protocol and projector.
+type DecisionAudioInstructions = decision.DecisionAudioInstructions
+
 // DecisionAnswer contains the typed answer to one decision question.
 // Choice is populated for Choice, Score and Legend for Score, Noul for Noul,
 // and Probabilities and Confidence for Choice and Score.
@@ -83,6 +87,18 @@ func validateDecisionRequest(req DecisionRequest, protocol DecisionProtocol) err
 	for i, image := range req.Images {
 		if mediaTypeFromMagicBytes(image) != MediaTypeVision {
 			return fmt.Errorf("%w: images[%d] must be a JPEG, PNG, GIF, or WebP image", ErrDecisionRequest, i)
+		}
+	}
+	for i, file := range req.Files {
+		switch mediaTypeFromMagicBytes(file) {
+		case MediaTypeVision, MediaTypeAudio:
+		default:
+			return fmt.Errorf("%w: files[%d] must be an encoded image or audio clip", ErrDecisionRequest, i)
+		}
+	}
+	for _, question := range req.Questions {
+		if audio, ok := question.Instructions.(DecisionAudioInstructions); ok && mediaTypeFromMagicBytes(audio.Data) != MediaTypeAudio {
+			return fmt.Errorf("%w: question %q instructions must contain an encoded audio clip", ErrDecisionRequest, question.ID)
 		}
 	}
 	return decision.ValidateRequest(req, protocol.String())

@@ -2685,8 +2685,22 @@ data: {"type":"response.completed",...}`}</code></pre>
           <h4 id="decision-images">Decision images</h4>
           <p>Vision-capable Clef models accept an optional top-level <code>images</code> array of base64 strings or image data URLs, such as <code>data:image/jpeg;base64,...</code>. Remote URLs are not fetched. In the Go SDK, set <code>DecisionRequest.Images</code> to an ordered <code>[][]byte</code> containing encoded JPEG, PNG, GIF, or WebP files.</p>
           <p>All images appear before <code>state</code>, in array order, outside question and option spans. Image-shaped values inside <code>state</code> remain ordinary structured data; Kronk does not extract chat-message attachments from decision state.</p>
-          <p>This requires a compatible projector configured through <code>ProjFile</code> and a Clef GGUF whose <code>systemone</code> template supports images. A projection file alone does not enable images for other decision protocols; OpenJEV and the other protocols remain text-only in Kronk's decision API. Audio and video inputs are unsupported.</p>
+          <p>This requires a compatible projector configured through <code>ProjFile</code> and a Clef GGUF whose <code>systemone</code> template supports images. A projection file alone does not enable images for other decision protocols. LFM3-d1-omni supports image and audio inputs as described below; OpenJEV and the remaining protocols stay text-only. Video inputs are unsupported.</p>
           <p>The complete text-plus-image prompt must fit both the context window and one physical batch. Expanded image rows count toward <code>usage.input_tokens</code> and the batch budget. Oversized inputs are rejected, never truncated; increase <code>context-window</code> or <code>prefill-batch-size</code> as indicated by the error. Decoding images also consumes memory proportional to their dimensions, so applications accepting untrusted images should bound payload sizes, dimensions, and count.</p>
+          <h4 id="lfm3-d1-omni-inputs">LFM3-d1-omni inputs</h4>
+          <p>LFM3-d1-omni models with a compatible projector accept an optional top-level <code>files</code> array containing nonempty base64 strings or image/audio data URLs, such as <code>data:image/png;base64,...</code> and <code>data:audio/wav;base64,...</code>. The existing <code>images</code> field remains image-only. Images appear first, followed by <code>files</code> in array order, before state. Remote URLs are not fetched and video data URLs are rejected. Encoded media formats and protocol/projector support are validated by the SDK.</p>
+          <p>A question can use audio instructions instead of text or structured data:</p>
+          <pre className="code-block"><code className="language-json">{`{
+  "type": "noul",
+  "instructions": {
+    "type": "input_audio",
+    "input_audio": {
+      "data": "data:audio/wav;base64,...",
+      "format": "wav"
+    }
+  }
+}`}</code></pre>
+          <p><code>input_audio.data</code> must contain nonempty base64 audio or an audio base64 data URL. Only an instructions object with the exact <code>type</code> value <code>input_audio</code> triggers audio decoding; other structured instructions and state remain ordinary JSON. In the Go SDK, use <code>DecisionRequest.Files</code> for encoded image/audio bytes and <code>model.DecisionAudioInstructions&#123;Data: audioBytes&#125;</code> for question instructions.</p>
           <h4 id="decision-protocols">Decision protocols</h4>
           <p>Kronk detects these protocols from the GGUF's architecture-specific <code>decision.type</code> metadata and uses its named <code>systemone</code> template. The existing OpenJEV, Jev-Style, Laya/Julia, Lev, Kev, Nimble, and Clef protocols remain available. The following additional protocols are implemented:</p>
           <table className="flags-table">
@@ -2707,7 +2721,11 @@ data: {"type":"response.completed",...}`}</code></pre>
               </tr>
               <tr>
                 <td><code>lfm3-d1</code></td>
-                <td>Text-only, non-causal whole-prompt label groups; median score and maximum-probability confidence</td>
+                <td>Non-causal whole-prompt label groups; median score and maximum-probability confidence</td>
+              </tr>
+              <tr>
+                <td><code>lfm3-d1-omni</code></td>
+                <td>LFM3-d1 readouts with image/audio state inputs and spoken instructions</td>
               </tr>
               <tr>
                 <td><code>vllm-decision2</code></td>
@@ -2721,8 +2739,8 @@ data: {"type":"response.completed",...}`}</code></pre>
           </table>
           <p>These protocols apply model-provided temperatures and score-level biases. Decision2 and D3 return normalized entropy concentration as <code>confidence</code> for choice and score questions; <code>noul</code> still returns the true-option probability. Decision2 requires at least two choice options and a state that is text, an object, or an array. D3 permits omitted or empty instructions, using the template's default question; the other protocols require instructions.</p>
           <p>Decision2, D3, and LFM3 d1 evaluate each complete prompt in a single physical batch, regardless of the configured prefill batch size. D3 and LFM3 d1 use one execution sequence even when <code>NSeqMax</code> is larger. Large context windows can therefore increase working memory requirements for these models. LFM3 d1 does not reuse persistent sequence state; independent questions and concurrent requests are serialized through that single execution sequence.</p>
-          <p>LFM3 d1 preserves structured JSON state and option descriptions for the model's template. It uses alphabetic choice labels beyond 26 options (<code>AA</code>, <code>AB</code>, …), quotes control-token spellings in user input, returns the median score level rather than an expected level, and uses maximum answer probability for choice and score <code>confidence</code>. Spoken instructions and the <code>lfm3-d1-omni</code> protocol are not implemented.</p>
-          <p>LFM3 d1 has been exercised with a Q4_K_M d1-2B model for choice, score, <code>noul</code>, concurrent request isolation, and prompt-budget rejection on macOS Metal with llama.cpp b11960. This is compatibility coverage, not a decision-quality benchmark. The other four protocols have model-free contract coverage, but their model-backed compatibility remains unverified.</p>
+          <p>LFM3 d1 preserves structured JSON state and option descriptions for the model's template. It uses alphabetic choice labels beyond 26 options (<code>AA</code>, <code>AB</code>, …), quotes control-token spellings in user input, returns the median score level rather than an expected level, and uses maximum answer probability for choice and score <code>confidence</code>. The <code>lfm3-d1-omni</code> protocol shares these semantics and supports image/audio state inputs and spoken instructions with a compatible projector. Spoken instructions are placed after state media, at the question's instructions position. All expanded media rows count toward usage and the whole-prompt budget; inputs are never truncated.</p>
+          <p>LFM3 d1 has been exercised with a Q4_K_M d1-2B model for choice, score, <code>noul</code>, concurrent request isolation, and prompt-budget rejection on macOS Metal with llama.cpp b11960. This is compatibility coverage, not a decision-quality benchmark. The Q8_0 d1-Omni-2B model has also been exercised for image and audio decisions, spoken questions about images, concurrent image requests, malformed media rejection, and recovery after budget errors on the same platform. The other four protocols have model-free contract coverage, but their model-backed compatibility remains unverified.</p>
           <p>LFM3 text chat uses its own hybrid short-convolution/full/SWA topology and its bundled XML tool-call template. It is not treated as an LFM2 architecture alias. Resource estimates include recurrent state and attention caches; workspace allowances remain conservative heuristics rather than measured calibration. LFM3 MTP, video input, realtime audio, and audio generation are not enabled by this integration.</p>
           <p>LFM3-VL image chat has been exercised with image-identification controls. LFM3-Audio accepts audio, but the tested Q4_K_M Audio-2B model's bundled template summarized the JFK sample instead of transcribing it. This also reproduced in llama.cpp's Jinja CLI path. Setting the request's <code>bos_token</code> to an empty string restored transcription in that sample; this is a diagnostic workaround, not a general model default or a transcription-quality guarantee.</p>
           <p>A response is keyed by the caller's question IDs:</p>
@@ -2802,6 +2820,7 @@ resp, err := krn.Decision(ctx, req)`}</code></pre>
           <p>For an image-based decision, see <code>examples/decision-image</code>. It uses the bundled giraffe photograph and follows the same installation and initialization pattern as <code>examples/decision</code>, with a hardcoded model source and image path:</p>
           <pre className="code-block"><code className="language-shell">{`make example-decision-image`}</code></pre>
           <p>Set <code>modelSource</code> and <code>imageFile</code> in the example to change the inputs. The model resolver downloads the model and discovers its companion projector. Image decisions require a vision-capable Clef conversion with a compatible projector and image-capable systemone template; older text-only conversions cannot be used.</p>
+          <p>For an audio-based decision, run <code>make example-decision-audio</code>. The <code>examples/decision-audio</code> program uses <code>LiquidAI/d1-Omni-2B-Q8_0</code> and the bundled <code>samples/jfk.wav</code> recording. It supplies audio through <code>DecisionRequest.Files</code> and asks choice, noul, and score questions directly, without generating a transcript. The model and its projector are installed in the normal Kronk store and reused on subsequent runs. Change <code>modelSource</code> and <code>audioFile</code> to try other compatible models or recordings.</p>
           <h2 id="99-tokenization">9.9 Tokenization</h2>
           <p><code>POST /v1/tokenize</code> returns a token <strong>count</strong>, not token IDs:</p>
           <pre className="code-block"><code className="language-json">{`{

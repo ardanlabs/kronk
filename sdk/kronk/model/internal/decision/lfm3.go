@@ -15,7 +15,7 @@ type lfm3D1Protocol struct {
 	breaker *strings.Replacer
 }
 
-func newLFM3D1Protocol(m *Runtime) (Protocol, error) {
+func newLFM3D1Protocol(m *Runtime) (*lfm3D1Protocol, error) {
 	runner, err := newFinalTokenRunner(m)
 	if err != nil {
 		return nil, err
@@ -40,33 +40,41 @@ func newLFM3D1Protocol(m *Runtime) (Protocol, error) {
 }
 
 func (p *lfm3D1Protocol) Decide(ctx context.Context, req DecisionRequest) (DecisionResponse, error) {
+	questions, err := p.questions(req)
+	if err != nil {
+		return DecisionResponse{}, err
+	}
+	return p.run(ctx, req, questions, answerLFM3D1Question)
+}
+
+func (p *lfm3D1Protocol) questions(req DecisionRequest) ([]finalTokenQuestion, error) {
 	questions := make([]finalTokenQuestion, len(req.Questions))
 	for i, question := range req.Questions {
 		options, err := decisionDeciderOptions(question, true)
 		if err != nil {
-			return DecisionResponse{}, fmt.Errorf("decision: question %q: %w", question.ID, err)
+			return nil, fmt.Errorf("decision: question %q: %w", question.ID, err)
 		}
 		if len(options) > MaxReadouts {
-			return DecisionResponse{}, fmt.Errorf("%w: question %q has too many options", ErrDecisionRequest, question.ID)
+			return nil, fmt.Errorf("%w: question %q has too many options", ErrDecisionRequest, question.ID)
 		}
 		labels, groups, err := decisionD1Labels(question.Type, options, lfm3D1ChoiceCode, func(text string) []llama.Token { return p.encode(text, false) })
 		if err != nil {
-			return DecisionResponse{}, fmt.Errorf("decision: question %q: %w", question.ID, err)
+			return nil, fmt.Errorf("decision: question %q: %w", question.ID, err)
 		}
 		if question.Instructions != nil {
 			// Retain numeric input validation without using its lossy text
 			// representation in the model-owned JSON template.
 			if _, err := decisionDeciderText(question.Instructions, false, false); err != nil {
-				return DecisionResponse{}, err
+				return nil, err
 			}
 		}
 		values, err := p.values(req.State, question, labels)
 		if err != nil {
-			return DecisionResponse{}, fmt.Errorf("decision: question %q: %w", question.ID, err)
+			return nil, fmt.Errorf("decision: question %q: %w", question.ID, err)
 		}
 		questions[i] = finalTokenQuestion{values: values, options: options, groups: groups}
 	}
-	return p.run(ctx, req, questions, answerLFM3D1Question)
+	return questions, nil
 }
 
 func lfm3D1ChoiceCode(index int) string {
