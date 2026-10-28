@@ -34,6 +34,17 @@ Project skills live in `.agents/skills/`. Load the matching skill before the wor
 | [`kronk-service-architecture`](.agents/skills/kronk-service-architecture/SKILL.md) | Writing, editing, or auditing Go under `cmd/`, `sdk/`, or `examples/`: ownership and import direction, HTTP request/response types, type-set enums, SDK errors and `errs.FromSDK`, lifecycle and inference invariants, branching style. |
 | [`kronk-pr-review`](.agents/skills/kronk-pr-review/SKILL.md)         | Any review request ("review this PR", "review my changes", "pre-commit review", one aspect such as tests or security). Claude Code; read-only; reviews only the change unless a full review is asked for; runs CI's Go static checks, plus focused race tests for a maintainer's PR only; writes reports to `.reviews/`. |
 
+## Config Tool (`kronk config`)
+
+`cmd/kronk/config` asks questions to write `model_config.yaml`. Keep it in step when these change:
+
+- **Model settings** (`models.ModelConfig` in `sdk/tools/models/kronkconfig.go`, or enum values in `sdk/kronk/model/config_types.go`): the questions are hand-written in `questions()` in `cmd/kronk/config/questions.go`. Add, rename or remove the question there. `TestQuestionKeys` fails on a renamed key or removed value, but not on a new setting with no question.
+- **Server settings** (`config` struct in `cmd/server/api/services/kronk/config.go`): questions are generated from the struct. Give every new field a `conf:"help:..."` tag (no commas in the text); `TestSettings` fails without it. A new top-level group needs a label in `sections` in `cmd/kronk/config/server.go`.
+- **GPU backends** (a new `gpu_*` device type): add it to `gpuTypes` in `cmd/kronk/config/start.go`.
+- **Model types**: the tool covers `models:` (chat models) and `kms:` only, not `bucky-models:` or `malina-models:`.
+
+After a change, run `go test ./cmd/kronk/config/... ./cmd/server/api/services/kronk/`.
+
 ## MCP Services
 
 Kronk has an MCP service and these are settings:

@@ -145,6 +145,13 @@ func Analyze(info ModelInfo, devs devices.Devices) (Analysis, error) {
 	return analyzeModelWithConfig(info, devs, ModelConfig{})
 }
 
+// AnalyzeWithConfig is Analyze with explicitly configured sizing values
+// treated as fixed constraints. devs may describe a machine other than this
+// one, for example when writing a config for another server.
+func AnalyzeWithConfig(info ModelInfo, devs devices.Devices, constraints ModelConfig) (Analysis, error) {
+	return analyzeModelWithConfig(info, devs, constraints)
+}
+
 // ModelAnalysis reads a GGUF model file and produces an analysis with
 // recommended runtime settings based on the model's architecture and
 // the available system hardware.
