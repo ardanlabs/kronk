@@ -189,7 +189,7 @@ func TestQuickCheckCommand(t *testing.T) {
 						}
 					}
 					if dense {
-						wantModel = "unsloth/Qwen3.8-27B-UD-Q2_K_XL" + strings.TrimPrefix(wantModel, strings.TrimSuffix(modelID, "/QUICK-CHECK"))
+						wantModel = "ornith-ai/Ornith-1.5-9B-Q8_0" + strings.TrimPrefix(wantModel, strings.TrimSuffix(modelID, "/QUICK-CHECK"))
 					}
 					if body.Model != wantModel {
 						t.Errorf("wrong model alias: got %q, want %q", body.Model, wantModel)
@@ -989,7 +989,7 @@ func TestQuickCheckModelConfig(t *testing.T) {
 	for _, cell := range matrixCells {
 		model := "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL"
 		if strings.HasPrefix(cell.id, "Dense/") {
-			model = "unsloth/Qwen3.8-27B-UD-Q2_K_XL"
+			model = "ornith-ai/Ornith-1.5-9B-Q8_0"
 		}
 		model += "/QUICK-CHECK"
 		if cell.noCache {

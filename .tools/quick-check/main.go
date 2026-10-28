@@ -26,7 +26,7 @@ const modelID = "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK"
 const targetOnlyModelID = "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK-NO-MTP"
 const noCacheModelID = "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK-NO-IMC"
 const noCacheTargetOnlyModelID = "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL/QUICK-CHECK-NO-IMC-NO-MTP"
-const denseModelID = "unsloth/Qwen3.8-27B-UD-Q2_K_XL"
+const denseModelID = "ornith-ai/Ornith-1.5-9B-Q8_0"
 
 type options struct {
 	host        string
