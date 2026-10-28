@@ -41,12 +41,42 @@ install-libraries: install-kronk
 	kronk malina libs --local
 	@echo
 
-# Keep the GH target as an alias; all test jobs share one model list.
-install-test-gh-models: install-test-models
-
 # Use this to install the test models.
 install-test-models: install-kronk
-	bash .github/scripts/pull-models.sh .github/test-models.txt
+	@echo ========== INSTALL KRONK MODELS ==========
+	kronk model pull --local "unsloth/Qwen3-0.6B-Q8_0"
+	@echo
+	kronk model pull --local "unsloth/Qwen3.5-0.8B-Q8_0"
+	@echo
+	kronk model pull --local "mradermacher/Qwopus3.5-4B-Coder.Q4_K_M"
+	@echo
+	kronk model pull --local "unsloth/LFM2-700M-Q8_0"
+	@echo
+	kronk model pull --local "unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M"
+	@echo
+	kronk model pull --local "unsloth/Qwen3.6-35B-A3B-MTP-GGUF:UD-Q2_K_XL"
+	@echo
+	kronk model pull --local "ggml-org/Qwen2.5-Omni-3B-Q4_K_M"
+	@echo
+	kronk model pull --local "unsloth/gpt-oss-20b-Q8_0"
+	@echo
+	kronk model pull --local "unsloth/Qwen3-1.7B-Q4_K_M"
+	@echo
+	kronk model pull --local "nomic-ai/nomic-embed-text-v1.5.Q8_0"
+	@echo
+	kronk model pull --local "gpustack/bge-reranker-v2-m3-Q8_0"
+	@echo
+	kronk model pull --local "chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0.gguf"
+	@echo
+	kronk model pull --local "LiquidAI/d1-Omni-2B-Q8_0"
+	@echo
+	kronk model pull --local "LiquidAI/LFM3-1.7B-Q4_K_M"
+	@echo
+	@echo ========== INSTALL BUCKY MODELS ==========
+	kronk bucky model pull --local "ggml-tiny.bin"
+	@echo
+	kronk bucky model pull --local "silero-vad"
+	@echo
 
 # Use this to install the library and model required by the opt-in Malina tests.
 install-test-malina: install-kronk

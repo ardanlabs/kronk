@@ -14,9 +14,23 @@ import (
 )
 
 func TestLFM3TopologyAndToolCalls(t *testing.T) {
+	if testing.Short() {
+		t.Skip("model inference skipped in short mode")
+	}
 	file := os.Getenv("KRONK_TEST_LFM3_MODEL")
 	if file == "" {
-		t.Skip("KRONK_TEST_LFM3_MODEL is not set to an LFM3 text GGUF")
+		mdls, err := models.New()
+		if err != nil {
+			t.Fatal(err)
+		}
+		mp, err := mdls.FullPath("LiquidAI/LFM3-1.7B-Q4_K_M")
+		if err != nil || len(mp.ModelFiles) == 0 {
+			if os.Getenv("CI") == "true" {
+				t.Fatalf("required LFM3 text model not installed: %v", err)
+			}
+			t.Skipf("LFM3 text model not installed: %v", err)
+		}
+		file = mp.ModelFiles[0]
 	}
 	if err := kronk.Init(kronk.WithLibPath(os.Getenv("KRONK_TEST_LIB_PATH"))); err != nil {
 		t.Fatal(err)

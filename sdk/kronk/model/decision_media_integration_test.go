@@ -73,8 +73,8 @@ func TestClefVision(t *testing.T) {
 	}
 }
 
-// TestLFM3D1Omni exercises real media through the public SDK. The optional
-// spoken fixture must ask "Which animal is in the picture?" in an audio file.
+// TestLFM3D1Omni exercises real media through the public SDK. The spoken
+// fixture asks "Which animal is in the picture?" in an audio file.
 func TestLFM3D1Omni(t *testing.T) {
 	if testing.Short() {
 		t.Skip("model inference skipped in short mode")
@@ -157,7 +157,7 @@ func TestLFM3D1Omni(t *testing.T) {
 	t.Run("spoken instructions", func(t *testing.T) {
 		file := os.Getenv("KRONK_TEST_LFM3_OMNI_QUESTION")
 		if file == "" {
-			t.Skip("set KRONK_TEST_LFM3_OMNI_QUESTION to a recording asking which animal is pictured")
+			file = filepath.Join(os.Getenv("GITHUB_WORKSPACE"), "examples/samples/which-animal.wav")
 		}
 		audio, err := os.ReadFile(file)
 		if err != nil {
