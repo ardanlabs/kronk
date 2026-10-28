@@ -438,6 +438,7 @@ kronk launchd status`}</code></pre>
           <h3 id="31-configuration-file">3.1 Configuration File</h3>
           <p>The model server reads per-model overrides from:</p>
           <pre className="code-block"><code className="language-text">{`~/.kronk/models/model_config.yaml`}</code></pre>
+          <p>To create or change entries interactively, run <code>kronk config</code>; see <a href="https://www.kronkai.com/manual#85-model-configuration-files">Chapter 8 §8.5</a>.</p>
           <p>Kronk creates this file on first use. Version 2 stores language-model overrides under <code>models</code>, Bucky overrides under <code>bucky-models</code>, and Malina overrides under <code>malina-models</code>. Version 1 files containing only <code>kms</code> and <code>models</code> remain supported. Language-model entries use the canonical ID shown by <code>kronk model list</code> or the <code>/v1/models</code> endpoint:</p>
           <pre className="code-block"><code className="language-yaml">{`version: 2
 models:
@@ -2188,6 +2189,26 @@ malina-models:
           <p>or:</p>
           <pre className="code-block"><code className="language-shell">{`KRONK_POOL_MODEL_CONFIG_FILE=./my-model_config.yaml kronk server start`}</code></pre>
           <p>The file format, variants, configuration keys, and tuning workflow are documented in <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3</a>. The repository's commented reference file is <code>zarf/kms/model_config.yaml</code>.</p>
+          <h3 id="editing-the-file-with-kronk-config">Editing the file with kronk config</h3>
+          <p><code>kronk config</code> is an interactive terminal tool that writes this file. It works on local files and does not need a running server.</p>
+          <pre className="code-block"><code className="language-shell">{`kronk config`}</code></pre>
+          <p>It asks, in order:</p>
+          <ol>
+            <li><strong>Which config file.</strong> The file the server reads comes first (<code>KRONK_POOL_MODEL_CONFIG_FILE</code>, otherwise <code>&lt;base-path&gt;/models/model_config.yaml</code>), then <code>model_config*.yaml</code> files in the current directory, or any other path, including a new file.</li>
+            <li><strong>A model or the server settings.</strong></li>
+            <li><strong>For a model: this machine or another one.</strong> This machine's GPUs, GPU memory and RAM are detected through llama.cpp, so the llama.cpp libraries must be installed. For another machine, enter its GPU count, GPU type, memory per GPU and RAM; the libraries are not needed.</li>
+          </ol>
+          <p>For a model, pick an installed or catalog model. A box shows the model's architecture, the machine and what AutoTune picks for it on that hardware. The questions follow: context window, concurrent requests, thinking and reasoning defaults, custom chat template variables, sampling, KV cache, GPU layers, MoE experts, flash attention, weight loading, queueing, the conversation cache, speculative decoding and the image projector. Questions that do not apply to the model or the machine are skipped. Custom chat template variables are written to <code>chat-template-kwargs</code>, one <code>name=value</code> per line, with YAML values.</p>
+          <p>For the server settings, pick the sections to change (web server, auth, authorization, MCP, downloads, tracing, model pool, runtime). Sections with values in the file start selected. The questions are generated from the server's configuration, so every <code>kms</code> key is covered. Secrets are masked and never shown; an empty answer keeps the value in the file. The admin password is typed in clear and written as its SHA-256.</p>
+          <p>Each list starts with the default, and each input shows the default. Leaving it writes nothing, so Kronk's defaults and AutoTune still apply. Esc goes back one question.</p>
+          <p>The review shows the changes and the entry or <code>kms</code> section exactly as it will be written. For a model it also runs the memory check with the answers on the chosen hardware. Saving then:</p>
+          <ul>
+            <li>rewrites only that model's entry or the <code>kms</code> section; other entries, sections and comments are kept;</li>
+            <li>checks the result first: a model entry must load with the model settings, and a <code>kms</code> section must be accepted by the server's configuration, or nothing is written;</li>
+            <li>keeps the previous file as <code>&lt;file&gt;.bak</code>.</li>
+          </ul>
+          <p>Restart the server to apply the changes. A file saved for another machine goes to that machine as <code>~/.kronk/models/model_config.yaml</code>, or is selected there with <code>KRONK_POOL_MODEL_CONFIG_FILE</code>.</p>
+          <p>The tool covers <code>models</code> and <code>kms</code>; edit <code>bucky-models</code> and <code>malina-models</code> by hand.</p>
           <h2 id="86-catalog-operations">8.6 Catalog Operations</h2>
           <p>The personal model catalog is stored at <code>~/.kronk/catalog/catalog.yaml</code>. Kronk seeds it with a starter catalog and adds resolved model information as models are discovered or downloaded.</p>
           <p>Common operations are:</p>
@@ -6606,6 +6627,9 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
             </div>
             <div className="doc-index-section">
               <a href="#85-model-configuration-files" className={`doc-index-header ${activeSection === '85-model-configuration-files' ? 'active' : ''}`}>8.5 Model Configuration Files</a>
+              <ul>
+                <li><a href="#editing-the-file-with-kronk-config" className={activeSection === 'editing-the-file-with-kronk-config' ? 'active' : ''}>Editing the file with kronk config</a></li>
+              </ul>
             </div>
             <div className="doc-index-section">
               <a href="#86-catalog-operations" className={`doc-index-header ${activeSection === '86-catalog-operations' ? 'active' : ''}`}>8.6 Catalog Operations</a>

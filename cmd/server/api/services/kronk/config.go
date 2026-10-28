@@ -21,68 +21,68 @@ var supportedConfigVersions = []int{1, 2}
 type config struct {
 	conf.Version `yaml:"-"`
 	Web          struct {
-		ReadTimeout        time.Duration `yaml:"read-timeout"`
-		WriteTimeout       time.Duration `yaml:"write-timeout"`
-		InferenceTimeout   time.Duration `yaml:"inference-timeout"`
-		IdleTimeout        time.Duration `yaml:"idle-timeout"`
-		ShutdownTimeout    time.Duration `yaml:"shutdown-timeout"`
-		APIHost            string        `yaml:"api-host"`
-		DebugHost          string        `yaml:"debug-host"`
-		CORSAllowedOrigins []string      `yaml:"cors-allowed-origins"`
+		ReadTimeout        time.Duration `conf:"help:HTTP read timeout" yaml:"read-timeout"`
+		WriteTimeout       time.Duration `conf:"help:HTTP write timeout. 0 disables it; otherwise it must be longer than the inference timeout" yaml:"write-timeout"`
+		InferenceTimeout   time.Duration `conf:"help:Total time one inference request may take" yaml:"inference-timeout"`
+		IdleTimeout        time.Duration `conf:"help:HTTP idle timeout" yaml:"idle-timeout"`
+		ShutdownTimeout    time.Duration `conf:"help:Time to finish requests when the server stops" yaml:"shutdown-timeout"`
+		APIHost            string        `conf:"help:Address the API listens on (host:port). 0.0.0.0 accepts connections from other machines" yaml:"api-host"`
+		DebugHost          string        `conf:"help:Address of the debug server: metrics and pprof (host:port)" yaml:"debug-host"`
+		CORSAllowedOrigins []string      `conf:"help:Origins allowed to call the API from a browser" yaml:"cors-allowed-origins"`
 		Admin              struct {
-			Enabled        bool   `yaml:"enabled"`
-			PasswordSHA256 string `conf:"mask" yaml:"password-sha-256"`
+			Enabled        bool   `conf:"help:Serve the browser admin UI at /admin/" yaml:"enabled"`
+			PasswordSHA256 string `conf:"mask,help:SHA-256 digest of the browser admin login password" yaml:"password-sha-256"`
 		} `yaml:"admin"`
 	} `yaml:"web"`
 	Auth struct {
-		Host string `yaml:"host"`
+		Host string `conf:"help:External auth service host. Empty uses the local auth" yaml:"host"`
 		TLS  struct {
-			Enabled    bool   `yaml:"enabled"`
-			CAFile     string `yaml:"ca-file"`
-			ServerName string `yaml:"server-name"`
+			Enabled    bool   `conf:"help:Use TLS for the external auth service" yaml:"enabled"`
+			CAFile     string `conf:"help:CA certificate file for the external auth service" yaml:"ca-file"`
+			ServerName string `conf:"help:TLS server name for the external auth service" yaml:"server-name"`
 		} `yaml:"tls"`
 		Local struct {
-			Issuer string `yaml:"issuer"`
+			Issuer string `conf:"help:Issuer name in the tokens the local auth creates" yaml:"issuer"`
 		} `yaml:"local"`
 	} `yaml:"auth"`
 	Authorization struct {
-		Mode auth.Mode `yaml:"mode"`
+		Mode auth.Mode `conf:"help:Which endpoints need a token: open / management / authenticated / full-protected" yaml:"mode"`
 	} `yaml:"authorization"`
 	MCP struct {
-		Enabled     bool   `yaml:"enabled"`
-		Host        string `yaml:"host"`
-		AuthEnabled bool   `yaml:"auth-enabled"`
-		BraveAPIKey string `conf:"mask" yaml:"brave-api-key"`
+		Enabled     bool   `conf:"help:Run the embedded MCP service" yaml:"enabled"`
+		Host        string `conf:"help:External MCP host. Setting it disables the embedded service" yaml:"host"`
+		AuthEnabled bool   `conf:"help:Require a Kronk admin token for MCP access" yaml:"auth-enabled"`
+		BraveAPIKey string `conf:"mask,help:Brave Search API key for the embedded MCP service" yaml:"brave-api-key"`
 	} `yaml:"mcp"`
 	Download struct {
-		Enabled bool `yaml:"enabled"`
+		Enabled bool `conf:"help:Allow model downloads through the server" yaml:"enabled"`
 	} `yaml:"download"`
 	Tempo struct {
-		Host        string  `yaml:"host"`
-		ServiceName string  `yaml:"service-name"`
-		Probability float64 `yaml:"probability"`
+		Host        string  `conf:"help:Tempo tracing host (host:port)" yaml:"host"`
+		ServiceName string  `conf:"help:Service name in the traces" yaml:"service-name"`
+		Probability float64 `conf:"help:Share of requests traced (0 to 1)" yaml:"probability"`
 	} `yaml:"tempo"`
 	Pool struct {
 		ModelConfigFile string        `yaml:"-"`
-		BudgetPercent   int           `yaml:"budget-percent"`
-		ModelsInPool    int           `yaml:"models-in-pool"`
-		TTL             time.Duration `yaml:"ttl"`
+		BudgetPercent   int           `conf:"help:Percent (1 to 100) of system and GPU memory the loaded models may use" yaml:"budget-percent"`
+		ModelsInPool    int           `conf:"help:Most models kept loaded at once regardless of memory" yaml:"models-in-pool"`
+		TTL             time.Duration `conf:"help:Unload a model after it is idle this long. 0 keeps it loaded" yaml:"ttl"`
 	} `yaml:"pool"`
-	BasePath             string `yaml:"base-path"`
-	LibPath              string `yaml:"lib-path"`
-	BuckyLibPath         string `yaml:"bucky-lib-path"`
-	MalinaLibPath        string `yaml:"malina-lib-path"`
-	LibVersion           string `yaml:"lib-version"`
-	LibDownloadEnabled   bool   `yaml:"lib-download-enabled"`
-	MediaBackendsEnabled bool   `yaml:"media-backends-enabled"`
-	LibVerifyEnabled     bool   `yaml:"lib-verify-enabled"`
-	Arch                 string `yaml:"arch"`
-	OS                   string `yaml:"os"`
-	Processor            string `yaml:"processor"`
-	AllowUpgrade         bool   `yaml:"allow-upgrade"`
-	InsecureLogging      bool   `yaml:"insecure-logging"`
-	HfToken              string `conf:"mask" yaml:"hf-token"`
-	LlamaLog             int    `yaml:"llama-log"`
+	BasePath             string `conf:"help:Base path for Kronk data: models and libraries" yaml:"base-path"`
+	LibPath              string `conf:"help:Path to the llama.cpp libraries" yaml:"lib-path"`
+	BuckyLibPath         string `conf:"help:Path to the whisper.cpp libraries" yaml:"bucky-lib-path"`
+	MalinaLibPath        string `conf:"help:Path to the stable-diffusion.cpp libraries" yaml:"malina-lib-path"`
+	LibVersion           string `conf:"help:llama.cpp library version. Optionally VERSION@sha256:DIGEST" yaml:"lib-version"`
+	LibDownloadEnabled   bool   `conf:"help:Download the llama.cpp libraries at startup when missing" yaml:"lib-download-enabled"`
+	MediaBackendsEnabled bool   `conf:"help:Download and load the audio (Bucky) and image (Malina) backends at startup" yaml:"media-backends-enabled"`
+	LibVerifyEnabled     bool   `conf:"help:Verify the llama.cpp and whisper.cpp libraries before loading them" yaml:"lib-verify-enabled"`
+	Arch                 string `conf:"help:Architecture override: amd64 / arm64" yaml:"arch"`
+	OS                   string `conf:"help:Operating system override" yaml:"os"`
+	Processor            string `conf:"help:Processor override: cpu / cuda / metal / rocm / vulkan" yaml:"processor"`
+	AllowUpgrade         bool   `conf:"help:Allow automatic library upgrades" yaml:"allow-upgrade"`
+	InsecureLogging      bool   `conf:"help:Log sensitive data such as messages and model config" yaml:"insecure-logging"`
+	HfToken              string `conf:"mask,help:Hugging Face token for gated models" yaml:"hf-token"`
+	LlamaLog             int    `conf:"help:llama.cpp log level: 0 off / 1 on" yaml:"llama-log"`
 }
 
 func newConfig() config {

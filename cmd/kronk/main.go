@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/ardanlabs/kronk/cmd/kronk/bucky"
+	"github.com/ardanlabs/kronk/cmd/kronk/config"
 	"github.com/ardanlabs/kronk/cmd/kronk/devices"
 	"github.com/ardanlabs/kronk/cmd/kronk/diagnose"
 	"github.com/ardanlabs/kronk/cmd/kronk/kronk/catalog"
@@ -53,6 +54,7 @@ COMMANDS
   systemd   Install/manage the Linux systemd user service
   launchd   Install/manage the macOS launchd user agent
   model     Manage local models (list, pull, remove, show, ps)
+  config    Create or edit model and server settings in model_config.yaml (interactive)
   catalog   Browse and manage the model catalog (list, show, remove)
   libs      Install/upgrade llama.cpp libraries
   security  Manage API keys and JWT tokens
@@ -124,6 +126,9 @@ func init() {
 	rootCmd.AddCommand(devices.Cmd)
 	rootCmd.AddCommand(diagnose.Cmd)
 	rootCmd.AddCommand(launch.Cmd)
+
+	// Interactive tool that writes model_config.yaml.
+	rootCmd.AddCommand(config.Cmd)
 }
 
 // =============================================================================

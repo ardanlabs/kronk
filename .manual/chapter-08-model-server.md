@@ -365,6 +365,66 @@ The file format, variants, configuration keys, and tuning workflow are
 documented in [Chapter 3](https://www.kronkai.com/manual#chapter-3-model-configuration). The repository's
 commented reference file is `zarf/kms/model_config.yaml`.
 
+### Editing the file with kronk config
+
+`kronk config` is an interactive terminal tool that writes this file. It works
+on local files and does not need a running server.
+
+```shell
+kronk config
+```
+
+It asks, in order:
+
+1. **Which config file.** The file the server reads comes first
+   (`KRONK_POOL_MODEL_CONFIG_FILE`, otherwise
+   `<base-path>/models/model_config.yaml`), then `model_config*.yaml` files in
+   the current directory, or any other path, including a new file.
+2. **A model or the server settings.**
+3. **For a model: this machine or another one.** This machine's GPUs, GPU
+   memory and RAM are detected through llama.cpp, so the llama.cpp libraries
+   must be installed. For another machine, enter its GPU count, GPU type,
+   memory per GPU and RAM; the libraries are not needed.
+
+For a model, pick an installed or catalog model. A box shows the model's
+architecture, the machine and what AutoTune picks for it on that hardware.
+The questions follow: context window, concurrent requests, thinking and
+reasoning defaults, custom chat template variables, sampling, KV cache, GPU
+layers, MoE experts, flash attention, weight loading, queueing, the
+conversation cache, speculative decoding and the image projector. Questions
+that do not apply to the model or the machine are skipped. Custom chat
+template variables are written to `chat-template-kwargs`, one `name=value` per
+line, with YAML values.
+
+For the server settings, pick the sections to change (web server, auth,
+authorization, MCP, downloads, tracing, model pool, runtime). Sections with
+values in the file start selected. The questions are generated from the
+server's configuration, so every `kms` key is covered. Secrets are masked and
+never shown; an empty answer keeps the value in the file. The admin password
+is typed in clear and written as its SHA-256.
+
+Each list starts with the default, and each input shows the default. Leaving
+it writes nothing, so Kronk's defaults and AutoTune still apply. Esc goes back
+one question.
+
+The review shows the changes and the entry or `kms` section exactly as it will
+be written. For a model it also runs the memory check with the answers on the
+chosen hardware. Saving then:
+
+- rewrites only that model's entry or the `kms` section; other entries,
+  sections and comments are kept;
+- checks the result first: a model entry must load with the model settings,
+  and a `kms` section must be accepted by the server's configuration, or
+  nothing is written;
+- keeps the previous file as `<file>.bak`.
+
+Restart the server to apply the changes. A file saved for another machine
+goes to that machine as `~/.kronk/models/model_config.yaml`, or is selected
+there with `KRONK_POOL_MODEL_CONFIG_FILE`.
+
+The tool covers `models` and `kms`; edit `bucky-models` and `malina-models`
+by hand.
+
 ## 8.6 Catalog Operations
 
 The personal model catalog is stored at

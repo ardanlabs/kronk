@@ -31,6 +31,9 @@ The model server reads per-model overrides from:
 ~/.kronk/models/model_config.yaml
 ```
 
+To create or change entries interactively, run `kronk config`; see
+[Chapter 8 §8.5](https://www.kronkai.com/manual#85-model-configuration-files).
+
 Kronk creates this file on first use. Version 2 stores language-model overrides
 under `models`, Bucky overrides under `bucky-models`, and Malina overrides under
 `malina-models`. Version 1 files containing only `kms` and `models` remain
