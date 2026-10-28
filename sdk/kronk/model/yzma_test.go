@@ -8,29 +8,6 @@ import (
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
-func TestYzmaMTMDTextCapabilities(t *testing.T) {
-	libPath := os.Getenv("KRONK_TEST_LIB_PATH")
-	if libPath == "" {
-		t.Skip("KRONK_TEST_LIB_PATH is required (llama.cpp b11899 or newer)")
-	}
-
-	if err := InitYzmaWorkarounds(libPath); err != nil {
-		t.Fatalf("initialize mtmd bindings: %v", err)
-	}
-
-	// With no projector, native capability discovery returns text-only defaults
-	// without accessing a model. No model weights or GPU initialization are needed.
-	got, err := MTMDHelperGetCapabilities(0, 0)
-	if err != nil {
-		t.Fatalf("get text-only capabilities: %v", err)
-	}
-
-	want := MTMDHelperCapabilities{Chat: true, TextGen: true}
-	if got != want {
-		t.Errorf("capabilities: got %+v, want %+v", got, want)
-	}
-}
-
 func TestYzmaTokenizeNUL(t *testing.T) {
 	libPath := os.Getenv("KRONK_TEST_LIB_PATH")
 	modelPath := os.Getenv("KRONK_TEST_MODEL")

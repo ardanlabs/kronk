@@ -54,23 +54,7 @@ export default function DocsSDKModel() {
               <pre className="code-block">
                 <code>func InitYzmaWorkarounds(path string) error</code>
               </pre>
-              <p className="doc-description">InitYzmaWorkarounds initializes Kronk-specific Yzma compatibility code. Call it during native library initialization, before using these bindings.</p>
-            </div>
-
-            <div className="doc-section" id="func-mtmdaudiostreamgetnrows">
-              <h4>MTMDAudioStreamGetNRows</h4>
-              <pre className="code-block">
-                <code>func MTMDAudioStreamGetNRows(stream MTMDAudioStream) (int64, error)</code>
-              </pre>
-              <p className="doc-description">MTMDAudioStreamGetNRows returns the rows produced so far, including prefix rows. The stream must be a nonzero, live native stream. An error means the binding is unavailable.</p>
-            </div>
-
-            <div className="doc-section" id="func-mtmdaudiostreamgetnrowsflushed">
-              <h4>MTMDAudioStreamGetNRowsFlushed</h4>
-              <pre className="code-block">
-                <code>func MTMDAudioStreamGetNRowsFlushed(stream MTMDAudioStream) (int64, error)</code>
-              </pre>
-              <p className="doc-description">MTMDAudioStreamGetNRowsFlushed returns the row endpoint of the last flush. Once produced rows reach this endpoint, all flushed audio rows have been produced, not necessarily decoded or delivered. The stream must be nonzero and live. An error means the binding is unavailable.</p>
+              <p className="doc-description">InitYzmaWorkarounds initializes Kronk-specific Yzma compatibility code. There are currently no workarounds to initialize.</p>
             </div>
 
             <div className="doc-section" id="func-recurrentstatecopies">
@@ -207,14 +191,6 @@ export default function DocsSDKModel() {
                 <code>func ParseLoadMode(value string) (LoadMode, error)</code>
               </pre>
               <p className="doc-description">ParseLoadMode parses a load mode name or direct-I/O alias.</p>
-            </div>
-
-            <div className="doc-section" id="func-mtmdhelpergetcapabilities">
-              <h4>MTMDHelperGetCapabilities</h4>
-              <pre className="code-block">
-                <code>func MTMDHelperGetCapabilities(model llama.Model, ctx mtmd.Context) (MTMDHelperCapabilities, error)</code>
-              </pre>
-              <p className="doc-description">MTMDHelperGetCapabilities returns native capabilities for a loaded model and projector. The projector may be zero for a text-only model. The handles must remain loaded during the call. An error means the binding is unavailable.</p>
             </div>
 
             <div className="doc-section" id="func-parsemediatype">
@@ -917,31 +893,6 @@ export default function DocsSDKModel() {
 }`}</code>
               </pre>
               <p className="doc-description">Logprobs contains log probability information for the response.</p>
-            </div>
-
-            <div className="doc-section" id="type-mtmdaudiostream">
-              <h4>MTMDAudioStream</h4>
-              <pre className="code-block">
-                <code>{`type MTMDAudioStream uintptr`}</code>
-              </pre>
-              <p className="doc-description">MTMDAudioStream is an opaque native mtmd_audio_stream pointer. Its owner must keep the stream alive while calling the row getters below.</p>
-            </div>
-
-            <div className="doc-section" id="type-mtmdhelpercapabilities">
-              <h4>MTMDHelperCapabilities</h4>
-              <pre className="code-block">
-                <code>{`type MTMDHelperCapabilities struct {
-	Chat           bool
-	Vision         bool
-	Audio          bool
-	Video          bool
-	AudioStream    bool
-	TextGen        bool
-	AudioGen       bool
-	AudioGenSpkRef bool
-}`}</code>
-              </pre>
-              <p className="doc-description">MTMDHelperCapabilities describes native model and projector capabilities, not features implemented by Kronk. It mirrors struct mtmd_helper_cap in field order.</p>
             </div>
 
             <div className="doc-section" id="type-mediatype">
@@ -3335,8 +3286,6 @@ export default function DocsSDKModel() {
               <ul>
                 <li><a href="#func-addparams">AddParams</a></li>
                 <li><a href="#func-inityzmaworkarounds">InitYzmaWorkarounds</a></li>
-                <li><a href="#func-mtmdaudiostreamgetnrows">MTMDAudioStreamGetNRows</a></li>
-                <li><a href="#func-mtmdaudiostreamgetnrowsflushed">MTMDAudioStreamGetNRowsFlushed</a></li>
                 <li><a href="#func-recurrentstatecopies">RecurrentStateCopies</a></li>
                 <li><a href="#func-registerparser">RegisterParser</a></li>
                 <li><a href="#func-speculativecontextcount">SpeculativeContextCount</a></li>
@@ -3354,7 +3303,6 @@ export default function DocsSDKModel() {
                 <li><a href="#func-parsekvcachemode">ParseKVCacheMode</a></li>
                 <li><a href="#func-parselazymode">ParseLazyMode</a></li>
                 <li><a href="#func-parseloadmode">ParseLoadMode</a></li>
-                <li><a href="#func-mtmdhelpergetcapabilities">MTMDHelperGetCapabilities</a></li>
                 <li><a href="#func-parsemediatype">ParseMediaType</a></li>
                 <li><a href="#func-parsemoemode">ParseMoEMode</a></li>
                 <li><a href="#func-newmodel">NewModel</a></li>
@@ -3408,8 +3356,6 @@ export default function DocsSDKModel() {
                 <li><a href="#type-lazymode">LazyMode</a></li>
                 <li><a href="#type-loadmode">LoadMode</a></li>
                 <li><a href="#type-logprobs">Logprobs</a></li>
-                <li><a href="#type-mtmdaudiostream">MTMDAudioStream</a></li>
-                <li><a href="#type-mtmdhelpercapabilities">MTMDHelperCapabilities</a></li>
                 <li><a href="#type-mediatype">MediaType</a></li>
                 <li><a href="#type-moeconfig">MoEConfig</a></li>
                 <li><a href="#type-moemode">MoEMode</a></li>

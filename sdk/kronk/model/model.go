@@ -197,7 +197,7 @@ type Model struct {
 	projFile         string
 	projDevice       llama.GGMLBackendDevice
 	mtmdMetaCtx      mtmd.Context
-	mtmdCapabilities MTMDHelperCapabilities
+	mtmdCapabilities mtmd.HelperCap
 	mtmdCapsKnown    bool
 	modelInfo        ModelInfo
 	paramsResolved   bool
@@ -441,11 +441,11 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		l(ctx, "loading-prof-file", "status", "completed", "proj", path.Base(m.projFile))
 	}
 
-	capabilities, err := MTMDHelperGetCapabilities(m.model, m.mtmdMetaCtx)
+	capabilities, err := mtmd.HelperGetCapabilities(m.model, m.mtmdMetaCtx)
 	m.mtmdCapsKnown = err == nil
 	if err != nil {
 		// Older bundles lack the helper; preserve their existing input checks.
-		capabilities = MTMDHelperCapabilities{Chat: true, TextGen: true}
+		capabilities = mtmd.HelperCap{Chat: true, TextGen: true}
 		if m.mtmdMetaCtx != 0 {
 			capabilities.Vision = mtmd.SupportVision(m.mtmdMetaCtx)
 			capabilities.Audio = mtmd.SupportAudio(m.mtmdMetaCtx)
