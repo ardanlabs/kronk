@@ -269,7 +269,7 @@ func answerOpenJEVQuestion(plan openJEVQuestionPlan) DecisionAnswer {
 func decisionInputTokens(work []Work) int {
 	var total int
 	for _, item := range work {
-		total += len(item.Tokens)
+		total += item.rowCount()
 	}
 	return total
 }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/ardanlabs/kronk/sdk/kronk/model"
+	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
 // TestClefVision accepts an explicitly provisioned, compatible Clef model and
@@ -75,10 +76,30 @@ func TestClefVision(t *testing.T) {
 // TestLFM3D1Omni exercises real media through the public SDK. The optional
 // spoken fixture must ask "Which animal is in the picture?" in an audio file.
 func TestLFM3D1Omni(t *testing.T) {
+	if testing.Short() {
+		t.Skip("model inference skipped in short mode")
+	}
 	modelFile := os.Getenv("KRONK_TEST_LFM3_OMNI_MODEL")
 	projector := os.Getenv("KRONK_TEST_LFM3_OMNI_PROJECTOR")
+	if modelFile == "" && projector == "" {
+		mdls, err := models.New()
+		if err != nil {
+			t.Fatal(err)
+		}
+		mp, err := mdls.FullPath("LiquidAI/d1-Omni-2B-Q8_0")
+		if err != nil {
+			if os.Getenv("CI") == "true" {
+				t.Fatalf("required LFM3 Omni fixture: %v", err)
+			}
+			t.Skipf("LFM3 Omni model not installed: %v", err)
+		}
+		if len(mp.ModelFiles) != 0 {
+			modelFile = mp.ModelFiles[0]
+		}
+		projector = mp.ProjFile
+	}
 	if modelFile == "" || projector == "" {
-		t.Skip("set KRONK_TEST_LFM3_OMNI_MODEL and KRONK_TEST_LFM3_OMNI_PROJECTOR")
+		t.Fatal("LFM3 Omni requires both a model and projector")
 	}
 	if err := kronk.Init(kronk.WithLibPath(os.Getenv("KRONK_TEST_LIB_PATH"))); err != nil {
 		t.Fatal(err)
@@ -114,7 +135,7 @@ func TestLFM3D1Omni(t *testing.T) {
 			t.Parallel()
 			for range 2 {
 				resp, err := krn.Decision(t.Context(), model.DecisionRequest{Files: [][]byte{read(t, image.name)}, Questions: []model.DecisionQuestion{animal}})
-				if err != nil || resp.Answers["animal"].Choice != image.want || resp.Usage.InputTokens == 0 || resp.Usage.OutputTokens != 0 {
+				if err != nil || resp.Answers["animal"].Choice != image.want || resp.Usage.InputTokens <= 1 || resp.Usage.OutputTokens != 0 {
 					t.Fatalf("image decision: got %+v, %v, want %s with input-only usage", resp, err, image.want)
 				}
 			}
@@ -127,7 +148,9 @@ func TestLFM3D1Omni(t *testing.T) {
 			model.DecisionQuestionNoul("country", "Does the speaker mention their country?", nil),
 			model.DecisionQuestionScore("rating", "Does this clip contain human speech?", "No human speech", "Clear human speech"),
 		}})
-		if err != nil || resp.Answers["subject"].Choice != "service" || resp.Answers["country"].Noul <= .5 || resp.Answers["rating"].Score != 1 || resp.Usage.InputTokens == 0 {
+		// Each question has one final readout token; usage must also include
+		// the encoded audio and the rest of its rendered text prompt.
+		if err != nil || resp.Answers["subject"].Choice != "service" || resp.Answers["country"].Noul <= .5 || resp.Answers["rating"].Score != 1 || resp.Usage.InputTokens <= 3 {
 			t.Fatalf("audio decision: got %+v, %v", resp, err)
 		}
 	})

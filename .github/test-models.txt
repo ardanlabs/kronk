@@ -1,9 +1,8 @@
-# Pulled by .github/scripts/pull-models.sh. One `<backend> <model-id> [tier]`
+# Pulled by .github/scripts/pull-models.sh. One `<backend> <model-id>`
 # per line, backend `kronk` or `bucky`; blank lines and `#` comments ignored.
 #
-# tier is `base` when omitted: shared setup pulls it for race, API and SDK jobs.
-# `gpu` adds the larger fixtures used by the API and SDK jobs in linux.yml and
-# macos.yml. These jobs require self-hosted GPU runners and never run on forks.
+# Shared by local Make targets and GitHub race, API and SDK test jobs.
+# Existing validated models are reused rather than downloaded again.
 
 kronk unsloth/Qwen3.5-0.8B-Q8_0
 kronk unsloth/Qwen3-1.7B-Q4_K_M
@@ -12,17 +11,20 @@ kronk mradermacher/Qwopus3.5-4B-Coder.Q4_K_M
 kronk nomic-ai/nomic-embed-text-v1.5.Q8_0
 kronk gpustack/bge-reranker-v2-m3-Q8_0
 kronk chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0
+kronk LiquidAI/d1-Omni-2B-Q8_0
 bucky ggml-tiny.bin
+bucky silero-vad
+kronk unsloth/gpt-oss-20b-Q8_0
 
-# Dense Hybrid convolution/recurrent-state coverage; kept off hosted runners.
-kronk unsloth/LFM2-700M-Q8_0 gpu
+# Dense Hybrid convolution/recurrent-state coverage.
+kronk unsloth/LFM2-700M-Q8_0
 
 # Image/IMC qualification only; Omni audio remains excluded from GPU selectors.
-kronk ggml-org/Qwen2.5-Omni-3B-Q4_K_M gpu
+kronk ggml-org/Qwen2.5-Omni-3B-Q4_K_M
 
 # MTP SDK suites and the opt-in Test_API_MTP HTTP contracts use these targets
 # (the classic separate-GGUF drafter is sdk/kronk/tests/draft). Qwen3.6 has an
 # embedded own-KV head; Gemma shares target KV via its mtp-*.gguf companion.
 # Gemma also supplies the no-speculation text and vision IMC suites.
-kronk unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL gpu
-kronk unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M gpu
+kronk unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL
+kronk unsloth/gemma-4-26B-A4B-it-UD-Q4_K_M

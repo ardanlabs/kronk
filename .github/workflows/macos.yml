@@ -170,9 +170,6 @@ jobs:
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
 
-      - name: Download extended test models
-        run: ./.github/scripts/pull-models.sh .github/test-models.txt gpu
-
       - name: Run api/service tests
         env:
           # The shim setup-kronk staged. Per-step, never $GITHUB_ENV: the banner
@@ -201,9 +198,6 @@ jobs:
 
       - name: Set up Kronk
         uses: ./.github/actions/setup-kronk
-
-      - name: Download extended test models
-        run: ./.github/scripts/pull-models.sh .github/test-models.txt gpu
 
       - name: Run sdk tests
         env:
