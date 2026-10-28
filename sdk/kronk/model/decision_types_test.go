@@ -209,6 +209,7 @@ func TestDetectDecisionProtocol(t *testing.T) {
 		},
 		{name: "pplx-decider metadata", metadata: map[string]string{"general.architecture": "qwen35", "qwen35.decision.type": "pplx-decider"}, want: DecisionProtocolPplxDecider},
 		{name: "lfm2-d1 metadata", metadata: map[string]string{"general.architecture": "lfm2", "lfm2.decision.type": "lfm2-d1"}, want: DecisionProtocolLfm2D1},
+		{name: "lfm3-d1 metadata", metadata: map[string]string{"general.architecture": "lfm3", "lfm3.decision.type": "lfm3-d1"}, want: DecisionProtocolLfm3D1},
 		{name: "decision2 metadata", metadata: map[string]string{"general.architecture": "vllm-decision2", "vllm-decision2.decision.type": "vllm-decision2"}, want: DecisionProtocolVllmDecision2},
 		{name: "D3 metadata", metadata: map[string]string{"general.architecture": "qwen35", "qwen35.decision.type": "vllm-d3"}, want: DecisionProtocolVllmD3},
 		{

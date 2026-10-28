@@ -941,6 +941,9 @@ var (
 	// DecisionProtocolLfm2D1 identifies the LFM2 grouped-label protocol.
 	DecisionProtocolLfm2D1 = newDecisionProtocol("lfm2-d1")
 
+	// DecisionProtocolLfm3D1 identifies the LFM3 whole-prompt grouped-label protocol.
+	DecisionProtocolLfm3D1 = newDecisionProtocol("lfm3-d1")
+
 	// DecisionProtocolVllmDecision2 identifies the single-question decision-head protocol.
 	DecisionProtocolVllmDecision2 = newDecisionProtocol("vllm-decision2")
 

@@ -24,11 +24,11 @@ const name = "qwen"
 // Parser implements model.Parser for Qwen.
 type Parser struct{}
 
-// New returns a Parser value if the fingerprint indicates a Qwen model,
-// otherwise returns false. Detection is layered: GGUF
+// New returns a Parser value if the fingerprint indicates a Qwen-compatible
+// format, otherwise returns false. Detection is layered: GGUF
 // "general.architecture" prefix (e.g. "qwen2", "qwen3", "qwen35moe") is
 // the strongest signal, the chat template's distinctive Qwen tool-call
-// markers (<function=, <parameter=) is the next, and the model name
+// markers (<function=, <parameter=, also used by LFM3) are next, and the model name
 // substring is a last-resort legacy fallback.
 func New(fp model.Fingerprint) (model.Parser, bool) {
 	// 1. GGUF architecture prefix.
@@ -89,8 +89,8 @@ func (Parser) ToolCallWithSchema(ctx context.Context, log applog.Logger, buf str
 
 // containsQwenMarkers reports whether a chat template carries distinctive
 // Qwen tool-call tokens. The <function= and <parameter= openers are
-// specific to Qwen's direct-XML tool-call format and unlikely to appear
-// in any other lineage's template.
+// specific to the direct-XML wire format, also used by LFM3; a generic
+// <tool_call> wrapper alone does not identify that format.
 func containsQwenMarkers(template string) bool {
 	for _, marker := range []string{
 		"<function=",

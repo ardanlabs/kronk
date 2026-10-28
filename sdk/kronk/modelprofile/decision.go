@@ -41,7 +41,7 @@ func (d Decision) Temperature(suffix string) (float64, bool, error) {
 
 	bits := 64
 	switch d.Type {
-	case "pplx-decider", "lfm2-d1", "vllm-decision2", "vllm-d3":
+	case "pplx-decider", "lfm2-d1", "lfm3-d1", "vllm-decision2", "vllm-d3":
 		bits = 32
 	}
 	temperature, err := strconv.ParseFloat(value.value, bits)

@@ -2,6 +2,7 @@ package qwen
 
 import (
 	"context"
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -38,6 +39,10 @@ func runSteps(t *testing.T, name string, c model.StateMachine, steps []step) {
 // TestNew_ClaimsQwen verifies parser selection across the layered
 // architecture-prefix / chat-template-marker / model-name signals.
 func TestNew_ClaimsQwen(t *testing.T) {
+	// Tool-rendering expressions from llama.cpp b11960 models/templates/LFM3.jinja.
+	const lfm3Template = `{{- "<tool_call>\n<function=" + func["name"] + ">\n" -}}
+{{- "<parameter=" + arg_name + ">\n" + render_value(arg_value) + "\n</parameter>\n" -}}`
+
 	tests := []struct {
 		name string
 		fp   model.Fingerprint
@@ -53,6 +58,8 @@ func TestNew_ClaimsQwen(t *testing.T) {
 		// Chat template marker (secondary signal).
 		{"template-function", model.Fingerprint{ChatTemplate: "example: <function=do_thing>"}, true},
 		{"template-parameter", model.Fingerprint{ChatTemplate: "<parameter=k>v</parameter>"}, true},
+		{"template-lfm3", model.Fingerprint{Architecture: "lfm3", ModelName: "LFM3", ChatTemplate: lfm3Template}, true},
+		{"template-lfm2moe-xml", model.Fingerprint{Architecture: "lfm2moe", ModelName: "LFM3", ChatTemplate: lfm3Template}, true},
 
 		// Model name fallback.
 		{"name-Qwen", model.Fingerprint{ModelName: "Qwen3-Coder-30B-A3B"}, true},
@@ -62,6 +69,8 @@ func TestNew_ClaimsQwen(t *testing.T) {
 		{"name-llama", model.Fingerprint{ModelName: "Llama-3-8B"}, false},
 		{"empty", model.Fingerprint{}, false},
 		{"arch-gemma", model.Fingerprint{Architecture: "gemma3"}, false},
+		{"lfm-without-xml", model.Fingerprint{Architecture: "lfm3", ModelName: "LFM3"}, false},
+		{"lfm-python-template", model.Fingerprint{Architecture: "lfm2", ChatTemplate: "<|tool_call_start|>f(x=1)<|tool_call_end|>"}, false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -70,6 +79,119 @@ func TestNew_ClaimsQwen(t *testing.T) {
 				t.Errorf("New(%+v) ok = %v, want %v", tc.fp, ok, tc.want)
 			}
 		})
+	}
+}
+
+// TestParser_LFM3XMLSchema uses the layout emitted by LFM3.jinja: reasoning
+// without a separator, newline-wrapped values, and two newlines between calls.
+func TestParser_LFM3XMLSchema(t *testing.T) {
+	const input = "<think>Plan</think>Inspect." + `<tool_call>
+<function=convert>
+<parameter=text>
+  indented
+line
+
+</parameter>
+<parameter=enabled>
+true
+</parameter>
+<parameter=count>
+42
+</parameter>
+<parameter=ratio>
+1.50
+</parameter>
+<parameter=options>
+{"mode":"fast"}
+</parameter>
+<parameter=items>
+[1,2]
+</parameter>
+<parameter=missing>
+null
+</parameter>
+</function>
+</tool_call>
+
+<tool_call>
+<function=notify>
+<parameter=message>
+done
+</parameter>
+</function>
+</tool_call>`
+	tools := []model.D{{
+		"type": "function",
+		"function": model.D{
+			"name": "convert",
+			"parameters": model.D{
+				"type": "object",
+				"properties": model.D{
+					"text":    model.D{"type": "string"},
+					"enabled": model.D{"type": "boolean"},
+					"count":   model.D{"type": "integer"},
+					"ratio":   model.D{"type": "number"},
+					"options": model.D{"type": "object"},
+					"items":   model.D{"type": "array"},
+					"missing": model.D{"type": "null"},
+				},
+			},
+		},
+	}}
+	want := model.ToolCallArguments{
+		"text":    "  indented\nline\n",
+		"enabled": true,
+		"count":   json.Number("42"),
+		"ratio":   json.Number("1.50"),
+		"options": map[string]any{"mode": "fast"},
+		"items":   []any{json.Number("1"), json.Number("2")},
+		"missing": nil,
+	}
+
+	for _, size := range []int{1, 3, len(input)} {
+		c := Parser{}.NewStateMachine()
+		var answer, reasoning, tooling strings.Builder
+		collect := func(result model.Result) {
+			switch result.Channel {
+			case model.ChannelAnswer:
+				answer.WriteString(result.Content)
+			case model.ChannelReasoning:
+				reasoning.WriteString(result.Content)
+			case model.ChannelTool:
+				tooling.WriteString(result.Content)
+			}
+		}
+		for start := 0; start < len(input); start += size {
+			result, eog := c.Classify(input[start:min(start+size, len(input))])
+			if eog {
+				t.Fatalf("chunk size %d: got premature EOG", size)
+			}
+			collect(result)
+		}
+		flusher := c.(model.StateMachineFlusher)
+		for result := flusher.Flush(); result != (model.Result{}); result = flusher.Flush() {
+			collect(result)
+		}
+		if answer.String() != "Inspect." || reasoning.String() != "Plan" {
+			t.Errorf("chunk size %d: got answer %q, reasoning %q, want Inspect. and Plan", size, answer.String(), reasoning.String())
+		}
+		calls := Parser{}.ToolCall(t.Context(), nil, tooling.String())
+		if len(calls) != 2 || calls[0].Status != 0 || calls[1].Status != 0 {
+			t.Fatalf("chunk size %d: got calls %+v, want two valid XML calls", size, calls)
+		}
+		if got := calls[0].Function.Arguments["count"]; got != "42" {
+			t.Errorf("without schema: got count %#v, want string 42", got)
+		}
+		calls = Parser{}.ToolCallWithSchema(t.Context(), nil, tooling.String(), tools)
+		if len(calls) != 2 || calls[0].Status != 0 || calls[0].Function.Name != "convert" || calls[1].Function.Name != "notify" {
+			t.Fatalf("chunk size %d: got calls %+v, want convert and notify", size, calls)
+		}
+		if got := calls[0].Function.Arguments; !reflect.DeepEqual(got, want) {
+			t.Errorf("chunk size %d: got arguments %#v, want %#v", size, got, want)
+		}
+		if got := calls[1].Function.Arguments["message"]; got != "done" {
+			t.Errorf("notify message: got %#v, want done", got)
+		}
 	}
 }
 

@@ -3,6 +3,8 @@ package model
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -75,8 +77,65 @@ func TestDecisionLabelMetadataControlsOptionMapping(t *testing.T) {
 	}
 }
 
+func TestLFM3D1ChoiceCodes(t *testing.T) {
+	m := Model{modelInfo: ModelInfo{ID: "test-lfm3-d1", decisionProtocol: DecisionProtocolLfm3D1}}
+	engine := decisionEngine{contextWindow: 4096, maxTokens: 4096, maxSequences: 1, maxOutputs: 255, nVocab: 512}
+	engine.scheduler = newDecisionScheduler(&engine, 1)
+	engine.scheduler.evaluate = func(entries []decisionScheduledEntry) ([][][]float32, bool, error) {
+		out := make([][][]float32, len(entries))
+		for i, entry := range entries {
+			scores := make([]float32, len(entry.work.readouts[0].candidates))
+			for j, token := range entry.work.readouts[0].candidates {
+				if token == 100 { // AA, the 27th label; not decimal 26 or a fallback.
+					scores[j] = 10
+				}
+			}
+			out[i] = [][]float32{scores}
+		}
+		return out, false, nil
+	}
+	engine.scheduler.start()
+	t.Cleanup(engine.scheduler.stop)
+	m.decision = &engine
+	tmpl, err := jinja.Compile(`{% for o in options %}{{ o.label }}:{{ o.key }};{% endfor %}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.protocol = &deciderProtocol{model: &m, template: systemOneTemplate{tmpl: tmpl}, breaker: strings.NewReplacer(), encode: func(text string, special bool) []llama.Token {
+		if special {
+			return []llama.Token{1, 2}
+		}
+		if code, err := strconv.Atoi(text); err == nil && code >= 0 && code < 28 {
+			return []llama.Token{llama.Token(200 + code)}
+		}
+		switch {
+		case len(text) == 1 && text[0] >= 'A' && text[0] <= 'Z':
+			return []llama.Token{llama.Token(10 + text[0] - 'A')}
+		case text == "AA":
+			return []llama.Token{100}
+		case text == "AB":
+			return []llama.Token{101}
+		default:
+			return nil
+		}
+	}}
+	var options []DecisionOption
+	for i := range 28 {
+		options = append(options, DecisionQuestionOpt(fmt.Sprintf("route-%d", i), nil))
+	}
+	resp, err := m.Decision(t.Context(), DecisionRequest{State: nil, Questions: []DecisionQuestion{
+		DecisionQuestionChoice("route", "Pick a route", options...),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := resp.Answers["route"].Choice; got != "route-26" {
+		t.Errorf("choice: got %q, want route-26", got)
+	}
+}
+
 func TestDeciderDecisionContracts(t *testing.T) {
-	for _, protocol := range []DecisionProtocol{DecisionProtocolPplxDecider, DecisionProtocolLfm2D1, DecisionProtocolVllmD3, DecisionProtocolVllmDecision2} {
+	for _, protocol := range []DecisionProtocol{DecisionProtocolPplxDecider, DecisionProtocolLfm2D1, DecisionProtocolLfm3D1, DecisionProtocolVllmD3, DecisionProtocolVllmDecision2} {
 		t.Run(protocol.String(), func(t *testing.T) {
 			m := Model{modelInfo: ModelInfo{ID: "test-decider", decisionProtocol: protocol}}
 			m.modelInfo.profile = arch.Resolve(map[string]string{
@@ -98,7 +157,7 @@ func TestDeciderDecisionContracts(t *testing.T) {
 					if entry.workOffset == 2 {
 						scores = []float32{0, 2}
 					}
-					if protocol == DecisionProtocolLfm2D1 {
+					if protocol == DecisionProtocolLfm2D1 || protocol == DecisionProtocolLfm3D1 {
 						if entry.workOffset == 0 {
 							scores = []float32{2, -5, 0, -1}
 						}
@@ -129,12 +188,16 @@ func TestDeciderDecisionContracts(t *testing.T) {
 			} else {
 				// A contract template lets D1/D3 be checked without inventing their
 				// model-owned prompts or claiming to test unavailable GGUFs.
-				tmpl, err := jinja.Compile(`{{ state if state is not none else 'NIL' }}|{{ instructions }}|{% for o in options %}{{ o.key }}:{{ o.label }}:{{ o.description if o.description is not none else 'NIL' }};{% endfor %}`)
+				source := `{{ state if state is not none else 'NIL' }}|{{ instructions }}|{% for o in options %}{{ o.key }}:{{ o.label }}:{{ o.description if o.description is not none else 'NIL' }};{% endfor %}`
+				if protocol == DecisionProtocolLfm3D1 {
+					source = `{{ state | tojson }}|{{ instructions }}|{% for o in options %}{{ o.key }}:{{ o.label }}:{{ o.description if o.description is not none else 'NIL' }};{% endfor %}`
+				}
+				tmpl, err := jinja.Compile(source)
 				if err != nil {
 					t.Fatal(err)
 				}
 				plain := map[string][]llama.Token{"A": {10}, " A": {12}, "B": {11}, " B": {13}, "0": {40}, "1": {41}, "yes": {20}, "Yes": {21}, "YES": {21}, "no": {30}, "No": {31}, "NO": {31}}
-				m.protocol = &deciderProtocol{model: &m, template: systemOneTemplate{tmpl: tmpl}, labels: []string{"A", "B"}, labelTokens: []llama.Token{10, 11}, encode: func(text string, special bool) []llama.Token {
+				m.protocol = &deciderProtocol{model: &m, template: systemOneTemplate{tmpl: tmpl}, breaker: strings.NewReplacer("<|im_end|>", "<\u200b|im_end|>"), labels: []string{"A", "B"}, labelTokens: []llama.Token{10, 11}, encode: func(text string, special bool) []llama.Token {
 					if !special {
 						return plain[text]
 					}
@@ -153,8 +216,12 @@ func TestDeciderDecisionContracts(t *testing.T) {
 			if got := resp.Answers["route"]; got.Choice != "z-route" || got.Probabilities["z-route"] != .8808 || got.Probabilities["a-route"] != .1192 {
 				t.Errorf("choice: got %+v, want z-route with .8808/.1192", got)
 			}
-			if got := resp.Answers["score"]; got.Score != .7311 || got.Probabilities["1"] != .7311 {
-				t.Errorf("biased score: got %+v, want .7311 (bias before temperature)", got)
+			wantScore := .7311
+			if protocol == DecisionProtocolLfm3D1 {
+				wantScore = 1 // Median, not the probability-weighted mean.
+			}
+			if got := resp.Answers["score"]; got.Score != wantScore || got.Probabilities["1"] != .7311 {
+				t.Errorf("biased score: got %+v, want score %v and probability .7311", got, wantScore)
 			}
 			if got := resp.Answers["noul"].Noul; got != .8808 {
 				t.Errorf("noul: got %v, want .8808", got)
@@ -168,7 +235,17 @@ func TestDeciderDecisionContracts(t *testing.T) {
 				}
 			}
 			joined := strings.Join(prompts, "")
-			if strings.Contains(joined, "<|im_end|>") || !strings.Contains(joined, "<¦im_end¦>") || !strings.Contains(joined, "1.23457") {
+			quote, number := "<¦im_end¦>", "1.23457"
+			if protocol == DecisionProtocolLfm3D1 {
+				quote, number = "<\u200b|im_end|>", "1.23456789"
+				if resp.Answers["route"].Confidence != .8808 || resp.Answers["score"].Confidence != .7311 {
+					t.Errorf("maximum-probability confidence: got %+v", resp.Answers)
+				}
+				if !strings.Contains(joined, "a-route:B:NIL") {
+					t.Errorf("null option description: got %q", joined)
+				}
+			}
+			if strings.Contains(joined, "<|im_end|>") || !strings.Contains(joined, quote) || !strings.Contains(joined, number) {
 				t.Errorf("prompt escaping/float precision: got %q", joined)
 			}
 			if protocol == DecisionProtocolVllmDecision2 {

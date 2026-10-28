@@ -2,6 +2,8 @@ package vram
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
@@ -113,6 +115,7 @@ func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, m
 	input := Input{
 		WeightLoading:         cfg.WeightLoading,
 		LazyTable:             LazyTableForShards(profile, shards),
+		Architecture:          profile.Architecture,
 		ComputeBackend:        cfg.ComputeBackend,
 		ComputeKind:           profile.ComputeKind,
 		VocabularySize:        vocabularySize,
@@ -171,6 +174,26 @@ func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, m
 		KVCacheOnCPU:          cfg.KVCacheOnCPU,
 		SWAFull:               cfg.SWAFull,
 		VTransposed:           cfg.VTransposed,
+	}
+
+	if profile.Architecture == "lfm3" {
+		// b11960 defaults to causal attention. Every non-causal LFM3
+		// graph is batch-local, independently of decision-head metadata.
+		if value, exists := metadata["lfm3.attention.causal"]; exists {
+			causal, err := strconv.ParseBool(strings.TrimSpace(value))
+			if err != nil {
+				return Result{}, fmt.Errorf("build-from-metadata: invalid lfm3.attention.causal: %w", err)
+			}
+			input.NoPersistentCache = !causal
+		}
+		if metadata["lfm3.decision.type"] == "lfm3-d1" {
+			// Match decisionContextParams: one sequence, with the entire
+			// context evaluated in one physical batch and one final readout.
+			input.NUBatch = cfg.ContextWindow
+			input.Slots = 1
+			input.OutputRows = 1
+			input.NoPersistentCache = true
+		}
 	}
 
 	return Calculate(input), nil

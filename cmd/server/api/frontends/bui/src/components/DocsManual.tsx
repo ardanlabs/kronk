@@ -2706,6 +2706,10 @@ data: {"type":"response.completed",...}`}</code></pre>
                 <td>Final-token label groups, taking the maximum logit per option before calibration</td>
               </tr>
               <tr>
+                <td><code>lfm3-d1</code></td>
+                <td>Text-only, non-causal whole-prompt label groups; median score and maximum-probability confidence</td>
+              </tr>
+              <tr>
                 <td><code>vllm-decision2</code></td>
                 <td>One question per prompt, with marked option/question spans and scalar decision-head outputs</td>
               </tr>
@@ -2715,9 +2719,12 @@ data: {"type":"response.completed",...}`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <p>These four protocols apply model-provided temperatures and score-level biases. Decision2 and D3 return normalized entropy concentration as <code>confidence</code> for choice and score questions; <code>noul</code> still returns the true-option probability. Decision2 requires at least two choice options and a state that is text, an object, or an array. D3 permits omitted or empty instructions, using the template's default question; the other protocols require instructions.</p>
-          <p>Decision2 and D3 evaluate each complete prompt in a single physical batch, regardless of the configured prefill batch size. D3 uses one execution sequence even when <code>NSeqMax</code> is larger. Large context windows can therefore increase working memory requirements for these models.</p>
-          <p>The four new protocols have model-free contract coverage, but have not yet been validated against downloaded GGUF models. Treat model-backed compatibility and decision quality as unverified until those models are exercised.</p>
+          <p>These protocols apply model-provided temperatures and score-level biases. Decision2 and D3 return normalized entropy concentration as <code>confidence</code> for choice and score questions; <code>noul</code> still returns the true-option probability. Decision2 requires at least two choice options and a state that is text, an object, or an array. D3 permits omitted or empty instructions, using the template's default question; the other protocols require instructions.</p>
+          <p>Decision2, D3, and LFM3 d1 evaluate each complete prompt in a single physical batch, regardless of the configured prefill batch size. D3 and LFM3 d1 use one execution sequence even when <code>NSeqMax</code> is larger. Large context windows can therefore increase working memory requirements for these models. LFM3 d1 does not reuse persistent sequence state; independent questions and concurrent requests are serialized through that single execution sequence.</p>
+          <p>LFM3 d1 preserves structured JSON state and option descriptions for the model's template. It uses alphabetic choice labels beyond 26 options (<code>AA</code>, <code>AB</code>, …), quotes control-token spellings in user input, returns the median score level rather than an expected level, and uses maximum answer probability for choice and score <code>confidence</code>. Spoken instructions and the <code>lfm3-d1-omni</code> protocol are not implemented.</p>
+          <p>LFM3 d1 has been exercised with a Q4_K_M d1-2B model for choice, score, <code>noul</code>, concurrent request isolation, and prompt-budget rejection on macOS Metal with llama.cpp b11960. This is compatibility coverage, not a decision-quality benchmark. The other four protocols have model-free contract coverage, but their model-backed compatibility remains unverified.</p>
+          <p>LFM3 text chat uses its own hybrid short-convolution/full/SWA topology and its bundled XML tool-call template. It is not treated as an LFM2 architecture alias. Resource estimates include recurrent state and attention caches; workspace allowances remain conservative heuristics rather than measured calibration. LFM3 MTP, video input, realtime audio, and audio generation are not enabled by this integration.</p>
+          <p>LFM3-VL image chat has been exercised with image-identification controls. LFM3-Audio accepts audio, but the tested Q4_K_M Audio-2B model's bundled template summarized the JFK sample instead of transcribing it. This also reproduced in llama.cpp's Jinja CLI path. Setting the request's <code>bos_token</code> to an empty string restored transcription in that sample; this is a diagnostic workaround, not a general model default or a transcription-quality guarantee.</p>
           <p>A response is keyed by the caller's question IDs:</p>
           <pre className="code-block"><code className="language-json">{`{
   "model": "chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0",

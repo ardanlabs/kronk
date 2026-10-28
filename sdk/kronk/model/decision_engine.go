@@ -71,12 +71,12 @@ func decisionContextParams(base llama.ContextParams, cfg Config) llama.ContextPa
 		params.Embeddings = 1
 		params.PoolingType = llama.PoolingTypeNone
 	}
-	if cfg.DecisionProtocol == DecisionProtocolVllmD3 || cfg.DecisionProtocol == DecisionProtocolVllmDecision2 {
+	if cfg.DecisionProtocol == DecisionProtocolVllmD3 || cfg.DecisionProtocol == DecisionProtocolVllmDecision2 || cfg.DecisionProtocol == DecisionProtocolLfm3D1 {
 		// These protocols must evaluate the complete prompt in one ubatch.
-		// D3 is non-causal, so it must also run without concurrent sequences.
+		// D3 and LFM3 d1 are non-causal and cannot mix sequences.
 		params.NUbatch = uint32(cfg.ContextWindow())
 		params.NBatch = params.NUbatch
-		if cfg.DecisionProtocol == DecisionProtocolVllmD3 {
+		if cfg.DecisionProtocol == DecisionProtocolVllmD3 || cfg.DecisionProtocol == DecisionProtocolLfm3D1 {
 			params.NSeqMax = 1
 			params.NCtx = params.NBatch
 			params.AttentionType = llama.AttentionTypeNonCausal

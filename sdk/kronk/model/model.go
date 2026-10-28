@@ -297,7 +297,11 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	configuredPrefillBatchSize := cfg.PrefillBatchSize()
 	cfg = adjustConfig(cfg, mdl)
 	prefillChunk := cfg.PrefillBatchSize()
-	modelInfo := toModelInfo(cfg, mdl)
+	modelInfo, err := toModelInfo(cfg, mdl)
+	if err != nil {
+		llama.ModelFree(mdl)
+		return nil, err
+	}
 	cfg.DecisionProtocol = modelInfo.decisionProtocol
 
 	if cfg.MoECacheSize() > 0 {

@@ -640,7 +640,7 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 	}
 
 	switch cfg.DecisionProtocol {
-	case DecisionProtocol{}, DecisionProtocolOpenJEV, DecisionProtocolJevStyle, DecisionProtocolLaya, DecisionProtocolLev, DecisionProtocolKev, DecisionProtocolNimble, DecisionProtocolClef, DecisionProtocolPplxDecider, DecisionProtocolLfm2D1, DecisionProtocolVllmDecision2, DecisionProtocolVllmD3:
+	case DecisionProtocol{}, DecisionProtocolOpenJEV, DecisionProtocolJevStyle, DecisionProtocolLaya, DecisionProtocolLev, DecisionProtocolKev, DecisionProtocolNimble, DecisionProtocolClef, DecisionProtocolPplxDecider, DecisionProtocolLfm2D1, DecisionProtocolLfm3D1, DecisionProtocolVllmDecision2, DecisionProtocolVllmD3:
 	default:
 		return fmt.Errorf("validate-config: unsupported decision protocol %q", cfg.DecisionProtocol)
 	}

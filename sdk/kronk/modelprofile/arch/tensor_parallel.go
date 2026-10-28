@@ -15,7 +15,7 @@ func SupportsTensorParallel(architecture string) bool {
 		"mamba", "mamba2", "jamba", "falcon-h1", "olmo2", "olmoe",
 		"deepseek2", "deepseek32", "hy_v4", "dots3note", "glm-dsa",
 		"bitnet", "t5", "nemotron_h", "nemotron_h_moe", "granitehybrid",
-		"minimax-01", "minimax-m2", "minimax-m3", "mistral4", "kimi-linear",
+		"lfm3", "minimax-01", "minimax-m2", "minimax-m3", "mistral4", "kimi-linear",
 		"bailingmoe3", "kimi-k3", "glm5-next", "qwen3tts", "qwen4exp":
 		return false
 	default:

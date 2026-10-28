@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
@@ -19,6 +21,7 @@ type deciderProtocol struct {
 	encode      func(string, bool) []llama.Token
 	labelTokens []llama.Token
 	labels      []string
+	breaker     *strings.Replacer // LFM3 d1 quotes the model's control-token spellings.
 }
 
 func newDeciderProtocol(m *Model) (decisionProtocol, error) {
@@ -29,7 +32,24 @@ func newDeciderProtocol(m *Model) (decisionProtocol, error) {
 	p := deciderProtocol{model: m, template: tmpl, encode: func(text string, special bool) []llama.Token {
 		return llama.Tokenize(m.vocab, text, false, special)
 	}}
-	if m.modelInfo.decisionProtocol != DecisionProtocolLfm2D1 {
+	if m.modelInfo.decisionProtocol == DecisionProtocolLfm3D1 {
+		var spellings []string
+		for id := range llama.VocabNTokens(m.vocab) {
+			token := llama.Token(id)
+			if llama.VocabGetAttr(m.vocab, token)&llama.TokenAttrControl != 0 {
+				if text := llama.VocabGetText(m.vocab, token); len(text) >= 2 {
+					spellings = append(spellings, text)
+				}
+			}
+		}
+		slices.SortStableFunc(spellings, func(a, b string) int { return len(b) - len(a) })
+		pairs := make([]string, 0, 2*len(spellings))
+		for _, text := range spellings {
+			_, n := utf8.DecodeRuneInString(text)
+			pairs = append(pairs, text, text[:n]+"\u200b"+text[n:])
+		}
+		p.breaker = strings.NewReplacer(pairs...)
+	} else if m.modelInfo.decisionProtocol != DecisionProtocolLfm2D1 {
 		p.labelTokens, p.labels, err = m.decisionLabelTokens()
 		if err != nil {
 			return nil, fmt.Errorf("init-decider: %w", err)
@@ -43,8 +63,10 @@ func newDeciderProtocol(m *Model) (decisionProtocol, error) {
 
 func (p *deciderProtocol) decide(ctx context.Context, req DecisionRequest) (DecisionResponse, error) {
 	protocol := p.model.modelInfo.decisionProtocol
+	lfm3 := protocol == DecisionProtocolLfm3D1
+	d1 := protocol == DecisionProtocolLfm2D1 || lfm3
 	var state any
-	if req.State != nil || protocol == DecisionProtocolPplxDecider {
+	if !lfm3 && (req.State != nil || protocol == DecisionProtocolPplxDecider) {
 		text, err := decisionDeciderText(req.State, protocol == DecisionProtocolLfm2D1, false)
 		if err != nil {
 			return DecisionResponse{}, fmt.Errorf("decision: serialize state: %w", err)
@@ -56,7 +78,7 @@ func (p *deciderProtocol) decide(ctx context.Context, req DecisionRequest) (Deci
 	optionsByQuestion := make([][]systemOneOption, len(work))
 	groupsByQuestion := make([][]int, len(work))
 	for i, question := range req.Questions {
-		options, err := decisionDeciderOptions(question, protocol == DecisionProtocolLfm2D1)
+		options, err := decisionDeciderOptions(question, d1)
 		if err != nil {
 			return DecisionResponse{}, fmt.Errorf("decision: question %q: %w", question.ID, err)
 		}
@@ -65,8 +87,8 @@ func (p *deciderProtocol) decide(ctx context.Context, req DecisionRequest) (Deci
 		}
 		var labels []string
 		var groups [][]llama.Token
-		if protocol == DecisionProtocolLfm2D1 {
-			labels, groups, err = decisionD1Labels(question.Type, options, func(text string) []llama.Token { return p.encode(text, false) })
+		if d1 {
+			labels, groups, err = decisionD1Labels(question.Type, options, lfm3, func(text string) []llama.Token { return p.encode(text, false) })
 		} else {
 			if len(options) > len(p.labels) {
 				return DecisionResponse{}, fmt.Errorf("%w: question %q needs %d labels, model provides %d", ErrDecisionRequest, question.ID, len(options), len(p.labels))
@@ -88,6 +110,12 @@ func (p *deciderProtocol) decide(ctx context.Context, req DecisionRequest) (Deci
 		}
 		values := decisionDeciderQuestion(question, instructions, options, labels)
 		values["state"], values["images"] = state, []any{}
+		if lfm3 {
+			values, err = p.lfm3Values(req.State, question, labels)
+			if err != nil {
+				return DecisionResponse{}, fmt.Errorf("decision: question %q: %w", question.ID, err)
+			}
+		}
 		prompt, err := p.template.renderValues(values)
 		if err != nil {
 			return DecisionResponse{}, err
@@ -180,7 +208,7 @@ func escapeDecisionSpecial(text string) string {
 	return decisionSpecialPattern.ReplaceAllString(text, "<¦$1¦>")
 }
 
-func decisionD1Labels(typ DecisionQuestionType, options []systemOneOption, encode func(string) []llama.Token) ([]string, [][]llama.Token, error) {
+func decisionD1Labels(typ DecisionQuestionType, options []systemOneOption, lfm3 bool, encode func(string) []llama.Token) ([]string, [][]llama.Token, error) {
 	single := func(forms ...string) []llama.Token {
 		var tokens []llama.Token
 		for _, form := range forms {
@@ -249,6 +277,11 @@ func decisionD1Labels(typ DecisionQuestionType, options []systemOneOption, encod
 			code = option.name
 		} else if len(options) <= 26 {
 			code = string(rune('A' + i))
+		} else if lfm3 {
+			code = string(rune('A' + i))
+			if i >= 26 {
+				code = string([]rune{'A' + rune((i-26)/26), 'A' + rune((i-26)%26)})
+			}
 		}
 		if take(code) {
 			continue
@@ -259,6 +292,60 @@ func decisionD1Labels(typ DecisionQuestionType, options []systemOneOption, encod
 		}
 	}
 	return labels, groups, nil
+}
+
+// lfm3Values preserves JSON values for the model-owned template. In particular,
+// null descriptions and structured state must not become pre-serialized text.
+func (p *deciderProtocol) lfm3Values(state any, question DecisionQuestion, labels []string) (D, error) {
+	options, err := decisionRawSystemOneOptions(question, true)
+	if err != nil {
+		return nil, err
+	}
+	for i := range options {
+		options[i].label = labels[i]
+	}
+	values := decisionTemplateQuestion(question, question.Instructions, options)
+	values["state"], values["images"] = state, []any{}
+	value, err := decisionTemplateValue(values)
+	if err != nil {
+		return nil, err
+	}
+	if instructions, ok := value.(map[string]any)["instructions"].(map[string]any); ok && instructions["type"] == "input_audio" {
+		return nil, fmt.Errorf("%w: lfm3-d1 supports text instructions, not spoken instructions", ErrDecisionRequest)
+	}
+
+	// Repeating the longest-first replacement also breaks overlapping control
+	// spellings. Insert after the first UTF-8 character, as the native d1 shim does.
+	breakText := func(text string) string {
+		for {
+			next := p.breaker.Replace(text)
+			if next == text {
+				return text
+			}
+			text = next
+		}
+	}
+	var escape func(any) any
+	escape = func(value any) any {
+		switch value := value.(type) {
+		case string:
+			return breakText(value)
+		case []any:
+			for i := range value {
+				value[i] = escape(value[i])
+			}
+			return value
+		case map[string]any:
+			out := make(map[string]any, len(value))
+			for key, item := range value {
+				out[breakText(key)] = escape(item)
+			}
+			return out
+		default:
+			return value
+		}
+	}
+	return D(escape(value).(map[string]any)), nil
 }
 
 func answerDeciderQuestion(m *Model, question DecisionQuestion, options []systemOneOption, scores []float32) (DecisionAnswer, error) {
@@ -285,6 +372,19 @@ func answerDeciderQuestion(m *Model, question DecisionQuestion, options []system
 	}
 	answer := answerSystemOneQuestion(question, options, probabilities)
 	protocol := m.modelInfo.decisionProtocol
+	if protocol == DecisionProtocolLfm3D1 && question.Type != DecisionQuestionTypeNoul {
+		answer.Confidence = roundFour(slices.Max(probabilities))
+		if question.Type == DecisionQuestionTypeScore {
+			var mass float64
+			for i, probability := range probabilities {
+				mass += probability
+				answer.Score = float64(i)
+				if mass >= .5 {
+					break
+				}
+			}
+		}
+	}
 	if question.Type != DecisionQuestionTypeNoul && (protocol == DecisionProtocolVllmD3 || protocol == DecisionProtocolVllmDecision2) {
 		confidence := 1.0
 		if len(probabilities) > 1 {

@@ -29,6 +29,7 @@ var decisionProtocolFactories = map[DecisionProtocol]decisionProtocolFactory{
 	DecisionProtocolClef:          func(m *Model) (decisionProtocol, error) { return newClefProtocol(m) },
 	DecisionProtocolPplxDecider:   newDeciderProtocol,
 	DecisionProtocolLfm2D1:        newDeciderProtocol,
+	DecisionProtocolLfm3D1:        newDeciderProtocol,
 	DecisionProtocolVllmD3:        newDeciderProtocol,
 	DecisionProtocolVllmDecision2: newDecision2Protocol,
 }

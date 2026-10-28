@@ -20,6 +20,7 @@ func TestDetection(t *testing.T) {
 		{"markers", model.Fingerprint{ChatTemplate: toolOpen + " body " + toolClose}, true},
 		{"architecture", model.Fingerprint{Architecture: "LFM2"}, true},
 		{"model name", model.Fingerprint{ModelName: "Liquid-LFM2.5-1.2B"}, true},
+		{"LFM3 XML protocol", model.Fingerprint{Architecture: "lfm3", ChatTemplate: "<tool_call><function=lookup><parameter=key>"}, false},
 		{"unrelated", model.Fingerprint{Architecture: "llama"}, false},
 		{"one marker", model.Fingerprint{ChatTemplate: toolOpen}, false},
 	}
