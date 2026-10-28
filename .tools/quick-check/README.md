@@ -62,12 +62,13 @@ Keep in mind that reverting to an older commit does not automatically downgrade 
 If you wish, you can pin a specific version of a library to ensure a fair comparison.
 
 **WARNING: We suggest to run quick-check right after a fresh commit, rebuilding/restarting
-the server first. Uncommitted changes are not flagged, though they are taken into account as soon as the server is restarted using `server-for-tools`;; another run of the same
-commit replaces its saved run. Copy any run you want to keep into
+the server first. Uncommitted changes are not flagged, though they are taken into account as soon as the server is restarted using `server-for-tools`. Runs rotate under
+the retention rules below. Copy any run you want to keep into
 `output/saved_local_runs/` before running again.**
 
-A subset run also replaces the previous same-commit report; results from separate
-invocations are not merged.
+A subset run follows the same retention rules as a full run; results from
+separate invocations are not merged. A passing run replaces previous same-commit
+reports, but a failed or interrupted run preserves a same-commit passing baseline.
 
 ## Results
 
@@ -80,17 +81,31 @@ Runs are saved under `.tools/quick-check/output/`:
 All selected cells share these three files and one retention queue, directly under
 `output/`.
 
+The terminal prints each executed cell's compact summary after all its repetitions
+and evidence collection finish, then the overall verdict at the end. These writes
+are outside measured workload intervals, never between repetitions or on the
+token/phase path. Skipped cells remain `NOT_RUN` in the saved report.
+
+Ctrl+C or SIGTERM cancels active requests and attempts model cleanup (bounded to
+15 seconds), then saves the report as `INTERRUPTED`. Completed cells keep their
+results and timings; an incomplete cell retains partial evidence but has no valid
+aggregate timing. Unstarted cells stay `NOT_RUN`. A later invocation starts a new
+run; it does not resume or merge the interrupted run. Forced termination such as
+SIGKILL cannot perform this finalization.
+
 Those files can be useful to feed a harness and investigate reasons for slowdowns or regressions, alongside the bigger reliability tools.
 
 All of `output/` is Git-ignored. Up to three distinct runs are retained:
 
-- `new-<commit>`: fresh run, release or not.
-- `release-<tag>`: most recent older release, excluding the fresh hash.
-- `old-<commit>`: newest remaining older run, release or not.
+- `new-<commit>`: fresh run, including `FAIL` or `INTERRUPTED`.
+- `release-<tag>`: most recent previous passing release.
+- `old-<commit>`: newest remaining previous passing run, release or not.
 
 A fresh release preserves the older release baseline until a later run advances
-the queue. Same-hash runs replace rather than duplicate that hash. Local archives
-under `output/saved_local_runs/` remain outside retention.
+the queue. Only passing runs can advance either baseline. Failed or interrupted
+reruns preserve passing baselines even at the same commit. The next run replaces
+the previous failed/interrupted `new` report: this queue is not a failure archive.
+Local archives under `output/saved_local_runs/` remain outside retention.
 
 
 ## Compare

@@ -70,7 +70,7 @@ func savedRuns(parent string) ([]storedRun, error) {
 			return nil, err
 		}
 		var r matrixReport
-		if json.Unmarshal(data, &r) != nil || (r.Status != "PASS" && r.Status != "FAIL") {
+		if json.Unmarshal(data, &r) != nil || (r.Status != "PASS" && r.Status != "FAIL" && r.Status != "INTERRUPTED") {
 			continue
 		}
 		if len(r.Cells) == 0 {
@@ -219,8 +219,10 @@ func recordReleaseComparison(parent, baselineTag, candidateTag string, a, b matr
 	return os.Rename(f.Name(), path)
 }
 
-// Keep three distinct runs: fresh, most recent older release, and newest remaining
-// older commit. A fresh release only becomes the release baseline on a later run.
+// Keep the fresh candidate, the most recent previous PASS release, and the newest
+// remaining PASS commit. Only a PASS candidate replaces baselines of its commit;
+// failed/interrupted candidates preserve them. Baseline commits stay distinct.
+// A fresh release only becomes the release baseline on a later run.
 func retainRuns(ctx context.Context, parent, current string, tags map[string]string) (string, error) {
 	runs, err := savedRuns(parent)
 	if err != nil {
@@ -231,7 +233,7 @@ func retainRuns(ctx context.Context, parent, current string, tags map[string]str
 	for _, run := range runs {
 		if run.path == current {
 			candidate = run
-		} else {
+		} else if run.report.Status == "PASS" {
 			previous = append(previous, run)
 		}
 	}
@@ -240,7 +242,7 @@ func retainRuns(ctx context.Context, parent, current string, tags map[string]str
 	}
 	var release, older storedRun
 	for _, run := range previous {
-		if candidate.report.serverVersion() != "unknown" && run.report.serverVersion() == candidate.report.serverVersion() {
+		if candidate.report.Status == "PASS" && candidate.report.serverVersion() != "unknown" && run.report.serverVersion() == candidate.report.serverVersion() {
 			continue
 		}
 		if tags[run.report.ServerRevision] != "" || strings.HasPrefix(filepath.Base(run.path), "release-") {
@@ -250,7 +252,7 @@ func retainRuns(ctx context.Context, parent, current string, tags map[string]str
 	}
 	for _, run := range previous {
 		version := run.report.serverVersion()
-		if (version != "unknown" && version == candidate.report.serverVersion()) || run.path == release.path || (version != "unknown" && version == release.report.serverVersion()) {
+		if (candidate.report.Status == "PASS" && version != "unknown" && version == candidate.report.serverVersion()) || run.path == release.path || (version != "unknown" && version == release.report.serverVersion()) {
 			continue
 		}
 		older = run

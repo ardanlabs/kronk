@@ -75,7 +75,7 @@ func readComparison(dir string) (matrixInput, error) {
 		return input, fmt.Errorf("expected one matrix diagnostic report; rerun quick-check")
 	}
 	s := input.summary
-	if (s.Status != "PASS" && s.Status != "FAIL") || len(s.Cells) != len(r.Cells) {
+	if (s.Status != "PASS" && s.Status != "FAIL" && s.Status != "INTERRUPTED") || len(s.Cells) != len(r.Cells) {
 		return input, fmt.Errorf("missing matrix status/cells or summary and diagnostics disagree")
 	}
 	if _, err := time.Parse(time.RFC3339Nano, s.TestStartedAt); err != nil {

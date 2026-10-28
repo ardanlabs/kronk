@@ -409,19 +409,6 @@ func run(o options) (runErr error) {
 	if err != nil {
 		return err
 	}
-	committed := false
-	defer func() {
-		if ctx.Err() != nil && !committed {
-			err := os.RemoveAll(dir)
-			runErr = errors.Join(runErr, ctx.Err(), err)
-			reported = true
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Quick-check interrupted; could not remove unfinished output %s: %v\n", dir, err)
-			} else {
-				fmt.Fprintln(os.Stderr, "Quick-check interrupted; unfinished output removed; previous runs retained.")
-			}
-		}
-	}()
 	events, err := os.Create(filepath.Join(dir, "events.ndjson"))
 	if err != nil {
 		return err
@@ -446,10 +433,10 @@ func run(o options) (runErr error) {
 	}
 	c := &client{ctx: ctx, host: strings.TrimRight(o.host, "/"), token: os.Getenv("KRONK_TOKEN"), timeout: o.timeout, traces: make(map[string]string), events: json.NewEncoder(events), eventMu: new(sync.Mutex)}
 	defer func() {
-		if ctx.Err() != nil {
-			return // The interruption cleanup removes this incomplete run.
-		}
-		tags, tagErr := releaseTags(ctx)
+		// Save interrupted work independently of the cancelled request context.
+		// releaseTags bounds its remote lookup with its own timeout.
+		finalCtx := context.Background()
+		tags, tagErr := releaseTags(finalCtx)
 		r.ReleaseTag = tags[r.ServerRevision]
 		for i := range r.Cells {
 			if r.Cells[i].Status != "NOT_RUN" {
@@ -467,6 +454,11 @@ func run(o options) (runErr error) {
 					r.Status = "FAIL"
 				}
 			}
+		}
+		if ctx.Err() != nil {
+			r.Status = "INTERRUPTED"
+			r.Findings = append(r.Findings, "run interrupted; remaining cells/repetitions were not run")
+			runErr = errors.Join(runErr, ctx.Err())
 		}
 		// Preserve full metadata, answers, counters, and execution evidence for
 		// investigation without expanding the summary consumed on every merge.
@@ -493,18 +485,17 @@ func run(o options) (runErr error) {
 		writeErr := errors.Join(evidenceErr, err, logErr, events.Close(), toolLog.Close())
 		runErr = errors.Join(runErr, writeErr)
 		if writeErr == nil && tagErr == nil {
-			finalDir, retentionErr := retainRuns(ctx, o.out, dir, tags)
+			finalDir, retentionErr := retainRuns(finalCtx, o.out, dir, tags)
 			dir = finalDir
 			runErr = errors.Join(runErr, retentionErr)
 			reported = retentionErr == nil
-			committed = retentionErr == nil
-			if ctx.Err() != nil && !committed {
-				return
-			}
 		} else {
 			fmt.Fprintln(os.Stderr, "Artifacts or release recognition could not be finalized; previous runs retained.")
 		}
-		fmt.Fprint(os.Stdout, r.logSummary())
+		fmt.Fprintln(os.Stdout, strings.SplitN(r.logSummary(), "\n", 2)[0])
+		if len(r.Findings) > 0 {
+			fmt.Fprintln(os.Stdout, "Details: summary.json (run findings)")
+		}
 		if r.Status != "PASS" {
 			runErr = errors.Join(runErr, fmt.Errorf("quick-check has findings; inspect %s", dir))
 		}
@@ -534,9 +525,13 @@ func run(o options) (runErr error) {
 	}
 	defer func() { runErr = errors.Join(runErr, finishGroup()) }()
 	var cellErrors error
+	headerPrinted := false
 	for i, cell := range matrixCells {
 		if !selected[cell.id] {
 			continue
+		}
+		if ctx.Err() != nil {
+			return errors.Join(cellErrors, ctx.Err())
 		}
 		o.images = cell.images
 		c.cell = cell.id
@@ -592,6 +587,15 @@ func run(o options) (runErr error) {
 			cr.Status = "FAIL"
 			cr.Findings = append(cr.Findings, err.Error())
 			cellErrors = errors.Join(cellErrors, fmt.Errorf("cell %s: %w", cell.id, err))
+		}
+		// Both concurrent requests and all repetitions have finished. Terminal
+		// output is outside measured intervals, never on the token/phase path.
+		if !headerPrinted {
+			fmt.Fprint(os.Stdout, strings.Join(strings.SplitN(r.logSummary(), "\n", 4)[1:3], "\n")+"\n")
+			headerPrinted = true
+		}
+		fmt.Fprint(os.Stdout, cr.logSummary())
+		if err != nil {
 			if ctx.Err() != nil {
 				return cellErrors
 			}
@@ -657,6 +661,11 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 	if _, err := serverLog.Seek(0, io.SeekEnd); err != nil {
 		return err
 	}
+	// Preserve available evidence on every exit, including failed warm-up and
+	// interruption before the workload starts. This runs after workload clocks stop.
+	defer func() {
+		runErr = errors.Join(runErr, collectEvidence(serverLog, info, o.serverLog, c, r))
+	}()
 	for _, path := range []string{"/v1/liveness", "/v1/kronk/libs", "/v1/devices"} {
 		var metadata any
 		if err := c.json("GET", path, nil, &metadata); err != nil {
@@ -735,8 +744,7 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 	r.SystemTokens, r.SystemSHA256 = tokens, fmt.Sprintf("%x", sha256.Sum256([]byte(system)))
 	log("workload=%s model=%s system_tokens=%d", r.Workload, c.model, tokens)
 	if r.TwoSlots {
-		runErr := runConcurrent(c, r, system, log)
-		return errors.Join(runErr, collectEvidence(serverLog, info, o.serverLog, c, r))
+		return runConcurrent(c, r, system, log)
 	}
 	a := conversation(system, "ORCHID-47", "Maren", "Northport")
 	b := conversation(system, "COBALT-83", "Tobin", "Southbank")
@@ -808,9 +816,7 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 		err = c.waitIdle()
 	}
 	r.WorkloadSeconds = time.Since(start).Seconds()
-	// Collect even after a workload failure; incomplete evidence never yields PASS.
-	logErr := collectEvidence(serverLog, info, o.serverLog, c, r)
-	return errors.Join(err, logErr)
+	return err
 }
 
 func (c *client) snapshot() (engine, error) {

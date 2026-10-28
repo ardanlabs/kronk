@@ -62,7 +62,7 @@ func TestQuickCheckCommand(t *testing.T) {
 	git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "--quiet", "-m", "release")
 	git("-c", "tag.gpgsign=false", "tag", "v1.0.0")
 	releaseRevision := git("rev-parse", "HEAD")
-	for _, defect := range []string{"", "release", "single-repetition", "all-cells", "all-cells-failure", "all-cells-owner-failure", "all-cells-cleanup-failure", "all-cells-server-change", "no-imc-config", "no-imc-reuse", "images-no-imc-no-encode", "mtp-off", "images-mtp-off", "mtp-off-drafts", "mtp-off-cancel-drafts", "mtp-off-no-restore", "no-drafts", "second-no-drafts", "no-cache", "wrong-cache-path", "missing-logs", "truncated-stream", "foreign-session", "two-slots", "cancel-internal-error", "cancel-without-ack", "cancel-without-cleanup", "missing-draft-restore", "actual-reuse-mismatch", "wrong-slot", "uncancelled-error", "dense-fixture", "missing-timing", "invalid-timing", "images", "images-system", "images-system-no-encode", "images-system-no-decode", "images-system-wrong-reuse", "images-system-no-restore", "images-no-encode", "images-no-decode", "images-reencode", "images-no-restore", "images-leak", "images-recovery-reuse", "images-recovery-leak", "dense", "images-dense", "dense-mtp-off", "images-dense-mtp-off", "dense-no-imc", "images-dense-no-imc", "dense-no-imc-mtp-off", "images-dense-no-imc-mtp-off", "dense-moe-fixture", "dense-unknown-fixture"} {
+	for _, defect := range []string{"", "release", "single-repetition", "all-cells", "all-cells-interrupt", "all-cells-failure", "all-cells-owner-failure", "all-cells-cleanup-failure", "all-cells-server-change", "no-imc-config", "no-imc-reuse", "images-no-imc-no-encode", "mtp-off", "images-mtp-off", "mtp-off-drafts", "mtp-off-cancel-drafts", "mtp-off-no-restore", "no-drafts", "second-no-drafts", "no-cache", "wrong-cache-path", "missing-logs", "truncated-stream", "foreign-session", "two-slots", "cancel-internal-error", "cancel-without-ack", "cancel-without-cleanup", "missing-draft-restore", "actual-reuse-mismatch", "wrong-slot", "uncancelled-error", "dense-fixture", "missing-timing", "invalid-timing", "images", "images-system", "images-system-no-encode", "images-system-no-decode", "images-system-wrong-reuse", "images-system-no-restore", "images-no-encode", "images-no-decode", "images-reencode", "images-no-restore", "images-leak", "images-recovery-reuse", "images-recovery-leak", "dense", "images-dense", "dense-mtp-off", "images-dense-mtp-off", "dense-no-imc", "images-dense-no-imc", "dense-no-imc-mtp-off", "images-dense-no-imc-mtp-off", "dense-moe-fixture", "dense-unknown-fixture"} {
 		t.Run(defect, func(t *testing.T) {
 			grouped := strings.HasPrefix(defect, "all-cells")
 			dense := strings.Contains(defect, "dense") && defect != "dense-fixture"
@@ -216,6 +216,27 @@ func TestQuickCheckCommand(t *testing.T) {
 					}
 					if phase == "cold" {
 						cancelStarted, cancelFinished = make(chan struct{}), make(chan struct{})
+					}
+					if grouped && images && phase == "cold" && repetition == 1 && !targetOnly && !noCache {
+						// The first cell's summary must already be visible while the
+						// next cell is running, not buffered until the invocation ends.
+						terminal, err := os.ReadFile(filepath.Join(root, "terminal.log"))
+						if err != nil || strings.Count(string(terminal), "Cell: "+matrixCells[0].id+" |") != 1 || strings.Contains(string(terminal), "Cell: "+matrixCells[1].id+" |") {
+							t.Error("cell summary was not streamed between completed cells", string(terminal), err)
+						}
+						if defect == "all-cells-interrupt" {
+							process, err := os.FindProcess(os.Getpid())
+							if err != nil {
+								t.Error(err)
+								return
+							}
+							if err := process.Signal(os.Interrupt); err != nil {
+								t.Error(err)
+								return
+							}
+							<-req.Context().Done()
+							return
+						}
 					}
 					loaded = true
 					calls++
@@ -555,6 +576,32 @@ func TestQuickCheckCommand(t *testing.T) {
 			if err := json.Unmarshal(data, &matrix); err != nil {
 				t.Fatal(err)
 			}
+			if defect == "all-cells-interrupt" {
+				if matrix.Status != "INTERRUPTED" || loaded || unloads != 1 {
+					t.Fatalf("interruption did not finalize/unload the partial matrix: %s", data)
+				}
+				var completed, interrupted runSummary
+				json.Unmarshal(matrix.Cells[0], &completed)
+				json.Unmarshal(matrix.Cells[1], &interrupted)
+				if completed.Status != "PASS" || completed.RepetitionsExecuted != requested || completed.Measurements["workload"]["elapsed_seconds"].Samples != requested || interrupted.Status != "FAIL" || interrupted.Measurements != nil {
+					t.Fatal("interruption lost completed cell measurements or fabricated partial timings", string(data))
+				}
+				for _, cell := range matrix.Cells[2:] {
+					if !bytes.Contains(cell, []byte(`"status": "NOT_RUN"`)) {
+						t.Fatal("interruption attempted a later cell", string(cell))
+					}
+				}
+				input, err := readComparison(filepath.Dir(paths[0]))
+				if err != nil {
+					t.Fatal("interrupted matrix is not readable", err)
+				}
+				compared := compareMatrices("baseline", "candidate", input, input)
+				index := slices.IndexFunc(compared.Cells, func(cell comparison) bool { return cell.Cell == matrixCells[0].id })
+				if compared.Status != "FAIL" || index < 0 || compared.Cells[index].Status != "PASS" || len(compared.Cells[index].Metrics) == 0 {
+					t.Fatal("interrupted run lost passing cell comparison or became overall PASS")
+				}
+				return
+			}
 			if defect == "all-cells-cleanup-failure" || defect == "all-cells-server-change" {
 				wantCalls := 1 + 6*requested + 4
 				if defect == "all-cells-server-change" {
@@ -743,8 +790,10 @@ func TestQuickCheckCommand(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if string(terminalData) != header+"\n" {
-				t.Fatalf("terminal must show only the log header, got: %s", terminalData)
+			if strings.Count(string(terminalData), "Cell: "+matrixCells[cellIndex].id+" |") != 1 ||
+				!strings.Contains(string(terminalData), "Quick-check: "+summary.Status+"\n") ||
+				strings.Contains(string(terminalData), "phase=") || strings.Contains(string(terminalData), "NOT_RUN") {
+				t.Fatalf("terminal must show one completed cell summary and final verdict, without phase progress: %s", terminalData)
 			}
 			if passing {
 				for _, required := range []string{"IMC/MTP: PASS", "Serial isolation: PASS", "Cancel/recovery: PASS", "Warm-up:", "Workload s [SD]", "Normalized s [SD]", "phase=recovery elapsed="} {
@@ -1040,13 +1089,13 @@ func TestRunRetention(t *testing.T) {
 	}{
 		{a, false, []int{0}},
 		{a, false, []int{1}}, // Replace the only candidate.
-		{b, false, []int{1, 2}},
-		{b, false, []int{1, 3}},
-		{b, false, []int{1, 4}}, // Repeated replacement preserves the baseline.
-		{a, false, []int{4, 5}}, // Returning to an older commit still promotes the last candidate.
-		{a, false, []int{4, 6}},
-		{"", false, []int{6, 7}},  // Unknown hashes cannot establish equality.
-		{b, true, []int{6, 7, 8}}, // Failed writes must not prune either result.
+		{b, false, []int{2}},
+		{b, false, []int{3}},
+		{b, false, []int{4}}, // Failed candidates never become baselines.
+		{a, false, []int{5}},
+		{a, false, []int{6}},
+		{"", false, []int{7}},
+		{b, true, []int{7, 8}}, // Failed writes must not prune the previous result.
 	} {
 		before, _ := filepath.Glob(filepath.Join(out, "20*"))
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -1468,6 +1517,7 @@ func TestQuickCheckInterrupt(t *testing.T) {
 		}
 		os.Exit(0)
 	}
+	releaseTestRepo(t)
 	for _, tc := range []struct {
 		name, phase string
 		signal      os.Signal
@@ -1483,8 +1533,11 @@ func TestQuickCheckInterrupt(t *testing.T) {
 				t.Fatal(err)
 			}
 			names := []string{"new-aaaaaaa", "old-bbbbbbb", "release-v1.0.0"}
-			for _, name := range names {
-				if err := os.Rename(writeComparisonFixture(t, comparisonFixture([]float64{1, 4, 10})), filepath.Join(out, name)); err != nil {
+			for i, name := range names {
+				r := comparisonFixture([]float64{1, 4, 10})
+				r.ServerRevision = strings.Repeat(string(rune('a'+i)), 40)
+				r.TestStartedAt = time.Date(2026, 10, 22, 0, 0, 3-i, 0, time.UTC).Format(time.RFC3339Nano)
+				if err := os.Rename(writeComparisonFixture(t, r), filepath.Join(out, name)); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -1549,7 +1602,7 @@ func TestQuickCheckInterrupt(t *testing.T) {
 			if err := cmd.Process.Signal(tc.signal); err != nil {
 				t.Fatal(err)
 			}
-			if err := cmd.Wait(); err == nil || ctx.Err() != nil || !strings.Contains(output.String(), "Quick-check interrupted; unfinished output removed; previous runs retained.") || strings.Contains(output.String(), "Quick-check: PASS") {
+			if err := cmd.Wait(); err == nil || ctx.Err() != nil || !strings.Contains(output.String(), "Quick-check: INTERRUPTED") || strings.Contains(output.String(), "Quick-check: PASS") {
 				t.Fatalf("interruption was not handled cleanly: %v\n%s", err, output.String())
 			}
 			select {
@@ -1568,14 +1621,19 @@ func TestQuickCheckInterrupt(t *testing.T) {
 			for _, entry := range entries {
 				got = append(got, entry.Name())
 			}
+			names = []string{"new-unknown", "old-aaaaaaa", "release-v1.0.0"}
 			slices.Sort(names)
 			if !slices.Equal(got, names) {
-				t.Fatal("interruption changed saved runs or left a lock/partial output", got)
+				t.Fatal("interruption lost passing baselines or left a lock/unfinalized output", got)
 			}
 			for _, name := range names {
 				if _, err := readComparison(filepath.Join(out, name)); err != nil {
-					t.Fatal("interruption damaged a previous run", err)
+					t.Fatal("interruption left an unreadable report", name, err)
 				}
+			}
+			interrupted, err := readComparison(filepath.Join(out, "new-unknown"))
+			if err != nil || interrupted.summary.Status != "INTERRUPTED" || interrupted.summary.Cells[0].Status != "FAIL" || interrupted.summary.Cells[1].Status != "NOT_RUN" {
+				t.Fatal("interruption status or attempted/unrun cells lost", interrupted.summary, err)
 			}
 		})
 	}
