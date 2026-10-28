@@ -5,8 +5,7 @@ Models: **MoE** `unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL` and
 **Dense** `ornith-ai/Ornith-1.5-9B-Q8_0`, using the `QUICK-CHECK` aliases
 from `.tools/model_config_tools.yaml`, with **32,768 tokens per slot**.
 Both require their image projection files and contain embedded MTP;
-no separate Dense MTP file is needed. Dense cells await real-run qualification
-with the Q8_0 fixture.
+no separate Dense MTP file is needed.
 
 ## Run
 
@@ -31,8 +30,18 @@ slots are `1s` or `2s`, and each mode is `+` (on) or `-` (off).
 There are no group selectors or comma-separated lists. Selected cells run in
 matrix order, regardless of argument order. Images require the projection file.
 
-Dense Normalized values remain `n/a` until references are calibrated from real
-runs. Workload timings and correctness comparisons remain available.
+Dense Normalized values use per-cell Q8 references calibrated from the Chicha
+run `new-f87f7d4` (llama b11901). All reference constants are together at the top
+of [repetitions.go](repetitions.go). These are provisional for the familiar-word
+workload below: the calibration run used the earlier names. MoE references are
+unchanged; review both families against fresh runs of the new workload.
+
+Calibration uses rounded medians of completed-request effective input tokens
+(prompt minus actual reuse) and generation tokens (completion minus its first
+token), excluding warm-up and cancelled requests. Fifteen Dense cells have two
+samples; `Dense/2s/IMC-/MTP-/img+` has one complete measured sample with a
+content-only finding. Its FAIL verdict is unchanged; the unrun repetition is not
+a sample. Saved reports are never rewritten to use new references.
 
 One-slot image cells exercise image rebuild, replay, append, a different
 image/session, cancellation, and recovery with the original image. Two-slot cells
@@ -40,10 +49,49 @@ exercise overlapping conversations, peer cancellation, and same-slot recovery.
 Their image variants add a first image to text history, then another image to
 image history, and recover with text while the other conversation continues.
 
+Private facts use familiar words so the probe focuses on state handling rather
+than unusual spelling:
+
+| Fact | Conversation A | Conversation B |
+| --- | --- | --- |
+| Identifier | River | Mountain |
+| Owner | Alice | Bob |
+| Initial destination | Apple | Lemon |
+| Updated destination | Orange | Cherry (two-slot cells) |
+
+The cancellation-only identifier is Forest. Validation matches whole words
+(case-insensitive), accepting singular and ordinary plural forms such as
+giraffe/giraffes, Orange/Oranges, and Cherry/Cherries; deer is unchanged. The
+same matching applies to required and excluded markers, so plurals cannot hide
+foreign facts. Substrings such as riverbank still cannot satisfy River.
+Workloads are versioned as
+`operations-v4` (one slot) and `operations-concurrent-v3` (two slots). Results
+from earlier workloads are not code-only performance comparisons.
+
 ```sh
 # Optional settings (KRONK_TOKEN supplies authentication):
 make quick-check-this-code QUICK_CHECK_ARGS='-repetitions 3 -host http://localhost:11435 -server-log /path/to/kronk.log'
 ```
+
+### Findings
+
+Every finding still makes the cell and overall check **FAIL**. Categories describe
+the observed signal, not a proven cause or engine defect:
+
+| Category | Meaning | Execution behavior |
+| --- | --- | --- |
+| `CONTENT` | Missing/wrong required facts, repeating this conversation's old destination (even in a negation), or missing/disallowed animal descriptions. | Keep the finding and finish the remaining phases in that repetition; do not cancel a peer for this alone. |
+| `ISOLATION` | Another handover's private marker appears, including a cancellation-only marker in a different conversation. | Hard failure; stop the affected workload and cancel its active peer. |
+| `INFRASTRUCTURE` | Transport, completion, usage, cache/MTP, overlap, cancellation, cleanup, or required execution evidence fails. | Hard failure; stop when detected. Server-evidence checks run after the measured workload. |
+
+`summary.json` groups findings under `findings_by_category` in each repetition
+and phase. Phase `infrastructure_status` and `isolation_status`, and the terminal
+probe lines, separate execution/isolation evidence from content mismatches.
+Failed cells also print category counts. A content-only FAIL still suppresses
+aggregate timings, leaves later repetitions unrun, and follows failed-run retention;
+it is not silently downgraded to PASS or retried until successful.
+
+### Testing another revision
 
 Restart the server after configuration changes. To test another revision, preserve
 uncommitted work, then:

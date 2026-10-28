@@ -32,10 +32,10 @@ func TestAnswerHyphens(t *testing.T) {
 		{"ascii", "COBALT-83 belongs to Tobin in Westhaven.", ""},
 		{"hyphen", "COBALT\u201083 belongs to Tobin in Westhaven.", ""},
 		{"nonbreaking-hyphen", "COBALT\u201183 belongs to Tobin in Westhaven.", ""},
-		{"missing-hyphen", "COBALT83 belongs to Tobin in Westhaven.", "omitted handover fact"},
-		{"wrong-identifier", "COBALT\u201184 belongs to Tobin in Westhaven.", "omitted handover fact"},
-		{"foreign-hyphen", "COBALT-83 belongs to Tobin in Westhaven. ORCHID\u201047.", "leaked foreign handover fact"},
-		{"foreign-nonbreaking-hyphen", "COBALT-83 belongs to Tobin in Westhaven. ORCHID\u201147.", "leaked foreign handover fact"},
+		{"missing-hyphen", "COBALT83 belongs to Tobin in Westhaven.", "[CONTENT] answer omitted required fact"},
+		{"wrong-identifier", "COBALT\u201184 belongs to Tobin in Westhaven.", "[CONTENT] answer omitted required fact"},
+		{"foreign-hyphen", "COBALT-83 belongs to Tobin in Westhaven. ORCHID\u201047.", "[ISOLATION]"},
+		{"foreign-nonbreaking-hyphen", "COBALT-83 belongs to Tobin in Westhaven. ORCHID\u201147.", "[ISOLATION]"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := result{
@@ -43,13 +43,82 @@ func TestAnswerHyphens(t *testing.T) {
 				FinishReason: "stop",
 				Usage:        usage{PromptTokens: 10000, CompletionTokens: 20},
 			}
-			err := checkAnswer(r, []string{"COBALT-83", "Tobin", "Westhaven"}, []string{"ORCHID-47"}, true)
+			err := checkAnswer(r, answerFacts{required: []string{"COBALT-83", "Tobin", "Westhaven"}, foreign: []string{"ORCHID-47"}}, true)
 			if tc.wantErr == "" {
 				if err != nil {
 					t.Fatal(err)
 				}
 			} else if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 				t.Fatalf("expected %q, got %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestAnswerFacts(t *testing.T) {
+	for _, tc := range []struct {
+		name, content, wantErr string
+	}{
+		{"exact", "River belongs to Alice, destination Orange.", ""},
+		{"punctuation-case", "RIVER: Alice's destination is (ORANGE).", ""},
+		{"identifier-substring", "Riverbank belongs to Alice, destination Orange.", "[CONTENT] answer omitted required fact"},
+		{"destination-substring", "River belongs to Alice, destination Orangeade.", "[CONTENT] answer omitted required fact"},
+		{"unicode-boundary", "éRiver belongs to Alice, destination Orange.", "[CONTENT] answer omitted required fact"},
+		{"foreign-substring", "River belongs to Alice, destination Orange. A bobcat passed nearby.", ""},
+		{"foreign-identifier", "River belongs to Alice, destination Orange. Mountain.", "[ISOLATION]"},
+		{"foreign-owner", "River belongs to Alice, destination Orange. Bob.", "[ISOLATION]"},
+		{"missing-and-foreign", "Mountain belongs to Bob, destination Cherry.", "[ISOLATION]"},
+		{"old-destination", "River belongs to Alice, destination Orange, previously Apple.", "[CONTENT] answer repeated excluded fact"},
+		{"negated-old-destination", "River belongs to Alice, destination Orange, not Apple.", "[CONTENT] answer repeated excluded fact"},
+		{"cancelled-identifier", "River belongs to Alice, destination Orange. Forest.", "[ISOLATION]"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := result{Content: tc.content, FinishReason: "stop", Usage: usage{PromptTokens: 10000, CompletionTokens: 20}}
+			err := checkAnswer(r, answerFacts{required: []string{"River", "Alice", "Orange"}, foreign: []string{"Mountain", "Bob", "Lemon", "Cherry", "Forest"}, excluded: []string{"Apple"}}, true)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("expected %q, got %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestAnswerPlurals(t *testing.T) {
+	for _, tc := range []struct {
+		name, marker, content, category string
+	}{
+		{"giraffes", "giraffe", "Three GIRAFFES against a blue sky.", ""},
+		{"oranges", "Orange", "Oranges", ""},
+		{"cherries", "Cherry", "Cherries", ""},
+		{"deer", "deer", "Three deer.", ""},
+		{"suffix-substring", "giraffe", "giraffesque", "CONTENT"},
+		{"unicode-prefix", "giraffe", "égiraffes", "CONTENT"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := result{Content: tc.content, FinishReason: "stop", Usage: usage{PromptTokens: 10000, CompletionTokens: 20}}
+			err := checkAnswer(r, answerFacts{required: []string{tc.marker}}, true)
+			if tc.category == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || findingCategory(err.Error()) != tc.category {
+				t.Fatalf("want %s finding, got %v", tc.category, err)
+			}
+			// Plurals cannot bypass either kind of exclusion.
+			if tc.category == "" {
+				for _, facts := range []answerFacts{{foreign: []string{tc.marker}}, {excluded: []string{tc.marker}}} {
+					err := checkAnswer(r, facts, true)
+					want := "CONTENT"
+					if len(facts.foreign) > 0 {
+						want = "ISOLATION"
+					}
+					if err == nil || findingCategory(err.Error()) != want {
+						t.Fatalf("plural exclusion must produce %s, got %v", want, err)
+					}
+				}
 			}
 		})
 	}
@@ -62,7 +131,7 @@ func TestQuickCheckCommand(t *testing.T) {
 	git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "--quiet", "-m", "release")
 	git("-c", "tag.gpgsign=false", "tag", "v1.0.0")
 	releaseRevision := git("rev-parse", "HEAD")
-	for _, defect := range []string{"", "release", "single-repetition", "all-cells", "all-cells-interrupt", "all-cells-failure", "all-cells-owner-failure", "all-cells-cleanup-failure", "all-cells-server-change", "no-imc-config", "no-imc-reuse", "images-no-imc-no-encode", "mtp-off", "images-mtp-off", "mtp-off-drafts", "mtp-off-cancel-drafts", "mtp-off-no-restore", "no-drafts", "second-no-drafts", "no-cache", "wrong-cache-path", "missing-logs", "truncated-stream", "foreign-session", "two-slots", "cancel-internal-error", "cancel-without-ack", "cancel-without-cleanup", "missing-draft-restore", "actual-reuse-mismatch", "wrong-slot", "uncancelled-error", "dense-fixture", "missing-timing", "invalid-timing", "images", "images-system", "images-system-no-encode", "images-system-no-decode", "images-system-wrong-reuse", "images-system-no-restore", "images-no-encode", "images-no-decode", "images-reencode", "images-no-restore", "images-leak", "images-recovery-reuse", "images-recovery-leak", "dense", "images-dense", "dense-mtp-off", "images-dense-mtp-off", "dense-no-imc", "images-dense-no-imc", "dense-no-imc-mtp-off", "images-dense-no-imc-mtp-off", "dense-moe-fixture", "dense-unknown-fixture"} {
+	for _, defect := range []string{"", "release", "single-repetition", "all-cells", "all-cells-interrupt", "all-cells-failure", "all-cells-owner-failure", "all-cells-cleanup-failure", "all-cells-server-change", "no-imc-config", "no-imc-reuse", "images-no-imc-no-encode", "mtp-off", "images-mtp-off", "mtp-off-drafts", "mtp-off-cancel-drafts", "mtp-off-no-restore", "no-drafts", "second-no-drafts", "no-cache", "wrong-cache-path", "missing-logs", "truncated-stream", "foreign-session", "two-slots", "cancel-internal-error", "cancel-without-ack", "cancel-without-cleanup", "missing-draft-restore", "actual-reuse-mismatch", "wrong-slot", "uncancelled-error", "dense-fixture", "missing-timing", "invalid-timing", "images", "images-system", "images-system-no-encode", "images-system-no-decode", "images-system-wrong-reuse", "images-system-no-restore", "images-no-encode", "images-no-decode", "images-reencode", "images-no-restore", "images-leak", "images-recovery-reuse", "images-recovery-leak", "dense", "images-dense", "dense-mtp-off", "images-dense-mtp-off", "dense-no-imc", "images-dense-no-imc", "dense-no-imc-mtp-off", "images-dense-no-imc-mtp-off", "dense-moe-fixture", "dense-unknown-fixture", "content-append", "images-plural"} {
 		t.Run(defect, func(t *testing.T) {
 			grouped := strings.HasPrefix(defect, "all-cells")
 			dense := strings.Contains(defect, "dense") && defect != "dense-fixture"
@@ -70,7 +139,7 @@ func TestQuickCheckCommand(t *testing.T) {
 			targetOnly := strings.Contains(defect, "mtp-off")
 			noCache := strings.Contains(defect, "no-imc")
 			systemReuse := strings.HasPrefix(defect, "images-system") || defect == "images-mtp-off"
-			passing := defect == "" || defect == "release" || defect == "single-repetition" || defect == "all-cells" || defect == "images" || defect == "images-system" || defect == "images-recovery-reuse" || defect == "mtp-off" || defect == "images-mtp-off"
+			passing := defect == "" || defect == "release" || defect == "single-repetition" || defect == "all-cells" || defect == "images" || defect == "images-system" || defect == "images-recovery-reuse" || defect == "mtp-off" || defect == "images-mtp-off" || defect == "images-plural"
 			passing = passing || dense && defect != "dense-moe-fixture" && defect != "dense-unknown-fixture"
 			revision, tag := "0123456789abcdef0123456789abcdef01234567", ""
 			if defect == "release" {
@@ -240,7 +309,7 @@ func TestQuickCheckCommand(t *testing.T) {
 					}
 					loaded = true
 					calls++
-					if phase == "append" && (len(body.Messages) != 4 || !strings.Contains(body.Messages[2].Content.(string), "Maren")) {
+					if phase == "append" && (len(body.Messages) != 4 || !strings.Contains(body.Messages[2].Content.(string), "Alice")) {
 						t.Error("continuation did not preserve actual assistant response")
 					}
 					if images && phase != "warmup" {
@@ -435,18 +504,21 @@ func TestQuickCheckCommand(t *testing.T) {
 					if defect == "no-cache" {
 						cached = 0
 					}
-					text := "ORCHID-47 belongs to Maren, destination Northport. Queue checks and recovery require care."
+					text := "River belongs to Alice, destination Apple. Queue checks and recovery require care."
 					if phase == "append" {
-						text = "ORCHID-47 belongs to Maren, destination Eastmere. Check the queue before recovery."
+						text = "River belongs to Alice, destination Orange. Check the queue before recovery."
+						if defect == "content-append" {
+							text += " Not Apple."
+						}
 					}
 					if phase == "replay" {
-						text = "For orchid-47, MAREN should review the Northport queue. Wording may vary on replay."
+						text = "For river, ALICE should review the Apple queue. Wording may vary on replay."
 					}
 					if phase == "fresh-session" {
-						text = "COBALT-83 belongs to Tobin, destination Southbank. Review the pending work."
+						text = "Mountain belongs to Bob, destination Lemon. Review the pending work."
 						failedCell := !targetOnly && !noCache && ((defect == "all-cells-failure" || defect == "all-cells-cleanup-failure") && images || defect == "all-cells-owner-failure" && !images)
 						if defect == "foreign-session" || failedCell {
-							text += " Maren."
+							text += " Alice."
 						}
 					}
 					if images && phase != "warmup" {
@@ -459,6 +531,9 @@ func TestQuickCheckCommand(t *testing.T) {
 						}
 						if defect == "images-recovery-leak" && phase == "recovery" {
 							animal = "deer"
+						}
+						if defect == "images-plural" && animal == "giraffe" {
+							animal = "giraffes"
 						}
 						text += " The picture shows a " + animal + "."
 					}
@@ -761,6 +836,11 @@ func TestQuickCheckCommand(t *testing.T) {
 			if !passing && summary.Measurements != nil {
 				t.Fatalf("failed/partial run must not publish performance aggregates: %s", data)
 			}
+			if defect == "content-append" || defect == "images-leak" || defect == "images-recovery-leak" {
+				if len(summary.Repetitions[0].Results) != 6 || calls != 7 || !bytes.Contains(data, []byte(`"CONTENT": [`)) {
+					t.Fatalf("content finding must retain FAIL and finish cancellation/recovery: %s", data)
+				}
+			}
 			previous := -1
 			for _, key := range []string{"machine", "server_version", "server_build", "installed_library", "model", "repetitions_requested", "repetitions"} {
 				position := strings.Index(string(data), "\""+key+"\":")
@@ -895,13 +975,13 @@ func TestQuickCheckCommand(t *testing.T) {
 				t.Fatalf("repetition diagnostics lost: %+v", diagnostic)
 			}
 			if dense && passing {
-				if summary.ReferenceTokens != (normalizationReference{}) || summary.Measurements["workload"]["reference_seconds"].Samples != 0 || !strings.HasPrefix(diagnostic.cell(), "Dense / ") {
+				if summary.ReferenceTokens != denseReferenceTokens(images, noCache, targetOnly, false) || summary.Measurements["workload"]["reference_seconds"].Samples != requested || !strings.HasPrefix(diagnostic.cell(), "Dense / ") {
 					t.Fatal("Dense report borrowed MoE identity/calibration", string(data))
 				}
 				dir := filepath.Dir(paths[0])
 				var comparison bytes.Buffer
-				if err := compareCommand([]string{"-baseline", dir, "-candidate", dir, "-out", t.TempDir()}, &comparison); err != nil || !strings.Contains(comparison.String(), "Dense normalization reference is uncalibrated") {
-					t.Fatal("uncalibrated Dense artifacts must remain comparable with a warning", err, comparison.String())
+				if err := compareCommand([]string{"-baseline", dir, "-candidate", dir, "-out", t.TempDir()}, &comparison); err != nil || strings.Contains(comparison.String(), "Dense normalization reference is uncalibrated") {
+					t.Fatal("calibrated Dense artifacts must compare without an uncalibrated warning", err, comparison.String())
 				}
 			}
 			if passing {

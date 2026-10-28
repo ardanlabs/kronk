@@ -17,10 +17,10 @@ func runConcurrent(c *client, r *report, system string, log func(string, ...any)
 	base.ctx = ctx
 	start := time.Now()
 	defer func() { r.WorkloadSeconds = time.Since(start).Seconds() }()
-	perform := func(client *client, phase string, messages []message, expected, forbidden []string, interrupted bool) result {
+	perform := func(client *client, phase string, messages []message, facts answerFacts, interrupted bool) result {
 		res, err := client.chat(phase, messages, 768, interrupted)
 		if err == nil && !interrupted {
-			err = checkAnswer(res, expected, forbidden, r.TargetOnly)
+			err = checkAnswer(res, facts, r.TargetOnly)
 		}
 		if err != nil {
 			res.Error = err.Error()
@@ -33,7 +33,11 @@ func runConcurrent(c *client, r *report, system string, log func(string, ...any)
 			r.Results = append(r.Results, res)
 			log("phase=%s elapsed=%.3fs first_content=%.3fs prompt=%d cached=%d output=%d drafts=%d error=%s", res.Phase, res.Elapsed, res.FirstContent, res.Usage.PromptTokens, res.Usage.PromptTokensDetails.CachedTokens, res.Usage.CompletionTokens, res.Usage.DraftTokens, res.Error)
 			if res.Error != "" {
-				err = errors.Join(err, fmt.Errorf("%s: %s", res.Phase, res.Error))
+				if findingCategory(res.Error) == "CONTENT" {
+					r.Findings = append(r.Findings, res.Phase+": "+res.Error)
+				} else {
+					err = errors.Join(err, fmt.Errorf("%s: %s", res.Phase, res.Error))
+				}
 			}
 		}
 		return err
@@ -41,9 +45,9 @@ func runConcurrent(c *client, r *report, system string, log func(string, ...any)
 	continueChat := func(history []message, answer result, question message) []message {
 		return append(append([]message{}, history...), message{Role: "assistant", Content: answer.Content}, question)
 	}
-	a := conversation(system, "ORCHID-47", "Maren", "Northport")
-	b := conversation(system, "COBALT-83", "Tobin", "Southbank")
-	bFacts := []string{"COBALT-83", "Tobin", "Southbank"}
+	a := conversation(system, "River", "Alice", "Apple")
+	b := conversation(system, "Mountain", "Bob", "Lemon")
+	bFacts := []string{"Mountain", "Bob", "Lemon"}
 	if r.Images {
 		var err error
 		b, err = picturedConversation(b, "giraffe.jpg")
@@ -52,21 +56,21 @@ func runConcurrent(c *client, r *report, system string, log func(string, ...any)
 		}
 		bFacts = append(bFacts, "giraffe")
 	}
-	cold := perform(&base, "cold", a, []string{"ORCHID-47", "Maren", "Northport"}, []string{"COBALT-83", "Tobin"}, false)
+	cold := perform(&base, "cold", a, answerFacts{required: []string{"River", "Alice", "Apple"}, foreign: []string{"Mountain", "Bob"}}, false)
 	if err := save(cold); err != nil {
 		return err
 	}
-	if err := save(perform(&base, "replay", a, []string{"ORCHID-47", "Maren", "Northport"}, []string{"COBALT-83", "Tobin"}, false)); err != nil {
+	if err := save(perform(&base, "replay", a, answerFacts{required: []string{"River", "Alice", "Apple"}, foreign: []string{"Mountain", "Bob"}}, false)); err != nil {
 		return err
 	}
-	fresh := perform(&base, "fresh-session", b, bFacts, []string{"ORCHID-47", "Maren", "Northport"}, false)
+	fresh := perform(&base, "fresh-session", b, answerFacts{required: bFacts, foreign: []string{"River", "Alice", "Apple"}}, false)
 	if err := save(fresh); err != nil {
 		return err
 	}
-	aQuestion := message{Role: "user", Content: "Change the destination to Eastmere; keep the identifier and owner unchanged. Review the updated handover using between 60 and 80 words in total, including its current facts. Do not repeat the previous destination."}
-	bQuestion := message{Role: "user", Content: "Change the destination to Westhaven; keep the identifier and owner unchanged. Review the updated handover using between 60 and 80 words in total, including its current facts. Do not repeat the previous destination."}
-	aFacts, bFacts := []string{"ORCHID-47", "Maren", "Eastmere"}, []string{"COBALT-83", "Tobin", "Westhaven"}
-	aForeign, bForeign := []string{"Northport", "COBALT-83", "Tobin", "Westhaven"}, []string{"Southbank", "ORCHID-47", "Maren", "Eastmere"}
+	aQuestion := message{Role: "user", Content: "Change the destination to Orange; keep the identifier and owner unchanged. Review the updated handover using between 60 and 80 words in total, including its current facts. Do not repeat the previous destination."}
+	bQuestion := message{Role: "user", Content: "Change the destination to Cherry; keep the identifier and owner unchanged. Review the updated handover using between 60 and 80 words in total, including its current facts. Do not repeat the previous destination."}
+	aChecks := answerFacts{required: []string{"River", "Alice", "Orange"}, foreign: []string{"Mountain", "Bob", "Cherry"}, excluded: []string{"Apple"}}
+	bChecks := answerFacts{required: []string{"Mountain", "Bob", "Cherry"}, foreign: []string{"River", "Alice", "Orange"}, excluded: []string{"Lemon"}}
 	if r.Images {
 		var err error
 		aQuestion, err = picturedMessage(aQuestion.Content.(string)+" Also identify the animal in this first attached picture.", "giraffe.jpg")
@@ -77,22 +81,22 @@ func runConcurrent(c *client, r *report, system string, log func(string, ...any)
 		if err != nil {
 			return err
 		}
-		aFacts, bFacts = append(aFacts, "giraffe"), append(bFacts, "deer")
-		aForeign, bForeign = append(aForeign, "deer"), append(bForeign, "giraffe")
+		aChecks.required, bChecks.required = append(aChecks.required, "giraffe"), append(bChecks.required, "deer")
+		aChecks.excluded, bChecks.excluded = append(aChecks.excluded, "deer"), append(bChecks.excluded, "giraffe")
 	}
 	a = continueChat(a, cold, aQuestion)
 	b = continueChat(b, fresh, bQuestion)
 	var appended, peer result
 	var pair sync.WaitGroup
 	pair.Go(func() {
-		appended = perform(&base, "append", a, aFacts, aForeign, false)
-		if appended.Error != "" {
+		appended = perform(&base, "append", a, aChecks, false)
+		if appended.Error != "" && findingCategory(appended.Error) != "CONTENT" {
 			cancel()
 		}
 	})
 	pair.Go(func() {
-		peer = perform(&base, "peer-append", b, bFacts, bForeign, false)
-		if peer.Error != "" {
+		peer = perform(&base, "peer-append", b, bChecks, false)
+		if peer.Error != "" && findingCategory(peer.Error) != "CONTENT" {
 			cancel()
 		}
 	})
@@ -119,15 +123,15 @@ func runConcurrent(c *client, r *report, system string, log func(string, ...any)
 		}
 	}
 	a = continueChat(a, appended, message{Role: "user", Content: "Review this updated handover in about 180 words. Preserve its current identifier, owner and destination, and any pictured animal. Explain queue checks, safe interruption, cache reuse and recovery."})
-	b = continueChat(b, peer, message{Role: "user", Content: "For interrupted handover INTERRUPTED-91, write a long recovery checklist, repeating its identifier in every paragraph."})
+	b = continueChat(b, peer, message{Role: "user", Content: "For interrupted handover Forest, write a long recovery checklist, repeating its identifier in every paragraph."})
 	go func() {
-		res := perform(&survivorClient, "survivor", a, aFacts, aForeign, false)
-		if res.Error != "" {
+		res := perform(&survivorClient, "survivor", a, aChecks, false)
+		if res.Error != "" && findingCategory(res.Error) != "CONTENT" {
 			cancel()
 		}
 		survivorDone <- res
 	}()
-	interrupted := perform(&cancelClient, "cancel", b, nil, nil, true)
+	interrupted := perform(&cancelClient, "cancel", b, answerFacts{}, true)
 	var recovered result
 	var err error
 	if interrupted.Error != "" {
@@ -139,10 +143,10 @@ func runConcurrent(c *client, r *report, system string, log func(string, ...any)
 		err = base.waitPeerIdle()
 		r.CancelReleaseSeconds = time.Since(released).Seconds()
 		if err == nil {
-			recovered = perform(&base, "recovery", conversation(system, "ORCHID-47", "Maren", "Northport"), []string{"ORCHID-47", "Maren", "Northport"}, []string{"COBALT-83", "Tobin", "Westhaven", "Eastmere", "INTERRUPTED-91"}, false)
+			recovered = perform(&base, "recovery", conversation(system, "River", "Alice", "Apple"), answerFacts{required: []string{"River", "Alice", "Apple"}, foreign: []string{"Mountain", "Bob", "Cherry", "Forest"}, excluded: []string{"Orange"}}, false)
 		}
 	}
-	if err != nil || recovered.Error != "" {
+	if err != nil || (recovered.Error != "" && findingCategory(recovered.Error) != "CONTENT") {
 		cancel()
 	}
 	survivor := <-survivorDone // Always join before evidence extraction or unload.

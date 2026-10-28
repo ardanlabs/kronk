@@ -39,11 +39,92 @@ const (
 	moe2SlotNoIMCTextMTPOffGenerationTokens   = 1595
 	moe2SlotNoIMCImagesMTPOffInputTokens      = 74388
 	moe2SlotNoIMCImagesMTPOffGenerationTokens = 1613
+
+	// Dense Q8: provisional operations-v3 calibration from output/new-f87f7d4,
+	// pending a fresh familiar-word/names workload run. Each cell uses rounded
+	// medians of completed-request effective input and completion-minus-one;
+	// cancelled requests and warmup are excluded (same accounting as referenceTime).
+	dense1SlotIMCTextMTPOnInputTokens           = 10584
+	dense1SlotIMCTextMTPOnGenerationTokens      = 492
+	dense1SlotIMCImagesMTPOnInputTokens         = 11627
+	dense1SlotIMCImagesMTPOnGenerationTokens    = 560
+	dense1SlotIMCTextMTPOffInputTokens          = 10572
+	dense1SlotIMCTextMTPOffGenerationTokens     = 449
+	dense1SlotIMCImagesMTPOffInputTokens        = 11644
+	dense1SlotIMCImagesMTPOffGenerationTokens   = 645
+	dense1SlotNoIMCTextMTPOnInputTokens         = 51371
+	dense1SlotNoIMCTextMTPOnGenerationTokens    = 467
+	dense1SlotNoIMCImagesMTPOnInputTokens       = 53139
+	dense1SlotNoIMCImagesMTPOnGenerationTokens  = 592
+	dense1SlotNoIMCTextMTPOffInputTokens        = 51360
+	dense1SlotNoIMCTextMTPOffGenerationTokens   = 427
+	dense1SlotNoIMCImagesMTPOffInputTokens      = 53139
+	dense1SlotNoIMCImagesMTPOffGenerationTokens = 599
+	dense2SlotIMCTextMTPOnInputTokens           = 10904
+	dense2SlotIMCTextMTPOnGenerationTokens      = 768
+	dense2SlotIMCImagesMTPOnInputTokens         = 12000
+	dense2SlotIMCImagesMTPOnGenerationTokens    = 869
+	dense2SlotIMCTextMTPOffInputTokens          = 10887
+	dense2SlotIMCTextMTPOffGenerationTokens     = 745
+	dense2SlotIMCImagesMTPOffInputTokens        = 11971
+	dense2SlotIMCImagesMTPOffGenerationTokens   = 834
+	dense2SlotNoIMCTextMTPOnInputTokens         = 72340
+	dense2SlotNoIMCTextMTPOnGenerationTokens    = 830
+	dense2SlotNoIMCImagesMTPOnInputTokens       = 74103
+	dense2SlotNoIMCImagesMTPOnGenerationTokens  = 860
+	dense2SlotNoIMCTextMTPOffInputTokens        = 72319
+	dense2SlotNoIMCTextMTPOffGenerationTokens   = 736
+	// One complete measured repetition: the sole finding was a stale Northport
+	// mention from this same conversation, not missing/failed execution evidence.
+	// The cell remains FAIL; its unrun second repetition is not a sample.
+	dense2SlotNoIMCImagesMTPOffInputTokens      = 74073
+	dense2SlotNoIMCImagesMTPOffGenerationTokens = 821
 )
 
 type normalizationReference struct {
 	InputTokens      int `json:"input_tokens"`
 	GenerationTokens int `json:"generation_tokens"`
+}
+
+func denseReferenceTokens(images, noCache, targetOnly, twoSlots bool) normalizationReference {
+	if twoSlots {
+		switch {
+		case noCache && images && targetOnly:
+			return normalizationReference{dense2SlotNoIMCImagesMTPOffInputTokens, dense2SlotNoIMCImagesMTPOffGenerationTokens}
+		case noCache && images:
+			return normalizationReference{dense2SlotNoIMCImagesMTPOnInputTokens, dense2SlotNoIMCImagesMTPOnGenerationTokens}
+		case noCache && targetOnly:
+			return normalizationReference{dense2SlotNoIMCTextMTPOffInputTokens, dense2SlotNoIMCTextMTPOffGenerationTokens}
+		case noCache:
+			return normalizationReference{dense2SlotNoIMCTextMTPOnInputTokens, dense2SlotNoIMCTextMTPOnGenerationTokens}
+		case images && targetOnly:
+			return normalizationReference{dense2SlotIMCImagesMTPOffInputTokens, dense2SlotIMCImagesMTPOffGenerationTokens}
+		case images:
+			return normalizationReference{dense2SlotIMCImagesMTPOnInputTokens, dense2SlotIMCImagesMTPOnGenerationTokens}
+		case targetOnly:
+			return normalizationReference{dense2SlotIMCTextMTPOffInputTokens, dense2SlotIMCTextMTPOffGenerationTokens}
+		default:
+			return normalizationReference{dense2SlotIMCTextMTPOnInputTokens, dense2SlotIMCTextMTPOnGenerationTokens}
+		}
+	}
+	switch {
+	case noCache && images && targetOnly:
+		return normalizationReference{dense1SlotNoIMCImagesMTPOffInputTokens, dense1SlotNoIMCImagesMTPOffGenerationTokens}
+	case noCache && images:
+		return normalizationReference{dense1SlotNoIMCImagesMTPOnInputTokens, dense1SlotNoIMCImagesMTPOnGenerationTokens}
+	case noCache && targetOnly:
+		return normalizationReference{dense1SlotNoIMCTextMTPOffInputTokens, dense1SlotNoIMCTextMTPOffGenerationTokens}
+	case noCache:
+		return normalizationReference{dense1SlotNoIMCTextMTPOnInputTokens, dense1SlotNoIMCTextMTPOnGenerationTokens}
+	case images && targetOnly:
+		return normalizationReference{dense1SlotIMCImagesMTPOffInputTokens, dense1SlotIMCImagesMTPOffGenerationTokens}
+	case images:
+		return normalizationReference{dense1SlotIMCImagesMTPOnInputTokens, dense1SlotIMCImagesMTPOnGenerationTokens}
+	case targetOnly:
+		return normalizationReference{dense1SlotIMCTextMTPOffInputTokens, dense1SlotIMCTextMTPOffGenerationTokens}
+	default:
+		return normalizationReference{dense1SlotIMCTextMTPOnInputTokens, dense1SlotIMCTextMTPOnGenerationTokens}
+	}
 }
 
 func referenceTokens(images, noCache, targetOnly, twoSlots bool) normalizationReference {
@@ -122,20 +203,22 @@ func (r report) referenceTime() (float64, bool) {
 }
 
 type repetitionSummary struct {
-	Repetition           int              `json:"repetition"`
-	Status               string           `json:"status"`
-	Findings             []string         `json:"findings"`
-	SystemTokens         int              `json:"system_tokens"`
-	SystemSHA256         string           `json:"system_sha256"`
-	WorkloadSeconds      float64          `json:"workload_seconds"`
-	CancelReleaseSeconds float64          `json:"cancel_release_seconds"`
-	Results              []map[string]any `json:"results"`
+	Repetition           int                 `json:"repetition"`
+	Status               string              `json:"status"`
+	Findings             []string            `json:"findings"`
+	FindingsByCategory   map[string][]string `json:"findings_by_category"`
+	SystemTokens         int                 `json:"system_tokens"`
+	SystemSHA256         string              `json:"system_sha256"`
+	WorkloadSeconds      float64             `json:"workload_seconds"`
+	CancelReleaseSeconds float64             `json:"cancel_release_seconds"`
+	Results              []map[string]any    `json:"results"`
 }
 
 func (r report) repetitionSummary(index int) repetitionSummary {
 	summary := repetitionSummary{
 		Repetition: index, Status: r.Status, Findings: append([]string{}, r.Findings...),
-		SystemTokens: r.SystemTokens, SystemSHA256: r.SystemSHA256, WorkloadSeconds: r.WorkloadSeconds,
+		FindingsByCategory: classifyFindings(r.Findings),
+		SystemTokens:       r.SystemTokens, SystemSHA256: r.SystemSHA256, WorkloadSeconds: r.WorkloadSeconds,
 		CancelReleaseSeconds: r.CancelReleaseSeconds, Results: []map[string]any{},
 	}
 	for _, res := range r.Results {

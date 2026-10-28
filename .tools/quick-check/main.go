@@ -187,8 +187,10 @@ func (r report) cell() string {
 func (r report) phaseSummary(res result) map[string]any {
 	findings := []string{}
 	for _, finding := range r.Findings {
-		if text, ok := strings.CutPrefix(finding, res.Phase+": "); ok {
-			findings = append(findings, text)
+		for line := range strings.SplitSeq(finding, "\n") {
+			if text, ok := strings.CutPrefix(line, res.Phase+": "); ok {
+				findings = append(findings, text)
+			}
 		}
 	}
 	if res.Error != "" && len(findings) == 0 {
@@ -198,6 +200,15 @@ func (r report) phaseSummary(res result) map[string]any {
 	if r.evidenceValidated {
 		status = "PASS"
 	}
+	classified := classifyFindings(findings)
+	infrastructure := status
+	if len(classified["INFRASTRUCTURE"]) > 0 {
+		infrastructure = "FAIL"
+	}
+	isolation := infrastructure
+	if len(classified["ISOLATION"]) > 0 {
+		isolation = "FAIL"
+	}
 	if len(findings) > 0 {
 		status = "FAIL"
 	}
@@ -206,6 +217,9 @@ func (r report) phaseSummary(res result) map[string]any {
 		"phase":                 res.Phase,
 		"status":                status,
 		"findings":              findings,
+		"findings_by_category":  classified,
+		"infrastructure_status": infrastructure,
+		"isolation_status":      isolation,
 		"elapsed_seconds":       res.Elapsed,
 		"first_content_seconds": res.FirstContent,
 		"server_timings":        res.ServerTimings,
@@ -239,7 +253,7 @@ func (r report) phaseSummary(res result) map[string]any {
 
 // Probe verdicts summarize their complete phase checks, not a diagnosed cause.
 func (r report) logSummary() string {
-	verdict := func(names ...string) string {
+	verdict := func(statusKey string, names ...string) string {
 		status := "PASS"
 		if len(r.Repetitions) < r.RepetitionsRequested {
 			status = "UNVERIFIED"
@@ -261,7 +275,7 @@ func (r report) logSummary() string {
 					status = "UNVERIFIED"
 					continue
 				}
-				switch repetition.phaseSummary(res)["status"] {
+				switch repetition.phaseSummary(res)[statusKey] {
 				case "FAIL":
 					return "FAIL"
 				case "UNVERIFIED":
@@ -292,12 +306,12 @@ func (r report) logSummary() string {
 			reference = format(m)
 		}
 	}
-	cache := verdict(append([]string{"warmup"}, r.phases()...)...)
-	isolation := verdict("fresh-session", "recovery")
-	recovery := verdict("cancel", "recovery")
+	cache := verdict("infrastructure_status", append([]string{"warmup"}, r.phases()...)...)
+	isolation := verdict("isolation_status", "fresh-session", "recovery")
+	recovery := verdict("infrastructure_status", "cancel", "recovery")
 	isolationLabel := "Serial isolation"
 	if r.TwoSlots {
-		isolation = verdict("append", "peer-append", "survivor", "cancel", "recovery")
+		isolation = verdict("isolation_status", "append", "peer-append", "survivor", "cancel", "recovery")
 		isolationLabel = "Concurrent isolation"
 	}
 	var b strings.Builder
@@ -306,13 +320,30 @@ func (r report) logSummary() string {
 	fmt.Fprintf(&b, "  Workload s [SD]: %s | Normalized s [SD]: %s\n", workload, reference)
 	fmt.Fprintf(&b, "IMC/MTP: %s | %s: %s | Cancel/recovery: %s", cache, isolationLabel, isolation, recovery)
 	if r.Images {
-		fmt.Fprintf(&b, " | Images: %s\n", verdict(r.phases()...))
+		fmt.Fprintf(&b, " | Images: %s\n", verdict("infrastructure_status", r.phases()...))
 	} else {
 		fmt.Fprintln(&b)
 	}
 	if r.Status != "PASS" {
-		fmt.Fprintln(&b, "Details: summary.json (fix setup/evidence failures before deeper inference checks)")
-		if r.Images {
+		counts := map[string]int{}
+		for _, repetition := range r.Repetitions {
+			for category, findings := range classifyFindings(repetition.Findings) {
+				counts[category] += len(findings)
+			}
+		}
+		for _, finding := range r.Findings {
+			// Repetition findings and their failure summaries are already covered;
+			// group cleanup and other cell-level failures are not.
+			if len(r.Repetitions) > 0 && strings.HasPrefix(finding, "repetition ") {
+				continue
+			}
+			for category, findings := range classifyFindings([]string{finding}) {
+				counts[category] += len(findings)
+			}
+		}
+		fmt.Fprintf(&b, "Findings: CONTENT=%d | ISOLATION=%d | INFRASTRUCTURE=%d\n", counts["CONTENT"], counts["ISOLATION"], counts["INFRASTRUCTURE"])
+		fmt.Fprintln(&b, "Details: summary.json (classified findings are signals, not diagnosed engine defects)")
+		if r.Images && counts["INFRASTRUCTURE"] > 0 {
 			fmt.Fprintln(&b, "Images -> make test-load-media-correctness")
 		}
 		if cache == "FAIL" {
@@ -560,10 +591,10 @@ func run(o options) (runErr error) {
 		*cr = report{ID: cell.id, Status: "FAIL", Workload: workloadVersion, Model: c.model, Images: cell.images, TargetOnly: cell.targetOnly, NoCache: cell.noCache, TwoSlots: cell.twoSlots, Host: o.host, ServerCommitTime: "unknown", TestStartedAt: r.TestStartedAt, RepetitionsRequested: o.repetitions, HarnessRevision: harnessRevision, ReferenceTokens: referenceTokens(cell.images, cell.noCache, cell.targetOnly, cell.twoSlots)}
 		if cr.isDense() {
 			// Calibrate against the chosen Dense fixture, never MoE token volumes.
-			cr.ReferenceTokens = normalizationReference{}
+			cr.ReferenceTokens = denseReferenceTokens(cell.images, cell.noCache, cell.targetOnly, cell.twoSlots)
 		}
 		if cr.TwoSlots {
-			cr.Workload = "operations-concurrent-v2"
+			cr.Workload = "operations-concurrent-v3"
 		}
 		var err error
 		if group == nil {
@@ -746,8 +777,8 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 	if r.TwoSlots {
 		return runConcurrent(c, r, system, log)
 	}
-	a := conversation(system, "ORCHID-47", "Maren", "Northport")
-	b := conversation(system, "COBALT-83", "Tobin", "Southbank")
+	a := conversation(system, "River", "Alice", "Apple")
+	b := conversation(system, "Mountain", "Bob", "Lemon")
 	if o.images {
 		a, err = picturedConversation(a, "giraffe.jpg")
 		if err != nil {
@@ -759,47 +790,51 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 		}
 	}
 	start := time.Now()
-	perform := func(phase string, messages []message, expected, forbidden []string, cancelled bool) (result, error) {
+	perform := func(phase string, messages []message, facts answerFacts, cancelled bool) (result, error) {
 		if o.images {
 			animal, foreign := "giraffe", "deer"
 			if phase == "fresh-session" || phase == "cancel" {
 				animal, foreign = foreign, animal
 			}
-			expected = append(expected, animal)
-			forbidden = append(forbidden, foreign)
+			facts.required = append(facts.required, animal)
+			facts.excluded = append(facts.excluded, foreign)
 		}
 		res, err := c.chat(phase, messages, 384, cancelled)
 		if err == nil && !cancelled {
-			err = checkAnswer(res, expected, forbidden, r.TargetOnly)
+			err = checkAnswer(res, facts, r.TargetOnly)
 		}
 		if err != nil {
 			res.Error = err.Error()
 			err = fmt.Errorf("%s: %w", phase, err)
+			if findingCategory(res.Error) == "CONTENT" {
+				r.Findings = append(r.Findings, err.Error())
+				err = nil // A completed content mismatch must not hide later probes.
+			}
 		}
 		r.Results = append(r.Results, res)
-		log("phase=%s elapsed=%.3fs first_content=%.3fs prompt=%d cached=%d output=%d drafts=%d error=%v", phase, res.Elapsed, res.FirstContent, res.Usage.PromptTokens, res.Usage.PromptTokensDetails.CachedTokens, res.Usage.CompletionTokens, res.Usage.DraftTokens, err)
+		log("phase=%s elapsed=%.3fs first_content=%.3fs prompt=%d cached=%d output=%d drafts=%d error=%s", phase, res.Elapsed, res.FirstContent, res.Usage.PromptTokens, res.Usage.PromptTokensDetails.CachedTokens, res.Usage.CompletionTokens, res.Usage.DraftTokens, res.Error)
 		return res, err
 	}
-	cold, err := perform("cold", a, []string{"ORCHID-47", "Maren", "Northport"}, nil, false)
+	cold, err := perform("cold", a, answerFacts{required: []string{"River", "Alice", "Apple"}}, false)
 	if err == nil {
-		_, err = perform("replay", a, []string{"ORCHID-47", "Maren", "Northport"}, nil, false)
+		_, err = perform("replay", a, answerFacts{required: []string{"River", "Alice", "Apple"}}, false)
 	}
 	if err == nil {
-		question := "Change the destination to Eastmere; keep the identifier and owner unchanged. Review the updated handover using between 60 and 80 words in total, including its current facts. Do not repeat the previous destination."
+		question := "Change the destination to Orange; keep the identifier and owner unchanged. Review the updated handover using between 60 and 80 words in total, including its current facts. Do not repeat the previous destination."
 		if o.images {
 			question += " Include the animal from the picture already in this conversation."
 		}
 		continued := append(append([]message{}, a...), message{Role: "assistant", Content: cold.Content}, message{Role: "user", Content: question})
-		_, err = perform("append", continued, []string{"ORCHID-47", "Maren", "Eastmere"}, []string{"Northport"}, false)
+		_, err = perform("append", continued, answerFacts{required: []string{"River", "Alice", "Orange"}, excluded: []string{"Apple"}}, false)
 	}
 	var fresh result
 	if err == nil {
-		fresh, err = perform("fresh-session", b, []string{"COBALT-83", "Tobin", "Southbank"}, []string{"ORCHID-47", "Maren", "Eastmere", "Northport"}, false)
+		fresh, err = perform("fresh-session", b, answerFacts{required: []string{"Mountain", "Bob", "Lemon"}, foreign: []string{"River", "Alice", "Orange", "Apple"}}, false)
 	}
 	if err == nil {
-		cancelMessages := append(append([]message{}, b...), message{Role: "assistant", Content: fresh.Content}, message{Role: "user", Content: "For interrupted handover INTERRUPTED-91, write a long recovery checklist, repeating its identifier in every paragraph."})
+		cancelMessages := append(append([]message{}, b...), message{Role: "assistant", Content: fresh.Content}, message{Role: "user", Content: "For interrupted handover Forest, write a long recovery checklist, repeating its identifier in every paragraph."})
 		var cancelled result
-		cancelled, err = perform("cancel", cancelMessages, nil, nil, true)
+		cancelled, err = perform("cancel", cancelMessages, answerFacts{}, true)
 		if err == nil && !cancelled.Cancelled {
 			err = fmt.Errorf("active cancellation was not observed")
 		}
@@ -809,7 +844,7 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 			r.CancelReleaseSeconds = time.Since(released).Seconds()
 		}
 		if err == nil {
-			_, err = perform("recovery", a, []string{"ORCHID-47", "Maren", "Northport"}, []string{"COBALT-83", "Tobin", "Southbank", "INTERRUPTED-91"}, false)
+			_, err = perform("recovery", a, answerFacts{required: []string{"River", "Alice", "Apple"}, foreign: []string{"Mountain", "Bob", "Lemon", "Forest"}}, false)
 		}
 	}
 	if err == nil {

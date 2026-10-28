@@ -23,7 +23,7 @@ func TestQuickCheckTwoSlots(t *testing.T) {
 			t.Run(cell.id, func(t *testing.T) { checkTwoSlotFixture(t, cell.id, "") })
 		}
 	}
-	for _, defect := range []string{"serialized", "wrong-recovery-slot", "no-survivor-progress", "system-only-media-append", "missing-cancel-ack", "foreign-session"} {
+	for _, defect := range []string{"serialized", "wrong-recovery-slot", "no-survivor-progress", "system-only-media-append", "missing-cancel-ack", "foreign-session", "content-append", "content-peer-append", "content-survivor", "content-recovery", "content-and-evidence", "plurals"} {
 		t.Run(defect, func(t *testing.T) { checkTwoSlotFixture(t, "MoE/2s/IMC+/MTP+/img+", defect) })
 	}
 	t.Run("uncached-reuse", func(t *testing.T) { checkTwoSlotFixture(t, "MoE/2s/IMC-/MTP+/img+", "uncached-reuse") })
@@ -32,6 +32,7 @@ func TestQuickCheckTwoSlots(t *testing.T) {
 
 func checkTwoSlotFixture(t *testing.T, selector, defect string) {
 	t.Helper()
+	passing := defect == "" || defect == "plurals"
 	images, noCache, targetOnly := strings.HasSuffix(selector, "img+"), strings.Contains(selector, "IMC-"), strings.Contains(selector, "MTP-")
 	denseModel := ""
 	if strings.HasPrefix(selector, "Dense/") {
@@ -118,7 +119,7 @@ func checkTwoSlotFixture(t *testing.T, selector, defect string) {
 			}
 		}
 		text, _ := json.Marshal(body.Messages)
-		isA := bytes.Contains(text, []byte("ORCHID-47"))
+		isA := bytes.Contains(text, []byte("River"))
 		phase, slot := "warmup", 7
 		mu.Lock()
 		model, loaded = body.Model, true
@@ -187,7 +188,7 @@ func checkTwoSlotFixture(t *testing.T, selector, defect string) {
 				kind, reason = "anchor", "media-prefix-text-replay"
 			}
 		}
-		if defect == "system-only-media-append" && phase == "append" {
+		if (defect == "system-only-media-append" || defect == "content-and-evidence") && phase == "append" {
 			kind, reason, reused = "append", "system-cache-prefix", 10000
 		}
 		if phase == "warmup" && !targetOnly {
@@ -241,25 +242,37 @@ func checkTwoSlotFixture(t *testing.T, selector, defect string) {
 			prefills.Done()
 			prefills.Wait()
 		}
-		answer := "ORCHID-47 Maren Northport"
+		answer := "River Alice Apple"
 		if !isA && phase != "warmup" {
-			answer = "COBALT-83 Tobin Southbank"
+			answer = "Mountain Bob Lemon"
 		}
 		if phase == "append" || phase == "survivor" {
-			answer = "ORCHID-47 Maren Eastmere"
+			answer = "River Alice Orange"
 		}
 		if phase == "peer-append" {
-			answer = "COBALT-83 Tobin Westhaven"
+			answer = "Mountain Bob Cherry"
 		}
 		if media {
 			animal := "giraffe"
 			if phase == "peer-append" || phase == "cancel" {
 				animal = "deer"
 			}
+			if defect == "plurals" && animal == "giraffe" {
+				animal = "giraffes"
+			}
 			answer += " " + animal
 		}
+		if defect == "content-"+phase || (defect == "content-and-evidence" && phase == "append") {
+			stale := "Apple"
+			if phase == "peer-append" {
+				stale = "Lemon"
+			} else if phase == "recovery" {
+				stale = "Orange"
+			}
+			answer += " Not " + stale + "."
+		}
 		if defect == "foreign-session" && phase == "peer-append" {
-			answer += " ORCHID-47"
+			answer += " River"
 		}
 		chunk := func(text string) {
 			fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"content\":%q}}]}\n\n", text)
@@ -312,7 +325,7 @@ func checkTwoSlotFixture(t *testing.T, selector, defect string) {
 	defer server.Close()
 	out := filepath.Join(root, "output")
 	err = run(options{host: server.URL, out: out, serverLog: logPath, timeout: 2 * time.Second, repetitions: 1, cells: []string{selector}})
-	if (err == nil) != (defect == "") {
+	if (err == nil) != passing {
 		t.Fatalf("selector=%s defect=%s: %v", selector, defect, err)
 	}
 	paths, _ := filepath.Glob(filepath.Join(out, "*", "summary.json"))
@@ -333,7 +346,7 @@ func checkTwoSlotFixture(t *testing.T, selector, defect string) {
 		"no-survivor-progress":     "continued content after peer cancellation",
 		"system-only-media-append": "required media-append/text-prefix-media-append",
 		"missing-cancel-ack":       "server terminal status must be cancel",
-		"foreign-session":          "answer leaked foreign handover fact",
+		"foreign-session":          "[ISOLATION]",
 		"uncached-reuse":           "IMC-off execution reported cache planning",
 		"target-only-drafts":       "target-only execution reported speculative activity",
 	}[defect]
@@ -346,20 +359,42 @@ func checkTwoSlotFixture(t *testing.T, selector, defect string) {
 		if wantFinding != "" && !strings.Contains(strings.Join(cell.Findings, "\n"), wantFinding) {
 			t.Fatalf("missing expected finding %q: %s", wantFinding, data)
 		}
-		if (cell.Status == "PASS") != (defect == "") || (defect == "" && (len(cell.Repetitions) != 1 || len(cell.Repetitions[0].Results) != 8 || cell.Measurements["workload"]["elapsed_seconds"].Median <= 0)) {
+		if (cell.Status == "PASS") != passing || (passing && (len(cell.Repetitions) != 1 || len(cell.Repetitions[0].Results) != 8 || cell.Measurements["workload"]["elapsed_seconds"].Median <= 0)) {
 			t.Fatalf("unexpected two-slot report: %s", data)
 		}
-		if defect == "" && denseModel == "" && cell.Measurements["workload"]["reference_seconds"].Median <= 0 {
+		if passing && cell.Measurements["workload"]["reference_seconds"].Median <= 0 {
 			t.Fatal("calibrated two-slot cell must publish Normalized", string(data))
 		}
-		if denseModel != "" && (cell.ReferenceTokens != (normalizationReference{}) || cell.Measurements["workload"]["reference_seconds"].Samples != 0) {
+		if denseModel != "" && cell.ReferenceTokens != denseReferenceTokens(images, noCache, targetOnly, true) {
 			t.Fatal("Dense cell borrowed MoE calibration", string(data))
+		}
+		if strings.HasPrefix(defect, "content-") {
+			if len(cell.Repetitions) != 1 || len(cell.Repetitions[0].Results) != 8 || cell.Measurements != nil {
+				t.Fatalf("content finding must finish all probes without publishing a passing aggregate: %s", data)
+			}
+			findings := cell.Repetitions[0].FindingsByCategory
+			if len(findings["CONTENT"]) != 1 || len(findings["ISOLATION"]) != 0 || (len(findings["INFRASTRUCTURE"]) > 0) != (defect == "content-and-evidence") {
+				t.Fatalf("content and infrastructure findings must remain distinct: %+v", findings)
+			}
+			for _, phase := range cell.Repetitions[0].Results {
+				if phase["phase"] == "cancel" || phase["phase"] == "recovery" && defect != "content-recovery" {
+					if phase["status"] != "PASS" {
+						t.Fatalf("content finding interfered with cancellation/recovery: %+v", phase)
+					}
+				}
+			}
+			if defect != "content-and-evidence" {
+				logs, err := os.ReadFile(filepath.Join(filepath.Dir(paths[0]), "tool.log"))
+				if err != nil || !bytes.Contains(logs, []byte("IMC/MTP: PASS | Concurrent isolation: PASS | Cancel/recovery: PASS | Images: PASS")) || !bytes.Contains(logs, []byte("Findings: CONTENT=1 | ISOLATION=0 | INFRASTRUCTURE=0")) {
+					t.Fatalf("content finding must not be reported as an infrastructure failure: %v\n%s", err, logs)
+				}
+			}
 		}
 	}
 	if executed != 1 || len(summary.Cells) != len(matrixCells) {
 		t.Fatalf("expected one selected cell and remaining NOT_RUN entries: %s", data)
 	}
-	if defect == "" {
+	if passing {
 		var comparison bytes.Buffer
 		dir := filepath.Dir(paths[0])
 		if err := compareCommand([]string{"-baseline", dir, "-candidate", dir, "-out", t.TempDir()}, &comparison); err != nil {

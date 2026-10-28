@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
-const workloadVersion = "operations-v3"
+const workloadVersion = "operations-v4"
 
 // A stable synthetic handbook approximates an agent's large instruction/reference
 // prefix without importing a client prompt, tool loop, or executable task.
@@ -73,30 +74,79 @@ func picturedMessage(question, fixture string) (message, error) {
 	}}, nil
 }
 
-func checkAnswer(r result, expected, forbidden []string, targetOnly bool) error {
+// Exclusions concern this conversation's stale facts or image descriptions;
+// foreign facts belong to another handover and are an isolation signal.
+type answerFacts struct {
+	required []string
+	foreign  []string
+	excluded []string
+}
+
+func findingCategory(text string) string {
+	for _, category := range []string{"ISOLATION", "CONTENT"} {
+		if strings.Contains(text, "["+category+"] ") {
+			return category
+		}
+	}
+	return "INFRASTRUCTURE"
+}
+
+func classifyFindings(findings []string) map[string][]string {
+	classified := map[string][]string{"CONTENT": {}, "ISOLATION": {}, "INFRASTRUCTURE": {}}
+	for _, finding := range findings {
+		for line := range strings.SplitSeq(finding, "\n") {
+			category := findingCategory(line)
+			classified[category] = append(classified[category], line)
+		}
+	}
+	return classified
+}
+
+func checkAnswer(r result, facts answerFacts, targetOnly bool) error {
 	if strings.TrimSpace(r.Content) == "" || r.FinishReason != "stop" {
-		return fmt.Errorf("expected nonempty completed answer, finish=%q", r.FinishReason)
+		return fmt.Errorf("[INFRASTRUCTURE] expected nonempty completed answer, finish=%q", r.FinishReason)
 	}
 	if r.Usage.PromptTokens <= 0 || r.Usage.CompletionTokens <= 8 {
-		return fmt.Errorf("insufficient prompt/generation usage: prompt=%d completion=%d", r.Usage.PromptTokens, r.Usage.CompletionTokens)
+		return fmt.Errorf("[INFRASTRUCTURE] insufficient prompt/generation usage: prompt=%d completion=%d", r.Usage.PromptTokens, r.Usage.CompletionTokens)
 	}
 	if targetOnly && (r.Usage.DraftTokens != 0 || r.Usage.DraftAcceptedTokens != 0 || r.Usage.DraftCoverage != 0 || r.Usage.DraftDisableReason != "") {
-		return fmt.Errorf("target-only request reported speculative activity: %+v", r.Usage)
+		return fmt.Errorf("[INFRASTRUCTURE] target-only request reported speculative activity: %+v", r.Usage)
 	}
 	if !targetOnly && (r.Usage.DraftDisableReason != "" || r.Usage.DraftTokens <= 0 || r.Usage.DraftCoverage <= 0) {
-		return fmt.Errorf("MTP did not remain active: drafts=%d coverage=%g disabled=%q", r.Usage.DraftTokens, r.Usage.DraftCoverage, r.Usage.DraftDisableReason)
+		return fmt.Errorf("[INFRASTRUCTURE] MTP did not remain active: drafts=%d coverage=%g disabled=%q", r.Usage.DraftTokens, r.Usage.DraftCoverage, r.Usage.DraftDisableReason)
 	}
 	// Typography must neither hide a required identifier nor bypass isolation.
 	hyphens := strings.NewReplacer("\u2010", "-", "\u2011", "-")
 	text := strings.ToLower(hyphens.Replace(r.Content))
-	for _, fact := range expected {
-		if !strings.Contains(text, strings.ToLower(hyphens.Replace(fact))) {
-			return fmt.Errorf("answer omitted handover fact %q (content finding, not a proven engine defect)", fact)
+	containsFact := func(fact string) bool {
+		// Accept singular and ordinary English plurals, not arbitrary substrings.
+		fact = strings.ToLower(hyphens.Replace(fact))
+		plural := fact + "s"
+		switch {
+		case fact == "deer":
+			plural = fact
+		case regexp.MustCompile(`[b-df-hj-np-tv-z]y$`).MatchString(fact):
+			plural = strings.TrimSuffix(fact, "y") + "ies"
+		case strings.HasSuffix(fact, "s"), strings.HasSuffix(fact, "x"), strings.HasSuffix(fact, "z"), strings.HasSuffix(fact, "ch"), strings.HasSuffix(fact, "sh"):
+			plural = fact + "es"
+		}
+		pattern := `(^|[^\p{L}\p{N}])(?:` + regexp.QuoteMeta(fact) + `|` + regexp.QuoteMeta(plural) + `)($|[^\p{L}\p{N}])`
+		return regexp.MustCompile(pattern).MatchString(text)
+	}
+	// Do not let missing required content conceal a foreign-session marker.
+	for _, fact := range facts.foreign {
+		if containsFact(fact) {
+			return fmt.Errorf("[ISOLATION] answer contains another handover's private fact %q (isolation signal, not a proven engine defect)", fact)
 		}
 	}
-	for _, fact := range forbidden {
-		if strings.Contains(text, strings.ToLower(hyphens.Replace(fact))) {
-			return fmt.Errorf("answer leaked foreign handover fact %q", fact)
+	for _, fact := range facts.required {
+		if !containsFact(fact) {
+			return fmt.Errorf("[CONTENT] answer omitted required fact %q (not a proven engine defect)", fact)
+		}
+	}
+	for _, fact := range facts.excluded {
+		if containsFact(fact) {
+			return fmt.Errorf("[CONTENT] answer repeated excluded fact %q (stale fact or disallowed image description, not proof of cross-session leakage)", fact)
 		}
 	}
 	return nil
