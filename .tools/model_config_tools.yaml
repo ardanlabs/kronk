@@ -55,37 +55,37 @@ models:
     incremental-cache: false
     speculation: disabled
 
-  ornith-ai/Ornith-1.5-9B-Q8_0/QUICK-CHECK:
+  ornith-ai/Ornith-1.5-9B-Q4_K_M/QUICK-CHECK:
     <<: *quick
 
-  ornith-ai/Ornith-1.5-9B-Q8_0/QUICK-CHECK-NO-MTP:
+  ornith-ai/Ornith-1.5-9B-Q4_K_M/QUICK-CHECK-NO-MTP:
     <<: *quick
     speculation: disabled
 
-  ornith-ai/Ornith-1.5-9B-Q8_0/QUICK-CHECK-NO-IMC:
+  ornith-ai/Ornith-1.5-9B-Q4_K_M/QUICK-CHECK-NO-IMC:
     <<: *quick
     incremental-cache: false
 
-  ornith-ai/Ornith-1.5-9B-Q8_0/QUICK-CHECK-NO-IMC-NO-MTP:
+  ornith-ai/Ornith-1.5-9B-Q4_K_M/QUICK-CHECK-NO-IMC-NO-MTP:
     <<: *quick
     incremental-cache: false
     speculation: disabled
 
-  ornith-ai/Ornith-1.5-9B-Q8_0/QUICK-CHECK-2S:
+  ornith-ai/Ornith-1.5-9B-Q4_K_M/QUICK-CHECK-2S:
     <<: *quick
     nseq-max: 2
 
-  ornith-ai/Ornith-1.5-9B-Q8_0/QUICK-CHECK-NO-MTP-2S:
+  ornith-ai/Ornith-1.5-9B-Q4_K_M/QUICK-CHECK-NO-MTP-2S:
     <<: *quick
     nseq-max: 2
     speculation: disabled
 
-  ornith-ai/Ornith-1.5-9B-Q8_0/QUICK-CHECK-NO-IMC-2S:
+  ornith-ai/Ornith-1.5-9B-Q4_K_M/QUICK-CHECK-NO-IMC-2S:
     <<: *quick
     nseq-max: 2
     incremental-cache: false
 
-  ornith-ai/Ornith-1.5-9B-Q8_0/QUICK-CHECK-NO-IMC-NO-MTP-2S:
+  ornith-ai/Ornith-1.5-9B-Q4_K_M/QUICK-CHECK-NO-IMC-NO-MTP-2S:
     <<: *quick
     nseq-max: 2
     incremental-cache: false

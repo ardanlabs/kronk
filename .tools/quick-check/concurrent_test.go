@@ -35,7 +35,7 @@ func checkTwoSlotFixture(t *testing.T, selector, defect string) {
 	images, noCache, targetOnly := strings.HasSuffix(selector, "img+"), strings.Contains(selector, "IMC-"), strings.Contains(selector, "MTP-")
 	denseModel := ""
 	if strings.HasPrefix(selector, "Dense/") {
-		denseModel = "ornith-ai/Ornith-1.5-9B-Q8_0"
+		denseModel = "ornith-ai/Ornith-1.5-9B-Q4_K_M"
 	}
 	root := t.TempDir()
 	logPath := filepath.Join(root, "server.log")
