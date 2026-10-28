@@ -1,4 +1,4 @@
-package model
+package decision
 
 import (
 	"context"
@@ -18,26 +18,26 @@ const (
 )
 
 type clefProtocol struct {
-	model    *Model
+	runtime  *Runtime
 	template systemOneTemplate
 }
 
-func (p *clefProtocol) mediaSupport() MediaType {
-	return MediaTypeVision
+func (p *clefProtocol) SupportsImages() bool {
+	return true
 }
 
-func newClefProtocol(m *Model) (*clefProtocol, error) {
+func newClefProtocol(m *Runtime) (*clefProtocol, error) {
 	tmpl, err := newSystemOneTemplate(m)
 	if err != nil {
 		return nil, fmt.Errorf("init-clef: %w", err)
 	}
-	if width := llama.ModelNEmbdOut(m.model); width != 1 {
+	if width := llama.ModelNEmbdOut(m.Model); width != 1 {
 		return nil, fmt.Errorf("init-clef: invalid output embedding width %d", width)
 	}
-	return &clefProtocol{model: m, template: tmpl}, nil
+	return &clefProtocol{runtime: m, template: tmpl}, nil
 }
 
-func (p *clefProtocol) decide(ctx context.Context, req DecisionRequest) (DecisionResponse, error) {
+func (p *clefProtocol) Decide(ctx context.Context, req DecisionRequest) (DecisionResponse, error) {
 	// Sanitize only user values, before introducing the template's own markers.
 	sanitize := func(value any) any {
 		value = replaceDecisionTemplateText(value, clefMarker, "<<clef ")
@@ -80,8 +80,8 @@ func (p *clefProtocol) decide(ctx context.Context, req DecisionRequest) (Decisio
 		}
 		totalOptions += len(options)
 	}
-	if totalOptions > decisionMaxReadouts {
-		return DecisionResponse{}, fmt.Errorf("decision: clef needs %d option scores, limit is %d", totalOptions, decisionMaxReadouts)
+	if totalOptions > MaxReadouts {
+		return DecisionResponse{}, fmt.Errorf("decision: clef needs %d option scores, limit is %d", totalOptions, MaxReadouts)
 	}
 
 	images := make([]string, len(req.Images))
@@ -102,7 +102,7 @@ func (p *clefProtocol) decide(ctx context.Context, req DecisionRequest) (Decisio
 
 	var tokens []llama.Token
 	var orders []llama.DecisionOrder
-	var prefixRows []extendedBatchEntry
+	var prefixRows []PrefixRow
 	var position int
 	pieces := strings.Split(prompt, clefSeparator)
 	if len(req.Images) > 0 {
@@ -114,7 +114,7 @@ func (p *clefProtocol) decide(ctx context.Context, req DecisionRequest) (Decisio
 		if strings.Count(head.String(), mtmd.DefaultMarker()) != len(req.Images) || strings.Contains(head.String(), clefMarker) {
 			return DecisionResponse{}, fmt.Errorf("%w: systemone template must place all images before decision spans", ErrDecisionRequest)
 		}
-		prefixRows, position, err = p.model.prepareDecisionMedia(ctx, head.String(), req.Images)
+		prefixRows, position, err = p.runtime.PrepareMedia(ctx, head.String(), req.Images)
 		if err != nil {
 			return DecisionResponse{}, err
 		}
@@ -140,7 +140,7 @@ func (p *clefProtocol) decide(ctx context.Context, req DecisionRequest) (Decisio
 			optionCount++
 		}
 
-		pieceTokens := llama.Tokenize(p.model.vocab, piece, false, true)
+		pieceTokens := llama.Tokenize(p.runtime.Vocab, piece, false, true)
 		if order != llama.DecisionOrderNone && len(pieceTokens) == 0 {
 			return DecisionResponse{}, fmt.Errorf("decision: instructions and options must not be empty")
 		}
@@ -155,12 +155,12 @@ func (p *clefProtocol) decide(ctx context.Context, req DecisionRequest) (Decisio
 	if len(tokens) == 0 {
 		return DecisionResponse{}, fmt.Errorf("decision: tokenize prompt: no tokens")
 	}
-	if len(tokens) > p.model.decision.contextWindow {
-		return DecisionResponse{}, fmt.Errorf("decision: %w: input needs %d tokens, limit is %d", ErrDecisionBudget, len(tokens), p.model.decision.contextWindow)
+	if len(tokens) > p.runtime.ContextWindow {
+		return DecisionResponse{}, fmt.Errorf("decision: %w: input needs %d tokens, limit is %d", ErrDecisionBudget, len(tokens), p.runtime.ContextWindow)
 	}
 
-	work := []decisionWork{{tokens: tokens, prefixRows: prefixRows, position: position, decisionOrder: orders, jointScores: totalOptions}}
-	readouts, err := p.model.decision.run(ctx, work)
+	work := []Work{{Tokens: tokens, PrefixRows: prefixRows, Position: position, DecisionOrder: orders, JointScores: totalOptions}}
+	readouts, err := p.runtime.Run(ctx, work)
 	if err != nil {
 		return DecisionResponse{}, fmt.Errorf("decision: clef readout: %w", err)
 	}
@@ -172,7 +172,7 @@ func (p *clefProtocol) decide(ctx context.Context, req DecisionRequest) (Decisio
 	offset := 0
 	for i, question := range req.Questions {
 		n := len(optionsByQuestion[i])
-		temperature, err := decisionTemperature(p.model, question)
+		temperature, err := decisionTemperature(p.runtime, question)
 		if err != nil {
 			return DecisionResponse{}, fmt.Errorf("decision: question %q: %w", question.ID, err)
 		}
@@ -185,7 +185,7 @@ func (p *clefProtocol) decide(ctx context.Context, req DecisionRequest) (Decisio
 	}
 
 	return DecisionResponse{
-		Model:   p.model.responseModelID(),
+		Model:   p.runtime.ModelID,
 		Answers: answers,
 		Usage:   DecisionUsage{InputTokens: work[0].rowCount()},
 	}, nil

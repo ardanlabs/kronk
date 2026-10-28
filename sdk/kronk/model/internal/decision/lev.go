@@ -1,4 +1,4 @@
-package model
+package decision
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 const decisionLevRatings = 9
 
 type levProtocol struct {
-	model        *Model
+	runtime      *Runtime
 	template     systemOneTemplate
 	labelTokens  []llama.Token
 	labelStrings []string
@@ -21,7 +21,7 @@ type levPass struct {
 	reversed bool
 }
 
-func newLevProtocol(m *Model) (*levProtocol, error) {
+func newLevProtocol(m *Runtime) (*levProtocol, error) {
 	tmpl, err := newSystemOneTemplate(m)
 	if err != nil {
 		return nil, fmt.Errorf("init-lev: %w", err)
@@ -36,14 +36,14 @@ func newLevProtocol(m *Model) (*levProtocol, error) {
 	}
 
 	return &levProtocol{
-		model:        m,
+		runtime:      m,
 		template:     tmpl,
 		labelTokens:  labelTokens,
 		labelStrings: labelStrings,
 	}, nil
 }
 
-func (p *levProtocol) decide(ctx context.Context, req DecisionRequest) (DecisionResponse, error) {
+func (p *levProtocol) Decide(ctx context.Context, req DecisionRequest) (DecisionResponse, error) {
 	state, err := decisionSortedText(req.State)
 	if err != nil {
 		return DecisionResponse{}, fmt.Errorf("decision: serialize state: %w", err)
@@ -51,7 +51,7 @@ func (p *levProtocol) decide(ctx context.Context, req DecisionRequest) (Decision
 
 	optionsByQuestion := make([][]systemOneOption, len(req.Questions))
 	var passes []levPass
-	var work []decisionWork
+	var work []Work
 	for i, question := range req.Questions {
 		options, err := decisionSystemOneOptions(question)
 		if err != nil {
@@ -82,31 +82,31 @@ func (p *levProtocol) decide(ctx context.Context, req DecisionRequest) (Decision
 			if err != nil {
 				return DecisionResponse{}, fmt.Errorf("decision: question %q: %w", question.ID, err)
 			}
-			tokens := llama.Tokenize(p.model.vocab, prompt, false, true)
+			tokens := llama.Tokenize(p.runtime.Vocab, prompt, false, true)
 			if len(tokens) == 0 {
 				return DecisionResponse{}, fmt.Errorf("decision: question %q: tokenize prompt: no tokens", question.ID)
 			}
-			if len(tokens) > p.model.decision.contextWindow {
-				return DecisionResponse{}, fmt.Errorf("decision: question %q: %w: input needs %d tokens, limit is %d", question.ID, ErrDecisionBudget, len(tokens), p.model.decision.contextWindow)
+			if len(tokens) > p.runtime.ContextWindow {
+				return DecisionResponse{}, fmt.Errorf("decision: question %q: %w: input needs %d tokens, limit is %d", question.ID, ErrDecisionBudget, len(tokens), p.runtime.ContextWindow)
 			}
 
 			outputs := len(options)
 			if question.Type == DecisionQuestionTypeNoul {
 				outputs = decisionLevRatings
 			}
-			work = append(work, decisionWork{
-				tokens:    tokens,
-				prefixLen: len(tokens) - 1,
-				readouts: []decisionReadout{{
-					position:   len(tokens) - 1,
-					candidates: append([]llama.Token(nil), p.labelTokens[:outputs]...),
+			work = append(work, Work{
+				Tokens:    tokens,
+				PrefixLen: len(tokens) - 1,
+				Readouts: []Readout{{
+					Position:   len(tokens) - 1,
+					Candidates: append([]llama.Token(nil), p.labelTokens[:outputs]...),
 				}},
 			})
 			passes = append(passes, levPass{question: i, reversed: variant == 1})
 		}
 	}
 
-	readouts, err := p.model.decision.run(ctx, work)
+	readouts, err := p.runtime.Run(ctx, work)
 	if err != nil {
 		return DecisionResponse{}, fmt.Errorf("decision: lev readout: %w", err)
 	}
@@ -115,7 +115,7 @@ func (p *levProtocol) decide(ctx context.Context, req DecisionRequest) (Decision
 	variantCounts := make([]int, len(req.Questions))
 	for i, pass := range passes {
 		question := req.Questions[pass.question]
-		temperature, err := decisionTemperature(p.model, question)
+		temperature, err := decisionTemperature(p.runtime, question)
 		if err != nil {
 			return DecisionResponse{}, fmt.Errorf("decision: question %q: %w", question.ID, err)
 		}
@@ -153,7 +153,7 @@ func (p *levProtocol) decide(ctx context.Context, req DecisionRequest) (Decision
 	}
 
 	return DecisionResponse{
-		Model:   p.model.responseModelID(),
+		Model:   p.runtime.ModelID,
 		Answers: answers,
 		Usage:   DecisionUsage{InputTokens: decisionInputTokens(work)},
 	}, nil

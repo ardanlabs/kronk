@@ -21,6 +21,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
+	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/decision"
 	internalspec "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
 	mtpengine "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation/mtp"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
@@ -190,7 +191,7 @@ type Model struct {
 	adapterScales    []float32
 	batch            *batchEngine
 	decision         *decisionEngine
-	protocol         decisionProtocol
+	protocol         decision.Protocol
 	template         Template
 	compiledTmpl     *compiledTemplate // Long-lived compiled jinja template (one-time init via templateOnce).
 	templateOnce     sync.Once         // Guards one-time compile of compiledTmpl.

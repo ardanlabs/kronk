@@ -1,4 +1,4 @@
-package model
+package decision
 
 import (
 	"context"
@@ -22,7 +22,7 @@ const (
 )
 
 type jevStyleProtocol struct {
-	model    *Model
+	runtime  *Runtime
 	renderer jevStyleRenderer
 }
 
@@ -33,12 +33,12 @@ type jevStyleRenderer struct {
 }
 
 type jevStyleRendered struct {
-	work       decisionWork
+	work       Work
 	names      []string
 	headTokens int
 }
 
-func newJevStyleProtocol(m *Model) (*jevStyleProtocol, error) {
+func newJevStyleProtocol(m *Runtime) (*jevStyleProtocol, error) {
 	expected := []struct {
 		text  string
 		token llama.Token
@@ -48,32 +48,32 @@ func newJevStyleProtocol(m *Model) (*jevStyleProtocol, error) {
 		{text: " ->", token: jevStyleSlotToken},
 	}
 	for _, item := range expected {
-		tokens := llama.Tokenize(m.vocab, item.text, false, false)
+		tokens := llama.Tokenize(m.Vocab, item.text, false, false)
 		if len(tokens) != 1 || tokens[0] != item.token {
 			return nil, fmt.Errorf("init-jev-style: tokenizer mismatch for %q: got %v, want [%d]", item.text, tokens, item.token)
 		}
 	}
 
 	return &jevStyleProtocol{
-		model: m,
+		runtime: m,
 		renderer: jevStyleRenderer{
 			encode: func(text string) []llama.Token {
-				return llama.Tokenize(m.vocab, text, false, false)
+				return llama.Tokenize(m.Vocab, text, false, false)
 			},
-			maxLen:  min(jevStyleMaxLen, m.decision.contextWindow),
+			maxLen:  min(jevStyleMaxLen, m.ContextWindow),
 			headMax: jevStyleHeadMax,
 		},
 	}, nil
 }
 
-func (p *jevStyleProtocol) decide(ctx context.Context, req DecisionRequest) (DecisionResponse, error) {
+func (p *jevStyleProtocol) Decide(ctx context.Context, req DecisionRequest) (DecisionResponse, error) {
 	state, err := decisionState(req.State)
 	if err != nil {
 		return DecisionResponse{}, fmt.Errorf("decision: serialize state: %w", err)
 	}
 
 	rendered := make([]jevStyleRendered, len(req.Questions))
-	work := make([]decisionWork, len(req.Questions))
+	work := make([]Work, len(req.Questions))
 	for i, question := range req.Questions {
 		rendered[i], err = p.renderer.render(state, question)
 		if err != nil {
@@ -82,7 +82,7 @@ func (p *jevStyleProtocol) decide(ctx context.Context, req DecisionRequest) (Dec
 		work[i] = rendered[i].work
 	}
 
-	readouts, err := p.model.decision.run(ctx, work)
+	readouts, err := p.runtime.Run(ctx, work)
 	if err != nil {
 		return DecisionResponse{}, fmt.Errorf("decision: jev-style readout: %w", err)
 	}
@@ -104,7 +104,7 @@ func (p *jevStyleProtocol) decide(ctx context.Context, req DecisionRequest) (Dec
 	}
 
 	return DecisionResponse{
-		Model:   p.model.responseModelID(),
+		Model:   p.runtime.ModelID,
 		Answers: answers,
 		Usage:   DecisionUsage{InputTokens: decisionInputTokens(work)},
 	}, nil
@@ -155,18 +155,18 @@ func (r jevStyleRenderer) render(state string, question DecisionQuestion) (jevSt
 		return jevStyleRendered{}, fmt.Errorf("%w: input needs %d tokens (state %d, head %d), limit is %d", ErrDecisionBudget, len(tokens), prefixLen, len(head), r.maxLen)
 	}
 
-	readouts := make([]decisionReadout, len(relativeSlots))
+	readouts := make([]Readout, len(relativeSlots))
 	for i, slot := range relativeSlots {
-		readouts[i] = decisionReadout{
-			position:   prefixLen + slot,
-			candidates: []llama.Token{jevStyleYesToken, jevStyleNoToken},
+		readouts[i] = Readout{
+			Position:   prefixLen + slot,
+			Candidates: []llama.Token{jevStyleYesToken, jevStyleNoToken},
 		}
 	}
 	return jevStyleRendered{
-		work: decisionWork{
-			tokens:    tokens,
-			prefixLen: prefixLen,
-			readouts:  readouts,
+		work: Work{
+			Tokens:    tokens,
+			PrefixLen: prefixLen,
+			Readouts:  readouts,
 		},
 		names:      names,
 		headTokens: len(head),

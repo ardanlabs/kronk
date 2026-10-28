@@ -1,4 +1,4 @@
-package model
+package decision
 
 import (
 	"context"
@@ -16,43 +16,43 @@ import (
 var kevSpecialToken = regexp.MustCompile(`<\|([A-Za-z0-9_]+)\|>`)
 
 type kevProtocol struct {
-	model       *Model
+	runtime     *Runtime
 	template    systemOneTemplate
 	marker      llama.Token
 	outputWidth int
 }
 
-func newKevProtocol(m *Model) (*kevProtocol, error) {
+func newKevProtocol(m *Runtime) (*kevProtocol, error) {
 	tmpl, err := newSystemOneTemplate(m)
 	if err != nil {
 		return nil, fmt.Errorf("init-kev: %w", err)
 	}
 
-	tokens := llama.Tokenize(m.vocab, "<|box_end|>", false, true)
+	tokens := llama.Tokenize(m.Vocab, "<|box_end|>", false, true)
 	if len(tokens) != 1 {
 		return nil, fmt.Errorf("init-kev: model has no single-token <|box_end|> marker")
 	}
-	outputWidth := int(llama.ModelNEmbdOut(m.model))
+	outputWidth := int(llama.ModelNEmbdOut(m.Model))
 	if outputWidth <= 0 || outputWidth%2 != 0 {
 		return nil, fmt.Errorf("init-kev: invalid output embedding width %d", outputWidth)
 	}
 
 	return &kevProtocol{
-		model:       m,
+		runtime:     m,
 		template:    tmpl,
 		marker:      tokens[0],
 		outputWidth: outputWidth,
 	}, nil
 }
 
-func (p *kevProtocol) decide(ctx context.Context, req DecisionRequest) (DecisionResponse, error) {
+func (p *kevProtocol) Decide(ctx context.Context, req DecisionRequest) (DecisionResponse, error) {
 	state, err := decisionKevText(req.State)
 	if err != nil {
 		return DecisionResponse{}, fmt.Errorf("decision: serialize state: %w", err)
 	}
 
 	optionsByQuestion := make([][]systemOneOption, len(req.Questions))
-	work := make([]decisionWork, len(req.Questions))
+	work := make([]Work, len(req.Questions))
 	for i, question := range req.Questions {
 		options, err := decisionSystemOneOptions(question)
 		if err != nil {
@@ -76,28 +76,28 @@ func (p *kevProtocol) decide(ctx context.Context, req DecisionRequest) (Decision
 		if err != nil {
 			return DecisionResponse{}, fmt.Errorf("decision: question %q: %w", question.ID, err)
 		}
-		tokens := llama.Tokenize(p.model.vocab, prompt, false, true)
+		tokens := llama.Tokenize(p.runtime.Vocab, prompt, false, true)
 		if len(tokens) == 0 {
 			return DecisionResponse{}, fmt.Errorf("decision: question %q: tokenize prompt: no tokens", question.ID)
 		}
-		if len(tokens) > p.model.decision.contextWindow {
-			return DecisionResponse{}, fmt.Errorf("decision: question %q: %w: input needs %d tokens, limit is %d", question.ID, ErrDecisionBudget, len(tokens), p.model.decision.contextWindow)
+		if len(tokens) > p.runtime.ContextWindow {
+			return DecisionResponse{}, fmt.Errorf("decision: question %q: %w: input needs %d tokens, limit is %d", question.ID, ErrDecisionBudget, len(tokens), p.runtime.ContextWindow)
 		}
 		markers := tokenPositions(tokens, p.marker)
 		if len(markers) != len(options) || markers[len(markers)-1] >= len(tokens)-1 {
 			return DecisionResponse{}, fmt.Errorf("decision: question %q: unexpected layout of the decision prompt", question.ID)
 		}
 
-		readouts := make([]decisionReadout, 0, len(markers)+1)
+		readouts := make([]Readout, 0, len(markers)+1)
 		for _, marker := range markers {
-			readouts = append(readouts, decisionReadout{position: marker, embeddingWidth: p.outputWidth})
+			readouts = append(readouts, Readout{Position: marker, EmbeddingWidth: p.outputWidth})
 		}
-		readouts = append(readouts, decisionReadout{position: len(tokens) - 1, embeddingWidth: p.outputWidth})
+		readouts = append(readouts, Readout{Position: len(tokens) - 1, EmbeddingWidth: p.outputWidth})
 		optionsByQuestion[i] = options
-		work[i] = decisionWork{tokens: tokens, readouts: readouts}
+		work[i] = Work{Tokens: tokens, Readouts: readouts}
 	}
 
-	readouts, err := p.model.decision.run(ctx, work)
+	readouts, err := p.runtime.Run(ctx, work)
 	if err != nil {
 		return DecisionResponse{}, fmt.Errorf("decision: kev readout: %w", err)
 	}
@@ -120,7 +120,7 @@ func (p *kevProtocol) decide(ctx context.Context, req DecisionRequest) (Decision
 			}
 			scores[j] = float32(dot / math.Sqrt(float64(headWidth)))
 		}
-		temperature, err := decisionTemperature(p.model, question)
+		temperature, err := decisionTemperature(p.runtime, question)
 		if err != nil {
 			return DecisionResponse{}, fmt.Errorf("decision: question %q: %w", question.ID, err)
 		}
@@ -132,7 +132,7 @@ func (p *kevProtocol) decide(ctx context.Context, req DecisionRequest) (Decision
 	}
 
 	return DecisionResponse{
-		Model:   p.model.responseModelID(),
+		Model:   p.runtime.ModelID,
 		Answers: answers,
 		Usage:   DecisionUsage{InputTokens: decisionInputTokens(work)},
 	}, nil

@@ -1,4 +1,4 @@
-package model
+package decision
 
 import (
 	"math"
@@ -33,19 +33,19 @@ func TestJevStyleRenderer(t *testing.T) {
 	if got.names[0] != "billing" || got.names[1] != "support" {
 		t.Fatalf("names: got %v", got.names)
 	}
-	if len(got.work.readouts) != 2 {
-		t.Fatalf("readouts: got %d, want 2", len(got.work.readouts))
+	if len(got.work.Readouts) != 2 {
+		t.Fatalf("readouts: got %d, want 2", len(got.work.Readouts))
 	}
-	for i, readout := range got.work.readouts {
-		if got.work.tokens[readout.position] != jevStyleSlotToken {
-			t.Fatalf("readout[%d] token: got %d, want %d", i, got.work.tokens[readout.position], jevStyleSlotToken)
+	for i, readout := range got.work.Readouts {
+		if got.work.Tokens[readout.Position] != jevStyleSlotToken {
+			t.Fatalf("readout[%d] token: got %d, want %d", i, got.work.Tokens[readout.Position], jevStyleSlotToken)
 		}
-		if !reflect.DeepEqual(readout.candidates, []llama.Token{jevStyleYesToken, jevStyleNoToken}) {
-			t.Fatalf("readout[%d] candidates: got %v", i, readout.candidates)
+		if !reflect.DeepEqual(readout.Candidates, []llama.Token{jevStyleYesToken, jevStyleNoToken}) {
+			t.Fatalf("readout[%d] candidates: got %v", i, readout.Candidates)
 		}
 	}
-	if got.work.prefixLen <= 0 || got.headTokens <= 0 || got.work.prefixLen+got.headTokens != len(got.work.tokens) {
-		t.Fatalf("token accounting: prefix=%d head=%d total=%d", got.work.prefixLen, got.headTokens, len(got.work.tokens))
+	if got.work.PrefixLen <= 0 || got.headTokens <= 0 || got.work.PrefixLen+got.headTokens != len(got.work.Tokens) {
+		t.Fatalf("token accounting: prefix=%d head=%d total=%d", got.work.PrefixLen, got.headTokens, len(got.work.Tokens))
 	}
 }
 
@@ -116,7 +116,7 @@ func TestLayaFitTruncatesHeadAndPreservesState(t *testing.T) {
 func TestDecisionTemperatureBuckets(t *testing.T) {
 	tests := []struct {
 		name     string
-		protocol DecisionProtocol
+		protocol string
 		options  int
 		metadata map[string]string
 		want     float64
@@ -132,7 +132,7 @@ func TestDecisionTemperatureBuckets(t *testing.T) {
 		},
 		{
 			name:     "lev mid",
-			protocol: DecisionProtocolLev,
+			protocol: "lev",
 			options:  9,
 			metadata: map[string]string{
 				"general.architecture":                   "qwen35",
@@ -153,7 +153,7 @@ func TestDecisionTemperatureBuckets(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := Model{modelInfo: ModelInfo{Metadata: tt.metadata, decisionProtocol: tt.protocol, profile: arch.Resolve(tt.metadata)}}
+			m := Runtime{Protocol: tt.protocol, Calibration: arch.Resolve(tt.metadata).Decision}
 			question := DecisionQuestion{Type: DecisionQuestionTypeChoice, Options: make([]DecisionOption, tt.options)}
 			got, err := decisionTemperature(&m, question)
 			if err != nil {

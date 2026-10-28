@@ -14,10 +14,11 @@ type decisionValue struct {
 
 // Decision contains normalized metadata for a decision model.
 type Decision struct {
-	Type          string
-	maxHeadTokens string
-	temperatures  map[string]decisionValue
-	scoreBiases   map[string]decisionValue
+	Type            string
+	maxHeadTokens   string
+	temperatures    map[string]decisionValue
+	temperatureBits int
+	scoreBiases     map[string]decisionValue
 }
 
 // MaxHeadTokens returns the maximum number of tokens accepted by a decision
@@ -39,10 +40,9 @@ func (d Decision) Temperature(suffix string) (float64, bool, error) {
 		return 0, false, nil
 	}
 
-	bits := 64
-	switch d.Type {
-	case "pplx-decider", "lfm2-d1", "lfm3-d1", "vllm-decision2", "vllm-d3":
-		bits = 32
+	bits := d.temperatureBits
+	if bits == 0 {
+		bits = 64
 	}
 	temperature, err := strconv.ParseFloat(value.value, bits)
 	if err != nil || temperature <= 0 || math.IsNaN(temperature) || math.IsInf(temperature, 0) {
@@ -77,10 +77,11 @@ func ResolveDecision(metadata map[string]string, architecture string) Decision {
 	prefix := architecture + ".decision."
 	temperaturePrefix := prefix + "temperature."
 	decision := Decision{
-		Type:          metadata[prefix+"type"],
-		maxHeadTokens: metadata[prefix+"max_head_tokens"],
-		temperatures:  make(map[string]decisionValue),
-		scoreBiases:   make(map[string]decisionValue),
+		Type:            metadata[prefix+"type"],
+		maxHeadTokens:   metadata[prefix+"max_head_tokens"],
+		temperatures:    make(map[string]decisionValue),
+		temperatureBits: DecisionContractFor(metadata[prefix+"type"]).temperatureBits,
+		scoreBiases:     make(map[string]decisionValue),
 	}
 
 	for key, value := range metadata {

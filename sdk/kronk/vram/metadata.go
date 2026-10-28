@@ -186,9 +186,10 @@ func buildFromMetadata(metadata map[string]string, shards [][]gguf.TensorInfo, m
 			}
 			input.NoPersistentCache = !causal
 		}
-		if metadata["lfm3.decision.type"] == "lfm3-d1" {
-			// Match decisionContextParams: one sequence, with the entire
-			// context evaluated in one physical batch and one final readout.
+		execution := modelprofile.DecisionContractFor(profile.Decision.Type).Execution
+		if execution.Batch == modelprofile.DecisionBatchWholePrompt && execution.SingleSequence {
+			// Keep this estimate scoped to LFM3. The execution contract
+			// requires one whole-context batch and one final readout.
 			input.NUBatch = cfg.ContextWindow
 			input.Slots = 1
 			input.OutputRows = 1

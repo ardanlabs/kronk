@@ -1,4 +1,4 @@
-package model
+package decision
 
 import (
 	"context"
@@ -24,17 +24,17 @@ type openJEVOption struct {
 }
 
 type openJEVProtocol struct {
-	model        *Model
+	runtime      *Runtime
 	letterTokens []llama.Token
 }
 
-func newOpenJEVProtocol(m *Model) (*openJEVProtocol, error) {
+func newOpenJEVProtocol(m *Runtime) (*openJEVProtocol, error) {
 	for _, prefix := range []string{"", " "} {
 		ids := make([]llama.Token, len(openJEVLetters))
 		seen := make(map[llama.Token]bool, len(ids))
 		valid := true
 		for i, letter := range openJEVLetters {
-			tokens := llama.Tokenize(m.vocab, prefix+string(letter), false, false)
+			tokens := llama.Tokenize(m.Vocab, prefix+string(letter), false, false)
 			if len(tokens) != 1 || seen[tokens[0]] {
 				valid = false
 				break
@@ -43,7 +43,7 @@ func newOpenJEVProtocol(m *Model) (*openJEVProtocol, error) {
 			seen[tokens[0]] = true
 		}
 		if valid {
-			return &openJEVProtocol{model: m, letterTokens: ids}, nil
+			return &openJEVProtocol{runtime: m, letterTokens: ids}, nil
 		}
 	}
 	return nil, fmt.Errorf("init-openjev: neither bare nor space-prefixed A-Z/a-z are unique single tokens")
@@ -62,7 +62,7 @@ type openJEVPass struct {
 	chunk int
 }
 
-func (p *openJEVProtocol) decide(ctx context.Context, req DecisionRequest) (DecisionResponse, error) {
+func (p *openJEVProtocol) Decide(ctx context.Context, req DecisionRequest) (DecisionResponse, error) {
 	state, err := decisionState(req.State)
 	if err != nil {
 		return DecisionResponse{}, fmt.Errorf("decision: serialize state: %w", err)
@@ -70,7 +70,7 @@ func (p *openJEVProtocol) decide(ctx context.Context, req DecisionRequest) (Deci
 
 	plans := make([]openJEVQuestionPlan, len(req.Questions))
 	var passes []openJEVPass
-	var work []decisionWork
+	var work []Work
 	for i, question := range req.Questions {
 		plan, err := prepareOpenJEVQuestion(question)
 		if err != nil {
@@ -87,7 +87,7 @@ func (p *openJEVProtocol) decide(ctx context.Context, req DecisionRequest) (Deci
 		}
 	}
 
-	result, err := p.model.decision.run(ctx, work)
+	result, err := p.runtime.Run(ctx, work)
 	if err != nil {
 		return DecisionResponse{}, fmt.Errorf("decision: openjev readout: %w", err)
 	}
@@ -100,7 +100,7 @@ func (p *openJEVProtocol) decide(ctx context.Context, req DecisionRequest) (Deci
 		plans[pass.plan].probabilities[pass.chunk] = probabilities
 	}
 
-	var finalWork []decisionWork
+	var finalWork []Work
 	var finalPlans []int
 	for i := range plans {
 		if len(plans[i].chunks) == 1 {
@@ -119,7 +119,7 @@ func (p *openJEVProtocol) decide(ctx context.Context, req DecisionRequest) (Deci
 	}
 
 	if len(finalWork) > 0 {
-		finalResult, err := p.model.decision.run(ctx, finalWork)
+		finalResult, err := p.runtime.Run(ctx, finalWork)
 		if err != nil {
 			return DecisionResponse{}, fmt.Errorf("decision: openjev final readout: %w", err)
 		}
@@ -143,38 +143,33 @@ func (p *openJEVProtocol) decide(ctx context.Context, req DecisionRequest) (Deci
 		answers[plan.question.ID] = answerOpenJEVQuestion(plan)
 	}
 	return DecisionResponse{
-		Model:   p.model.responseModelID(),
+		Model:   p.runtime.ModelID,
 		Answers: answers,
 		Usage:   DecisionUsage{InputTokens: inputTokens},
 	}, nil
 }
 
-func (p *openJEVProtocol) work(ctx context.Context, state string, instructions string, options []openJEVOption) (decisionWork, error) {
+func (p *openJEVProtocol) work(ctx context.Context, state string, instructions string, options []openJEVOption) (Work, error) {
 	prompt := openJEVPrompt(state, instructions, options)
-	rendered, err := p.model.applyJinjaTemplate(ctx, D{
-		"messages": []D{{"role": RoleUser, "content": prompt}},
-		"chat_template_kwargs": D{
-			"enable_thinking": false,
-		},
-	})
+	rendered, err := p.runtime.RenderChat(ctx, prompt)
 	if err != nil {
-		return decisionWork{}, fmt.Errorf("render prompt: %w", err)
+		return Work{}, fmt.Errorf("render prompt: %w", err)
 	}
 
-	tokens := llama.Tokenize(p.model.vocab, rendered, p.model.addBOSToken, true)
+	tokens := llama.Tokenize(p.runtime.Vocab, rendered, p.runtime.AddBOSToken, true)
 	if len(tokens) == 0 {
-		return decisionWork{}, fmt.Errorf("tokenize prompt: no tokens")
+		return Work{}, fmt.Errorf("tokenize prompt: no tokens")
 	}
-	if len(tokens) > p.model.decision.contextWindow {
-		return decisionWork{}, fmt.Errorf("%w: input needs %d tokens, limit is %d", ErrDecisionBudget, len(tokens), p.model.decision.contextWindow)
+	if len(tokens) > p.runtime.ContextWindow {
+		return Work{}, fmt.Errorf("%w: input needs %d tokens, limit is %d", ErrDecisionBudget, len(tokens), p.runtime.ContextWindow)
 	}
 	candidates := append([]llama.Token(nil), p.letterTokens[:len(options)]...)
-	return decisionWork{
-		tokens:    tokens,
-		prefixLen: len(tokens) - 1,
-		readouts: []decisionReadout{{
-			position:   len(tokens) - 1,
-			candidates: candidates,
+	return Work{
+		Tokens:    tokens,
+		PrefixLen: len(tokens) - 1,
+		Readouts: []Readout{{
+			Position:   len(tokens) - 1,
+			Candidates: candidates,
 		}},
 	}, nil
 }
@@ -271,10 +266,10 @@ func answerOpenJEVQuestion(plan openJEVQuestionPlan) DecisionAnswer {
 	}
 }
 
-func decisionInputTokens(work []decisionWork) int {
+func decisionInputTokens(work []Work) int {
 	var total int
 	for _, item := range work {
-		total += len(item.tokens)
+		total += len(item.Tokens)
 	}
 	return total
 }

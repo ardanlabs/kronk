@@ -15,6 +15,7 @@ import (
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
 	"github.com/ardanlabs/kronk/sdk/kronk/kvstorage"
+	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/decision"
 	internalspec "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
@@ -639,10 +640,10 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 		return fmt.Errorf("validate-config: %w", err)
 	}
 
-	switch cfg.DecisionProtocol {
-	case DecisionProtocol{}, DecisionProtocolOpenJEV, DecisionProtocolJevStyle, DecisionProtocolLaya, DecisionProtocolLev, DecisionProtocolKev, DecisionProtocolNimble, DecisionProtocolClef, DecisionProtocolPplxDecider, DecisionProtocolLfm2D1, DecisionProtocolLfm3D1, DecisionProtocolVllmDecision2, DecisionProtocolVllmD3:
-	default:
-		return fmt.Errorf("validate-config: unsupported decision protocol %q", cfg.DecisionProtocol)
+	if !cfg.DecisionProtocol.IsZero() {
+		if !decision.Supports(cfg.DecisionProtocol.String()) {
+			return fmt.Errorf("validate-config: unsupported decision protocol %q", cfg.DecisionProtocol)
+		}
 	}
 
 	if cfg.QueueDepth() < 0 {

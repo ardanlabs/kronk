@@ -6,10 +6,12 @@ import (
 	"fmt"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/applog"
+	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/decision"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
-const decisionMaxReadouts = 255
+const decisionMaxReadouts = decision.MaxReadouts
 
 type decisionReadout struct {
 	position       int
@@ -49,6 +51,7 @@ type decisionEngine struct {
 }
 
 func decisionContextParams(base llama.ContextParams, cfg Config) llama.ContextParams {
+	execution := modelprofile.DecisionContractFor(cfg.DecisionProtocol.String()).Execution
 	params := base
 	nSeqMax := max(cfg.NSeqMax(), 1)
 	params.NCtx = uint32(cfg.ContextWindow() * nSeqMax)
@@ -59,30 +62,30 @@ func decisionContextParams(base llama.ContextParams, cfg Config) llama.ContextPa
 		physical = cfg.BatchBaseSize()
 	}
 	params.NUbatch = min(uint32(physical), params.NBatch)
-	if decisionUsesEmbeddings(cfg.DecisionProtocol) {
-		params.NBatch = params.NUbatch
-	}
 	params.NSeqMax = uint32(nSeqMax)
 	params.NOutputsMax = decisionMaxReadouts
 	params.NOutputsMaxPerSeq = decisionMaxReadouts
 	params.KVUnified = 1
 	params.NoPerf = 1
-	if decisionUsesEmbeddings(cfg.DecisionProtocol) {
+	if execution.Embeddings {
 		params.Embeddings = 1
 		params.PoolingType = llama.PoolingTypeNone
 	}
-	if cfg.DecisionProtocol == DecisionProtocolVllmD3 || cfg.DecisionProtocol == DecisionProtocolVllmDecision2 || cfg.DecisionProtocol == DecisionProtocolLfm3D1 {
-		// These protocols must evaluate the complete prompt in one ubatch.
-		// D3 and LFM3 d1 are non-causal and cannot mix sequences.
+	switch execution.Batch {
+	case modelprofile.DecisionBatchPhysical:
+		params.NBatch = params.NUbatch
+	case modelprofile.DecisionBatchWholePrompt:
 		params.NUbatch = uint32(cfg.ContextWindow())
 		params.NBatch = params.NUbatch
-		if cfg.DecisionProtocol == DecisionProtocolVllmD3 || cfg.DecisionProtocol == DecisionProtocolLfm3D1 {
-			params.NSeqMax = 1
-			params.NCtx = params.NBatch
-			params.AttentionType = llama.AttentionTypeNonCausal
-		}
 	}
-	if cfg.DecisionProtocol == DecisionProtocolClef || cfg.DecisionProtocol == DecisionProtocolVllmDecision2 {
+	if execution.SingleSequence {
+		params.NSeqMax = 1
+		params.NCtx = params.NBatch
+	}
+	if execution.NonCausal {
+		params.AttentionType = llama.AttentionTypeNonCausal
+	}
+	if execution.AllTokenOutputs {
 		params.NOutputsMax = params.NBatch
 		params.NOutputsMaxPerSeq = params.NBatch
 	}

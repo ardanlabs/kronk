@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/decision"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
 )
 
@@ -70,17 +71,16 @@ func TestValidateDecisionRequest(t *testing.T) {
 func TestDecisionRejectsUnsupportedImages(t *testing.T) {
 	for _, tt := range []struct {
 		name     string
-		protocol decisionProtocol
+		protocol decision.Protocol
 		image    []byte
 		want     string
 	}{
-		{"missing projector", &clefProtocol{}, []byte("\x89PNG\r\n\x1a\n"), "vision projector"},
-		{"Laya", &layaProtocol{}, []byte("\x89PNG\r\n\x1a\n"), "does not support images"},
-		{"Kev", &kevProtocol{}, []byte("\x89PNG\r\n\x1a\n"), "does not support images"},
-		{"OpenJEV remains text only", &openJEVProtocol{}, []byte("\x89PNG\r\n\x1a\n"), "does not support images"},
-		{"audio", &clefProtocol{}, []byte("RIFF\x00\x00\x00\x00WAVE"), "images[0]"},
-		{"video", &clefProtocol{}, []byte("\x00\x00\x00\x18ftypmp42"), "images[0]"},
-		{"empty", &clefProtocol{}, nil, "images[0]"},
+		{"missing projector", decisionImageTestProtocol{true}, []byte("\x89PNG\r\n\x1a\n"), "vision projector"},
+		{"no image contract", decisionTestProtocol{}, []byte("\x89PNG\r\n\x1a\n"), "does not support images"},
+		{"text only", decisionImageTestProtocol{false}, []byte("\x89PNG\r\n\x1a\n"), "does not support images"},
+		{"audio", decisionImageTestProtocol{true}, []byte("RIFF\x00\x00\x00\x00WAVE"), "images[0]"},
+		{"video", decisionImageTestProtocol{true}, []byte("\x00\x00\x00\x18ftypmp42"), "images[0]"},
+		{"empty", decisionImageTestProtocol{true}, nil, "images[0]"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			m := Model{protocol: tt.protocol}
@@ -93,6 +93,24 @@ func TestDecisionRejectsUnsupportedImages(t *testing.T) {
 			}
 		})
 	}
+}
+
+type decisionTestProtocol struct{}
+
+func (decisionTestProtocol) Decide(context.Context, DecisionRequest) (DecisionResponse, error) {
+	return DecisionResponse{}, errors.New("unexpected protocol invocation")
+}
+
+type decisionImageTestProtocol struct {
+	supportsImages bool
+}
+
+func (decisionImageTestProtocol) Decide(context.Context, DecisionRequest) (DecisionResponse, error) {
+	return DecisionResponse{}, errors.New("unexpected protocol invocation")
+}
+
+func (p decisionImageTestProtocol) SupportsImages() bool {
+	return p.supportsImages
 }
 
 func TestDecisionResponseMarshalJSON(t *testing.T) {

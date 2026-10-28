@@ -1,4 +1,4 @@
-package model
+package decision
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 const decisionLayaMaxOptionTokens = 48
 
 type layaProtocol struct {
-	model         *Model
+	runtime       *Runtime
 	template      systemOneTemplate
 	marker        llama.Token
 	separator     llama.Token
@@ -19,37 +19,37 @@ type layaProtocol struct {
 	maxHeadTokens int
 }
 
-func newLayaProtocol(m *Model) (*layaProtocol, error) {
+func newLayaProtocol(m *Runtime) (*layaProtocol, error) {
 	tmpl, err := newSystemOneTemplate(m)
 	if err != nil {
 		return nil, fmt.Errorf("init-laya: %w", err)
 	}
 
-	marker := llama.VocabMASK(m.vocab)
-	separator := llama.VocabSEP(m.vocab)
+	marker := llama.VocabMASK(m.Vocab)
+	separator := llama.VocabSEP(m.Vocab)
 	if marker == llama.TokenNull || separator == llama.TokenNull {
 		return nil, fmt.Errorf("init-laya: model has no mask or separator token")
 	}
-	if outputWidth := llama.ModelNEmbdOut(m.model); outputWidth != 3 {
+	if outputWidth := llama.ModelNEmbdOut(m.Model); outputWidth != 3 {
 		return nil, fmt.Errorf("init-laya: invalid output embedding width %d", outputWidth)
 	}
 
-	maxHeadTokens, err := m.modelInfo.profile.Decision.MaxHeadTokens()
+	maxHeadTokens, err := m.Calibration.MaxHeadTokens()
 	if err != nil {
 		return nil, fmt.Errorf("init-laya: %w", err)
 	}
 
 	return &layaProtocol{
-		model:         m,
+		runtime:       m,
 		template:      tmpl,
 		marker:        marker,
 		separator:     separator,
-		markerText:    tokenText(m.vocab, marker),
+		markerText:    tokenText(m.Vocab, marker),
 		maxHeadTokens: maxHeadTokens,
 	}, nil
 }
 
-func (p *layaProtocol) decide(ctx context.Context, req DecisionRequest) (DecisionResponse, error) {
+func (p *layaProtocol) Decide(ctx context.Context, req DecisionRequest) (DecisionResponse, error) {
 	state, err := decisionSystemOneText(req.State)
 	if err != nil {
 		return DecisionResponse{}, fmt.Errorf("decision: serialize state: %w", err)
@@ -57,7 +57,7 @@ func (p *layaProtocol) decide(ctx context.Context, req DecisionRequest) (Decisio
 	state = strings.ReplaceAll(state, p.markerText, " ")
 
 	optionsByQuestion := make([][]systemOneOption, len(req.Questions))
-	work := make([]decisionWork, len(req.Questions))
+	work := make([]Work, len(req.Questions))
 	for i, question := range req.Questions {
 		options, err := decisionSystemOneOptions(question)
 		if err != nil {
@@ -77,24 +77,24 @@ func (p *layaProtocol) decide(ctx context.Context, req DecisionRequest) (Decisio
 		if err != nil {
 			return DecisionResponse{}, fmt.Errorf("decision: question %q: %w", question.ID, err)
 		}
-		tokens := llama.Tokenize(p.model.vocab, prompt, false, true)
+		tokens := llama.Tokenize(p.runtime.Vocab, prompt, false, true)
 		tokens, markers, err := p.fit(tokens, len(options))
 		if err != nil {
 			return DecisionResponse{}, fmt.Errorf("decision: question %q: %w", question.ID, err)
 		}
-		if len(tokens) > p.model.decision.contextWindow {
-			return DecisionResponse{}, fmt.Errorf("decision: question %q: %w: input needs %d tokens, limit is %d", question.ID, ErrDecisionBudget, len(tokens), p.model.decision.contextWindow)
+		if len(tokens) > p.runtime.ContextWindow {
+			return DecisionResponse{}, fmt.Errorf("decision: question %q: %w: input needs %d tokens, limit is %d", question.ID, ErrDecisionBudget, len(tokens), p.runtime.ContextWindow)
 		}
 
-		readouts := make([]decisionReadout, len(markers))
+		readouts := make([]Readout, len(markers))
 		for j, marker := range markers {
-			readouts[j] = decisionReadout{position: marker, embeddingWidth: 3}
+			readouts[j] = Readout{Position: marker, EmbeddingWidth: 3}
 		}
 		optionsByQuestion[i] = options
-		work[i] = decisionWork{tokens: tokens, readouts: readouts}
+		work[i] = Work{Tokens: tokens, Readouts: readouts}
 	}
 
-	readouts, err := p.model.decision.run(ctx, work)
+	readouts, err := p.runtime.Run(ctx, work)
 	if err != nil {
 		return DecisionResponse{}, fmt.Errorf("decision: laya readout: %w", err)
 	}
@@ -109,7 +109,7 @@ func (p *layaProtocol) decide(ctx context.Context, req DecisionRequest) (Decisio
 			}
 			scores[j] = embedding[column]
 		}
-		temperature, err := decisionTemperature(p.model, question)
+		temperature, err := decisionTemperature(p.runtime, question)
 		if err != nil {
 			return DecisionResponse{}, fmt.Errorf("decision: question %q: %w", question.ID, err)
 		}
@@ -121,7 +121,7 @@ func (p *layaProtocol) decide(ctx context.Context, req DecisionRequest) (Decisio
 	}
 
 	return DecisionResponse{
-		Model:   p.model.responseModelID(),
+		Model:   p.runtime.ModelID,
 		Answers: answers,
 		Usage:   DecisionUsage{InputTokens: decisionInputTokens(work)},
 	}, nil

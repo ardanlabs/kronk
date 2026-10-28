@@ -1,4 +1,4 @@
-package model
+package decision
 
 import (
 	"context"
@@ -8,12 +8,12 @@ import (
 )
 
 type systemOneOpenJEVProtocol struct {
-	model        *Model
+	runtime      *Runtime
 	template     systemOneTemplate
 	letterTokens []llama.Token
 }
 
-func newSystemOneOpenJEVProtocol(m *Model) (*systemOneOpenJEVProtocol, error) {
+func newSystemOneOpenJEVProtocol(m *Runtime) (*systemOneOpenJEVProtocol, error) {
 	tmpl, err := newSystemOneTemplate(m)
 	if err != nil {
 		return nil, fmt.Errorf("init-openjev: %w", err)
@@ -21,7 +21,7 @@ func newSystemOneOpenJEVProtocol(m *Model) (*systemOneOpenJEVProtocol, error) {
 
 	letterTokens := make([]llama.Token, len(openJEVLetters))
 	for i, letter := range openJEVLetters {
-		tokens := llama.Tokenize(m.vocab, string(letter), false, false)
+		tokens := llama.Tokenize(m.Vocab, string(letter), false, false)
 		if len(tokens) != 1 {
 			return nil, fmt.Errorf("init-openjev: label %q is not a single token", letter)
 		}
@@ -29,20 +29,20 @@ func newSystemOneOpenJEVProtocol(m *Model) (*systemOneOpenJEVProtocol, error) {
 	}
 
 	return &systemOneOpenJEVProtocol{
-		model:        m,
+		runtime:      m,
 		template:     tmpl,
 		letterTokens: letterTokens,
 	}, nil
 }
 
-func (p *systemOneOpenJEVProtocol) decide(ctx context.Context, req DecisionRequest) (DecisionResponse, error) {
+func (p *systemOneOpenJEVProtocol) Decide(ctx context.Context, req DecisionRequest) (DecisionResponse, error) {
 	state, err := decisionSystemOneText(req.State)
 	if err != nil {
 		return DecisionResponse{}, fmt.Errorf("decision: serialize state: %w", err)
 	}
 
 	optionsByQuestion := make([][]systemOneOption, len(req.Questions))
-	work := make([]decisionWork, len(req.Questions))
+	work := make([]Work, len(req.Questions))
 	for i, question := range req.Questions {
 		options, err := decisionSystemOneOptions(question)
 		if err != nil {
@@ -63,33 +63,33 @@ func (p *systemOneOpenJEVProtocol) decide(ctx context.Context, req DecisionReque
 		if err != nil {
 			return DecisionResponse{}, fmt.Errorf("decision: question %q: %w", question.ID, err)
 		}
-		tokens := llama.Tokenize(p.model.vocab, prompt, false, true)
+		tokens := llama.Tokenize(p.runtime.Vocab, prompt, false, true)
 		if len(tokens) == 0 {
 			return DecisionResponse{}, fmt.Errorf("decision: question %q: tokenize prompt: no tokens", question.ID)
 		}
-		if len(tokens) > p.model.decision.contextWindow {
-			return DecisionResponse{}, fmt.Errorf("decision: question %q: %w: input needs %d tokens, limit is %d", question.ID, ErrDecisionBudget, len(tokens), p.model.decision.contextWindow)
+		if len(tokens) > p.runtime.ContextWindow {
+			return DecisionResponse{}, fmt.Errorf("decision: question %q: %w: input needs %d tokens, limit is %d", question.ID, ErrDecisionBudget, len(tokens), p.runtime.ContextWindow)
 		}
 
 		optionsByQuestion[i] = options
-		work[i] = decisionWork{
-			tokens:    tokens,
-			prefixLen: len(tokens) - 1,
-			readouts: []decisionReadout{{
-				position:   len(tokens) - 1,
-				candidates: append([]llama.Token(nil), p.letterTokens[:len(options)]...),
+		work[i] = Work{
+			Tokens:    tokens,
+			PrefixLen: len(tokens) - 1,
+			Readouts: []Readout{{
+				Position:   len(tokens) - 1,
+				Candidates: append([]llama.Token(nil), p.letterTokens[:len(options)]...),
 			}},
 		}
 	}
 
-	readouts, err := p.model.decision.run(ctx, work)
+	readouts, err := p.runtime.Run(ctx, work)
 	if err != nil {
 		return DecisionResponse{}, fmt.Errorf("decision: openjev readout: %w", err)
 	}
 
 	answers := make(map[string]DecisionAnswer, len(req.Questions))
 	for i, question := range req.Questions {
-		temperature, err := decisionTemperature(p.model, question)
+		temperature, err := decisionTemperature(p.runtime, question)
 		if err != nil {
 			return DecisionResponse{}, fmt.Errorf("decision: question %q: %w", question.ID, err)
 		}
@@ -101,7 +101,7 @@ func (p *systemOneOpenJEVProtocol) decide(ctx context.Context, req DecisionReque
 	}
 
 	return DecisionResponse{
-		Model:   p.model.responseModelID(),
+		Model:   p.runtime.ModelID,
 		Answers: answers,
 		Usage:   DecisionUsage{InputTokens: decisionInputTokens(work)},
 	}, nil

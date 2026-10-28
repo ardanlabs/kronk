@@ -1,4 +1,4 @@
-package model
+package decision
 
 import (
 	"encoding/json"
@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/ardanlabs/jinja"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
 
@@ -23,8 +24,8 @@ type systemOneOption struct {
 	label       string
 }
 
-func newSystemOneTemplate(m *Model) (systemOneTemplate, error) {
-	source := llama.ModelChatTemplate(m.model, "systemone")
+func newSystemOneTemplate(m *Runtime) (systemOneTemplate, error) {
+	source := llama.ModelChatTemplate(m.Model, "systemone")
 	if source == "" {
 		return systemOneTemplate{}, fmt.Errorf("decision model has no %q template", "systemone")
 	}
@@ -70,22 +71,18 @@ func (t systemOneTemplate) renderValues(values D) (string, error) {
 	return rendered, nil
 }
 
-func decisionUsesEmbeddings(protocol DecisionProtocol) bool {
-	return protocol == DecisionProtocolLaya || protocol == DecisionProtocolKev || protocol == DecisionProtocolClef || protocol == DecisionProtocolVllmDecision2
-}
-
-func (m *Model) decisionLabelTokens() ([]llama.Token, []string, error) {
+func (m *Runtime) decisionLabelTokens() ([]llama.Token, []string, error) {
 	return decisionLabelTokens(func(index uint32) (string, error) {
-		return llama.ModelDecisionLabel(m.model, index)
+		return llama.ModelDecisionLabel(m.Model, index)
 	}, func(text string) []llama.Token {
-		return llama.Tokenize(m.vocab, text, false, false)
+		return llama.Tokenize(m.Vocab, text, false, false)
 	})
 }
 
 func decisionLabelTokens(labelAt func(uint32) (string, error), encode func(string) []llama.Token) ([]llama.Token, []string, error) {
 	var tokens []llama.Token
 	var labels []string
-	for i := range decisionMaxReadouts {
+	for i := range MaxReadouts {
 		label, err := labelAt(uint32(i))
 		if i == 0 && errors.Is(err, llama.ErrModelNoDecisionLabel) {
 			break
@@ -116,11 +113,11 @@ func decisionLabelTokens(labelAt func(uint32) (string, error), encode func(strin
 		}
 	}
 
-	for first := 'A'; first <= 'Z' && len(tokens) < decisionMaxReadouts; first++ {
+	for first := 'A'; first <= 'Z' && len(tokens) < MaxReadouts; first++ {
 		appendLabel(string(first))
 	}
-	for first := 'A'; first <= 'Z' && len(tokens) < decisionMaxReadouts; first++ {
-		for second := 'A'; second <= 'Z' && len(tokens) < decisionMaxReadouts; second++ {
+	for first := 'A'; first <= 'Z' && len(tokens) < MaxReadouts; first++ {
+		for second := 'A'; second <= 'Z' && len(tokens) < MaxReadouts; second++ {
 			appendLabel(string([]rune{first, second}))
 		}
 	}
@@ -196,33 +193,12 @@ func decisionSystemOneOptions(question DecisionQuestion) ([]systemOneOption, err
 	}
 }
 
-func decisionTemperature(m *Model, question DecisionQuestion) (float64, error) {
+func decisionTemperature(m *Runtime, question DecisionQuestion) (float64, error) {
 	n := decisionOptionCount(question)
-	bucket := ""
-	if m.modelInfo.decisionProtocol == DecisionProtocolLev {
-		switch {
-		case n <= 8:
-			bucket = "small"
-		case n <= 26:
-			bucket = "mid"
-		default:
-			bucket = "large"
-		}
-	} else {
-		switch {
-		case n <= 2:
-			bucket = "2"
-		case n <= 5:
-			bucket = "3_5"
-		case n <= 10:
-			bucket = "6_10"
-		default:
-			bucket = "11"
-		}
-	}
+	bucket := modelprofile.DecisionContractFor(m.Protocol).TemperatureBucket(n)
 
 	for _, suffix := range []string{question.Type.String() + "." + bucket, question.Type.String()} {
-		temperature, exists, err := m.modelInfo.profile.Decision.Temperature(suffix)
+		temperature, exists, err := m.Calibration.Temperature(suffix)
 		if !exists {
 			continue
 		}

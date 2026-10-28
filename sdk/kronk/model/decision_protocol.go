@@ -4,43 +4,24 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hybridgroup/yzma/pkg/llama"
+	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/decision"
 )
 
-type decisionProtocol interface {
-	decide(ctx context.Context, req DecisionRequest) (DecisionResponse, error)
-}
-
-// decisionMediaProtocol declares prompt support, independently of the loaded
-// projector's capabilities. Protocols without this contract remain text-only.
-type decisionMediaProtocol interface {
-	mediaSupport() MediaType
-}
-
-type decisionProtocolFactory func(m *Model) (decisionProtocol, error)
-
-var decisionProtocolFactories = map[DecisionProtocol]decisionProtocolFactory{
-	DecisionProtocolOpenJEV:       newDetectedOpenJEVProtocol,
-	DecisionProtocolJevStyle:      func(m *Model) (decisionProtocol, error) { return newJevStyleProtocol(m) },
-	DecisionProtocolLaya:          func(m *Model) (decisionProtocol, error) { return newLayaProtocol(m) },
-	DecisionProtocolLev:           func(m *Model) (decisionProtocol, error) { return newLevProtocol(m) },
-	DecisionProtocolKev:           func(m *Model) (decisionProtocol, error) { return newKevProtocol(m) },
-	DecisionProtocolNimble:        func(m *Model) (decisionProtocol, error) { return newNimbleProtocol(m) },
-	DecisionProtocolClef:          func(m *Model) (decisionProtocol, error) { return newClefProtocol(m) },
-	DecisionProtocolPplxDecider:   newDeciderProtocol,
-	DecisionProtocolLfm2D1:        newDeciderProtocol,
-	DecisionProtocolLfm3D1:        newDeciderProtocol,
-	DecisionProtocolVllmD3:        newDeciderProtocol,
-	DecisionProtocolVllmDecision2: newDecision2Protocol,
-}
-
 func initDecisionProtocol(m *Model) error {
-	factory, exists := decisionProtocolFactories[m.modelInfo.decisionProtocol]
-	if !exists {
-		return fmt.Errorf("init-decision-protocol: unknown decision protocol %q", m.modelInfo.decisionProtocol)
-	}
-
-	protocol, err := factory(m)
+	protocol, err := decision.New(decision.Runtime{
+		Model: m.model, Vocab: m.vocab,
+		ModelID: m.responseModelID(), Protocol: m.modelInfo.decisionProtocol.String(),
+		AddBOSToken: m.addBOSToken, ContextWindow: m.decision.contextWindow,
+		Calibration: m.modelInfo.profile.Decision,
+		Run:         m.runDecisionWork,
+		RenderChat: func(ctx context.Context, prompt string) (string, error) {
+			return m.applyJinjaTemplate(ctx, D{
+				"messages":             []D{{"role": RoleUser, "content": prompt}},
+				"chat_template_kwargs": D{"enable_thinking": false},
+			})
+		},
+		PrepareMedia: m.prepareProtocolMedia,
+	})
 	if err != nil {
 		return err
 	}
@@ -48,11 +29,45 @@ func initDecisionProtocol(m *Model) error {
 	return nil
 }
 
-func newDetectedOpenJEVProtocol(m *Model) (decisionProtocol, error) {
-	if llama.ModelChatTemplate(m.model, "systemone") != "" {
-		return newSystemOneOpenJEVProtocol(m)
+// Protocol plans contain only request-owned data. Native staging, scheduling,
+// and context ownership remain in the model engine.
+func (m *Model) runDecisionWork(ctx context.Context, plans []decision.Work) ([][][]float32, error) {
+	work := make([]decisionWork, len(plans))
+	for i, plan := range plans {
+		readouts := make([]decisionReadout, len(plan.Readouts))
+		for j, readout := range plan.Readouts {
+			readouts[j] = decisionReadout{position: readout.Position, candidates: readout.Candidates, embeddingWidth: readout.EmbeddingWidth}
+		}
+		prefix := make([]extendedBatchEntry, len(plan.PrefixRows))
+		for j, row := range plan.PrefixRows {
+			prefix[j] = extendedBatchEntry{
+				token: row.Token, hasToken: row.HasToken,
+				embedding: row.Embedding, embdWidth: len(row.Embedding),
+				positions: row.Positions, positionCount: row.PositionCount,
+			}
+		}
+		work[i] = decisionWork{
+			tokens: plan.Tokens, prefixRows: prefix, position: plan.Position,
+			prefixLen: plan.PrefixLen, readouts: readouts,
+			decisionOrder: plan.DecisionOrder, jointScores: plan.JointScores,
+		}
 	}
-	return newOpenJEVProtocol(m)
+	return m.decision.run(ctx, work)
+}
+
+func (m *Model) prepareProtocolMedia(ctx context.Context, prompt string, images [][]byte) ([]decision.PrefixRow, int, error) {
+	rows, position, err := m.prepareDecisionMedia(ctx, prompt, images)
+	if err != nil {
+		return nil, 0, err
+	}
+	prefix := make([]decision.PrefixRow, len(rows))
+	for i, row := range rows {
+		prefix[i] = decision.PrefixRow{
+			Token: row.token, HasToken: row.hasToken, Embedding: row.embedding,
+			Positions: row.positions, PositionCount: row.positionCount,
+		}
+	}
+	return prefix, position, nil
 }
 
 // Decision evaluates a set of decision questions against shared state.
@@ -64,13 +79,13 @@ func (m *Model) Decision(ctx context.Context, req DecisionRequest) (DecisionResp
 		return DecisionResponse{}, err
 	}
 	if len(req.Images) > 0 {
-		media, ok := m.protocol.(decisionMediaProtocol)
-		if !ok || media.mediaSupport() != MediaTypeVision {
+		media, ok := m.protocol.(decision.ImageProtocol)
+		if !ok || !media.SupportsImages() {
 			return DecisionResponse{}, fmt.Errorf("%w: decision protocol %q does not support images", ErrDecisionRequest, m.modelInfo.decisionProtocol)
 		}
 		if m.mtmdMetaCtx == 0 || !m.mtmdCapabilities.Vision {
 			return DecisionResponse{}, fmt.Errorf("%w: decision images require a compatible vision projector", ErrDecisionRequest)
 		}
 	}
-	return m.protocol.decide(ctx, req)
+	return m.protocol.Decide(ctx, req)
 }
