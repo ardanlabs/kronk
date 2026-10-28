@@ -238,8 +238,7 @@ func readCellComparison(s runSummary, r report, events []byte) (comparisonInput,
 	if (s.Status != "PASS" && s.Status != "FAIL") || s.Workload == "" || s.Model == "" {
 		return input, fmt.Errorf("summary.json: missing supported run identity/status")
 	}
-	uncalibrated := (r.TwoSlots || r.isDense()) && s.ReferenceTokens == (normalizationReference{})
-	if !uncalibrated && (s.ReferenceTokens.InputTokens <= 0 || s.ReferenceTokens.GenerationTokens <= 0) {
+	if s.ReferenceTokens.InputTokens <= 0 || s.ReferenceTokens.GenerationTokens <= 0 {
 		return input, fmt.Errorf("summary.json: missing or invalid normalization reference; rerun quick-check")
 	}
 	if s.ID != r.ID || s.Status != r.Status || s.Workload != r.Workload || s.Model != r.Model ||
@@ -415,14 +414,6 @@ func compareRuns(aDir, bDir string, a, b comparisonInput) comparison {
 	check("workload", a.summary.Workload, b.summary.Workload)
 	check("matrix cell", a.summary.Cell, b.summary.Cell)
 	check("normalization reference", a.summary.ReferenceTokens, b.summary.ReferenceTokens)
-	if ((a.report.TwoSlots || a.report.isDense()) && a.summary.ReferenceTokens == (normalizationReference{})) ||
-		((b.report.TwoSlots || b.report.isDense()) && b.summary.ReferenceTokens == (normalizationReference{})) {
-		kind := "two-slot"
-		if a.report.isDense() || b.report.isDense() {
-			kind = "Dense"
-		}
-		c.Warnings = append(c.Warnings, "Normalized metrics unavailable: "+kind+" normalization reference is uncalibrated")
-	}
 	if a.summary.ReferenceTokens != b.summary.ReferenceTokens {
 		c.Warnings = append(c.Warnings, "Normalized delta omitted: reference token amounts differ")
 	}

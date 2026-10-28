@@ -381,7 +381,7 @@ func main() {
 	}
 	var o options
 	flag.StringVar(&o.host, "host", "http://localhost:11435", "running Kronk server URL")
-	flag.StringVar(&o.out, "out", ".tools/quick-check/output", "artifact parent; retains committed baseline and latest candidate")
+	flag.StringVar(&o.out, "out", ".tools/quick-check/output", "artifact parent; retains new candidate and passing old/release baselines")
 	flag.StringVar(&o.serverLog, "server-log", filepath.Join(home, ".kronk/kronk.log"), "required local JSON server log")
 	flag.DurationVar(&o.timeout, "timeout", 5*time.Minute, "per-request timeout; not a performance threshold")
 	flag.IntVar(&o.repetitions, "repetitions", 2, "workload repetitions per cell; stop a failing cell, then continue remaining cells")
@@ -658,7 +658,7 @@ func executeCell(o options, c *client, r *report, log func(string, ...any)) (run
 			repetition.Status = "PASS"
 		}
 		if i == 1 {
-			// Invocation metadata comes from its first repetition. Full per-run
+			// Cell metadata comes from its first repetition. Full per-repetition
 			// metadata remains in the diagnostic report, not duplicated in summary.
 			r.Metadata = repetition.Metadata
 			r.ServerRevision, r.ServerCommitTime = repetition.ServerRevision, repetition.ServerCommitTime
@@ -705,7 +705,6 @@ func execute(o options, c *client, r *report, log func(string, ...any)) (runErr 
 		r.Metadata[path] = metadata
 		if path == "/v1/liveness" {
 			liveness, _ := metadata.(map[string]any)
-			delete(liveness, "vcs_modified") // Older servers may still expose the retired flag.
 			r.ServerRevision, _ = liveness["vcs_revision"].(string)
 			if stamp, ok := liveness["vcs_time"].(string); ok && stamp != "" {
 				r.ServerCommitTime = stamp

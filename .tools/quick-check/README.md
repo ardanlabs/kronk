@@ -25,71 +25,17 @@ make quick-check-this-code QUICK_CHECK_ARGS='-cell MoE/1s/IMC+/MTP+/img- -cell M
 make quick-check-this-code QUICK_CHECK_ARGS='-cell Dense/1s/IMC+/MTP+/img-'
 ```
 
-IDs use `<routing>/<slots>/IMC<mode>/MTP<mode>/img<mode>`: routing is `MoE` or `Dense`,
-slots are `1s` or `2s`, and each mode is `+` (on) or `-` (off).
-There are no group selectors or comma-separated lists. Selected cells run in
-matrix order, regardless of argument order. Images require the projection file.
-
-Dense Normalized values use per-cell Q8 references calibrated from the Chicha
-run `new-f87f7d4` (llama b11901). All reference constants are together at the top
-of [repetitions.go](repetitions.go). These are provisional for the familiar-word
-workload below: the calibration run used the earlier names. MoE references are
-unchanged; review both families against fresh runs of the new workload.
-
-Calibration uses rounded medians of completed-request effective input tokens
-(prompt minus actual reuse) and generation tokens (completion minus its first
-token), excluding warm-up and cancelled requests. Fifteen Dense cells have two
-samples; `Dense/2s/IMC-/MTP-/img+` has one complete measured sample with a
-content-only finding. Its FAIL verdict is unchanged; the unrun repetition is not
-a sample. Saved reports are never rewritten to use new references.
-
 One-slot image cells exercise image rebuild, replay, append, a different
 image/session, cancellation, and recovery with the original image. Two-slot cells
 exercise overlapping conversations, peer cancellation, and same-slot recovery.
 Their image variants add a first image to text history, then another image to
 image history, and recover with text while the other conversation continues.
 
-Private facts use familiar words so the probe focuses on state handling rather
-than unusual spelling:
-
-| Fact | Conversation A | Conversation B |
-| --- | --- | --- |
-| Identifier | River | Mountain |
-| Owner | Alice | Bob |
-| Initial destination | Apple | Lemon |
-| Updated destination | Orange | Cherry (two-slot cells) |
-
-The cancellation-only identifier is Forest. Validation matches whole words
-(case-insensitive), accepting singular and ordinary plural forms such as
-giraffe/giraffes, Orange/Oranges, and Cherry/Cherries; deer is unchanged. The
-same matching applies to required and excluded markers, so plurals cannot hide
-foreign facts. Substrings such as riverbank still cannot satisfy River.
-Workloads are versioned as
-`operations-v4` (one slot) and `operations-concurrent-v3` (two slots). Results
-from earlier workloads are not code-only performance comparisons.
 
 ```sh
 # Optional settings (KRONK_TOKEN supplies authentication):
 make quick-check-this-code QUICK_CHECK_ARGS='-repetitions 3 -host http://localhost:11435 -server-log /path/to/kronk.log'
 ```
-
-### Findings
-
-Every finding still makes the cell and overall check **FAIL**. Categories describe
-the observed signal, not a proven cause or engine defect:
-
-| Category | Meaning | Execution behavior |
-| --- | --- | --- |
-| `CONTENT` | Missing/wrong required facts, repeating this conversation's old destination (even in a negation), or missing/disallowed animal descriptions. | Keep the finding and finish the remaining phases in that repetition; do not cancel a peer for this alone. |
-| `ISOLATION` | Another handover's private marker appears, including a cancellation-only marker in a different conversation. | Hard failure; stop the affected workload and cancel its active peer. |
-| `INFRASTRUCTURE` | Transport, completion, usage, cache/MTP, overlap, cancellation, cleanup, or required execution evidence fails. | Hard failure; stop when detected. Server-evidence checks run after the measured workload. |
-
-`summary.json` groups findings under `findings_by_category` in each repetition
-and phase. Phase `infrastructure_status` and `isolation_status`, and the terminal
-probe lines, separate execution/isolation evidence from content mismatches.
-Failed cells also print category counts. A content-only FAIL still suppresses
-aggregate timings, leaves later repetitions unrun, and follows failed-run retention;
-it is not silently downgraded to PASS or retried until successful.
 
 ### Testing another revision
 
@@ -114,9 +60,6 @@ the server first. Uncommitted changes are not flagged, though they are taken int
 the retention rules below. Copy any run you want to keep into
 `output/saved_local_runs/` before running again.**
 
-A subset run follows the same retention rules as a full run; results from
-separate invocations are not merged. A passing run replaces previous same-commit
-reports, but a failed or interrupted run preserves a same-commit passing baseline.
 
 ## Results
 
@@ -128,18 +71,6 @@ Runs are saved under `.tools/quick-check/output/`:
 
 All selected cells share these three files and one retention queue, directly under
 `output/`.
-
-The terminal prints each executed cell's compact summary after all its repetitions
-and evidence collection finish, then the overall verdict at the end. These writes
-are outside measured workload intervals, never between repetitions or on the
-token/phase path. Skipped cells remain `NOT_RUN` in the saved report.
-
-Ctrl+C or SIGTERM cancels active requests and attempts model cleanup (bounded to
-15 seconds), then saves the report as `INTERRUPTED`. Completed cells keep their
-results and timings; an incomplete cell retains partial evidence but has no valid
-aggregate timing. Unstarted cells stay `NOT_RUN`. A later invocation starts a new
-run; it does not resume or merge the interrupted run. Forced termination such as
-SIGKILL cannot perform this finalization.
 
 Those files can be useful to feed a harness and investigate reasons for slowdowns or regressions, alongside the bigger reliability tools.
 

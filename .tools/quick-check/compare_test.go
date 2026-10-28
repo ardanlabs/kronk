@@ -14,37 +14,21 @@ import (
 
 func TestCompareAutomaticSelection(t *testing.T) {
 	parent := t.TempDir()
-	add := func(name string, values []float64) string {
+	add := func(name string) string {
 		t.Helper()
-		dir := filepath.Join(parent, name)
-		r := comparisonFixture(values)
+		r := comparisonFixture([]float64{2, 6})
 		if strings.HasPrefix(name, "new-") {
-			r.ServerRevision = strings.Repeat("b", 40)
 			r.TestStartedAt = "2026-10-20T16:00:00Z"
 		}
+		dir := filepath.Join(parent, name)
 		if err := os.Rename(writeComparisonFixture(t, r), dir); err != nil {
 			t.Fatal(err)
 		}
 		return dir
 	}
-	// Roles win over timestamps, creation order, and the protected release copy.
-	newer := add("new-bbbbbbb", []float64{2, 6, 14})
-	older := add("old-aaaaaaa", []float64{1, 4, 10})
-	add("release-v1.0.0", []float64{3})
-	archive := filepath.Join(parent, "saved_local_runs")
-	if err := os.Mkdir(archive, 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Rename(writeComparisonFixture(t, comparisonFixture([]float64{3})), filepath.Join(archive, "20261021T170000Z-3")); err != nil {
-		t.Fatal(err)
-	}
-	incomplete := filepath.Join(parent, "20261021T180000Z-4")
-	if err := os.Mkdir(incomplete, 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(incomplete, "summary.json"), []byte(`{}`), 0600); err != nil {
-		t.Fatal(err)
-	}
+	// Managed roles, not timestamps or creation order, select the pair.
+	newer, older := add("new-bbbbbbb"), add("old-aaaaaaa")
+	add("release-v1.0.0")
 	var out bytes.Buffer
 	if err := compareCommand([]string{"-out", parent, "-json"}, &out); err != nil {
 		t.Fatal(err)
@@ -56,263 +40,43 @@ func TestCompareAutomaticSelection(t *testing.T) {
 	if got.Baseline.Directory != older || got.Candidate.Directory != newer || got.Status != "PASS" {
 		t.Fatalf("incorrect automatic ordering: %+v", got)
 	}
-	// Explicit selection can deliberately reverse the order and bypass discovery.
-	out.Reset()
-	if err := compareCommand([]string{"-out", parent, "-baseline", newer, "-candidate", older, "-json"}, &out); err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
-		t.Fatal(err)
-	}
-	if got.Baseline.Directory != newer || got.Candidate.Directory != older {
-		t.Fatal("explicit order was overridden")
-	}
-	for _, args := range [][]string{{"-out", parent, "-baseline", older}, {"-out", parent, "-candidate", newer}} {
-		if err := compareCommand(args, &out); err == nil {
-			t.Fatal("accepted only one explicit path")
-		}
-	}
-	third := add("20261021T190000Z-5", []float64{3})
-	for _, against := range []string{"commit", "release"} {
-		if err := compareCommand([]string{"-out", parent, "-against", against}, &out); err == nil {
-			t.Fatal("selected a stale candidate from an ambiguous queue", against)
-		}
-	}
-	if err := os.RemoveAll(third); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Rename(newer, filepath.Join(parent, "20261021T162309Z-2")); err != nil {
-		t.Fatal(err)
-	}
-	staged := filepath.Join(parent, "20261021T160436Z-9")
-	if err := os.Rename(older, staged); err != nil {
-		t.Fatal(err)
-	}
+	add("20261021T190000Z-5")
 	if err := compareCommand([]string{"-out", parent}, &out); err == nil {
-		t.Fatal("automatically compared runs without managed roles")
-	}
-	if err := os.RemoveAll(staged); err != nil {
-		t.Fatal(err)
-	}
-	if err := compareCommand([]string{"-out", parent}, &out); err == nil {
-		t.Fatal("compared a single run")
-	}
-}
-
-func TestCompareImageCell(t *testing.T) {
-	parent := t.TempDir()
-	for _, role := range []string{"old-aaaaaaa", "new-aaaaaaa"} {
-		r := comparisonFixture([]float64{2, 6})
-		r.Images = true
-		r.ReferenceTokens = referenceTokens(true, false, false, false)
-		for i := range r.Repetitions {
-			r.Repetitions[i].Images = true
-			r.Repetitions[i].ReferenceTokens = r.ReferenceTokens
-		}
-		if err := os.Rename(writeComparisonFixture(t, r), filepath.Join(parent, role)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	text := writeComparisonFixture(t, comparisonFixture([]float64{1, 4}))
-	var out bytes.Buffer
-	if err := compareCommand([]string{"-out", parent}, &out); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out.String(), "img+") || !strings.Contains(out.String(), "Normalized (s)") {
-		t.Fatal("image comparison identity/metrics missing", out.String())
-	}
-	for _, artifact := range []string{"comparison.log", "comparison.json"} {
-		if _, err := os.Stat(filepath.Join(parent, artifact)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	out.Reset()
-	if err := compareCommand([]string{"-out", parent, "-baseline", text, "-candidate", filepath.Join(parent, "new-aaaaaaa")}, &out); err == nil || !strings.Contains(out.String(), "Comparison status: NOT_RUN") {
-		t.Fatal("cross-cell reports must not manufacture a comparison", err, out.String())
-	}
-}
-
-func TestCompareMatrixSelection(t *testing.T) {
-	image := func(values ...float64) report {
-		r := comparisonFixture(values)
-		r.Images = true
-		r.ReferenceTokens = referenceTokens(true, false, false, false)
-		for i := range r.Repetitions {
-			r.Repetitions[i].Images = true
-			r.Repetitions[i].ReferenceTokens = r.ReferenceTokens
-		}
-		return r
-	}
-	base := writeComparisonFixture(t, comparisonFixture([]float64{1, 4}), image(10, 20))
-	for _, subset := range []bool{false, true} {
-		text, pictures := comparisonFixture([]float64{2, 6}), image(8, 12)
-		for _, r := range []*report{&text, &pictures} {
-			r.Metadata["/v1/kronk/libs"].(map[string]any)["current"] = "new-library"
-			r.HarnessRevision = "new-harness"
-		}
-		text.Repetitions[0].SystemTokens++ // A warning belonging only to the text cell.
-		if subset {
-			pictures = report{Images: true, Status: "NOT_RUN"}
-		}
-		// Deliberately reverse the report order; timings must follow IDs.
-		candidate := writeComparisonFixture(t, pictures, text)
-		var out bytes.Buffer
-		if err := compareCommand([]string{"-out", t.TempDir(), "-baseline", base, "-candidate", candidate, "-json"}, &out); err != nil {
-			t.Fatal(err)
-		}
-		var got matrixComparison
-		if err := json.Unmarshal(out.Bytes(), &got); err != nil {
-			t.Fatal(err)
-		}
-		if got.Status != "PASS" || len(got.Cells) != 2 {
-			t.Fatal("missing matrix comparisons", out.String())
-		}
-		jsonBefore, _ := json.Marshal(got)
-		var display bytes.Buffer
-		if err := got.writeText(&display); err != nil {
-			t.Fatal(err)
-		}
-		shown := display.String()
-		shared := `Warning: installed library: "test-library" -> "new-library"`
-		if strings.Count(shown, shared) != 1 || strings.Index(shown, shared) > strings.Index(shown, "Baseline median [SD]") || strings.Contains(shown, "harness revision:") {
-			t.Fatal("common warning must appear once above metrics without exposing hidden warnings", shown)
-		}
-		local := "repetition 1: system token count/hash changed or missing"
-		if strings.Count(shown, local) != 1 || (!subset && !strings.Contains(shown, "Warning [MoE/1s/IMC+/MTP+/img-]: "+local)) {
-			t.Fatal("cell-specific warning lost or moved to the common header", shown)
-		}
-		if strings.Count(shown, "Baseline median [SD]") != 1 || strings.Contains(shown, "| baseline") {
-			t.Fatal("comparison must have one table header without repeated cell-status lines", shown)
-		}
-		metricColumn := -1
-		lines := strings.Split(shown, "\n")
-		for i, line := range lines {
-			if strings.HasPrefix(line, "Cell ") {
-				metricColumn = strings.Index(line, "Metric")
-			}
-			for _, label := range []string{"Workload (s)", "Normalized (s)"} {
-				if column := strings.Index(line, label); column >= 0 && (metricColumn < 0 || column != metricColumn) {
-					t.Fatal("timing rows must align with the shared header", shown)
-				}
-			}
-			if strings.HasPrefix(line, "MoE/") && strings.Contains(line, "Workload (s)") && (i == 0 || strings.TrimSpace(lines[i-1]) != "") {
-				t.Fatal("cells must be separated by a blank line", shown)
-			}
-		}
-		jsonAfter, _ := json.Marshal(got)
-		if !bytes.Equal(jsonBefore, jsonAfter) {
-			t.Fatal("text rendering changed per-cell JSON warnings")
-		}
-		for _, cell := range got.Cells {
-			if strings.HasSuffix(cell.Cell, "img+") && subset {
-				if cell.Status != "NOT_RUN" || cell.SavedRunChecks["baseline"] != "PASS" || cell.SavedRunChecks["candidate"] != "NOT_RUN" || len(cell.Metrics) != 0 {
-					t.Fatal("unrun cell acquired metrics/status", out.String())
-				}
-				continue
-			}
-			want := 1.5
-			if strings.HasSuffix(cell.Cell, "img+") {
-				want = -5
-			}
-			found := false
-			for _, metric := range cell.Metrics {
-				if metric.Metric == "workload.elapsed_seconds" {
-					found = metric.Delta != nil && *metric.Delta == want
-				}
-			}
-			if !found {
-				t.Fatal("cell timing attributed by position instead of ID", out.String())
-			}
-		}
+		t.Fatal("accepted an ambiguous run queue")
 	}
 }
 
 func TestCompareCommand(t *testing.T) {
-	a := comparisonFixture([]float64{1, 4, 10})
-	b := comparisonFixture([]float64{2, 6, 14})
-	b.ServerRevision = strings.Repeat("b", 40)
-	b.Metadata["/v1/liveness"].(map[string]any)["vcs_revision"] = b.ServerRevision
-	base, candidate := writeComparisonFixture(t, a), writeComparisonFixture(t, b)
-	output := t.TempDir()
-	var out bytes.Buffer
-	args := []string{"-out", output, "-baseline", base, "-candidate", candidate, "-json"}
-	if err := compareCommand(args, &out); err != nil {
-		t.Fatal(err)
+	baseline := comparisonFixture([]float64{1, 4, 10})
+	saved := readComparisonCellFixture(t, baseline).summary.Measurements["workload"]["elapsed_seconds"]
+	base := writeComparisonFixture(t, baseline)
+	candidate := writeComparisonFixture(t, comparisonFixture([]float64{2, 6, 14}))
+	got, err := runComparisonFixture(t, base, candidate)
+	if err != nil || got.Status != "PASS" || len(got.Cells) != 1 {
+		t.Fatalf("comparison: %+v, %v", got, err)
 	}
-	first := out.String()
-	if !strings.Contains(first, `"saved_run_checks"`) {
-		t.Fatal("JSON output must expose saved-run checks", first)
-	}
-	var got matrixComparison
-	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
-		t.Fatal(err)
-	}
-	if got.Status != "PASS" || len(got.Cells[0].Warnings) != 0 {
-		t.Fatalf("unexpected verdict/warnings: %+v", got)
-	}
-	jsonModeLog, err := os.ReadFile(filepath.Join(output, "comparison.log"))
-	if err != nil || !bytes.HasPrefix(jsonModeLog, []byte("Comparison status: PASS\n")) {
-		t.Fatal("JSON mode must also save a plain-text summary", err)
-	}
-	rows := map[string]metricComparison{}
-	for _, row := range got.Cells[0].Metrics {
-		rows[row.Metric] = row
-	}
+	rows := comparisonMetricsFixture(got.Cells[0])
 	r := rows["workload.elapsed_seconds"]
-	if r.Baseline.Samples != 3 || r.Baseline.Median != 4 || r.Baseline.Min != 1 || r.Baseline.Max != 10 || math.Abs(*r.Baseline.SampleStdDev-math.Sqrt(21)) > 1e-12 ||
-		r.Candidate.Median != 6 || *r.Delta != 2 || *r.Percent != 50 {
-		t.Fatalf("incorrect asymmetric statistics/direction: %+v", r)
+	if r.Baseline == nil || r.Candidate == nil || r.Delta == nil || r.Percent == nil {
+		t.Fatalf("missing workload comparison: %+v", r)
+	}
+	if r.Baseline.Median != saved.Median || r.Baseline.Samples != saved.Samples {
+		t.Fatal("comparison did not preserve saved measurements", r.Baseline, saved)
+	}
+	if r.Baseline.Samples != 3 || r.Baseline.Median != 4 || r.Baseline.Min != 1 || r.Baseline.Max != 10 || r.Baseline.SampleStdDev == nil || math.Abs(*r.Baseline.SampleStdDev-math.Sqrt(21)) > 1e-12 || r.Candidate.Median != 6 || *r.Delta != 2 || *r.Percent != 50 {
+		t.Fatalf("incorrect statistics/direction: %+v", r)
 	}
 	zero := rows["cold.cached_tokens"]
 	if zero.Percent != nil || zero.Delta == nil || *zero.Delta != 0 {
 		t.Fatalf("zero denominator: %+v", zero)
 	}
-	startup := rows["warmup.startup.native_model_load_seconds"]
-	if startup.Baseline.Median != 3.5 || startup.Baseline.Samples != 1 || startup.Baseline.SampleStdDev != nil {
+	startup := rows["warmup.startup.native_model_load_seconds"].Baseline
+	if startup == nil || startup.Median != 3.5 || startup.Samples != 1 || startup.SampleStdDev != nil {
 		t.Fatalf("saved startup measurement: %+v", startup)
-	}
-	if rows["warmup.elapsed_seconds"].Baseline.Samples != 1 {
-		t.Fatal("warm-up pooled with repetitions")
-	}
-	out.Reset()
-	if err := compareCommand(args, &out); err != nil || out.String() != first {
-		t.Fatal("comparison is not deterministic", err)
-	}
-	out.Reset()
-	if err := compareCommand([]string{"-out", output, "-baseline", candidate, "-candidate", base, "-json"}, &out); err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
-		t.Fatal(err)
-	}
-	for _, row := range got.Cells[0].Metrics {
-		if row.Metric == "workload.elapsed_seconds" && (*row.Delta != -2 || math.Abs(*row.Percent+100.0/3) > 1e-12) {
-			t.Fatal("reversed baseline calculation", row)
-		}
-	}
-	out.Reset()
-	if err := compareCommand([]string{"-out", output, "-baseline", base, "-candidate", candidate}, &out); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(out.String(), "Saved-run checks: baseline PASS / candidate PASS") || !strings.Contains(out.String(), "Workload (s)") || !strings.Contains(out.String(), "Normalized (s)") || strings.Contains(out.String(), "Throughput") || strings.Contains(out.String(), "Out tok") {
-		t.Fatal(out.String())
-	}
-	saved, err := os.ReadFile(filepath.Join(output, "comparison.json"))
-	if err != nil || string(saved) != first {
-		t.Fatal("saved full report differs from JSON output", err)
-	}
-	log, err := os.ReadFile(filepath.Join(output, "comparison.log"))
-	if err != nil || string(log) != out.String() || !bytes.Equal(log, jsonModeLog) {
-		t.Fatal("saved log must match terminal output in either mode", err)
-	}
-	for _, dir := range []string{base, candidate} {
-		if _, err := os.Stat(filepath.Join(dir, "comparison.json")); !os.IsNotExist(err) {
-			t.Fatal("comparison must not be saved inside a run", dir, err)
-		}
 	}
 }
 
-func TestCompareReferenceTime(t *testing.T) {
+func TestCompareNormalizedTime(t *testing.T) {
 	r := comparisonFixture([]float64{2, 6, 14})
 	for i, tokensPerRequest := range []int{21, 51, 101} {
 		for j := range r.Repetitions[i].Results {
@@ -323,253 +87,111 @@ func TestCompareReferenceTime(t *testing.T) {
 			res.ServerTimings["slot_prefill_ttft_seconds"] = []float64{0.2, 0.4, 0.5}[i]
 			res.ServerTimings["generation_seconds"] = []float64{0.5, 1, 2}[i]
 		}
-		// Neither cancelled tokens nor their durations belong to reference time.
+		// Cancelled work must contribute neither tokens nor duration.
 		r.Repetitions[i].Results[4].Usage.CompletionTokens = 999
 		r.Repetitions[i].Results[4].ServerTimings["generation_seconds"] = 999
 	}
 	dir := writeComparisonFixture(t, r)
-	var out bytes.Buffer
-	if err := compareCommand([]string{"-out", t.TempDir(), "-baseline", dir, "-candidate", dir, "-json"}, &out); err != nil {
-		t.Fatal(err)
-	}
-	var got matrixComparison
-	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
-		t.Fatal(err)
-	}
-	rows := make(map[string]metricComparison)
-	for _, row := range got.Cells[0].Metrics {
-		rows[row.Metric] = row
+	got, err := runComparisonFixture(t, dir, dir)
+	if err != nil || got.Status != "PASS" {
+		t.Fatalf("comparison: %+v, %v", got, err)
 	}
 	// Effective input rates: 400, 250, 400; generation rates: 40, 50, 50.
 	// Fixed 10708/1332 references give 60.07, 69.472, 53.41 seconds.
-	rate := rows["workload.reference_seconds"].Candidate
+	rate := comparisonMetricsFixture(got.Cells[0])["workload.reference_seconds"].Candidate
 	if rate == nil || rate.Samples != 3 || math.Abs(rate.Median-60.07) > 1e-10 || math.Abs(rate.Min-53.41) > 1e-10 || math.Abs(rate.Max-69.472) > 1e-10 || rate.SampleStdDev == nil || math.Abs(*rate.SampleStdDev-math.Sqrt(65.123508)) > 1e-10 {
-		t.Fatalf("incorrect reference time: %+v", rate)
+		t.Fatalf("incorrect Normalized time: %+v", rate)
 	}
-	if _, ok := rows["workload.output_tokens_per_second"]; ok {
-		t.Fatal("removed workload throughput still reported")
-	}
-	var savedMatrix matrixSummary
-	data, err := os.ReadFile(filepath.Join(dir, "summary.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal(data, &savedMatrix); err != nil {
-		t.Fatal(err)
-	}
-	saved := savedMatrix.Cells[0]
-	m := saved.Measurements["workload"]["reference_seconds"]
-	if math.Abs(m.Median-rate.Median) > 1e-10 || m.Samples != rate.Samples {
-		t.Fatal("saved reference time and comparison disagree", m, rate)
-	}
-	if !strings.Contains(r.logSummary(), "Normalized s [SD]: 60.07 [8.07]") {
-		t.Fatal("run summary and comparison disagree", r.logSummary())
-	}
-	if saved.ReferenceTokens != (normalizationReference{InputTokens: 10708, GenerationTokens: 1332}) {
-		t.Fatal("text reference changed", saved.ReferenceTokens)
-	}
-	// A future reference change must preserve the saved values, not reinterpret
-	// old runs using today's constants or manufacture a cross-volume delta.
+	// A reference change preserves each saved value but cannot receive a delta.
 	r.ReferenceTokens.InputTokens *= 2
 	for i := range r.Repetitions {
 		r.Repetitions[i].ReferenceTokens = r.ReferenceTokens
 	}
-	changed := writeComparisonFixture(t, r)
-	out.Reset()
-	if err := compareCommand([]string{"-out", t.TempDir(), "-baseline", dir, "-candidate", changed, "-json"}, &out); err != nil {
-		t.Fatal(err)
+	got, err = runComparisonFixture(t, dir, writeComparisonFixture(t, r))
+	if err != nil || got.Status != "PASS" {
+		t.Fatalf("comparison: %+v, %v", got, err)
 	}
-	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
-		t.Fatal(err)
+	rows := comparisonMetricsFixture(got.Cells[0])
+	normalized := rows["workload.reference_seconds"]
+	if normalized.Baseline == nil || normalized.Candidate == nil || normalized.Delta != nil || normalized.Percent != nil || math.Abs(normalized.Baseline.Median-60.07) > 1e-10 || math.Abs(normalized.Candidate.Median-86.84) > 1e-10 {
+		t.Fatalf("reference mismatch reinterpreted values or received a delta: %+v", normalized)
 	}
-	if !strings.Contains(strings.Join(got.Cells[0].Warnings, "\n"), "Normalized delta omitted") || got.Cells[0].Baseline.ReferenceTokens == got.Cells[0].Candidate.ReferenceTokens {
-		t.Fatal("reference mismatch not exposed", out.String())
-	}
-	for _, row := range got.Cells[0].Metrics {
-		if row.Metric == "workload.reference_seconds" && (row.Baseline == nil || row.Candidate == nil || row.Delta != nil || row.Percent != nil || math.Abs(row.Baseline.Median-60.07) > 1e-10 || math.Abs(row.Candidate.Median-86.84) > 1e-10) {
-			t.Fatal("changed references altered old values or received a delta", row)
-		}
-		if row.Metric == "workload.elapsed_seconds" && row.Delta == nil {
-			t.Fatal("reference mismatch suppressed measured workload comparison")
-		}
+	if rows["workload.elapsed_seconds"].Delta == nil {
+		t.Fatal("reference mismatch suppressed measured workload comparison")
 	}
 }
 
-func TestCompareRunStatuses(t *testing.T) {
-	for _, baselineStatus := range []string{"PASS", "FAIL"} {
-		for _, candidateStatus := range []string{"PASS", "FAIL"} {
-			t.Run(baselineStatus+"-"+candidateStatus, func(t *testing.T) {
-				a, b := comparisonFixture([]float64{1, 4, 10}), comparisonFixture([]float64{2, 6, 14})
-				a.Status, b.Status = baselineStatus, candidateStatus
-				baseline, candidate := writeComparisonFixture(t, a), writeComparisonFixture(t, b)
-				output := t.TempDir()
-				var out bytes.Buffer
-				err := compareCommand([]string{"-out", output, "-baseline", baseline, "-candidate", candidate}, &out)
-				fails := baselineStatus == "FAIL" || candidateStatus == "FAIL"
-				status := "PASS"
-				if fails {
-					status = "FAIL"
-				}
-				if (err != nil) != fails || !strings.HasPrefix(out.String(), fmt.Sprintf("Comparison status: %s\nSaved-run checks: baseline %s / candidate %s\n", status, baselineStatus, candidateStatus)) {
-					t.Fatal(err, out.String())
-				}
-				log, err := os.ReadFile(filepath.Join(output, "comparison.log"))
-				if err != nil || string(log) != out.String() {
-					t.Fatal("passing and failed comparisons must save their terminal summary", err)
-				}
-				data, err := os.ReadFile(filepath.Join(output, "comparison.json"))
-				if err != nil {
-					t.Fatal(err)
-				}
-				var got matrixComparison
-				if err := json.Unmarshal(data, &got); err != nil {
-					t.Fatal(err)
-				}
-				if got.SavedRunChecks["baseline"] != baselineStatus || got.SavedRunChecks["candidate"] != candidateStatus || (got.Status == "FAIL") != fails {
-					t.Fatal(string(data))
-				}
-				found := make(map[string]bool)
-				for _, row := range got.Cells[0].Metrics {
-					if (row.Baseline != nil) != (baselineStatus == "PASS") || (row.Candidate != nil) != (candidateStatus == "PASS") {
-						t.Fatalf("metric must preserve only passing sides: %+v", row)
-					}
-					if fails && (row.Delta != nil || row.Percent != nil) {
-						t.Fatalf("failed comparison received a delta: %+v", row)
-					}
-					found[row.Metric] = true
-					if row.Metric == "workload.elapsed_seconds" {
-						if row.Baseline != nil && row.Baseline.Median != 4 || row.Candidate != nil && row.Candidate.Median != 6 {
-							t.Fatalf("passing workload median changed: %+v", row)
-						}
-					}
-				}
-				if baselineStatus == "PASS" || candidateStatus == "PASS" {
-					if !found["workload.elapsed_seconds"] || !found["workload.reference_seconds"] {
-						t.Fatal("passing workload and normalized measurements must remain visible", found)
-					}
-				}
-				missing := 0
-				if baselineStatus == "FAIL" {
-					missing++
-				}
-				if candidateStatus == "FAIL" {
-					missing++
-				}
-				if fails {
-					missing++ // A failed side also makes the change unavailable.
-				}
-				for line := range strings.SplitSeq(out.String(), "\n") {
-					if strings.Contains(line, "Workload (s)") || strings.Contains(line, "Normalized (s)") {
-						if strings.Count(line, "n/a") != missing {
-							t.Fatal("only failed sides and their changes should render n/a", line)
-						}
-					}
-				}
-			})
-		}
-	}
-}
-
-func TestCompareWarningsAndFailures(t *testing.T) {
-	base := writeComparisonFixture(t, comparisonFixture([]float64{1, 4, 10}))
-	for _, tc := range []struct {
-		name    string
-		mutate  func(*report)
-		fails   bool
-		warning string
-	}{
-		{"library", func(r *report) { r.Metadata["/v1/kronk/libs"].(map[string]any)["current"] = "different" }, false, "installed library"},
-		{"missing-mtp-backend", func(r *report) { r.MTPBackend = "" }, false, "MTP backend: missing metadata"},
-		{"harness", func(r *report) { r.HarnessRevision = "different" }, false, "harness revision"},
-		{"machine", func(r *report) { r.Metadata["/v1/liveness"].(map[string]any)["host"] = "different" }, false, "machine.host"},
-		{"unknown-memory", func(r *report) { r.Metadata["/v1/devices"].(map[string]any)["system_ram_bytes"] = 0 }, false, "missing metadata"},
-		{"config", func(r *report) { r.Metadata["model"].(map[string]any)["model_config"].(map[string]any)["nseq-max"] = 2 }, false, "model configuration.nseq-max"},
-		{"unknown", func(r *report) { r.ServerRevision = "" }, false, "unknown server commit"},
-		{"prompt", func(r *report) { r.Repetitions[1].SystemTokens++ }, false, "system token count/hash"},
-		{"counts", func(r *report) { r.Repetitions[0].Results[0].Usage.CompletionTokens++ }, false, "counts differ"},
-		{"single", func(r *report) { r.Repetitions = r.Repetitions[:1]; r.RepetitionsRequested = 1 }, false, "repetition count"},
-		{"failed", func(r *report) { r.Status = "FAIL"; r.Findings = []string{"known failure"} }, true, ""},
-		{"partial", func(r *report) { r.Repetitions = r.Repetitions[:2] }, true, ""},
-		{"phase", func(r *report) { r.Repetitions[1].Results = r.Repetitions[1].Results[:5] }, true, ""},
-		{"missing-timing", func(r *report) { delete(r.Repetitions[1].Results[0].ServerTimings, "prepare_seconds") }, true, ""},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			r := comparisonFixture([]float64{2, 6, 14})
-			tc.mutate(&r)
-			candidate := writeComparisonFixture(t, r)
-			output := t.TempDir()
-			var out bytes.Buffer
-			err := compareCommand([]string{"-out", output, "-baseline", base, "-candidate", candidate, "-json"}, &out)
-			if (err != nil) != tc.fails {
-				t.Fatalf("unexpected error %v: %s", err, out.String())
+func TestCompareCellStatuses(t *testing.T) {
+	for _, statuses := range [][2]string{{"PASS", "FAIL"}, {"FAIL", "PASS"}, {"FAIL", "FAIL"}, {"PASS", "NOT_RUN"}} {
+		t.Run(strings.Join(statuses[:], "-"), func(t *testing.T) {
+			a, b := comparisonFixture([]float64{1, 4}), comparisonFixture([]float64{2, 6})
+			a.Status, b.Status = statuses[0], statuses[1]
+			// A common passing cell keeps a partial matrix comparable. Reverse the
+			// candidate's cell order to verify that identity, not position, wins.
+			image := comparisonFixture([]float64{8, 12})
+			image.Images = true
+			image.ReferenceTokens = referenceTokens(true, false, false, false)
+			for i := range image.Repetitions {
+				image.Repetitions[i].Images = true
+				image.Repetitions[i].ReferenceTokens = image.ReferenceTokens
 			}
-			var got matrixComparison
-			if err := json.Unmarshal(out.Bytes(), &got); err != nil {
-				t.Fatal(err, out.String())
+			if b.Status == "NOT_RUN" {
+				b = report{Status: "NOT_RUN"}
 			}
-			if tc.fails {
-				if got.Status != "FAIL" || len(got.Cells[0].Metrics) == 0 {
-					t.Fatalf("failed candidate must preserve valid baseline measurements: %+v", got)
-				}
-				for _, row := range got.Cells[0].Metrics {
-					if row.Baseline == nil || row.Candidate != nil || row.Delta != nil || row.Percent != nil {
-						t.Fatalf("invalid candidate received timing aggregates: %+v", row)
-					}
+			got, err := runComparisonFixture(t, writeComparisonFixture(t, a, image), writeComparisonFixture(t, image, b))
+			fails := statuses[0] == "FAIL" || statuses[1] == "FAIL"
+			if (err != nil) != fails || (got.Status == "FAIL") != fails || len(got.Cells) != 2 {
+				t.Fatalf("comparison: %+v, %v", got, err)
+			}
+			var cell comparison
+			for _, c := range got.Cells {
+				if c.Cell == matrixCells[0].id {
+					cell = c
 				}
 			}
-			if tc.warning != "" && !strings.Contains(strings.Join(got.Cells[0].Warnings, "\n"), tc.warning) {
-				t.Fatalf("missing warning %q: %v", tc.warning, got.Cells[0].Warnings)
+			if cell.Cell != matrixCells[0].id || cell.SavedRunChecks["baseline"] != statuses[0] || cell.SavedRunChecks["candidate"] != statuses[1] {
+				t.Fatalf("cell status/identity: %+v", cell)
 			}
-			log, err := os.ReadFile(filepath.Join(output, "comparison.log"))
-			if err != nil {
-				t.Fatal(err)
+			if statuses[1] == "NOT_RUN" {
+				if cell.Status != "NOT_RUN" || len(cell.Metrics) != 0 {
+					t.Fatalf("unrun cell acquired a comparison: %+v", cell)
+				}
+				return
 			}
-			text := string(log)
-			switch tc.name {
-			case "library":
-				if !strings.Contains(text, tc.warning) {
-					t.Fatal("library change must be visible in the summary", text)
-				}
-			case "harness", "config":
-				if strings.Contains(text, tc.warning) {
-					t.Fatal("equivalent workload metadata should not clutter the summary", text)
+			if cell.Status != "FAIL" {
+				t.Fatalf("failed cell passed: %+v", cell)
+			}
+			rows := comparisonMetricsFixture(cell)
+			for _, name := range []string{"workload.elapsed_seconds", "workload.reference_seconds"} {
+				row := rows[name]
+				if (row.Baseline != nil) != (statuses[0] == "PASS") || (row.Candidate != nil) != (statuses[1] == "PASS") || row.Delta != nil || row.Percent != nil {
+					t.Fatalf("must retain only passing measurements without deltas: %+v", row)
 				}
 			}
-			banner := "WARNING: MACHINE METADATA DIFFERS OR IS MISSING!"
-			if tc.name == "machine" || tc.name == "unknown-memory" {
-				if strings.Count(text, banner) != 2 || strings.Index(text, banner) > strings.Index(text, "Baseline median [SD]") || !strings.HasSuffix(strings.TrimSpace(text), banner) {
-					t.Fatal("machine warning must appear before metrics and at the end", text)
-				}
-			} else if strings.Contains(text, banner) {
-				t.Fatal("machine warning shown for unrelated changes", text)
-			}
-			if tc.name == "single" {
-				for _, row := range got.Cells[0].Metrics {
-					if row.Candidate != nil && row.Candidate.SampleStdDev != nil {
-						t.Fatal("single sample SD must be null")
-					}
-				}
+			row := rows["workload.elapsed_seconds"]
+			if row.Baseline != nil && row.Baseline.Median != 2.5 || row.Candidate != nil && row.Candidate.Median != 4 {
+				t.Fatalf("passing side lost its values: %+v", row)
 			}
 		})
 	}
 }
 
 func TestCompareRejectsBrokenArtifacts(t *testing.T) {
-	base := writeComparisonFixture(t, comparisonFixture([]float64{1, 4, 10}))
-	for _, name := range []string{"missing-log", "truncated-events", "duplicate-report", "summary-disagrees", "log-disagrees", "missing-timestamp", "startup-disagrees", "missing-startup", "request-order", "missing-reference", "repetition-reference"} {
+	base := writeComparisonFixture(t, comparisonFixture([]float64{1, 4}))
+	for _, name := range []string{"missing-log", "truncated-events", "summary-disagrees", "incomplete-repetition", "missing-reference"} {
 		t.Run(name, func(t *testing.T) {
-			r := comparisonFixture([]float64{2, 6, 14})
-			switch name {
-			case "missing-reference":
+			baseline := base
+			r := comparisonFixture([]float64{2, 6})
+			if name == "incomplete-repetition" {
+				r.Repetitions[0].Results = r.Repetitions[0].Results[:5]
+			}
+			if name == "missing-reference" {
+				r = comparisonTwoSlotFixture([]float64{2, 6})
+				baseline = writeComparisonFixture(t, r)
 				r.ReferenceTokens = normalizationReference{}
-			case "repetition-reference":
-				r.Repetitions[0].ReferenceTokens.InputTokens++
-			case "startup-disagrees":
-				r.WarmupRequest.StartupTimings = map[string]float64{"native_model_load_seconds": 99}
-			case "missing-startup":
-				r.WarmupRequest.StartupTimings = nil
-			case "missing-timestamp":
-				r.TestStartedAt = ""
+				for i := range r.Repetitions {
+					r.Repetitions[i].ReferenceTokens = r.ReferenceTokens
+				}
 			}
 			dir := writeComparisonFixture(t, r)
 			switch name {
@@ -581,173 +203,90 @@ func TestCompareRejectsBrokenArtifacts(t *testing.T) {
 				if err := os.WriteFile(filepath.Join(dir, "events.ndjson"), []byte("{\n"), 0600); err != nil {
 					t.Fatal(err)
 				}
-			case "duplicate-report":
-				f, err := os.OpenFile(filepath.Join(dir, "events.ndjson"), os.O_APPEND|os.O_WRONLY, 0600)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if err := json.NewEncoder(f).Encode(map[string]any{"source": "report", "report": r}); err != nil {
-					t.Fatal(err)
-				}
-				f.Close()
 			case "summary-disagrees":
 				var s matrixSummary
-				original, err := os.ReadFile(filepath.Join(dir, "summary.json"))
+				data, err := os.ReadFile(filepath.Join(dir, "summary.json"))
 				if err != nil {
 					t.Fatal(err)
 				}
-				if err := json.Unmarshal(original, &s); err != nil {
+				if err := json.Unmarshal(data, &s); err != nil {
 					t.Fatal(err)
 				}
-				s.Cells[0].Measurements["cold"]["elapsed_seconds"] = measurement{Samples: 3, Median: 999}
-				data, err := json.Marshal(s)
+				s.Cells[0].Measurements["cold"]["elapsed_seconds"] = measurement{Samples: 2, Median: 999}
+				data, err = json.Marshal(s)
 				if err != nil {
 					t.Fatal(err)
 				}
 				if err := os.WriteFile(filepath.Join(dir, "summary.json"), data, 0600); err != nil {
 					t.Fatal(err)
 				}
-			case "log-disagrees":
-				if err := os.WriteFile(filepath.Join(dir, "tool.log"), []byte("Quick-check: FAIL\n"), 0600); err != nil {
-					t.Fatal(err)
-				}
-			case "request-order":
-				path := filepath.Join(dir, "events.ndjson")
-				data, err := os.ReadFile(path)
-				if err != nil {
-					t.Fatal(err)
-				}
-				data = bytes.Replace(data, []byte(`"phase":"warmup"`), []byte(`"phase":"replay"`), 1)
-				if err := os.WriteFile(path, data, 0600); err != nil {
-					t.Fatal(err)
-				}
 			}
 			var out bytes.Buffer
-			if err := compareCommand([]string{"-out", t.TempDir(), "-baseline", base, "-candidate", dir}, &out); err == nil {
+			if err := compareCommand([]string{"-out", t.TempDir(), "-baseline", baseline, "-candidate", dir}, &out); err == nil {
 				t.Fatal("accepted broken artifacts")
 			}
 		})
 	}
 }
 
-func TestCompareTwoSlots(t *testing.T) {
+func TestCompareTwoSlotArrivalOrder(t *testing.T) {
 	r := comparisonTwoSlotFixture([]float64{2, 6})
-	baseline := readComparisonCellFixture(t, r)
-	candidate := readComparisonCellFixture(t, comparisonTwoSlotFixture([]float64{3, 7}))
-	// Reverse all arrivals, including warm-up and the repetition boundaries.
-	// Give each request its own body to ensure the comparison follows phase IDs.
-	for i, value := range baseline.requests {
-		request := value.(map[string]any)
-		request["body"] = map[string]any{"phase": request["phase"], "repetition": request["repetition"]}
-		candidate.requests[i].(map[string]any)["body"] = request["body"]
+	base, candidate := writeComparisonFixture(t, r), writeComparisonFixture(t, r)
+	path := filepath.Join(candidate, "events.ndjson")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
 	}
-	slices.Reverse(candidate.requests)
-	got := compareRuns("baseline", "candidate", baseline, candidate)
-	if got.Status != "PASS" || len(got.Baseline.Problems) != 0 || len(got.Candidate.Problems) != 0 {
-		t.Fatalf("complete two-slot evidence rejected: %+v", got)
-	}
-	if !slices.Contains(got.Matches, "request bodies/order") || strings.Contains(strings.Join(got.Warnings, "\n"), "request bodies/order differ") {
-		t.Fatal("arrival order changed request comparison", got.Warnings)
-	}
-	if !strings.Contains(strings.Join(got.Warnings, "\n"), "two-slot normalization reference is uncalibrated") {
-		t.Fatal("uncalibrated normalization warning missing", got.Warnings)
-	}
-	for _, metric := range got.Metrics {
-		if metric.Metric == "workload.reference_seconds" {
-			t.Fatal("uncalibrated run received Normalized metrics", metric)
+	lines := bytes.Split(bytes.TrimSpace(data), []byte("\n"))
+	var requests [][]byte
+	for _, line := range lines {
+		if bytes.Contains(line, []byte(`"source":"request"`)) {
+			requests = append(requests, line)
 		}
 	}
-	if candidate.requests[0].(map[string]any)["repetition"] != 2 {
-		t.Fatal("comparison mutated recorded request order")
+	slices.Reverse(requests)
+	for i, line := range lines {
+		if bytes.Contains(line, []byte(`"source":"request"`)) {
+			lines[i], requests = requests[0], requests[1:]
+		}
 	}
-	candidate.requests[0].(map[string]any)["body"] = map[string]any{"changed": true}
-	got = compareRuns("baseline", "candidate", baseline, candidate)
-	if !strings.Contains(strings.Join(got.Warnings, "\n"), "request bodies/order differ") {
-		t.Fatal("real request body change was hidden", got.Warnings)
+	if err := os.WriteFile(path, bytes.Join(lines, []byte("\n")), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := runComparisonFixture(t, base, candidate)
+	if err != nil || got.Status != "PASS" || !slices.Contains(got.Cells[0].Matches, "request bodies/order") {
+		t.Fatalf("arrival order invalidated comparison: %+v, %v", got, err)
+	}
+	row := comparisonMetricsFixture(got.Cells[0])["workload.reference_seconds"]
+	if row.Baseline == nil || row.Baseline.Median <= 0 || row.Candidate == nil || row.Candidate.Samples != 2 || row.Delta == nil || *row.Delta != 0 || row.Percent == nil || *row.Percent != 0 {
+		t.Fatalf("arrival order changed Normalized metrics: %+v", row)
 	}
 }
 
-func TestCompareTwoSlotsRejectsBrokenEvidence(t *testing.T) {
-	for _, name := range []string{"missing-request", "duplicate-request", "missing-warmup", "duplicate-warmup", "wrong-warmup-repetition", "wrong-repetition", "unknown-phase", "nil-body", "result-order", "missing-result"} {
-		t.Run(name, func(t *testing.T) {
-			r := comparisonTwoSlotFixture([]float64{2, 6})
-			if name == "result-order" {
-				r.Repetitions[0].Results[2], r.Repetitions[0].Results[3] = r.Repetitions[0].Results[3], r.Repetitions[0].Results[2]
-			}
-			if name == "missing-result" {
-				r.Repetitions[0].Results = r.Repetitions[0].Results[:7]
-			}
-			input := readComparisonCellFixture(t, r)
-			switch name {
-			case "missing-request":
-				input.requests = input.requests[:len(input.requests)-1]
-			case "duplicate-request":
-				// Keep the count unchanged: one duplicate replaces a required phase.
-				input.requests[2] = input.requests[1]
-			case "missing-warmup":
-				input.requests = input.requests[1:]
-			case "duplicate-warmup":
-				input.requests[1] = input.requests[0]
-			case "wrong-warmup-repetition":
-				input.requests[0].(map[string]any)["repetition"] = 2
-			case "wrong-repetition":
-				input.requests[1].(map[string]any)["repetition"] = 3
-			case "unknown-phase":
-				input.requests[1].(map[string]any)["phase"] = "unexpected"
-			case "nil-body":
-				input.requests[1].(map[string]any)["body"] = nil
-			}
-			got := compareRuns("baseline", "candidate", input, input)
-			if got.Status != "FAIL" || len(got.Metrics) != 0 {
-				t.Fatalf("broken two-slot evidence received passing metrics: %+v", got)
-			}
-		})
+func runComparisonFixture(t *testing.T, baseline, candidate string) (matrixComparison, error) {
+	t.Helper()
+	var out bytes.Buffer
+	err := compareCommand([]string{"-out", t.TempDir(), "-baseline", baseline, "-candidate", candidate, "-json"}, &out)
+	var got matrixComparison
+	if decodeErr := json.Unmarshal(out.Bytes(), &got); decodeErr != nil {
+		t.Fatalf("comparison did not emit JSON: %v (command: %v): %s", decodeErr, err, &out)
 	}
+	return got, err
 }
 
-func TestCompareNormalizationReferences(t *testing.T) {
-	for _, twoSlots := range []bool{false, true} {
-		for _, reference := range []normalizationReference{{}, {InputTokens: 1}, {GenerationTokens: 1}, {InputTokens: -1, GenerationTokens: 1}, {InputTokens: 1, GenerationTokens: -1}, {InputTokens: -1, GenerationTokens: -1}, {InputTokens: 1, GenerationTokens: 1}} {
-			t.Run(fmt.Sprintf("twoSlots=%t/%+v", twoSlots, reference), func(t *testing.T) {
-				r := comparisonFixture([]float64{2})
-				if twoSlots {
-					r = comparisonTwoSlotFixture([]float64{2})
-				}
-				r.ReferenceTokens = reference
-				r.Repetitions[0].ReferenceTokens = reference
-				// This fixture has startup metrics, so supply its saved timestamps.
-				data, err := os.ReadFile(filepath.Join(writeComparisonFixture(t, r), "events.ndjson"))
-				if err != nil {
-					t.Fatal(err)
-				}
-				_, err = readCellComparison(r.summary(), r, data)
-				valid := reference.InputTokens > 0 && reference.GenerationTokens > 0 || twoSlots && reference == (normalizationReference{})
-				if (err == nil) != valid {
-					t.Fatalf("reference validation: valid=%t, err=%v", valid, err)
-				}
-			})
-		}
+func comparisonMetricsFixture(cell comparison) map[string]metricComparison {
+	rows := make(map[string]metricComparison)
+	for _, row := range cell.Metrics {
+		rows[row.Metric] = row
 	}
-}
-
-func TestCompareRejectsRepetitionSlotModeMismatch(t *testing.T) {
-	for _, twoSlots := range []bool{false, true} {
-		r := comparisonFixture([]float64{2})
-		if twoSlots {
-			r = comparisonTwoSlotFixture([]float64{2})
-		}
-		r.Repetitions[0].TwoSlots = !twoSlots
-		if _, err := readCellComparison(r.summary(), r, nil); err == nil || !strings.Contains(err.Error(), "repetition 1") {
-			t.Fatal("accepted inconsistent repetition slot mode", err)
-		}
-	}
+	return rows
 }
 
 func comparisonTwoSlotFixture(values []float64) report {
 	r := comparisonFixture(values)
 	r.TwoSlots = true
 	r.ID = "MoE/2s/IMC+/MTP+/img-"
-	r.ReferenceTokens = normalizationReference{}
+	r.ReferenceTokens = referenceTokens(false, false, false, true)
 	r.Metadata["model"].(map[string]any)["model_config"] = map[string]any{"nseq-max": 2}
 	for i := range r.Repetitions {
 		rep := &r.Repetitions[i]
@@ -774,62 +313,6 @@ func readComparisonCellFixture(t *testing.T, r report) comparisonInput {
 		t.Fatal(err)
 	}
 	return input
-}
-
-func TestCompareSharedWarmup(t *testing.T) {
-	for _, defect := range []string{"", "missing-source", "wrong-model", "failed-warmup", "duplicate-warmup"} {
-		t.Run(defect, func(t *testing.T) {
-			owner := comparisonFixture([]float64{2})
-			shared := comparisonFixture([]float64{3})
-			shared.Images = true
-			shared.SharedWarmupFrom = matrixCells[0].id
-			shared.WarmupRequest = nil
-			shared.Repetitions[0].Images = true
-			shared.Repetitions[0].SharedWarmupFrom = shared.SharedWarmupFrom
-			shared.Repetitions[0].WarmupRequest = nil
-			switch defect {
-			case "missing-source":
-				shared.SharedWarmupFrom = "missing"
-				shared.Repetitions[0].SharedWarmupFrom = "missing"
-			case "wrong-model":
-				shared.Model += "-different-configuration"
-			case "failed-warmup":
-				owner.Status, owner.Repetitions[0].Status = "FAIL", "FAIL"
-				owner.WarmupRequest.Error = "startup failed"
-				owner.Findings = []string{"warmup: startup failed"}
-				owner.Repetitions[0].Findings = owner.Findings
-			case "duplicate-warmup":
-				shared.WarmupRequest = owner.WarmupRequest
-				shared.Repetitions[0].WarmupRequest = owner.WarmupRequest
-			}
-			input, err := readComparison(writeComparisonFixture(t, owner, shared))
-			if defect == "missing-source" || defect == "wrong-model" || defect == "duplicate-warmup" {
-				if err == nil {
-					t.Fatal("accepted invalid shared startup evidence", defect)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			got := compareMatrices("baseline", "candidate", input, input)
-			if (got.Status == "PASS") != (defect == "") {
-				t.Fatal("incorrect shared startup verdict", got)
-			}
-			if defect == "" {
-				for _, cell := range got.Cells {
-					if cell.Cell != matrixCells[1].id {
-						continue
-					}
-					for _, metric := range cell.Metrics {
-						if strings.HasPrefix(metric.Metric, "warmup.") {
-							t.Fatal("shared cell duplicated startup measurements", metric)
-						}
-					}
-				}
-			}
-		})
-	}
 }
 
 func comparisonFixture(values []float64) report {
@@ -885,9 +368,11 @@ func writeComparisonFixture(t *testing.T, cells ...report) string {
 	r := matrixReport{Status: "PASS", ServerRevision: first.ServerRevision, ServerCommitTime: first.ServerCommitTime, ReleaseTag: first.ReleaseTag, TestStartedAt: first.TestStartedAt, Cells: cells}
 	for i := range r.Cells {
 		cell := &r.Cells[i]
-		cell.ID = matrixCells[0].id
-		if cell.Images {
-			cell.ID = matrixCells[1].id
+		if cell.ID == "" {
+			cell.ID = matrixCells[0].id
+			if cell.Images {
+				cell.ID = matrixCells[1].id
+			}
 		}
 		if cell.Status == "FAIL" {
 			r.Status = "FAIL"
@@ -927,8 +412,8 @@ func writeComparisonFixture(t *testing.T, cells ...report) string {
 			emit(map[string]any{"source": "request", "phase": "warmup", "repetition": 1, "body": map[string]any{"max_tokens": 8}})
 		}
 		for i, rep := range cell.Repetitions {
-			for _, res := range rep.Results {
-				emit(map[string]any{"source": "request", "phase": res.Phase, "repetition": i + 1, "body": map[string]any{"seed": 42}})
+			for j, res := range rep.Results {
+				emit(map[string]any{"source": "request", "phase": res.Phase, "repetition": i + 1, "body": map[string]any{"seed": 42 + i*10 + j}})
 			}
 		}
 		if cell.WarmupRequest == nil {

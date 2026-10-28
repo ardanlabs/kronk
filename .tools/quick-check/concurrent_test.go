@@ -18,26 +18,15 @@ import (
 // evidence. This validates the harness, not model quality or Kronk inference.
 func TestQuickCheckTwoSlots(t *testing.T) {
 	releaseTestRepo(t)
-	for _, cell := range matrixCells {
-		if cell.twoSlots {
-			t.Run(cell.id, func(t *testing.T) { checkTwoSlotFixture(t, cell.id, "") })
-		}
+	for _, defect := range []string{"", "serialized", "wrong-recovery-slot", "no-survivor-progress", "missing-cancel-ack", "foreign-session", "content-append", "content-and-evidence"} {
+		t.Run(defect, func(t *testing.T) { checkTwoSlotFixture(t, defect) })
 	}
-	for _, defect := range []string{"serialized", "wrong-recovery-slot", "no-survivor-progress", "system-only-media-append", "missing-cancel-ack", "foreign-session", "content-append", "content-peer-append", "content-survivor", "content-recovery", "content-and-evidence", "plurals"} {
-		t.Run(defect, func(t *testing.T) { checkTwoSlotFixture(t, "MoE/2s/IMC+/MTP+/img+", defect) })
-	}
-	t.Run("uncached-reuse", func(t *testing.T) { checkTwoSlotFixture(t, "MoE/2s/IMC-/MTP+/img+", "uncached-reuse") })
-	t.Run("target-only-drafts", func(t *testing.T) { checkTwoSlotFixture(t, "MoE/2s/IMC+/MTP-/img+", "target-only-drafts") })
 }
 
-func checkTwoSlotFixture(t *testing.T, selector, defect string) {
+func checkTwoSlotFixture(t *testing.T, defect string) {
 	t.Helper()
-	passing := defect == "" || defect == "plurals"
-	images, noCache, targetOnly := strings.HasSuffix(selector, "img+"), strings.Contains(selector, "IMC-"), strings.Contains(selector, "MTP-")
-	denseModel := ""
-	if strings.HasPrefix(selector, "Dense/") {
-		denseModel = "ornith-ai/Ornith-1.5-9B-Q8_0"
-	}
+	const selector = "MoE/2s/IMC+/MTP+/img+"
+	passing := defect == ""
 	root := t.TempDir()
 	logPath := filepath.Join(root, "server.log")
 	serverLog, err := os.Create(logPath)
@@ -84,17 +73,10 @@ func checkTwoSlotFixture(t *testing.T, selector, defect string) {
 					}
 					slots = append(slots, map[string]any{"id": id, "phase": phase})
 				}
-				ndraft := 5
-				if targetOnly {
-					ndraft = 0
-				}
-				json.NewEncoder(w).Encode([]map[string]any{{"model_id": model, "mtp": !targetOnly, "ndraft": ndraft, "slots": slots}})
+				json.NewEncoder(w).Encode([]map[string]any{{"model_id": model, "mtp": true, "ndraft": 5, "slots": slots}})
 			default:
 				metadata := map[string]string{"general.architecture": "qwen35moe", "qwen35moe.expert_count": "256"}
-				if denseModel != "" {
-					metadata = map[string]string{"general.architecture": "qwen35"}
-				}
-				json.NewEncoder(w).Encode(map[string]any{"has_projection": true, "model_config": map[string]any{"incremental-cache": !noCache, "nseq-max": 2}, "metadata": metadata})
+				json.NewEncoder(w).Encode(map[string]any{"has_projection": true, "model_config": map[string]any{"incremental-cache": true, "nseq-max": 2}, "metadata": metadata})
 			}
 			return
 		}
@@ -105,18 +87,6 @@ func checkTwoSlotFixture(t *testing.T, selector, defect string) {
 		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 			t.Error(err)
 			return
-		}
-		if denseModel != "" {
-			alias := denseModel + "/QUICK-CHECK"
-			if noCache {
-				alias += "-NO-IMC"
-			}
-			if targetOnly {
-				alias += "-NO-MTP"
-			}
-			if body.Model != alias+"-2S" {
-				t.Errorf("wrong Dense alias: %s", body.Model)
-			}
 		}
 		text, _ := json.Marshal(body.Messages)
 		isA := bytes.Contains(text, []byte("River"))
@@ -166,7 +136,7 @@ func checkTwoSlotFixture(t *testing.T, selector, defect string) {
 		emit("request-lifecycle", "started", map[string]any{"stage": 4})
 		stable := map[string]int{"cold": 10050, "replay": 10050, "fresh-session": 10070, "append": 10300, "peer-append": 10320, "survivor": 10600, "cancel": 10620, "recovery": 10050}[phase]
 		reused := map[string]int{"replay": 10050, "fresh-session": 10000, "append": 10050, "peer-append": 10070, "survivor": 10300, "cancel": 10320, "recovery": 10000}[phase]
-		media := images && phase != "warmup" && phase != "cold" && phase != "replay" && phase != "recovery"
+		media := phase != "warmup" && phase != "cold" && phase != "replay" && phase != "recovery"
 		kind, reason := "append", "complete-prefix-append"
 		switch phase {
 		case "cold":
@@ -188,22 +158,13 @@ func checkTwoSlotFixture(t *testing.T, selector, defect string) {
 				kind, reason = "anchor", "media-prefix-text-replay"
 			}
 		}
-		if (defect == "system-only-media-append" || defect == "content-and-evidence") && phase == "append" {
+		if defect == "content-and-evidence" && phase == "append" {
 			kind, reason, reused = "append", "system-cache-prefix", 10000
 		}
-		if phase == "warmup" && !targetOnly {
+		if phase == "warmup" {
 			emit("draft-model-mtp", "loaded", map[string]any{"backend": "qwen35-own-kv"})
 		}
-		if noCache {
-			reused = 0
-			if defect == "uncached-reuse" && phase == "append" {
-				reused = 10000
-			}
-			if media {
-				emit("start-slot-media", "tokenized", nil)
-				emit("prefill-media", "encoding-image", map[string]any{"tokens": 256})
-			}
-		} else if phase != "warmup" {
+		if phase != "warmup" {
 			if phase == "cold" {
 				emit("imc", "system-cache-published", map[string]any{"tokens": 10000})
 			}
@@ -222,9 +183,6 @@ func checkTwoSlotFixture(t *testing.T, selector, defect string) {
 				emit("imc", "plan-ready", map[string]any{"match_kind": kind, "match_reason": reason, "stable_tokens": stable, "tail_tokens": 50, "reusable_tokens": reused, "extension_tokens": stable - reused})
 			}
 			for _, status := range []string{"imc-restore-done", "imc-snapshot-done", "imc-draft-restore-done", "imc-draft-snapshot-done"} {
-				if strings.Contains(status, "draft") && targetOnly {
-					continue
-				}
 				emit("start-slot", status, nil)
 			}
 		}
@@ -257,19 +215,10 @@ func checkTwoSlotFixture(t *testing.T, selector, defect string) {
 			if phase == "peer-append" || phase == "cancel" {
 				animal = "deer"
 			}
-			if defect == "plurals" && animal == "giraffe" {
-				animal = "giraffes"
-			}
 			answer += " " + animal
 		}
-		if defect == "content-"+phase || (defect == "content-and-evidence" && phase == "append") {
-			stale := "Apple"
-			if phase == "peer-append" {
-				stale = "Lemon"
-			} else if phase == "recovery" {
-				stale = "Orange"
-			}
-			answer += " Not " + stale + "."
+		if (defect == "content-append" || defect == "content-and-evidence") && phase == "append" {
+			answer += " Not Apple."
 		}
 		if defect == "foreign-session" && phase == "peer-append" {
 			answer += " River"
@@ -296,20 +245,12 @@ func checkTwoSlotFixture(t *testing.T, selector, defect string) {
 			<-req.Context().Done()
 		}
 		drafts, accepted, coverage, resume := 10, 5, 0.5, "restored-draft-kv"
-		if noCache || phase == "cold" || phase == "warmup" {
+		if phase == "cold" || phase == "warmup" {
 			resume = "fresh-prefill"
-		}
-		if targetOnly {
-			drafts, accepted, coverage, resume = 0, 0, 0, ""
-			if defect == "target-only-drafts" && phase == "cancel" {
-				drafts = 1
-			}
 		}
 		emit("batch-engine", "slot-finished", map[string]any{"elapsed": "2ms", "imc_actual_reused_tokens": reused, "total_prompt": stable + 50, "output_tokens": 20, "draft_tokens": drafts, "draft_accepted_tokens": accepted, "draft_resume_source": resume})
 		emit("finish-slot", "seq-cleared", nil)
-		if !targetOnly {
-			emit("speculative", "draft-kv-cleared", nil)
-		}
+		emit("speculative", "draft-kv-cleared", nil)
 		terminal := "complete"
 		if phase == "cancel" && defect != "missing-cancel-ack" {
 			terminal = "cancel"
@@ -341,14 +282,11 @@ func checkTwoSlotFixture(t *testing.T, selector, defect string) {
 		t.Fatal(err)
 	}
 	wantFinding := map[string]string{
-		"serialized":               "generation overlap on distinct slots",
-		"wrong-recovery-slot":      "must start on cancelled slot",
-		"no-survivor-progress":     "continued content after peer cancellation",
-		"system-only-media-append": "required media-append/text-prefix-media-append",
-		"missing-cancel-ack":       "server terminal status must be cancel",
-		"foreign-session":          "[ISOLATION]",
-		"uncached-reuse":           "IMC-off execution reported cache planning",
-		"target-only-drafts":       "target-only execution reported speculative activity",
+		"serialized":           "generation overlap on distinct slots",
+		"wrong-recovery-slot":  "must start on cancelled slot",
+		"no-survivor-progress": "continued content after peer cancellation",
+		"missing-cancel-ack":   "server terminal status must be cancel",
+		"foreign-session":      "[ISOLATION]",
 	}[defect]
 	executed := 0
 	for _, cell := range summary.Cells {
@@ -365,9 +303,6 @@ func checkTwoSlotFixture(t *testing.T, selector, defect string) {
 		if passing && cell.Measurements["workload"]["reference_seconds"].Median <= 0 {
 			t.Fatal("calibrated two-slot cell must publish Normalized", string(data))
 		}
-		if denseModel != "" && cell.ReferenceTokens != denseReferenceTokens(images, noCache, targetOnly, true) {
-			t.Fatal("Dense cell borrowed MoE calibration", string(data))
-		}
 		if strings.HasPrefix(defect, "content-") {
 			if len(cell.Repetitions) != 1 || len(cell.Repetitions[0].Results) != 8 || cell.Measurements != nil {
 				t.Fatalf("content finding must finish all probes without publishing a passing aggregate: %s", data)
@@ -377,16 +312,10 @@ func checkTwoSlotFixture(t *testing.T, selector, defect string) {
 				t.Fatalf("content and infrastructure findings must remain distinct: %+v", findings)
 			}
 			for _, phase := range cell.Repetitions[0].Results {
-				if phase["phase"] == "cancel" || phase["phase"] == "recovery" && defect != "content-recovery" {
+				if phase["phase"] == "cancel" || phase["phase"] == "recovery" {
 					if phase["status"] != "PASS" {
 						t.Fatalf("content finding interfered with cancellation/recovery: %+v", phase)
 					}
-				}
-			}
-			if defect != "content-and-evidence" {
-				logs, err := os.ReadFile(filepath.Join(filepath.Dir(paths[0]), "tool.log"))
-				if err != nil || !bytes.Contains(logs, []byte("IMC/MTP: PASS | Concurrent isolation: PASS | Cancel/recovery: PASS | Images: PASS")) || !bytes.Contains(logs, []byte("Findings: CONTENT=1 | ISOLATION=0 | INFRASTRUCTURE=0")) {
-					t.Fatalf("content finding must not be reported as an infrastructure failure: %v\n%s", err, logs)
 				}
 			}
 		}

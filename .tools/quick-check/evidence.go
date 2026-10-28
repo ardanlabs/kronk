@@ -366,22 +366,22 @@ func validateImageExecution(r *report, res result, cold, fresh, system int) {
 	if !res.MediaPlan || res.MediaCount != 1 || res.TailTokens <= 0 {
 		fail("single-image cache plan not attested")
 	}
-	if (res.Phase == "fresh-session" || res.Phase == "recovery") && res.CacheReason == "system-cache-prefix" {
+	if res.Phase == "fresh-session" || res.Phase == "recovery" {
 		// The immutable text prefix can be restored independently of images.
 		// This is not a media-anchor restore: the new image must still be processed.
-		if res.CacheMatch != "append" || system < r.SystemTokens || system <= 0 || e.ReusedTokens != system || res.ReusableTokens != system || res.MediaAnchorKV != 0 || res.MediaPosition <= system || res.EncodedTokens <= 0 || res.DecodedTokens <= 0 {
+		if res.CacheMatch != "append" || res.CacheReason != "system-cache-prefix" || system < r.SystemTokens || system <= 0 || e.ReusedTokens != system || res.ReusableTokens != system || res.MediaAnchorKV != 0 || res.MediaPosition <= system || res.EncodedTokens <= 0 || res.DecodedTokens <= 0 {
 			fail("System-prefix reuse with new image encoding/decoding not attested")
 		}
 		if !e.TargetRestored || (!r.TargetOnly && (!e.DraftRestored || e.DraftResume != "restored-draft-kv")) {
 			fail("System target restore and any required MTP restore not attested")
 		}
-	} else if res.Phase == "cold" || res.Phase == "fresh-session" || (res.Phase == "recovery" && res.CacheMatch == "rebuild") {
-		if res.CacheMatch != "rebuild" || e.ReusedTokens != 0 || res.MediaPosition <= 0 || res.EncodedTokens <= 0 || res.DecodedTokens <= 0 {
-			fail("new image must be encoded and decoded into an uncached prefix")
+	} else if res.Phase == "cold" {
+		if res.CacheMatch != "rebuild" || e.ReusedTokens != 0 || res.ReusableTokens != 0 || system < r.SystemTokens || system <= 0 || res.MediaPosition <= system || res.EncodedTokens <= 0 || res.DecodedTokens <= 0 || (!r.TargetOnly && e.DraftResume != "fresh-prefill") {
+			fail("uncached image build and large System-prefix publication not attested")
 		}
 	} else {
 		kind, reason, reused := "anchor", "media-prefix-text-replay", cold
-		if res.Phase == "replay" || res.Phase == "recovery" {
+		if res.Phase == "replay" {
 			kind, reason = "exact", "logical-plan-equal"
 		}
 		if res.Phase == "cancel" {
