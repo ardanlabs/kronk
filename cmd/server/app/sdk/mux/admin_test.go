@@ -200,9 +200,10 @@ func TestAdminLoginSession(t *testing.T) {
 	digest := sha256.Sum256([]byte("secret"))
 	app := web.NewApp(func(context.Context, string, ...any) {})
 	registerAdminRoutes(app, Config{
-		AdminAuthEnabled:    true,
-		AdminPasswordSHA256: hex.EncodeToString(digest[:]),
-		Security:            sec,
+		AdminAuthEnabled:     true,
+		AdminPasswordSHA256:  hex.EncodeToString(digest[:]),
+		AdminSessionDuration: 150 * time.Minute,
+		Security:             sec,
 	})
 	app.NotFoundHandler()
 	handler := adminCookieMiddleware(app)
@@ -232,6 +233,19 @@ func TestAdminLoginSession(t *testing.T) {
 	}
 	if cookies[0].Name != adminHTTPCookieName || cookies[0].Secure {
 		t.Fatalf("HTTP login cookie: got %+v", cookies[0])
+	}
+	if cookies[0].MaxAge != 9000 {
+		t.Errorf("cookie MaxAge: got %d, want 9000", cookies[0].MaxAge)
+	}
+	claims, err := sec.Authenticate(context.Background(), "Bearer "+cookies[0].Value, true, "")
+	if err != nil {
+		t.Fatalf("Authenticate: %v", err)
+	}
+	if got := claims.ExpiresAt.Sub(claims.IssuedAt.Time); got != 150*time.Minute {
+		t.Errorf("token lifetime: got %s, want 2h30m", got)
+	}
+	if delta := cookies[0].Expires.Sub(claims.ExpiresAt.Time); delta < -time.Second || delta > time.Second {
+		t.Errorf("cookie/token expiry difference: got %s, want within one second", delta)
 	}
 
 	sessionReq = httptest.NewRequest(http.MethodGet, "http://example.test/admin/api/session", nil)

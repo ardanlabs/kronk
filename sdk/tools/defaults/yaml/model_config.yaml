@@ -20,6 +20,7 @@ version: 2
 #     cors-allowed-origins: ["*"]
 #     admin:
 #       enabled: true
+#       session-duration: 12h
 #       password-sha-256: <64 hexadecimal characters>
 #   auth:
 #     host: ""

@@ -38,6 +38,7 @@ func init() {
 	Cmd.Flags().String("auth-tls-server-name", "", "TLS server name for the external auth service")
 	Cmd.Flags().String("auth-issuer", "", "Local auth issuer name")
 	Cmd.Flags().String("web-admin-password-sha-256", "", "SHA-256 digest for browser admin login")
+	Cmd.Flags().String("web-admin-session-duration", "", "Browser admin session lifetime (e.g., 12h; default: 12h)")
 	Cmd.Flags().String("authorization-mode", "", "API authorization mode (open, management, authenticated, full-protected)")
 
 	// MCP settings

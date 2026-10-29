@@ -133,6 +133,51 @@ kms:
 	}
 }
 
+func TestLoadConfigAdminSessionDuration(t *testing.T) {
+	tests := []struct {
+		name    string
+		yaml    string
+		env     string
+		want    time.Duration
+		wantErr bool
+	}{
+		{name: "default", want: 12 * time.Hour},
+		{name: "yaml", yaml: "3h", want: 3 * time.Hour},
+		{name: "environment overrides yaml", yaml: "3h", env: "7h30m", want: 450 * time.Minute},
+		{name: "minimum", yaml: "1s", want: time.Second},
+		{name: "zero", yaml: "0s", wantErr: true},
+		{name: "negative", env: "-1h", wantErr: true},
+		{name: "subsecond", yaml: "500ms", wantErr: true},
+		{name: "invalid", env: "overnight", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			unsetEnv(t, "KRONK_HF_TOKEN")
+			unsetEnv(t, "KRONK_LLAMA_LOG")
+			unsetEnv(t, "KRONK_WEB_ADMIN_SESSION_DURATION")
+			if tt.env != "" {
+				t.Setenv("KRONK_WEB_ADMIN_SESSION_DURATION", tt.env)
+			}
+			data := "version: 2\nmodels: {}\n"
+			if tt.yaml != "" {
+				data += "kms:\n  web:\n    admin:\n      session-duration: " + tt.yaml + "\n"
+			}
+			path := filepath.Join(t.TempDir(), "model_config.yaml")
+			if err := os.WriteFile(path, []byte(data), 0644); err != nil {
+				t.Fatalf("WriteFile: %v", err)
+			}
+			t.Setenv("KRONK_POOL_MODEL_CONFIG_FILE", path)
+			cfg, err := loadConfig(false)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("loadConfig: got error %v, wantErr %t", err, tt.wantErr)
+			}
+			if err == nil && cfg.Web.Admin.SessionDuration != tt.want {
+				t.Errorf("SessionDuration: got %s, want %s", cfg.Web.Admin.SessionDuration, tt.want)
+			}
+		})
+	}
+}
+
 func TestLoadConfigVersionOneCompatibility(t *testing.T) {
 	unsetEnv(t, "KRONK_HF_TOKEN")
 	unsetEnv(t, "KRONK_LLAMA_LOG")

@@ -30,8 +30,9 @@ type config struct {
 		DebugHost          string        `yaml:"debug-host"`
 		CORSAllowedOrigins []string      `yaml:"cors-allowed-origins"`
 		Admin              struct {
-			Enabled        bool   `yaml:"enabled"`
-			PasswordSHA256 string `conf:"mask" yaml:"password-sha-256"`
+			Enabled         bool          `yaml:"enabled"`
+			PasswordSHA256  string        `conf:"mask" yaml:"password-sha-256"`
+			SessionDuration time.Duration `yaml:"session-duration"`
 		} `yaml:"admin"`
 	} `yaml:"web"`
 	Auth struct {
@@ -100,6 +101,7 @@ func newConfig() config {
 	cfg.Web.DebugHost = "127.0.0.1:11445"
 	cfg.Web.CORSAllowedOrigins = []string{"*"}
 	cfg.Web.Admin.Enabled = true
+	cfg.Web.Admin.SessionDuration = 12 * time.Hour
 	cfg.Web.Admin.PasswordSHA256 = "18511e63760230cd17291273b607e7e13da2a2bb9a1750e0becdac08185a3c11"
 	cfg.Auth.Local.Issuer = "kronk project"
 	cfg.Authorization.Mode = auth.Open
@@ -172,9 +174,15 @@ func loadConfig(showHelp bool) (config, error) {
 		}
 		return config{}, fmt.Errorf("parsing config: %w", err)
 	}
+
+	if cfg.Web.Admin.SessionDuration < time.Second {
+		return config{}, errors.New("configuration: web admin session duration must be at least one second")
+	}
+
 	if err := os.Setenv("KRONK_HF_TOKEN", cfg.HfToken); err != nil {
 		return config{}, fmt.Errorf("setting Hugging Face token: %w", err)
 	}
+
 	if err := os.Setenv("KRONK_LLAMA_LOG", strconv.Itoa(cfg.LlamaLog)); err != nil {
 		return config{}, fmt.Errorf("setting llama log level: %w", err)
 	}

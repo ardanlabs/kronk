@@ -124,6 +124,21 @@ func TestBuildEnvVarsInferenceTimeout(t *testing.T) {
 	}
 }
 
+func TestBuildEnvVarsAdminSessionDuration(t *testing.T) {
+	cmd := &cobra.Command{}
+	cmd.Flags().String("web-admin-session-duration", "", "")
+	if envVars := buildEnvVars(cmd); len(envVars) != 0 {
+		t.Fatalf("omitted flag: got %v, want no overrides", envVars)
+	}
+	if err := cmd.Flags().Set("web-admin-session-duration", "7h30m"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	const want = "KRONK_WEB_ADMIN_SESSION_DURATION=7h30m"
+	if envVars := buildEnvVars(cmd); !slices.Contains(envVars, want) {
+		t.Errorf("buildEnvVars: got %v, want entry %q", envVars, want)
+	}
+}
+
 func TestBuildEnvVarsPoolTTL(t *testing.T) {
 	tests := []struct {
 		name    string
