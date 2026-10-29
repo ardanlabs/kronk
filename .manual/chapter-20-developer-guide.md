@@ -103,6 +103,13 @@ largest command.
   should orchestrate reusable managers rather than become a second implementation of
   catalogs, downloads, inference, or authentication. `make install-kronk` is simply
   `go install ./cmd/kronk`; there are no project build tags required for installation.
+- **`cmd/kronk/config/`** is the interactive `kronk config` tool. Chat model
+  questions are written by hand in `questions.go` and checked against
+  `models.ModelConfig` by `TestQuestionKeys`; audio and image questions are in
+  `media.go`. Server questions are generated from the server's config struct
+  through `Settings()` in `cmd/server/api/services/kronk/settings.go`, so every
+  server field needs a `conf:"help:..."` tag. `AGENTS.md` lists what to update
+  when a setting changes.
 - **`cmd/server/api/`** composes executable services, startup configuration, embedded
   assets, and tooling binaries. `cmd/server/api/services/kronk/main.go` is the Kronk
   service composition root and the BUI embedding owner.

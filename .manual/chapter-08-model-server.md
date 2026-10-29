@@ -93,6 +93,9 @@ kronk model pull unsloth/Qwen3-0.6B-Q8_0 --local
 kronk libs --local
 ```
 
+`kronk config` always works on local files; see
+[Editing the file with kronk config](https://www.kronkai.com/manual#editing-the-file-with-kronk-config).
+
 Local mode is useful for initial setup, offline administration, and installing
 models into a stopped server's data directory. Use server-backed mode when
 administering a remote host or when browser progress needs to observe the
@@ -367,63 +370,93 @@ commented reference file is `zarf/kms/model_config.yaml`.
 
 ### Editing the file with kronk config
 
-`kronk config` is an interactive terminal tool that writes this file. It works
-on local files and does not need a running server.
+`kronk config` is an interactive terminal tool that writes this file. It asks
+questions, shows the result, and saves it. It works on local files and does not
+need a running server.
 
 ```shell
 kronk config
 ```
 
-It asks, in order:
+Every question starts on its default. Leaving the default writes nothing, so
+Kronk's defaults and AutoTune still apply. Esc goes back one question.
 
-1. **Which config file.** The file the server reads comes first
+#### Start
+
+1. **Config file.** The file the server reads comes first
    (`KRONK_POOL_MODEL_CONFIG_FILE`, otherwise
    `<base-path>/models/model_config.yaml`), then `model_config*.yaml` files in
-   the current directory, or any other path, including a new file.
+   the current directory. Any other path, including a new file, also works.
 2. **A model or the server settings.**
-3. **For a model: this machine or another one.** This machine's GPUs, GPU
-   memory and RAM are detected through llama.cpp, so the llama.cpp libraries
-   must be installed. For another machine, enter its GPU count, GPU type,
-   memory per GPU and RAM; the libraries are not needed.
+3. **This machine or another one** (models only). This machine's GPUs, GPU
+   memory, and RAM are detected through llama.cpp, so its libraries must be
+   installed. For another machine, enter its GPU count, GPU type, memory per
+   GPU, and RAM; the libraries are not needed.
+4. **The model.** Installed and catalog chat models, and installed audio and
+   image models. When a chat model already has entries in the file, pick the
+   one to change or add a variant (`model/NAME`).
 
-For a model, pick an installed or catalog model. A box shows the model's
-architecture, the machine and what AutoTune picks for it on that hardware.
-The questions follow: context window, concurrent requests, thinking and
-reasoning defaults, custom chat template variables, sampling, KV cache, GPU
-layers, MoE experts, flash attention, weight loading, queueing, the
-conversation cache, speculative decoding and the image projector. Questions
-that do not apply to the model or the machine are skipped. Custom chat
-template variables are written to `chat-template-kwargs`, one `name=value` per
-line, with YAML values.
+A box then shows the model's architecture, the machine, and what AutoTune picks
+for the model on that hardware.
 
-For the server settings, pick the sections to change (web server, auth,
-authorization, MCP, downloads, tracing, model pool, runtime). Sections with
-values in the file start selected. The questions are generated from the
-server's configuration, so every `kms` key is covered. Secrets are masked and
-never shown; an empty answer keeps the value in the file. The admin password
-is typed in clear and written as its SHA-256.
+#### Model questions
 
-Each list starts with the default, and each input shows the default. Leaving
-it writes nothing, so Kronk's defaults and AutoTune still apply. Esc goes back
-one question.
+Questions that do not apply to the model or the machine are skipped. For
+example, MoE questions are skipped for a dense model, and multi-GPU questions
+for a machine with one GPU.
+
+| Group | Settings |
+| ----- | -------- |
+| Essentials | `context-window`, with the YaRN keys when it is longer than the training context; `nseq-max` |
+| Behavior | `enable_thinking`, `reasoning_effort`, `template`, `chat-template-kwargs` |
+| Sampling | `temperature`, `top_p`, `top_k`, `min_p`, `max_tokens`, `repeat_penalty`, `frequency_penalty`, `presence_penalty` |
+| Memory and GPU | `cache-type-k`, `cache-type-v`, `ngpu-layers`, `offload-kqv`, `moe`, `numa`, `flash-attention`, `swa-full`, `load-mode`, `lazy-mode` |
+| Multiple GPUs | `devices`, `split-mode`, `main-gpu`, `tensor-split` |
+| Throughput | `queue-depth`, `admission-timeout`, `prefill-batch-size`, `kv-cache-mode`, `nthreads`, `incremental-cache`, `cache-min-tokens`, `imc-session-capacity` |
+| Features | `speculation`, `draft-model`, `adapters`, `proj-on-cpu`, `proj-device`, `image-token-budget` |
+| Audio (`bucky-models`) | `nseq-max`, `queue-depth`, `admission-timeout`, `nthreads` |
+| Image (`malina-models`) | `concurrency`, `queue-depth`, `admission-timeout`, `cpu-threads` |
+
+Template variables are one `name=value` per line, with YAML values. Adapters
+are one per line: an ID from the `lora` folder or an absolute `.gguf` path,
+with an optional `=scale`.
+
+The tool does not ask for settings that a request sets better (`seed`, DRY,
+XTC, `grammar`) or that AutoTune or the GGUF own (`physical-batch-size`,
+`rope-freq-base`, the YaRN factors, `op-offload`, `tensor-buft-overrides`).
+Add them to the file by hand when needed.
+
+#### Server settings
+
+Pick the sections to change: web server, auth, authorization, MCP, downloads,
+tracing, model pool, or runtime. Sections with values in the file start
+selected. The questions are generated from the server's configuration, so a
+new `kms` key is asked without changes to the tool. `base-path` is not asked,
+because the server finds this file through it.
+
+Secrets are masked and never shown; an empty answer keeps the value in the
+file. The admin password is typed in clear and written as its SHA-256.
+
+#### Review and save
 
 The review shows the changes and the entry or `kms` section exactly as it will
-be written. For a model it also runs the memory check with the answers on the
-chosen hardware. Saving then:
+be written. For a chat model it also:
 
-- rewrites only that model's entry or the `kms` section; other entries,
-  sections and comments are kept;
-- checks the result first: a model entry must load with the model settings,
-  and a `kms` section must be accepted by the server's configuration, or
-  nothing is written;
-- keeps the previous file as `<file>.bak`.
+- runs the memory check with the answers on the chosen hardware. When the
+  answers do not fit, it offers the fixes that do fit, each with the memory it
+  needs: a smaller context, a `q8_0` KV cache, fewer requests at the same time,
+  or `q8_0` with a smaller context. Keeping the answers is also possible.
+- lists combinations that Kronk refuses when it loads the model, such as a
+  quantized V cache with flash attention disabled, or fewer cached
+  conversations than admitted requests. Saving waits until they are changed.
 
-Restart the server to apply the changes. A file saved for another machine
+Saving rewrites only that entry or the `kms` section; other entries, sections,
+and comments are kept. The result is checked before it replaces the file, and
+the previous file is kept as `<file>.bak`.
+
+Restart the server to apply the changes. A file written for another machine
 goes to that machine as `~/.kronk/models/model_config.yaml`, or is selected
 there with `KRONK_POOL_MODEL_CONFIG_FILE`.
-
-The tool covers `models` and `kms`; edit `bucky-models` and `malina-models`
-by hand.
 
 ## 8.6 Catalog Operations
 

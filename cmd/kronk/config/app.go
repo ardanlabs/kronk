@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -24,6 +25,7 @@ const (
 	stepStart
 	stepSections
 	stepPick
+	stepVariant
 	stepFacts
 	stepQuestions
 	stepCheck
@@ -39,6 +41,7 @@ const (
 	actOther = "other"
 	actEdit  = "edit"
 	actQuit  = "quit"
+	actFix   = "fix:" // followed by the index in app.fixes
 )
 
 type startMsg struct {
@@ -61,6 +64,7 @@ type factsMsg struct {
 
 type checkMsg struct {
 	analysis models.Analysis
+	fixes    []fix
 	err      error
 }
 
@@ -105,6 +109,15 @@ type app struct {
 	picked   string
 	choice   choice
 
+	// entryID is the entry written: the model ID, or model/NAME for a
+	// variant (S2, S3). section is models, bucky-models or malina-models.
+	entryID      string
+	section      string
+	variantForm  *huh.Form
+	variantPick  string
+	variantName  string
+	variantAsked bool
+
 	facts    facts
 	qs       []question
 	ans      *answers
@@ -114,6 +127,8 @@ type app struct {
 	changes  []change
 	check    *models.Analysis
 	checkErr error
+	fixes    []fix    // offered when the check says it doesn't fit
+	problems []string // answers the SDK refuses together; saving waits
 
 	reviewForm *huh.Form
 	action     string
@@ -188,19 +203,22 @@ func (a *app) runCheck(cfg models.ModelConfig) tea.Cmd {
 	f := a.facts
 	return func() tea.Msg {
 		an, err := a.src.check(f, cfg)
-		return checkMsg{analysis: an, err: err}
+		if err != nil {
+			return checkMsg{err: err}
+		}
+		return checkMsg{analysis: an, fixes: fitFixes(f.Info, f.Devices, cfg, an)}
 	}
 }
 
 func (a *app) save(path string) tea.Cmd {
-	id, changes, server := a.choice.ID, a.changes, a.server
+	id, section, changes, server := a.entryID, a.section, a.changes, a.server
 	return func() tea.Msg {
 		var backup string
 		var err error
 		if server {
 			backup, err = saveKMS(path, changes)
 		} else {
-			backup, err = saveEntry(path, id, changes)
+			backup, err = saveSectionEntry(path, section, id, changes)
 		}
 		return savedMsg{path: path, backup: backup, err: err}
 	}
@@ -222,7 +240,7 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.String() == "ctrl+c" {
 				return a, tea.Quit
 			}
-		case stepStart, stepSections, stepPick, stepQuestions, stepReview:
+		case stepStart, stepSections, stepPick, stepVariant, stepQuestions, stepReview:
 			if msg.String() == "esc" && !a.fieldUsesEsc() {
 				return a.back()
 			}
@@ -269,6 +287,7 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.checkErr = msg.err
 		} else {
 			a.check = &msg.analysis
+			a.fixes = msg.fixes
 		}
 		return a.startReview()
 
@@ -309,6 +328,8 @@ func (a *app) updateForm(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a.sectionsDone()
 		case stepPick:
 			return a.pickDone()
+		case stepVariant:
+			return a.variantDone()
 		case stepQuestions:
 			return a.questionsDone()
 		case stepReview:
@@ -334,6 +355,8 @@ func (a *app) currentForm() *huh.Form {
 		return a.sectionsForm
 	case stepPick:
 		return a.pickForm
+	case stepVariant:
+		return a.variantForm
 	case stepQuestions:
 		return a.form
 	case stepReview:
@@ -364,11 +387,21 @@ func (a *app) back() (tea.Model, tea.Cmd) {
 		a.startForm = form
 		return a, cmd
 
+	case stepVariant:
+		a.step = stepPick
+		a.pickForm = a.newPickForm()
+		return a, a.pickForm.Init()
+
 	case stepQuestions:
 		if a.server {
 			a.step = stepSections
 			a.sectionsForm = a.newSectionsForm()
 			return a, a.sectionsForm.Init()
+		}
+		if a.variantAsked {
+			a.step = stepVariant
+			a.variantForm = a.newVariantForm()
+			return a, a.variantForm.Init()
 		}
 		a.step = stepPick
 		a.pickForm = a.newPickForm()
@@ -465,6 +498,36 @@ func (a *app) pickDone() (tea.Model, tea.Cmd) {
 	}
 
 	a.choice = a.choices[i]
+	a.section = sectionOfKind(a.choice.Kind)
+	a.entryID = a.choice.ID
+	a.variantAsked = false
+
+	if a.choice.Kind != kindChatModel {
+		return a.startMediaQuestions()
+	}
+
+	// S2: a model with entries in the file asks which one to change, or for
+	// a new variant.
+	if len(entriesFor(a.doc, a.choice.ID)) > 0 {
+		a.variantAsked = true
+		a.variantPick, a.variantName = a.choice.ID, ""
+		a.step = stepVariant
+		a.variantForm = a.newVariantForm()
+		return a, a.variantForm.Init()
+	}
+
+	return a.readFacts()
+}
+
+func (a *app) variantDone() (tea.Model, tea.Cmd) {
+	a.entryID = a.variantPick
+	if a.variantPick == newVariant {
+		a.entryID = a.choice.ID + "/" + strings.TrimSpace(a.variantName)
+	}
+	return a.readFacts()
+}
+
+func (a *app) readFacts() (tea.Model, tea.Cmd) {
 	a.step = stepFacts
 	a.status = "Reading " + a.choice.ID
 	if !a.choice.Installed {
@@ -474,13 +537,40 @@ func (a *app) pickDone() (tea.Model, tea.Cmd) {
 	return a, tea.Batch(a.spin.Tick, a.loadFacts(a.choice))
 }
 
+// startMediaQuestions asks the audio or image model questions. These models
+// have no GGUF analysis and no memory check.
+func (a *app) startMediaQuestions() (tea.Model, tea.Cmd) {
+	a.facts = facts{ID: a.choice.ID}
+	a.qs = audioQuestions()
+	if a.choice.Kind == kindImageModel {
+		a.qs = imageQuestions()
+	}
+	a.ans = newAnswers(a.qs)
+
+	existing, err := mediaExisting(a.doc, a.choice.Kind, a.choice.ID)
+	if err != nil {
+		return a.fail(fmt.Errorf("read existing entry: %w", err))
+	}
+	a.existing = existing
+	a.ans.prefill(a.facts, existing)
+
+	return a.openQuestions()
+}
+
 func (a *app) startQuestions(f facts) (tea.Model, tea.Cmd) {
+	// Installed chat models are the candidates for a classic draft model.
+	for _, c := range a.choices {
+		if c.Installed && c.Kind == kindChatModel && c.Endpoint == "" {
+			f.Installed = append(f.Installed, c.ID)
+		}
+	}
+
 	a.facts = f
 	a.qs = questions()
 	a.ans = newAnswers(a.qs)
 	a.existing = nil
 
-	if mc, ok := a.doc.Models[f.ID]; ok {
+	if mc, ok := a.doc.Models[a.entryID]; ok {
 		existing, err := flattenConfig(mc)
 		if err != nil {
 			return a.fail(fmt.Errorf("read existing entry: %w", err))
@@ -498,15 +588,28 @@ func (a *app) questionsDone() (tea.Model, tea.Cmd) {
 		return a.fail(err)
 	}
 	a.changes = changes
-	a.check, a.checkErr = nil, nil
+	a.check, a.checkErr, a.fixes, a.problems = nil, nil, nil, nil
 
 	if a.server {
 		return a.startReview()
 	}
 
-	cfg, err := toModelConfig(apply(a.existing, changes))
+	if a.choice.Kind != kindChatModel {
+		if err := checkMedia(a.choice.Kind, apply(a.existing, changes)); err != nil {
+			return a.fail(err)
+		}
+		return a.startReview()
+	}
+
+	flat := apply(a.existing, changes)
+	cfg, err := toModelConfig(flat)
 	if err != nil {
 		return a.fail(err)
+	}
+
+	// Answers the server would refuse: show them, skip the memory check.
+	if a.problems = problems(flat); len(a.problems) > 0 {
+		return a.startReview()
 	}
 
 	if !a.facts.HardwareKnown {
@@ -524,6 +627,12 @@ func (a *app) questionsDone() (tea.Model, tea.Cmd) {
 func (a *app) startReview() (tea.Model, tea.Cmd) {
 	a.step = stepReview
 	a.action = actSave
+	switch {
+	case len(a.problems) > 0:
+		a.action = actEdit
+	case len(a.fixes) > 0:
+		a.action = actFix + "0"
+	}
 	a.otherPath = ""
 	a.reviewForm = a.newReviewForm()
 	return a, a.reviewForm.Init()
@@ -582,6 +691,14 @@ func (a *app) editAnswers() (tea.Model, tea.Cmd) {
 }
 
 func (a *app) reviewDone() (tea.Model, tea.Cmd) {
+	if n, ok := strings.CutPrefix(a.action, actFix); ok {
+		i, _ := strconv.Atoi(n)
+		if i >= 0 && i < len(a.fixes) {
+			a.ans.applyFix(a.facts, a.fixes[i])
+		}
+		return a.questionsDone()
+	}
+
 	switch a.action {
 	case actEdit:
 		return a.editAnswers()
@@ -668,7 +785,10 @@ func newPickRow(c choice) pickRow {
 		r.sourceText = "installed"
 		r.notValidated = !c.Validated
 	}
-	if c.Endpoint != "" {
+	switch {
+	case c.Kind != kindChatModel:
+		r.kindText = c.Kind
+	case c.Endpoint != "":
 		r.kindText = c.Endpoint
 	}
 	if c.Size > 0 {
@@ -709,11 +829,15 @@ func (a *app) newQuestionsForm() *huh.Form {
 		open := func() bool { return ans.applies(f, q) }
 		hg = append(hg, huh.NewGroup(a.field(q)).WithHideFunc(func() bool { return !open() }))
 
-		if q.options != nil && q.kind != kindChoice && q.kind != kindBool {
+		if q.options != nil && q.kind != kindChoice && q.kind != kindBool && q.kind != kindMulti {
+			otherDesc := "Writes " + a.keyPath(q.key)
+			if n := a.facts.Analysis.Model.BlockCount; q.key == "ngpu-layers" && n > 0 {
+				otherDesc = fmt.Sprintf("The model has %d layers. ", n) + otherDesc
+			}
 			other := huh.NewInput().
 				Key(q.key + "/other").
 				Title(upperFirst(q.title)).
-				Description("Writes " + a.keyPath(q.key)).
+				Description(otherDesc).
 				Placeholder("a value").
 				Validate(q.validate).
 				Value(ans.other[q.key])
@@ -731,7 +855,20 @@ func (a *app) newQuestionsForm() *huh.Form {
 func (a *app) field(q question) huh.Field {
 	desc := a.describe(q)
 
-	if q.kind == kindVars {
+	if q.kind == kindMulti {
+		var opts []huh.Option[string]
+		for _, o := range q.options(a.facts) {
+			opts = append(opts, huh.NewOption(o.label, o.value))
+		}
+		return huh.NewMultiSelect[string]().
+			Key(q.key).
+			Title(upperFirst(q.title)).
+			Description(desc).
+			Options(opts...).
+			Value(a.ans.multi[q.key])
+	}
+
+	if q.kind == kindVars || q.kind == kindAdapters {
 		return huh.NewText().
 			Key(q.key).
 			Title(upperFirst(q.title)).
@@ -744,10 +881,20 @@ func (a *app) field(q question) huh.Field {
 	}
 
 	if q.options == nil {
-		// A secret's hint says whether the file has one, not a default.
+		// A secret's hint says whether the file has one, not a default. A
+		// required input has no default.
 		placeholder := q.def(a.facts)
-		if !q.secret {
+		if !q.secret && !q.required {
 			placeholder += " (default)"
+		}
+		validate := q.validate
+		if q.required {
+			validate = func(s string) error {
+				if strings.TrimSpace(s) == "" {
+					return fmt.Errorf("enter a value")
+				}
+				return q.validate(s)
+			}
 		}
 
 		in := huh.NewInput().
@@ -755,7 +902,7 @@ func (a *app) field(q question) huh.Field {
 			Title(upperFirst(q.title)).
 			Description(desc).
 			Placeholder(upperFirst(placeholder)).
-			Validate(q.validate).
+			Validate(validate).
 			Value(a.ans.sel[q.key])
 		if q.secret || q.kind == kindPassword {
 			in = in.EchoMode(huh.EchoModePassword)
@@ -773,7 +920,10 @@ func (a *app) field(q question) huh.Field {
 		}
 	}
 
-	opts := []huh.Option[string]{huh.NewOption(upperFirst(def)+" (default)", "")}
+	var opts []huh.Option[string]
+	if !q.required {
+		opts = append(opts, huh.NewOption(upperFirst(def)+" (default)", ""))
+	}
 	for _, o := range options {
 		if o.value == q.same {
 			continue
@@ -781,7 +931,11 @@ func (a *app) field(q question) huh.Field {
 		opts = append(opts, huh.NewOption(upperFirst(o.label), o.value))
 	}
 	if q.kind != kindChoice && q.kind != kindBool {
-		opts = append(opts, huh.NewOption("Other value…", otherValue))
+		label := "Other value…"
+		if q.otherLabel != "" {
+			label = q.otherLabel
+		}
+		opts = append(opts, huh.NewOption(label, otherValue))
 	}
 
 	return huh.NewSelect[string]().
@@ -807,6 +961,12 @@ func (a *app) describe(q question) string {
 	if q.about != "" {
 		lines = append(lines, upperFirst(q.about))
 	}
+	if note := contextNote(a.facts); q.key == "context-window" && note != "" {
+		lines = append(lines, note)
+	}
+	if q.kind == kindAdapters && len(a.facts.Adapters) > 0 {
+		lines = append(lines, "In the lora folder: "+strings.Join(a.facts.Adapters, ", "))
+	}
 	if q.kind == kindVars && len(a.facts.TemplateVars) > 0 {
 		lines = append(lines, "This model's template checks: "+strings.Join(a.facts.TemplateVars, ", "))
 	}
@@ -815,6 +975,9 @@ func (a *app) describe(q question) string {
 	keys := make([]string, 0, len(q.keys()))
 	for _, k := range q.keys() {
 		keys = append(keys, a.keyPath(k))
+	}
+	if q.key == keyRopeScaling {
+		keys = []string{"context-window, or rope-scaling-type, rope-freq-scale and yarn-orig-ctx"}
 	}
 	lines = append(lines, a.st.muted.Render("Writes ")+a.st.value.Render(strings.Join(keys, ", ")))
 
@@ -873,15 +1036,37 @@ func (a *app) newSectionsForm() *huh.Form {
 }
 
 func (a *app) newReviewForm() *huh.Form {
-	opts := []huh.Option[string]{
-		huh.NewOption("Save to "+shortPath(a.path), actSave),
+	// When the answers don't fit, the fixes come first, then keep: save
+	// anyway.
+	var opts []huh.Option[string]
+	for i, x := range a.fixes {
+		opts = append(opts, huh.NewOption(x.label(), actFix+strconv.Itoa(i)))
+	}
+
+	if len(a.problems) > 0 {
+		sel := huh.NewSelect[string]().
+			Title("Fix the answers above before saving.").
+			Options(huh.NewOption("Change answers", actEdit), huh.NewOption("Quit without saving", actQuit)).
+			Value(&a.action)
+		return a.sized(huh.NewForm(huh.NewGroup(sel)).WithTheme(a.theme).WithKeyMap(backKeyMap()).WithShowHelp(true))
+	}
+
+	save := "Save to " + shortPath(a.path)
+	title := "What next?"
+	if len(a.fixes) > 0 || (a.check != nil && !a.check.Recommended.Fits) {
+		save = "Keep it and save to " + shortPath(a.path)
+		title = "It doesn't fit. What next?"
+	}
+
+	opts = append(opts,
+		huh.NewOption(save, actSave),
 		huh.NewOption("Save to another file…", actOther),
 		huh.NewOption("Change answers", actEdit),
 		huh.NewOption("Quit without saving", actQuit),
-	}
+	)
 
 	sel := huh.NewSelect[string]().
-		Title("What next?").
+		Title(title).
 		Options(opts...).
 		Value(&a.action)
 
@@ -922,6 +1107,9 @@ func (a *app) View() tea.View {
 	case stepSections:
 		b.WriteString(a.sectionsForm.View())
 
+	case stepVariant:
+		b.WriteString(a.variantForm.View())
+
 	case stepPick:
 		if a.pickErr != nil {
 			b.WriteString(a.st.bad.Render("Error: " + a.pickErr.Error()))
@@ -930,9 +1118,12 @@ func (a *app) View() tea.View {
 		b.WriteString(a.pickForm.View())
 
 	case stepQuestions:
-		if a.server {
+		switch {
+		case a.server:
 			b.WriteString(a.serverView())
-		} else {
+		case a.choice.Kind != kindChatModel:
+			b.WriteString(a.mediaView())
+		default:
 			b.WriteString(a.factsView())
 		}
 		b.WriteString("\n\n")
@@ -1006,7 +1197,7 @@ func (a *app) factsView() string {
 	}
 
 	lines := []string{
-		a.st.heading.Render(f.ID) + "  " + a.st.muted.Render(source),
+		a.st.heading.Render(a.entryID) + "  " + a.st.muted.Render(source),
 		row("Model", fmt.Sprintf("%s · %s · %s · trained on %d tokens", m.Architecture, m.Quantization, strings.Join(traits, ", "), m.TrainingContext)),
 	}
 
@@ -1037,6 +1228,17 @@ func (a *app) factsView() string {
 	return a.boxed(lines)
 }
 
+func (a *app) mediaView() string {
+	what := "Audio model (whisper.cpp)"
+	if a.choice.Kind == kindImageModel {
+		what = "Image model (stable-diffusion.cpp)"
+	}
+	return a.boxed([]string{
+		a.st.heading.Render(a.choice.ID) + "  " + a.st.muted.Render(what),
+		a.st.value.Render("Written under " + a.section + ": in " + shortPath(a.path) + "."),
+	})
+}
+
 func (a *app) serverView() string {
 	return a.boxed([]string{
 		a.st.heading.Render("Server settings") + "  " + a.st.muted.Render("kms: in "+shortPath(a.path)),
@@ -1049,7 +1251,7 @@ func (a *app) reviewView() string {
 	if a.server {
 		lines = append(lines, a.st.heading.Render("Server settings"))
 	} else {
-		lines = append(lines, a.st.heading.Render(a.choice.ID))
+		lines = append(lines, a.st.heading.Render(a.entryID))
 	}
 
 	if len(a.changes) == 0 {
@@ -1076,7 +1278,7 @@ func (a *app) reviewView() string {
 		entry, err = previewKMS(a.path, a.changes)
 	} else {
 		lines = append(lines, "", a.st.label.Render("Entry as written"))
-		entry, err = previewEntry(a.path, a.choice.ID, a.changes)
+		entry, err = previewSectionEntry(a.path, a.section, a.entryID, a.changes)
 	}
 	switch {
 	case err != nil:
@@ -1093,7 +1295,16 @@ func (a *app) reviewView() string {
 		}
 	}
 
-	if a.server {
+	// Server settings and audio or image models have no memory check.
+	if a.server || a.choice.Kind != kindChatModel {
+		return a.boxed(lines)
+	}
+
+	if len(a.problems) > 0 {
+		lines = append(lines, "")
+		for _, p := range a.problems {
+			lines = append(lines, a.st.bad.Render("  ✗ "+p))
+		}
 		return a.boxed(lines)
 	}
 
@@ -1102,7 +1313,7 @@ func (a *app) reviewView() string {
 	case a.check != nil:
 		r := a.check.Recommended
 		lines = append(lines, a.st.label.Render("Memory    ")+fmt.Sprintf("context %d · %d at a time · cache %s · %s", r.ContextWindow, r.NSeqMax, r.CacheTypeK, fitText(r)))
-		for _, w := range a.check.Warnings {
+		for _, w := range reviewWarnings(a.check.Warnings) {
 			lines = append(lines, a.st.warn.Render("  ! "+w))
 		}
 	case a.checkErr != nil:
@@ -1164,6 +1375,11 @@ func fitText(r models.RuntimeRecommendation) string {
 	mem := formatBytes(uint64(max(r.EstimatedVRAMBytes, 0)))
 	if r.Fits {
 		return "fits (" + mem + ")"
+	}
+	// The SDK puts the profile's description before the reason it doesn't
+	// fit; only the reason is useful here.
+	if _, reason, ok := strings.Cut(r.Reason, "WARNING: "); ok {
+		return "does not fit (" + mem + "): " + reason
 	}
 	if r.Reason != "" {
 		return "does not fit (" + mem + "): " + r.Reason

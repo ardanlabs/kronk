@@ -16,14 +16,26 @@ import (
 // newFile is written when the target file doesn't exist yet.
 const newFile = "version: 2\n\nmodels: {}\n"
 
+// The sections that hold model entries.
+const (
+	sectionModels = "models"
+	sectionBucky  = "bucky-models"
+	sectionMalina = "malina-models"
+)
+
 // saveEntry writes the changes into models.<id> of the file at path. Other
 // entries, sections and comments are kept. The result is checked with
 // modelconfig.Load before it replaces the file, and the previous file is
 // kept as <path>.bak. It returns the backup path, empty when there was no
 // previous file.
 func saveEntry(path string, id string, changes []change) (string, error) {
+	return saveSectionEntry(path, sectionModels, id, changes)
+}
+
+// saveSectionEntry is saveEntry for <section>.<id>.
+func saveSectionEntry(path string, section string, id string, changes []change) (string, error) {
 	return saveFile(path, func(data []byte) ([]byte, error) {
-		return editEntry(data, id, changes)
+		return editSectionEntry(data, section, id, changes)
 	})
 }
 
@@ -52,8 +64,13 @@ func saveKMS(path string, changes []change) (string, error) {
 // previewEntry returns the lines of models.<id> as saveEntry would write them
 // to the file at path, empty when the entry would be removed.
 func previewEntry(path string, id string, changes []change) (string, error) {
-	return preview(path, []string{"models", id}, func(data []byte) ([]byte, error) {
-		return editEntry(data, id, changes)
+	return previewSectionEntry(path, sectionModels, id, changes)
+}
+
+// previewSectionEntry is previewEntry for <section>.<id>.
+func previewSectionEntry(path string, section string, id string, changes []change) (string, error) {
+	return preview(path, []string{section, id}, func(data []byte) ([]byte, error) {
+		return editSectionEntry(data, section, id, changes)
 	})
 }
 
@@ -232,10 +249,16 @@ func editKMS(data []byte, changes []change) ([]byte, error) {
 	}
 }
 
-// editEntry applies the changes to models.<id>. Only the lines of that entry
-// are rewritten; the rest of the file stays byte for byte, including blank
-// lines, which a full YAML re-encode would drop.
+// editEntry applies the changes to models.<id>.
 func editEntry(data []byte, id string, changes []change) ([]byte, error) {
+	return editSectionEntry(data, sectionModels, id, changes)
+}
+
+// editSectionEntry applies the changes to <section>.<id>, where section is
+// models, bucky-models or malina-models. Only the lines of that entry are
+// rewritten; the rest of the file stays byte for byte, including blank
+// lines, which a full YAML re-encode would drop.
+func editSectionEntry(data []byte, section string, id string, changes []change) ([]byte, error) {
 	var doc yaml.Node
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return nil, fmt.Errorf("parse config file: %w", err)
@@ -260,7 +283,7 @@ func editEntry(data []byte, id string, changes []change) ([]byte, error) {
 	lines := strings.SplitAfter(text, "\n")
 	lines = lines[:len(lines)-1]
 
-	mKey, mVal := lookup(root, "models")
+	mKey, mVal := lookup(root, section)
 
 	var eKey, eVal *yaml.Node
 	if mVal != nil && mVal.Kind == yaml.MappingNode {
@@ -313,10 +336,10 @@ func editEntry(data []byte, id string, changes []change) ([]byte, error) {
 
 	case mKey != nil && mVal.Line == mKey.Line:
 		// "models: {}" or "models:" with nothing under it.
-		out = splice(lines, mKey.Line-1, mKey.Line, append([]string{"models:\n"}, rendered...))
+		out = splice(lines, mKey.Line-1, mKey.Line, append([]string{section + ":\n"}, rendered...))
 
 	default:
-		out = append(lines, "\nmodels:\n")
+		out = append(lines, "\n"+section+":\n")
 		out = append(out, rendered...)
 	}
 

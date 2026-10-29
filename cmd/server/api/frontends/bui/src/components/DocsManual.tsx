@@ -380,7 +380,7 @@ kronk model pull unsloth/Qwen3-0.6B-Q8_0 --local`}</code></pre>
 └── keys/`}</code></pre>
           <p>Set <code>KRONK_BASE_PATH</code> or the global <code>--base-path</code> flag to move the entire data root. Official containers set it to <code>/kronk</code>.</p>
           <p>The <code>lora</code> directory holds optional, user-provided LoRA adapter GGUF files. Kronk does not download these files. See <a href="https://www.kronkai.com/manual#lora-adapters">Chapter 3 §3.7</a> for placement and configuration.</p>
-          <p>The model configuration file contains per-model and per-variant overrides. Do not copy configuration values based only on model size; use <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3</a> for context, cache, GPU, and sampling settings.</p>
+          <p>The model configuration file contains per-model and per-variant overrides. Do not copy configuration values based only on model size; use <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3</a> for context, cache, GPU, and sampling settings. To write it interactively, run <code>kronk config</code>; see <a href="https://www.kronkai.com/manual#85-model-configuration-files">Chapter 8 §8.5</a>.</p>
           <h3 id="26-running-the-server">2.6 Running the Server</h3>
           <p>Start in the foreground:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --api-host=127.0.0.1:11435`}</code></pre>
@@ -1935,6 +1935,7 @@ kronk model pull unsloth/Qwen3-0.6B-Q8_0`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`kronk catalog list --local
 kronk model pull unsloth/Qwen3-0.6B-Q8_0 --local
 kronk libs --local`}</code></pre>
+          <p><code>kronk config</code> always works on local files; see <a href="https://www.kronkai.com/manual#editing-the-file-with-kronk-config">Editing the file with kronk config</a>.</p>
           <p>Local mode is useful for initial setup, offline administration, and installing models into a stopped server's data directory. Use server-backed mode when administering a remote host or when browser progress needs to observe the operation.</p>
           <h2 id="83-essential-server-configuration">8.3 Essential Server Configuration</h2>
           <p>Common settings can be supplied as flags or environment variables:</p>
@@ -2190,25 +2191,78 @@ malina-models:
           <pre className="code-block"><code className="language-shell">{`KRONK_POOL_MODEL_CONFIG_FILE=./my-model_config.yaml kronk server start`}</code></pre>
           <p>The file format, variants, configuration keys, and tuning workflow are documented in <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3</a>. The repository's commented reference file is <code>zarf/kms/model_config.yaml</code>.</p>
           <h3 id="editing-the-file-with-kronk-config">Editing the file with kronk config</h3>
-          <p><code>kronk config</code> is an interactive terminal tool that writes this file. It works on local files and does not need a running server.</p>
+          <p><code>kronk config</code> is an interactive terminal tool that writes this file. It asks questions, shows the result, and saves it. It works on local files and does not need a running server.</p>
           <pre className="code-block"><code className="language-shell">{`kronk config`}</code></pre>
-          <p>It asks, in order:</p>
+          <p>Every question starts on its default. Leaving the default writes nothing, so Kronk's defaults and AutoTune still apply. Esc goes back one question.</p>
+          <h4 id="start">Start</h4>
           <ol>
-            <li><strong>Which config file.</strong> The file the server reads comes first (<code>KRONK_POOL_MODEL_CONFIG_FILE</code>, otherwise <code>&lt;base-path&gt;/models/model_config.yaml</code>), then <code>model_config*.yaml</code> files in the current directory, or any other path, including a new file.</li>
+            <li><strong>Config file.</strong> The file the server reads comes first (<code>KRONK_POOL_MODEL_CONFIG_FILE</code>, otherwise <code>&lt;base-path&gt;/models/model_config.yaml</code>), then <code>model_config*.yaml</code> files in the current directory. Any other path, including a new file, also works.</li>
             <li><strong>A model or the server settings.</strong></li>
-            <li><strong>For a model: this machine or another one.</strong> This machine's GPUs, GPU memory and RAM are detected through llama.cpp, so the llama.cpp libraries must be installed. For another machine, enter its GPU count, GPU type, memory per GPU and RAM; the libraries are not needed.</li>
+            <li><strong>This machine or another one</strong> (models only). This machine's GPUs, GPU memory, and RAM are detected through llama.cpp, so its libraries must be installed. For another machine, enter its GPU count, GPU type, memory per GPU, and RAM; the libraries are not needed.</li>
+            <li><strong>The model.</strong> Installed and catalog chat models, and installed audio and image models. When a chat model already has entries in the file, pick the one to change or add a variant (<code>model/NAME</code>).</li>
           </ol>
-          <p>For a model, pick an installed or catalog model. A box shows the model's architecture, the machine and what AutoTune picks for it on that hardware. The questions follow: context window, concurrent requests, thinking and reasoning defaults, custom chat template variables, sampling, KV cache, GPU layers, MoE experts, flash attention, weight loading, queueing, the conversation cache, speculative decoding and the image projector. Questions that do not apply to the model or the machine are skipped. Custom chat template variables are written to <code>chat-template-kwargs</code>, one <code>name=value</code> per line, with YAML values.</p>
-          <p>For the server settings, pick the sections to change (web server, auth, authorization, MCP, downloads, tracing, model pool, runtime). Sections with values in the file start selected. The questions are generated from the server's configuration, so every <code>kms</code> key is covered. Secrets are masked and never shown; an empty answer keeps the value in the file. The admin password is typed in clear and written as its SHA-256.</p>
-          <p>Each list starts with the default, and each input shows the default. Leaving it writes nothing, so Kronk's defaults and AutoTune still apply. Esc goes back one question.</p>
-          <p>The review shows the changes and the entry or <code>kms</code> section exactly as it will be written. For a model it also runs the memory check with the answers on the chosen hardware. Saving then:</p>
+          <p>A box then shows the model's architecture, the machine, and what AutoTune picks for the model on that hardware.</p>
+          <h4 id="model-questions">Model questions</h4>
+          <p>Questions that do not apply to the model or the machine are skipped. For example, MoE questions are skipped for a dense model, and multi-GPU questions for a machine with one GPU.</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Group</th>
+                <th>Settings</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Essentials</td>
+                <td><code>context-window</code>, with the YaRN keys when it is longer than the training context; <code>nseq-max</code></td>
+              </tr>
+              <tr>
+                <td>Behavior</td>
+                <td><code>enable_thinking</code>, <code>reasoning_effort</code>, <code>template</code>, <code>chat-template-kwargs</code></td>
+              </tr>
+              <tr>
+                <td>Sampling</td>
+                <td><code>temperature</code>, <code>top_p</code>, <code>top_k</code>, <code>min_p</code>, <code>max_tokens</code>, <code>repeat_penalty</code>, <code>frequency_penalty</code>, <code>presence_penalty</code></td>
+              </tr>
+              <tr>
+                <td>Memory and GPU</td>
+                <td><code>cache-type-k</code>, <code>cache-type-v</code>, <code>ngpu-layers</code>, <code>offload-kqv</code>, <code>moe</code>, <code>numa</code>, <code>flash-attention</code>, <code>swa-full</code>, <code>load-mode</code>, <code>lazy-mode</code></td>
+              </tr>
+              <tr>
+                <td>Multiple GPUs</td>
+                <td><code>devices</code>, <code>split-mode</code>, <code>main-gpu</code>, <code>tensor-split</code></td>
+              </tr>
+              <tr>
+                <td>Throughput</td>
+                <td><code>queue-depth</code>, <code>admission-timeout</code>, <code>prefill-batch-size</code>, <code>kv-cache-mode</code>, <code>nthreads</code>, <code>incremental-cache</code>, <code>cache-min-tokens</code>, <code>imc-session-capacity</code></td>
+              </tr>
+              <tr>
+                <td>Features</td>
+                <td><code>speculation</code>, <code>draft-model</code>, <code>adapters</code>, <code>proj-on-cpu</code>, <code>proj-device</code>, <code>image-token-budget</code></td>
+              </tr>
+              <tr>
+                <td>Audio (<code>bucky-models</code>)</td>
+                <td><code>nseq-max</code>, <code>queue-depth</code>, <code>admission-timeout</code>, <code>nthreads</code></td>
+              </tr>
+              <tr>
+                <td>Image (<code>malina-models</code>)</td>
+                <td><code>concurrency</code>, <code>queue-depth</code>, <code>admission-timeout</code>, <code>cpu-threads</code></td>
+              </tr>
+            </tbody>
+          </table>
+          <p>Template variables are one <code>name=value</code> per line, with YAML values. Adapters are one per line: an ID from the <code>lora</code> folder or an absolute <code>.gguf</code> path, with an optional <code>=scale</code>.</p>
+          <p>The tool does not ask for settings that a request sets better (<code>seed</code>, DRY, XTC, <code>grammar</code>) or that AutoTune or the GGUF own (<code>physical-batch-size</code>, <code>rope-freq-base</code>, the YaRN factors, <code>op-offload</code>, <code>tensor-buft-overrides</code>). Add them to the file by hand when needed.</p>
+          <h4 id="server-settings">Server settings</h4>
+          <p>Pick the sections to change: web server, auth, authorization, MCP, downloads, tracing, model pool, or runtime. Sections with values in the file start selected. The questions are generated from the server's configuration, so a new <code>kms</code> key is asked without changes to the tool. <code>base-path</code> is not asked, because the server finds this file through it.</p>
+          <p>Secrets are masked and never shown; an empty answer keeps the value in the file. The admin password is typed in clear and written as its SHA-256.</p>
+          <h4 id="review-and-save">Review and save</h4>
+          <p>The review shows the changes and the entry or <code>kms</code> section exactly as it will be written. For a chat model it also:</p>
           <ul>
-            <li>rewrites only that model's entry or the <code>kms</code> section; other entries, sections and comments are kept;</li>
-            <li>checks the result first: a model entry must load with the model settings, and a <code>kms</code> section must be accepted by the server's configuration, or nothing is written;</li>
-            <li>keeps the previous file as <code>&lt;file&gt;.bak</code>.</li>
+            <li>runs the memory check with the answers on the chosen hardware. When the answers do not fit, it offers the fixes that do fit, each with the memory it needs: a smaller context, a <code>q8_0</code> KV cache, fewer requests at the same time, or <code>q8_0</code> with a smaller context. Keeping the answers is also possible.</li>
+            <li>lists combinations that Kronk refuses when it loads the model, such as a quantized V cache with flash attention disabled, or fewer cached conversations than admitted requests. Saving waits until they are changed.</li>
           </ul>
-          <p>Restart the server to apply the changes. A file saved for another machine goes to that machine as <code>~/.kronk/models/model_config.yaml</code>, or is selected there with <code>KRONK_POOL_MODEL_CONFIG_FILE</code>.</p>
-          <p>The tool covers <code>models</code> and <code>kms</code>; edit <code>bucky-models</code> and <code>malina-models</code> by hand.</p>
+          <p>Saving rewrites only that entry or the <code>kms</code> section; other entries, sections, and comments are kept. The result is checked before it replaces the file, and the previous file is kept as <code>&lt;file&gt;.bak</code>.</p>
+          <p>Restart the server to apply the changes. A file written for another machine goes to that machine as <code>~/.kronk/models/model_config.yaml</code>, or is selected there with <code>KRONK_POOL_MODEL_CONFIG_FILE</code>.</p>
           <h2 id="86-catalog-operations">8.6 Catalog Operations</h2>
           <p>The personal model catalog is stored at <code>~/.kronk/catalog/catalog.yaml</code>. Kronk seeds it with a starter catalog and adds resolved model information as models are discovered or downloaded.</p>
           <p>Common operations are:</p>
@@ -6146,6 +6200,7 @@ fmt.Println(info.Description)`}</code></pre>
           <h4 id="2031-commands-and-server">20.3.1 Commands and server</h4>
           <ul>
             <li><strong>&lt;code&gt;cmd/kronk/&lt;/code&gt;</strong> owns the installed <code>kronk</code> executable, command hierarchy, flags, local-versus-server dispatch, terminal presentation, and process control. Commands should orchestrate reusable managers rather than become a second implementation of catalogs, downloads, inference, or authentication. <code>make install-kronk</code> is simply <code>go install ./cmd/kronk</code>; there are no project build tags required for installation.</li>
+            <li><strong>&lt;code&gt;cmd/kronk/config/&lt;/code&gt;</strong> is the interactive <code>kronk config</code> tool. Chat model questions are written by hand in <code>questions.go</code> and checked against <code>models.ModelConfig</code> by <code>TestQuestionKeys</code>; audio and image questions are in <code>media.go</code>. Server questions are generated from the server's config struct through <code>Settings()</code> in <code>cmd/server/api/services/kronk/settings.go</code>, so every server field needs a <code>conf:"help:..."</code> tag. <code>AGENTS.md</code> lists what to update when a setting changes.</li>
             <li><strong>&lt;code&gt;cmd/server/api/&lt;/code&gt;</strong> composes executable services, startup configuration, embedded assets, and tooling binaries. <code>cmd/server/api/services/kronk/main.go</code> is the Kronk service composition root and the BUI embedding owner.</li>
             <li><strong>&lt;code&gt;cmd/server/app/domain/&lt;/code&gt;</strong> owns HTTP domain behavior. Packages such as <code>chatapp</code>, <code>respapp</code>, <code>embedapp</code>, <code>rerankapp</code>, <code>audioapp</code>, <code>toolapp</code>, and <code>playgroundapp</code> register routes and translate HTTP requests to application/SDK calls. Keep protocol validation and response formatting near the domain; keep inference policy in SDKs.</li>
             <li><strong>&lt;code&gt;cmd/server/app/&lt;/code&gt;</strong> also contains application wiring and adapters shared by domains. It is below service startup and above reusable SDK packages.</li>
