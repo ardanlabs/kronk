@@ -1,8 +1,12 @@
-# Manual quick-check workflow
+# Quick-check workflows
 
-In Actions, select **Quick-check → Run workflow**. There are no inputs:
-manual dispatch checks out latest `main` and runs the complete implemented matrix
-with the tool's default repetitions. The summary records the resolved commit.
+Quick-check runs daily at **02:00 EST (07:00 UTC)** year-round. During Eastern
+daylight saving time, that is 03:00 EDT. GitHub may delay scheduled jobs;
+the schedule becomes active once the workflow is on the default branch.
+For a manual run, select **Quick-check → Run workflow** in Actions. There are no
+inputs. Both triggers check out latest `main` and run the complete implemented
+matrix with the tool's default repetitions, unless that commit was already tested.
+The summary records the resolved commit.
 
 ## Promote to Release
 
@@ -37,19 +41,6 @@ promotion. Successful promotion, packaging, and upload permit replacement
 of the shared queue. An operational failure before upload leaves the previous artifact intact;
 pruning happens only after a successful upload. Once uploaded, the promoted queue
 is what the next Quick-check or Promote to Release invocation restores.
-
-## Temporary pre-merge validation
-
-Before this workflow exists on `main`, `ramon-reichert` can apply the
-`run-quick-check` label to his same-repository PR from `ramon/cron-job` into `main`.
-The job checks the PR author's numeric account ID, exact branch and repository,
-label, and labeling actor. Other PRs do not run the job. It tests the PR's exact
-head commit and uses the normal retained queue, with no isolated artifact scheme.
-Remove/reapply the label to test another revision; pushes alone do not trigger it.
-
-**Before merging:** remove the temporary `pull_request` trigger and job guard,
-restore checkout to `ref: main`, and remove this validation section. Keep
-`workflow_dispatch` and the existing concurrency/artifact behavior.
 
 ## Execution
 

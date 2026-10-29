@@ -2,14 +2,12 @@ name: Quick-check
 
 on:
   workflow_dispatch:
-  # TEMPORARY: remove this trigger and the PR-specific job/checkout logic after
-  # Ramon's pre-merge validation, before merging this workflow into main.
-  pull_request:
-    types: [labeled]
-    branches: [main]
+  schedule:
+    # 02:00 EST (UTC-5) year-round; 03:00 during Eastern daylight saving time.
+    - cron: '0 7 * * *'
 
-# Serializes this workflow only, not other work on Pacha. Do not cancel an
-# existing measurement when another manual invocation is queued.
+# Serializes Quick-check and Promote to Release, not other work on Pacha.
+# Do not cancel an existing measurement when another invocation is queued.
 concurrency:
   group: quick-check-pacha
   cancel-in-progress: false
@@ -25,24 +23,13 @@ env:
 
 jobs:
   matrix:
-    # TEMPORARY: only Ramon's same-repository workflow PR can use the label.
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' &&
-       github.event.label.name == 'run-quick-check' &&
-       github.actor == 'ramon-reichert' &&
-       github.event.pull_request.user.id == 95890275 &&
-       github.event.pull_request.head.repo.full_name == github.repository &&
-       github.event.pull_request.head.ref == 'ramon/cron-job')
     runs-on: [self-hosted, macOS, ARM64, sand, metal]
     timeout-minutes: 180
     steps:
-      # TEMPORARY: PR validation tests its exact head commit. Manual dispatch
-      # continues to test latest main, irrespective of the dispatch ref.
       - name: Checkout tested code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || 'main' }}
+          ref: main
           fetch-depth: 0
 
       - name: Restore retained run queue
