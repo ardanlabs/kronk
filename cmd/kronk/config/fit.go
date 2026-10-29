@@ -9,10 +9,10 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
-// When the memory check says the answers don't fit, the review offers the
-// fixes of the init map: a smaller context, a q8_0 KV cache, fewer requests
-// at the same time, or keep. Each fix is checked with the same analysis on
-// the same model and hardware, and only offered when it then fits.
+// When the memory check says the answers don't fit, the review offers fixes:
+// a smaller context, a q8_0 KV cache, fewer requests at the same time, or
+// keep. Each fix is checked with the same analysis on the same model and
+// hardware, and only offered when it then fits.
 
 // Fix kinds.
 const (

@@ -8,10 +8,10 @@ import (
 	"strings"
 )
 
-// A context window longer than the model's training context needs a choice
-// (question E1a of the init map): lower it to the training context, or keep
-// it with YaRN. YaRN writes the scaling keys chapter 7 of the manual
-// describes: rope-freq-scale = training / chosen, yarn-orig-ctx = training.
+// A context window longer than the model's training context needs a choice:
+// lower it to the training context, or keep it with YaRN. YaRN writes the
+// scaling keys chapter 7 of the manual describes: rope-freq-scale = training
+// / chosen, yarn-orig-ctx = training.
 
 const keyRopeScaling = "rope-scaling-type"
 
@@ -28,7 +28,7 @@ func longContext(f facts, a *answers) bool {
 	return train > 0 && chosenContext(a) > train
 }
 
-// fixContext adds the changes that follow from the E1a answer.
+// fixContext adds the changes that follow from the YaRN answer.
 func fixContext(f facts, a *answers, existing map[string]any, out []change) []change {
 	if !longContext(f, a) {
 		return out

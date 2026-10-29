@@ -110,7 +110,7 @@ type app struct {
 	choice   choice
 
 	// entryID is the entry written: the model ID, or model/NAME for a
-	// variant (S2, S3). section is models, bucky-models or malina-models.
+	// variant. section is models, bucky-models or malina-models.
 	entryID      string
 	section      string
 	variantForm  *huh.Form
@@ -506,7 +506,7 @@ func (a *app) pickDone() (tea.Model, tea.Cmd) {
 		return a.startMediaQuestions()
 	}
 
-	// S2: a model with entries in the file asks which one to change, or for
+	// A model with entries in the file asks which one to change, or for
 	// a new variant.
 	if len(entriesFor(a.doc, a.choice.ID)) > 0 {
 		a.variantAsked = true

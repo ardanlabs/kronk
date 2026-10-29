@@ -16,7 +16,7 @@ import (
 
 // Audio (Bucky, whisper.cpp) and image (Malina, stable-diffusion.cpp) models
 // have their own entries under bucky-models: and malina-models:, and their own
-// questions (A1-A4 and I1-I4 of the init map). They have no GGUF analysis.
+// questions. They have no GGUF analysis.
 
 // Model kinds in the picker.
 const (
@@ -38,25 +38,25 @@ func sectionOfKind(k string) string {
 
 func audioQuestions() []question {
 	return []question{
-		{ // A1
+		{
 			key: "nseq-max", kind: kindInt, min: 1,
 			title: "How many requests should run at the same time?",
 			def:   func(facts) string { return "1" },
 			show:  always,
 		},
-		{ // A2
+		{
 			key: "queue-depth", kind: kindInt, min: 0,
 			title: "How many requests can wait in line?",
 			def:   func(facts) string { return "0" },
 			show:  always,
 		},
-		{ // A3
+		{
 			key: "admission-timeout", kind: kindDuration, min: 1,
 			title: "How long can a request wait for a slot?",
 			def:   func(facts) string { return "3m" },
 			show:  always,
 		},
-		{ // A4
+		{
 			key: "nthreads", kind: kindInt, min: 1,
 			title: "How many CPU threads?",
 			def:   func(facts) string { return "whisper.cpp's choice" },
@@ -67,25 +67,25 @@ func audioQuestions() []question {
 
 func imageQuestions() []question {
 	return []question{
-		{ // I1
+		{
 			key: "concurrency", kind: kindInt, min: 1,
 			title: "How many images can be generated at the same time?",
 			def:   func(facts) string { return "1" },
 			show:  always,
 		},
-		{ // I2
+		{
 			key: "queue-depth", kind: kindInt, min: 0,
 			title: "How many requests can wait in line?",
 			def:   func(facts) string { return "0" },
 			show:  always,
 		},
-		{ // I3
+		{
 			key: "admission-timeout", kind: kindDuration, min: 1,
 			title: "How long can a request wait for a slot?",
 			def:   func(facts) string { return "3m" },
 			show:  always,
 		},
-		{ // I4
+		{
 			key: "cpu-threads", kind: kindInt, min: 1,
 			title: "How many CPU threads?",
 			def:   func(facts) string { return "stable-diffusion.cpp's choice" },

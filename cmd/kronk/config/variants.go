@@ -13,7 +13,7 @@ import (
 // A variant is a second set of settings for the same downloaded model, in an
 // entry named model/NAME (chapter 3 of the manual). When the picked model
 // already has entries, the tool asks which one to change, or for a new
-// variant (S2, S3 of the init map).
+// variant.
 
 const newVariant = "\x00new"
 
