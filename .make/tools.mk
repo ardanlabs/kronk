@@ -29,9 +29,10 @@
 #   slot overlap, queue pressure, and isolation. Distinguish tool assertions
 #   from trace-correlated server evidence, and report failures or evidence gaps.
 
-server-for-tools: kronk-build
+# API-only tools server: compile current Go code without regenerating docs/BUI.
+server-for-tools:
 	KRONK_POOL_MODEL_CONFIG_FILE="$(CURDIR)/.tools/model_config_tools.yaml" \
-		go run -buildvcs=true ./cmd/kronk server start --detach
+		go run -buildvcs=true ./cmd/kronk server start --detach --web-admin-enabled=false
 
 QUICK_CHECK_ARGS ?=
 
