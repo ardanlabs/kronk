@@ -103,10 +103,13 @@ largest command.
   should orchestrate reusable managers rather than become a second implementation of
   catalogs, downloads, inference, or authentication. `make install-kronk` is simply
   `go install ./cmd/kronk`; there are no project build tags required for installation.
-- **`cmd/kronk/config/`** is the interactive `kronk config` tool. Chat model
-  questions are written by hand in `questions.go` and checked against
-  `models.ModelConfig` by `TestQuestionKeys`; audio and image questions are in
-  `media.go`. Server questions are generated from the server's config struct
+- **`cmd/kronk/config/`** is the interactive `kronk config` tool. `cmd.go` and
+  `config.go` hold the command; the work is in `configfile` (edits
+  `model_config.yaml`), `source` (local models, catalog, devices, templates),
+  `questions` (the questions, answers and the changes they write) and `tui` (the
+  Bubble Tea program). Chat model questions are written by hand in
+  `questions/chat.go` and checked against `models.ModelConfig` by
+  `TestQuestionKeys`; audio and image questions are in `questions/media.go`. Server questions are generated from the server's config struct
   through `Settings()` in `cmd/server/api/services/kronk/settings.go`, so every
   server field needs a `conf:"help:..."` tag. `AGENTS.md` lists what to update
   when a setting changes.

@@ -381,6 +381,20 @@ kronk config
 Every question starts on its default. Leaving the default writes nothing, so
 Kronk's defaults and AutoTune still apply. Esc goes back one question.
 
+Colors follow the terminal's background, also when it switches between light
+and dark while the tool runs. When a light terminal shows faint, hard to read
+text, the terminal didn't report its background (this can happen through tmux
+or ssh): run `kronk config --theme light`, or `--theme dark` for the opposite
+case. A fixed `--theme` doesn't follow switches.
+
+Each question says what the setting does, gives a tip on when to change it,
+and names the key it writes. In a terminal at least 120 columns wide, an
+answers column on the right lists every question asked so far and the ones
+still ahead, with the answer to each; defaults are marked `(default)`. At any
+size, `ctrl+o` opens that list full screen. Enter on an answer opens that
+question; once it is answered, the questions resume where they were. Esc
+closes the list.
+
 #### Start
 
 1. **Config file.** The file the server reads comes first
@@ -392,23 +406,46 @@ Kronk's defaults and AutoTune still apply. Esc goes back one question.
    memory, and RAM are detected through llama.cpp, so its libraries must be
    installed. For another machine, enter its GPU count, GPU type, memory per
    GPU, and RAM; the libraries are not needed.
-4. **The model.** Installed and catalog chat models, and installed audio and
-   image models. When a chat model already has entries in the file, pick the
-   one to change or add a variant (`model/NAME`).
+4. **The model.** First the kind of model: chat, embeddings, rerank,
+   decision, audio (whisper) or image, each with its number of models, or
+   **All models** to search every kind. Then the models of that kind; type to
+   search. Installed models come first, then the catalog. A catalog chat model is
+   configured from its GGUF header alone, which is fetched and cached; any
+   catalog model is offered for download after saving. When a chat
+   model already has entries in the file, pick the one to change or add a
+   variant (`model/NAME`).
 
 A box then shows the model's architecture, the machine, and what AutoTune picks
-for the model on that hardware.
+for the model on that hardware. When AutoTune's pick may not fit the target GPU,
+the box warns under it with the memory it needs; the review checks the answers
+themselves.
 
 #### Model questions
 
 Questions that do not apply to the model or the machine are skipped. For
 example, MoE questions are skipped for a dense model, and multi-GPU questions
-for a machine with one GPU.
+for a machine with one GPU. `enable_thinking` and `reasoning_effort` are asked
+only when the chat template the server would use reads them: the `template`
+answer, a `.jinja` file in the `jinja` folder, or the GGUF's own template.
+`numa` is asked when part of the model runs on the CPU, unless this machine
+has a single NUMA node.
+
+The GGUF metadata tells whether the model generates text. Embedding, rerank
+and decision models don't, so they are only asked the loading, memory and
+throughput settings: not sampling, thinking, the chat template, its
+variables, speculation or the conversation cache.
+
+For a model with a projector (mmproj), the inputs it takes come from the
+projector's own header (`clip.has_vision_encoder`, `clip.has_audio_encoder`),
+read from the local file or fetched for a catalog model. The box shows them,
+the projector questions name them, and `image-token-budget` is asked only when
+the projector takes images. When the header can't be read, the projector
+questions are all asked.
 
 | Group | Settings |
 | ----- | -------- |
 | Essentials | `context-window`, with the YaRN keys when it is longer than the training context; `nseq-max` |
-| Behavior | `enable_thinking`, `reasoning_effort`, `template`, `chat-template-kwargs` |
+| Behavior | `template`, `enable_thinking`, `reasoning_effort`, `chat-template-kwargs` |
 | Sampling | `temperature`, `top_p`, `top_k`, `min_p`, `max_tokens`, `repeat_penalty`, `frequency_penalty`, `presence_penalty` |
 | Memory and GPU | `cache-type-k`, `cache-type-v`, `ngpu-layers`, `offload-kqv`, `moe`, `numa`, `flash-attention`, `swa-full`, `load-mode`, `lazy-mode` |
 | Multiple GPUs | `devices`, `split-mode`, `main-gpu`, `tensor-split` |
@@ -440,7 +477,10 @@ file. The admin password is typed in clear and written as its SHA-256.
 #### Review and save
 
 The review shows the changes and the entry or `kms` section exactly as it will
-be written. For a chat model it also:
+be written. **Change one answer** (or `ctrl+o`) opens the same list; the
+picked question opens, and the review comes back once it is answered, after
+any questions the new answer adds. Esc goes back to the last question, and esc
+again walks back through them. For a chat model the review also:
 
 - runs the memory check with the answers on the chosen hardware. When the
   answers do not fit, it offers the fixes that do fit, each with the memory it
@@ -457,6 +497,20 @@ the previous file is kept as `<file>.bak`.
 Restart the server to apply the changes. A file written for another machine
 goes to that machine as `~/.kronk/models/model_config.yaml`, or is selected
 there with `KRONK_POOL_MODEL_CONFIG_FILE`.
+
+When the model is not installed yet, the tool then shows its pull command
+(`kronk model pull --local <id>`, or the `kronk bucky` / `kronk malina`
+command for audio and image models) with two buttons: **Copy pull command**,
+and **Install now**, the default, which downloads it with progress (Esc
+cancels). Esc skips both. A config for another machine only offers the copy,
+to run there. The configuration is saved first, so a cancelled or failed
+download keeps it.
+
+**All done!** then sums up the file, its backup, the entry written (or that
+Kronk's defaults apply when there was nothing to write), where the model is
+installed or the command still to run, and how the server picks up the file.
+**Configure another model** starts over with the same file and machine;
+**Exit**, the default, quits.
 
 ## 8.6 Catalog Operations
 

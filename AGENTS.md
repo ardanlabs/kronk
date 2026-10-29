@@ -18,10 +18,10 @@ You will want to look at `Chapter 20: Developer Guide` for detailed information 
 
 `cmd/kronk/config` asks questions to write `model_config.yaml`. Keep it in step when these change:
 
-- **Model settings** (`models.ModelConfig` in `sdk/tools/models/kronkconfig.go`, or enum values in `sdk/kronk/model/config_types.go`): the questions are hand-written in `questions()` in `cmd/kronk/config/questions.go`. Add, rename or remove the question there. `TestQuestionKeys` fails on a renamed key or removed value, but not on a new setting with no question.
-- **Server settings** (`config` struct in `cmd/server/api/services/kronk/config.go`): questions are generated from the struct. Give every new field a `conf:"help:..."` tag (no commas in the text); `TestSettings` fails without it. A new top-level group needs a label in `sections` in `cmd/kronk/config/server.go`.
-- **GPU backends** (a new `gpu_*` device type): add it to `gpuTypes` in `cmd/kronk/config/start.go`.
-- **Audio and image models** (`BuckyModelConfig`, `MalinaModelConfig` in `sdk/tools/modelconfig`): questions are in `audioQuestions()` and `imageQuestions()` in `cmd/kronk/config/media.go`; `TestMediaQuestionKeys` checks them.
+- **Model settings** (`models.ModelConfig` in `sdk/tools/models/kronkconfig.go`, or enum values in `sdk/kronk/model/config_types.go`): the questions are hand-written in `Chat()` in `cmd/kronk/config/questions/chat.go`. Add, rename or remove the question there. `TestQuestionKeys` fails on a renamed key or removed value, but not on a new setting with no question.
+- **Server settings** (`config` struct in `cmd/server/api/services/kronk/config.go`): questions are generated from the struct. Give every new field a `conf:"help:..."` tag (no commas in the text); `TestSettings` fails without it. A new top-level group needs a label in `sections` in `cmd/kronk/config/questions/server.go`.
+- **GPU backends** (a new `gpu_*` device type): add it to `GPUTypes` in `cmd/kronk/config/source/machine.go`.
+- **Audio and image models** (`BuckyModelConfig`, `MalinaModelConfig` in `sdk/tools/modelconfig`): questions are in `Audio()` and `Image()` in `cmd/kronk/config/questions/media.go`; `TestMediaQuestionKeys` checks them.
 
 After a change, run `go test ./cmd/kronk/config/... ./cmd/server/api/services/kronk/`.
 
