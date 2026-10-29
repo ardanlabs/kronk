@@ -367,6 +367,13 @@ type engine struct {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "promote" {
+		if err := promoteCommand(os.Args[2:], os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "compare" {
 		if err := compareCommand(os.Args[2:], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)

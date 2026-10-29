@@ -20,6 +20,7 @@ import (
 type comparisonRun struct {
 	Directory       string                 `json:"directory"`
 	Version         string                 `json:"version"`
+	Release         string                 `json:"release,omitempty"`
 	Status          string                 `json:"recorded_status"`
 	Executed        int                    `json:"repetitions_executed,omitempty"`
 	Requested       int                    `json:"repetitions_requested,omitempty"`
@@ -133,14 +134,30 @@ func compareCommand(args []string, out io.Writer) error {
 	c := compareMatrices(*baseline, *candidate, a, b)
 	var baselineTag, candidateTag string
 	if *against == "release" {
-		tags, err := releaseTags(context.Background())
+		baselineTag, err = promotedRelease(*baseline, a.summary.ServerRevision)
 		if err != nil {
 			return err
 		}
-		baselineTag, candidateTag = tags[a.summary.ServerRevision], tags[b.summary.ServerRevision]
-		if baselineTag == "" {
-			return fmt.Errorf("baseline commit does not have a remote release tag")
+		candidateTag, err = promotedRelease(*candidate, b.summary.ServerRevision)
+		if err != nil {
+			return err
 		}
+		// Manually promoted baselines need no tag lookup. An ordinary nightly
+		// candidate is not a release until it is explicitly promoted too.
+		if baselineTag == "" {
+			tags, err := releaseTags(context.Background())
+			if err != nil {
+				return err
+			}
+			baselineTag = tags[a.summary.ServerRevision]
+			if candidateTag == "" {
+				candidateTag = tags[b.summary.ServerRevision]
+			}
+		}
+		if baselineTag == "" {
+			return fmt.Errorf("baseline has neither a promotion nor a remote release tag")
+		}
+		c.Baseline.Release, c.Candidate.Release = baselineTag, candidateTag
 	}
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
@@ -283,7 +300,8 @@ func readCellComparison(s runSummary, r report, events []byte) (comparisonInput,
 
 func comparisonIdentity(dir string, input comparisonInput) comparisonRun {
 	s := input.summary
-	run := comparisonRun{dir, input.report.serverVersion(), s.Status, s.RepetitionsExecuted, s.RepetitionsRequested, []string{}, s.ReferenceTokens}
+	run := comparisonRun{Directory: dir, Version: input.report.serverVersion(), Status: s.Status,
+		Executed: s.RepetitionsExecuted, Requested: s.RepetitionsRequested, Problems: []string{}, ReferenceTokens: s.ReferenceTokens}
 	run.Problems = append(run.Problems, s.Findings...)
 	if s.Status != "PASS" || s.RepetitionsRequested <= 0 || s.RepetitionsExecuted != s.RepetitionsRequested {
 		run.Problems = append(run.Problems, "run failed or requested repetitions were not completed")

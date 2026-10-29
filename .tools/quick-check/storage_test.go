@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,56 @@ import (
 	"testing"
 	"time"
 )
+
+func TestPromoteFailedRunRetention(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "output")
+	if err := os.Mkdir(out, 0755); err != nil {
+		t.Fatal(err)
+	}
+	r := comparisonFixture([]float64{2})
+	r.Status, r.RepetitionsRequested = "FAIL", 2
+	r.Findings = []string{"content finding; remaining repetition unrun"}
+	r.Repetitions[0].Status = "FAIL"
+	r.Repetitions[0].Findings = []string{"content finding"}
+	source := filepath.Join(out, "new-aaaaaaa")
+	if err := os.Rename(writeComparisonFixture(t, r, report{ID: matrixCells[1].id, Status: "NOT_RUN"}), source); err != nil {
+		t.Fatal(err)
+	}
+	if err := promoteCommand([]string{"-out", out, "-release", "v1.0.0", "-commit", r.ServerRevision}, &bytes.Buffer{}); err != nil {
+		t.Fatalf("promote failed, partial run with unfinished repetitions: %v", err)
+	}
+	release := filepath.Join(out, "release-v1.0.0")
+	for _, name := range []string{"summary.json", "events.ndjson", "tool.log"} {
+		original, err := os.ReadFile(filepath.Join(source, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		promoted, err := os.ReadFile(filepath.Join(release, name))
+		if err != nil || !bytes.Equal(original, promoted) {
+			t.Fatalf("promotion changed %s: %v", name, err)
+		}
+	}
+	next := comparisonFixture([]float64{3})
+	next.ServerRevision = strings.Repeat("b", 40)
+	next.Metadata["/v1/liveness"].(map[string]any)["vcs_revision"] = next.ServerRevision
+	candidate := filepath.Join(out, "new-bbbbbbb")
+	if err := os.Rename(writeComparisonFixture(t, next), candidate); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := retainRuns(context.Background(), out, candidate, map[string]string{r.ServerRevision: "v9.0.0"}); err != nil {
+		t.Fatal(err)
+	}
+	runs, err := savedRuns(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, run := range runs {
+		if run.path == release && run.report.Status == "FAIL" && run.report.ServerRevision == r.ServerRevision {
+			return
+		}
+	}
+	t.Fatal("retention discarded or renamed the explicitly promoted failed baseline")
+}
 
 func TestRetentionPassBaselines(t *testing.T) {
 	a, b, c, d := strings.Repeat("a", 40), strings.Repeat("b", 40), strings.Repeat("c", 40), strings.Repeat("d", 40)

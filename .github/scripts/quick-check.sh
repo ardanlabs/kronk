@@ -8,14 +8,32 @@ history=.tools/quick-check/release-history.log
 diagnostics="${RUNNER_TEMP:?}/quick-check"
 mkdir -p "$diagnostics"
 
+# Resolve numeric IDs, including the current workflow before it is registered on
+# main. Never trust a name or artifact prefix alone to establish queue ownership.
+queue_runs() {
+  local workflows current workflow path
+  workflows=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows?per_page=100" \
+    --jq '.workflows[] | select(.path == ".github/workflows/quick-check.yml" or .path == ".github/workflows/promote-to-release.yml") | .id') || return
+  current=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/${GITHUB_RUN_ID:?}" --jq '.workflow_id') || return
+  workflows=$(printf '%s\n%s\n' "$workflows" "$current" | sort -nu) || return
+  while IFS= read -r workflow; do
+    [[ -n "$workflow" ]] || continue
+    path=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow" --jq '.path') || return
+    case "$path" in
+      .github/workflows/quick-check.yml|.github/workflows/promote-to-release.yml)
+        gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?per_page=100" \
+          --jq '.workflow_runs[].id' || return
+        ;;
+      *) echo "Refusing queue discovery for workflow $workflow ($path)" >&2; return 1 ;;
+    esac
+  done <<< "$workflows"
+}
+
 case "${1:-}" in
   restore)
-    # Restrict discovery to this workflow. A failed/interrupted candidate is
-    # retained alongside passing baselines. Ignore expired artifacts.
-    # Resolve by run ID so a new workflow can be tested before it exists on main.
-    workflow=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/${GITHUB_RUN_ID:?}" --jq '.workflow_id')
-    runs=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?per_page=100" \
-      --jq '.workflow_runs[].id')
+    # Both workflows share one queue. A failed/interrupted candidate is retained
+    # alongside passing baselines. Ignore expired artifacts.
+    runs=$(queue_runs)
     artifact=0
     while IFS= read -r run; do
       [[ -n "$run" ]] || continue
@@ -59,11 +77,9 @@ case "${1:-}" in
     ;;
   prune)
     # Upload must have succeeded before this command is invoked. Enumerate only
-    # this workflow's queue artifacts, never artifacts belonging to other jobs.
+    # the two approved workflows' queue artifacts, never unrelated artifacts.
     : "${KEEP_ARTIFACT_ID:?}"
-    workflow=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/${GITHUB_RUN_ID:?}" --jq '.workflow_id')
-    runs=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?per_page=100" \
-      --jq '.workflow_runs[].id')
+    runs=$(queue_runs)
     while IFS= read -r run; do
       [[ -n "$run" ]] || continue
       artifacts=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$run/artifacts?per_page=100" \
@@ -144,6 +160,38 @@ case "${1:-}" in
     fi
     exit "$status"
     ;;
+  promote)
+    : "${RELEASE:?}" "${COMMIT:?}"
+    rm -f "$diagnostics/release-history-before.log" "$output/release-history.log"
+    if [[ -f "$history" ]]; then
+      cp "$history" "$diagnostics/release-history-before.log"
+    fi
+    mkdir -p "$output/compare-release"
+    rm -f "$output/comparison.json" "$output/comparison.log"
+    # Go promotes retained evidence locally; no server, models,
+    # GitHub requests, or transfers belong to this command.
+    status=0
+    go run ./.tools/quick-check promote -release "$RELEASE" -commit "$COMMIT" \
+      > "$output/compare-release/terminal.log" 2>&1 || status=$?
+    for report in comparison.json comparison.log; do
+      [[ ! -f "$output/$report" ]] || mv "$output/$report" "$output/compare-release/$report"
+    done
+    cat "$output/compare-release/terminal.log"
+    if (( status != 0 )); then exit "$status"; fi
+    if [[ -f "$history" ]] && ! cmp -s "$history" "$diagnostics/release-history-before.log"; then
+      cp "$history" "$output/release-history.log"
+      echo 'Release history updated; its download copy is included in the queue artifact.'
+    fi
+    {
+      echo '## Promote to Release'
+      printf '\nTested SHA: `%s`\n\nIntended release: `%s`\n' "$COMMIT" "$RELEASE"
+      echo
+      echo 'Retained evidence promoted locally; no release was published or tagged.'
+      echo
+      echo 'If changed, download release-history.log from the queue artifact, review it, and manually commit it to .tools/quick-check/release-history.log.'
+      echo 'The committed canonical history is the starting point for every invocation; this workflow does not commit or push updates.'
+    } >> "${GITHUB_STEP_SUMMARY:?}"
+    ;;
   finish)
     if [[ -f "$diagnostics/server-owned" ]]; then
       if ! make kronk-server-stop > "$diagnostics/server-stop.log" 2>&1; then
@@ -168,5 +216,5 @@ case "${1:-}" in
       printf '\nOther workflows or host workloads may affect performance.\n'
     } >> "$GITHUB_STEP_SUMMARY"
     ;;
-  *) echo "Usage: $0 restore|prepare|prune|snapshot|start|compare|finish" >&2; exit 2 ;;
+  *) echo "Usage: $0 restore|prepare|prune|snapshot|start|compare|promote|finish" >&2; exit 2 ;;
 esac

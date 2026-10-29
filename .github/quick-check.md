@@ -4,6 +4,40 @@ In Actions, select **Quick-check → Run workflow**. There are no inputs:
 manual dispatch checks out latest `main` and runs the complete implemented matrix
 with the tool's default repetitions. The summary records the resolved commit.
 
+## Promote to Release
+
+In Actions, select **Promote to Release → Run workflow** and supply:
+
+- `release`: the intended `vX.Y.Z` release label. A real Git tag is not required.
+- `commit`: the full SHA of the already tested commit in the retained queue.
+
+This separate, manual workflow checks out `main`, installs Go from `.go-version`,
+and restores the same queue as Quick-check. It runs on `ubuntu-latest`, without
+model or native-library downloads, server startup, or another benchmark. Inputs
+are passed through environment variables to the shell, which invokes
+`go run ./.tools/quick-check promote -release "$RELEASE" -commit "$COMMIT"`.
+The Go command promotes local retained evidence; it does not contact
+GitHub or transfer files. The workflow performs all restoration and transfers.
+
+Promotion records the intended release in a `promotion.json` sidecar in the
+promoted run directory. Original finalized evidence (including summaries, events,
+and tool logs) stays immutable; promotion does not pretend the original test ran
+with a tag that did not exist at test time. Promotion is the operator's decision:
+selected-cell, FAIL, INTERRUPTED, and unfinished-repetition reports are allowed.
+Untested cells stay `NOT_RUN`; findings and recorded verdicts are not rewritten.
+If a prior release baseline is
+available, comparison reports are placed in `compare-release/` alongside the
+promotion terminal log. Changed history is included as a download copy only, as
+described below. The job summary identifies the tested SHA and release label and
+reminds the operator to review and manually commit canonical history changes.
+**No release is published and no Git tag is created.**
+
+Comparison failures or unavailable comparisons are reported without blocking
+promotion. Successful promotion, packaging, and upload permit replacement
+of the shared queue. An operational failure before upload leaves the previous artifact intact;
+pruning happens only after a successful upload. Once uploaded, the promoted queue
+is what the next Quick-check or Promote to Release invocation restores.
+
 ## Temporary pre-merge validation
 
 Before this workflow exists on `main`, `ramon-reichert` can apply the
@@ -49,13 +83,21 @@ including their summary, events, and tool log, plus the current candidate's
 `compare-commit/` and `compare-release/` reports when comparisons were attempted.
 It is named
 `quick-check-queue-<run-id>-<attempt>` so retries can safely upload a replacement.
-After that upload succeeds, the workflow deletes its superseded queue artifacts;
+After that upload succeeds, the workflow deletes superseded shared queue artifacts;
 there is no per-run artifact history and no separate reports artifact. Deletion
-requires the workflow's `actions: write` permission and is scoped to its own queue
-artifacts. The previous queue remains intact if packaging or upload fails.
+requires the workflow's `actions: write` permission and is scoped to queue
+artifacts originating from exactly `.github/workflows/quick-check.yml` and
+`.github/workflows/promote-to-release.yml`. Discovery resolves numeric workflow
+IDs from the repository workflow list and current run, verifies their exact
+workflow paths, then enumerates their runs and artifacts. A promotion workflow
+not yet registered before merge is simply absent from discovery. Unrelated
+workflows' artifacts are never restored or pruned. The previous queue remains
+intact if packaging or upload fails.
 
 Finalized failed or interrupted checks are saved too: they occupy `new`, while
-only passing runs qualify for `old` and `release`. The next invocation replaces
+only passing runs automatically qualify for `old` and `release`. Manual promotion
+may explicitly select a failed or interrupted release baseline, which retention
+then preserves. The next invocation replaces
 the previous failed/interrupted candidate according to the tool's retention
 policy; this is not a permanent failure archive. Cancellation cleanup and upload
 are best-effort: a forced termination or lost VM can prevent finalization or
@@ -77,10 +119,11 @@ Release history stays at `.tools/quick-check/release-history.log`, outside ignor
 copy named `release-history.log` is included at the archive root for download,
 review, and manual commit. No copy is included when unchanged, and restored
 download copies never overwrite the canonical file. The workflow does not commit
-or push history updates.
+or push history updates. Promotion follows this same history-copy behavior.
 
 The first run has no baseline. A release baseline becomes available after a
-successful tested commit is recognized as a release by the tool. This workflow
+successful tested commit is recognized as a release by the tool, including manual
+promotion with an intended release label. Quick-check
 does not automatically check out or benchmark older releases. Artifacts expire
 after 90 days; if none remain, the baseline queue starts afresh.
 
@@ -88,6 +131,8 @@ Comparison tables and failure diagnostics are also available in the Actions logs
 summary identifies the commit, runner, and check outcome. The retained artifact
 contains synthetic workload content and machine metadata; review before sharing.
 
-Concurrency prevents overlapping invocations of **this workflow only**. Other CI
+The shared `quick-check-pacha` concurrency group, with cancellation disabled,
+prevents overlapping invocations of **Quick-check and Promote to Release**,
+including queue restore, upload, and pruning. Other CI
 jobs, VMs, and manual workloads on Pacha remain unrestricted. VM timings are not
 directly comparable with bare-metal runs; read the tool's comparability warnings.
