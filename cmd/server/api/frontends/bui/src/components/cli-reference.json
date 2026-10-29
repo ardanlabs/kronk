@@ -2334,6 +2334,14 @@
         "inherited": false
       },
       {
+        "name": "web-admin-session-duration",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Browser admin session lifetime (e.g., 12h; default: 12h)",
+        "inherited": false
+      },
+      {
         "name": "write-timeout",
         "shorthand": "",
         "type": "string",

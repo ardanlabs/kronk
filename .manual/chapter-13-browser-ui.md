@@ -184,10 +184,19 @@ export KRONK_WEB_ADMIN_PASSWORD_SHA_256="$(printf '%s' 'choose-a-password' | sha
 kronk server start
 ```
 
-Login creates a one-hour admin token in an HttpOnly, SameSite cookie. The
+Login creates a 12-hour admin token in an HttpOnly, SameSite cookie by default. The
 browser cannot read the token, and the server uses it to authenticate the
 BUI's same-origin `/v1` requests. Sign out from the sidebar to end the browser
 session.
+
+Set `kms.web.admin.session-duration` in `model_config.yaml`,
+`KRONK_WEB_ADMIN_SESSION_DURATION`, or the server start flag
+`--web-admin-session-duration` to override the lifetime (for example, `24h`).
+The duration must be at least one second and applies to both the token and cookie.
+It is an absolute lifetime from login, not an inactivity timeout; activity does
+not renew it. Changes apply to new logins, not existing sessions. A longer lifetime
+reduces interruptions during test sweeps but does not preserve an unfinished run
+across a page refresh or session expiry.
 
 Chapter 12 explains the `open`, `management`, `authenticated`, and
 `full-protected` modes, including TLS and reverse proxy considerations.

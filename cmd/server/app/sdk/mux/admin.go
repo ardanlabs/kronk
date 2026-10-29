@@ -120,13 +120,13 @@ func registerAdminRoutes(app *web.App, cfg Config) {
 			return
 		}
 
-		token, err := cfg.Security.GenerateToken(true, nil, time.Hour)
+		token, err := cfg.Security.GenerateToken(true, nil, cfg.AdminSessionDuration)
 		if err != nil {
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			return
 		}
 
-		setAdminCookie(w, r, token, time.Now().Add(time.Hour), 3600)
+		setAdminCookie(w, r, token, time.Now().Add(cfg.AdminSessionDuration), int(cfg.AdminSessionDuration/time.Second))
 		writeJSON(w, http.StatusOK, sessionResponse{Authenticated: true, AuthenticationRequired: true})
 	})
 

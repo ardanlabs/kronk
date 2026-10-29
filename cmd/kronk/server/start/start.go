@@ -166,6 +166,7 @@ func buildEnvVars(cmd *cobra.Command) []string {
 	addString("auth-tls-server-name", "KRONK_AUTH_TLS_SERVER_NAME")
 	addString("auth-issuer", "KRONK_AUTH_LOCAL_ISSUER")
 	addString("web-admin-password-sha-256", "KRONK_WEB_ADMIN_PASSWORD_SHA_256")
+	addString("web-admin-session-duration", "KRONK_WEB_ADMIN_SESSION_DURATION")
 	addString("authorization-mode", "KRONK_AUTHORIZATION_MODE")
 
 	// MCP settings

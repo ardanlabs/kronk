@@ -281,6 +281,7 @@ kms:
     cors-allowed-origins: ["*"]
     admin:
       enabled: true
+      session-duration: 12h
       password-sha-256: 18511e63760230cd17291273b607e7e13da2a2bb9a1750e0becdac08185a3c11
   auth:
     host: ""

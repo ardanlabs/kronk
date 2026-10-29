@@ -2148,6 +2148,7 @@ kms:
     cors-allowed-origins: ["*"]
     admin:
       enabled: true
+      session-duration: 12h
       password-sha-256: 18511e63760230cd17291273b607e7e13da2a2bb9a1750e0becdac08185a3c11
   auth:
     host: ""
@@ -3947,7 +3948,8 @@ kronk server start`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`export KRONK_AUTHORIZATION_MODE=management
 export KRONK_WEB_ADMIN_PASSWORD_SHA_256="$(printf '%s' 'choose-a-password' | shasum -a 256 | awk '{print $1}')"
 kronk server start`}</code></pre>
-          <p>Login creates a one-hour admin token in an HttpOnly, SameSite cookie. The browser cannot read the token, and the server uses it to authenticate the BUI's same-origin <code>/v1</code> requests. Sign out from the sidebar to end the browser session.</p>
+          <p>Login creates a 12-hour admin token in an HttpOnly, SameSite cookie by default. The browser cannot read the token, and the server uses it to authenticate the BUI's same-origin <code>/v1</code> requests. Sign out from the sidebar to end the browser session.</p>
+          <p>Set <code>kms.web.admin.session-duration</code> in <code>model_config.yaml</code>, <code>KRONK_WEB_ADMIN_SESSION_DURATION</code>, or the server start flag <code>--web-admin-session-duration</code> to override the lifetime (for example, <code>24h</code>). The duration must be at least one second and applies to both the token and cookie. It is an absolute lifetime from login, not an inactivity timeout; activity does not renew it. Changes apply to new logins, not existing sessions. A longer lifetime reduces interruptions during test sweeps but does not preserve an unfinished run across a page refresh or session expiry.</p>
           <p>Chapter 12 explains the <code>open</code>, <code>management</code>, <code>authenticated</code>, and <code>full-protected</code> modes, including TLS and reverse proxy considerations.</p>
           <h3 id="134-operational-notes">13.4 Operational Notes</h3>
           <ul>

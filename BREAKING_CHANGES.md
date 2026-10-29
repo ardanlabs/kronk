@@ -2,6 +2,8 @@
 
 ## Index
 
+- [v1.33.2](#v1332)
+  - [Browser Admin Session Lifetime](#v1332-browser-admin-session-lifetime)
 - [v1.33.1](#v1331)
   - [Bucky Segment Text Confidence](#v1331-bucky-segment-text-confidence)
   - [Malina Generation Result ABI](#v1331-malina-generation-result-abi)
@@ -44,6 +46,29 @@
   - [HTTP Error Response Changes](#v1303-http-error-response-changes)
   - [Session Storage Changes](#v1303-session-storage-changes)
   - [Go SDK Changes](#v1303-go-sdk-changes)
+
+## v1.33.2
+
+### v1.33.2: Browser Admin Session Lifetime
+
+Browser admin logins now default to a 12-hour lifetime instead of one hour.
+This extends the validity of both the admin JWT and its HttpOnly cookie,
+reducing authentication interruptions during long-running BUI test sweeps.
+Operators who rely on the previous one-hour security boundary must explicitly
+set the lifetime to `1h` using one of these options:
+
+- `kms.web.admin.session-duration` in `model_config.yaml`;
+- `KRONK_WEB_ADMIN_SESSION_DURATION`; or
+- `kronk server start --web-admin-session-duration 1h`.
+
+CLI flags override environment variables, which override the YAML setting.
+Durations use Go duration syntax and must be at least one second; zero does
+not disable expiration. The lifetime is absolute from login and is not renewed
+by activity. Changes apply to new logins, not existing sessions. CLI bearer
+tokens and inference request timeouts are unaffected.
+
+This change does not persist unfinished test runs across page refreshes or
+session expiry and does not add background execution or reattachment.
 
 ## v1.33.1
 

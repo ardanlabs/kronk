@@ -60,26 +60,27 @@ func WithFileServer(react bool, static embed.FS, dir string, path string, apiPre
 
 // Config contains all the mandatory systems required by handlers.
 type Config struct {
-	Build               string
-	Log                 *logger.Logger
-	AuthClient          *authclient.Client
-	Pool                *pool.Pool
-	Libs                *libs.Libs
-	LibVersion          string
-	LibVerifyEnabled    bool
-	Models              *models.Models
-	BuckyLibs           *buckylibs.Libs
-	BuckyModels         *buckymodels.Models
-	MalinaLibs          *malinalibs.Libs
-	MalinaModels        *malinamodels.Models
-	MalinaProgress      *malinaprogress.Broker
-	DownloadEnabled     bool
-	AuthorizationMode   auth.Mode
-	AdminAuthEnabled    bool
-	WebAdminEnabled     bool
-	AdminPasswordSHA256 string
-	Security            *security.Security
-	InferenceTimeout    time.Duration
+	Build                string
+	Log                  *logger.Logger
+	AuthClient           *authclient.Client
+	Pool                 *pool.Pool
+	Libs                 *libs.Libs
+	LibVersion           string
+	LibVerifyEnabled     bool
+	Models               *models.Models
+	BuckyLibs            *buckylibs.Libs
+	BuckyModels          *buckymodels.Models
+	MalinaLibs           *malinalibs.Libs
+	MalinaModels         *malinamodels.Models
+	MalinaProgress       *malinaprogress.Broker
+	DownloadEnabled      bool
+	AuthorizationMode    auth.Mode
+	AdminAuthEnabled     bool
+	WebAdminEnabled      bool
+	AdminPasswordSHA256  string
+	AdminSessionDuration time.Duration
+	Security             *security.Security
+	InferenceTimeout     time.Duration
 }
 
 // RouteAdder defines behavior that sets the routes to bind for an instance
