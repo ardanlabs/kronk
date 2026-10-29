@@ -2,6 +2,11 @@ name: Quick-check
 
 on:
   workflow_dispatch:
+  # TEMPORARY: remove this trigger and the PR-specific job/checkout logic after
+  # Ramon's pre-merge validation, before merging this workflow into main.
+  pull_request:
+    types: [labeled]
+    branches: [main]
 
 # Serializes this workflow only, not other work on Pacha. Do not cancel an
 # existing measurement when another manual invocation is queued.
@@ -20,30 +25,47 @@ env:
 
 jobs:
   matrix:
+    # TEMPORARY: only Ramon's same-repository workflow PR can use the label.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       github.event.label.name == 'run-quick-check' &&
+       github.actor == 'ramon-reichert' &&
+       github.event.pull_request.user.id == 95890275 &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.head.ref == 'ramon/cron-job')
     runs-on: [self-hosted, macOS, ARM64, sand, metal]
     timeout-minutes: 180
     steps:
-      # Always test the latest main, irrespective of the dispatch ref.
-      - name: Checkout latest main
+      # TEMPORARY: PR validation tests its exact head commit. Manual dispatch
+      # continues to test latest main, irrespective of the dispatch ref.
+      - name: Checkout tested code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          ref: main
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || 'main' }}
           fetch-depth: 0
-
-      - name: Set up Kronk
-        uses: ./.github/actions/setup-kronk
-
-      - name: Download quick-check models
-        run: |
-          kronk model pull --local unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL
-          kronk model pull --local ornith-ai/Ornith-1.5-9B-Q8_0
 
       - name: Restore retained run queue
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash .github/scripts/quick-check.sh restore
 
+      - name: Skip an already tested commit
+        id: prepare
+        run: bash .github/scripts/quick-check.sh prepare
+
+      - name: Set up Kronk
+        if: steps.prepare.outputs.skip != 'true'
+        uses: ./.github/actions/setup-kronk
+
+      - name: Download quick-check models
+        if: steps.prepare.outputs.skip != 'true'
+        run: |
+          kronk model pull --local unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL
+          kronk model pull --local ornith-ai/Ornith-1.5-9B-Q8_0
+
       - name: Build and start tools server
+        if: steps.prepare.outputs.skip != 'true'
         env:
           # Scope injection to the server, not quick-check's machine probes.
           DYLD_INSERT_LIBRARIES: ${{ runner.temp }}/LumeMetalCapabilities.dylib
@@ -53,11 +75,12 @@ jobs:
 
       - name: Run complete matrix
         id: check
+        if: steps.prepare.outputs.skip != 'true'
         run: make quick-check-this-code
 
       # All artifact preparation and transfers happen outside server/tool time.
       - name: Stop server and collect diagnostics
-        if: always()
+        if: ${{ always() && steps.prepare.outputs.skip != 'true' }}
         env:
           CHECK_OUTCOME: ${{ steps.check.outcome }}
           RUNNER_IDENTITY: ${{ runner.name }}

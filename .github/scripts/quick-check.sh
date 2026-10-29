@@ -4,6 +4,7 @@
 set -euo pipefail
 
 output=.tools/quick-check/output
+history=.tools/quick-check/release-history.log
 diagnostics="${RUNNER_TEMP:?}/quick-check"
 mkdir -p "$diagnostics"
 
@@ -11,7 +12,9 @@ case "${1:-}" in
   restore)
     # Restrict discovery to this workflow. A failed/interrupted candidate is
     # retained alongside passing baselines. Ignore expired artifacts.
-    runs=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/quick-check.yml/runs?per_page=100" \
+    # Resolve by run ID so a new workflow can be tested before it exists on main.
+    workflow=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/${GITHUB_RUN_ID:?}" --jq '.workflow_id')
+    runs=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?per_page=100" \
       --jq '.workflow_runs[].id')
     artifact=0
     while IFS= read -r run; do
@@ -29,6 +32,10 @@ case "${1:-}" in
       mkdir -p "$output"
       unzip -q "$diagnostics/baselines.zip" -d "$diagnostics"
       tar -xzf "$diagnostics/quick-check-baselines.tgz" -C "$output"
+      # Comparisons belong only to the candidate that produced them. History
+      # starts from the committed canonical file, never an old download copy.
+      rm -rf "$output/compare-commit" "$output/compare-release"
+      rm -f "$output/release-history.log"
       rm "$diagnostics/quick-check-baselines.tgz"
       rm "$diagnostics/baselines.zip"
       echo "Restored retained run queue from Actions artifact $artifact"
@@ -36,11 +43,26 @@ case "${1:-}" in
       echo "No retained run queue; this run will establish one."
     fi
     ;;
+  prepare)
+    revision=$(git rev-parse HEAD)
+    for summary in "$output"/new-*/summary.json; do
+      [[ -f "$summary" ]] || continue
+      previous=$(jq -er '.server_revision' "$summary")
+      if [[ "$previous" == "$revision" ]]; then
+        echo 'skip=true' >> "${GITHUB_OUTPUT:?}"
+        printf 'Skipping already tested commit %s\n' "$revision"
+        printf '## Quick-check skipped\n\nCommit `%s` matches the latest retained candidate; no new test or upload.\n' "$revision" >> "${GITHUB_STEP_SUMMARY:?}"
+        exit 0
+      fi
+    done
+    echo 'skip=false' >> "${GITHUB_OUTPUT:?}"
+    ;;
   prune)
     # Upload must have succeeded before this command is invoked. Enumerate only
     # this workflow's queue artifacts, never artifacts belonging to other jobs.
     : "${KEEP_ARTIFACT_ID:?}"
-    runs=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/quick-check.yml/runs?per_page=100" \
+    workflow=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/${GITHUB_RUN_ID:?}" --jq '.workflow_id')
+    runs=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?per_page=100" \
       --jq '.workflow_runs[].id')
     while IFS= read -r run; do
       [[ -n "$run" ]] || continue
@@ -58,12 +80,22 @@ case "${1:-}" in
       [[ ! -f "$run/summary.json" ]] || runs+=("${run##*/}")
     done
     [[ ${#runs[@]} -gt 0 ]] || { echo "No runs to preserve" >&2; exit 1; }
+    for report in compare-commit compare-release release-history.log; do
+      [[ ! -e "$output/$report" ]] || runs+=("$report")
+    done
     COPYFILE_DISABLE=1 tar -czf "$RUNNER_TEMP/quick-check-baselines.tgz" -C "$output" "${runs[@]}"
     ;;
   start)
     # The ephemeral VM belongs to this job; never operate on the physical host's
     # manually started server. Mark ownership before start so cleanup covers a
     # partial startup too. The make target compiles an API-only tools server.
+    if ! kronk server stop > "$diagnostics/server-stop-before.log" 2>&1; then
+      if [[ -e "${KRONK_BASE_PATH:-$HOME/.kronk}/kronk.pid" ]]; then
+        cat "$diagnostics/server-stop-before.log" >&2
+        exit 1
+      fi
+      echo 'No existing detached server PID; starting a fresh server.'
+    fi
     touch "$diagnostics/server-owned"
     make server-for-tools > "$diagnostics/server-start.log" 2>&1
     for ((attempt=0; attempt<60; attempt++)); do
@@ -78,6 +110,10 @@ case "${1:-}" in
   compare)
     # Both comparisons must be attempted independently; a failed commit
     # comparison must not suppress the release comparison.
+    rm -f "$diagnostics/release-history-before.log" "$output/release-history.log"
+    if [[ -f "$history" ]]; then
+      cp "$history" "$diagnostics/release-history-before.log"
+    fi
     status=0
     for role in commit release; do
       prefix=old
@@ -88,16 +124,24 @@ case "${1:-}" in
       done
       if [[ "$available" == true ]]; then
         mkdir -p "$output/compare-$role"
+        rm -f "$output/comparison.json" "$output/comparison.log"
         make "quick-compare-against-$role" \
-          QUICK_CHECK_COMPARE_ARGS="-out $output/compare-$role" \
+          QUICK_CHECK_COMPARE_ARGS="-out $output" \
           QUICK_COMPARE_BASELINE="$(dirname "$baseline")" \
           QUICK_COMPARE_CANDIDATE="$(dirname "$(find "$output" -path '*/new-*/summary.json' -print -quit)")" \
           > "$output/compare-$role/terminal.log" 2>&1 || status=1
+        for report in comparison.json comparison.log; do
+          [[ ! -f "$output/$report" ]] || mv "$output/$report" "$output/compare-$role/$report"
+        done
         cat "$output/compare-$role/terminal.log"
       else
         echo "Skipping $role comparison: no available baseline."
       fi
     done
+    if [[ -f "$history" ]] && ! cmp -s "$history" "$diagnostics/release-history-before.log"; then
+      cp "$history" "$output/release-history.log"
+      echo 'Release history updated; its download copy is included in the queue artifact.'
+    fi
     exit "$status"
     ;;
   finish)
@@ -113,7 +157,7 @@ case "${1:-}" in
     # Full finalized run evidence is preserved by snapshot/upload separately.
     # Also print startup/cleanup diagnostics when the check could not complete.
     if [[ "${CHECK_OUTCOME:-}" != success ]]; then
-      for log in "$diagnostics/server-start.log" "$diagnostics/server.log"; do
+      for log in "$diagnostics/server-stop-before.log" "$diagnostics/server-start.log" "$diagnostics/server.log"; do
         [[ ! -f "$log" ]] || tail -n 100 "$log"
       done
     fi
@@ -124,5 +168,5 @@ case "${1:-}" in
       printf '\nOther workflows or host workloads may affect performance.\n'
     } >> "$GITHUB_STEP_SUMMARY"
     ;;
-  *) echo "Usage: $0 restore|prune|snapshot|start|compare|finish" >&2; exit 2 ;;
+  *) echo "Usage: $0 restore|prepare|prune|snapshot|start|compare|finish" >&2; exit 2 ;;
 esac
