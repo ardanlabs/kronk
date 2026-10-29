@@ -616,7 +616,8 @@ Bucky, and Malina models, including language-model variants. Kronk creates it
 when absent and preserves existing edits. Restart the server after changing it.
 Do not copy configuration values based only on model size; use
 [Chapter 3](https://www.kronkai.com/manual#chapter-3-model-configuration) for context, cache, GPU, and
-sampling settings.
+sampling settings. To write it interactively, run `kronk config`; see
+[Chapter 8 §8.5](https://www.kronkai.com/manual#85-model-configuration-files).
 
 ### 2.6 Running the Server
 

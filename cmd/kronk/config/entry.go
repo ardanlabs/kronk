@@ -43,6 +43,9 @@ func diff(qs []question, f facts, a *answers, existing map[string]any) ([]change
 			old, had := existing[key]
 
 			if raw == "" {
+				if q.sameAs != "" {
+					continue
+				}
 				if had && fmt.Sprint(old) != q.same && !q.secret {
 					out = append(out, change{key: key, old: old, del: true})
 				}
@@ -54,14 +57,35 @@ func diff(qs []question, f facts, a *answers, existing map[string]any) ([]change
 				return nil, fmt.Errorf("%s: %w", key, err)
 			}
 
-			if had && fmt.Sprint(old) == fmt.Sprint(v) {
+			if had && inlineYAML(old) == inlineYAML(v) {
 				continue
 			}
 			out = append(out, change{key: key, old: old, new: v})
 		}
 	}
 
-	return out, nil
+	out = fixContext(f, a, existing, out)
+
+	// Classic speculation runs one request at a time.
+	if a.value("speculation") == "classic" {
+		out = setChange(out, existing, "nseq-max", 1)
+	}
+
+	return lastPerKey(out), nil
+}
+
+// lastPerKey keeps the last change to each key, where two questions write
+// the same key: value precision after key precision, or a fix after an
+// answer.
+func lastPerKey(changes []change) []change {
+	var out []change
+	for i, c := range changes {
+		later := slices.ContainsFunc(changes[i+1:], func(n change) bool { return n.key == c.key })
+		if !later {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // apply returns the flattened entry after the changes.

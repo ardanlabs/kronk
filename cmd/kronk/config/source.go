@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -21,6 +22,7 @@ import (
 // choice is one model the user can configure.
 type choice struct {
 	ID        string
+	Kind      string // kindChatModel, kindAudioModel or kindImageModel
 	Installed bool
 	InFile    bool
 	Size      int64
@@ -61,6 +63,22 @@ type facts struct {
 	// TemplateVars are the names the chat template checks with "is defined",
 	// shown as hints for the custom variables question.
 	TemplateVars []string
+
+	// Installed are the installed chat models, for the draft model question.
+	// Adapters are the LoRA adapters in <base>/lora.
+	Installed []string
+	Adapters  []string
+}
+
+// gpuNames are the GPU device names, e.g. CUDA0, CUDA1.
+func (f facts) gpuNames() []string {
+	var out []string
+	for _, d := range f.Devices.Devices {
+		if strings.HasPrefix(d.Type, "gpu") {
+			out = append(out, d.Name)
+		}
+	}
+	return out
 }
 
 func (f facts) moe() bool        { return f.Analysis.Model.MoE != nil }
@@ -133,7 +151,7 @@ func (s *source) choices(doc modelconfig.Document) ([]choice, error) {
 		}
 		seen[id] = true
 
-		_, inFile := doc.Models[id]
+		inFile := len(entriesFor(doc, id)) > 0
 		installed = append(installed, choice{ID: id, Installed: true, InFile: inFile, Size: f.Size, Validated: f.Validated, Endpoint: endpoint(id)})
 	}
 
@@ -148,14 +166,28 @@ func (s *source) choices(doc modelconfig.Document) ([]choice, error) {
 			size += n
 		}
 
-		_, inFile := doc.Models[id]
+		inFile := len(entriesFor(doc, id)) > 0
 		catalog = append(catalog, choice{ID: id, InFile: inFile, Size: size, Endpoint: endpoint(id)})
 	}
 
 	sort.Slice(installed, func(i, j int) bool { return installed[i].ID < installed[j].ID })
 	sort.Slice(catalog, func(i, j int) bool { return catalog[i].ID < catalog[j].ID })
 
-	return append(installed, catalog...), nil
+	out := append(installed, s.mediaChoices(doc)...)
+	return append(out, catalog...), nil
+}
+
+// entriesFor lists the entries in models: for a model: its own and its
+// variants (id/NAME), sorted.
+func entriesFor(doc modelconfig.Document, id string) []string {
+	var out []string
+	for key := range doc.Models {
+		if key == id || strings.HasPrefix(key, id+"/") && !strings.Contains(strings.TrimPrefix(key, id+"/"), "/") {
+			out = append(out, key)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // facts reads the model metadata and runs the AutoTune analysis. Installed
@@ -168,6 +200,7 @@ func (s *source) facts(ctx context.Context, c choice, other *machine) (facts, er
 	}
 
 	f := facts{ID: c.ID, Info: info, Other: other}
+	f.Adapters = loraAdapters(filepath.Join(defaults.BaseDir(s.basePath), "lora"))
 
 	devs := devices.Devices{}
 	switch {

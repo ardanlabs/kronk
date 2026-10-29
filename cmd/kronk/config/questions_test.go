@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/ardanlabs/kronk/sdk/tools/devices"
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
@@ -22,9 +23,14 @@ func sampleFacts() facts {
 		},
 		Info:          models.ModelInfo{HasProjection: true, HasMTP: true},
 		HardwareKnown: true,
-		GPUs:          1,
-		Thinking:      true,
-		Reasoning:     true,
+		GPUs:          2,
+		Devices: devices.Devices{Devices: []devices.DeviceInfo{
+			{Name: "CPU", Type: "cpu"}, {Name: "CUDA0", Type: "gpu_cuda"}, {Name: "CUDA1", Type: "gpu_cuda"},
+		}},
+		Installed: []string{"test/model", "test/draft"},
+		Adapters:  []string{"style"},
+		Thinking:  true,
+		Reasoning: true,
 	}
 }
 
@@ -46,11 +52,17 @@ func TestQuestionKeys(t *testing.T) {
 		case kindInt:
 			values = append(values, strconv.Itoa(int(max(q.min, 1))))
 		case kindFloat:
-			values = append(values, "0.5")
+			values = append(values, trimFloat(max(q.min, 0.5)))
 		case kindDuration:
 			values = append(values, "90s")
 		case kindVars:
 			values = append(values, "preserve_thinking=true\nlevels=[low, high]")
+		case kindText:
+			values = append(values, "/srv/template.jinja")
+		case kindFloatList:
+			values = append(values, "0.6, 0.4")
+		case kindAdapters:
+			values = append(values, "style=0.8\n/srv/lora/other.gguf")
 		}
 
 		if len(values) == 0 {
@@ -163,7 +175,7 @@ func TestPrefillAndDiff(t *testing.T) {
 	}
 
 	*a.sel["context-window"] = otherValue
-	*a.other["context-window"] = "65536"
+	*a.other["context-window"] = "36000" // within the training context
 	*a.sel["nseq-max"] = ""
 
 	changes, err = diff(qs, f, a, existing)
@@ -175,7 +187,7 @@ func TestPrefillAndDiff(t *testing.T) {
 	for _, c := range changes {
 		got[c.key] = c
 	}
-	if c := got["context-window"]; c.new != 65536 {
+	if c := got["context-window"]; c.new != 36000 {
 		t.Fatalf("context-window change = %+v", c)
 	}
 	if c := got["nseq-max"]; !c.del {

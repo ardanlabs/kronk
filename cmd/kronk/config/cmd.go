@@ -29,9 +29,10 @@ Pick the config file, then configure a model or the server settings (kms:).
 
 For a model, say whether the config is for this machine or another one. This
 machine's hardware is detected; for another machine, enter its GPUs, GPU
-memory and RAM. Pick an installed or catalog model, see what AutoTune picks
-for it on that hardware, answer the questions, review the entry with a memory
-check and save it.
+memory and RAM. Pick an installed or catalog model (chat, audio or image),
+pick the entry or a new variant, see what AutoTune picks for it on that
+hardware, answer the questions, review the entry with a memory check and save
+it.
 
 For the server, pick the sections to change and answer their questions. The
 questions come from the server's own settings.

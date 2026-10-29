@@ -93,8 +93,13 @@ func TestServerQuestions(t *testing.T) {
 
 	var picked []string
 	qs := serverQuestions(settings, &picked, existing)
-	if len(qs) != len(settings) {
-		t.Fatalf("%d questions for %d settings", len(qs), len(settings))
+	if len(qs) != len(settings)-len(skipServer) {
+		t.Fatalf("%d questions for %d settings, %d skipped", len(qs), len(settings), len(skipServer))
+	}
+	for _, q := range qs {
+		if skipServer[q.key] {
+			t.Fatalf("%s must not be asked", q.key)
+		}
 	}
 
 	a := newAnswers(qs)

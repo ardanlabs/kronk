@@ -36,6 +36,11 @@ var sections = []struct {
 	{"runtime", "Runtime: paths, libraries, processor, tokens, logging"},
 }
 
+// skipServer are kms keys the tool doesn't ask. base-path: the server finds
+// this file through the base path before it reads kms:, so a value here can't
+// move it and only confuses.
+var skipServer = map[string]bool{"base-path": true}
+
 func sectionOf(key string) string {
 	if first, _, ok := strings.Cut(key, "."); ok {
 		return first
@@ -76,7 +81,7 @@ func serverQuestions(settings []kronkserver.Setting, picked *[]string, existing 
 	var qs []question
 	for _, sec := range serverSections(settings) {
 		for _, st := range settings {
-			if sectionOf(st.Key) != sec {
+			if sectionOf(st.Key) != sec || skipServer[st.Key] {
 				continue
 			}
 			qs = append(qs, serverQuestion(st, sec, picked, existing))
@@ -86,10 +91,15 @@ func serverQuestions(settings []kronkserver.Setting, picked *[]string, existing 
 }
 
 func serverQuestion(st kronkserver.Setting, sec string, picked *[]string, existing map[string]any) question {
+	// The first sentence of the help text is the question, the rest its
+	// description.
+	title, about, _ := strings.Cut(st.Help, ". ")
+
 	q := question{
 		key:   st.Key,
 		group: sec,
-		title: st.Help + "?",
+		title: strings.TrimSuffix(title, ".") + "?",
+		about: about,
 		show:  func(facts, *answers) bool { return slices.Contains(*picked, sec) },
 	}
 
@@ -126,7 +136,7 @@ func serverQuestion(st kronkserver.Setting, sec string, picked *[]string, existi
 		q.kind = kindDuration
 	case kronkserver.KindList:
 		q.kind = kindList
-		q.about = "Comma separated."
+		q.about = strings.TrimSpace(q.about + " Comma separated.")
 	default:
 		q.kind = kindText
 	}
