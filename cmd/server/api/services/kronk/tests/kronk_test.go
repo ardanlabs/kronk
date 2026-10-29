@@ -394,11 +394,38 @@ func (v responseValidator) hasUsage(reasoning bool) responseValidator {
 		v.errors = append(v.errors, "expected total_tokens to be greater than 0")
 	}
 
-	if u.TokensPerSecond <= 0 {
-		v.errors = append(v.errors, "expected tokens_per_second to be greater than 0")
+	if u.TokensPerSecond < 0 || (u.CompletionTokens > 1 && u.TokensPerSecond == 0) {
+		v.errors = append(v.errors, "expected tokens_per_second to be nonnegative and positive for multiple tokens")
 	}
 
 	return v
+}
+
+func TestChatResponseUsage(t *testing.T) {
+	for _, tt := range []struct {
+		name             string
+		completionTokens int
+		tokensPerSecond  float64
+		wantErr          bool
+	}{
+		{name: "one token zero throughput", completionTokens: 1},
+		{name: "one token negative throughput", completionTokens: 1, tokensPerSecond: -1, wantErr: true},
+		{name: "multiple tokens zero throughput", completionTokens: 2, wantErr: true},
+		{name: "multiple tokens positive throughput", completionTokens: 2, tokensPerSecond: 30},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := &model.ChatResponse{Usage: &model.Usage{
+				PromptTokens:     20,
+				CompletionTokens: tt.completionTokens,
+				TotalTokens:      20 + tt.completionTokens,
+				TokensPerSecond:  tt.tokensPerSecond,
+			}}
+			got := validateResponse(resp, false).hasUsage(false).result(t)
+			if (got != "") != tt.wantErr {
+				t.Errorf("usage validation: got %q, wantErr %t", got, tt.wantErr)
+			}
+		})
+	}
 }
 
 func (v responseValidator) hasValidChoice() responseValidator {
