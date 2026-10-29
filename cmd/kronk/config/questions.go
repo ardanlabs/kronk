@@ -214,8 +214,6 @@ func trimFloat(n float64) string {
 // =============================================================================
 
 // questions returns the chat model questions in the order they are asked.
-// The list follows the init question map (#833); the map IDs are in the
-// comments.
 func questions() []question {
 	// f32 is left out: more memory than f16 for no gain.
 	cacheTypes := fixed(option{"f16", "f16"}, option{"bf16", "bf16"}, option{"q8_0", "q8_0"}, option{"q5_1", "q5_1"},
@@ -225,7 +223,7 @@ func questions() []question {
 
 		// Essentials
 
-		{ // E1
+		{
 			key: "context-window", group: gEssentials, kind: kindInt, min: 512,
 			title: "How long do conversations need to be?",
 			about: "Context window in tokens. Longer uses more memory.",
@@ -247,7 +245,7 @@ func questions() []question {
 			def:  func(f facts) string { return autoTune(f.Analysis.Recommended.ContextWindow) },
 			show: always,
 		},
-		{ // E1a
+		{
 			key: keyRopeScaling, group: gEssentials, kind: kindChoice,
 			title:   "That's longer than the model was trained on. Lower it, or keep it with YaRN?",
 			about:   "YaRN extends the context and can lower answer quality. See chapter 7 of the manual.",
@@ -255,7 +253,7 @@ func questions() []question {
 			def:     func(f facts) string { return fmt.Sprintf("lower it to %d", f.Analysis.Model.TrainingContext) },
 			show:    longContext,
 		},
-		{ // E2
+		{
 			key: "nseq-max", group: gEssentials, kind: kindInt, min: 1,
 			title: "How many requests should run at the same time?",
 			about: "Each slot keeps its own conversation memory.",
@@ -265,7 +263,7 @@ func questions() []question {
 
 		// Behavior
 
-		{ // B1
+		{
 			key: "sampling-parameters.enable_thinking", group: gBehavior, kind: kindBool,
 			title:   "Should the model think before it answers?",
 			about:   "Used when a request doesn't say. A request can still turn thinking on or off.",
@@ -274,7 +272,7 @@ func questions() []question {
 			same:    "true",
 			show:    func(f facts, _ *answers) bool { return f.Thinking },
 		},
-		{ // B2
+		{
 			key: "sampling-parameters.reasoning_effort", group: gBehavior, kind: kindChoice,
 			title:   "How much should the model reason?",
 			about:   "Used when a request doesn't say; a request can still set its own. Some models accept fewer levels.",
@@ -285,44 +283,44 @@ func questions() []question {
 
 		// Sampling (B3)
 
-		{ // B3a
+		{
 			key: "sampling-parameters.temperature", group: gSampling, kind: kindFloat, min: 0, max: 5,
 			title: "Temperature?",
 			def:   func(f facts) string { return metaOr(f, "general.sampling.temp", "1.0") },
 			show:  always,
 		},
-		{ // B3b
+		{
 			key: "sampling-parameters.top_p", group: gSampling, kind: kindFloat, min: 0, max: 1,
 			title: "Top P?",
 			def:   func(f facts) string { return metaOr(f, "general.sampling.top_p", "0.95") },
 			show:  always,
 		},
-		{ // B3c
+		{
 			key: "sampling-parameters.top_k", group: gSampling, kind: kindInt, min: 0,
 			title: "Top K?",
 			def:   func(f facts) string { return metaOr(f, "general.sampling.top_k", "20") },
 			show:  always,
 		},
-		{ // B3d
+		{
 			key: "sampling-parameters.min_p", group: gSampling, kind: kindFloat, min: 0, max: 1,
 			title: "Min P?",
 			def:   func(f facts) string { return metaOr(f, "general.sampling.min_p", "0") },
 			show:  always,
 		},
-		{ // B3e
+		{
 			key: "sampling-parameters.max_tokens", group: gSampling, kind: kindInt, min: 1,
 			title: "Max tokens per answer?",
 			def:   func(facts) string { return "the context window" },
 			show:  always,
 		},
-		{ // B3f
+		{
 			key: "sampling-parameters.repeat_penalty", group: gSampling, kind: kindFloat, min: 0,
 			title: "Repeat penalty?",
 			def:   func(facts) string { return "1.0" },
 			show:  always,
 		},
 
-		// Penalties (B3g). Repeat window, DRY, XTC and seed are left to
+		// Penalties. Repeat window, DRY, XTC and seed are left to
 		// requests: niche, and a per-model seed makes every request repeatable.
 
 		{
@@ -340,16 +338,16 @@ func questions() []question {
 			show:  always,
 		},
 
-		// Template (B4, B5)
+		// Template
 
-		{ // B4
+		{
 			key: "template", group: gBehavior, kind: kindText,
 			title: "Chat template file to use instead of the model's own?",
 			about: "Rarely needed. A Jinja file path on the machine that runs the server.",
 			def:   func(facts) string { return "the model's own template" },
 			show:  always,
 		},
-		{ // B5
+		{
 			key: keyTemplateVars, group: gBehavior, kind: kindVars,
 			title: "Custom chat template variables?",
 			about: "One name=value per line, e.g. preserve_thinking=true. Only templates that use a name respond to it. Request values override these.",
@@ -359,7 +357,7 @@ func questions() []question {
 
 		// Memory and GPU
 
-		{ // M1
+		{
 			key: "cache-type-k", also: []string{"cache-type-v"}, group: gMemory, kind: kindChoice,
 			title:   "KV cache precision?",
 			about:   "Lower saves memory and may cost some quality. Applies to keys, and to values unless the next question says otherwise.",
@@ -367,14 +365,14 @@ func questions() []question {
 			def:     func(f facts) string { return autoTuneStr(f.Analysis.Recommended.CacheTypeK) },
 			show:    always,
 		},
-		{ // M1a, M1b
+		{
 			key: "cache-type-v", group: gMemory, kind: kindChoice, sameAs: "cache-type-k",
 			title:   "KV cache precision for values?",
 			options: cacheTypes,
 			def:     func(facts) string { return "same as keys" },
 			show:    func(_ facts, a *answers) bool { return a.value("cache-type-k") != "" },
 		},
-		{ // M2, M2a
+		{
 			key: "ngpu-layers", group: gMemory, kind: kindInt, min: -1,
 			title:      "How many model layers go on the GPU?",
 			options:    fixed(option{"All layers", "0"}, option{"None (CPU only)", "-1"}),
@@ -383,7 +381,7 @@ func questions() []question {
 			same:       "0",
 			show:       func(f facts, _ *answers) bool { return f.GPUs > 0 || !f.HardwareKnown },
 		},
-		{ // M3
+		{
 			key: "offload-kqv", group: gMemory, kind: kindBool,
 			title:   "Keep the conversation memory (KV cache) on the GPU?",
 			about:   "No saves GPU memory but is slower.",
@@ -392,7 +390,7 @@ func questions() []question {
 			same:    "true",
 			show:    func(f facts, a *answers) bool { return f.GPUs > 0 && a.value("ngpu-layers") != "-1" },
 		},
-		{ // M4
+		{
 			key: "moe.mode", group: gMemory, kind: kindChoice,
 			title: "Where do the MoE experts go?",
 			options: fixed(option{"auto", "auto"}, option{"All on CPU", "experts_cpu"}, option{"All on GPU", "experts_gpu"},
@@ -401,13 +399,13 @@ func questions() []question {
 			same: "auto",
 			show: func(f facts, _ *answers) bool { return f.moe() },
 		},
-		{ // M4a
+		{
 			key: "moe.keep-experts-top-n", group: gMemory, kind: kindInt, min: 0, required: true,
 			title: "How many top layers keep their experts on GPU?",
 			def:   func(facts) string { return "0" },
 			show:  func(f facts, a *answers) bool { return f.moe() && a.value("moe.mode") == "keep_top_n" },
 		},
-		{ // M5
+		{
 			key: "numa", group: gMemory, kind: kindChoice,
 			title: "NUMA strategy?",
 			about: "Matters on machines with more than one CPU socket when experts or layers run on the CPU. With distribute, also set weight loading to none.",
@@ -416,21 +414,21 @@ func questions() []question {
 			def:  func(facts) string { return "disabled" },
 			show: cpuWork,
 		},
-		{ // M6
+		{
 			key: "flash-attention", group: gMemory, kind: kindChoice,
 			title:   "Flash attention?",
 			options: fixed(option{"auto", "auto"}, option{"enabled", "enabled"}, option{"disabled", "disabled"}),
 			def:     func(f facts) string { return autoTuneStr(f.Analysis.Recommended.FlashAttention) },
 			show:    always,
 		},
-		{ // M7
+		{
 			key: "swa-full", group: gMemory, kind: kindBool,
 			title:   "Sliding window cache: compact or full?",
 			options: fixed(option{"Compact (less memory)", "false"}, option{"Full", "true"}),
 			def:     func(facts) string { return "llama.cpp's choice" },
 			show:    func(f facts, _ *answers) bool { return f.swa() },
 		},
-		{ // M8
+		{
 			key: "load-mode", group: gMemory, kind: kindChoice,
 			title: "How should the weights load?",
 			options: fixed(option{"auto", "auto"}, option{"mmap", "mmap"}, option{"none", "none"}, option{"mlock", "mlock"},
@@ -439,7 +437,7 @@ func questions() []question {
 			same: "auto",
 			show: always,
 		},
-		{ // M9
+		{
 			key: "lazy-mode", group: gMemory, kind: kindChoice,
 			title:   "Lazy loading: read large tensors only when they are needed?",
 			options: fixed(option{"Auto", "auto"}, option{"No: read everything at load", "off"}, option{"Yes", "on"}),
@@ -450,7 +448,7 @@ func questions() []question {
 
 		// Multiple GPUs
 
-		{ // G1
+		{
 			key: "devices", group: gGPUs, kind: kindMulti,
 			title: "Which GPUs should this model use?",
 			about: "Space selects. None selected uses all of them.",
@@ -464,7 +462,7 @@ func questions() []question {
 			def:  func(facts) string { return "all" },
 			show: multiGPU,
 		},
-		{ // G2
+		{
 			key: "split-mode", group: gGPUs, kind: kindChoice,
 			title: "How should the model be split across them?",
 			options: fixed(option{"layer: whole layers per GPU", "layer"}, option{"row: rows of each layer", "row"},
@@ -474,14 +472,14 @@ func questions() []question {
 				return multiGPU(f, a) && len(*a.multi["devices"]) != 1
 			},
 		},
-		{ // G3
+		{
 			key: "main-gpu", group: gGPUs, kind: kindInt, min: 0,
 			title: "Which of the GPUs runs the whole model?",
 			about: "Its position among the GPUs this model uses (the ones picked above, or all): 0 is the first.",
 			def:   func(facts) string { return "0" },
 			show:  func(f facts, a *answers) bool { return multiGPU(f, a) && a.value("split-mode") == "none" },
 		},
-		{ // G4
+		{
 			key: "tensor-split", group: gGPUs, kind: kindFloatList,
 			title: "How much of the model goes on each GPU?",
 			about: "Shares in GPU order, comma separated, e.g. 0.6, 0.4.",
@@ -494,7 +492,7 @@ func questions() []question {
 
 		// Throughput
 
-		{ // T1
+		{
 			key: "queue-depth", group: gThroughput, kind: kindInt, min: 1,
 			title:   "How many requests may wait for each slot?",
 			about:   "Requests beyond that wait to be admitted, up to the time in the next question, then fail.",
@@ -503,19 +501,19 @@ func questions() []question {
 			same:    "2",
 			show:    always,
 		},
-		{ // T2
+		{
 			key: "admission-timeout", group: gThroughput, kind: kindDuration, min: 1,
 			title: "How long can a request wait to be admitted?",
 			def:   func(facts) string { return "3m" },
 			show:  always,
 		},
-		{ // T3
+		{
 			key: "prefill-batch-size", group: gThroughput, kind: kindInt, min: 1,
 			title: "How many prompt tokens per processing step?",
 			def:   func(facts) string { return "2048" },
 			show:  always,
 		},
-		{ // T5
+		{
 			key: "kv-cache-mode", group: gThroughput, kind: kindChoice,
 			title:   "Give each request its own memory slice, or share one pool?",
 			options: fixed(option{"Own slice per request", "partitioned"}, option{"One shared pool", "shared"}),
@@ -523,13 +521,13 @@ func questions() []question {
 			same:    "partitioned",
 			show:    func(f facts, a *answers) bool { return requests(f, a) > 1 },
 		},
-		{ // T6
+		{
 			key: "nthreads", also: []string{"nthreads-batch"}, group: gThroughput, kind: kindInt, min: 1,
 			title: "How many CPU threads?",
 			def:   func(facts) string { return "all CPU cores, at least 4" },
 			show:  cpuWork,
 		},
-		{ // C1
+		{
 			key: "incremental-cache", group: gThroughput, kind: kindBool,
 			title:   "Cache conversations between turns?",
 			about:   "Faster for agents and long chats.",
@@ -538,13 +536,13 @@ func questions() []question {
 			same:    "true",
 			show:    always,
 		},
-		{ // C2
+		{
 			key: "cache-min-tokens", group: gThroughput, kind: kindInt, min: 0,
 			title: "Minimum prompt size before caching (tokens)?",
 			def:   func(facts) string { return "100" },
 			show:  func(_ facts, a *answers) bool { return a.value("incremental-cache") != "false" },
 		},
-		{ // C3
+		{
 			key: "imc-session-capacity", group: gThroughput, kind: kindInt, min: 1,
 			title: "How many conversations to keep cached?",
 			about: "At least one per admitted request: requests at the same time × (1 + requests waiting per slot).",
@@ -554,7 +552,7 @@ func questions() []question {
 
 		// Features
 
-		{ // F1
+		{
 			key: "speculation", group: gFeatures, kind: kindChoice,
 			title: "Speculative decoding?",
 			about: "Auto uses a draft when one is available: a draft model, then an MTP head.",
@@ -572,7 +570,7 @@ func questions() []question {
 			same: "auto",
 			show: always,
 		},
-		{ // F2
+		{
 			key: "draft-model.model-id", group: gFeatures, kind: kindChoice, required: true,
 			title: "Which installed model is the draft?",
 			about: "A small model of the same family. Classic needs one request at a time, so nseq-max is set to 1.",
@@ -588,7 +586,7 @@ func questions() []question {
 			def:  func(facts) string { return "" },
 			show: func(_ facts, a *answers) bool { return a.value("speculation") == "classic" },
 		},
-		{ // F3
+		{
 			key: "draft-model.ndraft", group: gFeatures, kind: kindInt, min: 1,
 			title: "How many draft tokens per step?",
 			def:   func(facts) string { return "3" },
@@ -597,14 +595,14 @@ func questions() []question {
 				return spec == "classic" || (f.mtp() && spec != "disabled")
 			},
 		},
-		{ // F4, F4a
+		{
 			key: "adapters", group: gFeatures, kind: kindAdapters,
 			title: "LoRA adapters to load?",
 			about: "One per line: an adapter from the lora folder, or an absolute path. Add =scale for strength, e.g. style=0.8.",
 			def:   func(facts) string { return "none" },
 			show:  func(f facts, _ *answers) bool { return len(f.Adapters) > 0 },
 		},
-		{ // F5
+		{
 			key: "proj-on-cpu", group: gFeatures, kind: kindBool,
 			title:   "Run the image projector on the CPU?",
 			options: fixed(option{"No", "false"}, option{"Yes", "true"}),
@@ -612,7 +610,7 @@ func questions() []question {
 			same:    "false",
 			show:    func(f facts, _ *answers) bool { return f.projection() },
 		},
-		{ // F5a
+		{
 			key: "proj-device", group: gFeatures, kind: kindChoice,
 			title: "Which GPU should run the image projector?",
 			options: func(f facts) []option {
@@ -627,7 +625,7 @@ func questions() []question {
 				return f.projection() && f.GPUs > 1 && a.value("proj-on-cpu") != "true"
 			},
 		},
-		{ // F6
+		{
 			key: "image-token-budget", group: gFeatures, kind: kindInt, min: 1,
 			title: "Image detail budget (tokens per image)?",
 			about: "Lower means less detail and less memory.",
