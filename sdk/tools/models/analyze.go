@@ -379,7 +379,7 @@ func analyzeModelWithConfigAndBudget(info ModelInfo, devs devices.Devices, cfg M
 	}
 
 	if !fullGPUFit && sf.SupportsGPUOffload {
-		warnings = append(warnings, fmt.Sprintf("Model weights (%.1f GiB) may not fully fit in GPU memory (%.1f GiB free); partial offload may be needed",
+		warnings = append(warnings, fmt.Sprintf("Model weights (%.1f GiB) may not fully fit in the target GPU (%.1f GiB free); partial offload may be needed",
 			float64(modelSize)/(1024*1024*1024), float64(sf.GPUFreeBytes)/(1024*1024*1024)))
 	}
 
