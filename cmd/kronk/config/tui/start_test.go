@@ -1,4 +1,4 @@
-package config
+package tui
 
 import (
 	"os"
@@ -19,7 +19,7 @@ func TestMachineDevices(t *testing.T) {
 		t.Fatal("another machine must describe its hardware")
 	}
 
-	devs := m.devices()
+	devs := m.Devices()
 	if devs.GPUCount != 2 || !devs.SupportsGPUOffload {
 		t.Fatalf("gpus = %d, offload = %t", devs.GPUCount, devs.SupportsGPUOffload)
 	}
@@ -44,7 +44,7 @@ func TestMachineCPUOnly(t *testing.T) {
 	s.ram = "64"
 
 	m, _ := s.machine()
-	devs := m.devices()
+	devs := m.Devices()
 	if devs.GPUCount != 0 || devs.SupportsGPUOffload || devs.GPUTotalBytes != 0 {
 		t.Fatalf("CPU-only machine has GPUs: %+v", devs)
 	}
@@ -80,33 +80,6 @@ func TestValidFile(t *testing.T) {
 	} {
 		if err := validFile(tt.path); (err == nil) != tt.ok {
 			t.Errorf("validFile(%q) = %v, want ok %t", tt.path, err, tt.ok)
-		}
-	}
-}
-
-func TestConfigFilesByName(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-
-	for name, body := range map[string]string{
-		".goreleaser.yaml":      "version: 2\nbuilds: []\n",
-		"model_config.yaml":     "version: 2\nmodels: {}\n",
-		"model_config.gpu.yaml": "version: 2\nmodels: {}\n",
-		"model_config.bad.yaml": "version: 99\n",
-	} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	got := configFiles("/srv/model_config.yaml")
-	want := []string{"/srv/model_config.yaml", filepath.Join(dir, "model_config.gpu.yaml"), filepath.Join(dir, "model_config.yaml")}
-	if len(got) != len(want) {
-		t.Fatalf("got %v, want %v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("got %v, want %v", got, want)
 		}
 	}
 }

@@ -1,4 +1,4 @@
-package config
+package tui
 
 import (
 	"errors"
@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"charm.land/huh/v2"
+	"github.com/ardanlabs/kronk/cmd/kronk/config/source"
 )
 
 // A variant is a second set of settings for the same downloaded model, in an
@@ -20,7 +21,7 @@ const newVariant = "\x00new"
 var variantName = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 func (a *app) newVariantForm() *huh.Form {
-	entries := entriesFor(a.doc, a.choice.ID)
+	entries := source.EntriesFor(a.doc, a.choice.ID)
 
 	var opts []huh.Option[string]
 	for _, e := range entries {
@@ -51,8 +52,8 @@ func (a *app) newVariantForm() *huh.Form {
 		}).
 		Value(&a.variantName)
 
-	return a.sized(huh.NewForm(
+	return a.newForm(
 		huh.NewGroup(sel),
 		huh.NewGroup(name).WithHideFunc(func() bool { return a.variantPick != newVariant }),
-	).WithTheme(a.theme).WithKeyMap(backKeyMap()).WithShowHelp(true))
+	)
 }

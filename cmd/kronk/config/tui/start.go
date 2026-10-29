@@ -1,16 +1,15 @@
-package config
+package tui
 
 import (
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 
 	"charm.land/huh/v2"
-	"github.com/ardanlabs/kronk/sdk/tools/devices"
+	"github.com/ardanlabs/kronk/cmd/kronk/config/source"
 	"github.com/ardanlabs/kronk/sdk/tools/modelconfig"
 )
 
@@ -38,17 +37,6 @@ const (
 	keyVRAM     = "start/vram"
 	keyRAM      = "start/ram"
 )
-
-// gpuTypes are the GPU backends a target machine can have. name is the
-// llama.cpp device name prefix, used to build CUDA0, CUDA1, ...
-var gpuTypes = []struct {
-	label, value, name string
-}{
-	{"NVIDIA (CUDA)", "cuda", "CUDA"},
-	{"AMD (ROCm)", "rocm", "ROCm"},
-	{"Vulkan", "vulkan", "Vulkan"},
-	{"Apple Silicon (Metal)", "metal", "MTL"},
-}
 
 // start holds the start form answers.
 type start struct {
@@ -88,113 +76,22 @@ func (s *start) path() string {
 
 // machine describes the target machine from the answers. It returns false for
 // this machine, whose devices are detected.
-func (s *start) machine() (machine, bool) {
+func (s *start) machine() (source.Machine, bool) {
 	if !s.another() {
-		return machine{}, false
+		return source.Machine{}, false
 	}
 
-	m := machine{gpus: s.gpuCount(), ram: gb(s.ram)}
-	if m.gpus > 0 {
-		m.gpuType = s.gpuType
-		m.vram = gb(s.vram)
+	m := source.Machine{GPUs: s.gpuCount(), RAM: gb(s.ram)}
+	if m.GPUs > 0 {
+		m.GPUType = s.gpuType
+		m.VRAM = gb(s.vram)
 	}
 	return m, true
-}
-
-// =============================================================================
-
-// machine is a target machine described by the user.
-type machine struct {
-	gpus    int
-	gpuType string
-	vram    uint64 // per GPU
-	ram     uint64
-}
-
-// devices builds the device list the analysis reads, as llama.cpp would
-// report it on that machine.
-func (m machine) devices() devices.Devices {
-	devs := devices.Devices{
-		Devices:        []devices.DeviceInfo{{Name: "CPU", Type: "cpu", HardwareType: "cpu"}},
-		SystemRAMBytes: m.ram,
-		MMapSupported:  true,
-		UnifiedMemory:  m.gpuType == "metal",
-	}
-
-	i := slices.IndexFunc(gpuTypes, func(t struct{ label, value, name string }) bool { return t.value == m.gpuType })
-	for n := range m.gpus {
-		name := fmt.Sprintf("GPU%d", n)
-		if i >= 0 {
-			name = fmt.Sprintf("%s%d", gpuTypes[i].name, n)
-		}
-		devs.Devices = append(devs.Devices, devices.DeviceInfo{
-			Index:        n + 1,
-			Name:         name,
-			Type:         "gpu_" + m.gpuType,
-			HardwareType: "gpu",
-			Backend:      m.gpuType,
-			FreeBytes:    m.vram,
-			TotalBytes:   m.vram,
-		})
-		devs.GPUCount++
-		devs.GPUTotalBytes += m.vram
-		devs.SupportsGPUOffload = true
-	}
-
-	return devs
-}
-
-func (m machine) String() string {
-	if m.gpus == 0 {
-		return fmt.Sprintf("another machine: CPU only, %s RAM", formatBytes(m.ram))
-	}
-
-	name := m.gpuType
-	for _, t := range gpuTypes {
-		if t.value == m.gpuType {
-			name = t.label
-		}
-	}
-	return fmt.Sprintf("another machine: %d × %s, %s each, %s RAM", m.gpus, name, formatBytes(m.vram), formatBytes(m.ram))
 }
 
 func gb(s string) uint64 {
 	n, _ := strconv.ParseFloat(strings.TrimSpace(s), 64)
 	return uint64(n * (1 << 30))
-}
-
-// =============================================================================
-
-// configFiles lists the config files to offer: the one the server reads,
-// then model_config*.yaml files in the current directory. Other YAML files
-// can load as a config too (modelconfig.Load ignores unknown keys), so the
-// name is what selects them.
-func configFiles(serverFile string) []string {
-	files := []string{serverFile}
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		return files
-	}
-
-	var found []string
-	for _, pattern := range []string{"model_config*.yaml", "model_config*.yml"} {
-		m, _ := filepath.Glob(filepath.Join(cwd, pattern))
-		found = append(found, m...)
-	}
-	slices.Sort(found)
-
-	for _, f := range found {
-		if f == serverFile || slices.Contains(files, f) {
-			continue
-		}
-		if _, err := modelconfig.Load(f); err != nil {
-			continue
-		}
-		files = append(files, f)
-	}
-
-	return files
 }
 
 func (a *app) newStartForm() *huh.Form {
@@ -216,12 +113,12 @@ func (a *app) newStartForm() *huh.Form {
 	another := func() bool { return s.another() }
 	withGPUs := func() bool { return s.another() && s.gpuCount() > 0 }
 
-	gpuOpts := make([]huh.Option[string], 0, len(gpuTypes))
-	for _, t := range gpuTypes {
-		gpuOpts = append(gpuOpts, huh.NewOption(t.label, t.value))
+	gpuOpts := make([]huh.Option[string], 0, len(source.GPUTypes))
+	for _, t := range source.GPUTypes {
+		gpuOpts = append(gpuOpts, huh.NewOption(t.Label, t.Value))
 	}
 
-	return a.sized(huh.NewForm(
+	return a.newForm(
 		huh.NewGroup(huh.NewSelect[string]().
 			Key(keyFile).
 			Title("Which config file?").
@@ -241,6 +138,7 @@ func (a *app) newStartForm() *huh.Form {
 		huh.NewGroup(huh.NewSelect[string]().
 			Key(keyWhat).
 			Title("What do you want to configure?").
+			Description("A model's entry, or the server's own settings (kms:).").
 			Options(
 				huh.NewOption("A model", whatModel),
 				huh.NewOption("Server settings", whatServer),
@@ -269,6 +167,7 @@ func (a *app) newStartForm() *huh.Form {
 		huh.NewGroup(huh.NewSelect[string]().
 			Key(keyGPUType).
 			Title("What type of GPUs does the target machine have?").
+			Description("It names the GPUs for the questions and sets how memory is counted.").
 			Options(gpuOpts...).
 			Value(&s.gpuType)).
 			WithHideFunc(func() bool { return !withGPUs() }),
@@ -276,6 +175,7 @@ func (a *app) newStartForm() *huh.Form {
 		huh.NewGroup(huh.NewInput().
 			Key(keyVRAM).
 			Title("How much memory does each GPU have (GB)?").
+			Description("The memory of one GPU, in GB.").
 			Validate(positiveNumber).
 			Value(&s.vram)).
 			WithHideFunc(func() bool { return !withGPUs() }),
@@ -283,10 +183,11 @@ func (a *app) newStartForm() *huh.Form {
 		huh.NewGroup(huh.NewInput().
 			Key(keyRAM).
 			Title("How much system RAM does the target machine have (GB)?").
+			Description("For the layers and experts that run on the CPU, in GB.").
 			Validate(positiveNumber).
 			Value(&s.ram)).
 			WithHideFunc(func() bool { return !another() }),
-	).WithTheme(a.theme).WithKeyMap(backKeyMap()).WithShowHelp(true))
+	)
 }
 
 // validFile accepts a path to an existing config file that loads, or to a
