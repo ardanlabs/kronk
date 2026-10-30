@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Manual CI orchestration only. The quick-check CLI and its retention rules own
+# CI orchestration only. The quick-check CLI and its retention rules own
 # matrix execution, evidence validation, baseline roles, and comparison output.
 set -euo pipefail
 
@@ -8,64 +8,66 @@ history=.tools/quick-check/release-history.log
 diagnostics="${RUNNER_TEMP:?}/quick-check"
 mkdir -p "$diagnostics"
 
-# Resolve numeric IDs, including the current workflow before it is registered on
-# main. Never trust a name or artifact prefix alone to establish queue ownership.
-queue_runs() {
-  local workflows current workflow path
-  workflows=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows?per_page=100" \
-    --jq '.workflows[] | select(.path == ".github/workflows/quick-check.yml" or .path == ".github/workflows/promote-to-release.yml") | .id') || return
-  current=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/${GITHUB_RUN_ID:?}" --jq '.workflow_id') || return
-  workflows=$(printf '%s\n%s\n' "$workflows" "$current" | sort -nu) || return
-  while IFS= read -r workflow; do
-    [[ -n "$workflow" ]] || continue
-    path=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow" --jq '.path') || return
-    case "$path" in
-      .github/workflows/quick-check.yml|.github/workflows/promote-to-release.yml)
-        gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?per_page=100" \
-          --jq '.workflow_runs[].id' || return
-        ;;
-      *) echo "Refusing queue discovery for workflow $workflow ($path)" >&2; return 1 ;;
-    esac
-  done <<< "$workflows"
+results_branch=quick-check-results
+results="$RUNNER_TEMP/quick-check-results"
+
+validate_queue() {
+  # Go owns format/evidence validation, including selected-cell and failed runs.
+  # Validate away from the restored queue; never replace full local evidence.
+  local scratch
+  scratch=$(mktemp -d "$diagnostics/validate.XXXXXX")
+  if ! go run ./.tools/quick-check snapshot -out "$1" -dest "$scratch/queue"; then
+    rm -rf "$scratch"
+    return 1
+  fi
+  rm -rf "$scratch"
+}
+
+commit_results() {
+  local path=$1 message=$2
+  git -C "$results" add -- "$path"
+  if git -C "$results" diff --cached --quiet; then
+    echo "No changes to $path"
+    return
+  fi
+  git -C "$results" -c user.name='github-actions[bot]' \
+    -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+    commit -m "$message"
+  # Never force-push or merge stale state. A competing writer fails safely.
+  git -C "$results" push origin "HEAD:refs/heads/$results_branch"
+  if [[ "$path" == "$history" ]]; then
+    printf '\nRelease-history-only commit: `%s`.\n' "$(git -C "$results" rev-parse HEAD)" >> "${GITHUB_STEP_SUMMARY:?}"
+  fi
 }
 
 case "${1:-}" in
   restore)
-    # Both workflows share one queue. A failed/interrupted candidate is retained
-    # alongside passing baselines. Ignore expired artifacts.
-    runs=$(queue_runs)
-    artifact=0
-    while IFS= read -r run; do
-      [[ -n "$run" ]] || continue
-      artifacts=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$run/artifacts?per_page=100" \
-        --jq '.artifacts[] | select((.name | startswith("quick-check-queue-")) and .expired == false) | .id')
-      while IFS= read -r id; do
-        [[ -n "$id" ]] || continue
-        # A rerun of an older workflow run can upload the newest queue.
-        if (( id > artifact )); then artifact=$id; fi
-      done <<< "$artifacts"
-    done <<< "$runs"
-    if (( artifact > 0 )); then
-      gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact/zip" > "$diagnostics/baselines.zip"
-      mkdir -p "$output"
-      unzip -q "$diagnostics/baselines.zip" -d "$diagnostics"
-      tar -xzf "$diagnostics/quick-check-baselines.tgz" -C "$output"
-      # Comparisons belong only to the candidate that produced them. History
-      # starts from the committed canonical file, never an old download copy.
-      rm -rf "$output/compare-commit" "$output/compare-release"
-      rm -f "$output/release-history.log"
-      rm "$diagnostics/quick-check-baselines.tgz"
-      rm "$diagnostics/baselines.zip"
-      echo "Restored retained run queue from Actions artifact $artifact"
-    else
-      echo "No retained run queue; this run will establish one."
+    # No artifact fallback: an absent/corrupt branch must not erase baselines.
+    git fetch --depth=1 --no-tags origin "refs/heads/$results_branch:refs/remotes/origin/$results_branch"
+    git worktree add --detach "$results" "refs/remotes/origin/$results_branch"
+    [[ -d "$results/queue" ]] || { echo 'Missing saved queue' >&2; exit 1; }
+    [[ ! -e "$output" ]] || { echo "Refusing to overwrite existing $output" >&2; exit 1; }
+    mkdir -p "$(dirname "$output")"
+    cp -R "$results/queue" "$output"
+    rm -f "$history"
+    if [[ -f "$results/$history" ]]; then
+      cp "$results/$history" "$history"
     fi
+    validate_queue "$output"
+    # The queue push may have succeeded before its separate history push failed.
+    if [[ -f "$output/release-history.log" ]]; then
+      cp "$output/release-history.log" "$history"
+      mkdir -p "$results/$(dirname "$history")"
+      cp "$history" "$results/$history"
+      commit_results "$history" 'Recover release history from saved queue'
+    fi
+    echo "Restored retained queue and history from $results_branch at $(git -C "$results" rev-parse HEAD)"
     ;;
   prepare)
     revision=$(git rev-parse HEAD)
-    for summary in "$output"/new-*/summary.json; do
+    for summary in "$output"/new-*/comparison-snapshot.json; do
       [[ -f "$summary" ]] || continue
-      previous=$(jq -er '.server_revision' "$summary")
+      previous=$(jq -er '.summary.server_revision' "$summary")
       if [[ "$previous" == "$revision" ]]; then
         echo 'skip=true' >> "${GITHUB_OUTPUT:?}"
         printf 'Skipping already tested commit %s\n' "$revision"
@@ -75,27 +77,31 @@ case "${1:-}" in
     done
     echo 'skip=false' >> "${GITHUB_OUTPUT:?}"
     ;;
-  prune)
-    # Upload must have succeeded before this command is invoked. Enumerate only
-    # the two approved workflows' queue artifacts, never unrelated artifacts.
-    : "${KEEP_ARTIFACT_ID:?}"
-    runs=$(queue_runs)
-    while IFS= read -r run; do
-      [[ -n "$run" ]] || continue
-      artifacts=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$run/artifacts?per_page=100" \
-        --jq '.artifacts[] | select(.name | startswith("quick-check-queue-")) | .id')
-      while IFS= read -r artifact; do
-        [[ -n "$artifact" && "$artifact" != "$KEEP_ARTIFACT_ID" ]] || continue
-        gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact"
-      done <<< "$artifacts"
-    done <<< "$runs"
+  save-queue)
+    # Export completely before touching Git state. Never commit the full docs.
+    stage=$(mktemp -d "$diagnostics/export.XXXXXX")
+    go run ./.tools/quick-check snapshot -out "$output" -dest "$stage/queue"
+    # Retain history with the queue so a retry can finish its later history commit.
+    [[ ! -f "$history" ]] || cp "$history" "$stage/queue/release-history.log"
+    rm -rf "$results/queue"
+    mv "$stage/queue" "$results/queue"
+    rmdir "$stage"
+    commit_results queue "Rotate quick-check queue (Actions run ${GITHUB_RUN_ID:?})"
+    ;;
+  save-history)
+    if [[ -f "$history" ]]; then
+      mkdir -p "$results/$(dirname "$history")"
+      cp "$history" "$results/$history"
+      commit_results "$history" "Update release history for ${RELEASE:-release comparison}"
+    fi
     ;;
   snapshot)
     runs=()
-    for run in "$output"/new-* "$output"/old-* "$output"/release-*; do
-      [[ ! -f "$run/summary.json" ]] || runs+=("${run##*/}")
+    for run in "$output"/new-* "$output"/old-* "$output"/release-* "$output"/[0-9]*T*Z-*; do
+      [[ ! -d "$run" ]] || runs+=("${run##*/}")
     done
     [[ ${#runs[@]} -gt 0 ]] || { echo "No runs to preserve" >&2; exit 1; }
+    [[ ! -f "$history" ]] || cp "$history" "$output/release-history.log"
     for report in compare-commit compare-release release-history.log; do
       [[ ! -e "$output/$report" ]] || runs+=("$report")
     done
@@ -135,16 +141,16 @@ case "${1:-}" in
       prefix=old
       [[ "$role" != release ]] || prefix=release
       available=false
-      for baseline in "$output/$prefix-"*/summary.json; do
-        [[ ! -f "$baseline" ]] || available=true
+      for baseline in "$output/$prefix-"*; do
+        [[ ! -d "$baseline" ]] || { available=true; break; }
       done
       if [[ "$available" == true ]]; then
         mkdir -p "$output/compare-$role"
         rm -f "$output/comparison.json" "$output/comparison.log"
         make "quick-compare-against-$role" \
           QUICK_CHECK_COMPARE_ARGS="-out $output" \
-          QUICK_COMPARE_BASELINE="$(dirname "$baseline")" \
-          QUICK_COMPARE_CANDIDATE="$(dirname "$(find "$output" -path '*/new-*/summary.json' -print -quit)")" \
+          QUICK_COMPARE_BASELINE="$baseline" \
+          QUICK_COMPARE_CANDIDATE="$(find "$output" -maxdepth 1 -type d -name 'new-*' -print -quit)" \
           > "$output/compare-$role/terminal.log" 2>&1 || status=1
         for report in comparison.json comparison.log; do
           [[ ! -f "$output/$report" ]] || mv "$output/$report" "$output/compare-$role/$report"
@@ -188,8 +194,7 @@ case "${1:-}" in
       echo
       echo 'Retained evidence promoted locally; no release was published or tagged.'
       echo
-      echo 'If changed, download release-history.log from the queue artifact, review it, and manually commit it to .tools/quick-check/release-history.log.'
-      echo 'The committed canonical history is the starting point for every invocation; this workflow does not commit or push updates.'
+      echo 'The queue is saved to quick-check-results first; changed release history is saved in a separate later commit.'
     } >> "${GITHUB_STEP_SUMMARY:?}"
     ;;
   finish)
@@ -216,5 +221,5 @@ case "${1:-}" in
       printf '\nOther workflows or host workloads may affect performance.\n'
     } >> "$GITHUB_STEP_SUMMARY"
     ;;
-  *) echo "Usage: $0 restore|prepare|prune|snapshot|start|compare|promote|finish" >&2; exit 2 ;;
+  *) echo "Usage: $0 restore|prepare|save-queue|save-history|snapshot|start|compare|promote|finish" >&2; exit 2 ;;
 esac

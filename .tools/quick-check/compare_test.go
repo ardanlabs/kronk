@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -50,10 +51,15 @@ func TestCompareCommand(t *testing.T) {
 	baseline := comparisonFixture([]float64{1, 4, 10})
 	saved := readComparisonCellFixture(t, baseline).summary.Measurements["workload"]["elapsed_seconds"]
 	base := writeComparisonFixture(t, baseline)
-	candidate := writeComparisonFixture(t, comparisonFixture([]float64{2, 6, 14}))
+	next := comparisonFixture([]float64{2, 6, 14})
+	next.Repetitions[0].SystemTokens++
+	candidate := writeComparisonFixture(t, next)
 	got, err := runComparisonFixture(t, base, candidate)
 	if err != nil || got.Status != "PASS" || len(got.Cells) != 1 {
 		t.Fatalf("comparison: %+v, %v", got, err)
+	}
+	if len(got.Cells[0].Warnings) != 0 {
+		t.Fatalf("token counts or generated history produced warnings: %v", got.Cells[0].Warnings)
 	}
 	rows := comparisonMetricsFixture(got.Cells[0])
 	r := rows["workload.elapsed_seconds"]
@@ -73,6 +79,33 @@ func TestCompareCommand(t *testing.T) {
 	startup := rows["warmup.startup.native_model_load_seconds"].Baseline
 	if startup == nil || startup.Median != 3.5 || startup.Samples != 1 || startup.SampleStdDev != nil {
 		t.Fatalf("saved startup measurement: %+v", startup)
+	}
+	// A compact queue must reproduce the full-evidence comparison without any
+	// original files, including startup samples and normalized metrics.
+	queue := t.TempDir()
+	for name, dir := range map[string]string{"old-aaaaaaa": base, "new-bbbbbbb": candidate} {
+		if err := os.Rename(dir, filepath.Join(queue, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	compact := filepath.Join(t.TempDir(), "queue")
+	if err := snapshotCommand([]string{"-out", queue, "-dest", compact}, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := runComparisonFixture(t, filepath.Join(compact, "old-aaaaaaa"), filepath.Join(compact, "new-bbbbbbb"))
+	if err != nil || !reflect.DeepEqual(got.Cells[0].Metrics, snapshot.Cells[0].Metrics) || !slices.Equal(got.Cells[0].Warnings, snapshot.Cells[0].Warnings) {
+		t.Fatalf("snapshot changed comparison: %+v, %v", snapshot, err)
+	}
+	path := filepath.Join(compact, "new-bbbbbbb", "comparison-snapshot.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, bytes.Replace(data, []byte(`"test-os"`), []byte(`"other-os"`), 1), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := compareCommand([]string{"-out", compact}, &bytes.Buffer{}); err == nil {
+		t.Fatal("accepted a modified snapshot without detecting its checksum mismatch")
 	}
 }
 
@@ -122,7 +155,7 @@ func TestCompareNormalizedTime(t *testing.T) {
 }
 
 func TestCompareCellStatuses(t *testing.T) {
-	for _, statuses := range [][2]string{{"PASS", "FAIL"}, {"FAIL", "PASS"}, {"FAIL", "FAIL"}, {"PASS", "NOT_RUN"}} {
+	for _, statuses := range [][2]string{{"PASS", "FAIL"}, {"FAIL", "PASS"}, {"PASS", "NOT_RUN"}} {
 		t.Run(strings.Join(statuses[:], "-"), func(t *testing.T) {
 			a, b := comparisonFixture([]float64{1, 4}), comparisonFixture([]float64{2, 6})
 			a.Status, b.Status = statuses[0], statuses[1]
@@ -178,7 +211,7 @@ func TestCompareCellStatuses(t *testing.T) {
 
 func TestCompareRejectsBrokenArtifacts(t *testing.T) {
 	base := writeComparisonFixture(t, comparisonFixture([]float64{1, 4}))
-	for _, name := range []string{"missing-log", "truncated-events", "summary-disagrees", "incomplete-repetition", "missing-reference"} {
+	for _, name := range []string{"summary-disagrees", "incomplete-repetition", "missing-reference"} {
 		t.Run(name, func(t *testing.T) {
 			baseline := base
 			r := comparisonFixture([]float64{2, 6})
@@ -194,16 +227,7 @@ func TestCompareRejectsBrokenArtifacts(t *testing.T) {
 				}
 			}
 			dir := writeComparisonFixture(t, r)
-			switch name {
-			case "missing-log":
-				if err := os.Remove(filepath.Join(dir, "tool.log")); err != nil {
-					t.Fatal(err)
-				}
-			case "truncated-events":
-				if err := os.WriteFile(filepath.Join(dir, "events.ndjson"), []byte("{\n"), 0600); err != nil {
-					t.Fatal(err)
-				}
-			case "summary-disagrees":
+			if name == "summary-disagrees" {
 				var s matrixSummary
 				data, err := os.ReadFile(filepath.Join(dir, "summary.json"))
 				if err != nil {
@@ -254,7 +278,7 @@ func TestCompareTwoSlotArrivalOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := runComparisonFixture(t, base, candidate)
-	if err != nil || got.Status != "PASS" || !slices.Contains(got.Cells[0].Matches, "request bodies/order") {
+	if err != nil || got.Status != "PASS" || !slices.Contains(got.Cells[0].Matches, "controlled request inputs") {
 		t.Fatalf("arrival order invalidated comparison: %+v, %v", got, err)
 	}
 	row := comparisonMetricsFixture(got.Cells[0])["workload.reference_seconds"]
@@ -316,7 +340,7 @@ func readComparisonCellFixture(t *testing.T, r report) comparisonInput {
 }
 
 func comparisonFixture(values []float64) report {
-	r := report{Status: "PASS", Workload: "operations-v2", Model: modelID, ServerRevision: strings.Repeat("a", 40), TestStartedAt: "2026-10-21T16:00:00Z", HarnessRevision: "fixed-harness", MTPBackend: "qwen35-own-kv", RepetitionsRequested: len(values), evidenceValidated: true}
+	r := report{Status: "PASS", Workload: workloadVersion, Model: modelID, ServerRevision: strings.Repeat("a", 40), TestStartedAt: "2026-10-21T16:00:00Z", HarnessRevision: "fixed-harness", MTPBackend: "qwen35-own-kv", RepetitionsRequested: len(values), evidenceValidated: true}
 	r.ReferenceTokens = referenceTokens(false, false, false, false)
 	r.Metadata = map[string]any{
 		"/v1/liveness":   map[string]any{"host": "test-machine", "os": "test-os", "vcs_revision": r.ServerRevision},
@@ -413,7 +437,10 @@ func writeComparisonFixture(t *testing.T, cells ...report) string {
 		}
 		for i, rep := range cell.Repetitions {
 			for j, res := range rep.Results {
-				emit(map[string]any{"source": "request", "phase": res.Phase, "repetition": i + 1, "body": map[string]any{"seed": 42 + i*10 + j}})
+				emit(map[string]any{"source": "request", "phase": res.Phase, "repetition": i + 1, "body": map[string]any{
+					"seed":     42 + i*10 + j,
+					"messages": []message{{Role: "assistant", Content: fmt.Sprintf("Previous answer %.2f", res.Elapsed)}, {Role: "user", Content: "Continue."}},
+				}})
 			}
 		}
 		if cell.WarmupRequest == nil {

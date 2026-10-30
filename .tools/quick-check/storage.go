@@ -54,24 +54,35 @@ func savedRuns(parent string) ([]storedRun, error) {
 			continue
 		}
 		path := filepath.Join(parent, name)
-		complete := true
-		for _, artifact := range []string{"summary.json", "events.ndjson", "tool.log"} {
-			info, err := os.Lstat(filepath.Join(path, artifact))
-			if err != nil || !info.Mode().IsRegular() {
-				complete = false
-				break
-			}
-		}
-		if !complete {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(path, "summary.json"))
-		if err != nil {
-			return nil, err
-		}
 		var r matrixReport
-		if json.Unmarshal(data, &r) != nil || (r.Status != "PASS" && r.Status != "FAIL" && r.Status != "INTERRUPTED") {
-			continue
+		if info, err := os.Lstat(filepath.Join(path, "comparison-snapshot.json")); err == nil && info.Mode().IsRegular() {
+			s, err := readSnapshot(path)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", path, err)
+			}
+			r = matrixReport{Status: s.Summary.Status, ServerRevision: s.Summary.ServerRevision, TestStartedAt: s.Summary.TestStartedAt}
+			for _, cell := range s.Summary.Cells {
+				r.Cells = append(r.Cells, report{ID: cell.ID, Status: cell.Status})
+			}
+		} else {
+			complete := true
+			for _, artifact := range []string{"summary.json", "events.ndjson", "tool.log"} {
+				info, err := os.Lstat(filepath.Join(path, artifact))
+				if err != nil || !info.Mode().IsRegular() {
+					complete = false
+					break
+				}
+			}
+			if !complete {
+				continue
+			}
+			data, err := os.ReadFile(filepath.Join(path, "summary.json"))
+			if err != nil {
+				return nil, err
+			}
+			if json.Unmarshal(data, &r) != nil || (r.Status != "PASS" && r.Status != "FAIL" && r.Status != "INTERRUPTED") {
+				continue
+			}
 		}
 		if len(r.Cells) == 0 {
 			return nil, fmt.Errorf("%s: missing matrix cells; archive older artifacts and rerun quick-check", path)
@@ -140,6 +151,7 @@ func recordReleaseComparison(parent, baselineTag, candidateTag string, a, b matr
 	// Keep mismatched/unknown machines in comparison.log only. Failed runs retain
 	// their recorded verdicts and unavailable metrics rather than being certified.
 	host, _ := b.summary.Machine["host"].(string)
+	systemOS, _ := b.summary.Machine["os"].(string)
 	ram, vram := eventInt(b.summary.Machine, "system_ram_bytes"), eventInt(b.summary.Machine, "gpu_total_bytes")
 	unified, knownUnified := b.summary.Machine["unified_memory"].(bool)
 	if !reflect.DeepEqual(a.summary.Machine, b.summary.Machine) || host == "" || ram <= 0 || vram <= 0 || !knownUnified {
@@ -168,7 +180,7 @@ func recordReleaseComparison(parent, baselineTag, candidateTag string, a, b matr
 	gib := func(bytes int) string {
 		return strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.2f", float64(bytes)/(1<<30)), "0"), ".") + "GiB"
 	}
-	machine := fmt.Sprintf("machine: %s; RAM: %s; VRAM: %s; unified memory: %t", text(host), gib(ram), gib(vram), unified)
+	machine := fmt.Sprintf("machine: %s; os: %s; RAM: %s; VRAM: %s; unified memory: %t", text(host), text(systemOS), gib(ram), gib(vram), unified)
 	references := make(map[string]normalizationReference)
 	for _, cell := range c.Cells {
 		if cell.Status != "NOT_RUN" {
@@ -195,7 +207,11 @@ func recordReleaseComparison(parent, baselineTag, candidateTag string, a, b matr
 	} else if previousID == referenceID {
 		updated = "no"
 	}
-	key := fmt.Sprintf("%s → %s\n%s\n", text(baselineTag), text(candidateTag), machine)
+	label := fmt.Sprintf("%s → %s", text(baselineTag), text(candidateTag))
+	if baselineTag == "" {
+		label = fmt.Sprintf("%s (starting baseline; no previous release; tested commit %s)", text(candidateTag), text(b.summary.ServerRevision))
+	}
+	key := fmt.Sprintf("%s\n%s\n", label, machine)
 	var entry strings.Builder
 	entry.WriteString(key)
 	fmt.Fprintf(&entry, "References updated: %s%s%s\n", updated, referenceIDLabel, referenceID)
@@ -224,6 +240,23 @@ func recordReleaseComparison(parent, baselineTag, candidateTag string, a, b matr
 		return closeErr
 	}
 	return os.Rename(f.Name(), path)
+}
+
+func recordReleaseStart(parent, release string, input matrixInput) error {
+	path := filepath.Join(filepath.Dir(parent), "release-history.log")
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	c := compareMatrices("", "", input, input)
+	for i := range c.Cells {
+		for j := range c.Cells[i].Metrics {
+			m := &c.Cells[i].Metrics[j]
+			m.Baseline, m.Delta, m.Percent = nil, nil, nil
+		}
+	}
+	return recordReleaseComparison(parent, "", release, input, input, c)
 }
 
 // Keep the fresh candidate, the manually promoted release (regardless of verdict)

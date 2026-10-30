@@ -3,8 +3,9 @@ name: Quick-check
 on:
   workflow_dispatch:
   schedule:
-    # 02:00 EST (UTC-5) year-round; 03:00 during Eastern daylight saving time.
-    - cron: '0 7 * * *'
+    # Follow Miami's local clock, including daylight saving time.
+    - cron: '0 2 * * *'
+      timezone: America/New_York
 
 # Serializes Quick-check and Promote to Release, not other work on Pacha.
 # Do not cancel an existing measurement when another invocation is queued.
@@ -13,9 +14,8 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
-  # Delete the previous queue only after its replacement has been uploaded.
-  actions: write
+  # Commit the retained queue to quick-check-results, never main.
+  contents: write
 
 env:
   GOTOOLCHAIN: local
@@ -30,11 +30,18 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: main
-          fetch-depth: 0
+          # Avoid downloading historical results. Release recognition
+          # queries remote tags rather than relying on local history.
+          fetch-depth: 1
+
+      # Restore validates compact snapshots with Go before any runtime setup.
+      - name: Set up Go for queue validation
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: .go-version
+          cache: false
 
       - name: Restore retained run queue
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: bash .github/scripts/quick-check.sh restore
 
       - name: Skip an already tested commit
@@ -78,27 +85,28 @@ jobs:
         run: bash .github/scripts/quick-check.sh compare
 
       # The tool retains failed/interrupted candidates without displacing
-      # passing baselines. Preserve the whole queue, even after comparison fails.
+      # passing baselines. Preserve available evidence even if comparison fails.
+      - name: Save compact retained run queue
+        id: persist
+        if: ${{ always() && steps.check.outcome != 'skipped' && steps.check.outcome != '' }}
+        run: bash .github/scripts/quick-check.sh save-queue
+
+      - name: Commit updated release history
+        if: ${{ !cancelled() && steps.persist.outcome == 'success' }}
+        run: bash .github/scripts/quick-check.sh save-history
+
       - name: Package retained run queue
         id: snapshot
         if: ${{ always() && steps.check.outcome != 'skipped' && steps.check.outcome != '' }}
         run: bash .github/scripts/quick-check.sh snapshot
 
-      - name: Save retained run queue
-        id: upload
+      # Download convenience only; restore never relies on Actions artifacts.
+      - name: Upload downloadable reports
         if: ${{ always() && steps.snapshot.outcome == 'success' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          # Unique per attempt: retrying a job must not delete its last queue
-          # before the replacement upload has succeeded.
+          # Unique per attempt; these downloads are not durable queue storage.
           name: quick-check-queue-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/quick-check-baselines.tgz
           retention-days: 90
           if-no-files-found: error
-
-      - name: Remove superseded queue artifacts
-        if: ${{ always() && steps.upload.outcome == 'success' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          KEEP_ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
-        run: bash .github/scripts/quick-check.sh prune
