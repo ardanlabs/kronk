@@ -189,6 +189,14 @@ func New(ctx context.Context, src *source.Source, isDark bool, follow bool) tea.
 	return a
 }
 
+// Err is the error that ended the tool, if any.
+func Err(m tea.Model) error {
+	if a, ok := m.(*app); ok {
+		return a.err
+	}
+	return nil
+}
+
 func newApp(ctx context.Context, src *source.Source, isDark bool) *app {
 	st := newStyles(isDark)
 	c := newColors(isDark, false)

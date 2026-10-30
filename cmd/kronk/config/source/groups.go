@@ -1,6 +1,9 @@
 package source
 
-import "strings"
+import (
+	"path"
+	"strings"
+)
 
 // Group is where the picker lists a model.
 type Group string
@@ -36,4 +39,14 @@ func (c Choice) Group() Group {
 		return GroupRerank
 	}
 	return GroupEmbeddings
+}
+
+// Served reports whether the server can use c. The runtime treats a model as
+// an embedding model only when its file name says so: without "embed" it
+// loads, then refuses every embedding request.
+func (c Choice) Served() bool {
+	if c.Group() != GroupEmbeddings {
+		return true
+	}
+	return strings.Contains(strings.ToLower(path.Base(c.ID)), "embed")
 }

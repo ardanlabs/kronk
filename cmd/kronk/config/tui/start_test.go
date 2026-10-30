@@ -82,4 +82,11 @@ func TestValidFile(t *testing.T) {
 			t.Errorf("validFile(%q) = %v, want ok %t", tt.path, err, tt.ok)
 		}
 	}
+
+	if err := validPick(bad); err == nil {
+		t.Error("a picked file that doesn't load must stop at the file question")
+	}
+	if err := validPick(fileOther); err != nil {
+		t.Errorf("another file is checked when its path is entered: %v", err)
+	}
 }

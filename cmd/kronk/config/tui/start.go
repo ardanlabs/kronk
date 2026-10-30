@@ -124,6 +124,7 @@ func (a *app) newStartForm() *huh.Form {
 			Title("Which config file?").
 			Description("Kronk reads one model_config.yaml: server settings and one entry per model.").
 			Options(fileOpts...).
+			Validate(validPick).
 			Value(&s.file)),
 
 		huh.NewGroup(huh.NewInput().
@@ -188,6 +189,15 @@ func (a *app) newStartForm() *huh.Form {
 			Value(&s.ram)).
 			WithHideFunc(func() bool { return !another() }),
 	)
+}
+
+// validPick checks the file picked from the list, before any other question.
+// Another file is checked when its path is entered.
+func validPick(s string) error {
+	if s == fileOther {
+		return nil
+	}
+	return validFile(s)
 }
 
 // validFile accepts a path to an existing config file that loads, or to a

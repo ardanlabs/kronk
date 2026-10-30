@@ -409,7 +409,9 @@ closes the list.
 4. **The model.** First the kind of model: chat, embeddings, rerank,
    decision, audio (whisper) or image, each with its number of models, or
    **All models** to search every kind. Then the models of that kind; type to
-   search. Installed models come first, then the catalog. A catalog chat model is
+   search. Installed models come first, then the catalog. Embedding models
+   without `embed` in their file name are not listed, because the server can't
+   use them. A catalog chat model is
    configured from its GGUF header alone, which is fetched and cached; any
    catalog model is offered for download after saving. When a chat
    model already has entries in the file, pick the one to change or add a
