@@ -2,6 +2,8 @@ module github.com/ardanlabs/kronk/examples
 
 go 1.27.3
 
+godebug multipathtcp=0
+
 replace github.com/ardanlabs/kronk => ../
 
 require (

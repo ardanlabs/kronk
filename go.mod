@@ -2,6 +2,8 @@ module github.com/ardanlabs/kronk
 
 go 1.27.3
 
+godebug multipathtcp=0
+
 require (
 	github.com/ardanlabs/bucky v1.1.5
 	github.com/ardanlabs/conf/v3 v3.13.0
