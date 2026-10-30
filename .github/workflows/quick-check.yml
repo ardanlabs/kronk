@@ -1,0 +1,104 @@
+name: Quick-check
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 02:00 EST (UTC-5) year-round; 03:00 during Eastern daylight saving time.
+    - cron: '0 7 * * *'
+
+# Serializes Quick-check and Promote to Release, not other work on Pacha.
+# Do not cancel an existing measurement when another invocation is queued.
+concurrency:
+  group: quick-check-pacha
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  # Delete the previous queue only after its replacement has been uploaded.
+  actions: write
+
+env:
+  GOTOOLCHAIN: local
+  KRONK_PROCESSOR: metal
+
+jobs:
+  matrix:
+    runs-on: [self-hosted, macOS, ARM64, sand, metal]
+    timeout-minutes: 180
+    steps:
+      - name: Checkout tested code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Restore retained run queue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/quick-check.sh restore
+
+      - name: Skip an already tested commit
+        id: prepare
+        run: bash .github/scripts/quick-check.sh prepare
+
+      - name: Set up Kronk
+        if: steps.prepare.outputs.skip != 'true'
+        uses: ./.github/actions/setup-kronk
+
+      - name: Download quick-check models
+        if: steps.prepare.outputs.skip != 'true'
+        run: |
+          kronk model pull --local unsloth/mtp-Qwen3.6-35B-A3B-UD-Q2_K_XL
+          kronk model pull --local ornith-ai/Ornith-1.5-9B-Q8_0
+
+      - name: Build and start tools server
+        if: steps.prepare.outputs.skip != 'true'
+        env:
+          # Scope injection to the server, not quick-check's machine probes.
+          DYLD_INSERT_LIBRARIES: ${{ runner.temp }}/LumeMetalCapabilities.dylib
+          LUME_METAL_APPLE_FAMILY_MAX: "1009"
+          LUME_METAL_MAX_THREADGROUP_MEMORY: "32768"
+        run: bash .github/scripts/quick-check.sh start
+
+      - name: Run complete matrix
+        id: check
+        if: steps.prepare.outputs.skip != 'true'
+        run: make quick-check-this-code
+
+      # All artifact preparation and transfers happen outside server/tool time.
+      - name: Stop server and collect diagnostics
+        if: ${{ always() && steps.prepare.outputs.skip != 'true' }}
+        env:
+          CHECK_OUTCOME: ${{ steps.check.outcome }}
+          RUNNER_IDENTITY: ${{ runner.name }}
+        run: bash .github/scripts/quick-check.sh finish
+
+      - name: Compare available baselines
+        if: ${{ !cancelled() && steps.check.outcome == 'success' }}
+        run: bash .github/scripts/quick-check.sh compare
+
+      # The tool retains failed/interrupted candidates without displacing
+      # passing baselines. Preserve the whole queue, even after comparison fails.
+      - name: Package retained run queue
+        id: snapshot
+        if: ${{ always() && steps.check.outcome != 'skipped' && steps.check.outcome != '' }}
+        run: bash .github/scripts/quick-check.sh snapshot
+
+      - name: Save retained run queue
+        id: upload
+        if: ${{ always() && steps.snapshot.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          # Unique per attempt: retrying a job must not delete its last queue
+          # before the replacement upload has succeeded.
+          name: quick-check-queue-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/quick-check-baselines.tgz
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Remove superseded queue artifacts
+        if: ${{ always() && steps.upload.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEEP_ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+        run: bash .github/scripts/quick-check.sh prune

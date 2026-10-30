@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -29,9 +28,10 @@ func (r report) serverVersion() string {
 }
 
 type storedRun struct {
-	path    string
-	report  matrixReport
-	started time.Time
+	path     string
+	report   matrixReport
+	started  time.Time
+	promoted string
 }
 
 // Recognize finalized managed runs only; archives, symlinks and partial outputs
@@ -80,7 +80,11 @@ func savedRuns(parent string) ([]storedRun, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%s: missing or invalid test timestamp: %w", path, err)
 		}
-		runs = append(runs, storedRun{path, r, started})
+		promoted, err := promotedRelease(path, r.ServerRevision)
+		if err != nil {
+			return nil, err
+		}
+		runs = append(runs, storedRun{path: path, report: r, started: started, promoted: promoted})
 	}
 	slices.SortFunc(runs, func(a, b storedRun) int {
 		if order := b.started.Compare(a.started); order != 0 {
@@ -104,7 +108,6 @@ func releaseTags(parent context.Context) (map[string]string, error) {
 	}
 	refs := map[string]string{}
 	peeled := map[string]string{}
-	pattern := regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$`)
 	for line := range strings.SplitSeq(string(data), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) != 2 {
@@ -112,7 +115,7 @@ func releaseTags(parent context.Context) (map[string]string, error) {
 		}
 		tag := strings.TrimPrefix(fields[1], "refs/tags/")
 		name := strings.TrimSuffix(tag, "^{}")
-		if !pattern.MatchString(name) {
+		if !releasePattern.MatchString(name) {
 			continue
 		}
 		if name != tag {
@@ -134,11 +137,12 @@ func releaseTags(parent context.Context) (map[string]string, error) {
 
 func recordReleaseComparison(parent, baselineTag, candidateTag string, a, b matrixInput, c matrixComparison) error {
 	// The compact history has no diagnostics or room for two machine descriptions.
-	// Keep failed comparisons and mismatched/unknown machines in comparison.log only.
+	// Keep mismatched/unknown machines in comparison.log only. Failed runs retain
+	// their recorded verdicts and unavailable metrics rather than being certified.
 	host, _ := b.summary.Machine["host"].(string)
 	ram, vram := eventInt(b.summary.Machine, "system_ram_bytes"), eventInt(b.summary.Machine, "gpu_total_bytes")
 	unified, knownUnified := b.summary.Machine["unified_memory"].(bool)
-	if c.Status != "PASS" || !reflect.DeepEqual(a.summary.Machine, b.summary.Machine) || host == "" || ram <= 0 || vram <= 0 || !knownUnified {
+	if !reflect.DeepEqual(a.summary.Machine, b.summary.Machine) || host == "" || ram <= 0 || vram <= 0 || !knownUnified {
 		return nil
 	}
 	path := filepath.Join(filepath.Dir(parent), "release-history.log")
@@ -198,6 +202,9 @@ func recordReleaseComparison(parent, baselineTag, candidateTag string, a, b matr
 	if err := c.writeTable(&entry); err != nil {
 		return err
 	}
+	if c.Status != "PASS" {
+		fmt.Fprintf(&entry, "\nSaved-run checks: baseline %s / candidate %s\n", a.summary.Status, b.summary.Status)
+	}
 	// One complete table per ordered release pair and machine. Move updated
 	// entries to the end so the next comparison sees the latest reference ID.
 	sections = slices.DeleteFunc(sections, func(section string) bool { return strings.HasPrefix(section, key) })
@@ -219,10 +226,10 @@ func recordReleaseComparison(parent, baselineTag, candidateTag string, a, b matr
 	return os.Rename(f.Name(), path)
 }
 
-// Keep the fresh candidate, the most recent previous PASS release, and the newest
-// remaining PASS commit. Only a PASS candidate replaces baselines of its commit;
-// failed/interrupted candidates preserve them. Baseline commits stay distinct.
-// A fresh release only becomes the release baseline on a later run.
+// Keep the fresh candidate, the manually promoted release (regardless of verdict)
+// or most recent previous PASS release, and the newest remaining PASS commit.
+// Only a PASS candidate replaces unpromoted baselines of its commit;
+// failed/interrupted candidates preserve them.
 func retainRuns(ctx context.Context, parent, current string, tags map[string]string) (string, error) {
 	runs, err := savedRuns(parent)
 	if err != nil {
@@ -233,7 +240,7 @@ func retainRuns(ctx context.Context, parent, current string, tags map[string]str
 	for _, run := range runs {
 		if run.path == current {
 			candidate = run
-		} else if run.report.Status == "PASS" {
+		} else if run.report.Status == "PASS" || (run.promoted != "" && strings.HasPrefix(filepath.Base(run.path), "release-")) {
 			previous = append(previous, run)
 		}
 	}
@@ -241,7 +248,18 @@ func retainRuns(ctx context.Context, parent, current string, tags map[string]str
 		return current, fmt.Errorf("current run is not finalized: %s", current)
 	}
 	var release, older storedRun
+	// An explicit promotion remains the baseline until another manual promotion,
+	// even if later commits acquire real tags or rerun the promoted commit.
 	for _, run := range previous {
+		if run.promoted != "" && strings.HasPrefix(filepath.Base(run.path), "release-") {
+			release = run
+			break
+		}
+	}
+	for _, run := range previous {
+		if release.path != "" {
+			break
+		}
 		if candidate.report.Status == "PASS" && candidate.report.serverVersion() != "unknown" && run.report.serverVersion() == candidate.report.serverVersion() {
 			continue
 		}
@@ -270,7 +288,10 @@ func retainRuns(ctx context.Context, parent, current string, tags map[string]str
 	selected := []storedRun{candidate}
 	names := []string{"new-" + label(candidate)}
 	if release.path != "" {
-		tag := tags[release.report.ServerRevision]
+		tag := release.promoted
+		if tag == "" {
+			tag = tags[release.report.ServerRevision]
+		}
 		if tag == "" {
 			tag = strings.TrimPrefix(filepath.Base(release.path), "release-")
 		}

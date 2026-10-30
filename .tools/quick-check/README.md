@@ -74,17 +74,26 @@ All selected cells share these three files and one retention queue, directly und
 
 Those files can be useful to feed a harness and investigate reasons for slowdowns or regressions, alongside the bigger reliability tools.
 
-All of `output/` is Git-ignored. Up to three distinct runs are retained:
+All of `output/` is Git-ignored. Up to three run directories are retained:
 
 - `new-<commit>`: fresh run, including `FAIL` or `INTERRUPTED`.
-- `release-<tag>`: most recent previous passing release.
+- `release-<version>`: manually promoted release baseline (or a recognized passing tagged run).
 - `old-<commit>`: newest remaining previous passing run, release or not.
 
 A fresh release preserves the older release baseline until a later run advances
-the queue. Only passing runs can advance either baseline. Failed or interrupted
+the queue. Only passing runs automatically advance either baseline. Failed or interrupted
 reruns preserve passing baselines even at the same commit. The next run replaces
 the previous failed/interrupted `new` report: this queue is not a failure archive.
 Local archives under `output/saved_local_runs/` remain outside retention.
+
+## Promote to Release
+
+Designate a saved run as a release baseline without rerunning
+inference or creating a Git tag:
+
+```sh
+go run ./.tools/quick-check promote -release v1.33.1 -commit FULL_TESTED_SHA
+```
 
 
 ## Compare
@@ -101,8 +110,9 @@ make quick-compare-against-commit \
   QUICK_COMPARE_CANDIDATE=/path/to/candidate
 ```
 
-Release comparisons check remote tags. Successful same-machine release comparisons
-update `release-history.log`: release tags, machine, reference-update flag, and the
+Release comparisons use promotion labels when present, otherwise remote tags.
+Same-machine release-to-release comparisons update `release-history.log`:
+release labels, machine, reference-update flag, and the
 comparison table only. Repeating a release pair on that machine replaces its entry;
 commit the file to preserve history. The flag compares the candidate's reference
 set with the previous saved comparison on that machine (`unknown` initially);

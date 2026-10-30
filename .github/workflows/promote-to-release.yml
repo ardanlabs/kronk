@@ -1,0 +1,71 @@
+name: Promote to Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Intended release label (vX.Y.Z); no tag required
+        required: true
+        type: string
+      commit:
+        description: Full tested commit SHA in the retained queue
+        required: true
+        type: string
+
+# Share the measurement queue lock, including while restoring and replacing it.
+concurrency:
+  group: quick-check-pacha
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout promotion tool
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: main
+
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: .go-version
+
+      - name: Restore retained run queue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/quick-check.sh restore
+
+      - name: Promote tested evidence
+        env:
+          RELEASE: ${{ inputs.release }}
+          COMMIT: ${{ inputs.commit }}
+        run: bash .github/scripts/quick-check.sh promote
+
+      # Default success conditions deliberately leave the previous queue intact
+      # on operational promotion, packaging, or upload failure.
+      - name: Package retained run queue
+        run: bash .github/scripts/quick-check.sh snapshot
+
+      - name: Save retained run queue
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: quick-check-queue-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/quick-check-baselines.tgz
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Remove superseded queue artifacts
+        if: ${{ steps.upload.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEEP_ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+        run: bash .github/scripts/quick-check.sh prune
