@@ -54,6 +54,7 @@ type comparisonInput struct {
 	requests              []any
 	native                map[string]string
 	sharedWarmupValidated bool
+	snapshot              *snapshotCell
 }
 
 func compareCommand(args []string, out io.Writer) error {
@@ -299,6 +300,11 @@ func readCellComparison(s runSummary, r report, events []byte) (comparisonInput,
 }
 
 func comparisonIdentity(dir string, input comparisonInput) comparisonRun {
+	if input.snapshot != nil {
+		run := input.snapshot.Identity
+		run.Directory = dir
+		return run
+	}
 	s := input.summary
 	run := comparisonRun{Directory: dir, Version: input.report.serverVersion(), Status: s.Status,
 		Executed: s.RepetitionsExecuted, Requested: s.RepetitionsRequested, Problems: []string{}, ReferenceTokens: s.ReferenceTokens}
@@ -481,47 +487,19 @@ func compareRuns(aDir, bDir string, a, b comparisonInput) comparison {
 			c.Warnings = append(c.Warnings, "model configuration."+key+": changed or unavailable in one run")
 		}
 	}
-	if !reflect.DeepEqual(comparisonRequests(a), comparisonRequests(b)) {
-		c.Warnings = append(c.Warnings, "request bodies/order differ (includes generated assistant history); input/settings are not identical")
+	if controlledInputHash(a) != controlledInputHash(b) {
+		c.Warnings = append(c.Warnings, "controlled request inputs differ (excluding generated assistant history)")
 	} else {
-		c.Matches = append(c.Matches, "request bodies/order")
-	}
-	for i := range min(len(a.summary.Repetitions), len(b.summary.Repetitions)) {
-		x, y := a.summary.Repetitions[i], b.summary.Repetitions[i]
-		if x.SystemTokens <= 0 || y.SystemTokens <= 0 || x.SystemSHA256 == "" || y.SystemSHA256 == "" || x.SystemTokens != y.SystemTokens || x.SystemSHA256 != y.SystemSHA256 {
-			c.Warnings = append(c.Warnings, fmt.Sprintf("repetition %d: system token count/hash changed or missing", i+1))
-		} else {
-			c.Matches = append(c.Matches, fmt.Sprintf("repetition %d system tokens/hash", i+1))
-		}
-	}
-	observations := func(r report) [][]int {
-		var counts [][]int
-		results := []result{}
-		if r.WarmupRequest != nil {
-			results = append(results, *r.WarmupRequest)
-		}
-		for _, rep := range r.Repetitions {
-			results = append(results, rep.Results...)
-		}
-		for _, res := range results {
-			counts = append(counts, []int{res.Usage.PromptTokens, res.Usage.CompletionTokens,
-				res.Execution.ReusedTokens, res.Execution.OutputTokens, res.Execution.DraftTokens, res.Execution.DraftAccepted})
-		}
-		return counts
-	}
-	if reflect.DeepEqual(observations(a.report), observations(b.report)) {
-		c.Matches = append(c.Matches, "per-request prompt/output/cache/draft counts")
-	} else {
-		c.Warnings = append(c.Warnings, "per-request prompt/output/cache/draft counts differ; elapsed times may include different work")
+		c.Matches = append(c.Matches, "controlled request inputs")
 	}
 	// Validate each side independently: a failed/partial run must not hide the
 	// other run's valid measurements, but it cannot contribute values or deltas.
 	var x, y map[string][]float64
 	if len(c.Baseline.Problems) == 0 {
-		x = comparisonMetrics(a.report)
+		x = a.metricSamples()
 	}
 	if len(c.Candidate.Problems) == 0 {
-		y = comparisonMetrics(b.report)
+		y = b.metricSamples()
 	}
 	metricKeys := make(map[string]bool)
 	for key := range x {
@@ -608,7 +586,7 @@ func (c comparison) textWarnings() []string {
 		if strings.HasPrefix(warning, "harness revision:") {
 			continue
 		}
-		if strings.HasPrefix(warning, "model configuration") && slices.Contains(c.Matches, "effective native parameters") && slices.Contains(c.Matches, "request bodies/order") {
+		if strings.HasPrefix(warning, "model configuration") && slices.Contains(c.Matches, "effective native parameters") && slices.Contains(c.Matches, "controlled request inputs") {
 			continue
 		}
 		warnings = append(warnings, warning)

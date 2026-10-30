@@ -86,6 +86,11 @@ func promoteCommand(args []string, out io.Writer) error {
 	}
 	destination := filepath.Join(*parent, "release-"+*release)
 	if previous == destination {
+		if input, err := readComparison(destination); err == nil {
+			if err := recordReleaseStart(*parent, *release, input); err != nil {
+				return err
+			}
+		}
 		fmt.Fprintf(out, "%s already represents tested commit %s\n", *release, *commit)
 		return nil
 	}
@@ -97,7 +102,11 @@ func promoteCommand(args []string, out io.Writer) error {
 		return err
 	}
 	defer os.RemoveAll(staged)
-	for _, name := range []string{"summary.json", "events.ndjson", "tool.log"} {
+	files := []string{"summary.json", "events.ndjson", "tool.log"}
+	if _, err := os.Stat(filepath.Join(source, "summary.json")); os.IsNotExist(err) {
+		files = []string{"comparison-snapshot.json"}
+	}
+	for _, name := range files {
 		data, err := os.ReadFile(filepath.Join(source, name))
 		if err != nil {
 			return err
@@ -127,6 +136,11 @@ func promoteCommand(args []string, out io.Writer) error {
 			// Comparison reports what is available; it does not authorize
 			// promotion. The operator may choose a failed or interrupted run.
 			fmt.Fprintf(out, "Release comparison: %v\nPromotion remains the operator's decision.\n", err)
+		}
+	}
+	if input, err := readComparison(destination); err == nil {
+		if err := recordReleaseStart(*parent, *release, input); err != nil {
+			return err
 		}
 	}
 	if previous != "" {

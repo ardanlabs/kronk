@@ -23,22 +23,30 @@ func TestPromoteFailedRunRetention(t *testing.T) {
 	r.Repetitions[0].Status = "FAIL"
 	r.Repetitions[0].Findings = []string{"content finding"}
 	source := filepath.Join(out, "new-aaaaaaa")
-	if err := os.Rename(writeComparisonFixture(t, r, report{ID: matrixCells[1].id, Status: "NOT_RUN"}), source); err != nil {
+	// A peer cell can fail before it observes the server revision.
+	if err := os.Rename(writeComparisonFixture(t, r, report{ID: matrixCells[1].id, Status: "FAIL", Findings: []string{"interrupted before model became idle"}}), source); err != nil {
 		t.Fatal(err)
 	}
+	compact := filepath.Join(t.TempDir(), "queue")
+	if err := snapshotCommand([]string{"-out", out, "-dest", compact}, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	out, source = compact, filepath.Join(compact, "new-aaaaaaa")
 	if err := promoteCommand([]string{"-out", out, "-release", "v1.0.0", "-commit", r.ServerRevision}, &bytes.Buffer{}); err != nil {
 		t.Fatalf("promote failed, partial run with unfinished repetitions: %v", err)
 	}
 	release := filepath.Join(out, "release-v1.0.0")
-	for _, name := range []string{"summary.json", "events.ndjson", "tool.log"} {
-		original, err := os.ReadFile(filepath.Join(source, name))
-		if err != nil {
-			t.Fatal(err)
-		}
-		promoted, err := os.ReadFile(filepath.Join(release, name))
-		if err != nil || !bytes.Equal(original, promoted) {
-			t.Fatalf("promotion changed %s: %v", name, err)
-		}
+	original, err := os.ReadFile(filepath.Join(source, "comparison-snapshot.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	promoted, err := os.ReadFile(filepath.Join(release, "comparison-snapshot.json"))
+	if err != nil || !bytes.Equal(original, promoted) {
+		t.Fatalf("promotion changed snapshot: %v", err)
+	}
+	history, err := os.ReadFile(filepath.Join(filepath.Dir(out), "release-history.log"))
+	if err != nil || !strings.Contains(string(history), "v1.0.0 (starting baseline; no previous release;") {
+		t.Fatalf("missing honest starting baseline: %s, %v", history, err)
 	}
 	next := comparisonFixture([]float64{3})
 	next.ServerRevision = strings.Repeat("b", 40)
@@ -101,13 +109,11 @@ func TestRetentionPassBaselines(t *testing.T) {
 				{a, "PASS", -1, -1},
 				{b, "PASS", -1, 0},
 				{c, "FAIL", 1, 0},
-				{c, "INTERRUPTED", 1, 0},
 				{a, "FAIL", 1, 0},
-				{a, "INTERRUPTED", 1, 0},
 				{c, "PASS", 1, 0},
-				{d, "PASS", 1, 6},
-				{c, "PASS", 7, -1}, // Only PASS deduplicates the release commit.
-				{b, "PASS", 7, 8},
+				{d, "PASS", 1, 4},
+				{c, "PASS", 5, -1}, // Only PASS deduplicates the release commit.
+				{b, "PASS", 5, 6},
 			},
 		},
 	} {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -280,6 +281,14 @@ func TestQuickCheckCommand(t *testing.T) {
 			if defect == "interrupt" {
 				if summary.Status != "INTERRUPTED" || cell.Status != "PASS" || cell.Measurements == nil || summary.Cells[2].Status != "FAIL" || summary.Cells[2].Measurements != nil || summary.Cells[3].Status != "NOT_RUN" {
 					t.Fatalf("lost completed/partial cells: %s", data)
+				}
+				compact := filepath.Join(root, "compact")
+				if err := snapshotCommand([]string{"-out", out, "-dest", compact}, io.Discard); err != nil {
+					t.Fatal(err)
+				}
+				input, err := readComparison(filepath.Join(compact, filepath.Base(filepath.Dir(paths[0]))))
+				if err != nil || input.summary.Status != "INTERRUPTED" || len(input.cells[cell.ID].metricSamples()) == 0 || len(input.cells[summary.Cells[2].ID].metricSamples()) != 0 || input.cells[summary.Cells[3].ID].summary.Status != "NOT_RUN" {
+					t.Fatalf("snapshot lost completed/partial cells: %+v, %v", input.summary, err)
 				}
 			} else {
 				if (cell.Status == "PASS") != wantPass || len(cell.Repetitions) != 1 {
