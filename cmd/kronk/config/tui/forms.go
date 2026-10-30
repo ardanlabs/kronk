@@ -95,6 +95,7 @@ func backKeyMap() *huh.KeyMap {
 	km.Select.Prev.SetHelp("esc", "back")
 	km.Text.Prev.SetHelp("esc", "back")
 	km.MultiSelect.Prev.SetHelp("esc", "back")
+	km.MultiSelect.Toggle.SetHelp("space", "toggle")
 
 	// The picker's search: esc closes and clears it at once (clearSearch).
 	km.Select.Filter.SetHelp("/", "search")

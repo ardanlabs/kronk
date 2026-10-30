@@ -50,11 +50,14 @@ func run(cmd *cobra.Command) error {
 	follow := theme == "" || theme == "auto"
 
 	p := tea.NewProgram(tui.New(cmd.Context(), src, isDark, follow), tea.WithContext(cmd.Context()))
-	if _, err := p.Run(); err != nil && !errors.Is(err, tea.ErrProgramKilled) {
+	m, err := p.Run()
+	if err != nil && !errors.Is(err, tea.ErrProgramKilled) {
 		return fmt.Errorf("config: %w", err)
 	}
 
-	return nil
+	// The screen is gone by now: the error is printed again and sets the
+	// exit code.
+	return tui.Err(m)
 }
 
 func isTerminal() bool {

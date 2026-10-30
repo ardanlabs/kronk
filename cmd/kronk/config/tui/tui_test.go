@@ -9,6 +9,20 @@ import (
 	"github.com/ardanlabs/kronk/cmd/kronk/config/source"
 )
 
+func TestErrComesFromFail(t *testing.T) {
+	a := newApp(context.Background(), nil, true)
+	if err := Err(a); err != nil {
+		t.Fatalf("err = %v, want none", err)
+	}
+
+	want := errors.New("no catalog")
+	a.fail(want)
+
+	if err := Err(a); !errors.Is(err, want) {
+		t.Fatalf("err = %v, want %v", err, want)
+	}
+}
+
 func TestSaveErrorReturnsToReview(t *testing.T) {
 	a := newApp(context.Background(), nil, true)
 	a.step, a.path, a.otherPath = stepSaving, "/root/model_config.yaml", "./mine.yaml"

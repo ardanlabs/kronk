@@ -76,7 +76,7 @@ func (s *Source) LoadDoc(path string) (modelconfig.Document, error) {
 }
 
 // Choices lists installed models first, then catalog models that are not
-// downloaded yet.
+// downloaded yet. Models the server can't use are left out.
 func (s *Source) Choices(doc modelconfig.Document) ([]Choice, error) {
 	files, err := s.mdls.Files()
 	if err != nil {
@@ -142,7 +142,8 @@ func (s *Source) Choices(doc modelconfig.Document) ([]Choice, error) {
 	// Installed models first, then the catalog; chat before audio and
 	// image in each.
 	mediaInstalled, mediaCatalog := s.mediaChoices(doc)
-	return slices.Concat(installed, mediaInstalled, catalog, mediaCatalog), nil
+	choices := slices.Concat(installed, mediaInstalled, catalog, mediaCatalog)
+	return slices.DeleteFunc(choices, func(c Choice) bool { return !c.Served() }), nil
 }
 
 // EntriesFor lists the entries in models: for a model: its own and its
