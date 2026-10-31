@@ -61,6 +61,7 @@ var ggmlTypeSizes = map[uint32]ggmlTypeInfo{
 	40: {64, 36},   // NVFP4
 	41: {128, 18},  // Q1_0
 	42: {64, 18},   // Q2_0
+	43: {1, 1},     // F8_E4M3
 }
 
 // GGMLRowSize computes the byte size of a single row of ne0 elements for

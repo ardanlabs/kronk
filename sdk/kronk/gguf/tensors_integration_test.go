@@ -19,7 +19,7 @@ func TestGGMLTypeSizesMatchLlama(t *testing.T) {
 	}
 	t.Cleanup(llama.Close)
 
-	if got, want := llama.GGMLTypeCOUNT, llama.GGMLType(43); got != want {
+	if got, want := llama.GGMLTypeCOUNT, llama.GGMLType(44); got != want {
 		t.Fatalf("GGMLTypeCOUNT: got %d, want %d; review the pure-Go sizing table for new types", got, want)
 	}
 
