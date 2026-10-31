@@ -5,7 +5,7 @@
 - [6.1 What Speculative Decoding Does](#61-what-speculative-decoding-does)
 - [6.2 Drafter Sources and Selection](#62-drafter-sources-and-selection)
 - [6.3 Choosing a Drafter](#63-choosing-a-drafter)
-- [6.4 Draft Size and Adaptive Throttling](#64-draft-size-and-adaptive-throttling)
+- [6.4 Draft Size and Classic Adaptive Throttling](#64-draft-size-and-classic-adaptive-throttling)
 - [6.5 Configuration](#65-configuration)
 - [6.6 Measuring the Result](#66-measuring-the-result)
 - [6.7 Limitations and Fallbacks](#67-limitations-and-fallbacks)
@@ -29,12 +29,8 @@ Kronk supports classic speculative decoding with a separate draft model and
 Multi-Token Prediction (MTP). MTP uses a prediction head designed for the
 target rather than a general-purpose smaller language model.
 
-This is a specialized Stage 4 generation loop. The drafter proposes multiple
-candidates, but the target model verifies them and remains authoritative. At a
-divergence Kronk accepts only the verified prefix and chooses a target
-replacement token; when all candidates are accepted it chooses a target bonus
-token. That final target token becomes input to the next decode and is not yet
-committed to KV state when selected.
+The target accepts a verified prefix of the proposals and supplies a replacement
+or bonus token. Rejected proposals do not become authoritative output.
 
 ![Speculative decoding proposal, target verification, acceptance, and state synchronization](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-06/speculative-decoding.svg)
 
@@ -59,7 +55,7 @@ Kronk can load a drafter from four sources:
 | **Classic separate draft** | A `draft-model` configuration names another compatible GGUF. | Requires `nseq-max: 1` |
 | **Shared-KV companion MTP assistant** | A model-specific assistant GGUF, currently used by Gemma4 models, is discovered with the downloaded target. | Supports multiple slots |
 | **Own-KV companion MTP head** | A supported MTP GGUF under the repository's `MTP/` folder, currently used by Qwen3.8-27B, is downloaded with the target. | Supports multiple slots |
-| **Embedded MTP head** | The target GGUF contains supported `nextn_predict_layers` metadata, currently used by Qwen3.5, Qwen3.6, and NVIDIA Nemotron 3 Super models. | Supports multiple slots |
+| **Embedded MTP head** | The target GGUF contains supported head weights, including Qwen3.5, Qwen3.6, Qwen3.8 Flash Next (`qwen4exp`), and NVIDIA Nemotron 3 Super models. | Supports multiple slots |
 
 Kronk checks these sources in that order. A `draft-model` block containing a
 `model-id` explicitly selects the classic separate draft and takes precedence
@@ -76,16 +72,19 @@ separate draft model, and `mtp` requires a compatible companion or embedded
 head. Explicit selection makes it possible to benchmark the same target with
 MTP enabled and disabled without changing downloaded model files.
 
-Embedded detection happens before llama.cpp loads the target. Kronk reads the
-first GGUF shard, where model metadata is stored, and enables MTP tensor loading
-when a recognized architecture advertises a positive `nextn_predict_layers`
-value and that architecture's runtime is enabled. This early step is required
-because llama.cpp otherwise omits gated MTP tensors during model load; adding
-an `ndraft` setting after load cannot recover them.
+Embedded MTP requires a supported head in the downloaded GGUF files.
+Qwen3.5-family files that retain MTP metadata after the head weights were
+stripped are not treated as MTP-capable. Changing `ndraft` cannot add missing
+head weights. Recognized metadata alone does not establish runtime support:
+GLM5 Next currently runs target-only in `auto` and fails loading with
+`speculation: mtp`.
 
-MTP also requires support from the loaded llama.cpp library. When a model
-advertises MTP but the required API is unavailable, Kronk reports that MTP was
-disabled at model load and serves the model without speculation.
+MTP also requires support from the loaded llama.cpp library. In `auto` mode,
+an unavailable MTP API, unsupported recognized runtime, or incompatible embedded
+head width leaves the model running target-only. With `speculation: mtp`, these
+conditions fail model loading instead. Explicit MTP also fails when no compatible
+source is found or a classic separate draft is configured. Automatic selection
+does not suppress errors while loading an otherwise selected drafter.
 
 ### 6.3 Choosing a Drafter
 
@@ -132,18 +131,12 @@ self-contained companion GGUFs through the own-KV runtime. Existing
 shared-tensor sidecars are not compatible; the companion must contain its own
 token embeddings and output tensors.
 
-The pinned b11960 bundle contains the recurrent-memory assertion fix from
-upstream PR #29799 and the Qwen4Exp QSA/indexer correctness fixes from PR
-#29819. MTP hidden rows use the separate state-embedding input introduced in
-PR #30257; token and media embeddings remain separate. In `auto` mode Kronk
-loads a compatible Qwen4Exp companion when one is
+In `auto` mode Kronk loads a compatible Qwen4Exp companion when one is
 available, otherwise it uses a compatible embedded head. The `disabled`
 speculation mode continues to run the target without MTP.
 
-NVIDIA Nemotron 3 Super uses the embedded own-KV MTP runtime. Kronk recognizes
-the `nemotron_h_moe` architecture, preserves recurrent-state rollback for its
-hybrid Mamba-attention target, and uses the model's Qwen3-Coder-compatible tool
-protocol. Separate Nemotron MTPv2 companion files and Nemotron Puzzle MTP are
+NVIDIA Nemotron 3 Super uses the embedded own-KV MTP runtime for the
+`nemotron_h_moe` architecture. Separate Nemotron MTPv2 companion files and Nemotron Puzzle MTP are
 not supported; configure `speculation: disabled` to benchmark target-only
 generation with the same embedded model.
 
@@ -172,7 +165,9 @@ and `ndraft + 1` tokens; a round is not the same as a token.
 MTP always uses its configured `ndraft` as the per-round maximum. Kronk does
 not evaluate acceptance to try lower values, run calibration rounds, or select
 a different value at runtime. An omitted or zero value uses the MTP default of
-3; an explicit positive value remains in effect for the loaded model.
+3; an explicit positive value remains the ceiling for the loaded model. A round
+can propose fewer candidates near context or output limits or when drafting
+reaches an end condition.
 
 Prompt type, sampling settings, and output structure can change MTP acceptance
 and the amount of useful work produced by each round. Coding, summarization,
@@ -208,11 +203,13 @@ Configuration belongs under the target model ID in
 #### 6.5.1 Classic separate draft
 
 ```yaml
-some-provider/target-model:
-  nseq-max: 1
-  draft-model:
-    model-id: some-provider/compatible-draft-model
-    ndraft: 5
+version: 1
+models:
+  some-provider/target-model:
+    nseq-max: 1
+    draft-model:
+      model-id: some-provider/compatible-draft-model
+      ndraft: 5
 ```
 
 The target and draft must already be downloaded. Kronk resolves the configured
@@ -226,12 +223,14 @@ catalog-provided companion files is sufficient for automatic detection.
 
 #### 6.5.3 MTP draft-count override
 
-To change the fixed MTP draft count, set `ndraft` without a `model-id`:
+To change the MTP draft ceiling, set `ndraft` without a `model-id`:
 
 ```yaml
-some-provider/mtp-target-model:
-  draft-model:
-    ndraft: 6
+version: 1
+models:
+  some-provider/mtp-target-model:
+    draft-model:
+      ndraft: 6
 ```
 
 This form supports multiple slots. A value of 0 or an omitted value uses the
@@ -262,26 +261,28 @@ small part of the response. Conversely, a moderate acceptance rate can still
 help when drafting is much cheaper than target decoding. Compare end-to-end
 latency or tokens per second against the same workload with no drafter.
 
-Final `chat-completion` logs use `acceptance_rate`, while batch-engine completion
-logs use `draft_acceptance_rate`. Both also report draft and accepted-token
-counts when a drafter is loaded. Common MTP disable reasons include:
+Final `chat-completion` and batch-engine completion logs use
+`draft_acceptance_rate`. Both report draft-token counts, accepted-token counts,
+and draft coverage when a drafter is loaded, including zero counts when
+speculation did not run. Common MTP disable reasons include:
 
 - `imc-hit` — target cache state was restored without compatible draft state
 - `sync-error` — draft state could not be synchronized after target decoding,
   including media prefill or verification
 
-Startup events under `draft-model`, `draft-model-mtp`, and
-`draft-model-mtp-shared` show which source loaded or why MTP was skipped. See
+Startup events under `draft-model`, `draft-model-mtp`,
+`draft-model-mtp-separate`, `draft-model-mtp-shared`, and `speculation` show
+which source loaded or why MTP was skipped. See
 [Chapter 15](https://www.kronkai.com/manual#chapter-15-observability) for logging and metrics configuration.
 
 ### 6.7 Limitations and Fallbacks
 
 - **Classic separate drafts require one slot.** Set `nseq-max: 1` on the
   target entry.
-- **Multi-slot MTP uses one physical batch per logical decode.** Kronk caps
-  the derived internal `NBatch` and `NUBatch` at the same value because
-  llama.cpp exposes dense NextN hidden states in physical-batch order without
-  a complete mapping back to logical token rows.
+- **Some sampling controls bypass classic speculation.** Requests using grammar,
+  adaptive-p, DRY, frequency/presence penalties, a nondefault repeat penalty,
+  or XTC run target-only. This restriction applies to classic separate drafts,
+  not MTP.
 - **Tokenizer compatibility remains the user's responsibility.** Kronk rejects
   unequal vocabulary sizes, but that check cannot establish identical token
   mappings or templates.
@@ -296,17 +297,13 @@ Startup events under `draft-model`, `draft-model-mtp`, and
   rather than continuing from ambiguous recurrent state.
 - **IMC may restore target state without draft state.** Target-prefix reuse
   remains valid. Shared-target-KV MTP resumes from the restored target state.
-  Own-KV MTP resumes only when Kronk can restore the matching draft snapshot
-  and saved final hidden row; if either is absent or invalid, that request runs
+  Own-KV MTP resumes only when Kronk can restore compatible draft state;
+  if that state is absent or invalid, the request runs
   target-only rather than drafting from inconsistent state. Text System cache
   entries retain this paired state when it is valid. See
   [Chapter 5](https://www.kronkai.com/manual#chapter-5-message-caching).
-- **MTP supports projected media rows, including M-RoPE images.** The target
-  performs projection and prefill. Own-KV MTP replays those embeddings at their
-  original positions with shifted target hidden states; shared-KV MTP captures
-  hidden state without replaying the media. IMC retains a matching own-KV draft
-  snapshot and final hidden row when synchronization and snapshotting succeed.
-  Incompatible draft input widths or failed synchronization fall back to
+- **MTP supports media input, including M-RoPE images.** Compatible draft state
+  can also be retained for IMC reuse. Incompatible draft input widths or failed synchronization fall back to
   target-only execution for that request. Classic separate drafts still cannot
   reconstruct media prefixes. See
   [Chapter 11](https://www.kronkai.com/manual#chapter-11-multimodal-models).

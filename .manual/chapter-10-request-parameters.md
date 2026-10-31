@@ -27,10 +27,17 @@ recommendation, then Kronk baseline. See
 [Chapter 3 §3.7](https://www.kronkai.com/manual#37-advanced-features)
 for per-model `sampling-parameters`.
 
+This precedence has zero-value exceptions. Some zero-valued model configuration
+fields are treated as unset and fall back to GGUF recommendations or Kronk
+baselines. Explicit request zeros work for controls such as `temperature`,
+`top_k`, and `min_p`, but `dry_multiplier: 0` and `xtc_probability: 0` currently
+fall back to the resolved model default rather than disabling an enabled sampler.
+
 GGUF recommendations are used when present for `temperature`, `top_k`,
 `top_p`, `min_p`, `repeat_last_n`, `xtc_probability`, and `xtc_threshold`.
 Malformed or absent metadata falls back to Kronk's baseline. Model
-configuration and explicit request values still win over valid metadata.
+configuration and explicit request values take precedence subject to the
+zero-value exceptions above.
 
 JSON requests use `number`, `integer`, `boolean`, and `string` values. The Go
 SDK accepts the corresponding Go values in `model.D`.
@@ -64,11 +71,8 @@ Incremental Message Cache session retains that master seed across conversation t
 Resetting or reassigning the session clears it so the next conversation receives a new
 random seed. Requests without a matched session continue to receive a new random seed.
 An explicit request seed, including `seed: 0`, overrides the configured or retained seed
-and becomes the session's retained seed. It makes target sampling, classic draft sampling,
-and speculative acceptance and replacement decisions repeatable. Kronk derives independent
-request-local streams for the target distribution, XTC, Adaptive-P, the classic draft
-distribution, and speculative decisions. Concurrent requests therefore do not advance one
-another's seeded streams.
+and becomes the session's retained seed. Seeded requests do not consume one
+another's sampling randomness.
 Repeatability requires the same Kronk and native-library builds, model files,
 request, sampling settings, backend and devices, speculative mode, and
 equivalent batching conditions. It is not guaranteed across software versions,
@@ -84,7 +88,7 @@ Kronk supports both token penalties and DRY n-gram penalties:
 | `repeat_last_n`      | integer | `64`     | Number of recent tokens considered by repetition penalties; `0` disables them and `-1` uses the full context. |
 | `frequency_penalty`  | number  | `0.0`    | Penalizes tokens in proportion to how often they appeared. |
 | `presence_penalty`   | number  | `0.0`    | Applies a flat penalty to tokens that appeared at least once. |
-| `dry_multiplier`     | number  | `0.0`    | Enables DRY and controls its strength; `0` disables it. |
+| `dry_multiplier`     | number  | `0.0`    | Enables DRY and controls its strength. Baseline disabled; see the zero-value caveat in §10.1. |
 | `dry_base`           | number  | `1.75`   | Exponential penalty growth for longer repeated sequences. |
 | `dry_allowed_length` | integer | `2`      | Minimum repeated sequence length before DRY applies. |
 | `dry_penalty_last_n` | integer | `-1`     | Recent-token window for DRY; `0` disables it and `-1` uses the full context. |
@@ -99,7 +103,7 @@ XTC probabilistically removes likely candidates to increase diversity:
 
 | JSON key         | Type    | Baseline | Behavior |
 | ---------------- | ------- | -------- | -------- |
-| `xtc_probability` | number  | `0.0`    | Probability that XTC runs for a token; `0` disables it. |
+| `xtc_probability` | number  | `0.0`    | Probability that XTC runs for a token. Baseline disabled; see the zero-value caveat in §10.1. |
 | `xtc_threshold`   | number  | `0.1`    | Probability threshold used when culling candidates. |
 | `xtc_min_keep`    | integer | `1`      | Minimum candidates retained by XTC. |
 

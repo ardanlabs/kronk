@@ -5,127 +5,52 @@
 - [19.1 Overview](#191-overview)
 - [19.2 Install Stable Diffusion Libraries](#192-install-stable-diffusion-libraries)
 - [19.3 Manage Model Bundles](#193-manage-model-bundles)
-- [19.4 Go SDK](#194-go-sdk)
-  - [19.4.1 Initialize Malina](#1941-initialize-malina)
-  - [19.4.2 Load and Unload a Model](#1942-load-and-unload-a-model)
-  - [19.4.3 Generate an Image](#1943-generate-an-image)
-- [19.5 Multi-File Model Bundles](#195-multi-file-model-bundles)
-- [19.6 Image-to-Image Generation](#196-image-to-image-generation)
-  - [19.6.1 ControlNet](#1961-controlnet)
-  - [19.6.2 ADetailer](#1962-adetailer)
-  - [19.6.3 AnimateDiff](#1963-animatediff)
-  - [19.6.4 Wan2.2 S2V](#1964-wan22-s2v)
-  - [19.6.5 Upscaling](#1965-upscaling)
-- [19.7 Logging, Progress, and Diagnostics](#197-logging-progress-and-diagnostics)
-- [19.8 Motion-JPEG Encoding](#198-motion-jpeg-encoding)
-- [19.9 Examples](#199-examples)
-- [19.10 Current Scope and Limitations](#1910-current-scope-and-limitations)
-- [19.11 Troubleshooting](#1911-troubleshooting)
+- [19.4 Server Configuration and Resources](#194-server-configuration-and-resources)
+- [19.5 Browser UI](#195-browser-ui)
+- [19.6 Image Generation and Editing API](#196-image-generation-and-editing-api)
+- [19.7 Progress and Administration](#197-progress-and-administration)
+- [19.8 Limitations and Developer Resources](#198-limitations-and-developer-resources)
+- [19.9 Troubleshooting](#199-troubleshooting)
 
 ---
 
-**Experimental:** The Malina SDK public API is subject to change.
-
-Malina is Kronk's image-generation SDK. It uses
-[`stable-diffusion.cpp`](https://github.com/leejet/stable-diffusion.cpp)
-through the [`malina`](https://github.com/ardanlabs/malina) bindings and is
-available through the Go packages under `sdk/malina`.
-
-Using Malina requires both a compatible stable-diffusion.cpp library bundle
-and a supported model bundle. The libraries provide the native inference
-engine. The model bundle contains either one complete checkpoint or the set of
-component files required by a diffusion pipeline.
+**Experimental:** Malina's public SDK API is subject to change.
 
 ### 19.1 Overview
 
-The current SDK supports:
+Malina is Kronk's image-generation subsystem, powered by
+[stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp). It needs
+both compatible native libraries and a supported model bundle. A bundle can be
+a single checkpoint or several pipeline components; downloading a language-model
+GGUF does not supply an image-generation pipeline.
 
-- text-to-image generation;
-- image-to-image generation from a Go `image.Image`;
-- Canny ControlNet conditioning and ADetailer face refinement;
-- AnimateDiff video generation and Real-ESRGAN upscaling;
-- single-checkpoint and multi-file diffusion pipelines;
-- curated model-bundle download and validation;
-- native library detection, installation, and version management;
-- application-controlled native logging and progress reporting;
-- stable-diffusion.cpp system diagnostics; and
-- Motion-JPEG AVI encoding from generated or existing image frames.
+| Surface | Supported workflows |
+| ------- | ------------------- |
+| Model server and BUI | Text-to-image and image-to-image; PNG results and server-wide progress |
+| Local CLI | Library and curated model-bundle installation, listing, and removal |
+| SDK | Image generation/editing plus ControlNet, ADetailer, video generation, upscaling, and Motion-JPEG encoding |
 
-The Malina API follows the same high-level shape as the Kronk and Bucky SDKs:
-
-1. Detect and install compatible native libraries.
-2. Initialize the process-wide native backend.
-3. Download a curated model bundle.
-4. Construct a handle with one or more contexts for a loaded model.
-5. Perform work through the handle.
-6. Unload the handle.
-
-Malina is available through the SDK, local tooling, and the Kronk model server.
-The CLI manages local libraries and model bundles. The server's shared resource
-manager performs RAM and VRAM admission and eviction for Malina models. The
-basic `POST /v1/images/generations` and `POST /v1/images/edits` endpoints create
-and transform images. `GET /v1/images/events` streams process-global model
-loading and generation progress for those operations. ControlNet, ADetailer,
-video, and upscaling operations remain SDK-only.
-
-Configure server-loaded bundles under the top-level `malina-models` mapping in
-`~/.kronk/models/model_config.yaml`, using the bundle ID shown by
-`kronk malina model list`:
-
-```yaml
-version: 2
-malina-models:
-  sd-1.5:
-    concurrency: 2
-    queue-depth: 2
-    admission-timeout: 3m
-    cpu-threads: 0
-```
-
-Each concurrency slot loads another native model context, increasing RAM or
-VRAM use. Queue depth adds waiting requests without loading more contexts.
-Restart the server after changing these settings.
+The server shares memory admission and retention controls with the language
+and Bucky backends. Advanced SDK features are not additional HTTP routes.
 
 ### 19.2 Install Stable Diffusion Libraries
 
-Install and validate the pinned stable-diffusion.cpp build for the current host:
+Install the pinned bundle for the current host:
 
 ```shell
 kronk malina libs --local
+kronk malina libs --list-combinations --local
+kronk malina libs --list-installs --local
 ```
 
-Use `kronk malina libs --help` for version selection, supported combinations,
-parallel installs for other platform triples, listing, and removal. Malina does
-not have model-server library-management routes, so `--local` is currently
-required for these operations.
+The Malina CLI currently requires `--local`. Server-side management is available
+through the BUI and `/v1/malina/...` APIs, not through default CLI web mode.
+Run `kronk malina libs --help` for version selection, installation for another
+platform triple, and removal.
 
-The normal SDK flow detects the current host, resolves a compatible runtime,
-and installs Kronk's pinned stable-diffusion.cpp version:
-
-```go
-ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
-defer cancel()
-
-libs, err := libs.New(
-    libs.WithDetect(ctx, malina.FmtLogger),
-)
-if err != nil {
-    return err
-}
-
-if _, err := libs.Download(ctx, malina.FmtLogger); err != nil {
-    return err
-}
-```
-
-Libraries are installed below `~/.kronk/malina-libraries/` by default, using
-one directory per operating-system, architecture, and processor combination:
-
-```text
-~/.kronk/malina-libraries/<os>/<arch>/<processor>/
-```
-
-The published combinations are:
+Libraries normally live under
+`~/.kronk/malina-libraries/<os>/<arch>/<processor>/`. Supported combinations
+for the pinned release include:
 
 | Operating system | Architecture | Processors |
 | ---------------- | ------------ | ---------- |
@@ -133,696 +58,240 @@ The published combinations are:
 | Linux | `amd64` | `cpu`, `vulkan`, `rocm` |
 | Windows | `amd64` | `cpu`, `cuda`, `vulkan`, `rocm` |
 
-Use `libs.SupportedCombinations()` as the source of truth for combinations
-available to the installed Kronk version.
-
-The macOS `cpu` and `metal` choices download the same Metal-capable Darwin
-archive; choosing the `cpu` directory alone does not force CPU execution.
-There are no published Linux CUDA or arm64 Linux/Windows bundles for this pin.
-
-Automatic selection treats detected hardware and environment-derived runtime
-values as preferences and falls back to a compatible runtime when possible.
-The `libs.WithArch`, `libs.WithOS`, and `libs.WithProcessor` options are
-authoritative when they form a published combination. An explicit library path
-is also authoritative.
-
-The library manager recognizes these path and platform overrides:
+Use `--list-combinations` for the installed release's current list. The macOS
+`cpu` and `metal` choices use the same Metal-capable archive; selecting its CPU
+directory alone does not force CPU execution. This pin has no Linux CUDA or
+Linux/Windows arm64 bundle.
 
 | Variable | Purpose |
 | -------- | ------- |
-| `KRONK_BASE_PATH` | Changes the root below which Kronk-managed files are stored. |
-| `KRONK_MALINA_LIB_PATH` | Selects an exact stable-diffusion.cpp library directory. |
-| `MALINA_LIB` | Legacy fallback for `KRONK_MALINA_LIB_PATH`. |
-| `KRONK_ARCH` | Supplies the preferred architecture during automatic selection. |
-| `KRONK_OS` | Supplies the preferred operating system during automatic selection. |
-| `KRONK_PROCESSOR` | Supplies the preferred processor during automatic selection; compatibility checks may fall back. |
+| `KRONK_BASE_PATH` | Select the data root without migrating existing files |
+| `KRONK_MALINA_LIB_PATH` | Select an exact stable-diffusion.cpp library directory |
+| `MALINA_LIB` | Legacy fallback for the Malina library path |
+| `KRONK_ARCH`, `KRONK_OS`, `KRONK_PROCESSOR` | Runtime-selection preferences; compatibility checks can select a fallback |
 
-A selected directory containing `version.json` is treated as a
-Kronk-managed installation. A non-empty directory without that file is
-treated as a read-only user-managed build: Malina can load from it, but the
-library manager will not upgrade, replace, or remove it.
+An explicit library path is authoritative. A nonempty directory without
+`version.json` is a read-only user-managed build, not a managed installation.
+Default verified server startup requires managed metadata and can reject it.
+Using independently trusted custom builds requires an advanced verification
+exception; do not disable verification as routine recovery.
 
-By default, `Download` uses the stable-diffusion.cpp version pinned by the
-Malina release that Kronk depends on. This is the supported choice. Advanced
-users can request a specific version with `libs.WithVersion`, or opt into the
-latest upstream release with:
+Use the libraries pinned to this Kronk release. Newer native libraries are not
+necessarily ABI-compatible; upgrade bindings and libraries together. Offline
+managed installations must match the requested pin and platform. Installation
+is staged so a failed download does not replace the working bundle. Restart
+after changing the selected libraries; the process does not hot-reload them.
 
-```go
-libs, err := libs.New(
-    libs.WithDetect(ctx, malina.FmtLogger),
-    libs.WithAllowUpgrade(true),
-)
-```
-
-An upgraded upstream library may not be ABI-compatible with the Malina and
-Kronk versions in use. Use this option for testing, not as a compatibility
-guarantee. Without an explicit version or upgrade opt-in, Kronk requires the
-exact Malina-compatible default even when a numerically newer managed build is
-already installed. If the host is offline, a mismatched managed build is
-rejected rather than loaded. Library installation is staged and activated
-atomically so a failed download does not replace a working installation.
-
-Malina v1.1.9 requires stable-diffusion.cpp `master-1017-be48649`, authenticated
-by manifest digest
-`sha256:7ecdc95bbc9adfadf813750ba84fc3f3d1f312cbcad339ee46a3e87e190cca03`.
-Compared with v1.1.8's `master-975-95b3090`, image, video, upscaler, and
-ADetailer results use a new native ABI with matching result destructors and
-generation metadata. Video generation parameters also grow a reference-image
-arguments field. Upgrade bindings and native libraries together.
-Successful symbol loading is not proof of ABI compatibility.
-`Download` replaces any mismatched Kronk-managed
-installation with the exact pin. A user-managed library directory is read-only
-to Kronk and must be rebuilt or replaced by its owner. Do not combine Malina
-v1.1.9 with an older native bundle, or older bindings with `master-1017`.
-
-The exact upstream changes are available in the
-[Malina source comparison](https://github.com/ardanlabs/malina/compare/v1.1.8...v1.1.9)
-and the
-[native source comparison](https://github.com/leejet/stable-diffusion.cpp/compare/master-975-95b3090...master-1017-be48649).
+With default verification enabled, installation or verification failures stop
+server startup. Repair the managed bundle locally, then restart. A later native
+initialization failure can instead leave Malina unavailable while the server
+continues; BUI repair is useful only if the server actually remains running.
 
 ### 19.3 Manage Model Bundles
 
-Kronk provides a small, curated catalog rather than accepting arbitrary model
-repository layouts. This keeps component roles and known-compatible files in
-the high-level SDK instead of requiring applications to use Malina's raw
-download API.
-
-The current bundles are:
-
-| Bundle | Files | License | Approximate download |
-| ------ | ----- | ------- | -------------------- |
-| `sd-1.5` | Stable Diffusion 1.5 checkpoint | CreativeML Open RAIL-M | 4.3 GB |
-| `controlnet-canny-sd1.5` | Quantized SD 1.5 and Canny ControlNet | CreativeML Open RAIL-M / OpenRAIL | 2.3 GB |
-| `realesrgan-x4-anime` | Real-ESRGAN 4× anime upscaler | BSD-3-Clause | 18 MB |
-| `adetailer-face-yolov8n` | Quantized SD 1.5 and face detector | CreativeML Open RAIL-M / AGPL-3.0 | 1.6 GB |
-| `animatediff-sd1.5` | Quantized SD 1.5 and AnimateDiff v3 motion module | CreativeML Open RAIL-M / Apache-2.0 | 2.4 GB |
-| `wan2.2-s2v-14b` | Quantized Wan2.2 S2V diffusion and text encoder, VAE, and audio encoder | Apache-2.0 | 18.4 GB |
-| `sdxl-base-1.0` | SDXL Base 1.0 checkpoint | CreativeML Open RAIL++-M | 6.9 GB |
-| `llada-image-turbo` | Quantized diffusion and text encoder, connectors, VAE, and tokenizer | Apache-2.0 | 20.2 GB |
-| `z-image-turbo` | Q4_K diffusion, Q4_K_M Qwen3-4B text encoder, and VAE | Apache-2.0 | 6.7 GB |
-| `moss-image-sft` | Q4_0 diffusion, Q4_K_M Qwen3.5-9B text encoder, FLUX.2 VAE, and tokenizer | Apache-2.0 | 9.4 GB |
-| `z-image-turbo-controlnet-union` | Z-Image-Turbo components and Union 2.1 ControlNet (2601) | Apache-2.0 | 13.4 GB |
-| `flux2-klein-4b` | Diffusion model, VAE, and LLM text encoder | FLUX Non-Commercial | 5.3 GB |
-| `flux2-klein-9b` | Diffusion model, VAE, and LLM text encoder | FLUX Non-Commercial | 11 GB of unique downloads, 16 GB installed |
-
-Use `models.SupportedBundles()` to enumerate names and `models.Catalog()` to
-inspect descriptions, licenses, gating, files, and component roles.
-
-The target native release also supports Qwen Image 2.1, but Kronk does not
-curate it because its license restricts use to non-commercial research and
-evaluation.
-
-Models are installed below `~/.kronk/malina-models/` by default:
-
-```text
-~/.kronk/malina-models/<bundle>/
-```
-
-Manage curated bundles from the CLI:
+Use the curated catalog rather than an arbitrary repository layout:
 
 ```shell
 kronk malina model catalog --local
-kronk malina model pull --local sd-1.5
+kronk malina model pull sd-1.5 --local
 kronk malina model list --local
-kronk malina model remove --local sd-1.5
+kronk malina model remove sd-1.5 --local
 ```
 
-Download a single-file bundle with the backend-compatible `Download` method:
+Models normally live under `~/.kronk/malina-models/<bundle>/`. The catalog
+reports component files, licenses, gating, and download sizes. Budget disk for
+multi-gigabyte downloads and installation staging, not just inference memory.
+Complete installations are reused on subsequent runs.
 
-```go
-mdls, err := models.New()
-if err != nil {
-    return err
-}
+| Bundle | Intended use |
+| ------ | ------------ |
+| `sd-1.5`, `sdxl-base-1.0` | Single-checkpoint image generation |
+| `z-image-turbo`, `llada-image-turbo`, `moss-image-sft` | Component-based image generation |
+| `flux2-klein-4b`, `flux2-klein-9b` | Component-based, license-gated image generation |
+| `controlnet-canny-sd1.5`, `z-image-turbo-controlnet-union` | SDK ControlNet workflows |
+| `adetailer-face-yolov8n` | SDK face refinement |
+| `animatediff-sd1.5`, `wan2.2-s2v-14b` | SDK video workflows |
+| `realesrgan-x4-anime` | SDK upscaling |
 
-mp, err := mdls.Download(
-    ctx,
-    malina.FmtLogger,
-    models.BundleSD15.String(),
-)
-if err != nil {
-    return err
-}
+For gated FLUX.2 bundles, accept the provider's license and supply a read token
+through `KRONK_HF_TOKEN` or `HF_TOKEN`. Review each model's license for your use;
+availability in the catalog is not a grant of commercial rights.
+
+Catalog selection does not change generation defaults. Apply model-specific
+recommendations explicitly in HTTP fields or the BUI:
+
+- **Z-Image-Turbo:** 8 steps and CFG scale 1.
+- **LLaDA-Image-Turbo:** 4 steps and CFG scale 1. Its distinct native
+  reference-image instruction-editing path is not exposed by Kronk.
+- **MOSS-Image-SFT:** dimensions divisible by 16 and CFG scale 3. The curated
+  bundle has not been locally inference-validated.
+
+The server maps the required component roles for supported generation bundles;
+operators do not need to configure individual component paths.
+
+### 19.4 Server Configuration and Resources
+
+Enable media backends and restart after installation.
+`--media-backends-enabled=false` / `KRONK_MEDIA_BACKENDS_ENABLED=false` skips
+both Malina and Bucky downloads and native initialization. Installing files
+alone does not override this setting.
+
+Configure bundles under `malina-models` in the versioned model configuration:
+
+```yaml
+version: 2
+malina-models:
+  sd-1.5:
+    concurrency: 1
+    queue-depth: 2
+    admission-timeout: 3m
+    cpu-threads: 0
 ```
 
-For a component bundle, use `DownloadBundle` and configure the model from the
-returned role-to-path manifest:
+Merge this mapping into the existing file rather than replacing its other
+sections. `concurrency` defaults to 1. Each additional slot loads another
+native model context and increases RAM/VRAM use substantially. Queue depth
+adds waiting requests without adding execution capacity; it defaults to 0.
+Additional callers can wait for admission up to the configured timeout,
+default three minutes. Restart after changing configuration.
 
-```go
-manifest, err := mdls.DownloadBundle(ctx, models.BundleFlux2Klein9B)
-if err != nil {
-    return err
-}
-```
+The shared server pool defaults to ten entries per backend with idle expiry
+disabled. Memory pressure and count limits can still evict idle Malina models.
+The three backend pools share a budget but evict only their own idle entries;
+an idle language model is not automatically unloaded to admit an image model.
+See [Chapter 8](https://www.kronkai.com/manual#84-model-pool-and-resource-budgets).
 
-Downloads are staged, checked for all required non-empty files, recorded in
-`manifest.json`, and then activated atomically. A complete installed bundle is
-reused on later calls.
+### 19.5 Browser UI
 
-The FLUX.2 bundles are license-gated. Accept the model license on Hugging Face,
-then provide a read token through `KRONK_HF_TOKEN` or `HF_TOKEN` before
-downloading them.
+Use the library and model-management pages to prepare a compatible installation.
+In **Image Generator**, select an installed generation model, enter a prompt,
+and set dimensions, steps, CFG scale, and seed. Upload a PNG/JPEG to select
+image-to-image and choose strength. The result shows dimensions and can be
+downloaded as PNG.
 
-### 19.4 Go SDK
+The activity panel reports server-wide loading and generation progress, not
+only the current browser's request. See Chapter 13 for browser authentication.
 
-The complete Stable Diffusion 1.5 flow is demonstrated by
-[`examples/malina/main.go`](../examples/malina/main.go). The important phases
-are initialization, model construction, generation, and unloading.
+### 19.6 Image Generation and Editing API
 
-#### 19.4.1 Initialize Malina
+All image routes follow inference authorization. `authenticated` requires a
+valid token; `full-protected` additionally requires `image-generations`.
+Inference is public in `open` and `management` modes.
 
-After installing the libraries, initialize the process-wide backend from the
-resolved directory:
-
-```go
-if err := malina.Init(
-    malina.WithLibPath(libs.LibsPath()),
-); err != nil {
-    return err
-}
-```
-
-Call `Init` before constructing a Malina handle. Repeated calls using the same
-library path are safe. Once initialized, the process cannot switch to a
-different stable-diffusion.cpp library directory.
-
-#### 19.4.2 Load and Unload a Model
-
-Construct one handle for one model checkpoint:
-
-```go
-mln, err := malina.New(
-    model.WithModelPath(mp.ModelFiles[0]),
-)
-if err != nil {
-    return err
-}
-
-defer func() {
-    if err := mln.Unload(context.Background()); err != nil {
-        fmt.Println("unload:", err)
-    }
-}()
-```
-
-Use `NewWithContext` when model loading needs a deadline or cancellation.
-`Unload` stops new admission and waits until native work can be released
-safely. If its context expires, cleanup continues in the background and a
-later `Unload` call can wait for completion.
-
-One handle can load a pool of independent native model contexts and dispatch
-concurrent `Generate` calls across them:
-
-```go
-mln, err := malina.New(
-    model.WithModelPath(mp.ModelFiles[0]),
-    model.WithConcurrency(2),
-    model.WithQueueDepth(4),
-)
-```
-
-`Concurrency` is the number of model contexts loaded and therefore the maximum
-number of simultaneous generations. It defaults to 1 because each additional
-context consumes another model-sized allocation of RAM or VRAM. `QueueDepth`
-is the number of calls admitted to the internal queue after every context is
-busy and defaults to 0. Additional callers may wait for admission for up to the
-three-minute default admission timeout. Configure these with
-`model.WithConcurrency`, `model.WithQueueDepth`, and
-`model.WithAdmissionTimeout` when constructing the handle.
-
-Stable-diffusion.cpp also provides numerical scale overrides for models that
-produce black or white images because of NaN values on a particular backend,
-device, or weight format:
-
-```go
-mln, err := malina.New(
-    model.WithModelPath(mp.ModelFiles[0]),
-    model.WithLinearScale(0.125),
-    model.WithAttnScale(0.25),
-)
-```
-
-Both values default to zero, which preserves the model defaults. Set only the
-override recommended for the affected model and backend. `AttnScale` applies
-to the flash-attention path. Non-zero values must be positive and finite.
-
-Malina also exposes SageAttention and a per-context conditioning cache:
-
-```go
-mln, err := malina.New(
-    model.WithModelPath(mp.ModelFiles[0]),
-    model.WithSageAttention(true),
-    model.WithConditioningCacheSize(8),
-)
-```
-
-The conditioning cache defaults to four entries per model context. Set it to
-zero to disable caching. SageAttention is useful only for native backends and
-models that support it.
-
-Malina v1.1.7 adds automatic, per-module flash-attention and direct-convolution
-selection. Empty mode strings use automatic selection and honor legacy true
-attention flags; false legacy flags do not force those operations off. For an
-explicit policy, use the SDK options:
-
-```go
-mln, err := malina.New(
-    model.WithModelPath(mp.ModelFiles[0]),
-    model.WithFlashAttentionMode("off"),
-    model.WithConvDirectMode("auto,vae=off"),
-    model.WithBatchedCFG(false),
-)
-```
-
-`NewConfig` requests batched conditional/unconditional UNet execution by
-default. Unsupported workflows fall back to separate passes. The bindings
-always disable batching for Metal, including automatic macOS selection, to
-avoid incorrect group-normalization output. `Config.BatchedCFG` records the
-request, not confirmation that the backend used batching. Automatic operator
-selection can benchmark the device during context construction. The new
-backend policies and tile blending can change output pixels and memory use;
-do not expect byte-identical images across native versions.
-
-#### 19.4.3 Generate an Image
-
-Start with the stable-diffusion.cpp generation defaults and set a prompt:
-
-```go
-params := model.NewGenerateParams()
-params.Prompt = "a small red sailboat crossing a calm mountain lake at sunrise"
-params.Seed = 42
-
-generated, err := mln.Generate(ctx, params)
-if err != nil {
-    return err
-}
-
-if err := os.WriteFile("malina.png", generated.PNG, 0o644); err != nil {
-    return err
-}
-```
-
-`GeneratedImage` contains an owned PNG byte slice, output dimensions, and the
-requested seed value. When `-1` asks the native backend to select a random
-seed, `Seed` retains `-1`. `GenerationInfo` contains the native
-`sdcpp.generation/v1` JSON record, including the resolved seed as a string.
-This metadata remains valid after unloading the model but is not embedded in
-the PNG. `GeneratedVideo.GenerationInfo` similarly carries sequence metadata;
-its `Seed` field also retains the requested value.
-
-The default parameters are:
-
-| Parameter | Default |
-| --------- | ------- |
-| Width | 512 |
-| Height | 512 |
-| Steps | 20 |
-| CFG scale | 7 |
-| Seed | `-1` (random) |
-| Image-to-image strength | 0.75 |
-
-Dimensions must be multiples of 8 from 64 through 1024, with no more than
-1,048,576 total pixels. A request needs a non-empty prompt, positive finite
-CFG scale, and between 1 and 1,000 steps.
-
-`GenerateParams.ImagePreprocessRules` and
-`VideoParams.ImagePreprocessRules` pass stable-diffusion.cpp's shared image
-preprocessing rules to native generation. Rules are semicolon-separated, and
-each rule starts with `target=...` followed by comma-separated key-value pairs,
-for example `target=init,mode=none,canny=true`. An empty string preserves the
-model defaults. Preprocessing uses temporary native pixels and does not mutate
-the caller's Go images.
-
-The underlying bindings define VAE tiling in image pixels for both
-encoding and decoding: zero selects 256 pixels, positive relative values up to
-1 select a fraction of the image dimension, and values above 1 select a target
-tile count. Kronk's high-level generation parameters do not currently expose
-VAE tiling, so they preserve the native defaults.
-
-Waiting for admission is cancellable. Canceling a request after native
-generation starts asks stable-diffusion.cpp to stop, waits for native execution
-to return, and resets that model context before returning the cancellation
-error. The context is never reused or freed while native code is still active.
-
-### 19.5 Multi-File Model Bundles
-
-Some pipelines require several files with distinct roles. The FLUX.2 example
-downloads a manifest and maps its diffusion, VAE, and LLM components into the
-model configuration:
-
-```go
-manifest, err := mdls.DownloadBundle(ctx, models.BundleFlux2Klein9B)
-if err != nil {
-    return err
-}
-
-mln, err := malina.New(
-    model.WithDiffusionModelPath(manifest.Files[string(models.RoleDiffusion)]),
-    model.WithVAEPath(manifest.Files[string(models.RoleVAE)]),
-    model.WithLLMPath(manifest.Files[string(models.RoleLLM)]),
-)
-if err != nil {
-    return err
-}
-```
-
-Use the exported `models.Role...` values instead of relying on filenames or
-file ordering. This keeps application configuration tied to the curated
-bundle contract.
-
-LLaDA-Image-Turbo adds an external tokenizer and embeddings connectors to the
-usual diffusion, VAE, and LLM components. The pool and model server map all
-five roles automatically. Direct SDK users can configure it explicitly:
-
-```go
-manifest, err := mdls.DownloadBundle(ctx, models.BundleLLaDAImageTurbo)
-if err != nil {
-    return err
-}
-
-mln, err := malina.New(
-    model.WithDiffusionModelPath(manifest.Files[string(models.RoleDiffusion)]),
-    model.WithVAEPath(manifest.Files[string(models.RoleVAE)]),
-    model.WithLLMPath(manifest.Files[string(models.RoleLLM)]),
-    model.WithTokenizerPath(manifest.Files[string(models.RoleTokenizer)]),
-    model.WithEmbeddingsConnectorsPath(
-        manifest.Files[string(models.RoleEmbeddingsConn)],
-    ),
-)
-```
-
-LLaDA-Image-Turbo is tuned for four steps and CFG scale 1.0; set those values
-on `GenerateParams`. Stable-diffusion.cpp selects its LLaDA-Image scheduler
-from the model. The native model also supports reference-image instruction
-editing, but Kronk's high-level SDK does not yet expose that distinct
-reference-image input path.
-
-Z-Image-Turbo uses the existing diffusion, LLM, and VAE roles, with no external
-tokenizer. The pool and server map them automatically. Direct SDK users can
-use the FLUX.2 component-loading pattern above with `models.BundleZImageTurbo`.
-Set `GenerateParams.Steps = 8` and `GenerateParams.CFGScale = 1`. Catalog
-selection does not change generation defaults. For the server, explicitly send
-`"steps": 8` and `"cfg_scale": 1`; in the image generator UI, set Steps to 8 and
-CFG scale to 1 before submitting. Download it with:
+Create an image with JSON:
 
 ```shell
-kronk malina model pull --local z-image-turbo
+curl http://localhost:11435/v1/images/generations \
+  -H "Authorization: Bearer $KRONK_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "sd-1.5",
+    "prompt": "A lighthouse during a thunderstorm",
+    "size": "512x512",
+    "steps": 20,
+    "cfg_scale": 7,
+    "seed": 42,
+    "response_format": "b64_json"
+  }'
 ```
 
-MOSS-Image-SFT adds a mandatory external Qwen3.5 tokenizer to the diffusion,
-LLM, and VAE roles. The pool and server map all four roles automatically;
-direct SDK users should also pass `model.WithTokenizerPath` with
-`manifest.Files[models.RoleTokenizer.String()]`. Use
-`models.BundleMOSSImageSFT`, dimensions divisible by 16, and CFG scale 3,
-as recommended by the native MOSS-Image guide. Catalog selection does not
-change generation defaults. The bundle is ungated and Apache-2.0, but has not
-been locally inference-validated.
+Omit Authorization for an unprotected local server. Unknown JSON fields are
+rejected. Request controls are:
 
-### 19.6 Image-to-Image Generation
+| Field | Default | Contract |
+| ----- | ------- | -------- |
+| `model` | Required | Installed generation bundle ID |
+| `prompt` | Required | Nonempty text prompt |
+| `negative_prompt` | Empty | Undesired features |
+| `size` | `512x512` for generation | `WIDTHxHEIGHT`; multiples of 8, each 64–1024, at most 1,048,576 pixels |
+| `steps` | `20` | 1–1,000 |
+| `cfg_scale` | `7` | Positive finite value; follow model recommendations |
+| `seed` | `-1` | `-1` requests random selection |
+| `n` | `1` | Only one image is supported |
+| `response_format` | `b64_json` | Only base64 PNG output is supported; no URL response |
 
-Set `GenerateParams.InitImage` to transform an existing Go image. The request
-still needs a prompt, and `Strength` must be greater than zero and no more than
-one:
+The response has `created` and a one-element `data` array containing
+`b64_json`, `seed`, `width`, and `height`. Decode `b64_json` to save the PNG.
+The returned seed retains the requested value, including `-1`; it does not
+expose a resolved random seed. Do not expect identical pixels across model,
+backend, or native-library changes.
 
-```go
-params := model.NewGenerateParams()
-params.Prompt = "a watercolor painting at sunset"
-params.InitImage = source
-params.Strength = 0.6
-params.Width = 768
-params.Height = 512
-
-generated, err := mln.Generate(ctx, params)
-```
-
-The requested dimensions are the generation dimensions; prepare the source
-image and choose valid dimensions for the desired aspect ratio. The
-[`malina-img2img`](../examples/malina-img2img/main.go) example accepts PNG and
-JPEG input, constrains the image to 1024 pixels per side, and rounds dimensions
-down to multiples of 8.
-
-#### 19.6.1 ControlNet
-
-Load the model and ControlNet roles from the curated bundle, then supply a
-control image. Set `Canny` to preprocess a copy of the source image before
-generation:
-
-```go
-mln, err := malina.New(
-    model.WithModelPath(manifest.Files[string(models.RoleModel)]),
-    model.WithControlNetPath(manifest.Files[string(models.RoleControlNet)]),
-)
-
-params := model.NewGenerateParams()
-params.Prompt = "a detailed astronaut portrait"
-params.ControlImage = source
-canny := model.NewCannyParams()
-params.Canny = &canny
-generated, err := mln.Generate(ctx, params)
-```
-
-The `models.BundleZImageTurboControlNetUnion` bundle instead uses diffusion,
-LLM, VAE, and ControlNet roles. Configure those component paths and supply an
-already prepared control map through `ControlImage`, with 8 steps and CFG
-scale 1. Leave `Canny` unset for pose or depth maps. Upstream recommends
-disabling VAE encode tiling; Kronk's native defaults already leave VAE tiling
-disabled. Pose/depth preprocessing and simultaneous reference-image editing
-are not exposed by the high-level SDK. This ungated Apache-2.0 bundle is
-SDK-only and has not been locally inference-validated.
-
-#### 19.6.2 ADetailer
-
-An ADetailer bundle loads one detector beside every configured generation
-context. `Detail` detects faces and returns the final inpainted image:
-
-```go
-mln, err := malina.New(
-    model.WithModelPath(manifest.Files[string(models.RoleModel)]),
-    model.WithADetailerPath(manifest.Files[string(models.RoleADetailer)]),
-)
-
-params := model.NewDetailParams()
-params.Image = portrait
-params.Prompt = "a detailed portrait photo"
-generated, err := mln.Detail(ctx, params)
-```
-
-#### 19.6.3 AnimateDiff
-
-Configure a motion module and call `GenerateVideo`. The result owns standard Go
-images that can be passed directly to `model.SaveAVI`:
-
-```go
-mln, err := malina.New(
-    model.WithModelPath(manifest.Files[string(models.RoleModel)]),
-    model.WithMotionModulePath(manifest.Files[string(models.RoleMotionModule)]),
-)
-
-params := model.NewVideoParams()
-params.Prompt = "a cat walking through a garden"
-video, err := mln.GenerateVideo(ctx, params)
-if err == nil {
-    err = model.SaveAVI("animatediff.avi", video.Frames, video.FPS, 90)
-}
-```
-
-`video.FPS` is the effective frame rate reported by stable-diffusion.cpp, not
-necessarily the requested `params.FPS`. Always use the returned value when
-encoding the frames because some video models require a fixed frame rate.
-
-#### 19.6.4 Wan2.2 S2V
-
-Wan2.2 S2V animates a source image from a driving WAV speech track. The curated
-`wan2.2-s2v-14b` bundle contains the Wan2.2 S2V diffusion model, Wan 2.1 VAE,
-UMT5-XXL text encoder, and wav2vec2 audio encoder. The example downloads that
-bundle and uses its included portrait and WAV samples automatically:
+Transform an image with multipart form fields:
 
 ```shell
-make example-malina-s2v
+curl http://localhost:11435/v1/images/edits \
+  -H "Authorization: Bearer $KRONK_TOKEN" \
+  -F model=sd-1.5 \
+  -F prompt='A watercolor illustration at sunset' \
+  -F image=@source.png \
+  -F strength=0.6 \
+  -F steps=20
 ```
 
-The example resizes the source image to the requested generation dimensions,
-decodes PCM or floating-point WAV audio, and passes both through
-`VideoParams.InitImage` and `VideoParams.RefAudios`. Its defaults follow the
-upstream S2V example: 832×480, 81 frames, 16 FPS, and 20 steps. S2V enforces
-16 FPS, so encoding uses the effective `GeneratedVideo.FPS` value returned by
-stable-diffusion.cpp.
+Editing accepts the same generation controls plus required PNG/JPEG `image`
+and optional `strength` (default `0.75`, greater than zero through 1). Uploads
+are limited to 25 MiB and decoded images to 32 Mi pixels. Without `size`, the
+server preserves aspect ratio, scales down to at most 1024 pixels per side,
+and rounds dimensions down to multiples of eight. Explicit dimensions resize
+the source to that size. The response has the same base64 PNG shape.
 
-`model.SaveAVI` does not mux audio. The example writes a Motion-JPEG AVI and a
-PCM WAV sidecar, then prints an `ffmpeg` command that combines them into an MP4.
+Both operations use the server's inference deadline. Cancellation requests
+native work to stop but can take time to finish; it is not a guarantee of
+immediate resource release.
 
-#### 19.6.5 Upscaling
+### 19.7 Progress and Administration
 
-Upscalers use a standalone handle because their bundles do not contain a
-diffusion model:
+`GET /v1/images/events` is an SSE stream reporting `scope: "global"`, `step`,
+`steps`, `percent`, and `seconds_per_step`. Progress is process-global and not
+request-correlated; it must not be treated as the completion signal for an
+individual request. Use the POST response for that result.
 
-```go
-upscaler, err := malina.NewUpscaler(ctx, malina.UpscalerConfig{
-    ModelPath: manifest.Files[models.RoleUpscaler.String()],
-})
-if err != nil {
-    return err
-}
-defer upscaler.Unload()
+Management APIs require administrator access in every authorization mode except
+`open`:
 
-images, err := upscaler.UpscaleWithInfo(ctx, source)
-```
+| Method and path | Purpose |
+| --------------- | ------- |
+| `GET /v1/malina/libs` | Active native library installation |
+| `GET /v1/malina/libs/integrity` | Verify the selected library bundle |
+| `GET /v1/malina/libs/combinations` | Supported platform combinations |
+| `GET /v1/malina/libs/installs` | Installed bundles |
+| `POST /v1/malina/libs/pull` | Install libraries |
+| `DELETE /v1/malina/libs/installs` | Remove an installation |
+| `GET /v1/malina/models` | Installed model bundles |
+| `GET /v1/malina/models/catalog` | Curated model catalog |
+| `POST /v1/malina/models/pull` | Download a bundle |
+| `DELETE /v1/malina/models/{model}` | Remove a model bundle |
 
-Each `model.UpscaledImage` contains an `Image` with owned pixels and a
-`GenerationInfo` string with the native `sdcpp.generation/v1` JSON record,
-including `upscale.upscale_factor`. Both remain valid after unloading the
-upscaler. Pass `images[0].Image` to an image encoder and save or parse
-`images[0].GenerationInfo` separately; PNG/JPEG encoding does not embed it.
-The existing `Upscale` method remains available and returns only
-`[]image.Image`, discarding metadata.
+See Chapter 9 for API conventions and Chapter 15 for server logs and metrics.
 
-Construction reads the model's native scale directly from ESRGAN metadata,
-then verifies that the loaded context reports the same factor. `Factor` returns
-that verified value without another native call. An unrecognized RGB ESRGAN
-model or a native library without the metadata API is rejected.
+### 19.8 Limitations and Developer Resources
 
-An ESRGAN call already executing in native code cannot be interrupted. A
-canceled context prevents queued work from starting and causes completed work
-to be discarded.
+The server exposes basic text-to-image and image-to-image only. ControlNet,
+ADetailer, video, upscaling, and AVI encoding remain SDK workflows. A feature
+in upstream stable-diffusion.cpp does not establish a supported Kronk workflow
+or a curated, licensed model bundle. The catalog is intentionally bounded.
 
-### 19.7 Logging, Progress, and Diagnostics
+Use the generated Malina SDK reference and `examples/malina*` for application
+development. Source-checkout targets include `make example-malina`,
+`make example-malina-img2img`, `make example-malina-controlnet`,
+`make example-malina-adetailer`, `make example-malina-animatediff`,
+`make example-malina-s2v`, and `make example-malina-upscale`. These can download
+multi-gigabyte model bundles and execute native inference. They are not
+required steps for operating the HTTP server.
 
-Native stable-diffusion.cpp and GGML diagnostics are silent by default. Enable
-them when diagnosing native behavior:
-
-```go
-malina.Init(
-    malina.WithLibPath(libs.LibsPath()),
-    malina.WithLogLevel(malina.LogNormal),
-)
-```
-
-Model-loading and generation progress uses the native terminal display by
-default. Applications can replace it with a callback:
-
-```go
-func progress(step int, steps int, secondsPerStep float32) {
-    fmt.Printf("\r%d/%d %.2fs/step", step, steps, secondsPerStep)
-}
-
-malina.Init(
-    malina.WithLibPath(libs.LibsPath()),
-    malina.WithProgress(progress),
-)
-```
-
-Progress callbacks are process-wide and may be invoked concurrently. Protect
-shared output or UI state as needed. Use
-`malina.WithProgress(malina.DiscardProgress)` to suppress progress completely.
-
-After initialization, inspect the native backend and host with:
-
-```go
-info, err := malina.SystemInfo()
-if err != nil {
-    return err
-}
-
-fmt.Println(info.NativeVersion)
-fmt.Println(info.PhysicalCores)
-fmt.Println(info.BackendDeviceCount)
-fmt.Println(info.Description)
-```
-
-A loaded handle also exposes `SystemInfo`, `ModelInfo`, `ModelConfig`,
-`ActiveGenerations`, and `Ready` for application observability.
-`ModelInfo.ModelVersion` reports the model family detected by
-stable-diffusion.cpp, or `Unknown` when the native library cannot identify it.
-
-### 19.8 Motion-JPEG Encoding
-
-`model.SaveAVI` writes same-sized Go images as a Motion-JPEG AVI without
-loading stable-diffusion.cpp or a model:
-
-```go
-if err := model.SaveAVI("output.avi", frames, 24, 90); err != nil {
-    return err
-}
-```
-
-The frame rate must be positive, JPEG quality must be from 1 through 100, and
-all frames must have the same dimensions. This helper encodes an in-memory
-frame sequence; it is not a streaming video-generation API.
-
-### 19.9 Examples
-
-The examples install their own compatible libraries. Examples backed by the
-curated catalog also install their model bundles using default Kronk paths.
-All inputs and model IDs are built in, so the make targets require no flags.
-
-| Command | Purpose |
-| ------- | ------- |
-| `make example-malina` | Generate a deterministic Stable Diffusion 1.5 PNG. |
-| `make example-malina-img2img` | Transform a PNG or JPEG with a prompt and strength. |
-| `make example-malina-controlnet` | Generate an image using Canny edge conditioning. |
-| `make example-malina-adetailer` | Detect and refine faces in a portrait. |
-| `make example-malina-animatediff` | Generate AnimateDiff frames and write an AVI. |
-| `make example-malina-s2v` | Animate a source image from WAV speech with Wan2.2 S2V. |
-| `make example-malina-upscale` | Enlarge a PNG or JPEG with Real-ESRGAN. |
-| `make example-malina-sd-encode` | Encode a directory of PNG/JPEG frames as Motion-JPEG AVI. |
-| `make example-malina-system` | Install libraries and print native system diagnostics. |
-
-The first run of an inference example can take significant time and disk
-space because it downloads native libraries and multi-gigabyte model files.
-Later runs reuse complete installations.
-
-### 19.10 Current Scope and Limitations
-
-- The public API is experimental and may change between Kronk releases.
-- The model server exposes basic text-to-image generation. Advanced Malina
-  operations remain available only through the Go SDK.
-- The curated catalog is intentionally small. The high-level SDK guarantees
-  its listed component roles; arbitrary user-created bundle layouts are not a
-  supported catalog contract.
-- Wan2.2 S2V is available in the curated model catalog and through the SDK,
-  but it is not exposed by the model-server API.
-- LLaDA-Image-Turbo is available for text-to-image generation. Its native
-  reference-image instruction-editing workflow is not yet exposed by the
-  high-level SDK.
-- The native release adds PixArt-α/Σ and Ming-Image Design support. Kronk does
-  not yet curate their component files, validation, VRAM estimates, or server
-  configurations, so these model families are not advertised as supported
-  Kronk workflows. Ming-Image also requires an external tokenizer path.
-- VAE tiling is available in the raw Malina bindings but is not yet exposed by
-  Kronk's high-level image or video request types.
-- The new native Iris-3B, Z-Image L2P, FLUX.3, and MoSR workflows have no
-  curated Kronk bundles. The existing catalog still supplies Real-ESRGAN for
-  upscaling; native support alone is not a supported high-level workflow.
-- Raw preview metadata (`sd.GetPreviewInfo`) and LoRA-aware component
-  conversion remain binding-level APIs. Kronk does not expose preview callbacks
-  or conversion, so adding wrappers would not make those workflows usable.
-  Preview metadata is process-global and requires serialized preview-enabled work.
-- Native Fibo 2.0 and FLUX.3 are not curated because their non-commercial or
-  custom licenses have not been cleared for this catalog. RPC server registration
-  and video reference-image arguments remain binding-level APIs; Kronk does not
-  expose distributed inference or video reference-image inputs.
-- Native callbacks and backend initialization are process-wide. Model-context
-  construction and destruction are serialized, while one handle may own
-  multiple contexts and generate concurrently across them. Each concurrency
-  slot loads another copy of the model and increases RAM or VRAM use.
-- Context cancellation interrupts active native generation, waits for the
-  native call to return, and resets the same context before reuse. It never
-  frees a context while native code is active.
-
-### 19.11 Troubleshooting
+### 19.9 Troubleshooting
 
 | Symptom | Action |
 | ------- | ------ |
-| `Init` cannot find or load stable-diffusion.cpp | Construct `libs.New` with detection, call `Download`, and pass `libs.LibsPath()` to `malina.Init`. |
-| No compatible bundle is published for the host | Check `libs.SupportedCombinations()`; use one of the published operating-system, architecture, and processor triples. |
-| A custom library directory cannot be upgraded or removed | A non-empty directory without `version.json` is intentionally read-only. Manage that build yourself or use a Kronk-managed install directory. |
-| A gated FLUX.2 download returns 401 or 403 | Accept the Hugging Face license and set `KRONK_HF_TOKEN` or `HF_TOKEN` to a token with read access. |
-| Generation reports an invalid request | Start with `model.NewGenerateParams`; provide a prompt and valid dimensions, steps, CFG scale, and image-to-image strength. |
-| Generation produces a solid black or white image and native logs report NaN values | Try the positive finite `model.WithLinearScale` or `model.WithAttnScale` override recommended for that model, backend, and weight format. Leave both at zero otherwise. |
-| Generation waits and then returns an admission timeout | Other calls are using the handle's admitted capacity. Increase admitted capacity or the admission timeout only when the application can tolerate the additional work or wait. |
-| Native diagnostic output is too verbose | Remove `malina.WithLogLevel(malina.LogNormal)`; native logging is silent by default. |
-| Progress output is unwanted | Pass `malina.WithProgress(malina.DiscardProgress)` during initialization. |
-| A different library path is rejected after initialization | Native initialization is process-wide. Restart the process to load a different stable-diffusion.cpp installation. |
+| Startup fails during library installation or verification | Install the pinned managed bundle locally, inspect the error, then restart. Do not routinely disable verification. |
+| No compatible host bundle | Check `kronk malina libs --list-combinations --local`; use a published platform/backend. |
+| Files exist but image inference is unavailable | Enable media backends and restart; inspect native initialization errors. |
+| Custom libraries cannot be upgraded or removed | Directories without managed metadata are read-only; manage them independently. |
+| Gated download returns 401/403 | Accept the provider's license and supply a read token privately. |
+| Invalid generation request | Check installed bundle ID, prompt, dimensions, steps, CFG scale, and edit strength. |
+| Black/white images or NaN diagnostics | Verify the pinned library/model combination and model-specific guidance; report backend, format, and settings rather than changing unrelated defaults. |
+| Admission timeout or server busy | Inspect running work and shared memory; reduce concurrency/sizing or unload unused models. Increase waiting only if callers can tolerate it. |
+| Library path changed but behavior did not | Restart; native libraries are not hot-reloaded. |
 
 ---
 

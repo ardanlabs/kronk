@@ -7,13 +7,10 @@
 - [18.3 Manage Models](#183-manage-models)
 - [18.4 Server Configuration](#184-server-configuration)
 - [18.5 Browser UI](#185-browser-ui)
-- [18.6 Transcriptions API](#186-transcriptions-api)
+- [18.6 Transcriptions and Translations API](#186-transcriptions-and-translations-api)
   - [18.6.1 Request and Response](#1861-request-and-response)
   - [18.6.2 Bucky Management Endpoints](#1862-bucky-management-endpoints)
-- [18.7 Go SDK](#187-go-sdk)
-  - [18.7.1 Batch Transcription](#1871-batch-transcription)
-  - [18.7.2 Channel-Separated Diarization](#1872-channel-separated-diarization)
-  - [18.7.3 Streaming Transcription](#1873-streaming-transcription)
+- [18.7 Capability Boundaries and Developer Resources](#187-capability-boundaries-and-developer-resources)
 - [18.8 Languages](#188-languages)
 - [18.9 Troubleshooting](#189-troubleshooting)
 
@@ -46,8 +43,9 @@ Bucky supports these common workflows:
 - consume partial and final transcript events from live audio through the SDK.
 
 The HTTP endpoint follows the OpenAI audio transcription request shape. It is
-protected by Kronk's `transcriptions` authentication permission when server
-authentication is enabled.
+protected by Kronk's `transcriptions` endpoint grant in `full-protected` mode.
+`authenticated` requires a valid token without grants; `open` and `management`
+leave inference public. See Chapter 12.
 
 Whisper models use GGML `.bin` files and are separate from the GGUF models used
 by Kronk's language-model backend. Bucky models and language models share the
@@ -96,9 +94,11 @@ The commands use the running model server by default. Add `--local` to manage
 the files directly without a server.
 
 The BUI's **Whisper Libraries** screen provides the same installation and
-removal operations. If Bucky failed to initialize because its libraries were
-missing, install a compatible bundle and **restart the server**. The running
-server does not automatically retry Bucky initialization.
+removal operations when the server is running. Default library installation or
+verification failures stop startup; install a compatible managed bundle with
+`kronk bucky libs --local`, then **restart the server**. If startup reached native
+initialization but Bucky failed, the server can remain running in degraded mode
+and the BUI can manage libraries. It does not automatically retry initialization.
 
 Libraries are installed below `~/.kronk/bucky-libraries/` by default. Kronk
 normally treats the detected processor as a preference and verifies that the
@@ -151,8 +151,11 @@ different CUDA-major option names.
 A non-empty `KRONK_BUCKY_LIB_PATH` bypasses automatic compatibility selection.
 If the directory contains `version.json`, Kronk adopts its recorded platform
 metadata unless explicitly overridden. A non-empty existing directory without
-that file is treated as a read-only user-managed build: Kronk loads from it but
-does not install, upgrade, or replace its contents.
+that file is treated as a read-only user-managed build and is not installed,
+upgraded, or replaced. Default verified startup requires managed installation
+metadata and fails for such a build. Independently trusted custom builds require
+an advanced startup path with managed verification explicitly disabled; this
+is not routine recovery for a broken installation.
 
 The default downloader installs the authenticated whisper.cpp version bound
 to this Bucky dependency, replacing older or arbitrary newer managed bundles
@@ -205,9 +208,8 @@ The transcription models currently included in that catalog are:
 | `large-v3-turbo` | 1.5 GB           | Multilingual; faster large-model variant |
 
 The catalog also contains `silero-vad`, an auxiliary voice-activity detection
-model. It is not a transcription model. Streaming uses its built-in energy
-detector unless a caller explicitly supplies the downloaded Silero model with
-`model.WithVADModel`.
+model. It is not a transcription model. SDK streaming uses its built-in energy
+detector unless the application explicitly selects the Silero model.
 
 Pull, list, and remove models with:
 
@@ -250,25 +252,25 @@ bucky-models:
     nthreads: 0
 ```
 
-`nseq-max` controls the number of independent Whisper states and therefore the
-number of concurrent operations. `queue-depth` adds waiting requests without
-adding states. `nthreads` controls native threads per operation; zero preserves
-the whisper.cpp default. The pool reserves the model file size plus a
-conservative 200 MiB allowance for each configured state; queued requests do not
-increase the reservation. Restart the server after changing these settings.
+`nseq-max` controls the number of concurrent operations. Increasing it increases
+runtime memory without duplicating the model weights. `queue-depth` adds waiting
+requests without adding inference capacity. `nthreads` controls native threads
+per operation; zero preserves the whisper.cpp default. Restart the server after
+changing these settings.
 
 Bucky uses the server's shared pool settings:
 
 | Setting          | Server default | Purpose                              |
 | ---------------- | -------------- | ------------------------------------ |
 | Models in pool   | `10`           | Maximum cached models                |
-| Pool TTL         | `20m`          | How long an idle model remains loaded; `0` disables idle expiration |
-| Memory budget    | Shared         | Bucky and language models compete for the same host memory budget |
+| Pool TTL         | `0`            | Idle expiration disabled by default; count/memory eviction still applies |
+| Memory budget    | Shared         | Bucky, language, and Malina models compete for the shared budget |
 
-If the server starts without usable Whisper libraries, it logs that Bucky is
-running in degraded mode. Library and model management remain available, but
-transcription cannot work until the libraries are installed and the server is
-restarted.
+`--media-backends-enabled=false` / `KRONK_MEDIA_BACKENDS_ENABLED=false` skips
+both Bucky and Malina library downloads and initialization. Installing libraries
+alone does not re-enable inference: enable media backends and restart. Library
+installation/verification failures normally stop startup; native initialization
+failures can leave Bucky unavailable while the server continues.
 
 Server startup constructs the Bucky library manager from `KRONK_BASE_PATH` and
 `KRONK_BUCKY_LIB_PATH`, downloads or verifies the selected bundle, and passes
@@ -315,8 +317,14 @@ translation route instead:
 POST /v1/audio/translations
 ```
 
-The uploaded file is limited to **25 MiB**. Each transcription has a 30-minute
-server deadline.
+The uploaded file is limited to **25 MiB**. Transcription and translation use
+the shared `--inference-timeout` / `KRONK_WEB_INFERENCE_TIMEOUT`, default `60m`.
+
+WAV, MP3, and FLAC decode in-process. Browser recordings and formats such as
+WebM/Opus, MP4/AAC, OGG, and M4A require `ffmpeg` on the **server's PATH**, including
+inside its container or service environment. Installing it only on the browser's
+machine is not sufficient. Restart after fixing PATH or installing ffmpeg if
+the running process has already failed to find it.
 
 | Field                       | Required | Purpose |
 | --------------------------- | -------- | ------- |
@@ -357,15 +365,21 @@ The default JSON response is:
 {"text":"And so my fellow Americans..."}
 ```
 
-The translation route accepts `file`, `model`, `prompt`, `temperature`, and
-`response_format`. It always enables source-to-English translation, so it does
+The translation route accepts the same options above and always enables
+source-to-English translation, so it does
 not require the Kronk-specific `translate` field. Its default JSON response has
 the same `text` shape. A `verbose_json` translation identifies its task as
 `translate` and its output language as `english`.
+Prefer this route when verbose output must identify the translation task;
+the transcription route's `translate=true` extension retains its transcription
+task label.
 
 `verbose_json` adds the detected language, duration, and timestamped segments.
 When `timestamp_granularities[]=word` is requested, it also includes a `words`
 array whose entries contain `word`, `start`, and `end` fields.
+Segment `tokens`, `temperature`, `avg_logprob`, and `compression_ratio` are
+compatibility placeholders (empty or zero), not measured decoder results. Do
+not use them as confidence filters.
 The `text`, `srt`, and `vtt` formats return their corresponding non-JSON media
 types.
 
@@ -380,6 +394,7 @@ The CLI and BUI use these management routes:
 | Method and path                            | Purpose |
 | ------------------------------------------ | ------- |
 | `GET /v1/bucky/libs`                       | Show the active library installation |
+| `GET /v1/bucky/libs/integrity`             | Verify the selected library bundle |
 | `GET /v1/bucky/libs/combinations`          | List supported platform combinations |
 | `GET /v1/bucky/libs/installs`              | List installed library bundles |
 | `POST /v1/bucky/libs/pull`                 | Install a library bundle |
@@ -393,224 +408,24 @@ The CLI and BUI use these management routes:
 Mutating management routes require administrator authorization when
 authentication is enabled.
 
-### 18.7 Go SDK
+### 18.7 Capability Boundaries and Developer Resources
 
-The Go SDK supports batch transcription, channel-separated diarization, and
-live streaming. See [`examples/bucky/main.go`](../examples/bucky/main.go) for a
-complete program that installs the current-host libraries, downloads a model,
-initializes Bucky, and handles errors.
+HTTP and BUI support uploaded or recorded-file transcription and translation.
+Channel-separated diarization and continuous partial/final streaming are
+SDK-only; they are not audio HTTP streaming routes. The Translator records
+audio before uploading it rather than exposing the SDK's continuous stream.
 
-A `Bucky` handle is safe to call from multiple goroutines. It loads one Whisper
-model context and shares its weights while maintaining a pool of independent
-`whisper.State` values. Set the pool size with `model.WithNSeqMax` when creating
-the handle; the default is 1. Up to `NSeqMax` transcriptions, language-detection
-calls, or streams can use the handle concurrently without loading another copy
-of the model.
-
-When every state is in use, another call waits until a state becomes available
-or its context is canceled. The admission wait times out after three minutes by
-default and can be configured with `model.WithAdmissionTimeout`; the timeout
-ends once the call is admitted. `model.WithQueueDepth` controls how many calls
-are admitted to wait after every state is busy and defaults to 0. A stream
-reserves one state for its lifetime, so always close streams that are no longer
-needed.
-
-#### 18.7.1 Batch Transcription
-
-After calling `bucky.Init` and constructing a `*bucky.Bucky` with the path to
-an installed model, transcribe an audio reader directly:
-
-```go
-f, err := os.Open("samples/jfk.wav")
-if err != nil {
-    return err
-}
-defer f.Close()
-
-tr, err := b.TranscribeFile(ctx, f, model.WithLanguage("en"))
-if err != nil {
-    return err
-}
-
-fmt.Println(tr.Text)
-```
-
-Use `Transcribe` instead when the audio is already decoded to 16 kHz mono
-`[]float32`. Sampling options map directly to whisper.cpp's full parameters:
-
-```go
-tr, err := b.Transcribe(ctx, samples,
-    model.WithTemperature(0),
-    model.WithTemperatureInc(0.2),
-    model.WithEntropyThreshold(2.4),
-    model.WithLogProbThreshold(-1),
-    model.WithNoSpeechThreshold(0.6),
-    model.WithGreedyBestOf(2),
-    model.WithLengthPenalty(-1),
-)
-```
-
-Only specify values that should override the defaults supplied by the loaded
-whisper.cpp library. `WithBeamSize` selects beam search; use it with
-`WithBeamSearchPatience` instead of `WithGreedyBestOf`. Without a positive beam
-size, decoding uses greedy sampling.
-
-Each `Segment` includes `TextConfidence`: the arithmetic mean of its decoded
-text-token probabilities, excluding timestamp and control tokens. The score
-ranges from 0 to 1, with higher values indicating greater decoder confidence;
-segments with no text tokens have a score of 0. Batch results, `OnSegment`
-callbacks, diarized segments, and streaming partial/final segments all use the
-same calculation.
-
-`NoSpeechProb` estimates whether speech occurred; `TextConfidence` describes the
-decoder's confidence in its chosen text. Neither guarantees that the words were
-actually spoken, and hallucinations can have high text confidence. Bucky applies
-no confidence filter. A caller might start by rejecting segments below 0.5, but
-this is only an illustrative threshold, not a validated universal cutoff. Tune
-it on representative speech and noise, balancing missed speech against phantom
-text. Filtering segments does not change the returned `Transcription.Text` or
-stream `Event.Text`; callers should build their filtered text from accepted
-segments.
-
-#### 18.7.2 Channel-Separated Diarization
-
-`TranscribeChannelsFile` treats each source channel as a separate speaker and
-merges their timestamped segments:
-
-```go
-d, err := b.TranscribeChannelsFile(ctx, f, model.WithLanguage("en"))
-if err != nil {
-    return err
-}
-
-for _, seg := range d.Segments {
-    fmt.Printf("[%dms] speaker %d: %s\n", seg.StartMs, seg.Channel, seg.Text)
-}
-```
-
-This works best with native multichannel formats such as WAV or FLAC. Formats
-decoded through ffmpeg may be downmixed and therefore produce only one
-speaker channel.
-
-#### 18.7.3 Streaming Transcription
-
-Use `NewStream` when audio arrives over time. A stream emits tentative
-partials and committed finals:
-
-```go
-stream, err := b.NewStream(ctx, model.WithStreamLanguage("en"))
-if err != nil {
-    return err
-}
-defer stream.Close()
-
-go func() {
-    for ev := range stream.Events() {
-        switch ev.Kind {
-        case model.EventPartial:
-            // Replace the currently displayed partial with ev.Text.
-        case model.EventFinal:
-            // Append ev.Text to the permanent transcript.
-        case model.EventError:
-            log.Println(ev.Err)
-        }
-    }
-}()
-
-for samples := range incomingAudio {
-    if err := stream.Feed(ctx, samples); err != nil {
-        return err
-    }
-}
-
-return stream.Close()
-```
-
-`EventPartial` contains the complete pending hypothesis, not a text delta, and
-may be dropped when the event consumer falls behind. `EventFinal` is the text
-to append and is not dropped.
-
-`Feed` accepts normalized 16 kHz mono `[]float32`. For raw microphone data,
-`FeedPCM` accepts little-endian `int16` or `float32` PCM and performs downmixing
-and resampling:
-
-```go
-format := model.AudioFormat{
-    SampleRate: 48000,
-    Channels:   2,
-    Sample:     model.Int16LE,
-}
-
-if err := stream.FeedPCM(ctx, rawPCM, format); err != nil {
-    return err
-}
-```
-
-Call `Feed` or `FeedPCM` from one producer goroutine. Both methods apply
-backpressure when their input queue is full. Real-time capture callbacks must
-not block; the [`examples/bucky-stream`](../examples/bucky-stream/main.go)
-program therefore uses an intermediate channel and deliberately drops capture
-buffers if its pump falls behind.
-
-Important stream defaults are:
-
-| Behavior             | Default |
-| -------------------- | ------- |
-| Partial update       | Every 1,000 ms |
-| Forced final         | Every 6,000 ms without a pause |
-| Maximum utterance    | 25,000 ms |
-| Silence detection    | Enabled |
-| Prompt carryover     | Enabled |
-
-Options such as `WithPartialEveryMs`, `WithCommitEveryMs`, `WithVAD`, and
-`WithPromptCarryover` change these behaviors. A negative partial interval
-disables partial events. The `WithStreamTemperature`,
-`WithStreamTemperatureInc`, `WithStreamEntropyThreshold`,
-`WithStreamLogProbThreshold`, `WithStreamNoSpeechThreshold`,
-`WithStreamGreedyBestOf`, `WithStreamBeamSize`,
-`WithStreamBeamSearchPatience`, and `WithStreamLengthPenalty` options apply the
-same sampling controls to every decode in a streaming session.
-
-For model-backed voice-activity detection, download the cataloged Silero model
-and pass its resolved path when opening the stream:
-
-```go
-stream, err := b.NewStream(ctx,
-    model.WithVADModel("/path/to/ggml-silero-v5.1.2.bin"),
-    model.WithVADSpeechThreshold(0.5),
-)
-```
-
-`WithVADSpeechThreshold` overrides whisper.cpp's Silero speech-probability
-threshold. Without `WithVADModel`, the existing `WithVADThreshold` option
-continues to tune the built-in energy-ratio detector.
-
-The [`examples/bucky-stream`](../examples/bucky-stream/main.go) program uses the
-built-in energy detector by default. Run `make example-bucky-stream-vad` to
-invoke the same program with `--silero-vad --vad-threshold=0.5`; it downloads
-the additional model and enables Silero. Silero changes utterance-boundary
-detection, not Whisper's transcription. Compared with the built-in energy
-ratio, learned speech probabilities are more robust to quiet speech, steady
-background noise, and changing microphone gain.
-
-`Reset` starts a new logical session while keeping the stream open. By default
-it flushes pending audio and restarts timestamps at zero. After an
-`EventError`, close the failed stream and open a new one instead of resetting
-it.
-
-Always close a stream. An open stream reserves SDK inference capacity and can
-prevent model unloading. SDK users can configure concurrent streams with
-`model.WithNSeqMax`; model-server users set `nseq-max` in the model's
-`bucky-models` entry.
+Application developers should use the generated Bucky SDK reference and the
+`examples/bucky` and `examples/bucky-stream` programs. The source-checkout
+targets `make example-bucky` and `make example-bucky-stream` run those examples;
+`make example-bucky-stream-vad` additionally downloads and selects Silero VAD.
+These commands can download libraries/models and run inference or capture audio.
 
 ### 18.8 Languages
 
 Whisper supports approximately 99 languages. Use its short language codes,
 such as `en`, `de`, `fr`, `es`, or `zh`. An empty language value asks Whisper
 to auto-detect the language.
-
-The SDK exposes `bucky.LangID`, `bucky.LangStr`, and `bucky.LangMaxID` for
-enumerating and converting the codes known to the loaded whisper.cpp library.
 
 Use a multilingual model (`tiny`, `base`, `small`, `medium`, `large-v3`, or
 `large-v3-turbo`) for non-English speech. Models ending in `.en` are English
@@ -627,10 +442,9 @@ not translate into arbitrary target languages.
 | The upload is rejected for its size | Keep the audio file at or below 25 MiB. Split long recordings or re-encode them at a lower bitrate. |
 | Audio decodes to no samples | The file may be corrupt or unsupported. Re-encode it as a 16 kHz mono WAV and retry. |
 | GPU inference is unexpectedly slow | Check `KRONK_BUCKY_LIB_PATH` and the active bundle. A CPU bundle runs without GPU acceleration. |
-| A new SDK stream blocks or times out | Another stream is holding all configured SDK stream capacity. Close idle streams or create the handle with a larger `NSeqMax`. |
-| Streaming emits finals but no partials | Check that `WithPartialEveryMs` was not given a negative value and that audio is arriving continuously. |
-| Streaming repeats words at boundaries | Keep silence detection enabled and avoid overly short forced-final intervals. |
-| Whisper diagnostic output appears in the terminal | Do not select `bucky.LogNormal`; the default `LogSilent` suppresses whisper.cpp diagnostics. |
+| Browser recordings fail to decode | Make ffmpeg available on the server/container PATH and restart after a previous failed lookup. |
+| Server startup fails during library installation or verification | Install the compatible managed bundle locally, inspect the verification error, then restart; do not routinely disable verification. |
+| Libraries exist but audio inference is unavailable | Check `KRONK_MEDIA_BACKENDS_ENABLED`, enable it if needed, and restart. |
 
 ---
 

@@ -38,14 +38,20 @@ For example:
 
 ```shell
 export KRONK_AUTHORIZATION_MODE=full-protected
+export KRONK_WEB_ADMIN_ENABLED=false
 kronk server start
 ```
 
 The default authorization mode is `open`.
 
-`KRONK_AUTH_HOST` selects the authentication provider; it does not change the
-rights in this table. `KRONK_WEB_ADMIN_ENABLED` independently controls whether
-the BUI is served. When using an external auth host with a mode that protects
+`KRONK_AUTH_HOST` selects the authentication provider. The table assumes that
+provider enforces authentication. The standalone auth service defaults to
+`AUTH_AUTH_ENABLED=false`, which bypasses token validation; set it to `true`
+before relying on a protected Kronk mode. Selecting a protected mode on Kronk
+alone cannot make a disabled external provider enforce tokens.
+`KRONK_WEB_ADMIN_ENABLED` independently controls whether the BUI is served.
+Replace the built-in browser password or disable the BUI before remote use.
+When using an external auth host with a mode that protects
 management, disable the BUI because its password login uses the embedded
 security store.
 
@@ -70,6 +76,7 @@ existing tokens to fail issuer validation.
 Load the initial admin token for CLI administration:
 
 ```shell
+set +x
 export KRONK_TOKEN=$(cat ~/.kronk/keys/master.jwt)
 ```
 
@@ -90,6 +97,10 @@ not accept `30d`. Every generated token receives a unique subject UUID, so
 authorization and quotas are per token rather than per named human or account.
 
 ## 12.4 Endpoint Grants and Rate Limits
+
+Endpoint grants and quotas are enforced only in `full-protected` mode; admin
+tokens bypass both. In `authenticated` mode a valid user token can call
+inference without endpoint grants, and its endpoint quotas are not counted.
 
 The grant names used by inference middleware are:
 
@@ -145,8 +156,10 @@ curl http://localhost:11435/v1/chat/completions \
   }'
 ```
 
-Kronk verifies the signature, issuer, expiration, required admin status or
-endpoint grant, and quota before processing a protected request. Authentication,
+With enforcing authentication, Kronk verifies the signature, issuer, expiration,
+and required admin status before processing a protected request. In
+`full-protected`, user requests also require the endpoint grant and available
+quota. Authentication,
 missing-grant, and exhausted-quota failures return `401 Unauthorized`,
 `403 Forbidden`, and `429 Too Many Requests`, respectively. Authentication
 service failures return `500 Internal Server Error`, while unavailable external
@@ -185,28 +198,35 @@ kronk security key list --local
 
 Local mode still requires `KRONK_TOKEN` containing a valid local admin token.
 Use it while the server is stopped because the local command opens the same
-Badger database.
+Badger database. The local security CLI currently uses the issuer `kronk project`
+rather than reading the server's configured issuer; tokens issued with a custom
+issuer cannot be administered through this local path. Use server-backed
+commands with the matching provider instead.
 
 ## 12.7 Embedded and Standalone Authentication
 
-By default, `kronk server` runs the auth service in-process over an in-memory
-listener. Relevant server settings are:
+Kronk uses embedded authentication by default. Relevant server settings are:
 
 | Flag | Environment variable | Purpose |
 | ---- | -------------------- | ------- |
 | `--authorization-mode` | `KRONK_AUTHORIZATION_MODE` | Select `open`, `management`, `authenticated`, or `full-protected`. Defaults to `open`. |
-| `--auth-issuer` | `KRONK_AUTH_LOCAL_ISSUER` | Set the expected JWT issuer. |
+| `--auth-issuer` | `KRONK_AUTH_LOCAL_ISSUER` | Set the embedded-auth JWT issuer. |
 | `--auth-host` | `KRONK_AUTH_HOST` | Connect to an external auth service instead. |
 | `--auth-tls-enabled` | `KRONK_AUTH_TLS_ENABLED` | Use TLS for an external auth connection. |
 | `--auth-tls-ca-file` | `KRONK_AUTH_TLS_CA_FILE` | Trust the certificates in this PEM CA file instead of the system roots. |
 | `--auth-tls-server-name` | `KRONK_AUTH_TLS_SERVER_NAME` | Override the TLS certificate server name. |
 
 Setting `KRONK_AUTH_HOST` skips embedded auth startup. The standalone `auth`
-service uses `AUTH_AUTH_HOST` (default `localhost:6000`), `AUTH_AUTH_ISSUER`
-(default `kronk project`), and `AUTH_AUTH_ENABLED`. Set
+service uses `AUTH_AUTH_HOST` (default `0.0.0.0:6000`), `AUTH_AUTH_ISSUER`
+(default `kronk project`), and `AUTH_AUTH_ENABLED` (default `false`). Its separate
+debug listener defaults to `0.0.0.0:6010`. Bind both listeners explicitly to
+loopback for local use with `AUTH_AUTH_HOST=127.0.0.1:6000` and
+`AUTH_WEB_DEBUG_HOST=127.0.0.1:6010`, or restrict both through network policy.
+Enable `AUTH_AUTH_ENABLED=true` for token enforcement. Set
 `AUTH_AUTH_TLS_ENABLED=true`, `AUTH_AUTH_TLS_CERT_FILE`, and
-`AUTH_AUTH_TLS_KEY_FILE` to serve TLS. The Kronk client and auth service must
-agree on issuer, protection policy, and transport security. External plaintext
+`AUTH_AUTH_TLS_KEY_FILE` to serve TLS. Configure token issuance and validation
+consistently at the provider and configure Kronk's connection for the same
+transport security. External plaintext
 connections remain supported for compatibility but produce a startup warning.
 
 The standalone MCP service uses `MCP_AUTH_TLS_ENABLED`,
@@ -222,7 +242,10 @@ Kronk listens on `127.0.0.1:11435` and serves plain HTTP by default. Before
 binding Kronk to another interface or allowing traffic outside a trusted host:
 
 - select `management`, `authenticated`, or `full-protected` authorization as
-  appropriate;
+  appropriate; `management` leaves inference public, and only `full-protected`
+  enforces user endpoint grants and quotas;
+- replace the built-in browser password or disable the BUI;
+- enable token enforcement at an external auth service before relying on it;
 - terminate TLS at a trusted reverse proxy and do not expose the API port
   directly to the public internet;
 - enable auth TLS whenever the auth service is reached across an untrusted

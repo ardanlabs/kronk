@@ -79,7 +79,7 @@ filesystem permissions as the Kronk process.
 Start the model server with embedded MCP:
 
 ```shell
-export KRONK_MCP_BRAVE_API_KEY=<your-brave-api-key>
+export KRONK_MCP_BRAVE_API_KEY="<your-brave-api-key>"
 kronk server start
 ```
 
@@ -92,11 +92,13 @@ or proxy to that address.
 Protect embedded MCP with the existing Kronk JWT system:
 
 ```shell
-kronk server start --mcp-auth-enabled
+kronk server start --mcp-auth-enabled --authorization-mode=management --web-admin-enabled=false
 ```
 
-This requires an admin bearer token on every MCP request and also enables
-administrative authentication for the REST API and BUI. Configure the MCP
+`--mcp-auth-enabled` requires an admin bearer token on every MCP request; it
+does not protect REST administration or the BUI. The example separately selects
+`management` authorization and disables the BUI. Inference remains public in
+that mode; use `full-protected` for endpoint grants and quotas. Configure the MCP
 client to send `Authorization: Bearer <admin-token>`. Application tokens with
 inference endpoint grants are not sufficient for MCP access. Before exposing
 the model server outside a trusted host, replace the BUI's default `kronk`
@@ -108,7 +110,7 @@ session.
 Start the standalone service with:
 
 ```shell
-export MCP_MCP_BRAVE_API_KEY=<your-brave-api-key>
+export MCP_MCP_BRAVE_API_KEY="<your-brave-api-key>"
 make mcp-server
 ```
 
@@ -152,7 +154,8 @@ The tool tries these matching tiers in order:
 3. Lines compared without surrounding whitespace.
 
 Each tier must identify exactly one block. An absent or ambiguous match returns
-an error without modifying the file. The replacement is inserted as provided.
+an error without modifying the file. The replacement may undergo line-ending
+or trailing-newline adjustment to match the selected tier.
 
 | Parameter | Type | Required | Description |
 | --------- | ---- | -------- | ----------- |
@@ -190,24 +193,62 @@ With the shipped `kronk` server key, OpenCode exposes the tools as
 
 ### 16.6 Testing with curl
 
-The makefile provides commands for a complete stateful MCP handshake. First,
-initialize a session and copy the `Mcp-Session-Id` response header:
+First initialize a session and copy the `Mcp-Session-Id` response header. These
+examples assume MCP authentication is enabled and `KRONK_TOKEN` contains an
+admin token. For an unprotected local listener, omit the Authorization header:
 
 ```shell
-make curl-mcp-init
+curl -i http://localhost:9000/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -H "Authorization: Bearer $KRONK_TOKEN" \
+  -d '{
+    "jsonrpc": "2.0", "id": 1, "method": "initialize",
+    "params": {
+      "protocolVersion": "2025-03-26",
+      "capabilities": {},
+      "clientInfo": {"name": "curl-client", "version": "1.0.0"}
+    }
+  }'
 ```
 
 Then send the required initialized notification:
 
 ```shell
-make curl-mcp-initialized SESSIONID=<session-id>
+SESSIONID="<session-id-from-response>"
+curl http://localhost:9000/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'MCP-Protocol-Version: 2025-03-26' \
+  -H "Authorization: Bearer $KRONK_TOKEN" \
+  -H "Mcp-Session-Id: $SESSIONID" \
+  -d '{"jsonrpc":"2.0","method":"notifications/initialized"}'
 ```
 
 The session can now list and call tools:
 
 ```shell
-make curl-mcp-tools-list SESSIONID=<session-id>
-make curl-mcp-web-search SESSIONID=<session-id>
+curl http://localhost:9000/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'MCP-Protocol-Version: 2025-03-26' \
+  -H "Authorization: Bearer $KRONK_TOKEN" \
+  -H "Mcp-Session-Id: $SESSIONID" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
+
+curl http://localhost:9000/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'MCP-Protocol-Version: 2025-03-26' \
+  -H "Authorization: Bearer $KRONK_TOKEN" \
+  -H "Mcp-Session-Id: $SESSIONID" \
+  -d '{
+    "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+    "params": {
+      "name": "web_search",
+      "arguments": {"query": "what is the Model Context Protocol", "count": 5}
+    }
+  }'
 ```
 
 When MCP authentication is enabled, include

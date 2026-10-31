@@ -135,7 +135,7 @@ look them up and pass them to Compose:
 
 ```shell
 getent group render video
-KRONK_RENDER_GID=<render GID> KRONK_VIDEO_GID=<video GID> docker compose -f compose.vulkan.yaml up -d
+KRONK_RENDER_GID="<render-GID>" KRONK_VIDEO_GID="<video-GID>" docker compose -f compose.vulkan.yaml up -d
 ```
 
 With `docker run`, pass the numbers to `--group-add` instead. On hosts with
@@ -199,8 +199,9 @@ Pull it again using any supported source form:
 kronk model pull <model-id> --local
 ```
 
-`model pull` requires a canonical `provider/modelID` and checks that provider
-when the ID has not been resolved before. A separate `model resolve` step is
+For canonical `provider/modelID` sources, `model pull` checks the specified
+provider when unresolved. URLs, exact file pins, and supported quantization
+shorthands also work. A separate `model resolve` step is
 not normally required. Interrupted downloads are resumable; if a file remains
 invalid, remove that model through Kronk and pull it again:
 
@@ -284,14 +285,17 @@ The source of the deadline matters:
 
 - a client or reverse proxy may cancel first;
 - admission waits are capped at three minutes before model processing starts;
-- the HTTP server defaults to a 30-second read timeout and a 60-minute write
+- the inference deadline defaults to 60 minutes, covering admission,
+  preparation, slot waiting, and generation;
+- the HTTP server defaults to a 30-second read timeout and a 61-minute write
   timeout.
 
 `--read-timeout` covers reading the request, not model execution. Increase
-`--write-timeout` only when a long response is being cut off by the server:
+the inference deadline only for intentionally longer operations, and keep a
+nonzero write timeout greater than it:
 
 ```shell
-kronk server start --write-timeout 90m
+kronk server start --inference-timeout 90m --write-timeout 91m
 ```
 
 Check client and proxy timeouts separately. Large prompts and queued requests

@@ -37,10 +37,10 @@ a separate server at `127.0.0.1:11445`:
 | `/debug/pprof/trace` | Go execution trace |
 | `/debug/statsviz` | Live Go runtime charts |
 
-> **Security:** The debug server has no authentication and its default address
-> listens on every interface. Profiles and runtime data can reveal sensitive
-> operational details. Bind it to loopback or restrict port `11445` at the
-> network boundary unless remote scraping is required.
+> **Security:** The debug server has no authentication. Its built-in default
+> is loopback, but YAML, environment settings, or flags can change the listener.
+> Profiles and runtime data can reveal sensitive operational details. Keep it
+> private or restrict port `11445` at the network boundary for remote scraping.
 
 To bind it to loopback:
 
@@ -108,7 +108,10 @@ scrape_configs:
 ```
 
 When Prometheus runs in Docker while Kronk runs on the host, use
-`host.docker.internal:11445`, as the repository's configuration does.
+`host.docker.internal:11445`, as the repository's configuration does. Kronk's
+debug listener must also be reachable from that container; a loopback-only
+listener is not portable across container runtimes. Select an appropriate
+private interface and restrict access rather than exposing profiling publicly.
 
 #### PromQL Examples
 
@@ -182,6 +185,11 @@ The repository includes a Docker Compose stack containing Grafana, Prometheus,
 Tempo, Loki, and Alloy. It provisions the data sources and a Kronk dashboard
 without manual Grafana setup.
 
+This is a trusted-development stack: Grafana enables anonymous Admin access and
+publishes port `3100` without a loopback-only binding. Restrict published ports
+and configure authentication before allowing access from other machines. Actual
+reachability depends on Docker, network, and firewall settings.
+
 Download the pinned images once, start the stack, and open Grafana:
 
 ```shell
@@ -245,16 +253,16 @@ production traffic based on its volume and storage budget.
 Use Go's pprof tooling against the debug server. For example:
 
 ```shell
-go tool pprof http://localhost:11445/debug/pprof/profile?seconds=30
-go tool pprof http://localhost:11445/debug/pprof/heap
-curl http://localhost:11445/debug/pprof/goroutine?debug=2
+go tool pprof 'http://localhost:11445/debug/pprof/profile?seconds=30'
+go tool pprof 'http://localhost:11445/debug/pprof/heap'
+curl 'http://localhost:11445/debug/pprof/goroutine?debug=2'
 ```
 
 Start pprof's interactive web interface with:
 
 ```shell
 go tool pprof -http=localhost:8081 \
-  http://localhost:11445/debug/pprof/profile?seconds=30
+  'http://localhost:11445/debug/pprof/profile?seconds=30'
 ```
 
 Statsviz displays live heap, allocation, goroutine, garbage collection, and

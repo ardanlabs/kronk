@@ -67,14 +67,15 @@ export default function DocsManual() {
       <div className="doc-layout">
         <div className="doc-content manual-content">
           <h2 id="chapter-1-introduction">Chapter 1: Introduction</h2>
-          <h3 id="11-what-is-kronk?">1.1 What Is Kronk?</h3>
-          <p>Kronk is a Go SDK and model server for running open-source models on your own hardware. It uses two C++ inference engines:</p>
+          <h3 id="11-what-is-kronk">1.1 What Is Kronk</h3>
+          <p>Kronk is a Go SDK and model server for running open-source models on your own hardware. It uses three C++ inference engines:</p>
           <ul>
             <li><a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a> runs GGUF text, vision, embedding, and reranking models.</li>
             <li><a href="https://github.com/ggml-org/whisper.cpp">whisper.cpp</a> runs speech-to-text models through Kronk's <strong>Bucky</strong> subsystem.</li>
+            <li><a href="https://github.com/leejet/stable-diffusion.cpp">stable-diffusion.cpp</a> runs image-generation models through Kronk's experimental <strong>Malina</strong> subsystem.</li>
           </ul>
-          <p>Kronk provides hardware-accelerated text generation, image understanding, audio transcription, embeddings, and reranking from Go without requiring Python or a CGO build toolchain.</p>
-          <h3 id="12-sdk-or-model-server?">1.2 SDK or Model Server?</h3>
+          <p>Kronk provides hardware-accelerated text generation, image understanding, audio transcription, image generation, embeddings, and reranking from Go without requiring Python or a CGO build toolchain. Runtime inference still requires compatible native libraries, which Kronk's library managers can download for supported platforms.</p>
+          <h3 id="12-sdk-or-model-server">1.2 SDK or Model Server</h3>
           <p>The model server's inference functionality is built on the same public SDK that is available to Go applications. You can either embed inference directly in an application or run the server for network access.</p>
           <table className="flags-table">
             <thead>
@@ -109,15 +110,16 @@ export default function DocsManual() {
             <li><strong>Text generation</strong> — chat completions and responses, including streaming, reasoning, and tool calls.</li>
             <li><strong>Vision</strong> — image understanding with compatible multimodal models.</li>
             <li><strong>Audio transcription</strong> — speech-to-text through Bucky and whisper.cpp. See <a href="https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription">Chapter 18: Bucky</a>.</li>
+            <li><strong>Image generation and editing</strong> — text-to-image and image-to-image through experimental Malina and stable-diffusion.cpp. See <a href="https://www.kronkai.com/manual#chapter-19-malina-image-generation">Chapter 19: Malina</a> for server capabilities and additional SDK-only operations.</li>
             <li><strong>Embeddings and reranking</strong> — vector generation and document relevance scoring for search and retrieval systems.</li>
             <li><strong>Structured decisions</strong> — evaluate choice, score, and calibrated yes/no questions against shared application state with supported decision models.</li>
           </ul>
           <p><strong>Performance</strong></p>
           <ul>
-            <li><strong>Concurrent processing</strong> — partition a model's KV cache into sequences so it can process multiple requests.</li>
+            <li><strong>Concurrent processing</strong> — serve multiple requests against a loaded model within configured concurrency and memory limits.</li>
             <li><strong>Message caching</strong> — reuse computed prompt prefixes instead of evaluating them again for every request.</li>
             <li><strong>Extended context</strong> — configure YaRN context extension for compatible models.</li>
-            <li><strong>Model pooling</strong> — keep a configurable number of models loaded and evict inactive models after a time-to-live period.</li>
+            <li><strong>Model pooling</strong> — retain loaded models within per-backend count limits and shared RAM/VRAM budgets, evicting idle models when space is needed. Optional time-to-live expiration can also unload idle models; it is disabled by default.</li>
           </ul>
           <p><strong>Operation</strong></p>
           <ul>
@@ -130,31 +132,33 @@ export default function DocsManual() {
           <p>Hardware support differs by operating system, architecture, inference engine, and release artifact. Kronk can use CPU inference and GPU backends such as Metal, CUDA, Vulkan, and ROCm where a compatible library bundle is available. See <a href="https://www.kronkai.com/manual#chapter-2-installation-quick-start">Chapter 2: Installation & Quick Start</a> for the currently distributed native and container options.</p>
           <p>Memory requirements depend on more than model parameter count. Quantization, context size, KV cache type, batch size, concurrency, and multimodal projections all affect RAM and VRAM use. See <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3: Model Configuration</a> before selecting a large model or context window.</p>
           <h3 id="14-architecture">1.4 Architecture</h3>
-          <p>Kronk is layered so applications and the model server use the same inference SDKs. The two engine paths provide different model capabilities and may have different platform support.</p>
+          <p>Kronk is layered so applications and the model server use the same inference SDKs. The three engine paths provide different model capabilities and may have different platform support.</p>
           <p><img src="https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/02-kronk-architecture.svg" alt="Kronk architecture: application access, SDKs, bindings, native engines, and models" /></p>
-          <p>The SDK layer owns model loading, inference, caching, and concurrency. The model server adds HTTP transport, model pooling, the BUI, security, and operational services. The model server reaches both typed SDKs through the shared <code>sdk/pool</code> facade. Your application can call <code>sdk/kronk</code> or <code>sdk/bucky</code> directly without starting the model server, or use the pool when it needs a coordinated multi-model lifecycle.</p>
-          <p>For conversational generation, Incremental Message Caching (IMC) keeps a pool of reusable conversation-prefix snapshots separate from the active execution slots. An inactive session is externalized to the built-in RAM store or a custom SDK store rather than remaining attached to one slot or persistently occupying that slot's accelerator KV stream. A later request can reserve the longest compatible complete prefix, restore it into any free slot, and prefill only the stable work that was added. This applies to supported text and multimodal prompts; media identity, ordering, embedding expansion, and position accounting are part of safe reuse. See <a href="https://www.kronkai.com/manual#chapter-4-batch-processing">Chapter 4</a> for the request lifecycle and <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a> for the full IMC semantics.</p>
+          <p>Embedded applications control model loading and inference directly. The model server provides network access to those capabilities and manages model retention, memory admission, concurrent requests, and waiting requests. It also provides the BUI, security, and operational services. Supported operations differ by model and backend; some SDK operations are not exposed over HTTP.</p>
+          <p>For conversational generation, Incremental Message Caching (IMC) can avoid reprocessing a compatible prompt prefix from an earlier request. Chat-completion clients still send the complete conversation; caching does not replace conversation history management. An inactive conversation does not hold an execution slot, but its cached state still consumes storage. Changes to messages, tools, templates, or media can reduce or prevent reuse. See <a href="https://www.kronkai.com/manual#chapter-4-batch-processing">Chapter 4</a> for concurrency and request handling, and <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a> for cache behavior and limitations.</p>
           <h3 id="15-where-to-go-next">1.5 Where to Go Next</h3>
           <ul>
             <li><strong>Install Kronk and run your first model:</strong> <a href="https://www.kronkai.com/manual#chapter-2-installation-quick-start">Chapter 2: Installation & Quick Start</a></li>
             <li><strong>Choose memory, context, and GPU settings:</strong> <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3: Model Configuration</a></li>
             <li><strong>Connect an editor, agent, or other client:</strong> <a href="https://www.kronkai.com/manual#chapter-14-client-integration">Chapter 14: Client Integration</a></li>
             <li><strong>Run speech-to-text models:</strong> <a href="https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription">Chapter 18: Bucky</a></li>
+            <li><strong>Generate or edit images:</strong> <a href="https://www.kronkai.com/manual#chapter-19-malina-image-generation">Chapter 19: Malina</a></li>
           </ul>
           <hr />
           <h2 id="chapter-2-installation-quick-start">Chapter 2: Installation &amp; Quick Start</h2>
           <h3 id="21-native-quick-start">2.1 Native Quick Start</h3>
-          <p>This path installs Kronk on the host, downloads a starter model, and starts the model server. The first run requires an internet connection for native libraries and model files.</p>
+          <p>This path installs Kronk on the host, downloads a starter model, and starts the model server. The first run requires an internet connection for native libraries and model files. These examples assume the default server settings; an existing installation keeps its saved configuration.</p>
           <p><strong>1. Install the CLI with Homebrew (macOS or Linux)</strong></p>
           <pre className="code-block"><code className="language-shell">{`brew install ardanlabs/kronk/kronk`}</code></pre>
           <p>The fully qualified formula name adds the tap and trusts only the Kronk formula. Do not run <code>brew trust ardanlabs/kronk</code> unless you intend to trust every current and future formula, cask, and external command published by the tap.</p>
           <p>Other installation methods are listed in <a href="#22-choose-an-installation-method">Section 2.2</a>.</p>
           <p><strong>2. Install the native inference libraries</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk libs --local`}</code></pre>
+          <p><code>--local</code> runs this operation on the current machine without a server. Library, model, and catalog commands that support this flag otherwise use a running server by default.</p>
           <p>Kronk detects the operating system, architecture, and available GPU backend. It selects Metal, CUDA, ROCm, or Vulkan when supported and falls back to CPU.</p>
           <p><strong>3. Download a starter model</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk model pull mradermacher/Qwopus3.5-4B-Coder.Q8_0 --local`}</code></pre>
-          <p>This coding model requires about 5.3 GB of disk space, including its multimodal projection. On memory-constrained or CPU-only systems, start with the smaller <code>unsloth/Qwen3-0.6B-Q8_0</code> instead.</p>
+          <p>This coding model requires about 5.3 GB of disk space, including its multimodal projection. On memory-constrained or CPU-only systems, start with the smaller <code>unsloth/Qwen3-0.6B-Q8_0</code> instead, using that ID in both the pull command and the API examples below. Disk size is not the model's runtime memory requirement.</p>
           <p><strong>4. Start the server in the background</strong></p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --api-host=127.0.0.1:11435 -d`}</code></pre>
           <p>The explicit host keeps this unauthenticated quick-start server reachable only from the local machine. The API listens on <code>http://localhost:11435</code>. The Browser UI (BUI) is enabled by default at <code>http://localhost:11435/admin/</code>.</p>
@@ -164,7 +168,7 @@ export default function DocsManual() {
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT",
+    "model": "mradermacher/Qwopus3.5-4B-Coder.Q8_0",
     "messages": [{"role": "user", "content": "Write a Go function that reverses a string."}],
     "max_tokens": 256
   }'`}</code></pre>
@@ -194,7 +198,7 @@ export default function DocsManual() {
               <tr>
                 <td><code>go install</code></td>
                 <td>Platforms supported by the Go toolchain and Kronk libraries</td>
-                <td>Go 1.27 or later</td>
+                <td>Go 1.27.3 or later for this release</td>
               </tr>
               <tr>
                 <td>Container</td>
@@ -224,7 +228,7 @@ export default function DocsManual() {
 kronk --help`}</code></pre>
           <p>Use <code>kronk &lt;command&gt; --help</code> for the current command and flag reference rather than relying on copied CLI output.</p>
           <h3 id="23-container-quick-start">2.3 Container Quick Start</h3>
-          <p>Release images are published to GHCR and Docker Hub. Each image contains the Kronk executable, BUI, ffmpeg, and the native llama.cpp and whisper.cpp libraries for its processor variant.</p>
+          <p>Release images are published to GHCR and Docker Hub. Each image contains the Kronk executable, BUI, ffmpeg, and native llama.cpp and whisper.cpp libraries. Linux amd64 images also include stable-diffusion.cpp libraries for Malina; arm64 images do not. The tag identifies the llama.cpp backend, not a guarantee that every inference engine uses that backend: ROCm images use Vulkan for transcription, and CUDA images provide Vulkan or CPU for image generation.</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -267,6 +271,7 @@ kronk --help`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`docker run -d \\
   --name kronk \\
   --restart unless-stopped \\
+  -e KRONK_PROCESSOR=cpu \\
   -p 127.0.0.1:11435:11435 \\
   -v kronk-data:/kronk \\
   ghcr.io/ardanlabs/kronk:latest`}</code></pre>
@@ -282,7 +287,7 @@ kronk --help`}</code></pre>
   ghcr.io/ardanlabs/kronk:latest-cuda`}</code></pre>
           <p>AMD ROCm and Vulkan require host-specific device access. Use the Compose files below, or see the tested <code>docker run</code> command lines and the compatibility matrix in the header of the <a href="https://github.com/ardanlabs/kronk/blob/main/zarf/docker/kronk/Dockerfile"><code>Dockerfile</code></a>.</p>
           <p><strong>Docker Compose</strong></p>
-          <p>The repository includes Compose files in <a href="https://github.com/ardanlabs/kronk/tree/main/zarf/docker/kronk"><code>zarf/docker/kronk</code></a> that run the same local CPU container as above, in the same <code>kronk-data</code> volume. Remove a <code>kronk</code> container started with <code>docker run</code> first; its models are kept:</p>
+          <p>The repository includes Compose files in <a href="https://github.com/ardanlabs/kronk/tree/main/zarf/docker/kronk"><code>zarf/docker/kronk</code></a> that reuse the same <code>kronk-data</code> volume. The default file selects CPU inference and publishes the API (<code>11435</code>) and debug server (<code>11445</code>, including metrics and profiling) on localhost. Remove a <code>kronk</code> container started with <code>docker run</code> first; its models are kept in the volume:</p>
           <pre className="code-block"><code className="language-shell">{`docker rm -f kronk
 git clone --depth 1 https://github.com/ardanlabs/kronk.git
 cd kronk/zarf/docker/kronk
@@ -291,7 +296,7 @@ docker compose up -d`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`docker compose -f compose.cuda.yaml up -d     # NVIDIA, needs the NVIDIA Container Toolkit
 docker compose -f compose.rocm.yaml up -d     # AMD with ROCm, needs /dev/kfd and /dev/dri
 docker compose -f compose.vulkan.yaml up -d   # AMD or Intel with Vulkan, needs /dev/dri`}</code></pre>
-          <p>For the <code>latest-all</code> image, change the image tag in the GPU file to <code>-all</code>.</p>
+          <p>To use the <code>latest-all</code> image, set the GPU file's image to <code>ghcr.io/ardanlabs/kronk:latest-all</code>, retaining its device access and processor settings.</p>
           <p>Settings, server options such as authentication, GPU details, and upgrades are covered in <a href="https://www.kronkai.com/manual#87-container-operations">8.7 Container Operations</a>.</p>
           <p>The container runs as UID/GID <code>10001</code>. A named volume needs no preparation. If you use a host directory such as <code>/srv/kronk</code>, make it writable by that user before starting the container:</p>
           <pre className="code-block"><code className="language-shell">{`sudo mkdir -p /srv/kronk
@@ -303,16 +308,31 @@ sudo chown -R 10001:10001 /srv/kronk`}</code></pre>
   -f zarf/helm/kronk/examples/cpu.yaml --wait --timeout 20m`}</code></pre>
           <p>This installs one StatefulSet replica, a retained <code>50Gi</code> RWO data claim, and the small <code>unsloth/Qwen3-0.6B-Q8_0</code> starter model. A default StorageClass is required unless you select another class or an existing claim. Unlike the local container quick start, the chart defaults to authenticated access and disables the BUI. See <a href="https://www.kronkai.com/manual#810-kubernetes-with-helm">8.10 Kubernetes with Helm</a> for installation and essential operating warnings, and the <a href="https://github.com/ardanlabs/kronk/blob/main/zarf/helm/kronk/README.md">chart README</a> for configuration, the first chat request, and troubleshooting. Installation is from the local chart only. GPU examples require validation on real nodes with compatible drivers and runtimes.</p>
           <h3 id="24-libraries">2.4 Libraries</h3>
-          <p>Kronk needs a native llama.cpp library bundle before it can run GGUF models. The server checks the selected bundle during startup and installs it when needed. To install it explicitly before starting the server, run:</p>
+          <p>Kronk needs a native llama.cpp library bundle before it can run GGUF models. By default, the server checks the selected bundle during startup and installs it when needed. To install it explicitly before starting the server, run:</p>
           <pre className="code-block"><code className="language-shell">{`kronk libs --local`}</code></pre>
+          <p>The server also installs and initializes Bucky and Malina libraries by default where supported. For a server that does not need transcription or image generation, <code>--media-backends-enabled=false</code> skips those backend downloads and initialization. This does not disable vision or audio input supported by a llama.cpp model.</p>
+          <h4 id="selecting-a-library-bundle">Selecting a library bundle</h4>
           <p>The default location is:</p>
           <pre className="code-block"><code className="language-text">{`~/.kronk/libraries/<os>/<arch>/<processor>/`}</code></pre>
           <p>Examples include <code>darwin/arm64/metal</code> and <code>linux/amd64/cuda</code>. Multiple bundles can coexist. During automatic selection, Kronk first resolves the preferred processor for the host. A CUDA 13 bundle requires every visible NVIDIA GPU to have compute capability 7.5 or newer. If the visible devices are older, or <code>CUDA_VISIBLE_DEVICES</code> leaves no CUDA device visible, Kronk selects a supported ROCm or Vulkan host runtime when one is available and otherwise selects CPU. An inconclusive NVIDIA probe retains CUDA rather than silently changing the backend.</p>
           <p>After installation, Kronk probes the preferred accelerator bundle before loading it. If that bundle positively reports no accelerator and another installed bundle for the same llama.cpp version positively reports a device, Kronk selects the working installed bundle. This second check does not download another bundle. Startup logs report the preferred processor, selected processor, and reason for either retaining or changing it.</p>
-          <p>Explicit settings take precedence over both automatic checks. Setting <code>KRONK_ARCH</code>, <code>KRONK_OS</code>, <code>KRONK_PROCESSOR</code>, or <code>KRONK_LIB_PATH</code> selects that value strictly; Kronk does not substitute another runtime. Use an explicit processor when automatic detection is not appropriate, such as deliberately running CPU inference on a GPU host.</p>
+          <p><code>KRONK_ARCH</code> and <code>KRONK_OS</code> select the bundle's target architecture and operating system. Set <code>KRONK_PROCESSOR</code> when automatic backend selection is not appropriate, such as deliberately running CPU inference on a GPU host. An explicit processor or library path disables the server's automatic runtime substitution; setting only the architecture or operating system does not.</p>
+          <p>List the supported and installed bundles without a running server:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk libs --local --list-combinations
+kronk libs --local --list-installs`}</code></pre>
+          <p>To deliberately select CPU inference, apply the setting to both installation and server startup; setting it for one command does not persist it:</p>
+          <pre className="code-block"><code className="language-shell">{`KRONK_PROCESSOR=cpu kronk libs --local
+KRONK_PROCESSOR=cpu kronk server start`}</code></pre>
+          <p>For server startup, <code>KRONK_LIB_PATH</code> or <code>--lib-path</code> can name an existing versioned Kronk bundle or a user-managed library directory. A non-empty user-managed directory without <code>version.json</code> is treated as read-only: Kronk loads from it but does not install, upgrade, or replace its contents. Changing the selected processor or library path requires a process restart; native libraries are not hot-reloaded.</p>
+          <p>Linux CUDA bundles depend on CUDA runtime libraries supplied by the host. A working <code>nvidia-smi</code> confirms the driver but not necessarily the CUDA runtime. If the CUDA backend does not load, inspect <code>libggml-cuda.so</code> with <code>ldd</code> and install the runtime packages appropriate for the CUDA version used by the current bundle. The CUDA container image already includes its matching runtime.</p>
+          <h4 id="versions-and-upgrades">Versions and upgrades</h4>
+          <p>On a fresh installation, the normal command installs the llama.cpp build pinned for the installed Kronk release and verifies the download against its pinned release manifest. A newer installed build is retained rather than automatically downgraded; use <code>--version</code> to select a particular release. Once verification metadata is cached, subsequent verification can run offline. Older installations without that metadata need an online verification first.</p>
+          <p>Prefer the pinned build. <code>--upgrade</code> opts into the latest published llama.cpp build, which may be incompatible with the installed Kronk release:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk libs --local --upgrade`}</code></pre>
+          <p>Use <code>kronk libs --help</code> for explicit version selection, cross-platform bundle installation, and removal. The compatibility matrix is kept in the repository <a href="https://github.com/ardanlabs/kronk#project-status">README</a>. Native backend environment settings and their restart requirements are covered in <a href="https://www.kronkai.com/manual#native-backend-environment-settings">Chapter 3</a>.</p>
           <h4 id="openvino-preview-bundles">OpenVINO preview bundles</h4>
           <p>Kronk can download llama.cpp OpenVINO bundles for Linux amd64 and Windows amd64. Kronk supports these bundles only on Intel systems. They can be tried to improve inference performance by targeting an Intel CPU, integrated or discrete Intel GPU, or Intel NPU. They do not provide acceleration for AMD or NVIDIA GPUs; use ROCm or Vulkan for AMD GPUs and CUDA for NVIDIA GPUs.</p>
-          <p>OpenVINO remains an explicit, preview backend. It is not selected automatically, and performance and compatibility depend on the model, quantization, workload, and target device. Benchmark against Kronk's standard <code>cpu</code> backend when using an Intel CPU, and validate complete serving workloads on the target system before production use. Successfully loading a model or passing <code>test-openvino</code> is only a smoke test, not confirmation that every model or serving feature is supported.</p>
+          <p>OpenVINO remains an explicit, preview backend. It is not selected automatically, and performance and compatibility depend on the model, quantization, workload, and target device. Benchmark against Kronk's standard <code>cpu</code> backend when using an Intel CPU, and validate complete serving workloads on the target system before production use. Successfully loading one model is not confirmation that every model or serving feature is supported.</p>
           <p>Two environment variables select the runtime:</p>
           <ul>
             <li><code>KRONK_PROCESSOR=openvino</code> selects the OpenVINO llama.cpp bundle.</li>
@@ -334,30 +354,12 @@ kronk server start`}</code></pre>
 make test-openvino OPENVINO_DEVICE=GPU
 make test-openvino OPENVINO_DEVICE=GPU.0
 make test-openvino OPENVINO_DEVICE=NPU`}</code></pre>
-          <p>The probe is supported on Linux/Windows amd64, downloads the pinned bundle and small diagnostic model, loads the library in-process, enumerates <code>OPENVINO0</code>, runs <code>llama-bench</code>, and fails if OpenVINO reports a fallback to CPU. It is not part of the normal test suite.</p>
-          <p>Useful commands:</p>
-          <pre className="code-block"><code className="language-shell">{`# Show supported bundles.
-kronk libs --list-combinations
-
-# Show installed bundles.
-kronk libs --list-installs
-
-# Install the supported version using its exact release manifest pin.
-kronk libs --local \\
-  --version=b11960@sha256:bab64a43d056b39e64c9ce46f966e43757a0dcf07cce5c4939c0fcf19cd01b38
-
-# Explicitly select CPU instead of an available GPU.
-KRONK_PROCESSOR=cpu kronk libs --local`}</code></pre>
-          <p>The normal command installs the llama.cpp version selected for the installed Kronk release. That default includes the SHA-256 of the release manifest. The manifest contains the digests of every platform archive, allowing Kronk to authenticate the manifest before verifying the selected download. Yzma caches the authenticated manifest and its digest beside the installed libraries so subsequent verification can run without network access. An installation made before Yzma 1.26.1 needs one online verification to populate that cache. <code>--upgrade</code> opts into the latest published llama.cpp build, which may introduce upstream compatibility changes:</p>
-          <pre className="code-block"><code className="language-shell">{`kronk libs --local --upgrade`}</code></pre>
-          <p>Kronk, its Yzma Go binding, and llama.cpp form a tested compatibility set. Do not infer compatibility from version ordering or upgrade only one member of the set. The current and historical matrix is kept in the repository <a href="../README.md#project-status">README</a>, while the normal non-<code>--upgrade</code> command installs the build pinned for the Kronk release.</p>
-          <p>When upgrading to llama.cpp b11696, check any deployment settings for <code>GGML_CUDA_ENABLE_UNIFIED_MEMORY</code>, <code>GGML_CUDA_NO_PINNED</code>, and <code>GGML_CUDA_REGISTER_HOST</code>. These native CUDA-family environment variables now require numeric nonzero values instead of merely being present. Use <code>1</code> to activate them, not <code>true</code>, <code>yes</code>, or an empty value. See <a href="https://www.kronkai.com/manual#native-backend-environment-settings">Native backend environment settings</a> for their meanings and restart requirements. No change is needed if they are unset.</p>
-          <p>Use <code>kronk libs --help</code> for cross-platform bundle installation and removal. Changing the active library path requires a server restart; libraries are not hot-reloaded.</p>
-          <p><code>KRONK_LIB_PATH</code> can name an existing versioned Kronk bundle or a user-managed library directory. A non-empty user-managed directory without <code>version.json</code> is treated as read-only: Kronk loads from it but does not install, upgrade, or replace its contents. Changing the selected processor or library path requires a process restart; native libraries are not hot-reloaded.</p>
-          <p>Linux CUDA bundles depend on CUDA runtime libraries supplied by the host. A working <code>nvidia-smi</code> confirms the driver but not necessarily the CUDA runtime. If the CUDA backend does not load, inspect <code>libggml-cuda.so</code> with <code>ldd</code> and install the runtime packages appropriate for the CUDA version used by the current bundle. The CUDA container image already includes its matching runtime.</p>
-          <p>Speech-to-text uses a separate whisper.cpp bundle:</p>
-          <pre className="code-block"><code className="language-shell">{`kronk bucky libs --local`}</code></pre>
-          <p>See <a href="https://www.kronkai.com/manual#182-install-whisper-libraries">Chapter 18: Bucky</a> for Bucky platforms, models, and configuration.</p>
+          <p>The probe requires a source checkout and Linux/Windows amd64. It downloads the pinned bundle and a small diagnostic model, tests inference, and fails if OpenVINO reports a fallback to CPU. Passing it is a smoke test, not validation of every model or serving feature.</p>
+          <h4 id="bucky-and-malina-libraries">Bucky and Malina libraries</h4>
+          <p>Speech-to-text and image generation use separate bundles. To install them explicitly without a running server:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk bucky libs --local
+kronk malina libs --local`}</code></pre>
+          <p>Platform and backend support differ from llama.cpp. See <a href="https://www.kronkai.com/manual#182-install-whisper-libraries">Chapter 18: Bucky</a> and <a href="https://www.kronkai.com/manual#192-install-stable-diffusion-libraries">Chapter 19: Malina</a> for supported bundles, models, and configuration.</p>
           <h3 id="25-models-and-data-paths">2.5 Models and Data Paths</h3>
           <p>List the starter catalog and download a model directly on the host:</p>
           <pre className="code-block"><code className="language-shell">{`kronk catalog list --local
@@ -373,22 +375,24 @@ kronk model pull unsloth/Qwen3-0.6B-Q8_0 --local`}</code></pre>
 │   └── [<organization>/]<adapter>.gguf
 ├── models/
 │   ├── model_config.yaml
-│   ├── .index.yaml
 │   └── <provider>/<family>/<model files>
 ├── bucky-libraries/
 ├── bucky-models/
+├── malina-libraries/
+├── malina-models/
 └── keys/`}</code></pre>
-          <p>Set <code>KRONK_BASE_PATH</code> or the global <code>--base-path</code> flag to move the entire data root. Official containers set it to <code>/kronk</code>.</p>
+          <p>Set <code>KRONK_BASE_PATH</code> or the global <code>--base-path</code> flag to select a different data root. This does not move existing files; migrate them separately when reusing an installation. Use the same root for local management commands and the server. Official containers set it to <code>/kronk</code>.</p>
           <p>The <code>lora</code> directory holds optional, user-provided LoRA adapter GGUF files. Kronk does not download these files. See <a href="https://www.kronkai.com/manual#lora-adapters">Chapter 3 §3.7</a> for placement and configuration.</p>
-          <p>The model configuration file contains per-model and per-variant overrides. Do not copy configuration values based only on model size; use <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3</a> for context, cache, GPU, and sampling settings.</p>
+          <p><code>models/model_config.yaml</code> contains server settings and overrides for language, Bucky, and Malina models, including language-model variants. Kronk creates it when absent and preserves existing edits. Restart the server after changing it. Do not copy configuration values based only on model size; use <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3</a> for context, cache, GPU, and sampling settings.</p>
           <h3 id="26-running-the-server">2.6 Running the Server</h3>
           <p>Start in the foreground:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --api-host=127.0.0.1:11435`}</code></pre>
-          <p>Start in the background:</p>
+          <p>Stop a foreground server with Ctrl-C. To run in the background instead:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --api-host=127.0.0.1:11435 -d`}</code></pre>
           <p>The background process writes logs to <code>~/.kronk/kronk.log</code>. Manage it with:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server logs
 kronk server stop`}</code></pre>
+          <p>If you selected another data root, use the same <code>--base-path</code> or <code>KRONK_BASE_PATH</code> for logs and stop commands. A background launch can return while startup is still in progress; follow the logs and verify the API before sending inference requests.</p>
           <p>The server defaults to <code>127.0.0.1:11435</code> for local-only access. The API and BUI share port <code>11435</code>; the BUI is enabled by default and is served under <code>/admin/</code>. Disable it for a headless server with:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start \\
   --api-host=127.0.0.1:11435 \\
@@ -400,29 +404,29 @@ kronk server stop`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`kronk systemd install
 kronk systemd start
 kronk systemd status`}</code></pre>
-          <p>The embedded service definition runs against your existing <code>~/.kronk</code> and enables startup at login. Use <code>kronk systemd install --boot</code> instead to enable startup before login and operation after logout (may require authorization). Stop any manually started server before starting the service. Use <code>kronk systemd stop</code> and <code>kronk systemd logs</code> for this process, not the detached-server commands. See <a href="https://www.kronkai.com/manual#88-running-as-a-systemd-service">Chapter 8 §8.8</a> for configuration, upgrades, and removal.</p>
+          <p>The user service uses your existing <code>~/.kronk</code> by default and enables startup at login. Use <code>kronk systemd install --boot</code> instead to enable startup before login and operation after logout (may require authorization). Stop any manually started server before starting the service. Use <code>kronk systemd stop</code> and <code>kronk systemd logs</code> for this process, not the detached-server commands. See <a href="https://www.kronkai.com/manual#88-running-as-a-systemd-service">Chapter 8 §8.8</a> for configuration, upgrades, and removal.</p>
           <h4 id="run-as-a-macos-agent-launchd">Run as a macOS Agent (launchd)</h4>
           <p>With Kronk installed in a permanent location, run these as your normal user:</p>
           <pre className="code-block"><code className="language-shell">{`kronk launchd install
 kronk launchd start
 kronk launchd status`}</code></pre>
-          <p>The embedded LaunchAgent reuses your existing <code>~/.kronk</code> and enables startup at desktop login. Stop any manually started server before starting the agent. Use <code>kronk launchd stop</code> and <code>kronk launchd logs</code> to manage it. This is a per-user agent, not a system-wide service or a before-login boot service. See <a href="https://www.kronkai.com/manual#89-running-as-a-launchd-agent">Chapter 8 §8.9</a> for configuration, upgrades, logs, and removal.</p>
+          <p>The LaunchAgent uses your existing <code>~/.kronk</code> by default and enables startup at desktop login. Stop any manually started server before starting the agent. Use <code>kronk launchd stop</code> and <code>kronk launchd logs</code> to manage it. This is a per-user agent, not a system-wide service or a before-login boot service. See <a href="https://www.kronkai.com/manual#89-running-as-a-launchd-agent">Chapter 8 §8.9</a> for configuration, upgrades, logs, and removal.</p>
           <h3 id="27-verify-the-installation">2.7 Verify the Installation</h3>
           <p>Check server liveness:</p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/liveness`}</code></pre>
           <p>List models visible to the server:</p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/models`}</code></pre>
-          <p>Test a downloaded model:</p>
+          <p>Test the starter model from Section 2.1, or substitute the ID of another downloaded chat model:</p>
           <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "unsloth/Qwen3-0.6B-Q8_0",
+    "model": "mradermacher/Qwopus3.5-4B-Coder.Q8_0",
     "messages": [{"role": "user", "content": "Hello!"}],
     "max_tokens": 100
   }'`}</code></pre>
-          <p>If authentication is enabled, add <code>-H "Authorization: Bearer $KRONK_TOKEN"</code> to API requests.</p>
+          <p>If authentication is enabled, add <code>-H "Authorization: Bearer $KRONK_TOKEN"</code> to protected API requests, using a token with the required permissions. Health endpoints remain public. A successful health check confirms the API is responding, not that a particular model can load and generate; the chat request checks that separately.</p>
           <h3 id="28-security-and-next-steps">2.8 Security and Next Steps</h3>
-          <p>Authentication is disabled by default. Do not publish port <code>11435</code> to an untrusted network until authentication and TLS termination are configured. The BUI, management endpoints, and inference endpoints have separate security controls; see <a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication">Chapter 12: Security & Authentication</a> before operating a shared or internet-reachable server.</p>
+          <p>The native server defaults to open API access. Do not publish port <code>11435</code> to an untrusted network until authentication and TLS termination are configured. The BUI, management endpoints, and inference endpoints have separate security controls; see <a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication">Chapter 12: Security & Authentication</a> before operating a shared or internet-reachable server.</p>
           <p>Continue with:</p>
           <ul>
             <li><a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3: Model Configuration</a> for memory, context, GPU, cache, and sampling settings.</li>
@@ -430,10 +434,11 @@ kronk launchd status`}</code></pre>
             <li><a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication">Chapter 12: Security & Authentication</a> before exposing the service.</li>
             <li><a href="https://www.kronkai.com/manual#chapter-14-client-integration">Chapter 14: Client Integration</a> to connect an editor or coding agent.</li>
             <li><a href="https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription">Chapter 18: Bucky</a> for speech-to-text.</li>
+            <li><a href="https://www.kronkai.com/manual#chapter-19-malina-image-generation">Chapter 19: Malina</a> for image generation.</li>
           </ul>
           <h3 id="29-cli-reference-and-shell-completion">2.9 CLI Reference and Shell Completion</h3>
-          <p>The BUI's <strong>Docs → CLI</strong> reference is generated from the same command definitions as <code>kronk --help</code>. It includes every visible command, its flags and declared defaults, and short examples. Use this manual for workflows, environment settings, and service configuration. A flag's declared default may be an unset sentinel; server defaults and environment/configuration precedence are described in Chapter 8.</p>
-          <p>Cobra provides shell completion for Bash, Fish, PowerShell, and Zsh. For the current session:</p>
+          <p>The BUI's <strong>Docs → CLI</strong> reference and <code>kronk --help</code> list commands, flags, declared defaults, and examples. Use this manual for workflows, environment settings, and service configuration. Defaults shown in help are not necessarily the effective server settings: saved configuration and environment variables can supply values for flags you do not set. Chapter 8 describes server defaults and configuration precedence.</p>
+          <p>Shell completion is available for Bash, Fish, PowerShell, and Zsh. For the current session:</p>
           <pre className="code-block"><code className="language-shell">{`# Bash
 source <(kronk completion bash)
 
@@ -473,7 +478,7 @@ malina-models:
   sd-1.5:
     concurrency: 2
     queue-depth: 2`}</code></pre>
-          <p>Files without <code>version</code> use the legacy version-0 shape, where model IDs are top-level keys. The remaining examples in this chapter show individual entries as they appear below <code>models:</code>. Model setting names use kebab-case, such as <code>context-window</code> and <code>nseq-max</code>. Keys nested under <code>sampling-parameters</code> use the API's snake_case names, such as <code>top_p</code>.</p>
+          <p>Files must declare <code>version: 1</code> or <code>version: 2</code>; missing or unsupported versions prevent server startup. Migrate legacy files with top-level model IDs into the <code>models:</code> mapping. The remaining examples in this chapter show individual entries as they appear below <code>models:</code>. Model setting names use kebab-case, such as <code>context-window</code> and <code>nseq-max</code>. Keys nested under <code>sampling-parameters</code> use the API's snake_case names, such as <code>top_p</code>.</p>
           <p>The server reads this file during startup. Restart the server after changing it. To test a different file without replacing the default, run:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --model-config-file=./my-model-config.yaml`}</code></pre>
           <p>You can also set <code>KRONK_POOL_MODEL_CONFIG_FILE</code> to an alternative path. See <a href="https://www.kronkai.com/manual#85-model-configuration-files">Chapter 8 §8.5</a> for model config file management and <a href="https://www.kronkai.com/manual#25-models-and-data-paths">Chapter 2 §2.5</a> for all data paths.</p>
@@ -488,17 +493,18 @@ malina-models:
     context-window: 65536`}</code></pre>
           <p>Select the variant by sending the complete name, including <code>/LONG</code>, as the API request's <code>model</code> value. Variants let applications use different runtime settings without keeping duplicate model files.</p>
           <h4 id="other-configuration-surfaces">Other configuration surfaces</h4>
-          <p>Applications embedding the Go SDK can construct a <code>model.Config</code> directly. Request fields such as <code>temperature</code>, <code>top_p</code>, <code>seed</code>, and <code>max_tokens</code> can override generation behavior for an individual request. A configured seed makes requests that omit <code>seed</code> repeatable; omit it from both places to use random sampling. Those request fields are documented in <a href="https://www.kronkai.com/manual#chapter-10-request-parameters">Chapter 10</a>.</p>
-          <p>The hardware processor (<code>cpu</code>, <code>metal</code>, <code>cuda</code>, <code>rocm</code>, or <code>vulkan</code>) selects a native library bundle rather than a per-model setting. Kronk detects it during library installation. Set <code>KRONK_PROCESSOR</code> before installing libraries only when you need to override detection; see <a href="https://www.kronkai.com/manual#24-libraries">Chapter 2 §2.4</a>.</p>
+          <p>Applications embedding the SDK can configure model loading directly without using the server's YAML file. Request fields such as <code>temperature</code>, <code>top_p</code>, <code>seed</code>, and <code>max_tokens</code> can override generation behavior for an individual request. A configured seed supplies a repeatable sampling default; an explicit request seed takes precedence. Without either, Kronk generates a random seed, which a matched IMC session can retain across turns. A fixed seed does not guarantee identical output across different backends or execution conditions. Those request fields are documented in <a href="https://www.kronkai.com/manual#chapter-10-request-parameters">Chapter 10</a>.</p>
+          <p>The hardware processor (such as <code>cpu</code>, <code>metal</code>, <code>cuda</code>, <code>rocm</code>, or <code>vulkan</code>) selects a native library bundle rather than a per-model setting. Kronk normally detects it automatically. To override detection, apply <code>KRONK_PROCESSOR</code> to both library installation and server startup; a one-command setting does not persist. See <a href="https://www.kronkai.com/manual#24-libraries">Chapter 2 §2.4</a>.</p>
           <h4 id="311-chat-templates-define-the-model-protocol">3.1.1 Chat Templates Define the Model Protocol</h4>
           <p>A chat template is not cosmetic string formatting. It is executable, model-specific protocol logic that converts portable request data—messages, roles, tools, optional media, and supported reasoning controls—into the exact prompt syntax the model learned during training. The model never receives the original message objects.</p>
           <p>The correct template is therefore part of model compatibility, much like the tokenizer. A mismatched template can use the wrong role markers, serialize tool definitions incorrectly, omit media placeholders, or fail to append the cue that tells the model to begin an assistant response. These failures can be subtle: the model may still generate fluent text while instruction following, tool calling, reasoning, or multimodal behavior degrades.</p>
-          <p>Kronk resolves the template when the model loads, in this order:</p>
+          <p>For normal server model loads, Kronk resolves the template in this order:</p>
           <ol>
             <li>The explicit <code>template</code> path in <code>model_config.yaml</code>.</li>
-            <li>A matching Jinja file discovered under Kronk's Jinja directory.</li>
+            <li>A matching Jinja file under the data root's <code>jinja</code> directory, first matching the model name including quantization, then the name without its quantization suffix.</li>
             <li>The <code>tokenizer.chat_template</code> embedded in GGUF metadata.</li>
           </ol>
+          <p>Relative <code>template</code> paths resolve under the Kronk data root, not beside the configuration file. An unreadable or empty explicit template prevents model loading. A custom in-memory template supplied by the Playground or an embedded application takes precedence over these file-based choices.</p>
           <p>Prefer the model's supplied template unless you are correcting known-bad metadata or deliberately testing a custom protocol. A template override must remain compatible with the model and with any tool-call output parser. Sampling controls such as <code>temperature</code>, <code>top_p</code>, penalties, and <code>max_tokens</code> do not become prompt text; they govern token selection and stopping after the template has rendered.</p>
           <p><a href="https://www.kronkai.com/manual#45-stage-2-—-prepare-model-work">Chapter 4 §4.5</a> shows this template protocol as part of Stage 2 request preparation, where the portable request becomes the exact prompt that Kronk tokenizes and executes. <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a> explains why IMC renders the complete conversation both with and without the generation suffix. <a href="https://www.kronkai.com/manual#chapter-9-api-endpoints">Chapter 9</a> documents the portable API message formats that templates consume.</p>
           <h3 id="32-automatic-tuning">3.2 Automatic Tuning</h3>
@@ -530,8 +536,9 @@ malina-models:
   context-window: 262144
   nseq-max: 2`}</code></pre>
           <p>Leave <code>cache-type-k</code> and <code>cache-type-v</code> out unless the workload requires a specific cache format. In this example, Kronk sizes the exact 262144-token, two-sequence configuration with <code>f16</code> first and then <code>q8_0</code> if necessary.</p>
-          <p>When context and concurrency are not specified, the balanced analysis limits the selected context to the model's training context and a maximum of 128K tokens. It searches supported context buckets from largest to smallest. At each context it tries <code>f16</code> first and then <code>q8_0</code> before considering a smaller context. The minimum recommendation is 4K. CPU-only analysis and systems without a known GPU budget cannot perform the same fit check. All recommendations are estimates, not a guarantee that every backend and workload will fit or have identical memory use.</p>
-          <p>In the Go SDK, the same analysis is opt-in through <code>WithAutoTune</code>. It is not applied when an application uses the low-level <code>model</code> package directly. Explicit SDK options still take precedence over analyzed values.</p>
+          <p>When context and concurrency are not specified, the balanced analysis limits the selected context to the model's training context and a maximum of 128K tokens. It searches supported context buckets from largest to smallest. At each context it tries <code>f16</code> first and then <code>q8_0</code> before considering a smaller context. The usual minimum candidate is 4K, but a smaller training context is not expanded to 4K. Fit checks use both VRAM and host RAM where applicable; on unified-memory systems, they use the combined footprint. CPU-only analysis can check RAM when a budget is known. Without a known budget, the corresponding memory limit cannot be checked. All recommendations are estimates, not a guarantee that every backend and workload will fit or have identical memory use.</p>
+          <p>Automatic tuning estimates a configuration; it does not guarantee a successful load. A configuration that cannot fit the server's memory budget can be rejected before loading. AutoTune does not automatically turn an oversized full-GPU configuration into a CPU/GPU split: configure partial layer or expert placement explicitly when needed.</p>
+          <p>Embedded applications must opt into automatic tuning. Explicit application settings constrain the recommendation in the same way as server overrides.</p>
           <h3 id="33-core-runtime-settings">3.3 Core Runtime Settings</h3>
           <h4 id="context-window">Context window</h4>
           <p><code>context-window</code> is the maximum number of tokens available to one sequence. Input and generated tokens both consume this capacity.</p>
@@ -574,12 +581,13 @@ malina-models:
   nseq-max: 4
   kv-cache-mode: shared`}</code></pre>
           <p>The default, <code>partitioned</code>, gives each slot a dedicated context-window-sized partition. <code>shared</code> uses one aggregate pool. Both request total context capacity of <code>context-window × nseq-max</code>, isolate attention between requests, and keep Kronk's per-request context limit unchanged. Shared mode does not reserve a physical partition for each slot.</p>
-          <p>Shared mode can improve ordinary generation batching when active sequence IDs have gaps. It can also increase attention workspace and long-history processing costs. Benchmark your workload rather than assuming it is always faster. This is a model-load setting, not a chat-request parameter; restart/reload with the new configuration. SDK callers use <code>model.WithKVCacheMode(model.KVCacheShared)</code>.</p>
+          <p>Shared mode can improve ordinary generation batching when active sequence IDs have gaps. It can also increase attention workspace and long-history processing costs. Benchmark your workload rather than assuming it is always faster. This is a model-load setting, not a chat-request parameter; restart/reload with the new configuration.</p>
           <h4 id="flash-attention">Flash Attention</h4>
           <p>Flash Attention can reduce attention memory traffic and improve performance, especially at longer contexts:</p>
           <pre className="code-block"><code className="language-yaml">{`unsloth/Qwen3-0.6B-Q8_0:
   flash-attention: auto`}</code></pre>
           <p>Valid values are <code>enabled</code>, <code>disabled</code>, and <code>auto</code>. Automatic tuning uses <code>auto</code> when a GPU is available and disables it for CPU-only analysis. Set an explicit value only for backend compatibility or controlled benchmarking.</p>
+          <p>Quantized value caches such as <code>cache-type-v: q8_0</code> or <code>q4_0</code> require <code>flash-attention: auto</code> or <code>enabled</code>; combining them with <code>disabled</code> fails configuration validation. Backend and model support must still be verified.</p>
           <h4 id="sliding-window-attention">Sliding Window Attention</h4>
           <p>Kronk reads the sliding-window size from model metadata. <code>swa-full</code> controls the cache allocation used by models with sliding window attention:</p>
           <pre className="code-block"><code className="language-yaml">{`some-provider/some-swa-model:
@@ -614,8 +622,46 @@ malina-models:
             </tbody>
           </table>
           <p>Partial offload can make a model fit in limited VRAM, but CPU-resident layers usually reduce inference speed. On unified-memory systems, CPU and GPU do not have separate memory pools, although placement can still affect performance.</p>
+          <h4 id="moe-expert-placement">MoE expert placement</h4>
+          <p>For MoE models, <code>moe.mode</code> controls routed expert placement separately from ordinary layer offload:</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Value</th>
+                <th>Behavior</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>auto</code></td>
+                <td>Experts follow normal layer placement; no extra CPU override</td>
+              </tr>
+              <tr>
+                <td><code>experts_cpu</code></td>
+                <td>Keep routed expert weights on the CPU while other weights follow layer placement</td>
+              </tr>
+              <tr>
+                <td><code>experts_gpu</code></td>
+                <td>No extra CPU override; experts follow layer placement, so full GPU offload is still needed to put all experts on GPU</td>
+              </tr>
+              <tr>
+                <td><code>keep_top_n</code></td>
+                <td>Keep routed experts eligible for GPU placement in the highest-numbered N layers; force the remaining expert layers to CPU</td>
+              </tr>
+              <tr>
+                <td><code>custom</code></td>
+                <td>Use explicit <code>tensor-buft-overrides</code> for placement</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>For example, on a discrete-GPU system with enough host RAM, this keeps the non-expert model weights eligible for GPU offload while placing routed experts in host memory:</p>
+          <pre className="code-block"><code className="language-yaml">{`some-provider/large-moe-model:
+  ngpu-layers: 0
+  moe:
+    mode: experts_cpu`}</code></pre>
+          <p>To retain some expert layers on GPU, use <code>mode: keep_top_n</code> with <code>keep-experts-top-n: 4</code>, adjusting the count to fit the available VRAM. Here “top” means the highest-numbered layers, not the most frequently selected experts. An explicit <code>tensor-buft-overrides</code> list takes precedence over <code>moe.mode</code>. These settings redistribute weights; they do not reduce model size or create additional capacity on unified-memory systems. Measure throughput because CPU expert evaluation can become the bottleneck. The optional GPU expert cache is described in Section 3.6.</p>
           <h4 id="model-weight-loading">Model weight loading</h4>
-          <p><code>load-mode</code> controls how Kronk reads model weights. Its default and Go zero value are <code>auto</code>:</p>
+          <p><code>load-mode</code> controls how Kronk reads model weights. Its default is <code>auto</code>:</p>
           <pre className="code-block"><code className="language-yaml">{`some-provider/some-model:
   load-mode: auto`}</code></pre>
           <table className="flags-table">
@@ -653,7 +699,7 @@ malina-models:
             </tbody>
           </table>
           <p>Use <code>none</code> when mmap is unsuitable or when direct allocation is needed for a measured NUMA placement issue. Use <code>mlock</code> only when the host has enough physical and lockable RAM for the model plus the rest of the workload; process resource limits may prevent all pages from being locked. Use <code>mmap+mlock</code> when the model should be both memory mapped and kept resident. Direct I/O can avoid page-cache pollution for some local-storage and GPU-loading workloads, but it can also make repeated loads slower and is not supported by every filesystem. Benchmark the actual model path before selecting it.</p>
-          <p>Kronk applies one load mode to the target model and any separate draft model. The Go SDK equivalent is <code>model.WithLoadMode</code>, using <code>LoadModeAuto</code>, <code>LoadModeMMap</code>, <code>LoadModeNone</code>, <code>LoadModeMLock</code>, <code>LoadModeMMapMLock</code>, or <code>LoadModeDirectIO</code>.</p>
+          <p>Kronk applies one load mode to the target model and any separate draft model.</p>
           <p>The former <code>use-mmap</code> and <code>use-direct-io</code> keys are no longer supported. Migrate existing configuration as follows:</p>
           <table className="flags-table">
             <thead>
@@ -697,7 +743,7 @@ malina-models:
               </tr>
               <tr>
                 <td><code>on</code></td>
-                <td>Request lazy reading for eligible tensors regardless of size; requires platform mmap support</td>
+                <td>Request lazy reading regardless of tensor size; if platform mmap is unavailable, load fully into RAM and log a warning</td>
               </tr>
             </tbody>
           </table>
@@ -705,16 +751,15 @@ malina-models:
   lazy-mode: on
   load-mode: none`}</code></pre>
           <p>On Metal, mmap can bring the entire table into RAM through an overlapping GPU mapping even when the log says <code>lazy read enabled</code>. Use <code>load-mode: none</code> to avoid that overlap unless the table is isolated in its own shard. Eligible lazy tensors remain file-mapped even with <code>load-mode: none</code>; the other weights use ordinary loading. Accessed pages may remain cached, and disk reads can reduce inference speed. Verify residency and performance with the actual model.</p>
-          <p>The setting applies to the target and any separate or companion draft model. The Go SDK equivalent is <code>model.WithLazyMode(model.LazyModeOn)</code>, with <code>LazyModeAuto</code> and <code>LazyModeOff</code> as the other choices.</p>
-          <p>Kronk's calculator replaces an effective lazy table's full encoded size with a page-rounded working-set estimate: two physical batches per native context, with at least 256 MiB reserved for accessed pages, capped at the table size. Gemma4 gathers one all-layer row per token; Qwen4Exp gathers multiple n-gram head rows. The table remains host memory, not additional GPU workspace. The same result feeds fitting, admission reservations, and the resource screen.</p>
-          <p>Full-table accounting remains when lazy reading is off or uncertain, when <code>auto</code> does not meet its size/device requirements, with mlock, or when Metal mmap may overlap a table that is not alone in its shard. The current device capability check verifies CPU and Metal; other backends conservatively retain the full table in <code>auto</code> mode. Explicit <code>on</code> only needs platform mmap support. This is not a hard residency cap: clean mapped pages may accumulate or be reclaimed by the operating system. Validate actual memory and latency under representative prompts before relying on the additional admission headroom.</p>
+          <p>The setting applies to the target and any separate or companion draft model. For eligible lazy tables, Kronk's memory estimates and admission reservations use an estimated host-memory working set instead of the full table size.</p>
+          <p>Full-table accounting remains when lazy reading is off or uncertain, when <code>auto</code> does not meet its size/device requirements, with mlock, or when Metal mmap may overlap a table that is not alone in its shard. The current device capability check verifies CPU and Metal; other backends conservatively retain the full table in <code>auto</code> mode. Explicit <code>on</code> bypasses the size and device checks, but cannot enable lazy reading on a platform without mmap support. This is not a hard residency cap: clean mapped pages may accumulate or be reclaimed by the operating system. Validate actual memory and latency under representative prompts before relying on the additional admission headroom.</p>
           <h4 id="kv-cache-and-operations">KV cache and operations</h4>
           <p>The KV cache and host tensor operations are offloaded to the GPU by default:</p>
           <pre className="code-block"><code className="language-yaml">{`some-provider/some-model:
   offload-kqv: false
   op-offload: false`}</code></pre>
           <p><code>offload-kqv: false</code> keeps the KV cache on the CPU. <code>op-offload: false</code> keeps host tensor operations on the CPU. These options can reduce discrete-GPU VRAM pressure at a performance cost. They do not reduce total memory requirements.</p>
-          <p>llama.cpp also supports the process-wide <code>GGML_OP_OFFLOAD_MIN_BATCH</code> environment variable. Set it before Kronk starts; GPU backends read it once during <code>kronk.Init</code>, so it cannot be configured independently per model.</p>
+          <p><code>GGML_OP_OFFLOAD_MIN_BATCH</code> sets the minimum batch size for offloading supported host operations on applicable GPU backends; the default is 32. It is process-wide, not a per-model setting. Set it before server startup and restart after changing it.</p>
           <p>For multimodal models, <code>proj-on-cpu: true</code> keeps the media projector on the CPU without changing placement of the language model itself. To place the projector on a specific accelerator, set <code>proj-device</code> to a name reported by <code>kronk devices</code> (for example, <code>CUDA1</code> or <code>MTL0</code>). Omit both settings for automatic placement. <code>proj-device</code> cannot be combined with <code>proj-on-cpu: true</code>.</p>
           <h4 id="native-backend-environment-settings">Native backend environment settings</h4>
           <p>These optional llama.cpp settings are process-wide environment variables, not per-model YAML fields. They affect the CUDA backend and applicable ROCm/HIP paths. Leave them unset unless you need to override backend memory behavior.</p>
@@ -740,7 +785,7 @@ malina-models:
               </tr>
             </tbody>
           </table>
-          <p>Starting with llama.cpp b11696, these three settings require a value that parses as a nonzero integer. Previously, their presence alone activated them, even with an empty value or <code>0</code>. Use <code>1</code> to activate a setting; <code>true</code>, <code>yes</code>, an empty value, and <code>0</code> no longer activate it. For example:</p>
+          <p>Use <code>1</code> to activate these three settings. An empty value, <code>0</code>, <code>true</code>, or <code>yes</code> does not activate them. For example:</p>
           <pre className="code-block"><code className="language-shell">{`GGML_CUDA_ENABLE_UNIFIED_MEMORY=1 kronk server start`}</code></pre>
           <p>Set these variables before backend initialization. Their values are cached on first use, so restart the server after changing them. Do not apply this numeric rule to every native setting: <code>GGML_CUDA_P2P</code> remains presence-based, so even <code>GGML_CUDA_P2P=0</code> enables it; unset it to disable it.</p>
           <h4 id="multiple-gpus">Multiple GPUs</h4>
@@ -783,8 +828,8 @@ malina-models:
           <p><code>nseq-max</code> controls model concurrency:</p>
           <pre className="code-block"><code className="language-yaml">{`unsloth/Qwen3-0.6B-Q8_0:
   nseq-max: 4`}</code></pre>
-          <p>For text generation, this creates up to four batch-engine slots. Their sequence state and KV capacity are isolated. Kronk allocates an aggregate context of <code>context-window × nseq-max</code>, which llama.cpp divides into one fixed <code>context-window</code> stream per slot. Increasing <code>nseq-max</code> therefore increases the capacity Kronk must budget and can substantially increase memory use.</p>
-          <p>For supported embedding and reranking architectures, <code>nseq-max</code> is the maximum number of complete inputs or query-document pairs in one sequence batch on a shared context. Architectures that have not been proven safe for that runtime use <code>nseq-max</code> to size a pool of independent single-sequence contexts instead. See <a href="https://www.kronkai.com/manual#chapter-4-batch-processing">Chapter 4</a> for request scheduling and the differences between model types.</p>
+          <p>For text generation, this allows up to four active generation requests. Requests remain isolated, and each has the configured <code>context-window</code> limit. Kronk budgets aggregate context capacity of <code>context-window × nseq-max</code>; <code>kv-cache-mode</code> determines whether KV storage is partitioned or shared. Increasing concurrency can substantially increase memory use.</p>
+          <p>For embedding and reranking models, <code>nseq-max</code> limits the number of complete inputs or query-document pairs evaluated together. Their combined token count is also limited by <code>prefill-batch-size</code>. See <a href="https://www.kronkai.com/manual#chapter-4-batch-processing">Chapter 4</a> for request scheduling and the differences between model types.</p>
           <p>Text scheduling, image capacity, and image preprocessing are configured separately:</p>
           <table className="flags-table">
             <thead>
@@ -817,17 +862,17 @@ malina-models:
               </tr>
             </tbody>
           </table>
-          <p>For generation models, a larger value can move a long prompt to generation in fewer decode calls, but requires larger compute buffers and each call runs longer before already-generating slots can run again. A smaller value gives generating slots more frequent scheduling opportunities at the cost of more prefill decode calls.</p>
-          <p>For embedding and reranking models, Kronk sets both internal <code>NBatch</code> and <code>NUBatch</code> to <code>prefill-batch-size</code>. This is the aggregate token capacity of one native sequence batch, not a capacity granted separately to every sequence. The batch is constrained independently by <code>nseq-max</code> complete sequences and by <code>prefill-batch-size</code> combined tokens. For example, <code>nseq-max: 8</code> with <code>prefill-batch-size: 2048</code> can evaluate eight 256-token sequences, four 512-token sequences, two 1024-token sequences, or one 2048-token sequence in a single native batch. Kronk does not multiply the token capacity by <code>nseq-max</code>; doing so would allocate a much larger physical compute batch. Increase <code>prefill-batch-size</code> explicitly when the expected embedding or reranking workload needs a larger aggregate batch.</p>
+          <p>For generation models, a larger <code>prefill-batch-size</code> can move a long prompt to generation in fewer decode calls, but requires larger compute buffers and each call runs longer before already-generating slots can run again. A smaller value gives generating slots more frequent scheduling opportunities at the cost of more prefill decode calls.</p>
+          <p>For embedding and reranking, <code>prefill-batch-size</code> limits the combined tokens evaluated together, not the token capacity of each input. The batch is constrained independently by <code>nseq-max</code> complete sequences and by <code>prefill-batch-size</code> combined tokens. For example, <code>nseq-max: 8</code> with <code>prefill-batch-size: 2048</code> can evaluate eight 256-token sequences, four 512-token sequences, two 1024-token sequences, or one 2048-token sequence in a single batch. Kronk does not multiply the token capacity by <code>nseq-max</code>; larger aggregate batches require more compute memory. Increase <code>prefill-batch-size</code> explicitly when the expected embedding or reranking workload needs a larger aggregate batch.</p>
           <p>Most deployments should leave the prompt contribution at its default.</p>
-          <p>For ordinary causal generation, <code>physical-batch-size</code> lets llama.cpp divide one logical submission into smaller compute batches without changing how many prompt tokens Kronk schedules. For example, <code>prefill-batch-size: 2048</code>, <code>physical-batch-size: 512</code>, and <code>nseq-max: 1</code> resolve to logical capacity 2049 and physical capacity 512. This can enable layer-split multi-GPU pipeline overlap within a submission. Completion synchronization is unchanged.</p>
-          <p>Explicit positive physical sizes override AutoTune's recommendation. AutoTune initially recommends 512 for ordinary text models using multiple selected GPUs with layer splitting and full GPU offload. Single-GPU and other execution modes retain the legacy default when the setting is omitted. Image capacity and budget floors can raise a request, and logical/native context capacity can cap it. Active MTP preserves its existing equal-capacity policy; embedding, reranking, and specialized decision evaluation retain their own sizing policies. Requested and effective capacities are reported separately. Non-causal media chunks still must fit in one physical batch; oversized chunks return an error.</p>
-          <p>Kronk derives llama.cpp's internal physical and logical batch capacities from this value. It reserves one output row per slot for non-MTP generation. MTP reserves <code>1 + ndraft</code> rows per slot because speculative verification includes the sampled token and its draft candidates. With four slots and the default <code>ndraft: 3</code>, the internal effective sizes are <code>NUBatch: 2048</code>, <code>NBatch: 2052</code> for non-MTP and <code>NUBatch: 2064</code>, <code>NBatch: 2064</code> for MTP. Both can stage generation rows and then add a complete 2048-token prefill contribution from the current owner in the same logical decode. Non-MTP may split that tray into physical ubatches; MTP currently keeps it in one physical batch pending validation of multi-ubatch execution in Kronk's hidden-state consumption path.</p>
-          <p>For generation models with a projector, the native base capacity is <code>max(prefill-batch-size, image-batch-token-capacity, image-token-budget)</code> (an unset image budget contributes zero). Kronk then applies the generation reserve and MTP rules above. The text scheduler still contributes at most <code>prefill-batch-size</code> tokens per iteration.</p>
-          <p>There are no model-family image-capacity defaults. Supply a non-negative <code>image-batch-token-capacity</code> when complete non-causal image chunks need more room than text prefill provides. For example, <code>prefill-batch-size: 512</code>, <code>image-batch-token-capacity: 1120</code>, and <code>nseq-max: 2</code> produce <code>NUBatch: 1120</code> and <code>NBatch: 1122</code> without MTP. Text prefill remains <code>512</code>, and the projector's image processing is unchanged. In the SDK, use <code>model.WithImageBatchTokenCapacity(value)</code>.</p>
-          <p>Only an explicit positive <code>image-token-budget</code> is passed to MTMD as <code>ImageMaxTokens</code>; neither text prefill nor image capacity silently sets it. Lowering this budget can reduce image resolution and detail. When omitted, Kronk preserves the projector's default. Not all projectors support the option (for example, Gemma 3's fixed-resolution path does not), and resizing alignment can make the final chunk count differ from the budget. Very small budgets may also conflict with a projector's minimum and fail initialization. In the SDK, use <code>model.WithImageTokenBudget(value)</code>. An explicit budget also contributes to native capacity, so a separate capacity setting is unnecessary unless more room is needed. Increasing capacity does not undo a smaller preprocessing budget.</p>
+          <p>For ordinary causal generation, <code>physical-batch-size</code> lets llama.cpp divide one logical submission into smaller compute batches without changing how many prompt tokens Kronk schedules. For example, <code>prefill-batch-size: 2048</code>, <code>physical-batch-size: 512</code>, and <code>nseq-max: 1</code> allow a prompt contribution to be processed in smaller compute batches. This can enable layer-split multi-GPU pipeline overlap within a submission.</p>
+          <p>Explicit positive physical sizes override AutoTune's recommendation. AutoTune initially recommends 512 for ordinary text models using multiple selected GPUs with layer splitting and full GPU offload. Single-GPU and other execution modes retain the legacy default when the setting is omitted. Image capacity and budget floors can raise a request, and logical/native context capacity can cap it. Embedding, reranking, and specialized decision evaluation retain their own sizing policies. Requested and effective capacities are reported separately. Non-causal media chunks still must fit in one physical batch; oversized chunks return an error.</p>
+          <p>Kronk adds generation capacity automatically; users do not need to calculate an allowance for active slots or draft tokens. With active MTP, Kronk keeps the work in one physical batch, so <code>physical-batch-size</code> cannot divide that work into smaller compute batches. MTP may therefore require more compute memory. See <a href="https://www.kronkai.com/manual#chapter-6-speculative-decoding-and-mtp">Chapter 6</a> for MTP configuration and limitations.</p>
+          <p>Image capacity and an explicit image token budget can increase the required compute capacity without increasing text prefill per iteration.</p>
+          <p>There are no model-family image-capacity defaults. Supply a non-negative <code>image-batch-token-capacity</code> when complete non-causal image chunks need more room than text prefill provides. For example, <code>prefill-batch-size: 512</code> and <code>image-batch-token-capacity: 1120</code> reserve room for a complete 1120-token image chunk while keeping text prefill at 512 tokens per iteration. This does not change image preprocessing or detail.</p>
+          <p>Only an explicit positive <code>image-token-budget</code> changes the projector's preprocessing budget; neither text prefill nor image capacity silently sets it. Lowering this budget can reduce image resolution and detail. When omitted, Kronk preserves the projector's default. Not all projectors support the option (for example, Gemma 3's fixed-resolution path does not), and resizing alignment can make the final chunk count differ from the budget. Very small budgets may also conflict with a projector's minimum and fail initialization. An explicit budget also contributes to native capacity, so a separate capacity setting is unnecessary unless more room is needed. Increasing capacity does not undo a smaller preprocessing budget.</p>
           <p>Non-causal media chunks must fit completely in one physical decode. Kronk checks actual chunk sizes before native decoding in both cached and uncached paths. An oversized chunk returns an error with the required capacity instead of being split or aborting the process. Increase <code>image-batch-token-capacity</code> and reload the model to process that chunk.</p>
-          <p>The <code>status[resolved]</code> <code>batch-sizing</code> debug log reports the configured prefill size, image capacity, explicit image budget (<code>0</code> when unset), generation reserve, effective internal sizes, and MTP state. The Slots diagnostic screen also displays effective <code>NBatch / NUBatch</code> as read-only runtime values.</p>
+          <p>After loading, inspect the <code>batch-sizing</code> debug logs and Slots diagnostics to compare requested settings with effective runtime capacities. Image requirements, active MTP, and native context limits can change the effective physical capacity.</p>
           <p><img src="https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/08-wait-for-execution-slot.svg" alt="How two requests move from prefill to generation and how non-MTP and MTP batch sizing supports them" /></p>
           <p>Incremental Message Caching is configured separately with <code>incremental-cache</code> and related cache settings. See <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a> rather than treating cached conversations as dedicated physical slots.</p>
           <h3 id="36-memory-planning-and-quantization">3.6 Memory Planning and Quantization</h3>
@@ -870,7 +915,7 @@ malina-models:
             </tbody>
           </table>
           <p>An architecture identifier is not another activation or sequence-processing category. It identifies the overall design; inspect that design and its metadata to determine both dimensions rather than treating its name as a third axis of mutually exclusive types.</p>
-          <p>The catalog's existing <strong>Type</strong> column reports parameter activation: Dense or MoE. New downloads also store <code>architecture</code> (the GGUF architecture identifier) and <code>sequence_processing</code> (Attention-only, Recurrent, Hybrid, or Unknown) in catalog metadata, without adding list columns. Unknown means the available metadata does not establish the sequence-processing topology. The runtime uses independent MoE facts and memory semantics: recurrent memory requires special speculative rollback and snapshot handling, regardless of expert routing. <code>Profile.Class</code> has been removed. Loaded models report <code>ModelInfo.Type</code> (Dense or MoE parameter activation), <code>ModelInfo.SequenceProcessing</code>, and <code>ModelInfo.Architecture</code> separately. For metadata-only inspection, use <code>modelprofile.Resolve</code>, then <code>Profile.ParameterActivation()</code>, <code>Profile.SequenceProcessing</code>, and <code>Profile.Architecture</code>. A hybrid MoE model reports both MoE activation and Hybrid sequence processing; neither property replaces the other.</p>
+          <p>The catalog's existing <strong>Type</strong> column reports parameter activation: Dense or MoE. New downloads also store <code>architecture</code> (the GGUF architecture identifier) and <code>sequence_processing</code> (Attention-only, Recurrent, Hybrid, or Unknown) in catalog metadata, without adding list columns. Unknown means the available metadata does not establish the sequence-processing topology. The runtime uses independent MoE and sequence-processing properties for memory planning. A hybrid MoE model combines MoE parameter activation with hybrid sequence processing; neither property replaces the other.</p>
           <p>Dense and Mixture-of-Experts (MoE) describe how each layer's feed-forward weights are activated. A dense layer uses its complete feed-forward network for every token. An MoE layer stores many expert feed-forward networks and uses a learned router to select a small subset independently for each token and layer. All experts remain in memory even though only the selected experts compute.</p>
           <p><strong>Experimental GPU expert cache:</strong> <code>moe.cache-size</code> reserves additional GPU storage for frequently used experts whose original weights remain in host memory. The value is bytes per native context; it is one global budget shared across eligible GPUs, not a budget per GPU or per sequence slot. Unset or zero leaves the llama.cpp default unchanged (currently disabled). Non-MoE models ignore this setting.</p>
           <pre className="code-block"><code className="language-yaml">{`my-moe-model:
@@ -883,13 +928,13 @@ malina-models:
           <p>Each sequence-processing choice can pair with dense feed-forward networks or MoE blocks; not every combination needs to be represented in Kronk's catalog. Qwen 3.6 combines Gated DeltaNet and full-attention layers with MoE; qwen4exp combines Gated DeltaNet and sparse attention with MoE. Every token still traverses every layer. The hybrid stack changes how context is processed, while an MoE router independently changes which feed-forward experts activate.</p>
           <p><img src="https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/03c-dense-moe-and-hybrid-inference.svg" alt="Independent model dimensions: Dense and MoE activation crossed with attention-only, recurrent/state-space-only, and hybrid sequence processing" /></p>
           <p>The estimator follows the model's per-layer attention topology when the GGUF provides it. Full-attention and sliding-window layers can have different KV head counts and dimensions; compact SWA includes its physical-batch headroom, while <code>swa-full: true</code> allocates SWA against the full context. Shared KV layers are not charged twice.</p>
-          <p>Hybrid recurrent models such as Qwen 3.5 do not allocate ordinary K/V tensors for recurrent layers. Kronk instead estimates their float32 recurrent state per sequence and, when the active speculative configuration is known, the current state plus required rollback copies. Appended embedded-MTP/NextN layers are excluded from the target context's attention-state allocation because they are not target trunk layers. Their weights remain part of model size, and embedded MTP can increase recurrent rollback-state memory. These distinctions are why a generic transformer KV formula can substantially over- or under-estimate a hybrid model.</p>
+          <p>Hybrid recurrent models use both attention-cache memory and per-sequence recurrent state. Speculative decoding can add state copies, additional context memory, and drafter weights. Use the calculator for the intended speculative configuration; an ordinary transformer KV-cache formula can substantially misestimate these models.</p>
           <p>If a configuration does not fit, consider these changes one at a time:</p>
           <ol>
             <li>Reduce <code>context-window</code>.</li>
             <li>Reduce <code>nseq-max</code>.</li>
             <li>Let automatic tuning use q8_0, or explicitly compare a quantized KV cache.</li>
-            <li>Move the KV cache or some model layers to CPU.</li>
+            <li>On discrete-GPU systems with sufficient host RAM, move the KV cache, model layers, or MoE experts to CPU to reduce VRAM pressure.</li>
             <li>Choose a smaller or more heavily quantized GGUF.</li>
           </ol>
           <h4 id="weight-quantization-versus-kv-cache-quantization">Weight quantization versus KV-cache quantization</h4>
@@ -907,7 +952,7 @@ malina-models:
           <p>With the default data root, these IDs resolve to:</p>
           <pre className="code-block"><code className="language-text">{`~/.kronk/lora/acme/support.gguf
 ~/.kronk/lora/concise.gguf`}</code></pre>
-          <p>Create the directories as needed and place the files there before loading the model. <code>KRONK_BASE_PATH</code> or <code>--base-path</code> moves the <code>lora</code> directory with the rest of the Kronk data root.</p>
+          <p>Create the directories as needed and place the files there before loading the model. <code>KRONK_BASE_PATH</code> or <code>--base-path</code> selects the data root containing the <code>lora</code> directory; it does not move existing adapter files.</p>
           <p>To keep an adapter elsewhere, specify its absolute path instead:</p>
           <pre className="code-block"><code className="language-yaml">{`some-provider/base-model:
   adapters:
@@ -929,7 +974,7 @@ malina-models:
           <p>Use <code>speculation</code> to select the implementation for a model:</p>
           <pre className="code-block"><code className="language-yaml">{`some-provider/mtp-target-model:
   speculation: disabled # auto, disabled, classic, or mtp`}</code></pre>
-          <p><code>auto</code> preserves automatic selection. <code>disabled</code> runs target-only and does not load draft resources. <code>classic</code> requires <code>draft-model.model-id</code>; <code>mtp</code> requires a compatible embedded head or companion assistant.</p>
+          <p><code>auto</code> uses a configured separate drafter first; otherwise it attempts supported MTP and can fall back to target-only generation. <code>disabled</code> runs target-only and does not load draft resources. <code>classic</code> requires <code>draft-model.model-id</code>. <code>mtp</code> requires a supported, compatible embedded head or companion assistant and a native library that provides MTP; explicitly requiring unavailable MTP fails model loading instead of silently disabling it. Do not combine <code>mtp</code> with a separate <code>draft-model.model-id</code>.</p>
           <p>Do not use model names or benchmark results as universal draft-selection rules. Measure acceptance and throughput on the actual workload. See <a href="https://www.kronkai.com/manual#chapter-6-speculative-decoding-and-mtp">Chapter 6</a> for drafter selection, adaptive throttling, observability, and limitations.</p>
           <h4 id="extended-context-with-yarn">Extended context with YaRN</h4>
           <p>Do not add RoPE scaling merely because a large <code>context-window</code> fits in memory. Scaling must match the model and its native training context. Configuration uses <code>rope-scaling-type</code> and the <code>yarn-*</code> keys described in <a href="https://www.kronkai.com/manual#chapter-7-yarn-extended-context">Chapter 7</a>.</p>
@@ -1008,7 +1053,7 @@ models:
               <tr>
                 <td><code>nseq-max</code></td>
                 <td>Positive integer</td>
-                <td>Generation slots, sequence-batch width, or fallback context-pool size</td>
+                <td>Active generation requests or embedding/reranking batch width</td>
               </tr>
               <tr>
                 <td><code>admission-timeout</code></td>
@@ -1023,7 +1068,7 @@ models:
               <tr>
                 <td><code>imc-session-capacity</code></td>
                 <td>Positive integer; derived when omitted</td>
-                <td>Reusable IMC conversation identities retained in RAM or on disk</td>
+                <td>Maximum reusable IMC conversation identities; built-in storage is RAM</td>
               </tr>
               <tr>
                 <td><code>prefill-batch-size</code></td>
@@ -1049,6 +1094,26 @@ models:
                 <td><code>ngpu-layers</code></td>
                 <td><code>-1</code>, <code>0</code>, or a positive count</td>
                 <td>CPU/GPU layer placement</td>
+              </tr>
+              <tr>
+                <td><code>moe.mode</code></td>
+                <td><code>auto</code>, <code>experts_cpu</code>, <code>experts_gpu</code>, <code>keep_top_n</code>, <code>custom</code></td>
+                <td>Routed-expert placement; explicit tensor overrides take precedence</td>
+              </tr>
+              <tr>
+                <td><code>moe.keep-experts-top-n</code></td>
+                <td>Non-negative layer count</td>
+                <td>Required for <code>keep_top_n</code>; highest-numbered expert layers eligible for GPU placement</td>
+              </tr>
+              <tr>
+                <td><code>moe.cache-size</code></td>
+                <td>Non-negative byte count</td>
+                <td>Additional experimental GPU expert-cache budget</td>
+              </tr>
+              <tr>
+                <td><code>tensor-buft-overrides</code></td>
+                <td>CPU-placement patterns</td>
+                <td>Advanced tensor placement overriding <code>moe.mode</code></td>
               </tr>
               <tr>
                 <td><code>lazy-mode</code></td>
@@ -1153,42 +1218,37 @@ models:
           <p>Kronk can process requests concurrently while sharing one loaded copy of a model's weights. The <code>nseq-max</code> model setting controls how much concurrency a model instance provides, but its exact behavior depends on the model's task.</p>
           <p>This chapter provides the runtime story for generation: how a request is admitted, turned into model work, scheduled, and executed. Model memory, batch-size configuration, and KV-cache precision are covered in <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3</a>. Message-cache session behavior is covered in <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a>.</p>
           <h3 id="41-runtime-mental-model">4.1 Runtime Mental Model</h3>
-          <p>Kronk uses three concurrency designs:</p>
+          <p>Concurrency has different meanings for generation and complete-input evaluation:</p>
           <table className="flags-table">
             <thead>
               <tr>
                 <th>Workload</th>
                 <th><code>nseq-max</code> controls</th>
-                <th>Execution design</th>
+                <th>Behavior</th>
               </tr>
             </thead>
             <tbody>
               <tr>
                 <td>Text generation</td>
                 <td>Active generation slots</td>
-                <td>One model context and the generation batch engine</td>
+                <td>Requests share model computation while keeping conversation state isolated</td>
               </tr>
               <tr>
                 <td>Multimodal generation</td>
                 <td>Active generation slots</td>
-                <td>The generation batch engine with specialized media prefill</td>
+                <td>The same slot limit, with additional media processing</td>
               </tr>
               <tr>
-                <td>Supported embedding/reranking</td>
-                <td>Sequences per native batch</td>
-                <td>One model context and the sequence-batch engine</td>
-              </tr>
-              <tr>
-                <td>Other embedding/reranking</td>
-                <td>Independent contexts</td>
-                <td>Context-pool fallback with shared model weights</td>
+                <td>Embedding/reranking</td>
+                <td>Complete sequences evaluated together</td>
+                <td>Inputs from queued requests can share a batch within sequence and token limits</td>
               </tr>
             </tbody>
           </table>
           <p>Multimodal generation includes requests that provide images or audio to a compatible language model. Bucky speech transcription is a separate whisper.cpp service and is not scheduled by this batch engine; see <a href="https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription">Chapter 18</a>.</p>
           <p>Increasing <code>nseq-max</code> allows more work to proceed concurrently. It can improve aggregate throughput when requests overlap, but it also increases memory capacity and gives each request a smaller share of the same compute resources. Higher concurrency can therefore increase individual response latency. There is no universal value that is best for every model, device, and workload.</p>
           <h4 id="generation-slots-and-sequences">Generation slots and sequences</h4>
-          <p>For text and multimodal generation, the batch engine creates <code>nseq-max</code> execution slots. A slot tracks one active request's prompt position, sampler, streaming response, and sequence ID.</p>
+          <p>For text and multimodal generation, <code>nseq-max</code> sets the number of execution slots. Each slot serves one active request. Requests share the loaded weights but keep prompt state, sampling, and output separate.</p>
           <pre className="code-block"><code className="language-diagram">{`┌───────────────┐       ┌────────────────────────────────────┐
 │ Waiting jobs  │──────▶│ Batch engine                       │
 └───────────────┘       │                                    │
@@ -1223,47 +1283,40 @@ models:
           <h3 id="44-stage-1-—-admit-the-request">4.4 Stage 1 — Admit the Request</h3>
           <p>The outer Kronk API applies the user-visible admission limit before a request reaches model preparation. For generation, the capacity is:</p>
           <pre className="code-block"><code className="language-text">{`admission capacity = max(nseq-max, 1) × queue-depth`}</code></pre>
-          <p><code>queue-depth</code> counts admitted request layers rather than a literal number of waiting requests. A depth of <code>1</code> admits only enough requests to occupy the execution slots, so <code>nseq-max: 2</code> admits two requests. The default depth of <code>2</code> admits one active layer and one additional waiting layer, so the same two-slot model admits four requests. An unset value resolves to <code>2</code>, and negative values are invalid. Embedding and reranking do not use this multiplier; their admission capacity is <code>max(nseq-max, 1)</code>.</p>
-          <p>If admission is full, Kronk waits for a permit for at most <code>admission-timeout</code>, a per-model SDK setting that defaults to three minutes. This deadline is local to the admission wait. Kronk discards that child deadline as soon as the request is admitted, so prompt preparation, slot waiting, and generation do <strong>not</strong> inherit a three-minute completion deadline. A caller's own earlier cancellation or deadline still applies throughout the request.</p>
+          <p><code>queue-depth</code> counts admitted request layers rather than a literal number of waiting requests. A depth of <code>1</code> admits only enough requests to occupy the execution slots, so <code>nseq-max: 2</code> admits two requests. The default depth of <code>2</code> admits one active layer and one additional waiting layer, so the same two-slot model admits four requests. An unset or zero value resolves to <code>2</code>, and negative values are invalid. Embedding and reranking do not use this multiplier; their admission capacity is <code>max(nseq-max, 1)</code>.</p>
+          <p>If admission is full, Kronk waits for a permit for at most <code>admission-timeout</code>, a per-model setting that defaults to three minutes. This deadline applies only to the admission wait, so prompt preparation, slot waiting, and generation do <strong>not</strong> inherit a three-minute completion deadline. A caller's own earlier cancellation or deadline still applies throughout the request.</p>
           <p>The admission permit remains held until the request finishes. It therefore bounds the total number of requests that can be preparing, waiting for an execution slot, or generating—not merely the number in the handoff channel.</p>
           <p>At the default generation admission depth, <code>nseq-max: 4</code> permits up to eight requests through the outer admission gate. At most four can occupy execution slots at once; the remainder wait for a slot. Additional callers block at the admission gate until capacity is released.</p>
           <p>The model server applies a total inference timeout of 60 minutes by default. It bounds the entire inference route, including admission, IMC session reservation, execution-slot waiting, and generation. The admission-specific three-minute limit normally expires first in Stage 1. Direct SDK callers should use request cancellation or generation limits such as <code>max_tokens</code>.</p>
           <h3 id="45-stage-2-—-prepare-model-work">4.5 Stage 2 — Prepare Model Work</h3>
           <p>After admission, Kronk validates generation parameters and translates the portable request into exact model work. A model-specific chat template renders messages, roles, tools, media markers, reasoning controls, and the assistant generation cue into the protocol the selected model learned during training.</p>
           <p><img src="https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/06-render-plan-prompt.svg" alt="A chat template translates request context into the selected model's prompt protocol" /></p>
-          <p>The rendered prompt—not the original message objects—is tokenized and executed. For an IMC-eligible request, Kronk independently renders the complete prompt with and without the generation cue. After tokenization or media-plan construction, the no-cue plan is reusable only when it is a strict prefix of the generation-ready plan and leaves a nonempty inference tail; a media tail must also be text-only. Kronk then finds the longest complete safe reusable prefix from all working sessions first. Only when none matches does it search the model's System cache pool and preload a separately selected working session. It never treats a coincidental partial token overlap inside a saved snapshot as reusable state. <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a> zooms further into this planning step.</p>
-          <p>Ordinary non-cached tokenization can occur when the slot starts. The exact internal boundary does not change the ownership story: request preparation defines the model work, while Stage 4 performs the model computation.</p>
+          <p>The rendered prompt—not the original message objects—is tokenized and executed. When IMC is enabled, preparation determines whether a compatible complete cached prefix can be reused. Kronk prefers a matching conversation cache, then a compatible System preload; otherwise it prepares a new cache. Partial overlap alone does not qualify for reuse. Cache planning identifies reusable work; model computation happens after slot assignment. See <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a> for eligibility and matching rules.</p>
           <h3 id="46-stage-3-—-schedule-the-job">4.6 Stage 3 — Schedule the Job</h3>
-          <p>Internally, the batch engine receives admitted jobs through a bounded handoff channel and drains them into its pending-job list until slots become available. The channel is not a second user-visible queue budget. The direct Go SDK option <code>model.WithQueueDepth(n)</code> changes both the outer admission multiplier and the handoff channel capacity. The handoff capacity is <code>NSeqMax × QueueDepth</code>; <code>pendingJobs</code> remains responsible for jobs drained while every slot is busy. Queue depth does not change execution concurrency; <code>NSeqMax</code> remains the number of requests that can occupy slots simultaneously.</p>
+          <p>Prepared requests wait for the first available execution slot. <code>queue-depth</code> sets the admitted-request budget described in Stage 1; it is not another queue of that size after preparation. Raising it allows more requests to remain in the system but does not increase execution concurrency. <code>nseq-max</code> remains the maximum number of requests that can occupy slots simultaneously.</p>
           <p>Waiting honors request cancellation. If a request's context is cancelled while waiting for admission, preparing, submitting, waiting for a slot, or generating, the request returns that cancellation. During model shutdown, the engine rejects new submissions and finishes active and pending jobs with a shutdown error.</p>
           <p>The engine does <strong>not</strong> cancel a long-running request merely because another job has waited for a slot. The visible queue wait begins around engine submission and ends when the first inactive slot is assigned. It remains bounded by the route deadline and caller cancellation.</p>
           <h3 id="47-stage-4-—-execute-in-the-slot">4.7 Stage 4 — Execute in the Slot</h3>
           <h4 id="471-bind-and-restore">4.7.1 Bind and Restore</h4>
-          <p>When the scheduler assigns a slot, Kronk binds any reserved IMC session to that slot's fixed llama sequence ID. A compatible saved prefix is restored from the session store; otherwise the sequence starts from an empty state. The session identity is not permanently attached to the slot.</p>
-          <p>Restoring target KV does not restore a live sampler object. Kronk primes penalties and DRY from the complete logical prompt, including the restored prefix, before generation. When own-KV MTP state is available, its paired draft snapshot and final hidden row are restored with the target; shared-target-KV MTP resumes from the restored target state. Missing or invalid draft-side state falls back to target-only generation without discarding a valid target prefix.</p>
+          <p>A request runs in an available slot. If preparation selected a compatible cached prefix, Kronk restores it before processing the remaining prompt; a cache miss starts with a fresh sequence. Cache identities are not permanently assigned to slots. An expected snapshot that cannot be restored can fail the request; it is not silently treated as a cache miss.</p>
+          <p>Cache reuse preserves the prompt's sampling context. Unavailable speculative-decoding state does not require discarding a valid target-model prefix; generation can continue without speculation.</p>
           <h4 id="472-prefill-uncached-work">4.7.2 Prefill Uncached Work</h4>
-          <p>For ordinary text prefill, one active slot owns prefill until its prompt is complete. Each decode iteration first stages generated and speculative rows from every ready output slot, then gives the remaining tray capacity to the prefill owner. This gets one request to first-token generation quickly without pausing output already streaming from other slots.</p>
-          <p>More precisely, <code>prefill-batch-size</code>—2048 tokens by default—caps the owner's contribution during one scheduler visit. Kronk derives an internal logical batch capacity that also reserves generation rows. For the current prefill owner, Kronk adds:</p>
-          <pre className="code-block"><code className="language-text">{`min(remaining prompt tokens, available logical-batch space, prefill-batch-size)`}</code></pre>
-          <p>The scheduler retains a prefill cursor between decode iterations. It remains on the current owner across prefill contributions and advances to the next eligible slot only when that owner's prefill completes, is cancelled, or otherwise becomes ineligible. A long prompt can therefore make another new prompt wait, but it cannot block output-token generation between decode iterations.</p>
-          <p>For ordinary text models without a media projector or draft context, intermediate prefill submissions that request no outputs can remain in flight across scheduler iterations. This also applies while IMC builds or extends a text prefix. On eligible layer-split multi-GPU backends, later chunks can execute early layers while earlier chunks execute later layers, without adding another prefill owner. Kronk waits at output, cache-snapshot, admission, sequence-cleanup, and shutdown boundaries rather than after every output-free submission. Mixed batches containing generation outputs, media, and speculative decoding retain completion waits. Actual overlap depends on llama.cpp's backend capabilities and internal synchronization.</p>
-          <p>Multimodal generation uses the same logical tray through a contribution planner. Text rows, including M-RoPE text, can use available tray capacity. For validated architectures, causal image or audio embedding rows can share a decode with token rows when the complete media contribution fits. Non-causal media, explicitly unsupported architectures, unvalidated architectures, and media contributions that do not fit use the isolated media decoder instead. This fallback is the same processing path used before mixed batches were available.</p>
-          <p>At debug level, each contribution emits <code>status[prefill-scheduled]</code> with <code>iteration</code>, <code>slot</code>, <code>prefill_slots</code>, <code>generation_contributions</code>, <code>chunk_tokens</code>, <code>prefill_remaining</code>, <code>prefill_complete</code>, <code>selector_start</code>, <code>selector_selected</code>, <code>selector_next</code>, <code>generation_rows</code>, <code>tray_tokens</code>, <code>nbatch</code>, and <code>nubatch</code>. <code>prefill_slots</code> lists every eligible prefill slot for that iteration. Each <code>generation_contributions</code> entry reports its slot, staged row count, and mode; <code>mrope-shared</code> identifies M-RoPE generation in the shared tray. Media contributions emit <code>status[media-plan]</code> with <code>mode</code> set to <code>shared</code>, <code>isolated</code>, or <code>deferred</code>, along with the model's input-mixing capability and the contribution's position and attention requirements. The three selector fields show the persistent cursor before selection, the selected slot-array index, and the cursor retained for the next iteration. While an owner is still prefilling, <code>selector_selected</code> and <code>selector_next</code> remain equal. Completion moves <code>selector_next</code> to the following slot-array index. If generation rows consume the complete logical tray, <code>status[prefill-deferred]</code> records the same slot and selector snapshot without a prefill contribution. The older <code>next_slot</code> field remains as an alias for <code>selector_next</code>.</p>
+          <p>Prefill computes the prompt state that is not already reusable from a cache. For ordinary text, one slot retains prefill priority until its prompt is complete, cancelled, or no longer eligible. <code>prefill-batch-size</code>—2048 tokens by default—caps its text contribution per scheduling iteration. A long prompt can therefore delay another new prompt even when both have execution slots.</p>
+          <p>Kronk interleaves this work with output generation from ready slots. A new prompt does not normally need to finish all of its prefill before existing responses can continue, but each compute batch still takes time. Larger prefill batches can increase pauses between streamed output tokens. This is a responsiveness tradeoff, not a fixed latency guarantee.</p>
+          <p>Eligible text-only, layer-split multi-GPU workloads can overlap prompt computation across GPUs. This includes building or extending a text IMC prefix. Actual overlap depends on the backend; media and speculative workloads should not be assumed to have the same behavior.</p>
+          <p>Media requires additional encoding and may require isolated processing rather than sharing a text batch. Supported causal media can share computation when it fits; other media uses a separate decode path. In particular, non-causal image chunks must fit completely in one physical batch. Increase <code>image-batch-token-capacity</code> and reload the model if an oversized chunk is rejected. This capacity setting does not increase image detail; an explicit <code>image-token-budget</code> controls preprocessing on supported projectors.</p>
           <p><img src="https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/09-restore-session-state.svg" alt="The two prefill phases: restore reusable IMC state, then compute missing request state" /></p>
-          <p>Kronk adds a generation reserve to the 2048-token default prefill contribution. Non-MTP reserves one row per slot and keeps the internal physical capacity at 2048, so llama.cpp may split the logical tray into physical ubatches. MTP reserves <code>1 + ndraft</code> rows per slot and raises both internal capacities so a full speculative verification round and the prefill contribution remain in one physical batch. For four slots, the internal effective values are <code>NUBatch: 2048</code>, <code>NBatch: 2052</code> for non-MTP and <code>NUBatch: 2064</code>, <code>NBatch: 2064</code> for MTP with the default <code>ndraft: 3</code>.</p>
-          <p>A media embedding row and a token row each consume one logical tray row. Mixed batching therefore does not change these formulas or require a larger configured prefill batch. llama.cpp may split a causal mixed logical batch into physical ubatches under the same <code>NUBatch</code> limit. Media requiring non-causal attention stays isolated so its whole-chunk physical-batch requirement remains unchanged.</p>
-          <p>Generation-row count comes from the generation mode, not from the configured prefill size: ordinary generation contributes one row, while MTP with <code>ndraft: 3</code> contributes up to four rows—the sampled token plus three candidates. Generation and prefill therefore continue in the same scheduler iteration for both modes. If the prefill owner is not itself generating, some of the worst-case reserve remains unused.</p>
-          <p>At model load, <code>batch-sizing status[resolved]</code> logs <code>configured-prefill-batch-size</code>, <code>prefill-batch-size</code>, <code>generation-rows-per-slot</code>, <code>generation-reserve</code>, <code>effective-prefill</code>, <code>effective-nbatch</code>, <code>effective-nubatch</code>, <code>mtp</code>, and <code>automatic-padding</code>. The effective values describe derived llama.cpp capacities; they are diagnostic output rather than separate configuration controls.</p>
+          <p>Kronk automatically includes capacity for generation and speculative work. Operators do not need to calculate extra output rows. Active MTP keeps work in one physical batch, so it cannot use <code>physical-batch-size</code> to split computation into smaller batches. Chapter 3 describes these controls and their memory tradeoffs; Chapter 6 covers speculative decoding.</p>
           <h4 id="473-generate-output">4.7.3 Generate Output</h4>
-          <p>Once the final prefill row produces logits, ordinary non-speculative generation repeats the decode-and-sample loop below. The first output token is sampled directly from the final prefill logits. On later iterations, Kronk decodes the previously selected token into that slot's sequence state, samples from the new logits, processes and streams the resulting text, and retains the selected token for the next iteration. A newly selected token is therefore not committed to KV state until the following decode.</p>
+          <p>Once prompt processing completes, Kronk samples output tokens and continues generation using each request's own history and sampling settings. Ready requests share model computation; one request does not receive another's generated tokens. Streaming clients receive output as it becomes available.</p>
           <p><img src="https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/10-run-generation-inference.svg" alt="Stage 4 ordinary token generation from batched decode through sampling and streaming" /></p>
-          <p>Vocabulary EOG, parser-signaled completion, and <code>max_tokens</code> end generation normally. Cancellation, context or decode failure, streaming failure, and engine shutdown use the error path. Sampling controls and generation limits are documented in <a href="https://www.kronkai.com/manual#chapter-10-request-parameters">Chapter 10</a>, while endpoint-specific stream framing is documented in <a href="https://www.kronkai.com/manual#chapter-9-api-endpoints">Chapter 9</a>.</p>
+          <p>The model's end-of-generation signal, parsed completion, and <code>max_tokens</code> end generation normally. Cancellation, context or decode failure, streaming failure, and engine shutdown use the error path. Sampling controls and generation limits are documented in <a href="https://www.kronkai.com/manual#chapter-10-request-parameters">Chapter 10</a>, while endpoint-specific stream framing is documented in <a href="https://www.kronkai.com/manual#chapter-9-api-endpoints">Chapter 9</a>.</p>
           <p>Media input requires specialized encoder and prefill steps, so it is not always combined with text work in one forward pass. Multi-Token Prediction (MTP) also changes how some prefill and verification batches are formed. These special cases preserve the same user-visible slot limit but should not be treated as identical scheduling at the backend level. <a href="https://www.kronkai.com/manual#chapter-6-speculative-decoding-and-mtp">Chapter 6</a> zooms into proposal, verification, acceptance, and state synchronization.</p>
           <h4 id="474-finish-and-release-resources">4.7.4 Finish and Release Resources</h4>
-          <p>On normal completion or error, Kronk finishes the response, clears the active sequence, releases the slot, completes or releases any IMC reservation, and returns the outer admission permit. The next pending job can then occupy the slot; it does not inherit the prior request's sampler, parser, or sequence state.</p>
+          <p>On completion, cancellation, or failure, Kronk releases the request's execution resources, any IMC reservation it still holds, and its admission permit. The slot's active sequence is cleared before reuse. A cache already saved by the request can remain available after the slot is released; the next request does not inherit the previous request's sampling, parsing, or live sequence state.</p>
           <p>Most users should leave <code>prefill-batch-size</code> at its 2048-token default. Kronk derives the internal batch capacities as described in <a href="https://www.kronkai.com/manual#35-concurrency-and-batching">Chapter 3 §3.5</a>.</p>
           <h3 id="48-embedding-and-reranking">4.8 Embedding and Reranking</h3>
-          <p>Embedding and reranking models do not use generation slots. Kronk chooses a separate runtime from the GGUF architecture metadata. Architectures proven safe for multi-sequence pooled evaluation use the sequence-batch engine. The current compatibility set is Qwen3 embedding and BERT reranking models.</p>
+          <p>Embedding and reranking models do not use generation slots. They use sequence batching: complete inputs from one or more queued requests can be evaluated together. This applies to all models identified as embedding or reranking models; it is not limited to an architecture allowlist.</p>
           <pre className="code-block"><code className="language-diagram">{`┌──────────────┐       ┌────────────────────────────────┐
 │ Request jobs │──────▶│ Sequence-batch scheduler       │
 └──────────────┘       │ seq 0 ── request A, input 0    │
@@ -1278,24 +1331,19 @@ models:
           <p>The two limits control independent dimensions of a sequence batch:</p>
           <pre className="code-block"><code className="language-text">{`number of sequences <= nseq-max
 sum of sequence tokens <= prefill-batch-size`}</code></pre>
-          <p>For these models, Kronk derives both llama.cpp <code>NBatch</code> and <code>NUBatch</code> directly from <code>prefill-batch-size</code>. The value is an aggregate native-batch token budget, not a per-sequence allowance. With <code>nseq-max: 8</code> and <code>prefill-batch-size: 2048</code>, one batch can hold eight 256-token sequences or two 1024-token sequences, but not eight 2048-token sequences. Kronk deliberately does not multiply <code>prefill-batch-size</code> by <code>nseq-max</code>: pooled evaluation must fit the complete batch in one physical ubatch, and automatic multiplication could substantially increase compute-buffer memory. Increase <code>prefill-batch-size</code> explicitly when measured workloads benefit from a larger aggregate token budget.</p>
-          <p>Unknown or unsafe architectures use the context-pool fallback. Each admitted request acquires one independent single-sequence context, performs its work, and returns the context to the pool. This avoids native assertions seen with some architectures during multi-sequence initialization. Additional fallback contexts require memory even though model weights are shared.</p>
-          <p>Runtime selection is conservative: a model name identifies the task, while GGUF <code>general.architecture</code> metadata must match the compatibility allowlist to select sequence batching. Missing or unrecognized architecture metadata uses the fallback. Raise <code>nseq-max</code> only after measuring throughput and memory for the selected runtime.</p>
+          <p>For these models, <code>prefill-batch-size</code> is an aggregate batch token budget, not a per-sequence allowance. With <code>nseq-max: 8</code> and <code>prefill-batch-size: 2048</code>, one batch can hold eight 256-token sequences or two 1024-token sequences, but not eight 2048-token sequences. Kronk deliberately does not multiply <code>prefill-batch-size</code> by <code>nseq-max</code>; larger batches require more compute memory. Increase <code>prefill-batch-size</code> explicitly when measured workloads benefit from a larger aggregate token budget.</p>
+          <p>Raise <code>nseq-max</code> only after measuring throughput and memory for the actual model and workload.</p>
           <h3 id="49-configuration-and-tuning">4.9 Configuration and Tuning</h3>
           <p>Configure concurrency in <code>~/.kronk/models/model_config.yaml</code>:</p>
-          <pre className="code-block"><code className="language-yaml">{`mradermacher/Qwopus3.5-4B-Coder.Q8_0:
-  context-window: 32768
-  nseq-max: 2
-  admission-timeout: 3m
-  queue-depth: 2`}</code></pre>
-          <p>The file is read at server startup. Restart the server after changing it. The top-level key must match the model ID used by requests.</p>
-          <p>The Go SDK equivalents are <code>model.WithAdmissionTimeout(3*time.Minute)</code> and <code>model.WithQueueDepth(2)</code>. <code>admission-timeout</code> is separate from the model server's <code>KRONK_WEB_INFERENCE_TIMEOUT</code> (default <code>60m</code>): admission timeout only bounds waiting for a permit, while inference timeout bounds admitted request processing at the server/web/CLI layer.</p>
-          <p>Local representative benchmarks are available for both embedding and reranking runtimes:</p>
-          <pre className="code-block"><code className="language-shell">{`make benchmark-embedding-fallback
-make benchmark-embedding-batchseq
-make benchmark-rerank-fallback
-make benchmark-rerank-batchseq`}</code></pre>
-          <p>Each path uses a model known to select that runtime, so these are deployment baselines rather than controlled measurements of scheduler overhead: model architecture and weights differ between each fallback/sequence-batch pair.</p>
+          <pre className="code-block"><code className="language-yaml">{`version: 2
+models:
+  mradermacher/Qwopus3.5-4B-Coder.Q8_0:
+    context-window: 32768
+    nseq-max: 2
+    admission-timeout: 3m
+    queue-depth: 2`}</code></pre>
+          <p>The file is read at server startup. Restart the server after changing it. The entry under <code>models</code> must match the model ID used by requests.</p>
+          <p><code>admission-timeout</code> is separate from the model server's <code>KRONK_WEB_INFERENCE_TIMEOUT</code> (default <code>60m</code>): admission timeout only bounds waiting for a permit, while inference timeout bounds admitted request processing at the server/web/CLI layer.</p>
           <p>Tune from a measured baseline rather than a generic slot recommendation:</p>
           <ol>
             <li>Start with automatic tuning or <code>nseq-max: 1</code> for a controlled baseline.</li>
@@ -1314,15 +1362,14 @@ make benchmark-rerank-batchseq`}</code></pre>
           <p>Do not treat weight size plus a hand-calculated KV value as total VRAM. Use the BUI's <strong>Apps → VRAM Calculator</strong> and retain operating headroom. See <a href="https://www.kronkai.com/manual#36-memory-planning-and-quantization">Chapter 3 §3.6</a> for the components that affect an estimate.</p>
           <h3 id="410-interaction-with-message-caching">4.10 Interaction with Message Caching</h3>
           <p>Incremental Message Caching (IMC) keeps reusable conversation state in a logical session, not in a permanently assigned execution slot. Cached state is externalized to a session store between requests. A later request can restore that state into any free slot, extend it, and continue generation.</p>
-          <p>While a request is active, its restored or newly built state consumes cells in that slot's KV stream. Kronk normally snapshots a built or extended stable prefix during slot startup, before generating the request's suffix. Exact read-only hits can skip a redundant snapshot. Completion clears the slot's active sequence. This allows the number of cached conversation identities to differ from the number of concurrent execution slots.</p>
+          <p>While a request executes, its restored or newly prepared prefix occupies the slot's model state. Cache builds and extensions run as scheduled preparation work, in bounded steps, before processing the remaining prompt. Once the stable prefix is ready, Kronk saves it for reuse; exact read-only hits can avoid saving the same state again. Completion clears the live sequence, not the reusable cache. Cached conversations can therefore outnumber execution slots.</p>
           <p>The IMC pool contains:</p>
           <pre className="code-block"><code className="language-text">{`default session capacity = max(nseq-max, 1) × queue-depth`}</code></pre>
           <p>The default session pool matches generation admission capacity. Set <code>imc-session-capacity</code> to a larger explicit value when the measured warm conversation working set warrants it. An explicit value cannot be smaller than generation admission capacity. Therefore, for generation through the Kronk SDK:</p>
           <pre className="code-block"><code className="language-text">{`session capacity ≥ admission capacity`}</code></pre>
           <p>This invariant prevents Kronk from admitting more concurrent generation requests than the IMC planner has session identities available to reserve. It avoids moving an admitted request into preparation when every session is already owned by another admitted request.</p>
-          <p>A session is <strong>reserved</strong> while one request has exclusive ownership of its IMC state and other planners must skip it. Reservation does not necessarily mean that token generation is active. Cache append or rebuild paths can publish a stable snapshot and release the reservation before generation finishes, while exact, read-only, and some media paths can retain it longer.</p>
-          <p>If every IMC session is reserved, current token-based planning returns a server-busy error rather than preempting another request's session. With the capacity invariant, this remains a defensive path for direct low-level model callers, leaked reservations, or an internal invariant violation rather than the expected result of a valid SDK queue-depth configuration.</p>
-          <p>Session matching, RAM and disk stores, media caching, invalidation, and cache settings are documented in <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a>.</p>
+          <p>A reservation gives one request exclusive access to a cache entry, including while it waits for a slot. It is not a measure of active generation. A newly built or extended cache may become available to other requests before its owner finishes generating. Exact read-only reuse and some media operations retain the reservation until completion.</p>
+          <p>Kronk's built-in cache store uses host RAM, and System preloads always remain in RAM. Embedded applications can supply a custom working-session store; externalizing state does not by itself make it durable across restarts. Cache matching, media reuse, invalidation, and settings are covered in <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a>.</p>
           <h3 id="411-observing-queue-behavior">4.11 Observing Queue Behavior</h3>
           <p>Kronk records two direct indicators of generation-slot contention:</p>
           <ul>
@@ -1330,9 +1377,9 @@ make benchmark-rerank-batchseq`}</code></pre>
             <li>the <code>chat_queue_wait_seconds</code> Prometheus histogram, recorded when a slot is assigned.</li>
           </ul>
           <p>For a successful job, timing starts immediately before attempting submission to the batch engine and ends at slot assignment. It does not include time blocked at the outer SDK admission gate or time spent preparing an IMC session before the submit attempt. Compare it with end-to-end request duration and time-to-first-token measurements when diagnosing latency.</p>
-          <p>Embedding and reranking expose <code>inference_requests_total</code>, <code>inference_request_duration_seconds</code>, and <code>inference_active_requests</code>, labeled by operation and runtime (<code>batchseq</code> or <code>context_pool</code>). Sequence batching also publishes <code>batchseq_queue_wait_seconds</code>, <code>batchseq_items</code>, and <code>batchseq_batches_total</code>. These distinguish outer request concurrency from the number and width of native batches actually evaluated.</p>
+          <p>Embedding and reranking expose <code>inference_requests_total</code>, <code>inference_request_duration_seconds</code>, and <code>inference_active_requests</code>, labeled by operation and runtime (currently <code>batchseq</code>). Sequence batching also publishes <code>batchseq_queue_wait_seconds</code>, <code>batchseq_items</code>, and <code>batchseq_batches_total</code>. These distinguish outer request concurrency from the number and width of native batches actually evaluated.</p>
           <p>The <code>inference_*</code> metrics begin after the outer SDK admission permit is acquired. They describe admitted model-layer work and do not count admission wait time or requests that time out or are cancelled before admission.</p>
-          <p>Consistently increasing queue-wait time means requests are arriving faster than slots complete them. Before raising <code>nseq-max</code>, confirm that the device has memory headroom and that aggregate throughput improves under a realistic concurrent load. See <a href="https://www.kronkai.com/manual#chapter-15-observability">Chapter 15</a> for metrics, tracing, and profiling.</p>
+          <p>Consistently increasing queue-wait time indicates contention for execution capacity; compare request volume, prompt lengths, and generation lengths. Before raising <code>nseq-max</code>, confirm that the device has memory headroom and that aggregate throughput improves under a realistic concurrent load. See <a href="https://www.kronkai.com/manual#chapter-15-observability">Chapter 15</a> for metrics, tracing, and profiling.</p>
           <hr />
           <h2 id="chapter-5-message-caching">Chapter 5: Message Caching</h2>
           <h2 id="51-what-imc-does">5.1 What IMC Does</h2>
@@ -1345,19 +1392,11 @@ make benchmark-rerank-batchseq`}</code></pre>
             <li>Multiple agents or conversation branches sharing one model</li>
             <li>Prompts with expensive media that remains unchanged across follow-up turns</li>
           </ul>
+          <p>Chat-completion clients still send the complete conversation on every request, including earlier media. IMC avoids repeated model computation; it does not store a client-visible conversation history or let a later request omit it. Built-in cache state is lost when the model unloads or the server restarts. There is no <code>cache_id</code> contract for choosing a session: Kronk automatically matches compatible rendered prefixes.</p>
           <p>Short, one-shot prompts generally gain little from caching. IMC also performs host-side rendering, tokenization, snapshot, and restore work, so it is not a replacement for choosing an appropriate context window and concurrency level.</p>
           <h3 id="511-quick-semantic-understanding">5.1.1 Quick Semantic Understanding</h3>
           <p>IMC is best understood as <strong>prompt planning backed by reusable model state</strong>. Before assigning a request to an execution slot, Kronk determines the exact rendered prompt, its reusable stable portion, the inference-only tail, the compatible saved state, and the work required to move from that state to the current request.</p>
-          <p>IMC caches the tokens used for prefix matching and the corresponding serialized model sequence state—principally KV-cache tensors, plus recurrent or MTP state where required. The distinction matters: token equality proves which saved prefix is eligible, while the serialized state is what avoids processing that prefix again.</p>
-          <pre className="code-block"><code className="language-text">{`Current snapshot
-├─ prefix-matching token IDs
-└─ serialized model sequence state
-   ├─ KV-cache tensors
-   ├─ recurrent/SSM state for hybrid models
-   ├─ logical positions
-   ├─ draft/MTP state when compatible
-   └─ model-specific snapshot encoding`}</code></pre>
-          <p>Not every model needs every listed component. Kronk stores the state required to resume the configured target and, when compatible, its draft path. Prompt metadata is retained alongside the snapshot so Kronk can prove that the bytes belong to the same complete rendered prefix.</p>
+          <p>IMC retains both the complete reusable prefix and the model state computed for it. Matching the prefix establishes whether reuse is safe; restoring the saved state avoids processing that prefix again. The saved state depends on the model and may include attention, recurrent, and speculative-decoding state.</p>
           <p>This is prompt-oriented rather than message-oriented because the model does not consume message objects directly. It consumes rendered tokens, media embeddings, and positions. Requests with apparently unchanged messages can render differently when tools, thinking settings, templates, media, or other render-affecting inputs change.</p>
           <p>Each model owns two bounded pools with equal capacity:</p>
           <ul>
@@ -1396,20 +1435,20 @@ System cache pool:                 -> not searched; working cache matched
 If every Current diverges:
 System cache 1:     [A B]          -> safe verified system-only prefix
 Empty/LRU session:                 -> destination for the copied state`}</code></pre>
-          <p>Choosing the longest compatible cache within the active tier minimizes new prefill work while preserving Current as the normal path. A prefix is safe only when:</p>
+          <p>Choosing the longest compatible working cache minimizes new prefill work. System lookup instead requires an exact match with the independently rendered system-only candidate; it does not choose an arbitrary shorter System prefix. A prefix is safe only when:</p>
           <ul>
             <li>It ends at a complete, committed session boundary.</li>
             <li>The saved plan and snapshot metadata describe the same model state.</li>
             <li>The complete saved plan prefixes the new stable plan.</li>
             <li>The session is available rather than reserved by another request.</li>
-            <li>For media, the saved media plan is unchanged and anything added after the anchor is text-only.</li>
+            <li>For media, the saved plan remains unchanged. Added media must also pass attention-mode and native-prefix compatibility checks.</li>
           </ul>
-          <p>"Longest complete prefix" within a tier does not mean the longest coincidental token overlap. For example, <code>[A B C D]</code> is not shortened and reused for <code>[A B X D]</code>, even though <code>[A B]</code> matches. The LCP is not selected as the boundary. Kronk restores only model state that it explicitly serialized as Current or System. This avoids assuming that an internal KV cut remains valid across template boundaries, media embeddings, M-RoPE positions, hybrid recurrent state, or draft/MTP state.</p>
+          <p>"Longest complete working prefix" does not mean the longest coincidental token overlap. For example, <code>[A B C D]</code> is not shortened and reused for <code>[A B X D]</code>, even though <code>[A B]</code> matches. The LCP is not selected as the boundary. Kronk restores only model state that it explicitly serialized as Current or System. This avoids assuming that an internal KV cut remains valid across template boundaries, media embeddings, M-RoPE positions, hybrid recurrent state, or draft/MTP state.</p>
           <p>When establishing a text session, Kronk independently renders the system-only prefix without a generation cue:</p>
           <pre className="code-block"><code className="language-text">{`[SYSTEM]
    ^ fixed checkpoint candidate`}</code></pre>
           <p>The candidate is accepted only when it is nonempty, cache-worthy, and its complete token sequence exactly prefixes the request's stable rendering. Kronk serializes matching target and compatible draft/MTP state into the model-owned System pool. An exact duplicate refreshes the existing entry. A new prefix uses an empty entry or replaces the least-recently-used entry that is not being restored.</p>
-          <h4 id="step-4-select-exact-append-anchor-or-rebuild">Step 4: Select exact, append, anchor, or rebuild</h4>
+          <h4 id="step-4-select-a-reuse-action-or-rebuild">Step 4: Select a reuse action or rebuild</h4>
           <p>The selected action follows from the stable plan and the best safe session.</p>
           <p><strong>Exact</strong> means the cached stable plan and new stable plan are identical:</p>
           <pre className="code-block"><code className="language-text">{`Cached stable: [A B C D]
@@ -1426,15 +1465,19 @@ Actual:        [A B C D E F][G]`}</code></pre>
           <pre className="code-block"><code className="language-text">{`Cached plan: [A B][image-1][C D]
 New plan:    [A B][image-1][C D E F]`}</code></pre>
           <p>The unchanged media-bearing plan acts as an anchor. Kronk restores its snapshot, does not encode <code>image-1</code> again, prefills only <code>[E F]</code>, and stages an advanced snapshot before processing the generation tail. The staged snapshot and its matching metadata are published together only after success, so a failed advance leaves the previous media snapshot authoritative.</p>
-          <p>Changing, appending, removing, or reordering media is not an anchor extension:</p>
+          <p>Changing, removing, or reordering an existing media prefix is not an anchor extension:</p>
           <pre className="code-block"><code className="language-text">{`[A B][image-2][C D]             -> rebuild: changed media
-[A B][image-1][image-2][C D]    -> rebuild: appended media
+[A B][image-1][image-2][C D]    -> rebuild: inserted media before cached C D
 [A B][C D][image-1]             -> rebuild: reordered media
 [A B][C D]                      -> rebuild: removed media`}</code></pre>
           <p>These outcomes describe comparison with the shown anchor. Because Kronk searches the full available session pool, it can still reuse another session whose complete media plan is compatible with the request.</p>
-          <p><strong>Rebuild</strong> means neither Current nor System prefixes the stable plan. Kronk selects an empty session or the least recently used available session, resets it, processes the stable plan from the beginning, snapshots the resulting state, and then processes the generation tail. Rebuild is not a request failure; it means only that the request receives no saved-prefill benefit.</p>
+          <p><strong>Media append</strong> can reuse a complete cached text or media prefix while adding new media after it:</p>
+          <pre className="code-block"><code className="language-text">{`Cached plan: [A B][image-1][C D]
+New plan:    [A B][image-1][C D E F][image-2]`}</code></pre>
+          <p>This requires compatible causal attention and a verified native media prefix. A non-causal cached session or a native-prefix mismatch can require a rebuild. The cached portion avoids repeated model media encoding and prefill, but the complete input may still require host-side media preparation and tokenization.</p>
+          <p><strong>Rebuild</strong> means no eligible working cache or exact System checkpoint matches. Kronk selects an empty session or the least recently used available session, resets it, processes the stable plan from the beginning, snapshots the resulting state, and then processes the generation tail. Rebuild is not a request failure; it means only that the request receives no saved-prefill benefit.</p>
           <h4 id="step-5-reserve-the-selected-session">Step 5: Reserve the selected session</h4>
-          <p>Planning and execution do not happen at the same instant. A request may wait for an execution slot after selecting a session, so Kronk immediately marks the session reserved while holding the cache lock:</p>
+          <p>Planning and execution do not happen at the same instant. A request may wait for an execution slot after selecting a session, so Kronk immediately reserves it for that request:</p>
           <pre className="code-block"><code className="language-text">{`select session -> reserve -> queue -> restore/build stable state
 
 ordinary text append/rebuild or initial media build:
@@ -1444,22 +1487,6 @@ exact read-only hit or media-anchor advance:
     keep reservation -> generate -> release at completion`}</code></pre>
           <p>Other planners skip reserved sessions. Reservations apply to exact matches, appends, media anchors, empty sessions selected for rebuild, and LRU sessions selected for replacement. Even an exact match needs a reservation: another request must not rebuild or replace its snapshot between selection and restore.</p>
           <p>If every session is reserved, Kronk returns a retryable busy error rather than evicting an active session. The reservation also prevents a partially updated session from becoming visible. Snapshot bytes and metadata must describe the same stable prefix before the session can be selected again.</p>
-          <h4 id="why-this-is-called-prompt-planning">Why this is called prompt planning</h4>
-          <p>The old mental model, "which messages have been cached?", is no longer precise enough. The planner now produces an execution contract containing:</p>
-          <ul>
-            <li>The complete rendered prompt and reusable stable rendering</li>
-            <li>The generation-only tail</li>
-            <li>The canonical token or media identity</li>
-            <li>The selected reusable session boundary</li>
-            <li>The stable extension that must be prefilled</li>
-            <li>The exact, append, anchor, or rebuild action</li>
-            <li>Logical positions and expected physical KV state</li>
-            <li>The selected session and the state version execution must observe</li>
-          </ul>
-          <p>The batch engine executes this plan rather than independently interpreting a reduced message document. Put another way:</p>
-          <blockquote>Prompt planning asks, "What exact prompt will the model execute, and what is</blockquote>
-          <blockquote>the safest minimum work needed to reach it?" IMC supplies the reusable model</blockquote>
-          <blockquote>state that makes the answer efficient.</blockquote>
           <h2 id="52-how-kronk-reuses-a-text-prefix">5.2 How Kronk Reuses a Text Prefix</h2>
           <p>Kronk compares the complete stable token sequence with the Current and fixed System sequences in available sessions. The result is one of three match types:</p>
           <ul>
@@ -1509,30 +1536,36 @@ Next stable rendering retroactively changes an assistant turn:
           <p>Setting <code>queue-depth: 1</code> with two slots instead provides two working sessions and two System entries. It does not reduce two-request execution concurrency; it prevents additional requests from passing admission until a slot's request finishes.</p>
           <p>An explicit <code>imc-session-capacity</code> must be at least <code>nseq-max × queue-depth</code>. This preserves one reservable session identity for every admitted generation request. Values above that floor retain more completed conversation branches and may reduce LRU rebuilds, at the cost of additional session-store capacity.</p>
           <p>Admission waiting is controlled separately by the per-model <code>admission-timeout</code> setting (default <code>3m</code>). It only bounds the wait for an SDK admission permit. The server's <code>KRONK_WEB_INFERENCE_TIMEOUT</code> (default <code>60m</code>) instead bounds admitted preparation, slot waiting, and inference; neither setting changes IMC session retention.</p>
-          <p>For text IMC builds and extensions, slot assignment and cache preparation are separate steps. Kronk first binds queued requests to all available execution slots. The batch loop then selects one preparing slot and retains it as the prefill Stage 2 IMC-extension owner until that slot's new stable-prefix tokens have been decoded, the request is cancelled, or the slot otherwise becomes ineligible. Normal generation resumes between extension chunks, and the selector advances to the next waiting slot when the current owner finishes. A chunk uses the configured prefill capacity—2048 tokens by default; generation-reserve rows do not change it. This removes cache building from synchronous slot startup while allowing already-generating requests to continue between chunks. Prefill Stage 1 is only the <code>StateSeqSetData</code> copy that restores an exact reusable IMC snapshot into the slot; it performs no token decode. Media cache builds still use their dedicated synchronous paths.</p>
+          <p>Slot assignment and cache preparation are separate steps. Text and media cache builds and extensions run as scheduled work after a request receives a slot. One preparing request retains priority until its reusable prefix is ready, cancelled, or no longer eligible. Work proceeds in bounded steps, so already-generating requests can continue between steps. Media encoding and indivisible image chunks can still take longer; this is not a fixed latency guarantee. Text preparation uses <code>prefill-batch-size</code>, 2048 tokens by default.</p>
           <p>Kronk reserves a session as soon as it selects it for an exact match, append, or rebuild. Other requests cannot select that identity while the reservation is held. If all session identities are reserved, the request returns a busy error and should be retried. Kronk does not evict an active session to make room.</p>
           <p>During a request, Kronk restores the selected snapshot into a free slot. For a new or appended stable prefix, it creates the updated snapshot after processing the stable tokens. The generation-ready tail is then processed without making it part of that reusable stable prefix.</p>
-          <p>The snapshot restores model state, not a long-lived sampler instance. Kronk re-primes repetition penalties and DRY from the authoritative complete logical prompt, including the restored portion, so sampling history agrees with the KV prefix even though only uncached model work is decoded again. For cached media, Kronk retains the text-token history needed for that sampler priming separately from the media embedding cells represented by the native snapshot.</p>
-          <p>For text requests, Kronk can retain an independently rendered and verified system-only preload, including matching draft/MTP state when available. These preloads live in a model-owned RAM pool whose capacity equals the working session count. Unlike working snapshots, System entries do not use the configured session store; persisted working snapshots already contain the System prefix.</p>
-          <p>An exact match may skip rewriting the snapshot when the stable state has not changed. This avoids an unnecessary serialization of the state that was just restored. Exact media-plan reuse can receive the same optimization. These are implementation optimizations; they do not change which content is considered part of the cache.</p>
+          <p>Repetition penalties and DRY still account for the complete prompt, including the restored portion. Cache reuse does not remove earlier text from sampling history merely because the model computation was skipped.</p>
+          <p>Kronk can retain an independently rendered and verified text-only system preload, including matching draft/MTP state when available. These preloads live in a model-owned RAM pool whose capacity equals the working session count. Unlike working snapshots, System entries do not use the configured session store; saved working snapshots already contain the System prefix.</p>
+          <p>An exact match may skip rewriting the snapshot when the stable state has not changed. This avoids an unnecessary serialization of the state that was just restored. Exact media-plan reuse can receive the same optimization. This does not change which content is considered part of the cache.</p>
           <p>Snapshots externalize inactive session state from the model's active KV cache. They therefore do not permanently occupy an execution slot or pin their state in accelerator KV memory between requests. They do consume the configured session-store capacity, as described in <a href="#55-configuration-and-storage">Configuration and Storage</a>.</p>
           <h2 id="54-media-requests">5.4 Media Requests</h2>
           <p>IMC supports media processed by Kronk's multimodal pipeline. Instead of relying only on text-token equality, Kronk builds a logical plan containing the ordered text and media inputs.</p>
-          <p>Kronk can reuse a media session in two cases:</p>
+          <p>Kronk can reuse a media session in three cases:</p>
           <ul>
             <li><strong>Exact plan</strong> — The complete stable media plan is unchanged.</li>
             <li><strong>Text extension from an anchor</strong> — The stored media plan remains unchanged and is followed only by new text. Kronk restores the media state and processes the text extension without encoding the media again.</li>
+            <li><strong>Compatible media append</strong> — A complete cached text or media prefix is followed by new media. Kronk reuses the prefix when causal-attention and native-prefix checks permit it, then encodes and processes the added media.</li>
           </ul>
-          <p>Kronk rebuilds the stable plan when media is changed, reordered, removed, or newly appended and no other available session already contains a compatible plan. This conservative rule lets the model-specific multimodal pipeline remain authoritative for media embeddings, token placement, and position handling.</p>
-          <p>For example, a user can submit an image and then ask several text-only follow-up questions. The saved media plan acts as an anchor for those turns. Replacing the image or adding another one cannot extend that anchor; it requires a rebuild unless a different session already holds the new plan.</p>
+          <p>Kronk rebuilds when earlier media changes or an append is incompatible and no available session has a compatible plan. This conservative rule lets the model-specific multimodal pipeline remain authoritative for media embeddings, token placement, and position handling.</p>
+          <p>For example, a user can submit an image and then ask several text-only follow-up questions. The saved media plan acts as an anchor for those turns. Replacing the image cannot extend that anchor; it requires a rebuild unless another session already holds the new plan. Adding media after a complete cached prefix can reuse it when the compatibility checks permit.</p>
           <p>See <a href="https://www.kronkai.com/manual#chapter-11-multimodal-models">Chapter 11</a> for supported media inputs and model requirements.</p>
           <h2 id="55-configuration-and-storage">5.5 Configuration and Storage</h2>
           <p>IMC settings belong under the model ID in <code>~/.kronk/models/model_config.yaml</code>:</p>
-          <pre className="code-block"><code className="language-yaml">{`unsloth/Qwen3-1.7B-UD-Q8_K_XL:
-  incremental-cache: true
-  cache-min-tokens: 100
-  imc-session-capacity: 8
-  session-store-kind: ram`}</code></pre>
+          <pre className="code-block"><code className="language-yaml">{`version: 2
+models:
+  unsloth/Qwen3-1.7B-UD-Q8_K_XL:
+    nseq-max: 2
+    queue-depth: 2
+    incremental-cache: true
+    cache-min-tokens: 100
+    imc-session-capacity: 8
+    session-store-kind: ram`}</code></pre>
+          <p>Restart the server after changing the file. This example retains eight working cache identities while admitting up to four requests for two execution slots.</p>
           <p>The relevant settings are:</p>
           <table className="flags-table">
             <thead>
@@ -1561,49 +1594,29 @@ Next stable rendering retroactively changes an assistant turn:
               <tr>
                 <td><code>session-store-kind</code></td>
                 <td><code>ram</code></td>
-                <td>Selects the session-store plugin. Currently, only <code>ram</code> is built in.</td>
+                <td>Working-session storage; only <code>ram</code> is supported in server configuration.</td>
               </tr>
             </tbody>
           </table>
           <p>When <code>imc-session-capacity</code> is omitted, Kronk derives the capacity from <code>nseq-max</code> and <code>queue-depth</code>. The same admission-capacity floor applies to an explicit value in <code>model_config.yaml</code>.</p>
-          <p>The <code>cache-min-tokens</code> setting applies to the stable text-token-plan length. A text request below the threshold still works, but Kronk processes its complete generation-ready prompt without creating or reusing an IMC session. The current media planner does not apply this threshold; media safety is instead determined by whether it can construct compatible logical stable and actual plans.</p>
+          <p>The <code>cache-min-tokens</code> setting applies to the stable text-token-plan length. A text request below the threshold still works, but Kronk processes its complete generation-ready prompt without creating or reusing an IMC session. The current media working-plan cache does not apply this threshold; media safety depends on compatible stable and generation-ready plans. Text-only System checkpoints still use the threshold, including those created during media requests. Zero or negative <code>cache-min-tokens</code> values use the default of 100 rather than making every text prompt eligible.</p>
           <p>Set <code>incremental-cache: false</code> if a workload is entirely short-lived or if you need to compare behavior without prompt caching.</p>
           <h3 id="built-in-ram-storage">Built-in RAM storage</h3>
           <p>The built-in <code>ram</code> store keeps snapshots in process memory. It is selected by default when <code>session-store-kind</code> is omitted. Each session buffer grows as needed and retains its peak allocation for reuse. Actual memory use depends on the model, cached conversation lengths, KV data types, and number of sessions that have been used. Budget for peak conversation state across the branches you expect to keep warm, not just the <code>nseq-max</code> requests that can run simultaneously.</p>
           <h3 id="custom-sdk-storage">Custom SDK storage</h3>
-          <p>Direct SDK users can implement <code>kvstorage.Store</code>, construct a factory that captures the implementation's own dependencies and configuration, and inject that factory into the model:</p>
-          <pre className="code-block"><code className="language-go">{`factory := func(ctx context.Context) (kvstorage.Store, error) {
-	return myStore.New(ctx, dependency)
-}
-
-krn, err := kronk.New(
-	model.WithModelFiles(modelFiles),
-	model.WithIncrementalCache(true),
-	model.WithSessionStoreFactory(factory),
-)`}</code></pre>
-          <p>Kronk calls the factory independently for every working target, draft, or staged checkpoint store it needs. Each call must return a new store; Kronk owns that store and calls <code>Close</code> when it is no longer needed. Factory calls and store reads, prepares, commits, and resets receive the current operation's <code>context.Context</code> and report failures as errors. System preloads remain in a model-owned RAM pool. Direct SDK use defaults to RAM when no factory is injected.</p>
-          <p>Each returned store represents one session snapshot. Kronk serializes access to that individual store, so implementations do not need per-store locking. Different stores can be active concurrently, however. A factory may capture a shared database client, connection pool, byte budget, or eviction manager, but the implementation must synchronize any such shared resource.</p>
-          <p>The byte slices cross a borrowed-memory boundary:</p>
-          <ul>
-            <li><code>Bytes</code> returns read-only bytes. Kronk does not modify them, and callers must not retain them after the next <code>Prepare</code>, <code>Commit</code>, <code>Reset</code>, or <code>Close</code>.</li>
-            <li><code>Prepare</code> returns exactly the requested writable length. Kronk owns that write access only until the next <code>Prepare</code>, <code>Commit</code>, <code>Reset</code>, or <code>Close</code>.</li>
-            <li>Implementations may reuse storage for either slice. They do not need to allocate or copy on every operation.</li>
-            <li><code>Len</code> and <code>Cap</code> are cheap metadata operations and must not perform storage I/O. After <code>Prepare</code>, <code>Len</code> remains zero until <code>Commit</code> succeeds.</li>
-          </ul>
-          <p>Implementations should check the supplied context before starting work and pass it to cancellable backend operations. A context cannot interrupt every local filesystem syscall, but it still prevents canceled requests from starting additional I/O. Return wrapped operation errors rather than turning a failed read or write into an empty snapshot. Kronk validates returned lengths and publishes only complete snapshots.</p>
-          <p>The <a href="https://github.com/ardanlabs/kronk/tree/main/examples/session-store"><code>examples/session-store</code></a> program provides a complete custom implementation and shows how to inject it. Its implementation writes snapshots to anonymous temporary files and deletes them on <code>Close</code>. It exists only to demonstrate the extension contract: it has no stable session identity, persisted request history, startup recovery, or atomic commits. <strong>Do not use the example as durable session storage.</strong> A durable implementation needs a higher-level persistence design in addition to the byte-store contract.</p>
-          <p>In particular, a production file or object store should write and validate a replacement before atomically publishing it—for example, by writing a temporary file, syncing it when durability is required, and renaming it over the previous snapshot, or by committing a database transaction. A versioned envelope with the expected length and checksum can reject truncated or corrupt data before it reaches the model runtime. Cleanup must not depend exclusively on <code>Close</code>: process termination can bypass it, so persistent backends need expiration, leases, or an external garbage collector. Shared factories should also enforce an explicit total storage budget and reject an oversized snapshot rather than silently exceeding that budget.</p>
+          <p>Embedded applications can replace working-session storage. This is an SDK extension, not a server configuration option for disk storage. System preloads still use RAM. Custom storage must preserve complete snapshots, report read and write failures, and provide its own capacity limits and cleanup policy.</p>
+          <p>Writing snapshot bytes to disk does not make conversations recoverable after a restart. Durable recovery also needs compatible model and configuration identities, matching cache metadata, validated snapshots, and an application recovery design.</p>
+          <p>The <a href="https://github.com/ardanlabs/kronk/tree/main/examples/session-store"><code>examples/session-store</code></a> program demonstrates the SDK extension. It uses temporary files and deletes them when closed; it does not provide startup recovery or durable atomic commits. <strong>Do not use the example as durable session storage.</strong> Consult the SDK storage contract when implementing an alternative backend.</p>
           <p>Some MTP configurations maintain draft-model cached state and saved hidden state in addition to the target model snapshot. Account for this extra storage when sizing memory. See <a href="https://www.kronkai.com/manual#chapter-6-speculative-decoding-and-mtp">Chapter 6</a> for MTP configuration and behavior.</p>
           <h2 id="56-invalidation-and-limitations">5.6 Invalidation and Limitations</h2>
           <p>IMC favors safe reuse over partial recovery. A session is rebuilt when Kronk cannot prove that its complete saved prefix matches the new stable prompt. Common causes include:</p>
           <ul>
             <li>Editing, deleting, or reordering earlier conversation content</li>
             <li>Changing tools or settings that alter the rendered prompt</li>
-            <li>Changing, adding, removing, or reordering media</li>
+            <li>Changing, removing, or reordering cached media, or adding incompatible media</li>
             <li>Loading a different model or an incompatible model configuration</li>
-            <li>Producing a stable rendering that is not a prefix of the generation-ready rendering</li>
-            <li>For media, failing to construct an append-safe logical plan, including a marker/media-count mismatch, an automatically appended EOS, or a non-text generation tail</li>
           </ul>
+          <p>If the stable rendering does not prefix the generation-ready prompt, or a media plan cannot be proven safe, Kronk bypasses IMC and processes the complete request. Examples include media-marker mismatches or a non-text generation tail. A cache bypass is different from rebuilding an eligible stable snapshot.</p>
           <p>An unload or server restart clears the built-in in-memory sessions. Do not rely on IMC sessions surviving model or process lifecycles.</p>
           <p>IMC has several practical costs:</p>
           <ul>
@@ -1616,8 +1629,8 @@ krn, err := kronk.New(
           </ul>
           <p>Evaluate IMC using a representative conversation workload rather than a single prompt benchmark. The benefit grows with reusable prefix length and follow-up frequency.</p>
           <h2 id="57-observability">5.7 Observability</h2>
-          <p>At debug log level, IMC planning events identify the selected <code>match_kind</code> (<code>exact</code>, <code>append</code>, or <code>rebuild</code>) and report reusable, extension, stable, and tail token counts. Media planning events similarly identify exact, anchor, and rebuild decisions. Request-completion events include whether IMC participated and whether a prior snapshot was restored.</p>
-          <p>Resumable text preparation emits <code>imc-preparation-queued</code> when a slot owns the request, <code>imc-preparation-chunk</code> after each successful target and compatible MTP draft advance, and <code>imc-cache-ready</code> after final preparation. The final event's <code>session_committed</code> field reports whether the updated snapshot metadata was committed. The chunk event reports <code>slot</code>, <code>chunk_tokens</code>, <code>prepared_tokens</code>, <code>total_tokens</code>, <code>remaining_tokens</code>, <code>next_position</code>, <code>elapsed</code>, and the batch <code>iteration</code>. It also reports <code>preparation_slots</code>, <code>selector_start</code>, <code>selector_selected</code>, and <code>selector_next</code> so the IMC preparation owner and next-slot cursor can be followed independently from the ordinary prefill cursor. Repeated chunk events for one slot show ownership being retained through Stage 2; after completion, the next preparing slot becomes the owner. Generation events between chunk events demonstrate that existing generation remains live.</p>
+          <p>IMC planning events identify the selected <code>match_kind</code> (<code>exact</code>, <code>append</code>, or <code>rebuild</code>) and report reusable, extension, stable, and tail token counts. Media planning events also identify <code>media-append</code> and System-preload append decisions. The server emits these through its Info logger; embedded application logging depends on the configured logger. Request-completion events include whether IMC participated and whether a prior snapshot was restored.</p>
+          <p>Text preparation emits <code>imc-preparation-queued</code>, <code>imc-preparation-chunk</code>, and <code>imc-cache-ready</code> events. Chunk progress and elapsed time distinguish a large cache build from a request waiting for execution. Media preparation has corresponding media-specific events. Compare these with generation activity and end-to-end request latency when investigating responsiveness.</p>
           <p>The Prometheus counters <code>imc_snapshot_skipped_total</code> and <code>imc_pure_hit_stale_session_total</code> expose exact-hit snapshot skips and rejected stale-session races. A rising rebuild rate usually means clients are changing earlier prompt content, media, tools, or rendering inputs rather than appending to a stable conversation.</p>
           <p>Per-working-entry gauges expose token/allocation values, latest-request input/output/context, peak context, and context-window utilization. The BUI <strong>IMC Sessions</strong> page exposes working sessions and model-owned System caches on separate tabs. These are bounded current-state views, not a history of every conversation transition.</p>
           <p>See <a href="https://www.kronkai.com/manual#chapter-15-observability">Chapter 15</a> for logging, metrics, tracing, and profiling configuration.</p>
@@ -1626,7 +1639,7 @@ krn, err := kronk.New(
           <p>Speculative decoding uses a faster drafter to propose several continuation tokens. The target model verifies those proposals together. Accepted proposals reduce the number of target-model passes needed to produce the response; rejected proposals are discarded and the target remains authoritative.</p>
           <p>This optimization does not change the chat, Responses, or SDK request shapes. It can improve generation throughput when the drafter is inexpensive and its proposals agree frequently with the target. It can also reduce performance when draft work is expensive or acceptance is poor. Always measure with the model, sampling settings, hardware, and prompts used in production.</p>
           <p>Kronk supports classic speculative decoding with a separate draft model and Multi-Token Prediction (MTP). MTP uses a prediction head designed for the target rather than a general-purpose smaller language model.</p>
-          <p>This is a specialized Stage 4 generation loop. The drafter proposes multiple candidates, but the target model verifies them and remains authoritative. At a divergence Kronk accepts only the verified prefix and chooses a target replacement token; when all candidates are accepted it chooses a target bonus token. That final target token becomes input to the next decode and is not yet committed to KV state when selected.</p>
+          <p>The target accepts a verified prefix of the proposals and supplies a replacement or bonus token. Rejected proposals do not become authoritative output.</p>
           <p><img src="https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/chapter-06/speculative-decoding.svg" alt="Speculative decoding proposal, target verification, acceptance, and state synchronization" /></p>
           <p>Classic speculative sampling uses the target and draft distributions to decide acceptance and replacement. Kronk's MTP path uses exact token-match verification against the target sampler. Both paths keep the target authoritative and emit an accepted prefix of zero to <code>ndraft</code> candidates followed by a target-derived replacement or bonus token.</p>
           <p>When a request supplies <code>seed</code>, Kronk derives request-local random streams for the target sampler, classic draft sampler, and speculative acceptance and replacement decisions. This prevents concurrent requests from consuming one another's random stream. See <a href="https://www.kronkai.com/manual#chapter-10-request-parameters">Chapter 10</a> for the repeatability contract and its environment constraints.</p>
@@ -1658,7 +1671,7 @@ krn, err := kronk.New(
               </tr>
               <tr>
                 <td><strong>Embedded MTP head</strong></td>
-                <td>The target GGUF contains supported <code>nextn_predict_layers</code> metadata, currently used by Qwen3.5, Qwen3.6, and NVIDIA Nemotron 3 Super models.</td>
+                <td>The target GGUF contains supported head weights, including Qwen3.5, Qwen3.6, Qwen3.8 Flash Next (<code>qwen4exp</code>), and NVIDIA Nemotron 3 Super models.</td>
                 <td>Supports multiple slots</td>
               </tr>
             </tbody>
@@ -1666,8 +1679,8 @@ krn, err := kronk.New(
           <p>Kronk checks these sources in that order. A <code>draft-model</code> block containing a <code>model-id</code> explicitly selects the classic separate draft and takes precedence over the MTP forms. Without one, Kronk uses a compatible companion MTP file when present, then checks the target for an embedded MTP head. If no source is available, the model runs normally without speculation.</p>
           <p>A <code>draft-model</code> block containing only <code>ndraft</code> is different: it changes the MTP draft ceiling and does not select a classic draft or disable MTP.</p>
           <p>The model-level <code>speculation</code> setting selects the implementation. <code>auto</code> keeps the normal priority order, <code>disabled</code> runs target-only, <code>classic</code> requires a separate draft model, and <code>mtp</code> requires a compatible companion or embedded head. Explicit selection makes it possible to benchmark the same target with MTP enabled and disabled without changing downloaded model files.</p>
-          <p>Embedded detection happens before llama.cpp loads the target. Kronk reads the first GGUF shard, where model metadata is stored, and enables MTP tensor loading when a recognized architecture advertises a positive <code>nextn_predict_layers</code> value and that architecture's runtime is enabled. This early step is required because llama.cpp otherwise omits gated MTP tensors during model load; adding an <code>ndraft</code> setting after load cannot recover them.</p>
-          <p>MTP also requires support from the loaded llama.cpp library. When a model advertises MTP but the required API is unavailable, Kronk reports that MTP was disabled at model load and serves the model without speculation.</p>
+          <p>Embedded MTP requires a supported head in the downloaded GGUF files. Qwen3.5-family files that retain MTP metadata after the head weights were stripped are not treated as MTP-capable. Changing <code>ndraft</code> cannot add missing head weights. Recognized metadata alone does not establish runtime support: GLM5 Next currently runs target-only in <code>auto</code> and fails loading with <code>speculation: mtp</code>.</p>
+          <p>MTP also requires support from the loaded llama.cpp library. In <code>auto</code> mode, an unavailable MTP API, unsupported recognized runtime, or incompatible embedded head width leaves the model running target-only. With <code>speculation: mtp</code>, these conditions fail model loading instead. Explicit MTP also fails when no compatible source is found or a classic separate draft is configured. Automatic selection does not suppress errors while loading an otherwise selected drafter.</p>
           <h3 id="63-choosing-a-drafter">6.3 Choosing a Drafter</h3>
           <h4 id="631-classic-separate-draft">6.3.1 Classic separate draft</h4>
           <p>Use a classic separate draft when the target has no supported MTP source or when you have already measured a compatible draft that performs well for your workload.</p>
@@ -1684,8 +1697,8 @@ krn, err := kronk.New(
           <p>MTP is normally the simpler choice when the downloaded model provides a supported embedded or companion head. It is architecture-matched to its target, supports multiple execution slots, and does not require a <code>model-id</code> in the <code>draft-model</code> configuration.</p>
           <p>An embedded head requires no companion file. A companion MTP head is an additional model-specific file, but Kronk's catalog and download flow can discover and associate files at the repository root or under <code>MTP/</code> with the target automatically. A version 2 catalog entry can instead provide <code>mtp_url</code> when a compatible companion is hosted in another repository. It is not configured as a classic <code>draft-model</code>.</p>
           <p>Qwen3.8 Flash Next's <code>qwen4exp</code> MTP runtime supports embedded heads and self-contained companion GGUFs through the own-KV runtime. Existing shared-tensor sidecars are not compatible; the companion must contain its own token embeddings and output tensors.</p>
-          <p>The pinned b11960 bundle contains the recurrent-memory assertion fix from upstream PR #29799 and the Qwen4Exp QSA/indexer correctness fixes from PR #29819. MTP hidden rows use the separate state-embedding input introduced in PR #30257; token and media embeddings remain separate. In <code>auto</code> mode Kronk loads a compatible Qwen4Exp companion when one is available, otherwise it uses a compatible embedded head. The <code>disabled</code> speculation mode continues to run the target without MTP.</p>
-          <p>NVIDIA Nemotron 3 Super uses the embedded own-KV MTP runtime. Kronk recognizes the <code>nemotron_h_moe</code> architecture, preserves recurrent-state rollback for its hybrid Mamba-attention target, and uses the model's Qwen3-Coder-compatible tool protocol. Separate Nemotron MTPv2 companion files and Nemotron Puzzle MTP are not supported; configure <code>speculation: disabled</code> to benchmark target-only generation with the same embedded model.</p>
+          <p>In <code>auto</code> mode Kronk loads a compatible Qwen4Exp companion when one is available, otherwise it uses a compatible embedded head. The <code>disabled</code> speculation mode continues to run the target without MTP.</p>
+          <p>NVIDIA Nemotron 3 Super uses the embedded own-KV MTP runtime for the <code>nemotron_h_moe</code> architecture. Separate Nemotron MTPv2 companion files and Nemotron Puzzle MTP are not supported; configure <code>speculation: disabled</code> to benchmark target-only generation with the same embedded model.</p>
           <p>MTP availability is a property of the downloaded files and the loaded llama.cpp library. Naming a model “MTP” or adding an <code>ndraft</code> override cannot create an MTP head that is not present.</p>
           <h3 id="64-draft-size-and-classic-adaptive-throttling">6.4 Draft Size and Classic Adaptive Throttling</h3>
           <p><code>ndraft</code> is the maximum number of candidates the drafter attempts in one round. Larger values can save more target passes when acceptance remains high, but they also increase wasted draft and verification work when proposals are rejected.</p>
@@ -1695,7 +1708,7 @@ krn, err := kronk.New(
             <li><strong>MTP:</strong> 3</li>
           </ul>
           <p>For MTP, one <strong>round</strong> is a complete speculative cycle: MTP proposes up to <code>ndraft</code> candidates, the target verifies them together, and Kronk emits the accepted prefix followed by one target-selected replacement or bonus token. A round therefore emits between 1 and <code>ndraft + 1</code> tokens; a round is not the same as a token.</p>
-          <p>MTP always uses its configured <code>ndraft</code> as the per-round maximum. Kronk does not evaluate acceptance to try lower values, run calibration rounds, or select a different value at runtime. An omitted or zero value uses the MTP default of 3; an explicit positive value remains in effect for the loaded model.</p>
+          <p>MTP always uses its configured <code>ndraft</code> as the per-round maximum. Kronk does not evaluate acceptance to try lower values, run calibration rounds, or select a different value at runtime. An omitted or zero value uses the MTP default of 3; an explicit positive value remains the ceiling for the loaded model. A round can propose fewer candidates near context or output limits or when drafting reaches an end condition.</p>
           <p>Prompt type, sampling settings, and output structure can change MTP acceptance and the amount of useful work produced by each round. Coding, summarization, prose, and structured output can therefore perform differently at the same <code>ndraft</code>. If a workload performs better with another value, benchmark that representative workload and configure the value explicitly. Compare end-to-end throughput and latency rather than selecting a value from acceptance rate alone.</p>
           <p>Classic separate-draft speculation does adapt its draft size directly from its acceptance EMA:</p>
           <table className="flags-table">
@@ -1733,19 +1746,23 @@ krn, err := kronk.New(
           <h3 id="65-configuration">6.5 Configuration</h3>
           <p>Configuration belongs under the target model ID in <code>~/.kronk/models/model_config.yaml</code>.</p>
           <h4 id="651-classic-separate-draft">6.5.1 Classic separate draft</h4>
-          <pre className="code-block"><code className="language-yaml">{`some-provider/target-model:
-  nseq-max: 1
-  draft-model:
-    model-id: some-provider/compatible-draft-model
-    ndraft: 5`}</code></pre>
+          <pre className="code-block"><code className="language-yaml">{`version: 1
+models:
+  some-provider/target-model:
+    nseq-max: 1
+    draft-model:
+      model-id: some-provider/compatible-draft-model
+      ndraft: 5`}</code></pre>
           <p>The target and draft must already be downloaded. Kronk resolves the configured draft model ID to its local files. A classic draft with <code>nseq-max</code> greater than 1 is rejected during configuration validation.</p>
           <h4 id="652-mtp-default">6.5.2 MTP default</h4>
           <p>No model configuration is required. Downloading a supported target and its catalog-provided companion files is sufficient for automatic detection.</p>
           <h4 id="653-mtp-draft-count-override">6.5.3 MTP draft-count override</h4>
-          <p>To change the fixed MTP draft count, set <code>ndraft</code> without a <code>model-id</code>:</p>
-          <pre className="code-block"><code className="language-yaml">{`some-provider/mtp-target-model:
-  draft-model:
-    ndraft: 6`}</code></pre>
+          <p>To change the MTP draft ceiling, set <code>ndraft</code> without a <code>model-id</code>:</p>
+          <pre className="code-block"><code className="language-yaml">{`version: 1
+models:
+  some-provider/mtp-target-model:
+    draft-model:
+      ndraft: 6`}</code></pre>
           <p>This form supports multiple slots. A value of 0 or an omitted value uses the MTP default of 3; a negative value is rejected. If neither a compatible companion nor an embedded MTP head is available, the override has no effect.</p>
           <p>See <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3</a> for the complete model configuration format.</p>
           <h3 id="66-measuring-the-result">6.6 Measuring the Result</h3>
@@ -1782,21 +1799,21 @@ krn, err := kronk.New(
             </tbody>
           </table>
           <p>These fields use <code>omitempty</code>; zero-valued fields may be absent from JSON. A high acceptance rate with low coverage can mean speculation ran for only a small part of the response. Conversely, a moderate acceptance rate can still help when drafting is much cheaper than target decoding. Compare end-to-end latency or tokens per second against the same workload with no drafter.</p>
-          <p>Final <code>chat-completion</code> logs use <code>acceptance_rate</code>, while batch-engine completion logs use <code>draft_acceptance_rate</code>. Both also report draft and accepted-token counts when a drafter is loaded. Common MTP disable reasons include:</p>
+          <p>Final <code>chat-completion</code> and batch-engine completion logs use <code>draft_acceptance_rate</code>. Both report draft-token counts, accepted-token counts, and draft coverage when a drafter is loaded, including zero counts when speculation did not run. Common MTP disable reasons include:</p>
           <ul>
             <li><code>imc-hit</code> — target cache state was restored without compatible draft state</li>
             <li><code>sync-error</code> — draft state could not be synchronized after target decoding, including media prefill or verification</li>
           </ul>
-          <p>Startup events under <code>draft-model</code>, <code>draft-model-mtp</code>, and <code>draft-model-mtp-shared</code> show which source loaded or why MTP was skipped. See <a href="https://www.kronkai.com/manual#chapter-15-observability">Chapter 15</a> for logging and metrics configuration.</p>
+          <p>Startup events under <code>draft-model</code>, <code>draft-model-mtp</code>, <code>draft-model-mtp-separate</code>, <code>draft-model-mtp-shared</code>, and <code>speculation</code> show which source loaded or why MTP was skipped. See <a href="https://www.kronkai.com/manual#chapter-15-observability">Chapter 15</a> for logging and metrics configuration.</p>
           <h3 id="67-limitations-and-fallbacks">6.7 Limitations and Fallbacks</h3>
           <ul>
             <li><strong>Classic separate drafts require one slot.</strong> Set <code>nseq-max: 1</code> on the target entry.</li>
-            <li><strong>Multi-slot MTP uses one physical batch per logical decode.</strong> Kronk caps the derived internal <code>NBatch</code> and <code>NUBatch</code> at the same value because llama.cpp exposes dense NextN hidden states in physical-batch order without a complete mapping back to logical token rows.</li>
+            <li><strong>Some sampling controls bypass classic speculation.</strong> Requests using grammar, adaptive-p, DRY, frequency/presence penalties, a nondefault repeat penalty, or XTC run target-only. This restriction applies to classic separate drafts, not MTP.</li>
             <li><strong>Tokenizer compatibility remains the user's responsibility.</strong> Kronk rejects unequal vocabulary sizes, but that check cannot establish identical token mappings or templates.</li>
             <li><strong>MTP at nonzero temperature is an approximation.</strong> MTP proposals are greedy, while target verification uses the request's sampler and accepts exact token matches. Sampling parameters still shape output, but this does not provide strict speculative-sampling distribution equivalence.</li>
             <li><strong>MTP can fall back per request.</strong> A synchronization or compatible-state problem disables MTP for the affected request while target-only generation continues. It does not make an incorrect draft token authoritative. A target rollback or restore failure is different: Kronk fails the affected request rather than continuing from ambiguous recurrent state.</li>
-            <li><strong>IMC may restore target state without draft state.</strong> Target-prefix reuse remains valid. Shared-target-KV MTP resumes from the restored target state. Own-KV MTP resumes only when Kronk can restore the matching draft snapshot and saved final hidden row; if either is absent or invalid, that request runs target-only rather than drafting from inconsistent state. Text System cache entries retain this paired state when it is valid. See <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a>.</li>
-            <li><strong>MTP supports projected media rows, including M-RoPE images.</strong> The target performs projection and prefill. Own-KV MTP replays those embeddings at their original positions with shifted target hidden states; shared-KV MTP captures hidden state without replaying the media. IMC retains a matching own-KV draft snapshot and final hidden row when synchronization and snapshotting succeed. Incompatible draft input widths or failed synchronization fall back to target-only execution for that request. Classic separate drafts still cannot reconstruct media prefixes. See <a href="https://www.kronkai.com/manual#chapter-11-multimodal-models">Chapter 11</a>.</li>
+            <li><strong>IMC may restore target state without draft state.</strong> Target-prefix reuse remains valid. Shared-target-KV MTP resumes from the restored target state. Own-KV MTP resumes only when Kronk can restore compatible draft state; if that state is absent or invalid, the request runs target-only rather than drafting from inconsistent state. Text System cache entries retain this paired state when it is valid. See <a href="https://www.kronkai.com/manual#chapter-5-message-caching">Chapter 5</a>.</li>
+            <li><strong>MTP supports media input, including M-RoPE images.</strong> Compatible draft state can also be retained for IMC reuse. Incompatible draft input widths or failed synchronization fall back to target-only execution for that request. Classic separate drafts still cannot reconstruct media prefixes. See <a href="https://www.kronkai.com/manual#chapter-11-multimodal-models">Chapter 11</a>.</li>
             <li><strong>Drafting consumes resources.</strong> A classic draft loads another model and KV cache. MTP heads and companion assistants also require compute and memory. Hybrid recurrent targets retain current state plus rollback copies sized by the MTP draft ceiling. Automatic detection does not guarantee a performance improvement.</li>
           </ul>
           <p>Implementation details for drafting, verification, state synchronization, and hybrid-model rollback belong in <a href="https://www.kronkai.com/manual#2066-speculative-decoding-and-mtp">Chapter 20</a>.</p>
@@ -1816,12 +1833,12 @@ krn, err := kronk.New(
           </ul>
           <p>Avoid YaRN when the workload fits within the native context. llama.cpp uses static YaRN: the configured scale applies at short positions too and can reduce quality on shorter prompts. Do not assume that one model family's settings are valid for another model, even when both use RoPE.</p>
           <h2 id="73-qwen3-configuration">7.3 Qwen3 Configuration</h2>
-          <p>The Qwen3-1.7B model documentation identifies 32,768 tokens as the native context and reports validation up to 131,072 tokens with YaRN. It recommends matching the scale to the context actually needed.</p>
+          <p>The <a href="https://huggingface.co/Qwen/Qwen3-8B#processing-long-texts">Qwen3-8B model documentation</a> identifies 32,768 tokens as the native context and reports validation up to 131,072 tokens with YaRN. It recommends matching the scale to the context actually needed. These examples apply to a downloaded Qwen3-8B GGUF; use its local model ID in place of <code>owner/Qwen3-8B-GGUF</code>.</p>
           <p>For a 2× extension to 65,536 tokens:</p>
           <pre className="code-block"><code className="language-yaml">{`# ~/.kronk/models/model_config.yaml
 version: 1
 models:
-  unsloth/Qwen3-1.7B-UD-Q8_K_XL:
+  owner/Qwen3-8B-GGUF:
     context-window: 65536
     rope-scaling-type: yarn
     rope-freq-scale: 0.5
@@ -1830,7 +1847,7 @@ models:
           <pre className="code-block"><code className="language-yaml">{`# ~/.kronk/models/model_config.yaml
 version: 1
 models:
-  unsloth/Qwen3-1.7B-UD-Q8_K_XL:
+  owner/Qwen3-8B-GGUF:
     context-window: 131072
     rope-scaling-type: yarn
     rope-freq-scale: 0.25
@@ -1851,7 +1868,7 @@ models:
             <tbody>
               <tr>
                 <td><code>none</code></td>
-                <td>Applies no RoPE scaling. It does not prevent a separately configured oversized context window.</td>
+                <td>Leaves the model/native RoPE scaling method unchanged. It does not force scaling off or prevent an oversized context window.</td>
               </tr>
               <tr>
                 <td><code>linear</code></td>
@@ -1863,6 +1880,7 @@ models:
               </tr>
             </tbody>
           </table>
+          <p>Use the provider's instructions when comparing scaled and unscaled operation. Setting <code>rope-scaling-type: none</code> alone does not disable scaling already declared by the GGUF.</p>
           <p>The available controls are:</p>
           <table className="flags-table">
             <thead>
@@ -1904,12 +1922,12 @@ models:
           </table>
           <p>When these settings are omitted, Kronk leaves the llama.cpp or GGUF defaults in place. An omitted or YAML <code>null</code> value does not ask Kronk to calculate a value from the context ratio. Override the advanced YaRN factors only when the model provider supplies values or controlled evaluation shows they are needed.</p>
           <h2 id="75-memory-and-concurrency">7.5 Memory and Concurrency</h2>
-          <p>KV-cache capacity grows approximately linearly with the context window. The actual size depends on the model architecture, layer count, KV heads, head dimensions, cache data types, backend, and alignment. With multiple generation slots, each slot receives one fixed <code>context-window</code> KV stream, for aggregate capacity based on <code>context-window × nseq-max</code>.</p>
+          <p>KV-cache capacity grows approximately linearly with the context window. The actual size depends on the model architecture, layer count, KV heads, head dimensions, cache data types, backend, and alignment. With multiple generation slots, aggregate capacity is based on <code>context-window × nseq-max</code>. Shared KV storage does not imply fixed physical partitions per slot; <code>context-window</code> still limits an individual request.</p>
           <p>If a long-context model does not fit, consider:</p>
           <ul>
             <li>reducing <code>nseq-max</code>;</li>
             <li>selecting supported quantized KV-cache types; or</li>
-            <li>keeping the KV cache on the CPU with <code>offload-kqv: false</code>, at a likely performance cost.</li>
+            <li>keeping the KV cache on the CPU with <code>offload-kqv: false</code> to relieve discrete GPU memory, at a likely performance cost. On unified-memory systems this does not remove the cache from the shared physical memory budget.</li>
           </ul>
           <p>Do not rely on fixed memory figures from another model. Use Kronk's hardware analysis and observe actual memory consumption. See <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3</a> for KV-cache configuration and <a href="https://www.kronkai.com/manual#chapter-4-batch-processing">Chapter 4</a> for concurrency effects.</p>
           <h2 id="76-validate-quality">7.6 Validate Quality</h2>
@@ -1921,7 +1939,7 @@ models:
             <li>Compare short-prompt quality with scaling enabled and disabled.</li>
             <li>Reduce the extension factor if quality or performance is unacceptable.</li>
           </ol>
-          <p>Prefer the smallest context and scale that satisfy the workload. For Qwen3-1.7B, use the native context when average requests remain within 32,768 tokens, a 2× configuration for workloads around 65,536, and the documented 4× configuration only when requests genuinely require it.</p>
+          <p>Prefer the smallest context and scale that satisfy the workload. For Qwen3-8B, use the native context when average requests remain within 32,768 tokens, a 2× configuration for workloads around 65,536, and the documented 4× configuration only when requests genuinely require it.</p>
           <h2 id="chapter-8-model-server">Chapter 8: Model Server</h2>
           <p>The Kronk model server provides OpenAI-compatible inference APIs and manages downloaded models, native libraries, and loaded model instances. This chapter focuses on operating that server. Installation is covered in <a href="https://www.kronkai.com/manual#chapter-2-installation-quick-start">Chapter 2</a>, while model-level tuning belongs in <a href="https://www.kronkai.com/manual#chapter-3-model-configuration">Chapter 3</a>.</p>
           <h2 id="81-server-lifecycle">8.1 Server Lifecycle</h2>
@@ -1935,7 +1953,7 @@ models:
           <p>Detached mode records the process ID and redirects server output to these paths by default:</p>
           <pre className="code-block"><code className="language-text">{`~/.kronk/kronk.pid
 ~/.kronk/kronk.log`}</code></pre>
-          <p>Setting <code>KRONK_BASE_PATH</code> before starting the detached server moves both files under that root.</p>
+          <p>Setting <code>KRONK_BASE_PATH</code> before starting the detached server selects that root for both files; existing files are not moved.</p>
           <p>Use these commands for a detached server:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server logs
 kronk server stop`}</code></pre>
@@ -1997,7 +2015,7 @@ kronk libs --local`}</code></pre>
                 <td><code>--lib-path</code></td>
                 <td><code>KRONK_LIB_PATH</code></td>
                 <td>Detected bundle under <code>&lt;base&gt;/libraries</code></td>
-                <td>Exact llama.cpp library directory or libraries root</td>
+                <td>Exact llama.cpp library directory</td>
               </tr>
               <tr>
                 <td><code>--lib-version</code></td>
@@ -2009,7 +2027,7 @@ kronk libs --local`}</code></pre>
                 <td><code>--lib-verify-enabled</code></td>
                 <td><code>KRONK_LIB_VERIFY_ENABLED</code></td>
                 <td><code>true</code></td>
-                <td>Verify the selected llama.cpp and whisper.cpp bundles before loading them</td>
+                <td>Verify selected llama.cpp, whisper.cpp, and stable-diffusion.cpp bundles before loading them</td>
               </tr>
               <tr>
                 <td><code>--processor</code></td>
@@ -2110,10 +2128,10 @@ kronk libs --local`}</code></pre>
           <h3 id="runtime-selection-and-overrides">Runtime selection and overrides</h3>
           <p>With no processor or library-path override, server startup detects a preferred llama.cpp backend and verifies it before native libraries are loaded. CUDA 13 requires compute capability 7.5 or newer on every visible NVIDIA GPU. Older or hidden CUDA devices cause host detection to prefer an available ROCm or Vulkan runtime and then CPU. If compatibility cannot be determined conclusively, Kronk retains the preferred backend.</p>
           <p>Kronk also probes the installed preferred accelerator bundle. It changes to a different installed bundle only when the preferred bundle positively reports no accelerator and a same-version alternative positively reports a device. This probe never installs another bundle. The startup log records the preferred and selected processors and the reason for the decision.</p>
-          <p><code>--processor</code> and <code>--lib-path</code>, or their environment equivalents, are strict operator choices and disable automatic fallback. A custom non-empty library directory without <code>version.json</code> is treated as a read-only user-managed build; the server loads it but does not upgrade or replace it. <code>--base-path</code> moves the managed library root along with other Kronk data, while <code>--lib-path</code> selects the llama.cpp location specifically. Restart the server after changing any native library selection setting.</p>
+          <p><code>--processor</code> and <code>--lib-path</code>, or their environment equivalents, are strict operator choices and disable automatic fallback. A custom non-empty library directory without <code>version.json</code> is treated as a read-only user-managed build; Kronk does not upgrade or replace it. To use such a build, explicitly disable automatic llama.cpp downloading and managed-bundle verification with <code>--lib-download-enabled=false --lib-verify-enabled=false</code>. Default startup checks otherwise fail because managed installation metadata is absent. <code>--base-path</code> selects the root for managed libraries and other Kronk data; it does not migrate existing data. <code>--lib-path</code> selects the llama.cpp location specifically. Restart after changing native library selection settings.</p>
           <p>Set <code>--lib-download-enabled=false</code> or <code>KRONK_LIB_DOWNLOAD_ENABLED=false</code> to skip the automatic llama.cpp download at startup. Kronk still loads the library selected by <code>--lib-path</code> or <code>KRONK_LIB_PATH</code>.</p>
           <p>Set <code>--media-backends-enabled=false</code> or <code>KRONK_MEDIA_BACKENDS_ENABLED=false</code> to skip automatic Bucky and Malina bundle downloads and native backend initialization. This does not affect llama.cpp download or initialization.</p>
-          <p>Library verification is enabled by default. Set <code>--lib-verify-enabled=false</code> or <code>KRONK_LIB_VERIFY_ENABLED=false</code> to disable it. Kronk verifies the selected llama.cpp bundle before its device probe and verifies the selected whisper.cpp bundle before either backend loads native code. A failure leaves only the affected backend in degraded mode.</p>
+          <p>Library verification is enabled by default and applies to llama.cpp and the enabled Bucky and Malina native backends. Kronk verifies a runtime before its device probe or native initialization. Installation or verification failures normally stop server startup; native initialization failures after verification can leave the affected backend unavailable while the server continues. For llama.cpp releases without per-file digests, Kronk logs that post-install verification is unavailable and can continue. Set <code>--lib-verify-enabled=false</code> or <code>KRONK_LIB_VERIFY_ENABLED=false</code> to disable verification; do this only for libraries you independently trust.</p>
           <p>For an externally pinned llama.cpp check, set <code>--lib-version</code> or <code>KRONK_LIB_VERSION</code> to <code>VERSION@sha256:&lt;64-hex-digest&gt;</code>. The digest identifies Yzma's release manifest, which identifies the platform archives and their installed files. The default llama.cpp and whisper.cpp versions already include their published manifest digests. The builders publish each manifest as a release asset, GitHub records its SHA-256, and Kronk carries that digest as the trust anchor. Yzma and Bucky validate the manifest and selected archive during download; startup verification then hashes the extracted files against the authenticated manifest. Post-install verification requires an install record and per-file hashes in the release manifest.</p>
           <p>Bucky performs separate whisper.cpp runtime selection. Its managed bundles live below <code>&lt;base&gt;/bucky-libraries</code>, and <code>KRONK_BUCKY_LIB_PATH</code> authoritatively selects a different bundle or user-managed build. It does not use <code>--lib-path</code>/<code>KRONK_LIB_PATH</code>. See <a href="https://www.kronkai.com/manual#182-install-whisper-libraries">Chapter 18 §18.2</a> for Bucky's CUDA, Vulkan, and CPU fallback rules.</p>
           <h2 id="84-model-pool-and-resource-budgets">8.4 Model Pool and Resource Budgets</h2>
@@ -2125,10 +2143,10 @@ kronk libs --local`}</code></pre>
           </ul>
           <p>At the default <code>budget-percent: 90</code>, each discrete GPU receives a 90% budget minus 256 MiB of headroom. Host RAM receives an 85% budget because Kronk reserves an additional five percentage points for the operating system, allocators, and memory not represented in model estimates. Apple Silicon unified memory is accounted as one host-memory pool rather than independent RAM and Metal VRAM.</p>
           <p>Admission uses predicted model, KV-cache, and runtime memory. These predictions are planning estimates, not a guarantee that every backend allocation will succeed. Context size, cache types, sequence count, CPU offload, and model architecture all affect the estimate.</p>
-          <p>After a model and its target, draft/MTP, and projection contexts are initialized, Kronk checks the backend's live free-memory report before publishing the model to the pool. Metal, CUDA, and ROCm loads that no longer retain the configured headroom are unloaded and rejected with an insufficient-memory error. Vulkan is logged as advisory because drivers without the memory-budget extension can report the entire heap as free. CPU backends do not expose a portable live-memory value and skip this check.</p>
+          <p>After a model and its target, draft/MTP, and projection contexts are initialized, Kronk checks the backend's live free-memory report before publishing the model to the pool. CUDA and ROCm loads that no longer retain the configured headroom are unloaded and rejected with an insufficient-memory error. Metal and Vulkan checks are advisory: Metal reports a recommended working-set limit rather than physical unified-memory capacity, while Vulkan drivers without the memory-budget extension can report the entire heap as free. CPU backends do not expose a portable live-memory value and skip this check.</p>
           <p>On multi-GPU systems, Kronk accounts for llama.cpp's model distribution across the selected devices. Automatic splits use available GPUs, while explicit <code>devices</code> and <code>tensor-split</code> configuration control the proportions. Each assigned share must fit within that GPU's individual budget; unused capacity on another card cannot satisfy an over-budget share.</p>
-          <p>When a new load exceeds the count or memory budget, Kronk evicts an idle model. For memory pressure it prefers an idle entry that frees enough memory without unloading a needlessly large model, then falls back to the coldest idle entry. Models with active streams are not evicted. If no idle entry can make room, the request returns a server-busy error and the client should retry later.</p>
-          <p>The Bucky and LLM pools share the same byte budget, so transcription and language-model loads can compete for memory. Bucky installation and pool behavior are covered in <a href="https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription">Chapter 18</a>.</p>
+          <p>For a load that can fit the configured budget, Kronk can evict one or more idle entries from the requesting backend's pool to satisfy its count or memory limit. For memory pressure it prefers an entry that frees enough memory without unloading a needlessly large model, then falls back to the coldest idle entry. Models with active streams are not evicted. If no idle entry in that pool can make room, the request returns server busy. A load that exceeds the entire applicable budget is rejected without evicting existing entries; reduce its sizing or change the budget rather than retrying unchanged.</p>
+          <p>The LLM, Bucky, and Malina pools share one byte budget, but each has its own count limit and eviction candidates. An idle model in another backend's pool is not automatically evicted to admit the request; explicitly unload it or allow its TTL to expire when necessary. Bucky installation and pool behavior are covered in <a href="https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription">Chapter 18</a>.</p>
           <p>Resource usage and eviction events are available through the logging and metrics described in <a href="https://www.kronkai.com/manual#chapter-15-observability">Chapter 15</a>.</p>
           <h2 id="85-model-configuration-files">8.5 Model Configuration Files</h2>
           <p>The server reads per-model overrides from:</p>
@@ -2178,8 +2196,10 @@ kms:
   base-path: ""
   lib-path: ""
   bucky-lib-path: ""
+  malina-lib-path: ""
   lib-version: ""
   lib-download-enabled: true
+  lib-verify-enabled: true
   media-backends-enabled: true
   arch: ""
   os: ""
@@ -2198,7 +2218,7 @@ bucky-models:
 malina-models:
   sd-1.5:
     concurrency: 2`}</code></pre>
-          <p>The built-in defaults apply when a <code>kms</code> key is omitted. Configuration precedence is built-in defaults, then <code>kms</code> YAML, then <code>KRONK_*</code> environment variables, then explicitly supplied <code>kronk server start</code> flags. The <code>--model-config-file</code> flag and <code>KRONK_POOL_MODEL_CONFIG_FILE</code> environment variable select the YAML file itself and therefore remain outside the file. The backend sections are top-level mappings alongside <code>models</code>. Bucky keys are the short IDs shown by <code>kronk bucky model list</code>; Malina keys are bundle IDs shown by <code>kronk malina model list</code>. Restart the server after changing them.</p>
+          <p>The built-in defaults apply when a <code>kms</code> key is omitted. Configuration precedence is built-in defaults, then <code>kms</code> YAML, then <code>KRONK_*</code> environment variables, then explicitly supplied <code>kronk server start</code> flags. The <code>--model-config-file</code> flag and <code>KRONK_POOL_MODEL_CONFIG_FILE</code> environment variable select the YAML file itself and therefore remain outside the file. The default file location is resolved from the command-line/environment base path before YAML is read; setting <code>kms.base-path</code> inside the file does not select a different configuration file. The backend sections are top-level mappings alongside <code>models</code>. Bucky keys are the short IDs shown by <code>kronk bucky model list</code>; Malina keys are bundle IDs shown by <code>kronk malina model list</code>. Restart the server after changing them.</p>
           <p>Automatic tuning is enabled by default in the model server. An explicit <code>context-window</code> or <code>nseq-max</code> in this file is treated as a fixed sizing constraint, not a value the tuner may reduce. When KV cache types are omitted, the server tries <code>f16</code> and then <code>q8_0</code> for that exact context and concurrency; it never automatically quantizes below <code>q8_0</code>. See <a href="https://www.kronkai.com/manual#32-automatic-tuning">Chapter 3 §3.2</a> for the complete selection order and recommended configuration style.</p>
           <p>Use another file without replacing the default:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --model-config-file=./my-model_config.yaml`}</code></pre>
@@ -2235,12 +2255,18 @@ kronk catalog remove unsloth/Qwen3-0.6B-Q8_0`}</code></pre>
           <pre className="code-block"><code className="language-shell">{`docker run -d \\
   --name kronk \\
   --restart unless-stopped \\
+  -e KRONK_PROCESSOR=cpu \\
   -e KRONK_AUTHORIZATION_MODE=full-protected \\
   -e KRONK_WEB_ADMIN_ENABLED=false \\
   -p 127.0.0.1:11435:11435 \\
   -v kronk-data:/kronk \\
   ghcr.io/ardanlabs/kronk:vX.Y.Z-cpu`}</code></pre>
           <p>Choose the processor-specific tag documented in Chapter 2. Terminate TLS at a reverse proxy or keep the service on a trusted private network. Read <a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication">Chapter 12</a> before exposing an authenticated server remotely.</p>
+          <p>The image sets the container API listener to <code>0.0.0.0:11435</code>, peer downloads off, and insecure logging off through environment variables. These override the corresponding YAML settings; host exposure is controlled separately by the published port above.</p>
+          <p>On first initialization Kronk creates an administrator token at <code>/kronk/keys/master.jwt</code>. Capture it without printing it or enabling shell tracing:</p>
+          <pre className="code-block"><code className="language-shell">{`set +x
+KRONK_TOKEN=$(docker exec kronk cat /kronk/keys/master.jwt)`}</code></pre>
+          <p>Send <code>Authorization: Bearer $KRONK_TOKEN</code> with protected API requests. Keep the token private and run <code>unset KRONK_TOKEN</code> when finished. This bootstrap also works with the Compose container below; do not disable authentication to obtain a token. See Chapter 12 for token management and scoped credentials.</p>
           <p>Install and inspect models directly in the persistent volume without enabling browser downloads:</p>
           <pre className="code-block"><code className="language-shell">{`docker exec kronk kronk model pull unsloth/Qwen3-0.6B-Q8_0 --local
 docker exec kronk kronk catalog list --local`}</code></pre>
@@ -2366,13 +2392,15 @@ curl http://localhost:11435/v1/liveness`}</code></pre>
 touch ~/.config/kronk/kronk.env
 chmod 600 ~/.config/kronk/kronk.env`}</code></pre>
           <p>For example:</p>
-          <pre className="code-block"><code className="language-text">{`KRONK_AUTHORIZATION_MODE=management
+          <pre className="code-block"><code className="language-text">{`KRONK_WEB_API_HOST=127.0.0.1:11435
+KRONK_AUTHORIZATION_MODE=full-protected
+KRONK_WEB_ADMIN_ENABLED=false
 # Optional GPU settings; use values appropriate to your host:
 # KRONK_PROCESSOR=rocm
 # PATH=/opt/rocm/bin:/usr/local/bin:/usr/bin:/bin
 # LD_LIBRARY_PATH=/opt/rocm/lib`}</code></pre>
           <p>This is not a shell script: use <code>NAME=value</code>, without <code>export</code>, and absolute paths, not <code>~</code>, <code>$HOME</code>, or <code>$PATH</code> substitutions. The service does not read your shell startup files. GPU detection tools and native libraries must be available in its environment. Configure GPU-specific values here if a working interactive shell depends on them.</p>
-          <p><code>--base-path</code> or <code>KRONK_BASE_PATH</code> when installing records a custom data directory in the unit; <code>KRONK_BASE_PATH</code> in <code>kronk.env</code> overrides that value. Other shell settings are not copied into the unit automatically. By default the API listens on <code>127.0.0.1:11435</code>. Configure authorization before exposing it on a public interface with <code>KRONK_WEB_API_HOST</code>.</p>
+          <p><code>--base-path</code> or <code>KRONK_BASE_PATH</code> when installing records a custom data directory in the unit; <code>KRONK_BASE_PATH</code> in <code>kronk.env</code> overrides that value. Other shell settings are not copied into the unit automatically. The service loads the existing <code>model_config.yaml</code>; settings in <code>kronk.env</code> override its server settings. The built-in listener default is <code>127.0.0.1:11435</code>, but existing YAML can change it. The example above explicitly selects a local, protected, headless server. Review listener and authentication settings before starting. The initial administrator token is at <code>&lt;base-path&gt;/keys/master.jwt</code>; see <a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication">Chapter 12</a> before remote exposure or enabling the BUI.</p>
           <h3 id="managing-and-removing-the-service">Managing and Removing the Service</h3>
           <pre className="code-block"><code className="language-shell">{`kronk systemd stop
 kronk systemd start
@@ -2397,12 +2425,14 @@ curl http://localhost:11435/v1/liveness`}</code></pre>
           <pre className="code-block"><code className="language-xml">{`<key>KRONK_WEB_API_HOST</key>
 <string>127.0.0.1:11435</string>
 <key>KRONK_AUTHORIZATION_MODE</key>
-<string>management</string>`}</code></pre>
+<string>full-protected</string>
+<key>KRONK_WEB_ADMIN_ENABLED</key>
+<string>false</string>`}</code></pre>
           <p>Launchd does not source shell startup files or read the systemd <code>kronk.env</code> file. Other shell settings are not automatically copied at installation. Use literal values and absolute paths, not <code>~</code>, <code>$HOME</code>, or <code>$PATH</code> substitutions. The plist includes a <code>PATH</code> covering both standard Homebrew locations and macOS system tools. Its initial permissions are <code>0600</code>; keep it private if adding sensitive environment values.</p>
           <p>Validate an edited plist, then reload it:</p>
           <pre className="code-block"><code className="language-shell">{`plutil -lint ~/Library/LaunchAgents/com.ardanlabs.kronk.plist
 kronk launchd restart`}</code></pre>
-          <p>The default API listener remains local-only at <code>127.0.0.1:11435</code>. Configure authorization before exposing it on a public interface. <code>status</code> shows launchd's agent information, not HTTP readiness; startup may include library downloads. Check <code>/v1/liveness</code> before sending requests.</p>
+          <p>The built-in API listener default is <code>127.0.0.1:11435</code>, but existing YAML can change it. The environment example above overrides YAML to select a local, protected, headless server. Review the effective settings before starting; the initial administrator token is at <code>&lt;base-path&gt;/keys/master.jwt</code>. See <a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication">Chapter 12</a> before remote exposure or enabling the BUI. <code>status</code> shows launchd's agent information, not HTTP readiness; startup may include library downloads. Check <code>/v1/liveness</code> before sending requests.</p>
           <h3 id="launchagent-lifecycle-and-logs">LaunchAgent Lifecycle and Logs</h3>
           <pre className="code-block"><code className="language-shell">{`kronk launchd stop
 kronk launchd start
@@ -2410,7 +2440,7 @@ kronk launchd restart
 kronk launchd status
 kronk launchd logs
 kronk launchd uninstall`}</code></pre>
-          <p><code>RunAtLoad</code> starts the server when the agent is loaded. <code>KeepAlive</code> restarts it if the process exits, with a 10-second throttle for repeated short-lived runs. <code>stop</code> unloads the agent so it stays stopped for the current login session, until explicitly started again. It starts again at the next desktop login. <code>restart</code> gracefully unloads and reloads the plist, applying configuration changes rather than just killing the process. The plist requests a 150-second <code>ExitTimeOut</code> for graceful HTTP shutdown and model unload, but macOS can cap this: a 60-second effective limit was observed on the development host. Inspect <code>kronk launchd status</code> for the effective exit timeout. If shutdown can exceed it, reduce <code>KRONK_WEB_SHUTDOWN_TIMEOUT</code> so twice that timeout plus 30 seconds fits the available grace period. Merely increasing <code>ExitTimeOut</code> does not guarantee a longer grace period.</p>
+          <p><code>RunAtLoad</code> starts the server when the agent is loaded. <code>KeepAlive</code> restarts it if the process exits, with a 10-second throttle for repeated short-lived runs. <code>stop</code> unloads the agent so it stays stopped for the current login session, until explicitly started again. It starts again at the next desktop login. <code>restart</code> gracefully unloads and reloads the plist, applying configuration changes rather than just killing the process. The plist requests a 150-second <code>ExitTimeOut</code> for graceful HTTP shutdown and model unload, but the effective grace period can depend on macOS. Inspect <code>kronk launchd status</code> for the effective exit timeout. If shutdown can exceed it, reduce <code>KRONK_WEB_SHUTDOWN_TIMEOUT</code> so twice that timeout plus 30 seconds fits the available grace period. Merely increasing <code>ExitTimeOut</code> does not guarantee a longer grace period.</p>
           <p>Both standard output and standard error append to <code>~/Library/Logs/kronk/kronk.log</code>. <code>logs</code> follows that file, including after rotation; Ctrl-C stops following, not the server. Arrange log rotation if running long-term, since launchd does not impose a size limit on this file.</p>
           <p>Restart after upgrading the binary at the same path. If its location changes, reinstall with <code>kronk launchd install --force</code>, then restart. <code>--force</code> replaces the plist and resets manual plist edits; save those edits first. Models, keys, server YAML configuration, and logs are preserved. Uninstall unloads and disables the agent and removes its plist, retaining server data and logs. Any environment settings stored only in the removed plist are removed with it.</p>
           <h2 id="810-kubernetes-with-helm">8.10 Kubernetes with Helm</h2>
@@ -2439,15 +2469,16 @@ kubectl port-forward -n kronk service/kronk 11435:11435`}</code></pre>
           <p>Kronk exposes several familiar inference API formats. This chapter describes their wire contracts and the Kronk-specific details needed to use them. See <a href="https://www.kronkai.com/manual#chapter-10-request-parameters">Chapter 10</a> for generation and sampling parameters.</p>
           <h2 id="91-api-conventions">9.1 API Conventions</h2>
           <p>The examples use the default server address, <code>http://localhost:11435</code>. JSON endpoints accept <code>Content-Type: application/json</code>. Streaming endpoints use Server-Sent Events (SSE).</p>
-          <p>When server authentication is enabled, inference requests require a bearer token with access to the requested endpoint:</p>
+          <p>Inference and model discovery are public in <code>open</code> and <code>management</code> modes. <code>authenticated</code> requires a valid bearer token; <code>full-protected</code> additionally requires the inference endpoint's grant:</p>
           <pre className="code-block"><code className="language-text">{`Authorization: Bearer <token>`}</code></pre>
-          <p>Authentication is bypassed only when the server is configured with authentication disabled. See <a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication">Chapter 12</a> for token creation, endpoint grants, and rate limits.</p>
+          <p>Management routes require an administrator token in every mode except <code>open</code>. External auth providers must also be configured to enforce authentication. See <a href="https://www.kronkai.com/manual#chapter-12-security-and-authentication">Chapter 12</a> for token creation, endpoint grants, and rate limits.</p>
           <p>Application errors use a top-level code and message:</p>
           <pre className="code-block"><code className="language-json">{`{
   "code": "invalid_argument",
   "message": "missing model field"
 }`}</code></pre>
           <p>The HTTP status reflects the error. Depending on the failure, clients may see statuses such as 400, 401, 403, 404, 409, 429, 500, 501, or 503.</p>
+          <p>Errors before streaming begins use the JSON error format and HTTP status above. Once SSE headers have been sent, a generation failure is reported inside the stream and the HTTP status cannot change. Clients must check stream error records rather than treating HTTP 200 as successful completion.</p>
           <h2 id="92-endpoint-overview">9.2 Endpoint Overview</h2>
           <table className="flags-table">
             <thead>
@@ -2585,8 +2616,9 @@ data: [DONE]`}</code></pre>
   "input": "Explain quantum computing in simple terms."
 }`}</code></pre>
           <p>It also accepts an array of input messages for conversations. A non-streaming response places generated messages or function calls in <code>output</code>. Tools use Responses-style tool definitions. <code>tool_choice</code> accepts <code>"none"</code>, <code>"auto"</code>, or <code>"required"</code>. Select a specific function with the Responses form <code>&#123;"type":"function","name":"get_weather"&#125;</code>.</p>
+          <p>This is a compatible inference interface, not a stored-response service. Send the full conversation and function-call results in <code>input</code>; <code>previous_response_id</code> does not retrieve earlier turns, and <code>store</code> does not enable response persistence. File and <code>input_file</code> content parts are rejected. Use Kronk's top-level <code>response_format</code> and <code>reasoning_effort</code> controls; the Responses-native <code>text.format</code> and <code>reasoning.effort</code> objects are not translated.</p>
           <p>Use <code>max_output_tokens</code> to set the Responses output limit. <code>max_tokens</code> remains available as a compatibility alias, but <code>max_output_tokens</code> wins when both are present. As a Kronk extension, <code>stop</code> accepts a string or an array of up to four strings and ends generation when one is encountered; the matched sequence is omitted from the output. When the output-token limit is reached, the response has <code>status: "incomplete"</code>, <code>completed_at: null</code>, and:</p>
-          <pre className="code-block"><code className="language-json">{`"incomplete_details": {"reason": "max_output_tokens"}`}</code></pre>
+          <pre className="code-block"><code className="language-json">{`{"incomplete_details": {"reason": "max_output_tokens"}}`}</code></pre>
           <p>Output items have the same <code>incomplete</code> status. Usage reports all generated output tokens in <code>output_tokens</code>, including reasoning and tool-call syntax; <code>output_tokens_details.reasoning_tokens</code> supplies the reasoning subset, and <code>total_tokens</code> includes both input and output.</p>
           <p>With <code>"stream": true</code>, each SSE record has a named event and matching JSON payload. Streaming usage is omitted unless the request sets <code>"stream_options": &#123;"include_usage": true&#125;</code>. A text response commonly includes:</p>
           <pre className="code-block"><code className="language-text">{`event: response.created
@@ -2617,7 +2649,8 @@ data: {"type":"response.completed",...}`}</code></pre>
   "model": "Qwen/Qwen3-Embedding-0.6B-Q8_0",
   "input": ["First document", "Second document"]
 }`}</code></pre>
-          <p>The response contains <code>object</code>, <code>created</code>, <code>model</code>, a <code>data</code> array, and <code>usage</code>. Each data item has an <code>index</code> and an <code>embedding</code> vector. Use an embedding model; ordinary text-generation models do not provide useful embedding behavior.</p>
+          <p>The response contains <code>object</code>, <code>created</code>, <code>model</code>, a <code>data</code> array, and <code>usage</code>. Each data item has an <code>index</code> and an <code>embedding</code> vector. Use an embedding model; models not marked as embedding models are rejected.</p>
+          <p>Inputs exceeding the model's effective token limit are rejected by default. Set <code>truncate: true</code> to truncate them; the default <code>truncate_direction: "right"</code> drops the end, while <code>"left"</code> drops the beginning. The effective limit can include batch limits as well as the context window.</p>
           <h2 id="97-reranking">9.7 Reranking</h2>
           <p><code>POST /v1/rerank</code> and <code>POST /v1/reranking</code> are equivalent. Supply a reranker model, a query, and a nonempty string array:</p>
           <pre className="code-block"><code className="language-json">{`{
@@ -2717,49 +2750,47 @@ data: {"type":"response.completed",...}`}</code></pre>
     }
   }
 }`}</code></pre>
-          <p><code>input_audio.data</code> must contain nonempty base64 audio or an audio base64 data URL. Only an instructions object with the exact <code>type</code> value <code>input_audio</code> triggers audio decoding; other structured instructions and state remain ordinary JSON. In the Go SDK, use <code>DecisionRequest.Files</code> for encoded image/audio bytes and <code>model.DecisionAudioInstructions&#123;Data: audioBytes&#125;</code> for question instructions.</p>
+          <p><code>input_audio.data</code> must contain nonempty base64 audio or an audio base64 data URL. Only an instructions object with the exact <code>type</code> value <code>input_audio</code> triggers audio decoding; other structured instructions and state remain ordinary JSON.</p>
           <h4 id="decision-protocols">Decision protocols</h4>
-          <p>Kronk detects these protocols from the GGUF's architecture-specific <code>decision.type</code> metadata and uses its named <code>systemone</code> template. The existing OpenJEV, Jev-Style, Laya/Julia, Lev, Kev, Nimble, and Clef protocols remain available. The following additional protocols are implemented:</p>
+          <p>Kronk selects the decision protocol from the model's metadata and bundled template. Use a compatible decision model rather than an ordinary chat model. OpenJEV, Jev-Style, Laya/Julia, Lev, Kev, Nimble, and Clef are supported, along with the following protocols:</p>
           <table className="flags-table">
             <thead>
               <tr>
                 <th>Protocol</th>
-                <th>Readout and execution</th>
+                <th>User-visible behavior</th>
               </tr>
             </thead>
             <tbody>
               <tr>
                 <td><code>pplx-decider</code></td>
-                <td>One final-token label readout per question; unlike Lev, no reverse-order averaging</td>
+                <td>Independent decisions for each question</td>
               </tr>
               <tr>
                 <td><code>lfm2-d1</code></td>
-                <td>Final-token label groups, taking the maximum logit per option before calibration</td>
+                <td>Model-calibrated option probabilities</td>
               </tr>
               <tr>
                 <td><code>lfm3-d1</code></td>
-                <td>Non-causal whole-prompt label groups; median score and maximum-probability confidence</td>
+                <td>Median score; confidence is maximum answer probability</td>
               </tr>
               <tr>
                 <td><code>lfm3-d1-omni</code></td>
-                <td>LFM3-d1 readouts with image/audio state inputs and spoken instructions</td>
+                <td>LFM3-d1 semantics with image/audio state and spoken instructions; requires a compatible projector</td>
               </tr>
               <tr>
                 <td><code>vllm-decision2</code></td>
-                <td>One question per prompt, with marked option/question spans and scalar decision-head outputs</td>
+                <td>Requires at least two choice options and text, object, or array state</td>
               </tr>
               <tr>
                 <td><code>vllm-d3</code></td>
-                <td>Non-causal whole-prompt label readout; questions execute separately without prefix reuse</td>
+                <td>Allows omitted or empty instructions, using the template's default question</td>
               </tr>
             </tbody>
           </table>
           <p>These protocols apply model-provided temperatures and score-level biases. Decision2 and D3 return normalized entropy concentration as <code>confidence</code> for choice and score questions; <code>noul</code> still returns the true-option probability. Decision2 requires at least two choice options and a state that is text, an object, or an array. D3 permits omitted or empty instructions, using the template's default question; the other protocols require instructions.</p>
           <p>Decision2, D3, and LFM3 d1 evaluate each complete prompt in a single physical batch, regardless of the configured prefill batch size. D3 and LFM3 d1 use one execution sequence even when <code>NSeqMax</code> is larger. Large context windows can therefore increase working memory requirements for these models. LFM3 d1 does not reuse persistent sequence state; independent questions and concurrent requests are serialized through that single execution sequence.</p>
-          <p>LFM3 d1 preserves structured JSON state and option descriptions for the model's template. It uses alphabetic choice labels beyond 26 options (<code>AA</code>, <code>AB</code>, …), quotes control-token spellings in user input, returns the median score level rather than an expected level, and uses maximum answer probability for choice and score <code>confidence</code>. The <code>lfm3-d1-omni</code> protocol shares these semantics and supports image/audio state inputs and spoken instructions with a compatible projector. Spoken instructions are placed after state media, at the question's instructions position. All expanded media rows count toward usage and the whole-prompt budget; inputs are never truncated.</p>
-          <p>LFM3 d1 has been exercised with a Q4_K_M d1-2B model for choice, score, <code>noul</code>, concurrent request isolation, and prompt-budget rejection on macOS Metal with llama.cpp b11960. This is compatibility coverage, not a decision-quality benchmark. The Q8_0 d1-Omni-2B model has also been exercised for image and audio decisions, spoken questions about images, concurrent image requests, malformed media rejection, and recovery after budget errors on the same platform. The other four protocols have model-free contract coverage, but their model-backed compatibility remains unverified.</p>
-          <p>LFM3 text chat uses its own hybrid short-convolution/full/SWA topology and its bundled XML tool-call template. It is not treated as an LFM2 architecture alias. Resource estimates include recurrent state and attention caches; workspace allowances remain conservative heuristics rather than measured calibration. LFM3 MTP, video input, realtime audio, and audio generation are not enabled by this integration.</p>
-          <p>LFM3-VL image chat has been exercised with image-identification controls. LFM3-Audio accepts audio, but the tested Q4_K_M Audio-2B model's bundled template summarized the JFK sample instead of transcribing it. This also reproduced in llama.cpp's Jinja CLI path. Setting the request's <code>bos_token</code> to an empty string restored transcription in that sample; this is a diagnostic workaround, not a general model default or a transcription-quality guarantee.</p>
+          <p>LFM3 d1 preserves structured JSON state and option descriptions, returns the median score level rather than an expected level, and uses maximum answer probability for choice and score <code>confidence</code>. The <code>lfm3-d1-omni</code> protocol shares these semantics and supports image/audio state and spoken instructions with a compatible projector. All expanded media rows count toward usage and the whole-prompt budget; inputs are never truncated.</p>
+          <p>Model-backed compatibility has been exercised for LFM3 d1 text and Omni media decisions, not decision quality. The other four additional protocols still need model-backed validation. Protocol support alone is not a quality guarantee.</p>
           <p>A response is keyed by the caller's question IDs:</p>
           <pre className="code-block"><code className="language-json">{`{
   "model": "chaoliangUNSW/Jev-Style-0.8B-Decision-v3-Q8_0",
@@ -2801,43 +2832,16 @@ data: {"type":"response.completed",...}`}</code></pre>
     "output_tokens": 0
   }
 }`}</code></pre>
-          <p>Decision models read logits directly rather than generating text, so <code>output_tokens</code> is zero. Exact scores and probabilities depend on the model and request. When authentication is enabled, both aliases require the same <code>decision</code> endpoint grant.</p>
+          <p>Decision models read logits directly rather than generating text, so <code>output_tokens</code> is zero. Exact scores and probabilities depend on the model and request. In <code>full-protected</code> mode, both aliases require the same <code>decision</code> endpoint grant.</p>
           <p>Call either route with curl:</p>
           <pre className="code-block"><code className="language-shell">{`make curl-kronk-decide
 make curl-kronk-systemone`}</code></pre>
-          <h3 id="go-sdk">Go SDK</h3>
-          <p>The SDK uses typed request constructors so state, question, option, and level order remains explicit. Given a loaded <code>*kronk.Kronk</code> decision model:</p>
-          <pre className="code-block"><code className="language-go">{`req := model.DecisionRequest{
-    State: model.DecisionState(
-        model.DecisionStateData("customer_message", "I was charged twice."),
-        model.DecisionStateData("account_tier", "business"),
-    ),
-    Questions: []model.DecisionQuestion{
-        model.DecisionQuestionChoice(
-            "route",
-            "Which team should handle this request?",
-            model.DecisionQuestionOpt("billing", "Payment and invoice issues"),
-            model.DecisionQuestionOpt("support", "Technical product issues"),
-        ),
-        model.DecisionQuestionScore(
-            "urgency",
-            "How urgent is this request?",
-            "not urgent", "normal", "urgent", "critical",
-        ),
-        model.DecisionQuestionNoul(
-            "requires_human",
-            "Should a human review this request?",
-            nil,
-        ),
-    },
-}
-
-resp, err := krn.Decision(ctx, req)`}</code></pre>
-          <p><code>Kronk.Decision</code> returns <code>model.DecisionResponse</code>. <code>Kronk.DecisionHTTP</code> performs the same evaluation and writes that response using the public HTTP JSON contract. Supported model names and metadata are detected automatically; use <code>model.WithDecisionProtocol</code> with the matching protocol only when a renamed model cannot be detected. The complete runnable example is under <code>examples/decision</code>. The bundled SDK reference documents every constructor, request type, response type, protocol, and error.</p>
-          <p>For an image-based decision, see <code>examples/decision-image</code>. It uses the bundled giraffe photograph and follows the same installation and initialization pattern as <code>examples/decision</code>, with a hardcoded model source and image path:</p>
-          <pre className="code-block"><code className="language-shell">{`make example-decision-image`}</code></pre>
-          <p>Set <code>modelSource</code> and <code>imageFile</code> in the example to change the inputs. The model resolver downloads the model and discovers its companion projector. Image decisions require a vision-capable Clef conversion with a compatible projector and image-capable systemone template; older text-only conversions cannot be used.</p>
-          <p>For an audio-based decision, run <code>make example-decision-audio</code>. The <code>examples/decision-audio</code> program uses <code>LiquidAI/d1-Omni-2B-Q8_0</code> and the bundled <code>samples/jfk.wav</code> recording. It supplies audio through <code>DecisionRequest.Files</code> and asks choice, noul, and score questions directly, without generating a transcript. The model and its projector are installed in the normal Kronk store and reused on subsequent runs. Change <code>modelSource</code> and <code>audioFile</code> to try other compatible models or recordings.</p>
+          <h3 id="sdk-examples">SDK examples</h3>
+          <p>The bundled SDK reference documents typed decision requests and responses. Runnable examples are in <code>examples/decision</code>, <code>examples/decision-image</code>, and <code>examples/decision-audio</code>. From a source checkout:</p>
+          <pre className="code-block"><code className="language-shell">{`make example-decision
+make example-decision-image
+make example-decision-audio`}</code></pre>
+          <p>These examples can download models and projectors into the normal Kronk store and run inference. Media decisions require a compatible decision model, projector, and systemone template; a text-only conversion cannot accept images or audio merely because the request includes media.</p>
           <h2 id="99-tokenization">9.9 Tokenization</h2>
           <p><code>POST /v1/tokenize</code> returns a token <strong>count</strong>, not token IDs:</p>
           <pre className="code-block"><code className="language-json">{`{
@@ -2868,14 +2872,14 @@ resp, err := krn.Decision(ctx, req)`}</code></pre>
   "seed": -1
 }`}</code></pre>
           <p><code>size</code> defaults to <code>512x512</code>. The response contains <code>created</code> and a <code>data</code> array whose single item contains <code>b64_json</code>, <code>seed</code>, <code>width</code>, and <code>height</code>. Only <code>n: 1</code>, <code>response_format: "b64_json"</code>, and PNG output are supported.</p>
-          <p><code>POST /v1/images/edits</code> accepts the same controls as multipart form fields and requires an <code>image</code> PNG or JPEG file. The optional <code>strength</code> field controls how far the result may depart from the source and defaults to <code>0.75</code>; its range is greater than zero through <code>1</code>. When <code>size</code> is omitted, Kronk preserves the source aspect ratio, scales dimensions down to at most 1024 pixels per side, and aligns them to multiples of eight. Uploads are limited to 25 MiB. Both image routes support <code>negative_prompt</code>, <code>steps</code>, <code>cfg_scale</code>, and <code>seed</code> and require the <code>image-generations</code> inference permission when authentication is enabled.</p>
+          <p><code>POST /v1/images/edits</code> accepts the same controls as multipart form fields and requires an <code>image</code> PNG or JPEG file. The optional <code>strength</code> field controls how far the result may depart from the source and defaults to <code>0.75</code>; its range is greater than zero through <code>1</code>. When <code>size</code> is omitted, Kronk preserves the source aspect ratio, scales dimensions down to at most 1024 pixels per side, and aligns them to multiples of eight. Uploads are limited to 25 MiB. Both image routes support <code>negative_prompt</code>, <code>steps</code>, <code>cfg_scale</code>, and <code>seed</code> and require the <code>image-generations</code> inference permission in <code>full-protected</code> mode.</p>
           <pre className="code-block"><code className="language-sh">{`curl http://localhost:11435/v1/images/edits \\
   -F model=sd-1.5 \\
   -F prompt='A watercolor illustration at sunset' \\
   -F image=@source.png \\
   -F strength=0.6 \\
   -F steps=20`}</code></pre>
-          <p><code>GET /v1/images/events</code> is a persistent server-sent event stream for Malina model-loading and image-generation progress. Each event reports <code>scope: "global"</code>, <code>step</code>, <code>steps</code>, <code>percent</code>, and <code>seconds_per_step</code>. The native callback is process-global, so an event describes server-wide Malina activity and is not attributable to the client or request consuming the stream. This route also requires the <code>image-generations</code> inference permission.</p>
+          <p><code>GET /v1/images/events</code> is a persistent server-sent event stream for Malina model-loading and image-generation progress. Each event reports <code>scope: "global"</code>, <code>step</code>, <code>steps</code>, <code>percent</code>, and <code>seconds_per_step</code>. The native callback is process-global, so an event describes server-wide Malina activity and is not attributable to the client or request consuming the stream. This route also requires the <code>image-generations</code> inference permission in <code>full-protected</code> mode.</p>
           <p>ControlNet, ADetailer, video generation, and upscaling remain available through the Malina SDK rather than the model-server API.</p>
           <p><code>POST /v1/audio/transcriptions</code> accepts multipart audio uploads and uses the Bucky speech-to-text runtime. <code>POST /v1/audio/translations</code> accepts the same file, model, prompt, temperature, and response-format fields and translates speech from a supported language into English. Their request fields, formats, and administrative operations are documented in <a href="https://www.kronkai.com/manual#1861-request-and-response">Chapter 18</a>.</p>
           <h2 id="911-kronk-administration">9.11 Kronk Administration</h2>
@@ -2917,7 +2921,7 @@ resp, err := krn.Decision(ctx, req)`}</code></pre>
           </table>
           <p><code>POST /v1/kronk/libs/pull</code> accepts optional <code>arch</code>, <code>os</code>, <code>processor</code>, and <code>version</code> query parameters. Supply <code>arch</code>, <code>os</code>, and <code>processor</code> together for a cross-platform bundle; omit all three to operate on the active platform. A version can be externally pinned as <code>VERSION@sha256:&lt;64-hex-digest&gt;</code>. Yzma checks the raw release-manifest bytes against that digest and then verifies the selected archive before extraction.</p>
           <p><code>GET /v1/kronk/libs/integrity</code> hashes the installed files and compares them with the file digests in Yzma's release manifest. Its optional <code>version</code> query parameter accepts the same pinned syntax, allowing the caller to supply the trusted manifest digest rather than trusting the server's install record or manifest host. The response identifies the backend, version, platform triple, overall result, per-file states, and changed, missing, or unexpected counts. Kronk's default llama.cpp version already carries its published manifest digest, so default downloads and startup verification use the authenticated manifest without an operator-supplied version.</p>
-          <p>Every successful runtime-integrity response includes <code>verified_at</code>, <code>bundle_manifest_version</code>, and <code>bundle_digest</code>. The digest is a stable identity for the selected runtime files, independent of archive serialization. Version <code>kronk-runtime-v1</code> sorts verified slash-separated paths lexicographically and hashes a length-prefixed field stream with SHA-256. The first field is <code>kronk-runtime-v1</code>. Each regular file then contributes <code>file</code>, relative path, decimal byte size, and lowercase file SHA-256; each symbolic link contributes <code>symlink</code>, relative path, and its exact target. A field is encoded as its decimal UTF-8 byte length, a colon, and its raw bytes, with no separator. The response's per-file entries expose the same size, SHA-256, or symlink target so an independent allowlist owner can reproduce the digest. When verification fails, the digest and verification time are omitted.</p>
+          <p>Every successful runtime-integrity response includes <code>verified_at</code>, <code>bundle_manifest_version</code>, and <code>bundle_digest</code>. The digest is a stable identity for the selected runtime files, independent of archive serialization. The response also exposes per-file verification evidence. When verification fails, the digest and verification time are omitted.</p>
           <p>This digest identifies the installed bytes; it does not establish that they are acceptable. Compare it with an allowlist obtained outside the server's mutable runtime environment. <code>manifest_authenticated</code> separately reports whether the publisher manifest was authenticated by an externally supplied pin.</p>
           <p>Verification requires a Yzma install record and a release manifest containing per-file hashes. A release or upstream asset with archive hashes only returns an error rather than claiming the installed files are verified.</p>
           <h3 id="models">Models</h3>
@@ -2932,10 +2936,6 @@ resp, err := krn.Decision(ctx, req)`}</code></pre>
               <tr>
                 <td><code>GET /v1/kronk/models</code></td>
                 <td>List locally installed GGUF models with Kronk metadata</td>
-              </tr>
-              <tr>
-                <td><code>GET /v1/kronk/models/</code></td>
-                <td>Return the missing-model validation error for an empty model ID</td>
               </tr>
               <tr>
                 <td><code>GET /v1/kronk/models/integrity</code></td>
@@ -3317,7 +3317,8 @@ resp, err := krn.Decision(ctx, req)`}</code></pre>
           <p>This chapter covers generation parameters used by Chat Completions and the Go SDK. Other API formats expose compatible subsets or translate their own field names into these parameters. See <a href="https://www.kronkai.com/manual#chapter-9-api-endpoints">Chapter 9</a> for endpoint-specific request formats and streaming behavior.</p>
           <h2 id="101-scope-and-defaults">10.1 Scope and Defaults</h2>
           <p>The defaults below are Kronk's baseline values. When present, a model's GGUF sampling recommendations take precedence over those baselines. A model configuration can provide different sampling defaults, and a request can override them. The precedence order is request, model configuration, GGUF recommendation, then Kronk baseline. See <a href="https://www.kronkai.com/manual#37-advanced-features">Chapter 3 §3.7</a> for per-model <code>sampling-parameters</code>.</p>
-          <p>GGUF recommendations are used when present for <code>temperature</code>, <code>top_k</code>, <code>top_p</code>, <code>min_p</code>, <code>repeat_last_n</code>, <code>xtc_probability</code>, and <code>xtc_threshold</code>. Malformed or absent metadata falls back to Kronk's baseline. Model configuration and explicit request values still win over valid metadata.</p>
+          <p>This precedence has zero-value exceptions. Some zero-valued model configuration fields are treated as unset and fall back to GGUF recommendations or Kronk baselines. Explicit request zeros work for controls such as <code>temperature</code>, <code>top_k</code>, and <code>min_p</code>, but <code>dry_multiplier: 0</code> and <code>xtc_probability: 0</code> currently fall back to the resolved model default rather than disabling an enabled sampler.</p>
+          <p>GGUF recommendations are used when present for <code>temperature</code>, <code>top_k</code>, <code>top_p</code>, <code>min_p</code>, <code>repeat_last_n</code>, <code>xtc_probability</code>, and <code>xtc_threshold</code>. Malformed or absent metadata falls back to Kronk's baseline. Model configuration and explicit request values take precedence subject to the zero-value exceptions above.</p>
           <p>JSON requests use <code>number</code>, <code>integer</code>, <code>boolean</code>, and <code>string</code> values. The Go SDK accepts the corresponding Go values in <code>model.D</code>.</p>
           <p>Avoid changing several samplers at once. Start with the model's defaults, change one parameter, and evaluate the result against representative prompts. Parameters that improve creative prose can reduce the reliability of JSON and tool calls.</p>
           <h2 id="102-core-sampling">10.2 Core Sampling</h2>
@@ -3365,7 +3366,7 @@ resp, err := krn.Decision(ctx, req)`}</code></pre>
             </tbody>
           </table>
           <p>Explicit request values override model-specific sampling defaults, including <code>top_p: 1</code>, which disables nucleus filtering. When <code>temperature</code>, <code>top_k</code>, or <code>top_p</code> is omitted, Kronk uses the configured value, GGUF recommendation, or baseline default in that order. Set <code>temperature: 0</code> explicitly to request greedy generation. Set <code>top_k: 0</code> to disable top-k filtering.</p>
-          <p>When <code>seed</code> is omitted, Kronk uses the model's configured <code>sampling-parameters.seed</code> default, or generates a random master seed when no default is configured. A matched Incremental Message Cache session retains that master seed across conversation turns. Resetting or reassigning the session clears it so the next conversation receives a new random seed. Requests without a matched session continue to receive a new random seed. An explicit request seed, including <code>seed: 0</code>, overrides the configured or retained seed and becomes the session's retained seed. It makes target sampling, classic draft sampling, and speculative acceptance and replacement decisions repeatable. Kronk derives independent request-local streams for the target distribution, XTC, Adaptive-P, the classic draft distribution, and speculative decisions. Concurrent requests therefore do not advance one another's seeded streams. Repeatability requires the same Kronk and native-library builds, model files, request, sampling settings, backend and devices, speculative mode, and equivalent batching conditions. It is not guaranteed across software versions, backends, quantizations, sampler changes, or different batching schedules.</p>
+          <p>When <code>seed</code> is omitted, Kronk uses the model's configured <code>sampling-parameters.seed</code> default, or generates a random master seed when no default is configured. A matched Incremental Message Cache session retains that master seed across conversation turns. Resetting or reassigning the session clears it so the next conversation receives a new random seed. Requests without a matched session continue to receive a new random seed. An explicit request seed, including <code>seed: 0</code>, overrides the configured or retained seed and becomes the session's retained seed. Seeded requests do not consume one another's sampling randomness. Repeatability requires the same Kronk and native-library builds, model files, request, sampling settings, backend and devices, speculative mode, and equivalent batching conditions. It is not guaranteed across software versions, backends, quantizations, sampler changes, or different batching schedules.</p>
           <h2 id="103-repetition-control">10.3 Repetition Control</h2>
           <p>Kronk supports both token penalties and DRY n-gram penalties:</p>
           <table className="flags-table">
@@ -3406,7 +3407,7 @@ resp, err := krn.Decision(ctx, req)`}</code></pre>
                 <td><code>dry_multiplier</code></td>
                 <td>number</td>
                 <td><code>0.0</code></td>
-                <td>Enables DRY and controls its strength; <code>0</code> disables it.</td>
+                <td>Enables DRY and controls its strength. Baseline disabled; see the zero-value caveat in §10.1.</td>
               </tr>
               <tr>
                 <td><code>dry_base</code></td>
@@ -3445,7 +3446,7 @@ resp, err := krn.Decision(ctx, req)`}</code></pre>
                 <td><code>xtc_probability</code></td>
                 <td>number</td>
                 <td><code>0.0</code></td>
-                <td>Probability that XTC runs for a token; <code>0</code> disables it.</td>
+                <td>Probability that XTC runs for a token. Baseline disabled; see the zero-value caveat in §10.1.</td>
               </tr>
               <tr>
                 <td><code>xtc_threshold</code></td>
@@ -3657,10 +3658,10 @@ EOF`}</code></pre>
           <p>These helpers create one user turn with media before text. <code>model.VideoMessage</code> constructs a <code>video_url</code> part, but it does not add video-container decoding; send extracted frames with <code>ImageMessage</code> for the current media path.</p>
           <h2 id="116-configuration-and-resources">11.6 Configuration and Resources</h2>
           <p>Multimodal requests use the same batch engine and concurrency controls as text requests. The projector adds weights and runtime buffers, while image resolution, audio duration, context length, and <code>nseq-max</code> affect resource use. Use the BUI VRAM Calculator rather than adding model, projector, and KV file sizes as a complete memory estimate. See <a href="https://www.kronkai.com/manual#36-memory-planning-and-quantization">Chapter 3 §3.6</a> for memory planning and <a href="https://www.kronkai.com/manual#chapter-4-batch-processing">Chapter 4</a> for concurrency.</p>
-          <p>Most deployments should leave <code>prefill-batch-size</code> at its 2048-token default. Kronk adds the model's per-slot generation reserve when deriving llama.cpp's internal batch capacities. A multimodal encoder may require an entire media-token chunk to fit in one physical batch, so lowering <code>prefill-batch-size</code> below that capacity can break media input. <code>proj-on-cpu: true</code> can keep the projector on the CPU when accelerator memory is constrained, at a performance cost.</p>
-          <p>For validated model architectures, causal media embeddings can share the generation tray with token rows. Each embedding consumes one logical tray row, so mixed batching does not increase <code>NBatch</code> or <code>NUBatch</code>. Kronk retains the isolated decoder for non-causal media, unsupported architectures, unvalidated architectures, and media contributions that do not fit the available tray.</p>
+          <p>Most deployments should leave <code>prefill-batch-size</code> at its 2048-token default. A multimodal encoder may require an entire media-token chunk to fit in one batch, so lowering <code>prefill-batch-size</code> below that capacity can break media input. <code>proj-on-cpu: true</code> can keep the projector on the CPU when accelerator memory is constrained, at a performance cost. This relieves discrete VRAM but does not remove the projector's memory cost on unified-memory systems.</p>
+          <p>Media preparation is scheduled alongside other requests, but an individual image or audio chunk can still monopolize computation while it is encoded or decoded. Do not assume that a text-prefill chunk limit bounds every media operation's latency.</p>
           <h2 id="117-message-caching">11.7 Message Caching</h2>
-          <p>Incremental Message Caching can reuse unchanged media state for text-only follow-up turns without encoding the media again. Changing, reordering, removing, or appending media rebuilds the stable media plan through the multimodal pipeline. See <a href="https://www.kronkai.com/manual#54-media-requests">Chapter 5 §5.4</a> for the cache behavior and limitations.</p>
+          <p>Incremental Message Caching can reuse unchanged media state for text-only follow-up turns without repeating model media encoding/prefill for the cached portion. Continue sending the complete conversation, including original media; IMC does not reconstruct omitted inputs. Appending media can also reuse a compatible prefix when native-stream and attention-mode checks permit. Changing, reordering, or removing cached inputs requires another compatible session or rebuilding the prefix. See <a href="https://www.kronkai.com/manual#54-media-requests">Chapter 5 §5.4</a> for the cache behavior and limitations.</p>
           <h2 id="118-limitations">11.8 Limitations</h2>
           <ul>
             <li>Media must be embedded as base64; Kronk does not fetch remote URLs.</li>
@@ -3715,9 +3716,10 @@ EOF`}</code></pre>
           <p>Health endpoints remain public in every mode. Model discovery consists of <code>GET /v1/models</code> and <code>GET /v1/models/&#123;model&#125;</code>. Native Kronk model, integrity, catalog, device, diagnostic, pool, playground, and security endpoints are management APIs.</p>
           <p>For example:</p>
           <pre className="code-block"><code className="language-shell">{`export KRONK_AUTHORIZATION_MODE=full-protected
+export KRONK_WEB_ADMIN_ENABLED=false
 kronk server start`}</code></pre>
           <p>The default authorization mode is <code>open</code>.</p>
-          <p><code>KRONK_AUTH_HOST</code> selects the authentication provider; it does not change the rights in this table. <code>KRONK_WEB_ADMIN_ENABLED</code> independently controls whether the BUI is served. When using an external auth host with a mode that protects management, disable the BUI because its password login uses the embedded security store.</p>
+          <p><code>KRONK_AUTH_HOST</code> selects the authentication provider. The table assumes that provider enforces authentication. The standalone auth service defaults to <code>AUTH_AUTH_ENABLED=false</code>, which bypasses token validation; set it to <code>true</code> before relying on a protected Kronk mode. Selecting a protected mode on Kronk alone cannot make a disabled external provider enforce tokens. <code>KRONK_WEB_ADMIN_ENABLED</code> independently controls whether the BUI is served. Replace the built-in browser password or disable the BUI before remote use. When using an external auth host with a mode that protects management, disable the BUI because its password login uses the embedded security store.</p>
           <h2 id="122-initial-credentials">12.2 Initial Credentials</h2>
           <p>When the embedded security store initializes for the first time, Kronk creates:</p>
           <ul>
@@ -3729,7 +3731,8 @@ kronk server start`}</code></pre>
           <p>Treat both master files as recovery credentials. Keep secure backups and never distribute them to applications. Changing the configured JWT issuer causes existing tokens to fail issuer validation.</p>
           <h2 id="123-admin-and-user-tokens">12.3 Admin and User Tokens</h2>
           <p>Load the initial admin token for CLI administration:</p>
-          <pre className="code-block"><code className="language-shell">{`export KRONK_TOKEN=$(cat ~/.kronk/keys/master.jwt)`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`set +x
+export KRONK_TOKEN=$(cat ~/.kronk/keys/master.jwt)`}</code></pre>
           <p>Admin tokens bypass endpoint grants and rate limits. The security CLI requires <code>KRONK_TOKEN</code> for key and token commands. In protected modes, the server also verifies that it is an admin token.</p>
           <p>Create a short-lived application token with exact endpoint grants:</p>
           <pre className="code-block"><code className="language-shell">{`kronk security token create \\
@@ -3737,6 +3740,7 @@ kronk server start`}</code></pre>
   --endpoints chat-completions,responses,messages`}</code></pre>
           <p><code>--duration</code> uses Go duration syntax such as <code>1h</code>, <code>24h</code>, or <code>720h</code>; it does not accept <code>30d</code>. Every generated token receives a unique subject UUID, so authorization and quotas are per token rather than per named human or account.</p>
           <h2 id="124-endpoint-grants-and-rate-limits">12.4 Endpoint Grants and Rate Limits</h2>
+          <p>Endpoint grants and quotas are enforced only in <code>full-protected</code> mode; admin tokens bypass both. In <code>authenticated</code> mode a valid user token can call inference without endpoint grants, and its endpoint quotas are not counted.</p>
           <p>The grant names used by inference middleware are:</p>
           <table className="flags-table">
             <thead>
@@ -3805,7 +3809,7 @@ curl http://localhost:11435/v1/chat/completions \\
     "model": "unsloth/Qwen3-1.7B-UD-Q8_K_XL",
     "messages": [{"role": "user", "content": "Hello"}]
   }'`}</code></pre>
-          <p>Kronk verifies the signature, issuer, expiration, required admin status or endpoint grant, and quota before processing a protected request. Authentication, missing-grant, and exhausted-quota failures return <code>401 Unauthorized</code>, <code>403 Forbidden</code>, and <code>429 Too Many Requests</code>, respectively. Authentication service failures return <code>500 Internal Server Error</code>, while unavailable external auth services return <code>503 Service Unavailable</code>.</p>
+          <p>With enforcing authentication, Kronk verifies the signature, issuer, expiration, and required admin status before processing a protected request. In <code>full-protected</code>, user requests also require the endpoint grant and available quota. Authentication, missing-grant, and exhausted-quota failures return <code>401 Unauthorized</code>, <code>403 Forbidden</code>, and <code>429 Too Many Requests</code>, respectively. Authentication service failures return <code>500 Internal Server Error</code>, while unavailable external auth services return <code>503 Service Unavailable</code>.</p>
           <h2 id="126-key-rotation-and-revocation">12.6 Key Rotation and Revocation</h2>
           <p>Security commands use the running server by default:</p>
           <pre className="code-block"><code className="language-shell">{`kronk security key list
@@ -3822,9 +3826,9 @@ kronk security key delete --keyid "$KEY_ID"`}</code></pre>
           <p>The master key cannot be deleted through the security API. Keep it as the administrative recovery key.</p>
           <p>Add <code>--local</code> to operate directly on the local key store without the server:</p>
           <pre className="code-block"><code className="language-shell">{`kronk security key list --local`}</code></pre>
-          <p>Local mode still requires <code>KRONK_TOKEN</code> containing a valid local admin token. Use it while the server is stopped because the local command opens the same Badger database.</p>
+          <p>Local mode still requires <code>KRONK_TOKEN</code> containing a valid local admin token. Use it while the server is stopped because the local command opens the same Badger database. The local security CLI currently uses the issuer <code>kronk project</code> rather than reading the server's configured issuer; tokens issued with a custom issuer cannot be administered through this local path. Use server-backed commands with the matching provider instead.</p>
           <h2 id="127-embedded-and-standalone-authentication">12.7 Embedded and Standalone Authentication</h2>
-          <p>By default, <code>kronk server</code> runs the auth service in-process over an in-memory listener. Relevant server settings are:</p>
+          <p>Kronk uses embedded authentication by default. Relevant server settings are:</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -3842,7 +3846,7 @@ kronk security key delete --keyid "$KEY_ID"`}</code></pre>
               <tr>
                 <td><code>--auth-issuer</code></td>
                 <td><code>KRONK_AUTH_LOCAL_ISSUER</code></td>
-                <td>Set the expected JWT issuer.</td>
+                <td>Set the embedded-auth JWT issuer.</td>
               </tr>
               <tr>
                 <td><code>--auth-host</code></td>
@@ -3866,13 +3870,15 @@ kronk security key delete --keyid "$KEY_ID"`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <p>Setting <code>KRONK_AUTH_HOST</code> skips embedded auth startup. The standalone <code>auth</code> service uses <code>AUTH_AUTH_HOST</code> (default <code>localhost:6000</code>), <code>AUTH_AUTH_ISSUER</code> (default <code>kronk project</code>), and <code>AUTH_AUTH_ENABLED</code>. Set <code>AUTH_AUTH_TLS_ENABLED=true</code>, <code>AUTH_AUTH_TLS_CERT_FILE</code>, and <code>AUTH_AUTH_TLS_KEY_FILE</code> to serve TLS. The Kronk client and auth service must agree on issuer, protection policy, and transport security. External plaintext connections remain supported for compatibility but produce a startup warning.</p>
+          <p>Setting <code>KRONK_AUTH_HOST</code> skips embedded auth startup. The standalone <code>auth</code> service uses <code>AUTH_AUTH_HOST</code> (default <code>0.0.0.0:6000</code>), <code>AUTH_AUTH_ISSUER</code> (default <code>kronk project</code>), and <code>AUTH_AUTH_ENABLED</code> (default <code>false</code>). Its separate debug listener defaults to <code>0.0.0.0:6010</code>. Bind both listeners explicitly to loopback for local use with <code>AUTH_AUTH_HOST=127.0.0.1:6000</code> and <code>AUTH_WEB_DEBUG_HOST=127.0.0.1:6010</code>, or restrict both through network policy. Enable <code>AUTH_AUTH_ENABLED=true</code> for token enforcement. Set <code>AUTH_AUTH_TLS_ENABLED=true</code>, <code>AUTH_AUTH_TLS_CERT_FILE</code>, and <code>AUTH_AUTH_TLS_KEY_FILE</code> to serve TLS. Configure token issuance and validation consistently at the provider and configure Kronk's connection for the same transport security. External plaintext connections remain supported for compatibility but produce a startup warning.</p>
           <p>The standalone MCP service uses <code>MCP_AUTH_TLS_ENABLED</code>, <code>MCP_AUTH_TLS_CA_FILE</code>, and <code>MCP_AUTH_TLS_SERVER_NAME</code> for its connection to the auth service.</p>
           <p>CLI web mode reads <code>KRONK_WEB_API_HOST</code>, which defaults to <code>localhost:11435</code>.</p>
           <h2 id="128-production-hardening">12.8 Production Hardening</h2>
           <p>Kronk listens on <code>127.0.0.1:11435</code> and serves plain HTTP by default. Before binding Kronk to another interface or allowing traffic outside a trusted host:</p>
           <ul>
-            <li>select <code>management</code>, <code>authenticated</code>, or <code>full-protected</code> authorization as appropriate;</li>
+            <li>select <code>management</code>, <code>authenticated</code>, or <code>full-protected</code> authorization as appropriate; <code>management</code> leaves inference public, and only <code>full-protected</code> enforces user endpoint grants and quotas;</li>
+            <li>replace the built-in browser password or disable the BUI;</li>
+            <li>enable token enforcement at an external auth service before relying on it;</li>
             <li>terminate TLS at a trusted reverse proxy and do not expose the API port directly to the public internet;</li>
             <li>enable auth TLS whenever the auth service is reached across an untrusted network, or use an authenticated encrypted service mesh;</li>
             <li>restrict network access with host or cloud firewall rules;</li>
@@ -3886,7 +3892,7 @@ kronk security key delete --keyid "$KEY_ID"`}</code></pre>
           <hr />
           <p><em>Next: &lt;a href="https://www.kronkai.com/manual#chapter-13-browser-ui-bui"&gt;Chapter 13: Browser UI (BUI)&lt;/a&gt;</em></p>
           <h2 id="chapter-13-browser-ui-bui">Chapter 13: Browser UI (BUI)</h2>
-          <p>Kronk includes a Browser UI (BUI) for managing a local server and trying models interactively. It is bundled in the <code>kronk</code> binary, served from the same port as the Web API, and uses the server's <code>/v1</code> endpoints rather than maintaining separate state.</p>
+          <p>Kronk includes a Browser UI (BUI) for managing a local server and trying models interactively. It is bundled in the <code>kronk</code> binary, served from the same port as the Web API, and uses the server's <code>/v1</code> endpoints for server operations. Chat history and some preferences are stored locally in the browser; they do not automatically follow you to another browser or machine.</p>
           <p>This chapter describes the main areas of the BUI without cataloging every control. The CLI remains useful for scripting and headless administration; the BUI is not intended to duplicate every CLI command.</p>
           <h3 id="131-accessing-the-bui">13.1 Accessing the BUI</h3>
           <p>The BUI is enabled by default. Start the server and open:</p>
@@ -3902,7 +3908,7 @@ kronk server start`}</code></pre>
           <ul>
             <li><strong>Chat</strong> provides multi-turn conversations, model selection, system prompts, chat history, and sampling controls.</li>
             <li><strong>Decision</strong> runs a customer-support example against a decision model from the catalog. The model selector shows download readiness and disables evaluation until the selected model is downloaded and validated. Edit the shared customer state, inspect the fixed choice, score, and Noul questions, then review typed answers, probability distributions, token usage, and the raw <code>/v1/decide</code> response.</li>
-            <li><strong>VRAM Calculator</strong> estimates model memory requirements from a HuggingFace model without downloading the entire model. A calculator is also available in local model and catalog details. Set the intended context, sequence slots, KV precision and placement, layer/expert offload, devices, and tensor split before comparing the result with available memory. The estimate reads per-layer GGUF metadata, including full/SWA topology, recurrent layers, and embedded MTP/NextN layers when present.</li>
+            <li><strong>VRAM Calculator</strong> estimates model memory requirements from a HuggingFace model without downloading the entire model. A calculator is also available in local model and catalog details. Set the intended context, sequence slots, KV precision and placement, layer/expert offload, devices, and tensor split before comparing the result with available memory. Estimates do not reserve memory or guarantee that a model will load.</li>
             <li><strong>Translator</strong> records or uploads audio for transcription through Bucky. You can select a whisper model, language, and response format and inspect timestamped segments. See <a href="https://www.kronkai.com/manual#185-browser-ui">Chapter 18 §18.5</a>.</li>
             <li><strong>Image Generator</strong> creates an image from a text prompt or transforms an uploaded PNG or JPEG with an installed Malina model. Generation settings include negative prompt, output size, steps, CFG scale, seed, and image-to-image strength. The result includes a download action and image dimensions. A server-wide activity panel displays Malina model-loading and generation progress. See <a href="https://www.kronkai.com/manual#chapter-19-malina-image-generation">Chapter 19</a>.</li>
           </ul>
@@ -3910,7 +3916,7 @@ kronk server start`}</code></pre>
           <ul>
             <li><strong>Info</strong> reports server, host, device, library, and model diagnostics.</li>
             <li><strong>Running</strong> shows models that are loading or resident in the pool, along with the current resource budget. Models can also be unloaded here.</li>
-            <li><strong>Slots</strong> polls the live batch-engine scheduler for each loaded generation model. It shows each slot's phase and request age, prefill stage 1 establishing the sequence by copying reusable IMC session state into the slot, and prefill stage 2 decoding both stable-prefix IMC extensions (such as completed tool calls) and the remaining uncached request tail. The Stage 2 cards show active, next, and waiting slots for those two decode paths. The table also reports per-slot progress, generation mode, and row contribution. Use this view with the batch-engine logs to verify prefill ownership, rotation, and generation priority during concurrent requests. Embedding and reranking models do not have generation slots and are omitted. Each Stage 2 selector retains its selected slot until that decode path is complete, then advances to the next eligible slot.</li>
+            <li><strong>Slots</strong> shows live generation slots, request age, prefill/generation status, and progress for diagnosing concurrent workloads. Embedding and reranking models do not have generation slots and are omitted.</li>
             <li><strong>IMC Sessions</strong> has separate tabs for bounded working sessions and model-owned, reusable System prompt caches.</li>
           </ul>
           <h4 id="kronk">Kronk</h4>
@@ -3949,6 +3955,7 @@ kronk server start`}</code></pre>
 export KRONK_WEB_ADMIN_PASSWORD_SHA_256="$(printf '%s' 'choose-a-password' | shasum -a 256 | awk '{print $1}')"
 kronk server start`}</code></pre>
           <p>Login creates a 12-hour admin token in an HttpOnly, SameSite cookie by default. The browser cannot read the token, and the server uses it to authenticate the BUI's same-origin <code>/v1</code> requests. Sign out from the sidebar to end the browser session.</p>
+          <p>Behind a trusted reverse proxy, preserve the public Host and set or overwrite <code>X-Forwarded-Proto</code> to reflect HTTPS. Login and unsafe cookie-authenticated requests require a matching Origin host. Keep the backend private so clients cannot bypass the proxy or spoof its forwarding headers. Signing out clears the browser cookie; it does not revoke the token itself.</p>
           <p>Set <code>kms.web.admin.session-duration</code> in <code>model_config.yaml</code>, <code>KRONK_WEB_ADMIN_SESSION_DURATION</code>, or the server start flag <code>--web-admin-session-duration</code> to override the lifetime (for example, <code>24h</code>). The duration must be at least one second and applies to both the token and cookie. It is an absolute lifetime from login, not an inactivity timeout; activity does not renew it. Changes apply to new logins, not existing sessions. A longer lifetime reduces interruptions during test sweeps but does not preserve an unfinished run across a page refresh or session expiry.</p>
           <p>Chapter 12 explains the <code>open</code>, <code>management</code>, <code>authenticated</code>, and <code>full-protected</code> modes, including TLS and reverse proxy considerations.</p>
           <h3 id="134-operational-notes">13.4 Operational Notes</h3>
@@ -3995,16 +4002,17 @@ kronk server start`}</code></pre>
           <p>For a disposable session, use the preferred launch workflow:</p>
           <pre className="code-block"><code className="language-shell">{`kronk model pull mradermacher/Qwopus3.5-4B-Coder.Q8_0 --local
 kronk server start
-kronk launch opencode mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT`}</code></pre>
+kronk launch opencode mradermacher/Qwopus3.5-4B-Coder.Q8_0`}</code></pre>
           <p>OpenCode uses the model ID exactly as provided, with Kronk responsible for resolving it to the downloaded model and optional configuration profile. The model must already be available from the running Kronk server. Launch never starts a server or downloads models. It connects to <code>localhost:11435</code> by default and verifies the server and selected model through <code>GET /v1/models</code>. Accepted model ID forms are <code>modelName</code>, <code>provider/modelName</code>, and <code>provider/modelName/userName</code>. Use <code>--host</code> when Kronk runs elsewhere:</p>
-          <pre className="code-block"><code className="language-shell">{`kronk launch opencode mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT \\
+          <pre className="code-block"><code className="language-shell">{`kronk launch opencode mradermacher/Qwopus3.5-4B-Coder.Q8_0 \\
   --host 192.168.1.10:11435`}</code></pre>
           <p>The server remains independently managed and continues running after OpenCode exits. Its normal <code>model_config.yaml</code> resolution and AutoTune behavior apply.</p>
           <p>OpenCode runs with only the selected model in a temporary workspace and temporary XDG config, data, cache, and state directories. User and project OpenCode configuration is not loaded or changed. Kronk prints the temporary environment path before OpenCode starts and confirms its removal after OpenCode exits. In an interactive terminal, Kronk warns that OpenCode may show a blank screen for up to 20 seconds while it initializes and waits for Enter before handing over the terminal. Arguments after <code>--</code> pass directly to OpenCode:</p>
-          <pre className="code-block"><code className="language-shell">{`kronk launch opencode mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT -- --help`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`kronk launch opencode mradermacher/Qwopus3.5-4B-Coder.Q8_0 -- --help`}</code></pre>
           <p>If OpenCode is missing, Kronk displays the official install command and <a href="https://opencode.ai/docs/">OpenCode documentation</a>, asks permission, and installs only after a yes response. To use OpenCode's official preview and confirmed removal workflow, run:</p>
           <pre className="code-block"><code className="language-shell">{`kronk launch opencode uninstall`}</code></pre>
           <p>See the <a href="https://opencode.ai/docs/cli/#uninstall">OpenCode uninstall documentation</a>. The persistent bundle installation below is an advanced alternative for users who want a reusable OpenCode configuration connected to a separately managed Kronk server.</p>
+          <p>For protected inference, export a valid application token as <code>KRONK_TOKEN</code> before launching; the isolated configuration uses it for server access. The isolated launch does not connect to Kronk's MCP service. Use the persistent bundle below when that connection is needed. The base ID above avoids requiring a preconfigured <code>/AGENT</code> variant; use a variant only when the server lists it.</p>
           <h4 id="install-opencode">Install OpenCode</h4>
           <p>Install OpenCode with its official installer:</p>
           <pre className="code-block"><code className="language-shell">{`curl -fsSL https://opencode.ai/install | bash`}</code></pre>
@@ -4028,7 +4036,7 @@ kronk launch opencode mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT`}</code></pre>
           </ul>
           <p>The Kronk MCP service starts with the model server and listens at <code>http://localhost:9000/mcp</code> by default. Its <code>web_search</code> tool requires a Brave Search API key; <code>fuzzy_edit</code> does not. See Chapter 16 for configuration.</p>
           <h4 id="configure-a-coding-model">Configure a Coding Model</h4>
-          <p>OpenCode's model name must match a model registered in its <code>provider.kronk.models</code> map. Kronk also needs a corresponding model variant in its model configuration. The shipped default is:</p>
+          <p>OpenCode's model name must match a model registered in its <code>provider.kronk.models</code> map. Kronk also needs a corresponding model variant in its model configuration. For example, place this entry under the <code>models:</code> mapping in your versioned configuration file:</p>
           <pre className="code-block"><code className="language-yaml">{`unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
   context-window: 131072
   nseq-max: 2
@@ -4047,7 +4055,7 @@ kronk launch opencode mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT`}</code></pre>
             <li>Register the same variant under <code>provider.kronk.models</code> in <code>~/.config/opencode/opencode.jsonc</code>.</li>
             <li>Set the top-level <code>model</code> field to <code>&lt;provider&gt;/&lt;model-id&gt;</code> or select the registered model from OpenCode.</li>
           </ol>
-          <p>For example:</p>
+          <p>For example, under the model configuration's <code>models:</code> mapping:</p>
           <pre className="code-block"><code className="language-yaml">{`organization/my-coding-model-Q8_0/AGENT:
   context-window: 131072
   nseq-max: 2
@@ -4104,7 +4112,7 @@ response = client.chat.completions.create(
 )
 
 for chunk in response:
-    if chunk.choices[0].delta.content:
+    if chunk.choices and chunk.choices[0].delta.content:
         print(chunk.choices[0].delta.content, end="")`}</code></pre>
           <h3 id="145-curl-and-other-http-clients">14.5 curl and Other HTTP Clients</h3>
           <p>Any HTTP client can call Kronk's REST API directly.</p>
@@ -4178,10 +4186,10 @@ print(response.content)`}</code></pre>
               </tr>
             </tbody>
           </table>
-          <blockquote><strong>Security:</strong> The debug server has no authentication and its default address</blockquote>
-          <blockquote>listens on every interface. Profiles and runtime data can reveal sensitive</blockquote>
-          <blockquote>operational details. Bind it to loopback or restrict port <code>11445</code> at the</blockquote>
-          <blockquote>network boundary unless remote scraping is required.</blockquote>
+          <blockquote><strong>Security:</strong> The debug server has no authentication. Its built-in default</blockquote>
+          <blockquote>is loopback, but YAML, environment settings, or flags can change the listener.</blockquote>
+          <blockquote>Profiles and runtime data can reveal sensitive operational details. Keep it</blockquote>
+          <blockquote>private or restrict port <code>11445</code> at the network boundary for remote scraping.</blockquote>
           <p>To bind it to loopback:</p>
           <pre className="code-block"><code className="language-shell">{`kronk server start --debug-host localhost:11445`}</code></pre>
           <p>The equivalent environment variable is <code>KRONK_WEB_DEBUG_HOST=localhost:11445</code>.</p>
@@ -4256,7 +4264,7 @@ curl http://localhost:11435/v1/readiness`}</code></pre>
     static_configs:
       - targets: ["localhost:11445"]
     scrape_interval: 15s`}</code></pre>
-          <p>When Prometheus runs in Docker while Kronk runs on the host, use <code>host.docker.internal:11445</code>, as the repository's configuration does.</p>
+          <p>When Prometheus runs in Docker while Kronk runs on the host, use <code>host.docker.internal:11445</code>, as the repository's configuration does. Kronk's debug listener must also be reachable from that container; a loopback-only listener is not portable across container runtimes. Select an appropriate private interface and restrict access rather than exposing profiling publicly.</p>
           <h4 id="promql-examples">PromQL Examples</h4>
           <p>Average end-to-end time to first token by model:</p>
           <pre className="code-block"><code className="language-promql">{`rate(model_request_ttft_seconds_sum[5m])
@@ -4340,6 +4348,7 @@ curl http://localhost:11435/v1/readiness`}</code></pre>
           <p>System caches are model-owned rather than working-session metrics. Their live state is available on the <strong>System Caches</strong> tab of the BUI <strong>IMC Sessions</strong> page. The Current values can move before the latest-request values update: the former are published during prompt preparation, while the latter describe the most recently completed request. Peak context is an entry lifetime high water mark and can describe an earlier request.</p>
           <h3 id="153-bundled-observability-stack">15.3 Bundled Observability Stack</h3>
           <p>The repository includes a Docker Compose stack containing Grafana, Prometheus, Tempo, Loki, and Alloy. It provisions the data sources and a Kronk dashboard without manual Grafana setup.</p>
+          <p>This is a trusted-development stack: Grafana enables anonymous Admin access and publishes port <code>3100</code> without a loopback-only binding. Restrict published ports and configure authentication before allowing access from other machines. Actual reachability depends on Docker, network, and firewall settings.</p>
           <p>Download the pinned images once, start the stack, and open Grafana:</p>
           <pre className="code-block"><code className="language-shell">{`make install-docker
 make grafana-up
@@ -4389,12 +4398,12 @@ make grafana-browse`}</code></pre>
           <p>Set the probability to <code>1.0</code> when every trace is needed for focused debugging, or <code>0.0</code> to disable sampling. Choose a lower nonzero value for sustained production traffic based on its volume and storage budget.</p>
           <h3 id="155-profiling-and-runtime-visualization">15.5 Profiling and Runtime Visualization</h3>
           <p>Use Go's pprof tooling against the debug server. For example:</p>
-          <pre className="code-block"><code className="language-shell">{`go tool pprof http://localhost:11445/debug/pprof/profile?seconds=30
-go tool pprof http://localhost:11445/debug/pprof/heap
-curl http://localhost:11445/debug/pprof/goroutine?debug=2`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`go tool pprof 'http://localhost:11445/debug/pprof/profile?seconds=30'
+go tool pprof 'http://localhost:11445/debug/pprof/heap'
+curl 'http://localhost:11445/debug/pprof/goroutine?debug=2'`}</code></pre>
           <p>Start pprof's interactive web interface with:</p>
           <pre className="code-block"><code className="language-shell">{`go tool pprof -http=localhost:8081 \\
-  http://localhost:11445/debug/pprof/profile?seconds=30`}</code></pre>
+  'http://localhost:11445/debug/pprof/profile?seconds=30'`}</code></pre>
           <p>Statsviz displays live heap, allocation, goroutine, garbage collection, and scheduler charts at:</p>
           <pre className="code-block"><code className="language-text">{`http://localhost:11445/debug/statsviz`}</code></pre>
           <p>The same unauthenticated-access warning as the rest of the debug server applies to pprof and Statsviz.</p>
@@ -4484,14 +4493,14 @@ curl http://localhost:11445/debug/pprof/goroutine?debug=2`}</code></pre>
             </tbody>
           </table>
           <p>Start the model server with embedded MCP:</p>
-          <pre className="code-block"><code className="language-shell">{`export KRONK_MCP_BRAVE_API_KEY=<your-brave-api-key>
+          <pre className="code-block"><code className="language-shell">{`export KRONK_MCP_BRAVE_API_KEY="<your-brave-api-key>"
 kronk server start`}</code></pre>
           <p>The corresponding CLI option is <code>--mcp-brave-api-key</code>. Disable embedded MCP with <code>--mcp-enabled=false</code> or <code>KRONK_MCP_ENABLED=false</code>. To use a separately managed MCP service, set <code>KRONK_MCP_HOST</code> or pass <code>--mcp-host</code>; a non-empty value only prevents the embedded service from starting. Kronk does not connect or proxy to that address.</p>
           <p>Protect embedded MCP with the existing Kronk JWT system:</p>
-          <pre className="code-block"><code className="language-shell">{`kronk server start --mcp-auth-enabled`}</code></pre>
-          <p>This requires an admin bearer token on every MCP request and also enables administrative authentication for the REST API and BUI. Configure the MCP client to send <code>Authorization: Bearer &lt;admin-token&gt;</code>. Application tokens with inference endpoint grants are not sufficient for MCP access. Before exposing the model server outside a trusted host, replace the BUI's default <code>kronk</code> password as described in <a href="https://www.kronkai.com/manual#133-authentication">Chapter 13</a> or disable the BUI; otherwise that known password can be exchanged for an admin session.</p>
+          <pre className="code-block"><code className="language-shell">{`kronk server start --mcp-auth-enabled --authorization-mode=management --web-admin-enabled=false`}</code></pre>
+          <p><code>--mcp-auth-enabled</code> requires an admin bearer token on every MCP request; it does not protect REST administration or the BUI. The example separately selects <code>management</code> authorization and disables the BUI. Inference remains public in that mode; use <code>full-protected</code> for endpoint grants and quotas. Configure the MCP client to send <code>Authorization: Bearer &lt;admin-token&gt;</code>. Application tokens with inference endpoint grants are not sufficient for MCP access. Before exposing the model server outside a trusted host, replace the BUI's default <code>kronk</code> password as described in <a href="https://www.kronkai.com/manual#133-authentication">Chapter 13</a> or disable the BUI; otherwise that known password can be exchanged for an admin session.</p>
           <p>Start the standalone service with:</p>
-          <pre className="code-block"><code className="language-shell">{`export MCP_MCP_BRAVE_API_KEY=<your-brave-api-key>
+          <pre className="code-block"><code className="language-shell">{`export MCP_MCP_BRAVE_API_KEY="<your-brave-api-key>"
 make mcp-server`}</code></pre>
           <p>To protect a standalone MCP listener, connect it to an auth service that has authentication enabled:</p>
           <pre className="code-block"><code className="language-shell">{`export MCP_MCP_AUTH_ENABLED=true
@@ -4551,7 +4560,7 @@ make mcp-server`}</code></pre>
             <li>Text after normalizing CRLF and LF line endings.</li>
             <li>Lines compared without surrounding whitespace.</li>
           </ol>
-          <p>Each tier must identify exactly one block. An absent or ambiguous match returns an error without modifying the file. The replacement is inserted as provided.</p>
+          <p>Each tier must identify exactly one block. An absent or ambiguous match returns an error without modifying the file. The replacement may undergo line-ending or trailing-newline adjustment to match the selected tier.</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -4597,13 +4606,50 @@ make mcp-server`}</code></pre>
 }`}</code></pre>
           <p>With the shipped <code>kronk</code> server key, OpenCode exposes the tools as <code>kronk_web_search</code> and <code>kronk_fuzzy_edit</code>.</p>
           <h3 id="166-testing-with-curl">16.6 Testing with curl</h3>
-          <p>The makefile provides commands for a complete stateful MCP handshake. First, initialize a session and copy the <code>Mcp-Session-Id</code> response header:</p>
-          <pre className="code-block"><code className="language-shell">{`make curl-mcp-init`}</code></pre>
+          <p>First initialize a session and copy the <code>Mcp-Session-Id</code> response header. These examples assume MCP authentication is enabled and <code>KRONK_TOKEN</code> contains an admin token. For an unprotected local listener, omit the Authorization header:</p>
+          <pre className="code-block"><code className="language-shell">{`curl -i http://localhost:9000/mcp \\
+  -H 'Content-Type: application/json' \\
+  -H 'Accept: application/json, text/event-stream' \\
+  -H "Authorization: Bearer $KRONK_TOKEN" \\
+  -d '{
+    "jsonrpc": "2.0", "id": 1, "method": "initialize",
+    "params": {
+      "protocolVersion": "2025-03-26",
+      "capabilities": {},
+      "clientInfo": {"name": "curl-client", "version": "1.0.0"}
+    }
+  }'`}</code></pre>
           <p>Then send the required initialized notification:</p>
-          <pre className="code-block"><code className="language-shell">{`make curl-mcp-initialized SESSIONID=<session-id>`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`SESSIONID="<session-id-from-response>"
+curl http://localhost:9000/mcp \\
+  -H 'Content-Type: application/json' \\
+  -H 'Accept: application/json, text/event-stream' \\
+  -H 'MCP-Protocol-Version: 2025-03-26' \\
+  -H "Authorization: Bearer $KRONK_TOKEN" \\
+  -H "Mcp-Session-Id: $SESSIONID" \\
+  -d '{"jsonrpc":"2.0","method":"notifications/initialized"}'`}</code></pre>
           <p>The session can now list and call tools:</p>
-          <pre className="code-block"><code className="language-shell">{`make curl-mcp-tools-list SESSIONID=<session-id>
-make curl-mcp-web-search SESSIONID=<session-id>`}</code></pre>
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:9000/mcp \\
+  -H 'Content-Type: application/json' \\
+  -H 'Accept: application/json, text/event-stream' \\
+  -H 'MCP-Protocol-Version: 2025-03-26' \\
+  -H "Authorization: Bearer $KRONK_TOKEN" \\
+  -H "Mcp-Session-Id: $SESSIONID" \\
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
+
+curl http://localhost:9000/mcp \\
+  -H 'Content-Type: application/json' \\
+  -H 'Accept: application/json, text/event-stream' \\
+  -H 'MCP-Protocol-Version: 2025-03-26' \\
+  -H "Authorization: Bearer $KRONK_TOKEN" \\
+  -H "Mcp-Session-Id: $SESSIONID" \\
+  -d '{
+    "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+    "params": {
+      "name": "web_search",
+      "arguments": {"query": "what is the Model Context Protocol", "count": 5}
+    }
+  }'`}</code></pre>
           <p>When MCP authentication is enabled, include <code>Authorization: Bearer &lt;admin-token&gt;</code> in every initialization, notification, tool-listing, tool-call, and session-deletion request.</p>
           <p>If the service restarts, initialize a new session instead of reusing the old ID.</p>
           <hr />
@@ -4650,7 +4696,7 @@ sudo systemctl restart docker`}</code></pre>
           <h4 id="permission-denied-on-`devdri`-or-`devkfd`-in-a-container">Permission denied on `/dev/dri` or `/dev/kfd` in a container</h4>
           <p>The container user reaches GPU devices through the <code>render</code> and <code>video</code> groups, which the image maps to GIDs 110 and 44. If the host uses other GIDs, look them up and pass them to Compose:</p>
           <pre className="code-block"><code className="language-shell">{`getent group render video
-KRONK_RENDER_GID=<render GID> KRONK_VIDEO_GID=<video GID> docker compose -f compose.vulkan.yaml up -d`}</code></pre>
+KRONK_RENDER_GID="<render-GID>" KRONK_VIDEO_GID="<video-GID>" docker compose -f compose.vulkan.yaml up -d`}</code></pre>
           <p>With <code>docker run</code>, pass the numbers to <code>--group-add</code> instead. On hosts with SELinux in enforcing mode, also check the audit log for denied device access.</p>
           <h4 id="a-library-update-introduced-crashes-or-bad-output">A library update introduced crashes or bad output</h4>
           <p>The normal CLI installs Kronk's pinned default. <code>--upgrade</code> and the server's <code>--allow-upgrade=true</code> opt into newer llama.cpp releases. List installed bundles and pin a known-good version when investigating a regression:</p>
@@ -4669,7 +4715,7 @@ kronk model index --local`}</code></pre>
           <h4 id="a-model-is-missing-incomplete-or-corrupt">A model is missing, incomplete, or corrupt</h4>
           <p>Pull it again using any supported source form:</p>
           <pre className="code-block"><code className="language-shell">{`kronk model pull <model-id> --local`}</code></pre>
-          <p><code>model pull</code> requires a canonical <code>provider/modelID</code> and checks that provider when the ID has not been resolved before. A separate <code>model resolve</code> step is not normally required. Interrupted downloads are resumable; if a file remains invalid, remove that model through Kronk and pull it again:</p>
+          <p>For canonical <code>provider/modelID</code> sources, <code>model pull</code> checks the specified provider when unresolved. URLs, exact file pins, and supported quantization shorthands also work. A separate <code>model resolve</code> step is not normally required. Interrupted downloads are resumable; if a file remains invalid, remove that model through Kronk and pull it again:</p>
           <pre className="code-block"><code className="language-shell">{`kronk model remove <model-id> --local
 kronk model pull <model-id> --local`}</code></pre>
           <p>For a gated or private Hugging Face repository, provide a read token:</p>
@@ -4703,10 +4749,11 @@ kronk model pull <model-id> --local`}</code></pre>
           <ul>
             <li>a client or reverse proxy may cancel first;</li>
             <li>admission waits are capped at three minutes before model processing starts;</li>
-            <li>the HTTP server defaults to a 30-second read timeout and a 60-minute write timeout.</li>
+            <li>the inference deadline defaults to 60 minutes, covering admission, preparation, slot waiting, and generation;</li>
+            <li>the HTTP server defaults to a 30-second read timeout and a 61-minute write timeout.</li>
           </ul>
-          <p><code>--read-timeout</code> covers reading the request, not model execution. Increase <code>--write-timeout</code> only when a long response is being cut off by the server:</p>
-          <pre className="code-block"><code className="language-shell">{`kronk server start --write-timeout 90m`}</code></pre>
+          <p><code>--read-timeout</code> covers reading the request, not model execution. Increase the inference deadline only for intentionally longer operations, and keep a nonzero write timeout greater than it:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk server start --inference-timeout 90m --write-timeout 91m`}</code></pre>
           <p>Check client and proxy timeouts separately. Large prompts and queued requests should be diagnosed with the timing metrics rather than masking them with a larger HTTP read timeout.</p>
           <h4 id="a-stream-stops-or-does-not-parse">A stream stops or does not parse</h4>
           <p>OpenAI-compatible chat streaming uses SSE records of the form:</p>
@@ -4798,7 +4845,7 @@ lsof -nP -iTCP:9000 -sTCP:LISTEN`}</code></pre>
             <li>transcribe separate audio channels as separate speakers through the SDK; and</li>
             <li>consume partial and final transcript events from live audio through the SDK.</li>
           </ul>
-          <p>The HTTP endpoint follows the OpenAI audio transcription request shape. It is protected by Kronk's <code>transcriptions</code> authentication permission when server authentication is enabled.</p>
+          <p>The HTTP endpoint follows the OpenAI audio transcription request shape. It is protected by Kronk's <code>transcriptions</code> endpoint grant in <code>full-protected</code> mode. <code>authenticated</code> requires a valid token without grants; <code>open</code> and <code>management</code> leave inference public. See Chapter 12.</p>
           <p>Whisper models use GGML <code>.bin</code> files and are separate from the GGUF models used by Kronk's language-model backend. Bucky models and language models share the server's memory budget and pool controls.</p>
           <h3 id="182-install-whisper-libraries">18.2 Install Whisper Libraries</h3>
           <p>Install the default library bundle for the current host:</p>
@@ -4846,7 +4893,7 @@ kronk bucky libs --install --arch=amd64 --os=linux --processor=cuda13
 kronk bucky libs --list-installs
 kronk bucky libs --remove-install --arch=amd64 --os=linux --processor=cuda`}</code></pre>
           <p>The commands use the running model server by default. Add <code>--local</code> to manage the files directly without a server.</p>
-          <p>The BUI's <strong>Whisper Libraries</strong> screen provides the same installation and removal operations. If Bucky failed to initialize because its libraries were missing, install a compatible bundle and <strong>restart the server</strong>. The running server does not automatically retry Bucky initialization.</p>
+          <p>The BUI's <strong>Whisper Libraries</strong> screen provides the same installation and removal operations when the server is running. Default library installation or verification failures stop startup; install a compatible managed bundle with <code>kronk bucky libs --local</code>, then <strong>restart the server</strong>. If startup reached native initialization but Bucky failed, the server can remain running in degraded mode and the BUI can manage libraries. It does not automatically retry initialization.</p>
           <p>Libraries are installed below <code>~/.kronk/bucky-libraries/</code> by default. Kronk normally treats the detected processor as a preference and verifies that the corresponding whisper.cpp bundle can run on the host. CPU and Metal are retained when published for the platform. CUDA is retained only when <code>nvidia-smi</code> reports a compatible driver and every GPU visible through <code>CUDA_VISIBLE_DEVICES</code> meets the bundle's compute-capability requirement:</p>
           <table className="flags-table">
             <thead>
@@ -4880,7 +4927,7 @@ kronk bucky libs --remove-install --arch=amd64 --os=linux --processor=cuda`}</co
           <p>To select a specific installed bundle or user-managed build authoritatively, set its directory before starting the server:</p>
           <pre className="code-block"><code className="language-sh">{`export KRONK_BUCKY_LIB_PATH=~/.kronk/bucky-libraries/linux/amd64/cuda`}</code></pre>
           <p>For CUDA 13, use the corresponding <code>linux/amd64/cuda13</code> or <code>linux/arm64/cuda13</code> directory. Prefer this Bucky-specific override rather than setting <code>KRONK_PROCESSOR=cuda13</code> for the whole server: llama.cpp uses different CUDA-major option names.</p>
-          <p>A non-empty <code>KRONK_BUCKY_LIB_PATH</code> bypasses automatic compatibility selection. If the directory contains <code>version.json</code>, Kronk adopts its recorded platform metadata unless explicitly overridden. A non-empty existing directory without that file is treated as a read-only user-managed build: Kronk loads from it but does not install, upgrade, or replace its contents.</p>
+          <p>A non-empty <code>KRONK_BUCKY_LIB_PATH</code> bypasses automatic compatibility selection. If the directory contains <code>version.json</code>, Kronk adopts its recorded platform metadata unless explicitly overridden. A non-empty existing directory without that file is treated as a read-only user-managed build and is not installed, upgraded, or replaced. Default verified startup requires managed installation metadata and fails for such a build. Independently trusted custom builds require an advanced startup path with managed verification explicitly disabled; this is not routine recovery for a broken installation.</p>
           <p>The default downloader installs the authenticated whisper.cpp version bound to this Bucky dependency, replacing older or arbitrary newer managed bundles rather than assuming numerical version order implies ABI compatibility. An offline installation must match the requested pin and platform. <code>--version</code> and <code>--upgrade</code> explicitly opt out of the default pin. Restart after replacing libraries. If a future upgrade changes the ABI, rebuild or replace user-managed libraries yourself; Kronk never mutates a read-only build. Do not mix ggml files from independently built Whisper and llama.cpp bundles.</p>
           <p>The library tools also recognize these platform overrides:</p>
           <table className="flags-table">
@@ -4972,7 +5019,7 @@ kronk bucky libs --remove-install --arch=amd64 --os=linux --processor=cuda`}</co
               </tr>
             </tbody>
           </table>
-          <p>The catalog also contains <code>silero-vad</code>, an auxiliary voice-activity detection model. It is not a transcription model. Streaming uses its built-in energy detector unless a caller explicitly supplies the downloaded Silero model with <code>model.WithVADModel</code>.</p>
+          <p>The catalog also contains <code>silero-vad</code>, an auxiliary voice-activity detection model. It is not a transcription model. SDK streaming uses its built-in energy detector unless the application explicitly selects the Silero model.</p>
           <p>Pull, list, and remove models with:</p>
           <pre className="code-block"><code className="language-sh">{`kronk bucky model pull tiny
 kronk bucky model list
@@ -4990,7 +5037,7 @@ bucky-models:
     queue-depth: 4
     admission-timeout: 3m
     nthreads: 0`}</code></pre>
-          <p><code>nseq-max</code> controls the number of independent Whisper states and therefore the number of concurrent operations. <code>queue-depth</code> adds waiting requests without adding states. <code>nthreads</code> controls native threads per operation; zero preserves the whisper.cpp default. The pool reserves the model file size plus a conservative 200 MiB allowance for each configured state; queued requests do not increase the reservation. Restart the server after changing these settings.</p>
+          <p><code>nseq-max</code> controls the number of concurrent operations. Increasing it increases runtime memory without duplicating the model weights. <code>queue-depth</code> adds waiting requests without adding inference capacity. <code>nthreads</code> controls native threads per operation; zero preserves the whisper.cpp default. Restart the server after changing these settings.</p>
           <p>Bucky uses the server's shared pool settings:</p>
           <table className="flags-table">
             <thead>
@@ -5008,17 +5055,17 @@ bucky-models:
               </tr>
               <tr>
                 <td>Pool TTL</td>
-                <td><code>20m</code></td>
-                <td>How long an idle model remains loaded; <code>0</code> disables idle expiration</td>
+                <td><code>0</code></td>
+                <td>Idle expiration disabled by default; count/memory eviction still applies</td>
               </tr>
               <tr>
                 <td>Memory budget</td>
                 <td>Shared</td>
-                <td>Bucky and language models compete for the same host memory budget</td>
+                <td>Bucky, language, and Malina models compete for the shared budget</td>
               </tr>
             </tbody>
           </table>
-          <p>If the server starts without usable Whisper libraries, it logs that Bucky is running in degraded mode. Library and model management remain available, but transcription cannot work until the libraries are installed and the server is restarted.</p>
+          <p><code>--media-backends-enabled=false</code> / <code>KRONK_MEDIA_BACKENDS_ENABLED=false</code> skips both Bucky and Malina library downloads and initialization. Installing libraries alone does not re-enable inference: enable media backends and restart. Library installation/verification failures normally stop startup; native initialization failures can leave Bucky unavailable while the server continues.</p>
           <p>Server startup constructs the Bucky library manager from <code>KRONK_BASE_PATH</code> and <code>KRONK_BUCKY_LIB_PATH</code>, downloads or verifies the selected bundle, and passes the manager's resolved directory to the whisper runtime. This keeps a moved base path and an explicit Bucky library path consistent across installation and inference. The llama.cpp <code>--lib-path</code>/<code>KRONK_LIB_PATH</code> setting does not select whisper.cpp libraries; use <code>KRONK_BUCKY_LIB_PATH</code> for Bucky.</p>
           <h3 id="185-browser-ui">18.5 Browser UI</h3>
           <p>The BUI provides three Bucky-related areas:</p>
@@ -5042,7 +5089,8 @@ bucky-models:
           <pre className="code-block"><code className="language-text">{`POST /v1/audio/transcriptions`}</code></pre>
           <p>To translate supported source speech into English, use the OpenAI-compatible translation route instead:</p>
           <pre className="code-block"><code className="language-text">{`POST /v1/audio/translations`}</code></pre>
-          <p>The uploaded file is limited to <strong>25 MiB</strong>. Each transcription has a 30-minute server deadline.</p>
+          <p>The uploaded file is limited to <strong>25 MiB</strong>. Transcription and translation use the shared <code>--inference-timeout</code> / <code>KRONK_WEB_INFERENCE_TIMEOUT</code>, default <code>60m</code>.</p>
+          <p>WAV, MP3, and FLAC decode in-process. Browser recordings and formats such as WebM/Opus, MP4/AAC, OGG, and M4A require <code>ffmpeg</code> on the <strong>server's PATH</strong>, including inside its container or service environment. Installing it only on the browser's machine is not sufficient. Restart after fixing PATH or installing ffmpeg if the running process has already failed to find it.</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -5144,8 +5192,8 @@ bucky-models:
   -F response_format=json`}</code></pre>
           <p>The default JSON response is:</p>
           <pre className="code-block"><code className="language-json">{`{"text":"And so my fellow Americans..."}`}</code></pre>
-          <p>The translation route accepts <code>file</code>, <code>model</code>, <code>prompt</code>, <code>temperature</code>, and <code>response_format</code>. It always enables source-to-English translation, so it does not require the Kronk-specific <code>translate</code> field. Its default JSON response has the same <code>text</code> shape. A <code>verbose_json</code> translation identifies its task as <code>translate</code> and its output language as <code>english</code>.</p>
-          <p><code>verbose_json</code> adds the detected language, duration, and timestamped segments. When <code>timestamp_granularities[]=word</code> is requested, it also includes a <code>words</code> array whose entries contain <code>word</code>, <code>start</code>, and <code>end</code> fields. The <code>text</code>, <code>srt</code>, and <code>vtt</code> formats return their corresponding non-JSON media types.</p>
+          <p>The translation route accepts the same options above and always enables source-to-English translation, so it does not require the Kronk-specific <code>translate</code> field. Its default JSON response has the same <code>text</code> shape. A <code>verbose_json</code> translation identifies its task as <code>translate</code> and its output language as <code>english</code>. Prefer this route when verbose output must identify the translation task; the transcription route's <code>translate=true</code> extension retains its transcription task label.</p>
+          <p><code>verbose_json</code> adds the detected language, duration, and timestamped segments. When <code>timestamp_granularities[]=word</code> is requested, it also includes a <code>words</code> array whose entries contain <code>word</code>, <code>start</code>, and <code>end</code> fields. Segment <code>tokens</code>, <code>temperature</code>, <code>avg_logprob</code>, and <code>compression_ratio</code> are compatibility placeholders (empty or zero), not measured decoder results. Do not use them as confidence filters. The <code>text</code>, <code>srt</code>, and <code>vtt</code> formats return their corresponding non-JSON media types.</p>
           <p>English-only models (<code>tiny.en</code>, <code>base.en</code>, <code>small.en</code>, and <code>medium.en</code>) only accept an empty language hint or <code>en</code>. Use a multilingual model for other languages or translation.</p>
           <h4 id="1862-bucky-management-endpoints">18.6.2 Bucky Management Endpoints</h4>
           <p>The CLI and BUI use these management routes:</p>
@@ -5160,6 +5208,10 @@ bucky-models:
               <tr>
                 <td><code>GET /v1/bucky/libs</code></td>
                 <td>Show the active library installation</td>
+              </tr>
+              <tr>
+                <td><code>GET /v1/bucky/libs/integrity</code></td>
+                <td>Verify the selected library bundle</td>
               </tr>
               <tr>
                 <td><code>GET /v1/bucky/libs/combinations</code></td>
@@ -5200,132 +5252,11 @@ bucky-models:
             </tbody>
           </table>
           <p>Mutating management routes require administrator authorization when authentication is enabled.</p>
-          <h3 id="187-go-sdk">18.7 Go SDK</h3>
-          <p>The Go SDK supports batch transcription, channel-separated diarization, and live streaming. See <a href="../examples/bucky/main.go"><code>examples/bucky/main.go</code></a> for a complete program that installs the current-host libraries, downloads a model, initializes Bucky, and handles errors.</p>
-          <p>A <code>Bucky</code> handle is safe to call from multiple goroutines. It loads one Whisper model context and shares its weights while maintaining a pool of independent <code>whisper.State</code> values. Set the pool size with <code>model.WithNSeqMax</code> when creating the handle; the default is 1. Up to <code>NSeqMax</code> transcriptions, language-detection calls, or streams can use the handle concurrently without loading another copy of the model.</p>
-          <p>When every state is in use, another call waits until a state becomes available or its context is canceled. The admission wait times out after three minutes by default and can be configured with <code>model.WithAdmissionTimeout</code>; the timeout ends once the call is admitted. <code>model.WithQueueDepth</code> controls how many calls are admitted to wait after every state is busy and defaults to 0. A stream reserves one state for its lifetime, so always close streams that are no longer needed.</p>
-          <h4 id="1871-batch-transcription">18.7.1 Batch Transcription</h4>
-          <p>After calling <code>bucky.Init</code> and constructing a <code>*bucky.Bucky</code> with the path to an installed model, transcribe an audio reader directly:</p>
-          <pre className="code-block"><code className="language-go">{`f, err := os.Open("samples/jfk.wav")
-if err != nil {
-    return err
-}
-defer f.Close()
-
-tr, err := b.TranscribeFile(ctx, f, model.WithLanguage("en"))
-if err != nil {
-    return err
-}
-
-fmt.Println(tr.Text)`}</code></pre>
-          <p>Use <code>Transcribe</code> instead when the audio is already decoded to 16 kHz mono <code>[]float32</code>. Sampling options map directly to whisper.cpp's full parameters:</p>
-          <pre className="code-block"><code className="language-go">{`tr, err := b.Transcribe(ctx, samples,
-    model.WithTemperature(0),
-    model.WithTemperatureInc(0.2),
-    model.WithEntropyThreshold(2.4),
-    model.WithLogProbThreshold(-1),
-    model.WithNoSpeechThreshold(0.6),
-    model.WithGreedyBestOf(2),
-    model.WithLengthPenalty(-1),
-)`}</code></pre>
-          <p>Only specify values that should override the defaults supplied by the loaded whisper.cpp library. <code>WithBeamSize</code> selects beam search; use it with <code>WithBeamSearchPatience</code> instead of <code>WithGreedyBestOf</code>. Without a positive beam size, decoding uses greedy sampling.</p>
-          <p>Each <code>Segment</code> includes <code>TextConfidence</code>: the arithmetic mean of its decoded text-token probabilities, excluding timestamp and control tokens. The score ranges from 0 to 1, with higher values indicating greater decoder confidence; segments with no text tokens have a score of 0. Batch results, <code>OnSegment</code> callbacks, diarized segments, and streaming partial/final segments all use the same calculation.</p>
-          <p><code>NoSpeechProb</code> estimates whether speech occurred; <code>TextConfidence</code> describes the decoder's confidence in its chosen text. Neither guarantees that the words were actually spoken, and hallucinations can have high text confidence. Bucky applies no confidence filter. A caller might start by rejecting segments below 0.5, but this is only an illustrative threshold, not a validated universal cutoff. Tune it on representative speech and noise, balancing missed speech against phantom text. Filtering segments does not change the returned <code>Transcription.Text</code> or stream <code>Event.Text</code>; callers should build their filtered text from accepted segments.</p>
-          <h4 id="1872-channel-separated-diarization">18.7.2 Channel-Separated Diarization</h4>
-          <p><code>TranscribeChannelsFile</code> treats each source channel as a separate speaker and merges their timestamped segments:</p>
-          <pre className="code-block"><code className="language-go">{`d, err := b.TranscribeChannelsFile(ctx, f, model.WithLanguage("en"))
-if err != nil {
-    return err
-}
-
-for _, seg := range d.Segments {
-    fmt.Printf("[%dms] speaker %d: %s\\n", seg.StartMs, seg.Channel, seg.Text)
-}`}</code></pre>
-          <p>This works best with native multichannel formats such as WAV or FLAC. Formats decoded through ffmpeg may be downmixed and therefore produce only one speaker channel.</p>
-          <h4 id="1873-streaming-transcription">18.7.3 Streaming Transcription</h4>
-          <p>Use <code>NewStream</code> when audio arrives over time. A stream emits tentative partials and committed finals:</p>
-          <pre className="code-block"><code className="language-go">{`stream, err := b.NewStream(ctx, model.WithStreamLanguage("en"))
-if err != nil {
-    return err
-}
-defer stream.Close()
-
-go func() {
-    for ev := range stream.Events() {
-        switch ev.Kind {
-        case model.EventPartial:
-            // Replace the currently displayed partial with ev.Text.
-        case model.EventFinal:
-            // Append ev.Text to the permanent transcript.
-        case model.EventError:
-            log.Println(ev.Err)
-        }
-    }
-}()
-
-for samples := range incomingAudio {
-    if err := stream.Feed(ctx, samples); err != nil {
-        return err
-    }
-}
-
-return stream.Close()`}</code></pre>
-          <p><code>EventPartial</code> contains the complete pending hypothesis, not a text delta, and may be dropped when the event consumer falls behind. <code>EventFinal</code> is the text to append and is not dropped.</p>
-          <p><code>Feed</code> accepts normalized 16 kHz mono <code>[]float32</code>. For raw microphone data, <code>FeedPCM</code> accepts little-endian <code>int16</code> or <code>float32</code> PCM and performs downmixing and resampling:</p>
-          <pre className="code-block"><code className="language-go">{`format := model.AudioFormat{
-    SampleRate: 48000,
-    Channels:   2,
-    Sample:     model.Int16LE,
-}
-
-if err := stream.FeedPCM(ctx, rawPCM, format); err != nil {
-    return err
-}`}</code></pre>
-          <p>Call <code>Feed</code> or <code>FeedPCM</code> from one producer goroutine. Both methods apply backpressure when their input queue is full. Real-time capture callbacks must not block; the <a href="../examples/bucky-stream/main.go"><code>examples/bucky-stream</code></a> program therefore uses an intermediate channel and deliberately drops capture buffers if its pump falls behind.</p>
-          <p>Important stream defaults are:</p>
-          <table className="flags-table">
-            <thead>
-              <tr>
-                <th>Behavior</th>
-                <th>Default</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Partial update</td>
-                <td>Every 1,000 ms</td>
-              </tr>
-              <tr>
-                <td>Forced final</td>
-                <td>Every 6,000 ms without a pause</td>
-              </tr>
-              <tr>
-                <td>Maximum utterance</td>
-                <td>25,000 ms</td>
-              </tr>
-              <tr>
-                <td>Silence detection</td>
-                <td>Enabled</td>
-              </tr>
-              <tr>
-                <td>Prompt carryover</td>
-                <td>Enabled</td>
-              </tr>
-            </tbody>
-          </table>
-          <p>Options such as <code>WithPartialEveryMs</code>, <code>WithCommitEveryMs</code>, <code>WithVAD</code>, and <code>WithPromptCarryover</code> change these behaviors. A negative partial interval disables partial events. The <code>WithStreamTemperature</code>, <code>WithStreamTemperatureInc</code>, <code>WithStreamEntropyThreshold</code>, <code>WithStreamLogProbThreshold</code>, <code>WithStreamNoSpeechThreshold</code>, <code>WithStreamGreedyBestOf</code>, <code>WithStreamBeamSize</code>, <code>WithStreamBeamSearchPatience</code>, and <code>WithStreamLengthPenalty</code> options apply the same sampling controls to every decode in a streaming session.</p>
-          <p>For model-backed voice-activity detection, download the cataloged Silero model and pass its resolved path when opening the stream:</p>
-          <pre className="code-block"><code className="language-go">{`stream, err := b.NewStream(ctx,
-    model.WithVADModel("/path/to/ggml-silero-v5.1.2.bin"),
-    model.WithVADSpeechThreshold(0.5),
-)`}</code></pre>
-          <p><code>WithVADSpeechThreshold</code> overrides whisper.cpp's Silero speech-probability threshold. Without <code>WithVADModel</code>, the existing <code>WithVADThreshold</code> option continues to tune the built-in energy-ratio detector.</p>
-          <p>The <a href="../examples/bucky-stream/main.go"><code>examples/bucky-stream</code></a> program uses the built-in energy detector by default. Run <code>make example-bucky-stream-vad</code> to invoke the same program with <code>--silero-vad --vad-threshold=0.5</code>; it downloads the additional model and enables Silero. Silero changes utterance-boundary detection, not Whisper's transcription. Compared with the built-in energy ratio, learned speech probabilities are more robust to quiet speech, steady background noise, and changing microphone gain.</p>
-          <p><code>Reset</code> starts a new logical session while keeping the stream open. By default it flushes pending audio and restarts timestamps at zero. After an <code>EventError</code>, close the failed stream and open a new one instead of resetting it.</p>
-          <p>Always close a stream. An open stream reserves SDK inference capacity and can prevent model unloading. SDK users can configure concurrent streams with <code>model.WithNSeqMax</code>; model-server users set <code>nseq-max</code> in the model's <code>bucky-models</code> entry.</p>
+          <h3 id="187-capability-boundaries-and-developer-resources">18.7 Capability Boundaries and Developer Resources</h3>
+          <p>HTTP and BUI support uploaded or recorded-file transcription and translation. Channel-separated diarization and continuous partial/final streaming are SDK-only; they are not audio HTTP streaming routes. The Translator records audio before uploading it rather than exposing the SDK's continuous stream.</p>
+          <p>Application developers should use the generated Bucky SDK reference and the <code>examples/bucky</code> and <code>examples/bucky-stream</code> programs. The source-checkout targets <code>make example-bucky</code> and <code>make example-bucky-stream</code> run those examples; <code>make example-bucky-stream-vad</code> additionally downloads and selects Silero VAD. These commands can download libraries/models and run inference or capture audio.</p>
           <h3 id="188-languages">18.8 Languages</h3>
           <p>Whisper supports approximately 99 languages. Use its short language codes, such as <code>en</code>, <code>de</code>, <code>fr</code>, <code>es</code>, or <code>zh</code>. An empty language value asks Whisper to auto-detect the language.</p>
-          <p>The SDK exposes <code>bucky.LangID</code>, <code>bucky.LangStr</code>, and <code>bucky.LangMaxID</code> for enumerating and converting the codes known to the loaded whisper.cpp library.</p>
           <p>Use a multilingual model (<code>tiny</code>, <code>base</code>, <code>small</code>, <code>medium</code>, <code>large-v3</code>, or <code>large-v3-turbo</code>) for non-English speech. Models ending in <code>.en</code> are English only. Whisper translation converts supported source speech to English; it does not translate into arbitrary target languages.</p>
           <h3 id="189-troubleshooting">18.9 Troubleshooting</h3>
           <table className="flags-table">
@@ -5361,83 +5292,55 @@ if err := stream.FeedPCM(ctx, rawPCM, format); err != nil {
                 <td>Check <code>KRONK_BUCKY_LIB_PATH</code> and the active bundle. A CPU bundle runs without GPU acceleration.</td>
               </tr>
               <tr>
-                <td>A new SDK stream blocks or times out</td>
-                <td>Another stream is holding all configured SDK stream capacity. Close idle streams or create the handle with a larger <code>NSeqMax</code>.</td>
+                <td>Browser recordings fail to decode</td>
+                <td>Make ffmpeg available on the server/container PATH and restart after a previous failed lookup.</td>
               </tr>
               <tr>
-                <td>Streaming emits finals but no partials</td>
-                <td>Check that <code>WithPartialEveryMs</code> was not given a negative value and that audio is arriving continuously.</td>
+                <td>Server startup fails during library installation or verification</td>
+                <td>Install the compatible managed bundle locally, inspect the verification error, then restart; do not routinely disable verification.</td>
               </tr>
               <tr>
-                <td>Streaming repeats words at boundaries</td>
-                <td>Keep silence detection enabled and avoid overly short forced-final intervals.</td>
-              </tr>
-              <tr>
-                <td>Whisper diagnostic output appears in the terminal</td>
-                <td>Do not select <code>bucky.LogNormal</code>; the default <code>LogSilent</code> suppresses whisper.cpp diagnostics.</td>
+                <td>Libraries exist but audio inference is unavailable</td>
+                <td>Check <code>KRONK_MEDIA_BACKENDS_ENABLED</code>, enable it if needed, and restart.</td>
               </tr>
             </tbody>
           </table>
           <hr />
           <p>Next: <a href="https://www.kronkai.com/manual#chapter-19-malina-image-generation">Chapter 19: Malina (Image Generation)</a></p>
           <h2 id="chapter-19-malina-image-generation">Chapter 19: Malina (Image Generation)</h2>
-          <p><strong>Experimental:</strong> The Malina SDK public API is subject to change.</p>
-          <p>Malina is Kronk's image-generation SDK. It uses <a href="https://github.com/leejet/stable-diffusion.cpp"><code>stable-diffusion.cpp</code></a> through the <a href="https://github.com/ardanlabs/malina"><code>malina</code></a> bindings and is available through the Go packages under <code>sdk/malina</code>.</p>
-          <p>Using Malina requires both a compatible stable-diffusion.cpp library bundle and a supported model bundle. The libraries provide the native inference engine. The model bundle contains either one complete checkpoint or the set of component files required by a diffusion pipeline.</p>
+          <p><strong>Experimental:</strong> Malina's public SDK API is subject to change.</p>
           <h3 id="191-overview">19.1 Overview</h3>
-          <p>The current SDK supports:</p>
-          <ul>
-            <li>text-to-image generation;</li>
-            <li>image-to-image generation from a Go <code>image.Image</code>;</li>
-            <li>Canny ControlNet conditioning and ADetailer face refinement;</li>
-            <li>AnimateDiff video generation and Real-ESRGAN upscaling;</li>
-            <li>single-checkpoint and multi-file diffusion pipelines;</li>
-            <li>curated model-bundle download and validation;</li>
-            <li>native library detection, installation, and version management;</li>
-            <li>application-controlled native logging and progress reporting;</li>
-            <li>stable-diffusion.cpp system diagnostics; and</li>
-            <li>Motion-JPEG AVI encoding from generated or existing image frames.</li>
-          </ul>
-          <p>The Malina API follows the same high-level shape as the Kronk and Bucky SDKs:</p>
-          <ol>
-            <li>Detect and install compatible native libraries.</li>
-            <li>Initialize the process-wide native backend.</li>
-            <li>Download a curated model bundle.</li>
-            <li>Construct a handle with one or more contexts for a loaded model.</li>
-            <li>Perform work through the handle.</li>
-            <li>Unload the handle.</li>
-          </ol>
-          <p>Malina is available through the SDK, local tooling, and the Kronk model server. The CLI manages local libraries and model bundles. The server's shared resource manager performs RAM and VRAM admission and eviction for Malina models. The basic <code>POST /v1/images/generations</code> and <code>POST /v1/images/edits</code> endpoints create and transform images. <code>GET /v1/images/events</code> streams process-global model loading and generation progress for those operations. ControlNet, ADetailer, video, and upscaling operations remain SDK-only.</p>
-          <p>Configure server-loaded bundles under the top-level <code>malina-models</code> mapping in <code>~/.kronk/models/model_config.yaml</code>, using the bundle ID shown by <code>kronk malina model list</code>:</p>
-          <pre className="code-block"><code className="language-yaml">{`version: 2
-malina-models:
-  sd-1.5:
-    concurrency: 2
-    queue-depth: 2
-    admission-timeout: 3m
-    cpu-threads: 0`}</code></pre>
-          <p>Each concurrency slot loads another native model context, increasing RAM or VRAM use. Queue depth adds waiting requests without loading more contexts. Restart the server after changing these settings.</p>
+          <p>Malina is Kronk's image-generation subsystem, powered by <a href="https://github.com/leejet/stable-diffusion.cpp">stable-diffusion.cpp</a>. It needs both compatible native libraries and a supported model bundle. A bundle can be a single checkpoint or several pipeline components; downloading a language-model GGUF does not supply an image-generation pipeline.</p>
+          <table className="flags-table">
+            <thead>
+              <tr>
+                <th>Surface</th>
+                <th>Supported workflows</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Model server and BUI</td>
+                <td>Text-to-image and image-to-image; PNG results and server-wide progress</td>
+              </tr>
+              <tr>
+                <td>Local CLI</td>
+                <td>Library and curated model-bundle installation, listing, and removal</td>
+              </tr>
+              <tr>
+                <td>SDK</td>
+                <td>Image generation/editing plus ControlNet, ADetailer, video generation, upscaling, and Motion-JPEG encoding</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>The server shares memory admission and retention controls with the language and Bucky backends. Advanced SDK features are not additional HTTP routes.</p>
           <h3 id="192-install-stable-diffusion-libraries">19.2 Install Stable Diffusion Libraries</h3>
-          <p>Install and validate the pinned stable-diffusion.cpp build for the current host:</p>
-          <pre className="code-block"><code className="language-shell">{`kronk malina libs --local`}</code></pre>
-          <p>Use <code>kronk malina libs --help</code> for version selection, supported combinations, parallel installs for other platform triples, listing, and removal. Malina does not have model-server library-management routes, so <code>--local</code> is currently required for these operations.</p>
-          <p>The normal SDK flow detects the current host, resolves a compatible runtime, and installs Kronk's pinned stable-diffusion.cpp version:</p>
-          <pre className="code-block"><code className="language-go">{`ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
-defer cancel()
-
-libs, err := libs.New(
-    libs.WithDetect(ctx, malina.FmtLogger),
-)
-if err != nil {
-    return err
-}
-
-if _, err := libs.Download(ctx, malina.FmtLogger); err != nil {
-    return err
-}`}</code></pre>
-          <p>Libraries are installed below <code>~/.kronk/malina-libraries/</code> by default, using one directory per operating-system, architecture, and processor combination:</p>
-          <pre className="code-block"><code className="language-text">{`~/.kronk/malina-libraries/<os>/<arch>/<processor>/`}</code></pre>
-          <p>The published combinations are:</p>
+          <p>Install the pinned bundle for the current host:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk malina libs --local
+kronk malina libs --list-combinations --local
+kronk malina libs --list-installs --local`}</code></pre>
+          <p>The Malina CLI currently requires <code>--local</code>. Server-side management is available through the BUI and <code>/v1/malina/...</code> APIs, not through default CLI web mode. Run <code>kronk malina libs --help</code> for version selection, installation for another platform triple, and removal.</p>
+          <p>Libraries normally live under <code>~/.kronk/malina-libraries/&lt;os&gt;/&lt;arch&gt;/&lt;processor&gt;/</code>. Supported combinations for the pinned release include:</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -5464,10 +5367,7 @@ if _, err := libs.Download(ctx, malina.FmtLogger); err != nil {
               </tr>
             </tbody>
           </table>
-          <p>Use <code>libs.SupportedCombinations()</code> as the source of truth for combinations available to the installed Kronk version.</p>
-          <p>The macOS <code>cpu</code> and <code>metal</code> choices download the same Metal-capable Darwin archive; choosing the <code>cpu</code> directory alone does not force CPU execution. There are no published Linux CUDA or arm64 Linux/Windows bundles for this pin.</p>
-          <p>Automatic selection treats detected hardware and environment-derived runtime values as preferences and falls back to a compatible runtime when possible. The <code>libs.WithArch</code>, <code>libs.WithOS</code>, and <code>libs.WithProcessor</code> options are authoritative when they form a published combination. An explicit library path is also authoritative.</p>
-          <p>The library manager recognizes these path and platform overrides:</p>
+          <p>Use <code>--list-combinations</code> for the installed release's current list. The macOS <code>cpu</code> and <code>metal</code> choices use the same Metal-capable archive; selecting its CPU directory alone does not force CPU execution. This pin has no Linux CUDA or Linux/Windows arm64 bundle.</p>
           <table className="flags-table">
             <thead>
               <tr>
@@ -5478,472 +5378,234 @@ if _, err := libs.Download(ctx, malina.FmtLogger); err != nil {
             <tbody>
               <tr>
                 <td><code>KRONK_BASE_PATH</code></td>
-                <td>Changes the root below which Kronk-managed files are stored.</td>
+                <td>Select the data root without migrating existing files</td>
               </tr>
               <tr>
                 <td><code>KRONK_MALINA_LIB_PATH</code></td>
-                <td>Selects an exact stable-diffusion.cpp library directory.</td>
+                <td>Select an exact stable-diffusion.cpp library directory</td>
               </tr>
               <tr>
                 <td><code>MALINA_LIB</code></td>
-                <td>Legacy fallback for <code>KRONK_MALINA_LIB_PATH</code>.</td>
+                <td>Legacy fallback for the Malina library path</td>
               </tr>
               <tr>
-                <td><code>KRONK_ARCH</code></td>
-                <td>Supplies the preferred architecture during automatic selection.</td>
-              </tr>
-              <tr>
-                <td><code>KRONK_OS</code></td>
-                <td>Supplies the preferred operating system during automatic selection.</td>
-              </tr>
-              <tr>
-                <td><code>KRONK_PROCESSOR</code></td>
-                <td>Supplies the preferred processor during automatic selection; compatibility checks may fall back.</td>
+                <td><code>KRONK_ARCH</code>, <code>KRONK_OS</code>, <code>KRONK_PROCESSOR</code></td>
+                <td>Runtime-selection preferences; compatibility checks can select a fallback</td>
               </tr>
             </tbody>
           </table>
-          <p>A selected directory containing <code>version.json</code> is treated as a Kronk-managed installation. A non-empty directory without that file is treated as a read-only user-managed build: Malina can load from it, but the library manager will not upgrade, replace, or remove it.</p>
-          <p>By default, <code>Download</code> uses the stable-diffusion.cpp version pinned by the Malina release that Kronk depends on. This is the supported choice. Advanced users can request a specific version with <code>libs.WithVersion</code>, or opt into the latest upstream release with:</p>
-          <pre className="code-block"><code className="language-go">{`libs, err := libs.New(
-    libs.WithDetect(ctx, malina.FmtLogger),
-    libs.WithAllowUpgrade(true),
-)`}</code></pre>
-          <p>An upgraded upstream library may not be ABI-compatible with the Malina and Kronk versions in use. Use this option for testing, not as a compatibility guarantee. Without an explicit version or upgrade opt-in, Kronk requires the exact Malina-compatible default even when a numerically newer managed build is already installed. If the host is offline, a mismatched managed build is rejected rather than loaded. Library installation is staged and activated atomically so a failed download does not replace a working installation.</p>
-          <p>Malina v1.1.9 requires stable-diffusion.cpp <code>master-1017-be48649</code>, authenticated by manifest digest <code>sha256:7ecdc95bbc9adfadf813750ba84fc3f3d1f312cbcad339ee46a3e87e190cca03</code>. Compared with v1.1.8's <code>master-975-95b3090</code>, image, video, upscaler, and ADetailer results use a new native ABI with matching result destructors and generation metadata. Video generation parameters also grow a reference-image arguments field. Upgrade bindings and native libraries together. Successful symbol loading is not proof of ABI compatibility. <code>Download</code> replaces any mismatched Kronk-managed installation with the exact pin. A user-managed library directory is read-only to Kronk and must be rebuilt or replaced by its owner. Do not combine Malina v1.1.9 with an older native bundle, or older bindings with <code>master-1017</code>.</p>
-          <p>The exact upstream changes are available in the <a href="https://github.com/ardanlabs/malina/compare/v1.1.8...v1.1.9">Malina source comparison</a> and the <a href="https://github.com/leejet/stable-diffusion.cpp/compare/master-975-95b3090...master-1017-be48649">native source comparison</a>.</p>
+          <p>An explicit library path is authoritative. A nonempty directory without <code>version.json</code> is a read-only user-managed build, not a managed installation. Default verified server startup requires managed metadata and can reject it. Using independently trusted custom builds requires an advanced verification exception; do not disable verification as routine recovery.</p>
+          <p>Use the libraries pinned to this Kronk release. Newer native libraries are not necessarily ABI-compatible; upgrade bindings and libraries together. Offline managed installations must match the requested pin and platform. Installation is staged so a failed download does not replace the working bundle. Restart after changing the selected libraries; the process does not hot-reload them.</p>
+          <p>With default verification enabled, installation or verification failures stop server startup. Repair the managed bundle locally, then restart. A later native initialization failure can instead leave Malina unavailable while the server continues; BUI repair is useful only if the server actually remains running.</p>
           <h3 id="193-manage-model-bundles">19.3 Manage Model Bundles</h3>
-          <p>Kronk provides a small, curated catalog rather than accepting arbitrary model repository layouts. This keeps component roles and known-compatible files in the high-level SDK instead of requiring applications to use Malina's raw download API.</p>
-          <p>The current bundles are:</p>
+          <p>Use the curated catalog rather than an arbitrary repository layout:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk malina model catalog --local
+kronk malina model pull sd-1.5 --local
+kronk malina model list --local
+kronk malina model remove sd-1.5 --local`}</code></pre>
+          <p>Models normally live under <code>~/.kronk/malina-models/&lt;bundle&gt;/</code>. The catalog reports component files, licenses, gating, and download sizes. Budget disk for multi-gigabyte downloads and installation staging, not just inference memory. Complete installations are reused on subsequent runs.</p>
           <table className="flags-table">
             <thead>
               <tr>
                 <th>Bundle</th>
-                <th>Files</th>
-                <th>License</th>
-                <th>Approximate download</th>
+                <th>Intended use</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td><code>sd-1.5</code></td>
-                <td>Stable Diffusion 1.5 checkpoint</td>
-                <td>CreativeML Open RAIL-M</td>
-                <td>4.3 GB</td>
+                <td><code>sd-1.5</code>, <code>sdxl-base-1.0</code></td>
+                <td>Single-checkpoint image generation</td>
               </tr>
               <tr>
-                <td><code>controlnet-canny-sd1.5</code></td>
-                <td>Quantized SD 1.5 and Canny ControlNet</td>
-                <td>CreativeML Open RAIL-M / OpenRAIL</td>
-                <td>2.3 GB</td>
+                <td><code>z-image-turbo</code>, <code>llada-image-turbo</code>, <code>moss-image-sft</code></td>
+                <td>Component-based image generation</td>
               </tr>
               <tr>
-                <td><code>realesrgan-x4-anime</code></td>
-                <td>Real-ESRGAN 4× anime upscaler</td>
-                <td>BSD-3-Clause</td>
-                <td>18 MB</td>
+                <td><code>flux2-klein-4b</code>, <code>flux2-klein-9b</code></td>
+                <td>Component-based, license-gated image generation</td>
+              </tr>
+              <tr>
+                <td><code>controlnet-canny-sd1.5</code>, <code>z-image-turbo-controlnet-union</code></td>
+                <td>SDK ControlNet workflows</td>
               </tr>
               <tr>
                 <td><code>adetailer-face-yolov8n</code></td>
-                <td>Quantized SD 1.5 and face detector</td>
-                <td>CreativeML Open RAIL-M / AGPL-3.0</td>
-                <td>1.6 GB</td>
+                <td>SDK face refinement</td>
               </tr>
               <tr>
-                <td><code>animatediff-sd1.5</code></td>
-                <td>Quantized SD 1.5 and AnimateDiff v3 motion module</td>
-                <td>CreativeML Open RAIL-M / Apache-2.0</td>
-                <td>2.4 GB</td>
+                <td><code>animatediff-sd1.5</code>, <code>wan2.2-s2v-14b</code></td>
+                <td>SDK video workflows</td>
               </tr>
               <tr>
-                <td><code>wan2.2-s2v-14b</code></td>
-                <td>Quantized Wan2.2 S2V diffusion and text encoder, VAE, and audio encoder</td>
-                <td>Apache-2.0</td>
-                <td>18.4 GB</td>
-              </tr>
-              <tr>
-                <td><code>sdxl-base-1.0</code></td>
-                <td>SDXL Base 1.0 checkpoint</td>
-                <td>CreativeML Open RAIL++-M</td>
-                <td>6.9 GB</td>
-              </tr>
-              <tr>
-                <td><code>llada-image-turbo</code></td>
-                <td>Quantized diffusion and text encoder, connectors, VAE, and tokenizer</td>
-                <td>Apache-2.0</td>
-                <td>20.2 GB</td>
-              </tr>
-              <tr>
-                <td><code>z-image-turbo</code></td>
-                <td>Q4_K diffusion, Q4_K_M Qwen3-4B text encoder, and VAE</td>
-                <td>Apache-2.0</td>
-                <td>6.7 GB</td>
-              </tr>
-              <tr>
-                <td><code>moss-image-sft</code></td>
-                <td>Q4_0 diffusion, Q4_K_M Qwen3.5-9B text encoder, FLUX.2 VAE, and tokenizer</td>
-                <td>Apache-2.0</td>
-                <td>9.4 GB</td>
-              </tr>
-              <tr>
-                <td><code>z-image-turbo-controlnet-union</code></td>
-                <td>Z-Image-Turbo components and Union 2.1 ControlNet (2601)</td>
-                <td>Apache-2.0</td>
-                <td>13.4 GB</td>
-              </tr>
-              <tr>
-                <td><code>flux2-klein-4b</code></td>
-                <td>Diffusion model, VAE, and LLM text encoder</td>
-                <td>FLUX Non-Commercial</td>
-                <td>5.3 GB</td>
-              </tr>
-              <tr>
-                <td><code>flux2-klein-9b</code></td>
-                <td>Diffusion model, VAE, and LLM text encoder</td>
-                <td>FLUX Non-Commercial</td>
-                <td>11 GB of unique downloads, 16 GB installed</td>
+                <td><code>realesrgan-x4-anime</code></td>
+                <td>SDK upscaling</td>
               </tr>
             </tbody>
           </table>
-          <p>Use <code>models.SupportedBundles()</code> to enumerate names and <code>models.Catalog()</code> to inspect descriptions, licenses, gating, files, and component roles.</p>
-          <p>The target native release also supports Qwen Image 2.1, but Kronk does not curate it because its license restricts use to non-commercial research and evaluation.</p>
-          <p>Models are installed below <code>~/.kronk/malina-models/</code> by default:</p>
-          <pre className="code-block"><code className="language-text">{`~/.kronk/malina-models/<bundle>/`}</code></pre>
-          <p>Manage curated bundles from the CLI:</p>
-          <pre className="code-block"><code className="language-shell">{`kronk malina model catalog --local
-kronk malina model pull --local sd-1.5
-kronk malina model list --local
-kronk malina model remove --local sd-1.5`}</code></pre>
-          <p>Download a single-file bundle with the backend-compatible <code>Download</code> method:</p>
-          <pre className="code-block"><code className="language-go">{`mdls, err := models.New()
-if err != nil {
-    return err
-}
-
-mp, err := mdls.Download(
-    ctx,
-    malina.FmtLogger,
-    models.BundleSD15.String(),
-)
-if err != nil {
-    return err
-}`}</code></pre>
-          <p>For a component bundle, use <code>DownloadBundle</code> and configure the model from the returned role-to-path manifest:</p>
-          <pre className="code-block"><code className="language-go">{`manifest, err := mdls.DownloadBundle(ctx, models.BundleFlux2Klein9B)
-if err != nil {
-    return err
-}`}</code></pre>
-          <p>Downloads are staged, checked for all required non-empty files, recorded in <code>manifest.json</code>, and then activated atomically. A complete installed bundle is reused on later calls.</p>
-          <p>The FLUX.2 bundles are license-gated. Accept the model license on Hugging Face, then provide a read token through <code>KRONK_HF_TOKEN</code> or <code>HF_TOKEN</code> before downloading them.</p>
-          <h3 id="194-go-sdk">19.4 Go SDK</h3>
-          <p>The complete Stable Diffusion 1.5 flow is demonstrated by <a href="../examples/malina/main.go"><code>examples/malina/main.go</code></a>. The important phases are initialization, model construction, generation, and unloading.</p>
-          <h4 id="1941-initialize-malina">19.4.1 Initialize Malina</h4>
-          <p>After installing the libraries, initialize the process-wide backend from the resolved directory:</p>
-          <pre className="code-block"><code className="language-go">{`if err := malina.Init(
-    malina.WithLibPath(libs.LibsPath()),
-); err != nil {
-    return err
-}`}</code></pre>
-          <p>Call <code>Init</code> before constructing a Malina handle. Repeated calls using the same library path are safe. Once initialized, the process cannot switch to a different stable-diffusion.cpp library directory.</p>
-          <h4 id="1942-load-and-unload-a-model">19.4.2 Load and Unload a Model</h4>
-          <p>Construct one handle for one model checkpoint:</p>
-          <pre className="code-block"><code className="language-go">{`mln, err := malina.New(
-    model.WithModelPath(mp.ModelFiles[0]),
-)
-if err != nil {
-    return err
-}
-
-defer func() {
-    if err := mln.Unload(context.Background()); err != nil {
-        fmt.Println("unload:", err)
-    }
-}()`}</code></pre>
-          <p>Use <code>NewWithContext</code> when model loading needs a deadline or cancellation. <code>Unload</code> stops new admission and waits until native work can be released safely. If its context expires, cleanup continues in the background and a later <code>Unload</code> call can wait for completion.</p>
-          <p>One handle can load a pool of independent native model contexts and dispatch concurrent <code>Generate</code> calls across them:</p>
-          <pre className="code-block"><code className="language-go">{`mln, err := malina.New(
-    model.WithModelPath(mp.ModelFiles[0]),
-    model.WithConcurrency(2),
-    model.WithQueueDepth(4),
-)`}</code></pre>
-          <p><code>Concurrency</code> is the number of model contexts loaded and therefore the maximum number of simultaneous generations. It defaults to 1 because each additional context consumes another model-sized allocation of RAM or VRAM. <code>QueueDepth</code> is the number of calls admitted to the internal queue after every context is busy and defaults to 0. Additional callers may wait for admission for up to the three-minute default admission timeout. Configure these with <code>model.WithConcurrency</code>, <code>model.WithQueueDepth</code>, and <code>model.WithAdmissionTimeout</code> when constructing the handle.</p>
-          <p>Stable-diffusion.cpp also provides numerical scale overrides for models that produce black or white images because of NaN values on a particular backend, device, or weight format:</p>
-          <pre className="code-block"><code className="language-go">{`mln, err := malina.New(
-    model.WithModelPath(mp.ModelFiles[0]),
-    model.WithLinearScale(0.125),
-    model.WithAttnScale(0.25),
-)`}</code></pre>
-          <p>Both values default to zero, which preserves the model defaults. Set only the override recommended for the affected model and backend. <code>AttnScale</code> applies to the flash-attention path. Non-zero values must be positive and finite.</p>
-          <p>Malina also exposes SageAttention and a per-context conditioning cache:</p>
-          <pre className="code-block"><code className="language-go">{`mln, err := malina.New(
-    model.WithModelPath(mp.ModelFiles[0]),
-    model.WithSageAttention(true),
-    model.WithConditioningCacheSize(8),
-)`}</code></pre>
-          <p>The conditioning cache defaults to four entries per model context. Set it to zero to disable caching. SageAttention is useful only for native backends and models that support it.</p>
-          <p>Malina v1.1.7 adds automatic, per-module flash-attention and direct-convolution selection. Empty mode strings use automatic selection and honor legacy true attention flags; false legacy flags do not force those operations off. For an explicit policy, use the SDK options:</p>
-          <pre className="code-block"><code className="language-go">{`mln, err := malina.New(
-    model.WithModelPath(mp.ModelFiles[0]),
-    model.WithFlashAttentionMode("off"),
-    model.WithConvDirectMode("auto,vae=off"),
-    model.WithBatchedCFG(false),
-)`}</code></pre>
-          <p><code>NewConfig</code> requests batched conditional/unconditional UNet execution by default. Unsupported workflows fall back to separate passes. The bindings always disable batching for Metal, including automatic macOS selection, to avoid incorrect group-normalization output. <code>Config.BatchedCFG</code> records the request, not confirmation that the backend used batching. Automatic operator selection can benchmark the device during context construction. The new backend policies and tile blending can change output pixels and memory use; do not expect byte-identical images across native versions.</p>
-          <h4 id="1943-generate-an-image">19.4.3 Generate an Image</h4>
-          <p>Start with the stable-diffusion.cpp generation defaults and set a prompt:</p>
-          <pre className="code-block"><code className="language-go">{`params := model.NewGenerateParams()
-params.Prompt = "a small red sailboat crossing a calm mountain lake at sunrise"
-params.Seed = 42
-
-generated, err := mln.Generate(ctx, params)
-if err != nil {
-    return err
-}
-
-if err := os.WriteFile("malina.png", generated.PNG, 0o644); err != nil {
-    return err
-}`}</code></pre>
-          <p><code>GeneratedImage</code> contains an owned PNG byte slice, output dimensions, and the requested seed value. When <code>-1</code> asks the native backend to select a random seed, <code>Seed</code> retains <code>-1</code>. <code>GenerationInfo</code> contains the native <code>sdcpp.generation/v1</code> JSON record, including the resolved seed as a string. This metadata remains valid after unloading the model but is not embedded in the PNG. <code>GeneratedVideo.GenerationInfo</code> similarly carries sequence metadata; its <code>Seed</code> field also retains the requested value.</p>
-          <p>The default parameters are:</p>
+          <p>For gated FLUX.2 bundles, accept the provider's license and supply a read token through <code>KRONK_HF_TOKEN</code> or <code>HF_TOKEN</code>. Review each model's license for your use; availability in the catalog is not a grant of commercial rights.</p>
+          <p>Catalog selection does not change generation defaults. Apply model-specific recommendations explicitly in HTTP fields or the BUI:</p>
+          <ul>
+            <li><strong>Z-Image-Turbo:</strong> 8 steps and CFG scale 1.</li>
+            <li><strong>LLaDA-Image-Turbo:</strong> 4 steps and CFG scale 1. Its distinct native reference-image instruction-editing path is not exposed by Kronk.</li>
+            <li><strong>MOSS-Image-SFT:</strong> dimensions divisible by 16 and CFG scale 3. The curated bundle has not been locally inference-validated.</li>
+          </ul>
+          <p>The server maps the required component roles for supported generation bundles; operators do not need to configure individual component paths.</p>
+          <h3 id="194-server-configuration-and-resources">19.4 Server Configuration and Resources</h3>
+          <p>Enable media backends and restart after installation. <code>--media-backends-enabled=false</code> / <code>KRONK_MEDIA_BACKENDS_ENABLED=false</code> skips both Malina and Bucky downloads and native initialization. Installing files alone does not override this setting.</p>
+          <p>Configure bundles under <code>malina-models</code> in the versioned model configuration:</p>
+          <pre className="code-block"><code className="language-yaml">{`version: 2
+malina-models:
+  sd-1.5:
+    concurrency: 1
+    queue-depth: 2
+    admission-timeout: 3m
+    cpu-threads: 0`}</code></pre>
+          <p>Merge this mapping into the existing file rather than replacing its other sections. <code>concurrency</code> defaults to 1. Each additional slot loads another native model context and increases RAM/VRAM use substantially. Queue depth adds waiting requests without adding execution capacity; it defaults to 0. Additional callers can wait for admission up to the configured timeout, default three minutes. Restart after changing configuration.</p>
+          <p>The shared server pool defaults to ten entries per backend with idle expiry disabled. Memory pressure and count limits can still evict idle Malina models. The three backend pools share a budget but evict only their own idle entries; an idle language model is not automatically unloaded to admit an image model. See <a href="https://www.kronkai.com/manual#84-model-pool-and-resource-budgets">Chapter 8</a>.</p>
+          <h3 id="195-browser-ui">19.5 Browser UI</h3>
+          <p>Use the library and model-management pages to prepare a compatible installation. In <strong>Image Generator</strong>, select an installed generation model, enter a prompt, and set dimensions, steps, CFG scale, and seed. Upload a PNG/JPEG to select image-to-image and choose strength. The result shows dimensions and can be downloaded as PNG.</p>
+          <p>The activity panel reports server-wide loading and generation progress, not only the current browser's request. See Chapter 13 for browser authentication.</p>
+          <h3 id="196-image-generation-and-editing-api">19.6 Image Generation and Editing API</h3>
+          <p>All image routes follow inference authorization. <code>authenticated</code> requires a valid token; <code>full-protected</code> additionally requires <code>image-generations</code>. Inference is public in <code>open</code> and <code>management</code> modes.</p>
+          <p>Create an image with JSON:</p>
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/images/generations \\
+  -H "Authorization: Bearer $KRONK_TOKEN" \\
+  -H 'Content-Type: application/json' \\
+  -d '{
+    "model": "sd-1.5",
+    "prompt": "A lighthouse during a thunderstorm",
+    "size": "512x512",
+    "steps": 20,
+    "cfg_scale": 7,
+    "seed": 42,
+    "response_format": "b64_json"
+  }'`}</code></pre>
+          <p>Omit Authorization for an unprotected local server. Unknown JSON fields are rejected. Request controls are:</p>
           <table className="flags-table">
             <thead>
               <tr>
-                <th>Parameter</th>
+                <th>Field</th>
                 <th>Default</th>
+                <th>Contract</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td>Width</td>
-                <td>512</td>
+                <td><code>model</code></td>
+                <td>Required</td>
+                <td>Installed generation bundle ID</td>
               </tr>
               <tr>
-                <td>Height</td>
-                <td>512</td>
+                <td><code>prompt</code></td>
+                <td>Required</td>
+                <td>Nonempty text prompt</td>
               </tr>
               <tr>
-                <td>Steps</td>
-                <td>20</td>
+                <td><code>negative_prompt</code></td>
+                <td>Empty</td>
+                <td>Undesired features</td>
               </tr>
               <tr>
-                <td>CFG scale</td>
-                <td>7</td>
+                <td><code>size</code></td>
+                <td><code>512x512</code> for generation</td>
+                <td><code>WIDTHxHEIGHT</code>; multiples of 8, each 64–1024, at most 1,048,576 pixels</td>
               </tr>
               <tr>
-                <td>Seed</td>
-                <td><code>-1</code> (random)</td>
+                <td><code>steps</code></td>
+                <td><code>20</code></td>
+                <td>1–1,000</td>
               </tr>
               <tr>
-                <td>Image-to-image strength</td>
-                <td>0.75</td>
+                <td><code>cfg_scale</code></td>
+                <td><code>7</code></td>
+                <td>Positive finite value; follow model recommendations</td>
+              </tr>
+              <tr>
+                <td><code>seed</code></td>
+                <td><code>-1</code></td>
+                <td><code>-1</code> requests random selection</td>
+              </tr>
+              <tr>
+                <td><code>n</code></td>
+                <td><code>1</code></td>
+                <td>Only one image is supported</td>
+              </tr>
+              <tr>
+                <td><code>response_format</code></td>
+                <td><code>b64_json</code></td>
+                <td>Only base64 PNG output is supported; no URL response</td>
               </tr>
             </tbody>
           </table>
-          <p>Dimensions must be multiples of 8 from 64 through 1024, with no more than 1,048,576 total pixels. A request needs a non-empty prompt, positive finite CFG scale, and between 1 and 1,000 steps.</p>
-          <p><code>GenerateParams.ImagePreprocessRules</code> and <code>VideoParams.ImagePreprocessRules</code> pass stable-diffusion.cpp's shared image preprocessing rules to native generation. Rules are semicolon-separated, and each rule starts with <code>target=...</code> followed by comma-separated key-value pairs, for example <code>target=init,mode=none,canny=true</code>. An empty string preserves the model defaults. Preprocessing uses temporary native pixels and does not mutate the caller's Go images.</p>
-          <p>The underlying bindings define VAE tiling in image pixels for both encoding and decoding: zero selects 256 pixels, positive relative values up to 1 select a fraction of the image dimension, and values above 1 select a target tile count. Kronk's high-level generation parameters do not currently expose VAE tiling, so they preserve the native defaults.</p>
-          <p>Waiting for admission is cancellable. Canceling a request after native generation starts asks stable-diffusion.cpp to stop, waits for native execution to return, and resets that model context before returning the cancellation error. The context is never reused or freed while native code is still active.</p>
-          <h3 id="195-multi-file-model-bundles">19.5 Multi-File Model Bundles</h3>
-          <p>Some pipelines require several files with distinct roles. The FLUX.2 example downloads a manifest and maps its diffusion, VAE, and LLM components into the model configuration:</p>
-          <pre className="code-block"><code className="language-go">{`manifest, err := mdls.DownloadBundle(ctx, models.BundleFlux2Klein9B)
-if err != nil {
-    return err
-}
-
-mln, err := malina.New(
-    model.WithDiffusionModelPath(manifest.Files[string(models.RoleDiffusion)]),
-    model.WithVAEPath(manifest.Files[string(models.RoleVAE)]),
-    model.WithLLMPath(manifest.Files[string(models.RoleLLM)]),
-)
-if err != nil {
-    return err
-}`}</code></pre>
-          <p>Use the exported <code>models.Role...</code> values instead of relying on filenames or file ordering. This keeps application configuration tied to the curated bundle contract.</p>
-          <p>LLaDA-Image-Turbo adds an external tokenizer and embeddings connectors to the usual diffusion, VAE, and LLM components. The pool and model server map all five roles automatically. Direct SDK users can configure it explicitly:</p>
-          <pre className="code-block"><code className="language-go">{`manifest, err := mdls.DownloadBundle(ctx, models.BundleLLaDAImageTurbo)
-if err != nil {
-    return err
-}
-
-mln, err := malina.New(
-    model.WithDiffusionModelPath(manifest.Files[string(models.RoleDiffusion)]),
-    model.WithVAEPath(manifest.Files[string(models.RoleVAE)]),
-    model.WithLLMPath(manifest.Files[string(models.RoleLLM)]),
-    model.WithTokenizerPath(manifest.Files[string(models.RoleTokenizer)]),
-    model.WithEmbeddingsConnectorsPath(
-        manifest.Files[string(models.RoleEmbeddingsConn)],
-    ),
-)`}</code></pre>
-          <p>LLaDA-Image-Turbo is tuned for four steps and CFG scale 1.0; set those values on <code>GenerateParams</code>. Stable-diffusion.cpp selects its LLaDA-Image scheduler from the model. The native model also supports reference-image instruction editing, but Kronk's high-level SDK does not yet expose that distinct reference-image input path.</p>
-          <p>Z-Image-Turbo uses the existing diffusion, LLM, and VAE roles, with no external tokenizer. The pool and server map them automatically. Direct SDK users can use the FLUX.2 component-loading pattern above with <code>models.BundleZImageTurbo</code>. Set <code>GenerateParams.Steps = 8</code> and <code>GenerateParams.CFGScale = 1</code>. Catalog selection does not change generation defaults. For the server, explicitly send <code>"steps": 8</code> and <code>"cfg_scale": 1</code>; in the image generator UI, set Steps to 8 and CFG scale to 1 before submitting. Download it with:</p>
-          <pre className="code-block"><code className="language-shell">{`kronk malina model pull --local z-image-turbo`}</code></pre>
-          <p>MOSS-Image-SFT adds a mandatory external Qwen3.5 tokenizer to the diffusion, LLM, and VAE roles. The pool and server map all four roles automatically; direct SDK users should also pass <code>model.WithTokenizerPath</code> with <code>manifest.Files[models.RoleTokenizer.String()]</code>. Use <code>models.BundleMOSSImageSFT</code>, dimensions divisible by 16, and CFG scale 3, as recommended by the native MOSS-Image guide. Catalog selection does not change generation defaults. The bundle is ungated and Apache-2.0, but has not been locally inference-validated.</p>
-          <h3 id="196-image-to-image-generation">19.6 Image-to-Image Generation</h3>
-          <p>Set <code>GenerateParams.InitImage</code> to transform an existing Go image. The request still needs a prompt, and <code>Strength</code> must be greater than zero and no more than one:</p>
-          <pre className="code-block"><code className="language-go">{`params := model.NewGenerateParams()
-params.Prompt = "a watercolor painting at sunset"
-params.InitImage = source
-params.Strength = 0.6
-params.Width = 768
-params.Height = 512
-
-generated, err := mln.Generate(ctx, params)`}</code></pre>
-          <p>The requested dimensions are the generation dimensions; prepare the source image and choose valid dimensions for the desired aspect ratio. The <a href="../examples/malina-img2img/main.go"><code>malina-img2img</code></a> example accepts PNG and JPEG input, constrains the image to 1024 pixels per side, and rounds dimensions down to multiples of 8.</p>
-          <h4 id="1961-controlnet">19.6.1 ControlNet</h4>
-          <p>Load the model and ControlNet roles from the curated bundle, then supply a control image. Set <code>Canny</code> to preprocess a copy of the source image before generation:</p>
-          <pre className="code-block"><code className="language-go">{`mln, err := malina.New(
-    model.WithModelPath(manifest.Files[string(models.RoleModel)]),
-    model.WithControlNetPath(manifest.Files[string(models.RoleControlNet)]),
-)
-
-params := model.NewGenerateParams()
-params.Prompt = "a detailed astronaut portrait"
-params.ControlImage = source
-canny := model.NewCannyParams()
-params.Canny = &canny
-generated, err := mln.Generate(ctx, params)`}</code></pre>
-          <p>The <code>models.BundleZImageTurboControlNetUnion</code> bundle instead uses diffusion, LLM, VAE, and ControlNet roles. Configure those component paths and supply an already prepared control map through <code>ControlImage</code>, with 8 steps and CFG scale 1. Leave <code>Canny</code> unset for pose or depth maps. Upstream recommends disabling VAE encode tiling; Kronk's native defaults already leave VAE tiling disabled. Pose/depth preprocessing and simultaneous reference-image editing are not exposed by the high-level SDK. This ungated Apache-2.0 bundle is SDK-only and has not been locally inference-validated.</p>
-          <h4 id="1962-adetailer">19.6.2 ADetailer</h4>
-          <p>An ADetailer bundle loads one detector beside every configured generation context. <code>Detail</code> detects faces and returns the final inpainted image:</p>
-          <pre className="code-block"><code className="language-go">{`mln, err := malina.New(
-    model.WithModelPath(manifest.Files[string(models.RoleModel)]),
-    model.WithADetailerPath(manifest.Files[string(models.RoleADetailer)]),
-)
-
-params := model.NewDetailParams()
-params.Image = portrait
-params.Prompt = "a detailed portrait photo"
-generated, err := mln.Detail(ctx, params)`}</code></pre>
-          <h4 id="1963-animatediff">19.6.3 AnimateDiff</h4>
-          <p>Configure a motion module and call <code>GenerateVideo</code>. The result owns standard Go images that can be passed directly to <code>model.SaveAVI</code>:</p>
-          <pre className="code-block"><code className="language-go">{`mln, err := malina.New(
-    model.WithModelPath(manifest.Files[string(models.RoleModel)]),
-    model.WithMotionModulePath(manifest.Files[string(models.RoleMotionModule)]),
-)
-
-params := model.NewVideoParams()
-params.Prompt = "a cat walking through a garden"
-video, err := mln.GenerateVideo(ctx, params)
-if err == nil {
-    err = model.SaveAVI("animatediff.avi", video.Frames, video.FPS, 90)
-}`}</code></pre>
-          <p><code>video.FPS</code> is the effective frame rate reported by stable-diffusion.cpp, not necessarily the requested <code>params.FPS</code>. Always use the returned value when encoding the frames because some video models require a fixed frame rate.</p>
-          <h4 id="1964-wan22-s2v">19.6.4 Wan2.2 S2V</h4>
-          <p>Wan2.2 S2V animates a source image from a driving WAV speech track. The curated <code>wan2.2-s2v-14b</code> bundle contains the Wan2.2 S2V diffusion model, Wan 2.1 VAE, UMT5-XXL text encoder, and wav2vec2 audio encoder. The example downloads that bundle and uses its included portrait and WAV samples automatically:</p>
-          <pre className="code-block"><code className="language-shell">{`make example-malina-s2v`}</code></pre>
-          <p>The example resizes the source image to the requested generation dimensions, decodes PCM or floating-point WAV audio, and passes both through <code>VideoParams.InitImage</code> and <code>VideoParams.RefAudios</code>. Its defaults follow the upstream S2V example: 832×480, 81 frames, 16 FPS, and 20 steps. S2V enforces 16 FPS, so encoding uses the effective <code>GeneratedVideo.FPS</code> value returned by stable-diffusion.cpp.</p>
-          <p><code>model.SaveAVI</code> does not mux audio. The example writes a Motion-JPEG AVI and a PCM WAV sidecar, then prints an <code>ffmpeg</code> command that combines them into an MP4.</p>
-          <h4 id="1965-upscaling">19.6.5 Upscaling</h4>
-          <p>Upscalers use a standalone handle because their bundles do not contain a diffusion model:</p>
-          <pre className="code-block"><code className="language-go">{`upscaler, err := malina.NewUpscaler(ctx, malina.UpscalerConfig{
-    ModelPath: manifest.Files[models.RoleUpscaler.String()],
-})
-if err != nil {
-    return err
-}
-defer upscaler.Unload()
-
-images, err := upscaler.UpscaleWithInfo(ctx, source)`}</code></pre>
-          <p>Each <code>model.UpscaledImage</code> contains an <code>Image</code> with owned pixels and a <code>GenerationInfo</code> string with the native <code>sdcpp.generation/v1</code> JSON record, including <code>upscale.upscale_factor</code>. Both remain valid after unloading the upscaler. Pass <code>images[0].Image</code> to an image encoder and save or parse <code>images[0].GenerationInfo</code> separately; PNG/JPEG encoding does not embed it. The existing <code>Upscale</code> method remains available and returns only <code>[]image.Image</code>, discarding metadata.</p>
-          <p>Construction reads the model's native scale directly from ESRGAN metadata, then verifies that the loaded context reports the same factor. <code>Factor</code> returns that verified value without another native call. An unrecognized RGB ESRGAN model or a native library without the metadata API is rejected.</p>
-          <p>An ESRGAN call already executing in native code cannot be interrupted. A canceled context prevents queued work from starting and causes completed work to be discarded.</p>
-          <h3 id="197-logging-progress-and-diagnostics">19.7 Logging, Progress, and Diagnostics</h3>
-          <p>Native stable-diffusion.cpp and GGML diagnostics are silent by default. Enable them when diagnosing native behavior:</p>
-          <pre className="code-block"><code className="language-go">{`malina.Init(
-    malina.WithLibPath(libs.LibsPath()),
-    malina.WithLogLevel(malina.LogNormal),
-)`}</code></pre>
-          <p>Model-loading and generation progress uses the native terminal display by default. Applications can replace it with a callback:</p>
-          <pre className="code-block"><code className="language-go">{`func progress(step int, steps int, secondsPerStep float32) {
-    fmt.Printf("\\r%d/%d %.2fs/step", step, steps, secondsPerStep)
-}
-
-malina.Init(
-    malina.WithLibPath(libs.LibsPath()),
-    malina.WithProgress(progress),
-)`}</code></pre>
-          <p>Progress callbacks are process-wide and may be invoked concurrently. Protect shared output or UI state as needed. Use <code>malina.WithProgress(malina.DiscardProgress)</code> to suppress progress completely.</p>
-          <p>After initialization, inspect the native backend and host with:</p>
-          <pre className="code-block"><code className="language-go">{`info, err := malina.SystemInfo()
-if err != nil {
-    return err
-}
-
-fmt.Println(info.NativeVersion)
-fmt.Println(info.PhysicalCores)
-fmt.Println(info.BackendDeviceCount)
-fmt.Println(info.Description)`}</code></pre>
-          <p>A loaded handle also exposes <code>SystemInfo</code>, <code>ModelInfo</code>, <code>ModelConfig</code>, <code>ActiveGenerations</code>, and <code>Ready</code> for application observability. <code>ModelInfo.ModelVersion</code> reports the model family detected by stable-diffusion.cpp, or <code>Unknown</code> when the native library cannot identify it.</p>
-          <h3 id="198-motion-jpeg-encoding">19.8 Motion-JPEG Encoding</h3>
-          <p><code>model.SaveAVI</code> writes same-sized Go images as a Motion-JPEG AVI without loading stable-diffusion.cpp or a model:</p>
-          <pre className="code-block"><code className="language-go">{`if err := model.SaveAVI("output.avi", frames, 24, 90); err != nil {
-    return err
-}`}</code></pre>
-          <p>The frame rate must be positive, JPEG quality must be from 1 through 100, and all frames must have the same dimensions. This helper encodes an in-memory frame sequence; it is not a streaming video-generation API.</p>
-          <h3 id="199-examples">19.9 Examples</h3>
-          <p>The examples install their own compatible libraries. Examples backed by the curated catalog also install their model bundles using default Kronk paths. All inputs and model IDs are built in, so the make targets require no flags.</p>
+          <p>The response has <code>created</code> and a one-element <code>data</code> array containing <code>b64_json</code>, <code>seed</code>, <code>width</code>, and <code>height</code>. Decode <code>b64_json</code> to save the PNG. The returned seed retains the requested value, including <code>-1</code>; it does not expose a resolved random seed. Do not expect identical pixels across model, backend, or native-library changes.</p>
+          <p>Transform an image with multipart form fields:</p>
+          <pre className="code-block"><code className="language-shell">{`curl http://localhost:11435/v1/images/edits \\
+  -H "Authorization: Bearer $KRONK_TOKEN" \\
+  -F model=sd-1.5 \\
+  -F prompt='A watercolor illustration at sunset' \\
+  -F image=@source.png \\
+  -F strength=0.6 \\
+  -F steps=20`}</code></pre>
+          <p>Editing accepts the same generation controls plus required PNG/JPEG <code>image</code> and optional <code>strength</code> (default <code>0.75</code>, greater than zero through 1). Uploads are limited to 25 MiB and decoded images to 32 Mi pixels. Without <code>size</code>, the server preserves aspect ratio, scales down to at most 1024 pixels per side, and rounds dimensions down to multiples of eight. Explicit dimensions resize the source to that size. The response has the same base64 PNG shape.</p>
+          <p>Both operations use the server's inference deadline. Cancellation requests native work to stop but can take time to finish; it is not a guarantee of immediate resource release.</p>
+          <h3 id="197-progress-and-administration">19.7 Progress and Administration</h3>
+          <p><code>GET /v1/images/events</code> is an SSE stream reporting <code>scope: "global"</code>, <code>step</code>, <code>steps</code>, <code>percent</code>, and <code>seconds_per_step</code>. Progress is process-global and not request-correlated; it must not be treated as the completion signal for an individual request. Use the POST response for that result.</p>
+          <p>Management APIs require administrator access in every authorization mode except <code>open</code>:</p>
           <table className="flags-table">
             <thead>
               <tr>
-                <th>Command</th>
+                <th>Method and path</th>
                 <th>Purpose</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td><code>make example-malina</code></td>
-                <td>Generate a deterministic Stable Diffusion 1.5 PNG.</td>
+                <td><code>GET /v1/malina/libs</code></td>
+                <td>Active native library installation</td>
               </tr>
               <tr>
-                <td><code>make example-malina-img2img</code></td>
-                <td>Transform a PNG or JPEG with a prompt and strength.</td>
+                <td><code>GET /v1/malina/libs/integrity</code></td>
+                <td>Verify the selected library bundle</td>
               </tr>
               <tr>
-                <td><code>make example-malina-controlnet</code></td>
-                <td>Generate an image using Canny edge conditioning.</td>
+                <td><code>GET /v1/malina/libs/combinations</code></td>
+                <td>Supported platform combinations</td>
               </tr>
               <tr>
-                <td><code>make example-malina-adetailer</code></td>
-                <td>Detect and refine faces in a portrait.</td>
+                <td><code>GET /v1/malina/libs/installs</code></td>
+                <td>Installed bundles</td>
               </tr>
               <tr>
-                <td><code>make example-malina-animatediff</code></td>
-                <td>Generate AnimateDiff frames and write an AVI.</td>
+                <td><code>POST /v1/malina/libs/pull</code></td>
+                <td>Install libraries</td>
               </tr>
               <tr>
-                <td><code>make example-malina-s2v</code></td>
-                <td>Animate a source image from WAV speech with Wan2.2 S2V.</td>
+                <td><code>DELETE /v1/malina/libs/installs</code></td>
+                <td>Remove an installation</td>
               </tr>
               <tr>
-                <td><code>make example-malina-upscale</code></td>
-                <td>Enlarge a PNG or JPEG with Real-ESRGAN.</td>
+                <td><code>GET /v1/malina/models</code></td>
+                <td>Installed model bundles</td>
               </tr>
               <tr>
-                <td><code>make example-malina-sd-encode</code></td>
-                <td>Encode a directory of PNG/JPEG frames as Motion-JPEG AVI.</td>
+                <td><code>GET /v1/malina/models/catalog</code></td>
+                <td>Curated model catalog</td>
               </tr>
               <tr>
-                <td><code>make example-malina-system</code></td>
-                <td>Install libraries and print native system diagnostics.</td>
+                <td><code>POST /v1/malina/models/pull</code></td>
+                <td>Download a bundle</td>
+              </tr>
+              <tr>
+                <td><code>DELETE /v1/malina/models/&#123;model&#125;</code></td>
+                <td>Remove a model bundle</td>
               </tr>
             </tbody>
           </table>
-          <p>The first run of an inference example can take significant time and disk space because it downloads native libraries and multi-gigabyte model files. Later runs reuse complete installations.</p>
-          <h3 id="1910-current-scope-and-limitations">19.10 Current Scope and Limitations</h3>
-          <ul>
-            <li>The public API is experimental and may change between Kronk releases.</li>
-            <li>The model server exposes basic text-to-image generation. Advanced Malina operations remain available only through the Go SDK.</li>
-            <li>The curated catalog is intentionally small. The high-level SDK guarantees its listed component roles; arbitrary user-created bundle layouts are not a supported catalog contract.</li>
-            <li>Wan2.2 S2V is available in the curated model catalog and through the SDK, but it is not exposed by the model-server API.</li>
-            <li>LLaDA-Image-Turbo is available for text-to-image generation. Its native reference-image instruction-editing workflow is not yet exposed by the high-level SDK.</li>
-            <li>The native release adds PixArt-α/Σ and Ming-Image Design support. Kronk does not yet curate their component files, validation, VRAM estimates, or server configurations, so these model families are not advertised as supported Kronk workflows. Ming-Image also requires an external tokenizer path.</li>
-            <li>VAE tiling is available in the raw Malina bindings but is not yet exposed by Kronk's high-level image or video request types.</li>
-            <li>The new native Iris-3B, Z-Image L2P, FLUX.3, and MoSR workflows have no curated Kronk bundles. The existing catalog still supplies Real-ESRGAN for upscaling; native support alone is not a supported high-level workflow.</li>
-            <li>Raw preview metadata (<code>sd.GetPreviewInfo</code>) and LoRA-aware component conversion remain binding-level APIs. Kronk does not expose preview callbacks or conversion, so adding wrappers would not make those workflows usable. Preview metadata is process-global and requires serialized preview-enabled work.</li>
-            <li>Native Fibo 2.0 and FLUX.3 are not curated because their non-commercial or custom licenses have not been cleared for this catalog. RPC server registration and video reference-image arguments remain binding-level APIs; Kronk does not expose distributed inference or video reference-image inputs.</li>
-            <li>Native callbacks and backend initialization are process-wide. Model-context construction and destruction are serialized, while one handle may own multiple contexts and generate concurrently across them. Each concurrency slot loads another copy of the model and increases RAM or VRAM use.</li>
-            <li>Context cancellation interrupts active native generation, waits for the native call to return, and resets the same context before reuse. It never frees a context while native code is active.</li>
-          </ul>
-          <h3 id="1911-troubleshooting">19.11 Troubleshooting</h3>
+          <p>See Chapter 9 for API conventions and Chapter 15 for server logs and metrics.</p>
+          <h3 id="198-limitations-and-developer-resources">19.8 Limitations and Developer Resources</h3>
+          <p>The server exposes basic text-to-image and image-to-image only. ControlNet, ADetailer, video, upscaling, and AVI encoding remain SDK workflows. A feature in upstream stable-diffusion.cpp does not establish a supported Kronk workflow or a curated, licensed model bundle. The catalog is intentionally bounded.</p>
+          <p>Use the generated Malina SDK reference and <code>examples/malina*</code> for application development. Source-checkout targets include <code>make example-malina</code>, <code>make example-malina-img2img</code>, <code>make example-malina-controlnet</code>, <code>make example-malina-adetailer</code>, <code>make example-malina-animatediff</code>, <code>make example-malina-s2v</code>, and <code>make example-malina-upscale</code>. These can download multi-gigabyte model bundles and execute native inference. They are not required steps for operating the HTTP server.</p>
+          <h3 id="199-troubleshooting">19.9 Troubleshooting</h3>
           <table className="flags-table">
             <thead>
               <tr>
@@ -5953,44 +5615,40 @@ fmt.Println(info.Description)`}</code></pre>
             </thead>
             <tbody>
               <tr>
-                <td><code>Init</code> cannot find or load stable-diffusion.cpp</td>
-                <td>Construct <code>libs.New</code> with detection, call <code>Download</code>, and pass <code>libs.LibsPath()</code> to <code>malina.Init</code>.</td>
+                <td>Startup fails during library installation or verification</td>
+                <td>Install the pinned managed bundle locally, inspect the error, then restart. Do not routinely disable verification.</td>
               </tr>
               <tr>
-                <td>No compatible bundle is published for the host</td>
-                <td>Check <code>libs.SupportedCombinations()</code>; use one of the published operating-system, architecture, and processor triples.</td>
+                <td>No compatible host bundle</td>
+                <td>Check <code>kronk malina libs --list-combinations --local</code>; use a published platform/backend.</td>
               </tr>
               <tr>
-                <td>A custom library directory cannot be upgraded or removed</td>
-                <td>A non-empty directory without <code>version.json</code> is intentionally read-only. Manage that build yourself or use a Kronk-managed install directory.</td>
+                <td>Files exist but image inference is unavailable</td>
+                <td>Enable media backends and restart; inspect native initialization errors.</td>
               </tr>
               <tr>
-                <td>A gated FLUX.2 download returns 401 or 403</td>
-                <td>Accept the Hugging Face license and set <code>KRONK_HF_TOKEN</code> or <code>HF_TOKEN</code> to a token with read access.</td>
+                <td>Custom libraries cannot be upgraded or removed</td>
+                <td>Directories without managed metadata are read-only; manage them independently.</td>
               </tr>
               <tr>
-                <td>Generation reports an invalid request</td>
-                <td>Start with <code>model.NewGenerateParams</code>; provide a prompt and valid dimensions, steps, CFG scale, and image-to-image strength.</td>
+                <td>Gated download returns 401/403</td>
+                <td>Accept the provider's license and supply a read token privately.</td>
               </tr>
               <tr>
-                <td>Generation produces a solid black or white image and native logs report NaN values</td>
-                <td>Try the positive finite <code>model.WithLinearScale</code> or <code>model.WithAttnScale</code> override recommended for that model, backend, and weight format. Leave both at zero otherwise.</td>
+                <td>Invalid generation request</td>
+                <td>Check installed bundle ID, prompt, dimensions, steps, CFG scale, and edit strength.</td>
               </tr>
               <tr>
-                <td>Generation waits and then returns an admission timeout</td>
-                <td>Other calls are using the handle's admitted capacity. Increase admitted capacity or the admission timeout only when the application can tolerate the additional work or wait.</td>
+                <td>Black/white images or NaN diagnostics</td>
+                <td>Verify the pinned library/model combination and model-specific guidance; report backend, format, and settings rather than changing unrelated defaults.</td>
               </tr>
               <tr>
-                <td>Native diagnostic output is too verbose</td>
-                <td>Remove <code>malina.WithLogLevel(malina.LogNormal)</code>; native logging is silent by default.</td>
+                <td>Admission timeout or server busy</td>
+                <td>Inspect running work and shared memory; reduce concurrency/sizing or unload unused models. Increase waiting only if callers can tolerate it.</td>
               </tr>
               <tr>
-                <td>Progress output is unwanted</td>
-                <td>Pass <code>malina.WithProgress(malina.DiscardProgress)</code> during initialization.</td>
-              </tr>
-              <tr>
-                <td>A different library path is rejected after initialization</td>
-                <td>Native initialization is process-wide. Restart the process to load a different stable-diffusion.cpp installation.</td>
+                <td>Library path changed but behavior did not</td>
+                <td>Restart; native libraries are not hot-reloaded.</td>
               </tr>
             </tbody>
           </table>
@@ -6183,16 +5841,17 @@ fmt.Println(info.Description)`}</code></pre>
           </ul>
           <h4 id="2033-pools-and-shared-resources">20.3.3 Pools and shared resources</h4>
           <ul>
-            <li><strong>&lt;code&gt;sdk/pool/&lt;/code&gt;</strong> is the server-facing application facade over the language and audio typed pools and their shared resource manager. It coordinates backends; it does not replace either SDK handle.</li>
+            <li><strong>&lt;code&gt;sdk/pool/&lt;/code&gt;</strong> is the server-facing application facade over the language, audio, and image typed pools and their shared resource manager. It coordinates backends; it does not replace the public SDK handles.</li>
             <li><strong>&lt;code&gt;sdk/kronk/pool/&lt;/code&gt;</strong> adapts Kronk model discovery, planning, loading, display, and unloading to the generic pool engine.</li>
             <li><strong>&lt;code&gt;sdk/bucky/pool/&lt;/code&gt;</strong> performs the equivalent work for Whisper/Bucky models.</li>
+            <li><strong>&lt;code&gt;sdk/malina/pool/&lt;/code&gt;</strong> performs the equivalent work for image-generation bundles.</li>
             <li><strong>&lt;code&gt;sdk/pool/engine/&lt;/code&gt;</strong> owns typed cache mechanics: acquisition coalescing, admission, idle-entry selection, expiry, invalidation, and eviction callbacks. The shared resource manager owns RAM/VRAM reservations and budget decisions across backends. Eviction is therefore budget-aware and constrained by active use and releasable reservations; it is not a simple model-ID LRU.</li>
           </ul>
-          <p>The service supplies shared-pool settings to both typed pools. A typed pool used independently may therefore have different fallback values. Check the composition layer before documenting effective server behavior, and check the typed constructor before documenting standalone behavior.</p>
+          <p>The service supplies shared-pool settings to all three typed pools. A typed pool used independently may therefore have different fallback values. Check the composition layer before documenting effective server behavior, and check the typed constructor before documenting standalone behavior.</p>
           <h4 id="2034-bucky-malina-tools-ui-examples-and-deployment">20.3.4 Bucky, Malina, tools, UI, examples, and deployment</h4>
           <ul>
             <li><strong>&lt;code&gt;sdk/bucky/&lt;/code&gt;</strong> is the public concurrent audio handle. <strong>&lt;code&gt;sdk/bucky/model/&lt;/code&gt;</strong> owns whisper context/state operations, decoding, transcription, and stream mechanics.</li>
-            <li><strong>&lt;code&gt;sdk/malina/&lt;/code&gt;</strong> is the experimental public image-generation handle. <strong>&lt;code&gt;sdk/malina/model/&lt;/code&gt;</strong> owns stable-diffusion model configuration, native context lifecycle, generation, and Motion-JPEG encoding. Malina is not yet part of the model server or shared model pool.</li>
+            <li><strong>&lt;code&gt;sdk/malina/&lt;/code&gt;</strong> is the experimental public image-generation handle. <strong>&lt;code&gt;sdk/malina/model/&lt;/code&gt;</strong> owns stable-diffusion model configuration, native context lifecycle, generation, and Motion-JPEG encoding. The server exposes image generation and editing through Malina's typed pool; other SDK capabilities remain SDK-only.</li>
             <li><strong>&lt;code&gt;sdk/tools/&lt;/code&gt;</strong> owns reusable catalog, downloader, backend, device, diagnostics, library, and model-management operations used by CLI and server tools. Bucky-specific installers and catalogs live below <code>sdk/tools/bucky/</code>; Malina's native-library manager and curated diffusion bundles live below <code>sdk/tools/malina/</code>.</li>
             <li><strong>&lt;code&gt;cmd/server/api/frontends/bui/&lt;/code&gt;</strong> is the React/TypeScript browser application. Component-level conventions are deliberately delegated to the applicable <code>AGENTS.md</code>; this guide does not duplicate them.</li>
             <li><strong>&lt;code&gt;examples/&lt;/code&gt;</strong> is a separate Go module of runnable public-SDK examples and a source for generated documentation. Keep examples public and instructional: do not import internal server implementation to make them convenient.</li>
@@ -6218,23 +5877,7 @@ make kronk-server-stop`}</code></pre>
           <p>OpenVINO validation is deliberately opt-in and never runs in the normal local or GitHub suites. On Linux/Windows amd64, run <code>make test-openvino</code> for the CPU target or set <code>OPENVINO_DEVICE=GPU</code>, <code>GPU.&lt;index&gt;</code>, or <code>NPU</code>. The target uses the <code>openvino_integration</code> build tag, installs the pinned llama.cpp bundle and diagnostic model, and rejects an unavailable device that silently falls back to CPU. See <a href="https://www.kronkai.com/manual#24-libraries">Chapter 2 §2.4</a> for runtime selection and host requirements.</p>
           <h4 id="2041-native-library-compatibility-and-sdk-initialization">20.4.1 Native-library compatibility and SDK initialization</h4>
           <p>The versions in <code>go.mod</code>, <code>sdk/tools/libs</code> defaults, and the README compatibility matrix describe one tested Kronk/Yzma/llama.cpp set. A dependency update is incomplete unless the binding, pinned native build, root and examples modules, generated Nix module data, and focused model tests remain aligned. Do not update Yzma or select a newer llama.cpp build independently merely because it is available upstream.</p>
-          <p>Runnable language-model examples should resolve and initialize the same runtime they install:</p>
-          <pre className="code-block"><code className="language-go">{`lib, err := libs.New(
-    libs.WithDetect(ctx, kronk.FmtLogger),
-    libs.WithValidation(true),
-)
-if err != nil {
-    return err
-}
-
-if _, err := lib.Download(ctx, kronk.FmtLogger); err != nil {
-    return err
-}
-
-if err := kronk.Init(kronk.WithLibPath(lib.LibsPath())); err != nil {
-    return err
-}`}</code></pre>
-          <p>Call <code>kronk.Init</code> after runtime detection and installation but before constructing a Kronk model. Passing the manager's resolved <code>LibsPath</code> is required: calling bare <code>kronk.Init()</code> can repeat default selection and load a different bundle from the one the example just verified. Initialization is process-wide and should occur once.</p>
+          <p>Runnable examples should resolve, verify, and initialize the same native runtime. Call <code>kronk.Init</code> after runtime detection and installation but before constructing a Kronk model. Passing the manager's resolved <code>LibsPath</code> is required: calling bare <code>kronk.Init()</code> can repeat default selection and load a different bundle from the one the example just verified. Initialization is process-wide and should occur once.</p>
           <p>Bucky examples follow the same sequence with <code>sdk/tools/bucky/libs</code>, <code>bucky.Init</code>, and <code>bucky.WithLibPath(lib.LibsPath())</code>. Keep library installation separate from model download in both example families so failures identify the correct dependency.</p>
           <p>The exact development toolchain is pinned by <code>.go-version</code>, while <code>go.mod</code> declares the minimum language version. Patch versions may differ, but major and minor must match. The workflow version script enforces this relationship; read both files rather than copying their current values into new documentation.</p>
           <h4 id="2042-server-adversarial-probes">20.4.2 Server adversarial probes</h4>
@@ -6249,44 +5892,8 @@ make test-adversarial ARGS="-l"                  # list groups and their tiers`}
           <p>Results land under <code>.tools/adversarial/output</code> (ignored by Git, overridable with <code>OUT</code>): <code>findings.txt</code> holds a result line per probe, a verdict block, and the full request/response of every flagged call, and <code>kronk-server.log</code> holds the server's own log when the script manages the server. Exit status is <code>0</code> when nothing is flagged, <code>1</code> when there are findings, and <code>2</code> when the run could not proceed.</p>
           <p>This is a deliberate human/integration run, not part of <code>make test</code> and not an agent default — see <a href="#2091-required-go-post-edit-sequence">20.9.1</a>.</p>
           <h5>Triaging the findings</h5>
-          <p>A finding is a flagged probe, not a proven defect: the probe itself can be wrong, and the cause may sit in yzma or llama.cpp rather than in Kronk. <code>make test-adversarial</code> prints a triage prompt after every run — including the exit-1 run that produced findings — which hands the report to a coding agent for verification. The prompt lives in <code>.tools/adversarial/adversarial-triage.md</code>; it is reproduced here as the reference for what that triage must cover:</p>
-          <pre className="code-block"><code className="language-text">{`Triage the adversarial run into a verified bug report.
-
-Input:
-- \`.tools/adversarial/output/findings.txt\` — probe results, verdict block, flagged calls
-- \`.tools/adversarial/output/kronk-server.log\` — server + llama.cpp log
-- \`.tools/adversarial/adversarial.sh\` — probe source
-
-Source code, in ownership order:
-1. Kronk — \`cmd/server/app/domain/*app/\`, \`cmd/server/foundation/web/\`,
-   \`sdk/kronk/model/\` (batch, sampling, grammar, IMC, MTP), \`sdk/kronk/parsers/<family>/\`
-2. yzma — \`.extras/yzma/pkg/\`, \`.extras/yzma/lib/\`
-3. llama.cpp — \`.extras/llama.cpp/src/\`, \`.extras/llama.cpp/common/\`, \`.extras/llama.cpp/ggml/\`
-
-Steps:
-1. Candidates = every flagged probe + every NO SIGNAL. Dedupe by root cause.
-2. Verify each independently. Subagents optional — one per candidate when there are
-   many. Each verification:
-   - Read the flagged call's request/response in \`findings.txt\` and its probe in
-     \`adversarial.sh\`; confirm the probe asserts a real invariant.
-   - Correlate by timestamp with \`kronk-server.log\`.
-   - Trace to owning code, cite \`file:line\`, name the layer. Follow Kronk → yzma →
-     llama.cpp when the cause is not in Kronk.
-   - Verdict: CONFIRMED (code path proves it) | EXPECTED (server right, probe or spec
-     reading wrong — say which) | UNPROVEN (not pinnable to code).
-   - Uncertain → EXPECTED or UNPROVEN. No defect without a mechanism shown in source.
-3. Report CONFIRMED only.
-
-Output — bullets, no prose, no preamble:
-
-- **<symptom>** — \`<probe-id>\` · \`path/file.go:LINE\` (kronk|yzma|llama.cpp)
-  - Expected: <invariant> · Actual: <observed>
-  - Cause: <one sentence, cites code path>
-  - Repro: <single command from findings.txt>
-
-Then one line per non-confirmed flag: \`Dismissed: <probe-id> — <reason>\`.`}</code></pre>
+          <p>A finding is a flagged probe, not a proven defect: the probe itself can be wrong, and the cause may sit in yzma or llama.cpp rather than in Kronk. <code>make test-adversarial</code> prints a triage prompt after every run — including the exit-1 run that produced findings — which hands the report to a coding agent for verification. The authoritative prompt is <code>.tools/adversarial/adversarial-triage.md</code>. Follow it to correlate flagged requests with server logs, check the probe's assumptions, and trace ownership before calling a finding a defect. Report confirmed mechanisms separately from unproven findings.</p>
           <p>The yzma and llama.cpp trees the prompt cites are working checkouts under <code>.extras/</code>, which is untracked. Clone them there before triaging, or drop those two sources from the prompt and accept that a defect below the Kronk boundary can only be localized to the binding call site.</p>
-          <p>Editing the prompt means editing <code>.tools/adversarial/adversarial-triage.md</code> and this chapter together; the file is what the Make target prints.</p>
           <h4 id="2043-opencode-coding-benchmark">20.4.3 OpenCode coding benchmark</h4>
           <p><code>.tools/codegen-benchmark</code> is a deliberate coding-agent benchmark against a separately managed Kronk server. It runs the tic-tac-toe prompt from <code>examples/talks/tic-tac-toe.md</code> through <code>opencode run</code>, preserving an isolated OpenCode home and nested Git repository for each attempt. The repository boundary keeps OpenCode inside the attempt directory, where it can compile and repair its program before the harness applies hidden structural tests and scripted gameplay checks.</p>
           <p>The harness warms each model with a minimal <code>hello model</code> chat completion before its attempts, then unloads that model before continuing to the next configured model. Warm-up time and tokens are excluded from the OpenCode benchmark measurements.</p>
@@ -6304,7 +5911,7 @@ make benchmark-codegen \\
   -> foundation/web middleware and request context
   -> domain route validation and protocol translation
   -> sdk/pool facade
-  -> typed pool acquisition (Kronk or Bucky)
+  -> typed pool acquisition (Kronk, Bucky, or Malina)
   -> one-model public handle admission semaphore
   -> model engine/state execution
   -> SDK result or stream
@@ -6312,10 +5919,10 @@ make benchmark-codegen \\
           <p>Every arrow is an ownership boundary. Middleware owns transport concerns. Domains own HTTP compatibility. Pools own model residency and resource tickets. Handles own per-model admission and shutdown coordination. Engines own native contexts, sequences, and inference state. Preserve error identities long enough for the domain layer to map capacity, cancellation, validation, and internal failures correctly.</p>
           <h4 id="2052-typed-pool-acquisition-loading-and-eviction">20.5.2 Typed pool acquisition, loading, and eviction</h4>
           <p>An acquisition first checks/coalesces a typed cache entry. A cold load is planned by the backend loader, then reserved against the shared memory manager before expensive native loading. The loaded handle becomes visible only after initialization succeeds. Failed planning or loading must release its reservation and must not publish a partial cache entry. Concurrent acquisition of the same key should share load work rather than multiply memory commitments.</p>
-          <p>Item count and available RAM/VRAM are independent admission constraints. Normal admission-driven eviction selects only idle handles; the pool observes each handle's active-operation counter rather than owning a separate request lease. Explicit invalidation and shutdown may remove an active entry and rely on the handle's <code>Unload</code> method to drain active work according to its context.</p>
-          <p>Asynchronous invalidation does not imply that its eviction callback has finished. Synchronous invalidation waits for callback and reservation-ticket completion, but it does not prove native unload succeeded: the callback can report an unload error and still release the reservation. Preserve the engine-level distinction between a model that cannot fit the configured budget and temporary pressure where no idle candidate can be evicted; typed/public APIs may translate those errors differently.</p>
+          <p>Item count and available RAM/VRAM are independent admission constraints. Normal admission-driven eviction selects only idle handles; the pool observes each handle's active-operation counter rather than owning a separate request lease. Invalidation also rechecks active use: an active entry is restored rather than unloaded.</p>
+          <p>Asynchronous invalidation does not imply that its eviction callback has finished. Synchronous invalidation reports callback errors. When unload fails, the engine restores the entry and retains its reservation rather than pretending that memory was released. Preserve the engine-level distinction between a model that cannot fit the configured budget and temporary pressure where no idle candidate can be evicted; typed/public APIs may translate those errors differently.</p>
           <h4 id="2053-semaphore-lifetime-and-cancellation">20.5.3 Semaphore lifetime and cancellation</h4>
-          <p>The <code>Kronk</code> handle's semaphore is admission control around one model. A permit belongs to the operation, not merely to function setup. For a non-streaming call, hold it until the operation returns. For streaming, hold it until the stream is terminal or closed, including cancellation/error cleanup. Releasing at stream construction over-admits; forgetting to release on an early error deadlocks future work. The pool's active-use lease similarly spans the entire externally visible operation so eviction cannot unload native resources while output is still being consumed.</p>
+          <p>The <code>Kronk</code> handle's semaphore is admission control around one model. A permit belongs to the operation, not merely to function setup. For a non-streaming call, hold it until the operation returns. For streaming, hold it until the stream is terminal or closed, including cancellation/error cleanup. Releasing at stream construction over-admits; forgetting to release on an early error deadlocks future work. The handle's active-use counter similarly spans the operation so pool eviction cannot unload native resources while work is active.</p>
           <p>Context cancellation must propagate inward to queue waits and inference. The layer that creates a goroutine, stream, native object, or lease owns its shutdown. Do not close caller-owned channels or unload a caller-owned handle. Unload prevents new work, waits for owned active work according to its context, then tears down engine/native resources. Pool shutdown owns handles created by that pool.</p>
           <h4 id="2054-batch-slots-and-sequence-isolation">20.5.4 Batch slots and sequence isolation</h4>
           <p>Text generation uses a batch engine. A slot is an execution reservation and mutable per-request state; its sequence ID partitions KV/cache operations in the shared native context. Scheduling several slots into one decode is safe only if every token, logit index, sampler, parser, cancellation flag, speculative buffer, media position, and KV operation remains associated with the correct slot/sequence.</p>
@@ -6329,8 +5936,8 @@ make benchmark-codegen \\
             <li>Native decode failure is attributed to affected jobs and followed by deterministic cleanup; it must not silently publish partly advanced session state.</li>
           </ul>
           <h4 id="2055-generation-versus-embedding-and-reranking-engines">20.5.5 Generation versus embedding and reranking engines</h4>
-          <p>Text generation benefits from shared batched execution and sequence-partitioned KV. Embeddings and reranking never use generation slots. Proven architectures use the separate sequence-batch engine, which schedules complete embedding inputs or query-document pairs across sequence IDs on one context. Unsupported architectures acquire an independent context from the fallback pool and perform their own decode/clear cycle. Reranking must not allow one document's state to contaminate the next. Embedding pooling and normalization are model/output concerns, not chat-slot concerns. Do not merge the sequence-batch and generation engines merely to share code; their lifecycle contracts differ.</p>
-          <p>Compatibility is an explicit allowlist based on <code>general.architecture</code>. Add an architecture only after a native yzma proof, model-backed concurrent tests, and a benchmark. Some llama.cpp failures assert instead of returning an error, so probing an unknown architecture at runtime is not a safe fallback strategy.</p>
+          <p>Text generation benefits from shared batched execution and sequence-partitioned KV. Embeddings and reranking never use generation slots. All embedding and reranking models currently use the separate sequence-batch engine, which schedules complete embedding inputs or query-document pairs across sequence IDs on one context. A context-pool fallback remains available for models proven incompatible with that engine, but no architecture is currently excluded. Reranking must not allow one document's state to contaminate the next. Embedding pooling and normalization are model/output concerns, not chat-slot concerns. Do not merge the sequence-batch and generation engines merely to share code; their lifecycle contracts differ.</p>
+          <p>Runtime selection belongs to <code>supportsBatchSeq</code>; do not add fallback heuristics in HTTP handlers. Changes to compatibility need native/model-backed evidence, concurrent isolation tests, and a benchmark. Some llama.cpp failures assert instead of returning an error, so retrying a failed native decode is not a safe compatibility probe.</p>
           <h3 id="206-core-inference-invariants">20.6 Core Inference Invariants</h3>
           <h4 id="2061-imc-sessions-slots-and-external-storage">20.6.1 IMC sessions, slots, and external storage</h4>
           <p>Incremental Message Cache (IMC) sessions are cache identities, not execution slots. A stable cache/session identifier allows a conversation prefix to survive movement between batch slots. A slot is short-lived compute capacity; binding a session to a slot would reduce concurrency and make slot reuse unsafe.</p>
@@ -6370,7 +5977,7 @@ make benchmark-codegen \\
           <p>Speculative support has three ownership shapes:</p>
           <ol>
             <li><strong>Separate GGUF draft model.</strong> The draft has its own model/context/KV and proposes tokens; the target verifies them. Loading, memory planning, sequence cleanup, and rollback must account for both models.</li>
-            <li><strong>Embedded MTP.</strong> A target GGUF exposes an embedded multi-token-prediction head. Model detection and MTP construction are owned by <code>draft_mtp.go</code>/<code>batchgen_mtp.go</code>, while generic proposal verification and reconciliation remain in <code>batchgen_speculative.go</code>.</li>
+            <li><strong>Embedded MTP.</strong> A target GGUF exposes an embedded multi-token-prediction head. Model detection and MTP construction belong to the model package; speculative scheduling and verification coordinate with <code>model/internal/speculation</code>.</li>
             <li><strong>Separate-file Gemma4/shared-target-KV MTP.</strong> The MTP component is supplied as a separate file but shares target KV semantics rather than behaving like an ordinary independent draft model. Capabilities, not “has a draft path,” must decide whether draft KV can be trimmed or externalized.</li>
           </ol>
           <p>Across all three, target output is authoritative. Proposal generation cannot expose a token until target verification accepts it or chooses the replacement/bonus token. Position counters, sampled-token history, target KV, draft/MTP state, and streamed output must describe one accepted prefix after every round.</p>
@@ -6517,8 +6124,8 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
             <div className="doc-index-section">
               <a href="#chapter-1-introduction" className={`doc-index-header ${activeSection === 'chapter-1-introduction' ? 'active' : ''}`}>Chapter 1: Introduction</a>
               <ul>
-                <li><a href="#11-what-is-kronk?" className={activeSection === '11-what-is-kronk?' ? 'active' : ''}>1.1 What Is Kronk?</a></li>
-                <li><a href="#12-sdk-or-model-server?" className={activeSection === '12-sdk-or-model-server?' ? 'active' : ''}>1.2 SDK or Model Server?</a></li>
+                <li><a href="#11-what-is-kronk" className={activeSection === '11-what-is-kronk' ? 'active' : ''}>1.1 What Is Kronk</a></li>
+                <li><a href="#12-sdk-or-model-server" className={activeSection === '12-sdk-or-model-server' ? 'active' : ''}>1.2 SDK or Model Server</a></li>
                 <li><a href="#13-capabilities" className={activeSection === '13-capabilities' ? 'active' : ''}>1.3 Capabilities</a></li>
                 <li><a href="#14-architecture" className={activeSection === '14-architecture' ? 'active' : ''}>1.4 Architecture</a></li>
                 <li><a href="#15-where-to-go-next" className={activeSection === '15-where-to-go-next' ? 'active' : ''}>1.5 Where to Go Next</a></li>
@@ -6712,7 +6319,7 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
             <div className="doc-index-section">
               <a href="#98-decisions" className={`doc-index-header ${activeSection === '98-decisions' ? 'active' : ''}`}>9.8 Decisions</a>
               <ul>
-                <li><a href="#go-sdk" className={activeSection === 'go-sdk' ? 'active' : ''}>Go SDK</a></li>
+                <li><a href="#sdk-examples" className={activeSection === 'sdk-examples' ? 'active' : ''}>SDK examples</a></li>
               </ul>
             </div>
             <div className="doc-index-section">
@@ -6885,7 +6492,7 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
                 <li><a href="#184-server-configuration" className={activeSection === '184-server-configuration' ? 'active' : ''}>18.4 Server Configuration</a></li>
                 <li><a href="#185-browser-ui" className={activeSection === '185-browser-ui' ? 'active' : ''}>18.5 Browser UI</a></li>
                 <li><a href="#186-transcriptions-and-translations-api" className={activeSection === '186-transcriptions-and-translations-api' ? 'active' : ''}>18.6 Transcriptions and Translations API</a></li>
-                <li><a href="#187-go-sdk" className={activeSection === '187-go-sdk' ? 'active' : ''}>18.7 Go SDK</a></li>
+                <li><a href="#187-capability-boundaries-and-developer-resources" className={activeSection === '187-capability-boundaries-and-developer-resources' ? 'active' : ''}>18.7 Capability Boundaries and Developer Resources</a></li>
                 <li><a href="#188-languages" className={activeSection === '188-languages' ? 'active' : ''}>18.8 Languages</a></li>
                 <li><a href="#189-troubleshooting" className={activeSection === '189-troubleshooting' ? 'active' : ''}>18.9 Troubleshooting</a></li>
               </ul>
@@ -6896,14 +6503,12 @@ go test -count=1 -run 'TestSpecificBehavior' ./sdk/kronk/parsers/qwen`}</code></
                 <li><a href="#191-overview" className={activeSection === '191-overview' ? 'active' : ''}>19.1 Overview</a></li>
                 <li><a href="#192-install-stable-diffusion-libraries" className={activeSection === '192-install-stable-diffusion-libraries' ? 'active' : ''}>19.2 Install Stable Diffusion Libraries</a></li>
                 <li><a href="#193-manage-model-bundles" className={activeSection === '193-manage-model-bundles' ? 'active' : ''}>19.3 Manage Model Bundles</a></li>
-                <li><a href="#194-go-sdk" className={activeSection === '194-go-sdk' ? 'active' : ''}>19.4 Go SDK</a></li>
-                <li><a href="#195-multi-file-model-bundles" className={activeSection === '195-multi-file-model-bundles' ? 'active' : ''}>19.5 Multi-File Model Bundles</a></li>
-                <li><a href="#196-image-to-image-generation" className={activeSection === '196-image-to-image-generation' ? 'active' : ''}>19.6 Image-to-Image Generation</a></li>
-                <li><a href="#197-logging-progress-and-diagnostics" className={activeSection === '197-logging-progress-and-diagnostics' ? 'active' : ''}>19.7 Logging, Progress, and Diagnostics</a></li>
-                <li><a href="#198-motion-jpeg-encoding" className={activeSection === '198-motion-jpeg-encoding' ? 'active' : ''}>19.8 Motion-JPEG Encoding</a></li>
-                <li><a href="#199-examples" className={activeSection === '199-examples' ? 'active' : ''}>19.9 Examples</a></li>
-                <li><a href="#1910-current-scope-and-limitations" className={activeSection === '1910-current-scope-and-limitations' ? 'active' : ''}>19.10 Current Scope and Limitations</a></li>
-                <li><a href="#1911-troubleshooting" className={activeSection === '1911-troubleshooting' ? 'active' : ''}>19.11 Troubleshooting</a></li>
+                <li><a href="#194-server-configuration-and-resources" className={activeSection === '194-server-configuration-and-resources' ? 'active' : ''}>19.4 Server Configuration and Resources</a></li>
+                <li><a href="#195-browser-ui" className={activeSection === '195-browser-ui' ? 'active' : ''}>19.5 Browser UI</a></li>
+                <li><a href="#196-image-generation-and-editing-api" className={activeSection === '196-image-generation-and-editing-api' ? 'active' : ''}>19.6 Image Generation and Editing API</a></li>
+                <li><a href="#197-progress-and-administration" className={activeSection === '197-progress-and-administration' ? 'active' : ''}>19.7 Progress and Administration</a></li>
+                <li><a href="#198-limitations-and-developer-resources" className={activeSection === '198-limitations-and-developer-resources' ? 'active' : ''}>19.8 Limitations and Developer Resources</a></li>
+                <li><a href="#199-troubleshooting" className={activeSection === '199-troubleshooting' ? 'active' : ''}>19.9 Troubleshooting</a></li>
               </ul>
             </div>
             <div className="doc-index-section">

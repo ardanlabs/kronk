@@ -55,8 +55,8 @@ paths by default:
 ~/.kronk/kronk.log
 ```
 
-Setting `KRONK_BASE_PATH` before starting the detached server moves both files
-under that root.
+Setting `KRONK_BASE_PATH` before starting the detached server selects that root
+for both files; existing files are not moved.
 
 Use these commands for a detached server:
 
@@ -109,9 +109,9 @@ Common settings can be supplied as flags or environment variables:
 | `--inference-timeout` | `KRONK_WEB_INFERENCE_TIMEOUT` | `60m` | Total timeout for inference admission, preparation, slot waiting, and generation |
 | `--write-timeout` | `KRONK_WEB_WRITE_TIMEOUT` | `61m` | HTTP response write timeout; `0` disables it, otherwise it must exceed the inference timeout |
 | `--base-path` | `KRONK_BASE_PATH` | `~/.kronk` | Root for Kronk data |
-| `--lib-path` | `KRONK_LIB_PATH` | Detected bundle under `<base>/libraries` | Exact llama.cpp library directory or libraries root |
+| `--lib-path` | `KRONK_LIB_PATH` | Detected bundle under `<base>/libraries` | Exact llama.cpp library directory |
 | `--lib-version` | `KRONK_LIB_VERSION` | unset | llama.cpp release, optionally pinned as `VERSION@sha256:<64-hex-digest>` |
-| `--lib-verify-enabled` | `KRONK_LIB_VERIFY_ENABLED` | `true` | Verify the selected llama.cpp and whisper.cpp bundles before loading them |
+| `--lib-verify-enabled` | `KRONK_LIB_VERIFY_ENABLED` | `true` | Verify selected llama.cpp, whisper.cpp, and stable-diffusion.cpp bundles before loading them |
 | `--processor` | `KRONK_PROCESSOR` | Detected host backend | Processor bundle such as `metal`, `cuda`, `rocm`, `vulkan`, or `cpu` |
 | `--arch` | `KRONK_ARCH` | Host architecture | Library-bundle architecture override |
 | `--os` | `KRONK_OS` | Host operating system | Library-bundle operating-system override |
@@ -163,10 +163,13 @@ and selected processors and the reason for the decision.
 `--processor` and `--lib-path`, or their environment equivalents, are strict
 operator choices and disable automatic fallback. A custom non-empty library
 directory without `version.json` is treated as a read-only user-managed build;
-the server loads it but does not upgrade or replace it. `--base-path` moves the
-managed library root along with other Kronk data, while `--lib-path` selects the
-llama.cpp location specifically. Restart the server after changing any native
-library selection setting.
+Kronk does not upgrade or replace it. To use such a build, explicitly disable
+automatic llama.cpp downloading and managed-bundle verification with
+`--lib-download-enabled=false --lib-verify-enabled=false`. Default startup
+checks otherwise fail because managed installation metadata is absent.
+`--base-path` selects the root for managed libraries and other Kronk data; it
+does not migrate existing data. `--lib-path` selects the llama.cpp location
+specifically. Restart after changing native library selection settings.
 
 Set `--lib-download-enabled=false` or `KRONK_LIB_DOWNLOAD_ENABLED=false` to
 skip the automatic llama.cpp download at startup. Kronk still loads the library
@@ -177,11 +180,15 @@ Set `--media-backends-enabled=false` or
 downloads and native backend initialization. This does not affect llama.cpp
 download or initialization.
 
-Library verification is enabled by default. Set `--lib-verify-enabled=false` or
-`KRONK_LIB_VERIFY_ENABLED=false` to disable it. Kronk verifies the selected
-llama.cpp bundle before its device probe and verifies the selected whisper.cpp
-bundle before either backend loads native code. A failure leaves only the
-affected backend in degraded mode.
+Library verification is enabled by default and applies to llama.cpp and the
+enabled Bucky and Malina native backends. Kronk verifies a runtime before its
+device probe or native initialization. Installation or verification failures
+normally stop server startup; native initialization failures after verification
+can leave the affected backend unavailable while the server continues. For
+llama.cpp releases without per-file digests, Kronk logs that post-install
+verification is unavailable and can continue. Set `--lib-verify-enabled=false`
+or `KRONK_LIB_VERIFY_ENABLED=false` to disable verification; do this only for
+libraries you independently trust.
 
 For an externally pinned llama.cpp check, set `--lib-version` or
 `KRONK_LIB_VERSION` to `VERSION@sha256:<64-hex-digest>`. The digest identifies
@@ -226,11 +233,12 @@ architecture all affect the estimate.
 
 After a model and its target, draft/MTP, and projection contexts are initialized,
 Kronk checks the backend's live free-memory report before publishing the model to
-the pool. Metal, CUDA, and ROCm loads that no longer retain the configured
-headroom are unloaded and rejected with an insufficient-memory error. Vulkan is
-logged as advisory because drivers without the memory-budget extension can
-report the entire heap as free. CPU backends do not expose a portable live-memory
-value and skip this check.
+the pool. CUDA and ROCm loads that no longer retain the configured headroom are
+unloaded and rejected with an insufficient-memory error. Metal and Vulkan
+checks are advisory: Metal reports a recommended working-set limit rather than
+physical unified-memory capacity, while Vulkan drivers without the memory-budget
+extension can report the entire heap as free. CPU backends do not expose a
+portable live-memory value and skip this check.
 
 On multi-GPU systems, Kronk accounts for llama.cpp's model distribution across
 the selected devices. Automatic splits use available GPUs, while explicit
@@ -238,15 +246,20 @@ the selected devices. Automatic splits use available GPUs, while explicit
 assigned share must fit within that GPU's individual budget; unused capacity on
 another card cannot satisfy an over-budget share.
 
-When a new load exceeds the count or memory budget, Kronk evicts an idle model.
-For memory pressure it prefers an idle entry that frees enough memory without
+For a load that can fit the configured budget, Kronk can evict one or more idle
+entries from the requesting backend's pool to satisfy its count or memory
+limit. For memory pressure it prefers an entry that frees enough memory without
 unloading a needlessly large model, then falls back to the coldest idle entry.
-Models with active streams are not evicted. If no idle entry can make room, the
-request returns a server-busy error and the client should retry later.
+Models with active streams are not evicted. If no idle entry in that pool can
+make room, the request returns server busy. A load that exceeds the entire
+applicable budget is rejected without evicting existing entries; reduce its
+sizing or change the budget rather than retrying unchanged.
 
-The Bucky and LLM pools share the same byte budget, so transcription and
-language-model loads can compete for memory. Bucky installation and pool
-behavior are covered in [Chapter 18](https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription).
+The LLM, Bucky, and Malina pools share one byte budget, but each has its own
+count limit and eviction candidates. An idle model in another backend's pool
+is not automatically evicted to admit the request; explicitly unload it or
+allow its TTL to expire when necessary. Bucky installation and pool behavior
+are covered in [Chapter 18](https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription).
 
 Resource usage and eviction events are available through the logging and
 metrics described in [Chapter 15](https://www.kronkai.com/manual#chapter-15-observability).
@@ -311,8 +324,10 @@ kms:
   base-path: ""
   lib-path: ""
   bucky-lib-path: ""
+  malina-lib-path: ""
   lib-version: ""
   lib-download-enabled: true
+  lib-verify-enabled: true
   media-backends-enabled: true
   arch: ""
   os: ""
@@ -338,6 +353,9 @@ precedence is built-in defaults, then `kms` YAML, then `KRONK_*` environment
 variables, then explicitly supplied `kronk server start` flags. The
 `--model-config-file` flag and `KRONK_POOL_MODEL_CONFIG_FILE` environment
 variable select the YAML file itself and therefore remain outside the file.
+The default file location is resolved from the command-line/environment base
+path before YAML is read; setting `kms.base-path` inside the file does not
+select a different configuration file.
 The backend sections are top-level mappings alongside `models`. Bucky keys are
 the short IDs shown by `kronk bucky model list`; Malina keys are bundle IDs
 shown by `kronk malina model list`. Restart the server after changing them.
@@ -433,6 +451,7 @@ loopback interface:
 docker run -d \
   --name kronk \
   --restart unless-stopped \
+  -e KRONK_PROCESSOR=cpu \
   -e KRONK_AUTHORIZATION_MODE=full-protected \
   -e KRONK_WEB_ADMIN_ENABLED=false \
   -p 127.0.0.1:11435:11435 \
@@ -444,6 +463,25 @@ Choose the processor-specific tag documented in Chapter 2. Terminate TLS at a
 reverse proxy or keep the service on a trusted private network. Read
 [Chapter 12](https://www.kronkai.com/manual#chapter-12-security-and-authentication) before exposing an
 authenticated server remotely.
+
+The image sets the container API listener to `0.0.0.0:11435`, peer downloads
+off, and insecure logging off through environment variables. These override
+the corresponding YAML settings; host exposure is controlled separately by
+the published port above.
+
+On first initialization Kronk creates an administrator token at
+`/kronk/keys/master.jwt`. Capture it without printing it or enabling shell
+tracing:
+
+```shell
+set +x
+KRONK_TOKEN=$(docker exec kronk cat /kronk/keys/master.jwt)
+```
+
+Send `Authorization: Bearer $KRONK_TOKEN` with protected API requests. Keep the
+token private and run `unset KRONK_TOKEN` when finished. This bootstrap also
+works with the Compose container below; do not disable authentication to
+obtain a token. See Chapter 12 for token management and scoped credentials.
 
 Install and inspect models directly in the persistent volume without enabling
 browser downloads:
@@ -639,7 +677,9 @@ chmod 600 ~/.config/kronk/kronk.env
 For example:
 
 ```text
-KRONK_AUTHORIZATION_MODE=management
+KRONK_WEB_API_HOST=127.0.0.1:11435
+KRONK_AUTHORIZATION_MODE=full-protected
+KRONK_WEB_ADMIN_ENABLED=false
 # Optional GPU settings; use values appropriate to your host:
 # KRONK_PROCESSOR=rocm
 # PATH=/opt/rocm/bin:/usr/local/bin:/usr/bin:/bin
@@ -654,9 +694,14 @@ working interactive shell depends on them.
 
 `--base-path` or `KRONK_BASE_PATH` when installing records a custom data
 directory in the unit; `KRONK_BASE_PATH` in `kronk.env` overrides that value.
-Other shell settings are not copied into the unit automatically. By default
-the API listens on `127.0.0.1:11435`. Configure authorization before exposing
-it on a public interface with `KRONK_WEB_API_HOST`.
+Other shell settings are not copied into the unit automatically. The service
+loads the existing `model_config.yaml`; settings in `kronk.env` override its
+server settings. The built-in listener default is `127.0.0.1:11435`, but existing
+YAML can change it. The example above explicitly selects a local, protected,
+headless server. Review listener and authentication settings before starting.
+The initial administrator token is at `<base-path>/keys/master.jwt`; see
+[Chapter 12](https://www.kronkai.com/manual#chapter-12-security-and-authentication)
+before remote exposure or enabling the BUI.
 
 ### Managing and Removing the Service
 
@@ -730,7 +775,9 @@ add these entries inside that dictionary:
 <key>KRONK_WEB_API_HOST</key>
 <string>127.0.0.1:11435</string>
 <key>KRONK_AUTHORIZATION_MODE</key>
-<string>management</string>
+<string>full-protected</string>
+<key>KRONK_WEB_ADMIN_ENABLED</key>
+<string>false</string>
 ```
 
 Launchd does not source shell startup files or read the systemd
@@ -747,8 +794,12 @@ plutil -lint ~/Library/LaunchAgents/com.ardanlabs.kronk.plist
 kronk launchd restart
 ```
 
-The default API listener remains local-only at `127.0.0.1:11435`. Configure
-authorization before exposing it on a public interface. `status` shows
+The built-in API listener default is `127.0.0.1:11435`, but existing YAML can
+change it. The environment example above overrides YAML to select a local,
+protected, headless server. Review the effective settings before starting;
+the initial administrator token is at `<base-path>/keys/master.jwt`. See
+[Chapter 12](https://www.kronkai.com/manual#chapter-12-security-and-authentication)
+before remote exposure or enabling the BUI. `status` shows
 launchd's agent information, not HTTP readiness; startup may include library
 downloads. Check `/v1/liveness` before sending requests.
 
@@ -770,8 +821,8 @@ session, until explicitly started again. It starts again at the next
 desktop login. `restart` gracefully unloads and reloads the plist, applying
 configuration changes rather than just killing the process. The plist
 requests a 150-second `ExitTimeOut` for graceful HTTP shutdown and model
-unload, but macOS can cap this: a 60-second effective limit was observed on
-the development host. Inspect `kronk launchd status` for the effective exit
+unload, but the effective grace period can depend on macOS. Inspect
+`kronk launchd status` for the effective exit
 timeout. If shutdown can exceed it, reduce `KRONK_WEB_SHUTDOWN_TIMEOUT` so
 twice that timeout plus 30 seconds fits the available grace period. Merely
 increasing `ExitTimeOut` does not guarantee a longer grace period.

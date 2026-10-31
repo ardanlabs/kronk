@@ -60,7 +60,7 @@ For a disposable session, use the preferred launch workflow:
 ```shell
 kronk model pull mradermacher/Qwopus3.5-4B-Coder.Q8_0 --local
 kronk server start
-kronk launch opencode mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT
+kronk launch opencode mradermacher/Qwopus3.5-4B-Coder.Q8_0
 ```
 
 OpenCode uses the model ID exactly as provided, with Kronk responsible for
@@ -73,7 +73,7 @@ Accepted model ID forms are `modelName`, `provider/modelName`, and
 Use `--host` when Kronk runs elsewhere:
 
 ```shell
-kronk launch opencode mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT \
+kronk launch opencode mradermacher/Qwopus3.5-4B-Coder.Q8_0 \
   --host 192.168.1.10:11435
 ```
 
@@ -90,7 +90,7 @@ before handing over the terminal. Arguments after `--` pass directly to
 OpenCode:
 
 ```shell
-kronk launch opencode mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT -- --help
+kronk launch opencode mradermacher/Qwopus3.5-4B-Coder.Q8_0 -- --help
 ```
 
 If OpenCode is missing, Kronk displays the official install command and
@@ -106,6 +106,12 @@ See the [OpenCode uninstall documentation](https://opencode.ai/docs/cli/#uninsta
 The persistent bundle installation below is an advanced alternative for users
 who want a reusable OpenCode configuration connected to a separately managed
 Kronk server.
+
+For protected inference, export a valid application token as `KRONK_TOKEN`
+before launching; the isolated configuration uses it for server access.
+The isolated launch does not connect to Kronk's MCP service. Use the persistent
+bundle below when that connection is needed. The base ID above avoids requiring
+a preconfigured `/AGENT` variant; use a variant only when the server lists it.
 
 #### Install OpenCode
 
@@ -152,7 +158,8 @@ Search API key; `fuzzy_edit` does not. See Chapter 16 for configuration.
 
 OpenCode's model name must match a model registered in its
 `provider.kronk.models` map. Kronk also needs a corresponding model variant in
-its model configuration. The shipped default is:
+its model configuration. For example, place this entry under the `models:`
+mapping in your versioned configuration file:
 
 ```yaml
 unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT:
@@ -189,7 +196,7 @@ To use another model:
 4. Set the top-level `model` field to `<provider>/<model-id>` or select the
    registered model from OpenCode.
 
-For example:
+For example, under the model configuration's `models:` mapping:
 
 ```yaml
 organization/my-coding-model-Q8_0/AGENT:
@@ -283,7 +290,7 @@ response = client.chat.completions.create(
 )
 
 for chunk in response:
-    if chunk.choices[0].delta.content:
+    if chunk.choices and chunk.choices[0].delta.content:
         print(chunk.choices[0].delta.content, end="")
 ```
 

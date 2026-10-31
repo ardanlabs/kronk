@@ -45,9 +45,11 @@ valid for another model, even when both use RoPE.
 
 ## 7.3 Qwen3 Configuration
 
-The Qwen3-1.7B model documentation identifies 32,768 tokens as the native context
-and reports validation up to 131,072 tokens with YaRN. It recommends matching
-the scale to the context actually needed.
+The [Qwen3-8B model documentation](https://huggingface.co/Qwen/Qwen3-8B#processing-long-texts)
+identifies 32,768 tokens as the native context and reports validation up to
+131,072 tokens with YaRN. It recommends matching the scale to the context
+actually needed. These examples apply to a downloaded Qwen3-8B GGUF; use its
+local model ID in place of `owner/Qwen3-8B-GGUF`.
 
 For a 2× extension to 65,536 tokens:
 
@@ -55,7 +57,7 @@ For a 2× extension to 65,536 tokens:
 # ~/.kronk/models/model_config.yaml
 version: 1
 models:
-  unsloth/Qwen3-1.7B-UD-Q8_K_XL:
+  owner/Qwen3-8B-GGUF:
     context-window: 65536
     rope-scaling-type: yarn
     rope-freq-scale: 0.5
@@ -68,7 +70,7 @@ For a 4× extension to 131,072 tokens:
 # ~/.kronk/models/model_config.yaml
 version: 1
 models:
-  unsloth/Qwen3-1.7B-UD-Q8_K_XL:
+  owner/Qwen3-8B-GGUF:
     context-window: 131072
     rope-scaling-type: yarn
     rope-freq-scale: 0.25
@@ -98,9 +100,13 @@ Kronk accepts three `rope-scaling-type` values:
 
 | Value | Behavior |
 | ----- | -------- |
-| `none` | Applies no RoPE scaling. It does not prevent a separately configured oversized context window. |
+| `none` | Leaves the model/native RoPE scaling method unchanged. It does not force scaling off or prevent an oversized context window. |
 | `linear` | Applies the same interpolation scale across RoPE frequencies. Use only when the model documentation calls for it. |
 | `yarn` | Applies YaRN frequency-dependent interpolation and attention scaling. |
+
+Use the provider's instructions when comparing scaled and unscaled operation.
+Setting `rope-scaling-type: none` alone does not disable scaling already
+declared by the GGUF.
 
 The available controls are:
 
@@ -124,15 +130,17 @@ provider supplies values or controlled evaluation shows they are needed.
 KV-cache capacity grows approximately linearly with the context window. The
 actual size depends on the model architecture, layer count, KV heads, head
 dimensions, cache data types, backend, and alignment. With multiple generation
-slots, each slot receives one fixed `context-window` KV stream, for aggregate
-capacity based on `context-window × nseq-max`.
+slots, aggregate capacity is based on `context-window × nseq-max`. Shared KV
+storage does not imply fixed physical partitions per slot; `context-window`
+still limits an individual request.
 
 If a long-context model does not fit, consider:
 
 - reducing `nseq-max`;
 - selecting supported quantized KV-cache types; or
-- keeping the KV cache on the CPU with `offload-kqv: false`, at a likely
-  performance cost.
+- keeping the KV cache on the CPU with `offload-kqv: false` to relieve discrete
+  GPU memory, at a likely performance cost. On unified-memory systems this
+  does not remove the cache from the shared physical memory budget.
 
 Do not rely on fixed memory figures from another model. Use Kronk's hardware
 analysis and observe actual memory consumption. See
@@ -150,7 +158,7 @@ context reliably. Test the intended model and GGUF with representative data:
 4. Compare short-prompt quality with scaling enabled and disabled.
 5. Reduce the extension factor if quality or performance is unacceptable.
 
-Prefer the smallest context and scale that satisfy the workload. For Qwen3-1.7B,
+Prefer the smallest context and scale that satisfy the workload. For Qwen3-8B,
 use the native context when average requests remain within 32,768 tokens, a 2×
 configuration for workloads around 65,536, and the documented 4× configuration
 only when requests genuinely require it.
