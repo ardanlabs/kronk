@@ -3,8 +3,6 @@ package models
 import (
 	"fmt"
 	"strconv"
-	"strings"
-	"unicode"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
 	"github.com/ardanlabs/kronk/sdk/kronk/hf"
@@ -241,13 +239,13 @@ func CapabilitiesFor(metadata map[string]string, hasProjection bool) CatalogCapa
 // identifier. Current decision models carry a standardized decision type;
 // published model names remain as a fallback for older GGUFs.
 func CapabilitiesForModel(metadata map[string]string, hasProjection bool, modelID string) CatalogCapabilities {
-	profile := arch.Resolve(metadata)
+	profile := arch.ResolveForModel(metadata, modelID)
 	caps := CatalogCapabilities{
 		Streaming: true,
 	}
 
 	switch {
-	case profile.Decision.Type != "" || profile.Purpose == modelprofile.PurposeGeneration && isDecisionModelName(metadata["general.name"]+" "+modelID):
+	case profile.Decision.Type != "":
 		caps.Endpoint = "decision"
 		caps.Decision = true
 		caps.Streaming = false
@@ -288,23 +286,6 @@ func MTPSourceFor(metadata map[string]string, hasCompanion bool) MTPSource {
 	}
 
 	return MTPSource{}
-}
-
-func isDecisionModelName(name string) bool {
-	name = strings.ToLower(name)
-	if strings.Contains(name, "openjev") || strings.Contains(name, "jev-style") || strings.Contains(name, "julia-1") {
-		return true
-	}
-
-	for _, token := range strings.FieldsFunc(name, func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
-	}) {
-		if token == "laya" || token == "lev" || token == "kev" {
-			return true
-		}
-	}
-
-	return false
 }
 
 // ParameterCount extracts the model's parameter count from GGUF metadata.

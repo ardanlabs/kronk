@@ -9,7 +9,7 @@ import (
 
 func TestBatchEngineSnapshotPublishesSlotAndSelectorState(t *testing.T) {
 	now := time.Now()
-	m := Model{cfg: adjustConfig(NewConfig(WithNSeqMax(2), WithPrefillBatchSize(2048)), 0)}
+	m := Model{cfg: adjustConfig(NewConfig(WithNSeqMax(2), WithPrefillBatchSize(2048)), 0, false)}
 	e := batchEngine{
 		model:                     &m,
 		batch:                     &extendedBatch{capacity: 64},

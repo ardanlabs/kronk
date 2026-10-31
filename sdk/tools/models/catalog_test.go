@@ -90,9 +90,10 @@ func TestCapabilitiesForSpecializedQwenModels(t *testing.T) {
 			want: CatalogCapabilities{Endpoint: "embeddings", Embedding: true},
 		},
 		{
-			name: "BERT reranker architecture",
+			name: "BERT reranker pooling",
 			metadata: map[string]string{
 				"general.architecture": "bert",
+				"bert.pooling_type":    "4",
 			},
 			want: CatalogCapabilities{Endpoint: "rerank", Rerank: true},
 		},

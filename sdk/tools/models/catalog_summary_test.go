@@ -7,6 +7,43 @@ import (
 	"github.com/ardanlabs/kronk/sdk/tools/models"
 )
 
+func TestModelPurpose(t *testing.T) {
+	tests := []struct {
+		name     string
+		id       string
+		metadata map[string]string
+		endpoint string
+	}{
+		{"MiniLM without filename hint", "all-MiniLM-L6-v2-Q8_0", map[string]string{"general.architecture": "bert", "bert.pooling_type": "1"}, "embeddings"},
+		{"Jina without filename hint", "renamed", map[string]string{"general.architecture": "jina-bert-v2", "jina-bert-v2.pooling_type": "1"}, "embeddings"},
+		{"CLS pooling overrides rerank name", "rerank", map[string]string{"general.architecture": "bert", "bert.pooling_type": "2"}, "embeddings"},
+		{"last pooling", "renamed", map[string]string{"general.architecture": "qwen3", "qwen3.pooling_type": "3"}, "embeddings"},
+		{"rank pooling overrides embed name", "embed", map[string]string{"general.architecture": "bert", "bert.pooling_type": "4"}, "rerank"},
+		{"BGE rerank wins over embed tags", "bge-reranker-v2-m3-Q8_0", map[string]string{"general.architecture": "bert", "general.name": "Bge M3", "general.tags": "[text-embeddings-inference]"}, "rerank"},
+		{"BERT default", "all-MiniLM-L6-v2", map[string]string{"general.architecture": "bert"}, "embeddings"},
+		{"filename fallback", "legacy-embed", nil, "embeddings"},
+		{"generation with no pooling", "ordinary", map[string]string{"general.architecture": "llama", "llama.pooling_type": "0"}, "chat_completion"},
+		{"invalid pooling is not embedding evidence", "ordinary", map[string]string{"general.architecture": "llama", "llama.pooling_type": "invalid"}, "chat_completion"},
+		{"decision metadata beats pooling and name", "embed-rerank", map[string]string{"general.architecture": "modern-bert", "modern-bert.decision.type": "laya", "modern-bert.pooling_type": "4"}, "decision"},
+		{"legacy decision BERT", "Laya-Q8_0", map[string]string{"general.architecture": "modern-bert"}, "decision"},
+		{"legacy decision beats embed hint", "OpenJEV-embed-Q8_0", map[string]string{"general.architecture": "llama"}, "decision"},
+		{"Julia decision fallback", "Julia-1-Q8_0", map[string]string{"general.architecture": "modern-bert"}, "decision"},
+		{"decision token boundary", "clever-model", map[string]string{"general.architecture": "llama"}, "chat_completion"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			caps := models.CapabilitiesForModel(tt.metadata, false, tt.id)
+			if caps.Endpoint != tt.endpoint {
+				t.Errorf("endpoint: got %q, want %q", caps.Endpoint, tt.endpoint)
+			}
+			info := models.ModelInfoFromMetadata(tt.id, tt.metadata, 0, false, false)
+			if info.IsEmbedModel != (tt.endpoint == "embeddings") || info.IsRerankModel != (tt.endpoint == "rerank") {
+				t.Errorf("model flags: got embed=%t rerank=%t, want endpoint %q", info.IsEmbedModel, info.IsRerankModel, tt.endpoint)
+			}
+		})
+	}
+}
+
 func TestCatalogModelDimensions(t *testing.T) {
 	tests := []struct {
 		name         string

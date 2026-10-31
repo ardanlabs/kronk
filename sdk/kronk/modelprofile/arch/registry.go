@@ -13,8 +13,6 @@ type architectureAdapter interface {
 // architectureAdapters is composition wiring only. Architecture-specific
 // metadata interpretation belongs to the adapter implementations.
 var architectureAdapters = []architectureAdapter{
-	EmbeddingPurpose{},
-	RerankPurpose{},
 	ArchitectureModality{},
 	Vision{},
 	KnownRecurrent{},

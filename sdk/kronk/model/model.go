@@ -296,14 +296,19 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 	}
 
 	configuredPrefillBatchSize := cfg.PrefillBatchSize()
-	cfg = adjustConfig(cfg, mdl)
-	prefillChunk := cfg.PrefillBatchSize()
 	modelInfo, err := toModelInfo(cfg, mdl)
 	if err != nil {
 		llama.ModelFree(mdl)
 		return nil, err
 	}
 	cfg.DecisionProtocol = modelInfo.decisionProtocol
+	pooled := modelInfo.IsEmbedModel || modelInfo.IsRerankModel
+	if err := validateIMCSessionCapacity(cfg, pooled); err != nil {
+		llama.ModelFree(mdl)
+		return nil, err
+	}
+	cfg = adjustConfig(cfg, mdl, pooled)
+	prefillChunk := cfg.PrefillBatchSize()
 
 	if cfg.MoECacheSize() > 0 {
 		switch {
@@ -317,7 +322,6 @@ func NewModel(ctx context.Context, cfg Config) (*Model, error) {
 		}
 	}
 
-	pooled := isEmbedOrRerankConfig(cfg)
 	generationRowsPerSlot := 0
 	if !pooled && cfg.DecisionProtocol.IsZero() {
 		generationRowsPerSlot = plan.RowsPerSequence()

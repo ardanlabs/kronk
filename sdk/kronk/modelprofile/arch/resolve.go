@@ -10,6 +10,12 @@ import (
 // Missing optional fields retain their zero values; consumers validate the
 // subset required for their operation.
 func Resolve(values map[string]string) modelprofile.Profile {
+	return ResolveForModel(values, "")
+}
+
+// ResolveForModel resolves model facts using metadata first and the model ID as
+// a compatibility hint for older GGUFs without explicit purpose metadata.
+func ResolveForModel(values map[string]string, modelID string) modelprofile.Profile {
 	metadata := NewMetadata(values)
 	profile := Generic(metadata)
 
@@ -21,6 +27,7 @@ func Resolve(values map[string]string) modelprofile.Profile {
 			modelprofile.AddIssue(&profile, fmt.Errorf("%s profile: %w", adapter.Name(), err))
 		}
 	}
+	resolvePurpose(metadata, modelID, &profile)
 	if profile.Role == modelprofile.RoleLanguage {
 		profile.Batch = BatchCapabilities(profile.Architecture)
 	}

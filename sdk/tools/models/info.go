@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/ardanlabs/kronk/sdk/kronk/gguf"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 )
@@ -46,8 +47,8 @@ func (m *Models) ModelInformation(modelID string) (ModelInfo, error) {
 // ModelInfoFromPath builds ModelInfo directly from on-disk model file paths,
 // without requiring a catalog/basePath. It backs ModelInformation and lets
 // callers that already hold raw file paths (e.g. SDK auto-tune via kronk.New)
-// run the analysis. id is used only for the gpt/embed/rerank name heuristics
-// and the ID field; when empty it is derived from the first model file name.
+// run the analysis. id supplies fallback identity hints and the ID field;
+// when empty it is derived from the first model file name.
 func ModelInfoFromPath(id string, modelFiles []string, projFile string, mtpFile string) (ModelInfo, error) {
 	if len(modelFiles) == 0 {
 		return ModelInfo{}, fmt.Errorf("model-info-from-path: no model files provided")
@@ -118,7 +119,7 @@ func ModelInfoFromPath(id string, modelFiles []string, projFile string, mtpFile 
 // This lets callers run model analysis without loading the model or rereading
 // header bytes they already hold.
 func ModelInfoFromMetadata(id string, metadata map[string]string, size uint64, hasProjection bool, hasMTP bool) ModelInfo {
-	lowerID := strings.ToLower(id)
+	profile := arch.ResolveForModel(metadata, id)
 	fileType, err := gguf.ParseInt64(metadata, "general.file_type")
 	quantization := ""
 	if err == nil {
@@ -133,8 +134,8 @@ func ModelInfoFromMetadata(id string, metadata map[string]string, size uint64, h
 		Size:          size,
 		FileType:      fileType,
 		Quantization:  quantization,
-		IsEmbedModel:  strings.Contains(lowerID, "embed"),
-		IsRerankModel: strings.Contains(lowerID, "rerank"),
+		IsEmbedModel:  profile.Purpose == modelprofile.PurposeEmbedding,
+		IsRerankModel: profile.Purpose == modelprofile.PurposeRerank,
 		Metadata:      metadata,
 	}
 }

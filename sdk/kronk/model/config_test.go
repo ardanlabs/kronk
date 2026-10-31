@@ -292,20 +292,21 @@ func TestAdjustQueueDepthDefault(t *testing.T) {
 
 func TestAdjustIMCSessionCapacity(t *testing.T) {
 	tests := []struct {
-		name string
-		cfg  Config
-		want int
+		name   string
+		cfg    Config
+		pooled bool
+		want   int
 	}{
-		{"derived default", NewConfig(WithNSeqMax(2), WithQueueDepth(2)), 4},
-		{"queue expansion", NewConfig(WithNSeqMax(2), WithQueueDepth(4)), 8},
-		{"explicit capacity preserved", NewConfig(WithNSeqMax(2), WithQueueDepth(2), WithIMCSessionCapacity(8)), 8},
-		{"embedding has no session pool", NewConfig(WithModelFiles([]string{"Qwen3-Embedding-0.6B-Q8_0.gguf"}), WithNSeqMax(2), WithQueueDepth(2)), 0},
-		{"rerank has no session pool", NewConfig(WithModelFiles([]string{"bge-reranker-v2-m3-Q8_0.gguf"}), WithNSeqMax(2), WithQueueDepth(2)), 0},
+		{"derived default", NewConfig(WithNSeqMax(2), WithQueueDepth(2)), false, 4},
+		{"queue expansion", NewConfig(WithNSeqMax(2), WithQueueDepth(4)), false, 8},
+		{"explicit capacity preserved", NewConfig(WithNSeqMax(2), WithQueueDepth(2), WithIMCSessionCapacity(8)), false, 8},
+		{"embedding has no session pool", NewConfig(WithModelFiles([]string{"all-MiniLM-L6-v2.gguf"}), WithNSeqMax(2), WithQueueDepth(2)), true, 0},
+		{"rerank has no session pool", NewConfig(WithModelFiles([]string{"bge-reranker-v2-m3-Q8_0.gguf"}), WithNSeqMax(2), WithQueueDepth(2)), true, 0},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := adjustIMCSessionCapacity(tt.cfg)
+			cfg := adjustIMCSessionCapacity(tt.cfg, tt.pooled)
 			if got := cfg.IMCSessionCapacity(); got != tt.want {
 				t.Errorf("IMCSessionCapacity: got %d, want %d", got, tt.want)
 			}
@@ -421,19 +422,20 @@ func TestAdjustConfigUsesOneBatchDefault(t *testing.T) {
 	tests := []struct {
 		name        string
 		cfg         Config
+		pooled      bool
 		wantNBatch  int
 		wantNUBatch int
 	}{
-		{"text", NewConfig(WithContextWindow(8192), WithNSeqMax(4)), DefaultPrefillBatchSize + 4, DefaultPrefillBatchSize},
-		{"projection", NewConfig(WithContextWindow(8192), WithNSeqMax(4), WithProjFile("mmproj.gguf")), DefaultPrefillBatchSize + 4, DefaultPrefillBatchSize},
-		{"MoE CPU experts", NewConfig(WithContextWindow(8192), WithNSeqMax(4), WithMoE(&MoEConfig{Mode: MoEModeExpertsCPU})), DefaultPrefillBatchSize + 4, DefaultPrefillBatchSize},
-		{"embedding", NewConfig(WithModelFiles([]string{"Qwen3-Embedding-0.6B-Q8_0.gguf"}), WithContextWindow(8192), WithNSeqMax(4)), DefaultPrefillBatchSize, DefaultPrefillBatchSize},
-		{"rerank", NewConfig(WithModelFiles([]string{"bge-reranker-v2-m3-Q8_0.gguf"}), WithContextWindow(8192), WithNSeqMax(4)), DefaultPrefillBatchSize, DefaultPrefillBatchSize},
+		{"text", NewConfig(WithContextWindow(8192), WithNSeqMax(4)), false, DefaultPrefillBatchSize + 4, DefaultPrefillBatchSize},
+		{"projection", NewConfig(WithContextWindow(8192), WithNSeqMax(4), WithProjFile("mmproj.gguf")), false, DefaultPrefillBatchSize + 4, DefaultPrefillBatchSize},
+		{"MoE CPU experts", NewConfig(WithContextWindow(8192), WithNSeqMax(4), WithMoE(&MoEConfig{Mode: MoEModeExpertsCPU})), false, DefaultPrefillBatchSize + 4, DefaultPrefillBatchSize},
+		{"embedding", NewConfig(WithModelFiles([]string{"all-MiniLM-L6-v2.gguf"}), WithContextWindow(8192), WithNSeqMax(4)), true, DefaultPrefillBatchSize, DefaultPrefillBatchSize},
+		{"rerank", NewConfig(WithModelFiles([]string{"bge-reranker-v2-m3-Q8_0.gguf"}), WithContextWindow(8192), WithNSeqMax(4)), true, DefaultPrefillBatchSize, DefaultPrefillBatchSize},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := adjustConfig(tt.cfg, 0)
+			cfg := adjustConfig(tt.cfg, 0, tt.pooled)
 			if got := cfg.EffectiveNUBatch(); got != tt.wantNUBatch {
 				t.Errorf("NUBatch: got %d, want %d", got, tt.wantNUBatch)
 			}
@@ -454,7 +456,7 @@ func TestAdjustConfigUsesConfiguredPrefillBatchSize(t *testing.T) {
 		WithPrefillBatchSize(4096),
 	)
 
-	got := adjustConfig(cfg, 0)
+	got := adjustConfig(cfg, 0, false)
 
 	if got.PrefillBatchSize() != 4096 {
 		t.Errorf("PrefillBatchSize: got %d, want %d", got.PrefillBatchSize(), 4096)
@@ -493,7 +495,7 @@ func TestPhysicalBatchSize(t *testing.T) {
 			}
 		})
 	}
-	resolved := adjustConfig(NewConfig(WithPrefillBatchSize(2048), WithPhysicalBatchSize(512), WithNSeqMax(1)), 0)
+	resolved := adjustConfig(NewConfig(WithPrefillBatchSize(2048), WithPhysicalBatchSize(512), WithNSeqMax(1)), 0, false)
 	if resolved.EffectiveNBatch() != 2049 || resolved.EffectiveNUBatch() != 512 || resolved.PrefillBatchSize() != 2048 {
 		t.Fatalf("Florin configuration: got prompt=%d batch=%d/%d, want 2048 and 2049/512", resolved.PrefillBatchSize(), resolved.EffectiveNBatch(), resolved.EffectiveNUBatch())
 	}
@@ -508,7 +510,7 @@ func TestPhysicalBatchSize(t *testing.T) {
 
 func TestAdjustConfigDoesNotMutateDraftModelConfig(t *testing.T) {
 	draft := &DraftModelConfig{ModelFiles: []string{"draft.gguf"}}
-	cfg := adjustConfig(Config{PtrDraftModel: draft}, 0)
+	cfg := adjustConfig(Config{PtrDraftModel: draft}, 0, false)
 
 	if draft.NDraft != 0 {
 		t.Errorf("caller draft NDraft: got %d, want 0", draft.NDraft)
@@ -550,7 +552,7 @@ func TestAdjustConfigUsesKronkThreadDefault(t *testing.T) {
 			{"batch only", NewConfig(WithContextWindow(8192), WithNThreadsBatch(9)), limit.want, 9},
 		} {
 			t.Run(fmt.Sprintf("GOMAXPROCS=%d/%s", limit.maxProcs, tt.name), func(t *testing.T) {
-				cfg := adjustConfig(tt.cfg, 0)
+				cfg := adjustConfig(tt.cfg, 0, false)
 				if got := cfg.NThreads(); got != tt.wantThreads {
 					t.Errorf("NThreads: got %d, want %d", got, tt.wantThreads)
 				}
@@ -641,7 +643,7 @@ func TestAdjustDefaultGenerationBatchBySlotCount(t *testing.T) {
 			plain := adjustConfig(NewConfig(
 				WithContextWindow(8192),
 				WithNSeqMax(tt.nSeqMax),
-			), 0)
+			), 0, false)
 			if plain.EffectiveNBatch() != tt.wantPlain || plain.EffectiveNUBatch() != DefaultPrefillBatchSize {
 				t.Errorf("plain batch = %d/%d, want %d/%d", plain.EffectiveNBatch(), plain.EffectiveNUBatch(), tt.wantPlain, DefaultPrefillBatchSize)
 			}
@@ -1179,6 +1181,9 @@ func TestValidateConfig(t *testing.T) {
 		for _, tt := range tests {
 			t.Run(tt.want, func(t *testing.T) {
 				err := validateConfig(context.Background(), tt.cfg, discardLogger)
+				if err == nil {
+					err = validateIMCSessionCapacity(tt.cfg, isEmbedOrRerankConfig(tt.cfg))
+				}
 				if (err != nil) != tt.wantErr {
 					t.Errorf("validateConfig() error = %v, wantErr %v", err, tt.wantErr)
 					return
