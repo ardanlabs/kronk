@@ -513,6 +513,80 @@ Models, configuration, catalog state, and authentication keys remain in the
 named volume. Removing `kronk-data` permanently deletes that state and is not
 part of a normal image update.
 
+**Container resource limits**
+
+Container limits and Kronk's model budgets serve different purposes. Docker
+and Kubernetes enforce CPU and host-memory limits; Kronk's `budget-percent`
+controls model admission, not a hard limit on the whole server process.
+Leave room for the server, native libraries, temporary allocations, and
+other work beyond model weights and KV caches. A model fitting Kronk's
+estimated budget does not guarantee that the container fits its RAM limit.
+
+- CPU quotas can throttle inference and increase latency. Size thread counts
+  and concurrency for the CPU capacity assigned to the container, not the
+  host's total core count.
+- A hard RAM limit can cause an OOM kill rather than a recoverable API error.
+  Reducing context size, concurrent sequences, or resident models can lower
+  memory demand. Inspect container memory usage and restarts under realistic
+  load before rollout.
+- CPU/RAM limits do not cap GPU VRAM. Device access such as `--gpus all` is
+  not a per-container VRAM quota or an exclusive reservation. Account for
+  other GPU workloads and leave VRAM headroom; do not treat `budget-percent`
+  as isolation from other processes.
+- With Docker Desktop, the Linux VM's CPU and memory allocation also bounds
+  what containers can use. Increasing a container limit cannot increase the
+  VM's available resources.
+
+For example, add `--cpus=2 --memory=8g` to the `docker run` command to limit
+it to two CPUs' worth of execution time and 8 GiB of host memory. These are
+illustrative limits, not sizing recommendations for every model. For Compose,
+add the equivalent settings to the same override file used for server settings:
+
+```yaml
+services:
+  kronk:
+    cpus: 2.0
+    mem_limit: 8g
+```
+
+For Helm, set `resources.requests` and `resources.limits` in your values file.
+Requests guide scheduling; limits constrain runtime use. A GPU device request
+does not by itself specify a VRAM byte limit. See §8.4 for model budgets and
+Chapter 3 for context and concurrency tuning.
+
+**NVIDIA Jetson: build locally**
+
+Jetson is not part of the published image matrix: there is no automatically
+published `ghcr.io/ardanlabs/kronk:jetson` tag. The optional `runtime-jetson`
+target requires a Jetson compatible with JetPack 6 / L4T r36 and NVIDIA
+Container Runtime. Build natively on that device from a reviewed repository
+checkout, using a local image name:
+
+```shell
+docker buildx build --load \
+  --platform linux/arm64 \
+  --build-arg LLAMA_PROCESSORS=cuda \
+  --build-arg BUCKY_PROCESSORS=cuda \
+  --target runtime-jetson \
+  -t kronk-jetson:local \
+  -f zarf/docker/kronk/Dockerfile .
+
+docker run -d \
+  --name kronk \
+  --restart unless-stopped \
+  --runtime=nvidia \
+  -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics \
+  -p 127.0.0.1:11435:11435 \
+  -v kronk-data:/kronk \
+  kronk-jetson:local
+```
+
+Use the authentication settings above for a protected deployment. To upgrade,
+build again from the desired release checkout, then stop and remove the old
+container and repeat the run command, retaining `kronk-data`. Validate inference
+on the actual device; a successful build or liveness response alone does not
+verify GPU inference.
+
 **Docker Compose**
 
 The Compose files in
@@ -613,6 +687,29 @@ To upgrade, run from the Compose directory with the same `-f` files or `.env`:
   `docker compose up -d`. If you downloaded the Compose files for a release
   tag, download them again for the new tag first.
 - `latest`: run `docker compose pull`, then `docker compose up -d`.
+
+**Stop and uninstall without deleting data**
+
+For a container created with `docker run`:
+
+```shell
+docker stop kronk
+docker rm kronk
+```
+
+For Compose, run from its directory with the same `-f` files or `.env` used
+to start it:
+
+```shell
+docker compose stop
+docker compose down
+```
+
+`stop` leaves the container available to start again; `down` removes the
+Compose containers and network. Both retain the named `kronk-data` volume.
+Do not use `docker compose down --volumes` or `docker volume rm kronk-data`
+unless you intend to permanently delete models, configuration, and keys.
+Back up important data before any deliberate volume removal.
 
 The `kronk-net` network is shared with the
 [observability stack](https://www.kronkai.com/manual#153-bundled-observability-stack)

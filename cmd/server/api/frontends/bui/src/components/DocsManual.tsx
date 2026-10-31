@@ -285,7 +285,42 @@ kronk --help`}</code></pre>
   -p 127.0.0.1:11435:11435 \\
   -v kronk-data:/kronk \\
   ghcr.io/ardanlabs/kronk:latest-cuda`}</code></pre>
-          <p>AMD ROCm and Vulkan require host-specific device access. Use the Compose files below, or see the tested <code>docker run</code> command lines and the compatibility matrix in the header of the <a href="https://github.com/ardanlabs/kronk/blob/main/zarf/docker/kronk/Dockerfile"><code>Dockerfile</code></a>.</p>
+          <p><strong>AMD ROCm container (Linux amd64)</strong></p>
+          <p>The host needs a ROCm-compatible GPU and kernel driver, with <code>/dev/kfd</code> and <code>/dev/dri</code> available. Pass the host's numeric device-group IDs so the container's non-root user can access the GPU:</p>
+          <pre className="code-block"><code className="language-shell">{`docker run -d \\
+  --name kronk \\
+  --restart unless-stopped \\
+  --device=/dev/kfd --device=/dev/dri \\
+  --group-add "$(getent group video | cut -d: -f3)" \\
+  --group-add "$(getent group render | cut -d: -f3)" \\
+  --security-opt seccomp=unconfined \\
+  -p 127.0.0.1:11435:11435 \\
+  -v kronk-data:/kronk \\
+  ghcr.io/ardanlabs/kronk:latest-rocm`}</code></pre>
+          <p>This ROCm example disables Docker's default seccomp filter; apply your deployment's security policy before using it on shared infrastructure.</p>
+          <p><strong>Vulkan container (AMD or Intel on Linux)</strong></p>
+          <p>Use a compatible host kernel driver and expose the GPU render devices:</p>
+          <pre className="code-block"><code className="language-shell">{`docker run -d \\
+  --name kronk \\
+  --restart unless-stopped \\
+  --device=/dev/dri \\
+  --group-add "$(getent group video | cut -d: -f3)" \\
+  --group-add "$(getent group render | cut -d: -f3)" \\
+  -p 127.0.0.1:11435:11435 \\
+  -v kronk-data:/kronk \\
+  ghcr.io/ardanlabs/kronk:latest-vulkan`}</code></pre>
+          <p>For both examples, check <code>getent group video</code> and <code>getent group render</code> first. If your distribution uses different device groups, substitute the numeric GIDs that own the GPU devices on your host. These examples expose all devices under <code>/dev/dri</code>; expose individual render nodes instead when you need to restrict device access.</p>
+          <p><strong>Vulkan container (NVIDIA on Linux)</strong></p>
+          <p>Use the NVIDIA Container Toolkit and request graphics capabilities in addition to compute and utility access:</p>
+          <pre className="code-block"><code className="language-shell">{`docker run -d \\
+  --name kronk \\
+  --restart unless-stopped \\
+  --runtime=nvidia --gpus all \\
+  -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics \\
+  -p 127.0.0.1:11435:11435 \\
+  -v kronk-data:/kronk \\
+  ghcr.io/ardanlabs/kronk:latest-vulkan`}</code></pre>
+          <p>Run only one of these examples at a time: they reuse the same container name and port. Stop and remove an existing container before switching backends; keep <code>kronk-data</code>. For production authentication, resource limits, and a local Jetson build, see <a href="https://www.kronkai.com/manual#87-container-operations">8.7 Container Operations</a>.</p>
           <p><strong>Docker Compose</strong></p>
           <p>The repository includes Compose files in <a href="https://github.com/ardanlabs/kronk/tree/main/zarf/docker/kronk"><code>zarf/docker/kronk</code></a> that reuse the same <code>kronk-data</code> volume. The default file selects CPU inference and publishes the API (<code>11435</code>) and debug server (<code>11445</code>, including metrics and profiling) on localhost. Remove a <code>kronk</code> container started with <code>docker run</code> first; its models are kept in the volume:</p>
           <pre className="code-block"><code className="language-shell">{`docker rm -f kronk
@@ -2280,6 +2315,39 @@ docker stop kronk
 docker rm kronk
 # Repeat the docker run command with the new versioned tag.`}</code></pre>
           <p>Models, configuration, catalog state, and authentication keys remain in the named volume. Removing <code>kronk-data</code> permanently deletes that state and is not part of a normal image update.</p>
+          <p><strong>Container resource limits</strong></p>
+          <p>Container limits and Kronk's model budgets serve different purposes. Docker and Kubernetes enforce CPU and host-memory limits; Kronk's <code>budget-percent</code> controls model admission, not a hard limit on the whole server process. Leave room for the server, native libraries, temporary allocations, and other work beyond model weights and KV caches. A model fitting Kronk's estimated budget does not guarantee that the container fits its RAM limit.</p>
+          <ul>
+            <li>CPU quotas can throttle inference and increase latency. Size thread counts and concurrency for the CPU capacity assigned to the container, not the host's total core count.</li>
+            <li>A hard RAM limit can cause an OOM kill rather than a recoverable API error. Reducing context size, concurrent sequences, or resident models can lower memory demand. Inspect container memory usage and restarts under realistic load before rollout.</li>
+            <li>CPU/RAM limits do not cap GPU VRAM. Device access such as <code>--gpus all</code> is not a per-container VRAM quota or an exclusive reservation. Account for other GPU workloads and leave VRAM headroom; do not treat <code>budget-percent</code> as isolation from other processes.</li>
+            <li>With Docker Desktop, the Linux VM's CPU and memory allocation also bounds what containers can use. Increasing a container limit cannot increase the VM's available resources.</li>
+          </ul>
+          <p>For example, add <code>--cpus=2 --memory=8g</code> to the <code>docker run</code> command to limit it to two CPUs' worth of execution time and 8 GiB of host memory. These are illustrative limits, not sizing recommendations for every model. For Compose, add the equivalent settings to the same override file used for server settings:</p>
+          <pre className="code-block"><code className="language-yaml">{`services:
+  kronk:
+    cpus: 2.0
+    mem_limit: 8g`}</code></pre>
+          <p>For Helm, set <code>resources.requests</code> and <code>resources.limits</code> in your values file. Requests guide scheduling; limits constrain runtime use. A GPU device request does not by itself specify a VRAM byte limit. See §8.4 for model budgets and Chapter 3 for context and concurrency tuning.</p>
+          <p><strong>NVIDIA Jetson: build locally</strong></p>
+          <p>Jetson is not part of the published image matrix: there is no automatically published <code>ghcr.io/ardanlabs/kronk:jetson</code> tag. The optional <code>runtime-jetson</code> target requires a Jetson compatible with JetPack 6 / L4T r36 and NVIDIA Container Runtime. Build natively on that device from a reviewed repository checkout, using a local image name:</p>
+          <pre className="code-block"><code className="language-shell">{`docker buildx build --load \\
+  --platform linux/arm64 \\
+  --build-arg LLAMA_PROCESSORS=cuda \\
+  --build-arg BUCKY_PROCESSORS=cuda \\
+  --target runtime-jetson \\
+  -t kronk-jetson:local \\
+  -f zarf/docker/kronk/Dockerfile .
+
+docker run -d \\
+  --name kronk \\
+  --restart unless-stopped \\
+  --runtime=nvidia \\
+  -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics \\
+  -p 127.0.0.1:11435:11435 \\
+  -v kronk-data:/kronk \\
+  kronk-jetson:local`}</code></pre>
+          <p>Use the authentication settings above for a protected deployment. To upgrade, build again from the desired release checkout, then stop and remove the old container and repeat the run command, retaining <code>kronk-data</code>. Validate inference on the actual device; a successful build or liveness response alone does not verify GPU inference.</p>
           <p><strong>Docker Compose</strong></p>
           <p>The Compose files in <a href="https://github.com/ardanlabs/kronk/tree/main/zarf/docker/kronk"><code>zarf/docker/kronk</code></a> use the same container name (<code>kronk</code>) and volume (<code>kronk-data</code>) as the examples above, so the <code>docker exec</code> and <code>docker logs</code> commands work unchanged. Start with <a href="https://www.kronkai.com/manual#23-container-quick-start">2.3 Container Quick Start</a>. All <code>docker compose</code> commands run from the directory holding the files.</p>
           <p>Without a repository checkout, download only the Compose files. Replace <code>main</code> with the release tag of the image you pin:</p>
@@ -2372,6 +2440,14 @@ KRONK_IMAGE_VERSION=vX.Y.Z`}</code></pre>
             <li>Pinned version: change <code>KRONK_IMAGE_VERSION</code> to the new release, then run <code>docker compose up -d</code>. If you downloaded the Compose files for a release tag, download them again for the new tag first.</li>
             <li><code>latest</code>: run <code>docker compose pull</code>, then <code>docker compose up -d</code>.</li>
           </ul>
+          <p><strong>Stop and uninstall without deleting data</strong></p>
+          <p>For a container created with <code>docker run</code>:</p>
+          <pre className="code-block"><code className="language-shell">{`docker stop kronk
+docker rm kronk`}</code></pre>
+          <p>For Compose, run from its directory with the same <code>-f</code> files or <code>.env</code> used to start it:</p>
+          <pre className="code-block"><code className="language-shell">{`docker compose stop
+docker compose down`}</code></pre>
+          <p><code>stop</code> leaves the container available to start again; <code>down</code> removes the Compose containers and network. Both retain the named <code>kronk-data</code> volume. Do not use <code>docker compose down --volumes</code> or <code>docker volume rm kronk-data</code> unless you intend to permanently delete models, configuration, and keys. Back up important data before any deliberate volume removal.</p>
           <p>The <code>kronk-net</code> network is shared with the <a href="https://www.kronkai.com/manual#153-bundled-observability-stack">observability stack</a> and can remain after both stacks stop; remove it with <code>docker network rm kronk-net</code>.</p>
           <h2 id="88-running-as-a-systemd-service">8.8 Running as a systemd Service</h2>
           <p>On Linux, <code>kronk systemd</code> installs and manages a systemd <strong>user service</strong>. It runs as your normal user and uses your existing <code>~/.kronk</code> models, libraries, and keys. It is separate from <code>kronk server start --detach</code>: systemd owns the process, restarts it after failures, and stores its logs in the journal. Do not use <code>sudo kronk systemd</code>.</p>
