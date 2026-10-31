@@ -204,10 +204,71 @@ docker run -d \
   ghcr.io/ardanlabs/kronk:latest-cuda
 ```
 
-AMD ROCm and Vulkan require host-specific device access. Use the Compose
-files below, or see the tested `docker run` command lines and the
-compatibility matrix in the header of the
-[`Dockerfile`](https://github.com/ardanlabs/kronk/blob/main/zarf/docker/kronk/Dockerfile).
+**AMD ROCm container (Linux amd64)**
+
+The host needs a ROCm-compatible GPU and kernel driver, with `/dev/kfd` and
+`/dev/dri` available. Pass the host's numeric device-group IDs so the
+container's non-root user can access the GPU:
+
+```shell
+docker run -d \
+  --name kronk \
+  --restart unless-stopped \
+  --device=/dev/kfd --device=/dev/dri \
+  --group-add "$(getent group video | cut -d: -f3)" \
+  --group-add "$(getent group render | cut -d: -f3)" \
+  --security-opt seccomp=unconfined \
+  -p 127.0.0.1:11435:11435 \
+  -v kronk-data:/kronk \
+  ghcr.io/ardanlabs/kronk:latest-rocm
+```
+
+This ROCm example disables Docker's default seccomp filter; apply your
+deployment's security policy before using it on shared infrastructure.
+
+**Vulkan container (AMD or Intel on Linux)**
+
+Use a compatible host kernel driver and expose the GPU render devices:
+
+```shell
+docker run -d \
+  --name kronk \
+  --restart unless-stopped \
+  --device=/dev/dri \
+  --group-add "$(getent group video | cut -d: -f3)" \
+  --group-add "$(getent group render | cut -d: -f3)" \
+  -p 127.0.0.1:11435:11435 \
+  -v kronk-data:/kronk \
+  ghcr.io/ardanlabs/kronk:latest-vulkan
+```
+
+For both examples, check `getent group video` and `getent group render`
+first. If your distribution uses different device groups, substitute the
+numeric GIDs that own the GPU devices on your host. These examples expose
+all devices under `/dev/dri`; expose individual render nodes instead when
+you need to restrict device access.
+
+**Vulkan container (NVIDIA on Linux)**
+
+Use the NVIDIA Container Toolkit and request graphics capabilities in
+addition to compute and utility access:
+
+```shell
+docker run -d \
+  --name kronk \
+  --restart unless-stopped \
+  --runtime=nvidia --gpus all \
+  -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics \
+  -p 127.0.0.1:11435:11435 \
+  -v kronk-data:/kronk \
+  ghcr.io/ardanlabs/kronk:latest-vulkan
+```
+
+Run only one of these examples at a time: they reuse the same container
+name and port. Stop and remove an existing container before switching
+backends; keep `kronk-data`. For production authentication, resource limits,
+and a local Jetson build, see
+[8.7 Container Operations](https://www.kronkai.com/manual#87-container-operations).
 
 **Docker Compose**
 
