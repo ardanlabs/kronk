@@ -89,6 +89,7 @@ func TestGGMLTypeSizes(t *testing.T) {
 		{"NVFP4", 40, 64, 36},
 		{"Q1_0", 41, 128, 18},
 		{"Q2_0", 42, 64, 18},
+		{"F8_E4M3", 43, 1, 1},
 	}
 
 	if got, want := len(ggmlTypeSizes), len(tests); got != want {
@@ -128,6 +129,8 @@ func TestGGMLRowSize(t *testing.T) {
 		{"NVFP4-128", 40, 128, 72},
 		{"Q1_0-128", 41, 128, 18},
 		{"Q2_0-128", 42, 128, 36},
+		{"F8_E4M3-17", 43, 17, 17},
+		{"F8_E4M3-zero", 43, 0, 0},
 		{"unknown-type", 255, 128, 0},
 	}
 
@@ -154,6 +157,7 @@ func TestGGMLTensorSize(t *testing.T) {
 		{"MXFP4-2D-4096x4096", 39, []int64{4096, 4096}, 2176 * 4096},
 		{"empty-dims", 0, []int64{}, 0},
 		{"F16-3D", 1, []int64{128, 32, 8}, 128 * 2 * 32 * 8},
+		{"F8_E4M3-3D", 43, []int64{17, 3, 5}, 255},
 	}
 
 	for _, tt := range tests {
