@@ -58,8 +58,9 @@ malina-models:
     queue-depth: 2
 ```
 
-Files without `version` use the legacy version-0 shape, where model IDs are
-top-level keys. The remaining examples in this chapter show individual entries
+Files must declare `version: 1` or `version: 2`; missing or unsupported versions
+prevent server startup. Migrate legacy files with top-level model IDs into the
+`models:` mapping. The remaining examples in this chapter show individual entries
 as they appear below `models:`. Model setting names use kebab-case, such as
 `context-window` and `nseq-max`. Keys nested under `sampling-parameters` use the
 API's snake_case names, such as `top_p`.
@@ -101,17 +102,22 @@ settings without keeping duplicate model files.
 
 #### Other configuration surfaces
 
-Applications embedding the Go SDK can construct a `model.Config` directly.
+Applications embedding the SDK can configure model loading directly without
+using the server's YAML file.
 Request fields such as `temperature`, `top_p`, `seed`, and `max_tokens` can override
-generation behavior for an individual request. A configured seed makes requests
-that omit `seed` repeatable; omit it from both places to use random sampling.
+generation behavior for an individual request. A configured seed supplies a
+repeatable sampling default; an explicit request seed takes precedence. Without
+either, Kronk generates a random seed, which a matched IMC session can retain
+across turns. A fixed seed does not guarantee identical output across different
+backends or execution conditions.
 Those request fields are documented in
 [Chapter 10](https://www.kronkai.com/manual#chapter-10-request-parameters).
 
-The hardware processor (`cpu`, `metal`, `cuda`, `rocm`, or `vulkan`) selects a
-native library bundle rather than a per-model setting. Kronk detects it during
-library installation. Set `KRONK_PROCESSOR` before installing libraries only
-when you need to override detection; see
+The hardware processor (such as `cpu`, `metal`, `cuda`, `rocm`, or `vulkan`)
+selects a native library bundle rather than a per-model setting. Kronk normally
+detects it automatically. To override detection, apply `KRONK_PROCESSOR` to both
+library installation and server startup; a one-command setting does not persist.
+See
 [Chapter 2 §2.4](https://www.kronkai.com/manual#24-libraries).
 
 #### 3.1.1 Chat Templates Define the Model Protocol
@@ -129,11 +135,18 @@ that tells the model to begin an assistant response. These failures can be
 subtle: the model may still generate fluent text while instruction following,
 tool calling, reasoning, or multimodal behavior degrades.
 
-Kronk resolves the template when the model loads, in this order:
+For normal server model loads, Kronk resolves the template in this order:
 
 1. The explicit `template` path in `model_config.yaml`.
-2. A matching Jinja file discovered under Kronk's Jinja directory.
+2. A matching Jinja file under the data root's `jinja` directory, first matching
+   the model name including quantization, then the name without its quantization
+   suffix.
 3. The `tokenizer.chat_template` embedded in GGUF metadata.
+
+Relative `template` paths resolve under the Kronk data root, not beside the
+configuration file. An unreadable or empty explicit template prevents model
+loading. A custom in-memory template supplied by the Playground or an embedded
+application takes precedence over these file-based choices.
 
 Prefer the model's supplied template unless you are correcting known-bad
 metadata or deliberately testing a custom protocol. A template override must
@@ -206,14 +219,22 @@ When context and concurrency are not specified, the balanced analysis limits
 the selected context to the model's training context and a maximum of 128K
 tokens. It searches supported context buckets from largest to smallest. At
 each context it tries `f16` first and then `q8_0` before considering a smaller
-context. The minimum recommendation is 4K. CPU-only analysis and systems
-without a known GPU budget cannot perform the same fit check. All
+context. The usual minimum candidate is 4K, but a smaller training context is
+not expanded to 4K. Fit checks use both VRAM and host RAM where applicable; on
+unified-memory systems, they use the combined footprint. CPU-only analysis can
+check RAM when a budget is known. Without a known budget, the corresponding
+memory limit cannot be checked. All
 recommendations are estimates, not a guarantee that every backend and workload
 will fit or have identical memory use.
 
-In the Go SDK, the same analysis is opt-in through `WithAutoTune`. It is not
-applied when an application uses the low-level `model` package directly.
-Explicit SDK options still take precedence over analyzed values.
+Automatic tuning estimates a configuration; it does not guarantee a successful
+load. A configuration that cannot fit the server's memory budget can be rejected
+before loading. AutoTune does not automatically turn an oversized full-GPU
+configuration into a CPU/GPU split: configure partial layer or expert placement
+explicitly when needed.
+
+Embedded applications must opt into automatic tuning. Explicit application
+settings constrain the recommendation in the same way as server overrides.
 
 ### 3.3 Core Runtime Settings
 
@@ -277,7 +298,7 @@ Shared mode can improve ordinary generation batching when active sequence IDs
 have gaps. It can also increase attention workspace and long-history processing
 costs. Benchmark your workload rather than assuming it is always faster. This is
 a model-load setting, not a chat-request parameter; restart/reload with the new
-configuration. SDK callers use `model.WithKVCacheMode(model.KVCacheShared)`.
+configuration.
 
 #### Flash Attention
 
@@ -292,6 +313,10 @@ unsloth/Qwen3-0.6B-Q8_0:
 Valid values are `enabled`, `disabled`, and `auto`. Automatic tuning uses
 `auto` when a GPU is available and disables it for CPU-only analysis. Set an
 explicit value only for backend compatibility or controlled benchmarking.
+
+Quantized value caches such as `cache-type-v: q8_0` or `q4_0` require
+`flash-attention: auto` or `enabled`; combining them with `disabled` fails
+configuration validation. Backend and model support must still be verified.
 
 #### Sliding Window Attention
 
@@ -333,10 +358,42 @@ Partial offload can make a model fit in limited VRAM, but CPU-resident layers
 usually reduce inference speed. On unified-memory systems, CPU and GPU do not
 have separate memory pools, although placement can still affect performance.
 
+#### MoE expert placement
+
+For MoE models, `moe.mode` controls routed expert placement separately from
+ordinary layer offload:
+
+| Value | Behavior |
+| ----- | -------- |
+| `auto` | Experts follow normal layer placement; no extra CPU override |
+| `experts_cpu` | Keep routed expert weights on the CPU while other weights follow layer placement |
+| `experts_gpu` | No extra CPU override; experts follow layer placement, so full GPU offload is still needed to put all experts on GPU |
+| `keep_top_n` | Keep routed experts eligible for GPU placement in the highest-numbered N layers; force the remaining expert layers to CPU |
+| `custom` | Use explicit `tensor-buft-overrides` for placement |
+
+For example, on a discrete-GPU system with enough host RAM, this keeps the
+non-expert model weights eligible for GPU offload while placing routed experts
+in host memory:
+
+```yaml
+some-provider/large-moe-model:
+  ngpu-layers: 0
+  moe:
+    mode: experts_cpu
+```
+
+To retain some expert layers on GPU, use `mode: keep_top_n` with
+`keep-experts-top-n: 4`, adjusting the count to fit the available VRAM. Here
+“top” means the highest-numbered layers, not the most frequently selected
+experts. An explicit `tensor-buft-overrides` list takes precedence over
+`moe.mode`. These settings redistribute weights; they do not reduce model size
+or create additional capacity on unified-memory systems. Measure throughput
+because CPU expert evaluation can become the bottleneck. The optional GPU
+expert cache is described in Section 3.6.
+
 #### Model weight loading
 
-`load-mode` controls how Kronk reads model weights. Its default and Go zero
-value are `auto`:
+`load-mode` controls how Kronk reads model weights. Its default is `auto`:
 
 ```yaml
 some-provider/some-model:
@@ -362,9 +419,6 @@ can also make repeated loads slower and is not supported by every filesystem.
 Benchmark the actual model path before selecting it.
 
 Kronk applies one load mode to the target model and any separate draft model.
-The Go SDK equivalent is `model.WithLoadMode`, using `LoadModeAuto`,
-`LoadModeMMap`, `LoadModeNone`, `LoadModeMLock`, `LoadModeMMapMLock`, or
-`LoadModeDirectIO`.
 
 The former `use-mmap` and `use-direct-io` keys are no longer supported. Migrate
 existing configuration as follows:
@@ -385,7 +439,7 @@ whole-model lazy loading; models without eligible tensors are unaffected.
 | ----- | -------- |
 | `auto` | Lazy-read eligible tensors larger than 4 GiB when all selected devices support mmap; this is the default |
 | `off` | Read eligible tensors up front like ordinary weights |
-| `on` | Request lazy reading for eligible tensors regardless of size; requires platform mmap support |
+| `on` | Request lazy reading regardless of tensor size; if platform mmap is unavailable, load fully into RAM and log a warning |
 
 ```yaml
 some-provider/some-model:
@@ -401,21 +455,15 @@ ordinary loading. Accessed pages may remain cached, and disk reads can reduce
 inference speed. Verify residency and performance with the actual model.
 
 The setting applies to the target and any separate or companion draft model.
-The Go SDK equivalent is `model.WithLazyMode(model.LazyModeOn)`, with
-`LazyModeAuto` and `LazyModeOff` as the other choices.
-
-Kronk's calculator replaces an effective lazy table's full encoded size with a
-page-rounded working-set estimate: two physical batches per native context,
-with at least 256 MiB reserved for accessed pages, capped at the table size.
-Gemma4 gathers one all-layer row per token; Qwen4Exp gathers multiple n-gram
-head rows. The table remains host memory, not additional GPU workspace.
-The same result feeds fitting, admission reservations, and the resource screen.
+For eligible lazy tables, Kronk's memory estimates and admission reservations
+use an estimated host-memory working set instead of the full table size.
 
 Full-table accounting remains when lazy reading is off or uncertain, when
 `auto` does not meet its size/device requirements, with mlock, or when Metal
 mmap may overlap a table that is not alone in its shard. The current device
 capability check verifies CPU and Metal; other backends conservatively retain
-the full table in `auto` mode. Explicit `on` only needs platform mmap support.
+the full table in `auto` mode. Explicit `on` bypasses the size and device checks,
+but cannot enable lazy reading on a platform without mmap support.
 This is not a hard residency cap: clean mapped pages may accumulate or be
 reclaimed by the operating system. Validate actual memory and latency under
 representative prompts before relying on the additional admission headroom.
@@ -434,9 +482,10 @@ some-provider/some-model:
 host tensor operations on the CPU. These options can reduce discrete-GPU VRAM
 pressure at a performance cost. They do not reduce total memory requirements.
 
-llama.cpp also supports the process-wide `GGML_OP_OFFLOAD_MIN_BATCH`
-environment variable. Set it before Kronk starts; GPU backends read it once
-during `kronk.Init`, so it cannot be configured independently per model.
+`GGML_OP_OFFLOAD_MIN_BATCH` sets the minimum batch size for offloading supported
+host operations on applicable GPU backends; the default is 32. It is
+process-wide, not a per-model setting. Set it before server startup and restart
+after changing it.
 
 For multimodal models, `proj-on-cpu: true` keeps the media projector on the
 CPU without changing placement of the language model itself. To place the
@@ -457,10 +506,8 @@ paths. Leave them unset unless you need to override backend memory behavior.
 | `GGML_CUDA_NO_PINNED` | Disable pinned host-memory allocation |
 | `GGML_CUDA_REGISTER_HOST` | Enable host-memory registration |
 
-Starting with llama.cpp b11696, these three settings require a value that
-parses as a nonzero integer. Previously, their presence alone activated them,
-even with an empty value or `0`. Use `1` to activate a setting; `true`, `yes`,
-an empty value, and `0` no longer activate it. For example:
+Use `1` to activate these three settings. An empty value, `0`, `true`, or `yes`
+does not activate them. For example:
 
 ```shell
 GGML_CUDA_ENABLE_UNIFIED_MEMORY=1 kronk server start
@@ -519,17 +566,15 @@ unsloth/Qwen3-0.6B-Q8_0:
   nseq-max: 4
 ```
 
-For text generation, this creates up to four batch-engine slots. Their
-sequence state and KV capacity are isolated. Kronk allocates an aggregate
-context of `context-window × nseq-max`, which llama.cpp divides into one fixed
-`context-window` stream per slot. Increasing `nseq-max` therefore increases
-the capacity Kronk must budget and can substantially increase memory use.
+For text generation, this allows up to four active generation requests.
+Requests remain isolated, and each has the configured `context-window` limit.
+Kronk budgets aggregate context capacity of `context-window × nseq-max`;
+`kv-cache-mode` determines whether KV storage is partitioned or shared.
+Increasing concurrency can substantially increase memory use.
 
-For supported embedding and reranking architectures, `nseq-max` is the maximum
-number of complete inputs or query-document pairs in one sequence batch on a
-shared context. Architectures that have not been proven safe for that runtime
-use `nseq-max` to size a pool of independent single-sequence contexts instead.
-See
+For embedding and reranking models, `nseq-max` limits the number of complete
+inputs or query-document pairs evaluated together. Their combined token count
+is also limited by `prefill-batch-size`. See
 [Chapter 4](https://www.kronkai.com/manual#chapter-4-batch-processing) for request scheduling and the
 differences between model types.
 
@@ -542,21 +587,20 @@ Text scheduling, image capacity, and image preprocessing are configured separate
 | `image-batch-token-capacity` | `0` (no additional floor) | Independent native capacity floor for image chunks; does not change text scheduling or image detail |
 | `image-token-budget` | Unset (projector default) | Explicit preprocessing budget for supported projectors; lowering it may reduce image resolution and detail |
 
-For generation models, a larger value can move a long prompt to generation in
+For generation models, a larger `prefill-batch-size` can move a long prompt to generation in
 fewer decode calls, but requires larger compute buffers and each call runs
 longer before already-generating slots can run again. A smaller value gives
 generating slots more frequent scheduling opportunities at the cost of more
 prefill decode calls.
 
-For embedding and reranking models, Kronk sets both internal `NBatch` and
-`NUBatch` to `prefill-batch-size`. This is the aggregate token capacity of one
-native sequence batch, not a capacity granted separately to every sequence.
+For embedding and reranking, `prefill-batch-size` limits the combined tokens
+evaluated together, not the token capacity of each input.
 The batch is constrained independently by `nseq-max` complete sequences and by
 `prefill-batch-size` combined tokens. For example, `nseq-max: 8` with
 `prefill-batch-size: 2048` can evaluate eight 256-token sequences, four
 512-token sequences, two 1024-token sequences, or one 2048-token sequence in a
-single native batch. Kronk does not multiply the token capacity by `nseq-max`;
-doing so would allocate a much larger physical compute batch. Increase
+single batch. Kronk does not multiply the token capacity by `nseq-max`;
+larger aggregate batches require more compute memory. Increase
 `prefill-batch-size` explicitly when the expected embedding or reranking
 workload needs a larger aggregate batch.
 
@@ -565,53 +609,43 @@ Most deployments should leave the prompt contribution at its default.
 For ordinary causal generation, `physical-batch-size` lets llama.cpp divide one
 logical submission into smaller compute batches without changing how many prompt
 tokens Kronk schedules. For example, `prefill-batch-size: 2048`,
-`physical-batch-size: 512`, and `nseq-max: 1` resolve to logical capacity 2049
-and physical capacity 512. This can enable layer-split multi-GPU pipeline overlap
-within a submission. Completion synchronization is unchanged.
+`physical-batch-size: 512`, and `nseq-max: 1` allow a prompt contribution to
+be processed in smaller compute batches. This can enable layer-split multi-GPU
+pipeline overlap within a submission.
 
 Explicit positive physical sizes override AutoTune's recommendation. AutoTune
 initially recommends 512 for ordinary text models using multiple selected GPUs
 with layer splitting and full GPU offload. Single-GPU and other execution modes
 retain the legacy default when the setting is omitted. Image capacity and budget
 floors can raise a request, and logical/native context capacity can cap it.
-Active MTP preserves its existing equal-capacity policy; embedding, reranking,
-and specialized decision evaluation retain their own sizing policies. Requested
+Embedding, reranking, and specialized decision evaluation retain their own sizing policies. Requested
 and effective capacities are reported separately. Non-causal media chunks still
 must fit in one physical batch; oversized chunks return an error.
 
-Kronk derives llama.cpp's internal physical and logical batch capacities from
-this value. It reserves one output row per slot for non-MTP generation. MTP
-reserves `1 + ndraft` rows per slot because speculative verification includes
-the sampled token and its draft candidates. With four slots and the default
-`ndraft: 3`, the internal effective sizes are `NUBatch: 2048`, `NBatch: 2052`
-for non-MTP and `NUBatch: 2064`, `NBatch: 2064` for MTP. Both can stage
-generation rows and then add a complete 2048-token prefill contribution from
-the current owner in the same logical decode. Non-MTP may split that tray into
-physical ubatches; MTP currently keeps it in one physical batch pending validation
-of multi-ubatch execution in Kronk's hidden-state consumption path.
+Kronk adds generation capacity automatically; users do not need to calculate an
+allowance for active slots or draft tokens. With active MTP, Kronk keeps the
+work in one physical batch, so `physical-batch-size` cannot divide that work
+into smaller compute batches. MTP may therefore require more compute memory.
+See [Chapter 6](https://www.kronkai.com/manual#chapter-6-speculative-decoding-and-mtp)
+for MTP configuration and limitations.
 
-For generation models with a projector, the native base capacity is
-`max(prefill-batch-size, image-batch-token-capacity, image-token-budget)`
-(an unset image budget contributes zero). Kronk then applies the
-generation reserve and MTP rules above. The text scheduler still contributes
-at most `prefill-batch-size` tokens per iteration.
+Image capacity and an explicit image token budget can increase the required
+compute capacity without increasing text prefill per iteration.
 
 There are no model-family image-capacity defaults. Supply a non-negative
 `image-batch-token-capacity` when complete non-causal image chunks need more
-room than text prefill provides. For example, `prefill-batch-size: 512`,
-`image-batch-token-capacity: 1120`, and `nseq-max: 2` produce `NUBatch: 1120`
-and `NBatch: 1122` without MTP. Text prefill remains `512`, and the projector's
-image processing is unchanged. In the SDK, use
-`model.WithImageBatchTokenCapacity(value)`.
+room than text prefill provides. For example, `prefill-batch-size: 512` and
+`image-batch-token-capacity: 1120` reserve room for a complete 1120-token image
+chunk while keeping text prefill at 512 tokens per iteration. This does not
+change image preprocessing or detail.
 
-Only an explicit positive `image-token-budget` is passed to MTMD as
-`ImageMaxTokens`; neither text prefill nor image capacity silently sets it.
+Only an explicit positive `image-token-budget` changes the projector's
+preprocessing budget; neither text prefill nor image capacity silently sets it.
 Lowering this budget can reduce image resolution and detail. When omitted,
 Kronk preserves the projector's default. Not all projectors support the option
 (for example, Gemma 3's fixed-resolution path does not), and resizing alignment
 can make the final chunk count differ from the budget. Very small budgets may
-also conflict with a projector's minimum and fail initialization. In the SDK,
-use `model.WithImageTokenBudget(value)`. An explicit budget also contributes
+also conflict with a projector's minimum and fail initialization. An explicit budget also contributes
 to native capacity, so a separate capacity setting is unnecessary unless more
 room is needed. Increasing capacity does not undo a smaller preprocessing budget.
 
@@ -621,10 +655,9 @@ paths. An oversized chunk returns an error with the required capacity instead
 of being split or aborting the process. Increase `image-batch-token-capacity`
 and reload the model to process that chunk.
 
-The `status[resolved]` `batch-sizing` debug log reports the configured prefill
-size, image capacity, explicit image budget (`0` when unset), generation reserve, effective internal sizes, and MTP
-state. The Slots diagnostic screen also displays effective `NBatch / NUBatch`
-as read-only runtime values.
+After loading, inspect the `batch-sizing` debug logs and Slots diagnostics to
+compare requested settings with effective runtime capacities. Image requirements,
+active MTP, and native context limits can change the effective physical capacity.
 
 ![How two requests move from prefill to generation and how non-MTP and MTP batch sizing supports them](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/08-wait-for-execution-slot.svg)
 
@@ -672,15 +705,9 @@ MoE. New downloads also store `architecture` (the GGUF architecture identifier)
 and `sequence_processing` (Attention-only, Recurrent, Hybrid, or Unknown) in
 catalog metadata, without adding list columns. Unknown means the available
 metadata does not establish the sequence-processing topology. The runtime uses
-independent MoE facts and memory semantics: recurrent memory requires special
-speculative rollback and snapshot handling, regardless of expert routing.
-`Profile.Class` has been removed. Loaded models report
-`ModelInfo.Type` (Dense or MoE parameter activation), `ModelInfo.SequenceProcessing`, and
-`ModelInfo.Architecture` separately. For metadata-only inspection, use
-`modelprofile.Resolve`, then `Profile.ParameterActivation()`,
-`Profile.SequenceProcessing`, and `Profile.Architecture`. A hybrid MoE model
-reports both MoE activation and Hybrid sequence processing; neither property
-replaces the other.
+independent MoE and sequence-processing properties for memory planning. A
+hybrid MoE model combines MoE parameter activation with hybrid sequence
+processing; neither property replaces the other.
 
 Dense and Mixture-of-Experts (MoE) describe how each layer's feed-forward
 weights are activated. A dense layer uses its complete feed-forward network for
@@ -741,22 +768,19 @@ head counts and dimensions; compact SWA includes its physical-batch headroom,
 while `swa-full: true` allocates SWA against the full context. Shared KV layers
 are not charged twice.
 
-Hybrid recurrent models such as Qwen 3.5 do not allocate ordinary K/V tensors
-for recurrent layers. Kronk instead estimates their float32 recurrent state per
-sequence and, when the active speculative configuration is known, the current
-state plus required rollback copies. Appended embedded-MTP/NextN layers are
-excluded from the target context's attention-state allocation because they are
-not target trunk layers. Their weights remain part of model size, and embedded
-MTP can increase recurrent rollback-state memory. These distinctions are why a
-generic transformer KV formula can substantially over- or under-estimate a
-hybrid model.
+Hybrid recurrent models use both attention-cache memory and per-sequence
+recurrent state. Speculative decoding can add state copies, additional context
+memory, and drafter weights. Use the calculator for the intended speculative
+configuration; an ordinary transformer KV-cache formula can substantially
+misestimate these models.
 
 If a configuration does not fit, consider these changes one at a time:
 
 1. Reduce `context-window`.
 2. Reduce `nseq-max`.
 3. Let automatic tuning use q8_0, or explicitly compare a quantized KV cache.
-4. Move the KV cache or some model layers to CPU.
+4. On discrete-GPU systems with sufficient host RAM, move the KV cache, model
+   layers, or MoE experts to CPU to reduce VRAM pressure.
 5. Choose a smaller or more heavily quantized GGUF.
 
 #### Weight quantization versus KV-cache quantization
@@ -799,8 +823,8 @@ With the default data root, these IDs resolve to:
 ```
 
 Create the directories as needed and place the files there before loading the
-model. `KRONK_BASE_PATH` or `--base-path` moves the `lora` directory with the
-rest of the Kronk data root.
+model. `KRONK_BASE_PATH` or `--base-path` selects the data root containing the
+`lora` directory; it does not move existing adapter files.
 
 To keep an adapter elsewhere, specify its absolute path instead:
 
@@ -854,9 +878,13 @@ some-provider/mtp-target-model:
   speculation: disabled # auto, disabled, classic, or mtp
 ```
 
-`auto` preserves automatic selection. `disabled` runs target-only and does not
-load draft resources. `classic` requires `draft-model.model-id`; `mtp` requires
-a compatible embedded head or companion assistant.
+`auto` uses a configured separate drafter first; otherwise it attempts supported
+MTP and can fall back to target-only generation. `disabled` runs target-only and
+does not load draft resources. `classic` requires `draft-model.model-id`.
+`mtp` requires a supported, compatible embedded head or companion assistant and
+a native library that provides MTP; explicitly requiring unavailable MTP fails
+model loading instead of silently disabling it. Do not combine `mtp` with a
+separate `draft-model.model-id`.
 
 Do not use model names or benchmark results as universal draft-selection rules.
 Measure acceptance and throughput on the actual workload. See
@@ -955,15 +983,19 @@ is normally supplied by analysis or by the load-time defaults.
 | `cache-type-k`, `cache-type-v` | `f16`, `q8_0`, `q4_0`, and supported GGML types | KV-cache precision |
 | `kv-cache-mode` | `partitioned` (default), `shared` | Dedicated slot partitions or shared aggregate KV capacity |
 | `flash-attention` | `enabled`, `disabled`, `auto` | Attention implementation mode |
-| `nseq-max` | Positive integer | Generation slots, sequence-batch width, or fallback context-pool size |
+| `nseq-max` | Positive integer | Active generation requests or embedding/reranking batch width |
 | `admission-timeout` | Go duration, default `3m` | Maximum SDK admission-permit wait; separate from the server's `KRONK_WEB_INFERENCE_TIMEOUT` (default `60m`) |
 | `queue-depth` | Non-negative integer, default `2` | Admitted request layers: `1` allows slot occupants only; `2` adds one waiting layer |
-| `imc-session-capacity` | Positive integer; derived when omitted | Reusable IMC conversation identities retained in RAM or on disk |
+| `imc-session-capacity` | Positive integer; derived when omitted | Maximum reusable IMC conversation identities; built-in storage is RAM |
 | `prefill-batch-size` | Positive token count, default `2048` | Generation prefill contribution per decode iteration, or aggregate embedding/reranking tokens per native sequence batch |
 | `physical-batch-size` | Positive token count up to `2147483647`; unset by default | Requested generation compute batch size; AutoTune can choose it, and correctness constraints determine the effective capacity |
 | `image-batch-token-capacity` | Non-negative token count, default `0` | Image-capacity floor for native generation batches; does not change image detail |
 | `image-token-budget` | Positive token count up to `2147483647`; unset by default | Explicit projector preprocessing budget; may reduce image detail; also contributes to native capacity |
 | `ngpu-layers` | `-1`, `0`, or a positive count | CPU/GPU layer placement |
+| `moe.mode` | `auto`, `experts_cpu`, `experts_gpu`, `keep_top_n`, `custom` | Routed-expert placement; explicit tensor overrides take precedence |
+| `moe.keep-experts-top-n` | Non-negative layer count | Required for `keep_top_n`; highest-numbered expert layers eligible for GPU placement |
+| `moe.cache-size` | Non-negative byte count | Additional experimental GPU expert-cache budget |
+| `tensor-buft-overrides` | CPU-placement patterns | Advanced tensor placement overriding `moe.mode` |
 | `lazy-mode` | `auto`, `off`, `on` | On-demand reading of eligible tensors; default `auto` |
 | `load-mode` | `auto`, `mmap`, `none`, `mlock`, `mmap+mlock`, `direct-io` | Model weight loading strategy |
 | `offload-kqv` | Boolean | Place KV cache on GPU when true |

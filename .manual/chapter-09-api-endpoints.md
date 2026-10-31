@@ -30,15 +30,17 @@ The examples use the default server address, `http://localhost:11435`. JSON
 endpoints accept `Content-Type: application/json`. Streaming endpoints use
 Server-Sent Events (SSE).
 
-When server authentication is enabled, inference requests require a bearer
-token with access to the requested endpoint:
+Inference and model discovery are public in `open` and `management` modes.
+`authenticated` requires a valid bearer token; `full-protected` additionally
+requires the inference endpoint's grant:
 
 ```text
 Authorization: Bearer <token>
 ```
 
-Authentication is bypassed only when the server is configured with
-authentication disabled. See [Chapter 12](https://www.kronkai.com/manual#chapter-12-security-and-authentication)
+Management routes require an administrator token in every mode except `open`.
+External auth providers must also be configured to enforce authentication. See
+[Chapter 12](https://www.kronkai.com/manual#chapter-12-security-and-authentication)
 for token creation, endpoint grants, and rate limits.
 
 Application errors use a top-level code and message:
@@ -52,6 +54,11 @@ Application errors use a top-level code and message:
 
 The HTTP status reflects the error. Depending on the failure, clients may see
 statuses such as 400, 401, 403, 404, 409, 429, 500, 501, or 503.
+
+Errors before streaming begins use the JSON error format and HTTP status above.
+Once SSE headers have been sent, a generation failure is reported inside the
+stream and the HTTP status cannot change. Clients must check stream error
+records rather than treating HTTP 200 as successful completion.
 
 ## 9.2 Endpoint Overview
 
@@ -192,6 +199,13 @@ Responses-style tool definitions. `tool_choice` accepts `"none"`, `"auto"`,
 or `"required"`. Select a specific function with the Responses form
 `{"type":"function","name":"get_weather"}`.
 
+This is a compatible inference interface, not a stored-response service. Send
+the full conversation and function-call results in `input`;
+`previous_response_id` does not retrieve earlier turns, and `store` does not
+enable response persistence. File and `input_file` content parts are rejected.
+Use Kronk's top-level `response_format` and `reasoning_effort` controls; the
+Responses-native `text.format` and `reasoning.effort` objects are not translated.
+
 Use `max_output_tokens` to set the Responses output limit. `max_tokens` remains
 available as a compatibility alias, but `max_output_tokens` wins when both are
 present. As a Kronk extension, `stop` accepts a string or an array of up to four
@@ -200,7 +214,7 @@ omitted from the output. When the output-token limit is reached, the response
 has `status: "incomplete"`, `completed_at: null`, and:
 
 ```json
-"incomplete_details": {"reason": "max_output_tokens"}
+{"incomplete_details": {"reason": "max_output_tokens"}}
 ```
 
 Output items have the same `incomplete` status. Usage reports all generated
@@ -273,8 +287,12 @@ non-streaming responses use the same mapping.
 
 The response contains `object`, `created`, `model`, a `data` array, and
 `usage`. Each data item has an `index` and an `embedding` vector. Use an
-embedding model; ordinary text-generation models do not provide useful
-embedding behavior.
+embedding model; models not marked as embedding models are rejected.
+
+Inputs exceeding the model's effective token limit are rejected by default.
+Set `truncate: true` to truncate them; the default
+`truncate_direction: "right"` drops the end, while `"left"` drops the beginning.
+The effective limit can include batch limits as well as the context window.
 
 ## 9.7 Reranking
 
@@ -419,24 +437,22 @@ A question can use audio instructions instead of text or structured data:
 `input_audio.data` must contain nonempty base64 audio or an audio base64 data URL.
 Only an instructions object with the exact `type` value `input_audio` triggers
 audio decoding; other structured instructions and state remain ordinary JSON.
-In the Go SDK, use `DecisionRequest.Files` for encoded image/audio bytes and
-`model.DecisionAudioInstructions{Data: audioBytes}` for question instructions.
 
 #### Decision protocols
 
-Kronk detects these protocols from the GGUF's architecture-specific
-`decision.type` metadata and uses its named `systemone` template. The existing
-OpenJEV, Jev-Style, Laya/Julia, Lev, Kev, Nimble, and Clef protocols remain
-available. The following additional protocols are implemented:
+Kronk selects the decision protocol from the model's metadata and bundled
+template. Use a compatible decision model rather than an ordinary chat model.
+OpenJEV, Jev-Style, Laya/Julia, Lev, Kev, Nimble, and Clef are supported, along
+with the following protocols:
 
-| Protocol | Readout and execution |
+| Protocol | User-visible behavior |
 | --- | --- |
-| `pplx-decider` | One final-token label readout per question; unlike Lev, no reverse-order averaging |
-| `lfm2-d1` | Final-token label groups, taking the maximum logit per option before calibration |
-| `lfm3-d1` | Non-causal whole-prompt label groups; median score and maximum-probability confidence |
-| `lfm3-d1-omni` | LFM3-d1 readouts with image/audio state inputs and spoken instructions |
-| `vllm-decision2` | One question per prompt, with marked option/question spans and scalar decision-head outputs |
-| `vllm-d3` | Non-causal whole-prompt label readout; questions execute separately without prefix reuse |
+| `pplx-decider` | Independent decisions for each question |
+| `lfm2-d1` | Model-calibrated option probabilities |
+| `lfm3-d1` | Median score; confidence is maximum answer probability |
+| `lfm3-d1-omni` | LFM3-d1 semantics with image/audio state and spoken instructions; requires a compatible projector |
+| `vllm-decision2` | Requires at least two choice options and text, object, or array state |
+| `vllm-d3` | Allows omitted or empty instructions, using the template's default question |
 
 These protocols apply model-provided temperatures and score-level biases.
 Decision2 and D3 return normalized entropy concentration as `confidence` for
@@ -452,38 +468,16 @@ therefore increase working memory requirements for these models. LFM3 d1 does
 not reuse persistent sequence state; independent questions and concurrent
 requests are serialized through that single execution sequence.
 
-LFM3 d1 preserves structured JSON state and option descriptions for the model's
-template. It uses alphabetic choice labels beyond 26 options (`AA`, `AB`, …),
-quotes control-token spellings in user input, returns the median score level
-rather than an expected level, and uses maximum answer probability for choice
-and score `confidence`. The `lfm3-d1-omni` protocol shares these semantics and
-supports image/audio state inputs and spoken instructions with a compatible
-projector. Spoken instructions are placed after state media, at the question's
-instructions position. All expanded media rows count toward usage and the
-whole-prompt budget; inputs are never truncated.
+LFM3 d1 preserves structured JSON state and option descriptions, returns the
+median score level rather than an expected level, and uses maximum answer
+probability for choice and score `confidence`. The `lfm3-d1-omni` protocol
+shares these semantics and supports image/audio state and spoken instructions
+with a compatible projector. All expanded media rows count toward usage and
+the whole-prompt budget; inputs are never truncated.
 
-LFM3 d1 has been exercised with a Q4_K_M d1-2B model for choice, score, `noul`,
-concurrent request isolation, and prompt-budget rejection on macOS Metal with
-llama.cpp b11960. This is compatibility coverage, not a decision-quality
-benchmark. The Q8_0 d1-Omni-2B model has also been exercised for image and audio
-decisions, spoken questions about images, concurrent image requests, malformed
-media rejection, and recovery after budget errors on the same platform.
-The other four protocols have model-free contract coverage, but
-their model-backed compatibility remains unverified.
-
-LFM3 text chat uses its own hybrid short-convolution/full/SWA topology and its
-bundled XML tool-call template. It is not treated as an LFM2 architecture alias.
-Resource estimates include recurrent state and attention caches; workspace
-allowances remain conservative heuristics rather than measured calibration.
-LFM3 MTP, video input, realtime audio, and audio generation are not enabled by
-this integration.
-
-LFM3-VL image chat has been exercised with image-identification controls.
-LFM3-Audio accepts audio, but the tested Q4_K_M Audio-2B model's bundled
-template summarized the JFK sample instead of transcribing it. This also
-reproduced in llama.cpp's Jinja CLI path. Setting the request's `bos_token` to
-an empty string restored transcription in that sample; this is a diagnostic
-workaround, not a general model default or a transcription-quality guarantee.
+Model-backed compatibility has been exercised for LFM3 d1 text and Omni media
+decisions, not decision quality. The other four additional protocols still need
+model-backed validation. Protocol support alone is not a quality guarantee.
 
 A response is keyed by the caller's question IDs:
 
@@ -532,7 +526,7 @@ A response is keyed by the caller's question IDs:
 
 Decision models read logits directly rather than generating text, so
 `output_tokens` is zero. Exact scores and probabilities depend on the model
-and request. When authentication is enabled, both aliases require the same
+and request. In `full-protected` mode, both aliases require the same
 `decision` endpoint grant.
 
 Call either route with curl:
@@ -542,68 +536,22 @@ make curl-kronk-decide
 make curl-kronk-systemone
 ```
 
-### Go SDK
+### SDK examples
 
-The SDK uses typed request constructors so state, question, option, and level
-order remains explicit. Given a loaded `*kronk.Kronk` decision model:
-
-```go
-req := model.DecisionRequest{
-    State: model.DecisionState(
-        model.DecisionStateData("customer_message", "I was charged twice."),
-        model.DecisionStateData("account_tier", "business"),
-    ),
-    Questions: []model.DecisionQuestion{
-        model.DecisionQuestionChoice(
-            "route",
-            "Which team should handle this request?",
-            model.DecisionQuestionOpt("billing", "Payment and invoice issues"),
-            model.DecisionQuestionOpt("support", "Technical product issues"),
-        ),
-        model.DecisionQuestionScore(
-            "urgency",
-            "How urgent is this request?",
-            "not urgent", "normal", "urgent", "critical",
-        ),
-        model.DecisionQuestionNoul(
-            "requires_human",
-            "Should a human review this request?",
-            nil,
-        ),
-    },
-}
-
-resp, err := krn.Decision(ctx, req)
-```
-
-`Kronk.Decision` returns `model.DecisionResponse`. `Kronk.DecisionHTTP`
-performs the same evaluation and writes that response using the public HTTP
-JSON contract. Supported model names and metadata are detected automatically;
-use `model.WithDecisionProtocol` with the matching protocol only when a renamed
-model cannot be detected. The complete runnable example is under
-`examples/decision`. The bundled SDK reference documents every constructor,
-request type, response type, protocol, and error.
-
-For an image-based decision, see `examples/decision-image`. It uses the bundled
-giraffe photograph and follows the same installation and initialization pattern
-as `examples/decision`, with a hardcoded model source and image path:
+The bundled SDK reference documents typed decision requests and responses.
+Runnable examples are in `examples/decision`, `examples/decision-image`, and
+`examples/decision-audio`. From a source checkout:
 
 ```shell
+make example-decision
 make example-decision-image
+make example-decision-audio
 ```
 
-Set `modelSource` and `imageFile` in the example to change the inputs. The model
-resolver downloads the model and discovers its companion projector. Image
-decisions require a vision-capable Clef conversion with a compatible projector
-and image-capable systemone template; older text-only conversions cannot be used.
-
-For an audio-based decision, run `make example-decision-audio`. The
-`examples/decision-audio` program uses `LiquidAI/d1-Omni-2B-Q8_0` and the bundled
-`samples/jfk.wav` recording. It supplies audio through `DecisionRequest.Files`
-and asks choice, noul, and score questions directly, without generating a
-transcript. The model and its projector are installed in the normal Kronk store
-and reused on subsequent runs. Change `modelSource` and `audioFile` to try other
-compatible models or recordings.
+These examples can download models and projectors into the normal Kronk store
+and run inference. Media decisions require a compatible decision model,
+projector, and systemone template; a text-only conversion cannot accept images
+or audio merely because the request includes media.
 
 ## 9.9 Tokenization
 
@@ -671,7 +619,7 @@ is greater than zero through `1`. When `size` is omitted, Kronk preserves the
 source aspect ratio, scales dimensions down to at most 1024 pixels per side,
 and aligns them to multiples of eight. Uploads are limited to 25 MiB. Both image
 routes support `negative_prompt`, `steps`, `cfg_scale`, and `seed` and require
-the `image-generations` inference permission when authentication is enabled.
+the `image-generations` inference permission in `full-protected` mode.
 
 ```sh
 curl http://localhost:11435/v1/images/edits \
@@ -687,7 +635,8 @@ model-loading and image-generation progress. Each event reports `scope:
 "global"`, `step`, `steps`, `percent`, and `seconds_per_step`. The native
 callback is process-global, so an event describes server-wide Malina activity
 and is not attributable to the client or request consuming the stream. This
-route also requires the `image-generations` inference permission.
+route also requires the `image-generations` inference permission in
+`full-protected` mode.
 
 ControlNet, ADetailer, video generation, and upscaling remain available through
 the Malina SDK rather than the model-server API.
@@ -736,16 +685,9 @@ manifest without an operator-supplied version.
 
 Every successful runtime-integrity response includes `verified_at`,
 `bundle_manifest_version`, and `bundle_digest`. The digest is a stable identity
-for the selected runtime files, independent of archive serialization. Version
-`kronk-runtime-v1` sorts verified slash-separated paths lexicographically and
-hashes a length-prefixed field stream with SHA-256. The first field is
-`kronk-runtime-v1`. Each regular file then contributes `file`, relative path,
-decimal byte size, and lowercase file SHA-256; each symbolic link contributes
-`symlink`, relative path, and its exact target. A field is encoded as
-its decimal UTF-8 byte length, a colon, and its raw bytes, with no separator.
-The response's per-file entries expose the same size, SHA-256, or symlink target
-so an independent allowlist owner can reproduce the digest. When verification
-fails, the digest and verification time are omitted.
+for the selected runtime files, independent of archive serialization. The
+response also exposes per-file verification evidence. When verification fails,
+the digest and verification time are omitted.
 
 This digest identifies the installed bytes; it does not establish that they are
 acceptable. Compare it with an allowlist obtained outside the server's mutable
@@ -761,7 +703,6 @@ an error rather than claiming the installed files are verified.
 | Method and path | Purpose |
 | ---------------- | ------- |
 | `GET /v1/kronk/models` | List locally installed GGUF models with Kronk metadata |
-| `GET /v1/kronk/models/` | Return the missing-model validation error for an empty model ID |
 | `GET /v1/kronk/models/integrity` | List local artifact digests and persisted verification evidence without hashing model files |
 | `GET /v1/kronk/models/integrity/{model}` | Return integrity information for one local model without inspecting other models |
 | `GET /v1/kronk/models/{model}` | Show detailed metadata and effective configuration for one model |

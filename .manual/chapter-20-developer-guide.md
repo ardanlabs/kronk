@@ -138,19 +138,20 @@ largest command.
 
 #### 20.3.3 Pools and shared resources
 
-- **`sdk/pool/`** is the server-facing application facade over the language and audio
+- **`sdk/pool/`** is the server-facing application facade over the language, audio, and image
   typed pools and their shared resource manager. It coordinates backends; it does not
-  replace either SDK handle.
+  replace the public SDK handles.
 - **`sdk/kronk/pool/`** adapts Kronk model discovery, planning, loading, display, and
   unloading to the generic pool engine.
 - **`sdk/bucky/pool/`** performs the equivalent work for Whisper/Bucky models.
+- **`sdk/malina/pool/`** performs the equivalent work for image-generation bundles.
 - **`sdk/pool/engine/`** owns typed cache mechanics: acquisition coalescing, admission,
   idle-entry selection, expiry, invalidation, and eviction callbacks. The shared
   resource manager owns RAM/VRAM reservations and budget decisions across backends.
   Eviction is therefore budget-aware and constrained by active use and releasable
   reservations; it is not a simple model-ID LRU.
 
-The service supplies shared-pool settings to both typed pools. A typed pool used
+The service supplies shared-pool settings to all three typed pools. A typed pool used
 independently may therefore have different fallback values. Check the composition
 layer before documenting effective server behavior, and check the typed constructor
 before documenting standalone behavior.
@@ -161,8 +162,8 @@ before documenting standalone behavior.
   whisper context/state operations, decoding, transcription, and stream mechanics.
 - **`sdk/malina/`** is the experimental public image-generation handle.
   **`sdk/malina/model/`** owns stable-diffusion model configuration, native context
-  lifecycle, generation, and Motion-JPEG encoding. Malina is not yet part of the model
-  server or shared model pool.
+  lifecycle, generation, and Motion-JPEG encoding. The server exposes image generation
+  and editing through Malina's typed pool; other SDK capabilities remain SDK-only.
 - **`sdk/tools/`** owns reusable catalog, downloader, backend, device, diagnostics,
   library, and model-management operations used by CLI and server tools. Bucky-specific
   installers and catalogs live below `sdk/tools/bucky/`; Malina's native-library
@@ -239,27 +240,7 @@ unless the binding, pinned native build, root and examples modules, generated Ni
 module data, and focused model tests remain aligned. Do not update Yzma or select a
 newer llama.cpp build independently merely because it is available upstream.
 
-Runnable language-model examples should resolve and initialize the same runtime they
-install:
-
-```go
-lib, err := libs.New(
-    libs.WithDetect(ctx, kronk.FmtLogger),
-    libs.WithValidation(true),
-)
-if err != nil {
-    return err
-}
-
-if _, err := lib.Download(ctx, kronk.FmtLogger); err != nil {
-    return err
-}
-
-if err := kronk.Init(kronk.WithLibPath(lib.LibsPath())); err != nil {
-    return err
-}
-```
-
+Runnable examples should resolve, verify, and initialize the same native runtime.
 Call `kronk.Init` after runtime detection and installation but before constructing a
 Kronk model. Passing the manager's resolved `LibsPath` is required: calling bare
 `kronk.Init()` can repeat default selection and load a different bundle from the one
@@ -315,55 +296,15 @@ default — see [20.9.1](#2091-required-go-post-edit-sequence).
 A finding is a flagged probe, not a proven defect: the probe itself can be wrong, and
 the cause may sit in yzma or llama.cpp rather than in Kronk. `make test-adversarial` prints
 a triage prompt after every run — including the exit-1 run that produced findings —
-which hands the report to a coding agent for verification. The prompt lives in
-`.tools/adversarial/adversarial-triage.md`; it is reproduced here as the reference for what
-that triage must cover:
-
-```text
-Triage the adversarial run into a verified bug report.
-
-Input:
-- `.tools/adversarial/output/findings.txt` — probe results, verdict block, flagged calls
-- `.tools/adversarial/output/kronk-server.log` — server + llama.cpp log
-- `.tools/adversarial/adversarial.sh` — probe source
-
-Source code, in ownership order:
-1. Kronk — `cmd/server/app/domain/*app/`, `cmd/server/foundation/web/`,
-   `sdk/kronk/model/` (batch, sampling, grammar, IMC, MTP), `sdk/kronk/parsers/<family>/`
-2. yzma — `.extras/yzma/pkg/`, `.extras/yzma/lib/`
-3. llama.cpp — `.extras/llama.cpp/src/`, `.extras/llama.cpp/common/`, `.extras/llama.cpp/ggml/`
-
-Steps:
-1. Candidates = every flagged probe + every NO SIGNAL. Dedupe by root cause.
-2. Verify each independently. Subagents optional — one per candidate when there are
-   many. Each verification:
-   - Read the flagged call's request/response in `findings.txt` and its probe in
-     `adversarial.sh`; confirm the probe asserts a real invariant.
-   - Correlate by timestamp with `kronk-server.log`.
-   - Trace to owning code, cite `file:line`, name the layer. Follow Kronk → yzma →
-     llama.cpp when the cause is not in Kronk.
-   - Verdict: CONFIRMED (code path proves it) | EXPECTED (server right, probe or spec
-     reading wrong — say which) | UNPROVEN (not pinnable to code).
-   - Uncertain → EXPECTED or UNPROVEN. No defect without a mechanism shown in source.
-3. Report CONFIRMED only.
-
-Output — bullets, no prose, no preamble:
-
-- **<symptom>** — `<probe-id>` · `path/file.go:LINE` (kronk|yzma|llama.cpp)
-  - Expected: <invariant> · Actual: <observed>
-  - Cause: <one sentence, cites code path>
-  - Repro: <single command from findings.txt>
-
-Then one line per non-confirmed flag: `Dismissed: <probe-id> — <reason>`.
-```
+which hands the report to a coding agent for verification. The authoritative prompt is
+`.tools/adversarial/adversarial-triage.md`. Follow it to correlate flagged requests
+with server logs, check the probe's assumptions, and trace ownership before calling
+a finding a defect. Report confirmed mechanisms separately from unproven findings.
 
 The yzma and llama.cpp trees the prompt cites are working checkouts under `.extras/`,
 which is untracked. Clone them there before triaging, or drop those two sources from
 the prompt and accept that a defect below the Kronk boundary can only be localized to
 the binding call site.
-
-Editing the prompt means editing `.tools/adversarial/adversarial-triage.md` and this
-chapter together; the file is what the Make target prints.
 
 #### 20.4.3 OpenCode coding benchmark
 
@@ -409,7 +350,7 @@ HTTP request
   -> foundation/web middleware and request context
   -> domain route validation and protocol translation
   -> sdk/pool facade
-  -> typed pool acquisition (Kronk or Bucky)
+  -> typed pool acquisition (Kronk, Bucky, or Malina)
   -> one-model public handle admission semaphore
   -> model engine/state execution
   -> SDK result or stream
@@ -433,14 +374,13 @@ multiply memory commitments.
 
 Item count and available RAM/VRAM are independent admission constraints. Normal
 admission-driven eviction selects only idle handles; the pool observes each handle's
-active-operation counter rather than owning a separate request lease. Explicit
-invalidation and shutdown may remove an active entry and rely on the handle's `Unload`
-method to drain active work according to its context.
+active-operation counter rather than owning a separate request lease. Invalidation
+also rechecks active use: an active entry is restored rather than unloaded.
 
 Asynchronous invalidation does not imply that its eviction callback has finished.
-Synchronous invalidation waits for callback and reservation-ticket completion, but it
-does not prove native unload succeeded: the callback can report an unload error and
-still release the reservation. Preserve the engine-level distinction between a model
+Synchronous invalidation reports callback errors. When unload fails, the engine
+restores the entry and retains its reservation rather than pretending that memory
+was released. Preserve the engine-level distinction between a model
 that cannot fit the configured budget and temporary pressure where no idle candidate
 can be evicted; typed/public APIs may translate those errors differently.
 
@@ -450,9 +390,9 @@ The `Kronk` handle's semaphore is admission control around one model. A permit b
 to the operation, not merely to function setup. For a non-streaming call, hold it until
 the operation returns. For streaming, hold it until the stream is terminal or closed,
 including cancellation/error cleanup. Releasing at stream construction over-admits;
-forgetting to release on an early error deadlocks future work. The pool's active-use
-lease similarly spans the entire externally visible operation so eviction cannot unload
-native resources while output is still being consumed.
+forgetting to release on an early error deadlocks future work. The handle's active-use
+counter similarly spans the operation so pool eviction cannot unload native resources
+while work is active.
 
 Context cancellation must propagate inward to queue waits and inference. The layer
 that creates a goroutine, stream, native object, or lease owns its shutdown. Do not
@@ -482,19 +422,19 @@ The main invariants are:
 #### 20.5.5 Generation versus embedding and reranking engines
 
 Text generation benefits from shared batched execution and sequence-partitioned KV.
-Embeddings and reranking never use generation slots. Proven architectures use the
-separate sequence-batch engine, which schedules complete embedding inputs or
-query-document pairs across sequence IDs on one context. Unsupported architectures
-acquire an independent context from the fallback pool and perform their own
-decode/clear cycle. Reranking must not allow one document's state to contaminate the
+Embeddings and reranking never use generation slots. All embedding and reranking models
+currently use the separate sequence-batch engine, which schedules complete embedding
+inputs or query-document pairs across sequence IDs on one context. A context-pool
+fallback remains available for models proven incompatible with that engine, but no
+architecture is currently excluded. Reranking must not allow one document's state to contaminate the
 next. Embedding pooling and normalization are model/output concerns, not chat-slot
 concerns. Do not merge the sequence-batch and generation engines merely to share code;
 their lifecycle contracts differ.
 
-Compatibility is an explicit allowlist based on `general.architecture`. Add an
-architecture only after a native yzma proof, model-backed concurrent tests, and a
-benchmark. Some llama.cpp failures assert instead of returning an error, so probing an
-unknown architecture at runtime is not a safe fallback strategy.
+Runtime selection belongs to `supportsBatchSeq`; do not add fallback heuristics in
+HTTP handlers. Changes to compatibility need native/model-backed evidence, concurrent
+isolation tests, and a benchmark. Some llama.cpp failures assert instead of returning
+an error, so retrying a failed native decode is not a safe compatibility probe.
 
 ### 20.6 Core Inference Invariants
 
@@ -675,9 +615,8 @@ Speculative support has three ownership shapes:
    tokens; the target verifies them. Loading, memory planning, sequence cleanup, and
    rollback must account for both models.
 2. **Embedded MTP.** A target GGUF exposes an embedded multi-token-prediction head.
-   Model detection and MTP construction are owned by `draft_mtp.go`/`batchgen_mtp.go`,
-   while generic proposal verification and reconciliation remain in
-   `batchgen_speculative.go`.
+   Model detection and MTP construction belong to the model package; speculative
+   scheduling and verification coordinate with `model/internal/speculation`.
 3. **Separate-file Gemma4/shared-target-KV MTP.** The MTP component is supplied as a
    separate file but shares target KV semantics rather than behaving like an ordinary
    independent draft model. Capabilities, not “has a draft path,” must decide whether

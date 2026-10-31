@@ -155,25 +155,27 @@ for memory planning and [Chapter 4](https://www.kronkai.com/manual#chapter-4-bat
 concurrency.
 
 Most deployments should leave `prefill-batch-size` at its 2048-token default.
-Kronk adds the model's per-slot generation reserve when deriving llama.cpp's
-internal batch capacities. A multimodal encoder may require an entire
-media-token chunk to fit in one physical batch, so lowering
+A multimodal encoder may require an entire media-token chunk to fit in one
+batch, so lowering
 `prefill-batch-size` below that capacity can break media input.
 `proj-on-cpu: true` can keep the projector on the CPU when accelerator memory
-is constrained, at a performance cost.
+is constrained, at a performance cost. This relieves discrete VRAM but does not
+remove the projector's memory cost on unified-memory systems.
 
-For validated model architectures, causal media embeddings can share the
-generation tray with token rows. Each embedding consumes one logical tray row,
-so mixed batching does not increase `NBatch` or `NUBatch`. Kronk retains the
-isolated decoder for non-causal media, unsupported architectures, unvalidated
-architectures, and media contributions that do not fit the available tray.
+Media preparation is scheduled alongside other requests, but an individual
+image or audio chunk can still monopolize computation while it is encoded or
+decoded. Do not assume that a text-prefill chunk limit bounds every media
+operation's latency.
 
 ## 11.7 Message Caching
 
 Incremental Message Caching can reuse unchanged media state for text-only
-follow-up turns without encoding the media again. Changing, reordering,
-removing, or appending media rebuilds the stable media plan through the
-multimodal pipeline. See
+follow-up turns without repeating model media encoding/prefill for the cached
+portion. Continue sending the complete conversation, including original media;
+IMC does not reconstruct omitted inputs. Appending media can also reuse a
+compatible prefix when native-stream and attention-mode checks permit.
+Changing, reordering, or removing cached inputs requires another compatible
+session or rebuilding the prefix. See
 [Chapter 5 §5.4](https://www.kronkai.com/manual#54-media-requests) for the cache
 behavior and limitations.
 

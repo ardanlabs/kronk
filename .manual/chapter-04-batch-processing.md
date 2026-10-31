@@ -32,14 +32,13 @@ is covered in [Chapter 5](https://www.kronkai.com/manual#chapter-5-message-cachi
 
 ### 4.1 Runtime Mental Model
 
-Kronk uses three concurrency designs:
+Concurrency has different meanings for generation and complete-input evaluation:
 
-| Workload | `nseq-max` controls | Execution design |
+| Workload | `nseq-max` controls | Behavior |
 | --- | --- | --- |
-| Text generation | Active generation slots | One model context and the generation batch engine |
-| Multimodal generation | Active generation slots | The generation batch engine with specialized media prefill |
-| Supported embedding/reranking | Sequences per native batch | One model context and the sequence-batch engine |
-| Other embedding/reranking | Independent contexts | Context-pool fallback with shared model weights |
+| Text generation | Active generation slots | Requests share model computation while keeping conversation state isolated |
+| Multimodal generation | Active generation slots | The same slot limit, with additional media processing |
+| Embedding/reranking | Complete sequences evaluated together | Inputs from queued requests can share a batch within sequence and token limits |
 
 Multimodal generation includes requests that provide images or audio to a
 compatible language model. Bucky speech transcription is a separate
@@ -54,9 +53,9 @@ is no universal value that is best for every model, device, and workload.
 
 #### Generation slots and sequences
 
-For text and multimodal generation, the batch engine creates `nseq-max`
-execution slots. A slot tracks one active request's prompt position, sampler,
-streaming response, and sequence ID.
+For text and multimodal generation, `nseq-max` sets the number of execution
+slots. Each slot serves one active request. Requests share the loaded weights
+but keep prompt state, sampling, and output separate.
 
 ```diagram
 ┌───────────────┐       ┌────────────────────────────────────┐
@@ -147,14 +146,13 @@ admission capacity = max(nseq-max, 1) × queue-depth
 waiting requests. A depth of `1` admits only enough requests to occupy the
 execution slots, so `nseq-max: 2` admits two requests. The default depth of `2`
 admits one active layer and one additional waiting layer, so the same two-slot
-model admits four requests. An unset value resolves to `2`, and negative values
+model admits four requests. An unset or zero value resolves to `2`, and negative values
 are invalid. Embedding and reranking do not use this multiplier; their
 admission capacity is `max(nseq-max, 1)`.
 
 If admission is full, Kronk waits for a permit for at most `admission-timeout`,
-a per-model SDK setting that defaults to three minutes. This deadline is local
-to the admission wait. Kronk discards that child deadline as
-soon as the request is admitted, so prompt preparation, slot waiting, and
+a per-model setting that defaults to three minutes. This deadline applies only
+to the admission wait, so prompt preparation, slot waiting, and
 generation do **not** inherit a three-minute completion deadline. A caller's
 own earlier cancellation or deadline still applies throughout the request.
 
@@ -183,32 +181,21 @@ generation cue into the protocol the selected model learned during training.
 ![A chat template translates request context into the selected model's prompt protocol](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/06-render-plan-prompt.svg)
 
 The rendered prompt—not the original message objects—is tokenized and executed.
-For an IMC-eligible request, Kronk independently renders the complete prompt
-with and without the generation cue. After tokenization or media-plan
-construction, the no-cue plan is reusable only when it is a strict prefix of
-the generation-ready plan and leaves a nonempty inference tail; a media tail
-must also be text-only. Kronk then finds the longest complete safe reusable
-prefix from all working sessions first. Only when none matches does it search
-the model's System cache pool and preload a separately selected working
-session. It never treats a
-coincidental partial token overlap inside a saved snapshot as reusable state.
-[Chapter 5](https://www.kronkai.com/manual#chapter-5-message-caching) zooms
-further into this planning step.
-
-Ordinary non-cached tokenization can occur when the slot starts. The exact
-internal boundary does not change the ownership story: request preparation
-defines the model work, while Stage 4 performs the model computation.
+When IMC is enabled, preparation determines whether a compatible complete
+cached prefix can be reused. Kronk prefers a matching conversation cache, then
+a compatible System preload; otherwise it prepares a new cache. Partial
+overlap alone does not qualify for reuse. Cache planning identifies reusable
+work; model computation happens after slot assignment. See
+[Chapter 5](https://www.kronkai.com/manual#chapter-5-message-caching) for
+eligibility and matching rules.
 
 ### 4.6 Stage 3 — Schedule the Job
 
-Internally, the batch engine receives admitted jobs through a bounded handoff
-channel and drains them into its pending-job list until slots become available.
-The channel is not a second user-visible queue budget. The direct Go SDK option
-`model.WithQueueDepth(n)` changes both the outer admission multiplier and the
-handoff channel capacity. The handoff capacity is `NSeqMax × QueueDepth`;
-`pendingJobs` remains responsible for jobs drained while every slot is busy.
-Queue depth does not change execution concurrency; `NSeqMax` remains the number
-of requests that can occupy slots simultaneously.
+Prepared requests wait for the first available execution slot. `queue-depth`
+sets the admitted-request budget described in Stage 1; it is not another queue
+of that size after preparation. Raising it allows more requests to remain in
+the system but does not increase execution concurrency. `nseq-max` remains the
+maximum number of requests that can occupy slots simultaneously.
 
 Waiting honors request cancellation. If a request's context is cancelled
 while waiting for admission, preparing, submitting, waiting for a slot, or
@@ -225,126 +212,61 @@ bounded by the route deadline and caller cancellation.
 
 #### 4.7.1 Bind and Restore
 
-When the scheduler assigns a slot, Kronk binds any reserved IMC session to that
-slot's fixed llama sequence ID. A compatible saved prefix is restored from the
-session store; otherwise the sequence starts from an empty state. The session
-identity is not permanently attached to the slot.
+A request runs in an available slot. If preparation selected a compatible
+cached prefix, Kronk restores it before processing the remaining prompt; a
+cache miss starts with a fresh sequence. Cache identities are not permanently
+assigned to slots. An expected snapshot that cannot be restored can fail the
+request; it is not silently treated as a cache miss.
 
-Restoring target KV does not restore a live sampler object. Kronk primes
-penalties and DRY from the complete logical prompt, including the restored
-prefix, before generation. When own-KV MTP state is available, its paired draft
-snapshot and final hidden row are restored with the target; shared-target-KV
-MTP resumes from the restored target state. Missing or invalid draft-side state
-falls back to target-only generation without discarding a valid target prefix.
+Cache reuse preserves the prompt's sampling context. Unavailable
+speculative-decoding state does not require discarding a valid target-model
+prefix; generation can continue without speculation.
 
 #### 4.7.2 Prefill Uncached Work
 
-For ordinary text prefill, one active slot owns prefill until its prompt is
-complete. Each decode iteration first stages generated and speculative rows
-from every ready output slot, then gives the remaining tray capacity to the
-prefill owner. This gets one request to first-token generation quickly without
-pausing output already streaming from other slots.
+Prefill computes the prompt state that is not already reusable from a cache.
+For ordinary text, one slot retains prefill priority until its prompt is
+complete, cancelled, or no longer eligible. `prefill-batch-size`—2048 tokens
+by default—caps its text contribution per scheduling iteration. A long prompt
+can therefore delay another new prompt even when both have execution slots.
 
-More precisely, `prefill-batch-size`—2048 tokens by default—caps the owner's
-contribution during one scheduler visit. Kronk derives an internal logical
-batch capacity that also reserves generation rows. For the current prefill
-owner, Kronk adds:
+Kronk interleaves this work with output generation from ready slots. A new
+prompt does not normally need to finish all of its prefill before existing
+responses can continue, but each compute batch still takes time. Larger prefill
+batches can increase pauses between streamed output tokens. This is a
+responsiveness tradeoff, not a fixed latency guarantee.
 
-```text
-min(remaining prompt tokens, available logical-batch space, prefill-batch-size)
-```
+Eligible text-only, layer-split multi-GPU workloads can overlap prompt
+computation across GPUs. This includes building or extending a text IMC prefix.
+Actual overlap depends on the backend; media and speculative workloads should
+not be assumed to have the same behavior.
 
-The scheduler retains a prefill cursor between decode iterations. It remains
-on the current owner across prefill contributions and advances to the next
-eligible slot only when that owner's prefill completes, is cancelled, or
-otherwise becomes ineligible. A long prompt can therefore make another new
-prompt wait, but it cannot block output-token generation between decode
-iterations.
-
-For ordinary text models without a media projector or draft context, intermediate
-prefill submissions that request no outputs can remain in flight across scheduler
-iterations. This also applies while IMC builds or extends a text prefix. On eligible
-layer-split multi-GPU backends, later chunks can execute early layers while earlier
-chunks execute later layers, without adding another prefill owner. Kronk waits at
-output, cache-snapshot, admission, sequence-cleanup, and shutdown boundaries rather
-than after every output-free submission. Mixed batches containing generation
-outputs, media, and speculative decoding retain completion waits. Actual overlap
-depends on llama.cpp's backend capabilities and internal synchronization.
-
-Multimodal generation uses the same logical tray through a contribution
-planner. Text rows, including M-RoPE text, can use available tray capacity.
-For validated architectures, causal image or audio embedding rows can share a
-decode with token rows when the complete media contribution fits. Non-causal
-media, explicitly unsupported architectures, unvalidated architectures, and
-media contributions that do not fit use the isolated media decoder instead.
-This fallback is the same processing path used before mixed batches were
-available.
-
-At debug level, each contribution emits `status[prefill-scheduled]` with
-`iteration`, `slot`, `prefill_slots`, `generation_contributions`,
-`chunk_tokens`, `prefill_remaining`, `prefill_complete`, `selector_start`,
-`selector_selected`, `selector_next`, `generation_rows`, `tray_tokens`,
-`nbatch`, and `nubatch`. `prefill_slots` lists every eligible prefill slot for
-that iteration. Each `generation_contributions` entry reports its slot, staged
-row count, and mode; `mrope-shared` identifies M-RoPE generation in the shared
-tray. Media contributions emit `status[media-plan]` with `mode` set to
-`shared`, `isolated`, or `deferred`, along with the model's input-mixing
-capability and the contribution's position and attention requirements. The
-three selector fields show the persistent cursor before selection, the selected
-slot-array index, and the cursor retained for the next iteration. While an owner
-is still prefilling,
-`selector_selected` and `selector_next` remain equal. Completion moves
-`selector_next` to the following slot-array index. If generation rows consume
-the complete logical tray, `status[prefill-deferred]` records the same slot and
-selector snapshot without a prefill contribution. The older `next_slot` field
-remains as an alias for `selector_next`.
+Media requires additional encoding and may require isolated processing rather
+than sharing a text batch. Supported causal media can share computation when it
+fits; other media uses a separate decode path. In particular, non-causal image
+chunks must fit completely in one physical batch. Increase
+`image-batch-token-capacity` and reload the model if an oversized chunk is
+rejected. This capacity setting does not increase image detail; an explicit
+`image-token-budget` controls preprocessing on supported projectors.
 
 ![The two prefill phases: restore reusable IMC state, then compute missing request state](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/09-restore-session-state.svg)
 
-Kronk adds a generation reserve to the 2048-token default prefill contribution.
-Non-MTP reserves one row per slot and keeps the internal physical capacity at
-2048, so llama.cpp may split the logical tray into physical ubatches. MTP
-reserves `1 + ndraft` rows per slot and raises both internal capacities so a
-full speculative verification round and the prefill contribution remain in one
-physical batch. For four slots, the internal effective values are
-`NUBatch: 2048`, `NBatch: 2052` for non-MTP and `NUBatch: 2064`,
-`NBatch: 2064` for MTP with the default `ndraft: 3`.
-
-A media embedding row and a token row each consume one logical tray row.
-Mixed batching therefore does not change these formulas or require a larger
-configured prefill batch. llama.cpp may split a causal mixed logical batch into
-physical ubatches under the same `NUBatch` limit. Media requiring non-causal
-attention stays isolated so its whole-chunk physical-batch requirement remains
-unchanged.
-
-Generation-row count comes from the generation mode, not from the configured
-prefill size:
-ordinary generation contributes one row, while MTP with `ndraft: 3` contributes
-up to four rows—the sampled token plus three candidates. Generation and prefill
-therefore continue in the same scheduler iteration for both modes. If the
-prefill owner is not itself generating, some of the worst-case reserve remains
-unused.
-
-At model load, `batch-sizing status[resolved]` logs
-`configured-prefill-batch-size`, `prefill-batch-size`,
-`generation-rows-per-slot`, `generation-reserve`, `effective-prefill`,
-`effective-nbatch`, `effective-nubatch`, `mtp`, and `automatic-padding`.
-The effective values describe derived llama.cpp capacities; they are diagnostic
-output rather than separate configuration controls.
+Kronk automatically includes capacity for generation and speculative work.
+Operators do not need to calculate extra output rows. Active MTP keeps work in
+one physical batch, so it cannot use `physical-batch-size` to split computation
+into smaller batches. Chapter 3 describes these controls and their memory
+tradeoffs; Chapter 6 covers speculative decoding.
 
 #### 4.7.3 Generate Output
 
-Once the final prefill row produces logits, ordinary non-speculative generation
-repeats the decode-and-sample loop below. The first output token is sampled
-directly from the final prefill logits. On later iterations, Kronk decodes the
-previously selected token into that slot's sequence state, samples from the new
-logits, processes and streams the resulting text, and retains the selected token
-for the next iteration. A newly selected token is therefore not committed to KV
-state until the following decode.
+Once prompt processing completes, Kronk samples output tokens and continues
+generation using each request's own history and sampling settings. Ready
+requests share model computation; one request does not receive another's
+generated tokens. Streaming clients receive output as it becomes available.
 
 ![Stage 4 ordinary token generation from batched decode through sampling and streaming](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/10-run-generation-inference.svg)
 
-Vocabulary EOG, parser-signaled completion, and `max_tokens` end generation
+The model's end-of-generation signal, parsed completion, and `max_tokens` end generation
 normally. Cancellation, context or decode failure, streaming failure, and
 engine shutdown use the error path. Sampling controls and generation limits
 are documented in [Chapter 10](https://www.kronkai.com/manual#chapter-10-request-parameters),
@@ -361,11 +283,12 @@ zooms into proposal, verification, acceptance, and state synchronization.
 
 #### 4.7.4 Finish and Release Resources
 
-On normal completion or error, Kronk finishes the response, clears the active
-sequence, releases the slot, completes or releases any IMC reservation, and
-returns the outer admission permit. The next pending job can then occupy the
-slot; it does not inherit the prior request's sampler, parser, or sequence
-state.
+On completion, cancellation, or failure, Kronk releases the request's
+execution resources, any IMC reservation it still holds, and its admission
+permit. The slot's active sequence is cleared before reuse. A cache already
+saved by the request can remain available after the slot is released; the
+next request does not inherit the previous request's sampling, parsing, or live
+sequence state.
 
 Most users should leave `prefill-batch-size` at its 2048-token default. Kronk
 derives the internal batch capacities as described in
@@ -373,10 +296,10 @@ derives the internal batch capacities as described in
 
 ### 4.8 Embedding and Reranking
 
-Embedding and reranking models do not use generation slots. Kronk chooses a
-separate runtime from the GGUF architecture metadata. Architectures proven
-safe for multi-sequence pooled evaluation use the sequence-batch engine. The
-current compatibility set is Qwen3 embedding and BERT reranking models.
+Embedding and reranking models do not use generation slots. They use sequence
+batching: complete inputs from one or more queued requests can be evaluated
+together. This applies to all models identified as embedding or reranking
+models; it is not limited to an architecture allowlist.
 
 ```diagram
 ┌──────────────┐       ┌────────────────────────────────┐
@@ -405,63 +328,39 @@ number of sequences <= nseq-max
 sum of sequence tokens <= prefill-batch-size
 ```
 
-For these models, Kronk derives both llama.cpp `NBatch` and `NUBatch` directly
-from `prefill-batch-size`. The value is an aggregate native-batch token budget,
+For these models, `prefill-batch-size` is an aggregate batch token budget,
 not a per-sequence allowance. With `nseq-max: 8` and
 `prefill-batch-size: 2048`, one batch can hold eight 256-token sequences or two
 1024-token sequences, but not eight 2048-token sequences. Kronk deliberately
-does not multiply `prefill-batch-size` by `nseq-max`: pooled evaluation must fit
-the complete batch in one physical ubatch, and automatic multiplication could
-substantially increase compute-buffer memory. Increase `prefill-batch-size`
+does not multiply `prefill-batch-size` by `nseq-max`; larger batches require
+more compute memory. Increase `prefill-batch-size`
 explicitly when measured workloads benefit from a larger aggregate token
 budget.
 
-Unknown or unsafe architectures use the context-pool fallback. Each admitted
-request acquires one independent single-sequence context, performs its work,
-and returns the context to the pool. This avoids native assertions seen with
-some architectures during multi-sequence initialization. Additional fallback
-contexts require memory even though model weights are shared.
-
-Runtime selection is conservative: a model name identifies the task, while
-GGUF `general.architecture` metadata must match the compatibility allowlist to
-select sequence batching. Missing or unrecognized architecture metadata uses
-the fallback. Raise `nseq-max` only after measuring throughput and memory for
-the selected runtime.
+Raise `nseq-max` only after measuring throughput and memory for the actual
+model and workload.
 
 ### 4.9 Configuration and Tuning
 
 Configure concurrency in `~/.kronk/models/model_config.yaml`:
 
 ```yaml
-mradermacher/Qwopus3.5-4B-Coder.Q8_0:
-  context-window: 32768
-  nseq-max: 2
-  admission-timeout: 3m
-  queue-depth: 2
+version: 2
+models:
+  mradermacher/Qwopus3.5-4B-Coder.Q8_0:
+    context-window: 32768
+    nseq-max: 2
+    admission-timeout: 3m
+    queue-depth: 2
 ```
 
 The file is read at server startup. Restart the server after changing it. The
-top-level key must match the model ID used by requests.
+entry under `models` must match the model ID used by requests.
 
-The Go SDK equivalents are `model.WithAdmissionTimeout(3*time.Minute)` and
-`model.WithQueueDepth(2)`. `admission-timeout` is separate from the model
+`admission-timeout` is separate from the model
 server's `KRONK_WEB_INFERENCE_TIMEOUT` (default `60m`): admission timeout only
 bounds waiting for a permit, while inference timeout bounds admitted request
 processing at the server/web/CLI layer.
-
-Local representative benchmarks are available for both embedding and
-reranking runtimes:
-
-```shell
-make benchmark-embedding-fallback
-make benchmark-embedding-batchseq
-make benchmark-rerank-fallback
-make benchmark-rerank-batchseq
-```
-
-Each path uses a model known to select that runtime, so these are deployment
-baselines rather than controlled measurements of scheduler overhead: model
-architecture and weights differ between each fallback/sequence-batch pair.
 
 Tune from a measured baseline rather than a generic slot recommendation:
 
@@ -491,12 +390,12 @@ logical session, not in a permanently assigned execution slot. Cached state is
 externalized to a session store between requests. A later request can restore
 that state into any free slot, extend it, and continue generation.
 
-While a request is active, its restored or newly built state consumes cells in
-that slot's KV stream. Kronk normally snapshots a built or extended stable
-prefix during slot startup, before generating the request's suffix. Exact
-read-only hits can skip a redundant snapshot. Completion clears the slot's
-active sequence. This allows the number of cached conversation identities to
-differ from the number of concurrent execution slots.
+While a request executes, its restored or newly prepared prefix occupies the
+slot's model state. Cache builds and extensions run as scheduled preparation
+work, in bounded steps, before processing the remaining prompt. Once the stable
+prefix is ready, Kronk saves it for reuse; exact read-only hits can avoid saving
+the same state again. Completion clears the live sequence, not the reusable
+cache. Cached conversations can therefore outnumber execution slots.
 
 The IMC pool contains:
 
@@ -519,20 +418,17 @@ requests than the IMC planner has session identities available to reserve. It
 avoids moving an admitted request into preparation when every session is
 already owned by another admitted request.
 
-A session is **reserved** while one request has exclusive ownership of its IMC
-state and other planners must skip it. Reservation does not necessarily mean
-that token generation is active. Cache append or rebuild paths can publish a
-stable snapshot and release the reservation before generation finishes, while
-exact, read-only, and some media paths can retain it longer.
+A reservation gives one request exclusive access to a cache entry, including
+while it waits for a slot. It is not a measure of active generation. A newly
+built or extended cache may become available to other requests before its owner
+finishes generating. Exact read-only reuse and some media operations retain
+the reservation until completion.
 
-If every IMC session is reserved, current token-based planning returns a
-server-busy error rather than preempting another request's session. With the
-capacity invariant, this remains a defensive path for direct low-level model
-callers, leaked reservations, or an internal invariant violation rather than
-the expected result of a valid SDK queue-depth configuration.
-
-Session matching, RAM and disk stores, media caching, invalidation, and cache
-settings are documented in [Chapter 5](https://www.kronkai.com/manual#chapter-5-message-caching).
+Kronk's built-in cache store uses host RAM, and System preloads always remain
+in RAM. Embedded applications can supply a custom working-session store;
+externalizing state does not by itself make it durable across restarts. Cache
+matching, media reuse, invalidation, and settings are covered in
+[Chapter 5](https://www.kronkai.com/manual#chapter-5-message-caching).
 
 ### 4.11 Observing Queue Behavior
 
@@ -551,7 +447,7 @@ time-to-first-token measurements when diagnosing latency.
 
 Embedding and reranking expose `inference_requests_total`,
 `inference_request_duration_seconds`, and `inference_active_requests`, labeled
-by operation and runtime (`batchseq` or `context_pool`). Sequence batching also
+by operation and runtime (currently `batchseq`). Sequence batching also
 publishes `batchseq_queue_wait_seconds`, `batchseq_items`, and
 `batchseq_batches_total`. These distinguish outer request concurrency from the
 number and width of native batches actually evaluated.
@@ -560,8 +456,9 @@ The `inference_*` metrics begin after the outer SDK admission permit is
 acquired. They describe admitted model-layer work and do not count admission
 wait time or requests that time out or are cancelled before admission.
 
-Consistently increasing queue-wait time means requests are arriving faster
-than slots complete them. Before raising `nseq-max`, confirm that the device
+Consistently increasing queue-wait time indicates contention for execution
+capacity; compare request volume, prompt lengths, and generation lengths.
+Before raising `nseq-max`, confirm that the device
 has memory headroom and that aggregate throughput improves under a realistic
 concurrent load. See [Chapter 15](https://www.kronkai.com/manual#chapter-15-observability) for metrics,
 tracing, and profiling.

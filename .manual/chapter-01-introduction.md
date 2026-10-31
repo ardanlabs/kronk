@@ -10,32 +10,36 @@
 
 ---
 
-### 1.1 What Is Kronk?
+### 1.1 What Is Kronk
 
 Kronk is a Go SDK and model server for running open-source models on your own
-hardware. It uses two C++ inference engines:
+hardware. It uses three C++ inference engines:
 
 - [llama.cpp](https://github.com/ggml-org/llama.cpp) runs GGUF text, vision,
   embedding, and reranking models.
 - [whisper.cpp](https://github.com/ggml-org/whisper.cpp) runs speech-to-text
   models through Kronk's **Bucky** subsystem.
+- [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) runs
+  image-generation models through Kronk's experimental **Malina** subsystem.
 
 Kronk provides hardware-accelerated text generation, image understanding,
-audio transcription, embeddings, and reranking from Go without requiring
-Python or a CGO build toolchain.
+audio transcription, image generation, embeddings, and reranking from Go
+without requiring Python or a CGO build toolchain. Runtime inference still
+requires compatible native libraries, which Kronk's library managers can
+download for supported platforms.
 
-### 1.2 SDK or Model Server?
+### 1.2 SDK or Model Server
 
 The model server's inference functionality is built on the same public SDK
 that is available to Go applications. You can either embed inference directly
 in an application or run the server for network access.
 
-| Use the SDK when you need... | Use the Model Server when you need... |
-| ---------------------------- | ------------------------------------- |
-| Inference inside a Go process | HTTP APIs for one or more clients |
+| Use the SDK when you need...                   | Use the Model Server when you need...                           |
+| ---------------------------------------------- | --------------------------------------------------------------- |
+| Inference inside a Go process                  | HTTP APIs for one or more clients                               |
 | Direct control over model loading and lifetime | OpenAI-compatible APIs and an Anthropic-compatible Messages API |
-| No separate server process | A browser interface for managing and testing models |
-| Application-specific caching and concurrency | Authentication, authorization, and rate limiting |
+| No separate server process                     | A browser interface for managing and testing models             |
+| Application-specific caching and concurrency   | Authentication, authorization, and rate limiting                |
 
 Standalone SDK examples are available in the
 [`examples`](https://github.com/ardanlabs/kronk/tree/main/examples) directory.
@@ -49,6 +53,10 @@ Standalone SDK examples are available in the
 - **Vision** — image understanding with compatible multimodal models.
 - **Audio transcription** — speech-to-text through Bucky and whisper.cpp. See
   [Chapter 18: Bucky](https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription).
+- **Image generation and editing** — text-to-image and image-to-image through
+  experimental Malina and stable-diffusion.cpp. See
+  [Chapter 19: Malina](https://www.kronkai.com/manual#chapter-19-malina-image-generation)
+  for server capabilities and additional SDK-only operations.
 - **Embeddings and reranking** — vector generation and document relevance
   scoring for search and retrieval systems.
 - **Structured decisions** — evaluate choice, score, and calibrated yes/no
@@ -56,14 +64,16 @@ Standalone SDK examples are available in the
 
 **Performance**
 
-- **Concurrent processing** — partition a model's KV cache into sequences so
-  it can process multiple requests.
+- **Concurrent processing** — serve multiple requests against a loaded model
+  within configured concurrency and memory limits.
 - **Message caching** — reuse computed prompt prefixes instead of evaluating
   them again for every request.
 - **Extended context** — configure YaRN context extension for compatible
   models.
-- **Model pooling** — keep a configurable number of models loaded and evict
-  inactive models after a time-to-live period.
+- **Model pooling** — retain loaded models within per-backend count limits
+  and shared RAM/VRAM budgets, evicting idle models when space is needed.
+  Optional time-to-live expiration can also unload idle models; it is
+  disabled by default.
 
 **Operation**
 
@@ -95,31 +105,27 @@ selecting a large model or context window.
 ### 1.4 Architecture
 
 Kronk is layered so applications and the model server use the same inference
-SDKs. The two engine paths provide different model capabilities and may have
+SDKs. The three engine paths provide different model capabilities and may have
 different platform support.
 
 ![Kronk architecture: application access, SDKs, bindings, native engines, and models](https://raw.githubusercontent.com/ardanlabs/kronk/main/.manual/images/talk/02-kronk-architecture.svg)
 
-The SDK layer owns model loading, inference, caching, and concurrency. The
-model server adds HTTP transport, model pooling, the BUI, security, and
-operational services. The model server reaches both typed SDKs through the
-shared `sdk/pool` facade. Your application can call `sdk/kronk` or `sdk/bucky`
-directly without starting the model server, or use the pool when it needs a
-coordinated multi-model lifecycle.
+Embedded applications control model loading and inference directly. The
+model server provides network access to those capabilities and manages model
+retention, memory admission, concurrent requests, and waiting requests. It also
+provides the BUI, security, and operational services. Supported operations
+differ by model and backend; some SDK operations are not exposed over HTTP.
 
-For conversational generation, Incremental Message Caching (IMC) keeps a pool
-of reusable conversation-prefix snapshots separate from the active execution
-slots. An inactive session is externalized to the built-in RAM store or a
-custom SDK store rather than remaining attached to one slot or persistently
-occupying that slot's accelerator KV stream. A later request can reserve the
-longest compatible complete prefix, restore it into any free slot, and prefill
-only the stable work that was added. This applies to supported text and
-multimodal prompts; media identity, ordering, embedding expansion, and position
-accounting are part of safe reuse. See
-[Chapter 4](https://www.kronkai.com/manual#chapter-4-batch-processing) for the
-request lifecycle and
-[Chapter 5](https://www.kronkai.com/manual#chapter-5-message-caching) for the
-full IMC semantics.
+For conversational generation, Incremental Message Caching (IMC) can avoid
+reprocessing a compatible prompt prefix from an earlier request.
+Chat-completion clients still send the complete conversation; caching does not
+replace conversation history management. An inactive conversation does not
+hold an execution slot, but its cached state still consumes storage. Changes
+to messages, tools, templates, or media can reduce or prevent reuse. See
+[Chapter 4](https://www.kronkai.com/manual#chapter-4-batch-processing) for
+concurrency and request handling, and
+[Chapter 5](https://www.kronkai.com/manual#chapter-5-message-caching) for cache
+behavior and limitations.
 
 ### 1.5 Where to Go Next
 
@@ -131,5 +137,7 @@ full IMC semantics.
   [Chapter 14: Client Integration](https://www.kronkai.com/manual#chapter-14-client-integration)
 - **Run speech-to-text models:**
   [Chapter 18: Bucky](https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription)
+- **Generate or edit images:**
+  [Chapter 19: Malina](https://www.kronkai.com/manual#chapter-19-malina-image-generation)
 
 ---

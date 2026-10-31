@@ -18,8 +18,9 @@
 
 Kronk includes a Browser UI (BUI) for managing a local server and trying
 models interactively. It is bundled in the `kronk` binary, served from the
-same port as the Web API, and uses the server's `/v1` endpoints rather than
-maintaining separate state.
+same port as the Web API, and uses the server's `/v1` endpoints for server
+operations. Chat history and some preferences are stored locally in the
+browser; they do not automatically follow you to another browser or machine.
 
 This chapter describes the main areas of the BUI without cataloging every
 control. The CLI remains useful for scripting and headless administration;
@@ -66,9 +67,8 @@ The sidebar groups related operations by subsystem.
   model without downloading the entire model. A calculator is also available
   in local model and catalog details. Set the intended context, sequence slots,
   KV precision and placement, layer/expert offload, devices, and tensor split
-  before comparing the result with available memory. The estimate reads
-  per-layer GGUF metadata, including full/SWA topology, recurrent layers, and
-  embedded MTP/NextN layers when present.
+  before comparing the result with available memory. Estimates do not reserve
+  memory or guarantee that a model will load.
 - **Translator** records or uploads audio for transcription through Bucky.
   You can select a whisper model, language, and response format and inspect
   timestamped segments. See
@@ -86,18 +86,9 @@ The sidebar groups related operations by subsystem.
 - **Info** reports server, host, device, library, and model diagnostics.
 - **Running** shows models that are loading or resident in the pool, along
   with the current resource budget. Models can also be unloaded here.
-- **Slots** polls the live batch-engine scheduler for each loaded generation
-  model. It shows each slot's phase and request age, prefill stage 1 establishing
-  the sequence by copying reusable IMC session state into the slot, and prefill
-  stage 2 decoding both stable-prefix IMC extensions (such as completed tool
-  calls) and the remaining uncached request tail. The Stage 2 cards show active,
-  next, and waiting slots for those two decode paths. The table also reports
-  per-slot progress, generation mode, and row contribution. Use this view with
-  the batch-engine logs to verify prefill ownership, rotation, and generation
-  priority during concurrent requests. Embedding and reranking models do not
-  have generation slots and are omitted. Each Stage 2 selector retains its
-  selected slot until that decode path is complete, then advances to the next
-  eligible slot.
+- **Slots** shows live generation slots, request age, prefill/generation status,
+  and progress for diagnosing concurrent workloads. Embedding and reranking
+  models do not have generation slots and are omitted.
 - **IMC Sessions** has separate tabs for bounded working sessions and
   model-owned, reusable System prompt caches.
 
@@ -188,6 +179,12 @@ Login creates a 12-hour admin token in an HttpOnly, SameSite cookie by default. 
 browser cannot read the token, and the server uses it to authenticate the
 BUI's same-origin `/v1` requests. Sign out from the sidebar to end the browser
 session.
+
+Behind a trusted reverse proxy, preserve the public Host and set or overwrite
+`X-Forwarded-Proto` to reflect HTTPS. Login and unsafe cookie-authenticated
+requests require a matching Origin host. Keep the backend private so clients
+cannot bypass the proxy or spoof its forwarding headers. Signing out clears
+the browser cookie; it does not revoke the token itself.
 
 Set `kms.web.admin.session-duration` in `model_config.yaml`,
 `KRONK_WEB_ADMIN_SESSION_DURATION`, or the server start flag

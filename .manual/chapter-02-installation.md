@@ -18,7 +18,8 @@
 
 This path installs Kronk on the host, downloads a starter model, and starts the
 model server. The first run requires an internet connection for native
-libraries and model files.
+libraries and model files. These examples assume the default server settings;
+an existing installation keeps its saved configuration.
 
 **1. Install the CLI with Homebrew (macOS or Linux)**
 
@@ -38,6 +39,10 @@ Other installation methods are listed in [Section 2.2](#22-choose-an-installatio
 kronk libs --local
 ```
 
+`--local` runs this operation on the current machine without a server. Library,
+model, and catalog commands that support this flag otherwise use a running
+server by default.
+
 Kronk detects the operating system, architecture, and available GPU backend.
 It selects Metal, CUDA, ROCm, or Vulkan when supported and falls back to CPU.
 
@@ -49,7 +54,8 @@ kronk model pull mradermacher/Qwopus3.5-4B-Coder.Q8_0 --local
 
 This coding model requires about 5.3 GB of disk space, including its multimodal
 projection. On memory-constrained or CPU-only systems, start with the smaller
-`unsloth/Qwen3-0.6B-Q8_0` instead.
+`unsloth/Qwen3-0.6B-Q8_0` instead, using that ID in both the pull command and
+the API examples below. Disk size is not the model's runtime memory requirement.
 
 **4. Start the server in the background**
 
@@ -73,7 +79,7 @@ You can also call the API directly:
 curl http://localhost:11435/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT",
+    "model": "mradermacher/Qwopus3.5-4B-Coder.Q8_0",
     "messages": [{"role": "user", "content": "Write a Go function that reverses a string."}],
     "max_tokens": 256
   }'
@@ -93,7 +99,7 @@ The prerequisites depend on how you install Kronk:
 | ------ | --------- | ------------ |
 | Homebrew | macOS and Linux | Homebrew |
 | Release archive | Supported release platforms | None beyond the host OS |
-| `go install` | Platforms supported by the Go toolchain and Kronk libraries | Go 1.27 or later |
+| `go install` | Platforms supported by the Go toolchain and Kronk libraries | Go 1.27.3 or later for this release |
 | Container | Any host supported by the selected Linux image | Docker or another OCI runtime |
 | Kubernetes / Helm | Linux nodes supported by the selected image | Helm, kubectl, a cluster, and a suitable StorageClass |
 
@@ -147,8 +153,11 @@ than relying on copied CLI output.
 ### 2.3 Container Quick Start
 
 Release images are published to GHCR and Docker Hub. Each image contains the
-Kronk executable, BUI, ffmpeg, and the native llama.cpp and whisper.cpp
-libraries for its processor variant.
+Kronk executable, BUI, ffmpeg, and native llama.cpp and whisper.cpp libraries.
+Linux amd64 images also include stable-diffusion.cpp libraries for Malina;
+arm64 images do not. The tag identifies the llama.cpp backend, not a guarantee
+that every inference engine uses that backend: ROCm images use Vulkan for
+transcription, and CUDA images provide Vulkan or CPU for image generation.
 
 | Tag | Intended hardware | Published platforms |
 | --- | ----------------- | ------------------- |
@@ -170,6 +179,7 @@ state in a named volume:
 docker run -d \
   --name kronk \
   --restart unless-stopped \
+  -e KRONK_PROCESSOR=cpu \
   -p 127.0.0.1:11435:11435 \
   -v kronk-data:/kronk \
   ghcr.io/ardanlabs/kronk:latest
@@ -203,9 +213,10 @@ compatibility matrix in the header of the
 
 The repository includes Compose files in
 [`zarf/docker/kronk`](https://github.com/ardanlabs/kronk/tree/main/zarf/docker/kronk)
-that run the same local CPU container as above, in the same `kronk-data`
-volume. Remove a `kronk` container started with `docker run` first; its models
-are kept:
+that reuse the same `kronk-data` volume. The default file selects CPU inference
+and publishes the API (`11435`) and debug server (`11445`, including metrics
+and profiling) on localhost. Remove a `kronk` container started with
+`docker run` first; its models are kept in the volume:
 
 ```shell
 docker rm -f kronk
@@ -223,7 +234,9 @@ docker compose -f compose.rocm.yaml up -d     # AMD with ROCm, needs /dev/kfd an
 docker compose -f compose.vulkan.yaml up -d   # AMD or Intel with Vulkan, needs /dev/dri
 ```
 
-For the `latest-all` image, change the image tag in the GPU file to `-all`.
+To use the `latest-all` image, set the GPU file's image to
+`ghcr.io/ardanlabs/kronk:latest-all`, retaining its device access and processor
+settings.
 
 Settings, server options such as authentication, GPU details, and upgrades are
 covered in [8.7 Container Operations](https://www.kronkai.com/manual#87-container-operations).
@@ -263,12 +276,20 @@ compatible drivers and runtimes.
 ### 2.4 Libraries
 
 Kronk needs a native llama.cpp library bundle before it can run GGUF models.
-The server checks the selected bundle during startup and installs it when
-needed. To install it explicitly before starting the server, run:
+By default, the server checks the selected bundle during startup and installs
+it when needed. To install it explicitly before starting the server, run:
 
 ```shell
 kronk libs --local
 ```
+
+The server also installs and initializes Bucky and Malina libraries by default
+where supported. For a server that does not need transcription or image
+generation, `--media-backends-enabled=false` skips those backend downloads and
+initialization. This does not disable vision or audio input supported by a
+llama.cpp model.
+
+#### Selecting a library bundle
 
 The default location is:
 
@@ -292,11 +313,61 @@ Kronk selects the working installed bundle. This second check does not download
 another bundle. Startup logs report the preferred processor, selected
 processor, and reason for either retaining or changing it.
 
-Explicit settings take precedence over both automatic checks. Setting
-`KRONK_ARCH`, `KRONK_OS`, `KRONK_PROCESSOR`, or `KRONK_LIB_PATH` selects that
-value strictly; Kronk does not substitute another runtime. Use an explicit
-processor when automatic detection is not appropriate, such as deliberately
-running CPU inference on a GPU host.
+`KRONK_ARCH` and `KRONK_OS` select the bundle's target architecture and
+operating system. Set `KRONK_PROCESSOR` when automatic backend selection is
+not appropriate, such as deliberately running CPU inference on a GPU host.
+An explicit processor or library path disables the server's automatic runtime
+substitution; setting only the architecture or operating system does not.
+
+List the supported and installed bundles without a running server:
+
+```shell
+kronk libs --local --list-combinations
+kronk libs --local --list-installs
+```
+
+To deliberately select CPU inference, apply the setting to both installation
+and server startup; setting it for one command does not persist it:
+
+```shell
+KRONK_PROCESSOR=cpu kronk libs --local
+KRONK_PROCESSOR=cpu kronk server start
+```
+
+For server startup, `KRONK_LIB_PATH` or `--lib-path` can name an existing
+versioned Kronk bundle or a user-managed library directory. A non-empty
+user-managed directory without `version.json` is treated as read-only: Kronk
+loads from it but does not install, upgrade, or replace its contents. Changing
+the selected processor or library path requires a process restart; native
+libraries are not hot-reloaded.
+
+Linux CUDA bundles depend on CUDA runtime libraries supplied by the host. A
+working `nvidia-smi` confirms the driver but not necessarily the CUDA runtime.
+If the CUDA backend does not load, inspect `libggml-cuda.so` with `ldd` and
+install the runtime packages appropriate for the CUDA version used by the
+current bundle. The CUDA container image already includes its matching runtime.
+
+#### Versions and upgrades
+
+On a fresh installation, the normal command installs the llama.cpp build
+pinned for the installed Kronk release and verifies the download against its
+pinned release manifest. A newer installed build is retained rather than
+automatically downgraded; use `--version` to select a particular release.
+Once verification metadata is cached, subsequent verification can run offline.
+Older installations without that metadata need an online verification first.
+
+Prefer the pinned build. `--upgrade` opts into the latest published llama.cpp
+build, which may be incompatible with the installed Kronk release:
+
+```shell
+kronk libs --local --upgrade
+```
+
+Use `kronk libs --help` for explicit version selection, cross-platform bundle
+installation, and removal. The compatibility matrix is kept in the repository
+[README](https://github.com/ardanlabs/kronk#project-status). Native backend
+environment settings and their restart requirements are covered in
+[Chapter 3](https://www.kronkai.com/manual#native-backend-environment-settings).
 
 #### OpenVINO preview bundles
 
@@ -310,8 +381,8 @@ OpenVINO remains an explicit, preview backend. It is not selected automatically,
 and performance and compatibility depend on the model, quantization, workload,
 and target device. Benchmark against Kronk's standard `cpu` backend when using
 an Intel CPU, and validate complete serving workloads on the target system before
-production use. Successfully loading a model or passing `test-openvino` is only
-a smoke test, not confirmation that every model or serving feature is supported.
+production use. Successfully loading one model is not confirmation that every
+model or serving feature is supported.
 
 Two environment variables select the runtime:
 
@@ -348,81 +419,25 @@ make test-openvino OPENVINO_DEVICE=GPU.0
 make test-openvino OPENVINO_DEVICE=NPU
 ```
 
-The probe is supported on Linux/Windows amd64, downloads the pinned bundle and
-small diagnostic model, loads the library in-process, enumerates `OPENVINO0`,
-runs `llama-bench`, and fails if OpenVINO reports a fallback to CPU. It is not
-part of the normal test suite.
+The probe requires a source checkout and Linux/Windows amd64. It downloads the
+pinned bundle and a small diagnostic model, tests inference, and fails if
+OpenVINO reports a fallback to CPU. Passing it is a smoke test, not validation
+of every model or serving feature.
 
-Useful commands:
+#### Bucky and Malina libraries
 
-```shell
-# Show supported bundles.
-kronk libs --list-combinations
-
-# Show installed bundles.
-kronk libs --list-installs
-
-# Install the supported version using its exact release manifest pin.
-kronk libs --local \
-  --version=b11960@sha256:bab64a43d056b39e64c9ce46f966e43757a0dcf07cce5c4939c0fcf19cd01b38
-
-# Explicitly select CPU instead of an available GPU.
-KRONK_PROCESSOR=cpu kronk libs --local
-```
-
-The normal command installs the llama.cpp version selected for the installed
-Kronk release. That default includes the SHA-256 of the release manifest. The
-manifest contains the digests of every platform archive, allowing Kronk to
-authenticate the manifest before verifying the selected download. Yzma caches
-the authenticated manifest and its digest beside the installed libraries so
-subsequent verification can run without network access. An installation made
-before Yzma 1.26.1 needs one online verification to populate that cache.
-`--upgrade` opts into the latest published llama.cpp build, which may introduce
-upstream compatibility changes:
-
-```shell
-kronk libs --local --upgrade
-```
-
-Kronk, its Yzma Go binding, and llama.cpp form a tested compatibility set.
-Do not infer compatibility from version ordering or upgrade only one member of
-the set. The current and historical matrix is kept in the repository
-[README](../README.md#project-status), while the normal non-`--upgrade` command
-installs the build pinned for the Kronk release.
-
-When upgrading to llama.cpp b11696, check any deployment settings for
-`GGML_CUDA_ENABLE_UNIFIED_MEMORY`, `GGML_CUDA_NO_PINNED`, and
-`GGML_CUDA_REGISTER_HOST`. These native CUDA-family environment variables
-now require numeric nonzero values instead of merely being present. Use `1`
-to activate them, not `true`, `yes`, or an empty value. See
-[Native backend environment settings](https://www.kronkai.com/manual#native-backend-environment-settings)
-for their meanings and restart requirements. No change is needed if they
-are unset.
-
-Use `kronk libs --help` for cross-platform bundle installation and removal.
-Changing the active library path requires a server restart; libraries are not
-hot-reloaded.
-
-`KRONK_LIB_PATH` can name an existing versioned Kronk bundle or a user-managed
-library directory. A non-empty user-managed directory without `version.json`
-is treated as read-only: Kronk loads from it but does not install, upgrade, or
-replace its contents. Changing the selected processor or library path requires
-a process restart; native libraries are not hot-reloaded.
-
-Linux CUDA bundles depend on CUDA runtime libraries supplied by the host. A
-working `nvidia-smi` confirms the driver but not necessarily the CUDA runtime.
-If the CUDA backend does not load, inspect `libggml-cuda.so` with `ldd` and
-install the runtime packages appropriate for the CUDA version used by the
-current bundle. The CUDA container image already includes its matching runtime.
-
-Speech-to-text uses a separate whisper.cpp bundle:
+Speech-to-text and image generation use separate bundles. To install them
+explicitly without a running server:
 
 ```shell
 kronk bucky libs --local
+kronk malina libs --local
 ```
 
-See [Chapter 18: Bucky](https://www.kronkai.com/manual#182-install-whisper-libraries) for
-Bucky platforms, models, and configuration.
+Platform and backend support differ from llama.cpp. See
+[Chapter 18: Bucky](https://www.kronkai.com/manual#182-install-whisper-libraries)
+and [Chapter 19: Malina](https://www.kronkai.com/manual#192-install-stable-diffusion-libraries)
+for supported bundles, models, and configuration.
 
 ### 2.5 Models and Data Paths
 
@@ -451,23 +466,28 @@ The default data layout is:
 │   └── [<organization>/]<adapter>.gguf
 ├── models/
 │   ├── model_config.yaml
-│   ├── .index.yaml
 │   └── <provider>/<family>/<model files>
 ├── bucky-libraries/
 ├── bucky-models/
+├── malina-libraries/
+├── malina-models/
 └── keys/
 ```
 
-Set `KRONK_BASE_PATH` or the global `--base-path` flag to move the entire data
-root. Official containers set it to `/kronk`.
+Set `KRONK_BASE_PATH` or the global `--base-path` flag to select a different
+data root. This does not move existing files; migrate them separately when
+reusing an installation. Use the same root for local management commands and
+the server. Official containers set it to `/kronk`.
 
 The `lora` directory holds optional, user-provided LoRA adapter GGUF files.
 Kronk does not download these files. See
 [Chapter 3 §3.7](https://www.kronkai.com/manual#lora-adapters) for placement
 and configuration.
 
-The model configuration file contains per-model and per-variant overrides. Do
-not copy configuration values based only on model size; use
+`models/model_config.yaml` contains server settings and overrides for language,
+Bucky, and Malina models, including language-model variants. Kronk creates it
+when absent and preserves existing edits. Restart the server after changing it.
+Do not copy configuration values based only on model size; use
 [Chapter 3](https://www.kronkai.com/manual#chapter-3-model-configuration) for context, cache, GPU, and
 sampling settings.
 
@@ -479,7 +499,7 @@ Start in the foreground:
 kronk server start --api-host=127.0.0.1:11435
 ```
 
-Start in the background:
+Stop a foreground server with Ctrl-C. To run in the background instead:
 
 ```shell
 kronk server start --api-host=127.0.0.1:11435 -d
@@ -491,6 +511,11 @@ The background process writes logs to `~/.kronk/kronk.log`. Manage it with:
 kronk server logs
 kronk server stop
 ```
+
+If you selected another data root, use the same `--base-path` or
+`KRONK_BASE_PATH` for logs and stop commands. A background launch can return
+while startup is still in progress; follow the logs and verify the API before
+sending inference requests.
 
 The server defaults to `127.0.0.1:11435` for local-only access. The API and BUI
 share port `11435`; the BUI is enabled by default and is served under
@@ -519,7 +544,7 @@ kronk systemd start
 kronk systemd status
 ```
 
-The embedded service definition runs against your existing `~/.kronk` and
+The user service uses your existing `~/.kronk` by default and
 enables startup at login. Use `kronk systemd install --boot` instead to
 enable startup before login and operation after logout (may require
 authorization). Stop any manually started server before starting the service.
@@ -537,7 +562,7 @@ kronk launchd start
 kronk launchd status
 ```
 
-The embedded LaunchAgent reuses your existing `~/.kronk` and enables startup
+The LaunchAgent uses your existing `~/.kronk` by default and enables startup
 at desktop login. Stop any manually started server before starting the
 agent. Use `kronk launchd stop` and `kronk launchd logs` to manage it.
 This is a per-user agent, not a system-wide service or a before-login boot
@@ -558,25 +583,29 @@ List models visible to the server:
 curl http://localhost:11435/v1/models
 ```
 
-Test a downloaded model:
+Test the starter model from Section 2.1, or substitute the ID of another
+downloaded chat model:
 
 ```shell
 curl http://localhost:11435/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "unsloth/Qwen3-0.6B-Q8_0",
+    "model": "mradermacher/Qwopus3.5-4B-Coder.Q8_0",
     "messages": [{"role": "user", "content": "Hello!"}],
     "max_tokens": 100
   }'
 ```
 
 If authentication is enabled, add
-`-H "Authorization: Bearer $KRONK_TOKEN"` to API requests.
+`-H "Authorization: Bearer $KRONK_TOKEN"` to protected API requests, using a
+token with the required permissions. Health endpoints remain public. A
+successful health check confirms the API is responding, not that a particular
+model can load and generate; the chat request checks that separately.
 
 ### 2.8 Security and Next Steps
 
-Authentication is disabled by default. Do not publish port `11435` to an
-untrusted network until authentication and TLS termination are configured.
+The native server defaults to open API access. Do not publish port `11435`
+to an untrusted network until authentication and TLS termination are configured.
 The BUI, management endpoints, and inference endpoints have separate security
 controls; see [Chapter 12: Security & Authentication](https://www.kronkai.com/manual#chapter-12-security-and-authentication)
 before operating a shared or internet-reachable server.
@@ -592,17 +621,19 @@ Continue with:
 - [Chapter 14: Client Integration](https://www.kronkai.com/manual#chapter-14-client-integration) to connect
   an editor or coding agent.
 - [Chapter 18: Bucky](https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription) for speech-to-text.
+- [Chapter 19: Malina](https://www.kronkai.com/manual#chapter-19-malina-image-generation) for image generation.
 
 ### 2.9 CLI Reference and Shell Completion
 
-The BUI's **Docs → CLI** reference is generated from the same command definitions
-as `kronk --help`. It includes every visible command, its flags and declared defaults,
-and short examples. Use this manual for workflows, environment settings, and service
-configuration. A flag's declared default may be an unset sentinel; server defaults
-and environment/configuration precedence are described in Chapter 8.
+The BUI's **Docs → CLI** reference and `kronk --help` list commands, flags,
+declared defaults, and examples. Use this manual for workflows, environment
+settings, and service configuration. Defaults shown in help are not necessarily
+the effective server settings: saved configuration and environment variables
+can supply values for flags you do not set. Chapter 8 describes server defaults
+and configuration precedence.
 
-Cobra provides shell completion for Bash, Fish, PowerShell, and Zsh. For the current
-session:
+Shell completion is available for Bash, Fish, PowerShell, and Zsh. For the
+current session:
 
 ```shell
 # Bash
