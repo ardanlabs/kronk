@@ -309,7 +309,7 @@ func (m *Models) enrichEntry(ctx context.Context, entry CatalogEntry) (CatalogEn
 }
 
 func isDecisionCatalogEntry(entry CatalogEntry) bool {
-	return isDecisionModelName(catalogEntryModelName(entry))
+	return arch.ResolveForModel(nil, catalogEntryModelName(entry)).Decision.Type != ""
 }
 
 func catalogEntryModelName(entry CatalogEntry) string {

@@ -93,7 +93,7 @@ func Generic(metadata Metadata) modelprofile.Profile {
 		profile.TiedOutputFallback = true
 	}
 
-	applyGenericPurposeAndModalities(metadata, &profile)
+	applyGenericModalities(metadata, &profile)
 	if metadata.hasKeyFragment(".ssm.", ".mamba.", ".recurrent.") {
 		profile.MemorySemantics = modelprofile.MemoryRecurrent
 	}
@@ -101,16 +101,12 @@ func Generic(metadata Metadata) modelprofile.Profile {
 	return profile
 }
 
-func applyGenericPurposeAndModalities(metadata Metadata, profile *modelprofile.Profile) {
+func applyGenericModalities(metadata Metadata, profile *modelprofile.Profile) {
 	hint := strings.ToLower(strings.Join([]string{
 		gguf.GeneralName(metadata.values),
 		gguf.GeneralBasename(metadata.values),
 		gguf.GeneralTags(metadata.values),
 	}, " "))
-
-	if strings.Contains(hint, "embed") {
-		profile.Purpose = modelprofile.PurposeEmbedding
-	}
 
 	anyToAny := strings.Contains(hint, "any-to-any") || strings.Contains(hint, "omni")
 	profile.Modalities.Audio = anyToAny || strings.Contains(hint, "audio")

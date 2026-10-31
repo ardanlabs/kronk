@@ -127,7 +127,7 @@ func TestDecisionContextParamsEmbeddingProtocol(t *testing.T) {
 			if tt.prefill > 0 {
 				options = append(options, WithPrefillBatchSize(tt.prefill))
 			}
-			cfg := adjustConfig(NewConfig(options...), 0)
+			cfg := adjustConfig(NewConfig(options...), 0, false)
 
 			got := decisionContextParams(llama.ContextParams{}, cfg)
 			if got.Embeddings != 1 {

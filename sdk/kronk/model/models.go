@@ -125,7 +125,8 @@ func toModelInfo(cfg Config, model llama.Model) (ModelInfo, error) {
 
 	// llama_model_meta_* deliberately omits GGUF arrays. LFM3 needs its
 	// per-layer KV heads and SWA pattern to classify the hybrid runtime.
-	profile := arch.Resolve(metadata)
+	modelID := modelIDFromFiles(cfg.ModelFiles)
+	profile := arch.ResolveForModel(metadata, modelID)
 	if profile.Architecture == "lfm3" {
 		data, err := gguf.ReadHeaderBytes(cfg.ModelFiles[0])
 		if err != nil {
@@ -142,16 +143,13 @@ func toModelInfo(cfg Config, model llama.Model) (ModelInfo, error) {
 				}
 			}
 		}
-		profile = arch.Resolve(metadata)
+		profile = arch.ResolveForModel(metadata, modelID)
 	}
 
-	modelID := modelIDFromFiles(cfg.ModelFiles)
-
-	isEmbedModel, isRerankModel := detectEmbedRerank(modelID)
 	if llama.ModelIsHybrid(model) {
 		profile.MemorySemantics = modelprofile.MemoryRecurrent
 	}
-	decisionProtocol := detectDecisionProtocol(cfg.DecisionProtocol, modelID, metadata, profile)
+	decisionProtocol := detectDecisionProtocol(cfg.DecisionProtocol, profile)
 
 	return ModelInfo{
 		ID:                 modelID,
@@ -164,8 +162,8 @@ func toModelInfo(cfg Config, model llama.Model) (ModelInfo, error) {
 		Type:               profile.ParameterActivation(),
 		SequenceProcessing: profile.SequenceProcessing,
 		Architecture:       profile.Architecture,
-		IsEmbedModel:       isEmbedModel,
-		IsRerankModel:      isRerankModel,
+		IsEmbedModel:       decisionProtocol.IsZero() && profile.Purpose == modelprofile.PurposeEmbedding,
+		IsRerankModel:      decisionProtocol.IsZero() && profile.Purpose == modelprofile.PurposeRerank,
 		IsDecisionModel:    !decisionProtocol.IsZero(),
 		Metadata:           metadata,
 		decisionProtocol:   decisionProtocol,
@@ -173,52 +171,16 @@ func toModelInfo(cfg Config, model llama.Model) (ModelInfo, error) {
 	}, nil
 }
 
-func detectDecisionProtocol(configured DecisionProtocol, modelID string, metadata map[string]string, profile modelprofile.Profile) DecisionProtocol {
+func detectDecisionProtocol(configured DecisionProtocol, profile modelprofile.Profile) DecisionProtocol {
 	if !configured.IsZero() {
 		return configured
 	}
 
-	switch profile.Decision.Type {
-	case "openjev":
-		return DecisionProtocolOpenJEV
-	case "laya":
-		return DecisionProtocolLaya
-	case "lev":
-		return DecisionProtocolLev
-	case "kev":
-		return DecisionProtocolKev
-	case "nimble":
-		return DecisionProtocolNimble
-	case "clef":
-		return DecisionProtocolClef
-	case "pplx-decider":
-		return DecisionProtocolPplxDecider
-	case "lfm2-d1":
-		return DecisionProtocolLfm2D1
-	case "lfm3-d1":
-		return DecisionProtocolLfm3D1
-	case "lfm3-d1-omni":
-		return DecisionProtocolLfm3D1Omni
-	case "vllm-decision2":
-		return DecisionProtocolVllmDecision2
-	case "vllm-d3":
-		return DecisionProtocolVllmD3
-	}
-
-	modelName := strings.ToLower(metadata["general.name"])
-	if strings.Contains(modelName, "jev-style") {
-		return DecisionProtocolJevStyle
-	}
-
-	name := strings.ToLower(modelID)
-	switch {
-	case strings.Contains(name, "openjev"):
-		return DecisionProtocolOpenJEV
-	case strings.Contains(name, "jev-style"):
-		return DecisionProtocolJevStyle
-	default:
+	protocol, err := ParseDecisionProtocol(profile.Decision.Type)
+	if err != nil {
 		return DecisionProtocol{}
 	}
+	return protocol
 }
 
 var splitPattern = regexp.MustCompile(`-\d+-of-\d+$`)
@@ -255,20 +217,6 @@ func modelIDFromFiles(modelFiles []string) string {
 		name := strings.TrimSuffix(filepath.Base(modelFiles[0]), filepath.Ext(modelFiles[0]))
 		return splitPattern.ReplaceAllString(name, "")
 	}
-}
-
-func detectEmbedRerank(modelID string) (isEmbed bool, isRerank bool) {
-	nameLower := strings.ToLower(modelID)
-
-	if strings.Contains(nameLower, "embed") {
-		isEmbed = true
-	}
-
-	if strings.Contains(nameLower, "rerank") {
-		isRerank = true
-	}
-
-	return isEmbed, isRerank
 }
 
 // =============================================================================

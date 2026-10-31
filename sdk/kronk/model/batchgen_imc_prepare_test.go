@@ -4,7 +4,7 @@ import "testing"
 
 func TestIMCPreparationUsesPrefillBase(t *testing.T) {
 	e := batchEngine{model: &Model{
-		cfg: adjustGenerationBatch(adjustConfig(NewConfig(WithNSeqMax(4), WithPrefillBatchSize(2048)), 0), 1+defMTPNDraft, true),
+		cfg: adjustGenerationBatch(adjustConfig(NewConfig(WithNSeqMax(4), WithPrefillBatchSize(2048)), 0, false), 1+defMTPNDraft, true),
 	}}
 
 	if got := e.imcPreparationChunkSize(); got != 2048 {

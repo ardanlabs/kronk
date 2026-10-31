@@ -151,12 +151,12 @@ func TestResolveArchitectureParity(t *testing.T) {
 			memory:  modelprofile.MemoryAttention,
 		},
 		{
-			name: "reranker architecture",
+			name: "BERT embedding default",
 			metadata: map[string]string{
 				"general.architecture": "bert",
 			},
 			role:    modelprofile.RoleLanguage,
-			purpose: modelprofile.PurposeRerank,
+			purpose: modelprofile.PurposeEmbedding,
 			memory:  modelprofile.MemoryAttention,
 		},
 		{

@@ -183,7 +183,7 @@ func analyzeModelWithConfigAndBudget(info ModelInfo, devs devices.Devices, cfg M
 	md := info.Metadata
 	devs = analysisDevices(devs, cfg.Devices)
 
-	profile := arch.Resolve(md)
+	profile := arch.ResolveForModel(md, info.ID)
 	arch := profile.Architecture
 	if err := profile.ValidateForAnalysis(); err != nil {
 		return Analysis{}, fmt.Errorf("model-analysis: %w", err)
@@ -241,6 +241,9 @@ func analyzeModelWithConfigAndBudget(info ModelInfo, devs devices.Devices, cfg M
 		rowsPerSlot = 0 // Resolve the MTP reserve through the runtime sizing policy.
 	}
 	_, physical := runtimeCfg.GenerationBatchSizes(rowsPerSlot, singlePhysicalBatch)
+	if info.IsEmbedModel || info.IsRerankModel {
+		physical = runtimeCfg.BatchBaseSize()
+	}
 
 	mf := ModelFacts{
 		ID:              info.ID,
@@ -683,6 +686,9 @@ func calculateProfile(p profileInput, contextWindow, slots int64, cache cacheRec
 	batchCfg := p.batchConfig
 	batchCfg.PtrNSeqMax = new(int(slots))
 	_, physical := batchCfg.GenerationBatchSizes(p.generationRows, p.singlePhysicalBatch)
+	if p.class == "embedding" || p.class == "rerank" {
+		physical = batchCfg.BatchBaseSize()
+	}
 	headCountKV := p.attn.FullHeadCountKV
 	if headCountKV <= 0 {
 		headCountKV = p.headCountKV

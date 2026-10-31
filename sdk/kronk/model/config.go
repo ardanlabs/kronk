@@ -18,6 +18,7 @@ import (
 	"github.com/ardanlabs/kronk/sdk/kronk/model/internal/decision"
 	internalspec "github.com/ardanlabs/kronk/sdk/kronk/model/internal/speculation"
 	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile"
+	"github.com/ardanlabs/kronk/sdk/kronk/modelprofile/arch"
 	"github.com/ardanlabs/kronk/sdk/kronk/vram"
 	"github.com/hybridgroup/yzma/pkg/llama"
 )
@@ -654,18 +655,6 @@ func validateConfig(ctx context.Context, cfg Config, log applog.Logger) error {
 		return fmt.Errorf("validate-config: IMC session capacity must be >= 0, got %d", cfg.IMCSessionCapacity())
 	}
 
-	if cfg.IMCSessionCapacity() > 0 && !isEmbedOrRerankConfig(cfg) {
-		nSeqMax := max(cfg.NSeqMax(), defNSeqMax)
-		queueDepth := cfg.QueueDepth()
-		if queueDepth == 0 {
-			queueDepth = DefaultQueueDepth
-		}
-		admissionCapacity := nSeqMax * queueDepth
-		if cfg.IMCSessionCapacity() < admissionCapacity {
-			return fmt.Errorf("validate-config: IMC session capacity must be >= admission capacity %d, got %d", admissionCapacity, cfg.IMCSessionCapacity())
-		}
-	}
-
 	if cfg.AdmissionTimeout() < 0 {
 		return fmt.Errorf("validate-config: admission timeout must be >= 0, got %s", cfg.AdmissionTimeout())
 	}
@@ -867,8 +856,25 @@ func adjustAdmissionTimeout(cfg Config) Config {
 	return cfg
 }
 
-func adjustIMCSessionCapacity(cfg Config) Config {
-	if cfg.IMCSessionCapacity() == 0 && !isEmbedOrRerankConfig(cfg) {
+// validateIMCSessionCapacity runs after model classification because pooled
+// embedding/reranking models do not use generation admission or IMC sessions.
+func validateIMCSessionCapacity(cfg Config, pooled bool) error {
+	if cfg.IMCSessionCapacity() > 0 && !pooled {
+		nSeqMax := max(cfg.NSeqMax(), defNSeqMax)
+		queueDepth := cfg.QueueDepth()
+		if queueDepth == 0 {
+			queueDepth = DefaultQueueDepth
+		}
+		admissionCapacity := nSeqMax * queueDepth
+		if cfg.IMCSessionCapacity() < admissionCapacity {
+			return fmt.Errorf("validate-config: IMC session capacity must be >= admission capacity %d, got %d", admissionCapacity, cfg.IMCSessionCapacity())
+		}
+	}
+	return nil
+}
+
+func adjustIMCSessionCapacity(cfg Config, pooled bool) Config {
+	if cfg.IMCSessionCapacity() == 0 && !pooled {
 		capacity := imcSessionCapacity(cfg.NSeqMax(), cfg.QueueDepth())
 		cfg.PtrIMCSessionCapacity = new(capacity)
 	}
@@ -876,7 +882,7 @@ func adjustIMCSessionCapacity(cfg Config) Config {
 	return cfg
 }
 
-func adjustConfig(cfg Config, model llama.Model) Config {
+func adjustConfig(cfg Config, model llama.Model, pooled bool) Config {
 	cfg = adjustQueueDepth(cfg)
 	cfg = adjustAdmissionTimeout(cfg)
 
@@ -887,7 +893,7 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 	if cfg.NSeqMax() <= 0 {
 		cfg.PtrNSeqMax = new(defNSeqMax)
 	}
-	cfg = adjustIMCSessionCapacity(cfg)
+	cfg = adjustIMCSessionCapacity(cfg, pooled)
 
 	// Default the scheduler's text contribution independently of native media
 	// capacity. Generation sizing adds the image floor and per-slot reserve.
@@ -903,7 +909,7 @@ func adjustConfig(cfg Config, model llama.Model) Config {
 	// MTP sizing is finalized after model loading, when MTP availability is
 	// known. Pooled embedding and reranking evaluation use n_ubatch directly
 	// because they do not mix generation and prefill rows.
-	if isEmbedOrRerankConfig(cfg) {
+	if pooled {
 		cfg.nBatch = cfg.PrefillBatchSize()
 		cfg.nUBatch = cfg.PrefillBatchSize()
 	} else {
@@ -983,13 +989,11 @@ func (cfg Config) GenerationBatchSizes(generationRowsPerSlot int, singlePhysical
 }
 
 func isEmbedOrRerankConfig(cfg Config) bool {
-	if len(cfg.ModelFiles) == 0 {
+	if !cfg.DecisionProtocol.IsZero() || len(cfg.ModelFiles) == 0 {
 		return false
 	}
-
-	isEmbed, isRerank := detectEmbedRerank(modelIDFromFiles(cfg.ModelFiles))
-
-	return isEmbed || isRerank
+	purpose := arch.ResolveForModel(nil, modelIDFromFiles(cfg.ModelFiles)).Purpose
+	return purpose == modelprofile.PurposeEmbedding || purpose == modelprofile.PurposeRerank
 }
 
 func batchSeqTokenLimit(nBatch, nUBatch int) int {
