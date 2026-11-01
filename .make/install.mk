@@ -1,21 +1,23 @@
+##@ Installation
+
 # ==============================================================================
 # Setup
 
 # Configure git to use project hooks so pre-commit runs for all developers.
-setup:
+setup: ## Set up the development environment
 	git config core.hooksPath .githooks
 
 # ==============================================================================
 # Install
 
-install-gotooling:
+install-gotooling: ## Install Go development tools
 	go install honnef.co/go/tools/cmd/staticcheck@latest
 	go install golang.org/x/vuln/cmd/govulncheck@latest
 	go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 	go install github.com/nix-community/gomod2nix@latest
 
-install-tooling:
+install-tooling: ## Install development tooling
 	brew list protobuf || brew install protobuf
 	brew list grpcurl || brew install grpcurl
 	brew list node || brew install node
@@ -23,14 +25,14 @@ install-tooling:
 	brew list ffmpeg || brew install ffmpeg
 
 # Install the kronk cli.
-install-kronk:
+install-kronk: ## Install the Kronk CLI
 	@echo ========== INSTALL KRONK ==========
 	go install ./cmd/kronk
 	@echo
 
 # Use this to install or update llama.cpp, whisper.cpp, and
 # stable-diffusion.cpp to the pinned version.
-install-libraries: install-kronk
+install-libraries: install-kronk ## Install native inference libraries
 	@echo "========== INSTALL LLAMA LIBRARIES (pinned) =========="
 	kronk libs --local
 	@echo
@@ -42,7 +44,7 @@ install-libraries: install-kronk
 	@echo
 
 # Use this to install the test models.
-install-test-models: install-kronk
+install-test-models: install-kronk ## Download test models
 	@echo ========== INSTALL KRONK MODELS ==========
 	kronk model pull --local "unsloth/Qwen3-0.6B-Q8_0"
 	@echo
@@ -79,7 +81,7 @@ install-test-models: install-kronk
 	@echo
 
 # Use this to install the library and model required by the opt-in Malina tests.
-install-test-malina: install-kronk
+install-test-malina: install-kronk ## Download Malina test fixtures
 	@echo ========== INSTALL STABLE DIFFUSION LIBRARIES ==========
 	kronk malina libs --local
 	@echo
@@ -88,7 +90,7 @@ install-test-malina: install-kronk
 	@echo
 
 # Use this to install models for the class.
-install-class-models: install-kronk
+install-class-models: install-kronk ## Download class models
 	@echo ========== INSTALL MODELS ==========
 	kronk model pull --local "unsloth/Qwen3-0.6B-Q8_0"
 	@echo
@@ -121,7 +123,7 @@ LOKI       := grafana/loki:3.7.7
 ALLOY      := grafana/alloy:v1.19.2
 
 # Install the docker images.
-install-docker:
+install-docker: ## Pull supporting Docker images
 	docker pull $(OPENWEBUI) & \
 	docker pull $(GRAFANA) & \
 	docker pull $(PROMETHEUS) & \
