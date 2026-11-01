@@ -18,8 +18,8 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
-  actions: write
+  # Queue and history are separate commits on quick-check-results, never main.
+  contents: write
 
 env:
   GOTOOLCHAIN: local
@@ -32,6 +32,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: main
+          fetch-depth: 1
 
       - name: Set up Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
@@ -39,33 +40,35 @@ jobs:
           go-version-file: .go-version
 
       - name: Restore retained run queue
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: bash .github/scripts/quick-check.sh restore
 
       - name: Promote tested evidence
+        id: promote
         env:
           RELEASE: ${{ inputs.release }}
           COMMIT: ${{ inputs.commit }}
         run: bash .github/scripts/quick-check.sh promote
 
-      # Default success conditions deliberately leave the previous queue intact
-      # on operational promotion, packaging, or upload failure.
+      - name: Save compact retained run queue
+        run: bash .github/scripts/quick-check.sh save-queue
+
+      - name: Commit updated release history
+        # Also saves an initialized first-baseline entry, but never before queue.
+        env:
+          RELEASE: ${{ inputs.release }}
+        run: bash .github/scripts/quick-check.sh save-history
+
+      # Preserve recovery/download copies even if a queue/history push failed.
       - name: Package retained run queue
+        id: snapshot
+        if: ${{ !cancelled() && steps.promote.outcome == 'success' }}
         run: bash .github/scripts/quick-check.sh snapshot
 
-      - name: Save retained run queue
-        id: upload
+      - name: Upload downloadable reports
+        if: ${{ !cancelled() && steps.snapshot.outcome == 'success' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: quick-check-queue-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/quick-check-baselines.tgz
           retention-days: 90
           if-no-files-found: error
-
-      - name: Remove superseded queue artifacts
-        if: ${{ steps.upload.outcome == 'success' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          KEEP_ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
-        run: bash .github/scripts/quick-check.sh prune

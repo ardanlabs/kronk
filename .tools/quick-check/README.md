@@ -9,6 +9,10 @@ no separate Dense MTP file is needed.
 
 ## Run
 
+In GitHub Actions, **Quick-check** runs daily at 02:00 Miami time, or manually
+through **Run workflow**. Review **Compare available baselines** in the job logs;
+download the run's artifacts if further investigation is needed.
+
 Install the model and compatible native libraries first. From the repository root,
 start a dedicated test server and run:
 
@@ -88,13 +92,15 @@ Local archives under `output/saved_local_runs/` remain outside retention.
 
 ## Promote to Release
 
-Designate a saved run as a release baseline without rerunning
-inference or creating a Git tag:
+In GitHub Actions, select **Promote to Release → Run workflow** and enter the
+release label (`vX.Y.Z`) and full tested commit SHA. This selects the shared
+release baseline without rerunning tests or creating a release/tag.
+
+**Not needed for Actions.** Optional local promotion only; does not change the remote queue:
 
 ```sh
 go run ./.tools/quick-check promote -release v1.33.1 -commit FULL_TESTED_SHA
 ```
-
 
 ## Compare
 
@@ -111,12 +117,10 @@ make quick-compare-against-commit \
 ```
 
 Release comparisons use promotion labels when present, otherwise remote tags.
-Same-machine release-to-release comparisons update `release-history.log`:
-release labels, machine, reference-update flag, and the
-comparison table only. Repeating a release pair on that machine replaces its entry;
-commit the file to preserve history. The flag compares the candidate's reference
-set with the previous saved comparison on that machine (`unknown` initially);
-its reference ID also changes when the compared cell set changes.
+Same-machine release-to-release comparisons update `release-history.log`; preserve
+it alongside the queue. `References updated` indicates whether the reference token
+values or compared cell set changed since the previous entry on that machine
+(`unknown` initially).
 
 ## Read the timings together:
 

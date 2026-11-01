@@ -1,0 +1,101 @@
+Release comparison: v1.33.1 (starting baseline; no previous release; tested commit 5e993cad8cf4d5833ab0564574fcc8307bd746a9)
+machine: Manageds-Virtual-Machine.local; os: darwin; RAM: 48GiB; VRAM: 36GiB; unified memory: true
+References updated: unknown; reference ID: 7d4d8029d5cc2731
+
+Cell                     Metric          Baseline median [SD]  Candidate median [SD]  Change
+                                                                                      
+Dense/1s/IMC+/MTP+/img+  Workload (s)    n/a                   26.14 [0.50]           n/a
+                         Normalized (s)  n/a                   24.73 [0.15]           n/a
+                                                                                      
+Dense/1s/IMC+/MTP+/img-  Workload (s)    n/a                   20.49 [0.24]           n/a
+                         Normalized (s)  n/a                   21.29 [0.10]           n/a
+                                                                                      
+Dense/1s/IMC+/MTP-/img+  Workload (s)    n/a                   30.80 [0.76]           n/a
+                         Normalized (s)  n/a                   29.91 [0.18]           n/a
+                                                                                      
+Dense/1s/IMC+/MTP-/img-  Workload (s)    n/a                   21.81 [0.03]           n/a
+                         Normalized (s)  n/a                   22.53 [0.10]           n/a
+                                                                                      
+Dense/1s/IMC-/MTP+/img+  Workload (s)    n/a                   94.83 [0.03]           n/a
+                         Normalized (s)  n/a                   79.78 [0.19]           n/a
+                                                                                      
+Dense/1s/IMC-/MTP+/img-  Workload (s)    n/a                   84.77 [0.31]           n/a
+                         Normalized (s)  n/a                   72.51 [0.23]           n/a
+                                                                                      
+Dense/1s/IMC-/MTP-/img+  Workload (s)    n/a                   90.32 [1.87]           n/a
+                         Normalized (s)  n/a                   78.37 [0.13]           n/a
+                                                                                      
+Dense/1s/IMC-/MTP-/img-  Workload (s)    n/a                   81.32 [1.35]           n/a
+                         Normalized (s)  n/a                   68.83 [0.06]           n/a
+                                                                                      
+Dense/2s/IMC+/MTP+/img+  Workload (s)    n/a                   27.82 [0.72]           n/a
+                         Normalized (s)  n/a                   36.31 [0.83]           n/a
+                                                                                      
+Dense/2s/IMC+/MTP+/img-  Workload (s)    n/a                   23.12 [0.14]           n/a
+                         Normalized (s)  n/a                   29.28 [0.53]           n/a
+                                                                                      
+Dense/2s/IMC+/MTP-/img+  Workload (s)    n/a                   30.79 [0.24]           n/a
+                         Normalized (s)  n/a                   40.09 [0.22]           n/a
+                                                                                      
+Dense/2s/IMC+/MTP-/img-  Workload (s)    n/a                   24.79 [0.32]           n/a
+                         Normalized (s)  n/a                   32.37 [0.01]           n/a
+                                                                                      
+Dense/2s/IMC-/MTP+/img+  Workload (s)    n/a                   123.12 [0.50]          n/a
+                         Normalized (s)  n/a                   174.08 [1.79]          n/a
+                                                                                      
+Dense/2s/IMC-/MTP+/img-  Workload (s)    n/a                   116.55 [1.76]          n/a
+                         Normalized (s)  n/a                   161.95 [5.96]          n/a
+                                                                                      
+Dense/2s/IMC-/MTP-/img+  Workload (s)    n/a                   117.57 [0.20]          n/a
+                         Normalized (s)  n/a                   163.93 [0.50]          n/a
+                                                                                      
+Dense/2s/IMC-/MTP-/img-  Workload (s)    n/a                   110.39 [0.01]          n/a
+                         Normalized (s)  n/a                   149.07 [0.01]          n/a
+                                                                                      
+MoE/1s/IMC+/MTP+/img+    Workload (s)    n/a                   21.16 [0.35]           n/a
+                         Normalized (s)  n/a                   19.72 [0.04]           n/a
+                                                                                      
+MoE/1s/IMC+/MTP+/img-    Workload (s)    n/a                   20.47 [0.04]           n/a
+                         Normalized (s)  n/a                   20.75 [0.55]           n/a
+                                                                                      
+MoE/1s/IMC+/MTP-/img+    Workload (s)    n/a                   23.43 [0.38]           n/a
+                         Normalized (s)  n/a                   21.30 [0.03]           n/a
+                                                                                      
+MoE/1s/IMC+/MTP-/img-    Workload (s)    n/a                   21.06 [1.07]           n/a
+                         Normalized (s)  n/a                   23.05 [0.06]           n/a
+                                                                                      
+MoE/1s/IMC-/MTP+/img+    Workload (s)    n/a                   59.50 [0.92]           n/a
+                         Normalized (s)  n/a                   48.88 [0.04]           n/a
+                                                                                      
+MoE/1s/IMC-/MTP+/img-    Workload (s)    n/a                   55.09 [0.61]           n/a
+                         Normalized (s)  n/a                   45.93 [0.07]           n/a
+                                                                                      
+MoE/1s/IMC-/MTP-/img+    Workload (s)    n/a                   58.51 [0.37]           n/a
+                         Normalized (s)  n/a                   47.39 [0.03]           n/a
+                                                                                      
+MoE/1s/IMC-/MTP-/img-    Workload (s)    n/a                   53.84 [0.24]           n/a
+                         Normalized (s)  n/a                   46.00 [0.01]           n/a
+                                                                                      
+MoE/2s/IMC+/MTP+/img+    Workload (s)    n/a                   25.40 [0.45]           n/a
+                         Normalized (s)  n/a                   32.78 [0.10]           n/a
+                                                                                      
+MoE/2s/IMC+/MTP+/img-    Workload (s)    n/a                   22.03 [0.88]           n/a
+                         Normalized (s)  n/a                   32.66 [0.47]           n/a
+                                                                                      
+MoE/2s/IMC+/MTP-/img+    Workload (s)    n/a                   29.11 [0.16]           n/a
+                         Normalized (s)  n/a                   34.58 [0.63]           n/a
+                                                                                      
+MoE/2s/IMC+/MTP-/img-    Workload (s)    n/a                   25.31 [2.20]           n/a
+                         Normalized (s)  n/a                   30.78 [0.42]           n/a
+                                                                                      
+MoE/2s/IMC-/MTP+/img+    Workload (s)    n/a                   78.69 [0.13]           n/a
+                         Normalized (s)  n/a                   104.33 [0.48]          n/a
+                                                                                      
+MoE/2s/IMC-/MTP+/img-    Workload (s)    n/a                   72.02 [1.34]           n/a
+                         Normalized (s)  n/a                   95.54 [1.86]           n/a
+                                                                                      
+MoE/2s/IMC-/MTP-/img+    Workload (s)    n/a                   77.37 [0.17]           n/a
+                         Normalized (s)  n/a                   104.97 [0.04]          n/a
+                                                                                      
+MoE/2s/IMC-/MTP-/img-    Workload (s)    n/a                   70.76 [0.76]           n/a
+                         Normalized (s)  n/a                   94.98 [0.90]           n/a
