@@ -1,56 +1,58 @@
+##@ Browser UI and server
+
 # ==============================================================================
 # Kronk BUI
 
 BUI_DIR := cmd/server/api/frontends/bui
 
-bui-install:
+bui-install: ## Install browser UI dependencies
 	cd $(BUI_DIR) && npm install
 
-bui-run: kronk-docs
+bui-run: kronk-docs ## Generate docs and start the browser UI dev server
 	cd $(BUI_DIR) && npm run dev
 
-bui-build:
+bui-build: ## Build the browser UI
 	cd $(BUI_DIR) && npm run build
 
-bui-upgrade:
+bui-upgrade: ## Update browser UI dependencies
 	cd $(BUI_DIR) && npm update
 
-bui-upgrade-latest:
+bui-upgrade-latest: ## Upgrade browser UI dependencies to latest versions
 	cd $(BUI_DIR) && npx npm-check-updates -u && npm install
 
 # ==============================================================================
 # Kronk Server
 
-kronk-build: kronk-docs bui-build
+kronk-build: kronk-docs bui-build ## Generate documentation and build the browser UI
 
-kronk-docs:
+kronk-docs: ## Generate documentation
 	go run cmd/server/api/tooling/docs/*.go
 
-kronk-server:
+kronk-server: ## Start the model server
 	. .env 2>/dev/null || true && \
 	export KRONK_POOL_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
 	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
 
-kronk-server-build: kronk-build
+kronk-server-build: kronk-build ## Build assets and start the model server
 	. .env 2>/dev/null || true && \
 	export KRONK_POOL_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
 	go run cmd/kronk/main.go server start | go run cmd/server/api/tooling/logfmt/main.go
 
-kronk-server-llama-log:
+kronk-server-llama-log: ## Start the server with llama.cpp logging
 	. .env 2>/dev/null || true && \
 	export KRONK_POOL_MODEL_CONFIG_FILE=zarf/kms/model_config.yaml && \
 	go run cmd/kronk/main.go server start --llama-log=1 | go run cmd/server/api/tooling/logfmt/main.go
 
-kronk-server-detach: kronk-build
+kronk-server-detach: kronk-build ## Build assets and start the server detached
 	go run cmd/kronk/main.go server start --detach
 
-kronk-server-logs:
+kronk-server-logs: ## Follow server logs
 	go run cmd/kronk/main.go server logs
 
-kronk-server-stop:
+kronk-server-stop: ## Stop the server
 	go run cmd/kronk/main.go server stop
 
-llama-ornith:
+llama-ornith: ## Start llama-server with the configured Ornith model
 	$(HOME)/.kronk/libraries/darwin/arm64/metal/llama-server \
 		-m $(HOME)/.kronk/models/ornith-ai/Ornith-1.5-35B-A3B-GGUF/Ornith-1.5-35B-Q8_0.gguf \
 		--alias ornith-ai/Ornith-1.5-35B-Q8_0/AGENT \
