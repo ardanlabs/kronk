@@ -127,7 +127,7 @@ func prepareOpenCode(root string, parentEnv, availableModels []string, serverURL
 		return "", nil, err
 	}
 
-	content, err := runtimeConfig(serverURL)
+	content, err := runtimeConfig(serverURL, filepath.Join(configDir, "skills"))
 	if err != nil {
 		return "", nil, err
 	}
@@ -185,7 +185,10 @@ func materializeDefaults(configDir string) error {
 	})
 }
 
-func runtimeConfig(serverURL string) (string, error) {
+// runtimeConfig builds the OpenCode config overlay. skillsDir holds the
+// materialized skills, which sit outside the workspace: skills read their own
+// scripts and references there, so reads are allowed and edits denied.
+func runtimeConfig(serverURL string, skillsDir string) (string, error) {
 	baseURL, err := url.JoinPath(serverURL, "/v1")
 	if err != nil {
 		return "", fmt.Errorf("building OpenCode server URL: %w", err)
@@ -195,6 +198,8 @@ func runtimeConfig(serverURL string) (string, error) {
 	if os.Getenv("KRONK_TOKEN") != "" {
 		apiKey = "{env:KRONK_TOKEN}"
 	}
+
+	skills := filepath.ToSlash(skillsDir) + "/**"
 
 	config := map[string]any{
 		"providers": map[string]any{
@@ -207,6 +212,10 @@ func runtimeConfig(serverURL string) (string, error) {
 		},
 		"enabled_providers":  []string{"kronk"},
 		"disabled_providers": []string{},
+		"permissions": []map[string]string{
+			{"action": "external_directory", "resource": skills, "effect": "allow"},
+			{"action": "edit", "resource": skills, "effect": "deny"},
+		},
 	}
 
 	data, err := json.Marshal(config)

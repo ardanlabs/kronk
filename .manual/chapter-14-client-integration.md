@@ -147,7 +147,8 @@ The installed files provide:
 - registered coding models and a default model;
 - direct access to the Kronk and gopls MCP servers;
 - local API-key credentials;
-- project instructions and the `kronk-mcp` and `writing-go` skills; and
+- project instructions and the `kronk-mcp` and `use-modern-go` skills (`use-modern-go` runs a small `sh` or `pwsh` script from its skill directory);
+- permission to read, but not edit, files in the installed `skills/` directory; and
 - terminal UI preferences.
 
 The Kronk MCP service starts with the model server and listens at

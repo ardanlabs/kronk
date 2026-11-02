@@ -1,0 +1,43 @@
+# "<since> <guideline>"; non-digit lines ignored. ASCII only.
+1.0 `time.Since(t)` over `time.Now().Sub(t)`
+1.8 `time.Until(t)` over `t.Sub(time.Now())`
+1.13 `errors.Is` over `==` (matches wrapped errors)
+1.18 `any` over `interface{}`
+1.18 `strings.Cut`/`bytes.Cut` over Index+slice; `strings.Clone`
+1.19 `atomic.Bool`/`Int64`/`Pointer[T]` over `atomic.StoreInt32` etc
+1.19 `fmt.Appendf(buf, ...)` to append to a buffer; don't mechanically rewrite `[]byte(fmt.Sprintf(...))`
+1.20 `errors.Join`; `bytes.Clone`
+1.20 `strings.CutPrefix`/`CutSuffix` (and bytes) over HasPrefix+TrimPrefix
+1.20 `context.WithCancelCause` + `context.Cause(ctx)`
+1.21 `min`/`max` over if/else; `clear(m)`, `clear(s)`
+1.21 `slices` over loops: `Contains`, `Index`, `IndexFunc`, `Sort`, `SortFunc(s, func(a, b T) int { return cmp.Compare(a.X, b.X) })`, `Max`, `Min`, `Reverse`, `Compact` (consecutive dups only), `Clip`, `Clone`
+1.21 `maps.Clone`, `maps.Copy(dst, src)`, `maps.DeleteFunc`
+1.21 `sync.OnceFunc`/`OnceValue` over `sync.Once` wrappers
+1.21 `context.AfterFunc`/`WithTimeoutCause`/`WithDeadlineCause`
+1.21 raising go.mod's `go` line changes GODEBUG defaults (runtime behavior) silently; check before bumping
+1.22 `for i := range n`; loop vars are per-iteration (safe to capture)
+1.22 `cmp.Or(a, b, "default")` = first non-zero
+1.22 `reflect.TypeFor[T]()` over `reflect.TypeOf((*T)(nil)).Elem()`
+1.22 mux patterns: `mux.HandleFunc("GET /api/{id}", h)` + `r.PathValue("id")`
+1.23 `maps.Keys`/`Values` return iterators: `slices.Sorted(maps.Keys(m))`, `slices.Collect(it)`, `for k := range maps.Keys(m)`
+1.23 `time.Tick` needs no Stop (GC reclaims it); prefer over `NewTicker` when it suffices
+1.24 `strings.SplitSeq`/`FieldsSeq` (and bytes) over `Split` in range loops
+1.24 JSON `omitzero` over `omitempty` for Duration, Time, and structs (which `omitempty` never omits); for slices and maps `omitzero` emits an empty non-nil value as `[]`/`{}` where `omitempty` drops it, so changing an existing tag changes wire output
+1.24 tests: `t.Context()` over `context.WithCancel(context.Background())`, always
+1.24 benchmarks: `for b.Loop()` over `for i := 0; i < b.N; i++`
+1.24 go.mod `tool` directive (`go get -tool pkg`, run with `go tool <name>`) over `tools.go` blank imports
+1.25 `wg.Go(f)` over `wg.Add(1)` + `go func() { defer wg.Done(); ... }()`
+1.26 `new(v)` over `x := v; &x`: `new(30)` -> `*int`, `new(T{})` -> `*T`; no redundant casts (`new(0)`, not `new(int(0))`); e.g. `Config{Timeout: new(30)}`
+1.26 `errors.AsType[T](err)` over `errors.As(err, &t)`: `if pe, ok := errors.AsType[*os.PathError](err); ok {...}`
+1.26 `go mod init` writes `go 1.(N-1).0` (one below the toolchain); raise with `go get go@<ver>` before using newer features
+1.26 `//go:fix inline` on a deprecated wrapper func/const lets `go fix` rewrite its callers
+1.27 generic methods: methods may declare type params, e.g. `func (s *Set[T]) Map[U comparable](f func(T) U) *Set[U]`; prefer over package funcs taking the receiver. Not on interface methods; never satisfy an interface. `math/rand/v2` `r.N(d)` is now one
+1.27 literal keys may name promoted fields: `User{ID: 1}` with `ID` from embedded `Base`; `User{Base.ID: 1}` still invalid
+1.21 generic funcs inferred on assignment/conversion to func types: `var f func([]int) int = Sum` (no `Sum[int]`)
+1.27 stdlib `uuid` over google/gofrs; `NewV7` (time-ordered) for DB keys; no `driver.Valuer`: details "uuid"
+1.27 `encoding/json/v2` for new code; v1 stays supported; migrating changes wire output: details "json/v2"
+1.27 `strings.CutLast`/`bytes.CutLast` over LastIndex+slice: `dir, file, ok := strings.CutLast(p, "/")`
+1.27 `(*url.URL).Clone()`/`url.Values.Clone()` over `u2 := *u` (shallow, shares `User`) or hand-rolled copies
+1.27 `math/big` `z.Divide(x, y, mode)`: quotient+remainder, Trunc/Floor/Round/Ceil
+1.27 tests: `httptest.NewTestServer(t, h)` + `srv.Client()` over `NewServer` + `t.Cleanup(srv.Close)` + `http.DefaultClient`; in-memory, auto-cleanup, fails test on handler panic, any host works (no `srv.URL`)
+1.27 tests: `synctest.Sleep(d)` over `time.Sleep(d); synctest.Wait()`

@@ -1,6 +1,6 @@
 # Tic-Tac-Toe
 
-Use the `writing-go` skill. Implement a two-player terminal game in `tictactoe/main.go` using only the Go standard library. Follow the implementation recipe below directly. Keep the code short and add no unrequested features.
+Use the `use-modern-go` skill. Implement a two-player terminal game in `tictactoe/main.go` using only the Go standard library. Follow the implementation recipe below directly. Keep the code short and add no unrequested features.
 
 ## Required program structure
 

@@ -21,6 +21,16 @@ You will want to look at `Chapter 20: Developer Guide` for detailed information 
 - Be concrete for CLI usage, installation, and configuration. Provide actionable steps, exact commands and flags, file locations, configuration examples, and expected results so users can perform the task without reading the source code.
 - Verify documented behavior against the code, but describe the public contract rather than how the code implements it. Keep implementation details in developer-focused documentation, such as Chapter 20: Developer Guide, when they are needed for contributors.
 
+## Skills
+
+Project skills live in `.agents/skills/`. Load the matching skill before the work it covers.
+
+| Skill                                                                | Load when                                                                                                                                                                                    |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`use-modern-go`](.agents/skills/use-modern-go/SKILL.md)             | Writing, editing, or reviewing any `.go` file: modern syntax for the Go version in `go.mod`.                                                                                                 |
+| [`kronk-service-architecture`](.agents/skills/kronk-service-architecture/SKILL.md) | Writing, editing, or auditing Go under `cmd/`, `sdk/`, or `examples/`: ownership and import direction, HTTP request/response types, type-set enums, SDK errors and `errs.FromSDK`, lifecycle and inference invariants, branching style. |
+| [`kronk-pr-review`](.agents/skills/kronk-pr-review/SKILL.md)         | Any review request ("review this PR", "review my changes", "pre-commit review", one aspect such as tests or security). Claude Code; read-only; runs CI's Go static checks and focused race tests, writes reports to `.reviews/`. |
+
 ## MCP Services
 
 Kronk has an MCP service and these are settings:

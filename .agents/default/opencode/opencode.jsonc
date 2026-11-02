@@ -155,6 +155,18 @@
     },
     "update": "disable",
     "share": "disabled",
+    "permissions": [
+        {
+            "action": "external_directory",
+            "resource": "~/.config/opencode/skills/**",
+            "effect": "allow"
+        },
+        {
+            "action": "edit",
+            "resource": "~/.config/opencode/skills/**",
+            "effect": "deny"
+        }
+    ],
     "mcp": {
         "servers": {
             "kronk": {

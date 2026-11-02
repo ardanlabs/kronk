@@ -150,6 +150,14 @@
     },
     "autoupdate": false,
     "share": "disabled",
+    "permission": {
+        "external_directory": {
+            "~/.config/opencode/skills/**": "allow"
+        },
+        "edit": {
+            "~/.config/opencode/skills/**": "deny"
+        }
+    },
     "mcp": {
         "kronk": {
             "type": "remote",

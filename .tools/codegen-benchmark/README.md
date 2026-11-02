@@ -9,7 +9,7 @@ grades the final `tictactoe/main.go`.
 The harness creates a fresh nested Git repository and isolated OpenCode home for
 every attempt. The repository boundary prevents OpenCode from treating the
 surrounding Kronk checkout as its workspace. It installs only the repository's
-`writing-go` skill, disables project configuration, plugins, MCP, web access, and
+`use-modern-go` skill, disables project configuration, plugins, MCP, web access, and
 subagents, disables OpenCode's Git-backed workspace snapshots, and denies
 filesystem access outside the attempt directory through OpenCode's file tools.
 The structural tests and scripted game inputs remain hidden from OpenCode.

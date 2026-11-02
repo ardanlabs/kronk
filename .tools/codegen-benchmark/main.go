@@ -531,10 +531,10 @@ func prepareOpenCodeEnvironment(root, attemptDir string, config []byte) ([]strin
 		}
 	}
 
-	skillSource := filepath.Join(root, ".agents", "default", "skills", "writing-go")
-	skillDestination := filepath.Join(configDir, "skills", "writing-go")
+	skillSource := filepath.Join(root, ".agents", "default", "skills", "use-modern-go")
+	skillDestination := filepath.Join(configDir, "skills", "use-modern-go")
 	if err := os.CopyFS(skillDestination, os.DirFS(skillSource)); err != nil {
-		return nil, fmt.Errorf("codegen benchmark: installing writing-go skill: %w", err)
+		return nil, fmt.Errorf("codegen benchmark: installing use-modern-go skill: %w", err)
 	}
 
 	replaced := make(map[string]bool, len(overrides))
