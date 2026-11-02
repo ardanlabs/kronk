@@ -197,9 +197,9 @@ func runtimeConfig(serverURL string) (string, error) {
 	}
 
 	config := map[string]any{
-		"provider": map[string]any{
+		"providers": map[string]any{
 			"kronk": map[string]any{
-				"options": map[string]any{
+				"settings": map[string]any{
 					"baseURL": baseURL,
 					"apiKey":  apiKey,
 				},
