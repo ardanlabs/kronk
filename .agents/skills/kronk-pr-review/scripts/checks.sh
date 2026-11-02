@@ -1,5 +1,5 @@
 #!/bin/sh
-# Usage: sh checks.sh RUN_DIR [--env K=V]... [--exclude PATH]... [--timeout 10m] [--no-tests]
+# Usage: sh checks.sh RUN_DIR [--env K=V]... [--exclude PATH]... [--timeout 10m] [--no-tests] [--trust]
 # Runs every mechanical check ONCE, scoped to the files/packages intake.sh recorded in
 # RUN_DIR/context, in parallel. The depth comes from scope.txt: at diff depth file checks
 # cover the changed files; at full depth (files/packages/project) they cover review-set.tsv,
@@ -15,6 +15,9 @@
 #   --exclude PATH never run tests in packages under PATH (repo-relative); adds to the defaults
 #   --timeout D    go test -timeout (default 10m, as in CI)
 #   --no-tests     skip test runs
+#   --trust        run the reviewed tree's code even when scope.txt says trusted=no (a fork PR):
+#                  go test, zarf/helm/kronk/test.sh, and the BUI's npx tsc. Without it they are
+#                  skipped; the other checks only read the code (builds run no repo code).
 # A failing check is data for the reviewers, not a script failure. Exit: 0 ran | 2 usage.
 
 set -u
@@ -29,7 +32,7 @@ sdk/bucky/tests
 sdk/kronk/pool
 cmd/server/api/services/kronk/tests
 '
-excludes=$DEFAULT_EXCLUDES timeout=10m tests=1 envkeys=''
+excludes=$DEFAULT_EXCLUDES timeout=10m tests=1 trust=0 envkeys=''
 while [ $# -gt 0 ]; do
   case $1 in
     --env|--exclude|--timeout) [ $# -ge 2 ] || die "$1 needs a value" ;;
@@ -45,7 +48,8 @@ while [ $# -gt 0 ]; do
 "; shift 2 ;;
     --timeout) timeout=${2-}; shift 2 ;;
     --no-tests) tests=0; shift ;;
-    -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
+    --trust) trust=1; shift ;;
+    -h|--help) sed -n '2,21p' "$0"; exit 0 ;;
     *) die "unknown argument: $1" ;;
   esac
 done
@@ -59,6 +63,12 @@ ctx=$(cd -- "$run/context" 2>/dev/null && pwd) || die "no context in $run (run i
 root=$(sed -n 's/^root=//p' "$ctx/scope.txt")
 basesha=$(sed -n 's/^base=//p' "$ctx/scope.txt")
 depth=$(sed -n 's/^depth=//p' "$ctx/scope.txt")
+# runcode: may checks execute code from the reviewed tree? Not for someone else's fork PR
+# (trusted=no) unless --trust; a scope.txt without the key predates the check: trust it.
+runcode=1 untrusted_why=''
+if [ "$(sed -n 's/^trusted=//p' "$ctx/scope.txt")" = no ] && [ "$trust" = 0 ]; then
+  runcode=0 untrusted_why="untrusted code ($(sed -n 's/^trust_reason=//p' "$ctx/scope.txt")); pass --trust / -Trust after reading the diff"
+fi
 # scoped: the files under review — the changed files, or the review set at full depth
 scoped=$ctx/files.tsv
 [ "${depth:-diff}" = diff ] || scoped=$ctx/review-set.tsv
@@ -85,6 +95,7 @@ toolpath() { awk -F '\t' -v t="$1" '$1 == t { print $2; exit }' "$ctx/tools.tsv"
   printf 'test_excludes=%s\n' "$(printf '%s' "$excludes" | tr '\n' ' ')"
   echo "test_timeout=$timeout"
   echo "tests=$tests"
+  echo "runs_reviewed_code=$runcode"
 } >"$out/setup.txt"
 
 # job NAME CMD...: run CMD in the background, log to $out/NAME.txt, exit code to NAME.exit.
@@ -195,6 +206,7 @@ for m in $modules; do
     # Whole module, as CI does: catches callers in unchanged packages broken by the diff.
     job "go-vet$sfx" go vet ./...
     if [ $tests = 0 ]; then skip "go-test$sfx" "--no-tests"
+    elif [ $runcode = 0 ]; then skip "go-test$sfx" "$untrusted_why"
     elif [ "$depth" = project ]; then skip "go-test$sfx" "project depth: AGENTS.md forbids a full repo test run"
     elif [ -z "$testpkgs" ]; then skip "go-test$sfx" "all packages excluded"
     else job "go-test$sfx" go test -race -short -count=1 -timeout "$timeout" $testpkgs
@@ -242,6 +254,7 @@ bui=cmd/server/api/frontends/bui
 if live ts | grep -q "^$bui/"; then
   if [ ! -d "$bui/node_modules" ]; then skip bui-tsc "BUI dependencies not installed (cd $bui && npm ci)"
   elif ! has npx; then skip bui-tsc "npx not installed"
+  elif [ $runcode = 0 ]; then skip bui-tsc "$untrusted_why"
   else job bui-tsc sh -c 'cd "$1" && npx --no-install tsc --noEmit' _ "$bui"
   fi
 fi
@@ -251,6 +264,7 @@ if live '*' | grep -q '^zarf/helm/kronk/'; then
   if [ ! -x zarf/helm/kronk/test.sh ]; then skip helm-test "zarf/helm/kronk/test.sh missing"
   elif ! has helm; then skip helm-test "helm not installed"
   elif ! python3 -c 'import yaml' >/dev/null 2>&1; then skip helm-test "python3 with PyYAML not installed"
+  elif [ $runcode = 0 ]; then skip helm-test "$untrusted_why"
   else job helm-test zarf/helm/kronk/test.sh
   fi
 fi

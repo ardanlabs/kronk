@@ -28,6 +28,7 @@ Kronk rules the scripts apply on their own (from `AGENTS.md` and the Linux CI `s
 - `GITHUB_WORKSPACE` is set to the repo root for every check.
 - Tests run as `go test -race -short -count=1` on the reviewed packages only (the changed ones at `diff` depth), never `./...` and never at `project` depth (`AGENTS.md` forbids a full repo test run), with `KRONK_BASE_PATH` pointed at an empty store so in-package model-backed tests skip instead of running inference. Packages under `sdk/kronk/tests`, `sdk/bucky/tests`, `sdk/kronk/pool`, and `cmd/server/api/services/kronk/tests` are never tested: they need native libraries, models, or a server, and belong to CI or humans.
 - Go static checks follow CI's `static` job: `go vet ./...` per module (as CI runs it), and on the reviewed packages only `staticcheck -checks=all`, `go fix -diff`, `govulncheck`; plus `gofmt -s -l` on the reviewed files (`AGENTS.md` adds `-s`) and `go mod tidy -diff`. `goreleaser check` is not run. Build output goes to a temp dir, so checks never write to the repo. BUI TypeScript changes get `tsc --noEmit` when `node_modules` exists; Helm chart changes get `zarf/helm/kronk/test.sh` when `helm` and Python's PyYAML are installed.
+- Someone else's fork PR is untrusted: intake writes `trusted=no` when the PR (`--pr`, or the current branch's open PR) comes from another repository and you are not its author, or the branch tracks `refs/pull/*`; `--untrusted` forces it. Then `checks.sh` runs nothing from the reviewed tree (`go test`, the Helm test script, and the BUI `tsc` are skipped; builds, vet, and the analyzers only read the code) unless given `--trust`, and reviewers execute nothing from it.
 - Generated outputs (BUI docs components, `cli-reference.json`, the embedded `static/` bundle, `*.pb.go`, `gomod2nix.toml`) are skipped like any generated file; a changed source without its regenerated output is a reviewer finding.
 
 ## 1. Parse the request
@@ -58,6 +59,7 @@ One round (native question UI if available, ≤2 batches). Skip what the request
 6. **Secret-scan generated files** — if `skipped_files > 0`. Off by default. Give the file count and `noise_tokens_est` as the worst-case cost; a secret scanner in `tools.tsv` makes it much cheaper.
 7. **Model tier** — if your runtime picks models per subagent: run the context builder and generated-file scan on a cheaper model? Every run. Reviewers and the aggregator always use the session model.
 8. **Security PoC target** — *All agents + Security* only, and only if memory has no `kronk-project-interaction-guide`: is a disposable local Kronk server running for PoCs (host, port, how to get a token), or are PoCs static-only? Save the answer as project memory `kronk-project-interaction-guide` (no memory → ask every run). Never ask about test setup: `checks.sh` already applies the Kronk rules above.
+9. **Untrusted code** — if the preview says `trusted=no`: name `trust_reason`, say its tests, Helm test script, and BUI `tsc` won't run and no agent will execute its code, then ask *Keep untrusted* (default) · *Trust it* (only once you have read the diff; adds `--trust` to `checks.sh`). Reviewers still never run it.
 
 The answers are the confirmation; echo the final setup in ≤6 lines and continue.
 
@@ -65,7 +67,7 @@ The answers are the confirmation; echo the final setup in ≤6 lines and continu
 
 1. `intake.sh <scope> --id <id> [--depth <depth>] [--exclude <path>]…` creates `<run>`. `checks.sh` reads the depth from `scope.txt`.
 2. Save the ticket raw to `<run>/context/ticket.md` without reading it — `gh issue view <n> --repo ardanlabs/kronk --comments > …` first, then a tracker MCP, then web fetch.
-3. In parallel: `checks.sh <run> [--exclude <pkg path>]… [--timeout D]` in the background, and the context builder: "Follow `<skill>/references/roles/context-builder.md`. Run directory: `<run>`."
+3. In parallel: `checks.sh <run> [--trust] [--exclude <pkg path>]… [--timeout D]` in the background, and the context builder: "Follow `<skill>/references/roles/context-builder.md`. Run directory: `<run>`."
 
 ## 5. Acceptance-criteria gate
 

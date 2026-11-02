@@ -51,7 +51,7 @@ When a finding hinges on intent (meant to be public? deliberately unauthenticate
 
 ## PoCs (optional)
 
-Only when a code citation isn't proof enough. Write under `<run>/security-issues/poc/<name>/` — `<name>` is one segment, no `/` or `..`, never overwrite. Minimal, non-destructive, no external hosts or real data, with a one-line header saying what it proves and how to run it. Cite the path in Proof.
+Only when a code citation isn't proof enough. Write under `<run>/security-issues/poc/<name>/` — `<name>` is one segment, no `/` or `..`, never overwrite. Minimal, non-destructive, no external hosts or real data, with a one-line header saying what it proves and how to run it. Cite the path in Proof. When `scope.txt` says `trusted=no`, PoCs stay static: never build, run, or start a server from the reviewed tree.
 
 ## Gates
 

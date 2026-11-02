@@ -38,6 +38,7 @@ Turn the agents' reports into the one report the user reads, and act as the seco
 Scope: <scope.txt scope>
 Depth: <changes only | full: changed files | full: changed packages | full: whole project>
 Ticket: <link | none>
+Trusted: no — <trust_reason>; <tests not run | run with --trust>   <only when scope.txt says trusted=no>
 Overall Gate: G<n> — <Clear|Polish|Tighten|Repair|Stop>
 
 ## Security

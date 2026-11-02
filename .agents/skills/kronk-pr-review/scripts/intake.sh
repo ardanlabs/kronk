@@ -1,7 +1,7 @@
 #!/bin/sh
 # Usage: sh intake.sh [--id ID] [--base REF | --range A..B | --pr N | --staged | --files F...]
 #                     [--exclude PATHSPEC]... [--depth diff|files|packages|project]
-#                     [--max-file-diff N] [--max-file-lines N] [--reviews-dir DIR] [--dry-run]
+#                     [--max-file-diff N] [--max-file-lines N] [--reviews-dir DIR] [--untrusted] [--dry-run]
 # Resolves the review scope in the current git repo and writes the run directory
 # <reviews-dir>/<id>/<NNN>/context/ (default .reviews at the repo root) (diff, file inventory, symbols, routing signals,
 # shards, packages, tools, missing tools, rules, size warnings). Default scope: all uncommitted changes (staged + unstaged) +
@@ -13,12 +13,15 @@
 # read with > --max-file-lines lines (2000), noise (generated/vendor/lockfiles) and PRs
 # over the shard threshold. Symlinks are never reviewed. --dry-run prints the summary without
 # writing anything.
+# Trust: scope.txt records trusted=no when HEAD holds someone else's fork PR (--pr, or the current
+# branch's open PR, comes from another repository and its author is not the gh user; or the
+# branch tracks refs/pull/*). --untrusted forces it. checks.sh then runs no code from the tree.
 # Exit: 0 ok | 2 usage | 3 code on disk is not the code under review | 4 empty diff | 5 not a git repo.
 
 set -u
 LC_ALL=C; export LC_ALL  # byte-wise sort/awk, identical on every machine
 
-scope=unstaged base='' range='' pr='' id='' reviews=.reviews dry=0 files='' excl='' depth=diff
+scope=unstaged base='' range='' pr='' id='' reviews=.reviews dry=0 files='' excl='' depth=diff untrusted=0
 SHARD_FILES=30 SHARD_LINES=2500 BIN_FILES=15 BIN_LINES=1200 MAX_FILE_DIFF=800 MAX_FILE_LINES=2000
 # Full-depth shards weigh whole files, not changed lines.
 SET_SHARD_FILES=30 SET_SHARD_LINES=6000 SET_BIN_FILES=20 SET_BIN_LINES=4000
@@ -46,7 +49,8 @@ while [ $# -gt 0 ]; do
     --max-file-lines) MAX_FILE_LINES=${2-}; shift 2 ;;
     --reviews-dir) reviews=${2-}; shift 2 ;;
     --dry-run) dry=1; shift ;;
-    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
+    --untrusted) untrusted=1; shift ;;
+    -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
     *) die 2 "unknown argument: $1" ;;
   esac
 done
@@ -119,10 +123,12 @@ case $scope in
     ;;
   pr)
     command -v gh >/dev/null 2>&1 || die 2 "--pr needs the gh CLI"
-    meta=$(gh pr view "$pr" --json headRefOid,baseRefOid,url --jq '.headRefOid+" "+.baseRefOid+" "+.url') ||
+    meta=$(gh pr view "$pr" --json headRefOid,baseRefOid,url,isCrossRepository,author \
+      --jq '.headRefOid+" "+.baseRefOid+" "+.url+" "+(.isCrossRepository|tostring)+" "+.author.login') ||
       die 2 "gh pr view $pr failed"
-    # shellcheck disable=SC2086 # split "head base url"
+    # shellcheck disable=SC2086 # split "head base url cross author"
     set -- $meta
+    prcross=${4-} prauthor=${5-}
     [ "$1" = "$head" ] || die 3 "HEAD is not PR #$pr head ($1); run 'gh pr checkout $pr' first"
     if git cat-file -e "$2^{commit}" 2>/dev/null; then
       mb=$(git merge-base "$2" HEAD) && git_diff "$mb...HEAD" >"$patch" &&
@@ -164,6 +170,33 @@ for d in "$reviews/$slug"/*/; do
 done
 nn=$(printf '%03d' $((last + 1)))
 run=$reviews/$slug/$nn
+
+# --- trust: is HEAD someone else's fork PR? -------------------------------------------
+# A fork PR's tests and scripts are its author's code; checks.sh runs none of them unless
+# --trust is passed. Fork = the PR comes from another repository and its author is not the gh
+# user (your own fork PR is yours), or the branch tracks a pull ref (refs/pull/N/head). With
+# --pr an unanswered lookup counts as a fork; elsewhere no PR found means local work.
+trusted=yes trust_reason=local
+branch=$(git symbolic-ref --short -q HEAD || true)
+if [ "$scope" != pr ] && [ -n "$branch" ] && command -v gh >/dev/null 2>&1; then
+  # shellcheck disable=SC2046 # split "cross author"
+  set -- $(gh pr view --json isCrossRepository,author --jq '(.isCrossRepository|tostring)+" "+.author.login' 2>/dev/null)
+  prcross=${1-} prauthor=${2-}
+fi
+case ${prcross-} in
+  true)
+    viewer=$(gh api user --jq .login 2>/dev/null || true)
+    if [ -z "$viewer" ] || [ "$viewer" != "${prauthor-}" ]; then
+      trusted=no trust_reason="fork PR by ${prauthor:-unknown}"
+    else trust_reason="own fork PR"
+    fi ;;
+  false) trust_reason="same-repository PR" ;;
+  *) [ "$scope" = pr ] && trusted=no trust_reason="fork status of PR #$pr unknown" ;;
+esac
+case $(git config "branch.$branch.merge" 2>/dev/null) in
+  refs/pull/*) trusted=no trust_reason="branch tracks a pull ref" ;;
+esac
+[ "$untrusted" = 1 ] && trusted=no trust_reason="--untrusted"
 
 # lang/kind/layer of a repo-relative path; shared by files.tsv and review-set.tsv.
 classify_awk='
@@ -632,7 +665,9 @@ langs=$(awk -F '\t' '$5 != "generated" && $5 != "vendor" { c[$4]++ } END { for (
   echo "depth=$depth"
   echo "head=$head"
   echo "base=$basesha"
-  echo "branch=$(git symbolic-ref --short -q HEAD || echo detached)"
+  echo "branch=${branch:-detached}"
+  echo "trusted=$trusted"
+  echo "trust_reason=$trust_reason"
   echo "files=$total"
   echo "reviewable_files=$reviewable"
   echo "skipped_files=$skipped"

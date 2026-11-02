@@ -1,4 +1,4 @@
-# Usage: checks.ps1 RUN_DIR [-Env K=V,...] [-Exclude PATH,...] [-Timeout 10m] [-NoTests]
+# Usage: checks.ps1 RUN_DIR [-Env K=V,...] [-Exclude PATH,...] [-Timeout 10m] [-NoTests] [-Trust]
 # PowerShell port of checks.sh (same outputs). Runs every mechanical check ONCE, scoped to the
 # files/packages intake recorded in RUN_DIR/context, in parallel; the depth in scope.txt picks
 # the files (see checks.sh). Output:
@@ -12,6 +12,7 @@
 #   -Exclude PATH never run tests in packages under PATH (repo-relative); adds to the defaults
 #   -Timeout D    go test -timeout (default 10m, as in CI)
 #   -NoTests      skip test runs
+#   -Trust        run the reviewed tree's code even when scope.txt says trusted=no (see checks.sh)
 # A failing check is data for the reviewers, not a script failure. Exit: 0 ran | 2 usage.
 [CmdletBinding()]
 param(
@@ -19,7 +20,8 @@ param(
     [string[]]$Env = @(),
     [string[]]$Exclude = @(),
     [string]$Timeout = '10m',
-    [switch]$NoTests
+    [switch]$NoTests,
+    [switch]$Trust
 )
 
 # -File passes 'a,b' as one string: split list parameters ourselves (-Env only before NAME=).
@@ -41,6 +43,12 @@ $baseLine = $scopeLines | Where-Object { $_.StartsWith('base=') } | Select-Objec
 $baseSha = if ($baseLine) { $baseLine.Substring(5) } else { '' }
 $depthLine = $scopeLines | Where-Object { $_.StartsWith('depth=') } | Select-Object -First 1
 $depth = if ($depthLine) { $depthLine.Substring(6) } else { 'diff' }
+# runCode: may checks execute code from the reviewed tree? Not for someone else's fork PR
+# (trusted=no) unless -Trust; a scope.txt without the key predates the check: trust it.
+$trustedLine = $scopeLines | Where-Object { $_.StartsWith('trusted=') } | Select-Object -First 1
+$reasonLine = $scopeLines | Where-Object { $_.StartsWith('trust_reason=') } | Select-Object -First 1
+$runCode = -not ($trustedLine -ceq 'trusted=no' -and -not $Trust)
+$untrustedWhy = if ($runCode) { '' } else { "untrusted code ($(if ($reasonLine) { $reasonLine.Substring(13) } else { '' })); pass --trust / -Trust after reading the diff" }
 # scoped: the files under review — the changed files, or the review set at full depth
 $scoped = Join-Path $ctx $(if ($depth -eq 'diff') { 'files.tsv' } else { 'review-set.tsv' })
 if (-not (Test-Path -LiteralPath $root -PathType Container)) { Die "cannot enter repo root $root" }
@@ -63,7 +71,7 @@ $envKeys = foreach ($kv in $Env) {
 }
 $Exclude = @($Exclude | Where-Object { $_ } | ForEach-Object { $_.TrimEnd('/') })
 $tests = -not $NoTests
-Out-Text (Join-Path $out 'setup.txt') ("env_keys=$(@($envKeys) -join ' ')`ntest_excludes=$(($Exclude | ForEach-Object { "$_ " }) -join '')`ntest_timeout=$Timeout`ntests=$([int]$tests)`n")
+Out-Text (Join-Path $out 'setup.txt') ("env_keys=$(@($envKeys) -join ' ')`ntest_excludes=$(($Exclude | ForEach-Object { "$_ " }) -join '')`ntest_timeout=$Timeout`ntests=$([int]$tests)`nruns_reviewed_code=$([int]$runCode)`n")
 
 $tools = @{}; foreach ($r in @(ReadTsv (Join-Path $ctx 'tools.tsv'))) { $tools[$r[0]] = $r[1] }
 function Has([string]$t) { $tools.ContainsKey($t) }
@@ -199,6 +207,7 @@ foreach ($m in $modules) {
     # Whole module, as CI does: catches callers in unchanged packages broken by the diff.
     Job "go-vet$sfx" $dir 'go' @('vet', './...')
     if (-not $tests) { Skip "go-test$sfx" '--no-tests' }
+    elseif (-not $runCode) { Skip "go-test$sfx" $untrustedWhy }
     elseif ($depth -eq 'project') { Skip "go-test$sfx" 'project depth: AGENTS.md forbids a full repo test run' }
     elseif (-not $testPkgs.Count) { Skip "go-test$sfx" 'all packages excluded' }
     else { Job "go-test$sfx" $dir 'go' (@('test', '-race', '-short', '-count=1', '-timeout', $Timeout) + $testPkgs) }
@@ -235,6 +244,7 @@ $bui = 'cmd/server/api/frontends/bui'
 if (@(Live 'ts') | Where-Object { $_.StartsWith("$bui/", [StringComparison]::Ordinal) }) {
     if (-not (Test-Path -LiteralPath "$bui/node_modules" -PathType Container)) { Skip 'bui-tsc' "BUI dependencies not installed (cd $bui && npm ci)" }
     elseif (-not (Has 'npx')) { Skip 'bui-tsc' 'npx not installed' }
+    elseif (-not $runCode) { Skip 'bui-tsc' $untrustedWhy }
     else { Job 'bui-tsc' (Join-Path $root $bui) 'npx' @('--no-install', 'tsc', '--noEmit') }
 }
 
@@ -244,6 +254,7 @@ if (@(Live '*') | Where-Object { $_.StartsWith('zarf/helm/kronk/', [StringCompar
     elseif (-not (Has 'helm')) { Skip 'helm-test' 'helm not installed' }
     elseif (-not (Has 'python3') -or $(& python3 -c 'import yaml' *> $null; $LASTEXITCODE -ne 0)) { Skip 'helm-test' 'python3 with PyYAML not installed' }
     elseif (-not (Get-Command bash -CommandType Application -ErrorAction SilentlyContinue)) { Skip 'helm-test' 'bash not installed' }
+    elseif (-not $runCode) { Skip 'helm-test' $untrustedWhy }
     else { Job 'helm-test' $root 'bash' @('zarf/helm/kronk/test.sh') }
 }
 

@@ -1,11 +1,11 @@
 # Usage: intake.ps1 [-Id ID] [-Base REF | -Range A..B | -Pr N | -Staged | -Files F,...]
 #                   [-Exclude PATHSPEC,...] [-Depth diff|files|packages|project]
-#                   [-MaxFileDiff N] [-MaxFileLines N] [-ReviewsDir DIR] [-DryRun]
+#                   [-MaxFileDiff N] [-MaxFileLines N] [-ReviewsDir DIR] [-Untrusted] [-DryRun]
 # PowerShell port of intake.sh (same outputs). Resolves the review scope in the current git
 # repo and writes <ReviewsDir>/<id>/<NNN>/context/ (default .reviews at the repo root). Default scope: all uncommitted changes (staged + unstaged) + untracked
 # files. -Exclude drops paths from the scope. -Depth: see intake.sh (review-set.tsv).
 # Size guard: see intake.sh. Symlinks are never reviewed. -DryRun prints the summary without
-# writing anything.
+# writing anything. Trust (trusted= in scope.txt, -Untrusted): see intake.sh.
 # Exit: 0 ok | 2 usage | 3 code on disk is not the code under review | 4 empty diff | 5 not a git repo.
 [CmdletBinding()]
 param(
@@ -20,6 +20,7 @@ param(
     [int]$MaxFileDiff = 800,
     [int]$MaxFileLines = 2000,
     [string]$ReviewsDir = '.reviews',
+    [switch]$Untrusted,
     [switch]$DryRun
 )
 
@@ -103,7 +104,7 @@ try {
         GitDiffTo $patch @($Range); SaveLog $Range; $desc = $Range
     } elseif ($Pr) {
         if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { Die 2 '-Pr needs the gh CLI' }
-        $meta = & gh pr view $Pr --json headRefOid,baseRefOid,url 2>$null | ConvertFrom-Json
+        $meta = & gh pr view $Pr --json headRefOid,baseRefOid,url,isCrossRepository,author 2>$null | ConvertFrom-Json
         if (-not $meta) { Die 2 "gh pr view $Pr failed" }
         if ($meta.headRefOid -ne $head) { Die 3 "HEAD is not PR #$Pr head ($($meta.headRefOid)); run 'gh pr checkout $Pr' first" }
         & git cat-file -e "$($meta.baseRefOid)^{commit}" 2>$null
@@ -138,6 +139,24 @@ try {
         $desc = 'uncommitted changes (staged + unstaged) + untracked files'
     }
     if (-not (Test-Path -LiteralPath $patch) -or (Get-Item -LiteralPath $patch).Length -eq 0) { Die 4 "no changes in scope ($desc)" }
+
+    # --- trust: is HEAD someone else's fork PR? (see intake.sh) -------------------------
+    $trusted = 'yes'; $trustReason = 'local'
+    $branch = GitOut symbolic-ref --short -q HEAD
+    $prInfo = $null
+    if ($Pr) { $prInfo = $meta }
+    elseif ($branch -and (Get-Command gh -ErrorAction SilentlyContinue)) {
+        $prInfo = & gh pr view --json isCrossRepository,author 2>$null | ConvertFrom-Json
+    }
+    if ($prInfo -and $prInfo.isCrossRepository -eq $true) {
+        $viewer = "$(& gh api user --jq .login 2>$null)".Trim()
+        if (-not $viewer -or $viewer -cne "$($prInfo.author.login)") {
+            $trusted = 'no'; $trustReason = "fork PR by $(if ($prInfo.author.login) { $prInfo.author.login } else { 'unknown' })"
+        } else { $trustReason = 'own fork PR' }
+    } elseif ($prInfo -and $prInfo.isCrossRepository -eq $false) { $trustReason = 'same-repository PR' }
+    elseif ($Pr) { $trusted = 'no'; $trustReason = "fork status of PR #$Pr unknown" }
+    if ($branch -and "$(GitOut config "branch.$branch.merge")" -clike 'refs/pull/*') { $trusted = 'no'; $trustReason = 'branch tracks a pull ref' }
+    if ($Untrusted) { $trusted = 'no'; $trustReason = '-Untrusted' }
 
     # --- issue id ---------------------------------------------------------------------
     if (-not $Id) { $Id = GitOut symbolic-ref --short -q HEAD; if (-not $Id) { Die 2 'detached HEAD: pass -Id' } }
@@ -628,9 +647,9 @@ try {
 
     # --- scope.txt ----------------------------------------------------------------------
     $langs = ($rev | Group-Object Lang | ForEach-Object { "$($_.Name):$($_.Count)" }) -join ' '
-    $branch = GitOut symbolic-ref --short -q HEAD; if (-not $branch) { $branch = 'detached' }
+    if (-not $branch) { $branch = 'detached' }
     $setInfo = if ($Depth -ne 'diff') { @("review_files=$($setRecs.Count)", "review_code_files=$($setCode.Count)", "review_lines=$setLines", "review_tokens_est=$tokSet") } else { @() }
-    $scope = @("id=$slug", "nn=$nn", "run=$run", "root=$top", "scope=$desc", "depth=$Depth", "head=$head", "base=$baseSha", "branch=$branch",
+    $scope = @("id=$slug", "nn=$nn", "run=$run", "root=$top", "scope=$desc", "depth=$Depth", "head=$head", "base=$baseSha", "branch=$branch", "trusted=$trusted", "trust_reason=$trustReason",
         "files=$($allRecs.Count)", "reviewable_files=$($rev.Count)", "skipped_files=$($skippedRecs.Count)", "lines_added=$added", "lines_deleted=$deleted",
         "code_files=$($code.Count)", "code_lines_changed=$codeLines", "languages=$langs", "go_packages=$($pk.Count)",
         "symbols=$($syms.Count)", "refs=$($refs.Count)", "shards=$shards",
