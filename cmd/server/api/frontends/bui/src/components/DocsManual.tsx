@@ -191,6 +191,11 @@ export default function DocsManual() {
                 <td>Homebrew</td>
               </tr>
               <tr>
+                <td>DEB / RPM package</td>
+                <td>Linux amd64 and arm64</td>
+                <td>apt or dnf; systemd for the optional user service</td>
+              </tr>
+              <tr>
                 <td>Release archive</td>
                 <td>Supported release platforms</td>
                 <td>None beyond the host OS</td>
@@ -218,6 +223,24 @@ export default function DocsManual() {
           <p>Homebrew automatically adds the tap and records trust for this formula. This is narrower than <code>brew trust ardanlabs/kronk</code>, which trusts every current and future item in the tap.</p>
           <p>Upgrade an existing installation with:</p>
           <pre className="code-block"><code className="language-shell">{`brew upgrade ardanlabs/kronk/kronk`}</code></pre>
+          <h4 id="linux-deb-rpm-packages">Linux DEB / RPM Packages</h4>
+          <p>Download the <code>.deb</code> or <code>.rpm</code> for your architecture from the <a href="https://github.com/ardanlabs/kronk/releases">Kronk releases page</a>. DEB filenames use <code>amd64</code> or <code>arm64</code>; RPM filenames use <code>x86_64</code> or <code>aarch64</code>. Install the downloaded file with your distribution's package manager, replacing <code>&lt;file&gt;</code> with its filename:</p>
+          <pre className="code-block"><code className="language-shell">{`# Debian / Ubuntu
+sudo apt install ./<file>.deb
+
+# Fedora / RHEL-compatible distributions
+sudo dnf install ./<file>.rpm`}</code></pre>
+          <p>Packages install <code>/usr/bin/kronk</code> and declare host runtime dependencies. Native inference libraries are downloaded separately by <code>kronk libs --local</code> or during normal server startup; the first download requires internet access. GPU drivers and backend-specific runtimes must already be installed on the host. <code>ffmpeg</code> is a recommended dependency for audio formats that need transcoding; its availability depends on your distribution's enabled repositories. There is no Kronk apt or yum repository, so download each new release package explicitly.</p>
+          <p>Package installation does not create an account, register a service, or start the server. To opt into the existing systemd <strong>user service</strong>, run as your normal user, <strong>without sudo</strong>:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk systemd install --boot
+kronk systemd start
+curl --fail http://127.0.0.1:11435/v1/liveness`}</code></pre>
+          <p><code>--boot</code> enables user lingering so the service starts before login and continues after logout; this may require authorization. Installation requires an available systemd user manager. Omit <code>--boot</code> for startup at login only. Stop any manually started Kronk server before starting the service. No system-wide <code>kronk.service</code> is installed; <code>sudo systemctl enable --now kronk</code> is not this installation method.</p>
+          <p>The service reuses your models, libraries, and keys under <code>~/.kronk</code> by default, and reads optional settings from <code>~/.config/kronk/kronk.env</code>. Existing base-path and XDG overrides still apply. See <a href="https://www.kronkai.com/manual#88-running-as-a-systemd-service">Chapter 8 §8.8</a> for configuration and security settings before exposing the server remotely.</p>
+          <p>To upgrade, install the newer package with the same apt or dnf command, then run <code>kronk systemd restart</code> as each user running the service. The stable executable path means re-registering the service is not required. Packages do not restart user services automatically or replace user configuration.</p>
+          <p>Before removing the package, each user who installed a service should run:</p>
+          <pre className="code-block"><code className="language-shell">{`kronk systemd uninstall`}</code></pre>
+          <p>Then remove the binary with <code>sudo apt remove kronk</code> or <code>sudo dnf remove kronk</code>. Models, libraries, keys, user configuration, and lingering are preserved. Package removal does not stop or unregister user services on users' behalf.</p>
           <h4 id="release-archive">Release archive</h4>
           <p>Download the archive for your operating system and architecture from the <a href="https://github.com/ardanlabs/kronk/releases">Kronk releases page</a>, extract the <code>kronk</code> executable, and place it on your <code>PATH</code>.</p>
           <h4 id="go-toolchain">Go toolchain</h4>

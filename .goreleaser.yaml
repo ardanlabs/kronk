@@ -47,6 +47,49 @@ archives:
         formats:
           - zip
 
+# Linux packages install the CLI only. Users opt into the existing user
+# service with `kronk systemd install`; package scripts must not select a
+# user, create a system service, or start/stop user services as root.
+nfpms:
+  - id: kronk
+    ids:
+      - kronk
+    package_name: kronk
+    file_name_template: "{{ .ConventionalFileName }}"
+    vendor: Ardan Labs
+    homepage: https://www.kronkai.com
+    maintainer: Bill Kennedy <bill@ardanlabs.com>
+    description: Local LLM inference SDK and server CLI
+    license: Apache-2.0
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/bin
+    recommends:
+      - ffmpeg
+    overrides:
+      deb:
+        dependencies:
+          - ca-certificates
+          - libc6
+          - libstdc++6
+          - libgomp1
+          - libcurl4
+          - libnuma1
+          - libopenblas0
+      rpm:
+        dependencies:
+          - ca-certificates
+          - glibc
+          - libstdc++
+          - libgomp
+          - libcurl
+          - numactl-libs
+          - openblas
+    contents:
+      - src: LICENSE
+        dst: /usr/share/licenses/kronk/LICENSE
+
 checksum:
   name_template: "checksums.txt"
 

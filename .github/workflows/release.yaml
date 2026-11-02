@@ -65,9 +65,8 @@ jobs:
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
 
       # SLSA build provenance for every artifact GoReleaser produced.
-      # `actions/attest-build-provenance` resolves to a glob over
-      # dist/checksums.txt-listed paths; we pass the binary tarballs/zips
-      # and the checksums file itself so any consumer can verify with
+      # Include archives, Linux packages, SBOMs, and the checksums file
+      # itself so any consumer can verify with
       # `gh attestation verify` or `cosign verify-attestation`.
       - name: Attest release artifacts (SLSA)
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a  # v3
@@ -75,5 +74,7 @@ jobs:
           subject-path: |
             dist/*.tar.gz
             dist/*.zip
+            dist/*.deb
+            dist/*.rpm
             dist/checksums.txt
             dist/*.sbom.json
