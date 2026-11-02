@@ -115,13 +115,13 @@ func TestPrepareOpenCode(t *testing.T) {
 	if err := json.Unmarshal([]byte(got["OPENCODE_CONFIG_CONTENT"]), &content); err != nil {
 		t.Fatalf("runtime config is not valid JSON: %v", err)
 	}
-	provider := content["provider"].(map[string]any)["kronk"].(map[string]any)
-	options := provider["options"].(map[string]any)
-	if options["baseURL"] != "http://127.0.0.1:9999/v1" {
-		t.Errorf("baseURL: got %v, want http://127.0.0.1:9999/v1", options["baseURL"])
+	provider := content["providers"].(map[string]any)["kronk"].(map[string]any)
+	settings := provider["settings"].(map[string]any)
+	if settings["baseURL"] != "http://127.0.0.1:9999/v1" {
+		t.Errorf("baseURL: got %v, want http://127.0.0.1:9999/v1", settings["baseURL"])
 	}
-	if options["apiKey"] != "{env:KRONK_TOKEN}" {
-		t.Errorf("apiKey: got %v, want {env:KRONK_TOKEN}", options["apiKey"])
+	if settings["apiKey"] != "{env:KRONK_TOKEN}" {
+		t.Errorf("apiKey: got %v, want {env:KRONK_TOKEN}", settings["apiKey"])
 	}
 
 	data, err := os.ReadFile(filepath.Join(root, "config", "opencode", "opencode.jsonc"))
@@ -142,9 +142,17 @@ func TestPrepareOpenCode(t *testing.T) {
 	if config["model"] != "kronk/"+available[0] {
 		t.Errorf("model: got %v, want kronk/%s", config["model"], available[0])
 	}
+	title := config["agents"].(map[string]any)["title"].(map[string]any)
+	if title["model"] != "kronk/"+available[0] {
+		t.Errorf("title model: got %v, want kronk/%s", title["model"], available[0])
+	}
 	mcp := config["mcp"].(map[string]any)
-	if _, ok := mcp["kronk"]; ok {
+	servers := mcp["servers"].(map[string]any)
+	if _, ok := servers["kronk"]; ok {
 		t.Errorf("temporary config should not reference the disabled Kronk MCP service")
+	}
+	if _, ok := servers["gopls"]; !ok {
+		t.Errorf("temporary config should preserve the gopls MCP service")
 	}
 }
 
@@ -174,6 +182,12 @@ func TestFilterOpenCodeModelsPreservesOutputLimit(t *testing.T) {
 	limit := model["limit"].(map[string]any)
 	if got, want := limit["output"], float64(8192); got != want {
 		t.Errorf("output limit: got %v, want %v", got, want)
+	}
+	for name, value := range config["agents"].(map[string]any) {
+		agent := value.(map[string]any)
+		if got, want := agent["model"], "kronk/"+modelID; got != want {
+			t.Errorf("%s model: got %v, want %v", name, got, want)
+		}
 	}
 }
 

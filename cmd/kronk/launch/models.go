@@ -54,7 +54,9 @@ func filteredOpenCodeConfig(config map[string]any, available []string) ([]byte, 
 		}
 	}
 	if mcp, ok := config["mcp"].(map[string]any); ok {
-		delete(mcp, "kronk")
+		if servers, ok := mcp["servers"].(map[string]any); ok {
+			delete(servers, "kronk")
+		}
 	}
 
 	defaultModel, _ := config["model"].(string)
@@ -63,7 +65,15 @@ func filteredOpenCodeConfig(config map[string]any, available []string) ([]byte, 
 		defaultID = available[0]
 	}
 	config["model"] = "kronk/" + defaultID
-	config["small_model"] = "kronk/" + defaultID
+	if agents, ok := config["agents"].(map[string]any); ok {
+		for _, value := range agents {
+			if agent, ok := value.(map[string]any); ok {
+				if model, ok := agent["model"].(string); ok && strings.HasPrefix(model, "kronk/") && !keep[strings.TrimPrefix(model, "kronk/")] {
+					agent["model"] = config["model"]
+				}
+			}
+		}
+	}
 
 	data, err := json.MarshalIndent(config, "", "    ")
 	if err != nil {
@@ -88,9 +98,9 @@ func readOpenCodeConfig() (map[string]any, error) {
 }
 
 func modelEntries(config map[string]any) (map[string]any, error) {
-	providers, ok := config["provider"].(map[string]any)
+	providers, ok := config["providers"].(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("OpenCode config is missing provider")
+		return nil, fmt.Errorf("OpenCode config is missing providers")
 	}
 	kronkProvider, ok := providers["kronk"].(map[string]any)
 	if !ok {

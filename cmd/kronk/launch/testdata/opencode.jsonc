@@ -1,7 +1,14 @@
 {
     "model": "kronk/example/test-model/AGENT",
-    "small_model": "kronk/example/test-model/AGENT",
-    "provider": {
+    "agents": {
+        "title": {
+            "model": "kronk/example/other-model/AGENT"
+        },
+        "compaction": {
+            "model": "kronk/example/test-model/AGENT"
+        }
+    },
+    "providers": {
         "kronk": {
             "models": {
                 "example/test-model/AGENT": {
@@ -22,9 +29,11 @@
         }
     },
     "mcp": {
-        "kronk": {
-            "type": "remote",
-            "url": "http://localhost:9000/mcp"
+        "servers": {
+            "kronk": {
+                "type": "remote",
+                "url": "http://localhost:9000/mcp"
+            }
         }
     }
 }
