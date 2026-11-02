@@ -323,13 +323,13 @@ curl-tokenize-template: ## Send a tokenize template API request
 # MCP Service
 
 # Start the standalone MCP server.
-mcp-server: ## Mcp: server
+mcp-server: ## Start the standalone MCP server on port 9000
 	go run cmd/server/api/services/mcp/main.go
 
 # Initialize the MCP session. The response includes the Mcp-Session-Id header
 # needed for subsequent requests.
 # Usage: make curl-mcp-init
-curl-mcp-init: ## Send a mcp init API request
+curl-mcp-init: ## Initialize an MCP session and return its session ID
 	curl -i -X POST "http://localhost:9000/mcp" \
 	-H "Content-Type: application/json" \
 	-H "Accept: application/json, text/event-stream" \
@@ -346,7 +346,7 @@ curl-mcp-init: ## Send a mcp init API request
 
 # Send the initialized notification.
 # make curl-mcp-initialized SESSIONID=<Mcp-Session-Id-from-init>
-curl-mcp-initialized: ## Send a mcp initialized API request
+curl-mcp-initialized: ## Complete the MCP handshake; SESSIONID=<session ID>
 	curl -X POST "http://localhost:9000/mcp" \
 	-H "Content-Type: application/json" \
 	-H "Accept: application/json, text/event-stream" \
@@ -358,7 +358,7 @@ curl-mcp-initialized: ## Send a mcp initialized API request
 
 # List available tools.
 # make curl-mcp-tools-list SESSIONID=<Mcp-Session-Id-from-init>
-curl-mcp-tools-list: ## Send a mcp tools list API request
+curl-mcp-tools-list: ## List available MCP tools; SESSIONID=<session ID>
 	curl -i -X POST "http://localhost:9000/mcp" \
 	-H "Content-Type: application/json" \
 	-H "Accept: application/json, text/event-stream" \
@@ -372,7 +372,7 @@ curl-mcp-tools-list: ## Send a mcp tools list API request
 
 # Call the web_search tool.
 # make curl-mcp-web-search SESSIONID=<Mcp-Session-Id-from-init>
-curl-mcp-web-search: ## Send a mcp web search API request
+curl-mcp-web-search: ## Run an MCP web search example; SESSIONID=<session ID>
 	curl -i -X POST "http://localhost:9000/mcp" \
 	-H "Content-Type: application/json" \
 	-H "Accept: application/json, text/event-stream" \

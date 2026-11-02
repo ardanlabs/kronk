@@ -720,45 +720,53 @@ Server (.power/server.ps1):
   llama-ornith
 
 CLI (.power/cli.ps1):
-  kronk-diagnose
-  kronk-libs
-  kronk-libs-local
-  kronk-model-index
-  kronk-model-index-local
-  kronk-model-list
-  kronk-model-list-local
-  kronk-model-pull -Url <model>
-  kronk-model-pull-local -Url <model>
-  kronk-model-ps
-  kronk-model-remove -Id <model>
-  kronk-model-remove-local -Id <model>
-  kronk-model-show -Id <model>
-  kronk-model-show-local -Id <model>
-  kronk-catalog-list
-  kronk-catalog-list-local
-  kronk-catalog-show -Id <model>
-  kronk-catalog-show-local -Id <model>
-  kronk-security-help
-  kronk-security-key-list
-  kronk-security-key-list-local
+  Model, catalog, key, and library commands use the running server by default.
+  Targets with -local operate directly on local files without a server.
+
+  kronk-diagnose                         Diagnose the host and installed library bundles (no server)
+  kronk-libs                             Install pinned llama.cpp libraries
+  kronk-libs-local                       Install all pinned inference libraries locally
+  kronk-model-index                      Rebuild the model index
+  kronk-model-index-local                Rebuild the local model index
+  kronk-model-list                       List downloaded models
+  kronk-model-list-local                 List locally downloaded models
+  kronk-model-pull -Url <source>          Download a model
+  kronk-model-pull-local -Url <source>    Download a model locally
+  kronk-model-ps                         List models currently loaded by the server
+  kronk-model-remove -Id <model>          Remove a downloaded model
+  kronk-model-remove-local -Id <model>    Remove a locally downloaded model
+  kronk-model-show -Id <model>            Show model details
+  kronk-model-show-local -Id <model>      Show local model details
+  kronk-catalog-list                     List available catalog entries
+  kronk-catalog-list-local               List catalog entries locally
+  kronk-catalog-show -Id <model>          Show a catalog entry
+  kronk-catalog-show-local -Id <model>    Show a catalog entry locally
+  kronk-security-help                    Show usage for security commands (no server)
+  kronk-security-key-list                List signing keys
+  kronk-security-key-list-local          List local signing keys
   kronk-security-token-create-local -Duration <duration> -Endpoints <grants>
-  kronk-launch
-  bucky-libs
-  bucky-libs-local
-  bucky-libs-combinations
-  bucky-libs-combinations-local
-  bucky-libs-installs
-  bucky-libs-installs-local
+    Create a local token
+  kronk-launch                           Launch OpenCode with the Qwen3.6 35B-A3B coding model
+  bucky-libs                             Install pinned Whisper libraries
+  bucky-libs-local                       Install pinned Whisper libraries locally
+  bucky-libs-combinations                List supported Whisper platforms
+  bucky-libs-combinations-local          List supported Whisper platforms locally
+  bucky-libs-installs                    List installed Whisper bundles
+  bucky-libs-installs-local              List locally installed Whisper bundles
   bucky-libs-install -Arch <arch> -Os <os> -Processor <processor>
+    Install a Whisper bundle through the server
   bucky-libs-install-local -Arch <arch> -Os <os> -Processor <processor>
+    Install a Whisper bundle locally
   bucky-libs-remove-install -Arch <arch> -Os <os> -Processor <processor>
+    Remove a Whisper bundle through the server
   bucky-libs-remove-install-local -Arch <arch> -Os <os> -Processor <processor>
-  bucky-model-list
-  bucky-model-list-local
-  bucky-model-pull -Name <model>
-  bucky-model-pull-local -Name <model>
-  bucky-model-remove -Name <model>
-  bucky-model-remove-local -Name <model>
+    Remove a Whisper bundle locally
+  bucky-model-list                       List downloaded Whisper models
+  bucky-model-list-local                 List locally downloaded Whisper models
+  bucky-model-pull -Name <model>          Download a Whisper model
+  bucky-model-pull-local -Name <model>    Download a Whisper model locally
+  bucky-model-remove -Name <model>        Remove a Whisper model
+  bucky-model-remove-local -Name <model>  Remove a locally downloaded Whisper model
 
 Examples (.power/examples.ps1):
   example-agent
