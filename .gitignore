@@ -77,3 +77,8 @@ dist
 
 # kronk-pr-review run output (reports, diffs, check logs)
 .reviews/
+
+# Florin
+.agents/skills/florin-*
+.claude/agents/florin-*
+.florin
