@@ -3,8 +3,10 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -54,7 +56,10 @@ type comparisonInput struct {
 	requests              []any
 	native                map[string]string
 	sharedWarmupValidated bool
+	snapshot              *snapshotCell
 }
+
+var errComparisonFindings = errors.New("comparison contains failed or incomplete recorded checks")
 
 func compareCommand(args []string, out io.Writer) error {
 	flags := flag.NewFlagSet("quick-check compare", flag.ContinueOnError)
@@ -62,65 +67,39 @@ func compareCommand(args []string, out io.Writer) error {
 	baseline := flags.String("baseline", "", "baseline run directory (supply both paths or neither)")
 	candidate := flags.String("candidate", "", "candidate run directory (supply both paths or neither)")
 	parent := flags.String("out", ".tools/quick-check/output", "comparison output directory and run parent for automatic selection")
-	against := flags.String("against", "commit", "baseline role: commit or release")
 	asJSON := flags.Bool("json", false, "write the full comparison as JSON")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	historyParent := *parent
 	if (*baseline == "") != (*candidate == "") || flags.NArg() != 0 {
-		return fmt.Errorf("usage: quick-check compare [-against commit|release] [-baseline DIR -candidate DIR] [-out DIR] [-json]; supply both paths or neither")
-	}
-	if *against != "commit" && *against != "release" {
-		return fmt.Errorf("-against must be commit or release")
+		return fmt.Errorf("usage: quick-check compare [-baseline DIR -candidate DIR] [-out DIR] [-json]; supply both paths or neither")
 	}
 	if *baseline == "" {
 		stored, err := savedRuns(*parent)
 		if err != nil {
 			return err
 		}
-		var runs []string
-		var release string
 		for _, run := range stored {
 			if strings.HasPrefix(filepath.Base(run.path), "release-") {
-				if release != "" {
+				if run.promoted == "" {
+					return fmt.Errorf("release baseline must be explicitly promoted")
+				}
+				if *baseline != "" {
 					return fmt.Errorf("multiple release baselines; supply explicit paths")
 				}
-				release = run.path
-			} else {
-				runs = append(runs, run.path)
-			}
-		}
-		if *against == "release" {
-			for _, run := range runs {
-				if strings.HasPrefix(filepath.Base(run), "new-") {
-					if *candidate != "" {
-						return fmt.Errorf("ambiguous fresh run; supply explicit paths")
-					}
-					*candidate = run
-				} else if !strings.HasPrefix(filepath.Base(run), "old-") {
-					return fmt.Errorf("ambiguous run queue; supply explicit paths")
+				*baseline = run.path
+			} else if strings.HasPrefix(filepath.Base(run.path), "new-") {
+				if *candidate != "" {
+					return fmt.Errorf("ambiguous fresh run; supply explicit paths")
 				}
-			}
-			if len(runs) > 2 {
+				*candidate = run.path
+			} else {
 				return fmt.Errorf("ambiguous run queue; supply explicit paths")
 			}
-			if release == "" || *candidate == "" {
-				return fmt.Errorf("release comparison needs a fresh run and an older release baseline")
-			}
-			*baseline = release
-		} else {
-			if len(runs) != 2 {
-				return fmt.Errorf("automatic comparison needs exactly two finalized runs directly under %s; found %d (supply explicit paths instead)", *parent, len(runs))
-			}
-			switch {
-			case strings.HasPrefix(filepath.Base(runs[0]), "new-") && strings.HasPrefix(filepath.Base(runs[1]), "old-"):
-			case strings.HasPrefix(filepath.Base(runs[0]), "old-") && strings.HasPrefix(filepath.Base(runs[1]), "new-"):
-				runs[0], runs[1] = runs[1], runs[0]
-			default:
-				return fmt.Errorf("automatic comparison needs an old/new pair; supply explicit baseline and candidate paths")
-			}
-			*candidate, *baseline = runs[0], runs[1]
+		}
+		if *baseline == "" || *candidate == "" {
+			return fmt.Errorf("release comparison needs a fresh run and a promoted release baseline")
 		}
 	}
 	a, err := readComparison(*baseline)
@@ -132,33 +111,15 @@ func compareCommand(args []string, out io.Writer) error {
 		return fmt.Errorf("candidate: %w", err)
 	}
 	c := compareMatrices(*baseline, *candidate, a, b)
-	var baselineTag, candidateTag string
-	if *against == "release" {
-		baselineTag, err = promotedRelease(*baseline, a.summary.ServerRevision)
-		if err != nil {
-			return err
-		}
-		candidateTag, err = promotedRelease(*candidate, b.summary.ServerRevision)
-		if err != nil {
-			return err
-		}
-		// Manually promoted baselines need no tag lookup. An ordinary nightly
-		// candidate is not a release until it is explicitly promoted too.
-		if baselineTag == "" {
-			tags, err := releaseTags(context.Background())
-			if err != nil {
-				return err
-			}
-			baselineTag = tags[a.summary.ServerRevision]
-			if candidateTag == "" {
-				candidateTag = tags[b.summary.ServerRevision]
-			}
-		}
-		if baselineTag == "" {
-			return fmt.Errorf("baseline has neither a promotion nor a remote release tag")
-		}
-		c.Baseline.Release, c.Candidate.Release = baselineTag, candidateTag
+	baselineTag, err := promotedRelease(*baseline, a.summary.ServerRevision)
+	if err != nil {
+		return err
 	}
+	candidateTag, err := promotedRelease(*candidate, b.summary.ServerRevision)
+	if err != nil {
+		return err
+	}
+	c.Baseline.Release, c.Candidate.Release = baselineTag, candidateTag
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err
@@ -192,10 +153,10 @@ func compareCommand(args []string, out io.Writer) error {
 		return err
 	}
 	if c.Status == "NOT_RUN" {
-		return fmt.Errorf("comparison has no common executed cells")
+		return fmt.Errorf("comparison has no common executed cells: %w", errComparisonFindings)
 	}
 	if c.Status != "PASS" {
-		return fmt.Errorf("comparison contains failed or incomplete recorded checks")
+		return errComparisonFindings
 	}
 	return nil
 }
@@ -299,6 +260,11 @@ func readCellComparison(s runSummary, r report, events []byte) (comparisonInput,
 }
 
 func comparisonIdentity(dir string, input comparisonInput) comparisonRun {
+	if input.snapshot != nil {
+		run := input.snapshot.Identity
+		run.Directory = dir
+		return run
+	}
 	s := input.summary
 	run := comparisonRun{Directory: dir, Version: input.report.serverVersion(), Status: s.Status,
 		Executed: s.RepetitionsExecuted, Requested: s.RepetitionsRequested, Problems: []string{}, ReferenceTokens: s.ReferenceTokens}
@@ -378,14 +344,32 @@ func comparisonIdentity(dir string, input comparisonInput) comparisonRun {
 	return run
 }
 
-// Two-slot requests can arrive in goroutine order, unlike their canonical results.
-// Sort a copy so validation and the saved evidence retain the actual arrival order.
+// Compare controlled inputs without generated assistant history. Copy requests
+// so validation and saved evidence retain their original content/arrival order.
 func comparisonRequests(input comparisonInput) []any {
-	if !input.report.TwoSlots {
-		return input.requests
+	requests := make([]any, 0, len(input.requests))
+	for _, value := range input.requests {
+		request := maps.Clone(value.(map[string]any))
+		body, _ := request["body"].(map[string]any)
+		controlled := maps.Clone(body)
+		if messages, ok := body["messages"].([]any); ok {
+			filtered := []any{}
+			for _, value := range messages {
+				message, _ := value.(map[string]any)
+				if message["role"] != "assistant" {
+					filtered = append(filtered, value)
+				}
+			}
+			controlled["messages"] = filtered
+		}
+		request["body"] = controlled
+		requests = append(requests, request)
 	}
+	if !input.report.TwoSlots {
+		return requests
+	}
+	// Two-slot requests can arrive in goroutine order, unlike canonical results.
 	phases := append([]string{"warmup"}, input.report.phases()...)
-	requests := slices.Clone(input.requests)
 	slices.SortStableFunc(requests, func(a, b any) int {
 		x, y := a.(map[string]any), b.(map[string]any)
 		if delta := x["repetition"].(int) - y["repetition"].(int); delta != 0 {
@@ -394,6 +378,22 @@ func comparisonRequests(input comparisonInput) []any {
 		return slices.Index(phases, x["phase"].(string)) - slices.Index(phases, y["phase"].(string))
 	})
 	return requests
+}
+
+func controlledInputHash(input comparisonInput) string {
+	if input.snapshot != nil {
+		return input.snapshot.Inputs
+	}
+	data, _ := json.Marshal(comparisonRequests(input))
+	digest := sha256.Sum256(data)
+	return hex.EncodeToString(digest[:])
+}
+
+func (input comparisonInput) metricSamples() map[string][]float64 {
+	if input.snapshot != nil {
+		return input.snapshot.Metrics
+	}
+	return comparisonMetrics(input.report)
 }
 
 func compareRuns(aDir, bDir string, a, b comparisonInput) comparison {
@@ -481,47 +481,19 @@ func compareRuns(aDir, bDir string, a, b comparisonInput) comparison {
 			c.Warnings = append(c.Warnings, "model configuration."+key+": changed or unavailable in one run")
 		}
 	}
-	if !reflect.DeepEqual(comparisonRequests(a), comparisonRequests(b)) {
-		c.Warnings = append(c.Warnings, "request bodies/order differ (includes generated assistant history); input/settings are not identical")
+	if controlledInputHash(a) != controlledInputHash(b) {
+		c.Warnings = append(c.Warnings, "controlled request inputs differ (excluding generated assistant history)")
 	} else {
-		c.Matches = append(c.Matches, "request bodies/order")
-	}
-	for i := range min(len(a.summary.Repetitions), len(b.summary.Repetitions)) {
-		x, y := a.summary.Repetitions[i], b.summary.Repetitions[i]
-		if x.SystemTokens <= 0 || y.SystemTokens <= 0 || x.SystemSHA256 == "" || y.SystemSHA256 == "" || x.SystemTokens != y.SystemTokens || x.SystemSHA256 != y.SystemSHA256 {
-			c.Warnings = append(c.Warnings, fmt.Sprintf("repetition %d: system token count/hash changed or missing", i+1))
-		} else {
-			c.Matches = append(c.Matches, fmt.Sprintf("repetition %d system tokens/hash", i+1))
-		}
-	}
-	observations := func(r report) [][]int {
-		var counts [][]int
-		results := []result{}
-		if r.WarmupRequest != nil {
-			results = append(results, *r.WarmupRequest)
-		}
-		for _, rep := range r.Repetitions {
-			results = append(results, rep.Results...)
-		}
-		for _, res := range results {
-			counts = append(counts, []int{res.Usage.PromptTokens, res.Usage.CompletionTokens,
-				res.Execution.ReusedTokens, res.Execution.OutputTokens, res.Execution.DraftTokens, res.Execution.DraftAccepted})
-		}
-		return counts
-	}
-	if reflect.DeepEqual(observations(a.report), observations(b.report)) {
-		c.Matches = append(c.Matches, "per-request prompt/output/cache/draft counts")
-	} else {
-		c.Warnings = append(c.Warnings, "per-request prompt/output/cache/draft counts differ; elapsed times may include different work")
+		c.Matches = append(c.Matches, "controlled request inputs")
 	}
 	// Validate each side independently: a failed/partial run must not hide the
 	// other run's valid measurements, but it cannot contribute values or deltas.
 	var x, y map[string][]float64
 	if len(c.Baseline.Problems) == 0 {
-		x = comparisonMetrics(a.report)
+		x = a.metricSamples()
 	}
 	if len(c.Candidate.Problems) == 0 {
-		y = comparisonMetrics(b.report)
+		y = b.metricSamples()
 	}
 	metricKeys := make(map[string]bool)
 	for key := range x {
@@ -608,7 +580,7 @@ func (c comparison) textWarnings() []string {
 		if strings.HasPrefix(warning, "harness revision:") {
 			continue
 		}
-		if strings.HasPrefix(warning, "model configuration") && slices.Contains(c.Matches, "effective native parameters") && slices.Contains(c.Matches, "request bodies/order") {
+		if strings.HasPrefix(warning, "model configuration") && slices.Contains(c.Matches, "effective native parameters") && slices.Contains(c.Matches, "controlled request inputs") {
 			continue
 		}
 		warnings = append(warnings, warning)

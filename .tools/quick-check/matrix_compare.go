@@ -15,8 +15,9 @@ import (
 )
 
 type matrixInput struct {
-	summary matrixSummary
-	cells   map[string]comparisonInput
+	summary  matrixSummary
+	cells    map[string]comparisonInput
+	problems []string
 }
 
 type matrixComparison struct {
@@ -28,6 +29,17 @@ type matrixComparison struct {
 }
 
 func readComparison(dir string) (matrixInput, error) {
+	if _, err := os.Stat(filepath.Join(dir, "summary.json")); os.IsNotExist(err) {
+		s, err := readSnapshot(dir)
+		if err != nil {
+			return matrixInput{}, err
+		}
+		return snapshotInput(s), nil
+	}
+	return readFullComparison(dir)
+}
+
+func readFullComparison(dir string) (matrixInput, error) {
 	input := matrixInput{cells: make(map[string]comparisonInput)}
 	data, err := os.ReadFile(filepath.Join(dir, "summary.json"))
 	if err != nil {
@@ -147,7 +159,9 @@ func compareMatrices(aDir, bDir string, a, b matrixInput) matrixComparison {
 		Candidate: comparisonRun{Directory: bDir, Version: b.summary.ServerVersion, Status: b.summary.Status, Problems: b.summary.Findings},
 		Cells:     []comparison{},
 	}
-	if a.summary.Status != "PASS" || b.summary.Status != "PASS" {
+	c.Baseline.Problems = append(append([]string{}, c.Baseline.Problems...), a.problems...)
+	c.Candidate.Problems = append(append([]string{}, c.Candidate.Problems...), b.problems...)
+	if a.summary.Status != "PASS" || b.summary.Status != "PASS" || len(a.problems) > 0 || len(b.problems) > 0 {
 		c.Status = "FAIL"
 	}
 	ids := make(map[string]bool)

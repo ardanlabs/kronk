@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -27,8 +28,11 @@ func TestCompareAutomaticSelection(t *testing.T) {
 		return dir
 	}
 	// Managed roles, not timestamps or creation order, select the pair.
-	newer, older := add("new-bbbbbbb"), add("old-aaaaaaa")
-	add("release-v1.0.0")
+	newer, older := add("new-bbbbbbb"), add("release-v1.0.0")
+	data, _ := json.Marshal(releasePromotion{"v1.0.0", strings.Repeat("a", 40)})
+	if err := os.WriteFile(filepath.Join(older, "promotion.json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
 	var out bytes.Buffer
 	if err := compareCommand([]string{"-out", parent, "-json"}, &out); err != nil {
 		t.Fatal(err)
@@ -50,10 +54,17 @@ func TestCompareCommand(t *testing.T) {
 	baseline := comparisonFixture([]float64{1, 4, 10})
 	saved := readComparisonCellFixture(t, baseline).summary.Measurements["workload"]["elapsed_seconds"]
 	base := writeComparisonFixture(t, baseline)
-	candidate := writeComparisonFixture(t, comparisonFixture([]float64{2, 6, 14}))
+	next := comparisonFixture([]float64{2, 6, 14})
+	next.Repetitions[0].SystemTokens++
+	next.Repetitions[0].SystemSHA256 = strings.Repeat("b", 64)
+	next.Repetitions[0].Results[0].Usage.PromptTokens++
+	candidate := writeComparisonFixture(t, next)
 	got, err := runComparisonFixture(t, base, candidate)
 	if err != nil || got.Status != "PASS" || len(got.Cells) != 1 {
 		t.Fatalf("comparison: %+v, %v", got, err)
+	}
+	if len(got.Cells[0].Warnings) != 0 || !slices.Contains(got.Cells[0].Matches, "controlled request inputs") {
+		t.Fatalf("generated history or token counts produced warnings: %v", got.Cells[0])
 	}
 	rows := comparisonMetricsFixture(got.Cells[0])
 	r := rows["workload.elapsed_seconds"]
@@ -73,6 +84,55 @@ func TestCompareCommand(t *testing.T) {
 	startup := rows["warmup.startup.native_model_load_seconds"].Baseline
 	if startup == nil || startup.Median != 3.5 || startup.Samples != 1 || startup.SampleStdDev != nil {
 		t.Fatalf("saved startup measurement: %+v", startup)
+	}
+	// A release snapshot alone must reproduce every comparison value/warning.
+	queue := t.TempDir()
+	managed := filepath.Join(queue, "release-v1.0.0")
+	if err := os.Rename(base, managed); err != nil {
+		t.Fatal(err)
+	}
+	base = managed
+	compact := filepath.Join(t.TempDir(), "snapshots")
+	if err := snapshotCommand([]string{"-out", queue, "-dest", compact}, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	snapshotDir := filepath.Join(compact, "release-v1.0.0")
+	snapshot, err := runComparisonFixture(t, snapshotDir, candidate)
+	if err != nil || !reflect.DeepEqual(got.Cells[0].Metrics, snapshot.Cells[0].Metrics) || !slices.Equal(got.Cells[0].Warnings, snapshot.Cells[0].Warnings) {
+		t.Fatalf("snapshot changed comparison: %+v, %v", snapshot, err)
+	}
+	snapshotPath := filepath.Join(snapshotDir, "comparison-snapshot.json")
+	snapshotData, err := os.ReadFile(snapshotPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(snapshotData, []byte("Previous answer")) || bytes.Contains(snapshotData, []byte("Continue.")) {
+		t.Fatal("snapshot leaked request/answer content")
+	}
+	if err := os.WriteFile(snapshotPath, bytes.Replace(snapshotData, []byte(`"test-os"`), []byte(`"other-os"`), 1), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := compareCommand([]string{"-baseline", snapshotDir, "-candidate", candidate, "-out", t.TempDir()}, &bytes.Buffer{}); err == nil {
+		t.Fatal("accepted corrupted snapshot")
+	}
+	// Ignoring generated answers must not hide changes to controlled inputs.
+	path := filepath.Join(candidate, "events.ndjson")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, change := range [][2]string{{`"Continue."`, `"Different user request."`}, {`"seed":42`, `"seed":43`}} {
+		changed := bytes.Replace(data, []byte(change[0]), []byte(change[1]), 1)
+		if bytes.Equal(data, changed) {
+			t.Fatal("fixture did not exercise controlled input change")
+		}
+		if err := os.WriteFile(path, changed, 0600); err != nil {
+			t.Fatal(err)
+		}
+		got, err := runComparisonFixture(t, base, candidate)
+		if err != nil || !slices.Contains(got.Cells[0].Warnings, "controlled request inputs differ (excluding generated assistant history)") {
+			t.Fatalf("controlled input change was hidden: %+v, %v", got, err)
+		}
 	}
 }
 
@@ -138,10 +198,29 @@ func TestCompareCellStatuses(t *testing.T) {
 			if b.Status == "NOT_RUN" {
 				b = report{Status: "NOT_RUN"}
 			}
-			got, err := runComparisonFixture(t, writeComparisonFixture(t, a, image), writeComparisonFixture(t, image, b))
+			parent := t.TempDir()
+			baseline, candidate := filepath.Join(parent, "release-v1.0.0"), writeComparisonFixture(t, image, b)
+			if err := os.Rename(writeComparisonFixture(t, a, image), baseline); err != nil {
+				t.Fatal(err)
+			}
+			got, err := runComparisonFixture(t, baseline, candidate)
 			fails := statuses[0] == "FAIL" || statuses[1] == "FAIL"
 			if (err != nil) != fails || (got.Status == "FAIL") != fails || len(got.Cells) != 2 {
 				t.Fatalf("comparison: %+v, %v", got, err)
+			}
+			compact := filepath.Join(t.TempDir(), "snapshots")
+			if err := snapshotCommand([]string{"-out", parent, "-dest", compact}, &bytes.Buffer{}); err != nil {
+				t.Fatal(err)
+			}
+			snapshot, err := runComparisonFixture(t, filepath.Join(compact, "release-v1.0.0"), candidate)
+			if len(snapshot.Cells) != len(got.Cells) {
+				t.Fatal("snapshot lost cells")
+			}
+			for i := range snapshot.Cells {
+				snapshot.Cells[i].Baseline.Directory = got.Cells[i].Baseline.Directory
+			}
+			if (err != nil) != fails || snapshot.Status != got.Status || !reflect.DeepEqual(snapshot.Cells, got.Cells) {
+				t.Fatalf("snapshot changed partial/failed comparison: %+v, %v", snapshot, err)
 			}
 			var cell comparison
 			for _, c := range got.Cells {
@@ -254,7 +333,7 @@ func TestCompareTwoSlotArrivalOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := runComparisonFixture(t, base, candidate)
-	if err != nil || got.Status != "PASS" || !slices.Contains(got.Cells[0].Matches, "request bodies/order") {
+	if err != nil || got.Status != "PASS" || !slices.Contains(got.Cells[0].Matches, "controlled request inputs") {
 		t.Fatalf("arrival order invalidated comparison: %+v, %v", got, err)
 	}
 	row := comparisonMetricsFixture(got.Cells[0])["workload.reference_seconds"]
@@ -376,6 +455,8 @@ func writeComparisonFixture(t *testing.T, cells ...report) string {
 		}
 		if cell.Status == "FAIL" {
 			r.Status = "FAIL"
+		} else if cell.Status == "INTERRUPTED" {
+			r.Status = "INTERRUPTED"
 		}
 	}
 	dir := t.TempDir()
@@ -413,7 +494,10 @@ func writeComparisonFixture(t *testing.T, cells ...report) string {
 		}
 		for i, rep := range cell.Repetitions {
 			for j, res := range rep.Results {
-				emit(map[string]any{"source": "request", "phase": res.Phase, "repetition": i + 1, "body": map[string]any{"seed": 42 + i*10 + j}})
+				emit(map[string]any{"source": "request", "phase": res.Phase, "repetition": i + 1, "body": map[string]any{
+					"seed":     42 + i*10 + j,
+					"messages": []message{{Role: "assistant", Content: fmt.Sprintf("Previous answer %.2f", res.Elapsed)}, {Role: "user", Content: "Continue."}},
+				}})
 			}
 		}
 		if cell.WarmupRequest == nil {

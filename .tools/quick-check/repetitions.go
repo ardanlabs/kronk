@@ -40,10 +40,6 @@ const (
 	moe2SlotNoIMCImagesMTPOffInputTokens      = 74388
 	moe2SlotNoIMCImagesMTPOffGenerationTokens = 1613
 
-	// Dense Q8: provisional operations-v3 calibration from output/new-f87f7d4,
-	// pending a fresh familiar-word/names workload run. Each cell uses rounded
-	// medians of completed-request effective input and completion-minus-one;
-	// cancelled requests and warmup are excluded (same accounting as referenceTime).
 	dense1SlotIMCTextMTPOnInputTokens           = 10584
 	dense1SlotIMCTextMTPOnGenerationTokens      = 492
 	dense1SlotIMCImagesMTPOnInputTokens         = 11627

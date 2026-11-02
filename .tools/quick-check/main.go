@@ -367,6 +367,13 @@ type engine struct {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "snapshot" {
+		if err := snapshotCommand(os.Args[2:], os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "promote" {
 		if err := promoteCommand(os.Args[2:], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -472,16 +479,7 @@ func run(o options) (runErr error) {
 	c := &client{ctx: ctx, host: strings.TrimRight(o.host, "/"), token: os.Getenv("KRONK_TOKEN"), timeout: o.timeout, traces: make(map[string]string), events: json.NewEncoder(events), eventMu: new(sync.Mutex)}
 	defer func() {
 		// Save interrupted work independently of the cancelled request context.
-		// releaseTags bounds its remote lookup with its own timeout.
 		finalCtx := context.Background()
-		tags, tagErr := releaseTags(finalCtx)
-		r.ReleaseTag = tags[r.ServerRevision]
-		for i := range r.Cells {
-			if r.Cells[i].Status != "NOT_RUN" {
-				r.Cells[i].ReleaseTag = r.ReleaseTag
-			}
-		}
-		runErr = errors.Join(runErr, tagErr)
 		if runErr != nil {
 			r.Findings = append(r.Findings, runErr.Error())
 		}
@@ -522,13 +520,13 @@ func run(o options) (runErr error) {
 		}
 		writeErr := errors.Join(evidenceErr, err, logErr, events.Close(), toolLog.Close())
 		runErr = errors.Join(runErr, writeErr)
-		if writeErr == nil && tagErr == nil {
-			finalDir, retentionErr := retainRuns(finalCtx, o.out, dir, tags)
+		if writeErr == nil {
+			finalDir, retentionErr := retainRuns(finalCtx, o.out, dir)
 			dir = finalDir
 			runErr = errors.Join(runErr, retentionErr)
 			reported = retentionErr == nil
 		} else {
-			fmt.Fprintln(os.Stderr, "Artifacts or release recognition could not be finalized; previous runs retained.")
+			fmt.Fprintln(os.Stderr, "Artifacts could not be finalized; previous runs retained.")
 		}
 		fmt.Fprintln(os.Stdout, strings.SplitN(r.logSummary(), "\n", 2)[0])
 		if len(r.Findings) > 0 {
