@@ -1,10 +1,11 @@
 # Usage: intake.ps1 [-Id ID] [-Base REF | -Range A..B | -Pr N | -Staged | -Files F,...]
-#                   [-Exclude PATHSPEC,...] [-MaxFileDiff N] [-MaxFileLines N]
-#                   [-ReviewsDir DIR] [-DryRun]
+#                   [-Exclude PATHSPEC,...] [-Depth diff|files|packages|project]
+#                   [-MaxFileDiff N] [-MaxFileLines N] [-ReviewsDir DIR] [-DryRun]
 # PowerShell port of intake.sh (same outputs). Resolves the review scope in the current git
 # repo and writes <ReviewsDir>/<id>/<NNN>/context/ (default .reviews at the repo root). Default scope: all uncommitted changes (staged + unstaged) + untracked
-# files. -Exclude drops paths from the scope. Size guard: see intake.sh. -DryRun prints the
-# summary without writing anything.
+# files. -Exclude drops paths from the scope. -Depth: see intake.sh (review-set.tsv).
+# Size guard: see intake.sh. Symlinks are never reviewed. -DryRun prints the summary without
+# writing anything.
 # Exit: 0 ok | 2 usage | 3 code on disk is not the code under review | 4 empty diff | 5 not a git repo.
 [CmdletBinding()]
 param(
@@ -15,6 +16,7 @@ param(
     [switch]$Staged,
     [string[]]$Files = @(),
     [string[]]$Exclude = @(),
+    [string]$Depth = 'diff',
     [int]$MaxFileDiff = 800,
     [int]$MaxFileLines = 2000,
     [string]$ReviewsDir = '.reviews',
@@ -34,6 +36,8 @@ $latin1 = [Text.Encoding]::GetEncoding(28591)
 function FixPath([string]$s) { $utf8.GetString($latin1.GetBytes($s)) }
 $LockFiles = '(go\.sum|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock|composer\.lock|Gemfile\.lock|poetry\.lock|gomod2nix\.toml)'
 $ShardFiles = 30; $ShardLines = 2500; $BinFiles = 15; $BinLines = 1200; $MaxRefSymbols = 200; $MaxRefs = 25
+# Full-depth shards weigh whole files, not changed lines.
+$SetShardFiles = 30; $SetShardLines = 6000; $SetBinFiles = 20; $SetBinLines = 4000
 
 function OrdDict { , (New-Object System.Collections.Specialized.OrderedDictionary ([StringComparer]::Ordinal)) }
 function OrdinalUnique { $a = [string[]]@($input | Select-Object -Unique); [Array]::Sort($a, [StringComparer]::Ordinal); $a }
@@ -45,6 +49,7 @@ function Out-Lines([string]$path, $lines, $enc = $utf8) {
 }
 function GitOut { $o = & git -c core.quotePath=false @args 2>$null; if ($LASTEXITCODE -ne 0) { return $null }; $o }
 
+if ('diff', 'files', 'packages', 'project' -cnotcontains $Depth) { Die 2 '-Depth must be diff, files, packages, or project' }
 $scopes = @($Base, $Range, $Pr) | Where-Object { $_ }
 if (@($scopes).Count + [int]$Staged.IsPresent + [int](@($Files).Count -gt 0) -gt 1) { Die 2 'pass only one scope' }
 
@@ -219,12 +224,14 @@ try {
             # fallback for header-only sections (mode change): "diff --git a/P b/P"
             $g = $ln.Substring(13); $gp = ''
             if (($g.Length - 3) % 2 -eq 0) { $n = ($g.Length - 3) / 2; if ($g.Substring(0, $n) -ceq $g.Substring($n + 3)) { $gp = FixPath $g.Substring(0, $n) } }
-            $cur = [pscustomobject]@{ St = 'M'; Add = 0; Del = 0; Path = ''; GitPath = $gp; Bytes = 0; Start = $i; End = 0 }; $inh = $true
+            $cur = [pscustomobject]@{ St = 'M'; Add = 0; Del = 0; Path = ''; GitPath = $gp; Bytes = 0; Start = $i; End = 0; Link = $false }; $inh = $true
             $cur.Bytes += $ln.Length + 1; continue
         }
         if (-not $cur) { continue }
         $cur.Bytes += $ln.Length + 1
         if ($inh) {
+            # mode 120000 = symlink (new, deleted, mode change, or "index a..b 120000")
+            if ($ln -cmatch '^(new file mode|deleted file mode|new mode|old mode|index [0-9a-f]+\.\.[0-9a-f]+) 120000$') { $cur.Link = $true }
             if ($ln.StartsWith('new file mode')) { $cur.St = 'A' }
             elseif ($ln.StartsWith('deleted file mode')) { $cur.St = 'D' }
             elseif ($ln.StartsWith('rename to ')) { $cur.St = 'R'; $cur.Path = FixPath $ln.Substring(10) }
@@ -244,8 +251,11 @@ try {
 
     $langOf = New-Object hashtable ([StringComparer]::Ordinal); $kindOf = New-Object hashtable ([StringComparer]::Ordinal)
     $recs2 = foreach ($r in $recs) {
-        $l = LangOf $r.Path; $k = KindOf $r.Path $l
-        if ($k -ne 'generated' -and $k -ne 'vendor' -and $r.St -ne 'D' -and (Test-Path -LiteralPath $r.Path -PathType Leaf)) {
+        # Symlinks are never reviewed: the target can be outside the repo (~/.aws/credentials).
+        $l = LangOf $r.Path; $k = if ($r.Link) { 'symlink' } else { KindOf $r.Path $l }
+        $item = Get-Item -LiteralPath $r.Path -Force -ErrorAction SilentlyContinue
+        if ($item -and ($item.LinkType -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint))) { $k = 'symlink' }
+        if ($k -ne 'generated' -and $k -ne 'vendor' -and $k -ne 'symlink' -and $r.St -ne 'D' -and (Test-Path -LiteralPath $r.Path -PathType Leaf)) {
             if ((GitOut check-attr linguist-generated -- $r.Path) -cmatch ': (set|true)$') { $k = 'generated' }
             if ($k -ne 'generated' -and 'go', 'proto', 'ts', 'js', 'py' -contains $l) {
                 if ((Get-Content -LiteralPath $r.Path -TotalCount 5 -ErrorAction SilentlyContinue) -cmatch 'Code generated .*DO NOT EDIT') { $k = 'generated' }
@@ -259,7 +269,7 @@ try {
     }
     $allRecs = @($recs2)
     function RowOf($f) { "$($f.St)`t$($f.Add)`t$($f.Del)`t$($f.Lang)`t$($f.Kind)`t$($f.Layer)`t$($f.Path)" }
-    function IsSkipped($f) { $f.Kind -eq 'generated' -or $f.Kind -eq 'vendor' }
+    function IsSkipped($f) { $f.Kind -eq 'generated' -or $f.Kind -eq 'vendor' -or $f.Kind -eq 'symlink' }
     $fileRecs = @($allRecs | Where-Object { -not (IsSkipped $_) })
     $skippedRecs = @($allRecs | Where-Object { IsSkipped $_ })
     Out-Lines (Join-Path $ctx 'files.tsv') ($fileRecs | ForEach-Object { RowOf $_ })
@@ -276,7 +286,7 @@ try {
         Out-Lines $patch $kept $latin1
         $lines = $kept.ToArray()
     }
-    if (-not $fileRecs.Count) { Die 4 "only generated/vendored files changed in scope ($desc); nothing to review" }
+    if (-not $fileRecs.Count) { Die 4 "only generated/vendored files or symlinks changed in scope ($desc); nothing to review" }
 
     # --- routing signals + changed symbols ------------------------------------------
     function GoSym([string]$s) {
@@ -402,23 +412,87 @@ try {
     }
     Out-Lines (Join-Path $ctx 'refs.tsv') $refs
 
+    # --- review set (full depth): review-set.tsv ------------------------------------------
+    # status added deleted lang kind layer path lines — the files.tsv columns plus the file's
+    # line count; status is "-" for files the diff doesn't touch. The same content rules as for
+    # changed files drop generated files; binary, empty, excluded, and .reviews files are left out.
+    function DirOf([string]$p) { if ($p -cmatch '/') { $p -creplace '/[^/]*$', '' } else { '.' } }
+    $setRecs = New-Object System.Collections.Generic.List[object]
+    $setBytes = 0
+    if ($Depth -ne 'diff') {
+        $changed = @($fileRecs | Where-Object { $_.St -ne 'D' } | ForEach-Object { $_.Path })
+        $cand = switch ($Depth) {
+            'files' { $changed }
+            'packages' {
+                $dirs = New-Object hashtable ([StringComparer]::Ordinal)
+                foreach ($p in $changed) { $dirs[(DirOf $p)] = $true }
+                @(GitOut ls-files --cached --others --exclude-standard) | Where-Object { $_ -and $dirs.ContainsKey((DirOf $_)) }
+            }
+            'project' { @(GitOut ls-files --cached --others --exclude-standard) }
+        }
+        $rd = $ReviewsDir.TrimEnd('/') + '/'
+        $cls = @(foreach ($p in @($cand | Where-Object { $_ } | OrdinalUnique)) {
+                if ($p.StartsWith($rd, [StringComparison]::Ordinal) -or $p -cmatch '(^|/)\.reviews/' -or (IsExcluded $p)) { continue }
+                $l = LangOf $p; $k = KindOf $p $l
+                if ($k -ne 'generated' -and $k -ne 'vendor') { [pscustomobject]@{ Lang = $l; Kind = $k; Layer = (LayerOf $p); Path = $p } }
+            })
+        $lg = New-Object hashtable ([StringComparer]::Ordinal)
+        if ($cls.Count) {
+            foreach ($o in @($cls | ForEach-Object { $_.Path } | & git -c core.quotePath=false check-attr --stdin linguist-generated 2>$null)) {
+                if ("$o" -cmatch '^(.*): linguist-generated: (set|true)$') { $lg[$Matches[1]] = $true }
+            }
+        }
+        $chg = New-Object hashtable ([StringComparer]::Ordinal)
+        foreach ($f in $fileRecs) { $chg[$f.Path] = $f }
+        foreach ($c in $cls) {
+            if ($lg.ContainsKey($c.Path) -or -not (Test-Path -LiteralPath $c.Path -PathType Leaf)) { continue }
+            # Regular files only: a symlink can point outside the repo (~/.aws/credentials).
+            $item = Get-Item -LiteralPath $c.Path -Force
+            if ($item.LinkType -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { continue }
+            $raw = [IO.File]::ReadAllBytes((Join-Path $top $c.Path))
+            if ($raw.Length -eq 0 -or [Array]::IndexOf($raw, [byte]0) -ge 0) { continue }  # empty or binary
+            $text = $latin1.GetString($raw)
+            if ('go', 'proto', 'ts', 'js', 'py' -ccontains $c.Lang -and ((($text -split "`n", 6) | Select-Object -First 5) -join "`n") -cmatch 'Code generated .*DO NOT EDIT') { continue }
+            if ('js', 'ts', 'css' -ccontains $c.Lang -and @($text -split "`n" | Where-Object { $_.Length -gt 1000 }).Count) { continue }
+            $n = [regex]::Matches($text, "`n").Count; if (-not $text.EndsWith("`n")) { $n++ }  # = awk records
+            $f = $chg[$c.Path]
+            $st, $a, $d = if ($f) { $f.St, $f.Add, $f.Del } else { '-', 0, 0 }
+            $setRecs.Add([pscustomobject]@{ St = $st; Add = $a; Del = $d; Lang = $c.Lang; Kind = $c.Kind; Layer = $c.Layer; Path = $c.Path; Lines = $n })
+            $setBytes += $raw.Length
+        }
+    }
+    Out-Lines (Join-Path $ctx 'review-set.tsv') ($setRecs | ForEach-Object { "$(RowOf $_)`t$($_.Lines)" })
+    $tokSet = [int][Math]::Floor(($setBytes + 3) / 4)
+    $setLines = 0; foreach ($r in $setRecs) { $setLines += $r.Lines }
+
     # --- totals + shards --------------------------------------------------------------
     $rev = @($fileRecs | Where-Object { $_.Kind -ne 'generated' -and $_.Kind -ne 'vendor' })
     $code = @($rev | Where-Object { $_.Kind -ne 'doc' })
     $added = ($rev | Measure-Object Add -Sum).Sum; if (-not $added) { $added = 0 }
     $deleted = ($rev | Measure-Object Del -Sum).Sum; if (-not $deleted) { $deleted = 0 }
     $codeLines = ($code | ForEach-Object { $_.Add + $_.Del } | Measure-Object -Sum).Sum; if (-not $codeLines) { $codeLines = 0 }
-    $shards = 0
-    if ($code.Count -gt $ShardFiles -or $codeLines -gt $ShardLines) {
+    # Code files only (docs aren't sharded), grouped by directory. Diff depth weighs changed
+    # lines; full depth weighs the review set's whole files, plus deleted files' removed lines.
+    $setCode = @($setRecs | Where-Object { $_.Kind -ne 'doc' })
+    $setCodeLines = 0; foreach ($r in $setCode) { $setCodeLines += $r.Lines }
+    $shards = 0; $bigSet = $false
+    $items = New-Object System.Collections.Generic.List[object]
+    if ($Depth -eq 'diff') {
+        $bf = $BinFiles; $bl = $BinLines
+        $doShard = $code.Count -gt $ShardFiles -or $codeLines -gt $ShardLines
+        foreach ($f in $code) { $items.Add([pscustomobject]@{ Dir = (DirOf $f.Path); N = $f.Add + $f.Del; Path = $f.Path }) }
+    } else {
+        $bf = $SetBinFiles; $bl = $SetBinLines
+        $bigSet = $setCode.Count -gt $SetShardFiles -or $setCodeLines -gt $SetShardLines
+        $doShard = $bigSet
+        foreach ($f in $setCode) { $items.Add([pscustomobject]@{ Dir = (DirOf $f.Path); N = $f.Lines; Path = $f.Path }) }
+        foreach ($f in $code) { if ($f.St -eq 'D') { $items.Add([pscustomobject]@{ Dir = (DirOf $f.Path); N = $f.Del; Path = $f.Path }) } }
+    }
+    if ($doShard) {
         $s = 1; $nf = 0; $nl = 0; $dir = $null; $out = @()
-        $items = New-Object System.Collections.Generic.List[object]
-        foreach ($f in $code) {
-            $d = if ($f.Path -cmatch '/') { $f.Path -creplace '/[^/]*$', '' } else { '.' }
-            $items.Add([pscustomobject]@{ Dir = $d; N = $f.Add + $f.Del; Path = $f.Path })
-        }
         $items.Sort([Comparison[object]] { param($x, $y) $c = [string]::CompareOrdinal($x.Dir, $y.Dir); if ($c) { $c } else { [string]::CompareOrdinal($x.Path, $y.Path) } })
         foreach ($i in $items) {
-            if ($null -ne $dir -and $i.Dir -ne $dir -and ($nf -ge $BinFiles -or $nl -ge $BinLines)) { $s++; $nf = 0; $nl = 0 }
+            if ($null -ne $dir -and $i.Dir -ne $dir -and ($nf -ge $bf -or $nl -ge $bl)) { $s++; $nf = 0; $nl = 0 }
             $dir = $i.Dir; $nf++; $nl += $i.N; $out += "$s`t$($i.Path)"
         }
         if ($s -gt 1) { $shards = $s; Out-Lines (Join-Path $ctx 'shards.tsv') $out }
@@ -433,7 +507,8 @@ try {
         if (IsSkipped $f) {
             $tokNoise += $t
             $lbl = $f.Kind + $(if ($lock) { '/lockfile' } else { '' })
-            $size.Add([pscustomobject]@{ F = 'noise'; P = $f.Path; M = "$lbl $($f.Add + $f.Del) lines"; T = $t; S = 'skipped: generated/vendored files are never reviewed (Kronk commits regenerated outputs with their sources)' })
+            $sug = if ($f.Kind -eq 'symlink') { 'skipped: symlinks are never reviewed (the target can be outside the repo)' } else { 'skipped: generated/vendored files are never reviewed (Kronk commits regenerated outputs with their sources)' }
+            $size.Add([pscustomobject]@{ F = 'noise'; P = $f.Path; M = "$lbl $($f.Add + $f.Del) lines"; T = $t; S = $sug })
             continue
         }
         $tokReview += $t
@@ -450,9 +525,13 @@ try {
         }
     }
     if ($code.Count -gt $ShardFiles -or $codeLines -gt $ShardLines) {
-        $size.Add([pscustomobject]@{ F = 'big-pr'; P = '-'; M = "$($code.Count) code files, $codeLines changed lines"; T = $tokReview; S = "review shards into $shards parts per heavy lens; split the PR along shards.tsv" })
+        $sug = if ($Depth -eq 'diff') { "review shards into $shards parts per heavy lens; split the PR along shards.tsv" } else { 'split the PR into smaller changes' }
+        $size.Add([pscustomobject]@{ F = 'big-pr'; P = '-'; M = "$($code.Count) code files, $codeLines changed lines"; T = $tokReview; S = $sug })
     }
-    $sizeLines = foreach ($flag in 'big-pr', 'big-diff', 'huge-file', 'noise') {
+    if ($bigSet) {
+        $size.Add([pscustomobject]@{ F = 'big-review-set'; P = '-'; M = "$($setCode.Count) code files, $setCodeLines lines at depth $Depth"; T = $tokSet; S = "review shards into $shards parts per heavy lens; pick a narrower depth or --exclude paths" })
+    }
+    $sizeLines = foreach ($flag in 'big-pr', 'big-review-set', 'big-diff', 'huge-file', 'noise') {
         $grp = New-Object System.Collections.Generic.List[object]
         foreach ($w in $size) { if ($w.F -eq $flag) { $grp.Add($w) } }
         $grp.Sort([Comparison[object]] { param($x, $y) $c = $y.T.CompareTo($x.T); if ($c) { $c } else { [string]::CompareOrdinal($x.P, $y.P) } })
@@ -462,14 +541,17 @@ try {
     Out-Lines (Join-Path $ctx 'size.tsv') $sizeLines
 
     # --- Go packages grouped by module --------------------------------------------------
-    $pk = foreach ($d in ($fileRecs | Where-Object { $_.Lang -eq 'go' -and $_.St -ne 'D' -and $_.Kind -ne 'vendor' } |
-            ForEach-Object { if ($_.Path -cmatch '/') { $_.Path -creplace '/[^/]*$', '' } else { '.' } } | OrdinalUnique)) {
+    # The packages of the changed Go files, or of the review set's at full depth. Directories
+    # the go tool ignores (testdata, _x, .x) are left out.
+    # scopedRecs: the files under review — files.tsv, or review-set.tsv at full depth.
+    $scopedRecs = @(if ($Depth -eq 'diff') { $fileRecs } else { $setRecs })
+    $pk = foreach ($d in ($scopedRecs | Where-Object { $_.Lang -eq 'go' -and $_.St -ne 'D' -and $_.Kind -ne 'vendor' } |
+            ForEach-Object { DirOf $_.Path } | Where-Object { $_ -eq '.' -or $_ -cnotmatch '(^|/)(testdata|[_.][^/]*)(/|$)' } | OrdinalUnique)) {
         if (-not (Test-Path -LiteralPath $d -PathType Container)) { continue }
         $m = $d
         while (-not (Test-Path -LiteralPath "$m/go.mod") -and $m -ne '.') { $m = if ($m -cmatch '/') { $m -creplace '/[^/]*$', '' } else { '.' } }
         if (-not (Test-Path -LiteralPath "$m/go.mod")) { continue }
-        $rel = if ($m -eq $d) { '.' } else { './' + $d.Substring($m.Length + 1) }
-        if ($m -eq '.') { $rel = if ($d -eq '.') { '.' } else { "./$d" } }
+        $rel = if ($m -eq $d) { '.' } elseif ($m -eq '.') { "./$d" } else { './' + $d.Substring($m.Length + 1) }
         "$m`t$rel"
     }
     $pk = @($pk)
@@ -480,7 +562,7 @@ try {
         if (-not $r) { continue }
         $d = $r -creplace '[^/]*$', ''
         if (-not $d) { $r; continue }
-        if ($fileRecs | Where-Object { $_.Path.StartsWith($d) } | Select-Object -First 1) { $r }
+        if ($scopedRecs | Where-Object { $_.Path.StartsWith($d, [StringComparison]::Ordinal) } | Select-Object -First 1) { $r }
     }
     # Kronk's ownership map and verification rules apply to every change.
     if (Test-Path -LiteralPath '.manual/chapter-20-developer-guide.md' -PathType Leaf) { $rules = @($rules) + '.manual/chapter-20-developer-guide.md' }
@@ -508,7 +590,7 @@ try {
         $built = GoMinor ((& go version $toolPaths[$t] 2>$null) -join '')
         if ($built -and $built -lt $goCur) { "$t`t$for (built with go$built, toolchain is go${goCur}: rebuild)`t$fix" }
     }
-    $liveLangs = @{}; foreach ($r in $rev) { if ($r.St -ne 'D') { $liveLangs[$r.Lang] = $true } }
+    $liveLangs = @{}; foreach ($r in $scopedRecs) { if ($r.St -ne 'D') { $liveLangs[$r.Lang] = $true } }
     $missing = @(
         if ($pk.Count) {
             Need 'go' 'build, vet, tests' 'https://go.dev/dl/'
@@ -547,11 +629,12 @@ try {
     # --- scope.txt ----------------------------------------------------------------------
     $langs = ($rev | Group-Object Lang | ForEach-Object { "$($_.Name):$($_.Count)" }) -join ' '
     $branch = GitOut symbolic-ref --short -q HEAD; if (-not $branch) { $branch = 'detached' }
-    $scope = @("id=$slug", "nn=$nn", "run=$run", "root=$top", "scope=$desc", "head=$head", "base=$baseSha", "branch=$branch",
+    $setInfo = if ($Depth -ne 'diff') { @("review_files=$($setRecs.Count)", "review_code_files=$($setCode.Count)", "review_lines=$setLines", "review_tokens_est=$tokSet") } else { @() }
+    $scope = @("id=$slug", "nn=$nn", "run=$run", "root=$top", "scope=$desc", "depth=$Depth", "head=$head", "base=$baseSha", "branch=$branch",
         "files=$($allRecs.Count)", "reviewable_files=$($rev.Count)", "skipped_files=$($skippedRecs.Count)", "lines_added=$added", "lines_deleted=$deleted",
         "code_files=$($code.Count)", "code_lines_changed=$codeLines", "languages=$langs", "go_packages=$($pk.Count)",
         "symbols=$($syms.Count)", "refs=$($refs.Count)", "shards=$shards",
-        "diff_tokens_est=$tokReview", "noise_tokens_est=$tokNoise", "size_warnings=$($sizeLines.Count)", "missing_tools=$($missing.Count)") + $signals
+        "diff_tokens_est=$tokReview") + $setInfo + @("noise_tokens_est=$tokNoise", "size_warnings=$($sizeLines.Count)", "missing_tools=$($missing.Count)") + $signals
     Out-Lines (Join-Path $ctx 'scope.txt') $scope
 
     $sizeOut = @(); if ($sizeLines.Count) { $sizeOut = @('# size warnings: flag path metric est_tokens suggestion') + $sizeLines }

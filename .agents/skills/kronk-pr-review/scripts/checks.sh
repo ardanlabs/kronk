@@ -1,10 +1,14 @@
 #!/bin/sh
 # Usage: sh checks.sh RUN_DIR [--env K=V]... [--exclude PATH]... [--timeout 10m] [--no-tests]
 # Runs every mechanical check ONCE, scoped to the files/packages intake.sh recorded in
-# RUN_DIR/context, in parallel. Output: RUN_DIR/context/checks/<check>.txt (full log) and
-# RUN_DIR/context/checks/summary.tsv (check status exit lines file). Prints the summary.
+# RUN_DIR/context, in parallel. The depth comes from scope.txt: at diff depth file checks
+# cover the changed files; at full depth (files/packages/project) they cover review-set.tsv,
+# and Go checks cover packages.tsv, which intake fills to match the depth.
+# Output: RUN_DIR/context/checks/<check>.txt (full log) and RUN_DIR/context/checks/summary.tsv
+# (check status exit lines file). Prints the summary.
 # Kronk rules (AGENTS.md, .github/workflows/linux.yml static + race jobs) always apply:
-# GITHUB_WORKSPACE=<repo root>; tests are `go test -race -short` on changed packages only, with
+# GITHUB_WORKSPACE=<repo root>; tests are `go test -race -short` on the reviewed packages only
+# (never at project depth: AGENTS.md forbids a full repo test run), with
 # KRONK_BASE_PATH=<empty temp store> so model-backed tests skip; go vet covers the whole module;
 # packages under DEFAULT_EXCLUDES are never tested; staticcheck runs with -checks=all.
 #   --env K=V      exported for every check; repeatable
@@ -41,7 +45,7 @@ while [ $# -gt 0 ]; do
 "; shift 2 ;;
     --timeout) timeout=${2-}; shift 2 ;;
     --no-tests) tests=0; shift ;;
-    -h|--help) sed -n '2,10p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
     *) die "unknown argument: $1" ;;
   esac
 done
@@ -54,6 +58,10 @@ IFS='
 ctx=$(cd -- "$run/context" 2>/dev/null && pwd) || die "no context in $run (run intake.sh first)"
 root=$(sed -n 's/^root=//p' "$ctx/scope.txt")
 basesha=$(sed -n 's/^base=//p' "$ctx/scope.txt")
+depth=$(sed -n 's/^depth=//p' "$ctx/scope.txt")
+# scoped: the files under review — the changed files, or the review set at full depth
+scoped=$ctx/files.tsv
+[ "${depth:-diff}" = diff ] || scoped=$ctx/review-set.tsv
 cd -- "$root" 2>/dev/null || die "cannot enter repo root $root"
 case " $envkeys " in
   *" GITHUB_WORKSPACE "*) ;;  # --env GITHUB_WORKSPACE=... wins
@@ -90,14 +98,14 @@ job() {
 }
 skip() { printf '# skipped: %s\n' "$2" >"$out/$1.txt"; echo skip >"$out/$1.exit"; }
 
-# live LANG: changed (not deleted) reviewable files of LANG ("*" = any), repo-relative
-live() { awk -F '\t' -v l="$1" '$1 != "D" && $5 != "generated" && $5 != "vendor" && (l == "*" || $4 == l) { print $7 }' "$ctx/files.tsv"; }
+# live LANG: reviewed (not deleted) files of LANG ("*" = any), repo-relative
+live() { awk -F '\t' -v l="$1" '$1 != "D" && $5 != "generated" && $5 != "vendor" && (l == "*" || $4 == l) { print $7 }' "$scoped"; }
 
 # --- base tree (apidiff) ---------------------------------------------------------------
 # The base commit's files, extracted outside the repo with git archive: nothing is written
 # to the working tree or .git. Removed when the script exits.
-basesrc=''
-trap 'rm -rf "$scratch"; [ -z "$basesrc" ] || rm -rf "$basesrc"' EXIT
+basesrc='' setcopy=''
+trap 'rm -rf "$scratch"; [ -z "$basesrc" ] || rm -rf "$basesrc"; [ -z "$setcopy" ] || rm -rf "$setcopy"' EXIT
 if [ -n "$basesha" ] && [ -s "$ctx/packages.tsv" ] && has apidiff; then
   if basesrc=$(mktemp -d); then
     git archive "$basesha" | tar -x -C "$basesrc" || { rm -rf "$basesrc"; basesrc=''; }
@@ -136,9 +144,9 @@ build_pkgs() {
   return $brc
 }
 
-# deadcode_changed: unreachable functions (tests count as roots) in the changed files of
+# deadcode_scoped: unreachable functions (tests count as roots) in the reviewed files of
 # this module. $1 = module dir relative to the repo root.
-deadcode_changed() {
+deadcode_scoped() {
   m=$1
   pre=''; [ "$m" = . ] || pre=$m/
   log=$(mktemp) || return 1
@@ -150,7 +158,7 @@ deadcode_changed() {
     fi
     rm -f "$log"; return $rc
   fi
-  awk -v pre="$pre" -v files="$ctx/files.tsv" '
+  awk -v pre="$pre" -v files="$scoped" '
     BEGIN { while ((getline l < files) > 0) { split(l, f, "\t"); if (f[1] != "D") ch[f[7]] = 1 } }
     { p = $0; sub(/:[0-9]+:[0-9]+: .*/, "", p); sub(/^\.\//, "", p)
       if ((pre p) in ch || p in ch) print }' "$log"
@@ -182,12 +190,13 @@ for m in $modules; do
     # Test-only packages (e.g. sdk/kronk/tests/*) have nothing to build; go vet still type-checks them.
     buildpkgs=$(go list -e -f '{{if or .GoFiles .CgoFiles}}{{.ImportPath}}{{end}}' $pkgs 2>/dev/null)
     if [ -n "$buildpkgs" ]; then job "go-build$sfx" build_pkgs "$scratch/bin" $buildpkgs
-    else skip "go-build$sfx" "only test-only packages changed"
+    else skip "go-build$sfx" "only test-only packages in scope"
     fi
     # Whole module, as CI does: catches callers in unchanged packages broken by the diff.
     job "go-vet$sfx" go vet ./...
     if [ $tests = 0 ]; then skip "go-test$sfx" "--no-tests"
-    elif [ -z "$testpkgs" ]; then skip "go-test$sfx" "all changed packages excluded"
+    elif [ "$depth" = project ]; then skip "go-test$sfx" "project depth: AGENTS.md forbids a full repo test run"
+    elif [ -z "$testpkgs" ]; then skip "go-test$sfx" "all packages excluded"
     else job "go-test$sfx" go test -race -short -count=1 -timeout "$timeout" $testpkgs
     fi
     if has staticcheck; then job "staticcheck$sfx" staticcheck -checks=all $pkgs; else skip "staticcheck$sfx" "staticcheck not installed"; fi
@@ -200,7 +209,7 @@ for m in $modules; do
       job "nilaway$sfx" nilaway -pretty-print=false -include-pkgs="$modpath" $pkgs
     else skip "nilaway$sfx" "nilaway not installed"
     fi
-    if has deadcode; then job "deadcode$sfx" deadcode_changed "$m"; else skip "deadcode$sfx" "deadcode not installed"; fi
+    if has deadcode; then job "deadcode$sfx" deadcode_scoped "$m"; else skip "deadcode$sfx" "deadcode not installed"; fi
     if ! has apidiff; then skip "apidiff$sfx" "apidiff not installed"
     elif [ -z "$basesrc" ]; then skip "apidiff$sfx" "base commit not available locally"
     else job "apidiff$sfx" apidiff_pkgs "$m" $pkgs
@@ -220,7 +229,7 @@ for m in $modules; do
   ) &
 done
 
-# --- changed files by language -------------------------------------------------------
+# --- reviewed files by language ------------------------------------------------------
 go_files=$(live go)
 if [ -n "$go_files" ] && has go; then
   # shellcheck disable=SC2086
@@ -261,14 +270,31 @@ if [ -n "$js_dirs" ] && has jscpd; then
   job jscpd jscpd --min-tokens 50 --reporters console --silent $js_dirs
 fi
 
-# Secrets: the reviewed diff only. generated.patch is scanned only on request, by the
-# generated-scan agent (see references/roles/generated-scan.md).
-if has gitleaks; then
+# Secrets: the reviewed diff, or at full depth a copy of the review set (so generated and
+# vendored files stay out; findings show repo-relative paths). generated.patch is scanned
+# only on request, by the generated-scan agent (see references/roles/generated-scan.md).
+if has gitleaks && [ "$scoped" != "$ctx/files.tsv" ]; then
+  if setcopy=$(mktemp -d); then
+    # Never follow a symlink out of the repo (intake already leaves them out of the set).
+    live '*' | while IFS= read -r f; do
+      [ -L "$f" ] && continue
+      mkdir -p "$setcopy/$(dirname -- "$f")" && cp -P -p -- "$f" "$setcopy/$f"
+    done
+    if gitleaks help dir >/dev/null 2>&1; then
+      # shellcheck disable=SC2016 # $1 expands in the child shell
+      job gitleaks sh -c 'cd "$1" && gitleaks dir -v --no-banner --redact .' _ "$setcopy"
+    else
+      # shellcheck disable=SC2016
+      job gitleaks sh -c 'cd "$1" && gitleaks detect -v --no-git --no-banner --redact --source .' _ "$setcopy"
+    fi
+  else setcopy=''; skip gitleaks "cannot create a temp copy of the review set"
+  fi
+elif has gitleaks; then
   if gitleaks help stdin >/dev/null 2>&1; then
     # shellcheck disable=SC2016 # $1 expands in the child shell
-    job gitleaks sh -c 'gitleaks stdin --no-banner --redact <"$1"' _ "$ctx/diff.patch"
+    job gitleaks sh -c 'gitleaks stdin -v --no-banner --redact <"$1"' _ "$ctx/diff.patch"
   else
-    job gitleaks gitleaks detect --no-git --no-banner --redact --source "$ctx/diff.patch"
+    job gitleaks gitleaks detect -v --no-git --no-banner --redact --source "$ctx/diff.patch"
   fi
 elif has trufflehog; then
   # shellcheck disable=SC2046

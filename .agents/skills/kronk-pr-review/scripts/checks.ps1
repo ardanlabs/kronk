@@ -1,9 +1,11 @@
 # Usage: checks.ps1 RUN_DIR [-Env K=V,...] [-Exclude PATH,...] [-Timeout 10m] [-NoTests]
 # PowerShell port of checks.sh (same outputs). Runs every mechanical check ONCE, scoped to the
-# files/packages intake recorded in RUN_DIR/context, in parallel. Output:
+# files/packages intake recorded in RUN_DIR/context, in parallel; the depth in scope.txt picks
+# the files (see checks.sh). Output:
 # RUN_DIR/context/checks/<check>.txt (full log) and RUN_DIR/context/checks/summary.tsv.
 # Kronk rules (AGENTS.md, .github/workflows/linux.yml static + race jobs) always apply:
-# GITHUB_WORKSPACE=<repo root>; tests are `go test -race -short` on changed packages only, with
+# GITHUB_WORKSPACE=<repo root>; tests are `go test -race -short` on the reviewed packages only
+# (never at project depth: AGENTS.md forbids a full repo test run), with
 # KRONK_BASE_PATH=<empty temp store> so model-backed tests skip; go vet covers the whole module;
 # packages under $DefaultExcludes are never tested; staticcheck runs with -checks=all.
 #   -Env K=V      set for every check
@@ -37,6 +39,10 @@ $scopeLines = [IO.File]::ReadAllLines((Join-Path $ctx 'scope.txt'))
 $root = ($scopeLines | Where-Object { $_.StartsWith('root=') } | Select-Object -First 1).Substring(5)
 $baseLine = $scopeLines | Where-Object { $_.StartsWith('base=') } | Select-Object -First 1
 $baseSha = if ($baseLine) { $baseLine.Substring(5) } else { '' }
+$depthLine = $scopeLines | Where-Object { $_.StartsWith('depth=') } | Select-Object -First 1
+$depth = if ($depthLine) { $depthLine.Substring(6) } else { 'diff' }
+# scoped: the files under review — the changed files, or the review set at full depth
+$scoped = Join-Path $ctx $(if ($depth -eq 'diff') { 'files.tsv' } else { 'review-set.tsv' })
 if (-not (Test-Path -LiteralPath $root -PathType Container)) { Die "cannot enter repo root $root" }
 Set-Location -LiteralPath $root
 $out = Join-Path $ctx 'checks'
@@ -106,7 +112,7 @@ function Skip([string]$name, [string]$why) {
     Out-Text (Join-Path $out "$name.exit") 'skip'
 }
 
-$files = @(ReadTsv (Join-Path $ctx 'files.tsv'))
+$files = @(ReadTsv $scoped)
 function Live([string]$lang) { @($files | Where-Object { $_[0] -ne 'D' -and ($lang -eq '*' -or $_[3] -ceq $lang) } | ForEach-Object { $_[6] }) }
 
 # --- base tree (apidiff) ---------------------------------------------------------------
@@ -143,7 +149,7 @@ $apidiffFn = {
     }
 }
 
-# Unreachable functions (tests count as roots) in the changed files of this module.
+# Unreachable functions (tests count as roots) in the reviewed files of this module.
 # Library packages build normally (results discarded); main packages go to the scratch bin dir,
 # so nothing is written to the repo. `go build -o DIR` rejects a list with no main package.
 $buildFn = {
@@ -189,11 +195,12 @@ foreach ($m in $modules) {
     $buildPkgs = @(& go list -e -f '{{if or .GoFiles .CgoFiles}}{{.ImportPath}}{{end}}' @pkgs 2>$null | Where-Object { $_ })
     Pop-Location
     if ($buildPkgs.Count) { JobFn "go-build$sfx" $dir "build_pkgs $($buildPkgs -join ' ')" $buildFn @((Join-Path $scratch 'bin'), [string[]]$buildPkgs) }
-    else { Skip "go-build$sfx" 'only test-only packages changed' }
+    else { Skip "go-build$sfx" 'only test-only packages in scope' }
     # Whole module, as CI does: catches callers in unchanged packages broken by the diff.
     Job "go-vet$sfx" $dir 'go' @('vet', './...')
     if (-not $tests) { Skip "go-test$sfx" '--no-tests' }
-    elseif (-not $testPkgs.Count) { Skip "go-test$sfx" 'all changed packages excluded' }
+    elseif ($depth -eq 'project') { Skip "go-test$sfx" 'project depth: AGENTS.md forbids a full repo test run' }
+    elseif (-not $testPkgs.Count) { Skip "go-test$sfx" 'all packages excluded' }
     else { Job "go-test$sfx" $dir 'go' (@('test', '-race', '-short', '-count=1', '-timeout', $Timeout) + $testPkgs) }
     if (Has 'staticcheck') { Job "staticcheck$sfx" $dir 'staticcheck' (@('-checks=all') + $pkgs) } else { Skip "staticcheck$sfx" 'staticcheck not installed' }
     if (Has 'checklocks') { Job "checklocks$sfx" $dir 'go' (@('vet', "-vettool=$($tools['checklocks'])") + $pkgs) }
@@ -205,7 +212,7 @@ foreach ($m in $modules) {
         Job "nilaway$sfx" $dir 'nilaway' (@('-pretty-print=false', "-include-pkgs=$modPath") + $pkgs)
     } else { Skip "nilaway$sfx" 'nilaway not installed' }
     $pre = if ($m -eq '.') { '' } else { "$m/" }
-    if (Has 'deadcode') { JobFn "deadcode$sfx" $dir "deadcode_changed $m" $deadcodeFn @($pre, (Join-Path $ctx 'files.tsv')) }
+    if (Has 'deadcode') { JobFn "deadcode$sfx" $dir "deadcode_scoped $m" $deadcodeFn @($pre, $scoped) }
     else { Skip "deadcode$sfx" 'deadcode not installed' }
     if (-not (Has 'apidiff')) { Skip "apidiff$sfx" 'apidiff not installed' }
     elseif (-not $baseSrc) { Skip "apidiff$sfx" 'base commit not available locally' }
@@ -218,7 +225,7 @@ foreach ($m in $modules) {
     if (Has 'dupl') { Job "dupl$sfx" $dir 'dupl' (@('-t', '50', '-plumbing') + $pkgs) } else { Skip "dupl$sfx" 'dupl not installed' }
 }
 
-# --- changed files by language -------------------------------------------------------
+# --- reviewed files by language ------------------------------------------------------
 $goFiles = @(Live 'go')
 if ($goFiles.Count -and (Has 'go')) { Job 'gofmt' $root 'gofmt' (@('-s', '-l') + $goFiles) }
 
@@ -247,13 +254,29 @@ if ($sh.Count) {
 $jsDirs = @(@(Live 'js') + @(Live 'ts') | ForEach-Object { $_ -creplace '/[^/]*$', '' } | Select-Object -Unique)
 if ($jsDirs.Count -and (Has 'jscpd')) { Job 'jscpd' $root 'jscpd' (@('--min-tokens', '50', '--reporters', 'console', '--silent') + $jsDirs) }
 
-# Secrets: the reviewed diff only. generated.patch is scanned only on request, by the
-# generated-scan agent (see references/roles/generated-scan.md).
+# Secrets: the reviewed diff, or at full depth a copy of the review set (so generated and
+# vendored files stay out; findings show repo-relative paths). generated.patch is scanned
+# only on request, by the generated-scan agent (see references/roles/generated-scan.md).
 $patches = @(Join-Path $ctx 'diff.patch')
-if (Has 'gitleaks') {
+$setCopy = ''
+if ((Has 'gitleaks') -and $depth -ne 'diff') {
+    $setCopy = Join-Path ([IO.Path]::GetTempPath()) ('checks-set-' + [guid]::NewGuid().ToString('N'))
+    # Never follow a symlink out of the repo (intake already leaves them out of the set).
+    foreach ($f in @(Live '*')) {
+        $item = Get-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue
+        if (-not $item -or $item.LinkType -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { continue }
+        $dst = Join-Path $setCopy $f
+        New-Item -ItemType Directory -Path (Split-Path -Parent $dst) -Force | Out-Null
+        Copy-Item -LiteralPath $f -Destination $dst
+    }
+    New-Item -ItemType Directory -Path $setCopy -Force | Out-Null
+    & gitleaks help dir *> $null
+    if ($LASTEXITCODE -eq 0) { Job 'gitleaks' $setCopy 'gitleaks' @('dir', '-v', '--no-banner', '--redact', '.') }
+    else { Job 'gitleaks' $setCopy 'gitleaks' @('detect', '-v', '--no-git', '--no-banner', '--redact', '--source', '.') }
+} elseif (Has 'gitleaks') {
     & gitleaks help stdin *> $null
-    if ($LASTEXITCODE -eq 0) { Job 'gitleaks' $root 'gitleaks' @('stdin', '--no-banner', '--redact') $patches }
-    else { Job 'gitleaks' $root 'gitleaks' @('detect', '--no-git', '--no-banner', '--redact', '--source', $patches[0]) }
+    if ($LASTEXITCODE -eq 0) { Job 'gitleaks' $root 'gitleaks' @('stdin', '-v', '--no-banner', '--redact') $patches }
+    else { Job 'gitleaks' $root 'gitleaks' @('detect', '-v', '--no-git', '--no-banner', '--redact', '--source', $patches[0]) }
 } elseif (Has 'trufflehog') {
     Job 'trufflehog' $root 'trufflehog' (@('filesystem', '--no-update') + @(Live '*'))
 } else {
@@ -262,6 +285,7 @@ if (Has 'gitleaks') {
 
 if ($jobs.Count) { $jobs | Wait-Job | Out-Null; $jobs | Receive-Job -ErrorAction SilentlyContinue | Out-Null; $jobs | Remove-Job }
 if ($baseSrc) { Remove-Item -LiteralPath $baseSrc -Recurse -Force -ErrorAction SilentlyContinue }
+if ($setCopy) { Remove-Item -LiteralPath $setCopy -Recurse -Force -ErrorAction SilentlyContinue }
 Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue
 
 # --- summary ----------------------------------------------------------------------------

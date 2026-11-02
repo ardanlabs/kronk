@@ -1,6 +1,17 @@
 # Reviewer contract
 
-Every review agent follows this file plus its lens checklists. `<run>` and `<skill>` come from your prompt.
+Every review agent follows this file plus its lens checklists. `<run>`, `<skill>`, and the review depth come from your prompt.
+
+## Review scope
+
+The depth (`Review depth:` in your prompt, `depth=` in `scope.txt`) sets what you may report on. Read whatever you need for context; scope limits only what becomes a finding.
+
+- **`diff`** (default): review the change, not the code around it. A finding must sit on a line the diff adds, modifies, or removes, or on unchanged code that is either:
+  - **broken by the change**, such as a caller of a changed signature, a reader of a changed format, or a test the change makes fail. Cite the unchanged line and the change that breaks it.
+  - **required to change by the criteria in force**, such as a site the ticket covers that the diff skipped (spec lens).
+
+  A problem that predates the change, and that the change neither causes nor worsens, is out of scope. Drop it silently: it is not a finding, an Open check, or a note. The same applies to `checks/` hits on lines the diff doesn't touch.
+- **`files` / `packages` / `project`**: full review. Every line of the files in `review-set.tsv` (or of your shard) is in scope, including problems that predate the change. Add `- Origin: pre-existing` to each finding on a line the diff didn't touch. Rows with `status` other than `-` are the change; read those most closely.
 
 ## Inputs (in `<run>/context/`, already prepared)
 
@@ -12,11 +23,12 @@ Every review agent follows this file plus its lens checklists. `<run>` and `<ski
 | `symbols.tsv`                     | `status kind name path line` for added, removed, and modified funcs, methods, and types.               |
 | `refs.tsv`                        | `symbol path:line` — word-match references to each changed symbol (capped, `+N more`). A starting list; confirm with `gopls`. |
 | `diff.patch`                      | The diff (8 context lines). Find `diff --git a/<path>` and read only the sections you need.             |
-| `shards.tsv`                      | `shard path`, large diffs only. With a shard in your prompt, review only its files.                    |
-| `checks/summary.tsv`              | Build, vet, tests (`-race`), linters, analyzers, scanners, clone detectors — already run. Status `pass`, `fail`, `findings` (hits reported on output), or `skipped`. Open a log only when its row matters. Package-wide tools (staticcheck, errcheck, nilaway, checklocks, gosec) report on whole packages: only hits on code the diff changed, or whose behavior it changed, are findings. |
+| `review-set.tsv`                  | Full depth only: the `files.tsv` columns plus `lines` for every file in scope; `status` `-` = untouched by the diff. Empty at `diff` depth. |
+| `shards.tsv`                      | `shard path`, large diffs or review sets only. With a shard in your prompt, review only its files.      |
+| `checks/summary.tsv`              | Build, vet, tests (`-race`), linters, analyzers, scanners, clone detectors — already run. Status `pass`, `fail`, `findings` (hits reported on output), or `skipped`. Open a log only when its row matters. Package-wide tools (staticcheck, errcheck, nilaway, checklocks, gosec) report on whole packages: only hits in scope (see Review scope) are findings. |
 | `ticket.md`, `pr.md`, `commits.txt` | Ticket, PR description, commit messages (whichever exist).                                          |
 | `rules.txt`                       | `AGENTS.md`/`CLAUDE.md` files governing the changed paths; the brief digests them.                     |
-| `skipped.tsv`                     | Generated and vendored files. Never reviewed; never read `generated.patch`.                            |
+| `skipped.tsv`                     | Generated and vendored files and symlinks. Never reviewed; never read `generated.patch`. Never open a symlink (`kind=symlink`): its target can be outside the repo. |
 
 ## Rules
 
@@ -41,7 +53,7 @@ Every review agent follows this file plus its lens checklists. `<run>` and `<ski
 
 A G2+ finding needs `file:line`, Proof, why it matters, Patch direction (smallest safe fix), and Verify. Anything weaker is an Open check.
 
-**Verify before writing.** Treat each finding as a hypothesis: re-open the cited line, confirm the Proof shows the claim, and look for what would make it wrong (stale line, untouched code, handled elsewhere, false pattern match). Drop, downgrade, or move to Open checks what doesn't hold. Set the Gate last.
+**Verify before writing.** Treat each finding as a hypothesis: re-open the cited line, confirm the Proof shows the claim, and look for what would make it wrong (stale line, out of scope for the depth, handled elsewhere, false pattern match). Drop, downgrade, or move to Open checks what doesn't hold. Set the Gate last.
 
 ## Languages
 
@@ -49,7 +61,7 @@ Review each file in its own idiom; Go is primary, not the only one.
 
 | Area                | Focus                                                                                         |
 |---------------------|-----------------------------------------------------------------------------------------------|
-| Go                  | Full review; Kronk ownership rules and the Go skills apply.                                   |
+| Go                  | Every lens applies; Kronk ownership rules and the Go skills apply.                            |
 | React/TS/CSS (BUI)  | Props and API-client types matching the Go route, hook dependencies, effect cleanup (timers, streams, `AbortController`), `fetch` and SSE errors shown in the UI, a11y, `src/components/AGENTS.md` (tooltips via `PARAM_TOOLTIPS`/`TooltipKey`). |
 | Rego                | Auth policy (`cmd/server/app/sdk/security/auth/rego`): default deny, `input` shape assumptions, unintended allows. |
 | proto               | `authapp.proto`: field-number stability, compatibility, regenerated `*.pb.go` in the same change. |
@@ -65,6 +77,7 @@ Write to the path in your prompt:
 ```markdown
 # <Agent> report
 Gate: G<n>
+Depth: <diff | files | packages | project>
 Lenses: <lenses applied>
 Shard: <k | all>
 
@@ -77,6 +90,7 @@ Shard: <k | all>
 - Patch direction: <smallest safe fix>
 - Verify: <test, command, or review step>
 - Assumption: <only when it rests on unconfirmed intent>
+- Origin: pre-existing <full depth only, on lines the diff didn't touch>
 <extra fields from your lens>
 
 ## Open checks

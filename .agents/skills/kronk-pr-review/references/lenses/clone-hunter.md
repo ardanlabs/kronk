@@ -10,9 +10,9 @@ Duplicated logic is a defect: copies drift, and a fix to one silently skips the 
 
 ## Detection, in order
 
-1. **Detector output** — `dupl*` and `jscpd` rows in `checks/`; keep clones with at least one changed site.
+1. **Detector output** — `dupl*` and `jscpd` rows in `checks/`; keep clones with at least one in-scope site.
 2. **gopls / LSP** — `go_search`, `go_symbol_references` for repeated call shapes and twin helpers.
-3. **Targeted search** — `rg`/`ast-grep` for the changed code's distinctive literals and call patterns, repo-wide.
+3. **Targeted search** — `rg`/`ast-grep` for the in-scope code's distinctive literals and call patterns, repo-wide.
 4. **Inspection** — only when nothing above works for the language; say it's best-effort.
 
 Name the method on each finding.
@@ -21,7 +21,7 @@ Kronk deliberately mirrors structure per backend (`sdk/{kronk,bucky,malina}/pool
 
 ## Scope
 
-At least one site must be changed code. Report an untouched pre-existing clone only when the diff adds a third copy or edits one of a pair. Ignore boilerplate the framework forces.
+At `diff` depth, at least one site must be changed code. Report a clone that predates the change only when the diff adds a third copy or edits one of a pair. At full depth, report every clone with a site in the review set. Ignore boilerplate the framework forces.
 
 ## Gates
 

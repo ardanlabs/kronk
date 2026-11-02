@@ -6,7 +6,7 @@ Generated, vendored, and lockfile changes are never reviewed. This agent checks 
 
 ## Method — never read the patch whole
 
-1. **Scanner, if installed.** `gitleaks stdin --no-banner --redact < <run>/context/generated.patch` (older gitleaks: `gitleaks detect --no-git --no-banner --redact --source <that file>`), else `trufflehog filesystem --no-update <skipped paths that exist>`.
+1. **Scanner, if installed.** `gitleaks stdin -v --no-banner --redact < <run>/context/generated.patch` (older gitleaks: `gitleaks detect -v --no-git --no-banner --redact --source <that file>`), else `trufflehog filesystem --no-update <skipped paths that exist>`.
 2. **Otherwise, a pattern sweep** of added lines (`^\+`) with `rg -n --max-columns 300`:
    - private keys `-----BEGIN [A-Z ]*PRIVATE KEY-----`
    - cloud keys `AKIA[0-9A-Z]{16}`, `AIza[0-9A-Za-z_-]{35}`

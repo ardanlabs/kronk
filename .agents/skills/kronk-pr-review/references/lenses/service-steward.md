@@ -4,16 +4,16 @@ Report what affects whether the change should merge, not preferences. Test: woul
 
 Priority: correctness, explicit `AGENTS.md` rules, Kronk ownership and lifecycle invariants, Go idioms, operational safety, local maintainability.
 
-For `.go` files apply `use-modern-go` and `kronk-service-architecture`. When the diff touches handles, pools, engines, IMC, parsers, Responses normalization, speculative/MTP, tracing, or Bucky, read that section of `kronk-service-architecture` `references/lifecycle.md` and check its list against the changed code.
+For `.go` files apply `use-modern-go` and `kronk-service-architecture`. When in-scope code touches handles, pools, engines, IMC, parsers, Responses normalization, speculative/MTP, tracing, or Bucky, read that section of `kronk-service-architecture` `references/lifecycle.md` and check its list against the in-scope code.
 
-A failing `go-build`, `go-vet`, or analyzer row in `checks/` on changed code is a finding; cite the log line. These rows mirror the Linux CI `static` job, so a hit there fails CI.
+A failing `go-build`, `go-vet`, or analyzer row in `checks/` on in-scope code is a finding; cite the log line. These rows mirror the Linux CI `static` job, so a hit there fails CI.
 
-Analyzer rows in `checks/` (changed code only):
+Analyzer rows in `checks/` (in-scope code only):
 
-- `staticcheck` (run with `-checks=all`, as CI does): each hit on changed code is a finding at the Gate its effect warrants; style-only checks (`ST*`) are G1 unless CI would fail, then G2.
-- `checklocks`: a violation of an existing `+checklocks`/`+checkatomic` annotation is a data race (G4). "may require checklocks annotation for X" is not a finding by itself: it names the lock that guards those fields, so verify the changed code holds it on every access.
+- `staticcheck` (run with `-checks=all`, as CI does): each hit on in-scope code is a finding at the Gate its effect warrants; style-only checks (`ST*`) are G1 unless CI would fail, then G2.
+- `checklocks`: a violation of an existing `+checklocks`/`+checkatomic` annotation is a data race (G4). "may require checklocks annotation for X" is not a finding by itself: it names the lock that guards those fields, so verify the in-scope code holds it on every access.
 - `nilaway`: candidate nil dereferences. Confirm the nil flow can happen before reporting; unconfirmed ones go to Open checks.
-- `go-fix`, `gofmt`, `go-mod-tidy`: CI fails on any diff, so a hit on changed files is G2.
+- `go-fix`, `gofmt`, `go-mod-tidy`: CI fails on any diff, so a hit on in-scope files is G2.
 - `apidiff`: incompatible exported-API changes: confirm every caller in the repo (including `examples/`) was updated (step 1); an unannounced break of a `sdk/*` package is G3.
 - `bui-tsc`: a type error in changed BUI code is G4 (the BUI build and server embed fail).
 - `helm-test`: a failing chart check on a changed chart is G3.
@@ -31,7 +31,7 @@ Analyzer rows in `checks/` (changed code only):
 
 - **G4**: compile or BUI build break, data race, security/authz hole, cross-slot or cross-session state leak, native resource or permit leak on a reachable path, explicit `AGENTS.md` violation.
 - **G3**: likely production bug: nil/error mishandling, leaked goroutine or stream, cancellation not propagated, reservation kept after failure, CI static job would fail on a non-format check.
-- **G2**: real convention or maintainability problem in the diff; generated output not regenerated; `gofmt`/`go fix`/tidy diff.
+- **G2**: real convention or maintainability problem in scope; generated output not regenerated; `gofmt`/`go fix`/tidy diff.
 - **G1**: small naming or idiom cleanup.
 
 ## Extra fields

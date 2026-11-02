@@ -1,8 +1,8 @@
 # Doc Drift Check (comment truthfulness)
 
-Treat each changed comment, doc string, README/manual section (`kind=doc`, mostly `.manual/chapter-*.md`), `BREAKING_CHANGES.md` entry, and TODO/FIXME as a contract and check the code honors it. A comment earns its place by explaining intent, constraints, or domain rules the code doesn't make obvious.
+Treat each in-scope comment, doc string, README/manual section (`kind=doc`, mostly `.manual/chapter-*.md`), `BREAKING_CHANGES.md` entry, and TODO/FIXME as a contract (at `diff` depth: the changed ones, plus unchanged ones the change makes false) and check the code honors it. A comment earns its place by explaining intent, constraints, or domain rules the code doesn't make obvious.
 
-Flag comments that contradict the code, promise behavior it lacks, omit an important caveat on an exported API, narrate obvious code, carry outdated assumptions, or freeze temporary context as design. In changed docs, check commands, flags, config keys, env vars, defaults, and examples against the code, and every `§`/anchor link against the target heading.
+Flag comments that contradict the code, promise behavior it lacks, omit an important caveat on an exported API, narrate obvious code, carry outdated assumptions, or freeze temporary context as design. In in-scope docs, check commands, flags, config keys, env vars, defaults, and examples against the code, and every `§`/anchor link against the target heading.
 
 **Drift the diff causes elsewhere.** Exported `sdk/*` doc comments feed generated SDK docs, and the manual is the user's reference. When the diff changes a flag, config key, default, endpoint, or exported behavior, search `.manual/` (`rg`) for the old value and report chapters left stale (unchanged file, cite the line). When it changes `.manual/`, exported Go docs, `examples/`, or Cobra `Long`/`Example`, check `skipped.tsv` for the regenerated output; missing → G2. An observable public SDK change without a `BREAKING_CHANGES.md` entry → G2, stated as an assumption for the author to confirm. The generated section of `Layout.tsx` (between the docs tool's markers) follows the same rule.
 
@@ -16,8 +16,8 @@ Flag comments that contradict the code, promise behavior it lacks, omit an impor
 
 ## Patrol route
 
-1. **Claims** (working notes, not reported): what each changed comment asserts — inputs, outputs, errors, side effects, ordering, concurrency, invariants, ownership.
-2. **Match** each claim against the changed code and the unchanged code it describes.
+1. **Claims** (working notes, not reported): what each in-scope comment asserts — inputs, outputs, errors, side effects, ordering, concurrency, invariants, ownership.
+2. **Match** each claim against the code it describes, changed or not.
 3. **Decide**: rewrite stale or incomplete claims, remove narration. Accurate comments aren't reported.
 
 ## Gates

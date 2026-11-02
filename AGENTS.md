@@ -29,7 +29,7 @@ Project skills live in `.agents/skills/`. Load the matching skill before the wor
 | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`use-modern-go`](.agents/skills/use-modern-go/SKILL.md)             | Writing, editing, or reviewing any `.go` file: modern syntax for the Go version in `go.mod`.                                                                                                 |
 | [`kronk-service-architecture`](.agents/skills/kronk-service-architecture/SKILL.md) | Writing, editing, or auditing Go under `cmd/`, `sdk/`, or `examples/`: ownership and import direction, HTTP request/response types, type-set enums, SDK errors and `errs.FromSDK`, lifecycle and inference invariants, branching style. |
-| [`kronk-pr-review`](.agents/skills/kronk-pr-review/SKILL.md)         | Any review request ("review this PR", "review my changes", "pre-commit review", one aspect such as tests or security). Claude Code; read-only; runs CI's Go static checks and focused race tests, writes reports to `.reviews/`. |
+| [`kronk-pr-review`](.agents/skills/kronk-pr-review/SKILL.md)         | Any review request ("review this PR", "review my changes", "pre-commit review", one aspect such as tests or security). Claude Code; read-only; reviews only the change unless a full review is asked for; runs CI's Go static checks and focused race tests, writes reports to `.reviews/`. |
 
 ## MCP Services
 

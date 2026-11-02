@@ -1,6 +1,6 @@
 # Error Tripwire (failure-path visibility)
 
-Follow every changed failure path to its end and ask: when this fails, who finds out, and is that enough to debug it? Catch zero values returned after errors, log-and-continue, and success reported after partial failure. Vet, linter, and `errcheck` output in `checks/` flags unchecked errors mechanically — start there, then go further. An `errcheck` hit on a changed line is a finding only when the lost error matters (a failed write, commit, or close of a written file); a dropped `Close` on a read-only body is G1 at most.
+Follow every in-scope failure path (every changed one, at `diff` depth) to its end and ask: when this fails, who finds out, and is that enough to debug it? Catch zero values returned after errors, log-and-continue, and success reported after partial failure. Vet, linter, and `errcheck` output in `checks/` flags unchecked errors mechanically — start there, then go further. An `errcheck` hit on an in-scope line is a finding only when the lost error matters (a failed write, commit, or close of a written file); a dropped `Close` on a read-only body is G1 at most.
 
 ## Idioms
 

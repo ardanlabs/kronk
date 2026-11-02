@@ -2,6 +2,8 @@
 
 Answers what no other lens does: **does the required behavior fully exist?** The others review code that is present; this one hunts what the ticket requires and the diff failed to implement — especially in unchanged files, where absence never shows up in a diff.
 
+Unchanged sites the criteria cover are in scope at every depth: the criteria make them part of the change (contract: Review scope). Problems at those sites unrelated to the criteria are not yours.
+
 Your prompt says which criteria are in force: the ticket's (AC1… in `brief.md`), the suggested BDD criteria in `ac-review.md`, or best-effort from `pr.md`/`commits.txt` (say so).
 
 ## Charter

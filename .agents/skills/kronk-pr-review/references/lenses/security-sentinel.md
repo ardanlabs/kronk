@@ -1,6 +1,6 @@
 # Security Sentinel (secrets, data leaks, vulnerabilities)
 
-Runs only when the user picks *Full + Security*. Assume the diff is hostile until proven safe. For every changed line, try hard to answer "yes":
+Runs only when the user picks *All agents + Security*. Assume the diff is hostile until proven safe. For every in-scope line (every changed line, at `diff` depth), try hard to answer "yes":
 
 1. Does it leak a secret or sensitive data — in a log, error, response, commit, config, fixture, cache, or telemetry?
 2. Can an attacker reach or influence it — untrusted input, unauthenticated path, a key/token with fewer rights, admin vs inference access?
@@ -10,7 +10,7 @@ Think in chains (leak → replay → escalate), including unlikely ones. A suspi
 
 ## Kronk attack surface
 
-Start here; trace the changed code to these sinks.
+Start here; trace the in-scope code to these sinks.
 
 - **AuthN/AuthZ**: JWT and Rego policy in `cmd/server/app/sdk/security/auth`, keys in `security/keystore`, rate limits in `security/rate`, per-route `mid.NewAccess(...).Inference(...)`, admin routes behind `WebAdminEnabled`, browser admin sessions. A route registered without its access middleware, or an auth mode that fails open, is G4.
 - **Model and library downloads** (`sdk/tools/downloader`, `sdk/tools/models`, `sdk/tools/libs`, `sdk/tools/github`, `sdk/kronk/hf`, `downapp` peer pulls): user-supplied URLs and repo IDs (SSRF, `go-getter` source forms), archive extraction (path traversal, symlinks), integrity verification against bundle manifests, and model IDs resolving to file paths outside the model store.
@@ -22,7 +22,7 @@ Start here; trace the changed code to these sinks.
 
 ## Tools
 
-Scanner results are in `checks/summary.tsv`: secrets (`gitleaks`/`trufflehog`, or a `secrets` row saying none is installed), `gosec`, `govulncheck` (CI runs it too), linters. Start there. You may run another installed tool from `tools.tsv` on changed files only (e.g. `osv-scanner` on a changed `package-lock.json`, `opa test` on Rego, `hadolint` on a Dockerfile). Trace taint with `gopls`/LSP; `rg` sweeps supplement, never replace. A missing tool goes to Open checks — the concern still gets a manual pass.
+Scanner results are in `checks/summary.tsv`: secrets (`gitleaks`/`trufflehog`, or a `secrets` row saying none is installed), `gosec`, `govulncheck` (CI runs it too), linters. Start there. You may run another installed tool from `tools.tsv` on in-scope files only (e.g. `osv-scanner` on a changed `package-lock.json`, `opa test` on Rego, `hadolint` on a Dockerfile). Trace taint with `gopls`/LSP; `rg` sweeps supplement, never replace. A missing tool goes to Open checks — the concern still gets a manual pass.
 
 ## Patrol route
 

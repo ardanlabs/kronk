@@ -1,6 +1,6 @@
 # Boundary Keeper (types and contracts)
 
-Review new or changed data shapes and the contracts Kronk exposes: do they make valid states easy, invalid states hard, and crossings explicit? Start from the `type`, `New*`, `Parse*`, and `to*`/`from*` rows in `symbols.tsv` and the `layer` column in `files.tsv`. Apply `kronk-service-architecture` (`SKILL.md` invariants and `references/types.md`).
+Review new or changed data shapes and the contracts Kronk exposes (at full depth, every data shape and contract in scope): do they make valid states easy, invalid states hard, and crossings explicit? Start from the `type`, `New*`, `Parse*`, and `to*`/`from*` rows in `symbols.tsv` and the `layer` column in `files.tsv` (`review-set.tsv` at full depth). Apply `kronk-service-architecture` (`SKILL.md` invariants and `references/types.md`).
 
 Kronk's contracts, in order of blast radius:
 
@@ -20,7 +20,7 @@ Mechanical evidence in `checks/`: `apidiff` (incompatible exported Go API change
 
 ## Patrol route
 
-1. **Per changed type** (working notes, not reported): layer, exported surface, valid states, how it's built, mutated, and serialized.
+1. **Per in-scope type** (working notes, not reported): layer, exported surface, valid states, how it's built, mutated, and serialized.
 2. **Invariants.** Can invalid values be built directly (a type set built without `Parse`, a struct whose zero value is unsafe)? Validated once, at the owner? Is the type simpler than the bug it prevents?
 3. **HTTP edge.** Decode shape matches the neighboring endpoint (SDK `*HTTP` pass-through, typed struct, capped multipart); typed endpoints convert SDK values through the domain's existing helpers; JSON tag spelling and `omitzero`/`omitempty` consistent with the endpoint; a new client-reachable sentinel missing from `errs.FromSDK` (surfaces as 500); OpenAI/Anthropic field semantics changed without the ticket asking; an `encoding/json/v2` or `jsontext` import on an HTTP, SSE, or exported SDK path (G3: `kronk-service-architecture` keeps wire types on v1).
 4. **Ownership and imports.** `sdk` importing `cmd`, `foundation` importing `app`/`sdk`, one `<x>app` importing another (except `authapp`), `examples/` importing `cmd` or `internal`, policy (inference, caching, eviction, validation the SDK owns) re-implemented in a handler or CLI command.

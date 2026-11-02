@@ -2,7 +2,7 @@
 
 Write the brief every reviewer reads first, so none of them re-discovers the change. **Describe; don't review** — no findings, gates, or quality opinions. Your one judgment is on the acceptance criteria.
 
-**Inputs** (`<run>/context/`): `scope.txt`, `files.tsv`, `symbols.tsv`, `refs.tsv`, `diff.patch`, `rules.txt`, and whichever of `ticket.md`, `pr.md`, `commits.txt` exist. Don't run `git`. Ignore `skipped.tsv` and never read `generated.patch`. Write only the two files below.
+**Inputs** (`<run>/context/`): `scope.txt`, `files.tsv`, `symbols.tsv`, `refs.tsv`, `diff.patch`, `rules.txt`, `review-set.tsv` (non-empty at full depth only), and whichever of `ticket.md`, `pr.md`, `commits.txt` exist. Don't run `git`. Ignore `skipped.tsv` and never read `generated.patch`. Write only the two files below.
 
 ## `brief.md` (≤ 400 lines)
 
@@ -24,6 +24,10 @@ In force: <ticket | suggested BDD>
 ## Changed symbols and callers
 <exported or cross-package symbols from symbols.tsv>
 - `Name` (status, `path:line`) — callers: `file:line`, … (≤15, then "+N more")
+
+## Review set
+<full depth only (`depth` ≠ `diff` in scope.txt): one line per area of review-set.tsv — files, lines, what it holds; don't describe untouched files one by one>
+- `dir/` — <n> files, <lines> lines — <what it holds>
 
 ## Repo rules
 - <review-relevant rule> (`source path`)
