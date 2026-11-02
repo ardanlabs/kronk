@@ -1,13 +1,15 @@
+##@ API requests
+
 # ==============================================================================
 # Kronk Endpoints
 
-curl-liveness:
+curl-liveness: ## Send a liveness API request
 	curl -i -X GET http://localhost:11435/v1/liveness
 
-curl-readiness:
+curl-readiness: ## Send a readiness API request
 	curl -i -X GET http://localhost:11435/v1/readiness
 
-curl-kronk-chat:
+curl-kronk-chat: ## Send a kronk chat API request
 	curl -i -X POST http://localhost:11435/v1/chat/completions \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
@@ -22,7 +24,7 @@ curl-kronk-chat:
 		] \
     }'
 
-curl-kronk-chat-load:
+curl-kronk-chat-load: ## Send a kronk chat load API request
 	for i in {1..3}; do \
 		curl -i -X POST http://localhost:11435/v1/chat/completions \
 		-H "Authorization: Bearer ${KRONK_TOKEN}" \
@@ -41,7 +43,7 @@ curl-kronk-chat-load:
 
 FILE_GIRAFFE := $(shell base64 < examples/samples/giraffe.jpg)
 
-curl-kronk-chat-image:
+curl-kronk-chat-image: ## Send a kronk chat image API request
 	curl -i -X POST http://localhost:11435/v1/chat/completions \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
@@ -60,7 +62,7 @@ curl-kronk-chat-image:
 		] \
     }'
 
-curl-kronk-chat-openai-image:
+curl-kronk-chat-openai-image: ## Send a kronk chat openai image API request
 	curl -i -X POST http://localhost:11435/v1/chat/completions \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
@@ -78,7 +80,7 @@ curl-kronk-chat-openai-image:
 		] \
     }'
 
-curl-kronk-chat-gpt:
+curl-kronk-chat-gpt: ## Send a kronk chat gpt API request
 	curl -i -X POST http://localhost:11435/v1/chat/completions \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
@@ -93,7 +95,7 @@ curl-kronk-chat-gpt:
 		] \
     }'
 
-curl-kronk-chat-tool:
+curl-kronk-chat-tool: ## Send a kronk chat tool API request
 	curl -i -X POST http://localhost:11435/v1/chat/completions \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
@@ -128,7 +130,7 @@ curl-kronk-chat-tool:
 		] \
     }'
 
-curl-kronk-embeddings:
+curl-kronk-embeddings: ## Send a kronk embeddings API request
 	curl -i -X POST http://localhost:11435/v1/embeddings \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
@@ -137,7 +139,7 @@ curl-kronk-embeddings:
   		"input": "Why is the sky blue?" \
     }'
 
-curl-kronk-rerank:
+curl-kronk-rerank: ## Send a kronk rerank API request
 	curl -i -X POST http://localhost:11435/v1/rerank \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
@@ -155,7 +157,7 @@ curl-kronk-rerank:
 		"return_documents": true \
     }'
 
-curl-kronk-systemone:
+curl-kronk-systemone: ## Send a kronk systemone API request
 	curl -i -X POST http://localhost:11435/v1/systemone \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
 	 -H "Content-Type: application/json" \
@@ -187,7 +189,7 @@ curl-kronk-systemone:
 		} \
 	}'
 
-curl-kronk-decide:
+curl-kronk-decide: ## Send a kronk decide API request
 	curl -i -X POST http://localhost:11435/v1/decide \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
 	 -H "Content-Type: application/json" \
@@ -206,14 +208,14 @@ curl-kronk-decide:
 		} \
 	}'
 
-curl-kronk-transcribe:
+curl-kronk-transcribe: ## Send a kronk transcribe API request
 	curl -i -X POST http://localhost:11435/v1/audio/transcriptions \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
 	 -F file=@examples/samples/jfk.wav \
 	 -F model=ggml-tiny.bin \
 	 -F response_format=verbose_json
 
-curl-kronk-responses:
+curl-kronk-responses: ## Send a kronk responses API request
 	curl -i -X POST http://localhost:11435/v1/responses \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
@@ -223,7 +225,7 @@ curl-kronk-responses:
 		"input": "Hello model" \
     }'
 
-curl-kronk-responses-image:
+curl-kronk-responses-image: ## Send a kronk responses image API request
 	curl -i -X POST http://localhost:11435/v1/responses \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
@@ -242,7 +244,7 @@ curl-kronk-responses-image:
 		] \
     }'
 
-curl-kronk-tool-response:
+curl-kronk-tool-response: ## Send a kronk tool response API request
 	curl -i -X POST http://localhost:11435/v1/chat/completions \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
@@ -298,7 +300,7 @@ curl-kronk-tool-response:
 		] \
 	}'
 
-curl-tokenize:
+curl-tokenize: ## Send a tokenize API request
 	curl -i -X POST http://localhost:11435/v1/tokenize \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
@@ -307,7 +309,7 @@ curl-tokenize:
 		"input": "The quick brown fox jumps over the lazy dog" \
     }'
 
-curl-tokenize-template:
+curl-tokenize-template: ## Send a tokenize template API request
 	curl -i -X POST http://localhost:11435/v1/tokenize \
 	 -H "Authorization: Bearer ${KRONK_TOKEN}" \
      -H "Content-Type: application/json" \
@@ -321,13 +323,13 @@ curl-tokenize-template:
 # MCP Service
 
 # Start the standalone MCP server.
-mcp-server:
+mcp-server: ## Mcp: server
 	go run cmd/server/api/services/mcp/main.go
 
 # Initialize the MCP session. The response includes the Mcp-Session-Id header
 # needed for subsequent requests.
 # Usage: make curl-mcp-init
-curl-mcp-init:
+curl-mcp-init: ## Send a mcp init API request
 	curl -i -X POST "http://localhost:9000/mcp" \
 	-H "Content-Type: application/json" \
 	-H "Accept: application/json, text/event-stream" \
@@ -344,7 +346,7 @@ curl-mcp-init:
 
 # Send the initialized notification.
 # make curl-mcp-initialized SESSIONID=<Mcp-Session-Id-from-init>
-curl-mcp-initialized:
+curl-mcp-initialized: ## Send a mcp initialized API request
 	curl -X POST "http://localhost:9000/mcp" \
 	-H "Content-Type: application/json" \
 	-H "Accept: application/json, text/event-stream" \
@@ -356,7 +358,7 @@ curl-mcp-initialized:
 
 # List available tools.
 # make curl-mcp-tools-list SESSIONID=<Mcp-Session-Id-from-init>
-curl-mcp-tools-list:
+curl-mcp-tools-list: ## Send a mcp tools list API request
 	curl -i -X POST "http://localhost:9000/mcp" \
 	-H "Content-Type: application/json" \
 	-H "Accept: application/json, text/event-stream" \
@@ -370,7 +372,7 @@ curl-mcp-tools-list:
 
 # Call the web_search tool.
 # make curl-mcp-web-search SESSIONID=<Mcp-Session-Id-from-init>
-curl-mcp-web-search:
+curl-mcp-web-search: ## Send a mcp web search API request
 	curl -i -X POST "http://localhost:9000/mcp" \
 	-H "Content-Type: application/json" \
 	-H "Accept: application/json, text/event-stream" \

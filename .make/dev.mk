@@ -1,9 +1,11 @@
+##@ Development and tests
+
 # ==============================================================================
 # Llama.cpp programs
 
 # Use this to see what devices are available on your machine. You need to
 # install llama first.
-llama-bench:
+llama-bench: ## List available llama.cpp devices
 	$$HOME/.kronk/libraries/llama-bench --list-devices
 
 # ==============================================================================
@@ -17,14 +19,14 @@ INFERENCE_BENCH_COUNT ?= 10
 INFERENCE_BENCH_TIMEOUT ?= 4h
 
 .PHONY: benchmark-inference
-benchmark-inference:
+benchmark-inference: ## Run native SDK inference regression benchmarks
 	bash sdk/kronk/tests/benchmarks/run.sh '$(INFERENCE_BENCH)' \
 		'$(INFERENCE_BENCH_TIME)' '$(INFERENCE_BENCH_COUNT)' '$(INFERENCE_BENCH_TIMEOUT)'
 
 # ==============================================================================
 # Protobuf support
 
-authapp-proto-gen:
+authapp-proto-gen: ## Generate authentication protobuf bindings
 	protoc --go_out=cmd/server/app/domain/authapp --go_opt=paths=source_relative \
 		--go-grpc_out=cmd/server/app/domain/authapp --go-grpc_opt=paths=source_relative \
 		--proto_path=cmd/server/app/domain/authapp \
@@ -33,17 +35,17 @@ authapp-proto-gen:
 # ==============================================================================
 # Tests
 
-lint:
+lint: ## Run Go vet and staticcheck
 	go vet ./...
 	staticcheck -checks=all ./...
 
-vuln-check:
+vuln-check: ## Check Go dependencies for vulnerabilities
 	govulncheck ./...
 
-diff:
+diff: ## Preview Go fix changes
 	go fix -diff ./...
 
-test-only: install-libraries install-test-models
+test-only: install-libraries install-test-models ## Install fixtures and run the main test suite
 	@echo ========== RUN TESTS ==========
 	# Unset path and CI-mode overrides so a developer's shell environment
 	# (e.g. KRONK_BASE_PATH=/data/kronk or KRONK_TEST_HOSTED=1) cannot leak into the suite —
@@ -56,9 +58,9 @@ test-only: install-libraries install-test-models
 	go test -v -p=1 -count=1 ./sdk/... && \
 	go -C examples test -v -p=1 -count=1 ./...
 
-test: test-only lint vuln-check diff
+test: test-only lint vuln-check diff ## Run tests, lint, vulnerability checks, and Go fix preview
 
-test-gh-only: install-libraries install-test-gh-models
+test-gh-only: install-libraries install-test-gh-models ## Install GitHub fixtures and run CI tests
 	@echo ========== RUN GH ONLY TESTS ==========
 	unset KRONK_BASE_PATH KRONK_LIB_PATH KRONK_BUCKY_LIB_PATH KRONK_PROCESSOR KRONK_ARCH KRONK_OS && \
 	export GITHUB_WORKSPACE=$(shell pwd) && \
@@ -76,12 +78,12 @@ test-gh-only: install-libraries install-test-gh-models
 	go test -v -count=1 -timeout 20m ./sdk/kronk/tests/hybrid && \
 	go test -v -count=1 -timeout 6m -run '^TestSuite$$' ./sdk/kronk/tests/hybrid_vision_imc
 
-test-gh: test-gh-only lint vuln-check diff
+test-gh: test-gh-only lint vuln-check diff ## Run CI tests and static checks
 
 # Run the native Malina SDK and model-server integration tests explicitly.
 # These tests require stable-diffusion.cpp and the sd-1.5 model, and are not
 # part of the ordinary local or GitHub test suites.
-test-malina: install-test-malina
+test-malina: install-test-malina ## Install fixtures and run Malina tests
 	@echo ========== RUN MALINA INTEGRATION TESTS ==========
 	unset KRONK_TEST_HOSTED KRONK_BASE_PATH KRONK_LIB_PATH KRONK_BUCKY_LIB_PATH KRONK_MALINA_LIB_PATH MALINA_LIB KRONK_PROCESSOR KRONK_ARCH KRONK_OS && \
 	export GITHUB_WORKSPACE=$(shell pwd) && \
@@ -93,7 +95,7 @@ test-malina: install-test-malina
 # part of the ordinary local or GitHub test suites. OPENVINO_DEVICE selects the
 # OpenVINO target: CPU, GPU, GPU.<index>, or NPU.
 OPENVINO_DEVICE ?= CPU
-test-openvino:
+test-openvino: ## Run OpenVINO tests
 	@platform="$$(go env GOOS)/$$(go env GOARCH)"; \
 	case "$$platform" in \
 		linux/amd64|windows/amd64) ;; \
@@ -113,11 +115,11 @@ test-openvino:
 # ==============================================================================
 # Go Modules support
 
-tidy:
+tidy: ## Tidy Go module dependencies
 	go mod tidy
 	cd examples && go mod tidy
 
-deps-upgrade: bui-upgrade
+deps-upgrade: bui-upgrade ## Upgrade Go and frontend dependencies
 	go get -u -v ./...
 	go get github.com/hybridgroup/yzma@main
 	go mod tidy
@@ -125,8 +127,8 @@ deps-upgrade: bui-upgrade
 	cd examples && go get github.com/hybridgroup/yzma@main
 	cd examples && go mod tidy
 
-build-deps-upgrade: deps-upgrade
+build-deps-upgrade: deps-upgrade ## Upgrade dependencies and build Kronk
 	./zarf/docker/kronk/upgrade-pins.sh
 
-yzma-latest:
+yzma-latest: ## Upgrade Yzma to the latest revision
 	GOPROXY=direct go get github.com/hybridgroup/yzma@main

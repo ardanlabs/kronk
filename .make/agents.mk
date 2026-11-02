@@ -1,3 +1,5 @@
+##@ Agent configuration
+
 # ==============================================================================
 # Agents — Default bundle
 #
@@ -9,7 +11,7 @@
 # any rote skill left behind from a previous `agents-rote-<host>` run
 # before the default skill tree is laid down.
 
-agents-default-opencode:
+agents-default-opencode: ## Install the default OpenCode agent configuration and skills
 	mkdir -p $$HOME/.config/opencode
 	cp .agents/default/opencode/opencode.jsonc $$HOME/.config/opencode/opencode.jsonc
 	cp .agents/default/opencode/tui.jsonc $$HOME/.config/opencode/tui.jsonc

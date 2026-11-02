@@ -1,3 +1,5 @@
+##@ Probes and benchmarks
+
 # Consolidated batch-engine, MTP, IMC, long-context, and media reliability
 # probes. Each invocation replaces RELIABILITY_OUT with summary.json,
 # events.ndjson, and tool.log. The runner reads only bytes appended to the
@@ -30,25 +32,25 @@
 #   from trace-correlated server evidence, and report failures or evidence gaps.
 
 # API-only tools server: compile current Go code without regenerating docs/BUI.
-server-for-tools:
+server-for-tools: ## Start a detached API server for probes
 	KRONK_POOL_MODEL_CONFIG_FILE="$(CURDIR)/.tools/model_config_tools.yaml" \
 		go run -buildvcs=true ./cmd/kronk server start --detach --web-admin-enabled=false
 
 QUICK_CHECK_ARGS ?=
 
-quick-check-this-code:
+quick-check-this-code: ## Run quick checks on the current code
 	@go run ./.tools/quick-check $(QUICK_CHECK_ARGS)
 
 QUICK_COMPARE_BASELINE ?=
 QUICK_COMPARE_CANDIDATE ?=
 QUICK_CHECK_COMPARE_ARGS ?=
 
-quick-compare-against-commit:
+quick-compare-against-commit: ## Compare quick checks against a commit
 	@go run ./.tools/quick-check compare -against commit \
 		-baseline "$(QUICK_COMPARE_BASELINE)" -candidate "$(QUICK_COMPARE_CANDIDATE)" \
 		$(QUICK_CHECK_COMPARE_ARGS)
 
-quick-compare-against-release:
+quick-compare-against-release: ## Compare quick checks against a release
 	@go run ./.tools/quick-check compare -against release \
 		-baseline "$(QUICK_COMPARE_BASELINE)" -candidate "$(QUICK_COMPARE_CANDIDATE)" \
 		$(QUICK_CHECK_COMPARE_ARGS)
@@ -129,57 +131,57 @@ endef
 # -------------------------------
 
 # Both embedded-head and separate companion/own-KV MTP profiles.
-test-load-mtp:
+test-load-mtp: ## Run mtp reliability probes
 	$(call run_reliability,mtp,-mtp-profile all)
 
 # Embedded-head MTP probe. Calibrates one distinct prompt per slot, releases all
 # requests together, and verifies scheduler activation and per-request drafting.
-test-load-mtp-embedded:
+test-load-mtp-embedded: ## Run mtp embedded reliability probes
 	$(call run_reliability,mtp,-mtp-profile embedded)
 
 # Separate companion/own-KV MTP probe. Verifies the catalog-provided companion
 # activates and produces draft coverage across every configured slot.
-test-load-mtp-companion:
+test-load-mtp-companion: ## Run mtp companion reliability probes
 	$(call run_reliability,mtp,-mtp-profile companion)
 
 # -------------------------------
 
 # Single-slot hybrid state-integrity probe. Exercises deterministic cold/repeat
 # generation, exact and append IMC reuse, cancellation, and recovery.
-test-load-hybrid:
+test-load-hybrid: ## Run hybrid reliability probes
 	$(call run_reliability,hybrid-state,)
 
 # Staged begin/middle/end marker retrieval and warm-IMC probe. Targets beyond
 # the model's configured context window are reported as skipped.
-test-load-long-context:
+test-load-long-context: ## Run long context reliability probes
 	$(call run_reliability,long-context,)
 
 # Long-running multi-slot batch-isolation probe. Exercises every slot plus queue
 # pressure, overlapping generation, marker isolation, IMC reuse, and 30K-token histories.
-test-load-batch:
+test-load-batch: ## Run batch reliability probes
 	$(call run_reliability,batch,)
 
 # -------------------------------
 
 # Media group and independently selectable subprofiles.
-test-load-media:
+test-load-media: ## Run media reliability probes
 	$(call run_reliability,media,-media-profile all)
 
 # Multimodal correctness probe. Verifies subject recognition, deterministic
 # replay, media IMC reuse, and isolation from a following text-only request.
-test-load-media-correctness:
+test-load-media-correctness: ## Run media correctness reliability probes
 	$(call run_reliability,media,-media-profile correctness)
 
 # Media-prefill concurrency probe. Requires at least two slots and verifies
 # scheduler-observed media-prefill/generation overlap with bounded text gaps.
-test-load-media-prefill:
+test-load-media-prefill: ## Run media prefill reliability probes
 	$(call run_reliability,media,-media-profile prefill)
 
 # -------------------------------
 
 # Runs only load/reliability scenarios, sequentially in one artifact set.
 # The separately configured lifecycle probe is intentionally excluded.
-test-load-all:
+test-load-all: ## Run all reliability probes
 	$(call run_reliability,all,)
 
 # ==============================================================================
@@ -194,7 +196,7 @@ test-load-all:
 LIFECYCLE_LOAD_OUT ?= .tools/lifecycle-load/output
 LIFECYCLE_SERVER_LOG ?= $(HOME)/.kronk/kronk.log
 
-example-lifecycle-load:
+example-lifecycle-load: ## Probe server admission, cancellation, and slot release
 	KRONK_LIFECYCLE_OUT="$(LIFECYCLE_LOAD_OUT)" \
 	KRONK_SERVER_LOG="$(LIFECYCLE_SERVER_LOG)" \
 	go run ./.tools/lifecycle-load
@@ -210,7 +212,7 @@ HTTP_CAPTURE_UPSTREAM_PORT ?= 11435
 HTTP_CAPTURE_OUT ?= .tools/http-capture/output
 
 # Replaces HTTP_CAPTURE_OUT at startup so it contains only the current capture.
-http-capture:
+http-capture: ## Capture HTTP traffic through a local proxy
 	python3 .tools/http-capture/capture-proxy.py \
 		--listen-host "$(HTTP_CAPTURE_LISTEN_HOST)" \
 		--listen-port "$(HTTP_CAPTURE_LISTEN_PORT)" \
@@ -222,13 +224,13 @@ HTTP_REPLAY_CAPTURE ?= .tools/http-capture/output
 HTTP_REPLAY_OUT ?= .tools/http-replay/output
 HTTP_REPLAY_UPSTREAM ?= http://127.0.0.1:11435
 
-http-replay:
+http-replay: ## Replay captured HTTP requests
 	bash .tools/http-replay/replay.sh \
 		"$(HTTP_REPLAY_CAPTURE)" \
 		"$(HTTP_REPLAY_OUT)" \
 		"$(HTTP_REPLAY_UPSTREAM)"
 
-http-inspect-sse:
+http-inspect-sse: ## Inspect captured SSE response files
 	@test -n "$(SSE_FILES)" || { echo 'usage: make http-inspect-sse SSE_FILES="response-*.sse"' >&2; exit 2; }
 	python3 .tools/http-replay/inspect-sse.py $(SSE_FILES)
 
@@ -244,7 +246,7 @@ http-inspect-sse:
 # The script exits 1 when it flags anything. Print the triage prompt regardless, then
 # re-raise the script's status so the target still fails on findings.
 # Requires nseq-max: 4
-test-adversarial:
+test-adversarial: ## Run adversarial probes and print the triage prompt
 	@echo ========== RUN ADVERSARIAL PROBES ==========
 	@.tools/adversarial/adversarial.sh $(ARGS); \
 	status=$$?; \
@@ -265,7 +267,7 @@ CODEGEN_ATTEMPTS ?= 1
 CODEGEN_STEPS ?= 40
 CODEGEN_TIMEOUT ?= 30m
 
-benchmark-codegen:
+benchmark-codegen: ## Run the OpenCode coding benchmark
 	go run ./.tools/codegen-benchmark \
 		-host "$(CODEGEN_HOST)" \
 		-model "$(CODEGEN_MODEL)" \
@@ -273,8 +275,8 @@ benchmark-codegen:
 		-steps "$(CODEGEN_STEPS)" \
 		-timeout "$(CODEGEN_TIMEOUT)"
 
-benchmark-codegen-list:
+benchmark-codegen-list: ## List coding benchmark models
 	go run ./.tools/codegen-benchmark -list
 
-benchmark-codegen-report:
+benchmark-codegen-report: ## Show the coding benchmark report
 	go run ./.tools/codegen-benchmark -report
