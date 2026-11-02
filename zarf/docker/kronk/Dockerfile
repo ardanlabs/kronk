@@ -55,7 +55,7 @@
 # ├─────────────┼────────────┼──────────────┼─────────┼──────┼──────────────────────────────────────────────┤
 # │ Linux       │ none       │ :cpu/:latest │ cpu     │  ✅  │ always works                                 │
 # ├─────────────┼────────────┼──────────────┼─────────┼──────┼──────────────────────────────────────────────┤
-# │ Linux arm64 │ Jetson     │ :jetson      │ cuda    │  ✅  │ JetPack 6+; --runtime nvidia (no --gpus)     │
+# │ Linux arm64 │ Jetson     │ :jetson      │ cuda    │  ✅  │ not published; JetPack 6+; --runtime nvidia  │
 # ├─────────────┼────────────┼──────────────┼─────────┼──────┼──────────────────────────────────────────────┤
 # │ Linux arm64 │ SoC iGPU   │ :vulkan      │ vulkan  │  ✅  │ Panfrost / Freedreno / Lima via /dev/dri     │
 # ├─────────────┼────────────┼──────────────┼─────────┼──────┼──────────────────────────────────────────────┤
@@ -88,7 +88,7 @@
 #   :cuda    → LLAMA=cuda                 BUCKY=cuda cuda13
 #   :vulkan  → LLAMA=vulkan               BUCKY=vulkan
 #   :rocm    → LLAMA=rocm                 BUCKY=vulkan   (no whisper-rocm bundle exists; entrypoint redirects to vulkan)
-#   :jetson  → LLAMA=cuda                 BUCKY=cuda
+#   :jetson  → LLAMA=cuda                 BUCKY=cuda     (local build only; not published)
 #   :all     → LLAMA=cpu cuda vulkan rocm BUCKY=cpu cuda cuda13 vulkan
 #
 # Malina bundles are amd64-only: cpu uses cpu, cuda/vulkan use
@@ -156,14 +156,15 @@
 # Jetson (NVIDIA Jetson Orin / Xavier — linux/arm64 with JetPack 6 / L4T
 # r36.x). Selects an NVIDIA L4T CUDA runtime as the base image so the
 # ABI matches the host driver injected by `nvidia-container-runtime`.
-# Always builds the arm64 cuda bundle and uses `--target=runtime-jetson`:
+# Always builds the arm64 cuda bundle and uses `--target=runtime-jetson`.
+# This image is not published; build it locally:
 #
 #   docker buildx build \
 #       --platform linux/arm64 \
 #       --build-arg LLAMA_PROCESSORS="cuda" \
 #       --build-arg BUCKY_PROCESSORS="cuda" \
 #       --target runtime-jetson \
-#       -t ghcr.io/ardanlabs/kronk:jetson \
+#       -t kronk-jetson:local \
 #       -f zarf/docker/kronk/Dockerfile .
 #
 # -----------------------------------------------------------------------------
@@ -252,13 +253,13 @@
 #       -e NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics \
 #       -p 11435:11435 \
 #       -v kronk-data:/kronk \
-#       ghcr.io/ardanlabs/kronk:jetson
+#       kronk-jetson:local
 #
 # Verify CUDA detection inside the Jetson container:
 #
 #   docker run --rm --runtime nvidia \
 #       --entrypoint nvidia-smi \
-#       ghcr.io/ardanlabs/kronk:jetson
+#       kronk-jetson:local
 #
 # (On Jetson `nvidia-smi` is replaced by `tegrastats`; the toolkit also
 # injects a `nvidia-smi` shim, but if it is missing fall back to
