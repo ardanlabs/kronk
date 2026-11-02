@@ -647,7 +647,7 @@ need() {  # need TOOL NEEDED_FOR INSTALL [go]: record TOOL if missing (or stale,
   # Helm chart checks (helm-test) run zarf/helm/kronk/test.sh: helm plus python3 with PyYAML.
   if awk -F '\t' '$1 != "D" && $7 ~ /^zarf\/helm\// { f = 1; exit } END { exit !f }' "$ctx/files.tsv"; then
     need helm "Helm chart checks (zarf/helm/kronk/test.sh)" "https://helm.sh/docs/intro/install/"
-    if ! python3 -c 'import yaml' >/dev/null 2>&1; then
+    if ! python3 -I -c 'import yaml' >/dev/null 2>&1; then
       printf 'pyyaml\tHelm chart checks (zarf/helm/kronk/test.sh)\tpython3 -m pip install pyyaml\n'
     fi
   fi

@@ -638,7 +638,7 @@ try {
         # Helm chart checks (helm-test) run zarf/helm/kronk/test.sh: helm plus python3 with PyYAML.
         if ($rev | Where-Object { $_.St -ne 'D' -and $_.Path -cmatch '^zarf/helm/' } | Select-Object -First 1) {
             Need 'helm' 'Helm chart checks (zarf/helm/kronk/test.sh)' 'https://helm.sh/docs/intro/install/'
-            $py = $false; if ($toolPaths.ContainsKey('python3')) { & python3 -c 'import yaml' *> $null; $py = $LASTEXITCODE -eq 0 }
+            $py = $false; if ($toolPaths.ContainsKey('python3')) { & python3 -I -c 'import yaml' *> $null; $py = $LASTEXITCODE -eq 0 }
             if (-not $py) { "pyyaml`tHelm chart checks (zarf/helm/kronk/test.sh)`tpython3 -m pip install pyyaml" }
         }
     ) | Where-Object { $_ }

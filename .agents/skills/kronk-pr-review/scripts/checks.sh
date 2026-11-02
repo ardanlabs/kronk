@@ -262,9 +262,9 @@ fi
 # Helm: the chart's own checks (.manual/chapter-20 §20.10.3); renders only, no cluster.
 if live '*' | grep -q '^zarf/helm/kronk/'; then
   if [ ! -x zarf/helm/kronk/test.sh ]; then skip helm-test "zarf/helm/kronk/test.sh missing"
-  elif ! has helm; then skip helm-test "helm not installed"
-  elif ! python3 -c 'import yaml' >/dev/null 2>&1; then skip helm-test "python3 with PyYAML not installed"
   elif [ $runcode = 0 ]; then skip helm-test "$untrusted_why"
+  elif ! has helm; then skip helm-test "helm not installed"
+  elif ! python3 -I -c 'import yaml' >/dev/null 2>&1; then skip helm-test "python3 with PyYAML not installed"
   else job helm-test zarf/helm/kronk/test.sh
   fi
 fi

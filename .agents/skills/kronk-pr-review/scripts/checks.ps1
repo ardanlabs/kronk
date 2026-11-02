@@ -251,10 +251,10 @@ if (@(Live 'ts') | Where-Object { $_.StartsWith("$bui/", [StringComparison]::Ord
 # Helm: the chart's own checks (.manual/chapter-20 §20.10.3); renders only, no cluster.
 if (@(Live '*') | Where-Object { $_.StartsWith('zarf/helm/kronk/', [StringComparison]::Ordinal) }) {
     if (-not (Test-Path -LiteralPath 'zarf/helm/kronk/test.sh' -PathType Leaf)) { Skip 'helm-test' 'zarf/helm/kronk/test.sh missing' }
-    elseif (-not (Has 'helm')) { Skip 'helm-test' 'helm not installed' }
-    elseif (-not (Has 'python3') -or $(& python3 -c 'import yaml' *> $null; $LASTEXITCODE -ne 0)) { Skip 'helm-test' 'python3 with PyYAML not installed' }
-    elseif (-not (Get-Command bash -CommandType Application -ErrorAction SilentlyContinue)) { Skip 'helm-test' 'bash not installed' }
     elseif (-not $runCode) { Skip 'helm-test' $untrustedWhy }
+    elseif (-not (Has 'helm')) { Skip 'helm-test' 'helm not installed' }
+    elseif (-not (Has 'python3') -or $(& python3 -I -c 'import yaml' *> $null; $LASTEXITCODE -ne 0)) { Skip 'helm-test' 'python3 with PyYAML not installed' }
+    elseif (-not (Get-Command bash -CommandType Application -ErrorAction SilentlyContinue)) { Skip 'helm-test' 'bash not installed' }
     else { Job 'helm-test' $root 'bash' @('zarf/helm/kronk/test.sh') }
 }
 
