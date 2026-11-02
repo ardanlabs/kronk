@@ -1,4 +1,4 @@
-package launchd
+package service_test
 
 import (
 	"bytes"
@@ -12,14 +12,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ardanlabs/kronk/cmd/kronk/service"
 	"github.com/spf13/cobra"
 )
 
-func TestUnsupportedPlatform(t *testing.T) {
+func TestLaunchdUnsupportedPlatform(t *testing.T) {
 	if runtime.GOOS == "darwin" {
 		t.Skip("non-macOS behavior")
 	}
-	cmd := newCmd()
+	cmd := service.NewLaunchdCommand()
 	cmd.SetArgs([]string{"install"})
 	cmd.SetOut(new(bytes.Buffer))
 	cmd.SetErr(new(bytes.Buffer))
@@ -28,7 +29,7 @@ func TestUnsupportedPlatform(t *testing.T) {
 	}
 }
 
-func TestAgentLifecycle(t *testing.T) {
+func TestLaunchdLifecycle(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("LaunchAgent installation is macOS-only")
 	}
@@ -61,7 +62,7 @@ esac
 		t.Helper()
 		root := &cobra.Command{Use: "kronk", SilenceErrors: true, SilenceUsage: true}
 		root.PersistentFlags().String("base-path", "", "")
-		root.AddCommand(newCmd())
+		root.AddCommand(service.NewLaunchdCommand())
 		var out bytes.Buffer
 		root.SetOut(&out)
 		root.SetErr(&out)

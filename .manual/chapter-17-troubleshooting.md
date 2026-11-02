@@ -180,6 +180,8 @@ reproduction steps.
 #### A downloaded model is not listed
 
 Kronk stores data beneath `KRONK_BASE_PATH`, which defaults to `~/.kronk`.
+The Windows service defaults to `%ProgramData%\Kronk` instead; use its installed
+base path explicitly for local management commands, or query the running API.
 Inspect the model index rather than relying on a hard-coded directory:
 
 ```shell
@@ -461,6 +463,56 @@ port conflicts, and the plist's `EnvironmentVariables`; shell startup
 files and `kronk.env` are not read. Validate manual edits with `plutil -lint`
 and run `kronk launchd restart` to reload them. See
 [Chapter 8 §8.9](https://www.kronkai.com/manual#89-running-as-a-launchd-agent).
+
+#### Windows service failures
+
+Use `kronk service status` and `kronk service logs`, not detached-server
+commands. `status` is SCM state, not HTTP readiness: probe
+`http://localhost:11435/v1/liveness` (or your configured address), then test
+inference separately. Real Windows validation has not yet been performed;
+see the [Windows 11 acceptance procedure in §8.12](https://www.kronkai.com/manual#812-running-as-a-windows-service).
+
+- **Access denied during service management:** use an elevated terminal.
+  Installation sets protected data ACLs; verify the selected service account
+  can read configuration, keys, libraries, and the executable and can write
+  data/logs. Do not fix this by granting everyone access to credentials.
+- **Logon failure:** check the `--account` identity, its password, **Log on as
+  a service** right, and local/domain deny policies. Named accounts use a
+  secure terminal password prompt during installation, not a password in
+  arguments. Stop before replacing registration with `install --force`.
+- **Missing executable or immediate exit:** verify the recorded permanent
+  absolute path, port conflicts, and server configuration. After moving the
+  binary, stop and reinstall with `--force` from its new administrator-controlled
+  location, supplying the intended settings again. Reinstallation does not
+  start the service; a running registration cannot be force-replaced.
+- **No log or early startup failure:** inspect Windows Event Viewer for
+  lifecycle entries and `<installed-base-path>\service.log` for appended
+  stdout/stderr. `logs` discovers the installed base path, not your current
+  interactive data root. The default is `%ProgramData%\Kronk`, not `~/.kronk`.
+- **Works interactively but fails as a service:** check service-session GPU
+  driver/library access, profile-dependent settings, proxy/network access,
+  and account permissions. Shell profiles, mapped drives, per-user environment,
+  and your interactive network credentials are not automatically available.
+  Validate inference and downloads under the actual service account.
+- **Install rejects arguments:** put non-secret server flags after `--`.
+  Detached mode and secrets in arguments are rejected; keep secrets in the
+  existing `<base-path>\models\model_config.yaml` with protected Windows ACLs.
+- **Unsafe service data permissions:** installation checks ownership and access
+  rules throughout existing data trees; it does not migrate your interactive
+  profile or reset permissions. Use a new dedicated directory or ask an
+  administrator to secure the tree for Administrators, SYSTEM, and the service
+  account. Junctions and symbolic links are not supported. Parent directories
+  must exist and remain administrator-controlled.
+- **Remote clients cannot connect:** installation does not open the firewall.
+  Check the configured listener and deliberate firewall rules, and configure
+  authentication and network/TLS protection before enabling remote access.
+- **Log keeps growing:** rotation is operator-controlled. Stop the service,
+  wait for graceful HTTP and pool shutdown, archive/rename `service.log`, then
+  start again. Do not remove database lock files while shutdown is in progress.
+
+`kronk service uninstall` preserves models, libraries, keys, configuration,
+and logs. Stop first; do not delete the data directory to repair a service
+registration problem.
 
 Whisper-specific failures are listed in
 [Chapter 18 §18.9](https://www.kronkai.com/manual#189-troubleshooting).

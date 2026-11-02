@@ -21,7 +21,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func runLocal(cmd *cobra.Command) error {
+func runLocal(cmd *cobra.Command, onReady func()) error {
 	detach, _ := cmd.Flags().GetBool("detach")
 	envVars := buildEnvVars(cmd)
 
@@ -106,8 +106,12 @@ func runLocal(cmd *cobra.Command) error {
 
 	ready := func() {
 		status.Report(cmd.Context(), "idle", "Server ready to serve", -1)
+		if onReady != nil {
+			onReady()
+		}
 	}
-	if err := kronk.Run(false, ready); err != nil {
+
+	if err := kronk.Run(cmd.Context(), false, ready); err != nil {
 		return fmt.Errorf("run: %w", err)
 	}
 

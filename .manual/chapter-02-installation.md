@@ -540,6 +540,11 @@ data root. This does not move existing files; migrate them separately when
 reusing an installation. Use the same root for local management commands and
 the server. Official containers set it to `/kronk`.
 
+The Windows service instead defaults to `%ProgramData%\Kronk`, not your
+interactive user's `~/.kronk`. Select a custom service data root with the
+existing global `--base-path` or `KRONK_BASE_PATH` at installation. Use that
+same root explicitly when preparing models and libraries with `--local`.
+
 The `lora` directory holds optional, user-provided LoRA adapter GGUF files.
 Kronk does not download these files. See
 [Chapter 3 §3.7](https://www.kronkai.com/manual#lora-adapters) for placement
@@ -629,6 +634,29 @@ agent. Use `kronk launchd stop` and `kronk launchd logs` to manage it.
 This is a per-user agent, not a system-wide service or a before-login boot
 service. See [Chapter 8 §8.9](https://www.kronkai.com/manual#89-running-as-a-launchd-agent)
 for configuration, upgrades, logs, and removal.
+
+#### Run as a Windows Service
+
+Place `kronk.exe` at a permanent absolute path in an administrator-controlled
+directory, such as `C:\Program Files\Kronk`. In an elevated PowerShell with
+that directory on `PATH`, stop any manually started server, then run:
+
+```powershell
+kronk service install
+kronk service start
+kronk service status
+curl.exe http://localhost:11435/v1/liveness
+```
+
+Installation registers automatic startup without starting the server. The
+default account is `NT AUTHORITY\LocalService`, with data under
+`%ProgramData%\Kronk`; it does not reuse your interactive profile's data.
+Use `kronk service stop` and `kronk service logs`, not detached-server
+commands. `status` reports Windows Service Control Manager state, not HTTP
+readiness. This command family is Windows-only; the Linux and macOS workflows
+above are unchanged. See [Chapter 8 §8.12](https://www.kronkai.com/manual#812-running-as-a-windows-service)
+for account selection, protected configuration, logs, and a Windows 11
+acceptance procedure. Real Windows validation has not yet been performed.
 
 ### 2.7 Verify the Installation
 

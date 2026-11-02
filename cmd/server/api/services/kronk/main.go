@@ -46,14 +46,13 @@ import (
 //go:embed static
 var static embed.FS
 
-// Run starts the service. If ready is non-nil, it is called after the API
-// listener binds successfully and before requests are served.
-func Run(showHelp bool, ready func()) error {
+// Run starts the service until ctx is canceled or an interrupt/termination signal
+// arrives, then shuts down HTTP and the model pool. If ready is non-nil, it is
+// called after the API listener binds successfully and before requests are served.
+func Run(ctx context.Context, showHelp bool, ready func()) error {
 	log := logger.New(os.Stdout, logger.LevelInfo, "KRONK", web.GetTraceID)
 
 	// -------------------------------------------------------------------------
-
-	ctx := context.Background()
 
 	if err := run(ctx, log, showHelp, ready); err != nil {
 		return err
@@ -535,7 +534,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool, ready func()) e
 			Authenticate: authenticate,
 		})
 
-		defer mcpApp.Shutdown(ctx)
+		defer mcpApp.Shutdown(context.WithoutCancel(ctx))
 
 		log.Info(ctx, "startup", "status", "local mcp server started", "host", mcpLis.Addr().String())
 	}
@@ -573,8 +572,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool, ready func()) e
 
 	log.Info(ctx, "startup", "status", "initializing V1 API support")
 
-	shutdown := make(chan os.Signal, 1)
-	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	cfgMux := mux.Config{
 		Build:                cfg.Build,
@@ -642,8 +641,8 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool, ready func()) e
 	case err := <-serverErrors:
 		return fmt.Errorf("server error: %w", err)
 
-	case sig := <-shutdown:
-		log.Info(ctx, "shutdown", "status", "shutdown started", "signal", sig)
+	case <-ctx.Done():
+		log.Info(ctx, "shutdown", "status", "shutdown started", "reason", context.Cause(ctx))
 		cancelRequests()
 
 		ctx, cancel := context.WithTimeout(context.Background(), cfg.Web.ShutdownTimeout)
@@ -663,7 +662,7 @@ func run(ctx context.Context, log *logger.Logger, showHelp bool, ready func()) e
 			return fmt.Errorf("could not stop server gracefully: %w", err)
 		}
 
-		log.Info(ctx, "shutdown", "status", "shutdown complete", "signal", sig)
+		log.Info(ctx, "shutdown", "status", "shutdown complete")
 	}
 
 	return nil

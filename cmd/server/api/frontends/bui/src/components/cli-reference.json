@@ -1926,7 +1926,7 @@
     "path": "kronk server",
     "usage": "kronk server [flags]",
     "short": "Start, stop, and manage the Kronk model server",
-    "description": "Start, stop, and manage the Kronk model server.\n\nThe Model Server provides an OpenAI-compatible REST API for local LLM inference.\nIt supports text generation, vision, audio, embeddings, and reranking with hardware\nacceleration via Metal (macOS), CUDA (NVIDIA), ROCm (AMD), Vulkan, or CPU.\n\nThese commands run the server directly. stop and logs manage only servers started\nwith --detach. For an OS-managed service, use \"kronk systemd\" on Linux or\n\"kronk launchd\" on macOS instead.\n\nThe server includes:\n  • OpenAI-compatible REST API endpoints\n  • Browser UI (BUI) for interactive testing and management\n  • Model caching with configurable TTL\n  • Distributed tracing via Tempo/OpenTelemetry\n  • Prometheus metrics for observability\n  • JWT authentication and rate limiting\n  • Built-in MCP service for AI agent tool integration",
+    "description": "Start, stop, and manage the Kronk model server.\n\nThe Model Server provides an OpenAI-compatible REST API for local LLM inference.\nIt supports text generation, vision, audio, embeddings, and reranking with hardware\nacceleration via Metal (macOS), CUDA (NVIDIA), ROCm (AMD), Vulkan, or CPU.\n\nThese commands run the server directly. stop and logs manage only servers started\nwith --detach. For an OS-managed service, use \"kronk systemd\" on Linux or\n\"kronk launchd\" on macOS, or \"kronk service\" on Windows instead.\n\nThe server includes:\n  • OpenAI-compatible REST API endpoints\n  • Browser UI (BUI) for interactive testing and management\n  • Model caching with configurable TTL\n  • Distributed tracing via Tempo/OpenTelemetry\n  • Prometheus metrics for observability\n  • JWT authentication and rate limiting\n  • Built-in MCP service for AI agent tool integration",
     "example": "",
     "flags": [
       {
@@ -1952,7 +1952,7 @@
     "path": "kronk server logs",
     "usage": "kronk server logs [flags]",
     "short": "Stream server logs",
-    "description": "Stream logs from a server started with --detach. For an OS-managed service, use \"kronk systemd logs\" on Linux or \"kronk launchd logs\" on macOS.",
+    "description": "Stream logs from a server started with --detach. For an OS-managed service, use \"kronk systemd logs\" on Linux, \"kronk launchd logs\" on macOS, or \"kronk service logs\" on Windows.",
     "example": "",
     "flags": [
       {
@@ -2356,7 +2356,7 @@
     "path": "kronk server stop",
     "usage": "kronk server stop [flags]",
     "short": "Stop the Kronk model server",
-    "description": "Stop a server started with --detach by sending SIGTERM. For an OS-managed service, use \"kronk systemd stop\" on Linux or \"kronk launchd stop\" on macOS.",
+    "description": "Stop a server started with --detach by sending SIGTERM. For an OS-managed service, use \"kronk systemd stop\" on Linux, \"kronk launchd stop\" on macOS, or \"kronk service stop\" on Windows.",
     "example": "",
     "flags": [
       {
@@ -2365,6 +2365,238 @@
         "type": "bool",
         "default": "false",
         "usage": "help for stop",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "service",
+    "path": "kronk service",
+    "usage": "kronk service [flags]",
+    "short": "Install and manage the native Windows service",
+    "description": "Install and manage Kronk as a native Windows service. Administrative\noperations require an elevated terminal. Linux users should use \"kronk systemd\";\nmacOS users should use \"kronk launchd\" instead.\n\nInstall from a permanent administrator-controlled binary location, not go run.\nThe service runs independently of your login, using LocalService by default.\nUnlike --detach, Windows owns this process. Use service stop and service logs.",
+    "example": "kronk service install\n  kronk service start\n  kronk service status\n  kronk service logs\n  kronk service stop\n  kronk service uninstall",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for service",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "install",
+    "path": "kronk service install",
+    "usage": "kronk service install [flags] [-- server flags]",
+    "short": "Register automatic startup without starting the service",
+    "description": "Register the Windows service without starting it. The default data directory\nis %ProgramData%\\Kronk, overridden by --base-path or KRONK_BASE_PATH.\nPass additional server flags after --. Use absolute configuration/library paths.\nStore secrets in protected configuration, not service command-line arguments.\n\n--force updates a stopped service and preserves its account unless --account is\nexplicitly supplied. A named account password is read securely from the terminal.\nThe account must already have the Windows \"Log on as a service\" right.",
+    "example": "",
+    "flags": [
+      {
+        "name": "account",
+        "shorthand": "",
+        "type": "string",
+        "default": "NT AUTHORITY\\LocalService",
+        "usage": "Service account (named accounts prompt for a password)",
+        "inherited": false
+      },
+      {
+        "name": "force",
+        "shorthand": "",
+        "type": "bool",
+        "default": "false",
+        "usage": "Update an existing stopped service registration",
+        "inherited": false
+      },
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for install",
+        "inherited": false
+      },
+      {
+        "name": "start-type",
+        "shorthand": "",
+        "type": "string",
+        "default": "auto",
+        "usage": "Startup type: auto or manual",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "logs",
+    "path": "kronk service logs",
+    "usage": "kronk service logs [flags]",
+    "short": "Follow the installed service's output log (Ctrl-C to stop)",
+    "description": "",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for logs",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "restart",
+    "path": "kronk service restart",
+    "usage": "kronk service restart [flags]",
+    "short": "Stop gracefully and start the service again",
+    "description": "",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for restart",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "start",
+    "path": "kronk service start",
+    "usage": "kronk service start [flags]",
+    "short": "Start the installed service",
+    "description": "",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for start",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "status",
+    "path": "kronk service status",
+    "usage": "kronk service status [flags]",
+    "short": "Show Windows service state and exit codes (not HTTP readiness)",
+    "description": "",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for status",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "stop",
+    "path": "kronk service stop",
+    "usage": "kronk service stop [flags]",
+    "short": "Stop the service and wait for model unload",
+    "description": "",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for stop",
+        "inherited": false
+      },
+      {
+        "name": "base-path",
+        "shorthand": "",
+        "type": "string",
+        "default": "",
+        "usage": "Base path for kronk data (models, libraries, catalog, model_config)",
+        "inherited": true
+      }
+    ]
+  },
+  {
+    "name": "uninstall",
+    "path": "kronk service uninstall",
+    "usage": "kronk service uninstall [flags]",
+    "short": "Stop and remove the service, preserving data, settings, and logs",
+    "description": "",
+    "example": "",
+    "flags": [
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "default": "false",
+        "usage": "help for uninstall",
         "inherited": false
       },
       {
