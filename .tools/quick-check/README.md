@@ -9,6 +9,11 @@ no separate Dense MTP file is needed.
 
 ## Run
 
+In GitHub Actions, **Quick-check** runs daily at 02:00 Miami time (including DST),
+or manually through **Run workflow**. It tests latest `main`, skipping if its SHA
+matches the latest saved run, including a failed or interrupted attempt. Review
+the release comparison in the job logs; download the run's artifact to investigate.
+
 Install the model and compatible native libraries first. From the repository root,
 start a dedicated test server and run:
 
@@ -74,49 +79,65 @@ All selected cells share these three files and one retention queue, directly und
 
 Those files can be useful to feed a harness and investigate reasons for slowdowns or regressions, alongside the bigger reliability tools.
 
-All of `output/` is Git-ignored. Up to three run directories are retained:
+All of `output/` is Git-ignored. Up to two run directories are retained:
 
 - `new-<commit>`: fresh run, including `FAIL` or `INTERRUPTED`.
-- `release-<version>`: manually promoted release baseline (or a recognized passing tagged run).
-- `old-<commit>`: newest remaining previous passing run, release or not.
+- `release-<version>`: explicitly promoted release baseline.
 
-A fresh release preserves the older release baseline until a later run advances
-the queue. Only passing runs automatically advance either baseline. Failed or interrupted
-reruns preserve passing baselines even at the same commit. The next run replaces
-the previous failed/interrupted `new` report: this queue is not a failure archive.
-Local archives under `output/saved_local_runs/` remain outside retention.
+Every finalized attempt replaces `new`; only Promote replaces `release`, even
+when the same commit is tested again. Local archives under `output/saved_local_runs/`
+remain outside retention. Older `old-*` directories are no longer managed.
+
+Actions saves each run's full evidence and comparison reports as a
+`quick-check-run-<run-id>-<attempt>` artifact with a requested retention of 10 days; repository limits may
+shorten availability. The `quick-check-results` branch stores only the compact
+release snapshot, promotion metadata, and `release-history.log`. Nightly runs
+read that branch but never write it. Without a baseline, testing still runs and
+the release comparison is skipped. Missing/expired artifacts cannot be promoted.
 
 ## Promote to Release
 
-Designate a saved run as a release baseline without rerunning
-inference or creating a Git tag:
+In GitHub Actions, select **Promote to Release → Run workflow** and enter the
+release label (`vX.Y.Z`) and full tested commit SHA from the good night-run.
+Do this before publishing the release. Promotion downloads the saved run,
+compares it against the outgoing release baseline, and saves its compact snapshot
+to `quick-check-results`. Updated history is pushed in a separate later commit
+that changes only `.tools/quick-check/release-history.log`, at the same path as
+the tracked copy on `main`. Manually cherry-pick that history commit into the code
+branch before publishing the release; Promotion does not update `main`.
+The first promotion records a starting baseline. No tests are rerun and no
+release/tag is created; the measured commit remains unchanged.
+
+If the baseline push succeeds but the history push fails, rerun the promotion
+with the same inputs to finish saving history. No force-push is used.
+
+**Not needed for Actions.** Optional local promotion only; does not change the remote queue:
 
 ```sh
 go run ./.tools/quick-check promote -release v1.33.1 -commit FULL_TESTED_SHA
 ```
-
 
 ## Compare
 
 Compare saved results to catch wall clock differences between them:
 
 ```sh
-make quick-compare-against-commit   # fresh versus old
 make quick-compare-against-release  # fresh versus release baseline
 
-# Either command also accepts an explicit pair (including archived runs):
-make quick-compare-against-commit \
+# An explicit pair may use full evidence or compact release snapshots:
+make quick-compare-against-release \
   QUICK_COMPARE_BASELINE=/path/to/baseline \
   QUICK_COMPARE_CANDIDATE=/path/to/candidate
 ```
 
-Release comparisons use promotion labels when present, otherwise remote tags.
-Same-machine release-to-release comparisons update `release-history.log`:
-release labels, machine, reference-update flag, and the
-comparison table only. Repeating a release pair on that machine replaces its entry;
-commit the file to preserve history. The flag compares the candidate's reference
-set with the previous saved comparison on that machine (`unknown` initially);
-its reference ID also changes when the compared cell set changes.
+Release labels come only from explicit promotion, not Git tag discovery.
+Same-machine release-to-release comparisons update `release-history.log`;
+Actions promotion preserves it on the results branch. Local history stays at
+`.tools/quick-check/release-history.log`.
+The initial v1.33.1 entry is included once in the code branch. Machine descriptions
+include the operating system recorded by the test server.
+`References updated` indicates whether the reference token values or compared
+cell set changed since the previous entry on that machine (`unknown` initially).
 
 ## Read the timings together:
 

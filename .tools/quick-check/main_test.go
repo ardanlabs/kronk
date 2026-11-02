@@ -433,18 +433,22 @@ func TestRunRetentionSafety(t *testing.T) {
 }
 
 func TestReleaseHistory(t *testing.T) {
-	git := releaseTestRepo(t)
 	paths := make([]string, 2)
 	for i, tag := range []string{"v1.0.0", "v1.1.0"} {
-		git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "--quiet", "-m", tag)
-		git("-c", "tag.gpgsign=false", "tag", tag)
 		r := comparisonFixture([]float64{2, 6})
-		r.ServerRevision = git("rev-parse", "HEAD")
+		r.ServerRevision = strings.Repeat([]string{"a", "b"}[i], 40)
 		paths[i] = writeComparisonFixture(t, r)
+		data, err := json.Marshal(releasePromotion{tag, r.ServerRevision})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(paths[i], "promotion.json"), data, 0600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	out := filepath.Join(t.TempDir(), "output")
 	history := filepath.Join(filepath.Dir(out), "release-history.log")
-	args := []string{"-against", "release", "-baseline", paths[0], "-candidate", paths[1], "-out", out}
+	args := []string{"-baseline", paths[0], "-candidate", paths[1], "-out", out}
 	for _, flag := range []string{"unknown", "no"} {
 		var output bytes.Buffer
 		if err := compareCommand(args, &output); err != nil {
@@ -457,6 +461,9 @@ func TestReleaseHistory(t *testing.T) {
 		if strings.Count(string(data), "Release comparison:") != 1 || !bytes.Contains(data, []byte("v1.0.0 → v1.1.0")) || !bytes.Contains(data, []byte("References updated: "+flag+";")) || !bytes.Contains(data, []byte("Normalized (s)")) || bytes.Contains(data, []byte("WARNING")) {
 			t.Fatalf("release history not updated in place: %s", data)
 		}
+		if !bytes.Contains(data, []byte("machine: test-machine; os: test-os;")) {
+			t.Fatalf("release history missing recorded OS: %s", data)
+		}
 	}
 	if err := os.WriteFile(history, []byte("broken"), 0644); err != nil {
 		t.Fatal(err)
@@ -467,5 +474,22 @@ func TestReleaseHistory(t *testing.T) {
 	}
 	if data, err := os.ReadFile(history); err != nil || string(data) != "broken" {
 		t.Fatal("overwrote corrupt history", err)
+	}
+	// A history write failure must not silently rotate the release baseline.
+	baseline := filepath.Join(out, "release-v1.0.0")
+	if err := os.Rename(paths[0], baseline); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(paths[1], filepath.Join(out, "new-bbbbbbb")); err != nil {
+		t.Fatal(err)
+	}
+	if err := promoteCommand([]string{"-out", out, "-release", "v1.1.0", "-commit", strings.Repeat("b", 40)}, &bytes.Buffer{}); err == nil {
+		t.Fatal("promotion ignored corrupt history")
+	}
+	if _, err := os.Stat(baseline); err != nil {
+		t.Fatal("failed promotion removed previous release", err)
+	}
+	if _, err := os.Stat(filepath.Join(out, "release-v1.1.0")); !os.IsNotExist(err) {
+		t.Fatal("failed promotion retained new release", err)
 	}
 }
