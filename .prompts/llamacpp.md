@@ -16,6 +16,8 @@ This prompt has two outcomes:
 
 Use authoritative llama.cpp and yzma source, history, release notes, tests, and documentation. Inspect Kronk's actual usage before deciding that a change applies.
 
+For each relevant upstream change, trace the affected contract through yzma and all Kronk consumers, including locally maintained representations of upstream behavior or data. Verify that every affected consumer remains aligned; updating one representation or passing existing tests is not evidence that the others are complete. Identify any verification gaps in the report.
+
 Audit the complete upstream commit range, commit by commit; do not sample commits or rely only on release summaries. Review every llama.cpp commit between the exact old and proposed revisions against Kronk's actual llama, MTMD, speculative decoding/MTP, batching, cache, sampler, tokenizer, grammar and tool-calling, model-loading, multimodal, and backend usage. If yzma changes, perform the same commit-by-commit audit for its exact old-to-proposed range. For each commit, inspect the source diff and classify it as:
 
 - an internal fix or optimization Kronk inherits automatically;
