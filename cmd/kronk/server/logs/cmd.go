@@ -7,7 +7,7 @@ import (
 var Cmd = &cobra.Command{
 	Use:   "logs",
 	Short: "Stream server logs",
-	Long:  `Stream logs from a server started with --detach. For an OS-managed service, use "kronk systemd logs" on Linux or "kronk launchd logs" on macOS.`,
+	Long:  `Stream logs from a server started with --detach. For an OS-managed service, use "kronk systemd logs" on Linux, "kronk launchd logs" on macOS, or "kronk service logs" on Windows.`,
 	Args:  cobra.NoArgs,
 	RunE:  main,
 }

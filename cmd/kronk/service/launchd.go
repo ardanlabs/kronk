@@ -1,5 +1,4 @@
-// Package launchd provides macOS launchd user-agent management for Kronk.
-package launchd
+package service
 
 import (
 	"bytes"
@@ -18,15 +17,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const label = "com.ardanlabs.kronk"
+const launchdLabel = "com.ardanlabs.kronk"
 
-//go:embed com.ardanlabs.kronk.plist.tmpl
-var plistTemplate string
+//go:embed templates/com.ardanlabs.kronk.plist.tmpl
+var launchdPlistTemplate string
 
-// Cmd manages Kronk through the macOS launchd user-login domain.
-var Cmd = newCmd()
-
-func newCmd() *cobra.Command {
+// NewLaunchdCommand constructs macOS launchd user-agent commands. Help is
+// available on every platform; operations require a macOS desktop login session.
+func NewLaunchdCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "launchd",
 		Short: "Install and manage the macOS launchd user agent",
@@ -69,7 +67,7 @@ Use --force to replace an existing plist after moving the binary. This resets
 manual plist edits, but preserves models, keys, server YAML configuration, and
 logs. Run "kronk launchd restart" afterwards if the agent is already loaded.`,
 		Args: cobra.NoArgs,
-		RunE: install,
+		RunE: installLaunchd,
 	}
 	installCmd.Flags().Bool("force", false, "Replace the existing plist, resetting manual plist edits")
 	cmd.AddCommand(installCmd)
@@ -79,19 +77,19 @@ logs. Run "kronk launchd restart" afterwards if the agent is already loaded.`,
 		short string
 		run   func(*cobra.Command, []string) error
 	}{
-		{"start", "Load and start the installed LaunchAgent", start},
-		{"stop", "Unload the LaunchAgent until started again or the next desktop login", stop},
-		{"restart", "Gracefully unload and reload the LaunchAgent from its plist", restart},
-		{"uninstall", "Stop, disable, and remove the agent, preserving server data and logs", uninstall},
+		{"start", "Load and start the installed LaunchAgent", startLaunchd},
+		{"stop", "Unload the LaunchAgent until started again or the next desktop login", stopLaunchd},
+		{"restart", "Gracefully unload and reload the LaunchAgent from its plist", restartLaunchd},
+		{"uninstall", "Stop, disable, and remove the agent, preserving server data and logs", uninstallLaunchd},
 		{"status", "Show launchd agent status (not HTTP readiness)", func(cmd *cobra.Command, args []string) error {
-			return runCommand(cmd, "launchctl", "print", serviceTarget())
+			return runLaunchdCommand(cmd, "launchctl", "print", launchdServiceTarget())
 		}},
 		{"logs", "Follow the agent's combined output log (Ctrl-C to stop following)", func(cmd *cobra.Command, args []string) error {
-			_, logPath, err := paths()
+			_, logPath, err := launchdPaths()
 			if err != nil {
 				return err
 			}
-			return runCommand(cmd, "tail", "-n", "50", "-F", logPath)
+			return runLaunchdCommand(cmd, "tail", "-n", "50", "-F", logPath)
 		}},
 	} {
 		cmd.AddCommand(&cobra.Command{Use: action.name, Short: action.short, Args: cobra.NoArgs, RunE: action.run})
@@ -102,8 +100,8 @@ logs. Run "kronk launchd restart" afterwards if the agent is already loaded.`,
 
 // =============================================================================
 
-func install(cmd *cobra.Command, args []string) error {
-	plistPath, logPath, err := paths()
+func installLaunchd(cmd *cobra.Command, args []string) error {
+	plistPath, logPath, err := launchdPaths()
 	if err != nil {
 		return err
 	}
@@ -138,7 +136,7 @@ func install(cmd *cobra.Command, args []string) error {
 	tmpl, err := template.New("agent").Funcs(template.FuncMap{"string": func(value string) (string, error) {
 		data, err := xml.Marshal(value)
 		return string(data), err
-	}}).Parse(plistTemplate)
+	}}).Parse(launchdPlistTemplate)
 	if err != nil {
 		return fmt.Errorf("parsing embedded agent template: %w", err)
 	}
@@ -178,7 +176,7 @@ func install(cmd *cobra.Command, args []string) error {
 	if err := errors.Join(writeErr, file.Close()); err != nil {
 		return fmt.Errorf("writing agent plist: %w", err)
 	}
-	if err := runCommand(cmd, "launchctl", "enable", serviceTarget()); err != nil {
+	if err := runLaunchdCommand(cmd, "launchctl", "enable", launchdServiceTarget()); err != nil {
 		return err
 	}
 	cmd.Printf("Installed %s\nLogs: %s\n", plistPath, logPath)
@@ -186,29 +184,29 @@ func install(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func start(cmd *cobra.Command, args []string) error {
-	plistPath, _, err := paths()
+func startLaunchd(cmd *cobra.Command, args []string) error {
+	plistPath, _, err := launchdPaths()
 	if err != nil {
 		return err
 	}
 	if _, err := os.Stat(plistPath); err != nil {
 		return fmt.Errorf("finding installed agent (run kronk launchd install first): %w", err)
 	}
-	if err := runCommand(cmd, "launchctl", "enable", serviceTarget()); err != nil {
+	if err := runLaunchdCommand(cmd, "launchctl", "enable", launchdServiceTarget()); err != nil {
 		return err
 	}
-	active, err := loaded(cmd)
+	active, err := launchdLoaded(cmd)
 	if err != nil {
 		return err
 	}
 	if active {
-		return runCommand(cmd, "launchctl", "kickstart", serviceTarget())
+		return runLaunchdCommand(cmd, "launchctl", "kickstart", launchdServiceTarget())
 	}
-	return runCommand(cmd, "launchctl", "bootstrap", domainTarget(), plistPath)
+	return runLaunchdCommand(cmd, "launchctl", "bootstrap", launchdDomainTarget(), plistPath)
 }
 
-func stop(cmd *cobra.Command, args []string) error {
-	active, err := loaded(cmd)
+func stopLaunchd(cmd *cobra.Command, args []string) error {
+	active, err := launchdLoaded(cmd)
 	if err != nil {
 		return err
 	}
@@ -216,7 +214,7 @@ func stop(cmd *cobra.Command, args []string) error {
 		cmd.Println("LaunchAgent is not loaded.")
 		return nil
 	}
-	if err := runCommand(cmd, "launchctl", "bootout", serviceTarget()); err != nil {
+	if err := runLaunchdCommand(cmd, "launchctl", "bootout", launchdServiceTarget()); err != nil {
 		return err
 	}
 	// bootout can return while the job is still shutting down. Wait for its
@@ -224,7 +222,7 @@ func stop(cmd *cobra.Command, args []string) error {
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		active, err := loaded(cmd)
+		active, err := launchdLoaded(cmd)
 		if err != nil {
 			return err
 		}
@@ -239,25 +237,25 @@ func stop(cmd *cobra.Command, args []string) error {
 	}
 }
 
-func restart(cmd *cobra.Command, args []string) error {
-	if err := stop(cmd, args); err != nil {
+func restartLaunchd(cmd *cobra.Command, args []string) error {
+	if err := stopLaunchd(cmd, args); err != nil {
 		return err
 	}
-	return start(cmd, args)
+	return startLaunchd(cmd, args)
 }
 
-func uninstall(cmd *cobra.Command, args []string) error {
-	plistPath, _, err := paths()
+func uninstallLaunchd(cmd *cobra.Command, args []string) error {
+	plistPath, _, err := launchdPaths()
 	if err != nil {
 		return err
 	}
 	if _, err := os.Lstat(plistPath); err != nil {
 		return fmt.Errorf("finding installed agent plist: %w", err)
 	}
-	if err := stop(cmd, args); err != nil {
+	if err := stopLaunchd(cmd, args); err != nil {
 		return err
 	}
-	if err := runCommand(cmd, "launchctl", "disable", serviceTarget()); err != nil {
+	if err := runLaunchdCommand(cmd, "launchctl", "disable", launchdServiceTarget()); err != nil {
 		return err
 	}
 	if err := os.Remove(plistPath); err != nil {
@@ -267,25 +265,25 @@ func uninstall(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func paths() (string, string, error) {
+func launchdPaths() (string, string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", "", fmt.Errorf("finding home directory: %w", err)
 	}
-	return filepath.Join(home, "Library", "LaunchAgents", label+".plist"),
+	return filepath.Join(home, "Library", "LaunchAgents", launchdLabel+".plist"),
 		filepath.Join(home, "Library", "Logs", "kronk", "kronk.log"), nil
 }
 
-func domainTarget() string {
+func launchdDomainTarget() string {
 	return fmt.Sprintf("gui/%d", os.Getuid())
 }
 
-func serviceTarget() string {
-	return domainTarget() + "/" + label
+func launchdServiceTarget() string {
+	return launchdDomainTarget() + "/" + launchdLabel
 }
 
-func loaded(cmd *cobra.Command) (bool, error) {
-	output, err := exec.CommandContext(cmd.Context(), "launchctl", "print", serviceTarget()).CombinedOutput()
+func launchdLoaded(cmd *cobra.Command) (bool, error) {
+	output, err := exec.CommandContext(cmd.Context(), "launchctl", "print", launchdServiceTarget()).CombinedOutput()
 	if err == nil {
 		return true, nil
 	}
@@ -297,7 +295,7 @@ func loaded(cmd *cobra.Command) (bool, error) {
 	return false, fmt.Errorf("checking LaunchAgent (requires a macOS desktop login session): %s: %w", output, err)
 }
 
-func runCommand(cmd *cobra.Command, name string, args ...string) error {
+func runLaunchdCommand(cmd *cobra.Command, name string, args ...string) error {
 	process := exec.CommandContext(cmd.Context(), name, args...)
 	process.Stdin = cmd.InOrStdin()
 	process.Stdout = cmd.OutOrStdout()

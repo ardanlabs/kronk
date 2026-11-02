@@ -1,6 +1,8 @@
 package kronk
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,6 +11,15 @@ import (
 	"github.com/ardanlabs/kronk/cmd/server/app/sdk/security/auth"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 )
+
+func TestRunCanceledBeforeStartup(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := Run(ctx, false, func() { t.Error("canceled server announced readiness") })
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run: got %v, want context cancellation before loading configuration or native libraries", err)
+	}
+}
 
 func TestNewConfigBuild(t *testing.T) {
 	if got := newConfig().Build; got != kronk.Version {

@@ -15,6 +15,12 @@ You will want to look at `Chapter 20: Developer Guide` for detailed information 
 - Never perform a full repo test run and never run tests from this location `sdk/kronk/tests`.
 - Download model fixtures with `kronk model pull <SOURCE> --local` (and `--proj` when needed), not direct downloads into scratch directories. Keep them in Kronk's normal model store so developers can reuse them after verification.
 
+## Documentation Rules
+
+- Focus user-facing documentation on Kronk's semantics and specification: what features mean, their observable behavior, supported inputs and outputs, defaults, constraints, and limitations. Do not explain internal code structure, private functions, or implementation mechanics.
+- Be concrete for CLI usage, installation, and configuration. Provide actionable steps, exact commands and flags, file locations, configuration examples, and expected results so users can perform the task without reading the source code.
+- Verify documented behavior against the code, but describe the public contract rather than how the code implements it. Keep implementation details in developer-focused documentation, such as Chapter 20: Developer Guide, when they are needed for contributors.
+
 ## MCP Services
 
 Kronk has an MCP service and these are settings:

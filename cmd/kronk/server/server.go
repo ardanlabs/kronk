@@ -19,7 +19,7 @@ acceleration via Metal (macOS), CUDA (NVIDIA), ROCm (AMD), Vulkan, or CPU.
 
 These commands run the server directly. stop and logs manage only servers started
 with --detach. For an OS-managed service, use "kronk systemd" on Linux or
-"kronk launchd" on macOS instead.
+"kronk launchd" on macOS, or "kronk service" on Windows instead.
 
 The server includes:
   • OpenAI-compatible REST API endpoints

@@ -9,11 +9,11 @@ import (
 	"github.com/ardanlabs/kronk/cmd/kronk/kronk/libs"
 	"github.com/ardanlabs/kronk/cmd/kronk/kronk/model"
 	"github.com/ardanlabs/kronk/cmd/kronk/launch"
-	"github.com/ardanlabs/kronk/cmd/kronk/launchd"
 	"github.com/ardanlabs/kronk/cmd/kronk/malina"
 	"github.com/ardanlabs/kronk/cmd/kronk/security"
 	"github.com/ardanlabs/kronk/cmd/kronk/server"
-	"github.com/ardanlabs/kronk/cmd/kronk/systemd"
+	"github.com/ardanlabs/kronk/cmd/kronk/server/start"
+	"github.com/ardanlabs/kronk/cmd/kronk/service"
 	"github.com/ardanlabs/kronk/sdk/kronk"
 	"github.com/spf13/cobra"
 )
@@ -46,6 +46,7 @@ See the manual for installation, environment settings, security, and service wor
 	}
 	cmd.PersistentFlags().String("base-path", "", "Base path for kronk data (models, libraries, catalog, model_config)")
 	cmd.AddCommand(libs.Cmd, model.Cmd, catalog.Cmd, bucky.Cmd, malina.Cmd)
-	cmd.AddCommand(server.Cmd, systemd.Cmd, launchd.Cmd, security.Cmd, devices.Cmd, diagnose.Cmd, launch.Cmd)
+	cmd.AddCommand(server.Cmd, service.NewSystemdCommand(), service.NewLaunchdCommand(), service.NewWindowsCommand(start.NewCommand()))
+	cmd.AddCommand(security.Cmd, devices.Cmd, diagnose.Cmd, launch.Cmd)
 	return cmd
 }

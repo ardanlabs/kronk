@@ -13,6 +13,7 @@
 - [8.9 Running as a launchd Agent](#89-running-as-a-launchd-agent)
 - [8.10 Kubernetes with Helm](#810-kubernetes-with-helm)
 - [8.11 Related Administration Guides](#811-related-administration-guides)
+- [8.12 Running as a Windows Service](#812-running-as-a-windows-service)
 
 ---
 
@@ -986,3 +987,173 @@ Detailed administration is divided by responsibility:
   tracing, and profiling
 - [Chapter 18](https://www.kronkai.com/manual#chapter-18-bucky-audio-transcription) — transcription libraries, models, and pool
   behavior
+
+## 8.12 Running as a Windows Service
+
+On Windows, `kronk service` manages a machine-wide service through the Windows
+Service Control Manager (SCM). Linux `kronk systemd` and macOS `kronk launchd`
+commands are unchanged. **Real Windows validation has not yet been performed**;
+use the Windows 11 acceptance procedure below before relying on unattended
+operation, especially GPU inference.
+
+### Installation and Startup
+
+Install `kronk.exe` at a permanent absolute path in an administrator-controlled
+location, such as `C:\Program Files\Kronk\kronk.exe`. Do not register a
+temporary `go run` executable or a binary in a directory writable by untrusted
+users. Keep the executable and its parent directories protected against
+replacement. The service records the executable path; moving it breaks startup.
+
+From an elevated PowerShell with Kronk on `PATH`:
+
+```powershell
+kronk service install
+kronk service start
+kronk service status
+curl.exe http://localhost:11435/v1/liveness
+```
+
+Stop any foreground server with Ctrl-C, or detached server with
+`kronk server stop`, before starting the service to avoid port and database-lock
+conflicts. Installation only registers the service; it does not start it.
+The default startup type is automatic, including startup at boot without login.
+Use `kronk service install --start-type manual` for explicit startup instead;
+`--start-type auto` selects the default.
+
+The service runs independently of your terminal and interactive login. Manage
+it with `kronk service`, not `kronk server stop` or `kronk server logs`.
+
+### Accounts, Data, and Configuration
+
+The default identity is `NT AUTHORITY\LocalService`. `--account` supports
+built-in service accounts and named accounts. For example:
+
+```powershell
+kronk service install --account 'NT AUTHORITY\NetworkService'
+kronk service install --account 'CONTOSO\kronk-svc'
+```
+
+These are alternative installations, not commands to run in sequence. For a
+named account, installation securely prompts for its password in the terminal;
+do not put the password in command arguments. Ensure the account has the
+Windows **Log on as a service** right and that local/domain policy does not
+deny it. Use the least-privileged account that can access the required files,
+devices, and network resources. Plan for account password changes and validate
+startup again after updating credentials.
+
+The data root defaults to `%ProgramData%\Kronk`. The existing global
+`--base-path` flag (or `KRONK_BASE_PATH`) at installation selects another root:
+
+```powershell
+kronk --base-path 'D:\KronkData' service install --start-type auto -- --api-host=127.0.0.1:11435 --web-admin-enabled=false
+```
+
+Server flags go after `--`; install flags go before it. Detached mode
+(`--detach`/`-d`) and secrets in server arguments are rejected. Arguments are
+stored in the service registration and must not contain tokens, passwords, or
+API keys. Store secrets in the existing server configuration file,
+`<base-path>\models\model_config.yaml`, protected by Windows ACLs, instead
+(see §8.5). Installation creates a new dedicated data directory with a protected,
+inheritable ACL and administrator ownership. Its parent directories must already
+exist and be administrator-controlled. Drive roots and reparse points (including
+junctions and symbolic links) are not supported as service data locations.
+
+Existing data trees are checked recursively, not silently migrated or
+re-permissioned. Owners and access rules must be limited to Administrators,
+SYSTEM, and the selected service account, which must have full control.
+Installation rejects incompatible trees, including files copied with explicit
+permissions for another user. Use a new directory or have an administrator
+review ownership and ACLs throughout the tree. Changing service accounts may
+require preparing a new directory or securing the existing tree for the new
+identity first. Do not grant broad read access to keys or config.
+
+The service does not reuse your interactive user's `~/.kronk`, shell profile,
+mapped drives, or per-user environment automatically. Use absolute paths and
+the same explicit base path for local model/library preparation. Review the
+existing YAML before starting: it can change listeners and authentication.
+Keep the API on loopback unless deliberately securing remote access. No
+firewall exposure is configured automatically; remote access requires operator
+firewall rules, authentication, and appropriate network/TLS protection.
+
+GPU drivers, native libraries, profile-dependent configuration, proxy settings,
+and network credentials available in an interactive session may be unavailable
+in the service session. LocalService does not inherit your user's network
+credentials. Verify downloads and representative inference under the actual
+service account; an interactive `kronk diagnose` alone is not proof of service
+GPU or network access.
+
+### Lifecycle, Logs, and Removal
+
+```powershell
+kronk service stop
+kronk service start
+kronk service restart
+kronk service status
+kronk service logs
+kronk service uninstall
+```
+
+`stop` waits for graceful HTTP shutdown and model-pool shutdown. Allow active
+shutdown to finish before replacing the executable or touching data.
+`status` reports SCM state, not HTTP readiness; probe `/v1/liveness` at the
+configured API address and test inference separately. Startup may include
+library downloads. CLI start/stop waits are bounded to five minutes; a timeout
+does not kill the server or prove it stopped. Check status and logs before
+retrying. Startup or shutdown that exceeds this interval may be reported as
+unresponsive by Windows; native operations are not forcibly interrupted.
+Windows may impose a shorter deadline during system shutdown; validate
+loaded-model shutdown on the target host before relying on reboot-time cleanup.
+
+Standard output and standard error append to `<base-path>\service.log`.
+Lifecycle entries also go to the Windows Event Log. `logs` discovers the base
+path from the installed service and follows `service.log`; Ctrl-C stops the
+follower, not the service. Log rotation is operator-controlled: stop the
+service, wait for shutdown, archive or rename `service.log`, then start again.
+Protect archived logs as well; there is no automatic rotation to rely on.
+
+Stop before upgrading the binary at the same path, then start it again.
+To change the executable path, startup type, account, or installed arguments,
+stop the service and reinstall with `kronk service install --force`, supplying
+the intended settings again. `--force` replaces only a **stopped** service
+registration; it is not a way to overwrite a running service. Installation
+still does not start the replacement.
+
+Omitting `--account` during a force update preserves the registered identity
+and its stored password. Other install settings, base-path selection, and
+server arguments are taken from the new invocation; supply them again rather
+than assuming they are merged with the previous registration.
+
+Uninstall removes the service registration, not user data. Stop first, then
+uninstall; models, libraries, keys, configuration, and logs remain in the data
+root. Back up that directory before maintenance and delete it only as a
+separate, deliberate operator action.
+
+### Windows 11 Acceptance Procedure
+
+Run on a disposable Windows 11 host with the intended account, drivers, and
+network policy. Record the Kronk version, paths, account, backend, and results;
+this is a procedure to execute, not a claim of completed validation.
+
+1. Place the binary in its permanent protected location. Install with the
+   intended base path and default automatic startup. Confirm `status` is
+   stopped immediately after installation and inspect the data ACLs.
+2. Prepare libraries and a small model using that explicit base path and
+   `--local`. Review protected YAML and secrets. Start the service, probe
+   `/v1/liveness`, then run a representative inference request. Confirm the
+   expected backend in logs; HTTP liveness alone does not validate GPU use.
+3. Follow `kronk service logs`, generate a request, and confirm appended output
+   and lifecycle entries in Event Viewer. Exit the follower with Ctrl-C and
+   confirm the service remains running.
+4. Exercise `restart` and `stop`, including a request in flight; verify graceful
+   HTTP/pool shutdown, stopped SCM state, and released listener/database locks.
+   Confirm install without `--force` refuses an existing registration and
+   replacement with `--force` refuses while running. Stop, replace with
+   `--force --start-type manual`, and confirm it remains stopped until started.
+5. Stop and replace with `--force --start-type auto`, start, then reboot Windows.
+   Verify automatic startup without an interactive login (using an authorized
+   remote management session if needed), then check liveness, logs, and
+   inference again. Check service-session GPU and network behavior explicitly.
+6. Stop, rotate the log while stopped, start, and confirm a new log receives
+   output. Record model/config/key files, stop, and uninstall. Confirm the
+   service registration is gone and those files and logs remain unchanged by
+   uninstall. Never delete the data root as part of this acceptance check.

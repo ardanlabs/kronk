@@ -1,5 +1,4 @@
-// Package systemd provides Linux systemd user-service management for Kronk.
-package systemd
+package service
 
 import (
 	_ "embed"
@@ -15,13 +14,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-//go:embed kronk.service.tmpl
-var unitTemplate string
+//go:embed templates/kronk.service.tmpl
+var systemdUnitTemplate string
 
-// Cmd manages Kronk through the Linux systemd user service manager.
-var Cmd = newCmd()
-
-func newCmd() *cobra.Command {
+// NewSystemdCommand constructs Linux systemd user-service commands. Help is
+// available on every platform; operations require Linux and a systemd user session.
+func NewSystemdCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "systemd",
 		Short: "Install and manage the Linux systemd user service",
@@ -64,7 +62,7 @@ at installation selects the data directory; kronk.env can override it later.
 authorization and affects all your user services, not only Kronk. Uninstall
 does not disable lingering because other services may depend on it.`,
 		Args: cobra.NoArgs,
-		RunE: install,
+		RunE: installSystemd,
 	}
 	installCmd.Flags().Bool("force", false, "Replace an existing service unit")
 	installCmd.Flags().Bool("boot", false, "Enable user lingering for startup at boot and operation after logout")
@@ -73,7 +71,7 @@ does not disable lingering because other services may depend on it.`,
 		Use:   "uninstall",
 		Short: "Stop, disable, and remove the service, preserving data and settings",
 		Args:  cobra.NoArgs,
-		RunE:  uninstall,
+		RunE:  uninstallSystemd,
 	})
 
 	for _, action := range []struct {
@@ -90,7 +88,7 @@ does not disable lingering because other services may depend on it.`,
 			Short: action.short,
 			Args:  cobra.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error {
-				return runCommand(cmd, "systemctl", "--user", action.name, "kronk.service")
+				return runSystemdCommand(cmd, "systemctl", "--user", action.name, "kronk.service")
 			},
 		})
 	}
@@ -99,7 +97,7 @@ does not disable lingering because other services may depend on it.`,
 		Short: "Follow the systemd service journal (Ctrl-C to stop following)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCommand(cmd, "journalctl", "--user", "--unit=kronk.service", "--follow")
+			return runSystemdCommand(cmd, "journalctl", "--user", "--unit=kronk.service", "--follow")
 		},
 	})
 
@@ -108,7 +106,7 @@ does not disable lingering because other services may depend on it.`,
 
 // =============================================================================
 
-func install(cmd *cobra.Command, args []string) error {
+func installSystemd(cmd *cobra.Command, args []string) error {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return fmt.Errorf("finding user configuration directory: %w", err)
@@ -146,13 +144,13 @@ func install(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("resolving data directory: %w", err)
 		}
-		baseSetting = "Environment=" + unitQuote("KRONK_BASE_PATH="+basePath)
+		baseSetting = "Environment=" + systemdUnitQuote("KRONK_BASE_PATH="+basePath)
 	}
 	unit := strings.NewReplacer(
-		"@EXECUTABLE@", unitQuote(executable),
+		"@EXECUTABLE@", systemdUnitQuote(executable),
 		"@BASE_PATH@", baseSetting,
 		"@ENVIRONMENT_FILE@", "-"+strings.ReplaceAll(envPath, "%", "%%"),
-	).Replace(unitTemplate)
+	).Replace(systemdUnitTemplate)
 
 	if err := os.MkdirAll(filepath.Dir(unitPath), 0o755); err != nil {
 		return fmt.Errorf("creating user service directory: %w", err)
@@ -172,15 +170,15 @@ func install(cmd *cobra.Command, args []string) error {
 	if err := errors.Join(writeErr, file.Close()); err != nil {
 		return fmt.Errorf("writing service unit: %w", err)
 	}
-	if err := runCommand(cmd, "systemctl", "--user", "daemon-reload"); err != nil {
+	if err := runSystemdCommand(cmd, "systemctl", "--user", "daemon-reload"); err != nil {
 		return err
 	}
-	if err := runCommand(cmd, "systemctl", "--user", "enable", "kronk.service"); err != nil {
+	if err := runSystemdCommand(cmd, "systemctl", "--user", "enable", "kronk.service"); err != nil {
 		return err
 	}
 	boot, _ := cmd.Flags().GetBool("boot")
 	if boot {
-		if err := runCommand(cmd, "loginctl", "enable-linger"); err != nil {
+		if err := runSystemdCommand(cmd, "loginctl", "enable-linger"); err != nil {
 			return fmt.Errorf("service installed, but enabling startup at boot failed (authorization may be required): %w", err)
 		}
 	}
@@ -189,7 +187,7 @@ func install(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func uninstall(cmd *cobra.Command, args []string) error {
+func uninstallSystemd(cmd *cobra.Command, args []string) error {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return fmt.Errorf("finding user configuration directory: %w", err)
@@ -198,20 +196,20 @@ func uninstall(cmd *cobra.Command, args []string) error {
 	if _, err := os.Lstat(unitPath); err != nil {
 		return fmt.Errorf("finding installed service unit: %w", err)
 	}
-	if err := runCommand(cmd, "systemctl", "--user", "disable", "--now", "kronk.service"); err != nil {
+	if err := runSystemdCommand(cmd, "systemctl", "--user", "disable", "--now", "kronk.service"); err != nil {
 		return err
 	}
 	if err := os.Remove(unitPath); err != nil {
 		return fmt.Errorf("removing service unit: %w", err)
 	}
-	if err := runCommand(cmd, "systemctl", "--user", "daemon-reload"); err != nil {
+	if err := runSystemdCommand(cmd, "systemctl", "--user", "daemon-reload"); err != nil {
 		return err
 	}
 	cmd.Println("Service removed. Models, configuration, systemctl drop-ins, and user lingering were preserved.")
 	return nil
 }
 
-func runCommand(cmd *cobra.Command, name string, args ...string) error {
+func runSystemdCommand(cmd *cobra.Command, name string, args ...string) error {
 	process := exec.CommandContext(cmd.Context(), name, args...)
 	process.Stdin = cmd.InOrStdin()
 	process.Stdout = cmd.OutOrStdout()
@@ -222,9 +220,9 @@ func runCommand(cmd *cobra.Command, name string, args ...string) error {
 	return nil
 }
 
-// unitQuote escapes a literal value for systemd's quoted unit-file syntax.
+// systemdUnitQuote escapes a literal value for systemd's quoted unit-file syntax.
 // Percent specifiers are escaped; ExecStart uses ':' to disable dollar expansion.
-func unitQuote(value string) string {
+func systemdUnitQuote(value string) string {
 	return `"` + strings.NewReplacer(
 		`\`, `\\`, `"`, `\"`, "%", "%%",
 		"\n", `\n`, "\r", `\r`, "\t", `\t`,
