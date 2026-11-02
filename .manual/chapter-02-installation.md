@@ -98,6 +98,7 @@ The prerequisites depend on how you install Kronk:
 | Method | Platforms | Prerequisite |
 | ------ | --------- | ------------ |
 | Homebrew | macOS and Linux | Homebrew |
+| DEB / RPM package | Linux amd64 and arm64 | apt or dnf; systemd for the optional user service |
 | Release archive | Supported release platforms | None beyond the host OS |
 | `go install` | Platforms supported by the Go toolchain and Kronk libraries | Go 1.27.3 or later for this release |
 | Container | Any host supported by the selected Linux image | Docker or another OCI runtime |
@@ -124,6 +125,66 @@ Upgrade an existing installation with:
 ```shell
 brew upgrade ardanlabs/kronk/kronk
 ```
+
+#### Linux DEB / RPM Packages
+
+Download the `.deb` or `.rpm` for your architecture from the
+[Kronk releases page](https://github.com/ardanlabs/kronk/releases).
+DEB filenames use `amd64` or `arm64`; RPM filenames use `x86_64` or `aarch64`.
+Install the downloaded file with your distribution's package manager, replacing
+`<file>` with its filename:
+
+```shell
+# Debian / Ubuntu
+sudo apt install ./<file>.deb
+
+# Fedora / RHEL-compatible distributions
+sudo dnf install ./<file>.rpm
+```
+
+Packages install `/usr/bin/kronk` and declare host runtime dependencies. Native
+inference libraries are downloaded separately by `kronk libs --local` or during
+normal server startup; the first download requires internet access. GPU drivers
+and backend-specific runtimes must already be installed on the host. `ffmpeg` is
+a recommended dependency for audio formats that need transcoding; its availability
+depends on your distribution's enabled repositories. There is no Kronk apt or yum
+repository, so download each new release package explicitly.
+
+Package installation does not create an account, register a service, or start the
+server. To opt into the existing systemd **user service**, run as your normal
+user, **without sudo**:
+
+```shell
+kronk systemd install --boot
+kronk systemd start
+curl --fail http://127.0.0.1:11435/v1/liveness
+```
+
+`--boot` enables user lingering so the service starts before login and continues
+after logout; this may require authorization. Installation requires an available
+systemd user manager. Omit `--boot` for startup at login only. Stop any manually
+started Kronk server before starting the service. No system-wide `kronk.service`
+is installed; `sudo systemctl enable --now kronk` is not this installation method.
+
+The service reuses your models, libraries, and keys under `~/.kronk` by default,
+and reads optional settings from `~/.config/kronk/kronk.env`. Existing base-path
+and XDG overrides still apply. See [Chapter 8 §8.8](https://www.kronkai.com/manual#88-running-as-a-systemd-service)
+for configuration and security settings before exposing the server remotely.
+
+To upgrade, install the newer package with the same apt or dnf command, then run
+`kronk systemd restart` as each user running the service. The stable executable
+path means re-registering the service is not required. Packages do not restart
+user services automatically or replace user configuration.
+
+Before removing the package, each user who installed a service should run:
+
+```shell
+kronk systemd uninstall
+```
+
+Then remove the binary with `sudo apt remove kronk` or `sudo dnf remove kronk`.
+Models, libraries, keys, user configuration, and lingering are preserved. Package
+removal does not stop or unregister user services on users' behalf.
 
 #### Release archive
 
