@@ -1,18 +1,18 @@
 {
     "$schema": "https://opencode.ai/config.json",
     "model": "kronk/unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT",
-    "small_model": "kronk/ornith-ai/Ornith-1.5-9B-Q4_K_M/AGENT",
-    "provider": {
+    "providers": {
         "kronk": {
-            "npm": "@ai-sdk/openai-compatible",
+            "package": "@opencode/ai/providers/openai-compatible",
             "name": "Kronk (local)",
-            "options": {
+            "settings": {
                 "baseURL": "http://127.0.0.1:11435/v1"
             },
             "models": {
                 "unsloth/Qwen3.8-Flash-Next-UD-Q2_K_XL/AGENT": {
                     "name": "Qwen3.8 Flash Next UD-Q2_K_XL",
-                    "modalities": {
+                    "capabilities": {
+                        "tools": true,
                         "input": [
                             "text",
                             "image"
@@ -28,7 +28,8 @@
                 },
                 "ukisai/Swift-Qwen3.8-27B-Q8_0/AGENT": {
                     "name": "Swift Qwen3.8 27B Q8_0",
-                    "modalities": {
+                    "capabilities": {
+                        "tools": true,
                         "input": [
                             "text",
                             "image"
@@ -44,7 +45,8 @@
                 },
                 "unsloth/Qwen3.8-27B-UD-Q4_K_XL/AGENT": {
                     "name": "Qwen3.8 27B UD-Q4_K_XL",
-                    "modalities": {
+                    "capabilities": {
+                        "tools": true,
                         "input": [
                             "text",
                             "image"
@@ -60,7 +62,8 @@
                 },
                 "ornith-ai/Ornith-1.5-35B-Q8_0/AGENT": {
                     "name": "Ornith1.5 35B Q8_0",
-                    "modalities": {
+                    "capabilities": {
+                        "tools": true,
                         "input": [
                             "text",
                             "image"
@@ -76,8 +79,8 @@
                 },
                 "unsloth/mtp-Qwen3.6-35B-A3B-UD-Q8_K_XL/AGENT": {
                     "name": "Qwen3.6 MTP 35B-A3B UD-Q8_K_XL",
-                    "attachment": true,
-                    "modalities": {
+                    "capabilities": {
+                        "tools": true,
                         "input": [
                             "text",
                             "image"
@@ -93,7 +96,8 @@
                 },
                 "unsloth/gemma-4-26B-A4B-it-UD-Q8_K_XL/AGENT": {
                     "name": "Gemma4 26B-A4B UD-Q8_K_XL",
-                    "modalities": {
+                    "capabilities": {
+                        "tools": true,
                         "input": [
                             "text",
                             "image"
@@ -109,7 +113,8 @@
                 },
                 "ornith-ai/Ornith-1.5-9B-Q4_K_M/AGENT": {
                     "name": "Ornith 1.5 9B Q4_K_M",
-                    "modalities": {
+                    "capabilities": {
+                        "tools": true,
                         "input": [
                             "text",
                             "image"
@@ -125,7 +130,8 @@
                 },
                 "mradermacher/Qwopus3.5-4B-Coder.Q8_0/AGENT": {
                     "name": "Qwopus3.5 4B-Coder Q8_0",
-                    "modalities": {
+                    "capabilities": {
+                        "tools": true,
                         "input": [
                             "text",
                             "image"
@@ -145,34 +151,30 @@
     "formatter": true,
     "lsp": true,
     "compaction": {
-        "auto": false,
-        "prune": false
+        "auto": false
     },
-    "autoupdate": false,
+    "update": "disable",
     "share": "disabled",
     "mcp": {
-        "kronk": {
-            "type": "remote",
-            "url": "http://localhost:9000/mcp"
-        },
-        "gopls": {
-            "type": "local",
-            "command": [
-                "gopls",
-                "mcp"
-            ],
-            "enabled": true
+        "servers": {
+            "kronk": {
+                "type": "remote",
+                "url": "http://localhost:9000/mcp"
+            },
+            "gopls": {
+                "type": "local",
+                "command": [
+                    "gopls",
+                    "mcp"
+                ],
+                "disabled": false
+            }
         }
     },
-    "plugin": [
-        "opencode-session-handoff"
-    ],
-    "agent": {
+    "agents": {
         "title": {
-            "disable": false
+            "model": "kronk/ornith-ai/Ornith-1.5-9B-Q4_K_M/AGENT",
+            "disabled": false
         }
-    },
-    "experimental": {
-        "openTelemetry": false
     }
 }

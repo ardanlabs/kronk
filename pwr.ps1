@@ -33,6 +33,8 @@ param(
     [ValidateSet(
         "help",
         "setup",
+        "agents-default-opencode",
+        "agents-default-opencode-v1",
         "install-gotooling",
         "install-tooling",
         "install-kronk",
@@ -675,6 +677,10 @@ Usage: ./pwr.ps1 <target> [options]
 
 Targets:
 
+Agents (.power/agents.ps1):
+  agents-default-opencode               Install the OpenCode v2 bundle (overwrites config and skills)
+  agents-default-opencode-v1            Install the OpenCode v1 bundle (overwrites config and skills)
+
 Install (.power/install.ps1):
   setup
   install-gotooling
@@ -815,6 +821,7 @@ Examples (.power/examples.ps1):
 # ==============================================================================
 # Target Implementations
 
+. (Join-Path $PSScriptRoot ".power/agents.ps1")
 . (Join-Path $PSScriptRoot ".power/install.ps1")
 . (Join-Path $PSScriptRoot ".power/dev.ps1")
 . (Join-Path $PSScriptRoot ".power/server.ps1")
@@ -830,6 +837,12 @@ switch ($Target) {
     }
     "setup" {
         Set-UpRepository
+    }
+    "agents-default-opencode" {
+        Install-OpenCodeBundle
+    }
+    "agents-default-opencode-v1" {
+        Install-OpenCodeBundle -V1
     }
     "install-gotooling" {
         Install-GoTooling
