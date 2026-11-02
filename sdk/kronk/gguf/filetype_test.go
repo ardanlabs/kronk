@@ -43,6 +43,7 @@ func TestFileTypeName(t *testing.T) {
 		{39, "NVFP4"},
 		{40, "Q1_0"},
 		{41, "Q2_0"},
+		{42, "F8_E4M3"},
 	}
 
 	if got, want := len(fileTypeNames), len(tests); got != want {

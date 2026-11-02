@@ -42,6 +42,7 @@ var fileTypeNames = map[int64]string{
 	39: "NVFP4",
 	40: "Q1_0",
 	41: "Q2_0",
+	42: "F8_E4M3",
 }
 
 // FileTypeName returns the human-readable name for the given GGUF
