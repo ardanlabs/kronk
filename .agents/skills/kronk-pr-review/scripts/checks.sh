@@ -270,9 +270,18 @@ if [ -n "$protos" ]; then
   else
     set --
     for p in $protos; do set -- "$@" --path "$p"; done
-    job buf-lint buf lint "$@"
-    if [ -n "$basesrc" ]; then job buf-breaking buf breaking --against "$basesrc"
-    else skip buf-breaking "base commit not available locally"
+    # buf.yaml v2 can name lint/breaking plugins (executables): the repo's config only for a
+    # maintainer PR, otherwise buf's default rules from an inline config.
+    if runs_code; then
+      job buf-lint buf lint "$@"
+      if [ -n "$basesrc" ]; then job buf-breaking buf breaking --against "$basesrc"
+      else skip buf-breaking "base commit not available locally"
+      fi
+    else
+      job buf-lint buf lint --config '{"version":"v2"}' "$@"
+      if [ -n "$basesrc" ]; then job buf-breaking buf breaking --config '{"version":"v2"}' --against "$basesrc" --against-config '{"version":"v2"}'
+      else skip buf-breaking "base commit not available locally"
+      fi
     fi
   fi
 fi
@@ -314,6 +323,8 @@ if [ -n "$js_dirs" ] && has jscpd; then
 fi
 
 # --- Rust, per crate -------------------------------------------------------------------
+# cargo_audit LOCKFILE: cargo-audit on one lock file, from a directory outside the repo
+cargo_audit() { ( cd / && "$(toolpath cargo-audit)" audit --file "$1" ); }
 # cargo_audit_dirs: directories holding the Cargo.lock of each crate unit, deduplicated
 cargo_lock_dirs() {
   units rust | while IFS= read -r u; do
@@ -330,7 +341,10 @@ if [ -n "$(units rust)" ]; then
       s=$(usfx rust "$u")
       (
         cd -- "$u" || exit 1
-        if cargo fmt --version >/dev/null 2>&1; then job "cargo-fmt$s" cargo fmt --check
+        # Any cargo call inside the crate reads its rust-toolchain.toml (a toolchain path) and
+        # .cargo/config.toml (aliases, build.rustc): repo-chosen binaries run.
+        if ! runs_code; then skip "cargo-fmt$s" "$UNTRUSTED (rust-toolchain.toml, .cargo/config.toml)"
+        elif cargo fmt --version >/dev/null 2>&1; then job "cargo-fmt$s" cargo fmt --check
         else skip "cargo-fmt$s" "rustfmt not installed"
         fi
         # --locked: fail instead of rewriting Cargo.lock
@@ -354,9 +368,12 @@ EOF
       s=''; [ "$(cargo_lock_dirs | grep -c .)" -gt 1 ] && s="@$(printf '%s' "$d" | tr '/' '_')"
       (
         cd -- "$d" || exit 1
-        if has cargo-audit; then job "cargo-audit$s" cargo audit; else skip "cargo-audit$s" "cargo-audit not installed"; fi
+        # cargo-audit reads only Cargo.lock: run the binary itself from / (no cargo, no repo config).
+        if has cargo-audit; then job "cargo-audit$s" cargo_audit "$PWD/Cargo.lock"; else skip "cargo-audit$s" "cargo-audit not installed"; fi
         if [ -f deny.toml ]; then
-          if has cargo-deny; then job "cargo-deny$s" cargo deny check; else skip "cargo-deny$s" "cargo-deny not installed"; fi
+          # cargo-deny runs cargo metadata, which reads the repo's cargo config and toolchain file
+          if ! runs_code; then skip "cargo-deny$s" "$UNTRUSTED (cargo metadata, repo cargo config)"
+          elif has cargo-deny; then job "cargo-deny$s" cargo deny check; else skip "cargo-deny$s" "cargo-deny not installed"; fi
         fi
         wait
       ) &
@@ -497,9 +514,12 @@ iac_scan() {
   return $rc
 }
 if [ -n "$iac_targets" ]; then
-  if has trivy || has checkov; then
+  # checkov loads the repo's .checkov.yaml, whose external-checks-dir runs Python checks from
+  # the repo: only for a maintainer PR. trivy's repo config holds Rego only.
+  if has trivy || { has checkov && runs_code; }; then
     # shellcheck disable=SC2086
     job iac-scan iac_scan $iac_targets
+  elif has checkov; then skip iac-scan "$UNTRUSTED (checkov repo config can load Python checks; install trivy)"
   else skip iac-scan "trivy/checkov not installed"
   fi
 fi

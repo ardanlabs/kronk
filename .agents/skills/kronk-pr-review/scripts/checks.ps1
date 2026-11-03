@@ -262,8 +262,12 @@ if ($protos.Count) {
     if (-not $bufCfg) { Skip 'buf-lint' 'no buf.yaml/buf.work.yaml at the repo root' }
     elseif (-not (Has 'buf')) { Skip 'buf-lint' 'buf not installed' }
     else {
-        Job 'buf-lint' $root 'buf' (@('lint') + @($protos | ForEach-Object { '--path'; $_ }))
-        if ($baseSrc) { Job 'buf-breaking' $root 'buf' @('breaking', '--against', $baseSrc) }
+        # buf.yaml v2 can name lint/breaking plugins (executables): the repo's config only for a
+        # maintainer PR, otherwise buf's default rules from an inline config.
+        $neutral = if ($runsCode) { @() } else { @('--config', '{"version":"v2"}') }
+        $againstNeutral = if ($runsCode) { @() } else { @('--against-config', '{"version":"v2"}') }
+        Job 'buf-lint' $root 'buf' (@('lint') + $neutral + @($protos | ForEach-Object { '--path'; $_ }))
+        if ($baseSrc) { Job 'buf-breaking' $root 'buf' (@('breaking') + $neutral + @('--against', $baseSrc) + $againstNeutral) }
         else { Skip 'buf-breaking' 'base commit not available locally' }
     }
 }
@@ -300,11 +304,16 @@ $rustUnits = @(Units 'rust')
 if ($rustUnits.Count) {
     if (-not (Has 'cargo')) { Skip 'cargo' 'cargo not installed' }
     else {
+        # Probe from outside the repo: inside it, rustup reads its rust-toolchain.toml (a toolchain path).
+        Push-Location -LiteralPath ([IO.Path]::GetTempPath())
         & cargo fmt --version *> $null; $hasFmt = $LASTEXITCODE -eq 0
         & cargo clippy --version *> $null; $hasClippy = $LASTEXITCODE -eq 0
+        Pop-Location
         foreach ($u in $rustUnits) {
             $s = USfx 'rust' $u; $dir = UnitDir $u
-            if ($hasFmt) { Job "cargo-fmt$s" $dir 'cargo' @('fmt', '--check') } else { Skip "cargo-fmt$s" 'rustfmt not installed' }
+            # Any cargo call inside the crate reads its rust-toolchain.toml and .cargo/config.toml.
+            if (-not $runsCode) { Skip "cargo-fmt$s" "$untrusted (rust-toolchain.toml, .cargo/config.toml)" }
+            elseif ($hasFmt) { Job "cargo-fmt$s" $dir 'cargo' @('fmt', '--check') } else { Skip "cargo-fmt$s" 'rustfmt not installed' }
             # --locked: fail instead of rewriting Cargo.lock
             # clippy/check/test compile the crate: build scripts and proc macros run
             if (-not $runsCode) { Skip "cargo-clippy$s" "$untrusted (build scripts, proc macros)" }
@@ -322,9 +331,12 @@ if ($rustUnits.Count) {
                 }) | Select-Object -Unique)
         foreach ($d in $lockDirs) {
             $s = if ($lockDirs.Count -gt 1) { '@' + ($d -creplace '/', '_') } else { '' }; $dir = UnitDir $d
-            if (Has 'cargo-audit') { Job "cargo-audit$s" $dir 'cargo' @('audit') } else { Skip "cargo-audit$s" 'cargo-audit not installed' }
+            # cargo-audit reads only Cargo.lock: run the binary itself from outside the repo.
+            if (Has 'cargo-audit') { Job "cargo-audit$s" ([IO.Path]::GetTempPath()) 'cargo-audit' @('audit', '--file', (Join-Path $dir 'Cargo.lock')) } else { Skip "cargo-audit$s" 'cargo-audit not installed' }
             if (Test-Path -LiteralPath "$d/deny.toml") {
-                if (Has 'cargo-deny') { Job "cargo-deny$s" $dir 'cargo' @('deny', 'check') } else { Skip "cargo-deny$s" 'cargo-deny not installed' }
+                # cargo-deny runs cargo metadata, which reads the repo's cargo config and toolchain file
+                if (-not $runsCode) { Skip "cargo-deny$s" "$untrusted (cargo metadata, repo cargo config)" }
+                elseif (Has 'cargo-deny') { Job "cargo-deny$s" $dir 'cargo' @('deny', 'check') } else { Skip "cargo-deny$s" 'cargo-deny not installed' }
             }
         }
     }
@@ -450,7 +462,10 @@ $iacFn = {
     }
 }
 if ($iacDirs.Count) {
-    if ((Has 'trivy') -or (Has 'checkov')) { JobFn 'iac-scan' $root "iac_scan $($iacDirs -join ' ')" $iacFn @((Has 'trivy'), $iacDirs) }
+    # checkov loads the repo's .checkov.yaml, whose external-checks-dir runs Python checks from
+    # the repo: only for a maintainer PR. trivy's repo config holds Rego only.
+    if ((Has 'trivy') -or ((Has 'checkov') -and $runsCode)) { JobFn 'iac-scan' $root "iac_scan $($iacDirs -join ' ')" $iacFn @((Has 'trivy'), $iacDirs) }
+    elseif (Has 'checkov') { Skip 'iac-scan' "$untrusted (checkov repo config can load Python checks; install trivy)" }
     else { Skip 'iac-scan' 'trivy/checkov not installed' }
 }
 

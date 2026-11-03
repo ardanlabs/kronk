@@ -807,8 +807,13 @@ try {
         if (Eco 'rust') {
             Need 'cargo' 'Rust build, fmt, clippy, tests' 'https://rustup.rs'
             if ($toolPaths.ContainsKey('cargo')) {
-                & cargo fmt --version *> $null; if ($LASTEXITCODE -ne 0) { "rustfmt`tcargo fmt --check`trustup component add rustfmt" }
-                & cargo clippy --version *> $null; if ($LASTEXITCODE -ne 0) { "clippy`tRust lints`trustup component add clippy" }
+                # from outside the repo: inside it, rustup would read its rust-toolchain.toml (a toolchain path)
+                Push-Location -LiteralPath ([IO.Path]::GetTempPath())
+                & cargo fmt --version *> $null; $fmtRc = $LASTEXITCODE
+                & cargo clippy --version *> $null; $clippyRc = $LASTEXITCODE
+                Pop-Location
+                if ($fmtRc -ne 0) { "rustfmt`tcargo fmt --check`trustup component add rustfmt" }
+                if ($clippyRc -ne 0) { "clippy`tRust lints`trustup component add clippy" }
             }
             Need 'cargo-audit' 'Rust vulnerability scan' 'cargo install cargo-audit --locked'
             if (RepoHas '(^|/)deny\.toml$') { Need 'cargo-deny' 'repo cargo-deny config' 'cargo install cargo-deny --locked' }

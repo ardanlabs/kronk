@@ -1,6 +1,6 @@
 # Rust idioms
 
-**Tools:** `rust-analyzer` via LSP if available, else `rg`; `cargo tree -i <crate>` for dependency questions. **Checks:** `cargo-fmt`, `cargo-audit`, `cargo-deny`; for a maintainer PR also `cargo-clippy` (`-D warnings`; `cargo-check` when clippy is missing) and `cargo-test` — compiling runs build scripts and proc macros, so they are skipped otherwise. Cargo runs with `--locked`: a failure saying the lock file needs updating is a real finding (`Cargo.lock` out of date).
+**Tools:** `rust-analyzer` via LSP if available, else `rg`; `cargo tree -i <crate>` for dependency questions. **Checks:** `cargo-audit`; for a maintainer PR also `cargo-fmt`, `cargo-deny` (any cargo call reads the repo's `rust-toolchain.toml` and `.cargo/config.toml`), `cargo-clippy` (`-D warnings`; `cargo-check` when clippy is missing) and `cargo-test` — compiling runs build scripts and proc macros, so they are skipped otherwise. Cargo runs with `--locked`: a failure saying the lock file needs updating is a real finding (`Cargo.lock` out of date).
 
 ## Correctness
 Blocking in async (`std::fs`, `thread::sleep`, sync `Mutex` held across `.await`); `RefCell` borrow panics; `as` casts that truncate or change sign; integer overflow (wraps in release); `clone()` added only to silence the borrow checker on hot paths; `Send`/`Sync` assumptions; feature-flag and `#[cfg]` combinations that no longer compile; iterator invalidation via indices.

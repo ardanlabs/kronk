@@ -822,8 +822,9 @@ need() {  # need TOOL NEEDED_FOR INSTALL [go]: record TOOL if missing (or stale,
   if eco rust; then
     need cargo "Rust build, fmt, clippy, tests" "https://rustup.rs"
     if has_tool cargo; then
-      cargo fmt --version >/dev/null 2>&1 || printf 'rustfmt\tcargo fmt --check\trustup component add rustfmt\n'
-      cargo clippy --version >/dev/null 2>&1 || printf 'clippy\tRust lints\trustup component add clippy\n'
+      # from / : inside the repo, rustup would read its rust-toolchain.toml (a toolchain path)
+      (cd / && cargo fmt --version) >/dev/null 2>&1 || printf 'rustfmt\tcargo fmt --check\trustup component add rustfmt\n'
+      (cd / && cargo clippy --version) >/dev/null 2>&1 || printf 'clippy\tRust lints\trustup component add clippy\n'
     fi
     need cargo-audit "Rust vulnerability scan" "cargo install cargo-audit --locked"
     repo_has '(^|/)deny\.toml$' && need cargo-deny "repo cargo-deny config" "cargo install cargo-deny --locked"
