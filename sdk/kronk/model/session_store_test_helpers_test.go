@@ -45,17 +45,12 @@ func resetTestSession(t testing.TB, session *imcSession) {
 	resetSessionMetadata(session)
 }
 
-// bindTestTokenCaches assembles the independent cache collection for fixtures.
-// Callers can reorder the collection afterward without changing resident order.
-func bindTestTokenCaches(m *Model) {
-	m.tokenCaches = make([]*tokenCache, 0, len(m.imcSessions))
+// publishTestIMCPrefixes publishes the resident prefix hashes for fixtures.
+func publishTestIMCPrefixes(m *Model) {
 	for _, session := range m.imcSessions {
-		cache := session.cache
-		if cache == nil {
-			cache = &tokenCache{id: session.id}
-			session.cache = cache
+		if session.cache == nil {
+			session.cache = &imcPrefix{}
 		}
-		cache.session = session
-		m.tokenCaches = append(m.tokenCaches, cache)
+		session.updatePrefixHash()
 	}
 }

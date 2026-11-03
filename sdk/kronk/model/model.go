@@ -64,7 +64,9 @@ const imcSeqIDUnbound llama.SeqId = -1
 // request is in flight, and imcSeqIDUnbound otherwise.
 type imcSession struct {
 	id               int            // Resident pool index, used for reservation release and diagnostics.
-	cache            *tokenCache    // Non-owning binding to model-owned matching metadata.
+	cache            *imcPrefix     // Owned immutable prefix description and execution/recovery metadata.
+	prefixLen        int            // Logical units covered by prefixHash, not physical media KV cells.
+	prefixHash       [32]byte       // Reject-only lookup digest; exact resident verification is mandatory.
 	seqID            llama.SeqId    // KV sequence id the session is currently bound to, or imcSeqIDUnbound when its state is externalized.
 	kvState          *imcCheckpoint // Internal RAM checkpoint of the target sequence.
 	draftKVState     *imcCheckpoint // Externalized MTP draft seq KV state. Nil unless the model has an MTP drafter (allocated post-draft-load in initGenerationRuntime). Captured alongside kvState during cache build so a cache hit on the next request can restore the draft seq in lock-step with the target seq and MTP can keep running for IMC-cache-hit requests.
@@ -84,14 +86,10 @@ type imcSession struct {
 	hasSamplingSeed  bool           // True once samplingSeed has been generated or explicitly supplied.
 }
 
-// tokenCache describes a cached prefix without owning native checkpoint bytes.
-// The model owns these entries independently of the resident session pool.
-// RAM-only caching binds one entry to each session; matching searches these
-// entries and resolves the selected entry's resident session explicitly.
-// Token slices and prompt plans are immutable once published under cacheMu.
-type tokenCache struct {
-	id                    int         // Local cache identity; not a resident pool index or durable ID.
-	session               *imcSession // Current RAM residency; not owned by this entry.
+// imcPrefix belongs to a resident session. Exact prefix
+// verification, restoration, media replay and sampling need this state. Token
+// slices and prompt plans remain immutable once published under cacheMu.
+type imcPrefix struct {
 	cachedMsgsHash        string
 	cachedTokens          []llama.Token
 	totalTokensCached     int // Physical KV cells in the cached prefix.
@@ -124,7 +122,7 @@ type imcSystemCache struct {
 	building         bool // Exclusive rebuild reservation; planners must not restore this entry while true.
 }
 
-func (s *tokenCache) logicalPosition() int {
+func (s *imcPrefix) logicalPosition() int {
 	if s.nextLogicalPos > 0 {
 		return s.nextLogicalPos
 	}
@@ -216,7 +214,6 @@ type Model struct {
 	pendingDecode    bool // Protected by decodeMu; submitted target work may still be executing.
 	graphAllocations graphAllocationLog
 	cacheMu          sync.RWMutex
-	tokenCaches      []*tokenCache     // Lightweight matching index, one-to-one with resident sessions in RAM-only mode.
 	imcSessions      []*imcSession     // Resident checkpoint pool; buffers grow lazily in internal RAM.
 	imcSystemCaches  []*imcSystemCache // Immutable system-prompt preload pool with the same capacity as imcSessions.
 	addBOSToken      bool              // Whether to add BOS token (from model metadata)
@@ -835,19 +832,15 @@ func initGenerationRuntime(ctx context.Context, m *Model, nSlots int, plan inter
 	// slot. Checkpoint buffers are allocated lazily on first use.
 	if m.cfg.IncrementalCache() {
 		nSessions := m.cfg.IMCSessionCapacity()
-		m.tokenCaches = make([]*tokenCache, nSessions)
 		m.imcSessions = make([]*imcSession, nSessions)
 		m.imcSystemCaches = make([]*imcSystemCache, nSessions)
 		for i := range nSessions {
-			cache := tokenCache{id: i}
 			session := imcSession{
 				id:      i,
-				cache:   &cache,
+				cache:   &imcPrefix{},
 				seqID:   imcSeqIDUnbound,
 				kvState: &imcCheckpoint{},
 			}
-			cache.session = &session
-			m.tokenCaches[i] = &cache
 			m.imcSessions[i] = &session
 			m.imcSystemCaches[i] = &imcSystemCache{id: i}
 		}
@@ -979,7 +972,6 @@ func (m *Model) cleanupGenerationRuntime(ctx context.Context, cause error) error
 			}
 		}
 	}
-	m.tokenCaches = nil
 	m.imcSessions = nil
 	m.imcSystemCaches = nil
 	m.parser = nil

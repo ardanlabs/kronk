@@ -228,7 +228,8 @@ func resetCurrentSessionMetadata(s *imcSession) {
 	}
 
 	cache := s.cache
-	*cache = tokenCache{id: cache.id, session: s}
+	*cache = imcPrefix{}
+	s.updatePrefixHash()
 	s.completedHistory = nil
 	clear(s.pendingH[:cap(s.pendingH)])
 	s.pendingH = s.pendingH[:0]
@@ -405,6 +406,7 @@ func (m *Model) imcCommitMediaAdvance(ctx context.Context, session *imcSession, 
 		clear(session.pendingH[:cap(session.pendingH)])
 		session.pendingH = session.pendingH[:0]
 	}
+	session.updatePrefixHash()
 	m.cacheMu.Unlock()
 
 	return oldStore
@@ -421,6 +423,7 @@ func (m *Model) imcPublishSession(session *imcSession) {
 	}
 
 	m.cacheMu.Lock()
+	session.updatePrefixHash()
 	session.allocatedContext = max(session.allocatedContext, session.cache.totalTokensCached)
 	session.snapshotBytes = imcSnapshotBytes(session.kvState, session.draftKVState, session.pendingH)
 	session.highWaterContext = max(session.highWaterContext, session.cache.totalTokensCached)

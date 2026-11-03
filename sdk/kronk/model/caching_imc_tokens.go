@@ -33,7 +33,7 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable, sy
 	result.imcSamplerPromptTokens = slices.Clone(actual)
 	result.imcTailTokens = tail
 
-	if targetLen < m.cfg.CacheMinTokens() || len(m.tokenCaches) == 0 {
+	if targetLen < m.cfg.CacheMinTokens() || len(m.imcSessions) == 0 {
 		result.imcTailTokens = slices.Clone(actual)
 		m.log(ctx, "imc", "status", "plan-ready", "cache_mode", "token-v2", "session_format", "token-v2",
 			"match_kind", "rebuild", "reusable_tokens", 0, "extension_tokens", 0, "tail_tokens", len(actual),
@@ -42,30 +42,19 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable, sy
 	}
 
 	m.cacheMu.Lock()
-	var best *tokenCache
+	hashes := m.imcCandidateHashes(target, nil)
+	var best *imcSession
 	var bestLen int
-	var empty *imcSession
-	var lru *imcSession
-	var unbound, reserved, emptyCount, missingCheckpoint, incompatible, prefixMismatch, fingerprintMismatch, matches int
-	for _, cache := range m.tokenCaches {
-		session := cache.session
-		if session == nil {
-			unbound++
-			continue
-		}
+	var reserved, emptyCount, missingCheckpoint, incompatible, prefixMismatch, fingerprintMismatch, matches int
+	for _, session := range m.imcSessions {
+		cache := session.cache
 		if session.reserved {
 			reserved++
 			continue
 		}
 		if cache.totalTokensCached == 0 {
 			emptyCount++
-			if empty == nil {
-				empty = session
-			}
 			continue
-		}
-		if lru == nil || session.lastUsed.Before(lru.lastUsed) {
-			lru = session
 		}
 		currentExact := len(cache.cachedTokens) == len(target)
 		currentFingerprintOK := !currentExact || exactRenderFingerprintMatches(cache.cachedRenderInputHash, renderFingerprint, fingerprintOK)
@@ -74,14 +63,14 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable, sy
 			incompatible++
 		case session.kvState == nil || session.kvState.Len() == 0:
 			missingCheckpoint++
-		case !tokensHavePrefix(target, cache.cachedTokens):
+		case !session.matchesPrefixHash(hashes) || !tokensHavePrefix(target, cache.cachedTokens):
 			prefixMismatch++
 		case !currentFingerprintOK:
 			fingerprintMismatch++
 		default:
 			matches++
 			if len(cache.cachedTokens) > bestLen {
-				best = cache
+				best = session
 				bestLen = len(cache.cachedTokens)
 			}
 		}
@@ -104,8 +93,8 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable, sy
 	previousTokens := 0
 	var selected *imcSession
 	if best != nil {
-		selected = best.session
-		reusable = len(best.cachedTokens)
+		selected = best
+		reusable = len(selected.cache.cachedTokens)
 		extension = slices.Clone(target[reusable:])
 		clearSeq = false
 		if len(extension) == 0 {
@@ -119,19 +108,14 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable, sy
 		}
 		selected.lastUsed = time.Now()
 	} else {
-		selected = empty
-		selection = "empty"
-		if selected == nil {
-			selected = lru
-			selection = "lru-eviction"
-		}
+		selected, selection = m.imcRebuildSession()
 		if selected == nil {
 			if systemCache != nil {
 				systemCache.activeRestores--
 			}
 			m.cacheMu.Unlock()
 			m.log(ctx, "imc", "status", "plan-unavailable", "reason", "no-available-resident",
-				"candidates_unbound", unbound, "candidates_reserved", reserved, "candidates_empty", emptyCount,
+				"candidates_reserved", reserved, "candidates_empty", emptyCount,
 				"candidates_missing_checkpoint", missingCheckpoint, "candidates_incompatible", incompatible,
 				"candidates_prefix_mismatch", prefixMismatch, "candidates_fingerprint_mismatch", fingerprintMismatch, "candidates_matching", matches)
 			result.err = fmt.Errorf("imc: server busy processing other requests, try again shortly")
@@ -149,7 +133,7 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable, sy
 			if systemCache != nil {
 				systemCache.activeRestores--
 			}
-			tokenCacheID := selected.cache.id
+			tokenCacheID := selected.id
 			m.cacheMu.Unlock()
 			m.log(ctx, "imc", "status", "plan-reset-failed", "token_cache_id", tokenCacheID,
 				"imc_cache_entry", selected.id, "selection", selection, "previous_cached_tokens", previousTokens, "err", resetErr)
@@ -188,12 +172,12 @@ func (m *Model) processIMCTokenPlan(ctx context.Context, d D, actual, stable, sy
 	if systemCache == nil && len(system) >= m.cfg.CacheMinTokens() && reusable == 0 && len(system) < targetLen && tokensHavePrefix(target, system) {
 		result.imcSystemBoundaryTokens = len(system)
 	}
-	tokenCacheID := selected.cache.id
+	tokenCacheID := selected.id
 	m.cacheMu.Unlock()
 
 	m.log(ctx, "imc", "status", "plan-ready", "cache_mode", "token-v2", "session_format", "token-v2",
 		"token_cache_id", tokenCacheID, "selection", selection, "previous_cached_tokens", previousTokens,
-		"candidates_unbound", unbound, "candidates_reserved", reserved, "candidates_empty", emptyCount,
+		"candidates_reserved", reserved, "candidates_empty", emptyCount,
 		"candidates_missing_checkpoint", missingCheckpoint, "candidates_incompatible", incompatible,
 		"candidates_prefix_mismatch", prefixMismatch, "candidates_fingerprint_mismatch", fingerprintMismatch, "candidates_matching", matches,
 		"imc_cache_entry", selected.id, "match_kind", matchKind, "match_reason", matchReason, "reusable_tokens", reusable,

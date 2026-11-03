@@ -22,7 +22,7 @@ func TestProcessIMCTokenPlanReturnsResetError(t *testing.T) {
 			kvState: &imcCheckpoint{},
 		}},
 	}
-	bindTestTokenCaches(&m)
+	publishTestIMCPrefixes(&m)
 
 	result := m.processIMCTokenPlan(ctx, D{"messages": []D{{"role": "user", "content": "hello"}}}, []llama.Token{1, 2, 3}, []llama.Token{1, 2}, nil, time.Now())
 	if !errors.Is(result.err, wantErr) {
@@ -33,7 +33,7 @@ func TestProcessIMCTokenPlanReturnsResetError(t *testing.T) {
 	}
 	assertPlanLogFields(t, events["plan-reset-failed"], map[string]any{
 		"selection": "empty", "previous_cached_tokens": 0,
-		"token_cache_id": m.imcSessions[0].cache.id, "imc_cache_entry": 0,
+		"token_cache_id": m.imcSessions[0].id, "imc_cache_entry": 0,
 	})
 }
 

@@ -165,7 +165,7 @@ func TestIMCSlotState(t *testing.T) {
 
 	for i := range m.imcSessions {
 		m.imcSessions[i] = &imcSession{
-			cache:   &tokenCache{},
+			cache:   &imcPrefix{},
 			kvState: &imcCheckpoint{},
 			seqID:   llama.SeqId(i),
 			id:      i,
@@ -216,14 +216,14 @@ func TestClearCaches(t *testing.T) {
 			kvState: &imcCheckpoint{},
 			seqID:   llama.SeqId(i),
 			id:      i,
-			cache: &tokenCache{
+			cache: &imcPrefix{
 				cachedMsgsHash:    "hash",
 				totalTokensCached: 500,
 				cachedMsgCount:    3,
 			},
 		}
 	}
-	bindTestTokenCaches(m)
+	publishTestIMCPrefixes(m)
 
 	// Clear caches.
 	if err := m.clearCaches(context.Background()); err != nil {
@@ -273,13 +273,14 @@ func TestIMCResetSessionClearsKVState(t *testing.T) {
 		draftKVState: &imcCheckpoint{},
 		seqID:        0,
 		id:           0,
-		cache: &tokenCache{
+		cache: &imcPrefix{
 			cachedMsgsHash:      "abc123",
 			cachedTokens:        []llama.Token{1, 2, 3},
 			totalTokensCached:   100,
 			cachedMsgCount:      2,
 			hasMedia:            true,
 			useMRoPE:            true,
+			promptPlan:          mediaPlan(promptUnit{token: 1}, promptUnit{isMedia: true}),
 			mediaKVCounts:       []int{10, 20},
 			samplerPromptTokens: []llama.Token{4, 5, 6},
 		},
@@ -287,6 +288,9 @@ func TestIMCResetSessionClearsKVState(t *testing.T) {
 		reserved: true,
 		pendingH: make([]float32, 4, 8),
 	}
+	m := Model{imcSessions: []*imcSession{s}}
+	publishTestIMCPrefixes(&m)
+	cache := s.cache
 	buf := prepareTestStore(t, s.kvState, 16)
 	draftBuf := prepareTestStore(t, s.draftKVState, 16)
 	for i := range buf {
@@ -304,6 +308,9 @@ func TestIMCResetSessionClearsKVState(t *testing.T) {
 
 	resetTestSession(t, s)
 
+	if s.cache != cache || s.prefixLen != 0 || s.prefixHash != ([32]byte{}) {
+		t.Error("reset did not clear prefix hash metadata while preserving its resident cache")
+	}
 	if s.kvState.Len() != 0 {
 		t.Errorf("kvState.Len() = %d, want 0 (contents cleared)", s.kvState.Len())
 	}
@@ -380,7 +387,7 @@ func TestClearCachesResetsKVState(t *testing.T) {
 			kvState: &imcCheckpoint{},
 			seqID:   llama.SeqId(i),
 			id:      i,
-			cache: &tokenCache{
+			cache: &imcPrefix{
 				cachedMsgsHash:    "hash",
 				totalTokensCached: 500,
 				cachedMsgCount:    3,
@@ -388,7 +395,7 @@ func TestClearCachesResetsKVState(t *testing.T) {
 		}
 		prepareTestStore(t, m.imcSessions[i].kvState, 1024)
 	}
-	bindTestTokenCaches(m)
+	publishTestIMCPrefixes(m)
 
 	if err := m.clearCaches(context.Background()); err != nil {
 		t.Fatalf("clearCaches() error = %v, want nil", err)
@@ -443,7 +450,7 @@ func TestIMCSessionMediaFlag(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			session := &imcSession{cache: &tokenCache{hasMedia: tt.hasMedia}, kvState: &imcCheckpoint{}}
+			session := &imcSession{cache: &imcPrefix{hasMedia: tt.hasMedia}, kvState: &imcCheckpoint{}}
 			got := session.cache.hasMedia || tt.imcMediaBuild
 			if got != tt.wantMediaFlag {
 				t.Errorf("imcSessionMedia = %v, want %v", got, tt.wantMediaFlag)
@@ -468,7 +475,7 @@ func TestIMCCommitSessionPreservesKVState(t *testing.T) {
 	}
 
 	session := &imcSession{
-		cache:    &tokenCache{},
+		cache:    &imcPrefix{},
 		kvState:  &imcCheckpoint{},
 		id:       0,
 		seqID:    0,
@@ -511,7 +518,7 @@ func TestIMCCommitSessionPreservesKVState(t *testing.T) {
 func TestIMCCommitMediaInvalidatesOwnDraftState(t *testing.T) {
 	m := &Model{}
 	session := &imcSession{
-		cache:        &tokenCache{},
+		cache:        &imcPrefix{},
 		kvState:      &imcCheckpoint{},
 		draftKVState: &imcCheckpoint{},
 		pendingH:     []float32{1, 2, 3},
@@ -535,7 +542,7 @@ func TestIMCCommitMediaInvalidatesDraftMetadataWhenResetFails(t *testing.T) {
 	cancel()
 	wantErr := context.Canceled
 	session := &imcSession{
-		cache:        &tokenCache{},
+		cache:        &imcPrefix{},
 		draftKVState: populatedTestSessionStore(t),
 		pendingH:     []float32{1, 2, 3},
 		reserved:     true,
@@ -565,7 +572,7 @@ func TestIMCCommitMediaInvalidatesDraftMetadataWhenResetFails(t *testing.T) {
 func TestIMCInvalidateReservedSessionRetainsOwnership(t *testing.T) {
 	m := &Model{}
 	session := &imcSession{
-		cache:    &tokenCache{cachedMsgsHash: "hash", totalTokensCached: 10},
+		cache:    &imcPrefix{cachedMsgsHash: "hash", totalTokensCached: 10},
 		reserved: true,
 		kvState:  populatedTestSessionStore(t),
 	}
@@ -610,7 +617,7 @@ func TestIMCFillSlotsAnySlot(t *testing.T) {
 				kvState: &imcCheckpoint{},
 				seqID:   1,
 				id:      1,
-				cache:   &tokenCache{hasMedia: tt.hasMedia},
+				cache:   &imcPrefix{hasMedia: tt.hasMedia},
 			}
 
 			job := &chatJob{
@@ -632,7 +639,7 @@ func TestIMCFillSlotsAnySlot(t *testing.T) {
 // to a session across follow-up turns and is cleared when token-v2 selects the
 // session for a full rebuild. All sessions externalize their KV state to RAM.
 func TestIMCSessionMediaTransitions(t *testing.T) {
-	s := &imcSession{id: 0, seqID: 0, cache: &tokenCache{}, kvState: &imcCheckpoint{}}
+	s := &imcSession{id: 0, seqID: 0, cache: &imcPrefix{}, kvState: &imcCheckpoint{}}
 
 	// snapshot simulates startSlot writing kvState by going through the
 	// kvBuffer Prepare/Commit lifecycle.
@@ -840,13 +847,13 @@ func TestIMCSessions(t *testing.T) {
 		cfg: Config{PtrContextWindow: new(8192)},
 		imcSessions: []*imcSession{
 			{id: 0, kvState: &imcCheckpoint{}},
-			{id: 1, cache: &tokenCache{totalTokensCached: 1024}, reserved: true, kvState: &imcCheckpoint{}},
-			{id: 2, cache: &tokenCache{totalTokensCached: 2048, nextLogicalPos: 2100, cachedMsgCount: 4, hasMedia: true}, allocatedContext: 4096, inputMessages: 4, inputTokens: 2200, outputTokens: 300, lastUsed: lastUsed, kvState: populatedTestSessionStore(t), pendingH: make([]float32, 2)},
-			{id: 3, cache: &tokenCache{totalTokensCached: 2048}, allocatedContext: 1536, kvState: &imcCheckpoint{}},
-			{id: 4, cache: &tokenCache{totalTokensCached: 1024, cachedMsgCount: 2}, reserved: true, allocatedContext: 1536, kvState: &imcCheckpoint{}},
+			{id: 1, cache: &imcPrefix{totalTokensCached: 1024}, reserved: true, kvState: &imcCheckpoint{}},
+			{id: 2, cache: &imcPrefix{totalTokensCached: 2048, nextLogicalPos: 2100, cachedMsgCount: 4, hasMedia: true}, allocatedContext: 4096, inputMessages: 4, inputTokens: 2200, outputTokens: 300, lastUsed: lastUsed, kvState: populatedTestSessionStore(t), pendingH: make([]float32, 2)},
+			{id: 3, cache: &imcPrefix{totalTokensCached: 2048}, allocatedContext: 1536, kvState: &imcCheckpoint{}},
+			{id: 4, cache: &imcPrefix{totalTokensCached: 1024, cachedMsgCount: 2}, reserved: true, allocatedContext: 1536, kvState: &imcCheckpoint{}},
 		},
 	}
-	bindTestTokenCaches(m)
+	publishTestIMCPrefixes(m)
 	m.imcSessions[2].snapshotBytes = imcSnapshotBytes(m.imcSessions[2].kvState, m.imcSessions[2].draftKVState, m.imcSessions[2].pendingH)
 
 	got := m.IMCSessions()
@@ -947,7 +954,7 @@ func TestIMCCompletedHistory(t *testing.T) {
 		}}},
 	}
 	session := &imcSession{
-		cache:   &tokenCache{cachedTokens: []llama.Token{17, 23}, totalTokensCached: 2, cachedMsgCount: 1},
+		cache:   &imcPrefix{cachedTokens: []llama.Token{17, 23}, totalTokensCached: 2, cachedMsgCount: 1},
 		kvState: populatedTestSessionStore(t),
 	}
 	m := Model{imcSessions: []*imcSession{session}}
@@ -1050,11 +1057,17 @@ func TestImcClearReservedSessionIDArg(t *testing.T) {
 // reserved until its externalized snapshot is published.
 func TestIMCCommitDoesNotPublishUntilSnapshot(t *testing.T) {
 	m := &Model{imcSessions: make([]*imcSession, 1)}
-	m.imcSessions[0] = &imcSession{cache: &tokenCache{}, kvState: &imcCheckpoint{}, seqID: imcSeqIDUnbound, id: 0, reserved: true}
+	m.imcSessions[0] = &imcSession{cache: &imcPrefix{cachedTokens: []llama.Token{9}, totalTokensCached: 1}, kvState: &imcCheckpoint{}, seqID: imcSeqIDUnbound, id: 0, reserved: true}
+	publishTestIMCPrefixes(m)
+	session := m.imcSessions[0]
+	oldPrefixLen, oldPrefixHash := session.prefixLen, session.prefixHash
 
 	m.imcCommitSession(context.Background(), m.imcSessions[0], "hash", 500, 2, []llama.Token{1, 2}, false, nil, "")
 	if !m.imcSessions[0].reserved {
 		t.Fatal("committed session must remain reserved before publish")
+	}
+	if session.prefixLen != oldPrefixLen || session.prefixHash != oldPrefixHash {
+		t.Fatal("commit changed prefix hash identity before snapshot publication")
 	}
 
 	buf := prepareTestStore(t, m.imcSessions[0].kvState, 3)
@@ -1063,5 +1076,9 @@ func TestIMCCommitDoesNotPublishUntilSnapshot(t *testing.T) {
 	m.imcPublishSession(m.imcSessions[0])
 	if m.imcSessions[0].reserved {
 		t.Fatal("published session must be unreserved")
+	}
+	hashes := m.imcCandidateHashes([]llama.Token{1, 2, 3}, nil)
+	if session.prefixLen != 2 || !session.matchesPrefixHash(hashes) {
+		t.Fatal("published prefix hash does not discover the new prefix")
 	}
 }

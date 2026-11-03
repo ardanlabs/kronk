@@ -182,8 +182,8 @@ func TestIMCSessionLogicalPosition(t *testing.T) {
 		session imcSession
 		want    int
 	}{
-		{name: "linear uses physical count", session: imcSession{cache: &tokenCache{totalTokensCached: 12}}, want: 12},
-		{name: "mrope uses logical position", session: imcSession{cache: &tokenCache{totalTokensCached: 12, nextLogicalPos: 5}}, want: 5},
+		{name: "linear uses physical count", session: imcSession{cache: &imcPrefix{totalTokensCached: 12}}, want: 12},
+		{name: "mrope uses logical position", session: imcSession{cache: &imcPrefix{totalTokensCached: 12, nextLogicalPos: 5}}, want: 5},
 	}
 
 	for _, tt := range tests {

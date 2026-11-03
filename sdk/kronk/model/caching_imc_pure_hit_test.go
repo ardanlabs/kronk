@@ -302,7 +302,7 @@ func TestIMCCommitAndResetRenderInputHash(t *testing.T) {
 	m := newFingerprintTestModel("template-x")
 
 	session := &imcSession{
-		cache:    &tokenCache{},
+		cache:    &imcPrefix{},
 		kvState:  &imcCheckpoint{},
 		id:       0,
 		seqID:    0,
@@ -353,7 +353,7 @@ func TestIMCCommitAndResetRenderInputHash(t *testing.T) {
 func TestIMCCommitEmptyRenderHashDisqualifiesSkip(t *testing.T) {
 	m := newFingerprintTestModel("template-x")
 	session := &imcSession{
-		cache:    &tokenCache{},
+		cache:    &imcPrefix{},
 		kvState:  &imcCheckpoint{},
 		id:       0,
 		seqID:    0,
