@@ -807,9 +807,9 @@ try {
         if (Eco 'rust') {
             Need 'cargo' 'Rust build, fmt, clippy, tests' 'https://rustup.rs'
             if ($toolPaths.ContainsKey('cargo')) {
-                # from the filesystem root: rustup reads rust-toolchain.toml (a toolchain path) from the
-                # working directory and its parents, so neither the repo nor a shared temp dir will do
-                Push-Location -LiteralPath ([IO.Path]::GetPathRoot($top))
+                # from the user's home: rustup and cargo read rust-toolchain.toml and .cargo/config.toml
+                # from the working directory and its parents (not the repo, a shared temp dir, or a volume root)
+                Push-Location -LiteralPath ([Environment]::GetFolderPath('UserProfile'))
                 & cargo fmt --version *> $null; $fmtRc = $LASTEXITCODE
                 & cargo clippy --version *> $null; $clippyRc = $LASTEXITCODE
                 Pop-Location

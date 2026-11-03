@@ -304,9 +304,10 @@ $rustUnits = @(Units 'rust')
 if ($rustUnits.Count) {
     if (-not (Has 'cargo')) { Skip 'cargo' 'cargo not installed' }
     else {
-        # Probe from the filesystem root: rustup reads rust-toolchain.toml (a toolchain path) from the
-        # working directory and its parents, so neither the repo nor a shared temp dir will do.
-        Push-Location -LiteralPath ([IO.Path]::GetPathRoot($root))
+        # Probe from the user's home: rustup reads rust-toolchain.toml (a toolchain path) and cargo
+        # reads .cargo/config.toml from the working directory and its parents, so neither the repo,
+        # a shared temp dir, nor a volume root others can write to will do.
+        Push-Location -LiteralPath ([Environment]::GetFolderPath('UserProfile'))
         & cargo fmt --version *> $null; $hasFmt = $LASTEXITCODE -eq 0
         & cargo clippy --version *> $null; $hasClippy = $LASTEXITCODE -eq 0
         Pop-Location
@@ -332,8 +333,8 @@ if ($rustUnits.Count) {
                 }) | Select-Object -Unique)
         foreach ($d in $lockDirs) {
             $s = if ($lockDirs.Count -gt 1) { '@' + ($d -creplace '/', '_') } else { '' }; $dir = UnitDir $d
-            # cargo-audit reads only Cargo.lock: run the binary itself from the filesystem root.
-            if (Has 'cargo-audit') { Job "cargo-audit$s" ([IO.Path]::GetPathRoot($root)) 'cargo-audit' @('audit', '--file', (Join-Path $dir 'Cargo.lock')) } else { Skip "cargo-audit$s" 'cargo-audit not installed' }
+            # cargo-audit reads only Cargo.lock: run the binary itself from the user's home.
+            if (Has 'cargo-audit') { Job "cargo-audit$s" ([Environment]::GetFolderPath('UserProfile')) 'cargo-audit' @('audit', '--file', (Join-Path $dir 'Cargo.lock')) } else { Skip "cargo-audit$s" 'cargo-audit not installed' }
             if (Test-Path -LiteralPath "$d/deny.toml") {
                 # cargo-deny runs cargo metadata, which reads the repo's cargo config and toolchain file
                 if (-not $runsCode) { Skip "cargo-deny$s" "$untrusted (cargo metadata, repo cargo config)" }
